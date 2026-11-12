@@ -2283,19 +2283,40 @@ foundation_neg_compile_test(neg_core_box_consume_not_movable
 
 # ── The Atomic family ─────────────────────────────────────────────────
 #
-# An Atomic holds a lock-free value with one bit pattern for each value,
-# and each operation names its memory order.  The runtime test runs four
-# threads, and foundation starts no thread, so test/fixy holds it.
+# An Atomic holds a lock-free value with one bit pattern for each value, or
+# the word of a value that declares one, and each operation names its memory
+# order.  The runtime test runs four threads, and foundation starts no thread,
+# so test/fixy holds it.
+#
+# Each gate of a value is a disjunction of the three roads of a value.  At
+# the default depth, GCC names the gate that refuses the value, and it gives
+# the part that the value misses only at depth 2.  So each fixture of the
+# value gate compiles at depth 2.
 
+set(CRUCIBLE_ATOMIC_GATE_FIXTURES
+  neg_core_atomic_padded_payload neg_core_atomic_float_payload neg_core_atomic_not_lock_free
+  neg_core_atomic_word_without_key neg_core_atomic_word_incomplete neg_core_atomic_word_without_empty_word)
 foundation_neg_compile_test(neg_core_atomic_padded_payload
-  "template constraint failure for .template<class T, class Writer>  requires  AtomicValue<T> class foundation::core::Atomic."
+  "required for the satisfaction of .OtherValueHasOwnBits<T>. \\[with T = Padded\\]"
   "the expression .has_unique_object_representations_v<T> \\[with T = Padded\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_atomic_float_payload
-  "template constraint failure for .template<class T, class Writer>  requires  AtomicValue<T> class foundation::core::Atomic."
+  "required for the satisfaction of .OtherValueHasOwnBits<T>. \\[with T = float\\]"
   "the expression .has_unique_object_representations_v<T> \\[with T = float\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_atomic_not_lock_free
-  "template constraint failure for .template<class T, class Writer>  requires  AtomicValue<T> class foundation::core::Atomic."
+  "required for the satisfaction of .OtherValueHasOwnBits<T>. \\[with T = WidePhase\\]"
   "the expression .__atomic_always_lock_free\\(long unsigned int, const volatile void\\*\\)\\(sizeof \\(T\\), 0\\) \\[with T = WidePhase\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_atomic_word_without_key
+  "required for the satisfaction of .DeclaredWordIsComplete<T>. \\[with T = .*Seat\\]"
+  "the required expression .foundation::core::atomic_word<T>::from_word\\(key, word\\). is invalid")
+foundation_neg_compile_test(neg_core_atomic_word_incomplete
+  "required for the satisfaction of .DeclaredWordIsComplete<T>. \\[with T = .*Seat\\]"
+  "the required expression .foundation::core::atomic_word<T>::to_word\\(value\\). is invalid")
+foundation_neg_compile_test(neg_core_atomic_word_without_empty_word
+  "required for the satisfaction of .DeclaredWordIsComplete<T>. \\[with T = .*Seat\\]"
+  ".empty_word. is not a member of .foundation::core::atomic_word<.*Seat>.")
+foreach(_fixture IN LISTS CRUCIBLE_ATOMIC_GATE_FIXTURES)
+  set_property(TEST ${_fixture} APPEND PROPERTY ENVIRONMENT "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=2")
+endforeach()
 foundation_neg_compile_test(neg_core_atomic_fetch_add_enum
   "no matching function for call to .foundation::core::Atomic<Phase>::fetch_add_acq_rel\\(Phase\\)."
   "the expression .is_integral_v<_Tp> \\[with _Tp = Phase\\]. evaluated to .false.")

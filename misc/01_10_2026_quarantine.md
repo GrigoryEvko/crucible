@@ -1336,7 +1336,7 @@ Each owner fills each element on its mint, or takes a fill value: no owner reads
 
 **The header.** `include/foundation/core/Atomic.h` (main).
 
-**The gates.** `AtomicValue<T>` admits a trivially copyable object type that is not an array and not cv-qualified (main). It must have one bit pattern for each value, and lock-free atomic operations for its size. A type with padding and a float with two zeros are refused. `AtomicCount<T>` adds an integer that is not `bool`, and `AtomicBits<T>` an unsigned integer (main).
+**The gates.** `AtomicValue<T>` admits an object type that is not an array and not cv-qualified, on one of three roads (main). The first road is a trivially copyable value with one bit pattern for each value and lock-free atomic operations for its size. A type with padding and a float with two zeros are refused. The second road is a value whose type states a word through `atomic_word<T>` (`AtomicWordProtocol<T>`), and the third is an `Option` of such a value. `AtomicCount<T>` adds an integer that is not `bool`, and `AtomicBits<T>` an unsigned integer (main).
 
 **The API.**
 
@@ -1353,14 +1353,15 @@ Each owner fills each element on its mint, or takes a fill value: no owner reads
 | `load_owned(writer)` | The relaxed load of the sole writer, on a cell of one writer only | one load | main |
 | `SoleWriter<Role, Brand>`, `mint_sole_writer<Role>()` | The proof of the writer: a linear token with no bytes, with the shape of a `Permission`. The mint is its one door, and each call site of the mint gives a fresh brand | none | main |
 | `Atomic<Option<X>>` for a niche `X` | An empty cell or a full cell of one word. A niche `Option` has the bytes of its payload and one bit pattern for each value, so `AtomicValue` admits it, and a compare-and-swap compares the `Option` as one word. A plain `Option` has a tag and padding, and `AtomicValue` refuses it | as `Atomic` | main |
-| `Atomic<Option<Ref<T>>>` | A pointer that a thread publishes. `Option<Ref<T>>` is one pointer with a niche, so the cell is lock-free | as `Atomic` | design, after `Ref` of G3 |
+| `atomic_word<T>`, `atomic_word_key<T>` | The word protocol of a value that keeps an invariant, beside the definition of its type: a `word_type` (an integer, an enum or a pointer), `to_word(value)`, `from_word(key, word)` and a constant `empty_word`. Only a cell makes the key, so only a cell makes a value from a word. The word of `Option<X>` is the word of `X`, and `empty_word` is the empty `Option` | as `Atomic` | main |
+| `Atomic<Option<Ref<T>>>` | A pointer that a thread publishes. `Option<Ref<T>>` holds the word of `Ref<T>`, one pointer, so the cell is lock-free | as `Atomic` | design, after `atomic_word<Ref<T>>` in `Ref.h` |
 | `CacheLine<T>` | Aligns a cell to 64 bytes and pads it to a multiple of 64 bytes. `*line` and `line->member` borrow the cell (main). `line.view()` gives a `Ref` of the Ref family | none | main, new |
 | `Tally` | A statistics counter. `add(n)` is a fetch-add with acq_rel order, and `read()` is an acquire load. A value of a `Tally` orders no other data | one locked add | main |
 | the relaxed and seq_cst operations of `ChaseLevDeque`, and `fence_seq_cst` | `detail` code of the base, with a citation of the algorithm | as the algorithm | design |
 
 A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), and not a member of `Atomic`. The run-time id of a brand of the linear design is an `Atomic` counter (section 11.10). The publication types of `fixy/handle/` (`PublishOnce`, `PublishCommit`, `OneShotFlag` and `Once`) stay in the layer X4, and slice 4.4 rebuilds them on `Atomic` (Appendix E). A pointer that a thread publishes is then a `PublishOnce<Ref<T>>` or an `Atomic<Option<Ref<T>>>`.
 
-**The family list.** The types and the gates: `Atomic`, `AtomicValue`, `AtomicCount`, `AtomicBits`, `CasRefusal`, `SoleWriter`, `CacheLine` and `Tally`. The operations: each operation of the table, and `add` and `read`. The members `value_type` and `observed` of main, and `brand_type`, the member that `foundation/Brand.h` reads. The check file `test/layer/checks/foundation/core/Atomic.cpp` holds the list as `atomic_names`.
+**The family list.** The types and the gates: `Atomic`, `AtomicValue`, `AtomicCount`, `AtomicBits`, `AtomicWordProtocol`, `atomic_word`, `atomic_word_key`, `CasRefusal`, `SoleWriter`, `CacheLine` and `Tally`. The operations: each operation of the table, and `add` and `read`. The members `value_type` and `observed` of main, and `brand_type`, the member that `foundation/Brand.h` reads. The members `word_type`, `empty_word`, `to_word` and `from_word` of each specialization of `atomic_word`. The check file `test/layer/checks/foundation/core/Atomic.cpp` holds the list as `atomic_names`.
 
 **Removes.** The row `allow F0_primitives <atomic> until Atomic`. The family has no R5 import of its own, because each operation is a builtin. The import `std::__detail::__notify_impl` of `libcrucible_vigil.a` goes when its wait moves to the futex door (section 11.9).
 
@@ -1371,6 +1372,7 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 - QDESIGN gives `load_owned` on `Atomic<T>`. A proof that each cell accepts proves nothing about a cell, so `load_owned` is on the cell of one writer only, whose type names the writer, and each write of that cell takes the proof (CLAUDE.md §XXII). `SoleWriter` is a token of `foundation/core`, because `Permission` is in a higher layer. A handle of a higher layer holds the writer beside its `Permission`.
 - The identity of a writer is the call site of its mint. A mint in a loop gives one type in each turn, and a token that leaves its turn can write the cell of a different turn. The run-time id of a brand (section 11.10) closes this case.
 - `CacheLine::get()` of main borrowed with no key. The owner decided P6 on 2026-11-12, and the dereference took its place (section 11.1). `view()` comes with the `Ref` of the Ref family.
+- The first design held `Option<Ref<T>>` as its own bytes. `Ref<T>` holds a byte seal, so it is not trivially copyable, and no cast makes a `Ref` from bytes. The word protocol gives the cell the pointer of the `Ref`, and only the cell makes a `Ref` from a word.
 - QDESIGN puts `PublishOnce` and `OneShotFlag` beside `Atomic`. Appendix E rebuilds them in place in `fixy/handle/`, and this section agrees.
 
 **The recipes.**

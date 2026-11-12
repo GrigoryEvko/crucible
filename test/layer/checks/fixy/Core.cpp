@@ -54,6 +54,8 @@ static_assert(fixy_zip_pairs() == 3);
 static_assert(std::is_same_v<::fixy::Tally, ::foundation::core::Tally>);
 static_assert(::fixy::AtomicValue<int> && ::fixy::AtomicCount<int> && ::fixy::AtomicBits<unsigned>);
 static_assert(!::fixy::AtomicValue<float> && !::fixy::AtomicCount<bool> && !::fixy::AtomicBits<int>);
+static_assert(std::is_same_v<::fixy::atomic_word_key<int>, ::foundation::core::atomic_word_key<int>>);
+static_assert(!::fixy::AtomicWordProtocol<int> && !::foundation::core::AtomicWordProtocol<int>);
 struct CoreCheckRole {};
 // A fresh brand stays in the scope that made it, so the alias of the writer
 // is in the body of a function.

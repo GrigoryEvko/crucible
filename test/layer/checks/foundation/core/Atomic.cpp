@@ -178,10 +178,13 @@ static_assert(!HasGet<CacheLine<int>> && !HasGet<CacheLine<int> const>);
 // The closed surface of the family (plan section 10.2, item 9).  The list
 // holds the names of the family of plan section 11.6, value_type and
 // observed of main, and brand_type, the member that foundation/Brand.h reads.
+// The four members of a word protocol belong to each specialization of
+// atomic_word, and the list names them for the specializations of the base.
 inline constexpr TextView atomic_names{
-    "Atomic AtomicValue AtomicCount AtomicBits CasRefusal SoleWriter CacheLine Tally load_acquire store_release "
-    "exchange_acq_rel cas_acq_rel fetch_add_acq_rel fetch_sub_acq_rel fetch_or_acq_rel fetch_and_acq_rel "
-    "fetch_max_acq_rel fetch_min_acq_rel load_owned add read value_type observed brand_type"};
+    "Atomic AtomicValue AtomicCount AtomicBits AtomicWordProtocol CasRefusal SoleWriter CacheLine Tally atomic_word "
+    "atomic_word_key load_acquire store_release exchange_acq_rel cas_acq_rel fetch_add_acq_rel fetch_sub_acq_rel "
+    "fetch_or_acq_rel fetch_and_acq_rel fetch_max_acq_rel fetch_min_acq_rel load_owned add read value_type observed "
+    "brand_type word_type empty_word to_word from_word"};
 CRUCIBLE_CLOSED_SURFACE(atomic_names, Atomic<int>);
 CRUCIBLE_CLOSED_SURFACE(atomic_names, Atomic<std::uint64_t>);
 CRUCIBLE_CLOSED_SURFACE(atomic_names, Atomic<Pair>);
@@ -272,6 +275,225 @@ concept Swaps = requires(Cell& cell) { cell.cas_acq_rel(typename Cell::value_typ
     return true;
 }
 static_assert(sole_writer_checks());
+
+// ── The word of a value ───────────────────────────────────────────────
+
+// A seat number that is never zero.  The assignment is user-provided, so the
+// seat is not trivially copyable, and its type states the word of its cell.
+// The member niche lets an Option of a seat copy.
+class Seat {
+    std::uint32_t number_ = 1;
+    constexpr explicit Seat(std::uint32_t number) noexcept : number_{number} {}
+    friend struct ::foundation::core::atomic_word<Seat>;
+
+public:
+    constexpr Seat(Seat const&) noexcept = default;
+    constexpr Seat& operator=(Seat const& other) noexcept {
+        number_ = other.number_;
+        return *this;
+    }
+    [[nodiscard]] static constexpr Seat first() noexcept { return Seat{1}; }
+    [[nodiscard]] static constexpr Seat niche_empty(niche_key<Seat> const&) noexcept { return Seat{0}; }
+    [[nodiscard]] constexpr bool is_niche_empty(niche_key<Seat> const&) const noexcept { return number_ == 0; }
+};
+
+// A value with a user-provided assignment, for the protocols that the gate
+// refuses.  The tag gives each protocol a type of its own.
+template <int Tag>
+struct Sealed {
+    std::uint32_t number = 1;
+    constexpr Sealed() noexcept = default;
+    constexpr explicit Sealed(std::uint32_t value) noexcept : number{value} {}
+    constexpr Sealed(Sealed const&) noexcept = default;
+    constexpr Sealed& operator=(Sealed const& other) noexcept {
+        number = other.number;
+        return *this;
+    }
+};
+
+// A value whose destructor is not trivial.
+struct Owner {
+    std::uint32_t number = 1;
+    constexpr Owner() noexcept = default;
+    constexpr explicit Owner(std::uint32_t value) noexcept : number{value} {}
+    constexpr Owner(Owner const&) noexcept = default;
+    constexpr ~Owner() {}
+};
+
+// A value with one bit pattern for each value.
+struct Bits {
+    std::uint32_t number = 1;
+};
+
+// A class that holds a word, and is not an integer, an enum or a pointer.
+struct WordClass {
+    std::uint32_t raw = 0;
+};
+
+// The members of a complete protocol with a word of four bytes.
+template <class T>
+struct FourByteWord {
+    using word_type = std::uint32_t;
+    static constexpr word_type empty_word = 0;
+    [[nodiscard]] static constexpr word_type to_word(T const& value) noexcept { return value.number; }
+    [[nodiscard]] static constexpr T from_word(atomic_word_key<T> const&, word_type word) noexcept { return T{word}; }
+};
+
+}  // namespace detail::atomic_checks
+
+template <>
+struct atomic_word<detail::atomic_checks::Seat> {
+    using word_type = std::uint32_t;
+    static constexpr word_type empty_word = 0;
+    [[nodiscard]] static constexpr word_type to_word(detail::atomic_checks::Seat const& seat) noexcept {
+        return seat.number_;
+    }
+    [[nodiscard]] static constexpr detail::atomic_checks::Seat
+    from_word(atomic_word_key<detail::atomic_checks::Seat> const&, word_type word) noexcept {
+        return detail::atomic_checks::Seat{word};
+    }
+};
+
+// from_word takes the key, and a second from_word takes the word alone.
+template <>
+struct atomic_word<detail::atomic_checks::Sealed<0>>
+    : detail::atomic_checks::FourByteWord<detail::atomic_checks::Sealed<0>> {
+    using FourByteWord::from_word;
+    [[nodiscard]] static constexpr detail::atomic_checks::Sealed<0> from_word(word_type word) noexcept {
+        return detail::atomic_checks::Sealed<0>{word};
+    }
+};
+
+// The word is a class.
+template <>
+struct atomic_word<detail::atomic_checks::Sealed<1>> {
+    using word_type = detail::atomic_checks::WordClass;
+    static constexpr word_type empty_word{};
+    [[nodiscard]] static constexpr word_type to_word(detail::atomic_checks::Sealed<1> const& value) noexcept {
+        return word_type{value.number};
+    }
+    [[nodiscard]] static constexpr detail::atomic_checks::Sealed<1>
+    from_word(atomic_word_key<detail::atomic_checks::Sealed<1>> const&, word_type word) noexcept {
+        return detail::atomic_checks::Sealed<1>{word.raw};
+    }
+};
+
+// to_word can throw.
+template <>
+struct atomic_word<detail::atomic_checks::Sealed<2>>
+    : detail::atomic_checks::FourByteWord<detail::atomic_checks::Sealed<2>> {
+    [[nodiscard]] static constexpr word_type to_word(detail::atomic_checks::Sealed<2> const& value) {
+        return value.number;
+    }
+};
+
+// empty_word is not of the word type.
+template <>
+struct atomic_word<detail::atomic_checks::Sealed<3>>
+    : detail::atomic_checks::FourByteWord<detail::atomic_checks::Sealed<3>> {
+    static constexpr int empty_word = 0;
+};
+
+// empty_word is not a constant.
+template <>
+struct atomic_word<detail::atomic_checks::Sealed<4>>
+    : detail::atomic_checks::FourByteWord<detail::atomic_checks::Sealed<4>> {
+    static inline word_type empty_word = 0;
+};
+
+// A complete protocol.  An Option of the value takes the word of the value,
+// so a protocol of the Option is refused.
+template <>
+struct atomic_word<detail::atomic_checks::Sealed<5>>
+    : detail::atomic_checks::FourByteWord<detail::atomic_checks::Sealed<5>> {};
+
+template <>
+struct atomic_word<Option<detail::atomic_checks::Sealed<5>>> {
+    using word_type = std::uint32_t;
+    static constexpr word_type empty_word = 0;
+    [[nodiscard]] static constexpr word_type to_word(Option<detail::atomic_checks::Sealed<5>> const&) noexcept {
+        return 1;
+    }
+    [[nodiscard]] static constexpr Option<detail::atomic_checks::Sealed<5>>
+    from_word(atomic_word_key<Option<detail::atomic_checks::Sealed<5>>> const&, word_type) noexcept {
+        return Option<detail::atomic_checks::Sealed<5>>{};
+    }
+};
+
+// from_word takes the key by value, and the key does not copy.
+template <>
+struct atomic_word<detail::atomic_checks::Sealed<7>>
+    : detail::atomic_checks::FourByteWord<detail::atomic_checks::Sealed<7>> {
+    [[nodiscard]] static constexpr detail::atomic_checks::Sealed<7>
+    from_word(atomic_word_key<detail::atomic_checks::Sealed<7>>, word_type word) noexcept {
+        return detail::atomic_checks::Sealed<7>{word};
+    }
+};
+
+// Complete protocols of a value with a destructor that is not trivial, and
+// of a value with bits of its own.
+template <>
+struct atomic_word<detail::atomic_checks::Owner> : detail::atomic_checks::FourByteWord<detail::atomic_checks::Owner> {};
+
+template <>
+struct atomic_word<detail::atomic_checks::Bits> : detail::atomic_checks::FourByteWord<detail::atomic_checks::Bits> {};
+
+namespace detail::atomic_checks {
+
+// A value that keeps an invariant takes the word that it declares, and an
+// Option of it takes the same word.
+static_assert(!std::is_trivially_copyable_v<Seat>);
+static_assert(AtomicWordProtocol<Seat> && AtomicValue<Seat>);
+static_assert(AtomicValue<Option<Seat>> && !AtomicWordProtocol<Option<Seat>>);
+static_assert(AtomicWordProtocol<Sealed<5>> && AtomicValue<Sealed<5>>);
+
+// Each protocol that is not complete is refused: two doors of from_word, a
+// word that is a class, a to_word that can throw, an empty_word of a
+// different type, an empty_word that is not a constant, and a from_word that
+// takes the key by value.
+static_assert(!AtomicValue<Sealed<0>> && !AtomicValue<Sealed<1>> && !AtomicValue<Sealed<2>>);
+static_assert(!AtomicValue<Sealed<3>> && !AtomicValue<Sealed<4>> && !AtomicValue<Sealed<7>>);
+
+// A value whose destructor is not trivial, a value with bits of its own, and
+// an Option of a value with a word give no word of their own.  A value that
+// is not trivially copyable and declares no word has no word at all.
+static_assert(!AtomicValue<Owner> && !AtomicValue<Bits> && !AtomicValue<Option<Sealed<5>>>);
+static_assert(!AtomicValue<Sealed<6>> && !AtomicValue<Option<Sealed<6>>>);
+
+// An Option of a value whose protocol is not complete is refused too.
+static_assert(!AtomicValue<Option<Sealed<0>>> && !AtomicValue<Option<Bits>>);
+
+// Only the codec of a cell makes a key, and the key of one value does not
+// open the from_word of a different value.  The key does not copy, and its
+// copy is not a bit copy, so no cast makes a key from bytes.
+static_assert(!std::is_default_constructible_v<atomic_word_key<Seat>>);
+static_assert(!std::is_copy_constructible_v<atomic_word_key<Seat>>
+              && !std::is_copy_assignable_v<atomic_word_key<Seat>>);
+static_assert(!std::is_trivially_copyable_v<atomic_word_key<Seat>>);
+static_assert(!std::is_convertible_v<atomic_word_key<Seat> const&, atomic_word_key<Sealed<5>>>);
+
+// The cell of a value with a word, and of an Option of it, holds the word.
+// The error of a compare-and-swap holds the value that the cell held.
+static_assert(sizeof(Atomic<Seat>) == 4 && alignof(Atomic<Seat>) == 4);
+static_assert(sizeof(Atomic<Option<Seat>>) == 4 && alignof(Atomic<Option<Seat>>) == 4);
+static_assert(ErrorValue<CasRefusal<Seat>> && ErrorValue<CasRefusal<Option<Seat>>>);
+
+// The codec works in a constant evaluation, so a constinit cell of a value
+// with a word needs no dynamic initialization.
+[[nodiscard]] consteval bool word_cell_builds_in_a_constant_evaluation() noexcept {
+    Atomic<Seat> const seat_cell{Seat::first()};
+    Atomic<Option<Seat>> const empty_cell{};
+    Atomic<Option<Seat>> const full_cell{Option<Seat>::some(Seat::first())};
+    static_cast<void>(seat_cell);
+    static_cast<void>(empty_cell);
+    static_cast<void>(full_cell);
+    return true;
+}
+static_assert(word_cell_builds_in_a_constant_evaluation());
+
+CRUCIBLE_CLOSED_SURFACE(atomic_names, Atomic<Seat>);
+CRUCIBLE_CLOSED_SURFACE(atomic_names, Atomic<Option<Seat>>);
+CRUCIBLE_CLOSED_SURFACE(atomic_names, atomic_word_key<Seat>);
 
 }  // namespace detail::atomic_checks
 

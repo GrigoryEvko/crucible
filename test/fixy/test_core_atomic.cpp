@@ -1,5 +1,5 @@
-// Tests of foundation/core/Atomic.h: Atomic, the cell of one writer,
-// CacheLine and Tally, alone and under contention.  The tsan preset runs
+// Tests of foundation/core/Atomic.h: Atomic, the word of a value, the cell of
+// one writer, CacheLine and Tally, alone and under contention.  The tsan preset runs
 // the same binary, so each order that the names claim is checked by
 // ThreadSanitizer too.  The test is a fixy test, because foundation starts
 // no thread: the fork of fixy/concurrent/PermissionFork.h starts the four
@@ -16,6 +16,7 @@
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
 
+#include "../foundation/abort_probe.h"
 #include "../foundation/philox_stream.h"
 
 #include <cstdint>
@@ -42,6 +43,60 @@ struct Fourth {
 };
 }  // namespace worker_tags
 
+// A seat number that is never zero.  The assignment is user-provided, so the
+// seat is not trivially copyable, and no cast makes a seat from bytes.  Its
+// type states the word of its cell below: the number, with zero as the empty
+// word.  The member niche lets an Option of a seat copy.
+class Seat {
+    std::uint32_t number_ = 1;
+    constexpr explicit Seat(std::uint32_t number) noexcept : number_{number} {}
+    friend struct ::foundation::core::atomic_word<Seat>;
+
+public:
+    // The seat of a number that is not zero.
+    [[nodiscard]] static Seat of(std::uint32_t number) noexcept {
+        CRUCIBLE_FATAL_INVARIANT(number != 0);
+        return Seat{number};
+    }
+    constexpr Seat(Seat const&) noexcept = default;
+    constexpr Seat& operator=(Seat const& other) noexcept {
+        number_ = other.number_;
+        return *this;
+    }
+    [[nodiscard]] constexpr std::uint32_t number() const noexcept { return number_; }
+    [[nodiscard]] static constexpr Seat niche_empty(::foundation::core::niche_key<Seat> const&) noexcept {
+        return Seat{0};
+    }
+    [[nodiscard]] constexpr bool is_niche_empty(::foundation::core::niche_key<Seat> const&) const noexcept {
+        return number_ == 0;
+    }
+};
+
+// A seat of the same shape, whose protocol below has a defect: to_word gives
+// the empty word for the seat 1.
+class LossySeat {
+    std::uint32_t number_ = 1;
+    constexpr explicit LossySeat(std::uint32_t number) noexcept : number_{number} {}
+    friend struct ::foundation::core::atomic_word<LossySeat>;
+
+public:
+    [[nodiscard]] static LossySeat of(std::uint32_t number) noexcept {
+        CRUCIBLE_FATAL_INVARIANT(number != 0);
+        return LossySeat{number};
+    }
+    constexpr LossySeat(LossySeat const&) noexcept = default;
+    constexpr LossySeat& operator=(LossySeat const& other) noexcept {
+        number_ = other.number_;
+        return *this;
+    }
+    [[nodiscard]] static constexpr LossySeat niche_empty(::foundation::core::niche_key<LossySeat> const&) noexcept {
+        return LossySeat{0};
+    }
+    [[nodiscard]] constexpr bool is_niche_empty(::foundation::core::niche_key<LossySeat> const&) const noexcept {
+        return number_ == 0;
+    }
+};
+
 }  // namespace
 
 namespace foundation::permissions {
@@ -52,6 +107,30 @@ template <>
 struct has_split_pack_authoring_witness<worker_tags::Whole, worker_tags::First, worker_tags::Second, worker_tags::Third,
                                         worker_tags::Fourth> : std::true_type {};
 }  // namespace foundation::permissions
+
+namespace foundation::core {
+
+template <>
+struct atomic_word<Seat> {
+    using word_type = std::uint32_t;
+    static constexpr word_type empty_word = 0;
+    [[nodiscard]] static constexpr word_type to_word(Seat const& seat) noexcept { return seat.number_; }
+    [[nodiscard]] static constexpr Seat from_word(atomic_word_key<Seat> const&, word_type word) noexcept {
+        return Seat{word};
+    }
+};
+
+template <>
+struct atomic_word<LossySeat> {
+    using word_type = std::uint32_t;
+    static constexpr word_type empty_word = 0;
+    [[nodiscard]] static constexpr word_type to_word(LossySeat const& seat) noexcept { return seat.number_ - 1; }
+    [[nodiscard]] static constexpr LossySeat from_word(atomic_word_key<LossySeat> const&, word_type word) noexcept {
+        return LossySeat{word + 1};
+    }
+};
+
+}  // namespace foundation::core
 
 namespace {
 
@@ -252,6 +331,104 @@ void test_niche_option_cell() {
     owned.store_release(writer, SlotOption::some(SlotNumber{9}));
     CRUCIBLE_FATAL_INVARIANT(holds_slot(owned.load_owned(writer), 9) && holds_slot(owned.load_acquire(), 9));
     ::foundation::linear::drop(std::move(writer));
+}
+
+using SeatOption = ::foundation::core::Option<Seat>;
+
+// The number of a full Option, or zero for an empty Option.  No seat has the
+// number zero.
+[[nodiscard]] std::uint32_t number_or_zero(SeatOption option) noexcept {
+    return std::move(option).match([](Seat seat) noexcept { return seat.number(); },
+                                   []() noexcept { return std::uint32_t{0}; });
+}
+
+// The Option of a number of the model: empty for zero, and full for each
+// other number.
+[[nodiscard]] SeatOption option_of(std::uint32_t number) noexcept {
+    return number == 0 ? SeatOption{} : SeatOption::some(Seat::of(number));
+}
+
+// A cell of a value with a word: the cell holds the number of the seat, and a
+// compare-and-swap compares the numbers.
+void test_word_cell() {
+    Atomic<Seat> cell{Seat::of(3)};
+    CRUCIBLE_FATAL_INVARIANT(cell.load_acquire().number() == 3);
+    cell.store_release(Seat::of(5));
+    CRUCIBLE_FATAL_INVARIANT(cell.exchange_acq_rel(Seat::of(6)).number() == 5);
+    CRUCIBLE_FATAL_INVARIANT(cell.cas_acq_rel(Seat::of(6), Seat::of(7)).is_ok());
+    auto const refused = cell.cas_acq_rel(Seat::of(6), Seat::of(8));
+    CRUCIBLE_FATAL_INVARIANT(refused.is_err() && observed_by(refused, Seat::of(6)).number() == 7);
+    CRUCIBLE_FATAL_INVARIANT(cell.load_acquire().number() == 7);
+
+    auto writer = mint_sole_writer<TailRole>();
+    Atomic<Seat, decltype(writer)> owned{Seat::of(2)};
+    owned.store_release(writer, Seat::of(owned.load_owned(writer).number() + 1));
+    CRUCIBLE_FATAL_INVARIANT(owned.load_owned(writer).number() == 3 && owned.load_acquire().number() == 3);
+    ::foundation::linear::drop(std::move(writer));
+}
+
+// A cell of an Option of a value with a word: the empty word is the empty
+// Option, and the cell makes no seat from it.
+void test_word_option_cell() {
+    Atomic<SeatOption> cell{};
+    CRUCIBLE_FATAL_INVARIANT(cell.load_acquire().is_none());
+    CRUCIBLE_FATAL_INVARIANT(cell.cas_acq_rel(SeatOption{}, option_of(4)).is_ok());
+    auto const refused = cell.cas_acq_rel(SeatOption{}, option_of(9));
+    CRUCIBLE_FATAL_INVARIANT(refused.is_err() && number_or_zero(observed_by(refused, SeatOption{})) == 4);
+    CRUCIBLE_FATAL_INVARIANT(number_or_zero(cell.exchange_acq_rel(SeatOption{})) == 4);
+    CRUCIBLE_FATAL_INVARIANT(cell.load_acquire().is_none());
+
+    auto writer = mint_sole_writer<TailRole>();
+    Atomic<SeatOption, decltype(writer)> owned{};
+    CRUCIBLE_FATAL_INVARIANT(owned.load_owned(writer).is_none());
+    owned.store_release(writer, option_of(2));
+    CRUCIBLE_FATAL_INVARIANT(number_or_zero(owned.load_owned(writer)) == 2);
+    CRUCIBLE_FATAL_INVARIANT(number_or_zero(owned.load_acquire()) == 2);
+    ::foundation::linear::drop(std::move(writer));
+}
+
+// The property: a random sequence of stores, exchanges and compare-and-swap
+// operations on a cell of an Option of a seat agrees with a plain model, a
+// number with zero for the empty Option.
+void test_word_option_agrees_with_plain_model() {
+    ::foundation::test::PhiloxStream stream{0x5EEDA703000000C6u};
+    Atomic<SeatOption> cell{};
+    std::uint32_t model = 0;
+    for (int step = 0; step < 20000; ++step) {
+        auto const number = static_cast<std::uint32_t>(stream.below(4));
+        switch (stream.below(3)) {
+            case 0:
+                cell.store_release(option_of(number));
+                model = number;
+                break;
+            case 1:
+                CRUCIBLE_FATAL_INVARIANT(number_or_zero(cell.exchange_acq_rel(option_of(number))) == model);
+                model = number;
+                break;
+            default: {
+                auto const expected = static_cast<std::uint32_t>(stream.below(4));
+                auto const outcome = cell.cas_acq_rel(option_of(expected), option_of(number));
+                CRUCIBLE_FATAL_INVARIANT(outcome.is_ok() == (expected == model));
+                CRUCIBLE_FATAL_INVARIANT(number_or_zero(observed_by(outcome, option_of(expected))) == model);
+                if (outcome.is_ok()) model = number;
+                break;
+            }
+        }
+        CRUCIBLE_FATAL_INVARIANT(number_or_zero(cell.load_acquire()) == model);
+    }
+}
+
+// A protocol whose to_word gives the empty word for a value would make a full
+// Option read back as empty.  The store of that Option ends the process, and
+// the cell keeps its value.
+void test_word_option_store_of_empty_word_aborts() {
+    using LossyOption = ::foundation::core::Option<LossySeat>;
+    Atomic<LossyOption> cell{};
+    CRUCIBLE_FATAL_INVARIANT(
+        ::foundation::test::aborts([&cell] { cell.store_release(LossyOption::some(LossySeat::of(1))); }));
+    CRUCIBLE_FATAL_INVARIANT(cell.load_acquire().is_none());
+    cell.store_release(LossyOption::some(LossySeat::of(2)));
+    CRUCIBLE_FATAL_INVARIANT(cell.load_acquire().is_some());
 }
 
 void test_cache_line() {
@@ -497,6 +674,28 @@ void test_niche_option_claim_under_contention() {
     CRUCIBLE_FATAL_INVARIANT(owner->load_acquire().is_none());
 }
 
+// One thread stores a full Option of a seat after it writes a plain payload,
+// and the other three wait for it with acquire loads.  ThreadSanitizer reports
+// a race on the payload if an order is missing.
+void test_word_option_publishes_to_acquire() {
+    CacheLine<Atomic<SeatOption>> published{};
+    std::uint64_t payload = 0;
+    CacheLine<Atomic<std::uint64_t>> next_worker{std::uint64_t{0}};
+    CacheLine<Tally> complete_reads{};
+    run_on_four_threads([&] {
+        if (next_worker->fetch_add_acq_rel(1) == 0) {
+            payload = 0x4444;
+            published->store_release(option_of(11));
+            return;
+        }
+        while (published->load_acquire().is_none()) {
+            CRUCIBLE_SPIN_PAUSE;
+        }
+        if (payload == 0x4444 && number_or_zero(published->load_acquire()) == 11) complete_reads->add(1);
+    });
+    CRUCIBLE_FATAL_INVARIANT(complete_reads->read() == 3);
+}
+
 // The cell of one writer, on one thread: the writer reads its own value
 // with load_owned, and each read agrees with load_acquire.
 void test_sole_writer_single_thread() {
@@ -640,6 +839,10 @@ int main() {
     test_read_modify_write_operations();
     test_class_value();
     test_niche_option_cell();
+    test_word_cell();
+    test_word_option_cell();
+    test_word_option_agrees_with_plain_model();
+    test_word_option_store_of_empty_word_aborts();
     test_cache_line();
     test_agrees_with_plain_model();
     test_signed_bounds_agree_with_plain_model();
@@ -650,6 +853,7 @@ int main() {
     test_release_publishes_to_acquire();
     test_fetch_and_under_contention();
     test_niche_option_claim_under_contention();
+    test_word_option_publishes_to_acquire();
     test_sole_writer_single_thread();
     test_sole_writer_agrees_with_plain_model();
     test_sole_writer_under_contention();

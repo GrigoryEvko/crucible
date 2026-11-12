@@ -663,6 +663,9 @@ witness <foundation/core/Text.h> private | foundation::core::CText | foundation:
 # the key of its constructor, so no caller makes a second writer of a cell.
 witness <foundation/core/Atomic.h> private | foundation::core::sole_writer_key | foundation::core::sole_writer_key{}
 witness <foundation/core/Atomic.h> no-match | foundation::core::SoleWriter<forge::brand, forge::brand> | foundation::core::SoleWriter<forge::brand, forge::brand>{}
+# Only the codec of a cell makes the key of from_word, so no caller makes a
+# value that keeps an invariant, such as a Ref, from a word.
+witness <foundation/core/Atomic.h> private | foundation::core::atomic_word_key<int> | foundation::core::atomic_word_key<int>{}
 # An Index comes only from its check, from a constant index below its count,
 # from an index of a smaller count and from the loop of an IndexRange, so no
 # number that a caller holds becomes an index.  A cursor of the loop comes

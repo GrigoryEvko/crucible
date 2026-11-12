@@ -457,6 +457,16 @@ PROBES: tuple[Probe, ...] = (
     Probe("sole_store", "store_release of a cell of one writer is the release store of std::atomic, with no lock"),
     Probe("sole_load", "load_acquire of a cell of one writer is the acquire load of std::atomic"),
     Probe(
+        "word_option_load",
+        "load_acquire of a cell of an Option of a value with a word is the acquire load of the word, because the "
+        "optimizer removes the check of the niche of the full Option",
+    ),
+    Probe(
+        "word_option_store",
+        "store_release of an Option of a value with a word is the release store of the word, because the optimizer "
+        "removes the check of the empty word of the full Option",
+    ),
+    Probe(
         "view_sum",
         "a range-for over a View is the loop of a raw pointer, because the optimizer removes the checks of the "
         "cursor.  Outside the loops, the family side compares the end pointer with the start, and the raw side "

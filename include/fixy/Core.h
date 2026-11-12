@@ -10,9 +10,9 @@
 // foundation name are the same entity and not a second type.
 //
 // A specialization of a family template, for example of
-// foundation::core::niche, names the template in namespace
-// foundation::core.  A specialization through a using-declaration is not
-// valid C++.
+// foundation::core::niche or foundation::core::atomic_word, names the
+// template in namespace foundation::core.  A specialization through a
+// using-declaration is not valid C++.
 
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Arithmetic.h>
@@ -89,6 +89,8 @@ using ::foundation::core::Atomic;
 using ::foundation::core::AtomicBits;
 using ::foundation::core::AtomicCount;
 using ::foundation::core::AtomicValue;
+using ::foundation::core::atomic_word_key;
+using ::foundation::core::AtomicWordProtocol;
 using ::foundation::core::CacheLine;
 using ::foundation::core::CasRefusal;
 using ::foundation::core::mint_sole_writer;

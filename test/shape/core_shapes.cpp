@@ -184,6 +184,53 @@ sole_load(fixy::Atomic<std::uint64_t, decltype(fixy::mint_sole_writer<ShapeHeadR
     return cell.load_acquire();
 }
 
+// A seat number that is never zero, a value that keeps an invariant.  Its
+// word is the number, and zero is its empty word and the empty value of its
+// niche, so the cell of an Option of a seat holds one 32-bit word.  The
+// optimizer then removes the check of the niche on a load and the check of
+// the empty word on a store.
+class ShapeSeat final {
+    std::uint32_t number_ = 1;
+    constexpr explicit ShapeSeat(std::uint32_t number) noexcept : number_{number} {}
+    friend struct ::foundation::core::atomic_word<ShapeSeat>;
+
+public:
+    constexpr ShapeSeat(ShapeSeat const&) noexcept = default;
+    constexpr ShapeSeat& operator=(ShapeSeat const& other) noexcept {
+        number_ = other.number_;
+        return *this;
+    }
+    [[nodiscard]] static constexpr ShapeSeat niche_empty(fixy::niche_key<ShapeSeat> const&) noexcept {
+        return ShapeSeat{0};
+    }
+    [[nodiscard]] constexpr bool is_niche_empty(fixy::niche_key<ShapeSeat> const&) const noexcept {
+        return number_ == 0;
+    }
+};
+
+}  // namespace
+
+template <>
+struct foundation::core::atomic_word<ShapeSeat> {
+    using word_type = std::uint32_t;
+    static constexpr word_type empty_word = 0;
+    [[nodiscard]] static constexpr word_type to_word(ShapeSeat const& seat) noexcept { return seat.number_; }
+    [[nodiscard]] static constexpr ShapeSeat from_word(atomic_word_key<ShapeSeat> const&, word_type word) noexcept {
+        return ShapeSeat{word};
+    }
+};
+
+namespace {
+
+[[gnu::used]] fixy::Option<ShapeSeat> word_option_load(fixy::Atomic<fixy::Option<ShapeSeat>> const& cell) noexcept {
+    return cell.load_acquire();
+}
+
+[[gnu::used]] void word_option_store(fixy::Atomic<fixy::Option<ShapeSeat>>& cell,
+                                     fixy::Option<ShapeSeat> value) noexcept {
+    cell.store_release(value);
+}
+
 // ── Region ──────────────────────────────────────────────────────────────────
 
 [[gnu::used]] std::uint32_t view_sum(fixy::View<std::uint32_t const> view) noexcept {
@@ -674,6 +721,16 @@ struct RawList final {
 
 [[gnu::used]] std::uint64_t sole_load_raw(std::atomic<std::uint64_t> const& cell) noexcept {
     return cell.load(std::memory_order_acquire);
+}
+
+// The raw form of a cell of an Option of a seat is a cell of the number, with
+// zero for no seat.
+[[gnu::used]] std::uint32_t word_option_load_raw(std::atomic<std::uint32_t> const& cell) noexcept {
+    return cell.load(std::memory_order_acquire);
+}
+
+[[gnu::used]] void word_option_store_raw(std::atomic<std::uint32_t>& cell, std::uint32_t value) noexcept {
+    cell.store(value, std::memory_order_release);
 }
 
 [[gnu::used]] std::uint32_t view_sum_raw(std::uint32_t const* first, std::size_t count) noexcept {

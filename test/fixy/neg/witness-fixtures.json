@@ -142,6 +142,11 @@
       "constructor": "\\bAddress\\("
     },
     {
+      "name": "neg_witness_core_atomic_word_key_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\batomic_word_key\\("
+    },
+    {
       "name": "neg_witness_core_box_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bBox\\("
@@ -983,6 +988,10 @@
     },
     {
       "type": "foundation::core::SoleWriter<forge::brand, forge::brand>",
+      "header": "foundation/core/Atomic.h"
+    },
+    {
+      "type": "foundation::core::atomic_word_key<int>",
       "header": "foundation/core/Atomic.h"
     },
     {

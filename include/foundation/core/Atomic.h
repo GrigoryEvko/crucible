@@ -30,6 +30,32 @@
 // bits of a value with no padding are the value, so the compare agrees with
 // a compare of the members.
 //
+// THE WORD OF A VALUE
+//   A value that keeps an invariant, such as a Ref that is never null, is
+//   not trivially copyable, so std::bit_cast cannot make it from bytes.  Its
+//   type states a word beside its own definition: atomic_word<T> gives a
+//   word_type, an integer, an enum or a pointer, and three members:
+//
+//     to_word(value)             the word of a value
+//     from_word(key, word)       the value of a word that to_word gave
+//     empty_word                 a constant word that no value gives
+//
+//   from_word takes an atomic_word_key<T> by reference.  Only the cells of
+//   this family make one, so only a cell makes a value from a word, and a
+//   cell holds only words that to_word gave.  The key of T opens only the
+//   from_word of T.
+//   A protocol whose from_word takes no key is refused, because each caller
+//   could then make a value from a word.  The cell copies the value out on
+//   each read and destroys no value, so the value is trivially destructible
+//   and copies with no throw.  A value with one bit pattern for each value
+//   keeps its own bits as its word, and an atomic_word for it is refused.
+//
+//   The word of Option<X> comes from the word of X: a full Option gives the
+//   word of its payload, and an empty Option gives empty_word.  The cell
+//   reads empty_word as an empty Option, and it never makes the empty value
+//   of a niche.  A store of a full Option whose payload gives empty_word ends
+//   the process, because the cell would read the Option back as empty.
+//
 // THE CELL OF ONE WRITER
 //   Atomic<T, SoleWriter<Role, Brand>> names its writer in its type, and
 //   each write takes the proof of that writer:
@@ -65,25 +91,123 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/OpenExtension.h>
 #include <foundation/Pinned.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Report.h>
 
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <meta>
 #include <type_traits>
 
 namespace foundation::core {
 
-// The value of an Atomic: a trivially copyable object type, not an array and
-// not cv-qualified, with one bit pattern for each value, whose atomic
-// operations are lock-free for each object of its size.  The one bit
-// pattern makes a compare-and-swap compare values: a type with padding, or a
-// floating type with two zeros, is refused.
 template <class T>
-concept AtomicValue = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>
-                   && std::is_trivially_copyable_v<T> && std::has_unique_object_representations_v<T>
-                   && __atomic_always_lock_free(sizeof(T), 0);
+class atomic_word_key;
+
+// The word protocol of a value (THE WORD OF A VALUE).  The primary template
+// has no definition, so a type with no specialization has no word.
+template <class T>
+struct[[= ::foundation::open_extension{
+    "a type that keeps an invariant states the word of its atomic cell beside its own definition"}]] atomic_word;
+
+namespace detail {
+
+// The shape of each value of a cell: an object type, not an array and not
+// cv-qualified.
+template <class T>
+concept AtomicObject = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>;
+
+// A value that the cell holds as its own bits: trivially copyable, with one
+// bit pattern for each value, and lock-free for each object of its size.
+// The one bit pattern makes a compare-and-swap compare values: a type with
+// padding, or a floating type with two zeros, has no such bits.
+template <class T>
+concept AtomicBitsValue = std::is_trivially_copyable_v<T> && std::has_unique_object_representations_v<T>
+                       && __atomic_always_lock_free(sizeof(T), 0);
+
+// The word of a word protocol: an integer, an enum or a pointer that the
+// cell holds as its own bits.
+template <class W>
+concept AtomicWordType = AtomicBitsValue<W> && (std::is_integral_v<W> || std::is_enum_v<W> || std::is_pointer_v<W>);
+
+// A type with a specialization of atomic_word.
+template <class T>
+concept HasAtomicWord = requires { sizeof(atomic_word<T>); };
+
+// The members of a word protocol.  empty_word is a constant of the word
+// type.  from_word takes the key of T, and no from_word takes the word
+// alone.  The cell copies the value out on each read and destroys no value.
+template <class T>
+concept AtomicWordMembers =
+    HasAtomicWord<T> && AtomicWordType<typename atomic_word<T>::word_type>
+    && std::same_as<std::remove_cv_t<decltype(atomic_word<T>::empty_word)>, typename atomic_word<T>::word_type>
+    && requires { typename std::bool_constant<(atomic_word<T>::empty_word == atomic_word<T>::empty_word)>; }
+    && requires(T const& value, atomic_word_key<T> const& key, typename atomic_word<T>::word_type word) {
+           { atomic_word<T>::to_word(value) } noexcept -> std::same_as<typename atomic_word<T>::word_type>;
+           { atomic_word<T>::from_word(key, word) } noexcept -> std::same_as<T>;
+       } && !requires(typename atomic_word<T>::word_type word) {
+           atomic_word<T>::from_word(word);
+       } && std::is_trivially_destructible_v<T> && std::is_nothrow_copy_constructible_v<T>;
+
+// An Option<X> for some X.  The gate reads the template of its argument by
+// reflection, as PackType of Record.h does, so no trait of a unit can change
+// its answer.
+template <class T>
+concept OptionType = std::meta::has_template_arguments(std::meta::dealias(^^T))
+                  && std::meta::template_of(std::meta::dealias(^^T)) == ^^Option;
+
+// The payload of an Option.
+template <OptionType T>
+using option_payload_t = [:std::meta::template_arguments_of(std::meta::dealias(^^T))[0]:];
+
+// An Option whose payload declares a word.  The cell derives the word of the
+// Option from the word of the payload.
+template <class T>
+concept OptionOfWordShape = OptionType<T> && HasAtomicWord<option_payload_t<T>>;
+
+}  // namespace detail
+
+// A complete word protocol of a value that has no bits of its own.  An
+// Option of a payload with a word takes the word of the payload, so the
+// protocol refuses a specialization of atomic_word for that Option.
+template <class T>
+concept AtomicWordProtocol =
+    detail::AtomicWordMembers<T> && !detail::AtomicBitsValue<T> && !detail::OptionOfWordShape<T>;
+
+namespace detail {
+
+// The three gates of a value.  Each value takes one road: the word that it
+// declares, the word of the payload of an Option, or its own bits.  Each
+// gate holds for a value of a different road, so the note of a refusal names
+// the gate of the road of the value.
+
+// A value that declares a word gives a complete protocol.
+template <class T>
+concept DeclaredWordIsComplete = !HasAtomicWord<T> || AtomicWordProtocol<T>;
+
+// An Option of a payload that declares a word: the protocol of the payload
+// is complete, and the Option copies and ends as a plain value does.
+template <class T>
+concept OptionOfWordIsComplete = HasAtomicWord<T> || !OptionOfWordShape<T>
+                              || (AtomicWordProtocol<option_payload_t<T>> && !AtomicBitsValue<T>
+                                  && std::is_trivially_destructible_v<T> && std::is_nothrow_copy_constructible_v<T>);
+
+// A value with no word has bits of its own.
+template <class T>
+concept OtherValueHasOwnBits = HasAtomicWord<T> || OptionOfWordShape<T> || AtomicBitsValue<T>;
+
+}  // namespace detail
+
+// The value of an Atomic: an object type, not an array and not
+// cv-qualified, that the cell holds through the word that it declares,
+// through the word of the payload of an Option, or as its own bits.  Each
+// value takes one of the three, so the cell gives each value one word.
+template <class T>
+concept AtomicValue = detail::AtomicObject<T> && detail::DeclaredWordIsComplete<T> && detail::OptionOfWordIsComplete<T>
+                   && detail::OtherValueHasOwnBits<T>;
 
 // An integral value that an addition, a subtraction, a maximum or a minimum
 // can change.  A bool or an enum has no meaning for these operations.
@@ -101,37 +225,109 @@ struct CasRefusal final {
     T observed;
 };
 
+template <AtomicValue T, class Writer = void>
+class Atomic;
+
 namespace detail {
 
-// The word that holds a value of an Atomic.  An integer, an enum and a
-// pointer go to the builtins as they are.  Each other value goes as the
-// unsigned integer of its size, because the builtins take only those.
+// The word of a value that the cell holds as its own bits.  An integer, an
+// enum and a pointer go to the builtins as they are.  Each other value goes
+// as the unsigned integer of its size, because the builtins take only those.
 template <class T>
-using atomic_storage_t = std::conditional_t<
-    std::is_integral_v<T> || std::is_enum_v<T> || std::is_pointer_v<T>, T,
-    std::conditional_t<sizeof(T) == 1, std::uint8_t,
-                       std::conditional_t<sizeof(T) == 2, std::uint16_t,
-                                          std::conditional_t<sizeof(T) == 4, std::uint32_t, std::uint64_t>>>>;
+struct atomic_storage {
+    using type = std::conditional_t<
+        std::is_integral_v<T> || std::is_enum_v<T> || std::is_pointer_v<T>, T,
+        std::conditional_t<sizeof(T) == 1, std::uint8_t,
+                           std::conditional_t<sizeof(T) == 2, std::uint16_t,
+                                              std::conditional_t<sizeof(T) == 4, std::uint32_t, std::uint64_t>>>>;
+};
 
-// The word of a value, and the value of a word.  A value of one bit pattern
-// for each value round-trips through its word.
+// The word of a value that declares a word.
 template <class T>
-[[nodiscard]] constexpr atomic_storage_t<T> to_atomic_storage(T value) noexcept {
-    if constexpr (std::same_as<atomic_storage_t<T>, T>) {
-        return value;
-    } else {
-        return __builtin_bit_cast(atomic_storage_t<T>, value);
-    }
-}
+    requires HasAtomicWord<T>
+struct atomic_storage<T> {
+    using type = typename atomic_word<T>::word_type;
+};
 
+// The word of an Option of a payload that declares a word: the word of the
+// payload.
 template <class T>
-[[nodiscard]] constexpr T from_atomic_storage(atomic_storage_t<T> bits) noexcept {
-    if constexpr (std::same_as<atomic_storage_t<T>, T>) {
-        return bits;
-    } else {
-        return __builtin_bit_cast(T, bits);
+    requires(!HasAtomicWord<T> && OptionOfWordShape<T>)
+struct atomic_storage<T> {
+    using type = typename atomic_word<option_payload_t<T>>::word_type;
+};
+
+// The word of a value, and the value of a word.  Each value round-trips
+// through its word.  The members are private, and only the cells of this
+// family call them, so only a cell makes a key and a value from a word.
+template <class T>
+class atomic_codec {
+    using storage_type = typename atomic_storage<T>::type;
+
+    template <AtomicValue U, class Writer>
+    friend class ::foundation::core::Atomic;
+
+    [[nodiscard]] static constexpr storage_type to_storage_(T const& value) noexcept {
+        if constexpr (HasAtomicWord<T>) {
+            return atomic_word<T>::to_word(value);
+        } else if constexpr (OptionOfWordShape<T>) {
+            using Payload = option_payload_t<T>;
+            return value.match([](Payload const& payload) noexcept { return payload_word_(payload); },
+                               []() noexcept { return atomic_word<Payload>::empty_word; });
+        } else if constexpr (std::same_as<storage_type, T>) {
+            return value;
+        } else {
+            return __builtin_bit_cast(storage_type, value);
+        }
     }
-}
+
+    [[nodiscard]] static constexpr T from_storage_(storage_type word) noexcept {
+        if constexpr (HasAtomicWord<T>) {
+            return atomic_word<T>::from_word(atomic_word_key<T>{}, word);
+        } else if constexpr (OptionOfWordShape<T>) {
+            using Payload = option_payload_t<T>;
+            if (word == atomic_word<Payload>::empty_word) return T{};
+            return T::some(atomic_word<Payload>::from_word(atomic_word_key<Payload>{}, word));
+        } else if constexpr (std::same_as<storage_type, T>) {
+            return word;
+        } else {
+            return __builtin_bit_cast(T, word);
+        }
+    }
+
+    // The word of the payload of a full Option.  The empty word would read
+    // back as an empty Option, so a protocol that gives it ends the process.
+    template <class Payload>
+    [[nodiscard]] static constexpr storage_type payload_word_(Payload const& payload) noexcept {
+        storage_type const word = atomic_word<Payload>::to_word(payload);
+        if (word == atomic_word<Payload>::empty_word) [[unlikely]] {
+            fatal("atomic_word: to_word gave empty_word for the payload of a full Option, and the cell would read the "
+                  "Option back as empty");
+        }
+        return word;
+    }
+};
+
+}  // namespace detail
+
+// The key of from_word (THE WORD OF A VALUE).  Only a cell of this family
+// makes one, and the key of T opens only the from_word of T.  The protocol
+// takes the key by reference, as the niche protocol of Choice.h takes its
+// key, so nothing copies one.  Both constructors are user-provided and
+// private, so std::bit_cast and a lifetime start over bytes build no key.
+template <class T>
+class [[nodiscard]] atomic_word_key final {
+    template <class U>
+    friend class detail::atomic_codec;
+
+    constexpr atomic_word_key() noexcept {}
+    constexpr atomic_word_key(atomic_word_key const&) noexcept {}
+
+public:
+    atomic_word_key& operator=(atomic_word_key const&) = delete("a word key lives for one call of the word protocol");
+};
+
+namespace detail {
 
 // The role of a sole writer: an empty class that is not cv-qualified.  A role
 // names a kind of cell, such as the head of a ring.
@@ -222,22 +418,22 @@ template <class Role, class... Arguments, class Brand>
 
 // The writer of a cell: void for a cell that each thread can write, or a
 // SoleWriter for a cell of one writer.
-template <AtomicValue T, class Writer = void>
+template <AtomicValue T, class Writer>
 class Atomic : ::foundation::Pinned<Atomic<T, Writer>> {
     static_assert(std::is_void_v<Writer>, "Atomic<T, Writer>: the writer is void, for a cell that each thread can "
                                           "write, or SoleWriter<Role, Brand>, for a cell of one writer.");
 
-    using storage_type = detail::atomic_storage_t<T>;
-    static_assert(sizeof(storage_type) == sizeof(T), "a lock-free value has the size of an unsigned integer");
+    using codec_type = detail::atomic_codec<T>;
+    using storage_type = typename detail::atomic_storage<T>::type;
 
-    alignas(sizeof(T)) storage_type value_{};
+    alignas(sizeof(storage_type)) storage_type value_{};
 
-    [[nodiscard]] static constexpr storage_type to_storage_(T value) noexcept {
-        return detail::to_atomic_storage<T>(value);
+    [[nodiscard]] static constexpr storage_type to_storage_(T const& value) noexcept {
+        return codec_type::to_storage_(value);
     }
 
-    [[nodiscard]] static constexpr T from_storage_(storage_type bits) noexcept {
-        return detail::from_atomic_storage<T>(bits);
+    [[nodiscard]] static constexpr T from_storage_(storage_type word) noexcept {
+        return codec_type::from_storage_(word);
     }
 
 public:
@@ -329,34 +525,34 @@ class Atomic<T, SoleWriter<Role, Identity>> : ::foundation::Pinned<Atomic<T, Sol
                   "Atomic<T, SoleWriter<Role, Brand>>: the brand is the identity of one writer.  DefaultBrand would "
                   "give each writer of the role one type, so the writer of one cell could write a different cell.");
 
-    using storage_type = detail::atomic_storage_t<T>;
-    static_assert(sizeof(storage_type) == sizeof(T), "a lock-free value has the size of an unsigned integer");
+    using codec_type = detail::atomic_codec<T>;
+    using storage_type = typename detail::atomic_storage<T>::type;
 
-    alignas(sizeof(T)) storage_type value_{};
+    alignas(sizeof(storage_type)) storage_type value_{};
 
 public:
     using value_type = T;
 
     constexpr Atomic() noexcept
         requires std::is_nothrow_default_constructible_v<T>
-        : value_{detail::to_atomic_storage<T>(T{})} {}
+        : value_{codec_type::to_storage_(T{})} {}
 
-    explicit constexpr Atomic(T initial) noexcept : value_{detail::to_atomic_storage<T>(initial)} {}
+    explicit constexpr Atomic(T initial) noexcept : value_{codec_type::to_storage_(initial)} {}
 
     // A read on each thread, with acquire order.  It pairs with each
     // store_release of the writer.
     [[nodiscard]] T load_acquire() const noexcept {
-        return detail::from_atomic_storage<T>(__atomic_load_n(&value_, __ATOMIC_ACQUIRE));
+        return codec_type::from_storage_(__atomic_load_n(&value_, __ATOMIC_ACQUIRE));
     }
 
     // The read of the writer.  Each value of the cell is a value that the
     // holder of the proof stored, so the read needs no order.
     [[nodiscard]] T load_owned(SoleWriter<Role, Identity> const&) const noexcept {
-        return detail::from_atomic_storage<T>(__atomic_load_n(&value_, __ATOMIC_RELAXED));
+        return codec_type::from_storage_(__atomic_load_n(&value_, __ATOMIC_RELAXED));
     }
 
     void store_release(SoleWriter<Role, Identity> const&, T value) noexcept {
-        __atomic_store_n(&value_, detail::to_atomic_storage<T>(value), __ATOMIC_RELEASE);
+        __atomic_store_n(&value_, codec_type::to_storage_(value), __ATOMIC_RELEASE);
     }
 };
 
