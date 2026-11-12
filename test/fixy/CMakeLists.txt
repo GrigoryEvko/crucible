@@ -2118,6 +2118,13 @@ fixy_test(test_session_node_members)
 fixy_neg_compile_test(neg_sess_combinator_specialized_member
   "fixy::session::diagnostic \\[Protocol_Specialized_Combinator\\]: the node fixy::session::Loop<fixy::session::Recv<int, fixy::session::Continue> >"
   "no matching function for call to .mint_session_handle<fixy::session::Loop<fixy::session::Recv<int, fixy::session::Continue> > >")
+# The members_of of GCC 16 hides an alias member whose target is a closure
+# type, and the check reads such a member on a copy with a stand-in.  An
+# explicit specialization has its own source location, so the copy does
+# not speak for it, and a member that lies behind a closure is refused.
+fixy_neg_compile_test(neg_sess_combinator_closure_member_lie
+  "fixy::session::diagnostic \\[Protocol_Specialized_Combinator\\]: the node fixy::session::Send<neg_sess_combinator_closure_member_lie_types::<lambda\\(\\)>, fixy::session::End>"
+  "no matching function for call to .mint_session_handle<fixy::session::Send<neg_sess_combinator_closure_member_lie_types::<lambda\\(\\)>, fixy::session::End> >")
 fixy_neg_compile_test(neg_sess_global_node_specialized
   "fixy::session::diagnostic \\[Projection_Specialized_Global_Node\\]: the node fixy::session::global::Branch<neg_sess_global_node_specialized_types::Hello, int, fixy::session::global::End>"
   "In instantiation of .consteval auto fixy::session::detail::proj::project_under\\(\\) \\[with G = fixy::session::global::Comm<")
@@ -2415,8 +2422,8 @@ fixy_neg_compile_test(neg_sess_subtype_missing_crash_branch
 # A keyed choice sends a label word, so its branches pair by label in any
 # order.  The relation refuses a label that the peer does not accept, and
 # a keyed choice against a positional one.  A closure label is the one
-# route to one label word with two keys, and the member check of its
-# message refuses it before the relation runs.
+# route to one label word with two keys.  It has no stable identity, so
+# the well-formedness of its choice refuses it before the relation runs.
 fixy_neg_compile_test(neg_sess_subtype_label_set_output
   "fixy::session::diagnostic \\[Subtype_LabelSet\\]: assert_subtype_sync"
   "The failed pair is .*Select<.*Retry, int>.* against .*Select<.*Bye, int>")
@@ -2429,12 +2436,12 @@ fixy_neg_compile_test(neg_sess_subtype_label_discipline_keyed
 fixy_neg_compile_test(neg_sess_subtype_label_discipline_positional
   "fixy::session::diagnostic \\[Subtype_LabelDiscipline\\]: assert_subtype_sync"
   "The failed pair is fixy::session::Offer<fixy::session::Recv<int, fixy::session::End> > against .*Offer<.*PeerMsg<.*Hello, int>")
-fixy_neg_compile_test(neg_sess_subtype_label_word_clash_output
-  "uncaught exception of type .std::meta::exception.*\\[Protocol_Specialized_Combinator\\]: the node fixy::session::PeerMsg<neg_sess_subtype_label_word_clash_output_types::Bob, neg_sess_subtype_label_word_clash_output_types::<lambda\\(\\)>, int>"
-  "non-constant condition for static assertion")
-fixy_neg_compile_test(neg_sess_subtype_label_word_clash_input
-  "uncaught exception of type .std::meta::exception.*\\[Protocol_Specialized_Combinator\\]: the node fixy::session::PeerMsg<neg_sess_subtype_label_word_clash_input_types::Bob, neg_sess_subtype_label_word_clash_input_types::<lambda\\(\\)>, int>"
-  "non-constant condition for static assertion")
+fixy_neg_compile_test(neg_sess_subtype_label_without_identity_output
+  "fixy::session::diagnostic \\[Subtype_IllFormed\\]: assert_subtype_sync"
+  "The failed pair is fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<neg_sess_subtype_label_without_identity_output_types::Bob, neg_sess_subtype_label_without_identity_output_types::<lambda\\(\\)>, int>")
+fixy_neg_compile_test(neg_sess_subtype_label_without_identity_input
+  "fixy::session::diagnostic \\[Subtype_IllFormed\\]: assert_subtype_sync"
+  "The failed pair is fixy::session::Offer<fixy::session::Recv<fixy::session::PeerMsg<neg_sess_subtype_label_without_identity_input_types::Bob, neg_sess_subtype_label_without_identity_input_types::<lambda\\(\\)>, int>")
 
 # Well-formedness of a choice: no message branch after a crash branch,
 # no two crash branches with one payload, and no two branches that name
@@ -2451,14 +2458,14 @@ fixy_neg_compile_test(neg_sess_wf_repeated_label
 
 # A keyed branch sends its label word and a positional branch sends its
 # position, so a choice that mixes the two is refused.  Two closure types
-# print one name, so their label keys share a word and are refused too.
+# print one name, so a closure label key has no stable identity and no
+# word, and the choice check refuses it before it reads a word.
 fixy_neg_compile_test(neg_sess_wf_mixed_label_keys
   "fixy::session::diagnostic \\[Protocol_Choice_Ill_Formed\\]"
   "some label branches name a label key and some do not")
-fixy_neg_compile_test(neg_sess_wf_label_word_collision
-  "fixy::session::diagnostic \\[Protocol_Choice_Ill_Formed\\]"
-  "two label keys of the choice have one label word"
-  "a stable id refuses the type .*<lambda\\(\\)>.*has no declared name")
+fixy_neg_compile_test(neg_sess_wf_label_key_without_identity
+  "fixy::session::diagnostic \\[Protocol_Choice_Ill_Formed\\]: the choice fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<neg_sess_wf_label_key_without_identity_types::Bob, neg_sess_wf_label_key_without_identity_types::<lambda\\(\\)>, int>"
+  "a label key of the choice has no stable identity, so it has no label word")
 fixy_neg_compile_test(neg_sess_mint_mixed_label_keys
   "no matching function for call to .mint_session_handle"
   "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<.*Hello, int>, fixy::session::End>, fixy::session::Send<int, fixy::session::End>")

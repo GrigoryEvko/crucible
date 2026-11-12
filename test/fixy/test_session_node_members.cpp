@@ -60,8 +60,15 @@ consteval bool agrees(t::node_reader read, std::meta::info type) {
     return t::first_disagreeing_node(read, type) == std::meta::info{};
 }
 
+// The members_of of GCC 16 lists no alias member whose target is a closure
+// type.  A node with a closure argument agrees with its claims all the
+// same: the check reads the member on a copy with a stand-in.  Two
+// different closures in one node take two copies.
+using ClosureLabel = decltype([] {});
+using ClosurePayload = decltype([](int) {});
+
 // One instance of each session combinator, a choice with and without the
-// note of its sender.
+// note of its sender, and the nodes with a closure argument.
 constexpr std::meta::info session_instances[] = {
     ^^s::Send<int, s::End>,
     ^^s::Recv<int, s::End>,
@@ -82,6 +89,10 @@ constexpr std::meta::info session_instances[] = {
     ^^s::Crash<Alice>,
     ^^s::PeerMsg<Alice, Hello, int>,
     ^^s::Labelled<Hello, int>,
+    ^^s::PeerMsg<Alice, ClosureLabel, int>,
+    ^^s::Labelled<ClosureLabel, int>,
+    ^^s::Send<ClosurePayload, s::End>,
+    ^^s::PeerMsg<ClosureLabel, ClosureLabel, ClosurePayload>,
 };
 
 consteval bool every_session_instance_is_claimed() {
@@ -117,6 +128,7 @@ constexpr std::meta::info global_instances[] = {
     ^^g::Comm<Alice, Bob, g::Branch<Hello, int, g::End>>,
     ^^g::EnRouteChoice<Alice, Bob, Hello, g::Branch<Hello, int, g::End>>,
     ^^g::Crashed<Alice>,
+    ^^g::Branch<ClosureLabel, ClosurePayload, g::End>,
 };
 
 consteval bool every_global_instance_is_claimed() {
@@ -152,6 +164,14 @@ static_assert(readable_member_count(^^s::Crash<Alice>) == 1);
 static_assert(!every_member_claimed(&s::detail::session_node_members, ^^int));
 static_assert(agrees(&s::detail::session_node_members,
                      ^^s::Loop<s::Offer<s::Recv<int, s::Continue>, s::Recv<long, s::End>>>));
+
+// The instances with a closure argument agree with their claims (the
+// arrays above), and a mint admits a step with a closure payload.
+static_assert(s::is_well_formed_v<s::Send<ClosurePayload, s::End>>);
+// A closure label agrees with its claims, but it has no stable identity and
+// so no label word.  A keyed choice that names it is not well-formed (rule
+// 7 of fixy/session/Fold.h).
+static_assert(!s::is_well_formed_v<s::Select<s::Send<s::PeerMsg<Alice, ClosureLabel, int>, s::End>>>);
 
 }  // namespace
 

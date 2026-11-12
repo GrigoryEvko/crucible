@@ -43,7 +43,7 @@
 // A branch that is no label has no word on the wire.  The endpoint
 // enters it on an event, for example the detection of a crash, and
 // finds it by its payload.  So refinement matches such a branch by its
-// payload, wherever it stands.  Six rules keep the kinds apart:
+// payload, wherever it stands.  Seven rules keep the kinds apart:
 //
 //   1. Each choice has one label branch or more.  An empty internal
 //      choice has no branch to pick, and an empty external choice has
@@ -60,14 +60,21 @@
 //      is unique.
 //   4. Either each label branch of a choice names a key, or none does.
 //      A choice that mixes the two has no single kind of wire word.
-//   5. No two label words of one choice are equal.  Two distinct key
-//      types can print one name, for example two closure types, and
-//      then share a word.  The peer would enter the wrong branch.
+//   5. No two label words of one choice are equal.  Two distinct stable
+//      ids can have one word, and the peer would enter the wrong branch.
 //   6. In a keyed choice, each label branch is its label step, with no
 //      wrapper and no binder above it.  The endpoint enters a keyed
 //      branch past its label step, so nothing may stand above that step.
 //      The label step of a branch that starts with a binder is also the
 //      entry of the loop, where it is a choice of its own.
+//   7. Each label key of a choice has a stable identity
+//      (foundation/reflect/Hash.h), so it has a label word.  A closure
+//      type, an unnamed class and a class with internal linkage print a
+//      name that is not a function of the type.  Two such keys can print
+//      one name and share a word, so a choice that names one is not
+//      well-formed, and the check reads no word.  A keyed step outside a
+//      choice reads its word when it sends, and the stable id refuses
+//      such a key there.
 //
 // A keyed step is a choice with one branch.  In the papers a message is
 // a choice with one label, p⊕q:m(B) and p&q:m(B) (Barwell, Hou, Yoshida
@@ -260,30 +267,133 @@ struct node_members {
 
 using node_reader = void (*)(std::meta::info, node_members&);
 
-// True when the first of `count` members at `members` with the identifier
-// of `claim` has the claimed value: an alias of the claimed type, or a
-// static data member with the claimed constant.  An inherited member is
-// not a member here.  The list comes from a walk that sees private
-// members, so the reflection of a member stays in this function and in
-// members_agree.
-[[nodiscard]] consteval bool claim_holds(const std::meta::info* members, std::size_t count, const member_claim& claim) {
+// What a member list says about one claim.  `holds`: the first member with
+// the identifier of the claim has the claimed value.  `differs`: that member
+// has a different value.  `unlisted`: no member has the identifier.
+enum class claim_reading : std::uint8_t {
+    holds,
+    differs,
+    unlisted,
+};
+
+// The reading of `claim` in the `count` members at `members`.  A member has
+// the claimed value when it is an alias of the claimed type, or a static
+// data member with the claimed constant.  An inherited member is not a
+// member here.  The list comes from a walk that sees private members, so
+// the reflection of a member stays in this function and in members_agree.
+[[nodiscard]] consteval claim_reading read_claim(const std::meta::info* members, std::size_t count,
+                                                 const member_claim& claim) {
     for (std::size_t place = 0; place < count; ++place) {
         const std::meta::info member = members[place];
         if (!std::meta::has_identifier(member) || std::meta::identifier_of(member) != claim.name) continue;
-        if (std::meta::is_type(claim.value)) {
-            return std::meta::is_type_alias(member) && std::meta::dealias(member) == std::meta::dealias(claim.value);
-        }
-        return std::meta::is_variable(member) && std::meta::constant_of(member) == claim.value;
+        const bool is_claimed_value =
+            std::meta::is_type(claim.value)
+                ? std::meta::is_type_alias(member) && std::meta::dealias(member) == std::meta::dealias(claim.value)
+                : std::meta::is_variable(member) && std::meta::constant_of(member) == claim.value;
+        return is_claimed_value ? claim_reading::holds : claim_reading::differs;
     }
-    return false;
+    return claim_reading::unlisted;
 }
+
+// ── A member behind a closure ─────────────────────────────────────────
+//
+// The members_of of GCC 16 lists no alias member whose target is a closure
+// type.  So a claim on such a member reads `unlisted`, and a node with a
+// closure argument, such as a keyed message with a closure label or a step
+// with a closure payload, would disagree with its own arguments.  The node
+// is then read through a copy: the same template, with a stand-in in place
+// of each argument that is the closure.  The copy lists the member, and the
+// claims of the node hold on the copy at the stand-in.
+//
+// The copy and the node must come from one definition, at one source
+// location.  An explicit specialization for the closure has its own
+// location, so it cannot hide a member that disagrees behind the closure.
+// A claim whose value holds the closure inside another type does not hold on
+// the copy, so such a node stays refused.
+
+[[nodiscard]] consteval bool members_agree(std::meta::info type, const node_members& view);
+
+namespace detail {
+
+// The argument of a copy in place of a closure.
+struct closure_stand_in {};
+
+// The place of the definition of a class: its file, line and column.
+struct definition_place {
+    const char* file = "";
+    std::uint_least32_t line = 0;
+    std::uint_least32_t column = 0;
+};
+
+[[nodiscard]] consteval definition_place place_of(std::meta::info type) {
+    return {std::meta::source_location_of(type).file_name(), std::meta::source_location_of(type).line(),
+            std::meta::source_location_of(type).column()};
+}
+
+// True when the two classes come from one definition: the same file, line
+// and column.
+[[nodiscard]] consteval bool is_same_definition(std::meta::info left, std::meta::info right) {
+    const definition_place left_place = place_of(left);
+    const definition_place right_place = place_of(right);
+    if (left_place.line != right_place.line || left_place.column != right_place.column) return false;
+    const char* left_file = left_place.file;
+    const char* right_file = right_place.file;
+    for (; *left_file != '\0' && *left_file == *right_file; ++left_file, ++right_file) {}
+    return *left_file == *right_file;
+}
+
+// The member answer of `type` when its claim on `closure` reads unlisted.
+// The copy is `type` with closure_stand_in in place of each template
+// argument that is `closure`.  No copy exists when no argument is
+// `closure`, when `closure` is the stand-in, or when the template refuses
+// the copied arguments.  Each copy has one argument fewer that is not the
+// stand-in, so a chain of copies ends.  The members of the copy must agree
+// with the claims and the bases of `view`, each with the stand-in in place
+// of the closure.  Complexity: one member walk of the copy, and one more
+// copy for each other closure argument.
+[[nodiscard]] consteval bool agrees_behind_closure(std::meta::info type, const node_members& view,
+                                                   std::meta::info closure) {
+    if (closure == ^^closure_stand_in || !std::meta::has_template_arguments(type)) return false;
+    const std::vector<std::meta::info> arguments = std::meta::template_arguments_of(type);
+    const std::meta::info* const argument = arguments.data();
+    const std::size_t argument_count = arguments.size();
+    stack<std::meta::info> copied_arguments{};
+    bool is_replaced = false;
+    for (std::size_t place = 0; place < argument_count; ++place) {
+        const bool is_closure = std::meta::is_type(argument[place]) && std::meta::dealias(argument[place]) == closure;
+        push(copied_arguments, is_closure ? ^^closure_stand_in : argument[place]);
+        is_replaced = is_replaced || is_closure;
+    }
+    const std::meta::info shape = std::meta::template_of(type);
+    if (!is_replaced || !std::meta::can_substitute(shape, copied_arguments)) return false;
+    const std::meta::info copy = std::meta::substitute(shape, copied_arguments);
+    if (!is_same_definition(type, copy)) return false;
+    // size_of completes the copy, so that members_agree reads its members.
+    if (std::meta::size_of(copy) == 0 || !std::meta::is_complete_type(copy)) return false;
+    node_members copied{};
+    copied.is_node = view.is_node;
+    for (std::size_t place = 0; place < view.claims.top; ++place) {
+        const member_claim& claim = view.claims.items[place];
+        const bool is_closure = std::meta::is_type(claim.value) && std::meta::dealias(claim.value) == closure;
+        push(copied.claims, member_claim{claim.name, is_closure ? ^^closure_stand_in : claim.value});
+    }
+    for (std::size_t place = 0; place < view.bases.top; ++place) {
+        const std::meta::info base = view.bases.items[place];
+        push(copied.bases, std::meta::dealias(base) == closure ? ^^closure_stand_in : base);
+    }
+    return members_agree(copy, copied);
+}
+
+}  // namespace detail
 
 // True when each member that a claim of `view` names exists in `type` with
 // the claimed value, and the direct bases of `type` are exactly the bases
 // of `view`, in order.  A type that is only declared in this translation
-// unit has no member that a reader can read, so it agrees.  The walk reads
-// the members of `type` one time for all the claims.  Complexity: linear in
-// the members of `type` for each claim.
+// unit has no member that a reader can read, so it agrees.  A claim on a
+// member that the list does not show is read behind a closure, as the
+// section above states.  The walk reads the members of `type` one time for
+// all the claims.  Complexity: linear in the members of `type` for each
+// claim.
 [[nodiscard]] consteval bool members_agree(std::meta::info type, const node_members& view) {
     if (!std::meta::is_complete_type(type)) return true;
     const std::size_t claim_count = view.claims.top;
@@ -294,7 +404,11 @@ using node_reader = void (*)(std::meta::info, node_members&);
         const std::size_t member_count = members.size();
         const member_claim* const claim = view.claims.items;
         for (std::size_t place = 0; place < claim_count; ++place) {
-            if (!claim_holds(member_list, member_count, claim[place])) return false;
+            const claim_reading reading = read_claim(member_list, member_count, claim[place]);
+            if (reading == claim_reading::unlisted && std::meta::is_type(claim[place].value)) {
+                return detail::agrees_behind_closure(type, view, std::meta::dealias(claim[place].value));
+            }
+            if (reading != claim_reading::holds) return false;
         }
     }
     const std::vector<std::meta::info> actual = std::meta::bases_of(type, std::meta::access_context::unchecked());
@@ -507,13 +621,15 @@ inline constexpr std::uint64_t label_word_bit = std::uint64_t{1} << 63;
 
 // The head of one branch of a choice, under its wrappers.  `payload` is
 // the payload of a head step, or null.  `label_key` is the label that
-// the payload names through its registration, or null, and
-// `label_word` is the word of that key, or zero.  `is_at_root` is false
-// when a wrapper or a binder stands above the head step.
+// the payload names through its registration, or null.
+// `has_stable_key` is false when that key has no stable identity, and
+// `label_word` is the word of a key with one, or zero.  `is_at_root` is
+// false when a wrapper or a binder stands above the head step.
 struct branch_head {
     bool is_label = true;
     std::meta::info payload{};
     std::meta::info label_key{};
+    bool has_stable_key = true;
     std::uint64_t label_word = 0;
     bool is_at_root = true;
 };
@@ -530,6 +646,7 @@ enum class choice_fault : std::uint8_t {
     mixed_label_keys,
     label_word_collision,
     keyed_label_below_root,
+    label_key_without_identity,
 };
 
 namespace detail {
@@ -554,7 +671,8 @@ namespace detail {
     result.is_label = head.entry.direction != polarity::input || rule.entry.is_label;
     if (rule.entry.label_key != std::meta::info{} && std::meta::can_substitute(rule.entry.label_key, {head.payload})) {
         result.label_key = std::meta::dealias(std::meta::substitute(rule.entry.label_key, {head.payload}));
-        result.label_word = label_word_of(result.label_key);
+        result.has_stable_key = ::foundation::reflect::has_stable_identity(result.label_key);
+        if (result.has_stable_key) result.label_word = label_word_of(result.label_key);
     }
     return result;
 }
@@ -631,6 +749,7 @@ namespace detail {
         if (keyed != 0 && heads[place].is_label && !heads[place].is_at_root) {
             return choice_fault::keyed_label_below_root;
         }
+        if (heads[place].is_label && !heads[place].has_stable_key) return choice_fault::label_key_without_identity;
     }
     for (std::size_t first = 0; first < count; ++first) {
         for (std::size_t second = first + 1; second < count; ++second) {
@@ -671,12 +790,15 @@ namespace detail {
             return "some label branches name a label key and some do not, so the choice has no single kind of wire "
                    "word";
         case choice_fault::label_word_collision:
-            return "two label keys of the choice have one label word, so the peer cannot tell the two labels apart. "
-                   "Two distinct types that print one name, for example two closure types, share a word";
+            return "two label keys of the choice have one label word, so the peer cannot tell the two labels apart";
         case choice_fault::keyed_label_below_root:
             return "a label branch of a keyed choice starts with a wrapper or a binder, not with its label step.  The "
                    "endpoint enters the branch past the label word of that step, so a wrapper or a loop entry above "
                    "the step has no place on the wire";
+        case choice_fault::label_key_without_identity:
+            return "a label key of the choice has no stable identity, so it has no label word.  A closure type, an "
+                   "unnamed class and a class with internal linkage print a name that is not a function of the "
+                   "type.  Give the label a declared name in a named namespace";
         default:
             break;
     }
@@ -723,20 +845,26 @@ namespace detail {
     return std::meta::extract<bool>(std::meta::substitute(wrapper.entry.value_admits, {wrapper.value}));
 }
 
-// The branches of a choice after a mapping, with the note kept when the
-// target shape carries a note of the same template.
-[[nodiscard]] consteval std::vector<std::meta::info> choice_arguments(std::meta::info registry, const node& choice,
-                                                                      std::meta::info target_shape,
-                                                                      std::span<const std::meta::info> mapped) {
-    std::vector<std::meta::info> arguments;
+// Puts the branches of a choice after a mapping on `arguments`, with the
+// note first when the target shape carries a note of the same template.
+consteval void push_choice_arguments(std::meta::info registry, const node& choice, std::meta::info target_shape,
+                                     const stack<std::meta::info>& mapped, stack<std::meta::info>& arguments) {
     const combinator_lookup target = lookup_combinator(registry, target_shape);
     if (choice.annotation != std::meta::info{} && target.is_found
         && target.entry.annotation == choice.entry.annotation) {
-        arguments.push_back(choice.annotation);
+        push(arguments, choice.annotation);
     }
     for (const std::meta::info branch : mapped)
-        arguments.push_back(branch);
-    return arguments;
+        push(arguments, branch);
+}
+
+// The choice of `target_shape` over the mapped branches of `choice`.
+[[nodiscard]] consteval std::meta::info rebuild_choice(std::meta::info registry, const node& choice,
+                                                       std::meta::info target_shape,
+                                                       const stack<std::meta::info>& mapped) {
+    stack<std::meta::info> arguments{};
+    push_choice_arguments(registry, choice, target_shape, mapped, arguments);
+    return std::meta::substitute(target_shape, arguments);
 }
 
 }  // namespace detail
@@ -923,11 +1051,10 @@ struct dual_algebra {
     }
     template <class Child>
     consteval std::meta::info choice(const node& view, context ctx, const Child& child) const {
-        std::vector<std::meta::info> mapped;
+        stack<std::meta::info> mapped{};
         for (const std::meta::info branch : view.branches)
-            mapped.push_back(child(branch, ctx));
-        return std::meta::substitute(view.entry.dual,
-                                     detail::choice_arguments(registry, view, view.entry.dual, mapped));
+            push(mapped, child(branch, ctx));
+        return detail::rebuild_choice(registry, view, view.entry.dual, mapped);
     }
     template <class Child>
     consteval std::meta::info binder(const node& view, context ctx, const Child& child) const {
@@ -992,11 +1119,10 @@ struct canonical_algebra {
                 return child(view.branches[0], ctx);
             }
         }
-        std::vector<std::meta::info> mapped;
+        stack<std::meta::info> mapped{};
         for (const std::meta::info branch : view.branches)
-            mapped.push_back(child(branch, ctx));
-        return std::meta::substitute(view.entry.shape,
-                                     detail::choice_arguments(registry, view, view.entry.shape, mapped));
+            push(mapped, child(branch, ctx));
+        return detail::rebuild_choice(registry, view, view.entry.shape, mapped);
     }
     template <class Child>
     consteval std::meta::info binder(const node& view, context ctx, const Child& child) const {
@@ -1036,11 +1162,10 @@ struct compose_algebra {
     }
     template <class Child>
     consteval std::meta::info choice(const node& view, context ctx, const Child& child) const {
-        std::vector<std::meta::info> mapped;
+        stack<std::meta::info> mapped{};
         for (const std::meta::info branch : view.branches)
-            mapped.push_back(child(branch, ctx));
-        return std::meta::substitute(view.entry.shape,
-                                     detail::choice_arguments(registry, view, view.entry.shape, mapped));
+            push(mapped, child(branch, ctx));
+        return detail::rebuild_choice(registry, view, view.entry.shape, mapped);
     }
     template <class Child>
     consteval std::meta::info binder(const node& view, context ctx, const Child& child) const {
@@ -1086,10 +1211,12 @@ struct compose_at_choice_algebra {
     template <class Child>
     consteval std::meta::info choice(const node& view, context, const Child&) const {
         if (index >= view.branches.size()) return {};
-        std::vector<std::meta::info> mapped(view.branches.begin(), view.branches.end());
-        mapped[index] = fold(registry, mapped[index], compose_algebra{registry, suffix}, 0);
-        return std::meta::substitute(view.entry.shape,
-                                     detail::choice_arguments(registry, view, view.entry.shape, mapped));
+        stack<std::meta::info> mapped{};
+        for (std::size_t place = 0; place < view.branches.size(); ++place) {
+            push(mapped, place == index ? fold(registry, view.branches[place], compose_algebra{registry, suffix}, 0)
+                                        : view.branches[place]);
+        }
+        return detail::rebuild_choice(registry, view, view.entry.shape, mapped);
     }
     template <class Child>
     consteval std::meta::info binder(const node& view, context ctx, const Child& child) const {

@@ -321,6 +321,11 @@ struct stack {
     stack(const stack&) = delete("items points into the storage of this stack");
     stack& operator=(const stack&) = delete("items points into the storage of this stack");
     constexpr ~stack() { detail::release_storage_(items, capacity); }
+
+    // The live elements, so that a stack of reflections is a range that
+    // std::meta::substitute reads with no copy.
+    [[nodiscard]] constexpr const T* begin() const noexcept { return items; }
+    [[nodiscard]] constexpr const T* end() const noexcept { return items + top; }
 };
 
 namespace detail {

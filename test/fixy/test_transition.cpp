@@ -596,16 +596,21 @@ static_assert(tr::wire_word_of(reg, ^^Pick<Done, Ping>, 1).value == 1);
 static_assert(tr::first_faulty_choice(reg, ^^Pick<Put<Envelope<Alice, Hello, int>, Done>, Put<int, Done>>).fault
               == tr::choice_fault::mixed_label_keys);
 
-// Rule 5: two distinct closure types print one name, so they would share
+// Rule 7: two distinct closure types print one name, so they would share
 // a label word, and the peer could not tell the two labels apart.  No word
 // exists for such a key: every stable id refuses a type that names a
 // closure, so the collision never reaches the wire.
-// test/fixy/neg/neg_label_word_of_a_closure_key.cpp is the witness.
+// test/fixy/neg/neg_label_word_of_a_closure_key.cpp is the witness.  The
+// choice check refuses such a key before it reads a word.
 using ClosureLabelA = decltype([] {});
 using ClosureLabelB = decltype([] {});
 static_assert(!std::is_same_v<ClosureLabelA, ClosureLabelB>);
 static_assert(!::foundation::reflect::HasStableIdentity<Envelope<Alice, ClosureLabelA, void>>);
 static_assert(!::foundation::reflect::HasStableIdentity<Envelope<Alice, ClosureLabelB, void>>);
+static_assert(tr::first_faulty_choice(reg, ^^Pick<Put<Envelope<Alice, ClosureLabelA, int>, Done>,
+                                                  Put<Envelope<Alice, ClosureLabelB, int>, Done>>)
+                  .fault
+              == tr::choice_fault::label_key_without_identity);
 
 // An axiom that breaks the contract and sheds to the same type stops at
 // the depth bound instead of a recursion without end.

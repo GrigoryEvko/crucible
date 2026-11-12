@@ -605,9 +605,7 @@ struct erase_algebra {
                             && crash::is_crash_branch_type(branch);
             if (!drops) crash::tr::push(kept, child(branch, ctx));
         }
-        const std::vector<std::meta::info> arguments = crash::tr::detail::choice_arguments(
-            protocol_registry, view, view.entry.shape, std::span<const std::meta::info>{kept.items, kept.top});
-        return std::meta::substitute(view.entry.shape, arguments);
+        return crash::tr::detail::rebuild_choice(protocol_registry, view, view.entry.shape, kept);
     }
     template <class Child>
     consteval std::meta::info binder(const crash::tr::node& view, context ctx, const Child& child) const {
