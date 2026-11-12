@@ -68,8 +68,10 @@ A CCACHE HIT
     ccache gave a stored object and the compiler did not run.  The record of
     a hit holds no time of its own.  The subcommand judges a hit with the
     cost of the compile that made its object, from the cost store (THE COST
-    STORE).  It judges the peak memory and the CPU time of that cost as THE
-    MEASURED RULES judge a compile.  A hit that the judge accepts gets the
+    STORE).  It judges the peak memory of that cost as THE MEASURED RULES
+    judge a compile.  It judges no CPU time, because the cost holds the CPU
+    time of each process of the step together, and the hard stop applies to
+    each process alone.  A hit that the judge accepts gets the
     record "hit".  A hit above a limit with no row that admits it gets the
     verdict of that compile: the subcommand removes the output, prints the
     error line and exits with status 1, with the record "rejected".  The
@@ -287,10 +289,10 @@ def judge_hit(step: str, output: str, last_cost: cost_record.Cost | None,
               budget: dict[str, float]) -> tuple[str, tuple[str, str, str] | None]:
     """Decide the result of one ccache hit and the one line to print, with the cost of the compile of its object.
 
-    A CCACHE HIT gives the rules.  The compile that made the object ended with
-    the status 0, and each process of a compile that reaches its CPU limit
-    ends on SIGKILL.  So a cost above the hard stop is the cost of a compile
-    with no CPU limit on it, and the judge gives it no limit.
+    A CCACHE HIT gives the rules.  The judge reads the peak memory of the
+    cost.  The cost holds the CPU time of each process of the step together,
+    and the hard stop applies to each process alone.  So the judge gives the
+    compile the CPU limit of its step, and it judges no CPU time.
 
     Args:
         step: "compile"
@@ -304,7 +306,7 @@ def judge_hit(step: str, output: str, last_cost: cost_record.Cost | None,
     if last_cost is None:
         return cost_record.HIT, None
     made = cost_meter.Measurement(0, last_cost.user_s, last_cost.system_s, last_cost.wall_s, last_cost.peak_rss_kb,
-                                  last_cost.load, last_cost.end, None)
+                                  last_cost.load, last_cost.end, CPU_LIMITS_S[step])
     result, line = judge(step, output, made, budget, f"the {step} that made this ccache hit")
     return (cost_record.HIT if result == "built" else result), line
 

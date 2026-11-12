@@ -859,10 +859,11 @@ def run_hit_judge(expect: Callable[[str, bool], None]) -> None:
             and line[:2] == ("error", step_meter.MEMORY_RULE)
             and line[2].startswith("the compile that made this ccache hit took 2.00 GB"),
         )
-        result, line = step_meter.judge_hit("compile", output, made(step_meter.COMPILE_CPU_LIMIT_S + 1.0, 0.5), budget)
         expect(
-            "off a CI runner, a hit whose compile ran past the hard stop is rejected, as that compile was",
-            result == "rejected" and line is not None and line[:2] == ("error", step_meter.LIMIT_CHECK),
+            "off a CI runner, a hit whose cost holds more CPU time than the hard stop is a hit with no line, because "
+            "the cost holds the CPU time of each process of the step together, and the stop applies to each process",
+            step_meter.judge_hit("compile", output, made(step_meter.COMPILE_CPU_LIMIT_S + 1.0, 0.5), budget)
+            == (cost_record.HIT, None),
         )
 
 
