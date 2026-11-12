@@ -1,0 +1,2 @@
+#include <signal.h>
+int signal_entry(int number) { return raise(number); }

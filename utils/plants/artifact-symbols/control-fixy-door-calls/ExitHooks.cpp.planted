@@ -1,0 +1,3 @@
+#include <stdlib.h>
+extern "C" void crucible_plant_hook();
+int hook_entry() { return atexit(crucible_plant_hook); }

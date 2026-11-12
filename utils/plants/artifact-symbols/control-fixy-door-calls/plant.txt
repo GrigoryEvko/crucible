@@ -1,0 +1,6 @@
+# The door calls of fixy, each from the member of its door: clock_gettime from MonotonicClock.cpp.o, pthread_self
+# from ThreadTasks.cpp.o, raise from Signal.cpp.o and atexit from ExitHooks.cpp.o.  Each one has the mark libc-allow.
+library planted_tree externs.cpp
+library foundation base.cpp
+library fixy base.cpp MonotonicClock.cpp ThreadTasks.cpp Signal.cpp ExitHooks.cpp
+library crucible base.cpp

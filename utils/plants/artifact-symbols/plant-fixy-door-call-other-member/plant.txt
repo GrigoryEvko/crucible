@@ -1,0 +1,7 @@
+# The door of clock_gettime is the member MonotonicClock.cpp.o of fixy.  A second member of fixy, Topology.cpp.o,
+# also calls it.  The import then has a member outside its door and the mark door-ratchet, and the ledger holds it
+# only with the mark libc-allow.
+library planted_tree externs.cpp
+library foundation base.cpp
+library fixy base.cpp MonotonicClock.cpp Topology.cpp
+library crucible base.cpp

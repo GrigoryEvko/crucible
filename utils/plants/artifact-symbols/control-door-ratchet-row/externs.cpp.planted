@@ -1,0 +1,1 @@
+extern "C" int crucible_plant_extern(int value) { return value; }

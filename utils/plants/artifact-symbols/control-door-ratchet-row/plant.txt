@@ -1,0 +1,4 @@
+# A member of crucible calls clock_gettime outside its door, and a row door-ratchet with its reason holds the import.
+library planted_tree externs.cpp
+library foundation base.cpp
+library crucible base.cpp clock.cpp

@@ -46,6 +46,12 @@ REGISTRY_ROWS = (
     "rule artifact-symbols engine=elf scope=builddir ledger=count doc=XII | a planted symbol rule | lower it",
 )
 HEAD = f"# a planted ledger\nformat {rule_ledger.FORMAT}\nrule {RULE}\n"
+# The row that a person writes for the call of atexit of the unit glibc in the library crucible, outside its door.
+DOOR_ROW = (
+    "@build/libcrucible.a | door-ratchet | 1 | atexit | the planted unit glibc registers an exit hook outside its "
+    "door.  A planted slice moves the call\n"
+)
+START = HEAD + DOOR_ROW
 KIND = "planted-kind"
 OTHER = "planted-other"
 ROWS_K = "configuration k kind k\nconfiguration k tier t\n"
@@ -260,9 +266,11 @@ def class_cases(expect: testing.Expect) -> None:
         ("foundation", "memcpy", module.RUNTIME, module.LIBC_ALLOW),
         ("foundation", "__udivti3", module.RUNTIME, module.LIBC_ALLOW),
         ("foundation", "getenv", module.RUNTIME, module.LIBC_RATCHET),
-        ("foundation", "pthread_create", module.RUNTIME, module.LIBC_RATCHET),
-        ("fixy", "pthread_create", module.RUNTIME, module.LIBC_ALLOW),
-        ("crucible", "pthread_create", module.RUNTIME, module.LIBC_RATCHET),
+        ("foundation", "pthread_create", module.RUNTIME, module.DOOR_RATCHET),
+        ("fixy", "pthread_create", module.RUNTIME, module.DOOR_RATCHET),
+        ("crucible", "pthread_create", module.RUNTIME, module.DOOR_RATCHET),
+        ("fixy", "malloc", module.RUNTIME, module.LIBC_RATCHET),
+        ("fixy", "dlopen", module.RUNTIME, module.LIBC_RATCHET),
         ("crucible", "__cxa_atexit", module.RUNTIME, module.LIBC_ALLOW),
         ("fixy", "__cxa_atexit", module.RUNTIME, module.LIBC_RATCHET),
         ("crucible_vigil", "__cxa_atexit", module.RUNTIME, module.LIBC_ALLOW),
@@ -283,21 +291,42 @@ def class_cases(expect: testing.Expect) -> None:
             module.mark_for(library, symbol, family, support) == wanted,
         )
     door, routes, other = frozenset({"Abort.cpp.o"}), frozenset({"Intercepted.cpp.o"}), frozenset({"Platform.cpp.o"})
+    clock, threads = frozenset({"MonotonicClock.cpp.o"}), frozenset({"ThreadTasks.cpp.o"})
     for library, symbol, members, kind, wanted in (
         ("foundation", "abort", door, "x86_64-debug-asan", module.LIBC_ALLOW),
-        ("foundation", "abort", door | other, "x86_64-debug-asan", module.LIBC_RATCHET),
-        ("foundation", "abort", other, "x86_64-release", module.LIBC_RATCHET),
-        ("fixy", "abort", door, "x86_64-release", module.LIBC_RATCHET),
+        ("foundation", "abort", door | other, "x86_64-debug-asan", module.DOOR_RATCHET),
+        ("foundation", "abort", other, "x86_64-release", module.DOOR_RATCHET),
+        ("fixy", "abort", door, "x86_64-release", module.DOOR_RATCHET),
         ("foundation", "read", routes, "x86_64-debug-tsan", module.LIBC_ALLOW),
         ("foundation", "__errno_location", routes, "aarch64-debug-tsan", module.LIBC_ALLOW),
-        ("foundation", "write", routes, "x86_64-debug-asan", module.LIBC_RATCHET),
-        ("foundation", "read", other, "x86_64-debug-tsan", module.LIBC_RATCHET),
-        ("foundation", "read", door, "x86_64-debug-tsan", module.LIBC_RATCHET),
+        ("foundation", "write", routes, "x86_64-debug-asan", module.DOOR_RATCHET),
+        ("foundation", "read", other, "x86_64-debug-tsan", module.DOOR_RATCHET),
+        ("foundation", "read", door, "x86_64-debug-tsan", module.DOOR_RATCHET),
+        ("fixy", "clock_gettime", clock, "x86_64-release", module.LIBC_ALLOW),
+        ("fixy", "clock_gettime", clock | frozenset({"Topology.cpp.o"}), "x86_64-release", module.DOOR_RATCHET),
+        ("crucible", "clock_gettime", frozenset({"Ptp.cpp.o"}), "x86_64-debug-asan", module.DOOR_RATCHET),
+        ("crucible", "clock_gettime", clock, "x86_64-debug-asan", module.DOOR_RATCHET),
+        ("fixy", "pthread_self", threads, "x86_64-debug-tsan", module.LIBC_ALLOW),
+        ("fixy", "pthread_self", clock, "x86_64-debug-tsan", module.DOOR_RATCHET),
+        (
+            "crucible_vigil",
+            "pthread_self",
+            frozenset({"BackgroundThread.cpp.o"}),
+            "x86_64-release",
+            module.DOOR_RATCHET,
+        ),
+        ("crucible_cipher", "__errno_location", frozenset({"Cipher.cpp.o"}), "x86_64-debug-tsan", module.DOOR_RATCHET),
     ):
         expect(
             f"an import {symbol} of {sorted(members)} in {library} of the kind {kind} has the mark {wanted}",
             module.mark_for(library, symbol, module.RUNTIME, support, members, kind) == wanted,
         )
+    expect(
+        "each door call has one door, in the library foundation or fixy, and the allowlists of the base hold no door call",
+        len(module.DOORS) == len(module.DOOR_CALLS)
+        and {call.library for call in module.DOOR_CALLS} == {module.FOUNDATION, module.FIXY}
+        and not (module.LIBC_ALLOWLISTS[module.FOUNDATION] | module.LIBC_ALLOWLISTS[module.FIXY]) & set(module.DOORS),
+    )
     expect(
         "a message gives the mangled name only when it is not the demangled name",
         module.named("memcpy", "memcpy") == "memcpy"
@@ -588,7 +617,7 @@ class Scratch:
         self.objects.mkdir()
         self.ledger = rule_ledger.ledger_path(RULE, root)
         self.ledger.parent.mkdir(parents=True)
-        self.ledger.write_text(HEAD, encoding="utf-8")
+        self.ledger.write_text(START, encoding="utf-8")
         self.extra: dict[str, str | tuple[str, str]] = {}
         self.missing: list[str] = []
         self.links: list[str] = []
@@ -684,7 +713,7 @@ def keys_of(ledger: rule_ledger.Ledger) -> dict[str, dict[str, int]]:
 def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     """Hold the first write, an equal build, a new use, a symbol that goes and a new allowlist symbol."""
     status, _ = scratch.write()
-    expect("a write refuses the first ratchet symbols without --raise", status == 1 and scratch.ledger_text() == HEAD)
+    expect("a write refuses the first ratchet symbols without --raise", status == 1 and scratch.ledger_text() == START)
     status, _ = scratch.write(rule_ledger.WriteMode.RAISE)
     written = scratch.rows()
     threads = [entity for entity in keys_of(written).get("@build/libfoundation.a", {}) if "hardware" in entity]
@@ -697,9 +726,10 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     )
     crucible_rows = {key.entity: key.kind for key in written.expected() if key.path == "@build/libcrucible.a"}
     expect(
-        "memcpy of glibc gets the mark libc-allow and atexit of libc_nonshared.a the mark libc-ratchet, each with no "
-        "version",
-        crucible_rows == {"memcpy": artifact_symbols.LIBC_ALLOW, "atexit": artifact_symbols.LIBC_RATCHET},
+        "memcpy of glibc gets the mark libc-allow and atexit of libc_nonshared.a, a door call outside its door, the "
+        "mark door-ratchet, each with no version, and the row of the person keeps its reason",
+        crucible_rows == {"memcpy": artifact_symbols.LIBC_ALLOW, "atexit": artifact_symbols.DOOR_RATCHET}
+        and DOOR_ROW in scratch.ledger_text(),
     )
     expect(
         "a reference to a name that a different library of the root defines gives no row",
@@ -926,6 +956,32 @@ def link_line_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.archive("crucible", ["glibc", "base"])
 
 
+def door_cases(expect: testing.Expect, scratch: Scratch) -> None:
+    """Hold a door call outside its door: with no row, in a write with --raise, and with a row that has no reason."""
+    good = scratch.ledger_text()
+    scratch.ledger.write_text(good.replace(DOOR_ROW, ""), encoding="utf-8")
+    stripped = scratch.ledger_text()
+    status, found, _ = scratch.run()
+    expect(
+        "a door call outside its door with no row is an error that names the member of the door",
+        status == 1 and any("ExitHooks.cpp.o of libfixy.a" in message for message in errors_of(found)),
+    )
+    status, text = scratch.write(rule_ledger.WriteMode.RAISE)
+    expect(
+        "a write refuses a door call outside its door with no row, also with --raise",
+        status == 1 and "only a person writes" in text and scratch.ledger_text() == stripped,
+    )
+    no_reason = DOOR_ROW.split(" | atexit | ")[0] + " | atexit | -\n"
+    scratch.ledger.write_text(good.replace(DOOR_ROW, no_reason), encoding="utf-8")
+    status, found, _ = scratch.run()
+    expect(
+        "a row door-ratchet with no reason is an error of the ledger",
+        status == 1
+        and any(f"{artifact_symbols.DOOR_RATCHET} | 1 | IMPORT | REASON" in message for message in errors_of(found)),
+    )
+    scratch.ledger.write_text(good, encoding="utf-8")
+
+
 def build_cases(expect: testing.Expect) -> None:
     """Run each case of the planted build directory, in sequence."""
     compiler = runner.plant_compiler()
@@ -940,6 +996,7 @@ def build_cases(expect: testing.Expect) -> None:
         unapplied_cases(expect, scratch)
         admit_cases(expect, scratch)
         link_line_cases(expect, scratch)
+        door_cases(expect, scratch)
 
 
 def main(argv: list[str]) -> int:

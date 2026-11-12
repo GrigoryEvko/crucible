@@ -1,6 +1,6 @@
 # The ledger holds each import of the planted configuration: the guard functions and the personality routine of
 # the allowlist for a function-local static, the unwinder of the support library of GCC that its cleanup calls,
-# a std::thread call, and atexit of libc_nonshared.a.
+# a std::thread call, and atexit of libc_nonshared.a, a door call outside its door with its row door-ratchet.
 library planted_tree externs.cpp
 library foundation base.cpp threads.cpp
 library crucible base.cpp guard.cpp glibc.cpp

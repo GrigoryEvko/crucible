@@ -117,7 +117,11 @@ THE MARKS
                                     `ratchet`
       `libc-allow`, `libc-ratchet`  runtime.  `libc-allow` marks a symbol of
                                     the allowlist of its library (THE
-                                    ALLOWLISTS)
+                                    ALLOWLISTS), and a door call from the
+                                    member of its door (THE DOORS)
+      `door-ratchet`                runtime: a door call from a member that
+                                    is not its door, in each library (THE
+                                    DOORS)
       `static-ratchet`              static
       `crt-allow`, `crt-ratchet`    crt.  `crt-allow` marks __dso_handle in
                                     a library with __cxa_atexit in its
@@ -133,22 +137,23 @@ THE ALLOWLISTS
       * The calls that GCC makes itself (COMPILER_CALLS), and each function
         of the support library of GCC (SUPPORT_ARCHIVES), such as __udivti3
         and _Unwind_Resume.
-      * For fixy, the calls of glibc that decision D12 keeps, each in its
-        door (DOOR_CALLS).  The plan names these calls.  When a door must
-        make a related call, the change that adds the door adds the call to
-        the set.
-      * For foundation, the calls of glibc of its doors (FOUNDATION_DOOR_CALLS).
-        The rule admits a call only when each member that imports it is the
-        member of its door.  It admits the calls of the door
-        src/foundation/os/Intercepted.cpp only in a build kind with the word
-        tsan.  abort is the call of the exit door foundation/os/Abort.h.  The
-        deny rows of the rule table give the signals of the process to the C
-        library, and no raw call can send SIGABRT.  A build with
-        ThreadSanitizer compiles the calls read, write and __errno_location
-        of src/foundation/os/Intercepted.cpp (rule R18).
       * For crucible and each other library of the root, __cxa_atexit, which
         plan section 13.4 admits.
     At the S4 gate, libfixy.a holds no `libc-ratchet` row.
+
+THE DOORS
+    Decision D12 of the plan keeps some calls of the C library in the base,
+    because the C library owns their state.  Each such call has one door: a
+    member of the archive of foundation or of fixy (DOOR_CALLS).  The rule
+    gives an import of a door call the mark `libc-allow` only when its
+    library is the library of the door, and each member that imports it is
+    the member of the door.  Each other import of a door call, in each
+    library, has the mark `door-ratchet`.  An example is the inline clock
+    read of fixy/os/Time.h in an object of crucible.  A call of the door
+    src/foundation/os/Intercepted.cpp is a door call only in a build kind
+    with the word tsan, because only a build with ThreadSanitizer compiles
+    it (rule R18).  The plan names each door call in decision D12.  The
+    change that adds a door adds its calls to DOOR_CALLS and to D12.
 
 THE HIDDEN IMPORTS
     The quarantine plugin writes the records of the library code into the
@@ -200,12 +205,15 @@ THE LEDGER
     assay.core.ledger.  It holds one set of rows, and the set judges each
     build (assay.guard.engines.elf.one_set, THE SET):
         @build/LIBRARY | MARK | 1 | IMPORT | -
+        @build/LIBRARY | door-ratchet | 1 | IMPORT | REASON
         @build/ARCHIVE | helper-throw | COUNT | HELPER | -
         @build/ARCHIVE | throw | admit | TEXT | REASON
         @build/ARCHIVE | vtable | admit | TEXT | REASON
     MARK is one of MARKS (THE MARKS), and IMPORT is the name of THE NAMES.  A
-    row helper-throw gives the references of an archive that is not of the
-    base to a throw helper (THE THROW HELPERS).  The imports change with the
+    row door-ratchet has a reason: the code that makes the call outside its
+    door, and the slice of the plan that moves the call.  A row helper-throw
+    gives the references of an archive that is not of the base to a throw
+    helper (THE THROW HELPERS).  The imports change with the
     build, because the inlining, the sanitizers and the macro
     _GLIBCXX_ASSERTIONS change the references.  The set holds the imports of
     each build, and each build is judged against the full set.  LIBRARY and
@@ -245,8 +253,8 @@ THE WRITE
     mark (RATCHET_MARKS).  It
     also refuses a count of helper-throw above its row.  --raise also writes
     such an import or count.  Use it only for one of RAISE_REASONS, and give
-    the reason in the commit.  The write adds no row throw or vtable: a
-    person writes it with its reason.  The reduce of the landing gate
+    the reason in the commit.  The write adds no row door-ratchet, throw or
+    vtable, also with --raise: a person writes it with its reason.  The reduce of the landing gate
     removes the row of an import or a count that no build of the gate gives,
     and it keeps each row throw and vtable (one_set, THE REDUCE).
 
@@ -291,13 +299,26 @@ ALLOW = "allow"
 RATCHET = "ratchet"
 LIBC_ALLOW = "libc-allow"
 LIBC_RATCHET = "libc-ratchet"
+DOOR_RATCHET = "door-ratchet"
 STATIC_RATCHET = "static-ratchet"
 CRT_ALLOW = "crt-allow"
 CRT_RATCHET = "crt-ratchet"
 HOST_RATCHET = "host-ratchet"
-MARKS = (ALLOW, RATCHET, LIBC_ALLOW, LIBC_RATCHET, STATIC_RATCHET, CRT_ALLOW, CRT_RATCHET, HOST_RATCHET)
+MARKS = (
+    ALLOW,
+    RATCHET,
+    LIBC_ALLOW,
+    LIBC_RATCHET,
+    DOOR_RATCHET,
+    STATIC_RATCHET,
+    CRT_ALLOW,
+    CRT_RATCHET,
+    HOST_RATCHET,
+)
 # The marks of an import that a write refuses with no --raise.
 RATCHET_MARKS = (RATCHET, LIBC_RATCHET, STATIC_RATCHET, CRT_RATCHET, HOST_RATCHET)
+# The marks of an import that a write gives a row to.
+ALLOW_MARKS = (ALLOW, LIBC_ALLOW, CRT_ALLOW)
 # The kind of an import that no provider gives (THE PROVIDERS).  No row admits it.
 UNKNOWN_PROVIDER = "unknown-provider"
 # The kind of an import that no record of the library code explains (THE HIDDEN IMPORTS).  No row admits it.
@@ -377,68 +398,71 @@ ATEXIT = "__cxa_atexit"
 CRT_ALLOWLIST = frozenset({"__dso_handle"})
 # The calls of the C library that GCC makes itself, which each library can reference (rule R5).
 COMPILER_CALLS = frozenset({"memcpy", "memmove", "memset", "memcmp", "__stack_chk_fail", "__tls_get_addr"})
-# The calls that decision D12 of the plan keeps in glibc.  Only a door of fixy makes one (rule R5).  The thread door
-# of fixy/os/ThreadTasks.h starts each thread with the attributes of the call, names it, and registers the fork hook
-# of a caller.  The signal door of fixy/os/Signal.h installs the handlers of the signals that end a process, and it
-# sets the signal stack of a thread.  The C library keeps the signal actions of the process and the signal sets of
-# its threads.  The exit hook door of fixy/os/ExitHooks.h registers a hook for std::exit and std::quick_exit.  The
-# monotonic clock door of fixy/os/MonotonicClock.h reads the clock in user space.
-DOOR_CALLS = frozenset(
-    {
-        "pthread_create",
-        "pthread_join",
-        "pthread_attr_init",
-        "pthread_attr_destroy",
-        "pthread_attr_setstacksize",
-        "pthread_attr_setguardsize",
-        "pthread_attr_setaffinity_np",
-        "pthread_self",
-        "pthread_setname_np",
-        "pthread_atfork",
-        "sigaction",
-        "sigaltstack",
-        "sigemptyset",
-        "raise",
-        "atexit",
-        "at_quick_exit",
-        "dlopen",
-        "clock_gettime",
-        "malloc",
-        "free",
-    }
-)
 
 
 @dataclass(frozen=True, slots=True)
 class DoorCall:
-    """One call of the C library that a door of foundation keeps (THE ALLOWLISTS).
+    """One call of the C library that a door of the base keeps (THE DOORS).
 
-    `member` is the file name of the member of the door in the archive.  `kind_word` is a word that the build kind
-    must hold, or an empty text for each build kind.
+    `library` is the target name of the library of the door, and `member` the file name of the member of the door in
+    its archive.  `kind_word` is a word that the build kind must hold, or an empty text for each build kind.
     """
 
     symbol: str
+    library: str
     member: str
-    kind_word: str
+    kind_word: str = ""
 
 
-# The library of the doors of FOUNDATION_DOOR_CALLS, and the word of the build kind of a build with ThreadSanitizer.
+# The libraries of the doors, and the word of the build kind of a build with ThreadSanitizer.
 FOUNDATION = "foundation"
+FIXY = "fixy"
 TSAN_WORD = "tsan"
-# The calls of the C library of the doors of foundation (rule R5).  The exit door of foundation/os/Abort.h calls abort
-# in each build.  In a build with ThreadSanitizer, the door src/foundation/os/Intercepted.cpp of rule R18 calls read
-# and write, and it reads errno through __errno_location.
-FOUNDATION_DOOR_CALLS = (
-    DoorCall("abort", "Abort.cpp.o", ""),
-    DoorCall("read", "Intercepted.cpp.o", TSAN_WORD),
-    DoorCall("write", "Intercepted.cpp.o", TSAN_WORD),
-    DoorCall("__errno_location", "Intercepted.cpp.o", TSAN_WORD),
+# The calls of the C library that decision D12 of the plan keeps, each with its door (THE DOORS, rule R5).
+#   * The abort door of foundation/os/Abort.h calls abort in each build.  The deny rows of the rule table give the
+#     signals of the process to the C library, and no raw call can send SIGABRT.
+#   * In a build with ThreadSanitizer, the door src/foundation/os/Intercepted.cpp of rule R18 calls read and write,
+#     and it reads errno through __errno_location.
+#   * The thread door of fixy/os/ThreadTasks.h starts each thread with the attributes of the call, names it, joins
+#     it, and registers the fork hook of a caller.  The C library starts the thread and holds its TLS.
+#   * The signal door of fixy/os/Signal.h installs the handlers of the signals that end a process, and it sets the
+#     signal stack of a thread.  The C library keeps the signal actions of the process and the signal sets of its
+#     threads.
+#   * The exit hook door of fixy/os/ExitHooks.h registers a hook for std::exit and std::quick_exit.  The C library
+#     keeps the list of the exit hooks.
+#   * The monotonic clock door of fixy/os/MonotonicClock.h reads the clock through the vDSO of the C library.
+DOOR_CALLS = (
+    DoorCall("abort", FOUNDATION, "Abort.cpp.o"),
+    DoorCall("read", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
+    DoorCall("write", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
+    DoorCall("__errno_location", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
+    *(
+        DoorCall(symbol, FIXY, "ThreadTasks.cpp.o")
+        for symbol in (
+            "pthread_create",
+            "pthread_join",
+            "pthread_attr_init",
+            "pthread_attr_destroy",
+            "pthread_attr_setstacksize",
+            "pthread_attr_setguardsize",
+            "pthread_attr_setaffinity_np",
+            "pthread_self",
+            "pthread_setname_np",
+            "pthread_atfork",
+        )
+    ),
+    *(DoorCall(symbol, FIXY, "Signal.cpp.o") for symbol in ("sigaction", "sigaltstack", "sigemptyset", "raise")),
+    DoorCall("atexit", FIXY, "ExitHooks.cpp.o"),
+    DoorCall("at_quick_exit", FIXY, "ExitHooks.cpp.o"),
+    DoorCall("clock_gettime", FIXY, "MonotonicClock.cpp.o"),
 )
-# The C runtime allowlist of each library, by its target name, without the support library and without the door calls
-# of foundation (THE ALLOWLISTS).  Each other library of the root has the allowlist of crucible.
+# The door of each door call.  A call has one door.
+DOORS = {call.symbol: call for call in DOOR_CALLS}
+# The C runtime allowlist of each library, by its target name, without the support library and without the door
+# calls (THE ALLOWLISTS).  Each other library of the root has the allowlist of crucible.
 LIBC_ALLOWLISTS = {
-    "foundation": COMPILER_CALLS,
-    "fixy": COMPILER_CALLS | DOOR_CALLS,
+    FOUNDATION: COMPILER_CALLS,
+    FIXY: COMPILER_CALLS,
     "crucible": COMPILER_CALLS | {ATEXIT},
 }
 TREE_ALLOWLIST = LIBC_ALLOWLISTS["crucible"]
@@ -472,10 +496,11 @@ RAISE_REASONS = (
     "a new build kind or target",
     "a class of symbols that the rule did not read before",
 )
-# The three shapes of a row (THE LEDGER).
+# The four shapes of a row (THE LEDGER).
 ROW_SHAPE = (
-    f"a row is '@build/LIBRARY | {'|'.join(MARKS)} | 1 | IMPORT | -', "
-    "'@build/ARCHIVE | helper-throw | COUNT | HELPER | -', or '@build/ARCHIVE | throw|vtable | admit | TEXT | REASON'"
+    f"a row is '@build/LIBRARY | {'|'.join(mark for mark in MARKS if mark != DOOR_RATCHET)} | 1 | IMPORT | -', "
+    f"'@build/LIBRARY | {DOOR_RATCHET} | 1 | IMPORT | REASON', '@build/ARCHIVE | helper-throw | COUNT | HELPER | -', "
+    "or '@build/ARCHIVE | throw|vtable | admit | TEXT | REASON'"
 )
 
 
@@ -560,18 +585,16 @@ def libc_allowlist(library: str) -> frozenset[str]:
 
 
 def is_door_call(library: str, symbol: str, members: frozenset[str], kind: str) -> bool:
-    """Return True for an import of a door of foundation from the member of its door, in a build kind of the call.
+    """Return True for an import of a door call from the member of its door, in a build kind of the call (THE DOORS).
 
-    `members` names the members that import the symbol, and `kind` is the build kind (THE ALLOWLISTS).
+    `library` is the target name of the importing library, `members` names the members that import the symbol, and
+    `kind` is the build kind.
     """
-    if library != FOUNDATION or not members:
+    call = DOORS.get(symbol)
+    if call is None or library != call.library or not members:
         return False
-    words = kind.split("-")
-    return any(
-        call.symbol == symbol
-        and all(member == call.member for member in members)
-        and (not call.kind_word or call.kind_word in words)
-        for call in FOUNDATION_DOOR_CALLS
+    return all(member == call.member for member in members) and (
+        not call.kind_word or call.kind_word in kind.split("-")
     )
 
 
@@ -586,14 +609,16 @@ def mark_for(
     """Return the mark of an import of a library from a provider of a family (THE MARKS).
 
     `library` is the target name of the library, and `support` holds the functions of the support library of GCC.
-    `members` names the members that import the symbol, and `kind` is the build kind, for the door calls of
-    foundation.  The family is not sanitizer, because such an import has no row.
+    `members` names the members that import the symbol, and `kind` is the build kind, for the door calls (THE DOORS).
+    The family is not sanitizer, because such an import has no row.
     """
     if family == LIBSTDCXX:
         return RATCHET if library == FOUNDATION else mark_of(symbol)
     if family == RUNTIME:
+        if symbol in DOORS:
+            return LIBC_ALLOW if is_door_call(library, symbol, members, kind) else DOOR_RATCHET
         allowed = symbol in libc_allowlist(library) or symbol in support
-        return LIBC_ALLOW if allowed or is_door_call(library, symbol, members, kind) else LIBC_RATCHET
+        return LIBC_ALLOW if allowed else LIBC_RATCHET
     if family == CRT:
         return CRT_ALLOW if symbol in CRT_ALLOWLIST and ATEXIT in libc_allowlist(library) else CRT_RATCHET
     return STATIC_RATCHET if family == STATIC else HOST_RATCHET
@@ -608,10 +633,14 @@ def is_linker_name(symbol: str) -> bool:
 
 
 def is_row(key: rule_ledger.Key, entry: rule_ledger.Entry) -> bool:
-    """Return True for a row with a shape of THE LEDGER: an import, a throw helper, or a row throw or vtable."""
+    """Return True for a row with a shape of THE LEDGER: an import, a throw helper, or a row throw or vtable.
+
+    A row door-ratchet has a reason.
+    """
     is_symbol = (key.kind in MARKS or key.kind == HELPER_THROW) and entry.value != rule_ledger.ADMIT_VALUE
     is_admit = key.kind in ADMITTED_KINDS and entry.value == rule_ledger.ADMIT_VALUE
-    return key.path.startswith(LIBRARY_PREFIX) and bool(key.entity) and (is_symbol or is_admit)
+    has_reason = key.kind != DOOR_RATCHET or bool(entry.reason)
+    return key.path.startswith(LIBRARY_PREFIX) and bool(key.entity) and (is_symbol or is_admit) and has_reason
 
 
 def row_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
@@ -1115,6 +1144,15 @@ def import_message(
         )
     if mark in (LIBC_ALLOW, CRT_ALLOW):
         return f"{archive} uses {symbol} of {provider.label} in {used}, a symbol of the allowlist of {library}"
+    if mark == DOOR_RATCHET:
+        door = DOORS[symbol]
+        build = f" in a build kind with the word {door.kind_word}" if door.kind_word else ""
+        return (
+            f"{archive} uses {symbol} of {provider.label} in {used}.  Decision D12 keeps that call in the C library "
+            f"only in its door, the member {door.member} of lib{door.library}.a{build} (THE DOORS, rule R5).  Call "
+            f"the door.  A person writes each row {DOOR_RATCHET} with its reason: the code of the call and the slice "
+            f"of the plan that moves it"
+        )
     return (
         f"{archive} uses the {provider.family} symbol {symbol} of {provider.label} in {used}.  A change can only "
         f"remove such a use (rule R5): call a door of fixy/os, or use a type of fixy or foundation"
@@ -1186,7 +1224,7 @@ def import_findings(
         said = import_message(
             item.archive, targets[item.archive], item.symbol, item.provider, item.mark, names[item.symbol], used
         )
-        if item.mark not in RATCHET_MARKS:
+        if item.mark in ALLOW_MARKS:
             said = f"{said}.  {write}"
         found.append(finding(path, item.mark, item.symbol, said))
     return found, unknown
@@ -1325,13 +1363,15 @@ def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path
 
 
 # The rows that a write refuses with no --raise: a new import with a ratchet mark and a risen count of a throw helper.
-# Then the reasons for --raise (THE WRITE).
+# Then the reasons for --raise, and the rows door-ratchet that only a person writes (THE WRITE).
 WRITE_POLICY = one_set.WritePolicy(
     row_problems,
     (*RATCHET_MARKS, HELPER_THROW),
     RAISE_REASONS,
     f"a person writes each row throw or vtable of {RULE} with its reason",
     "rows of imports and throw helpers",
+    (DOOR_RATCHET,),
+    "its reason: the code that makes the call outside its door, and the slice of the plan that moves the call",
 )
 # The write of the import rows of the build into the set (THE WRITE, assay.guard.engines.elf.one_set).
 write = one_set.writer(examine, WRITE_POLICY)

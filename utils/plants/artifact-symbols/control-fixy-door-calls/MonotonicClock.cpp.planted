@@ -1,0 +1,6 @@
+#include <time.h>
+long clock_entry() {
+    timespec now{};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return now.tv_nsec;
+}

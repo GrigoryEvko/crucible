@@ -1,0 +1,2 @@
+#include <pthread.h>
+unsigned long thread_entry() { return static_cast<unsigned long>(pthread_self()); }

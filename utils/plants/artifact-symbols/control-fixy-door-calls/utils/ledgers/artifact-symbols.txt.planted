@@ -1,0 +1,7 @@
+# A planted ledger: the door calls of fixy with the mark libc-allow.
+format 1
+rule artifact-symbols
+@build/libfixy.a | libc-allow | 1 | atexit | -
+@build/libfixy.a | libc-allow | 1 | clock_gettime | -
+@build/libfixy.a | libc-allow | 1 | pthread_self | -
+@build/libfixy.a | libc-allow | 1 | raise | -

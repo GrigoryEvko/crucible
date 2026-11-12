@@ -1,0 +1,5 @@
+# A member of crucible calls clock_gettime outside its door, and the row door-ratchet of the import has no reason.
+# The rule refuses the row.
+library planted_tree externs.cpp
+library foundation base.cpp
+library crucible base.cpp clock.cpp

@@ -1,0 +1,4 @@
+# A planted ledger: the door call clock_gettime of fixy with the mark libc-allow.
+format 1
+rule artifact-symbols
+@build/libfixy.a | libc-allow | 1 | clock_gettime | -

@@ -19,9 +19,10 @@ THE WRITE
         build does not give could make the run of a different build fail.
       * It adds a row for each fact of the build with no row, and it raises
         each count of the build that is above its row.  The refusals of the
-        rule (WritePolicy.refusals) are rows that only --raise writes.
+        rule (WritePolicy.refusal_kinds) are rows that only --raise writes.
       * The mode admit does not apply.  A person writes each admit row with
-        its reason.
+        its reason, and each row of a kind of WritePolicy.person_kinds.  The
+        write refuses such a fact with no row, also with --raise.
       * A ledger with a row problem writes nothing.  A build that the rule
         cannot read writes nothing.  A build with an error that no row of the
         ledger admits writes nothing (Inspection.unadmitted).
@@ -73,7 +74,8 @@ class WritePolicy:
     `row_problems` gives an error for each row of a ledger that the rule refuses.  `refusal_kinds` names the kinds of
     the keys that only --raise writes, when the count of the build is above the row.  `raise_reasons` are the reasons
     for --raise, and `admit_text` tells why the mode admit does not apply.  `rows` names the rows of the build in the
-    line of a written ledger.
+    line of a written ledger.  `person_kinds` names the kinds of the keys that only a person writes, with a reason,
+    and no write writes their row: `person_text` tells the reason of each such row.
     """
 
     row_problems: Callable[[rule_ledger.Ledger], list[check_report.Finding]]
@@ -81,6 +83,8 @@ class WritePolicy:
     raise_reasons: tuple[str, ...]
     admit_text: str
     rows: str
+    person_kinds: tuple[str, ...] = ()
+    person_text: str = ""
 
 
 def read_ledger(rule: rule_registry.Rule, root: Path) -> rule_ledger.Ledger | Inspection:
@@ -236,6 +240,16 @@ def write_inspection(
     ledger = inspections[0].ledger
     largest = Inspection((), ledger, rule_ledger.largest_counts(item.counts for item in inspections))
     is_reduce = bool(request.more_builds)
+    person_rows = risen_rows(largest, ledger.expected(), policy.person_kinds)
+    if person_rows and not is_reduce:
+        for line in person_rows:
+            check_report.write_line(f"guard write: {line}", is_error=True)
+        check_report.write_line(
+            f"guard write: the ledger of {rule.id} is not written: {len(person_rows)} rows that only a person writes, "
+            f"also with --raise.  Remove their cause, or write each row by hand with {policy.person_text}",
+            is_error=True,
+        )
+        return 1
     kinds = tuple(sorted({key.kind for key in largest.counts})) if is_reduce else policy.refusal_kinds
     refused = risen_rows(largest, ledger.expected(), kinds)
     for line in refused:

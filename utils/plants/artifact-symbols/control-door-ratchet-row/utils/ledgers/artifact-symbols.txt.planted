@@ -1,0 +1,4 @@
+# A planted ledger: the door call clock_gettime of crucible with the mark door-ratchet and its reason.
+format 1
+rule artifact-symbols
+@build/libcrucible.a | door-ratchet | 1 | clock_gettime | the planted unit clock.cpp reads the clock outside its door.  A planted slice moves the call
