@@ -63,6 +63,7 @@ static std::filesystem::path object_path_for(const std::filesystem::path& root, 
 
 int main() {
     test_vigil::test_divergence_drops_the_unobserved_region();
+    test_vigil::test_divergence_drops_the_regions_of_the_backlog();
     test_vigil::test_divergence_drops_a_half_finished_alignment();
     test_vigil::test_region_store_stays_bounded();
     test_vigil::test_record_op_claims_the_producer_role();

@@ -132,6 +132,63 @@ void test_divergence_drops_the_unobserved_region() {
     crucible::test::pass("  test_divergence_drops_the_unobserved_region: PASSED\n");
 }
 
+// The same claim, with ops in flight in the background pipeline at the
+// divergence.
+//
+// The ops of the backlog reach the ring while the context is compiled, and
+// the divergence comes before the background thread has read them.  Each op
+// of the backlog was recorded before the divergence, so no region of the
+// backlog holds an op of the trace after it.  After the flush, the slot must
+// give the foreground no such region: the first op after the divergence must
+// reach the ring.
+void test_divergence_drops_the_regions_of_the_backlog() {
+    using namespace divrig;
+    using crucible::DispatchResult;
+    using crucible::ReplayStatus;
+    // Each iteration of the backlog completes a boundary.  The region store
+    // holds each region of the backlog, because the foreground writes no
+    // holders while it replays.
+    constexpr uint32_t BACKLOG_ITERATIONS = 48;
+
+    crucible::Vigil vigil;
+    feed_one_region(vigil, 0);
+    crucible::test::flush_and_wait_region_published(vigil);
+    for (uint32_t i = 0; i < NUM_OPS; i++) {
+        auto aligned = op_at(3, i);
+        (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
+    }
+    assert(vigil.context().is_compiled() && "the foreground must align on the first region");
+
+    for (uint32_t iter = 4; iter < 4 + BACKLOG_ITERATIONS; iter++) {
+        for (uint32_t i = 0; i < NUM_OPS; i++) {
+            auto recorded = op_at(iter, i);
+            (void)vigil.record_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas,
+                                  recorded.n_metas);
+        }
+    }
+
+    OpData foreign_op = op_at(4 + BACKLOG_ITERATIONS, 0);
+    foreign_op.entry.schema_hash = FOREIGN_SCHEMA;
+    auto result_diverged =
+        crucible::test::dispatch_synthetic(vigil, foreign_op.entry, foreign_op.metas, foreign_op.n_metas);
+    assert(result_diverged.status == ReplayStatus::DIVERGED);
+    assert(!vigil.context().is_compiled());
+
+    vigil.flush();
+    assert(vigil.flush_complete() && "flush() returned before the background thread finished");
+
+    const uint64_t produced_before = vigil.ring_total_produced();
+    auto after_divergence = op_at(5 + BACKLOG_ITERATIONS, 0);
+    auto result_after = crucible::test::dispatch_synthetic(vigil, after_divergence.entry, after_divergence.metas,
+                                                           after_divergence.n_metas);
+    assert(result_after.action == DispatchResult::Action::RECORD);
+    assert(vigil.ring_total_produced() == produced_before + 1
+           && "the first op after a divergence must be recorded, not aligned against a region of ops recorded "
+              "before the divergence");
+
+    crucible::test::pass("  test_divergence_drops_the_regions_of_the_backlog: PASSED\n");
+}
+
 // The other half of the same defect: the alignment walk, rather than the
 // publication slot.
 //

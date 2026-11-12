@@ -67,6 +67,23 @@ struct BackgroundThread {
     // writes the fields that follow.
     alignas(64) std::atomic<RegionNode*> active_region{nullptr};
 
+    // A point of the recorded op stream: the count of ops that the producer
+    // put into the trace ring before it.  A divergence reset applies at the
+    // point of the divergence, so each op belongs to one side of it.
+    struct StreamPoint {
+        uint64_t ops_before = 0;
+        auto operator<=>(const StreamPoint&) const = default;
+    };
+
+    // A region that the publish stage gives to its owner, and the point of
+    // the last reset that the detect stage applied before the first op of
+    // the region.  The region store holds the record with its region, so
+    // the address of the record lives as long as the region.
+    struct PublishedRegion {
+        RegionNode* region = nullptr;
+        StreamPoint reset_point{};
+    };
+
     // Proof that the caller owns the state that the region callback writes.
     //
     // Only this class builds one, and it builds a fresh one for each call
@@ -123,8 +140,8 @@ struct BackgroundThread {
         // runs it.  A callee that acts under a background context takes that
         // one, and never builds its own.  It also receives the publish-stage
         // proof, which is what lets it write state that the publish stage
-        // owns.
-        using Fn = void (*)(void*, ::foundation::effects::Bg const&, PublishStage, RegionNode*) noexcept;
+        // owns.  The record of the region lives in the region store.
+        using Fn = void (*)(void*, ::foundation::effects::Bg const&, PublishStage, PublishedRegion const&) noexcept;
 
         void* ctx = nullptr;
         Fn fn = nullptr;
@@ -133,8 +150,9 @@ struct BackgroundThread {
 
         // The caller proves that it runs on the stage, and the callback
         // gets a proof of its own that dies with the call.
-        void operator()(::foundation::effects::Bg const& bg, PublishStage const&, RegionNode* region) const noexcept {
-            fn(ctx, bg, PublishStage{}, region);
+        void operator()(::foundation::effects::Bg const& bg, PublishStage const&,
+                        PublishedRegion const& published) const noexcept {
+            fn(ctx, bg, PublishStage{}, published);
         }
     };
 
@@ -357,6 +375,9 @@ private:
         BuiltRegion parts;
         ::foundation::AlignedBuffer<RegionNode> node;
         ::foundation::AlignedBuffer<MemoryPlan> plan;
+        // The record that the region callback gets, and that the owner can
+        // publish to its foreground.
+        PublishedRegion published{};
         // The foreground generation at the first sweep that found the region
         // neither the last published region nor the handed region.
         uint64_t left_generation = NOT_LEFT;
@@ -473,36 +494,49 @@ public:
     using TotalProcessedCell = ::fixy::handle::PublishCommitCell<PublishStageTag, PublishStageAuth>;
     TotalProcessedCell total_processed;
 
-    // The foreground raises this when compiled replay diverges.  The
-    // background clears its accumulated trace and detector on observing it,
-    // so leftover signature ops from the pre-divergence iteration cannot
-    // poison the next region.  The detector keeps one thing: the periods
-    // that broke, so a layer square that diverged is not picked again.
+    // The divergence reset.  When compiled replay diverges, the producer
+    // requests a reset at the point of the divergence, before it puts the
+    // next op into the ring.  The detect stage applies the reset when its
+    // count of ops reaches that point, and not when it first reads the
+    // request.  The detect stage can still hold ops recorded before the
+    // divergence, and two periods of such ops make a region of the shape
+    // that diverged.  At the point, the detect stage clears its held ops and
+    // restarts the detector, which keeps the periods that broke.
     //
-    // Own cache line: the foreground writes it while the background reads it
-    // each drain cycle, and the neighbouring fields are background-private.
-    alignas(64)::fixy::handle::OneShotFlag reset_requested;
+    // Each work item carries the point of the last reset that the detect
+    // stage applied before its cut, and each region carries the point of
+    // its work.  A region whose point is not the requested point holds ops
+    // recorded before the last divergence.  The publish stage discards it.
+    // A region that the publish stage gave out just before a request is
+    // stale too, so the producer also compares the point of each region
+    // that it takes.  Commit markers and releases carry no region, and no
+    // reset drops them.
+    //
+    // The producer requests with acquire and release order before it puts
+    // the op at the point, so the detect stage reads the request before it
+    // reads that op, and it never passes an unapplied point.  The points are
+    // counts of a monotonic counter, so a request never moves the point
+    // back.  Two divergences with no op between them request one point.
+    void request_reset(StreamPoint point) noexcept { (void)requested_reset_.try_advance(point); }
 
-    // Which side of the last reset a piece of pipeline work belongs to.
-    //
-    // Clearing the detect stage's accumulated trace is not enough on its
-    // own.  A region whose entries were all recorded before the divergence
-    // may already be queued for the build or the publish stage, and it
-    // finishes and publishes after the reset.  The foreground has just
-    // deactivated replay and gone back to recording, and that publish hands
-    // it the shape that diverged: it aligns against it, activates, and the
-    // region cache then offers it as an alternate for the next divergence.
-    //
-    // So each work item carries the epoch it was cut under, and the two
-    // stages downstream drop anything older than the current one.  The
-    // detect stage is the sole writer, and it bumps inside the reset itself,
-    // which puts every item already in flight one epoch behind.
-    //
-    // Commit markers are exempt.  They carry no region, only the count of
-    // entries a batch consumed, and total_processed has to advance past a
-    // dropped region for flush() to return.
-    alignas(64)::fixy::AtomicMonotonic<uint32_t> reset_epoch = ::fixy::mint_atomic_monotonic<uint32_t>(0);
+    [[nodiscard]] StreamPoint requested_reset() const noexcept { return requested_reset_.get(); }
 
+    // The point of the last reset that the detect stage applied.
+    [[nodiscard]] StreamPoint applied_reset() const noexcept { return applied_reset_.get(); }
+
+private:
+    ::fixy::AtomicMonotonic<StreamPoint> requested_reset_ = ::fixy::mint_atomic_monotonic<StreamPoint>(StreamPoint{});
+    // The detect stage is the one writer of the two below.
+    ::fixy::AtomicMonotonic<StreamPoint> applied_reset_ = ::fixy::mint_atomic_monotonic<StreamPoint>(StreamPoint{});
+    // The count of ops that the detect stage read.
+    uint64_t stream_ops_ = 0;
+
+    // Applies the requested reset when the count of ops that the detect stage
+    // read is at its point.  The detect stage calls it before each op and
+    // after each batch.
+    void apply_due_reset_() noexcept;
+
+public:
     // The mailbox of the publish-stage state.  It holds one of four values:
     //   &mailbox_closed_  no publish stage runs, so a caller may own the state
     //   &mailbox_inline_  a caller runs a job while no publish stage runs
@@ -605,9 +639,9 @@ public:
         bool commit_only = false;
         uint32_t commit_count = 0;
         uint32_t completed_len = 0;
-        // The reset epoch this work was cut under.  Meaningless on a
-        // commit-only marker, which is never dropped.
-        uint32_t epoch = 0;
+        // The point of the last reset before the cut of this work.
+        // Meaningless on a commit-only marker, which is never dropped.
+        StreamPoint reset_point{};
         // The ops of the iteration, completed_len of each, and each value
         // initialized before the copy.  completed_len is at most
         // IterationDetector::MAX_PERIOD, so the four buffers take at most
@@ -663,7 +697,7 @@ public:
         // Carried through from the BgBuildWork this came from, so a reset
         // that lands while the build stage is mid-graph is still caught
         // here, one stage later.
-        uint32_t epoch = 0;
+        StreamPoint reset_point{};
     };
 
     // Makes a commit marker: a work item that carries only the count of
@@ -700,8 +734,9 @@ public:
     // context of the publish stage allocates the node and the plan, and is
     // handed to the region callback, which runs on the same thread.  After
     // the callback, the sweep releases each region that no holder names.
-    void publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts)
-        CRUCIBLE_NO_THREAD_SAFETY;
+    // The record of the region carries reset_point, the point of its work.
+    void publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
+                        StreamPoint reset_point) CRUCIBLE_NO_THREAD_SAFETY;
 
     // The only legal caller of bump_by on total_processed.  Any other call
     // site fails to compile because bump_by is private to this friend.

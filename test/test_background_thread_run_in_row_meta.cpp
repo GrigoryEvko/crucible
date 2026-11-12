@@ -178,7 +178,8 @@ void test_publish_stage_releases_in_order() {
     assert(metalog->tail.get() == 0u);
 
     bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
-        bt.publish_region(bg, stage, std::move(built).expect("the first work builds").region);
+        bt.publish_region(bg, stage, std::move(built).expect("the first work builds").region,
+                          BackgroundThread::StreamPoint{});
         assert(metalog->tail.get() == first_end);
         bt.release_meta_log(stage, overflowed.err().expect("the second work overflows").meta_end);
     });
@@ -287,8 +288,9 @@ void test_built_graph_owns_its_metadata() {
 
     // The region of the publish holds the same ops, and the release moves
     // the tail past the run.
-    bt.run_on_publish_stage(
-        [&](BackgroundThread::PublishStage const& stage) noexcept { bt.publish_region(bg, stage, std::move(parts)); });
+    bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
+        bt.publish_region(bg, stage, std::move(parts), BackgroundThread::StreamPoint{});
+    });
     const crucible::RegionNode* const region = bt.active_region.load(std::memory_order_acquire);
     assert(region != nullptr && region->ops == graph->ops);
     assert(metalog->tail.get() == OPS);
@@ -332,8 +334,9 @@ void test_build_and_release_pass_two_to_the_32() {
         assert(crucible::raw_data_ptr(metas[0]) == crucible::raw_data_ptr(output_meta(op)));
     }
 
-    bt.run_on_publish_stage(
-        [&](BackgroundThread::PublishStage const& stage) noexcept { bt.publish_region(bg, stage, std::move(parts)); });
+    bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
+        bt.publish_region(bg, stage, std::move(parts), BackgroundThread::StreamPoint{});
+    });
     assert(metalog->tail.get() == run_end && "the release did not move the tail past 2^32");
 
     crucible::test::pass("  build_and_release_pass_two_to_the_32:      PASSED\n");

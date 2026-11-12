@@ -136,8 +136,8 @@ struct BackgroundThread::Pipeline {
 
     // The detect stage feeds each entry to the iteration detector, cuts a
     // work item at each boundary, and pushes a commit marker after each
-    // batch.  It clears its trace and bumps the reset epoch on a divergence
-    // reset.
+    // batch.  It applies each divergence reset at the point of the
+    // divergence in the op stream.
     static void DetectIterationFn(TraceBatchInput&& in, typename BuildWorkChannel::ProducerHandle&& out);
 
     // The build stage builds a trace graph from each work item and
@@ -149,10 +149,10 @@ struct BackgroundThread::Pipeline {
     // body takes the background context of that thread from the door.
     static void BuildTraceFn(BuildWorkInput&& in, typename GraphPublishChannel::ProducerHandle&& out);
 
-    // The publish stage publishes each region whose reset epoch is current,
-    // discards each stale one, advances total_processed at each commit
-    // marker, and applies each release.  It is the one writer of the tail
-    // of the metadata log.
+    // The publish stage publishes each region whose reset point is the
+    // requested point, discards each stale one, advances total_processed at
+    // each commit marker, and applies each release.  It is the one writer of
+    // the tail of the metadata log.
     //
     // The channel is SPSC FIFO, so a commit marker can only arrive here
     // after every region produced from its batch and from preceding batches
@@ -237,7 +237,7 @@ BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work() 
     if (meta_log && completed_len > 0) {
         work = new BgBuildWork{};
         work->completed_len = completed_len;
-        work->epoch = reset_epoch.get();
+        work->reset_point = applied_reset_.peek_relaxed();
         work->trace = ::foundation::AlignedBuffer<TraceRing::Entry>::allocate_value_initialized(completed_len);
         work->meta_starts = ::foundation::AlignedBuffer<MetaIndex>::allocate_value_initialized(completed_len);
         work->scope_hashes = ::foundation::AlignedBuffer<ScopeHash>::allocate_value_initialized(completed_len);
@@ -253,6 +253,21 @@ BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work() 
     // The last K ops begin the next iteration, and the ring keeps them.
     pending_ops_.drop_oldest(completed_len);
     return work;
+}
+
+// The detect stage reads the request before the op at its point, because the
+// producer requests before it puts that op into the ring (request_reset).  So
+// an unapplied point is never behind the count of ops read.  A newer request
+// replaces an older one that the detect stage did not reach, and the reset at
+// the newer point also clears the ops between the two points.
+void BackgroundThread::apply_due_reset_() noexcept {
+    const StreamPoint requested = requested_reset_.get();
+    if (requested == applied_reset_.peek_relaxed()) return;
+    CRUCIBLE_FATAL_INVARIANT(requested.ops_before >= stream_ops_);
+    if (requested.ops_before != stream_ops_) return;
+    detector.restart_after_divergence();
+    pending_ops_.clear();
+    applied_reset_.advance(requested);
 }
 
 void BackgroundThread::discard_region(PublishStage const& stage, BuiltRegion parts) {
@@ -273,8 +288,8 @@ void BackgroundThread::release_meta_log(PublishStage const&, uint64_t meta_end) 
 // The memory goes to a slot of the region store before the region becomes
 // visible, so each region that a holder can name has an owner.  A store with
 // no free slot discards the region, as a reset discards a stale region.
-void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage,
-                                      BuiltRegion parts) {
+void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
+                                      StreamPoint reset_point) {
     uint32_t free_index = REGION_STORE_CAP;
     for (uint32_t index = 0; index < REGION_STORE_CAP && free_index == REGION_STORE_CAP; ++index) {
         if (region_store_[index].node.empty()) free_index = index;
@@ -288,6 +303,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     memory = RegionMemory{.parts = std::move(parts),
                           .node = ::foundation::AlignedBuffer<RegionNode>::allocate_value_initialized(1),
                           .plan = {},
+                          .published = {},
                           .left_generation = NOT_LEFT};
     RegionNode& region = memory.node[0];
     init_region_node(region, memory.parts.ops.data(), static_cast<uint32_t>(memory.parts.ops.size()),
@@ -306,11 +322,13 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     const ::fixy::WeakRef<RegionNode> published{region};
     last_published_ = ::fixy::WeakRef<const RegionNode>{region};
 
+    memory.published = PublishedRegion{.region = &published.get(), .reset_point = reset_point};
+
     uncompiled_regions.push(&published.get());
     active_region.store(&published.get(), std::memory_order_release);
     owner_marks_ = RegionMarks{};
     if (region_ready_cb) {
-        region_ready_cb(bg, stage, &published.get());
+        region_ready_cb(bg, stage, memory.published);
     }
     sweep_regions_(stage);
 }
@@ -424,25 +442,13 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
             return;
         }
 
-        auto do_reset = [&]() noexcept {
-            owner->detector.restart_after_divergence();
-            owner->pending_ops_.clear();
-            // Everything already handed downstream was cut from
-            // pre-divergence entries.  The bump is what the build and
-            // publish stages compare against to drop it.  It happens
-            // last so the cleared state above is visible to whoever
-            // observes the new epoch.
-            (void)owner->reset_epoch.bump();
-        };
-
-        (void)owner->reset_requested.check_and_run(do_reset);
-
         // The channel gives the batch as an owning pointer.  The stage reads
         // the ops through this reference.
         BgTraceBatch const& ops = *batch;
 
         for (uint32_t i = 0; i < batch->count; ++i) {
-            (void)owner->reset_requested.check_and_run(do_reset);
+            owner->apply_due_reset_();
+            ++owner->stream_ops_;
 
             owner->pending_ops_.push(ops.entries[i], ops.meta_starts[i], ops.scope_hashes[i], ops.callsite_hashes[i]);
 
@@ -454,6 +460,9 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
             }
             owner->drop_unclaimable_ops_();
         }
+        // A reset at the end of the batch applies now, so the detector holds
+        // no ops of the trace that diverged while it waits for the next op.
+        owner->apply_due_reset_();
 
         auto commit = std::unique_ptr<BgBuildWork>(owner->make_commit_work(batch->count));
         push_pipeline(out, commit.get());
@@ -489,7 +498,7 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
             auto publish = std::make_unique<BgGraphPublish>();
             publish->kind = BgGraphPublish::Kind::Commit;
             publish->commit_count = work->commit_count;
-            publish->epoch = work->epoch;
+            publish->reset_point = work->reset_point;
             push_pipeline(out, publish.get());
             publish.release();
             continue;
@@ -527,7 +536,7 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
                 auto release = std::make_unique<BgGraphPublish>();
                 release->kind = BgGraphPublish::Kind::Release;
                 release->meta_end = overflow.meta_end;
-                release->epoch = work->epoch;
+                release->reset_point = work->reset_point;
                 push_pipeline(out, release.get());
                 release.release();
             }
@@ -537,8 +546,8 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
         BuiltRegion region = std::move(built).expect("the build made a graph").region;
         std::move(epoch).end();
 
-        auto publish = std::make_unique<BgGraphPublish>(
-            BgGraphPublish{.kind = BgGraphPublish::Kind::Region, .region = std::move(region), .epoch = work->epoch});
+        auto publish = std::make_unique<BgGraphPublish>(BgGraphPublish{
+            .kind = BgGraphPublish::Kind::Region, .region = std::move(region), .reset_point = work->reset_point});
         push_pipeline(out, publish.get());
         publish.release();
     }
@@ -579,35 +588,37 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
         }
 
         // A release carries no region, so a reset does not drop it.  The
-        // metadata that it names is dead in each epoch, and the foreground
-        // has to be able to use that space again.
+        // metadata that it names is dead on each side of a reset, and the
+        // foreground has to be able to use that space again.
         if (publish->kind == BgGraphPublish::Kind::Release) {
             owner->release_meta_log(PublishStage{}, publish->meta_end);
             continue;
         }
 
-        // A divergence reset landed after this region's entries were
-        // cut, so the region describes the shape that just failed to
-        // replay.  Publishing it would hand that shape back to a
-        // foreground that has already fallen back to recording.
+        // The producer requested a reset at a point after the ops of this
+        // region, so the region describes the shape that failed to replay.
+        // Publishing it would hand that shape back to a foreground that has
+        // already fallen back to recording.
         //
-        // This is the only stale check, and it sits here rather than at
-        // the build stage so that the region's own max_meta_end is the
-        // one thing that decides which metadata range to release.  It
-        // also catches a reset that landed while the build stage was
-        // mid-graph.
+        // The stale check sits here rather than at the build stage, so that
+        // the region's own max_meta_end is the one thing that decides which
+        // metadata range to release.  It also catches a reset requested
+        // while the build stage was mid-graph.  A request can come between
+        // this check and the publication, so the foreground does the same
+        // check when it takes a region.
         //
         // The discard frees the memory of the region.  The metadata log
         // needs the hand-off too: the entries this build read are dead
         // either way, and the foreground has to be able to reuse that
         // space.
         BuiltRegion region = std::move(publish->region);
-        if (publish->epoch != owner->reset_epoch.get()) {
+        const StreamPoint reset_point = publish->reset_point;
+        if (reset_point != owner->requested_reset()) {
             owner->discard_region(PublishStage{}, std::move(region));
             continue;
         }
 
-        owner->publish_region(bg, PublishStage{}, std::move(region));
+        owner->publish_region(bg, PublishStage{}, std::move(region), reset_point);
     }
 }
 

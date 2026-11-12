@@ -34,9 +34,11 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup) : cfg_(std::move(cf
             startup, ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{cfg_.cipher_path})));
     }
 
-    bg_.set_region_ready_callback(
-        this, [](void* self, ::foundation::effects::Bg const& bg, BackgroundThread::PublishStage stage,
-                 RegionNode* region) noexcept { static_cast<Vigil*>(self)->on_region_ready(bg, stage, region); });
+    bg_.set_region_ready_callback(this, [](void* self, ::foundation::effects::Bg const& bg,
+                                           BackgroundThread::PublishStage stage,
+                                           BackgroundThread::PublishedRegion const& published) noexcept {
+        static_cast<Vigil*>(self)->on_region_ready(bg, stage, published);
+    });
 
     // The watchdog is constructed before the background thread starts,
     // so on_region_ready can observe on the very first region transition
@@ -86,7 +88,8 @@ bool Vigil::rollback() {
 }
 
 void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,
-                            RegionNode* region) {
+                            BackgroundThread::PublishedRegion const& published) {
+    RegionNode* const region = published.region;
     // bump returns the previous value, which is the index this call
     // reserved.  The background thread is the sole writer.
     const uint64_t step = step_.bump();
@@ -107,8 +110,9 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // foreground still records until it aligns to this region, and it
     // publishes COMPILED when it activates the context, so is_compiled
     // never reports a replay that has not started.  An observer that
-    // waits for this publication reads has_pending_region.
-    pending_region_.publish(region);
+    // waits for this publication reads has_pending_region.  The slot holds
+    // the record, so the foreground can compare the reset point.
+    pending_region_.publish(&published);
 
     // The sweep of the region store after this callback releases each region
     // that no holder names.  The transaction log holds each region that a
@@ -117,7 +121,8 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // foreground.
     BackgroundThread::RegionMarks marks{};
     tx_log_.for_each_region(stage, [&marks](::fixy::WeakRef<const RegionNode> held) noexcept { marks.hold(held); });
-    marks.handed = ::fixy::WeakRef<const RegionNode>::from_raw(pending_region_.observe());
+    const BackgroundThread::PublishedRegion* const handed = pending_region_.observe();
+    marks.handed = ::fixy::WeakRef<const RegionNode>::from_raw(handed != nullptr ? handed->region : nullptr);
     mark_held_regions_(marks);
     bg_.set_region_marks(stage, marks);
 

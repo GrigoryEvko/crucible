@@ -62,6 +62,7 @@ namespace test_vigil {
 // A divergence drops what the foreground has not observed
 // (test_vigil_divergence.cpp).
 void test_divergence_drops_the_unobserved_region();
+void test_divergence_drops_the_regions_of_the_backlog();
 void test_divergence_drops_a_half_finished_alignment();
 void test_region_store_stays_bounded();
 

@@ -3536,8 +3536,8 @@ crucible_neg_compile_test(neg_costmodel_fusion_benefit_block_row
 # of a publication.  The first fixture shows that a function that is not
 # noexcept does not convert to Fn.  The second shows that Fn is not the
 # same type as the plain function pointer.
-set(BG_CALLBACK_PARAMS "void\\*, const foundation::effects::Bg&, crucible::BackgroundThread::PublishStage, crucible::RegionNode\\*")
-set(BG_CALLBACK_CLASS_PARAMS "void\\*, const class foundation::effects::Bg&, class crucible::BackgroundThread::PublishStage, struct crucible::RegionNode\\*")
+set(BG_CALLBACK_PARAMS "void\\*, const foundation::effects::Bg&, crucible::BackgroundThread::PublishStage, const crucible::BackgroundThread::PublishedRegion&")
+set(BG_CALLBACK_CLASS_PARAMS "void\\*, const class foundation::effects::Bg&, class crucible::BackgroundThread::PublishStage, const struct crucible::BackgroundThread::PublishedRegion&")
 crucible_neg_compile_test(neg_background_thread_callback_throwing_fnptr_rejected
   "invalid conversion from .void \\(\\*\\)\\(${BG_CALLBACK_PARAMS}\\). to .crucible::BackgroundThread::RegionReadyCallback::Fn."
   "aka .void \\(\\*\\)\\(${BG_CALLBACK_PARAMS}\\) noexcept.")

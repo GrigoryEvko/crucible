@@ -615,7 +615,7 @@ private:
     // region to the foreground, and observes the watchdog when it is
     // loaded.  The body is in src/Vigil.cpp.
     [[gnu::cold]] void on_region_ready(::foundation::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,
-                                       RegionNode* region);
+                                       BackgroundThread::PublishedRegion const& published);
 
     // Writes the regions that the foreground holds into held_regions_: the
     // region of the alignment walk, the region of the replay context and the
@@ -685,10 +685,10 @@ private:
         // through try_switch_region_, which first verifies that every op
         // before the divergence position is identical.
         //
-        // Take it before the reset signal below.  A region the background
-        // thread publishes after that signal belongs to the new trace, and
-        // stays in the slot for the next dispatch to observe.
-        if (auto* stale_pending = pending_region_.consume()) region_cache_.insert(stale_pending);
+        // The pipeline can still publish a region of ops recorded before
+        // the reset request below.  The reset point of that region is not
+        // the requested point, so consume_pending_region_ caches it too.
+        if (const auto* stale_pending = pending_region_.consume()) region_cache_.insert(stale_pending->region);
 
         // Alignment state is foreground-only, and it describes a partial walk
         // into a region this reset abandons.  This is not dead code: both
@@ -723,7 +723,9 @@ private:
         if (ctx_.is_compiled()) ctx_.deactivate();
 
         mode_.publish_recording_after_divergence();
-        bg_.reset_requested.signal();
+        // The reset applies at the point of the divergence: each op in the
+        // ring was recorded before it, and the next op comes after it.
+        bg_.request_reset(BackgroundThread::StreamPoint{.ops_before = ring_total_produced()});
         publish_held_regions_();
         // The divergent op is deliberately not recorded: it would poison the
         // background thread's iteration detector.
@@ -765,9 +767,21 @@ private:
 
     // Moves the published region into foreground-only alignment state.  It
     // does not activate replay; the alignment phase does that.
+    //
+    // A region whose reset point is not the requested point holds ops
+    // recorded before the last divergence.  The publish stage can give it
+    // out just before the request, so the check runs here too.  The region
+    // goes to the cache, as in handle_divergence_, and an open alignment
+    // keeps its state.  The foreground is the one writer of the request, so
+    // this read cannot race it.
     [[gnu::cold]] void consume_pending_region_() {
-        auto* region = pending_region_.consume();
-        if (!region) return;
+        const auto* published = pending_region_.consume();
+        if (!published) return;
+        RegionNode* const region = published->region;
+        if (published->reset_point != bg_.requested_reset()) {
+            region_cache_.insert(region);
+            return;
+        }
         if (region->num_ops == 0) return;
 
         pending_activation_ = region;
@@ -976,8 +990,9 @@ private:
     // foreground side, so the region data written before the publish is
     // visible after the observe.  It is a reusable latest-wins slot rather
     // than a publish-once cell because divergence recovery publishes
-    // several regions over one process lifetime.
-    ::fixy::handle::PublishSlot<RegionNode> pending_region_;
+    // several regions over one process lifetime.  The slot holds the record
+    // of the region in the region store, which carries its reset point.
+    ::fixy::handle::PublishSlot<const BackgroundThread::PublishedRegion> pending_region_;
     // The five below are foreground-only.
     RegionNode* pending_activation_{nullptr};
     AlignmentPos alignment_pos_ = alignment_pos_at(0);

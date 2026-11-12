@@ -18,7 +18,8 @@ namespace {
 
 // The parameter list of Fn, without the noexcept.
 void throwing_callback(void* /*ctx*/, ::foundation::effects::Bg const& /*bg*/,
-                       c::BackgroundThread::PublishStage /*stage*/, c::RegionNode* /*region*/) {}
+                       c::BackgroundThread::PublishStage /*stage*/,
+                       c::BackgroundThread::PublishedRegion const& /*published*/) {}
 
 }  // namespace
 
