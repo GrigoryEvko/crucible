@@ -2258,6 +2258,67 @@ foundation_neg_compile_test(neg_core_fill_const
   "no matching function for call to .fill\\(foundation::core::View<const int>&, int\\)."
   "required for the satisfaction of .RegionCopyElement<T>. .with T = const int.")
 
+# An Index<N> proves a number below N: only its check, a constant index
+# below N and an index of a smaller count make one.  A FixedArray fills each
+# element, reads only at a proven index, and refuses a view of a temporary.
+# The reads of a TextView live in Region.h, and the free operations refuse
+# a predicate that can throw, a key with no total order and the bytes of a
+# padded or a temporary object.
+foundation_test(test_core_array)
+foundation_test(test_core_algorithms)
+foundation_test(test_core_iteration)
+
+foundation_neg_compile_test(neg_core_view_windows_zero_width
+  "no matching function for call to .foundation::core::View<int>::windows<0>\\(\\)."
+  "required for the satisfaction of .ViewExtent<T, Width>. \\[with T = int; Width = 0\\]")
+foundation_neg_compile_test(neg_core_view_windows_past_extent
+  "no matching function for call to .foundation::core::View<int, 4>::windows<5>\\(\\)."
+  "constexpr auto foundation::core::View<T, Extent>::windows\\(\\) const \\[with long unsigned int Width = Width; T = int; long unsigned int Extent = 4\\].")
+foundation_neg_compile_test(neg_core_fixed_array_reverse_of_temporary
+  "use of deleted function .void foundation::core::FixedArray<T, N>::reverse\\(\\) const && \\[with T = int; long unsigned int N = 4\\]."
+  "a loop over a temporary FixedArray points into an object that the full expression ends")
+foundation_neg_compile_test(neg_core_fixed_array_chunks_of_temporary
+  "use of deleted function .void foundation::core::FixedArray<T, N>::chunks\\(\\) const && \\[with long unsigned int Width = 2; T = int; long unsigned int N = 4\\]."
+  "a loop over a temporary FixedArray points into an object that the full expression ends")
+
+foundation_neg_compile_test(neg_core_index_zero_count
+  "template constraint failure for .template<long unsigned int Count>  requires  IndexCount<Count> class foundation::core::Index."
+  "the expression .Count > 0 \\[with Count = 0\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_index_narrowing
+  "could not convert .wide. from .Index<8>. to .Index<4>."
+  "In function .foundation::core::Index<4> narrow\\(foundation::core::Index<8>\\).")
+foundation_neg_compile_test(neg_core_index_static_past_count
+  "could not convert .foundation::core::index<4>\\(\\). from .foundation::core::StaticIndex<4>. to .foundation::core::Index<4>."
+  "In function .foundation::core::Index<4> past_the_end\\(\\).")
+foundation_neg_compile_test(neg_core_fixed_array_partial_list
+  "no matching function for call to .foundation::core::FixedArray<int, 3>::FixedArray\\(<brace-enclosed initializer list>\\)."
+  "ArrayStorage\\(foundation::core::detail::ArrayParameter<T, Positions>\\.\\.\\.\\) requires  is_nothrow_move_constructible_v<T> \\[with T = int; long unsigned int N = 3; long unsigned int \\.\\.\\.Positions = \\{0, 1, 2\\}\\]."
+  "candidate expects 3 arguments, 2 provided")
+foundation_neg_compile_test(neg_core_fixed_array_view_of_temporary
+  "use of deleted function .void foundation::core::FixedArray<T, N>::view\\(\\) && \\[with T = int; long unsigned int N = 4\\]."
+  "a view of a temporary FixedArray points into an object that the full expression ends")
+foundation_neg_compile_test(neg_core_fixed_array_subscript
+  "no match for .operator\\[\\]. \\(operand types are .const foundation::core::FixedArray<int, 4>. and .std::size_t."
+  "In function .int unchecked_read\\(const foundation::core::FixedArray<int, 4>&, std::size_t\\).")
+foundation_neg_compile_test(neg_core_fixed_array_at_wider_index
+  "no matching function for call to .foundation::core::FixedArray<int, 4>::at\\(foundation::core::Index<8>&\\) const."
+  "In function .int read_past\\(const foundation::core::FixedArray<int, 4>&, foundation::core::Index<8>\\).")
+foundation_neg_compile_test(neg_core_text_window_without_region
+  "use of .constexpr auto foundation::core::TextView::window\\(std::size_t, std::size_t\\) const. before deduction of .auto."
+  "In function .bool has_window\\(foundation::core::TextView\\).")
+foundation_neg_compile_test(neg_core_bytes_of_padded
+  "no matching function for call to .bytes\\(const Padded&\\)."
+  "the expression .has_unique_object_representations_v<T> \\[with T = Padded\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_bytes_of_temporary
+  "use of deleted function .void foundation::core::bytes\\(const T&&\\) \\[with T = long unsigned int\\]."
+  "the bytes of a temporary object dangle at the end of the full expression")
+foundation_neg_compile_test(neg_core_find_if_throwing_predicate
+  "no matching function for call to .find_if\\(foundation::core::View<const int, 4>, has_large\\(const foundation::core::FixedArray<int, 4>&\\)::<lambda\\(int\\)>\\)."
+  "the expression .is_nothrow_invocable_v<Predicate&, const T&> \\[with Predicate = has_large::._anon_[0-9]+; T = int\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_lower_bound_float_key
+  "no matching function for call to .lower_bound_by_key\\(foundation::core::View<const float, 4>, bound_of\\(const foundation::core::FixedArray<float, 4>&\\)::<lambda\\(float\\)>, float\\)."
+  "required for the satisfaction of .KeyOf<Key, typename std::remove_const<_Tp>::type>. \\[with Key = bound_of::._anon_[0-9]+; T = const float\\]")
+
 # ── The door directory of the base floor: foundation/os ───────────────
 #
 # The file door reads a file of /proc into a FixedText, gives the error of

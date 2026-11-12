@@ -4,8 +4,10 @@
 // fit.
 
 #include <foundation/core/Format.h>
+#include <foundation/core/Region.h>
 
 #include "../test_assert.h"
+#include "abort_probe.h"
 
 #include <cstdint>
 #include <utility>
@@ -37,6 +39,56 @@ void test_fixed_text_starts_empty() {
     assert(text.size() == 0);
     assert(text.view() == TextView{""});
     assert(FixedText<8>::capacity == 8);
+}
+
+// The loop reads each character of a text one time, in order, and a window
+// gives the characters from its offset.
+void test_text_view_reads_its_characters() {
+    TextView const list{"0-3,8"};
+    std::size_t digits = 0;
+    std::size_t position = 0;
+    for (char const character : list) {
+        if (character >= '0' && character <= '9') ++digits;
+        ++position;
+    }
+    assert(digits == 3 && position == 5);
+    assert(list.window(2, 3).expect("the window fits") == TextView{"3,8"});
+    assert(list.window(5, 0).expect("the empty window fits") == TextView{});
+    assert(list.window(5, 1).is_none());
+    assert(list.window(6, 0).is_none());
+    int turns = 0;
+    for ([[maybe_unused]] char const character : TextView{}) {
+        ++turns;
+    }
+    assert(turns == 0);
+}
+
+// A FixedText gives the loop over the characters that it holds, and clear()
+// empties it.
+void test_fixed_text_loop_and_clear() {
+    FixedText<16> text;
+    assert(format(text, "{}{}", 12, TextView{"ab"}).is_ok());
+    std::size_t count = 0;
+    for ([[maybe_unused]] char const character : text) {
+        ++count;
+    }
+    assert(count == 4);
+    text.clear();
+    assert(text.size() == 0 && text.view() == TextView{});
+}
+
+// A cursor of a text never leaves the text: a read at the end and a step
+// past the end end the process in each build.
+void test_text_cursor_at_the_end_aborts() {
+    TextView const pair{"ab"};
+    bool const end_read_aborts = ::foundation::test::aborts([&pair] { static_cast<void>(*pair.end()); });
+    bool const past_end_step_aborts = ::foundation::test::aborts([&pair] {
+        auto cursor = pair.begin();
+        ++cursor;
+        ++cursor;
+        ++cursor;
+    });
+    assert(end_read_aborts && past_end_step_aborts);
 }
 
 void test_format_writes_integers_in_decimal() {
@@ -105,6 +157,9 @@ void test_format_keeps_a_long_text() {
 int main() {
     test_text_view_compares_its_characters();
     test_fixed_text_starts_empty();
+    test_text_view_reads_its_characters();
+    test_fixed_text_loop_and_clear();
+    test_text_cursor_at_the_end_aborts();
     test_format_writes_integers_in_decimal();
     test_format_writes_bools_and_texts();
     test_format_writes_escapes_and_braces_of_arguments();

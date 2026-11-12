@@ -652,6 +652,17 @@ witness <foundation/core/Text.h> private | foundation::core::TextView | foundati
 # keeps a zero after its last character, so no pointer that a caller holds
 # becomes a CText.
 witness <foundation/core/Text.h> private | foundation::core::CText | foundation::core::CText{forge::rvalue<char const*>(), forge::rvalue<unsigned long>()}
+# An Index comes only from its check, from a constant index below its count,
+# from an index of a smaller count and from the loop of an IndexRange, so no
+# number that a caller holds becomes an index.  A cursor of the loop comes
+# only from its range.
+witness <foundation/core/Index.h> private | foundation::core::Index<4> | foundation::core::Index<4>{forge::rvalue<unsigned int>()}
+witness <foundation/core/Index.h> private | foundation::core::IndexCursor<4> | foundation::core::IndexCursor<4>{forge::rvalue<unsigned int>()}
+# A cursor of an iteration verb comes only from its range, and a range comes
+# only from a View, so no pointer that a caller holds becomes a cursor.
+witness <foundation/core/Region.h> private | foundation::core::detail::ReverseCursor<int> | foundation::core::detail::ReverseCursor<int>{forge::rvalue<int*>(), forge::rvalue<int*>()}
+witness <foundation/core/Region.h> private | foundation::core::detail::WindowCursor<int, 2> | foundation::core::detail::WindowCursor<int, 2>{forge::rvalue<int*>(), forge::rvalue<int*>()}
+witness <foundation/core/Region.h> private | foundation::core::detail::ChunkCursor<int, 2> | foundation::core::detail::ChunkCursor<int, 2>{forge::rvalue<int*>(), forge::rvalue<int*>()}
 
 # -- The graded substrate --------------------------------------------
 # A grade that nothing derives is paired with a value only through a key,

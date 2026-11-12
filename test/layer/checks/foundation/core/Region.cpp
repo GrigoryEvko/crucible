@@ -2,9 +2,13 @@
 
 #include <foundation/core/Region.h>
 
+#include <foundation/core/Array.h>
+#include <foundation/core/Verbs.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 namespace foundation::core {
 
@@ -196,6 +200,192 @@ concept ReadsInside = requires { typename std::integral_constant<int, read_after
 static_assert(ReadsInside<0>);
 static_assert(!ReadsInside<1>);
 static_assert(!ReadsInside<2>);
+
+// An Option of a window of a text has the size of a TextView: the niche
+// marks the empty state.
+static_assert(sizeof(Option<TextView>) == sizeof(TextView));
+static_assert(option_form_of<TextView> == OptionForm::niche);
+static_assert(std::is_same_v<decltype(TextView{}.window(0, 0)), Option<TextView>>);
+static_assert(std::is_same_v<decltype(TextView{}.begin()), ViewCursor<char const>>);
+
+// The loop and the windows of a text in a constant evaluation.
+[[nodiscard]] consteval std::size_t digits_of(TextView text) noexcept {
+    std::size_t count = 0;
+    for (char const character : text) {
+        if (character >= '0' && character <= '9') ++count;
+    }
+    return count;
+}
+
+static_assert(digits_of(TextView{"cpu12-15"}) == 4);
+static_assert(digits_of(TextView{}) == 0);
+static_assert(TextView{"cpulist"}.window(3, 4).expect("the window fits") == TextView{"list"});
+static_assert(TextView{"cpulist"}.window(7, 0).expect("the empty window fits") == TextView{});
+static_assert(TextView{"cpulist"}.window(7, 1).is_none());
+static_assert(TextView{"cpulist"}.window(8, 0).is_none());
+static_assert(TextView{"cpulist"}.window(1, dynamic_extent).is_none());
+static_assert(TextView{}.window(0, 0).is_some());
+
+// A cursor of a text never leaves the text, as a cursor of a View.
+[[nodiscard]] consteval char read_text_after_steps(int steps) noexcept {
+    auto cursor = TextView{"ab"}.begin();
+    for (int step = 0; step < steps; ++step) {
+        ++cursor;
+    }
+    return *cursor;
+}
+template <int Steps>
+concept ReadsInsideText = requires { typename std::integral_constant<char, read_text_after_steps(Steps)>; };
+static_assert(ReadsInsideText<1>);
+static_assert(!ReadsInsideText<2>);
+static_assert(!ReadsInsideText<3>);
+
+// A FixedText gives the loop over its characters, and clear() empties it.
+[[nodiscard]] consteval std::size_t characters_after_clear(bool clears) noexcept {
+    FixedText<8> text;
+    text_resize_(text, 3);
+    if (clears) text.clear();
+    std::size_t count = 0;
+    for ([[maybe_unused]] char const character : text) {
+        ++count;
+    }
+    return count;
+}
+static_assert(characters_after_clear(false) == 3);
+static_assert(characters_after_clear(true) == 0);
+template <class Text>
+concept LoopsOverTemporary = requires { static_cast<Text&&>(std::declval<Text>()).begin(); };
+static_assert(!LoopsOverTemporary<FixedText<8>>);
+
+// The iteration verbs in a constant evaluation, over the View of an array.
+[[nodiscard]] consteval int reverse_digits() noexcept {
+    FixedArray<int, 4> const digits{1, 2, 3, 4};
+    int number = 0;
+    for (int const digit : digits.view().reverse()) {
+        number = number * 10 + digit;
+    }
+    return number;
+}
+static_assert(reverse_digits() == 4321);
+
+// Each window of three of five elements: the first and the last element of
+// each run, and the count of the runs.
+[[nodiscard]] consteval int window_marks() noexcept {
+    FixedArray<int, 5> const values{1, 2, 3, 4, 5};
+    int marks = 0;
+    int count = 0;
+    for (View<int const, 3> const run : values.windows<3>()) {
+        marks += run.at(index<0>()) * 100 + run.at(index<2>());
+        ++count;
+    }
+    return marks * 10 + count;
+}
+static_assert(window_marks() == (103 + 204 + 305) * 10 + 3);
+
+// The chunks of two of five elements, and the rest of one element.
+[[nodiscard]] consteval int chunk_sums() noexcept {
+    FixedArray<int, 5> const values{1, 2, 3, 4, 5};
+    int total = 0;
+    int count = 0;
+    auto const runs = values.chunks<2>();
+    for (View<int const, 2> const run : runs) {
+        total += run.at(index<0>()) * 10 + run.at(index<1>());
+        ++count;
+    }
+    int rest_total = 0;
+    for (int const value : runs.rest()) {
+        rest_total += value;
+    }
+    return total * 1000 + count * 100 + rest_total * 10 + static_cast<int>(runs.rest().size());
+}
+static_assert(chunk_sums() == (12 + 34) * 1000 + 2 * 100 + 5 * 10 + 1);
+
+// A View with fewer elements than a window gives no window, and an empty
+// View gives no element and no run.
+[[nodiscard]] consteval int turns_of_short_views() noexcept {
+    FixedArray<int, 2> const pair{7, 8};
+    int turns = 0;
+    for ([[maybe_unused]] View<int const, 3> const run : View<int const>{pair.view()}.windows<3>()) {
+        ++turns;
+    }
+    for ([[maybe_unused]] int const value : View<int const>{}.reverse()) {
+        ++turns;
+    }
+    for ([[maybe_unused]] View<int const, 2> const run : View<int const>{}.chunks<2>()) {
+        ++turns;
+    }
+    return turns + static_cast<int>(View<int const>{}.chunks<2>().rest().size());
+}
+static_assert(turns_of_short_views() == 0);
+
+// A fixed extent refuses a window or a chunk past it at compile time, and a
+// width of zero is no width.  A loop over a temporary array is refused.
+template <class Elements, std::size_t Width>
+concept HasWindows = requires(Elements elements) { elements.template windows<Width>(); };
+template <class Elements, std::size_t Width>
+concept HasChunks = requires(Elements elements) { elements.template chunks<Width>(); };
+static_assert(HasWindows<View<int, 4>, 4> && !HasWindows<View<int, 4>, 5> && !HasWindows<View<int>, 0>);
+static_assert(HasChunks<View<int, 4>, 1> && !HasChunks<View<int, 4>, 5> && !HasChunks<View<int>, 0>);
+static_assert(HasWindows<View<int>, 1000>);
+template <class Array>
+concept ReversesTemporary = requires { std::declval<Array>().reverse(); };
+static_assert(!ReversesTemporary<FixedArray<int, 4>> && ReversesTemporary<FixedArray<int, 4>&>);
+
+// A cursor of a verb never leaves its loop: a read at the end calls the
+// fatal exit, which is not a constant expression.
+[[nodiscard]] consteval int read_reverse_after_steps(int steps) noexcept {
+    FixedArray<int, 2> const pair{7, 8};
+    auto cursor = pair.reverse().begin();
+    for (int step = 0; step < steps; ++step) {
+        ++cursor;
+    }
+    return *cursor;
+}
+template <int Steps>
+concept ReadsInsideReverse = requires { typename std::integral_constant<int, read_reverse_after_steps(Steps)>; };
+static_assert(ReadsInsideReverse<1> && !ReadsInsideReverse<2> && !ReadsInsideReverse<3>);
+static_assert(read_reverse_after_steps(0) == 8 && read_reverse_after_steps(1) == 7);
+
+// ── The closed surface ────────────────────────────────────────────────
+
+// The family list of plan section 11.4, with the names of the headers of
+// the family that are on main: element_type and extent of a View, capacity
+// of an owner, raw and check of an Index, and rest of the chunks.  The niche
+// of a View, of a TextView and of an Index is the protocol of the Choice
+// family, and its check reads it.
+inline constexpr TextView region_names{
+    "View Index StaticIndex IndexRange BrandedIndex TextView CText FixedText GrowText FixedArray FixedList HeapArray "
+    "GrowList HeapRing RingView FixedTable HeapTable Full Held LengthMismatch dynamic_extent element_type extent "
+    "capacity window split_at indices index check raw rest take take_first take_last clear with_view freeze"};
+
+// Each type of the family gives only the shared verbs, the language
+// protocols and the names of the list.
+CRUCIBLE_CLOSED_SURFACE(region_names, View<int>);
+CRUCIBLE_CLOSED_SURFACE(region_names, View<int const, 4>);
+CRUCIBLE_CLOSED_SURFACE(region_names, TextView);
+CRUCIBLE_CLOSED_SURFACE(region_names, CText);
+CRUCIBLE_CLOSED_SURFACE(region_names, FixedText<8>);
+CRUCIBLE_CLOSED_SURFACE(region_names, Index<4>);
+CRUCIBLE_CLOSED_SURFACE(region_names, Index<0x100000000ull>);
+CRUCIBLE_CLOSED_SURFACE(region_names, StaticIndex<2>);
+CRUCIBLE_CLOSED_SURFACE(region_names, IndexRange<4>);
+CRUCIBLE_CLOSED_SURFACE(region_names, FixedArray<int, 4>);
+CRUCIBLE_CLOSED_SURFACE(region_names, FixedArray<Record, 1>);
+CRUCIBLE_CLOSED_SURFACE(region_names, LengthMismatch);
+CRUCIBLE_CLOSED_SURFACE(region_names, detail::ReverseRange<int>);
+CRUCIBLE_CLOSED_SURFACE(region_names, detail::WindowRange<int const, 2>);
+CRUCIBLE_CLOSED_SURFACE(region_names, detail::ChunkRange<int, 3>);
+
+// The cursors of the loops take the cursor protocol, and no other type of
+// the family takes a dereference.
+CRUCIBLE_CLOSED_SURFACE(region_names, ViewCursor<int>, CursorProtocol);
+CRUCIBLE_CLOSED_SURFACE(region_names, ViewCursor<char const>, CursorProtocol);
+CRUCIBLE_CLOSED_SURFACE(region_names, IndexCursor<4>, CursorProtocol);
+CRUCIBLE_CLOSED_SURFACE(region_names, detail::ReverseCursor<int>, CursorProtocol);
+CRUCIBLE_CLOSED_SURFACE(region_names, detail::WindowCursor<int, 2>, CursorProtocol);
+CRUCIBLE_CLOSED_SURFACE(region_names, detail::ChunkCursor<int const, 3>, CursorProtocol);
+static_assert(!closed_surface<ViewCursor<int>>(region_names).is_closed());
+static_assert(!closed_surface<IndexCursor<4>>(region_names).is_closed());
 
 }  // namespace detail::region_checks
 

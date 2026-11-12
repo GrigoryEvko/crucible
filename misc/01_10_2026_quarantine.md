@@ -1127,7 +1127,7 @@ A `Result` has no loop, because a loop over the value drops the error with no tr
 
 **The idea.** Each array, buffer, text, run of bytes, pointer with a count, and C array is one contiguous region. A region has an owner kind and an extent kind, and each kind gives one set of verbs and one small set of free operations. An index is checked by its type, or by the one explicit branch of `get`.
 
-**The headers.** `include/foundation/core/Region.h` and `include/foundation/core/Text.h` (main), and one header for each owner kind (design): `Array.h`, `List.h`, `Ring.h`, `Table.h` and `Algorithms.h`. `Text.h` uses no other family, so the Report family can take a `TextView`.
+**The headers.** `include/foundation/core/Region.h`, `include/foundation/core/Text.h`, `Index.h`, `Array.h` and `Algorithms.h` (main), and one header for each other owner kind (design): `List.h`, `Ring.h` and `Table.h`. `Index.h` holds `Index<N>`, `StaticIndex<I>` and `index<I>()`. `Text.h` uses no other family, so the Report family can take a `TextView`. So `Text.h` declares the loop and `window` of a `TextView`, and `Region.h` defines them.
 
 **The merges.** Slice 4.3 merges five base headers into the family (Appendix E):
 - `fixy/FixedArray.h` into `FixedArray`
@@ -1211,7 +1211,7 @@ Each owner fills each element on its mint, or takes a fill value: no owner reads
 | `load<T>(window)`, `store(window, value)` | A `BitValid` value from or into a window of `sizeof(T)` bytes (section 11.7) | one move | design |
 | `static_array(range)` | consteval. The run-time `View` of a `define_static_array` | none | design |
 
-**The family list.** The types: `View`, `Index`, `BrandedIndex`, `TextView`, `CText`, `FixedText`, `GrowText`, `FixedArray`, `FixedList`, `HeapArray`, `GrowList`, `HeapRing`, `RingView`, `FixedTable` and `HeapTable`. The errors: `Full` and `LengthMismatch`. The names of operations: `dynamic_extent`, `window`, `split_at`, `indices`, `index`, `check`, `take`, `take_first`, `take_last`, `clear`, `with_view`, `freeze`, the mints and the free operations.
+**The family list.** The types: `View`, `Index`, `StaticIndex`, `IndexRange`, `BrandedIndex`, `TextView`, `CText`, `FixedText`, `GrowText`, `FixedArray`, `FixedList`, `HeapArray`, `GrowList`, `HeapRing`, `RingView`, `FixedTable` and `HeapTable`. The errors: `Full`, `Held` and `LengthMismatch`. The table push gives `Result<Ref<V>, OneOf<Full<V>, Held<V>>>` (P6, 2026-11-12). The names of operations: `dynamic_extent`, `window`, `split_at`, `indices`, `index`, `check`, `take`, `take_first`, `take_last`, `clear`, `with_view`, `freeze`, the mints and the free operations.
 
 **Removes.** Eight rows: `allow F0_core <array> until Region`, `allow F0_core <span> until Region`, `allow F0_core <string> until Region`, `allow F0_core <string_view> until Region`, `allow F0_core <vector> until Region`, `allow F0_primitives <cstring> until Region`, `allow X1_wrappers <ranges> until Region` and `allow X3_os <algorithm> until Region`. The R5 imports of `libfixy.a`: `std::__throw_length_error` and `std::__throw_logic_error`, with the throw row of `Topology.cpp.o` (Region and the path type of Os). The R5 imports of the `libcrucible*.a` libraries: `std::__throw_length_error`, `std::__throw_logic_error`, `std::__throw_out_of_range_fmt` with their `helper-throw` rows, `std::string::_M_replace_cold`, `strlen`, `strncmp`, `__memcpy_chk` and `__memset_chk`.
 
@@ -1388,7 +1388,7 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 
 **The idea.** Each operation on a fundamental value is total: no input is undefined. An input that can fail gives an `Option`. A type that proves the result gives the value with no check. No operation reads `errno`, a locale or a global, and no operation calls `fatal()`. A strong type gives a meaning to a number, and a quantity gives it a unit.
 
-**The headers.** `include/foundation/core/Scalar.h` (main), `include/foundation/core/Index.h` (design), and one header for each group of the API (design). The builtins of R3 replace `<bit>`, `<limits>`, `<numeric>`, `<cmath>` and `<climits>`: `__builtin_clzg`, `__builtin_ctzg`, `__builtin_popcountg`, `__builtin_bswap16` to `64`, the overflow builtins, `__builtin_bit_cast`, `__builtin_sqrt`, `__builtin_fma`, the classification builtins, and the macros `__FLT_*`, `__DBL_*` and `__CHAR_BIT__`. The modular forms use the overflow builtins only, so no result changes with `-fno-strict-overflow`.
+**The headers.** `include/foundation/core/Scalar.h` (main), and one header for each group of the API (design). `StaticIndex<I>` and `index<I>()` are in `include/foundation/core/Index.h` of the Region family (section 11.4). The builtins of R3 replace `<bit>`, `<limits>`, `<numeric>`, `<cmath>` and `<climits>`: `__builtin_clzg`, `__builtin_ctzg`, `__builtin_popcountg`, `__builtin_bswap16` to `64`, the overflow builtins, `__builtin_bit_cast`, `__builtin_sqrt`, `__builtin_fma`, the classification builtins, and the macros `__FLT_*`, `__DBL_*` and `__CHAR_BIT__`. The modular forms use the overflow builtins only, so no result changes with `-fno-strict-overflow`.
 
 **The merges.** Slice 4.10 merges `foundation/Saturate.h`, `fixy/Saturate.h`, `fixy/Saturated.h` and `fixy/Checked.h` into the family (Appendix E). The checked operations then give an `Option`.
 

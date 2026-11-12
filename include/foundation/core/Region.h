@@ -33,11 +33,17 @@
 // result is its slow path.  The check of the window is then the only check
 // of the append, and the copy into the window compiles to the memmove of
 // the raw form.
+//
+// This header also defines the reads of the characters of a TextView and of
+// a FixedText, which foundation/core/Text.h declares: the loop gives a
+// ViewCursor<char const>, and window() gives an Option<TextView>.
 
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Index.h>
 #include <foundation/core/Report.h>
 #include <foundation/core/Scalar.h>
+#include <foundation/core/Text.h>
 
 #include <concepts>
 #include <cstddef>
@@ -102,6 +108,21 @@ template <std::size_t Extent, class T>
 template <class T, std::size_t Extent>
 [[nodiscard]] constexpr T* first_of_(View<T, Extent> view) noexcept;
 
+// The loops of the iteration verbs reverse(), windows<W>() and chunks<W>()
+// of a View, and their cursors.
+template <class Element>
+class ReverseRange;
+template <class Element>
+class ReverseCursor;
+template <class Element, std::size_t Width>
+class WindowRange;
+template <class Element, std::size_t Width>
+class WindowCursor;
+template <class Element, std::size_t Width>
+class ChunkRange;
+template <class Element, std::size_t Width>
+class ChunkCursor;
+
 }  // namespace detail
 
 // The position of a loop over a View.  It comes only from begin() and
@@ -120,6 +141,7 @@ class ViewCursor {
     template <class T, std::size_t Extent>
         requires ViewElement<T> && ViewExtent<T, Extent>
     friend class View;
+    friend class TextView;
 
     constexpr ViewCursor(Element* at, Element* end) noexcept : at_{at}, end_{end} {}
 
@@ -162,6 +184,19 @@ class View {
     template <class U, std::size_t OtherExtent>
     friend constexpr U* detail::first_of_(View<U, OtherExtent> view) noexcept;
     friend struct niche<View>;
+    // The ranges of the iteration verbs read the pointer member of their View
+    // directly.  A gate that reads a View also reads their bodies, and the
+    // rule home finds a call of the function template first_of_ open.
+    template <class Element>
+    friend class detail::ReverseRange;
+    template <class Element, std::size_t Width>
+    friend class detail::WindowRange;
+    template <class Element, std::size_t Width>
+    friend class detail::WindowCursor;
+    template <class Element, std::size_t Width>
+    friend class detail::ChunkCursor;
+    template <class Element, std::size_t Width>
+    friend class detail::ChunkRange;
 
     constexpr View(T* first, std::size_t count) noexcept
         requires(Extent == dynamic_extent)
@@ -202,6 +237,55 @@ public:
     [[nodiscard]] constexpr ViewCursor<T> begin() const noexcept { return ViewCursor<T>{first_, first_ + size()}; }
     [[nodiscard]] constexpr ViewCursor<T> end() const noexcept {
         return ViewCursor<T>{first_ + size(), first_ + size()};
+    }
+
+    // The element at a proven index of a View of a fixed extent.  The type
+    // of the index proves it below the extent, so the read has no check.
+    // An index below a smaller count is below the extent too.
+    template <std::size_t Count>
+        requires(Extent != dynamic_extent && Count <= Extent)
+    [[nodiscard]] constexpr T& at(Index<Count> index) const noexcept {
+        return first_[index.raw()];
+    }
+
+    // The element at the constant index I, which the type proves below the
+    // extent.
+    template <std::size_t I>
+        requires(Extent != dynamic_extent && I < Extent)
+    [[nodiscard]] constexpr T& at(StaticIndex<I>) const noexcept {
+        return first_[I];
+    }
+
+    // Each index of a View of a fixed extent, in order: the loop
+    // `for (Index<Extent> index : view.indices())`.
+    [[nodiscard]] static constexpr auto indices() noexcept
+        requires(Extent != dynamic_extent)
+    {
+        return IndexRange<Extent>{};
+    }
+
+    // The loop `for (T& element : view.reverse())` reads each element one
+    // time, from the last element.
+    [[nodiscard]] constexpr auto reverse() const noexcept { return detail::ReverseRange<T>{View<T>{*this}}; }
+
+    // The loop `for (View<T, Width> run : view.windows<Width>())` reads each
+    // run of Width consecutive elements, with a step of one element.  A View
+    // of fewer than Width elements gives no run.  A View of a fixed extent
+    // refuses a Width past its extent at compile time.
+    template <std::size_t Width>
+        requires ViewExtent<T, Width> && (Width != dynamic_extent) && (Extent == dynamic_extent || Width <= Extent)
+    [[nodiscard]] constexpr auto windows() const noexcept {
+        return detail::WindowRange<T, Width>{View<T>{*this}};
+    }
+
+    // The loop `for (View<T, Width> run : view.chunks<Width>())` reads each
+    // run of Width elements, with a step of Width elements.  rest() of the
+    // range gives the View of the last size() % Width elements, which no
+    // run holds.
+    template <std::size_t Width>
+        requires ViewExtent<T, Width> && (Width != dynamic_extent) && (Extent == dynamic_extent || Width <= Extent)
+    [[nodiscard]] constexpr auto chunks() const noexcept {
+        return detail::ChunkRange<T, Width>{View<T>{*this}};
     }
 
     // The count elements from offset, or no value when they do not fit.
@@ -285,7 +369,220 @@ template <class T, std::size_t Extent>
     return view.first_;
 }
 
+// The cursors of the iteration verbs obey the rule of a ViewCursor: each
+// cursor knows the end of its loop, a read or a step at the end ends the
+// process in each build, and the optimizer removes the two checks in a loop
+// that compares the cursor with the end first.  A cursor comes only from
+// its range, and the seal refuses std::bit_cast and a lifetime start over
+// bytes.  A range comes only from a View, so it holds a run that a View
+// proves.
+
+// The position of a reverse loop: the place after the next element to read,
+// and the first element of the View, which is the end of the loop.
+template <class Element>
+class ReverseCursor {
+    Element* after_ = nullptr;
+    Element* first_ = nullptr;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    friend class ReverseRange<Element>;
+
+    constexpr ReverseCursor(Element* after, Element* first) noexcept : after_{after}, first_{first} {}
+
+public:
+    [[nodiscard]] constexpr Element& operator*() const noexcept {
+        if (after_ == first_) [[unlikely]] {
+            fatal("a read through the end cursor of a reverse loop over a View");
+        }
+        return *(after_ - 1);
+    }
+
+    constexpr ReverseCursor& operator++() noexcept {
+        if (after_ == first_) [[unlikely]] {
+            fatal("a step past the end cursor of a reverse loop over a View");
+        }
+        --after_;
+        return *this;
+    }
+
+    [[nodiscard]] friend constexpr bool operator==(ReverseCursor const& left, ReverseCursor const& right) noexcept {
+        return left.after_ == right.after_;
+    }
+};
+
+// The elements of a View, from the last element.
+template <class Element>
+class ReverseRange {
+    View<Element> elements_;
+
+public:
+    constexpr explicit ReverseRange(View<Element> elements) noexcept : elements_{elements} {}
+
+    [[nodiscard]] constexpr ReverseCursor<Element> begin() const noexcept {
+        Element* const first = elements_.first_;
+        return ReverseCursor<Element>{first + elements_.size(), first};
+    }
+    [[nodiscard]] constexpr ReverseCursor<Element> end() const noexcept {
+        Element* const first = elements_.first_;
+        return ReverseCursor<Element>{first, first};
+    }
+};
+
+// The position of a loop over the windows of a View: the first element of
+// the next window, and the place after the first element of the last
+// window, which is the end of the loop.
+template <class Element, std::size_t Width>
+class WindowCursor {
+    Element* at_ = nullptr;
+    Element* end_ = nullptr;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    friend class WindowRange<Element, Width>;
+
+    constexpr WindowCursor(Element* at, Element* end) noexcept : at_{at}, end_{end} {}
+
+public:
+    [[nodiscard]] constexpr View<Element, Width> operator*() const noexcept {
+        if (at_ == end_) [[unlikely]] {
+            fatal("a read through the end cursor of a loop over the windows of a View");
+        }
+        return View<Element, Width>{at_};
+    }
+
+    constexpr WindowCursor& operator++() noexcept {
+        if (at_ == end_) [[unlikely]] {
+            fatal("a step past the end cursor of a loop over the windows of a View");
+        }
+        ++at_;
+        return *this;
+    }
+
+    [[nodiscard]] friend constexpr bool operator==(WindowCursor const& left, WindowCursor const& right) noexcept {
+        return left.at_ == right.at_;
+    }
+};
+
+// Each run of Width consecutive elements of a View, with a step of one.  A
+// View of size n holds n - Width + 1 runs, and a View of fewer than Width
+// elements holds no run.
+template <class Element, std::size_t Width>
+class WindowRange {
+    View<Element> elements_;
+
+    [[nodiscard]] constexpr Element* end_() const noexcept {
+        Element* const first = elements_.first_;
+        std::size_t const size = elements_.size();
+        return size < Width ? first : first + (size - Width + 1);
+    }
+
+public:
+    constexpr explicit WindowRange(View<Element> elements) noexcept : elements_{elements} {}
+
+    [[nodiscard]] constexpr WindowCursor<Element, Width> begin() const noexcept {
+        return WindowCursor<Element, Width>{elements_.first_, end_()};
+    }
+    [[nodiscard]] constexpr WindowCursor<Element, Width> end() const noexcept {
+        Element* const end = end_();
+        return WindowCursor<Element, Width>{end, end};
+    }
+};
+
+// The position of a loop over the chunks of a View: the first element of
+// the next chunk, and the first element after the last whole chunk, which
+// is the end of the loop.
+template <class Element, std::size_t Width>
+class ChunkCursor {
+    Element* at_ = nullptr;
+    Element* end_ = nullptr;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    friend class ChunkRange<Element, Width>;
+
+    constexpr ChunkCursor(Element* at, Element* end) noexcept : at_{at}, end_{end} {}
+
+public:
+    [[nodiscard]] constexpr View<Element, Width> operator*() const noexcept {
+        if (at_ == end_) [[unlikely]] {
+            fatal("a read through the end cursor of a loop over the chunks of a View");
+        }
+        return View<Element, Width>{at_};
+    }
+
+    constexpr ChunkCursor& operator++() noexcept {
+        if (at_ == end_) [[unlikely]] {
+            fatal("a step past the end cursor of a loop over the chunks of a View");
+        }
+        at_ += Width;
+        return *this;
+    }
+
+    [[nodiscard]] friend constexpr bool operator==(ChunkCursor const& left, ChunkCursor const& right) noexcept {
+        return left.at_ == right.at_;
+    }
+};
+
+// Each run of Width elements of a View, with a step of Width, and the rest:
+// the last size() % Width elements, which no run holds.
+template <class Element, std::size_t Width>
+class ChunkRange {
+    View<Element> elements_;
+
+    [[nodiscard]] constexpr Element* end_() const noexcept {
+        return elements_.first_ + (elements_.size() / Width) * Width;
+    }
+
+public:
+    constexpr explicit ChunkRange(View<Element> elements) noexcept : elements_{elements} {}
+
+    [[nodiscard]] constexpr ChunkCursor<Element, Width> begin() const noexcept {
+        return ChunkCursor<Element, Width>{elements_.first_, end_()};
+    }
+    [[nodiscard]] constexpr ChunkCursor<Element, Width> end() const noexcept {
+        Element* const end = end_();
+        return ChunkCursor<Element, Width>{end, end};
+    }
+
+    // The View of the elements after the last whole run.
+    [[nodiscard]] constexpr View<Element> rest() const noexcept {
+        return View<Element>{end_(), elements_.size() % Width};
+    }
+};
+
 }  // namespace detail
+
+// The reads of the characters of a TextView, which foundation/core/Text.h
+// declares.  The cursor holds the place and the end of the text, as the
+// cursor of a View does.
+constexpr auto TextView::begin() const noexcept { return ViewCursor<char const>{first_, first_ + size()}; }
+
+constexpr auto TextView::end() const noexcept {
+    char const* const last = first_ + size();
+    return ViewCursor<char const>{last, last};
+}
+
+// The window fits, so its count is at most the count of this text, which
+// size() bounds.  The optimizer then knows that the count is not the empty
+// value of the niche, and the Option needs no test.
+constexpr auto TextView::window(std::size_t offset, std::size_t count) const noexcept {
+    using Result = Option<TextView>;
+    if (offset > size() || count > size() - offset) [[unlikely]] {
+        return Result{none};
+    }
+    [[assume(count <= static_cast<std::size_t>(__PTRDIFF_MAX__))]];
+    return Result::some(TextView{first_ + offset, count});
+}
+
+template <std::size_t Capacity>
+    requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(__PTRDIFF_MAX__))
+constexpr auto FixedText<Capacity>::begin() const& noexcept {
+    return view().begin();
+}
+
+template <std::size_t Capacity>
+    requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(__PTRDIFF_MAX__))
+constexpr auto FixedText<Capacity>::end() const& noexcept {
+    return view().end();
+}
 
 // The error of a copy between two Views of a dynamic extent whose counts
 // differ.

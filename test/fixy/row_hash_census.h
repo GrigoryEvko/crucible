@@ -901,6 +901,16 @@ inline constexpr StatedZero kZeros[] = {
      "an owned buffer of characters: it holds storage and makes no claim about what the characters hold"},
     {^^::foundation::core::Truncated,
      "the error of a format() whose text needs more than its buffer: it holds nothing"},
+    {^^::foundation::core::Index,
+     "the proof of an index below a count: a number whose bound is its type, and it makes no claim about an element"},
+    {^^::foundation::core::StaticIndex, "the proof of a constant index: it holds nothing, and the index is its type"},
+    {^^::foundation::core::IndexCursor,
+     "the position of a loop over the indexes of a count: it lives inside the loop, and it is never a value in a "
+     "signature"},
+    {^^::foundation::core::IndexRange,
+     "the loop over the indexes of a count: it holds nothing, and it is never a value in a signature"},
+    {^^::foundation::core::FixedArray,
+     "an inline array of elements: it holds storage and makes no claim about what the elements hold"},
     // The Scalar family.
     {^^::foundation::core::WideProduct, kPayload},
     {^^::foundation::core::Bounds,

@@ -14,12 +14,15 @@
 // foundation::core.  A specialization through a using-declaration is not
 // valid C++.
 
+#include <foundation/core/Algorithms.h>
 #include <foundation/core/Arithmetic.h>
+#include <foundation/core/Array.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Compare.h>
 #include <foundation/core/Convert.h>
 #include <foundation/core/Format.h>
+#include <foundation/core/Index.h>
 #include <foundation/core/Number.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
@@ -65,11 +68,30 @@ using ::foundation::core::CacheLine;
 using ::foundation::core::CasRefusal;
 using ::foundation::core::Tally;
 
+// The scans all_of and any_of of the Region family stay in foundation::core:
+// fixy::all_of and fixy::any_of are the combinators of the refinement
+// predicates of fixy/Predicates.h.
+using ::foundation::core::ByteImageable;
+using ::foundation::core::bytes;
 using ::foundation::core::copy;
+using ::foundation::core::count_if;
 using ::foundation::core::dynamic_extent;
+using ::foundation::core::ends_with;
+using ::foundation::core::equal;
 using ::foundation::core::fill;
+using ::foundation::core::find;
+using ::foundation::core::find_if;
+using ::foundation::core::Index;
+using ::foundation::core::index;
+using ::foundation::core::IndexCount;
+using ::foundation::core::IndexRange;
 using ::foundation::core::LengthMismatch;
+using ::foundation::core::lower_bound_by_key;
+using ::foundation::core::starts_with;
+using ::foundation::core::StaticIndex;
 using ::foundation::core::View;
+// FixedArray of the Region family stays in foundation::core until the merge of
+// fixy/FixedArray.h, which declares a fixy::FixedArray of its own.
 
 using ::foundation::core::decode;
 using ::foundation::core::enum_from;

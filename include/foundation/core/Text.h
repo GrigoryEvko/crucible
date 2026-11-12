@@ -26,8 +26,19 @@
 // text into it.  A FixedText never holds more than N characters, and no
 // operation reads past its count.
 //
-// This header uses no other family, so the Report family can take a
-// TextView as an argument of a report.
+// THE READS OF THE CHARACTERS
+//   A TextView gives the reads of a View: size(), the loop
+//   `for (char c : text)` and window(offset, count), which gives the count
+//   characters from offset, or no value when they do not fit.  The free
+//   operations of foundation/core/Algorithms.h search and compare texts.
+//
+//   This header uses no other family, so the Report family can take a
+//   TextView as an argument of a report.  The loop and the window give a
+//   cursor and an Option, which are above the Report family.  So this header
+//   declares begin(), end() and window() with a deduced type, and
+//   foundation/core/Region.h defines them.  A unit that reads a TextView
+//   without Region.h does not compile: the compiler refuses the use of a
+//   function whose type it has not deduced.
 
 #include <foundation/ByteSeal.h>
 
@@ -37,6 +48,11 @@ namespace foundation::core {
 
 class TextView;
 class CText;
+
+// The niche protocol of the Choice family.  This header gives the niche of
+// a TextView, so an Option of a window has the size of a TextView.
+template <class T>
+struct niche;
 
 template <std::size_t Capacity>
     requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(__PTRDIFF_MAX__))
@@ -77,6 +93,7 @@ class TextView {
     friend class FixedText;
     friend class CText;
     friend constexpr char const* detail::text_first_(TextView text) noexcept;
+    friend struct niche<TextView>;
 
     constexpr TextView(char const* first, std::size_t size) noexcept : first_{first}, size_{size} {}
 
@@ -96,7 +113,24 @@ public:
         }
     }
 
-    [[nodiscard]] constexpr std::size_t size() const noexcept { return size_; }
+    // Each door gives the characters of one object, and GCC bounds the size
+    // of an object at __PTRDIFF_MAX__.  The optimizer reads that bound, so
+    // a window of the text is never the empty value of an Option, with no
+    // check.
+    [[nodiscard]] constexpr std::size_t size() const noexcept {
+        std::size_t const count = size_;
+        [[assume(count <= static_cast<std::size_t>(__PTRDIFF_MAX__))]];
+        return count;
+    }
+
+    // The loop `for (char c : text)` reads each character one time, in
+    // order.  The cursor of foundation/core/Region.h never leaves the text.
+    [[nodiscard]] constexpr auto begin() const noexcept;
+    [[nodiscard]] constexpr auto end() const noexcept;
+
+    // The count characters from offset, as an Option<TextView>, or no value
+    // when they do not fit.  One branch.
+    [[nodiscard]] constexpr auto window(std::size_t offset, std::size_t count) const noexcept;
 
     // Two texts are equal when they hold the same characters in the same
     // order.  The cost is one compare for each character.
@@ -106,6 +140,18 @@ public:
             if (left.first_[index] != right.first_[index]) return false;
         }
         return true;
+    }
+};
+
+// The empty value of an Option of a TextView: the largest count, which no
+// TextView holds, because each door gives the characters of one object.
+// The specialization stands beside the class, so each Option and each Result
+// of a TextView sees it.
+template <>
+struct niche<TextView> {
+    [[nodiscard]] static constexpr TextView empty() noexcept { return TextView{nullptr, ~std::size_t{0}}; }
+    [[nodiscard]] static constexpr bool is_empty(TextView const& text) noexcept {
+        return text.size_ == ~std::size_t{0};
     }
 };
 
@@ -177,6 +223,20 @@ public:
     [[nodiscard]] constexpr TextView view() const& noexcept { return TextView{bytes_, size()}; }
     TextView
     view() const&& = delete("a view of a temporary FixedText points into an object that the full expression ends");
+
+    // The loop `for (char c : text)` reads each character that the buffer
+    // holds.  A loop over a temporary binds it to a reference first, and a
+    // cursor of an rvalue is refused.  foundation/core/Region.h defines the
+    // two cursors, as it defines those of a TextView.
+    [[nodiscard]] constexpr auto begin() const& noexcept;
+    [[nodiscard]] constexpr auto end() const& noexcept;
+    void
+    begin() const&& = delete("a cursor of a temporary FixedText points into an object that the full expression ends");
+    void
+    end() const&& = delete("a cursor of a temporary FixedText points into an object that the full expression ends");
+
+    // The buffer then holds no character.
+    constexpr void clear() noexcept { size_ = 0; }
 };
 
 namespace detail {

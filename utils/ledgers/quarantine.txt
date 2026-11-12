@@ -502,9 +502,9 @@ test/fixy/ | replace-pending:std::source_location | 7 | - | -
 test/fixy/ | std-entity | 3333 | - | -
 test/fixy/ | std-object | 1257 | - | -
 test/fixy/neg/ | c-array-object | 53 | - | -
-test/fixy/neg/ | c-library-call | 255 | - | -
+test/fixy/neg/ | c-library-call | 265 | - | -
 test/fixy/neg/ | c-library-object | 2 | - | -
-test/fixy/neg/ | detail-use | 222 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
+test/fixy/neg/ | detail-use | 225 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -552,13 +552,21 @@ test/foundation/ | c-library-call | 413 | - | -
 test/foundation/ | c-library-object | 7 | - | -
 test/foundation/ | door-header | 7 | - | -
 test/foundation/ | foreign-symbol | 5 | - | -
+test/foundation/ | opted-out | 2 | ORACLE: memcpy is the model of the bytes of an object | -
+test/foundation/ | opted-out | 4 | ORACLE: std::array is the model of the writes of a FixedArray | -
+test/foundation/ | opted-out | 11 | ORACLE: std::string_view is the model of the text operations | -
 test/foundation/ | opted-out | 21 | ORACLE: std::to_chars and std::from_chars give the text that the Report family writes | -
+test/foundation/ | opted-out | 8 | ORACLE: the std algorithms are the model of the scans | -
 test/foundation/ | opted-out | 2 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | raw-function-pointer | 17 | - | -
 test/foundation/ | raw-new-delete | 2 | - | -
 test/foundation/ | raw-pointer-object | 46 | - | -
+test/foundation/ | region | 1 | ORACLE: memcpy is the model of the bytes of an object | -
+test/foundation/ | region | 1 | ORACLE: std::array is the model of the writes of a FixedArray | -
+test/foundation/ | region | 2 | ORACLE: std::string_view is the model of the text operations | -
 test/foundation/ | region | 1 | ORACLE: std::to_chars and std::from_chars give the text that the Report family writes | -
+test/foundation/ | region | 1 | ORACLE: the std algorithms are the model of the scans | -
 test/foundation/ | region | 1 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | replace-pending:<limits> | 57 | - | -
