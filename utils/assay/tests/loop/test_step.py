@@ -31,7 +31,11 @@ the object of a rejected compile must compile again and be rejected again.
 With `--cxx`, two more cases use the real compiler.  One compiles and links.
 The other compiles a constant evaluation that runs away, with a hard
 RLIMIT_CPU of 1 s.  The compile must end at the CPU limit with status 1, as
-the GCC driver reports a compiler that SIGKILL stopped.  When ccache is on
+the GCC driver reports a compiler that SIGKILL stopped.  A case at a CPU
+limit judges the signal of the limit and the CPU time of the record, and
+not a wall time, because the wall time increases with the load of the host.
+The time limit of each launch is the guard against a step that does not
+end.  When ccache is on
 PATH, a case compiles a source that
 includes <vector> directly, through the real ccache with CCACHE_DISABLE, and
 through the real ccache with a cache directory of its own.  The three counts
@@ -72,8 +76,15 @@ from assay.loop import step as step_meter
 # The launcher as CMake starts it: the master loop with the subcommand step.
 LAUNCHER = (str(LOOP), "step")
 KIND = "test-kind"
-# The time limit of one run of the launcher, also of the case that interrupts it, in seconds.
+# The time limit of one run of the launcher, also of the case that interrupts it, in seconds.  It is the guard against
+# a step that does not end.  A case at a CPU limit judges no wall time, because the wall time increases with the load
+# of the host.  The compile of SPIN_SOURCE with no CPU limit runs for minutes, far past this limit.
 LAUNCH_TIMEOUT_S = 60.0
+# The text that the planted tool and the GCC driver write for a child that a signal ended, such as the SIGKILL of
+# RLIMIT_CPU.
+KILLED_TEXT = b"Killed signal terminated program"
+# The margin of the CPU time of a step at its CPU limit, as reached_cpu_limit of assay.core.meter takes it.
+CPU_CLOCK_S = 0.05
 # The time limit of a run of the program that the real compiler links, in seconds.
 PROGRAM_TIMEOUT_S = 30.0
 
@@ -677,37 +688,48 @@ def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
     )
 
 
+def is_stopped_at_limit(result: proc.Completed, record: dict[str, object], limit_s: float) -> bool:
+    """Tell if a step ended at its CPU limit: a child ended on the signal, and the record holds the CPU time of the limit.
+
+    The kernel sends SIGKILL when a process reaches RLIMIT_CPU.  The planted tool and the GCC driver each write
+    KILLED_TEXT for a child that a signal ended.  The CPU time of the record does not change with the load of the host.
+    """
+    cpu_s = cost_of(record).get("cpu_s")
+    return (
+        KILLED_TEXT in result.stderr
+        and record.get("result") == "failed"
+        and isinstance(cpu_s, int | float)
+        and cpu_s >= limit_s - CPU_CLOCK_S
+    )
+
+
 def run_cpu_limit(bench: Bench, verdicts: Verdicts) -> None:
     """A planted link and a planted compile that run away end at the CPU limit of the launcher."""
     expect = verdicts.expect
     linked = bench.root / "out" / "program"
-    started = time.monotonic()
     result = bench.launch_limited(bench.tool, 1, link=True, output=linked, PLANTED_MODE="spin")
     found_line = last_finding(result.stderr)
     expect(
         f"a link that runs away gets the CPU limit of the launcher, which keeps a lower hard limit, and ends at "
-        f"it with an error line of the check {step_meter.LIMIT_CHECK}",
+        f"it on the signal of the limit with an error line of the check {step_meter.LIMIT_CHECK}",
         result.exit == 1
-        and time.monotonic() - started < 15
+        and is_stopped_at_limit(result, bench.record(linked), 1.0)
         and found_line is not None
         and found_line.level == "error"
         and found_line.check == step_meter.LIMIT_CHECK
-        and "hard limit of 1 s" in found_line.message
-        and bench.record(linked).get("result") == "failed",
+        and "hard limit of 1 s" in found_line.message,
     )
-    started = time.monotonic()
     result = bench.launch_limited(bench.tool, 1, PLANTED_MODE="spin")
     found_line = last_finding(result.stderr)
     expect(
         f"a compile that runs away gets the CPU limit of the launcher, which keeps a lower hard limit, and ends "
-        f"at it with an error line of the check {step_meter.LIMIT_CHECK}",
+        f"at it on the signal of the limit with an error line of the check {step_meter.LIMIT_CHECK}",
         result.exit == 1
-        and time.monotonic() - started < 15
+        and is_stopped_at_limit(result, bench.record(), 1.0)
         and found_line is not None
         and found_line.level == "error"
         and found_line.check == step_meter.LIMIT_CHECK
-        and "hard limit of 1 s" in found_line.message
-        and bench.record().get("result") == "failed",
+        and "hard limit of 1 s" in found_line.message,
     )
 
 
@@ -856,14 +878,13 @@ def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
         )
 
         bench.source.write_text(SPIN_SOURCE, encoding="utf-8")
-        started = time.monotonic()
         stopped_run = bench.launch_limited([cxx, *SPIN_FLAGS], 1)
         found_line = last_finding(stopped_run.stderr)
         expect(
-            "the real compiler: a compile at the CPU limit ends with status 1 and an error line, and the "
-            "driver reports no internal compiler error",
+            "the real compiler: a compile at the CPU limit ends on the signal of the limit with status 1 and an "
+            "error line, and the driver reports no internal compiler error",
             stopped_run.exit == 1
-            and time.monotonic() - started < 15
+            and is_stopped_at_limit(stopped_run, bench.record(), 1.0)
             and b"internal compiler error" not in stopped_run.stderr
             and found_line is not None
             and found_line.check == step_meter.LIMIT_CHECK
