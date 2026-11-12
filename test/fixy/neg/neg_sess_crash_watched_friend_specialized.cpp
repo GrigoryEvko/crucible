@@ -9,6 +9,7 @@
 // Expected diagnostic: the constructor is private in this context.
 #include <fixy/session/CrashTransport.h>
 #include <fixy/session/Mint.h>
+#include <foundation/Quarantine.h>
 
 namespace neg_sess_crash_watched_friend_specialized_types {
 struct Tag {};
@@ -19,6 +20,7 @@ struct Wire {
 };
 }  // namespace neg_sess_crash_watched_friend_specialized_types
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges a CrashWatched that builds a decorator around a plain handle")
 namespace fixy::session {
 template <>
 class CrashWatched<neg_sess_crash_watched_friend_specialized_types::Tag,
@@ -35,6 +37,7 @@ public:
     }
 };
 }  // namespace fixy::session
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     namespace s = ::fixy::session;

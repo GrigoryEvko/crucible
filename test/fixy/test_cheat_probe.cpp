@@ -24,6 +24,11 @@
 // neg/neg_cheat_graded_modality_injection.cpp: the primary is
 // constrained, so the specialization is a constraint failure.
 //
+// The rule specialization-home of the quarantine plugin makes each
+// specialization of a template of the tree outside its home a compile
+// error.  Thus each forged specialization here stands in an opt-out region
+// of the reason class PROBE:, and the reason names the forge.
+//
 // The instance query of foundation/reflect/Instance.h has no value
 // spelling, so the cheats that injected one have no target.  Each keeps
 // its lookalike class and its refusal, and the negative-compile fixture
@@ -55,6 +60,7 @@
 #include <fixy/Stale.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Quarantine.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/algebra/lattices/BoolLattice.h>
@@ -333,10 +339,12 @@ static_assert(fa::GradedWrapper<Cheat18_FunctionTemplateForwarder>,
 // variable template, and a variable template can be specialized.  The
 // specialization takes, and the concept reads the reflection query.
 struct Cheat19_FakeWrapper {};
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: cheat 19 forges is_graded_wrapper_v, and GradedWrapper must refuse it")
 namespace foundation::algebra {
 template <>
 inline constexpr bool is_graded_wrapper_v<::Cheat19_FakeWrapper> = true;
 }  // namespace foundation::algebra
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 static_assert(fa::is_graded_wrapper_v<::Cheat19_FakeWrapper>, "the injection did not take");
 static_assert(!fa::GradedWrapper<::Cheat19_FakeWrapper>,
               "[CHEAT 19 ADMITTED] is_graded_wrapper_v injection reached GradedWrapper");
@@ -351,10 +359,12 @@ struct Cheat20_FakeGraded {
     using lattice_type = fl::DetSafeLattice::At<fl::DetSafeTier::Pure>;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
 };
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: cheat 20 forges is_graded_v, and IsGraded and IsBand must refuse it")
 namespace foundation::algebra {
 template <>
 inline constexpr bool is_graded_v<::Cheat20_FakeGraded> = true;
 }  // namespace foundation::algebra
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 static_assert(fa::is_graded_v<::Cheat20_FakeGraded>, "the injection did not take");
 static_assert(!fa::IsGraded<::Cheat20_FakeGraded>, "[CHEAT 20 ADMITTED] is_graded_v injection reached IsGraded");
 static_assert(!fixy::IsBand<::Cheat20_FakeGraded>, "[CHEAT 20 ADMITTED] is_graded_v injection reached IsBand");
@@ -375,10 +385,12 @@ struct Cheat23_FakeBand {
     using lattice_type = fl::DetSafeLattice::At<fl::DetSafeTier::Pure>;
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
 };
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: cheat 23 forges is_band_v, and IsBand must refuse it")
 namespace fixy {
 template <>
 inline constexpr bool is_band_v<::Cheat23_FakeBand> = true;
 }  // namespace fixy
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 static_assert(fixy::is_band_v<::Cheat23_FakeBand>, "the injection did not take");
 static_assert(!fixy::IsBand<::Cheat23_FakeBand>, "[CHEAT 23 ADMITTED] is_band_v injection reached IsBand");
 
@@ -423,10 +435,12 @@ static_assert(!fixy::IsRefined<Cheat26_DerivedFromRefined>,
 struct Cheat27_FakeRefined {
     int payload{0};
 };
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: cheat 27 forges is_refined_v, and IsRefined must refuse it")
 namespace fixy {
 template <>
 inline constexpr bool is_refined_v<::Cheat27_FakeRefined> = true;
 }  // namespace fixy
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 static_assert(fixy::is_refined_v<::Cheat27_FakeRefined>, "the injection did not take");
 static_assert(!fixy::IsRefined<::Cheat27_FakeRefined>, "[CHEAT 27 ADMITTED] is_refined_v injection reached IsRefined");
 
@@ -441,10 +455,12 @@ static_assert(!fixy::IsTagged<Cheat29_DerivedFromTagged>, "[CHEAT 29 ADMITTED] d
 struct Cheat30_FakeTagged {
     int payload{0};
 };
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: cheat 30 forges is_tagged_v, and IsTagged must refuse it")
 namespace fixy {
 template <>
 inline constexpr bool is_tagged_v<::Cheat30_FakeTagged> = true;
 }  // namespace fixy
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 static_assert(fixy::is_tagged_v<::Cheat30_FakeTagged>, "the injection did not take");
 static_assert(!fixy::IsTagged<::Cheat30_FakeTagged>, "[CHEAT 30 ADMITTED] is_tagged_v injection reached IsTagged");
 
@@ -459,10 +475,12 @@ static_assert(!fixy::IsSecret<Cheat32_DerivedFromSecret>, "[CHEAT 32 ADMITTED] d
 struct Cheat33_FakeSecret {
     int payload{0};
 };
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: cheat 33 forges is_secret_v, and IsSecret must refuse it")
 namespace fixy {
 template <>
 inline constexpr bool is_secret_v<::Cheat33_FakeSecret> = true;
 }  // namespace fixy
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 static_assert(fixy::is_secret_v<::Cheat33_FakeSecret>, "the injection did not take");
 static_assert(!fixy::IsSecret<::Cheat33_FakeSecret>, "[CHEAT 33 ADMITTED] is_secret_v injection reached IsSecret");
 
@@ -477,10 +495,12 @@ static_assert(!fixy::IsStale<Cheat35_DerivedFromStale>, "[CHEAT 35 ADMITTED] der
 struct Cheat36_FakeStale {
     int payload{0};
 };
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: cheat 36 forges is_stale_v, and IsStale must refuse it")
 namespace fixy {
 template <>
 inline constexpr bool is_stale_v<::Cheat36_FakeStale> = true;
 }  // namespace fixy
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 static_assert(fixy::is_stale_v<::Cheat36_FakeStale>, "the injection did not take");
 static_assert(!fixy::IsStale<::Cheat36_FakeStale>, "[CHEAT 36 ADMITTED] is_stale_v injection reached IsStale");
 
@@ -496,10 +516,12 @@ static_assert(!fixy::IsBorrowed<Cheat38_DerivedFromBorrowed>,
 struct Cheat39_FakeBorrowed {
     int payload{0};
 };
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: cheat 39 forges is_borrowed_v, and IsBorrowed must refuse it")
 namespace fixy {
 template <>
 inline constexpr bool is_borrowed_v<::Cheat39_FakeBorrowed> = true;
 }  // namespace fixy
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 static_assert(fixy::is_borrowed_v<::Cheat39_FakeBorrowed>, "the injection did not take");
 static_assert(!fixy::IsBorrowed<::Cheat39_FakeBorrowed>,
               "[CHEAT 39 ADMITTED] is_borrowed_v injection reached IsBorrowed");
@@ -516,10 +538,12 @@ static_assert(!fixy::IsOwnedRegion<Cheat41_DerivedFromOwnedRegion>,
 struct Cheat42_FakeOwnedRegion {
     int payload{0};
 };
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: cheat 42 forges is_owned_region_v, and IsOwnedRegion must refuse it")
 namespace fixy {
 template <>
 inline constexpr bool is_owned_region_v<::Cheat42_FakeOwnedRegion> = true;
 }  // namespace fixy
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 static_assert(fixy::is_owned_region_v<::Cheat42_FakeOwnedRegion>, "the injection did not take");
 static_assert(!fixy::IsOwnedRegion<::Cheat42_FakeOwnedRegion>,
               "[CHEAT 42 ADMITTED] is_owned_region_v injection reached IsOwnedRegion");
@@ -539,10 +563,12 @@ static_assert(!fixy::is_writeonce_v<Cheat44_DerivedFromWriteOnce>,
 struct Cheat45_FakeWriteOnce {
     int payload{0};
 };
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: cheat 45 forges the is_writeonce struct, and is_writeonce_v must refuse it")
 namespace fixy {
 template <>
 struct is_writeonce<::Cheat45_FakeWriteOnce> : std::true_type {};
 }  // namespace fixy
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 static_assert(fixy::is_writeonce<::Cheat45_FakeWriteOnce>::value, "the injection did not take");
 static_assert(!fixy::is_writeonce_v<::Cheat45_FakeWriteOnce>,
               "[CHEAT 45 ADMITTED] a specialization of the is_writeonce struct reached is_writeonce_v");
@@ -592,10 +618,12 @@ static_assert(!fixy::IsRecipeSpec<Cheat54_DerivedFromRecipeSpec>,
 struct Cheat55_FakeRecipeSpec {
     int payload{0};
 };
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: cheat 55 forges is_recipe_spec_v, and IsRecipeSpec must refuse it")
 namespace fixy {
 template <>
 inline constexpr bool is_recipe_spec_v<::Cheat55_FakeRecipeSpec> = true;
 }  // namespace fixy
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 static_assert(fixy::is_recipe_spec_v<::Cheat55_FakeRecipeSpec>, "the injection did not take");
 static_assert(!fixy::IsRecipeSpec<::Cheat55_FakeRecipeSpec>,
               "[CHEAT 55 ADMITTED] is_recipe_spec_v injection reached IsRecipeSpec");

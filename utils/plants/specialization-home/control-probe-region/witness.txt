@@ -1,0 +1,11 @@
+# A forged specialization in an opt-out region of the reason class PROBE: is
+# no error in each mode, and the module of the rule reads no line of it.  The
+# rule quarantine counts the region and the opted-out finding, with the
+# reason of the region.
+compile report test/probe.cpp specialization-home=on
+exit report pass
+finding report quarantine region test/probe.cpp:6:1 | PROBE: the test forges is_admitted to prove that the gate reads the trait
+finding report quarantine opted-out test/probe.cpp:8:27 | specialization foundation::plant::is_admitted
+judge report
+compile error test/probe.cpp mode=error specialization-home=on findings=report
+exit error pass

@@ -12,6 +12,7 @@
 #include <fixy/session/Checkpoint.h>
 #include <fixy/session/CrashTransport.h>
 #include <fixy/session/Delegate.h>
+#include <foundation/Quarantine.h>
 
 #include <cstdio>
 #include <type_traits>
@@ -51,7 +52,12 @@ using SendsEvil = s::Send<Evil, s::End>;
 namespace seal = test_session_payload_seal_types;
 
 // ── The specializations ─────────────────────────────────────────────
+//
+// The rule specialization-home of the quarantine plugin makes each
+// specialization of a template of the tree outside its home a compile
+// error, so the forged specializations stand in one opt-out region.
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the seal test forges each payload view, gate and cell for a refused payload")
 template <>
 struct fixy::session::is_permission_classified<seal::Evil> : std::true_type {};
 
@@ -109,6 +115,7 @@ template <>
 struct fixy::session::detail::payload_facts_cell<fixy::session::detail::payload_facts(^^seal::Evil)> {
     static constexpr bool is_admitted = true;
 };
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace test_session_payload_seal_types {
 

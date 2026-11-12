@@ -10,6 +10,7 @@
 // Expected diagnostic: Protocol_Specialized_Combinator.
 #include <fixy/session/Handle.h>
 #include <fixy/session/Mint.h>
+#include <foundation/Quarantine.h>
 
 namespace neg_sess_combinator_closure_member_lie_types {
 using Sent = decltype([] {});
@@ -17,11 +18,13 @@ using Claimed = decltype([](int) {});
 struct Wire {};
 }  // namespace neg_sess_combinator_closure_member_lie_types
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges a Send whose message_type is a different closure")
 template <>
 struct fixy::session::Send<neg_sess_combinator_closure_member_lie_types::Sent, ::fixy::session::End> {
     using message_type = neg_sess_combinator_closure_member_lie_types::Claimed;
     using next = ::fixy::session::End;
 };
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     namespace s = ::fixy::session;

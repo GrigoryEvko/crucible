@@ -8,6 +8,7 @@
 //
 // Expected diagnostic: the member is protected in this context.
 #include <fixy/session/Handle.h>
+#include <foundation/Quarantine.h>
 
 namespace neg_sess_handle_base_sibling_specialized_types {
 struct ForgeTag {};
@@ -20,6 +21,7 @@ using Live =
 using LiveBase = s::SessionHandleBase<s::Send<int, s::End>, Live, s::check::Enforced>;
 }  // namespace neg_sess_handle_base_sibling_specialized_types
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges a SessionHandleBase that marks a live handle consumed")
 namespace fixy::session {
 template <>
 class SessionHandleBase<neg_sess_handle_base_sibling_specialized_types::ForgeTag, void, check::Enforced> {
@@ -29,5 +31,6 @@ public:
     }
 };
 }  // namespace fixy::session
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() { return 0; }

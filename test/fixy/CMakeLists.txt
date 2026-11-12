@@ -1107,7 +1107,7 @@ fixy_neg_compile_test(neg_refined_combinator_names_specialized_predicate
   "In substitution of .template<class V>  requires \\(PredicateInvocableOn<Preds, V> && \\.\\.\\.\\) constexpr bool fixy::refined_algebra::AllOf<fixy::IsPositive\\(\\), fixy::BoundedAbove<9>\\(\\)>::operator\\(\\)\\(const V&\\) const \\[with V = int\\]."
   "uncaught exception of type .std::meta::exception.*a predicate is specialized outside the file of its class.*The specialized declaration is constexpr bool fixy::IsPositive::operator\\(\\)\\(auto:[0-9]+\\) const .*\\[with auto:[0-9]+ = int\\] in [^ ]*neg_refined_combinator_names_specialized_predicate\\.cpp")
 fixy_neg_compile_test(neg_refined_relation_reads_specialized_predicate
-  "neg_refined_relation_reads_specialized_predicate\\.cpp:18:[0-9]+: error: non-constant condition for static assertion"
+  "neg_refined_relation_reads_specialized_predicate\\.cpp:21:[0-9]+: error: non-constant condition for static assertion"
   "required by the constraints of .template<auto P, auto Q> concept fixy::PredicateImplies."
   "uncaught exception of type .std::meta::exception.*a predicate is specialized outside the file of its class.*The specialized declaration is fixy::InRange<1, 4096> in [^ ]*neg_refined_relation_reads_specialized_predicate\\.cpp")
 

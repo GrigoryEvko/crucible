@@ -10,6 +10,7 @@
 // Expected diagnostic: the slots of the real hold are private in this
 // context.
 #include <fixy/session/Flow.h>
+#include <foundation/Quarantine.h>
 
 namespace neg_sess_hold_friend_specialized_types {
 struct Region {
@@ -20,6 +21,7 @@ struct ForgeTag {
 };
 }  // namespace neg_sess_hold_friend_specialized_types
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges a PermHold that reads the tokens of a real hold")
 namespace fixy::session {
 template <>
 class PermHold<::foundation::permissions::PermSet<neg_sess_hold_friend_specialized_types::ForgeTag>> {
@@ -30,5 +32,6 @@ public:
     }
 };
 }  // namespace fixy::session
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() { return 0; }

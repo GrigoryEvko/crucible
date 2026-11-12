@@ -6,7 +6,9 @@
 // the call operator outside fixy/Predicates.h and stops the build.
 
 #include <fixy/Refined.h>
+#include <foundation/Quarantine.h>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges a partial specialization of BoundedAbove")
 template <auto Max>
     requires(Max > 1000)
 struct fixy::BoundedAbove<Max> {
@@ -15,6 +17,7 @@ struct fixy::BoundedAbove<Max> {
         return true;
     }
 };
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 constexpr auto forged = fixy::mint_refined<fixy::bounded_above<4096>>(5000);
 

@@ -10,6 +10,7 @@
 // Expected diagnostic: the read calls the function that names a state of
 // another reading.
 
+#include <foundation/Quarantine.h>
 #include <foundation/diag/FailClosed.h>
 
 namespace {
@@ -29,11 +30,13 @@ inline constexpr ffc::edge<Checked, Raw> checked_to_raw{};
 
 }  // namespace
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges relation_state_at of ingest with a view of other cells")
 template <>
 inline constexpr ::foundation::fail_closed::detail::relation_state
     foundation::fail_closed::detail::relation_state_at<^^ingest, 1> =
         ::foundation::fail_closed::detail::relation_state::of(
             ::foundation::fail_closed::detail::relation_cells_at<^^forged, 1>);
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace {
 

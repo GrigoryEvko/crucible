@@ -1,0 +1,13 @@
+#include <foundation/Quarantine.h>
+#include <foundation/Traits.h>
+
+struct Fake {};
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test forges is_admitted to prove that the gate reads the trait")
+template <>
+struct foundation::plant::is_admitted<Fake> {
+    static constexpr bool value = true;
+};
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+static_assert(foundation::plant::Admitted<Fake>);

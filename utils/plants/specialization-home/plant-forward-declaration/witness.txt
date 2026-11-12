@@ -2,11 +2,11 @@
 # home of the trait, which no unit defines, into the test file.  The kind
 # foreign-primary stands at that first declaration, and each specialization
 # in the header then stands outside the home that moved.  A new template of
-# the namespace fixy in a test file is the kind foreign-primary too.  The
-# module of the rule refuses each line, and in the mode error each finding is
-# an error.
-compile report test/forward.cpp specialization-home=on
-exit report pass
+# the namespace fixy in a test file is the kind foreign-primary too.  Each
+# finding is a compile error in each mode, and the module of the rule refuses
+# each line.
+compile report test/forward.cpp specialization-home=on errors=report
+exit report fail
 finding report specialization-home foreign-primary test/forward.cpp:5:8 | foundation::plant::family_of
 finding report specialization-home foreign-primary test/forward.cpp:19:8 | fixy::own::test_trait
 finding report specialization-home specialization include/foundation/Traits.h:10:8 | foundation::plant::family_of

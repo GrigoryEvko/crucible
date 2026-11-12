@@ -9,14 +9,17 @@
 // members that the translation unit declares before the walk runs, so the
 // fixture plants the template first and includes the check file after it.
 
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Resources.h>
 
 #include <cstdint>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a tag template of the base with no alias")
 namespace foundation::effects::resource {
 template <std::uint64_t N>
 struct UnaliasedBudget {};
 }  // namespace foundation::effects::resource
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 #include "../../layer/checks/foundation/effects/Resources.cpp"
 

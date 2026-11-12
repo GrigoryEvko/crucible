@@ -1,10 +1,10 @@
 # An explicit and a partial specialization of a variable template of the
 # base in a test file are findings of the rule specialization-home.  The
-# concept that reads the variable then admits the forged type.  The module
-# of the rule refuses each line, and in the mode error each finding is an
-# error.
-compile report test/variable.cpp specialization-home=on
-exit report pass
+# concept that reads the variable then admits the forged type.  Each finding
+# is a compile error in each mode, and the module of the rule refuses each
+# line.
+compile report test/variable.cpp specialization-home=on errors=report
+exit report fail
 finding report specialization-home specialization test/variable.cpp:6:23 | foundation::plant::is_admitted_v
 finding report specialization-home specialization test/variable.cpp:10:23 | foundation::plant::is_admitted_v
 judge report

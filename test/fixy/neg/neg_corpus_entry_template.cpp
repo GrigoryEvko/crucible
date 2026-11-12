@@ -6,7 +6,9 @@
 // fixy::corpus::detail.
 
 #include <fixy/Corpus.h>
+#include <foundation/Quarantine.h>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a corpus entry template of the base")
 namespace fixy::corpus {
 
 template <int Variant>
@@ -18,6 +20,7 @@ struct generated_entry final : ::foundation::diag::tag_base {
 };
 
 }  // namespace fixy::corpus
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace fixture_site {
 struct here final {};

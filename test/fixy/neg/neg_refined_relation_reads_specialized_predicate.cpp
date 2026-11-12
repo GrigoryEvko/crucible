@@ -6,7 +6,9 @@
 // so no gate reads a claim that the specialized class refutes.
 
 #include <fixy/Predicates.h>
+#include <foundation/Quarantine.h>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges InRange<1, 4096> to admit zero")
 template <>
 struct fixy::InRange<1, 4096> {
     template <class V>
@@ -14,6 +16,7 @@ struct fixy::InRange<1, 4096> {
         return true;
     }
 };
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 static_assert(fixy::PredicateImplies<fixy::in_range<1, 4096>, fixy::positive>);
 

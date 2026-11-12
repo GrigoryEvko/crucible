@@ -260,6 +260,27 @@ def comparison_cases(expect: testing.Expect) -> None:
             ("unit.cpp:6", "quarantine: opted-out raw-pointer-object int*"),
         ],
     )
+    forged = sections.Finding("unit.cpp", 9, 8, "specialization-home", "specialization", "fixy::is_trait")
+    primary = sections.Finding("unit.cpp", 10, 8, "specialization-home", "foreign-primary", "fixy::own")
+    forward = sections.Finding("unit.cpp", 11, 19, "specialization-home", "forward-declaration", "fixy::flag_v")
+    mark = sections.Finding("a.h", 4, 8, "specialization-home", "open-extension", "fixy::open")
+    expect(
+        "derived_errors() gives the error of each kind of the rule specialization-home in the mode report, and no "
+        "error for the record open-extension",
+        witness.derived_errors([forged, primary, forward, mark], False)
+        == [
+            ("unit.cpp:9", "this file specializes the template 'fixy::is_trait' outside its home"),
+            ("unit.cpp:10", "this file declares the template 'fixy::own' of the base first, outside the base"),
+            (
+                "unit.cpp:11",
+                "this file declares the variable template 'fixy::flag_v' with 'extern' before its definition",
+            ),
+        ],
+    )
+    expect(
+        "derived_notes() gives no note for a kind of the rule specialization-home that is an error in each mode",
+        witness.derived_notes([forged, primary, forward]) == [],
+    )
     work, plugin, repo = Path("/w/one"), Path("/r/build/p.so"), Path("/r")
     expect(
         "normalized() writes the paths of the work directory, the plugin and the repository as marks",

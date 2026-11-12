@@ -11,11 +11,14 @@
 // check must name it.
 
 #include <fixy/Collision.h>
+#include <foundation/Quarantine.h>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a spawn template of the base with no reading")
 namespace fixy::atom::spawn {
 template <::fixy::atom::ctrl::rationale Rationale>
 struct probe_unread_spawn;
 }  // namespace fixy::atom::spawn
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 #include "../../layer/checks/fixy/collision/Report.cpp"
 

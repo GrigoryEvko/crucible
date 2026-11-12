@@ -4,6 +4,7 @@
 // optimizer cannot fold, which is the run-time half that a static_assert
 // cannot check.
 
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Concurrent.h>
 #include <foundation/effects/Resources.h>
 #include <foundation/reflect/EnumName.h>
@@ -33,6 +34,9 @@ struct SmBudget {
 
 }  // namespace tag_gate_attacks
 
+// The rule specialization-home of the quarantine plugin makes each forged
+// specialization a compile error outside an opt-out region.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag")
 template <>
 struct foundation::effects::resource::SmBudget<7> {
     static constexpr ResourceKind kind = ResourceKind::NicQp;
@@ -53,6 +57,7 @@ struct foundation::effects::resource::SmBudget<11> {
     static constexpr std::uint64_t value = 11;
     static constexpr std::string_view name = "HbmBytes";
 };
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace tag_gate_attacks {
 

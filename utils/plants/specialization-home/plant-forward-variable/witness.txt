@@ -2,10 +2,10 @@
 # header that defines it.  GCC keeps the place of that declaration, so the
 # home of the template is the test file and the forged specialization stands
 # at home.  The kind forward-declaration stands at the declaration.  The
-# module of the rule refuses the line, and in the mode error the finding is
-# an error.
-compile report test/forward.cpp specialization-home=on
-exit report pass
+# finding is a compile error in each mode, and the module of the rule refuses
+# the line.
+compile report test/forward.cpp specialization-home=on errors=report
+exit report fail
 finding report specialization-home forward-declaration test/forward.cpp:6:19 | crucible::plant::runtime_flag_v
 judge report
 compile error test/forward.cpp mode=error specialization-home=on findings=report errors=report

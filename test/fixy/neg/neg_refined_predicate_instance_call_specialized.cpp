@@ -6,12 +6,15 @@
 // outside fixy/Predicates.h and stops the build.
 
 #include <fixy/Refined.h>
+#include <foundation/Quarantine.h>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges the call operator of InRange<1, 9> for int")
 template <>
 template <>
 constexpr bool fixy::InRange<1, 9>::operator()<int>(int) const noexcept {
     return true;
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 constexpr auto forged = fixy::mint_refined<fixy::in_range<1, 9>>(0);
 

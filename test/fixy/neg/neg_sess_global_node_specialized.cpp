@@ -9,6 +9,7 @@
 //
 // Expected diagnostic: Projection_Specialized_Global_Node.
 #include <fixy/session/Projection.h>
+#include <foundation/Quarantine.h>
 
 namespace neg_sess_global_node_specialized_types {
 struct Alice {};
@@ -16,12 +17,14 @@ struct Bob {};
 struct Hello {};
 }  // namespace neg_sess_global_node_specialized_types
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges a global Branch whose next member disagrees with its argument")
 template <>
 struct fixy::session::global::Branch<neg_sess_global_node_specialized_types::Hello, int, fixy::session::global::End> {
     using label = neg_sess_global_node_specialized_types::Hello;
     using payload = int;
     using next = fixy::session::global::Var;
 };
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     namespace g = ::fixy::session::global;

@@ -9,6 +9,7 @@
 // Expected diagnostic: the member is private in this context.
 #include <fixy/session/Mint.h>
 #include <fixy/session/Recording.h>
+#include <foundation/Quarantine.h>
 
 namespace neg_sess_recorded_friend_specialized_types {
 struct Tag {};
@@ -17,6 +18,7 @@ struct Wire {
 };
 }  // namespace neg_sess_recorded_friend_specialized_types
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges a Recorded that takes the inner handle of a live recorder")
 namespace fixy::session {
 template <>
 class Recorded<neg_sess_recorded_friend_specialized_types::Tag> {
@@ -27,6 +29,7 @@ public:
     }
 };
 }  // namespace fixy::session
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     namespace s = ::fixy::session;

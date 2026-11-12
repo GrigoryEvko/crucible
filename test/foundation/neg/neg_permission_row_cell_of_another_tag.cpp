@@ -12,6 +12,7 @@
 // Expected diagnostic: the read calls the function that names a cell of
 // another tag.
 
+#include <foundation/Quarantine.h>
 #include <foundation/permissions/Permission.h>
 
 #include <meta>
@@ -30,6 +31,7 @@ struct PureTag {
 
 }  // namespace
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges row_cell_at of an IO tag with the walk of a pure tag")
 template <>
 inline constexpr ::foundation::permissions::detail::row_cell foundation::permissions::detail::row_cell_at<
     ^^IoTag,
@@ -39,6 +41,7 @@ inline constexpr ::foundation::permissions::detail::row_cell foundation::permiss
         ^^PureTag,
         std::meta::members_of(^^::foundation::permissions::permission_rows, std::meta::access_context::unprivileged())
             .size());
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace {
 

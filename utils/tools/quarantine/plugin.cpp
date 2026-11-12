@@ -499,9 +499,12 @@ void report(bool can_add_dependencies) {
         bool is_file_error =
             is_include_kind(finding.kind) ? finding.file->is_include_error_mode : finding.file->is_error_mode;
         bool is_error = state.is_error_mode || is_file_error || is_language;
-        // The contract rule and the unit facts give an error in each mode.
+        // The contract rule, the unit facts and the rule specialization-home
+        // give an error in each mode.
         if (finding.kind == Kind::contract_specifier && !is_out) {
             report_contract(finding);
+        } else if (rule_of_finding == Rule::specialization_home && !is_out) {
+            report_specialization(finding);
         } else if (is_each_mode_kind(finding.kind) && !is_out) {
             report_unit_fact(finding);
         } else if (rule_of_finding != Rule::quarantine && is_error && !is_out) {

@@ -9,6 +9,7 @@
 //
 // Expected diagnostic: the copy constructor of the state is private.
 
+#include <foundation/Quarantine.h>
 #include <foundation/diag/FailClosed.h>
 
 namespace {
@@ -28,9 +29,11 @@ namespace forged {
 
 }  // namespace
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges relation_state_at of ingest with a copy of another state")
 template <>
 inline constexpr ::foundation::fail_closed::detail::relation_state
     foundation::fail_closed::detail::relation_state_at<^^ingest, 1> =
         ::foundation::fail_closed::detail::relation_state_at<^^forged, 1>;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() { return 0; }

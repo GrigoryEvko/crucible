@@ -109,14 +109,16 @@ THE DERIVED DIAGNOSTICS
     In the mode error, each finding that no region opts out is an error at
     its location.  The key errors=OTHER says that the errors of the compile
     are the finding rows of the compile OTHER.  In the mode report, only a
-    finding of the rules of EACH_MODE_RULES gives an error.  The message of
-    the error of a finding of a rule other than contract-specifier holds
+    finding of the rules of EACH_MODE_RULES, and a finding of a kind of
+    SPECIALIZATION_ERRORS of the rule specialization-home, gives an error.
+    The message of the error of each other finding holds
     "quarantine: KIND ENTITY" with a semicolon after the entity.  A finding of the rule
-    contract-specifier gives the error of the contract rule.  A finding at
+    contract-specifier gives the error of the contract rule, and a finding of
+    the rule specialization-home gives the text of its kind.  A finding at
     the line 0, a fact of all the unit, gives an error with no location.
     The key notes=OTHER says that each finding row of OTHER gives a note
-    "quarantine: KIND ENTITY" at its location, other than a finding of the
-    rules of EACH_MODE_RULES, which give an error in each mode.  A region
+    "quarantine: KIND ENTITY" at its location, other than a finding that
+    gives an error in each mode.  A region
     line is no finding.  It gives the note "quarantine: region REASON" at the
     macro that opens the region, on the line of the region line.  OTHER has
     the root ".", and its paths are paths of the tree.
@@ -252,6 +254,15 @@ QUARANTINE_RULE = "quarantine"
 CONTRACT_RULE = "contract-specifier"
 # The rules that give an error in each mode for each finding: the contract rule and the rules of the family unit fact.
 EACH_MODE_RULES = frozenset((CONTRACT_RULE, "contract-semantic", "fast-math-override"))
+# The rule specialization-home, and the start of the error of each of its kinds that is an error in each mode
+# (THE DERIVED DIAGNOSTICS, and THE ERRORS of utils/tools/quarantine/specialization.cpp).  The record open-extension
+# is no error.
+SPECIALIZATION_RULE = "specialization-home"
+SPECIALIZATION_ERRORS = {
+    "specialization": "this file specializes the template '{entity}' outside its home",
+    "foreign-primary": "this file declares the template '{entity}' of the base first, outside the base",
+    "forward-declaration": "this file declares the variable template '{entity}' with 'extern' before its definition",
+}
 # The error of the plugin after a refused rule table.
 FAILED_PLUGIN = "failed to initialize plugin"
 # The error of the rows grammar for a carriage return.  assay.core.rows and rows.h of the plugin give this text.
@@ -736,18 +747,28 @@ def diagnostic_difference(
     return missing, [given[index] for index in free]
 
 
+def is_each_mode(finding: plugin_sections.Finding) -> bool:
+    """Return True for a finding that gives an error in each mode: a finding of a rule of EACH_MODE_RULES, or a kind
+    of SPECIALIZATION_ERRORS of the rule specialization-home (THE DERIVED DIAGNOSTICS)."""
+    return finding.rule in EACH_MODE_RULES or (
+        finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS
+    )
+
+
 def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: bool) -> list[tuple[str, str]]:
     """Return the error of each finding that no region opts out and that the mode makes an error.
 
-    In the mode report, only a finding of the rules of EACH_MODE_RULES gives an error (THE DERIVED DIAGNOSTICS).
+    In the mode report, only a finding of is_each_mode() gives an error (THE DERIVED DIAGNOSTICS).
     """
     errors: list[tuple[str, str]] = []
     for finding in findings:
-        if finding.kind in (OPTED_OUT, REGION) or not (is_error_mode or finding.rule in EACH_MODE_RULES):
+        if finding.kind in (OPTED_OUT, REGION) or not (is_error_mode or is_each_mode(finding)):
             continue
         place = f"{finding.file}:{finding.line}" if finding.line > 0 else NO_VALUE
         if finding.rule == CONTRACT_RULE:
             errors.append((place, f"the '{finding.entity}' contract specifier is not permitted in this tree"))
+        elif finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS:
+            errors.append((place, SPECIALIZATION_ERRORS[finding.kind].format(entity=finding.entity)))
         else:
             errors.append((place, f"{QUARANTINE_PREFIX}{finding.kind} {finding.entity};"))
     return errors
@@ -756,12 +777,12 @@ def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: b
 def derived_notes(findings: Iterable[plugin_sections.Finding]) -> list[tuple[str, str]]:
     """Return the note of each finding that the mode report makes a note, also of each opted-out one and each region.
 
-    The rules of EACH_MODE_RULES give an error in each mode and no note (THE DERIVED DIAGNOSTICS).
+    A finding of is_each_mode() gives an error in each mode and no note (THE DERIVED DIAGNOSTICS).
     """
     return [
         (f"{finding.file}:{finding.line}", f"{QUARANTINE_PREFIX}{finding.kind} {finding.entity}")
         for finding in findings
-        if finding.rule not in EACH_MODE_RULES
+        if not is_each_mode(finding)
     ]
 
 

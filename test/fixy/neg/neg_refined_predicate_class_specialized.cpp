@@ -6,7 +6,9 @@
 // build.
 
 #include <fixy/Refined.h>
+#include <foundation/Quarantine.h>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value")
 template <>
 struct fixy::InRange<1, 4096> {
     template <class V>
@@ -14,6 +16,7 @@ struct fixy::InRange<1, 4096> {
         return true;
     }
 };
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 constexpr auto forged = fixy::mint_refined<fixy::in_range<1, 4096>>(0);
 

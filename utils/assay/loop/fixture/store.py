@@ -95,8 +95,9 @@ The regexes and the rule of the reason read the log with no result of the
 plugin: the driver renders the log with sarif.is_plugin_result as `hidden`.
 The plugin then changes no line that a regex reads, and no finding of the
 plugin fails a fixture for its reason.  An error of the plugin that is no
-finding stays, such as the error of the contract rule.  The regexes of the
-fixtures neg_contract_specifier_* read that error.  The results of the plugin in the
+finding stays, such as the error of the contract rule and of the rule
+specialization-home.  The regexes of the fixtures neg_contract_specifier_*
+and neg_specialization_home_* read that error.  The results of the plugin in the
 source of the fixture are its census (`fixture_census`).  The record of the
 run holds the census and the stamp argument of the plugin (The record of a
 run), and the rule quarantine counts them.

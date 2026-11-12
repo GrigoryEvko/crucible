@@ -9,6 +9,7 @@
 // Expected diagnostic: the constructor is private in this context.
 #include <fixy/session/Checkpoint.h>
 #include <fixy/session/Mint.h>
+#include <foundation/Quarantine.h>
 
 namespace neg_sess_checkpoint_handle_friend_specialized_types {
 struct Tag {};
@@ -17,6 +18,7 @@ struct Wire {
 };
 }  // namespace neg_sess_checkpoint_handle_friend_specialized_types
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges a CheckpointHandle that builds a handle around a plain one")
 namespace fixy::session {
 template <>
 class CheckpointHandle<neg_sess_checkpoint_handle_friend_specialized_types::Tag,
@@ -30,6 +32,7 @@ public:
     }
 };
 }  // namespace fixy::session
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     namespace s = ::fixy::session;

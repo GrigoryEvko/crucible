@@ -73,6 +73,18 @@
 //                        extern before its definition, at that declaration
 //     open-extension     a record: a template with the open mark, at its home
 //
+// THE ERRORS
+//     Each finding of the first three kinds is a compile error in each build
+//     and each mode (is_each_mode_kind of plugin.h), so a forged
+//     specialization does not compile.  The record open-extension is no
+//     error, and the module of the rule judges it against the ledger.  The
+//     message of an error does not start with "quarantine: ", as the error of
+//     the contract rule does not.  The driver of the negative fixtures then
+//     keeps it, and a regex of a fixture can read it.  A test of a forged
+//     specialization puts it in an opt-out region of the reason class PROBE:,
+//     and the rule quarantine counts the opted-out finding with the reason of
+//     the region.
+//
 // THE ACTIVATION
 //     The argument specialization-home=on turns on the rule (plugin.cpp), and
 //     Quarantine.cmake gives it to each compile of the tree.  A compile of a
@@ -104,6 +116,11 @@ bool is_active = false;
 // The facts of each most general template, cleared at each garbage collection
 // (on_collection), because a tree keys the map.
 std::unordered_map<tree, TemplateHome> homes_by_template;
+
+// The home path of each template of the rule by its qualified name, for the
+// error of a site (THE ERRORS).  No tree keys the map, so it stays for the
+// unit.
+std::unordered_map<std::string, std::string> home_paths_by_entity;
 
 struct Names {
     tree open_extension = NULL_TREE;
@@ -210,6 +227,7 @@ const TemplateHome& home_of(tree general) {
         home.path = read_as(file->relative);
         home.entity = qualified_name(general);
         home.is_open = carries_open_mark(general);
+        home_paths_by_entity.emplace(home.entity, home.path);
         Place place = site_place(defining);
         if (place.file != nullptr && home.is_open) {
             add_finding(Kind::specialization_open_extension, nullptr, place, home.entity);
@@ -256,6 +274,46 @@ void note_template_site(tree template_decl, location_t location) {
         return;
     }
     add_finding(Kind::specialization_outside_home, nullptr, place, home.entity);
+}
+
+void report_specialization(const Finding& finding) {
+    const char* entity = finding.entity.c_str();
+    switch (finding.kind) {
+        case Kind::specialization_outside_home: {
+            auto found = home_paths_by_entity.find(finding.entity);
+            const char* home = found != home_paths_by_entity.end() ? found->second.c_str() : "";
+            error_at(finding.spelling, "this file specializes the template %qs outside its home %qs", entity, home);
+            inform(finding.spelling,
+                   "C++ has no orphan rule, so a specialization in a different file changes what each gate that "
+                   "reads the template admits");
+            inform(finding.spelling,
+                   "move the specialization into %qs, or give the template the annotation "
+                   "%<foundation::open_extension%> with its reason and a row of the rule specialization-home",
+                   home);
+            break;
+        }
+        case Kind::specialization_foreign_primary:
+            error_at(finding.spelling,
+                     "this file declares the template %qs of the base first, outside the base, so the home of the "
+                     "template moves here",
+                     entity);
+            inform(finding.spelling,
+                   "include the header of the template and remove the declaration, or move the template into the "
+                   "base");
+            break;
+        case Kind::specialization_forward_declaration:
+            error_at(finding.spelling,
+                     "this file declares the variable template %qs with %<extern%> before its definition, so the home "
+                     "of the template moves here",
+                     entity);
+            inform(finding.spelling, "include the header that defines the template, and remove the declaration");
+            break;
+        default:
+            return;
+    }
+    inform(finding.spelling,
+           "a test of a forged specialization puts it in a %<CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: reason\")%> "
+           "region of %<foundation/Quarantine.h%>");
 }
 
 void register_specialization_home(const char* plugin_name) {

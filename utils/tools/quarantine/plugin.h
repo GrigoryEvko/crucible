@@ -347,7 +347,8 @@
 //                           the rule table that a unit read, for the module of
 //                           the rule, which refuses a row with no record
 //     The rule specialization-home of the family specialization home
-//     (specialization.cpp, THE KINDS):
+//     (specialization.cpp, THE KINDS).  Each finding of the rule is an error
+//     in each mode, and an opt-out region covers it (is_each_mode_kind):
 //     specialization        a specialization of a template of the tree outside
 //                           the home of the template, when the template has no
 //                           open mark
@@ -1325,10 +1326,21 @@ inline Rule rule_of(Kind kind) {
     }
 }
 
-// True for a kind whose finding is an error in each mode: the contract rule and
-// the unit facts.  No enforce mode changes such a finding.
+// True for a kind whose finding is an error in each mode: the contract rule,
+// the unit facts and the findings of the rule specialization-home.  No enforce
+// mode changes such a finding, and an opt-out region covers it.
 inline bool is_each_mode_kind(Kind kind) {
-    return kind == Kind::contract_specifier || kind == Kind::contract_semantic || kind == Kind::fast_math_override;
+    switch (kind) {
+        case Kind::contract_specifier:
+        case Kind::contract_semantic:
+        case Kind::fast_math_override:
+        case Kind::specialization_outside_home:
+        case Kind::specialization_foreign_primary:
+        case Kind::specialization_forward_declaration:
+            return true;
+        default:
+            return false;
+    }
 }
 
 // True when a rule of the families declaration property (declaration.cpp),
@@ -1337,8 +1349,13 @@ inline bool is_each_mode_kind(Kind kind) {
 // kind, or the rule door-unit (include.cpp).  Such a finding is an
 // error only in the mode error, no opt-out region covers it, and no enforce
 // mode changes it.  The module of its rule judges it against the ledger of the
-// rule.  plugin.cpp reports each such line in one way (report_family).
+// rule.  plugin.cpp reports each such line in one way (report_family).  A
+// kind of the rule specialization-home that is an error in each mode
+// (is_each_mode_kind) is no family kind, and only its record is.
 inline bool is_family_kind(Kind kind) {
+    if (is_each_mode_kind(kind)) {
+        return false;
+    }
     switch (rule_of(kind)) {
         case Rule::door_unit:
         case Rule::mint:
@@ -1532,6 +1549,9 @@ inline bool is_name_kind(Kind kind) {
         case Kind::upward_name:
         case Kind::contract_semantic:
         case Kind::fast_math_override:
+        case Kind::specialization_outside_home:
+        case Kind::specialization_foreign_primary:
+        case Kind::specialization_forward_declaration:
             return true;
         default:
             return is_family_kind(kind);
@@ -2427,11 +2447,13 @@ location_t defining_location(tree template_decl);
 // specialization-home.  The family home gives it each template that no home
 // row governs (home.cpp, THE SITES).  read_template_home() is true when the
 // rule reads the sites of the template, and note_template_site() judges one
-// site of such a template.
+// site of such a template.  report_specialization() gives the error of one
+// finding of the rule that no region opts out (THE ERRORS).
 void register_specialization_home(const char* plugin_name);
 bool is_specialization_home_active();
 bool read_template_home(tree template_decl);
 void note_template_site(tree template_decl, location_t location);
+void report_specialization(const Finding& finding);
 
 // body.cpp: the family library code, the pass that reads the instructions of
 // each function.

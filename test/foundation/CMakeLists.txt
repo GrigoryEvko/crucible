@@ -700,6 +700,27 @@ foundation_neg_compile_test(neg_contract_specifier_template_member
   "write .CRUCIBLE_PRE\\(condition\\). of .foundation/contracts/Pre\\.h."
   "does not keep the contract specifier of a template in a header unit or in a precompiled header")
 
+# The rule specialization-home of utils/tools/quarantine/specialization.cpp
+# makes each of its findings a compile error in each build.  Its error does
+# not start with "quarantine: ", so the regexes read it, as they read the
+# error of the contract rule.  One fixture for each kind: a specialization
+# outside the home of its template, a template of the base that a file
+# outside the base declares first, and a variable template that a file
+# declares with extern before its header.  The first regex gives the place
+# and the error, and the second the forged template.  The variable template
+# of the last fixture is a template of the base, so its declaration is also
+# the first declaration of a base template outside the base.  Each of its two
+# regexes then gives one of the two errors, with the place and the template.
+foundation_neg_compile_test(neg_specialization_home_explicit
+  "neg_specialization_home_explicit\\.cpp:10:[0-9]+: error: this file specializes the template .* outside its home .include/foundation/effects/Resources\\.h."
+  "the template .foundation::effects::resource::SmBudget. outside its home")
+foundation_neg_compile_test(neg_specialization_home_foreign_primary
+  "neg_specialization_home_foreign_primary\\.cpp:10:[0-9]+: error: this file declares the template .* of the base first, outside the base"
+  "the template .foundation::forged::planted_trait. of the base")
+foundation_neg_compile_test(neg_specialization_home_forward_declaration
+  "neg_specialization_home_forward_declaration\\.cpp:12:[0-9]+: error: this file declares the variable template .foundation::algebra::is_graded_v. with .extern. before its definition"
+  "neg_specialization_home_forward_declaration\\.cpp:12:[0-9]+: error: this file declares the template .foundation::algebra::is_graded_v. of the base first, outside the base")
+
 # test/CMakeLists.txt registers test_reflect for test/test_reflect.cpp,
 # and a CMake target name is global.  This target carries the name of
 # its layer.
@@ -834,13 +855,13 @@ foundation_neg_compile_test(neg_fail_closed_edge_after_a_read
 # names another namespace, which the read refuses.
 foundation_neg_compile_test(neg_fail_closed_state_forged_by_copy
   "relation_state::relation_state\\(const foundation::fail_closed::detail::relation_state&\\). is private within this context"
-  "neg_fail_closed_state_forged_by_copy\\.cpp:34:[0-9]+: error:")
+  "neg_fail_closed_state_forged_by_copy\\.cpp:36:[0-9]+: error:")
 foundation_neg_compile_test(neg_fail_closed_state_views_other_cells
   "call to non-.constexpr. function .void foundation::fail_closed::detail::a_relation_state_stands_for_another_reading\\(\\)."
   "in .constexpr. expansion of .foundation::fail_closed::admits\\(\\^\\^\\{anonymous\\}::ingest, \\^\\^\\{anonymous\\}::Checked, \\^\\^\\{anonymous\\}::Raw\\).")
 foundation_neg_compile_test(neg_fail_closed_cells_forged_by_copy
   "relation_cells<Capacity>::relation_cells\\(const foundation::fail_closed::detail::relation_cells<Capacity>&\\) \\[with long unsigned int Capacity = 1\\]. is private within this context"
-  "neg_fail_closed_cells_forged_by_copy\\.cpp:35:[0-9]+: error:")
+  "neg_fail_closed_cells_forged_by_copy\\.cpp:37:[0-9]+: error:")
 
 # unique_target reads a relation as a function of its From, so it
 # refuses a From with no edge and a From with two.
@@ -1351,7 +1372,7 @@ foundation_neg_compile_test(neg_permission_row_not_a_row
 # refuses.
 foundation_neg_compile_test(neg_permission_row_cell_forged_by_copy
   "row_cell::row_cell\\(const foundation::permissions::detail::row_cell&\\). is private within this context"
-  "neg_permission_row_cell_forged_by_copy\\.cpp:33:[0-9]+: error:")
+  "neg_permission_row_cell_forged_by_copy\\.cpp:35:[0-9]+: error:")
 foundation_neg_compile_test(neg_permission_row_cell_of_another_tag
   "call to non-.constexpr. function .void foundation::permissions::detail::a_row_cell_names_another_tag\\(\\)."
   "in .constexpr. expansion of .foundation::permissions::permission_row_empty\\(\\^\\^\\{anonymous\\}::IoTag\\).")

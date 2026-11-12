@@ -11,13 +11,16 @@
 // branch_wire_word_v for one branch of a keyed choice.  Each
 // specialization changes what this file reads through that spelling, and
 // the handle still sends the word of the registry, so no user spelling
-// reaches the wire.
+// reaches the wire.  The rule specialization-home of the quarantine plugin
+// makes such a specialization a compile error, so the two stand in an
+// opt-out region.
 
 #include <fixy/session/Projection.h>
 #include <fixy/session/Crash.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
 
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Ctx.h>
 
 #include <array>
@@ -46,12 +49,14 @@ using KeyedPick =
 inline constexpr std::uint64_t forged_word = 7;
 }  // namespace wire_word_probe
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test forges the wire word of a keyed step and of a branch of a keyed choice")
 namespace fixy::session {
 template <>
 inline constexpr std::uint64_t step_wire_word_v<wire_word_probe::KeyedHello> = wire_word_probe::forged_word;
 template <>
 inline constexpr std::uint64_t branch_wire_word_v<wire_word_probe::KeyedPick, 0> = wire_word_probe::forged_word;
 }  // namespace fixy::session
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace {
 

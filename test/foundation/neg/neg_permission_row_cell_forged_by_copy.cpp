@@ -9,6 +9,7 @@
 //
 // Expected diagnostic: the copy constructor of the cell is private.
 
+#include <foundation/Quarantine.h>
 #include <foundation/permissions/Permission.h>
 
 #include <meta>
@@ -25,6 +26,7 @@ struct PureTag {
 
 }  // namespace
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges row_cell_at of an IO tag with a copy of a pure cell")
 template <>
 inline constexpr ::foundation::permissions::detail::row_cell foundation::permissions::detail::row_cell_at<
     ^^IoTag,
@@ -34,5 +36,6 @@ inline constexpr ::foundation::permissions::detail::row_cell foundation::permiss
                                                    std::meta::members_of(^^::foundation::permissions::permission_rows,
                                                                          std::meta::access_context::unprivileged())
                                                        .size()>;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() { return 0; }

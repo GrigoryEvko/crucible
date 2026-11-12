@@ -18,6 +18,7 @@
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
 #include <foundation/Platform.h>
+#include <foundation/Quarantine.h>
 
 #include <cstddef>
 #include <meta>
@@ -218,8 +219,12 @@ namespace fixy::atom::ctrl {
 struct planted_flow final : atom_of<Axis::ControlFlow> {};
 }  // namespace fixy::atom::ctrl
 
+// The rule specialization-home of the quarantine plugin makes this
+// specialization a compile error outside an opt-out region.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test forges stdio::write for a private stream, and IsAtom must refuse it")
 template <>
 struct fixy::atom::stdio::write<user_code::private_stream> final : fixy::atom::atom_of<Axis::Usage> {};
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace {
 

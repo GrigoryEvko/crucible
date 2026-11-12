@@ -9,6 +9,7 @@
 //
 // Expected diagnostic: the builder is private in this context.
 #include <fixy/session/Delegate.h>
+#include <foundation/Quarantine.h>
 
 namespace neg_sess_handle_factory_friend_specialized_types {
 struct ForgeTag {};
@@ -18,6 +19,7 @@ struct Wire {
 struct Region {};
 }  // namespace neg_sess_handle_factory_friend_specialized_types
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges a DelegatedSession that calls a builder of the factory")
 namespace fixy::session {
 template <>
 class DelegatedSession<neg_sess_handle_factory_friend_specialized_types::ForgeTag, int, check::Enforced,
@@ -30,5 +32,6 @@ public:
     }
 };
 }  // namespace fixy::session
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() { return 0; }

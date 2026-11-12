@@ -2,10 +2,10 @@
 # header, so the home of the trait is the test file in that unit, and the
 # specialization of the test stands at that home.  Each specialization of the
 # header then stands outside the home, so the unit still gives a finding.
-# The module of the rule refuses the line, and in the mode error the finding
-# is an error.
-compile report test/forward.cpp specialization-home=on
-exit report pass
+# The finding is a compile error in each mode, and the module of the rule
+# refuses the line.
+compile report test/forward.cpp specialization-home=on errors=report
+exit report fail
 finding report specialization-home specialization include/crucible/Families.h:10:8 | crucible::plant::family_of
 judge report
 compile error test/forward.cpp mode=error specialization-home=on findings=report errors=report

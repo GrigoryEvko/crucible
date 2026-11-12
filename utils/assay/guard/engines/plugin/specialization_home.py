@@ -27,11 +27,19 @@ THE RULE
     open-extension as a finding, and only a ledger row admits it: the ledger
     is the roster of the open templates.
 
+    The plugin makes each line of the first three kinds a compile error in
+    each build and each mode (THE ERRORS of specialization.cpp), so no object
+    holds such a line.  A test of a forged specialization puts it in an
+    opt-out region of the reason class PROBE:, and the rule quarantine counts
+    the opted-out finding.  This rule still refuses each such line that a
+    report holds.
+
 THE LEDGER
-    A row of utils/ledgers/specialization-home.txt admits the lines of one
-    file, kind and template: `PATH | KIND | admit | TEMPLATE | REASON`.  A
-    row of the kind open-extension names the home of a marked template.  A
-    row that admits no finding gives no finding, and a write removes it.
+    A row of utils/ledgers/specialization-home.txt admits the records of one
+    file and template: `PATH | open-extension | admit | TEMPLATE | REASON`.
+    The row names the home of a marked template.  A row of a different kind
+    can admit no line, because the compile of such a line fails.  A row that
+    admits no finding gives no finding, and a write removes it.
 
 Usage
     guard check --rule specialization-home --build-dir DIR [--warnings-dir DIR]

@@ -9,6 +9,7 @@
 // Expected diagnostic: the loan of the Borrowed is private in this
 // context.
 #include <fixy/session/Flow.h>
+#include <foundation/Quarantine.h>
 
 #include <utility>
 
@@ -21,6 +22,7 @@ struct ForgeTag {
 };
 }  // namespace neg_sess_hold_loan_by_specialization_types
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges a PermHold that takes the read loan out of a Borrowed")
 namespace fixy::session {
 template <>
 class PermHold<::foundation::permissions::PermSet<neg_sess_hold_loan_by_specialization_types::ForgeTag>> {
@@ -31,6 +33,7 @@ public:
     }
 };
 }  // namespace fixy::session
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace neg_sess_hold_loan_by_specialization_types {
 

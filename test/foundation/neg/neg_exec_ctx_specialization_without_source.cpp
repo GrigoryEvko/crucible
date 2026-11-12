@@ -7,6 +7,7 @@
 // Expected diagnostic: mint_from_ctx has no candidate, because IsExecCtx
 // refuses the forged specialization.
 
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Capability.h>
 
 namespace {
@@ -14,6 +15,7 @@ namespace fe = ::foundation::effects;
 using UnusedRow = fe::Row<fe::Effect::IO, fe::Effect::Bg, fe::Effect::IO>;
 }  // namespace
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges ExecCtx with no capability source")
 template <>
 class foundation::effects::ExecCtx<fe::Bg, UnusedRow> {
 public:
@@ -21,6 +23,7 @@ public:
     using row_type = UnusedRow;
     constexpr ExecCtx() noexcept = default;
 };
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     fe::ExecCtx<fe::Bg, UnusedRow> forged{};
