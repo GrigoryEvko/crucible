@@ -5,8 +5,8 @@ Each case writes one line.  Exit 0 when each case holds, else 1.  The
 witness of the rule holds the verdict on each plant.  This test holds the
 parts that a plant does not show: the batches, the second run of a batch
 with an error, the cache, the ledger, the reader of the ignore file
-(assay.readers.format_ignore), and the parts of the meta runner (THE PARTS
-of assay.guard.engines.meta.runner), which the rule does not read.  One case holds that the
+(assay.readers.format_ignore), and the parts (THE PARTS of
+assay.guard.engines.meta.runner), which the rule does not read.  One case holds that the
 reader ignores a file exactly when the pinned formatter ignores it.  The cases
 that run the formatter use the pinned clang-format, which `python3
 utils/bin/setup install clang-format` installs.  With no install of the pin,
@@ -27,6 +27,7 @@ from assay.core.paths import REPO_ROOT
 from assay.guard import check
 from assay.guard.engines.meta import clang_format, runner
 from assay.guard.engines.meta.runner import MetaContext, NotApplicable
+from assay.guard.engines.tsast.runner import TsastContext
 from assay.readers import format_ignore, tool_reports
 
 MODULE = __name__.removeprefix("assay.")
@@ -76,7 +77,7 @@ def refused(words: list[str]) -> bool:
 
 
 def part_cases(expect: testing.Expect) -> None:
-    """Check the parts of the meta runner: the part function, the context and the gate of guard check."""
+    """Check the parts: the part function, the context of the tsast engine and the gate of guard check."""
     files = {f"src/F{index}.h": b"x" * (index * 7 % 23 + 1) for index in range(PART_FILE_COUNT)}
     with git.scratch_repository(files) as root:
         paths = sorted(files)
@@ -87,7 +88,7 @@ def part_cases(expect: testing.Expect) -> None:
             holds = holds and sorted(flat) == paths and len(set(flat)) == len(flat)
             holds = holds and all(part == sorted(part) for part in parts)
         expect(f"the parts of each count of {PART_COUNTS} are disjoint, and together they hold each file", holds)
-        context = MetaContext(root, part=(2, 3))
+        context = TsastContext(root, part=(2, 3))
         chosen = context.part_of(paths)
         other = next(path for path in paths if path not in chosen)
         expect(
@@ -96,7 +97,7 @@ def part_cases(expect: testing.Expect) -> None:
             and context.is_covered(rule_ledger.Key(chosen[0], "drift", ""))
             and not context.is_covered(rule_ledger.Key(other, "drift", "")),
         )
-        whole = MetaContext(root)
+        whole = TsastContext(root)
         expect(
             "a context with no part gives each file and judges each ledger row",
             whole.part_of(paths) == paths and whole.is_covered(rule_ledger.Key(other, "drift", "")),
