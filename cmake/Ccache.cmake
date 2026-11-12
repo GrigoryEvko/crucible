@@ -40,7 +40,12 @@
 #   "/"                 an absolute path outside the two roots stays as it is
 #   source root         a path of the source root in a compile with no ccache
 #   source from build   a path of the source root that ccache gives
+#   source from the physical build root
+#                       the same, when the build root is behind a symlink
 #   build root          a path of the build directory with no ccache
+#   build from the physical build root
+#                       a path of the build directory that ccache gives, when
+#                       the build root is behind a symlink
 # ccache hashes only the name of a map option, and not its text.  The text
 # changes only with the roots.  A compile with other roots reads other paths,
 # so it gets a hit only when the remapped text is the same.
@@ -170,23 +175,53 @@ macro(crucible_ccache_after_project)
   endif()
 endmacro()
 
+# Set OUT_VAR to the path of the directory TO from the directory FROM, with no
+# separator at its end, or "." for the same directory.  file(RELATIVE_PATH)
+# gives "../" for the parent directory.  GCC keeps the separator after the old
+# prefix of a map, so a new prefix with a separator at its end gives "..//",
+# which a compile through ccache does not give.
+function(crucible_path_from from to out_var)
+  file(RELATIVE_PATH path "${from}" "${to}")
+  string(REGEX REPLACE "/+$" "" path "${path}")
+  if(path STREQUAL "")
+    set(path ".")
+  endif()
+  set(${out_var} "${path}" PARENT_SCOPE)
+endfunction()
+
+# Set OUT_VAR to the macro prefix maps of the source root SOURCE and the build
+# root BUILD, from the first map to the last (the list at the head of this
+# file).  ccache gives a path relative to the directory of the compile, and it
+# reads that directory from the kernel, which resolves each symlink.  When the
+# build root is behind a symlink, that path starts from the physical build root
+# and goes to the logical roots.  So the list then has two more maps: the source
+# root and the build root from the physical build root.
+function(crucible_macro_prefix_maps source build out_var)
+  crucible_path_from("${build}" "${source}" source_from_build)
+  set(source_maps "-fmacro-prefix-map==@build/" "-fmacro-prefix-map=/=/" "-fmacro-prefix-map=${source}/="
+                  "-fmacro-prefix-map=${source_from_build}/=")
+  set(build_maps "-fmacro-prefix-map=${build}/=@build/")
+  file(REAL_PATH "${build}" physical_build)
+  if(NOT physical_build STREQUAL build)
+    crucible_path_from("${physical_build}" "${source}" source_from_physical_build)
+    crucible_path_from("${physical_build}" "${build}" build_from_physical_build)
+    if(NOT source_from_physical_build STREQUAL source_from_build)
+      list(APPEND source_maps "-fmacro-prefix-map=${source_from_physical_build}/=")
+    endif()
+    list(APPEND build_maps "-fmacro-prefix-map=${build_from_physical_build}/=@build/")
+  endif()
+  set(${out_var} ${source_maps} ${build_maps} PARENT_SCOPE)
+endfunction()
+
 # Call this macro before the first target of the directory.
 macro(crucible_relocatable_objects)
-  # file(RELATIVE_PATH) gives "../" for the parent directory.  GCC keeps the
-  # separator after the old prefix, so a new prefix with a separator at its
-  # end gives "..//", which a compile through ccache does not give.
-  file(RELATIVE_PATH _crucible_source_from_build "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}")
-  string(REGEX REPLACE "/+$" "" _crucible_source_from_build "${_crucible_source_from_build}")
-  if(_crucible_source_from_build STREQUAL "")
-    set(_crucible_source_from_build ".")
-  endif()
+  crucible_path_from("${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}" _crucible_source_from_build)
   add_compile_options(
     "$<$<COMPILE_LANGUAGE:CXX>:-fdebug-prefix-map=${CMAKE_SOURCE_DIR}=${_crucible_source_from_build}>"
     "$<$<COMPILE_LANGUAGE:CXX>:-fdebug-prefix-map=${CMAKE_BINARY_DIR}=.>"
-    "$<$<COMPILE_LANGUAGE:CXX>:-gno-record-gcc-switches>"
-    "$<$<COMPILE_LANGUAGE:CXX>:-fmacro-prefix-map==@build/>"
-    "$<$<COMPILE_LANGUAGE:CXX>:-fmacro-prefix-map=/=/>"
-    "$<$<COMPILE_LANGUAGE:CXX>:-fmacro-prefix-map=${CMAKE_SOURCE_DIR}/=>"
-    "$<$<COMPILE_LANGUAGE:CXX>:-fmacro-prefix-map=${_crucible_source_from_build}/=>"
-    "$<$<COMPILE_LANGUAGE:CXX>:-fmacro-prefix-map=${CMAKE_BINARY_DIR}/=@build/>")
+    "$<$<COMPILE_LANGUAGE:CXX>:-gno-record-gcc-switches>")
+  crucible_macro_prefix_maps("${CMAKE_SOURCE_DIR}" "${CMAKE_BINARY_DIR}" _crucible_macro_maps)
+  foreach(_crucible_macro_map IN LISTS _crucible_macro_maps)
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:${_crucible_macro_map}>")
+  endforeach()
 endmacro()

@@ -1,5 +1,5 @@
 # The test of cmake/Ccache.cmake.  ctest runs it as:
-#   cmake -DCXX=<compiler> -DWORK=<directory> -DCASE=<launcher|relocation|plain_relocation|wrapper>
+#   cmake -DCXX=<compiler> -DWORK=<directory> -DCASE=<launcher|relocation|plain_relocation|symlink|wrapper>
 #         [-DPLUGIN_DIR=<directory>] -P cmake/CcacheSelfTest.cmake
 #
 # Each case configures a small project in WORK that calls the macros of
@@ -38,6 +38,12 @@
 # first build root then builds the plugin, as it does with no PLUGIN_DIR, and
 # each later build root gets the plugin of the root before it.  So the test
 # builds the plugin one time at most.
+#
+# CASE=symlink configures the project through a symlink to its source root,
+# with the build root under the link, and builds the probe with the ccache
+# that PATH holds.  Each text of __FILE__ in the object must be a path from the
+# source root, and no text can name the link.  Without ccache on PATH, the case
+# builds nothing.
 #
 # CASE=wrapper configures the project with cmake/Toolchain-gcc16.cmake and with
 # a compiler wrapper as CMAKE_CXX_COMPILER, as `loop fuzz` does with
@@ -80,11 +86,15 @@ file(WRITE "${WORK}/project/CMakeLists.txt"
 # The rule table of the project.  The plugin gives an error for a file of the
 # source root that no row holds, so each file of the project has a row.
 file(WRITE "${WORK}/project/rules.txt" "quarantine probe.cpp\nquarantine include/\n")
-file(WRITE "${WORK}/project/include/probe.h" "#pragma once\ninline int twice(int value) { return 2 * value; }\n")
+file(WRITE "${WORK}/project/include/probe.h"
+  "#pragma once\n"
+  "inline int twice(int value) { return 2 * value; }\n"
+  "inline const char* header_file() { return __FILE__; }\n")
 file(WRITE "${WORK}/project/probe.cpp"
   "#include <probe.h>\n"
   "int probe_twice(int value) { return twice(value); }\n"
-  "const char* probe_file() { return __FILE__; }\n")
+  "const char* probe_file() { return __FILE__; }\n"
+  "const char* probe_header_file() { return header_file(); }\n")
 # A launcher that is not ccache.  It runs the compile that it gets.
 file(WRITE "${WORK}/bin/sccache" "#!/bin/sh\nexec \"$@\"\n")
 file(CHMOD "${WORK}/bin/sccache" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
@@ -211,6 +221,51 @@ elseif(CASE STREQUAL "relocation" OR CASE STREQUAL "plain_relocation")
                              "build root build_two gives.")
     endif()
   endif()
+elseif(CASE STREQUAL "symlink")
+  # A source root behind a symlink, with the build root under the link.  The
+  # compile through ccache runs in the physical build root, so ccache gives
+  # each path from there to the logical roots.  The macro prefix maps must
+  # still give __FILE__ the paths from the source root.
+  file(WRITE "${WORK}/ccache.conf" "")
+  set(ENV{CCACHE_DIR} "${WORK}/ccache")
+  set(ENV{CCACHE_CONFIGPATH} "${WORK}/ccache.conf")
+  if(path_ccache)
+    file(CREATE_LINK "${WORK}/project" "${WORK}/link" SYMBOLIC)
+    set(directory "${WORK}/link/build_link")
+    execute_process(
+      COMMAND "${CMAKE_COMMAND}" -S "${WORK}/link" -B "${directory}" -G Ninja "-DCMAKE_CXX_COMPILER=${CXX}"
+              -DCRUCIBLE_USE_CCACHE=ON
+      RESULT_VARIABLE code
+      OUTPUT_VARIABLE output
+      ERROR_VARIABLE output)
+    if(NOT code EQUAL 0)
+      message(FATAL_ERROR "CcacheSelfTest: the configure of ${directory} failed:\n${output}")
+    endif()
+    execute_process(
+      COMMAND "${CMAKE_COMMAND}" --build "${directory}" --target probe
+      RESULT_VARIABLE code
+      OUTPUT_VARIABLE output
+      ERROR_VARIABLE output)
+    if(NOT code EQUAL 0)
+      message(FATAL_ERROR "CcacheSelfTest: the build of ${directory} failed:\n${output}")
+    endif()
+    file(GLOB_RECURSE object "${directory}/CMakeFiles/probe.dir/*.o")
+    file(READ "${object}" object_hex HEX)
+    # The configure gives no -g, so only the texts of __FILE__ name the files.
+    foreach(text "probe.cpp" "include/probe.h")
+      string(HEX "${text}" text_hex)
+      string(FIND "${object_hex}" "${text_hex}00" position)
+      if(position EQUAL -1)
+        string(APPEND failures "\n  The object ${object} holds no text '${text}' of __FILE__.")
+      endif()
+    endforeach()
+    string(HEX "link/" link_hex)
+    string(FIND "${object_hex}" "${link_hex}" position)
+    if(NOT position EQUAL -1)
+      string(APPEND failures "\n  The object ${object} names the link: a text of __FILE__ is not a path from the "
+                             "source root.")
+    endif()
+  endif()
 elseif(CASE STREQUAL "wrapper")
   # The object with the undefined reference, and the wrapper that adds it to
   # each link of a shared library.
@@ -257,7 +312,7 @@ elseif(CASE STREQUAL "wrapper")
   endif()
 else()
   message(FATAL_ERROR "CcacheSelfTest.cmake: CASE is '${CASE}', and the cases are launcher, relocation, "
-                      "plain_relocation and wrapper")
+                      "plain_relocation, symlink and wrapper")
 endif()
 file(REMOVE_RECURSE "${WORK}")
 if(NOT failures STREQUAL "")

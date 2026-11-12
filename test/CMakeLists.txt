@@ -405,8 +405,10 @@ set_tests_properties(assay_setup_test_pins PROPERTIES
 # and no object can name its build root, with ccache or without it.  Each
 # relocation case takes a copy of the plugin of this build.  The wrapper case
 # configures with the toolchain file and a compiler wrapper, and its build
-# must load the plugin that the configure builds.
-foreach(ccache_case launcher relocation plain_relocation wrapper)
+# must load the plugin that the configure builds.  The symlink case builds
+# through a symlink to the source root, and each text of __FILE__ must be a
+# path from the source root.
+foreach(ccache_case launcher relocation plain_relocation symlink wrapper)
   crucible_script_test(NAME ccache_${ccache_case}_self_test
     COMMAND ${CMAKE_COMMAND} -DCXX=${CRUCIBLE_REAL_CXX} -DCASE=${ccache_case}
             -DWORK=${CMAKE_CURRENT_BINARY_DIR}/ccache_${ccache_case}_self_test
