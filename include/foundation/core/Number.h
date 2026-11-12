@@ -43,8 +43,8 @@
 // Float never fits an Integer.
 
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
-#include <meta>
 #include <type_traits>
 
 namespace foundation::core {
@@ -126,31 +126,42 @@ template <class T>
     }
 }
 
+// The facts of an Arithmetic type that its value bits come from.  A gate
+// builds the shape from sizeof and two traits, with a name for each field,
+// so it reads no template that a unit can specialize, and the header needs
+// no reflection.
+struct NumberShape final {
+    bool is_float = false;
+    bool is_signed = false;
+    std::size_t size = 0;
+};
+
 // The value bits of an Arithmetic type: the digits of an integer, and the
-// significand of a float with its hidden bit.  The caller makes sure that
-// the type is Arithmetic.
-[[nodiscard]] consteval int value_bits_in(std::meta::info type) {
-    if (type == ^^float) return FloatBits<float>::significand_bits;
-    if (type == ^^double) return FloatBits<double>::significand_bits;
-    return static_cast<int>(std::meta::size_of(type)) * __CHAR_BIT__ - (std::meta::is_signed_type(type) ? 1 : 0);
+// significand of a float with its hidden bit.  A Float is float or double,
+// so its size tells which one it is.  The caller makes sure that the shape
+// is the shape of an Arithmetic type.
+[[nodiscard]] consteval int value_bits_in(NumberShape shape) noexcept {
+    if (shape.is_float) {
+        return shape.size == sizeof(float) ? FloatBits<float>::significand_bits : FloatBits<double>::significand_bits;
+    }
+    return static_cast<int>(shape.size) * __CHAR_BIT__ - (shape.is_signed ? 1 : 0);
 }
 
-// True when each value of the Arithmetic type from is a value of the
-// Arithmetic type to.
-[[nodiscard]] consteval bool fits_each_value_in(std::meta::info from, std::meta::info to) {
-    bool const is_float_from = from == ^^float || from == ^^double;
-    bool const is_float_to = to == ^^float || to == ^^double;
-    if (is_float_from && !is_float_to) return false;
-    if (!is_float_from && !is_float_to && std::meta::is_signed_type(from) && !std::meta::is_signed_type(to)) {
-        return false;
-    }
+// True when each value of the Arithmetic type of the shape from is a value
+// of the Arithmetic type of the shape to.
+[[nodiscard]] consteval bool fits_each_value_in(NumberShape from, NumberShape to) noexcept {
+    if (from.is_float && !to.is_float) return false;
+    if (!from.is_float && !to.is_float && from.is_signed && !to.is_signed) return false;
     return value_bits_in(from) <= value_bits_in(to);
 }
 
 }  // namespace detail
 
 template <class From, class To>
-concept fits_each_value = Arithmetic<From> && Arithmetic<To> && detail::fits_each_value_in(^^From, ^^To);
+concept fits_each_value =
+    Arithmetic<From> && Arithmetic<To>
+    && detail::fits_each_value_in({.is_float = Float<From>, .is_signed = std::is_signed_v<From>, .size = sizeof(From)},
+                                  {.is_float = Float<To>, .is_signed = std::is_signed_v<To>, .size = sizeof(To)});
 
 template <Arithmetic T>
 inline constexpr T max_of = detail::max_for<T>();
@@ -162,7 +173,8 @@ template <Arithmetic T>
 inline constexpr int bits_of = static_cast<int>(sizeof(T)) * __CHAR_BIT__;
 
 template <Arithmetic T>
-inline constexpr int value_bits_of = detail::value_bits_in(^^T);
+inline constexpr int value_bits_of =
+    detail::value_bits_in({.is_float = Float<T>, .is_signed = std::is_signed_v<T>, .size = sizeof(T)});
 
 template <Float T>
 inline constexpr T min_normal_of = __builtin_bit_cast(T, detail::FloatBits<T>::min_normal);

@@ -2299,10 +2299,10 @@ foundation_neg_compile_test(neg_core_scalar_bounds_decode
   "the expression .is_plain_at\\(.*\\(\\^\\^ To, 0\\) \\[with To = foundation::core::Bounds<int>\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_scalar_widen_signed_to_unsigned
   "no matching function for call to .widen<unsigned int>\\(int\\)."
-  "the expression .fits_each_value_in\\(.*\\(\\^\\^ From, \\^\\^ To\\) \\[with From = int; To = unsigned int\\]. evaluated to .false.")
+  "the expression .fits_each_value_in\\(.*\\)\\(\\{Float<From>, is_signed_v<From>, sizeof \\(From\\)\\}, \\{Float<To>, is_signed_v<To>, sizeof \\(To\\)\\}\\) \\[with From = int; To = unsigned int\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_scalar_widen_to_narrower
   "no matching function for call to .widen<uint8_t>\\(unsigned int\\)."
-  "the expression .fits_each_value_in\\(.*\\(\\^\\^ From, \\^\\^ To\\) \\[with From = unsigned int; To = unsigned char\\]. evaluated to .false.")
+  "the expression .fits_each_value_in\\(.*\\)\\(\\{Float<From>, is_signed_v<From>, sizeof \\(From\\)\\}, \\{Float<To>, is_signed_v<To>, sizeof \\(To\\)\\}\\) \\[with From = unsigned int; To = unsigned char\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_scalar_narrow_to_float
   "no matching function for call to .narrow<double>\\(int\\)."
   "required for the satisfaction of .Integer<To>. \\[with To = double\\]")
