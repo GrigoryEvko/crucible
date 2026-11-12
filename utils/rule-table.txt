@@ -284,9 +284,7 @@ allow F0_primitives <numeric> until Scalar | the saturating operations and std::
 allow F1_lattices <expected> until Choice | std::expected, a value or an error
 allow F1_lattices <functional> until Ref | std::invoke and the function types in most uses, and the comparators std::less, std::greater and std::identity
 allow F1_lattices <limits> until Scalar | std::numeric_limits
-allow F1_diag <cstdio> until Report | std::fprintf to stderr in most uses.  The Os family replaces the file streams of fixy/os/OwnedFile.h
 allow F1_diag <source_location> until Report | std::source_location, the place of a call
-allow F1_diag <system_error> until Os | std::error_code in most uses.  The Report family replaces std::errc of the JSON emitter
 allow F1_permissions <optional> until Choice | std::optional, a value or no value
 allow F1_rest <csignal> until Os | std::sig_atomic_t of the contract handler
 allow X1_wrappers <cmath> until Scalar | std::isnan, std::sqrt, std::fma and the other operations on a floating value
@@ -296,9 +294,11 @@ allow X1_wrappers <variant> until Choice | std::variant, one value of a closed s
 allow X3_os <algorithm> until Region | std::sort, std::lower_bound and the other operations on a sequence
 allow X3_os <cerrno> until Os | errno and the error numbers
 allow X3_os <climits> until Scalar | CHAR_BIT
+allow X3_os <cstdio> until Report | std::fprintf to stderr in most uses.  The Os family replaces the file streams of fixy/os/OwnedFile.h
 allow X3_os <ctime> until Os | the clock calls and the time structures of the C library
 allow X3_os <filesystem> until Os | std::filesystem::path
 allow X3_os <mutex> until Os | the lock tag std::try_to_lock_t
+allow X3_os <system_error> until Os | std::error_code, std::system_category and std::errc of the doors of fixy/os
 allow X5_session <any> until Ref | the classification names std::any to refuse a payload that erases its type
 
 door <asm/unistd.h> src/foundation/os/Syscall.cpp
