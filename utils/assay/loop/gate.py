@@ -155,8 +155,9 @@ THE RUN OF A CONFIGURATION
          Then each test that is red runs one more time apart from the
          suite.  The red tests run at the same time, in one run of ctest
          with the jobs of the step, and each one keeps its own verdict.  A
-         test that is red alone too rejects the commit.  A test that is
-         green alone is a flaky test, and no retry hides it: the
+         test that is red in that run too ("red alone too") rejects the
+         commit.  A test that is green in that run ("green alone") is a
+         flaky test, and no retry hides it: the
          gate writes its name, and the verdict gives it (Verdict.flaky).
          The landing writes it in the verdict of each request of the run
          (assay.loop.land, THE FLAKY TESTS).
@@ -372,7 +373,7 @@ COUNTED_POLICIES = frozenset({rule_registry.Policy.COUNT, rule_registry.Policy.A
 # The statuses of a test that count as red, and the status of a skip.
 RED = frozenset({ctest_reader.TestStatus.FAIL, ctest_reader.TestStatus.NOTRUN})
 SKIPPED = ctest_reader.TestStatus.SKIPPED
-# The limit of one call of `loop test`, of one configure, and of the run of one test alone, in seconds.
+# The limit of one call of `loop test`, of one configure, and of one test in the run of the red tests, in seconds.
 TEST_RUN_S = 2 * proc.BUILD_S
 CONFIGURE_S = proc.TOOL_S
 ALONE_S = 1500.0
@@ -1279,7 +1280,7 @@ class Step:
         if skipped:
             self.say(f"loop land: {configuration.name}: {len(skipped)} skipped: {' '.join(skipped)}")
         if red:
-            self.say(f"loop land: {configuration.name}: {len(red)} red, each runs again alone")
+            self.say(f"loop land: {configuration.name}: {len(red)} red, they run again together apart from the suite")
         still = self.red_alone(configuration, red)
         flaky = tuple(name for name in red if name not in still)
         if flaky:
