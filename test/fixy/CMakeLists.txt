@@ -982,6 +982,12 @@ fixy_neg_compile_test(neg_atom_planted_in_family
 fixy_neg_compile_test(neg_atom_specialized_outside_its_header
   "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]: every entry in the pack must be an atom of the closed catalog"
   "fixy::fn<int, fixy::atom::stdio::write<user_code::private_stream> >::tier2_atoms_ok_.+ evaluates to false")
+# A unit that does not include the header of a family can declare the seal
+# of the family and its own atoms in one file.  fixy/Atom.h names the header
+# of each family, so a seal in any other file admits no atom.
+fixy_neg_compile_test(neg_atom_forged_seal_in_family
+  "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]: every entry in the pack must be an atom of the closed catalog"
+  "refused because the seal of its namespace is declared in a file other than the header that fixy/Atom.h names for the family")
 # The name of an atom is its key in the row hash, so IsAtom refuses an
 # atom whose argument has no stable identity: a closure type, and a class
 # with internal linkage.  The strict Refinement pole is no witness, so

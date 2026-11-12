@@ -78,10 +78,16 @@ struct lifting_atom_of : atom_of<A> {
 //      names fixy::atom inside a namespace of their own is a different
 //      namespace, and a family that a user opens beside these is not in
 //      the list.  The list is the closed set of families: a new family
-//      is a line here and a header under fixy/atoms/.
+//      is a line here and a header of its own.
 //   2. The seal.  Each admitted namespace holds exactly one variable of
-//      type atom_seal.  A namespace with no seal, or with two, admits no
-//      atom.  Each query reads the seal again.
+//      type atom_seal, and the header that the list names for the family
+//      declares it.  A namespace with no seal, or with two, admits no
+//      atom.  A seal in any other file admits no atom either: a unit that
+//      does not include the header of a family could otherwise declare
+//      the seal and its own atoms in one file.  The list names each header
+//      as a path below the directory of this header, and the file of
+//      atom_seal anchors that directory, so no file outside this header
+//      can move the anchor.  Each query reads the seal again.
 //   3. The file.  An atom is declared in the file that declares the seal
 //      of its namespace.  source_location_of gives the file of a class
 //      definition, and the file of an explicit or partial
@@ -98,9 +104,9 @@ struct lifting_atom_of : atom_of<A> {
 //      reads the name, and an atom that fails it is refused.  A binding
 //      that the gate admits can therefore always be keyed.
 //
-// A `#line` directive that names a family header defeats the third read.
-// That forges the position of the source, and no property of a type can
-// refuse it.
+// A `#line` directive that names a family header defeats the second and
+// the third read.  That forges the position of the source, and no
+// property of a type can refuse it.
 
 // The families.  Each is opened here, empty, so that the list below can
 // name it before its header is included.
@@ -133,9 +139,35 @@ inline constexpr atom_seal atom_namespace_seal{};
 
 namespace detail {
 
-inline constexpr std::meta::info atom_families[] = {
-    ^^barrier, ^^ctrl,   ^^dispatch, ^^fp,      ^^global, ^^hw,    ^^io,    ^^fs,    ^^mmap, ^^leak,
-    ^^observe, ^^regime, ^^scope,    ^^session, ^^simd,   ^^spawn, ^^stack, ^^stdio, ^^sync, ^^syscall,
+// One admitted namespace, and the header that seals it, as a path below
+// the directory of this header.
+struct atom_family {
+    std::meta::info family;
+    const char* header = nullptr;
+};
+
+inline constexpr atom_family atom_families[] = {
+    {^^::fixy::atom, "Atom.h"},
+    {^^barrier, "atoms/Barrier.h"},
+    {^^ctrl, "atoms/Ctrl.h"},
+    {^^dispatch, "atoms/Dispatch.h"},
+    {^^fp, "atoms/Fp.h"},
+    {^^global, "atoms/Global.h"},
+    {^^hw, "atoms/Hw.h"},
+    {^^io, "atoms/Os.h"},
+    {^^fs, "atoms/Os.h"},
+    {^^mmap, "atoms/Os.h"},
+    {^^leak, "atoms/Os.h"},
+    {^^observe, "atoms/Observe.h"},
+    {^^regime, "atoms/Regime.h"},
+    {^^scope, "atoms/Scope.h"},
+    {^^session, "atoms/Session.h"},
+    {^^simd, "atoms/Simd.h"},
+    {^^spawn, "concurrent/Spawn.h"},
+    {^^stack, "atoms/Stack.h"},
+    {^^stdio, "atoms/Stdio.h"},
+    {^^sync, "atoms/Sync.h"},
+    {^^syscall, "atoms/Syscall.h"},
 };
 
 // Why a type with the shape of an atom is refused, or none.
@@ -144,6 +176,7 @@ enum class atom_refusal : std::uint8_t {
     outside_the_catalog,  // not declared directly in fixy::atom or in a family
     namespace_unsealed,  // the namespace holds no atom_seal
     namespace_sealed_twice,  // the namespace holds two atom_seal variables
+    sealed_outside_its_header,  // the seal is in a file other than the header that the list names
     declared_outside_its_seal,  // declared in a file other than the one that seals its namespace
     no_stable_identity  // its name is not a function of the type in every translation unit
 };
@@ -156,27 +189,62 @@ enum class atom_refusal : std::uint8_t {
     return std::meta::parent_of(declared);
 }
 
-[[nodiscard]] consteval bool is_admitted_atom_namespace_(std::meta::info ns) {
-    if (ns == ^^::fixy::atom) return true;
-    for (const std::meta::info family : atom_families) {
-        if (ns == family) return true;
+// The header of an admitted namespace, as a path below the directory of
+// this header, or a null pointer for a namespace that the list does not
+// name.
+[[nodiscard]] consteval const char* family_header_(std::meta::info ns) {
+    for (const atom_family& entry : atom_families) {
+        if (ns == entry.family) return entry.header;
     }
-    return false;
+    return nullptr;
+}
+
+[[nodiscard]] consteval bool is_admitted_atom_namespace_(std::meta::info ns) { return family_header_(ns) != nullptr; }
+
+// The file of a declaration, as the compiler names it.
+[[nodiscard]] consteval const char* declaration_file_(std::meta::info declaration) {
+    return std::meta::source_location_of(declaration).file_name();
+}
+
+// True when two texts hold the same characters.  Complexity: linear in
+// the shorter text.
+[[nodiscard]] consteval bool same_text_(const char* lhs, const char* rhs) {
+    while (*lhs != '\0' && *lhs == *rhs) {
+        ++lhs;
+        ++rhs;
+    }
+    return *lhs == *rhs;
 }
 
 [[nodiscard]] consteval bool same_file_(std::meta::info lhs, std::meta::info rhs) {
-    const std::string_view lhs_file = std::meta::source_location_of(lhs).file_name();
-    const std::string_view rhs_file = std::meta::source_location_of(rhs).file_name();
-    return lhs_file == rhs_file;
+    return same_text_(declaration_file_(lhs), declaration_file_(rhs));
+}
+
+// True when file is the directory of anchor followed by header.  The
+// directory of anchor is its text up to and with its last '/'.  A file
+// shorter than that directory differs from anchor at its terminator, so
+// the loop reads no character past it.  Complexity: linear in the texts.
+[[nodiscard]] consteval bool is_header_beside_(const char* file, const char* anchor, const char* header) {
+    std::size_t directory = 0;
+    for (std::size_t place = 0; anchor[place] != '\0'; ++place) {
+        if (anchor[place] == '/') directory = place + 1;
+    }
+    for (std::size_t place = 0; place < directory; ++place) {
+        if (file[place] != anchor[place]) return false;
+    }
+    return same_text_(file + directory, header);
 }
 
 // The refusal for a type that already has the shape.  The function is
 // not a template, so no translation unit can specialize a verdict in
-// front of it.  Complexity: linear in the members of the owning
-// namespace, plus the identity walk of the type.
+// front of it.  The type of the seal is atom_seal, which this header
+// declares, so the file of that type anchors the header of each family.
+// Complexity: linear in the members of the owning namespace, plus the
+// identity walk of the type.
 [[nodiscard]] consteval atom_refusal atom_refusal_of_(std::meta::info type) {
     const std::meta::info owner = atom_owner_(type);
-    if (!is_admitted_atom_namespace_(owner)) return atom_refusal::outside_the_catalog;
+    const char* const header = family_header_(owner);
+    if (header == nullptr) return atom_refusal::outside_the_catalog;
     std::meta::info seal{};
     std::size_t seals = 0;
     for (const std::meta::info member : std::meta::members_of(owner, std::meta::access_context::unchecked())) {
@@ -187,6 +255,8 @@ enum class atom_refusal : std::uint8_t {
     }
     if (seals == 0) return atom_refusal::namespace_unsealed;
     if (seals > 1) return atom_refusal::namespace_sealed_twice;
+    const char* const anchor = declaration_file_(std::meta::remove_cvref(std::meta::type_of(seal)));
+    if (!is_header_beside_(declaration_file_(seal), anchor, header)) return atom_refusal::sealed_outside_its_header;
     if (!same_file_(std::meta::dealias(type), seal)) return atom_refusal::declared_outside_its_seal;
     if (!::foundation::reflect::has_stable_identity(type)) return atom_refusal::no_stable_identity;
     return atom_refusal::none;
@@ -202,6 +272,9 @@ enum class atom_refusal : std::uint8_t {
             return "its namespace holds no fixy::atom::atom_seal";
         case atom_refusal::namespace_sealed_twice:
             return "its namespace holds two fixy::atom::atom_seal variables";
+        case atom_refusal::sealed_outside_its_header:
+            return "the seal of its namespace is declared in a file other than the header that fixy/Atom.h names "
+                   "for the family";
         case atom_refusal::declared_outside_its_seal:
             return "it is declared in a file other than the one that seals its namespace";
         case atom_refusal::no_stable_identity:

@@ -264,11 +264,30 @@ static_assert(is_admitted_atom_namespace_(^^::fixy::atom) && is_admitted_atom_na
 static_assert(!is_admitted_atom_namespace_(^^::fixy::atom::detail), "detail holds rosters and probes, not atoms");
 static_assert(!is_admitted_atom_namespace_(^^::fixy), "the parent of the catalog is not the catalog");
 
-// Each family in the list is a namespace directly in fixy::atom.  A
-// family that moved would leave a list entry that names nothing.
+// The header of a family is a path below the directory of the anchor.
+static_assert(is_header_beside_("/tree/include/fixy/atoms/Sync.h", "/tree/include/fixy/Atom.h", "atoms/Sync.h"));
+static_assert(!is_header_beside_("/elsewhere/fixy/atoms/Sync.h", "/tree/include/fixy/Atom.h", "atoms/Sync.h"),
+              "a file in another directory is not the header of the family");
+static_assert(!is_header_beside_("/tree/include/fixy/atoms/Sync.hh", "/tree/include/fixy/Atom.h", "atoms/Sync.h"));
+static_assert(!is_header_beside_("/tree/inc", "/tree/include/fixy/Atom.h", "atoms/Sync.h"),
+              "a file shorter than the directory is not the header");
+static_assert(same_text_("Atom.h", "Atom.h") && !same_text_("Atom.h", "Atom.hh") && !same_text_("Atom.hh", "Atom.h"));
+
+// The core namespace is the first entry of the list, and its header is
+// this one, which declares the type of each seal.
+static_assert(atom_families[0].family == ^^::fixy::atom);
+static_assert(is_header_beside_(declaration_file_(^^::fixy::atom::atom_namespace_seal),
+                                declaration_file_(^^::fixy::atom::atom_seal), "Atom.h"));
+
+// Each family in the list is a namespace directly in fixy::atom, and each
+// names a header.  A family that moved would leave a list entry that names
+// nothing.
 [[nodiscard]] consteval bool every_family_is_a_child_of_the_catalog() {
-    for (const std::meta::info family : atom_families) {
-        if (!std::meta::is_namespace(family) || std::meta::parent_of(family) != ^^::fixy::atom) return false;
+    for (const atom_family& entry : atom_families) {
+        if (entry.family == ^^::fixy::atom) continue;
+        if (!std::meta::is_namespace(entry.family) || std::meta::parent_of(entry.family) != ^^::fixy::atom)
+            return false;
+        if (entry.header == nullptr) return false;
     }
     return true;
 }
