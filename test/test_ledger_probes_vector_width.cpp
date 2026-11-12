@@ -134,9 +134,12 @@ void test_vector_width_probe_answers_or_declines() {
     assert(memory.has_value());
 
     // The rule the probe applies, restated: the wide width is preferred
-    // only when it won the compute shape outright.
+    // only when it won the compute shape outright.  compare_variants counts
+    // a gap of kPracticalMarginPercent or more as practically wide, so a
+    // compute gain of exactly 100 + kPracticalMarginPercent can prefer the
+    // wide width.  A load on the host moves the gain onto that boundary.
     if (width == ledger::probes::kWideWidthBits) {
-        assert(compute->value.raw() > 100u + ledger::kPracticalMarginPercent);
+        assert(compute->value.raw() >= 100u + ledger::kPracticalMarginPercent);
     }
     crucible::test::pass("  test_vector_width_probe_answers_or_declines: PASSED ({} bits, compute={}%, memory={}%)\n",
                          static_cast<unsigned long long>(width), static_cast<unsigned long long>(compute->value.raw()),
