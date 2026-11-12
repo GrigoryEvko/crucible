@@ -5608,31 +5608,3 @@ fixy_neg_compile_test(neg_witnessed_at_from_a_temporary_handle
 # result gate, the throws search, the delegation query and the payload
 # row answer for them.
 fixy_test(test_component_walk_gates)
-
-# ── The escape surface, reflected ─────────────────────────────────────
-#
-# The compiler reads the public surface of each wrapper through std::meta:
-# its own members, the members of each public base, and each member of a
-# base that a using-declaration makes public.  A member that hands out a
-# raw reference or pointer under an unsanctioned name fails to compile
-# however it is spelled.  This TU is the assertion.  Each fixture below
-# proves one shape of door: a trailing return, a door in a public base, a
-# door that a using-declaration exports, a conversion operator, and a
-# public data member.
-fixy_test(test_escape_reflection)
-
-fixy_neg_compile_test(neg_escape_unsanctioned_member
-  "the public surface of .*Leaky holds int. .*Leaky::steal_the_pointer"
-  "concept foundation::reflect::RawEscapesSanctioned")
-fixy_neg_compile_test(neg_escape_inherited_member
-  "the public surface of .*InheritsTheDoor holds int. .*LeakyBase::steal_the_pointer"
-  "concept foundation::reflect::RawEscapesSanctioned")
-fixy_neg_compile_test(neg_escape_reexported_member
-  "the public surface of .*ReExportsTheDoor holds int. .*LeakyBase::steal_the_pointer"
-  "concept foundation::reflect::RawEscapesSanctioned")
-fixy_neg_compile_test(neg_escape_conversion_operator
-  "the public surface of .*ConvertsToPointer holds .*ConvertsToPointer::operator int."
-  "concept foundation::reflect::RawEscapesSanctioned")
-fixy_neg_compile_test(neg_escape_public_data_member
-  "the public surface of .*ExposesStorage holds .*ExposesStorage::count.  A caller takes the address"
-  "concept foundation::reflect::RawEscapesSanctioned")

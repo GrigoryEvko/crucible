@@ -365,15 +365,14 @@ include/foundation/permissions/ | replace-pending:<optional> | 1 | - | -
 include/foundation/permissions/ | replace-pending:<string_view> | 3 | - | -
 include/foundation/permissions/ | replace-pending:<tuple> | 2 | - | -
 include/foundation/permissions/ | replace-pending:<vector> | 3 | - | -
-include/foundation/reflect/ | base-std-entity | 193 | - | -
-include/foundation/reflect/ | base-std-object | 65 | - | -
+include/foundation/reflect/ | base-std-entity | 140 | - | -
+include/foundation/reflect/ | base-std-object | 54 | - | -
 include/foundation/reflect/ | replace-pending:<array> | 3 | - | -
 include/foundation/reflect/ | replace-pending:<bit> | 1 | - | -
-include/foundation/reflect/ | replace-pending:<span> | 1 | - | -
-include/foundation/reflect/ | replace-pending:<string> | 3 | - | -
-include/foundation/reflect/ | replace-pending:<string_view> | 6 | - | -
+include/foundation/reflect/ | replace-pending:<string> | 2 | - | -
+include/foundation/reflect/ | replace-pending:<string_view> | 5 | - | -
 include/foundation/reflect/ | replace-pending:<tuple> | 1 | - | -
-include/foundation/reflect/ | replace-pending:<vector> | 5 | - | -
+include/foundation/reflect/ | replace-pending:<vector> | 4 | - | -
 src/ | c-array-object | 19 | - | -
 src/ | c-library-call | 38 | - | -
 src/ | compiler-builtin | 2 | - | -
@@ -484,7 +483,7 @@ test/fixy/neg/ | detail-use | 222 | - | each fixture uses a private name of the 
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | raw-function-pointer | 2 | - | -
 test/fixy/neg/ | raw-new-delete | 1 | - | -
-test/fixy/neg/ | raw-pointer-object | 35 | - | -
+test/fixy/neg/ | raw-pointer-object | 31 | - | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 6 | - | -
 test/fixy/neg/ | std-entity | 204 | - | -
@@ -506,11 +505,11 @@ test/foundation/ | std-entity | 608 | - | -
 test/foundation/ | std-object | 201 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
-test/foundation/neg/ | detail-use | 83 | - | each fixture uses a private name of the base for its probe, such as a check, a context key or a test lattice
+test/foundation/neg/ | detail-use | 82 | - | each fixture uses a private name of the base for its probe, such as a check, a context key or a test lattice
 test/foundation/neg/ | door-use | 2 | - | the fixture defines a door owner again, and its probe shows that the build refuses the second definition
 test/foundation/neg/ | lifetime-start | 11 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/ | raw-pointer-object | 18 | - | -
-test/foundation/neg/ | std-entity | 80 | - | -
+test/foundation/neg/ | std-entity | 79 | - | -
 test/foundation/neg/ | std-object | 51 | - | -
 test/fuzz/boundary/ | c-array-object | 1 | - | -
 test/fuzz/boundary/ | c-library-call | 25 | - | -
