@@ -1432,7 +1432,7 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 | `format(out, fmt, args...)` | Writes into a `FixedText`. Gives `Result<TextView, Truncated>`, and on `Truncated` the text holds the first characters | the format | main |
 | `Formattable<T>` | An integer, a `bool` or a `TextView` | - | main |
 | more argument kinds | A scoped enumeration by its reflected name, an `Id` and a `Digest` by their word, an `Errno` by its name, and a `Site` | the format | design |
-| float values | A fixed decimal form with no locale. The algorithm, or the row of `<charconv>` in the rule table, is a decision of Stage 2 (section 9) | the format | open |
+| float values | A fixed decimal form with no locale, from an algorithm of the family. The rule table has no `allow` row of `<charconv>`, so no base file includes it | the format | design |
 | `parse<T>(text)` | `Result<T, ParseError>`. Decimal and `0x` hex exactly, no white space, no sign on an unsigned type, and no overflow. `ParseError` holds the position in the text. It uses `checked_mul`, `checked_add` and `narrow` of the Scalar family | one pass over the text | design |
 | the prefix map | `-ffile-prefix-map` and `-fmacro-prefix-map`, so a `Site` holds a path relative to the source root (section 10.3a) | none | design |
 
@@ -1440,7 +1440,7 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 
 **The family list.** `Site`, `Fmt`, `report`, `Sink`, `fatal`, `unreachable`, `format`, `Truncated`, `Formattable`, `parse`, `ParseError`.
 
-**Removes.** Four rows: `allow F0_primitives <cstdlib> until Report`, `allow F1_diag <charconv> until Report`, `allow F1_diag <cstdio> until Report` and `allow F1_diag <source_location> until Report`. The text of the row of `<cstdlib>` also names the Ref family (the frees of the two buffers) and the Os family (`std::getenv`). The text of the row of `<cstdio>` names the streams of `fixy/os/OwnedFile.h`. So these two rows go after Report, Ref and Os. The decision on the row of `<charconv>` belongs to section 9. The admit row `admit std::source_location until Report`. The R5 import of `libfixy.a`: `__fprintf_chk`. The R5 imports of the `libcrucible*.a` libraries: `__fprintf_chk`, `__vfprintf_chk`, `stderr`, `abort` outside the abort door, and `__isoc23_strtoull`, which `parse` replaces.
+**Removes.** Three rows: `allow F0_primitives <cstdlib> until Report`, `allow F1_diag <cstdio> until Report` and `allow F1_diag <source_location> until Report`. The text of the row of `<cstdlib>` also names the Ref family (the frees of the two buffers) and the Os family (`std::getenv`). The text of the row of `<cstdio>` names the streams of `fixy/os/OwnedFile.h`. So these two rows go after Report, Ref and Os. The admit row `admit std::source_location until Report`. The R5 import of `libfixy.a`: `__fprintf_chk`. The R5 imports of the `libcrucible*.a` libraries: `__fprintf_chk`, `__vfprintf_chk`, `stderr`, `abort` outside the abort door, and `__isoc23_strtoull`, which `parse` replaces.
 
 **The load.** C calls: `fprintf` 1,097, `stderr` 1,062, `abort` 403, `printf` 230, `_Exit` 80, `snprintf` 21, `fputs` 20, `fflush` 16 and `puts` 14. The ledger holds 31 findings of `std::source_location` in `test/`. Objects: `std::from_chars_result` 12 and `std::to_chars_result` 9. The pilot found one call site: the `PASSED` lines of the tests, which go through `report`.
 
