@@ -1,0 +1,25 @@
+#include <crucible/Runtime.h>
+#include <foundation/Traits.h>
+
+struct Fake {};
+
+template <>
+struct foundation::plant::is_admitted<Fake> {
+    static constexpr bool value = true;
+};
+
+namespace fp = ::foundation::plant;
+struct Other {};
+template <>
+struct fp::is_admitted<Other> {
+    static constexpr bool value = true;
+};
+
+#define FORGE_RUNTIME(TYPE)                      \
+    template <>                                  \
+    struct crucible::plant::runtime_trait<TYPE> { \
+        static constexpr bool value = true;      \
+    };
+FORGE_RUNTIME(Fake)
+
+static_assert(foundation::plant::Admitted<Fake>);

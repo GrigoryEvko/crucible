@@ -1,0 +1,11 @@
+#pragma once
+
+namespace foundation::plant {
+
+template <class T>
+inline constexpr bool is_admitted_v = false;
+
+template <class T>
+concept Admitted = is_admitted_v<T>;
+
+}  // namespace foundation::plant

@@ -2,9 +2,9 @@
 # different base header.  The walk reads the specializations of each template
 # of each namespace, so it finds the call in the member of the specialization.
 
-compile sentinel src/use.cpp sentinel=include/fixy/Special.h stage=c
+compile sentinel src/use.cpp sentinel=include/fixy/Special.h stage=c specialization-home=on
 exit sentinel pass
 judge sentinel
 finding sentinel syscalls raw-syscall include/fixy/Special.h:12:40 | planted::Reader::read(): getpid
-finding sentinel home outside-home include/fixy/Special.h:11:8 | planted::Reader
+finding sentinel specialization-home specialization include/fixy/Special.h:11:8 | planted::Reader
 finding sentinel quarantine base-c-library-call include/fixy/Special.h:12:40 | getpid

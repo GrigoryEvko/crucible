@@ -1,0 +1,13 @@
+#pragma once
+
+namespace crucible::plant {
+
+template <class T>
+struct runtime_trait {
+    static constexpr bool value = false;
+};
+
+template <class T>
+concept Admitted = runtime_trait<T>::value;
+
+}  // namespace crucible::plant

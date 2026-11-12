@@ -1,0 +1,6 @@
+# The rule table of the plants of the rule specialization-home:
+# include/foundation/ is base code, and test/ is quarantined.  A template is
+# at home in the file that defines it, and a check file stands where its
+# header stands.
+layer low 0 include/foundation/
+quarantine test/

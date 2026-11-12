@@ -1,0 +1,10 @@
+#pragma once
+
+namespace crucible::plant {
+
+template <class T>
+struct runtime_trait {
+    static constexpr bool value = false;
+};
+
+}  // namespace crucible::plant

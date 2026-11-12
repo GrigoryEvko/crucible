@@ -31,9 +31,9 @@ THE KINDS
     because the rule of each kind holds its findings in the objects of all.
     It counts no other kind of the census.  Test code can use the testing
     door, so the rule does not count testing-use.  It does not count the
-    kinds of the rules mint, permission-storage and proof-routes, or
-    the kind outside-home, because a fixture with such a finding probes the
-    rule of that kind.
+    kinds of the rules mint, permission-storage, proof-routes and
+    specialization-home, or the kind outside-home, because a fixture with
+    such a finding probes the rule of that kind.
 
 NO FIXTURE RUN
     A build with no record of a fixture has no census, and the rule counts

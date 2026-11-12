@@ -1,0 +1,4 @@
+format 1
+rule specialization-home
+include/foundation/Traits.h | open-extension | admit | foundation::plant::describe | a type of the plant states its trait beside its own definition
+include/foundation/Traits.h | open-extension | admit | foundation::plant::flagged | a type of the plant states its flag beside its own definition

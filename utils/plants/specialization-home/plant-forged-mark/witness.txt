@@ -1,0 +1,11 @@
+# A test file that declares a runtime trait again with the open mark makes
+# the trait open in its unit.  The record open-extension then stands at the
+# home of the trait, and the module of the rule refuses a record that no
+# ledger row admits.  The record is no error of the compile, also in the
+# mode error.
+compile report test/mark.cpp specialization-home=on
+exit report pass
+finding report specialization-home open-extension include/crucible/Runtime.h:6:8 | crucible::plant::runtime_trait
+judge report
+compile error test/mark.cpp mode=error specialization-home=on findings=report
+exit error pass

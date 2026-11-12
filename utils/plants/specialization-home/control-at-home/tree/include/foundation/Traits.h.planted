@@ -1,0 +1,31 @@
+#pragma once
+
+namespace foundation::plant {
+
+template <class T>
+struct is_admitted {
+    static constexpr bool value = false;
+};
+
+template <>
+struct is_admitted<int> {
+    static constexpr bool value = true;
+};
+
+template <class T>
+struct is_admitted<T*> {
+    static constexpr bool value = true;
+};
+
+template <class T>
+inline constexpr bool is_admitted_v = is_admitted<T>::value;
+
+template <>
+inline constexpr bool is_admitted_v<long> = true;
+
+template <class T>
+constexpr int pick(T) {
+    return 0;
+}
+
+}  // namespace foundation::plant

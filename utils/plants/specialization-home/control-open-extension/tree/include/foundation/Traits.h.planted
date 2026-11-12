@@ -1,0 +1,17 @@
+#pragma once
+
+#include <foundation/OpenExtension.h>
+
+namespace foundation::plant {
+
+// A type states its trait beside its own definition, in each file.
+template <class T>
+struct [[= ::foundation::open_extension{"a type states its trait beside its own definition"}]] describe {
+    static constexpr int value = 0;
+};
+
+template <class T>
+[[= ::foundation::open_extension{"a type states its flag beside its own definition"}]] inline constexpr bool
+    flagged = false;
+
+}  // namespace foundation::plant

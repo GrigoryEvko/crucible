@@ -860,6 +860,8 @@ inline constexpr StatedZero kZeros[] = {
      "the one allocation of an open-addressing table: it holds storage and makes no claim about the slots"},
     {^^::foundation::ThreadLocalRef,
      "a stateless handle onto a cell of the thread: it holds nothing, and the cell it names is process state, not a claim"},
+    {^^::foundation::open_extension,
+     "the open mark of a template: the value of an annotation, and never a value in a kernel signature"},
     {^^::foundation::core::Option, kPayload},
     {^^::foundation::core::NoValue, "the marker of an empty Option: it holds nothing, and no Option holds it"},
     {^^::foundation::core::Site,

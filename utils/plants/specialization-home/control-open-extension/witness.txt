@@ -1,0 +1,11 @@
+# A template with the open mark is open to each file: its explicit and its
+# partial specializations in a test file give no line.  Each marked template
+# gives the record open-extension at its home, and a ledger row of the tree
+# admits each record, so the module of the rule gives no error.
+compile types test/types.cpp specialization-home=on
+exit types pass
+finding types specialization-home open-extension include/foundation/Traits.h:9:96 | foundation::plant::describe
+finding types specialization-home open-extension include/foundation/Traits.h:15:5 | foundation::plant::flagged
+judge types
+compile error test/types.cpp mode=error specialization-home=on findings=types
+exit error pass

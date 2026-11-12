@@ -1,0 +1,13 @@
+# Each specialization at the home of its template passes the rule
+# specialization-home: an explicit and a partial specialization in the
+# header that defines the trait, a specialization in the check file of the
+# header, and a specialization of a template of a test file in that file.
+# An explicit specialization of a function template is a line of the rule
+# proof-routes only, and the module of this rule reads no such line.
+compile uses test/uses.cpp specialization-home=on
+exit uses pass
+finding uses proof-routes function-specialization test/uses.cpp:29:15 | function-specialization: foundation::plant::pick
+judge uses
+compile check test/layer/checks/foundation/Traits.cpp mode=error specialization-home=on
+exit check pass
+judge check

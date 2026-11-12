@@ -50,13 +50,11 @@
 //     location of the definition, so the walk reads the definition of a
 //     member that stands outside its class at its own place.
 //
-// THE DEFAULT HOME
-//     A class template or a variable template that a header of
-//     include/foundation/ or include/fixy/ defines has a home with no row in
-//     the class trait: the file that defines the template.  A concept of
-//     the two layers can read such a template, and a specialization from a
-//     different file changes what the concept admits.  A row of the template
-//     replaces the default home.
+// THE TEMPLATES WITH NO ROW
+//     A class template or a variable template that no row governs is a
+//     template of the rule specialization-home (specialization.cpp).  The
+//     family reads its sites, as THE SITES tells, and gives each site to that
+//     rule.  A row of the template replaces that rule for the template.
 //
 // THE PLACE
 //     The place of a site is the expansion point of its location.  A
@@ -121,10 +119,9 @@ constexpr unsigned long long kCombineSalt = 0x9E3779B97F4A7C15ULL;
 constexpr char kCombineName[] = "combine_ids";
 constexpr std::size_t kCombineLength = sizeof kCombineName - 1;
 constexpr char kMixName[] = "fmix64";
-// The directory of the check files and the directory of the headers.
-constexpr char kCheckTree[] = "test/layer/checks/";
+// The directory of the headers.
 constexpr char kHeaderTree[] = "include/";
-// The layers whose templates have a default home, and the runtime layer.
+// The two layers of the base, and the runtime layer.
 constexpr const char* kLayerTrees[] = {"include/foundation/", "include/fixy/"};
 constexpr char kCrucibleTree[] = "include/crucible/";
 
@@ -145,15 +142,14 @@ Kind outside_kind_of(HomeClass home_class) {
     return Kind::trait_outside_home;
 }
 
-// The home of one entity: its row, or the default home of a template (THE
-// DEFAULT HOME), the class of the row, and the qualified name of the entity.
+// The home of one entity: its row, the class of the row, and the qualified
+// name of the entity.
 struct Home {
     const HomeRow* row = nullptr;
-    const FileEntry* default_file = nullptr;
     HomeClass home_class = HomeClass::trait;
     std::string entity;
 
-    [[nodiscard]] bool is_set() const { return row != nullptr || default_file != nullptr; }
+    [[nodiscard]] bool is_set() const { return row != nullptr; }
 };
 
 // The rows by their entity, and the last name of each entity, for a quick
@@ -204,56 +200,8 @@ void build_index() {
 
 // ── The place ───────────────────────────────────────────────────────────
 
-// The place of a site (THE PLACE), or a place with no file for a site outside
-// the source root.
-Place site_place(location_t location) {
-    Place place;
-    if (location == UNKNOWN_LOCATION || location <= BUILTINS_LOCATION) {
-        return place;
-    }
-    location_t point = linemap_resolve_location(line_table, location, LRK_MACRO_EXPANSION_POINT, nullptr);
-    expanded_location where = expand_location(point);
-    if (where.file == nullptr) {
-        return place;
-    }
-    const FileEntry& entry = classify_file(where.file);
-    if (entry.file_class == FileClass::outside) {
-        return place;
-    }
-    place.file_class = entry.file_class;
-    place.file = &entry;
-    place.line = where.line;
-    place.column = where.column;
-    place.spelling = point;
-    return place;
-}
-
-// The file of the place of LOCATION, or null outside the source root.  It
-// reads the line map and no line or column, so it costs less than
-// site_place(), and the tests of a file use it.
-const FileEntry* file_at(location_t location) {
-    if (location == UNKNOWN_LOCATION || location <= BUILTINS_LOCATION) {
-        return nullptr;
-    }
-    const line_map_ordinary* map = nullptr;
-    linemap_resolve_location(line_table, location, LRK_MACRO_EXPANSION_POINT, &map);
-    if (map == nullptr) {
-        return nullptr;
-    }
-    const FileEntry& entry = classify_file(ORDINARY_MAP_FILE_NAME(map));
-    return entry.file_class == FileClass::outside ? nullptr : &entry;
-}
-
-// The path that a home compares: the header of a check file, and the path of
-// each other file.
-std::string read_as(const std::string& relative) {
-    std::size_t tree_length = sizeof kCheckTree - 1;
-    if (has_prefix(relative, kCheckTree) && relative.size() > tree_length + 4
-        && relative.compare(relative.size() - 4, 4, ".cpp") == 0) {
-        return std::string(kHeaderTree) + relative.substr(tree_length, relative.size() - tree_length - 4) + ".h";
-    }
-    return relative;
-}
+// site_place(), file_at() and read_as() of THE PLACE stand after this
+// namespace, because the family specialization home reads them too.
 
 bool has_any_prefix(const std::string& path, std::initializer_list<const char*> prefixes) {
     for (const char* prefix : prefixes) {
@@ -382,9 +330,6 @@ void record_site(const Home& home, location_t location, bool is_beside = false) 
         }
         return;
     }
-    if (home.row == nullptr && home.default_file != nullptr && path == home.default_file->relative) {
-        return;
-    }
     if (home.row != nullptr && home.row->is_args && is_beside) {
         return;
     }
@@ -393,18 +338,8 @@ void record_site(const Home& home, location_t location, bool is_beside = false) 
 
 // ── The templates ───────────────────────────────────────────────────────
 
-// The location that defines a class template or a variable template: its
-// pattern when the unit defines it, and its declaration otherwise.
-location_t defining_location(tree template_decl) {
-    tree result = DECL_TEMPLATE_RESULT(template_decl);
-    if (result == NULL_TREE) {
-        return DECL_SOURCE_LOCATION(template_decl);
-    }
-    if (TREE_CODE(result) == TYPE_DECL && CLASS_TYPE_P(TREE_TYPE(result))) {
-        return DECL_SOURCE_LOCATION(TYPE_MAIN_DECL(TREE_TYPE(result)));
-    }
-    return DECL_SOURCE_LOCATION(result);
-}
+// defining_location() stands after this namespace, with the helpers of THE
+// PLACE.
 
 bool is_class_template(tree template_decl) {
     tree result = DECL_TEMPLATE_RESULT(template_decl);
@@ -417,9 +352,9 @@ bool is_variable_template(tree template_decl) {
     return result != NULL_TREE && VAR_P(result);
 }
 
-// The home of a class template or a variable template: its row, or its
-// default home (THE DEFAULT HOME), or no home.  Complexity: O(depth of the
-// scopes) on the first request.
+// The home of a class template or a variable template: its row, or no home
+// (THE TEMPLATES WITH NO ROW).  Complexity: O(depth of the scopes) on the
+// first request.
 const Home& home_of_template(tree template_decl) {
     tree general = most_general_template(template_decl);
     if (general == NULL_TREE) {
@@ -435,14 +370,6 @@ const Home& home_of_template(tree template_decl) {
     if (home.row != nullptr) {
         home.home_class = home.row->home_class;
         home.entity = entity_text(named);
-    } else if (is_class_template(general) || is_variable_template(general)) {
-        const FileEntry* file = file_at(defining_location(general));
-        if (file != nullptr && file->file_class == FileClass::base
-            && has_any_prefix(file->relative, {kLayerTrees[0], kLayerTrees[1]})) {
-            home.default_file = file;
-            home.home_class = HomeClass::trait;
-            home.entity = qualified_name(general);
-        }
     }
     return template_homes.emplace(general, std::move(home)).first->second;
 }
@@ -509,13 +436,24 @@ bool is_beside_arguments(tree arguments, location_t location) {
     return true;
 }
 
+// One site of TEMPLATE_DECL at LOCATION: a site of its row, or a site of the
+// rule specialization-home for a template with no row (THE TEMPLATES WITH NO
+// ROW).
+void record_template_site(const Home& home, tree template_decl, location_t location, bool is_beside) {
+    if (home.is_set()) {
+        record_site(home, location, is_beside);
+    } else {
+        note_template_site(template_decl, location);
+    }
+}
+
 // Each explicit and each partial specialization of TEMPLATE_DECL (THE SITES).
 void read_specializations(tree template_decl) {
     if (!is_class_template(template_decl) && !is_variable_template(template_decl)) {
         return;
     }
     const Home& home = home_of_template(template_decl);
-    if (!home.is_set() || home.home_class == HomeClass::combine) {
+    if (home.is_set() ? home.home_class == HomeClass::combine : !read_template_home(template_decl)) {
         return;
     }
     bool is_args = home.row != nullptr && home.row->is_args;
@@ -525,7 +463,8 @@ void read_specializations(tree template_decl) {
             continue;
         }
         location_t location = defining_location(partial);
-        record_site(home, location, is_args && is_beside_arguments(TREE_PURPOSE(entry), location));
+        record_template_site(home, template_decl, location,
+                             is_args && is_beside_arguments(TREE_PURPOSE(entry), location));
     }
     bool is_class = is_class_template(template_decl);
     for (tree entry = DECL_TEMPLATE_INSTANTIATIONS(template_decl); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
@@ -540,7 +479,8 @@ void read_specializations(tree template_decl) {
             continue;
         }
         location_t location = DECL_SOURCE_LOCATION(is_class ? TYPE_MAIN_DECL(value) : value);
-        record_site(home, location, is_args && is_beside_arguments(TREE_PURPOSE(entry), location));
+        record_template_site(home, template_decl, location,
+                             is_args && is_beside_arguments(TREE_PURPOSE(entry), location));
     }
 }
 
@@ -572,12 +512,13 @@ void read_member_specialization(tree decl) {
         return;
     }
     const Home& home = home_of_template(template_decl);
-    if (!home.is_set() || home.home_class == HomeClass::combine) {
+    if (home.is_set() ? home.home_class == HomeClass::combine : !read_template_home(template_decl)) {
         return;
     }
     location_t location = DECL_SOURCE_LOCATION(decl);
     bool is_args = home.row != nullptr && home.row->is_args;
-    record_site(home, location, is_args && is_beside_arguments(CLASSTYPE_TI_ARGS(context), location));
+    record_template_site(home, template_decl, location,
+                         is_args && is_beside_arguments(CLASSTYPE_TI_ARGS(context), location));
 }
 
 // ── The names of combine_ids ────────────────────────────────────────────
@@ -1087,13 +1028,13 @@ void read_row_site(tree decl, const HomeRow& row, tree named, bool is_class) {
 // How the walk reads the members of a class.
 enum class MemberWalk : std::uint8_t {
     none,
-    templates,  // only the member templates, which can have a default home
+    templates,  // only the member templates, which the rule specialization-home reads
     full,  // each member: a row governs the class, or a scope file defines it
 };
 
-// The member walk of a class (THE SCOPE).  A class of the two layers needs
-// the walk of its member templates, because such a template has a default
-// home.
+// The member walk of a class (THE SCOPE).  A class of the tree needs the walk
+// of its member templates while the rule specialization-home reads the
+// templates with no row (THE TEMPLATES WITH NO ROW).
 MemberWalk member_walk_of(tree type, const HomeRow* row) {
     if (row != nullptr) {
         return MemberWalk::full;
@@ -1105,8 +1046,7 @@ MemberWalk member_walk_of(tree type, const HomeRow* row) {
     if (is_scope_file(file)) {
         return MemberWalk::full;
     }
-    return has_any_prefix(file->relative, {kLayerTrees[0], kLayerTrees[1]}) ? MemberWalk::templates
-                                                                            : MemberWalk::none;
+    return is_specialization_home_active() ? MemberWalk::templates : MemberWalk::none;
 }
 
 // One declaration of a scope whose row is SCOPE_ROW, named at SCOPE_NAMED.  A
@@ -1314,6 +1254,75 @@ void on_collection(void*, void*) {
 }
 
 }  // namespace
+
+// ── The place, for the two families ────────────────────────────────────
+
+// The directory of the check files.
+constexpr char kCheckTree[] = "test/layer/checks/";
+
+// The place of a site (THE PLACE), or a place with no file for a site outside
+// the source root.
+Place site_place(location_t location) {
+    Place place;
+    if (location == UNKNOWN_LOCATION || location <= BUILTINS_LOCATION) {
+        return place;
+    }
+    location_t point = linemap_resolve_location(line_table, location, LRK_MACRO_EXPANSION_POINT, nullptr);
+    expanded_location where = expand_location(point);
+    if (where.file == nullptr) {
+        return place;
+    }
+    const FileEntry& entry = classify_file(where.file);
+    if (entry.file_class == FileClass::outside) {
+        return place;
+    }
+    place.file_class = entry.file_class;
+    place.file = &entry;
+    place.line = where.line;
+    place.column = where.column;
+    place.spelling = point;
+    return place;
+}
+
+// The file of the place of LOCATION, or null outside the source root.  It
+// reads the line map and no line or column, so it costs less than
+// site_place(), and the tests of a file use it.
+const FileEntry* file_at(location_t location) {
+    if (location == UNKNOWN_LOCATION || location <= BUILTINS_LOCATION) {
+        return nullptr;
+    }
+    const line_map_ordinary* map = nullptr;
+    linemap_resolve_location(line_table, location, LRK_MACRO_EXPANSION_POINT, &map);
+    if (map == nullptr) {
+        return nullptr;
+    }
+    const FileEntry& entry = classify_file(ORDINARY_MAP_FILE_NAME(map));
+    return entry.file_class == FileClass::outside ? nullptr : &entry;
+}
+
+// The path that a home compares: the header of a check file, and the path of
+// each other file.
+std::string read_as(const std::string& relative) {
+    std::size_t tree_length = sizeof kCheckTree - 1;
+    if (has_prefix(relative, kCheckTree) && relative.size() > tree_length + 4
+        && relative.compare(relative.size() - 4, 4, ".cpp") == 0) {
+        return std::string(kHeaderTree) + relative.substr(tree_length, relative.size() - tree_length - 4) + ".h";
+    }
+    return relative;
+}
+
+// The location that defines a class template or a variable template: its
+// pattern when the unit defines it, and its declaration otherwise.
+location_t defining_location(tree template_decl) {
+    tree result = DECL_TEMPLATE_RESULT(template_decl);
+    if (result == NULL_TREE) {
+        return DECL_SOURCE_LOCATION(template_decl);
+    }
+    if (TREE_CODE(result) == TYPE_DECL && CLASS_TYPE_P(TREE_TYPE(result))) {
+        return DECL_SOURCE_LOCATION(TYPE_MAIN_DECL(TREE_TYPE(result)));
+    }
+    return DECL_SOURCE_LOCATION(result);
+}
 
 // The walk of the family at the end of the parse (THE SITES).
 void walk_home() {

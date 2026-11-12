@@ -1,0 +1,5 @@
+# The rule table of the plants of the rule specialization-home:
+# include/foundation/ is base code, and test/ is quarantined.  A template of
+# the namespace foundation or fixy has its home in a base file.
+layer low 0 include/foundation/
+quarantine test/

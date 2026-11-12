@@ -1,0 +1,14 @@
+# An explicit specialization of a trait of the base in a test file is a
+# finding of the rule specialization-home, also through a namespace alias,
+# and so is an explicit specialization of a runtime trait that a macro
+# writes.  The gate that reads the trait then admits the forged type, and
+# the module of the rule refuses each line.  In the mode error each finding
+# is an error.
+compile report test/forge.cpp specialization-home=on
+exit report pass
+finding report specialization-home specialization test/forge.cpp:7:27 | foundation::plant::is_admitted
+finding report specialization-home specialization test/forge.cpp:14:12 | foundation::plant::is_admitted
+finding report specialization-home specialization test/forge.cpp:23:1 | crucible::plant::runtime_trait
+judge report
+compile error test/forge.cpp mode=error specialization-home=on findings=report errors=report
+exit error fail

@@ -1,0 +1,17 @@
+#pragma once
+
+namespace foundation {
+
+struct open_extension final {
+    char reason[256]{};
+
+    template <decltype(sizeof 0) Size>
+        requires(Size > 1 && Size <= 256)
+    consteval open_extension(char const (&text)[Size]) noexcept {
+        for (decltype(sizeof 0) index = 0; index < Size; ++index) {
+            reason[index] = text[index];
+        }
+    }
+};
+
+}  // namespace foundation

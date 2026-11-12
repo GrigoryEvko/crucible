@@ -1,0 +1,14 @@
+#pragma once
+
+namespace crucible::plant {
+
+// A trait that only its specializations define.
+template <class T>
+struct family_of;
+
+template <>
+struct family_of<int> {
+    static constexpr int value = 1;
+};
+
+}  // namespace crucible::plant

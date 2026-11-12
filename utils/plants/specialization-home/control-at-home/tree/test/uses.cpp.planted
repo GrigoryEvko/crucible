@@ -1,0 +1,31 @@
+#include <foundation/Traits.h>
+
+// A template of the test file is at home in the test file, and a read of a
+// trait of the base is no site.
+namespace {
+template <class T>
+struct own_trait {
+    static constexpr bool value = false;
+};
+
+template <>
+struct own_trait<int> {
+    static constexpr bool value = true;
+};
+}  // namespace
+
+template <class T>
+struct test_global {};
+
+template <>
+struct test_global<int> {};
+
+static_assert(foundation::plant::is_admitted_v<int*>);
+static_assert(own_trait<int>::value);
+
+// An explicit specialization of a function template is a route of the rule
+// proof-routes in each file, and no line of this rule.
+template <>
+constexpr int foundation::plant::pick<int>(int) {
+    return 1;
+}

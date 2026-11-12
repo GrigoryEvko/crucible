@@ -174,37 +174,11 @@ include/foundation/permissions/ReadView.h | open-read | 1 | foundation::reflect:
 test/fixy/test_armed_roster.cpp | outside-home | 1 | fixy::concurrent::is_stage_inline_safe | the roster test plants the cells and the instances of its own predicates, to prove that the walk of the roster finds each predicate
 test/fixy/test_armed_roster.cpp | outside-home | 68 | foundation::contracts::armed_cell | the roster test plants the cells and the instances of its own predicates, to prove that the walk of the roster finds each predicate
 test/fixy/test_armed_roster.cpp | outside-home | 15 | foundation::contracts::armed_instances | the roster test plants the cells and the instances of its own predicates, to prove that the walk of the roster finds each predicate
-test/fixy/test_atom.cpp | outside-home | 1 | fixy::atom::stdio::write | the attack test specializes an atom for a private stream, to prove that the binding refuses a specialized atom
-test/fixy/test_cheat_probe.cpp | outside-home | 1 | fixy::is_band_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
-test/fixy/test_cheat_probe.cpp | outside-home | 1 | fixy::is_borrowed_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
-test/fixy/test_cheat_probe.cpp | outside-home | 1 | fixy::is_owned_region_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
-test/fixy/test_cheat_probe.cpp | outside-home | 1 | fixy::is_recipe_spec_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
-test/fixy/test_cheat_probe.cpp | outside-home | 1 | fixy::is_refined_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
-test/fixy/test_cheat_probe.cpp | outside-home | 1 | fixy::is_secret_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
-test/fixy/test_cheat_probe.cpp | outside-home | 1 | fixy::is_stale_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
-test/fixy/test_cheat_probe.cpp | outside-home | 1 | fixy::is_tagged_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
-test/fixy/test_cheat_probe.cpp | outside-home | 1 | fixy::is_writeonce | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
 test/fixy/test_cheat_probe.cpp | outside-home | 1 | foundation::algebra::is_graded_specialization | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
-test/fixy/test_cheat_probe.cpp | outside-home | 1 | foundation::algebra::is_graded_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
-test/fixy/test_cheat_probe.cpp | outside-home | 1 | foundation::algebra::is_graded_wrapper_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
 test/fixy/test_machine.cpp | outside-home | 2 | fixy::machine::admitted_transitions | the test of the machine admits the edges of its own planted machine
 test/fixy/test_pipeline_dispatch.cpp | outside-home | 4 | fixy::concurrent::is_stage_inline_safe | the dispatch test claims inline dispatch for its planted stages
-test/fixy/test_session_payload_seal.cpp | outside-home | 1 | fixy::session::detail::delegation_readable_gate | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
-test/fixy/test_session_payload_seal.cpp | outside-home | 1 | fixy::session::detail::delivery_gate | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
-test/fixy/test_session_payload_seal.cpp | outside-home | 1 | fixy::session::detail::payload_admitted_gate | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
-test/fixy/test_session_payload_seal.cpp | outside-home | 1 | fixy::session::detail::payload_conveys_delegation | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
-test/fixy/test_session_payload_seal.cpp | outside-home | 1 | fixy::session::detail::payload_facts_cell | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
-test/fixy/test_session_payload_seal.cpp | outside-home | 1 | fixy::session::detail::payload_readable_gate | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
-test/fixy/test_session_payload_seal.cpp | outside-home | 1 | fixy::session::is_permission_classified | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
-test/fixy/test_session_payload_seal.cpp | outside-home | 1 | fixy::session::is_plain_payload | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
-test/fixy/test_session_payload_seal.cpp | outside-home | 1 | fixy::session::payload_delegation_carrier_v | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
-test/fixy/test_session_payload_seal.cpp | outside-home | 1 | fixy::session::payload_perm_delta | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
-test/fixy/test_session_payload_seal.cpp | outside-home | 1 | fixy::session::protocol_delivered_regions | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
-test/fixy/test_session_wire_word.cpp | outside-home | 1 | fixy::session::branch_wire_word_v | the attack test forges a wire word, to prove that the session refuses it
-test/fixy/test_session_wire_word.cpp | outside-home | 1 | fixy::session::step_wire_word_v | the attack test forges a wire word, to prove that the session refuses it
 test/foundation/test_core_choice.cpp | outside-home | 1 | foundation::core::niche | the test gives its planted payload an empty value, to test the storage form of an Option with a niche
 test/foundation/test_diag.cpp | outside-home | 3 | foundation::diag::insight_provider | the test expands the insight macros for its planted diagnostic tags
-test/foundation/test_effects_resources.cpp | outside-home | 3 | foundation::effects::resource::SmBudget | the attack test specializes a resource tag, to prove that ResourceTag refuses it
 test/foundation/test_permissions_compile.cpp | outside-home | 3 | foundation::permissions::permission_rows | the compile test states the rows of its planted tags
 test/layer/checks/fixy/Bands.cpp | open-read | 1 | fixy::mint_band | -
 test/layer/checks/fixy/Bands.cpp | open-read | 1 | fixy::relax | -

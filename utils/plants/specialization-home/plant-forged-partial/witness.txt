@@ -1,0 +1,14 @@
+# A partial specialization of a trait of the base in a test file is a
+# finding of the rule specialization-home.  So is an explicit specialization
+# of a static data member and of a member function of an instance of a class
+# template of the base: the hooks of the family home read them.  The module
+# of the rule refuses each line, and in the mode error each finding is an
+# error.
+compile report test/partial.cpp specialization-home=on
+exit report pass
+finding report specialization-home specialization test/partial.cpp:6:27 | foundation::plant::is_admitted
+finding report specialization-home specialization test/partial.cpp:11:5 | foundation::plant::holder
+finding report specialization-home specialization test/partial.cpp:14:6 | foundation::plant::holder
+judge report
+compile error test/partial.cpp mode=error specialization-home=on findings=report errors=report
+exit error fail

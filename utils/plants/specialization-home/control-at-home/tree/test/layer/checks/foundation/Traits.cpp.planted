@@ -1,0 +1,22 @@
+// The check file of the header stands where the header stands, so its
+// specializations are at home.
+#include <foundation/Traits.h>
+
+namespace foundation::plant {
+
+struct Probe {};
+
+template <>
+struct is_admitted<Probe> {
+    static constexpr bool value = true;
+};
+
+template <class T>
+struct local_trait {};
+
+template <>
+struct local_trait<Probe> {};
+
+static_assert(is_admitted<Probe>::value);
+
+}  // namespace foundation::plant

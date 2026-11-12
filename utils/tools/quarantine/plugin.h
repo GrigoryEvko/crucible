@@ -24,7 +24,10 @@
 //                          unit and the optimize options of each function
 //         home.cpp         the family home: where a definition or a
 //                          specialization of an entity stands
-//         body.cpp         the family library code: the code of a library in
+//         specialization.cpp
+//                          the family specialization home: the home of each
+//                          template of the tree, and its open mark
+//         body.cpp        the family library code: the code of a library in
 //                          each function that the unit compiles, from an RTL
 //                          pass
 //         linear.cpp       the family linear: the paths of a body and the
@@ -271,9 +274,9 @@
 //     module of the rule judges it against the ledger of the rule
 //     (is_family_kind).  The class of a home row selects the sites and the
 //     kinds of its entity (home.cpp, THE CLASSES):
-//     outside-home          a specialization of a template of a trait row or
-//                           of a default home, or a declaration of a namespace
-//                           of a trait row, outside its home
+//     outside-home          a specialization of a template of a trait row, or
+//                           a declaration of a namespace of a trait row,
+//                           outside its home
 //     federation-outside-home
 //                           a definition or a specialization of the entity of
 //                           a federation row, or a definition of a part of it,
@@ -339,6 +342,16 @@
 //     door                  no finding: one record of each linear-door row of
 //                           the rule table that a unit read, for the module of
 //                           the rule, which refuses a row with no record
+//     The rule specialization-home of the family specialization home
+//     (specialization.cpp, THE KINDS):
+//     specialization        a specialization of a template of the tree outside
+//                           the home of the template, when the template has no
+//                           open mark
+//     foreign-primary       the primary declaration of a template of the
+//                           namespace foundation or fixy outside the base
+//     open-extension        no finding: one record of each template with the
+//                           open mark, at its home, for the module of the rule,
+//                           which refuses a record that no ledger row admits
 //     The records of the library code (body.cpp, THE RECORDS) come from the
 //     instructions of each function that the unit compiles.  They have no
 //     rule of the registry.  The tag library-records stands in the place of
@@ -688,6 +701,7 @@ enum class Rule : std::uint8_t {
     home,
     owners,
     must_consume,
+    specialization_home,
     // No rule of the registry: the tag of the records of the library code
     // (THE RULES AND THE KINDS).
     library_records,
@@ -888,6 +902,10 @@ enum class Kind : std::uint8_t {
     linear_discarded_temporary,
     linear_unanalyzed,
     linear_door,
+    // The family specialization home (specialization.cpp).
+    specialization_outside_home,
+    specialization_foreign_primary,
+    specialization_open_extension,
     // The family library code (body.cpp).
     library_inlined,
     library_call,
@@ -941,6 +959,8 @@ inline const char* rule_name(Rule rule) {
             return "owners";
         case Rule::must_consume:
             return "must-consume";
+        case Rule::specialization_home:
+            return "specialization-home";
         case Rule::library_records:
             return "library-records";
     }
@@ -1153,6 +1173,12 @@ inline const char* kind_name(Kind kind) {
             return "unanalyzed";
         case Kind::linear_door:
             return "door";
+        case Kind::specialization_outside_home:
+            return "specialization";
+        case Kind::specialization_foreign_primary:
+            return "foreign-primary";
+        case Kind::specialization_open_extension:
+            return "open-extension";
         case Kind::library_inlined:
             return "inlined";
         case Kind::library_call:
@@ -1267,6 +1293,10 @@ inline Rule rule_of(Kind kind) {
         case Kind::linear_unanalyzed:
         case Kind::linear_door:
             return Rule::must_consume;
+        case Kind::specialization_outside_home:
+        case Kind::specialization_foreign_primary:
+        case Kind::specialization_open_extension:
+            return Rule::specialization_home;
         case Kind::library_inlined:
         case Kind::library_call:
         case Kind::library_reference:
@@ -1284,8 +1314,9 @@ inline bool is_each_mode_kind(Kind kind) {
 }
 
 // True when a rule of the families declaration property (declaration.cpp),
-// expression shape (expression.cpp), owner (owner.cpp), home (home.cpp) and
-// linear (linear.cpp) gives the kind, or the rule door-unit (include.cpp).  Such a finding is an
+// expression shape (expression.cpp), owner (owner.cpp), home (home.cpp),
+// specialization home (specialization.cpp) and linear (linear.cpp) gives the
+// kind, or the rule door-unit (include.cpp).  Such a finding is an
 // error only in the mode error, no opt-out region covers it, and no enforce
 // mode changes it.  The module of its rule judges it against the ledger of the
 // rule.  plugin.cpp reports each such line in one way (report_family).
@@ -1306,6 +1337,7 @@ inline bool is_family_kind(Kind kind) {
         case Rule::home:
         case Rule::owners:
         case Rule::must_consume:
+        case Rule::specialization_home:
         case Rule::library_records:
             return true;
         default:
@@ -1317,7 +1349,8 @@ inline bool is_family_kind(Kind kind) {
 // records, and no finding of its rule.  The record of a mint, the record of an
 // alias of a class with a member mint, the line of a grant set that the unit
 // compared, a site that a home row admits (at-home), a linear-door row that
-// the unit read (door), and each record of the library code.
+// the unit read (door), a template with the open mark (open-extension), and
+// each record of the library code.
 inline bool is_record_kind(Kind kind) {
     switch (kind) {
         case Kind::mint_record:
@@ -1325,6 +1358,7 @@ inline bool is_record_kind(Kind kind) {
         case Kind::grant_compared:
         case Kind::home_at_home:
         case Kind::linear_door:
+        case Kind::specialization_open_extension:
         case Kind::library_inlined:
         case Kind::library_call:
         case Kind::library_reference:
@@ -1450,6 +1484,9 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"must-consume", "discarded-temporary"},
     {"must-consume", "unanalyzed"},
     {"must-consume", "door"},
+    {"specialization-home", "specialization"},
+    {"specialization-home", "foreign-primary"},
+    {"specialization-home", "open-extension"},
 };
 
 // True when the entity is part of the key of a finding: two findings of such
@@ -2356,8 +2393,24 @@ void walk_contract_namespace(tree ns);
 void report_contract(const Finding& finding);
 
 // home.cpp: the family home, where a definition or a specialization stands.
+// The place helpers of THE PLACE and THE SITES of home.cpp, which the family
+// specialization home reads too.
 void register_home(const char* plugin_name);
 void walk_home();
+Place site_place(location_t location);
+const FileEntry* file_at(location_t location);
+std::string read_as(const std::string& relative);
+location_t defining_location(tree template_decl);
+
+// specialization.cpp: the family specialization home, the rule
+// specialization-home.  The family home gives it each template that no home
+// row governs (home.cpp, THE SITES).  read_template_home() is true when the
+// rule reads the sites of the template, and note_template_site() judges one
+// site of such a template.
+void register_specialization_home(const char* plugin_name);
+bool is_specialization_home_active();
+bool read_template_home(tree template_decl);
+void note_template_site(tree template_decl, location_t location);
 
 // body.cpp: the family library code, the pass that reads the instructions of
 // each function.

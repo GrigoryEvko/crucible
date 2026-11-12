@@ -1,0 +1,17 @@
+// The test declares a runtime trait that no unit defines before its header.
+// The home of the trait is then this file in this unit, and the plugin gets
+// no event for the declaration in the header.  The specialization of the
+// header then stands outside the home that moved.
+namespace crucible::plant {
+template <class T>
+struct family_of;
+}  // namespace crucible::plant
+
+#include <crucible/Families.h>
+
+struct Fake {};
+
+template <>
+struct crucible::plant::family_of<Fake> {
+    static constexpr int value = 2;
+};

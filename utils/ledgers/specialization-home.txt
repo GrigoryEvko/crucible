@@ -1,0 +1,32 @@
+# The ledger of the rule specialization-home.  `python3 utils/bin/guard explain specialization-home` tells the rule and its policy,
+# and `python3 utils/bin/guard write --rule specialization-home` writes this file.
+format 1
+rule specialization-home
+test/fixy/test_atom.cpp | specialization | admit | fixy::atom::stdio::write | the attack test specializes an atom for a private stream, to prove that the binding refuses a specialized atom
+test/fixy/test_cheat_probe.cpp | specialization | admit | fixy::is_band_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
+test/fixy/test_cheat_probe.cpp | specialization | admit | fixy::is_borrowed_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
+test/fixy/test_cheat_probe.cpp | specialization | admit | fixy::is_owned_region_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
+test/fixy/test_cheat_probe.cpp | specialization | admit | fixy::is_recipe_spec_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
+test/fixy/test_cheat_probe.cpp | specialization | admit | fixy::is_refined_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
+test/fixy/test_cheat_probe.cpp | specialization | admit | fixy::is_secret_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
+test/fixy/test_cheat_probe.cpp | specialization | admit | fixy::is_stale_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
+test/fixy/test_cheat_probe.cpp | specialization | admit | fixy::is_tagged_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
+test/fixy/test_cheat_probe.cpp | specialization | admit | fixy::is_writeonce | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
+test/fixy/test_cheat_probe.cpp | specialization | admit | foundation::algebra::is_graded_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
+test/fixy/test_cheat_probe.cpp | specialization | admit | foundation::algebra::is_graded_wrapper_v | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
+test/fixy/test_session_payload_seal.cpp | specialization | admit | fixy::session::detail::delegation_readable_gate | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
+test/fixy/test_session_payload_seal.cpp | specialization | admit | fixy::session::detail::delivery_gate | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
+test/fixy/test_session_payload_seal.cpp | specialization | admit | fixy::session::detail::payload_admitted_gate | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
+test/fixy/test_session_payload_seal.cpp | specialization | admit | fixy::session::detail::payload_conveys_delegation | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
+test/fixy/test_session_payload_seal.cpp | specialization | admit | fixy::session::detail::payload_facts_cell | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
+test/fixy/test_session_payload_seal.cpp | specialization | admit | fixy::session::detail::payload_readable_gate | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
+test/fixy/test_session_payload_seal.cpp | specialization | admit | fixy::session::is_permission_classified | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
+test/fixy/test_session_payload_seal.cpp | specialization | admit | fixy::session::is_plain_payload | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
+test/fixy/test_session_payload_seal.cpp | specialization | admit | fixy::session::payload_delegation_carrier_v | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
+test/fixy/test_session_payload_seal.cpp | specialization | admit | fixy::session::payload_perm_delta | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
+test/fixy/test_session_payload_seal.cpp | specialization | admit | fixy::session::protocol_delivered_regions | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
+test/fixy/test_session_wire_word.cpp | specialization | admit | fixy::session::branch_wire_word_v | the attack test forges a wire word, to prove that the session refuses it
+test/fixy/test_session_wire_word.cpp | specialization | admit | fixy::session::step_wire_word_v | the attack test forges a wire word, to prove that the session refuses it
+test/foundation/test_effects_resources.cpp | specialization | admit | foundation::effects::resource::SmBudget | the attack test specializes a resource tag, to prove that ResourceTag refuses it
+test/layer/checks/foundation/OpenExtension.cpp | open-extension | admit | foundation::open_extension_checks::open_flag | the check of the header plants an open variable template, to prove that reflection reads the mark from an instance
+test/layer/checks/foundation/OpenExtension.cpp | open-extension | admit | foundation::open_extension_checks::open_trait | the check of the header plants an open class template, to prove that reflection reads the mark from an instance

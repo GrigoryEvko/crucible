@@ -1,0 +1,18 @@
+#include <foundation/Traits.h>
+
+struct Widget {};
+
+template <>
+struct foundation::plant::describe<Widget> {
+    static constexpr int value = 3;
+};
+
+template <class T>
+struct foundation::plant::describe<T*> {
+    static constexpr int value = 4;
+};
+
+template <>
+inline constexpr bool foundation::plant::flagged<Widget> = true;
+
+static_assert(foundation::plant::describe<Widget>::value == 3);

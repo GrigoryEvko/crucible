@@ -36,12 +36,12 @@ THE RULE
                                its row (the class split).  A split for tags of
                                a different file gives authority over a region
                                that the file does not own
-      outside-home             a specialization of a template of the two
-                               layers outside the file that defines it, a
-                               specialization of a template of a trait row
+      outside-home             a specialization of a template of a trait row
                                outside the paths of the row, and a
                                declaration of a fail-closed namespace outside
-                               its home (the class trait)
+                               its home (the class trait).  The rule
+                               specialization-home reads each template that
+                               no row governs
       open-read                a gate of a header of the three layers that
                                reads a template that a unit can specialize
     A line of the kind at-home is no finding: it says that a path of a home
@@ -209,17 +209,13 @@ def paths_text(home: ruletable.Home | None) -> str:
 
 
 def trait_message(item: quarantine_sections.Finding, homes: Sequence[ruletable.Home]) -> str:
-    """Return the text of a site of the class trait outside its home, or of its default home."""
+    """Return the text of a site of the class trait outside the paths of its home row."""
     name = quarantine_sections.qualified_name(item.entity)
     row = row_of(name.simple_name, homes) or row_of(name.text, homes)
-    where = (
-        f"its home row admits only {paths_text(row)}"
-        if row is not None
-        else "its home is the file that defines the template"
-    )
     return (
         f"a specialization of {item.entity}, or a declaration of a namespace of its home row, stands here, and "
-        f"{where}.  A specialization changes what a concept of the two layers admits.  Move the site to its home"
+        f"its home row admits only {paths_text(row)}.  A specialization changes what a concept of the two layers "
+        f"admits.  Move the site to its home"
     )
 
 

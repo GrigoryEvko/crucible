@@ -32,7 +32,9 @@
 #include <type_traits>
 #include <vector>
 
-namespace foundation::decide::oracle {
+// The oracle has a namespace of the tests, so no template of the base is
+// declared outside the base.
+namespace decide_oracle {
 
 // The mapped type holds the sum of any two values of T without wrapping: 64
 // bits covers every T of 32 bits or fewer, 128 bits covers a 64-bit T.  The
@@ -114,4 +116,4 @@ template <std::integral T>
     return true;
 }
 
-}  // namespace foundation::decide::oracle
+}  // namespace decide_oracle

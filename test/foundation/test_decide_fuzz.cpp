@@ -51,7 +51,7 @@
 namespace {
 
 namespace dc = foundation::decide;
-namespace dco = foundation::decide::oracle;
+namespace dco = decide_oracle;
 
 // One block of four words for one (counter, key) pair, from the standard
 // Philox4x32-10 engine.  The key seeds the engine through a seed sequence

@@ -105,6 +105,12 @@
 //                    compile of the tree.  A compile of a plant of a different
 //                    rule has no such argument, so its report holds no line of
 //                    the rule
+//     specialization-home=on
+//                    run the rule specialization-home of the family
+//                    specialization home on each template with no home row
+//                    (specialization.cpp).  Quarantine.cmake gives it to each
+//                    compile of the tree, and a compile of a plant of a
+//                    different rule has no such argument
 //
 // THE DEPENDENCIES
 //     utils/assay/loop/stamps.py writes DIR/modes/PATH for each source file of
@@ -565,6 +571,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     bool has_padded_limit = false;
     bool records_library_code = false;
     bool checks_must_consume = false;
+    bool checks_specialization_home = false;
     for (int index = 0; index < plugin_info->argc; ++index) {
         std::string key = plugin_info->argv[index].key;
         std::string value = plugin_info->argv[index].value != nullptr ? plugin_info->argv[index].value : "";
@@ -618,9 +625,18 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
                 return 1;
             }
             checks_must_consume = true;
+        } else if (key == "specialization-home") {
+            if (value != "on") {
+                error("quarantine: specialization-home is %qs; give specialization-home=on to run the rule "
+                      "specialization-home, or no such argument",
+                      value.c_str());
+                return 1;
+            }
+            checks_specialization_home = true;
         } else {
             error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out, stamps, stamp, "
-                  "kinds, sentinel, not-standalone, padded-list-limit, library-records and must-consume",
+                  "kinds, sentinel, not-standalone, padded-list-limit, library-records, must-consume and "
+                  "specialization-home",
                   key.c_str());
             return 1;
         }
@@ -677,6 +693,9 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     }
     if (checks_must_consume) {
         register_linear(plugin_info->base_name);
+    }
+    if (checks_specialization_home) {
+        register_specialization_home(plugin_info->base_name);
     }
     front_end_parse_file = lang_hooks.parse_file;
     lang_hooks.parse_file = parse_and_walk;

@@ -1,0 +1,19 @@
+#include <crucible/Runtime.h>
+#include <foundation/OpenExtension.h>
+
+// A second declaration adds the open mark to a trait of a different file.
+// GCC merges the annotation into the template, so the specialization below
+// gives no line of its own, and the trait gives the record open-extension.
+namespace crucible::plant {
+template <class T>
+struct [[= ::foundation::open_extension{"a forged mark"}]] runtime_trait;
+}  // namespace crucible::plant
+
+struct Fake {};
+
+template <>
+struct crucible::plant::runtime_trait<Fake> {
+    static constexpr bool value = true;
+};
+
+static_assert(crucible::plant::Admitted<Fake>);

@@ -1,0 +1,22 @@
+// The test declares the trait first, so the home of the trait is this file
+// in this unit, and the specialization below stands beside that declaration.
+namespace foundation::plant {
+template <class T>
+struct family_of;
+}  // namespace foundation::plant
+
+#include <foundation/Traits.h>
+
+struct Fake {};
+
+template <>
+struct foundation::plant::family_of<Fake> {
+    static constexpr int value = 2;
+};
+
+namespace fixy::own {
+template <class T>
+struct test_trait {};
+}  // namespace fixy::own
+
+static_assert(foundation::plant::HasFamily<Fake>);

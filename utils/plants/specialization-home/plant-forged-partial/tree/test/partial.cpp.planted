@@ -1,0 +1,16 @@
+#include <foundation/Traits.h>
+
+struct Fake {};
+
+template <class T>
+struct foundation::plant::is_admitted<T*> {
+    static constexpr bool value = true;
+};
+
+template <>
+int foundation::plant::holder<Fake>::count = 7;
+
+template <>
+void foundation::plant::holder<Fake>::reset() {}
+
+static_assert(foundation::plant::Admitted<Fake*>);

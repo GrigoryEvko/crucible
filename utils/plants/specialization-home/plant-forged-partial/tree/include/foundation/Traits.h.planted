@@ -1,0 +1,25 @@
+#pragma once
+
+namespace foundation::plant {
+
+template <class T>
+struct is_admitted {
+    static constexpr bool value = false;
+};
+
+template <class T>
+concept Admitted = is_admitted<T>::value;
+
+template <class T>
+struct holder {
+    static int count;
+    static void reset();
+};
+
+template <class T>
+int holder<T>::count = 0;
+
+template <class T>
+void holder<T>::reset() {}
+
+}  // namespace foundation::plant
