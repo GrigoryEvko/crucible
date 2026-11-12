@@ -209,7 +209,7 @@ include/crucible/warden/ | replace-pending:std::bit_cast | 5 | - | -
 include/crucible/warden/ | std-entity | 149 | - | -
 include/crucible/warden/ | std-object | 54 | - | -
 include/fixy/ | base-c-library-call | 5 | - | -
-include/fixy/ | base-std-entity | 413 | - | -
+include/fixy/ | base-std-entity | 401 | - | -
 include/fixy/ | base-std-object | 220 | - | -
 include/fixy/ | replace-pending:<array> | 7 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
@@ -568,11 +568,11 @@ test/layer/checks/crucible/topology/ | replace-pending:<limits> | 1 | - | -
 test/layer/checks/crucible/topology/ | std-entity | 5 | - | -
 test/layer/checks/crucible/topology/ | std-object | 2 | - | -
 test/layer/checks/crucible/warden/ | std-entity | 1 | - | -
-test/layer/checks/fixy/ | c-array-object | 10 | - | -
+test/layer/checks/fixy/ | c-array-object | 9 | - | -
 test/layer/checks/fixy/ | c-library-call | 1 | - | -
 test/layer/checks/fixy/ | raw-pointer-object | 10 | - | -
 test/layer/checks/fixy/ | replace-pending:<limits> | 10 | - | -
-test/layer/checks/fixy/ | std-entity | 158 | - | -
+test/layer/checks/fixy/ | std-entity | 157 | - | -
 test/layer/checks/fixy/ | std-object | 15 | - | -
 test/layer/checks/fixy/atoms/ | std-entity | 24 | - | -
 test/layer/checks/fixy/atoms/ | std-object | 11 | - | -

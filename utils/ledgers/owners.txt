@@ -44,6 +44,7 @@ include/fixy/Bands.h | unchecked-use | admit | fixy::detail::every_tier_has_an_a
 include/fixy/Corpus.h | unchecked-use | admit | fixy::corpus::detail::non_none_policy_count_(): std::meta::access_context::unchecked | walks the secret-policy namespace to derive the corpus of policies
 include/fixy/Predicates.h | unchecked-use | admit | fixy::detail::refined_edge_walk::every_edge_holds(): std::meta::access_context::unchecked | reads the bases of a predicate and walks the admitted implications to seal the relation
 include/fixy/Predicates.h | unchecked-use | admit | fixy::refined::has_base_class(std::meta::info): std::meta::access_context::unchecked | reads the bases of a predicate and walks the admitted implications to seal the relation
+include/fixy/Predicates.h | unchecked-use | 2 | fixy::refined::seal_class(std::meta::info, std::meta::info): std::meta::access_context::unchecked | reads each call operator of a predicate, private ones too, to seal the call against a specialization
 include/fixy/Predicates.h | unchecked-use | admit | fixy::refined::steps_from(std::meta::info, std::meta::info): std::meta::access_context::unchecked | reads the bases of a predicate and walks the admitted implications to seal the relation
 include/fixy/ScopedView.h | unchecked-use | admit | fixy::detail::sv_reaches_view_(std::meta::info): std::meta::access_context::unchecked | finds a view stored in a private member, so a class cannot hide an escape
 include/fixy/SelfContained.h | access-reflection | admit | fixy::detail::self_contained::declared_by_the_standard(std::meta::info): std | walks every base and member to prove that a type holds no pointer out of itself
@@ -105,7 +106,7 @@ test/fixy/session_recording.h | detail-use | 1 | namespace-scope: foundation::ef
 test/fixy/test_armed_roster.cpp | detail-use | 1 | namespace-scope: fixy::channels::detail | names the armed predicate of the endpoint bridge
 test/fixy/test_armed_roster.cpp | detail-use | 46 | namespace-scope: fixy::collision::detail | names each armed predicate of the collision rules
 test/fixy/test_armed_roster.cpp | detail-use | 26 | namespace-scope: fixy::concurrent::detail | names each armed predicate of the stages and the stage fakes
-test/fixy/test_armed_roster.cpp | detail-use | 11 | namespace-scope: fixy::corpus::detail | names each armed predicate of the corpus
+test/fixy/test_armed_roster.cpp | detail-use | 4 | namespace-scope: fixy::corpus::detail | names each armed predicate of the corpus
 test/fixy/test_armed_roster.cpp | detail-use | 2 | namespace-scope: fixy::detail | names each armed predicate of the fixy root
 test/fixy/test_armed_roster.cpp | detail-use | 6 | namespace-scope: fixy::mach::detail | names each armed predicate of the machine transitions
 test/fixy/test_armed_roster.cpp | detail-use | 10 | namespace-scope: fixy::session::detail | names each armed predicate of the session core and the crash walk
@@ -138,7 +139,6 @@ test/fixy/test_payload_row.cpp | detail-use | 3 | namespace-scope: fixy::concurr
 test/fixy/test_refined.cpp | detail-use | 1 | namespace-scope: fixy::detail | runs the edge walk of the sealed implication relation
 test/fixy/test_refined.cpp | unchecked-use | admit | (anonymous namespace)::rule_count(): std::meta::access_context::unchecked | walks the admitted implications to check the sealed relation
 test/fixy/test_row_hash_wrappers.cpp | detail-use | 3 | (anonymous namespace)::test_every_role_is_off_the_zero_slot(): fixy::detail | counts the reflected roles
-test/fixy/test_row_hash_wrappers.cpp | detail-use | 3 | namespace-scope: fixy::corpus::detail | hashes the row of a secret carrier
 test/fixy/test_secret.cpp | unchecked-use | admit | (anonymous namespace)::count_length_policies(): std::meta::access_context::unchecked | walks the secret-policy namespace to check the policy roster
 test/fixy/test_secret.cpp | unchecked-use | admit | (anonymous namespace)::count_policy_tags_in_namespace(): std::meta::access_context::unchecked | walks the secret-policy namespace to check the policy roster
 test/fixy/test_secret.cpp | unchecked-use | admit | (anonymous namespace)::every_policy_declassifies(): std::meta::access_context::unchecked | walks the secret-policy namespace to check the policy roster

@@ -1,7 +1,9 @@
 // A predicate that derives from BoundedAbove<9> and accepts every value
 // deduces against the ceiling families through its base.  The relation
 // refuses a predicate with a base class.  The premise borrows no ceiling,
-// and the constrained weakening fails.
+// and the constrained weakening fails.  The checked mint refuses such a
+// predicate too, so this file takes the trusted door to reach the
+// relation.
 
 #include <fixy/Refined.h>
 
@@ -22,7 +24,7 @@ template <auto P, auto Q, class T>
 }  // namespace
 
 int main() {
-    fixy::Refined<accepts_everything, int> any = fixy::mint_refined<accepts_everything>(100);
+    fixy::Refined<accepts_everything, int> any = fixy::mint_refined_trusted<accepts_everything>(100);
     fixy::Refined<fixy::bounded_above<20>, int> claimed =
         weaken<accepts_everything, fixy::bounded_above<20>>(std::move(any));
     return claimed.value();

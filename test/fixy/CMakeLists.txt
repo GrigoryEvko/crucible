@@ -1052,6 +1052,55 @@ fixy_neg_compile_test(neg_refined_rule_specialized
   "template-id .bounded_above_weakens<>. for .consteval fixy::refined::rule_verdict fixy::refined::admitted_implications::bounded_above_weakens\\(std::meta::info, std::meta::info\\). does not match any template declaration"
   "neg_refined_rule_specialized\\.cpp:12:[0-9]+: error:")
 
+# The seal of a predicate.  A unit can specialize a predicate class
+# template, a member template of a predicate class, and a member of a
+# predicate instance.  The seal reads the file of each declaration on the
+# path of a call, and the mint, each combinator and the relation stop the
+# build when one stands outside the file of its class.
+fixy_neg_compile_test(neg_refined_predicate_class_specialized
+  "no matching function for call to .mint_refined<fixy::in_range<1, 4096> >\\(int\\)."
+  "required for the satisfaction of .PredicateInvocableOn<Pred, T>. \\[with Pred = fixy::InRange<1, 4096>\\{\\}; T = int\\]"
+  "uncaught exception of type .std::meta::exception.*a predicate is specialized outside the file of its class.*The specialized declaration is fixy::InRange<1, 4096> in [^ ]*neg_refined_predicate_class_specialized\\.cpp")
+fixy_neg_compile_test(neg_refined_predicate_partial_specialized
+  "no matching function for call to .mint_refined<fixy::bounded_above<4096> >\\(int\\)."
+  "required for the satisfaction of .PredicateInvocableOn<Pred, T>. \\[with Pred = fixy::BoundedAbove<4096>\\{\\}; T = int\\]"
+  "uncaught exception of type .std::meta::exception.*a predicate is specialized outside the file of its class.*The specialized declaration is fixy::BoundedAbove<4096> in [^ ]*neg_refined_predicate_partial_specialized\\.cpp")
+fixy_neg_compile_test(neg_refined_predicate_call_specialized
+  "no matching function for call to .mint_refined<fixy::positive>\\(int\\)."
+  "required for the satisfaction of .PredicateInvocableOn<Pred, T>. \\[with Pred = fixy::IsPositive\\{\\}; T = int\\]"
+  "uncaught exception of type .std::meta::exception.*a predicate is specialized outside the file of its class.*The specialized declaration is constexpr bool fixy::IsPositive::operator\\(\\)\\(auto:[0-9]+\\) const .*\\[with auto:[0-9]+ = int\\] in [^ ]*neg_refined_predicate_call_specialized\\.cpp")
+fixy_neg_compile_test(neg_refined_predicate_instance_call_specialized
+  "no matching function for call to .mint_refined<fixy::in_range<1, 9> >\\(int\\)."
+  "required for the satisfaction of .PredicateInvocableOn<Pred, T>. \\[with Pred = fixy::InRange<1, 9>\\{\\}; T = int\\]"
+  "uncaught exception of type .std::meta::exception.*a predicate is specialized outside the file of its class.*The specialized declaration is constexpr bool fixy::InRange<Lo, Hi>::operator\\(\\)\\(V\\) const \\[with V = int; auto Lo = 1; auto Hi = 9\\] in [^ ]*neg_refined_predicate_instance_call_specialized\\.cpp")
+fixy_neg_compile_test(neg_refined_combinator_names_specialized_predicate
+  "no matching function for call to .mint_refined<fixy::refined_algebra::all_of<fixy::IsPositive\\(\\), fixy::BoundedAbove<9>\\(\\)> >\\(int\\)."
+  "In substitution of .template<class V>  requires \\(PredicateInvocableOn<Preds, V> && \\.\\.\\.\\) constexpr bool fixy::refined_algebra::AllOf<fixy::IsPositive\\(\\), fixy::BoundedAbove<9>\\(\\)>::operator\\(\\)\\(const V&\\) const \\[with V = int\\]."
+  "uncaught exception of type .std::meta::exception.*a predicate is specialized outside the file of its class.*The specialized declaration is constexpr bool fixy::IsPositive::operator\\(\\)\\(auto:[0-9]+\\) const .*\\[with auto:[0-9]+ = int\\] in [^ ]*neg_refined_combinator_names_specialized_predicate\\.cpp")
+fixy_neg_compile_test(neg_refined_relation_reads_specialized_predicate
+  "neg_refined_relation_reads_specialized_predicate\\.cpp:18:[0-9]+: error: non-constant condition for static assertion"
+  "required by the constraints of .template<auto P, auto Q> concept fixy::PredicateImplies."
+  "uncaught exception of type .std::meta::exception.*a predicate is specialized outside the file of its class.*The specialized declaration is fixy::InRange<1, 4096> in [^ ]*neg_refined_relation_reads_specialized_predicate\\.cpp")
+
+# A call can run a call operator of a base class, which the seal does not
+# read, so the seal gives false and the checked mint has no candidate.
+fixy_neg_compile_test(neg_refined_predicate_with_base_class
+  "no matching function for call to .mint_refined<\\{anonymous\\}::positive_twice>\\(int\\)."
+  "the expression .is_sealed_call\\(.*\\[with Pred = <unnamed>::PositiveTwice\\{\\}; T = int\\]. evaluated to .false.")
+
+# A bounded predicate calls no helper template, BoundFits holds its whole
+# rule, and the relation reads a bound through a concept.  So a unit has
+# no template to specialize there.
+fixy_neg_compile_test(neg_refined_bound_helper_specialized
+  "expected initializer before .<. token"
+  "neg_refined_bound_helper_specialized\\.cpp:10:[0-9]+: error:")
+fixy_neg_compile_test(neg_refined_bound_fit_specialized
+  "expected initializer before .<. token"
+  "neg_refined_bound_fit_specialized\\.cpp:11:[0-9]+: error:")
+fixy_neg_compile_test(neg_refined_bound_reader_specialized
+  "expected initializer before .<. token"
+  "neg_refined_bound_reader_specialized\\.cpp:10:[0-9]+: error:")
+
 # No public constructor takes a bare value; the candidates the compiler
 # lists are the copy, the move and the two private doors.
 fixy_neg_compile_test(neg_refined_direct_construction

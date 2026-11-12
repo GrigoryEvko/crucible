@@ -41,6 +41,11 @@ namespace fixy {
 // Each call operator states the expression its body evaluates as a
 // constraint, so a predicate that cannot evaluate a type fails
 // PredicateInvocableOn at the mint instead of failing inside the body.
+//
+// Each call operator has one shape: a template over the value type that
+// takes one value of that type, by value or by reference to const.  The
+// seal below reads the specialization of that template for the value type
+// of a mint, and the checked mint refuses each other shape.
 struct IsPositive {
     constexpr bool operator()(auto x) const noexcept
         requires requires { x > decltype(x){0}; }
@@ -98,8 +103,14 @@ struct IsZero {
 
 inline constexpr IsZero is_zero{};
 
+// The value type is the pointer type, so the seal reads the call for the
+// value type of a mint.
 struct IsNonNull {
-    constexpr bool operator()(auto* p) const noexcept { return p != nullptr; }
+    template <class V>
+        requires std::is_pointer_v<V>
+    constexpr bool operator()(V p) const noexcept {
+        return p != nullptr;
+    }
 };
 
 inline constexpr IsNonNull non_null{};
@@ -154,61 +165,159 @@ concept ExactInteger = std::integral<T> && !std::same_as<T, bool> && !std::same_
 // other pair is refused: a floating-point bound on an integer value, a
 // NaN or an infinity, and a bound that a narrower floating-point type
 // would round.
+//
+// A predicate whose bound the value type cannot hold is not defined on
+// that type, and the checked mint refuses it at the call.  The two
+// concepts hold the whole rule, so no translation unit can specialize a
+// verdict in front of it.
+//
+// A significand of Digits bits holds each integer Bound with a magnitude of
+// at most 2^Digits.  A significand as wide as std::uintmax_t holds each
+// integer bound, and the disjunction stops before the shift of that width.
+template <auto Bound, int Digits>
+concept SignificandSpans = Digits >= std::numeric_limits<std::uintmax_t>::digits
+                        || (std::cmp_less_equal(Bound, std::uintmax_t{1} << Digits)
+                            && std::cmp_greater_equal(Bound, -static_cast<std::intmax_t>(std::uintmax_t{1} << Digits)));
+
 template <class V, auto Bound>
-[[nodiscard]] consteval bool bound_fits() noexcept {
-    using B = decltype(Bound);
-    if constexpr (ExactInteger<V> && ExactInteger<B>) {
-        return std::in_range<V>(Bound);
-    } else if constexpr (std::floating_point<V> && ExactInteger<B>) {
-        constexpr int digits = std::numeric_limits<V>::digits;
-        if constexpr (digits >= std::numeric_limits<std::uintmax_t>::digits) {
-            return true;
-        } else {
-            constexpr std::uintmax_t span = std::uintmax_t{1} << digits;
-            return std::cmp_less_equal(Bound, span) && std::cmp_greater_equal(Bound, -static_cast<std::intmax_t>(span));
+concept BoundFits = (ExactInteger<V> && ExactInteger<decltype(Bound)> && std::in_range<V>(Bound))
+                 || (std::floating_point<V> && ExactInteger<decltype(Bound)>
+                     && SignificandSpans<Bound, std::numeric_limits<V>::digits>)
+                 || (std::floating_point<V> && std::floating_point<decltype(Bound)>
+                     && std::numeric_limits<decltype(Bound)>::digits <= std::numeric_limits<V>::digits
+                     && std::numeric_limits<decltype(Bound)>::max_exponent <= std::numeric_limits<V>::max_exponent
+                     && std::numeric_limits<decltype(Bound)>::min_exponent >= std::numeric_limits<V>::min_exponent
+                     && __builtin_isfinite(Bound) != 0);
+
+// The type of a predicate value, stripped of const.  An inline
+// constexpr predicate variable is const at file scope while the
+// template argument that binds it is not, so every place that reasons
+// about a predicate by type goes through this one alias.
+template <auto Pred>
+using predicate_t = std::remove_cv_t<decltype(Pred)>;
+
+// THE SEAL
+//
+// A translation unit can specialize a class template, a member template of
+// a class, and a member of a class template instance.  A specialization of
+// a predicate or of its call operator changes what the predicate admits.
+// The mint and the implication relation read only the name of the
+// predicate, so a minted value would then carry a claim that the predicate
+// of this header refutes.
+//
+// An implicit instantiation stands where its template stands.  An explicit
+// specialization stands where a unit declares it, and so does each member
+// of a partial specialization.  So the seal reads the file of each
+// declaration on the path of a call: the class, each call operator, and
+// the specialization of the call operator for the value type.  Each one
+// must stand in the home of its class: the file of its primary template,
+// or the file of the class when the class is no specialization.  The
+// functions of the seal are not templates, so no unit can specialize the
+// seal either.
+//
+// A #line directive can give a declaration the name of a different file,
+// and the seal reads that name.
+
+// True when type is a class with a base class.  The mint refuses such a
+// predicate, because a call can run a call operator of a base.  No rule of
+// the relation takes such a class as a premise or as a conclusion, so a
+// predicate that derives from BoundedAbove<9> borrows no place of its base
+// in the relation, and its own call operator decides nothing there.
+// Complexity: O(bases).
+[[nodiscard]] consteval bool has_base_class(std::meta::info type) {
+    return std::meta::is_class_type(type) && !std::meta::bases_of(type, std::meta::access_context::unchecked()).empty();
+}
+
+// The declaration that gives a class its home: its primary template when
+// the class is a specialization, and the class when it is not.
+[[nodiscard]] consteval std::meta::info home_of(std::meta::info type) {
+    return std::meta::has_template_arguments(type) ? std::meta::template_of(type) : type;
+}
+
+// Stops the build when a declaration on the path of a call of a predicate
+// stands in a file other than the file of home.  The two file names
+// compare as text, and the text names the declaration and its file.
+consteval void require_at_home(std::meta::info declaration, std::meta::info home) {
+    const char* const declared_in = std::meta::source_location_of(declaration).file_name();
+    if (__builtin_strcmp(declared_in, std::meta::source_location_of(home).file_name()) == 0) return;
+    throw std::meta::exception(
+        std::string{"fixy::refined: a predicate is specialized outside the file of its class, while the mint and the "
+                    "implication relation read only its name.  Declare a predicate of your own, and specialize no "
+                    "predicate.  The specialized declaration is "}
+            + std::meta::display_string_of(declaration) + " in " + declared_in,
+        declaration);
+}
+
+// True when member is a call operator: a member function or a member
+// function template whose operator is the call.
+[[nodiscard]] consteval bool is_call_operator(std::meta::info member) {
+    return (std::meta::is_operator_function(member) || std::meta::is_operator_function_template(member))
+        && std::meta::operator_of(member) == std::meta::operators::op_parentheses;
+}
+
+// Seals a class, and gives the number of its call operators.  value is the
+// value type of a call, or the null reflection for a check of the class
+// alone.  For a value type, the specialization of each call operator
+// template for that type is the function that the call runs, so it must
+// take one value of that type, and a template of another shape gives the
+// count 0.  Complexity: O(members²) reads of the members, because the walk
+// asks for them again at each index.
+consteval std::size_t seal_class(std::meta::info type, std::meta::info value) {
+    const std::meta::info home = home_of(type);
+    require_at_home(type, home);
+    std::size_t calls = 0;
+    for (std::size_t index = 0; index < std::meta::members_of(type, std::meta::access_context::unchecked()).size();
+         ++index) {
+        const std::meta::info member = std::meta::members_of(type, std::meta::access_context::unchecked())[index];
+        if (!is_call_operator(member)) continue;
+        ++calls;
+        require_at_home(member, home);
+        if (value == std::meta::info{} || !std::meta::is_function_template(member)) continue;
+        if (!std::meta::can_substitute(member, {value})) return 0;
+        const std::meta::info call = std::meta::substitute(member, {value});
+        if (std::meta::parameters_of(call).size() != 1
+            || std::meta::dealias(std::meta::remove_cvref(std::meta::type_of(std::meta::parameters_of(call)[0])))
+                   != value) {
+            return 0;
         }
-    } else if constexpr (std::floating_point<V> && std::floating_point<B>) {
-        constexpr bool no_wider = std::numeric_limits<B>::digits <= std::numeric_limits<V>::digits
-                               && std::numeric_limits<B>::max_exponent <= std::numeric_limits<V>::max_exponent
-                               && std::numeric_limits<B>::min_exponent >= std::numeric_limits<V>::min_exponent;
-        return no_wider && __builtin_isfinite(Bound);
-    } else {
-        return false;
+        require_at_home(call, home);
     }
+    return calls;
 }
 
-// A bound of a predicate is one that the value type holds exactly.  A
-// predicate whose bound the value type cannot hold is not defined on that
-// type, and the checked mint refuses it at the call.
-template <class V, auto Bound>
-concept BoundFits = bound_fits<V, Bound>();
-
-// The comparisons of a value with a bound that BoundFits admits.  Two
-// integers compare through std::cmp_*, and a floating-point value
-// compares with the conversion of the bound, which BoundFits makes exact.
-template <auto Bound, class V>
-[[nodiscard]] constexpr bool at_most(V x) noexcept {
-    if constexpr (ExactInteger<V>) {
-        return std::cmp_less_equal(x, Bound);
-    } else {
-        return x <= static_cast<V>(Bound);
+// True when the class of the predicate and each of its call operators
+// stand at home.  The implication relation reads this.  It gives true or
+// stops the build.
+[[nodiscard]] consteval bool is_sealed_predicate(std::meta::info predicate) {
+    predicate = std::meta::dealias(predicate);
+    if (std::meta::is_class_type(predicate) && std::meta::is_complete_type(predicate)) {
+        static_cast<void>(seal_class(predicate, std::meta::info{}));
     }
+    return true;
 }
 
-template <auto Bound, class V>
-[[nodiscard]] constexpr bool at_least(V x) noexcept {
-    if constexpr (ExactInteger<V>) {
-        return std::cmp_greater_equal(x, Bound);
-    } else {
-        return x >= static_cast<V>(Bound);
-    }
+// True when the predicate is sealed and the function that a call of it
+// runs on a value of the type value stands at home too.  The mints and the
+// combinators read this through PredicateInvocableOn.  A specialization
+// outside the home stops the build.  A call that the seal cannot read gives
+// false: a class with a base, with no call operator or with more than one,
+// or a call operator template that does not take one value of the value
+// type.  Then the checked mint refuses the predicate, and the trusted mint
+// still takes it.  A predicate that is not a class has no call operator to
+// specialize, and Refinement refuses it.
+[[nodiscard]] consteval bool is_sealed_call(std::meta::info predicate, std::meta::info value) {
+    predicate = std::meta::dealias(predicate);
+    if (!std::meta::is_class_type(predicate)) return true;
+    return !has_base_class(predicate) && seal_class(predicate, std::meta::dealias(std::meta::remove_cvref(value))) == 1;
 }
 
 }  // namespace refined
 
 template <std::size_t Alignment>
 struct Aligned {
-    constexpr bool operator()(auto* p) const noexcept {
+    template <class V>
+        requires std::is_pointer_v<V>
+    constexpr bool operator()(V p) const noexcept {
         return (std::bit_cast<std::uintptr_t>(p) & (Alignment - 1)) == 0;
     }
 };
@@ -218,13 +327,19 @@ inline constexpr Aligned<Alignment> aligned{};
 
 // The four bounded predicates below compare the value with each bound by
 // value, and each is defined only on a value type that holds its bounds
-// (refined::BoundFits).
+// (refined::BoundFits).  Two integers compare through std::cmp_*, and a
+// floating-point value compares with the conversion of the bound, which
+// BoundFits makes exact.  Each body makes its own comparison and calls no
+// helper template, because a unit could specialize such a helper.
 template <auto Lo, auto Hi>
 struct InRange {
     template <class V>
         requires refined::BoundFits<V, Lo> && refined::BoundFits<V, Hi>
     constexpr bool operator()(V x) const noexcept {
-        return refined::at_least<Lo>(x) && refined::at_most<Hi>(x);
+        if constexpr (refined::ExactInteger<V>)
+            return std::cmp_greater_equal(x, Lo) && std::cmp_less_equal(x, Hi);
+        else
+            return x >= static_cast<V>(Lo) && x <= static_cast<V>(Hi);
     }
 };
 
@@ -236,7 +351,10 @@ struct BoundedAbove {
     template <class V>
         requires refined::BoundFits<V, Max>
     constexpr bool operator()(V x) const noexcept {
-        return refined::at_most<Max>(x);
+        if constexpr (refined::ExactInteger<V>)
+            return std::cmp_less_equal(x, Max);
+        else
+            return x <= static_cast<V>(Max);
     }
 };
 
@@ -275,7 +393,10 @@ struct BoundedBelow {
     template <class V>
         requires refined::BoundFits<V, Min>
     constexpr bool operator()(V x) const noexcept {
-        return refined::at_least<Min>(x);
+        if constexpr (refined::ExactInteger<V>)
+            return std::cmp_greater_equal(x, Min);
+        else
+            return x >= static_cast<V>(Min);
     }
 };
 
@@ -321,10 +442,16 @@ inline constexpr DivisibleBy<Divisor> divisible_by{};
 // evaluated, and gating it turns what would be a SFINAE cascade inside
 // the contract clause into one concept-violation message at the call
 // site.
+//
+// The second part is the seal of the call.  It reads the function that
+// the call runs, and it stops the build when a unit specialized the
+// predicate or its call operator.  A combinator gates its call operator
+// on this concept, so the seal reaches each predicate that a combinator
+// names.
 template <auto Pred, typename T>
 concept PredicateInvocableOn = requires(T const& v) {
     { Pred(v) } -> std::convertible_to<bool>;
-};
+} && refined::is_sealed_call(^^refined::predicate_t<Pred>, ^^T);
 
 namespace refined_algebra {
 
@@ -395,17 +522,6 @@ using refined_algebra::all_of;
 using refined_algebra::any_of;
 using refined_algebra::negate;
 using refined_algebra::implies;
-
-namespace refined {
-
-// The type of a predicate value, stripped of const.  An inline
-// constexpr predicate variable is const at file scope while the
-// template argument that binds it is not, so every place that reasons
-// about a predicate by type goes through this one alias.
-template <auto Pred>
-using predicate_t = std::remove_cv_t<decltype(Pred)>;
-
-}  // namespace refined
 
 // PredicateImplies<P, Q> reads: every value satisfying P also satisfies
 // Q.  P is therefore at least as strong as Q, and P's truth set is
@@ -491,6 +607,11 @@ using rule_signature = rule_verdict(std::meta::info, std::meta::info);
     return std::meta::template_arguments_of(type)[index];
 }
 
+// The number of template arguments of a specialization.
+[[nodiscard]] consteval std::size_t argument_count_of(std::meta::info type) {
+    return std::meta::template_arguments_of(type).size();
+}
+
 // A std::size_t parameter of a predicate: an alignment, a length or a
 // size.
 [[nodiscard]] consteval std::size_t size_argument_of(std::meta::info type, std::size_t index) {
@@ -504,72 +625,41 @@ using rule_signature = rule_verdict(std::meta::info, std::meta::info);
     return std::meta::dealias(std::meta::remove_cv(std::meta::type_of(argument)));
 }
 
-// True when type is a class with a base class.  No rule takes such a
-// class as a premise or as a conclusion, so a predicate that derives from
-// BoundedAbove<9> borrows no place of its base in the relation, and its
-// own call operator decides nothing there.  Complexity: O(bases).
-[[nodiscard]] consteval bool has_base_class(std::meta::info type) {
-    return std::meta::is_class_type(type) && !std::meta::bases_of(type, std::meta::access_context::unchecked()).empty();
-}
-
 // The widest integer types that ExactInteger admits.  std::integral holds
 // for them in this dialect, so a bound of either type compares by value
 // like a bound of a standard type.
 __extension__ using widest_signed = __int128;
 __extension__ using widest_unsigned = unsigned __int128;
 
-// A bound of a predicate, read by value as its sign and its magnitude.
-// The magnitude of the most negative value fits, because it is one more
-// than the largest signed value.
-struct exact_bound {
-    bool is_exact_integer = false;
-    bool is_negative = false;
-    widest_unsigned magnitude = 0;
-};
-
-// The types that ExactInteger admits: std::integral without bool and the
-// character types.  The check file of this header checks each against
-// the concept.
-inline constexpr std::meta::info exact_integer_types[] = {
-    ^^signed char,   ^^short,          ^^int,          ^^long,          ^^long long,          ^^widest_signed,
-    ^^unsigned char, ^^unsigned short, ^^unsigned int, ^^unsigned long, ^^unsigned long long, ^^widest_unsigned};
-
-// The sign and the magnitude of one bound of an exact integer type.  Only
-// a query that reads a bound instantiates it, one time for each value.
-template <auto Bound>
-inline constexpr exact_bound exact_bound_of{.is_exact_integer = true,
-                                            .is_negative = std::cmp_less(Bound, 0),
-                                            .magnitude = std::cmp_less(Bound, 0)
-                                                           ? widest_unsigned{0} - static_cast<widest_unsigned>(Bound)
-                                                           : static_cast<widest_unsigned>(Bound)};
-
-// Reads a bound of a predicate.  A bound whose type is not in
-// exact_integer_types reads as no exact integer.  The loop compares
-// reflections and splices no type, so an includer that reads no bound
-// evaluates nothing.  Complexity: O(1).
-[[nodiscard]] consteval exact_bound read_bound(std::meta::info argument) {
-    const std::meta::info type = std::meta::dealias(std::meta::remove_cvref(std::meta::type_of(argument)));
-    for (const std::meta::info candidate : exact_integer_types) {
-        if (type == std::meta::dealias(candidate)) {
-            return std::meta::extract<exact_bound>(std::meta::substitute(^^exact_bound_of, {argument}));
-        }
-    }
-    return {};
-}
-
-// lower ≤ upper for two bounds of predicates.  The bounds compare by
+// Lower ≤ Upper for two bounds of predicates.  The bounds compare by
 // value, as std::cmp_less_equal compares them, which is how each bounded
 // predicate compares a value with its bound.  An unsigned bound and a
 // negative bound then never meet through a conversion that changes a
 // sign: 9u ≤ -1 is false, as it is for the values.  A bound that is not
 // an exact integer defines its predicate on no value type, and every
 // step over it is refused.
+template <auto Lower, auto Upper>
+concept BoundAtMost =
+    ExactInteger<decltype(Lower)> && ExactInteger<decltype(Upper)> && std::cmp_less_equal(Lower, Upper);
+
+// Weak divides Strong, for two bounds with 1 ≤ Weak ≤ Strong.  Both bounds
+// are positive then, so the remainder of the two magnitudes is the
+// remainder of the two values.  The conjunction stops before the modulo
+// when Weak is less than one.
+template <auto Strong, auto Weak>
+concept BoundDivides = BoundAtMost<1, Weak> && BoundAtMost<Weak, Strong>
+                    && static_cast<widest_unsigned>(Strong) % static_cast<widest_unsigned>(Weak) == 0;
+
+// The rules read a bound through these two functions.  Each one asks its
+// concept through a reflection, and a concept has no specialization, so
+// no translation unit can put a different reading of a bound in front of
+// a rule.
 [[nodiscard]] consteval bool bound_at_most(std::meta::info lower, std::meta::info upper) {
-    const exact_bound left = read_bound(lower);
-    const exact_bound right = read_bound(upper);
-    if (!left.is_exact_integer || !right.is_exact_integer) return false;
-    if (left.is_negative != right.is_negative) return left.is_negative;
-    return left.is_negative ? left.magnitude >= right.magnitude : left.magnitude <= right.magnitude;
+    return std::meta::extract<bool>(std::meta::substitute(^^BoundAtMost, {lower, upper}));
+}
+
+[[nodiscard]] consteval bool bound_divides(std::meta::info strong, std::meta::info weak) {
+    return std::meta::extract<bool>(std::meta::substitute(^^BoundDivides, {strong, weak}));
 }
 
 // An admitted step whose conclusion is defined on fewer value types
@@ -694,8 +784,8 @@ inline constexpr narrowing_edge<predicate_t<non_zero>, predicate_t<non_null>> no
 // conjuncts spells.
 [[nodiscard]] consteval rule_verdict all_of_implies_conjunct(std::meta::info premise, std::meta::info conclusion) {
     if (conclusion == std::meta::info{} || !is_specialization_of(premise, ^^refined_algebra::AllOf)) return {};
-    for (const std::meta::info argument : std::meta::template_arguments_of(premise)) {
-        const std::meta::info conjunct = predicate_type_of(argument);
+    for (std::size_t index = 0; index < argument_count_of(premise); ++index) {
+        const std::meta::info conjunct = predicate_type_of(argument_of(premise, index));
         if (conjunct == conclusion || predicate_implies(conjunct, conclusion)) return {.admits = true};
     }
     return {};
@@ -703,8 +793,8 @@ inline constexpr narrowing_edge<predicate_t<non_zero>, predicate_t<non_null>> no
 
 [[nodiscard]] consteval rule_verdict disjunct_implies_any_of(std::meta::info premise, std::meta::info conclusion) {
     if (!is_specialization_of(conclusion, ^^refined_algebra::AnyOf)) return {};
-    for (const std::meta::info argument : std::meta::template_arguments_of(conclusion)) {
-        if (predicate_type_of(argument) == premise) return {.admits = true};
+    for (std::size_t index = 0; index < argument_count_of(conclusion); ++index) {
+        if (predicate_type_of(argument_of(conclusion, index)) == premise) return {.admits = true};
     }
     return {};
 }
@@ -773,15 +863,10 @@ inline constexpr narrowing_edge<predicate_t<non_zero>, predicate_t<non_null>> no
 // keeping modulo by zero out before it can be evaluated. The clause
 // requiring N at least M already follows from N being a multiple of a
 // positive M, and is stated anyway so the clause reads in one pass.
-// The rule compares the two bounds by value first.  Once 1 ≤ M ≤ N
-// holds, both are positive, and the remainder of the two magnitudes is
-// the remainder of the two values.
+// BoundDivides compares the two bounds by value first.
 [[nodiscard]] consteval rule_verdict divisible_by_weakens(std::meta::info premise, std::meta::info conclusion) {
     if (!is_specialization_of(premise, ^^DivisibleBy) || !is_specialization_of(conclusion, ^^DivisibleBy)) return {};
-    const std::meta::info strong = argument_of(premise, 0);
-    const std::meta::info weak = argument_of(conclusion, 0);
-    if (!bound_at_most(std::meta::reflect_constant(1), weak) || !bound_at_most(weak, strong)) return {};
-    return {.admits = read_bound(strong).magnitude % read_bound(weak).magnitude == 0};
+    return {.admits = bound_divides(argument_of(premise, 0), argument_of(conclusion, 0))};
 }
 
 // Every read counts the members against this seal: the edges, the
@@ -895,12 +980,13 @@ void implication_cycle_between_two_names_for_one_predicate() noexcept;
         const std::meta::info node = reached[cursor];
         const step_view view = steps_from(node, conclusion);
         if (view.admits) return true;
-        for (const std::meta::info next : view.successors) {
+        for (std::size_t step = 0; step < view.successors.size(); ++step) {
+            const std::meta::info next = view.successors[step];
             if (next == node) continue;
             if (next == premise) implication_cycle_between_two_names_for_one_predicate();
             bool is_reached = false;
-            for (const std::meta::info seen : reached)
-                is_reached = is_reached || seen == next;
+            for (std::size_t seen = 0; seen < reached.size(); ++seen)
+                is_reached = is_reached || reached[seen] == next;
             if (is_reached) continue;
             if (reached.size() == closure_node_limit) return false;
             reached.push_back(next);
@@ -916,9 +1002,16 @@ void implication_cycle_between_two_names_for_one_predicate() noexcept;
 // late member stops the build at the first query that reads the seal
 // after it, so a late member never changes an answer.  The closure
 // answers a query of a predicate against itself with one step.
+//
+// The relation reads the name of each predicate, so a query stops the
+// build when a unit specialized the premise or the conclusion (THE SEAL).
+// A chain needs no seal of a predicate between the two ends: the steps
+// hold for the predicates of this header, and they compose to a claim
+// about the two ends alone.
 [[nodiscard]] consteval bool predicate_implies(std::meta::info premise, std::meta::info conclusion) {
     const std::meta::info from = std::meta::dealias(premise);
     const std::meta::info to = std::meta::dealias(conclusion);
+    static_cast<void>(is_sealed_predicate(from) && is_sealed_predicate(to));
     const bool is_implied = from == to ? steps_from(from, to).admits : implies_closed(from, to);
     ::foundation::fail_closed::require_seal_holds(^^admitted_implications);
     return is_implied;

@@ -162,41 +162,31 @@ namespace detail::refined_edge_walk {
 
 namespace detail::refined_self_test {
 
-// Each type in exact_integer_types is one that ExactInteger admits.
-[[nodiscard]] consteval bool every_bound_type_is_exact() noexcept {
-    bool is_exact = true;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr std::meta::info type : refined::exact_integer_types) {
-        is_exact = is_exact && refined::ExactInteger<typename[:type:]>;
-    }
-#pragma GCC diagnostic pop
-    return is_exact;
-}
-static_assert(every_bound_type_is_exact());
+// The two widest integer types are exact integers, so their bounds
+// compare by value like the bounds of a standard type.
+static_assert(refined::ExactInteger<refined::widest_signed> && refined::ExactInteger<refined::widest_unsigned>);
 
-// read_bound gives the sign and the magnitude of an exact integer bound,
-// also at the most negative value of the widest type, and no exact
-// integer for a bound of another type.
-template <auto Bound>
-struct bound_holder {};
-
-[[nodiscard]] consteval refined::exact_bound bound_read_of(std::meta::info holder) {
-    return refined::read_bound(std::meta::template_arguments_of(holder)[0]);
-}
-
+// bound_at_most compares two bounds by value, also at the most negative
+// value of the widest type and across a sign, and it refuses a bound that
+// is not an exact integer.  bound_divides compares a divisor that is
+// wider than std::uintmax_t, and refuses a divisor less than one.
 inline constexpr refined::widest_signed most_negative_bound =
     -static_cast<refined::widest_signed>(refined::widest_unsigned{1} << 126) * 2;
 
-static_assert(bound_read_of(^^bound_holder<-1>).is_exact_integer && bound_read_of(^^bound_holder<-1>).is_negative
-              && bound_read_of(^^bound_holder<-1>).magnitude == 1);
-static_assert(bound_read_of(^^bound_holder<9u>).is_exact_integer && !bound_read_of(^^bound_holder<9u>).is_negative
-              && bound_read_of(^^bound_holder<9u>).magnitude == 9);
-static_assert(bound_read_of(^^bound_holder<most_negative_bound>).is_negative
-              && bound_read_of(^^bound_holder<most_negative_bound>).magnitude == (refined::widest_unsigned{1} << 127));
-static_assert(!bound_read_of(^^bound_holder<'a'>).is_exact_integer
-              && !bound_read_of(^^bound_holder<true>).is_exact_integer
-              && !bound_read_of(^^bound_holder<1.5>).is_exact_integer);
+static_assert(refined::bound_at_most(std::meta::reflect_constant(-1), std::meta::reflect_constant(0u))
+              && !refined::bound_at_most(std::meta::reflect_constant(9u), std::meta::reflect_constant(-1))
+              && refined::bound_at_most(std::meta::reflect_constant(most_negative_bound),
+                                        std::meta::reflect_constant(-1))
+              && !refined::bound_at_most(std::meta::reflect_constant(-1),
+                                         std::meta::reflect_constant(most_negative_bound)));
+static_assert(!refined::bound_at_most(std::meta::reflect_constant('a'), std::meta::reflect_constant('b'))
+              && !refined::bound_at_most(std::meta::reflect_constant(false), std::meta::reflect_constant(true))
+              && !refined::bound_at_most(std::meta::reflect_constant(1.5), std::meta::reflect_constant(2.5)));
+static_assert(refined::bound_divides(std::meta::reflect_constant(refined::widest_unsigned{1} << 90),
+                                     std::meta::reflect_constant(refined::widest_unsigned{1} << 70))
+              && !refined::bound_divides(std::meta::reflect_constant(12), std::meta::reflect_constant(0))
+              && !refined::bound_divides(std::meta::reflect_constant(12), std::meta::reflect_constant(-4))
+              && !refined::bound_divides(std::meta::reflect_constant(12), std::meta::reflect_constant(24)));
 static_assert(!PredicateImplies<bounded_above<1.5>, bounded_above<2.5>>,
               "a bound that is not an exact integer defines its predicate on no value type, so no step reads it");
 
