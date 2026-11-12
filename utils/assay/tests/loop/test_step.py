@@ -592,8 +592,47 @@ def run_store_order(bench: Bench, verdicts: Verdicts) -> None:
             "compile again",
             again.exit == 0 and record.get("result") == "hit" and "last_cost" not in record and not entries,
         )
+    if host_counts:
+        run_counted_entries(bench, verdicts)
 
     run_rejected_hits(bench, verdicts)
+
+
+def run_counted_entries(bench: Bench, verdicts: Verdicts) -> None:
+    """A hit whose entry holds no count, and a miss with no count over an entry with a count, on a host with a counter.
+
+    These cases hold A HIT WITH NO COUNT of the launcher and THE COUNT OF AN ENTRY of assay.core.cost_store.  The
+    caller gives a store with one entry of the object, and that entry holds a count.
+    """
+    expect = verdicts.expect
+    through_ccache = [*bench.ccache, *bench.tool]
+    entries = store_entries(bench.caches)
+    counted = entries[0].read_text(encoding="utf-8") if len(entries) == 1 else ""
+    uncounted = cost_record.cost_text(cost_record.Cost(1.0, 0.8, 0.2, 1.0, 1000, 1.0, 1.0, ()))
+    entries[0].write_text(f"{uncounted}\n", encoding="utf-8")
+    log = bench.root / "recache-count.log"
+    again = bench.launch(through_ccache, PLANTED_HIT="1", CCACHE_STATSLOG=str(log))
+    record = bench.record()
+    entries = store_entries(bench.caches)
+    expect(
+        "a hit whose entry holds no count compiles again with CCACHE_RECACHE, and its record and the entry of the "
+        "store then hold the count of that compile",
+        again.exit == 0
+        and record.get("result") == "built"
+        and isinstance(cost_of(record).get(cost_record.COMPILER_COUNT_KEY), int)
+        and len(entries) == 1
+        and cost_store.holds_count(entries[0].read_text(encoding="utf-8"))
+        and "recache" in log.read_text(encoding="utf-8"),
+    )
+    counted = entries[0].read_text(encoding="utf-8") if len(entries) == 1 else counted
+    bench.launch(through_ccache, variables={cost_meter.INSTRUCTIONS_ENV: "0"}, PLANTED_HIT="0")
+    entries = store_entries(bench.caches)
+    expect(
+        "a miss with no count leaves an entry that holds a count, so a later hit keeps that count",
+        "compiler_instructions" not in json.dumps(cost_of(bench.record()))
+        and len(entries) == 1
+        and entries[0].read_text(encoding="utf-8") == counted,
+    )
 
 
 def run_rejected_hits(bench: Bench, verdicts: Verdicts) -> None:

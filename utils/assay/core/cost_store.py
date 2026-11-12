@@ -76,6 +76,13 @@ THE KEY
     last of the two compiles writes the entry.  The difference of the two
     counts is the work of that part.
 
+THE COUNT OF AN ENTRY
+    A block with no compiler count does not replace an entry that holds one
+    (put()).  Such a block tells nothing about the work of the compile, and
+    a hit of the key would lose its count.  A block with a count replaces
+    each entry, and a hit with no count then gets the count of a later miss
+    (assay.loop.step, A HIT WITH NO COUNT).
+
 THE COST
     The key reads each byte of the object one time.  The module imports
     hashlib only in key_of(), and a link imports nothing of this module.  On
@@ -238,10 +245,21 @@ def entry_path(directory: str, key: str) -> str:
     return os.path.join(directory, key[:2], key)
 
 
+def holds_count(block: str | None) -> bool:
+    """Tell if a cost block reads and holds a compiler count (THE COUNT OF AN ENTRY)."""
+    if block is None:
+        return False
+    from assay.core import record
+
+    cost = record.cost_from_text(block)
+    return cost is not None and cost.compiler_instructions is not None
+
+
 def put(key: str, block: str) -> None:
     """Write the cost block of the compile of a key into the store, through a temporary file and a rename.
 
-    The call writes nothing when the caches are off.
+    The call writes nothing when the caches are off.  A block with no compiler count does not replace an entry that
+    holds one (THE COUNT OF AN ENTRY).
 
     Raises:
         OSError: If the entry cannot be written
@@ -250,6 +268,8 @@ def put(key: str, block: str) -> None:
     if directory is None:
         return
     target = entry_path(directory, key)
+    if not holds_count(block) and holds_count(read_entry(target)):
+        return
     staging = os.path.join(os.path.dirname(target), f".{key}.{os.getpid()}.tmp")
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     try:
@@ -273,6 +293,16 @@ def put(key: str, block: str) -> None:
         raise
 
 
+def read_entry(path: str) -> str | None:
+    """Return the cost block of the file of an entry, or None when the file cannot be read or holds nothing."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            block = handle.read().strip()
+    except OSError, UnicodeDecodeError:
+        return None
+    return block or None
+
+
 def get(key: str, used_at: float) -> str | None:
     """Return the cost block of the compile of a key, or None when the store holds none.
 
@@ -287,18 +317,19 @@ def get(key: str, used_at: float) -> str | None:
     if directory is None:
         return None
     path = entry_path(directory, key)
+    block = read_entry(path)
+    if block is None:
+        return None
     try:
-        with open(path, encoding="utf-8") as handle:
-            block = handle.read().strip()
         touched = os.stat(path).st_mtime
-    except OSError, UnicodeDecodeError:
+    except OSError:
         return None
     if used_at - touched > cache_root.TOUCH_INTERVAL:
         try:
             os.utime(path)
         except OSError:
             pass
-    return block or None
+    return block
 
 
 def hold_bound() -> bool:

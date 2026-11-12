@@ -103,6 +103,19 @@ A HIT WITH NO COST
     compile.  The second call there would compile each hit of an empty store
     again, and ccache would then save nothing.
 
+A HIT WITH NO COUNT
+    The store can also hold a block of the key of a hit with no compiler
+    count.  A compiler run with no exact count writes such a block.
+    The hit then repeats the missing count in each build, and the rule
+    instruction-total refuses each of them until a change compiles the
+    object again.  On 2026-11-12, nine such blocks refused three runs of the
+    landing gate.  So the subcommand runs such a hit again with
+    CCACHE_RECACHE=1 too, with the same conditions as a hit with no cost.
+    The new block replaces the old one only when it holds a count
+    (assay.core.cost_store, THE COUNT OF AN ENTRY).  A second call with no
+    count leaves the record with no count, and instruction-total still
+    refuses it.
+
     The subcommand imports the store and hashlib only for a compile through
     ccache.  On 2026-10-11 the store added a median of 15 ms to a step of
     the largest object of the Debug build, 10.74 MB.  The host was busy, and
@@ -423,14 +436,18 @@ def cost_variables(output: str, command: list[str]) -> dict[str, str]:
 
 
 def compiles_again(is_ccache: bool, is_hit: bool, last_cost: cost_record.Cost | None) -> bool:
-    """Tell if a compile through ccache is a hit with no cost that a second call can measure (A HIT WITH NO COST).
+    """Tell if a compile through ccache is a hit with no cost or no count that a second call can measure.
+
+    A HIT WITH NO COST and A HIT WITH NO COUNT give the rules.
 
     Args:
         is_ccache: Whether the command runs ccache
         is_hit: Whether ccache gave the output
         last_cost: The cost of the hit from stored_cost(), or None
     """
-    if not is_ccache or not is_hit or last_cost is not None:
+    if not is_ccache or not is_hit:
+        return False
+    if last_cost is not None and last_cost.compiler_instructions is not None:
         return False
     from assay.core import cost_store
 
