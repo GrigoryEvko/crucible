@@ -158,8 +158,7 @@ public:
         requires(!std::is_same_v<OtherElement, ElementType>)
     explicit constexpr vec(vec<OtherElement, Lanes> other) noexcept
         : v_([&]<int... Lane>(std::integer_sequence<int, Lane...>) noexcept -> raw_type {
-              const auto lanes = other.raw();
-              return raw_type{static_cast<ElementType>(lanes[Lane])...};
+              return raw_type{static_cast<ElementType>(other.v_[Lane])...};
           }(std::make_integer_sequence<int, Lanes>{})) {}
 
     [[nodiscard]] constexpr ElementType operator[](int lane) const noexcept { return v_[lane]; }
@@ -185,6 +184,12 @@ public:
     [[nodiscard]] friend constexpr mask_type operator>=(vec a, vec b) noexcept { return mask_type{a.v_ >= b.v_}; }
 
 private:
+    // The converting constructor reads each lane of a vec of a different
+    // element type in place, with no copy of the source vector.
+    template <typename OtherElement, int OtherLanes>
+        requires detail::VectorShape<OtherElement, OtherLanes>
+    friend class vec;
+
     raw_type v_{};
 };
 
