@@ -124,15 +124,16 @@ concept CharacterType = std::is_same_v<T, char> || std::is_same_v<T, wchar_t> ||
 
 }  // namespace detail
 
-// An integer argument of a report: an integral type that is not bool and
-// not a character type.  signed char and unsigned char are integers, so a
-// std::uint8_t is written as a number.
+// An integer argument of a report: an integral type that is not
+// cv-qualified, not bool and not a character type.  signed char and
+// unsigned char are integers, so a std::uint8_t is written as a number.
 template <class T>
-concept FmtInteger =
-    std::is_integral_v<T> && !std::is_same_v<std::remove_cv_t<T>, bool> && !detail::CharacterType<std::remove_cv_t<T>>;
+concept FmtInteger = std::is_integral_v<T> && std::is_same_v<T, std::remove_cv_t<T>> && !std::is_same_v<T, bool>
+                  && !detail::CharacterType<T>;
 
 // A type that a report can write.  The argument of a report binds to a
-// reference, so an argument type is never a reference.
+// reference, so an argument type is never a reference.  A deduced argument
+// type is never cv-qualified, so each arm refuses a cv-qualified type.
 template <class T>
 concept Formattable = FmtInteger<T> || std::is_same_v<T, bool> || std::is_same_v<T, TextView>
                    || std::is_same_v<T, float> || std::is_same_v<T, double>;

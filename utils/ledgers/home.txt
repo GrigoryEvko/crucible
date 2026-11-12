@@ -132,7 +132,6 @@ test/layer/checks/fixy/concurrent/Stage.cpp | open-read | 1 | fixy::concurrent::
 test/layer/checks/fixy/os/Mmap.cpp | open-read | 1 | fixy::mmap::advise_release_aware | -
 test/layer/checks/fixy/os/OwnedFile.cpp | open-read | 2 | fixy::OwnedFile::release | -
 test/layer/checks/fixy/os/OwnedMmap.cpp | open-read | 1 | foundation::core::detail::alternative_of_ | a gate over a sealed template reads this function template through the definition of the sealed template, and a different file can give it an overload or an explicit specialization
-test/layer/checks/fixy/os/OwnedMmap.cpp | open-read | 1 | foundation::core::detail::niche_empty_is_zero_bytes_ | a gate over a sealed template reads this function template through the definition of the sealed template, and a different file can give it an overload or an explicit specialization
 test/layer/checks/fixy/os/OwnedMmap.cpp | open-read | 1 | foundation::core::detail::option_form_for | a gate over a sealed template reads this function template through the definition of the sealed template, and a different file can give it an overload or an explicit specialization
 test/layer/checks/fixy/os/OwnedMmap.cpp | open-read | 1 | foundation::core::niche | the check reads the storage form of an Option through a sealed template, and the trait row of niche admits a specialization in each header of include/foundation/.  A niche selects only the storage form of an Option
 test/layer/checks/fixy/os/Path.cpp | open-read | 1 | fixy::sanitize::path_traversal::sanitize_path_no_dotdot | -

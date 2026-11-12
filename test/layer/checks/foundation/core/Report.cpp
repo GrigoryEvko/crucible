@@ -148,6 +148,10 @@ static_assert(!TakesArguments<decltype(nullptr)>);
 static_assert(!TakesArguments<Colour>);
 static_assert(!TakesArguments<char8_t[4]>);
 static_assert(!TakesArguments<int, long double>);
+// A deduced argument type is never cv-qualified, so the gate refuses each
+// cv-qualified type, an integer as a bool.
+static_assert(!TakesArguments<int const> && !TakesArguments<int volatile> && !TakesArguments<unsigned const>);
+static_assert(!TakesArguments<bool const> && !TakesArguments<double const> && !TakesArguments<TextView const>);
 
 // Each argument reaches the cold formatter as its kind and its bits.  A
 // signed value keeps its two's complement bits.
