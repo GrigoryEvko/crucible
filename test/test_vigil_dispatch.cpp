@@ -149,6 +149,7 @@ int main() {
     test_dispatch_recovery();
     test_alignment_continues_inside_the_matched_ops();
     test_alignment_ends_after_its_bound();
+    test_alignment_bound_returns_to_replay();
     test_dispatch_data_flow();
     test_dispatch_pool_bounds();
     test_dispatch_pure_matches_dispatch_op();

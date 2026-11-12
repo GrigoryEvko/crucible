@@ -51,6 +51,25 @@ void record_bordered(Vigil& vigil, uint32_t iter, uint32_t count) {
     return crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
 }
 
+// The iteration of make_op that the first op of the new trace uses.  It is
+// after the iterations that the region of the old trace recorded.
+inline constexpr uint32_t NEW_TRACE_ITER = 10;
+
+// Op `index` of a new trace: iterations of NUM_OPS ops with the data flow of
+// make_op, and hashes that the region of the old trace does not hold.
+OpData new_trace_op(uint32_t index) {
+    const uint32_t code = index % NUM_OPS;
+    OpData d = make_op(NEW_TRACE_ITER + index / NUM_OPS, code);
+    d.entry.schema_hash = SchemaHash{0xA00 + code};
+    d.entry.shape_hash = ShapeHash{0xB00 + code};
+    return d;
+}
+
+[[nodiscard]] DispatchResult dispatch_new_trace(Vigil& vigil, uint32_t index) {
+    OpData d = new_trace_op(index);
+    return crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
+}
+
 }  // namespace
 
 // The head of the region is A A A A B, and the stream gives A A A A A B.  The
@@ -105,6 +124,44 @@ void test_alignment_ends_after_its_bound() {
     assert(!vigil.is_compiled());
 
     crucible::test::pass("  test_alignment_ends_after_its_bound: PASSED\n");
+}
+
+// The stream changes to a new trace while the region of the old trace waits
+// for alignment.  The bound ends the alignment, the background publishes a
+// region of the new trace, and replay starts on it.  Before the flush, the
+// test records only the ops that complete the first detection of the new
+// trace, so the background publishes no region before the flush.
+void test_alignment_bound_returns_to_replay() {
+    Vigil vigil;
+
+    feed_record(vigil, 0);
+    feed_record(vigil, 1);
+    feed_trigger(vigil, 2);
+    flush_and_wait_region_published(vigil);
+
+    const uint32_t first_detection = Vigil::alignment_bound(NUM_OPS) + 2 * NUM_OPS + K;
+    uint32_t index = 0;
+    for (; index < first_detection; index++) {
+        const DispatchResult result = dispatch_new_trace(vigil, index);
+        assert(result.action == DispatchResult::Action::RECORD && "no replay before a region of the new trace");
+    }
+    flush_and_wait_region_published(vigil);
+
+    assert(vigil.active_region() != nullptr);
+    const RegionNode& region = *vigil.active_region();
+    assert(region.num_ops == NUM_OPS && "the region holds one iteration of the new trace");
+    for (uint32_t i = 0; i < region.num_ops; i++) {
+        const uint64_t schema = region.ops[i].schema_hash.raw();
+        assert(schema >= 0xA00 && schema < 0xA00 + NUM_OPS && "each op of the region is an op of the new trace");
+    }
+
+    const uint32_t replay_end = index + 3 * NUM_OPS;
+    for (; index < replay_end; index++)
+        (void)dispatch_new_trace(vigil, index);
+    assert(vigil.is_compiled() && "replay starts on the region of the new trace");
+    assert(vigil.compiled_iterations() >= 1);
+
+    crucible::test::pass("  test_alignment_bound_returns_to_replay: PASSED\n");
 }
 
 }  // namespace test_vigil_dispatch

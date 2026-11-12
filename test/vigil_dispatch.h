@@ -58,6 +58,7 @@ void test_dispatch_recovery();
 // (test_vigil_dispatch_alignment.cpp).
 void test_alignment_continues_inside_the_matched_ops();
 void test_alignment_ends_after_its_bound();
+void test_alignment_bound_returns_to_replay();
 
 // The pool behind the compiled iterations (test_vigil_dispatch_pool.cpp).
 void test_dispatch_data_flow();

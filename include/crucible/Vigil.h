@@ -842,6 +842,13 @@ private:
         // goes to the cache, as a stale pending region does, and the next op
         // goes to the ring, so the background can publish a region of the
         // stream that the foreground sees.
+        //
+        // This branch sends no reset to the background.  The reset can refute
+        // the accepted period as the period of a region that diverged, and
+        // this region never ran.  The detector accepts a period only when two
+        // periods of recorded ops are equal, and a region holds the last of
+        // the two.  So the ops that the alignment did not record cannot put
+        // into a region a sequence that the stream does not hold.
         if (alignment_ops_ >= alignment_bound(region->num_ops)) {
             region_cache_.insert(region);
             pending_activation_ = nullptr;
