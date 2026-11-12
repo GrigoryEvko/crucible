@@ -311,23 +311,35 @@ template <class T>
 // For each other niche, zero bytes are a full Option with a value that no
 // constructor made, so the mark carries the annotation no_start_over_bytes,
 // and the checked lifetime start of foundation/Lifetime.h refuses the
-// Option.  The mark is empty, so the Option keeps the size of its payload.
+// Option.  The mark is an empty base of the slot, and not a member, so the
+// Option keeps the size of its payload.  GCC 16 gives no unique object
+// representations to a class with an empty member, and an empty base keeps
+// them, so an Atomic cell can hold an Option of a niche payload.
 template <bool IsZeroBytes>
 struct NicheLifetime;
 
 template <>
-struct NicheLifetime<true> final {};
+struct NicheLifetime<true> {};
 
 template <>
-struct[[= ::foundation::lifetime::no_start_over_bytes{}]] NicheLifetime<false> final {};
+struct[[= ::foundation::lifetime::no_start_over_bytes{}]] NicheLifetime<false> {};
 
+// The storage of each Option.  Each slot keeps its parts private, and only
+// the Option that holds the slot reads them.
 template <class T, OptionForm Form = option_form_of<T>>
 class OptionSlot;
 
 template <class T>
-class OptionSlot<T, OptionForm::niche> {
+class OptionSlot<T, OptionForm::niche> : NicheLifetime<niche_empty_is_zero_bytes_<T>()> {
     T value_ = niche<T>::empty();
-    [[no_unique_address]] NicheLifetime<niche_empty_is_zero_bytes_<T>()> lifetime_{};
+
+    template <ChoicePayload U>
+    friend class ::foundation::core::Option;
+
+    [[nodiscard]] constexpr bool holds_() const noexcept { return !niche<T>::is_empty(value_); }
+    [[nodiscard]] constexpr T& payload_() noexcept { return value_; }
+    [[nodiscard]] constexpr T const& payload_() const noexcept { return value_; }
+    constexpr void clear_() noexcept { value_ = niche<T>::empty(); }
 
 public:
     constexpr OptionSlot() noexcept = default;
@@ -342,12 +354,10 @@ public:
             fatal("Option::some got the empty value of the niche of its payload");
         }
     }
-
-    [[nodiscard]] constexpr bool holds_() const noexcept { return !niche<T>::is_empty(value_); }
-    [[nodiscard]] constexpr T& payload_() noexcept { return value_; }
-    [[nodiscard]] constexpr T const& payload_() const noexcept { return value_; }
-    constexpr void clear_() noexcept { value_ = niche<T>::empty(); }
 };
+
+template <bool IsPlain, class... Ts>
+class SumSlotOf;
 
 // The one layout rule of the plain forms of the family: the storage, and
 // then a tag of one byte, as in std::expected and std::variant.  The x86-64
@@ -355,14 +365,19 @@ public:
 // a storage of four bytes, the storage is the low word of the first
 // register, so a value goes in and out with no shift, and a test of the tag
 // at bit 32 takes one shift.  The plain Option, and the sums whose
-// alternatives are all plain, use this rule.
+// alternatives are all plain, use this rule.  Only the slot of a plain sum
+// reads the two cells.
 template <class Storage, class Tag>
-struct TaggedCells {
+class TaggedCells {
     static_assert(sizeof(Tag) == 1, "the tag of the cells is one byte");
 
     Storage storage_;
     Tag tag_;
 
+    template <bool IsPlain, class... Ts>
+    friend class SumSlotOf;
+
+public:
     template <class... Args>
     constexpr explicit TaggedCells(Tag tag,
                                    Args&&... args) noexcept(std::is_nothrow_constructible_v<Storage, Args&&...>)
@@ -554,14 +569,24 @@ struct MoveActive final {
 // active member.  The destructor is trivial when each alternative is
 // trivially destructible.  Else it does nothing, and the slot destroys the
 // active alternative.  Complexity: the depth of the nest, and each walk of
-// an index, are linear in the number of alternatives.
+// an index, are linear in the number of alternatives.  The alternatives are
+// private, and only alternative_of_ reads one.
 template <class... Ts>
 union Alternatives;
 
+// The alternative at an index of a storage.
+template <std::size_t Index, class Storage>
+[[nodiscard]] constexpr auto& alternative_of_(Storage& storage) noexcept;
+
 template <class Last>
 union Alternatives<Last> {
+private:
     Last head_;
 
+    template <std::size_t Index, class Storage>
+    friend constexpr auto& alternative_of_(Storage& storage) noexcept;
+
+public:
     template <class U>
     constexpr Alternatives(AlternativeAt<0>, U&& value) noexcept(std::is_nothrow_constructible_v<Last, U&&>)
         : head_(static_cast<U&&>(value)) {}
@@ -582,9 +607,14 @@ union Alternatives<Last> {
 
 template <class Head, class Next, class... Rest>
 union Alternatives<Head, Next, Rest...> {
+private:
     Head head_;
     Alternatives<Next, Rest...> tail_;
 
+    template <std::size_t Index, class Storage>
+    friend constexpr auto& alternative_of_(Storage& storage) noexcept;
+
+public:
     template <class U>
     constexpr Alternatives(AlternativeAt<0>, U&& value) noexcept(std::is_nothrow_constructible_v<Head, U&&>)
         : head_(static_cast<U&&>(value)) {}
@@ -618,7 +648,6 @@ union Alternatives<Head, Next, Rest...> {
     }
 };
 
-// The alternative at an index of a storage.
 template <std::size_t Index, class Storage>
 [[nodiscard]] constexpr auto& alternative_of_(Storage& storage) noexcept {
     if constexpr (Index == 0) {
@@ -682,28 +711,37 @@ struct ZeroWords<Word, 1> {
 // copy of the sum reads no byte that no constructor wrote (SumSlotOf tells
 // when).  An alternative that holds a value leaves the bytes after it as they
 // are, as std::expected does, so its value stays in a register.  Width is the
-// alignment of the storage, at most eight bytes.
+// alignment of the storage, at most eight bytes.  Only the slot of a plain
+// sum reads the value.
 template <class T, std::size_t Size, std::size_t Width, bool WritesZeroWords>
-struct PlainAlternative {
-    T value;
+class PlainAlternative {
+    T value_;
 
+    template <bool IsPlain, class... Ts>
+    friend class SumSlotOf;
+
+public:
     template <class U>
     constexpr explicit PlainAlternative(U&& from) noexcept(std::is_nothrow_constructible_v<T, U&&>)
-        : value(static_cast<U&&>(from)) {}
+        : value_(static_cast<U&&>(from)) {}
 };
 
 template <class T, std::size_t Size, std::size_t Width>
-struct PlainAlternative<T, Size, Width, true> {
-    [[no_unique_address]] T value;
+class PlainAlternative<T, Size, Width, true> {
+    [[no_unique_address]] T value_;
     ZeroWords<typename WordOf<Width>::type, Size / Width> zero_{};
 
+    template <bool IsPlain, class... Ts>
+    friend class SumSlotOf;
+
+public:
     template <class U>
     constexpr explicit PlainAlternative(U&& from) noexcept(std::is_nothrow_constructible_v<T, U&&>)
-        : value(static_cast<U&&>(from)) {}
+        : value_(static_cast<U&&>(from)) {}
 };
 
-template <bool IsPlain, class... Ts>
-class SumSlotOf;
+template <class T, class E>
+class ResultSlot;
 
 // The slot of a plain sum: the storage and the tag of TaggedCells.  The
 // special members are implicit, and each one is trivial, because each
@@ -731,22 +769,27 @@ class SumSlotOf<true, Ts...> {
 
     TaggedCells<Storage, unsigned char> cells_;
 
-public:
-    template <std::size_t Index, class U>
-    constexpr SumSlotOf(AlternativeAt<Index> at,
-                        U&& value) noexcept(std::is_nothrow_constructible_v<Storage, AlternativeAt<Index>, U&&>)
-        : cells_{static_cast<unsigned char>(Index), at, static_cast<U&&>(value)} {}
+    template <class T, OptionForm Form>
+    friend class OptionSlot;
+    template <class T, class E>
+    friend class ResultSlot;
 
     [[nodiscard]] constexpr std::size_t index_() const noexcept { return cells_.tag_; }
 
     template <std::size_t Index>
     [[nodiscard]] constexpr auto& alternative_() noexcept {
-        return alternative_of_<Index>(cells_.storage_).value;
+        return alternative_of_<Index>(cells_.storage_).value_;
     }
     template <std::size_t Index>
     [[nodiscard]] constexpr auto const& alternative_() const noexcept {
-        return alternative_of_<Index>(cells_.storage_).value;
+        return alternative_of_<Index>(cells_.storage_).value_;
     }
+
+public:
+    template <std::size_t Index, class U>
+    constexpr SumSlotOf(AlternativeAt<Index> at,
+                        U&& value) noexcept(std::is_nothrow_constructible_v<Storage, AlternativeAt<Index>, U&&>)
+        : cells_{static_cast<unsigned char>(Index), at, static_cast<U&&>(value)} {}
 };
 
 // The slot of a sum with an alternative that owns something.  The slot is
@@ -758,6 +801,22 @@ template <class... Ts>
 class SumSlotOf<false, Ts...> {
     Alternatives<Ts...> storage_;
     unsigned char tag_;
+
+    template <class T, OptionForm Form>
+    friend class OptionSlot;
+    template <class T, class E>
+    friend class ResultSlot;
+
+    [[nodiscard]] constexpr std::size_t index_() const noexcept { return tag_; }
+
+    template <std::size_t Index>
+    [[nodiscard]] constexpr auto& alternative_() noexcept {
+        return alternative_of_<Index>(storage_);
+    }
+    template <std::size_t Index>
+    [[nodiscard]] constexpr auto const& alternative_() const noexcept {
+        return alternative_of_<Index>(storage_);
+    }
 
 public:
     template <std::size_t Index, class U>
@@ -773,17 +832,6 @@ public:
     SumSlotOf& operator=(SumSlotOf&&) = delete("an owning sum is not assignable: build a new sum instead");
 
     constexpr ~SumSlotOf() { storage_.destroy_(tag_); }
-
-    [[nodiscard]] constexpr std::size_t index_() const noexcept { return tag_; }
-
-    template <std::size_t Index>
-    [[nodiscard]] constexpr auto& alternative_() noexcept {
-        return alternative_of_<Index>(storage_);
-    }
-    template <std::size_t Index>
-    [[nodiscard]] constexpr auto const& alternative_() const noexcept {
-        return alternative_of_<Index>(storage_);
-    }
 };
 
 // The one slot of the sums of the family.
@@ -797,17 +845,20 @@ template <class T>
 class OptionSlot<T, OptionForm::plain> {
     SumSlot<NoPayload, T> sum_{AlternativeAt<0>{}, NoPayload{}};
 
+    template <ChoicePayload U>
+    friend class ::foundation::core::Option;
+
+    [[nodiscard]] constexpr bool holds_() const noexcept { return sum_.index_() != 0; }
+    [[nodiscard]] constexpr T& payload_() noexcept { return sum_.template alternative_<1>(); }
+    [[nodiscard]] constexpr T const& payload_() const noexcept { return sum_.template alternative_<1>(); }
+    constexpr void clear_() noexcept { sum_ = SumSlot<NoPayload, T>{AlternativeAt<0>{}, NoPayload{}}; }
+
 public:
     constexpr OptionSlot() noexcept = default;
 
     template <class U>
     constexpr OptionSlot(SomeTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
         : sum_{AlternativeAt<1>{}, static_cast<U&&>(value)} {}
-
-    [[nodiscard]] constexpr bool holds_() const noexcept { return sum_.index_() != 0; }
-    [[nodiscard]] constexpr T& payload_() noexcept { return sum_.template alternative_<1>(); }
-    [[nodiscard]] constexpr T const& payload_() const noexcept { return sum_.template alternative_<1>(); }
-    constexpr void clear_() noexcept { sum_ = SumSlot<NoPayload, T>{AlternativeAt<0>{}, NoPayload{}}; }
 };
 
 // An owning Option holds the alternatives of the empty marker and the
@@ -817,6 +868,19 @@ template <class T>
 class OptionSlot<T, OptionForm::owning> {
     Alternatives<NoPayload, T> storage_{AlternativeAt<0>{}, NoPayload{}};
     bool is_engaged_ = false;
+
+    template <ChoicePayload U>
+    friend class ::foundation::core::Option;
+
+    [[nodiscard]] constexpr bool holds_() const noexcept { return is_engaged_; }
+    [[nodiscard]] constexpr T& payload_() noexcept { return alternative_of_<1>(storage_); }
+    [[nodiscard]] constexpr T const& payload_() const noexcept { return alternative_of_<1>(storage_); }
+    constexpr void clear_() noexcept {
+        if (is_engaged_) {
+            storage_.destroy_(1);
+            is_engaged_ = false;
+        }
+    }
 
 public:
     constexpr OptionSlot() noexcept = default;
@@ -839,16 +903,6 @@ public:
     constexpr ~OptionSlot() {
         if (is_engaged_) storage_.destroy_(1);
     }
-
-    [[nodiscard]] constexpr bool holds_() const noexcept { return is_engaged_; }
-    [[nodiscard]] constexpr T& payload_() noexcept { return alternative_of_<1>(storage_); }
-    [[nodiscard]] constexpr T const& payload_() const noexcept { return alternative_of_<1>(storage_); }
-    constexpr void clear_() noexcept {
-        if (is_engaged_) {
-            storage_.destroy_(1);
-            is_engaged_ = false;
-        }
-    }
 };
 
 // The slot of a Result: SumSlot<E, T>, with the error at index 0 and the
@@ -860,17 +914,20 @@ template <class T, class E>
 class ResultSlot {
     SumSlot<E, T> sum_;
 
-public:
-    template <std::size_t Index, class U>
-    constexpr ResultSlot(AlternativeAt<Index> at,
-                         U&& part) noexcept(std::is_nothrow_constructible_v<SumSlot<E, T>, AlternativeAt<Index>, U&&>)
-        : sum_{at, static_cast<U&&>(part)} {}
+    template <ChoicePayload U, ErrorValue F>
+    friend class ::foundation::core::Result;
 
     [[nodiscard]] constexpr bool holds_() const noexcept { return sum_.index_() != 0; }
     [[nodiscard]] constexpr T& value_() noexcept { return sum_.template alternative_<1>(); }
     [[nodiscard]] constexpr T const& value_() const noexcept { return sum_.template alternative_<1>(); }
     [[nodiscard]] constexpr E& error_() noexcept { return sum_.template alternative_<0>(); }
     [[nodiscard]] constexpr E const& error_() const noexcept { return sum_.template alternative_<0>(); }
+
+public:
+    template <std::size_t Index, class U>
+    constexpr ResultSlot(AlternativeAt<Index> at,
+                         U&& part) noexcept(std::is_nothrow_constructible_v<SumSlot<E, T>, AlternativeAt<Index>, U&&>)
+        : sum_{at, static_cast<U&&>(part)} {}
 };
 
 }  // namespace detail

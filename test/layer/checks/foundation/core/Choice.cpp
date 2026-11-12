@@ -126,6 +126,13 @@ static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Option<MemberS
 static_assert(sizeof(Option<NonZeroCount>) == sizeof(NonZeroCount));
 static_assert(std::is_trivially_copyable_v<Option<SlotNumber>> && std::is_trivially_copyable_v<Option<NonZeroCount>>);
 
+// The mark of the lifetime is an empty base, so a niche Option has the
+// unique object representations of its payload, and an Atomic cell can hold
+// it.
+static_assert(std::has_unique_object_representations_v<Option<SlotNumber>>);
+static_assert(std::has_unique_object_representations_v<Option<MemberSlot>>);
+static_assert(std::has_unique_object_representations_v<Option<NonZeroCount>>);
+
 // A plain Option is the plain sum of the empty marker and its payload.
 static_assert(std::is_same_v<SumSlot<NoPayload, std::uint32_t>, SumSlotOf<true, NoPayload, std::uint32_t>>);
 static_assert(sizeof(Option<std::uint32_t>) == 8 && sizeof(Option<std::uint64_t>) == 16);
