@@ -1,0 +1,4 @@
+namespace {
+[[gnu::tls_model("initial-exec")]] alignas(512) thread_local char block[8];
+}
+char* block_entry() { return block; }

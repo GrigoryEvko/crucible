@@ -1,0 +1,4 @@
+# A planted ledger: a row that admits the TLS block of a shared library over the limit.
+format 1
+rule static-tls
+@build/test/libplanted.so | - | 1024 | - | a planted block that the row admits

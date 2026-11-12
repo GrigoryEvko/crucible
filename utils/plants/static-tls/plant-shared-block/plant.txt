@@ -1,0 +1,5 @@
+# A shared library of the target all with an initial-exec thread-local block of 1024 bytes, which is more than the
+# limit.  dlopen puts the full block in the static TLS of the process.  The block is not in a base scope.
+library foundation base.cpp
+library crucible base.cpp
+module test libplanted.so block.cpp

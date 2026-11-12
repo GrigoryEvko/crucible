@@ -1,0 +1,5 @@
+# A shared library with a thread-local block of 16384 bytes and no initial-exec access.  The loader gives each thread
+# the block on its first use, and the block does not go into the static TLS of the process.
+library foundation base.cpp
+library crucible base.cpp
+module test libplanted.so block.cpp

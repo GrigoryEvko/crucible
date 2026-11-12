@@ -1,0 +1,4 @@
+# A shared library with an initial-exec thread-local block of 128 bytes, which is less than the limit.
+library foundation base.cpp
+library crucible base.cpp
+module test libplanted.so block.cpp

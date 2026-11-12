@@ -1,0 +1,7 @@
+# The library libowner.so defines a thread-local block of 1024 bytes, and it reads the block with a dynamic model.  The
+# library libreader.so reads the same block with the initial-exec model.  The loader then puts the block of libowner.so
+# in the static TLS of the process, and the block is more than the limit.
+library foundation base.cpp
+library crucible base.cpp
+module test libowner.so owner.cpp
+module test libreader.so reader.cpp

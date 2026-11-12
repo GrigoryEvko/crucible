@@ -1,0 +1,2 @@
+__thread char shared_block[1024];
+char* owner_entry() { return shared_block; }

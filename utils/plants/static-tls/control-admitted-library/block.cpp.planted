@@ -1,0 +1,4 @@
+namespace {
+[[gnu::tls_model("initial-exec")]] thread_local char block[1024];
+}
+char* block_entry() { return block; }

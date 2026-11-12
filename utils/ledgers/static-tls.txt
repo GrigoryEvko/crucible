@@ -1,0 +1,9 @@
+# The ledger of the rule static-tls of utils/registry.txt: the members of the static libraries with base
+# thread-local variables and the shared libraries with a block in the static TLS that can be more than the
+# limit, one row for each item, and each row judges each build.  A row is '@build/ARCHIVE(MEMBER) | - | VALUE |
+# - | REASON' or '@build/PATH | - | VALUE | - | REASON', and VALUE is the kept value, in bytes.
+# `python3 utils/bin/guard explain static-tls` tells the rule, and `python3 utils/bin/guard write --rule
+# static-tls --build-dir DIR --reason TEXT` writes a new row or a higher VALUE.
+format 1
+rule static-tls
+@build/test/libtest_static_tls_plant.so | - | 16384 | - | the plant of the run-time witness in test_process_wide_across_libraries.cpp, which dlopen must refuse, with a block of 64 times the limit

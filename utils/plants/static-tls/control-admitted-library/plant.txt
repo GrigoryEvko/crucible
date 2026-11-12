@@ -1,0 +1,5 @@
+# A ledger row admits the initial-exec thread-local block of 1024 bytes of a shared library, with its reason, and the
+# rule gives no finding.  The row names the library by its path in the build directory.
+library foundation base.cpp
+library crucible base.cpp
+module test libplanted.so block.cpp

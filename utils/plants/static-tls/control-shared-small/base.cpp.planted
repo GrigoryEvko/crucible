@@ -1,0 +1,2 @@
+extern "C" int crucible_plant_extern(int);
+int plain_entry(int value) { return crucible_plant_extern(value) + 1; }

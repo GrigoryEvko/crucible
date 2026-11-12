@@ -1,0 +1,2 @@
+extern __thread char shared_block[1024] __attribute__((tls_model("initial-exec")));
+char* reader_entry() { return shared_block; }

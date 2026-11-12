@@ -1,0 +1,2 @@
+__thread char shared_block[16384];
+char* block_entry() { return shared_block; }

@@ -1,0 +1,5 @@
+# A shared library with an initial-exec thread-local block of 8 bytes and the alignment 512.  The block takes the
+# bytes of its alignment in the static TLS of the process, and that is more than the limit.
+library foundation base.cpp
+library crucible base.cpp
+module test libplanted.so block.cpp
