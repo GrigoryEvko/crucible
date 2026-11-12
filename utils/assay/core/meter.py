@@ -6,7 +6,9 @@ test-step`, imports it in the same way.  The module imports only os, sys and
 time, so an import costs about one millisecond.  It imports signal and
 resource only to run a command, _ctypes only to count instructions,
 utils/assay/core/report.py only to write a finding line, and
-utils/assay/core/ledger.py only to read or write a ledger that exists.
+utils/assay/core/ledger.py only to read or write a ledger that exists.  The
+compiler meter of a ccache miss imports the cost store and the record
+module to write the cost of its compiler run.
 
 MEASURE
     measure(command, environment, cpu_limit_s) runs a command with the
@@ -94,7 +96,11 @@ A COMPILE THROUGH CCACHE
     CCACHE_DISABLE is set.  ccache does not hash the prefix, so a hit stays a
     hit.  The meter (meter_compiler) counts the compiler run with a counter
     of its own, adds one line to the file, and exits as the compiler exited.
-    read_compiler_count() reads the file.  The meter costs approximately 57 M
+    read_compiler_count() reads the file.  After a compiler run with the
+    status 0, the meter also writes the cost of the run into the cost store,
+    before ccache stores the object (assay.core.cost_store, THE ORDER).  The
+    launcher gives it the inputs of the key in the variable KEY_ENV of that
+    module.  The meter costs approximately 57 M
     instructions and 12 ms of CPU time for each miss.  ccache splits the
     prefix at each space, so the launcher sets no prefix when a path holds a
     space or when the environment already sets CCACHE_PREFIX, and the record
@@ -640,7 +646,33 @@ def meter_compiler(command: list[str]) -> None:
                 handle.write(f"{line}\n")
         except OSError:
             pass
+    if run.exit_code == 0:
+        store_compiler_cost(command, run)
     end_like(run.exit_code)
+
+
+def store_compiler_cost(command: list[str], run: Measurement) -> None:
+    """Write the cost of a compiler run of a ccache miss into the cost store, before ccache stores its object.
+
+    assay.core.cost_store, THE ORDER, gives the rules.  The function writes
+    nothing when the environment holds no inputs of the key, and a failure
+    writes nothing too.  A measurement never fails a step.
+
+    Args:
+        command: The compiler command that ccache gave the meter
+        run: The measurement of the compiler run
+    """
+    import contextlib
+
+    with contextlib.suppress(Exception):
+        from assay.core import cost_store
+        from assay.core import record as cost_record
+
+        text = os.environ.get(cost_store.KEY_ENV)
+        key = None if not text else cost_store.compiler_key(text, command, run.peak_rss_kb / KB_PER_GB)
+        if key is not None:
+            counts = () if run.instructions is None else ((cost_record.COMPILER_COUNT_KEY, run.instructions),)
+            cost_store.put(key, cost_record.cost_text(cost_record.measured(run, counts)))
 
 
 def end_like(exit_code: int) -> None:

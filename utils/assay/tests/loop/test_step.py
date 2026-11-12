@@ -23,7 +23,10 @@ On a miss it runs a preprocessor run, and then the compiler run behind the
 words of CCACHE_PREFIX, as ccache 4 does.  A miss keeps a copy of the object,
 and a hit gives that copy.  The cases of the cost store (assay.core.cost_store)
 then see the bytes of the miss.  Each bench has a root of the caches of its
-own.
+own.  The planted ccache can end on SIGINT after it keeps the copy.  The
+entry of the compiler meter must then give the next hit its cost.  A hit
+with no entry must compile again when the host gives a counter.  A hit of
+the object of a rejected compile must compile again and be rejected again.
 
 With `--cxx`, two more cases use the real compiler.  One compiles and links.
 The other compiles a constant evaluation that runs away, with a hard
@@ -101,13 +104,16 @@ with open(out, "wb") as handle:
 
 # A planted ccache.  As ccache 4 does, a miss runs a preprocessor run with no prefix, and then the compiler run with
 # the words of CCACHE_PREFIX in front of it.  A miss keeps a copy of the object in OBJECT.planted-cache, or in the file
-# of PLANTED_STORED, and a hit gives that copy.  A hit with no copy gives an object that no miss made.
+# of PLANTED_STORED, and a hit gives that copy.  A hit with no copy gives an object that no miss made.  With
+# CCACHE_RECACHE=1, each call is a miss, as in ccache.  With PLANTED_DIES=1, a miss ends on SIGINT after it keeps the
+# copy, as ccache does when an interrupt comes after its store.
 PLANTED_CCACHE = """\
-import os, shutil, subprocess, sys
+import os, shutil, signal, subprocess, sys
 log = os.environ["CCACHE_STATSLOG"]
 out = sys.argv[sys.argv.index("-o") + 1]
 stored = os.environ.get("PLANTED_STORED") or out + ".planted-cache"
-if os.environ.get("PLANTED_HIT") == "1":
+recache = os.environ.get("CCACHE_RECACHE") == "1"
+if os.environ.get("PLANTED_HIT") == "1" and not recache:
     with open(log, "a") as handle:
         handle.write("# source.cpp\\ndirect_cache_hit\\nlocal_storage_hit\\n")
     if os.path.exists(stored):
@@ -117,12 +123,15 @@ if os.environ.get("PLANTED_HIT") == "1":
             handle.write(b"cached object")
     sys.exit(0)
 with open(log, "a") as handle:
-    handle.write("# source.cpp\\ncache_miss\\ndirect_cache_miss\\n")
+    handle.write("# source.cpp\\nrecache\\n" if recache else "# source.cpp\\ncache_miss\\ndirect_cache_miss\\n")
 subprocess.call([sys.executable, "-c", "sum(range(300000))"])
 prefix = os.environ.get("CCACHE_PREFIX", "").split()
 status = subprocess.call([*prefix, *sys.argv[1:]])
 if status == 0:
     shutil.copyfile(out, stored)
+    if os.environ.get("PLANTED_DIES") == "1":
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        os.kill(os.getpid(), signal.SIGINT)
 sys.exit(status)
 """
 
@@ -225,11 +234,17 @@ class Bench:
             return [sys.executable, "-S", *LAUNCHER, "--link", *tool, str(self.object), "-o", target]
         return [sys.executable, "-S", *LAUNCHER, *tool, "-o", target, "-c", str(self.source)]
 
-    def launch(self, tool: list[str], link: bool = False, output: Path | None = None, **env: str) -> proc.Completed:
-        """Run the launcher in front of one tool and wait for it."""
-        return proc.run(
-            proc.Command(self.argv(tool, link, output), timeout_s=LAUNCH_TIMEOUT_S, env={**self.env, **env})
-        )
+    def launch(
+        self,
+        tool: list[str],
+        link: bool = False,
+        output: Path | None = None,
+        variables: dict[str, str] | None = None,
+        **env: str,
+    ) -> proc.Completed:
+        """Run the launcher in front of one tool and wait for it, with `variables` and `env` in its environment."""
+        environment = {**self.env, **(variables or {}), **env}
+        return proc.run(proc.Command(self.argv(tool, link, output), timeout_s=LAUNCH_TIMEOUT_S, env=environment))
 
     def launch_limited(
         self, tool: list[str], hard_limit_s: int, link: bool = False, output: Path | None = None, **env: str
@@ -311,7 +326,7 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
         and cost_record.CCACHE_COUNT_KEY not in cost_of(first)
         and "instructions" not in cost_of(first),
     )
-    bench.launch(bench.tool, **{cost_meter.INSTRUCTIONS_ENV: "0"})
+    bench.launch(bench.tool, variables={cost_meter.INSTRUCTIONS_ENV: "0"})
     expect(
         f"with {cost_meter.INSTRUCTIONS_ENV}=0, a compile record holds no instruction count",
         bench.record().get("result") == "built" and cost_record.COMPILER_COUNT_KEY not in cost_of(bench.record()),
@@ -343,11 +358,11 @@ def run_records(bench: Bench, verdicts: Verdicts) -> None:
     )
 
     bench.launch(bench.tool)
-    result = bench.launch([*bench.ccache, *bench.tool], PLANTED_HIT="1")
+    result = bench.launch([*bench.ccache, *bench.tool], variables={cost_meter.INSTRUCTIONS_ENV: "0"}, PLANTED_HIT="1")
     hit = bench.record()
     expect(
-        "a ccache hit gives a hit record with no time, and no last cost when no compile through ccache made its "
-        "object, also after a compile of the same output with no ccache",
+        f"with {cost_meter.INSTRUCTIONS_ENV}=0, a ccache hit gives a hit record with no time, and no last cost when "
+        f"no compile through ccache made its object, also after a compile of the same output with no ccache",
         result.exit == 0
         and hit.get("result") == "hit"
         and "cost" not in hit
@@ -450,12 +465,15 @@ def run_cost_store(bench: Bench, verdicts: Verdicts) -> None:
     )
     bench.launch(through_ccache, PLANTED_HIT="1")
     expect("a second hit keeps the same last cost", bench.record().get("last_cost") == missed)
-    bench.launch([*through_ccache, "-DPLANTED_OPTION"], PLANTED_HIT="1")
+    # With no counter, a hit with no cost does not compile again (A HIT WITH NO COST of the launcher).  The cases of
+    # the key then see the hit itself.
+    no_counter = {cost_meter.INSTRUCTIONS_ENV: "0"}
+    bench.launch([*through_ccache, "-DPLANTED_OPTION"], variables=no_counter, PLANTED_HIT="1")
     expect(
         "a hit of the same bytes under a different command keeps no last cost",
         bench.record().get("result") == "hit" and "last_cost" not in bench.record(),
     )
-    bench.launch(through_ccache, PLANTED_HIT="1", PLANTED_STORED=str(bench.root / "no-copy"))
+    bench.launch(through_ccache, variables=no_counter, PLANTED_HIT="1", PLANTED_STORED=str(bench.root / "no-copy"))
     expect(
         "a hit of different bytes under the same command keeps no last cost",
         bench.record().get("result") == "hit" and "last_cost" not in bench.record(),
@@ -486,11 +504,107 @@ def run_cost_store(bench: Bench, verdicts: Verdicts) -> None:
 
     for entry in store_entries(bench.caches):
         entry.write_text("not a cost block\n", encoding="utf-8")
-    bench.launch(through_ccache, PLANTED_HIT="1")
+    bench.launch(through_ccache, variables=no_counter, PLANTED_HIT="1")
     expect(
         "a hit whose entry holds a text that cost_text() did not write keeps no last cost",
         bench.record().get("result") == "hit" and "last_cost" not in bench.record(),
     )
+    if cost_meter.host_gives_counter():
+        bench.launch(through_ccache, PLANTED_HIT="1")
+        repaired = bench.record()
+        next_hit = bench.launch(through_ccache, PLANTED_HIT="1")
+        expect(
+            "with a counter, a hit whose entry does not read compiles again, and the next hit keeps the cost of that "
+            "compile",
+            repaired.get("result") == "built"
+            and next_hit.exit == 0
+            and bench.record().get("result") == "hit"
+            and bench.record().get("last_cost") == repaired.get("cost"),
+        )
+
+
+def run_store_order(bench: Bench, verdicts: Verdicts) -> None:
+    """The entry of a miss before the store of ccache, a hit with no cost, and a rejected compile through ccache.
+
+    These cases hold THE ORDER of assay.core.cost_store and A HIT WITH NO COST of the launcher.
+    """
+    expect = verdicts.expect
+    through_ccache = [*bench.ccache, *bench.tool]
+    host_counts = cost_meter.host_gives_counter()
+    shown_host = "a counter" if host_counts else "no counter"
+
+    died = bench.launch(through_ccache, PLANTED_HIT="0", PLANTED_DIES="1")
+    entries = store_entries(bench.caches)
+    block = json.loads(entries[0].read_text(encoding="utf-8")) if len(entries) == 1 else {}
+    counted = isinstance(block.get(cost_record.COMPILER_COUNT_KEY), int)
+    expect(
+        f"an interrupt of ccache after its store ends the launcher on SIGINT with a failed record, and the compiler "
+        f"meter wrote the entry of the object before that store, with the count of the compiler run alone when the "
+        f"host gives a counter (this host: {shown_host})",
+        died.exit == -signal.SIGINT
+        and bench.record().get("result") == "failed"
+        and len(entries) == 1
+        and counted == host_counts
+        and cost_record.CCACHE_COUNT_KEY not in block,
+    )
+    bench.launch(through_ccache, PLANTED_HIT="1")
+    expect(
+        "a hit of the object of that interrupted miss keeps the cost of the compiler run as its last cost, and it "
+        "does not compile again",
+        bench.record().get("result") == "hit" and bench.record().get("last_cost") == block,
+    )
+
+    for entry in store_entries(bench.caches):
+        entry.unlink()
+    log = bench.root / "recache.log"
+    again = bench.launch(through_ccache, PLANTED_HIT="1", CCACHE_STATSLOG=str(log))
+    record = bench.record()
+    entries = store_entries(bench.caches)
+    if host_counts:
+        expect(
+            "a hit whose entry the store dropped compiles again with CCACHE_RECACHE, and its record and the new entry "
+            "of the store hold the cost of that compile, with the count of the compiler run",
+            again.exit == 0
+            and record.get("result") == "built"
+            and isinstance(cost_of(record).get(cost_record.COMPILER_COUNT_KEY), int)
+            and len(entries) == 1
+            and json.loads(entries[0].read_text(encoding="utf-8")) == record.get("cost")
+            and "recache" in log.read_text(encoding="utf-8")
+            and not Path(f"{bench.object}{cost_meter.COMPILER_COUNT_SUFFIX}").exists(),
+        )
+    else:
+        expect(
+            "on a host with no counter, a hit whose entry the store dropped keeps no last cost, and it does not "
+            "compile again",
+            again.exit == 0 and record.get("result") == "hit" and "last_cost" not in record and not entries,
+        )
+
+    for entry in store_entries(bench.caches):
+        entry.unlink()
+    bench.table(planted_registry(("step-memory", {"compile": 0.0001}, "GB")))
+    heavy = [*through_ccache, "-DPLANTED_HEAVY"]
+    copy = bench.root / "heavy-copy"
+    rejected = bench.launch(heavy, PLANTED_HIT="0", PLANTED_STORED=str(copy))
+    expect(
+        "a compile through ccache above the memory limit is rejected, and the store gets no entry of its object, "
+        "although ccache keeps the object",
+        rejected.exit == 1
+        and bench.record().get("result") == "rejected"
+        and copy.exists()
+        and not store_entries(bench.caches),
+    )
+    hit = bench.launch(heavy, PLANTED_HIT="1", PLANTED_STORED=str(copy))
+    if host_counts:
+        expect(
+            "a hit of the object of the rejected compile compiles again, and the launcher rejects it again",
+            hit.exit == 1 and bench.record().get("result") == "rejected" and not bench.object.exists(),
+        )
+    else:
+        expect(
+            "on a host with no counter, a hit of the object of the rejected compile keeps no last cost",
+            hit.exit == 0 and bench.record().get("result") == "hit" and "last_cost" not in bench.record(),
+        )
+    bench.table(QUIET)
 
 
 def run_memory_ledger(bench: Bench, verdicts: Verdicts) -> None:
@@ -765,13 +879,13 @@ def run_real_tools(bench: Bench, verdicts: Verdicts, cxx: str | None) -> None:
         direct_run = bench.launch([cxx])
         direct = bench.record()
         bench.object.unlink(missing_ok=True)
-        disabled_run = bench.launch([real_ccache, cxx], CCACHE_DISABLE="1", **env)
+        disabled_run = bench.launch([real_ccache, cxx], variables=env, CCACHE_DISABLE="1")
         disabled = bench.record()
         bench.object.unlink(missing_ok=True)
-        cold_run = bench.launch([real_ccache, cxx], **env)
+        cold_run = bench.launch([real_ccache, cxx], variables=env)
         cold = bench.record()
         bench.object.unlink(missing_ok=True)
-        warm_run = bench.launch([real_ccache, cxx], **env)
+        warm_run = bench.launch([real_ccache, cxx], variables=env)
         warm = bench.record()
         bench.source.write_text("int main() { return 0; }\n", encoding="utf-8")
         expect(
@@ -817,6 +931,7 @@ def main(argv: list[str]) -> int:
     groups: list[Callable[[Bench, Verdicts], None]] = [
         run_records,
         run_cost_store,
+        run_store_order,
         run_memory_ledger,
         run_cpu_limit,
         run_ci_memory,

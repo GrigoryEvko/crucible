@@ -22,7 +22,29 @@ THE STORE
     the byte limit of its row of LIMITS of assay.core.cache, and `guard
     check` takes that turn.  The entries with the oldest use go first.  The
     store has no age limit, because ccache keeps an object with no age
-    limit.  A hit of an object with no entry has no count.
+    limit.  ccache can then keep an object after the store dropped its entry.
+    `loop step` compiles such an object again (assay.loop.step, A HIT WITH
+    NO COST).
+
+THE ORDER
+    ccache stores the object of a miss after the compiler run, and then it
+    exits.  A hit in a different build can read that object at once, before
+    the launcher of the miss writes the cost of its step.  An interrupt of
+    ccache after its store, such as the stop of the gate (assay.loop.gate,
+    THE STOP), ends the step before that write.  On 2026-11-12, a run of the
+    gate after such a stop found 3 hits with no entry.
+
+    So the compiler meter of the miss writes the entry before the store of
+    ccache (assay.core.meter, A COMPILE THROUGH CCACHE).  The launcher gives
+    the meter the inputs of the key in the variable KEY_ENV (key_inputs()).
+    After a compiler run with the status 0, the meter writes the cost of
+    that run under the key of the inputs (compiler_key()).  Then the
+    launcher writes the cost of its full step under the same key.  The
+    meter writes no entry when the run writes a different object, or when
+    the peak memory of the run is above the memory limit in the inputs.
+    The launcher then judges the step first.  A step that the launcher
+    rejects drops the entry of its key (drop()), and a hit of its object
+    then has no cost.
 
 THE KEY
     A hit gives the object that ccache stored at the miss.  The key holds the
@@ -83,6 +105,8 @@ BEFORE = frozenset("=:,")
 AFTER = frozenset("/=:,")
 # The bytes of one read of the object.
 CHUNK = 1 << 20
+# The variable that gives the compiler meter of a ccache call the inputs of the key of its compile (THE ORDER).
+KEY_ENV = "CRUCIBLE_COMPILE_COST_KEY"
 
 
 def store_directory() -> str | None:
@@ -152,9 +176,83 @@ def key_of(object_path: str, command: Sequence[str], build_dir: str | None, sour
     return hashlib.sha256(material.encode("utf-8", "surrogateescape")).hexdigest()
 
 
+def output_of(command: Sequence[str]) -> str | None:
+    """Return the absolute path of the last -o output of a compiler command, or None when the command has none."""
+    found = None
+    for index, word in enumerate(command):
+        if word == "-o" and index + 1 < len(command):
+            found = command[index + 1]
+        elif word.startswith("-o") and len(word) > 2:
+            found = word[2:]
+    return None if found is None else os.path.abspath(found)
+
+
+def key_inputs(
+    object_path: str, command: Sequence[str], build_dir: str | None, source_root: str, memory_limit_gb: float | None
+) -> str:
+    """Return the text of KEY_ENV for one compile: the arguments of key_of() and the memory limit (THE ORDER).
+
+    Args:
+        object_path: The absolute object of the step
+        command: The command of the step, from the first word after the launcher
+        build_dir: The build directory of the object, or None
+        source_root: The source root of the build
+        memory_limit_gb: The memory limit of the compile in GB, or None when no limit judges the object
+    """
+    import json
+
+    return json.dumps([object_path, list(command), build_dir, source_root, memory_limit_gb])
+
+
+def compiler_key(text: str, compiler_command: Sequence[str], peak_gb: float) -> str | None:
+    """Return the key of the entry that a compiler run of a ccache miss writes, or None for no entry (THE ORDER).
+
+    Args:
+        text: The text of KEY_ENV, from key_inputs()
+        compiler_command: The compiler command that ccache gave the meter
+        peak_gb: The peak memory of the compiler run, in GB
+
+    Returns:
+        None when the text does not hold the inputs, when the compiler run writes a different object, when the peak
+        memory is above the limit of the inputs, or when the object cannot be read
+
+    Complexity: linear in the bytes of the object and the length of the command.
+    """
+    import json
+
+    try:
+        object_path, command, build_dir, source_root, limit_gb = json.loads(text)
+    except ValueError, TypeError:
+        return None
+    is_valid = (
+        isinstance(object_path, str)
+        and isinstance(command, list)
+        and all(isinstance(word, str) for word in command)
+        and (build_dir is None or isinstance(build_dir, str))
+        and isinstance(source_root, str)
+        and (limit_gb is None or isinstance(limit_gb, int | float))
+    )
+    if not is_valid or output_of(compiler_command) != object_path:
+        return None
+    if limit_gb is not None and peak_gb > limit_gb:
+        return None
+    return key_of(object_path, command, build_dir, source_root)
+
+
 def entry_path(directory: str, key: str) -> str:
     """Return the file of the entry of a key in the store directory."""
     return os.path.join(directory, key[:2], key)
+
+
+def drop(key: str) -> None:
+    """Remove the entry of a key from the store, when the store holds one (THE ORDER)."""
+    directory = store_directory()
+    if directory is None:
+        return
+    try:
+        os.unlink(entry_path(directory, key))
+    except OSError:
+        pass
 
 
 def put(key: str, block: str) -> None:
