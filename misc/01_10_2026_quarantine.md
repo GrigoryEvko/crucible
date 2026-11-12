@@ -759,6 +759,29 @@ The present layers already refuse the edges of items 1 and 5, because the source
 - The static TLS budget holds, and the vessel library loads with the default glibc tunables.
 - Each door of 2b and 2c uses UAPI headers and the syscall primitive, except the calls that D12 keeps in glibc. The thread door and the futex door pass their tests under TSan with no suppression.
 
+**The check of 2026-11-12** (commit d36be7daf). The check used the Debug preset on the host luks-a, with 224 vCPU and nine other agents. These are the verdicts:
+1. The include rules are errors: holds. The rule table has the row `error include` for `include/foundation/`, `include/fixy/`, `src/foundation/` and `src/fixy/`.
+2. The allowance of each layer: holds. The quarantine ledger holds no row of the kinds `layer-header`, `door-header` or `upward-include` in a base directory. Each runtime std header of the base is a row `replace-pending:HEADER` of the ratchet. The row `allow F1_diag <charconv> until Report` had no includer in a preprocessor arm, and commit da020b73d removed it.
+3. The layer order: holds. The rules `layer-boundary` and `layer-residual` give no finding. The kind `upward-include` is a compile error in the four base directories. Each configuration of the gate builds or parses `all`, and the landing of da020b73d passed in each of the seven configurations.
+4. The gauge: holds. The median of the three edit builds is 10,934 G user instructions. The three runs of 2026-10-02 gave 10,750 G to 10,752 G, and the limit of the rule `edit-build-instructions` is 11,800 G.
+5. The symbols of R5: holds. The rule `artifact-symbols` passes. Each row of `libfoundation.a` has the mark `libc-allow`: `__errno_location`, `__stack_chk_fail`, `abort`, `memset`, `read` and `write`. The rows of `libfixy.a` and `libcrucible.a` hold no new symbol.
+6. The static TLS budget and the vessel: open. The rule `static-tls` passes: 3 members hold 20 bytes, and the largest holds 8 bytes. `test_process_wide_across_libraries` passes, and `dlopen` refuses its plant. No configuration of the gate sets `TORCH_DIR`, so no test loads the vessel library with the default tunables.
+7. The doors: open. The doors that units 2b and 2c made obey the condition, but two files that unit 2b moved call stdio (below).
+
+The doors of condition 7 give these results. Each door of `src/foundation/os/` gives no finding of the C library. `Syscall.cpp`, `Errno.cpp` and `Auxiliary.cpp` include only UAPI headers. `Intercepted.cpp` includes `<errno.h>` and `<unistd.h>` for the routes of R18. In `src/fixy/os/`, the thread door, the signal door, the exit hook door and the monotonic clock door call only the functions of their door headers. D12 does not name `atexit`, `at_quick_exit` and `pthread_atfork`. The decision of 2026-10-11 gives the exit hook door and the fork hook of the thread door. The futex door calls the syscall primitive. The glibc imports of `libfixy.a` are the calls that GCC makes, the calls of `DOOR_CALLS` of the rule `artifact-symbols`, and the two ratchet rows `__fprintf_chk` and `memchr` of `Topology.cpp.o`. `test_os_thread_tasks` and `test_os_futex` pass in the `tsan` preset, with `halt_on_error=1` and no suppression file.
+
+The other calls of the C library in the door directories are these. Slice 4.1 removes each of them:
+- `fixy/os/OwnedFile.h` opens and closes a file stream through stdio. Unit 2b moved this file.
+- `Topology::log_summary` writes to a `FILE*` through `fprintf`, in `fixy/os/Topology.h` and `src/fixy/os/Topology.cpp`. Unit 2b moved the header and its probe.
+- `fixy/os/Time.h` calls `clock_gettime` outside its door `src/fixy/os/MonotonicClock.cpp`. It also calls `clock_nanosleep`, which D12 does not keep in glibc.
+- `fixy/os/Socket.h` calls `socket` through `<sys/socket.h>`.
+
+The owner decides if the gate accepts the first two items as parts of slice 4.1. The last two files are not doors of 2b or 2c. `libfixy.a` holds no libstdc++ thread symbol, but the `_State_impl` row stays for `libcrucible_vigil.a`, because `src/BackgroundThread.cpp` starts its thread with `std::jthread`.
+
+The gauge measured three edit runs at 96 jobs. The median edit build used 31.4 s, 2,812 CPU-s and 948 compiles. The median edit test run used 53.7 s and 4,248 CPU-s. At d6ef48653, at 192 jobs on the host of section 7.10, these steps used 16.8 s, 2,285 CPU-s and 880 compiles, and 21.8 s and 3,966 CPU-s. The host, the job count and the load are different, so these times do not judge condition 4. The first test run of the copy had a failure: with a cold cache, `guard_clang_format` used 1,575 G instructions, more than the limit of 500 G of the kind `test` of the rule `step-cost`.
+
+Stage 2 stays open until conditions 6 and 7 hold.
+
 ---
 
 ## 10. Stage 3: the primitive families
