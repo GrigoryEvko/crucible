@@ -737,6 +737,14 @@ struct OwnerRow {
     int line = 0;
 };
 
+// One linear-door row: a function that ends each linear value of its frame.
+// The function is a qualified name with no template arguments, and it names
+// each overload of that name.
+struct LinearDoorRow {
+    std::string function;
+    int line = 0;
+};
+
 // The rows of the rule table, in the order of the file.  A header keeps the
 // name inside its angle brackets.
 struct RuleTable {
@@ -758,6 +766,7 @@ struct RuleTable {
     std::vector<std::string> syscalls;  // each name of a syscall row (owner.cpp, THE CLAIMS)
     std::vector<std::string> primitives;  // the function of each primitive row (owner.cpp, THE CLAIMS)
     std::vector<std::string> denied_syscalls;  // each name of a deny row (owner.cpp, THE DENIED CALLS)
+    std::vector<LinearDoorRow> linear_doors;  // each linear-door row, in the order of the file
 };
 
 // The kinds of a finding (THE RULES AND THE KINDS above).  opted-out and

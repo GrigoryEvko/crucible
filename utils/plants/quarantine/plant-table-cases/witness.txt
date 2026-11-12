@@ -6,7 +6,7 @@
 
 table-unit plant_std.cpp
 
-table tables/an-unknown-row-kind.txt refused 1 | the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, host, kernel, enforce, language, seal, heavy, light, cite, grant, home, home-args, witness, owner, syscall, primitive and deny
+table tables/an-unknown-row-kind.txt refused 1 | the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, host, kernel, enforce, language, seal, heavy, light, cite, grant, home, home-args, witness, owner, syscall, primitive, deny and linear-door
 table tables/a-host-row-with-no-reason.txt refused 1 | a host row is 'host PATH... \| REASON', with each PATH of a host build tool that links a foreign API, and the reason is necessary
 table tables/a-kernel-row-with-a-path-of-the-build-directory.txt refused 1 | a kernel row is 'kernel PATH... \| REASON', with each PATH of kernel C that a different compiler compiles, and the reason is necessary
 table tables/an-exempt-path-in-the-base.txt refused 2 | the path a/tool/ of an exempt row holds a file of the base, and the base is never exempt
@@ -103,6 +103,11 @@ table tables/a-deny-row-with-no-reason.txt refused 1 | a deny row is 'deny NAME.
 table tables/a-deny-name-that-is-no-identifier.txt refused 1 | a deny row is 'deny NAME... \| REASON', with the name of each system call that the base does not issue raw, and the reason is necessary
 table tables/a-system-call-in-two-deny-rows.txt refused 2 | the system call clone has a second deny row, and its first deny row is on line 1
 table tables/primitive-and-deny-rows-accepted.txt accepted
+table tables/a-linear-door-row-with-no-reason.txt refused 1 | a linear-door row has one word after its kind, the qualified name of a function that ends each linear value of its frame, and a reason
+table tables/a-linear-door-row-with-two-functions.txt refused 1 | a linear-door row has one word after its kind, the qualified name of a function that ends each linear value of its frame, and a reason
+table tables/a-linear-door-that-is-no-qualified-name.txt refused 1 | a linear-door row has one word after its kind, the qualified name of a function that ends each linear value of its frame, and a reason
+table tables/a-linear-door-with-two-rows.txt refused 2 | the function planted::ended has a second linear-door row, and its first linear-door row is on line 1
+table tables/linear-door-rows-accepted.txt accepted
 
 # The table of each white-space character between two words, in a reason, and
 # the carriage return in a comment and in the line ends \r\n.

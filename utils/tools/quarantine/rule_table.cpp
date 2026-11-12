@@ -368,6 +368,11 @@ constexpr const char* kPrimitiveFormat =
 constexpr const char* kDenyFormat =
     "a deny row is 'deny NAME... | REASON', with the name of each system call that the base does not issue raw, and "
     "the reason is necessary";
+// The error of a linear-door row.  ruletable.LINEAR_DOOR_FORMAT gives the same
+// text.  The text holds no bar, so a cell of a plant manifest can hold it.
+constexpr const char* kLinearDoorFormat =
+    "a linear-door row has one word after its kind, the qualified name of a function that ends each linear value of "
+    "its frame, and a reason";
 
 // The kind of a use outside the sites of an owner row of RULE, as the row
 // spells it, or false when RULE has no such kind.
@@ -526,6 +531,7 @@ bool load_rule_table(const std::string& path) {
     crucible_rows::KeyLines syscall_lines;  // each name of a syscall row, and its line
     crucible_rows::KeyLines primitive_lines;  // the function of each primitive row, and its line
     crucible_rows::KeyLines deny_lines;  // each name of a deny row, and its line
+    crucible_rows::KeyLines linear_door_lines;  // the function of each linear-door row, and its line
     bool is_valid = true;
     int line_number = 0;
     auto refuse = [&](const std::string& message) {
@@ -865,10 +871,22 @@ bool load_rule_table(const std::string& path) {
             if (is_valid_row) {
                 table.denied_syscalls.insert(table.denied_syscalls.end(), args.begin(), args.end());
             }
+        } else if (kind == "linear-door") {
+            if (args.size() != 1 || reason.empty() || !is_qualified_name(args[0])) {
+                refuse(kLinearDoorFormat);
+                continue;
+            }
+            // One row names a door.  A second row would name it again.
+            if (int first_line = linear_door_lines.add(args[0], line_number); first_line > 0) {
+                refuse("the function " + args[0] + " has a second linear-door row, and its first linear-door row is on "
+                       "line " + std::to_string(first_line));
+                continue;
+            }
+            table.linear_doors.push_back(LinearDoorRow{args[0], line_number});
         } else {
             refuse("the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, host, kernel, enforce, "
-                   "language, seal, heavy, light, cite, grant, home, home-args, witness, owner, syscall, primitive and "
-                   "deny");
+                   "language, seal, heavy, light, cite, grant, home, home-args, witness, owner, syscall, primitive, "
+                   "deny and linear-door");
         }
     }
     for (std::size_t index = 0; index < allow_layers.size(); ++index) {

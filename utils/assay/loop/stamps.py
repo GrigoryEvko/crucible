@@ -13,7 +13,8 @@ files under the directory OUT:
                   light then compiles nothing.  A witness row gives only the
                   name of its class.  A new expression then compiles nothing.
                   An owner row gives its rule, kind, entity, paths and
-                  function, and a syscall row gives each of its names.
+                  function, and a syscall row gives each of its names.  A
+                  linear-door row gives its function.
                   The lines are sorted.  The stamp of each compile command
                   holds the hash of this file, so a change of a fact compiles
                   each unit again, and a change of a reason compiles nothing.
@@ -114,6 +115,7 @@ def facts_text(table: layer_rules.RuleTable) -> str:
         for owner in table.owners
     ]
     lines += [f"syscall {name}" for name in table.syscalls]
+    lines += [f"linear-door {door.function}" for door in table.linear_doors]
     return "".join(f"{line}\n" for line in sorted(lines))
 
 

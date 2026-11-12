@@ -24,7 +24,8 @@ the negative fixtures that `loop derive witness-fixtures` writes
 and syscalls, and the syscall rows give the system calls of the rule
 syscalls.  For the same rule, the primitive rows
 give the raw system call primitive of the base.  The deny rows give the system
-calls that the base does not issue raw.
+calls that the base does not issue raw.  The linear-door rows give the
+functions that end each linear value of their frame.
 """
 
 from __future__ import annotations
@@ -80,6 +81,7 @@ ROW_KINDS = (
     "syscall",
     "primitive",
     "deny",
+    "linear-door",
 )
 # The refusal that the negative fixture of a witness row must see, as the row names it.
 REFUSALS = ("private", "deleted", "no-match")
@@ -135,6 +137,12 @@ PRIMITIVE_FORMAT = (
 DENY_FORMAT = (
     "a deny row is 'deny NAME... | REASON', with the name of each system call that the base does not issue raw, and "
     "the reason is necessary"
+)
+# The error of a linear-door row.  rule_table.cpp gives the same text.  The text holds no bar, so a cell of a plant
+# manifest can hold it.
+LINEAR_DOOR_FORMAT = (
+    "a linear-door row has one word after its kind, the qualified name of a function that ends each linear value of "
+    "its frame, and a reason"
 )
 # The prefix of the field of an owner row that names the function of its sites.
 BY_PREFIX = "by="
@@ -326,6 +334,18 @@ class Owner:
     line: int
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class LinearDoor:
+    """One linear-door row: a function that ends each linear value of its frame, the reason and the line.
+
+    The function is a qualified name with no template arguments, and it names each overload of that name.
+    """
+
+    function: str
+    reason: str
+    line: int
+
+
 @dataclasses.dataclass(frozen=True)
 class RuleTable:
     """The rows of one rule table, in the order of the file."""
@@ -355,6 +375,8 @@ class RuleTable:
     exempts: tuple[Exempt, ...] = ()
     # The line of each door row, in the sequence of doors.
     door_lines: tuple[int, ...] = ()
+    # The linear-door rows, in the sequence of the file.
+    linear_doors: tuple[LinearDoor, ...] = ()
 
     def layer_named(self, name: str) -> Layer | None:
         """Return the layer with NAME, or None."""
@@ -734,6 +756,8 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
     primitive_lines: dict[str, int] = {}  # the function of each primitive row, and its line
     denied: list[str] = []
     deny_lines: dict[str, int] = {}  # each name of a deny row, and its line
+    linear_doors: list[LinearDoor] = []
+    linear_door_lines: dict[str, int] = {}  # the function of each linear-door row, and its line
     for row in rows:
         number = row.line
         where = f"{name}:{number}"
@@ -936,6 +960,15 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                                      f"row is on line {deny_lines[denied_name]}")
                 deny_lines[denied_name] = number
             denied.extend(args)
+        elif kind == "linear-door":
+            if len(args) != 1 or not reason or not is_qualified_name(args[0]):
+                raise TableError(f"{where}: {LINEAR_DOOR_FORMAT}")
+            # One row names a door.  A second row would name it again.
+            if args[0] in linear_door_lines:
+                raise TableError(f"{where}: the function {args[0]} has a second linear-door row, and its first "
+                                 f"linear-door row is on line {linear_door_lines[args[0]]}")
+            linear_door_lines[args[0]] = number
+            linear_doors.append(LinearDoor(args[0], reason, number))
         else:
             if len(args) not in (2, 3) or args[1] not in MODES or (len(args) == 3 and args[2] != INCLUDE_SCOPE):
                 raise TableError(f"{where}: {ENFORCE_FORMAT}")
@@ -966,7 +999,7 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
     return RuleTable(tuple(layers), tuple(allows), tuple(doors), tuple(admits), tuple(quarantines),
                      tuple(enforces), tuple(languages), tuple(seals), tuple(header_costs), tuple(cites),
                      tuple(grants), tuple(homes), tuple(witnesses), tuple(owners), tuple(syscalls), tuple(primitives),
-                     tuple(denied), tuple(exempts), tuple(door_lines))
+                     tuple(denied), tuple(exempts), tuple(door_lines), tuple(linear_doors))
 
 
 def load(path: Path = TABLE) -> RuleTable:
