@@ -1926,6 +1926,7 @@ foundation_neg_compile_test(neg_core_fixed_text_zero_capacity
 # whose return takes the failure.
 foundation_test(test_core_choice)
 foundation_test(test_core_try)
+foundation_test(test_core_one_of)
 
 foundation_neg_compile_test(neg_core_option_reference_payload
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
@@ -2061,6 +2062,48 @@ foundation_neg_compile_test(neg_core_try_unbraced_if
   ".crucible_try_hold_[0-9]+. was not declared in this scope"
   "template argument 1 is invalid"
   "unused variable .crucible_try_hold_[0-9]+.")
+foundation_neg_compile_test(neg_core_one_of_single
+  "template constraint failure for .template<class \\.\\.\\. Ts>  requires  OneOfAlternatives<Ts \\.\\.\\.> class foundation::core::OneOf."
+  "the expression .sizeof \\.\\.\\. \\(Ts \\.\\.\\.\\) >= 2 \\[with Ts = \\{int\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_one_of_duplicate
+  "template constraint failure for .template<class \\.\\.\\. Ts>  requires  OneOfAlternatives<Ts \\.\\.\\.> class foundation::core::OneOf."
+  "the expression .\\(OccursOnce<Ts, Ts \\.\\.\\.> && \\.\\.\\.\\) \\[with Ts = \\{int, long int, int\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_one_of_reference
+  "template constraint failure for .template<class \\.\\.\\. Ts>  requires  OneOfAlternatives<Ts \\.\\.\\.> class foundation::core::OneOf."
+  "the expression .\\(ChoicePayload<Ts> && \\.\\.\\.\\) \\[with Ts = \\{int&, long int\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_one_of_non_member_value
+  "no matching function for call to .foundation::core::OneOf<int, long int>::OneOf\\(<brace-enclosed initializer list>\\)."
+  "the expression .\\(is_same_v<T, Ts> \\|\\| \\.\\.\\.\\) \\[with T = unsigned int. Ts = \\{int, long int\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_one_of_no_default
+  "no matching function for call to .foundation::core::OneOf<int, long int>::OneOf\\(<brace-enclosed initializer list>\\)."
+  "candidate expects 1 argument, 0 provided")
+foundation_neg_compile_test(neg_core_one_of_match_missing_arm
+  "no matching function for call to .foundation::core::OneOf<int, Code, long int>::match\\(main\\(\\)::<lambda\\(int\\)>, main\\(\\)::<lambda\\(Code\\)>\\)."
+  "the expression .sizeof \\.\\.\\. \\(Arms \\.\\.\\.\\) == sizeof \\.\\.\\. \\(Ts \\.\\.\\.\\) \\[with Arms = \\{main::._anon_[0-9]+, main::._anon_[0-9]+\\}. Ts = \\{int, Code, long int\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_one_of_match_arm_types
+  "no matching function for call to .foundation::core::OneOf<int, Code>::match\\(main\\(\\)::<lambda\\(int\\)>, main\\(\\)::<lambda\\(Code\\)>\\)."
+  "the expression .\\(same_as<typename std::invoke_result<Arms, Ts&&>::type, typename std::invoke_result<Arms \\.\\.\\.\\[0\\],")
+foundation_neg_compile_test(neg_core_one_of_match_returns_reference
+  "no matching function for call to .foundation::core::OneOf<int, Code>::match\\(main\\(\\)::<lambda\\(int&&\\)>, main\\(\\)::<lambda\\(Code&&\\)>\\)."
+  "the expression .!\\(is_reference_v<typename std::invoke_result<Arms \\.\\.\\.\\[0\\],")
+foundation_neg_compile_test(neg_core_one_of_is_non_member
+  "no matching function for call to .foundation::core::OneOf<int, long int>::is<short int>\\(\\) const."
+  "required for the satisfaction of .AlternativeOf<T, Ts \\.\\.\\.>. \\[with T = short int. Ts = \\{int, long int\\}\\]")
+foundation_neg_compile_test(neg_core_one_of_expect_non_member
+  "no matching function for call to .foundation::core::OneOf<int, long int>::expect<short int>\\(const char \\[8\\]\\)."
+  "required for the satisfaction of .AlternativeOf<T, Ts \\.\\.\\.>. \\[with T = short int. Ts = \\{int, long int\\}\\]")
+foundation_neg_compile_test(neg_core_one_of_owning_copied
+  "use of deleted function .foundation::core::OneOf<Owner, int>::OneOf\\(const foundation::core::OneOf<Owner, int>&\\)."
+  "an owning sum is move-only: a copy would duplicate what an alternative owns")
+foundation_neg_compile_test(neg_core_one_of_temporary_borrow_match
+  "use of deleted function .void foundation::core::OneOf<Ts>::match\\(Arms&& \\.\\.\\.\\) const && \\[with Arms = \\{main\\(\\)::<lambda\\(const int&\\)>, main\\(\\)::<lambda\\(const Code&\\)>\\}. Ts = \\{int, Code\\}\\]."
+  "a borrow match of a temporary OneOf gives a reference into an object that the full expression ends")
+foundation_neg_compile_test(neg_core_option_temporary_borrow_match
+  "use of deleted function .void foundation::core::Option<T>::match\\(OnSome&&, OnNone&&\\) const && \\[with OnSome = main\\(\\)::<lambda\\(const int&\\)>. OnNone = main\\(\\)::<lambda\\(\\)>. T = int\\]."
+  "a borrow match of a temporary Option gives a reference into an object that the full expression ends")
+foundation_neg_compile_test(neg_core_result_temporary_borrow_match
+  "use of deleted function .void foundation::core::Result<T, E>::match\\(OnOk&&, OnErr&&\\) const && \\[with OnOk = main\\(\\)::<lambda\\(const int&\\)>. OnErr = main\\(\\)::<lambda\\(const Code&\\)>. T = int. E = Code\\]."
+  "a borrow match of a temporary Result gives a reference into an object that the full expression ends")
 foundation_neg_compile_test(neg_core_surface_open_name
   "static assertion failed: the public member constexpr bool Probe::has_value\\(\\) const of Probe is no shared verb, no language protocol and no name of the family list"
   "in expansion of macro .CRUCIBLE_CLOSED_SURFACE.")

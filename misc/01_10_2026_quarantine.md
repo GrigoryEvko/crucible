@@ -968,7 +968,7 @@ The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLooku
 
 **The idea.** A value that can be absent, and the result of an operation that can fail, is a closed sum. The roads to a payload are `match`, a loop of zero or one turns (`Option` only), `value_or`, `expect` and `CRUCIBLE_TRY`. No type of the family has `operator*`, `operator->` or `operator bool`. Each type is `[[nodiscard]]`, and each operation is `constexpr` and `noexcept`.
 
-**The headers.** `include/foundation/core/Choice.h` (main), and `include/foundation/core/OneOf.h` (design), because the includers of `Choice.h` do not read `OneOf`. They include `<cstddef>`, `<concepts>`, `<new>`, `<type_traits>`, `foundation/ByteSeal.h`, `foundation/Linear.h` and `foundation/core/Report.h`.
+**The headers.** `include/foundation/core/Choice.h` (main), and `include/foundation/core/OneOf.h` (main), because the includers of `Choice.h` do not read `OneOf`. They include `<cstddef>`, `<concepts>`, `<new>`, `<type_traits>`, `foundation/ByteSeal.h`, `foundation/Linear.h` and `foundation/core/Report.h`.
 
 **The gates.**
 
@@ -978,7 +978,7 @@ The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLooku
 | `ErrorValue<E>` | A scoped enum, a class of at most 16 bytes with no reference member whose copy, move and end are those of its bytes (`detail::TrivialCopyShape`, the shape of the niche gate too), or a linear class. A sealed class with a user-provided assignment passes, and its `Result` takes the owning form. The design adds: not an `Err<F>` | main, design |
 | `PlainPayload<T>`, `DroppablePayload<T>` | The plain form, and a payload that a member can drop or copy | main |
 | `HasNiche<T>`, `WellFormedNiche<T>` | A payload that declares its empty value. A declared niche that is not complete fails | main, design |
-| `OneOfAlternatives<Ts...>` | 2 to 255 alternatives, each a `ChoicePayload`, with no type two times. The tag is one byte | design |
+| `OneOfAlternatives<Ts...>` | 2 to 255 alternatives, each a `ChoicePayload`, with no type two times. The value of the tag fits in one byte | main |
 | `ErrorConvertsTo<F, E>` | `F` is not `E`, and `F` converts to `E` with no throw | design |
 | `TryOperand<H>` | An rvalue `Result` or `Option` for `CRUCIBLE_TRY` | design |
 
@@ -992,7 +992,7 @@ The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLooku
 | `Option<T>::some(v)` | Full. The empty value of a niche ends the process | one test for a niche payload | - | main |
 | `some(v)` | A free function that gives `Option<remove_cvref_t<V>>`, with no conversion | as `some` | - | design |
 | `is_some()`, `is_none()` | The state | a load | - | main |
-| `match(on_some, on_none)` | `&&` consumes, `const&` borrows | one branch | `match` | main |
+| `match(on_some, on_none)` | `&&` consumes, `const&` borrows. A temporary has no borrow match, so no arm gives a reference into it | one branch | `match` | main |
 | `for (x : option)` | Zero or one turn. A linear payload has no mutable loop | one test | `for` | main |
 | `value_or(fallback)` | `&&`, a droppable payload only | one select | - | main |
 | `expect(why)` | `&&`. An empty `Option` ends the process | one branch to a cold call | `expect` | main |
@@ -1013,7 +1013,7 @@ The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLooku
 | `err()` | `const&` copies a droppable `E`. `&&` moves a linear `E` | one branch | - | main |
 | `value_or(fallback)` | `&&`, a droppable `T` and `E` only | one select | - | main |
 | `expect(why)` | `&&`. Gives `void` for `Unit` | one branch to a cold call | `expect` | main |
-| `match(on_ok, on_err)` | `&&` and `const&` | one branch | `match` | main |
+| `match(on_ok, on_err)` | `&&` and `const&`. A temporary has no borrow match | one branch | `match` | main |
 | The move assignment, `==` | As for `Option` | as for `Option` | compare | design |
 
 A `Result` has no loop, because a loop over the value drops the error with no trace.
@@ -1022,10 +1022,10 @@ A `Result` has no loop, because a loop over the value drops the error with no tr
 
 | Operation | Contract | Cost | Verb | State |
 |---|---|---|---|---|
-| `OneOf(v)` | Implicit from one of `Ts`, with no conversion, no default constructor and no empty state | a move | - | design |
-| `is<T>()` | `T` is one of `Ts` | one compare | - | design |
-| `expect<T>(why)` | `&&`. Another alternative ends the process | one branch to a cold call | `expect` | design |
-| `match(arms...)` | One arm for each alternative in the order of `Ts`. The last alternative takes the last branch, so `match` has no fatal path | one switch | `match` | design |
+| `OneOf(v)` | Implicit from one of `Ts`, with no conversion, no default constructor and no empty state | a move | - | main |
+| `is<T>()` | `T` is one of `Ts` | one compare | - | main |
+| `expect<T>(why)` | `&&`. Another alternative ends the process | one branch to a cold call | `expect` | main |
+| `match(arms...)` | `&&` and `const&`. One arm for each alternative in the order of `Ts`. The last alternative takes the last branch, so `match` has no fatal path. The `&&` form gives no reference, and a temporary has no borrow match | one compare for each alternative | `match` | main |
 | `get<T>()` | `Option<Ref<T>>`, after `Ref` of G3 | one compare | `get` | design |
 | `which()` | `Index<sizeof...(Ts)>`, after `Index<N>` of G4 | a load | - | design |
 | The move assignment, `==` | As for `Option` | as for `Option` | compare | design |
@@ -1044,7 +1044,7 @@ A `Result` has no loop, because a loop over the value drops the error with no tr
 - A move of a niche or a plain `Option` keeps the source (main). QDESIGN empties it, but the payload owns nothing in these two forms, and the ABI wants a trivial copy.
 - The fatal unwrap is `expect(Fmt<>)` (main). The `Fmt<>` holds the reason and the `Site`, as the `ExpectWhy` of QDESIGN does.
 - An `Option` builds only through `some`, and a `Result` builds from `T` (main). An implicit `Option` from `T` hides the choice of the author in `return false;` of an `Option<bool>`.
-- A moved-from owning `Result` or `OneOf` keeps its tag (design). The attack ledger pins it.
+- A moved-from owning `Result` or `OneOf` keeps its tag (main), so the destructor of the source ends the moved-from alternative.
 - The owner rejected `map`, `and_then` and `or_else` on 2026-11-12 (P5 of section 11.11). `match` and `CRUCIBLE_TRY` are the roads to a payload.
 
 **The recipes.**

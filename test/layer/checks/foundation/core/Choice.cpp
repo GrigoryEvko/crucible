@@ -330,6 +330,23 @@ concept MatchesWithTwoTypes =
 static_assert(!MatchesWithOneArm<Option<int>>);
 static_assert(!MatchesWithTwoTypes<Option<int>>);
 
+// A temporary Option takes the deleted borrow match of an rvalue, so no arm
+// gives a reference into it.  A borrow of a named Option can give one.
+inline constexpr int option_fallback = 0;
+using OptionBorrow = int const&;
+template <class O>
+concept TemporaryBorrowGivesReference = requires(O option) {
+    static_cast<O&&>(option).match([](OptionBorrow value) noexcept -> OptionBorrow { return value; },
+                                   [] noexcept -> OptionBorrow { return option_fallback; });
+};
+template <class O>
+concept NamedBorrowGivesReference = requires(O const& option) {
+    option.match([](OptionBorrow value) noexcept -> OptionBorrow { return value; },
+                 [] noexcept -> OptionBorrow { return option_fallback; });
+};
+static_assert(!TemporaryBorrowGivesReference<Option<int>>);
+static_assert(NamedBorrowGivesReference<Option<int>>);
+
 // ── Result ────────────────────────────────────────────────────────────
 
 enum class Code : std::uint8_t {
@@ -510,6 +527,20 @@ constexpr bool borrowed_match_gives_reference = requires(R const& result) {
                  [](Code) noexcept -> NumberBorrow { return fallback_number; });
 };
 static_assert(borrowed_match_gives_reference<Result<int, Code>>);
+
+// A temporary Result takes the deleted borrow match of an rvalue, so no arm
+// gives a reference into it.
+template <class R>
+constexpr bool temporary_borrow_gives_reference = requires(R result) {
+    static_cast<R&&>(result).match([](NumberBorrow value) noexcept -> NumberBorrow { return value; },
+                                   [](Code const&) noexcept -> NumberBorrow { return fallback_number; });
+};
+template <class R>
+constexpr bool const_temporary_borrow_matches = requires(R const result) {
+    static_cast<R const&&>(result).match([](int const&) noexcept { return 0; }, [](Code const&) noexcept { return 0; });
+};
+static_assert(!temporary_borrow_gives_reference<Result<int, Code>>);
+static_assert(!const_temporary_borrow_matches<Result<int, Code>>);
 
 // A match of a Result needs both arms.
 template <class R>

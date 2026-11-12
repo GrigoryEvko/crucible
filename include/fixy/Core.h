@@ -25,6 +25,7 @@
 #include <foundation/core/Format.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Number.h>
+#include <foundation/core/OneOf.h>
 #include <foundation/core/Parse.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Ref.h>
@@ -62,6 +63,8 @@ using ::foundation::core::Err;
 using ::foundation::core::err;
 using ::foundation::core::Result;
 using ::foundation::core::Unit;
+
+using ::foundation::core::OneOf;
 
 using ::foundation::core::Pack;
 using ::foundation::core::pack_apply_t;

@@ -379,6 +379,14 @@ result_try_convert(fixy::Result<std::uint32_t, Code8> result) noexcept {
                                    [](Code32 code) noexcept { return static_cast<std::uint32_t>(code); });
 }
 
+// The match of a OneOf of three alternatives compares the tag with the first
+// two indices, and the last alternative takes the last branch.
+[[gnu::used]] std::uint32_t one_of_match(fixy::OneOf<std::uint32_t, Code32, std::uint16_t> reading) noexcept {
+    return std::move(reading).match([](std::uint32_t word) noexcept { return word * 3u; },
+                                    [](Code32 code) noexcept { return static_cast<std::uint32_t>(code); },
+                                    [](std::uint16_t half) noexcept { return std::uint32_t{half} + 5u; });
+}
+
 [[gnu::used]] std::uint32_t switch_unreachable(Kind kind) noexcept {
     switch (kind) {
         case Kind::first:
@@ -775,6 +783,20 @@ result_try_convert_raw(std::expected<std::uint32_t, Code8> result) noexcept {
 
 [[gnu::used]] std::uint32_t result_match_raw(std::expected<std::uint32_t, Code32> result) noexcept {
     return result ? *result * 3u : static_cast<std::uint32_t>(result.error());
+}
+
+// The raw form of a OneOf is a storage word that holds each alternative and
+// a tag of one byte after it.  A union gives the same layout, but the rule
+// proof-routes refuses a union, because it can hold a proof type.
+struct RawReading final {
+    std::uint32_t storage;
+    std::uint8_t tag;
+};
+
+[[gnu::used]] std::uint32_t one_of_match_raw(RawReading reading) noexcept {
+    if (reading.tag == 0) return reading.storage * 3u;
+    if (reading.tag == 1) return reading.storage;
+    return std::uint32_t{static_cast<std::uint16_t>(reading.storage)} + 5u;
 }
 
 [[gnu::used]] std::uint32_t switch_unreachable_raw(Kind kind) noexcept {

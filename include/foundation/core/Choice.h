@@ -325,11 +325,33 @@ concept ErrorValue = !std::is_const_v<E> && !std::is_volatile_v<E> && !detail::E
 template <class F, class E>
 concept ErrorConvertsTo = ErrorValue<F> && ErrorValue<E> && !std::same_as<F, E> && std::is_nothrow_convertible_v<F, E>;
 
+namespace detail {
+
+// T is one of Ts exactly one time.  A concept, and not a variable template,
+// because no unit can specialize a concept, so no unit can change what the
+// gate of OneOf admits.  Complexity: linear in the count of Ts.
+template <class T, class... Ts>
+concept OccursOnce = (std::size_t{0} + ... + static_cast<std::size_t>(std::is_same_v<T, Ts>)) == 1;
+
+}  // namespace detail
+
+// The alternatives of a OneOf (foundation/core/OneOf.h): 2 to 255 payloads,
+// with no type two times, so a value selects one alternative.  The value of
+// the tag of a OneOf is the index of the active alternative, so it fits in
+// one byte.
+template <class... Ts>
+concept OneOfAlternatives =
+    sizeof...(Ts) >= 2 && sizeof...(Ts) <= 255 && (ChoicePayload<Ts> && ...) && (detail::OccursOnce<Ts, Ts...> && ...);
+
 template <ChoicePayload T>
 class Option;
 
 template <ChoicePayload T, ErrorValue E>
 class Result;
+
+template <class... Ts>
+    requires OneOfAlternatives<Ts...>
+class OneOf;
 
 // The mark of an error, so that an error and a value of the same type
 // never meet in one conversion.  Only a Result reads the error of the mark.
@@ -588,6 +610,17 @@ public:
         if (!slot_.holds_()) return static_cast<OnNone&&>(on_none)();
         return static_cast<OnSome&&>(on_some)(slot_.payload_());
     }
+
+    // A temporary Option that the borrow match would take binds to this
+    // overload, so an arm cannot give a reference into an object that the
+    // full expression ends.  The constraint is that of the borrow match, so a
+    // call with the wrong arms gets the refusal of its arms.
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
+                  && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
+    void match(OnSome&& on_some, OnNone&& on_none) const&& = delete(
+        "a borrow match of a temporary Option gives a reference into an object that the full expression ends: match "
+        "the rvalue, or name the Option");
 
     // The loop `for (auto& value : option)` makes one turn when the Option
     // holds a value, and no turn when it is empty.  A cursor of a
@@ -851,6 +884,9 @@ class SumSlotOf<true, Ts...> {
     friend class OptionSlot;
     template <class T, class E>
     friend class ResultSlot;
+    template <class... Us>
+        requires OneOfAlternatives<Us...>
+    friend class ::foundation::core::OneOf;
 
     [[nodiscard]] constexpr std::size_t index_() const noexcept { return cells_.tag_; }
 
@@ -884,6 +920,9 @@ class SumSlotOf<false, Ts...> {
     friend class OptionSlot;
     template <class T, class E>
     friend class ResultSlot;
+    template <class... Us>
+        requires OneOfAlternatives<Us...>
+    friend class ::foundation::core::OneOf;
 
     [[nodiscard]] constexpr std::size_t index_() const noexcept { return tag_; }
 
@@ -1133,6 +1172,17 @@ public:
         if (!slot_.holds_()) return static_cast<OnErr&&>(on_err)(slot_.error_());
         return static_cast<OnOk&&>(on_ok)(slot_.value_());
     }
+
+    // A temporary Result that the borrow match would take binds to this
+    // overload, so an arm cannot give a reference into an object that the
+    // full expression ends.  The constraint is that of the borrow match, so a
+    // call with the wrong arms gets the refusal of its arms.
+    template <class OnOk, class OnErr>
+        requires std::is_invocable_v<OnOk, T const&> && std::is_invocable_v<OnErr, E const&>
+                  && std::same_as<std::invoke_result_t<OnOk, T const&>, std::invoke_result_t<OnErr, E const&>>
+    void match(OnOk&& on_ok, OnErr&& on_err) const&& = delete(
+        "a borrow match of a temporary Result gives a reference into an object that the full expression ends: match "
+        "the rvalue, or name the Result");
 };
 
 namespace detail {

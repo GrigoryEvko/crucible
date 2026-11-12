@@ -604,6 +604,15 @@ PROBES: tuple[Probe, ...] = (
         "the match of a Result is one test of the tag, as the raw form is",
     ),
     Probe(
+        "one_of_match",
+        "the match of a OneOf of three alternatives compares the tag with the first two indices, and the last "
+        "alternative takes the last branch with no compare, as the raw form of a tagged storage word does.  The family "
+        "side has no more instructions than the raw side.  The family form falls through to the arm of the first "
+        f"alternative and the raw form jumps to it, so the first branch tests the other way.  {HARDENED_BUILDS}.  On "
+        "the hot path, these flags add a second test of each edge, with a branch to a trap",
+        branches=True,
+    ),
+    Probe(
         "switch_unreachable",
         "a switch with fixy::unreachable() adds one bounds compare and one branch to a call of the fatal exit.  At "
         f"-O1, std::unreachable stops the process with a trap after the same compare.  {HARDENED_BUILDS}.  On the hot "

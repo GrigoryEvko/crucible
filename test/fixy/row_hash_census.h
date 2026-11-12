@@ -892,6 +892,8 @@ inline constexpr StatedZero kZeros[] = {
      "the value or the error of a partial operation: the result of a call, never a value in a kernel signature"},
     {^^::foundation::core::Err, "the mark of an error: it converts to a Result and makes no claim about the error"},
     {^^::foundation::core::Unit, "the value of a Result that holds no value: it holds nothing"},
+    {^^::foundation::core::OneOf,
+     "one value of a closed set of types: the result of a call, never a value in a kernel signature"},
     {^^::foundation::core::LengthMismatch,
      "the error of a copy between two Views of different counts: it holds nothing"},
     {^^::foundation::core::CacheLine, "a layout wrapper: it aligns its cell and makes no claim about the cell"},

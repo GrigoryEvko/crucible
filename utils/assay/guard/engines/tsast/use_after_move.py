@@ -227,6 +227,9 @@ PROBE_FILES: dict[str, str] = {
         "expect() and the rvalue match() leave an Option empty, and the move of an owning Option leaves the source "
         "empty"
     ),
+    "test/foundation/test_core_one_of.cpp": (
+        "the move of an owning OneOf leaves the moved-from alternative in the source, which the source still holds"
+    ),
     "test/foundation/test_read_view_lend_needs_a_share.cpp": (
         "a share guard moved out of an optional holds no share, and with_read_view aborts when it is lent"
     ),
@@ -236,6 +239,10 @@ PROBE_FILES: dict[str, str] = {
     "test/layer/checks/foundation/core/Choice.cpp": (
         "expect() and the rvalue match() leave an Option empty, and the move of an owning Option leaves the source "
         "empty"
+    ),
+    "test/layer/checks/foundation/core/OneOf.cpp": (
+        "the rvalue match of an owning OneOf leaves the moved-from alternative in the source, which the source still "
+        "holds"
     ),
     "test/test_metalog_session.cpp": "a use of a moved-from channel handle aborts",
     "test/test_perf_senses_smoke.cpp": "a moved-from Senses reports no attachments after a move and a move assignment",
