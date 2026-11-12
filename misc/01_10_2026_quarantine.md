@@ -1474,11 +1474,11 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 | `fatal(fmt, args...)`, `fatal(reason)` | Writes the text and the site to standard error, and ends the process in each build and with each contract semantic | one branch to a cold call | main |
 | `unreachable()` | The same, for a point that control never reaches | one branch to a cold call | main |
 | `format(out, fmt, args...)` | Writes into a `FixedText`. Gives `Result<TextView, Truncated>`, and on `Truncated` the text holds the first characters | the format | main |
-| `Formattable<T>` | An integer, a `bool` or a `TextView` | - | main |
+| `Formattable<T>` | An integer, a `bool`, a `TextView`, a `float` or a `double` | - | main |
 | more argument kinds | A scoped enumeration by its reflected name, an `Id` and a `Digest` by their word, an `Errno` by its name, and a `Site` | the format | design |
-| float values | A fixed decimal form with no locale, from an algorithm of the family. The rule table has no `allow` row of `<charconv>`, so no base file includes it | the format | design |
+| float values | A fixed decimal form with no locale, from an algorithm of the family: the text of `std::to_chars` with no format. The shortest digits that read back to the value, and the plain form or the exponent form, whichever is shorter. The family uses exact integer arithmetic on the bits, so the rounding mode has no effect. The rule table has no `allow` row of `<charconv>`, so no base file includes it | the format | main |
 | `parse<T>(text)` | `Result<T, ParseError>`. Decimal and `0x` hex exactly, no white space, no sign on an unsigned type, and no overflow. `ParseError` holds the position in the text. It uses `checked_mul`, `checked_add` and `narrow` of the Scalar family | one pass over the text | design |
-| the prefix map | `-ffile-prefix-map` and `-fmacro-prefix-map`, so a `Site` holds a path relative to the source root (section 10.3a) | none | design |
+| the prefix map | `-fmacro-prefix-map`, so a `Site` holds a path relative to the source root (section 10.3a). The debug maps of `cmake/Ccache.cmake` stay, so the build gives no `-ffile-prefix-map` | none | main |
 
 `parse` is the dual of `format`, and it belongs here because its input is a text and its error holds a position in that text.
 

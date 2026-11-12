@@ -2,6 +2,9 @@
 
 #include <foundation/core/Report.h>
 
+#include <foundation/core/Format.h>
+#include <foundation/core/Verbs.h>
+
 #include <type_traits>
 
 namespace foundation::core {
@@ -116,9 +119,10 @@ static_assert(BuildsSite<0> && BuildsSite<1>);
 static_assert(!BuildsSite<2>);
 static_assert(!BuildsSite<3>);
 
-// A text takes an integer, a bool or a TextView.  A character, a floating
-// value, a pointer, an array, an enumeration and each other type has no
-// formatter, so the text refuses it.
+// A text takes an integer, a bool, a TextView, a float or a double.  A
+// character, a long double, each other floating type, a pointer, an array,
+// an enumeration and each other type has no formatter, so the text refuses
+// it.
 enum class Colour : unsigned char {
     red
 };
@@ -127,18 +131,22 @@ concept TakesArguments = requires { typename Fmt<Args...>; };
 static_assert(TakesArguments<>);
 static_assert(TakesArguments<int, unsigned long long, signed char, unsigned char, short, long>);
 static_assert(TakesArguments<bool, TextView>);
+static_assert(TakesArguments<float, double>);
 static_assert(!TakesArguments<char[4]>);
 static_assert(!TakesArguments<char>);
 static_assert(!TakesArguments<wchar_t>);
 static_assert(!TakesArguments<char8_t>);
-static_assert(!TakesArguments<double>);
-static_assert(!TakesArguments<float>);
+static_assert(!TakesArguments<long double>);
+static_assert(!TakesArguments<_Float16>);
+static_assert(!TakesArguments<_Float32>);
+static_assert(!TakesArguments<_Float64>);
+static_assert(!TakesArguments<__bf16>);
 static_assert(!TakesArguments<char const*>);
 static_assert(!TakesArguments<int*>);
 static_assert(!TakesArguments<decltype(nullptr)>);
 static_assert(!TakesArguments<Colour>);
 static_assert(!TakesArguments<char8_t[4]>);
-static_assert(!TakesArguments<int, double>);
+static_assert(!TakesArguments<int, long double>);
 
 // Each argument reaches the cold formatter as its kind and its bits.  A
 // signed value keeps its two's complement bits.
@@ -146,6 +154,8 @@ static_assert(fmt_arg_of_(-1).kind == FmtArgKind::signed_integer && fmt_arg_of_(
 static_assert(fmt_arg_of_(7U).kind == FmtArgKind::unsigned_integer && fmt_arg_of_(7U).bits == 7U);
 static_assert(fmt_arg_of_(true).kind == FmtArgKind::boolean && fmt_arg_of_(true).bits == 1U);
 static_assert(fmt_arg_of_(TextView{"abcd"}).kind == FmtArgKind::text && fmt_arg_of_(TextView{"abcd"}).size == 4);
+static_assert(fmt_arg_of_(1.0f).kind == FmtArgKind::binary32 && fmt_arg_of_(1.0f).bits == 0x3F800000U);
+static_assert(fmt_arg_of_(-2.0).kind == FmtArgKind::binary64 && fmt_arg_of_(-2.0).bits == 0xC000000000000000ULL);
 
 // fatal and unreachable never return, and no call of the family throws.
 static_assert(std::is_same_v<decltype(fatal(Fmt<>{"text"})), void>);
@@ -153,6 +163,16 @@ static_assert(std::is_same_v<decltype(fatal(Fmt<int>{"text {}"}, 3)), void>);
 static_assert(noexcept(fatal(Fmt<int>{"text {}"}, 3)));
 static_assert(noexcept(report(Sink::Out, Fmt<int>{"text {}"}, 3)));
 static_assert(noexcept(unreachable()));
+
+// Each public member of a type of the family is a shared verb, a language
+// protocol or a name of the family list of plan section 11.8.
+inline constexpr TextView report_names{
+    "Site Fmt report Sink fatal unreachable format Truncated Formattable parse ParseError"};
+CRUCIBLE_CLOSED_SURFACE(report_names, Site);
+CRUCIBLE_CLOSED_SURFACE(report_names, Fmt<>);
+CRUCIBLE_CLOSED_SURFACE(report_names, Fmt<int, TextView, bool>);
+CRUCIBLE_CLOSED_SURFACE(report_names, Fmt<float, double>);
+CRUCIBLE_CLOSED_SURFACE(report_names, Truncated);
 
 }  // namespace detail::report_checks
 

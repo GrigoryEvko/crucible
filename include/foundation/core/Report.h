@@ -26,11 +26,28 @@
 //   names its rule (detail::fmt_*), and the build stops at the call.
 //
 // THE ARGUMENTS
-//   An argument is an integer, a bool or a TextView.  An integer is written
-//   in decimal, and a bool as true or false.  A TextView is written as its
-//   characters, so a literal argument is spelled TextView{"text"}.  A
-//   character type, a floating type, a pointer, an array and each other
-//   type is refused at the call (the concept Formattable).
+//   An argument is an integer, a bool, a TextView, a float or a double.  An
+//   integer is written in decimal, and a bool as true or false.  A TextView
+//   is written as its characters, so a literal argument is spelled
+//   TextView{"text"}.  A character type, a long double, each other floating
+//   type, a pointer, an array and each other type is refused at the call
+//   (the concept Formattable).  A long double has 80 value bits on x86_64
+//   and 128 on aarch64, so one value would have two texts.
+//
+// THE TEXT OF A FLOAT
+//   A float and a double are written as the text of std::to_chars(first,
+//   last, value) with no format, which std::format("{}") also writes:
+//     - The shortest digits that read back to the value with round to
+//       nearest, ties to even.  Of two such digit strings, the nearer one,
+//       and on an equal distance the one with the even last digit
+//     - The plain form (as %f) or the exponent form (as %e), whichever has
+//       fewer characters, and the plain form on a tie.  A plain form with no
+//       fraction holds the exact integer value of the float
+//     - The exponent form writes e+XX or e-XX, with at least two digits
+//     - A negative value and -0 take a minus sign: inf, -inf, nan and -nan.
+//   A double takes at most 24 characters, and a float at most 15.  The
+//   formatter does integer arithmetic on the bits of the value only, so the
+//   rounding mode and the floating environment do not change the text.
 //
 // THE OUTPUT
 //   The formatter uses no locale, no allocation and no global state, so one
@@ -117,7 +134,8 @@ concept FmtInteger =
 // A type that a report can write.  The argument of a report binds to a
 // reference, so an argument type is never a reference.
 template <class T>
-concept Formattable = FmtInteger<T> || std::is_same_v<T, bool> || std::is_same_v<T, TextView>;
+concept Formattable = FmtInteger<T> || std::is_same_v<T, bool> || std::is_same_v<T, TextView>
+                   || std::is_same_v<T, float> || std::is_same_v<T, double>;
 
 // The streams that a report can write to.
 enum class Sink : std::uint8_t {
@@ -244,12 +262,15 @@ enum class FmtArgKind : std::uint8_t {
     signed_integer,
     unsigned_integer,
     boolean,
-    text
+    text,
+    binary32,
+    binary64
 };
 
-// One argument of a report, as the cold formatter reads it.  An integer and
-// a bool are in bits: a signed integer as the bits of its std::int64_t
-// value.  A text is in first and size.
+// One argument of a report, as the cold formatter reads it.  An integer, a
+// bool and a floating value are in bits: a signed integer as the bits of
+// its std::int64_t value, and a float or a double as its IEEE bits.  A text
+// is in first and size.
 struct FmtArg {
     FmtArgKind kind = FmtArgKind::unsigned_integer;
     std::uint64_t bits = 0;
@@ -264,6 +285,10 @@ template <class T>
         return FmtArg{FmtArgKind::boolean, value ? 1U : 0U, nullptr, 0};
     } else if constexpr (std::is_same_v<T, TextView>) {
         return FmtArg{FmtArgKind::text, 0, text_first_(value), value.size()};
+    } else if constexpr (std::is_same_v<T, float>) {
+        return FmtArg{FmtArgKind::binary32, __builtin_bit_cast(std::uint32_t, value), nullptr, 0};
+    } else if constexpr (std::is_same_v<T, double>) {
+        return FmtArg{FmtArgKind::binary64, __builtin_bit_cast(std::uint64_t, value), nullptr, 0};
     } else if constexpr (std::is_signed_v<T>) {
         return FmtArg{FmtArgKind::signed_integer, static_cast<std::uint64_t>(static_cast<std::int64_t>(value)), nullptr,
                       0};

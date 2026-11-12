@@ -1846,11 +1846,13 @@ foundation_neg_compile_test(neg_thread_local_ref_store_of_another_type
 #
 # A text of a report is a string literal with one placeholder `{}` for each
 # argument, and with `{{` and `}}` for a brace.  An argument is an integer,
-# a bool or a TextView.  fatal and unreachable end the process in each
-# build.  format() writes into a FixedText and gives a Result, and it
-# refuses a temporary FixedText.
+# a bool, a TextView, a float or a double.  fatal and unreachable end the
+# process in each build.  format() writes into a FixedText and gives a
+# Result, and it refuses a temporary FixedText.  test_core_float_format
+# compares the text of each float with the text of std::to_chars.
 foundation_test(test_core_report)
 foundation_test(test_core_text)
+foundation_test(test_core_float_format)
 
 foundation_neg_compile_test(neg_core_fmt_more_placeholders_than_arguments
   "call to consteval function .foundation::core::Fmt<>\\(\"the queue holds \\{\\} items\", __builtin_FILE\\(\\), __builtin_LINE\\(\\), __builtin_FUNCTION\\(\\)\\). is not a constant expression"
@@ -1864,9 +1866,12 @@ foundation_neg_compile_test(neg_core_fmt_lone_brace
 foundation_neg_compile_test(neg_core_fmt_brace_spec
   "call to consteval function .foundation::core::Fmt<int>\\(\"the mask is \\{:x\\}\", __builtin_FILE\\(\\), __builtin_LINE\\(\\), __builtin_FUNCTION\\(\\)\\). is not a constant expression"
   "call to non-.constexpr. function .void foundation::core::detail::fmt_text_holds_a_brace_that_is_no_placeholder_and_no_escape\\(\\).")
-foundation_neg_compile_test(neg_core_fmt_argument_floating
+foundation_neg_compile_test(neg_core_fmt_argument_long_double
   "template constraint failure for .template<class ... Args>  requires \\(Formattable<Args> && ...\\) class foundation::core::Fmt."
-  "the expression .\\(Formattable<Args> && ...\\) \\[with Args = \\{double\\}\\]. evaluated to .false.")
+  "the expression .\\(Formattable<Args> && ...\\) \\[with Args = \\{long double\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_fmt_argument_float16
+  "template constraint failure for .template<class ... Args>  requires \\(Formattable<Args> && ...\\) class foundation::core::Fmt."
+  "the expression .\\(Formattable<Args> && ...\\) \\[with Args = \\{_Float16\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_fmt_argument_pointer
   "template constraint failure for .template<class ... Args>  requires \\(Formattable<Args> && ...\\) class foundation::core::Fmt."
   "the expression .\\(Formattable<Args> && ...\\) \\[with Args = \\{int\\*\\}\\]. evaluated to .false.")
