@@ -112,6 +112,12 @@ fixy_neg_compile_test(neg_qtt_consume_through_const_ref
   "discards qualifiers"
   "fixy::Qtt<Grade, T>::consume\\(\\) &&")
 
+# A borrow of the value of a temporary Linear.  The reference would dangle at
+# the end of the full expression, so peek() of an rvalue is deleted.
+fixy_neg_compile_test(neg_qtt_peek_of_temporary
+  "use of deleted function .const T& fixy::Qtt<Grade, T>::peek\\(\\) const && \\[with auto Grade = foundation::algebra::lattices::QttGrade::One. T = int\\]."
+  "a reference into a temporary Linear or Affine dangles at the end of the full expression")
+
 # A class that compares equal to the One grade is not a grade.  The
 # value check of IsConsumeBound admits it, and the type check refuses it.
 fixy_neg_compile_test(neg_qtt_grade_that_only_compares_equal

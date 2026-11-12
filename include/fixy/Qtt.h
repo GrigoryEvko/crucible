@@ -373,10 +373,14 @@ public:
 
     // Reading a consumed wrapper is use-after-consume in the plainest
     // form, so both accessors ask the same question the consume does.
+    // peek() of a temporary wrapper is deleted, because the reference
+    // dangles at the end of the full expression.
     [[nodiscard]] constexpr const T& peek() const& noexcept {
         this->require_live("read after consume", __PRETTY_FUNCTION__, __LINE__);
         return impl_.peek();
     }
+    const T& peek() const&& = delete("a reference into a temporary Linear or Affine dangles at the end of the full "
+                                     "expression");
 
     // Prefer consume and reconstruct over this when the change is
     // semantic rather than incidental.

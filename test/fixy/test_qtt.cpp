@@ -118,10 +118,11 @@ static_assert(!::fixy::is_already_consume_disciplined_v<int>);
 static_assert(::fixy::is_already_consume_disciplined_v<Linear<int>>);
 static_assert(::fixy::is_already_consume_disciplined_v<Affine<int>>);
 
-// The mint is usable in a constant expression.
-constexpr int minted_and_consumed = ::fixy::mint_linear<int>(7).peek();
+// The mint is usable in a constant expression.  A temporary wrapper gives
+// its value through consume, because a peek of a temporary is deleted.
+constexpr int minted_and_consumed = ::fixy::mint_linear<int>(7).consume();
 static_assert(minted_and_consumed == 7);
-constexpr int affine_minted = ::fixy::mint_affine<int>(9).peek();
+constexpr int affine_minted = ::fixy::mint_affine<int>(9).consume();
 static_assert(affine_minted == 9);
 
 // Each mint builds the payload from its arguments, and it refuses
