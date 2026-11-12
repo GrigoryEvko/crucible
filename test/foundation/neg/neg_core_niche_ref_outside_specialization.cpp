@@ -1,7 +1,8 @@
 // The rule specialization-home refuses a niche of a Ref outside Ref.h, and
-// this probe forges one in an opt-out region.  Ref grants no friend to a
-// niche, so such a specialization cannot call the private constructor of Ref.
-// A null Ref comes only from a hidden friend of Ref, which takes the niche key.
+// this probe forges one in an opt-out region.  Ref has no constructor from a
+// pointer and grants a niche no friend, so such a specialization cannot build
+// a Ref from the null pointer.  A null Ref comes only from a hidden friend of
+// Ref, which takes the niche key.
 
 #include <foundation/Quarantine.h>
 #include <foundation/core/Ref.h>

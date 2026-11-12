@@ -4,7 +4,7 @@
 //
 // foundation::core::Ref<int, forge::brand> attests to a fact that it cannot see.  The expression below is
 // the raw data that a forger gives its constructor, and the fixture keeps the door
-// shut: the compiler must refuse the construction with "is private within this context".
+// shut: the compiler must refuse the construction with "no matching function for call".
 //
 // The second diagnostic is the constructor as the compiler writes it, with
 // parentheses.  The source spells it with braces, so the text of the fixture

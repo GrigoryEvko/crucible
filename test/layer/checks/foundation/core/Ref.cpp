@@ -90,6 +90,14 @@ static_assert(!std::is_default_constructible_v<Ref<int, CheckBrand>>);
 static_assert(!std::is_constructible_v<Ref<int, CheckBrand>, int*>);
 static_assert(!std::is_constructible_v<Ref<int, CheckBrand>, std::nullptr_t>);
 
+// A Ref of an object takes the key, and only RefDoor builds a key.  The key
+// is not trivially copyable, so std::bit_cast builds no key either.
+static_assert(!std::is_constructible_v<Ref<int, CheckBrand>, int&>);
+static_assert(!std::is_default_constructible_v<detail::RefKey>);
+static_assert(!std::is_copy_constructible_v<detail::RefKey>);
+static_assert(!std::is_copy_assignable_v<detail::RefKey>);
+static_assert(!std::is_trivially_copyable_v<detail::RefKey>);
+
 // A const target comes from a mutable one with the same brand, and never
 // the reverse.  No brand changes into a different brand.
 static_assert(std::is_convertible_v<Ref<int, CheckBrand>, Ref<int const, CheckBrand>>);

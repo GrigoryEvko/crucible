@@ -162,6 +162,11 @@
       "constructor": "\\bEnumerateCursor\\("
     },
     {
+      "name": "neg_witness_core_detail_refkey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bRefKey\\("
+    },
+    {
       "name": "neg_witness_core_detail_reversecursor_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bReverseCursor\\("
@@ -208,7 +213,7 @@
     },
     {
       "name": "neg_witness_core_ref_direct_construction",
-      "reason": "is private within this context",
+      "reason": "no matching function for call",
       "constructor": "\\bRef\\("
     },
     {
@@ -942,6 +947,10 @@
     },
     {
       "type": "foundation::core::Ref<int, forge::brand>",
+      "header": "foundation/core/Ref.h"
+    },
+    {
+      "type": "foundation::core::detail::RefKey",
       "header": "foundation/core/Ref.h"
     },
     {

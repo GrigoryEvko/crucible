@@ -93,6 +93,20 @@ concept RefWidens = (std::same_as<From, To> || std::same_as<From const, To>)
 // definition is after Ref.
 struct RefDoor;
 
+// The key of the constructor of a Ref from an object.  RefDoor is its one
+// friend, so each Ref from an object comes through the door.  Both
+// constructors are user-provided and private, so std::bit_cast and a
+// lifetime start over bytes build no key.
+class [[nodiscard]] RefKey final {
+    friend struct RefDoor;
+
+    constexpr RefKey() noexcept {}
+    constexpr RefKey(RefKey const&) noexcept {}
+
+public:
+    RefKey& operator=(RefKey const&) = delete("a key of a Ref lives for one construction");
+};
+
 }  // namespace detail
 
 // The one door from an object.  The brand is the brand of a branded object,
@@ -114,59 +128,62 @@ class Ref {
     // build a Ref from the bytes of an address.
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
-    constexpr explicit Ref(T* object) noexcept : object_{object} {}
-
-    template <RefTarget U, ::foundation::brand::IsBrand UBrand>
-    friend class Ref;
-    template <BoxPayload U>
-    friend class Box;
-    friend struct detail::RefDoor;
-
-    template <class... Refused, RefTarget U, ::foundation::brand::IsBrand Fresh>
-        requires(sizeof...(Refused) == 0)
-    friend constexpr Ref<U, ::foundation::brand::inherited_or_fresh_brand_t<U, Fresh>> to(U& object) noexcept;
+    // The tag of the null value.  Only the two hidden friends below build a
+    // Ref from it, because Ref has no other friend.
+    struct NullTag {};
+    constexpr explicit Ref(NullTag) noexcept {}
 
     // The null value of an Option of a Ref, and its test.  Each one takes the
     // key that only the storage of an Option builds, and the storage gives
     // the key only to the niche that it calls.  A niche gets no friend, so
     // the niche of a Ref reaches the null value only through these two doors.
     // The rule specialization-home refuses a niche of a Ref outside this header.
-    [[nodiscard]] friend constexpr Ref niche_null_(niche_key<Ref> const& /*key*/) noexcept {
-        return Ref{static_cast<T*>(nullptr)};
-    }
+    [[nodiscard]] friend constexpr Ref niche_null_(niche_key<Ref> const& /*key*/) noexcept { return Ref{NullTag{}}; }
     [[nodiscard]] friend constexpr bool niche_is_null_(niche_key<Ref> const& /*key*/, Ref const& ref) noexcept {
         return ref.object_ == nullptr;
     }
 
 public:
+    // A Ref of an object, with the key that only RefDoor builds.  A reference
+    // is never null, so no key makes a null Ref.
+    constexpr Ref(T& object, detail::RefKey const& /*key*/) noexcept : object_{__builtin_addressof(object)} {}
+
     // Adds a const to the target, erases the brand, or does the two.
     template <class U, class UBrand>
         requires detail::RefWidens<U, UBrand, T, Brand>
-    constexpr Ref(Ref<U, UBrand> other) noexcept : object_{other.object_} {}
+    constexpr Ref(Ref<U, UBrand> other) noexcept : object_{__builtin_addressof(*other)} {}
 
     [[nodiscard]] constexpr T& operator*() const noexcept { return *object_; }
     [[nodiscard]] constexpr T* operator->() const noexcept { return object_; }
 };
 
-template <class... Refused, RefTarget T, ::foundation::brand::IsBrand Fresh>
-    requires(sizeof...(Refused) == 0)
-[[nodiscard]] constexpr Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>> to(T& object) noexcept {
-    return Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>{__builtin_addressof(object)};
-}
-
 namespace detail {
 
 // The owner gives the brand: the fresh brand of its own public call, which
 // a refused pack keeps out of the hands of the caller.  The door is in
-// namespace detail, so code outside the base cannot reach it.
+// namespace detail, so code outside the base cannot reach it, and to(),
+// Box::view and get() of the Region family call it.
+//
+// A file outside this header can still write an explicit specialization of
+// lend<B, T>.  That specialization is a member of RefDoor, so it builds the
+// key and gives a Ref with each brand B, such as the brand of an arena, to an
+// object that it can name.  It holds only the constructor from a reference,
+// so it cannot make a null Ref.  A rule that refuses such a specialization
+// outside its file is planned in specialization-home.
 struct RefDoor {
     template <::foundation::brand::IsBrand Brand, RefTarget T>
     [[nodiscard]] static constexpr Ref<T, Brand> lend(T& object) noexcept {
-        return Ref<T, Brand>{__builtin_addressof(object)};
+        return Ref<T, Brand>{object, RefKey{}};
     }
 };
 
 }  // namespace detail
+
+template <class... Refused, RefTarget T, ::foundation::brand::IsBrand Fresh>
+    requires(sizeof...(Refused) == 0)
+[[nodiscard]] constexpr Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>> to(T& object) noexcept {
+    return detail::RefDoor::lend<::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>(object);
+}
 
 // True when the two Refs reach one object.  The two targets are one type,
 // with or without a const, and the two brands can differ.
@@ -293,12 +310,13 @@ public:
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] Ref<T, Fresh> view() & noexcept {
-        return Ref<T, Fresh>{held_()};
+        return detail::RefDoor::lend<Fresh>(*held_());
     }
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] Ref<T const, Fresh> view() const& noexcept {
-        return Ref<T const, Fresh>{held_()};
+        T const& object = *held_();
+        return detail::RefDoor::lend<Fresh>(object);
     }
 
     // Moves the object out, destroys the moved-from object, and frees the

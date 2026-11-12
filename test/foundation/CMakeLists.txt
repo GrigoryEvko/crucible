@@ -2019,9 +2019,12 @@ foundation_neg_compile_test(neg_core_niche_member_no_key
 foundation_neg_compile_test(neg_core_niche_key_of_other_type
   "cannot convert .const foundation::core::niche_key<SlotNumber>. to .const foundation::core::niche_key<foundation::core::Ref<int, ForgeBrand> >&."
   "initializing argument 1 of .static constexpr foundation::core::Ref<[A-Za-z]+, [A-Za-z]+> foundation::core::niche<foundation::core::Ref<[A-Za-z]+, [A-Za-z]+> >::empty\\(")
-foundation_neg_compile_test(neg_core_niche_ref_outside_specialization
-  ".constexpr foundation::core::Ref<T, Brand>::Ref\\(T\\*\\) \\[with T = Forged; Brand = ForgeBrand\\]. is private within this context"
+foundation_neg_compile_test(neg_core_ref_door_forges_null
+  ".int\\* foundation::core::Ref<int, ForgeBrand>::object_. is private within this context"
   "foundation/core/Ref.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_niche_ref_outside_specialization
+  "no matching function for call to .foundation::core::Ref<Forged, ForgeBrand>::Ref\\(<brace-enclosed initializer list>\\)."
+  "no known conversion for argument 1 from .Forged\\*. to .foundation::core::Ref<Forged, ForgeBrand>::NullTag.")
 foundation_neg_compile_test(neg_core_option_niche_lifetime_start
   "no matching function for call to .start_as_array<foundation::core::Option<SlotNumber> >"
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::core::Option<SlotNumber>\\]")
