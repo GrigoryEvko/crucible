@@ -209,8 +209,8 @@ include/crucible/warden/ | replace-pending:std::bit_cast | 5 | - | -
 include/crucible/warden/ | std-entity | 149 | - | -
 include/crucible/warden/ | std-object | 54 | - | -
 include/fixy/ | base-c-library-call | 5 | - | -
-include/fixy/ | base-std-entity | 398 | - | -
-include/fixy/ | base-std-object | 219 | - | -
+include/fixy/ | base-std-entity | 396 | - | -
+include/fixy/ | base-std-object | 217 | - | -
 include/fixy/ | replace-pending:<array> | 7 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
 include/fixy/ | replace-pending:<bit> | 4 | - | -

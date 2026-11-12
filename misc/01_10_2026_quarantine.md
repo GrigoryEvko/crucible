@@ -220,7 +220,7 @@ The final report gives, in this order:
                  +--------------+--------------+
                                 | S1 gate (with the 1B end state)
                  +--------------v--------------+
-                 | Stage 2: base hygiene       |
+                 | Stage 2: base hygiene, done |
                  | 2a floor  2b os moves       |
                  | 2c thread moves  2d edges   |
                  | 2e header splits            |
@@ -682,6 +682,8 @@ In a header of `include/`, the rule `heavy-include` also refuses the include, be
 
 **Goal.** A base that obeys its include rules and its layer order, with no new primitive yet.
 
+**State.** Done on 2026-11-12. Section 9.3 gives the check of each condition of the S2 gate.
+
 ### 9.1 Units
 
 **2a, the floor.** `include/foundation/Platform.h` keeps the platform checks, attributes and macros. The debugger probe and the body of `fail_invariant` move to `src/foundation/Platform.cpp`, and the header keeps a `[[noreturn]]` declaration. Remove `<fcntl.h>`, `<unistd.h>`, `<cstdio>`, `<cstdlib>` and `<cstring>` from the header. Two more parts (R5, R19):
@@ -765,22 +767,29 @@ The present layers already refuse the edges of items 1 and 5, because the source
 3. The layer order: holds. The rules `layer-boundary` and `layer-residual` give no finding. The kind `upward-include` is a compile error in the four base directories. Each configuration of the gate builds or parses `all`, and the landing of da020b73d passed in each of the seven configurations.
 4. The gauge: holds. The median of the three edit builds is 10,934 G user instructions. The three runs of 2026-10-02 gave 10,750 G to 10,752 G, and the limit of the rule `edit-build-instructions` is 11,800 G.
 5. The symbols of R5: holds. The rule `artifact-symbols` passes. Each row of `libfoundation.a` has the mark `libc-allow`: `__errno_location`, `__stack_chk_fail`, `abort`, `memset`, `read` and `write`. The rows of `libfixy.a` and `libcrucible.a` hold no new symbol.
-6. The static TLS budget and the vessel: open. The rule `static-tls` passes: 3 members hold 20 bytes, and the largest holds 8 bytes. `test_process_wide_across_libraries` passes, and `dlopen` refuses its plant. No configuration of the gate sets `TORCH_DIR`, so no test loads the vessel library with the default tunables.
-7. The doors: open. The doors that units 2b and 2c made obey the condition, but two files that unit 2b moved call stdio (below).
+6. The static TLS budget and the vessel: holds at commit 288f2561b. The rule `static-tls` passes: 3 members hold 20 bytes, and the largest holds 8 bytes. `test_process_wide_across_libraries` passes, and `dlopen` refuses its plant. Commit 4374d025f added the preset `vessel` and moved the schema cache of `vessel/torch/crucible_fallback.cpp` out of static TLS (below).
+7. The doors: holds at commit 288f2561b. Each door that units 2b and 2c made obeys the condition. Commit 288f2561b moved `Topology::log_summary` from `fprintf` to the Report sink. `fixy/os/OwnedFile.h` still calls stdio, and the decision below keeps it out of the condition.
 
-The doors of condition 7 give these results. Each door of `src/foundation/os/` gives no finding of the C library. `Syscall.cpp`, `Errno.cpp` and `Auxiliary.cpp` include only UAPI headers. `Intercepted.cpp` includes `<errno.h>` and `<unistd.h>` for the routes of R18. In `src/fixy/os/`, the thread door, the signal door, the exit hook door and the monotonic clock door call only the functions of their door headers. D12 does not name `atexit`, `at_quick_exit` and `pthread_atfork`. The decision of 2026-10-11 gives the exit hook door and the fork hook of the thread door. The futex door calls the syscall primitive. The glibc imports of `libfixy.a` are the calls that GCC makes, the calls of `DOOR_CALLS` of the rule `artifact-symbols`, and the two ratchet rows `__fprintf_chk` and `memchr` of `Topology.cpp.o`. `test_os_thread_tasks` and `test_os_futex` pass in the `tsan` preset, with `halt_on_error=1` and no suppression file.
+The vessel load of condition 6 gives these results. Commit 4374d025f replaced 36 KB of thread-local schema caches with one schema table of the process. The TLS segment of `libcrucible_dispatch.so` went from 36,876 bytes to 8 bytes. The preset `vessel` builds the vessel libraries against the patched PyTorch of `.venv-torch`. Its tier is `nightly`, so the gate does not build it, and a nightly configuration gives this witness.
+
+In the build of the preset `vessel` at 288f2561b, ctest ran `vessel_test_default_tunables` through the test launcher, which gives a test no `GLIBC_TUNABLES`. The test passed. It imported torch 2.15.0a0+git8be2400 first, and then `dlopen` loaded each library of `build-vessel/lib`. Each library has the initial-exec TLS model. `readelf -lW` gives a TLS segment of 8 bytes for `libcrucible_dispatch.so` and 20 bytes for `libcrucible_vessel.so`.
+
+The doors of condition 7 give these results. Each door of `src/foundation/os/` gives no finding of the C library. `Syscall.cpp`, `Errno.cpp` and `Auxiliary.cpp` include only UAPI headers, and `Intercepted.cpp` includes `<errno.h>` and `<unistd.h>` for the routes of R18. In `src/fixy/os/`, the thread door, the signal door, the exit hook door and the monotonic clock door call only the functions of their door headers. D12 names each of these functions, also `atexit`, `at_quick_exit` and `pthread_atfork` (commit 57fb285d7). The futex door calls the syscall primitive, and `test_os_thread_tasks` and `test_os_futex` pass in the `tsan` preset with `halt_on_error=1` and no suppression file.
+
+`guard list` of the Debug build of 288f2561b gives no finding of the C library in `src/fixy/os/`. The door admission hides only a use, in a door file, of a declaration of its own door header. Before 288f2561b, the ledger counted one call of the C library in `src/fixy/os/`: the `std::fprintf` of `src/fixy/os/Topology.cpp`. In `include/fixy/os/`, the list gives the 15 calls and the 11 objects of the ledger. `OwnedFile.h` has 8 calls and 7 objects, `Socket.h` has 2 calls, and `Time.h` has 5 calls and 4 objects. The other headers that units 2b and 2c made or moved have no such finding: `Signal.h`, `ExitHooks.h`, `ThreadTasks.h`, `MonotonicClock.h`, `Futex.h`, `Topology.h`, `OwnedMmap.h` and `Path.h`.
+
+The glibc imports of `libfixy.a` are the calls that GCC makes, the calls of `DOOR_CALLS` of the rule `artifact-symbols`, and the one ratchet row `memchr` of `Topology.cpp.o`. Commit 288f2561b removed the ratchet row `__fprintf_chk`. `memchr` comes from `std::string_view::find` in the parse code of `src/fixy/os/Topology.cpp`, and the allowlist of the rule does not hold it. The probe is a client of the file door and not a door. Slice 4.6 removes `memchr` with the other std uses of the probe, and the S4 gate refuses a ratchet row of `libfixy.a`. `libfixy.a` holds no libstdc++ thread symbol, but the `_State_impl` row stays for `libcrucible_vigil.a`, because `src/BackgroundThread.cpp` starts its thread with `std::jthread`.
 
 The other calls of the C library in the door directories are these. Slice 4.1 removes each of them:
 - `fixy/os/OwnedFile.h` opens and closes a file stream through stdio. Unit 2b moved this file.
-- `Topology::log_summary` writes to a `FILE*` through `fprintf`, in `fixy/os/Topology.h` and `src/fixy/os/Topology.cpp`. Unit 2b moved the header and its probe.
 - `fixy/os/Time.h` calls `clock_gettime` outside its door `src/fixy/os/MonotonicClock.cpp`. It also calls `clock_nanosleep`, which D12 does not keep in glibc.
 - `fixy/os/Socket.h` calls `socket` through `<sys/socket.h>`.
 
-The owner decides if the gate accepts the first two items as parts of slice 4.1. The last two files are not doors of 2b or 2c. `libfixy.a` holds no libstdc++ thread symbol, but the `_State_impl` row stays for `libcrucible_vigil.a`, because `src/BackgroundThread.cpp` starts its thread with `std::jthread`.
+The decision of 2026-11-12, for the owner to confirm: `OwnedFile.h` does not block the gate. It is a stdio wrapper that unit 2b moved into the door directory, and not a door that unit 2b or 2c made. `Time.h` and `Socket.h` are not doors of 2b or 2c either, and the check of d36be7daf read them in the same way. Slice 4.1 removes the stdio of `OwnedFile.h` after the Region family is on main. Before that family, code outside the base cannot make a `View`, read the characters of a `TextView`, or hold a buffer with a size from run time.
 
 The gauge measured three edit runs at 96 jobs. The median edit build used 31.4 s, 2,812 CPU-s and 948 compiles. The median edit test run used 53.7 s and 4,248 CPU-s. At d6ef48653, at 192 jobs on the host of section 7.10, these steps used 16.8 s, 2,285 CPU-s and 880 compiles, and 21.8 s and 3,966 CPU-s. The host, the job count and the load are different, so these times do not judge condition 4. The first test run of the copy had a failure: with a cold cache, `guard_clang_format` used 1,575 G instructions, more than the limit of 500 G of the kind `test` of the rule `step-cost`.
 
-Stage 2 stays open until conditions 6 and 7 hold.
+Each of the seven conditions holds, so Stage 2 is done on 2026-11-12.
 
 ---
 
