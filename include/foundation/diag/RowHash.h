@@ -324,7 +324,7 @@ inline constexpr std::uint64_t row_hash_contribution_v = row_hash_contribution<T
 // trait.
 template <typename L>
 struct lattice_canonical_id {
-    static constexpr std::uint64_t value = ::foundation::reflect::stable_type_id<L>;
+    static constexpr std::uint64_t value = ::foundation::reflect::stable_type_id(^^L);
 };
 
 template <typename L>

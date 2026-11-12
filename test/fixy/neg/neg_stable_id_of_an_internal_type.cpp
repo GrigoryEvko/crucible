@@ -6,8 +6,11 @@
 
 #include <foundation/reflect/Hash.h>
 
+#include <cstdint>
+
 namespace {
 struct HeldByOneUnit {};
+inline constexpr std::uint64_t refused_id = ::foundation::reflect::stable_type_id(^^HeldByOneUnit);
 }  // namespace
 
-int main() { return ::foundation::reflect::stable_type_id<HeldByOneUnit> == 0 ? 1 : 0; }
+int main() { return refused_id == 0 ? 1 : 0; }

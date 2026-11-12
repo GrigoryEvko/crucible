@@ -54,7 +54,7 @@ struct UnitView {
 template <class T>
 [[nodiscard]] constexpr std::uint64_t id_or_zero() noexcept {
     if constexpr (::foundation::reflect::HasStableIdentity<T>) {
-        return ::foundation::reflect::stable_type_id<T>;
+        return ::foundation::reflect::stable_type_id(^^T);
     } else {
         return 0;
     }

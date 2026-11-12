@@ -6,10 +6,13 @@
 
 #include <foundation/reflect/Hash.h>
 
+#include <cstdint>
+
 namespace invoker_value {
 template <auto Function>
 struct Holds {};
 inline constexpr int (*twice)(int) = +[](int value) { return value * 2; };
+inline constexpr std::uint64_t refused_id = ::foundation::reflect::stable_type_id(^^Holds<twice>);
 }  // namespace invoker_value
 
-int main() { return ::foundation::reflect::stable_type_id<invoker_value::Holds<invoker_value::twice>> == 0 ? 1 : 0; }
+int main() { return invoker_value::refused_id == 0 ? 1 : 0; }

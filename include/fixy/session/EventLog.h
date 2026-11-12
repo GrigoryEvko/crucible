@@ -615,10 +615,10 @@ decode_session_log(std::span<const std::byte> bytes) {
 // ── Hashes of types ─────────────────────────────────────────────────
 
 template <typename T>
-inline constexpr SchemaHash default_schema_hash{::foundation::reflect::stable_type_id<T>};
+inline constexpr SchemaHash default_schema_hash{::foundation::reflect::stable_type_id(^^T)};
 
 template <typename T>
-inline constexpr StateHash default_proto_hash{::foundation::reflect::stable_type_id<T>};
+inline constexpr StateHash default_proto_hash{::foundation::reflect::stable_type_id(^^T)};
 
 // ── The log ─────────────────────────────────────────────────────────
 

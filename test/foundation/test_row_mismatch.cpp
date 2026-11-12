@@ -54,7 +54,6 @@ void run_test(const char* name, F&& body) {
     } while (0)
 
 namespace diag = ::foundation::diag;
-namespace refl = ::foundation::reflect;
 
 // A static_assert can be discharged without the consteval body running
 // as written, so the same surface is consumed here from a runtime
@@ -81,12 +80,11 @@ void test_runtime_smoke() {
     (void)fn_sink;
 }
 
-void test_type_name_aliases_stable_name_of() {
-    static_assert(diag::type_name<int> == refl::stable_name_of<int>);
-    static_assert(diag::type_name<float> == refl::stable_name_of<float>);
+void test_type_name_is_the_printed_name() {
+    static_assert(diag::type_name<int> == "int");
+    static_assert(diag::type_name<float> == "float");
+    static_assert(diag::type_name<void> == "void");
 
-    EXPECT_EQ(diag::type_name<int>, refl::stable_name_of<int>);
-    EXPECT_EQ(diag::type_name<void>, refl::stable_name_of<void>);
     EXPECT_TRUE(diag::type_name<int>.ends_with("int"));
 }
 
@@ -203,7 +201,7 @@ void test_macro_happy_path() {
 int main() {
     std::fprintf(stderr, "test_row_mismatch:\n");
     run_test("test_runtime_smoke", test_runtime_smoke);
-    run_test("test_type_name_aliases_stable_name_of", test_type_name_aliases_stable_name_of);
+    run_test("test_type_name_is_the_printed_name", test_type_name_is_the_printed_name);
     run_test("test_function_display_name_non_empty", test_function_display_name_non_empty);
     run_test("test_format_version", test_format_version);
     run_test("test_message_builder_format_shape", test_message_builder_format_shape);

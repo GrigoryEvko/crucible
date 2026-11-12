@@ -10,6 +10,8 @@
 
 #include <foundation/reflect/Hash.h>
 
+#include <cstdint>
+
 namespace stable_id_class_value_fixture {
 
 inline int const answer = 42;
@@ -21,9 +23,8 @@ struct Address {
 template <auto Value>
 struct Holds {};
 
+inline constexpr std::uint64_t refused_id = ::foundation::reflect::stable_type_id(^^Holds<Address{&answer}>);
+
 }  // namespace stable_id_class_value_fixture
 
-int main() {
-    using namespace stable_id_class_value_fixture;
-    return static_cast<int>(::foundation::reflect::stable_type_id<Holds<Address{&answer}>> & 1U);
-}
+int main() { return static_cast<int>(stable_id_class_value_fixture::refused_id & 1U); }

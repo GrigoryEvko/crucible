@@ -6,26 +6,30 @@ namespace foundation::reflect {
 
 namespace detail::stable_name_self_test {
 
-static_assert(!stable_name_of<int>.empty());
-static_assert(!stable_name_of<float>.empty());
-static_assert(!stable_name_of<void>.empty());
-static_assert(stable_name_of<int>.ends_with("int"));
-static_assert(stable_name_of<float>.ends_with("float"));
+static_assert(!stable_name(^^int).empty());
+static_assert(!stable_name(^^float).empty());
+static_assert(!stable_name(^^void).empty());
+static_assert(stable_name(^^int).ends_with("int"));
+static_assert(stable_name(^^float).ends_with("float"));
 
-static_assert(stable_type_id<int> != stable_type_id<float>);
-static_assert(stable_type_id<int> != stable_type_id<double>);
-static_assert(stable_type_id<float> != stable_type_id<double>);
-static_assert(stable_type_id<int> != stable_type_id<unsigned int>);
-static_assert(stable_type_id<int> != stable_type_id<long>);
-static_assert(stable_type_id<void> != stable_type_id<int>);
-static_assert(stable_type_id<char> != stable_type_id<unsigned char>);
-static_assert(stable_type_id<short> != stable_type_id<int>);
+static_assert(stable_type_id(^^int) != stable_type_id(^^float));
+static_assert(stable_type_id(^^int) != stable_type_id(^^double));
+static_assert(stable_type_id(^^float) != stable_type_id(^^double));
+static_assert(stable_type_id(^^int) != stable_type_id(^^unsigned int));
+static_assert(stable_type_id(^^int) != stable_type_id(^^long));
+static_assert(stable_type_id(^^void) != stable_type_id(^^int));
+static_assert(stable_type_id(^^char) != stable_type_id(^^unsigned char));
+static_assert(stable_type_id(^^short) != stable_type_id(^^int));
 
-static_assert(stable_type_id<int> != 0);
-static_assert(stable_type_id<float> != 0);
-static_assert(stable_type_id<void> != 0);
+static_assert(stable_type_id(^^int) != 0);
+static_assert(stable_type_id(^^float) != 0);
+static_assert(stable_type_id(^^void) != 0);
 
-static_assert(stable_type_id<int> == stable_type_id<int>);
+static_assert(stable_type_id(^^int) == stable_type_id(^^int));
+
+// An alias reads as the type that it names.
+using AliasOfInt = int;
+static_assert(stable_type_id(^^AliasOfInt) == stable_type_id(^^int));
 
 // These literals pin the ids the current toolchain produces. A shift in
 // how a name is printed moves every downstream hash silently, so one of
@@ -34,19 +38,19 @@ static_assert(stable_type_id<int> == stable_type_id<int>);
 // cache, then refresh the pins deliberately. A compiler major-version
 // roll is expected to fail them.
 
-static_assert(stable_type_id<int> == 0x038bf5d93760ba14ULL);
-static_assert(stable_type_id<unsigned int> == 0x3e40352bf14d5e8cULL);
-static_assert(stable_type_id<float> == 0xaac94173610ce8ebULL);
-static_assert(stable_type_id<double> == 0x5a427827acb3b7f4ULL);
-static_assert(stable_type_id<void> == 0x7095b61429cf52a0ULL);
-static_assert(stable_type_id<char> == 0x24810aa534fd4e53ULL);
-static_assert(stable_type_id<unsigned char> == 0xeb532a1cd85a3221ULL);
-static_assert(stable_type_id<signed char> == 0xe668b88a72723d2eULL);
-static_assert(stable_type_id<short> == 0x76a26fe7af41346dULL);
-static_assert(stable_type_id<long> == 0xb398537731c4a05dULL);
-static_assert(stable_type_id<long long> == 0x8e73a318de406be0ULL);
-static_assert(stable_type_id<unsigned long long> == 0xcb9dc82adf69491aULL);
-static_assert(stable_type_id<bool> == 0xc7dfd75159543180ULL);
+static_assert(stable_type_id(^^int) == 0x038bf5d93760ba14ULL);
+static_assert(stable_type_id(^^unsigned int) == 0x3e40352bf14d5e8cULL);
+static_assert(stable_type_id(^^float) == 0xaac94173610ce8ebULL);
+static_assert(stable_type_id(^^double) == 0x5a427827acb3b7f4ULL);
+static_assert(stable_type_id(^^void) == 0x7095b61429cf52a0ULL);
+static_assert(stable_type_id(^^char) == 0x24810aa534fd4e53ULL);
+static_assert(stable_type_id(^^unsigned char) == 0xeb532a1cd85a3221ULL);
+static_assert(stable_type_id(^^signed char) == 0xe668b88a72723d2eULL);
+static_assert(stable_type_id(^^short) == 0x76a26fe7af41346dULL);
+static_assert(stable_type_id(^^long) == 0xb398537731c4a05dULL);
+static_assert(stable_type_id(^^long long) == 0x8e73a318de406be0ULL);
+static_assert(stable_type_id(^^unsigned long long) == 0xcb9dc82adf69491aULL);
+static_assert(stable_type_id(^^bool) == 0xc7dfd75159543180ULL);
 
 static_assert(std::is_same_v<canonicalize_pack_t<>, std::tuple<>>);
 
@@ -76,18 +80,24 @@ inline void f1_twin(int) noexcept {}
 }  // namespace fn_test
 
 // Two functions of one signature share the type id and differ by name.
-static_assert(stable_function_id<&fn_test::f1> == stable_function_id<&fn_test::f1_twin>);
-static_assert(stable_function_name_id<&fn_test::f1> != stable_function_name_id<&fn_test::f1_twin>);
-static_assert(stable_function_name_id<&fn_test::f1> == stable_function_name_id<&fn_test::f1>);
-static_assert(stable_function_name_id<&fn_test::f0> != 0);
+static_assert(stable_function_id(^^function_key<&fn_test::f1>)
+              == stable_function_id(^^function_key<&fn_test::f1_twin>));
+static_assert(stable_function_name_id(^^function_key<&fn_test::f1>)
+              != stable_function_name_id(^^function_key<&fn_test::f1_twin>));
+static_assert(stable_function_name_id(^^function_key<&fn_test::f1>)
+              == stable_function_name_id(^^function_key<&fn_test::f1>));
+static_assert(stable_function_name_id(^^function_key<&fn_test::f0>) != 0);
 
-static_assert(stable_function_id<&fn_test::f0> != stable_function_id<&fn_test::f1>);
-static_assert(stable_function_id<&fn_test::f1> != stable_function_id<&fn_test::f2>);
-static_assert(stable_function_id<&fn_test::f1> != stable_function_id<&fn_test::f3>);
-static_assert(stable_function_id<&fn_test::f1> != stable_function_id<&fn_test::f4>);
-static_assert(stable_function_id<&fn_test::f4> != stable_function_id<&fn_test::f5>);
+static_assert(stable_function_id(^^function_key<&fn_test::f0>) != stable_function_id(^^function_key<&fn_test::f1>));
+static_assert(stable_function_id(^^function_key<&fn_test::f1>) != stable_function_id(^^function_key<&fn_test::f2>));
+static_assert(stable_function_id(^^function_key<&fn_test::f1>) != stable_function_id(^^function_key<&fn_test::f3>));
+static_assert(stable_function_id(^^function_key<&fn_test::f1>) != stable_function_id(^^function_key<&fn_test::f4>));
+static_assert(stable_function_id(^^function_key<&fn_test::f4>) != stable_function_id(^^function_key<&fn_test::f5>));
 
-static_assert(stable_function_id<&fn_test::f0> != 0);
+static_assert(stable_function_id(^^function_key<&fn_test::f0>) != 0);
+
+// The function id is the id of the type of the function.
+static_assert(stable_function_id(^^function_key<&fn_test::f1>) == stable_type_id(^^void(int) noexcept));
 
 // The empty string consumes no bytes, so the digest is the offset basis.
 static_assert(detail::fnv1a_64("") == detail::FNV1A_OFFSET_BASIS);
@@ -245,11 +255,11 @@ static_assert(!HasStableIdentity<identity_test::HoldsBoundReference<identity_tes
 
 // A number prints without its type, so the stable name appends it.  A
 // NaN and a union value print a text that a different value also prints.
-static_assert(stable_type_id<identity_test::Holds<1>> != stable_type_id<identity_test::Holds<1L>>);
-static_assert(stable_type_id<identity_test::Holds<65>> != stable_type_id<identity_test::Holds<u8'A'>>);
-static_assert(stable_type_id<identity_test::Holds<1.5>> != stable_type_id<identity_test::Holds<1.5L>>);
-static_assert(stable_type_id<identity_test::Holds<-1>>
-              != stable_type_id<identity_test::Holds<static_cast<int identity_test::Bound::*>(nullptr)>>);
+static_assert(stable_type_id(^^identity_test::Holds<1>) != stable_type_id(^^identity_test::Holds<1L>));
+static_assert(stable_type_id(^^identity_test::Holds<65>) != stable_type_id(^^identity_test::Holds<u8'A'>));
+static_assert(stable_type_id(^^identity_test::Holds<1.5>) != stable_type_id(^^identity_test::Holds<1.5L>));
+static_assert(stable_type_id(^^identity_test::Holds<-1>)
+              != stable_type_id(^^identity_test::Holds<static_cast<int identity_test::Bound::*>(nullptr)>));
 static_assert(!HasStableIdentity<identity_test::Holds<__builtin_nan("")>>);
 static_assert(!HasStableIdentity<identity_test::Holds<identity_test::Either{.first = 1}>>);
 static_assert(!HasStableIdentity<identity_test::Holds<identity_test::HoldsEither{identity_test::Either{.second = 1}}>>);

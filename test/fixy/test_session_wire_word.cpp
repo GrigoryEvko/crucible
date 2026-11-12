@@ -107,7 +107,7 @@ using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
 inline constexpr std::array<std::uint64_t, 2> own_words{s::branch_wire_word_v<Menu, 0>, s::branch_wire_word_v<Menu, 1>};
 
 static_assert(own_words[0] == tr::label_word_of(^^s::Labelled<Hello, void>));
-static_assert(own_words[0] == (::foundation::reflect::stable_type_id<s::Labelled<Hello, void>> | tr::label_word_bit),
+static_assert(own_words[0] == (::foundation::reflect::stable_type_id(^^s::Labelled<Hello, void>) | tr::label_word_bit),
               "the word is the stable type id of the label key, with the top bit set");
 static_assert(own_words[0] != own_words[1]);
 

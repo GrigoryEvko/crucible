@@ -233,8 +233,8 @@ inline constexpr bool default_policy_checks_abandonment = DefaultAbandonmentPoli
 // prints a protocol, and the concept's own name check below, read this,
 // so a handle cannot report one spelling while a diagnostic prints
 // another.  display_string_of is the same primitive foundation/reflect/
-// Hash.h uses for stable_name_of, and it returns a view into the
-// program's constant data.
+// Hash.h uses for stable_name, and it returns a view into the program's
+// constant data.
 template <typename T>
 inline constexpr std::string_view type_display_name_v = std::meta::display_string_of(^^T);
 

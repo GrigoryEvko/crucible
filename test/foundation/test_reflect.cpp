@@ -141,9 +141,9 @@ using test_reflect_types::Alpha;
 using test_reflect_types::Beta;
 using AlphaAlias = Alpha;
 
-static_assert(fr::stable_type_id<Alpha> != fr::stable_type_id<Beta>);
-static_assert(fr::stable_type_id<Alpha> == fr::stable_type_id<AlphaAlias>);
-static_assert(fr::stable_type_id<int> == fr::stable_type_id<signed int>);
+static_assert(fr::stable_type_id(^^test_reflect_types::Alpha) != fr::stable_type_id(^^test_reflect_types::Beta));
+static_assert(fr::stable_type_id(^^test_reflect_types::Alpha) == fr::stable_type_id(^^AlphaAlias));
+static_assert(fr::stable_type_id(^^int) == fr::stable_type_id(^^signed int));
 
 static_assert(fr::combine_ids(1, 2) != fr::combine_ids(2, 1));
 
@@ -271,19 +271,22 @@ void enum_name_runs_at_run_time() {
 void stable_name_runs_at_run_time() noexcept {
     using namespace ::foundation::reflect;
     volatile std::uint64_t sink = 0;
-    sink ^= stable_type_id<int>;
-    sink ^= stable_type_id<float>;
-    sink ^= stable_type_id<double>;
-    sink ^= stable_type_id<void>;
-    sink ^= stable_type_id<unsigned char>;
-    sink ^= stable_type_id<long>;
-    sink ^= stable_type_id<short>;
+    sink ^= stable_type_id(^^int);
+    sink ^= stable_type_id(^^float);
+    sink ^= stable_type_id(^^double);
+    sink ^= stable_type_id(^^void);
+    sink ^= stable_type_id(^^unsigned char);
+    sink ^= stable_type_id(^^long);
+    sink ^= stable_type_id(^^short);
     (void)sink;
 
+    constexpr std::size_t int_name_size = stable_name(^^int).size();
+    constexpr std::size_t float_name_size = stable_name(^^float).size();
+    constexpr std::size_t void_name_size = stable_name(^^void).size();
     volatile std::size_t name_sink = 0;
-    name_sink ^= stable_name_of<int>.size();
-    name_sink ^= stable_name_of<float>.size();
-    name_sink ^= stable_name_of<void>.size();
+    name_sink ^= int_name_size;
+    name_sink ^= float_name_size;
+    name_sink ^= void_name_size;
     (void)name_sink;
 
     using sorted2 = canonicalize_pack_t<int, float>;
@@ -293,7 +296,7 @@ void stable_name_runs_at_run_time() noexcept {
     (void)sink_b;
 
     auto const fn_ptr = +[](int) noexcept -> int { return 0; };
-    volatile std::uint64_t fid_sink = stable_function_id<+[](int) noexcept -> int { return 0; }>;
+    volatile std::uint64_t fid_sink = stable_function_id(^^function_key<+[](int) noexcept -> int { return 0; }>);
     fid_sink ^= std::bit_cast<std::uintptr_t>(fn_ptr);
     (void)fid_sink;
 }

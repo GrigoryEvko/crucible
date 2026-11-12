@@ -11,8 +11,8 @@ namespace detail::row_mismatch_self_test {
 
 inline void sample_fn(int, float) noexcept {}
 
-static_assert(type_name<int> == ::foundation::reflect::stable_name_of<int>);
-static_assert(type_name<float> == ::foundation::reflect::stable_name_of<float>);
+static_assert(type_name<int> == "int");
+static_assert(type_name<float> == "float");
 static_assert(!type_name<int>.empty());
 static_assert(type_name<int>.ends_with("int"));
 

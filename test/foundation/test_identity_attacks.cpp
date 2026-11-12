@@ -22,7 +22,7 @@
 namespace identity_attacks {
 
 using ::foundation::reflect::HasStableIdentity;
-using ::foundation::reflect::stable_name_of;
+using ::foundation::reflect::stable_name;
 using ::foundation::reflect::stable_type_id;
 
 template <auto Value>
@@ -176,19 +176,20 @@ int main() {
 
     two_classes_one_name();
     two_classes_one_expansion();
-    expect(stable_name_of<Named>.find(" @") == std::string_view::npos, "a namespace class carries a position");
+    constexpr bool named_carries_no_position = stable_name(^^Named).find(" @") == std::string_view::npos;
+    expect(named_carries_no_position, "a namespace class carries a position");
     expect(internal_helper(1) == 1, "the internal helper is used");
-    expect(stable_type_id<Holds<Bound{3}>> != stable_type_id<Holds<Bound{4}>>, "two class values share an id");
-    expect(stable_type_id<Holds<named_bound>> == stable_type_id<Holds<Bound{4}>>,
+    expect(stable_type_id(^^Holds<Bound{3}>) != stable_type_id(^^Holds<Bound{4}>), "two class values share an id");
+    expect(stable_type_id(^^Holds<named_bound>) == stable_type_id(^^Holds<Bound{4}>),
            "one class value gives two ids when a variable spells it");
-    expect(stable_type_id<Holds<1>> != stable_type_id<Holds<1L>>, "an int and a long of one value share an id");
-    expect(stable_type_id<Holds<u'A'>> != stable_type_id<Holds<static_cast<unsigned char>(65)>>,
+    expect(stable_type_id(^^Holds<1>) != stable_type_id(^^Holds<1L>), "an int and a long of one value share an id");
+    expect(stable_type_id(^^Holds<u'A'>) != stable_type_id(^^Holds<static_cast<unsigned char>(65)>),
            "a char16_t and an unsigned char of one value share an id");
-    expect(stable_type_id<Holds<null_member>> != stable_type_id<Holds<-1>>,
+    expect(stable_type_id(^^Holds<null_member>) != stable_type_id(^^Holds<-1>),
            "a null member pointer and the int -1 share an id");
-    expect(stable_type_id<Holds<static_cast<std::bfloat16_t>(1.5)>> != stable_type_id<Holds<1.5>>,
+    expect(stable_type_id(^^Holds<static_cast<std::bfloat16_t>(1.5)>) != stable_type_id(^^Holds<1.5>),
            "a bfloat16 and a double of one value share an id");
-    expect(stable_type_id<Holds<1>> == stable_type_id<Holds<1>>, "one value gives two ids");
+    expect(stable_type_id(^^Holds<1>) == stable_type_id(^^Holds<1>), "one value gives two ids");
 
     if (failures != 0) return EXIT_FAILURE;
     std::printf("test_identity_attacks: every refused attack refused, %zu ledger entries\n", kLedger.size());

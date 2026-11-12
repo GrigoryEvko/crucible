@@ -10,6 +10,7 @@
 
 #include <foundation/reflect/Hash.h>
 
+#include <cstdint>
 #include <meta>
 
 namespace stable_id_reflection_fixture {
@@ -19,9 +20,10 @@ static int helper(int value) { return value; }
 template <std::meta::info Named>
 struct Holds {};
 
+inline constexpr std::uint64_t refused_id = ::foundation::reflect::stable_type_id(^^Holds<^^helper>);
+
 }  // namespace stable_id_reflection_fixture
 
 int main() {
-    using namespace stable_id_reflection_fixture;
-    return static_cast<int>(::foundation::reflect::stable_type_id<Holds<^^helper>> & 1U) + helper(0);
+    return static_cast<int>(stable_id_reflection_fixture::refused_id & 1U) + stable_id_reflection_fixture::helper(0);
 }

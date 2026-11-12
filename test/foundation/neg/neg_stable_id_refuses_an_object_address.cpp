@@ -11,6 +11,8 @@
 
 #include <foundation/reflect/Hash.h>
 
+#include <cstdint>
+
 namespace stable_id_object_address_fixture {
 
 static int counter = 0;
@@ -18,9 +20,8 @@ static int counter = 0;
 template <auto Value>
 struct Holds {};
 
+inline constexpr std::uint64_t refused_id = ::foundation::reflect::stable_type_id(^^Holds<&counter>);
+
 }  // namespace stable_id_object_address_fixture
 
-int main() {
-    using namespace stable_id_object_address_fixture;
-    return static_cast<int>(::foundation::reflect::stable_type_id<Holds<&counter>> & 1U);
-}
+int main() { return static_cast<int>(stable_id_object_address_fixture::refused_id & 1U); }

@@ -5483,6 +5483,15 @@ fixy_neg_compile_test(neg_stable_id_of_a_closure_invoker_value
 fixy_neg_compile_test(neg_stable_id_of_an_internal_type
   "a stable id refuses the type"
   "has internal linkage")
+# The org id of a federation and the schema hash of a session event read
+# the stable id, which is a function that is not a template.  A unit has
+# no template to specialize there, so no unit can forge either one.
+fixy_neg_compile_test(neg_federation_org_id_through_specialized_stable_id
+  "expected initializer before .<. token"
+  "neg_federation_org_id_through_specialized_stable_id\\.cpp:16:[0-9]+: error:")
+fixy_neg_compile_test(neg_event_log_schema_through_specialized_stable_id
+  "expected initializer before .<. token"
+  "neg_event_log_schema_through_specialized_stable_id\\.cpp:17:[0-9]+: error:")
 
 # A predicate class states its expression as a constraint, so a payload
 # the expression cannot evaluate fails the invocability gate at the mint.

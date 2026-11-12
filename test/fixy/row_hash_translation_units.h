@@ -53,8 +53,8 @@ namespace {
         fd::row_hash_contribution_v<::fixy::Tagged<int, ::fixy::tags::trust::Verified>>,
         fd::row_hash_contribution_v<::fixy::Secret<int>>,
         fd::row_hash_contribution_v<::fixy::fn<int>>,
-        fr::stable_type_id<::fixy::IsPositive>,
-        fr::stable_type_id<::fixy::Refined<::fixy::positive, int>>,
+        fr::stable_type_id(^^::fixy::IsPositive),
+        fr::stable_type_id(^^::fixy::Refined<::fixy::positive, int>),
         fd::federation_key_with_toolchain_v<::fixy::Refined<::fixy::positive, int>>,
     };
 }

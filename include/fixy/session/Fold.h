@@ -614,8 +614,7 @@ inline constexpr std::uint64_t label_word_bit = std::uint64_t{1} << 63;
 // The wire word of a label key: its stable type id, with the top bit
 // set.  Complexity: linear in the length of the printed name of the key.
 [[nodiscard]] consteval std::uint64_t label_word_of(std::meta::info key) {
-    const std::uint64_t id = std::meta::extract<std::uint64_t>(
-        std::meta::substitute(^^::foundation::reflect::stable_type_id, {std::meta::dealias(key)}));
+    const std::uint64_t id = ::foundation::reflect::stable_type_id(std::meta::dealias(key));
     return id | label_word_bit;
 }
 

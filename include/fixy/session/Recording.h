@@ -142,7 +142,7 @@ template <typename T>
     if constexpr (is_delegation_shape<T>::value) {
         return SessionEvent::delegate_handoff(
             self, peer, default_proto_hash<typename is_delegation_shape<T>::protocol>,
-            InnerPermSetHash{::foundation::reflect::stable_type_id<typename is_delegation_shape<T>::perm_set>});
+            InnerPermSetHash{::foundation::reflect::stable_type_id(^^typename is_delegation_shape<T>::perm_set)});
     } else {
         return SessionEvent::send(self, peer, default_schema_hash<T>, PayloadHash{}, fate);
     }
@@ -153,7 +153,7 @@ template <typename T>
     if constexpr (is_delegation_shape<T>::value) {
         return SessionEvent::accept_handoff(
             self, peer, default_proto_hash<typename is_delegation_shape<T>::protocol>,
-            InnerPermSetHash{::foundation::reflect::stable_type_id<typename is_delegation_shape<T>::perm_set>});
+            InnerPermSetHash{::foundation::reflect::stable_type_id(^^typename is_delegation_shape<T>::perm_set)});
     } else {
         return SessionEvent::recv(self, peer, default_schema_hash<T>);
     }

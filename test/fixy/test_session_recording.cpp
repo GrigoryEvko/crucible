@@ -298,7 +298,7 @@ int check_handoff_recording() {
     if (to_peer.slots.size() != 1) return fail("the accepted endpoint did not step its own session");
 
     constexpr s::StateHash carried_hash = s::default_proto_hash<Carried>;
-    constexpr s::InnerPermSetHash no_permissions_hash{::foundation::reflect::stable_type_id<NoPermissions>};
+    constexpr s::InnerPermSetHash no_permissions_hash{::foundation::reflect::stable_type_id(^^NoPermissions)};
     static_assert(carried_hash != s::default_proto_hash<s::End>);
     if (log.size() != 4) return fail("the hand-off did not record four events");
     if (log[0].op() != s::SessionOp::Delegate || log[0].from_role() != kSelf || log[0].to_role() != kPeer

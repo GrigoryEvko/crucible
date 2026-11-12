@@ -23,7 +23,6 @@
 
 #include <foundation/Platform.h>
 #include <foundation/diag/Tag.h>
-#include <foundation/reflect/Hash.h>
 
 #include <array>
 #include <cstddef>
@@ -43,11 +42,12 @@ namespace foundation::diag {
 
 inline constexpr std::size_t CRUCIBLE_DIAG_FORMAT_VERSION = 1;
 
-// The same value under a name that reads correctly here. In a cache key
-// it is a stable identifier. In a message it is a display name.
+// The printed name of a type, for a message.  A message needs no stable
+// identity, so the name does not refuse a type that has none, and no key
+// reads it.  The text is in static storage.
 
 template <typename T>
-inline constexpr std::string_view type_name = ::foundation::reflect::stable_name_of<T>;
+inline constexpr std::string_view type_name = std::meta::display_string_of(^^T);
 
 // Reflection cannot splice a value: the operator wants an entity, and an
 // auto template argument is a value. The name is therefore scraped out

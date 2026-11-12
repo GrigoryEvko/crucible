@@ -10,6 +10,8 @@
 
 #include <foundation/reflect/Hash.h>
 
+#include <cstdint>
+
 namespace stable_id_union_fixture {
 
 union Either {
@@ -20,9 +22,8 @@ union Either {
 template <auto Value>
 struct Holds {};
 
+inline constexpr std::uint64_t refused_id = ::foundation::reflect::stable_type_id(^^Holds<Either{.second = 1}>);
+
 }  // namespace stable_id_union_fixture
 
-int main() {
-    using namespace stable_id_union_fixture;
-    return static_cast<int>(::foundation::reflect::stable_type_id<Holds<Either{.second = 1}>> & 1U);
-}
+int main() { return static_cast<int>(stable_id_union_fixture::refused_id & 1U); }

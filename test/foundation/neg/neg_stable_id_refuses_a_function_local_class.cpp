@@ -8,6 +8,6 @@
 
 int main() {
     struct Local {};
-    constexpr std::uint64_t id = ::foundation::reflect::stable_type_id<Local>;
+    constexpr std::uint64_t id = ::foundation::reflect::stable_type_id(^^Local);
     return id == 0 ? 1 : 0;
 }

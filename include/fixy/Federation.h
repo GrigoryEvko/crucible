@@ -86,7 +86,7 @@ using HandshakeMac = HandshakeWord<detail::handshake_word::Mac>;
 
 template <typename Org>
     requires FederationOrgTag<Org>
-inline constexpr OrgId federation_org_id = OrgId{::foundation::reflect::stable_type_id<Org>};
+inline constexpr OrgId federation_org_id = OrgId{::foundation::reflect::stable_type_id(^^Org)};
 
 namespace policy {
 

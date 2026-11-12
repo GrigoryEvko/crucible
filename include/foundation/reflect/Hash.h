@@ -18,8 +18,8 @@
 // ends_with against the simple name, never with == against a literal.
 // The simple name is always a suffix of the qualified form, so equality
 // compiles in one translation unit and fails in the next. Hashing is
-// unaffected: the variable template resolves to one inline constexpr
-// definition that every translation unit shares.
+// unaffected: each id reads the name inside its own function in this
+// header, so every translation unit reads it in one scope.
 //
 // The id also holds only for a type whose printed name is a function of
 // the type. An entity with no declared name, with internal linkage, or
@@ -29,7 +29,6 @@
 
 #pragma once
 
-#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/TypeComponents.h>
 
 #include <array>
@@ -128,9 +127,11 @@ inline constexpr std::uint64_t FNV1A_OFFSET_BASIS = 0xcbf29ce484222325ULL;
 inline constexpr std::uint64_t FNV1A_PRIME = 0x00000100000001b3ULL;
 
 [[nodiscard]] consteval std::uint64_t fnv1a_64(std::string_view s) noexcept {
+    const char* const bytes = s.data();
+    const std::size_t length = s.size();
     std::uint64_t h = FNV1A_OFFSET_BASIS;
-    for (char c : s) {
-        h ^= static_cast<std::uint64_t>(static_cast<unsigned char>(c));
+    for (std::size_t index = 0; index < length; ++index) {
+        h ^= static_cast<std::uint64_t>(static_cast<unsigned char>(bytes[index]));
         h *= FNV1A_PRIME;
     }
     return h;
@@ -196,6 +197,25 @@ inline constexpr std::uint64_t FNV1A_PRIME = 0x00000100000001b3ULL;
 
 namespace detail {
 
+// The holder of a function and of a pointer to it.  The function ids and
+// the identity walk read its two template arguments, and a specialization
+// of the holder changes no template argument.
+template <std::meta::info Function, auto Pointer>
+struct function_holder {};
+
+}  // namespace detail
+
+// The key of the function that a pointer names: a type whose two template
+// arguments are the reflection of the function and the pointer.  An alias
+// template has no specialization, so no translation unit can put a
+// different function behind a key.  A null pointer names no function, so
+// the key of a null pointer fails to compile.
+template <auto FnPtr>
+    requires std::is_pointer_v<decltype(FnPtr)> && std::is_function_v<std::remove_pointer_t<decltype(FnPtr)>>
+using function_key = detail::function_holder<std::meta::reflect_function(*FnPtr), FnPtr>;
+
+namespace detail {
+
 enum class identity_fault : std::uint8_t {
     none,
     no_declared_name,
@@ -213,37 +233,64 @@ struct identity_verdict {
     std::meta::info culprit{};
 };
 
-// The function that a template argument of pointer-to-function type
-// names, or a null reflection for any other value.  The pointer is not
-// compared with null: under -fno-delete-null-pointer-checks that
-// comparison is not a constant expression.  A null pointer argument
-// therefore fails to compile here, which refuses the type.
-template <auto Value>
-[[nodiscard]] consteval std::meta::info function_named_by() {
-    if constexpr (std::is_pointer_v<decltype(Value)> && std::is_function_v<std::remove_pointer_t<decltype(Value)>>) {
-        return std::meta::reflect_function(*Value);
-    } else {
-        return {};
+// The holder that the key of a function names.  A type that is no key
+// stops the build.
+[[nodiscard]] consteval std::meta::info holder_of_key(std::meta::info key) {
+    key = std::meta::dealias(key);
+    if (!std::meta::has_template_arguments(key) || std::meta::template_of(key) != ^^function_holder) {
+        throw std::meta::exception(u8"foundation::reflect: a function id takes the reflection of a function key, "
+                                   u8"written ^^function_key<&f>.",
+                                   key);
     }
+    return key;
 }
 
-template <auto Value>
-inline constexpr std::meta::info function_named_by_v = function_named_by<Value>();
+// The function that the key of a function names: the first template
+// argument of its holder.
+[[nodiscard]] consteval std::meta::info function_of_key(std::meta::info key) {
+    return std::meta::extract<std::meta::info>(std::meta::template_arguments_of(holder_of_key(key))[0]);
+}
+
+// The pointer that the key of a function holds: the second template
+// argument of its holder.
+[[nodiscard]] consteval std::meta::info pointer_of_key(std::meta::info key) {
+    return std::meta::template_arguments_of(holder_of_key(key))[1];
+}
+
+// The function that a template argument of pointer-to-function type
+// names.  The walk reads it through function_key, an alias template that
+// no unit can specialize.  The pointer is not compared with null: under
+// -fno-delete-null-pointer-checks that comparison is not a constant
+// expression.  A null pointer argument therefore fails to compile here,
+// which refuses the type.
+[[nodiscard]] consteval std::meta::info function_named_by(std::meta::info pointer) {
+    return function_of_key(std::meta::substitute(^^function_key, {pointer}));
+}
+
+// True when the printed text holds one of the marks.  The function is not
+// a template, so no translation unit can specialize it and let a mark
+// through the identity walk.  Complexity: the length of the text times
+// the number of marks.
+[[nodiscard]] consteval bool prints_one_of(std::string_view text, const char* const* marks,
+                                           std::size_t count) noexcept {
+    for (std::size_t index = 0; index < count; ++index) {
+        if (text.find(marks[index]) != std::string_view::npos) return true;
+    }
+    return false;
+}
 
 // True when the printed text carries a mark that GCC gives only to an
 // entity with no declared name or with internal linkage.
 [[nodiscard]] consteval bool prints_a_mark_of_no_identity(std::string_view text) noexcept {
-    return text.find("<lambda") != std::string_view::npos || text.find("<unnamed") != std::string_view::npos
-        || text.find("{anonymous}") != std::string_view::npos;
+    constexpr const char* marks[] = {"<lambda", "<unnamed", "{anonymous}"};
+    return prints_one_of(text, marks, sizeof(marks) / sizeof(marks[0]));
 }
 
 // True when the printed value carries a NaN, which GCC prints without its
 // payload, so two different NaNs print one text.
 [[nodiscard]] consteval bool prints_a_nan(std::string_view text) noexcept {
-    for (const std::string_view mark : {"+QNaN", "-QNaN", "+SNaN", "-SNaN"}) {
-        if (text.find(mark) != std::string_view::npos) return true;
-    }
-    return false;
+    constexpr const char* marks[] = {"+QNaN", "-QNaN", "+SNaN", "-SNaN"};
+    return prints_one_of(text, marks, sizeof(marks) / sizeof(marks[0]));
 }
 
 // The walk takes an optional sink for the suffix of the stable name.
@@ -385,12 +432,8 @@ consteval void append_value_type(std::string& suffix, std::meta::info type) {
         }
         // A pointer to a function prints the function's name, so the
         // function must have an identity too.
-        const std::meta::info function =
-            std::meta::extract<std::meta::info>(std::meta::substitute(^^function_named_by_v, {argument}));
-        if (function != std::meta::info{}) {
-            const identity_verdict of_function = identity_of_function(function, suffix);
-            if (of_function.fault != identity_fault::none) return of_function;
-        }
+        const identity_verdict of_function = identity_of_function(function_named_by(argument), suffix);
+        if (of_function.fault != identity_fault::none) return of_function;
     }
     if ((std::meta::is_class_type(type) || std::meta::is_union_type(type)) && carries_unreadable_part(type)) {
         return {identity_fault::unreadable_argument, argument};
@@ -513,46 +556,50 @@ consteval void append_value_type(std::string& suffix, std::meta::info type) {
     return {};
 }
 
+// The reason of a refusal, for each kind of fault.
+[[nodiscard]] consteval std::string_view identity_refusal_reason(identity_fault fault) noexcept {
+    if (fault == identity_fault::no_declared_name) {
+        return " has no declared name.  A closure type, an unnamed class, an unnamed union and an unnamed "
+               "enumeration print a name that is not a function of the entity: GCC prints a closure from its "
+               "call signature, and numbers each generic parameter by its position in the translation unit.  "
+               "Give the entity a declared name: a named class type with a call operator, or a named class "
+               "template.";
+    }
+    if (fault == identity_fault::internal_linkage) {
+        return " has internal linkage.  Each translation unit holds its own entity under one printed name, so "
+               "two different types would share one id.  Declare it in a named namespace.";
+    }
+    if (fault == identity_fault::function_local) {
+        return " is declared in a function body.  A local entity prints the name of its function and its own "
+               "name, and two local classes of one name in one function print one name.  The name of a function "
+               "template specialization does not name each type of its arguments, so the local classes of two "
+               "different functions can print one name too.  Declare the entity at namespace scope or in a "
+               "class.";
+    }
+    if (fault == identity_fault::ambiguous_value) {
+        return " prints a text that a different value also prints: GCC prints a NaN without its payload, and a "
+               "union value without its active member.  Pass a number that is not a NaN, or a value of a type "
+               "that holds no union.";
+    }
+    if (fault == identity_fault::object_address) {
+        return " names an object by its address or by a reference.  No query reads the object back to its "
+               "variable, so a variable with internal linkage would print one name in every translation unit.  "
+               "Pass the value, or name a type or a function.";
+    }
+    return " cannot be read back to a declared name: a class value that holds a pointer, a reference, a "
+           "member pointer or a reflection, or a reflection of an object or a base.  Pass a value of a type "
+           "with no such part, or name a type.";
+}
+
 // The refusal text for a type that has no identity.  Built only when
-// the verdict is a fault.  The function is a template only so that its
-// text can depend on Anchor (foundation/reflect/Anchor.h).  No check reads
-// the text.
-template <class Anchor = void>
-[[nodiscard]] consteval std::string_view identity_refusal_text(std::meta::info type, identity_verdict verdict) {
-    if (verdict.fault == identity_fault::none) return "";
-    anchored_t<^^Anchor, std::string> text{"foundation::reflect: a stable id refuses the type "};
+// the verdict is a fault.  No check reads the text.
+[[nodiscard]] consteval std::string identity_refusal(std::meta::info type, identity_verdict verdict) {
+    std::string text{"foundation::reflect: a stable id refuses the type "};
     text += std::meta::display_string_of(type);
     text += ", because its part ";
     text += std::meta::display_string_of(verdict.culprit);
-    if (verdict.fault == identity_fault::no_declared_name) {
-        text += " has no declared name.  A closure type, an unnamed class, an unnamed union and an unnamed "
-                "enumeration print a name that is not a function of the entity: GCC prints a closure from its "
-                "call signature, and numbers each generic parameter by its position in the translation unit.  "
-                "Give the entity a declared name: a named class type with a call operator, or a named class "
-                "template.";
-    } else if (verdict.fault == identity_fault::internal_linkage) {
-        text += " has internal linkage.  Each translation unit holds its own entity under one printed name, so "
-                "two different types would share one id.  Declare it in a named namespace.";
-    } else if (verdict.fault == identity_fault::function_local) {
-        text += " is declared in a function body.  A local entity prints the name of its function and its own "
-                "name, and two local classes of one name in one function print one name.  The name of a function "
-                "template specialization does not name each type of its arguments, so the local classes of two "
-                "different functions can print one name too.  Declare the entity at namespace scope or in a "
-                "class.";
-    } else if (verdict.fault == identity_fault::ambiguous_value) {
-        text += " prints a text that a different value also prints: GCC prints a NaN without its payload, and a "
-                "union value without its active member.  Pass a number that is not a NaN, or a value of a type "
-                "that holds no union.";
-    } else if (verdict.fault == identity_fault::object_address) {
-        text += " names an object by its address or by a reference.  No query reads the object back to its "
-                "variable, so a variable with internal linkage would print one name in every translation unit.  "
-                "Pass the value, or name a type or a function.";
-    } else {
-        text += " cannot be read back to a declared name: a class value that holds a pointer, a reference, a "
-                "member pointer or a reflection, or a reflection of an object or a base.  Pass a value of a type "
-                "with no such part, or name a type.";
-    }
-    return std::define_static_string(text);
+    text += identity_refusal_reason(verdict.fault);
+    return text;
 }
 
 }  // namespace detail
@@ -582,29 +629,36 @@ concept HasStableFunctionIdentity =
     std::is_pointer_v<decltype(FnPtr)> && std::is_function_v<std::remove_pointer_t<decltype(FnPtr)>>
     && has_stable_function_identity(std::meta::reflect_function(*FnPtr));
 
-namespace detail {
+// ── The stable ids ───────────────────────────────────────────────────
+//
+// Each id is a function that is not a template, and it takes the
+// reflection of what it names.  No translation unit can specialize such a
+// function, so no unit can put a forged id in front of a reader: the row
+// hash, the org id of a federation, the schema hash of a session event and
+// the key of the computation cache.  A type with no identity stops the
+// constant evaluation, and the diagnostic prints the refusal text, which
+// names the part of the type that has no identity.
 
-// The one door to a printed name that feeds an id.  The assertion names
-// the part of the type that has no identity.
-template <typename T>
-[[nodiscard]] consteval std::string_view checked_stable_name() {
-    static_assert(HasStableIdentity<T>, identity_refusal_text<anchored_t<^^T, void>>(^^T, identity_of_type(^^T)));
-    anchored_t<^^T, std::string> suffix;
-    (void)identity_of_type(^^T, &suffix);
-    if (suffix.empty()) return std::meta::display_string_of(^^T);
-    return std::define_static_string(std::string{std::meta::display_string_of(^^T)} + suffix);
+// The printed name that feeds each id of a type: the name of the type,
+// read through its aliases, and the type of each value argument that
+// prints without it.  The text lives only during the constant evaluation
+// that reads it.
+[[nodiscard]] consteval std::string stable_name(std::meta::info type) {
+    type = std::meta::dealias(type);
+    // The walk writes the suffix, and the printed name goes in front of it.
+    std::string name;
+    const detail::identity_verdict verdict = detail::identity_of_type(type, &name);
+    if (verdict.fault != detail::identity_fault::none) {
+        throw std::meta::exception(detail::identity_refusal(type, verdict), verdict.culprit);
+    }
+    name.insert(0, std::meta::display_string_of(type));
+    return name;
 }
 
-}  // namespace detail
-
-// The string lives in consteval result storage, which outlives every
-// caller, so holding the view for the life of the program is safe.
-
-template <typename T>
-inline constexpr std::string_view stable_name_of = detail::checked_stable_name<T>();
-
-template <typename T>
-inline constexpr std::uint64_t stable_type_id = detail::hash_name(stable_name_of<T>);
+// The id of a type: the hash of its stable name.
+[[nodiscard]] consteval std::uint64_t stable_type_id(std::meta::info type) {
+    return detail::hash_name(stable_name(type));
+}
 
 // Sorting by name collapses two packs that differ only in order to one
 // type. It does not deduplicate: a repeated element stays repeated.
@@ -616,7 +670,7 @@ namespace detail {
 template <typename... Ts>
 [[nodiscard]] consteval auto sort_indices_by_stable_name() noexcept {
     constexpr std::size_t N = sizeof...(Ts);
-    std::array<std::string_view, N> const names{stable_name_of<Ts>...};
+    std::array<std::string, N> const names{stable_name(^^Ts)...};
     std::array<std::size_t, N> indices{};
     for (std::size_t i = 0; i < N; ++i)
         indices[i] = i;
@@ -660,37 +714,31 @@ public:
 template <typename... Ts>
 using canonicalize_pack_t = typename canonicalize_pack<Ts...>::type;
 
+// The two ids of a function take the reflection of its key,
+// ^^function_key<&f>.
+//
 // This hashes the function type, never the address. Two distinct
 // functions that share a signature therefore share one id, and one
 // function reached through different declarations keeps a single id.
 // The function type goes through the same door as every other type, so
 // a signature that names a closure type is refused.
+[[nodiscard]] consteval std::uint64_t stable_function_id(std::meta::info key) {
+    return stable_type_id(std::meta::remove_pointer(std::meta::type_of(detail::pointer_of_key(key))));
+}
 
-template <auto FnPtr>
-inline constexpr std::uint64_t stable_function_id =
-    detail::hash_name(detail::checked_stable_name<std::remove_pointer_t<decltype(FnPtr)>>());
-
-// This hashes the printed name of the function that the pointer names.
-// It tells apart two functions of one signature, which share one
+// This hashes the printed name of the pointer that the key holds.  It
+// tells apart two functions of one signature, which share one
 // stable_function_id.  The name is read only when the function has a
 // stable identity, so a static invoker of a closure and a function with
 // internal linkage have no name id.
-
-namespace detail {
-
-template <auto FnPtr>
-[[nodiscard]] consteval std::uint64_t checked_function_name_hash() {
-    static_assert(HasStableFunctionIdentity<FnPtr>,
-                  "stable_function_name_id: the function has no stable identity.  A static invoker of a closure "
-                  "or a function with internal linkage prints a name that differs between translation units.  "
-                  "Name a function with external linkage.");
-    return hash_name(std::meta::display_string_of(std::meta::reflect_constant(FnPtr)));
+[[nodiscard]] consteval std::uint64_t stable_function_name_id(std::meta::info key) {
+    if (!has_stable_function_identity(detail::function_of_key(key))) {
+        throw std::meta::exception(u8"stable_function_name_id: the function has no stable identity.  A static "
+                                   u8"invoker of a closure or a function with internal linkage prints a name that "
+                                   u8"differs between translation units.  Name a function with external linkage.",
+                                   key);
+    }
+    return detail::hash_name(std::meta::display_string_of(detail::pointer_of_key(key)));
 }
-
-}  // namespace detail
-
-template <auto FnPtr>
-    requires std::is_pointer_v<decltype(FnPtr)> && std::is_function_v<std::remove_pointer_t<decltype(FnPtr)>>
-inline constexpr std::uint64_t stable_function_name_id = detail::checked_function_name_hash<FnPtr>();
 
 }  // namespace foundation::reflect

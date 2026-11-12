@@ -1699,10 +1699,10 @@ foundation_neg_compile_test(neg_producer_claim_outside_brand
 # the brand, so a brand with no stable identity is refused where it mints.
 foundation_neg_compile_test(neg_producer_claim_brand_internal_linkage
   "a stable id refuses the type .anonymous.::Hidden, because its part .anonymous.::Hidden has internal linkage"
-  "ProducerClaim<Brand>::brand_key_\\(\\) .with Brand = .anonymous.::Hidden")
+  "In instantiation of .constexpr const uint64_t foundation::effects::host::ProducerClaim<.anonymous.::Hidden>::brand_key_.")
 foundation_neg_compile_test(neg_producer_claim_brand_in_closure
   "because its part main\\(\\)::<lambda\\(\\)>::InClosure is declared in a function body"
-  "ProducerClaim<Brand>::brand_key_\\(\\) .with Brand = main\\(\\)::<lambda\\(\\)>::InClosure")
+  "In instantiation of .constexpr const uint64_t foundation::effects::host::ProducerClaim<main\\(\\)::<lambda\\(\\)>::InClosure>::brand_key_.")
 foundation_neg_compile_test(neg_branded_ctx_other_brand
   "invalid initialization of reference"
   "ctx_cap::BrandedFg<other_brand_probe::Stranger>")
@@ -1750,9 +1750,20 @@ foundation_neg_compile_test(neg_stable_id_refuses_a_union_value
 # The gate calls the identity walk itself, so a translation unit cannot
 # put a verdict of no fault in front of the walk for a closure type.
 foundation_neg_compile_test(neg_stable_identity_verdict_forged
-  "neg_stable_identity_verdict_forged\\.cpp:[0-9]+:[0-9]+: error: expected initializer before .<. token"
-  "static assertion failed: foundation::reflect: a stable id refuses the type const<lambda\\(\\)>"
-  "because its part <lambda\\(\\)> has no declared name")
+  "expected initializer before .<. token"
+  "neg_stable_identity_verdict_forged\\.cpp:22:[0-9]+: error:")
+# Each stable id is a function that is not a template, and the identity
+# walk reads the function of a pointer through an alias template.  A unit
+# has no template to specialize there, so no unit can forge an id.
+foundation_neg_compile_test(neg_stable_type_id_specialized
+  "expected initializer before .<. token"
+  "neg_stable_type_id_specialized\\.cpp:19:[0-9]+: error:")
+foundation_neg_compile_test(neg_stable_identity_function_reader_specialized
+  "expected initializer before .<. token"
+  "neg_stable_identity_function_reader_specialized\\.cpp:21:[0-9]+: error:")
+foundation_neg_compile_test(neg_stable_function_name_id_specialized
+  "expected initializer before .<. token"
+  "neg_stable_function_name_id_specialized\\.cpp:18:[0-9]+: error:")
 
 # ── The owned buffers ─────────────────────────────────────────────────
 #

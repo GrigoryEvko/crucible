@@ -340,6 +340,17 @@ struct BrandRegistry {
 // of the brand, which is hidden, so each shared library would hold a copy.
 CRUCIBLE_PROCESS_WIDE inline constinit BrandRegistry brand_registry{};
 
+// The key of a brand in the registry: its stable type id.  A brand with no
+// stable identity, or with the id zero, stops the constant evaluation.
+// Zero marks a record with no brand, so it names no brand.
+[[nodiscard]] consteval std::uint64_t brand_key_of(std::meta::info brand) {
+    const std::uint64_t key = ::foundation::reflect::stable_type_id(brand);
+    if (key == 0) {
+        throw std::meta::exception(u8"zero names no brand in the registry of producer claims", brand);
+    }
+    return key;
+}
+
 // The identity of the calling thread, the same in every shared library: the
 // address of the thread control block, which the thread pointer register
 // holds.  Each live thread has its own block, so two live threads never have
@@ -395,8 +406,7 @@ public:
     // The part that inlines is a relaxed load, a comparison and a branch.
     // The claim and the failure report sit out of line and cold.  The body
     // reads the thread identity and an atomic, so it is not constexpr.
-    [[nodiscard]] CRUCIBLE_INLINE auto mint_producer_context() noexcept
-        -> ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>> {
+    [[nodiscard]] CRUCIBLE_INLINE auto mint_producer_context() noexcept -> ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>> {
         const std::uintptr_t current_tid = detail::producer_claim::calling_thread_identity();
         if (holder_.load(std::memory_order_relaxed) != current_tid) [[unlikely]]
             claim_or_reject_(current_tid);
@@ -432,12 +442,9 @@ private:
     // The key of the brand in the process-wide registry.  A brand needs a
     // stable identity, because the key must be the same in every shared
     // library: stable_type_id refuses a brand with internal linkage or with
-    // no declared name, and it names the reason.
-    [[nodiscard]] static consteval std::uint64_t brand_key_() noexcept {
-        constexpr std::uint64_t key = ::foundation::reflect::stable_type_id<Brand>;
-        static_assert(key != 0, "zero names no brand in the registry of producer claims");
-        return key;
-    }
+    // no declared name, and it names the reason.  The first use of the key
+    // evaluates the initializer one time, so a refused brand gives one error.
+    static constexpr std::uint64_t brand_key_ = detail::producer_claim::brand_key_of(^^Brand);
 
     [[gnu::cold, gnu::noinline]] void claim_or_reject_(std::uintptr_t current_tid) noexcept {
         std::uintptr_t holder = holder_.load(std::memory_order_relaxed);
@@ -477,7 +484,7 @@ private:
         BrandRecord* record = nullptr;
         for (BrandRecord& candidate : registry.records) {
             const std::uint64_t brand = candidate.brand.load(std::memory_order_relaxed);
-            if (brand == brand_key_() || brand == 0) {
+            if (brand == brand_key_ || brand == 0) {
                 record = &candidate;
                 break;
             }
@@ -488,7 +495,7 @@ private:
             CRUCIBLE_FATAL_INVARIANT(record != nullptr);
             return nullptr;
         }
-        record->brand.store(brand_key_(), std::memory_order_release);
+        record->brand.store(brand_key_, std::memory_order_release);
         const bool is_only_brand_thread =
             record->claims == 0 || record->holder.load(std::memory_order_relaxed) == thread_identity;
         if (is_only_brand_thread) {
@@ -514,7 +521,7 @@ private:
     [[nodiscard]] static const BrandRecord* find_brand_record_() noexcept {
         for (const BrandRecord& candidate : detail::producer_claim::brand_registry.records) {
             const std::uint64_t brand = candidate.brand.load(std::memory_order_acquire);
-            if (brand == brand_key_()) return &candidate;
+            if (brand == brand_key_) return &candidate;
             if (brand == 0) return nullptr;
         }
         return nullptr;

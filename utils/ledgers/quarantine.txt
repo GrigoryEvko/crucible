@@ -508,7 +508,7 @@ test/foundation/ | std-entity | 609 | - | -
 test/foundation/ | std-object | 201 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
-test/foundation/neg/ | detail-use | 81 | - | each fixture uses a private name of the base for its probe, such as a check, a context key or a test lattice
+test/foundation/neg/ | detail-use | 82 | - | each fixture uses a private name of the base for its probe, such as a check, a context key or a test lattice
 test/foundation/neg/ | door-use | 2 | - | the fixture defines a door owner again, and its probe shows that the build refuses the second definition
 test/foundation/neg/ | lifetime-start | 11 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/ | raw-pointer-object | 18 | - | -
