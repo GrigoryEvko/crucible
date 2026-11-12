@@ -129,8 +129,8 @@ include/crucible/canopy/ | std-object | 137 | - | -
 include/crucible/cipher/ | c-library-call | 3 | - | -
 include/crucible/cipher/ | raw-pointer-object | 7 | - | -
 include/crucible/cipher/ | replace-pending:<limits> | 1 | - | -
-include/crucible/cipher/ | std-entity | 68 | - | -
-include/crucible/cipher/ | std-object | 38 | - | -
+include/crucible/cipher/ | std-entity | 87 | - | -
+include/crucible/cipher/ | std-object | 58 | - | -
 include/crucible/cntp/ | c-library-call | 30 | - | -
 include/crucible/cntp/ | compiler-builtin | 2 | - | -
 include/crucible/cntp/ | raw-pointer-object | 38 | - | -
@@ -276,22 +276,22 @@ include/fixy/handle/ | replace-pending:<cstdio> | 1 | - | -
 include/fixy/handle/ | replace-pending:<cstdlib> | 1 | - | -
 include/fixy/os/ | base-c-library-call | 15 | - | -
 include/fixy/os/ | base-c-library-object | 11 | - | -
-include/fixy/os/ | base-std-entity | 271 | - | -
-include/fixy/os/ | base-std-object | 127 | - | -
+include/fixy/os/ | base-std-entity | 254 | - | -
+include/fixy/os/ | base-std-object | 109 | - | -
 include/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
 include/fixy/os/ | replace-pending:<array> | 1 | - | -
 include/fixy/os/ | replace-pending:<cerrno> | 3 | - | -
 include/fixy/os/ | replace-pending:<climits> | 1 | - | -
 include/fixy/os/ | replace-pending:<cstdio> | 1 | - | -
 include/fixy/os/ | replace-pending:<ctime> | 1 | - | -
-include/fixy/os/ | replace-pending:<expected> | 12 | - | -
+include/fixy/os/ | replace-pending:<expected> | 11 | - | -
 include/fixy/os/ | replace-pending:<filesystem> | 1 | - | -
 include/fixy/os/ | replace-pending:<limits> | 1 | - | -
 include/fixy/os/ | replace-pending:<optional> | 1 | - | -
 include/fixy/os/ | replace-pending:<span> | 2 | - | -
 include/fixy/os/ | replace-pending:<string> | 2 | - | -
 include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
-include/fixy/os/ | replace-pending:<system_error> | 8 | - | -
+include/fixy/os/ | replace-pending:<system_error> | 7 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 56 | - | -
 include/fixy/session/ | base-std-entity | 480 | - | -
@@ -436,14 +436,14 @@ test/ | raw-new-delete | 43 | - | -
 test/ | raw-pointer-object | 678 | - | -
 test/ | replace-pending:<limits> | 14 | - | -
 test/ | replace-pending:std::bit_cast | 104 | - | -
-test/ | std-entity | 5557 | - | -
-test/ | std-object | 1861 | - | -
+test/ | std-entity | 5596 | - | -
+test/ | std-object | 1882 | - | -
 test/canopy_neg/ | raw-pointer-object | 1 | - | -
 test/canopy_neg/ | std-entity | 10 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
-test/cipher_neg/ | raw-pointer-object | 2 | - | -
-test/cipher_neg/ | std-entity | 48 | - | -
-test/cipher_neg/ | std-object | 10 | - | -
+test/cipher_neg/ | raw-pointer-object | 8 | - | -
+test/cipher_neg/ | std-entity | 60 | - | -
+test/cipher_neg/ | std-object | 16 | - | -
 test/cipher_neg/ | unchecked-use | 2 | - | the fixture reads the type of a private member of the Cipher with an unchecked walk, for the type of its probe
 test/cntp_neg/ | raw-pointer-object | 1 | - | -
 test/cntp_neg/ | std-entity | 75 | - | -
@@ -459,8 +459,8 @@ test/ct/ | std-object | 14 | - | -
 test/dag_neg/ | raw-pointer-object | 7 | - | -
 test/dag_neg/ | std-entity | 1 | - | -
 test/dag_neg/ | std-object | 3 | - | -
-test/fixy/ | c-array-object | 102 | - | -
-test/fixy/ | c-library-call | 1506 | - | -
+test/fixy/ | c-array-object | 100 | - | -
+test/fixy/ | c-library-call | 1478 | - | -
 test/fixy/ | c-library-object | 10 | - | -
 test/fixy/ | door-header | 22 | - | -
 test/fixy/ | opted-out | 16 | ORACLE: the C library reports the attributes of the calling thread | -
@@ -475,20 +475,20 @@ test/fixy/ | region | 1 | PROBE: a signal reaches a thread that waits in the fut
 test/fixy/ | replace-pending:<limits> | 30 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 20 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 3367 | - | -
-test/fixy/ | std-object | 1269 | - | -
+test/fixy/ | std-entity | 3333 | - | -
+test/fixy/ | std-object | 1257 | - | -
 test/fixy/neg/ | c-array-object | 53 | - | -
-test/fixy/neg/ | c-library-call | 253 | - | -
+test/fixy/neg/ | c-library-call | 251 | - | -
 test/fixy/neg/ | c-library-object | 2 | - | -
 test/fixy/neg/ | detail-use | 222 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | raw-function-pointer | 2 | - | -
 test/fixy/neg/ | raw-new-delete | 1 | - | -
-test/fixy/neg/ | raw-pointer-object | 41 | - | -
+test/fixy/neg/ | raw-pointer-object | 35 | - | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 6 | - | -
-test/fixy/neg/ | std-entity | 216 | - | -
-test/fixy/neg/ | std-object | 124 | - | -
+test/fixy/neg/ | std-entity | 204 | - | -
+test/fixy/neg/ | std-object | 118 | - | -
 test/foundation/ | c-array-object | 59 | - | -
 test/foundation/ | c-library-call | 413 | - | -
 test/foundation/ | c-library-object | 7 | - | -

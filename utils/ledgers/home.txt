@@ -92,9 +92,6 @@ include/fixy/concurrent/StageShape.h | open-read | 4 | fixy::concurrent::StageAr
 include/fixy/concurrent/StageShape.h | open-read | 1 | foundation::reflect::arity_v | -
 include/fixy/concurrent/StageShape.h | open-read | 1 | foundation::reflect::signature_traits | -
 include/fixy/os/AtomPack.h | open-read | 1 | fixy::atom_pack::detail::atoms_row_ | -
-include/fixy/os/CipherDurable.h | open-read | 1 | fixy::cipher::durable::detail::extras_engage_atomic_write_v | -
-include/fixy/os/CipherDurable.h | open-read | 1 | fixy::cipher::durable::detail::extras_engage_durable_v | -
-include/fixy/os/CipherDurable.h | open-read | 1 | fixy::cipher::durable::detail::extras_engage_mode_v | -
 include/fixy/os/Fs.h | open-read | 2 | fixy::atom_pack::has_row | -
 include/fixy/os/Fs.h | open-read | 2 | fixy::atom_pack::names_tag | -
 include/fixy/os/Fs.h | open-read | 1 | fixy::fs::detail::all_atom_tags_known_v | -

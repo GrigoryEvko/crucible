@@ -82,11 +82,6 @@
       "constructor": "\\bWriterHandle\\("
     },
     {
-      "name": "neg_witness_cipher_durable_cipherdurablehandle_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bCipherDurableHandle\\("
-    },
-    {
       "name": "neg_witness_clocksource_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bClockSource\\("
@@ -1034,10 +1029,6 @@
     {
       "type": "fixy::fs::Dirfd",
       "header": "fixy/os/Fs.h"
-    },
-    {
-      "type": "fixy::cipher::durable::CipherDurableHandle<fixy::cipher::durable::warm_writer_stance>",
-      "header": "fixy/os/CipherDurable.h"
     },
     {
       "type": "fixy::concurrent::Stage<&fixy::concurrent::detail::stage_witness::stage_pass_through, fixy::HotFgCtx>",

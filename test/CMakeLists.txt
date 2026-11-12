@@ -349,6 +349,7 @@ crucible_test(test_pool_allocator_alloc_class)
 crucible_test(test_cipher_wait)
 crucible_test(test_cipher_publish_tier)
 crucible_test(test_cipher_tier_promotion)
+crucible_test(test_cipher_durable)
 crucible_test(test_kernel_cache_levels)
 crucible_test(test_trace_ring_hot_path)
 crucible_test(test_cipher_commit_lifetime)
@@ -4238,6 +4239,37 @@ crucible_neg_compile_test(neg_cipher_tier_restore_wrong_value_type
 crucible_neg_compile_test(neg_cipher_tier_restore_no_hash_projection
   "no matching function for call to .mint_restore<ProductionPayload>"
   "required for the satisfaction of .RestorableHashed<T>. .with T = ProductionPayload.")
+
+# The three durable writers of crucible/cipher/CipherDurable.h.  Each mint
+# opens a file, so a context without Block is refused.  A stance pins the
+# mode, the durability and the atomicity, so an extra that engages one of
+# them is refused too.  Each second regex holds the anonymous-namespace
+# prefix that the compiler emits and the source does not.
+crucible_neg_compile_test(neg_cipher_durable_warm_writer_ctx_lacks_block
+  "no matching function for call"
+  "mint_warm_writer<>\\(\\{anonymous\\}::IoOnlyCtx&")
+crucible_neg_compile_test(neg_cipher_durable_warm_writer_extras_engage_mode
+  "no matching function for call"
+  "mint_warm_writer<fixy::atom::fs::mode<fixy::fs::open_mode::WriteCreate> >\\(\\{anonymous\\}::IoBlockCtx&")
+crucible_neg_compile_test(neg_cipher_durable_cold_writer_ctx_lacks_block
+  "no matching function for call"
+  "mint_cold_writer<>\\(\\{anonymous\\}::IoOnlyCtx&")
+crucible_neg_compile_test(neg_cipher_durable_cold_writer_extras_engage_durable
+  "no matching function for call"
+  "mint_cold_writer<fixy::atom::fs::durable<fixy::fs::sync_op::Fdatasync> >\\(\\{anonymous\\}::IoBlockCtx&")
+crucible_neg_compile_test(neg_cipher_durable_head_advancer_ctx_lacks_block
+  "no matching function for call"
+  "mint_head_advancer<>\\(\\{anonymous\\}::IoOnlyCtx&")
+crucible_neg_compile_test(neg_cipher_durable_head_advancer_extras_engage_atomic_write
+  "no matching function for call"
+  "mint_head_advancer<fixy::atom::fs::atomic_write<fixy::fs::atomicity::Rename> >\\(\\{anonymous\\}::IoBlockCtx&")
+# The handle attests to the flags that opened its descriptor, so its
+# constructor over a descriptor is private to the three mints.  The second
+# regex is the constructor as the compiler writes it, with parentheses, and
+# the source spells it with braces.
+crucible_neg_compile_test(neg_cipher_durable_handle_direct_construction
+  "is private within this context"
+  "crucible::cipher::durable::CipherDurableHandle<Stance>::CipherDurableHandle\\(fixy::fs::OwnedFd&&\\)")
 
 # State-discipline: SealedView cannot satisfy the MutableView parameter
 # of register_name / register_op — the only typed registration path

@@ -68,7 +68,6 @@
 #include <fixy/Insights.h>
 #include <fixy/Machine.h>
 #include <fixy/Mutation.h>
-#include <fixy/os/CipherDurable.h>
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/CpuPinned.h>
 #include <fixy/os/Fs.h>
@@ -425,7 +424,6 @@ inline constexpr std::meta::info kCensusNamespaces[] = {
     ^^::fixy::spin,
     ^^::fixy::time,
     ^^::fixy::topology,
-    ^^::fixy::cipher::durable,
 };
 
 // Namespaces that declare classes and hold no carrier.  Each holds the
@@ -804,8 +802,6 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::sched::SchedPriority, ^^::fixy::sched::SchedPriority<0>},
     {^^::fixy::spin::Gate, ^^::fixy::spin::SpinLock<PureRegionTag>},
     {^^::fixy::spin::GateGuard, ^^::fixy::spin::SpinGuard<PureRegionTag>},
-    {^^::fixy::cipher::durable::CipherDurableHandle,
-     ^^::fixy::cipher::durable::CipherDurableHandle<::fixy::cipher::durable::warm_writer_stance>},
 };
 
 // ── Stated zeros ─────────────────────────────────────────────────────
@@ -1195,9 +1191,6 @@ inline constexpr StatedZero kZeros[] = {
      "in a kernel signature"},
     {^^::fixy::session::witness::AtProtocol, kVocabulary},
     {^^::fixy::session::witness::UnderRow, kVocabulary},
-    {^^::fixy::cipher::durable::warm_writer_stance, kVocabulary},
-    {^^::fixy::cipher::durable::cold_writer_stance, kVocabulary},
-    {^^::fixy::cipher::durable::head_advance_stance, kVocabulary},
 };
 
 inline constexpr Verdict kVerdict = run<kCensusNamespaces, kCarriers, kZeros>();

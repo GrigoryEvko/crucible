@@ -4819,15 +4819,13 @@ fixy_neg_compile_test(neg_owned_file_temporary_without_io
   "no matching function for call to .mint_temporary_file\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >&\\)"
   "required for the satisfaction of .CtxFitsFileOpen<Ctx>.")
 
-# ── The file surface and the three durable writers ───────────────────
+# ── The file surface ──────────────────────────────────────────────────
 #
-# The sixteen negative fixtures below say what the gates refuse.  This
-# test says what the mints do: it runs the whole sequence in an mkdtemp
-# directory.  Its second leg is the cold writer, which must reach the
-# target and not stop at a commit that returns ENOSYS on each call.
+# The negative fixtures below say what the gates refuse.  This test says
+# what the mints do: it runs the whole sequence in an mkdtemp directory.
 fixy_test(test_fs)
 
-# The sixteen fixtures, each named for what it refuses.  Every second
+# The fixtures, each named for what it refuses.  Every second
 # regex is a string the compiler emits and the fixture source does not:
 # the anonymous-namespace prefix on the context type, the libstdc++
 # inline namespace on the path type, or the deduced call with its `> >`
@@ -4893,30 +4891,6 @@ fixy_neg_compile_test(neg_os_fs_durable_truncate_ctx_lacks_block
 fixy_neg_compile_test(neg_os_fs_durable_truncate_external_path
   "no matching function for call"
   "mint_durable_truncate_file\\(.*Tagged<std::filesystem::__cxx11::path, fixy::tags::source::External>\\)")
-
-fixy_neg_compile_test(neg_os_cipher_durable_warm_writer_ctx_lacks_block
-  "no matching function for call"
-  "mint_warm_writer<>\\(\\{anonymous\\}::IoOnlyCtx&")
-
-fixy_neg_compile_test(neg_os_cipher_durable_warm_writer_extras_engage_mode
-  "no matching function for call"
-  "mint_warm_writer<fixy::atom::fs::mode<fixy::fs::open_mode::WriteCreate> >\\(\\{anonymous\\}::IoBlockCtx&")
-
-fixy_neg_compile_test(neg_os_cipher_durable_cold_writer_ctx_lacks_block
-  "no matching function for call"
-  "mint_cold_writer<>\\(\\{anonymous\\}::IoOnlyCtx&")
-
-fixy_neg_compile_test(neg_os_cipher_durable_cold_writer_extras_engage_durable
-  "no matching function for call"
-  "mint_cold_writer<fixy::atom::fs::durable<fixy::fs::sync_op::Fdatasync> >\\(\\{anonymous\\}::IoBlockCtx&")
-
-fixy_neg_compile_test(neg_os_cipher_durable_head_advancer_ctx_lacks_block
-  "no matching function for call"
-  "mint_head_advancer<>\\(\\{anonymous\\}::IoOnlyCtx&")
-
-fixy_neg_compile_test(neg_os_cipher_durable_head_advancer_extras_engage_atomic_write
-  "no matching function for call"
-  "mint_head_advancer<fixy::atom::fs::atomic_write<fixy::fs::atomicity::Rename> >\\(\\{anonymous\\}::IoBlockCtx&")
 
 # ── The witness rows: one fixture for each row ─────────────────────────
 #

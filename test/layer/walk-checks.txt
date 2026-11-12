@@ -26,6 +26,7 @@ crucible/Types.cpp | 0.2 | ::crucible
 crucible/canopy/Crdt.cpp | 0.2 | ::fixy::tags::admitted_retags
 crucible/canopy/Hlc.cpp | 0.0 | ::fixy::tags::admitted_retags
 crucible/canopy/Lifeguard.cpp | 0.4 | ::fixy::tags::admitted_retags
+crucible/cipher/CipherDurable.cpp | unmeasured | unknown
 crucible/cipher/CipherTierPromotion.cpp | 0.3 | ::fixy::session::combinators, unknown
 crucible/cipher/ComputationCache.cpp | 0.1 | ::foundation::effects::resource, ::foundation::permissions::permission_rows
 crucible/cipher/ComputationCacheFederation.cpp | 0.8 | ::fixy::session::combinators, ::fixy::tags::admitted_retags, ::foundation::effects::resource, ::foundation::permissions::permission_rows
@@ -94,7 +95,6 @@ fixy/channels/LazyEstablishedChannel.cpp | 0.2 | ::fixy::session::combinators
 fixy/channels/StageEndpointBridge.cpp | 0.7 | ::fixy::session::combinators, ::foundation::permissions::permission_rows, unknown
 fixy/collision/Report.cpp | unmeasured | ::fixy::atom::detail, ::fixy::atom::dispatch, ::fixy::atom::spawn, unknown
 fixy/concurrent/Spawn.cpp | 0.4 | unknown
-fixy/os/CipherDurable.cpp | 0.1 | unknown
 fixy/os/Fs.cpp | 0.1 | unknown
 fixy/os/Io.cpp | 0.1 | unknown
 fixy/os/Mmap.cpp | 0.1 | unknown

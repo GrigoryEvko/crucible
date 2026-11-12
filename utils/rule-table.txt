@@ -762,7 +762,6 @@ witness <fixy/os/Fs.h> deleted | fixy::fs::FileDoor | fixy::fs::FileDoor{}
 witness <fixy/os/Socket.h> deleted | fixy::net::SocketDoor | fixy::net::SocketDoor{}
 witness <fixy/os/Time.h> deleted | fixy::time::PtpDeviceDoor | fixy::time::PtpDeviceDoor{}
 witness <fixy/os/Fs.h> private | fixy::fs::Dirfd | fixy::fs::Dirfd{forge::rvalue<fixy::fs::OwnedFd>()}
-witness <fixy/os/CipherDurable.h> private | fixy::cipher::durable::CipherDurableHandle<fixy::cipher::durable::warm_writer_stance> | fixy::cipher::durable::CipherDurableHandle<fixy::cipher::durable::warm_writer_stance>{forge::rvalue<fixy::fs::OwnedFd>()}
 
 # The five doors of the pipeline.  Each class exists only as the
 # product of its mint, and the mint is what weighs the payload rows

@@ -1,10 +1,10 @@
-// A stance pins the mode.  An extra that engages it would shadow the
-// pinned one, and it is refused here, at the rule the caller violated,
-// rather than one layer deeper on the duplicate-mode clause.
+// The head advancer opens a file, so a context without Block is
+// refused.
+
+#include <crucible/cipher/CipherDurable.h>
 
 #include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
-#include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>
 
 #include <filesystem>
@@ -12,7 +12,7 @@
 
 namespace eff = foundation::effects;
 namespace fs = fixy::fs;
-namespace durable = fixy::cipher::durable;
+namespace durable = crucible::cipher::durable;
 namespace atom_fs = fixy::atom::fs;
 namespace src = fixy::tags::source;
 
@@ -30,8 +30,7 @@ using IoOnlyCtx = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effec
 }  // namespace
 
 int main() {
-    IoBlockCtx ctx{eff::testing::test()};
-    [[maybe_unused]] auto r =
-        durable::mint_warm_writer<atom_fs::mode<fs::open_mode::WriteCreate>>(ctx, sanitized("/tmp/fixy-neg-warm"));
+    IoOnlyCtx ctx{eff::testing::init()};
+    [[maybe_unused]] auto r = durable::mint_head_advancer<>(ctx, sanitized("/tmp/cipher-neg-head"));
     return 0;
 }

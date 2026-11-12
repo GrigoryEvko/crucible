@@ -1,11 +1,7 @@
-// The file surface and the three durable writers, run against a real
-// directory.
+// The file surface, run against a real directory.
 //
-// The negative-compile fixtures of fixy/os/Fs.h and
-// fixy/os/CipherDurable.h say what the gates refuse and nothing about
-// what the mints do.  This file runs the mints.  A cold writer whose
-// commit returned ENOSYS on every call would pass each fixture, and the
-// second case here refuses it.
+// The negative-compile fixtures of fixy/os/Fs.h say what the gates refuse
+// and nothing about what the mints do.  This file runs the mints.
 //
 // Everything runs in a scratch directory under /tmp (scratch_dir.h), which
 // the test removes on the way out.  What the kernel can refuse — an
@@ -13,7 +9,6 @@
 
 #include <fixy/os/OwnedFile.h>
 #include <fixy/os/Path.h>
-#include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>
 
 #include "../scratch_dir.h"
@@ -36,7 +31,6 @@
 
 namespace eff = foundation::effects;
 namespace fs = fixy::fs;
-namespace durable = fixy::cipher::durable;
 namespace src = fixy::tags::source;
 
 namespace {
@@ -131,104 +125,6 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     }
     if (::access(tmp.c_str(), F_OK) == 0) {
         std::fprintf(stderr, "the temporary name still exists after the commit\n");
-        return 1;
-    }
-    return 0;
-}
-
-// The cold writer, end to end.  cold_writer_stance pins Rename, and this
-// leg is what says the whole sequence — open with O_SYNC, write, fsync,
-// commit — reaches the target.  A commit body that returned ENOSYS
-// before it consulted a filesystem fails this leg.
-[[nodiscard]] int cold_writer_commit_succeeds(const ScratchDir& scratch) {
-    IoBlockCtx ctx{eff::testing::test()};
-    std::uint8_t pattern[kPayloadBytes];
-    fill_pattern(pattern, 2);
-
-    const std::string tmp = scratch.file("cold.tmp");
-    const std::string target = scratch.file("cold");
-
-    auto writer = durable::mint_cold_writer<>(ctx, sanitized(tmp));
-    if (!writer) {
-        std::fprintf(stderr, "mint_cold_writer failed (%s)\n", writer.error().message().c_str());
-        return 1;
-    }
-    if (!write_all(writer->peek().get(), pattern)) {
-        std::fprintf(stderr, "writing through the cold writer failed (errno %d)\n", errno);
-        return 1;
-    }
-    if (auto synced = writer->peek().sync(ctx); !synced) {
-        std::fprintf(stderr, "the cold writer's fsync failed (%s)\n", synced.error().message().c_str());
-        return 1;
-    }
-    const auto committed = writer->peek().commit_atomic(ctx, sanitized(tmp), sanitized(target));
-    if (!committed) {
-        if (committed.error().value() == ENOSYS) {
-            std::fprintf(stderr, "the cold writer's commit returned ENOSYS, so it did not reach a filesystem\n");
-        } else {
-            std::fprintf(stderr, "the cold writer's commit failed (%s)\n", committed.error().message().c_str());
-        }
-        return 1;
-    }
-    if (!file_holds(target, pattern)) {
-        std::fprintf(stderr, "the cold-committed file does not hold the bytes that were written\n");
-        return 1;
-    }
-    return 0;
-}
-
-// RenameAt2NoReplace refuses an existing target, and that refusal is a
-// promise the caller relied on.  This leg pins both halves: EEXIST when
-// the target exists, success when it does not.  A filesystem without
-// the flag reports EINVAL, which would be passed through too — a
-// fallback to plain rename would overwrite what the caller promised
-// not to.
-[[nodiscard]] int no_replace_commit_refuses_an_existing_target(const ScratchDir& scratch) {
-    IoBlockCtx ctx{eff::testing::test()};
-    std::uint8_t pattern[kPayloadBytes];
-    fill_pattern(pattern, 3);
-
-    const std::string tmp = scratch.file("warm.tmp");
-    const std::string occupied = scratch.file("plain");  // committed by the first leg
-    const std::string fresh = scratch.file("warm");
-
-    auto writer = durable::mint_warm_writer<>(ctx, sanitized(tmp));
-    if (!writer) {
-        std::fprintf(stderr, "mint_warm_writer failed (%s)\n", writer.error().message().c_str());
-        return 1;
-    }
-    if (!write_all(writer->peek().get(), pattern)) {
-        std::fprintf(stderr, "writing through the warm writer failed (errno %d)\n", errno);
-        return 1;
-    }
-    if (auto synced = writer->peek().sync(ctx); !synced) {
-        std::fprintf(stderr, "the warm writer's fdatasync failed (%s)\n", synced.error().message().c_str());
-        return 1;
-    }
-
-    const auto refused = writer->peek().commit_atomic(ctx, sanitized(tmp), sanitized(occupied));
-    if (refused) {
-        std::fprintf(stderr, "a no-replace commit overwrote an existing target\n");
-        return 1;
-    }
-    if (refused.error().value() == EINVAL) {
-        crucible::test::pass(
-            "[skipped] this filesystem has no RENAME_NOREPLACE; the errno is passed through as designed\n");
-        return 0;
-    }
-    if (refused.error().value() != EEXIST) {
-        std::fprintf(stderr, "a no-replace commit onto an existing target failed with %s rather than EEXIST\n",
-                     refused.error().message().c_str());
-        return 1;
-    }
-
-    if (auto committed = writer->peek().commit_atomic(ctx, sanitized(tmp), sanitized(fresh)); !committed) {
-        std::fprintf(stderr, "a no-replace commit onto a fresh target failed (%s)\n",
-                     committed.error().message().c_str());
-        return 1;
-    }
-    if (!file_holds(fresh, pattern)) {
-        std::fprintf(stderr, "the warm-committed file does not hold the bytes that were written\n");
         return 1;
     }
     return 0;
@@ -340,8 +236,6 @@ int main() {
         return 0;
     }
     if (const int rc = mint_file_writes_syncs_and_commits(scratch); rc != 0) return rc;
-    if (const int rc = cold_writer_commit_succeeds(scratch); rc != 0) return rc;
-    if (const int rc = no_replace_commit_refuses_an_existing_target(scratch); rc != 0) return rc;
     if (const int rc = dirfd_opens_and_flushes_the_entry(scratch); rc != 0) return rc;
     if (const int rc = full_reads_and_writes_round_trip(scratch); rc != 0) return rc;
     return 0;

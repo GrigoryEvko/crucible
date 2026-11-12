@@ -1,9 +1,9 @@
-// cold_writer_stance pins the sync to Fsync.  An extra that engages the
-// durability axis is refused at the stance rule.
+// The cold writer opens a file, so a context without Block is refused.
+
+#include <crucible/cipher/CipherDurable.h>
 
 #include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
-#include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>
 
 #include <filesystem>
@@ -11,7 +11,7 @@
 
 namespace eff = foundation::effects;
 namespace fs = fixy::fs;
-namespace durable = fixy::cipher::durable;
+namespace durable = crucible::cipher::durable;
 namespace atom_fs = fixy::atom::fs;
 namespace src = fixy::tags::source;
 
@@ -29,8 +29,7 @@ using IoOnlyCtx = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effec
 }  // namespace
 
 int main() {
-    IoBlockCtx ctx{eff::testing::test()};
-    [[maybe_unused]] auto r =
-        durable::mint_cold_writer<atom_fs::durable<fs::sync_op::Fdatasync>>(ctx, sanitized("/tmp/fixy-neg-cold"));
+    IoOnlyCtx ctx{eff::testing::init()};
+    [[maybe_unused]] auto r = durable::mint_cold_writer<>(ctx, sanitized("/tmp/cipher-neg-cold"));
     return 0;
 }

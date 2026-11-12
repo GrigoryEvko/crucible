@@ -18,7 +18,6 @@ include/crucible/perf/detail/ | unconsumed | 1 | - | -
 include/fixy/ | unconsumed | 3 | - | -
 include/fixy/channels/ | unconsumed | 1 | - | -
 include/fixy/concurrent/ | unconsumed | 3 | - | -
-include/fixy/os/ | unconsumed | 1 | - | -
 include/fixy/session/ | assign-over-live | 1 | - | -
 include/fixy/session/ | unconsumed | 18 | - | -
 include/foundation/core/ | unconsumed | 1 | - | -
@@ -27,7 +26,7 @@ test/ | unconsumed | 70 | - | -
 test/fixy/ | assign-over-live | 4 | - | -
 test/fixy/ | discarded-temporary | 5 | - | -
 test/fixy/ | double-consume | 5 | - | -
-test/fixy/ | unconsumed | 225 | - | -
+test/fixy/ | unconsumed | 223 | - | -
 test/foundation/ | discarded-temporary | 2 | - | -
 test/foundation/ | unconsumed | 24 | - | -
 test/layer/checks/fixy/ | unconsumed | 1 | - | -

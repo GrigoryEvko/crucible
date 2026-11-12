@@ -5,7 +5,6 @@
 
 #include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
-#include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>
 
 #include <filesystem>
@@ -13,7 +12,6 @@
 
 namespace eff = foundation::effects;
 namespace fs = fixy::fs;
-namespace durable = fixy::cipher::durable;
 namespace atom_fs = fixy::atom::fs;
 namespace src = fixy::tags::source;
 

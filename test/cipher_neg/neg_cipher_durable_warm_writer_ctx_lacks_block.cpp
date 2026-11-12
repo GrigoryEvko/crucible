@@ -1,10 +1,10 @@
-// head_advance_stance pins the commit to RenameAt2NoReplace.  An extra
-// that engages the atomicity axis is refused at the stance rule.  The
-// extra here names Rename, and any other atomicity tag is the same test.
+// The warm writer opens a file, so its gate folds the stance atoms into
+// CtxFitsFileMint and a context without Block is refused.
+
+#include <crucible/cipher/CipherDurable.h>
 
 #include <fixy/os/Path.h>
 #include <fixy/atoms/Os.h>
-#include <fixy/os/CipherDurable.h>
 #include <fixy/os/Fs.h>
 
 #include <filesystem>
@@ -12,7 +12,7 @@
 
 namespace eff = foundation::effects;
 namespace fs = fixy::fs;
-namespace durable = fixy::cipher::durable;
+namespace durable = crucible::cipher::durable;
 namespace atom_fs = fixy::atom::fs;
 namespace src = fixy::tags::source;
 
@@ -30,8 +30,7 @@ using IoOnlyCtx = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effec
 }  // namespace
 
 int main() {
-    IoBlockCtx ctx{eff::testing::test()};
-    [[maybe_unused]] auto r =
-        durable::mint_head_advancer<atom_fs::atomic_write<fs::atomicity::Rename>>(ctx, sanitized("/tmp/fixy-neg-head"));
+    IoOnlyCtx ctx{eff::testing::init()};
+    [[maybe_unused]] auto r = durable::mint_warm_writer<>(ctx, sanitized("/tmp/cipher-neg-warm"));
     return 0;
 }
