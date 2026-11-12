@@ -57,27 +57,35 @@ THE MEASURED RULES
         limit.  A step that a row admits prints no line.  The subcommand does
         not judge the memory of an output in the directory bench of the build
         (assay.core.budget, THE SCOPE).
-    The subcommand prints at most one line, after the output of the command,
-    in the format of utils/assay/core/report.py.  A GB is 2^30 bytes.
+    A ccache hit gets the same judge, with the cost of the compile that made
+    its object (A CCACHE HIT).  The subcommand prints at most one line, after
+    the output of the command, in the format of utils/assay/core/report.py.
+    A GB is 2^30 bytes.
 
 A CCACHE HIT
     A compile sets CCACHE_STATSLOG to OBJECT.ccache-stats, and
     assay.readers.ccache reads that log.  A hit counter in the log means that
-    ccache gave a stored object and the compiler did not run.  The record
-    then says "hit" and holds no time of its own.  A hit has no memory to
-    judge.
+    ccache gave a stored object and the compiler did not run.  The record of
+    a hit holds no time of its own.  The subcommand judges a hit with the
+    cost of the compile that made its object, from the cost store (THE COST
+    STORE).  It judges the peak memory and the CPU time of that cost as THE
+    MEASURED RULES judge a compile.  A hit that the judge accepts gets the
+    record "hit".  A hit above a limit with no row that admits it gets the
+    verdict of that compile: the subcommand removes the output, prints the
+    error line and exits with status 1, with the record "rejected".  The
+    record of a hit keeps the cost of the compile as "last_cost".  A hit with
+    no such cost has nothing to judge (A HIT WITH NO COST).
 
 THE COST STORE
     After each compile through ccache that ran the compiler, the subcommand
     writes the cost block of the step into the cost store
-    (assay.core.cost_store).  The key of the entry holds the object and the
-    command.  A hit reads the block of its key, and its record keeps the
-    block as "last_cost".  The compile that made the object can be in a
-    different build directory or work tree.  The compiler meter of the miss
-    writes an entry before ccache stores the object, and the subcommand
-    gives the meter the inputs of the key (THE ORDER of
-    assay.core.cost_store).  A step that the subcommand rejects drops the
-    entry of its key.
+    (assay.core.cost_store), also for a step that it rejects.  The key of the
+    entry holds the object and the command.  A hit reads the block of its
+    key, and the subcommand judges the hit with it (A CCACHE HIT).  The
+    compile that made the object can be in a different build directory or
+    work tree.  The compiler meter of the miss writes an entry before ccache
+    stores the object, and the subcommand gives the meter the inputs of the
+    key (THE ORDER of assay.core.cost_store).
 
 A HIT WITH NO COST
     The store can hold no block of the key of a hit, or a block that does
@@ -88,8 +96,10 @@ A HIT WITH NO COST
     and the subcommand judges it as each other compile.  The rule
     instruction-total then gets a count of each object.  The second call
     runs only when the cost store is on and the host gives an exact counter
-    (meter.py, THE INSTRUCTION COUNT).  Else the hit has no last cost, as a
-    compile on such a host has no count.
+    (meter.py, THE INSTRUCTION COUNT).  Else the hit has no last cost and no
+    judge.  A host with no counter, such as a CI runner, gives no count to a
+    compile.  The second call there would compile each hit of an empty store
+    again, and ccache would then save nothing.
 
     The subcommand imports the store and hashlib only for a compile through
     ccache.  On 2026-10-11 the store added a median of 15 ms to a step of
@@ -232,7 +242,7 @@ def cpu_limit(step: str) -> tuple[int, str]:
 
 
 def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str, float],
-          hit: bool) -> tuple[str, tuple[str, str, str] | None]:
+          subject: str = "") -> tuple[str, tuple[str, str, str] | None]:
     """Decide the result of one step and the one line to print.
 
     Args:
@@ -240,19 +250,17 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
         output: The absolute output path
         run: The measurement of the command
         budget: The limit of each kind of the rule step-memory that the registry gives
-        hit: Whether ccache gave the output
+        subject: The words that name the measured run in the line, or "" for "the STEP job"
 
     Returns:
-        The result ("built", "failed", "rejected" or "hit"), and the level, the check and the message of the
-        line, or None
+        The result ("built", "failed" or "rejected"), and the level, the check and the message of the line, or None
     """
-    if hit:
-        return "hit", None
+    shown = subject or f"the {step} job"
     limit, limit_words = cpu_limit(step)
     if run.exit_code != 0:
         if run.reached_cpu_limit:
             return "failed", ("error", LIMIT_CHECK,
-                              f"the {step} job used {run.cpu_s:.1f} s CPU and reached the hard limit of "
+                              f"{shown} used {run.cpu_s:.1f} s CPU and reached the hard limit of "
                               f"{run.cpu_limit_s} s, {limit_words}, so the operating system stopped it")
         return "failed", None
     is_over = step in budget and cost_budget.verdict(run.peak_gb, budget[step], None) == cost_budget.ERROR
@@ -260,19 +268,45 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
         is_admitted, words = admission(step, output, run.peak_gb)
         if is_admitted:
             return "built", None
-        message = (f"the {step} job took {run.peak_gb:.2f} GB of peak memory, above the limit of the kind {step} "
+        message = (f"{shown} took {run.peak_gb:.2f} GB of peak memory, above the limit of the kind {step} "
                    f"{budget[step]:g} GB, and {words}")
         return "rejected", ("error", MEMORY_RULE, f"{message}.  The launcher removed the output.  Make the step "
                                                   f"smaller, or add a row with a reason")
     if run.cpu_limit_s is None and run.cpu_s > limit:
         # On a GitHub runner, limit_cpu() of meter.py sets no limit, and the step runs to its end (A CI RUNNER).
-        message = (f"the {step} job used {run.cpu_s:.1f} s CPU, more than the hard limit of {limit} s, "
+        message = (f"{shown} used {run.cpu_s:.1f} s CPU, more than the hard limit of {limit} s, "
                    f"{limit_words}, and no CPU limit stopped it")
         if cost_meter.is_github_actions():
             # A runner is slower than the build host, so the error of the hard stop is a warning there.
             return "built", ("warning", LIMIT_CHECK, f"{message}.  {cost_meter.CI_DEMOTION}.")
         return "rejected", ("error", LIMIT_CHECK, f"{message}.  The launcher removed the output")
     return "built", None
+
+
+def judge_hit(step: str, output: str, last_cost: cost_record.Cost | None,
+              budget: dict[str, float]) -> tuple[str, tuple[str, str, str] | None]:
+    """Decide the result of one ccache hit and the one line to print, with the cost of the compile of its object.
+
+    A CCACHE HIT gives the rules.  The compile that made the object ended with
+    the status 0, and each process of a compile that reaches its CPU limit
+    ends on SIGKILL.  So a cost above the hard stop is the cost of a compile
+    with no CPU limit on it, and the judge gives it no limit.
+
+    Args:
+        step: "compile"
+        output: The absolute output path
+        last_cost: The cost of the compile that made the object, from stored_cost(), or None
+        budget: The limit of each kind of the rule step-memory that the registry gives
+
+    Returns:
+        The result ("hit" or "rejected"), and the level, the check and the message of the line, or None
+    """
+    if last_cost is None:
+        return cost_record.HIT, None
+    made = cost_meter.Measurement(0, last_cost.user_s, last_cost.system_s, last_cost.wall_s, last_cost.peak_rss_kb,
+                                  last_cost.load, last_cost.end, None)
+    result, line = judge(step, output, made, budget, f"the {step} that made this ccache hit")
+    return (cost_record.HIT if result == "built" else result), line
 
 
 def compile_counts(run: cost_meter.Measurement, is_ccache: bool,
@@ -327,24 +361,18 @@ def is_ccache_hit(stats_path: str, outer_log: str | None) -> bool:
     return ccache.parse_stats_log(text).is_hit
 
 
-def remembered_cost(output: str, command: list[str], result: str, run: cost_meter.Measurement,
-                    counts: tuple[tuple[str, int], ...]) -> cost_record.Cost | None:
-    """Write the cost of a compile through ccache into the cost store, or read the cost of a hit from it.
+def store_cost(output: str, command: list[str], run: cost_meter.Measurement,
+               counts: tuple[tuple[str, int], ...]) -> None:
+    """Write the cost of a compile through ccache that ran the compiler into the cost store (THE COST STORE).
 
-    THE COST STORE gives the rules.  A built compile writes its cost block
-    with the key of its object and its command.  A hit reads the block of
-    its key.
+    The key holds the object and the command.  The cost of a rejected compile goes into the store too, so a hit of
+    its object gets the same verdict (A CCACHE HIT).
 
     Args:
         output: The absolute output path
         command: The command of the step, from the first word after the launcher
-        result: The result of judge(): "built" or "hit"
         run: The measurement of the command
         counts: The instruction counts of the cost block, from compile_counts()
-
-    Returns:
-        For a hit, the cost of the compile that made the object, or None when the store holds no cost of its key.
-        For a built compile, None
 
     Raises:
         OSError: If the object cannot be read, or the store cannot be written
@@ -352,36 +380,20 @@ def remembered_cost(output: str, command: list[str], result: str, run: cost_mete
     from assay.core import cost_store
 
     key = cost_store.key_of(output, command, cost_meter.build_dir_of(output), SOURCE_ROOT)
-    if key is None:
-        return None
-    if result != cost_record.HIT:
+    if key is not None:
         cost_store.put(key, cost_record.cost_text(cost_record.measured(run, counts)))
-        return None
-    block = cost_store.get(key, run.end)
-    return None if block is None else cost_record.cost_from_text(block)
 
 
-def cost_variables(output: str, command: list[str], budget: dict[str, float]) -> dict[str, str]:
-    """Return the variable that gives the compiler meter the inputs of the key of a compile (THE COST STORE).
-
-    The memory limit of the inputs is the limit of the kind compile, or none for an output that no rule judges.
+def stored_cost(output: str, command: list[str], used_at: float) -> cost_record.Cost | None:
+    """Return the cost of the compile that made the object of a hit, from the cost store (THE COST STORE).
 
     Args:
         output: The absolute output path
         command: The command of the step, from the first word after the launcher
-        budget: The limit of each kind of the rule step-memory that the registry gives
-    """
-    from assay.core import cost_store
+        used_at: The time of the hit, in seconds since the epoch
 
-    limit = budget.get("compile") if cost_budget.is_judged(build_item(output)) else None
-    text = cost_store.key_inputs(output, command, cost_meter.build_dir_of(output), SOURCE_ROOT, limit)
-    return {cost_store.KEY_ENV: text}
-
-
-def drop_cost(output: str, command: list[str]) -> None:
-    """Remove the entry of the cost store of a rejected compile through ccache, before the removal of its output.
-
-    A hit of its object then has no cost, and a hit with no cost compiles again (A HIT WITH NO COST).
+    Returns:
+        The cost, or None when the store holds no cost of the key that reads
 
     Raises:
         OSError: If the object cannot be read
@@ -389,19 +401,34 @@ def drop_cost(output: str, command: list[str]) -> None:
     from assay.core import cost_store
 
     key = cost_store.key_of(output, command, cost_meter.build_dir_of(output), SOURCE_ROOT)
-    if key is not None:
-        cost_store.drop(key)
+    if key is None:
+        return None
+    block = cost_store.get(key, used_at)
+    return None if block is None else cost_record.cost_from_text(block)
 
 
-def compiles_again(is_ccache: bool, result: str, last_cost: cost_record.Cost | None) -> bool:
+def cost_variables(output: str, command: list[str]) -> dict[str, str]:
+    """Return the variable that gives the compiler meter the inputs of the key of a compile (THE COST STORE).
+
+    Args:
+        output: The absolute output path
+        command: The command of the step, from the first word after the launcher
+    """
+    from assay.core import cost_store
+
+    text = cost_store.key_inputs(output, command, cost_meter.build_dir_of(output), SOURCE_ROOT)
+    return {cost_store.KEY_ENV: text}
+
+
+def compiles_again(is_ccache: bool, is_hit: bool, last_cost: cost_record.Cost | None) -> bool:
     """Tell if a compile through ccache is a hit with no cost that a second call can measure (A HIT WITH NO COST).
 
     Args:
         is_ccache: Whether the command runs ccache
-        result: The result of judge()
-        last_cost: The cost of the hit from remembered_cost(), or None
+        is_hit: Whether ccache gave the output
+        last_cost: The cost of the hit from stored_cost(), or None
     """
-    if not is_ccache or result != cost_record.HIT or last_cost is not None:
+    if not is_ccache or not is_hit or last_cost is not None:
         return False
     from assay.core import cost_store
 
@@ -412,14 +439,14 @@ class Call:
     """One run of the command of a step and its verdict (A HIT WITH NO COST).
 
     `stats_path`, `outer_log` and `count_path` are the stats log of the call, the stats log of the build and the file
-    of the counts of the meter, or None.  judged() gives the result, the line, the counts and the last cost.
+    of the counts of the meter, or None.  judged() gives the result, the line, the counts, the hit and the last cost.
     """
 
-    __slots__ = ("count_path", "counts", "last_cost", "line", "outer_log", "result", "run", "stats_path")
+    __slots__ = ("count_path", "counts", "is_hit", "last_cost", "line", "outer_log", "result", "run", "stats_path")
 
     def __init__(self, run: cost_meter.Measurement, stats_path: str | None, outer_log: str | None,
                  count_path: str | None) -> None:
-        """Hold the measurement and its files, with the result of its status and no line, count or last cost."""
+        """Hold the measurement and its files, with the result of its status and no line, count, hit or last cost."""
         self.run = run
         self.stats_path = stats_path
         self.outer_log = outer_log
@@ -427,10 +454,11 @@ class Call:
         self.result = "built" if run.exit_code == 0 else "failed"
         self.line: tuple[str, str, str] | None = None
         self.counts: tuple[tuple[str, int], ...] = ()
+        self.is_hit = False
         self.last_cost: cost_record.Cost | None = None
 
 
-def called(step: cost_record.Step, arguments: list[str], output: str, budget: dict[str, float], is_ccache: bool,
+def called(step: cost_record.Step, arguments: list[str], output: str, is_ccache: bool,
            extra: dict[str, str]) -> Call:
     """Run the command of a step one time, with the stats log of the call and the meter of a compile through ccache.
 
@@ -438,7 +466,6 @@ def called(step: cost_record.Step, arguments: list[str], output: str, budget: di
         step: COMPILE or LINK of assay.core.record
         arguments: The command, from the first word after the launcher
         output: The absolute output path
-        budget: The limit of each kind of the rule step-memory that the registry gives
         is_ccache: Whether the command runs ccache
         extra: More variables of the environment of a compile, such as RECACHE_ENV
 
@@ -465,31 +492,36 @@ def called(step: cost_record.Step, arguments: list[str], output: str, budget: di
         if metered is None:
             count_path = None
         else:
-            environment = {**metered, **cost_variables(output, arguments, budget)}
+            environment = {**metered, **cost_variables(output, arguments)}
     run = cost_meter.measure(arguments, environment, CPU_LIMITS_S[step], count_instructions=step == "compile")
     return Call(run, stats_path, outer_log, count_path)
 
 
 def judged(call: Call, step: cost_record.Step, arguments: list[str], output: str, budget: dict[str, float],
            is_ccache: bool) -> None:
-    """Give a call its result, its line, its counts and its last cost, and keep or drop the cost of a compile.
+    """Give a call its result, its line, its counts, its hit and its last cost, and store the cost of a compile.
+
+    A hit gets the judge of the compile that made its object (A CCACHE HIT).  A compile through ccache that ran the
+    compiler writes its cost into the cost store, also when the judge rejects it (THE COST STORE).
 
     Raises:
         OSError: If a file of the call, the object or the cost store cannot be read or written
     """
     if step == "compile":
         call.counts = compile_counts(call.run, is_ccache, call.count_path)
-    hit = call.stats_path is not None and is_ccache_hit(call.stats_path, call.outer_log)
-    call.result, call.line = judge(step, output, call.run, budget, hit)
-    if is_ccache and call.result in (cost_record.HIT, "built"):
-        call.last_cost = remembered_cost(output, arguments, call.result, call.run, call.counts)
-    if is_ccache and call.result == "rejected":
-        drop_cost(output, arguments)
+    call.is_hit = call.stats_path is not None and is_ccache_hit(call.stats_path, call.outer_log)
+    if call.is_hit:
+        call.last_cost = stored_cost(output, arguments, call.run.end) if is_ccache else None
+        call.result, call.line = judge_hit(step, output, call.last_cost, budget)
+        return
+    call.result, call.line = judge(step, output, call.run, budget)
+    if is_ccache and call.result in ("built", "rejected"):
+        store_cost(output, arguments, call.run, call.counts)
 
 
 def step_record(step: cost_record.Step, output: str, source: str | None, run: cost_meter.Measurement, result: str,
-                counts: tuple[tuple[str, int], ...] = (),
-                last_cost: cost_record.Cost | None = None) -> cost_record.CostRecord:
+                counts: tuple[tuple[str, int], ...] = (), last_cost: cost_record.Cost | None = None,
+                is_hit: bool = False) -> cost_record.CostRecord:
     """Return the record of one step: its fields, the bytes of its output, and its cost block when it is not a hit.
 
     Args:
@@ -497,15 +529,16 @@ def step_record(step: cost_record.Step, output: str, source: str | None, run: co
         output: The absolute output path
         source: The absolute source of a compile, or None
         run: The measurement of the command
-        result: The result of judge()
+        result: The result of judge() or of judge_hit()
         counts: The instruction counts of the cost block, from compile_counts()
-        last_cost: For a hit, the cost of the compile that made the object, from remembered_cost(), or None
+        last_cost: For a hit, the cost of the compile that made the object, from stored_cost(), or None
+        is_hit: Whether ccache gave the output.  The result "hit" is always a hit
     """
     try:
         size: int | None = os.stat(output).st_size
     except OSError:
         size = None
-    is_hit = result == cost_record.HIT
+    is_hit = is_hit or result == cost_record.HIT
     cost = None if is_hit else cost_record.measured(run, counts)
     return cost_record.CostRecord(step, result, source, output, size, run.exit_code, cost,
                                   last_cost if is_hit else None)
@@ -544,7 +577,7 @@ def main(argv: list[str]) -> int:
     extra: dict[str, str] = {}
     while True:
         try:
-            call = called(step, arguments, output, budget, is_ccache, extra)
+            call = called(step, arguments, output, is_ccache, extra)
         except OSError as error:
             print(f"loop step: the command {arguments[0]} cannot start: {error}", file=sys.stderr)
             sys.exit(127)
@@ -553,7 +586,7 @@ def main(argv: list[str]) -> int:
         is_again = False
         try:
             judged(call, step, arguments, output, budget, is_ccache)
-            is_again = not extra and compiles_again(is_ccache, call.result, call.last_cost)
+            is_again = not extra and compiles_again(is_ccache, call.is_hit, call.last_cost)
         except BaseException:  # noqa: BLE001
             pass
         if not is_again:
@@ -575,7 +608,8 @@ def main(argv: list[str]) -> int:
     try:
         # The record of an output is OUTPUT.cost.  record_file() gives it as a Path, and pathlib costs an import.
         cost_record.write(output + cost_record.SUFFIX,
-                          step_record(step, output, source, call.run, call.result, call.counts, call.last_cost))
+                          step_record(step, output, source, call.run, call.result, call.counts, call.last_cost,
+                                      call.is_hit))
     except BaseException:  # noqa: BLE001
         pass
     cost_meter.end_like(status)

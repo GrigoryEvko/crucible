@@ -96,7 +96,7 @@ def key_cases(expect: testing.Expect, scratch: Path) -> None:
 
 
 def order_cases(expect: testing.Expect, scratch: Path) -> None:
-    """Check the inputs of the key that the compiler meter gets, and the drop of an entry (THE ORDER)."""
+    """Check the inputs of the key that the compiler meter gets (THE ORDER)."""
     root = scratch / "order"
     build = root / "build"
     (build / "test").mkdir(parents=True)
@@ -104,7 +104,7 @@ def order_cases(expect: testing.Expect, scratch: Path) -> None:
     unit.write_bytes(b"planted object of the meter")
     words = command(str(root), str(build))
     expected = cost_store.key_of(str(unit), words, str(build), str(root))
-    text = cost_store.key_inputs(str(unit), words, str(build), str(root), 4.0)
+    text = cost_store.key_inputs(str(unit), words, str(build), str(root))
     compiler = ["/opt/gcc/bin/g++", "-o", str(unit), "-c", str(root / "test" / "unit.cpp")]
     expect(
         "output_of() gives the absolute path of the last -o output of a compiler command, also in the form -oFILE",
@@ -114,30 +114,17 @@ def order_cases(expect: testing.Expect, scratch: Path) -> None:
     )
     expect(
         "the meter of a compiler run that writes the object of the inputs gets the key of the launcher",
-        expected is not None and cost_store.compiler_key(text, compiler, 1.5) == expected,
-    )
-    expect(
-        "the meter gets no key above the memory limit of the inputs, and gets one with no limit",
-        cost_store.compiler_key(text, compiler, 4.5) is None
-        and cost_store.compiler_key(
-            cost_store.key_inputs(str(unit), words, str(build), str(root), None), compiler, 99.0
-        )
-        == expected,
+        expected is not None and cost_store.compiler_key(text, compiler) == expected,
     )
     elsewhere = ["/opt/gcc/bin/g++", "-o", str(build / "test" / "other.o"), "-c", "unit.cpp"]
     expect(
         "the meter gets no key when its compiler run writes a different object, or when the inputs do not read",
-        cost_store.compiler_key(text, elsewhere, 1.0) is None
-        and cost_store.compiler_key("not json", compiler, 1.0) is None
-        and cost_store.compiler_key('{"object": "a.o"}', compiler, 1.0) is None
-        and cost_store.compiler_key('[1, ["c++"], null, "/r", null]', compiler, 1.0) is None,
+        cost_store.compiler_key(text, elsewhere) is None
+        and cost_store.compiler_key("not json", compiler) is None
+        and cost_store.compiler_key('{"object": "a.o"}', compiler) is None
+        and cost_store.compiler_key('[1, ["c++"], null, "/r"]', compiler) is None
+        and cost_store.compiler_key(f'["{unit}", ["c++"], null, "/r", 4.0]', compiler) is None,
     )
-    with testing.environment_variable(cache_root.ROOT_VARIABLE, str(scratch / "order-caches")):
-        key = expected or ""
-        cost_store.put(key, "{}")
-        cost_store.drop(key)
-        cost_store.drop(key)
-        expect("drop() removes the entry of a key, and a second drop does nothing", cost_store.get(key, 0.0) is None)
 
 
 def entry_cases(expect: testing.Expect, scratch: Path) -> None:

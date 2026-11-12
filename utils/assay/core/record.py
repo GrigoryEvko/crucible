@@ -31,11 +31,12 @@ THE FORMAT
       test          the name of a test
       command       the program of a test
       exit          the status of the command, or minus the signal number
-      cost          the cost block.  A hit has no cost block
-      last_cost     for "hit": the cost block of the compile that made the
-                    object, when the cost store holds it
-                    (assay.core.cost_store).  The compile ran the compiler,
-                    in this build directory or in a different one
+      cost          the cost block.  A ccache hit has no cost block
+      last_cost     for a ccache hit, also one that the launcher rejected:
+                    the cost block of the compile that made the object,
+                    when the cost store holds it (assay.core.cost_store).
+                    The compile ran the compiler, in this build directory or
+                    in a different one
     A reader ignores each other key.  The first line of a record of a fixture
     holds a JSON object.  Each line
     after it holds the path of `realpath()` of one file that the compile read.

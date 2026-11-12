@@ -669,7 +669,7 @@ def store_compiler_cost(command: list[str], run: Measurement) -> None:
         from assay.core import record as cost_record
 
         text = os.environ.get(cost_store.KEY_ENV)
-        key = None if not text else cost_store.compiler_key(text, command, run.peak_rss_kb / KB_PER_GB)
+        key = None if not text else cost_store.compiler_key(text, command)
         if key is not None:
             counts = () if run.instructions is None else ((cost_record.COMPILER_COUNT_KEY, run.instructions),)
             cost_store.put(key, cost_record.cost_text(cost_record.measured(run, counts)))

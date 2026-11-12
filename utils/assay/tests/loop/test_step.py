@@ -26,7 +26,10 @@ then see the bytes of the miss.  Each bench has a root of the caches of its
 own.  The planted ccache can end on SIGINT after it keeps the copy.  The
 entry of the compiler meter must then give the next hit its cost.  A hit
 with no entry must compile again when the host gives a counter.  A hit of
-the object of a rejected compile must compile again and be rejected again.
+the object of a rejected compile must get the verdict of that compile,
+also on a host with no counter, because the store keeps the cost of a
+rejected compile.  The compiler meter must also write the entry of a run
+above the memory limit.
 
 With `--cxx`, two more cases use the real compiler.  One compiles and links.
 The other compiles a constant evaluation that runs away, with a hard
@@ -590,31 +593,80 @@ def run_store_order(bench: Bench, verdicts: Verdicts) -> None:
             again.exit == 0 and record.get("result") == "hit" and "last_cost" not in record and not entries,
         )
 
+    run_rejected_hits(bench, verdicts)
+
+
+def run_rejected_hits(bench: Bench, verdicts: Verdicts) -> None:
+    """A hit of the object of a rejected compile gets the verdict of that compile, also on a host with no counter.
+
+    These cases hold A CCACHE HIT of the launcher.  With CRUCIBLE_COUNT_INSTRUCTIONS=0, the launcher sees a host with
+    no counter, and a hit with no cost does not compile again.
+    """
+    expect = verdicts.expect
+    through_ccache = [*bench.ccache, *bench.tool]
+    no_counter = {cost_meter.INSTRUCTIONS_ENV: "0"}
     for entry in store_entries(bench.caches):
         entry.unlink()
     bench.table(planted_registry(("step-memory", {"compile": 0.0001}, "GB")))
     heavy = [*through_ccache, "-DPLANTED_HEAVY"]
     copy = bench.root / "heavy-copy"
     rejected = bench.launch(heavy, PLANTED_HIT="0", PLANTED_STORED=str(copy))
+    rejected_cost = bench.record().get("cost")
+    entries = store_entries(bench.caches)
     expect(
-        "a compile through ccache above the memory limit is rejected, and the store gets no entry of its object, "
-        "although ccache keeps the object",
+        "a compile through ccache above the memory limit is rejected, and the store keeps its cost under the key of "
+        "its object, while ccache keeps the object",
         rejected.exit == 1
         and bench.record().get("result") == "rejected"
         and copy.exists()
-        and not store_entries(bench.caches),
+        and len(entries) == 1
+        and json.loads(entries[0].read_text(encoding="utf-8")) == rejected_cost,
     )
-    hit = bench.launch(heavy, PLANTED_HIT="1", PLANTED_STORED=str(copy))
-    if host_counts:
-        expect(
-            "a hit of the object of the rejected compile compiles again, and the launcher rejects it again",
-            hit.exit == 1 and bench.record().get("result") == "rejected" and not bench.object.exists(),
-        )
-    else:
-        expect(
-            "on a host with no counter, a hit of the object of the rejected compile keeps no last cost",
-            hit.exit == 0 and bench.record().get("result") == "hit" and "last_cost" not in bench.record(),
-        )
+    log = bench.root / "rejected-hit.log"
+    hit = bench.launch(heavy, variables=no_counter, PLANTED_HIT="1", PLANTED_STORED=str(copy), CCACHE_STATSLOG=str(log))
+    record = bench.record()
+    found_line = last_finding(hit.stderr)
+    expect(
+        "on a host with no counter, a hit of the object of the rejected compile is rejected with the cost of that "
+        "compile: the launcher removes the object, prints a step-memory error, does not compile again, and the "
+        "record holds that cost as its last cost and no cost of its own",
+        hit.exit == 1
+        and not bench.object.exists()
+        and record.get("result") == "rejected"
+        and record.get("last_cost") == rejected_cost
+        and "cost" not in record
+        and found_line is not None
+        and found_line.check == "step-memory"
+        and "made this ccache hit" in found_line.message
+        and "recache" not in log.read_text(encoding="utf-8"),
+    )
+    bench.ledger("step-memory", "@build/out/source.o | compile | 0.5 | - | the test admits it\n")
+    admitted = bench.launch(heavy, variables=no_counter, PLANTED_HIT="1", PLANTED_STORED=str(copy))
+    expect(
+        "a ledger row that admits the object also admits a hit of it, with no line",
+        admitted.exit == 0
+        and bench.object.exists()
+        and bench.record().get("result") == "hit"
+        and bench.record().get("last_cost") == rejected_cost
+        and last_finding(admitted.stderr) is None,
+    )
+    Path(cost_meter.ledger_file("step-memory", str(bench.ledgers))).unlink()
+    for entry in store_entries(bench.caches):
+        entry.unlink()
+    raced = [*through_ccache, "-DPLANTED_RACE"]
+    race_copy = bench.root / "race-copy"
+    died = bench.launch(raced, PLANTED_HIT="0", PLANTED_STORED=str(race_copy), PLANTED_DIES="1")
+    hit = bench.launch(raced, variables=no_counter, PLANTED_HIT="1", PLANTED_STORED=str(race_copy))
+    expect(
+        "the compiler meter writes the entry of a compiler run above the memory limit too, so a hit after an "
+        "interrupt of ccache after its store, before the launcher judges the miss, is rejected on a host with no "
+        "counter",
+        died.exit == -signal.SIGINT
+        and len(store_entries(bench.caches)) == 1
+        and hit.exit == 1
+        and bench.record().get("result") == "rejected"
+        and not bench.object.exists(),
+    )
     bench.table(QUIET)
 
 
@@ -752,12 +804,12 @@ def run_step_limit(verdicts: Verdicts) -> None:
             step_meter.cpu_limit(step)[0] == limit,
         )
         with check_report.github_actions(False):
-            result, line = step_meter.judge(step, "out", step_run(limit - 1.0), budget, False)
+            result, line = step_meter.judge(step, "out", step_run(limit - 1.0), budget)
             expect(
                 f"a {step} under the hard stop gives no line, however long it ran, because no rule judges its CPU time",
                 result == "built" and line is None,
             )
-            result, line = step_meter.judge(step, "out", step_run(limit + 1.0), budget, False)
+            result, line = step_meter.judge(step, "out", step_run(limit + 1.0), budget)
             expect(
                 f"off a CI runner, a {step} past the hard stop with no CPU limit on it is rejected with an error",
                 result == "rejected"
@@ -768,7 +820,7 @@ def run_step_limit(verdicts: Verdicts) -> None:
                 and "removed the output" in line[2],
             )
         with check_report.github_actions(True):
-            result, line = step_meter.judge(step, "out", step_run(limit + 1.0), budget, False)
+            result, line = step_meter.judge(step, "out", step_run(limit + 1.0), budget)
             expect(
                 f"on a CI runner, a {step} past the hard stop runs to its end, and the line is a demoted warning",
                 result == "built"
@@ -777,6 +829,41 @@ def run_step_limit(verdicts: Verdicts) -> None:
                 and line[1] == step_meter.LIMIT_CHECK
                 and "demoted" in line[2],
             )
+    run_hit_judge(expect)
+
+
+def run_hit_judge(expect: Callable[[str, bool], None]) -> None:
+    """judge_hit() of the launcher with planted costs of the compile that made the object of a hit (A CCACHE HIT)."""
+
+    def made(cpu_s: float, peak_gb: float) -> cost_record.Cost:
+        """Return a planted cost of a compile with this CPU time and this peak memory."""
+        return cost_record.Cost(cpu_s, cpu_s, 0.0, cpu_s, int(peak_gb * cost_meter.KB_PER_GB), 1.0, 1.0)
+
+    budget = {"compile": 1.0}
+    output = "/no-build-directory/out.o"
+    with check_report.github_actions(False):
+        expect(
+            "a hit with no cost of its compile is a hit with no line",
+            step_meter.judge_hit("compile", output, None, budget) == (cost_record.HIT, None),
+        )
+        expect(
+            "a hit whose compile took less memory and CPU time than the limits is a hit with no line",
+            step_meter.judge_hit("compile", output, made(1.0, 0.5), budget) == (cost_record.HIT, None),
+        )
+        result, line = step_meter.judge_hit("compile", output, made(1.0, 2.0), budget)
+        expect(
+            "a hit whose compile took more memory than the limit is rejected with a step-memory error that names the "
+            "compile of the hit",
+            result == "rejected"
+            and line is not None
+            and line[:2] == ("error", step_meter.MEMORY_RULE)
+            and line[2].startswith("the compile that made this ccache hit took 2.00 GB"),
+        )
+        result, line = step_meter.judge_hit("compile", output, made(step_meter.COMPILE_CPU_LIMIT_S + 1.0, 0.5), budget)
+        expect(
+            "off a CI runner, a hit whose compile ran past the hard stop is rejected, as that compile was",
+            result == "rejected" and line is not None and line[:2] == ("error", step_meter.LIMIT_CHECK),
+        )
 
 
 def run_ci_memory(bench: Bench, verdicts: Verdicts) -> None:

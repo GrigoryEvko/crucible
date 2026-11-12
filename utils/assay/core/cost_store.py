@@ -39,12 +39,13 @@ THE ORDER
     the meter the inputs of the key in the variable KEY_ENV (key_inputs()).
     After a compiler run with the status 0, the meter writes the cost of
     that run under the key of the inputs (compiler_key()).  Then the
-    launcher writes the cost of its full step under the same key.  The
-    meter writes no entry when the run writes a different object, or when
-    the peak memory of the run is above the memory limit in the inputs.
-    The launcher then judges the step first.  A step that the launcher
-    rejects drops the entry of its key (drop()), and a hit of its object
-    then has no cost.
+    launcher writes the cost of its full step under the same key, also for
+    a step that it rejects.  The meter writes no entry when the run writes a
+    different object.  A hit gets the judge of the cost of its entry, as the
+    launcher judged the compile (assay.loop.step, A CCACHE HIT).  So a hit of
+    the object of a rejected compile gets the same verdict, also when the
+    hit reads the entry of the meter before the launcher of the miss judges
+    its step.
 
 THE KEY
     A hit gives the object that ccache stored at the miss.  The key holds the
@@ -187,41 +188,37 @@ def output_of(command: Sequence[str]) -> str | None:
     return None if found is None else os.path.abspath(found)
 
 
-def key_inputs(
-    object_path: str, command: Sequence[str], build_dir: str | None, source_root: str, memory_limit_gb: float | None
-) -> str:
-    """Return the text of KEY_ENV for one compile: the arguments of key_of() and the memory limit (THE ORDER).
+def key_inputs(object_path: str, command: Sequence[str], build_dir: str | None, source_root: str) -> str:
+    """Return the text of KEY_ENV for one compile: the arguments of key_of() (THE ORDER).
 
     Args:
         object_path: The absolute object of the step
         command: The command of the step, from the first word after the launcher
         build_dir: The build directory of the object, or None
         source_root: The source root of the build
-        memory_limit_gb: The memory limit of the compile in GB, or None when no limit judges the object
     """
     import json
 
-    return json.dumps([object_path, list(command), build_dir, source_root, memory_limit_gb])
+    return json.dumps([object_path, list(command), build_dir, source_root])
 
 
-def compiler_key(text: str, compiler_command: Sequence[str], peak_gb: float) -> str | None:
+def compiler_key(text: str, compiler_command: Sequence[str]) -> str | None:
     """Return the key of the entry that a compiler run of a ccache miss writes, or None for no entry (THE ORDER).
 
     Args:
         text: The text of KEY_ENV, from key_inputs()
         compiler_command: The compiler command that ccache gave the meter
-        peak_gb: The peak memory of the compiler run, in GB
 
     Returns:
-        None when the text does not hold the inputs, when the compiler run writes a different object, when the peak
-        memory is above the limit of the inputs, or when the object cannot be read
+        None when the text does not hold the inputs, when the compiler run writes a different object, or when the
+        object cannot be read
 
     Complexity: linear in the bytes of the object and the length of the command.
     """
     import json
 
     try:
-        object_path, command, build_dir, source_root, limit_gb = json.loads(text)
+        object_path, command, build_dir, source_root = json.loads(text)
     except ValueError, TypeError:
         return None
     is_valid = (
@@ -230,11 +227,8 @@ def compiler_key(text: str, compiler_command: Sequence[str], peak_gb: float) -> 
         and all(isinstance(word, str) for word in command)
         and (build_dir is None or isinstance(build_dir, str))
         and isinstance(source_root, str)
-        and (limit_gb is None or isinstance(limit_gb, int | float))
     )
     if not is_valid or output_of(compiler_command) != object_path:
-        return None
-    if limit_gb is not None and peak_gb > limit_gb:
         return None
     return key_of(object_path, command, build_dir, source_root)
 
@@ -242,17 +236,6 @@ def compiler_key(text: str, compiler_command: Sequence[str], peak_gb: float) -> 
 def entry_path(directory: str, key: str) -> str:
     """Return the file of the entry of a key in the store directory."""
     return os.path.join(directory, key[:2], key)
-
-
-def drop(key: str) -> None:
-    """Remove the entry of a key from the store, when the store holds one (THE ORDER)."""
-    directory = store_directory()
-    if directory is None:
-        return
-    try:
-        os.unlink(entry_path(directory, key))
-    except OSError:
-        pass
 
 
 def put(key: str, block: str) -> None:
