@@ -159,6 +159,15 @@ concept UndeclaredNicheOf = ::foundation::linear::carries_annotation(^^niche<T>,
 template <class T>
 concept NamesMemberNiche = requires { &T::niche_empty; } || requires { &T::is_niche_empty; };
 
+// A type whose copy, move and end are those of its bytes, and whose copy
+// assignment does not throw.  The assignment can be user-provided, as the
+// assignment of a type that holds a byte seal is, so std::bit_cast builds
+// no such value.  A copy then never allocates.  The niche gate and the
+// error gate read this one concept, so their two rules stay the same.
+template <class T>
+concept TrivialCopyShape = std::is_trivially_copy_constructible_v<T> && std::is_trivially_move_constructible_v<T>
+                        && std::is_trivially_destructible_v<T> && std::is_nothrow_copy_assignable_v<T>;
+
 }  // namespace detail
 
 // The niche of a class that gives the members of the protocol.  A class
@@ -189,8 +198,8 @@ namespace detail {
 // The one reader of the niche of T, and the one class that builds a
 // niche_key<T>.  The storage of a niche Option reads the empty value
 // through its private members.  The gate and the lifetime mark read only
-// its two facts, which are constants of type bool, so no other code gets an
-// empty value or a key.
+// its two facts, which are constants of type bool, and a decode reads only
+// the bool of holds_empty.  So no other code gets an empty value or a key.
 template <class T>
 class NicheRead final {
     friend class OptionSlot<T, OptionForm::niche>;
@@ -219,6 +228,17 @@ class NicheRead final {
     }
 
 public:
+    // True when the value holds the empty value of the niche.  This is the
+    // validity test for a value that a bit copy made, such as a value that a
+    // decode reads from wire bytes.  No constructor of T made such a value,
+    // so it can hold the empty value, which no valid T holds.  The test gives
+    // only the bool, and no empty value and no key.
+    [[nodiscard]] static constexpr bool holds_empty(T const& value) noexcept
+        requires(!UndeclaredNicheOf<T>)
+    {
+        return is_empty_(value);
+    }
+
     // True when is_empty gives true for the empty value.
     [[nodiscard]] static consteval bool holds_its_empty() noexcept { return is_empty_(empty_()); }
 
@@ -244,14 +264,12 @@ public:
 // would give the plain or the owning form with no message, so the payload
 // gate refuses it.  This gate is the one gate that reads niche<T>.
 template <class T>
-concept WellFormedNiche = detail::UndeclaredNicheOf<T>
-                       || (std::is_trivially_copy_constructible_v<T> && std::is_trivially_move_constructible_v<T>
-                           && std::is_trivially_destructible_v<T> && std::is_nothrow_copy_assignable_v<T>
-                           && requires(T const& value, niche_key<T> const& key) {
-                                  { niche<T>::empty(key) } noexcept -> std::same_as<T>;
-                                  { niche<T>::is_empty(key, value) } noexcept -> std::same_as<bool>;
-                                  typename std::bool_constant<detail::NicheRead<T>::holds_its_empty()>;
-                              } && detail::NicheRead<T>::holds_its_empty());
+concept WellFormedNiche =
+    detail::UndeclaredNicheOf<T> || (detail::TrivialCopyShape<T> && requires(T const& value, niche_key<T> const& key) {
+        { niche<T>::empty(key) } noexcept -> std::same_as<T>;
+        { niche<T>::is_empty(key, value) } noexcept -> std::same_as<bool>;
+        typename std::bool_constant<detail::NicheRead<T>::holds_its_empty()>;
+    } && detail::NicheRead<T>::holds_its_empty());
 
 // The payload of an Option: an object type that is not an array, not
 // cv-qualified, not the empty marker itself and not the mark of an error.
@@ -282,20 +300,20 @@ struct Unit final {
     [[nodiscard]] friend constexpr bool operator==(Unit, Unit) noexcept = default;
 };
 
-// An error: a scoped enum, a trivially copyable and assignable class of at
-// most 16 bytes, or a linear class.  A plain integer is refused, because
+// An error: a scoped enum, a class of at most 16 bytes of the shape
+// TrivialCopyShape, or a linear class.  A plain integer is refused, because
 // its meaning is not in its type.  A copyable class that owns memory is
 // refused, because an error never allocates.  A class with a reference
 // member is refused, because the reference cannot be assigned and can
-// outlive its object.  A linear error gives a resource back to the caller
-// of a failed operation.  It moves and ends with no throw, and only a
-// consumer of the Result gives it out.  An Err marks a return, so it is
-// not an error value itself.
+// outlive its object.  A sealed class, such as a Ref, has a user-provided
+// assignment, and the Result then takes its owning form, as it does for a
+// linear error.  A linear error gives a resource back to the caller of a
+// failed operation.  It moves and ends with no throw, and only a consumer
+// of the Result gives it out.  An Err marks a return, so it is not an error
+// value itself.
 template <class E>
 concept ErrorValue = !std::is_const_v<E> && !std::is_volatile_v<E> && !detail::ErrMark<E>
-                  && (std::is_scoped_enum_v<E>
-                      || (std::is_class_v<E> && std::is_trivially_copyable_v<E> && std::is_trivially_destructible_v<E>
-                          && std::is_trivially_copy_assignable_v<E> && sizeof(E) <= 16)
+                  && (std::is_scoped_enum_v<E> || (std::is_class_v<E> && detail::TrivialCopyShape<E> && sizeof(E) <= 16)
                       || (::foundation::linear::is_linear_type(^^E)
                           && std::is_nothrow_move_constructible_v<E> && std::is_nothrow_destructible_v<E>));
 

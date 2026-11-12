@@ -1951,6 +1951,19 @@ foundation_neg_compile_test(neg_core_result_integer_error
 foundation_neg_compile_test(neg_core_result_owning_error
   "template constraint failure for .template<class T, class E>  requires \\(ChoicePayload<T>\\) && \\(ErrorValue<E>\\)"
   "class foundation::core::Result \\[with T = int. E = CountedError\\]")
+# The error gate admits a class of at most 16 bytes whose copy, move and end
+# are those of its bytes.  The gate is a disjunction, so each fixture takes
+# a concept depth of 3, and its regex names the part of the shape that fails.
+foundation_neg_compile_test(neg_core_result_error_nontrivial_destructor
+  "required for the satisfaction of .TrivialCopyShape<E>. \\[with E = LoggedError\\]"
+  "the expression .is_trivially_copy_constructible_v<T> \\[with T = LoggedError\\]. evaluated to .false.")
+set_property(TEST neg_core_result_error_nontrivial_destructor APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=3")
+foundation_neg_compile_test(neg_core_result_error_sealed_too_wide
+  "required for the satisfaction of .ErrorValue<E>. \\[with E = WideSealedError\\]"
+  "the expression .sizeof \\(E\\) <= 16 \\[with E = WideSealedError\\]. evaluated to .false.")
+set_property(TEST neg_core_result_error_sealed_too_wide APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=3")
 foundation_neg_compile_test(neg_core_result_err_payload
   "template constraint failure for .template<class T, class E>  requires \\(ChoicePayload<T>\\) && \\(ErrorValue<E>\\)"
   "the expression .!\\(ErrMark<T>\\) \\[with T = foundation::core::Err<Code>\\]. evaluated to .false.")

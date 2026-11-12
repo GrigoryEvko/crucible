@@ -975,7 +975,7 @@ The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLooku
 | Gate | What it admits | State |
 |---|---|---|
 | `ChoicePayload<T>` | An object type that is not an array, not cv-qualified and not `NoValue`, with a move and a destructor that do not throw. The design adds: not an `Err<F>`, and `WellFormedNiche<T>` | main, design |
-| `ErrorValue<E>` | A scoped enum, a trivially copyable class of at most 16 bytes with no reference member, or a linear class. The design adds: not an `Err<F>` | main, design |
+| `ErrorValue<E>` | A scoped enum, a class of at most 16 bytes with no reference member whose copy, move and end are those of its bytes (`detail::TrivialCopyShape`, the shape of the niche gate too), or a linear class. A sealed class with a user-provided assignment passes, and its `Result` takes the owning form. The design adds: not an `Err<F>` | main, design |
 | `PlainPayload<T>`, `DroppablePayload<T>` | The plain form, and a payload that a member can drop or copy | main |
 | `HasNiche<T>`, `WellFormedNiche<T>` | A payload that declares its empty value. A declared niche that is not complete fails | main, design |
 | `OneOfAlternatives<Ts...>` | 2 to 255 alternatives, each a `ChoicePayload`, with no type two times. The tag is one byte | design |

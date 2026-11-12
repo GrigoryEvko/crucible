@@ -2203,7 +2203,7 @@ return compile_kernel(bg, arena, node, caps).match(
     });
 ```
 
-A `Result` is a union and a tag. Its error is a scoped enum, a trivially copyable class of at most 16 bytes, or a linear class that gives a resource back to the caller of a failed operation. An error that copies never allocates. The type is `[[nodiscard]]`, and it has no heap memory and no exception table. The other operations of a `Result` are `is_ok()`, `is_err()`, `ok()`, `err()`, `value_or()` and `expect(reason)`, the fatal unwrap (`include/foundation/core/Choice.h`).
+A `Result` is a union and a tag. Its error is a scoped enum, a class of at most 16 bytes whose copy, move and end are those of its bytes, or a linear class that gives a resource back to the caller of a failed operation. Such a class can have the user-provided assignment of a byte seal, as a `Ref` has. An error that copies never allocates. The type is `[[nodiscard]]`, and it has no heap memory and no exception table. The other operations of a `Result` are `is_ok()`, `is_err()`, `ok()`, `err()`, `value_or()` and `expect(reason)`, the fatal unwrap (`include/foundation/core/Choice.h`).
 
 ### Assertion macro quartet
 

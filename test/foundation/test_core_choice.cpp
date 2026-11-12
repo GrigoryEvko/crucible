@@ -6,6 +6,8 @@
 
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
+#include <foundation/Quarantine.h>
+#include <foundation/core/Ref.h>
 
 #include "abort_probe.h"
 #include "philox_stream.h"
@@ -287,6 +289,29 @@ void test_member_niche_payload() {
     CRUCIBLE_FATAL_INVARIANT(empty_value_aborts);
 }
 
+// The validity test of a value that a bit copy made.  A decode copies wire
+// bytes into a value, and the bytes can hold the empty value of its niche,
+// which no valid value holds.  The test reads the niche of a test type and
+// of a Ref at run time.
+void test_niche_validity_of_bit_copy() {
+    using ::foundation::core::Ref;
+    using ::foundation::core::detail::NicheRead;
+    SlotNumber const valid_slot{9};
+    SlotNumber const empty_bits_slot{0xFFFFFFFFu};
+    CRUCIBLE_FATAL_INVARIANT(!NicheRead<SlotNumber>::holds_empty(valid_slot));
+    CRUCIBLE_FATAL_INVARIANT(NicheRead<SlotNumber>::holds_empty(empty_bits_slot));
+
+    int target = 5;
+    Ref<int> copied = Ref<int>::to(target);
+    CRUCIBLE_FATAL_INVARIANT(!NicheRead<Ref<int>>::holds_empty(copied));
+    static_assert(sizeof(Ref<int>) == sizeof(std::uintptr_t));
+    std::uintptr_t const zero_word = 0;
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a bit copy of zero bytes into a Ref, as a decode of wire bytes makes")
+    __builtin_memcpy(static_cast<void*>(&copied), &zero_word, sizeof(zero_word));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    CRUCIBLE_FATAL_INVARIANT(NicheRead<Ref<int>>::holds_empty(copied));
+}
+
 // The property: for each value and each choice of empty or full, the
 // Option agrees with a plain model of one flag and one value.  The loop
 // makes one turn exactly when the model holds a value, and expect,
@@ -503,6 +528,7 @@ int main() {
     test_niche_payload();
     test_niche_empty_value_aborts();
     test_member_niche_payload();
+    test_niche_validity_of_bit_copy();
     test_agrees_with_plain_model();
     test_result_roads();
     test_result_of_unit();

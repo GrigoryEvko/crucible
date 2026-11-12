@@ -559,6 +559,7 @@ test/foundation/ | opted-out | 11 | ORACLE: std::string_view is the model of the
 test/foundation/ | opted-out | 21 | ORACLE: std::to_chars and std::from_chars give the text that the Report family writes | -
 test/foundation/ | opted-out | 18 | ORACLE: the differential test of Record and Pack against std::tuple and std::pair | -
 test/foundation/ | opted-out | 8 | ORACLE: the std algorithms are the model of the scans | -
+test/foundation/ | opted-out | 1 | PROBE: a bit copy of zero bytes into a Ref, as a decode of wire bytes makes | a test of the validity test makes a Ref with zero bytes through a bit copy, as a decode of wire bytes does
 test/foundation/ | opted-out | 2 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | raw-function-pointer | 17 | - | -
@@ -571,6 +572,7 @@ test/foundation/ | region | 2 | ORACLE: std::string_view is the model of the tex
 test/foundation/ | region | 1 | ORACLE: std::to_chars and std::from_chars give the text that the Report family writes | -
 test/foundation/ | region | 1 | ORACLE: the differential test of Record and Pack against std::tuple and std::pair | -
 test/foundation/ | region | 1 | ORACLE: the std algorithms are the model of the scans | -
+test/foundation/ | region | 1 | PROBE: a bit copy of zero bytes into a Ref, as a decode of wire bytes makes | a test of the validity test makes a Ref with zero bytes through a bit copy, as a decode of wire bytes does
 test/foundation/ | region | 1 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | replace-pending:<limits> | 57 | - | -

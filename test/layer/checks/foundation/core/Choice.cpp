@@ -151,6 +151,17 @@ static_assert(sizeof(Option<MemberSlot>) == sizeof(MemberSlot));
 static_assert(Option<MemberSlot>{}.is_none());
 static_assert(Option<MemberSlot>::some(MemberSlot{2}).expect("a constant slot").raw == 2);
 
+// The validity test of a value that a bit copy made: true for the bits of
+// the empty value, false for a valid value.  It reads the niche through a
+// specialization and through the members of the class, and it gives only a
+// bool.
+static_assert(detail::NicheRead<SlotNumber>::holds_empty(SlotNumber{0xFFFFFFFFu}));
+static_assert(!detail::NicheRead<SlotNumber>::holds_empty(SlotNumber{7}));
+static_assert(detail::NicheRead<MemberSlot>::holds_empty(MemberSlot{0xFFFFFFFFu}));
+static_assert(!detail::NicheRead<MemberSlot>::holds_empty(MemberSlot{7}));
+static_assert(std::is_same_v<decltype(detail::NicheRead<SlotNumber>::holds_empty(SlotNumber{})), bool>);
+static_assert(noexcept(detail::NicheRead<MemberSlot>::holds_empty(MemberSlot{})));
+
 // A count that is never zero: the empty value of its niche has zero bytes.
 struct NonZeroCount {
     std::uint32_t raw = 1;
@@ -353,8 +364,17 @@ struct ReferringError {
     int& target;
 };
 
-// The error gate: a scoped enum, or a trivially copyable and assignable
-// class of at most 16 bytes.
+// A sealed error: a byte seal makes its assignment user-provided, so it is
+// not trivially copyable, and std::bit_cast builds none.  Its copy, move and
+// end are those of its bytes.
+struct SealedError {
+    std::uint32_t code = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal{};
+};
+
+// The error gate: a scoped enum, or a class of at most 16 bytes whose copy,
+// move and end are those of its bytes.  The niche gate reads the same
+// shape.
 static_assert(ErrorValue<Code> && ErrorValue<WideError> && ErrorValue<Unit>);
 static_assert(std::is_trivially_copyable_v<ReferringError> && !ErrorValue<ReferringError>);
 static_assert(!ErrorValue<int>);
@@ -362,6 +382,16 @@ static_assert(!ErrorValue<bool>);
 static_assert(!ErrorValue<TooWideError>);
 static_assert(!ErrorValue<CountedError>);
 static_assert(!ErrorValue<Code const>);
+
+// A Result of a sealed error takes its owning form, which is move-only, as
+// it does for a linear error.
+static_assert(!std::is_trivially_copyable_v<SealedError> && detail::TrivialCopyShape<SealedError>);
+static_assert(ErrorValue<SealedError> && sizeof(SealedError) == sizeof(std::uint32_t));
+static_assert(!std::is_copy_constructible_v<Result<int, SealedError>>);
+static_assert(std::is_nothrow_move_constructible_v<Result<int, SealedError>>);
+static_assert(Result<int, SealedError>{err(SealedError{7})}.is_err());
+static_assert(Result<int, SealedError>{err(SealedError{7})}.err().expect("a constant error").code == 7);
+static_assert(Result<int, SealedError>{5}.expect("a constant value") == 5);
 
 // An Err marks a return.  It is neither a payload nor an error value.
 static_assert(std::is_trivially_copyable_v<Err<Code>> && sizeof(Err<Code>) <= 16);
