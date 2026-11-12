@@ -16,7 +16,6 @@ Usage:
 """
 
 import sys
-import time
 
 import torch
 import torch.nn as nn
@@ -28,12 +27,6 @@ from crucible_mode import CrucibleMode
 # test is then the same in each run, and the budgets of the test launcher hold.
 torch.set_num_threads(1)
 torch.set_num_interop_threads(1)
-
-
-def _spin_for(seconds: float) -> None:
-    deadline = time.perf_counter() + seconds
-    while time.perf_counter() < deadline:
-        pass
 
 
 # ── ResNet-18 (manual implementation) ────────────────────────────────
@@ -188,12 +181,12 @@ def run_test(name, model, optimizer, make_batch, n_iters, verbose):
                 print(f"  iter {i:3d}: [{status}] loss={loss_val:.4f} "
                       f"div={mode.diverged_count()} ops/iter={ops_per}")
 
-            if i == 3:
+            # The background pipeline processes each recorded iteration before
+            # the next one starts, so the result does not depend on its speed.
+            if not compiled:
                 mode.flush()
-                _spin_for(0.05)
 
         mode.flush()
-        _spin_for(0.05)
 
         # ── Results ──
         total_ops = mode._op_count

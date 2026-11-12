@@ -36,6 +36,10 @@ def main() -> int:
             widened = narrow.to(torch.int64)
             doubled = widened * 2
             del doubled
+            # The background pipeline processes each recorded iteration before
+            # the next one starts, so the result does not depend on its speed.
+            if not mode.is_compiled():
+                mode.flush()
         is_compiled = mode.is_compiled()
     print(f"test_unmapped_dtype: {ITERATIONS} iterations, compiled={is_compiled}")
     return 0 if is_compiled else 1
