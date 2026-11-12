@@ -1,0 +1,26 @@
+// The shapes that the rule linear-forge admits: a union of plain values, a
+// linear class with the byte seal as a member, and a class that holds a sealed
+// token.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal{};
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept = default;
+    Token(const Token&) = delete;
+};
+
+struct Holder {
+    Token token;
+};
+
+union Bits {
+    unsigned whole;
+    unsigned short half;
+};
+
+}  // namespace planted

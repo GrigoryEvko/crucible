@@ -1,9 +1,11 @@
-// The family linear: the rule must-consume.  Each path of a body uses a
-// linear value exactly one time (misc/12_10_2026_linear.md, P1).  The rule
-// reads the C++ statement tree of each body at PLUGIN_PRE_GENERICIZE, before
-// cp_genericize lowers it.  It walks the paths of the body forward, with the
-// states dead, live, consumed and maybe for each object, and with a fixed point
-// for each loop.  It runs only with the argument must-consume=on of plugin.cpp.
+// The family linear: the rule must-consume and the six rules of THE SHAPES.
+// Each path of a body uses a linear value exactly one time
+// (misc/12_10_2026_linear.md, P1).  The rule must-consume reads the C++
+// statement tree of each body at PLUGIN_PRE_GENERICIZE, before cp_genericize
+// lowers it.  It walks the paths of the body forward, with the states dead,
+// live, consumed and maybe for each object, and with a fixed point for each
+// loop.  It runs only with the argument must-consume=on of plugin.cpp, and the
+// rules of THE SHAPES run only with the argument linear-shapes=on.
 //
 // THE LINEAR TYPES
 //     The marker of include/foundation/Linear.h decides, as the trait
@@ -98,11 +100,76 @@
 //     each instance of one template gives the same line, and the key of a
 //     ledger row holds no line of an exit.
 //
+// THE FIELDS
+//     An object of a class that is linear by its parts, with no linear base,
+//     gets one slot for each linear field.  A move of a field consumes its
+//     slot, and the move of the last field consumes the object.  A move of the
+//     whole after a move of a field, or of a field after a move of the whole,
+//     is a second consume.  A reference to a field borrows it.
+//
+// THE ACCESSORS
+//     After a move cast, the walk to the tracked object goes through a member
+//     function with no qualifier && that gives an lvalue reference to a linear
+//     value, such as operator* or value() of std::optional.  The move of that
+//     reference consumes the object.
+//
+// THE CAPTURES
+//     A lambda initializes a capture by reference with the address of the
+//     object.  The closure hides each later consume, so the object gives no
+//     finding, and the rule linear-capture reports the capture.
+//
 // THE LIMITS
-//     The rule reads one function at a time.  A consume through a reference,
-//     an accessor or a member call of a door is not visible to it, and a
-//     consume that depends on a correlated branch needs a switch or a door.  A
-//     template that no unit instantiates with a linear type gives no finding.
+//     The rule reads one function at a time.  A consume through a reference or
+//     a member call of a door is not visible to it, and a consume that depends
+//     on a correlated branch, such as a test of has_value(), needs a switch or
+//     a door.  A template that no unit instantiates with a linear type gives no
+//     finding.
+//
+// THE SHAPES
+//     The rules of the shapes read each class, each signature and each body
+//     of the bodies that must-consume reads (THE BODIES), with the same places.
+//     A class is read at PLUGIN_FINISH_TYPE, and an instance of a template
+//     where a declaration or a body names it.  The rules:
+//       linear-containment  a class that holds a linear part, cannot move and
+//                           has no door at the end of its scope (pinned-holder),
+//                           a class that holds a linear part and has a
+//                           user-provided copy (copyable-holder), and a
+//                           declaration whose type holds a class of the library
+//                           with a linear argument (library-holder).  Such a
+//                           class is no aggregate, and it is linear by its parts
+//                           or it has a destructor that is not trivial
+//       linear-capture      a capture by reference of a linear object
+//       drop-door           an assignment over a linear object that is no
+//                           tracked object of must-consume, and a destructor
+//                           call or a clobber of such an object.  A door, a
+//                           destructor and a transfer function read none
+//       linear-forge        a union that holds a sealed type, a linear type or
+//                           a type that the checked lifetime start of
+//                           include/foundation/Lifetime.h refuses, and a class
+//                           with the annotation linear that it admits
+//       brand-escape        a fresh brand, the closure type of a lambda with no
+//                           capture and no parameter in a template argument,
+//                           that leaves its scope: a return type, a member, a
+//                           static object, an alias outside a body, and the type
+//                           of a local container of the library or function
+//                           pointer.  A brand that a template argument of the
+//                           function or of its class gave is bound (THE BRANDS)
+//       brand-reentry       a call with an argument of a brand that the caller
+//                           made, whose callee can reach the caller again in the
+//                           call graph of the bodies of the unit
+//     The front end gives no PLUGIN_FINISH_DECL for an alias, so the walk of
+//     the declarations of declaration.cpp gives each alias at namespace scope
+//     (check_linear_alias).  The rule brand-reentry reports at the end of the
+//     walks of the unit (finish_linear_rules).
+//
+// THE BRANDS
+//     GCC gives the closure of a lambda in a default template argument the
+//     translation unit as its context, so no closure tells which function made
+//     it.  A brand is bound at a declaration when a template argument of the
+//     declaration, or of a class or a function that holds it, holds the brand.
+//     The type of a value argument holds a brand too, such as the parameter of
+//     the function of a stage.  Each other brand came from a mint call or a
+//     decltype in the scope itself.
 
 #include "plugin.h"
 
@@ -129,6 +196,9 @@ struct TypeFacts {
 struct LinearNames {
     tree foundation = NULL_TREE;
     tree linear = NULL_TREE;  // the namespace foundation::linear and its class linear
+    tree lifetime = NULL_TREE;  // the namespace foundation::lifetime
+    tree no_start_over_bytes = NULL_TREE;
+    tree brand_type = NULL_TREE;
     tree drop_door = NULL_TREE;
     tree detach_door = NULL_TREE;
     tree scope_end_door = NULL_TREE;
@@ -200,15 +270,16 @@ tree annotation_class(tree attribute) {
     return CLASS_TYPE_P(type) ? type : NULL_TREE;
 }
 
-// True when TYPE is the class foundation::linear::NAME of the vocabulary of
-// include/foundation/Linear.h.
-bool is_vocabulary_class(tree type, tree name) {
+// True when TYPE is the class foundation::SPACE::NAME of the vocabulary of
+// include/foundation/Linear.h, or of include/foundation/ByteSeal.h when SPACE
+// is lifetime.
+bool is_vocabulary_class(tree type, tree name, tree space) {
     tree decl = TYPE_NAME(type);
     if (decl == NULL_TREE || TREE_CODE(decl) != TYPE_DECL || DECL_NAME(decl) != name) {
         return false;
     }
     tree scope = CP_DECL_CONTEXT(decl);
-    if (scope == NULL_TREE || TREE_CODE(scope) != NAMESPACE_DECL || DECL_NAME(scope) != linear_names.linear) {
+    if (scope == NULL_TREE || TREE_CODE(scope) != NAMESPACE_DECL || DECL_NAME(scope) != space) {
         return false;
     }
     tree top = CP_DECL_CONTEXT(scope);
@@ -216,11 +287,15 @@ bool is_vocabulary_class(tree type, tree name) {
         && CP_DECL_CONTEXT(top) == global_namespace;
 }
 
-// True when ATTRIBUTES hold an annotation of the class foundation::linear::NAME.
-bool carries_annotation(tree attributes, tree name) {
+// True when ATTRIBUTES hold an annotation of the class foundation::SPACE::NAME,
+// with foundation::linear as the default namespace.
+bool carries_annotation(tree attributes, tree name, tree space = NULL_TREE) {
+    if (space == NULL_TREE) {
+        space = linear_names.linear;
+    }
     for (tree attribute = attributes; attribute != NULL_TREE; attribute = TREE_CHAIN(attribute)) {
         tree annotation = annotation_class(attribute);
-        if (annotation != NULL_TREE && is_vocabulary_class(annotation, name)) {
+        if (annotation != NULL_TREE && is_vocabulary_class(annotation, name, space)) {
             return true;
         }
     }
@@ -379,6 +454,21 @@ bool is_move_cast(tree function) {
     return scope != NULL_TREE && TREE_CODE(scope) == NAMESPACE_DECL && DECL_NAMESPACE_STD_P(scope);
 }
 
+// True for an accessor: a member function with an implicit object parameter
+// and no qualifier &&, that gives an lvalue reference to a linear value, such
+// as operator* or value() of std::optional (THE ACCESSORS).  A member function
+// with the qualifier && consumes its object by itself.
+bool is_accessor(tree function) {
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_LANG_SPECIFIC(function) == nullptr
+        || !DECL_IOBJ_MEMBER_FUNCTION_P(function) || DECL_CONSTRUCTOR_P(function) || DECL_DESTRUCTOR_P(function)
+        || DECL_ASSIGNMENT_OPERATOR_P(function) || FUNCTION_RVALUE_QUALIFIED(TREE_TYPE(function))) {
+        return false;
+    }
+    tree result = TREE_TYPE(TREE_TYPE(function));
+    return result != NULL_TREE && TYPE_REF_P(result) && !TYPE_REF_IS_RVALUE(result)
+        && is_linear_type(TREE_TYPE(result));
+}
+
 // The type of the function that a call names, or null.
 tree function_type_of(tree call, tree callee) {
     if (callee != NULL_TREE) {
@@ -475,10 +565,22 @@ bool is_same_state(const FlowState& left, const FlowState& right) {
     return true;
 }
 
+// The bound of the slots of one object: the object and its fields (THE
+// FIELDS).
+constexpr std::size_t kNoParent = SIZE_MAX;
+
 struct Slot {
     tree decl = NULL_TREE;
+    // The field of a slot of one field of the object DECL, or null for the
+    // slot of the whole object (THE FIELDS).
+    tree field = NULL_TREE;
+    std::size_t parent = kNoParent;
+    std::vector<std::size_t> fields;
     // The end of the scope of the object is a door (THE LINEAR TYPES).
     bool ends_at_scope = false;
+    // A closure captured the object by reference, so the rule cannot see its
+    // consume, and the rule linear-capture reports the capture (THE CAPTURES).
+    bool is_escaped = false;
     bool has_live_exit = false;
     bool has_maybe_exit = false;
     bool was_double_reported = false;
@@ -509,6 +611,18 @@ struct PendingFinding {
 // passes.  A loop that reaches the bound keeps the state of its last pass.
 constexpr int kLoopPasses = 6;
 
+// True when the special member FUNCTION moves or transfers a linear value by
+// its contract: a move constructor or a move assignment, or a constructor or
+// an assignment of a class that carries the annotation linear (THE OBJECTS).
+bool is_transfer_function(tree function) {
+    if (DECL_LANG_SPECIFIC(function) != nullptr && move_fn_p(function)) {
+        return true;
+    }
+    tree scope = DECL_CONTEXT(function);
+    bool is_special = DECL_CONSTRUCTOR_P(function) || DECL_ASSIGNMENT_OPERATOR_P(function);
+    return is_special && scope != NULL_TREE && TYPE_P(scope) && linearity_of(scope) == Linearity::direct;
+}
+
 class Analysis {
 public:
     Analysis(tree function, bool is_door) : function_(function), is_door_(is_door) {}
@@ -522,7 +636,7 @@ public:
                 std::size_t slot = 0;
                 if (track(parameter, slot)) {
                     scopes_.back().push_back(slot);
-                    entry.set(slot, Status::live);
+                    set_object(entry, slot, Status::live);
                 }
             }
         }
@@ -558,14 +672,7 @@ private:
     location_t next_statement_ = UNKNOWN_LOCATION;
     bool is_unanalyzed_ = false;
 
-    bool is_exempt_function() const {
-        if (DECL_LANG_SPECIFIC(function_) != nullptr && move_fn_p(function_)) {
-            return true;
-        }
-        tree scope = DECL_CONTEXT(function_);
-        bool is_special = DECL_CONSTRUCTOR_P(function_) || DECL_ASSIGNMENT_OPERATOR_P(function_);
-        return is_special && scope != NULL_TREE && TYPE_P(scope) && linearity_of(scope) == Linearity::direct;
-    }
+    bool is_exempt_function() const { return is_transfer_function(function_); }
 
     // Gives DECL a slot when it is a tracked object (THE OBJECTS).
     bool track(tree decl, std::size_t& slot) {
@@ -613,7 +720,72 @@ private:
         entry.ends_at_scope = facts.ends_at_scope;
         slots_.push_back(entry);
         slot_of_.emplace(decl, slot);
+        add_field_slots(slot, type);
         return true;
+    }
+
+    // THE FIELDS: an object of a class that is linear by its parts, with no
+    // linear base, gets one slot for each linear field.  A move of a field
+    // consumes its slot, and the move of the last linear field consumes the
+    // object.  A class that carries the annotation hides its fields.
+    void add_field_slots(std::size_t slot, tree type) {
+        type = TYPE_MAIN_VARIANT(type);
+        if (!CLASS_TYPE_P(type) || linearity_of(type) != Linearity::derived) {
+            return;
+        }
+        if (tree binfo = TYPE_BINFO(type)) {
+            for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+                if (is_linear_type(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)))) {
+                    return;
+                }
+            }
+        }
+        std::vector<std::size_t> fields;
+        for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+            if (TREE_CODE(field) != FIELD_DECL || DECL_FIELD_IS_BASE(field) || TREE_TYPE(field) == NULL_TREE
+                || TYPE_REF_P(TREE_TYPE(field)) || !is_linear_type(TREE_TYPE(field))) {
+                continue;
+            }
+            Slot part;
+            part.decl = slots_[slot].decl;
+            part.field = field;
+            part.parent = slot;
+            fields.push_back(slots_.size());
+            slots_.push_back(part);
+        }
+        slots_[slot].fields = std::move(fields);
+    }
+
+    // The slot of the field FIELD of the tracked object DECL, or the slot of
+    // DECL when FIELD is null.  Returns kNoParent when the object has no slot
+    // for the field.
+    std::size_t slot_for(tree decl, tree field) const {
+        std::size_t slot = slot_of_.at(decl);
+        if (field == NULL_TREE) {
+            return slot;
+        }
+        for (std::size_t part : slots_[slot].fields) {
+            if (slots_[part].field == field) {
+                return part;
+            }
+        }
+        return kNoParent;
+    }
+
+    // Sets the object of SLOT and each of its fields to STATUS.
+    void set_object(FlowState& state, std::size_t slot, Status status) {
+        state.set(slot, status);
+        for (std::size_t part : slots_[slot].fields) {
+            state.set(part, status);
+        }
+    }
+
+    void mark_escaped(tree decl) {
+        std::size_t slot = slot_of_.at(decl);
+        slots_[slot].is_escaped = true;
+        for (std::size_t part : slots_[slot].fields) {
+            slots_[part].is_escaped = true;
+        }
     }
 
     // True when PARAMETER is the object parameter of the function: the
@@ -651,8 +823,16 @@ private:
 
     // The tracked object that NODE names through the casts of THE CONSUMES, or
     // null.  SAW_RVALUE is true when a cast to an rvalue reference or std::move
-    // is on the way.
-    tree strip_to_tracked(tree node, bool& saw_rvalue) const {
+    // is on the way.  With FIELD, the walk also goes through a member access
+    // to a linear field of the object (THE FIELDS), and FIELD gets that field,
+    // or null for the whole object.  After a move cast, it goes through an
+    // accessor: a member function that gives a reference to a linear value of
+    // its object, such as operator* or value() of std::optional.  The move of
+    // that reference consumes the object (THE ACCESSORS).
+    tree strip_to_tracked(tree node, bool& saw_rvalue, tree* field = nullptr) const {
+        if (field != nullptr) {
+            *field = NULL_TREE;
+        }
         for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
             node = unfolded(node, NULL_TREE);
             switch (TREE_CODE(node)) {
@@ -686,6 +866,13 @@ private:
                 case TARGET_EXPR:
                     node = TARGET_EXPR_INITIAL(node);
                     continue;
+                case COMPONENT_REF:
+                    if (field == nullptr || TREE_CODE(TREE_OPERAND(node, 1)) != FIELD_DECL) {
+                        return NULL_TREE;
+                    }
+                    *field = TREE_OPERAND(node, 1);
+                    node = TREE_OPERAND(node, 0);
+                    continue;
                 case CALL_EXPR: {
                     tree callee = cp_get_callee_fndecl_nofold(node);
                     if (is_move_cast(callee) && call_expr_nargs(node) >= 1) {
@@ -693,15 +880,27 @@ private:
                         node = CALL_EXPR_ARG(node, 0);
                         continue;
                     }
+                    if (saw_rvalue && is_accessor(callee) && call_expr_nargs(node) >= 1) {
+                        if (field != nullptr) {
+                            *field = NULL_TREE;
+                        }
+                        node = CALL_EXPR_ARG(node, 0);
+                        continue;
+                    }
                     return NULL_TREE;
                 }
                 case VAR_DECL:
                 case PARM_DECL: {
-                    if (slot_of_.count(node) != 0) {
-                        return node;
+                    tree found = node;
+                    if (slot_of_.count(node) == 0) {
+                        auto referent = referent_of_.find(node);
+                        found = referent != referent_of_.end() ? referent->second : NULL_TREE;
                     }
-                    auto referent = referent_of_.find(node);
-                    return referent != referent_of_.end() ? referent->second : NULL_TREE;
+                    if (found != NULL_TREE && field != nullptr && *field != NULL_TREE
+                        && slot_for(found, *field) == kNoParent) {
+                        return NULL_TREE;
+                    }
+                    return found;
                 }
                 default:
                     return NULL_TREE;
@@ -738,18 +937,47 @@ private:
         pending_.push_back(PendingFinding{kind, location, entity});
     }
 
-    void consume(tree decl, FlowState& state, location_t location) {
+    static bool is_used(Status status) { return status == Status::consumed || status == Status::maybe; }
+
+    // A consume of the object DECL, or of its field FIELD (THE FIELDS).  A
+    // consume of the whole after a consume of a field, or of a field after a
+    // consume of the whole, is a second consume.
+    void consume(tree decl, tree field, FlowState& state, location_t location) {
         if (!state.is_reachable) {
             return;
         }
-        std::size_t slot = slot_of_.at(decl);
+        std::size_t slot = slot_for(decl, field);
+        if (slot == kNoParent) {
+            return;
+        }
+        std::size_t whole = slot_of_.at(decl);
         Status status = state.get(slot);
-        if ((status == Status::consumed || status == Status::maybe) && !slots_[slot].was_double_reported) {
-            slots_[slot].was_double_reported = true;
+        bool was_used = is_used(status);
+        if (field == NULL_TREE) {
+            for (std::size_t part : slots_[whole].fields) {
+                was_used = was_used || is_used(state.get(part));
+            }
+        } else {
+            was_used = was_used || is_used(state.get(whole));
+        }
+        if (was_used && !slots_[whole].was_double_reported && !slots_[whole].is_escaped) {
+            slots_[whole].was_double_reported = true;
             add_pending(Kind::linear_double_consume, location, entity_of(decl));
         }
-        if (status != Status::dead) {
-            state.set(slot, Status::consumed);
+        if (status == Status::dead) {
+            return;
+        }
+        if (field == NULL_TREE) {
+            set_object(state, whole, Status::consumed);
+            return;
+        }
+        state.set(slot, Status::consumed);
+        bool is_each_field_consumed = true;
+        for (std::size_t part : slots_[whole].fields) {
+            is_each_field_consumed = is_each_field_consumed && state.get(part) == Status::consumed;
+        }
+        if (is_each_field_consumed) {
+            state.set(whole, Status::consumed);
         }
     }
 
@@ -759,11 +987,27 @@ private:
         }
         std::size_t slot = slot_of_.at(decl);
         Status status = state.get(slot);
-        if ((status == Status::live || status == Status::maybe) && !slots_[slot].was_assign_reported) {
+        if ((status == Status::live || status == Status::maybe) && !slots_[slot].was_assign_reported
+            && !slots_[slot].is_escaped) {
             slots_[slot].was_assign_reported = true;
             add_pending(Kind::linear_assign_over_live, location, entity_of(decl));
         }
-        state.set(slot, Status::live);
+        set_object(state, slot, Status::live);
+    }
+
+    // True when a live object drops a value at an exit on each path: it has no
+    // field slot, or a field that each path holds (THE FIELDS).  An object
+    // whose fields are consumed on some paths only drops a value on a path.
+    bool is_live_at_exit(const FlowState& state, std::size_t slot) const {
+        if (slots_[slot].fields.empty()) {
+            return true;
+        }
+        for (std::size_t part : slots_[slot].fields) {
+            if (state.get(part) == Status::live) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Notes the status of each object of the scopes from DEPTH on at an exit.
@@ -775,15 +1019,16 @@ private:
         for (std::size_t scope = depth; scope < scopes_.size(); ++scope) {
             for (std::size_t slot : scopes_[scope]) {
                 Status status = state.get(slot);
-                if (slots_[slot].ends_at_scope) {
-                    // The end of the scope is the door of the object.
-                } else if (status == Status::live) {
+                if (slots_[slot].ends_at_scope || slots_[slot].is_escaped) {
+                    // The end of the scope is the door of the object, or a
+                    // capture by reference hides the consume (THE CAPTURES).
+                } else if (status == Status::live && is_live_at_exit(state, slot)) {
                     slots_[slot].has_live_exit = true;
-                } else if (status == Status::maybe) {
+                } else if (status == Status::live || status == Status::maybe) {
                     slots_[slot].has_maybe_exit = true;
                 }
                 if (kill) {
-                    state.set(slot, Status::dead);
+                    set_object(state, slot, Status::dead);
                 }
             }
         }
@@ -971,7 +1216,8 @@ private:
             open_originals_.push_back(initial);
             walk_expression(initial, state);
             bool saw_rvalue = false;
-            tree source = strip_to_tracked(initial, saw_rvalue);
+            tree field = NULL_TREE;
+            tree source = strip_to_tracked(initial, saw_rvalue, &field);
             open_originals_.pop_back();
             // An lvalue reference local borrows its object, and a move through
             // it consumes the object.  The base of a structured binding by
@@ -979,10 +1225,15 @@ private:
             tree decl_type = TREE_TYPE(decl);
             bool is_borrow = decl_type != NULL_TREE && TYPE_REF_P(decl_type) && !TYPE_REF_IS_RVALUE(decl_type)
                           && !(DECL_DECOMPOSITION_P(decl) && DECL_DECOMP_IS_BASE(decl));
-            if (source != NULL_TREE && source != decl && is_borrow) {
+            // A reference to a field, also the base of a structured binding,
+            // borrows the field and consumes nothing (THE FIELDS).
+            bool is_field_borrow =
+                field != NULL_TREE && decl_type != NULL_TREE && TYPE_REF_P(decl_type) && !TYPE_REF_IS_RVALUE(decl_type);
+            if (source != NULL_TREE && source != decl && is_borrow && field == NULL_TREE) {
                 referent_of_[decl] = source;
-            } else if (source != NULL_TREE && source != decl && (saw_rvalue || is_linear_or_reference(decl_type))) {
-                consume(source, state, location_or(initial, DECL_SOURCE_LOCATION(decl)));
+            } else if (source != NULL_TREE && source != decl && !is_borrow && !is_field_borrow
+                       && (saw_rvalue || is_linear_or_reference(decl_type))) {
+                consume(source, field, state, location_or(initial, DECL_SOURCE_LOCATION(decl)));
             }
         }
         std::size_t slot = 0;
@@ -993,7 +1244,7 @@ private:
             is_tracked = true;
         }
         if (is_tracked && state.is_reachable) {
-            state.set(slot_of_.at(decl), Status::live);
+            set_object(state, slot_of_.at(decl), Status::live);
         }
         // The bindings of a structured binding, which have no DECL_EXPR of
         // their own.
@@ -1001,7 +1252,7 @@ private:
             for (const auto& [tracked, tracked_slot] : slot_of_) {
                 if (VAR_P(tracked) && DECL_DECOMPOSITION_P(tracked) && !DECL_DECOMP_IS_BASE(tracked)
                     && DECL_DECOMP_BASE(tracked) == decl) {
-                    state.set(tracked_slot, Status::live);
+                    set_object(state, tracked_slot, Status::live);
                 }
             }
         }
@@ -1254,9 +1505,11 @@ private:
             }
             tree argument = argument_at(call, index);
             bool saw_rvalue = false;
-            tree decl = strip_to_tracked(argument, saw_rvalue);
+            tree field = NULL_TREE;
+            tree decl = strip_to_tracked(argument, saw_rvalue, &field);
             if (is_method && index == 0) {
-                walk_object_argument(decl, argument, type, callee, is_constructor, is_assignment, location, state);
+                walk_object_argument(decl, field, argument, type, callee, is_constructor, is_assignment, location,
+                                     state);
                 continue;
             }
             if (parameter_type == NULL_TREE) {
@@ -1271,7 +1524,7 @@ private:
             }
             bool is_rvalue_reference = TYPE_REF_P(parameter_type) && TYPE_REF_IS_RVALUE(parameter_type);
             if (is_rvalue_reference || (!TYPE_REF_P(parameter_type) && CLASS_TYPE_P(parameter_type))) {
-                consume(decl, state, location);
+                consume(decl, field, state, location);
             }
         }
         if (callee != NULL_TREE && TREE_THIS_VOLATILE(callee)) {
@@ -1282,8 +1535,8 @@ private:
     // The object argument of a call of a member function: an assignment
     // assigns over it, and a member function with the qualifier && consumes
     // it.
-    void walk_object_argument(tree decl, tree argument, tree type, tree callee, bool is_constructor, bool is_assignment,
-                              location_t location, FlowState& state) {
+    void walk_object_argument(tree decl, tree field, tree argument, tree type, tree callee, bool is_constructor,
+                              bool is_assignment, location_t location, FlowState& state) {
         if (is_constructor) {
             return;
         }
@@ -1294,9 +1547,12 @@ private:
             return;
         }
         if (is_assignment) {
-            assign_over(decl, state, location);
+            // The rule drop-door reads an assignment to a field (THE SHAPES).
+            if (field == NULL_TREE) {
+                assign_over(decl, state, location);
+            }
         } else if (FUNCTION_RVALUE_QUALIFIED(type) || (callee != NULL_TREE && DECL_DESTRUCTOR_P(callee))) {
-            consume(decl, state, location);
+            consume(decl, field, state, location);
         }
     }
 
@@ -1315,16 +1571,24 @@ private:
             walk_expression(target, state);
         }
         bool saw_rvalue = false;
-        tree source = strip_to_tracked(value, saw_rvalue);
+        tree field = NULL_TREE;
+        tree source = strip_to_tracked(value, saw_rvalue, &field);
         open_originals_.pop_back();
         bool is_linear_target =
             target != NULL_TREE && TREE_TYPE(target) != NULL_TREE && is_linear_or_reference(TREE_TYPE(target));
-        if (source != NULL_TREE && source != tracked_target && (saw_rvalue || is_linear_target)) {
-            consume(source, state, location);
+        // THE CAPTURES: a lambda initializes a capture by reference with the
+        // address of the object, and the closure hides each later consume.
+        bool is_reference_capture = target != NULL_TREE && TREE_CODE(target) == COMPONENT_REF
+                                 && LAMBDA_TYPE_P(TREE_TYPE(TREE_OPERAND(target, 0))) && TREE_TYPE(target) != NULL_TREE
+                                 && TYPE_REF_P(TREE_TYPE(target));
+        if (source != NULL_TREE && is_reference_capture) {
+            mark_escaped(source);
+        } else if (source != NULL_TREE && source != tracked_target && (saw_rvalue || is_linear_target)) {
+            consume(source, field, state, location);
         }
         if (tracked_target != NULL_TREE && state.is_reachable) {
             if (is_init) {
-                state.set(slot_of_.at(tracked_target), Status::live);
+                set_object(state, slot_of_.at(tracked_target), Status::live);
             } else {
                 assign_over(tracked_target, state, location);
             }
@@ -1344,6 +1608,13 @@ private:
             }
             if (field != NULL_TREE && TREE_CODE(field) == FIELD_DECL && TREE_TYPE(field) != NULL_TREE
                 && TYPE_REF_P(TREE_TYPE(field)) && !TYPE_REF_IS_RVALUE(TREE_TYPE(field))) {
+                // THE CAPTURES: a closure that captures a tracked object by
+                // reference hides each later consume of it.
+                bool saw_reference = false;
+                tree captured = LAMBDA_TYPE_P(TREE_TYPE(node)) ? strip_to_tracked(value, saw_reference) : NULL_TREE;
+                if (captured != NULL_TREE) {
+                    mark_escaped(captured);
+                }
                 continue;
             }
             // An address or a pointer in an element is no transfer.
@@ -1352,9 +1623,10 @@ private:
                 continue;
             }
             bool saw_rvalue = false;
-            tree source = strip_to_tracked(value, saw_rvalue);
+            tree source_field = NULL_TREE;
+            tree source = strip_to_tracked(value, saw_rvalue, &source_field);
             if (source != NULL_TREE && (saw_rvalue || is_linear_type(value_type))) {
-                consume(source, state, location_or(value, location_or(node, function_location())));
+                consume(source, source_field, state, location_or(value, location_or(node, function_location())));
             }
         }
     }
@@ -1430,10 +1702,932 @@ private:
     }
 };
 
+// ── The shapes (THE SHAPES) ─────────────────────────────────────────────
+
+// The facts of the rules of the shapes, keyed by the main variant of a type.
+// Each collection clears them, as it clears linear_caches.
+struct ShapeCaches {
+    std::unordered_map<tree, bool> refuses_lifetime;
+    std::unordered_map<tree, tree> library_holder;
+    std::unordered_map<tree, std::vector<tree>> brands;
+};
+
+ShapeCaches shape_caches;
+
+// The classes that the class rules read in this unit, by TYPE_UID, which no
+// collection reuses.
+std::unordered_set<int> checked_classes;
+
+// The call edges of the bodies of this unit, and each call with a branded
+// argument, by DECL_UID (the rule brand-reentry).
+struct BrandedCall {
+    int caller = 0;
+    int callee = 0;
+    location_t location = UNKNOWN_LOCATION;
+    std::string entity;
+};
+
+struct CallGraph {
+    std::unordered_map<int, std::vector<int>> callees;
+    std::vector<BrandedCall> branded_calls;
+    bool was_reported = false;
+};
+
+CallGraph call_graph;
+
+// Records a finding of a rule of the family at LOCATION.
+void record_shape(Kind kind, location_t location, const std::string& entity) {
+    Place place = place_of(location, Scope::quarantine);
+    if (place.file != nullptr) {
+        add_finding(kind, nullptr, place, entity);
+    }
+}
+
+// True when a finding about ENTITY, a declaration or a class, counts in this
+// unit: in a quarantined file, in a base file only in its sentinel unit, and in
+// each unit that makes an instance of a base template (THE BODIES).
+bool is_reported_for(tree entity) {
+    tree decl = TYPE_P(entity) ? TYPE_MAIN_DECL(entity) : entity;
+    if (decl == NULL_TREE) {
+        return false;
+    }
+    Place place = place_of(DECL_SOURCE_LOCATION(decl), Scope::quarantine);
+    if (place.file == nullptr) {
+        return false;
+    }
+    if (is_in_instantiation(entity)) {
+        return place.file_class == FileClass::base || place.file_class == FileClass::quarantined;
+    }
+    return is_walked_file(place);
+}
+
+// True when TYPE carries the annotation no_start_over_bytes of
+// include/foundation/ByteSeal.h, or holds a part that carries it, or holds a
+// reference member: the checked lifetime start of include/foundation/Lifetime.h
+// refuses it.  Complexity: the walk visits each class one time.
+bool refuses_lifetime(tree type, int depth = 0) {
+    type = TYPE_MAIN_VARIANT(element_type_of(type));
+    if (!CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type) || depth > kTypeDepth) {
+        return false;
+    }
+    auto found = shape_caches.refuses_lifetime.find(type);
+    if (found != shape_caches.refuses_lifetime.end()) {
+        return found->second;
+    }
+    shape_caches.refuses_lifetime.emplace(type, false);
+    bool result = carries_annotation(TYPE_ATTRIBUTES(type), linear_names.no_start_over_bytes, linear_names.lifetime);
+    if (tree binfo = TYPE_BINFO(type); binfo != NULL_TREE && !result) {
+        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo) && !result; ++index) {
+            result = refuses_lifetime(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), depth + 1);
+        }
+    }
+    for (tree field = TYPE_FIELDS(type); field != NULL_TREE && !result; field = DECL_CHAIN(field)) {
+        if (TREE_CODE(field) == FIELD_DECL && TREE_TYPE(field) != NULL_TREE) {
+            result = TYPE_REF_P(TREE_TYPE(field)) || refuses_lifetime(TREE_TYPE(field), depth + 1);
+        }
+    }
+    shape_caches.refuses_lifetime[type] = result;
+    return result;
+}
+
+// A sealed type: a linear type, or a type that the checked lifetime start
+// refuses.  No route of bytes can build one.
+bool is_sealed_type(tree type) { return is_linear_type(type) || refuses_lifetime(type); }
+
+// True when TYPE is a class of namespace std.
+bool is_library_class(tree type) {
+    tree decl = TYPE_MAIN_DECL(type);
+    return decl != NULL_TREE && decl_in_std_namespace_p(decl);
+}
+
+// Calls VISIT for each type argument of the class TYPE, at each level and
+// inside each argument pack.
+template <typename Visit>
+void each_type_argument(tree arguments, Visit visit, int depth = 0) {
+    if (arguments == NULL_TREE || depth > kTypeDepth) {
+        return;
+    }
+    if (TREE_CODE(arguments) != TREE_VEC) {
+        if (ARGUMENT_PACK_P(arguments)) {
+            each_type_argument(ARGUMENT_PACK_ARGS(arguments), visit, depth + 1);
+        } else {
+            visit(arguments);
+        }
+        return;
+    }
+    for (int index = 0; index < TREE_VEC_LENGTH(arguments); ++index) {
+        each_type_argument(TREE_VEC_ELT(arguments, index), visit, depth + 1);
+    }
+}
+
+// The class of the library that TYPE holds by value with a linear type
+// argument, or null.  Such a class is no aggregate, and it is linear by its
+// parts or it has a destructor that is not trivial: its operations copy or
+// drop a value, and they carry no door.  A view, such as std::span, has a
+// trivial destructor and holds no value.  A pointer and a reference hold no
+// value.  Complexity: the walk visits each class one time.
+tree library_holder_of(tree type, int depth = 0) {
+    type = type != NULL_TREE && TYPE_P(type) ? TYPE_MAIN_VARIANT(element_type_of(type)) : NULL_TREE;
+    if (type == NULL_TREE || !CLASS_TYPE_P(type) || LAMBDA_TYPE_P(type) || depth > kTypeDepth
+        || CLASSTYPE_TEMPLATE_INFO(type) == NULL_TREE || uses_template_parms(type)) {
+        return NULL_TREE;
+    }
+    auto found = shape_caches.library_holder.find(type);
+    if (found != shape_caches.library_holder.end()) {
+        return found->second;
+    }
+    shape_caches.library_holder.emplace(type, NULL_TREE);
+    tree result = NULL_TREE;
+    bool is_owner = is_library_class(type) && COMPLETE_TYPE_P(type) && !CP_AGGREGATE_TYPE_P(type)
+                 && (is_linear_type(type) || TYPE_HAS_NONTRIVIAL_DESTRUCTOR(type));
+    each_type_argument(CLASSTYPE_TI_ARGS(type), [&](tree argument) {
+        if (result != NULL_TREE || !TYPE_P(argument)) {
+            return;
+        }
+        if (is_owner && is_linear_type(argument)) {
+            result = type;
+        } else {
+            result = library_holder_of(argument, depth + 1);
+        }
+    });
+    shape_caches.library_holder[type] = result;
+    return result;
+}
+
+// The macro of include/foundation/Brand.h that writes the fresh brand.
+constexpr const char* kFreshBrandMacro = "CRUCIBLE_FRESH_BRAND";
+
+// True when TYPE has the shape of a brand: the closure type of a lambda with
+// no capture, no template parameter and no parameter.
+bool has_brand_shape(tree type) {
+    if (type == NULL_TREE || !TYPE_P(type)) {
+        return false;
+    }
+    type = TYPE_MAIN_VARIANT(type);
+    if (!LAMBDA_TYPE_P(type)) {
+        return false;
+    }
+    for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+        if (TREE_CODE(field) == FIELD_DECL) {
+            return false;
+        }
+    }
+    tree call = lambda_function(type);
+    return call != NULL_TREE && TREE_CODE(call) == FUNCTION_DECL && !generic_lambda_fn_p(call)
+        && FUNCTION_FIRST_USER_PARMTYPE(call) == void_list_node;
+}
+
+// True when the expansion of the macro CRUCIBLE_FRESH_BRAND wrote the lambda
+// of the closure TYPE.
+bool is_written_by_fresh_brand(tree type) {
+    tree decl = TYPE_MAIN_DECL(TYPE_MAIN_VARIANT(type));
+    location_t location = decl != NULL_TREE ? DECL_SOURCE_LOCATION(decl) : UNKNOWN_LOCATION;
+    for (int depth = 0; depth < kMacroDepth && linemap_location_from_macro_expansion_p(line_table, location); ++depth) {
+        const line_map* map = linemap_lookup(line_table, location);
+        if (map == nullptr || !linemap_macro_expansion_map_p(map)) {
+            return false;
+        }
+        const char* macro = linemap_map_get_macro_name(linemap_check_macro(map));
+        if (macro != nullptr && std::strcmp(macro, kFreshBrandMacro) == 0) {
+            return true;
+        }
+        location = linemap_unwind_toward_expansion(line_table, location, &map);
+    }
+    return false;
+}
+
+// True when TYPE is a fresh brand: a closure with the shape of a brand that
+// CRUCIBLE_FRESH_BRAND of include/foundation/Brand.h writes.  A class that
+// names a closure as its member brand_type gives a fresh brand too
+// (collect_brands).  A closure with the shape of a brand that no class names
+// as its brand, such as a label of a session, is no brand.
+bool is_brand_closure(tree type) { return has_brand_shape(type) && is_written_by_fresh_brand(type); }
+
+// The closure that the class TYPE or one of its bases names as its member
+// brand_type, or null.
+tree named_brand_of(tree type, int depth = 0) {
+    if (type == NULL_TREE || !CLASS_TYPE_P(type) || depth > kTypeDepth) {
+        return NULL_TREE;
+    }
+    for (tree member = TYPE_FIELDS(type); member != NULL_TREE; member = DECL_CHAIN(member)) {
+        if (TREE_CODE(member) == TYPE_DECL && DECL_NAME(member) == linear_names.brand_type
+            && has_brand_shape(TREE_TYPE(member))) {
+            return TYPE_MAIN_VARIANT(TREE_TYPE(member));
+        }
+    }
+    if (tree binfo = TYPE_BINFO(type)) {
+        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+            if (tree brand = named_brand_of(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), depth + 1)) {
+                return brand;
+            }
+        }
+    }
+    return NULL_TREE;
+}
+
+// Adds each fresh brand that TYPE holds to OUT: a brand closure, a brand in a
+// template argument or in the type of a value argument such as a function
+// pointer, and a brand in a capture or a field of a closure or of a local
+// class.  Complexity: the walk visits each class one time.
+void collect_brands(tree type, std::vector<tree>& out, int depth = 0) {
+    if (type == NULL_TREE || !TYPE_P(type) || depth > kTypeDepth) {
+        return;
+    }
+    switch (TREE_CODE(type)) {
+        case REFERENCE_TYPE:
+        case POINTER_TYPE:
+        case ARRAY_TYPE:
+            collect_brands(TREE_TYPE(type), out, depth + 1);
+            return;
+        case OFFSET_TYPE:
+            collect_brands(TREE_TYPE(type), out, depth + 1);
+            collect_brands(TYPE_OFFSET_BASETYPE(type), out, depth + 1);
+            return;
+        case FUNCTION_TYPE:
+        case METHOD_TYPE: {
+            collect_brands(TREE_TYPE(type), out, depth + 1);
+            tree parameter = TYPE_ARG_TYPES(type);
+            if (TREE_CODE(type) == METHOD_TYPE && parameter != NULL_TREE) {
+                parameter = TREE_CHAIN(parameter);
+            }
+            for (; parameter != NULL_TREE && parameter != void_list_node; parameter = TREE_CHAIN(parameter)) {
+                collect_brands(TREE_VALUE(parameter), out, depth + 1);
+            }
+            return;
+        }
+        default:
+            break;
+    }
+    type = TYPE_MAIN_VARIANT(type);
+    if (!CLASS_TYPE_P(type)) {
+        return;
+    }
+    if (is_brand_closure(type)) {
+        out.push_back(type);
+        return;
+    }
+    auto found = shape_caches.brands.find(type);
+    if (found == shape_caches.brands.end()) {
+        shape_caches.brands.emplace(type, std::vector<tree>{});
+        std::vector<tree> held;
+        if (CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE) {
+            each_type_argument(CLASSTYPE_TI_ARGS(type), [&](tree argument) {
+                if (TYPE_P(argument)) {
+                    collect_brands(argument, held, depth + 1);
+                } else if (TREE_TYPE(argument) != NULL_TREE) {
+                    collect_brands(TREE_TYPE(argument), held, depth + 1);
+                }
+            });
+        }
+        if (tree named = named_brand_of(type)) {
+            held.push_back(named);
+        }
+        tree decl = TYPE_MAIN_DECL(type);
+        if (LAMBDA_TYPE_P(type) || (decl != NULL_TREE && decl_function_context(decl) != NULL_TREE)) {
+            for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+                if (TREE_CODE(field) == FIELD_DECL) {
+                    collect_brands(TREE_TYPE(field), held, depth + 1);
+                }
+            }
+        }
+        found = shape_caches.brands.find(type);
+        found->second = std::move(held);
+    }
+    out.insert(out.end(), found->second.begin(), found->second.end());
+}
+
+// True when BRAND is held by a template argument of SCOPE or of a class or a
+// function that holds SCOPE: the brand came in from outside, so SCOPE did not
+// make it (THE BRANDS).
+bool is_bound_brand(tree brand, tree scope) {
+    for (int depth = 0; scope != NULL_TREE && depth < kTypeDepth; ++depth) {
+        tree info = NULL_TREE;
+        tree next = NULL_TREE;
+        if (TYPE_P(scope)) {
+            scope = TYPE_MAIN_VARIANT(scope);
+            info = CLASS_TYPE_P(scope) ? CLASSTYPE_TEMPLATE_INFO(scope) : NULL_TREE;
+            next = CP_TYPE_CONTEXT(scope);
+        } else if (TREE_CODE(scope) == FUNCTION_DECL) {
+            info = DECL_LANG_SPECIFIC(scope) != nullptr ? DECL_TEMPLATE_INFO(scope) : NULL_TREE;
+            next = CP_DECL_CONTEXT(scope);
+        } else if (TREE_CODE(scope) == NAMESPACE_DECL) {
+            return false;
+        } else if (DECL_P(scope)) {
+            next = CP_DECL_CONTEXT(scope);
+        } else {
+            return false;
+        }
+        if (info != NULL_TREE && TI_ARGS(info) != NULL_TREE) {
+            bool is_held = false;
+            each_type_argument(TI_ARGS(info), [&](tree argument) {
+                std::vector<tree> held;
+                if (TYPE_P(argument) && TYPE_MAIN_VARIANT(argument) == brand) {
+                    held.push_back(brand);
+                } else if (TYPE_P(argument)) {
+                    collect_brands(argument, held);
+                } else if (TREE_TYPE(argument) != NULL_TREE && has_brand_shape(TREE_TYPE(argument))) {
+                    held.push_back(TYPE_MAIN_VARIANT(TREE_TYPE(argument)));
+                } else if (TREE_TYPE(argument) != NULL_TREE) {
+                    collect_brands(TREE_TYPE(argument), held);
+                }
+                is_held = is_held || std::find(held.begin(), held.end(), brand) != held.end();
+            });
+            if (is_held) {
+                return true;
+            }
+        }
+        scope = next;
+    }
+    return false;
+}
+
+// The first brand of TYPE that SCOPE did not get from outside, or null.
+tree unbound_brand(tree type, tree scope) {
+    std::vector<tree> held;
+    collect_brands(type, held);
+    for (tree brand : held) {
+        if (!is_bound_brand(brand, scope)) {
+            return brand;
+        }
+    }
+    return NULL_TREE;
+}
+
+// The name of a brand in an entity: the place of its lambda, because GCC
+// prints each brand as <lambda()>.
+std::string brand_text(tree brand) {
+    tree decl = TYPE_MAIN_DECL(brand);
+    Place place = decl != NULL_TREE ? place_of(DECL_SOURCE_LOCATION(decl), Scope::tree) : Place{};
+    if (place.file == nullptr) {
+        return "a brand of a library";
+    }
+    return "the brand of " + place.file->relative + ":" + std::to_string(place.line);
+}
+
+// True when the end of the scope of a value of TYPE is a door: the class
+// carries scope_end_door, or its destructor is a door.
+bool has_scope_door(tree type);
+
+// True when the class TYPE has a user-provided copy constructor or copy
+// assignment that is not deleted.
+bool has_user_copy(tree type) {
+    // A copy whose constraints an instance does not satisfy is no copy of it.
+    auto is_user_copy = [](tree function) {
+        return TREE_CODE(function) == FUNCTION_DECL && copy_fn_p(function) > 0 && !DECL_DELETED_FN(function)
+            && user_provided_p(function) && constraints_satisfied_p(function);
+    };
+    for (ovl_iterator constructor(CLASSTYPE_CONSTRUCTORS(type)); constructor; ++constructor) {
+        if (is_user_copy(*constructor)) {
+            return true;
+        }
+    }
+    for (tree member = TYPE_FIELDS(type); member != NULL_TREE; member = DECL_CHAIN(member)) {
+        if (TREE_CODE(member) == FUNCTION_DECL && DECL_ASSIGNMENT_OPERATOR_P(member) && is_user_copy(member)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when TYPE holds a linear base or a linear field by value.
+bool holds_linear_part(tree type) {
+    if (tree binfo = TYPE_BINFO(type)) {
+        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+            if (is_linear_type(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)))) {
+                return true;
+            }
+        }
+    }
+    for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+        if (TREE_CODE(field) == FIELD_DECL && !DECL_FIELD_IS_BASE(field) && TREE_TYPE(field) != NULL_TREE
+            && !TYPE_REF_P(TREE_TYPE(field)) && is_linear_type(TREE_TYPE(field))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void check_class(tree type, int depth = 0);
+
+// The checks of an object with static or thread storage duration: a brand in
+// it escapes each run of its mint site, and a class of the library with a
+// linear argument drops its values.
+void check_static_object(tree decl, const std::string& owner) {
+    tree type = TREE_TYPE(decl);
+    if (type == NULL_TREE || type == error_mark_node || uses_template_parms(type)) {
+        return;
+    }
+    std::string entity = owner + ": " + simple_name(decl);
+    std::vector<tree> held;
+    collect_brands(type, held);
+    if (!held.empty()) {
+        record_shape(Kind::brand_escaped_static, DECL_SOURCE_LOCATION(decl), entity + ", " + brand_text(held.front()));
+    }
+    if (tree holder = library_holder_of(type)) {
+        record_shape(Kind::linear_library_holder, DECL_SOURCE_LOCATION(decl),
+                     entity + ", " + qualified_name(TYPE_MAIN_DECL(holder)));
+    }
+    check_class(type);
+}
+
+// An alias outside a body: a brand in its type escapes each run of its mint
+// site, unless a template argument of its class gave the brand.
+void check_alias(tree decl, tree scope, const std::string& owner) {
+    tree type = TREE_TYPE(decl);
+    if (type == NULL_TREE || type == error_mark_node || uses_template_parms(type)) {
+        return;
+    }
+    if (tree brand = unbound_brand(type, scope)) {
+        record_shape(Kind::brand_escaped_alias, DECL_SOURCE_LOCATION(decl),
+                     owner + ": " + simple_name(decl) + ", " + brand_text(brand));
+    }
+}
+
+// The class rules: linear-containment, linear-forge and the members of
+// brand-escape, for one complete class that is no pattern (THE SHAPES).  The
+// walk goes on into the class of each base and each field.  Complexity: each
+// class one time in each unit.
+void check_class(tree type, int depth) {
+    type = type != NULL_TREE && TYPE_P(type) ? TYPE_MAIN_VARIANT(element_type_of(type)) : NULL_TREE;
+    if (type == NULL_TREE || !CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type) || LAMBDA_TYPE_P(type) || depth > kTypeDepth
+        || uses_template_parms(type) || !checked_classes.insert(TYPE_UID(type)).second) {
+        return;
+    }
+    tree decl = TYPE_MAIN_DECL(type);
+    if (decl == NULL_TREE || in_library_file_at(DECL_SOURCE_LOCATION(decl))) {
+        return;
+    }
+    if (tree binfo = TYPE_BINFO(type)) {
+        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+            check_class(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), depth + 1);
+        }
+    }
+    for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+        if (TREE_CODE(field) == FIELD_DECL && TREE_TYPE(field) != NULL_TREE) {
+            check_class(TREE_TYPE(field), depth + 1);
+        }
+    }
+    if (!is_reported_for(type)) {
+        return;
+    }
+    location_t location = DECL_SOURCE_LOCATION(decl);
+    std::string name = qualified_name(decl);
+    TypeFacts facts = facts_of(type);
+    // A union ends no member at its end, and its owner chooses the active
+    // member: the rule linear-forge reads it.
+    if (TREE_CODE(type) != UNION_TYPE && holds_linear_part(type)) {
+        if (facts.linearity == Linearity::none && !has_scope_door(type)) {
+            record_shape(Kind::linear_pinned_holder, location, name);
+        }
+        if (has_user_copy(type)) {
+            record_shape(Kind::linear_copyable_holder, location, name);
+        }
+    }
+    if (facts.linearity == Linearity::direct && !refuses_lifetime(type)) {
+        record_shape(Kind::linear_unsealed_lifetime, location, name);
+    }
+    bool is_union = TREE_CODE(type) == UNION_TYPE;
+    for (tree member = TYPE_FIELDS(type); member != NULL_TREE; member = DECL_CHAIN(member)) {
+        tree member_type = TREE_TYPE(member);
+        if (member_type == NULL_TREE || member_type == error_mark_node) {
+            continue;
+        }
+        if (TREE_CODE(member) == FIELD_DECL && !DECL_FIELD_IS_BASE(member)) {
+            std::string entity = name + ": " + simple_name(member);
+            if (is_union && is_sealed_type(member_type)) {
+                record_shape(Kind::linear_sealed_union, DECL_SOURCE_LOCATION(member), entity);
+            }
+            if (tree holder = library_holder_of(member_type)) {
+                record_shape(Kind::linear_library_holder, DECL_SOURCE_LOCATION(member),
+                             entity + ", " + qualified_name(TYPE_MAIN_DECL(holder)));
+            }
+            if (tree brand = unbound_brand(member_type, type)) {
+                record_shape(Kind::brand_escaped_member, DECL_SOURCE_LOCATION(member),
+                             entity + ", " + brand_text(brand));
+            }
+        } else if (VAR_P(member)) {
+            check_static_object(member, name);
+        } else if (TREE_CODE(member) == TYPE_DECL && !DECL_ARTIFICIAL(member) && !DECL_IMPLICIT_TYPEDEF_P(member)
+                   && !DECL_SELF_REFERENCE_P(member)) {
+            check_alias(member, type, name);
+        }
+    }
+}
+
+// The checks of the signature of a function whose body the unit reads: a
+// return value and a parameter of a class of the library with a linear
+// argument, and a fresh brand that the function made and returns.
+void check_signature(tree function) {
+    std::string name = function_text(function);
+    location_t location = DECL_SOURCE_LOCATION(function);
+    tree result = TREE_TYPE(TREE_TYPE(function));
+    if (!DECL_CONSTRUCTOR_P(function) && !DECL_DESTRUCTOR_P(function) && result != NULL_TREE
+        && !uses_template_parms(result)) {
+        if (tree holder = library_holder_of(result)) {
+            record_shape(Kind::linear_library_holder, location,
+                         name + ": the return value, " + qualified_name(TYPE_MAIN_DECL(holder)));
+        }
+        if (tree brand = unbound_brand(result, function)) {
+            record_shape(Kind::brand_escaped_return, location, name + ": " + brand_text(brand));
+        }
+        check_class(result);
+    }
+    for (tree parameter = DECL_ARGUMENTS(function); parameter != NULL_TREE; parameter = DECL_CHAIN(parameter)) {
+        tree type = TREE_TYPE(parameter);
+        if (DECL_ARTIFICIAL(parameter) || type == NULL_TREE || uses_template_parms(type)) {
+            continue;
+        }
+        check_class(type);
+        if (tree holder = library_holder_of(type)) {
+            record_shape(Kind::linear_library_holder, DECL_SOURCE_LOCATION(parameter),
+                         name + ": " + simple_name(parameter) + ", " + qualified_name(TYPE_MAIN_DECL(holder)));
+        }
+    }
+}
+
+// The walk of one body for the rules of the shapes.  It also tells whether
+// the body holds a linear object or a linear value, so that must-consume runs
+// only on such a body.
+struct ShapeWalk {
+    tree function = NULL_TREE;
+    std::string name;
+    // A door, a transfer and a destructor end or move the linear values of
+    // their frame by their contract, so drop-door reads none of them.
+    bool is_exempt_from_drops = false;
+    bool has_linear = false;
+    // The location of the last node with a location, for a node that the
+    // front end builds with none, such as the clobber of a trivial destructor.
+    location_t last_location = UNKNOWN_LOCATION;
+    // The locals of the body, and each local that a call of the same type
+    // initializes (check_local).
+    std::vector<tree> locals;
+    std::unordered_set<tree> from_call;
+    hash_set<tree> visited;
+
+    location_t location_of(tree node) const {
+        if (node != NULL_TREE && EXPR_P(node) && EXPR_HAS_LOCATION(node)) {
+            return EXPR_LOCATION(node);
+        }
+        return last_location != UNKNOWN_LOCATION ? last_location : DECL_SOURCE_LOCATION(function);
+    }
+};
+
+// The call or the aggregate initialization that INITIAL is, through a
+// temporary and its casts, or null.
+tree initializing_call(tree initial) {
+    for (int depth = 0; initial != NULL_TREE && depth < kTypeDepth; ++depth) {
+        initial = tree_strip_any_location_wrapper(initial);
+        if (TREE_CODE(initial) == TARGET_EXPR) {
+            initial = TARGET_EXPR_INITIAL(initial);
+        } else if (TREE_CODE(initial) == NOP_EXPR || TREE_CODE(initial) == CLEANUP_POINT_EXPR) {
+            initial = TREE_OPERAND(initial, 0);
+        } else {
+            break;
+        }
+    }
+    if (initial == NULL_TREE || (TREE_CODE(initial) != CALL_EXPR && TREE_CODE(initial) != AGGR_INIT_EXPR)) {
+        return NULL_TREE;
+    }
+    tree callee = cp_get_callee_fndecl_nofold(initial);
+    if (callee != NULL_TREE && TREE_CODE(callee) == FUNCTION_DECL && DECL_CONSTRUCTOR_P(callee)) {
+        return NULL_TREE;
+    }
+    return initial;
+}
+
+// True when INITIAL is a call that gives a value of TYPE: the local then takes
+// the type of the callee (check_local).
+bool is_call_of_type(tree initial, tree type) {
+    tree call = initializing_call(initial);
+    if (call == NULL_TREE || type == NULL_TREE) {
+        return false;
+    }
+    // An AGGR_INIT_EXPR has the type void, and its callee gives the type.
+    tree callee = cp_get_callee_fndecl_nofold(call);
+    tree result =
+        callee != NULL_TREE && TREE_CODE(callee) == FUNCTION_DECL ? TREE_TYPE(TREE_TYPE(callee)) : TREE_TYPE(call);
+    return result != NULL_TREE && TYPE_MAIN_VARIANT(result) == TYPE_MAIN_VARIANT(type);
+}
+
+// The tracked object of must-consume that NODE names: a local, a parameter
+// by value or by rvalue reference, or a structured binding.  An assignment to
+// it is the business of must-consume.
+bool is_frame_object(tree node) {
+    for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
+        node = tree_strip_any_location_wrapper(node);
+        switch (TREE_CODE(node)) {
+            case NOP_EXPR:
+            case CONVERT_EXPR:
+            case NON_LVALUE_EXPR:
+            case VIEW_CONVERT_EXPR:
+            case ADDR_EXPR:
+                node = TREE_OPERAND(node, 0);
+                continue;
+            case INDIRECT_REF: {
+                tree pointer = tree_strip_any_location_wrapper(TREE_OPERAND(node, 0));
+                return TREE_CODE(pointer) == PARM_DECL && TYPE_REF_P(TREE_TYPE(pointer))
+                    && TYPE_REF_IS_RVALUE(TREE_TYPE(pointer));
+            }
+            case TARGET_EXPR:
+                return true;
+            case VAR_DECL:
+                return !TREE_STATIC(node) && !DECL_EXTERNAL(node)
+                    && (!TYPE_REF_P(TREE_TYPE(node)) || DECL_DECOMPOSITION_P(node));
+            case PARM_DECL:
+                return !TYPE_REF_P(TREE_TYPE(node));
+            default:
+                return false;
+        }
+    }
+    return false;
+}
+
+// True when FIELD of the class CLOSURE is a capture by reference of a linear
+// object.
+bool is_linear_reference_capture(tree closure, tree field) {
+    return closure != NULL_TREE && LAMBDA_TYPE_P(TYPE_MAIN_VARIANT(closure)) && field != NULL_TREE
+        && TREE_CODE(field) == FIELD_DECL && TYPE_REF_P(TREE_TYPE(field))
+        && is_linear_type(TREE_TYPE(TREE_TYPE(field)));
+}
+
+// One capture by reference of a linear object, the field FIELD of the closure
+// CLOSURE that VALUE initializes (the rule linear-capture).
+void record_capture(tree closure, tree field, tree value, const ShapeWalk& walk) {
+    tree lambda = CLASSTYPE_LAMBDA_EXPR(TYPE_MAIN_VARIANT(closure));
+    location_t fallback = lambda != NULL_TREE ? LAMBDA_EXPR_LOCATION(lambda) : DECL_SOURCE_LOCATION(walk.function);
+    tree captured = value;
+    for (int depth = 0; captured != NULL_TREE && depth < kTypeDepth && !DECL_P(captured); ++depth) {
+        captured = tree_strip_any_location_wrapper(captured);
+        if (!EXPR_P(captured) || TREE_OPERAND_LENGTH(captured) == 0) {
+            break;
+        }
+        captured = TREE_OPERAND(captured, 0);
+    }
+    std::string object = captured != NULL_TREE && DECL_P(captured) ? simple_name(captured) : simple_name(field);
+    location_t location =
+        value != NULL_TREE && EXPR_P(value) && EXPR_HAS_LOCATION(value) ? EXPR_LOCATION(value) : fallback;
+    record_shape(Kind::linear_reference_capture, location, walk.name + ": " + object);
+}
+
+// The captures of a closure that a braced list builds.
+void check_captures(tree constructor, const ShapeWalk& walk) {
+    tree closure = TREE_TYPE(constructor);
+    vec<constructor_elt, va_gc>* elements = CONSTRUCTOR_ELTS(constructor);
+    for (unsigned index = 0; index < vec_safe_length(elements); ++index) {
+        if (is_linear_reference_capture(closure, (*elements)[index].index)) {
+            record_capture(closure, (*elements)[index].index, (*elements)[index].value, walk);
+        }
+    }
+}
+
+// The rule drop-door at an assignment: an assignment over a linear object
+// that is no tracked object of must-consume drops its old value.
+void check_assignment_target(tree target, location_t location, const ShapeWalk& walk) {
+    if (walk.is_exempt_from_drops || target == NULL_TREE || is_frame_object(target)) {
+        return;
+    }
+    tree type = TREE_TYPE(target);
+    if (type != NULL_TREE && TYPE_PTR_P(type)) {
+        type = TREE_TYPE(type);
+    }
+    if (type == NULL_TREE || !is_linear_type(type)) {
+        return;
+    }
+    tree stripped = target;
+    for (int depth = 0; stripped != NULL_TREE && depth < kTypeDepth; ++depth) {
+        stripped = tree_strip_any_location_wrapper(stripped);
+        if (TREE_CODE(stripped) != ADDR_EXPR && TREE_CODE(stripped) != NOP_EXPR) {
+            break;
+        }
+        stripped = TREE_OPERAND(stripped, 0);
+    }
+    std::string object = "an object behind a reference";
+    if (stripped != NULL_TREE && TREE_CODE(stripped) == COMPONENT_REF) {
+        object = simple_name(TREE_OPERAND(stripped, 1));
+    } else if (stripped != NULL_TREE && TREE_CODE(stripped) == ARRAY_REF) {
+        object = "an element";
+    } else if (stripped != NULL_TREE && DECL_P(stripped)) {
+        object = simple_name(stripped);
+    }
+    record_shape(Kind::linear_untracked_assignment, location, walk.name + ": " + object);
+}
+
+// The rules at a call: drop-door, and the call graph of brand-reentry.
+void check_call(tree call, ShapeWalk& walk) {
+    tree callee = cp_get_callee_fndecl_nofold(call);
+    if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL) {
+        return;
+    }
+    location_t location = walk.location_of(call);
+    int count = argument_count(call);
+    call_graph.callees[DECL_UID(walk.function)].push_back(DECL_UID(callee));
+    for (int index = 0; index < count; ++index) {
+        tree argument = argument_at(call, index);
+        tree type = argument != NULL_TREE ? TREE_TYPE(argument) : NULL_TREE;
+        if (type == NULL_TREE || (index == 0 && DECL_IOBJ_MEMBER_FUNCTION_P(callee))) {
+            continue;
+        }
+        if (tree brand = unbound_brand(type, walk.function)) {
+            call_graph.branded_calls.push_back(
+                BrandedCall{DECL_UID(walk.function), DECL_UID(callee), location,
+                            walk.name + ": " + function_text(callee) + ", " + brand_text(brand)});
+            break;
+        }
+    }
+    if (walk.is_exempt_from_drops || count < 1 || TREE_CODE(call) != CALL_EXPR) {
+        return;
+    }
+    tree first = argument_at(call, 0);
+    if (DECL_ASSIGNMENT_OPERATOR_P(callee) && DECL_CONTEXT(callee) != NULL_TREE && TYPE_P(DECL_CONTEXT(callee))
+        && is_linear_type(DECL_CONTEXT(callee))) {
+        check_assignment_target(first, location, walk);
+    } else if (DECL_DESTRUCTOR_P(callee) && DECL_CONTEXT(callee) != NULL_TREE && TYPE_P(DECL_CONTEXT(callee))
+               && is_linear_type(DECL_CONTEXT(callee)) && !is_frame_object(first)) {
+        // A delete-expression calls the destructor too, or clobbers the
+        // object of a trivial destructor (walk_shapes).
+        record_shape(Kind::linear_destroy, location, walk.name + ": " + function_text(callee));
+    }
+}
+
+// A local of the body: a class of the library with a linear argument, a
+// container that holds a fresh brand, and a function pointer whose type holds
+// one.  A local whose initializer is a call that gives the same type takes the
+// type of that callee, so the signature of the callee holds the finding.
+void check_local(tree decl, const ShapeWalk& walk) {
+    tree type = TREE_TYPE(decl);
+    if (type == NULL_TREE || type == error_mark_node || DECL_ARTIFICIAL(decl) || uses_template_parms(type)) {
+        return;
+    }
+    check_class(type);
+    bool is_from_call = walk.from_call.count(decl) != 0 || is_call_of_type(DECL_INITIAL(decl), type);
+    std::string entity = walk.name + ": " + simple_name(decl);
+    tree holder = library_holder_of(type);
+    if (holder != NULL_TREE && !is_from_call) {
+        record_shape(Kind::linear_library_holder, DECL_SOURCE_LOCATION(decl),
+                     entity + ", " + qualified_name(TYPE_MAIN_DECL(holder)));
+    }
+    tree brand = unbound_brand(type, walk.function);
+    if (brand == NULL_TREE) {
+        return;
+    }
+    tree bare = TYPE_MAIN_VARIANT(type);
+    if (TYPE_PTR_P(bare) && FUNC_OR_METHOD_TYPE_P(TREE_TYPE(bare))) {
+        record_shape(Kind::brand_escaped_function_pointer, DECL_SOURCE_LOCATION(decl),
+                     entity + ", " + brand_text(brand));
+    } else if (CLASS_TYPE_P(bare) && is_library_class(bare) && !CP_AGGREGATE_TYPE_P(bare) && !is_from_call) {
+        record_shape(Kind::brand_escaped_container, DECL_SOURCE_LOCATION(decl), entity + ", " + brand_text(brand));
+    }
+}
+
+void note_linear_variable(tree variable, ShapeWalk& walk) {
+    if (VAR_P(variable) && !TREE_STATIC(variable) && is_linear_or_reference(TREE_TYPE(variable))) {
+        walk.has_linear = true;
+    }
+}
+
+tree walk_shapes(tree* node_pointer, int* walk_subtrees, void* data) {
+    tree node = *node_pointer;
+    auto& walk = *static_cast<ShapeWalk*>(data);
+    if (node == NULL_TREE) {
+        return NULL_TREE;
+    }
+    if (TYPE_P(node) || DECL_P(node)) {
+        *walk_subtrees = 0;
+        note_linear_variable(node, walk);
+        return NULL_TREE;
+    }
+    if (EXPR_P(node) && EXPR_HAS_LOCATION(node)) {
+        walk.last_location = EXPR_LOCATION(node);
+    }
+    switch (TREE_CODE(node)) {
+        case BIND_EXPR:
+            for (tree variable = BIND_EXPR_VARS(node); variable != NULL_TREE; variable = DECL_CHAIN(variable)) {
+                note_linear_variable(variable, walk);
+                if (VAR_P(variable) && TREE_STATIC(variable) && !DECL_EXTERNAL(variable)) {
+                    check_static_object(variable, walk.name);
+                }
+            }
+            break;
+        case DECL_EXPR: {
+            tree decl = DECL_EXPR_DECL(node);
+            if (decl != NULL_TREE && VAR_P(decl) && !TREE_STATIC(decl) && !DECL_EXTERNAL(decl)) {
+                walk.locals.push_back(decl);
+                // The walk stops at a declaration, so it reads the
+                // initializer here, such as the closure of a lambda.
+                if (DECL_INITIAL(decl) != NULL_TREE && DECL_INITIAL(decl) != error_mark_node) {
+                    cp_walk_tree(&DECL_INITIAL(decl), walk_shapes, data, &walk.visited);
+                }
+            }
+            break;
+        }
+        case INIT_EXPR: {
+            tree target = tree_strip_any_location_wrapper(TREE_OPERAND(node, 0));
+            if (VAR_P(target) && is_call_of_type(TREE_OPERAND(node, 1), TREE_TYPE(target))) {
+                walk.from_call.insert(target);
+            }
+            // A lambda initializes each capture of its closure with one
+            // initialization of a field.
+            if (TREE_CODE(target) == COMPONENT_REF) {
+                tree closure = TREE_TYPE(TREE_OPERAND(target, 0));
+                if (is_linear_reference_capture(closure, TREE_OPERAND(target, 1))) {
+                    record_capture(closure, TREE_OPERAND(target, 1), TREE_OPERAND(node, 1), walk);
+                }
+            }
+            break;
+        }
+        case CLEANUP_STMT:
+            // The cleanup of a local is its end of scope, which must-consume
+            // reads.
+            cp_walk_tree(&CLEANUP_BODY(node), walk_shapes, data, &walk.visited);
+            *walk_subtrees = 0;
+            return NULL_TREE;
+        case TARGET_EXPR:
+            cp_walk_tree(&TARGET_EXPR_INITIAL(node), walk_shapes, data, &walk.visited);
+            *walk_subtrees = 0;
+            if (is_linear_type(TREE_TYPE(node))) {
+                walk.has_linear = true;
+            }
+            return NULL_TREE;
+        case CONSTRUCTOR:
+            if (LAMBDA_TYPE_P(TREE_TYPE(node))) {
+                check_captures(node, walk);
+            }
+            break;
+        case AGGR_INIT_EXPR: {
+            // A call that builds its value in a local, with no copy.
+            tree slot = AGGR_INIT_EXPR_SLOT(node);
+            if (slot != NULL_TREE && VAR_P(slot) && !AGGR_INIT_VIA_CTOR_P(node)
+                && is_call_of_type(node, TREE_TYPE(slot))) {
+                walk.from_call.insert(slot);
+            }
+            check_call(node, walk);
+            break;
+        }
+        case CALL_EXPR:
+            check_call(node, walk);
+            break;
+        case MODIFY_EXPR:
+            // An explicit call of a trivial destructor is a clobber of its
+            // object.
+            if (TREE_CLOBBER_P(TREE_OPERAND(node, 1))) {
+                tree target = TREE_OPERAND(node, 0);
+                if (!walk.is_exempt_from_drops && TREE_TYPE(target) != NULL_TREE && is_linear_type(TREE_TYPE(target))
+                    && !is_frame_object(target)) {
+                    record_shape(Kind::linear_destroy, walk.location_of(node), walk.name + ": the end of a lifetime");
+                }
+            } else {
+                check_assignment_target(TREE_OPERAND(node, 0), walk.location_of(node), walk);
+            }
+            break;
+        default:
+            break;
+    }
+    if ((EXPR_P(node) || TREE_CODE(node) == CONSTRUCTOR) && TREE_TYPE(node) != NULL_TREE
+        && is_linear_type(TREE_TYPE(node))) {
+        walk.has_linear = true;
+    }
+    return NULL_TREE;
+}
+
+// The rule brand-reentry at the end of the unit: a call with a branded
+// argument whose callee can reach the caller again.  Complexity: one search
+// of the call graph for each branded call, O(V + E) each.
+void report_reentries() {
+    for (const BrandedCall& call : call_graph.branded_calls) {
+        std::unordered_set<int> seen;
+        std::vector<int> pending{call.callee};
+        bool reaches = false;
+        while (!pending.empty() && !reaches) {
+            int current = pending.back();
+            pending.pop_back();
+            if (current == call.caller) {
+                reaches = true;
+            } else if (seen.insert(current).second) {
+                auto found = call_graph.callees.find(current);
+                if (found != call_graph.callees.end()) {
+                    pending.insert(pending.end(), found->second.begin(), found->second.end());
+                }
+            }
+        }
+        if (reaches) {
+            record_shape(Kind::brand_reentry, call.location, call.entity);
+        }
+    }
+}
+
 // ── The bodies ──────────────────────────────────────────────────────────
 
-// True when a body holds a linear object or a linear value, from a quick walk.
-// Most bodies hold none, and the analysis then does not run.
+// The rules that the arguments of the unit run (register_linear).
+struct LinearMode {
+    bool checks_must_consume = false;
+    bool checks_shapes = false;
+};
+
+LinearMode linear_mode;
+
+// True when a body holds a linear object or a linear value, from a quick walk,
+// in a unit that runs must-consume and not the shapes.  Most bodies hold none,
+// and the analysis then does not run.
 tree find_linear(tree* node_pointer, int* walk_subtrees, void*) {
     tree node = *node_pointer;
     if (node == NULL_TREE) {
@@ -1473,25 +2667,47 @@ bool has_linear_parameter(tree function) {
     return false;
 }
 
-// True when FUNCTION is a door (THE DOORS).  A linear-door row that names
-// FUNCTION gives its record at the place of FUNCTION.
-bool is_door(tree function, const Place& place) {
+// True when FUNCTION carries the annotation drop_door or detach_door.
+bool carries_door_annotation(tree function) {
     tree attributes = DECL_ATTRIBUTES(function);
-    if (carries_annotation(attributes, linear_names.drop_door)
-        || carries_annotation(attributes, linear_names.detach_door)) {
-        return true;
-    }
+    return carries_annotation(attributes, linear_names.drop_door)
+        || carries_annotation(attributes, linear_names.detach_door);
+}
+
+// The linear-door row that names FUNCTION, or null.
+const LinearDoorRow* door_row_of(tree function) {
     if (state.table.linear_doors.empty()) {
-        return false;
+        return nullptr;
     }
     std::string name = qualified_name(function);
     for (const LinearDoorRow& row : state.table.linear_doors) {
         if (row.function == name) {
-            add_finding(Kind::linear_door, nullptr, place, row.function);
-            return true;
+            return &row;
         }
     }
-    return false;
+    return nullptr;
+}
+
+// True when FUNCTION is a door (THE DOORS).  A linear-door row that names
+// FUNCTION gives its record at the place of FUNCTION.
+bool is_door(tree function, const Place& place) {
+    if (carries_door_annotation(function)) {
+        return true;
+    }
+    const LinearDoorRow* row = door_row_of(function);
+    if (row != nullptr) {
+        add_finding(Kind::linear_door, nullptr, place, row->function);
+    }
+    return row != nullptr;
+}
+
+bool has_scope_door(tree type) {
+    if (carries_annotation(TYPE_ATTRIBUTES(type), linear_names.scope_end_door)) {
+        return true;
+    }
+    tree destructor = CLASSTYPE_DESTRUCTOR(type);
+    return destructor != NULL_TREE && TREE_CODE(destructor) == FUNCTION_DECL
+        && (carries_door_annotation(destructor) || door_row_of(destructor) != nullptr);
 }
 
 // True when the rule reads the body of FUNCTION in this unit (THE BODIES).
@@ -1526,11 +2742,52 @@ void on_pre_genericize_linear(void* gcc_data, void*) {
         return;
     }
     tree body = DECL_SAVED_TREE(function);
-    if (!has_linear_parameter(function) && cp_walk_tree_without_duplicates(&body, find_linear, nullptr) == NULL_TREE) {
+    bool has_linear = has_linear_parameter(function);
+    if (linear_mode.checks_shapes) {
+        check_signature(function);
+        ShapeWalk walk;
+        walk.function = function;
+        walk.name = function_text(function);
+        bool is_door_function = carries_door_annotation(function) || door_row_of(function) != nullptr;
+        walk.is_exempt_from_drops = is_door_function || is_transfer_function(function) || DECL_DESTRUCTOR_P(function);
+        cp_walk_tree(&body, walk_shapes, &walk, &walk.visited);
+        for (tree local : walk.locals) {
+            check_local(local, walk);
+        }
+        has_linear = has_linear || walk.has_linear;
+    } else if (!has_linear) {
+        has_linear = cp_walk_tree_without_duplicates(&body, find_linear, nullptr) != NULL_TREE;
+    }
+    if (!linear_mode.checks_must_consume || !has_linear) {
         return;
     }
     Analysis analysis(function, is_door(function, place));
     analysis.run();
+}
+
+// PLUGIN_FINISH_TYPE: the class rules for each class that the unit defines
+// and that is no pattern (THE SHAPES).
+void on_finish_type_linear(void* gcc_data, void*) {
+    tree type = static_cast<tree>(gcc_data);
+    if (type == NULL_TREE || type == error_mark_node || !TYPE_P(type) || seen_error()) {
+        return;
+    }
+    check_class(type);
+}
+
+// PLUGIN_FINISH_DECL: a variable with static storage duration at namespace
+// scope (THE SHAPES).  The walk of a body reads each local, and the walk of
+// the declarations reads each alias (check_linear_alias).
+void on_finish_decl_linear(void* gcc_data, void*) {
+    tree decl = static_cast<tree>(gcc_data);
+    if (decl == NULL_TREE || decl == error_mark_node || !VAR_P(decl) || seen_error()
+        || TREE_CODE(CP_DECL_CONTEXT(decl)) != NAMESPACE_DECL || is_erroneous_decl(decl)) {
+        return;
+    }
+    bool is_static_object = (TREE_STATIC(decl) || DECL_THREAD_LOCAL_P(decl)) && !DECL_EXTERNAL(decl);
+    if (is_static_object && is_reported_for(decl)) {
+        check_static_object(decl, qualified_name(CP_DECL_CONTEXT(decl)));
+    }
 }
 
 // PLUGIN_FOLDED_INITIALIZER (THE FOLDS).
@@ -1556,6 +2813,9 @@ void on_empty_class_assignment(void* gcc_data, void*) {
 void on_linear_collection(void*, void*) {
     linear_caches.facts.clear();
     linear_caches.can_move.clear();
+    shape_caches.refuses_lifetime.clear();
+    shape_caches.library_holder.clear();
+    shape_caches.brands.clear();
     folded_initializers.clear();
     empty_assignments.clear();
     empty_assignment_of_source.clear();
@@ -1563,10 +2823,36 @@ void on_linear_collection(void*, void*) {
 
 }  // namespace
 
-// Registers the rule must-consume (plugin.cpp, the argument must-consume=on).
-void register_linear(const char* plugin_name) {
+// An alias at namespace scope, from the walk of the declarations
+// (declaration.cpp), because the front end gives no event PLUGIN_FINISH_DECL
+// for an alias (THE SHAPES).
+void check_linear_alias(tree decl) {
+    if (!linear_mode.checks_shapes || decl == NULL_TREE || TREE_CODE(decl) != TYPE_DECL
+        || TREE_CODE(CP_DECL_CONTEXT(decl)) != NAMESPACE_DECL || !is_reported_for(decl)) {
+        return;
+    }
+    check_alias(decl, CP_DECL_CONTEXT(decl), qualified_name(CP_DECL_CONTEXT(decl)));
+}
+
+// The rule brand-reentry at the end of the unit (plugin.cpp, walk_unit): each
+// body of the unit gave its edges of the call graph by then.
+void finish_linear_rules() {
+    if (linear_mode.checks_shapes && !call_graph.was_reported && !seen_error()) {
+        call_graph.was_reported = true;
+        report_reentries();
+    }
+}
+
+// Registers the rules of the family linear (plugin.cpp, the arguments
+// must-consume=on and linear-shapes=on).
+void register_linear(const char* plugin_name, bool checks_must_consume, bool checks_shapes) {
+    linear_mode.checks_must_consume = checks_must_consume;
+    linear_mode.checks_shapes = checks_shapes;
     linear_names.foundation = get_identifier("foundation");
     linear_names.linear = get_identifier("linear");
+    linear_names.lifetime = get_identifier("lifetime");
+    linear_names.no_start_over_bytes = get_identifier("no_start_over_bytes");
+    linear_names.brand_type = get_identifier("brand_type");
     linear_names.drop_door = get_identifier("drop_door");
     linear_names.detach_door = get_identifier("detach_door");
     linear_names.scope_end_door = get_identifier("scope_end_door");
@@ -1574,9 +2860,15 @@ void register_linear(const char* plugin_name) {
     linear_names.forward = get_identifier("forward");
     linear_names.move_if_noexcept = get_identifier("move_if_noexcept");
     linear_names.forward_like = get_identifier("forward_like");
-    register_callback(plugin_name, PLUGIN_FOLDED_INITIALIZER, on_folded_initializer, nullptr);
-    register_callback(plugin_name, PLUGIN_EMPTY_CLASS_ASSIGNMENT, on_empty_class_assignment, nullptr);
+    if (checks_must_consume) {
+        register_callback(plugin_name, PLUGIN_FOLDED_INITIALIZER, on_folded_initializer, nullptr);
+        register_callback(plugin_name, PLUGIN_EMPTY_CLASS_ASSIGNMENT, on_empty_class_assignment, nullptr);
+    }
     register_callback(plugin_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize_linear, nullptr);
+    if (checks_shapes) {
+        register_callback(plugin_name, PLUGIN_FINISH_TYPE, on_finish_type_linear, nullptr);
+        register_callback(plugin_name, PLUGIN_FINISH_DECL, on_finish_decl_linear, nullptr);
+    }
     register_callback(plugin_name, PLUGIN_GGC_START, on_linear_collection, nullptr);
 }
 

@@ -1,0 +1,12 @@
+# The rule table of this control.  The planted header of include/ is a base
+# file, and the unit of src/ is quarantined.  Each can name the vocabulary of
+# the linear marker and of the byte seal of the repository.
+
+layer floor 0 include/
+allow floor <array>
+allow floor <foundation/ByteSeal.h>
+allow floor <foundation/Linear.h>
+allow floor <span>
+admit foundation::lifetime | the byte seal, which the planted code names
+admit foundation::linear | the vocabulary of the linear marker, which the planted code names
+quarantine src/

@@ -1,0 +1,41 @@
+// Base templates that end a linear value that no tracked local holds: an
+// assignment to a field, an assignment through a reference, an explicit
+// destructor call and a delete-expression.
+#pragma once
+
+namespace planted {
+
+template <class T>
+struct Holder {
+    T token;
+};
+
+template <class T>
+void assign_member(Holder<T>& holder) {
+    holder.token = T{};
+}
+
+template <class T>
+void assign_through_reference(T& slot) {
+    slot = T{};
+}
+
+template <class T>
+void end_in_place(T* pointer) {
+    pointer->~T();
+}
+
+template <class T>
+void free_one(T* pointer) {
+    delete pointer;
+}
+
+template <class T>
+void drops(Holder<T>& holder, T& slot, T* pointer) {
+    assign_member(holder);
+    assign_through_reference(slot);
+    end_in_place(pointer);
+    free_one(pointer);
+}
+
+}  // namespace planted

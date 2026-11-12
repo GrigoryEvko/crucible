@@ -1,0 +1,80 @@
+// The brands that the rule brand-escape admits: the mint, whose own defaulted
+// parameter gives the brand, a forwarding mint with its own defaulted brand, a
+// function and a class whose template arguments give the brand, a class whose
+// value argument has a type that gives the brand, a local, a
+// lambda with a parameter, and a closure that no class names as its brand,
+// such as a label.  None of the last two is a brand.
+namespace planted {
+
+using Label = decltype([] {});
+
+template <class Tag, class Brand>
+struct Branded {
+    using brand_type = Brand;
+    int value = 0;
+};
+
+template <class Tag, class Brand = decltype([] {})>
+Branded<Tag, Brand> mint() {
+    return {};
+}
+
+template <class Tag, class Brand = decltype([] {})>
+auto forward() {
+    return mint<Tag, Brand>();
+}
+
+template <class Tag, class Brand>
+Branded<Tag, Brand> pass(Branded<Tag, Brand> value) {
+    return value;
+}
+
+struct TagA {};
+
+template <class Brand>
+struct Keeper {
+    using brand_type = Brand;
+    Branded<TagA, Brand> held;
+};
+
+template <class Function>
+struct Stage {
+    Function body;
+};
+
+template <class Brand>
+void consume(Branded<TagA, Brand> value) {
+    static_cast<void>(value);
+}
+
+template <class Function>
+struct FirstParameter;
+
+template <class Result, class Parameter>
+struct FirstParameter<Result (*)(Parameter)> {
+    using type = Parameter;
+};
+
+// The value argument is a function pointer, and the type of its parameter
+// gives the brand.
+template <auto Function>
+struct Runner {
+    typename FirstParameter<decltype(Function)>::type held;
+    typename FirstParameter<decltype(Function)>::type input() const { return held; }
+};
+
+void uses() {
+    auto token = mint<TagA>();
+    auto forwarded = forward<TagA>();
+    auto passed = pass(token);
+    Keeper<decltype(token)::brand_type> keeper{token};
+    Stage<decltype([](int count) { return count; })> stage{};
+    Runner<&consume<decltype(token)::brand_type>> runner{token};
+    static_cast<void>(forwarded);
+    static_cast<void>(passed);
+    static_cast<void>(keeper);
+    static_cast<void>(stage);
+    static_cast<void>(runner.input());
+}
+
+}  // namespace planted

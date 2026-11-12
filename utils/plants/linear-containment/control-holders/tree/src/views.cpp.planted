@@ -1,0 +1,33 @@
+// The shapes that the rule linear-containment admits: a class that cannot move
+// with the door scope_end_door, a class that is linear by its parts, and the
+// classes of the library of fixy/LinearViews.h.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+#include <fixy/LinearViews.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_over_bytes{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+struct [[= ::foundation::linear::scope_end_door{}]] Guard {
+    Guard() = default;
+    Guard(Guard&&) = delete;
+    Token token;
+};
+
+struct Holder {
+    Token token;
+};
+
+void uses(Token& token) {
+    Guard guard;
+    static_cast<void>(guard);
+    views<Token>({&token, 1});
+}
+
+}  // namespace planted

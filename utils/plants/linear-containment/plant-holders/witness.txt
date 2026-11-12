@@ -1,0 +1,15 @@
+# A class that cannot move holds a token with no door at the end of its scope,
+# a class with a user-provided copy holds a token, and a class of the library
+# with a linear argument is a field, a return value, a parameter and a local.
+# The local that a call of the same type initializes gives no line.
+
+compile holders src/holders.cpp linear-shapes=on
+flag holders -freflection
+exit holders pass
+judge holders
+finding holders linear-containment pinned-holder src/holders.cpp:17:8 | planted::Pinned
+finding holders linear-containment copyable-holder src/holders.cpp:23:8 | planted::Copied
+finding holders linear-containment library-holder include/fixy/LinearHolders.h:15:22 | planted::Slot: value, std::optional
+finding holders linear-containment library-holder include/fixy/LinearHolders.h:19:16 | planted::collect: the return value, std::vector
+finding holders linear-containment library-holder include/fixy/LinearHolders.h:24:29 | planted::keep: pair, std::pair
+finding holders linear-containment library-holder include/fixy/LinearHolders.h:35:22 | planted::holders: local, std::optional

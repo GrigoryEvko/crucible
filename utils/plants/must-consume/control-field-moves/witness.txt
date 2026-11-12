@@ -1,0 +1,6 @@
+# The moves of the fields of an object, the move of the reference of an
+# accessor, and a capture by reference give no line.
+
+compile fields src/fields.cpp must-consume=on
+flag fields -freflection
+exit fields pass

@@ -1,0 +1,17 @@
+# The ledger of the rule drop-door.  `python3 utils/bin/guard explain drop-door` tells the rule and its policy,
+# and `python3 utils/bin/guard write --rule drop-door` writes this file.
+format 1
+rule drop-door
+reason include/fixy/concurrent/ | the fork writes the token of a child into the frame of that child
+reason include/fixy/session/ | the hold of a session writes a token back through a reference after a read
+reason include/foundation/core/ | the alternatives of Option and Result end the lifetime of a payload, and the cursor of an Option writes its slot
+reason include/foundation/permissions/ | the inline fork writes a child token back through a reference, and the pool of shared permissions writes its parked token
+reason test/ | the tests write a token back through a reference in a door body, and the shape probes compare a write of a token with its raw form
+include/fixy/concurrent/ | untracked-assignment | 1 | - | -
+include/fixy/session/ | untracked-assignment | 2 | - | -
+include/foundation/core/ | destroy | 4 | - | -
+include/foundation/core/ | untracked-assignment | 1 | - | -
+include/foundation/permissions/ | untracked-assignment | 2 | - | -
+test/fixy/ | untracked-assignment | 1 | - | -
+test/foundation/ | untracked-assignment | 1 | - | -
+test/shape/ | untracked-assignment | 2 | - | -

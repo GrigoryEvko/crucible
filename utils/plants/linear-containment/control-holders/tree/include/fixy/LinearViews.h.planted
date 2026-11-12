@@ -1,0 +1,17 @@
+// Base templates whose classes of the library hold no linear value: a view
+// with a trivial destructor, an aggregate, and a pointer.
+#pragma once
+
+#include <array>
+#include <span>
+
+namespace planted {
+
+template <class T>
+void views(std::span<T> span) {
+    std::array<T, 2> pair{};
+    static_cast<void>(pair);
+    static_cast<void>(span);
+}
+
+}  // namespace planted

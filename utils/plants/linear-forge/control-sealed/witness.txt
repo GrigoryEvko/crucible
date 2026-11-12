@@ -1,0 +1,8 @@
+# A union of plain values, a linear class with a byte seal, and a class that
+# holds a sealed token give no line of the rule.  The rule proof-routes gives
+# a line for the union.
+
+compile sealed src/sealed.cpp linear-shapes=on
+flag sealed -freflection
+exit sealed pass
+finding sealed proof-routes union src/sealed.cpp:21:7 | union: Bits

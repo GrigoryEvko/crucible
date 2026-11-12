@@ -1,0 +1,12 @@
+# An assignment to a field and through a reference drops the old value, and an
+# explicit call of the trivial destructor and a delete-expression end a value
+# with no door.
+
+compile drops src/drops.cpp linear-shapes=on
+flag drops -freflection
+exit drops pass
+judge drops
+finding drops drop-door untracked-assignment include/fixy/LinearDrops.h:15:18 | planted::assign_member: token
+finding drops drop-door untracked-assignment include/fixy/LinearDrops.h:20:10 | planted::assign_through_reference: an object behind a reference
+finding drops drop-door destroy include/fixy/LinearDrops.h:25:5 | planted::end_in_place: the end of a lifetime
+finding drops drop-door destroy include/fixy/LinearDrops.h:30:5 | planted::free_one: the end of a lifetime

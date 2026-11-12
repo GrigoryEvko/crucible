@@ -1,0 +1,3 @@
+# The rule table of this plant.  The unit of src/ is quarantined.
+
+quarantine src/

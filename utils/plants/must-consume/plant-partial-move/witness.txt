@@ -1,0 +1,9 @@
+# A move of one field leaves the other field live, and a move of the whole
+# after a move of a field is a second consume.
+
+compile partial src/partial.cpp must-consume=on
+flag partial -freflection
+exit partial pass
+judge partial
+finding partial must-consume unconsumed src/partial.cpp:23:21 | planted::one_field: pair
+finding partial must-consume double-consume src/partial.cpp:27:14 | planted::field_then_whole: pair

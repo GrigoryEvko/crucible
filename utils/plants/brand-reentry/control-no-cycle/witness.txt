@@ -1,0 +1,6 @@
+# A branded value in a call that does not reach the minting function again, and
+# a recursion with no branded value, give no line.
+
+compile chain src/chain.cpp linear-shapes=on
+flag chain -freflection
+exit chain pass

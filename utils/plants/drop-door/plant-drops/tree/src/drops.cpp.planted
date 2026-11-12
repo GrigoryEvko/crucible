@@ -1,0 +1,17 @@
+// The drops of fixy/LinearDrops.h for a linear token.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+#include <fixy/LinearDrops.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_over_bytes{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+void uses(Holder<Token>& holder, Token& slot, Token& last) { drops<Token>(holder, slot, &last); }
+
+}  // namespace planted

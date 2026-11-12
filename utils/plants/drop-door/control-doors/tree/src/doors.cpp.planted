@@ -1,0 +1,44 @@
+// The ends that the rule drop-door admits: an assignment to a tracked local,
+// which the rule must-consume reads, an assignment in a door, the destructor of
+// a class, and the transfer functions of a linear class.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_over_bytes{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+struct Holder {
+    Token token;
+};
+
+struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_over_bytes{}]] Pair {
+    Token left;
+    constexpr Pair() noexcept = default;
+    constexpr Pair(Pair&& other) noexcept { left = static_cast<Token&&>(other.left); }
+    constexpr Pair& operator=(Pair&& other) noexcept {
+        left = static_cast<Token&&>(other.left);
+        return *this;
+    }
+    Pair(const Pair&) = delete;
+};
+
+struct [[= ::foundation::linear::scope_end_door{}]] Owner {
+    ~Owner() {}
+    Token token;
+};
+
+[[= ::foundation::linear::drop_door{}]] void reset(Holder& holder) noexcept { holder.token = Token{}; }
+
+void local() {
+    Token token;
+    token = Token{};
+    static_cast<void>(token);
+}
+
+}  // namespace planted

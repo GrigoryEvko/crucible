@@ -1,0 +1,6 @@
+# The rule table of this control.  The unit of src/ is quarantined, and it can
+# name the vocabulary of the linear marker and of the byte seal.
+
+admit foundation::lifetime | the byte seal, which the planted code names
+admit foundation::linear | the vocabulary of the linear marker, which the planted code names
+quarantine src/

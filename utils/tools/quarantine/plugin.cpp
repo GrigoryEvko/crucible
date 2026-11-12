@@ -105,6 +105,11 @@
 //                    compile of the tree.  A compile of a plant of a different
 //                    rule has no such argument, so its report holds no line of
 //                    the rule
+//     linear-shapes=on
+//                    run the other rules of the family linear (linear.cpp,
+//                    THE SHAPES): linear-containment, linear-capture,
+//                    drop-door, linear-forge, brand-escape and brand-reentry.
+//                    Quarantine.cmake gives it to each compile of the tree
 //     specialization-home=on
 //                    run the rule specialization-home of the family
 //                    specialization home on each template with no home row
@@ -399,6 +404,7 @@ void walk_unit() {
     finish_expression_rules();
     walk_home();
     walk_owner();
+    finish_linear_rules();
 }
 
 // The parse of the unit, and then the walks of its end.  When the parse
@@ -574,6 +580,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     bool has_padded_limit = false;
     bool records_library_code = false;
     bool checks_must_consume = false;
+    bool checks_linear_shapes = false;
     bool checks_specialization_home = false;
     for (int index = 0; index < plugin_info->argc; ++index) {
         std::string key = plugin_info->argv[index].key;
@@ -628,6 +635,14 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
                 return 1;
             }
             checks_must_consume = true;
+        } else if (key == "linear-shapes") {
+            if (value != "on") {
+                error("quarantine: linear-shapes is %qs; give linear-shapes=on to run the rules of the shapes of the "
+                      "family linear, or no such argument",
+                      value.c_str());
+                return 1;
+            }
+            checks_linear_shapes = true;
         } else if (key == "specialization-home") {
             if (value != "on") {
                 error("quarantine: specialization-home is %qs; give specialization-home=on to run the rule "
@@ -638,8 +653,8 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
             checks_specialization_home = true;
         } else {
             error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out, stamps, stamp, "
-                  "kinds, sentinel, not-standalone, padded-list-limit, library-records, must-consume and "
-                  "specialization-home",
+                  "kinds, sentinel, not-standalone, padded-list-limit, library-records, must-consume, "
+                  "linear-shapes and specialization-home",
                   key.c_str());
             return 1;
         }
@@ -694,8 +709,8 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     if (records_library_code) {
         register_library_code(plugin_info->base_name);
     }
-    if (checks_must_consume) {
-        register_linear(plugin_info->base_name);
+    if (checks_must_consume || checks_linear_shapes) {
+        register_linear(plugin_info->base_name, checks_must_consume, checks_linear_shapes);
     }
     if (checks_specialization_home) {
         register_specialization_home(plugin_info->base_name);

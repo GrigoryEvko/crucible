@@ -1,0 +1,30 @@
+// A branded value and its mint, whose defaulted last template parameter gives
+// a fresh brand at each call site, and a base template that stores a fresh
+// brand in a container of the library and in a function pointer type.
+#pragma once
+
+#include <vector>
+
+namespace planted {
+
+template <class Tag, class Brand>
+struct Branded {
+    using brand_type = Brand;
+    int value = 0;
+};
+
+template <class Tag, class Brand = decltype([] {})>
+Branded<Tag, Brand> mint() {
+    return {};
+}
+
+template <class Tag>
+void stores() {
+    auto token = mint<Tag>();
+    std::vector<decltype(token)> list;
+    void (*sink)(decltype(token)) = nullptr;
+    static_cast<void>(list);
+    static_cast<void>(sink);
+}
+
+}  // namespace planted

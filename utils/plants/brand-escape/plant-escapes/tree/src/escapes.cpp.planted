@@ -1,0 +1,27 @@
+// Each leaf where a fresh brand escapes the scope that made it: a return type
+// of a helper that is no mint, an alias at namespace scope, a member, a static
+// object, and the container and the function pointer of fixy/LinearBrands.h.
+// The class Branded names its brand as brand_type, and the alias Shared spells
+// the fresh brand of foundation/Brand.h.
+#include <foundation/Brand.h>
+#include <fixy/LinearBrands.h>
+
+namespace planted {
+
+struct TagA {};
+
+auto helper() { return mint<TagA>(); }
+
+using Shared = CRUCIBLE_FRESH_BRAND;
+
+struct Table {
+    decltype(mint<TagA>()) slot;
+};
+
+void locals() {
+    static const auto kept = mint<TagA>();
+    static_cast<void>(kept);
+    stores<TagA>();
+}
+
+}  // namespace planted

@@ -1,0 +1,6 @@
+# A class that cannot move and whose end of scope is its door, a class that is
+# linear by its parts, a view, an aggregate and a pointer give no line.
+
+compile views src/views.cpp linear-shapes=on
+flag views -freflection
+exit views pass

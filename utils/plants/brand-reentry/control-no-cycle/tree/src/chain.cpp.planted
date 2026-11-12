@@ -1,0 +1,30 @@
+// A branded value in a call whose callee does not reach the minting function
+// again, and a recursion that carries no branded value, give no line.
+namespace planted {
+
+template <class Tag, class Brand>
+struct Branded {
+    using brand_type = Brand;
+    int value = 0;
+};
+
+template <class Tag, class Brand = decltype([] {})>
+Branded<Tag, Brand> mint() {
+    return {};
+}
+
+struct TagA {};
+
+template <class Value>
+int read(Value value) {
+    return value.value;
+}
+
+int chain() {
+    auto token = mint<TagA>();
+    return read(token);
+}
+
+int count_down(int depth) { return depth > 0 ? count_down(depth - 1) + chain() : 0; }
+
+}  // namespace planted

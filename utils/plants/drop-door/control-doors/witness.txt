@@ -1,0 +1,6 @@
+# An assignment to a tracked local, an assignment in a door, a destructor and
+# the transfer functions of a linear class give no line.
+
+compile doors src/doors.cpp linear-shapes=on
+flag doors -freflection
+exit doors pass

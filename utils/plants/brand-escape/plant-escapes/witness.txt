@@ -1,0 +1,14 @@
+# A fresh brand in the return type of a helper, in an alias at namespace scope,
+# in a member, in a static object, in a container of the library and in a
+# function pointer type.
+
+compile escapes src/escapes.cpp linear-shapes=on
+flag escapes -freflection
+exit escapes pass
+judge escapes
+finding escapes brand-escape escaped-return src/escapes.cpp:13:6 | planted::helper: the brand of include/fixy/LinearBrands.h:16
+finding escapes brand-escape escaped-alias src/escapes.cpp:15:7 | planted: Shared, the brand of src/escapes.cpp:15
+finding escapes brand-escape escaped-member src/escapes.cpp:18:28 | planted::Table: slot, the brand of include/fixy/LinearBrands.h:16
+finding escapes brand-escape escaped-static src/escapes.cpp:22:23 | planted::locals: kept, the brand of include/fixy/LinearBrands.h:16
+finding escapes brand-escape escaped-container include/fixy/LinearBrands.h:24:34 | planted::stores: list, the brand of include/fixy/LinearBrands.h:16
+finding escapes brand-escape escaped-function-pointer include/fixy/LinearBrands.h:25:12 | planted::stores: sink, the brand of include/fixy/LinearBrands.h:16

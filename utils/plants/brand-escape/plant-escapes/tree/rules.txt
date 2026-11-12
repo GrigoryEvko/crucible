@@ -1,0 +1,6 @@
+# The rule table of this plant.  The planted header of include/ is a base file,
+# and the unit of src/ is quarantined.
+
+layer floor 0 include/
+allow floor <vector>
+quarantine src/

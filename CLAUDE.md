@@ -74,7 +74,7 @@ Plus `WriteOnce<T>` / `WriteOnceNonNull<Ptr>` / `BoundedMonotonic<T, Max, Cmp>` 
 
 **Verification harness.** `test/fixy/test_wrapper_verification.cpp` is a single TU that asserts the cross-wrapper properties of the fixy wrappers: the diagnostic surface, sizeof and triviality per storage regime, cross-composition, and distinct nesting orders. `test/fixy/test_cheat_probe.cpp` runs 56 adversarial cheats against the concept. The build succeeds only when the concept rejects each cheat, or when the file documents the cheat as admitted.
 
-**The linear marker.** `include/foundation/Linear.h`, in namespace `foundation::linear`, gives the marker of a linear class: the P3394 annotation `[[= ::foundation::linear::linear{}]]`. Reflection reads the annotation, and the quarantine plugin reads the same annotation in the tree of GCC, so no macro writes it. The rule `must-consume` of the plugin reads it (`utils/tools/quarantine/linear.cpp`), and phase A of `misc/12_10_2026_linear.md` gives the plan of the other rules that read it. A class is linear when it has the annotation, or when it can move and holds a linear base or member by value. A class that cannot move, such as a `Pinned` class, is not linear by its members, because its destructor is the door at the end of its scope. `is_linear_v<T>` refuses a marked class that is trivially copyable or copy constructible, or whose move constructor or destructor can throw. The annotations `authority`, `drop_door`, `detach_door` and `scope_end_door` name the doors, and `drop()` ends a linear value with no report.
+**The linear marker.** `include/foundation/Linear.h`, in namespace `foundation::linear`, gives the marker of a linear class: the P3394 annotation `[[= ::foundation::linear::linear{}]]`. Reflection reads the annotation, and the quarantine plugin reads the same annotation in the tree of GCC, so no macro writes it. The seven rules of the family linear of the plugin read it (`utils/tools/quarantine/linear.cpp`). A class is linear when it has the annotation, or when it can move and holds a linear base or member by value. A class that cannot move, such as a `Pinned` class, is not linear by its members, because its destructor is the door at the end of its scope. `is_linear_v<T>` refuses a marked class that is trivially copyable or copy constructible, or whose move constructor or destructor can throw. The annotations `authority`, `drop_door`, `detach_door` and `scope_end_door` name the doors, and `drop()` ends a linear value with no report.
 
 These classes have the annotation:
 - `Linear<T>` and `Permission<Tag, Brand>`
@@ -84,7 +84,15 @@ These classes have the annotation:
 
 The move constructor and the destructor of a token are trivial, so the ABI passes a token in a register. The move assignment is user-provided, so `std::bit_cast` cannot make a token from bytes. A token is an implicit-lifetime type, and the annotation `foundation::lifetime::no_start_over_bytes` refuses the checked lifetime start. A handle or an owner that holds a token gives the token back through its door `release()`. The `Option` and the `Result` of `include/foundation/core/Choice.h` give a linear payload or a linear error only through a consumer that takes them as an rvalue.
 
-The rule `must-consume` walks the paths of each body, and it reports each linear local, and each linear parameter by value or by rvalue reference, that a path does not use exactly one time. It is in report mode: `utils/ledgers/must-consume.txt` counts its lines in each directory and kind, and a count can only fall. A door ends each linear value of its frame: a function with the annotation `drop_door` or `detach_door`, and each function that a `linear-door` row of `utils/rule-table.txt` names. The end of the scope of a class with the annotation `scope_end_door` is a door too.
+The rule `must-consume` walks the paths of each body, and it reports each linear local, and each linear parameter by value or by rvalue reference, that a path does not use exactly one time. It is in report mode: `utils/ledgers/must-consume.txt` counts its lines in each directory and kind, and a count can only fall. A door ends each linear value of its frame: a function with the annotation `drop_door` or `detach_door`, and each function that a `linear-door` row of `utils/rule-table.txt` names. The end of the scope of a class with the annotation `scope_end_door` is a door too. A move of each linear field of an object consumes the object, and so does the move of the reference that an accessor such as `operator*` gives. A capture by reference hides each later consume, so the captured object gives no line.
+
+The six rules of the shapes read each class, signature and body that `must-consume` reads, and they are in report mode with a ledger of the same form:
+- `linear-containment`: a class that holds a linear part, cannot move and has no door at the end of its scope, a class that holds a linear part and has a user-provided copy, and a declaration whose type holds a class of the library with a linear argument, such as `std::optional` or `std::pair`
+- `linear-capture`: a capture by reference of a linear object
+- `drop-door`: an assignment over a linear member, element or object behind a reference, and a destructor call or a delete-expression of such an object, outside a door
+- `linear-forge`: a union that holds a sealed type, and a linear class that the checked lifetime start of `foundation/Lifetime.h` admits
+- `brand-escape`: a fresh brand that leaves the scope that made it, in a return type, a member, a static object, an alias outside a body, or the type of a local container or function pointer. A brand that a template argument of the function or of its class gave, also through the type of a value argument such as a function pointer, is no finding
+- `brand-reentry`: a call with a branded argument whose callee can reach the function that minted the brand again, in the call graph of the unit.
 
 **Soundness via measurement, not proof.** In the design, numerical correctness lives in the cross-vendor CI matrix (MIMIC.md §41): every IR002 kernel × recipe × backend runs on real silicon, outputs are compared pairwise against a CPU scalar-FMA oracle, tolerance enforced per the recipe's declared `ReductionDeterminism` tier (UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT). A backend that violates tolerance will fail the build. The `BITEXACT_TC` tier has a hardware limit, and §L2 states it: FP16 and BF16 tensor-core fragments are not bit-identical across vendors. No compute backend exists at this time, so the matrix does not run.
 
@@ -1161,7 +1169,10 @@ instructions, and 0.057% of their sum. The argument `must-consume=on` of each
 compile adds the rule `must-consume` (§L0). On 2026-11-12, that rule added 6 to
 50 million user instructions to a compile of six units of 5.0 to 45.3 billion
 instructions: 0.11% to 0.28% of the compile with the plugin, and 0.15% of their
-sum. ccache ignores the paths in the plugin arguments, so
+sum. The argument `linear-shapes=on` of each compile adds the six rules of the
+shapes of the family linear (§L0). On 2026-11-12, those rules added 5 to 42
+million user instructions to a compile of the same six units: 0.07% to 0.26% of
+the compile with the plugin, and 0.11% of their sum. ccache ignores the paths in the plugin arguments, so
 the build directories of two work trees share the cache. ccache also hashes
 the enforce rows of the rule table.
 

@@ -4,11 +4,12 @@ format 1
 rule must-consume
 reason bench/ | the benches hold the endpoints of a channel and a token for the run of a bench, and drop them at the end
 reason include/crucible/ | the runtime mints a gate token that ends at the end of its scope, and it reads a linear handle in std::expected through an accessor
-reason include/fixy/ | the wrappers move a linear value out of std::optional, std::expected or std::tuple through an accessor or a member, which the rule does not follow
-reason include/fixy/session/ | the session doors move each handle, value and token through an accessor of a factory or a closure, which the rule does not follow
-reason include/foundation/ | the constructor of Result takes the error out of its Err carrier by a move of a member, which the rule reads as no consume
+reason include/fixy/ | the wrappers move a token out of a field of a marked class or out of a tuple through std::get, and consume an upgrade behind a test of its option
+reason include/fixy/concurrent/ | the fork consumes its parent token in a temporary that GCC folds, and the drained access consumes an upgrade behind a test of its option
+reason include/fixy/session/ | the session doors move each handle, value and token out of a field of a marked class or through a closure, which the rule does not follow
+reason include/foundation/ | the constructor of Result moved the error out of its Err carrier by a move of a member, and the rule reads that move as a consume
 reason src/ | each stage of the background pipeline drops its endpoint of a channel at the end of its function, and the start drops one producer
-reason test/ | the tests drop tokens and handles at the end of a test, consume a value two times to show the abort, and discard linear temporaries
+reason test/ | the tests drop tokens and handles at the end of a test, consume a value two times to show the abort, and discard linear temporaries.  Some tests consume a token behind a test of its option
 bench/ | discarded-temporary | 2 | - | -
 bench/ | unconsumed | 14 | - | -
 include/crucible/ | unconsumed | 1 | - | -
@@ -27,8 +28,10 @@ test/fixy/ | assign-over-live | 4 | - | -
 test/fixy/ | discarded-temporary | 5 | - | -
 test/fixy/ | double-consume | 5 | - | -
 test/fixy/ | unconsumed | 223 | - | -
+test/fixy/ | unconsumed-on-path | 1 | - | -
 test/foundation/ | discarded-temporary | 2 | - | -
 test/foundation/ | unconsumed | 24 | - | -
+test/foundation/ | unconsumed-on-path | 1 | - | -
 test/layer/checks/fixy/ | unconsumed | 1 | - | -
 test/layer/checks/fixy/channels/ | unconsumed | 9 | - | -
 test/layer/checks/foundation/core/ | unconsumed | 1 | - | -

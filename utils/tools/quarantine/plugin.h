@@ -31,7 +31,9 @@
 //                          each function that the unit compiles, from an RTL
 //                          pass
 //         linear.cpp       the family linear: the paths of a body and the
-//                          linear values on them, for the rule must-consume
+//                          linear values on them, for the rule must-consume,
+//                          and the shapes of the linear and the branded
+//                          types, for the six rules of THE SHAPES
 //         contract.cpp     the contract rule
 //
 // THE RULE TABLE
@@ -346,6 +348,28 @@
 //     door                  no finding: one record of each linear-door row of
 //                           the rule table that a unit read, for the module of
 //                           the rule, which refuses a row with no record
+//     The other rules of the family linear (linear.cpp, THE SHAPES):
+//     pinned-holder         linear-containment: a class that cannot move,
+//                           holds a linear part and has no door at the end of
+//                           its scope
+//     copyable-holder       linear-containment: a class that holds a linear
+//                           part and has a user-provided copy
+//     library-holder        linear-containment: a declaration whose type holds
+//                           a class of the library with a linear argument
+//     reference-capture     linear-capture: a capture by reference of a
+//                           linear object
+//     untracked-assignment  drop-door: an assignment over a linear object that
+//                           is no tracked local, which drops its old value
+//     destroy               drop-door: a delete-expression or a destructor
+//                           call of a linear object outside a door
+//     sealed-union          linear-forge: a union that holds a sealed type
+//     unsealed-lifetime     linear-forge: a linear class that the checked
+//                           lifetime start admits
+//     escaped-return, escaped-member, escaped-static, escaped-container,
+//     escaped-function-pointer, escaped-alias
+//                           brand-escape: a fresh brand that leaves its scope
+//     reentry               brand-reentry: a branded value in a call that can
+//                           reach the function that minted the brand again
 //     The rule specialization-home of the family specialization home
 //     (specialization.cpp, THE KINDS).  Each finding of the rule is an error
 //     in each mode, and an opt-out region covers it (is_each_mode_kind):
@@ -708,6 +732,12 @@ enum class Rule : std::uint8_t {
     home,
     owners,
     must_consume,
+    linear_containment,
+    linear_capture,
+    drop_door,
+    linear_forge,
+    brand_escape,
+    brand_reentry,
     specialization_home,
     // No rule of the registry: the tag of the records of the library code
     // (THE RULES AND THE KINDS).
@@ -911,6 +941,21 @@ enum class Kind : std::uint8_t {
     linear_discarded_temporary,
     linear_unanalyzed,
     linear_door,
+    linear_pinned_holder,
+    linear_copyable_holder,
+    linear_library_holder,
+    linear_reference_capture,
+    linear_untracked_assignment,
+    linear_destroy,
+    linear_sealed_union,
+    linear_unsealed_lifetime,
+    brand_escaped_return,
+    brand_escaped_member,
+    brand_escaped_static,
+    brand_escaped_container,
+    brand_escaped_function_pointer,
+    brand_escaped_alias,
+    brand_reentry,
     // The family specialization home (specialization.cpp).
     specialization_outside_home,
     specialization_foreign_primary,
@@ -969,6 +1014,18 @@ inline const char* rule_name(Rule rule) {
             return "owners";
         case Rule::must_consume:
             return "must-consume";
+        case Rule::linear_containment:
+            return "linear-containment";
+        case Rule::linear_capture:
+            return "linear-capture";
+        case Rule::drop_door:
+            return "drop-door";
+        case Rule::linear_forge:
+            return "linear-forge";
+        case Rule::brand_escape:
+            return "brand-escape";
+        case Rule::brand_reentry:
+            return "brand-reentry";
         case Rule::specialization_home:
             return "specialization-home";
         case Rule::library_records:
@@ -1187,6 +1244,36 @@ inline const char* kind_name(Kind kind) {
             return "unanalyzed";
         case Kind::linear_door:
             return "door";
+        case Kind::linear_pinned_holder:
+            return "pinned-holder";
+        case Kind::linear_copyable_holder:
+            return "copyable-holder";
+        case Kind::linear_library_holder:
+            return "library-holder";
+        case Kind::linear_reference_capture:
+            return "reference-capture";
+        case Kind::linear_untracked_assignment:
+            return "untracked-assignment";
+        case Kind::linear_destroy:
+            return "destroy";
+        case Kind::linear_sealed_union:
+            return "sealed-union";
+        case Kind::linear_unsealed_lifetime:
+            return "unsealed-lifetime";
+        case Kind::brand_escaped_return:
+            return "escaped-return";
+        case Kind::brand_escaped_member:
+            return "escaped-member";
+        case Kind::brand_escaped_static:
+            return "escaped-static";
+        case Kind::brand_escaped_container:
+            return "escaped-container";
+        case Kind::brand_escaped_function_pointer:
+            return "escaped-function-pointer";
+        case Kind::brand_escaped_alias:
+            return "escaped-alias";
+        case Kind::brand_reentry:
+            return "reentry";
         case Kind::specialization_outside_home:
             return "specialization";
         case Kind::specialization_foreign_primary:
@@ -1311,6 +1398,27 @@ inline Rule rule_of(Kind kind) {
         case Kind::linear_unanalyzed:
         case Kind::linear_door:
             return Rule::must_consume;
+        case Kind::linear_pinned_holder:
+        case Kind::linear_copyable_holder:
+        case Kind::linear_library_holder:
+            return Rule::linear_containment;
+        case Kind::linear_reference_capture:
+            return Rule::linear_capture;
+        case Kind::linear_untracked_assignment:
+        case Kind::linear_destroy:
+            return Rule::drop_door;
+        case Kind::linear_sealed_union:
+        case Kind::linear_unsealed_lifetime:
+            return Rule::linear_forge;
+        case Kind::brand_escaped_return:
+        case Kind::brand_escaped_member:
+        case Kind::brand_escaped_static:
+        case Kind::brand_escaped_container:
+        case Kind::brand_escaped_function_pointer:
+        case Kind::brand_escaped_alias:
+            return Rule::brand_escape;
+        case Kind::brand_reentry:
+            return Rule::brand_reentry;
         case Kind::specialization_outside_home:
         case Kind::specialization_foreign_primary:
         case Kind::specialization_forward_declaration:
@@ -1372,6 +1480,12 @@ inline bool is_family_kind(Kind kind) {
         case Rule::home:
         case Rule::owners:
         case Rule::must_consume:
+        case Rule::linear_containment:
+        case Rule::linear_capture:
+        case Rule::drop_door:
+        case Rule::linear_forge:
+        case Rule::brand_escape:
+        case Rule::brand_reentry:
         case Rule::specialization_home:
         case Rule::library_records:
             return true;
@@ -1521,6 +1635,21 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"must-consume", "discarded-temporary"},
     {"must-consume", "unanalyzed"},
     {"must-consume", "door"},
+    {"linear-containment", "pinned-holder"},
+    {"linear-containment", "copyable-holder"},
+    {"linear-containment", "library-holder"},
+    {"linear-capture", "reference-capture"},
+    {"drop-door", "untracked-assignment"},
+    {"drop-door", "destroy"},
+    {"linear-forge", "sealed-union"},
+    {"linear-forge", "unsealed-lifetime"},
+    {"brand-escape", "escaped-return"},
+    {"brand-escape", "escaped-member"},
+    {"brand-escape", "escaped-static"},
+    {"brand-escape", "escaped-container"},
+    {"brand-escape", "escaped-function-pointer"},
+    {"brand-escape", "escaped-alias"},
+    {"brand-reentry", "reentry"},
     {"specialization-home", "specialization"},
     {"specialization-home", "foreign-primary"},
     {"specialization-home", "forward-declaration"},
@@ -2459,8 +2588,15 @@ void report_specialization(const Finding& finding);
 // each function.
 void register_library_code(const char* plugin_name);
 
-// linear.cpp: the family linear, the rule must-consume.
-void register_linear(const char* plugin_name);
+// linear.cpp: the family linear.  CHECKS_MUST_CONSUME runs the rule
+// must-consume, and CHECKS_SHAPES runs the rules of the shapes.
+void register_linear(const char* plugin_name, bool checks_must_consume, bool checks_shapes);
+// linear.cpp: the rule brand-escape at an alias of namespace scope, which the
+// walk of the declarations of declaration.cpp gives.
+void check_linear_alias(tree decl);
+// linear.cpp: the rule brand-reentry at the end of the unit, from the walks of
+// plugin.cpp after the parse.
+void finish_linear_rules();
 
 // plugin.cpp: the report of the unit.
 void report(bool can_add_dependencies);

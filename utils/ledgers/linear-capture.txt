@@ -1,0 +1,14 @@
+# The ledger of the rule linear-capture.  `python3 utils/bin/guard explain linear-capture` tells the rule and its policy,
+# and `python3 utils/bin/guard write --rule linear-capture` writes this file.
+format 1
+rule linear-capture
+reason bench/ | the benches capture the endpoints of a channel by reference in the lambda of a measured loop
+reason include/fixy/session/ | the session doors capture a payload, a handle or a token by reference in a lambda that the door calls one time
+reason include/foundation/permissions/ | the inline fork captures its child tokens by reference in a lambda that it calls one time
+reason test/ | the tests capture tokens, parts and handles by reference in a lambda that the test calls, and one attack test shows the capture
+bench/ | reference-capture | 9 | - | -
+include/fixy/session/ | reference-capture | 4 | - | -
+include/foundation/permissions/ | reference-capture | 1 | - | -
+test/ | reference-capture | 2 | - | -
+test/fixy/ | reference-capture | 7 | - | -
+test/foundation/ | reference-capture | 3 | - | -

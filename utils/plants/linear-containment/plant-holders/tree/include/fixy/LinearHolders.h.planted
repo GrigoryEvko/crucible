@@ -1,0 +1,39 @@
+// Base templates whose instances hold a linear value in a class of the
+// library: in a field, a return value, a parameter by value and a local.  A
+// local that a call of the same type initializes takes the type of the callee,
+// so it gives no line of its own.
+#pragma once
+
+#include <optional>
+#include <utility>
+#include <vector>
+
+namespace planted {
+
+template <class T>
+struct Slot {
+    std::optional<T> value;
+};
+
+template <class T>
+std::vector<T> collect() {
+    return {};
+}
+
+template <class T>
+void keep(std::pair<T, int> pair) {
+    static_cast<void>(pair);
+}
+
+template <class T>
+void holders() {
+    Slot<T> slot;
+    static_cast<void>(slot);
+    auto made = collect<T>();
+    static_cast<void>(made);
+    keep<T>(std::pair<T, int>{});
+    std::optional<T> local;
+    static_cast<void>(local);
+}
+
+}  // namespace planted

@@ -1,0 +1,31 @@
+// Each shape of the rule linear-containment: a class that cannot move and
+// drops its token in its destructor, a class whose copy makes a second token,
+// and a class of the library with a linear argument (fixy/LinearHolders.h).
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+#include <fixy/LinearHolders.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_over_bytes{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+struct Pinned {
+    Pinned() = default;
+    Pinned(Pinned&&) = delete;
+    Token token;
+};
+
+struct Copied {
+    Copied() = default;
+    Copied(const Copied&) noexcept : token{} {}
+    Token token;
+};
+
+void uses() { holders<Token>(); }
+
+}  // namespace planted

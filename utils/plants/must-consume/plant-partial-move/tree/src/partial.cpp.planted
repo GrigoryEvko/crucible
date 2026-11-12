@@ -1,0 +1,30 @@
+// A move of one field of an object leaves the other field live, so the object
+// drops a value at the end of its scope.  A move of the whole after a move of a
+// field is a second consume.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+struct Pair {
+    Token left;
+    Token right;
+};
+
+void take(Token&& token) noexcept;
+void take_pair(Pair&& pair) noexcept;
+
+void one_field(Pair pair) { take(static_cast<Token&&>(pair.left)); }
+
+void field_then_whole(Pair pair) {
+    take(static_cast<Token&&>(pair.left));
+    take_pair(static_cast<Pair&&>(pair));
+}
+
+}  // namespace planted

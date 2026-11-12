@@ -1,0 +1,6 @@
+# A mint, a forwarding mint, a function and a class whose template arguments
+# give the brand, a local and a lambda with a parameter give no line.
+
+compile bound src/bound.cpp linear-shapes=on
+flag bound -freflection
+exit bound pass

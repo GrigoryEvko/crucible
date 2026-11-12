@@ -1,0 +1,11 @@
+# The ledger of the rule linear-forge.  `python3 utils/bin/guard explain linear-forge` tells the rule and its policy,
+# and `python3 utils/bin/guard write --rule linear-forge` writes this file.
+format 1
+rule linear-forge
+reason include/foundation/core/ | the alternatives of Option and Result hold each payload in a union, and the alternatives end the lifetime of the payload
+reason test/ | the tests and the checks put a token in a union to show a refusal, and the tests of Option and Result use a token that has no seal
+include/foundation/core/ | sealed-union | 3 | - | -
+test/fixy/ | sealed-union | 3 | - | -
+test/foundation/ | unsealed-lifetime | 2 | - | -
+test/layer/checks/foundation/ | sealed-union | 1 | - | -
+test/layer/checks/foundation/core/ | unsealed-lifetime | 1 | - | -

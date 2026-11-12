@@ -1,0 +1,6 @@
+# A move into the closure, a capture by reference of a value that is not
+# linear, and the capture of this give no line.
+
+compile capture src/capture.cpp linear-shapes=on
+flag capture -freflection
+exit capture pass

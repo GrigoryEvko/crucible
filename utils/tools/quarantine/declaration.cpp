@@ -3223,6 +3223,7 @@ struct PropertyWalk {
         if (!DECL_ARTIFICIAL(decl) && !DECL_IMPLICIT_TYPEDEF_P(decl)) {
             check_named_alias(decl);
             check_mint_alias(decl, mint_classes);
+            check_linear_alias(decl);
             if (!is_pattern) {
                 check_padded_declaration(decl, Kind::padded_alias, padding);
             }

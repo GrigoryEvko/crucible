@@ -1,0 +1,34 @@
+// A function that mints a brand gives the branded value to a callee that can
+// call the function again.  The second run mints the same brand, so a value of
+// one run can stand in for a value of the other.
+namespace planted {
+
+template <class Tag, class Brand>
+struct Branded {
+    using brand_type = Brand;
+    int value = 0;
+};
+
+template <class Tag, class Brand = decltype([] {})>
+Branded<Tag, Brand> mint() {
+    return {};
+}
+
+struct TagA {};
+
+void recurse(int depth);
+
+template <class Value>
+void visit(Value value, int depth) {
+    static_cast<void>(value);
+    if (depth > 0) {
+        recurse(depth - 1);
+    }
+}
+
+void recurse(int depth) {
+    auto token = mint<TagA>();
+    visit(token, depth);
+}
+
+}  // namespace planted

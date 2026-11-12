@@ -1,0 +1,7 @@
+# A branded value in a call whose callee calls the minting function again.
+
+compile recursion src/recursion.cpp linear-shapes=on
+flag recursion -freflection
+exit recursion pass
+judge recursion
+finding recursion brand-reentry reentry src/recursion.cpp:31:10 | planted::recurse: planted::visit, the brand of src/recursion.cpp:12

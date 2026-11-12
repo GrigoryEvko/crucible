@@ -1,0 +1,38 @@
+// The routes of bytes into a sealed type: a union that holds a linear token or
+// a type with the byte seal, whose inactive member a read forges, and a linear
+// class that the checked lifetime start of foundation/Lifetime.h admits.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_over_bytes{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+struct [[= ::foundation::linear::linear{}]] Unsealed {
+    constexpr Unsealed() noexcept = default;
+    constexpr Unsealed(Unsealed&&) noexcept = default;
+    constexpr Unsealed& operator=(Unsealed&&) noexcept { return *this; }
+    Unsealed(const Unsealed&) = delete;
+};
+
+struct [[= ::foundation::lifetime::no_start_over_bytes{}]] Index {
+    unsigned value = 0;
+};
+
+union Overlay {
+    constexpr Overlay() noexcept : bits{0} {}
+    unsigned bits;
+    Token token;
+};
+
+union Window {
+    unsigned bits;
+    Index index;
+};
+
+}  // namespace planted

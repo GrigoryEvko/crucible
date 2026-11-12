@@ -1,0 +1,26 @@
+// A capture by reference of a linear object, by name and by the default
+// capture.  No rule sees a consume through such a capture.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_over_bytes{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+void take(Token&& token) noexcept;
+
+void captures() {
+    Token named;
+    Token defaulted;
+    auto by_name = [&named] { take(static_cast<Token&&>(named)); };
+    auto by_default = [&] { take(static_cast<Token&&>(defaulted)); };
+    by_name();
+    by_default();
+}
+
+}  // namespace planted

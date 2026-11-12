@@ -1,0 +1,13 @@
+# A union that holds a linear token or a sealed index, and a linear class with
+# no seal against the checked lifetime start.  The rule proof-routes gives a
+# line for each union too.
+
+compile forge src/forge.cpp linear-shapes=on
+flag forge -freflection
+exit forge pass
+judge forge
+finding forge linear-forge unsealed-lifetime src/forge.cpp:16:45 | planted::Unsealed
+finding forge linear-forge sealed-union src/forge.cpp:30:11 | planted::Overlay: token
+finding forge linear-forge sealed-union src/forge.cpp:35:11 | planted::Window: index
+finding forge proof-routes union src/forge.cpp:27:7 | union: Overlay
+finding forge proof-routes union src/forge.cpp:33:7 | union: Window

@@ -1,0 +1,48 @@
+// The moves that consume an object with no move of the whole: a move of each
+// linear field, the move of a reference that an accessor gives, and a capture
+// by reference, whose consume the closure hides.  The rule linear-capture
+// reports that capture.  No line of the rule must-consume.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+struct Pair {
+    Token left;
+    Token right;
+};
+
+struct Box {
+    Token token;
+    Token& get() noexcept { return token; }
+};
+
+void take(Token&& token) noexcept;
+
+void each_field(Pair pair) {
+    take(static_cast<Token&&>(pair.left));
+    take(static_cast<Token&&>(pair.right));
+}
+
+void through_accessor(Box box) { take(static_cast<Token&&>(box.get())); }
+
+void captured_by_reference() {
+    Token token;
+    auto consume = [&token] { take(static_cast<Token&&>(token)); };
+    consume();
+}
+
+void read_then_moved() {
+    Token token;
+    auto read = [&token] { static_cast<void>(token); };
+    read();
+    take(static_cast<Token&&>(token));
+}
+
+}  // namespace planted
