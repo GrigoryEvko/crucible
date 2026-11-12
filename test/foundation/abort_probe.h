@@ -11,9 +11,14 @@
 // it occurs.  A SIGABRT handler jumps back to the arming point on the same
 // thread.
 //
-// The jump target and the arming flag are thread-local, so two threads can arm
-// independently.  The signal disposition itself is process-wide, which is why
-// the previous one is put back before this returns.
+// The arming flag is thread-local, so only the thread that armed the probe
+// jumps.  An abort on a different thread ends the process.  The jump buffer
+// and the signal disposition are process-wide, and the probe puts back the
+// previous disposition before it returns.  Thus one thread at a time arms the
+// probe, and a second arm at the same time ends the process.  The buffer is
+// not thread-local, because each thread-local byte of a shared library that
+// includes this header goes into its TLS block.  The rule static-tls holds
+// that block small.
 //
 // ThreadSanitizer must see the jump. If it does not, it thinks that the
 // thread is still in the handler, and it gives a signal-unsafe report for
@@ -30,6 +35,9 @@
 // This is the foundation-layer copy of test/test_abort_probe.h; the two are
 // kept identical in shape and differ only in namespace.
 
+#include <foundation/core/Atomic.h>
+#include <foundation/core/Report.h>
+
 #include <csetjmp>
 #include <csignal>
 #include <cstdlib>
@@ -38,8 +46,10 @@
 
 namespace foundation::test {
 
-inline thread_local std::jmp_buf abort_probe_return;
+inline std::jmp_buf abort_probe_return;
 inline thread_local volatile sig_atomic_t abort_probe_armed = 0;
+// True while a thread is inside aborts().
+constinit inline ::foundation::core::Atomic<bool> abort_probe_busy{false};
 
 // This declaration names the plain longjmp symbol, which the sanitizers
 // intercept. The fortified name in <csetjmp> links to __longjmp_chk.
@@ -58,6 +68,9 @@ extern "C" inline void abort_probe_handler(int) {
 // reports false, which is the failure the caller is usually looking for.
 template <typename Body>
 [[nodiscard]] bool aborts(Body&& body) {
+    if (abort_probe_busy.exchange_acq_rel(true)) {
+        ::foundation::core::fatal("two threads armed the abort probe at the same time");
+    }
     struct sigaction want{};
     struct sigaction previous{};
     want.sa_handler = abort_probe_handler;
@@ -80,6 +93,7 @@ template <typename Body>
     }
 
     if (sigaction(SIGABRT, &previous, nullptr) != 0) std::abort();
+    abort_probe_busy.store_release(false);
     return did_abort;
 }
 
