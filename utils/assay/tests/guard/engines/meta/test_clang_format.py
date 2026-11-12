@@ -4,8 +4,9 @@
 Each case writes one line.  Exit 0 when each case holds, else 1.  The
 witness of the rule holds the verdict on each plant.  This test holds the
 parts that a plant does not show: the batches, the second run of a batch
-with an error, the cache, the parts of a run (THE PARTS), and the reader of
-the ignore file (assay.readers.format_ignore).  One case holds that the
+with an error, the cache, the ledger, the reader of the ignore file
+(assay.readers.format_ignore), and the parts of the meta runner (THE PARTS
+of assay.guard.engines.meta.runner), which the rule does not read.  One case holds that the
 reader ignores a file exactly when the pinned formatter ignores it.  The cases
 that run the formatter use the pinned clang-format, which `python3
 utils/bin/setup install clang-format` installs.  With no install of the pin,
@@ -32,7 +33,7 @@ MODULE = __name__.removeprefix("assay.")
 CONFIGURATION = b"---\nBasedOnStyle: LLVM\nIndentWidth: 4\n...\n"
 CLEAN = b"#pragma once\nnamespace planted {\nstruct Clean {\n    int value = 0;\n};\n} // namespace planted\n"
 DRIFT_COUNT = 200
-# The part counts of the cases of the parts, and the files of the case of the part function.
+# The part counts and the files of the case of the part function of the meta runner.
 PART_COUNTS = (1, 2, 3, 5, 8)
 PART_FILE_COUNT = 17
 # The drift that the planted ledger admits, and the ledger of the rule in a planted tree.
@@ -52,17 +53,15 @@ def drift(index: int) -> bytes:
     return f"struct    Drift{index} {{  int value=0; }};\n".encode()
 
 
-def verdicts(root: Path, part: tuple[int, int] | None = None) -> list[tuple[str, str]]:
-    """Return the path and the kind of each finding of a tree, or of one part of it, sorted."""
-    return sorted((item.path, item.kind) for item in clang_format.findings(MetaContext(root, part=part)))
+def verdicts(root: Path) -> list[tuple[str, str]]:
+    """Return the path and the kind of each finding of a tree, sorted."""
+    return sorted((item.path, item.kind) for item in clang_format.findings(MetaContext(root)))
 
 
-def judged_errors(rule: rule_registry.Rule, root: Path, part: tuple[int, int] | None) -> set[tuple[str, str]]:
-    """Return the path and the kind of each error of a tree, or of one part, after the ledger of the tree judges it."""
-    context = MetaContext(root, part=part)
-    found = clang_format.findings(context)
-    kept = context.is_covered if part is not None else None
-    return {(item.path, item.kind) for item in runner.judged(rule, root, found, kept) if item.level == "error"}
+def judged_errors(rule: rule_registry.Rule, root: Path) -> set[tuple[str, str]]:
+    """Return the path and the kind of each error of a tree after the ledger of the tree judges it."""
+    found = clang_format.findings(MetaContext(root))
+    return {(item.path, item.kind) for item in runner.judged(rule, root, found, None) if item.level == "error"}
 
 
 def check_status(words: list[str]) -> int:
@@ -77,7 +76,7 @@ def refused(words: list[str]) -> bool:
 
 
 def part_cases(expect: testing.Expect) -> None:
-    """Check the parts of a run that run no formatter: the part function, the context and the gate of guard check."""
+    """Check the parts of the meta runner: the part function, the context and the gate of guard check."""
     files = {f"src/F{index}.h": b"x" * (index * 7 % 23 + 1) for index in range(PART_FILE_COUNT)}
     with git.scratch_repository(files) as root:
         paths = sorted(files)
@@ -105,14 +104,15 @@ def part_cases(expect: testing.Expect) -> None:
     expect(
         "guard check refuses --part for a meta rule, a tsast rule and a plugin rule that read no part, and a bad part",
         refused(["--rule", "prose-bans", "--part", "1/2"])
+        and refused(["--rule", "clang-format", "--part", "1/2"])
         and refused(["--rule", "layer-residual", "--part", "1/2"])
         and refused(["--rule", "quarantine", "--part", "1/2", "--build-dir", "build"])
-        and refused(["--rule", "clang-format", "--part", "3/2"]),
+        and refused(["--rule", "parse-clean", "--part", "3/2"]),
     )
     expect(
-        "the rules clang-format and parse-clean read a part, and the rule prose-bans does not",
-        all(runner.reads_parts(rule_registry.load().rules[name]) for name in ("clang-format", "parse-clean"))
-        and not runner.reads_parts(rule_registry.load().rules["prose-bans"]),
+        "the rule parse-clean reads a part, and the rules clang-format and prose-bans do not",
+        runner.reads_parts(rule_registry.load().rules["parse-clean"])
+        and not any(runner.reads_parts(rule_registry.load().rules[name]) for name in ("clang-format", "prose-bans")),
     )
 
 
@@ -272,38 +272,23 @@ def formatter_cases(expect: testing.Expect) -> None:
         )
 
 
-def formatter_part_cases(expect: testing.Expect) -> None:
-    """Check that the parts of a run give together the findings and the verdicts of one run on each file."""
+def formatter_ledger_cases(expect: testing.Expect) -> None:
+    """Check the ledger of a tree, the status of guard check, and the error of a tree with no C++ file."""
     files = {".clang-format": CONFIGURATION, ".clang-format-ignore": b"ignored/Generated.h\n", "clean/Clean.h": CLEAN}
     files.update({f"drift/Drift{index}.h": drift(index) for index in range(DRIFT_COUNT // 10)})
     files["ignored/Generated.h"] = drift(DRIFT_COUNT)
     files["utils/ledgers/clang-format.txt"] = LEDGER
     rule = rule_registry.load().rules[clang_format.RULE]
     with cache.scratch_root(), git.scratch_repository(files) as root:
-        whole = verdicts(root)
-        holds = True
-        for count in PART_COUNTS:
-            joined = sorted(item for index in range(1, count + 1) for item in verdicts(root, (index, count)))
-            holds = holds and joined == whole
-        expect(f"the findings of the parts of each count of {PART_COUNTS} together are the findings of one run", holds)
-        whole_errors = judged_errors(rule, root, None)
-        part_errors = [judged_errors(rule, root, (index, 3)) for index in range(1, 4)]
+        errors = judged_errors(rule, root)
         expect(
-            "the ledger admits its file in the part that holds it, and the parts together give the errors of one run",
-            (ADMITTED, "drift") not in whole_errors
-            and set[tuple[str, str]]().union(*part_errors) == whole_errors
-            and len(whole_errors) == DRIFT_COUNT // 10 - 1,
+            "the ledger admits its file, and each other file that drifts is an error",
+            (ADMITTED, "drift") not in errors and len(errors) == DRIFT_COUNT // 10 - 1,
         )
-        accepted = check_status(["--rule", clang_format.RULE, "--part", "1/2", "--root", str(root)])
-        expect("guard check takes --part for the rule, and a part with a drift gives the status 1", accepted == 1)
+        status = check_status(["--rule", clang_format.RULE, "--root", str(root)])
+        expect("guard check on a tree with a drift gives the status 1", status == 1)
     with cache.scratch_root(), git.scratch_repository({"notes/a.txt": b"text\n"}) as root:
-        expect(
-            "only part 1 gives the error of a tree with no C++ file",
-            verdicts(root, (1, 3)) == [(".clang-format", "failed")]
-            and verdicts(root, (2, 3)) == []
-            and verdicts(root, (3, 3)) == []
-            and verdicts(root) == [(".clang-format", "failed")],
-        )
+        expect("a tree with no C++ file gives the error failed", verdicts(root) == [(".clang-format", "failed")])
 
 
 def main(argv: list[str]) -> int:
@@ -324,5 +309,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         MODULE,
         argv,
-        (unit_cases, ignore_cases, part_cases, formatter_ignore_cases, formatter_cases, formatter_part_cases),
+        (unit_cases, ignore_cases, part_cases, formatter_ignore_cases, formatter_cases, formatter_ledger_cases),
     )
