@@ -132,7 +132,7 @@ static_assert(s::payload_conveys_delegation_v<Handed>);
 static_assert(!s::CrashSessionAdmissible<s::Offer<s::Recv<Handed, s::End>, s::Recv<s::Crash<Bob>, s::End>>, Alice, Bob,
                                          s::NoReliableRoles>);
 using DelegatesInCheckpoint = s::Select<s::Commit<s::Send<Handed, s::End>>, s::Roll>;
-static_assert(s::checkpoint_verdict_v<DelegatesInCheckpoint, s::dual_of_t<DelegatesInCheckpoint>>
+static_assert(s::checkpoint_verdict_of(^^DelegatesInCheckpoint, ^^s::dual_of_t<DelegatesInCheckpoint>)
               == s::CheckpointVerdict::NotCheckpointShaped);
 
 static_assert(s::perm_set_has_open_loan_v<Lent> && !s::PermissionFlowCloses<s::End, Lent>);

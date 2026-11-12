@@ -1100,7 +1100,6 @@ inline constexpr StatedZero kZeros[] = {
      "it, and it is never a template argument of a kernel signature"},
     {^^::fixy::session::PeerCrashCell, kDescriptor},
     {^^::fixy::session::CrashSession, kQuery},
-    {^^::fixy::session::is_crash_session_admissible, kMetafunction},
     {^^::fixy::session::CrashSend,
      "the result of a crash-watched send, destructured at the call site: the handle in it folds on its own, and "
      "the payload that it can hold back is a bare payload"},

@@ -512,10 +512,12 @@ consteval CheckpointVerdict verdict_of(info left_protocol, info right_protocol) 
 }  // namespace detail::checkpoint
 
 // The verdict for a pair of checkpoint protocols, one for each endpoint.
-// The gate reads the walk and not this spelling, so a specialization of it
-// changes only what its author reads.
-template <typename P1, typename P2>
-inline constexpr CheckpointVerdict checkpoint_verdict_v = detail::checkpoint::verdict_of(^^P1, ^^P2);
+// A function at namespace scope that is not a template, so no translation
+// unit can specialize the verdict.
+[[nodiscard]] consteval CheckpointVerdict checkpoint_verdict_of(std::meta::info protocol,
+                                                                std::meta::info peer_protocol) {
+    return detail::checkpoint::verdict_of(protocol, peer_protocol);
+}
 
 // The question "are these two protocols compliant", as a one-argument
 // trait that can hold an armed cell.

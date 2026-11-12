@@ -9,6 +9,7 @@
 
 #include <fixy/session/Liveness.h>
 
+#include <meta>
 #include <type_traits>
 
 namespace test_session_global_types_types {
@@ -77,6 +78,14 @@ static_assert(g::is_global_well_formed_v<g::Msg<P, Q, M, int, g::Msg<Q, P, M, in
 // A type that is not built from the combinators is not a global type.
 static_assert(!g::is_global_type_v<s::Send<int, s::End>>);
 static_assert(!g::is_global_well_formed_v<s::Send<int, s::End>>);
+
+// The projection gate reads the concept, and the class spelling is an
+// alias template, so no specialization changes either answer.  The fixture
+// neg_sess_trait_spec_is_global_well_formed tries the class spelling.  The
+// predicate walk finds class templates only, so this assertion reads the
+// armed cell of the alias.
+static_assert(std::meta::is_concept(^^g::is_global_well_formed_v));
+static_assert(::foundation::contracts::armed_cell_holds_v<g::is_global_well_formed>);
 
 // ── Balancedness (Definitions 13, 14; Examples 11, 12, 14) ───────────
 

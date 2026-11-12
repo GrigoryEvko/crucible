@@ -125,6 +125,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <meta>
 #include <optional>
 #include <source_location>
 #include <tuple>
@@ -563,16 +564,30 @@ template <typename Ctx, typename Proto, typename Self, typename Peer, typename R
 concept CtxFitsCrashSession = CrashSessionAdmissible<Proto, Self, Peer, Reliable> && SessionResource<Resource>
                            && CtxAdmitsProtocolRow<Ctx, Proto> && std::is_nothrow_copy_constructible_v<Ctx>;
 
-// The same question as a one-argument trait, so that it can hold an
-// armed cell.
+// The same question as one type, so that the predicate below takes one
+// argument and can hold an armed cell.
 template <typename Proto, typename Self, typename Peer, typename Reliable>
 struct CrashSession {};
 
+namespace detail::crash_transport {
+
+// True when the question is a CrashSession that CrashSessionAdmissible
+// admits.  Any other type answers false.  A function at namespace scope
+// that is not a template, so no translation unit can specialize the answer.
+[[nodiscard]] consteval bool crash_session_admitted(std::meta::info question) {
+    const std::meta::info asked = std::meta::dealias(question);
+    if (!std::meta::is_type(asked) || !std::meta::has_template_arguments(asked)
+        || std::meta::template_of(asked) != ^^CrashSession) {
+        return false;
+    }
+    return std::meta::extract<bool>(
+        std::meta::substitute(^^CrashSessionAdmissible, std::meta::template_arguments_of(asked)));
+}
+
+}  // namespace detail::crash_transport
+
 template <typename Q>
-struct is_crash_session_admissible : std::false_type {};
-template <typename Proto, typename Self, typename Peer, typename Reliable>
-struct is_crash_session_admissible<CrashSession<Proto, Self, Peer, Reliable>>
-    : std::bool_constant<CrashSessionAdmissible<Proto, Self, Peer, Reliable>> {};
+using is_crash_session_admissible = std::bool_constant<detail::crash_transport::crash_session_admitted(^^Q)>;
 
 // ── The decorator ────────────────────────────────────────────────────
 

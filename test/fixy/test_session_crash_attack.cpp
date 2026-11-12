@@ -332,10 +332,10 @@ static_assert(!s::CrashSessionAdmissible<ReceivesEndpoint, Q, P, s::NoReliableRo
 using ReceivesEndpointPointer = s::Offer<s::Recv<Endpoint*, s::End>, s::Recv<s::Crash<P>, s::End>>;
 static_assert(!s::CrashSessionAdmissible<ReceivesEndpointPointer, Q, P, s::NoReliableRoles>);
 using SendsOwnedEndpoint = s::Select<s::Commit<s::Send<std::unique_ptr<Endpoint>, s::End>>, s::Roll>;
-static_assert(s::checkpoint_verdict_v<SendsOwnedEndpoint, s::dual_of_t<SendsOwnedEndpoint>>
+static_assert(s::checkpoint_verdict_of(^^SendsOwnedEndpoint, ^^s::dual_of_t<SendsOwnedEndpoint>)
               == s::CheckpointVerdict::NotCheckpointShaped);
 using SendsPlain = s::Select<s::Commit<s::Send<PlainMessage, s::End>>, s::Roll>;
-static_assert(s::checkpoint_verdict_v<SendsPlain, s::dual_of_t<SendsPlain>> == s::CheckpointVerdict::Compliant);
+static_assert(s::checkpoint_verdict_of(^^SendsPlain, ^^s::dual_of_t<SendsPlain>) == s::CheckpointVerdict::Compliant);
 
 // ── The delegation ledger ───────────────────────────────────────────
 //
@@ -390,16 +390,16 @@ static_assert(delegation_gaps_are_open(),
 
 // A rollback cannot recall a delegated endpoint.
 using DelegatesThenCommits = s::Select<s::Send<Delegated, s::Select<s::Commit<s::End>, s::Abort>>>;
-static_assert(s::checkpoint_verdict_v<DelegatesThenCommits, s::dual_of_t<DelegatesThenCommits>>
+static_assert(s::checkpoint_verdict_of(^^DelegatesThenCommits, ^^s::dual_of_t<DelegatesThenCommits>)
               == s::CheckpointVerdict::NotCheckpointShaped);
 
 // A crash branch inside a checkpoint session: the two disciplines do
 // not compose, and the checkpoint mint refuses the mixture.
 using CrashInsideCheckpoint =
     s::Offer<s::Recv<int, s::Offer<s::Commit<s::End>, s::Abort>>, s::Recv<s::Crash<P>, s::End>>;
-static_assert(
-    s::checkpoint_verdict_v<CrashInsideCheckpoint, s::Select<s::Send<int, s::Select<s::Commit<s::End>, s::Abort>>>>
-    != s::CheckpointVerdict::Compliant);
+static_assert(s::checkpoint_verdict_of(^^CrashInsideCheckpoint,
+                                       ^^s::Select<s::Send<int, s::Select<s::Commit<s::End>, s::Abort>>>)
+              != s::CheckpointVerdict::Compliant);
 
 // A crash session cannot start with a token: its mint has an empty set,
 // so the only token in flight is one it received.

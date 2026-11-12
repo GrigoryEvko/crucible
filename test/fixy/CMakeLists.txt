@@ -2156,6 +2156,14 @@ fixy_neg_compile_test(neg_sess_trait_spec_is_crash_well_formed
 fixy_neg_compile_test(neg_sess_trait_spec_is_checkpoint_compliant
   "specialization of alias template .template<class Q> using fixy::session::is_checkpoint_compliant = "
   "= std::bool_constant<fixy::session::detail::checkpoint::pair_is_compliant\\(\\^\\^Q\\)>")
+fixy_neg_compile_test(neg_sess_trait_spec_is_crash_session_admissible
+  "specialization of alias template .template<class Q> using fixy::session::is_crash_session_admissible = "
+  "= std::bool_constant<fixy::session::detail::crash_transport::crash_session_admitted\\(\\^\\^Q\\)>")
+# The projection gate reads the concept is_global_well_formed_v, and the
+# class spelling is an alias over it.
+fixy_neg_compile_test(neg_sess_trait_spec_is_global_well_formed
+  "specialization of alias template .template<class G> using fixy::session::global::is_global_well_formed = "
+  "= std::bool_constant<is_global_well_formed_v<G> >")
 # The inner loop context is an alias over a function that knows each form
 # of a loop context, so no specialization sends a Continue elsewhere.
 fixy_neg_compile_test(neg_sess_loop_ctx_inner_specialized
@@ -2205,6 +2213,9 @@ fixy_neg_compile_test(neg_sess_permission_rows_of_set_specialized
 fixy_neg_compile_test(neg_spawn_fits_specialized
   "template-id .spawn_fits<>. for .consteval bool fixy::spawn::detail::spawn_fits\\(std::meta::info, std::meta::info, std::meta::info, std::meta::info, std::meta::info\\). does not match any template declaration"
   "neg_spawn_fits_specialized\\.cpp:12:[0-9]+: error:")
+fixy_neg_compile_test(neg_sess_checkpoint_verdict_of_specialized
+  "template-id .checkpoint_verdict_of<>. for .consteval fixy::session::CheckpointVerdict fixy::session::checkpoint_verdict_of\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "neg_sess_checkpoint_verdict_of_specialized\\.cpp:12:[0-9]+: error:")
 
 # Commit is a marker that the registry marks as not plain.  The
 # well-formedness algebra refuses it at every depth, so a plain mint

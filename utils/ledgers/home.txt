@@ -128,7 +128,6 @@ include/fixy/session/CrashAssociation.h | open-read | 3 | fixy::session::config:
 include/fixy/session/CrashAssociation.h | open-read | 1 | fixy::session::global::detail::crashed_role_walk | -
 include/fixy/session/CrashAssociation.h | open-read | 1 | fixy::session::global::detail::is_crashed_v | -
 include/fixy/session/CrashAssociation.h | open-read | 3 | fixy::session::global::is_global_state_v | -
-include/fixy/session/CrashAssociation.h | open-read | 1 | fixy::session::global::is_global_well_formed_v | -
 include/fixy/session/CrashAssociation.h | open-read | 4 | fixy::session::global::is_reliability_v | -
 include/fixy/session/Flow.h | open-read | 1 | fixy::session::detail::delegation_readable_gate | -
 include/fixy/session/Flow.h | open-read | 1 | fixy::session::detail::payload_readable_gate | -
@@ -139,7 +138,6 @@ include/fixy/session/Mint.h | open-read | 1 | fixy::session::detail::dual_view |
 include/fixy/session/Network.h | open-read | 1 | fixy::session::is_implementable_on | -
 include/fixy/session/Projection.h | open-read | 1 | fixy::session::detail::proj::peer_walk | -
 include/fixy/session/Projection.h | open-read | 2 | fixy::session::global::detail::is_crashed_v | -
-include/fixy/session/Projection.h | open-read | 6 | fixy::session::global::is_global_well_formed_v | -
 include/fixy/session/Protocol.h | open-read | 1 | fixy::session::detail::canonical_of | -
 include/fixy/session/Protocol.h | open-read | 1 | fixy::session::detail::vendor_view | -
 include/fixy/session/Recording.h | open-read | 1 | fixy::session::detail::recording::wire_protocol | -
@@ -206,7 +204,6 @@ test/fixy/test_session_payload_seal.cpp | outside-home | 1 | fixy::session::is_p
 test/fixy/test_session_payload_seal.cpp | outside-home | 1 | fixy::session::payload_delegation_carrier_v | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
 test/fixy/test_session_payload_seal.cpp | outside-home | 1 | fixy::session::payload_perm_delta | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
 test/fixy/test_session_payload_seal.cpp | outside-home | 1 | fixy::session::protocol_delivered_regions | the seal test specializes each payload view, gate and cell, to prove that each verdict of the session layer still refuses the payload
-test/fixy/test_session_rollback.cpp | outside-home | 1 | fixy::session::checkpoint_verdict_v | the attack test forges a checkpoint verdict, to prove that the rollback refuses it
 test/fixy/test_session_wire_word.cpp | outside-home | 1 | fixy::session::branch_wire_word_v | the attack test forges a wire word, to prove that the session refuses it
 test/fixy/test_session_wire_word.cpp | outside-home | 1 | fixy::session::step_wire_word_v | the attack test forges a wire word, to prove that the session refuses it
 test/foundation/test_core_choice.cpp | outside-home | 1 | foundation::core::niche | the test gives its planted payload an empty value, to test the storage form of an Option with a niche

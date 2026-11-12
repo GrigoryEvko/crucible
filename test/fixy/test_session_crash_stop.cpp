@@ -194,6 +194,15 @@ static_assert(s::CrashSessionAdmissible<ProtoQ, Q, P, s::ReliableSet<>>);
 static_assert(!s::CrashSessionAdmissible<ProtoP, P, Q, s::ReliableSet<Q>>);
 static_assert(!s::CrashSessionAdmissible<ProtoP, P, P, s::ReliableSet<>>);
 
+// The one-argument predicate is an alias template over a function that is
+// not a template, so no specialization changes its answer.  The fixture
+// neg_sess_trait_spec_is_crash_session_admissible tries one.  The
+// predicate walk finds class templates only, so these assertions read the
+// armed cell of the alias and the answer for one question.
+static_assert(::foundation::contracts::armed_cell_holds_v<s::is_crash_session_admissible>);
+static_assert(s::is_crash_session_admissible<s::CrashSession<ProtoP, P, Q, s::ReliableSet<>>>::value);
+static_assert(!s::is_crash_session_admissible<s::CrashSession<ProtoP, P, Q, s::ReliableSet<Q>>>::value);
+
 // ── A vendor pin passes to what it pins ─────────────────────────────
 using PinnedP = s::VendorPinned<::foundation::algebra::lattices::VendorBackend::NV, ProtoP>;
 static_assert(s::CrashSessionAdmissible<PinnedP, P, Q, s::ReliableSet<>>);

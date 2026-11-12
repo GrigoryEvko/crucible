@@ -751,24 +751,37 @@ template <typename From, typename To, typename Chosen, typename... Bs, bool Boun
 struct fault_walk<EnRouteChoice<Crashed<From>, To, Chosen, Bs...>, Bound>
     : en_route_fault<Bound, true, From, To, Chosen, Bs...> {};
 
+// The first fault of the global type G, which the seal below reads through
+// a substitution.
+template <typename G>
+inline constexpr GlobalFault first_fault_v = fault_walk<G, false>::value;
+
+// True when the type that `global` reflects is a well-formed global type.
+// A type that is not a global type is not well-formed, and the fault walk
+// never reads it.  A function at namespace scope that is not a template,
+// so no translation unit can specialize the answer that the projection
+// gate reads.
+[[nodiscard]] consteval bool global_well_formed_of(std::meta::info global) {
+    if (!std::meta::extract<bool>(std::meta::substitute(^^is_global_type_v, {global}))) return false;
+    return std::meta::extract<GlobalFault>(std::meta::substitute(^^first_fault_v, {global})) == GlobalFault::None;
+}
+
 }  // namespace detail
 
-// The first well-formedness fault of G.  G must be a global type.
+// The first well-formedness fault of G.  G must be a global type.  The
+// diagnostics read this value, and the gates read the concept below.
 template <typename G>
     requires is_global_type_v<G>
-inline constexpr GlobalFault global_fault_v = detail::fault_walk<G, false>::value;
+inline constexpr GlobalFault global_fault_v = detail::first_fault_v<G>;
+
+// The well-formedness of G.  The boolean spelling is a concept and the
+// class spelling is an alias template, so no specialization of either
+// changes the answer.
+template <typename G>
+concept is_global_well_formed_v = detail::global_well_formed_of(^^G);
 
 template <typename G>
-struct is_global_well_formed : std::bool_constant<[] {
-    if constexpr (is_global_type_v<G>) {
-        return detail::fault_walk<G, false>::value == GlobalFault::None;
-    } else {
-        return false;
-    }
-}()> {};
-
-template <typename G>
-inline constexpr bool is_global_well_formed_v = is_global_well_formed<G>::value;
+using is_global_well_formed = std::bool_constant<is_global_well_formed_v<G>>;
 
 // ── Balancedness (Definitions 13 and 14) ─────────────────────────────
 
