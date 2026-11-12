@@ -1,0 +1,2 @@
+# A pattern with two stars, which clang-format reads in a different way in different versions.
+gen/**/generated_*.cpp

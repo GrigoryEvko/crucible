@@ -1,0 +1,2 @@
+# A negated pattern ignores each file that it does not match: clang-format reads only the headers of src.
+!src/*.h

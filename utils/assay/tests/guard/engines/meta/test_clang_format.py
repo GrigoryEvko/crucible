@@ -4,7 +4,9 @@
 Each case writes one line.  Exit 0 when each case holds, else 1.  The
 witness of the rule holds the verdict on each plant.  This test holds the
 parts that a plant does not show: the batches, the second run of a batch
-with an error, the cache, and the parts of a run (THE PARTS).  The cases
+with an error, the cache, the parts of a run (THE PARTS), and the reader of
+the ignore file (assay.readers.format_ignore).  One case holds that the
+reader ignores a file exactly when the pinned formatter ignores it.  The cases
 that run the formatter use the pinned clang-format, which `python3
 utils/bin/setup install clang-format` installs.  With no install of the pin,
 the test runs only the cases that run no formatter, and then it exits with
@@ -20,10 +22,11 @@ from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
+from assay.core.paths import REPO_ROOT
 from assay.guard import check
 from assay.guard.engines.meta import clang_format, runner
 from assay.guard.engines.meta.runner import MetaContext, NotApplicable
-from assay.readers import tool_reports
+from assay.readers import format_ignore, tool_reports
 
 MODULE = __name__.removeprefix("assay.")
 CONFIGURATION = b"---\nBasedOnStyle: LLVM\nIndentWidth: 4\n...\n"
@@ -38,6 +41,10 @@ LEDGER = (
     f"format 1\nrule clang-format\n{ADMITTED} | drift | admit | - | The planted ledger admits the drift of this file\n"
 ).encode()
 USAGE_ERROR = 2
+# A planted ignore file: a comment, a blank line, a pattern, a negated pattern, a lone `!` and a question mark.
+IGNORE_TEXT = "# planted patterns\n\ngen/generated_*.cpp\n!keep/*.h\n!\none/?.h\n"
+# The shapes of a pattern that the reader refuses (THE SHAPES THAT THE READER REFUSES of assay.readers.format_ignore).
+REFUSED_PATTERNS = ("gen/**/a.cpp", "gen/[ab].h", "gen\\a.h", "/abs/a.h", "gen/", "gen//a.h", "./a.h", "gen/../a.h")
 
 
 def drift(index: int) -> bytes:
@@ -112,13 +119,20 @@ def part_cases(expect: testing.Expect) -> None:
 def unit_cases(expect: testing.Expect) -> None:
     """Check the parts that run no formatter."""
     expect(
-        "the scope holds the C++ files, and no file vmlinux.h or file in a directory build* or papers",
+        "the scope holds the C++ files, and no file in a directory build* or papers",
         clang_format.is_in_scope("include/a.h")
         and clang_format.is_in_scope("src/b.cc")
-        and not clang_format.is_in_scope("include/crucible/perf/bpf/vmlinux.h")
         and not clang_format.is_in_scope("build-release/c.cpp")
         and not clang_format.is_in_scope("papers/d.cpp")
         and not clang_format.is_in_scope("notes/e.txt"),
+    )
+    ignored = format_ignore.read(REPO_ROOT / clang_format.IGNORE_FILE, clang_format.IGNORE_FILE)
+    expect(
+        "the ignore file of this tree ignores the BTF dump and the generated oracle tests, and not the driver of the oracle",
+        ignored.is_ignored("include/crucible/perf/bpf/vmlinux.h")
+        and ignored.is_ignored("test/session_oracle/generated_fixy_wire_00.cpp")
+        and not ignored.is_ignored("test/session_oracle/wire_driver.h")
+        and not ignored.is_ignored("test/session_oracle/sub/generated_fixy_wire_00.cpp"),
     )
     with git.scratch_repository({"a.h": b"one\ntwo\nthree\n"}) as root:
         incomplete = tool_reports.FormatDocument(True, ())
@@ -133,6 +147,103 @@ def unit_cases(expect: testing.Expect) -> None:
             "the batches hold each file one time, the largest file first",
             clang_format.batches_of(root, ["a.h", "b.h"]) == [["a.h"], ["b.h"]],
         )
+
+
+def ignore_cases(expect: testing.Expect) -> None:
+    """Check the reader of the ignore file, and the scope of the rule with an ignore file, with no formatter."""
+    parsed = format_ignore.parse(IGNORE_TEXT, "planted")
+    expect(
+        "the reader skips a comment, a blank line and a lone !, and keeps each pattern in its sequence",
+        [(item.text, item.is_negated, item.line) for item in parsed.patterns]
+        == [("gen/generated_*.cpp", False, 3), ("keep/*.h", True, 4), ("one/?.h", False, 6)],
+    )
+    expect(
+        "a star and a question mark match no /, and a pattern matches the whole path",
+        format_ignore.matches("gen/generated_*.cpp", "gen/generated_00.cpp")
+        and not format_ignore.matches("gen/generated_*.cpp", "gen/sub/generated_00.cpp")
+        and not format_ignore.matches("gen/generated_*.cpp", "other/gen/generated_00.cpp")
+        and not format_ignore.matches("gen/*", "gen/a/b.h")
+        and format_ignore.matches("one/?.h", "one/a.h")
+        and not format_ignore.matches("one/?.h", "one/ab.h"),
+    )
+    expect(
+        "the first pattern that decides a file decides it, and a negated pattern ignores each file that it misses",
+        format_ignore.parse("!keep/*.h\n", "planted").is_ignored("src/a.h")
+        and not format_ignore.parse("!keep/*.h\n", "planted").is_ignored("keep/a.h")
+        and format_ignore.parse("!keep/*.h\nkeep/a.h\n", "planted").is_ignored("keep/a.h")
+        and not format_ignore.IgnoreFile().is_ignored("a.h"),
+    )
+    refused = 0
+    for pattern in REFUSED_PATTERNS:
+        try:
+            format_ignore.parse(f"# planted\n{pattern}\n", "planted")
+        except format_ignore.IgnoreError as problem:
+            refused += problem.line == 2
+    expect(
+        f"the reader refuses each of the {len(REFUSED_PATTERNS)} shapes that it does not read",
+        refused == len(REFUSED_PATTERNS),
+    )
+    with git.scratch_repository({"absent.txt": b"x\n"}) as root:
+        expect(
+            "a tree with no ignore file ignores nothing",
+            format_ignore.read(root / clang_format.IGNORE_FILE, clang_format.IGNORE_FILE).patterns == (),
+        )
+    files = {
+        clang_format.IGNORE_FILE: b"gen/generated_*.cpp\n",
+        "gen/generated_00.cpp": b"x\n",
+        "gen/driver.h": b"x\n",
+        "src/a.h": b"x\n",
+    }
+    with git.scratch_repository(files) as root:
+        scope, problems = clang_format.scope_of(MetaContext(root))
+        expect(
+            "the scope leaves out each file that the ignore file names, and keeps the other files of its directory",
+            scope == ["gen/driver.h", "src/a.h"] and problems == [],
+        )
+    files[f"src/{clang_format.IGNORE_FILE}"] = b"a.h\n"
+    with git.scratch_repository(files) as root:
+        scope, problems = clang_format.scope_of(MetaContext(root))
+        expect(
+            "an ignore file below the root is the error failed, and the scope is empty",
+            scope == []
+            and [(item.path, item.kind) for item in problems] == [(f"src/{clang_format.IGNORE_FILE}", "failed")],
+        )
+    files.pop(f"src/{clang_format.IGNORE_FILE}")
+    files[clang_format.IGNORE_FILE] = b"gen/**/generated_*.cpp\n"
+    with git.scratch_repository(files) as root:
+        scope, problems = clang_format.scope_of(MetaContext(root))
+        expect(
+            "a pattern that the reader refuses is the error failed at its line, and the scope is empty",
+            scope == []
+            and [(item.path, item.line, item.kind) for item in problems] == [(clang_format.IGNORE_FILE, 1, "failed")],
+        )
+
+
+def formatter_ignore_cases(expect: testing.Expect) -> None:
+    """Check that the reader ignores a file exactly when the pinned formatter gives no document for it."""
+    paths = (
+        "gen/generated_00.cpp",
+        "gen/generated_.cpp",
+        "gen/driver.h",
+        "gen/sub/generated_01.cpp",
+        "keep/a.h",
+        "keep/sub/b.h",
+        "one/x.h",
+        "one/xy.h",
+        "src/c.cpp",
+    )
+    files = {".clang-format": CONFIGURATION, clang_format.IGNORE_FILE: IGNORE_TEXT.encode()}
+    files.update({path: CLEAN for path in paths})
+    ignored = format_ignore.parse(IGNORE_TEXT, "planted")
+    program = clang_format.formatter()
+    with git.scratch_repository(files) as root:
+        disagree = []
+        for path in paths:
+            done = clang_format.run_formatter(root, program, [path])
+            documents = tool_reports.clang_format_documents(done.out) if done is not None and done.exit == 0 else None
+            if documents is None or (len(documents) == 0) != ignored.is_ignored(path):
+                disagree.append(path)
+        expect(f"the reader and the pinned formatter agree on each of {len(paths)} files", disagree == [])
 
 
 def formatter_cases(expect: testing.Expect) -> None:
@@ -151,7 +262,8 @@ def formatter_cases(expect: testing.Expect) -> None:
         directory = cache.cache_root(clang_format.CACHE_NAME)
         entries = [] if directory is None else cache.entries(directory)
         expect(
-            f"the cache keeps one entry for each of the 2 clean files, and it holds {len(entries)}", len(entries) == 2
+            f"the cache keeps one entry for the clean file and none for the ignored file, and it holds {len(entries)}",
+            len(entries) == 1,
         )
         (root / "clean" / "Clean.h").write_bytes(CLEAN + b"struct    Late {  int value=0; };\n")
         expect(
@@ -204,9 +316,13 @@ def main(argv: list[str]) -> int:
     try:
         clang_format.applies()
     except NotApplicable as reason:
-        status = testing.run(MODULE, argv, (unit_cases, part_cases))
+        status = testing.run(MODULE, argv, (unit_cases, ignore_cases, part_cases))
         if status != ExitCode.OK:
             return status
         check_report.write_line(f"{MODULE}: {reason}.  The cases of the formatter do not run")
         return ExitCode.SKIPPED
-    return testing.run(MODULE, argv, (unit_cases, part_cases, formatter_cases, formatter_part_cases))
+    return testing.run(
+        MODULE,
+        argv,
+        (unit_cases, ignore_cases, part_cases, formatter_ignore_cases, formatter_cases, formatter_part_cases),
+    )

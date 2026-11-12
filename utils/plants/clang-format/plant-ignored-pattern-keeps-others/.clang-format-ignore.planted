@@ -1,0 +1,2 @@
+# The generated tests of the directory gen.  The file driver.h of that directory stays in the scope.
+gen/generated_*.cpp

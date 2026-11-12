@@ -7,8 +7,15 @@ other half: it refuses a file that the configuration changes.
 THE FILES
     Each file of the git index with a suffix of SUFFIXES.  A file in a
     directory papers or in a directory that starts with build is not in the
-    scope.  A file vmlinux.h is not in the scope too.  clang-format reads
-    .clang-format-ignore itself.
+    scope.  A file that the .clang-format-ignore of the root ignores is not
+    in the scope too (assay.readers.format_ignore).  The rule then runs no
+    formatter on it.  An example is a test that a generator writes byte for
+    byte, such as the files generated_* of test/session_oracle/, which the
+    rule session-oracle compares with its output.  Each other file of their
+    directory stays in the scope.  The rule gives the error `failed` for a
+    .clang-format-ignore below the root, because clang-format reads the
+    nearest such file, and the rule reads only the file of the root.  It
+    gives the same error for a pattern that the reader refuses.
 
 THE FORMATTER
     The rule runs only the clang-format of its pin in utils/pins.txt.  The
@@ -23,21 +30,21 @@ THE RUNS
     The rule runs `clang-format --output-replacements-xml` on batches of
     files, and assay.readers.tool_reports reads one document for each file.
     A batch with an exit status that is not 0, or with a different number of
-    documents, runs again with one process for each file.  A file
-    that .clang-format-ignore names, and a file that the formatter cannot
-    read, then get a verdict of their own.  The rule runs MAX_JOBS batches at
+    documents, runs again with one process for each file.  A file that the
+    formatter cannot read then gets a verdict of its own.  The rule runs MAX_JOBS batches at
     the same time, and the batches have about the same bytes (batches_of()).
     Each call of the formatter reads no standard input.
 
 THE PARTS
     The rule reads the part of the call (THE PARTS of
-    assay.guard.engines.meta.runner).  ctest runs it in parts, so each test
-    stays below the instruction limit of a test of the rule step-cost when
-    the cache is cold.  A part of N runs the formatter on MAX_JOBS / N jobs,
-    so the N parts together run MAX_JOBS jobs, as one run on each file does.
-    Only part 1 gives the error of a tree with no file of THE FILES.  The
-    findings of the N parts together are then the findings of one run on
-    each file.
+    assay.guard.engines.meta.runner).  A part of N runs the formatter on
+    MAX_JOBS / N jobs, so the N parts together run MAX_JOBS jobs, as one run
+    on each file does.  Only part 1 gives the error of a tree with no file of
+    THE FILES.  The findings of the N parts together are then the findings of
+    one run on each file.  An error of the ignore file is in each part,
+    because no part can tell its files.  ctest runs the rule in one test,
+    because a run on each file stays far below the instruction limit of a
+    test of the rule step-cost, also with a cold cache.
 
 THE CACHE
     The cache clang-format of assay.core.cache keeps one entry for each file
@@ -54,7 +61,8 @@ THE KINDS
     `failed`      an error: the formatter exits with a status that is not 0
                   on the file alone, or its report has no valid shape.  A
                   tree with no file of THE FILES gives this error at
-                  .clang-format
+                  .clang-format, and an ignore file that THE FILES refuses
+                  gives it at that file
     The entity of each finding is empty, and the path names the file.
 
 Complexity: one read and one hash of each file of the part, and one
@@ -68,7 +76,7 @@ from pathlib import Path
 from assay.core import cache, proc
 from assay.core import report as check_report
 from assay.guard.engines.meta.runner import MetaContext, pinned_program
-from assay.readers import tool_reports
+from assay.readers import format_ignore, tool_reports
 
 RULE = "clang-format"
 # The rule reads the part of the call through part_of() (THE PARTS).
@@ -76,10 +84,11 @@ READS_PARTS = True
 SUFFIXES = frozenset({".h", ".hpp", ".cpp", ".cc", ".cxx"})
 EXCLUDED_DIRECTORY = "papers"
 EXCLUDED_PREFIX = "build"
-EXCLUDED_NAME = "vmlinux.h"
 # The tool of assay.setup.install that gives the formatter (THE FORMATTER).
 TOOL = "clang-format"
-CONFIGURATION_FILES = (".clang-format", ".clang-format-ignore")
+IGNORE_FILE = ".clang-format-ignore"
+CONFIGURATION_FILES = (".clang-format", IGNORE_FILE)
+FAILED = "failed"
 # The batches at the same time of one run on each file: the job count of the package (THE JOB COUNT of
 # assay.core.proc), and the batches of one job.  A part of N has MAX_JOBS / N jobs (THE PARTS).
 MAX_JOBS = proc.DEFAULT_JOBS
@@ -118,11 +127,40 @@ def applies() -> None:
 
 
 def is_in_scope(path: str) -> bool:
-    """Return True for a file of THE FILES."""
+    """Return True for a file with a suffix of THE FILES outside the excluded directories, before the ignore file."""
     parts = Path(path).parts
-    if Path(path).suffix not in SUFFIXES or parts[-1] == EXCLUDED_NAME:
+    if Path(path).suffix not in SUFFIXES:
         return False
     return not any(part == EXCLUDED_DIRECTORY or part.startswith(EXCLUDED_PREFIX) for part in parts[:-1])
+
+
+def scope_of(context: MetaContext) -> tuple[list[str], list[check_report.Finding]]:
+    """Return the files of THE FILES, and the error of each ignore file that the rule cannot read.
+
+    With an error, the scope is empty, because the rule cannot tell which files the formatter reads.  Complexity:
+    linear in the tracked files and in the patterns for each file.
+    """
+    tracked = context.tracked()
+    nested = [path for path in tracked if Path(path).name == IGNORE_FILE and path != IGNORE_FILE]
+    problems = [
+        check_report.Finding(
+            "error",
+            path,
+            0,
+            RULE,
+            f"clang-format reads the nearest {IGNORE_FILE}, and the rule reads only the file at the root.  Move the "
+            f"patterns of this file into the {IGNORE_FILE} of the root, relative to the root",
+            FAILED,
+        )
+        for path in nested
+    ]
+    try:
+        ignored = format_ignore.read(context.root / IGNORE_FILE, IGNORE_FILE)
+    except format_ignore.IgnoreError as problem:
+        problems.append(check_report.Finding("error", IGNORE_FILE, problem.line, RULE, problem.reason, FAILED))
+    if problems:
+        return [], problems
+    return [path for path in tracked if is_in_scope(path) and not ignored.is_ignored(path)], []
 
 
 def run_identity(root: Path, program: Path) -> bytes:
@@ -272,12 +310,14 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
     """
     root = context.root
     program = formatter()
-    scope = [path for path in context.tracked() if is_in_scope(path)]
+    scope, problems = scope_of(context)
+    if problems:
+        return problems
     if not scope:
         if context.part is not None and context.part[0] != 1:
             return []
         message = f"the tree {root} holds no C++ file of the scope, and the rule gives no verdict.  Name the root"
-        return [check_report.Finding("error", CONFIGURATION_FILES[0], 0, RULE, message, "failed")]
+        return [check_report.Finding("error", CONFIGURATION_FILES[0], 0, RULE, message, FAILED)]
     scope = context.part_of(scope)
     jobs = max(1, MAX_JOBS // context.part[1]) if context.part is not None else MAX_JOBS
     directory = cache.cache_root(CACHE_NAME)

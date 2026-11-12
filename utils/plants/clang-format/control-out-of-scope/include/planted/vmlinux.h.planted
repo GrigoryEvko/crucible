@@ -1,1 +1,0 @@
-struct    Kernel {  int value=0; };

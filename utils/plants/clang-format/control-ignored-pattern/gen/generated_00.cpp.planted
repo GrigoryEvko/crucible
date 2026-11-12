@@ -1,0 +1,2 @@
+// clang-format off
+struct    Generated00 {  int value=0; };
