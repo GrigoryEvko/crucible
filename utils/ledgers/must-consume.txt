@@ -7,30 +7,28 @@ reason include/crucible/ | the runtime mints a gate token that ends at the end o
 reason include/fixy/ | the wrappers move a token out of a field of a marked class or out of a tuple through std::get, and consume an upgrade behind a test of its option
 reason include/fixy/concurrent/ | the fork consumes its parent token in a temporary that GCC folds, and the drained access consumes an upgrade behind a test of its option
 reason include/fixy/session/ | the session doors move each handle, value and token out of a field of a marked class or through a closure, which the rule does not follow
-reason include/foundation/ | the constructor of Result moved the error out of its Err carrier by a move of a member, and the rule reads that move as a consume
 reason src/ | each stage of the background pipeline drops its endpoint of a channel at the end of its function, and the start drops one producer
 reason test/ | the tests drop tokens and handles at the end of a test, consume a value two times to show the abort, and discard linear temporaries.  Some tests consume a token behind a test of its option
 bench/ | discarded-temporary | 2 | - | -
-bench/ | unconsumed | 14 | - | -
+bench/ | unconsumed | 8 | - | -
 include/crucible/ | unconsumed | 1 | - | -
 include/crucible/cntp/ | unconsumed | 28 | - | -
 include/crucible/ledger/ | unconsumed | 4 | - | -
 include/crucible/perf/detail/ | unconsumed | 1 | - | -
 include/fixy/ | unconsumed | 3 | - | -
 include/fixy/channels/ | unconsumed | 1 | - | -
-include/fixy/concurrent/ | unconsumed | 3 | - | -
+include/fixy/concurrent/ | unconsumed | 2 | - | -
 include/fixy/session/ | assign-over-live | 1 | - | -
-include/fixy/session/ | unconsumed | 18 | - | -
-include/foundation/core/ | unconsumed | 1 | - | -
+include/fixy/session/ | unconsumed | 13 | - | -
 src/ | unconsumed | 5 | - | -
-test/ | unconsumed | 70 | - | -
+test/ | unconsumed | 50 | - | -
 test/fixy/ | assign-over-live | 4 | - | -
 test/fixy/ | discarded-temporary | 5 | - | -
 test/fixy/ | double-consume | 5 | - | -
-test/fixy/ | unconsumed | 223 | - | -
+test/fixy/ | unconsumed | 208 | - | -
 test/fixy/ | unconsumed-on-path | 1 | - | -
 test/foundation/ | discarded-temporary | 2 | - | -
-test/foundation/ | unconsumed | 24 | - | -
+test/foundation/ | unconsumed | 15 | - | -
 test/foundation/ | unconsumed-on-path | 1 | - | -
 test/layer/checks/fixy/ | unconsumed | 1 | - | -
 test/layer/checks/fixy/channels/ | unconsumed | 9 | - | -

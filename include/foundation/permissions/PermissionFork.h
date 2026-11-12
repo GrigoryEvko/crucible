@@ -167,21 +167,24 @@ concept PermissionForkBody =
 // A static_assert message assembled at compile time, so one check can
 // name the arm it fires for.  The buffer is sized for the longest
 // message below; the text past the terminator is never read.
-struct fork_diagnostic {
-    std::array<char, 256> text{};
-    std::size_t length = 0;
-
+class fork_diagnostic {
+public:
     consteval fork_diagnostic(bool spawn, std::string_view rest) noexcept {
         append(spawn ? "mint_permission_fork" : "mint_permission_fork_inline");
         append(rest);
     }
+    [[nodiscard]] consteval std::size_t size() const noexcept { return length; }
+    [[nodiscard]] consteval char const* data() const noexcept { return text.data(); }
+
+private:
     consteval void append(std::string_view part) noexcept {
         for (char c : part) {
             if (length < text.size()) text[length++] = c;
         }
     }
-    [[nodiscard]] consteval std::size_t size() const noexcept { return length; }
-    [[nodiscard]] consteval char const* data() const noexcept { return text.data(); }
+
+    std::array<char, 256> text{};
+    std::size_t length = 0;
 };
 
 // The check that each arm makes after its constraint.  The constraint of

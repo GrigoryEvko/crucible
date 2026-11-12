@@ -271,7 +271,7 @@ concept DelegatesWithHold =
     static_assert(std::is_same_v<decltype(rest), s::PermHold<fp::EmptyPermSet>>);
     auto at_end =
         std::move(received).send(std::move(message), [](Wire& wire, s::Transferable<int, Region>& sent) noexcept {
-            wire.sent = sent.value;
+            wire.sent = sent.peek();
             return true;
         });
     const Wire back = std::move(at_end).close();

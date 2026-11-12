@@ -102,7 +102,7 @@ void crash_between_check_and_write_loses_token() {
             // The label went before the crash, so the queue of p holds it
             // and must hold nothing more.
             const bool is_token_queued = to_p.slots.size() > 1;
-            token_lost = !(undelivered.has_value() && undelivered->value == 7) || is_token_queued;
+            token_lost = !(undelivered.has_value() && undelivered->peek() == 7) || is_token_queued;
             (void)std::move(end).close();
         }
     });

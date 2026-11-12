@@ -198,10 +198,10 @@ static_assert(refusal_of<std::tuple<int, std::function<void()>>> == Refusal::Typ
 // The refusal does not depend on what the lambda captures, so a lambda
 // that captures only an int is refused as well.  That is conservative.
 inline auto capture_by_move(TX token) {
-    return [held = std::move(token)] { return held.value; };
+    return [held = std::move(token)] { return held.peek(); };
 }
 inline auto capture_by_reference(TX& token) {
-    return [&token] { return token.value; };
+    return [&token] { return token.peek(); };
 }
 inline auto capture_plain(int value) {
     return [value] { return value; };

@@ -72,7 +72,7 @@ void token_relayed_to_crashed_peer() {
             crash_endpoint(cell_p, to_p, s::CrashCause::Abort);
             auto chosen = std::move(reply).template select<0>(push_label);
             auto [end, undelivered] = std::move(chosen).send(std::move(token), push_token);
-            came_back_once = undelivered.has_value() && undelivered->value == 7;
+            came_back_once = undelivered.has_value() && undelivered->peek() == 7;
             (void)std::move(end).close();
         }
     });

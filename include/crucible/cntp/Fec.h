@@ -305,7 +305,7 @@ CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst, std::byte const* src, std::uint8_
         load_aligned_avx2(lifetime::start_as_array<const Avx2Register>(tables.lo.data(), 1).data());
     const Avx2Register hi_table =
         load_aligned_avx2(lifetime::start_as_array<const Avx2Register>(tables.hi.data(), 1).data());
-    const auto mask = std::bit_cast<Avx2Register>(Avx2Bytes{char{0x0f}}.v_);
+    const auto mask = std::bit_cast<Avx2Register>(Avx2Bytes{char{0x0f}}.raw());
 
     constexpr std::size_t stride_bytes = sizeof(Avx2Register);
     std::size_t i = 0;

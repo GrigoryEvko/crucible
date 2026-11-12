@@ -227,7 +227,7 @@ CRUCIBLE_INLINE void store_floats256(float* target, Floats256 value) noexcept {
     Floats256 lane0{};
     Floats256 lane1 = lane0, lane2 = lane0, lane3 = lane0;
     Floats256 lane4 = lane0, lane5 = lane0, lane6 = lane0, lane7 = lane0;
-    const Floats256 multiplier = ::foundation::simd::vec<float, 8>{1.0000001f}.v_;
+    const Floats256 multiplier = ::foundation::simd::vec<float, 8>{1.0000001f}.raw();
     for (std::size_t pass = 0; pass < passes; ++pass) {
         for (std::size_t index = 0; index + 64 <= float_count; index += 64) {
             lane0 = fmadd_floats256(load_floats256(buffer + index + 0), multiplier, lane0);
@@ -253,7 +253,7 @@ CRUCIBLE_INLINE void store_floats256(float* target, Floats256 value) noexcept {
     Floats512 lane0{};
     Floats512 lane1 = lane0, lane2 = lane0, lane3 = lane0;
     Floats512 lane4 = lane0, lane5 = lane0, lane6 = lane0, lane7 = lane0;
-    const Floats512 multiplier = ::foundation::simd::vec<float, 16>{1.0000001f}.v_;
+    const Floats512 multiplier = ::foundation::simd::vec<float, 16>{1.0000001f}.raw();
     for (std::size_t pass = 0; pass < passes; ++pass) {
         for (std::size_t index = 0; index + 128 <= float_count; index += 128) {
             lane0 = fmadd_floats512(load_floats512(buffer + index + 0), multiplier, lane0);

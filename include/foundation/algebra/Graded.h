@@ -504,12 +504,15 @@ concept CanPeekMutWithKey = requires(G& g) { g.peek_mut(self_test_authority::key
 
 // The derived-grade lattice is written out here rather than reused,
 // because the real one includes this header.
-struct MiniContainer {
-    std::size_t n{0};
+class MiniContainer {
+public:
     constexpr MiniContainer() = default;
     constexpr explicit MiniContainer(std::size_t k) noexcept : n{k} {}
     [[nodiscard]] constexpr std::size_t size() const noexcept { return n; }
     constexpr bool operator==(const MiniContainer&) const = default;
+
+private:
+    std::size_t n{0};
 };
 
 struct MiniDerivedLattice {

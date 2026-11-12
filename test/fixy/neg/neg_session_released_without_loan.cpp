@@ -20,5 +20,5 @@ struct Region {
 
 int main() {
     sess::Released<int, Region> message{1};
-    return message.value;
+    return message.peek();
 }

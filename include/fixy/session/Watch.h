@@ -289,24 +289,29 @@ CRUCIBLE_PROCESS_WIDE inline constinit thread_local bool tls_held_overflowed = f
 
 // Frees the slot of a thread when the thread ends.  Only the cold claim
 // below names it, so no hot path pays for its destructor.
-struct slot_releaser {
-    std::uint32_t slot = 0;
-
+class slot_releaser {
+public:
     slot_releaser() noexcept = default;
     slot_releaser(const slot_releaser&) = delete("one releaser owns the slot of its thread");
     slot_releaser& operator=(const slot_releaser&) = delete("one releaser owns the slot of its thread");
 
+    /// Takes the one-based slot that the claim of the thread took.
+    void adopt(std::uint32_t slot) noexcept { slot_ = slot; }
+
     /// Publishes that the thread waits on nothing, bumps the slot
     /// generation so that no stale owner token matches it, and frees it.
     ~slot_releaser() {
-        if (slot == 0) return;
-        thread_record& me = thread_at_(slot);
+        if (slot_ == 0) return;
+        thread_record& me = thread_at_(slot_);
         me.blocked_on.store_release(0);
         static_cast<void>(me.generation.fetch_add_acq_rel(1));
         me.is_taken.store_release(0);
         tls_owner_token = 0;
         tls_holder_stamp = 0;
     }
+
+private:
+    std::uint32_t slot_ = 0;
 };
 
 /// Claims a thread slot for the calling thread and returns its owner
@@ -318,7 +323,7 @@ CRUCIBLE_PROCESS_WIDE [[gnu::cold, gnu::noinline]] inline std::uint64_t claim_th
         if (candidate.is_taken.load_acquire() != 0) continue;
         if (candidate.is_taken.cas_acq_rel(0, 1).is_err()) continue;
         thread_local slot_releaser releaser;
-        releaser.slot = slot;
+        releaser.adopt(slot);
         const std::uint32_t generation = candidate.generation.load_acquire();
         tls_owner_token = pack(slot, generation);
         tls_holder_stamp = holder_stamp_of(slot, generation);

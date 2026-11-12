@@ -25,5 +25,5 @@ using TX = sess::Transferable<int, Region>;
 int main() {
     auto hold = sess::mint_permission_hold(fp::mint_permission_root<Other>());
     auto [loan, lent] = std::move(hold).lend<Region>(1);
-    return loan.value;
+    return loan.peek();
 }

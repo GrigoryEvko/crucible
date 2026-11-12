@@ -108,7 +108,7 @@ inline constexpr auto push_int = [](Port& port, int& value) noexcept {
 };
 inline constexpr auto push_token = [](Port& port, Token& token) noexcept {
     if (port.out->is_closed) return false;
-    port.out->slots.push_back(static_cast<std::uint64_t>(token.value));
+    port.out->slots.push_back(static_cast<std::uint64_t>(token.peek()));
     return true;
 };
 // A crash-watched reception reads with no wait: the payload when one is

@@ -251,26 +251,28 @@ consteval info argument(info type, std::size_t index) {
 }
 
 // The template arguments of a Select or an Offer.  The real branches start
-// at `first`, because a Sender tag is not a branch.  A reader reads the
+// at `first_`, because a Sender tag is not a branch.  A reader reads the
 // branches through the pointer of data().  No walk changes the vector.
-struct BranchList {
-    std::vector<info> arguments;
-    std::size_t first = 0;
-
-    [[nodiscard]] consteval const info* data() const { return arguments.data() + first; }
-    [[nodiscard]] consteval std::size_t size() const { return arguments.size() - first; }
-};
-
-consteval BranchList branches_of(info type) {
-    BranchList branches{std::meta::template_arguments_of(strip(type))};
-    if (!branches.arguments.empty()) {
-        const info head = std::meta::dealias(branches.arguments.data()[0]);
-        if (std::meta::has_template_arguments(head) && std::meta::template_of(head) == ^^Sender) {
-            branches.first = 1;
+class BranchList {
+public:
+    consteval explicit BranchList(info choice) : arguments_{std::meta::template_arguments_of(strip(choice))} {
+        if (!arguments_.empty()) {
+            const info head = std::meta::dealias(arguments_.data()[0]);
+            if (std::meta::has_template_arguments(head) && std::meta::template_of(head) == ^^Sender) {
+                first_ = 1;
+            }
         }
     }
-    return branches;
-}
+
+    [[nodiscard]] consteval const info* data() const { return arguments_.data() + first_; }
+    [[nodiscard]] consteval std::size_t size() const { return arguments_.size() - first_; }
+
+private:
+    std::vector<info> arguments_;
+    std::size_t first_ = 0;
+};
+
+consteval BranchList branches_of(info type) { return BranchList{type}; }
 
 // A rollback cannot recall a delegated endpoint that the peer already
 // holds, so a checkpoint session carries no delegation either.  The

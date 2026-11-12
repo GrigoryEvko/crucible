@@ -25,5 +25,5 @@ using TX = sess::Transferable<int, Region>;
 
 int main() {
     sess::Borrowed<int, Region> loan{1};
-    return loan.value;
+    return loan.peek();
 }

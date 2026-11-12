@@ -69,14 +69,17 @@ using comparison_lane_t = std::remove_cvref_t<decltype(std::declval<comparison_t
 
 template <typename MaskElement, int Lanes>
     requires std::signed_integral<MaskElement> && detail::VectorShape<MaskElement, Lanes>
-struct mask {
+class mask {
+public:
     using raw_type = detail::raw_vector_t<MaskElement, Lanes>;
-    raw_type m_{};
 
     constexpr mask() noexcept = default;
     constexpr mask(raw_type raw) noexcept : m_{raw} {}
 
     [[nodiscard]] static constexpr std::size_t size() noexcept { return static_cast<std::size_t>(Lanes); }
+    // The raw vector, by value, for the free operations of the facade and for
+    // the builtins of a SIMD arm.
+    [[nodiscard]] constexpr raw_type raw() const noexcept { return m_; }
     // The index is int, matching the raw builtin's own subscript type, so
     // no conversion appears on the access.
     [[nodiscard]] constexpr bool operator[](int lane) const noexcept { return m_[lane] != 0; }
@@ -89,20 +92,25 @@ struct mask {
     [[nodiscard]] friend constexpr mask operator~(mask a) noexcept { return mask{~a.m_}; }
     [[nodiscard]] friend constexpr mask operator&&(mask a, mask b) noexcept { return mask{a.m_ & b.m_}; }
     [[nodiscard]] friend constexpr mask operator||(mask a, mask b) noexcept { return mask{a.m_ | b.m_}; }
+
+private:
+    raw_type m_{};
 };
 
 template <typename MaskElement, int Lanes>
 [[nodiscard]] constexpr bool any_of(mask<MaskElement, Lanes> m) noexcept {
+    const auto lanes = m.raw();
     bool acc = false;
     for (int lane = 0; lane < Lanes; ++lane)
-        acc = acc || (m.m_[lane] != 0);
+        acc = acc || (lanes[lane] != 0);
     return acc;
 }
 template <typename MaskElement, int Lanes>
 [[nodiscard]] constexpr bool all_of(mask<MaskElement, Lanes> m) noexcept {
+    const auto lanes = m.raw();
     bool acc = true;
     for (int lane = 0; lane < Lanes; ++lane)
-        acc = acc && (m.m_[lane] != 0);
+        acc = acc && (lanes[lane] != 0);
     return acc;
 }
 template <typename MaskElement, int Lanes>
@@ -112,14 +120,16 @@ template <typename MaskElement, int Lanes>
 
 template <typename ElementType, int Lanes>
     requires detail::VectorShape<ElementType, Lanes>
-struct vec {
+class vec {
+public:
     using value_type = ElementType;
     using raw_type = detail::raw_vector_t<ElementType, Lanes>;
     using mask_type = mask<detail::comparison_lane_t<ElementType, Lanes>, Lanes>;
 
-    raw_type v_{};
-
     [[nodiscard]] static constexpr std::size_t size() noexcept { return static_cast<std::size_t>(Lanes); }
+    // The raw vector, by value, for the free operations of the facade and for
+    // the builtins of a SIMD arm.
+    [[nodiscard]] constexpr raw_type raw() const noexcept { return v_; }
 
     constexpr vec() noexcept = default;
     constexpr vec(raw_type raw) noexcept : v_{raw} {}
@@ -148,7 +158,8 @@ struct vec {
         requires(!std::is_same_v<OtherElement, ElementType>)
     explicit constexpr vec(vec<OtherElement, Lanes> other) noexcept
         : v_([&]<int... Lane>(std::integer_sequence<int, Lane...>) noexcept -> raw_type {
-              return raw_type{static_cast<ElementType>(other.v_[Lane])...};
+              const auto lanes = other.raw();
+              return raw_type{static_cast<ElementType>(lanes[Lane])...};
           }(std::make_integer_sequence<int, Lanes>{})) {}
 
     [[nodiscard]] constexpr ElementType operator[](int lane) const noexcept { return v_[lane]; }
@@ -172,6 +183,9 @@ struct vec {
     [[nodiscard]] friend constexpr mask_type operator<=(vec a, vec b) noexcept { return mask_type{a.v_ <= b.v_}; }
     [[nodiscard]] friend constexpr mask_type operator>(vec a, vec b) noexcept { return mask_type{a.v_ > b.v_}; }
     [[nodiscard]] friend constexpr mask_type operator>=(vec a, vec b) noexcept { return mask_type{a.v_ >= b.v_}; }
+
+private:
+    raw_type v_{};
 };
 
 using i64x4 = vec<std::int64_t, 4>;
@@ -214,13 +228,15 @@ template <typename V>
 
 template <typename V>
 CRUCIBLE_INLINE void store(V value, typename V::value_type* ptr) noexcept {
-    std::memcpy(ptr, &value.v_, sizeof(value.v_));
+    const typename V::raw_type raw = value.raw();
+    std::memcpy(ptr, &raw, sizeof(raw));
 }
 
 template <typename V>
 CRUCIBLE_INLINE void store_aligned(V value, typename V::value_type* ptr) noexcept {
     auto* aligned = static_cast<typename V::value_type*>(__builtin_assume_aligned(ptr, alignof(typename V::raw_type)));
-    std::memcpy(aligned, &value.v_, sizeof(value.v_));
+    const typename V::raw_type raw = value.raw();
+    std::memcpy(aligned, &raw, sizeof(raw));
 }
 
 // The mask has the same lane byte width as the value, so its bits cast
@@ -232,61 +248,67 @@ template <typename ElementType, int Lanes>
                                                              vec<ElementType, Lanes> on_true,
                                                              vec<ElementType, Lanes> on_false) noexcept {
     using RawType = typename vec<ElementType, Lanes>::raw_type;
-    const RawType bits = std::bit_cast<RawType>(selector.m_);
-    return vec<ElementType, Lanes>{(on_true.v_ & bits) | (on_false.v_ & ~bits)};
+    const RawType bits = std::bit_cast<RawType>(selector.raw());
+    return vec<ElementType, Lanes>{(on_true.raw() & bits) | (on_false.raw() & ~bits)};
 }
 
 template <typename V>
     requires DetSafeSimd<V>
 [[nodiscard]] CRUCIBLE_INLINE typename V::value_type reduce_xor(V value) noexcept {
-    typename V::value_type acc = value.v_[0];
+    const typename V::raw_type lanes = value.raw();
+    typename V::value_type acc = lanes[0];
     for (int lane = 1; lane < static_cast<int>(V::size()); ++lane)
-        acc = static_cast<typename V::value_type>(acc ^ value.v_[lane]);
+        acc = static_cast<typename V::value_type>(acc ^ lanes[lane]);
     return acc;
 }
 
 template <typename V>
     requires DetSafeSimd<V>
 [[nodiscard]] CRUCIBLE_INLINE typename V::value_type reduce_add(V value) noexcept {
-    typename V::value_type acc = value.v_[0];
+    const typename V::raw_type lanes = value.raw();
+    typename V::value_type acc = lanes[0];
     for (int lane = 1; lane < static_cast<int>(V::size()); ++lane)
-        acc = static_cast<typename V::value_type>(acc + value.v_[lane]);
+        acc = static_cast<typename V::value_type>(acc + lanes[lane]);
     return acc;
 }
 
 template <typename V>
     requires DetSafeSimd<V>
 [[nodiscard]] CRUCIBLE_INLINE typename V::value_type reduce_and(V value) noexcept {
-    typename V::value_type acc = value.v_[0];
+    const typename V::raw_type lanes = value.raw();
+    typename V::value_type acc = lanes[0];
     for (int lane = 1; lane < static_cast<int>(V::size()); ++lane)
-        acc = static_cast<typename V::value_type>(acc & value.v_[lane]);
+        acc = static_cast<typename V::value_type>(acc & lanes[lane]);
     return acc;
 }
 
 template <typename V>
     requires DetSafeSimd<V>
 [[nodiscard]] CRUCIBLE_INLINE typename V::value_type reduce_or(V value) noexcept {
-    typename V::value_type acc = value.v_[0];
+    const typename V::raw_type lanes = value.raw();
+    typename V::value_type acc = lanes[0];
     for (int lane = 1; lane < static_cast<int>(V::size()); ++lane)
-        acc = static_cast<typename V::value_type>(acc | value.v_[lane]);
+        acc = static_cast<typename V::value_type>(acc | lanes[lane]);
     return acc;
 }
 
 template <typename V>
     requires DetSafeSimd<V>
 [[nodiscard]] CRUCIBLE_INLINE typename V::value_type reduce_min(V value) noexcept {
-    typename V::value_type acc = value.v_[0];
+    const typename V::raw_type lanes = value.raw();
+    typename V::value_type acc = lanes[0];
     for (int lane = 1; lane < static_cast<int>(V::size()); ++lane)
-        acc = value.v_[lane] < acc ? value.v_[lane] : acc;
+        acc = lanes[lane] < acc ? lanes[lane] : acc;
     return acc;
 }
 
 template <typename V>
     requires DetSafeSimd<V>
 [[nodiscard]] CRUCIBLE_INLINE typename V::value_type reduce_max(V value) noexcept {
-    typename V::value_type acc = value.v_[0];
+    const typename V::raw_type lanes = value.raw();
+    typename V::value_type acc = lanes[0];
     for (int lane = 1; lane < static_cast<int>(V::size()); ++lane)
-        acc = value.v_[lane] > acc ? value.v_[lane] : acc;
+        acc = lanes[lane] > acc ? lanes[lane] : acc;
     return acc;
 }
 

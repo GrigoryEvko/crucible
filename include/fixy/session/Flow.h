@@ -91,20 +91,20 @@ class HoldFactory;
 // Every marker is move-only.  A copy of a token is a second owner, and
 // a copy of a read proof is a second loan that no set records.
 
+// The payload and the token of a marker are private.  A transport reads the
+// payload through peek() to write it to the wire, and only the door of a
+// hold takes the payload and the token out of the marker together.
 template <class T, class Tag>
 struct [[nodiscard]][[= ::foundation::linear::linear{}]] Transferable {
     using payload_type = T;
     using transferred_perm = Tag;
-
-    T value;
-    [[no_unique_address]] ::foundation::permissions::Permission<Tag> perm;
 
     // A protocol names the tag and not the instance, so the message drops
     // the brand of the token through the one door that drops a brand.
     template <class Brand>
     constexpr Transferable(T v, ::foundation::permissions::Permission<Tag, Brand>&& p) noexcept(
         std::is_nothrow_move_constructible_v<T>)
-        : value{std::move(v)}, perm{::foundation::permissions::permission_erase_brand(std::move(p))} {}
+        : value_{std::move(v)}, perm_{::foundation::permissions::permission_erase_brand(std::move(p))} {}
 
     Transferable(const Transferable&) = delete("Transferable carries a linear token. A copy is a second owner");
     Transferable&
@@ -112,6 +112,14 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Transferable {
     constexpr Transferable(Transferable&&) noexcept = default;
     constexpr Transferable& operator=(Transferable&&) noexcept = default;
     ~Transferable() = default;
+
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
+
+private:
+    friend class HoldFactory;
+
+    T value_;
+    [[no_unique_address]] ::foundation::permissions::Permission<Tag> perm_;
 };
 
 template <class T, class Tag>
@@ -119,20 +127,25 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Returned {
     using payload_type = T;
     using returned_perm = Tag;
 
-    T value;
-    [[no_unique_address]] ::foundation::permissions::Permission<Tag> perm;
-
     // The brand drops as it does for Transferable.
     template <class Brand>
     constexpr Returned(T v, ::foundation::permissions::Permission<Tag, Brand>&& p) noexcept(
         std::is_nothrow_move_constructible_v<T>)
-        : value{std::move(v)}, perm{::foundation::permissions::permission_erase_brand(std::move(p))} {}
+        : value_{std::move(v)}, perm_{::foundation::permissions::permission_erase_brand(std::move(p))} {}
 
     Returned(const Returned&) = delete("Returned carries a linear token. A copy is a second owner");
     Returned& operator=(const Returned&) = delete("Returned carries a linear token. A copy is a second owner");
     constexpr Returned(Returned&&) noexcept = default;
     constexpr Returned& operator=(Returned&&) noexcept = default;
     ~Returned() = default;
+
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
+
+private:
+    friend class HoldFactory;
+
+    T value_;
+    [[no_unique_address]] ::foundation::permissions::Permission<Tag> perm_;
 };
 
 // The loan comes from mint_read_loan, which parks the token of the tag.
@@ -144,13 +157,11 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Borrowed {
     using payload_type = T;
     using borrowed_perm = Tag;
 
-    T value;
-
     // The loan is on the erased identity, because the hold that lends it
     // keeps each token on the erased identity of its tag.
     constexpr Borrowed(T v, ::foundation::permissions::ReadLoan<Tag>&& loan) noexcept(
         std::is_nothrow_move_constructible_v<T>)
-        : value{std::move(v)}, loan_{std::move(loan)} {}
+        : value_{std::move(v)}, loan_{std::move(loan)} {}
 
     Borrowed(const Borrowed&) = delete("Borrowed is one read loan. A copy is a second loan that no set records");
     Borrowed&
@@ -159,9 +170,12 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Borrowed {
     Borrowed& operator=(Borrowed&&) = delete("Borrowed holds one read loan for its whole life");
     ~Borrowed() = default;
 
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
+
 private:
     friend class HoldFactory;
 
+    T value_;
     [[no_unique_address]] ::foundation::permissions::ReadLoan<Tag> loan_;
 };
 
@@ -174,12 +188,10 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Released {
     using payload_type = T;
     using released_perm = Tag;
 
-    T value;
-
     // The loan is on the erased identity, as the loan of Borrowed is.
     constexpr Released(T v, ::foundation::permissions::ReadLoan<Tag>&& loan) noexcept(
         std::is_nothrow_move_constructible_v<T>)
-        : value{std::move(v)}, loan_{std::move(loan)} {}
+        : value_{std::move(v)}, loan_{std::move(loan)} {}
 
     Released(const Released&) = delete("Released ends one read loan. A copy ends it a second time");
     Released& operator=(const Released&) = delete("Released ends one read loan. A copy ends it a second time");
@@ -187,9 +199,12 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Released {
     constexpr Released& operator=(Released&&) noexcept = default;
     ~Released() = default;
 
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
+
 private:
     friend class HoldFactory;
 
+    T value_;
     [[no_unique_address]] ::foundation::permissions::ReadLoan<Tag> loan_;
 };
 
@@ -811,8 +826,8 @@ public:
            Message&& message) noexcept(std::is_nothrow_move_constructible_v<typename Message::payload_type>)
         -> std::pair<typename Message::payload_type, PermHold<perm_set_after_recv_t<Set, Message>>> {
         hold.require_live_();
-        typename Message::payload_type value = std::move(message.value);
-        auto next = transition_<perm_set_after_recv_t<Set, Message>>(hold, std::move(message.perm));
+        typename Message::payload_type value = std::move(message.value_);
+        auto next = transition_<perm_set_after_recv_t<Set, Message>>(hold, std::move(message.perm_));
         return {std::move(value), std::move(next)};
     }
 
@@ -837,7 +852,7 @@ public:
     end_loan(PermHold<Set>&& hold, Released<T, Tag>&& message) noexcept(std::is_nothrow_move_constructible_v<T>)
         -> std::pair<T, PermHold<perm_set_after_recv_t<Set, Released<T, Tag>>>> {
         hold.require_live_();
-        T value = std::move(message.value);
+        T value = std::move(message.value_);
         ::foundation::permissions::LentPermission<Tag>& parked = slot_<LentOut<Tag>>(hold);
         auto next = transition_<perm_set_after_recv_t<Set, Released<T, Tag>>>(
             hold, ::foundation::permissions::mint_permission_after_loan(std::move(parked), std::move(message.loan_)));
@@ -850,7 +865,7 @@ public:
     accept_loan(PermHold<Set>&& hold, Borrowed<T, Tag>&& message) noexcept(std::is_nothrow_move_constructible_v<T>)
         -> std::pair<T, PermHold<perm_set_after_recv_t<Set, Borrowed<T, Tag>>>> {
         hold.require_live_();
-        T value = std::move(message.value);
+        T value = std::move(message.value_);
         auto next = transition_<perm_set_after_recv_t<Set, Borrowed<T, Tag>>>(hold, std::move(message.loan_));
         return {std::move(value), std::move(next)};
     }

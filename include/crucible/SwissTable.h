@@ -145,7 +145,7 @@ struct CtrlGroup {
 #if defined(__AVX512BW__)
     // The write mask of all ones compares each of the 64 lanes.
     [[nodiscard]] CRUCIBLE_INLINE BitMask match(int8_t h2) const {
-        const Lanes needle = Bytes{static_cast<char>(h2)}.v_;
+        const Lanes needle = Bytes{static_cast<char>(h2)}.raw();
         return BitMask{
             static_cast<uint64_t>(__builtin_ia32_pcmpeqb512_mask(std::bit_cast<Lanes>(ctrl), needle, ~0ULL))};
     }
@@ -160,7 +160,7 @@ struct CtrlGroup {
     // The comparison gives lanes of signed char.  The movemask builtin takes
     // lanes of char, and the bit cast keeps each bit.
     [[nodiscard]] CRUCIBLE_INLINE BitMask match(int8_t h2) const {
-        const Lanes needle = Bytes{static_cast<char>(h2)}.v_;
+        const Lanes needle = Bytes{static_cast<char>(h2)}.raw();
         const auto cmp = std::bit_cast<Lanes>(std::bit_cast<Lanes>(ctrl) == needle);
         // The movemask result is a signed int. Widening through uint32_t
         // stops a set top bit from sign-extending across the upper 32 bits.
@@ -178,7 +178,7 @@ struct CtrlGroup {
     // The comparison gives lanes of signed char.  The movemask builtin takes
     // lanes of char, and the bit cast keeps each bit.
     [[nodiscard]] CRUCIBLE_INLINE BitMask match(int8_t h2) const {
-        const Lanes needle = Bytes{static_cast<char>(h2)}.v_;
+        const Lanes needle = Bytes{static_cast<char>(h2)}.raw();
         const auto cmp = std::bit_cast<Lanes>(std::bit_cast<Lanes>(ctrl) == needle);
         // The movemask result is a signed int. Widening through uint32_t
         // stops a set top bit from sign-extending across the upper 32 bits.
