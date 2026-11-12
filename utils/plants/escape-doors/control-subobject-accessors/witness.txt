@@ -1,0 +1,7 @@
+# An aggregate whose getters give only a reference to a public subobject of
+# *this does not guard its storage, so its public data members are no
+# finding: a getter of a member, of a member through this, of a member of a
+# public base, and of a part in a cell of a base of an aggregate template.
+compile report subobjects.cpp
+flag report -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Subobjects.h
+exit report pass

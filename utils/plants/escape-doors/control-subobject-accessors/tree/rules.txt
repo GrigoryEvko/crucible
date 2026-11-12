@@ -1,0 +1,10 @@
+# The rule table of a control of the rule escape-doors: include/fixy/ is base
+# code, and subobjects.cpp is quarantined.
+layer low 0 include/fixy/
+allow low <cstddef>
+allow low <utility>
+admit std::size_t | the type of the index of a cell
+admit std::index_sequence | the list of the indices of the cells
+admit std::index_sequence_for | the list of the indices of the parts
+admit std::integer_sequence | the class of a list of indices
+quarantine subobjects.cpp

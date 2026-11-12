@@ -125,9 +125,13 @@
 //     each depth, and the targets of each public using-declaration.  A class
 //     guards its storage when it is no aggregate, or when it declares a
 //     public member function that hands out a raw reference or pointer to
-//     something other than the class itself.  An aggregate with no such
-//     function is a named record, and its parts are its interface.  For each
-//     class of a base file:
+//     something other than the class itself or a public subobject of it.  A
+//     function gives a public subobject when each of its return statements
+//     names one: a chain of casts to the class or a base and of member
+//     accesses of public data members, from *this.  The body of a template
+//     gives that fact at the walk, and each other body before cp_genericize.
+//     An aggregate with no other such function is a named record, and its
+//     parts are its interface.  For each class of a base file:
 //       public-member    a public data member on the surface of a class that
 //                        guards its storage.  A caller takes its address, and
 //                        no door names it.  A data member of a public
@@ -1690,10 +1694,218 @@ tree member_function(tree member) {
     return member != NULL_TREE && TREE_CODE(member) == FUNCTION_DECL ? member : NULL_TREE;
 }
 
+// Adds CLASS_TYPE and each base of it at each depth to FOUND.  A dependent
+// base gives the classes of member_classes.  Complexity: O(bases on the
+// chains), with each class one time.
+void collect_self_and_bases(tree class_type, std::vector<tree>& found, int depth) {
+    if (class_type == NULL_TREE || depth > kSurfaceDepth) {
+        return;
+    }
+    class_type = TYPE_MAIN_VARIANT(class_type);
+    if (std::find(found.begin(), found.end(), class_type) != found.end()) {
+        return;
+    }
+    found.push_back(class_type);
+    tree binfo = TYPE_BINFO(class_type);
+    for (unsigned index = 0; binfo != NULL_TREE && index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+        for (tree holder : member_classes(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), depth + 1)) {
+            collect_self_and_bases(holder, found, depth + 1);
+        }
+    }
+}
+
+// The most general template of the class TYPE, or null.
+tree general_template_of(tree type) {
+    if (type == NULL_TREE || !CLASS_TYPE_P(type)) {
+        return NULL_TREE;
+    }
+    tree info = CLASSTYPE_TEMPLATE_INFO(TYPE_MAIN_VARIANT(type));
+    if (info == NULL_TREE || TI_TEMPLATE(info) == NULL_TREE || TREE_CODE(TI_TEMPLATE(info)) != TEMPLATE_DECL) {
+        return NULL_TREE;
+    }
+    return most_general_template(TI_TEMPLATE(info));
+}
+
+// True when a cast of *this to a reference or a pointer to TARGET reaches a
+// subobject: TARGET is one of BASES, the class and its bases, or a
+// specialization of the template of one of them.
+bool is_self_or_base(tree target, const std::vector<tree>& bases) {
+    if (target == NULL_TREE || !CLASS_TYPE_P(target)) {
+        return false;
+    }
+    tree main_target = TYPE_MAIN_VARIANT(target);
+    tree target_template = general_template_of(main_target);
+    for (tree base : bases) {
+        if (base == main_target || (target_template != NULL_TREE && general_template_of(base) == target_template)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when MEMBER, a data member, is a public subobject: public, and of no
+// reference type.  A base subobject counts.
+bool is_public_subobject(tree member) {
+    return TREE_CODE(member) == FIELD_DECL
+        && (DECL_FIELD_IS_BASE(member)
+            || (is_public_member(member) && TREE_TYPE(member) != NULL_TREE && !TYPE_REF_P(TREE_TYPE(member))));
+}
+
+// True when each class whose members a caller names through OBJECT_TYPE has
+// a data member NAME that is a public subobject.  A dependent member access
+// of a template names its member by an identifier.
+bool names_public_subobject(tree object_type, tree name) {
+    if (object_type != NULL_TREE && TYPE_REF_P(object_type)) {
+        object_type = TREE_TYPE(object_type);
+    }
+    std::vector<tree> classes = member_classes(object_type, 0);
+    if (classes.empty()) {
+        return false;
+    }
+    for (tree holder : classes) {
+        bool has_member = false;
+        for (tree member = TYPE_FIELDS(holder); member != NULL_TREE && !has_member; member = DECL_CHAIN(member)) {
+            has_member = DECL_NAME(member) == name && is_public_subobject(member);
+        }
+        if (!has_member) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// True when a cast of the class type CAST_TYPE, or of a reference or a pointer
+// to it, keeps the walk in the class or a base of BASES.  A cast to a type that
+// is no class and no indirection to a class, such as a cast that adds const,
+// keeps it too.
+bool keeps_subobject(tree cast_type, const std::vector<tree>& bases) {
+    if (cast_type == NULL_TREE) {
+        return true;
+    }
+    tree target = INDIRECT_TYPE_P(cast_type) ? TREE_TYPE(cast_type) : cast_type;
+    return target == NULL_TREE || !CLASS_TYPE_P(target) || is_self_or_base(target, bases);
+}
+
+// True when the expression NODE gives a public subobject of *this (THE
+// SURFACE).  The walk reads the tree of a body before cp_genericize, or the
+// tree of a template.  An address names the subobject at a member access and
+// *this, through the casts to the class or a base: the address of the object
+// parameter, or the address of an lvalue.  An lvalue is a member access of a
+// public subobject of such an lvalue, a dereference of such an address, or a
+// cast of such an lvalue.  A call, a subscript and a dereference of a member
+// give no such subobject.  OBJECT is the object parameter of the function,
+// and BASES the class and its bases.  Complexity: linear in the chain.
+bool reaches_public_subobject(tree node, tree object, const std::vector<tree>& bases) {
+    node = node != NULL_TREE ? tree_strip_any_location_wrapper(node) : node;
+    bool is_address =
+        node != NULL_TREE
+        && ((TREE_TYPE(node) != NULL_TREE && INDIRECT_TYPE_P(TREE_TYPE(node))) || TREE_CODE(node) == ADDR_EXPR);
+    for (int depth = 0; node != NULL_TREE && depth < kSurfaceDepth; ++depth) {
+        node = tree_strip_any_location_wrapper(node);
+        tree_code code = TREE_CODE(node);
+        if (code == NON_LVALUE_EXPR || code == VIEW_CONVERT_EXPR || code == PAREN_EXPR) {
+            node = TREE_OPERAND(node, 0);
+            continue;
+        }
+        if (code == NOP_EXPR || code == CONVERT_EXPR || code == STATIC_CAST_EXPR) {
+            if (!keeps_subobject(TREE_TYPE(node), bases)) {
+                return false;
+            }
+            // A static_cast of a template to a reference takes the lvalue as
+            // the source spells it.
+            if (code == STATIC_CAST_EXPR && TREE_TYPE(node) != NULL_TREE && TYPE_REF_P(TREE_TYPE(node))) {
+                is_address = false;
+            }
+            node = TREE_OPERAND(node, 0);
+            continue;
+        }
+        if (is_address) {
+            if (code == ADDR_EXPR) {
+                is_address = false;
+                node = TREE_OPERAND(node, 0);
+                continue;
+            }
+            return code == PARM_DECL && node == object;
+        }
+        if (code == COMPONENT_REF) {
+            tree member = TREE_OPERAND(node, 1);
+            bool is_public = TREE_CODE(member) == IDENTIFIER_NODE
+                               ? names_public_subobject(TREE_TYPE(TREE_OPERAND(node, 0)), member)
+                               : is_public_subobject(member);
+            if (!is_public) {
+                return false;
+            }
+            node = TREE_OPERAND(node, 0);
+            continue;
+        }
+        if (code == INDIRECT_REF) {
+            is_address = true;
+            node = TREE_OPERAND(node, 0);
+            continue;
+        }
+        return false;
+    }
+    return false;
+}
+
+// The state of the walk of the return statements of a member function.
+struct SubobjectReturns {
+    tree object = NULL_TREE;
+    const std::vector<tree>* bases = nullptr;
+    bool saw_return = false;
+    bool is_each_subobject = true;
+};
+
+tree walk_subobject_returns(tree* node_pointer, int* walk_subtrees, void* data) {
+    tree node = *node_pointer;
+    if (node == NULL_TREE || TYPE_P(node) || TREE_CODE(node) == LAMBDA_EXPR) {
+        *walk_subtrees = 0;
+        return NULL_TREE;
+    }
+    if (TREE_CODE(node) != RETURN_EXPR) {
+        return NULL_TREE;
+    }
+    auto& walk = *static_cast<SubobjectReturns*>(data);
+    tree value = TREE_OPERAND(node, 0);
+    if (value != NULL_TREE && TREE_CODE(value) == INIT_EXPR) {
+        value = TREE_OPERAND(value, 1);
+    }
+    walk.saw_return = true;
+    walk.is_each_subobject = walk.is_each_subobject && reaches_public_subobject(value, walk.object, *walk.bases);
+    return NULL_TREE;
+}
+
+// The DECL_UID of each member function that is not a template whose return
+// statements each give a public subobject of *this, from its body before
+// cp_genericize (THE SURFACE).  The walk of the end of the unit reads a
+// lowered body, which a sanitizer changes, so the fact comes from
+// PLUGIN_PRE_GENERICIZE.  No collection reuses a DECL_UID.
+std::unordered_set<int> subobject_getters;
+
+// True when each return statement of the member function FUNCTION of
+// CLASS_TYPE gives a public subobject of *this (THE SURFACE).  A function with
+// no body or no return statement gives no such fact.  Complexity: linear in
+// the body and in the bases of the class.
+bool returns_only_public_subobjects(tree function, tree class_type) {
+    tree body = DECL_SAVED_TREE(function);
+    if (body == NULL_TREE || !DECL_IOBJ_MEMBER_FUNCTION_P(function)) {
+        return false;
+    }
+    std::vector<tree> bases;
+    collect_self_and_bases(class_type, bases, 0);
+    SubobjectReturns walk;
+    walk.object = DECL_ARGUMENTS(function);
+    walk.bases = &bases;
+    cp_walk_tree_without_duplicates(&body, walk_subobject_returns, &walk);
+    return walk.saw_return && walk.is_each_subobject;
+}
+
 // True when CLASS_TYPE guards its storage (THE SURFACE): it is no aggregate,
 // or it declares a public member function that hands out a raw reference or
-// pointer to something other than the class itself.  An aggregate with no
-// such function is a named record, and its parts are its interface.
+// pointer to something other than the class itself or a public subobject of
+// it.  An aggregate with no such function is a named record, and its parts
+// are its interface.  A reference to a public subobject of an aggregate gives
+// no access that the public member does not give.
 bool guards_storage(tree class_type) {
     if (!CP_AGGREGATE_TYPE_P(class_type)) {
         return true;
@@ -1707,7 +1919,12 @@ bool guards_storage(tree class_type) {
         tree result = TREE_TYPE(TREE_TYPE(function));
         bool is_self = result != NULL_TREE && INDIRECT_TYPE_P(result) && TREE_TYPE(result) != NULL_TREE
                     && TYPE_MAIN_VARIANT(TREE_TYPE(result)) == TYPE_MAIN_VARIANT(class_type);
-        if (!is_self) {
+        // The body of a template keeps its tree, and the body of each other
+        // function gave its fact before cp_genericize.
+        bool is_template_body = TREE_CODE(member) == TEMPLATE_DECL || uses_template_parms(class_type);
+        bool gives_subobject = is_template_body ? returns_only_public_subobjects(function, class_type)
+                                                : subobject_getters.count(static_cast<int>(DECL_UID(function))) != 0;
+        if (!is_self && !gives_subobject) {
             return true;
         }
     }
@@ -3402,7 +3619,18 @@ struct PropertyWalk {
 // PLUGIN_PRE_GENERICIZE (THE WALK).
 void on_pre_genericize_property(void* gcc_data, void*) {
     tree function = static_cast<tree>(gcc_data);
-    if (function == NULL_TREE || !is_mint(function) || is_in_instantiation(function)
+    if (function == NULL_TREE) {
+        return;
+    }
+    // A public getter of a class of a base file, for guards_storage (THE
+    // SURFACE).
+    tree owner = DECL_CONTEXT(function);
+    if (DECL_LANG_SPECIFIC(function) != nullptr && DECL_IOBJ_MEMBER_FUNCTION_P(function) && is_public_member(function)
+        && owner != NULL_TREE && CLASS_TYPE_P(owner) && can_hand_out(function) && in_base_file(function)
+        && returns_only_public_subobjects(function, owner)) {
+        subobject_getters.insert(static_cast<int>(DECL_UID(function)));
+    }
+    if (!is_mint(function) || is_in_instantiation(function)
         || property_place(DECL_SOURCE_LOCATION(function)).file == nullptr) {
         return;
     }

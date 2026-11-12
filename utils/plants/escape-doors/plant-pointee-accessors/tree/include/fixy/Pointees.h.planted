@@ -1,0 +1,35 @@
+#pragma once
+
+namespace plant {
+
+// A class with private storage and a getter of its public member is no
+// aggregate, so it guards its storage.
+class Private {
+public:
+    int shown = 0;
+
+    [[nodiscard]] int& front() noexcept { return shown; }
+
+private:
+    int hidden = 0;
+};
+
+// An aggregate whose getter gives a reference through a pointer member gives
+// access to an object that is no subobject.
+struct Pointee {
+    int* target = nullptr;
+
+    [[nodiscard]] int& value() noexcept { return *target; }
+};
+
+// An aggregate whose getter calls a function gives a reference that the rule
+// cannot read.
+int& shared_cell() noexcept;
+
+struct Called {
+    int count = 0;
+
+    [[nodiscard]] int& get() noexcept { return shared_cell(); }
+};
+
+}  // namespace plant

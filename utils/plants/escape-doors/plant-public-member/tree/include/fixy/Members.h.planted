@@ -2,13 +2,13 @@
 
 namespace plant {
 
-// An aggregate that hands out a reference to a part guards its storage, so a
-// public data member beside the getter is a raw escape.
+// An aggregate that hands out a reference through a pointer member guards
+// its storage, so a public data member beside the getter is a raw escape.
 class ExposesStorage {
 public:
-    [[nodiscard]] int const& value() const noexcept { return count; }
+    [[nodiscard]] int const& value() const noexcept { return *target; }
 
-    int count = 0;
+    int* target = nullptr;
 };
 
 // A class with a constructor is no aggregate, so it guards its storage.

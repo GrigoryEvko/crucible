@@ -1,0 +1,16 @@
+# A class guards its storage when it is no aggregate, or when a getter gives a
+# reference to something that is no public subobject of *this: through a
+# pointer member, or through a call.  Each public data member of such a class
+# is the kind public-member of the rule escape-doors, and the free function is
+# a door.  In the mode error each finding is an error.
+compile report pointees.cpp
+flag report -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Pointees.h
+exit report pass
+finding report escape-doors public-member include/fixy/Pointees.h:9:9 | plant::Private::shown
+finding report escape-doors public-member include/fixy/Pointees.h:20:10 | plant::Pointee::target
+finding report escape-doors bare-door include/fixy/Pointees.h:27:6 | plant::shared_cell()
+finding report escape-doors public-member include/fixy/Pointees.h:30:9 | plant::Called::count
+
+compile error pointees.cpp mode=error findings=report errors=report
+flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Pointees.h
+exit error fail

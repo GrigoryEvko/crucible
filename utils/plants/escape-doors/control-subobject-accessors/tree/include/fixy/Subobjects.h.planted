@@ -1,0 +1,50 @@
+#pragma once
+
+#include <cstddef>
+#include <utility>
+
+namespace control {
+
+// An aggregate whose getter gives a reference to its own public member: the
+// getter gives no access that the public member does not give.
+struct Pair {
+    int first = 0;
+    int second = 0;
+
+    [[nodiscard]] int& front() noexcept { return first; }
+    [[nodiscard]] int const& back() const noexcept { return this->second; }
+};
+
+// An aggregate whose getter gives a public member of a public base.
+struct Base {
+    int field = 0;
+};
+
+struct Derived : Base {
+    int extra = 0;
+
+    [[nodiscard]] int& value() noexcept { return static_cast<Base&>(*this).field; }
+};
+
+// An aggregate template whose parts are in cells of its bases, as the parts
+// of a Record are, with a getter of the part at a constant index.
+template <std::size_t I, class T>
+struct Cell {
+    T part;
+};
+
+template <class Indices, class... Ts>
+struct Cells;
+
+template <std::size_t... Is, class... Ts>
+struct Cells<std::index_sequence<Is...>, Ts...> : Cell<Is, Ts>... {};
+
+template <class... Ts>
+struct Tuple : Cells<std::index_sequence_for<Ts...>, Ts...> {
+    template <std::size_t I>
+    [[nodiscard]] constexpr auto& at() & noexcept {
+        return static_cast<Cell<I, Ts...[I]>&>(*this).part;
+    }
+};
+
+}  // namespace control

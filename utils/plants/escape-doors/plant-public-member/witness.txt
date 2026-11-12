@@ -1,13 +1,14 @@
 # Each public data member on the surface of a class that guards its storage
 # is the kind public-member of the rule escape-doors: an aggregate with a
-# getter, a class with a constructor, a class template with a private data
+# getter through a pointer member, a class with a constructor, a class
+# template with a private data
 # member, a member of a public anonymous union, a member of a record through
 # a public base, and a protected member that a public using-declaration
 # makes public.  In the mode error each finding is an error.
 compile report members.cpp
 flag report -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Members.h
 exit report pass
-finding report escape-doors public-member include/fixy/Members.h:11:9 | plant::ExposesStorage::count
+finding report escape-doors public-member include/fixy/Members.h:11:10 | plant::ExposesStorage::target
 finding report escape-doors public-member include/fixy/Members.h:19:9 | plant::WithConstructor::open
 finding report escape-doors public-member include/fixy/Members.h:26:7 | plant::MixedTemplate::open
 finding report proof-routes union include/fixy/Members.h:37:11 | union: <anonymous>
