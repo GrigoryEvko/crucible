@@ -74,6 +74,17 @@ void test_switch_reaches_unreachable_only_outside_the_enumerators() {
     }
 }
 
+// The abort probe has one jump buffer, so one arm at a time is open.  A
+// second arm while the first arm is open is a fatal exit, and the first arm
+// catches it.  After that, the probe arms again.
+void test_abort_probe_refuses_a_second_open_arm() {
+    bool const second_arm_aborts =
+        ::foundation::test::aborts([] { static_cast<void>(::foundation::test::aborts([] {})); });
+    CRUCIBLE_FATAL_INVARIANT(second_arm_aborts);
+    bool const later_arm_aborts = ::foundation::test::aborts([] { ::foundation::core::unreachable(); });
+    CRUCIBLE_FATAL_INVARIANT(later_arm_aborts);
+}
+
 }  // namespace
 
 int main() {
@@ -82,5 +93,6 @@ int main() {
     test_fatal_with_arguments_ends_the_process();
     test_report_returns();
     test_switch_reaches_unreachable_only_outside_the_enumerators();
+    test_abort_probe_refuses_a_second_open_arm();
     return 0;
 }

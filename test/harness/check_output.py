@@ -14,8 +14,10 @@ with its condition, its file and line and its function, and it must end by
 SIGABRT.
 
 PROBE_FATAL_TWICE (test/harness/probe_fatal_twice.cpp) catches two fatal
-exits on one thread with abort probes.  Its standard error must hold the
-text of each one, and it must end with status 0.
+exits on one thread with abort probes.  Then it opens a second arm of the
+probe while one arm is open, and the open arm catches the refusal.  Its
+standard error must hold the text of each fatal exit and of the refusal, and
+it must end with status 0.
 
 PROBE_DIAG (test/harness/probe_diag.cpp) writes the records and the lines of
 the diagnostic emitter of foundation/diag/JsonEmitter.h.  Each line of its
@@ -65,6 +67,7 @@ EXACT_RECORD = ('{"format_version":1,"source_position":{"file":"","line":0,"colu
                 '"error_code":"E","goal":"G","have":"H","gap":"' + "g" * 32596
                 + '","suggestion":"S","related_snippets":[]}\n')
 RESULTS_LINE = "results: true true true true true false\n"
+SECOND_ARM_TEXT = "foundation: fatal: a second arm of the abort probe starts while the first arm is open\n"
 REFUSED_LINE = "format refused\n"
 DEFAULT_SINK_LINE = "crucible-violation: category=DetSafeLeak fn=default_fn detail=default detail\n"
 
@@ -126,13 +129,15 @@ def check_report_probe(probe: str, emulator: list[str]) -> bool:
 
 
 def check_fatal_twice_probe(probe: str, emulator: list[str]) -> bool:
-    """Check that each of two caught fatal exits on one thread writes its text."""
+    """Check that each of two caught fatal exits on one thread, and the refusal of a second open arm, write a text."""
     result = run(probe, emulator)
-    passed = check(result.returncode == 0, "the two abort probes catch the two fatal exits", result)
+    passed = check(result.returncode == 0, "the abort probes catch the two fatal exits and the refusal", result)
     for which in ("first", "second"):
         text = f"foundation: fatal: the {which} fatal exit of the probe\n"
         passed = check(text in result.stderr, f"standard error holds the text of the {which} fatal exit",
                        result) and passed
+    passed = check(SECOND_ARM_TEXT in result.stderr, "standard error holds the refusal of a second open arm",
+                   result) and passed
     return passed
 
 

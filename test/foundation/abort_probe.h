@@ -14,8 +14,9 @@
 // The arming flag is thread-local, so only the thread that armed the probe
 // jumps.  An abort on a different thread ends the process.  The jump buffer
 // and the signal disposition are process-wide, and the probe puts back the
-// previous disposition before it returns.  Thus one thread at a time arms the
-// probe, and a second arm at the same time ends the process.  The buffer is
+// previous disposition before it returns.  Thus one arm at a time is open, and
+// a second arm while the first arm is open ends the process, on the same
+// thread or on a different thread.  The buffer is
 // not thread-local, because each thread-local byte of a shared library that
 // includes this header goes into its TLS block.  The rule static-tls holds
 // that block small.
@@ -69,7 +70,7 @@ extern "C" inline void abort_probe_handler(int) {
 template <typename Body>
 [[nodiscard]] bool aborts(Body&& body) {
     if (abort_probe_busy.exchange_acq_rel(true)) {
-        ::foundation::core::fatal("two threads armed the abort probe at the same time");
+        ::foundation::core::fatal("a second arm of the abort probe starts while the first arm is open");
     }
     struct sigaction want{};
     struct sigaction previous{};
