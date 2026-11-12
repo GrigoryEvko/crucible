@@ -55,8 +55,11 @@ static_assert(std::is_same_v<decltype(target_of(std::declval<Box<int>&>().view()
 // closure that the call gets by name still ends the life of the payload
 // that the reference names.  The Option of a trivially copyable payload
 // stays assignable, because the ABI gives it back in registers only then.
+// The owning form has a move assignment too, and there such a write runs
+// the destructor of the payload that the reference names.
 static_assert(std::is_copy_assignable_v<Option<int>>);
 static_assert(std::is_copy_assignable_v<::foundation::core::Result<int, ::foundation::core::LengthMismatch>>);
+static_assert(std::is_move_assignable_v<Option<Box<int>>>);
 
 // ── Entry: an error holds an address ─────────────────────────────────
 //

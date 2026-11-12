@@ -173,6 +173,56 @@ void test_owning_payload() {
     CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
 }
 
+// The handle of the owner that an owning Option holds, or 0 for no owner.
+[[nodiscard]] int handle_of(Option<CountedOwner> const& holder) noexcept {
+    return holder.match([](CountedOwner const& owner) noexcept { return owner.handle(); }, [] noexcept { return 0; });
+}
+
+// The move assignment of an owning Option drops the owner of the target one
+// time and takes the owner of the source, and the source is empty after it.
+// A self assignment through a second reference keeps the owner.  The probe
+// reads each source after its move on purpose.
+void test_owning_assignment() {
+    {
+        Option<CountedOwner> target = Option<CountedOwner>::some(CountedOwner{21});
+        Option<CountedOwner> source = Option<CountedOwner>::some(CountedOwner{22});
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 2);
+        target = static_cast<Option<CountedOwner>&&>(source);
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 1 && source.is_none() && handle_of(target) == 22);
+        Option<CountedOwner>& alias = target;
+        target = static_cast<Option<CountedOwner>&&>(alias);
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 1 && handle_of(target) == 22);
+        Option<CountedOwner> empty{};
+        target = static_cast<Option<CountedOwner>&&>(empty);
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 0 && target.is_none());
+        target = Option<CountedOwner>::some(CountedOwner{23});
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 1 && handle_of(target) == 23);
+        target = none;
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 0 && target.is_none());
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
+}
+
+// The property: two Options compare equal exactly when a plain model of one
+// flag and one value gives equal pairs.  The values come from a small range,
+// so equal payloads occur often.
+void test_equality_agrees_with_plain_model() {
+    ::foundation::test::PhiloxStream stream{0x5EEDC401CE000002u};
+    for (int trial = 0; trial < 4096; ++trial) {
+        std::uint64_t const left_value = stream.next_word() & 3u;
+        std::uint64_t const right_value = stream.next_word() & 3u;
+        bool const left_holds = (stream.next_word() & 1u) != 0;
+        bool const right_holds = (stream.next_word() & 1u) != 0;
+        Option<std::uint64_t> const left =
+            left_holds ? Option<std::uint64_t>::some(left_value) : Option<std::uint64_t>{};
+        Option<std::uint64_t> const right =
+            right_holds ? Option<std::uint64_t>::some(right_value) : Option<std::uint64_t>{};
+        bool const model_equal = left_holds == right_holds && (!left_holds || left_value == right_value);
+        CRUCIBLE_FATAL_INVARIANT((left == right) == model_equal);
+        CRUCIBLE_FATAL_INVARIANT((left != right) == !model_equal);
+    }
+}
+
 // A linear payload takes the owning form, so a move of the Option moves the
 // token and copies no byte of it.  The const loop reads the token with no
 // move, and the rvalue match gives the token to its arm.
@@ -414,6 +464,25 @@ void test_result_owning_value() {
     CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
 }
 
+// The move assignment of an owning Result drops the active part of the
+// target one time and takes the active part of the source.  The source
+// keeps its moved-from part, which its destructor ends.
+void test_result_owning_assignment() {
+    {
+        Result<CountedOwner, Refusal> target{CountedOwner{51}};
+        Result<CountedOwner, Refusal> source{CountedOwner{52}};
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 2);
+        target = static_cast<Result<CountedOwner, Refusal>&&>(source);
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 2 && target.is_ok());
+        int const handle = target.match([](CountedOwner const& owner) noexcept { return owner.handle(); },
+                                        [](Refusal) noexcept { return 0; });
+        CRUCIBLE_FATAL_INVARIANT(handle == 52);
+        target = Result<CountedOwner, Refusal>{err(Refusal::closed)};
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 1 && target.is_err());
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
+}
+
 // The error of a Result can be linear, so a failed operation gives its
 // resource back.  The const match reads the error, the rvalue err() moves
 // it into its Option, and the rvalue match moves it into its arm.
@@ -522,6 +591,8 @@ int main() {
     test_loop();
     test_end_cursor_read_aborts();
     test_owning_payload();
+    test_owning_assignment();
+    test_equality_agrees_with_plain_model();
     test_linear_payload();
     test_value_or();
     test_match();
@@ -533,6 +604,7 @@ int main() {
     test_result_roads();
     test_result_of_unit();
     test_result_owning_value();
+    test_result_owning_assignment();
     test_result_linear_error();
     test_result_agrees_with_plain_model();
     test_ok_or();

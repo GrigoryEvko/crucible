@@ -2116,6 +2116,32 @@ foundation_neg_compile_test(neg_core_option_temporary_borrow_match
 foundation_neg_compile_test(neg_core_result_temporary_borrow_match
   "use of deleted function .void foundation::core::Result<T, E>::match\\(OnOk&&, OnErr&&\\) const && \\[with OnOk = main\\(\\)::<lambda\\(const int&\\)>. OnErr = main\\(\\)::<lambda\\(const Code&\\)>. T = int. E = Code\\]."
   "a borrow match of a temporary Result gives a reference into an object that the full expression ends")
+# A move assignment drops what the target holds, so a sum with a linear
+# part has none.
+foundation_neg_compile_test(neg_core_option_linear_assign
+  "use of deleted function .foundation::core::Option<Token>& foundation::core::Option<Token>::operator=\\(foundation::core::Option<Token>&&\\)."
+  "an assignment drops the payload that the Option holds, and a linear payload must not be dropped")
+foundation_neg_compile_test(neg_core_result_linear_assign
+  "use of deleted function .foundation::core::Result<int, Token>& foundation::core::Result<int, Token>::operator=\\(foundation::core::Result<int, Token>&&\\)."
+  "use of deleted function .foundation::core::detail::ResultSlot<int, Token>& foundation::core::detail::ResultSlot<int, Token>::operator=\\(foundation::core::detail::ResultSlot<int, Token>&&\\)."
+  "an assignment drops the alternative that the sum holds, and a linear alternative must not be dropped")
+# A sum compares only with a sum of its own type, and a floating-point part
+# has no compare.
+foundation_neg_compile_test(neg_core_option_compare_none
+  "use of deleted function .bool foundation::core::operator==\\(const Option<T>&, const Other&\\) \\[with Other = NoValue. T = int\\]."
+  "an Option compares only with an Option of its own payload type")
+foundation_neg_compile_test(neg_core_option_compare_other_type
+  "use of deleted function .bool foundation::core::operator==\\(const Option<T>&, const Other&\\) \\[with Other = Option<long int>. T = int\\]."
+  "an Option compares only with an Option of its own payload type")
+foundation_neg_compile_test(neg_core_option_compare_float
+  "no match for .operator==. \\(operand types are .const foundation::core::Option<double>. and .const foundation::core::Option<double>.\\)"
+  "the expression .!\\(is_floating_point_v<T>\\) \\[with T = double\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_result_compare_value
+  "use of deleted function .bool foundation::core::operator==\\(const Result<T, E>&, const Other&\\) \\[with Other = int. T = int. E = Code\\]."
+  "a Result compares only with a Result of its own value and error types")
+foundation_neg_compile_test(neg_core_one_of_compare_value
+  "use of deleted function .bool foundation::core::operator==\\(const OneOf<Ts>&, const Other&\\) \\[with Other = int. Ts = \\{int, long int\\}\\]."
+  "a OneOf compares only with a OneOf of its own alternatives")
 # The borrow match of each sum carries the annotation borrow_match, and the
 # rule borrow-match of the plugin refuses an arm that writes the sum.
 foundation_neg_compile_test(neg_core_option_borrow_match_arm_assigns

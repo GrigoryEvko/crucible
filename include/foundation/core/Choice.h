@@ -301,6 +301,15 @@ concept DroppablePayload = std::is_copy_constructible_v<T> || !::foundation::lin
 template <class T>
 concept PlainPayload = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T> && DroppablePayload<T>;
 
+// A part that the compare of a sum reads: its == gives exactly bool and
+// does not throw.  A floating-point part is refused, because NaN is not
+// equal to itself, and -Werror=float-equal refuses == of two floats.  A
+// compare of floats compares their bits, or a type of its own.
+template <class T>
+concept ComparablePart = !std::is_floating_point_v<T> && requires(T const& left, T const& right) {
+    { left == right } noexcept -> std::same_as<bool>;
+};
+
 // The value of a Result of an operation that gives no value.
 struct Unit final {
     [[nodiscard]] friend constexpr bool operator==(Unit, Unit) noexcept = default;
@@ -436,6 +445,9 @@ class OptionSlot<T, OptionForm::niche> : NicheLifetime<NicheRead<T>::empty_has_z
     friend class ::foundation::core::Option;
 
     [[nodiscard]] constexpr bool holds_() const noexcept { return !NicheRead<T>::is_empty_(value_); }
+    [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept {
+        return holds_() == other.holds_();
+    }
     [[nodiscard]] constexpr T& payload_() noexcept { return value_; }
     [[nodiscard]] constexpr T const& payload_() const noexcept { return value_; }
     constexpr void clear_() noexcept { value_ = NicheRead<T>::empty_(); }
@@ -654,6 +666,24 @@ public:
     void end() && = delete("a cursor of a temporary Option points into an object that the full expression ends");
     void begin() const&& = delete("a cursor of a temporary Option points into an object that the full expression ends");
     void end() const&& = delete("a cursor of a temporary Option points into an object that the full expression ends");
+
+    // Two Options of one type are equal when both are empty, or when both
+    // hold equal payloads.  A payload is read only when both hold one.  The
+    // cost is one test of each state and one compare of the payloads.
+    [[nodiscard]] friend constexpr bool operator==(Option const& left, Option const& right) noexcept
+        requires ComparablePart<T>
+    {
+        return left.slot_.same_state_(right.slot_)
+            && (!left.slot_.holds_() || left.slot_.payload_() == right.slot_.payload_());
+    }
+
+    // Each other operand, such as none, a payload, or an Option of a
+    // different payload type, binds to this overload, so no implicit
+    // constructor makes a compare of two types.
+    template <class Other>
+        requires(!std::same_as<Other, Option>)
+    friend bool operator==(Option const&, Other const&) =
+        delete("an Option compares only with an Option of its own payload type: test is_some() or is_none(), or match");
 };
 
 // A full Option of the type of the value, with no conversion:
@@ -709,9 +739,7 @@ public:
 
     // No member is active until the body builds the alternative of the
     // index, so the active member of the source tells which member to build.
-    constexpr Alternatives(MoveActive, std::size_t, Alternatives& source) noexcept {
-        ::new(static_cast<void*>(&head_)) Last(static_cast<Last&&>(source.head_));
-    }
+    constexpr Alternatives(MoveActive, std::size_t index, Alternatives& source) noexcept { move_in_(index, source); }
 
     constexpr ~Alternatives()
         requires std::is_trivially_destructible_v<Last>
@@ -719,6 +747,13 @@ public:
     constexpr ~Alternatives() {}
 
     constexpr void destroy_(std::size_t) noexcept { head_.~Last(); }
+
+    // Build the alternative of the index from the same alternative of the
+    // source.  No member is active before the call: the constructor calls it
+    // first, and an assignment calls it after destroy_.
+    constexpr void move_in_(std::size_t, Alternatives& source) noexcept {
+        ::new(static_cast<void*>(&head_)) Last(static_cast<Last&&>(source.head_));
+    }
 };
 
 template <class Head, class Next, class... Rest>
@@ -741,13 +776,7 @@ public:
         std::is_nothrow_constructible_v<Alternatives<Next, Rest...>, AlternativeAt<Index - 1>, U&&>)
         : tail_(AlternativeAt<Index - 1>{}, static_cast<U&&>(value)) {}
 
-    constexpr Alternatives(MoveActive, std::size_t index, Alternatives& source) noexcept {
-        if (index == 0) {
-            ::new(static_cast<void*>(&head_)) Head(static_cast<Head&&>(source.head_));
-        } else {
-            ::new(static_cast<void*>(&tail_)) Alternatives<Next, Rest...>(MoveActive{}, index - 1, source.tail_);
-        }
-    }
+    constexpr Alternatives(MoveActive, std::size_t index, Alternatives& source) noexcept { move_in_(index, source); }
 
     constexpr ~Alternatives()
         requires(std::is_trivially_destructible_v<Head>
@@ -760,6 +789,17 @@ public:
             head_.~Head();
         } else {
             tail_.destroy_(index - 1);
+        }
+    }
+
+    // Build the alternative of the index from the same alternative of the
+    // source.  The tail is a union of its own, so a new tail starts its
+    // lifetime, and its constructor builds the alternative inside it.
+    constexpr void move_in_(std::size_t index, Alternatives& source) noexcept {
+        if (index == 0) {
+            ::new(static_cast<void*>(&head_)) Head(static_cast<Head&&>(source.head_));
+        } else {
+            ::new(static_cast<void*>(&tail_)) Alternatives<Next, Rest...>(MoveActive{}, index - 1, source.tail_);
         }
     }
 };
@@ -916,7 +956,8 @@ public:
 // move-only.  A move builds the active alternative from the active
 // alternative of the source, and the source keeps its moved-from
 // alternative, which its destructor ends.  A borrow of the source then
-// stays a borrow of a live object.
+// stays a borrow of a live object.  A move assignment drops the alternative
+// that the slot holds, so a sum with a linear alternative has none.
 template <class... Ts>
 class SumSlotOf<false, Ts...> {
     Alternatives<Ts...> storage_;
@@ -950,9 +991,28 @@ public:
     constexpr SumSlotOf(SumSlotOf&& other) noexcept
         : storage_(MoveActive{}, other.tag_, other.storage_), tag_{other.tag_} {}
 
+    // The source moves to a local first, because it can live inside the
+    // alternative that this slot holds, and the end of that alternative
+    // would end the source.  A self assignment then moves the alternative
+    // out and back, with no test of the address.  The cost is two moves and
+    // two ends of an alternative.
+    constexpr SumSlotOf& operator=(SumSlotOf&& other) noexcept
+        requires(DroppablePayload<Ts> && ...)
+    {
+        SumSlotOf taken(static_cast<SumSlotOf&&>(other));
+        storage_.destroy_(tag_);
+        storage_.move_in_(taken.tag_, taken.storage_);
+        tag_ = taken.tag_;
+        return *this;
+    }
+
+    SumSlotOf& operator=(SumSlotOf&&)
+        requires(!(DroppablePayload<Ts> && ...))
+    = delete("an assignment drops the alternative that the sum holds, and a linear alternative must not be dropped: "
+             "build a new sum instead");
+
     SumSlotOf(SumSlotOf const&) = delete("an owning sum is move-only: a copy would duplicate what an alternative owns");
     SumSlotOf& operator=(SumSlotOf const&) = delete("an owning sum is move-only");
-    SumSlotOf& operator=(SumSlotOf&&) = delete("an owning sum is not assignable: build a new sum instead");
 
     constexpr ~SumSlotOf() { storage_.destroy_(tag_); }
 };
@@ -972,6 +1032,11 @@ class OptionSlot<T, OptionForm::plain> {
     friend class ::foundation::core::Option;
 
     [[nodiscard]] constexpr bool holds_() const noexcept { return sum_.index_() != 0; }
+    // The tag is the state, so one compare of the two tags tests the two
+    // states, and no bool of a state is built for the compare.
+    [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept {
+        return sum_.index_() == other.sum_.index_();
+    }
     [[nodiscard]] constexpr T& payload_() noexcept { return sum_.template alternative_<1>(); }
     [[nodiscard]] constexpr T const& payload_() const noexcept { return sum_.template alternative_<1>(); }
     constexpr void clear_() noexcept { sum_ = SumSlot<NoPayload, T>{AlternativeAt<0>{}, NoPayload{}}; }
@@ -986,7 +1051,8 @@ public:
 
 // An owning Option holds the alternatives of the empty marker and the
 // payload, and a flag.  A move builds the payload in the new slot, and the
-// source becomes empty.
+// source becomes empty.  A move assignment drops the payload that the slot
+// holds, so a linear payload has none.
 template <class T>
 class OptionSlot<T, OptionForm::owning> {
     Alternatives<NoPayload, T> storage_{AlternativeAt<0>{}, NoPayload{}};
@@ -996,6 +1062,9 @@ class OptionSlot<T, OptionForm::owning> {
     friend class ::foundation::core::Option;
 
     [[nodiscard]] constexpr bool holds_() const noexcept { return is_engaged_; }
+    [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept {
+        return is_engaged_ == other.is_engaged_;
+    }
     [[nodiscard]] constexpr T& payload_() noexcept { return alternative_of_<1>(storage_); }
     [[nodiscard]] constexpr T const& payload_() const noexcept { return alternative_of_<1>(storage_); }
     constexpr void clear_() noexcept {
@@ -1018,10 +1087,32 @@ public:
         other.clear_();
     }
 
+    // A full source moves to a local first, because it can live inside the
+    // payload of this slot, and the end of that payload would end the
+    // source.  A self assignment then moves the payload out and back, with
+    // no test of the address.  The source is empty after the call.
+    constexpr OptionSlot& operator=(OptionSlot&& other) noexcept
+        requires DroppablePayload<T>
+    {
+        if (!other.is_engaged_) {
+            clear_();
+            return *this;
+        }
+        OptionSlot taken(static_cast<OptionSlot&&>(other));
+        clear_();
+        storage_.move_in_(1, taken.storage_);
+        is_engaged_ = true;
+        return *this;
+    }
+
+    OptionSlot& operator=(OptionSlot&&)
+        requires(!DroppablePayload<T>)
+    = delete("an assignment drops the payload that the Option holds, and a linear payload must not be dropped: "
+             "build a new Option instead");
+
     OptionSlot(OptionSlot const&) =
         delete("an owning Option is move-only: a copy would duplicate what the payload owns");
     OptionSlot& operator=(OptionSlot const&) = delete("an owning Option is move-only");
-    OptionSlot& operator=(OptionSlot&&) = delete("an owning Option is not assignable: build a new Option instead");
 
     constexpr ~OptionSlot() {
         if (is_engaged_) storage_.destroy_(1);
@@ -1041,6 +1132,9 @@ class ResultSlot {
     friend class ::foundation::core::Result;
 
     [[nodiscard]] constexpr bool holds_() const noexcept { return sum_.index_() != 0; }
+    [[nodiscard]] constexpr bool same_state_(ResultSlot const& other) const noexcept {
+        return sum_.index_() == other.sum_.index_();
+    }
     [[nodiscard]] constexpr T& value_() noexcept { return sum_.template alternative_<1>(); }
     [[nodiscard]] constexpr T const& value_() const noexcept { return sum_.template alternative_<1>(); }
     [[nodiscard]] constexpr E& error_() noexcept { return sum_.template alternative_<0>(); }
@@ -1191,6 +1285,25 @@ public:
     void match(OnOk&& on_ok, OnErr&& on_err) const&& = delete(
         "a borrow match of a temporary Result gives a reference into an object that the full expression ends: match "
         "the rvalue, or name the Result");
+
+    // Two Results of one type are equal when both hold equal values, or
+    // when both hold equal errors.  The cost is one test of each state and
+    // one compare of the active parts.
+    [[nodiscard]] friend constexpr bool operator==(Result const& left, Result const& right) noexcept
+        requires ComparablePart<T> && ComparablePart<E>
+    {
+        if (!left.slot_.same_state_(right.slot_)) return false;
+        if (left.slot_.holds_()) return left.slot_.value_() == right.slot_.value_();
+        return left.slot_.error_() == right.slot_.error_();
+    }
+
+    // Each other operand, such as a value, an Err, or a Result of different
+    // types, binds to this overload, so no implicit constructor makes a
+    // compare of two types.
+    template <class Other>
+        requires(!std::same_as<Other, Result>)
+    friend bool operator==(Result const&, Other const&) = delete(
+        "a Result compares only with a Result of its own value and error types: test is_ok() or is_err(), or match");
 };
 
 namespace detail {

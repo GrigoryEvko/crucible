@@ -171,6 +171,39 @@ static_assert(!MatchesWithTwoTypes<OneOf<int, Code8, long>>);
 static_assert(!MovedMatchGivesReference<OneOf<int, Code8, long>>);
 static_assert(BorrowedMatchGivesReference<OneOf<int, Code8, long>>);
 
+// A OneOf of plain alternatives keeps its trivial assignment.  An owning
+// OneOf has a move assignment, which drops the active alternative, so a
+// linear alternative refuses it.
+static_assert(std::is_trivially_copy_assignable_v<OneOf<std::uint32_t, Code32>>);
+static_assert(std::is_nothrow_move_assignable_v<OneOf<Owner, int>>);
+static_assert(!std::is_copy_assignable_v<OneOf<Owner, int>>);
+static_assert(!std::is_move_assignable_v<OneOf<Token, int>>);
+
+[[nodiscard]] consteval int assigned_one_of() noexcept {
+    OneOf<Owner, int> target{Owner{7}};
+    OneOf<Owner, int> source{8};
+    target = static_cast<OneOf<Owner, int>&&>(source);
+    if (!target.is<int>()) return -1;
+    target = OneOf<Owner, int>{Owner{9}};
+    return target.match([](Owner const& owner) noexcept { return owner.handle; },
+                        [](int const&) noexcept { return 0; });
+}
+static_assert(assigned_one_of() == 9);
+
+// Two OneOfs of one type are equal when the same alternative is active,
+// with equal values.  A OneOf compares only with a OneOf of its own
+// alternatives, and an alternative with no compare gives no compare.
+static_assert(OneOf<int, Code8>{5} == OneOf<int, Code8>{5});
+static_assert(OneOf<int, Code8>{5} != OneOf<int, Code8>{6});
+static_assert(OneOf<int, Code8>{5} != OneOf<int, Code8>{Code8::full});
+static_assert(OneOf<int, Code8, long>{4L} == OneOf<int, Code8, long>{4L});
+template <class Left, class Right>
+concept Compares = requires(Left const& left, Right const& right) { left == right; };
+static_assert(Compares<OneOf<int, Code8>, OneOf<int, Code8>>);
+static_assert(!Compares<OneOf<int, Code8>, int> && !Compares<int, OneOf<int, Code8>>);
+static_assert(!Compares<OneOf<int, Code8>, OneOf<int, Code32>>);
+static_assert(!Compares<OneOf<Owner, int>, OneOf<Owner, int>> && !Compares<OneOf<double, int>, OneOf<double, int>>);
+
 // The closed surface: a OneOf gives only the shared verbs, the language
 // protocols, and the names of the family list of plan section 11.2 that
 // its API table holds.  The check file of Choice.h holds the full list, and

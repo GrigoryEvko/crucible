@@ -608,6 +608,22 @@ PROBES: tuple[Probe, ...] = (
         "carries no padding byte",
     ),
     Probe(
+        "option_equal",
+        "a compare of two Options of a 4-byte payload compares the two tags, and compares the payloads only when both "
+        "hold one, as the compare of two std::optional does.  The tag is the state, so the family side builds no "
+        "bool of a state, and it has fewer instructions than the raw side.  At -O1, GCC puts the blocks of the family "
+        "side in a different order, so the targets of its branches are different",
+        branches=True,
+    ),
+    Probe(
+        "option_equal_word",
+        "a compare of two Options of a word compares the two tag words, and compares the payloads only when both "
+        "hold one, as the compare of two std::optional does.  The tag is the state, so the family side builds no "
+        "bool of a state, and it has fewer instructions than the raw side.  At -O1, GCC puts the blocks of the family "
+        "side in a different order, so the targets of its branches are different",
+        branches=True,
+    ),
+    Probe(
         "option_try",
         "CRUCIBLE_TRY of an Option is one test of the tag.  The value takes a second test of the tag in expect, which "
         "the optimizer removes, because no code writes the operand between the two tests",

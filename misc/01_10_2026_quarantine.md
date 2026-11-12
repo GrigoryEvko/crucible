@@ -977,6 +977,7 @@ The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLooku
 | `ChoicePayload<T>` | An object type that is not an array, not cv-qualified and not `NoValue`, with a move and a destructor that do not throw. The design adds: not an `Err<F>`, and `WellFormedNiche<T>` | main, design |
 | `ErrorValue<E>` | A scoped enum, a class of at most 16 bytes with no reference member whose copy, move and end are those of its bytes (`detail::TrivialCopyShape`, the shape of the niche gate too), or a linear class. A sealed class with a user-provided assignment passes, and its `Result` takes the owning form. The design adds: not an `Err<F>` | main, design |
 | `PlainPayload<T>`, `DroppablePayload<T>` | The plain form, and a payload that a member can drop or copy | main |
+| `ComparablePart<T>` | A part whose `==` gives exactly `bool` and does not throw, and that is not a floating-point type | main |
 | `HasNiche<T>`, `WellFormedNiche<T>` | A payload that declares its empty value. A declared niche that is not complete fails | main, design |
 | `OneOfAlternatives<Ts...>` | 2 to 255 alternatives, each a `ChoicePayload`, with no type two times. The value of the tag fits in one byte | main |
 | `ErrorConvertsTo<F, E>` | `F` is not `E`, and `F` converts to `E` with no throw | design |
@@ -997,8 +998,8 @@ The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLooku
 | `value_or(fallback)` | `&&`, a droppable payload only | one select | - | main |
 | `expect(why)` | `&&`. An empty `Option` ends the process | one branch to a cold call | `expect` | main |
 | `ok_or(error)` | `&&`. Gives `Result<T, E>` for a droppable `E` | one branch | - | design |
-| `option = none`, the move assignment | The owning form, a droppable payload only. A self assignment has no effect | destroy, then move | - | design |
-| `==` | Two `Option` values of one type only | one test and one compare | compare | design |
+| `option = none`, the move assignment | The owning form, a droppable payload only. The source moves to a local first, so a source inside the payload of the target and a self assignment keep a live payload | a move to a local, a destroy and a move | - | main |
+| `==` | Two `Option` values of one type only, with a `ComparablePart` payload. Each other operand, such as `none` or a payload, binds to a deleted overload | one test of each state and one compare | compare | main |
 | `Option(Err<F>)` | Deleted: "a Result carries an error that an Option drops: write std::move(result).ok()" | - | - | design |
 
 **The API of `Result<T, E>`.**
@@ -1014,7 +1015,7 @@ The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLooku
 | `value_or(fallback)` | `&&`, a droppable `T` and `E` only | one select | - | main |
 | `expect(why)` | `&&`. Gives `void` for `Unit` | one branch to a cold call | `expect` | main |
 | `match(on_ok, on_err)` | `&&` and `const&`. A temporary has no borrow match. The rule borrow-match refuses an arm of the borrow match that writes the Result | one branch | `match` | main |
-| The move assignment, `==` | As for `Option` | as for `Option` | compare | design |
+| The move assignment, `==` | As for `Option`. A value or an `Err` binds to the deleted overload | as for `Option` | compare | main |
 
 A `Result` has no loop, because a loop over the value drops the error with no trace.
 
@@ -1028,7 +1029,7 @@ A `Result` has no loop, because a loop over the value drops the error with no tr
 | `match(arms...)` | `&&` and `const&`. One arm for each alternative in the order of `Ts`. The last alternative takes the last branch, so `match` has no fatal path. The `&&` form gives no reference, and a temporary has no borrow match. The rule borrow-match refuses an arm of the borrow match that writes the OneOf | one compare for each alternative | `match` | main |
 | `get<T>()` | `Option<Ref<T>>`, after `Ref` of G3 | one compare | `get` | design |
 | `which()` | `Index<sizeof...(Ts)>`, after `Index<N>` of G4 | a load | - | design |
-| The move assignment, `==` | As for `Option` | as for `Option` | compare | design |
+| The move assignment, `==` | As for `Option`. A value of an alternative binds to the deleted overload | as for `Option`, and one compare of each tag before the active alternative | compare | main |
 
 **`CRUCIBLE_TRY(name, expr);`** (design). The macro evaluates `expr` one time. On an error or on no value, it returns the error or `none` from the function, and `Result(Err<F>)` converts the error. Else it binds the value to `name`. The gate `TryOperand` refuses an lvalue and each type that is not a sum. A `Result` in a function that gives an `Option`, and the reverse, do not compile. The helpers are in `foundation::core::detail`, so the rule `owners` refuses a direct call of them. The macro is a sequence of statements, so the body of an `if` with no braces cannot hold it. The checked take repeats the test, and the optimizer removes the second test. The probes `result_try` and `result_try_convert` give 15 instructions against 15 of the raw form with the flags of the Release preset (`-O3` and the two `-fharden-` flags). With the Debug flags (`-O1`), each probe gives 9 against 9. The rule `codegen-shapes` measured each count at `-march=x86-64`, `x86-64-v3` and `x86-64-v4`. The two forms hold the same instructions, and only the order of the two return blocks is different. `option_try` gives 15 against 27 in Release and 10 against 20 in Debug. The commit "Add CRUCIBLE_TRY, which takes the value of an Option or a Result, or returns its failure" holds the measurement.
 

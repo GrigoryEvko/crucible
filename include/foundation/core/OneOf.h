@@ -82,6 +82,22 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] OneOf {
         }
     }
 
+    // The compare of the alternative at Index and after, when the two tags
+    // are equal.  The last alternative takes the last branch.  Complexity:
+    // at most one compare of a tag for each alternative, and one compare of
+    // the active alternatives.
+    template <std::size_t Index>
+    [[nodiscard]] constexpr bool equal_from_(OneOf const& other) const noexcept {
+        if constexpr (Index + 1 == sizeof...(Ts)) {
+            return slot_.template alternative_<Index>() == other.slot_.template alternative_<Index>();
+        } else {
+            if (slot_.index_() == Index) {
+                return slot_.template alternative_<Index>() == other.slot_.template alternative_<Index>();
+            }
+            return this->template equal_from_<Index + 1>(other);
+        }
+    }
+
     template <std::size_t Index, class Result, class... Arms>
     constexpr Result borrowed_from_(Arms&&... arms) const {
         if constexpr (Index + 1 == sizeof...(Ts)) {
@@ -167,6 +183,23 @@ public:
                      && ...)
     void match(Arms&&... arms) const&& = delete("a borrow match of a temporary OneOf gives a reference into an object "
                                                 "that the full expression ends: match the rvalue, or name the OneOf");
+
+    // Two OneOfs of one type are equal when the same alternative is active
+    // in each, with equal values.  The cost is one compare of the tags and
+    // the walk of equal_from_.
+    [[nodiscard]] friend constexpr bool operator==(OneOf const& left, OneOf const& right) noexcept
+        requires(ComparablePart<Ts> && ...)
+    {
+        return left.slot_.index_() == right.slot_.index_() && left.template equal_from_<0>(right);
+    }
+
+    // Each other operand, such as a value of an alternative or a OneOf of
+    // different types, binds to this overload, so no implicit constructor
+    // makes a compare of two types.
+    template <class Other>
+        requires(!std::same_as<Other, OneOf>)
+    friend bool operator==(OneOf const&, Other const&) =
+        delete("a OneOf compares only with a OneOf of its own alternatives: test is<T>(), or match");
 };
 
 }  // namespace foundation::core

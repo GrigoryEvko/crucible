@@ -61,14 +61,15 @@ static_assert(sizeof(Option<Owner>) == 8);
 static_assert(sizeof(OptionCursor<int>) == sizeof(void*));
 
 // A niche or plain Option is trivially copyable, so the ABI gives it back
-// in registers.  An owning Option is move-only.
+// in registers.  An owning Option is move-only, and its move assignment
+// does not throw.
 static_assert(std::is_trivially_copyable_v<Option<SlotNumber>>);
 static_assert(std::is_trivially_copyable_v<Option<std::uint64_t>>);
 static_assert(!std::is_trivially_copyable_v<Option<Owner>>);
 static_assert(std::is_nothrow_move_constructible_v<Option<Owner>>);
 static_assert(!std::is_copy_constructible_v<Option<Owner>>);
 static_assert(!std::is_copy_assignable_v<Option<Owner>>);
-static_assert(!std::is_move_assignable_v<Option<Owner>>);
+static_assert(std::is_nothrow_move_assignable_v<Option<Owner>>);
 
 // The payload gate.
 static_assert(ChoicePayload<int>);
@@ -618,6 +619,113 @@ static_assert(refused_with(6).match([](int&&) noexcept { return 0; },
                          [](Token const& token) noexcept { return token.handle; });
 }
 static_assert(read_refusal() == 7);
+
+// ── Assignment ────────────────────────────────────────────────────────
+
+// An owning sum drops what it holds in a move assignment, so a linear part
+// refuses the assignment.  A plain sum keeps its trivial assignment.
+static_assert(!std::is_move_assignable_v<Option<Token>> && !std::is_move_assignable_v<Option<HoldsToken>>);
+static_assert(std::is_nothrow_move_assignable_v<Result<Owner, Code>>);
+static_assert(!std::is_copy_assignable_v<Result<Owner, Code>>);
+static_assert(!std::is_move_assignable_v<Result<int, Token>> && !std::is_move_assignable_v<Result<Token, Code>>);
+static_assert(std::is_trivially_copy_assignable_v<Result<int, Code>>);
+static_assert(std::is_trivially_copy_assignable_v<Option<SlotNumber>>);
+
+// The move assignment of an owning Option in each state: a full target
+// drops its payload, and the source is empty after the call.
+[[nodiscard]] consteval int assigned_owner(bool target_holds, bool source_holds) noexcept {
+    Option<Owner> target = target_holds ? Option<Owner>::some(Owner{1}) : Option<Owner>{};
+    Option<Owner> source = source_holds ? Option<Owner>::some(Owner{2}) : Option<Owner>{};
+    target = static_cast<Option<Owner>&&>(source);
+    if (source.is_some()) return -1;
+    return target.match([](Owner const& owner) noexcept { return owner.handle; }, [] noexcept { return 0; });
+}
+static_assert(assigned_owner(true, true) == 2 && assigned_owner(false, true) == 2);
+static_assert(assigned_owner(true, false) == 0 && assigned_owner(false, false) == 0);
+
+// A self assignment keeps the payload.  The source goes through a second
+// reference, as an alias in a program does.
+[[nodiscard]] consteval int self_assigned_owner() noexcept {
+    Option<Owner> held = Option<Owner>::some(Owner{3});
+    Option<Owner>& alias = held;
+    held = static_cast<Option<Owner>&&>(alias);
+    return held.match([](Owner const& owner) noexcept { return owner.handle; }, [] noexcept { return 0; });
+}
+static_assert(self_assigned_owner() == 3);
+
+// `option = none` empties an owning Option.
+[[nodiscard]] consteval bool cleared_owner() noexcept {
+    Option<Owner> held = Option<Owner>::some(Owner{4});
+    held = none;
+    return held.is_none();
+}
+static_assert(cleared_owner());
+
+// The move assignment of an owning Result changes the active part.
+[[nodiscard]] consteval int assigned_result() noexcept {
+    Result<Owner, Code> target{Owner{5}};
+    Result<Owner, Code> source{err(Code::closed)};
+    target = static_cast<Result<Owner, Code>&&>(source);
+    if (target.is_ok()) return -1;
+    target = Result<Owner, Code>{Owner{6}};
+    return target.match([](Owner const& owner) noexcept { return owner.handle; }, [](Code) noexcept { return 0; });
+}
+static_assert(assigned_result() == 6);
+
+// The gate of Option needs a complete payload, so a payload names its own
+// Option only where the class is complete, such as in a member function
+// body.  The move assignment of that Option reads the payload there.
+struct NamesItsOption {
+    Owner owner{};
+    [[nodiscard]] static consteval bool has_assignable_option() noexcept {
+        return std::is_nothrow_move_assignable_v<Option<NamesItsOption>>;
+    }
+};
+static_assert(NamesItsOption::has_assignable_option());
+
+// ── Equality ──────────────────────────────────────────────────────────
+
+// A compare reads a part with an == that gives bool and does not throw,
+// and not a floating-point part.
+static_assert(ComparablePart<int> && ComparablePart<Code> && ComparablePart<Unit>);
+static_assert(!ComparablePart<double> && !ComparablePart<float> && !ComparablePart<Owner>);
+
+// Two sums of one type compare their states and their active parts.
+static_assert(Option<int>::some(3) == Option<int>::some(3));
+static_assert(Option<int>::some(3) != Option<int>::some(4));
+static_assert(Option<int>{} == Option<int>{} && Option<int>::some(3) != Option<int>{});
+static_assert(Option<std::uint64_t>::some(std::uint64_t{9}) == Option<std::uint64_t>::some(std::uint64_t{9}));
+static_assert(Result<int, Code>{2} == Result<int, Code>{2} && Result<int, Code>{2} != Result<int, Code>{3});
+static_assert(Result<int, Code>{err(Code::closed)} == Result<int, Code>{err(Code::closed)});
+static_assert(Result<int, Code>{err(Code::closed)} != Result<int, Code>{err(Code::full)});
+static_assert(Result<int, Code>{err(Code::closed)} != Result<int, Code>{2});
+static_assert(Result<Unit, Code>{Unit{}} == Result<Unit, Code>{Unit{}});
+
+// A niche payload with a compare.  The niche Option reads its state from
+// the payload, so its compare tests the niche of each side.
+struct Ticket {
+    std::uint32_t raw = 1;
+    [[nodiscard]] static constexpr Ticket niche_empty(niche_key<Ticket> const&) noexcept { return Ticket{0}; }
+    [[nodiscard]] constexpr bool is_niche_empty(niche_key<Ticket> const&) const noexcept { return raw == 0; }
+    [[nodiscard]] friend constexpr bool operator==(Ticket, Ticket) noexcept = default;
+};
+
+static_assert(sizeof(Option<Ticket>) == sizeof(Ticket));
+static_assert(Option<Ticket>::some(Ticket{2}) == Option<Ticket>::some(Ticket{2}));
+static_assert(Option<Ticket>::some(Ticket{2}) != Option<Ticket>::some(Ticket{3}));
+static_assert(Option<Ticket>{} == Option<Ticket>{} && Option<Ticket>::some(Ticket{2}) != Option<Ticket>{});
+
+// A sum compares only with a sum of its own type.  The implicit
+// constructors make no compare with none, a payload, an Err or a sum of a
+// different type, and a floating-point payload has no compare.
+template <class Left, class Right>
+concept Compares = requires(Left const& left, Right const& right) { left == right; };
+static_assert(Compares<Option<int>, Option<int>> && Compares<Result<int, Code>, Result<int, Code>>);
+static_assert(!Compares<Option<int>, NoValue> && !Compares<NoValue, Option<int>>);
+static_assert(!Compares<Option<int>, int> && !Compares<Option<int>, Option<long>>);
+static_assert(!Compares<Result<int, Code>, int> && !Compares<Result<int, Code>, Err<Code>>);
+static_assert(!Compares<Result<int, Code>, Result<long, Code>>);
+static_assert(!Compares<Option<double>, Option<double>> && !Compares<Option<Owner>, Option<Owner>>);
 
 // ── The closed surface ────────────────────────────────────────────────
 

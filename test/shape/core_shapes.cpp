@@ -436,6 +436,16 @@ namespace {
     return word_below(value, limit);
 }
 
+// A compare of two Options tests the two states, and compares the payloads
+// only when both hold one.
+[[gnu::used]] bool option_equal(fixy::Option<std::uint32_t> left, fixy::Option<std::uint32_t> right) noexcept {
+    return left == right;
+}
+
+[[gnu::used]] bool option_equal_word(fixy::Option<std::uint64_t> left, fixy::Option<std::uint64_t> right) noexcept {
+    return left == right;
+}
+
 // ok_or gives the payload of an Option as a Result, in the same register.
 [[gnu::used]] fixy::Result<std::uint32_t, Code32> option_ok_or(fixy::Option<std::uint32_t> option) noexcept {
     return std::move(option).ok_or(Code32::gone);
@@ -960,6 +970,15 @@ struct RawWord final {
 [[gnu::used]] RawWord option_word_below_raw(std::size_t value, std::size_t limit) noexcept {
     if (value >= limit) return RawWord{0, 0};
     return RawWord{value, 1};
+}
+
+[[gnu::used]] bool option_equal_raw(std::optional<std::uint32_t> left, std::optional<std::uint32_t> right) noexcept {
+    return left == right;
+}
+
+[[gnu::used]] bool option_equal_word_raw(std::optional<std::uint64_t> left,
+                                         std::optional<std::uint64_t> right) noexcept {
+    return left == right;
 }
 
 [[gnu::used]] std::expected<std::uint32_t, Code32> option_ok_or_raw(std::optional<std::uint32_t> option) noexcept {
