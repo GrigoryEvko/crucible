@@ -208,9 +208,9 @@ THE RUN OF THE BASE
     configuration holds the tests that were red alone too, or no test for a
     problem of a different kind.  The run of the base runs only that focus
     (THE RUN OF THE BASE of assay.loop.gate).  It does not run each
-    configuration of the batch.  It runs the red tests alone, and each
-    configuration with a different problem in the mode of the changed
-    inputs.
+    configuration of the batch.  It runs only the red tests of a
+    configuration, with `loop test --only`, and each configuration with a
+    different problem in the mode of the changed inputs.
 
     A verdict with no focus, such as the verdict of a planted gate, gives a
     run of the base of each configuration of the batch.  The run of the
@@ -251,9 +251,10 @@ THE ERROR OF A RUN
     CONFIRMATION judges it.
 
 THE FLAKY TESTS
-    The gate runs a red test again alone, and a test that is green alone does
-    not reject the commit (assay.loop.gate, THE RUN OF A CONFIGURATION).  Such
-    a test is a flaky test, and no retry hides it.  The verdict of each
+    The gate runs the red tests of a configuration again, together in one run
+    of ctest apart from the suite (assay.loop.gate, THE RUN OF A
+    CONFIGURATION).  A test that is green in that run does not reject the
+    commit.  Such a test is a flaky test, and no retry hides it.  The verdict of each
     request that lands, or that --check accepts, names each flaky test of
     each accepted run of the gate that holds the request, with the line
     FLAKY_MARK.  The record of a run gives its flaky tests too.  The verdict
