@@ -1,0 +1,10 @@
+#pragma once
+
+#include <foundation/gates.h>
+
+namespace crucible::gates {
+
+template <class T> struct runtime_declared;
+template <class T> concept ReadsRuntimeDeclared = runtime_declared<T>::value;
+
+}  // namespace crucible::gates

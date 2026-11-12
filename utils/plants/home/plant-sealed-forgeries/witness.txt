@@ -1,0 +1,41 @@
+# A gate over a sealed template is closed, because each forgery of the
+# template is an error of the rule specialization-home.  A unit forges each
+# template that a gate of the control control-sealed-reads reads: an explicit
+# and a partial specialization of a variable template, an explicit
+# specialization of a class trait, of a member function and of a member
+# variable template of a class template instance, and a specialization of a
+# crucible variable template.  The static assertions show that each forgery
+# changes the answer of its gate, and each forgery does not compile.  A class
+# template that the header only declares and specializes is sealed too: a
+# unit that defines it or declares it first in a different file moves its
+# home, and the specialization in the header then does not compile.
+compile primary src/primary.cpp specialization-home=on
+exit primary fail
+finding primary specialization-home foreign-primary src/primary.cpp:6:27 | foundation::gates::declared_family
+finding primary specialization-home specialization include/foundation/gates.h:12:20 | foundation::gates::declared_family
+error primary src/primary.cpp:6 | this file declares the template 'foundation::gates::declared_family' of the base first, outside the base
+error primary include/foundation/gates.h:12 | this file specializes the template 'foundation::gates::declared_family' outside its home 'src/primary.cpp'
+compile forward src/forward.cpp specialization-home=on
+exit forward fail
+finding forward specialization-home foreign-primary src/forward.cpp:4:27 | foundation::gates::declared_family
+finding forward specialization-home specialization include/foundation/gates.h:12:20 | foundation::gates::declared_family
+error forward src/forward.cpp:4 | this file declares the template 'foundation::gates::declared_family' of the base first, outside the base
+error forward include/foundation/gates.h:12 | this file specializes the template 'foundation::gates::declared_family' outside its home 'src/forward.cpp'
+compile forge src/forge.cpp specialization-home=on
+exit forge fail
+finding forge specialization-home specialization src/forge.cpp:6:35 | foundation::gates::sealed_v
+finding forge specialization-home specialization src/forge.cpp:7:42 | foundation::gates::sealed_v
+finding forge specialization-home specialization src/forge.cpp:8:20 | foundation::gates::sealed_trait
+finding forge specialization-home specialization src/forge.cpp:9:28 | foundation::gates::Holder
+finding forge specialization-home specialization src/forge.cpp:10:40 | foundation::gates::Holder
+finding forge specialization-home specialization src/forge.cpp:10:40 | foundation::gates::Holder::member_v
+finding forge specialization-home specialization src/forge.cpp:11:20 | foundation::gates::declared_family
+finding forge specialization-home specialization src/forge.cpp:15:35 | crucible::gates::runtime_sealed_v
+error forge src/forge.cpp:6 | this file specializes the template 'foundation::gates::sealed_v' outside its home 'include/foundation/gates.h'
+error forge src/forge.cpp:7 | this file specializes the template 'foundation::gates::sealed_v' outside its home 'include/foundation/gates.h'
+error forge src/forge.cpp:8 | this file specializes the template 'foundation::gates::sealed_trait' outside its home 'include/foundation/gates.h'
+error forge src/forge.cpp:9 | this file specializes the template 'foundation::gates::Holder' outside its home 'include/foundation/gates.h'
+error forge src/forge.cpp:10 | this file specializes the template 'foundation::gates::Holder' outside its home 'include/foundation/gates.h'
+error forge src/forge.cpp:10 | this file specializes the template 'foundation::gates::Holder::member_v' outside its home 'include/foundation/gates.h'
+error forge src/forge.cpp:11 | this file specializes the template 'foundation::gates::declared_family' outside its home 'include/foundation/gates.h'
+error forge src/forge.cpp:15 | this file specializes the template 'crucible::gates::runtime_sealed_v' outside its home 'include/crucible/gates.h'

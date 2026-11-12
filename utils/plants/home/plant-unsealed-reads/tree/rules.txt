@@ -1,0 +1,7 @@
+# The rule table of the plant of the open gates of the rule home:
+# include/foundation/ is base code, and include/crucible/ and src/ are
+# quarantined.  A home row governs the trait row_trait.
+layer low 0 include/foundation/
+quarantine include/crucible/
+quarantine src/
+home trait foundation::gates::row_trait include/foundation/gates.h | an extension point of the plant beside its trait

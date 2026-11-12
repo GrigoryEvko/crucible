@@ -98,9 +98,43 @@
 //     specialize gives open-read: a variable template, a function template, or
 //     a member of a class template instance, such as trait<T>::value.  The
 //     template is a template of the two layers, and for a gate of
-//     include/crucible/ also a template of include/crucible/.  A concept and a
-//     function that is not a template are closed.  Each gate reads each
-//     template one time.
+//     include/crucible/ also a template of include/crucible/.  A concept, a
+//     function that is not a template and a sealed template are closed.  Each
+//     gate reads each template one time.
+//
+// THE SEALED TEMPLATES
+//     The rule specialization-home makes each specialization of a template
+//     with no row outside its home a compile error (specialization.cpp).  So
+//     a class template or a variable template is sealed when the unit defines
+//     it, no row governs it, and it has no open mark.  A unit cannot change
+//     the answer of a gate that reads it from a different file.  A class
+//     template that the unit only declares is sealed too when the unit holds
+//     a specialization of it in its home.  A different file that declares or
+//     defines the template first moves the home there, and that
+//     specialization then stands outside the home.  So is a class template
+//     of the namespace foundation or fixy whose home is a header of the two
+//     layers: the rule specialization-home refuses its definition outside
+//     the base (THE BASE ROOTS of specialization.cpp).  A template of a row
+//     stays open, because its row admits sites in the paths of the row.  A
+//     function template stays open, because the rule specialization-home
+//     does not read it.  Each other template that the unit only declares
+//     stays open, because a different file can give its definition.  When a
+//     compile has no argument specialization-home=on, no template is sealed.
+//
+//     The definition of a sealed template can read an open template, so a
+//     gate over a sealed template reads each open leaf of the definition, at
+//     each depth.  The walk of a definition reads the pattern and each
+//     explicit and partial specialization: the initializer of a variable
+//     template, and the bases, the data members, the member aliases, the
+//     nested classes and the friends of a class template.  It reads the
+//     signature, the constraint and the noexcept specification of each
+//     member function.  It reads the body of a function that a constant
+//     evaluation or the deduction of its return type reads: a constexpr, a
+//     consteval and an auto function.  It reads each class template instance
+//     that a type of the definition names, and the template arguments of
+//     each sealed template that the gate or the definition reads.  A cycle of
+//     sealed templates gives the leaves of the cycle, and a chain longer than
+//     kSealDepth is open.
 //
 // WHAT THE FAMILY DOES NOT READ
 //     Code that no unit of the build compiles, such as a BPF C header that
@@ -177,6 +211,11 @@ Index index_of_rows;
 std::unordered_map<tree, Home> template_homes;
 std::unordered_map<tree, int> gate_kinds;  // the open kind of a template, or kClosedTemplate
 std::unordered_set<tree> walked;
+// The open leaves of each sealed template whose walk is complete, and the
+// depth of each sealed template whose walk has not finished (THE SEALED
+// TEMPLATES).
+std::unordered_map<tree, std::vector<tree>> sealed_leaves;
+std::unordered_map<tree, int> sealing;
 
 constexpr int kClosedTemplate = 0;
 constexpr int kLayerTemplate = 1;
@@ -706,9 +745,73 @@ void read_body_shape(tree function) {
 
 // ── The gates ───────────────────────────────────────────────────────────
 
+// True when the unit holds an explicit or a partial specialization of the
+// class template GENERAL in the home file of GENERAL (THE SEALED TEMPLATES).
+// Complexity: linear in the specializations of GENERAL.
+bool has_specialization_at_home(tree general) {
+    const FileEntry* home = file_at(defining_location(general));
+    if (home == nullptr) {
+        return false;
+    }
+    std::string home_path = read_as(home->relative);
+    auto is_at_home = [&home_path](location_t location) {
+        const FileEntry* file = file_at(location);
+        return file != nullptr && read_as(file->relative) == home_path;
+    };
+    for (tree entry = DECL_TEMPLATE_SPECIALIZATIONS(general); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+        tree partial = TREE_VALUE(entry);
+        if (partial != NULL_TREE && TREE_CODE(partial) == TEMPLATE_DECL && is_at_home(defining_location(partial))) {
+            return true;
+        }
+    }
+    for (tree entry = DECL_TEMPLATE_INSTANTIATIONS(general); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+        tree value = TREE_VALUE(entry);
+        if (value != NULL_TREE && CLASS_TYPE_P(value) && CLASSTYPE_TEMPLATE_SPECIALIZATION(value)
+            && !uses_template_parms(value) && is_at_home(DECL_SOURCE_LOCATION(TYPE_MAIN_DECL(value)))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when GENERAL is a template of the namespace foundation or fixy whose
+// home is a header of the two layers (THE SEALED TEMPLATES).  The rule
+// specialization-home refuses its definition in a file outside the base.
+bool is_base_root_template(tree general) {
+    tree top = top_namespace(general);
+    if (top == NULL_TREE || DECL_NAME(top) == NULL_TREE) {
+        return false;
+    }
+    const char* name = IDENTIFIER_POINTER(DECL_NAME(top));
+    if (std::strcmp(name, "foundation") != 0 && std::strcmp(name, "fixy") != 0) {
+        return false;
+    }
+    const FileEntry* file = file_at(defining_location(general));
+    return file != nullptr && has_any_prefix(read_as(file->relative), {kLayerTrees[0], kLayerTrees[1]});
+}
+
+// True when the most general template GENERAL is sealed (THE SEALED
+// TEMPLATES).  The walk at the end of the parse asks it, so the unit holds
+// each definition and each specialization that it reads.
+bool is_sealed_template(tree general) {
+    if (!is_specialization_home_active() || home_of_template(general).is_set()) {
+        return false;
+    }
+    tree result = DECL_TEMPLATE_RESULT(general);
+    bool is_defined = false;
+    if (is_class_template(general)) {
+        is_defined = COMPLETE_TYPE_P(TREE_TYPE(result)) || has_specialization_at_home(general)
+                  || is_base_root_template(general);
+    } else if (is_variable_template(general)) {
+        is_defined = DECL_INITIAL(result) != NULL_TREE && DECL_INITIAL(result) != error_mark_node;
+    }
+    return is_defined && read_template_home(general);
+}
+
 // The open kind of TEMPLATE_DECL for a gate (THE GATES): kLayerTemplate for a
 // template of the two layers, kCrucibleTemplate for a template of
-// include/crucible/, and kClosedTemplate for a concept and each other template.
+// include/crucible/, and kClosedTemplate for a concept and each other
+// template.
 int gate_kind(tree template_decl) {
     tree general = most_general_template(template_decl);
     if (general == NULL_TREE) {
@@ -738,16 +841,87 @@ int gate_kind(tree template_decl) {
 // gate.  A gate of a class template that reads a member of its own instance
 // is no open read: an explicit specialization of the class replaces the gate
 // too.  A member of a different instance of the same template is an open read.
+// The walk of the definition of a sealed template reads each type that the
+// definition names, too (THE SEALED TEMPLATES).
 struct GateReads {
     bool is_crucible = false;
+    bool is_definition = false;
+    // A walk at the event of a folded initializer keeps each template and
+    // each class that it reads in DEFERRED, and the walk of the definition
+    // reads them at the end of the parse (THE FOLDED SPECIALIZATIONS).
+    bool is_deferred = false;
+    std::vector<tree> deferred;
     std::vector<tree> templates;
     std::vector<tree> owners;
 };
 
-void note_member_of(GateReads& reads, tree type);
+// THE FOLDED SPECIALIZATIONS
+//     The front end replaces the initializer of a constexpr variable with its
+//     value.  An explicit specialization does not depend on a template
+//     parameter, so the definition of a sealed template keeps no read of the
+//     initializer of an explicit specialization.  The fifth patch of GCC
+//     gives the event PLUGIN_FOLDED_INITIALIZER with the initializer before
+//     the fold.  The event walks it and keeps each template and each class
+//     that it reads, for the object: an explicit specialization of a variable
+//     template, or a static data member of an explicit specialization of a
+//     class template.  Such an object, a template and a class instance stay
+//     to the end of the unit, so no collection frees a kept tree.
+std::unordered_map<tree, std::vector<tree>> folded_reads;
 
-void note_open(GateReads& reads, tree template_decl) {
+// The bound of a chain of sealed templates.  A longer chain is open, so the
+// walk fails closed.
+constexpr int kSealDepth = 256;
+constexpr int kNoUnfinished = INT_MAX;
+
+// The lowest depth of a sealed template whose walk has not finished, that
+// the walks met since the last walk of a definition started.
+int lowest_unfinished = kNoUnfinished;
+
+void note_member_of(GateReads& reads, tree type);
+void scan_type(GateReads& reads, tree type, int depth);
+tree visit_gate(tree* node_pointer, int* walk_subtrees, void* data);
+std::vector<tree> leaves_of(tree general);
+
+void add_read(GateReads& reads, tree general) {
+    if (std::find(reads.templates.begin(), reads.templates.end(), general) == reads.templates.end()) {
+        reads.templates.push_back(general);
+    }
+}
+
+// The template arguments of a read of a sealed template: a sealed template
+// can read the members of a class that an argument names.  Complexity:
+// linear in the nodes of the arguments.
+void note_arguments(GateReads& reads, tree arguments, int depth) {
+    if (arguments == NULL_TREE || depth >= kTypeDepth) {
+        return;
+    }
+    if (TREE_CODE(arguments) == TREE_VEC) {
+        for (int index = 0; index < TREE_VEC_LENGTH(arguments); ++index) {
+            note_arguments(reads, TREE_VEC_ELT(arguments, index), depth + 1);
+        }
+        return;
+    }
+    if (ARGUMENT_PACK_P(arguments)) {
+        note_arguments(reads, ARGUMENT_PACK_ARGS(arguments), depth + 1);
+        return;
+    }
+    if (TYPE_P(arguments)) {
+        scan_type(reads, arguments, depth + 1);
+        return;
+    }
+    cp_walk_tree_without_duplicates(&arguments, visit_gate, &reads);
+}
+
+// One read of TEMPLATE_DECL with the template arguments ARGUMENTS, or
+// NULL_TREE.  An open template is one read.  A sealed template gives the
+// open leaves of its definition and of its arguments (THE SEALED TEMPLATES).
+void note_open(GateReads& reads, tree template_decl, tree arguments) {
     if (template_decl == NULL_TREE || TREE_CODE(template_decl) != TEMPLATE_DECL) {
+        return;
+    }
+    if (reads.is_deferred) {
+        reads.deferred.push_back(template_decl);
+        note_arguments(reads, arguments, 0);
         return;
     }
     // A member template of a class template is a member of that class
@@ -755,13 +929,23 @@ void note_open(GateReads& reads, tree template_decl) {
     tree scope = DECL_CONTEXT(template_decl);
     if (scope != NULL_TREE && CLASS_TYPE_P(scope) && CLASSTYPE_TEMPLATE_INFO(scope) != NULL_TREE) {
         note_member_of(reads, scope);
+        note_arguments(reads, arguments, 0);
         return;
     }
     int kind = gate_kind(template_decl);
-    tree general = most_general_template(template_decl);
-    if (kind == kLayerTemplate || (kind == kCrucibleTemplate && reads.is_crucible)) {
-        reads.templates.push_back(general != NULL_TREE ? general : template_decl);
+    if (kind != kLayerTemplate && (kind != kCrucibleTemplate || !reads.is_crucible)) {
+        return;
     }
+    tree general = most_general_template(template_decl);
+    general = general != NULL_TREE ? general : template_decl;
+    if (!is_sealed_template(general)) {
+        add_read(reads, general);
+        return;
+    }
+    for (tree leaf : leaves_of(general)) {
+        add_read(reads, leaf);
+    }
+    note_arguments(reads, arguments, 0);
 }
 
 // The patterns of the class templates that hold DECL, from DECL out: each
@@ -792,15 +976,22 @@ void note_member_of(GateReads& reads, tree type) {
     if (std::find(reads.owners.begin(), reads.owners.end(), main_type) != reads.owners.end()) {
         return;
     }
+    if (reads.is_deferred) {
+        if (CLASS_TYPE_P(main_type) && CLASSTYPE_TEMPLATE_INFO(main_type) != NULL_TREE) {
+            reads.deferred.push_back(main_type);
+        }
+        return;
+    }
     if (CLASS_TYPE_P(main_type) && CLASSTYPE_TEMPLATE_INFO(main_type) != NULL_TREE
         && TREE_CODE(CLASSTYPE_TI_TEMPLATE(main_type)) == TEMPLATE_DECL) {
-        note_open(reads, CLASSTYPE_TI_TEMPLATE(main_type));
+        note_open(reads, CLASSTYPE_TI_TEMPLATE(main_type), CLASSTYPE_TI_ARGS(main_type));
     }
 }
 
 // A name of a function template or a variable template: a TEMPLATE_DECL, an
-// overload set or a member reference.
-void note_template_name(GateReads& reads, tree name) {
+// overload set or a member reference, with its template arguments or
+// NULL_TREE.
+void note_template_name(GateReads& reads, tree name, tree arguments) {
     if (name == NULL_TREE) {
         return;
     }
@@ -810,16 +1001,61 @@ void note_template_name(GateReads& reads, tree name) {
     if (TREE_CODE(name) == TEMPLATE_DECL) {
         tree result = DECL_TEMPLATE_RESULT(name);
         if (result != NULL_TREE && (VAR_P(result) || TREE_CODE(result) == FUNCTION_DECL)) {
-            note_open(reads, name);
+            note_open(reads, name, arguments);
         }
         return;
     }
     if (TREE_CODE(name) == OVERLOAD) {
         for (ovl_iterator candidate(name, true); candidate; ++candidate) {
             if (TREE_CODE(*candidate) == TEMPLATE_DECL) {
-                note_open(reads, *candidate);
+                note_open(reads, *candidate, arguments);
             }
         }
+    }
+}
+
+// Each class template instance that a type of the definition of a sealed
+// template names, through each pointer, reference, array, signature and
+// decltype (THE SEALED TEMPLATES).  A gate names a type with no read, but the
+// definition of a sealed template can give the type to the gate.
+void scan_type(GateReads& reads, tree type, int depth) {
+    if (type == NULL_TREE || !TYPE_P(type) || depth >= kTypeDepth) {
+        return;
+    }
+    switch (TREE_CODE(type)) {
+        case TYPENAME_TYPE:
+            note_member_of(reads, TYPE_CONTEXT(type));
+            return;
+        case RECORD_TYPE:
+        case UNION_TYPE:
+            if (CLASS_TYPE_P(type) && CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE) {
+                note_member_of(reads, type);
+            }
+            return;
+        case POINTER_TYPE:
+        case REFERENCE_TYPE:
+        case ARRAY_TYPE:
+            scan_type(reads, TREE_TYPE(type), depth + 1);
+            return;
+        case OFFSET_TYPE:
+            scan_type(reads, TYPE_OFFSET_BASETYPE(type), depth + 1);
+            scan_type(reads, TREE_TYPE(type), depth + 1);
+            return;
+        case FUNCTION_TYPE:
+        case METHOD_TYPE:
+            scan_type(reads, TREE_TYPE(type), depth + 1);
+            for (tree parameter = TYPE_ARG_TYPES(type); parameter != NULL_TREE && parameter != void_list_node;
+                 parameter = TREE_CHAIN(parameter)) {
+                scan_type(reads, TREE_VALUE(parameter), depth + 1);
+            }
+            return;
+        case DECLTYPE_TYPE: {
+            tree expression = DECLTYPE_TYPE_EXPR(type);
+            cp_walk_tree_without_duplicates(&expression, visit_gate, &reads);
+            return;
+        }
+        default:
+            return;
     }
 }
 
@@ -828,10 +1064,10 @@ tree visit_gate(tree* node_pointer, int* walk_subtrees, void* data) {
     auto& reads = *static_cast<GateReads*>(data);
     switch (TREE_CODE(node)) {
         case TEMPLATE_ID_EXPR:
-            note_template_name(reads, TREE_OPERAND(node, 0));
+            note_template_name(reads, TREE_OPERAND(node, 0), TREE_OPERAND(node, 1));
             break;
         case OVERLOAD:
-            note_template_name(reads, node);
+            note_template_name(reads, node, NULL_TREE);
             break;
         case SCOPE_REF:
             note_member_of(reads, TREE_OPERAND(node, 0));
@@ -843,7 +1079,7 @@ tree visit_gate(tree* node_pointer, int* walk_subtrees, void* data) {
         case FUNCTION_DECL:
             if (DECL_LANG_SPECIFIC(node) != nullptr && DECL_TEMPLATE_INFO(node) != NULL_TREE
                 && TREE_CODE(DECL_TI_TEMPLATE(node)) == TEMPLATE_DECL && PRIMARY_TEMPLATE_P(DECL_TI_TEMPLATE(node))) {
-                note_open(reads, DECL_TI_TEMPLATE(node));
+                note_open(reads, DECL_TI_TEMPLATE(node), DECL_TI_ARGS(node));
             }
             if (DECL_CLASS_SCOPE_P(node)) {
                 note_member_of(reads, DECL_CONTEXT(node));
@@ -851,12 +1087,243 @@ tree visit_gate(tree* node_pointer, int* walk_subtrees, void* data) {
             *walk_subtrees = 0;
             break;
         default:
+            if (TYPE_P(node) && reads.is_definition) {
+                scan_type(reads, node, 0);
+            }
             if (DECL_P(node) || TYPE_P(node)) {
                 *walk_subtrees = 0;
             }
             break;
     }
     return NULL_TREE;
+}
+
+// ── The definitions of the sealed templates ─────────────────────────────
+
+void walk_class_definition(GateReads& reads, tree type, int depth);
+
+// The type and the initializer of a variable or of a data member, and the
+// reads of its initializer before a fold (THE FOLDED SPECIALIZATIONS).
+void walk_variable(GateReads& reads, tree variable) {
+    scan_type(reads, TREE_TYPE(variable), 0);
+    tree initial = DECL_INITIAL(variable);
+    if (initial != NULL_TREE && initial != error_mark_node && TREE_CODE(initial) != DEFERRED_PARSE) {
+        cp_walk_tree_without_duplicates(&initial, visit_gate, &reads);
+    }
+    auto folded = folded_reads.find(variable);
+    if (folded == folded_reads.end()) {
+        return;
+    }
+    for (tree read : folded->second) {
+        if (TYPE_P(read)) {
+            note_member_of(reads, read);
+        } else {
+            note_open(reads, read, NULL_TREE);
+        }
+    }
+}
+
+// True when OBJECT is an object of THE FOLDED SPECIALIZATIONS: an explicit
+// specialization of a variable template, or a static data member of an
+// explicit specialization of a class template.
+bool is_folded_specialization(tree object) {
+    if (object == NULL_TREE || !VAR_P(object) || DECL_LANG_SPECIFIC(object) == nullptr) {
+        return false;
+    }
+    if (DECL_TEMPLATE_INFO(object) != NULL_TREE && DECL_TEMPLATE_SPECIALIZATION(object)) {
+        return true;
+    }
+    tree scope = DECL_CONTEXT(object);
+    return scope != NULL_TREE && CLASS_TYPE_P(scope) && CLASSTYPE_TEMPLATE_SPECIALIZATION(scope);
+}
+
+// PLUGIN_FOLDED_INITIALIZER: the reads of the initializer of an object of THE
+// FOLDED SPECIALIZATIONS, before the fold.
+void on_folded_initializer_home(void* gcc_data, void*) {
+    const auto* data = static_cast<const plugin_folded_initializer_data*>(gcc_data);
+    if (data == nullptr || data->original == NULL_TREE || data->original == error_mark_node
+        || !is_specialization_home_active() || !is_folded_specialization(data->object)) {
+        return;
+    }
+    GateReads reads;
+    reads.is_deferred = true;
+    reads.is_definition = true;
+    tree original = data->original;
+    cp_walk_tree_without_duplicates(&original, visit_gate, &reads);
+    if (!reads.deferred.empty()) {
+        std::vector<tree>& kept = folded_reads[data->object];
+        kept.insert(kept.end(), reads.deferred.begin(), reads.deferred.end());
+    }
+}
+
+// The signature, the constraint and the noexcept specification of a
+// function, and its body when a constant evaluation or the deduction of its
+// return type reads the body.  A gate reads only the signature of each other
+// function.
+void walk_function(GateReads& reads, tree function) {
+    if (DECL_ARTIFICIAL(function)) {
+        return;
+    }
+    scan_type(reads, TREE_TYPE(function), 0);
+    tree raises = TYPE_RAISES_EXCEPTIONS(TREE_TYPE(function));
+    if (raises != NULL_TREE && TREE_PURPOSE(raises) != NULL_TREE && TREE_CODE(TREE_PURPOSE(raises)) != DEFERRED_NOEXCEPT) {
+        tree specification = TREE_PURPOSE(raises);
+        cp_walk_tree_without_duplicates(&specification, visit_gate, &reads);
+    }
+    tree info = get_constraints(function);
+    if (info != NULL_TREE && TREE_CODE(info) == CONSTRAINT_INFO && CI_DECLARATOR_REQS(info) != NULL_TREE) {
+        tree requirement = CI_DECLARATOR_REQS(info);
+        cp_walk_tree_without_duplicates(&requirement, visit_gate, &reads);
+    }
+    bool is_read_at_compile_time =
+        DECL_DECLARED_CONSTEXPR_P(function) || DECL_IMMEDIATE_FUNCTION_P(function) || FNDECL_USED_AUTO(function);
+    if (is_read_at_compile_time && DECL_SAVED_TREE(function) != NULL_TREE) {
+        cp_walk_tree_without_duplicates(&DECL_SAVED_TREE(function), visit_gate, &reads);
+    }
+}
+
+// One member of a class of the definition of a sealed template.
+void walk_member(GateReads& reads, tree member, tree main_type, int depth) {
+    switch (TREE_CODE(member)) {
+        case FIELD_DECL:
+        case VAR_DECL:
+            walk_variable(reads, member);
+            return;
+        case FUNCTION_DECL:
+            walk_function(reads, member);
+            return;
+        case TYPE_DECL:
+            if (DECL_IMPLICIT_TYPEDEF_P(member)) {
+                if (TREE_TYPE(member) != main_type) {
+                    walk_class_definition(reads, TREE_TYPE(member), depth + 1);
+                }
+                return;
+            }
+            scan_type(reads, DECL_ORIGINAL_TYPE(member) != NULL_TREE ? DECL_ORIGINAL_TYPE(member) : TREE_TYPE(member),
+                      0);
+            return;
+        case TEMPLATE_DECL: {
+            tree result = DECL_TEMPLATE_RESULT(member);
+            if (result == NULL_TREE) {
+                return;
+            }
+            if (TREE_CODE(result) == FUNCTION_DECL) {
+                walk_function(reads, result);
+            } else if (VAR_P(result)) {
+                walk_variable(reads, result);
+            } else if (TREE_CODE(result) == TYPE_DECL && CLASS_TYPE_P(TREE_TYPE(result))) {
+                walk_class_definition(reads, TREE_TYPE(result), depth + 1);
+            } else if (TREE_CODE(result) == TYPE_DECL) {
+                scan_type(reads, TREE_TYPE(result), 0);
+            }
+            return;
+        }
+        default:
+            return;
+    }
+}
+
+// The bases, the members and the friends that a class defines.  A class that
+// the unit only declares has none.  Complexity: linear in the members.
+void walk_class_definition(GateReads& reads, tree type, int depth) {
+    tree main_type = TYPE_MAIN_VARIANT(type);
+    if (!CLASS_TYPE_P(main_type) || !COMPLETE_TYPE_P(main_type) || depth >= kTypeDepth) {
+        return;
+    }
+    if (tree binfo = TYPE_BINFO(main_type)) {
+        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+            scan_type(reads, BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), 0);
+        }
+    }
+    for (tree member = TYPE_FIELDS(main_type); member != NULL_TREE; member = DECL_CHAIN(member)) {
+        walk_member(reads, member, main_type, depth);
+    }
+    tree decl = TYPE_MAIN_DECL(main_type);
+    for (tree friends = decl != NULL_TREE ? DECL_FRIENDLIST(decl) : NULL_TREE; friends != NULL_TREE;
+         friends = TREE_CHAIN(friends)) {
+        for (tree item = TREE_VALUE(friends); item != NULL_TREE; item = TREE_CHAIN(item)) {
+            tree friend_decl = TREE_VALUE(item);
+            if (friend_decl != NULL_TREE && TREE_CODE(friend_decl) == TEMPLATE_DECL) {
+                friend_decl = DECL_TEMPLATE_RESULT(friend_decl);
+            }
+            if (friend_decl != NULL_TREE && TREE_CODE(friend_decl) == FUNCTION_DECL) {
+                walk_function(reads, friend_decl);
+            }
+        }
+    }
+}
+
+// The definition of the sealed template GENERAL: its pattern and each
+// explicit and partial specialization of it in the unit.
+void walk_definition(GateReads& reads, tree general) {
+    tree result = DECL_TEMPLATE_RESULT(general);
+    bool is_class = is_class_template(general);
+    if (is_class) {
+        walk_class_definition(reads, TREE_TYPE(result), 0);
+    } else {
+        walk_variable(reads, result);
+    }
+    for (tree entry = DECL_TEMPLATE_SPECIALIZATIONS(general); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+        tree partial = TREE_VALUE(entry);
+        if (partial == NULL_TREE || TREE_CODE(partial) != TEMPLATE_DECL || DECL_TEMPLATE_RESULT(partial) == NULL_TREE) {
+            continue;
+        }
+        if (is_class) {
+            walk_class_definition(reads, TREE_TYPE(DECL_TEMPLATE_RESULT(partial)), 0);
+        } else {
+            walk_variable(reads, DECL_TEMPLATE_RESULT(partial));
+        }
+    }
+    for (tree entry = DECL_TEMPLATE_INSTANTIATIONS(general); entry != NULL_TREE; entry = TREE_CHAIN(entry)) {
+        tree value = TREE_VALUE(entry);
+        if (value == NULL_TREE) {
+            continue;
+        }
+        if (is_class && CLASS_TYPE_P(value) && CLASSTYPE_TEMPLATE_SPECIALIZATION(value)) {
+            walk_class_definition(reads, value, 0);
+        } else if (!is_class && VAR_P(value) && DECL_LANG_SPECIFIC(value) != nullptr
+                   && DECL_TEMPLATE_SPECIALIZATION(value)) {
+            walk_variable(reads, value);
+        }
+    }
+}
+
+// The open leaves of the sealed template GENERAL: each open template that
+// its definition reads, at each depth (THE SEALED TEMPLATES).  A template
+// whose walk has not finished gives no leaf, and a walk that met one keeps
+// no result, unless the template is GENERAL itself.  A chain longer than
+// kSealDepth gives GENERAL as its own leaf, so the walk fails closed.
+// Complexity: linear in the nodes of each definition, one time for each
+// template of the unit.
+std::vector<tree> leaves_of(tree general) {
+    auto cached = sealed_leaves.find(general);
+    if (cached != sealed_leaves.end()) {
+        return cached->second;
+    }
+    auto unfinished = sealing.find(general);
+    if (unfinished != sealing.end()) {
+        lowest_unfinished = std::min(lowest_unfinished, unfinished->second);
+        return {};
+    }
+    int depth = static_cast<int>(sealing.size());
+    if (depth >= kSealDepth) {
+        return {general};
+    }
+    sealing.emplace(general, depth);
+    int outer_lowest = lowest_unfinished;
+    lowest_unfinished = kNoUnfinished;
+    GateReads inner;
+    inner.is_crucible = true;
+    inner.is_definition = true;
+    inner.owners = owner_patterns(general);
+    walk_definition(inner, general);
+    sealing.erase(general);
+    int inner_lowest = lowest_unfinished;
+    lowest_unfinished = std::min(outer_lowest, inner_lowest < depth ? inner_lowest : kNoUnfinished);
+    if (inner_lowest >= depth) {
+        sealed_leaves.emplace(general, inner.templates);
+    }
+    return inner.templates;
 }
 
 // One gate of the declaration DECL: each open template that EXPRESSION reads
@@ -1251,6 +1718,8 @@ void on_collection(void*, void*) {
     template_homes.clear();
     gate_kinds.clear();
     walked.clear();
+    sealed_leaves.clear();
+    sealing.clear();
 }
 
 }  // namespace
@@ -1335,6 +1804,7 @@ void register_home(const char* plugin_name) {
     register_callback(plugin_name, PLUGIN_FINISH_DECL, on_finish_decl, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_PARSE_FUNCTION, on_finish_function, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_TYPE, on_finish_type, nullptr);
+    register_callback(plugin_name, PLUGIN_FOLDED_INITIALIZER, on_folded_initializer_home, nullptr);
     register_callback(plugin_name, PLUGIN_GGC_START, on_collection, nullptr);
 }
 

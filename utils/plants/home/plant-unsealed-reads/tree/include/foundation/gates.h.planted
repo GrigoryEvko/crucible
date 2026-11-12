@@ -1,0 +1,42 @@
+#pragma once
+
+#include <foundation/OpenExtension.h>
+
+namespace foundation::gates {
+
+template <class T> constexpr bool open_f() { return false; }
+template <class T>
+struct [[= ::foundation::open_extension{"a type states its trait beside its own definition"}]] marked_trait {
+    static constexpr bool value = false;
+};
+template <class T> struct row_trait { static constexpr bool value = false; };
+template <class T> struct declared_trait;
+template <class T> concept ReadsFunction = open_f<T>();
+template <class T> concept ReadsMarked = marked_trait<T>::value;
+template <class T> concept ReadsRow = row_trait<T>::value;
+template <class T> concept ReadsDeclared = declared_trait<T>::value;
+
+template <class T> inline constexpr bool outer_v = marked_trait<T>::value;
+template <class T> inline constexpr bool deep_v = outer_v<T>;
+template <class T> struct outer_trait { static constexpr bool value = open_f<T>(); };
+template <class U> struct passes { static constexpr bool value = U::value; };
+template <class T> struct aliases { using type = marked_trait<T>; };
+template <class T> struct asks { static consteval bool answer() { return row_trait<T>::value; } };
+template <class T> inline constexpr bool picked_v = false;
+template <> inline constexpr bool picked_v<int> = marked_trait<int>::value;
+template <class T> struct ping;
+template <class T> struct pong { static constexpr bool value = ping<T>::value; };
+template <class T> struct ping { static constexpr bool value = pong<T>::value || open_f<T>(); };
+template <class T> concept ReadsOuter = outer_v<T>;
+template <class T> concept ReadsDeep = deep_v<T>;
+template <class T> concept ReadsOuterTrait = outer_trait<T>::value;
+template <class T> concept ReadsThroughArgument = passes<marked_trait<T>>::value;
+template <class T> concept ReadsThroughAlias = aliases<T>::type::value;
+template <class T> concept ReadsThroughMember = asks<T>::answer();
+template <class T> concept ReadsPicked = picked_v<T>;
+template <class T> concept ReadsCycle = pong<T>::value;
+template <class T> struct picked_trait { static constexpr bool value = false; };
+template <> struct picked_trait<int> { static constexpr bool value = row_trait<int>::value; };
+template <class T> concept ReadsPickedTrait = picked_trait<T>::value;
+
+}  // namespace foundation::gates

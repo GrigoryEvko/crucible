@@ -1,0 +1,29 @@
+#pragma once
+
+namespace foundation::gates {
+
+template <class T> inline constexpr bool sealed_v = false;
+template <class T> struct sealed_trait { static constexpr bool value = false; };
+template <class T> struct Holder {
+    static consteval bool answer() { return false; }
+    template <class U> static constexpr bool member_v = false;
+};
+template <class T> struct declared_family;
+template <> struct declared_family<int> { using type = int; };
+template <class T> inline constexpr bool outer_v = sealed_trait<T>::value && sealed_v<T>;
+template <class U> struct passes { static constexpr bool value = U::value; };
+template <class T> struct length { static constexpr int value = 1 + length<T*>::value; };
+template <class T> struct length<T***> { static constexpr int value = 0; };
+template <class T> concept ReadsVariable = sealed_v<T>;
+template <class T> concept ReadsDeclaredFamily = requires { typename declared_family<T>::type; };
+template <class T> concept ReadsTrait = sealed_trait<T>::value;
+template <class T> concept ReadsMember = Holder<T>::answer();
+template <class T> concept ReadsMemberTemplate = Holder<int>::template member_v<T>;
+template <class T> concept ReadsOuter = outer_v<T>;
+template <class T> concept ReadsThroughArgument = passes<sealed_trait<T>>::value;
+template <class T> concept ReadsRecursion = length<T>::value == 3;
+template <class T> requires sealed_v<T*> void gated(T);
+template <class T> struct declared_base;
+template <class T> concept ReadsDeclaredBase = requires { typename declared_base<T>::type; };
+
+}  // namespace foundation::gates

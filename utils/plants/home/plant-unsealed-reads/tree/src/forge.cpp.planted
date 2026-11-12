@@ -1,0 +1,12 @@
+#include <foundation/gates.h>
+
+struct Fake {};
+
+namespace foundation::gates {
+template <> struct marked_trait<Fake> { static constexpr bool value = true; };
+}  // namespace foundation::gates
+
+static_assert(foundation::gates::ReadsOuter<Fake>);
+static_assert(foundation::gates::ReadsDeep<Fake>);
+static_assert(foundation::gates::ReadsThroughArgument<Fake>);
+static_assert(foundation::gates::ReadsThroughAlias<Fake>);

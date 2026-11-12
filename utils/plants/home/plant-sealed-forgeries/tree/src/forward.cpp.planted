@@ -1,0 +1,10 @@
+struct Fake {};
+
+namespace foundation::gates {
+template <class T> struct declared_family;
+template <> struct declared_family<Fake> { using type = Fake; };
+}  // namespace foundation::gates
+
+#include <foundation/gates.h>
+
+static_assert(foundation::gates::ReadsDeclaredFamily<Fake>);

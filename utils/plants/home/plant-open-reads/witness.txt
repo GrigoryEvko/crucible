@@ -4,7 +4,8 @@
 # requires-clause.  A gate of a crucible header reads a template of its own
 # layer and a template of the two layers.  A gate in the check file of a
 # header is a gate of the header.  A concept, a function that is not a
-# template and a class template named as a type are closed.
+# template and a class template named as a type are closed.  The compiles
+# have no argument specialization-home=on, so no template is sealed.
 compile layer src/layer.cpp mode=error
 flag layer -fplugin-arg-crucible_quarantine-sentinel=include/foundation/gates.h
 exit layer fail

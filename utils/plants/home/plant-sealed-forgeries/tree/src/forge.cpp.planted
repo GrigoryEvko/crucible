@@ -1,0 +1,23 @@
+#include <crucible/gates.h>
+
+struct Fake {};
+
+namespace foundation::gates {
+template <> inline constexpr bool sealed_v<Fake> = true;
+template <class T> inline constexpr bool sealed_v<T*> = true;
+template <> struct sealed_trait<Fake> { static constexpr bool value = true; };
+template <> consteval bool Holder<Fake>::answer() { return true; }
+template <> template <> constexpr bool Holder<int>::member_v<Fake> = true;
+template <> struct declared_family<Fake> { using type = Fake; };
+}  // namespace foundation::gates
+
+namespace crucible::gates {
+template <> inline constexpr bool runtime_sealed_v<Fake> = true;
+}  // namespace crucible::gates
+
+static_assert(foundation::gates::ReadsVariable<Fake>);
+static_assert(foundation::gates::ReadsTrait<Fake>);
+static_assert(foundation::gates::ReadsMember<Fake>);
+static_assert(foundation::gates::ReadsMemberTemplate<Fake>);
+static_assert(crucible::gates::ReadsRuntime<Fake>);
+static_assert(foundation::gates::ReadsDeclaredFamily<Fake>);
