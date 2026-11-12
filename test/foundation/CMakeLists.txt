@@ -2291,6 +2291,12 @@ foundation_neg_compile_test(neg_core_box_consume_lvalue
 foundation_neg_compile_test(neg_core_box_consume_not_movable
   "no matching function for call to .foundation::core::Box<Fixed>::consume\\(\\)."
   "the expression .is_nothrow_move_constructible_v<T> \\[with T = Fixed\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_box_mint_forged_body
+  "no matching function for call to .foundation::core::Box<int>::Box\\(<brace-enclosed initializer list>\\)."
+  "cannot convert .& stolen. \\(type .int\\*.\\) to type .const foundation::core::detail::BoxKey&.")
+foundation_neg_compile_test(neg_core_address_of_forged_body
+  "no matching function for call to .foundation::core::Address::Address\\(<brace-enclosed initializer list>\\)."
+  "candidate expects 2 arguments, 1 provided")
 
 # ── The Atomic family ─────────────────────────────────────────────────
 #

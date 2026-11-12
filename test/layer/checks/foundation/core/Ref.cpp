@@ -49,6 +49,14 @@ static_assert(!std::is_default_constructible_v<Box<int>>);
 static_assert(!std::is_constructible_v<Box<int>, int*>);
 static_assert(!std::is_convertible_v<int*, Box<int>>);
 
+// The constructor of a Box takes the key, and only BoxDoor builds a key.
+// The key is not trivially copyable, so std::bit_cast builds no key either.
+static_assert(!std::is_constructible_v<Box<int>, int>);
+static_assert(!std::is_default_constructible_v<detail::BoxKey>);
+static_assert(!std::is_copy_constructible_v<detail::BoxKey>);
+static_assert(!std::is_copy_assignable_v<detail::BoxKey>);
+static_assert(!std::is_trivially_copyable_v<detail::BoxKey>);
+
 // The payload gate.
 static_assert(BoxPayload<int>);
 static_assert(BoxPayload<OverAligned>);
@@ -207,6 +215,13 @@ static_assert(!std::is_default_constructible_v<Address>);
 static_assert(!std::is_constructible_v<Address, std::uintptr_t>);
 static_assert(!std::is_constructible_v<Address, int*>);
 static_assert(!std::is_trivially_copyable_v<Address>);
+
+// The constructor of an Address takes the key, and only AddressDoor builds
+// a key.
+static_assert(!std::is_default_constructible_v<detail::AddressKey>);
+static_assert(!std::is_copy_constructible_v<detail::AddressKey>);
+static_assert(!std::is_copy_assignable_v<detail::AddressKey>);
+static_assert(!std::is_trivially_copyable_v<detail::AddressKey>);
 
 // An address compares for equality and has no order.
 static_assert(std::equality_comparable<Address>);

@@ -138,7 +138,7 @@
     },
     {
       "name": "neg_witness_core_address_direct_construction",
-      "reason": "is private within this context",
+      "reason": "no matching function for call",
       "constructor": "\\bAddress\\("
     },
     {
@@ -148,13 +148,23 @@
     },
     {
       "name": "neg_witness_core_box_direct_construction",
-      "reason": "is private within this context",
+      "reason": "no matching function for call",
       "constructor": "\\bBox\\("
     },
     {
       "name": "neg_witness_core_ctext_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bCText\\("
+    },
+    {
+      "name": "neg_witness_core_detail_addresskey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bAddressKey\\("
+    },
+    {
+      "name": "neg_witness_core_detail_boxkey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBoxKey\\("
     },
     {
       "name": "neg_witness_core_detail_chunkcursor_direct_construction",
@@ -951,6 +961,10 @@
       "header": "foundation/core/Ref.h"
     },
     {
+      "type": "foundation::core::detail::BoxKey",
+      "header": "foundation/core/Ref.h"
+    },
+    {
       "type": "foundation::core::Ref<int, forge::brand>",
       "header": "foundation/core/Ref.h"
     },
@@ -960,6 +974,10 @@
     },
     {
       "type": "foundation::core::Address",
+      "header": "foundation/core/Ref.h"
+    },
+    {
+      "type": "foundation::core::detail::AddressKey",
       "header": "foundation/core/Ref.h"
     },
     {

@@ -30,9 +30,10 @@
 // twice.
 //
 // A Box is move-only.  A move leaves the source with no object, and the
-// use-after-move guard refuses a later use of that source.  A Box comes
-// only from mint_box, so no pointer that a caller holds becomes a Box, and
-// the destructor frees only storage that mint_box allocated.
+// use-after-move guard refuses a later use of that source.  The one
+// constructor of a Box from arguments takes the key of mint_box, and it
+// allocates the storage itself.  So no pointer that a caller holds becomes
+// a Box, and the destructor frees only storage that a Box allocated.
 //
 // operator* and operator-> give a borrow of the object, and view() gives
 // the borrow as a Ref with the fresh brand of the call.  The overloads for
@@ -198,10 +199,31 @@ template <class First, class FirstBrand, class Second, class SecondBrand>
     return __builtin_addressof(*first) == __builtin_addressof(*second);
 }
 
-class Address;
+namespace detail {
 
-template <RefTarget T, ::foundation::brand::IsBrand Brand>
-[[nodiscard]] Address address_of(Ref<T, Brand> ref) noexcept;
+// The door of address_of, and the key of the constructor of an Address.
+// AddressDoor is the one friend of the key, and only address_of calls the
+// door.  The door and the key hold no template, so no explicit
+// specialization of a template reaches the key.  The door is in namespace
+// detail, and a use of that namespace outside the base is a finding.  Such
+// a use can still build an Address from each integer.
+struct AddressDoor;
+
+class [[nodiscard]] AddressKey final {
+    friend struct AddressDoor;
+
+    constexpr AddressKey() noexcept {}
+    constexpr AddressKey(AddressKey const&) noexcept {}
+
+public:
+    AddressKey& operator=(AddressKey const&) = delete("a key of an Address lives for one construction");
+};
+
+struct AddressDoor {
+    [[nodiscard]] static constexpr AddressKey key() noexcept { return AddressKey{}; }
+};
+
+}  // namespace detail
 
 // The address of one object, which address_of(ref) gives.  It answers an
 // alignment query and compares with a different address.  An address
@@ -212,12 +234,10 @@ class Address {
     std::uintptr_t value_ = 0;
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
-    constexpr explicit Address(std::uintptr_t value) noexcept : value_{value} {}
-
-    template <RefTarget T, ::foundation::brand::IsBrand Brand>
-    friend Address address_of(Ref<T, Brand> ref) noexcept;
-
 public:
+    // The address of one object, with the key that only address_of takes.
+    constexpr Address(std::uintptr_t value, detail::AddressKey const& /*key*/) noexcept : value_{value} {}
+
     // True when the address is a multiple of Alignment, a power of two.
     template <std::size_t Alignment>
         requires(Alignment != 0 && (Alignment & (Alignment - 1)) == 0)
@@ -234,7 +254,7 @@ public:
 // constant of the compile, so the function runs only at run time.
 template <RefTarget T, ::foundation::brand::IsBrand Brand>
 [[nodiscard]] Address address_of(Ref<T, Brand> ref) noexcept {
-    return Address{__builtin_bit_cast(std::uintptr_t, __builtin_addressof(*ref))};
+    return Address{__builtin_bit_cast(std::uintptr_t, __builtin_addressof(*ref)), detail::AddressDoor::key()};
 }
 
 // The empty value of an Option of a Ref: the null pointer, which no Ref
@@ -254,19 +274,36 @@ struct niche<Ref<T, Brand>> {
 template <class T, class Marker, class... Args>
 concept CanMintBox = BoxPayload<T> && AllocationCapability<Marker> && std::constructible_from<T, Args&&...>;
 
-template <class T, class Marker, class... Args>
-    requires CanMintBox<T, Marker, Args...>
-[[nodiscard]] Box<T> mint_box(Marker allocation, Args&&... args) noexcept;
+namespace detail {
+
+// The door of mint_box, and the key of the constructor of a Box.  BoxDoor is
+// the one friend of the key, and only mint_box calls the door.  The door and
+// the key hold no template, so no explicit specialization of a template
+// reaches the key.  The constructor that takes the key allocates the storage
+// and builds the object itself.  So a use of namespace detail outside the
+// base gets only a Box of new storage, with no allocation capability at its
+// call site.
+struct BoxDoor;
+
+class [[nodiscard]] BoxKey final {
+    friend struct BoxDoor;
+
+    constexpr BoxKey() noexcept {}
+    constexpr BoxKey(BoxKey const&) noexcept {}
+
+public:
+    BoxKey& operator=(BoxKey const&) = delete("a key of a Box lives for one construction");
+};
+
+struct BoxDoor {
+    [[nodiscard]] static constexpr BoxKey key() noexcept { return BoxKey{}; }
+};
+
+}  // namespace detail
 
 template <BoxPayload T>
 class [[nodiscard]] Box {
     T* object_ = nullptr;
-
-    explicit Box(T* object) noexcept : object_{object} {}
-
-    template <class U, class Marker, class... Args>
-        requires CanMintBox<U, Marker, Args...>
-    friend Box<U> mint_box(Marker allocation, Args&&... args) noexcept;
 
     void destroy_() noexcept {
         if (object_ != nullptr) {
@@ -287,6 +324,16 @@ class [[nodiscard]] Box {
     }
 
 public:
+    // Takes the storage of the size and the alignment of T from the
+    // allocation door, and builds the object from the arguments in it.  Only
+    // mint_box holds the key.  An explicit specialization of this constructor
+    // is a specialization of Box outside its home, and the rule
+    // specialization-home refuses it in each build.
+    template <class... Args>
+        requires std::constructible_from<T, Args&&...>
+    explicit Box(detail::BoxKey const& /*key*/, Args&&... args) noexcept
+        : object_{::new(detail::heap_allocate_(sizeof(T), alignof(T))) T(static_cast<Args&&>(args)...)} {}
+
     Box(Box&& other) noexcept : object_{other.object_} { other.object_ = nullptr; }
 
     Box& operator=(Box&& other) noexcept {
@@ -352,8 +399,7 @@ public:
 template <class T, class Marker, class... Args>
     requires CanMintBox<T, Marker, Args...>
 [[nodiscard]] Box<T> mint_box(Marker /*allocation*/, Args&&... args) noexcept {
-    void* const storage = detail::heap_allocate_(sizeof(T), alignof(T));
-    return Box<T>{::new(storage) T(static_cast<Args&&>(args)...)};
+    return Box<T>{detail::BoxDoor::key(), static_cast<Args&&>(args)...};
 }
 
 }  // namespace foundation::core
