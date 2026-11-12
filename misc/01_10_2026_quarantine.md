@@ -1013,26 +1013,31 @@ The six F1 layers come from the split of unit 2d (owner, 2026-10-11), and they l
 
 A slice migrates one base API group and every caller in the whole tree, in one clean cut. When a caller is in a quarantined file, the slice changes only the lines that the API change forces. The rest of that file waits for Stage 5.
 
-| Slice | Content | Callers |
-|---|---|---|
-| 4.1 Os results | Every `fixy::os` door returns `Result<T, os::Errno>`. One `Errno` type replaces `std::error_code` and the plain `int` of Sched. The slice also removes each system type from the public signatures of the doors (R4). A base record replaces each struct of the kernel or of the C library, and a base type replaces each integer typedef of the C library. On 2026-10-09, seventeen public signatures hold a system type. In `fixy/os/Time.h`, `PtpClockReader::caps()` holds `::ptp_clock_caps`, `nanos_from_timespec` holds `std::timespec`, and `clockid_for` holds `::clockid_t`. `mint_file`, `mint_durable_truncate_file` and `mint_durable_append_file` of `fixy/os/Fs.h` and the three mints of `fixy/os/CipherDurable.h` hold `::mode_t`. `file_size` of `fixy/os/Fs.h`, `mint_mmap` of `fixy/os/Mmap.h`, `OwnedMmap::mint_region` of `fixy/os/OwnedMmap.h` and the two overloads of `zerocopy_transfer` of `fixy/os/Io.h` hold `::off_t`. `OwnedFile::get()` and `OwnedFile::release()` of `fixy/os/OwnedFile.h` and `Topology::log_summary` of `fixy/os/Topology.h` hold `std::FILE*` | about 133 base uses, many callers in crucible and test |
-| 4.2 Choice in concurrent and wrappers | `Checked.h` and `Saturate` return `Option`. The rings, channels and `AtomicSnapshot` pop into `Option`. `admit_refined` returns `Result` | the rings are on hot paths: check the disassembly |
-| 4.3 Region in the wrappers | `FixedArray` loses `operator[](size_t)`, `data()` and raw iterators. `Borrowed` becomes `View`. `OwnedRegion` and `SharedRegion` give `View`. `foundation::simd` loads and stores take `View<T const, Lanes>`. `CyclicBuffer` indexes through `Index<N>`. `AppendOnly` stores a `GrowList` | every caller of those accessors |
-| 4.4 Atomic in the base | `AtomicMonotonic`, `MpscRing`, `OneShotFlag`, `PublishOnce`, `PublishCommit`, `Once`, `SpinLock`, `CpuPinned`, `session/Watch.h` move to `Atomic`. `ChaseLevDeque` keeps its relaxed and seq_cst operations as cited `detail` code inside the base | few callers outside |
-| 4.5 Report in the base | `fail_invariant`, the diag runtime sink, `JsonEmitter`, and every `std::source_location` in a public API move to `Site` and the Report sink | few callers outside |
-| 4.6 Os internals | `Path` stops using `std::filesystem::path`. Each `try`/`catch` site that unit 2b did not remove goes. Unit 2b moves Topology off `ifstream`, `filesystem`, `set` and `map`, and unit 2c moves `std::jthread` to the thread door | callers of Path |
-| 4.7 Record in the base | `pair` and `tuple` in base APIs and in the stage and pipeline runners become `Record` or `Pack` | few callers outside |
-| 4.8 Foundation remainder | the other runtime uses in foundation (233 runtime, 367 constexpr data, 36 in src/foundation) | none outside |
-| 4.9 Fixy remainder | the other runtime uses in fixy, one unit for each directory: concurrent, session, os, handle, top level | none outside |
+Appendix E gives each base header a verdict, a family and a slice. The last column of this table names the rebuild, merge and delete rows of each slice. Appendix E gives the keep rows.
+
+| Slice | Content | Callers | Rows of Appendix E |
+|---|---|---|---|
+| 4.1 Os results | Every `fixy::os` door returns `Result<T, os::Errno>`. One `Errno` type replaces `std::error_code` and the plain `int` of Sched. The slice also removes each system type from the public signatures of the doors (R4). A base record replaces each struct of the kernel or of the C library, and a base type replaces each integer typedef of the C library. On 2026-10-09, seventeen public signatures hold a system type. In `fixy/os/Time.h`, `PtpClockReader::caps()` holds `::ptp_clock_caps`, `nanos_from_timespec` holds `std::timespec`, and `clockid_for` holds `::clockid_t`. `mint_file`, `mint_durable_truncate_file` and `mint_durable_append_file` of `fixy/os/Fs.h` and the three mints of `fixy/os/CipherDurable.h` hold `::mode_t`. `file_size` of `fixy/os/Fs.h`, `mint_mmap` of `fixy/os/Mmap.h`, `OwnedMmap::mint_region` of `fixy/os/OwnedMmap.h` and the two overloads of `zerocopy_transfer` of `fixy/os/Io.h` hold `::off_t`. `OwnedFile::get()` and `OwnedFile::release()` of `fixy/os/OwnedFile.h` and `Topology::log_summary` of `fixy/os/Topology.h` hold `std::FILE*` | about 133 base uses, many callers in crucible and test | Rebuild: `fixy/os/` CpuPinned, Fs, Io, Mmap, NumaPlacement, OwnedMmap, Sched, Socket, Time, CipherDurable. Merge: `fixy/os/OwnedFile.h` |
+| 4.2 Choice in concurrent and wrappers | A pop of a ring or a channel, a load of `AtomicSnapshot` and a step of a session decorator give `Option`. `admit_refined` and the version gate of `EpochVersioned` return `Result`. The checked operations of `Checked.h` go to the Scalar family in 4.10 | the rings are on hot paths: check the disassembly | Rebuild: `fixy/` Refined, EpochVersioned. `fixy/channels/` Endpoint, SwmrSession. `fixy/concurrent/` AtomicSnapshot, SpscRing, MpscRing, PermissionedSpscChannel, PermissionedMpscChannel. `fixy/session/` CrashTransport, Recording, Transport, Checkpoint, EventLog |
+| 4.3 Region in the wrappers | `fixy/FixedArray.h` merges into the fixed array of the Region family, which has no `operator[](size_t)`, no `data()` and no raw iterator. `Borrowed`, `ScopedView`, `OwnedRegion` and `SharedRegion` merge into `View` and the Ref family, with brands. `AlignedBuffer` and `SwissTableBuffer` merge into the Region family. `foundation::simd` loads and stores take `View<T const, Lanes>`. `CyclicBuffer` indexes through `Index<N>`. `AppendOnly` stores a `GrowList`. Each other `std::span`, `std::string_view` and `std::array` of a base API that runs at run time goes to the Region family | every caller of those accessors | Rebuild: `foundation/` Lifetime, Simd, contracts/Decide, reflect/EnumName, reflect/Enumerate. `fixy/` Mutation, ConstantTime, SipHash, Federation, CyclicBuffer, session/Classified, session/EventLog, session/Witnessed. Merge: `foundation/` AlignedBuffer, SwissTableBuffer. `fixy/` Borrowed, ScopedView, OwnedRegion, SharedRegion, FixedArray |
+| 4.4 Atomic in the base | `AtomicMonotonic`, `MpscRing`, `OneShotFlag`, `PublishOnce`, `PublishCommit`, `Once`, `SpinLock` and each other holder of a `std::atomic` move to `Atomic`. `ChaseLevDeque` keeps its relaxed and seq_cst operations as cited `detail` code inside the base. `CpuPinned` and `session/Watch.h` use `Atomic` at this time | few callers outside | Rebuild: `foundation/` ChannelBinding, effects/Ctx, permissions/SharedPermission. `fixy/` Mutation, channels/LazyEstablishedChannel, concurrent/MpscRing, concurrent/ChaseLevDeque, handle/Once, handle/OneShotFlag, handle/PublishCommit, handle/PublishOnce, os/SpinLock, session/CrashTransport, session/VigilModeCell |
+| 4.5 Report in the base | `fail_invariant`, the diag runtime sink, `JsonEmitter`, and every `std::source_location` in a public API move to `Site` and the Report sink | few callers outside | Rebuild: `foundation/diag/` Runtime, JsonEmitter. `fixy/session/` Entry, Mint, AsyncChannel, Stepping, Handle, Delegate, Watch, Flow, CrashTransport, Checkpoint |
+| 4.6 Os internals | `Path` stops using `std::filesystem::path`. Each `try`/`catch` site that unit 2b did not remove goes. Unit 2b moves Topology off `ifstream`, `filesystem`, `set` and `map`, and unit 2c moves `std::jthread` to the thread door | callers of Path | Rebuild: `fixy/os/` Path, Topology |
+| 4.7 Record in the base | `pair` and `tuple` in base APIs and in the stage and pipeline runners become `Record` or `Pack` | few callers outside | Rebuild: `foundation/permissions/` Permission, PermissionFork, ReadView. `fixy/` Federation, concurrent/Pipeline, concurrent/Spawn, concurrent/Stage, session/Flow |
+| 4.8 Foundation remainder | the other runtime uses in foundation (233 runtime, 367 constexpr data, 36 in src/foundation) | none outside | Rebuild: `foundation/algebra/lattices/` AffinityLattice, HappensBefore, StrongCounterLattice, MonotoneLattice |
+| 4.9 Fixy remainder | the other runtime uses in fixy, one unit for each directory: concurrent, session, os, handle, top level | none outside | Rebuild: `fixy/` SelfContained, os/ThreadName |
+| 4.10 Scalar in the base | `foundation/Saturate.h`, `fixy/Saturate.h`, `fixy/Saturated.h` and `fixy/Checked.h` merge into the Scalar family, and the checked operations return `Option`. Each `std::numeric_limits`, `std::bit_cast`, operation on bits and operation on a floating value of the base goes to the Scalar family | 9 production files include `foundation/Saturate.h` | Merge: `foundation/Saturate.h`, `fixy/` Saturate, Saturated, Checked. Rebuild: `fixy/fp/Polynomial.h` |
+| 4.11 Deletes | each delete row of Appendix E that the owner approves | tests only | Delete (proposal): `foundation/reflect/RawEscape.h` |
 
 ### 13.2 Order and parallelism
 
 | Wave | Slices | Reason |
 |---|---|---|
-| 4-I | 4.3, 4.4, 4.5, 4.7 | few shared caller files |
+| 4-I | 4.3, 4.4, 4.5, 4.7, 4.10 | the slices change different APIs, and a shared file takes a merge of main. On 2026-11-12, the rows of 4.10 had 66 direct includers outside the base, and 26 of them also include a header of a row of the four other slices |
 | 4-II | 4.1, then 4.2 | 4.1 and 4.2 touch many of the same caller files, so they run one after the other |
 | 4-III | 4.6 | needs the Os results of 4.1 |
 | 4-IV | 4.8 and the five units of 4.9, in parallel | internal only |
+| no wave | 4.11 | a delete row becomes work only after the owner approves it. Then it can run in each wave, because only tests include the header |
 
 ### 13.3 Special care
 
@@ -1048,6 +1053,7 @@ A slice migrates one base API group and every caller in the whole tree, in one c
 - The link guard (R5) passes for `libcrucible.a`. Its first allowlist: `__cxa_guard_acquire`, `__cxa_guard_release`, `__cxa_guard_abort`, `__cxa_atexit`, `__gxx_personality_v0`, and `operator new` and `operator delete` only if the Ref family uses them.
 - The libc rows of the symbol ledger (R5) hold no ratchet row for `libfixy.a`. Each libc symbol of `libfixy.a` is a call that D12 keeps in glibc, in its door.
 - The kinds `vector-reserve` and `process-start` of the rule `banned` have no base part. The include rules refuse `<vector>` and each header of a process start in a base file outside its door.
+- Each rebuild row and each merge row of Appendix E is on main, and each delete row that the owner approved.
 - The full suite passes in every preset.
 
 ---
@@ -2468,3 +2474,168 @@ These reports are in the session scratchpad, and they give the full detail behin
 - `stage-cd/open-gate-ledger-plan.md`: the plan for the 30 open templates of the gate ledger.
 
 The scratchpad ends with the session. Copy the reports into `misc/` before the session ends if they must stay.
+
+---
+
+## Appendix E. The header map
+
+This appendix gives each header of `include/foundation` and `include/fixy` a verdict, a family and a slice of section 13.1. The census reads main at d36be7daf on 2026-11-12. The two directories hold 264 headers and 76,285 lines. The language files (`include/foundation/core/*.h` and `include/fixy/Core.h`) hold 2,382 of these lines.
+
+### E.1 The open question for the owner
+
+The older half of fixy is the graded wrappers, the collision catalog, the sessions and the permissions. Do we rebuild it on the core families, or do we keep it? No delete row becomes work before the owner answers, and each delete row is a proposal.
+
+| Group | Headers | Lines | Keep rows: headers, lines, std findings | Rebuild rows: headers, lines, std findings |
+|---|---|---|---|---|
+| Graded wrappers | 51 | 10,934 | 43, 7,891, 228 | 8, 3,043, 206 |
+| Collision catalog | 27 | 7,992 | 27, 7,992, 394 | 0, 0, 0 |
+| Sessions | 36 | 22,367 | 20, 13,309, 360 | 16, 9,058, 481 |
+| Permissions | 16 | 4,622 | 7, 908, 76 | 9, 3,714, 152 |
+| Total | 130 | 45,915 | 97, 30,100, 1,058 | 33, 15,815, 839 |
+
+A std finding is a finding of a base kind or of a kind `replace-pending:` of the rule `quarantine`. The four groups are these headers:
+- The graded wrappers: `foundation/algebra/`, and Qtt, Refined, Tagged, Secret, Stale, Bands, Mutation, EpochVersioned, Budgeted, GradedFacade, Aliases, CanonicalOrder, Predicates and SelfContained of `fixy/`
+- The collision catalog: `fixy/atoms/`, `fixy/collision/`, and Fn, Axis, Atom, Collision, Corpus, Reject, Insights, Role and Throws of `fixy/`
+- The sessions: `fixy/session/`
+- The permissions: `foundation/permissions/`, `fixy/channels/`, and PermissionFork, PermissionedSpscChannel and PermissionedMpscChannel of `fixy/concurrent/`.
+
+The two answers have these costs:
+- **Keep.** The older half keeps its design. Stage 4 rebuilds the 33 headers that hold a std type at run time. The remainder slices change the std names of the 97 keep headers to the compile-time forms of Region and Record. The row-hash golden moves only where a reflected name of a type changes (section 13.3).
+- **Rebuild.** Each of the 130 headers gets a new implementation on the families. Examples are the graded carriers on Record, the protocols on the type lists of Record, and the permission brands on the brands of the Ref family. The work touches 45,915 lines and each caller. 165 production files reach `fixy/Refined.h` through their includes, and 30 production files reach `foundation/permissions/Permission.h`. The row-hash golden, the session-oracle golden and the fixtures of the four groups change.
+
+The recommendation is to keep the older half, with the rebuild rows of E.3. These are the reasons:
+1. The families are the value vocabulary of the base: a choice, a region, an owner, an atomic cell, a scalar, a report and a door. The older half is the type vocabulary: a grade, an effect row, a protocol and a permission tree. No family gives a lattice, a projection or a split manifest.
+2. 97 of the 130 headers hold no std type at run time. Their std use is reflection results, the texts of a refusal, type lists, tags and std functions that a slice changes one for one. A remainder slice changes these names, and the design does not change.
+3. The 33 headers that hold a std type at run time are rebuild rows in the two answers, because the goal of Stage 4 applies to each base header.
+4. Two goldens pin the behavior of the older half. `test/session_oracle/golden.csv` pins the answers of published mechanized proofs of the session relations, and `utils/tools/row_hash_golden.txt` pins the row hash of each carrier. A new implementation must give the same answers again.
+5. The brand and borrow design of `misc/12_10_2026_linear.md` moves the brands into the core in its phases B to D. That design changes the permissions one slice at a time, where a family gives a better form. A rebuild of the whole group is then not necessary.
+
+Three smaller questions:
+- The collision catalog reaches production through one binding, in `vessel/torch/record_kernel.h`. The recommendation is to keep it. The map gives it remainder work only.
+- `SetOnce` of `fixy/handle/Once.h` has the members of `WriteOnceNonNull` of `fixy/Mutation.h`. The proposal is to merge the two in slice 4.4.
+- `fixy/os/CipherDurable.h` holds the durable writers of the Cipher, but no production file includes it, because `include/crucible/Cipher.h` writes through `fixy/os/Fs.h`. Does the base keep it, or does it move to `include/crucible/cipher/` when the Cipher uses it?
+
+### E.2 The verdicts
+
+- **Keep.** The header keeps its role, its public API and its data. Its std use is in a constant evaluation only: a reflection result, a name text, a type list or a constant table. A std function that a slice changes one for one is a keep use too, such as `std::exchange`, `std::bit_cast` or `std::popcount`. An empty tag type, such as `std::in_place_t`, is a keep use too. The slice of a keep row changes only these names. A dash in the slice column tells that the header has no std finding.
+- **Rebuild.** The header keeps its role, but a std type or a C library call is in a public signature, in a stored member or in code that runs at run time. A header whose API a slice text or a merge row changes is a rebuild row too, such as `fixy/CyclicBuffer.h` and `fixy/session/Witnessed.h`. The slice gives the header a new implementation on the family, and each caller changes with it.
+- **Merge.** A family type or a different header gives the same thing. The slice moves each caller to the target and removes the header. The core does not hold the target of a merge row at this time. Each target is a planned part of a Stage 3 group.
+- **Delete (proposal).** A second holder gives the same thing. Nothing happens before the owner approves the row, and slice 4.11 has no wave until then (section 13.2).
+
+The family column names the families of section 11. The findings of each header and the rows `until FAMILY` of `utils/rule-table.txt` give them. Os names a door of the Os family.
+
+The run-time test reads the library records of the quarantine plugin (the records `inlined`, `call`, `reference` and `symbol`) and the source of each header. A call that GCC adds itself, such as `memcpy` or `__stack_chk_fail`, does not count. A record that the payload of a caller makes does not count either, as in `fixy/Tagged.h` and `foundation/algebra/Graded.h`. The findings come from `guard list` on the main build, which can be older than d36be7daf. So no finding count is the reason of a row.
+
+### E.3 The map
+
+A group row names its directory, its members and the count of its members.
+
+| Headers | Verdict | Family | Slice | Reason |
+|---|---|---|---|---|
+| `foundation/core/Atomic.h`, `foundation/core/Choice.h`, `foundation/core/Format.h`, `foundation/core/Ref.h`, `foundation/core/Region.h`, `foundation/core/Report.h`, `foundation/core/Scalar.h`, `foundation/core/Text.h`, `fixy/Core.h` (9) | Keep | the families | – | The language files. Stage 3 adds each part of a family that is not on main. The one finding, `std::nothrow` in `Ref.h`, goes with the allocation door of G3 |
+| `foundation/`: Platform, Pinned, Quarantine, Brand, ByteSeal, Linear, NoObject (7) | Keep | – | – | The floor and the markers that each layer reads. No std finding |
+| `foundation/Lifetime.h` | Rebuild | Region | 4.3 | `start_as_array` gives a `std::span` at run time |
+| `foundation/Saturate.h`, `fixy/Saturate.h`, `fixy/Saturated.h`, `fixy/Checked.h` (4) | Merge | Scalar (G2, planned) | 4.10 | The saturating and the checked operations belong to the Scalar family. The checked operations give an `Option` |
+| `foundation/AlignedBuffer.h` | Merge | Region (G4, planned) | 4.3 | An owned allocation at a chosen alignment is a heap array of the Region family. Section 10.3 gives its defect: the heap bytes have no initial value |
+| `foundation/SwissTableBuffer.h` | Merge | Region (G4, planned) | 4.3 | The storage of an open-addressing table belongs to the table of the Region family |
+| `foundation/Simd.h` | Rebuild | Region, Scalar | 4.3 | The loads and the stores take a `View`. `memcpy` and `std::bit_cast` go to the copy of Region and to Scalar |
+| `foundation/ThreadLocalRef.h` | Keep | Region | 4.8 | The std use is the name text of the cell |
+| `foundation/ChannelBinding.h` | Rebuild | Atomic, Ref | 4.4 | The binding is a `std::atomic` pointer at run time |
+| `foundation/algebra/ClaimOrientation.h` | Keep | – | – | No std finding |
+| `foundation/algebra/`: Graded, GradedTrait, Lattice, Modality (4) | Keep | Region | 4.8 | The substrate of each graded wrapper. The std use is the name text, the reflection results of the law checks and `std::swap` |
+| `foundation/algebra/lattices/`: AllocClassLattice, CipherTierLattice, ConfLattice, DetSafeLattice, HotPathLattice, LifetimeLattice, PinningRequirementLattice, ResidencyHeatLattice, SchedulerPolicyLattice, SuspendBehaviorLattice, ToleranceLattice, WaitLattice (12) | Keep | – | – | Chain lattices with no std finding |
+| `foundation/algebra/lattices/`: BarrierStrengthLattice, BoolLattice, ChainLattice, ClockSourceLattice, DualLattice, MemoryScopeLattice, NumaNodeLattice, ProductLattice, QttSemiring, RecipeFamilyLattice, TrustLattice, VendorLattice (12) | Keep | Region | 4.8 | The std use is the name text of the lattice, or a reflection result in a constant evaluation |
+| `foundation/algebra/lattices/`: SeqPrefixLattice, StalenessSemiring, FractionalLattice (3) | Keep | Scalar, Region | 4.10 | The bounds of `std::numeric_limits`, `std::gcd` and the name text |
+| `foundation/algebra/lattices/AffinityLattice.h` | Rebuild | Region, Scalar | 4.8 | The mask is a `std::array` of words at run time |
+| `foundation/algebra/lattices/`: HappensBefore, StrongCounterLattice (2) | Rebuild | Region, Choice, Scalar | 4.8 | A count or a clock is a `std::array` at run time, and the read of an image gives `std::expected` |
+| `foundation/algebra/lattices/MonotoneLattice.h` | Rebuild | Ref, Scalar | 4.8 | `std::less` and `std::greater` are the comparators of the public template, and they run at run time |
+| `foundation/algebra/lattices/EnumValuePins.h` | Keep | Region | 4.8 | The pin tables of its check file. The `std::array` tables are constant data |
+| `foundation/contracts/`: Armed, Pre, Post (3) | Keep | – | – | No std finding |
+| `foundation/contracts/ArmedRoster.h` | Keep | Region | 4.8 | The walk of the check files. The std use is the reflection results of a constant evaluation |
+| `foundation/contracts/Decide.h` | Rebuild | Region | 4.3 | `intervals_pairwise_disjoint` takes a `std::span` at run time |
+| `foundation/diag/tags/`: Aborts, Rows, Tiers, Wrappers (4) | Keep | – | – | The prose of the tags. No std finding |
+| `foundation/diag/`: Catalog, FailClosed, Insights, RowHash, Tag (5) | Keep | Region, Record | 4.8 | The std use is the text, the tables and the reflection results of a constant evaluation |
+| `foundation/diag/RowMismatch.h` | Keep | Report, Region | 4.5 | A constant evaluation builds and reads the block. Its `std::source_location` goes to `Site` |
+| `foundation/diag/Runtime.h` | Rebuild | Report | 4.5 | The violation sink takes `std::string_view` and `std::source_location` at run time |
+| `foundation/diag/JsonEmitter.h` | Rebuild | Report, Region | 4.5 | The emitter reads `std::string_view` at run time |
+| `foundation/effects/`: Computation, ImageRead (2) | Keep | – | – | No std finding |
+| `foundation/effects/`: Capability, Concurrent, Effect, Lift, Resources, Row (6) | Keep | Region, Scalar | 4.8 | The std use is the name text, the tables and the reflection results of a constant evaluation |
+| `foundation/effects/Ctx.h` | Rebuild | Atomic | 4.4 | The host doors hold `std::atomic` flags at run time |
+| `foundation/os/`: Abort, Auxiliary, Directory, Errno, File, FutexWords, GuardedRegion, KernelFloor, MapWords, MemoryPolicyWords, OpenFlags, PathText, Poison, SchedWords, Syscall (15) | Keep | Os | – | The floor and the doors of the Os family. No std finding |
+| `foundation/permissions/`: FederationDoor, Fwd (2) | Keep | – | – | No std finding |
+| `foundation/permissions/PermSet.h` | Keep | Region | 4.8 | The set operations run in a constant evaluation |
+| `foundation/permissions/`: Permission, PermissionFork, ReadView (3) | Rebuild | Record | 4.7 | The split, the fork and the loan give or hold a `std::pair` or a `std::tuple` of tokens at run time |
+| `foundation/permissions/SharedPermission.h` | Rebuild | Atomic, Choice | 4.4 | The pool counts its shares in a `std::atomic`, and a lend gives `std::optional` at run time |
+| `foundation/reflect/Anchor.h` | Keep | – | – | No std finding |
+| `foundation/reflect/`: EnumPins, Hash, Instance, Signature, TypeComponents (5) | Keep | Region, Record | 4.8 | The std use is the text and the reflection results of a constant evaluation |
+| `foundation/reflect/`: EnumName, Enumerate (2) | Rebuild | Region | 4.3 | The name of an enumerator and `bits_to_string` give `std::string_view` at run time |
+| `foundation/reflect/RawEscape.h` | Delete (proposal) | – | 4.11 | The rule `escape-doors` of the quarantine plugin overlaps it: the rule reads each public function of a base header. This header also refuses a public data member, and a member that a public base or a using-declaration gives. First give the rule these two cases with plants, then delete the header and its six fixtures |
+| `fixy/`: Aliases, Ctx, Tags, Tagged, Throws (5) | Keep | – | – | No std finding. The library records of `Tagged.h` come from a payload of a caller |
+| `fixy/`: Qtt, Secret, Stale, Machine (4) | Keep | Choice | 4.9 | The std use is the tag `std::in_place`, and in `Secret.h` the constant table of the policies |
+| `fixy/`: Bands, GradedFacade, CanonicalOrder (3) | Keep | Region, Record | 4.9 | The std use is the name text, the type lists and the reflection results of a constant evaluation |
+| `fixy/Mutation.h` | Rebuild | Region, Atomic, Choice, Ref | 4.3, 4.4 | `AppendOnly` stores a `std::vector`, `WriteOnce` a `std::optional` and `AtomicMonotonic` a `std::atomic`. `Monotonic` takes `std::less` by default |
+| `fixy/Refined.h` | Rebuild | Choice, Region | 4.2 | `admit_refined` gives `std::expected`, and `NonEmptySpan` refines a `std::span` |
+| `fixy/EpochVersioned.h` | Rebuild | Choice, Ref | 4.2 | The version gate and the combine give `std::expected` at run time, and the replace of a payload calls `std::construct_at` |
+| `fixy/Budgeted.h` | Keep | Ref, Choice | 4.9 | The std use is `std::construct_at` and `std::destroy_at` in the replace of a payload, and the tag `std::in_place_t` |
+| `fixy/Predicates.h` | Keep | Region, Ref | 4.9 | A constant evaluation reads the implication relation. The one std use at run time is a `std::bit_cast` of a pointer, which goes to the address of the Ref family |
+| `fixy/SelfContained.h` | Rebuild | Region, Choice, Record, Scalar | 4.9 | The gate runs in a constant evaluation, but `equal_by_members` reads `std::optional`, `std::variant` and a range through `std::ranges` and `std::bit_cast` at run time |
+| `fixy/Bits.h` | Keep | Scalar, Region | 4.10 | `std::popcount` and the name text |
+| `fixy/`: Borrowed, ScopedView, OwnedRegion, SharedRegion (4) | Merge | Region and Ref (G3, G4, planned) | 4.3 | A borrow with an owner tag and a brand is a `View` or a `Ref` of the core, with brands |
+| `fixy/FixedArray.h` | Merge | Region (G4, planned) | 4.3 | The core gives the fixed array |
+| `fixy/ConstantTime.h` | Rebuild | Region | 4.3 | The primitives take `std::span` at run time |
+| `fixy/SipHash.h` | Rebuild | Region, Scalar | 4.3 | The key and the message are `std::array` and `std::span` at run time, and a round calls `std::rotl` |
+| `fixy/Federation.h` | Rebuild | Region, Record | 4.3, 4.7 | The admission holds `std::array` nonces and gives `std::pair` at run time |
+| `fixy/Cyclic.h` | Keep | Region | 4.9 | The std use is the name text |
+| `fixy/CyclicBuffer.h` | Rebuild | Region | 4.3 | A read indexes through an index type of the Region family |
+| `fixy/`: Atom, Axis, Collision, Corpus, Reject, Role, Fn, Insights (8) | Keep | Region, Record, Choice | 4.9 | The gate of `fn` runs in a constant evaluation. The std use is the text of a refusal, the type lists and the reflection results |
+| `fixy/atoms/`: Barrier, Ctrl, Dispatch, Fp, Global, Hw, Observe, Os, Regime, Scope, Session, Simd, Stack, Stdio, Sync, Syscall (16) | Keep | Record, Region | 4.9 | The rosters of the atoms are `std::tuple` type lists and constant tables |
+| `fixy/collision/`: Codes, Report (2) | Keep | Region | 4.9 | The codes, the corpus and the checks run in a constant evaluation. Only the check files include `Report.h` |
+| `fixy/channels/`: EndpointMint, SubstrateSessionBridge (2) | Keep | – | – | No std finding |
+| `fixy/channels/StageEndpointBridge.h` | Keep | Record | 4.7 | The `std::tuple` is a type list |
+| `fixy/channels/`: Endpoint, SwmrSession (2) | Rebuild | Choice | 4.2 | A receive gives `std::optional` at run time |
+| `fixy/channels/LazyEstablishedChannel.h` | Rebuild | Atomic, Choice, Report | 4.4 | The channel holds a `std::atomic`, and its mint gives `std::expected` and takes `std::source_location` |
+| `fixy/concurrent/`: ParallelismRule, PermissionFork, RingValue, StageShape (4) | Keep | – | – | No std finding |
+| `fixy/concurrent/HandleTraits.h` | Keep | Choice | 4.9 | The `std::optional` is in the detection of a member, in a constant evaluation |
+| `fixy/concurrent/PayloadRow.h` | Keep | Region | 4.9 | The payload walk runs in a constant evaluation |
+| `fixy/concurrent/WorkingSet.h` | Keep | Scalar | 4.10 | `std::numeric_limits` |
+| `fixy/concurrent/`: AtomicSnapshot, SpscRing, PermissionedSpscChannel, PermissionedMpscChannel (4) | Rebuild | Choice, Region | 4.2 | A ring or a channel of the hot path. A pop or a load gives `std::optional`, and the cells of a ring are a `std::array`. Compare the disassembly (13.3) |
+| `fixy/concurrent/MpscRing.h` | Rebuild | Atomic, Choice, Region | 4.2, 4.4 | A ring of the hot path. The cells are a `std::array`, the ready bits are a `std::atomic` and a pop gives `std::optional`. Compare the disassembly (13.3) |
+| `fixy/concurrent/ChaseLevDeque.h` | Rebuild | Atomic, Choice, Region | 4.4 | The relaxed and the seq_cst operations stay as cited detail code. A steal gives `std::optional` |
+| `fixy/concurrent/Pipeline.h` | Rebuild | Region, Record, Atomic | 4.7 | The runner holds `std::vector` lists of CPUs and a `std::tuple` of stages at run time |
+| `fixy/concurrent/`: Spawn, Stage (2) | Rebuild | Record, Region, Choice | 4.7 | The fork and the stage hold a `std::tuple` or a `std::array` at run time |
+| `fixy/fp/Canonicalize.h` | Keep | Scalar | 4.10 | `std::bit_cast` and `std::isnan` |
+| `fixy/fp/Polynomial.h` | Rebuild | Scalar, Region | 4.10 | The coefficients are a `std::array` at run time, and the evaluation calls `std::fma` and `std::bit_cast` |
+| `fixy/handle/Once.h` | Rebuild | Atomic | 4.4 | The gate holds a `std::atomic`. `SetOnce` has the members of `WriteOnceNonNull` of `fixy/Mutation.h`. A proposal: merge the two in this slice |
+| `fixy/handle/`: OneShotFlag, PublishCommit, PublishOnce (3) | Rebuild | Atomic, Report | 4.4 | A `std::atomic` at run time. `PublishOnce.h` also reports a second publish with `fprintf` and `abort` |
+| `fixy/os/`: ClockSource, ExitHooks, Futex, MonotonicClock, NumaCounters, SchedClass, Signal, ThreadTasks (8) | Keep | Os | – | The doors and the tags of fixy/os. No std finding |
+| `fixy/os/AtomPack.h` | Keep | Region | 4.9 | The folds of an atom pack run in a constant evaluation |
+| `fixy/os/Fd.h` | Keep | Ref | 4.9 | `std::exchange` in the moves of the handle |
+| `fixy/os/ThreadName.h` | Rebuild | Region | 4.9 | The name is a `std::array` of characters at run time |
+| `fixy/os/`: CpuPinned, Fs, Io, Mmap, NumaPlacement, OwnedMmap, Sched, Socket, Time, CipherDurable (10) | Rebuild | Os, Choice | 4.1 | The door gives `std::expected` with `std::error_code`, or with a plain `int` in `CpuPinned.h` and `Sched.h`. `Fs.h`, `Io.h`, `Mmap.h`, `OwnedMmap.h`, `Time.h` and `CipherDurable.h` also hold a system type in a public signature |
+| `fixy/os/OwnedFile.h` | Merge | Os (G6, planned) | 4.1 | The Os family replaces the stdio stream, and `std::FILE` leaves the public signatures |
+| `fixy/os/Path.h` | Rebuild | Os, Region | 4.6 | A `Tagged` over `std::filesystem::path` |
+| `fixy/os/SpinLock.h` | Rebuild | Atomic, Os | 4.4 | The bare lock holds `std::atomic_flag`, and the guard takes `std::try_to_lock_t` |
+| `fixy/os/Topology.h` | Rebuild | Region, Choice, Report | 4.6 | The probe holds `std::vector`, `std::string` and `std::optional` at run time |
+| `fixy/session/`: ContentAddressed, CrashAssociation, CrashCause, Liveness, NetworkModel, Projection, Semantics, VigilMode, Wire (9) | Keep | – | – | No std finding |
+| `fixy/session/`: Admission, Classification, Crash, Fold, Global, Network, Protocol, Refinement, Registry, Subtype, MachineBridge (11) | Keep | Region, Record | 4.9 | The protocol algebra, the projection, the subtyping and the payload walk run in a constant evaluation. The std use is the text of a refusal, the type lists and the reflection results |
+| `fixy/session/Classified.h` | Rebuild | Region | 4.3 | `bytes()` gives a `std::span` at run time |
+| `fixy/session/`: Entry, Mint, AsyncChannel, Stepping (4) | Rebuild | Report | 4.5 | A mint takes `std::source_location` at run time |
+| `fixy/session/`: Handle, Delegate (2) | Rebuild | Report, Region | 4.5 | A run-time check reports with `fprintf` or `fwrite` and `abort`, and the handle records a `std::source_location` |
+| `fixy/session/Watch.h` | Rebuild | Report, Region | 4.5 | The registration of a live session takes a `std::source_location`, and the table of the watch is a `std::array` at run time |
+| `fixy/session/Flow.h` | Rebuild | Report, Record | 4.5, 4.7 | A fault reports with `fwrite` and `abort` at run time, and a fact of a flow is a `std::pair` |
+| `fixy/session/CrashTransport.h` | Rebuild | Report, Choice, Atomic, Ref, Record | 4.2, 4.4, 4.5 | The decorator gives `std::optional`, reads a `std::atomic` peer cell, calls through `std::invoke` and reports with `fprintf` |
+| `fixy/session/`: Recording, Transport (2) | Rebuild | Choice, Record, Ref | 4.2 | A step gives `std::optional` or `std::pair` at run time, and calls through `std::invoke` |
+| `fixy/session/Checkpoint.h` | Rebuild | Choice, Record, Report, Region | 4.2, 4.5 | The coordinated rollback gives `std::optional` and stops with `std::abort` |
+| `fixy/session/EventLog.h` | Rebuild | Region, Choice, Report, Scalar | 4.2, 4.3 | The log stores a `std::vector` of events, and the decode gives `std::expected` |
+| `fixy/session/VigilModeCell.h` | Rebuild | Atomic | 4.4 | The cell holds the mode in a `std::atomic` |
+| `fixy/session/Witnessed.h` | Rebuild | Region | 4.3 | A witnessed borrow holds a borrow of `fixy/Borrowed.h`, which merges into `View` |
+
+### E.4 The counts
+
+| Verdict | Rows | Headers | Lines |
+|---|---|---|---|
+| Keep | 43 | 179 | 45,414 |
+| Rebuild | 47 | 72 | 27,663 |
+| Merge | 6 | 12 | 2,982 |
+| Delete (proposal) | 1 | 1 | 226 |
+| Total | 97 | 264 | 76,285 |
