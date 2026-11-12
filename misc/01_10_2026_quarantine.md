@@ -763,45 +763,60 @@ The present layers already refuse the edges of items 1 and 5, because the source
 
 ## 10. Stage 3: the primitive families
 
-**Goal.** The eight families exist in `include/foundation/core/`, re-exported in `include/fixy/Core.h`, with tests, fixtures and zero hot-path cost. No caller moves yet.
+**Goal.** The eight families are on main with the full design of section 11, with tests, fixtures and zero hot-path cost. Seven families live in `include/foundation/core/`, and `include/fixy/Core.h` puts their public names into namespace `fixy`. The Os family lives in the two door directories of D16: its types in `include/foundation/os/`, and its doors in `include/fixy/os/`. No caller outside the base moves yet.
+
+**The state on 2026-11-12** (main at d36be7daf). The first parts of six families are on main: Choice, Scalar, Ref, Atomic, Region with its text types, and Report. CLAUDE.md §XXII "The families on main" gives their rules. Record has no part on main. The Os family has the doors of Stage 2 (section 9) and no part in `foundation/core`.
 
 ### 10.1 Groups and order
 
-| Group | Families | Needs first | Parallel inside the group |
-|---|---|---|---|
-| G1 | Choice | S2 gate | one unit |
-| G2 | Scalar, Record | G1 | two units |
-| G3 | Ref (with the bump arena moved from `include/crucible/Arena.h`), Atomic | G2 | two units |
-| G4 | Region | G3 | one unit, the largest |
-| G5 | Report | G4 | one unit |
-| G6 | Os | G5 | one unit |
+| Group | Families | Needs first | Parallel inside the group | On main at d36be7daf |
+|---|---|---|---|---|
+| G1 | Choice | S2 gate | one unit | `Option`, `Result`, `Err`, `Unit`, `none` and `niche` |
+| G2 | Scalar, Record | G1 | two units | `decode` and `enum_from` of Scalar |
+| G3 | Ref (with the bump arena of `include/crucible/Arena.h`), Atomic | G2 | two units | `Box` and `mint_box`. `Atomic`, `CacheLine` and `Tally` |
+| G4 | Region | G3 | one unit, the largest | `View`, `copy`, `fill`, `TextView`, `CText` and `FixedText` |
+| G5 | Report | G4 | one unit | `Site`, `Fmt`, `report`, `fatal`, `unreachable` and `format` |
+| G6 | Os | G5 | one unit | `Errno` and the doors of section 9 |
 
-The groups are serial, because each family uses the ones before it.
+The groups are serial, because each family uses the ones before it. A part of a later group can land early when it uses only operations that are on main. The parts of G3, G4 and G5 in the table landed in this way.
+
+The phases of `misc/12_10_2026_linear.md` land with the groups that its section 11 (item 4) names: phase B with G3, and phase C with G3 and G4. A proposal of section 11.11 gets no group until the owner approves it (section 17).
 
 ### 10.2 Instructions for each family unit
 
-1. **The API.** Start from the QDESIGN design (section 11). Cut it to the operations that the tree calls. The census in the QPLUG report names them. Each operation that no call site needs stays out.
-2. **The implementation.** Use only the allowance of layer F0 and the builtins of R3. No std runtime type appears in any signature or data member. Contracts guard every boundary. `CRUCIBLE_PRE` and `CRUCIBLE_POST` cite a named predicate where one exists.
-3. **The layout.** A `static_assert` states the size of each type. `Option<Ref<T>>` has the size of one pointer. `Option<Id>` has the size of the id. `Result<int, E>` with a 4-byte `E` returns in registers under the x86-64 System V ABI: check it in the disassembly.
+1. **The API.** Build the full API of the family in section 11, as one part of one language (CLAUDE.md §XXII, "The design bar of the base"). An operation stays in the design also when no call site uses it at this time. The owner made this decision on 2026-10-02. It replaces the rule that a type gets only the operations that the tree calls (the last sentence of R9, and the first rule of section 17). Before the first commit, write the design of the unit against the bar:
+   - Each operation, with its contract, its cost and its verb of section 11.1
+   - Each place where main, this plan and the bar do not agree, with the side that wins
+   - The probes, the tests, the fixtures and the adversarial cases
+   - The order of the commits. The operations with call sites in the census come first.
+
+   An operation with no verb of section 11.1 and no name in the list of its family goes to the owner (section 11.11).
+2. **The implementation.** Use only the allowance of the layer of the family and the builtins of R3. The layer of the seven families of `foundation/core` is F0 primitives. The Os family uses F0 doors and X3 os. No std runtime type appears in a signature or a data member. Each check of a family calls `fatal()` of the Report family, so it does the same work in each build and with each contract semantic. A check of a family is not a `CRUCIBLE_PRE`, because the ignore semantic removes a contract check.
+3. **The layout.** The check file of the family states the size of each type with a `static_assert` (R13). `Option<Ref<T>>` has the size of one pointer. `Option<Id>` has the size of the id. A sum of plain parts of at most 16 bytes returns in registers under the x86-64 System V ABI, and a probe of item 6 shows it.
 4. **The tests.**
-   - A unit test for each operation.
+   - A unit test for each operation, in one test file for each subject (R17).
    - A property test with Philox-seeded inputs for each invariant (for example: `copy` then `equal`, `sort_by_key` stable and ordered, `narrow` round trip).
-   - A differential test against std, inside an opt-out region with the reason "differential oracle", for each operation that has a std counterpart.
+   - A differential test against std for each operation that has a std counterpart, inside one opt-out region with the reason class `ORACLE:` (section 16).
+   - A death test for each path that calls `fatal()`.
    - For Atomic: TSan runs, and a stress test of each operation under contention.
-5. **The fixtures.** At least two negative fixtures for each gate and each mint (HS14). Each fixture attacks the new door, and each regex names the reason of the refusal.
-6. **The cost.** For each hot-path operation, compile a probe with `CRUCIBLE_DUMP_ASM=ON` and compare its instructions with the std or raw form it replaces. They must be the same, or the difference must be explained. For Region and Atomic, run the benches before and after.
+5. **The fixtures.** At least two negative fixtures for each gate and each mint (HS14). Each fixture attacks one gate. Its regex names the constraint expression or the text of the deleted function.
+6. **The cost.** For each hot-path operation, add a probe pair to `test/shape/core_shapes.cpp`: the family form, and the raw or std form in an `ORACLE` region. The rule `codegen-shapes` compares the two (R12, CLAUDE.md §XXII). A pair that differs declares the difference with a true claim. For Region and Atomic, run the benches before and after.
 7. **The adversarial pass.** A second agent tries legal uses that still dangle, leak, race, forge or misuse. Each finding is fixed, or pinned on a ledger that can only shrink.
-8. **The re-export.** Add each public name to `include/fixy/Core.h` with a using-declaration.
+8. **The re-export.** Add each public name of a family of `foundation/core` to `include/fixy/Core.h` with a using-declaration, and check it in `test/layer/checks/fixy/Core.cpp`. The doors of the Os family keep their namespaces in `fixy`.
+9. **The protocol check.** Each family type gives only the verbs and the language protocols of section 11.1, and the names of the family list of its section. The check file of the family reads the public members of each type by reflection, and a name outside the three lists fails the build.
+10. **The rows.** The unit removes no row of the rule table. Stage 4 removes an `allow ... until FAMILY` row when the last base include of its header goes. Stage 5 removes an `admit ... until FAMILY` row when the last use of its name goes. Section 11 names the rows and the R5 imports of each family.
 
 ### 10.3 Defects that the families fix
 
-These defects from QDESIGN (task list 404) get their fix in the unit of their family, with a witness that goes red on the old code:
-- `_GLIBCXX_ASSERTIONS` is on only in Debug, but CLAUDE.md says every build has it. The Region family makes each index checked by its type, and CLAUDE.md gets the truth now.
-- The `OwnedRegion` arena door does not require an implicit-lifetime type. The Ref family moves the arena into `BumpArena`, whose `array` requires `ImplicitLifetimeThroughout`.
-- `AtomicMonotonic` accepts any memory order. The Atomic family puts the order in the operation name.
-- `AlignedBuffer::allocate` leaves heap memory uninitialized. The Region family zero-fills or takes a fill value.
-- CLAUDE.md describes an arena with `start_lifetime_as` and a reset. Correct the text in the Ref unit.
-- `TscMode::SteadyClockFallback` reads the TSC. Delete the enumerator in the Os unit.
+QDESIGN and the designs of 2026-10-17 found these defects. Each one is on main at d36be7daf. The unit of its family fixes it, with a witness that goes red on the old code:
+- A Release build has no `_GLIBCXX_ASSERTIONS`, so a subscript of `std::array`, `std::span` and `std::vector` has no check, and `fixy::FixedArray::operator[]` forwards to it. CLAUDE.md §V states this fact. The Region family makes each index checked by its type.
+- `fixy/OwnedRegion.h` merges into `View` and the Ref family (Appendix E, slice 4.3). Its arena door `mint_owned_region` takes a type that is not implicit-lifetime. The requirement of the Ref family: `BumpArena::array` takes only a type of `ImplicitLifetimeThroughout`, and no door of Ref or Region gives a run of bytes the type of a proof.
+- `AtomicMonotonic` of `fixy/Mutation.h` takes a memory order as an argument, and it has relaxed reads. The Atomic family puts the order in the operation name.
+- `foundation/AlignedBuffer.h` merges into `HeapArray` of the Region family (Appendix E, slice 4.3). `AlignedBuffer::allocate` leaves the heap bytes with no initial value. The requirement of the Region family: each mint of a `HeapArray` fills each element with zero or with a fill value. Only an implicit-lifetime element gets a view that only writes.
+- CLAUDE.md §II.4 shows an arena that starts a lifetime with `std::start_lifetime_as`, and `include/crucible/Arena.h` does not. The reset is on main as `ArenaEpoch`. The Ref unit corrects the text.
+- `TscMode::SteadyClockFallback` of `fixy/os/Time.h` reads the TSC. The Os unit deletes the enumerator.
+- `Result` admits the payload `Err<F>` when `F` is not `E`. A `niche<T>` with no complete protocol falls to the plain form with no message. The flag of a trivial `Result` follows the union, so a 4-byte payload puts the flag at bit 32. The Choice unit fixes the three.
+- `decode` into a payload with a niche gives the empty bits to `Option::some`, which calls `fatal()`. The Scalar unit gives no value for those bits.
 
 ### 10.3a Parts that the thin base adds (2026-10-03)
 
@@ -814,39 +829,185 @@ These parts come from D12 to D14 and the rules R18 to R20. Each one gets its wit
 
 ### 10.4 The extension lane opens
 
-At the S3 gate, the extension lane opens (section 17). It stays open until Stage 6.
+At the S3 gate, the extension lane opens (section 17). It stays open until Stage 6. A request for a new family or a new verb goes to the owner. Section 11.11 lists the proposals that wait at this time.
 
 ### 10.5 The S3 gate
 
-- All eight families are on main, with the tests and fixtures above.
-- Every hot-path cost claim is checked in the disassembly and in the benches.
+- All eight families are on main with the full API of section 11, with the tests and fixtures of section 10.2. An operation that waits has an owner decision.
+- The protocol check of section 10.2 (item 9) passes for each family type.
+- The rule `codegen-shapes` holds each hot-path cost claim, and the benches show it for Region and Atomic.
 - The adversarial ledger of each family is empty, or each row has an owner decision.
-- The families use only the allowance of F0.
+- Each family uses only the allowance of its layer.
+- Each proposal of section 11.11 has an owner decision.
 
 ---
 
-## 11. The families: summary and migration recipes
+## 11. The families: the full design and the migration recipes
 
-The full design is in the QDESIGN report. This section gives what a migrating unit needs.
+This section is the design of the base as one language (CLAUDE.md §XXII, "The design bar of the base"). For each family it gives these parts:
+- The full API
+- The rows of the rule table and the R5 imports that the family removes
+- Its load in the tree
+- The places where the sources do not agree
+- The recipes of a unit that migrates code to the family.
 
-### 11.1 The shared verbs
+**The sources and their order.** When two sources do not agree, the first source of this list wins:
+1. Main at d36be7daf: `include/foundation/core/`, `include/fixy/Core.h`, the doors of `include/foundation/os/` and `include/fixy/os/`, and CLAUDE.md §XXII.
+2. `misc/12_10_2026_linear.md`, which the owner accepted on 2026-10-12.
+3. The unit designs of G1 Choice, G2 Record and G2 Scalar of 2026-10-17. Their recommendations are a part of this section.
+4. QDESIGN, the family report of 2026-10-01 (appendix D).
 
-| Verb | Meaning | Cost |
+The work of G1 changes `Choice.h` after d36be7daf, so the state of the Choice family on main can differ from the column "State". Appendix E gives each base header a verdict, a family and a slice of Stage 4, and the merges of this section are its merge rows.
+
+**The column "State"** of each API table has one of three values:
+- `main`: the operation is on main at d36be7daf
+- `design`: a source of the list designs it
+- `new`: this section designs it first
+- `P6` or a different proposal: the operation waits for the owner (section 11.11).
+
+**The load** of each family comes from two sources. The first is the quarantine findings of the main build on 2026-11-12 (`guard list --kind std-object` and `--kind std-entity`) and the counts of `utils/ledgers/quarantine.txt` at d36be7daf. The main build can be older than d36be7daf: `guard list` gave 6,954 objects and 14,651 names, and the ledger counts 7,531 and 16,521. So no count of a family is the reason of a decision. The second source is the call sites that the pilot migration of the MetaLog path found missing in the base.
+
+**What a family removes.** A family removes no row of the rule table when it lands (section 10.2, item 10). Stage 4 removes an `allow` row and Stage 5 an `admit` row. For R5, `libfoundation.a` has no ratchet row at d36be7daf. `libfixy.a` has 16 ratchet rows and one throw row, and Stage 4 removes them. Each other ratchet row is a row of a `libcrucible*.a` library, which quarantined code makes. The family makes its removal possible, and Stage 5 removes it. Some imports come from more than one facility of libstdc++, so no one family removes them. The four `libcrucible*.a` libraries of the ledger are `libcrucible.a`, `libcrucible_cipher.a`, `libcrucible_perf.a` and `libcrucible_vigil.a`:
+
+| Import | Libraries at d36be7daf | Goes when |
 |---|---|---|
-| `for (x : c)` | Visit each element. The type fixes the count | the loop bound only |
-| `match(fns...)` | Total elimination of a sum. A missing arm does not compile | one switch on a tag |
-| `get(key)` | Checked lookup. Returns `Option<Ref<T>>` | one explicit branch |
-| `at(proof)` | Total lookup with a proof value (`Index<N>`, a brand index, a constant) | no branch |
-| `view()` | Borrow as a `View` or a `Ref` | none |
-| `size()` | Element count | none |
-| `push(v)` | Add with no growth. Returns `Result<Ref<T>, Full>` | one compare |
-| `append(Alloc, v)` | Add, and grow if full. The capability shows the allocation | a visible O(n) event |
-| `consume() &&` | Take the owned value out | a move |
-| `expect(Fmt)` | Fatal unwrap at a boundary | one branch to a cold call |
+| `__cxa_allocate_exception`, `__cxa_throw`, `__cxa_call_terminate` | `libfixy.a`, `libcrucible_cipher.a`, `libcrucible_perf.a`, `libcrucible_vigil.a` | the last throw path of libstdc++ in the library goes: the containers, the streams and the threads (Region, Ref and Os) |
+| `std::terminate` | the four `libcrucible*.a` libraries | the same |
+| `__libc_single_threaded` | `libcrucible_vigil.a` | the same |
+| `std::__glibcxx_assert_fail` | `libfixy.a` and the four `libcrucible*.a` libraries | the last checked accessor of libstdc++ goes (Choice and Region) |
+| `memchr` | `libfixy.a`, `libcrucible.a`, `libcrucible_cipher.a`, `libcrucible_vigil.a` | the last text search of libstdc++ goes (Region and Report) |
+| `std::__throw_bad_cast` | `libcrucible_cipher.a` | the last stream with a locale goes (Report and Os) |
 
-A verb that no family needs is not added. A new operation that no verb covers uses a `mint_*` name, which marks a site that creates authority.
+**A decision that this section keeps.** The representation kinds (Total, Checkable, Opaque, and a padding map) are not a part of this design, because the owner decided not to start them.
+
+### 11.1 The shared verbs: one protocol set
+
+The ten verbs and the prefix `mint_` are the shared operations of the language. Each verb is one protocol: one receiver form, one result form, one law and one cost, the same in each family. A type that gives a verb obeys its row. No type gives a different meaning under a verb name.
+
+| Verb | Receiver and result | Law | Cost | Types |
+|---|---|---|---|---|
+| `for (x : c)` | `begin()` and `end()` on `&` and `const&` | Visits each element one time, in a fixed order. The body cannot add or remove an element | the loop bound only | `Option`, `View`, `TextView`, `RingView`, `FixedArray`, `FixedList`, `HeapArray`, the tables in slot order, `Slot`. A growable owner only through `with_view` |
+| `match(arms...)` | `&&` and `const&`. One arm for each alternative, in the declared order, and one result type | Total elimination of a closed sum. A missing arm does not compile. The `&&` form consumes the sum and gives no reference | one switch on the tag | `Option`, `Result`, `OneOf`, `Slot`, and a `Ref` of a kind family (section 11.5) |
+| `expect(why)` | `&&`, with a `Fmt<>` that holds the reason and the `Site`. Gives the value | The value, or the fatal exit with the reason. A search for `expect(` finds each one | one branch to a cold call | `Option`, `Result`, `OneOf` (`expect<T>`) |
+| `get(key)` | `&` and `const&`. Gives `Option<Ref<T>>` or `Option<Ref<T const>>` | Checked lookup by a key that can miss. It never ends the process | one explicit branch | the regions with an index, the tables with a key, `OneOf` with a type (`get<T>()`) |
+| `at(proof)` | `&` and `const&`. Gives `T&` or `T const&` | Total lookup with a proof value: `Index<N>`, `BrandedIndex<Brand>` or `StaticIndex<I>` | no branch | `FixedArray`, a `View` of a fixed extent, a `View` in a branded scope, `Record`, and `Pack` as `pack_at_t` |
+| `view()` | `&` and `const&`. The `&&` form is deleted | A borrow of the whole owner as a `View` or a `Ref`. The borrow stays in a frame below the frame of its owner (section 11.10) | none | `FixedArray`, `FixedList`, `HeapArray`, `FixedText`, `Box` and `CacheLine` (P6 for the two). A growable owner only through `with_view` |
+| `size()` | `const`. Gives `std::size_t`, a static constant for a fixed extent | The count of elements | none | the regions, the tables, `Record`, and `Pack` as `pack_size_v` |
+| `push(v)` | `&`. Gives `Result<Ref<T>, Full<T>>` | Adds into a fixed capacity. The element does not move while its owner lives and holds it. A full owner refuses, and `Full<T>` gives a linear value back | one compare | `FixedList`, and the tables as `push(key, value)` |
+| `append(alloc, v)` | `&`, with the allocation capability first. The result waits for the owner (P6 of section 11.11) | Adds, and grows if full. A growth can move each element, so the verb gives no reference | a visible O(n) event at each growth | `GrowList`, `GrowText`, `HeapRing` |
+| `consume()` | `&&`. Gives `T` | Takes the value out of an owner that always holds one, and ends the owner | a move | `Box`, `Linear<T>` |
+| `mint_*` | A free function, `[[nodiscard]]` and `noexcept`, with one concept as its constraint (§XXI) | The only door to a proof, a token, an owner of an allocation or a refined value | the cost of its check | `mint_box`, `mint_heap_array`, `mint_grow_list`, the mints of the Os doors |
+
+`Full<T>` is the `Full` of the approved verb, with the value of a linear `T` in it, so the caller gets the value back (`misc/12_10_2026_linear.md`, section 11, item 10). For each other `T` it is empty, and the value ends with the refusal.
+
+**The language protocols.** These operators and forms are not verbs. The families give them with one meaning:
+- Dereference: `*x` and `x->member` are only on a type with no empty state: `Ref`, `Box`, and `CacheLine` after P6. A type that can be empty has no dereference.
+- Compare: `==` and `<=>`, defaulted, on two values of one type only, where each part has the operator. Never with a different type and never with `none`. `Unit`, the sums of Choice, `Record`, `Id` and `Digest` give them.
+- Structured binding: `Record` only, through the hook `get<I>` that the language names. The plugin kind `binding-hook` refuses a direct call of the hook (section 11.3).
+- `template for (auto& part : record)`: each part of a `Record`.
+
+**The laws of the set.**
+1. One meaning, one name. No two names have almost the same meaning: an `Option` gives `is_some`, and no `has_value`.
+2. The set is closed. Each public member of a family type is a verb, a language protocol or a name of the family list of its section. The check file of each family asserts this by reflection (section 10.2, item 9).
+3. A verb that consumes takes `&&`. A verb that borrows from an owner takes `&` or `const&`, and its `&&` form is deleted. A borrowed type such as `View` or `Ref` owns nothing, so it gives its verbs on each value category.
+4. Absence is a sum. A verb that can miss gives an `Option` or a `Result`. A verb that cannot miss takes a proof.
+5. The row of a verb states its cost, and a probe of the rule `codegen-shapes` holds each hot-path claim.
+6. A new verb waits for the owner (section 17). Section 11.11 lists the verbs that wait.
+
+The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLookup`, `Borrowable`, `Sized`, `BoundedSink`, `GrowingSink`, `Owner`) live in `include/foundation/core/Verbs.h` (new). Generic code takes each type that gives a verb through them, and the protocol check of item 2 reads them.
+
+**Where the sources do not agree about a verb.**
+- `consume`: main wins. `Option` and `Result` have no `consume()`, and `expect` and `match` take its place. `consume` stays for an owner that always holds a value.
+- `get`: the verb is the checked lookup with a key. `Box::get()` and `CacheLine::get()` of main borrow with no key, and `Ref::get()` of QDESIGN does the same. Main wins until the owner decides P6 of section 11.11, which gives the dereference and `view()` in their place. `Ref` takes the dereference and no `get()`.
+- `match`: the `visit_kind` of QDESIGN is the verb `match` on a `Ref` of a kind family.
+- `push`: QDESIGN gives `Result<Ref<T>, Full>`, and a refusal then drops a linear value. `Full<T>` gives it back, as the linear design decides. The refusal of a key that a table holds waits for the owner (P6).
+- `append`: QDESIGN gives `Ref<T>`, which dangles at the next growth, so `append` gives no reference. Its result form and the maximum of a growable owner wait for the owner (P6).
+- The hook `get<I>` of a structured binding is a name that the language fixes, and not the verb.
 
 ### 11.2 Choice: `Option`, `Result`, `OneOf`, `CRUCIBLE_TRY`
+
+**The idea.** A value that can be absent, and the result of an operation that can fail, is a closed sum. The roads to a payload are `match`, a loop of zero or one turns (`Option` only), `value_or`, `expect` and `CRUCIBLE_TRY`. No type of the family has `operator*`, `operator->` or `operator bool`. Each type is `[[nodiscard]]`, and each operation is `constexpr` and `noexcept`.
+
+**The headers.** `include/foundation/core/Choice.h` (main), and `include/foundation/core/OneOf.h` (design), because the includers of `Choice.h` do not read `OneOf`. They include `<cstddef>`, `<concepts>`, `<new>`, `<type_traits>`, `foundation/ByteSeal.h`, `foundation/Linear.h` and `foundation/core/Report.h`.
+
+**The gates.**
+
+| Gate | What it admits | State |
+|---|---|---|
+| `ChoicePayload<T>` | An object type that is not an array, not cv-qualified and not `NoValue`, with a move and a destructor that do not throw. The design adds: not an `Err<F>`, and `WellFormedNiche<T>` | main, design |
+| `ErrorValue<E>` | A scoped enum, a trivially copyable class of at most 16 bytes with no reference member, or a linear class. The design adds: not an `Err<F>` | main, design |
+| `PlainPayload<T>`, `DroppablePayload<T>` | The plain form, and a payload that a member can drop or copy | main |
+| `HasNiche<T>`, `WellFormedNiche<T>` | A payload that declares its empty value. A declared niche that is not complete fails | main, design |
+| `OneOfAlternatives<Ts...>` | 2 to 255 alternatives, each a `ChoicePayload`, with no type two times. The tag is one byte | design |
+| `ErrorConvertsTo<F, E>` | `F` is not `E`, and `F` converts to `E` with no throw | design |
+| `TryOperand<H>` | An rvalue `Result` or `Option` for `CRUCIBLE_TRY` | design |
+
+**The niche protocol.** A payload declares its empty value through `niche<T>`, with `empty()` and `is_empty(value)` (main). A class can also declare the two as members: `static constexpr T niche_empty() noexcept` and `constexpr bool is_niche_empty() const noexcept` (design). The member form serves a class in a namespace that cannot specialize `niche`, such as a strong id (section 11.7).
+
+**The API of `Option<T>`.**
+
+| Operation | Contract | Cost | Verb | State |
+|---|---|---|---|---|
+| `Option()`, `Option(none)` | Empty | none | - | main |
+| `Option<T>::some(v)` | Full. The empty value of a niche ends the process | one test for a niche payload | - | main |
+| `some(v)` | A free function that gives `Option<remove_cvref_t<V>>`, with no conversion | as `some` | - | design |
+| `is_some()`, `is_none()` | The state | a load | - | main |
+| `match(on_some, on_none)` | `&&` consumes, `const&` borrows | one branch | `match` | main |
+| `for (x : option)` | Zero or one turn. A linear payload has no mutable loop | one test | `for` | main |
+| `value_or(fallback)` | `&&`, a droppable payload only | one select | - | main |
+| `expect(why)` | `&&`. An empty `Option` ends the process | one branch to a cold call | `expect` | main |
+| `ok_or(error)` | `&&`. Gives `Result<T, E>` for a droppable `E` | one branch | - | design |
+| `option = none`, the move assignment | The owning form, a droppable payload only. A self assignment has no effect | destroy, then move | - | design |
+| `==` | Two `Option` values of one type only | one test and one compare | compare | design |
+| `Option(Err<F>)` | Deleted: "a Result carries an error that an Option drops: write std::move(result).ok()" | - | - | design |
+
+**The API of `Result<T, E>`.**
+
+| Operation | Contract | Cost | Verb | State |
+|---|---|---|---|---|
+| `Result(value)`, `Result(err(e))` | `return value;` and `return err(code);` convert | a move | - | main |
+| `Result(Err<F>)` | `ErrorConvertsTo<F, E>` | a move | - | design |
+| `Result(Err<F>)` for each other `F`, `Result(none)` | Deleted, with the fix in the text: a conversion of `E`, `match`, or `ok_or` | - | - | design |
+| `is_ok()`, `is_err()` | The state | a load | - | main |
+| `ok()` | `&&`. Gives `Option<T>` and drops the error | one branch | - | main |
+| `err()` | `const&` copies a droppable `E`. `&&` moves a linear `E` | one branch | - | main |
+| `value_or(fallback)` | `&&`, a droppable `T` and `E` only | one select | - | main |
+| `expect(why)` | `&&`. Gives `void` for `Unit` | one branch to a cold call | `expect` | main |
+| `match(on_ok, on_err)` | `&&` and `const&` | one branch | `match` | main |
+| The move assignment, `==` | As for `Option` | as for `Option` | compare | design |
+
+A `Result` has no loop, because a loop over the value drops the error with no trace.
+
+**The API of `OneOf<Ts...>`.**
+
+| Operation | Contract | Cost | Verb | State |
+|---|---|---|---|---|
+| `OneOf(v)` | Implicit from one of `Ts`, with no conversion, no default constructor and no empty state | a move | - | design |
+| `is<T>()` | `T` is one of `Ts` | one compare | - | design |
+| `expect<T>(why)` | `&&`. Another alternative ends the process | one branch to a cold call | `expect` | design |
+| `match(arms...)` | One arm for each alternative in the order of `Ts`. The last alternative takes the last branch, so `match` has no fatal path | one switch | `match` | design |
+| `get<T>()` | `Option<Ref<T>>`, after `Ref` of G3 | one compare | `get` | design |
+| `which()` | `Index<sizeof...(Ts)>`, after `Index<N>` of G4 | a load | - | design |
+| The move assignment, `==` | As for `Option` | as for `Option` | compare | design |
+
+**`CRUCIBLE_TRY(name, expr);`** (design). The macro evaluates `expr` one time. On an error or on no value, it returns the error or `none` from the function, and `Result(Err<F>)` converts the error. Else it binds the value to `name`. The gate `TryOperand` refuses an lvalue and each type that is not a sum. A `Result` in a function that gives an `Option`, and the reverse, do not compile. The helpers are in `foundation::core::detail`, so the rule `owners` refuses a direct call of them. The macro is a sequence of statements, so the body of an `if` with no braces cannot hold it. The cost is open. The checked take repeats the test, and the probe `result_try` measured 11 instructions against 9 of the raw form. `result_try_convert` measured 12 against 9, with one more branch. The unit makes the build of the `Result` smaller, or it declares the cost with a true claim.
+
+**The layout.** The tag is one byte (`detail::TaggedCells`). It goes before a storage of 4 bytes, so a register return holds it in the low byte, and else after the storage. `Option<std::uint32_t>` has 8 bytes. `Result<std::uint32_t, E>` with a 4-byte `E` has 8 bytes, with the tag at offset 0. A sum of `PlainPayload` parts of at most 16 bytes is trivially copyable and returns in registers. Three types carry the annotation `no_start_over_bytes`: a `Result`, a `OneOf`, and a niche `Option` whose empty value is not all zero bits. So no lifetime start over bytes makes them.
+
+**The family list.** `none`, `NoValue`, `Unit`, `Err`, `err`, `some`, `is_some`, `is_none`, `value_or`, `ok_or`, `is_ok`, `is_err`, `ok`, `is`, `which`, `niche`, `CRUCIBLE_TRY`.
+
+**Removes.** The rows `allow F1_lattices <expected> until Choice`, `allow F1_permissions <optional> until Choice` and `allow X1_wrappers <variant> until Choice`. The family has no R5 import of its own (the table of shared imports holds `std::__glibcxx_assert_fail`).
+
+**The load.** Objects: `std::expected` 1,588 and `std::optional` 494. Names: `std::expected::has_value` 1,145, `std::expected::operator*` 588, `std::expected::error` 550, `std::unexpected` 530, `std::expected::operator->` 509, `std::optional::has_value` 223, `std::optional::operator*` 199 and `std::nullopt` 105. The base: 19 headers include `<expected>`, 22 `<optional>` and one `<variant>`. The pilot found three call sites. A ring and a channel pop into an `Option` (slice 4.2). The mint of a validated MetaLog entry gives a `std::optional`. The trace build of `src/BackgroundThread.cpp` gives a `std::expected`.
+
+**Where the sources do not agree.**
+- A move of a niche or a plain `Option` keeps the source (main). QDESIGN empties it, but the payload owns nothing in these two forms, and the ABI wants a trivial copy.
+- The fatal unwrap is `expect(Fmt<>)` (main). The `Fmt<>` holds the reason and the `Site`, as the `ExpectWhy` of QDESIGN does.
+- An `Option` builds only through `some`, and a `Result` builds from `T` (main). An implicit `Option` from `T` hides the choice of the author in `return false;` of an `Option<bool>`.
+- A moved-from owning `Result` or `OneOf` keeps its tag (design). The attack ledger pins it.
+- `map`, `and_then` and `or_else` wait for the owner (section 11.11).
+
+**The recipes.**
 
 | Pattern A | Pattern B | Kind |
 |---|---|---|
@@ -861,8 +1022,55 @@ A verb that no family needs is not added. A new operation that no verb covers us
 | `if (opt) use(*opt);` with no else | `for (auto& v : opt) use(v);` | mechanical |
 | `T* find(...)` that can give null | `Option<Ref<T>> find(...)` | judgment for each caller |
 | an error enum with a `None` value | delete `None`. `Result` holds the no-error state | judgment |
+| `opt ? value_of(*opt) : fallback` | `std::move(opt).match(on_some, on_none)` | mechanical |
+| `if (!opt) return std::unexpected(e);` before a use of `*opt` | `CRUCIBLE_TRY(v, std::move(opt).ok_or(e));` | mechanical |
+| `std::optional<T>` that `emplace` or `reset` changes | `opt = fixy::some(v);` and `opt = fixy::none;` | mechanical |
+| `std::variant<A, B>` | `fixy::OneOf<A, B>` | mechanical |
+| `std::visit(visitor, v)`, `std::holds_alternative<T>(v)` | `std::move(v).match(arms...)`, `v.is<T>()` | mechanical |
 
 ### 11.3 Record: `Record<Ts...>`, `Pack<Ts...>`
+
+**The idea.** A product whose parts have meanings is a named struct. A generic product is `Record<Ts...>`, and a list of types is `Pack<Ts...>`. Neither is `std::tuple`. The family has no part on main.
+
+**The header.** `include/foundation/core/Record.h`, a file of the language. It includes `<cstddef>`, `<compare>`, `<type_traits>`, `<utility>` and `foundation/core/Index.h` of the Scalar family, and no `<tuple>`.
+
+**The gate.** `RecordElement<T>`: an object type that is not an array, not cv-qualified, not a reference and not `void`. A reference part hides a borrow, so a borrow is a `Ref` or a `View`. A const part blocks the move of a linear part. A C array part is a `FixedArray`. A `Pinned` part is valid, and the `Record` is then pinned too.
+
+**The layout.** `Record<Ts...>` derives from one flat base of cells, one cell for each part: `RecordCell<I, T>` with one `[[no_unique_address]]` member. The instantiation depth is two for each count of parts, where a recursive tuple has a depth of N. A `Record` is an aggregate with no converting constructor, and the default member initializer of each cell gives each part its value. It is trivially copyable and structural when each part is. Empty parts collapse: `sizeof(Record<TokenA, TokenB>)` is 1. The parts are in declaration order. When no part gives its tail padding to the next part, each offset equals the offset of a hand-written struct. The check file asserts this by reflection for twelve shapes.
+
+**The API.**
+
+| Operation | Contract | Cost | Verb | State |
+|---|---|---|---|---|
+| `Record<A, B>{a, b}` | Aggregate initialization. A narrowing conversion does not compile | none | - | design |
+| `Record(Ts...) -> Record<Ts...>` | The deduction guide. `return {std::move(value), std::move(next)};` builds a return | none | - | design |
+| `at(index<I>())` | `&` and `const&`, for `I` below the count of parts | one member access | `at` | design |
+| `at(index<I>())` on `&&` | Deleted: "write auto [first, second] = std::move(record)", because a move of one part drops the others | - | - | design |
+| `size()` | `static consteval` | none | `size` | design |
+| `types` | `Pack<Ts...>` | none | - | design |
+| `auto [a, b] = record;` | The protocol of `std::tuple_size` and `std::tuple_element` (their class forms) and the hidden friend hook `get<I>`. `auto [a, b] = std::move(record)` moves each part one time | none | binding | design |
+| `auto [...parts] = record;` | A binding pack, in place of `std::apply` | none | binding | design |
+| `template for (auto& part : record)` | Each part, in order | the count of parts | `for` of a product | design |
+| `==`, `<=>` | Defaulted and lexicographic, for one `Record` type only. `<=>` only for parts with a strong or a partial order | one compare for each part | compare | design |
+| copy, move | Defaulted. A move-only part makes the `Record` move-only | as the parts | - | design |
+
+**The API of `Pack<Ts...>`.** An empty class for deduction only, as `std::index_sequence`. Its operations are variable templates and aliases (R14), each with an instantiation depth of one: `pack_size_v<P>` (verb `size`), `pack_at_t<I, P>` (verb `at`), `pack_contains_v<T, P>`, `pack_index_of_v<T, P>` (one occurrence of `T` only), `pack_concat_t<Ps...>`, `pack_apply_t<Template, P>` and `pack_unique_v<P>`. `std::meta::substitute(^^Pack, args)` and `template_of(type) == ^^Pack` work, because `Pack` is a plain variadic class template.
+
+**The binding hook.** The language finds the hook `get<I>` through argument-dependent lookup, so a quarantined `get<0>(record)` compiles as a second form of `at`. The plugin kind `binding-hook` refuses a call of the annotated hook outside the initializer of a decomposition (design). A binding of a family type gives no finding of the protocol names.
+
+**The family list.** `Record`, `Pack`, `types`, `pack_size_v`, `pack_at_t`, `pack_contains_v`, `pack_index_of_v`, `pack_concat_t`, `pack_apply_t`, `pack_unique_v`.
+
+**Removes.** The row `allow F0_core <tuple> until Record`. The rows `admit std::tuple_size` and `admit std::tuple_element` in `include/foundation/core/` stay, because they hold the protocol of the family. The family has no R5 import.
+
+**The load.** Objects: `std::pair` 330 and `std::tuple` 53. Names: `std::get` 475, `std::pair` 241, `std::tuple` 137, `std::tuple_element_t` 24 and `std::tuple_size_v` 23. The base: 35 headers include `<tuple>`. The products of linear tokens (`mint_permission_split`, `mint_permission_split_n`, `mint_read_loan`), the steps of a session (`recv` gives a value and the next handle), the stages of a pipeline, and the rosters of `fixy/atoms/` (type lists) use it.
+
+**Where the sources do not agree.**
+- QDESIGN gives a free `at<I>(record)`. The member `record.at(fixy::index<I>())` is the form of Region, so the families have one form.
+- QDESIGN gives `apply(record, fn)`. A binding pack does the same with no name, so `apply` goes.
+- R9 cut the API to the calls of the tree. The design bar keeps `pack_unique_v` and the compares.
+- `std::weak_ordering` has no admit row. `<=>` takes parts with a strong or a partial order, until a call site makes the admit row necessary.
+
+**The recipes.**
 
 | Pattern A | Pattern B | Kind |
 |---|---|---|
@@ -871,14 +1079,121 @@ A verb that no family needs is not added. A new operation that no verb covers us
 | `std::tuple` for values | `fixy::Record<Ts...>` | mechanical |
 | `std::tuple` as a type list | `fixy::Pack<Ts...>` | mechanical |
 | `std::tie(a, b) = f();` | `auto [a, b] = f();` | mechanical |
+| `std::get<I>(t)` | `t.at(fixy::index<I>())`, or a structured binding | mechanical |
+| `std::apply(f, t)` | `auto [...parts] = t; f(parts...);` | mechanical |
+| `std::tuple_element_t<I, List>` of a type list | `fixy::pack_at_t<I, Pack>` | mechanical |
 
-### 11.4 Region: `View`, `FixedArray`, `FixedList`, `HeapArray`, `GrowList`, `Text`, `TextView`, `CText`, `FixedText`, `FixedTable`, `HeapTable`, and the free operations
+### 11.4 Region: `View`, `FixedArray`, `FixedList`, `HeapArray`, `GrowList`, `HeapRing`, `TextView`, `CText`, `FixedText`, `GrowText`, `FixedTable`, `HeapTable`, and the free operations
+
+**The idea.** Each array, buffer, text, run of bytes, pointer with a count, and C array is one contiguous region. A region has an owner kind and an extent kind, and each kind gives one set of verbs and one small set of free operations. An index is checked by its type, or by the one explicit branch of `get`.
+
+**The headers.** `include/foundation/core/Region.h` and `include/foundation/core/Text.h` (main), and one header for each owner kind (design): `Array.h`, `List.h`, `Ring.h`, `Table.h` and `Algorithms.h`. `Text.h` uses no other family, so the Report family can take a `TextView`.
+
+**The merges.** Slice 4.3 merges seven base headers into the family (Appendix E):
+- `fixy/FixedArray.h` into `FixedArray`
+- `foundation/AlignedBuffer.h` into `HeapArray`, whose `Align` states the alignment
+- `foundation/SwissTableBuffer.h` into the storage of the tables
+- `fixy/Borrowed.h`, `fixy/ScopedView.h`, `fixy/OwnedRegion.h` and `fixy/SharedRegion.h` into `View` and the Ref family. Their brands go to `Ref<T, Brand>`, `BrandedIndex<Brand>` and the region capability of section 11.10.
+
+**The kinds.**
+
+| | Borrowed | Inline, exactly N | Inline, at most N | Heap, count fixed at the mint | Heap, growable |
+|---|---|---|---|---|---|
+| Elements | `View<T, Extent>` | `FixedArray<T, N>` | `FixedList<T, N>` | `HeapArray<T, Align>` | `GrowList<T>` |
+| Text | `TextView`, `CText` | - | `FixedText<N>` | - | `GrowText` |
+| Ring | - | - | `fixy::CyclicBuffer<T, N>` (X1) | - | `HeapRing<T>` |
+| Keyed | - | - | `FixedTable<K, V, N>` | `HeapTable<K, V>` | - |
+
+The fixed ring stays `fixy::CyclicBuffer` of `fixy/CyclicBuffer.h`, which keeps the last N elements, and slice 4.3 rebuilds its reads on `Index<N>` (Appendix E). Arena memory comes from `BumpArena::array` of the Ref family as a `View`. A table does not grow: a larger table is a new table, and the caller moves each entry with `take` and `push`.
+
+**The proofs of an index.** `Index<N>` proves `i < N` (design). `Index<N>::check(i)` gives an `Option`, and `index<I>()` of the Scalar family converts when `I < N`. A `View` has no brand (main, and phase D of `misc/12_10_2026_linear.md`). `mint_branded_scope(view, body)` gives the body the view with a fresh brand (design). In the body, `index(i)` gives `Option<BrandedIndex<Brand>>` and `indices()` gives each index, an index of 4 bytes that proves `i` below the count of that view. Only that scope makes such an index, and the count of a view never changes.
+
+**The API of `View<T, Extent>`.**
+
+| Operation | Contract | Cost | Verb | State |
+|---|---|---|---|---|
+| `size()` | The count. A static constant for a fixed extent | none | `size` | main |
+| `for (x : view)` | Each element, with the count as the only bound | the loop bound | `for` | main |
+| `window(offset, count)` | `Option<View<T>>`. No value when the window does not fit | one branch | - | main |
+| `window<N>(offset)` | `Option<View<T, N>>`. Then N reads with no check | one branch | - | main |
+| conversions | `View<T>` to `View<T const>`, and a fixed extent to `View<T>`. No conversion removes a const or adds a fixed extent | none | - | main |
+| `Option<View<T>>` | The size of a `View`, through the niche of the view | none | - | main |
+| `get(i)` | `Option<Ref<T>>`, after `Ref` of G3 | one branch | `get` | design |
+| `at(i)` | `Index<Extent>` for a fixed extent, `BrandedIndex<Brand>` in a branded scope | no branch | `at` | design |
+| `indices()` | The proven indexes of a loop: `Index<N>` or `BrandedIndex<Brand>` | the loop bound | `for` | design |
+| `split_at(k)` | `Option<Record<View<T>, View<T>>>` | one branch | - | design |
+| `mint_branded_scope(view, body)` | The body gets the view with a fresh brand, and the mints of its `BrandedIndex` | none | `mint_*` | design |
+
+The constructor from raw parts is private, and only the doors of the base reach it (`detail::view_over_`, main). The seal of `foundation/ByteSeal.h` refuses `std::bit_cast` into a `View` (main).
+
+**The API of the owners.**
+
+| Operation | Owners | Contract | Cost | Verb | State |
+|---|---|---|---|---|---|
+| `at(Index<N>)`, `at(index<I>())` | `FixedArray` | Total | no branch | `at` | design |
+| `get(i)` | each owner, a growable owner only in `with_view` | `Option<Ref<T>>` | one branch | `get` | design |
+| `view()` | `FixedArray`, `FixedList`, `HeapArray`, `FixedText` | `&` and `const&`. The `&&` form is deleted | none | `view` | main for `FixedText`, design for the others |
+| `for (x : owner)`, `size()` | each owner, a growable owner only in `with_view` | As for a `View` | the loop bound | `for`, `size` | design |
+| `push(v)` | `FixedList` | `Result<Ref<T>, Full<T>>` | one compare | `push` | design |
+| `take_last()`, `take_first()` | `FixedList` and `GrowList` (last), `HeapRing` (first and last) | `Option<T>`: the element moves out | one compare | - | new |
+| `clear()` | `FixedList`, a droppable element only | Ends each element | the count | - | new |
+| `mint_heap_array(alloc, count, fill)` | `HeapArray` | Each element is `fill`. `Align` states the alignment of the storage, as `AlignedBuffer` does | one allocation | `mint_*` | design |
+| `mint_heap_array_written(alloc, count, body)` | `HeapArray` of an implicit-lifetime `T` | The body gets a view that only writes, and the mint gives the array after the body | one allocation | `mint_*` | design |
+| `mint_grow_list(maximum)`, `mint_heap_ring(minimum, maximum)` | `GrowList`, `GrowText`, `HeapRing` | Empty, with no allocation. The maximum bounds each growth (the principle P5 of the linear design). The maximum of a `GrowList` waits for P6 | none | `mint_*` | new |
+| `append(alloc, v)` | `GrowList`, `GrowText`, `HeapRing` | Gives no reference, and its result waits for the owner (P6). A `HeapRing` doubles its capacity from its minimum up to its maximum | a visible O(n) event at each growth | `append` | design |
+| `with_view(std::move(owner), body)` | `GrowList`, `GrowText`, `HeapRing` | The body gets a `View`, or a `RingView` that counts from the oldest element, and cannot reach the owner. So no growth happens while the view lives. Gives the owner back | none | - | design |
+| `freeze(std::move(list))` | `GrowList` | Gives a `HeapArray<T>` of the elements | none | - | design |
+| `push(key, value)` | `FixedTable`, `HeapTable` | `Result<Ref<V>, Full<V>>` for a full table. The refusal of a key that the table holds waits for the owner (P6) | one probe | `push` | design |
+| `get(key)`, `take(key)` | `FixedTable`, `HeapTable` | `Option<Ref<V>>`, and `Option<V>` that moves the value out | one probe | `get` | design |
+| `for (entry : table)` | `FixedTable`, `HeapTable` | Each entry as `Record<K, Ref<V>>`, in slot order. The order is a function of the keys and a fixed seed | the capacity | `for` | design |
+| `mint_heap_table(alloc, capacity)` | `HeapTable` | Empty, with a fixed capacity | one allocation | `mint_*` | design |
+
+Each owner fills each element on its mint, or takes a fill value: no owner reads an indeterminate value. `FixedList`, `GrowList` and `HeapRing` hold trivially destructible elements or end each element in their destructor, and no API reads a slot at or past `size()`. A table key is an integer, an `Id` or a `Digest` of at most 64 bits (section 11.7). The table probe is the SIMD probe of `include/crucible/SwissTable.h`, which moves into the base, over the storage of `foundation/SwissTableBuffer.h`.
+
+**The text types.** `TextView` is a borrowed run of characters (main). Its constructor from a literal is consteval, so the literal has static storage. `CText` is a run with a zero after it, for a call of the kernel (main). It comes from a literal or from `foundation::os::PathText`. `FixedText<N>` is a buffer of N characters with its count (main), and `format` of the Report family writes into it. `GrowText` is the growable text (design). A `TextView` gives `size()`, `for` and `window(offset, count)` as a `View` does, in place of `substr`. The other text operations are free functions: `equal`, `find` of a character or a text, `starts_with`, `ends_with` and `split_once`, which gives `Option<Record<TextView, TextView>>` (design).
+
+**The free operations.**
+
+| Operation | Contract | Cost | State |
+|---|---|---|---|
+| `copy(dst, src)` | Two views of one fixed extent cannot fail. Two views of a dynamic extent give `Result<Unit, LengthMismatch>`. An overlap is safe, as `__builtin_memmove` | the raw copy | main |
+| `fill(dst, value)` | Each element. An element of one byte takes one `memset` | the raw fill | main |
+| `equal(a, b)` | Element by element, with no read of padding | the raw compare | design |
+| `find(view, x)`, `find_if(view, predicate)` | `Option<std::size_t>` | a scan | design |
+| `all_of`, `any_of`, `count_if` | A predicate over each element | a scan | design |
+| `sort_by_key(view, key)` | One fixed stable algorithm (a radix sort on the key). The key has a total order, such as an integer or `fp::total_key` | O(n) for each pass of the radix | design |
+| `lower_bound_by_key(view, key, probe)` | The first position whose key is not below the probe | O(log n) | design |
+| `bytes(object)` | `View<std::byte const, sizeof(T)>` for a `T` with unique object representations, so no padding reaches a hash or a wire | none | design |
+| `load<T>(window)`, `store(window, value)` | A `BitValid` value from or into a window of `sizeof(T)` bytes (section 11.7) | one move | design |
+| `static_array(range)` | consteval. The run-time `View` of a `define_static_array` | none | design |
+
+**The family list.** The types: `View`, `Index`, `BrandedIndex`, `TextView`, `CText`, `FixedText`, `GrowText`, `FixedArray`, `FixedList`, `HeapArray`, `GrowList`, `HeapRing`, `RingView`, `FixedTable` and `HeapTable`. The errors: `Full` and `LengthMismatch`. The names of operations: `dynamic_extent`, `window`, `split_at`, `indices`, `index`, `check`, `take`, `take_first`, `take_last`, `clear`, `with_view`, `freeze`, the mints and the free operations.
+
+**Removes.** Eight rows: `allow F0_core <array> until Region`, `allow F0_core <span> until Region`, `allow F0_core <string> until Region`, `allow F0_core <string_view> until Region`, `allow F0_core <vector> until Region`, `allow F0_primitives <cstring> until Region`, `allow X1_wrappers <ranges> until Region` and `allow X3_os <algorithm> until Region`. The R5 imports of `libfixy.a`: `std::__throw_length_error` and `std::__throw_logic_error`, with the throw row of `Topology.cpp.o` (Region and the path type of Os). The R5 imports of the `libcrucible*.a` libraries: `std::__throw_length_error`, `std::__throw_logic_error`, `std::__throw_out_of_range_fmt` with their `helper-throw` rows, `std::string::_M_replace_cold`, `strlen`, `strncmp`, `__memcpy_chk` and `__memset_chk`.
+
+**The load.** Objects: `std::span` 1,708, `std::array` 809, `std::basic_string_view` 670, `std::vector` 358, `std::basic_string` 223, `std::inplace_vector` 21, `std::deque` 8, `std::unordered_set` 8, `std::set` 3 and `std::bitset` 2. Names: `std::array::operator[]` 892, `std::vector::operator[]` 286, `std::span::operator[]` 153 and `std::vector::push_back` 98. The ledger holds 1,109 C array objects. C calls: `memcpy` 128, `memset` 44, `strcmp` 28, `memcmp` 21 and `strlen` 14. The pilot found these call sites:
+- The counter and the key of `include/crucible/Philox.h` are `std::array`, and they become `FixedArray`.
+- A view over an `AlignedBuffer`.
+- The history ring of `include/crucible/IterationDetector.h` doubles its capacity up to a maximum. It appends, takes the oldest element and reads by an index from the oldest, each in O(1). It is a `HeapRing`.
+- The table of window fingerprints of the same file inserts, finds and removes by a 64-bit key in a fixed capacity. It is a `HeapTable`.
+- The callers of `std::vector` take a `GrowList`, and the C arrays become `FixedArray`.
+
+**Where the sources do not agree.**
+- QDESIGN gives a type `Text`, and the recipe of a static name used it. On main, `TextView` and `CText` take the literal, and `TextView` is a class of its own and not `View<char const>`. Main wins.
+- QDESIGN gives a brand parameter to `View`. Main and phase D of the linear design give a view no brand, and the branded proof is the index. Main wins.
+- QDESIGN gives `Ref<T>` from `append` of a `GrowList`, which dangles at the next growth. `append` gives no reference, and a growable owner gives its elements only in `with_view`.
+- QDESIGN gives a table that grows through `rehash_into`. The table of the iteration detector has a fixed capacity, and a growth is a new table.
+- `FixedArray` is in `include/fixy/FixedArray.h`, in the layer X1. The family gives it in `foundation/core`, in the layer F0 primitives, and slice 4.3 merges the old header.
+- Appendix E merges `fixy/OwnedRegion.h` into `View` and the Ref family. Section 4 of the linear design keeps that header in X1 as the CSL view of a region: the region capability and a `Permission`. The owner decides which form slice 4.3 takes.
+- QDESIGN keeps `fixy/ScopedView.h` as it is, and Appendix E merges it. A `ScopedView` also proves a state of its carrier, and a `Ref<T, Brand>` holds no state. The owner decides which type holds that proof after slice 4.3.
+
+**The recipes.**
 
 | Pattern A | Pattern B | Kind |
 |---|---|---|
 | `std::span<T>` parameter | `fixy::View<T>` | mechanical |
 | `std::span<T, N>` | `fixy::View<T, N>` | mechanical |
-| `static constexpr std::string_view n = "...";` | `static constexpr fixy::Text n = "...";` | mechanical |
+| `static constexpr std::string_view n = "...";` | `static constexpr fixy::TextView n{"..."};` | mechanical |
 | `std::string_view` parameter | `fixy::TextView` | mechanical |
 | `const char*` text parameter | `TextView`, or `CText` when it goes to the kernel | judgment |
 | `std::array<T, N>` | `fixy::FixedArray<T, N>` | mechanical |
@@ -889,15 +1204,69 @@ A verb that no family needs is not added. A new operation that no verb covers us
 | `T* p, size_t n` parameters | `fixy::View<T> v` | mechanical signature, judgment body |
 | `std::vector<T>`, known maximum | `FixedList<T, N>` | judgment (N) |
 | `std::vector<T>`, size known at build | `HeapArray<T>` | judgment |
-| `std::vector<T>`, unbounded, cold | `GrowList<T>`. `push_back(x)` becomes `list.append(alloc, x)` | judgment (the caller needs an `Alloc`) |
+| `std::vector<T>`, unbounded, cold | `GrowList<T>`. `push_back(x)` becomes `list.append(alloc, x)`, with the result form of P6 | judgment (the caller holds an `Alloc`) |
 | `std::string` | `FixedText<N>` or `GrowText` | judgment |
 | `memcpy(dst, src, n)` | `fixy::copy(dst_view, src_view)` | judgment (n becomes view lengths) |
 | `memcpy(&x, p, sizeof x)` | `x = fixy::load<T>(window)` | mechanical when the window exists |
 | `memset(p, 0, n)` | `fixy::fill(view, T{})` | mechanical |
 | `std::ranges::sort(v, cmp)` | `fixy::sort_by_key(view, key)` | judgment (the key) |
 | `std::unordered_map<K, V>` | `HeapTable<K, V>` | judgment (capacity) |
+| `std::unordered_set<K>` | `HeapTable<K, fixy::Unit>` | judgment (capacity) |
+| `std::inplace_vector<T, N>` | `FixedList<T, N>` | mechanical |
+| `std::deque<T>` used as a queue | `HeapRing<T>`, or `fixy::CyclicBuffer<T, N>` that keeps the last N | judgment (the maximum) |
+| `v[i]` on a `std::vector` member that grows | `with_view(std::move(list), body)`, and `get(i)` or `at` in the body | judgment |
+| `view.subspan(o, c)`, `text.substr(o, c)` | `view.window(o, c)`, and handle the empty case | judgment |
+| `text.starts_with(p)`, `text.find(c)` | `fixy::starts_with(text, p)`, `fixy::find(text, c)` | mechanical |
+| `std::vector<T>` that a loop fills and then only reads | `GrowList<T>`, then `freeze(std::move(list))` | judgment |
 
-### 11.5 Ref: `Ref`, `Box`, `BumpArena`, `Slot`, `downcast`, `visit_kind`, `FnRef`, `CallRef`, `Address`
+### 11.5 Ref: `Ref`, `Box`, `BumpArena`, `Slot`, `downcast`, `FnRef`, `CallRef`, `Address`, `Hole`
+
+**The idea.** One object is reached through a reference that is never null (`Ref`). It has one owner on the heap (`Box`), lives in an arena (`BumpArena::make`), or lives in storage with an explicit lifetime (`Slot`). A function is reached through `FnRef` or `CallRef`. With Region, this gives one grid of one object or many objects, borrowed, owned, in an arena or inline.
+
+**The header.** `include/foundation/core/Ref.h` (main), with the parts of the linear design in `foundation/core/Credit.h` and `foundation/core/Identity.h` (section 11.10). `Ref.h` and `Region.h` include `Credit.h`, and `Region.h` never includes `Ref.h`.
+
+**The merges.** Slice 4.3 merges `fixy/Borrowed.h`, `fixy/ScopedView.h`, `fixy/OwnedRegion.h` and `fixy/SharedRegion.h` into `View` and the Ref family (Appendix E). A borrow of one object becomes a `Ref<T, Brand>`, and a borrow of a run becomes a `View` (section 11.4).
+
+**The API.**
+
+| Operation | Contract | Cost | Verb | State |
+|---|---|---|---|---|
+| `Ref<T, Brand>::to(object)` | A reference that is never null. `to` of an rvalue is deleted, because the `Ref` dangles at the end of the full expression | none | - | design |
+| `*ref`, `ref->member` | Total: a `Ref` has no empty state | none | dereference | design |
+| `same_object(a, b)` | The same object | one compare | - | design |
+| conversions | `Ref<T, Brand>` to `Ref<T const, Brand>`, and to the erased brand | none | - | design |
+| `Option<Ref<T>>` | One pointer: the null value is the niche | none | - | design |
+| `ref.match(arms...)` | A `Ref` of a kind family: one arm for each enumerator of the kind. `KindFamily<Base>` reads the kind enum and a `kind_value` on each derived type by reflection. The build stops when one enumerator has no type | one switch | `match` | design |
+| `downcast<Derived>(ref)` | `Option<Ref<Derived>>`, for `KindTagged<Base, Derived>` | one compare | - | design |
+| `mint_box<T>(alloc, args...)` | The one door to a `Box`: it allocates, builds the object and gives the `Box` | one allocation | `mint_*` | main |
+| `*box`, `box->member` | A borrow of the object. The `&&` forms are deleted | one test of a moved-from `Box` | dereference | main |
+| `box.get()` | `T&`, a borrow with no key | one test of a moved-from `Box` | - | main |
+| `box.view()` | `Ref<T>`. P6 gives it in place of `get()` | one test of a moved-from `Box` | `view` | P6 |
+| `std::move(box).consume()` | Moves the object out and frees the storage | a move | `consume` | main |
+| `BumpArena::make<T>(alloc, args...)` | A trivially destructible `T`. Gives `Ref<T, Brand>` of the arena brand | the bump | - | design |
+| `BumpArena::array<T>(alloc, count)` | `ImplicitLifetimeThroughout<T>`. Gives `View<T>` | the bump | - | design |
+| `BumpArena::copy_text(alloc, text)` | A copy of a text in the arena. Gives `TextView` | the bump and a copy | - | design |
+| the epoch of an arena | The end of an epoch frees each byte of the arena at one time, and the arena keeps its blocks. `ArenaEpoch` is on main in `include/crucible/Arena.h`, and it becomes the epoch region of the linear design | O(1) | - | main, design |
+| `Slot<T>` | Storage with an explicit lifetime for one object, also a `Pinned` object. `emplace(args...)` gives `Option<Ref<T>>`, with no value when the slot holds an object. `clear()` ends the object | the build | `for`, `match` | design |
+| `FnRef<Sig>` | The address of a function, never null. `Option<FnRef<Sig>>` has the size of a pointer | an indirect call | - | design |
+| `CallRef<Sig>` | A borrowed callable, for a parameter only. The rule `view-escape` refuses it in a member | an indirect call | - | design |
+| `address_of(ref)` | An `Address`: `is_aligned<N>()` and `==`. No hash and no order, because an address changes from run to run | none | - | design |
+| `Hole<Size, Align>` | The credit that the consume of a linear `Box` gives, and that a build of a `Box` spends (linear design, section 6) | none | - | design |
+| the allocation door | Each allocation of the base goes through one door, which calls glibc `malloc` (section 10.3a). Each arena poisons its free space for ASan (R18) | one call | - | design |
+
+**The family list.** `Ref`, `to`, `same_object`, `downcast`, `KindFamily`, `KindTagged`, `Box`, `mint_box`, `BumpArena`, `make`, `array`, `copy_text`, `Slot`, `emplace`, `clear`, `FnRef`, `CallRef`, `Address`, `address_of`, `is_aligned`, `Hole`.
+
+**Removes.** Three rows: `allow F1_lattices <functional> until Ref`, `allow X1_wrappers <memory> until Ref` and `allow X5_session <any> until Ref`. The text of the row of `<functional>` also names the comparators `std::less`, `std::greater` and `std::identity`. The sort keys of Region replace them, so that row goes after Ref and Region. The row `admit std::nothrow until Ref in include/foundation/core/Ref.h` goes when the allocation door lands. The R5 imports of `libfixy.a`: `operator new` (`_Znwm`), `operator delete` (`_ZdlPvm`), and the typeinfo, the vtable and the destructor of `std::bad_alloc` and of `std::bad_array_new_length`. The R5 imports of the `libcrucible*.a` libraries: the same, and the aligned forms of `operator new` and `operator delete`. The calls of `malloc`, `calloc`, `aligned_alloc` and `free` move into the allocation door.
+
+**The load.** Objects: `std::unique_ptr` 118 and `std::shared_ptr` 4. Names: `std::unique_ptr::operator->` 177, `std::unique_ptr::get` 70 and `std::make_unique` 68. The ledger holds 2,513 raw pointer objects, 102 raw function pointers and 80 raw new-expressions and delete-expressions. The pilot found two call sites. The four payloads of the background stages of `include/crucible/BackgroundThread.h` become a `Box`. The `std::unique_ptr` owners of `include/crucible/Vigil.h` (the ring, the MetaLog, the Cipher, the senses and the watchdog) and of `BackgroundThread.h` (the pipeline) become a `Box`.
+
+**Where the sources do not agree.**
+- `Box::get()` of main and `Ref::get()` of QDESIGN borrow with no key, and the verb `get` is the checked lookup. `Ref` takes the dereference only. `Box::get()` stays until the owner decides P6 (section 11.1).
+- `visit_kind` of QDESIGN is the verb `match` on a `Ref` of a kind family.
+- The base has no counted reference (`misc/12_10_2026_linear.md`, section 11, item 2). A `std::shared_ptr` becomes an owner with a scope, an epoch or a lease.
+- A `Box` tests for a moved-from object at each access (main). The rule `must-consume` replaces the test when it becomes an error (linear design, section 6).
+
+**The recipes.**
 
 | Pattern A | Pattern B | Kind |
 |---|---|---|
@@ -905,15 +1274,58 @@ A verb that no family needs is not added. A new operation that no verb covers us
 | a member that is never null after build | `Ref<T>` | judgment |
 | `new (arena.alloc_obj<T>(a)) T{}` | `arena.make<T>(a)` | mechanical |
 | `arena.alloc_array<T>(a, n)` | `arena.array<T>(a, n)` | mechanical |
-| `static_cast<D*>(node)` in `switch (node->kind)` | `visit_kind(node, arms...)` | mechanical for each switch |
+| `static_cast<D*>(node)` in `switch (node->kind)` | `node.match(arms...)` | mechanical for each switch |
 | one `static_cast` after an if | `downcast<D>(ref)` | judgment |
 | `std::make_unique<T>(args)` | `fixy::mint_box<T>(alloc, args)` | judgment (an `Alloc` must reach the site) |
 | `new T` / `delete p` | `Box` | mechanical |
 | `std::function<Sig>` parameter | `CallRef<Sig>` | mechanical |
 | `std::function<Sig>` member | a template parameter | judgment |
 | `reinterpret_cast<uintptr_t>(p)` | `fixy::address_of(ref)` | mechanical |
+| `std::unique_ptr<T>` member, and `p.get()` | `Box<T>`, and `box.view()` | mechanical |
+| `std::reference_wrapper<T>`, `std::addressof(x)` | `Ref<T>`, `Ref<T>::to(x)` | mechanical |
+| `std::construct_at` and `std::destroy_at` on raw storage | `Slot<T>`, or `BumpArena::make` | judgment |
+| `std::shared_ptr<T>` | an owner with a scope, an epoch or a lease | judgment |
 
 ### 11.6 Atomic: `Atomic<T>`, `CacheLine`, `Tally`
+
+**The idea.** A value that two threads touch is an `Atomic<T>`. The name of each operation gives its memory order. Only the sole writer can use the relaxed order, and it shows a proof. Only the lock-free algorithms of the base use the sequentially consistent order. Each operation is one `__atomic` builtin on a plain value. So it compiles to the instructions of the same `std::atomic` operation, and no `<atomic>` include is necessary.
+
+**The header.** `include/foundation/core/Atomic.h` (main).
+
+**The gates.** `AtomicValue<T>` admits a trivially copyable object type that is not an array and not cv-qualified (main). It must have one bit pattern for each value, and lock-free atomic operations for its size. A type with padding and a float with two zeros are refused. `AtomicCount<T>` adds an integer that is not `bool`, and `AtomicBits<T>` an unsigned integer (main).
+
+**The API.**
+
+| Operation | Contract | Cost | State |
+|---|---|---|---|
+| `Atomic<T>(initial)`, `Atomic<T>()` | A pinned cell | none | main |
+| `load_acquire()`, `store_release(v)` | The value with acquire order, and a store with release order | one load, one store | main |
+| `exchange_acq_rel(v)` | Stores `v`, and gives the value before | one locked exchange | main |
+| `cas_acq_rel(expected, desired)` | Strong. `Result<Unit, CasRefusal<T>>`, and the error holds the value that the cell held | one locked compare-and-swap | main |
+| `fetch_add_acq_rel(d)`, `fetch_sub_acq_rel(d)` | For an `AtomicCount` | one locked add | main |
+| `fetch_or_acq_rel(b)`, `fetch_and_acq_rel(b)` | For an `AtomicBits` | one locked operation | main |
+| `fetch_max_acq_rel(v)`, `fetch_min_acq_rel(v)` | For an `AtomicCount` | one locked operation, or a compare-and-swap loop | main |
+| `load_owned(proof)` | The relaxed load of the sole writer. The proof is `SoleWriter<Role, Brand>`, the linear permission of the writer of the cell, so another thread cannot call it | one load | design |
+| `Atomic<Option<Ref<T>>>` | A pointer that a thread publishes. `Option<Ref<T>>` is one pointer with a niche, so the cell is lock-free | as `Atomic` | design |
+| `CacheLine<T>` | Aligns a cell to 64 bytes and pads it to a multiple of 64 bytes. `get()` borrows the cell (main). P6 gives `*line`, `line->member` and `line.view()` in its place | none | main, P6 |
+| `Tally` | A statistics counter. `add(n)` is a fetch-add with acq_rel order, and `read()` is an acquire load. A value of a `Tally` orders no other data | one locked add | main |
+| the relaxed and seq_cst operations of `ChaseLevDeque`, and `fence_seq_cst` | `detail` code of the base, with a citation of the algorithm | as the algorithm | design |
+
+A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), and not a member of `Atomic`. The run-time id of a brand of the linear design is an `Atomic` counter (section 11.10). The publication types of `fixy/handle/` (`PublishOnce`, `PublishCommit`, `OneShotFlag` and `Once`) stay in the layer X4, and slice 4.4 rebuilds them on `Atomic` (Appendix E). A pointer that a thread publishes is then a `PublishOnce<Ref<T>>` or an `Atomic<Option<Ref<T>>>`.
+
+**The family list.** The types and the gates: `Atomic`, `AtomicValue`, `AtomicCount`, `AtomicBits`, `CasRefusal`, `SoleWriter`, `CacheLine` and `Tally`. The operations: each operation of the table, and `add` and `read`.
+
+**Removes.** The row `allow F0_primitives <atomic> until Atomic`. The family has no R5 import of its own, because each operation is a builtin. The import `std::__detail::__notify_impl` of `libcrucible_vigil.a` goes when its wait moves to the futex door (section 11.9).
+
+**The load.** Objects: `std::atomic` 212. Names: `std::__atomic_base::load` 184, `std::atomic::load` 106, `std::atomic::store` 101, `std::atomic` 102 and `std::__atomic_base::fetch_add` 94. The quarantine ledger counts 16 base includes of `<atomic>`. The rule `lock-free-asserts` holds 27 objects of four directories, and Stage 5 deletes it when they move (section 8.6a).
+
+**Where the sources do not agree.**
+- QDESIGN gives `cas_acq_rel` a `Result<Unit, T>`. Main gives `CasRefusal<T>`, which names the value that the cell held.
+- QDESIGN gives `load_owned`. Main has no relaxed operation, because the tree has no proof type `SoleWriter` (CLAUDE.md §XXII). The design keeps `load_owned` for G3, with the proof type.
+- `CacheLine::get()` of main borrows with no key. Main wins until the owner decides P6 (section 11.1).
+- QDESIGN puts `PublishOnce` and `OneShotFlag` beside `Atomic`. Appendix E rebuilds them in place in `fixy/handle/`, and this section agrees.
+
+**The recipes.**
 
 | Pattern A | Pattern B | Kind |
 |---|---|---|
@@ -925,8 +1337,66 @@ A verb that no family needs is not added. A new operation that no verb covers us
 | relaxed statistics counter | `fixy::Tally` | mechanical |
 | relaxed read of an owned variable | `load_owned(writer_permission)` | judgment (find the proof) |
 | `std::atomic<T*>` | `PublishOnce<Ref<T>>` or `Atomic<Option<Ref<T>>>` | judgment |
+| `x.wait(v)` and `x.notify_one()` | the futex door of the Os family | judgment (the context) |
+| `alignas(64) std::atomic<T> x;` | `fixy::CacheLine<fixy::Atomic<T>> x;` | mechanical |
 
-### 11.7 Scalar
+### 11.7 Scalar: numbers, bits, enumerations, strong types and quantities
+
+**The idea.** Each operation on a fundamental value is total: no input is undefined. An input that can fail gives an `Option`. A type that proves the result gives the value with no check. No operation reads `errno`, a locale or a global, and no operation calls `fatal()`. A strong type gives a meaning to a number, and a quantity gives it a unit.
+
+**The headers.** `include/foundation/core/Scalar.h` (main), `include/foundation/core/Index.h` (design), and one header for each group of the API (design). The builtins of R3 replace `<bit>`, `<limits>`, `<numeric>`, `<cmath>` and `<climits>`: `__builtin_clzg`, `__builtin_ctzg`, `__builtin_popcountg`, `__builtin_bswap16` to `64`, the overflow builtins, `__builtin_bit_cast`, `__builtin_sqrt`, `__builtin_fma`, the classification builtins, and the macros `__FLT_*`, `__DBL_*` and `__CHAR_BIT__`. The modular forms use the overflow builtins only, so no result changes with `-fno-strict-overflow`.
+
+**The merges.** Slice 4.10 merges `foundation/Saturate.h`, `fixy/Saturate.h`, `fixy/Saturated.h` and `fixy/Checked.h` into the family (Appendix E). The checked operations then give an `Option`.
+
+**The gates.**
+
+| Gate | What it admits | State |
+|---|---|---|
+| `Integer<T>` | An integral type that is not cv-qualified, not `bool` and not a character type. Plain `char` is signed on x86_64 and unsigned on aarch64 | design |
+| `SignedInteger<T>`, `UnsignedInteger<T>`, `Float<T>`, `Arithmetic<T>` | `Float` is `float` or `double`. `long double` has 80 value bits on x86_64 and 128 on aarch64 | design |
+| `Enumerated<E>`, `DecodableFrom<To, From>` | An enumeration with an enumerator, and a decode with no pointer, reference, union, bit-field, empty class or sealed class | main |
+| `BitValid<T>` | Each bit pattern of the value bytes is a value. `std::byte` is valid | design |
+| `fits_each_value<From, To>` | Each value of `From` is a value of `To`, from the value bits and the signedness | design |
+
+**The API.**
+
+| Group | Operations | Contract | Cost | State |
+|---|---|---|---|---|
+| Limits | `max_of<T>`, `min_of<T>` (the lowest), `bits_of<T>`, `value_bits_of<T>`. For a `Float`: `min_normal_of`, `min_subnormal_of`, `epsilon_of`, `infinity_of`, `quiet_nan_of`, `signaling_nan_of` | Constants. A type that is not `Arithmetic` does not compile | none | design |
+| Compare and select | `min(a, b)`, `max(a, b)` by value, `Bounds<T>::of(lo, hi)`, `bounds<lo, hi>()`, `clamp(v, bounds)`, `compare(a, b)` of two integers of each signedness, `fits<To>(v)`, `unsigned_abs(v)`, `abs_diff(a, b)` | `Bounds` proves `lo <= hi` and no NaN, so `clamp` has no check | one compare and one select | design |
+| Conversions | `narrow<To>(v)` from an integer or a float, `wrapping_narrow<To>(v)`, `saturating_narrow<To>(v)`, `widen<To>(v)` | `narrow` gives `Option<To>`. `widen` takes only a pair of `fits_each_value` and has no check | at most two compares | design |
+| Enumerations | `enum_from<E>(raw)` | `Option<E>`. A set with no gap is one compare, and a set of 64 values is one compare and one bit test | one compare | main |
+| Arithmetic | `checked_add`, `checked_sub`, `checked_mul`, `checked_div`, `checked_rem`, `checked_neg`, `checked_shl`, `checked_shr` | `Option<T>`. A zero divisor and the minimum divided by -1 give no value | one flag test | design |
+| | `wrapping_add`, `wrapping_sub`, `wrapping_mul`, `wrapping_neg`, `wrapping_shl`, `wrapping_shr` | Modular. A shift count is modulo `bits_of<T>` | none | design |
+| | `saturating_add`, `saturating_sub`, `saturating_mul` | The exact result, or the clamp | one flag test | design |
+| | `gcd(a, b)`, `widening_mul(a, b)` | `gcd` gives an unsigned result for each input. `widening_mul` gives a named struct of the high and the low half | a loop of `ctz` steps, one multiply | design |
+| Bits | `popcount`, `countl_zero`, `countr_zero`, `countl_one`, `countr_one`, `bit_width`, `has_single_bit`, `bit_floor`, `bit_ceil`, `rotl`, `rotr`, `low_mask<T>(n)`, `byteswap` | `bit_ceil` gives `Option<T>`. `rotl` and `rotr` are total for each count. `low_mask` gives each bit for a count of `bits_of<T>` or more | one instruction in most cases | design |
+| Bit copy | `bit_cast<To>(v)`, `decode<To>(v)` | `bit_cast` takes only a `BitValid<To>` with `DecodableFrom`, and has no check. `decode` gives `Option<To>`, and the empty value of a niche gives no value | none, or the checks of the bool and enumeration parts | main for `decode`, design |
+| Floats | `fp::is_nan`, `fp::is_inf`, `fp::is_finite`, `fp::is_normal`, `fp::sign_bit`, `fp::abs`, `fp::copy_sign`, `fp::sqrt`, `fp::fma`, `fp::total_key` | `sqrt` of a negative value or a NaN gives the canonical NaN on each target. `total_key` gives the key of the IEEE total order | one instruction, or a call of libm `fma` with no FMA instruction | design |
+| Static index | `StaticIndex<I>`, `index<I>()` | The proof of a constant index for `at` | none | design |
+| Values | `exchange(slot, value)`, `swap` (a function object) | A type that moves with `noexcept` and is not `Pinned` | a move | design |
+| Random | `Philox4x32`, with a `FixedArray` counter and key | The counter-based generator of `include/crucible/Philox.h`, which moves into the base: the same counter and key give the same bits on each target | about ten integer instructions | design |
+| Strong ids | `Id<Tag, Word>` | An explicit construction from a `Word`, `raw()`, `==` and `<=>`, and no arithmetic. The value `max_of<Word>` is the empty value of `Option<Id>`, through the member niche protocol of section 11.2 | none | new |
+| Digests | `Digest<Tag>` | A 64-bit hash value with a meaning: an explicit construction, `raw()`, `==` and `<=>`, and no arithmetic. Each value is valid, so it has no niche | none | new |
+| Quantities | `Quantity<Unit, Rep>` | A number with a unit. A unit is a tag with a dimension and a ratio to the base unit of its dimension. The checked, wrapping and saturating operations take two values of one unit. A product or a quotient with a plain number keeps the unit. `convert<ToUnit>(q)` gives `Option`, and it has no check when the ratio divides | the operation of `Rep` | new |
+
+`Id` and `Digest` replace the macros `CRUCIBLE_STRONG_ID` and `CRUCIBLE_STRONG_HASH` of `include/crucible/Types.h`, in Stage 5. The base units of `Quantity` are bytes, elements, nanoseconds and cycles. `Duration` of the Os family is `Quantity<Nanosecond, std::int64_t>` (section 11.9).
+
+**The family list.** Each name of the API table and of the gates. `parse` belongs to the Report family (section 11.8).
+
+**Removes.** Five rows: `allow F0_core <bit> until Scalar`, `allow F0_primitives <numeric> until Scalar`, `allow F1_lattices <limits> until Scalar`, `allow X1_wrappers <cmath> until Scalar` and `allow X3_os <climits> until Scalar`. Two admit rows: `admit <limits> until Scalar` and `admit std::bit_cast until Scalar plain-result`. The family has no R5 import of its own. A bit builtin can call a helper of libgcc, such as `__popcountdi2` in a Debug build with no `POPCNT`. Such a helper stays a `libc-allow` row.
+
+**The load.** The ledger holds 301 findings of `<limits>` and 213 of `std::bit_cast` (the kinds `replace-pending`). Names: `std::bit_cast` 76, `std::min` 63 and `std::max` 50. The macro `CRUCIBLE_STRONG_ID` makes each id of `include/crucible/Types.h`. The pilot found one call site: `fixy::min`.
+
+**Where the sources do not agree.**
+- R9 cut the API to the calls of the tree. The design bar keeps `countl_one`, the float limits and `gcd`.
+- QDESIGN gates `enum_from` on a scoped enum. Main gates it on `Enumerated`, because an unscoped enumeration with a fixed type has the same hazard.
+- QDESIGN gives `clamp` a `pre` specifier, which the tree refuses (§XII). `Bounds` proves the order of the bounds, so `clamp` has no branch.
+- QDESIGN gives `abs`. `unsigned_abs` shows its unsigned result, so a change of `std::abs` cannot give a modular value with no sign.
+- `fixy/Checked.h` declares `checked_*`, `wrapping_*` and `saturating_*` with the same parameters, and two declarations of one name are ill-formed. So the re-export of the three sets waits for slice 4.10, which merges `foundation/Saturate.h`, `fixy/Saturate.h`, `fixy/Saturated.h` and `fixy/Checked.h` into the family (Appendix E).
+- QDESIGN moves Philox into Scalar, and the G2 Scalar design does not name it. This section keeps the move, because the Check proposal of section 11.11 uses a generator of the base.
+
+**The recipes.**
 
 | Pattern A | Pattern B | Kind |
 |---|---|---|
@@ -938,8 +1408,47 @@ A verb that no family needs is not added. A new operation that no verb covers us
 | `static_cast<E>(raw)` | `fixy::enum_from<E>(raw)` | judgment (the failure path) |
 | narrowing `static_cast<uint32_t>(x)` | `fixy::narrow<uint32_t>(x)`, or `widen` when the build proves it | judgment |
 | `std::rotl(x, n)` | `fixy::rotl(x, n)` | mechanical |
+| `std::clamp(v, lo, hi)` | `fixy::clamp(v, fixy::bounds<lo, hi>())`, or `Bounds<T>::of(lo, hi)` for run-time bounds | mechanical for constant bounds |
+| `std::cmp_less(a, b)`, `std::in_range<T>(v)` | `fixy::compare(a, b) < 0`, `fixy::fits<T>(v)` | mechanical |
+| `std::abs(v)` of an integer | `fixy::unsigned_abs(v)` | judgment (the unsigned result) |
+| `CRUCIBLE_STRONG_ID(Name, Word)` | `using Name = fixy::Id<NameTag, Word>;` | mechanical |
+| a size or a time as a plain integer | `fixy::Quantity<Unit, Rep>` | judgment (the unit) |
 
 ### 11.8 Report: `Site`, `Fmt`, `format`, `report`, `fatal`, `unreachable`, `parse`
+
+**The idea.** Each text that the program writes goes through one checked formatter into a region, and out through one sink with no buffer. Each fatal exit and each point that control never reaches goes through one cold function with a site. Each number that the program reads from a text goes through one parser.
+
+**The headers.** `include/foundation/core/Report.h` and `include/foundation/core/Format.h` (main). The cold functions are in `src/foundation/core/Report.cpp` and `src/foundation/ContractHandler.cpp`. The sink write is in `src/foundation/os/ReportSink.cpp`, and it issues the raw write of `foundation/os/Syscall.h`.
+
+**The API.**
+
+| Operation | Contract | Cost | State |
+|---|---|---|---|
+| `Site` | The file, the line and the function of a call | none | main |
+| `Fmt<Args...>` | A string literal with one `{}` for each argument, and its `Site`. `{{` and `}}` write one brace. The consteval constructor refuses each other text and names the rule | none at run time | main |
+| `report(sink, fmt, args...)` | Writes to `Sink::Out` or `Sink::Err` before it returns. A text of 512 bytes or less takes one system call. Safe in a signal handler | the format and one write | main |
+| `fatal(fmt, args...)`, `fatal(reason)` | Writes the text and the site to standard error, and ends the process in each build and with each contract semantic | one branch to a cold call | main |
+| `unreachable()` | The same, for a point that control never reaches | one branch to a cold call | main |
+| `format(out, fmt, args...)` | Writes into a `FixedText`. Gives `Result<TextView, Truncated>`, and on `Truncated` the text holds the first characters | the format | main |
+| `Formattable<T>` | An integer, a `bool` or a `TextView` | - | main |
+| more argument kinds | A scoped enumeration by its reflected name, an `Id` and a `Digest` by their word, an `Errno` by its name, and a `Site` | the format | design |
+| float values | A fixed decimal form with no locale. The algorithm, or the row of `<charconv>` in the rule table, is a decision of Stage 2 (section 9) | the format | open |
+| `parse<T>(text)` | `Result<T, ParseError>`. Decimal and `0x` hex exactly, no white space, no sign on an unsigned type, and no overflow. `ParseError` holds the position in the text. It uses `checked_mul`, `checked_add` and `narrow` of the Scalar family | one pass over the text | design |
+| the prefix map | `-ffile-prefix-map` and `-fmacro-prefix-map`, so a `Site` holds a path relative to the source root (section 10.3a) | none | design |
+
+`parse` is the dual of `format`, and it belongs here because its input is a text and its error holds a position in that text.
+
+**The family list.** `Site`, `Fmt`, `report`, `Sink`, `fatal`, `unreachable`, `format`, `Truncated`, `Formattable`, `parse`, `ParseError`.
+
+**Removes.** Four rows: `allow F0_primitives <cstdlib> until Report`, `allow F1_diag <charconv> until Report`, `allow F1_diag <cstdio> until Report` and `allow F1_diag <source_location> until Report`. The text of the row of `<cstdlib>` also names the Ref family (the frees of the two buffers) and the Os family (`std::getenv`). The text of the row of `<cstdio>` names the streams of `fixy/os/OwnedFile.h`. So these two rows go after Report, Ref and Os. The decision on the row of `<charconv>` belongs to section 9. The admit row `admit std::source_location until Report`. The R5 import of `libfixy.a`: `__fprintf_chk`. The R5 imports of the `libcrucible*.a` libraries: `__fprintf_chk`, `__vfprintf_chk`, `stderr`, `abort` outside the abort door, and `__isoc23_strtoull`, which `parse` replaces.
+
+**The load.** C calls: `fprintf` 1,097, `stderr` 1,062, `abort` 403, `printf` 230, `_Exit` 80, `snprintf` 21, `fputs` 20, `fflush` 16 and `puts` 14. The ledger holds 31 findings of `std::source_location` in `test/`. Objects: `std::from_chars_result` 12 and `std::to_chars_result` 9. The pilot found one call site: the `PASSED` lines of the tests, which go through `report`.
+
+**Where the sources do not agree.**
+- QDESIGN builds `Site` from `std::source_location` in a consteval context. Main builds it from the builtins of R3.
+- QDESIGN gives `parse` no family, and the G2 Scalar design puts it in Report. This section agrees with the G2 design.
+
+**The recipes.**
 
 | Pattern A | Pattern B | Kind |
 |---|---|---|
@@ -950,21 +1459,162 @@ A verb that no family needs is not added. A new operation that no verb covers us
 | `std::snprintf(buf, n, ...)` | `fixy::format(text, "...", ...)` | mechanical |
 | `std::to_string(x)` | `fixy::format` | mechanical |
 | `std::strtoull`, `std::from_chars` | `fixy::parse<std::uint64_t>(view)` | mechanical |
+| `std::printf("  test_x: PASSED\n");` in a test | `fixy::report(fixy::Sink::Out, "  test_x: PASSED\n");` | mechanical |
+| `std::source_location loc = std::source_location::current()` | a `fixy::Site` parameter with its default | mechanical |
 
-### 11.9 Os
+### 11.9 Os: the doors to the kernel
+
+**The idea.** Each system call, file, path, directory, clock, thread, wait, socket and read of the environment goes through one door. Each door takes a context that holds its effect atoms, and gives `Result<T, Errno>`. The descriptors, paths and names that a door gives are base types. A door has the same code path in each build (R18), and it changes no state of the whole process (R20).
+
+**The homes.** The family lives in the two door directories of D16 and not in `foundation/core`. `include/foundation/os/` holds the floor and the types. These are the raw system call, the kernel floor, the argument words and `Errno`. They are also the file and directory doors, `PathText`, the auxiliary vector, the guarded memory and the abort door. `include/fixy/os/` holds the doors of the layer X3, and `src/fixy/os/` holds their source files. Each system header has one owner (R4).
+
+**The namespaces.** `Errno` and the floor are in `foundation::os`. The doors keep the namespace of their subject: `fixy::fs`, `fixy::net`, `fixy::time`, `fixy::thread` and `fixy::futex` (main). A new door takes the namespace of its subject. The doors of the state of the process (`env`, `args`) and a re-export of `Errno` take `fixy::os` (design).
+
+**The API on main at d36be7daf.**
+
+| Door | Operations | Header |
+|---|---|---|
+| The system call | `raw_syscall`, the enumeration `Syscall`, `minimum_kernel()` and the start-up check | `foundation/os/Syscall.h`, `KernelFloor.h` |
+| The error | `Errno`, `result_of(word)`, `unit_of`, `error_number` | `foundation/os/Errno.h` |
+| Files and directories | `read_file(path, view)`, `read_file(path, text)`, `for_each_entry(path, visitor)`, `PathText<Capacity>` | `foundation/os/File.h`, `Directory.h`, `PathText.h` |
+| Memory | `map_guarded_region`, the ASan poison | `foundation/os/GuardedRegion.h`, `Poison.h` |
+| The exit | `abort_process()` | `foundation/os/Abort.h` |
+| Descriptors and files | `OwnedFd`, the file door, the durable writes of the Cipher | `fixy/os/Fd.h`, `Fs.h`, `CipherDurable.h` |
+| Mappings and I/O | `OwnedMmap`, `mint_mmap`, the `io_uring` door | `fixy/os/OwnedMmap.h`, `Mmap.h`, `Io.h` |
+| Waits | `wait`, `wake_one`, `wake_all` on a `FutexWord`, `Deadline` | `fixy/os/Futex.h` |
+| Threads | the start and the join of the thread door, `ThreadName`, `ThreadOptions` | `fixy/os/ThreadTasks.h` |
+| Hooks | the signal door (an Init context only), the exit hooks, the fork hook | `fixy/os/Signal.h`, `ExitHooks.h` |
+| Time | `MonotonicClock`, the TSC and PTP readers | `fixy/os/MonotonicClock.h`, `Time.h` |
+| Placement | `Sched.h`, `CpuPinned.h`, `NumaPlacement.h`, `Topology.h` | `fixy/os/` |
+| Sockets | the netlink route socket | `fixy/os/Socket.h` |
+
+**The design.**
+
+| Operation | Contract | State |
+|---|---|---|
+| one error type | Each door gives `Result<T, Errno>`, and no `std::error_code` or plain `int` stays (slice 4.1) | design |
+| `errno_text(e)` | A static `TextView` for each `Errno` | design |
+| `Path<Source>` | A `FixedText` path with its provenance tag, with no `std::filesystem`. A `..`, a zero byte and a path that is too long are refused, as `fixy/os/Path.h` does today | design |
+| `join(base, component)` | `Result<Path<Source>, PathError>` | design |
+| `OwnedFd`, `Dirfd` | The owners of a descriptor of `fixy/os/Fd.h` and `fixy/os/Fs.h` (main, a keep row of Appendix E). Only the doors of the family can adopt a descriptor | main, design |
+| `open_at`, `read_at`, `write_at`, `unlink_at`, `rename_at`, `make_dir_at`, `make_dirs`, `exists`, `temp_file`, `temp_dir` | The calls of the `*at` and `p*` forms that x86_64 and aarch64 have. `EINTR` and a partial transfer are handled inside the door | design |
+| `read_all(ctx, alloc, fd)` | `Result<GrowList<std::byte>, Errno>` | design |
+| `env(init_ctx, name)` | `Option<FixedText<4096>>`, a copy. An Init context only | design |
+| `args(argc, argv)` | `View<CText const>`, the one door from `main` | design |
+| `Thread` | A long-lived thread, linear. `mint_thread(bg_ctx, permission, body)` starts it, and `join() &&` gives the permission back. A stop goes through a `OneShotFlag` | design |
+| the socket doors | `bind`, `send`, `recv`, `recvmsg`, `setsockopt`, `getsockopt`, `if_nametoindex` and `ioctl` | design |
+| the doors of the kernel facilities | `perf_event_open`, `mlock`, `prctl`, `sched_getattr` | design |
+| the counter door | Maps the perf page of each event one time, and reads the counter with `rdpmc` (section 10.3a) | design |
+| the I/O door | Files and sockets on `io_uring` with registered buffers and files, and a fallback with plain system calls that a start-up probe selects (section 10.3a) | design |
+| time | `Instant`, `Duration` (`Quantity<Nanosecond, std::int64_t>`), `MonotonicClock`, `Deadline`. The hot path reads the cycle counter, and the wall clock calls glibc `clock_gettime` (section 10.3a) | main for `MonotonicClock` and `Deadline`, design |
+| the BPF owners | `bpf::Object`, `bpf::Map`, `bpf::Link`: linear owners of the libbpf handles | design |
+
+`fixy/os/OwnedFile.h` merges into the file doors of the family in slice 4.1 (Appendix E), so `std::FILE` leaves each public signature. Appendix E asks the owner where `fixy/os/CipherDurable.h` goes.
+
+**The family list.** The names of the two tables.
+
+**Removes.** Six rows: `allow F1_diag <system_error> until Os`, `allow F1_rest <csignal> until Os`, `allow X3_os <cerrno> until Os`, `allow X3_os <ctime> until Os`, `allow X3_os <filesystem> until Os` and `allow X3_os <mutex> until Os`. The text of the row of `<system_error>` also names `std::errc` of the JSON emitter, which Report replaces, so that row goes after Os and Report. The R5 imports of the `libcrucible*.a` libraries:
+- The imports of `std::filesystem` (11 names)
+- The imports of the file streams: `std::basic_ifstream`, `std::basic_ofstream`, `std::basic_filebuf`, `std::basic_ios`, `std::ios_base`, `std::locale`, `std::ctype<char>`, `std::getline`, and the reads and writes of `std::istream` and `std::ostream`
+- The imports of `std::error_code`: `std::system_category`, `std::generic_category` and the typeinfo of `std::error_category`
+- The imports of `std::thread`: `_M_start_thread`, `join`, the typeinfo and the vtable of `std::thread::_State`, the vtable of `__si_class_type_info`, and the vtable row of `std::thread::_State_impl`
+- `std::__detail::__notify_impl`, with the futex door
+- The C calls of files: `__errno_location`, `close`, `faccessat`, `fdatasync`, `fsync`, `openat`, `renameat`, `unlinkat`, `write` and `strerror`
+- The C calls of sockets: `recv`, `__recv_chk`, `recvmsg`, `send`, `bind`, `setsockopt`, `getsockopt`, `if_nametoindex` and `ioctl`
+- The other C calls: `getenv`, `getpid`, `sysconf`, `syscall`, `pthread_self` and `sched_yield`
+- `clock_gettime`, which becomes a call of the time door. D12 keeps it in glibc, so it stays a `libc-allow` row of `libfixy.a`
+- `__cxa_begin_catch` and `__cxa_end_catch` of the `try` and `catch` around `std::filesystem`
+- The 21 `host-ratchet` imports of libbpf of `libcrucible_perf.a`, which the BPF owners take.
+
+**The load.** Objects: `std::jthread` 96, `std::filesystem::path` 52, `std::chrono::time_point` 26, `std::thread` 15, `std::chrono::duration` 14, `std::stop_token` 13, `std::error_code` 12, `std::basic_ifstream` 12, `std::latch` 6, `std::basic_ofstream` 5, `std::lock_guard` 5 and `std::mutex` 3. Names: `std::jthread::join` 63, `std::chrono::steady_clock::now` 48 and `std::error_code::message` 39. C calls: `__errno_location` 60, `close` 56, `read` 23, `getenv` 16, `setenv` 13, `sched_getaffinity` 11, `mkdtemp` 11 and `syscall` 8. The calls of a child process (`fork` 27, `waitpid` 28, `pipe` 14, `dup2` 14, `_exit` 17 and `_Exit` 80) wait for the process door of section 11.11. The pilot found one call site: the background pipeline takes a thread type of the family in place of `std::jthread`.
+
+**Where the sources do not agree.**
+- Section 10 of this plan gave the eight families one home in `foundation/core`. D16 puts the Os family in the two door directories, and main agrees.
+- QDESIGN gives `exit_now(code)`. A process exit outside the abort door is a part of the process door, which waits for the owner (section 11.11).
+
+**The recipes.**
 
 | Pattern A | Pattern B | Kind |
 |---|---|---|
-| `std::filesystem::path{root} / "HEAD"` | `fixy::os::join(root, "HEAD")` | mechanical |
-| `std::filesystem::exists(p)` | `fixy::os::exists(ctx, p)` | mechanical (the context must reach the site) |
-| `::pread(fd, buf, n, off)` | `fixy::os::read_at(ctx, fd, view, off)` | mechanical |
+| `std::filesystem::path{root} / "HEAD"` | `fixy::fs::join(root, "HEAD")` | mechanical |
+| `std::filesystem::exists(p)` | `fixy::fs::exists(ctx, p)` | mechanical (the context must reach the site) |
+| `::pread(fd, buf, n, off)` | `fixy::fs::read_at(ctx, fd, view, off)` | mechanical |
 | `opendir` and `readdir` loop | `for_each_entry` | judgment |
-| `std::jthread` | `mint_permission_fork` or `fixy::os::Thread`, which start through the thread door of unit 2c | judgment |
+| `std::jthread` | `mint_permission_fork` or `fixy::thread::Thread`, which start through the thread door of unit 2c | judgment |
 | `std::mutex`, `std::condition_variable`, a spin with `sleep_for` | the futex door of unit 2c | judgment |
 | `::read`, `::write`, `::pread` in a loop | the I/O door of G6 (`io_uring`, or its fallback) | judgment (registered buffers) |
 | `std::chrono::steady_clock::now()` | the `MonotonicClock` reader | mechanical |
 | `std::getenv("X")` | `fixy::os::env(init_ctx, "X")` | judgment (the context) |
 | `std::error_code` | `fixy::os::Errno` | mechanical |
+| `std::chrono::nanoseconds`, a duration in a plain integer | `fixy::time::Duration` | mechanical |
+| `mkdtemp`, `std::filesystem::remove_all` in a test | `temp_dir` and the directory doors | judgment |
+| `std::thread` or `std::jthread` that a class keeps | `fixy::thread::Thread`, with `join() &&` at the end of its owner | judgment |
+
+### 11.10 Ownership, borrows and memory
+
+`misc/12_10_2026_linear.md` holds the design of ownership: linear values, brands, borrows, regions, credits and interaction nets. This section does not state it again. Each family takes these parts of it:
+
+| Family | Part | Section of the linear design | Phase |
+|---|---|---|---|
+| Choice | A linear payload or error leaves a sum only through a consumer that takes `&&`. A read through `const&` consumes nothing | 11, item 5 | A |
+| Choice, Region | The error of `push` and `append` gives a linear value back | 11, item 10 | A |
+| Record | A `Record` with a linear part is linear by containment | 2 (P1), 4 | A |
+| Ref | `Box` is linear in shape 1, and its consume gives a `Hole` credit | 6 | C |
+| Ref | No counted reference. A counted share is the grade `!n` at a named door | 11, item 2 | - |
+| Ref, Atomic | The run-time id of a brand | 4 | B |
+| Region | The region capability, the epochs, the frame regions, `BrandedIndex` of 4 bytes and the compact views | 6 | C |
+| Region | Views with no brand, and the rules `view-escape` and `move-while-borrowed` | 5, 6 | D |
+| Os | A handle that holds a `Permission`, such as `Thread`, is linear with a release door | 11, item 6 | A |
+| Each family | Each exit from linearity is a named door of the door roster | 2 (P10), 4 | A |
+
+### 11.11 The features with no design, and the proposals that wait for the owner
+
+QDESIGN and the designs of 2026-10-17 give no design to five features. Each one gets a home in a family, or a proposal of a new family or a new verb. A proposal waits for a yes from the owner (section 17), and no unit builds it before that yes.
+
+| Feature | Home | Status |
+|---|---|---|
+| Equality, order, hash, format and a byte codec, derived by reflection | a new family, Protocol | P1 waits for the owner |
+| The test language: death tests, property tests with Philox generators and shrinking, the helper of a std oracle | a new family, Check | P2 waits for the owner |
+| The iteration verbs `enumerate`, `zip`, `reverse`, `windows` and `chunks` | new verbs, given by Region and Record | P3 waits for the owner |
+| Strong ids, and quantities with units | Scalar (section 11.7): `Id`, `Digest` and `Quantity` | designed in this section. No new family and no new verb |
+| A process door | Os | P4 waits for the owner, because it changes D12 |
+| One meaning of `get`, the result of `append`, and the refusal of a present key | the verbs of section 11.1 | P6 waits for the owner |
+
+The unit design of G1 also leaves one question to the owner, P5. The protocol set of section 11.1 adds P6, because it changes three approved verb rows or the API of main.
+
+**P1. The Protocol family.**
+- What: one reflection walk derives five operations for a type that opts in through an annotation. They are `equal(a, b)`, `order(a, b)`, `hash(a)`, the format of a struct, and a byte codec of `encode(value, out)` and `decode<T>(bytes)`. The walk refuses what `decode` refuses: a pointer, a reference, a union and a read of padding. The codec writes fixed widths in little-endian order. `decode` of a byte view is the form of `decode` of the Scalar family over a run of bytes. Its `Result` holds the position of an error.
+- Reason: each type writes these operations by hand today. Examples are `reflect_hash` of `foundation/reflect/Hash.h`, the serializer of `include/crucible/Serialize.h` and the macros of `include/crucible/Types.h`. The design bar asks for a derivation by reflection, and DetSafe asks for a hash and a byte image with no padding.
+- Changes outside sections 10 and 11: R9 and section 4 (nine families), a row of section 1, CLAUDE.md §XXII, and a group after G5 in section 10.1.
+- Depends on: Scalar (`Digest` and the bit operations), Region (`bytes` and `View`), Record, and Report (`Formattable`). `equal` of Region becomes the form of `equal` over a view.
+
+**P2. The Check family.**
+- What: the test language, for a Test context only. `expect_dies(body, text)` runs the body in a child and expects `SIGABRT` with the text on standard error. `property(seed, count, body)` takes Philox generators of the base and shrinks a failure to a minimal input with the same seed. `oracle(...)` runs a family operation and its std form over Philox inputs inside one `ORACLE:` region. `pass(name)` writes the `PASSED` line through `report`, and the assert macro of the tests calls `fatal()` with its text.
+- Reason: `test/` holds 11,641 `std-entity` findings and 3,291 `c-library-call` findings. The harness repeats death tests, property loops and oracles by hand in each file, with `fork`, `waitpid`, `fprintf` and `abort`.
+- Changes outside sections 10 and 11: R9 and section 4, a row of section 1, the unit `harness` of wave 5A (section 14.1), and CLAUDE.md §XIII and §XXII.
+- Depends on: P4, Philox in the Scalar family (section 11.7), and Report.
+
+**P3. The iteration verbs.**
+- What: `enumerate()` gives each element with its proven index. `zip(a, b)` gives the pairs of two views: a fixed extent proves the counts equal, and a dynamic extent gives `Result<..., LengthMismatch>`. `reverse()` visits from the last element. `windows<N>()` gives each run of N consecutive elements with a step of one, as a `View<T, N>`. `chunks<N>()` gives each run of N elements with a step of N, and the rest as a separate `View`. Each one is a borrow with no allocation, and its cost is the loop bound.
+- Reason: a loop with an index is the largest source of a raw subscript: `std::array::operator[]` 892, `std::vector::operator[]` 286 and `std::span::operator[]` 153. A reverse loop writes `while (i-- > 0)`, and a loop over windows adds an offset by hand. Each verb removes a branch or an index from such a loop.
+- Changes outside sections 10 and 11: R9 and section 4 (fifteen verbs), and CLAUDE.md §XXII.
+
+**P4. The process door.**
+- What: doors of the Os family for a child process, for a Test context only. `spawn_child(test_ctx, body)` gives `Result<Child, Errno>`, and `wait(child)` gives the exit code or the signal. `pipe` and `redirect` give the output of the child, and `exit_now(code)` ends a child with no exit hooks. The doors call glibc `fork`, `waitpid`, `pipe2`, `dup3` and `_exit`, because glibc owns the fork handlers and the state of its threads.
+- Reason: the tests call `fork` 27 times, `waitpid` 28, `pipe` 14, `dup2` 14, `_exit` 17 and `_Exit` 80, and each death test repeats them. P2 uses the door.
+- Changes outside sections 10 and 11: the glibc list of D12, the deny list of R4 (`clone`) and the R5 allowlist of `libfixy.a`. It also changes the end state of the kind `process-start` of the rule `banned` (sections 8.6a and 13.4).
+
+**P5. `map`, `and_then` and `or_else` on `Option` and `Result`.**
+- What: three new verbs of the Choice family.
+- Reason against them, the recommendation of the unit design of G1: `match` and `CRUCIBLE_TRY` cover each pattern of the recipes of section 11.2, so the verbs add a second road to the same result.
+- Changes outside sections 10 and 11: R9 and section 4.
+
+**P6. Three changes to the verbs of section 11.1.**
+- What, part 1: `Box::get()` and `CacheLine::get()` of main go, and the dereference and `view()` take their place. Then `get` has one meaning, the checked lookup with a key, as law 1 asks.
+- What, part 2: `append(alloc, v)` gives `Result<Unit, Full<T>>`, and each growable owner states a maximum at its mint. The principle P5 of the linear design gives each size a budget. A growth past the maximum then refuses, and the process does not end.
+- What, part 3: `push(key, value)` of a table refuses a key that the table holds. The refusal gives the reason (full, or a key that the table holds) and a linear value back.
+- Reason: the design bar asks for one meaning for each name and for no hidden end of the process. QDESIGN gives `append` a `Ref<T>`, which dangles at the next growth, and gives no refusal for a key that a table holds.
+- Changes outside sections 10 and 11: the API of `foundation/core/Ref.h` and `foundation/core/Atomic.h` on main, and CLAUDE.md §XXII "The families on main". Each caller of `get()` changes too.
 
 ---
 
@@ -973,9 +1623,9 @@ A verb that no family needs is not added. A new operation that no verb covers us
 | Layer | Directories | May include |
 |---|---|---|
 | F0 floor | `foundation/Platform.h`, `foundation/Pinned.h`, `foundation/Quarantine.h` | the base allowance (R2) |
-| F0 core | `foundation/reflect/`, `foundation/contracts/`, `foundation/Brand.h`, `foundation/Lifetime.h`, `foundation/ByteSeal.h`, `foundation/diag/FailClosed.h`, `foundation/NoObject.h` | the base allowance |
+| F0 core | `foundation/reflect/`, `foundation/contracts/`, `foundation/Brand.h`, `foundation/Lifetime.h`, `foundation/ByteSeal.h`, `foundation/Linear.h`, `foundation/diag/FailClosed.h`, `foundation/NoObject.h` | the base allowance |
 | F0 os | `foundation/os/Syscall.h`, `foundation/os/KernelFloor.h`, `foundation/os/OpenFlags.h`, `foundation/os/FutexWords.h`, `foundation/os/MapWords.h`, `foundation/os/SchedWords.h`, `foundation/os/MemoryPolicyWords.h`, `src/foundation/os/Syscall.cpp`, `src/foundation/os/Intercepted.h`, `src/foundation/os/Intercepted.cpp` (D16, unit 2b) | the base allowance, plus each system header that the floor uses, through its one door. The rank is below F0 primitives, so that the families and each higher layer can use the syscall primitive |
-| F0 primitives | `foundation/core/` and `src/foundation/core/` (the families), `foundation/Simd.h`, `foundation/Saturate.h`, `foundation/AlignedBuffer.h`, `foundation/SwissTableBuffer.h`, `foundation/ThreadLocalRef.h`, `foundation/ChannelBinding.h` | the base allowance. No system header in a header. Cold code goes to `src/foundation/` |
+| F0 primitives | `foundation/core/` and `src/foundation/core/` (the families), `foundation/Simd.h`, `foundation/ThreadLocalRef.h`, `foundation/ChannelBinding.h`. Until their merge rows of Appendix E land, also `foundation/Saturate.h` (slice 4.10), `foundation/AlignedBuffer.h` and `foundation/SwissTableBuffer.h` (slice 4.3) | the base allowance. No system header in a header. Cold code goes to `src/foundation/` |
 | F0 doors | the other files of `foundation/os/` and `src/foundation/os/` | the base allowance, plus each system header through its one door. The rank is above F0 primitives, so that a door can return a `Result` of the families |
 | F1 algebra | `foundation/algebra/`, without `lattices/` | the base allowance. Runtime std names only in `consteval` context |
 | F1 lattices | `foundation/algebra/lattices/` | the base allowance. Runtime std names only in `consteval` context |
@@ -984,9 +1634,9 @@ A verb that no family needs is not added. A new operation that no verb covers us
 | F1 permissions | `foundation/permissions/` | the base allowance. Runtime std names only in `consteval` context |
 | F1 rest | the other files of `foundation/` and `src/foundation/` | the base allowance. Runtime std names only in `consteval` context |
 | X1 wrappers | `fixy/` top-level wrapper headers, `fixy/fp/`, `src/fixy/` | the base allowance |
-| X2 binding | `fixy/Fn.h`, `fixy/Axis.h`, `fixy/Atom.h`, `fixy/atoms/`, Collision, Corpus, Reject, Insights, Role, Throws, Federation | the base allowance |
+| X2 binding | `fixy/Fn.h`, `fixy/Axis.h`, `fixy/Atom.h`, `fixy/atoms/`, `fixy/collision/`, Collision, Corpus, Reject, Insights, Role, Throws, Federation | the base allowance |
 | X3 os | `fixy/os/`, `src/fixy/os/` | the base allowance, plus each system header through its one door |
-| X4 concurrent | `fixy/concurrent/`, `fixy/handle/` (without LazyEstablishedChannel) | the base allowance. Threads start through X3 |
+| X4 concurrent | `fixy/concurrent/`, `fixy/handle/` | the base allowance. Threads start through X3 |
 | X5 session | `fixy/session/`, `src/fixy/session/` | the base allowance |
 | X6 channels | `fixy/channels/` | the base allowance |
 
@@ -994,7 +1644,7 @@ A layer can include a lower layer and itself. It cannot include a higher layer.
 
 The six F1 layers come from the split of unit 2d (owner, 2026-10-11), and they land with items 2 to 4 of that unit. Before that commit, the rule table has one layer F1 algebra for the six rows.
 
-**Headers that no layer includes:** `<thread>`, `<chrono>`, `<filesystem>`, `<fstream>`, `<sstream>`, `<iostream>`, `<functional>`, `<memory>`, `<ranges>`, `<algorithm>`, `<set>`, `<map>`, `<unordered_map>`, `<mutex>`, `<any>`, `<variant>`, `<expected>`, `<optional>`, `<system_error>`, `<charconv>`, `<format>`, `<regex>`, `<cmath>`, `<source_location>`, any third-party header.
+**Headers that no layer includes at the end of Stage 4:** `<thread>`, `<chrono>`, `<filesystem>`, `<fstream>`, `<sstream>`, `<iostream>`, `<functional>`, `<memory>`, `<ranges>`, `<algorithm>`, `<set>`, `<map>`, `<unordered_map>`, `<mutex>`, `<any>`, `<variant>`, `<expected>`, `<optional>`, `<system_error>`, `<charconv>`, `<format>`, `<regex>`, `<cmath>`, `<source_location>`, any third-party header.
 
 **The admission rule for a new header.** A header joins the allowance of a layer only if all these conditions hold:
 1. A member of the layer needs a declaration from it, and no lower layer and no builtin gives the declaration.
