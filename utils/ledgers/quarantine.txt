@@ -460,7 +460,7 @@ test/dag_neg/ | raw-pointer-object | 7 | - | -
 test/dag_neg/ | std-entity | 1 | - | -
 test/dag_neg/ | std-object | 3 | - | -
 test/fixy/ | c-array-object | 102 | - | -
-test/fixy/ | c-library-call | 1508 | - | -
+test/fixy/ | c-library-call | 1506 | - | -
 test/fixy/ | c-library-object | 10 | - | -
 test/fixy/ | door-header | 22 | - | -
 test/fixy/ | opted-out | 16 | ORACLE: the C library reports the attributes of the calling thread | -
@@ -475,7 +475,7 @@ test/fixy/ | region | 1 | PROBE: a signal reaches a thread that waits in the fut
 test/fixy/ | replace-pending:<limits> | 30 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 20 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 3371 | - | -
+test/fixy/ | std-entity | 3367 | - | -
 test/fixy/ | std-object | 1269 | - | -
 test/fixy/neg/ | c-array-object | 53 | - | -
 test/fixy/neg/ | c-library-call | 253 | - | -
