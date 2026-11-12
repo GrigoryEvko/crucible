@@ -256,7 +256,7 @@ struct HostFacts {
     std::uint32_t l1d_bytes = 0;
     std::uint32_t l1i_bytes = 0;
     std::uint32_t l2_bytes = 0;
-    std::uint64_t l3_total_bytes = 0;
+    std::uint64_t l3_instance_bytes = 0;
     std::uint32_t cache_line_bytes = 0;
     std::uint16_t physical_core_count = 0;
     std::uint16_t hw_thread_count = 0;
@@ -385,7 +385,7 @@ template <::foundation::effects::IsExecCtx Ctx>
     facts.l1d_bytes = static_cast<std::uint32_t>(topology.l1d_per_core_bytes);
     facts.l1i_bytes = static_cast<std::uint32_t>(topology.l1i_per_core_bytes);
     facts.l2_bytes = static_cast<std::uint32_t>(topology.l2_per_core_bytes);
-    facts.l3_total_bytes = topology.l3_total_bytes;
+    facts.l3_instance_bytes = topology.l3_instance_bytes;
     facts.cache_line_bytes = static_cast<std::uint32_t>(topology.cache_line_bytes);
     facts.physical_core_count = static_cast<std::uint16_t>(topology.num_cores);
     facts.hw_thread_count = static_cast<std::uint16_t>(topology.num_smt_threads);
@@ -536,7 +536,7 @@ template <::foundation::effects::IsExecCtx Ctx>
     cog::CpuSocketTargetCaps socket{};
     socket.core_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(facts.physical_core_count);
     socket.thread_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(facts.hw_thread_count);
-    socket.l3_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(facts.l3_total_bytes);
+    socket.l3_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(facts.l3_instance_bytes);
     socket.numa_node_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint8_t>(facts.numa_node_count);
     socket.representative_core = core;
     socket.features = facts.isa_features;

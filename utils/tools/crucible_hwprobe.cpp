@@ -176,7 +176,7 @@ void print_host(ledger::HostFacts const& facts, ledger::HostFingerprint fingerpr
                 static_cast<unsigned long long>(fingerprint.policy.raw()));
     std::printf("geometry    l1d=%uK l2=%uK l3=%lluM line=%u cores=%u threads=%u ccd=%u numa=%u sve=%u bits\n",
                 facts.l1d_bytes / 1024u, facts.l2_bytes / 1024u,
-                static_cast<unsigned long long>(facts.l3_total_bytes / (1024u * 1024u)), facts.cache_line_bytes,
+                static_cast<unsigned long long>(facts.l3_instance_bytes / (1024u * 1024u)), facts.cache_line_bytes,
                 facts.physical_core_count, facts.hw_thread_count, facts.l3_instance_count, facts.numa_node_count,
                 facts.sve_vector_length_bits);
     std::printf("competence  %s (defects=0x%04x)\n", competence.is_competent() ? "FIT" : "DEGRADED",

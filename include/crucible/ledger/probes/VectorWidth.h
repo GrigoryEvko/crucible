@@ -102,7 +102,7 @@ inline constexpr std::size_t kMinStreamCacheMultiple = 4;
 // than one instance, so measure() refuses a streaming run whose pin
 // failed.
 [[nodiscard]] inline std::size_t reachable_last_level_bytes(::fixy::topology::Topology const& topology) noexcept {
-    return topology.l3_total_bytes();
+    return topology.l3_instance_bytes();
 }
 
 // The size of the streaming buffer for a reachable last-level cache, or

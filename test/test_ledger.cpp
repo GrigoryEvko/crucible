@@ -149,7 +149,7 @@ void test_fingerprint_reuses_the_cogmimic_projection() {
     assert(left != right);
 
     ledger::HostFacts doubled = facts;
-    doubled.l3_total_bytes = facts.l3_total_bytes * 2u;
+    doubled.l3_instance_bytes = facts.l3_instance_bytes * 2u;
     assert(ledger::fold_hardware(doubled) != ledger::fold_hardware(facts));
 
     crucible::test::pass("  test_fingerprint_reuses_the_cogmimic_projection: PASSED\n");

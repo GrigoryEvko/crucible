@@ -96,7 +96,7 @@ inline constexpr std::size_t kSweepMaxCeilingBytes = 256ull * 1024ull * 1024ull;
 inline constexpr std::size_t kMaxSweepPoints = 64;
 
 [[nodiscard]] inline std::size_t sweep_ceiling_bytes() noexcept {
-    const std::size_t last_level = ::fixy::topology::Topology::instance().l3_total_bytes();
+    const std::size_t last_level = ::fixy::topology::Topology::instance().l3_instance_bytes();
     return std::clamp(last_level * kSweepCeilingMultipleOfL3, kSweepMinCeilingBytes, kSweepMaxCeilingBytes);
 }
 

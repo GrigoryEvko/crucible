@@ -705,14 +705,14 @@ Result<TextView, Truncated> Topology::format_summary(FixedText<summary_capacity>
                   "  CPU:    vendor=\"{}\" model=\"{}\"\n"
                   "  Cores:  physical={} smt_threads={} smt_factor={} process_allowed={}\n"
                   "  Caches: l1d={} KB l1i={} KB l2={} KB l3={} MB line={}\n"
-                  "  Groups: l3_clusters={} cores_per_socket={}\n"
+                  "  Groups: l3_clusters={} largest_l3_group_cpus={}\n"
                   "  NUMA:   nodes={}\n"
                   "  Memory: page_size={} B hugepage_2mb={}\n",
                   source_ == Source::Sysfs ? TextView{"Sysfs"} : TextView{"Fallback"},
                   probed_text(cpu_vendor_.c_str(), cpu_vendor_.size()),
                   probed_text(cpu_model_.c_str(), cpu_model_.size()), cores_, threads_, smt_factor(), process_cpus_,
                   l1d_ / 1024, l1i_ / 1024, l2_ / 1024, l3_ / (1024 * 1024), line_, l3_groups_.size(),
-                  cores_per_socket(), numa_nodes(), page_size_, hugepage_2mb_ ? TextView{"yes"} : TextView{"no"});
+                  largest_l3_group_cpus(), numa_nodes(), page_size_, hugepage_2mb_ ? TextView{"yes"} : TextView{"no"});
 }
 
 void Topology::log_summary() const noexcept {

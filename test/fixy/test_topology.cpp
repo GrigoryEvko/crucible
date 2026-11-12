@@ -134,7 +134,7 @@ void test_basic_positive_values() {
     CRUCIBLE_TEST_REQUIRE(t.l1d_per_core_bytes() > 0);
     CRUCIBLE_TEST_REQUIRE(t.l1i_per_core_bytes() > 0);
     CRUCIBLE_TEST_REQUIRE(t.l2_per_core_bytes() > 0);
-    CRUCIBLE_TEST_REQUIRE(t.l3_total_bytes() > 0);
+    CRUCIBLE_TEST_REQUIRE(t.l3_instance_bytes() > 0);
     CRUCIBLE_TEST_REQUIRE(t.cache_line_bytes() > 0);
     CRUCIBLE_TEST_REQUIRE(t.num_cores() > 0);
     CRUCIBLE_TEST_REQUIRE(t.num_smt_threads() > 0);
@@ -207,7 +207,7 @@ void test_log_summary_emits() {
 void test_cache_hierarchy_monotonic() {
     auto& t = Topology::instance();
     CRUCIBLE_TEST_REQUIRE(t.l1d_per_core_bytes() <= t.l2_per_core_bytes());
-    CRUCIBLE_TEST_REQUIRE(t.l2_per_core_bytes() <= t.l3_total_bytes());
+    CRUCIBLE_TEST_REQUIRE(t.l2_per_core_bytes() <= t.l3_instance_bytes());
 
     // Sixty-four bytes on nearly every supported machine, with one
     // hundred and twenty-eight on some ARM parts.
@@ -229,11 +229,15 @@ void test_l3_groups_cover_threads() {
     if (t.source() == Topology::Source::Fallback) {
         // Nothing was probed, so there are no groups to check and only
         // the defaulted values remain.
-        CRUCIBLE_TEST_REQUIRE(t.cores_per_socket() > 0);
+        CRUCIBLE_TEST_REQUIRE(t.largest_l3_group_cpus() > 0);
         return;
     }
     const auto groups = t.l3_groups();
     CRUCIBLE_TEST_REQUIRE(!groups.empty());
+    // A group holds online CPUs, so the largest group holds no more CPUs
+    // than the host has online.
+    CRUCIBLE_TEST_REQUIRE(t.largest_l3_group_cpus() > 0);
+    CRUCIBLE_TEST_REQUIRE(t.largest_l3_group_cpus() <= t.num_smt_threads());
     std::set<int> covered;
     for (auto const& g : groups) {
         CRUCIBLE_TEST_REQUIRE(!g.empty());
@@ -303,11 +307,11 @@ void test_source_consistency() {
                  "\n      Topology(source=%s):\n"
                  "        cores=%zu smt_threads=%zu smt_factor=%zu\n"
                  "        l1d=%zu KB l2=%zu KB l3=%zu MB line=%zu\n"
-                 "        l3_groups=%zu numa_nodes=%zu cores_per_socket=%zu\n",
+                 "        l3_groups=%zu numa_nodes=%zu largest_l3_group_cpus=%zu\n",
                  (src == Topology::Source::Sysfs ? "Sysfs" : "Fallback"), t.num_cores(), t.num_smt_threads(),
                  t.smt_factor(), t.l1d_per_core_bytes() / 1024, t.l2_per_core_bytes() / 1024,
-                 t.l3_total_bytes() / (1024 * 1024), t.cache_line_bytes(), t.l3_groups().size(), t.numa_nodes(),
-                 t.cores_per_socket());
+                 t.l3_instance_bytes() / (1024 * 1024), t.cache_line_bytes(), t.l3_groups().size(), t.numa_nodes(),
+                 t.largest_l3_group_cpus());
 }
 
 // An id that names no node has no distance.  The answer is empty rather
@@ -435,7 +439,9 @@ void test_malformed_distance_row_reads_conventional() {
 }
 
 // A CPU with no cache directory keeps the fallback cache sizes, and the
-// probe still reads the NUMA nodes.
+// probe still reads the NUMA nodes.  The tree names no L3 group, so it
+// reads as one group of its two CPUs.  The tree gives no core id, so the
+// core count is not a count of the tree, and the group does not read it.
 void test_missing_cache_directory_still_reads_nodes() {
     const FakeSysfsTree tree{"crucible_topology_no_cache"};
     tree.add_cpus(2);
@@ -447,6 +453,7 @@ void test_missing_cache_directory_still_reads_nodes() {
     CRUCIBLE_TEST_REQUIRE(topo.source() == Topology::Source::Sysfs);
     CRUCIBLE_TEST_REQUIRE(topo.num_smt_threads() == 2);
     CRUCIBLE_TEST_REQUIRE(span_equals(topo.cores_on_node(0), {0, 1}));
+    CRUCIBLE_TEST_REQUIRE(topo.largest_l3_group_cpus() == 2);
 }
 
 }  // namespace

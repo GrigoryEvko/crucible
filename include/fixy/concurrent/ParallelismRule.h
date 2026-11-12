@@ -153,7 +153,7 @@ public:
         const auto& topo = ::fixy::topology::Topology::instance();
         const std::size_t l1d = topo.l1d_per_core_bytes();
         const std::size_t l2 = topo.l2_per_core_bytes();
-        const std::size_t l3 = topo.l3_total_bytes();
+        const std::size_t l3 = topo.l3_instance_bytes();
         if (ws_bytes <= l1d) return Tier::L1Resident;
         if (ws_bytes <= l2) return Tier::L2Resident;
         if (ws_bytes <= l3) return Tier::L3Resident;
@@ -176,9 +176,9 @@ public:
         // The CPUs of the process, which a launcher mask or a cpuset can
         // make fewer than the CPUs of the host.  A CPU quota does not.
         const std::size_t process_cpus = topo.process_cpu_count();
-        const std::size_t socket_cores = topo.cores_per_socket();
+        const std::size_t largest_group_cpus = topo.largest_l3_group_cpus();
         const std::size_t cores_avail = process_cpus == 0 ? 1 : process_cpus;
-        const std::size_t cores_per_socket = socket_cores == 0 ? 1 : socket_cores;
+        const std::size_t group_cpus = largest_group_cpus == 0 ? 1 : largest_group_cpus;
 
         ParallelismDecision dec;
         dec.tier = classify(ws);
@@ -193,12 +193,12 @@ public:
         }
 
         // The set fits one L3 instance.  The factor is at most the count
-        // of the CPUs of the largest L3 group, which cores_per_socket
+        // of the CPUs of the largest L3 group, which largest_l3_group_cpus
         // gives, and the intent keeps the workers on one NUMA node.
         if (dec.tier == Tier::L3Resident) {
             constexpr std::size_t max_factor = parallelism_rule_detail::kL3ResidentMaxFactor;
-            const std::size_t usable_on_socket = cores_avail < cores_per_socket ? cores_avail : cores_per_socket;
-            const std::size_t want = max_factor < usable_on_socket ? max_factor : usable_on_socket;
+            const std::size_t usable_in_group = cores_avail < group_cpus ? cores_avail : group_cpus;
+            const std::size_t want = max_factor < usable_in_group ? max_factor : usable_in_group;
             dec.kind = ParallelismDecision::Kind::Parallel;
             dec.factor = parallelism_rule_detail::round_to_factor_ladder(want);
             dec.numa = NumaPolicy::NumaLocal;

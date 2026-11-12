@@ -39,7 +39,7 @@ void test_classify_boundaries() {
     const auto& topo = Topology::instance();
     const std::size_t l1d = topo.l1d_per_core_bytes();
     const std::size_t l2 = topo.l2_per_core_bytes();
-    const std::size_t l3 = topo.l3_total_bytes();
+    const std::size_t l3 = topo.l3_instance_bytes();
 
     CRUCIBLE_TEST_REQUIRE(ParallelismRule::classify(0) == Tier::L1Resident);
     CRUCIBLE_TEST_REQUIRE(ParallelismRule::classify(l1d) == Tier::L1Resident);
@@ -95,7 +95,7 @@ void test_sequential_when_l2_resident() {
 void test_parallel_when_dram_bound() {
     const auto& topo = Topology::instance();
     // Twice L3 leaves no doubt about the tier on any supported host.
-    const std::size_t ws = topo.l3_total_bytes() * 2;
+    const std::size_t ws = topo.l3_instance_bytes() * 2;
 
     WorkBudget budget{
         .read_bytes = ws / 2,
@@ -130,7 +130,7 @@ void test_factor_ladder() {
 }
 
 void test_kind_matches_factor() {
-    const std::size_t l3 = Topology::instance().l3_total_bytes();
+    const std::size_t l3 = Topology::instance().l3_instance_bytes();
     const WorkBudget budgets[] = {
         {.read_bytes = 128, .write_bytes = 128, .item_count = 32},
         {.read_bytes = 4096, .write_bytes = 4096, .item_count = 1024},
@@ -149,11 +149,11 @@ void test_kind_matches_factor() {
 }
 
 void test_numa_policy_l3_resident() {
-    // L3 is shared per socket, so a set that fits in it should stay on
-    // one socket.
+    // The CPUs of one L3 instance share it, so a set that fits one
+    // instance stays on one NUMA node.
     const auto& topo = Topology::instance();
     const std::size_t l2 = topo.l2_per_core_bytes();
-    const std::size_t l3 = topo.l3_total_bytes();
+    const std::size_t l3 = topo.l3_instance_bytes();
     if (l3 <= l2 * 2) return;  // no room between the tiers on this host
 
     // Halfway between the two tiers lands inside L3 wherever they sit.
@@ -172,7 +172,7 @@ void test_numa_policy_l3_resident() {
 
 void test_numa_policy_dram_bound() {
     const auto& topo = Topology::instance();
-    const std::size_t ws = topo.l3_total_bytes() * 2;
+    const std::size_t ws = topo.l3_instance_bytes() * 2;
     WorkBudget budget{
         .read_bytes = ws,
         .write_bytes = 0,
@@ -211,7 +211,7 @@ void test_container_cap() {
     // The budget is made far larger than L3 so the factor is driven to its
     // maximum.  Only then does the cap get exercised at all.
     WorkBudget budget{
-        .read_bytes = topo.l3_total_bytes() * 100,
+        .read_bytes = topo.l3_instance_bytes() * 100,
         .write_bytes = 0,
         .item_count = 100000000,
     };

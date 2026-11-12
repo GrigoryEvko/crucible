@@ -58,7 +58,7 @@ public:
         std::size_t l1d_per_core_bytes = 0;
         std::size_t l1i_per_core_bytes = 0;
         std::size_t l2_per_core_bytes = 0;
-        std::size_t l3_total_bytes = 0;
+        std::size_t l3_instance_bytes = 0;
         std::size_t cache_line_bytes = 0;
         std::size_t num_cores = 0;
         std::size_t num_smt_threads = 0;
@@ -93,7 +93,7 @@ public:
             .l1d_per_core_bytes = l1d_,
             .l1i_per_core_bytes = l1i_,
             .l2_per_core_bytes = l2_,
-            .l3_total_bytes = l3_,
+            .l3_instance_bytes = l3_,
             .cache_line_bytes = line_,
             .num_cores = cores_,
             .num_smt_threads = threads_,
@@ -110,8 +110,9 @@ public:
     [[nodiscard]] std::size_t l2_per_core_bytes() const noexcept { return l2_; }
     // The size of one L3 instance: the L3 of the first online CPU.  A host
     // with more than one L3 instance, such as a part with more than one
-    // chiplet, has more L3 than this in total.
-    [[nodiscard]] std::size_t l3_total_bytes() const noexcept { return l3_; }
+    // chiplet, has more L3 than this in total.  `l3_groups()` gives the
+    // count of the instances.
+    [[nodiscard]] std::size_t l3_instance_bytes() const noexcept { return l3_; }
     [[nodiscard]] std::size_t cache_line_bytes() const noexcept { return line_; }
 
     // Physical cores across every package, deduplicated on (package, core).
@@ -158,12 +159,14 @@ public:
         return {l3_groups_.data(), l3_groups_.size()};
     }
 
-    // An approximation: the largest group of threads sharing one L3.
-    [[nodiscard]] std::size_t cores_per_socket() const noexcept {
-        std::size_t m = 0;
-        for (auto const& g : l3_groups_)
-            m = std::max(m, g.size());
-        return m == 0 ? cores_ : m;
+    // The count of the hardware threads of the largest L3 group.  A host
+    // whose sysfs names no L3 group reads as one group, so the count is then
+    // each online CPU of the host.  Complexity: linear in the L3 groups.
+    [[nodiscard]] std::size_t largest_l3_group_cpus() const noexcept {
+        std::size_t largest = 0;
+        for (auto const& group : l3_groups_)
+            largest = std::max(largest, group.size());
+        return largest == 0 ? threads_ : largest;
     }
 
     // The same data under the name a chiplet-based part invites: there one L3
