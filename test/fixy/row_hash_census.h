@@ -874,6 +874,9 @@ inline constexpr StatedZero kZeros[] = {
      "an owned allocation of one object: it holds storage and makes no claim about what the object holds"},
     {^^::foundation::core::Ref,
      "a borrow of one object: it owns nothing and makes no claim about what the object holds"},
+    {^^::foundation::core::Address,
+     "the address of one object for an alignment query: it changes from run to run, so it is never a value in a "
+     "kernel signature"},
     {^^::foundation::core::Atomic,
      "a cell that two threads share: its value is process state, and the cell is never a kernel signature argument"},
     {^^::foundation::core::CasRefusal, kPayload},

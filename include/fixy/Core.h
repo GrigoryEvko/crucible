@@ -55,6 +55,8 @@ using ::foundation::core::Unit;
 
 using ::foundation::core::Box;
 using ::foundation::core::mint_box;
+using ::foundation::core::Address;
+using ::foundation::core::address_of;
 using ::foundation::core::Ref;
 using ::foundation::core::same_object;
 

@@ -502,7 +502,7 @@ test/fixy/ | replace-pending:std::source_location | 7 | - | -
 test/fixy/ | std-entity | 3333 | - | -
 test/fixy/ | std-object | 1257 | - | -
 test/fixy/neg/ | c-array-object | 53 | - | -
-test/fixy/neg/ | c-library-call | 253 | - | -
+test/fixy/neg/ | c-library-call | 255 | - | -
 test/fixy/neg/ | c-library-object | 2 | - | -
 test/fixy/neg/ | detail-use | 222 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it

@@ -639,6 +639,7 @@ witness <foundation/core/Choice.h> private | foundation::core::OptionCursor<int>
 # that mint_box allocated.
 witness <foundation/core/Ref.h> private | foundation::core::Box<int> | foundation::core::Box<int>{forge::rvalue<int*>()}
 witness <foundation/core/Ref.h> private | foundation::core::Ref<int> | foundation::core::Ref<int>{forge::rvalue<int*>()}
+witness <foundation/core/Ref.h> private | foundation::core::Address | foundation::core::Address{forge::rvalue<unsigned long>()}
 # A View comes only from an owner of the base layer, so no pointer and no
 # count that a caller holds become a View, and a cursor of a View comes
 # only from the View.

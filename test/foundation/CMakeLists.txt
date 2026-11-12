@@ -2064,6 +2064,15 @@ foundation_neg_compile_test(neg_core_ref_array_target
 foundation_neg_compile_test(neg_core_ref_volatile_target
   "template constraint failure for .template<class T>  requires  RefTarget<T> class foundation::core::Ref."
   "the expression .!\\(is_volatile_v<T>\\) \\[with T = volatile int\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_address_alignment_not_power_of_two
+  "no matching function for call to .foundation::core::Address::is_aligned<24>\\(\\)."
+  "the expression .\\(Alignment & Alignment - 1\\) == 0 \\[with Alignment = 24\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_address_ordered
+  "no match for .operator<."
+  "operand types are .const foundation::core::Address. and .const foundation::core::Address.")
+foundation_neg_compile_test(neg_core_address_of_pointer
+  "no matching function for call to .address_of\\(int\\*\\)."
+  "mismatched types .foundation::core::Ref<[A-Za-z]+>. and .int\\*.")
 foundation_neg_compile_test(neg_core_ref_compared
   "no match for .operator==."
   "operand types are .const foundation::core::Ref<int>. and .const foundation::core::Ref<int>.")

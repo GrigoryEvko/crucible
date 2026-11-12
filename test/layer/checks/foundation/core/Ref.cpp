@@ -7,6 +7,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <type_traits>
 #include <utility>
 
@@ -128,6 +129,27 @@ consteval bool reaches_in_constant_evaluation() {
 }
 static_assert(reaches_in_constant_evaluation());
 
+// ── Address ────────────────────────────────────────────────────────────
+
+// One word, and no address from an integer, from a pointer or with no object.
+static_assert(sizeof(Address) == sizeof(std::uintptr_t));
+static_assert(!std::is_default_constructible_v<Address>);
+static_assert(!std::is_constructible_v<Address, std::uintptr_t>);
+static_assert(!std::is_constructible_v<Address, int*>);
+static_assert(!std::is_trivially_copyable_v<Address>);
+
+// An address compares for equality and has no order.
+static_assert(std::equality_comparable<Address>);
+static_assert(!std::totally_ordered<Address>);
+
+// The alignment query takes a power of two only.
+template <class A, std::size_t Alignment>
+concept AsksAlignment = requires(A const& address) { address.template is_aligned<Alignment>(); };
+static_assert(AsksAlignment<Address, 1>);
+static_assert(AsksAlignment<Address, 4096>);
+static_assert(!AsksAlignment<Address, 0>);
+static_assert(!AsksAlignment<Address, 24>);
+
 // ── Box ────────────────────────────────────────────────────────────────
 
 // A borrow of a temporary Box is refused.
@@ -157,6 +179,7 @@ CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int const>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<Abstract>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Box<int>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Box<OverAligned>, DereferenceProtocol);
+CRUCIBLE_CLOSED_SURFACE(ref_names, Address);
 
 }  // namespace detail::ref_checks
 

@@ -11,6 +11,8 @@
 
 namespace {
 
+using ::foundation::core::Address;
+using ::foundation::core::address_of;
 using ::foundation::core::none;
 using ::foundation::core::Option;
 using ::foundation::core::Ref;
@@ -111,6 +113,37 @@ void test_option_of_ref() {
     CRUCIBLE_FATAL_INVARIANT(same_object(taken, Ref<int>::to(number)));
 }
 
+struct alignas(64) LineAligned {
+    std::uint64_t value = 0;
+};
+
+// Two adjacent bytes: one of the two is not aligned to 2.
+struct TwoBytes {
+    unsigned char low = 0;
+    unsigned char high = 0;
+};
+
+// The address of an object answers the alignment of its type, and the
+// address of one object compares equal only with itself.
+void test_address() {
+    LineAligned line{};
+    Address const line_address = address_of(Ref<LineAligned>::to(line));
+    CRUCIBLE_FATAL_INVARIANT(line_address.is_aligned<1>());
+    CRUCIBLE_FATAL_INVARIANT(line_address.is_aligned<8>());
+    CRUCIBLE_FATAL_INVARIANT(line_address.is_aligned<64>());
+
+    TwoBytes bytes{};
+    bool const low_is_even = address_of(Ref<unsigned char>::to(bytes.low)).is_aligned<2>();
+    bool const high_is_even = address_of(Ref<unsigned char>::to(bytes.high)).is_aligned<2>();
+    CRUCIBLE_FATAL_INVARIANT(low_is_even != high_is_even);
+
+    int number = 1;
+    int other = 2;
+    CRUCIBLE_FATAL_INVARIANT(address_of(Ref<int>::to(number)) == address_of(Ref<int const>::to(number)));
+    CRUCIBLE_FATAL_INVARIANT(!(address_of(Ref<int>::to(number)) == address_of(Ref<int>::to(other))));
+    CRUCIBLE_FATAL_INVARIANT(address_of(Ref<int>::to(number)).is_aligned<alignof(int)>());
+}
+
 // Four slots, which a plain index selects.
 struct Slots {
     std::uint64_t zero = 0;
@@ -156,6 +189,7 @@ int main() {
     test_copy_and_rebind();
     test_abstract_target();
     test_option_of_ref();
+    test_address();
     test_agrees_with_plain_model();
     return 0;
 }

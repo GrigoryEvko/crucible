@@ -17,6 +17,9 @@ static_assert(std::is_same_v<decltype(::fixy::some(7)), ::foundation::core::Opti
 static_assert(::fixy::some(7).is_some());
 static_assert(std::is_same_v<::fixy::Box<int>, ::foundation::core::Box<int>>);
 static_assert(std::is_same_v<::fixy::Ref<int>, ::foundation::core::Ref<int>>);
+static_assert(std::is_same_v<::fixy::Address, ::foundation::core::Address>);
+static_assert(
+    std::is_same_v<decltype(::fixy::address_of(::fixy::Ref<int>::to(std::declval<int&>()))), ::fixy::Address>);
 static_assert(std::is_same_v<decltype(::fixy::same_object(::fixy::Ref<int>::to(std::declval<int&>()),
                                                           ::fixy::Ref<int>::to(std::declval<int&>()))),
                              bool>);

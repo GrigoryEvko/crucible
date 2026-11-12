@@ -11,6 +11,8 @@
 // default value and no conversion from a pointer.  Option<Ref<T>> has the
 // size of one pointer: the null pointer is its empty value, and no Ref holds
 // it.  A Ref owns nothing, so a Ref that outlives its object dangles.
+// address_of(ref) gives the Address of the object, which answers
+// is_aligned<N>() and ==, and gives no pointer back.
 //
 // Box<T> owns one object of type T on the heap.  The one door is
 // mint_box<T>(alloc, args...): it takes the storage from the allocation
@@ -45,6 +47,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <new>
 #include <type_traits>
 
@@ -88,6 +91,45 @@ template <class First, class Second>
     requires std::same_as<std::remove_const_t<First>, std::remove_const_t<Second>>
 [[nodiscard]] constexpr bool same_object(Ref<First> first, Ref<Second> second) noexcept {
     return __builtin_addressof(*first) == __builtin_addressof(*second);
+}
+
+class Address;
+
+template <RefTarget T>
+[[nodiscard]] Address address_of(Ref<T> ref) noexcept;
+
+// The address of one object, which address_of(ref) gives.  It answers an
+// alignment query and compares with a different address.  An address
+// changes from run to run, so it has no hash and no order, and no pointer
+// comes back from it.  The seal makes the assignment user-provided, so
+// std::bit_cast cannot build an Address from an integer.
+class Address {
+    std::uintptr_t value_ = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    constexpr explicit Address(std::uintptr_t value) noexcept : value_{value} {}
+
+    template <RefTarget T>
+    friend Address address_of(Ref<T> ref) noexcept;
+
+public:
+    // True when the address is a multiple of Alignment, a power of two.
+    template <std::size_t Alignment>
+        requires(Alignment != 0 && (Alignment & (Alignment - 1)) == 0)
+    [[nodiscard]] constexpr bool is_aligned() const noexcept {
+        return (value_ & (Alignment - 1)) == 0;
+    }
+
+    [[nodiscard]] friend constexpr bool operator==(Address const& left, Address const& right) noexcept {
+        return left.value_ == right.value_;
+    }
+};
+
+// The address of the object of a Ref.  The address of an object is no
+// constant of the compile, so the function runs only at run time.
+template <RefTarget T>
+[[nodiscard]] Address address_of(Ref<T> ref) noexcept {
+    return Address{__builtin_bit_cast(std::uintptr_t, __builtin_addressof(*ref))};
 }
 
 // The empty value of an Option of a Ref: the null pointer, which no Ref
