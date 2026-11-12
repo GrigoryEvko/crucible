@@ -671,13 +671,13 @@ struct ZeroWords<Word, 1> {
 };
 
 // An alternative of a plain sum.  An empty alternative, such as the empty
-// marker of an Option or the Unit of a Result, has no value bytes, so it
-// writes zero words over the full storage.  A copy of the sum then reads no
-// byte that no constructor wrote, also when the sum holds an empty
-// alternative and a wide one.  An alternative that holds a value leaves the
-// bytes after it as they are, as std::expected does, so its value stays in a
-// register.  Width is the alignment of the storage, at most eight bytes.
-template <class T, std::size_t Size, std::size_t Width, bool IsEmpty = std::is_empty_v<T>>
+// marker of an Option or the Unit of a Result, has no value bytes.  When
+// WritesZeroWords is true, it writes zero words over the full storage, so a
+// copy of the sum reads no byte that no constructor wrote (SumSlotOf tells
+// when).  An alternative that holds a value leaves the bytes after it as they
+// are, as std::expected does, so its value stays in a register.  Width is the
+// alignment of the storage, at most eight bytes.
+template <class T, std::size_t Size, std::size_t Width, bool WritesZeroWords>
 struct PlainAlternative {
     T value;
 
@@ -702,14 +702,24 @@ class SumSlotOf;
 // The slot of a plain sum: the storage and the tag of TaggedCells.  The
 // special members are implicit, and each one is trivial, because each
 // alternative is trivially copyable.  The tag is the index of the active
-// alternative.  An empty alternative writes zero words over the storage
-// (PlainAlternative).  The storage keeps the size and the alignment of the
-// union of the bare alternatives.
+// alternative.  The storage keeps the size and the alignment of the union of
+// the bare alternatives.
+//
+// The ABI of x86_64 and of aarch64 gives a sum of at most 16 bytes back in
+// two registers.  GCC can then read each byte of the storage into a register,
+// also when the active alternative is empty.  -Wmaybe-uninitialized then
+// reports a byte that no constructor wrote.  So the empty alternative of such
+// a sum writes zero words over the storage (PlainAlternative).  A larger sum
+// goes through memory, and GCC gives no such report for it.  Its empty
+// alternative writes no byte, so a clear of an Option of a large payload
+// writes only its tag, as the reset of std::optional does.
 template <class... Ts>
 class SumSlotOf<true, Ts...> {
     static constexpr std::size_t storage_size_ = sizeof(Alternatives<Ts...>);
     static constexpr std::size_t word_width_ = alignof(Alternatives<Ts...>) < 8 ? alignof(Alternatives<Ts...>) : 8;
-    using Storage = Alternatives<PlainAlternative<Ts, storage_size_, word_width_>...>;
+    static constexpr bool is_register_pair_ = sizeof(TaggedCells<Alternatives<Ts...>, unsigned char>) <= 16;
+    using Storage =
+        Alternatives<PlainAlternative<Ts, storage_size_, word_width_, std::is_empty_v<Ts> && is_register_pair_>...>;
     static_assert(sizeof(Storage) == storage_size_ && alignof(Storage) == alignof(Alternatives<Ts...>),
                   "the zero words of an empty alternative do not change the storage");
 

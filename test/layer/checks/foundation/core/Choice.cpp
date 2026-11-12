@@ -130,10 +130,9 @@ static_assert(std::is_same_v<SumSlot<NoPayload, std::uint32_t>, SumSlotOf<true, 
 static_assert(sizeof(Option<std::uint32_t>) == 8 && sizeof(Option<std::uint64_t>) == 16);
 static_assert(sizeof(Option<std::uint8_t>) == 2);
 
-// A large plain payload.  The empty marker writes zero words over the full
-// storage.  The depth of their instantiation is the binary logarithm of the
-// word count, so a storage of more than 900 words stays below the template
-// depth limit of the compiler.
+// A large plain payload, of more than 900 words, the template depth limit of
+// the compiler.  Its sum goes through memory, so its empty marker writes only
+// the tag, and no zero word (SumSlotOf).
 template <class Word, std::size_t Count>
 struct PackedWords {
     PackedWords<Word, Count / 2> low{};

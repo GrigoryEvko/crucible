@@ -49,6 +49,18 @@ struct Payload final {
     std::uint32_t value = 0;
 };
 
+// A payload of 64 bytes.  An Option of it goes through memory.
+struct Block64 final {
+    std::uint64_t first = 0;
+    std::uint64_t second = 0;
+    std::uint64_t third = 0;
+    std::uint64_t fourth = 0;
+    std::uint64_t fifth = 0;
+    std::uint64_t sixth = 0;
+    std::uint64_t seventh = 0;
+    std::uint64_t eighth = 0;
+};
+
 enum class Kind : std::uint8_t {
     first,
     second,
@@ -188,6 +200,10 @@ option_expect_niche(fixy::Option<fixy::View<std::uint32_t const>> option) noexce
 [[gnu::used]] std::uint32_t option_value_or(fixy::Option<std::uint32_t> option) noexcept {
     return std::move(option).value_or(7u);
 }
+
+// A clear of an Option of a payload of 64 bytes writes only its tag.  Its sum
+// goes through memory, so its empty marker writes no zero word.
+[[gnu::used]] void option_clear_block(fixy::Option<Block64>& held) noexcept { held = {}; }
 
 // ok_or gives the payload of an Option as a Result, in the same register.
 [[gnu::used]] fixy::Result<std::uint32_t, Code32> option_ok_or(fixy::Option<std::uint32_t> option) noexcept {
@@ -378,6 +394,8 @@ struct RawWindow final {
 [[gnu::used]] std::uint32_t option_value_or_raw(std::optional<std::uint32_t> option) noexcept {
     return option.value_or(7u);
 }
+
+[[gnu::used]] void option_clear_block_raw(std::optional<Block64>& held) noexcept { held = std::nullopt; }
 
 [[gnu::used]] std::expected<std::uint32_t, Code32> option_ok_or_raw(std::optional<std::uint32_t> option) noexcept {
     if (option) return *option;

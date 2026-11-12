@@ -524,6 +524,11 @@ PROBES: tuple[Probe, ...] = (
         branches=True,
     ),
     Probe(
+        "option_clear_block",
+        "a clear of an Option of a payload of 64 bytes writes only its tag, as the raw form does.  The sum goes "
+        "through memory, so its empty marker writes no zero word over the storage",
+    ),
+    Probe(
         "option_try",
         "CRUCIBLE_TRY of an Option is one test of the tag.  The value takes a second test of the tag in expect, which "
         "the optimizer removes, because no code writes the operand between the two tests",
