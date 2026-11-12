@@ -9,6 +9,7 @@
 #include "philox_stream.h"
 
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 
@@ -41,10 +42,6 @@ private:
     int label_ = 0;
 };
 
-struct OverAligned {
-    alignas(128) std::uint64_t value = 0;
-};
-
 struct Pair {
     int first = 0;
     int second = 0;
@@ -53,7 +50,7 @@ struct Pair {
 void test_mint_and_access() {
     ::foundation::effects::Alloc const alloc{};
     Box<int> number = mint_box<int>(alloc, 41);
-    CRUCIBLE_FATAL_INVARIANT(number.get() == 41);
+    CRUCIBLE_FATAL_INVARIANT(*number == 41);
     *number += 1;
     CRUCIBLE_FATAL_INVARIANT(*number == 42);
 
@@ -62,10 +59,17 @@ void test_mint_and_access() {
     pair->second = 5;
     Box<Pair> const& fixed_pair = pair;
     CRUCIBLE_FATAL_INVARIANT(fixed_pair->second == 5 && (*fixed_pair).first == 3);
-    CRUCIBLE_FATAL_INVARIANT(fixed_pair.get().second == 5);
+    CRUCIBLE_FATAL_INVARIANT(fixed_pair.view()->second == 5);
 
     Box<int> zero = mint_box<int>(alloc);
-    CRUCIBLE_FATAL_INVARIANT(zero.get() == 0);
+    CRUCIBLE_FATAL_INVARIANT(*zero == 0);
+
+    // A Ref from view() reaches the object of the Box, and a write through
+    // it shows through the Box.
+    ::foundation::core::Ref<Pair> const pair_ref = pair.view();
+    pair_ref->first = 8;
+    CRUCIBLE_FATAL_INVARIANT(pair->first == 8);
+    CRUCIBLE_FATAL_INVARIANT(::foundation::core::same_object(pair_ref, fixed_pair.view()));
 }
 
 void test_destruction_counts() {
@@ -154,23 +158,41 @@ void test_consume_of_moved_from_aborts() {
 void test_borrow_of_moved_from_aborts() {
     Box<int> source = mint_box<int>(::foundation::effects::Alloc{}, 2);
     Box<int> target{std::move(source)};
-    bool const get_aborts = ::foundation::test::aborts([&source] { static_cast<void>(source.get()); });
+    bool const view_aborts = ::foundation::test::aborts([&source] { static_cast<void>(source.view()); });
     bool const star_aborts = ::foundation::test::aborts([&source] { static_cast<void>(*source); });
     Box<int> const& fixed_source = source;
-    bool const fixed_get_aborts =
-        ::foundation::test::aborts([&fixed_source] { static_cast<void>(fixed_source.get()); });
-    CRUCIBLE_FATAL_INVARIANT(get_aborts && star_aborts && fixed_get_aborts);
+    bool const fixed_view_aborts =
+        ::foundation::test::aborts([&fixed_source] { static_cast<void>(fixed_source.view()); });
+    bool const fixed_star_aborts = ::foundation::test::aborts([&fixed_source] { static_cast<void>(*fixed_source); });
+    CRUCIBLE_FATAL_INVARIANT(view_aborts && star_aborts && fixed_view_aborts && fixed_star_aborts);
     CRUCIBLE_FATAL_INVARIANT(*target == 2);
 }
 
-void test_over_aligned_storage() {
+// The allocation door gives malloc storage up to an alignment of 16 and
+// aligned_alloc storage above it.  Each alignment from 8 to 4096 gives a
+// Box at that alignment, and its object holds its value.
+template <std::size_t Alignment>
+struct alignas(Alignment) AlignedValue {
+    std::uint64_t value = 0;
+};
+
+template <std::size_t Alignment>
+void test_box_at_alignment() {
     ::foundation::effects::Alloc const alloc{};
-    for (int trial = 0; trial < 64; ++trial) {
-        Box<OverAligned> aligned = mint_box<OverAligned>(alloc, OverAligned{static_cast<std::uint64_t>(trial)});
-        std::uintptr_t const address = std::bit_cast<std::uintptr_t>(&aligned.get());
-        CRUCIBLE_FATAL_INVARIANT(address % 128 == 0);
-        CRUCIBLE_FATAL_INVARIANT(aligned->value == static_cast<std::uint64_t>(trial));
+    for (std::uint64_t trial = 0; trial < 8; ++trial) {
+        Box<AlignedValue<Alignment>> held = mint_box<AlignedValue<Alignment>>(alloc, AlignedValue<Alignment>{trial});
+        CRUCIBLE_FATAL_INVARIANT(std::bit_cast<std::uintptr_t>(&*held) % Alignment == 0);
+        CRUCIBLE_FATAL_INVARIANT(held->value == trial);
     }
+}
+
+void test_each_alignment() {
+    test_box_at_alignment<8>();
+    test_box_at_alignment<16>();
+    test_box_at_alignment<32>();
+    test_box_at_alignment<64>();
+    test_box_at_alignment<128>();
+    test_box_at_alignment<4096>();
 }
 
 // The property: boxes built from random values, moved along a random
@@ -201,7 +223,7 @@ int main() {
     test_consume();
     test_consume_of_moved_from_aborts();
     test_borrow_of_moved_from_aborts();
-    test_over_aligned_storage();
+    test_each_alignment();
     test_agrees_with_plain_model();
     return 0;
 }

@@ -2037,12 +2037,31 @@ foundation_neg_compile_test(neg_core_surface_not_class
   "no matching function for call to .closed_surface<int>\\(foundation::core::TextView\\)."
   "the expression .is_class_v<T> \\[with T = int\\]. evaluated to .false.")
 
-# ── The Ref family: Box ───────────────────────────────────────────────
+# ── The Ref family: the allocation door and Box ───────────────────────
 #
-# A Box owns one object on the heap and comes only from mint_box, which
-# takes the allocation capability.  A copy and a borrow of a temporary are
-# refused.
+# The allocation door refuses a request of zero bytes and an alignment that
+# is not a power of two.  A Box owns one object on the heap and comes only
+# from mint_box, which takes the allocation capability.  A copy and a borrow
+# of a temporary are refused.
+foundation_test(test_core_heap)
+foundation_test(test_core_ref)
 foundation_test(test_core_box)
+
+foundation_neg_compile_test(neg_core_ref_of_temporary
+  "use of deleted function .static foundation::core::Ref<T> foundation::core::Ref<T>::to\\(T&&\\) \\[with T = const int\\]."
+  "a Ref of a temporary dangles at the end of the full expression")
+foundation_neg_compile_test(neg_core_ref_drops_const
+  "no matching function for call to .foundation::core::Ref<int>::Ref\\(<brace-enclosed initializer list>\\)."
+  "required for the satisfaction of .same_as<const U, T>. \\[with U = const int; T = int\\]")
+foundation_neg_compile_test(neg_core_ref_array_target
+  "template constraint failure for .template<class T>  requires  RefTarget<T> class foundation::core::Ref."
+  "the expression .!\\(is_array_v<T>\\) \\[with T = int\\[2\\]\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_ref_volatile_target
+  "template constraint failure for .template<class T>  requires  RefTarget<T> class foundation::core::Ref."
+  "the expression .!\\(is_volatile_v<T>\\) \\[with T = volatile int\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_ref_compared
+  "no match for .operator==."
+  "operand types are .const foundation::core::Ref<int>. and .const foundation::core::Ref<int>.")
 
 foundation_neg_compile_test(neg_core_box_without_allocation_marker
   "no matching function for call to .mint_box<int>\\(foundation::effects::cap::IO, int\\)."
@@ -2057,7 +2076,7 @@ foundation_neg_compile_test(neg_core_box_copied
   "use of deleted function .foundation::core::Box<T>::Box\\(const foundation::core::Box<T>&\\) \\[with T = int\\]."
   "a Box owns its object alone: a copy would free the object two times")
 foundation_neg_compile_test(neg_core_box_borrow_of_temporary
-  "use of deleted function .T& foundation::core::Box<T>::get\\(\\) && \\[with T = int\\]."
+  "use of deleted function .foundation::core::Ref<[A-Za-z]+> foundation::core::Box<T>::view\\(\\) && \\[with T = int\\]."
   "a borrow of a temporary Box dangles at the end of the full expression")
 foundation_neg_compile_test(neg_core_box_consume_lvalue
   "passing .foundation::core::Box<int>. as .this. argument discards qualifiers"

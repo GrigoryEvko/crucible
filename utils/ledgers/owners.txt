@@ -181,6 +181,7 @@ test/foundation/test_algebra_core.cpp | detail-use | 1 | (anonymous namespace)::
 test/foundation/test_algebra_core.cpp | detail-use | 1 | (anonymous namespace)::lattice_runs_at_run_time(): foundation::algebra::detail | runs the fixtures of the algebra headers
 test/foundation/test_algebra_core.cpp | detail-use | 3 | namespace-scope: foundation::algebra::detail | runs the fixtures of the algebra headers
 test/foundation/test_computation.cpp | detail-use | 4 | (anonymous namespace)::computation_graded_runs_at_run_time(): foundation::effects::detail | pins the graded capabilities of the computation carrier
+test/foundation/test_core_heap.cpp | detail-use | 1 | namespace-scope: foundation::core::detail | calls the allocation door with a zero size and a bad alignment, which no owner of the base gives, and shows that the door ends the process
 test/foundation/test_computation.cpp | detail-use | 1 | main(): foundation::effects::detail | pins the graded capabilities of the computation carrier
 test/foundation/test_computation.cpp | detail-use | 25 | namespace-scope: foundation::effects::detail | pins the graded capabilities of the computation carrier
 test/foundation/test_ctx.cpp | detail-use | 5 | namespace-scope: foundation::effects::detail | builds a context from a context witness

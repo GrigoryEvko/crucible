@@ -3,6 +3,7 @@
 #include <fixy/Core.h>
 
 #include <type_traits>
+#include <utility>
 
 namespace fixy::detail::core_checks {
 
@@ -14,6 +15,10 @@ static_assert(::fixy::Option<int>{::fixy::none}.is_none());
 static_assert(std::is_same_v<decltype(::fixy::some(7)), ::foundation::core::Option<int>>);
 static_assert(::fixy::some(7).is_some());
 static_assert(std::is_same_v<::fixy::Box<int>, ::foundation::core::Box<int>>);
+static_assert(std::is_same_v<::fixy::Ref<int>, ::foundation::core::Ref<int>>);
+static_assert(std::is_same_v<decltype(::fixy::same_object(::fixy::Ref<int>::to(std::declval<int&>()),
+                                                          ::fixy::Ref<int>::to(std::declval<int&>()))),
+                             bool>);
 static_assert(std::is_same_v<::fixy::Atomic<int>, ::foundation::core::Atomic<int>>);
 static_assert(std::is_same_v<::fixy::CacheLine<int>, ::foundation::core::CacheLine<int>>);
 static_assert(std::is_same_v<::fixy::CasRefusal<int>, ::foundation::core::CasRefusal<int>>);

@@ -269,7 +269,8 @@ def class_cases(expect: testing.Expect) -> None:
         ("foundation", "pthread_create", module.RUNTIME, module.DOOR_RATCHET),
         ("fixy", "pthread_create", module.RUNTIME, module.DOOR_RATCHET),
         ("crucible", "pthread_create", module.RUNTIME, module.DOOR_RATCHET),
-        ("fixy", "malloc", module.RUNTIME, module.LIBC_RATCHET),
+        ("fixy", "malloc", module.RUNTIME, module.DOOR_RATCHET),
+        ("fixy", "calloc", module.RUNTIME, module.LIBC_RATCHET),
         ("fixy", "dlopen", module.RUNTIME, module.LIBC_RATCHET),
         ("crucible", "__cxa_atexit", module.RUNTIME, module.LIBC_ALLOW),
         ("fixy", "__cxa_atexit", module.RUNTIME, module.LIBC_RATCHET),
@@ -292,8 +293,13 @@ def class_cases(expect: testing.Expect) -> None:
         )
     door, routes, other = frozenset({"Abort.cpp.o"}), frozenset({"Intercepted.cpp.o"}), frozenset({"Platform.cpp.o"})
     clock, threads = frozenset({"MonotonicClock.cpp.o"}), frozenset({"ThreadTasks.cpp.o"})
+    heap = frozenset({"Heap.cpp.o"})
     for library, symbol, members, kind, wanted in (
         ("foundation", "abort", door, "x86_64-debug-asan", module.LIBC_ALLOW),
+        ("foundation", "malloc", heap, "x86_64-release", module.LIBC_ALLOW),
+        ("foundation", "aligned_alloc", heap, "x86_64-debug-asan", module.LIBC_ALLOW),
+        ("foundation", "free", heap | other, "x86_64-debug-asan", module.DOOR_RATCHET),
+        ("crucible_vigil", "malloc", frozenset({"Vigil.cpp.o"}), "x86_64-release", module.DOOR_RATCHET),
         ("foundation", "abort", door | other, "x86_64-debug-asan", module.DOOR_RATCHET),
         ("foundation", "abort", other, "x86_64-release", module.DOOR_RATCHET),
         ("fixy", "abort", door, "x86_64-release", module.DOOR_RATCHET),

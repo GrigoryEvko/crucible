@@ -442,10 +442,6 @@ static_assert(std::is_same_v<std::underlying_type_t<std::align_val_t>, std::size
 static_assert(std::is_empty_v<std::nothrow_t>);
 static_assert(std::is_trivially_default_constructible_v<std::nothrow_t>);
 
-// name: std::nothrow
-static_assert(std::is_same_v<decltype(std::nothrow), const std::nothrow_t>);
-static_assert(noexcept(::operator new(1, std::align_val_t{8}, std::nothrow)));
-
 // name: std::vector
 // A std::meta query returns a std::vector of std::meta::info.  With and
 // without -D_GLIBCXX_ASSERTIONS, which adds a bounds check to operator[], a

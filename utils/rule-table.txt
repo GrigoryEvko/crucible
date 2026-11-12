@@ -373,7 +373,6 @@ admit std::meta::info | the type of a reflection, and the language refuses an ob
 admit std::vector consteval-only in include/foundation/core/ include/fixy/Core.h | the result of a reflection query, which the language holds only in a constant evaluation
 admit std::byte | the type with the aliasing right, and not std::to_integer or the byte operators, which are other names
 admit std::align_val_t in include/foundation/core/Ref.h | the alignment argument of the allocation functions, in the door of the Ref family
-admit std::nothrow until Ref in include/foundation/core/Ref.h | the tag of the allocation function that gives a null pointer and no exception, in mint_box, the allocation door of the Ref family
 admit std::initializer_list parameters | the type of a braced list, which outlives a parameter and not a data member
 admit std::contracts::contract_violation in src/foundation/ContractHandler.cpp | the parameter of the contract violation handler
 admit std::strong_ordering | the result of the operator <=>
@@ -639,6 +638,7 @@ witness <foundation/core/Choice.h> private | foundation::core::OptionCursor<int>
 # A Box comes only from mint_box, so the destructor frees only storage
 # that mint_box allocated.
 witness <foundation/core/Ref.h> private | foundation::core::Box<int> | foundation::core::Box<int>{forge::rvalue<int*>()}
+witness <foundation/core/Ref.h> private | foundation::core::Ref<int> | foundation::core::Ref<int>{forge::rvalue<int*>()}
 # A View comes only from an owner of the base layer, so no pointer and no
 # count that a caller holds become a View, and a cursor of a View comes
 # only from the View.

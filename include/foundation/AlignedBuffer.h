@@ -26,11 +26,11 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Heap.h>
 #include <foundation/core/Report.h>
 
 #include <bit>
 #include <cstddef>
-#include <cstdlib>
 #include <new>
 #include <span>
 #include <string_view>
@@ -44,19 +44,10 @@ inline constexpr std::size_t huge_page_bytes = std::size_t{2} << 20;
 
 namespace detail {
 
-// The two fatal exits of an allocation.  Each text names the entry of the
+// The fatal exit of a size that wraps.  The text names the entry of the
 // diagnostic catalog (foundation/diag/Catalog.h) that gives the causes and
-// the remediation.
-[[noreturn]] CRUCIBLE_COLD inline void aligned_allocation_failed_abort_(std::size_t alloc_bytes,
-                                                                        std::size_t alignment) noexcept {
-    if (alignment >= huge_page_bytes) {
-        ::foundation::core::fatal("aligned_alloc(alignment={}, bytes={}) gave no storage.  The catalog entry "
-                                  "foundation::diag::HugePageAllocationFailed gives the remediation",
-                                  alignment, alloc_bytes);
-    }
-    ::foundation::core::fatal("aligned_alloc(alignment={}, bytes={}) gave no storage", alignment, alloc_bytes);
-}
-
+// the remediation.  The allocation door of foundation/core/Heap.h has the
+// fatal exit of an exhausted memory.
 [[noreturn]] CRUCIBLE_COLD inline void allocation_size_overflow_abort_(std::size_t prefix_bytes, std::size_t count,
                                                                        std::size_t element_bytes,
                                                                        std::size_t alignment) noexcept {
@@ -66,8 +57,7 @@ namespace detail {
 }
 
 // The bytes of one allocation: a prefix, then `count` elements of
-// `element_bytes` each, rounded up to the alignment, which aligned_alloc
-// requires.  Each step wraps on a count that no real allocation has, and
+// `element_bytes` each, rounded up to the alignment.  Each step wraps on a count that no real allocation has, and
 // a wrap would hand back a block smaller than asked for, so a wrap
 // aborts.  The checks are plain code and not contract clauses, so they
 // hold under every contract evaluation semantic.  AlignedBuffer and
@@ -85,15 +75,6 @@ template <std::size_t Alignment>
     if (wraps) [[unlikely]]
         allocation_size_overflow_abort_(prefix_bytes, count, element_bytes, Alignment);
     return padded & ~(Alignment - 1);
-}
-
-// Fresh storage of `bytes` at the alignment.  Exhaustion aborts: this runs
-// where a failed allocation has no recovery.
-[[nodiscard]] inline void* allocate_aligned_storage_(std::size_t alignment, std::size_t bytes) {
-    void* const raw = std::aligned_alloc(alignment, bytes);
-    if (raw == nullptr) [[unlikely]]
-        aligned_allocation_failed_abort_(bytes, alignment);
-    return raw;
 }
 
 }  // namespace detail
@@ -172,7 +153,7 @@ public:
 
     constexpr void reset() noexcept {
         if (data_ != nullptr) {
-            std::free(data_);
+            core::detail::heap_release_(data_, allocation_bytes(size_), Alignment);
             data_ = nullptr;
             size_ = 0;
         }
@@ -201,8 +182,10 @@ public:
 private:
     explicit AlignedBuffer(T* data, size_type size) noexcept : data_{data}, size_{size} {}
 
+    // The allocation door ends the process when the memory is exhausted:
+    // this runs where a failed allocation has no recovery.
     [[nodiscard]] static void* allocate_storage_(size_type count) {
-        return detail::allocate_aligned_storage_(Alignment, allocation_bytes(count));
+        return core::detail::heap_allocate_(allocation_bytes(count), Alignment);
     }
 
     T* data_ = nullptr;

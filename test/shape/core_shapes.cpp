@@ -170,7 +170,11 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
 
 // ── Ref, Choice and Report ──────────────────────────────────────────────────
 
-[[gnu::used]] std::uint32_t box_get(fixy::Box<Payload>& box) noexcept { return box.get().value; }
+[[gnu::used]] std::uint32_t box_read(fixy::Box<Payload>& box) noexcept { return box->value; }
+
+// A read through a Ref is the load of a raw pointer.  A Ref has no empty
+// state, so the read has no test.
+[[gnu::used]] std::uint32_t ref_read(fixy::Ref<Payload const> ref) noexcept { return ref->value; }
 
 // An Option of a plain payload, as a function gives it back: in a register.
 // expect adds one test and one branch to a cold call.  For a payload of four
@@ -384,7 +388,9 @@ struct RawWindow final {
 
 [[gnu::used]] void view_fill_raw(std::uint8_t* first, std::size_t count) noexcept { std::memset(first, 0, count); }
 
-[[gnu::used]] std::uint32_t box_get_raw(std::unique_ptr<Payload>& box) noexcept { return box->value; }
+[[gnu::used]] std::uint32_t box_read_raw(std::unique_ptr<Payload>& box) noexcept { return box->value; }
+
+[[gnu::used]] std::uint32_t ref_read_raw(Payload const* payload) noexcept { return payload->value; }
 
 [[gnu::used]] std::uint32_t option_expect_raw(std::optional<std::uint32_t> option) noexcept { return *option; }
 

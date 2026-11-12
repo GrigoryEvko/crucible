@@ -51,6 +51,8 @@ using ::foundation::core::Unit;
 
 using ::foundation::core::Box;
 using ::foundation::core::mint_box;
+using ::foundation::core::Ref;
+using ::foundation::core::same_object;
 
 using ::foundation::core::Atomic;
 using ::foundation::core::CacheLine;

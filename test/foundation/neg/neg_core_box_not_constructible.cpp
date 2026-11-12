@@ -5,4 +5,7 @@
 #include <foundation/core/Ref.h>
 #include <foundation/effects/Effect.h>
 
-int main() { return ::foundation::core::mint_box<int>(::foundation::effects::Alloc{}, "seven").get(); }
+int main() {
+    auto held = ::foundation::core::mint_box<int>(::foundation::effects::Alloc{}, "seven");
+    return *held;
+}

@@ -421,6 +421,8 @@ TSAN_WORD = "tsan"
 # The calls of the C library that decision D12 of the plan keeps, each with its door (THE DOORS, rule R5).
 #   * The abort door of foundation/os/Abort.h calls abort in each build.  The deny rows of the rule table give the
 #     signals of the process to the C library, and no raw call can send SIGABRT.
+#   * The allocation door of foundation/core/Heap.h calls malloc, aligned_alloc and free.  The allocator of the C
+#     library owns the state of the heap, and the deny row of brk keeps its program break.
 #   * In a build with ThreadSanitizer, the door src/foundation/os/Intercepted.cpp of rule R18 calls read and write,
 #     and it reads errno through __errno_location.
 #   * The thread door of fixy/os/ThreadTasks.h starts each thread with the attributes of the call, names it, joins
@@ -433,6 +435,7 @@ TSAN_WORD = "tsan"
 #   * The monotonic clock door of fixy/os/MonotonicClock.h reads the clock through the vDSO of the C library.
 DOOR_CALLS = (
     DoorCall("abort", FOUNDATION, "Abort.cpp.o"),
+    *(DoorCall(symbol, FOUNDATION, "Heap.cpp.o") for symbol in ("malloc", "aligned_alloc", "free")),
     DoorCall("read", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
     DoorCall("write", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
     DoorCall("__errno_location", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),

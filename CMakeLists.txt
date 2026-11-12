@@ -400,7 +400,8 @@ target_link_libraries(crucible PUBLIC crucible_dialect)
 # src/foundation/os: the raw system call primitive with its start-up check of
 # the kernel, the abort door, the sink write of the Report family, the file
 # door, the directory door, the door of AddressSanitizer, the auxiliary vector
-# door and the guarded memory door.  foundation starts no thread.  `fixy` is a static
+# door, the guarded memory door and the allocation door.  foundation starts no
+# thread.  `fixy` is a static
 # library for the same reason: it holds the cold bodies of fixy headers, the
 # probe of the machine topology, the door that starts and joins each thread of
 # the base, the futex door, the signal door, the exit hook door, the monotonic
@@ -418,6 +419,7 @@ add_library(foundation STATIC
   src/foundation/os/Errno.cpp
   src/foundation/os/File.cpp
   src/foundation/os/GuardedRegion.cpp
+  src/foundation/os/Heap.cpp
   src/foundation/os/Intercepted.cpp
   src/foundation/os/Poison.cpp
   src/foundation/os/ReportSink.cpp

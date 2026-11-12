@@ -32,16 +32,16 @@ using ::foundation::core::ViewCursor;
 // ── Entry: a borrow outlives its owner ───────────────────────────────
 //
 // A View, a cursor of a View and a borrow of a Box carry no lifetime.  A
-// copy of a View that the caller keeps after its mapping unmaps, or a
-// reference from Box::get() that the caller keeps after a move assignment
-// to the Box, reads freed memory.  The deleted rvalue overloads refuse
-// only a borrow of a temporary owner.  The fix needs a lifetime that the
-// type carries, which C++ does not have.
+// copy of a View that the caller keeps after its mapping unmaps, or a Ref
+// from Box::view() that the caller keeps after a move assignment to the
+// Box, reads freed memory.  The deleted rvalue overloads refuse only a
+// borrow of a temporary owner.  The fix needs a lifetime that the type
+// carries, which C++ does not have.
 static_assert(std::is_trivially_copy_constructible_v<View<int>>);
 static_assert(std::is_copy_constructible_v<ViewCursor<int>>);
 static_assert(std::is_move_assignable_v<Box<int>>);
 static_assert(requires(Box<int>& box) {
-    { box.get() } -> std::same_as<int&>;
+    { box.view() } -> std::same_as<::foundation::core::Ref<int>>;
 });
 
 // ── Entry: a match arm assigns the Option that it reads ──────────────

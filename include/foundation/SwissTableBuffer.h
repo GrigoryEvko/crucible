@@ -12,11 +12,11 @@
 #include <foundation/AlignedBuffer.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Heap.h>
 
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -60,10 +60,10 @@ public:
         CRUCIBLE_FATAL_INVARIANT(is_swiss_table_capacity(capacity));
         if (capacity == 0) [[unlikely]]
             return SwissTableBuffer{};
-        const size_type rounded = detail::aligned_allocation_bytes<64>(capacity, capacity, sizeof(SlotPtr));
-        void* const raw = detail::allocate_aligned_storage_(64, rounded);
+        const size_type rounded = detail::aligned_allocation_bytes<kAlignment>(capacity, capacity, sizeof(SlotPtr));
+        void* const raw = core::detail::heap_allocate_(rounded, kAlignment);
 
-        // aligned_alloc creates the control bytes implicitly: an array of a
+        // The allocator creates the control bytes implicitly: an array of a
         // byte type is an implicit-lifetime type.  The slots start their
         // lifetime through the checked start.
         ctrl_type* ctrl = static_cast<ctrl_type*>(raw);
@@ -109,7 +109,7 @@ public:
 
     void reset() noexcept {
         if (backing_ != nullptr) {
-            std::free(backing_);
+            core::detail::heap_release_(backing_, alloc_bytes_, kAlignment);
             backing_ = nullptr;
             ctrl_ = nullptr;
             slots_ = nullptr;
@@ -131,6 +131,10 @@ public:
     [[nodiscard]] explicit operator bool() const noexcept { return backing_ != nullptr; }
 
 private:
+    // The alignment of the allocation: one cache line for the first group
+    // of control bytes.
+    static constexpr size_type kAlignment = 64;
+
     explicit SwissTableBuffer(void* backing, ctrl_type* ctrl, slot_type* slots, size_type capacity,
                               size_type alloc_bytes) noexcept
         : backing_{backing}, ctrl_{ctrl}, slots_{slots}, capacity_{capacity}, alloc_bytes_{alloc_bytes} {}

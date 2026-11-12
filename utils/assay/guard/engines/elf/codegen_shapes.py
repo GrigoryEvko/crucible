@@ -478,11 +478,12 @@ PROBES: tuple[Probe, ...] = (
         "with the count 0, so the fill does no test for an empty View",
     ),
     Probe(
-        "box_get",
-        f"Box::get adds one test and one branch to a call of the fatal exit.  {HARDENED_BUILDS}.  On the hot path, "
+        "box_read",
+        f"A read through the dereference of a Box adds one test and one branch to a call of the fatal exit.  {HARDENED_BUILDS}.  On the hot path, "
         "these flags add a copy of the pointer and a second test of the copy, with a branch to a trap",
         checks=("fatal",),
     ),
+    Probe("ref_read", "a read through a Ref is the load of a raw pointer: a Ref has no empty state, so it has no test"),
     Probe(
         "option_expect",
         "Option::expect adds one test and one branch to a call of the fatal exit.  The payload is the low word of the "
