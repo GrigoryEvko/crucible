@@ -35,6 +35,9 @@ static_assert(::fixy::dynamic_extent == ::foundation::core::dynamic_extent);
 static_assert(std::is_same_v<::fixy::Site, ::foundation::core::Site>);
 static_assert(std::is_same_v<::fixy::Fmt<>, ::foundation::core::Fmt<>>);
 static_assert(noexcept(::fixy::fatal("a text of a report")) && noexcept(::fixy::unreachable()));
+static_assert(std::is_same_v<::fixy::ParseError, ::foundation::core::ParseError>);
+static_assert(::fixy::parse<int>("-12").is_ok() && ::fixy::parse<unsigned>("-12").is_err());
+static_assert(::fixy::ParseError{::fixy::ParseErrorKind::overflow, 3}.position == 3);
 // The Scalar family.
 static_assert(::fixy::Integer<int> && !::fixy::Integer<bool> && ::fixy::Float<double> && ::fixy::Arithmetic<float>);
 static_assert(::fixy::SignedInteger<long> && ::fixy::UnsignedInteger<unsigned char>);

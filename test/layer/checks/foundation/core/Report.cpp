@@ -3,6 +3,7 @@
 #include <foundation/core/Report.h>
 
 #include <foundation/core/Format.h>
+#include <foundation/core/Parse.h>
 #include <foundation/core/Verbs.h>
 
 #include <type_traits>
@@ -165,14 +166,18 @@ static_assert(noexcept(report(Sink::Out, Fmt<int>{"text {}"}, 3)));
 static_assert(noexcept(unreachable()));
 
 // Each public member of a type of the family is a shared verb, a language
-// protocol or a name of the family list of plan section 11.8.
+// protocol or a name of the family list of plan section 11.8: each name of
+// the API table, and the enumeration and the two members kind and position
+// of ParseError.
 inline constexpr TextView report_names{
-    "Site Fmt report Sink fatal unreachable format Truncated Formattable parse ParseError"};
+    "Site Fmt report Sink fatal unreachable format Truncated Formattable parse ParseError ParseErrorKind kind "
+    "position"};
 CRUCIBLE_CLOSED_SURFACE(report_names, Site);
 CRUCIBLE_CLOSED_SURFACE(report_names, Fmt<>);
 CRUCIBLE_CLOSED_SURFACE(report_names, Fmt<int, TextView, bool>);
 CRUCIBLE_CLOSED_SURFACE(report_names, Fmt<float, double>);
 CRUCIBLE_CLOSED_SURFACE(report_names, Truncated);
+CRUCIBLE_CLOSED_SURFACE(report_names, ParseError);
 
 }  // namespace detail::report_checks
 

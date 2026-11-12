@@ -554,6 +554,7 @@ test/foundation/ | door-header | 7 | - | -
 test/foundation/ | foreign-symbol | 5 | - | -
 test/foundation/ | opted-out | 2 | ORACLE: memcpy is the model of the bytes of an object | -
 test/foundation/ | opted-out | 4 | ORACLE: std::array is the model of the writes of a FixedArray | -
+test/foundation/ | opted-out | 5 | ORACLE: std::from_chars reads the integer that parse reads from a text | -
 test/foundation/ | opted-out | 11 | ORACLE: std::string_view is the model of the text operations | -
 test/foundation/ | opted-out | 21 | ORACLE: std::to_chars and std::from_chars give the text that the Report family writes | -
 test/foundation/ | opted-out | 8 | ORACLE: the std algorithms are the model of the scans | -
@@ -564,6 +565,7 @@ test/foundation/ | raw-new-delete | 2 | - | -
 test/foundation/ | raw-pointer-object | 46 | - | -
 test/foundation/ | region | 1 | ORACLE: memcpy is the model of the bytes of an object | -
 test/foundation/ | region | 1 | ORACLE: std::array is the model of the writes of a FixedArray | -
+test/foundation/ | region | 1 | ORACLE: std::from_chars reads the integer that parse reads from a text | -
 test/foundation/ | region | 2 | ORACLE: std::string_view is the model of the text operations | -
 test/foundation/ | region | 1 | ORACLE: std::to_chars and std::from_chars give the text that the Report family writes | -
 test/foundation/ | region | 1 | ORACLE: the std algorithms are the model of the scans | -

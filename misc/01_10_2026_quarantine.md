@@ -1462,7 +1462,7 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 
 **The idea.** Each text that the program writes goes through one checked formatter into a region, and out through one sink with no buffer. Each fatal exit and each point that control never reaches goes through one cold function with a site. Each number that the program reads from a text goes through one parser.
 
-**The headers.** `include/foundation/core/Report.h` and `include/foundation/core/Format.h` (main). The cold functions are in `src/foundation/core/Report.cpp` and `src/foundation/ContractHandler.cpp`. The sink write is in `src/foundation/os/ReportSink.cpp`, and it issues the raw write of `foundation/os/Syscall.h`.
+**The headers.** `include/foundation/core/Report.h`, `include/foundation/core/Format.h` and `include/foundation/core/Parse.h` (main). The cold functions are in `src/foundation/core/Report.cpp` and `src/foundation/ContractHandler.cpp`. The sink write is in `src/foundation/os/ReportSink.cpp`, and it issues the raw write of `foundation/os/Syscall.h`.
 
 **The API.**
 
@@ -1477,12 +1477,12 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 | `Formattable<T>` | An integer, a `bool`, a `TextView`, a `float` or a `double` | - | main |
 | more argument kinds | A scoped enumeration by its reflected name, an `Id` and a `Digest` by their word, an `Errno` by its name, and a `Site` | the format | design |
 | float values | A fixed decimal form with no locale, from an algorithm of the family: the text of `std::to_chars` with no format. The shortest digits that read back to the value, and the plain form or the exponent form, whichever is shorter. The family uses exact integer arithmetic on the bits, so the rounding mode has no effect. The rule table has no `allow` row of `<charconv>`, so no base file includes it | the format | main |
-| `parse<T>(text)` | `Result<T, ParseError>`. Decimal and `0x` hex exactly, no white space, no sign on an unsigned type, and no overflow. `ParseError` holds the position in the text. It uses `checked_mul`, `checked_add` and `narrow` of the Scalar family | one pass over the text | design |
+| `parse<T>(text)` | `Result<T, ParseError>` for an `Integer` T. Decimal and `0x` hex exactly, no white space, no `+`, no sign on an unsigned type, and no overflow. `ParseError` holds a `ParseErrorKind` (`no_digit`, `unexpected_character`, `sign_on_unsigned` or `overflow`) and the position of the first character that the grammar refuses. The value collects in T, so the minimum of a signed T reads exactly. The digits that cannot leave the range of T take the modular operations of the Scalar family, and each other digit takes `checked_mul` with `checked_add` or `checked_sub` | one pass over the text | main |
 | the prefix map | `-fmacro-prefix-map`, so a `Site` holds a path relative to the source root (section 10.3a). The debug maps of `cmake/Ccache.cmake` stay, so the build gives no `-ffile-prefix-map` | none | main |
 
 `parse` is the dual of `format`, and it belongs here because its input is a text and its error holds a position in that text.
 
-**The family list.** `Site`, `Fmt`, `report`, `Sink`, `fatal`, `unreachable`, `format`, `Truncated`, `Formattable`, `parse`, `ParseError`.
+**The family list.** `Site`, `Fmt`, `report`, `Sink`, `fatal`, `unreachable`, `format`, `Truncated`, `Formattable`, `parse`, `ParseError`, `ParseErrorKind`, and `kind` and `position`, the two members of `ParseError`.
 
 **Removes.** Three rows: `allow F0_primitives <cstdlib> until Report`, `allow F1_diag <cstdio> until Report` and `allow F1_diag <source_location> until Report`. The text of the row of `<cstdlib>` also names the Ref family (the frees of the two buffers) and the Os family (`std::getenv`). The text of the row of `<cstdio>` names the streams of `fixy/os/OwnedFile.h`. So these two rows go after Report, Ref and Os. The admit row `admit std::source_location until Report`. The R5 import of `libfixy.a`: `__fprintf_chk`. The R5 imports of the `libcrucible*.a` libraries: `__fprintf_chk`, `__vfprintf_chk`, `stderr`, `abort` outside the abort door, and `__isoc23_strtoull`, which `parse` replaces.
 

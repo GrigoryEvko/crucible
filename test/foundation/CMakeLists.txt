@@ -1849,10 +1849,20 @@ foundation_neg_compile_test(neg_thread_local_ref_store_of_another_type
 # a bool, a TextView, a float or a double.  fatal and unreachable end the
 # process in each build.  format() writes into a FixedText and gives a
 # Result, and it refuses a temporary FixedText.  test_core_float_format
-# compares the text of each float with the text of std::to_chars.
+# compares the text of each float with the text of std::to_chars.  parse()
+# reads an integer of a text, and test_core_parse compares it with a
+# reference of the grammar and with std::from_chars.
 foundation_test(test_core_report)
 foundation_test(test_core_text)
 foundation_test(test_core_float_format)
+foundation_test(test_core_parse)
+
+foundation_neg_compile_test(neg_core_parse_character_type
+  "no matching function for call to .parse<char>\\(const char \\[2\\]\\)."
+  "the expression .!\\(same_as<T, char>\\) \\[with T = char\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_parse_floating_type
+  "no matching function for call to .parse<double>\\(const char \\[2\\]\\)."
+  "required for the satisfaction of .Integer<T>. \\[with T = double\\]")
 
 foundation_neg_compile_test(neg_core_fmt_more_placeholders_than_arguments
   "call to consteval function .foundation::core::Fmt<>\\(\"the queue holds \\{\\} items\", __builtin_FILE\\(\\), __builtin_LINE\\(\\), __builtin_FUNCTION\\(\\)\\). is not a constant expression"

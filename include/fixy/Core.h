@@ -24,6 +24,7 @@
 #include <foundation/core/Format.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Number.h>
+#include <foundation/core/Parse.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
@@ -36,6 +37,9 @@ using ::foundation::core::fatal;
 using ::foundation::core::Fmt;
 using ::foundation::core::format;
 using ::foundation::core::Formattable;
+using ::foundation::core::parse;
+using ::foundation::core::ParseError;
+using ::foundation::core::ParseErrorKind;
 using ::foundation::core::report;
 using ::foundation::core::Sink;
 using ::foundation::core::Site;
