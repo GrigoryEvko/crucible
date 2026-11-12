@@ -558,6 +558,17 @@ PROBES: tuple[Probe, ...] = (
         "through memory, so its empty marker writes no zero word over the storage",
     ),
     Probe(
+        "option_empty_word",
+        "an empty Option of a word comes back in two registers that hold zero, as a raw pair of a size and a flag "
+        "word does",
+    ),
+    Probe(
+        "option_word_below",
+        "an Option of a word from an inlined function comes back in two registers with no store to the stack, as a "
+        "raw pair of a size and a flag word does.  The tag fills the word after the storage, so a copy of the cells "
+        "carries no padding byte",
+    ),
+    Probe(
         "option_try",
         "CRUCIBLE_TRY of an Option is one test of the tag.  The value takes a second test of the tag in expect, which "
         "the optimizer removes, because no code writes the operand between the two tests",
@@ -617,10 +628,9 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "scalar_checked_add_wide",
-        "checked_add of a word is the add and the carry flag of the raw form.  The full Option comes back in two "
-        "registers with no store, and std::optional goes through the stack on each path.  The empty path writes the "
-        "zero words of the empty alternative of the Option to the stack and reads them back, so the family side can "
-        "have more instructions, and at -O1 the targets of the branches are different.  "
+        "checked_add of a word is the add and the carry flag of the raw form.  The Option comes back in two registers "
+        "with no store on each path, because its tag is a word of eight bytes and the cells hold no padding byte.  "
+        "std::optional goes through the stack on each path, and at -O1 the targets of the branches are different.  "
         f"{HARDENED_BUILDS}.  These flags add a second test of each edge, with a branch to a trap",
         branches=True,
     ),

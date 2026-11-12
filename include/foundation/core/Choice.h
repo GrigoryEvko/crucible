@@ -28,9 +28,10 @@
 //            Option then has the size of the payload, and the empty value
 //            is the state "no value".
 //   plain    A trivially copyable payload with no niche.  The Option holds
-//            the payload and a tag of one byte, in the layout of a plain
-//            Result, and it is trivially copyable.  The x86-64 System V
-//            ABI then gives it back in registers when it has at most 16
+//            the payload and a tag, in the layout of a plain Result, and it
+//            is trivially copyable.  The tag is one byte, or one word of
+//            eight bytes after a storage of whole words.  The x86-64 System
+//            V ABI then gives it back in registers when it has at most 16
 //            bytes.
 //   owning   Each other payload.  The Option is move-only.  A move leaves
 //            the source empty, and the destructor destroys the payload.
@@ -431,16 +432,21 @@ template <bool IsPlain, class... Ts>
 class SumSlotOf;
 
 // The one layout rule of the plain forms of the family: the storage, and
-// then a tag of one byte, as in std::expected and std::variant.  The x86-64
-// System V ABI gives a class of at most 16 bytes back in two registers.  For
-// a storage of four bytes, the storage is the low word of the first
-// register, so a value goes in and out with no shift, and a test of the tag
-// at bit 32 takes one shift.  The plain Option, and the sums whose
-// alternatives are all plain, use this rule.  Only the slot of a plain sum
-// reads the two cells.
+// then the tag, as in std::expected and std::variant.  The x86-64 System V
+// ABI gives a class of at most 16 bytes back in two registers.  For a
+// storage of four bytes, the storage is the low word of the first register,
+// so a value goes in and out with no shift, and a test of a tag of one byte
+// at bit 32 takes one shift.  A storage that fills whole words of eight
+// bytes puts the tag in a register of its own, and the tag is then a word
+// of eight bytes.  The cells then hold no padding byte, so a copy of the
+// cells carries no byte that -ftrivial-auto-var-init made zero, and an
+// inlined function gives its sum back in registers with no store to the
+// stack.  The plain Option, and the sums whose alternatives are all plain,
+// use this rule.  Only the slot of a plain sum reads the two cells.
 template <class Storage, class Tag>
 class TaggedCells {
-    static_assert(sizeof(Tag) == 1, "the tag of the cells is one byte");
+    static_assert(std::is_unsigned_v<Tag> && alignof(Tag) == sizeof(Tag) && sizeof(Tag) <= alignof(Storage),
+                  "the tag of the cells is one unsigned word, at most as wide as the alignment of the storage");
 
     Storage storage_;
     Tag tag_;
@@ -832,13 +838,14 @@ template <class... Ts>
 class SumSlotOf<true, Ts...> {
     static constexpr std::size_t storage_size_ = sizeof(Alternatives<Ts...>);
     static constexpr std::size_t word_width_ = alignof(Alternatives<Ts...>) < 8 ? alignof(Alternatives<Ts...>) : 8;
-    static constexpr bool is_register_pair_ = sizeof(TaggedCells<Alternatives<Ts...>, unsigned char>) <= 16;
+    using TagWord = std::conditional_t<word_width_ == 8, unsigned long long, unsigned char>;
+    static constexpr bool is_register_pair_ = sizeof(TaggedCells<Alternatives<Ts...>, TagWord>) <= 16;
     using Storage =
         Alternatives<PlainAlternative<Ts, storage_size_, word_width_, std::is_empty_v<Ts> && is_register_pair_>...>;
     static_assert(sizeof(Storage) == storage_size_ && alignof(Storage) == alignof(Alternatives<Ts...>),
                   "the zero words of an empty alternative do not change the storage");
 
-    TaggedCells<Storage, unsigned char> cells_;
+    TaggedCells<Storage, TagWord> cells_;
 
     template <class T, OptionForm Form>
     friend class OptionSlot;
@@ -860,7 +867,7 @@ public:
     template <std::size_t Index, class U>
     constexpr SumSlotOf(AlternativeAt<Index> at,
                         U&& value) noexcept(std::is_nothrow_constructible_v<Storage, AlternativeAt<Index>, U&&>)
-        : cells_{static_cast<unsigned char>(Index), at, static_cast<U&&>(value)} {}
+        : cells_{static_cast<TagWord>(Index), at, static_cast<U&&>(value)} {}
 };
 
 // The slot of a sum with an alternative that owns something.  The slot is

@@ -319,6 +319,25 @@ option_expect_niche(fixy::Option<fixy::View<std::uint32_t const>> option) noexce
 // goes through memory, so its empty marker writes no zero word.
 [[gnu::used]] void option_clear_block(fixy::Option<Block64>& held) noexcept { held = {}; }
 
+// An empty Option of a word, and an Option that an inlined function gives,
+// come back in two registers with no store to the stack.  The tag fills the
+// word after the storage, so the cells hold no padding byte that a copy
+// carries.
+namespace {
+
+[[nodiscard]] constexpr fixy::Option<std::size_t> word_below(std::size_t value, std::size_t limit) noexcept {
+    if (value >= limit) return fixy::none;
+    return fixy::Option<std::size_t>::some(value);
+}
+
+}  // namespace
+
+[[gnu::used]] fixy::Option<std::size_t> option_empty_word() noexcept { return fixy::none; }
+
+[[gnu::used]] fixy::Option<std::size_t> option_word_below(std::size_t value, std::size_t limit) noexcept {
+    return word_below(value, limit);
+}
+
 // ok_or gives the payload of an Option as a Result, in the same register.
 [[gnu::used]] fixy::Result<std::uint32_t, Code32> option_ok_or(fixy::Option<std::uint32_t> option) noexcept {
     return std::move(option).ok_or(Code32::gone);
@@ -712,6 +731,20 @@ struct RawText final {
 }
 
 [[gnu::used]] void option_clear_block_raw(std::optional<Block64>& held) noexcept { held = std::nullopt; }
+
+// The raw form of an Option of a word is a size and a flag word, which come
+// back in two registers.
+struct RawWord final {
+    std::size_t value;
+    std::size_t holds;
+};
+
+[[gnu::used]] RawWord option_empty_word_raw() noexcept { return RawWord{0, 0}; }
+
+[[gnu::used]] RawWord option_word_below_raw(std::size_t value, std::size_t limit) noexcept {
+    if (value >= limit) return RawWord{0, 0};
+    return RawWord{value, 1};
+}
 
 [[gnu::used]] std::expected<std::uint32_t, Code32> option_ok_or_raw(std::optional<std::uint32_t> option) noexcept {
     if (option) return *option;
