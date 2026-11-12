@@ -2659,10 +2659,10 @@ pool, and `foundation/permissions/FederationDoor.h` holds the key of a
 federation peer token. The check file of `Permission.h` holds the fixture tags
 of the checks, so no includer reads them.
 
-For scale, `fixy/Collision.h` is 1,497 lines and `fixy/Predicates.h` is 1,046. The
-headers of `include/foundation/` and `include/fixy/` are 29% comment, so their
-size is code and not prose. Header size is a review question about concerns, not
-a gate.
+For scale, `fixy/Collision.h` and `fixy/Predicates.h` each have more than 1,000
+lines, and `wc -l` gives the count of today. The headers of `include/foundation/`
+and `include/fixy/` are 29% comment, so their size is code and not prose. Header
+size is a review question about concerns, not a gate.
 
 ### Usage rules
 
