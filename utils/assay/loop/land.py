@@ -109,10 +109,15 @@ THE HOLDER
     goes before each other heavy step of the host (THE PRIORITY OF THE GATE
     of assay.loop.heavy).  --check holds that session too.  Then it frees the
     lock.  It does that again while its own request has no verdict.  An
-    error of a tool outside a run of the gate on a commit of the batch gives
-    each request of the batch with no verdict the verdict of that error,
-    other than a request that landed.  An error of the run of the base is
-    such an error (THE ERROR OF A RUN).
+    error outside a run of the gate on a commit of the batch stops the batch.
+    An error of the run of the base is such an error (THE ERROR OF A RUN).
+    Each request of the batch with no verdict then gets the verdict of that
+    error, other than a request that landed.  A LandError gives a usage
+    error.  Each other error gives a tool error.  An error that is not of the
+    types of KNOWN_ERRORS is a defect of the code of the landing, such as a
+    TypeError.  Its verdict also gives its traceback.  A request with a
+    verdict waits for no holder, so the next holder does not take the batch
+    again.
 
 THE BATCH
     The batch composes each request as its own commit on the commit of the
@@ -194,8 +199,9 @@ THE RUN OF THE BASE
 THE ERROR OF A RUN
     The check of the gate can raise an error on a commit of the batch.  An
     example is a file of the commit that the code of the gate cannot read.
-    The run then gets a verdict with one problem, the text of the error, and
-    with no focus (gate_run()).  The run of the base then runs each
+    The error can be of each type, also a TypeError of a file of an
+    unexpected shape.  The run then gets a verdict with one problem, the
+    text of the error, and with no focus (gate_run()).  The run of the base then runs each
     configuration of the batch on the commit of the batch.  When that run
     raises an error too, the error is not of a request, and each request
     gets the verdict of a tool error (THE HOLDER).  Else THE SEARCH finds the
@@ -332,6 +338,7 @@ import random
 import secrets
 import sys
 import time
+import traceback
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -412,13 +419,15 @@ DROPPED = "dropped"
 # The replacement of the directory of the logs of a run, when the batch compares the problems of two runs (THE RUN OF
 # THE BASE).
 LOGS_MARK = "LOGS"
-# The errors of the check of a commit of the batch that are a problem of that commit (THE ERROR OF A RUN).  They are
-# the errors of a tool that hold() turns into the verdict of each request.
-CHECK_ERRORS = (gate.GateError, git.GitError, proc.ToolFailed, OSError, ValueError)
 
 
 class LandError(Exception):
     """The request does not compose: a usage error, an edit that does not apply, or a path that is not listed."""
+
+
+# The errors of a tool or of an input that the landing expects (THE HOLDER).  An error of a different type is a defect
+# of the code of the landing, and its verdict also gives its type and its traceback.
+KNOWN_ERRORS = (LandError, gate.GateError, git.GitError, proc.ToolFailed, OSError, ValueError)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1011,6 +1020,20 @@ def refused(status: int, *texts: str) -> Decision:
     return Decision(status, "", tuple(Line(text, True) for text in texts))
 
 
+def error_text(problem: Exception) -> str:
+    """Return the text of an error, with its type and its traceback when it is not of KNOWN_ERRORS (THE HOLDER)."""
+    if isinstance(problem, KNOWN_ERRORS):
+        return str(problem)
+    trace = "".join(traceback.format_exception(problem)).rstrip("\n")
+    return f"{type(problem).__name__}: {problem}\n{trace}"
+
+
+def stopped_batch(problem: Exception) -> Decision:
+    """Return the verdict of each request of a batch that an error stopped: a usage error or a tool error (THE HOLDER)."""
+    status = ExitCode.USAGE if isinstance(problem, LandError) else ExitCode.TOOL_FAILED
+    return refused(status, f"loop land: {error_text(problem)}")
+
+
 class Journal:
     """The journals of the requests of one queue (THE JOURNAL)."""
 
@@ -1111,8 +1134,8 @@ class BatchLanding:
         started = time.monotonic()
         try:
             verdict = self.check(candidate, bool(self.runs))
-        except CHECK_ERRORS as problem:
-            text = f"the gate cannot judge the commit {candidate.commit[:SHORT_HASH]}: {problem}"
+        except Exception as problem:  # noqa: BLE001
+            text = f"the gate cannot judge the commit {candidate.commit[:SHORT_HASH]}: {error_text(problem)}"
             check_report.write_line(f"loop land: {text}", is_error=True)
             verdict = gate.Verdict((), (text,), time.monotonic() - started)
         numbers = tuple(link.queued.number for link in chain)
@@ -1835,11 +1858,17 @@ def hold(work: Path, queue: Path, check: Check | None = None, pause: heavy.Pause
         with session:
             landing = BatchLanding(batch, gated, decide, pause, functools.partial(is_alive, queue), Journal(queue))
             landing.land(batch)
-    except (LandError, gate.GateError, git.GitError, proc.ToolFailed, OSError, ValueError) as problem:
-        status = ExitCode.USAGE if isinstance(problem, LandError) else ExitCode.TOOL_FAILED
-        settle(batch, decide, landing, refused(status, f"loop land: {problem}"))
+    except Exception as problem:  # noqa: BLE001
+        failure = stopped_batch(problem)
+        check_report.write_line(failure.lines[0].content, is_error=True)
+        settle(batch, decide, landing, failure)
     finally:
-        write_records(work, "land", landing.records() if landing is not None else [])
+        try:
+            write_records(work, "land", landing.records() if landing is not None else [])
+        except Exception as problem:  # noqa: BLE001
+            check_report.write_line(
+                f"loop land: the record of the runs cannot be written: {error_text(problem)}", is_error=True
+            )
     return True
 
 

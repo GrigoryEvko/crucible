@@ -28,7 +28,10 @@ The cases write requests into a planted queue.  The holder of the tree must
 take them in the sequence of their numbers and write the verdict of each.
 An error of the check on the commit of one request must refuse only that
 request.  An error that the run of the base raises too must give each
-request the verdict of a tool error.
+request the verdict of a tool error.  These rules also hold for an error
+of a type that the landing does not expect, such as a TypeError.  Its
+verdict must give its traceback, and the next holder must take no request
+of its batch.
 Each number must occur one time only.  A holder must write the verdicts of
 the journals of a holder that ended after its swap.  A journal that git
 cannot judge must give a refusal.
@@ -1226,6 +1229,89 @@ def error_cases(expect: testing.Expect) -> None:
         )
 
 
+def hold_guarded(work: Path, queue: Path, check: land.Check) -> tuple[bool, str]:
+    """Run one holder with a planted gate, and return if it took a batch and the text of an error that it raised."""
+    try:
+        took, _printed = testing.captured(lambda: land.hold(work, queue, check, no_pause))
+    except Exception as problem:  # noqa: BLE001
+        return False, repr(problem)
+    return took, ""
+
+
+def defect_cases(expect: testing.Expect) -> None:
+    """Hold an error of a type that the landing does not expect, such as a TypeError of the code of the gate."""
+    with tempfile.TemporaryDirectory(prefix="land-defect-") as work_text:
+        work = Path(work_text) / "work"
+        root = Path(work_text) / "repo"
+        head = planted_repository(root)
+        queue = land.queue_of(work, root)
+        texts = {"r1.txt": "one\n", "r2.txt": UNREADABLE, "r3.txt": "three\n"}
+        for name, text in texts.items():
+            (root / name).write_text(text, encoding="utf-8")
+
+        def typed(candidate: gate.Candidate, _is_retry: bool) -> gate.Verdict:
+            """Raise a TypeError on a commit with r2.txt, as the code of the gate does on a file of a new shape."""
+            if git.show(root, candidate.commit, "r2.txt") == UNREADABLE.encode():
+                raise TypeError("'NoneType' object is not subscriptable")
+            return gate.Verdict(("debug",), (), 1.0)
+
+        with (
+            waiting(queue, root, request_of(("Add r1",), own=("r1.txt",))) as first,
+            waiting(queue, root, request_of(("Add r2",), own=("r2.txt",))) as second,
+            waiting(queue, root, request_of(("Add r3",), own=("r3.txt",))) as third,
+        ):
+            took, raised = hold_guarded(work, queue, typed)
+            decisions = [land.read_decision(queue, item.number, item.token) for item in (first, second, third)]
+        statuses = [decision.status if decision is not None else None for decision in decisions]
+        bad = decisions[1]
+        expect(
+            f"a TypeError of the check on the commit of one request refuses only that request, with the type, the "
+            f"text and the traceback of the error, and the other two land: statuses {statuses}, error {raised!r}",
+            took
+            and not raised
+            and statuses == [0, ExitCode.FINDINGS, 0]
+            and bad is not None
+            and any("TypeError: 'NoneType'" in line.content and "Traceback" in line.content for line in bad.lines)
+            and subjects_since(root, head) == ["Add r1", "Add r3"],
+        )
+        tip = git.head(root)
+        (root / "r4.txt").write_text("four\n", encoding="utf-8")
+        (root / "r5.txt").write_text("five\n", encoding="utf-8")
+        calls: list[gate.Candidate] = []
+
+        def defective(candidate: gate.Candidate, _is_retry: bool) -> gate.Verdict:
+            """Raise a TypeError on each commit, also on the commit of the run of the base."""
+            calls.append(candidate)
+            raise TypeError("a defect of the code of the gate")
+
+        with (
+            waiting(queue, root, request_of(("Add r4",), own=("r4.txt",))) as fourth,
+            waiting(queue, root, request_of(("Add r5",), own=("r5.txt",))) as fifth,
+        ):
+            took, raised = hold_guarded(work, queue, defective)
+            decisions = [land.read_decision(queue, item.number, item.token) for item in (fourth, fifth)]
+            again = land.waiting_requests(queue, no_pause)
+        expect(
+            f"a TypeError of each run, also of the run of the base, stops the batch: each request gets a tool error "
+            f"with the traceback, the branch does not move, and the next holder takes no request of the batch: "
+            f"error {raised!r}",
+            took
+            and not raised
+            and [decision.status if decision is not None else None for decision in decisions]
+            == [ExitCode.TOOL_FAILED, ExitCode.TOOL_FAILED]
+            and all(
+                decision is not None
+                and any(
+                    "TypeError: a defect" in line.content and "Traceback" in line.content for line in decision.lines
+                )
+                for decision in decisions
+            )
+            and len(calls) == 2
+            and git.head(root) == tip
+            and again == [],
+        )
+
+
 def journal_cases(expect: testing.Expect) -> None:
     """Hold a holder that stops after its swap: the next holder writes the verdicts of the journals and composes nothing."""
     with tempfile.TemporaryDirectory(prefix="land-journal-") as work_text:
@@ -1565,6 +1651,7 @@ def main(argv: list[str]) -> int:
             drop_cases,
             queue_cases,
             error_cases,
+            defect_cases,
             journal_cases,
             record_cases,
             heavy_lock_cases,
