@@ -1,0 +1,47 @@
+// No write here reaches a payload that an arm borrows: a write to a different
+// local, a write to a different member, a write in the arm on_none that gets
+// no reference, a write to a copy that the arm captures, and a write in an arm
+// of the rvalue match, which moves the payload out before the arm runs.
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::none;
+using ::foundation::core::Option;
+
+int other_local(Option<int>& held) {
+    Option<int> other = Option<int>::some(1);
+    int value = held.match([&](int const& payload) { other = none; return payload; }, [] { return 0; });
+    return value + std::move(other).value_or(0);
+}
+
+struct Holder {
+    Option<int> held = Option<int>::some(2);
+    Option<int> other = Option<int>::some(3);
+
+    int other_member() {
+        return held.match([this](int const& value) { other = none; return value; }, [] { return 0; });
+    }
+};
+
+int empty_arm(Option<int>& held) {
+    return held.match([](int const& value) { return value; }, [&] { held = Option<int>::some(4); return 0; });
+}
+
+int copied(Option<int> held) {
+    return held.match([held](int const& value) mutable { held = none; return value; }, [] { return 0; });
+}
+
+int rvalue_match(Option<int> held) {
+    return std::move(held).match([&](int value) { held = none; return value; }, [] { return 0; });
+}
+
+int calls(Option<int>& source) {
+    Holder holder;
+    return other_local(source) + holder.other_member() + empty_arm(source) + copied(Option<int>::some(5))
+         + rvalue_match(Option<int>::some(6));
+}
+
+}  // namespace planted

@@ -61,7 +61,6 @@ namespace {
 
 // The identifiers that the family compares, interned one time.
 struct Names {
-    tree foundation = NULL_TREE;
     tree linear = NULL_TREE;
     tree binding_hook = NULL_TREE;
 };
@@ -73,67 +72,10 @@ Names names;
 // address.
 std::unordered_map<tree, bool> hook_answers;
 
-// True when ATTRIBUTE is an annotation of the class
-// foundation::linear::binding_hook.  The value of an annotation has the type
-// of the annotation, with a const qualifier.
-bool is_hook_mark(tree attribute) {
-    if (!annotation_p(attribute)) {
-        return false;
-    }
-    tree value = TREE_VALUE(attribute);
-    if (value == NULL_TREE || TREE_CODE(value) != TREE_LIST || TREE_VALUE(value) == NULL_TREE) {
-        return false;
-    }
-    tree type = TREE_TYPE(TREE_VALUE(value));
-    if (type == NULL_TREE || type == error_mark_node || !TYPE_P(type)) {
-        return false;
-    }
-    type = TYPE_MAIN_VARIANT(type);
-    tree decl = CLASS_TYPE_P(type) ? TYPE_NAME(type) : NULL_TREE;
-    if (decl == NULL_TREE || TREE_CODE(decl) != TYPE_DECL || DECL_NAME(decl) != names.binding_hook) {
-        return false;
-    }
-    tree scope = CP_DECL_CONTEXT(decl);
-    if (scope == NULL_TREE || TREE_CODE(scope) != NAMESPACE_DECL || DECL_NAME(scope) != names.linear) {
-        return false;
-    }
-    tree top = CP_DECL_CONTEXT(scope);
-    return top != NULL_TREE && TREE_CODE(top) == NAMESPACE_DECL && DECL_NAME(top) == names.foundation
-        && CP_DECL_CONTEXT(top) == global_namespace;
-}
-
-bool carries_hook_mark(tree decl) {
-    for (tree attribute = DECL_ATTRIBUTES(decl); attribute != NULL_TREE; attribute = TREE_CHAIN(attribute)) {
-        if (is_hook_mark(attribute)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 // True when FUNCTION is a hook (THE HOOKS): it carries the annotation, or it
 // is an instance of a template whose pattern carries it.  Complexity: linear
-// in the attributes of the function and of its template.
-bool reads_as_hook(tree function) {
-    if (carries_hook_mark(function)) {
-        return true;
-    }
-    if (DECL_LANG_SPECIFIC(function) == nullptr || !DECL_TEMPLATE_INFO(function)) {
-        return false;
-    }
-    tree template_decl = DECL_TI_TEMPLATE(function);
-    if (template_decl == NULL_TREE || TREE_CODE(template_decl) != TEMPLATE_DECL) {
-        return false;
-    }
-    tree pattern = DECL_TEMPLATE_RESULT(template_decl);
-    if (pattern != NULL_TREE && pattern != function && carries_hook_mark(pattern)) {
-        return true;
-    }
-    tree general = most_general_template(template_decl);
-    tree general_pattern = general != NULL_TREE ? DECL_TEMPLATE_RESULT(general) : NULL_TREE;
-    return general_pattern != NULL_TREE && general_pattern != pattern && carries_hook_mark(general_pattern);
-}
-
+// in the attributes of the function and of its template, one time for each
+// function.
 bool is_hook(tree function) {
     if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
         return false;
@@ -142,7 +84,7 @@ bool is_hook(tree function) {
     if (found != hook_answers.end()) {
         return found->second;
     }
-    bool answer = reads_as_hook(function);
+    bool answer = function_carries_base_annotation(function, names.binding_hook, names.linear);
     hook_answers.emplace(function, answer);
     return answer;
 }
@@ -311,7 +253,6 @@ void report_binding_hook(const Finding& finding) {
 }
 
 void register_binding_hook(const char* plugin_name) {
-    names.foundation = get_identifier("foundation");
     names.linear = get_identifier("linear");
     names.binding_hook = get_identifier("binding_hook");
     register_callback(plugin_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize, nullptr);

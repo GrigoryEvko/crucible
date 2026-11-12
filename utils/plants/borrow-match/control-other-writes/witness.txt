@@ -1,0 +1,6 @@
+# No write reaches a payload that an arm borrows, and no line names the rule
+# borrow-match.
+
+compile others src/others.cpp
+flag others -freflection
+exit others pass

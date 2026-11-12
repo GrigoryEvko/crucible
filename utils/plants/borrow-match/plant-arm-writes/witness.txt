@@ -1,0 +1,39 @@
+# Each write of an arm of a borrow match to the sum that the match reads is an
+# error in each mode: an assignment through a capture by reference (line 21),
+# a move (26), a mutating call of the cursor of a loop over the sum (32), an
+# assignment in a generic arm through a reference parameter (38), through a
+# local reference of the arm (44), through a capture of this (53), of the
+# object that holds the receiver (57), a move in an arm with a declared return
+# type in an instance of a template, of a Result (65), and an assignment of a
+# OneOf (71).  The opt-out region turns the write on line 77 into opted-out.
+# The second compile shows that a parse with no object gives the same errors.
+
+compile writes src/writes.cpp
+flag writes -freflection
+exit writes fail
+finding writes borrow-match borrow-match src/writes.cpp:21:52 | assignment held
+finding writes borrow-match borrow-match src/writes.cpp:26:67 | move held
+finding writes borrow-match borrow-match src/writes.cpp:32:26 | mutating-call held
+finding writes borrow-match borrow-match src/writes.cpp:38:48 | assignment held
+finding writes borrow-match borrow-match src/writes.cpp:44:15 | assignment held
+finding writes borrow-match borrow-match src/writes.cpp:53:59 | assignment this->held
+finding writes borrow-match borrow-match src/writes.cpp:57:60 | assignment this->held
+finding writes borrow-match borrow-match src/writes.cpp:65:72 | move result
+finding writes borrow-match borrow-match src/writes.cpp:71:52 | assignment held
+finding writes quarantine region src/writes.cpp:76:1 | PROBE: the test writes the sum in an arm
+finding writes quarantine opted-out src/writes.cpp:77:59 | borrow-match assignment held
+error writes src/writes.cpp:21 | this arm of a borrow match writes the sum that the match reads (assignment held)
+error writes src/writes.cpp:26 | this arm of a borrow match writes the sum that the match reads (move held)
+error writes src/writes.cpp:32 | this arm of a borrow match writes the sum that the match reads (mutating-call held)
+error writes src/writes.cpp:38 | this arm of a borrow match writes the sum that the match reads (assignment held)
+error writes src/writes.cpp:44 | this arm of a borrow match writes the sum that the match reads (assignment held)
+error writes src/writes.cpp:53 | this arm of a borrow match writes the sum that the match reads (assignment this->held)
+error writes src/writes.cpp:57 | this arm of a borrow match writes the sum that the match reads (assignment this->held)
+error writes src/writes.cpp:65 | this arm of a borrow match writes the sum that the match reads (move result)
+error writes src/writes.cpp:71 | this arm of a borrow match writes the sum that the match reads (assignment held)
+text writes | an assignment, a move or a mutating call of the sum ends or changes the payload
+text writes | PROBE: reason
+
+compile syntax src/writes.cpp out=no stage=syntax errors=writes notes=writes
+flag syntax -freflection
+exit syntax fail

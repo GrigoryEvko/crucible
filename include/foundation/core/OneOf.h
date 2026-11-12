@@ -27,6 +27,7 @@
 // of Choice.h do not read OneOf, so it has a header of its own.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Report.h>
 
@@ -142,13 +143,15 @@ public:
     }
 
     // The total match of a borrow: the arm of the active alternative gets its
-    // value as a const reference, and the OneOf keeps it.
+    // value as a const reference, and the OneOf keeps it.  The rule
+    // borrow-match of the plugin refuses an arm that assigns, moves or changes
+    // this OneOf.
     template <class... Arms>
         requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts const&> && ...)
              && (std::same_as<std::invoke_result_t<Arms, Ts const&>, std::invoke_result_t<Arms...[0], Ts...[0] const&>>
                  && ...)
-    constexpr std::invoke_result_t<Arms...[0], Ts...[0] const&>
-    match(Arms&&... arms) const& noexcept((std::is_nothrow_invocable_v<Arms, Ts const&> && ...)) {
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Arms...[0], Ts...[0] const&>
+        match(Arms&&... arms) const& noexcept((std::is_nothrow_invocable_v<Arms, Ts const&> && ...)) {
         using Result = std::invoke_result_t<Arms...[0], Ts...[0] const&>;
         return this->template borrowed_from_<0, Result>(static_cast<Arms&&>(arms)...);
     }

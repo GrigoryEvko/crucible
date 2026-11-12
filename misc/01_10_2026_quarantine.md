@@ -992,7 +992,7 @@ The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLooku
 | `Option<T>::some(v)` | Full. The empty value of a niche ends the process | one test for a niche payload | - | main |
 | `some(v)` | A free function that gives `Option<remove_cvref_t<V>>`, with no conversion | as `some` | - | design |
 | `is_some()`, `is_none()` | The state | a load | - | main |
-| `match(on_some, on_none)` | `&&` consumes, `const&` borrows. A temporary has no borrow match, so no arm gives a reference into it | one branch | `match` | main |
+| `match(on_some, on_none)` | `&&` consumes, `const&` borrows. A temporary has no borrow match, so no arm gives a reference into it. The rule borrow-match of the plugin refuses an arm of the borrow match that assigns, moves or changes the Option | one branch | `match` | main |
 | `for (x : option)` | Zero or one turn. A linear payload has no mutable loop | one test | `for` | main |
 | `value_or(fallback)` | `&&`, a droppable payload only | one select | - | main |
 | `expect(why)` | `&&`. An empty `Option` ends the process | one branch to a cold call | `expect` | main |
@@ -1013,7 +1013,7 @@ The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLooku
 | `err()` | `const&` copies a droppable `E`. `&&` moves a linear `E` | one branch | - | main |
 | `value_or(fallback)` | `&&`, a droppable `T` and `E` only | one select | - | main |
 | `expect(why)` | `&&`. Gives `void` for `Unit` | one branch to a cold call | `expect` | main |
-| `match(on_ok, on_err)` | `&&` and `const&`. A temporary has no borrow match | one branch | `match` | main |
+| `match(on_ok, on_err)` | `&&` and `const&`. A temporary has no borrow match. The rule borrow-match refuses an arm of the borrow match that writes the Result | one branch | `match` | main |
 | The move assignment, `==` | As for `Option` | as for `Option` | compare | design |
 
 A `Result` has no loop, because a loop over the value drops the error with no trace.
@@ -1025,7 +1025,7 @@ A `Result` has no loop, because a loop over the value drops the error with no tr
 | `OneOf(v)` | Implicit from one of `Ts`, with no conversion, no default constructor and no empty state | a move | - | main |
 | `is<T>()` | `T` is one of `Ts` | one compare | - | main |
 | `expect<T>(why)` | `&&`. Another alternative ends the process | one branch to a cold call | `expect` | main |
-| `match(arms...)` | `&&` and `const&`. One arm for each alternative in the order of `Ts`. The last alternative takes the last branch, so `match` has no fatal path. The `&&` form gives no reference, and a temporary has no borrow match | one compare for each alternative | `match` | main |
+| `match(arms...)` | `&&` and `const&`. One arm for each alternative in the order of `Ts`. The last alternative takes the last branch, so `match` has no fatal path. The `&&` form gives no reference, and a temporary has no borrow match. The rule borrow-match refuses an arm of the borrow match that writes the OneOf | one compare for each alternative | `match` | main |
 | `get<T>()` | `Option<Ref<T>>`, after `Ref` of G3 | one compare | `get` | design |
 | `which()` | `Index<sizeof...(Ts)>`, after `Index<N>` of G4 | a load | - | design |
 | The move assignment, `==` | As for `Option` | as for `Option` | compare | design |

@@ -1,0 +1,37 @@
+// The rule reads the body of the arm only.  These writes still end the
+// payload that the arm borrows, and the rule does not see them: a write in a
+// free function that the arm calls with the sum, a write through a pointer to
+// the sum, a write through a second reference parameter to the same sum, and
+// a write in a closure that the call gets by name.
+#include <foundation/core/Choice.h>
+
+namespace planted {
+
+using ::foundation::core::none;
+using ::foundation::core::Option;
+
+void clear(Option<int>& target) { target = none; }
+
+int callee(Option<int>& held) {
+    return held.match([&](int const& value) { clear(held); return value; }, [] { return 0; });
+}
+
+int pointer(Option<int>& held) {
+    Option<int>* target = &held;
+    return held.match([&](int const& value) { *target = none; return value; }, [] { return 0; });
+}
+
+int second_reference(Option<int>& held, Option<int>& alias) {
+    return held.match([&](int const& value) { alias = none; return value; }, [] { return 0; });
+}
+
+int named_closure(Option<int>& held) {
+    auto arm = [&](int const& value) { held = none; return value; };
+    return held.match(arm, [] { return 0; });
+}
+
+int calls(Option<int>& source) {
+    return callee(source) + pointer(source) + second_reference(source, source) + named_closure(source);
+}
+
+}  // namespace planted

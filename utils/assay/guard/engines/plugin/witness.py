@@ -116,9 +116,9 @@ THE DERIVED DIAGNOSTICS
     The message of the error of each other finding holds
     "quarantine: KIND ENTITY" with a semicolon after the entity.  A finding of the rule
     contract-specifier gives the error of the contract rule, a finding of the
-    rule binding-hook gives the start of its error, and a finding of the rule
-    specialization-home gives the text of its kind.  Its record
-    open-extension is no finding, so it gives no error in each mode.  A
+    rules binding-hook and borrow-match gives the start of its error, and a
+    finding of the rule specialization-home gives the text of its kind.  Its
+    record open-extension is no finding, so it gives no error in each mode.  A
     finding at the line 0, a fact of all the unit, gives an error with no
     location.
     The key notes=OTHER says that each finding row of OTHER gives a note
@@ -261,9 +261,12 @@ CONTRACT_RULE = "contract-specifier"
 # The rule binding-hook, and the start of its error (THE ERRORS of utils/tools/quarantine/binding.cpp).
 BINDING_RULE = "binding-hook"
 BINDING_ERROR = "this call names the hook '{entity}' of a structured binding"
-# The rules that give an error in each mode for each finding: the contract rule, the rule binding-hook and the rules
-# of the family unit fact.
-EACH_MODE_RULES = frozenset((CONTRACT_RULE, BINDING_RULE, "contract-semantic", "fast-math-override"))
+# The rule borrow-match, and the start of its error (THE ERRORS of utils/tools/quarantine/borrow.cpp).
+BORROW_RULE = "borrow-match"
+BORROW_ERROR = "this arm of a borrow match writes the sum that the match reads ({entity})"
+# The rules that give an error in each mode for each finding: the contract rule, the rules binding-hook and
+# borrow-match and the rules of the family unit fact.
+EACH_MODE_RULES = frozenset((CONTRACT_RULE, BINDING_RULE, BORROW_RULE, "contract-semantic", "fast-math-override"))
 # The rule specialization-home, and the start of the error of each of its kinds that is an error in each mode
 # (THE DERIVED DIAGNOSTICS, and THE ERRORS of utils/tools/quarantine/specialization.cpp).  The record open-extension
 # is no error.
@@ -785,6 +788,8 @@ def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: b
             errors.append((place, f"the '{finding.entity}' contract specifier is not permitted in this tree"))
         elif finding.rule == BINDING_RULE:
             errors.append((place, BINDING_ERROR.format(entity=finding.entity)))
+        elif finding.rule == BORROW_RULE:
+            errors.append((place, BORROW_ERROR.format(entity=finding.entity)))
         elif finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS:
             errors.append((place, SPECIALIZATION_ERRORS[finding.kind].format(entity=finding.entity)))
         else:

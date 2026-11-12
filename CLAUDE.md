@@ -1176,7 +1176,11 @@ the compile with the plugin, and 0.10% of their sum. The rule `binding-hook` of
 `utils/tools/quarantine/binding.cpp` reads each body of each compile, with no
 argument. On 2026-11-12, that rule added 4 to 41 million user instructions to a
 compile of six units of 3.2 to 38.9 billion instructions: 0.03% to 0.15% of the
-compile with the plugin, and 0.08% of their sum. ccache ignores the paths in the plugin arguments, so
+compile with the plugin, and 0.08% of their sum. The rule `borrow-match` of
+`utils/tools/quarantine/borrow.cpp` reads each body of each compile too. On
+2026-11-12, that rule added 3 to 34 million user instructions to a compile of
+six units of 4.3 to 45.9 billion instructions: 0.06% to 0.09% of the compile
+with the plugin, and 0.07% of their sum. ccache ignores the paths in the plugin arguments, so
 the build directories of two work trees share the cache. ccache also hashes
 the enforce rows of the rule table.
 

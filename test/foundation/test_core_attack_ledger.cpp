@@ -45,13 +45,16 @@ template <class T, class Brand>
 T target_of(::foundation::core::Ref<T, Brand>);
 static_assert(std::is_same_v<decltype(target_of(std::declval<Box<int>&>().view())), int>);
 
-// ── Entry: a match arm assigns the Option that it reads ──────────────
+// ── Entry: a match arm writes the sum that it reads ──────────────────
 //
-// The borrow match gives the arm a const reference into the Option.  An
-// arm that captures the Option and assigns it, for example `holder = none`,
-// ends the life of the payload that its reference names.  The Option of a
-// trivially copyable payload stays assignable, because the ABI gives it
-// back in registers only then.
+// The borrow match gives the arm a const reference into the sum.  The rule
+// borrow-match of the quarantine plugin refuses an assignment, a move or a
+// mutating call of the sum in the body of the arm, through a capture by
+// reference, a capture of this or a local reference.  A write in a callee
+// of the arm, through a pointer or a second reference parameter, or in a
+// closure that the call gets by name still ends the life of the payload
+// that the reference names.  The Option of a trivially copyable payload
+// stays assignable, because the ABI gives it back in registers only then.
 static_assert(std::is_copy_assignable_v<Option<int>>);
 static_assert(std::is_copy_assignable_v<::foundation::core::Result<int, ::foundation::core::LengthMismatch>>);
 

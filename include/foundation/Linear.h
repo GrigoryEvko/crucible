@@ -42,7 +42,10 @@
 // binding_hook marks the hook get<I> of a structured binding, such as the
 // hook of foundation/core/Record.h.  Only the initializer of a name of a
 // binding calls such a function, and the rule binding-hook of the plugin
-// refuses each other call.
+// refuses each other call.  The annotation borrow_match marks the match of a
+// sum that gives each arm a reference into the payload, such as the match of
+// a const Option.  The rule borrow-match of the plugin refuses an arm that
+// assigns, moves or changes the sum that it reads.
 //
 // What the trait does not see, stated rather than implied: a lambda
 // capture, because GCC 16 reflects no data member of a closure type, and a
@@ -81,6 +84,10 @@ struct scope_end_door final {};
 // The annotation of the hook get<I> of a structured binding.  A direct call
 // on an rvalue moves one part out and drops the other parts.
 struct binding_hook final {};
+
+// The annotation of a match that gives each arm a reference into the
+// payload of the sum.  A write of the sum in an arm ends that payload.
+struct borrow_match final {};
 
 // The annotation value of a class template whose instances are linear
 // only for some arguments.

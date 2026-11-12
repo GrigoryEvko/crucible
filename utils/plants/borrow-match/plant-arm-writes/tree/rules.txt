@@ -1,0 +1,9 @@
+# The rule table of the plant plant-arm-writes of the rule borrow-match.  The
+# unit of src/ is quarantined.  The headers of the repository are outside the
+# root of the plant, so the table admits the names of the base that the
+# planted code uses.
+
+admit foundation::core | the sums Option, Result and OneOf, whose borrow match the planted code calls
+admit std::move | a cast to an rvalue reference
+
+quarantine src/

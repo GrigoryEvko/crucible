@@ -215,7 +215,6 @@ struct TypeFacts {
 
 // The identifiers that the family compares, interned one time.
 struct LinearNames {
-    tree foundation = NULL_TREE;
     tree linear = NULL_TREE;  // the namespace foundation::linear and its class linear
     tree lifetime = NULL_TREE;  // the namespace foundation::lifetime
     tree no_start_over_bytes = NULL_TREE;
@@ -223,10 +222,7 @@ struct LinearNames {
     tree drop_door = NULL_TREE;
     tree detach_door = NULL_TREE;
     tree scope_end_door = NULL_TREE;
-    tree move = NULL_TREE;
     tree forward = NULL_TREE;
-    tree move_if_noexcept = NULL_TREE;
-    tree forward_like = NULL_TREE;
 };
 
 LinearNames linear_names;
@@ -290,55 +286,12 @@ tree strip_conversions(tree node) {
     return node;
 }
 
-// The class of the annotation ATTRIBUTE, or null when ATTRIBUTE is no
-// annotation.  The value of an annotation is a tree with the type of the
-// annotation, with a const qualifier.
-tree annotation_class(tree attribute) {
-    if (!annotation_p(attribute)) {
-        return NULL_TREE;
-    }
-    tree value = TREE_VALUE(attribute);
-    if (value == NULL_TREE || TREE_CODE(value) != TREE_LIST || TREE_VALUE(value) == NULL_TREE) {
-        return NULL_TREE;
-    }
-    tree type = TREE_TYPE(TREE_VALUE(value));
-    if (type == NULL_TREE || type == error_mark_node || !TYPE_P(type)) {
-        return NULL_TREE;
-    }
-    type = TYPE_MAIN_VARIANT(type);
-    return CLASS_TYPE_P(type) ? type : NULL_TREE;
-}
-
-// True when TYPE is the class foundation::SPACE::NAME of the vocabulary of
-// include/foundation/Linear.h, or of include/foundation/ByteSeal.h when SPACE
-// is lifetime.
-bool is_vocabulary_class(tree type, tree name, tree space) {
-    tree decl = TYPE_NAME(type);
-    if (decl == NULL_TREE || TREE_CODE(decl) != TYPE_DECL || DECL_NAME(decl) != name) {
-        return false;
-    }
-    tree scope = CP_DECL_CONTEXT(decl);
-    if (scope == NULL_TREE || TREE_CODE(scope) != NAMESPACE_DECL || DECL_NAME(scope) != space) {
-        return false;
-    }
-    tree top = CP_DECL_CONTEXT(scope);
-    return top != NULL_TREE && TREE_CODE(top) == NAMESPACE_DECL && DECL_NAME(top) == linear_names.foundation
-        && CP_DECL_CONTEXT(top) == global_namespace;
-}
-
-// True when ATTRIBUTES hold an annotation of the class foundation::SPACE::NAME,
-// with foundation::linear as the default namespace.
+// True when ATTRIBUTES hold an annotation of the class foundation::SPACE::NAME
+// of the vocabulary of include/foundation/Linear.h, or of
+// include/foundation/ByteSeal.h when SPACE is lifetime, with foundation::linear
+// as the default namespace.
 bool carries_annotation(tree attributes, tree name, tree space = NULL_TREE) {
-    if (space == NULL_TREE) {
-        space = linear_names.linear;
-    }
-    for (tree attribute = attributes; attribute != NULL_TREE; attribute = TREE_CHAIN(attribute)) {
-        tree annotation = annotation_class(attribute);
-        if (annotation != NULL_TREE && is_vocabulary_class(annotation, name, space)) {
-            return true;
-        }
-    }
-    return false;
+    return carries_base_annotation(attributes, name, space != NULL_TREE ? space : linear_names.linear);
 }
 
 tree element_type_of(tree type) {
@@ -511,21 +464,6 @@ bool is_linear_or_reference(tree type) {
         type = TREE_TYPE(type);
     }
     return is_linear_type(type);
-}
-
-// True for std::move, std::forward, std::move_if_noexcept and
-// std::forward_like: a cast whose value goes on to the caller.
-bool is_move_cast(tree function) {
-    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
-        return false;
-    }
-    tree name = DECL_NAME(function);
-    if (name != linear_names.move && name != linear_names.forward && name != linear_names.move_if_noexcept
-        && name != linear_names.forward_like) {
-        return false;
-    }
-    tree scope = CP_DECL_CONTEXT(function);
-    return scope != NULL_TREE && TREE_CODE(scope) == NAMESPACE_DECL && DECL_NAMESPACE_STD_P(scope);
 }
 
 // True for an accessor: a member function with an implicit object parameter
@@ -1068,7 +1006,7 @@ private:
                 }
                 case CALL_EXPR: {
                     tree callee = cp_get_callee_fndecl_nofold(node);
-                    if (is_move_cast(callee) && call_expr_nargs(node) >= 1) {
+                    if (is_std_move_cast(callee) && call_expr_nargs(node) >= 1) {
                         saw_rvalue = saw_rvalue || DECL_NAME(callee) != linear_names.forward;
                         node = CALL_EXPR_ARG(node, 0);
                         continue;
@@ -1696,7 +1634,7 @@ private:
         for (int index = 0; index < count; ++index) {
             walk_expression(argument_at(call, index), state);
         }
-        if (is_move_cast(callee)) {
+        if (is_std_move_cast(callee)) {
             return;
         }
         location_t location = location_or(call, function_location());
@@ -3105,7 +3043,7 @@ tree moved_linear_decl(tree node) {
                 continue;
             case CALL_EXPR: {
                 tree callee = cp_get_callee_fndecl_nofold(node);
-                if (!is_move_cast(callee) || call_expr_nargs(node) < 1) {
+                if (!is_std_move_cast(callee) || call_expr_nargs(node) < 1) {
                     return NULL_TREE;
                 }
                 saw_rvalue = saw_rvalue || DECL_NAME(callee) != linear_names.forward;
@@ -3203,7 +3141,6 @@ void finish_linear_rules() {
 void register_linear(const char* plugin_name, bool checks_must_consume, bool checks_shapes) {
     linear_mode.checks_must_consume = checks_must_consume;
     linear_mode.checks_shapes = checks_shapes;
-    linear_names.foundation = get_identifier("foundation");
     linear_names.linear = get_identifier("linear");
     linear_names.lifetime = get_identifier("lifetime");
     linear_names.no_start_over_bytes = get_identifier("no_start_over_bytes");
@@ -3211,10 +3148,7 @@ void register_linear(const char* plugin_name, bool checks_must_consume, bool che
     linear_names.drop_door = get_identifier("drop_door");
     linear_names.detach_door = get_identifier("detach_door");
     linear_names.scope_end_door = get_identifier("scope_end_door");
-    linear_names.move = get_identifier("move");
     linear_names.forward = get_identifier("forward");
-    linear_names.move_if_noexcept = get_identifier("move_if_noexcept");
-    linear_names.forward_like = get_identifier("forward_like");
     if (checks_must_consume) {
         register_callback(plugin_name, PLUGIN_FOLDED_INITIALIZER, on_folded_initializer, nullptr);
         register_callback(plugin_name, PLUGIN_EMPTY_CLASS_ASSIGNMENT, on_empty_class_assignment, nullptr);

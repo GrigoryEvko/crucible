@@ -28,9 +28,9 @@
 // kinds, and they are no errors in the mode report (THE BASE KINDS in
 // plugin.h).  The ledger of the rule quarantine counts them.
 //
-// The plugin also applies the contract rule of the tree (contract.cpp) and the
-// rule binding-hook (binding.cpp), in each mode.  Each build of the tree loads
-// this plugin
+// The plugin also applies the contract rule of the tree (contract.cpp), the
+// rule binding-hook (binding.cpp) and the rule borrow-match (borrow.cpp), in
+// each mode.  Each build of the tree loads this plugin
 // (utils/tools/quarantine/Quarantine.cmake).
 //
 // THE HOOKS OF THE UNIT
@@ -342,9 +342,10 @@ bool set_build(const std::string& build_argument) {
 // Writes the kinds of each rule to PATH (the argument kinds).  Returns false,
 // after an error, when the write fails.
 bool write_kinds(const std::string& path) {
-    std::string text = "# The kinds of the quarantine plugin, one row for each kind of each rule.  The plugin writes\n"
-                       "# this file for its argument kinds, and the part kinds of the rule registry compares it with the\n"
-                       "# registry.\n";
+    std::string text =
+        "# The kinds of the quarantine plugin, one row for each kind of each rule.  The plugin writes\n"
+        "# this file for its argument kinds, and the part kinds of the rule registry compares it with the\n"
+        "# registry.\n";
     for (const RuleKind& rule_kind : kRuleKinds) {
         text += std::string("kind ") + rule_kind.rule + " " + rule_kind.kind + "\n";
     }
@@ -406,6 +407,7 @@ void walk_unit() {
     walk_home();
     walk_owner();
     finish_linear_rules();
+    finish_borrow_matches();
 }
 
 // The parse of the unit, and then the walks of its end.  When the parse
@@ -447,6 +449,85 @@ void on_collection(void*, void*) {
 }
 
 }  // namespace
+
+tree annotation_class(tree attribute) {
+    if (!annotation_p(attribute)) {
+        return NULL_TREE;
+    }
+    tree value = TREE_VALUE(attribute);
+    if (value == NULL_TREE || TREE_CODE(value) != TREE_LIST || TREE_VALUE(value) == NULL_TREE) {
+        return NULL_TREE;
+    }
+    tree type = TREE_TYPE(TREE_VALUE(value));
+    if (type == NULL_TREE || type == error_mark_node || !TYPE_P(type)) {
+        return NULL_TREE;
+    }
+    type = TYPE_MAIN_VARIANT(type);
+    return CLASS_TYPE_P(type) ? type : NULL_TREE;
+}
+
+bool carries_base_annotation(tree attributes, tree name, tree space) {
+    static tree const foundation = get_identifier("foundation");
+    for (tree attribute = attributes; attribute != NULL_TREE; attribute = TREE_CHAIN(attribute)) {
+        tree annotation = annotation_class(attribute);
+        tree decl = annotation != NULL_TREE ? TYPE_NAME(annotation) : NULL_TREE;
+        if (decl == NULL_TREE || TREE_CODE(decl) != TYPE_DECL || DECL_NAME(decl) != name) {
+            continue;
+        }
+        tree scope = CP_DECL_CONTEXT(decl);
+        if (space != NULL_TREE) {
+            if (scope == NULL_TREE || TREE_CODE(scope) != NAMESPACE_DECL || DECL_NAME(scope) != space) {
+                continue;
+            }
+            scope = CP_DECL_CONTEXT(scope);
+        }
+        if (scope != NULL_TREE && TREE_CODE(scope) == NAMESPACE_DECL && DECL_NAME(scope) == foundation
+            && CP_DECL_CONTEXT(scope) == global_namespace) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool function_carries_base_annotation(tree function, tree name, tree space) {
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
+        return false;
+    }
+    if (carries_base_annotation(DECL_ATTRIBUTES(function), name, space)) {
+        return true;
+    }
+    if (DECL_LANG_SPECIFIC(function) == nullptr || !DECL_TEMPLATE_INFO(function)) {
+        return false;
+    }
+    tree template_decl = DECL_TI_TEMPLATE(function);
+    if (template_decl == NULL_TREE || TREE_CODE(template_decl) != TEMPLATE_DECL) {
+        return false;
+    }
+    tree pattern = DECL_TEMPLATE_RESULT(template_decl);
+    if (pattern != NULL_TREE && pattern != function && carries_base_annotation(DECL_ATTRIBUTES(pattern), name, space)) {
+        return true;
+    }
+    tree general = most_general_template(template_decl);
+    tree general_pattern = general != NULL_TREE ? DECL_TEMPLATE_RESULT(general) : NULL_TREE;
+    return general_pattern != NULL_TREE && general_pattern != pattern
+        && carries_base_annotation(DECL_ATTRIBUTES(general_pattern), name, space);
+}
+
+bool is_std_move_cast(tree function) {
+    static tree const move = get_identifier("move");
+    static tree const forward = get_identifier("forward");
+    static tree const move_if_noexcept = get_identifier("move_if_noexcept");
+    static tree const forward_like = get_identifier("forward_like");
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
+        return false;
+    }
+    tree name = DECL_NAME(function);
+    if (name != move && name != forward && name != move_if_noexcept && name != forward_like) {
+        return false;
+    }
+    tree scope = CP_DECL_CONTEXT(function);
+    return scope != NULL_TREE && TREE_CODE(scope) == NAMESPACE_DECL && DECL_NAMESPACE_STD_P(scope);
+}
 
 // The report of the unit.  CAN_ADD_DEPENDENCIES is true at PLUGIN_FINISH_UNIT,
 // before GCC writes the dependency file.
@@ -499,8 +580,8 @@ void report(bool can_add_dependencies) {
         // language is a finding and no error, as it is in a quarantined file.
         // The rule of the language files is the quarantine rule.
         Rule rule_of_finding = rule_of(finding.kind);
-        bool is_language = finding.file->language_layer >= 0 && finding.pending == nullptr
-                        && rule_of_finding == Rule::quarantine;
+        bool is_language =
+            finding.file->language_layer >= 0 && finding.pending == nullptr && rule_of_finding == Rule::quarantine;
         // An enforce row of the scope include sets the mode of the include
         // kinds only, and each other kind keeps the mode of the scope all.
         bool is_file_error =
@@ -512,6 +593,8 @@ void report(bool can_add_dependencies) {
             report_contract(finding);
         } else if (finding.kind == Kind::binding_hook && !is_out) {
             report_binding_hook(finding);
+        } else if (finding.kind == Kind::borrow_match && !is_out) {
+            report_borrow_match(finding);
         } else if (rule_of_finding == Rule::specialization_home && !is_out) {
             report_specialization(finding);
         } else if (is_each_mode_kind(finding.kind) && !is_out) {
@@ -545,8 +628,8 @@ void report(bool can_add_dependencies) {
     // finding.  A unit with no report gives a note for each region too, so
     // that a census of the notes gives each opted-out finding its reason.
     for (const Region& region : state.regions) {
-        lines.push_back(report_line(rule_name(Rule::quarantine), kRegionKind, *region.file, region.begin_line, 1,
-                                    region.reason));
+        lines.push_back(
+            report_line(rule_name(Rule::quarantine), kRegionKind, *region.file, region.begin_line, 1, region.reason));
         if (state.out_dir.empty() && !has_section) {
             inform(region.use, "quarantine: %s %s", kRegionKind, region.reason.c_str());
         }
@@ -614,8 +697,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
         } else if (key == "not-standalone") {
             not_standalone_argument = value;
         } else if (key == "padded-list-limit") {
-            if (!crucible_rows::number(value, UINT64_MAX, state.padded_list_limit)
-                || state.padded_list_limit == 0) {
+            if (!crucible_rows::number(value, UINT64_MAX, state.padded_list_limit) || state.padded_list_limit == 0) {
                 error("quarantine: padded-list-limit is %qs, and the threshold of the rule padded-list must be a "
                       "whole number of 1 or more",
                       value.c_str());
@@ -680,8 +762,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     }
     struct stat sentinel_status;
     if (!state.sentinel.empty()
-        && (state.sentinel.front() == '/'
-            || ::stat((state.root + "/" + state.sentinel).c_str(), &sentinel_status) != 0
+        && (state.sentinel.front() == '/' || ::stat((state.root + "/" + state.sentinel).c_str(), &sentinel_status) != 0
             || !S_ISREG(sentinel_status.st_mode))) {
         error("quarantine: the argument %<sentinel=%s%> names no file under the source root; give the path of a "
               "header of include/ relative to the root",
@@ -705,6 +786,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     register_regions(plugin_info->base_name);
     register_contract_rule(plugin_info->base_name);
     register_binding_hook(plugin_info->base_name);
+    register_borrow_match(plugin_info->base_name);
     register_unit_facts(plugin_info->base_name);
     register_expressions(plugin_info->base_name);
     register_declarations(plugin_info->base_name);

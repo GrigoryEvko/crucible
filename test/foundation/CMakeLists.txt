@@ -2116,6 +2116,17 @@ foundation_neg_compile_test(neg_core_option_temporary_borrow_match
 foundation_neg_compile_test(neg_core_result_temporary_borrow_match
   "use of deleted function .void foundation::core::Result<T, E>::match\\(OnOk&&, OnErr&&\\) const && \\[with OnOk = main\\(\\)::<lambda\\(const int&\\)>. OnErr = main\\(\\)::<lambda\\(const Code&\\)>. T = int. E = Code\\]."
   "a borrow match of a temporary Result gives a reference into an object that the full expression ends")
+# The borrow match of each sum carries the annotation borrow_match, and the
+# rule borrow-match of the plugin refuses an arm that writes the sum.
+foundation_neg_compile_test(neg_core_option_borrow_match_arm_assigns
+  "neg_core_option_borrow_match_arm_assigns\\.cpp:11:[0-9]+: error: this arm of a borrow match writes the sum that the match reads \\(assignment held\\)"
+  "an assignment, a move or a mutating call of the sum ends or changes the payload that the reference names")
+foundation_neg_compile_test(neg_core_result_borrow_match_arm_moves
+  "neg_core_result_borrow_match_arm_moves\\.cpp:15:[0-9]+: error: this arm of a borrow match writes the sum that the match reads \\(move result\\)"
+  "an assignment, a move or a mutating call of the sum ends or changes the payload that the reference names")
+foundation_neg_compile_test(neg_core_one_of_borrow_match_arm_assigns
+  "neg_core_one_of_borrow_match_arm_assigns\\.cpp:13:[0-9]+: error: this arm of a borrow match writes the sum that the match reads \\(assignment held\\)"
+  "an assignment, a move or a mutating call of the sum ends or changes the payload that the reference names")
 foundation_neg_compile_test(neg_core_surface_open_name
   "static assertion failed: the public member constexpr bool Probe::has_value\\(\\) const of Probe is no shared verb, no language protocol and no name of the family list"
   "in expansion of macro .CRUCIBLE_CLOSED_SURFACE.")

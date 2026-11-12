@@ -605,13 +605,14 @@ public:
     }
 
     // The total match of a borrow: on_some gets the payload as a const
-    // reference, and the Option keeps it.
+    // reference, and the Option keeps it.  The rule borrow-match of the
+    // plugin refuses an arm that assigns, moves or changes this Option.
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
-    constexpr std::invoke_result_t<OnNone>
-    match(OnSome&& on_some, OnNone&& on_none) const& noexcept(std::is_nothrow_invocable_v<OnSome, T const&>
-                                                              && std::is_nothrow_invocable_v<OnNone>) {
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
+        match(OnSome&& on_some, OnNone&& on_none) const& noexcept(std::is_nothrow_invocable_v<OnSome, T const&>
+                                                                  && std::is_nothrow_invocable_v<OnNone>) {
         if (!slot_.holds_()) return static_cast<OnNone&&>(on_none)();
         return static_cast<OnSome&&>(on_some)(slot_.payload_());
     }
@@ -1167,13 +1168,15 @@ public:
     }
 
     // The total match of a borrow: on_ok gets the value and on_err gets the
-    // error, each as a const reference, and the Result keeps them.
+    // error, each as a const reference, and the Result keeps them.  The rule
+    // borrow-match of the plugin refuses an arm that assigns, moves or changes
+    // this Result.
     template <class OnOk, class OnErr>
         requires std::is_invocable_v<OnOk, T const&> && std::is_invocable_v<OnErr, E const&>
               && std::same_as<std::invoke_result_t<OnOk, T const&>, std::invoke_result_t<OnErr, E const&>>
-    constexpr std::invoke_result_t<OnErr, E const&>
-    match(OnOk&& on_ok, OnErr&& on_err) const& noexcept(std::is_nothrow_invocable_v<OnOk, T const&>
-                                                        && std::is_nothrow_invocable_v<OnErr, E const&>) {
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnErr, E const&>
+        match(OnOk&& on_ok, OnErr&& on_err) const& noexcept(std::is_nothrow_invocable_v<OnOk, T const&>
+                                                            && std::is_nothrow_invocable_v<OnErr, E const&>) {
         if (!slot_.holds_()) return static_cast<OnErr&&>(on_err)(slot_.error_());
         return static_cast<OnOk&&>(on_ok)(slot_.value_());
     }

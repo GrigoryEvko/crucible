@@ -1,0 +1,89 @@
+// Each write of an arm of a borrow match to the sum that the match reads is a
+// finding: an assignment, a move and a mutating call, through a capture by
+// reference of a local, a capture of this, a reference parameter, a local
+// reference of the arm, an object that holds the receiver, a generic arm, an
+// arm with a declared return type in an instance of a template, and the
+// borrow match of a Result and of a OneOf.  The opt-out region turns one write
+// into opted-out.
+#include <foundation/Quarantine.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/OneOf.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::none;
+using ::foundation::core::Option;
+
+int assigned_local() {
+    Option<int> held = Option<int>::some(1);
+    return held.match([&](int const& value) { held = none; return value; }, [] { return 0; });
+}
+
+int moved_local() {
+    Option<int> held = Option<int>::some(2);
+    return held.match([&held](int const& value) { return std::move(held).value_or(0) + value; }, [] { return 0; });
+}
+
+int cursor_of_the_sum(Option<int>& held) {
+    return held.match([&](int const& value) {
+        int total = value;
+        for (int& item : held) total += item;
+        return total;
+    }, [] { return 0; });
+}
+
+int generic_arm(Option<int>& held) {
+    return held.match([&](auto const& value) { held = none; return value; }, [] { return 0; });
+}
+
+int local_reference(Option<int>& held) {
+    return held.match([&](int const& value) {
+        Option<int>& alias = held;
+        alias = none;
+        return value;
+    }, [] { return 0; });
+}
+
+struct Holder {
+    Option<int> held = Option<int>::some(3);
+
+    int member() {
+        return held.match([this](int const& value) { held = none; return value; }, [] { return 0; });
+    }
+
+    int whole() {
+        return held.match([this](int const& value) { *this = Holder{}; return value; }, [] { return 0; });
+    }
+};
+
+enum class Fault : unsigned char { broken };
+
+template <class E>
+int result_instance(::foundation::core::Result<int, E>& result) {
+    return result.match([&](int const& value) -> int { return std::move(result).value_or(0) + value; },
+                        [](E const&) { return 0; });
+}
+
+int one_of() {
+    ::foundation::core::OneOf<int, long> held{4};
+    return held.match([&](int const& value) { held = ::foundation::core::OneOf<int, long>{5L}; return value; },
+                      [](long const& value) { return static_cast<int>(value); });
+}
+
+int opted(Option<int>& held) {
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test writes the sum in an arm")
+    int value = held.match([&](int const& payload) { held = none; return payload; }, [] { return 0; });
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    return value;
+}
+
+int instances(Option<int>& source) {
+    ::foundation::core::Result<int, Fault> result{6};
+    Holder holder;
+    return result_instance(result) + holder.member() + holder.whole() + assigned_local() + moved_local()
+         + cursor_of_the_sum(source) + generic_arm(source) + local_reference(source) + one_of() + opted(source);
+}
+
+}  // namespace planted

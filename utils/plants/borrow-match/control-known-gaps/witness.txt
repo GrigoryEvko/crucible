@@ -1,0 +1,9 @@
+# The rule does not see a write in a callee of the arm, through a pointer,
+# through a second reference parameter, or in a closure that the call gets by
+# name.  The pointer is a finding of the rule quarantine, and no line names the
+# rule borrow-match.
+
+compile gaps src/gaps.cpp
+flag gaps -freflection
+exit gaps pass
+finding gaps quarantine raw-pointer-object src/gaps.cpp:20:18 | target

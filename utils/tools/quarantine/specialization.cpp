@@ -149,7 +149,6 @@ std::unordered_map<std::string, std::string> home_paths_by_entity;
 
 struct Names {
     tree open_extension = NULL_TREE;
-    tree foundation = NULL_TREE;
 };
 
 Names names;
@@ -157,50 +156,20 @@ Names names;
 void make_names() {
     if (names.open_extension == NULL_TREE) {
         names.open_extension = get_identifier("open_extension");
-        names.foundation = get_identifier("foundation");
     }
 }
 
-// True when ATTRIBUTE is an annotation of the class foundation::open_extension.
-// The value of an annotation has the type of the annotation, with a const
-// qualifier.
-bool is_open_mark(tree attribute) {
-    if (!annotation_p(attribute)) {
-        return false;
-    }
-    tree value = TREE_VALUE(attribute);
-    if (value == NULL_TREE || TREE_CODE(value) != TREE_LIST || TREE_VALUE(value) == NULL_TREE) {
-        return false;
-    }
-    tree type = TREE_TYPE(TREE_VALUE(value));
-    if (type == NULL_TREE || type == error_mark_node || !TYPE_P(type)) {
-        return false;
-    }
-    type = TYPE_MAIN_VARIANT(type);
-    tree decl = CLASS_TYPE_P(type) ? TYPE_NAME(type) : NULL_TREE;
-    if (decl == NULL_TREE || TREE_CODE(decl) != TYPE_DECL || DECL_NAME(decl) != names.open_extension) {
-        return false;
-    }
-    tree scope = CP_DECL_CONTEXT(decl);
-    return scope != NULL_TREE && TREE_CODE(scope) == NAMESPACE_DECL && DECL_NAME(scope) == names.foundation
-        && CP_DECL_CONTEXT(scope) == global_namespace;
-}
-
-// True when the primary template GENERAL carries the open mark: an
-// annotation of the pattern class of a class template, or of the pattern
-// variable of a variable template.  Complexity: linear in the attributes.
+// True when the primary template GENERAL carries the open mark, an annotation
+// of the class foundation::open_extension: on the pattern class of a class
+// template, or on the pattern variable of a variable template.  Complexity:
+// linear in the attributes.
 bool carries_open_mark(tree general) {
     tree result = DECL_TEMPLATE_RESULT(general);
     if (result == NULL_TREE) {
         return false;
     }
     tree attributes = TREE_CODE(result) == TYPE_DECL ? TYPE_ATTRIBUTES(TREE_TYPE(result)) : DECL_ATTRIBUTES(result);
-    for (tree attribute = attributes; attribute != NULL_TREE; attribute = TREE_CHAIN(attribute)) {
-        if (is_open_mark(attribute)) {
-            return true;
-        }
-    }
-    return false;
+    return carries_base_annotation(attributes, names.open_extension, NULL_TREE);
 }
 
 // True when GENERAL stands in a namespace of a base root (THE BASE ROOTS).

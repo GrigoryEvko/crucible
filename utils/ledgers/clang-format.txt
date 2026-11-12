@@ -5,10 +5,8 @@ rule clang-format
 include/crucible/ledger/Ledger.h | drift | admit | - | The file drifted from .clang-format before the rule ran in ctest.  The next change of the file formats it with clang-format -i
 include/crucible/ledger/RefreshDaemon.h | drift | admit | - | The file drifted from .clang-format before the rule ran in ctest.  The next change of the file formats it with clang-format -i
 include/crucible/topology/Pingmesh.h | drift | admit | - | The file drifted from .clang-format before the rule ran in ctest.  The next change of the file formats it with clang-format -i
-include/foundation/effects/Ctx.h | drift | admit | - | The file drifted from .clang-format before the rule ran in ctest.  The next change of the file formats it with clang-format -i
 utils/tools/quarantine/expression.cpp | drift | admit | - | The file drifted from .clang-format before the rule ran in ctest.  The next change of the file formats it with clang-format -i
 utils/tools/quarantine/home.cpp | drift | admit | - | The file drifted from .clang-format before the rule ran in ctest.  The next change of the file formats it with clang-format -i
 utils/tools/quarantine/include.cpp | drift | admit | - | The file drifted from .clang-format before the rule ran in ctest.  The next change of the file formats it with clang-format -i
-utils/tools/quarantine/plugin.cpp | drift | admit | - | The file drifted from .clang-format before the rule ran in ctest.  The next change of the file formats it with clang-format -i
 utils/tools/quarantine/rule_table.cpp | drift | admit | - | The file drifted from .clang-format before the rule ran in ctest.  The next change of the file formats it with clang-format -i
 utils/tools/quarantine/unit.cpp | drift | admit | - | The file drifted from .clang-format before the rule ran in ctest.  The next change of the file formats it with clang-format -i
