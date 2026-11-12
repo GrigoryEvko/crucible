@@ -2,9 +2,9 @@
 # and `python3 utils/bin/guard write --rule linear-forge` writes this file.
 format 1
 rule linear-forge
-reason include/foundation/core/ | the alternatives of Option and Result hold each payload in a union, and the alternatives end the lifetime of the payload
+reason include/foundation/core/ | the alternatives of Option and Result hold each payload in a union, and the alternatives end the lifetime of the payload.  The slots of a FixedList hold each element in a union, and the count of the list is the tag: no code reads a slot at or past it
 reason test/ | the tests and the checks put a token in a union to show a refusal, and the tests of Option and Result use a token that has no seal
-include/foundation/core/ | sealed-union | 3 | - | -
+include/foundation/core/ | sealed-union | 4 | - | -
 test/fixy/ | sealed-union | 3 | - | -
 test/foundation/ | unsealed-lifetime | 2 | - | -
 test/layer/checks/foundation/ | sealed-union | 1 | - | -

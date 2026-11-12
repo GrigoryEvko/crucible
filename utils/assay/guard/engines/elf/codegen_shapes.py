@@ -505,6 +505,20 @@ PROBES: tuple[Probe, ...] = (
     Probe("view_windows_sum", "a loop over windows<2>() of a View is the loop of a raw pointer over each run"),
     Probe("view_chunks_sum", "a loop over chunks<4>() of a View is the loop of a raw pointer with a step of four"),
     Probe(
+        "fixed_list_push",
+        "a push into a FixedList is the compare of the count, the store and the step of a raw list, with no call.  "
+        "At -O1, is_ok() reads the tag of the Result, and the path of a full list jumps back to the shared tail",
+        branches=True,
+    ),
+    Probe(
+        "fixed_list_take_last",
+        "take_last of a FixedList is the compare of the count, the step and the load of a raw list, with no call.  "
+        "value_or() tests the tag of the Option on a separate compare, so the second test that the hardening adds "
+        f"goes to that compare.  {HARDENED_BUILDS}",
+        checks=(TRAP,),
+        branches=True,
+    ),
+    Probe(
         "view_enumerate_sum", "a loop over enumerate() of a View of a fixed extent is the counted loop of a raw pointer"
     ),
     Probe(

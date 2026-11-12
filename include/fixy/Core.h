@@ -24,6 +24,7 @@
 #include <foundation/core/Convert.h>
 #include <foundation/core/Format.h>
 #include <foundation/core/Index.h>
+#include <foundation/core/List.h>
 #include <foundation/core/Number.h>
 #include <foundation/core/OneOf.h>
 #include <foundation/core/Parse.h>
@@ -107,6 +108,8 @@ using ::foundation::core::equal;
 using ::foundation::core::fill;
 using ::foundation::core::find;
 using ::foundation::core::find_if;
+using ::foundation::core::FixedList;
+using ::foundation::core::Full;
 using ::foundation::core::HeapArray;
 using ::foundation::core::Index;
 using ::foundation::core::index;

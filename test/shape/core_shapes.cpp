@@ -313,6 +313,17 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
             [](fixy::LengthMismatch) noexcept { return std::uint32_t{0}; });
 }
 
+// A push into a FixedList: one compare of the count, the store of the
+// element, and the step of the count.
+[[gnu::used]] bool fixed_list_push(fixy::FixedList<std::uint32_t, 64>& list, std::uint32_t value) noexcept {
+    return list.push(value).is_ok();
+}
+
+// The last element of a FixedList, or zero for an empty list.
+[[gnu::used]] std::uint32_t fixed_list_take_last(fixy::FixedList<std::uint32_t, 64>& list) noexcept {
+    return list.take_last().value_or(0u);
+}
+
 // ── Ref, Choice and Report ──────────────────────────────────────────────────
 
 [[gnu::used]] std::uint32_t box_read(fixy::Box<Payload>& box) noexcept { return box->value; }
@@ -586,6 +597,11 @@ struct RawText final {
     std::size_t count;
 };
 
+struct RawList final {
+    std::uint32_t slots[64];
+    std::uint32_t count;
+};
+
 [[gnu::used]] std::uint64_t atomic_load_raw(std::atomic<std::uint64_t> const& cell) noexcept {
     return cell.load(std::memory_order_acquire);
 }
@@ -786,6 +802,23 @@ struct RawText final {
         ++other;
     }
     return sum;
+}
+
+[[gnu::used]] bool fixed_list_push_raw(RawList& list, std::uint32_t value) noexcept {
+    if (list.count == 64) {
+        return false;
+    }
+    list.slots[list.count] = value;
+    ++list.count;
+    return true;
+}
+
+[[gnu::used]] std::uint32_t fixed_list_take_last_raw(RawList& list) noexcept {
+    if (list.count == 0) {
+        return 0;
+    }
+    --list.count;
+    return list.slots[list.count];
 }
 
 [[gnu::used]] std::uint32_t box_read_raw(std::unique_ptr<Payload>& box) noexcept { return box->value; }

@@ -1176,11 +1176,11 @@ The constructor from raw parts is private, and only the doors of the base reach 
 |---|---|---|---|---|---|
 | `at(Index<N>)`, `at(index<I>())` | `FixedArray` | Total | no branch | `at` | main |
 | `get(i)` | each owner, a growable owner only in `with_view` | `Option<Ref<T>>` | one branch | `get` | main for `FixedArray` and `HeapArray`, design for the others |
-| `view()` | `FixedArray`, `FixedList`, `HeapArray`, `FixedText` | `&` and `const&`. The `&&` form is deleted | none | `view` | main for `FixedText`, `FixedArray` and `HeapArray`, design for `FixedList` |
+| `view()` | `FixedArray`, `FixedList`, `HeapArray`, `FixedText` | `&` and `const&`. The `&&` form is deleted | none | `view` | main |
 | `for (x : owner)`, `size()` | each owner, a growable owner only in `with_view` | As for a `View` | the loop bound | `for`, `size` | design |
-| `push(v)` | `FixedList` | `Result<Ref<T>, Full<T>>` | one compare | `push` | design |
-| `take_last()`, `take_first()` | `FixedList` and `GrowList` (last), `HeapRing` (first and last) | `Option<T>`: the element moves out | one compare | - | new |
-| `clear()` | `FixedList`, a droppable element only | Ends each element | the count | - | new |
+| `push(v)` | `FixedList` | `Result<Ref<T>, Full<T>>`. The `&&` form is deleted | one compare | `push` | main |
+| `take_last()`, `take_first()` | `FixedList` and `GrowList` (last), `HeapRing` (first and last) | `Option<T>`: the element moves out | one compare | - | main for `take_last()` of `FixedList`, new for the others |
+| `clear()` | `FixedList`, a droppable element only | Ends each element | the count | - | main |
 | `mint_heap_array(alloc, count, fill)` | `HeapArray` | Each element is `fill`. `Align` states the alignment of the storage, as `AlignedBuffer` does. A count of zero allocates nothing | one allocation | `mint_*` | main |
 | `mint_heap_array_written(alloc, count, body)` | `HeapArray` of an implicit-lifetime `T` | The body gets a view that only writes, and the mint gives the array after the body | one allocation | `mint_*` | design |
 | `mint_grow_list(maximum)`, `mint_heap_ring(minimum, maximum)` | `GrowList`, `GrowText`, `HeapRing` | Empty, with no allocation. The maximum bounds each growth (the principle P5 of the linear design). Each growable owner states its maximum here (P6) | none | `mint_*` | new |

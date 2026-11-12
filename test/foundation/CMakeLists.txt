@@ -2546,6 +2546,23 @@ foundation_neg_compile_test(neg_core_lower_bound_float_key
 # power of two.  It does not copy, and a view of a temporary is refused.
 foundation_test(test_core_heap_array)
 
+# A FixedList holds at most N elements, and a push into a full list gives
+# Full, which holds the value of a linear element.  Each element ends one
+# time, and the model of a FixedArray and a count agrees with each step.
+foundation_test(test_core_list)
+
+# A push into or a view of a temporary list is refused, and a list of a
+# linear element has no clear().
+foundation_neg_compile_test(neg_core_fixed_list_push_of_temporary
+  "use of deleted function .void foundation::core::FixedList<T, N>::push\\(T\\) && \\[with T = int; long unsigned int N = 4\\]."
+  "a push into a temporary FixedList gives a Ref that dangles at the end of the full expression")
+foundation_neg_compile_test(neg_core_fixed_list_clear_of_linear
+  "no matching function for call to .foundation::core::FixedList<Token, 2>::clear\\(\\)."
+  "required for the satisfaction of .DroppablePayload<T>. \\[with T = Token\\]")
+foundation_neg_compile_test(neg_core_fixed_list_view_of_temporary
+  "use of deleted function .void foundation::core::FixedList<T, N>::view\\(\\) && \\[with T = int; long unsigned int N = 4\\]."
+  "a view of a temporary FixedList points into an object that the full expression ends")
+
 foundation_neg_compile_test(neg_core_view_get_without_array
   "use of .constexpr auto foundation::core::detail::element_at_\\(T\\*, std::size_t, std::size_t\\) \\[with Brand = has_element\\(foundation::core::View<const int>\\)::<lambda\\(\\)>; T = const int; std::size_t = long unsigned int\\]. before deduction of .auto."
   "In instantiation of .constexpr auto foundation::core::View<T, Extent>::get\\(std::size_t\\) const \\[with Refused = \\{\\}; Fresh = has_element\\(foundation::core::View<const int>\\)::<lambda\\(\\)>; T = const int; long unsigned int Extent = 18446744073709551615; std::size_t = long unsigned int\\].")

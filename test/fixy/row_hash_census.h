@@ -929,6 +929,10 @@ inline constexpr StatedZero kZeros[] = {
      "an inline array of elements: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::HeapArray,
      "an array of elements on the heap: it holds storage and makes no claim about what the elements hold"},
+    {^^::foundation::core::FixedList,
+     "an inline list of at most N elements: it holds storage and makes no claim about what the elements hold"},
+    {^^::foundation::core::Full,
+     "the error of a push into a full owner: it holds nothing, or the linear value of the push, and makes no claim"},
     // The Scalar family.
     {^^::foundation::core::WideProduct, kPayload},
     {^^::foundation::core::Bounds,

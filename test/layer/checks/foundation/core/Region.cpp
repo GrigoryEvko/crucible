@@ -3,6 +3,7 @@
 #include <foundation/core/Region.h>
 
 #include <foundation/core/Array.h>
+#include <foundation/core/List.h>
 #include <foundation/core/Verbs.h>
 
 #include <cstddef>
@@ -373,6 +374,9 @@ CRUCIBLE_CLOSED_SURFACE(region_names, FixedArray<int, 4>);
 CRUCIBLE_CLOSED_SURFACE(region_names, FixedArray<Record, 1>);
 CRUCIBLE_CLOSED_SURFACE(region_names, HeapArray<int>);
 CRUCIBLE_CLOSED_SURFACE(region_names, HeapArray<std::uint8_t, 64>);
+CRUCIBLE_CLOSED_SURFACE(region_names, FixedList<int, 4>);
+CRUCIBLE_CLOSED_SURFACE(region_names, FixedList<Record, 2>);
+CRUCIBLE_CLOSED_SURFACE(region_names, Full<int>);
 CRUCIBLE_CLOSED_SURFACE(region_names, LengthMismatch);
 CRUCIBLE_CLOSED_SURFACE(region_names, detail::ReverseRange<int>);
 CRUCIBLE_CLOSED_SURFACE(region_names, detail::WindowRange<int const, 2>);
