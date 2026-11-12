@@ -492,16 +492,26 @@ class MeasurementMemo {
 public:
     // Returns the stored measurement if it is younger than
     // kMemoLifetimeNanos, otherwise runs `measure` and stores the result.
-    template <typename Fn>
-    [[nodiscard]] Measurement const& get_or_measure(Fn&& measure) noexcept {
-        const std::uint64_t now = monotonic_nanos();
+    // The age counts from the end of the measurement.  A measurement that
+    // runs longer than the lifetime then stays fresh for the full lifetime
+    // after it ends, and each sibling of the cycle reads it.  `now_nanos`
+    // gives the monotonic time in nanoseconds.
+    template <typename Fn, typename Clock>
+    [[nodiscard]] Measurement const& get_or_measure(Fn&& measure, Clock&& now_nanos) noexcept {
+        const std::uint64_t now = now_nanos();
         const bool is_fresh = has_value_ && now >= taken_at_nanos_ && (now - taken_at_nanos_) < kMemoLifetimeNanos;
         if (!is_fresh) {
             stored_ = std::forward<Fn>(measure)();
-            taken_at_nanos_ = now;
+            taken_at_nanos_ = now_nanos();
             has_value_ = true;
         }
         return stored_;
+    }
+
+    // The same, with the monotonic clock of the process.
+    template <typename Fn>
+    [[nodiscard]] Measurement const& get_or_measure(Fn&& measure) noexcept {
+        return get_or_measure(std::forward<Fn>(measure), []() noexcept { return monotonic_nanos(); });
     }
 
     void forget() noexcept { has_value_ = false; }

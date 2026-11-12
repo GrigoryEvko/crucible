@@ -203,6 +203,33 @@ void test_memo_shares_one_measurement() {
     crucible::test::pass("  test_memo_shares_one_measurement:          PASSED\n");
 }
 
+// The age of a measurement counts from its end.  A measurement that runs for
+// longer than the lifetime of the memo is fresh for the full lifetime after
+// it ends, so the next sibling reads it and does not measure again.
+void test_memo_ages_a_measurement_from_its_end() {
+    ledger::MeasurementMemo<int> memo{};
+    std::uint64_t now_nanos = 1000u;
+    int measure_count = 0;
+    const auto clock = [&now_nanos] { return now_nanos; };
+    const auto slow_measure = [&now_nanos, &measure_count] {
+        now_nanos += ledger::kMemoLifetimeNanos + 1u;
+        return ++measure_count;
+    };
+
+    assert(memo.get_or_measure(slow_measure, clock) == 1);
+    // The claim: the sibling right after the slow measurement reads it.
+    assert(memo.get_or_measure(slow_measure, clock) == 1);
+    // One nanosecond before the end of the lifetime, it is still fresh.
+    now_nanos += ledger::kMemoLifetimeNanos - 1u;
+    assert(memo.get_or_measure(slow_measure, clock) == 1);
+    // Break it: at the end of the lifetime, the next read measures again.
+    now_nanos += 1u;
+    assert(memo.get_or_measure(slow_measure, clock) == 2);
+    assert(measure_count == 2);
+
+    crucible::test::pass("  test_memo_ages_a_measurement_from_its_end: PASSED\n");
+}
+
 void test_every_verdict_id_has_a_name_and_a_trait() {
     // A verdict whose trait has no name can never be read back, because
     // verdict_id_from_name is the only way in from a stored file. The
@@ -306,6 +333,7 @@ int main() {
     test_ratio_evidence_catches_an_unreproducible_ratio();
     test_scratch_region_is_aligned_and_faultable();
     test_memo_shares_one_measurement();
+    test_memo_ages_a_measurement_from_its_end();
     test_every_verdict_id_has_a_name_and_a_trait();
     crucible::test::pass("test_ledger_probes: 6 groups, all passed\n");
     return 0;
