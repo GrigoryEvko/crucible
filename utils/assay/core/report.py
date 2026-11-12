@@ -363,7 +363,8 @@ def github_actions(is_active: bool) -> Iterator[None]:
 def emit(findings: Iterable[Finding], check: str, warnings_dir: Path | None, key: str | None = None) -> int:
     """Print the findings of one check, write its warnings file, and give its exit status.
 
-    Complexity: O(n log n) for n findings, because of the sort.
+    write_line() prints and flushes each line, so a reader of a pipe sees each finding at once.  Complexity: O(n log n)
+    for n findings, because of the sort.
 
     Args:
         findings: The findings.  Each one must name this check
@@ -385,9 +386,9 @@ def emit(findings: Iterable[Finding], check: str, warnings_dir: Path | None, key
         raise ValueError(f"the writer key {key!r} of {check} is not {WRITER_KEY_TEXT}")
     annotate = cost_meter.is_github_actions()
     for found in ordered:
-        print(found.text())
+        write_line(found.text())
         if annotate:
-            print(found.annotation())
+            write_line(found.annotation())
     if warnings_dir is not None:
         write_warnings(warnings_dir, check, [found for found in ordered if found.level == "warning"], key)
     return 1 if any(found.level == "error" for found in ordered) else 0
@@ -542,6 +543,12 @@ def self_test() -> int:
             reached = bytes(raw.data)
         expect(f"write_line flushes each line of the standard {name}, so a reader of a pipe sees it at once",
                reached == b"one line\n")
+    raw = Recorded()
+    buffered = io.TextIOWrapper(io.BufferedWriter(raw), encoding="utf-8")
+    with github_actions(False), contextlib.redirect_stdout(buffered):
+        emit([sample], "step-memory", None)
+        reached = bytes(raw.data)
+    expect("emit flushes each finding, so a reader of a pipe sees it at once", reached == f"{sample.text()}\n".encode())
     expect("parse_line reads text back", parse_line(sample.text()) == sample)
     expect("parse_line refuses a free line", parse_line("STALE something") is None)
     expect("annotation escapes", Finding("error", "a,b:c.h", 3, "object-size", "100% of x").annotation()
