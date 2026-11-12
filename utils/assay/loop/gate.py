@@ -309,7 +309,10 @@ THE LOGS
     highest number of a run.  It removes each directory of a run, other than
     the last RUNS_KEPT.  The problems of a refused landing then name logs
     that the next run does not change.  The name of a log holds its
-    configuration and its step.  Two threads then do not write one log.
+    configuration and its step.  Two threads then do not write one log.  The
+    round after THE REDUCE puts AGAIN_MARK after the name of the
+    configuration (log_name()).  The logs of the first round then stay, such
+    as the output of a test that was red in the suite and green alone.
 
 THE LOCK OF THE TREE
     One landing at a time uses the warm tree.  tree_lock() holds an
@@ -353,6 +356,8 @@ LOGS = "logs"
 RUN_MARK = "run-"
 RUN_WIDTH = 6
 RUNS_KEPT = 24
+# The mark after the name of the configuration in the name of a log of the round after THE REDUCE (THE LOGS).
+AGAIN_MARK = ".again"
 # The build files of a change that selects the release build and ThreadSanitizer, as a C or C++ file does (THE
 # SELECTION, COMPILED_SUFFIXES of assay.loop.inputs).
 BUILD_FILE_NAMES = ("CMakeLists.txt", "CMakePresets.json")
@@ -736,6 +741,14 @@ def build_directory(tree: Path, configuration: Configuration) -> Path:
     return tree / configuration.build
 
 
+def log_name(configuration: Configuration, step: str, is_again: bool = False) -> str:
+    """Return the name of the log of one step of a configuration, with AGAIN_MARK in the round after THE REDUCE.
+
+    THE LOGS gives the rule.  `step` is the rest of the name, such as test.log.
+    """
+    return f"{configuration.name}{AGAIN_MARK if is_again else ''}.{step}"
+
+
 def configure_words(tree: Path, configuration: Configuration) -> list[str]:
     """Return the words of the configure of the build directory of a configuration in a tree."""
     return ["cmake", "--preset", configuration.name, "-B", str(build_directory(tree, configuration))]
@@ -803,15 +816,16 @@ class Gate:
             raise GateError(f"`loop syntax --changed` gives an error: {completed.err.strip()}")
         return completed.out.split()
 
-    def loop_words(self, run: Run, is_plain: bool) -> list[str]:
+    def loop_words(self, run: Run, is_plain: bool, is_again: bool = False) -> list[str]:
         """Return the words of the mode of a run after `loop test BUILD` (THE SELECTION).
 
         A run of the full suite with `is_plain` runs the tests of the changed inputs.  The run of the touched tests
-        writes the file of --only into the directory of the logs.  A run with `is_build_only` gets --build-only.
+        writes the file of --only into the directory of the logs, with the name of its round (log_name()).  A run with
+        `is_build_only` gets --build-only.
         """
         if run.mode is Mode.TOUCHED:
             self.logs.mkdir(parents=True, exist_ok=True)
-            only = self.logs / f"{run.configuration.name}.only.txt"
+            only = self.logs / log_name(run.configuration, "only.txt", is_again)
             only.write_text("".join(f"{name}\n" for name in run.names), encoding="utf-8")
             return ["--only", str(only)]
         words = ["--all"] if run.mode is Mode.FULL and not is_plain else []
@@ -1116,12 +1130,12 @@ class Step:
                 return problem.completed.exit if problem.completed is not None else ExitCode.TOOL_FAILED
             return completed.exit
 
-    def configure(self, configuration: Configuration) -> str | None:
+    def configure(self, configuration: Configuration, is_again: bool = False) -> str | None:
         """Configure the build directory of a configuration when it has no graph of Ninja, and give a problem."""
         build = build_directory(self.gate.tree, configuration)
         if ninja_reader.graph_file(build).is_file():
             return None
-        log = f"{configuration.name}.configure.log"
+        log = log_name(configuration, "configure.log", is_again)
         if self.run_logged(configure_words(self.gate.tree, configuration), log, self.environment, CONFIGURE_S) != 0:
             return f"{configuration.name}: the configure gives an error, see {self.gate.logs / log}"
         return None
@@ -1140,20 +1154,22 @@ class Step:
             cmake = cmake_pin.configured_program(build, "cmake")
         except cmake_pin.PinError as problem:
             raise GateError(str(problem)) from None
-        log = f"{configuration.name}.regenerate.log"
+        log = log_name(configuration, "regenerate.log")
         command = [cmake, "--build", str(build), "--target", ninja_reader.GRAPH_NAME]
         if self.run_logged(command, log, self.environment, CONFIGURE_S) != 0:
             return f"{configuration.name}: the configure gives an error, see {self.gate.logs / log}"
         return None
 
-    def checked(self, configuration: Configuration, rules: Sequence[str], environment: Mapping[str, str]) -> list[str]:
+    def checked(
+        self, configuration: Configuration, rules: Sequence[str], environment: Mapping[str, str], is_again: bool = False
+    ) -> list[str]:
         """Run `guard check --build-dir` of each rule on a build at the same time, and give a problem for each exit other
         than 0 or 77."""
         build = build_directory(self.gate.tree, configuration)
 
         def check_one(rule: str) -> str | None:
             """Run the check of one rule, and give its problem or None."""
-            log = f"{configuration.name}.check-{rule}.log"
+            log = log_name(configuration, f"check-{rule}.log", is_again)
             command = [*self.gate.master("guard"), "check", "--rule", rule, "--build-dir", str(build)]
             status = self.run_logged(command, log, environment, proc.TOOL_S)
             if status in (ExitCode.OK, ExitCode.SKIPPED):
@@ -1196,12 +1212,13 @@ class Step:
         move_tree(self.gate.root, tree, final)
         return final, ledgers
 
-    def red_alone(self, configuration: Configuration, names: Sequence[str]) -> list[str]:
+    def red_alone(self, configuration: Configuration, names: Sequence[str], is_again: bool = False) -> list[str]:
         """Run each red test one more time apart from the suite, and return the names of the tests that are red again.
 
         The tests run at the same time, in one run of ctest with the jobs of the step (THE RUN OF A CONFIGURATION).
         The report of that run gives the status of each test.  A test with no status in the report is red.  The limit
-        of the run is ALONE_S for each test, the time of the tests one after the other.
+        of the run is ALONE_S for each test, the time of the tests one after the other.  The files of the run have the
+        name of its round (log_name()).
 
         Raises:
             GateError: If the CMake cache of the build names no ctest
@@ -1210,8 +1227,8 @@ class Step:
             return []
         build = build_directory(self.gate.tree, configuration)
         logs = self.gate.logs
-        selection = logs / f"{configuration.name}.alone.txt"
-        report = logs / f"{configuration.name}.alone.junit.xml"
+        selection = logs / log_name(configuration, "alone.txt", is_again)
+        report = logs / log_name(configuration, "alone.junit.xml", is_again)
         try:
             ctest = cmake_pin.configured_program(build, "ctest")
         except cmake_pin.PinError as problem:
@@ -1221,7 +1238,7 @@ class Step:
         report.unlink(missing_ok=True)
         command = [ctest, "--test-dir", str(build), "--tests-from-file", str(selection), "-j", str(self.jobs)]
         command += ["--timeout", str(int(ALONE_S)), "--output-on-failure", "--output-junit", str(report)]
-        self.run_logged(command, f"{configuration.name}.alone.log", self.environment, ALONE_S * len(names))
+        self.run_logged(command, log_name(configuration, "alone.log", is_again), self.environment, ALONE_S * len(names))
         try:
             statuses = ctest_reader.results(report)
         except ctest_reader.CtestError:
@@ -1234,7 +1251,7 @@ class Step:
         if problem is not None:
             return [problem]
         build = build_directory(self.gate.tree, configuration)
-        log = f"{configuration.name}.syntax.log"
+        log = log_name(configuration, "syntax.log")
         command = [*self.gate.master("loop"), "syntax", str(build), "-j", str(self.jobs)]
         if self.run_logged(command, log, self.environment, TEST_RUN_S) != 0:
             return [f"{configuration.name}: a unit does not parse, see {self.gate.logs / log}"]
@@ -1250,7 +1267,7 @@ class Step:
         wait for it (THE THREADS).  The second result holds the tests that are red alone too, and the third result the
         flaky tests: red in the suite and green alone.
         """
-        problem = self.configure(configuration)
+        problem = self.configure(configuration, is_again)
         if problem is not None:
             return [problem], (), ()
         if configuration.name == ALWAYS and not self.always_ready.is_set():
@@ -1262,7 +1279,7 @@ class Step:
         report = build / affected.STATE_DIRECTORY / "junit.xml"
         report.unlink(missing_ok=True)
         logs = self.gate.logs
-        log = f"{configuration.name}.test.log"
+        log = log_name(configuration, "test.log", is_again)
         command = [*self.gate.master("loop"), "test", str(build), "-j", str(self.jobs), *words]
         status = self.run_logged(command, log, self.environment, TEST_RUN_S)
         statuses: dict[str, ctest_reader.TestStatus] = {}
@@ -1281,13 +1298,13 @@ class Step:
             self.say(f"loop land: {configuration.name}: {len(skipped)} skipped: {' '.join(skipped)}")
         if red:
             self.say(f"loop land: {configuration.name}: {len(red)} red, they run again together apart from the suite")
-        still = self.red_alone(configuration, red)
+        still = self.red_alone(configuration, red, is_again)
         flaky = tuple(name for name in red if name not in still)
         if flaky:
             self.say(f"loop land: {configuration.name}: FLAKY, red in the suite and green alone: {' '.join(flaky)}")
         if still:
             return [f"{configuration.name}: red alone too: {' '.join(still)}, see {logs / log}"], tuple(still), flaky
-        warnings_log = f"{configuration.name}.warnings.log"
+        warnings_log = log_name(configuration, "warnings.log", is_again)
         warnings = [*self.gate.master("guard"), "warnings", str(build)]
         if self.run_logged(warnings, warnings_log, self.environment, proc.TOOL_S):
             return [f"{configuration.name}: `guard warnings` gives an error, see {logs / warnings_log}"], (), flaky
@@ -1300,10 +1317,10 @@ class Step:
         and the flaky tests."""
         configuration = run.configuration
         if configuration.is_parse and is_again:
-            return self.checked(configuration, COUNTED_RULES, self.environment), (), ()
+            return self.checked(configuration, COUNTED_RULES, self.environment, is_again), (), ()
         if configuration.is_parse:
             return self.run_parse(configuration), (), ()
-        words = self.gate.loop_words(run, is_retry or is_again)
+        words = self.gate.loop_words(run, is_retry or is_again, is_again)
         return self.run_objects(configuration, words, is_again)
 
     def outcome_of(self, run: Run, is_again: bool, is_retry: bool) -> Outcome:

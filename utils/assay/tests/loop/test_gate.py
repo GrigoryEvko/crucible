@@ -649,6 +649,12 @@ def reduce_cases(expect: testing.Expect) -> None:
             "after the fold, the tests run again on the new commit",
             "folded into the commit" in printed and "each configuration of the run runs again" in printed,
         )
+        logs = planted.logs
+        rounds = sorted(path.name for path in logs.glob(f"{gate.ALWAYS}*.test.log"))
+        expect(
+            f"the round after the fold writes its own logs, and the logs of the first round stay: {rounds}",
+            rounds == [f"{gate.ALWAYS}{gate.AGAIN_MARK}.test.log", f"{gate.ALWAYS}.test.log"],
+        )
         checks = (tree / "build" / "checks.txt").read_text(encoding="utf-8").splitlines()
         expect(
             f"the rule reconfigure-noop runs after the first build of the run, and not again after the fold: {checks}",
