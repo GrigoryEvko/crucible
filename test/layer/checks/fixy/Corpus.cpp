@@ -45,6 +45,17 @@ static_assert(is_row_observable_<::foundation::effects::Row<::foundation::effect
 static_assert(is_row_observable_<::foundation::effects::Row<::foundation::effects::Effect::Bg>>::value,
               "Bg must stay inside the observable set.");
 
+// The reader reads the row of an Effect grade through the closed relation
+// of fixy/Atom.h.  A stated with<IO> answers as the row Row<IO> does, and a
+// type that is not an Effect grade has no answer.
+static_assert(is_row_observable_<::fixy::atom::with_io>::value,
+              "a stated with<IO> names the observable effect IO, as the row Row<IO> does");
+static_assert(!is_row_observable_<::fixy::atom::with<>>::value, "the empty grade names no effect");
+static_assert(!std::meta::can_substitute(^^is_row_observable_, {^^int}),
+              "a type that is not an Effect grade has no row to read");
+static_assert(!std::meta::can_substitute(^^is_row_observable_, {^^::fixy::atom::ghost}),
+              "an atom of another axis has no row to read");
+
 }  // namespace detail
 
 namespace detail {

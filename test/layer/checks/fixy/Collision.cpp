@@ -62,40 +62,84 @@ static_assert(live_rules<::fixy::atom::capability_usage, ::fixy::atom::trust_ver
 static_assert(live_rules<::fixy::atom::trust_unverified>::T001_ok);
 static_assert(live_rules<>::T001_ok);
 
-// Every Trust atom of the roster has a class.  The walk names each Trust
-// atom that the closed relation does not answer for.  A walk that sees no
-// Trust atom proves nothing, so the walk refuses that roster too.
+// Every Trust, CallShape and Protocol atom of the roster has an answer in
+// the closed relation of its axis.  The walk names each atom that its
+// relation does not answer for.  A walk that sees no atom of one of the
+// three axes proves nothing for that axis, so the walk refuses that roster
+// too.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 
-[[nodiscard]] consteval std::string trust_atoms_without_a_class_() {
-    std::size_t seen = 0;
+[[nodiscard]] consteval std::string atoms_without_an_answer_() {
+    namespace cd = ::fixy::collision::detail;
+    std::size_t trust_seen = 0;
+    std::size_t call_shape_seen = 0;
+    std::size_t protocol_seen = 0;
     std::string offenders;
     template for (constexpr auto member : ::fixy::atom::detail::roster_members_v<::fixy::collision::all_atom_roster>) {
         using Atom = [:member:];
+        bool is_answered = true;
         if constexpr (Atom::axis == Axis::Trust) {
-            ++seen;
-            if (!::fixy::collision::detail::trust_class_of_(member)) {
-                if (!offenders.empty()) offenders += ", ";
-                offenders += std::meta::display_string_of(member);
-            }
+            ++trust_seen;
+            is_answered = !!cd::trust_class_of_(member);
+        } else if constexpr (Atom::axis == Axis::CallShape) {
+            ++call_shape_seen;
+            is_answered = cd::call_shape_reading_(member) != cd::CallShapeReading::Unread;
+        } else if constexpr (Atom::axis == Axis::Protocol) {
+            ++protocol_seen;
+            is_answered = cd::protocol_reading_(member) != cd::ProtocolReading::Unread;
+        }
+        if (!is_answered) {
+            if (!offenders.empty()) offenders += ", ";
+            offenders += std::meta::display_string_of(member);
         }
     }
-    return seen == 0 ? std::string{"(the roster has no Trust atom)"} : offenders;
+    const bool sees_each_axis = trust_seen != 0 && call_shape_seen != 0 && protocol_seen != 0;
+    return sees_each_axis ? offenders : std::string{"(the roster has no atom on one of the three axes)"};
 }
 
 #pragma GCC diagnostic pop
 
-static_assert(trust_atoms_without_a_class_().empty(),
+static_assert(atoms_without_an_answer_().empty(),
               std::string_view{std::define_static_string(
-                  "fixy/Collision.h: these Trust atoms have no class in fixy::collision::TrustClass: "
-                  + trust_atoms_without_a_class_()
-                  + ".  Name each one in the closed relation trust_class_of_, and decide if T001 reads it as "
-                    "unverified.")});
+                  "fixy/Collision.h: these atoms have no answer in the closed relation of their axis: "
+                  + atoms_without_an_answer_()
+                  + ".  Name each one in trust_class_of_, call_shape_reading_ or protocol_reading_, and decide "
+                    "how T001, D001 or L003 reads it.")});
 static_assert(::fixy::collision::IsTrustGrade<typename axis_traits<Axis::Trust>::strict>,
               "the strict Trust pole must have a class, because a binding that says nothing about Trust reads it");
 static_assert(!::fixy::collision::IsTrustGrade<int>, "a type that is not a Trust grade has no class");
 static_assert(!::fixy::collision::IsTrustGrade<::fixy::atom::copy>, "an atom on another axis has no Trust class");
+
+// The CallShape relation and the Protocol relation name the strict pole of
+// fixy/Axis.h by its type, and these pins hold the two to that pole.  A
+// type of another axis gets no reading.
+static_assert(::fixy::collision::detail::call_shape_reading_(^^typename axis_traits<Axis::CallShape>::strict)
+                  == ::fixy::collision::detail::CallShapeReading::NoIndirectCall,
+              "the strict CallShape pole calls through no pointer, and a binding that says nothing reads it");
+static_assert(::fixy::collision::detail::protocol_reading_(^^typename axis_traits<Axis::Protocol>::strict)
+                  == ::fixy::collision::detail::ProtocolReading::NoSpawn,
+              "the strict Protocol pole states no spawn, and a binding that says nothing reads it");
+static_assert(::fixy::collision::detail::call_shape_reading_(^^int)
+                  == ::fixy::collision::detail::CallShapeReading::Unread,
+              "int is no CallShape grade");
+static_assert(::fixy::collision::detail::protocol_reading_(^^::fixy::atom::copy)
+                  == ::fixy::collision::detail::ProtocolReading::Unread,
+              "an atom on another axis has no Protocol reading");
+static_assert(!live_rules<::fixy::atom::dispatch::recurses<4>>::indirect_call_may_throw,
+              "a recursion is no call through a pointer");
+
+// The observable reader of P010 reads the row of an Effect grade through
+// the closed relation of fixy/Atom.h.  A stated with<IO> answers as the row
+// Row<IO> does, and a type that is not an Effect grade has no answer.
+static_assert(::fixy::collision::detail::row_admits_observable_<::fixy::atom::with_io>::value,
+              "a stated with<IO> names the observable effect IO, as the row Row<IO> does");
+static_assert(!::fixy::collision::detail::row_admits_observable_<::fixy::atom::with_bg>::value,
+              "Bg is left out of the set of P010");
+static_assert(!std::meta::can_substitute(^^::fixy::collision::detail::row_admits_observable_, {^^int}),
+              "a type that is not an Effect grade has no row to read");
+static_assert(!std::meta::can_substitute(^^::fixy::collision::detail::row_admits_observable_, {^^::fixy::atom::copy}),
+              "an atom of another axis has no row to read");
 
 static_assert(!live_rules<::fixy::atom::coroutine, ::fixy::atom::borrow>::R002_ok);
 static_assert(!live_rules<::fixy::atom::borrow, ::fixy::atom::with<::foundation::effects::Effect::Bg>>::L007_ok);

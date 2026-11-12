@@ -303,13 +303,14 @@ struct foundation::contracts::armed_cell<::fixy::detail::is_throws_atom> {
 //
 // The rules read the row of the binding, which is a canonical Row: the
 // Effect grade joined with the lifts of the atoms.  The observable reader
-// answers for a row, and it gives false for a stated grade, which is not
-// the row a rule reads.
+// reads an Effect grade through the closed relation of fixy/Atom.h, so a
+// stated grade answers as its row does.  A type that is not an Effect grade
+// has no answer, so no such type is a witness.
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::collision::detail::row_admits_observable_> {
-    using accepts = witnesses<Row<Effect::Alloc>, Row<Effect::IO>, Row<Effect::Block>>;
-    using refuses = witnesses<Row<Effect::Bg>, Row<>, at::with<Effect::IO>>;
+    using accepts = witnesses<Row<Effect::Alloc>, Row<Effect::IO>, Row<Effect::Block>, at::with<Effect::IO>>;
+    using refuses = witnesses<Row<Effect::Bg>, Row<>, at::with<Effect::Bg>, at::with<>>;
 };
 
 template <>
@@ -430,7 +431,9 @@ struct foundation::contracts::armed_cell<::fixy::collision::detail::is_signature
 };
 
 // An indirect call can throw unless its family names a noexcept signature.
-// An opaque tag family names no signature, so the call can throw.
+// An opaque tag family names no signature, so the call can throw.  A
+// recursion and the strict pole call through no pointer.  A type that is
+// not a CallShape grade has no reading, so no such type is a witness.
 template <>
 struct foundation::contracts::armed_cell<::fixy::collision::detail::can_indirect_call_throw_> {
     using accepts =
@@ -438,15 +441,19 @@ struct foundation::contracts::armed_cell<::fixy::collision::detail::can_indirect
                   at::dispatch::indirect_call<void (w::Plain::*)() &>, at::dispatch::indirect_call<int (*)(char, ...)>>;
     using refuses =
         witnesses<at::dispatch::indirect_call<int(char) noexcept>, at::dispatch::indirect_call<void (*)() noexcept>,
-                  at::dispatch::indirect_call<w::NamesNoexceptSignature>, int>;
+                  at::dispatch::indirect_call<w::NamesNoexceptSignature>, at::dispatch::recurses<8>,
+                  ::fixy::pole::Unconstrained<::fixy::Axis::CallShape>>;
 };
 
 // A subprocess has its own copy of the address space, so it cannot
-// outlive the frame that it borrows from.
+// outlive the frame that it borrows from.  A protocol, a live handle and
+// the strict pole state no spawn.  A type that is not a Protocol grade has
+// no reading, so no such type is a witness.
 template <>
 struct foundation::contracts::armed_cell<::fixy::collision::detail::can_spawn_outlive_the_frame_> {
     using accepts = witnesses<at::spawn::detach_with<"drain">, at::spawn::syscall_only<"loader">>;
-    using refuses = witnesses<at::spawn::subprocess<"helper">, int>;
+    using refuses = witnesses<at::spawn::subprocess<"helper">, at::protocol<w::Plain>,
+                              at::session::live_handle<w::Plain>, ::fixy::pole::proto::None>;
 };
 
 template <>
@@ -629,12 +636,14 @@ struct foundation::contracts::armed_cell<::fixy::corpus::detail::is_ghost_> {
     using refuses = witnesses<int, at::copy>;
 };
 
-// Init and Test stay outside the observable set.  The entry reads the row
-// of the binding, so a stated grade that is not a row names nothing here.
+// Init and Test stay outside the observable set.  The reader reads an
+// Effect grade through the closed relation of fixy/Atom.h, so a stated
+// grade answers as its row does.  A type that is not an Effect grade has
+// no answer, so no such type is a witness.
 template <>
 struct foundation::contracts::armed_cell<::fixy::corpus::detail::is_row_observable_> {
-    using accepts = witnesses<Row<Effect::IO>, Row<Effect::Alloc>, Row<Effect::Init, Effect::Block>>;
-    using refuses = witnesses<Row<Effect::Init>, Row<Effect::Test>, Row<>, at::with_io, int>;
+    using accepts = witnesses<Row<Effect::IO>, Row<Effect::Alloc>, Row<Effect::Init, Effect::Block>, at::with_io>;
+    using refuses = witnesses<Row<Effect::Init>, Row<Effect::Test>, Row<>, at::with_init, at::with<>>;
 };
 
 // Only AuthorizedReplay discharges an axis, and it discharges staleness

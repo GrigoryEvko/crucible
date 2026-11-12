@@ -585,6 +585,18 @@ fixy_neg_compile_test(neg_rule_l003_borrow_raw_clone
   "Collision rule\\(s\\) L003:"
   "${_fixy_tier5_member}")
 
+# D001 and L003 read their axes through closed relations.  A grade that a
+# relation does not name stops the build with one message, so a new atom
+# on the axis cannot read as a call that cannot throw, or as a spawn that
+# a join ties to the frame.  The catalog of atoms is closed, so each
+# fixture reads the reader directly with a type of the shape of an atom.
+fixy_neg_compile_test(neg_collision_call_shape_without_reading
+  "static assertion failed: fixy/Collision\\.h: the CallShape grade of this binding has no reading in fixy::collision::detail::call_shape_reading_"
+  "indirect_call_throws_\\(\\) \\[with G = fixture::virtual_dispatch\\]")
+fixy_neg_compile_test(neg_collision_protocol_without_reading
+  "static assertion failed: fixy/Collision\\.h: the Protocol grade of this binding has no reading in fixy::collision::detail::protocol_reading_"
+  "spawn_outlives_frame_\\(\\) \\[with G = fixture::detached_thread\\]")
+
 # The constant-time family and the failure family.  The constant-time
 # claim is the Security grade atom::constant_time, and a failure is the
 # payload std::expected<T, E> or the ControlFlow grade ctrl::throws<E>.

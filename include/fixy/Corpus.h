@@ -206,11 +206,18 @@ struct is_internal_<G>
 // allowed to request without anyone deciding to widen it.  The entry
 // reads the row of the binding, which binding_row_on above gives as a
 // canonical Row.
-template <class R>
-struct is_row_observable_ : std::false_type {};
+//
+// The reader takes an Effect grade and reads its row through the closed
+// relation of fixy/Atom.h, so a stated with<IO> answers as the row Row<IO>
+// does.  A type that is not an Effect grade has no row, and the constraint
+// refuses it.  It does not read as a row with no observable effect.
 template <::foundation::effects::Effect... Es>
-struct is_row_observable_<::foundation::effects::Row<Es...>>
-    : std::bool_constant<(::foundation::effects::is_observable<Es>() || ...)> {};
+[[nodiscard]] consteval bool names_observable_effect_(::foundation::effects::Row<Es...>) noexcept {
+    return (::foundation::effects::is_observable<Es>() || ...);
+}
+
+template <::fixy::atom::IsEffectGrade G>
+struct is_row_observable_ : std::bool_constant<names_observable_effect_(::fixy::atom::effect_row_of_t<G>{})> {};
 
 template <class G>
 struct is_stale_ : std::false_type {};

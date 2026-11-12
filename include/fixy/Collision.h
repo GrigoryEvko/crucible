@@ -100,18 +100,20 @@
 
 namespace fixy {
 
-// The two spawn atoms L003 reads, declared rather than included.
-// fixy/concurrent/Spawn.h defines them beside the spawning mints, and including
-// it here would pull the thread door and the permission layer into every
-// header that sees this one.  A partial specialisation needs only the
-// template's name, and the redeclaration must match Spawn.h's template
-// head exactly, so a change there that this file does not follow is a
-// compile error rather than a rule that silently stops matching.
+// The three spawn atoms that the Protocol reading of L003 names, declared
+// and not included.  fixy/concurrent/Spawn.h defines them beside the
+// spawning mints, and an include here would pull the thread door and the
+// permission layer into each header that sees this one.  The relation
+// compares reflections of the templates, so it needs only their names.
+// Each redeclaration must match the template head of Spawn.h exactly, so a
+// change there that this file does not follow is a compile error.
 namespace atom::spawn {
 template <::fixy::atom::ctrl::rationale Rationale>
 struct detach_with;
 template <::fixy::atom::ctrl::rationale Rationale>
 struct syscall_only;
+template <::fixy::atom::ctrl::rationale Rationale>
+struct subprocess;
 }  // namespace atom::spawn
 
 namespace collision {
@@ -328,12 +330,20 @@ namespace detail {
 // makes each new atom take a decision, so a new observable atom joins
 // this set there and cannot be left out here.  Bg is left out because the
 // rules that read a Bg row, L007 and R003 among them, carry its theorem.
-template <class R>
-struct row_admits_observable_ : std::false_type {};
+//
+// The reader takes an Effect grade and reads its row through the closed
+// relation of fixy/Atom.h, so a stated with<IO> answers as the row Row<IO>
+// does.  P010 gives it the row of the binding, which is a canonical Row.
+// A type that is not an Effect grade has no row, and the constraint
+// refuses it.  It does not read as a row with no observable effect.
 template <::foundation::effects::Effect... Es>
-struct row_admits_observable_<::foundation::effects::Row<Es...>>
-    : std::bool_constant<((::foundation::effects::is_observable<Es>() && Es != ::foundation::effects::Effect::Bg)
-                          || ...)> {};
+[[nodiscard]] consteval bool names_observable_effect_without_bg_(::foundation::effects::Row<Es...>) noexcept {
+    return ((::foundation::effects::is_observable<Es>() && Es != ::foundation::effects::Effect::Bg) || ...);
+}
+
+template <::fixy::atom::IsEffectGrade G>
+struct row_admits_observable_
+    : std::bool_constant<names_observable_effect_without_bg_(::fixy::atom::effect_row_of_t<G>{})> {};
 
 // The payload's replay claim.
 //
@@ -581,26 +591,110 @@ template <class Family>
 template <class Family>
 struct is_signature_noexcept_ : std::bool_constant<names_noexcept_signature_<Family>()> {};
 
-// An indirect call can throw unless its family names a noexcept
-// signature.  An unknown family reads as one that throws.
-template <class G>
-struct can_indirect_call_throw_ : std::false_type {};
-template <class Family>
-struct can_indirect_call_throw_<::fixy::atom::dispatch::indirect_call<Family>>
-    : std::bool_constant<!is_signature_noexcept_<Family>::value> {};
+// What D001 reads in a CallShape grade, as one closed relation.
+//
+// D001 asks one question of the CallShape grade: does the binding call
+// through a pointer whose callee can throw?  An indirect_call names its
+// family, and D001 reads the signature of that family.  A recursion and
+// the strict pole call through no pointer.
+//
+// The relation is a function over reflections and not a template, so no
+// other file can add a grade to it.  It answers for a template as for each
+// of its specializations.  A CallShape grade that it does not name gets
+// Unread, and the reader of D001 stops the build on that grade.  So a new
+// atom on the axis cannot stand down as a call that cannot throw.  The
+// strict pole is named by its type, and the check file of this header
+// makes sure that the relation reads the pole of fixy/Axis.h and each
+// CallShape atom of the roster.
+enum class CallShapeReading : std::uint8_t {
+    Unread = 0,  // the relation does not name the grade
+    NoIndirectCall = 1,  // the strict pole and recurses<N>: no call through a pointer
+    IndirectCall = 2,  // indirect_call<Family>: a call through a pointer that the family names
+};
 
-// A spawn no structured join ties to the caller's frame, in a child that
-// shares the caller's address space.  detach_with is never joined, and
-// syscall_only is a raw clone that the structured join does not reach.
-// subprocess is left out on purpose: a forked or posix_spawn'd child
-// runs in its own copy of the address space, so a borrow there refers to
-// a copy and cannot dangle into the parent's frame.
+[[nodiscard]] consteval CallShapeReading call_shape_reading_(std::meta::info grade) noexcept {
+    const std::meta::info named = std::meta::dealias(grade);
+    if (named == ^^::fixy::pole::Unconstrained<Axis::CallShape>) return CallShapeReading::NoIndirectCall;
+    const std::meta::info declared = std::meta::has_template_arguments(named) ? std::meta::template_of(named) : named;
+    if (declared == ^^::fixy::atom::dispatch::indirect_call) return CallShapeReading::IndirectCall;
+    if (declared == ^^::fixy::atom::dispatch::recurses) return CallShapeReading::NoIndirectCall;
+    return CallShapeReading::Unread;
+}
+
+// An indirect call can throw unless its family names a noexcept
+// signature.  An unknown family reads as one that throws.  A grade with
+// no reading stops the build with one message, and then gives the answer
+// that refuses.
 template <class G>
-struct can_spawn_outlive_the_frame_ : std::false_type {};
-template <::fixy::atom::ctrl::rationale Rationale>
-struct can_spawn_outlive_the_frame_<::fixy::atom::spawn::detach_with<Rationale>> : std::true_type {};
-template <::fixy::atom::ctrl::rationale Rationale>
-struct can_spawn_outlive_the_frame_<::fixy::atom::spawn::syscall_only<Rationale>> : std::true_type {};
+[[nodiscard]] consteval bool indirect_call_throws_() noexcept {
+    constexpr CallShapeReading reading = call_shape_reading_(^^G);
+    static_assert(reading != CallShapeReading::Unread,
+                  "fixy/Collision.h: the CallShape grade of this binding has no reading in "
+                  "fixy::collision::detail::call_shape_reading_, so D001 cannot tell whether the binding calls "
+                  "through a pointer whose callee can throw. Name the atom in the closed relation beside "
+                  "indirect_call and recurses.");
+    if constexpr (reading == CallShapeReading::IndirectCall) {
+        using Family = [:std::meta::template_arguments_of(std::meta::dealias(^^G))[0]:];
+        return !is_signature_noexcept_<Family>::value;
+    } else {
+        return reading == CallShapeReading::Unread;
+    }
+}
+
+template <class G>
+struct can_indirect_call_throw_ : std::bool_constant<indirect_call_throws_<G>()> {};
+
+// What L003 reads in a Protocol grade, as one closed relation.
+//
+// L003 asks one question of the Protocol grade: does it state a spawn that
+// can run after the frame of the caller unwinds?  detach_with is never
+// joined, and syscall_only is a raw clone that the structured join does
+// not reach.  Each child shares the address space of the caller.  A
+// subprocess runs in its own copy of the address space, so a borrow there
+// refers to a copy and cannot dangle into the frame of the parent.  A
+// protocol, a live handle and the strict pole state no spawn.
+//
+// The relation is closed as the CallShape relation above is.  A Protocol
+// grade that it does not name stops the reader of L003, so a new spawn
+// atom cannot stand down as a spawn that a join ties to the frame.  The
+// spawn atoms are a sample set outside the roster, so a walk in the check
+// file of fixy/collision/Report.h reads the declarations of their
+// namespace.
+enum class ProtocolReading : std::uint8_t {
+    Unread = 0,  // the relation does not name the grade
+    NoSpawn = 1,  // the strict pole, protocol<P> and session::live_handle<P>
+    SpawnOutlivesTheFrame = 2,  // spawn::detach_with and spawn::syscall_only
+    SpawnInItsOwnSpace = 3,  // spawn::subprocess
+};
+
+[[nodiscard]] consteval ProtocolReading protocol_reading_(std::meta::info grade) noexcept {
+    const std::meta::info named = std::meta::dealias(grade);
+    if (named == ^^::fixy::pole::proto::None) return ProtocolReading::NoSpawn;
+    const std::meta::info declared = std::meta::has_template_arguments(named) ? std::meta::template_of(named) : named;
+    if (declared == ^^::fixy::atom::protocol || declared == ^^::fixy::atom::session::live_handle) {
+        return ProtocolReading::NoSpawn;
+    }
+    if (declared == ^^::fixy::atom::spawn::detach_with || declared == ^^::fixy::atom::spawn::syscall_only) {
+        return ProtocolReading::SpawnOutlivesTheFrame;
+    }
+    if (declared == ^^::fixy::atom::spawn::subprocess) return ProtocolReading::SpawnInItsOwnSpace;
+    return ProtocolReading::Unread;
+}
+
+// A grade with no reading stops the build with one message, and then
+// gives the answer that refuses.
+template <class G>
+[[nodiscard]] consteval bool spawn_outlives_frame_() noexcept {
+    constexpr ProtocolReading reading = protocol_reading_(^^G);
+    static_assert(reading != ProtocolReading::Unread,
+                  "fixy/Collision.h: the Protocol grade of this binding has no reading in "
+                  "fixy::collision::detail::protocol_reading_, so L003 cannot tell whether the binding spawns a "
+                  "child that can outlive its frame. Name the atom in the closed relation beside the spawn atoms.");
+    return reading == ProtocolReading::Unread || reading == ProtocolReading::SpawnOutlivesTheFrame;
+}
+
+template <class G>
+struct can_spawn_outlive_the_frame_ : std::bool_constant<spawn_outlives_frame_<G>()> {};
 
 // ── The failure path, in the two spellings the tree has ──────────────
 //
