@@ -155,6 +155,15 @@ class RuleContext(Protocol):
         """
 
 
+def parsed_part(text: str) -> tuple[int, int] | None:
+    """Return (K, N) of a part K/N with 1 <= K <= N, or None when the text is not such a part (THE PARTS)."""
+    first, slash, second = text.partition("/")
+    if not slash or not first.isascii() or not first.isdigit() or not second.isascii() or not second.isdigit():
+        return None
+    index, count = int(first), int(second)
+    return (index, count) if 1 <= index <= count else None
+
+
 def part_files(root: Path, paths: Sequence[str], part: tuple[int, int]) -> list[str]:
     """Return the files of part K of N of the paths, sorted (THE PARTS).
 

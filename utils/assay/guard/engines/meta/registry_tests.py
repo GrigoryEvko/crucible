@@ -47,18 +47,41 @@ THE PART
                     to a test of an executable target, and crucible_script_test() of cmake/TestLauncher.cmake
                     gives it to a script test
 
+THE PARTS OF A RULE
+    A test of `guard check --rule ID --part K/N` runs part K of N of the
+    files of the rule (THE PARTS of assay.guard.engines.meta.runner).  The
+    parts of one count N are disjoint, and together they hold each file.  A
+    lost part thus leaves files with no check, and the run of each other
+    part gives no sign of it.  The part reads the tests with the label
+    ci_guard, and it refuses:
+      bad-part      a test whose word after --part is not K/N with 1 <= K <= N
+      missing-part  a part K of a count N of a rule that no such test runs
+      part-count    a rule that such tests run with two counts N.  Part K of
+                    each count writes the warnings file RULE.partK.txt, so
+                    the two counts write over each other
+    No ledger row admits a finding of these kinds (PART_KINDS).
+
 Complexity: O(t * a) for t tests of a arguments, and linear in the size of the modules of the package.
 """
 
 import ast
 import itertools
+from collections import defaultdict
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
-from assay.guard.engines.meta.runner import MetaContext, NotApplicable, copy_tree, module_file, module_name_of
+from assay.guard.engines.meta.runner import (
+    MetaContext,
+    NotApplicable,
+    copy_tree,
+    module_file,
+    module_name_of,
+    parsed_part,
+)
 from assay.loop import teststep as test_launcher
 from assay.readers import ctest as ctest_reader
 
@@ -74,6 +97,12 @@ TREE_READER = "assay.readers.tsast"
 CMAKE_TIMEOUT_S = 300.0
 # The operations of ENVIRONMENT_MODIFICATION that give the test no value of a variable.
 CLEARING_OPERATIONS = ("unset", "reset")
+# The option of a part of the files of a rule, and the kinds of THE PARTS OF A RULE, which no ledger row admits.
+PART_OPTION = "--part"
+BAD_PART = "bad-part"
+MISSING_PART = "missing-part"
+PART_COUNT = "part-count"
+PART_KINDS = frozenset({BAD_PART, MISSING_PART, PART_COUNT})
 
 
 def master_of(test: ctest_reader.TestEntry, root: Path) -> tuple[str, list[str]] | None:
@@ -225,6 +254,60 @@ def dropped_variable(test: ctest_reader.TestEntry, path: str, line: int, prop: s
     return check_report.Finding("error", path, line, PART, message, "environment", f"{test.name}: {name}")
 
 
+@dataclass(frozen=True, slots=True)
+class PartRun:
+    """One test that runs part K of N of a rule (THE PARTS OF A RULE): the part, the test and its place."""
+
+    index: int
+    count: int
+    test: str
+    path: str
+    line: int
+
+
+def part_words(words: Sequence[str]) -> list[str]:
+    """Return each word after --part in the words of a command of guard."""
+    return [words[index + 1] for index, word in enumerate(words[:-1]) if word == PART_OPTION]
+
+
+def part_findings(parts: dict[str, list[PartRun]]) -> list[check_report.Finding]:
+    """Return an error for each rule with a part K of N that no test runs, or with two counts (THE PARTS OF A RULE).
+
+    `parts` gives the part runs of the tests with the label ci_guard for each rule.  Complexity: linear in the part
+    runs and in the counts N.
+    """
+    found: list[check_report.Finding] = []
+    for rule_id, runs in sorted(parts.items()):
+        if not runs:
+            continue
+        first = min(runs, key=lambda run: (run.path, run.line, run.test))
+        counts = sorted({run.count for run in runs})
+        if len(counts) > 1:
+            shown = ", ".join(
+                f"{count} ({', '.join(sorted(run.test for run in runs if run.count == count))})" for count in counts
+            )
+            message = (
+                f"the tests of the rule {rule_id} run it in parts of {len(counts)} counts: {shown}.  Part K of each "
+                f"count writes the warnings file {rule_id}.partK.txt, so the counts write over each other.  Register "
+                f"the parts of one count"
+            )
+            found.append(check_report.Finding("error", first.path, first.line, PART, message, PART_COUNT, rule_id))
+        for count in counts:
+            held = {run.index for run in runs if run.count == count}
+            for index in sorted(set(range(1, count + 1)) - held):
+                message = (
+                    f"the rule {rule_id} runs in {count} parts, and no test with the label {LABEL} runs `guard check "
+                    f"--rule {rule_id} --part {index}/{count}`.  The files of that part get no check.  Register a test "
+                    f"for each part K from 1 to {count}"
+                )
+                found.append(
+                    check_report.Finding(
+                        "error", first.path, first.line, PART, message, MISSING_PART, f"{rule_id}: {index}/{count}"
+                    )
+                )
+    return found
+
+
 def script_run(test: ctest_reader.TestEntry, root: Path) -> tuple[str, list[str]] | None:
     """Return the master and the words of a script test (THE PART), or None for each other test.
 
@@ -260,7 +343,7 @@ def registered_tests(context: MetaContext) -> tuple[ctest_reader.TestEntry, ...]
 
 def tests_findings(context: MetaContext) -> list[check_report.Finding]:
     """Give each test with a master and no label, each unknown rule, each rule with no test, each missing or unread
-    fixture, each variable that the launcher drops, and each test with no judge.
+    fixture, each variable that the launcher drops, each test with no judge, and each lost part of a rule.
 
     Raises:
         NotApplicable: If the part does not apply to the build (registered_tests())
@@ -270,6 +353,7 @@ def tests_findings(context: MetaContext) -> list[check_report.Finding]:
     root = context.root.resolve()
     found: list[check_report.Finding] = []
     covered: set[str] = set()
+    parts: defaultdict[str, list[PartRun]] = defaultdict(list)
     tree_cache: dict[str, bool] = {}
     module_imports: dict[str, frozenset[str]] = {}
     for test in tests:
@@ -313,10 +397,21 @@ def tests_findings(context: MetaContext) -> list[check_report.Finding]:
         if words[0] != "check" or "--self-test" in words:
             continue
         reads_any = False
+        part = None
+        for word in part_words(words):
+            part = parsed_part(word)
+            if part is None:
+                message = (
+                    f"the test {name} runs the part {word}, which is not K/N with 1 <= K <= N, so `guard check` "
+                    f"refuses it.  Give --part K/N"
+                )
+                found.append(check_report.Finding("error", path, line, PART, message, BAD_PART, name))
         for rule in [*run_rules, *engine_rules(words, registry)]:
             rule_id = rule.id
             if LABEL in labels:
                 covered.add(rule_id)
+                if part is not None:
+                    parts[rule_id].append(PartRun(part[0], part[1], name, path, line))
             module = implementing_module(rule, root)
             reads = module is not None and reads_trees(root, module, tree_cache, module_imports)
             reads_any = reads_any or reads
@@ -334,7 +429,7 @@ def tests_findings(context: MetaContext) -> list[check_report.Finding]:
             found.append(
                 check_report.Finding("error", rule_registry.REGISTRY_PATH, rule.line, PART, message, "no-test", rule.id)
             )
-    return found
+    return [*found, *part_findings(parts)]
 
 
 def plant_context(plant: Path, scratch: Path) -> MetaContext:

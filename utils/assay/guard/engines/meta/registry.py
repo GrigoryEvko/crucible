@@ -8,8 +8,9 @@ THE PARTS
       modules  registry_modules  each rule has one function, each function has one rule, and each holder names a
                                  function that the witness runs
       witness  registry_witness  each rule has its plants, and each plants directory has a rule
-      tests    registry_tests    each rule has its test with the label ci_guard, and each test that runs a master
-                                 has its label, its fixture, its launcher and its variables
+      tests    registry_tests    each rule has its test with the label ci_guard, each test that runs a master
+                                 has its label, its fixture, its launcher and its variables, and each part of a
+                                 rule that runs in parts has its test
       kinds    registry_kinds    the kinds that the quarantine plugin gives are the kinds of the plugin rows
       ledgers  registry_ledgers  each file of utils/ledgers/ is the ledger of one rule, and obeys its policy
       layout   registry_layout   each file of utils/ has its path row and obeys its naming rule, and each path row
@@ -32,8 +33,9 @@ THE BUILD
 THE REFUSED KINDS
     The parts shape, kinds and ledgers give an error for each finding, and no
     ledger row admits a finding of their kinds.  The three holder kinds of
-    the part modules are refused kinds too (REFUSED_KINDS).  The ledger
-    admits a finding of each other kind with a reason.
+    the part modules, and the three kinds of the parts of a rule of the part
+    tests, are refused kinds too (REFUSED_KINDS).  The ledger admits a
+    finding of each other kind with a reason.
 
 THE PLANTS
     The name of each plant and control names its part after the prefix, such
@@ -66,7 +68,13 @@ from assay.guard.engines.meta.runner import PREFIXES, MetaContext, NotApplicable
 
 RULE = "registry"
 # The kinds that no ledger row admits (THE REFUSED KINDS).
-REFUSED_KINDS = registry_shape.KINDS | registry_kinds.KINDS | registry_ledgers.KINDS | registry_modules.HOLDER_KINDS
+REFUSED_KINDS = (
+    registry_shape.KINDS
+    | registry_kinds.KINDS
+    | registry_ledgers.KINDS
+    | registry_modules.HOLDER_KINDS
+    | registry_tests.PART_KINDS
+)
 
 
 @dataclass(frozen=True, slots=True)

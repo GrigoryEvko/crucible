@@ -125,15 +125,6 @@ def rule_context(rule: rule_registry.Rule, root: Path, build_dir: Path | None,
     return runner.MetaContext(root, build_dir)
 
 
-def parsed_part(text: str) -> tuple[int, int] | None:
-    """Return (K, N) of a part K/N with 1 <= K <= N, or None when the text is not such a part."""
-    first, slash, second = text.partition("/")
-    if not slash or not first.isascii() or not first.isdigit() or not second.isascii() or not second.isdigit():
-        return None
-    index, count = int(first), int(second)
-    return (index, count) if 1 <= index <= count else None
-
-
 def main(argv: list[str]) -> int:
     """Run the rules that the command line names.
 
@@ -169,7 +160,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--path", dest="paths", action="append", default=[], metavar="PATH")
     options = parser.parse_args(argv)
     chosen = selected(registry, options.rules, options.engines)
-    part = parsed_part(options.part) if options.part is not None else None
+    part = runner.parsed_part(options.part) if options.part is not None else None
     if not isinstance(chosen, str) and options.part is not None and part is None:
         chosen = f"the part {options.part} is not K/N with 1 <= K <= N"
     if not isinstance(chosen, str) and part is not None:

@@ -53,7 +53,8 @@ endfunction()
 # each rule of TREES reads the parse trees of the tree, so it requires the fixture tsast_trees.  The rule
 # registry refuses a rule that reads the trees and is not in TREES.  PARTS gives pairs of a rule and a
 # count N of 2 or more.  Such a rule gets the tests guard_ID_K for K from 1 to N in place of guard_ID, and each
-# one runs part K of N of the files of the rule (THE PARTS of assay.guard.engines.meta.runner).
+# one runs part K of N of the files of the rule (THE PARTS of assay.guard.engines.meta.runner).  The rule registry
+# refuses a part K of N with no test (THE PARTS OF A RULE of assay.guard.engines.meta.registry_tests).
 function(crucible_meta_rule_tests warnings_dir)
   cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "TREES;PARTS")
   crucible_rule_rows("^rule[ \t]+[a-z0-9-]+[ \t]+(.*[ \t])?engine=meta[ \t]" rows)
@@ -162,7 +163,8 @@ endfunction()
 # Register the tests of each rule of the engine tsast that has a module of its own: a row with no field
 # legacy.  guard_ID runs the rule on the tree, and guard_ID_witness runs it on each plant and control of
 # utils/plants/ID/.  The rule parse-clean fills the tree cache, so it runs in <parts> parts,
-# guard_parse_clean_K for K from 1, and these tests are the setup of the fixture tsast_trees.  Each
+# guard_parse_clean_K for K from 1, and these tests are the setup of the fixture tsast_trees.  The rule registry
+# refuses a part with no test, as for a meta rule.  Each
 # other guard_ID requires the fixture, so it starts on a full tree cache.  A witness copies each plant
 # to a scratch repository and parses only the plant (assay.guard.engines.tsast.runner), so it does not
 # wait for the fill.  Exit 77 is a skip: the rule does not apply, for example because the pinned kit is
