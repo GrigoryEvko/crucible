@@ -74,6 +74,12 @@ def name_cases(expect: testing.Expect) -> None:
             "the name adds the word of each option that is on, in the sequence of NAME_OPTIONS",
             build_config.read_configuration(build).name == "x86_64-debug-asan-bench-fuzz",
         )
+        (build / "build-kind.txt").write_text("x86_64-release\n", encoding="utf-8")
+        cmake.plant(build, cache={"CMAKE_BUILD_TYPE": ("STRING", "Release"), "CRUCIBLE_REQUIRE_VESSEL": ("BOOL", "ON")})
+        expect(
+            "a build that must compile and test the vessel has the word vessel",
+            build_config.read_configuration(build).name == "x86_64-release-vessel",
+        )
 
 
 def main(argv: list[str]) -> int:

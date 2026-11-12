@@ -347,8 +347,8 @@ class _DispatchLib:
         # as soon as the library is loaded.
         self._lib = ctypes.CDLL(checked_lib_path(
             "libcrucible_dispatch.so", lib_path,
-            "  cmake -DTORCH_DIR=~/Downloads/pytorch --preset release\n"
-            "  cmake --build --preset release"))
+            "  cmake --preset vessel && cmake --build --preset vessel\n"
+            "and set CRUCIBLE_BUILD_DIR=build-vessel"))
         self._setup()
 
     def _setup(self) -> None:

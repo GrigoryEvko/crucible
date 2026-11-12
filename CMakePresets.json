@@ -52,6 +52,18 @@
       "vendor": { "crucible": { "tier": "nightly" } }
     },
     {
+      "name": "vessel",
+      "inherits": "release",
+      "displayName": "GCC 16 + libstdc++ 16 (C++26, Release) with the patched PyTorch: the vessel libraries and the vessel tests",
+      "binaryDir": "${sourceDir}/build-vessel",
+      "cacheVariables": {
+        "_comment_torch": "TORCH_DIR is the site-packages directory of the virtual environment .venv-torch of the source root, which holds the wheel of the patched PyTorch. CRUCIBLE_REQUIRE_VESSEL stops the configure step when the build cannot compile and test the vessel",
+        "TORCH_DIR": "${sourceDir}/.venv-torch/lib/python3.14/site-packages",
+        "CRUCIBLE_REQUIRE_VESSEL": "ON"
+      },
+      "vendor": { "crucible": { "tier": "nightly", "configuration": "x86_64-release-vessel" } }
+    },
+    {
       "name": "pgo-generate",
       "inherits": "release",
       "displayName": "GCC 16 + libstdc++ 16 (C++26, Release, PGO instrumented)",
@@ -187,6 +199,7 @@
     { "name": "analyzer", "configurePreset": "analyzer" },
     { "name": "release", "configurePreset": "release" },
     { "name": "bench",   "configurePreset": "bench" },
+    { "name": "vessel",  "configurePreset": "vessel" },
     { "name": "pgo-generate", "configurePreset": "pgo-generate" },
     { "name": "pgo",     "configurePreset": "pgo" },
     { "name": "pgo-release", "configurePreset": "pgo-release" },
@@ -207,6 +220,15 @@
       "name": "release",
       "configurePreset": "release",
       "output": { "outputOnFailure": true },
+      "execution": { "jobs": "", "timeout": 300 }
+    },
+    {
+      "name": "vessel",
+      "configurePreset": "vessel",
+      "displayName": "The tests of the build with the patched PyTorch, with no test of a counted ledger that only the gate lowers",
+      "vendor": { "crucible": { "tier": "nightly" } },
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "name": "^guard_(plugin|artifacts)$" } },
       "execution": { "jobs": "", "timeout": 300 }
     },
     {

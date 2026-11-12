@@ -31,8 +31,8 @@
 # the sizes and the times depend on it.  The launcher and the checks read it
 # from build-kind.txt in the build directory.  build-configuration.txt holds
 # the name of the configuration: the build kind with the words of the bench,
-# fuzz and parse options.  A bench object then gets a ledger row of its own
-# configuration.  The options that make the two names come after this file,
+# fuzz, vessel and parse options.  A bench object then gets a ledger row of its
+# own configuration.  The options that make the two names come after this file,
 # so a call at the end of the root directory writes the two files.
 
 find_program(CRUCIBLE_PYTHON3 NAMES python3 DOC "The Python interpreter of the build launcher")
@@ -75,10 +75,11 @@ function(_crucible_write_build_kind)
   # The name of the configuration: the build kind with the words of NAME_OPTIONS of
   # utils/assay/core/configuration.py, in that sequence.  The ledger rows of a measured rule read it.
   set(_configuration "${_kind}")
-  foreach(_option BENCH FUZZ SYNTAX_ONLY)
+  foreach(_pair BENCH:bench FUZZ:fuzz REQUIRE_VESSEL:vessel SYNTAX_ONLY:syntax)
+    string(REPLACE ":" ";" _pair "${_pair}")
+    list(GET _pair 0 _option)
+    list(GET _pair 1 _word)
     if(CRUCIBLE_${_option})
-      string(TOLOWER "${_option}" _word)
-      string(REPLACE "_only" "" _word "${_word}")
       string(APPEND _configuration "-${_word}")
     endif()
   endforeach()

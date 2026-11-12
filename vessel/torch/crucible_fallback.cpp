@@ -16,6 +16,8 @@
 
 #include "record_kernel.h"
 
+#include <fixy/Core.h>
+#include <fixy/FixedArray.h>
 #include <fixy/Tagged.h>
 
 #include <c10/core/CrucibleState.h>
@@ -115,24 +117,24 @@ using crucible::vessel::phase_flag_bits;
 // =====================================================================
 // Schema hash cache
 //
-// Thread-local direct-mapped cache: OperatorHandle address -> SchemaHash.
-// After warmup (first iteration), every op is a cache hit: one pointer
-// comparison + one array index.  Zero contention (thread-local).
+// One process-wide table: the address of an OperatorHandle gives its schema
+// hash and its two flags.  Each fact depends only on the operator, so each
+// thread reads the same table.  The table is not thread-local, because the
+// TLS block of this library goes into the static TLS of the process (the
+// contract flag of foundation has the initial-exec model), and dlopen finds
+// only a small surplus there with the default glibc tunables.
 //
-// 2048 slots x 16B = 32KB -- fits in L1d.  With >>4 shift for pointer
-// alignment (OperatorHandle >=16B), collision rate is near zero for
-// typical models (<500 unique ops).
-// =====================================================================
-
-// Per-op cached info: schema hash, is_mutable flag, is_foreach flag.
-// SchemaHash (16B slot) + two parallel arrays of 1B = 36KB total.
-// Fits comfortably in L1d (48KB Zen 4). The parallel arrays avoid
-// bloating slots to 24B which would spill L1d.
+// A slot is empty, claimed by the one thread that writes it, or ready.  The
+// writer writes the key, the hash and the flags, then stores the state ready
+// with release order.  A reader loads the state with acquire order, so it
+// reads the facts only after they are complete.  A ready slot never changes
+// again.  A hit at the home slot of an operator is one acquire load and one
+// comparison.  A lookup reads at most SCHEMA_CACHE_PROBES slots, and an
+// operator with no slot in that window gets its facts computed again.
 //
-// Both flags are properties of the operator rather than of the operation, so
-// both are computed once at the cache miss below. is_foreach is a substring
-// search over the operator name, which the unboxed path answers at compile
-// time; caching it here keeps the hot boxed path at one array index.
+// is_foreach is a substring search over the operator name, which the unboxed
+// path answers at compile time.  The table keeps the hot boxed path at one
+// slot read.
 //
 // `key` carries the c10::OperatorHandle pointer that PyTorch handed
 // to us across the boxed-fallback ABI.  It is wrapped in
@@ -150,22 +152,29 @@ using ExternalOpKey = ::fixy::Tagged<const void*, ::fixy::tags::source::External
     return ::fixy::mint_tagged<::fixy::tags::source::External>(op);
 }
 
+// The states of a slot, and the bits of its flags.
+static constexpr uint64_t SLOT_EMPTY = 0;
+static constexpr uint64_t SLOT_CLAIMED = 1;
+static constexpr uint64_t SLOT_READY = 2;
+static constexpr uint64_t FLAG_MUTABLE = 1;
+static constexpr uint64_t FLAG_FOREACH = 2;
+
 struct SchemaHashSlot {
+    ::fixy::Atomic<uint64_t> state{SLOT_EMPTY};
     ExternalOpKey key = mint_external_op_key(nullptr);
     crucible::SchemaHash hash;
+    uint64_t flags = 0;
 };
 
-static_assert(sizeof(SchemaHashSlot) == 16, "SchemaHashSlot must remain 16B for the L1d cache budget — "
+static_assert(sizeof(SchemaHashSlot) == 32, "SchemaHashSlot holds four words and no padding.  "
                                             "Tagged<const void*, source::External> is regime-1 EBO collapse "
                                             "so its sizeof equals sizeof(const void*).");
 
 static constexpr uint32_t SCHEMA_CACHE_CAP = 2048;
 static constexpr uint32_t SCHEMA_CACHE_MASK = SCHEMA_CACHE_CAP - 1;
-// constinit: an initializer that is not a constant would put a TLS guard
-// call in front of every access on the boxed hot path.
-static constinit thread_local SchemaHashSlot schema_cache[SCHEMA_CACHE_CAP]{};
-static thread_local bool schema_is_mutable[SCHEMA_CACHE_CAP]{};
-static thread_local bool schema_is_foreach[SCHEMA_CACHE_CAP]{};
+static constexpr uint32_t SCHEMA_CACHE_PROBES = 8;
+// constinit: the table has no dynamic initializer, so no access waits for one.
+static constinit ::fixy::FixedArray<SchemaHashSlot, SCHEMA_CACHE_CAP> schema_cache{};
 
 struct SchemaInfo {
     crucible::SchemaHash hash;
@@ -179,9 +188,13 @@ struct SchemaInfo {
     // integer for the index arithmetic; the pointer itself is compared
     // below, so the integer never turns back into one.
     const auto idx = (std::bit_cast<std::uintptr_t>(&op) >> 4) & SCHEMA_CACHE_MASK;
-    auto& slot = schema_cache[idx];
-    if (slot.key.value() == &op) [[likely]]
-        return {slot.hash, schema_is_mutable[idx], schema_is_foreach[idx]};
+    for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
+        SchemaHashSlot& slot = schema_cache[(idx + probe) & SCHEMA_CACHE_MASK];
+        const uint64_t state = slot.state.load_acquire();
+        if (state == SLOT_READY && slot.key.value() == &op) [[likely]]
+            return {slot.hash, (slot.flags & FLAG_MUTABLE) != 0, (slot.flags & FLAG_FOREACH) != 0};
+        if (state == SLOT_EMPTY) break;
+    }
 
     // Cache miss: compute FNV-1a over "namespace::name.overload".
     const auto& name = op.operator_name();
@@ -227,15 +240,26 @@ struct SchemaInfo {
     // name is the whole question.
     const bool foreach_op = is_foreach_op_name(name.name);
 
+    // The first empty slot of the window gets the facts.  The thread whose
+    // claim succeeds is the one writer of the slot.  Two threads that miss the
+    // same operator at one time can fill two slots, and each slot holds the
+    // same facts.
+    //
     // Re-tag at the FFI source: the OperatorHandle pointer just
     // crossed the boxed-fallback boundary, so it carries source::External
     // until something downstream proves otherwise.  Tagged has no public
     // constructor, so the mint is the one door; the wrapper is
     // move-assigned into the slot at zero runtime cost.
-    slot.key = mint_external_op_key(&op);
-    slot.hash = schema_hash;
-    schema_is_mutable[idx] = mutable_op;
-    schema_is_foreach[idx] = foreach_op;
+    for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
+        SchemaHashSlot& slot = schema_cache[(idx + probe) & SCHEMA_CACHE_MASK];
+        if (slot.state.cas_acq_rel(SLOT_EMPTY, SLOT_CLAIMED).is_ok()) {
+            slot.key = mint_external_op_key(&op);
+            slot.hash = schema_hash;
+            slot.flags = (mutable_op ? FLAG_MUTABLE : 0) | (foreach_op ? FLAG_FOREACH : 0);
+            slot.state.store_release(SLOT_READY);
+            break;
+        }
+    }
     return {schema_hash, mutable_op, foreach_op};
 }
 

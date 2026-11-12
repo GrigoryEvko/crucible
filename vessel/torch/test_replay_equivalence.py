@@ -173,8 +173,10 @@ def compare_workload(kind: str) -> list[str]:
 def main() -> int:
     """Compare every workload of bench_e2e.py and report."""
     # One intra-op thread, as each arm of bench_e2e.py sets, so that no
-    # thread count changes the order of a reduction between two arms.
+    # thread count changes the order of a reduction between two arms.  One
+    # inter-op thread keeps the instruction count of the test the same in each run.
     torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
 
     print("=" * 60)
     print("Crucible Vessel -- replay against PyTorch alone, bit for bit")

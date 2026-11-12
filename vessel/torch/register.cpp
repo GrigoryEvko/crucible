@@ -13,6 +13,21 @@
 // expansion pairs a struct with its table index, and the kernel derives
 // everything else — the signature by reflection, the schema hash, the arity,
 // the masks and the mutability from the row at that index.
+//
+// THE SHARDS
+//
+// One compile of the kernels of all 3110 operators used more than the hard
+// limit of 600 s CPU of a compile job (COMPILE_CPU_LIMIT_S of
+// utils/assay/loop/step.py).  So the build compiles this file one time for
+// each shard.  vessel/torch/CMakeLists.txt
+// gives each compile CRUCIBLE_VESSEL_REGISTER_SHARDS, the number of shards, and
+// CRUCIBLE_VESSEL_REGISTER_SHARD, the index of its shard.  shard_of() gives
+// each operator exactly one shard.  A shard instantiates the kernels of its
+// own operators only.  Shard 0 also publishes the CKernelId table.
+
+#if !defined(CRUCIBLE_VESSEL_REGISTER_SHARD) || !defined(CRUCIBLE_VESSEL_REGISTER_SHARDS)
+#error "a compile of register.cpp needs CRUCIBLE_VESSEL_REGISTER_SHARD and CRUCIBLE_VESSEL_REGISTER_SHARDS"
+#endif
 
 #include "record_kernel.h"
 
@@ -26,6 +41,18 @@
 
 namespace crucible::vessel {
 namespace {
+
+inline constexpr uint32_t kShardCount = CRUCIBLE_VESSEL_REGISTER_SHARDS;
+inline constexpr uint32_t kShard = CRUCIBLE_VESSEL_REGISTER_SHARD;
+
+static_assert(kShard < kShardCount, "the index of the shard of register.cpp is not less than the number of shards");
+
+// Shard k holds the table indices k, k + S, k + 2 * S and so on, for S
+// shards.  The table keeps the overloads of one operator adjacent, and the
+// kernels of some overload sets are expensive.  The interleave spreads each set
+// over the shards, so the cost of the shards stays near their average.  Each
+// shard holds N / S of the N operators, rounded down or up.
+[[nodiscard]] consteval uint32_t shard_of(uint32_t table_index) { return table_index % kShardCount; }
 
 // =====================================================================
 // The compile-time CKernelId table
@@ -117,17 +144,26 @@ void register_kernel(torch::Library& library) {
     library.impl(name.c_str() + kAtenNamespacePrefix.size(), Kernel::as_cpp_function());
 }
 
+// The condition depends on TableIndex, so the kernel of an operator of a
+// different shard is not instantiated.
+template <uint32_t TableIndex, class Op>
+void register_kernel_of_shard(torch::Library& library) {
+    if constexpr (shard_of(TableIndex) == kShard) register_kernel<TableIndex, Op>(library);
+}
+
 }  // namespace
 }  // namespace crucible::vessel
 
 // The classification is published from here rather than from a separate
-// initializer, so it is in place before any operator this block registers can
-// run and therefore before the background thread can classify one.
+// initializer, so it is in place before any operator that a shard registers can
+// run and therefore before the background thread can classify one.  dlopen of
+// the library runs the block of each shard before it returns.
 TORCH_LIBRARY_IMPL(aten, Crucible, m) {
-    crucible::publish_static_ckernel_table(crucible::vessel::kStaticCKernelTable);
+    if constexpr (crucible::vessel::kShard == 0)
+        crucible::publish_static_ckernel_table(crucible::vessel::kStaticCKernelTable);
 
 #define CRUCIBLE_REGISTER_ATEN_OP(index, op_struct) \
-    ::crucible::vessel::register_kernel<index##u, ::at::_ops::op_struct>(m);
+    ::crucible::vessel::register_kernel_of_shard<index##u, ::at::_ops::op_struct>(m);
     CRUCIBLE_ATEN_OP_LIST(CRUCIBLE_REGISTER_ATEN_OP)
 #undef CRUCIBLE_REGISTER_ATEN_OP
 }

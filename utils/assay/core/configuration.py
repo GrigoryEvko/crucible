@@ -3,9 +3,14 @@
 THE CONFIGURATION
     The name of a configuration is the build kind of a build
     (assay.core.target), for example x86_64-debug-asan.  The name adds -bench
-    when CRUCIBLE_BENCH is on, -fuzz when CRUCIBLE_FUZZ is on and -syntax
-    when CRUCIBLE_SYNTAX_ONLY is on.  A build with CRUCIBLE_SYNTAX_ONLY only
-    parses its units (is_parse_build(), `loop syntax`).
+    when CRUCIBLE_BENCH is on, -fuzz when CRUCIBLE_FUZZ is on, -vessel when
+    CRUCIBLE_REQUIRE_VESSEL is on and -syntax when CRUCIBLE_SYNTAX_ONLY is
+    on.  A build with CRUCIBLE_REQUIRE_VESSEL compiles the vessel units that
+    need PyTorch, because its configure step stops when TORCH_DIR names no
+    PyTorch tree (test/CMakeLists.txt).  A build with CRUCIBLE_SYNTAX_ONLY
+    only parses its units (is_parse_build(), `loop syntax`).  The function
+    _crucible_write_build_kind of cmake/BuildLauncher.cmake writes the same
+    name into build-configuration.txt.
 
     A different configuration compiles other objects or other preprocessor
     arms.  Its findings, its symbols and its totals can then be different.
@@ -26,7 +31,12 @@ from assay.readers import cmake
 # The cache option of a build that only parses its units (is_parse_build()).
 SYNTAX_OPTION = "CRUCIBLE_SYNTAX_ONLY"
 # The options that add a word to the name of a configuration.
-NAME_OPTIONS = (("bench", "CRUCIBLE_BENCH"), ("fuzz", "CRUCIBLE_FUZZ"), ("syntax", SYNTAX_OPTION))
+NAME_OPTIONS = (
+    ("bench", "CRUCIBLE_BENCH"),
+    ("fuzz", "CRUCIBLE_FUZZ"),
+    ("vessel", "CRUCIBLE_REQUIRE_VESSEL"),
+    ("syntax", SYNTAX_OPTION),
+)
 CMAKE_FALSE = frozenset({"", "0", "OFF", "NO", "FALSE", "N", "IGNORE", "NOTFOUND"})
 
 

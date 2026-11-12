@@ -27,6 +27,11 @@ import torch.nn.functional as F
 
 from crucible_mode import CrucibleMode
 
+# One intra-op thread and one inter-op thread.  The instruction count of the
+# test is then the same in each run, and the budgets of the test launcher hold.
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+
 
 def _spin_for(seconds: float) -> None:
     deadline = time.perf_counter() + seconds

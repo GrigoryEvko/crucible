@@ -1,0 +1,9 @@
+# The ledger of the rule step-memory of utils/registry.txt: the items that a row keeps over the limit of their kind,
+# one row for each kind and item, and each row judges each build.  A row is '@build/OUTPUT | KIND | VALUE | - | REASON' with KIND compile or link, or '- | KIND | VALUE | NAME | REASON' with KIND test.  VALUE is the kept value, in
+# GB.  A row keeps its item up to VALUE with the noise of its unit (THE NOISE of utils/assay/core/budget.py).
+# `python3 utils/bin/guard explain step-memory` tells the rule, and `python3 utils/bin/guard write --rule step-memory
+# --build-dir DIR --reason TEXT` writes a new row or a higher VALUE.
+format 1
+rule step-memory
+- | test | 1.638 | vessel_test_replay_equivalence | attach() loads the PyTorch dispatch library and makes a Vigil with its fixed buffers.  The first workload alone takes the peak to 1.585 GB, so a split of the workloads gives no smaller test
+@build/lib/libcrucible_dispatch.so | link | 2.623 | - | The link of the PyTorch dispatch library reads the 96 shard objects of vessel/torch/register.cpp, and each object holds the debug information of the PyTorch headers again

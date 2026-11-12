@@ -20,11 +20,13 @@ set_target_properties(crucible_vessel PROPERTIES
 # Builds libcrucible_dispatch.so: registers TORCH_LIBRARY_IMPL fallback
 # for DispatchKey::Crucible.  Loaded via torch.ops.load_library().
 #
-# Only built when TORCH_DIR is set (path to PyTorch source tree with
-# DispatchKey::Crucible + CrucibleState TLS).  Example:
-#   cmake -DTORCH_DIR=~/Downloads/pytorch ...
+# The build has this library only when TORCH_DIR names a directory with
+# torch/include and torch/lib of the patched PyTorch, which has
+# DispatchKey::Crucible and the CrucibleState TLS.  The preset vessel gives
+# TORCH_DIR the site-packages directory of the virtual environment .venv-torch:
+#   cmake --preset vessel && cmake --build --preset vessel
 #
-set(TORCH_DIR "" CACHE PATH "Path to PyTorch source tree (fork with DispatchKey::Crucible)")
+set(TORCH_DIR "" CACHE PATH "The directory with torch/include and torch/lib of the patched PyTorch (DispatchKey::Crucible)")
 
 if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
     # register.cpp holds one unboxed recording kernel per ATen operator and the
@@ -33,24 +35,7 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
     # backward-window thread_local, and the metadata bridge in record_kernel.h.
     # Splitting them would give each .so its own copy of the header-only
     # Crucible and its own backward-window counter.
-    add_library(crucible_dispatch SHARED crucible_fallback.cpp register.cpp)
-
-    # crucible is INTERFACE (header-only) — compiles into this target's ABI.
-    # foundation is the sibling substrate's runtime: record_kernel.h binds the
-    # recording step through a ::fixy role, and fixy is an INTERFACE target
-    # over foundation, whose contract handler the binding's own checks reach.
-    target_link_libraries(crucible_dispatch PRIVATE crucible fixy)
-
-    # register.cpp instantiates a kernel for each of the 3110 operators in one
-    # translation unit. The cost changes with the load of the host. On 2026-09-26,
-    # on a loaded host, the Release build of this file used about 10 minutes and
-    # 21 GB of peak resident set. The Debug build with ASan used more than 14
-    # minutes and 25 GB. The pool has depth one, so a -j24 build
-    # cannot schedule this beside another copy of itself and exhaust the
-    # machine. Ninja is the only generator that honours a pool; every other one
-    # ignores the property, which loses the limit but not the build.
-    set_property(GLOBAL APPEND PROPERTY JOB_POOLS crucible_heavy_tu=1)
-    set_property(TARGET crucible_dispatch PROPERTY JOB_POOL_COMPILE crucible_heavy_tu)
+    add_library(crucible_dispatch SHARED crucible_fallback.cpp)
 
     # PyTorch headers from the built fork.
     #
@@ -60,11 +45,42 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
     # compile under it: with plain -I this target produces ~1300 errors
     # from inside c10 and ATen before reaching a line of Crucible code.
     # SYSTEM suppresses warnings from those headers while leaving every
-    # warning armed for crucible_fallback.cpp itself.
-    target_include_directories(crucible_dispatch SYSTEM PRIVATE
+    # warning armed for the vessel sources.
+    add_library(crucible_torch_headers INTERFACE)
+    target_include_directories(crucible_torch_headers SYSTEM INTERFACE
         "${TORCH_DIR}/torch/include"
         "${TORCH_DIR}/torch/include/torch/csrc/api/include"
     )
+
+    # crucible is INTERFACE (header-only) — compiles into this target's ABI.
+    # foundation is the sibling substrate's runtime: record_kernel.h binds the
+    # recording step through a ::fixy role, and fixy is an INTERFACE target
+    # over foundation, whose contract handler the binding's own checks reach.
+    target_link_libraries(crucible_dispatch PRIVATE crucible fixy crucible_torch_headers)
+
+    # register.cpp holds a kernel for each of the 3110 operators.  One compile
+    # of all of them used more than the hard limit of 600 s CPU of a compile
+    # job.  So each shard of register.cpp is an object library of its own, with
+    # the index of its shard, and the dispatch library links the objects of each
+    # shard.  register.cpp divides the operators equally between the shards.
+    # A shard of one operator ran 62.9 G instructions on 2026-11-12, most of
+    # them in the PyTorch headers of record_kernel.h.  Each shard used about
+    # 1.6 GB, so the available memory lets approximately 80 shards compile at one
+    # time.  On 2026-11-12, 144 shards built in 220.7 s at -j 48 and 96 shards
+    # in 144.5 s, so more shards give a longer wall time.  The rows of
+    # utils/ledgers/step-cost.txt keep the shards above the limit of the kind
+    # compile, and each object stays below the limit of the rule object-size.
+    set(_crucible_register_shards 96)
+    math(EXPR _crucible_register_last "${_crucible_register_shards} - 1")
+    foreach(_crucible_shard RANGE 0 ${_crucible_register_last})
+        set(_crucible_shard_target crucible_dispatch_register_${_crucible_shard})
+        add_library(${_crucible_shard_target} OBJECT register.cpp)
+        target_compile_definitions(${_crucible_shard_target} PRIVATE
+            CRUCIBLE_VESSEL_REGISTER_SHARD=${_crucible_shard}
+            CRUCIBLE_VESSEL_REGISTER_SHARDS=${_crucible_register_shards})
+        target_link_libraries(${_crucible_shard_target} PRIVATE crucible fixy crucible_torch_headers)
+        target_link_libraries(crucible_dispatch PRIVATE ${_crucible_shard_target})
+    endforeach()
 
     # ── Stdlib ABI ───────────────────────────────────────────────────
     #

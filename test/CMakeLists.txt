@@ -4812,6 +4812,8 @@ endforeach()
 # as a disabled test.  ctest shows it as "Not Run (Disabled)" with the others
 # that did not run.  A build that must operate the tests sets
 # CRUCIBLE_REQUIRE_VESSEL, and the configure step then stops with the reason.
+# The preset vessel sets it, and the entries `loop nightly` and `loop release`
+# build and test that preset.
 # CRUCIBLE_VESSEL_PYTHON is the interpreter of the PyTorch that TORCH_DIR
 # names.  The default is the interpreter of the virtual environment that
 # holds TORCH_DIR, when one exists.
@@ -4828,8 +4830,8 @@ elseif(NOT CRUCIBLE_WERROR)
   set(_vessel_blocker "the build sets CRUCIBLE_WERROR to OFF, and the vessel tests accept only a -Werror build")
 endif()
 if(_vessel_blocker AND CRUCIBLE_REQUIRE_VESSEL)
-  message(FATAL_ERROR "vessel tests: ${_vessel_blocker}.  Set CRUCIBLE_REQUIRE_VESSEL=OFF, or configure a build "
-                      "of the release or bench preset with -DTORCH_DIR=<the PyTorch fork>.")
+  message(FATAL_ERROR "vessel tests: ${_vessel_blocker}.  Set CRUCIBLE_REQUIRE_VESSEL=OFF, or configure the "
+                      "preset vessel, whose TORCH_DIR is the site-packages directory of .venv-torch.")
 endif()
 if(NOT "${TORCH_DIR}" STREQUAL "")
   get_filename_component(_vessel_venv_python "${TORCH_DIR}/../../../bin/python" ABSOLUTE)

@@ -328,8 +328,8 @@ HOLDERS = {
 # (THE COVERS).
 MANUAL = {
     (Kind.DERIVE, "aten-ops"): (
-        "The target reads a PyTorch tree with the dispatch key of Crucible from TORCH_DIR, and no host of an entry has "
-        "such a tree.  A person runs it with TORCH_DIR set"
+        "The target reads native_functions.yaml of the source tree of the patched PyTorch, and no file or pin of the "
+        "tree names that source tree.  A person runs it with --torch-dir and --pytorch-src"
     ),
 }
 ENTRY_COMMANDS = ("land", "nightly", "release", "syntax", "test")
