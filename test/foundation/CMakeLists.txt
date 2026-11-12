@@ -2149,6 +2149,75 @@ foundation_neg_compile_test(neg_core_enum_from_no_enumerator
   "no matching function for call to .enum_from<Strong>\\(int\\)."
   "the expression .has_enumerators\\(.*\\(\\^\\^ E\\) \\[with E = Strong\\]. evaluated to .false.")
 
+# The gates of a number and the arithmetic.  bool, a character type and
+# long double are no number of the family.  The two operands of an
+# operation have one type, and widening_mul takes unsigned operands.
+foundation_test(test_core_scalar_arith)
+
+foundation_neg_compile_test(neg_core_scalar_max_of_bool
+  "use of invalid variable template .max_of<bool>."
+  "required for the satisfaction of .Arithmetic<T>. \\[with T = bool\\]")
+foundation_neg_compile_test(neg_core_scalar_max_of_char
+  "use of invalid variable template .max_of<char>."
+  "required for the satisfaction of .Arithmetic<T>. \\[with T = char\\]")
+foundation_neg_compile_test(neg_core_scalar_epsilon_of_long_double
+  "use of invalid variable template .epsilon_of<long double>."
+  "required for the satisfaction of .Float<T>. \\[with T = long double\\]")
+foundation_neg_compile_test(neg_core_scalar_epsilon_of_integer
+  "use of invalid variable template .epsilon_of<int>."
+  "required for the satisfaction of .Float<T>. \\[with T = int\\]")
+foundation_neg_compile_test(neg_core_scalar_checked_add_char
+  "no matching function for call to .checked_add\\(char, char\\)."
+  "the expression .!\\(same_as<T, char>\\) \\[with T = char\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_scalar_checked_add_mixed
+  "no matching function for call to .checked_add\\(int, unsigned int\\)."
+  "deduced conflicting types for parameter .T. \\(.int. and .unsigned int.\\)")
+foundation_neg_compile_test(neg_core_scalar_gcd_float
+  "no matching function for call to .gcd\\(double, double\\)."
+  "required for the satisfaction of .Integer<T>. \\[with T = double\\]")
+foundation_neg_compile_test(neg_core_scalar_widening_mul_signed
+  "no matching function for call to .widening_mul\\(int, int\\)."
+  "the expression .is_unsigned_v<T> \\[with T = int\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_scalar_wide_product_signed
+  "template constraint failure for .template<class T>  requires  UnsignedInteger<T> struct foundation::core::WideProduct."
+  "the expression .is_unsigned_v<T> \\[with T = int\\]. evaluated to .false.")
+
+# Compare, select and convert.  compare takes two integers, a Bounds comes
+# only from its two doors, widen takes only a pair whose values all fit, and
+# narrow gives an integer.
+foundation_test(test_core_scalar_convert)
+
+foundation_neg_compile_test(neg_core_scalar_compare_float
+  "no matching function for call to .compare\\(double, double\\)."
+  "required for the satisfaction of .Integer<Left>. \\[with Left = double\\]")
+foundation_neg_compile_test(neg_core_scalar_compare_bool
+  "no matching function for call to .compare\\(bool, int\\)."
+  "the expression .!\\(same_as<T, bool>\\) \\[with T = bool\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_scalar_bounds_swapped
+  "no matching function for call to .bounds<10, 0>\\(\\)."
+  "the expression .Lo <= Hi \\[with Lo = 10; Hi = 0\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_scalar_bounds_nan
+  "no matching function for call to .bounds<foundation::core::quiet_nan_of<double>, 1.0e\\+0>\\(\\)."
+  "the expression .Lo <= Hi \\[with Lo = \\+QNaN; Hi = 1.0e\\+0\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_scalar_bounds_constructor
+  ".constexpr foundation::core::Bounds<T>::Bounds\\(T, T\\) \\[with T = int\\]. is private within this context"
+  "neg_core_scalar_bounds_constructor.cpp:8:")
+foundation_neg_compile_test(neg_core_scalar_bounds_decode
+  "no matching function for call to .decode<foundation::core::Bounds<int> >\\(const uint64_t&\\)."
+  "the expression .is_plain_at\\(.*\\(\\^\\^ To, 0\\) \\[with To = foundation::core::Bounds<int>\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_scalar_widen_signed_to_unsigned
+  "no matching function for call to .widen<unsigned int>\\(int\\)."
+  "the expression .fits_each_value_in\\(.*\\(\\^\\^ From, \\^\\^ To\\) \\[with From = int; To = unsigned int\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_scalar_widen_to_narrower
+  "no matching function for call to .widen<uint8_t>\\(unsigned int\\)."
+  "the expression .fits_each_value_in\\(.*\\(\\^\\^ From, \\^\\^ To\\) \\[with From = unsigned int; To = unsigned char\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_scalar_narrow_to_float
+  "no matching function for call to .narrow<double>\\(int\\)."
+  "required for the satisfaction of .Integer<To>. \\[with To = double\\]")
+foundation_neg_compile_test(neg_core_scalar_unsigned_abs_unsigned
+  "no matching function for call to .unsigned_abs\\(unsigned int\\)."
+  "the expression .is_signed_v<T> \\[with T = unsigned int\\]. evaluated to .false.")
+
 # ── The Region family: View, copy and fill ────────────────────────────
 #
 # A View borrows a run of objects with a fixed or a dynamic extent.  A

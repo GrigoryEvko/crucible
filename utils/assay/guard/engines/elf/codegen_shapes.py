@@ -572,6 +572,73 @@ PROBES: tuple[Probe, ...] = (
         "path, these flags add a copy of the value and a second bounds compare of the copy, with a branch to a trap",
         checks=("fatal",),
     ),
+    # The Scalar family.
+    Probe(
+        "scalar_checked_add",
+        "checked_add of a value of four bytes is the add and the carry flag of the raw form, and the Option comes back "
+        "in one register, as std::optional does",
+    ),
+    Probe(
+        "scalar_checked_add_wide",
+        "checked_add of a word is the add and the carry flag of the raw form.  The full Option comes back in two "
+        "registers with no store, and std::optional goes through the stack on each path.  The empty path writes the "
+        "zero words of the empty alternative of the Option to the stack and reads them back, so the family side can "
+        "have more instructions, and at -O1 the targets of the branches are different.  "
+        f"{HARDENED_BUILDS}.  These flags add a second test of each edge, with a branch to a trap",
+        branches=True,
+    ),
+    Probe(
+        "scalar_checked_div",
+        "checked_div is the tests of the raw form and one idiv.  The family puts the path of a zero divisor out of line "
+        "and gives the Option back in a register, and the raw form puts the other path out of line, so the targets of "
+        f"the branches are different.  {HARDENED_BUILDS}.  These flags add a second test of each edge, with a branch "
+        "to a trap",
+        branches=True,
+    ),
+    Probe("scalar_wrapping_shl", "wrapping_shl is one shl, because the shl instruction takes its count modulo 64"),
+    Probe(
+        "scalar_saturating_add",
+        "saturating_add is the add and the clamp of std::saturating_add.  The family keeps the exact result on the "
+        "fall-through path with no taken jump, and std::saturating_add jumps to it, so the targets of the branches "
+        f"are different.  {HARDENED_BUILDS}.  These flags add a second test of each edge, with a branch to a trap, "
+        "and a copy of a register",
+        branches=True,
+    ),
+    Probe("scalar_widening_mul", "widening_mul is one mul, and the low and the high half come back in rax and rdx"),
+    Probe("scalar_min_float", "min of two doubles is the one compare and the one select of std::min"),
+    Probe(
+        "scalar_clamp_bounds",
+        "clamp of a Bounds is the two compares and the two cmov of std::clamp, with no branch.  The family tests hi "
+        "first, so a NaN gives lo, and at -O3 the order of the registers costs one more mov",
+        longer=1,
+    ),
+    Probe(
+        "scalar_compare_mixed",
+        "is_lt(compare(a, b)) of a signed and an unsigned value is the sign test and the compare of std::cmp_less at "
+        "-O3.  compare tests less first, and each other order is not less, so -O3 removes the test of greater.  At "
+        "-O1 GCC keeps that test, with its branches",
+        branches=True,
+    ),
+    Probe("scalar_fits", "fits is the one range compare of std::in_range"),
+    Probe("scalar_unsigned_abs", "unsigned_abs is the negation and the select of the raw form"),
+    Probe(
+        "scalar_narrow_checked",
+        "narrow of a word is the one range test of the raw form, and the Option comes back in one register.  The raw "
+        "form builds std::optional on the stack, so the family side has fewer instructions.  The two forms put a "
+        f"different path out of line, so the targets of their branches are different.  {HARDENED_BUILDS}.  These "
+        "flags add a second test of each edge, with a branch to a trap",
+        branches=True,
+    ),
+    Probe(
+        "scalar_narrow_float",
+        "narrow of a double is the two compares of the range and the cvttsd2si of the raw form, and the Option comes "
+        "back in one register.  The raw form builds std::optional on the stack, so the family side has fewer "
+        "instructions.  The two forms put a different path out of line, so the targets of their branches are "
+        f"different.  {HARDENED_BUILDS}.  These flags add a second test of each edge, with a branch to a trap",
+        branches=True,
+    ),
+    Probe("scalar_narrow_saturating", "saturating_narrow is the two compares and the two selects of the raw clamp"),
+    Probe("scalar_widen", "widen is the zero extension of the raw form, with no check"),
     Probe("linear_consume", "the ABI passes a Linear in a register, as it passes its value, and consume is a move"),
     Probe("linear_assign", "the user-provided move assignment of a Linear is the store of its value"),
     Probe("token_pass", "a token is empty and its move constructor is trivial, so a pass moves no byte"),

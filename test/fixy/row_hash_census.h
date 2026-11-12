@@ -898,6 +898,10 @@ inline constexpr StatedZero kZeros[] = {
      "an owned buffer of characters: it holds storage and makes no claim about what the characters hold"},
     {^^::foundation::core::Truncated,
      "the error of a format() whose text needs more than its buffer: it holds nothing"},
+    // The Scalar family.
+    {^^::foundation::core::WideProduct, kPayload},
+    {^^::foundation::core::Bounds,
+     "a proof that a range has lo <= hi and no NaN: the argument of clamp, never a value in a kernel signature"},
     {^^::foundation::core::SurfaceVerdict,
      "the answer of the protocol check of a family type: a text of a constant evaluation, never a value in a "
      "kernel signature"},

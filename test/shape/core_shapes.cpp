@@ -31,9 +31,13 @@
 #include <cstdint>
 #include <cstring>
 
+#include <algorithm>
 #include <atomic>
+#include <compare>
 #include <expected>
+#include <limits>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <utility>
 
@@ -266,6 +270,64 @@ result_try_convert(fixy::Result<std::uint32_t, Code8> result) noexcept {
     }
 }
 
+// ── Scalar ──────────────────────────────────────────────────────────────────
+
+// fixy/Checked.h holds the names of the three arithmetic sets until slice
+// 4.10, so the probes call the family in foundation::core.
+[[gnu::used]] fixy::Option<std::uint32_t> scalar_checked_add(std::uint32_t left, std::uint32_t right) noexcept {
+    return ::foundation::core::checked_add(left, right);
+}
+
+// An Option of a word has 16 bytes, and it comes back in two registers.
+[[gnu::used]] fixy::Option<std::uint64_t> scalar_checked_add_wide(std::uint64_t left, std::uint64_t right) noexcept {
+    return ::foundation::core::checked_add(left, right);
+}
+
+[[gnu::used]] fixy::Option<std::int32_t> scalar_checked_div(std::int32_t dividend, std::int32_t divisor) noexcept {
+    return ::foundation::core::checked_div(dividend, divisor);
+}
+
+[[gnu::used]] std::uint64_t scalar_wrapping_shl(std::uint64_t value, int count) noexcept {
+    return ::foundation::core::wrapping_shl(value, count);
+}
+
+[[gnu::used]] std::int64_t scalar_saturating_add(std::int64_t left, std::int64_t right) noexcept {
+    return ::foundation::core::saturating_add(left, right);
+}
+
+[[gnu::used]] ::foundation::core::WideProduct<std::uint64_t> scalar_widening_mul(std::uint64_t left,
+                                                                                 std::uint64_t right) noexcept {
+    return ::foundation::core::widening_mul(left, right);
+}
+
+[[gnu::used]] double scalar_min_float(double left, double right) noexcept { return fixy::min(left, right); }
+
+[[gnu::used]] std::int32_t scalar_clamp_bounds(std::int32_t value, fixy::Bounds<std::int32_t> range) noexcept {
+    return fixy::clamp(value, range);
+}
+
+[[gnu::used]] bool scalar_compare_mixed(std::int64_t left, std::uint64_t right) noexcept {
+    return std::is_lt(fixy::compare(left, right));
+}
+
+[[gnu::used]] bool scalar_fits(std::int32_t value) noexcept { return fixy::fits<std::uint8_t>(value); }
+
+[[gnu::used]] std::uint32_t scalar_unsigned_abs(std::int32_t value) noexcept { return fixy::unsigned_abs(value); }
+
+[[gnu::used]] fixy::Option<std::uint32_t> scalar_narrow_checked(std::uint64_t value) noexcept {
+    return fixy::narrow<std::uint32_t>(value);
+}
+
+[[gnu::used]] fixy::Option<std::int32_t> scalar_narrow_float(double value) noexcept {
+    return fixy::narrow<std::int32_t>(value);
+}
+
+[[gnu::used]] std::int16_t scalar_narrow_saturating(std::int64_t value) noexcept {
+    return fixy::saturating_narrow<std::int16_t>(value);
+}
+
+[[gnu::used]] std::uint64_t scalar_widen(std::uint32_t value) noexcept { return fixy::widen<std::uint64_t>(value); }
+
 // ── Linear and the permission tokens ────────────────────────────────────────
 
 struct ProbeRegion final {
@@ -455,6 +517,82 @@ result_try_convert_raw(std::expected<std::uint32_t, Code8> result) noexcept {
             std::unreachable();
     }
 }
+
+[[gnu::used]] std::optional<std::uint32_t> scalar_checked_add_raw(std::uint32_t left, std::uint32_t right) noexcept {
+    std::uint32_t sum = 0;
+    if (__builtin_add_overflow(left, right, &sum)) return std::nullopt;
+    return sum;
+}
+
+[[gnu::used]] std::optional<std::uint64_t> scalar_checked_add_wide_raw(std::uint64_t left,
+                                                                       std::uint64_t right) noexcept {
+    std::uint64_t sum = 0;
+    if (__builtin_add_overflow(left, right, &sum)) return std::nullopt;
+    return sum;
+}
+
+[[gnu::used]] std::optional<std::int32_t> scalar_checked_div_raw(std::int32_t dividend, std::int32_t divisor) noexcept {
+    if (divisor == 0 || (dividend == std::numeric_limits<std::int32_t>::min() && divisor == -1)) return std::nullopt;
+    return dividend / divisor;
+}
+
+[[gnu::used]] std::uint64_t scalar_wrapping_shl_raw(std::uint64_t value, int count) noexcept {
+    return value << (static_cast<unsigned>(count) & 63u);
+}
+
+[[gnu::used]] std::int64_t scalar_saturating_add_raw(std::int64_t left, std::int64_t right) noexcept {
+    return std::saturating_add(left, right);
+}
+
+struct RawWideProduct final {
+    std::uint64_t low;
+    std::uint64_t high;
+};
+
+[[gnu::used]] RawWideProduct scalar_widening_mul_raw(std::uint64_t left, std::uint64_t right) noexcept {
+    __extension__ using Wide = unsigned __int128;
+    Wide const product = static_cast<Wide>(left) * static_cast<Wide>(right);
+    return RawWideProduct{static_cast<std::uint64_t>(product), static_cast<std::uint64_t>(product >> 64)};
+}
+
+[[gnu::used]] double scalar_min_float_raw(double left, double right) noexcept { return std::min(left, right); }
+
+struct RawBounds final {
+    std::int32_t lo;
+    std::int32_t hi;
+};
+
+[[gnu::used]] std::int32_t scalar_clamp_bounds_raw(std::int32_t value, RawBounds range) noexcept {
+    return std::clamp(value, range.lo, range.hi);
+}
+
+[[gnu::used]] bool scalar_compare_mixed_raw(std::int64_t left, std::uint64_t right) noexcept {
+    return std::cmp_less(left, right);
+}
+
+[[gnu::used]] bool scalar_fits_raw(std::int32_t value) noexcept { return std::in_range<std::uint8_t>(value); }
+
+[[gnu::used]] std::uint32_t scalar_unsigned_abs_raw(std::int32_t value) noexcept {
+    return value < 0 ? 0u - static_cast<std::uint32_t>(value) : static_cast<std::uint32_t>(value);
+}
+
+[[gnu::used]] std::optional<std::uint32_t> scalar_narrow_checked_raw(std::uint64_t value) noexcept {
+    if (value > std::numeric_limits<std::uint32_t>::max()) return std::nullopt;
+    return static_cast<std::uint32_t>(value);
+}
+
+[[gnu::used]] std::optional<std::int32_t> scalar_narrow_float_raw(double value) noexcept {
+    if (!(value > -2147483649.0 && value < 2147483648.0)) return std::nullopt;
+    return static_cast<std::int32_t>(value);
+}
+
+[[gnu::used]] std::int16_t scalar_narrow_saturating_raw(std::int64_t value) noexcept {
+    if (value < std::numeric_limits<std::int16_t>::min()) return std::numeric_limits<std::int16_t>::min();
+    if (value > std::numeric_limits<std::int16_t>::max()) return std::numeric_limits<std::int16_t>::max();
+    return static_cast<std::int16_t>(value);
+}
+
+[[gnu::used]] std::uint64_t scalar_widen_raw(std::uint32_t value) noexcept { return value; }
 
 // The raw form of a token is an empty class that the ABI passes in no
 // register.

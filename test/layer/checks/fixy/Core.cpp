@@ -2,6 +2,7 @@
 
 #include <fixy/Core.h>
 
+#include <cstdint>
 #include <type_traits>
 #include <utility>
 
@@ -31,5 +32,20 @@ static_assert(::fixy::dynamic_extent == ::foundation::core::dynamic_extent);
 static_assert(std::is_same_v<::fixy::Site, ::foundation::core::Site>);
 static_assert(std::is_same_v<::fixy::Fmt<>, ::foundation::core::Fmt<>>);
 static_assert(noexcept(::fixy::fatal("a text of a report")) && noexcept(::fixy::unreachable()));
+// The Scalar family.
+static_assert(::fixy::Integer<int> && !::fixy::Integer<bool> && ::fixy::Float<double> && ::fixy::Arithmetic<float>);
+static_assert(::fixy::SignedInteger<long> && ::fixy::UnsignedInteger<unsigned char>);
+static_assert(::fixy::fits_each_value<std::uint8_t, int> && !::fixy::fits_each_value<int, std::uint8_t>);
+static_assert(::fixy::max_of<int> == 2147483647 && ::fixy::epsilon_of<double> > 0.0);
+static_assert(::fixy::bits_of<std::uint16_t> == 16 && ::fixy::value_bits_of<std::int16_t> == 15);
+static_assert(::fixy::min_of<std::int8_t> == -128 && ::fixy::gcd(12, 18) == 6u);
+static_assert(std::is_same_v<::fixy::WideProduct<unsigned>, ::foundation::core::WideProduct<unsigned>>);
+static_assert(::fixy::widening_mul(std::uint8_t{16}, std::uint8_t{16}).high == 1);
+static_assert(::fixy::min(2, 3) == 2 && ::fixy::max(2, 3) == 3 && ::fixy::clamp(9, ::fixy::bounds<0, 5>()) == 5);
+static_assert(std::is_same_v<::fixy::Bounds<int>, ::foundation::core::Bounds<int>>);
+static_assert(::fixy::compare(-1, 1u) < 0 && ::fixy::fits<std::uint8_t>(255) && !::fixy::fits<std::uint8_t>(256));
+static_assert(::fixy::unsigned_abs(-3) == 3u && ::fixy::abs_diff(2, 7) == 5u);
+static_assert(::fixy::narrow<std::uint8_t>(300).is_none() && ::fixy::wrapping_narrow<std::uint8_t>(300) == 44);
+static_assert(::fixy::saturating_narrow<std::uint8_t>(300) == 255 && ::fixy::widen<long>(3) == 3);
 
 }  // namespace fixy::detail::core_checks

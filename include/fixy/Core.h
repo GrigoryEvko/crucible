@@ -14,9 +14,13 @@
 // foundation::core.  A specialization through a using-declaration is not
 // valid C++.
 
+#include <foundation/core/Arithmetic.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Compare.h>
+#include <foundation/core/Convert.h>
 #include <foundation/core/Format.h>
+#include <foundation/core/Number.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
@@ -67,5 +71,45 @@ using ::foundation::core::View;
 
 using ::foundation::core::decode;
 using ::foundation::core::enum_from;
+
+using ::foundation::core::Arithmetic;
+using ::foundation::core::fits_each_value;
+using ::foundation::core::Float;
+using ::foundation::core::Integer;
+using ::foundation::core::SignedInteger;
+using ::foundation::core::UnsignedInteger;
+
+using ::foundation::core::bits_of;
+using ::foundation::core::epsilon_of;
+using ::foundation::core::infinity_of;
+using ::foundation::core::max_of;
+using ::foundation::core::min_normal_of;
+using ::foundation::core::min_of;
+using ::foundation::core::min_subnormal_of;
+using ::foundation::core::quiet_nan_of;
+using ::foundation::core::signaling_nan_of;
+using ::foundation::core::value_bits_of;
+
+// The three arithmetic sets checked_*, wrapping_* and saturating_* stay out
+// of namespace fixy, because fixy/Checked.h declares the same names there
+// with the same parameters.
+using ::foundation::core::gcd;
+using ::foundation::core::WideProduct;
+using ::foundation::core::widening_mul;
+
+using ::foundation::core::abs_diff;
+using ::foundation::core::Bounds;
+using ::foundation::core::bounds;
+using ::foundation::core::clamp;
+using ::foundation::core::compare;
+using ::foundation::core::fits;
+using ::foundation::core::max;
+using ::foundation::core::min;
+using ::foundation::core::unsigned_abs;
+
+using ::foundation::core::narrow;
+using ::foundation::core::saturating_narrow;
+using ::foundation::core::widen;
+using ::foundation::core::wrapping_narrow;
 
 }  // namespace fixy

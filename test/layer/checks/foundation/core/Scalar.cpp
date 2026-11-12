@@ -2,6 +2,10 @@
 
 #include <foundation/core/Scalar.h>
 
+#include <foundation/core/Arithmetic.h>
+#include <foundation/core/Compare.h>
+#include <foundation/core/Verbs.h>
+
 #include <cstdint>
 
 namespace foundation::core {
@@ -186,6 +190,27 @@ static_assert(decodes_nested_parts());
 // A level that names no enumerator, and a bool byte of 3.
 static_assert(decode<Nested>(Triple{0x0905, 0x0501, 0}).is_none());
 static_assert(decode<Nested>(Triple{0x09FE, 0x0503, 0}).is_none());
+
+// ── The closed surface ────────────────────────────────────────────────
+
+// The family list of plan section 11.7: each name of the API table and of
+// the gates, and the accessors lo and hi of Bounds and the halves low and
+// high of WideProduct, which the design of the unit gives.
+inline constexpr TextView scalar_names{
+    "Integer SignedInteger UnsignedInteger Float Arithmetic Enumerated DecodableFrom BitValid fits_each_value "
+    "max_of min_of bits_of value_bits_of min_normal_of min_subnormal_of epsilon_of infinity_of quiet_nan_of "
+    "signaling_nan_of min max Bounds of lo hi bounds clamp compare fits unsigned_abs abs_diff narrow "
+    "wrapping_narrow saturating_narrow widen enum_from checked_add checked_sub checked_mul checked_div checked_rem "
+    "checked_neg checked_shl checked_shr wrapping_add wrapping_sub wrapping_mul wrapping_neg wrapping_shl "
+    "wrapping_shr saturating_add saturating_sub saturating_mul gcd widening_mul WideProduct low high popcount "
+    "countl_zero countr_zero countl_one countr_one bit_width has_single_bit bit_floor bit_ceil rotl rotr low_mask "
+    "byteswap bit_cast decode is_nan is_inf is_finite is_normal sign_bit abs copy_sign sqrt fma total_key exchange "
+    "swap Philox4x32 generate Id raw Digest Quantity convert niche_empty is_niche_empty"};
+
+CRUCIBLE_CLOSED_SURFACE(scalar_names, WideProduct<std::uint8_t>);
+CRUCIBLE_CLOSED_SURFACE(scalar_names, WideProduct<std::uint64_t>);
+CRUCIBLE_CLOSED_SURFACE(scalar_names, Bounds<int>);
+CRUCIBLE_CLOSED_SURFACE(scalar_names, Bounds<double>);
 
 }  // namespace detail::scalar_checks
 
