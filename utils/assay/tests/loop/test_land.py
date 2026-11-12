@@ -17,6 +17,8 @@ a red branch, or a branch that moves.  The cases count the runs of the gate
 of each batch.  They cut a batch at a second change of a C++ file.  They drop
 a request when its process goes from the queue.  They land the falls of the
 gate.  The verdict of a landed request must name each flaky test of its run.
+A red run that a green run of the same tree does not repeat must land its
+request, with a line that names the problem as flaky.
 
 An own path can hold a file that an earlier request changes.  Such a request
 must not compose, in a batch and after a swap.  The holder must give each
@@ -437,9 +439,9 @@ def batch_cases(expect: testing.Expect) -> None:
                 and sum(land.LANDED in record.results for record in records) == 1,
             )
         expect(
-            "with the run of the base, the search needs 4 runs for a red request at the first or the last position, "
-            "and 5 runs at the second",
-            counts == {1: 4, 2: 5, 3: 4},
+            f"with the run of the base and the runs of the confirmation, the search needs 5 runs for a red request at "
+            f"the first position, 7 at the second and 6 at the last: {counts}",
+            counts == {1: 5, 2: 7, 3: 6},
         )
         root = Path(work_text) / "repo-lost"
         planted_repository(root)
@@ -475,13 +477,15 @@ def interaction_cases(expect: testing.Expect, work: Path) -> None:
 
     decisions, _ = landed(root, requests, interacting)
     expect(
-        "when only an interaction of two requests is red, the second of the two gets the refusal, and the others land",
+        f"when only an interaction of two requests is red, the second of the two is red again after the first and "
+        f"green alone, so it gets the refusal of an interaction, and the others land, after {len(seen)} runs",
         decisions[2].status == ExitCode.FINDINGS
         and any("test_pair" in line.content for line in decisions[2].lines)
+        and "an interaction" in decisions[2].lines[0].content
         and decisions[1].status == 0
         and decisions[3].status == 0
         and subjects_since(root, head) == ["Add r1", "Add r3"]
-        and len(seen) == 5,
+        and len(seen) == 7,
     )
     root = work / "repo-cut"
     head = planted_repository(root)
@@ -548,10 +552,10 @@ def red_base_cases(expect: testing.Expect) -> None:
         decisions, _ = bare_landing(root, requests, marking(root, ("base.txt", "r2.txt"), seen))
         expect(
             "on a red branch, a batch with a request that repairs it lands the repair and the request after the red "
-            "request, and refuses only the red request with its own problem, after 5 runs of the gate",
+            "request, and refuses only the red request with its own problem, after 7 runs of the gate",
             [decisions[number].status for number in (1, 2, 3)] == [0, ExitCode.FINDINGS, 0]
             and subjects_since(root, red_base) == ["Repair the branch", "Add r3"]
-            and len(seen) == 5
+            and len(seen) == 7
             and not any("red with no request" in line.content for line in decisions[2].lines),
         )
         root = work / "repo-red-lone"
@@ -575,9 +579,12 @@ def red_base_cases(expect: testing.Expect) -> None:
         seen = []
         decisions, _ = bare_landing(root, own_requests(root, (RED,)), marking(root, ("r1.txt",), seen))
         expect(
-            "a lone red request on a green branch gets the run of the base, and its refusal gives its own problem",
-            len(seen) == 2
+            "a lone red request on a green branch gets the run of the base and the run alone, and its refusal gives "
+            "its own problem",
+            len(seen) == 3
             and seen[1][1]
+            and seen[2][1]
+            and seen[2][0].changed == ("r1.txt",)
             and decisions[1].status == ExitCode.FINDINGS
             and any("test_r1.txt" in line.content for line in decisions[1].lines)
             and not any("red with no request" in line.content for line in decisions[1].lines),
@@ -797,11 +804,12 @@ def landing_cases(expect: testing.Expect) -> None:
         marked = request_of(("Rejected",), (land.Edit("own.txt", land.REPLACE, "after", "rejected"),), ("red.txt",))
         decisions, records = landed(root, [marked], marking(root, ("red.txt",), []))
         expect(
-            "a commit that the gate rejects does not land, and its verdict gives the problem",
+            "a commit that the gate rejects does not land, and its verdict gives the problem of its run alone",
             decisions[1].status == ExitCode.FINDINGS
             and git.head(root) == before
             and any("REJECTED" in line.content for line in decisions[1].lines)
-            and records[0].results == (land.REFUSED,),
+            and records[0].results == (land.REJECTED,)
+            and records[-1].results == (land.REFUSED,),
         )
         seen.clear()
         decisions, records = landed(root, [rejected], passing(seen), is_check=True)
@@ -916,6 +924,152 @@ def falls_cases(expect: testing.Expect) -> None:
             and subjects_since(root, head) == ["Add r1", "Add r3"]
             and (root / "utils/ledgers/demo.txt").read_bytes() == FALLEN,
         )
+
+
+def flaky_once(root: Path, name: str, seen: list[tuple[gate.Candidate, bool]]) -> land.Check:
+    """Return a planted gate that rejects the first run of a commit that holds a file, as a flaky test does.
+
+    The gate accepts each other run, and it keeps each call.
+    """
+    reds: list[str] = []
+
+    def check(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+        seen.append((candidate, is_retry))
+        logs = f"/work/logs/run-{len(seen):06d}"
+        if git.show(root, candidate.commit, name) is not None and not reds:
+            reds.append(candidate.commit)
+            return gate.Verdict(
+                ("debug",), (f"debug: red alone too: test_flaky, see {logs}/debug.test.log",), 1.0, logs=logs
+            )
+        return gate.Verdict(("debug",), (), 1.0, logs=logs)
+
+    return check
+
+
+def confirmation_cases(expect: testing.Expect) -> None:
+    """Hold THE CONFIRMATION: a red run that a green run of the same tree does not repeat lands the request."""
+    with tempfile.TemporaryDirectory(prefix="land-confirmation-") as work_text:
+        root = Path(work_text) / "repo-lone"
+        head = planted_repository(root)
+        seen: list[tuple[gate.Candidate, bool]] = []
+        decisions, records = landed(root, own_requests(root, ("one\n",)), flaky_once(root, "r1.txt", seen))
+        noted = [line.content for line in decisions[1].lines if line.content.startswith(land.FLAKY_MARK)]
+        expect(
+            f"a lone request whose red run does not repeat in its run alone lands after the run of the base and the "
+            f"run alone, and its verdict names the problem that did not repeat as flaky: {len(seen)} runs, {noted}",
+            decisions[1].status == 0
+            and subjects_since(root, head) == ["Add r1"]
+            and len(seen) == 3
+            and len(noted) == 1
+            and "test_flaky" in noted[0]
+            and records[-1].results == (land.LANDED,),
+        )
+        root = Path(work_text) / "repo-batch"
+        head = planted_repository(root)
+        seen = []
+        texts = ("one\n", "two\n", "three\n")
+        decisions, _ = landed(root, own_requests(root, texts), flaky_once(root, "r2.txt", seen))
+        statuses = [decisions[number].status for number in (1, 2, 3)]
+        expect(
+            f"a batch whose first run is red only by a flaky test lands each request, and the request that the search "
+            f"judged gets the line of the problem that did not repeat: statuses {statuses}, {len(seen)} runs",
+            statuses == [0, 0, 0]
+            and subjects_since(root, head) == ["Add r1", "Add r2", "Add r3"]
+            and len(seen) == 5
+            and any(line.content.startswith(land.FLAKY_MARK) for line in decisions[3].lines),
+        )
+        dependent_cases(expect, Path(work_text))
+
+
+def dependent_cases(expect: testing.Expect, work: Path) -> None:
+    """Hold THE CONFIRMATION for a request that needs an accepted request, and for a request that cannot run alone."""
+    root = work / "repo-dependent"
+    head = planted_repository(root)
+    seen: list[tuple[gate.Candidate, bool]] = []
+    reds: list[str] = []
+
+    def needing(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+        """Reject r2.txt with no r1.txt, as a test of a module of r1 does, and the first run of r2.txt as a flake."""
+        seen.append((candidate, is_retry))
+        has_first, has_second = (git.show(root, candidate.commit, name) is not None for name in ("r1.txt", "r2.txt"))
+        if has_second and not has_first:
+            return gate.Verdict(("debug",), ("debug: red alone too: test_needs_r1",), 1.0)
+        if has_second and not reds:
+            reds.append(candidate.commit)
+            return gate.Verdict(("debug",), ("debug: red alone too: test_flaky",), 1.0)
+        return gate.Verdict(("debug",), (), 1.0)
+
+    decisions, _ = landed(root, own_requests(root, ("one\n", "two\n")), needing)
+    expect(
+        f"a request that needs an accepted request of the batch and is red by a flake lands, because the red tree "
+        f"runs again with the accepted request: {len(seen)} runs",
+        [decisions[number].status for number in (1, 2)] == [0, 0]
+        and subjects_since(root, head) == ["Add r1", "Add r2"]
+        and len(seen) == 4,
+    )
+    root = work / "repo-no-alone"
+    head = planted_repository(root)
+    first = request_of(("Replace beta",), (land.Edit("shared.txt", land.REPLACE, "beta\n", "gamma\n"),))
+    second = request_of(("Add a line after gamma",), (land.Edit("shared.txt", land.INSERT, "gamma\n", "delta\n"),))
+    seen = []
+
+    def delta(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+        """Reject each commit with the line delta, and accept each other commit."""
+        seen.append((candidate, is_retry))
+        is_red = b"delta" in (git.show(root, candidate.commit, "shared.txt") or b"")
+        return gate.Verdict(("debug",), ("debug: red alone too: test_delta",) if is_red else (), 1.0)
+
+    decisions, _ = landed(root, [first, second], delta)
+    expect(
+        f"a request whose tree is red two times after the accepted part and that does not compose alone gets the "
+        f"refusal, with no run alone: {len(seen)} runs",
+        [decisions[number].status for number in (1, 2)] == [0, ExitCode.FINDINGS]
+        and "does not compose alone" in decisions[2].lines[0].content
+        and subjects_since(root, head) == ["Replace beta"]
+        and len(seen) == 4,
+    )
+    focus_red_branch_cases(expect, work)
+
+
+def focus_red_branch_cases(expect: testing.Expect, work: Path) -> None:
+    """Hold THE CONFIRMATION on a red branch with a planted gate that runs only the focus of a run of the base."""
+    root = work / "repo-focus-red"
+    planted_repository(root)
+    (root / "base.txt").write_text(RED, encoding="utf-8")
+    red_base = git.commit_all(root, "Make the branch red")
+    (root / "base.txt").write_text("repaired\n", encoding="utf-8")
+    (root / "r2.txt").write_text("two\n", encoding="utf-8")
+    seen: list[tuple[gate.Candidate, bool]] = []
+    reds: list[str] = []
+
+    def configured(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+        """Judge two planted configurations: debug is red on a red base.txt, and other on the first run of r2.txt.
+
+        A candidate with a focus runs only the configurations of its focus, as the gate does.
+        """
+        seen.append((candidate, is_retry))
+        ran = {item.configuration for item in candidate.focus} or {"debug", "other"}
+        problems: list[str] = []
+        focus: list[gate.Focus] = []
+        if "debug" in ran and git.show(root, candidate.commit, "base.txt") == RED.encode():
+            problems.append("debug: red alone too: test_base")
+            focus.append(gate.Focus("debug", ("test_base",)))
+        if "other" in ran and git.show(root, candidate.commit, "r2.txt") is not None and not reds:
+            reds.append(candidate.commit)
+            problems.append("other: red alone too: test_flaky")
+            focus.append(gate.Focus("other", ("test_flaky",)))
+        return gate.Verdict(tuple(sorted(ran)), tuple(problems), 1.0, focus=tuple(focus))
+
+    requests = [request_of(("Repair the branch",), own=("base.txt",)), request_of(("Add r2",), own=("r2.txt",))]
+    decisions, _ = bare_landing(root, requests, configured)
+    expect(
+        f"on a red branch, a repair and a request that a flake makes red both land, because the red tree runs again "
+        f"with the repair, and no run alone on the red branch judges the request: {len(seen)} runs",
+        [decisions[number].status for number in (1, 2)] == [0, 0]
+        and subjects_since(root, red_base) == ["Repair the branch", "Add r2"]
+        and len(seen) == 4
+        and seen[1][0].focus == (gate.Focus("other", ("test_flaky",)),),
+    )
 
 
 def flaky_cases(expect: testing.Expect) -> None:
@@ -1220,7 +1374,7 @@ def error_cases(expect: testing.Expect) -> None:
             and bad is not None
             and any(TABLE_ERROR in line.content for line in bad.lines)
             and subjects_since(root, head) == ["Add r1", "Add r3"]
-            and len(seen) == 5
+            and len(seen) == 7
             and seen[1][0].commit == head,
         )
         tip = git.head(root)
@@ -1674,6 +1828,7 @@ def main(argv: list[str]) -> int:
             landing_cases,
             falls_cases,
             flaky_cases,
+            confirmation_cases,
             drop_cases,
             queue_cases,
             error_cases,

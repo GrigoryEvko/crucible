@@ -152,8 +152,8 @@ THE SEARCH
     accepted run adds that half to the accepted part.
 
     A rejected run makes that half the red part.  A red part of one request
-    is red alone on the accepted part, and that request gets the refusal with
-    the problems of its run.  The other requests then compose again on the
+    is red on the accepted part.  THE CONFIRMATION then runs its tree again
+    before a refusal.  The other requests then compose again on the
     accepted part, and the gate tests them as a unit.  When only an
     interaction of two requests is red, the refusal goes to the second of the
     two.
@@ -162,6 +162,39 @@ THE SEARCH
     The branch then holds no commit that the gate did not accept as a unit.
     Each run after the first run of a batch runs `loop test` with the inputs
     that changed (assay.loop.gate).
+
+THE CONFIRMATION
+    One red run does not refuse a request, because a flaky test or a
+    transient error of a tool can make a correct request red.  Before a
+    refusal, the gate runs the red tree again: the request on the accepted
+    part (confirmed()).  Only a tree that is red two times refuses its
+    request.
+      * A green run tells that the problems of the red run did not repeat:
+        they were noise.  The request joins the accepted part with the green
+        run.
+      * A red run refuses the request with the problems of that run.  A test
+        that is red alone too in the two runs then refuses the request.
+    A run of a different tree cannot show that a problem repeats.  An
+    example is a request that needs an accepted request of the batch, such
+    as a test of a module of that request.
+
+    When the accepted part holds requests, the gate then also runs the
+    request alone before its refusal: its commit on the commit of the batch,
+    with no other request, and with the focus of the second red run
+    (assay.loop.gate, THE RUN OF THE BASE).  That run only gives the first
+    line of the refusal: red alone too, or green alone and red after the
+    accepted requests, which is an interaction.  A request that does not
+    compose alone on the commit of the batch, such as an edit of a text that
+    an accepted request writes, gets no run alone.
+
+    A problem that a green run of the same tree did not repeat is a flaky
+    test or a transient error.  The verdict of the request names it with
+    the line FLAKY_MARK (THE FLAKY TESTS).  No retry hides it.
+
+    The confirmation adds one run of the gate to each refusal, and one
+    focused run when the accepted part holds requests.  Each run of the
+    confirmation is a retry, so `loop test` runs only the tests with an
+    input that changed or with no pass, such as the red tests.
 
 THE RUN OF THE BASE
     The first run of a batch can be red, also for a batch of one request.
@@ -191,10 +224,10 @@ THE RUN OF THE BASE
 
     A search on a red branch runs the gate approximately two times for each
     request.  An example is a batch of three requests with one red request.
-    The batch runs the gate 4 times for the first or the last red request,
-    and 5 times for the second red request.  With no red request, the batch
-    runs the gate one time.  On a red branch, it runs the gate 2 times.  One
-    red request alone runs the gate 2 times.
+    With THE CONFIRMATION, the batch runs the gate 5 times for the first red
+    request, 7 times for the second and 6 times for the last.  With no red
+    request, the batch runs the gate one time.  On a red branch, it runs the
+    gate 2 times.  One red request alone runs the gate 3 times.
 
 THE ERROR OF A RUN
     The check of the gate can raise an error on a commit of the batch.  An
@@ -210,7 +243,8 @@ THE ERROR OF A RUN
 
     A run of the gate with no error has no added step.  An error of a run
     after the run of the base is a problem of its commit too.  A transient
-    error then counts as a red run, as a flaky test does.
+    error then counts as a red run, as a flaky test does, and THE
+    CONFIRMATION judges it.
 
 THE FLAKY TESTS
     The gate runs a red test again alone, and a test that is green alone does
@@ -218,7 +252,8 @@ THE FLAKY TESTS
     a test is a flaky test, and no retry hides it.  The verdict of each
     request that lands, or that --check accepts, names each flaky test of
     each accepted run of the gate that holds the request, with the line
-    FLAKY_MARK.  The record of a run gives its flaky tests too.
+    FLAKY_MARK.  The record of a run gives its flaky tests too.  The verdict
+    also names each problem that THE CONFIRMATION judged noise.
 
 THE GATE
     The gate builds and tests a commit in the warm tree of each configuration
@@ -1073,7 +1108,8 @@ class BatchLanding:
 
     The object keeps the runs of the gate, the run that landed, and the run that refused each request, for THE
     RECORD.  It also keeps the requests that wait for the next batch, the dropped requests and the verdicts of the
-    requests that landed.
+    requests that landed.  `noise` keeps the lines of the problems that THE CONFIRMATION judged noise, for each
+    request.
     """
 
     __slots__ = (
@@ -1090,6 +1126,7 @@ class BatchLanding:
         "journal",
         "landed",
         "landed_run",
+        "noise",
         "pause",
         "refused_by",
         "repository",
@@ -1127,6 +1164,7 @@ class BatchLanding:
         self.dropped: dict[int, int] = {}
         self.deferred: list[Queued] = []
         self.landed: dict[int, Decision] = {}
+        self.noise: dict[int, list[Line]] = {}
 
     def tip(self) -> str:
         """Return the commit of the branch of the batch.
@@ -1140,13 +1178,14 @@ class BatchLanding:
             raise LandError(f"the branch {self.branch} holds no commit")
         return commit
 
-    def gate_run(self, chain: Sequence[Link]) -> gate.Verdict:
+    def gate_run(self, chain: Sequence[Link], focus: Sequence[gate.Focus] = ()) -> gate.Verdict:
         """Run the gate on the last commit of a chain, keep the run, and return the verdict.
 
         The first run of the batch runs each test, and each subsequent run runs the tests with an input that changed.
-        An error of the check is a problem of the commit (THE ERROR OF A RUN).
+        A focus runs only the configurations and the tests of the focus (assay.loop.gate, THE RUN OF THE BASE).  An
+        error of the check is a problem of the commit (THE ERROR OF A RUN).
         """
-        candidate = gate.Candidate(self.base, chain[-1].commit, chain_changed(chain))
+        candidate = gate.Candidate(self.base, chain[-1].commit, chain_changed(chain), focus=tuple(focus))
         started = time.monotonic()
         try:
             verdict = self.check(candidate, bool(self.runs))
@@ -1210,11 +1249,11 @@ class BatchLanding:
             parent = link.commit
         return links, lost
 
-    def reject(self, queued: Queued, run: int) -> None:
-        """Give a request that is red alone on the accepted part the refusal, with the problems of its run.
+    def reject(self, queued: Queued, run: int, lead: str = "") -> None:
+        """Give a request that is red on the accepted part the refusal, with the problems of its run.
 
         When each problem of the run is a problem of the run of the base, the first line tells that the branch is red
-        (THE RUN OF THE BASE).
+        (THE RUN OF THE BASE).  A `lead` is the first line, such as the line of an interaction (THE CONFIRMATION).
         """
         self.refused_by[queued.number] = run
         verdict = self.runs[run].verdict
@@ -1222,7 +1261,72 @@ class BatchLanding:
         problems = shown_problems(verdict)
         if problems and problems <= self.base_problems():
             lines.insert(0, self.red_base_line())
+        if lead:
+            lines.insert(0, lead)
         self.decide(queued, refused(ExitCode.FINDINGS, *lines))
+
+    def note_noise(self, queued: Queued, red_run: int, green_run: int) -> None:
+        """Keep a line for each problem of a red run that a green run of the same tree did not repeat (THE CONFIRMATION).
+
+        The holder writes each line, and the verdict of the request gives it (THE FLAKY TESTS).
+        """
+        red, green = self.runs[red_run].verdict, self.runs[green_run].verdict
+        where = f"in {red.logs} " if red.logs else ""
+        again = f" in {green.logs}" if green.logs else ""
+        lines = [
+            Line(
+                f"{FLAKY_MARK}a problem of the run {where}did not repeat in a run of the same tree{again}: {item}", True
+            )
+            for item in red.problems
+        ]
+        for line in lines:
+            check_report.write_line(line.content, is_error=True)
+        self.noise[queued.number] = lines
+
+    def confirmed(self, queued: Queued, accepted: Sequence[Link], red_run: int) -> Link | None:
+        """Run the red tree of a request again before its refusal, and return its link when its red run was noise.
+
+        THE CONFIRMATION gives the rules.  The function gives the refusal of a request whose tree is red two times,
+        and it returns None.  A request with a process that left the queue drops out, with None.
+
+        Args:
+            queued: The request of the red part of one request
+            accepted: The accepted part
+            red_run: The index of the run that made the request the red part
+        """
+        links, lost = self.compose_chain(accepted, [queued])
+        if lost:
+            return None
+        verdict = self.gate_run([*accepted, *links])
+        again_run = len(self.runs) - 1
+        if verdict.is_accepted:
+            self.note_noise(queued, red_run, again_run)
+            return links[0]
+        lead = self.alone_line(queued, accepted, verdict.focus) if accepted else ""
+        self.reject(queued, again_run, lead)
+        return None
+
+    def alone_line(self, queued: Queued, accepted: Sequence[Link], focus: Sequence[gate.Focus]) -> str:
+        """Run the failed checks of a red chain on the request alone, and return the first line of its refusal.
+
+        The run alone is the request on the commit of the batch, with the focus of the second red run (THE
+        CONFIRMATION).  It only gives the words of the refusal: red alone too, or an interaction.
+        """
+        numbers = " ".join(link.queued.name for link in accepted)
+        base = self.base[:SHORT_HASH]
+        try:
+            alone = compose_link(queued, self.base, queued.head or self.base)
+        except LandError, git.GitError:
+            return (
+                f"loop land: REJECTED, the request is red two times after the accepted requests {numbers}, and it "
+                f"does not compose alone on {base}"
+            )
+        if self.gate_run([alone], focus).is_accepted:
+            return (
+                f"loop land: REJECTED, the request is red two times after the accepted requests {numbers}, and green "
+                f"alone on {base}: an interaction"
+            )
+        return f"loop land: REJECTED, the request is red two times after the accepted requests {numbers}, and alone too"
 
     def reject_on_red_base(self, items: Sequence[Queued], batch_run: int) -> None:
         """Give each request the refusal of a branch that is red with no request that repairs it (THE RUN OF THE BASE).
@@ -1269,7 +1373,8 @@ class BatchLanding:
         The index is -1 when the gate accepts no request.  A first run that is red gets THE RUN OF THE BASE.  When
         that run is red, and the first run has each of its problems, each request gets the refusal of a red branch.
         Complexity: one run of the gate when the gate accepts each request.  A batch of n requests with r red
-        requests runs the gate O(r log n) times.  THE RUN OF THE BASE adds one run.
+        requests runs the gate O(r log n) times.  THE RUN OF THE BASE adds one run, and THE CONFIRMATION adds one or
+        two runs for each red request.
         """
         accepted: list[Link] = []
         accepted_run = -1
@@ -1278,8 +1383,11 @@ class BatchLanding:
         red_run = -1
         while pending:
             if red_size == 1:
-                self.reject(pending.pop(0), red_run)
                 red_size = None
+                joined = self.confirmed(pending.pop(0), accepted, red_run)
+                if joined is not None:
+                    accepted.append(joined)
+                    accepted_run = len(self.runs) - 1
                 continue
             take = len(pending) if red_size is None else red_size // 2
             links, lost = self.compose_chain(accepted, pending[:take])
@@ -1307,9 +1415,9 @@ class BatchLanding:
         return accepted, accepted_run
 
     def flaky_lines(self, number: int) -> list[Line]:
-        """Return the line of each flaky test of each accepted run of the gate that holds a request (THE FLAKY TESTS).
+        """Return the lines of the noise of a request and of each flaky test of each accepted run that holds it.
 
-        Complexity: linear in the runs and their flaky tests.
+        THE FLAKY TESTS gives the rules.  Complexity: linear in the runs and their flaky tests.
         """
         found = [
             line
@@ -1317,7 +1425,7 @@ class BatchLanding:
             if number in run.numbers and run.verdict.is_accepted
             for line in flaky_of(run.verdict)
         ]
-        return list(dict.fromkeys(found))
+        return list(dict.fromkeys([*self.noise.get(number, ()), *found]))
 
     def accept_check(self, accepted: Sequence[Link], verdict: gate.Verdict) -> None:
         """Give each request of --check that the gate accepts its verdict.  Nothing lands."""
