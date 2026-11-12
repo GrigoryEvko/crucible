@@ -35,6 +35,9 @@
 //                          and the shapes of the linear and the branded
 //                          types, for the six rules of THE SHAPES
 //         contract.cpp     the contract rule
+//         binding.cpp      the family binding hook: each call of the hook
+//                          of a structured binding, for the rule
+//                          binding-hook
 //
 // THE RULE TABLE
 //     utils/rule-table.txt gives the layers of the base, the headers that
@@ -153,6 +156,9 @@
 //     The rule contract-specifier:
 //     contract-specifier    a `pre` or a `post` contract specifier (in each file
 //                           under the root and in each mode)
+//     The rule binding-hook (binding.cpp, in each mode):
+//     binding-hook          a call of the hook of a structured binding outside
+//                           the initializer of a name of a binding
 //     The rule detsafe-ledger (the seal rows, include.cpp):
 //     sealed-include        an #include of a file under a sealed PREFIX by a
 //                           file of the include closure of its seal ROOT
@@ -712,6 +718,7 @@ struct WitnessRow {
 enum class Rule : std::uint8_t {
     quarantine,
     contract_specifier,
+    binding_hook,
     detsafe_ledger,
     heavy_include,
     layer_boundary,
@@ -860,6 +867,7 @@ enum class Kind : std::uint8_t {
     base_c_library_object,
     base_c_library_call,
     contract_specifier,
+    binding_hook,
     sealed_include,
     sealed_name,
     heavy_include,
@@ -974,6 +982,8 @@ inline const char* rule_name(Rule rule) {
             return "quarantine";
         case Rule::contract_specifier:
             return "contract-specifier";
+        case Rule::binding_hook:
+            return "binding-hook";
         case Rule::detsafe_ledger:
             return "detsafe-ledger";
         case Rule::heavy_include:
@@ -1090,6 +1100,8 @@ inline const char* kind_name(Kind kind) {
             return "base-c-library-call";
         case Kind::contract_specifier:
             return "contract-specifier";
+        case Kind::binding_hook:
+            return "binding-hook";
         case Kind::sealed_include:
             return "sealed-include";
         case Kind::sealed_name:
@@ -1301,6 +1313,8 @@ inline Rule rule_of(Kind kind) {
     switch (kind) {
         case Kind::contract_specifier:
             return Rule::contract_specifier;
+        case Kind::binding_hook:
+            return Rule::binding_hook;
         case Kind::sealed_include:
         case Kind::sealed_name:
             return Rule::detsafe_ledger;
@@ -1435,11 +1449,13 @@ inline Rule rule_of(Kind kind) {
 }
 
 // True for a kind whose finding is an error in each mode: the contract rule,
-// the unit facts and the findings of the rule specialization-home.  No enforce
-// mode changes such a finding, and an opt-out region covers it.
+// the rule binding-hook, the unit facts and the findings of the rule
+// specialization-home.  No enforce mode changes such a finding, and an opt-out
+// region covers it.
 inline bool is_each_mode_kind(Kind kind) {
     switch (kind) {
         case Kind::contract_specifier:
+        case Kind::binding_hook:
         case Kind::contract_semantic:
         case Kind::fast_math_override:
         case Kind::specialization_outside_home:
@@ -1558,6 +1574,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"quarantine", "opted-out"},
     {"quarantine", "region"},
     {"contract-specifier", "contract-specifier"},
+    {"binding-hook", "binding-hook"},
     {"detsafe-ledger", "sealed-include"},
     {"detsafe-ledger", "sealed-name"},
     {"heavy-include", "heavy-include"},
@@ -2561,6 +2578,12 @@ void report_unit_facts();
 void register_contract_rule(const char* plugin_name);
 void walk_contract_namespace(tree ns);
 void report_contract(const Finding& finding);
+
+// binding.cpp: the family binding hook, the rule binding-hook.
+// report_binding_hook() gives the error of one finding of the rule that no
+// region opts out (THE ERRORS of binding.cpp).
+void register_binding_hook(const char* plugin_name);
+void report_binding_hook(const Finding& finding);
 
 // home.cpp: the family home, where a definition or a specialization stands.
 // The place helpers of THE PLACE and THE SITES of home.cpp, which the family

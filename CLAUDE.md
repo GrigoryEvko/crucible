@@ -1172,7 +1172,11 @@ instructions: 0.11% to 0.28% of the compile with the plugin, and 0.15% of their
 sum. The argument `linear-shapes=on` of each compile adds the six rules of the
 shapes of the family linear (§L0). On 2026-11-12, those rules added 5 to 42
 million user instructions to a compile of the same six units: 0.06% to 0.26% of
-the compile with the plugin, and 0.10% of their sum. ccache ignores the paths in the plugin arguments, so
+the compile with the plugin, and 0.10% of their sum. The rule `binding-hook` of
+`utils/tools/quarantine/binding.cpp` reads each body of each compile, with no
+argument. On 2026-11-12, that rule added 4 to 41 million user instructions to a
+compile of six units of 3.2 to 38.9 billion instructions: 0.03% to 0.15% of the
+compile with the plugin, and 0.08% of their sum. ccache ignores the paths in the plugin arguments, so
 the build directories of two work trees share the cache. ccache also hashes
 the enforce rows of the rule table.
 

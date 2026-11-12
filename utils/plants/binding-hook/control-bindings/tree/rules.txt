@@ -1,0 +1,10 @@
+# The rule table of the control control-bindings of the rule binding-hook.  The
+# unit of src/ is quarantined.  The headers of the repository are outside the
+# root of the control, so the table admits the names of the base that the
+# planted code uses.
+
+admit foundation::core | the Record family, whose bindings the planted code makes
+admit foundation::linear | the vocabulary of the linear marker
+admit std::move | a cast to an rvalue reference
+
+quarantine src/

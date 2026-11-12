@@ -1,0 +1,10 @@
+# The rule table of the plant plant-direct-calls of the rule binding-hook.  The
+# unit of src/ is quarantined.  The headers of the repository are outside the
+# root of the plant, so the table admits the names of the base that the
+# planted code uses.
+
+admit foundation::core | the Record family, whose hook the planted code calls
+admit foundation::linear | the vocabulary of the linear marker
+admit std::move | a cast to an rvalue reference
+
+quarantine src/

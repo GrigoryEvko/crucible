@@ -28,8 +28,9 @@
 // kinds, and they are no errors in the mode report (THE BASE KINDS in
 // plugin.h).  The ledger of the rule quarantine counts them.
 //
-// The plugin also applies the contract rule of the tree (contract.cpp), in
-// each mode.  Each build of the tree loads this plugin
+// The plugin also applies the contract rule of the tree (contract.cpp) and the
+// rule binding-hook (binding.cpp), in each mode.  Each build of the tree loads
+// this plugin
 // (utils/tools/quarantine/Quarantine.cmake).
 //
 // THE HOOKS OF THE UNIT
@@ -509,6 +510,8 @@ void report(bool can_add_dependencies) {
         // give an error in each mode.
         if (finding.kind == Kind::contract_specifier && !is_out) {
             report_contract(finding);
+        } else if (finding.kind == Kind::binding_hook && !is_out) {
+            report_binding_hook(finding);
         } else if (rule_of_finding == Rule::specialization_home && !is_out) {
             report_specialization(finding);
         } else if (is_each_mode_kind(finding.kind) && !is_out) {
@@ -701,6 +704,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     register_includes(plugin_info->base_name);
     register_regions(plugin_info->base_name);
     register_contract_rule(plugin_info->base_name);
+    register_binding_hook(plugin_info->base_name);
     register_unit_facts(plugin_info->base_name);
     register_expressions(plugin_info->base_name);
     register_declarations(plugin_info->base_name);

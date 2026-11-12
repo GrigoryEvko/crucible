@@ -115,8 +115,9 @@ THE DERIVED DIAGNOSTICS
     SPECIALIZATION_ERRORS of the rule specialization-home, gives an error.
     The message of the error of each other finding holds
     "quarantine: KIND ENTITY" with a semicolon after the entity.  A finding of the rule
-    contract-specifier gives the error of the contract rule, and a finding of
-    the rule specialization-home gives the text of its kind.  A finding at
+    contract-specifier gives the error of the contract rule, a finding of the
+    rule binding-hook gives the start of its error, and a finding of the rule
+    specialization-home gives the text of its kind.  A finding at
     the line 0, a fact of all the unit, gives an error with no location.
     The key notes=OTHER says that each finding row of OTHER gives a note
     "quarantine: KIND ENTITY" at its location, other than a finding that
@@ -255,8 +256,12 @@ OPTED_OUT = plugin_sections.OPTED_OUT
 REGION = plugin_sections.REGION
 QUARANTINE_RULE = "quarantine"
 CONTRACT_RULE = "contract-specifier"
-# The rules that give an error in each mode for each finding: the contract rule and the rules of the family unit fact.
-EACH_MODE_RULES = frozenset((CONTRACT_RULE, "contract-semantic", "fast-math-override"))
+# The rule binding-hook, and the start of its error (THE ERRORS of utils/tools/quarantine/binding.cpp).
+BINDING_RULE = "binding-hook"
+BINDING_ERROR = "this call names the hook '{entity}' of a structured binding"
+# The rules that give an error in each mode for each finding: the contract rule, the rule binding-hook and the rules
+# of the family unit fact.
+EACH_MODE_RULES = frozenset((CONTRACT_RULE, BINDING_RULE, "contract-semantic", "fast-math-override"))
 # The rule specialization-home, and the start of the error of each of its kinds that is an error in each mode
 # (THE DERIVED DIAGNOSTICS, and THE ERRORS of utils/tools/quarantine/specialization.cpp).  The record open-extension
 # is no error.
@@ -770,6 +775,8 @@ def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: b
         place = f"{finding.file}:{finding.line}" if finding.line > 0 else NO_VALUE
         if finding.rule == CONTRACT_RULE:
             errors.append((place, f"the '{finding.entity}' contract specifier is not permitted in this tree"))
+        elif finding.rule == BINDING_RULE:
+            errors.append((place, BINDING_ERROR.format(entity=finding.entity)))
         elif finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS:
             errors.append((place, SPECIALIZATION_ERRORS[finding.kind].format(entity=finding.entity)))
         else:

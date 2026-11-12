@@ -1,0 +1,7 @@
+# The rule table of the control control-known-gaps of the rule binding-hook.
+# The unit of src/ is quarantined.  The headers of the repository are outside
+# the root of the control, so the table admits the Record family.
+
+admit foundation::core | the Record family, whose hook the planted code calls
+
+quarantine src/

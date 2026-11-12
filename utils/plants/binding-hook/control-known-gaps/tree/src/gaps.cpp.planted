@@ -1,0 +1,27 @@
+// The calls of the hook that the rule does not see.  The front end folds a
+// static_assert, a template argument and a bound of an array while it parses,
+// with no event of an initializer.  Each of these calls gives no line, and a
+// change that sees one of them changes this control.
+#include <foundation/core/Record.h>
+
+namespace planted {
+
+using Pair = ::foundation::core::Record<int, long>;
+
+constexpr Pair constant_pair{1, 2};
+
+static_assert(get<0>(constant_pair) == 1);
+
+template <int Value>
+struct Holder {
+    static constexpr int value = Value;
+};
+
+int template_argument() { return Holder<get<0>(constant_pair)>::value; }
+
+int bound() {
+    int cells[get<0>(constant_pair) + 1]{};
+    return cells[0];
+}
+
+}  // namespace planted

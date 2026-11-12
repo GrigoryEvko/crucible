@@ -38,7 +38,11 @@
 // header name the doors: drop_door and detach_door on a function, and
 // scope_end_door on a class whose destructor releases its resource.  The
 // annotation authority marks a class whose value conveys an authority,
-// which the gate of foundation/effects/Computation.h reads.
+// which the gate of foundation/effects/Computation.h reads.  The annotation
+// binding_hook marks the hook get<I> of a structured binding, such as the
+// hook of foundation/core/Record.h.  Only the initializer of a name of a
+// binding calls such a function, and the rule binding-hook of the plugin
+// refuses each other call.
 //
 // What the trait does not see, stated rather than implied: a lambda
 // capture, because GCC 16 reflects no data member of a closure type, and a
@@ -73,6 +77,10 @@ struct detach_door final {};
 // The annotation of a class whose destructor releases its resource.  The
 // end of the scope of a value of the class is then its named door.
 struct scope_end_door final {};
+
+// The annotation of the hook get<I> of a structured binding.  A direct call
+// on an rvalue moves one part out and drops the other parts.
+struct binding_hook final {};
 
 // The annotation value of a class template whose instances are linear
 // only for some arguments.

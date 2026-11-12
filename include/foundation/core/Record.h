@@ -21,7 +21,9 @@
 // visits each part in order, but GCC 16 gives -Wshadow for each expansion of
 // a destructurable expression, so -Werror refuses it.  The language finds
 // the hook get<I> of a binding through argument-dependent lookup, so the
-// hook is a hidden friend.
+// hook is a hidden friend.  It carries the annotation binding_hook of
+// foundation/Linear.h, and the rule binding-hook of the plugin refuses each
+// call of the hook outside the initializer of a name of a binding.
 //
 // A part is an object type that is not an array, not cv-qualified and not
 // abstract, with a destructor that does not throw.  A part that moves, moves
@@ -61,6 +63,8 @@
 //   pack_concat_t<Ps...>       one Pack of the types of each P, in order
 //   pack_apply_t<Template, P>  Template<Ts...>
 //   pack_unique_v<P>           true when no type is in P two times
+
+#include <foundation/Linear.h>
 
 #include <compare>
 #include <concepts>
@@ -269,17 +273,18 @@ struct Record : detail::RecordCells<std::index_sequence_for<Ts...>, Ts...> {
     // a part type in a declaration.
     template <std::size_t I>
         requires(I < sizeof...(Ts))
-    [[nodiscard]] friend constexpr auto& get(Record& record) noexcept {
+    [[nodiscard]][[= ::foundation::linear::binding_hook{}]] friend constexpr auto& get(Record& record) noexcept {
         return static_cast<detail::RecordCell<I, Ts...[I]>&>(record).part;
     }
     template <std::size_t I>
         requires(I < sizeof...(Ts))
-    [[nodiscard]] friend constexpr auto const& get(Record const& record) noexcept {
+    [[nodiscard]][[= ::foundation::linear::binding_hook{}]] friend constexpr auto const&
+        get(Record const& record) noexcept {
         return static_cast<detail::RecordCell<I, Ts...[I]> const&>(record).part;
     }
     template <std::size_t I>
         requires(I < sizeof...(Ts))
-    [[nodiscard]] friend constexpr auto&& get(Record&& record) noexcept {
+    [[nodiscard]][[= ::foundation::linear::binding_hook{}]] friend constexpr auto&& get(Record&& record) noexcept {
         return std::move(record).template take_part_<I>();
     }
 

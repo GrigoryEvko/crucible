@@ -1,0 +1,8 @@
+# The rule does not see a hook call in a static_assert, in a template argument
+# or in a bound of an array.  The C array is a finding of the rule quarantine,
+# and no line names the rule binding-hook.
+
+compile gaps src/gaps.cpp
+flag gaps -freflection
+exit gaps pass
+finding gaps quarantine c-array-object src/gaps.cpp:23:9 | cells

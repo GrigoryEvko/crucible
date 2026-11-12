@@ -1,0 +1,33 @@
+# Each direct call of the hook of a structured binding is an error in each mode:
+# on an lvalue (line 27), on an rvalue (32), in an initializer that a fold
+# removes from the tree (37), in the hidden variable of a binding (43), in an
+# instance of a template (49), in an initializer of namespace scope (58) and in
+# an immediate function (70).  The opt-out region turns the call on line 63
+# into opted-out.  The second compile shows that a parse with no object gives
+# the same errors.
+
+compile calls src/calls.cpp
+flag calls -freflection
+exit calls fail
+finding calls binding-hook binding-hook src/calls.cpp:27:18 | foundation::core::get
+finding calls binding-hook binding-hook src/calls.cpp:32:18 | foundation::core::get
+finding calls binding-hook binding-hook src/calls.cpp:37:25 | foundation::core::get
+finding calls binding-hook binding-hook src/calls.cpp:43:58 | foundation::core::get
+finding calls binding-hook binding-hook src/calls.cpp:49:18 | foundation::core::get
+finding calls binding-hook binding-hook src/calls.cpp:58:39 | foundation::core::get
+finding calls binding-hook binding-hook src/calls.cpp:70:18 | foundation::core::get
+finding calls quarantine region src/calls.cpp:62:1 | PROBE: the test calls the hook
+finding calls quarantine opted-out src/calls.cpp:63:23 | binding-hook foundation::core::get
+error calls src/calls.cpp:27 | this call names the hook 'foundation::core::get' of a structured binding
+error calls src/calls.cpp:32 | this call names the hook 'foundation::core::get' of a structured binding
+error calls src/calls.cpp:37 | this call names the hook 'foundation::core::get' of a structured binding
+error calls src/calls.cpp:43 | this call names the hook 'foundation::core::get' of a structured binding
+error calls src/calls.cpp:49 | this call names the hook 'foundation::core::get' of a structured binding
+error calls src/calls.cpp:58 | this call names the hook 'foundation::core::get' of a structured binding
+error calls src/calls.cpp:70 | this call names the hook 'foundation::core::get' of a structured binding
+text calls | a direct call is a second form of the access to a part
+text calls | PROBE: reason
+
+compile syntax src/calls.cpp out=no stage=syntax errors=calls notes=calls
+flag syntax -freflection
+exit syntax fail

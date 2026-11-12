@@ -1,0 +1,56 @@
+// A structured binding calls the hook of each name, and gives no finding: a
+// binding of an lvalue, of a const lvalue by reference, of an rvalue, of an
+// rvalue of empty tokens whose initializer folds, and a binding pack in a
+// template.
+#include <foundation/Linear.h>
+#include <foundation/core/Record.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+using Pair = ::foundation::core::Record<int, long>;
+using Tokens = ::foundation::core::Record<Token, Token>;
+
+long lvalue_binding() {
+    Pair pair{1, 2};
+    auto [first, second] = pair;
+    return first + second;
+}
+
+long reference_binding() {
+    Pair const pair{3, 4};
+    auto const& [first, second] = pair;
+    return first + second;
+}
+
+long rvalue_binding() {
+    Pair pair{5, 6};
+    auto [first, second] = std::move(pair);
+    return first + second;
+}
+
+Token token_binding() {
+    Tokens tokens{Token{}, Token{}};
+    auto [left, right] = std::move(tokens);
+    Token kept = std::move(right);
+    static_cast<void>(kept);
+    return std::move(left);
+}
+
+template <class R>
+long pack_sum(R record) {
+    auto [... parts] = std::move(record);
+    return (0L + ... + parts);
+}
+
+long pack_instance() { return pack_sum(Pair{7, 8}); }
+
+}  // namespace planted

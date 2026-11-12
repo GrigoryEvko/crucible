@@ -1,0 +1,75 @@
+// Each direct call of the hook of a structured binding is a finding: a call on
+// an lvalue, a call on an rvalue, a call that a fold removes from the tree, a
+// call in the hidden variable of a binding, a call in an instance of a
+// template, a call in the initializer of a variable of namespace scope and a
+// call in an immediate function.  The opt-out region turns one call into
+// opted-out.
+#include <foundation/Linear.h>
+#include <foundation/Quarantine.h>
+#include <foundation/core/Record.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+using Pair = ::foundation::core::Record<int, long>;
+using Tokens = ::foundation::core::Record<Token, Token>;
+
+int lvalue_call() {
+    Pair pair{1, 2};
+    return get<0>(pair);
+}
+
+long rvalue_call() {
+    Pair pair{3, 4};
+    return get<1>(std::move(pair));
+}
+
+Token folded_call() {
+    Tokens tokens{Token{}, Token{}};
+    Token taken = get<0>(std::move(tokens));
+    return taken;
+}
+
+int hidden_variable() {
+    Pair pair{5, 6};
+    auto [value] = ::foundation::core::Record<int>{get<0>(pair)};
+    return value;
+}
+
+template <class R>
+int generic_call(R& record) {
+    return get<0>(record);
+}
+
+int instance() {
+    Pair pair{7, 8};
+    return generic_call(pair);
+}
+
+constexpr Pair constant_pair{9, 10};
+constexpr int namespace_value = get<0>(constant_pair);
+
+int opted() {
+    Pair pair{11, 12};
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test calls the hook")
+    int value = get<0>(pair);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    return value;
+}
+
+consteval int immediate() {
+    Pair pair{13, 14};
+    return get<0>(pair);
+}
+
+int immediate_call() { return immediate(); }
+
+}  // namespace planted

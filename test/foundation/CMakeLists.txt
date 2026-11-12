@@ -2122,6 +2122,14 @@ foundation_neg_compile_test(neg_core_record_equal_other_types
 foundation_neg_compile_test(neg_core_record_order_other_category
   "no match for .operator<=>. \\(operand types are .const foundation::core::Record<int, SignedOrder>. and .const foundation::core::Record<int, SignedOrder>.\\)"
   "the expression .\\(RecordOrderedPart<Ts> && ...\\) \\[with Ts = \\{int, SignedOrder\\}\\]. evaluated to .false.")
+# The hook get<I> of a binding carries the annotation binding_hook, and the
+# rule binding-hook of the plugin refuses a direct call of it.
+foundation_neg_compile_test(neg_core_record_hook_lvalue_call
+  "neg_core_record_hook_lvalue_call\\.cpp:9:[0-9]+: error: this call names the hook .foundation::core::get. of a structured binding, and only a structured binding calls the hook"
+  "a direct call is a second form of the access to a part, and a call on an rvalue moves one part out")
+foundation_neg_compile_test(neg_core_record_hook_rvalue_call
+  "neg_core_record_hook_rvalue_call\\.cpp:11:[0-9]+: error: this call names the hook .foundation::core::get. of a structured binding, and only a structured binding calls the hook"
+  "a direct call is a second form of the access to a part, and a call on an rvalue moves one part out")
 foundation_neg_compile_test(neg_core_pack_size_not_a_pack
   "use of invalid variable template .pack_size_v<foundation::core::Record<int, long int> >."
   "required for the satisfaction of .PackType<P>. \\[with P = foundation::core::Record<int, long int>\\]")

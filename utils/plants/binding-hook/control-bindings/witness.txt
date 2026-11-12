@@ -1,0 +1,8 @@
+# Each binding calls the hook for each name, and no binding gives a line of the
+# rule binding-hook: an lvalue, a const lvalue by reference, an rvalue, an
+# rvalue of empty tokens whose initializers fold, and a binding pack in an
+# instance of a template.
+
+compile bindings src/bindings.cpp
+flag bindings -freflection
+exit bindings pass
