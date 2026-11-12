@@ -153,7 +153,11 @@ THE RUN OF A CONFIGURATION
          with an input that changed, and each test of a rule that reads a
          build.  The file of --only is in the directory of the logs.
          Then each test that is red runs one more time, alone, one test at
-         a time.  A test that is red alone too rejects the commit.
+         a time.  A test that is red alone too rejects the commit.  A test
+         that is green alone is a flaky test, and no retry hides it: the
+         gate writes its name, and the verdict gives it (Verdict.flaky).
+         The landing writes it in the verdict of each request of the run
+         (assay.loop.land, THE FLAKY TESTS).
          An exit other than 0 with no red test rejects the commit too.  Then
          `guard warnings BUILD`.  The suite holds the ledger checks of the build
          kind, such as the tests guard_plugin and guard_artifact_symbols.
@@ -479,7 +483,7 @@ class Verdict:
     the wait, in the sequence of `configurations`.  `final` is the commit that the gate judged
     last, and `ledgers` holds each ledger that THE REDUCE folded into it.  `final` is "" for a verdict of no commit.
     `logs` is the directory of the logs of the run (THE LOGS).  `focus` gives each configuration with a problem (THE
-    VERDICT).
+    VERDICT).  `flaky` gives each test that was red in the suite and green alone, as CONFIGURATION: TEST.
     """
 
     configurations: tuple[str, ...]
@@ -490,6 +494,7 @@ class Verdict:
     ledgers: tuple[str, ...] = ()
     logs: str = ""
     focus: tuple[Focus, ...] = ()
+    flaky: tuple[str, ...] = ()
 
     @property
     def is_accepted(self) -> bool:
@@ -501,8 +506,8 @@ class Verdict:
 class Outcome:
     """The end of the run of one configuration in a heavy step (THE THREADS, THE STOP).
 
-    `red` holds the tests that were red alone too.  `is_stopped` tells that the stop ended the run, which then has no
-    problem of its own.
+    `red` holds the tests that were red alone too, and `flaky` the tests that were red in the suite and green alone.
+    `is_stopped` tells that the stop ended the run, which then has no problem of its own.
     """
 
     name: str
@@ -510,6 +515,7 @@ class Outcome:
     red: tuple[str, ...]
     seconds: float
     is_stopped: bool
+    flaky: tuple[str, ...] = ()
 
 
 # ── The selection ──────────────────────────────────────────────────────────
@@ -982,6 +988,7 @@ class Gate:
             ledgers,
             str(self.logs),
             tuple(Focus(item.name, item.red) for item in outcomes if item.problems),
+            tuple(dict.fromkeys(f"{item.name}: {name}" for item in outcomes for name in item.flaky)),
         )
 
 
@@ -1232,21 +1239,22 @@ class Step:
 
     def run_objects(
         self, configuration: Configuration, words: Sequence[str], is_again: bool
-    ) -> tuple[list[str], tuple[str, ...]]:
+    ) -> tuple[list[str], tuple[str, ...], tuple[str, ...]]:
         """Do steps 1 and 3 of THE RUN OF A CONFIGURATION for a configuration of objects, and give each problem.
 
         `words` are the words of the mode after `loop test BUILD` (Gate.loop_words()).  A run again after the fold does
         not run RECONFIGURE_RULE.  The run of ALWAYS first builds the target build.ninja when the other configurations
-        wait for it (THE THREADS).  The second result holds the tests that are red alone too.
+        wait for it (THE THREADS).  The second result holds the tests that are red alone too, and the third result the
+        flaky tests: red in the suite and green alone.
         """
         problem = self.configure(configuration)
         if problem is not None:
-            return [problem], ()
+            return [problem], (), ()
         if configuration.name == ALWAYS and not self.always_ready.is_set():
             problem = self.regenerate(configuration)
             self.always_ready.set()
             if problem is not None:
-                return [problem], ()
+                return [problem], (), ()
         build = build_directory(self.gate.tree, configuration)
         report = build / affected.STATE_DIRECTORY / "junit.xml"
         report.unlink(missing_ok=True)
@@ -1259,35 +1267,39 @@ class Step:
             try:
                 statuses = ctest_reader.results(report)
             except ctest_reader.CtestError as problem_text:
-                return [f"{configuration.name}: the test report does not read: {problem_text}"], ()
+                return [f"{configuration.name}: the test report does not read: {problem_text}"], (), ()
         elif status != 0:
-            return [f"{configuration.name}: the build or the test run gives an error, see {logs / log}"], ()
+            return [f"{configuration.name}: the build or the test run gives an error, see {logs / log}"], (), ()
         red = sorted(name for name, test_status in statuses.items() if test_status in RED)
         if status != 0 and not red:
-            return [f"{configuration.name}: `loop test` exits {status} with no red test, see {logs / log}"], ()
+            return [f"{configuration.name}: `loop test` exits {status} with no red test, see {logs / log}"], (), ()
         skipped = sorted(name for name, test_status in statuses.items() if test_status is SKIPPED)
         if skipped:
             self.say(f"loop land: {configuration.name}: {len(skipped)} skipped: {' '.join(skipped)}")
         if red:
             self.say(f"loop land: {configuration.name}: {len(red)} red, each runs again alone")
         still = self.red_alone(configuration, red)
+        flaky = tuple(name for name in red if name not in still)
+        if flaky:
+            self.say(f"loop land: {configuration.name}: FLAKY, red in the suite and green alone: {' '.join(flaky)}")
         if still:
-            return [f"{configuration.name}: red alone too: {' '.join(still)}, see {logs / log}"], tuple(still)
+            return [f"{configuration.name}: red alone too: {' '.join(still)}, see {logs / log}"], tuple(still), flaky
         warnings_log = f"{configuration.name}.warnings.log"
         warnings = [*self.gate.master("guard"), "warnings", str(build)]
         if self.run_logged(warnings, warnings_log, self.environment, proc.TOOL_S):
-            return [f"{configuration.name}: `guard warnings` gives an error, see {logs / warnings_log}"], ()
+            return [f"{configuration.name}: `guard warnings` gives an error, see {logs / warnings_log}"], (), flaky
         if is_again:
-            return [], ()
-        return self.checked(configuration, (RECONFIGURE_RULE,), self.environment), ()
+            return [], (), flaky
+        return self.checked(configuration, (RECONFIGURE_RULE,), self.environment), (), flaky
 
-    def run_of(self, run: Run, is_again: bool, is_retry: bool) -> tuple[list[str], tuple[str, ...]]:
-        """Run one configuration, or its tests again after THE REDUCE, and give each problem and the tests red alone too."""
+    def run_of(self, run: Run, is_again: bool, is_retry: bool) -> tuple[list[str], tuple[str, ...], tuple[str, ...]]:
+        """Run one configuration, or its tests again after THE REDUCE, and give each problem, the tests red alone too,
+        and the flaky tests."""
         configuration = run.configuration
         if configuration.is_parse and is_again:
-            return self.checked(configuration, COUNTED_RULES, self.environment), ()
+            return self.checked(configuration, COUNTED_RULES, self.environment), (), ()
         if configuration.is_parse:
-            return self.run_parse(configuration), ()
+            return self.run_parse(configuration), (), ()
         words = self.gate.loop_words(run, is_retry or is_again)
         return self.run_objects(configuration, words, is_again)
 
@@ -1301,7 +1313,7 @@ class Step:
         self.say(f"loop land: {name}: {'test again' if is_again else run.mode.value}")
         began = time.monotonic()
         try:
-            problems, red = self.run_of(run, is_again, is_retry)
+            problems, red, flaky = self.run_of(run, is_again, is_retry)
         except Stopped:
             seconds = round(time.monotonic() - began, 1)
             self.say(f"loop land: {name}: the stop ends the run after {seconds:.0f} s")
@@ -1316,7 +1328,7 @@ class Step:
         self.say(f"loop land: {name}: {seconds:.0f} s in the heavy step")
         if problems and not self.candidate.focus:
             self.stop.set()
-        return Outcome(name, tuple(problems), red, seconds, False)
+        return Outcome(name, tuple(problems), red, seconds, False, flaky)
 
     def require_problem(self, outcomes: Sequence[Outcome]) -> None:
         """Refuse a heavy step that the stop ended with no problem of a configuration (THE STOP).

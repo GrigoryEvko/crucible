@@ -212,6 +212,14 @@ THE ERROR OF A RUN
     after the run of the base is a problem of its commit too.  A transient
     error then counts as a red run, as a flaky test does.
 
+THE FLAKY TESTS
+    The gate runs a red test again alone, and a test that is green alone does
+    not reject the commit (assay.loop.gate, THE RUN OF A CONFIGURATION).  Such
+    a test is a flaky test, and no retry hides it.  The verdict of each
+    request that lands, or that --check accepts, names each flaky test of
+    each accepted run of the gate that holds the request, with the line
+    FLAKY_MARK.  The record of a run gives its flaky tests too.
+
 THE GATE
     The gate builds and tests a commit in the warm tree of each configuration
     that the change selects (assay.loop.gate).  The gate has no base side.  A
@@ -419,6 +427,8 @@ DROPPED = "dropped"
 # The replacement of the directory of the logs of a run, when the batch compares the problems of two runs (THE RUN OF
 # THE BASE).
 LOGS_MARK = "LOGS"
+# The start of a line of the verdict of a request that names a flaky test (THE FLAKY TESTS).
+FLAKY_MARK = "loop land: FLAKY, "
 
 
 class LandError(Exception):
@@ -1020,6 +1030,12 @@ def refused(status: int, *texts: str) -> Decision:
     return Decision(status, "", tuple(Line(text, True) for text in texts))
 
 
+def flaky_of(verdict: gate.Verdict) -> list[Line]:
+    """Return the line of each flaky test of a verdict of the gate (THE FLAKY TESTS)."""
+    shown = f" (logs in {verdict.logs})" if verdict.logs else ""
+    return [Line(f"{FLAKY_MARK}{name} is red in the suite and green alone{shown}", True) for name in verdict.flaky]
+
+
 def error_text(problem: Exception) -> str:
     """Return the text of an error, with its type and its traceback when it is not of KNOWN_ERRORS (THE HOLDER)."""
     if isinstance(problem, KNOWN_ERRORS):
@@ -1290,13 +1306,27 @@ class BatchLanding:
             red_size, red_run = take, batch_run
         return accepted, accepted_run
 
+    def flaky_lines(self, number: int) -> list[Line]:
+        """Return the line of each flaky test of each accepted run of the gate that holds a request (THE FLAKY TESTS).
+
+        Complexity: linear in the runs and their flaky tests.
+        """
+        found = [
+            line
+            for run in self.runs
+            if number in run.numbers and run.verdict.is_accepted
+            for line in flaky_of(run.verdict)
+        ]
+        return list(dict.fromkeys(found))
+
     def accept_check(self, accepted: Sequence[Link], verdict: gate.Verdict) -> None:
         """Give each request of --check that the gate accepts its verdict.  Nothing lands."""
         final = verdict.final or accepted[-1].commit
         folded = f", with the falls of {' '.join(verdict.ledgers)} that the gate wrote" if verdict.ledgers else ""
         for link in accepted:
             line = Line(f"loop land: the gate accepts the commit {final[:SHORT_HASH]}{folded}")
-            self.decide(link.queued, Decision(ExitCode.OK, final, (line,)))
+            lines = (line, *self.flaky_lines(link.queued.number))
+            self.decide(link.queued, Decision(ExitCode.OK, final, lines))
 
     def landed_decisions(
         self, accepted: Sequence[Link], verdict: gate.Verdict, final: str
@@ -1320,6 +1350,7 @@ class BatchLanding:
                 lines.append(
                     Line(f"loop land: a batch of {len(accepted)} requests landed at {final[:SHORT_HASH]} with one swap")
                 )
+            lines += self.flaky_lines(link.queued.number)
             has_falls = bool(ledgers) and last_of_root[link.queued.root] == index
             update = Update(
                 final,
@@ -1983,9 +2014,8 @@ def checked(root: Path, request: Request, options: Options, work: Path) -> int:
             run = Run(candidate, (0,), (request.subject,), verdict)
             write_records(work, "check", [RunRecord(run, (ACCEPTED if verdict.is_accepted else REJECTED,))])
             if verdict.is_accepted:
-                return written(
-                    Decision(ExitCode.OK, head, (Line(f"loop land: the gate accepts HEAD {head[:SHORT_HASH]}"),))
-                )
+                accepted_line = Line(f"loop land: the gate accepts HEAD {head[:SHORT_HASH]}")
+                return written(Decision(ExitCode.OK, head, (accepted_line, *flaky_of(verdict))))
             return written(refused(ExitCode.FINDINGS, *(f"loop land: REJECTED, {item}" for item in verdict.problems)))
         landing = BatchLanding([queued], run_check, lambda _queued, decision: decisions.append(decision), time.sleep)
         try:

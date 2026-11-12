@@ -530,8 +530,12 @@ def run_cases(expect: testing.Expect) -> None:
             "default: 1 skipped: test_skips" in outputs["clean"],
         )
         expect(
-            "a red test that is green alone does not reject the commit",
-            verdicts["flaky"].is_accepted,
+            "a red test that is green alone does not reject the commit, and the verdict and a line of the gate name it "
+            "as a flaky test",
+            verdicts["flaky"].is_accepted
+            and verdicts["flaky"].flaky == ("default: test_flaky",)
+            and "default: FLAKY, red in the suite and green alone: test_flaky" in outputs["flaky"]
+            and verdicts["clean"].flaky == (),
         )
         expect(
             "a test that is red alone too rejects the commit, the problem names it, and the focus gives the test",

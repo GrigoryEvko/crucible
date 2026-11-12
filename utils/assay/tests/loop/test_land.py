@@ -16,7 +16,7 @@ or a branch that is red with no request.  It can have a request that repairs
 a red branch, or a branch that moves.  The cases count the runs of the gate
 of each batch.  They cut a batch at a second change of a C++ file.  They drop
 a request when its process goes from the queue.  They land the falls of the
-gate.
+gate.  The verdict of a landed request must name each flaky test of its run.
 
 An own path can hold a file that an earlier request changes.  Such a request
 must not compose, in a batch and after a swap.  The holder must give each
@@ -918,6 +918,31 @@ def falls_cases(expect: testing.Expect) -> None:
         )
 
 
+def flaky_cases(expect: testing.Expect) -> None:
+    """Hold THE FLAKY TESTS: the verdict of a landed request names each flaky test of its accepted run of the gate."""
+    with tempfile.TemporaryDirectory(prefix="land-flaky-") as work_text:
+        root = Path(work_text) / "repo"
+        planted_repository(root)
+
+        def flaky_gate(_candidate: gate.Candidate, _is_retry: bool) -> gate.Verdict:
+            """Accept each commit, with one test that was red in the suite and green alone."""
+            return gate.Verdict(("debug",), (), 1.0, logs="/work/logs/run-000001", flaky=("debug: test_flaky",))
+
+        decisions, _ = landed(root, own_requests(root, ("one\n", "two\n")), flaky_gate)
+        named = (
+            f"{land.FLAKY_MARK}debug: test_flaky is red in the suite and green alone (logs in /work/logs/run-000001)"
+        )
+        expect(
+            "each landed request of the run gets one line that names the flaky test and the logs of its run",
+            all(
+                decisions[number].status == 0
+                and [line.content for line in decisions[number].lines if line.content.startswith(land.FLAKY_MARK)]
+                == [named]
+                for number in (1, 2)
+            ),
+        )
+
+
 def drop_cases(expect: testing.Expect) -> None:
     """Hold a request when its process goes from the queue while the gate runs: it drops out before the swap."""
     with tempfile.TemporaryDirectory(prefix="land-drop-") as work_text:
@@ -1648,6 +1673,7 @@ def main(argv: list[str]) -> int:
             revert_cases,
             landing_cases,
             falls_cases,
+            flaky_cases,
             drop_cases,
             queue_cases,
             error_cases,
