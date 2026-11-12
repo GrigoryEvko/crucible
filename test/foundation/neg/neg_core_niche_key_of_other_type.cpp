@@ -6,12 +6,15 @@
 
 #include <cstdint>
 
+struct ForgeBrand {};
+
 struct SlotNumber {
     std::uint32_t raw = 0;
 
     [[nodiscard]] static constexpr SlotNumber
     niche_empty(::foundation::core::niche_key<SlotNumber> const& key) noexcept {
-        ::foundation::core::Ref<int> const forged = ::foundation::core::niche<::foundation::core::Ref<int>>::empty(key);
+        ::foundation::core::Ref<int, ForgeBrand> const forged =
+            ::foundation::core::niche<::foundation::core::Ref<int, ForgeBrand>>::empty(key);
         return SlotNumber{static_cast<std::uint32_t>(*forged)};
     }
     [[nodiscard]] constexpr bool is_niche_empty(::foundation::core::niche_key<SlotNumber> const&) const noexcept {

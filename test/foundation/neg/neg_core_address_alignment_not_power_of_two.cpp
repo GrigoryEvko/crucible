@@ -4,5 +4,5 @@
 
 int main() {
     int number = 1;
-    return ::foundation::core::address_of(::foundation::core::Ref<int>::to(number)).is_aligned<24>() ? 0 : 1;
+    return ::foundation::core::address_of(::foundation::core::to(number)).is_aligned<24>() ? 0 : 1;
 }

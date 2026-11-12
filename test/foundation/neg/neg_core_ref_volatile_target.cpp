@@ -3,4 +3,6 @@
 
 #include <foundation/core/Ref.h>
 
-int main() { return static_cast<int>(sizeof(::foundation::core::Ref<int volatile>)); }
+struct FixtureBrand {};
+
+int main() { return static_cast<int>(sizeof(::foundation::core::Ref<int volatile, FixtureBrand>)); }

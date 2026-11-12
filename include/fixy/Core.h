@@ -79,6 +79,7 @@ using ::foundation::core::Address;
 using ::foundation::core::address_of;
 using ::foundation::core::Ref;
 using ::foundation::core::same_object;
+using ::foundation::core::to;
 
 using ::foundation::core::Atomic;
 using ::foundation::core::AtomicBits;

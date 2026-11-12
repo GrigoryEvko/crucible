@@ -4,6 +4,6 @@
 #include <foundation/core/Ref.h>
 
 int main() {
-    ::foundation::core::Ref<int const> const dangling = ::foundation::core::Ref<int const>::to(7);
+    auto const dangling = ::foundation::core::to(7);
     return *dangling;
 }

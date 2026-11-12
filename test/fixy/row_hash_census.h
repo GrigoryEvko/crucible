@@ -879,6 +879,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::Address,
      "the address of one object for an alignment query: it changes from run to run, so it is never a value in a "
      "kernel signature"},
+    {^^::foundation::core::Identity,
+     "the run-time identity of one brand instance: it changes from run to run, so it is never a value in a kernel "
+     "signature"},
     {^^::foundation::core::Atomic,
      "a cell that two threads share: its value is process state, and the cell is never a kernel signature argument"},
     {^^::foundation::core::CasRefusal, kPayload},

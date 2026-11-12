@@ -59,8 +59,8 @@ using ::foundation::core::address_of;
 using ::foundation::core::Atomic;
 using ::foundation::core::CacheLine;
 using ::foundation::core::mint_sole_writer;
-using ::foundation::core::Ref;
 using ::foundation::core::Tally;
+using ::foundation::core::to;
 
 // The roles of the writers of the tests.
 struct HeadRole {};
@@ -266,12 +266,11 @@ void test_cache_line() {
     CRUCIBLE_FATAL_INVARIANT(read_only->load_acquire() == 8 && (*read_only).load_acquire() == 8);
     // Each line starts at the start of a cache line, and each borrow of the
     // cell starts at the start of its line.
-    using Cell = Atomic<std::uint64_t>;
-    auto const line_address = address_of(Ref<decltype(head)>::to(head));
+    auto const line_address = address_of(to(head));
     CRUCIBLE_FATAL_INVARIANT(line_address.is_aligned<64>());
-    CRUCIBLE_FATAL_INVARIANT(address_of(Ref<decltype(tally)>::to(tally)).is_aligned<64>());
-    CRUCIBLE_FATAL_INVARIANT(address_of(Ref<Cell>::to(*head)) == line_address);
-    CRUCIBLE_FATAL_INVARIANT(address_of(Ref<Cell>::to(*head.operator->())) == line_address);
+    CRUCIBLE_FATAL_INVARIANT(address_of(to(tally)).is_aligned<64>());
+    CRUCIBLE_FATAL_INVARIANT(address_of(to(*head)) == line_address);
+    CRUCIBLE_FATAL_INVARIANT(address_of(to(*head.operator->())) == line_address);
 }
 
 // The property: a random sequence of operations on one cell agrees with
@@ -552,7 +551,8 @@ void test_sole_writer_agrees_with_plain_model() {
 // the join.
 void test_sole_writer_under_contention() {
     auto writer = mint_sole_writer<HeadRole>();
-    auto const lent_writer = Ref<decltype(writer) const>::to(writer);
+    decltype(writer) const& shared_writer = writer;
+    auto const lent_writer = to(shared_writer);
     CacheLine<Atomic<std::uint64_t, decltype(writer)>> head{std::uint64_t{0}};
     CacheLine<Atomic<std::uint64_t>> next_worker{std::uint64_t{0}};
     CacheLine<Tally> wrong_owned_reads{};
@@ -584,7 +584,8 @@ void test_sole_writer_under_contention() {
 // the payload if an order is missing.
 void test_sole_writer_release_publishes_to_acquire() {
     auto writer = mint_sole_writer<HeadRole>();
-    auto const lent_writer = Ref<decltype(writer) const>::to(writer);
+    decltype(writer) const& shared_writer = writer;
+    auto const lent_writer = to(shared_writer);
     CacheLine<Atomic<std::uint64_t, decltype(writer)>> published{std::uint64_t{0}};
     std::uint64_t payload = 0;
     CacheLine<Atomic<std::uint64_t>> next_worker{std::uint64_t{0}};
@@ -609,7 +610,8 @@ void test_sole_writer_release_publishes_to_acquire() {
 // join, and a thread of the second fork reads the value of the caller.
 void test_sole_writer_moves_through_a_join() {
     auto writer = mint_sole_writer<HeadRole>();
-    auto const lent_writer = Ref<decltype(writer) const>::to(writer);
+    decltype(writer) const& shared_writer = writer;
+    auto const lent_writer = to(shared_writer);
     CacheLine<Atomic<std::uint64_t, decltype(writer)>> head{std::uint64_t{0}};
     CacheLine<Atomic<std::uint64_t>> next_worker{std::uint64_t{0}};
     run_on_four_threads([&, lent_writer] {

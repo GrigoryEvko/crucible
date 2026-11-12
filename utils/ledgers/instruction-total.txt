@@ -20,5 +20,5 @@
 #   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT
 format 1
 rule instruction-total
-- | x86_64-debug-asan | 9072469793734 | fixtures | The measure of 2026-10-11 of a Debug build at 3dd0be3c4 with a ccache hit for each compile.  Each record of a hit keeps the count of its compile from the cost store, and each fixture keeps the count of its compile from the store of the fixture driver
-- | x86_64-debug-asan | 9702967994701 | objects | The measure of 2026-10-11 of a Debug build at 3dd0be3c4 with a ccache hit for each compile.  Each record of a hit keeps the count of its compile from the cost store, and each fixture keeps the count of its compile from the store of the fixture driver
+- | x86_64-debug-asan | 9472940293606 | fixtures | The measure of 2026-11-12 of a Debug build.  The families of the base after 3dd0be3c4 add tests, fixtures and check files, and the brand of Ref adds Identity with its test, its check file and six fixtures
+- | x86_64-debug-asan | 10257025691399 | objects | The measure of 2026-11-12 of a Debug build.  The families of the base after 3dd0be3c4 add tests, fixtures and check files, and the brand of Ref adds Identity with its test, its check file and six fixtures

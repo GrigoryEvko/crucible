@@ -131,7 +131,8 @@ int main() {
     // The measured loops borrow the writer through a Ref to a const writer,
     // so no loop can end it.
     auto writer = fixy::mint_sole_writer<BenchHeadRole>();
-    auto const lent_writer = fixy::Ref<decltype(writer) const>::to(writer);
+    decltype(writer) const& shared_writer = writer;
+    auto const lent_writer = fixy::to(shared_writer);
     fixy::Atomic<std::uint64_t, decltype(writer)> owned_cell{1};
 
     print_row("Atomic<SoleWriter>::load_owned", bench::run("Atomic<SoleWriter>::load_owned", [&, lent_writer] {

@@ -11,6 +11,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 #include <utility>
 
 namespace {
@@ -65,8 +66,9 @@ void test_mint_and_access() {
     CRUCIBLE_FATAL_INVARIANT(*zero == 0);
 
     // A Ref from view() reaches the object of the Box, and a write through
-    // it shows through the Box.
-    ::foundation::core::Ref<Pair> const pair_ref = pair.view();
+    // it shows through the Box.  Each call of view() gives a brand of its own.
+    auto const pair_ref = pair.view();
+    static_assert(!std::is_same_v<decltype(pair.view()), decltype(pair.view())>);
     pair_ref->first = 8;
     CRUCIBLE_FATAL_INVARIANT(pair->first == 8);
     CRUCIBLE_FATAL_INVARIANT(::foundation::core::same_object(pair_ref, fixed_pair.view()));

@@ -54,6 +54,9 @@ struct Payload final {
     std::uint32_t value = 0;
 };
 
+// The brand of the Ref of a probe.  A brand is an empty class.
+struct RefProbeBrand final {};
+
 // A payload of 64 bytes.  An Option of it goes through memory.
 struct Block64 final {
     std::uint64_t first = 0;
@@ -280,7 +283,7 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
 
 // A read through a Ref is the load of a raw pointer.  A Ref has no empty
 // state, so the read has no test.
-[[gnu::used]] std::uint32_t ref_read(fixy::Ref<Payload const> ref) noexcept { return ref->value; }
+[[gnu::used]] std::uint32_t ref_read(fixy::Ref<Payload const, RefProbeBrand> ref) noexcept { return ref->value; }
 
 // An Option of a plain payload, as a function gives it back: in a register.
 // expect adds one test and one branch to a cold call.  For a payload of four

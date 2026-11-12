@@ -6,7 +6,6 @@
 #include <foundation/effects/Effect.h>
 
 int main() {
-    ::foundation::core::Ref<int> const dangling =
-        ::foundation::core::mint_box<int>(::foundation::effects::Alloc{}, 1).view();
+    auto const dangling = ::foundation::core::mint_box<int>(::foundation::effects::Alloc{}, 1).view();
     return *dangling;
 }

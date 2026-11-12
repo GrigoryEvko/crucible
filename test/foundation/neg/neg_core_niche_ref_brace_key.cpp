@@ -4,7 +4,10 @@
 
 #include <foundation/core/Ref.h>
 
+struct ForgeBrand {};
+
 int main() {
-    ::foundation::core::Ref<int> const forged = ::foundation::core::niche<::foundation::core::Ref<int>>::empty({});
+    ::foundation::core::Ref<int, ForgeBrand> const forged =
+        ::foundation::core::niche<::foundation::core::Ref<int, ForgeBrand>>::empty({});
     return *forged;
 }

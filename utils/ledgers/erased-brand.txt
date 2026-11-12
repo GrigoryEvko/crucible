@@ -155,6 +155,7 @@ test/layer/checks/fixy/ScopedView.cpp | erased-brand | 6 | fixy::ScopedView | -
 test/layer/checks/fixy/SharedRegion.cpp | erased-brand | 1 | fixy::SharedRead | -
 test/layer/checks/fixy/os/Mmap.cpp | erased-brand | 1 | fixy::OwnedMmap | -
 test/layer/checks/fixy/os/NumaPlacement.cpp | erased-brand | 1 | fixy::NumaPlacement | -
+test/layer/checks/foundation/core/Ref.cpp | erased-brand | 2 | foundation::core::Ref | the check of the one conversion to the erased brand
 test/layer/checks/foundation/permissions/Permission.cpp | erased-brand | 32 | foundation::permissions::Permission | -
 test/layer/checks/foundation/permissions/Permission.cpp | erased-brand | 12 | foundation::permissions::SharedPermission | -
 test/layer/checks/foundation/permissions/Permission.cpp | erased-brand | 5 | foundation::permissions::SharedPermissionGuard | -

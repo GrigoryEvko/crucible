@@ -4,7 +4,7 @@
 
 int main() {
     int number = 1;
-    ::foundation::core::Ref<int> const first = ::foundation::core::Ref<int>::to(number);
-    ::foundation::core::Ref<int> const second = ::foundation::core::Ref<int>::to(number);
+    auto const first = ::foundation::core::to(number);
+    auto const second = first;
     return first == second ? 0 : 1;
 }

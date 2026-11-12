@@ -67,15 +67,21 @@
 
 namespace foundation::core {
 
-template <class T, std::size_t Extent>
-    requires ViewElement<T> && ViewExtent<T, Extent>
-constexpr auto View<T, Extent>::get(std::size_t position) const noexcept {
-    using Result = Option<Ref<T>>;
-    if (position >= size()) [[unlikely]] {
-        return Result{none};
+namespace detail {
+
+// The body of each get of the Region family, which Region.h declares: the
+// element at position of the count elements from first, as an Option of a
+// Ref with the brand of the public call, or no value at or past the count.
+// first is not null when count is above zero.
+template <::foundation::brand::IsBrand Brand, class T>
+[[nodiscard]] constexpr auto element_at_(T* first, std::size_t count, std::size_t position) noexcept {
+    if (position >= count) [[unlikely]] {
+        return Option<Ref<T, Brand>>{none};
     }
-    return Result::some(Ref<T>::to(first_[position]));
+    return Option<Ref<T, Brand>>::some(RefDoor::lend<Brand>(first[position]));
 }
+
+}  // namespace detail
 
 // The element of an owner of the Region family: an object type that is not
 // an array and not cv-qualified, whose destructor does not throw.  A const
@@ -168,10 +174,17 @@ public:
         at(Index<N>) const&& = delete("an element of a temporary FixedArray dangles at the end of the full expression");
 
     // The element at a position that no type proves, as an Option of a
-    // Ref, or no value at or past N: one compare.
-    [[nodiscard]] constexpr Option<Ref<T>> get(std::size_t position) & noexcept { return view().get(position); }
-    [[nodiscard]] constexpr Option<Ref<T const>> get(std::size_t position) const& noexcept {
-        return view().get(position);
+    // Ref with the fresh brand of the call, or no value at or past N: one
+    // compare.  The pack refuses each explicit argument.
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr Option<Ref<T, Fresh>> get(std::size_t position) & noexcept {
+        return detail::element_at_<Fresh>(&elements_[0], N, position);
+    }
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr Option<Ref<T const, Fresh>> get(std::size_t position) const& noexcept {
+        return detail::element_at_<Fresh>(&elements_[0], N, position);
     }
     void get(std::size_t) && = delete("an element of a temporary FixedArray dangles at the end of the full expression");
     void
@@ -355,11 +368,18 @@ public:
     begin() const&& = delete("a cursor of a temporary HeapArray points into storage that the full expression frees");
     void end() const&& = delete("a cursor of a temporary HeapArray points into storage that the full expression frees");
 
-    // The element at position, as an Option of a Ref, or no value at or
-    // past the count: one compare.
-    [[nodiscard]] constexpr Option<Ref<T>> get(std::size_t position) & noexcept { return view().get(position); }
-    [[nodiscard]] constexpr Option<Ref<T const>> get(std::size_t position) const& noexcept {
-        return view().get(position);
+    // The element at position, as an Option of a Ref with the fresh brand
+    // of the call, or no value at or past the count: one compare.  The pack
+    // refuses each explicit argument.
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr Option<Ref<T, Fresh>> get(std::size_t position) & noexcept {
+        return detail::element_at_<Fresh>(first_, count_, position);
+    }
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr Option<Ref<T const, Fresh>> get(std::size_t position) const& noexcept {
+        return detail::element_at_<Fresh>(static_cast<T const*>(first_), count_, position);
     }
     void get(std::size_t) && = delete("an element of a temporary HeapArray dangles at the end of the full expression");
     void

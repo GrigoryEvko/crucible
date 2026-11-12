@@ -1998,17 +1998,20 @@ foundation_neg_compile_test(neg_core_option_niche_member_wrong_type
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
   "required for the satisfaction of .WellFormedNiche<T>. \\[with T = SlotNumber\\]")
 foundation_neg_compile_test(neg_core_niche_ref_forge
-  "no matching function for call to .foundation::core::niche<foundation::core::Ref<int> >::empty\\(\\)."
+  "no matching function for call to .foundation::core::niche<foundation::core::Ref<int, ForgeBrand> >::empty\\(\\)."
   "candidate expects 1 argument, 0 provided")
 foundation_neg_compile_test(neg_core_niche_ref_brace_key
-  ".constexpr foundation::core::niche_key<T>::niche_key\\(\\) \\[with T = foundation::core::Ref<int>\\]. is private within this context"
+  ".constexpr foundation::core::niche_key<T>::niche_key\\(\\) \\[with T = foundation::core::Ref<int, ForgeBrand>\\]. is private within this context"
   "foundation/core/Choice.h:[0-9]+:[0-9]+: note: declared private here")
 foundation_neg_compile_test(neg_core_niche_member_no_key
   "no matching function for call to .SlotNumber::niche_empty\\(\\)."
   "candidate expects 1 argument, 0 provided")
 foundation_neg_compile_test(neg_core_niche_key_of_other_type
-  "cannot convert .const foundation::core::niche_key<SlotNumber>. to .const foundation::core::niche_key<foundation::core::Ref<int> >&."
-  "initializing argument 1 of .static constexpr foundation::core::Ref<[A-Za-z]+> foundation::core::niche<foundation::core::Ref<T> >::empty\\(")
+  "cannot convert .const foundation::core::niche_key<SlotNumber>. to .const foundation::core::niche_key<foundation::core::Ref<int, ForgeBrand> >&."
+  "initializing argument 1 of .static constexpr foundation::core::Ref<[A-Za-z]+, [A-Za-z]+> foundation::core::niche<foundation::core::Ref<[A-Za-z]+, [A-Za-z]+> >::empty\\(")
+foundation_neg_compile_test(neg_core_niche_ref_outside_specialization
+  ".constexpr foundation::core::Ref<T, Brand>::Ref\\(T\\*\\) \\[with T = Forged; Brand = ForgeBrand\\]. is private within this context"
+  "foundation/core/Ref.h:[0-9]+:[0-9]+: note: declared private here")
 foundation_neg_compile_test(neg_core_option_niche_lifetime_start
   "no matching function for call to .start_as_array<foundation::core::Option<SlotNumber> >"
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::core::Option<SlotNumber>\\]")
@@ -2154,19 +2157,32 @@ foundation_neg_compile_test(neg_core_pack_index_of_twice
 # of a temporary are refused.
 foundation_test(test_core_heap)
 foundation_test(test_core_ref)
+foundation_test(test_core_identity)
+foundation_neg_compile_test(neg_core_identity_ordered
+  "no match for .operator<."
+  "operand types are .const foundation::core::Identity. and .const foundation::core::Identity.")
+foundation_neg_compile_test(neg_core_identity_from_integer
+  "constexpr foundation::core::Identity::Identity\\([a-z_:0-9]+\\). is private within this context"
+  "declared private here")
 foundation_test(test_core_box)
 
 foundation_neg_compile_test(neg_core_ref_of_temporary
-  "use of deleted function .static foundation::core::Ref<T> foundation::core::Ref<T>::to\\(T&&\\) \\[with T = const int\\]."
+  "use of deleted function .void foundation::core::to\\(T&&\\) \\[with Refused = \\{\\}; T = int\\]."
   "a Ref of a temporary dangles at the end of the full expression")
 foundation_neg_compile_test(neg_core_ref_drops_const
-  "no matching function for call to .foundation::core::Ref<int>::Ref\\(<brace-enclosed initializer list>\\)."
-  "required for the satisfaction of .same_as<const U, T>. \\[with U = const int; T = int\\]")
+  "no matching function for call to .foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >::Ref\\(<brace-enclosed initializer list>\\)."
+  "required for the satisfaction of .RefWidens<U, UBrand, T, Brand>. \\[with U = const int; UBrand = [^;]+; T = int; ")
+foundation_neg_compile_test(neg_core_ref_changes_brand
+  "no matching function for call to .foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >::Ref\\(<brace-enclosed initializer list>\\)."
+  "required for the satisfaction of .RefWidens<U, UBrand, T, Brand>. \\[with U = int; UBrand = [^;]+; T = int; ")
+foundation_neg_compile_test(neg_core_ref_names_brand
+  "no matching function for call to .to<int, ArenaBrand>\\(int&\\)."
+  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int, ArenaBrand\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_ref_array_target
-  "template constraint failure for .template<class T>  requires  RefTarget<T> class foundation::core::Ref."
+  "template constraint failure for .template<class T, class Brand>  requires \\(RefTarget<T>\\) && \\(IsBrand<Brand>\\) class foundation::core::Ref."
   "the expression .!\\(is_array_v<T>\\) \\[with T = int\\[2\\]\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_ref_volatile_target
-  "template constraint failure for .template<class T>  requires  RefTarget<T> class foundation::core::Ref."
+  "template constraint failure for .template<class T, class Brand>  requires \\(RefTarget<T>\\) && \\(IsBrand<Brand>\\) class foundation::core::Ref."
   "the expression .!\\(is_volatile_v<T>\\) \\[with T = volatile int\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_address_alignment_not_power_of_two
   "no matching function for call to .foundation::core::Address::is_aligned<24>\\(\\)."
@@ -2176,10 +2192,10 @@ foundation_neg_compile_test(neg_core_address_ordered
   "operand types are .const foundation::core::Address. and .const foundation::core::Address.")
 foundation_neg_compile_test(neg_core_address_of_pointer
   "no matching function for call to .address_of\\(int\\*\\)."
-  "mismatched types .foundation::core::Ref<[A-Za-z]+>. and .int\\*.")
+  "mismatched types .foundation::core::Ref<[A-Za-z]+, [A-Za-z]+>. and .int\\*.")
 foundation_neg_compile_test(neg_core_ref_compared
   "no match for .operator==."
-  "operand types are .const foundation::core::Ref<int>. and .const foundation::core::Ref<int>.")
+  "operand types are .const foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >. and .const foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >.")
 
 foundation_neg_compile_test(neg_core_box_without_allocation_marker
   "no matching function for call to .mint_box<int>\\(foundation::effects::cap::IO, int\\)."
@@ -2194,7 +2210,7 @@ foundation_neg_compile_test(neg_core_box_copied
   "use of deleted function .foundation::core::Box<T>::Box\\(const foundation::core::Box<T>&\\) \\[with T = int\\]."
   "a Box owns its object alone: a copy would free the object two times")
 foundation_neg_compile_test(neg_core_box_borrow_of_temporary
-  "use of deleted function .foundation::core::Ref<[A-Za-z]+> foundation::core::Box<T>::view\\(\\) && \\[with T = int\\]."
+  "use of deleted function .void foundation::core::Box<T>::view\\(\\) && \\[with T = int\\]."
   "a borrow of a temporary Box dangles at the end of the full expression")
 foundation_neg_compile_test(neg_core_box_consume_lvalue
   "passing .foundation::core::Box<int>. as .this. argument discards qualifiers"
@@ -2472,8 +2488,8 @@ foundation_neg_compile_test(neg_core_lower_bound_float_key
 foundation_test(test_core_heap_array)
 
 foundation_neg_compile_test(neg_core_view_get_without_array
-  "use of .constexpr auto foundation::core::View<T, Extent>::get\\(std::size_t\\) const \\[with T = const int; long unsigned int Extent = 18446744073709551615; std::size_t = long unsigned int\\]. before deduction of .auto."
-  "In function .bool has_element\\(foundation::core::View<const int>\\).")
+  "use of .constexpr auto foundation::core::detail::element_at_\\(T\\*, std::size_t, std::size_t\\) \\[with Brand = has_element\\(foundation::core::View<const int>\\)::<lambda\\(\\)>; T = const int; std::size_t = long unsigned int\\]. before deduction of .auto."
+  "In instantiation of .constexpr auto foundation::core::View<T, Extent>::get\\(std::size_t\\) const \\[with Refused = \\{\\}; Fresh = has_element\\(foundation::core::View<const int>\\)::<lambda\\(\\)>; T = const int; long unsigned int Extent = 18446744073709551615; std::size_t = long unsigned int\\].")
 foundation_neg_compile_test(neg_core_fixed_array_get_of_temporary
   "use of deleted function .void foundation::core::FixedArray<T, N>::get\\(std::size_t\\) && \\[with T = int; long unsigned int N = 4; std::size_t = long unsigned int\\]."
   "an element of a temporary FixedArray dangles at the end of the full expression")

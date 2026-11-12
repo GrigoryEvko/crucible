@@ -294,7 +294,6 @@ void test_member_niche_payload() {
 // which no valid value holds.  The test reads the niche of a test type and
 // of a Ref at run time.
 void test_niche_validity_of_bit_copy() {
-    using ::foundation::core::Ref;
     using ::foundation::core::detail::NicheRead;
     SlotNumber const valid_slot{9};
     SlotNumber const empty_bits_slot{0xFFFFFFFFu};
@@ -302,14 +301,15 @@ void test_niche_validity_of_bit_copy() {
     CRUCIBLE_FATAL_INVARIANT(NicheRead<SlotNumber>::holds_empty(empty_bits_slot));
 
     int target = 5;
-    Ref<int> copied = Ref<int>::to(target);
-    CRUCIBLE_FATAL_INVARIANT(!NicheRead<Ref<int>>::holds_empty(copied));
-    static_assert(sizeof(Ref<int>) == sizeof(std::uintptr_t));
+    auto copied = ::foundation::core::to(target);
+    using Copied = decltype(copied);
+    CRUCIBLE_FATAL_INVARIANT(!NicheRead<Copied>::holds_empty(copied));
+    static_assert(sizeof(Copied) == sizeof(std::uintptr_t));
     std::uintptr_t const zero_word = 0;
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a bit copy of zero bytes into a Ref, as a decode of wire bytes makes")
     __builtin_memcpy(static_cast<void*>(&copied), &zero_word, sizeof(zero_word));
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    CRUCIBLE_FATAL_INVARIANT(NicheRead<Ref<int>>::holds_empty(copied));
+    CRUCIBLE_FATAL_INVARIANT(NicheRead<Copied>::holds_empty(copied));
 }
 
 // The property: for each value and each choice of empty or full, the

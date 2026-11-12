@@ -27,13 +27,13 @@ static_assert(std::is_same_v<::fixy::pack_concat_t<::fixy::Pack<int>, ::fixy::Pa
 static_assert(std::is_same_v<::fixy::pack_apply_t<::fixy::Record, ::fixy::Pack<int, long>>, ::fixy::Record<int, long>>);
 static_assert(::fixy::pack_unique_v<::fixy::Pack<int, long>>);
 static_assert(std::is_same_v<::fixy::Box<int>, ::foundation::core::Box<int>>);
-static_assert(std::is_same_v<::fixy::Ref<int>, ::foundation::core::Ref<int>>);
+struct CoreCheckBrand {};
+// An object for the unevaluated operands below, with no definition.
+extern int core_number;
+static_assert(std::is_same_v<::fixy::Ref<int, CoreCheckBrand>, ::foundation::core::Ref<int, CoreCheckBrand>>);
 static_assert(std::is_same_v<::fixy::Address, ::foundation::core::Address>);
-static_assert(
-    std::is_same_v<decltype(::fixy::address_of(::fixy::Ref<int>::to(std::declval<int&>()))), ::fixy::Address>);
-static_assert(std::is_same_v<decltype(::fixy::same_object(::fixy::Ref<int>::to(std::declval<int&>()),
-                                                          ::fixy::Ref<int>::to(std::declval<int&>()))),
-                             bool>);
+static_assert(std::is_same_v<decltype(::fixy::address_of(::fixy::to(core_number))), ::fixy::Address>);
+static_assert(std::is_same_v<decltype(::fixy::same_object(::fixy::to(core_number), ::fixy::to(core_number))), bool>);
 static_assert(std::is_same_v<::fixy::Atomic<int>, ::foundation::core::Atomic<int>>);
 static_assert(std::is_same_v<::fixy::CacheLine<int>, ::foundation::core::CacheLine<int>>);
 static_assert(std::is_same_v<::fixy::CasRefusal<int>, ::foundation::core::CasRefusal<int>>);

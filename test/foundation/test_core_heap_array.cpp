@@ -90,7 +90,7 @@ void test_alignment() {
     ::foundation::effects::Alloc const alloc{};
     for (std::size_t count = 1; count < 70; count += 23) {
         HeapArray<std::uint8_t, Alignment> bytes = mint_heap_array<std::uint8_t, Alignment>(alloc, count, 0);
-        ::foundation::core::Ref<std::uint8_t> const first = bytes.get(0).expect("the array holds an element");
+        auto const first = bytes.get(0).expect("the array holds an element");
         CRUCIBLE_FATAL_INVARIANT(::foundation::core::address_of(first).template is_aligned<Alignment>());
         CRUCIBLE_FATAL_INVARIANT(bytes.size() == count);
     }

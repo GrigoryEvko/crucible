@@ -6,7 +6,7 @@
 int main() {
     int first = 1;
     int second = 2;
-    ::foundation::core::Address const low = ::foundation::core::address_of(::foundation::core::Ref<int>::to(first));
-    ::foundation::core::Address const high = ::foundation::core::address_of(::foundation::core::Ref<int>::to(second));
+    ::foundation::core::Address const low = ::foundation::core::address_of(::foundation::core::to(first));
+    ::foundation::core::Address const high = ::foundation::core::address_of(::foundation::core::to(second));
     return low < high ? 0 : 1;
 }

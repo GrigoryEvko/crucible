@@ -2,6 +2,7 @@
 
 #include <foundation/core/Ref.h>
 
+#include <foundation/core/Array.h>
 #include <foundation/core/Text.h>
 #include <foundation/core/Verbs.h>
 
@@ -66,40 +67,100 @@ static_assert(!CanMintBox<int[2], TestAllocation>);
 
 // ── Ref ────────────────────────────────────────────────────────────────
 
+// Two brands of the checks.  A brand is an empty class (foundation/Brand.h).
+struct CheckBrand {};
+struct OtherBrand {};
+
 // One pointer, and an Option of a Ref has no flag.
-static_assert(sizeof(Ref<int>) == sizeof(void*));
-static_assert(sizeof(Ref<OverAligned const>) == sizeof(void*));
-static_assert(sizeof(Option<Ref<int>>) == sizeof(void*));
-static_assert(sizeof(Option<Ref<Abstract>>) == sizeof(void*));
+static_assert(sizeof(Ref<int, CheckBrand>) == sizeof(void*));
+static_assert(sizeof(Ref<OverAligned const, CheckBrand>) == sizeof(void*));
+static_assert(sizeof(Option<Ref<int, CheckBrand>>) == sizeof(void*));
+static_assert(sizeof(Option<Ref<Abstract, CheckBrand>>) == sizeof(void*));
 
 // A Ref copies as a pointer copies, and the seal makes it not trivially
 // copyable, so std::bit_cast builds no Ref from the bytes of an address.
-static_assert(std::is_trivially_copy_constructible_v<Ref<int>>);
-static_assert(std::is_trivially_move_constructible_v<Ref<int>>);
-static_assert(std::is_trivially_destructible_v<Ref<int>>);
-static_assert(std::is_copy_assignable_v<Ref<int>>);
-static_assert(!std::is_trivially_copyable_v<Ref<int>>);
+static_assert(std::is_trivially_copy_constructible_v<Ref<int, CheckBrand>>);
+static_assert(std::is_trivially_move_constructible_v<Ref<int, CheckBrand>>);
+static_assert(std::is_trivially_destructible_v<Ref<int, CheckBrand>>);
+static_assert(std::is_copy_assignable_v<Ref<int, CheckBrand>>);
+static_assert(!std::is_trivially_copyable_v<Ref<int, CheckBrand>>);
 
 // No empty Ref, and no Ref from a pointer.
-static_assert(!std::is_default_constructible_v<Ref<int>>);
-static_assert(!std::is_constructible_v<Ref<int>, int*>);
-static_assert(!std::is_constructible_v<Ref<int>, std::nullptr_t>);
+static_assert(!std::is_default_constructible_v<Ref<int, CheckBrand>>);
+static_assert(!std::is_constructible_v<Ref<int, CheckBrand>, int*>);
+static_assert(!std::is_constructible_v<Ref<int, CheckBrand>, std::nullptr_t>);
 
-// A const target comes from a mutable one, and never the reverse.
-static_assert(std::is_convertible_v<Ref<int>, Ref<int const>>);
-static_assert(!std::is_convertible_v<Ref<int const>, Ref<int>>);
-static_assert(!std::is_constructible_v<Ref<int>, Ref<int const>>);
-static_assert(!std::is_constructible_v<Ref<long>, Ref<int>>);
+// A const target comes from a mutable one with the same brand, and never
+// the reverse.  No brand changes into a different brand.
+static_assert(std::is_convertible_v<Ref<int, CheckBrand>, Ref<int const, CheckBrand>>);
+static_assert(!std::is_convertible_v<Ref<int const, CheckBrand>, Ref<int, CheckBrand>>);
+static_assert(!std::is_constructible_v<Ref<int, CheckBrand>, Ref<int const, CheckBrand>>);
+static_assert(!std::is_constructible_v<Ref<long, CheckBrand>, Ref<int, CheckBrand>>);
+static_assert(!std::is_constructible_v<Ref<int, OtherBrand>, Ref<int, CheckBrand>>);
+static_assert(!std::is_constructible_v<Ref<int const, OtherBrand>, Ref<int, CheckBrand>>);
 
-// to() takes an lvalue only.
-template <class R, class T>
-concept ReachesTemporary = requires { R::to(T{}); };
-template <class R, class T>
-concept ReachesLvalue = requires(T& object) { R::to(object); };
-static_assert(!ReachesTemporary<Ref<int>, int>);
-static_assert(!ReachesTemporary<Ref<int const>, int const>);
-static_assert(ReachesLvalue<Ref<int>, int>);
-static_assert(ReachesLvalue<Ref<int const>, int const>);
+// The one conversion to the erased brand, with or without a const, and no
+// conversion back.  Each of the two aliases spells the erased form on
+// purpose, and the ledger of the rule erased-brand admits the two.
+using ErasedRef = Ref<int, ::foundation::brand::DefaultBrand>;
+using ErasedConstRef = Ref<int const, ::foundation::brand::DefaultBrand>;
+static_assert(std::is_convertible_v<Ref<int, CheckBrand>, ErasedRef>);
+static_assert(std::is_convertible_v<Ref<int, CheckBrand>, ErasedConstRef>);
+static_assert(!std::is_constructible_v<Ref<int, CheckBrand>, ErasedRef>);
+
+// Two calls of get of an array give two fresh brands.  The two Refs reach
+// one element, so same_object accepts them, and each one converts to the
+// erased brand.
+consteval bool two_gets_reach_one_element() {
+    FixedArray<int, 3> numbers{1, 2, 3};
+    auto const first = numbers.get(1).expect("the position is below the count");
+    auto const second = numbers.get(1).expect("the position is below the count");
+    ErasedRef const erased_first = first;
+    ErasedConstRef const erased_second = second;
+    return !std::same_as<decltype(first), decltype(second)> && same_object(first, second)
+        && same_object(erased_first, erased_second);
+}
+static_assert(two_gets_reach_one_element());
+
+// A brand is an empty class.
+template <class T, class Brand>
+concept Spells = requires { sizeof(Ref<T, Brand>); };
+static_assert(!Spells<int, int>);
+static_assert(!Spells<int, Address>);
+
+// to() takes an lvalue only, and refuses each explicit template argument,
+// so no caller names the brand or the target.
+template <class T>
+concept ReachesTemporary = requires { ::foundation::core::to(T{}); };
+template <class T>
+concept ReachesLvalue = requires(T& object) { ::foundation::core::to(object); };
+template <class T>
+concept NamesTarget = requires(T& object) { ::foundation::core::to<T>(object); };
+template <class T, class Brand>
+concept NamesBrand = requires(T& object) { ::foundation::core::to<T, Brand>(object); };
+static_assert(!ReachesTemporary<int>);
+static_assert(!ReachesTemporary<int const>);
+static_assert(ReachesLvalue<int>);
+static_assert(ReachesLvalue<int const>);
+static_assert(!NamesTarget<int>);
+static_assert(!NamesBrand<int, CheckBrand>);
+
+// Each call of to() gives a brand of its own, and the target keeps the
+// const of the object.  target_of gives a tag of the target, because a
+// function that gives a const int by value gives a plain int.
+template <class T>
+struct Target {};
+template <class T, class Brand>
+Brand brand_of(Ref<T, Brand>);
+template <class T, class Brand>
+Target<T> target_of(Ref<T, Brand>);
+// Two objects for the unevaluated operands below, with no definition.
+extern int reached_number;
+extern int const reached_constant;
+static_assert(!std::is_same_v<decltype(brand_of(to(reached_number))), decltype(brand_of(to(reached_number)))>);
+static_assert(::foundation::brand::IsFreshBrand<decltype(brand_of(to(reached_number)))>);
+static_assert(std::is_same_v<decltype(target_of(to(reached_number))), Target<int>>);
+static_assert(std::is_same_v<decltype(target_of(to(reached_constant))), Target<int const>>);
 
 // The target gate.
 static_assert(RefTarget<int>);
@@ -111,21 +172,22 @@ static_assert(!RefTarget<int&>);
 static_assert(!RefTarget<void>);
 
 // A Ref has no compare: same_object() tells if two Refs reach one object.
-static_assert(!std::equality_comparable<Ref<int>>);
-static_assert(!std::totally_ordered<Ref<int>>);
+static_assert(!std::equality_comparable<Ref<int, CheckBrand>>);
+static_assert(!std::totally_ordered<Ref<int, CheckBrand>>);
 
 // A Ref borrows with the dereference only, and has no get().
 template <class R>
 concept HasGet = requires(R ref) { ref.get(); };
-static_assert(!HasGet<Ref<int>>);
+static_assert(!HasGet<Ref<int, CheckBrand>>);
 
 // The dereference and same_object() fold in a constant evaluation.
 consteval bool reaches_in_constant_evaluation() {
     int first = 1;
     int second = 2;
-    Ref<int> const ref = Ref<int>::to(first);
+    int const& first_read = first;
+    auto const ref = to(first);
     *ref = 3;
-    return first == 3 && same_object(ref, Ref<int const>::to(first)) && !same_object(ref, Ref<int>::to(second));
+    return first == 3 && same_object(ref, to(first_read)) && !same_object(ref, to(second));
 }
 static_assert(reaches_in_constant_evaluation());
 
@@ -161,9 +223,15 @@ static_assert(!BorrowsFromTemporary<Box<int>>);
 static_assert(BorrowsFromLvalue<Box<int>>);
 
 // view() gives a Ref of the object, and a Ref of a const object from a
-// const Box.  The Box borrows through view() and the dereference only.
-static_assert(std::is_same_v<decltype(std::declval<Box<int>&>().view()), Ref<int>>);
-static_assert(std::is_same_v<decltype(std::declval<Box<int> const&>().view()), Ref<int const>>);
+// const Box.  Each call gives a fresh brand, and no caller names it.  The
+// Box borrows through view() and the dereference only.
+static_assert(std::is_same_v<decltype(target_of(std::declval<Box<int>&>().view())), Target<int>>);
+static_assert(std::is_same_v<decltype(target_of(std::declval<Box<int> const&>().view())), Target<int const>>);
+static_assert(!std::is_same_v<decltype(std::declval<Box<int>&>().view()), decltype(std::declval<Box<int>&>().view())>);
+static_assert(::foundation::brand::IsFreshBrand<decltype(brand_of(std::declval<Box<int>&>().view()))>);
+template <class B>
+concept ViewNamesBrand = requires(B& box) { box.template view<CheckBrand>(); };
+static_assert(!ViewNamesBrand<Box<int>>);
 static_assert(!HasGet<Box<int>>);
 
 // ── The closed surface ─────────────────────────────────────────────────
@@ -174,9 +242,9 @@ static_assert(!HasGet<Box<int>>);
 inline constexpr TextView ref_names{"Ref to same_object downcast KindFamily KindTagged Box mint_box BumpArena make "
                                     "array copy_text Slot emplace clear FnRef CallRef Address address_of is_aligned "
                                     "Hole"};
-CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int>, DereferenceProtocol);
-CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int const>, DereferenceProtocol);
-CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<Abstract>, DereferenceProtocol);
+CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int, CheckBrand>, DereferenceProtocol);
+CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int const, CheckBrand>, DereferenceProtocol);
+CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<Abstract, CheckBrand>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Box<int>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Box<OverAligned>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Address);

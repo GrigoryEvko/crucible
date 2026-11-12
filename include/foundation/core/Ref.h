@@ -2,17 +2,23 @@
 
 // The Ref family: one object and its owner.
 //
-// Ref<T> reaches one object of type T and is never null.  Ref<T>::to(object)
-// is the one door from an object, and to() of a temporary is deleted,
-// because the Ref dangles at the end of the full expression.  *ref and
-// ref->member reach the object with no test, because a Ref has no empty
-// state.  A Ref<T> converts to a Ref<T const>, and nothing converts it back.
-// same_object(a, b) tells if two Refs reach one object.  A Ref has no ==, no
-// default value and no conversion from a pointer.  Option<Ref<T>> has the
-// size of one pointer: the null pointer is its empty value, and no Ref holds
-// it.  A Ref owns nothing, so a Ref that outlives its object dangles.
-// address_of(ref) gives the Address of the object, which answers
-// is_aligned<N>() and ==, and gives no pointer back.
+// Ref<T, Brand> reaches one object of type T and is never null.  The brand
+// is the identity of the borrow (foundation/Brand.h).  to(object) is the one
+// door from an object: it gives a Ref with a fresh brand, or with the brand
+// of an object that has one.  The brand is the last template parameter of
+// to(), after a pack that refuses each explicit argument, so a caller cannot
+// claim a brand for an object by spelling it.  to() of a temporary is
+// deleted, because the Ref dangles at the end of the full expression.
+//
+// *ref and ref->member reach the object with no test, because a Ref has no
+// empty state.  A Ref<T, Brand> converts to a Ref<T const, Brand> and to the
+// erased brand DefaultBrand, and nothing converts it back.  same_object(a, b)
+// tells if two Refs reach one object.  A Ref has no ==, no default value and
+// no conversion from a pointer.  Option<Ref<T, Brand>> has the size of one
+// pointer: the null pointer is its empty value, and no Ref holds it.  A Ref
+// owns nothing, so a Ref that outlives its object dangles.  address_of(ref)
+// gives the Address of the object, which answers is_aligned<N>() and ==, and
+// gives no pointer back.
 //
 // Box<T> owns one object of type T on the heap.  The one door is
 // mint_box<T>(alloc, args...): it takes the storage from the allocation
@@ -29,10 +35,10 @@
 // the destructor frees only storage that mint_box allocated.
 //
 // operator* and operator-> give a borrow of the object, and view() gives
-// the borrow as a Ref.  The overloads for an rvalue are deleted, because a
-// borrow of a temporary Box dangles at the end of the full expression.
-// consume() moves the object out of a Box that the caller gives up, and
-// frees the storage.
+// the borrow as a Ref with the fresh brand of the call.  The overloads for
+// an rvalue are deleted, because a borrow of a temporary Box dangles at the
+// end of the full expression.  consume() moves the object out of a Box that
+// the caller gives up, and frees the storage.
 //
 // C++ keeps a moved-from object alive, and no type can refuse its use.  So
 // each access tests for the object in each build, and a Box with no object
@@ -40,6 +46,7 @@
 // to a cold call.  A loop that reads the object many times takes one Ref
 // with view() before the loop, and the Ref has no test.
 
+#include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
@@ -59,7 +66,48 @@ namespace foundation::core {
 template <class T>
 concept RefTarget = std::is_object_v<T> && !std::is_array_v<T> && !std::is_volatile_v<T>;
 
-template <RefTarget T>
+// The object of a Box: a complete object type that is not an array, not
+// cv-qualified and not abstract, with a destructor that does not throw.
+template <class T>
+concept BoxPayload = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>
+                  && !std::is_abstract_v<T> && std::is_nothrow_destructible_v<T>;
+
+template <BoxPayload T>
+class Box;
+
+template <RefTarget T, ::foundation::brand::IsBrand Brand = ::foundation::brand::DefaultBrand>
+class Ref;
+
+namespace detail {
+
+// A Ref<From, FromBrand> converts to a Ref<To, ToBrand> when the conversion
+// adds a const, erases the brand, or does the two.  No conversion removes a
+// const, and no conversion gives an erased Ref a brand.
+template <class From, class FromBrand, class To, class ToBrand>
+concept RefWidens = (std::same_as<From, To> || std::same_as<From const, To>)
+                 && (std::same_as<FromBrand, ToBrand> || std::same_as<ToBrand, ::foundation::brand::DefaultBrand>)
+                 && !(std::same_as<From, To> && std::same_as<FromBrand, ToBrand>);
+
+// The door of an owner of the base that lends one of its objects with the
+// fresh brand of its own call, as get() of the Region family does.  The
+// definition is after Ref.
+struct RefDoor;
+
+}  // namespace detail
+
+// The one door from an object.  The brand is the brand of a branded object,
+// and the fresh brand of the call for each other object.  The pack in front
+// takes each explicit template argument and refuses it, so no caller names
+// the brand.
+template <class... Refused, RefTarget T, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+    requires(sizeof...(Refused) == 0)
+[[nodiscard]] constexpr Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>> to(T& object) noexcept;
+
+template <class... Refused, class T>
+    requires(!std::is_lvalue_reference_v<T>)
+void to(T&& object) = delete("a Ref of a temporary dangles at the end of the full expression");
+
+template <RefTarget T, ::foundation::brand::IsBrand Brand>
 class Ref {
     T* object_ = nullptr;
     // The seal makes the assignment user-provided, so std::bit_cast cannot
@@ -68,35 +116,69 @@ class Ref {
 
     constexpr explicit Ref(T* object) noexcept : object_{object} {}
 
-    template <RefTarget U>
+    template <RefTarget U, ::foundation::brand::IsBrand UBrand>
     friend class Ref;
-    friend struct niche<Ref>;
+    template <BoxPayload U>
+    friend class Box;
+    friend struct detail::RefDoor;
+
+    template <class... Refused, RefTarget U, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0)
+    friend constexpr Ref<U, ::foundation::brand::inherited_or_fresh_brand_t<U, Fresh>> to(U& object) noexcept;
+
+    // The null value of an Option of a Ref, and its test.  Each one takes the
+    // key that only the storage of an Option builds, and the storage gives
+    // the key only to the niche that it calls.  A niche gets no friend,
+    // because a file outside this header can specialize the niche of a Ref.
+    [[nodiscard]] friend constexpr Ref niche_null_(niche_key<Ref> const& /*key*/) noexcept {
+        return Ref{static_cast<T*>(nullptr)};
+    }
+    [[nodiscard]] friend constexpr bool niche_is_null_(niche_key<Ref> const& /*key*/, Ref const& ref) noexcept {
+        return ref.object_ == nullptr;
+    }
 
 public:
-    [[nodiscard]] static constexpr Ref to(T& object) noexcept { return Ref{__builtin_addressof(object)}; }
-    static Ref to(T&& object) = delete("a Ref of a temporary dangles at the end of the full expression");
-
-    // Adds a const to the target.
-    template <class U>
-        requires std::same_as<U const, T> && (!std::is_const_v<U>)
-    constexpr Ref(Ref<U> other) noexcept : object_{other.object_} {}
+    // Adds a const to the target, erases the brand, or does the two.
+    template <class U, class UBrand>
+        requires detail::RefWidens<U, UBrand, T, Brand>
+    constexpr Ref(Ref<U, UBrand> other) noexcept : object_{other.object_} {}
 
     [[nodiscard]] constexpr T& operator*() const noexcept { return *object_; }
     [[nodiscard]] constexpr T* operator->() const noexcept { return object_; }
 };
 
+template <class... Refused, RefTarget T, ::foundation::brand::IsBrand Fresh>
+    requires(sizeof...(Refused) == 0)
+[[nodiscard]] constexpr Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>> to(T& object) noexcept {
+    return Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>{__builtin_addressof(object)};
+}
+
+namespace detail {
+
+// The owner gives the brand: the fresh brand of its own public call, which
+// a refused pack keeps out of the hands of the caller.  The door is in
+// namespace detail, so code outside the base cannot reach it.
+struct RefDoor {
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] static constexpr Ref<T, Brand> lend(T& object) noexcept {
+        return Ref<T, Brand>{__builtin_addressof(object)};
+    }
+};
+
+}  // namespace detail
+
 // True when the two Refs reach one object.  The two targets are one type,
-// with or without a const.
-template <class First, class Second>
+// with or without a const, and the two brands can differ.
+template <class First, class FirstBrand, class Second, class SecondBrand>
     requires std::same_as<std::remove_const_t<First>, std::remove_const_t<Second>>
-[[nodiscard]] constexpr bool same_object(Ref<First> first, Ref<Second> second) noexcept {
+[[nodiscard]] constexpr bool same_object(Ref<First, FirstBrand> first, Ref<Second, SecondBrand> second) noexcept {
     return __builtin_addressof(*first) == __builtin_addressof(*second);
 }
 
 class Address;
 
-template <RefTarget T>
-[[nodiscard]] Address address_of(Ref<T> ref) noexcept;
+template <RefTarget T, ::foundation::brand::IsBrand Brand>
+[[nodiscard]] Address address_of(Ref<T, Brand> ref) noexcept;
 
 // The address of one object, which address_of(ref) gives.  It answers an
 // alignment query and compares with a different address.  An address
@@ -109,8 +191,8 @@ class Address {
 
     constexpr explicit Address(std::uintptr_t value) noexcept : value_{value} {}
 
-    template <RefTarget T>
-    friend Address address_of(Ref<T> ref) noexcept;
+    template <RefTarget T, ::foundation::brand::IsBrand Brand>
+    friend Address address_of(Ref<T, Brand> ref) noexcept;
 
 public:
     // True when the address is a multiple of Alignment, a power of two.
@@ -127,34 +209,27 @@ public:
 
 // The address of the object of a Ref.  The address of an object is no
 // constant of the compile, so the function runs only at run time.
-template <RefTarget T>
-[[nodiscard]] Address address_of(Ref<T> ref) noexcept {
+template <RefTarget T, ::foundation::brand::IsBrand Brand>
+[[nodiscard]] Address address_of(Ref<T, Brand> ref) noexcept {
     return Address{__builtin_bit_cast(std::uintptr_t, __builtin_addressof(*ref))};
 }
 
 // The empty value of an Option of a Ref: the null pointer, which no Ref
-// holds.  Option<Ref<T>> then has the size of one pointer.
-template <RefTarget T>
-struct niche<Ref<T>> {
-    [[nodiscard]] static constexpr Ref<T> empty(niche_key<Ref<T>> const&) noexcept {
-        return Ref<T>{static_cast<T*>(nullptr)};
+// holds.  Option<Ref<T, Brand>> then has the size of one pointer.  The
+// niche gives the key of its call to the hidden friends of Ref.
+template <RefTarget T, ::foundation::brand::IsBrand Brand>
+struct niche<Ref<T, Brand>> {
+    [[nodiscard]] static constexpr Ref<T, Brand> empty(niche_key<Ref<T, Brand>> const& key) noexcept {
+        return niche_null_(key);
     }
-    [[nodiscard]] static constexpr bool is_empty(niche_key<Ref<T>> const&, Ref<T> const& ref) noexcept {
-        return ref.object_ == nullptr;
+    [[nodiscard]] static constexpr bool is_empty(niche_key<Ref<T, Brand>> const& key,
+                                                 Ref<T, Brand> const& ref) noexcept {
+        return niche_is_null_(key, ref);
     }
 };
 
-// The object of a Box: a complete object type that is not an array, not
-// cv-qualified and not abstract, with a destructor that does not throw.
-template <class T>
-concept BoxPayload = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>
-                  && !std::is_abstract_v<T> && std::is_nothrow_destructible_v<T>;
-
 template <class T, class Marker, class... Args>
 concept CanMintBox = BoxPayload<T> && AllocationCapability<Marker> && std::constructible_from<T, Args&&...>;
-
-template <BoxPayload T>
-class Box;
 
 template <class T, class Marker, class... Args>
     requires CanMintBox<T, Marker, Args...>
@@ -210,10 +285,20 @@ public:
     [[nodiscard]] T* operator->() & noexcept { return held_(); }
     [[nodiscard]] T const* operator->() const& noexcept { return held_(); }
 
-    // The borrow of the whole object as a Ref.  The Ref has no test, so a
-    // loop reads the object through it at the cost of a raw pointer.
-    [[nodiscard]] Ref<T> view() & noexcept { return Ref<T>::to(*held_()); }
-    [[nodiscard]] Ref<T const> view() const& noexcept { return Ref<T const>::to(*held_()); }
+    // The borrow of the whole object as a Ref with the fresh brand of the
+    // call.  The Ref has no test, so a loop reads the object through it at
+    // the cost of a raw pointer.  The pack refuses each explicit argument, so
+    // no caller names the brand.
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] Ref<T, Fresh> view() & noexcept {
+        return Ref<T, Fresh>{held_()};
+    }
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] Ref<T const, Fresh> view() const& noexcept {
+        return Ref<T const, Fresh>{held_()};
+    }
 
     // Moves the object out, destroys the moved-from object, and frees the
     // storage.  The Box then holds no object.
@@ -228,8 +313,8 @@ public:
         return taken;
     }
 
-    Ref<T> view() && = delete("a borrow of a temporary Box dangles at the end of the full expression");
-    Ref<T const> view() const&& = delete("a borrow of a temporary Box dangles at the end of the full expression");
+    void view() && = delete("a borrow of a temporary Box dangles at the end of the full expression");
+    void view() const&& = delete("a borrow of a temporary Box dangles at the end of the full expression");
     T& operator*() && = delete("a borrow of a temporary Box dangles at the end of the full expression");
     T const& operator*() const&& = delete("a borrow of a temporary Box dangles at the end of the full expression");
     T* operator->() && = delete("a borrow of a temporary Box dangles at the end of the full expression");

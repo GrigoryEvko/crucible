@@ -641,8 +641,9 @@ witness <foundation/core/Choice.h> private | foundation::core::niche_key<int> | 
 # A Box comes only from mint_box, so the destructor frees only storage
 # that mint_box allocated.
 witness <foundation/core/Ref.h> private | foundation::core::Box<int> | foundation::core::Box<int>{forge::rvalue<int*>()}
-witness <foundation/core/Ref.h> private | foundation::core::Ref<int> | foundation::core::Ref<int>{forge::rvalue<int*>()}
+witness <foundation/core/Ref.h> private | foundation::core::Ref<int, forge::brand> | foundation::core::Ref<int, forge::brand>{forge::rvalue<int*>()}
 witness <foundation/core/Ref.h> private | foundation::core::Address | foundation::core::Address{forge::rvalue<unsigned long>()}
+witness <foundation/core/Identity.h> private | foundation::core::Identity | foundation::core::Identity{forge::rvalue<unsigned long>()}
 # A View comes only from an owner of the base layer, so no pointer and no
 # count that a caller holds become a View, and a cursor of a View comes
 # only from the View.

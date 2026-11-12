@@ -1,8 +1,8 @@
 // Written by `loop derive witness-fixtures --write` from the witness row of
-// foundation::core::Ref<int> in utils/rule-table.txt.  Edit the row, not this file.
+// foundation::core::Ref<int, forge::brand> in utils/rule-table.txt.  Edit the row, not this file.
 // clang-format off: the writer owns this layout, and --check compares it byte for byte.
 //
-// foundation::core::Ref<int> attests to a fact that it cannot see.  The expression below is
+// foundation::core::Ref<int, forge::brand> attests to a fact that it cannot see.  The expression below is
 // the raw data that a forger gives its constructor, and the fixture keeps the door
 // shut: the compiler must refuse the construction with "is private within this context".
 //
@@ -21,9 +21,13 @@ namespace forge {
 // construction, so no fixture links, and neither stand-in has a body.
 template <class T> T& lvalue() noexcept;
 template <class T> T&& rvalue() noexcept;
+
+// The brand that the expression names.  It is empty, which is all that
+// foundation::brand::IsBrand asks of a brand.
+struct brand {};
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = foundation::core::Ref<int>{forge::rvalue<int*>()};
+    [[maybe_unused]] auto forged = foundation::core::Ref<int, forge::brand>{forge::rvalue<int*>()};
     return 0;
 }

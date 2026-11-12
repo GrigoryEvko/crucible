@@ -139,8 +139,9 @@ void test_get_reads_below_the_count() {
     assert(*fixed.get(1).expect("the position is below the count") == 9);
     assert(fixed.get(4).is_none());
 
-    // A Ref from get reaches the element of the array.
-    ::foundation::core::Ref<int> const third = numbers.get(2).expect("the position is below the count");
+    // A Ref from get reaches the element of the array.  Each call of get has
+    // a fresh brand, and same_object accepts two brands.
+    auto const third = numbers.get(2).expect("the position is below the count");
     assert(::foundation::core::same_object(third, numbers.get(2).expect("the position is below the count")));
 
     View<int const> const empty{};

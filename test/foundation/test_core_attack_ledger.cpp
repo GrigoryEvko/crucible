@@ -20,6 +20,7 @@
 
 #include <concepts>
 #include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -40,9 +41,9 @@ using ::foundation::core::ViewCursor;
 static_assert(std::is_trivially_copy_constructible_v<View<int>>);
 static_assert(std::is_copy_constructible_v<ViewCursor<int>>);
 static_assert(std::is_move_assignable_v<Box<int>>);
-static_assert(requires(Box<int>& box) {
-    { box.view() } -> std::same_as<::foundation::core::Ref<int>>;
-});
+template <class T, class Brand>
+T target_of(::foundation::core::Ref<T, Brand>);
+static_assert(std::is_same_v<decltype(target_of(std::declval<Box<int>&>().view())), int>);
 
 // ── Entry: a match arm assigns the Option that it reads ──────────────
 //
