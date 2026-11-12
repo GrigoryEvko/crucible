@@ -117,7 +117,11 @@ THE HOLDER
     types of KNOWN_ERRORS is a defect of the code of the landing, such as a
     TypeError.  Its verdict also gives its traceback.  A request with a
     verdict waits for no holder, so the next holder does not take the batch
-    again.
+    again.  An error of the read of the queue, before the holder knows its
+    batch, gives each live request of the queue the verdict of that error
+    (refused_queue()).  The request file of each request gives the token of
+    its verdict.  When no verdict can be written, the holder ends on the
+    error.
 
 THE BATCH
     The batch composes each request as its own commit on the commit of the
@@ -1955,6 +1959,65 @@ def batch_of(found: Sequence[Queued]) -> list[Queued]:
     return [item for item in found if (item.common, item.branch) == (first.common, first.branch)]
 
 
+def held_gate(
+    work: Path, batch: Sequence[Queued], check: Check | None
+) -> tuple[Check, contextlib.AbstractContextManager[None]]:
+    """Return the check of the gate of a batch and the session of the gate that the holder holds (THE HOLDER).
+
+    A planted check gets no session.  Else the gate runs on the shared git directory of the first request, with the
+    smallest --jobs of the batch, and each run writes its logs into a directory of its own.
+
+    Raises:
+        git.GitError: If git cannot find the main work tree of the repository
+    """
+    if check is not None:
+        return check, contextlib.nullcontext()
+    jobs = min(item.options.jobs for item in batch)
+    is_every = any(item.options.is_every for item in batch)
+    repository = repository_of(batch[0])
+    planned = gate.Gate(heavy.main_work_tree(repository), work, jobs, is_every)
+
+    def run_check(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+        """Run the gate with the logs of the run in a directory of its own."""
+        return replace(planned, run=gate.next_run(work)).check(candidate, is_retry)
+
+    return run_check, heavy.gate_session(repository)
+
+
+def refused_queue(queue: Path, problem: Exception) -> bool:
+    """Give each live request of the queue the verdict of an error of the read of the queue (THE HOLDER).
+
+    The holder then knows no batch.  The request file of each request gives the token of its verdict.  A request
+    with a verdict of its token keeps that verdict.
+
+    Returns:
+        True, after one verdict or more
+
+    Raises:
+        Exception: The error itself, when the function writes no verdict.  The holder then ends on it, and it does not
+            wait for a verdict that no holder writes
+    """
+    failure = stopped_batch(problem)
+    check_report.write_line(failure.lines[0].content, is_error=True)
+    count = 0
+    for lock in paths.listing(queue, f"*{LOCK_SUFFIX}"):
+        number = number_of(lock)
+        if number is None or not heavy.is_held(lock):
+            continue
+        verdict_file = queue_file(queue, number, VERDICT_SUFFIX)
+        try:
+            token = token_of(queue_file(queue, number, REQUEST_SUFFIX).read_bytes())
+            if verdict_file.is_file() and token_of(verdict_file.read_bytes()) == token:
+                continue
+            cache.write_atomic(verdict_file, encoded_decision(failure, token))
+        except OSError:
+            continue
+        count += 1
+    if not count:
+        raise problem
+    return True
+
+
 def hold(work: Path, queue: Path, check: Check | None = None, pause: heavy.Pause = time.sleep) -> bool:
     """Land one batch of the queue as the holder of the tree, and tell if a batch was there (THE HOLDER).
 
@@ -1963,7 +2026,10 @@ def hold(work: Path, queue: Path, check: Check | None = None, pause: heavy.Pause
     heavy step (THE PRIORITY OF THE GATE of assay.loop.heavy).  Each run of the gate writes its logs into a directory
     of its own.
     """
-    batch = batch_of(waiting_requests(queue, pause))
+    try:
+        batch = batch_of(waiting_requests(queue, pause))
+    except Exception as problem:  # noqa: BLE001
+        return refused_queue(queue, problem)
     if not batch:
         return False
     decided: set[int] = set()
@@ -1976,24 +2042,11 @@ def hold(work: Path, queue: Path, check: Check | None = None, pause: heavy.Pause
         if is_alive(queue, queued):
             write_decision(queue, queued, decision)
 
-    gated = check
-    session: contextlib.AbstractContextManager[None] = contextlib.nullcontext()
-    if gated is None:
-        jobs = min(item.options.jobs for item in batch)
-        is_every = any(item.options.is_every for item in batch)
-        repository = repository_of(batch[0])
-        planned = gate.Gate(heavy.main_work_tree(repository), work, jobs, is_every)
-
-        def run_check(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
-            """Run the gate with the logs of the run in a directory of its own."""
-            return replace(planned, run=gate.next_run(work)).check(candidate, is_retry)
-
-        gated = run_check
-        session = heavy.gate_session(repository)
-    shown = " ".join(item.name for item in batch)
-    check_report.write_line(f"loop land: the holder of the tree lands the batch {shown}")
     landing: BatchLanding | None = None
     try:
+        gated, session = held_gate(work, batch, check)
+        shown = " ".join(item.name for item in batch)
+        check_report.write_line(f"loop land: the holder of the tree lands the batch {shown}")
         with session:
             landing = BatchLanding(batch, gated, decide, pause, functools.partial(is_alive, queue), Journal(queue))
             landing.land(batch)

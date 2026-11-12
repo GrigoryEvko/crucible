@@ -1408,13 +1408,57 @@ def error_cases(expect: testing.Expect) -> None:
         )
 
 
-def hold_guarded(work: Path, queue: Path, check: land.Check) -> tuple[bool, str]:
+def hold_guarded(
+    work: Path, queue: Path, check: land.Check, pause: Callable[[float], None] = no_pause
+) -> tuple[bool, str]:
     """Run one holder with a planted gate, and return if it took a batch and the text of an error that it raised."""
     try:
-        took, _printed = testing.captured(lambda: land.hold(work, queue, check, no_pause))
+        took, _printed = testing.captured(lambda: land.hold(work, queue, check, pause))
     except Exception as problem:  # noqa: BLE001
         return False, repr(problem)
     return took, ""
+
+
+def queue_defect_cases(expect: testing.Expect) -> None:
+    """Hold an error of the read of the queue, before the holder knows its batch (THE HOLDER)."""
+    with tempfile.TemporaryDirectory(prefix="land-queue-defect-") as work_text:
+        work = Path(work_text) / "work"
+        root = Path(work_text) / "repo"
+        head = planted_repository(root)
+        queue = land.queue_of(work, root)
+        _stuck_number, stuck = land.reserve(queue)
+
+        def failing(_seconds: float) -> None:
+            """Raise an error of the code of the queue in the wait for a request file."""
+            raise RuntimeError("a defect of the read of the queue")
+
+        try:
+            with (
+                waiting(queue, root, request_of(("Add r1",), own=("r1.txt",))) as first,
+                waiting(queue, root, request_of(("Add r2",), own=("r2.txt",))) as second,
+            ):
+                took, raised = hold_guarded(work, queue, passing([]), failing)
+                decisions = [land.read_decision(queue, item.number, item.token) for item in (first, second)]
+                again = land.waiting_requests(queue, no_pause)
+        finally:
+            os.close(stuck)
+        statuses = [decision.status if decision is not None else None for decision in decisions]
+        expect(
+            f"an error of the read of the queue gives each live request a tool error with the traceback, the branch "
+            f"does not move, and the next holder takes no request: statuses {statuses}, error {raised!r}",
+            took
+            and not raised
+            and statuses == [ExitCode.TOOL_FAILED, ExitCode.TOOL_FAILED]
+            and all(
+                decision is not None
+                and any(
+                    "RuntimeError: a defect" in line.content and "Traceback" in line.content for line in decision.lines
+                )
+                for decision in decisions
+            )
+            and git.head(root) == head
+            and again == [],
+        )
 
 
 def defect_cases(expect: testing.Expect) -> None:
@@ -1833,6 +1877,7 @@ def main(argv: list[str]) -> int:
             queue_cases,
             error_cases,
             defect_cases,
+            queue_defect_cases,
             journal_cases,
             record_cases,
             heavy_lock_cases,
