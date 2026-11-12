@@ -13,6 +13,6 @@ namespace eff = foundation::effects;
 
 int main() {
     const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>> ctx{eff::testing::bg()};
-    [[maybe_unused]] const auto topo = fixy::concurrent::Topology::probe_tree(ctx, "/tmp");
+    [[maybe_unused]] const auto topo = fixy::topology::Topology::probe_tree(ctx, "/tmp");
     return 0;
 }

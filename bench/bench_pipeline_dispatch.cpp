@@ -190,7 +190,7 @@ int main() {
     std::printf("pipeline dispatch facts: small=%zuB inline=%d large=%zuB inline=%d cpus=%zu\n",
                 SmallPipeline::aggregate_per_call_working_set, SmallPipeline::will_run_inline() ? 1 : 0,
                 LargePipeline::aggregate_per_call_working_set, LargePipeline::will_run_inline() ? 1 : 0,
-                cc::Topology::instance().process_cpu_count());
+                ::fixy::topology::Topology::instance().process_cpu_count());
 
     using Small = std::type_identity<SmallStages>;
     using Large = std::type_identity<LargeStages>;

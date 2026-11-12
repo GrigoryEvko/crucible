@@ -640,7 +640,7 @@ template <std::size_t N, class Ctx>
     if (allowed.empty()) return cpus;
 
     std::vector<int> candidates;
-    for (auto const& cluster : Topology::instance().cache_clusters()) {
+    for (auto const& cluster : ::fixy::topology::Topology::instance().cache_clusters()) {
         std::vector<int> inside;
         for (int cpu : cluster) {
             if (std::binary_search(allowed.begin(), allowed.end(), cpu)) inside.push_back(cpu);

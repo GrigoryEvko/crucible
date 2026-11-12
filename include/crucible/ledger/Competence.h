@@ -190,7 +190,7 @@ template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsHostProbe<Ctx>
 [[nodiscard]] inline std::vector<int> read_online_cpus(Ctx const& ctx) noexcept {
     fingerprint_detail::SmallFileBuffer buffer{};
-    return ::fixy::concurrent::topology_detail::parse_cpu_list_(
+    return ::fixy::topology::topology_detail::parse_cpu_list_(
         fingerprint_detail::read_small_file(ctx, "/sys/devices/system/cpu/online", buffer));
 }
 
@@ -198,7 +198,7 @@ template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsHostProbe<Ctx>
 [[nodiscard]] inline std::vector<int> read_isolated_cpus(Ctx const& ctx) noexcept {
     fingerprint_detail::SmallFileBuffer buffer{};
-    return ::fixy::concurrent::topology_detail::parse_cpu_list_(
+    return ::fixy::topology::topology_detail::parse_cpu_list_(
         fingerprint_detail::read_small_file(ctx, "/sys/devices/system/cpu/isolated", buffer));
 }
 
@@ -261,8 +261,8 @@ template <::foundation::effects::IsExecCtx Ctx>
     for (const int isolated_cpu : isolated) {
         std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", isolated_cpu);
         fingerprint_detail::SmallFileBuffer buffer{};
-        const std::vector<int> siblings = ::fixy::concurrent::topology_detail::parse_cpu_list_(
-            fingerprint_detail::read_small_file(ctx, path, buffer));
+        const std::vector<int> siblings =
+            ::fixy::topology::topology_detail::parse_cpu_list_(fingerprint_detail::read_small_file(ctx, path, buffer));
         for (const int sibling : siblings) {
             if (sibling == isolated_cpu) {
                 continue;
@@ -348,7 +348,7 @@ template <::foundation::effects::IsExecCtx Ctx>
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsHostProbe<Ctx>
 [[nodiscard]] inline CompetenceReport probe_competence(Ctx const& ctx) noexcept {
-    const ::fixy::concurrent::Topology::Snapshot topology = ::fixy::concurrent::Topology::instance().snapshot();
+    const ::fixy::topology::Topology::Snapshot topology = ::fixy::topology::Topology::instance().snapshot();
     const std::vector<int> isolated = competence_detail::read_isolated_cpus(ctx);
     const std::vector<int> online = competence_detail::read_online_cpus(ctx);
 
@@ -367,7 +367,7 @@ template <::foundation::effects::IsExecCtx Ctx>
     report.scaling_min_freq_khz = facts.scaling_min_freq_khz;
     report.scaling_max_freq_khz = facts.scaling_max_freq_khz;
 
-    report.defects = derive_defects(report, topology.source == ::fixy::concurrent::Topology::Source::Sysfs);
+    report.defects = derive_defects(report, topology.source == ::fixy::topology::Topology::Source::Sysfs);
     return report;
 }
 

@@ -60,7 +60,7 @@ namespace {
 // A budget past the L3 of this host, so the parallelism rule chooses the
 // spawning arm.
 [[nodiscard]] fixy::concurrent::WorkBudget dram_bound_budget() noexcept {
-    return fixy::concurrent::WorkBudget{.read_bytes = fixy::concurrent::Topology::instance().l3_total_bytes() * 2};
+    return fixy::concurrent::WorkBudget{.read_bytes = fixy::topology::Topology::instance().l3_total_bytes() * 2};
 }
 
 [[nodiscard]] int spawn_runs_every_child_and_returns_the_parent() {
@@ -293,7 +293,7 @@ struct ShardThreads {
 // Inside the shared L3 the rule caps the factor below the shard count, so
 // sixteen shards share a few threads.
 [[nodiscard]] int parallel_for_l3_resident_shares_threads() {
-    const auto& topo = fixy::concurrent::Topology::instance();
+    const auto& topo = fixy::topology::Topology::instance();
     const fixy::concurrent::WorkBudget budget{.read_bytes = (topo.l2_per_core_bytes() + topo.l3_total_bytes()) / 2};
     const auto decision = fixy::concurrent::ParallelismRule::recommend(budget);
     ShardThreads<16> record{};

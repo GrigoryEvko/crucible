@@ -16,6 +16,7 @@
 #include <cstdio>
 
 using namespace fixy::concurrent;
+using ::fixy::topology::Topology;
 
 #define CRUCIBLE_TEST_REQUIRE(...)                                                        \
     do {                                                                                  \

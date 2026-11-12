@@ -27,7 +27,7 @@
 #include <utility>
 #include "../test_assert.h"
 
-using namespace fixy::concurrent;
+using namespace fixy::topology;
 
 namespace eff = foundation::effects;
 
@@ -62,7 +62,7 @@ void run_test(const char* name, F&& body) {
 // These are the spellings the kernel writes into the cache-size files,
 // including the lowercase forms and the empty file.
 void test_parse_size_suffix() {
-    using fixy::concurrent::topology_detail::parse_size_suffix_;
+    using fixy::topology::topology_detail::parse_size_suffix_;
     CRUCIBLE_TEST_REQUIRE(parse_size_suffix_("32K") == 32 * 1024);
     CRUCIBLE_TEST_REQUIRE(parse_size_suffix_("1024K") == 1024 * 1024);
     CRUCIBLE_TEST_REQUIRE(parse_size_suffix_("32M") == 32ULL * 1024 * 1024);
@@ -79,7 +79,7 @@ void test_parse_size_suffix() {
 }
 
 void test_parse_cpu_list() {
-    using fixy::concurrent::topology_detail::parse_cpu_list_;
+    using fixy::topology::topology_detail::parse_cpu_list_;
 
     auto r1 = parse_cpu_list_("0");
     CRUCIBLE_TEST_REQUIRE(r1.size() == 1 && r1[0] == 0);
@@ -109,7 +109,7 @@ void test_parse_cpu_list() {
 }
 
 void test_parse_int_list() {
-    using fixy::concurrent::topology_detail::parse_int_list_;
+    using fixy::topology::topology_detail::parse_int_list_;
 
     auto r1 = parse_int_list_("10 20 20 10");
     CRUCIBLE_TEST_REQUIRE(r1.size() == 4);

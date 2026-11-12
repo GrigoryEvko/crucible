@@ -53,7 +53,7 @@
 //   minus sign for a signed number and one or more decimal digits, with no
 //   other sign.  A number that leaves the range of its type is no number.
 
-namespace fixy::concurrent {
+namespace fixy::topology {
 
 namespace topology_detail {
 
@@ -748,4 +748,4 @@ void Topology::probe_linux_(std::string_view sysfs_root) noexcept {
     source_ = Source::Sysfs;
 }
 
-}  // namespace fixy::concurrent
+}  // namespace fixy::topology

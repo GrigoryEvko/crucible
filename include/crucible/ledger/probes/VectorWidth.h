@@ -101,7 +101,7 @@ inline constexpr std::size_t kMinStreamCacheMultiple = 4;
 // the two-socket bench host.  A thread that is not pinned can fill more
 // than one instance, so measure() refuses a streaming run whose pin
 // failed.
-[[nodiscard]] inline std::size_t reachable_last_level_bytes(::fixy::concurrent::Topology const& topology) noexcept {
+[[nodiscard]] inline std::size_t reachable_last_level_bytes(::fixy::topology::Topology const& topology) noexcept {
     return topology.l3_total_bytes();
 }
 
@@ -118,7 +118,7 @@ inline constexpr std::size_t kMinStreamCacheMultiple = 4;
 }
 
 [[nodiscard]] inline std::expected<std::size_t, LedgerError> stream_bytes_for_host() noexcept {
-    return stream_bytes_for(reachable_last_level_bytes(::fixy::concurrent::Topology::instance()));
+    return stream_bytes_for(reachable_last_level_bytes(::fixy::topology::Topology::instance()));
 }
 
 // The compute shape's call is microseconds, so it takes the configured

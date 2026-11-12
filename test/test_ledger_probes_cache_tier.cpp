@@ -71,7 +71,7 @@ void test_a_wrong_census_refuses_the_placement() {
 // fallback, so the test reads them before and after the touch, and it
 // cannot measure when one of them moved.
 void test_first_touch_comes_from_the_measuring_cpu() {
-    const auto& topology = ::fixy::concurrent::Topology::instance();
+    const auto& topology = ::fixy::topology::Topology::instance();
     const std::span<const int> nodes = topology.numa_node_ids();
     if (nodes.size() < 2 || topology.cores_on_node(nodes[0]).empty() || topology.cores_on_node(nodes[1]).empty()) {
         std::printf("  test_first_touch_comes_from_the_measuring_cpu: SKIPPED (fewer than two NUMA nodes with CPUs, "
@@ -92,7 +92,7 @@ void test_first_touch_comes_from_the_measuring_cpu() {
         }
         auto region = ledger::ProbeRegion::create(probe_ctx, 2u * 1024u * 1024u, ledger::PagePolicy::BasePages);
         assert(region.has_value());
-        const int worker_node = ::fixy::concurrent::Topology::instance()
+        const int worker_node = ::fixy::topology::Topology::instance()
                                     .numa_node_of_cpu(worker_cpu)
                                     .expect("the topology gives the node of a CPU that it lists for a node");
         const ::fixy::Option<std::uint64_t> measuring_fallbacks = foreign_allocations_of(measuring_node);

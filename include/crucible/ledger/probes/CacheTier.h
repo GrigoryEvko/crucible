@@ -96,7 +96,7 @@ inline constexpr std::size_t kSweepMaxCeilingBytes = 256ull * 1024ull * 1024ull;
 inline constexpr std::size_t kMaxSweepPoints = 64;
 
 [[nodiscard]] inline std::size_t sweep_ceiling_bytes() noexcept {
-    const std::size_t last_level = ::fixy::concurrent::Topology::instance().l3_total_bytes();
+    const std::size_t last_level = ::fixy::topology::Topology::instance().l3_total_bytes();
     return std::clamp(last_level * kSweepCeilingMultipleOfL3, kSweepMinCeilingBytes, kSweepMaxCeilingBytes);
 }
 
@@ -284,7 +284,7 @@ private:
     if (!chosen.empty()) {
         return chosen;
     }
-    for (std::span<const int> group : ::fixy::concurrent::Topology::instance().l3_groups()) {
+    for (std::span<const int> group : ::fixy::topology::Topology::instance().l3_groups()) {
         const bool holds_measuring_cpu = std::find(group.begin(), group.end(), measuring_cpu) != group.end();
         if (!holds_measuring_cpu) {
             continue;
@@ -305,7 +305,7 @@ private:
 // A CPU on a different NUMA node from `measuring_cpu`, or -1 when the host
 // has one node or the topology could not say.
 [[nodiscard]] inline int remote_node_cpu_for(int measuring_cpu) noexcept {
-    ::fixy::concurrent::Topology const& topology = ::fixy::concurrent::Topology::instance();
+    ::fixy::topology::Topology const& topology = ::fixy::topology::Topology::instance();
     // Node ids, which can be sparse.
     const std::span<const int> node_ids = topology.numa_node_ids();
     if (node_ids.size() < 2) {
@@ -384,7 +384,7 @@ struct FirstTouch {
 // that node, so its placement has no fault, also on a kernel with no NUMA
 // support, which refuses the census.
 inline void record_placement(LedgerIoCtx const& ctx, ProbeRegion const& region, int cpu, FirstTouch& touch) noexcept {
-    ::fixy::concurrent::Topology const& topology = ::fixy::concurrent::Topology::instance();
+    ::fixy::topology::Topology const& topology = ::fixy::topology::Topology::instance();
     if (topology.numa_nodes() <= 1u) {
         touch.placement = LedgerError::None;
         return;

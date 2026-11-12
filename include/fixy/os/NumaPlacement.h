@@ -242,7 +242,7 @@ struct NumaQueryError {
 };
 
 // The concrete node that the index names, or no value for an index that
-// no NumaNodeId names.  fixy::concurrent::Topology names a node by an
+// no NumaNodeId names.  fixy::topology::Topology names a node by an
 // int, so a caller that has a node of the topology gets its id here.
 [[nodiscard]] constexpr Option<NumaNodeId> concrete_numa_node(int index) noexcept {
     if (index < 0 || index >= static_cast<int>(std::to_underlying(NumaNodeId::None))) {

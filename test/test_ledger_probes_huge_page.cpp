@@ -34,7 +34,7 @@ void test_page_policy_is_verified_against_the_kernel() {
     // check, or the verifier is answering true to everything.
     assert(!ledger::probes::huge_page_detail::verify_page_policy_took(*base, ledger::PagePolicy::HugePages));
 
-    if (::fixy::concurrent::Topology::instance().hugepage_2mb_available()) {
+    if (::fixy::topology::Topology::instance().hugepage_2mb_available()) {
         auto huge = ledger::ProbeRegion::create(probe_ctx, bytes, ledger::PagePolicy::HugePages);
         assert(huge.has_value());
         (void)huge->fault_in(1u);

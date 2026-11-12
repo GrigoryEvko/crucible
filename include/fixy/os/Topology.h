@@ -31,7 +31,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fixy::concurrent {
+namespace fixy::topology {
 
 namespace topology_detail {
 
@@ -271,4 +271,4 @@ private:
     void probe_linux_(std::string_view sysfs_root) noexcept;
 };
 
-}  // namespace fixy::concurrent
+}  // namespace fixy::topology

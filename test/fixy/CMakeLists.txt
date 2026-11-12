@@ -3919,7 +3919,7 @@ fixy_test(test_topology)
 # Topology::probe_tree reads a sysfs tree under another root, and only a
 # context that owns the Test capability reaches it.
 fixy_neg_compile_test(neg_topology_probe_tree_needs_test_ctx
-  "no matching function for call to .fixy::concurrent::Topology::probe_tree\\("
+  "no matching function for call to .fixy::topology::Topology::probe_tree\\("
   "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Test>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg> >\\]")
 
 # ── The stage and the pipeline ────────────────────────────────────────

@@ -374,7 +374,7 @@ template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsHostProbe<Ctx>
 [[nodiscard]] inline HostFacts probe_host_facts(Ctx const& ctx) noexcept {
     namespace probe = fingerprint_detail;
-    using ::fixy::concurrent::Topology;
+    using ::fixy::topology::Topology;
 
     HostFacts facts{};
     const Topology::Snapshot topology = Topology::instance().snapshot();

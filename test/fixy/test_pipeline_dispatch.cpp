@@ -195,7 +195,7 @@ static void test_threaded_stages_stay_in_the_caller_mask() {
 
     // The CPUs that a table which ignores the mask gives the two stages.
     std::vector<int> mask_blind;
-    for (auto const& cluster : cc::Topology::instance().cache_clusters()) {
+    for (auto const& cluster : ::fixy::topology::Topology::instance().cache_clusters()) {
         if (cluster.size() > mask_blind.size()) mask_blind = cluster;
     }
     mask_blind.resize(std::min(mask_blind.size(), kPinnedStages));

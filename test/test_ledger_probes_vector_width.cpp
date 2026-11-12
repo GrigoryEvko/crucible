@@ -60,7 +60,7 @@ void test_stream_buffer_outgrows_the_reachable_cache() {
     assert(!stream_bytes_for(504 * MiB).has_value());
 
     // This host, through the same rule.
-    const std::size_t host_reach = ledger::probes::reachable_last_level_bytes(::fixy::concurrent::Topology::instance());
+    const std::size_t host_reach = ledger::probes::reachable_last_level_bytes(::fixy::topology::Topology::instance());
     const std::expected<std::size_t, LedgerError> host_sized = ledger::probes::stream_bytes_for_host();
     assert(host_sized.has_value() == stream_bytes_for(host_reach).has_value());
     if (host_sized.has_value()) {

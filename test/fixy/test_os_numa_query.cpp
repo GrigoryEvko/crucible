@@ -42,7 +42,7 @@ template <class Owner>
     return std::move(*mapped).consume();
 }
 
-[[nodiscard]] std::size_t page_bytes() noexcept { return fixy::concurrent::Topology::instance().page_size_bytes(); }
+[[nodiscard]] std::size_t page_bytes() noexcept { return fixy::topology::Topology::instance().page_size_bytes(); }
 
 // Writes one byte in each page of the View.
 void touch_each_page(fixy::View<std::byte> bytes) {
@@ -144,7 +144,7 @@ void test_census_of_empty_and_unaligned_ranges() {
 // back between two reads.
 void test_counters_of_a_node_of_this_host() {
     IoBlockCtx const ctx{eff::testing::test()};
-    int const first_node = fixy::concurrent::Topology::instance().numa_node_of_cpu(0).value_or(0);
+    int const first_node = fixy::topology::Topology::instance().numa_node_of_cpu(0).value_or(0);
     fixy::NumaNodeId const node = fixy::numa::concrete_numa_node(first_node).expect("the topology names a node");
     auto first_read = fixy::numa::read_allocation_counters(ctx, node);
     if (first_read.is_err()) {

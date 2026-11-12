@@ -1806,7 +1806,7 @@ The working set is the saturated sum of the read and written bytes. The factor r
 
 The promise: **never regresses**. If the rule says sequential, parallel must not be measurably faster (within 5%, measured by `bench/bench_no_regression.cpp`). If it says parallel, the speedup must justify the sync cost.
 
-`fixy::concurrent::Topology` (`include/fixy/os/Topology.h`) probes the cache sizes, the core counts and the NUMA nodes from sysfs one time. `fixy::spawn::mint_parallel_for` (`include/fixy/concurrent/Spawn.h`) asks the rule for a decision on each call. A sequential decision runs every shard on the calling thread. A parallel decision starts no more threads than its factor. The NUMA policy of a decision is an intent, and no dispatcher binds the workers to a node. `fixy::spawn::mint_spawn` chooses between `mint_permission_fork_inline` and `mint_permission_fork` from the same rule.
+`fixy::topology::Topology` (`include/fixy/os/Topology.h`) probes the cache sizes, the core counts and the NUMA nodes from sysfs one time. `fixy::spawn::mint_parallel_for` (`include/fixy/concurrent/Spawn.h`) asks the rule for a decision on each call. A sequential decision runs every shard on the calling thread. A parallel decision starts no more threads than its factor. The NUMA policy of a decision is an intent, and no dispatcher binds the workers to a node. `fixy::spawn::mint_spawn` chooses between `mint_permission_fork_inline` and `mint_permission_fork` from the same rule.
 
 #### Decision matrix — which Permission primitive
 
@@ -3168,7 +3168,7 @@ No system type is part of a public signature of a door. An integer typedef of th
 - `fixy::time::clockid_for` returns a `::clockid_t`
 - `fixy::fs::mint_file`, `fixy::fs::mint_durable_truncate_file`, `fixy::fs::mint_durable_append_file` and the three mints of `fixy::cipher::durable` take a `::mode_t`
 - `fixy::fs::file_size` returns an `::off_t`, and `fixy::mmap::mint_mmap`, `fixy::OwnedMmap::mint_region` and the two overloads of `fixy::io::zerocopy_transfer` take one
-- `fixy::OwnedFile::get()` and `fixy::OwnedFile::release()` return a `std::FILE*`, and `fixy::concurrent::Topology::log_summary` takes one. `std::FILE` is a struct of the C library.
+- `fixy::OwnedFile::get()` and `fixy::OwnedFile::release()` return a `std::FILE*`, and `fixy::topology::Topology::log_summary` takes one. `std::FILE` is a struct of the C library.
 
 Slice 4.1 of the plan removes each of these. A base record replaces each struct, and a base type replaces each integer typedef of the C library. In the same slice, each door returns a `Result` with the error type of the Os family.
 

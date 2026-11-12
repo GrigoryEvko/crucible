@@ -150,7 +150,7 @@ public:
     // The boundaries come from the host, so one byte count classifies
     // differently on two machines.
     [[nodiscard, gnu::pure]] static Tier classify(std::size_t ws_bytes) noexcept {
-        const auto& topo = Topology::instance();
+        const auto& topo = ::fixy::topology::Topology::instance();
         const std::size_t l1d = topo.l1d_per_core_bytes();
         const std::size_t l2 = topo.l2_per_core_bytes();
         const std::size_t l3 = topo.l3_total_bytes();
@@ -170,7 +170,7 @@ public:
     // Deterministic: the same host and the same budget always give the
     // same answer.  There is no randomness and no per-call-site state.
     [[nodiscard]] static ParallelismDecision recommend(WorkBudget budget) noexcept {
-        const auto& topo = Topology::instance();
+        const auto& topo = ::fixy::topology::Topology::instance();
         const std::size_t ws = budget.working_set_bytes();
 
         // The CPUs of the process, which a launcher mask or a cpuset can

@@ -424,6 +424,7 @@ inline constexpr std::meta::info kCensusNamespaces[] = {
     ^^::fixy::sched,
     ^^::fixy::spin,
     ^^::fixy::time,
+    ^^::fixy::topology,
     ^^::fixy::cipher::durable,
 };
 
@@ -1136,8 +1137,8 @@ inline constexpr StatedZero kZeros[] = {
      "a rule that a layer gives the payload row walk at compile time: it names a family and the arguments that "
      "the walk reads, and it is never a value in a signature"},
     {^^::fixy::concurrent::StageArity, kMetafunction},
-    {^^::fixy::concurrent::Topology, "a measured description of the host, read by the scheduler and never a "
-                                     "template argument of a kernel signature"},
+    {^^::fixy::topology::Topology, "a measured description of the host, read by the scheduler and never a "
+                                   "template argument of a kernel signature"},
     {^^::fixy::concurrent::WorkBudget, kPayload},
     {^^::fixy::concurrent::ParallelismDecision, kPayload},
     {^^::fixy::concurrent::ParallelismRule,
