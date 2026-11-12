@@ -484,8 +484,8 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "option_expect",
-        "Option::expect adds one test and one branch to a call of the fatal exit.  The flag is the low byte of the "
-        "register and the payload is its high word, so the code also uses a shift and a move to read the payload.  "
+        "Option::expect adds one test and one branch to a call of the fatal exit.  The payload is the low word of the "
+        "register and the flag is bit 32, as in std::optional, so the test of the flag takes a shift.  "
         f"{HARDENED_BUILDS}.  On the hot path, these flags add a copy of the register and a second test of the flag "
         "in the copy, with a branch to a trap",
         checks=("fatal",),
@@ -496,6 +496,18 @@ PROBES: tuple[Probe, ...] = (
         f"{HARDENED_BUILDS}.  On the hot path, these flags add a copy of the count of the View and a second compare "
         "of the copy, with a branch to a trap",
         checks=("fatal",),
+    ),
+    Probe(
+        "result_expect",
+        "Result::expect adds one test and one branch to a call of the fatal exit.  The value is the low word of the "
+        "register and the tag is bit 32, as in std::expected, so the test of the tag takes a shift.  "
+        f"{HARDENED_BUILDS}.  On the hot path, these flags add a copy of the register and a second test of the tag in "
+        "the copy, with a branch to a trap",
+        checks=("fatal",),
+    ),
+    Probe(
+        "result_match",
+        "the match of a Result is one test of the tag, as the raw form is",
     ),
     Probe(
         "switch_unreachable",

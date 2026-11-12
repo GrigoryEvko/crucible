@@ -1932,6 +1932,12 @@ foundation_neg_compile_test(neg_core_option_niche_member_half_protocol
 foundation_neg_compile_test(neg_core_option_niche_member_wrong_type
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
   "required for the satisfaction of .WellFormedNiche<T>. \\[with T = SlotNumber\\]")
+foundation_neg_compile_test(neg_core_option_niche_lifetime_start
+  "no matching function for call to .start_as_array<foundation::core::Option<SlotNumber> >"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::core::Option<SlotNumber>\\]")
+foundation_neg_compile_test(neg_core_result_lifetime_start
+  "no matching function for call to .start_as_array<foundation::core::Result<unsigned int, Code> >"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::core::Result<unsigned int, Code>\\]")
 
 # ── The Ref family: Box ───────────────────────────────────────────────
 #

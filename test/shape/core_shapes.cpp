@@ -32,6 +32,7 @@
 #include <cstring>
 
 #include <atomic>
+#include <expected>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -53,6 +54,12 @@ enum class Kind : std::uint8_t {
     second,
     third,
     fourth
+};
+
+// An error of four bytes.
+enum class Code32 : std::uint32_t {
+    gone = 1,
+    late = 2
 };
 
 // ── Atomic ──────────────────────────────────────────────────────────────────
@@ -140,9 +147,8 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
 
 // An Option of a plain payload, as a function gives it back: in a register.
 // expect adds one test and one branch to a cold call.  For a payload of four
-// bytes, the flag is the low byte of the register, and one test reads it.  The
-// payload is the high word, so the code also uses a move and a shift to read
-// the payload.  std::optional puts its flag at bit 32, after the payload.
+// bytes, the payload is the low word of the register and the flag is bit 32,
+// as in std::optional, so the test of the flag takes a shift.
 [[gnu::used]] std::uint32_t option_expect(fixy::Option<std::uint32_t> option) noexcept {
     return std::move(option).expect("the probe gets a full Option");
 }
@@ -152,6 +158,20 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
 [[gnu::used]] fixy::View<std::uint32_t const>
 option_expect_niche(fixy::Option<fixy::View<std::uint32_t const>> option) noexcept {
     return std::move(option).expect("the probe gets a full Option");
+}
+
+// A Result of a value of four bytes and an error of four bytes, as a
+// function gives it back: in one register.  The value is the low word and
+// the tag is bit 32, as in std::expected.  expect adds one test and one
+// branch to a cold call.
+[[gnu::used]] std::uint32_t result_expect(fixy::Result<std::uint32_t, Code32> result) noexcept {
+    return std::move(result).expect("the probe gets a value");
+}
+
+// The match of a Result is one test of the tag.
+[[gnu::used]] std::uint32_t result_match(fixy::Result<std::uint32_t, Code32> result) noexcept {
+    return std::move(result).match([](std::uint32_t value) noexcept { return value * 3u; },
+                                   [](Code32 code) noexcept { return static_cast<std::uint32_t>(code); });
 }
 
 [[gnu::used]] std::uint32_t switch_unreachable(Kind kind) noexcept {
@@ -290,6 +310,12 @@ struct RawWindow final {
 [[gnu::used]] std::uint32_t option_expect_raw(std::optional<std::uint32_t> option) noexcept { return *option; }
 
 [[gnu::used]] RawWindow option_expect_niche_raw(RawWindow window) noexcept { return window; }
+
+[[gnu::used]] std::uint32_t result_expect_raw(std::expected<std::uint32_t, Code32> result) noexcept { return *result; }
+
+[[gnu::used]] std::uint32_t result_match_raw(std::expected<std::uint32_t, Code32> result) noexcept {
+    return result ? *result * 3u : static_cast<std::uint32_t>(result.error());
+}
 
 [[gnu::used]] std::uint32_t switch_unreachable_raw(Kind kind) noexcept {
     switch (kind) {

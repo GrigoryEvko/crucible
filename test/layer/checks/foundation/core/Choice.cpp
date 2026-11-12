@@ -2,6 +2,7 @@
 
 #include <foundation/core/Choice.h>
 
+#include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
 
 #include <cstdint>
@@ -105,6 +106,29 @@ static_assert(option_form_of<MemberSlot> == OptionForm::niche);
 static_assert(sizeof(Option<MemberSlot>) == sizeof(MemberSlot));
 static_assert(Option<MemberSlot>{}.is_none());
 static_assert(Option<MemberSlot>::some(MemberSlot{2}).expect("a constant slot").raw == 2);
+
+// A count that is never zero: the empty value of its niche has zero bytes.
+struct NonZeroCount {
+    std::uint32_t raw = 1;
+    [[nodiscard]] static constexpr NonZeroCount niche_empty() noexcept { return NonZeroCount{0}; }
+    [[nodiscard]] constexpr bool is_niche_empty() const noexcept { return raw == 0; }
+};
+
+// A lifetime start over bytes.  Zero bytes are an empty plain Option and an
+// empty niche Option whose empty value has zero bytes.  For each other
+// niche, zero bytes are a full Option that no constructor made, so the
+// checked lifetime start refuses the Option.
+static_assert(::foundation::lifetime::ImplicitLifetimeThroughout<Option<std::uint64_t>>);
+static_assert(::foundation::lifetime::ImplicitLifetimeThroughout<Option<NonZeroCount>>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Option<SlotNumber>>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Option<MemberSlot>>);
+static_assert(sizeof(Option<NonZeroCount>) == sizeof(NonZeroCount));
+static_assert(std::is_trivially_copyable_v<Option<SlotNumber>> && std::is_trivially_copyable_v<Option<NonZeroCount>>);
+
+// A plain Option is the plain sum of the empty marker and its payload.
+static_assert(std::is_same_v<SumSlot<NoPayload, std::uint32_t>, SumSlotOf<true, NoPayload, std::uint32_t>>);
+static_assert(sizeof(Option<std::uint32_t>) == 8 && sizeof(Option<std::uint64_t>) == 16);
+static_assert(sizeof(Option<std::uint8_t>) == 2);
 
 // No dereference and no conversion to bool.
 template <class O>
@@ -214,6 +238,11 @@ enum class Code : std::uint8_t {
     closed
 };
 
+enum class Code32 : std::uint32_t {
+    full,
+    closed
+};
+
 struct WideError {
     std::uint64_t first = 0;
     std::uint64_t second = 0;
@@ -263,8 +292,16 @@ static_assert(ChoicePayload<NamesMarkKind> && ErrorValue<NamesMarkKind>);
 // in registers.
 static_assert(sizeof(Result<Unit, Code>) == 2);
 static_assert(sizeof(Result<std::uint32_t, Code>) == 8);
+static_assert(sizeof(Result<std::uint32_t, Code32>) == 8);
+static_assert(sizeof(Result<std::uint64_t, Code>) == 16);
 static_assert(sizeof(Result<std::uint64_t, WideError>) == 24);
 static_assert(std::is_trivially_copyable_v<Result<std::uint64_t, Code>>);
+static_assert(std::is_trivially_copyable_v<Result<std::uint32_t, Code32>>);
+
+// Zero bytes are a value or an error that no constructor made, so the
+// checked lifetime start refuses each Result.
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Result<int, Code>>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Result<Unit, WideError>>);
 static_assert(!std::is_trivially_copyable_v<Result<Owner, Code>>);
 static_assert(std::is_nothrow_move_constructible_v<Result<Owner, Code>>);
 static_assert(!std::is_copy_constructible_v<Result<Owner, Code>>);

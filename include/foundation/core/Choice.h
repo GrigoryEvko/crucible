@@ -24,9 +24,10 @@
 //            Option then has the size of the payload, and the empty value
 //            is the state "no value".
 //   plain    A trivially copyable payload with no niche.  The Option holds
-//            the payload and one flag, and it is trivially copyable.  The
-//            x86-64 System V ABI then gives it back in registers when it
-//            has at most 16 bytes.
+//            the payload and a tag of one byte, in the layout of a plain
+//            Result, and it is trivially copyable.  The x86-64 System V
+//            ABI then gives it back in registers when it has at most 16
+//            bytes.
 //   owning   Each other payload.  The Option is move-only.  A move leaves
 //            the source empty, and the destructor destroys the payload.
 //
@@ -218,12 +219,58 @@ consteval OptionForm option_form_for() noexcept {
 template <class T>
 inline constexpr OptionForm option_form_of = option_form_for<T>();
 
+// True when each byte of the empty value of the niche of T is zero.  A
+// constant evaluation reads the bytes.  A payload that is not trivially
+// copyable gives false.
+template <class T>
+[[nodiscard]] consteval bool niche_empty_bytes_are_zero_() noexcept {
+    if constexpr (!std::is_trivially_copyable_v<T>) {
+        return false;
+    } else {
+        struct Image {
+            unsigned char byte[sizeof(T)];
+        };
+        Image const image = __builtin_bit_cast(Image, niche<T>::empty());
+        for (unsigned char const byte : image.byte) {
+            if (byte != 0) return false;
+        }
+        return true;
+    }
+}
+
+// The same answer, and false when a constant evaluation cannot read the
+// bytes, such as the bytes of a pointer.  So the answer fails closed.
+template <class T>
+[[nodiscard]] consteval bool niche_empty_is_zero_bytes_() noexcept {
+    if constexpr (requires { typename std::bool_constant<niche_empty_bytes_are_zero_<T>()>; }) {
+        return niche_empty_bytes_are_zero_<T>();
+    } else {
+        return false;
+    }
+}
+
+// The mark of a niche Option against a lifetime start over bytes.  Zero
+// bytes are the empty value of a niche whose empty value has zero bytes.
+// For each other niche, zero bytes are a full Option with a value that no
+// constructor made, so the mark carries the annotation no_start_over_bytes,
+// and the checked lifetime start of foundation/Lifetime.h refuses the
+// Option.  The mark is empty, so the Option keeps the size of its payload.
+template <bool IsZeroBytes>
+struct NicheLifetime;
+
+template <>
+struct NicheLifetime<true> final {};
+
+template <>
+struct[[= ::foundation::lifetime::no_start_over_bytes{}]] NicheLifetime<false> final {};
+
 template <class T, OptionForm Form = option_form_of<T>>
 class OptionSlot;
 
 template <class T>
 class OptionSlot<T, OptionForm::niche> {
     T value_ = niche<T>::empty();
+    [[no_unique_address]] NicheLifetime<niche_empty_is_zero_bytes_<T>()> lifetime_{};
 
 public:
     constexpr OptionSlot() noexcept = default;
@@ -245,110 +292,24 @@ public:
     constexpr void clear_() noexcept { value_ = niche<T>::empty(); }
 };
 
-// The payload and the flag of a plain Option, in one of two orders.  The
-// x86-64 System V ABI gives an Option of at most 16 bytes back in two
-// registers.  For a payload of four bytes, a flag after the payload is bit
-// 32 of the first register, and a test of it needs a shift first.  A flag
-// before the payload is in the low byte, which one test reads.  For a
-// payload of one or two bytes, the flag after the payload is in the low 32
-// bits already, and that order is shorter.  The two orders give one size.
-template <class T, bool IsFlagFirst = sizeof(T) == 4>
-struct PlainOptionCells;
+// The one layout rule of the plain forms of the family: the storage, and
+// then a tag of one byte, as in std::expected and std::variant.  The x86-64
+// System V ABI gives a class of at most 16 bytes back in two registers.  For
+// a storage of four bytes, the storage is the low word of the first
+// register, so a value goes in and out with no shift, and a test of the tag
+// at bit 32 takes one shift.  The plain Option, and the sums whose
+// alternatives are all plain, use this rule.
+template <class Storage, class Tag>
+struct TaggedCells {
+    static_assert(sizeof(Tag) == 1, "the tag of the cells is one byte");
 
-template <class T>
-struct PlainOptionCells<T, false> {
-    union {
-        NoPayload empty_;
-        T value_;
-    };
-    bool is_engaged_ = false;
+    Storage storage_;
+    Tag tag_;
 
-    constexpr PlainOptionCells() noexcept : empty_{} {}
-
-    template <class U>
-    constexpr PlainOptionCells(SomeTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
-        : value_(static_cast<U&&>(value)), is_engaged_{true} {}
-};
-
-template <class T>
-struct PlainOptionCells<T, true> {
-    bool is_engaged_ = false;
-    union {
-        NoPayload empty_;
-        T value_;
-    };
-
-    constexpr PlainOptionCells() noexcept : empty_{} {}
-
-    template <class U>
-    constexpr PlainOptionCells(SomeTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
-        : is_engaged_{true}, value_(static_cast<U&&>(value)) {}
-};
-
-// The special members are implicit, and each one is trivial, because each
-// member of the union is trivially copyable.
-template <class T>
-class OptionSlot<T, OptionForm::plain> {
-    PlainOptionCells<T> cells_;
-
-public:
-    constexpr OptionSlot() noexcept = default;
-
-    template <class U>
-    constexpr OptionSlot(SomeTag tag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
-        : cells_{tag, static_cast<U&&>(value)} {}
-
-    [[nodiscard]] constexpr bool holds_() const noexcept { return cells_.is_engaged_; }
-    [[nodiscard]] constexpr T& payload_() noexcept { return cells_.value_; }
-    [[nodiscard]] constexpr T const& payload_() const noexcept { return cells_.value_; }
-    constexpr void clear_() noexcept {
-        cells_.empty_ = NoPayload{};
-        cells_.is_engaged_ = false;
-    }
-};
-
-template <class T>
-class OptionSlot<T, OptionForm::owning> {
-    union {
-        NoPayload empty_;
-        T value_;
-    };
-    bool is_engaged_ = false;
-
-public:
-    constexpr OptionSlot() noexcept : empty_{} {}
-
-    template <class U>
-    constexpr OptionSlot(SomeTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
-        : value_(static_cast<U&&>(value)), is_engaged_{true} {}
-
-    // The payload moves into the new slot, and the source becomes empty.
-    constexpr OptionSlot(OptionSlot&& other) noexcept : empty_{} {
-        if (other.is_engaged_) {
-            ::new(static_cast<void*>(&value_)) T(static_cast<T&&>(other.value_));
-            is_engaged_ = true;
-            other.clear_();
-        }
-    }
-
-    OptionSlot(OptionSlot const&) =
-        delete("an owning Option is move-only: a copy would duplicate what the payload owns");
-    OptionSlot& operator=(OptionSlot const&) = delete("an owning Option is move-only");
-    OptionSlot& operator=(OptionSlot&&) = delete("an owning Option is not assignable: build a new Option instead");
-
-    constexpr ~OptionSlot() {
-        if (is_engaged_) value_.~T();
-    }
-
-    [[nodiscard]] constexpr bool holds_() const noexcept { return is_engaged_; }
-    [[nodiscard]] constexpr T& payload_() noexcept { return value_; }
-    [[nodiscard]] constexpr T const& payload_() const noexcept { return value_; }
-    constexpr void clear_() noexcept {
-        if (is_engaged_) {
-            value_.~T();
-            is_engaged_ = false;
-        }
-    }
+    template <class... Args>
+    constexpr explicit TaggedCells(Tag tag,
+                                   Args&&... args) noexcept(std::is_nothrow_constructible_v<Storage, Args&&...>)
+        : storage_(static_cast<Args&&>(args)...), tag_{tag} {}
 };
 
 }  // namespace detail
@@ -531,83 +492,328 @@ struct Err final {
 
 namespace detail {
 
-struct OkTag final {
-    explicit constexpr OkTag() noexcept = default;
+// The dispatch tag of the constructor of the alternative at an index.
+template <std::size_t Index>
+struct AlternativeAt final {
+    explicit constexpr AlternativeAt() noexcept = default;
 };
 
-struct ErrTag final {
-    explicit constexpr ErrTag() noexcept = default;
+// The dispatch tag of the constructor that moves the active alternative of
+// a different storage.
+struct MoveActive final {
+    explicit constexpr MoveActive() noexcept = default;
 };
 
-// A linear value or error takes the owning slot, also when its bytes are
-// trivially copyable, so a move never leaves a second copy of it.
-template <class T, class E, bool IsTrivial = PlainPayload<T> && PlainPayload<E>>
-class ResultSlot;
+// The storage of a sum: one alternative alive at a time.  The union nests
+// the alternatives after the first one, so each alternative is a direct
+// member of the union at its depth, and a constant evaluation can follow the
+// active member.  The destructor is trivial when each alternative is
+// trivially destructible.  Else it does nothing, and the slot destroys the
+// active alternative.  Complexity: the depth of the nest, and each walk of
+// an index, are linear in the number of alternatives.
+template <class... Ts>
+union Alternatives;
 
-// The special members are implicit, and each one is trivial, because each
-// member of the union is trivially copyable.
-template <class T, class E>
-class ResultSlot<T, E, true> {
-    union {
-        T stored_value_;
-        E stored_error_;
-    };
-    bool holds_value_;
+template <class Last>
+union Alternatives<Last> {
+    Last head_;
 
-public:
     template <class U>
-    constexpr ResultSlot(OkTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
-        : stored_value_(static_cast<U&&>(value)), holds_value_{true} {}
-    constexpr ResultSlot(ErrTag, E error) noexcept : stored_error_(error), holds_value_{false} {}
+    constexpr Alternatives(AlternativeAt<0>, U&& value) noexcept(std::is_nothrow_constructible_v<Last, U&&>)
+        : head_(static_cast<U&&>(value)) {}
 
-    [[nodiscard]] constexpr bool holds_() const noexcept { return holds_value_; }
-    [[nodiscard]] constexpr T& value_() noexcept { return stored_value_; }
-    [[nodiscard]] constexpr T const& value_() const noexcept { return stored_value_; }
-    [[nodiscard]] constexpr E& error_() noexcept { return stored_error_; }
-    [[nodiscard]] constexpr E const& error_() const noexcept { return stored_error_; }
+    // No member is active until the body builds the alternative of the
+    // index, so the active member of the source tells which member to build.
+    constexpr Alternatives(MoveActive, std::size_t, Alternatives& source) noexcept {
+        ::new(static_cast<void*>(&head_)) Last(static_cast<Last&&>(source.head_));
+    }
+
+    constexpr ~Alternatives()
+        requires std::is_trivially_destructible_v<Last>
+    = default;
+    constexpr ~Alternatives() {}
+
+    constexpr void destroy_(std::size_t) noexcept { head_.~Last(); }
 };
 
-// A value or an error that owns something.  The Result is move-only, and
-// a move moves the value or the error.
-template <class T, class E>
-class ResultSlot<T, E, false> {
-    union {
-        T stored_value_;
-        E stored_error_;
-    };
-    bool holds_value_;
+template <class Head, class Next, class... Rest>
+union Alternatives<Head, Next, Rest...> {
+    Head head_;
+    Alternatives<Next, Rest...> tail_;
 
-public:
     template <class U>
-    constexpr ResultSlot(OkTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
-        : stored_value_(static_cast<U&&>(value)), holds_value_{true} {}
-    constexpr ResultSlot(ErrTag, E error) noexcept : stored_error_(static_cast<E&&>(error)), holds_value_{false} {}
+    constexpr Alternatives(AlternativeAt<0>, U&& value) noexcept(std::is_nothrow_constructible_v<Head, U&&>)
+        : head_(static_cast<U&&>(value)) {}
 
-    constexpr ResultSlot(ResultSlot&& other) noexcept : holds_value_{other.holds_value_} {
-        if (holds_value_) {
-            ::new(static_cast<void*>(&stored_value_)) T(static_cast<T&&>(other.stored_value_));
+    template <std::size_t Index, class U>
+        requires(Index > 0)
+    constexpr Alternatives(AlternativeAt<Index>, U&& value) noexcept(
+        std::is_nothrow_constructible_v<Alternatives<Next, Rest...>, AlternativeAt<Index - 1>, U&&>)
+        : tail_(AlternativeAt<Index - 1>{}, static_cast<U&&>(value)) {}
+
+    constexpr Alternatives(MoveActive, std::size_t index, Alternatives& source) noexcept {
+        if (index == 0) {
+            ::new(static_cast<void*>(&head_)) Head(static_cast<Head&&>(source.head_));
         } else {
-            ::new(static_cast<void*>(&stored_error_)) E(static_cast<E&&>(other.stored_error_));
+            ::new(static_cast<void*>(&tail_)) Alternatives<Next, Rest...>(MoveActive{}, index - 1, source.tail_);
         }
     }
 
-    ResultSlot(ResultSlot const&) = delete("an owning Result is move-only: a copy would duplicate what the value owns");
-    ResultSlot& operator=(ResultSlot const&) = delete("an owning Result is move-only");
-    ResultSlot& operator=(ResultSlot&&) = delete("an owning Result is not assignable: build a new Result instead");
+    constexpr ~Alternatives()
+        requires(std::is_trivially_destructible_v<Head>
+                 && std::is_trivially_destructible_v<Alternatives<Next, Rest...>>)
+    = default;
+    constexpr ~Alternatives() {}
 
-    constexpr ~ResultSlot() {
-        if (holds_value_) {
-            stored_value_.~T();
-        } else if constexpr (!std::is_trivially_destructible_v<E>) {
-            stored_error_.~E();
+    constexpr void destroy_(std::size_t index) noexcept {
+        if (index == 0) {
+            head_.~Head();
+        } else {
+            tail_.destroy_(index - 1);
         }
     }
+};
 
-    [[nodiscard]] constexpr bool holds_() const noexcept { return holds_value_; }
-    [[nodiscard]] constexpr T& value_() noexcept { return stored_value_; }
-    [[nodiscard]] constexpr T const& value_() const noexcept { return stored_value_; }
-    [[nodiscard]] constexpr E& error_() noexcept { return stored_error_; }
-    [[nodiscard]] constexpr E const& error_() const noexcept { return stored_error_; }
+// The alternative at an index of a storage.
+template <std::size_t Index, class Storage>
+[[nodiscard]] constexpr auto& alternative_of_(Storage& storage) noexcept {
+    if constexpr (Index == 0) {
+        return storage.head_;
+    } else {
+        return alternative_of_<Index - 1>(storage.tail_);
+    }
+}
+
+// A sum is plain when each alternative is plain.  A linear alternative takes
+// the owning slot, also when its bytes are trivially copyable, so a move
+// never leaves a second copy of it.
+template <class... Ts>
+inline constexpr bool is_plain_sum_v = (PlainPayload<Ts> && ...);
+
+// The unsigned word of a width in bytes.
+template <std::size_t Width>
+struct WordOf;
+
+template <>
+struct WordOf<1> {
+    using type = unsigned char;
+};
+
+template <>
+struct WordOf<2> {
+    using type = unsigned short;
+};
+
+template <>
+struct WordOf<4> {
+    using type = unsigned int;
+};
+
+template <>
+struct WordOf<8> {
+    using type = unsigned long long;
+};
+
+// Count zero words.  The words are members and not an array, because
+// -fstack-protector-strong puts a canary on each frame that holds an array,
+// and a sum with a canary stays in memory and not in registers.  Complexity:
+// one instantiation for each count up to Count.
+template <class Word, std::size_t Count>
+struct ZeroWords {
+    Word first_ = 0;
+    ZeroWords<Word, Count - 1> rest_{};
+};
+
+template <class Word>
+struct ZeroWords<Word, 1> {
+    Word first_ = 0;
+};
+
+// An alternative of a plain sum.  An empty alternative, such as the empty
+// marker of an Option or the Unit of a Result, has no value bytes, so it
+// writes zero words over the full storage.  A copy of the sum then reads no
+// byte that no constructor wrote, also when the sum holds an empty
+// alternative and a wide one.  An alternative that holds a value leaves the
+// bytes after it as they are, as std::expected does, so its value stays in a
+// register.  Width is the alignment of the storage, at most eight bytes.
+template <class T, std::size_t Size, std::size_t Width, bool IsEmpty = std::is_empty_v<T>>
+struct PlainAlternative {
+    T value;
+
+    template <class U>
+    constexpr explicit PlainAlternative(U&& from) noexcept(std::is_nothrow_constructible_v<T, U&&>)
+        : value(static_cast<U&&>(from)) {}
+};
+
+template <class T, std::size_t Size, std::size_t Width>
+struct PlainAlternative<T, Size, Width, true> {
+    [[no_unique_address]] T value;
+    ZeroWords<typename WordOf<Width>::type, Size / Width> zero_{};
+
+    template <class U>
+    constexpr explicit PlainAlternative(U&& from) noexcept(std::is_nothrow_constructible_v<T, U&&>)
+        : value(static_cast<U&&>(from)) {}
+};
+
+template <bool IsPlain, class... Ts>
+class SumSlotOf;
+
+// The slot of a plain sum: the storage and the tag of TaggedCells.  The
+// special members are implicit, and each one is trivial, because each
+// alternative is trivially copyable.  The tag is the index of the active
+// alternative.  An empty alternative writes zero words over the storage
+// (PlainAlternative).  The storage keeps the size and the alignment of the
+// union of the bare alternatives.
+template <class... Ts>
+class SumSlotOf<true, Ts...> {
+    static constexpr std::size_t storage_size_ = sizeof(Alternatives<Ts...>);
+    static constexpr std::size_t word_width_ = alignof(Alternatives<Ts...>) < 8 ? alignof(Alternatives<Ts...>) : 8;
+    using Storage = Alternatives<PlainAlternative<Ts, storage_size_, word_width_>...>;
+    static_assert(sizeof(Storage) == storage_size_ && alignof(Storage) == alignof(Alternatives<Ts...>),
+                  "the zero words of an empty alternative do not change the storage");
+
+    TaggedCells<Storage, unsigned char> cells_;
+
+public:
+    template <std::size_t Index, class U>
+    constexpr SumSlotOf(AlternativeAt<Index> at,
+                        U&& value) noexcept(std::is_nothrow_constructible_v<Storage, AlternativeAt<Index>, U&&>)
+        : cells_{static_cast<unsigned char>(Index), at, static_cast<U&&>(value)} {}
+
+    [[nodiscard]] constexpr std::size_t index_() const noexcept { return cells_.tag_; }
+
+    template <std::size_t Index>
+    [[nodiscard]] constexpr auto& alternative_() noexcept {
+        return alternative_of_<Index>(cells_.storage_).value;
+    }
+    template <std::size_t Index>
+    [[nodiscard]] constexpr auto const& alternative_() const noexcept {
+        return alternative_of_<Index>(cells_.storage_).value;
+    }
+};
+
+// The slot of a sum with an alternative that owns something.  The slot is
+// move-only.  A move builds the active alternative from the active
+// alternative of the source, and the source keeps its moved-from
+// alternative, which its destructor ends.  A borrow of the source then
+// stays a borrow of a live object.
+template <class... Ts>
+class SumSlotOf<false, Ts...> {
+    Alternatives<Ts...> storage_;
+    unsigned char tag_;
+
+public:
+    template <std::size_t Index, class U>
+    constexpr SumSlotOf(AlternativeAt<Index> at, U&& value) noexcept(
+        std::is_nothrow_constructible_v<Alternatives<Ts...>, AlternativeAt<Index>, U&&>)
+        : storage_(at, static_cast<U&&>(value)), tag_{static_cast<unsigned char>(Index)} {}
+
+    constexpr SumSlotOf(SumSlotOf&& other) noexcept
+        : storage_(MoveActive{}, other.tag_, other.storage_), tag_{other.tag_} {}
+
+    SumSlotOf(SumSlotOf const&) = delete("an owning sum is move-only: a copy would duplicate what an alternative owns");
+    SumSlotOf& operator=(SumSlotOf const&) = delete("an owning sum is move-only");
+    SumSlotOf& operator=(SumSlotOf&&) = delete("an owning sum is not assignable: build a new sum instead");
+
+    constexpr ~SumSlotOf() { storage_.destroy_(tag_); }
+
+    [[nodiscard]] constexpr std::size_t index_() const noexcept { return tag_; }
+
+    template <std::size_t Index>
+    [[nodiscard]] constexpr auto& alternative_() noexcept {
+        return alternative_of_<Index>(storage_);
+    }
+    template <std::size_t Index>
+    [[nodiscard]] constexpr auto const& alternative_() const noexcept {
+        return alternative_of_<Index>(storage_);
+    }
+};
+
+// The one slot of the sums of the family.
+template <class... Ts>
+using SumSlot = SumSlotOf<is_plain_sum_v<Ts...>, Ts...>;
+
+// A plain Option is the plain sum of the empty marker and the payload.  The
+// tag is 0 for no value and 1 for a value, as the tag of a Result is.  The
+// special members are implicit and trivial.
+template <class T>
+class OptionSlot<T, OptionForm::plain> {
+    SumSlot<NoPayload, T> sum_{AlternativeAt<0>{}, NoPayload{}};
+
+public:
+    constexpr OptionSlot() noexcept = default;
+
+    template <class U>
+    constexpr OptionSlot(SomeTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
+        : sum_{AlternativeAt<1>{}, static_cast<U&&>(value)} {}
+
+    [[nodiscard]] constexpr bool holds_() const noexcept { return sum_.index_() != 0; }
+    [[nodiscard]] constexpr T& payload_() noexcept { return sum_.template alternative_<1>(); }
+    [[nodiscard]] constexpr T const& payload_() const noexcept { return sum_.template alternative_<1>(); }
+    constexpr void clear_() noexcept { sum_ = SumSlot<NoPayload, T>{AlternativeAt<0>{}, NoPayload{}}; }
+};
+
+// An owning Option holds the alternatives of the empty marker and the
+// payload, and a flag.  A move builds the payload in the new slot, and the
+// source becomes empty.
+template <class T>
+class OptionSlot<T, OptionForm::owning> {
+    Alternatives<NoPayload, T> storage_{AlternativeAt<0>{}, NoPayload{}};
+    bool is_engaged_ = false;
+
+public:
+    constexpr OptionSlot() noexcept = default;
+
+    template <class U>
+    constexpr OptionSlot(SomeTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
+        : storage_(AlternativeAt<1>{}, static_cast<U&&>(value)), is_engaged_{true} {}
+
+    constexpr OptionSlot(OptionSlot&& other) noexcept
+        : storage_(MoveActive{}, other.is_engaged_ ? std::size_t{1} : std::size_t{0}, other.storage_),
+          is_engaged_{other.is_engaged_} {
+        other.clear_();
+    }
+
+    OptionSlot(OptionSlot const&) =
+        delete("an owning Option is move-only: a copy would duplicate what the payload owns");
+    OptionSlot& operator=(OptionSlot const&) = delete("an owning Option is move-only");
+    OptionSlot& operator=(OptionSlot&&) = delete("an owning Option is not assignable: build a new Option instead");
+
+    constexpr ~OptionSlot() {
+        if (is_engaged_) storage_.destroy_(1);
+    }
+
+    [[nodiscard]] constexpr bool holds_() const noexcept { return is_engaged_; }
+    [[nodiscard]] constexpr T& payload_() noexcept { return alternative_of_<1>(storage_); }
+    [[nodiscard]] constexpr T const& payload_() const noexcept { return alternative_of_<1>(storage_); }
+    constexpr void clear_() noexcept {
+        if (is_engaged_) {
+            storage_.destroy_(1);
+            is_engaged_ = false;
+        }
+    }
+};
+
+// The slot of a Result: SumSlot<E, T>, with the error at index 0 and the
+// value at index 1.  A tag that is not zero then tells that a value is
+// there, as the tag of a plain Option does, so a full Option and a Result
+// of a value have one tag, and a test of the tag reads the same in each.
+// The special members follow the sum.
+template <class T, class E>
+class ResultSlot {
+    SumSlot<E, T> sum_;
+
+public:
+    template <std::size_t Index, class U>
+    constexpr ResultSlot(AlternativeAt<Index> at,
+                         U&& part) noexcept(std::is_nothrow_constructible_v<SumSlot<E, T>, AlternativeAt<Index>, U&&>)
+        : sum_{at, static_cast<U&&>(part)} {}
+
+    [[nodiscard]] constexpr bool holds_() const noexcept { return sum_.index_() != 0; }
+    [[nodiscard]] constexpr T& value_() noexcept { return sum_.template alternative_<1>(); }
+    [[nodiscard]] constexpr T const& value_() const noexcept { return sum_.template alternative_<1>(); }
+    [[nodiscard]] constexpr E& error_() noexcept { return sum_.template alternative_<0>(); }
+    [[nodiscard]] constexpr E const& error_() const noexcept { return sum_.template alternative_<0>(); }
 };
 
 }  // namespace detail
@@ -618,17 +824,18 @@ public:
 // value_or(), ok() or the rvalue match(), the Result holds the moved-from
 // value, and the use-after-move guard refuses a second use.  The payload
 // gate refuses each Err, so a value and an Err never meet in one
-// conversion.
+// conversion.  Zero bytes are a value or an error that no constructor made,
+// so the annotation no_start_over_bytes refuses a lifetime start over bytes.
 template <ChoicePayload T, ErrorValue E>
-class [[nodiscard]] Result {
+class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] Result {
     detail::ResultSlot<T, E> slot_;
 
 public:
     using value_type = T;
     using error_type = E;
 
-    constexpr Result(T value) noexcept : slot_{detail::OkTag{}, static_cast<T&&>(value)} {}
-    constexpr Result(Err<E> error) noexcept : slot_{detail::ErrTag{}, static_cast<E&&>(error.error)} {}
+    constexpr Result(T value) noexcept : slot_{detail::AlternativeAt<1>{}, static_cast<T&&>(value)} {}
+    constexpr Result(Err<E> error) noexcept : slot_{detail::AlternativeAt<0>{}, static_cast<E&&>(error.error)} {}
 
     [[nodiscard]] constexpr bool is_ok() const noexcept { return slot_.holds_(); }
     [[nodiscard]] constexpr bool is_err() const noexcept { return !slot_.holds_(); }
