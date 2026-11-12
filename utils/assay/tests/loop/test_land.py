@@ -26,6 +26,9 @@ directory.
 
 The cases write requests into a planted queue.  The holder of the tree must
 take them in the sequence of their numbers and write the verdict of each.
+An error of the check on the commit of one request must refuse only that
+request.  An error that the run of the base raises too must give each
+request the verdict of a tool error.
 Each number must occur one time only.  A holder must write the verdicts of
 the journals of a holder that ended after its swap.  A journal that git
 cannot judge must give a refusal.
@@ -66,6 +69,9 @@ WRITER_SHARED = "alpha\nbeta\nanother writer\n"
 WORKING_OWN = "own in the working tree\n"
 # The text of the own file of a request that the planted gate rejects.
 RED = "red\n"
+# The text of the own file of a request whose commit the planted gate cannot read, and the error that it raises.
+UNREADABLE = "a row of a kind that the code of the gate does not know\n"
+TABLE_ERROR = "rule-table.txt:525: the row kind 'linear-door' is unknown"
 # The ledger that the falls of a planted gate write.
 FALLEN = b"format 1\nrule demo\na.cpp | kind | 1 | entity | -\n"
 # The time limit of a planted landing process, and of the wait for a file of a process, in seconds.
@@ -1149,6 +1155,77 @@ def hold_drop_cases(expect: testing.Expect, work: Path, root: Path) -> None:
     )
 
 
+def error_cases(expect: testing.Expect) -> None:
+    """Hold THE ERROR OF A RUN: an error of the check on one request, and an error of the run of the base too."""
+    with tempfile.TemporaryDirectory(prefix="land-error-") as work_text:
+        work = Path(work_text) / "work"
+        root = Path(work_text) / "repo"
+        head = planted_repository(root)
+        queue = land.queue_of(work, root)
+        texts = {"r1.txt": "one\n", "r2.txt": UNREADABLE, "r3.txt": "three\n"}
+        for name, text in texts.items():
+            (root / name).write_text(text, encoding="utf-8")
+        seen: list[tuple[gate.Candidate, bool]] = []
+
+        def raising(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+            """Raise the error of a table that the code of the gate cannot read on a commit with r2.txt."""
+            seen.append((candidate, is_retry))
+            if git.show(root, candidate.commit, "r2.txt") == UNREADABLE.encode():
+                raise ValueError(TABLE_ERROR)
+            return gate.Verdict(("debug",), (), 1.0)
+
+        with (
+            waiting(queue, root, request_of(("Add r1",), own=("r1.txt",))) as first,
+            waiting(queue, root, request_of(("Add r2",), own=("r2.txt",))) as second,
+            waiting(queue, root, request_of(("Add r3",), own=("r3.txt",))) as third,
+        ):
+            took, _printed = testing.captured(lambda: land.hold(work, queue, raising, no_pause))
+            decisions = [land.read_decision(queue, item.number, item.token) for item in (first, second, third)]
+        statuses = [decision.status if decision is not None else None for decision in decisions]
+        bad = decisions[1]
+        expect(
+            f"an error of the check on the commit of one request refuses only that request, with the text of the "
+            f"error, after the run of the base and the search, and the other two land: statuses {statuses}, "
+            f"{len(seen)} runs of the gate",
+            took
+            and statuses == [0, ExitCode.FINDINGS, 0]
+            and bad is not None
+            and any(TABLE_ERROR in line.content for line in bad.lines)
+            and subjects_since(root, head) == ["Add r1", "Add r3"]
+            and len(seen) == 5
+            and seen[1][0].commit == head,
+        )
+        tip = git.head(root)
+        (root / "r4.txt").write_text("four\n", encoding="utf-8")
+        (root / "r5.txt").write_text("five\n", encoding="utf-8")
+        calls: list[gate.Candidate] = []
+
+        def broken(candidate: gate.Candidate, _is_retry: bool) -> gate.Verdict:
+            """Raise an error of the warm tree on each commit, also on the commit of the run of the base."""
+            calls.append(candidate)
+            raise gate.GateError("the warm tree cannot hold the commit")
+
+        with (
+            waiting(queue, root, request_of(("Add r4",), own=("r4.txt",))) as fourth,
+            waiting(queue, root, request_of(("Add r5",), own=("r5.txt",))) as fifth,
+        ):
+            testing.captured(lambda: land.hold(work, queue, broken, no_pause))
+            decisions = [land.read_decision(queue, item.number, item.token) for item in (fourth, fifth)]
+        expect(
+            "an error that the run of the base raises too gives each request the verdict of a tool error, after 2 runs "
+            "of the gate, and the branch does not move",
+            [decision.status if decision is not None else None for decision in decisions]
+            == [ExitCode.TOOL_FAILED, ExitCode.TOOL_FAILED]
+            and all(
+                decision is not None and any("cannot hold the commit" in line.content for line in decision.lines)
+                for decision in decisions
+            )
+            and len(calls) == 2
+            and calls[1].commit == tip
+            and git.head(root) == tip,
+        )
+
+
 def journal_cases(expect: testing.Expect) -> None:
     """Hold a holder that stops after its swap: the next holder writes the verdicts of the journals and composes nothing."""
     with tempfile.TemporaryDirectory(prefix="land-journal-") as work_text:
@@ -1487,6 +1564,7 @@ def main(argv: list[str]) -> int:
             falls_cases,
             drop_cases,
             queue_cases,
+            error_cases,
             journal_cases,
             record_cases,
             heavy_lock_cases,

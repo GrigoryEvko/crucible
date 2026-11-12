@@ -109,8 +109,10 @@ THE HOLDER
     goes before each other heavy step of the host (THE PRIORITY OF THE GATE
     of assay.loop.heavy).  --check holds that session too.  Then it frees the
     lock.  It does that again while its own request has no verdict.  An
-    error of a tool gives each request of the batch with no verdict the
-    verdict of that error, other than a request that landed.
+    error of a tool outside a run of the gate on a commit of the batch gives
+    each request of the batch with no verdict the verdict of that error,
+    other than a request that landed.  An error of the run of the base is
+    such an error (THE ERROR OF A RUN).
 
 THE BATCH
     The batch composes each request as its own commit on the commit of the
@@ -188,6 +190,21 @@ THE RUN OF THE BASE
     and 5 times for the second red request.  With no red request, the batch
     runs the gate one time.  On a red branch, it runs the gate 2 times.  One
     red request alone runs the gate 2 times.
+
+THE ERROR OF A RUN
+    The check of the gate can raise an error on a commit of the batch.  An
+    example is a file of the commit that the code of the gate cannot read.
+    The run then gets a verdict with one problem, the text of the error, and
+    with no focus (gate_run()).  The run of the base then runs each
+    configuration of the batch on the commit of the batch.  When that run
+    raises an error too, the error is not of a request, and each request
+    gets the verdict of a tool error (THE HOLDER).  Else THE SEARCH finds the
+    request that gives the error, that request gets the refusal with its
+    text, and the others land.
+
+    A run of the gate with no error has no added step.  An error of a run
+    after the run of the base is a problem of its commit too.  A transient
+    error then counts as a red run, as a flaky test does.
 
 THE GATE
     The gate builds and tests a commit in the warm tree of each configuration
@@ -395,6 +412,9 @@ DROPPED = "dropped"
 # The replacement of the directory of the logs of a run, when the batch compares the problems of two runs (THE RUN OF
 # THE BASE).
 LOGS_MARK = "LOGS"
+# The errors of the check of a commit of the batch that are a problem of that commit (THE ERROR OF A RUN).  They are
+# the errors of a tool that hold() turns into the verdict of each request.
+CHECK_ERRORS = (gate.GateError, git.GitError, proc.ToolFailed, OSError, ValueError)
 
 
 class LandError(Exception):
@@ -1085,9 +1105,16 @@ class BatchLanding:
         """Run the gate on the last commit of a chain, keep the run, and return the verdict.
 
         The first run of the batch runs each test, and each subsequent run runs the tests with an input that changed.
+        An error of the check is a problem of the commit (THE ERROR OF A RUN).
         """
         candidate = gate.Candidate(self.base, chain[-1].commit, chain_changed(chain))
-        verdict = self.check(candidate, bool(self.runs))
+        started = time.monotonic()
+        try:
+            verdict = self.check(candidate, bool(self.runs))
+        except CHECK_ERRORS as problem:
+            text = f"the gate cannot judge the commit {candidate.commit[:SHORT_HASH]}: {problem}"
+            check_report.write_line(f"loop land: {text}", is_error=True)
+            verdict = gate.Verdict((), (text,), time.monotonic() - started)
         numbers = tuple(link.queued.number for link in chain)
         self.runs.append(Run(candidate, numbers, tuple(link.queued.request.subject for link in chain), verdict))
         return verdict
