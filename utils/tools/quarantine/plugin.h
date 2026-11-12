@@ -349,6 +349,8 @@
 //                           open mark
 //     foreign-primary       the primary declaration of a template of the
 //                           namespace foundation or fixy outside the base
+//     forward-declaration   a variable template that a unit declares with
+//                           extern before its definition, at that declaration
 //     open-extension        no finding: one record of each template with the
 //                           open mark, at its home, for the module of the rule,
 //                           which refuses a record that no ledger row admits
@@ -905,6 +907,7 @@ enum class Kind : std::uint8_t {
     // The family specialization home (specialization.cpp).
     specialization_outside_home,
     specialization_foreign_primary,
+    specialization_forward_declaration,
     specialization_open_extension,
     // The family library code (body.cpp).
     library_inlined,
@@ -1177,6 +1180,8 @@ inline const char* kind_name(Kind kind) {
             return "specialization";
         case Kind::specialization_foreign_primary:
             return "foreign-primary";
+        case Kind::specialization_forward_declaration:
+            return "forward-declaration";
         case Kind::specialization_open_extension:
             return "open-extension";
         case Kind::library_inlined:
@@ -1295,6 +1300,7 @@ inline Rule rule_of(Kind kind) {
             return Rule::must_consume;
         case Kind::specialization_outside_home:
         case Kind::specialization_foreign_primary:
+        case Kind::specialization_forward_declaration:
         case Kind::specialization_open_extension:
             return Rule::specialization_home;
         case Kind::library_inlined:
@@ -1486,6 +1492,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"must-consume", "door"},
     {"specialization-home", "specialization"},
     {"specialization-home", "foreign-primary"},
+    {"specialization-home", "forward-declaration"},
     {"specialization-home", "open-extension"},
 };
 

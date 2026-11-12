@@ -15,6 +15,10 @@ THE RULE
                         file outside the base declares first.  A forward
                         declaration before the header moves the home of a
                         template that no unit defines
+      forward-declaration
+                        a variable template that a unit declares with extern
+                        before its definition.  GCC keeps the place of that
+                        declaration as the home, also after the definition
       open-extension    a record: a template with the annotation
                         foundation::open_extension, at its home
     A template with the open mark is open to each file.  GCC merges the mark
@@ -46,6 +50,9 @@ ACTIONS = {
     "template the annotation foundation::open_extension with its reason and a ledger row",
     "foreign-primary": "is a template of the base that this file declares first, so the home of the template moves "
     "here.  Include the header of the template and remove the declaration, or move the template into the base",
+    "forward-declaration": "is declared here with extern before its definition, so its home moves here and a "
+    "specialization beside the declaration is at home.  Include the header that defines the template, and remove the "
+    "declaration",
     "open-extension": "carries the open mark, and no ledger row admits it.  Add the row with the reason of the mark, "
     "or remove the mark.  A second declaration in a different file can add the mark",
 }

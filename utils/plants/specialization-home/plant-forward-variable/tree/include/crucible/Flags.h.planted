@@ -1,0 +1,11 @@
+#pragma once
+
+namespace crucible::plant {
+
+template <class T>
+inline constexpr bool runtime_flag_v = false;
+
+template <class T>
+concept Flagged = runtime_flag_v<T>;
+
+}  // namespace crucible::plant

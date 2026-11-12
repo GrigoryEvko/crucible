@@ -43,14 +43,19 @@
 //     templates, and a mark that a unit adds gives a record with no row.
 //
 // THE FORWARD DECLARATION
-//     A unit can declare a template that no unit defines before the header
-//     that declares it.  The plugin gets no event for the declaration in the
-//     header, so the home of the template is then the file of the forward
-//     declaration, and a specialization beside it is at home.  But each
-//     specialization in the header then stands outside that home, so the unit
-//     still gives the kind specialization.  Only a template whose header
-//     holds no specialization and no definition escapes, and a gate cannot
-//     read such a template, because each use of it is incomplete.
+//     A unit can declare a template before the header that declares it.  The
+//     plugin gets no event for the declaration in the header.  GCC moves the
+//     place of a class template to its definition, so a forward declaration
+//     moves the home of a class template only when no unit defines it.  Then
+//     each specialization in the header stands outside that home, so the unit
+//     still gives the kind specialization.  Only a class template whose
+//     header holds no specialization and no definition escapes, and a gate
+//     cannot read such a template, because each use of it is incomplete.
+//     GCC keeps the place of the first declaration of a variable template,
+//     also after its definition, so a forward declaration moves its home.
+//     Such a declaration needs extern, and GCC keeps that flag on the
+//     pattern.  So a variable template with extern and an initializer gives
+//     the kind forward-declaration at the place that GCC keeps.
 //
 // THE BASE ROOTS
 //     A template of the namespace foundation or fixy has its home in a base
@@ -63,6 +68,9 @@
 //                        mark.  Its entity is the template
 //     foreign-primary    the home of a template of a base root outside the
 //                        base.  Its entity is the template
+//     forward-declaration
+//                        a variable template that a unit declares with
+//                        extern before its definition, at that declaration
 //     open-extension     a record: a template with the open mark, at its home
 //
 // THE ACTIVATION
@@ -168,6 +176,14 @@ bool is_in_base_root(tree general) {
     return false;
 }
 
+// True when GENERAL is a variable template that a declaration with extern
+// introduced before its definition (THE FORWARD DECLARATION).
+bool is_forward_declared_variable(tree general) {
+    tree result = DECL_TEMPLATE_RESULT(general);
+    return result != NULL_TREE && VAR_P(result) && DECL_LANG_SPECIFIC(result) != nullptr && DECL_THIS_EXTERN(result)
+        && DECL_INITIAL(result) != NULL_TREE;
+}
+
 bool is_base_path(const std::string& path) {
     for (const char* prefix : kBasePaths) {
         if (has_prefix(path, prefix)) {
@@ -200,6 +216,9 @@ const TemplateHome& home_of(tree general) {
         }
         if (place.file != nullptr && is_in_base_root(general) && !is_base_path(home.path)) {
             add_finding(Kind::specialization_foreign_primary, nullptr, place, home.entity);
+        }
+        if (place.file != nullptr && is_forward_declared_variable(general)) {
+            add_finding(Kind::specialization_forward_declaration, nullptr, place, home.entity);
         }
     }
     return homes_by_template.emplace(general, std::move(home)).first->second;

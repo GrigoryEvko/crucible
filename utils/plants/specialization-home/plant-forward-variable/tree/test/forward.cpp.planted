@@ -1,0 +1,16 @@
+// The test declares a runtime variable template with extern before the
+// header that defines it.  GCC keeps the place of this declaration as the
+// place of the template, so the specialization below stands at that home.
+namespace crucible::plant {
+template <class T>
+extern const bool runtime_flag_v;
+}  // namespace crucible::plant
+
+#include <crucible/Flags.h>
+
+struct Fake {};
+
+template <>
+inline constexpr bool crucible::plant::runtime_flag_v<Fake> = true;
+
+static_assert(crucible::plant::Flagged<Fake>);
