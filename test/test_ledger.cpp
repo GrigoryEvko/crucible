@@ -155,6 +155,31 @@ void test_fingerprint_reuses_the_cogmimic_projection() {
     crucible::test::pass("  test_fingerprint_reuses_the_cogmimic_projection: PASSED\n");
 }
 
+// A host with two L3 instances on one socket.  test/CMakeLists.txt plants the
+// sysfs tree: two CPUs of one package, and each CPU has an L3 of 32 MB.  The
+// socket caps hold the bytes of each L3 instance, and not of one instance.
+void test_socket_caps_hold_each_l3_instance() {
+    constexpr std::uint64_t kInstanceBytes = std::uint64_t{32} * 1024u * 1024u;
+    const auto machine = ::fixy::topology::Topology::probe_tree(probe_ctx, TWO_L3_SYSFS_ROOT);
+    const ledger::HostFacts facts = ledger::probe_host_facts(probe_ctx, machine);
+    assert(facts.l3_instance_count == 2u);
+    assert(facts.l3_instance_bytes == kInstanceBytes);
+    assert(ledger::to_socket_caps(facts).l3_bytes.value() == 2u * kInstanceBytes);
+
+    // A host whose sysfs names no L3 group reads as one instance, as the
+    // topology does, so its socket caps hold the bytes of the instance.
+    ledger::HostFacts ungrouped = facts;
+    ungrouped.l3_instance_count = 0u;
+    assert(ledger::to_socket_caps(ungrouped).l3_bytes.value() == kInstanceBytes);
+
+    // A product past 64 bits saturates and does not wrap.
+    ledger::HostFacts oversized = facts;
+    oversized.l3_instance_bytes = ~std::uint64_t{0};
+    assert(ledger::to_socket_caps(oversized).l3_bytes.value() == ~std::uint64_t{0});
+
+    crucible::test::pass("  test_socket_caps_hold_each_l3_instance:    PASSED\n");
+}
+
 // ── Competence ────────────────────────────────────────────────────────
 
 void test_competence_names_every_defect() {
@@ -791,6 +816,7 @@ int main() {
     test_fingerprint_is_stable_and_complete();
     test_fingerprint_halves_are_independent();
     test_fingerprint_reuses_the_cogmimic_projection();
+    test_socket_caps_hold_each_l3_instance();
     test_competence_names_every_defect();
     test_competence_load_uses_machine_capacity();
     test_competence_accepts_a_pinned_floor_under_any_governor();

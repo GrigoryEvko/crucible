@@ -524,6 +524,20 @@ target_include_directories(test_permission_row_roster PRIVATE "${CMAKE_CURRENT_B
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
 crucible_test(test_ledger)
+# A sysfs tree of one socket with two L3 instances of 32 MB: cpu0 and cpu1
+# have the package 0, and each CPU has an L3 of its own.  test_ledger reads
+# the tree through Topology::probe_tree.
+set(_two_l3_root "${CMAKE_CURRENT_BINARY_DIR}/sysfs_two_l3_one_socket")
+foreach(_cpu 0 1)
+  set(_cpu_dir "${_two_l3_root}/devices/system/cpu/cpu${_cpu}")
+  file(CONFIGURE OUTPUT "${_cpu_dir}/cache/index3/level" CONTENT "3\n")
+  file(CONFIGURE OUTPUT "${_cpu_dir}/cache/index3/type" CONTENT "Unified\n")
+  file(CONFIGURE OUTPUT "${_cpu_dir}/cache/index3/size" CONTENT "32768K\n")
+  file(CONFIGURE OUTPUT "${_cpu_dir}/cache/index3/shared_cpu_list" CONTENT "${_cpu}\n")
+  file(CONFIGURE OUTPUT "${_cpu_dir}/topology/core_id" CONTENT "${_cpu}\n")
+  file(CONFIGURE OUTPUT "${_cpu_dir}/topology/physical_package_id" CONTENT "0\n")
+endforeach()
+target_compile_definitions(test_ledger PRIVATE TWO_L3_SYSFS_ROOT="${_two_l3_root}")
 # The probes time through bench/bench_harness.h rather than carrying their
 # own rig — the harness already reports the quantiles, the within-run
 # coefficient of variation and the drift check a ledger evidence record

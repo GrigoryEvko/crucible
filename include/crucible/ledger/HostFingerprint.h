@@ -44,6 +44,7 @@
 #include <fixy/Tags.h>
 #include <fixy/os/Topology.h>
 #include <fixy/os/Fs.h>
+#include <foundation/Saturate.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/reflect/Hash.h>
 
@@ -370,17 +371,20 @@ template <::foundation::effects::IsExecCtx Ctx>
 
 // ── The probe ─────────────────────────────────────────────────────────
 
+// The facts of the host, with the geometry of the topology `machine`.  The
+// form with no topology reads the topology of the process.  A test gives the
+// topology of a planted sysfs tree.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsHostProbe<Ctx>
-[[nodiscard]] inline HostFacts probe_host_facts(Ctx const& ctx) noexcept {
+[[nodiscard]] inline HostFacts probe_host_facts(Ctx const& ctx, ::fixy::topology::Topology const& machine) noexcept {
     namespace probe = fingerprint_detail;
     using ::fixy::topology::Topology;
 
     HostFacts facts{};
-    const Topology::Snapshot topology = Topology::instance().snapshot();
+    const Topology::Snapshot topology = machine.snapshot();
 
-    probe::copy_into(facts.cpu_vendor, Topology::instance().cpu_vendor());
-    probe::copy_into(facts.cpu_model, Topology::instance().cpu_model_name());
+    probe::copy_into(facts.cpu_vendor, machine.cpu_vendor());
+    probe::copy_into(facts.cpu_model, machine.cpu_model_name());
 
     facts.l1d_bytes = static_cast<std::uint32_t>(topology.l1d_per_core_bytes);
     facts.l1i_bytes = static_cast<std::uint32_t>(topology.l1i_per_core_bytes);
@@ -391,7 +395,7 @@ template <::foundation::effects::IsExecCtx Ctx>
     facts.hw_thread_count = static_cast<std::uint16_t>(topology.num_smt_threads);
     facts.numa_node_count = static_cast<std::uint8_t>(topology.numa_nodes);
     facts.page_size_bytes = static_cast<std::uint32_t>(topology.page_size_bytes);
-    facts.l3_instance_count = static_cast<std::uint16_t>(Topology::instance().l3_groups().size());
+    facts.l3_instance_count = static_cast<std::uint16_t>(machine.l3_groups().size());
     facts.was_probed_from_sysfs = (topology.source == Topology::Source::Sysfs);
 
     // The full matrix, not just the node count: two hosts with four nodes
@@ -401,11 +405,11 @@ template <::foundation::effects::IsExecCtx Ctx>
         // The node ids can be sparse, so the walk takes each pair of ids
         // from the node list.  Each distance is then present.
         std::uint64_t accumulator = 0x9e3779b97f4a7c15ULL;
-        const std::span<const int> node_ids = Topology::instance().numa_node_ids();
+        const std::span<const int> node_ids = machine.numa_node_ids();
         for (const int from_node : node_ids) {
             for (const int to_node : node_ids) {
                 const std::uint64_t distance =
-                    static_cast<std::uint64_t>(Topology::instance().numa_distance(from_node, to_node).value_or(0));
+                    static_cast<std::uint64_t>(machine.numa_distance(from_node, to_node).value_or(0));
                 accumulator = probe::mix(accumulator, distance);
             }
         }
@@ -516,6 +520,12 @@ template <::foundation::effects::IsExecCtx Ctx>
     return facts;
 }
 
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsHostProbe<Ctx>
+[[nodiscard]] inline HostFacts probe_host_facts(Ctx const& ctx) noexcept {
+    return probe_host_facts(ctx, ::fixy::topology::Topology::instance());
+}
+
 // ── Projection into the cog schema ────────────────────────────────────
 //
 // The probed facts are re-expressed as the cog caps the rest of the tree
@@ -533,10 +543,17 @@ template <::foundation::effects::IsExecCtx Ctx>
     core.l2_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(facts.l2_bytes);
     core.features = facts.isa_features;
 
+    // The projection reads the host as one socket: the core count, the
+    // thread count and the NUMA node count are each of the full host.  The
+    // L3 bytes are thus the bytes of each L3 instance of the host.  A host
+    // whose sysfs names no L3 group reads as one instance, as the topology
+    // does.
+    const std::uint64_t l3_instances = facts.l3_instance_count == 0u ? 1u : facts.l3_instance_count;
     cog::CpuSocketTargetCaps socket{};
     socket.core_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(facts.physical_core_count);
     socket.thread_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint16_t>(facts.hw_thread_count);
-    socket.l3_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(facts.l3_instance_bytes);
+    socket.l3_bytes = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint64_t>(
+        ::foundation::sat::mul_sat(facts.l3_instance_bytes, l3_instances));
     socket.numa_node_count = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint8_t>(facts.numa_node_count);
     socket.representative_core = core;
     socket.features = facts.isa_features;
