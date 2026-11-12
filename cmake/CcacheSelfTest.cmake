@@ -32,8 +32,12 @@
 #     absolute path of the source, so its __FILE__ names WORK.
 # PLUGIN_DIR names the directory of the plugin of the build that runs the test.
 # Each build root gets a copy of the plugin and of its key, so the configure
-# step finds the plugin current and does not build it.  With no PLUGIN_DIR, the
-# first build root builds the plugin, and the other build roots get a copy.
+# step finds the plugin current and does not build it.  The copy is not current
+# when the sources of the plugin or the compiler changed after the last
+# configure of the build, for example in a run of ctest with no build.  The
+# first build root then builds the plugin, as it does with no PLUGIN_DIR, and
+# each later build root gets the plugin of the root before it.  So the test
+# builds the plugin one time at most.
 #
 # CASE=wrapper configures the project with cmake/Toolchain-gcc16.cmake and with
 # a compiler wrapper as CMAKE_CXX_COMPILER, as `loop fuzz` does with
@@ -165,10 +169,10 @@ elseif(CASE STREQUAL "relocation" OR CASE STREQUAL "plain_relocation")
     endif()
     configured_launcher("${directory}" "" launcher -DCMAKE_BUILD_TYPE=Debug -DCRUCIBLE_USE_CCACHE=${use_ccache}
                         -DWITH_TREE_PLUGIN=ON)
-    if(NOT EXISTS "${WORK}/plugin")
-      file(GLOB plugin_files "${directory}/quarantine/*.so" "${directory}/quarantine/*.so.key")
-      file(COPY ${plugin_files} DESTINATION "${WORK}/plugin")
-    endif()
+    # The plugin of this root is current after its configure.  The next root
+    # gets it, also when the copy of PLUGIN_DIR was not current.
+    file(GLOB plugin_files "${directory}/quarantine/*.so" "${directory}/quarantine/*.so.key")
+    file(COPY ${plugin_files} DESTINATION "${WORK}/plugin")
     probe_object("${directory}" object)
     set(${out_var} "${object}" PARENT_SCOPE)
   endfunction()
