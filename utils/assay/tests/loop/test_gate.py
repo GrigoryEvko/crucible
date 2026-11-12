@@ -18,7 +18,9 @@ must run that test in each other configuration of objects.  A landing that
 builds each configuration must reduce each counted ledger over the builds,
 and a landing that builds only some configurations must write no ledger.
 The first run of each configuration of objects must end with the rule
-reconfigure-noop, and a failure of that rule must reject the commit.
+reconfigure-noop, and a failure of that rule must reject the commit.  A
+registry that the code of the gate cannot read must give the widest
+selection and no reduce.
 """
 
 import json
@@ -51,6 +53,15 @@ REGISTRY = (
     "rule syscalls engine=plugin scope=tracked ledger=count kinds=claim doc=XXII | a call | remove it\n"
     "rule home engine=plugin scope=tracked ledger=count kinds=open-read doc=XVI | a read | close the gate\n"
 )
+# The planted registry with the scope quarantined for the rule quarantine.  The inputs of the rule then read the rule
+# table for each C++ file of the tree.  The registry and the rule table of a commit that adds a row of a kind that the
+# code of the gate does not know (THE CAREFUL SELECTION).
+QUARANTINED_REGISTRY = REGISTRY.replace(
+    "rule quarantine engine=plugin scope=tracked", "rule quarantine engine=plugin scope=quarantined"
+)
+UNREADABLE_REGISTRY = QUARANTINED_REGISTRY + "budget a-row-of-a-new-kind\n"
+RULE_TABLE = "utils/rule-table.txt"
+UNREADABLE_TABLE = "planted-kind a::end_each | a row of a new kind\n"
 # The module of the rule that reads the build, its test, and the module of the test launcher of the planted repository.
 BUILD_RULE_MODULE = "utils/assay/guard/engines/meta/plan_check.py"
 BUILD_RULE_TEST = "guard_plan_check"
@@ -1068,6 +1079,46 @@ def base_run_cases(expect: testing.Expect) -> None:
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
+def careful_cases(expect: testing.Expect) -> None:
+    """Hold THE CAREFUL SELECTION: a file that the code of the gate cannot read gives the widest result of its read."""
+    with tempfile.TemporaryDirectory(prefix="gate-careful-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root, {rule_registry.REGISTRY_PATH: QUARANTINED_REGISTRY, "src/unit.cpp": "int a;\n"})
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        planted = replace(every_gate(work, root, tree), is_every=False)
+        table = commit_change(root, RULE_TABLE, UNREADABLE_TABLE, "Add a row of a new kind to the rule table")
+        candidate = gate.Candidate(head, table, (RULE_TABLE,))
+        verdict, printed = testing.captured(lambda: planted.check(candidate, False))
+        every = {item.name for item in gate.CONFIGURATIONS}
+        holds = (
+            verdict.is_accepted
+            and set(verdict.configurations) == every
+            and "the code of the gate cannot read the inputs of the rules of the parse builds" in printed
+        )
+        label = (
+            f"a rule table with a row that the code of the gate cannot read gives each parse configuration, and the "
+            f"commit gets its verdict: the gate runs {verdict.configurations}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        commit = commit_change(root, rule_registry.REGISTRY_PATH, UNREADABLE_REGISTRY, "Add a row of a new kind")
+        candidate = gate.Candidate(table, commit, (rule_registry.REGISTRY_PATH,))
+        verdict, printed = testing.captured(lambda: planted.check(candidate, False))
+        writes = [tree / item.build / "writes.txt" for item in gate.CONFIGURATIONS]
+        holds = (
+            verdict.is_accepted
+            and "the code of the gate cannot read the counted ledgers" in printed
+            and not any(path.is_file() for path in writes)
+            and verdict.final == commit
+        )
+        label = (
+            f"a registry with a row that the code of the gate cannot read gives no reduce, and the commit gets its "
+            f"verdict: the gate runs {verdict.configurations}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+
+
 def lock_cases(expect: testing.Expect) -> None:
     """Hold the lock of the warm tree: a second session waits for the first."""
     with tempfile.TemporaryDirectory(prefix="gate-lock-") as work_text:
@@ -1121,6 +1172,7 @@ def main(argv: list[str]) -> int:
             stop_cases,
             masked_error_cases,
             base_run_cases,
+            careful_cases,
             lock_cases,
         ),
     )

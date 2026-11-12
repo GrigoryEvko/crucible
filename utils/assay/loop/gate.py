@@ -98,6 +98,22 @@ THE SELECTION
     nothing.  A parse build then keeps the report of each unit (THE KEPT
     REPORTS of assay.loop.syntax).
 
+THE CAREFUL SELECTION
+    The selection reads files of the commit with the code of the gate, which
+    is the code of main (THE DRIVER of assay.loop.land).  A commit can change
+    the format of a file and its reader together.  An example is a new kind
+    of row of the rule table and the code that reads it.  The code of the
+    gate then cannot read that file.  Each read of the selection that gives
+    an error then gives its widest result (careful()):
+      * each parse configuration
+      * the mode of the changed inputs in each other configuration of objects
+      * no counted rule, so THE REDUCE lowers no row.
+    The gate writes a line with the error.  A wider selection runs each
+    configuration and each test that a narrower one runs, so the invariant
+    of THE SELECTION holds.  `loop syntax --changed` is the master of the
+    warm tree, and an error of it also gives each parse configuration.  The
+    commit then gets its verdict from its own tests.
+
 THE WARM TREE
     One repository in the directory TREE of the work directory holds the
     commit of each landing.  It borrows the objects of the repository of the
@@ -500,6 +516,28 @@ class Outcome:
 
 CONFIGURATIONS = configurations(paths.REPO_ROOT)
 BY_NAME = {configuration.name: configuration for configuration in CONFIGURATIONS}
+# The errors of a read of the selection that give its widest result (THE CAREFUL SELECTION).
+READ_ERRORS = (GateError, git.GitError, proc.ToolFailed, OSError, ValueError)
+
+
+def careful[Result](reading: Callable[[], Result], widest: Result, what: str, result_text: str) -> Result:
+    """Return the result of a read of the selection, or its widest result when the read gives an error.
+
+    THE CAREFUL SELECTION gives the rule.  The function writes one line with the error.
+
+    Args:
+        reading: The read
+        widest: The widest result of the read
+        what: The words that tell what the read reads
+        result_text: The words that tell the widest result
+    """
+    try:
+        return reading()
+    except READ_ERRORS as problem:
+        check_report.write_line(
+            f"loop land: the code of the gate cannot read {what}: {problem}.  The gate selects {result_text}"
+        )
+        return widest
 
 
 def is_build_file(path: str) -> bool:
@@ -800,21 +838,26 @@ class Gate:
         """Return the runs of the configurations of objects with no full suite, for the change and `ledgers`.
 
         `is_each` tells that the change can change each build (changes_each()).  Else, the plan reads the touched tests
-        of the build of ALWAYS.
-
-        Raises:
-            GateError: If the build of ALWAYS or its tests cannot be read
-            git.GitError: If git cannot read the registry at the commit that the change starts from
+        of the build of ALWAYS.  A read that gives an error gives the plan of a change that can change each build (THE
+        CAREFUL SELECTION).
         """
         if not others:
             return ()
+        each = other_runs(others, True, ())
         if is_each:
-            return other_runs(others, True, ())
-        change = guard_inputs.read_change(self.tree, candidate.head, (*candidate.changed, *ledgers))
-        names = self.touched_names(change)
-        shown = " ".join(names) if names else "none"
-        check_report.write_line(f"loop land: the touched tests of the other configurations of objects: {shown}")
-        return other_runs(others, False, names)
+            return each
+
+        def touched() -> tuple[Run, ...]:
+            """Return the runs of the touched tests of the build of ALWAYS."""
+            change = guard_inputs.read_change(self.tree, candidate.head, (*candidate.changed, *ledgers))
+            names = self.touched_names(change)
+            shown = " ".join(names) if names else "none"
+            check_report.write_line(f"loop land: the touched tests of the other configurations of objects: {shown}")
+            return other_runs(others, False, names)
+
+        return careful(
+            touched, each, "the touched tests", "the tests of the changed inputs in each other configuration"
+        )
 
     def check(self, candidate: Candidate, is_retry: bool) -> Verdict:
         """Give the warm tree the commit, select the configurations, and run them in one heavy step (THE THREADS).
@@ -839,18 +882,38 @@ class Gate:
                 f"loop land: the run of the base at {candidate.commit[:9]} runs {shown}, logs in {self.logs}"
             )
         else:
-            presets = self._parse_presets(based)
+            each_parse = [item.name for item in CONFIGURATIONS if item.is_parse]
+            presets = careful(
+                lambda: self._parse_presets(based),
+                list(each_parse),
+                "the arms of the change",
+                "each parse configuration",
+            )
             uncompiled = [path for path in candidate.changed if not is_compiled_change(path)]
-            if touches_parse_rules(self.tree, guard_inputs.read_change(self.tree, candidate.head, uncompiled)):
-                presets += [item.name for item in CONFIGURATIONS if item.is_parse]
-            counted = counted_rules(self.tree)
+
+            def touches() -> bool:
+                """Tell if the change touches the inputs of a rule that a parse configuration checks."""
+                return touches_parse_rules(self.tree, guard_inputs.read_change(self.tree, candidate.head, uncompiled))
+
+            if careful(touches, True, "the inputs of the rules of the parse builds", "each parse configuration"):
+                presets += each_parse
+            counted = careful(lambda: counted_rules(self.tree), (), "the counted ledgers", "no reduce")
             selected = select(candidate.changed, presets, self.is_every)
             plan = tuple(
                 Run(item, Mode.PARSE) if item.is_parse else Run(item, Mode.FULL, is_build_only=item.name != ALWAYS)
                 for item in selected
             )
             others = tuple(item for item in CONFIGURATIONS if not item.is_parse and item not in selected)
-            is_each = self.changes_each(candidate) if others else True
+            is_each = (
+                careful(
+                    lambda: self.changes_each(candidate),
+                    True,
+                    "the inputs of the meters of the tests",
+                    "the tests of the changed inputs in each other configuration of objects",
+                )
+                if others
+                else True
+            )
             shown = " ".join(item.name for item in selected)
             rest = f", and the tests of the change in {' '.join(item.name for item in others)}" if others else ""
             check_report.write_line(
@@ -890,7 +953,16 @@ class Gate:
                         f"loop land: the writes of the gate changed {' '.join(ledgers)}, folded into the commit "
                         f"{final[:9]}, and each configuration of the run runs again"
                     )
-                    is_each_again = self.changes_each(candidate, ledgers) if others else True
+                    is_each_again = (
+                        careful(
+                            lambda: self.changes_each(candidate, ledgers),
+                            True,
+                            "the inputs of the meters of the tests",
+                            "the tests of the changed inputs in each other configuration",
+                        )
+                        if others
+                        else True
+                    )
 
                     def again_plan() -> tuple[Run, ...]:
                         """Return the runs of the other configurations of the round after the fold."""
