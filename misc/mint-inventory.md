@@ -301,6 +301,7 @@ that the axis does not apply to the row.
 |---|---|---|---|---|---|---|---|---|
 | `mint_box` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 6 |
 | `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 5 |
+| `mint_sole_writer` | `include/foundation/core/Atomic.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 
 ## include/foundation/diag/
 
@@ -342,4 +343,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 84 | 46 | 29 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 114 | 53 | 58 | 3 | 0 | 4 |
+| substrate (`include/foundation/`, `include/fixy/`) | 115 | 53 | 59 | 3 | 0 | 4 |

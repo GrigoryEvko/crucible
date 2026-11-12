@@ -2202,13 +2202,13 @@ foundation_neg_compile_test(neg_core_box_consume_not_movable
 # threads, and foundation starts no thread, so test/fixy holds it.
 
 foundation_neg_compile_test(neg_core_atomic_padded_payload
-  "template constraint failure for .template<class T>  requires  AtomicValue<T> class foundation::core::Atomic."
+  "template constraint failure for .template<class T, class Writer>  requires  AtomicValue<T> class foundation::core::Atomic."
   "the expression .has_unique_object_representations_v<T> \\[with T = Padded\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_atomic_float_payload
-  "template constraint failure for .template<class T>  requires  AtomicValue<T> class foundation::core::Atomic."
+  "template constraint failure for .template<class T, class Writer>  requires  AtomicValue<T> class foundation::core::Atomic."
   "the expression .has_unique_object_representations_v<T> \\[with T = float\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_atomic_not_lock_free
-  "template constraint failure for .template<class T>  requires  AtomicValue<T> class foundation::core::Atomic."
+  "template constraint failure for .template<class T, class Writer>  requires  AtomicValue<T> class foundation::core::Atomic."
   "the expression .__atomic_always_lock_free\\(long unsigned int, const volatile void\\*\\)\\(sizeof \\(T\\), 0\\) \\[with T = WidePhase\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_atomic_fetch_add_enum
   "no matching function for call to .foundation::core::Atomic<Phase>::fetch_add_acq_rel\\(Phase\\)."
@@ -2228,6 +2228,36 @@ foundation_neg_compile_test(neg_core_cache_line_arrow_of_temporary
 foundation_neg_compile_test(neg_core_cache_line_get
   "has no member named .get."
   ".class foundation::core::CacheLine<int>.")
+foundation_neg_compile_test(neg_core_sole_writer_mint_role_not_class
+  "no matching function for call to .mint_sole_writer<int>\\(\\)."
+  "the expression .is_class_v<Role> \\[with Role = int\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_sole_writer_mint_named_brand
+  "no matching function for call to .mint_sole_writer<.*HeadRole, HeldBrand>\\(\\)."
+  "the expression .sizeof ... \\(Arguments ...\\) == 0 \\[with Arguments = .*\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_sole_writer_copied
+  "use of deleted function .foundation::core::SoleWriter<Role, Brand>::SoleWriter\\(const foundation::core::SoleWriter<Role, Brand>&\\)"
+  "SoleWriter: a copy gives the cell a second writer")
+foundation_neg_compile_test(neg_core_sole_writer_forged_key
+  ".constexpr foundation::core::sole_writer_key::sole_writer_key\\(\\). is private within this context"
+  "declared private here")
+foundation_neg_compile_test(neg_core_sole_writer_store_without_proof
+  "no matching function for call to .foundation::core::Atomic<long unsigned int, foundation::core::SoleWriter<.*HeadRole, .*> >::store_release\\(int\\)."
+  "candidate expects 2 arguments, 1 provided")
+foundation_neg_compile_test(neg_core_sole_writer_other_role
+  "cannot convert .foundation::core::SoleWriter<.*TailRole, .*>. to .const foundation::core::SoleWriter<.*HeadRole, .*>&."
+  "initializing argument 1 of .void foundation::core::Atomic<T, foundation::core::SoleWriter<Role, Identity> >::store_release")
+foundation_neg_compile_test(neg_core_atomic_load_owned_shared
+  ".class foundation::core::Atomic<long unsigned int>. has no member named .load_owned."
+  "has no member named .load_owned.")
+foundation_neg_compile_test(neg_core_sole_writer_default_brand
+  "the brand is the identity of one writer.  DefaultBrand would give each writer of the role one type"
+  "static assertion failed")
+foundation_neg_compile_test(neg_core_sole_writer_exchange
+  ".class foundation::core::Atomic<long unsigned int, foundation::core::SoleWriter<.*HeadRole, .*> >. has no member named .exchange_acq_rel."
+  "has no member named .exchange_acq_rel.")
+foundation_neg_compile_test(neg_core_atomic_writer_not_sole_writer
+  "the writer is void, for a cell that each thread can write, or SoleWriter<Role, Brand>, for a cell of one writer"
+  "static assertion failed")
 
 # ── The Scalar family: decode and enum_from ───────────────────────────
 #

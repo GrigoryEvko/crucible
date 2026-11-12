@@ -14,14 +14,13 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <utility>
 
 namespace forge {
-// Stand-ins for the values that a forger must give.  Neither returns: the
-// fixture compiles, and it never runs.
-template <class T> [[gnu::noinline]] T& lvalue() noexcept { std::abort(); }
-template <class T> [[gnu::noinline]] T&& rvalue() noexcept { std::abort(); }
+// Stand-ins for the values that a forger must give.  The compiler refuses the
+// construction, so no fixture links, and neither stand-in has a body.
+template <class T> T& lvalue() noexcept;
+template <class T> T&& rvalue() noexcept;
 
 // The brand that the expression names.  It is empty, which is all that
 // foundation::brand::IsBrand asks of a brand.

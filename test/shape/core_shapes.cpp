@@ -145,6 +145,42 @@ struct NetError8 final {
     return line->load_acquire();
 }
 
+// The cell of one writer.  The proof is a token with no bytes, so its
+// reference is one more register argument that no instruction reads.  A
+// fresh brand stays in the scope that made it, so no alias names the writer.
+// Each probe names its cell in its first parameter, and the second parameter
+// takes the writer of that cell.
+struct ShapeHeadRole final {};
+
+template <class CellReference>
+struct writer_of;
+
+template <class T, class Writer>
+struct writer_of<fixy::Atomic<T, Writer> const&> {
+    using type = Writer;
+};
+
+template <class T, class Writer>
+struct writer_of<fixy::Atomic<T, Writer>&> {
+    using type = Writer;
+};
+
+[[gnu::used]] std::uint64_t
+sole_load_owned(fixy::Atomic<std::uint64_t, decltype(fixy::mint_sole_writer<ShapeHeadRole>())> const& cell,
+                typename writer_of<decltype(cell)>::type const& writer) noexcept {
+    return cell.load_owned(writer);
+}
+
+[[gnu::used]] void sole_store(fixy::Atomic<std::uint64_t, decltype(fixy::mint_sole_writer<ShapeHeadRole>())>& cell,
+                              typename writer_of<decltype(cell)>::type const& writer, std::uint64_t value) noexcept {
+    cell.store_release(writer, value);
+}
+
+[[gnu::used]] std::uint64_t
+sole_load(fixy::Atomic<std::uint64_t, decltype(fixy::mint_sole_writer<ShapeHeadRole>())> const& cell) noexcept {
+    return cell.load_acquire();
+}
+
 // ── Region ──────────────────────────────────────────────────────────────────
 
 [[gnu::used]] std::uint32_t view_sum(fixy::View<std::uint32_t const> view) noexcept {
@@ -542,6 +578,20 @@ struct RawText final {
 // reads the cell with no CacheLine around it.
 [[gnu::used]] std::uint64_t cache_line_load_raw(fixy::Atomic<std::uint64_t> const& cell) noexcept {
     return cell.load_acquire();
+}
+
+// The read of its own variable by the one thread that writes it is a
+// relaxed load.
+[[gnu::used]] std::uint64_t sole_load_owned_raw(std::atomic<std::uint64_t> const& cell) noexcept {
+    return cell.load(std::memory_order_relaxed);
+}
+
+[[gnu::used]] void sole_store_raw(std::atomic<std::uint64_t>& cell, std::uint64_t value) noexcept {
+    cell.store(value, std::memory_order_release);
+}
+
+[[gnu::used]] std::uint64_t sole_load_raw(std::atomic<std::uint64_t> const& cell) noexcept {
+    return cell.load(std::memory_order_acquire);
 }
 
 [[gnu::used]] std::uint32_t view_sum_raw(std::uint32_t const* first, std::size_t count) noexcept {

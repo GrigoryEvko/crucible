@@ -21,8 +21,8 @@
 //   fetch_min_acq_rel(v)           stores v if v is smaller, for an integer
 //
 // The type has no operator and no conversion, so no operation takes the
-// sequentially consistent order without a name that says so, and no
-// operation takes the relaxed order at all.
+// sequentially consistent order without a name that says so.  Only the
+// writer of a cell of one writer takes the relaxed order (below).
 //
 // A value of a class type is admitted when it has one bit pattern for each
 // value.  The cell holds it as the unsigned integer of its size, and the
@@ -30,10 +30,29 @@
 // bits of a value with no padding are the value, so the compare agrees with
 // a compare of the members.
 //
-// The one thread that writes a cell, such as the producer of a
-// single-producer ring, keeps its own copy of the value and publishes each
-// change with store_release.  A relaxed read of its own cell needs a proof
-// that the thread is the sole writer, so the family gives no relaxed read.
+// THE CELL OF ONE WRITER
+//   Atomic<T, SoleWriter<Role, Brand>> names its writer in its type, and
+//   each write takes the proof of that writer:
+//
+//     load_acquire()             the value, with acquire order, on each thread
+//     load_owned(writer)         the value, with relaxed order, for the writer
+//     store_release(writer, v)   stores v, with release order, for the writer
+//
+//   The holder of the proof is the only thread that writes the cell, so a
+//   read by the writer reads a value that the same thread stored.  That read
+//   needs no order.  A proof moves to a different thread only through a
+//   handoff that orders it, such as a thread start, a join or a channel of
+//   the base.  The last store of the old holder then happens before the
+//   first read of the new holder.  The cell has no read-modify-write
+//   operation: the writer reads with load_owned and stores with
+//   store_release, with no locked instruction.
+//
+//   SoleWriter<Role, Brand> is the proof, a linear token with no bytes.
+//   mint_sole_writer<Role>() is its one door, and each call site of the
+//   door gives a fresh brand.  The identity is the call site: a mint in a
+//   loop gives one type in each turn, and a token that leaves its turn can
+//   write the cell of a different turn.  The run-time id of a brand of the
+//   linear design (misc/12_10_2026_linear.md, phase B) closes that case.
 //
 // CacheLine<T> aligns a cell to 64 bytes and pads it to a multiple of 64
 // bytes, so the type states that no other data shares its cache line.
@@ -43,10 +62,14 @@
 // which is the same locked instruction on x86-64, and read() is an acquire
 // load.  A value of a Tally orders no other data.
 
+#include <foundation/Brand.h>
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/core/Choice.h>
 
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -90,29 +113,131 @@ using atomic_storage_t = std::conditional_t<
                        std::conditional_t<sizeof(T) == 2, std::uint16_t,
                                           std::conditional_t<sizeof(T) == 4, std::uint32_t, std::uint64_t>>>>;
 
+// The word of a value, and the value of a word.  A value of one bit pattern
+// for each value round-trips through its word.
+template <class T>
+[[nodiscard]] constexpr atomic_storage_t<T> to_atomic_storage(T value) noexcept {
+    if constexpr (std::same_as<atomic_storage_t<T>, T>) {
+        return value;
+    } else {
+        return __builtin_bit_cast(atomic_storage_t<T>, value);
+    }
+}
+
+template <class T>
+[[nodiscard]] constexpr T from_atomic_storage(atomic_storage_t<T> bits) noexcept {
+    if constexpr (std::same_as<atomic_storage_t<T>, T>) {
+        return bits;
+    } else {
+        return __builtin_bit_cast(T, bits);
+    }
+}
+
+// The role of a sole writer: an empty class that is not cv-qualified.  A role
+// names a kind of cell, such as the head of a ring.
+template <class Role>
+concept SoleWriterRole =
+    std::is_class_v<Role> && std::is_empty_v<Role> && !std::is_const_v<Role> && !std::is_volatile_v<Role>;
+
+// The template arguments of mint_sole_writer: a role and no other argument.
+// A second argument would name the brand of a writer that the caller holds.
+template <class Role, class... Arguments>
+concept SoleWriterMint = SoleWriterRole<Role> && sizeof...(Arguments) == 0;
+
 }  // namespace detail
 
-template <AtomicValue T>
-class Atomic : ::foundation::Pinned<Atomic<T>> {
+template <class Role, class Brand>
+class SoleWriter;
+
+// The one door to a sole writer.  The fresh brand is the last template
+// parameter, after a pack, so a caller can name the role and nothing else.
+// An explicit second argument goes into the pack, and the constraint refuses
+// it.
+template <class Role, class... Arguments, class Brand = CRUCIBLE_FRESH_BRAND>
+    requires detail::SoleWriterMint<Role, Arguments...>
+[[nodiscard]] constexpr SoleWriter<Role, Brand> mint_sole_writer() noexcept;
+
+// The key of the constructor of a sole writer.  Only mint_sole_writer makes
+// one.  The two constructors are user-provided, so std::bit_cast and a
+// lifetime start over bytes build no key.  The key stays in this namespace,
+// because a friend declaration in a nested namespace would declare a
+// different mint there.
+class sole_writer_key final {
+    constexpr sole_writer_key() noexcept {}
+
+public:
+    constexpr sole_writer_key(sole_writer_key const&) noexcept {}
+
+private:
+    template <class Role, class... Arguments, class Brand>
+        requires detail::SoleWriterMint<Role, Arguments...>
+    friend constexpr SoleWriter<Role, Brand> mint_sole_writer() noexcept;
+};
+
+// The proof of the one thread that writes a cell (THE CELL OF ONE WRITER).
+// The token has no bytes.  Its move constructor and its destructor are
+// trivial, so the ABI passes it in a register.  Its move assignment is
+// user-provided, so it is not trivially copyable, and std::bit_cast builds
+// no token.  The annotation no_start_over_bytes refuses the checked lifetime
+// start of foundation/Lifetime.h.
+template <class Role, class Brand>
+class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::authority{}]]
+                   [[= ::foundation::lifetime::no_start_over_bytes{}]] SoleWriter final {
+    static_assert(detail::SoleWriterRole<Role>, "SoleWriter<Role, Brand>: the role names a kind of cell, such as the "
+                                                "head of a ring.  It must be an empty class that is not cv-qualified.");
+    static_assert(::foundation::brand::IsFreshBrand<Brand>,
+                  "SoleWriter<Role, Brand>: the brand is the identity of one writer.  DefaultBrand would give each "
+                  "writer of the role one type, so the writer of one cell could write a different cell.  Mint the "
+                  "writer with mint_sole_writer<Role>().");
+
+public:
+    using brand_type = Brand;
+
+    explicit constexpr SoleWriter(sole_writer_key) noexcept {}
+
+    SoleWriter(SoleWriter const&) = delete("SoleWriter: a copy gives the cell a second writer, and load_owned then "
+                                           "reads a value that a different thread stores.  Move the writer.");
+    SoleWriter& operator=(SoleWriter const&) = delete("SoleWriter: a copy gives the cell a second writer.");
+
+    constexpr SoleWriter(SoleWriter&&) noexcept = default;
+    constexpr SoleWriter& operator=(SoleWriter&&) noexcept { return *this; }
+    ~SoleWriter() = default;
+
+private:
+    // A writer lives in a scope, a handle or a parameter.  A new-expression
+    // gives it storage that no scope ends, and each copy of the pointer
+    // reaches the one token.  The class operator new hides each global form,
+    // and it is private, so it is no part of the public surface.
+    static void* operator new(std::size_t) = delete("a SoleWriter lives in a scope or a handle, not on the heap");
+    static void* operator new[](std::size_t) = delete("a SoleWriter lives in a scope or a handle, not on the heap");
+    static void operator delete(void*) = delete;
+    static void operator delete[](void*) = delete;
+};
+
+template <class Role, class... Arguments, class Brand>
+    requires detail::SoleWriterMint<Role, Arguments...>
+[[nodiscard]] constexpr SoleWriter<Role, Brand> mint_sole_writer() noexcept {
+    return SoleWriter<Role, Brand>{sole_writer_key{}};
+}
+
+// The writer of a cell: void for a cell that each thread can write, or a
+// SoleWriter for a cell of one writer.
+template <AtomicValue T, class Writer = void>
+class Atomic : ::foundation::Pinned<Atomic<T, Writer>> {
+    static_assert(std::is_void_v<Writer>, "Atomic<T, Writer>: the writer is void, for a cell that each thread can "
+                                          "write, or SoleWriter<Role, Brand>, for a cell of one writer.");
+
     using storage_type = detail::atomic_storage_t<T>;
     static_assert(sizeof(storage_type) == sizeof(T), "a lock-free value has the size of an unsigned integer");
 
     alignas(sizeof(T)) storage_type value_{};
 
     [[nodiscard]] static constexpr storage_type to_storage_(T value) noexcept {
-        if constexpr (std::same_as<storage_type, T>) {
-            return value;
-        } else {
-            return __builtin_bit_cast(storage_type, value);
-        }
+        return detail::to_atomic_storage<T>(value);
     }
 
     [[nodiscard]] static constexpr T from_storage_(storage_type bits) noexcept {
-        if constexpr (std::same_as<storage_type, T>) {
-            return bits;
-        } else {
-            return __builtin_bit_cast(T, bits);
-        }
+        return detail::from_atomic_storage<T>(bits);
     }
 
 public:
@@ -190,6 +315,48 @@ public:
         while (value < observed
                && !__atomic_compare_exchange_n(&value_, &observed, value, true, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {}
         return observed;
+    }
+};
+
+// The cell of one writer (THE CELL OF ONE WRITER).  The parameter of the
+// brand has the name Identity, so the rule erased-brand reads no brand of the
+// primary template here.
+template <AtomicValue T, class Role, class Identity>
+class Atomic<T, SoleWriter<Role, Identity>> : ::foundation::Pinned<Atomic<T, SoleWriter<Role, Identity>>> {
+    static_assert(detail::SoleWriterRole<Role>, "Atomic<T, SoleWriter<Role, Brand>>: the role names a kind of cell.  "
+                                                "It must be an empty class that is not cv-qualified.");
+    static_assert(::foundation::brand::IsFreshBrand<Identity>,
+                  "Atomic<T, SoleWriter<Role, Brand>>: the brand is the identity of one writer.  DefaultBrand would "
+                  "give each writer of the role one type, so the writer of one cell could write a different cell.");
+
+    using storage_type = detail::atomic_storage_t<T>;
+    static_assert(sizeof(storage_type) == sizeof(T), "a lock-free value has the size of an unsigned integer");
+
+    alignas(sizeof(T)) storage_type value_{};
+
+public:
+    using value_type = T;
+
+    constexpr Atomic() noexcept
+        requires std::is_nothrow_default_constructible_v<T>
+        : value_{detail::to_atomic_storage<T>(T{})} {}
+
+    explicit constexpr Atomic(T initial) noexcept : value_{detail::to_atomic_storage<T>(initial)} {}
+
+    // A read on each thread, with acquire order.  It pairs with each
+    // store_release of the writer.
+    [[nodiscard]] T load_acquire() const noexcept {
+        return detail::from_atomic_storage<T>(__atomic_load_n(&value_, __ATOMIC_ACQUIRE));
+    }
+
+    // The read of the writer.  Each value of the cell is a value that the
+    // holder of the proof stored, so the read needs no order.
+    [[nodiscard]] T load_owned(SoleWriter<Role, Identity> const&) const noexcept {
+        return detail::from_atomic_storage<T>(__atomic_load_n(&value_, __ATOMIC_RELAXED));
+    }
+
+    void store_release(SoleWriter<Role, Identity> const&, T value) noexcept {
+        __atomic_store_n(&value_, detail::to_atomic_storage<T>(value), __ATOMIC_RELEASE);
     }
 };
 

@@ -453,6 +453,9 @@ PROBES: tuple[Probe, ...] = (
     Probe("tally_add", "Tally::add is the lock add of a relaxed std::atomic counter"),
     Probe("tally_read", "Tally::read is the load of a relaxed std::atomic counter"),
     Probe("cache_line_load", "the dereference of a CacheLine gives its cell, with no instruction"),
+    Probe("sole_load_owned", "load_owned is the relaxed load of std::atomic, and the proof of the writer has no code"),
+    Probe("sole_store", "store_release of a cell of one writer is the release store of std::atomic, with no lock"),
+    Probe("sole_load", "load_acquire of a cell of one writer is the acquire load of std::atomic"),
     Probe(
         "view_sum",
         "a range-for over a View is the loop of a raw pointer, because the optimizer removes the checks of the "

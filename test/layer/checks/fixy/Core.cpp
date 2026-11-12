@@ -41,6 +41,21 @@ static_assert(std::is_same_v<::fixy::Result<::fixy::Unit, ::fixy::LengthMismatch
                              ::foundation::core::Result<::foundation::core::Unit, ::foundation::core::LengthMismatch>>);
 static_assert(std::is_same_v<decltype(::fixy::err(::fixy::LengthMismatch{})), ::fixy::Err<::fixy::LengthMismatch>>);
 static_assert(std::is_same_v<::fixy::Tally, ::foundation::core::Tally>);
+static_assert(::fixy::AtomicValue<int> && ::fixy::AtomicCount<int> && ::fixy::AtomicBits<unsigned>);
+static_assert(!::fixy::AtomicValue<float> && !::fixy::AtomicCount<bool> && !::fixy::AtomicBits<int>);
+struct CoreCheckRole {};
+// A fresh brand stays in the scope that made it, so the alias of the writer
+// is in the body of a function.
+[[nodiscard]] consteval bool sole_writer_names_are_one_entity() noexcept {
+    using CoreCheckWriter = decltype(::fixy::mint_sole_writer<CoreCheckRole>());
+    static_assert(
+        std::is_same_v<CoreCheckWriter, ::foundation::core::SoleWriter<CoreCheckRole, CoreCheckWriter::brand_type>>);
+    static_assert(std::is_same_v<::fixy::SoleWriter<CoreCheckRole, CoreCheckWriter::brand_type>, CoreCheckWriter>);
+    static_assert(
+        std::is_same_v<::fixy::Atomic<int, CoreCheckWriter>, ::foundation::core::Atomic<int, CoreCheckWriter>>);
+    return true;
+}
+static_assert(sole_writer_names_are_one_entity());
 static_assert(std::is_same_v<::fixy::View<int, 4>, ::foundation::core::View<int, 4>>);
 static_assert(::fixy::dynamic_extent == ::foundation::core::dynamic_extent);
 static_assert(std::is_same_v<::fixy::Site, ::foundation::core::Site>);

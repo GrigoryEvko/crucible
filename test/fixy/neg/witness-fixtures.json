@@ -197,6 +197,16 @@
       "constructor": "\\bRef\\("
     },
     {
+      "name": "neg_witness_core_sole_writer_key_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bsole_writer_key\\("
+    },
+    {
+      "name": "neg_witness_core_solewriter_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bSoleWriter\\("
+    },
+    {
       "name": "neg_witness_core_textview_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bTextView\\("
@@ -938,6 +948,14 @@
     {
       "type": "foundation::core::CText",
       "header": "foundation/core/Text.h"
+    },
+    {
+      "type": "foundation::core::sole_writer_key",
+      "header": "foundation/core/Atomic.h"
+    },
+    {
+      "type": "foundation::core::SoleWriter<forge::brand, forge::brand>",
+      "header": "foundation/core/Atomic.h"
     },
     {
       "type": "foundation::core::Index<4>",

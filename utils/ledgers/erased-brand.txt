@@ -115,6 +115,7 @@ test/foundation/neg/neg_brand_read_loan_does_not_erase.cpp | erased-brand | 1 | 
 test/foundation/neg/neg_brand_read_view_body_asks_the_erased_view.cpp | erased-brand | 1 | foundation::permissions::ReadView | -
 test/foundation/neg/neg_brand_shared_permission_does_not_erase.cpp | erased-brand | 1 | foundation::permissions::SharedPermission | -
 test/foundation/neg/neg_computation_extract_permission_payload.cpp | erased-brand | 1 | foundation::permissions::Permission | -
+test/foundation/neg/neg_core_sole_writer_default_brand.cpp | erased-brand | 1 | foundation::core::SoleWriter | the fixture shows that a cell of one writer refuses the erased brand
 test/foundation/neg/neg_lent_permission_forged_by_bit_cast.cpp | erased-brand | 1 | foundation::permissions::LentPermission | -
 test/foundation/neg/neg_lent_permission_forged_by_start_lifetime_as.cpp | erased-brand | 2 | foundation::permissions::LentPermission | -
 test/foundation/neg/neg_lifetime_start_as_array_proof_holder.cpp | erased-brand | 1 | foundation::permissions::Permission | -

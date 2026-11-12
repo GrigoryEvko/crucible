@@ -81,8 +81,13 @@ using ::foundation::core::Ref;
 using ::foundation::core::same_object;
 
 using ::foundation::core::Atomic;
+using ::foundation::core::AtomicBits;
+using ::foundation::core::AtomicCount;
+using ::foundation::core::AtomicValue;
 using ::foundation::core::CacheLine;
 using ::foundation::core::CasRefusal;
+using ::foundation::core::mint_sole_writer;
+using ::foundation::core::SoleWriter;
 using ::foundation::core::Tally;
 
 // The scans all_of and any_of of the Region family stay in foundation::core:

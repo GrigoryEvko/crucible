@@ -1349,15 +1349,18 @@ Each owner fills each element on its mint, or takes a fill value: no owner reads
 | `fetch_add_acq_rel(d)`, `fetch_sub_acq_rel(d)` | For an `AtomicCount` | one locked add | main |
 | `fetch_or_acq_rel(b)`, `fetch_and_acq_rel(b)` | For an `AtomicBits` | one locked operation | main |
 | `fetch_max_acq_rel(v)`, `fetch_min_acq_rel(v)` | For an `AtomicCount` | one locked operation, or a compare-and-swap loop | main |
-| `load_owned(proof)` | The relaxed load of the sole writer. The proof is `SoleWriter<Role, Brand>`, the linear permission of the writer of the cell, so another thread cannot call it | one load | design |
-| `Atomic<Option<Ref<T>>>` | A pointer that a thread publishes. `Option<Ref<T>>` is one pointer with a niche, so the cell is lock-free | as `Atomic` | design |
-| `CacheLine<T>` | Aligns a cell to 64 bytes and pads it to a multiple of 64 bytes. `*line`, `line->member` and `line.view()` borrow the cell. Group G3 removes `get()` of main (P6) | none | main, new |
+| `Atomic<T, SoleWriter<Role, Brand>>` | The cell of one writer. Its type names the writer, and each write takes the proof of the writer. It gives `load_acquire()`, `load_owned(writer)` and `store_release(writer, v)`, and no read-modify-write operation | as `Atomic` | main |
+| `load_owned(writer)` | The relaxed load of the sole writer, on a cell of one writer only | one load | main |
+| `SoleWriter<Role, Brand>`, `mint_sole_writer<Role>()` | The proof of the writer: a linear token with no bytes, with the shape of a `Permission`. The mint is its one door, and each call site of the mint gives a fresh brand | none | main |
+| `Atomic<Option<X>>` for a niche `X` | An empty cell or a full cell of one word. A niche `Option` has the bytes of its payload and one bit pattern for each value, so `AtomicValue` admits it, and a compare-and-swap compares the `Option` as one word. A plain `Option` has a tag and padding, and `AtomicValue` refuses it | as `Atomic` | main |
+| `Atomic<Option<Ref<T>>>` | A pointer that a thread publishes. `Option<Ref<T>>` is one pointer with a niche, so the cell is lock-free | as `Atomic` | design, after `Ref` of G3 |
+| `CacheLine<T>` | Aligns a cell to 64 bytes and pads it to a multiple of 64 bytes. `*line` and `line->member` borrow the cell (main). `line.view()` gives a `Ref` of the Ref family | none | main, new |
 | `Tally` | A statistics counter. `add(n)` is a fetch-add with acq_rel order, and `read()` is an acquire load. A value of a `Tally` orders no other data | one locked add | main |
 | the relaxed and seq_cst operations of `ChaseLevDeque`, and `fence_seq_cst` | `detail` code of the base, with a citation of the algorithm | as the algorithm | design |
 
 A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), and not a member of `Atomic`. The run-time id of a brand of the linear design is an `Atomic` counter (section 11.10). The publication types of `fixy/handle/` (`PublishOnce`, `PublishCommit`, `OneShotFlag` and `Once`) stay in the layer X4, and slice 4.4 rebuilds them on `Atomic` (Appendix E). A pointer that a thread publishes is then a `PublishOnce<Ref<T>>` or an `Atomic<Option<Ref<T>>>`.
 
-**The family list.** The types and the gates: `Atomic`, `AtomicValue`, `AtomicCount`, `AtomicBits`, `CasRefusal`, `SoleWriter`, `CacheLine` and `Tally`. The operations: each operation of the table, and `add` and `read`.
+**The family list.** The types and the gates: `Atomic`, `AtomicValue`, `AtomicCount`, `AtomicBits`, `CasRefusal`, `SoleWriter`, `CacheLine` and `Tally`. The operations: each operation of the table, and `add` and `read`. The members `value_type` and `observed` of main, and `brand_type`, the member that `foundation/Brand.h` reads. The check file `test/layer/checks/foundation/core/Atomic.cpp` holds the list as `atomic_names`.
 
 **Removes.** The row `allow F0_primitives <atomic> until Atomic`. The family has no R5 import of its own, because each operation is a builtin. The import `std::__detail::__notify_impl` of `libcrucible_vigil.a` goes when its wait moves to the futex door (section 11.9).
 
@@ -1365,8 +1368,9 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 
 **Where the sources do not agree.**
 - QDESIGN gives `cas_acq_rel` a `Result<Unit, T>`. Main gives `CasRefusal<T>`, which names the value that the cell held.
-- QDESIGN gives `load_owned`. Main has no relaxed operation, because the tree has no proof type `SoleWriter` (CLAUDE.md §XXII). The design keeps `load_owned` for G3, with the proof type.
-- `CacheLine::get()` of main borrows with no key. The owner decided P6 on 2026-11-12: group G3 gives the dereference and `view()` in its place (section 11.1).
+- QDESIGN gives `load_owned` on `Atomic<T>`. A proof that each cell accepts proves nothing about a cell, so `load_owned` is on the cell of one writer only, whose type names the writer, and each write of that cell takes the proof (CLAUDE.md §XXII). `SoleWriter` is a token of `foundation/core`, because `Permission` is in a higher layer. A handle of a higher layer holds the writer beside its `Permission`.
+- The identity of a writer is the call site of its mint. A mint in a loop gives one type in each turn, and a token that leaves its turn can write the cell of a different turn. The run-time id of a brand (section 11.10) closes this case.
+- `CacheLine::get()` of main borrowed with no key. The owner decided P6 on 2026-11-12, and the dereference took its place (section 11.1). `view()` comes with the `Ref` of the Ref family.
 - QDESIGN puts `PublishOnce` and `OneShotFlag` beside `Atomic`. Appendix E rebuilds them in place in `fixy/handle/`, and this section agrees.
 
 **The recipes.**
