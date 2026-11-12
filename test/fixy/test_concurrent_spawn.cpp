@@ -6,12 +6,14 @@
 // every child body ran, that the parent Permission comes back, and that
 // a recombined region still describes the same storage.
 
+#include <fixy/Core.h>
 #include <fixy/concurrent/Spawn.h>
+#include <foundation/Linear.h>
+#include <foundation/algebra/lattices/AffinityLattice.h>
 #include <foundation/permissions/Permission.h>
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -68,24 +70,24 @@ namespace {
     auto whole = perm::mint_permission_root<Whole>();
     using WholeBrand = ::foundation::brand::brand_of_t<decltype(whole)>;
 
-    std::atomic<int> ran{0};
+    ::fixy::Atomic<int> ran{0};
 
     // Each body borrows its child under the brand of the parent, and a
     // body may spell that brand.
     auto rebuilt = spawn::mint_spawn<Left, Right>(
         ctx, dram_bound_budget(), std::move(whole),
         [&ran](perm::WriteView<Left, WholeBrand> const&, BgCtx const&) noexcept {
-            ran.fetch_add(1, std::memory_order_acq_rel);
+            static_cast<void>(ran.fetch_add_acq_rel(1));
         },
         [&ran](perm::WriteView<Right, WholeBrand> const&, BgCtx const&) noexcept {
-            ran.fetch_add(2, std::memory_order_acq_rel);
+            static_cast<void>(ran.fetch_add_acq_rel(2));
         });
 
     // 1 from the left body and 2 from the right: a total of 3 says both
     // ran, and says which one is missing if they did not.
-    if (const int total = ran.load(std::memory_order_acquire); total != 3) {
-        std::fprintf(stderr, "mint_spawn: child bodies contributed %d, want 3 (1 = left only, 2 = right only)\n",
-                     total);
+    if (const int total = ran.load_acquire(); total != 3) {
+        ::fixy::report(::fixy::Sink::Err,
+                       "mint_spawn: child bodies contributed {}, want 3 (1 = left only, 2 = right only)\n", total);
         return 1;
     }
 
@@ -266,8 +268,9 @@ struct ShardThreads {
 }
 
 // Past L3 the rule goes parallel.  The mint starts no more threads than the
-// factor of the decision, never uses the calling thread for a shard, and
-// runs each shard on exactly one thread.
+// factor of the decision, and runs each shard on exactly one thread.  A run
+// whose workers started puts no shard on the calling thread.  When the
+// thread door starts no worker, each shard runs on the calling thread.
 [[nodiscard]] int parallel_for_dram_bound_caps_threads_at_the_factor() {
     const auto budget = dram_bound_budget();
     const auto decision = fixy::concurrent::ParallelismRule::recommend(budget);
@@ -283,8 +286,77 @@ struct ShardThreads {
                      record.distinct_threads(), want_threads);
         return 1;
     }
-    if (want_threads > 1 && record.ran_on(std::this_thread::get_id())) {
+    if (want_threads > 1 && record.ran_on(std::this_thread::get_id()) && record.distinct_threads() != 1) {
         std::fprintf(stderr, "mint_parallel_for: a threaded run put a shard on the calling thread\n");
+        return 1;
+    }
+    return 0;
+}
+
+// True on the thread that runs main, and false on each worker thread.
+constinit thread_local bool is_main_thread = false;
+
+// The thread door refuses each worker of this run: the one CPU of the mask
+// is past each CPU of the host, so the kernel refuses it and no worker
+// starts.  The mint then runs each shard on the calling thread, and each
+// shard runs one time.  Each shard holds one element, and its body adds
+// one to it.
+[[nodiscard]] int parallel_for_runs_inline_when_no_worker_starts() {
+    constexpr std::size_t kShards = 16;
+    const fixy::concurrent::WorkBudget budget = dram_bound_budget();
+    const fixy::concurrent::ParallelismDecision decision = fixy::concurrent::ParallelismRule::recommend(budget);
+    if (!decision.is_parallel() || decision.factor < 2) {
+        ::fixy::report(::fixy::Sink::Out, "mint_parallel_for: the process has one CPU, so no run starts a worker\n");
+        return 0;
+    }
+
+    BgCtx ctx{eff::testing::bg()};
+    const eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>> test_ctx{eff::testing::test()};
+    const fixy::thread::ThreadOptions refused_options{
+        .affinity = ::foundation::algebra::lattices::AffinityMask::single(
+            ::foundation::algebra::lattices::AffinityMask::kMaxCore),
+    };
+    std::array<std::uint32_t, kShards> storage{};
+    ::fixy::Atomic<bool> has_run_off_main{false};
+
+    auto whole = spawn::mint_parallel_for_with_thread_options<kShards>(
+        ctx, test_ctx, budget,
+        fixy::mint_owned_region(storage.data(), kShards, perm::mint_permission_root<RegionWhole>()),
+        [&has_run_off_main](auto& shard) noexcept {
+            if (!is_main_thread) has_run_off_main.store_release(true);
+            for (std::uint32_t& element : shard) {
+                ++element;
+            }
+        },
+        refused_options);
+
+    // The count of the shards of the region, and the first shard that did
+    // not run one time.  The region ends at the drop door before a check
+    // can return.
+    std::size_t shard_count = 0;
+    std::size_t wrong_shard = kShards;
+    std::uint32_t wrong_runs = 0;
+    for (const std::uint32_t runs : whole) {
+        if (runs != 1u && wrong_shard == kShards) {
+            wrong_shard = shard_count;
+            wrong_runs = runs;
+        }
+        ++shard_count;
+    }
+    ::foundation::linear::drop(std::move(whole));
+
+    if (has_run_off_main.load_acquire()) {
+        ::fixy::report(::fixy::Sink::Err, "mint_parallel_for: a shard ran on a worker that the door refused\n");
+        return 1;
+    }
+    if (wrong_shard != kShards) {
+        ::fixy::report(::fixy::Sink::Err, "mint_parallel_for: shard {} ran {} times, want 1\n", wrong_shard,
+                       wrong_runs);
+        return 1;
+    }
+    if (shard_count != kShards) {
+        ::fixy::report(::fixy::Sink::Err, "mint_parallel_for: the region holds {} shards, want {}\n", shard_count,
+                       kShards);
         return 1;
     }
     return 0;
@@ -316,6 +388,7 @@ struct ShardThreads {
 }  // namespace
 
 int main() {
+    is_main_thread = true;
     if (const int rc = spawn_runs_every_child_and_returns_the_parent(); rc != 0) return rc;
     if (const int rc = spawn_arm_follows_the_budget(); rc != 0) return rc;
     if (const int rc = parallel_for_visits_every_element_once(); rc != 0) return rc;
@@ -323,5 +396,6 @@ int main() {
     if (const int rc = parallel_for_core_resident_runs_inline(); rc != 0) return rc;
     if (const int rc = parallel_for_dram_bound_caps_threads_at_the_factor(); rc != 0) return rc;
     if (const int rc = parallel_for_l3_resident_shares_threads(); rc != 0) return rc;
+    if (const int rc = parallel_for_runs_inline_when_no_worker_starts(); rc != 0) return rc;
     return 0;
 }

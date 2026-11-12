@@ -5234,6 +5234,15 @@ fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_not_copyable
   "no matching function for call to .mint_parallel_for<2>\\(.*MoveOnlyBody\\)"
   "required for the satisfaction of .CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>. \\[with N = 2")
 
+# The door of a test gives the worker threads options, so its second
+# context must own Test and its first context must own Bg.
+fixy_neg_compile_test(neg_spawn_mint_parallel_for_with_thread_options_needs_test_ctx
+  "no matching function for call to .mint_parallel_for_with_thread_options<2>\\("
+  "required for the satisfaction of .CtxOwnsCapability<TestCtx, foundation::effects::Effect::Test>. \\[with TestCtx = foundation::effects::ExecCtx<foundation::effects::Bg,")
+fixy_neg_compile_test(neg_spawn_mint_parallel_for_with_thread_options_ctx_lacks_bg
+  "no matching function for call to .mint_parallel_for_with_thread_options<2>\\("
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test,")
+
 # ── The two Qtt discipline recognisers, armed ─────────────────────────
 #
 # Both recognisers of fixy/Qtt.h are structural: one reflection query

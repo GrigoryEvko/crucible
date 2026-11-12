@@ -197,8 +197,8 @@ that the axis does not apply to the row.
 | `mint_machine` | `include/fixy/Machine.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
 | `mint_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_ordered_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
-| `mint_owned_region(T0_0*, std::size_t, foundation::permissions::Permission<T0_1, T0_2>&&)` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 16 |
-| `mint_owned_region(foundation::effects::Alloc, T0_1&, std::size_t, foundation::permissions::Permission<T0_2, T0_3>&&)` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 16 |
+| `mint_owned_region(T0_0*, std::size_t, foundation::permissions::Permission<T0_1, T0_2>&&)` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 18 |
+| `mint_owned_region(foundation::effects::Alloc, T0_1&, std::size_t, foundation::permissions::Permission<T0_2, T0_3>&&)` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 18 |
 | `mint_recipe_spec` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 21 |
 | `mint_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 9 |
@@ -235,6 +235,7 @@ that the axis does not apply to the row.
 |---|---|---|---|---|---|---|---|---|
 | `mint_mpmc_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_parallel_for` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
+| `mint_parallel_for_with_thread_options` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_permission_fork` | `include/fixy/concurrent/PermissionFork.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_pipeline` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 11 |
 | `mint_pipeline_dag` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
@@ -329,7 +330,7 @@ that the axis does not apply to the row.
 | `mint_permission_combine` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 6 |
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | HS14: 8 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 171 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 173 |
 | `mint_permission_share` | `include/foundation/permissions/SharedPermission.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 26 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 12 |
@@ -340,4 +341,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 81 | 43 | 29 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 115 | 55 | 57 | 3 | 0 | 4 |
+| substrate (`include/foundation/`, `include/fixy/`) | 116 | 56 | 57 | 3 | 0 | 4 |

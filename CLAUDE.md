@@ -1812,7 +1812,7 @@ The working set is the saturated sum of the read and written bytes. The factor r
 
 The promise: **never regresses**. If the rule says sequential, parallel must not be measurably faster (within 5%, measured by `bench/bench_no_regression.cpp`). If it says parallel, the speedup must justify the sync cost.
 
-`fixy::topology::Topology` (`include/fixy/os/Topology.h`) probes the cache sizes, the core counts and the NUMA nodes from sysfs one time. `fixy::spawn::mint_parallel_for` (`include/fixy/concurrent/Spawn.h`) asks the rule for a decision on each call. A sequential decision runs every shard on the calling thread. A parallel decision starts no more threads than its factor. The NUMA policy of a decision is an intent, and no dispatcher binds the workers to a node. `fixy::spawn::mint_spawn` chooses between `mint_permission_fork_inline` and `mint_permission_fork` from the same rule.
+`fixy::topology::Topology` (`include/fixy/os/Topology.h`) probes the cache sizes, the core counts and the NUMA nodes from sysfs one time. `fixy::spawn::mint_parallel_for` (`include/fixy/concurrent/Spawn.h`) asks the rule for a decision on each call. A sequential decision runs every shard on the calling thread. A parallel decision starts no more threads than its factor. When the thread door starts no worker, each shard runs on the calling thread. The NUMA policy of a decision is an intent, and no dispatcher binds the workers to a node. `fixy::spawn::mint_spawn` chooses between `mint_permission_fork_inline` and `mint_permission_fork` from the same rule.
 
 #### Decision matrix — which Permission primitive
 

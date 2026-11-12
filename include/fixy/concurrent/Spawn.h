@@ -52,6 +52,19 @@
 //     for N threads, and it runs slower than a loop.  Two shards can run
 //     one after the other on one thread, so bodies that wait on each
 //     other must not share a parallel-for either.
+//
+//  5. The parallel factor of mint_parallel_for is a choice of speed and
+//     not of result.  When the door of fixy/os/ThreadTasks.h starts no
+//     worker, the mint runs each shard on the calling thread, as a
+//     sequential decision does.  The door gives an error only when no
+//     thread of the call started, which in practice is eagain, so no
+//     shard ran and the inline run gives the same result.  A start that
+//     fails after other workers started ends the process in the door.
+//     The door does not give the count of the workers that started, so
+//     the mint cannot give their shards to the calling thread.
+//     mint_parallel_for_with_thread_options is the door of a test: it
+//     gives the workers options that the thread door refuses, and so a
+//     test reaches the inline run with no global state.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -63,9 +76,11 @@
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Choice.h>
 #include <foundation/core/Region.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/os/Errno.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
 
@@ -242,13 +257,28 @@ concept CtxFitsParallelFor = (N > 0) && eff::IsExecCtx<Ctx> && eff::CtxOwnsCapab
                           && std::is_nothrow_invocable_v<Body&, ::fixy::OwnedRegion<T, ::fixy::Slice<Whole, 0>, Brand>&>
                           && (N == 1 || std::is_copy_constructible_v<Body>);
 
-// Declared before the runner so that its friend declaration names this
-// mint and nothing else.
+// The gate of the door of a test (design note 5).  The context passes the
+// gate of mint_parallel_for.  The second context owns Test, which only the
+// testing door of foundation/effects/Effect.h mints, so code that ships
+// cannot give the workers options of its own.
+template <std::size_t N, typename Ctx, typename TestCtx, typename T, typename Whole, typename Brand, typename Body>
+concept CtxFitsParallelForWithThreadOptions =
+    CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body> && eff::CtxOwnsCapability<TestCtx, eff::Effect::Test>;
+
+// Declared before the runner so that its friend declarations name these
+// two mints and nothing else.
 template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
     requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
 [[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
 mint_parallel_for(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, ::fixy::OwnedRegion<T, Whole, Brand>&& region,
                   Body body) noexcept;
+
+template <std::size_t N, typename Ctx, typename TestCtx, typename T, typename Whole, typename Brand, typename Body>
+    requires CtxFitsParallelForWithThreadOptions<N, Ctx, TestCtx, T, Whole, Brand, Body>
+[[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
+mint_parallel_for_with_thread_options(Ctx const& ctx, TestCtx const& test, ::fixy::concurrent::WorkBudget budget,
+                                      ::fixy::OwnedRegion<T, Whole, Brand>&& region, Body body,
+                                      ::fixy::thread::ThreadOptions const& options) noexcept;
 
 namespace detail {
 
@@ -264,18 +294,18 @@ template <std::size_t N>
 
 }  // namespace detail
 
-// The fan-out of mint_parallel_for: one thread for each of `threads`
-// workers, and each worker mutates the tuple elements whose index is its
-// own modulo `threads`.  Each shard then has exactly one thread.  The door
-// of fixy/os/ThreadTasks.h starts the threads and joins every one before it
-// returns, so every body has returned before the member does and the tuple
-// is whole again for recombine.
+// The work of mint_parallel_for.  run_shards_ is the fan-out: one thread
+// for each of `threads` workers, and each worker mutates the tuple
+// elements whose index is its own modulo `threads`.  Each shard then has
+// exactly one thread.  The door of fixy/os/ThreadTasks.h starts the threads
+// and joins every one before it returns, so every body has returned before
+// the member does and the tuple is whole again for recombine.
 //
 // Starting threads is the work of the mint, so only the mint may reach it.
-// The member is private and static, the mint is the only friend, and the
-// class is final and cannot be built.  The member also asks for the
-// background effect itself, so the check stands where the threads start.
-// A free function in a detail namespace is not a place for this
+// The members are private and static, the two mints are the only friends,
+// and the class is final and cannot be built.  The fan-out also asks for
+// the background effect itself, so the check stands where the threads
+// start.  A free function in a detail namespace is not a place for this
 // fan-out, because any translation unit can call it with no context at
 // all.
 class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
@@ -284,6 +314,13 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     friend ::fixy::OwnedRegion<T, Whole, Brand> mint_parallel_for(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget,
                                                                   ::fixy::OwnedRegion<T, Whole, Brand>&& region,
                                                                   Body body) noexcept;
+
+    template <std::size_t N, typename Ctx, typename TestCtx, typename T, typename Whole, typename Brand, typename Body>
+        requires CtxFitsParallelForWithThreadOptions<N, Ctx, TestCtx, T, Whole, Brand, Body>
+    friend ::fixy::OwnedRegion<T, Whole, Brand>
+    mint_parallel_for_with_thread_options(Ctx const& ctx, TestCtx const& test, ::fixy::concurrent::WorkBudget budget,
+                                          ::fixy::OwnedRegion<T, Whole, Brand>&& region, Body body,
+                                          ::fixy::thread::ThreadOptions const& options) noexcept;
 
     // What one worker reads.  The frames live in the frame of run_shards_,
     // which waits in the door until every worker has joined.
@@ -307,26 +344,70 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
          ...);
     }
 
+    // Starts the workers with the options, and joins each one before it
+    // returns.  The error of the door when no worker started, and then no
+    // shard ran (THE ERRORS of fixy/os/ThreadTasks.h).
     template <typename Ctx, typename Shards, typename Body, std::size_t... Is>
         requires eff::CtxOwnsCapability<Ctx, eff::Effect::Bg>
-    static void run_shards_(Ctx const&, Shards& shards, Body const& body, std::size_t threads,
-                            std::index_sequence<Is...>) noexcept {
+    [[nodiscard]] static ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+    run_shards_(Ctx const&, Shards& shards, Body const& body, std::size_t threads,
+                ::fixy::thread::ThreadOptions const& options, std::index_sequence<Is...>) noexcept {
         std::array<worker_frame_<Shards, Body>, sizeof...(Is)> frames{};
         std::array<::fixy::thread::detail::thread_task, sizeof...(Is)> tasks{};
         for (std::size_t worker = 0; worker < threads; ++worker) {
             frames[worker] = worker_frame_<Shards, Body>{&shards, &body, worker, threads};
             tasks[worker] = ::fixy::thread::detail::thread_task{&frames[worker], &run_worker_<Shards, Body, Is...>};
         }
-        ::fixy::thread::detail::run_thread_tasks(::foundation::core::detail::view_over_(tasks.data(), threads),
-                                                 ::fixy::thread::ThreadOptions{})
-            .expect("mint_parallel_for: no worker thread started");
+        return ::fixy::thread::detail::run_thread_tasks(::foundation::core::detail::view_over_(tasks.data(), threads),
+                                                        options);
+    }
+
+    // Runs each shard on the calling thread, in shard order.
+    template <typename Shards, typename Body, std::size_t... Is>
+    static void run_inline_(Shards& shards, Body& body, std::index_sequence<Is...>) noexcept {
+        (static_cast<void>(body(std::get<Is>(shards))), ...);
+    }
+
+    // The body of the two mints.  The workers get the options.
+    template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
+        requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
+    [[nodiscard]] static ::fixy::OwnedRegion<T, Whole, Brand>
+    run_(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, ::fixy::OwnedRegion<T, Whole, Brand>&& region,
+         Body& body, ::fixy::thread::ThreadOptions const& options) noexcept {
+        auto parts = ::fixy::mint_split<N>(std::move(region));
+
+        if constexpr (N == 1) {
+            // One shard runs on the calling thread, whatever the budget.
+            static_cast<void>(ctx);
+            static_cast<void>(budget);
+            static_cast<void>(options);
+            static_cast<void>(body(std::get<0>(parts.shards)));
+        } else {
+            // A sequential decision, or a parallel one whose workers did
+            // not start, runs every shard on the calling thread (design
+            // note 5).
+            const std::size_t threads = detail::parallel_for_thread_count<N>(budget);
+            const bool have_workers_run =
+                threads > 1
+                && run_shards_(ctx, parts.shards, body, threads, options, std::make_index_sequence<N>{}).is_ok();
+            if (!have_workers_run) {
+                run_inline_(parts.shards, body, std::make_index_sequence<N>{});
+            }
+        }
+
+        // Design note 3: every shard is surrendered here, and their Slice
+        // permissions are what reissue the parent's.  The receipt the split
+        // wrote is surrendered with them, so this rebuild is the one that
+        // split authorized and there is no second one.
+        return ::fixy::OwnedRegion<T, Whole, Brand>::recombine(std::move(parts.witness), std::move(parts.shards));
     }
 };
 
 // The call returns once every shard has run its body, and the region it
 // hands back is recombined from the shards.  The budget states the bytes
 // the bodies touch together, and the parallelism rule chooses the thread
-// count from it, per design note 4.
+// count from it, per design note 4.  The workers get the default options
+// of the thread door.
 template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
     requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
 [[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
@@ -335,31 +416,19 @@ mint_parallel_for(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, ::fixy:
     // The constraint on the declaration reads the context.  The runner
     // reads it too, and asks for the background effect again before it
     // starts a thread.
-    auto parts = ::fixy::mint_split<N>(std::move(region));
+    return ParallelForRunner::run_<N>(ctx, budget, std::move(region), body, ::fixy::thread::ThreadOptions{});
+}
 
-    if constexpr (N == 1) {
-        // One shard runs on the calling thread, whatever the budget.
-        static_cast<void>(ctx);
-        static_cast<void>(budget);
-        static_cast<void>(body(std::get<0>(parts.shards)));
-    } else {
-        const std::size_t threads = detail::parallel_for_thread_count<N>(budget);
-        if (threads == 1) {
-            // The inline arm: every shard on the calling thread, in shard
-            // order.
-            [&parts, &body]<std::size_t... Is>(std::index_sequence<Is...>) noexcept {
-                (static_cast<void>(body(std::get<Is>(parts.shards))), ...);
-            }(std::make_index_sequence<N>{});
-        } else {
-            ParallelForRunner::run_shards_(ctx, parts.shards, body, threads, std::make_index_sequence<N>{});
-        }
-    }
-
-    // Design note 3: every shard is surrendered here, and their Slice
-    // permissions are what reissue the parent's.  The receipt the split
-    // wrote is surrendered with them, so this rebuild is the one that
-    // split authorized and there is no second one.
-    return ::fixy::OwnedRegion<T, Whole, Brand>::recombine(std::move(parts.witness), std::move(parts.shards));
+// mint_parallel_for with the options of its worker threads, for a test
+// (design note 5).  The test context is the authority of the options.
+template <std::size_t N, typename Ctx, typename TestCtx, typename T, typename Whole, typename Brand, typename Body>
+    requires CtxFitsParallelForWithThreadOptions<N, Ctx, TestCtx, T, Whole, Brand, Body>
+[[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
+mint_parallel_for_with_thread_options(Ctx const& ctx, TestCtx const& test, ::fixy::concurrent::WorkBudget budget,
+                                      ::fixy::OwnedRegion<T, Whole, Brand>&& region, Body body,
+                                      ::fixy::thread::ThreadOptions const& options) noexcept {
+    static_cast<void>(test);
+    return ParallelForRunner::run_<N>(ctx, budget, std::move(region), body, options);
 }
 
 }  // namespace fixy::spawn
