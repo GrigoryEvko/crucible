@@ -35,7 +35,10 @@ THE SELECTION
             or of a build file at the top of the tree
           - bench-fuzz for a change of bench/ or test/fuzz/
           - each configuration for a change of the quarantine plugin or of
-            the rule table, and for --all-configurations.
+            the rule table, and for --all-configurations.  Also for a
+            candidate whose composition summed two changes of one count of a
+            ledger (assay.loop.land, THE MERGE), so THE REDUCE writes the
+            measured count.
       * The tests of the changed inputs, `loop test BUILD`, in each other
         configuration of objects, when the change can change each build.
         Such a change holds a C++ file or a build file.  It can also change
@@ -474,13 +477,14 @@ class Candidate:
     """The commit of a landing: the commit that the composition started from, the commit, the paths and the focus.
 
     `focus` is empty for the commit of a batch, and it gives the configurations of a run of the base (THE RUN OF THE
-    BASE).
+    BASE).  `is_every` selects each configuration, as --all-configurations does (THE SELECTION).
     """
 
     head: str
     commit: str
     changed: tuple[str, ...]
     focus: tuple[Focus, ...] = ()
+    is_every: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -921,7 +925,7 @@ class Gate:
             if careful(touches, True, "the inputs of the rules of the parse builds", "each parse configuration"):
                 presets += each_parse
             counted = careful(lambda: counted_rules(self.tree), (), "the counted ledgers", "no reduce")
-            selected = select(candidate.changed, presets, self.is_every)
+            selected = select(candidate.changed, presets, self.is_every or candidate.is_every)
             plan = tuple(
                 Run(item, Mode.PARSE) if item.is_parse else Run(item, Mode.FULL, is_build_only=item.name != ALWAYS)
                 for item in selected

@@ -104,6 +104,8 @@ BRANCH_OID = "# branch.oid "
 INITIAL_COMMIT = "(initial)"
 # The object name that removes a path from the index in `git update-index --index-info`.
 NULL_OBJECT = "0" * 40
+# The mode of an entry that names a commit of a different repository.
+GITLINK_MODE = "160000"
 # The kind of each function of this module (THE KINDS OF THE FUNCTIONS).
 READS_HISTORY = frozenset({
     "archive", "blobs", "change_base", "changed_files", "commit_subject", "has_no_change", "head", "index_changes",
@@ -115,8 +117,8 @@ READS_NAMES = frozenset({
     "change_base", "changed_files", "has_no_change", "listed_files", "listed_paths", "new_files", "tracked_files",
 })
 READS_NEITHER = frozenset({
-    "apply_patch", "borrowing_repository", "commit_all", "commit_tree", "common_dir", "git_dir", "hash_files",
-    "hash_object", "holds_patch", "index_object", "init", "null_separated", "run", "run_any_exit",
+    "borrowing_repository", "commit_all", "commit_tree", "common_dir", "git_dir", "hash_files", "hash_object",
+    "index_entries", "index_object", "init", "merge_file", "null_separated", "run", "run_any_exit",
     "scratch_repository", "set_index_entries", "set_index_entry", "swap_ref", "toplevel", "write_tree",
 })
 
@@ -615,23 +617,43 @@ def set_index_entries(root: Path, entries: Sequence[tuple[TreeEntry | None, str]
     return run_any_exit(root, "update-index", "--index-info", stdin=lines.encode()).exit == 0
 
 
-def holds_patch(root: Path, patch_bytes: bytes) -> bool:
-    """Tell if the working tree of a repository holds a patch: the patch applies in reverse.
+def index_entries(root: Path, paths: Sequence[str] | None = None) -> dict[str, TreeEntry]:
+    """Return the entry of each path at stage 0 of the index of a repository, or of each path of a list.
+
+    A path of the list that the index does not hold has no entry.  Complexity: linear in the entries that git gives.
 
     Raises:
-        GitError: If git cannot start
+        GitError: If git fails
     """
-    return run_any_exit(root, "apply", "--reverse", "--check", stdin=patch_bytes).exit == 0
+    if paths is not None and not paths:
+        return {}
+    spec = ["--", *(f":(literal){path}" for path in paths)] if paths is not None else []
+    output = run(root, "ls-files", "--stage", "-z", *spec).decode("utf-8", "surrogateescape")
+    entries: dict[str, TreeEntry] = {}
+    for item in output.split("\0"):
+        if not item:
+            continue
+        meta, path = item.split("\t", 1)
+        mode, name, stage = meta.split(" ")
+        if stage == "0":
+            entries[path] = TreeEntry(mode, "commit" if mode == GITLINK_MODE else "blob", name)
+    return entries
 
 
-def apply_patch(root: Path, patch_bytes: bytes) -> str | None:
-    """Give the working tree of a repository a patch, and return the error of git when a hunk does not apply, or None.
+def merge_file(root: Path, ours: str, base: str, theirs: str) -> str | None:
+    """Merge three blobs by their lines with `git merge-file`, write the result, and return its name, or None.
+
+    None tells that the two changes conflict.
 
     Raises:
-        GitError: If git cannot start
+        GitError: If git cannot start, or it gives an error
     """
-    applied = run_any_exit(root, "apply", stdin=patch_bytes)
-    return applied.err if applied.exit != 0 else None
+    completed = run_any_exit(root, "merge-file", "--object-id", "-q", ours, base, theirs)
+    if completed.exit == 0:
+        return completed.out.strip()
+    if completed.exit > 0:
+        return None
+    raise GitError(f"`git merge-file` failed in {root}: {completed.err.strip()}")
 
 
 def commit_all(root: Path, subject: str, body: str = "", date: str = "") -> str:

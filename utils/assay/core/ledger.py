@@ -112,6 +112,29 @@ THE REDUCE
     and it is a complete write.  It lowers each row above that count, and it
     removes each row whose largest count is 0.
 
+THE MERGE
+    merge() gives the ledger of two changes of one base: the change of the
+    main branch (ours) and the change of a landing (theirs).  The landing
+    gate calls it for a patch that does not apply as text (THE MERGE of
+    assay.loop.land).  It reads the three ledgers, and it refuses a ledger
+    that is not in the form of render().  It takes the side that changed
+    the head comment, each reason row and each entry row, by its key.  Two
+    sides that make the same change agree.
+
+    When the two sides change the count of one key of a count ledger, the
+    merged count is ours plus theirs less the base.  Each side then keeps
+    its own rise or fall.  That count is the count of the two changes only
+    when the two changes are independent.  A fall of main can remove the
+    findings that a rise of the landing counted, so the merged count can be
+    too high, and a count below its row gives no error.  merge() thus gives
+    each such key, and the gate then runs the complete write of THE REDUCE.
+    A merged count of 0 or less removes the row.
+
+    Each other change of one key by the two sides is a conflict: a value
+    that is not a count, a reason, and a row that one side removes and the
+    other side changes.  A conflict raises LedgerError, and the landing
+    refuses the patch.
+
 `guard write --rule ID` writes the ledger of a rule.  `guard selftest
 tests.core.test_ledger` does a test of the module.
 """
@@ -627,3 +650,94 @@ def needed_reasons(ledger: Ledger) -> Ledger:
     """Return the ledger with no reason row that holds no count row (THE REASON OF A PREFIX)."""
     idle = ledger.idle_reasons()
     return replace(ledger, reasons=tuple(item for item in ledger.reasons if item not in idle)) if idle else ledger
+
+
+@dataclass(frozen=True, slots=True)
+class Merged:
+    """The result of merge(): the text of the ledger, or None for no file, and each key whose counts merge by a sum."""
+
+    text: str | None
+    summed: tuple[Key, ...]
+
+
+def three_way[Item](base: Item, ours: Item, theirs: Item, what: str) -> Item:
+    """Return the side that changed an item, or the item that the two sides agree on (THE MERGE).
+
+    Raises:
+        LedgerError: If the two sides change the item differently
+    """
+    if theirs == base or ours == theirs:
+        return ours
+    if ours == base:
+        return theirs
+    raise LedgerError(f"the two sides change {what} differently")
+
+
+def merged_entry(rule: Rule, key: Key, entries: tuple[Entry | None, Entry | None, Entry | None]) -> Entry | None:
+    """Return the merged row of one key from its base, ours and theirs rows, or None for no row (THE MERGE).
+
+    Raises:
+        LedgerError: If the two sides change the row differently, and the change is not of two counts
+    """
+    base, ours, theirs = (None if item is None else (item.value, item.reason) for item in entries)
+    try:
+        cells = three_way(base, ours, theirs, f"the row {described(key)} of {key.path or '-'}")
+    except LedgerError:
+        counts = [0 if item is None else item.value for item in entries]
+        if rule.policy != Policy.COUNT:
+            raise
+        base_count, ours_count, theirs_count = counts
+        if not (isinstance(base_count, int) and isinstance(ours_count, int) and isinstance(theirs_count, int)):
+            raise
+        base_reason, ours_reason, theirs_reason = ("" if item is None else item.reason for item in entries)
+        reason = three_way(
+            base_reason, ours_reason, theirs_reason, f"the reason of the row {described(key)} of {key.path or '-'}"
+        )
+        count = ours_count + theirs_count - base_count
+        return Entry(key, count, reason) if count > 0 else None
+    return None if cells is None else Entry(key, cells[0], cells[1])
+
+
+def merge(rule: Rule, texts: tuple[str | None, str | None, str | None], shown: str) -> Merged:
+    """Return the ledger of two changes of one base: the base, ours and theirs texts (THE MERGE).
+
+    A text of None is a ledger with no file.
+
+    Raises:
+        LedgerError: If a text does not read, ours is not in the form of render(), or the two sides conflict
+
+    Complexity: O(r log r) for r rows of the three ledgers.
+    """
+    try:
+        ledgers = [empty(rule) if text is None else parse(text, shown, rule.id, rule.policy) for text in texts]
+    except rows_grammar.RowsError as problem:
+        raise LedgerError(f"{shown} does not read: {problem}") from None
+    base, ours, theirs = ledgers
+    if texts[1] is not None and render(ours) != texts[1]:
+        raise LedgerError(f"{shown} of the main branch is not in the form that the writer of the ledger gives")
+    comment = three_way(base.comment, ours.comment, theirs.comment, f"the head comment of {shown}")
+    reasons: list[PrefixReason] = []
+    base_reasons, ours_reasons, theirs_reasons = (
+        {item.prefix: item.reason for item in ledger.reasons} for ledger in ledgers
+    )
+    for prefix in sorted({*base_reasons, *ours_reasons, *theirs_reasons}):
+        reason = three_way(
+            base_reasons.get(prefix),
+            ours_reasons.get(prefix),
+            theirs_reasons.get(prefix),
+            f"the reason row of {prefix} in {shown}",
+        )
+        if reason is not None:
+            reasons.append(PrefixReason(prefix, reason))
+    rows: dict[Key, Entry] = {}
+    summed: list[Key] = []
+    for key in sorted(set(base.base) | set(ours.base) | set(theirs.base)):
+        row_sides = (base.base.get(key), ours.base.get(key), theirs.base.get(key))
+        entry = merged_entry(rule, key, row_sides)
+        cells = [None if item is None else (item.value, item.reason) for item in row_sides]
+        if cells[1] != cells[0] and cells[2] != cells[0] and cells[1] != cells[2]:
+            summed.append(key)
+        if entry is not None:
+            rows[key] = entry
+    result = needed_reasons(Ledger(rule.id, rule.policy, comment, rows, tuple(reasons)))
+    return Merged(render(result) if result.base else None, tuple(summed))

@@ -131,14 +131,25 @@ def object_cases(expect: Callable[[str, bool], None]) -> None:
             git.set_index_entries(root, [(git.tree_entry(root, third, "sub/b.txt"), "sub/b.txt")])
             and git.is_index_clean(root, third),
         )
-        patch = git.patch(root, [second, third], ["sub/b.txt"])
-        (root / "sub" / "b.txt").write_text("two\n")
+        listed = git.index_entries(root, ["sub/b.txt", "missing.txt"])
         expect(
-            "apply_patch gives the working tree a patch, and holds_patch then sees it",
-            not git.holds_patch(root, patch)
-            and git.apply_patch(root, patch) is None
-            and git.holds_patch(root, patch)
-            and (root / "sub" / "b.txt").read_text() == "three\n",
+            "index_entries gives the entry of each listed path of the index, and no entry of a path that it does not "
+            "hold",
+            listed == {"sub/b.txt": git.tree_entry(root, third, "sub/b.txt")}
+            and "sub/b.txt" in git.index_entries(root)
+            and git.index_entries(root, []) == {},
+        )
+        base = git.hash_object(root, b"a\nb\nc\nd\ne\n")
+        ours = git.hash_object(root, b"A\nb\nc\nd\ne\n")
+        theirs = git.hash_object(root, b"a\nb\nc\nd\nE\n")
+        other = git.hash_object(root, b"Z\nb\nc\nd\ne\n")
+        merged = git.merge_file(root, ours, base, theirs)
+        expect(
+            "merge_file merges two changes of different lines into a new blob, and gives None for two changes of one "
+            "line",
+            merged is not None
+            and git.blobs(root, [merged])[0] == b"A\nb\nc\nd\nE\n"
+            and git.merge_file(root, ours, base, other) is None,
         )
 
 

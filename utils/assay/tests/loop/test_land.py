@@ -52,7 +52,7 @@ import json
 import os
 import sys
 import tempfile
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
@@ -79,6 +79,10 @@ UNREADABLE = "a row of a kind that the code of the gate does not know\n"
 TABLE_ERROR = "rule-table.txt:525: the row kind 'linear-door' is unknown"
 # The ledger that the falls of a planted gate write.
 FALLEN = b"format 1\nrule demo\na.cpp | kind | 1 | entity | -\n"
+# The registry with the count rule demo, its ledger, and the head of that ledger, for the cases of THE MERGE.
+MERGE_REGISTRY = "format 1\nrule demo engine=meta scope=tracked ledger=count doc=XV | a planted refusal | fix it\n"
+MERGE_LEDGER = "utils/ledgers/demo.txt"
+MERGE_LEDGER_HEAD = "format 1\nrule demo\n"
 # The time limit of a planted landing process, and of the wait for a file of a process, in seconds.
 CHILD_S = 60.0
 WAIT_S = 30.0
@@ -837,15 +841,20 @@ def update_cases(expect: testing.Expect, work: Path, root: Path) -> None:
     copy of the module.
     """
     head = git.head(root)
-    patch = work / "gone.patch"
+    patch = work / "read-only.patch"
     (root / "shared.txt").write_text("alpha\nepsilon\n", encoding="utf-8")
     patch.write_bytes(git.patch(root, ["HEAD"], ["shared.txt"]))
     (root / "shared.txt").write_text((git.show(root, "HEAD", "shared.txt") or b"").decode(), encoding="utf-8")
-    request = request_of(("Change a line with a patch that goes",), patches=(patch,))
+    request = request_of(("Change a line of a file that the update cannot write",), patches=(patch,))
     decisions: dict[int, land.Decision] = {}
     queued = land.Queued(1, root, request, options())
+
+    def read_only() -> None:
+        """Make the working-tree copy of the file of the patch read-only, so the update cannot write it."""
+        (root / "shared.txt").chmod(0o444)
+
     batched = land.BatchLanding(
-        [queued], passing([], patch.unlink), lambda item, decision: decisions.update({item.number: decision}), no_pause
+        [queued], passing([], read_only), lambda item, decision: decisions.update({item.number: decision}), no_pause
     )
     try:
         _, printed = testing.captured(lambda: batched.land([queued]))
@@ -924,6 +933,110 @@ def falls_cases(expect: testing.Expect) -> None:
             and subjects_since(root, head) == ["Add r1", "Add r3"]
             and (root / "utils/ledgers/demo.txt").read_bytes() == FALLEN,
         )
+
+
+def ledger_text(counts: Sequence[int]) -> str:
+    """Return the planted ledger of the rule demo with the rows a.cpp, b.cpp and c.cpp and their counts."""
+    rows = "".join(f"{name}.cpp | kind | {count} | - | -\n" for name, count in zip("abc", counts, strict=True))
+    return f"{MERGE_LEDGER_HEAD}{rows}"
+
+
+def numbered(changed: Mapping[int, str]) -> str:
+    """Return ten numbered lines, with the text of CHANGED at the lines that it names."""
+    return "".join(f"{changed.get(index, f'line {index}')}\n" for index in range(10))
+
+
+def patch_of(root: Path, work: Path, name: str, files: Mapping[str, str]) -> Path:
+    """Write the files, keep their diff against HEAD as the patch NAME, give the files back their copy of HEAD."""
+    for path, text in files.items():
+        (root / path).write_text(text, encoding="utf-8")
+    patch = work / name
+    patch.write_bytes(git.patch(root, ["HEAD"], list(files)))
+    for path in files:
+        (root / path).write_bytes(git.show(root, "HEAD", path) or b"")
+    return patch
+
+
+def merge_cases(expect: testing.Expect) -> None:
+    """Hold THE MERGE: a patch that does not apply as text composes by a three-way merge, or is refused on a conflict.
+
+    The cases also hold THE INDEX AND THE WORKING TREE after a fold of the gate next to the hunk of a patch.
+    """
+    with tempfile.TemporaryDirectory(prefix="land-merge-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        planted_repository(root)
+        (root / "utils/registry.txt").write_text(MERGE_REGISTRY, encoding="utf-8")
+        (root / MERGE_LEDGER).write_text(ledger_text((4, 2, 1)), encoding="utf-8")
+        (root / "lines.txt").write_text(numbered({}), encoding="utf-8")
+        git.commit_all(root, "Add the registry, the ledger and the lines")
+        patch = patch_of(
+            root, work, "raise.patch", {MERGE_LEDGER: ledger_text((7, 2, 1)), "lines.txt": numbered({2: "theirs"})}
+        )
+        conflict = patch_of(root, work, "conflict.patch", {"lines.txt": numbered({8: "a different line"})})
+        (root / MERGE_LEDGER).write_text(ledger_text((5, 2, 1)), encoding="utf-8")
+        (root / "lines.txt").write_text(numbered({8: "ours"}), encoding="utf-8")
+        moved = git.commit_all(root, "Raise a count and change a line on main")
+        seen: list[tuple[gate.Candidate, bool]] = []
+        decisions, _ = landed(root, [request_of(("Raise a count with a patch",), patches=(patch,))], passing(seen))
+        lines = [line.content for line in decisions[1].lines]
+        expect(
+            "a patch that does not apply as text composes by a three-way merge: the count is ours plus theirs less the "
+            "base, the two changes of the lines merge, the gate runs each configuration, and the verdict names the "
+            f"merged files: {lines}",
+            decisions[1].status == 0
+            and git.parent(root, "HEAD") == moved
+            and git.show(root, "HEAD", MERGE_LEDGER) == ledger_text((8, 2, 1)).encode()
+            and git.show(root, "HEAD", "lines.txt") == numbered({2: "theirs", 8: "ours"}).encode()
+            and [candidate.is_every for candidate, _retry in seen] == [True]
+            and any("three-way merge composed lines.txt utils/ledgers/demo.txt" in line for line in lines)
+            and not any("WARNING" in line for line in lines),
+        )
+        expect(
+            "after the landing, the index and the working tree hold the merged commit",
+            git.is_index_clean(root, "HEAD")
+            and (root / MERGE_LEDGER).read_text(encoding="utf-8") == ledger_text((8, 2, 1))
+            and (root / "lines.txt").read_text(encoding="utf-8") == numbered({2: "theirs", 8: "ours"}),
+        )
+        head = git.head(root)
+        decisions, _ = landed(root, [request_of(("Change the line of main",), patches=(conflict,))], passing([]))
+        refusal = " ".join(line.content for line in decisions[1].lines)
+        expect(
+            f"a patch whose merge conflicts gets the refusal of the composition, which names the file: {refusal}",
+            decisions[1].status == ExitCode.USAGE
+            and "lines.txt: the two sides change the same lines" in refusal
+            and git.head(root) == head,
+        )
+        fall_cases(expect, work)
+
+
+def fall_cases(expect: testing.Expect, work: Path) -> None:
+    """Hold the update of a work tree after a fold of the gate next to the hunk of a patch.
+
+    The update of the holder and the update of the process each give the working tree the commit, with no warning.
+    """
+    root = work / "repo-fall"
+    planted_repository(root)
+    (root / "utils/registry.txt").write_text(MERGE_REGISTRY, encoding="utf-8")
+    (root / MERGE_LEDGER).write_text(ledger_text((4, 2, 1)), encoding="utf-8")
+    git.commit_all(root, "Add the registry and the ledger")
+    patch = patch_of(root, work, "row.patch", {MERGE_LEDGER: ledger_text((3, 2, 1))})
+
+    def folding(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+        """Fold a fall of the row next to the hunk of the patch into the commit, as THE REDUCE does."""
+        final = git.replaced_commit(root, candidate.commit, {MERGE_LEDGER: ledger_text((3, 1, 1)).encode()})
+        return gate.Verdict(("debug",), (), 1.0, (), final, (MERGE_LEDGER,))
+
+    decisions, _ = landed(root, [request_of(("Lower a count with a patch",), patches=(patch,))], folding)
+    lines = [line.content for line in decisions[1].lines]
+    expect(
+        f"after a fold next to the hunk of a patch, the updates of the holder and of the process give no warning, "
+        f"and the working tree holds the commit of the fold: {[line for line in lines if 'WARNING' in line]}",
+        decisions[1].status == 0
+        and not any("WARNING" in line for line in lines)
+        and git.is_index_clean(root, "HEAD")
+        and (root / MERGE_LEDGER).read_text(encoding="utf-8") == ledger_text((3, 1, 1)),
+    )
 
 
 def flaky_once(root: Path, name: str, seen: list[tuple[gate.Candidate, bool]]) -> land.Check:
@@ -1871,6 +1984,7 @@ def main(argv: list[str]) -> int:
             revert_cases,
             landing_cases,
             falls_cases,
+            merge_cases,
             flaky_cases,
             confirmation_cases,
             drop_cases,

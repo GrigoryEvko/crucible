@@ -446,6 +446,83 @@ def admit_row_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> Non
     )
 
 
+def merge_cases(expect: Expect, table: dict[str, rule_registry.Rule]) -> None:
+    """Check THE MERGE: the side that changed each row, the sum of two count changes of one key, and the conflicts."""
+    count = table["count-rule"]
+    key = rule_ledger.Key
+    head = "format 1\nrule count-rule\n"
+    base = f"{head}a.py | kind | 4 | - | -\nb.py | kind | 2 | - | -\nc.py | kind | 1 | - | -\n"
+    ours = f"{head}a.py | kind | 6 | - | -\nb.py | kind | 1 | - | -\nc.py | kind | 1 | - | -\n"
+    theirs = (
+        f"{head}a.py | kind | 9 | - | -\nb.py | kind | 2 | - | -\nc.py | kind | 1 | - | -\nd.py | kind | 3 | - | -\n"
+    )
+    merged = rule_ledger.merge(count, (base, ours, theirs), "ledger.txt")
+    parsed = rule_ledger.parse(merged.text or "", "ledger.txt", "count-rule", rule_registry.Policy.COUNT)
+    expect(
+        "two changes of one count merge to ours plus theirs less the base, a row that one side changed takes that "
+        "side, and merge() gives each summed key",
+        parsed.expected()
+        == {
+            key("a.py", "kind", ""): 11,
+            key("b.py", "kind", ""): 1,
+            key("c.py", "kind", ""): 1,
+            key("d.py", "kind", ""): 3,
+        }
+        and merged.summed == (key("a.py", "kind", ""),),
+    )
+    falls = rule_ledger.merge(
+        count,
+        (base, f"{head}a.py | kind | 1 | - | -\nc.py | kind | 1 | - | -\n", f"{head}c.py | kind | 1 | - | -\n"),
+        "ledger.txt",
+    )
+    expect(
+        "a merged count of 0 or less removes the row, and a ledger of no row merges to no file",
+        rule_ledger.merge(
+            count, (base, f"{head}c.py | kind | 1 | - | -\n", f"{head}c.py | kind | 1 | - | -\n"), "ledger.txt"
+        ).text
+        == f"{head}c.py | kind | 1 | - | -\n"
+        and falls.text == f"{head}c.py | kind | 1 | - | -\n"
+        and rule_ledger.merge(count, (base, None, None), "ledger.txt").text is None,
+    )
+    reasoned = f"format 1\nrule count-rule\nreason d.py | a planted step\n{theirs.removeprefix(head)}"
+    with_reason = rule_ledger.merge(count, (base, ours, reasoned), "ledger.txt")
+    expect(
+        "a reason row of theirs stays in the merged ledger",
+        "reason d.py | a planted step" in (with_reason.text or ""),
+    )
+    reasons = f"{head}a.py | kind | 6 | - | one reason\nb.py | kind | 2 | - | -\nc.py | kind | 1 | - | -\n"
+    other = f"{head}a.py | kind | 9 | - | a different reason\nb.py | kind | 2 | - | -\nc.py | kind | 1 | - | -\n"
+    expect(
+        "two different reasons of one key are a conflict",
+        refuses(partial(rule_ledger.merge, count, (base, reasons, other), "ledger.txt"), rule_ledger.LedgerError),
+    )
+    admit = table["admit-rule"]
+    admit_head = "format 1\nrule admit-rule\n"
+    expect(
+        "a ledger of the policy admit merges no sum: two different reasons of one key are a conflict",
+        refuses(
+            partial(
+                rule_ledger.merge,
+                admit,
+                (
+                    None,
+                    f"{admit_head}a.py | kind | admit | - | ours\n",
+                    f"{admit_head}a.py | kind | admit | - | theirs\n",
+                ),
+                "ledger.txt",
+            ),
+            rule_ledger.LedgerError,
+        ),
+    )
+    expect(
+        "ours in a form that the writer does not give is refused",
+        refuses(
+            partial(rule_ledger.merge, count, (base, ours.replace("a.py | kind", "a.py  | kind"), theirs), "x"),
+            rule_ledger.LedgerError,
+        ),
+    )
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and print one line for each.
 
@@ -470,6 +547,7 @@ def main(argv: list[str]) -> int:
     partial_cases(expect, table)
     reduce_cases(expect, table)
     admit_row_cases(expect, table)
+    merge_cases(expect, table)
     if failures:
         print(f"tests.core.test_ledger: FAILED, {len(failures)} case(s) did not hold")
         return 1

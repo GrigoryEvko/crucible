@@ -49,6 +49,29 @@ THE COMPOSITION
     writes is then in the repository.  The scratch repository reads the own
     paths from the work tree of the request through --work-tree.
 
+THE MERGE
+    A patch applies with `git apply --cached`.  A patch that does not apply
+    as text composes by a three-way merge of each of its files
+    (merged_patch()).  git builds the base of each file from the blobs that
+    the patch names, and the result of the patch on that base.  Ours is the
+    copy of the composition.  A file that ours did not change takes the
+    result of the patch, and a file that the two sides changed merges:
+      * A ledger of a rule of the registry of the composition merges by its
+        rows (THE MERGE of assay.core.ledger).  When two changes of one count
+        merge by a sum, the merged count can be too high.  The gate then runs
+        each configuration, and THE REDUCE writes the measured count.
+      * A witness fixture and the witness manifest come from the writer of
+        assay.loop.derive.witness_fixtures and the composed rule table, when
+        the composition holds the code of the writer of this copy.
+      * The mint inventory needs a build, and its merge is a refusal that
+        names its writer.
+      * Each other file merges by its lines with `git merge-file`.
+    Two changes of one line, one side that adds or removes a file that the
+    other side changes, and a merge of a ledger that conflicts each refuse
+    the request.  The refusal names each such file.  A raise or an admit of
+    a patch stays a change of its row in the commit.  The verdict names each
+    merged file.
+
 THE QUEUE
     A landing writes its request into the queue of its repository before it
     waits for the lock of the warm tree.  The queue is the directory
@@ -315,22 +338,30 @@ THE INDEX AND THE WORKING TREE
     update after it reads its verdict, and it writes the warnings.  An update
     that the work tree holds changes nothing.  The update also comes after a
     holder that ended after its swap (THE JOURNAL).  The verdict gives the
-    update: the commit and the paths of the index, and the falls.  Each
-    update holds a lock of flock(2) on the file
+    update: the landed commit, the paths, and the commit that the batch
+    started from.  Each update holds a lock of flock(2) on the file
     UPDATE_LOCK of the git directory of its work tree.  Two updates of one
     work tree then do not write its index at one time.
 
-    The index gets the entry of the landed commit for each changed path, and
-    the working tree does not change.  Then each patch goes to the working
-    tree with git apply, unless the working tree holds it.  The ledgers of
-    THE REDUCE go to each work tree of the batch one time.  Each edit goes to the working-tree
-    copy of its file, unless the copy holds it.
+    The update reads the copies of the commits, and no patch (synced_paths()).
+    The target of a path is its copy in the landed commit, or in the commit
+    of the branch when a later landing holds the landed commit.  Each path
+    of the update gets the entry of the target in the index.  The
+    working-tree copy of the path then gets the bytes of the target, when the
+    copy is the copy of the index before the update or of the commit that the
+    batch started from.  A copy that holds a local edit merges with the
+    target by its lines, with the entry of the index as the base.  When the
+    lines conflict, the edits of the request go to a shared file of an edit.
+    A copy that holds the target changes nothing.  So a patch that THE MERGE
+    composed, a fold of THE REDUCE next to a hunk, and a later request of the
+    batch give no warning.
 
-    When a hunk does not apply, the process writes a warning.  The owner of
-    the hunk must then apply it by hand before the next commit of that file,
-    or that commit reverts it.  An error of git or of a file also gives a
-    warning, because the commit is on the branch.  When HEAD of the work
-    tree is not on the branch of the request, the work tree gets no update.
+    A local edit that does not merge gives a warning, and the copy keeps the
+    edit.  The owner must then give it the change by hand before the next
+    commit of that file, or that commit reverts it.  An error of git or of a
+    file also gives a warning, because the commit is on the branch.  When
+    HEAD of the work tree is not on the branch of the request, the work tree
+    gets no update.
 
 THE LOCK OF A HEAVY STEP
     The gate takes the lock of the heavy steps for each of its steps
@@ -385,18 +416,22 @@ import os
 import random
 import secrets
 import sys
+import tempfile
 import time
 import traceback
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
-from assay.core import cache, git, paths, proc
+from assay.core import cache, git, paths, proc, ruletable
+from assay.core import ledger as rule_ledger
+from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
 from assay.loop import gate, heavy
 from assay.loop import history as loop_history
 from assay.loop import inputs as guard_inputs
+from assay.loop.derive import witness_fixtures
 
 # The refusals of the compare-and-swap before the batch stops, and the range of the random pause after one (THE
 # COMPARE-AND-SWAP).
@@ -469,6 +504,21 @@ DROPPED = "dropped"
 LOGS_MARK = "LOGS"
 # The start of a line of the verdict of a request that names a flaky test (THE FLAKY TESTS).
 FLAKY_MARK = "loop land: FLAKY, "
+# The directory of the ledgers and their suffix, and the generated file that the merge refuses with its writer (THE
+# MERGE).
+LEDGER_PREFIX = "utils/ledgers/"
+LEDGER_SUFFIX = ".txt"
+BUILT_FILES = {"misc/mint-inventory.md": "loop derive mint-inventory --write --build-dir build"}
+# The files of the code of the writer of the witness fixtures, which the merge compares with this copy (THE MERGE).
+WITNESS_WRITER = (
+    "utils/assay/loop/derive/witness_fixtures.py",
+    "utils/assay/core/ruletable.py",
+    "utils/assay/core/rows.py",
+)
+# The mode of an executable file, and the modes whose bytes the update of a working tree writes (THE INDEX AND THE
+# WORKING TREE).
+EXECUTABLE_MODE = "100755"
+FILE_MODES = (git.PLAIN_FILE_MODE, EXECUTABLE_MODE)
 
 
 class LandError(Exception):
@@ -529,12 +579,29 @@ class Options:
 
 @dataclass(frozen=True, slots=True)
 class Composed:
-    """The result of one composition: the commit that it starts from, the tree, the changed paths, and the diff."""
+    """The result of one composition: the commit that it starts from, the tree, the changed paths, and the diff.
+
+    `merged` holds each path that THE MERGE composed, and `is_summed` tells that it summed two changes of one count.
+    """
 
     head: str
     tree: str
     changed: tuple[str, ...]
     diff: str
+    merged: tuple[str, ...] = ()
+    is_summed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class PatchMerge:
+    """The result of THE MERGE of one patch: the entry of each path that it gives, and the paths that it merged.
+
+    An entry of None removes its path.  `is_summed` tells that a ledger summed two changes of one count.
+    """
+
+    entries: tuple[tuple[git.TreeEntry | None, str], ...]
+    merged: tuple[str, ...]
+    is_summed: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -563,12 +630,17 @@ class Queued:
 
 @dataclass(frozen=True, slots=True)
 class Link:
-    """One request composed on the commit before it: the request, that commit, its own commit, and its paths."""
+    """One request composed on the commit before it: the request, that commit, its own commit, and its paths.
+
+    `merged` and `is_summed` come from its composition (THE MERGE).
+    """
 
     queued: Queued
     parent: str
     commit: str
     changed: tuple[str, ...]
+    merged: tuple[str, ...] = ()
+    is_summed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -583,14 +655,17 @@ class Line:
 class Update:
     """The update of the work tree of a landed request (THE INDEX AND THE WORKING TREE).
 
-    The index gets the entry of the commit `index_commit` for each path of `index_paths`.  `falls` holds the commit
-    that the gate tested and the commit that landed, or nothing, and `ledgers` holds the ledgers of THE REDUCE.
+    The index gets the entry of the commit `index_commit` for each path of `index_paths`, or of a later commit of the
+    branch.  `base` is the commit that the batch started from, or "".  `falls` holds the commit that the gate tested
+    and the commit that landed, or nothing, and `ledgers` holds the ledgers of THE REDUCE.  This module reads no
+    falls, and a landing of an earlier copy reads them.
     """
 
     index_commit: str
     index_paths: tuple[str, ...]
     falls: tuple[str, ...] = ()
     ledgers: tuple[str, ...] = ()
+    base: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -807,6 +882,217 @@ def is_under(path: str, items: set[str]) -> bool:
     return any(path == item or path.startswith(item + "/") for item in items)
 
 
+# ── The merge ──────────────────────────────────────────────────────────────
+
+
+def patch_sides(root: Path, patch: Path) -> tuple[dict[str, git.TreeEntry], dict[str, git.TreeEntry]]:
+    """Return the base and the result of each file of a patch: the entries before and after the patch (THE MERGE).
+
+    git builds an index of the blobs that the patch names as its base, and then it applies the patch to that index.
+
+    Raises:
+        git.GitError: If the repository does not hold a blob of the base, or the patch does not apply to its base
+    """
+    with git.borrowing_repository(root) as side:
+        index = git.git_dir(side) / "index"
+        git.run(side, "apply", f"--build-fake-ancestor={index}", str(patch))
+        base = git.index_entries(side)
+        git.run(side, "apply", "--cached", str(patch))
+        return base, git.index_entries(side)
+
+
+def is_witness_output(path: str) -> bool:
+    """Tell if a path is a file that the writer of the witness fixtures writes (THE MERGE)."""
+    pure = PurePosixPath(path)
+    directory = witness_fixtures.FIXTURE_DIR.as_posix()
+    if pure.parent.as_posix() != directory:
+        return False
+    is_fixture = pure.name.startswith(witness_fixtures.FIXTURE_PREFIX) and pure.name.endswith(
+        witness_fixtures.FIXTURE_SUFFIX
+    )
+    return is_fixture or pure.name == witness_fixtures.MANIFEST_NAME
+
+
+def blob_text(root: Path, entry: git.TreeEntry | None) -> str | None:
+    """Return the text of the blob of an entry, or None for no entry.
+
+    Raises:
+        LandError: If the blob is not text of UTF-8
+    """
+    if entry is None:
+        return None
+    data = git.blobs(root, [entry.name])[0]
+    try:
+        return (data or b"").decode("utf-8")
+    except UnicodeDecodeError:
+        raise LandError(f"the blob {entry.name[:SHORT_HASH]} is not text of UTF-8") from None
+
+
+def ledger_rules(root: Path, scratch: Path) -> dict[str, rule_registry.Rule]:
+    """Return each rule with a ledger of the registry in the index of the composition, by its id (THE MERGE).
+
+    A registry that does not read gives no rule, and each ledger then merges as text.
+    """
+    entry = git.index_entries(scratch, [rule_registry.REGISTRY_PATH]).get(rule_registry.REGISTRY_PATH)
+    try:
+        text = blob_text(root, entry)
+    except LandError:
+        return {}
+    if text is None:
+        return {}
+    registry, problems = rule_registry.examine(text)
+    if problems:
+        return {}
+    return {rule_id: rule for rule_id, rule in registry.rules.items() if rule.policy != rule_registry.Policy.NONE}
+
+
+def merged_ledger(
+    root: Path, rule: rule_registry.Rule, path: str, sides: tuple[git.TreeEntry | None, ...]
+) -> tuple[git.TreeEntry | None, bool]:
+    """Return the entry of a ledger that two changes of one base merge to, and tell if a count merged by a sum.
+
+    Raises:
+        LandError: If the merge of the ledger conflicts (THE MERGE of assay.core.ledger)
+    """
+    texts = (blob_text(root, sides[0]), blob_text(root, sides[1]), blob_text(root, sides[2]))
+    try:
+        merged = rule_ledger.merge(rule, texts, path)
+    except rule_ledger.LedgerError as problem:
+        raise LandError(str(problem)) from None
+    if merged.text is None:
+        return None, bool(merged.summed)
+    mode = sides[1] or sides[2] or sides[0]
+    name = git.hash_object(root, merged.text.encode("utf-8"))
+    return git.TreeEntry(mode.mode if mode is not None else git.PLAIN_FILE_MODE, "blob", name), bool(merged.summed)
+
+
+def merged_text(root: Path, path: str, sides: tuple[git.TreeEntry | None, ...]) -> git.TreeEntry:
+    """Return the entry of a file that two changes of one base merge to, by its lines (THE MERGE).
+
+    Raises:
+        LandError: If one side adds, removes or changes the mode of the file differently, or the lines conflict
+    """
+    base, ours, theirs = sides
+    if base is None or ours is None or theirs is None:
+        raise LandError(f"{path}: one side adds or removes the file, and the other side changes it")
+    if git.GITLINK_MODE in (base.mode, ours.mode, theirs.mode):
+        raise LandError(f"{path}: the two sides change a commit of a different repository")
+    try:
+        mode = rule_ledger.three_way(base.mode, ours.mode, theirs.mode, "the mode")
+    except rule_ledger.LedgerError:
+        raise LandError(f"{path}: the two sides change the mode differently") from None
+    name = git.merge_file(root, ours.name, base.name, theirs.name)
+    if name is None:
+        raise LandError(f"{path}: the two sides change the same lines")
+    return git.TreeEntry(mode, "blob", name)
+
+
+def regenerated_witnesses(root: Path, scratch: Path) -> list[tuple[git.TreeEntry | None, str]]:
+    """Return the entry of each witness fixture and of the manifest that the composed rule table gives (THE MERGE).
+
+    The entries remove each fixture of no row.
+
+    Raises:
+        LandError: If the composition changes the code of the writer, or its rule table does not read
+    """
+    module_root = Path(witness_fixtures.__file__).resolve().parents[4]
+    composed = git.index_entries(scratch, list(WITNESS_WRITER))
+    for path in WITNESS_WRITER:
+        own = git.hash_object(root, (module_root / path).read_bytes())
+        if path not in composed or composed[path].name != own:
+            raise LandError(f"the composition changes {path}, so the gate cannot write the witness fixtures again")
+    table_path = witness_fixtures.TABLE.as_posix()
+    table = blob_text(root, git.index_entries(scratch, [table_path]).get(table_path))
+    if table is None:
+        raise LandError(f"the composition holds no {table_path}")
+    with tempfile.TemporaryDirectory(prefix="land-witness-") as work:
+        planted = Path(work) / "rule-table.txt"
+        planted.write_text(table, encoding="utf-8")
+        try:
+            witnesses = ruletable.load(planted).witnesses
+        except (ruletable.TableError, OSError) as problem:
+            raise LandError(f"the composed {table_path} does not read: {problem}") from None
+    directory = witness_fixtures.FIXTURE_DIR.as_posix()
+    wanted = {f"{directory}/{witness_fixtures.fixture_name(item)}": witness_fixtures.render(item) for item in witnesses}
+    wanted[f"{directory}/{witness_fixtures.MANIFEST_NAME}"] = witness_fixtures.manifest_text(witnesses)
+    present = git.index_entries(scratch, None)
+    entries: list[tuple[git.TreeEntry | None, str]] = []
+    for path in sorted(set(wanted) | {item for item in present if is_witness_output(item)}):
+        if path not in wanted:
+            entries.append((None, path))
+            continue
+        name = git.hash_object(root, wanted[path].encode("utf-8"))
+        kept = present.get(path)
+        if kept is None or kept.name != name:
+            entries.append((git.TreeEntry(kept.mode if kept is not None else git.PLAIN_FILE_MODE, "blob", name), path))
+    return entries
+
+
+def merged_patch(root: Path, scratch: Path, patch: Path, problem: str) -> PatchMerge:
+    """Compose a patch that does not apply as text by a three-way merge of each of its files (THE MERGE).
+
+    Args:
+        root: The top of the work tree of the request
+        scratch: The scratch repository of the composition, whose index holds the composition before the patch
+        patch: The patch
+        problem: The error of `git apply`
+
+    Raises:
+        LandError: If a file of the patch does not merge.  The message names each such file and the error of git
+    """
+    try:
+        base, theirs = patch_sides(root, patch)
+    except git.GitError as error:
+        raise LandError(
+            f"the patch {patch} does not apply, and git cannot build its base for a three-way merge: {error}.  "
+            f"git apply said: {problem.strip()}"
+        ) from None
+    changed = sorted(path for path in set(base) | set(theirs) if base.get(path) != theirs.get(path))
+    ours = git.index_entries(scratch, changed)
+    rules = ledger_rules(root, scratch)
+    entries: list[tuple[git.TreeEntry | None, str]] = []
+    merged: list[str] = []
+    conflicts: list[str] = []
+    is_summed = False
+    needs_witnesses = False
+    for path in changed:
+        sides = (base.get(path), ours.get(path), theirs.get(path))
+        if sides[1] == sides[0]:
+            entries.append((sides[2], path))
+            continue
+        if sides[1] == sides[2]:
+            continue
+        merged.append(path)
+        stem = PurePosixPath(path).stem
+        try:
+            if is_witness_output(path):
+                needs_witnesses = True
+            elif path in BUILT_FILES:
+                raise LandError(f"{path}: the two sides change it.  Merge main, and run `{BUILT_FILES[path]}`")
+            elif path.startswith(LEDGER_PREFIX) and path.endswith(LEDGER_SUFFIX) and stem in rules:
+                entry, summed = merged_ledger(root, rules[stem], path, sides)
+                entries.append((entry, path))
+                is_summed = is_summed or summed
+            else:
+                entries.append((merged_text(root, path, sides), path))
+        except LandError as conflict:
+            conflicts.append(str(conflict))
+    if not conflicts and needs_witnesses:
+        if not git.set_index_entries(scratch, entries):
+            raise LandError("git cannot give the index of the composition the merged files")
+        try:
+            entries += regenerated_witnesses(root, scratch)
+        except LandError as conflict:
+            conflicts.append(str(conflict))
+    if conflicts:
+        raise LandError(
+            f"the patch {patch} does not apply to the composition, and its three-way merge with it conflicts: "
+            f"{'; '.join(conflicts)}.  Merge main in the work tree, and land the request again.  git apply said: "
+            f"{problem.strip()}"
+        )
+    return PatchMerge(tuple(entries), tuple(merged), is_summed)
+
+
 def compose(root: Path, request: Request, head: str, with_diff: bool = False, since: str = "") -> Composed:
     """Compose the tree of a request on a commit (THE TREE, THE COMPOSITION).
 
@@ -829,8 +1115,17 @@ def compose(root: Path, request: Request, head: str, with_diff: bool = False, si
         if request.paths:
             git.run(scratch, "--work-tree", str(root), "add", "-A", "--", *request.paths)
         before_patches = git.write_tree(scratch)
+        merged: list[str] = []
+        is_summed = False
         for patch in request.patches:
-            git.run(scratch, "apply", "--cached", str(patch))
+            applied = git.run_any_exit(scratch, "apply", "--cached", str(patch))
+            if applied.exit == 0:
+                continue
+            result = merged_patch(root, scratch, patch, applied.err)
+            if not git.set_index_entries(scratch, result.entries):
+                raise LandError("git cannot give the index of the composition the merged files")
+            merged += result.merged
+            is_summed = is_summed or result.is_summed
         after_patches = git.write_tree(scratch)
         patched = git.tree_changes(scratch, before_patches, after_patches)
         shared = list(dict.fromkeys([*edited_paths(request), *patched]))
@@ -867,7 +1162,7 @@ def compose(root: Path, request: Request, head: str, with_diff: bool = False, si
                 )
         tree = git.write_tree(scratch)
         diff = git.index_patch(scratch, head) if with_diff else ""
-    return Composed(head, tree, changed, diff)
+    return Composed(head, tree, changed, diff, tuple(dict.fromkeys(merged)), is_summed)
 
 
 def commit_tree(root: Path, composed: Composed, message: str) -> str:
@@ -888,7 +1183,8 @@ def compose_link(queued: Queued, parent: str, since: str) -> Link:
     composed = compose(queued.root, request, parent, since=since)
     if not composed.changed:
         raise LandError("the commit would change nothing")
-    return Link(queued, parent, commit_tree(queued.root, composed, request.message), composed.changed)
+    commit = commit_tree(queued.root, composed, request.message)
+    return Link(queued, parent, commit, composed.changed, composed.merged, composed.is_summed)
 
 
 # ── The index and the working tree ─────────────────────────────────────────
@@ -911,70 +1207,114 @@ def swap(root: Path, branch: str, new: str, head: str, subject: str) -> bool:
     return git.swap_ref(root, branch, new, head, f"loop land: {subject}")
 
 
-def sync_index(root: Path, commit: str, changed: Sequence[str]) -> list[str]:
-    """Give the index of a work tree the entry of a commit for each path, and return the warnings.
+def working_names(root: Path, paths: Sequence[str]) -> dict[str, str]:
+    """Return the blob name of the working-tree copy of each path that is a regular file, by its path.
 
-    The working tree does not change.  A busy index only gives a warning, because the commit is done.
+    Complexity: one call of git for the files.
     """
-    entries = [(git.tree_entry(root, commit, path), path) for path in changed]
-    if git.set_index_entries(root, entries):
-        return []
-    return [f"loop land: WARNING, the index of {root} was busy and is not updated"]
+    files = [path for path in paths if (root / path).is_file() and not (root / path).is_symlink()]
+    return dict(zip(files, git.hash_files(root, files), strict=True))
 
 
-def apply_patch(root: Path, patch: bytes, shown: str) -> list[str]:
-    """Give the working tree a patch unless it holds the patch, and return a warning for each hunk that does not apply."""
-    if git.holds_patch(root, patch):
-        return []
-    problem = git.apply_patch(root, patch)
-    if problem is None:
-        return []
-    warning = (
-        f"loop land: WARNING, {shown} does not apply to the working tree:\n{problem}The owner must apply "
-        f"these hunks by hand before the next commit of those files, or that commit reverts them."
-    )
-    return [warning]
+def write_copy(root: Path, path: str, entry: git.TreeEntry | None) -> None:
+    """Give the working tree the copy of an entry, or remove the file for no entry (THE INDEX AND THE WORKING TREE).
 
-
-def update_working_tree(
-    root: Path, request: Request, folded: tuple[str, str, tuple[str, ...]] | None = None
-) -> list[str]:
-    """Give the working tree each patch, each edit and the ledgers of THE REDUCE.
-
-    The working tree gets only what it does not hold.
-
-    Args:
-        root: The top of the work tree of the request
-        request: The request
-        folded: The commit that the gate tested, the commit that landed, and the ledgers of THE REDUCE of
-            assay.loop.gate.  None when the gate wrote no ledger
-
-    Returns:
-        The warning of each hunk and each edit that does not apply
+    Raises:
+        LandError: If the entry is not a file, such as a link or a commit of a different repository
+        OSError: If the file cannot be written
     """
+    file = root / path
+    if entry is None:
+        file.unlink(missing_ok=True)
+        return
+    if entry.mode not in FILE_MODES:
+        raise LandError(f"{path} has the mode {entry.mode}, and the update writes only a file")
+    file.parent.mkdir(parents=True, exist_ok=True)
+    file.write_bytes(git.blobs(root, [entry.name])[0] or b"")
+    file.chmod(0o755 if entry.mode == EXECUTABLE_MODE else 0o644)
+
+
+def merged_copy(
+    root: Path, path: str, before: git.TreeEntry | None, wanted: git.TreeEntry | None, request: Request
+) -> bool:
+    """Merge a working-tree copy that holds a local edit with the landed copy, write it, and tell if it merged.
+
+    The merge takes the copy, the entry of the index before the update as its base, and the landed copy.  When the
+    lines conflict, the edits of the request go to the copy of a shared file of an edit, as each edit can.
+
+    Raises:
+        git.GitError: If git fails
+        LandError: If an edit does not apply
+        OSError: If the file cannot be read or written
+    """
+    file = root / path
+    if not file.is_file():
+        return False
+    if before is not None and wanted is not None:
+        local = git.hash_object(root, file.read_bytes())
+        name = git.merge_file(root, local, before.name, wanted.name)
+        if name is not None:
+            file.write_bytes(git.blobs(root, [name])[0] or b"")
+            return True
+    if path not in edited_paths(request):
+        return False
+    content = file.read_text(encoding="utf-8")
+    updated = content
+    for edit in request.edits:
+        if edit.path != path:
+            continue
+        state = edit_state(updated, edit.kind, edit.first, edit.second)
+        if state == "ambiguous":
+            return False
+        if state == "apply":
+            updated = apply_edit(updated, edit, path)
+    if updated != content:
+        file.write_text(updated, encoding="utf-8")
+    return True
+
+
+def synced_paths(root: Path, branch: str, request: Request, update: Update) -> list[str]:
+    """Give the index and the working tree the landed copy of each path of an update, and return the warnings.
+
+    THE INDEX AND THE WORKING TREE gives the rules.  Complexity: a constant number of git calls for each path.
+    """
+    target = update.index_commit
+    tip = git.resolve(root, branch) if branch else None
+    if tip is not None and tip != target and git.is_ancestor(root, target, tip):
+        target = tip
+    paths = list(update.index_paths)
+    index = git.index_entries(root, paths)
+    copies = working_names(root, paths)
+    entries: list[tuple[git.TreeEntry | None, str]] = []
     warnings: list[str] = []
-    for patch in request.patches:
-        warnings += apply_patch(root, patch.read_bytes(), str(patch))
-    if folded is not None:
-        before, after, ledgers = folded
-        warnings += apply_patch(root, git.patch(root, (before, after), ledgers), " ".join(ledgers))
-    for path in edited_paths(request):
-        file = root / path
-        content = file.read_text(encoding="utf-8")
-        updated = content
-        for edit in request.edits:
-            if edit.path != path:
+    for path in paths:
+        wanted = git.tree_entry(root, target, path)
+        before = index.get(path)
+        at_base = git.tree_entry(root, update.base, path) if update.base else None
+        copy = copies.get(path)
+        entries.append((wanted, path))
+        if copy is None and ((root / path).is_symlink() or (root / path).exists()):
+            warnings.append(f"loop land: WARNING, {path} of the working tree is not a file, and it gets no update")
+            continue
+        clean = {None if before is None else before.name, None if at_base is None else at_base.name}
+        try:
+            if copy == (None if wanted is None else wanted.name):
                 continue
-            state = edit_state(updated, edit.kind, edit.first, edit.second)
-            if state == "ambiguous":
-                warnings.append(
-                    f"loop land: WARNING, the working-tree {path} lacks an edit, and its anchor or old text is not "
-                    f"unique there.  Apply that edit by hand"
-                )
-            elif state == "apply":
-                updated = apply_edit(updated, edit, path)
-        if updated != content:
-            file.write_text(updated, encoding="utf-8")
+            if copy in clean:
+                write_copy(root, path, wanted)
+                continue
+            if merged_copy(root, path, before, wanted, request):
+                continue
+        except LandError as problem:
+            warnings.append(f"loop land: WARNING, {path} gets no update: {problem}")
+            continue
+        warnings.append(
+            f"loop land: WARNING, the working-tree copy of {path} holds a local edit that does not merge with the copy "
+            f"of {target[:SHORT_HASH]}, and it keeps the edit.  Give it that change by hand before the next commit of "
+            f"that file, or that commit reverts it"
+        )
+    if entries and not git.set_index_entries(root, entries):
+        warnings.append(f"loop land: WARNING, the index of {root} was busy and is not updated")
     return warnings
 
 
@@ -1005,9 +1345,7 @@ def updated_tree(root: Path, branch: str, request: Request, update: Update) -> l
             )
             return [elsewhere]
         with update_lock(root):
-            warnings = sync_index(root, update.index_commit, update.index_paths)
-            folded = (update.falls[0], update.falls[1], update.ledgers) if update.falls else None
-            warnings += update_working_tree(root, request, folded)
+            warnings = synced_paths(root, branch or current or "", request, update)
     except (git.GitError, LandError, OSError, ValueError) as problem:
         stopped = (
             f"loop land: WARNING, the update of the work tree {root} stops: {problem}.  The commit is on the branch.  "
@@ -1068,6 +1406,18 @@ def cut_point(links: Sequence[Link]) -> int:
 def refused(status: int, *texts: str) -> Decision:
     """Return the verdict of a refused request, with each text as a line of the standard error."""
     return Decision(status, "", tuple(Line(text, True) for text in texts))
+
+
+def merge_lines(link: Link) -> list[Line]:
+    """Return the line that names each file of a request that THE MERGE composed, or no line."""
+    if not link.merged:
+        return []
+    summed = ", with a sum of two changes of a count, so the gate ran each configuration" if link.is_summed else ""
+    return [
+        Line(
+            f"loop land: a patch did not apply as text, and a three-way merge composed {' '.join(link.merged)}{summed}"
+        )
+    ]
 
 
 def flaky_of(verdict: gate.Verdict) -> list[Line]:
@@ -1187,10 +1537,14 @@ class BatchLanding:
         """Run the gate on the last commit of a chain, keep the run, and return the verdict.
 
         The first run of the batch runs each test, and each subsequent run runs the tests with an input that changed.
-        A focus runs only the configurations and the tests of the focus (assay.loop.gate, THE RUN OF THE BASE).  An
-        error of the check is a problem of the commit (THE ERROR OF A RUN).
+        A focus runs only the configurations and the tests of the focus (assay.loop.gate, THE RUN OF THE BASE).  A
+        chain with a count that THE MERGE summed runs each configuration.  An error of the check is a problem of the
+        commit (THE ERROR OF A RUN).
         """
-        candidate = gate.Candidate(self.base, chain[-1].commit, chain_changed(chain), focus=tuple(focus))
+        is_every = any(link.is_summed for link in chain)
+        candidate = gate.Candidate(
+            self.base, chain[-1].commit, chain_changed(chain), focus=tuple(focus), is_every=is_every
+        )
         started = time.monotonic()
         try:
             verdict = self.check(candidate, bool(self.runs))
@@ -1438,7 +1792,7 @@ class BatchLanding:
         folded = f", with the falls of {' '.join(verdict.ledgers)} that the gate wrote" if verdict.ledgers else ""
         for link in accepted:
             line = Line(f"loop land: the gate accepts the commit {final[:SHORT_HASH]}{folded}")
-            lines = (line, *self.flaky_lines(link.queued.number))
+            lines = (line, *merge_lines(link), *self.flaky_lines(link.queued.number))
             self.decide(link.queued, Decision(ExitCode.OK, final, lines))
 
     def landed_decisions(
@@ -1459,6 +1813,7 @@ class BatchLanding:
             changed = tuple(sorted({*link.changed, *(ledgers if index == last else ())}))
             lines = [Line(f"loop land: committed {commit[:8]} on {link.parent[:8]}{folded if index == last else ''}:")]
             lines += [Line(f"  {path}") for path in changed]
+            lines += merge_lines(link)
             if len(accepted) > 1:
                 lines.append(
                     Line(f"loop land: a batch of {len(accepted)} requests landed at {final[:SHORT_HASH]} with one swap")
@@ -1470,6 +1825,7 @@ class BatchLanding:
                 tuple(sorted({*changed, *(ledgers if has_falls else ())})),
                 (accepted[-1].commit, final) if has_falls else (),
                 ledgers if has_falls else (),
+                self.base,
             )
             decisions.append((link.queued, Decision(ExitCode.OK, commit, tuple(lines), update)))
         return decisions
@@ -1783,11 +2139,11 @@ def decoded_update(value: object) -> Update | None:
         return None
     if not isinstance(value, dict):
         raise TypeError("the field update is not a record")
-    index_commit = value.get("index_commit")
-    if not isinstance(index_commit, str):
-        raise TypeError("the field index_commit of the update is not a text")
-    fields = [text_list(value.get(key), key) for key in ("index_paths", "falls", "ledgers")]
-    return Update(index_commit, *fields)
+    index_commit, base = value.get("index_commit"), value.get("base", "")
+    if not isinstance(index_commit, str) or not isinstance(base, str):
+        raise TypeError("the field index_commit or base of the update is not a text")
+    index_paths, falls, ledgers = (text_list(value.get(key), key) for key in ("index_paths", "falls", "ledgers"))
+    return Update(index_commit, index_paths, falls, ledgers, base)
 
 
 def decoded_decision(data: bytes) -> Decision:
