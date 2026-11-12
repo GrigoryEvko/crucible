@@ -1,0 +1,9 @@
+# A move of the fields of the bases of an object consumes the object: the one
+# part of a Record of one part, with bytes and empty, and each part of an object
+# with two cells.  A move of one of two parts leaves the object live.
+
+compile bases src/bases.cpp must-consume=on
+flag bases -freflection
+exit bases pass
+judge bases
+finding bases must-consume unconsumed src/bases.cpp:47:20 | planted::one_cell: pair

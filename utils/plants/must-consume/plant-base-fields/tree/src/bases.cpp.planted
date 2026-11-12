@@ -1,0 +1,49 @@
+// The fields of a base that is linear by its parts are fields of the object,
+// as the parts of a Record are in the cells of its bases.  A move of the one
+// part of a Record of one part consumes the Record, for a part with bytes and
+// for an empty part.  A move of each part of an object with two cells
+// consumes it, and a move of one of the two parts leaves the other live.
+#include <foundation/Linear.h>
+#include <foundation/core/Record.h>
+
+#include <cstddef>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+struct [[= ::foundation::linear::linear{}]] Handle {
+    int value = 0;
+    constexpr Handle() noexcept = default;
+    constexpr Handle(Handle&&) noexcept = default;
+    constexpr Handle& operator=(Handle&&) noexcept { return *this; }
+    Handle(const Handle&) = delete;
+};
+
+template <std::size_t I, class T>
+struct Cell {
+    T part;
+};
+
+struct Pair : Cell<0, Handle>, Cell<1, Handle> {};
+
+void take(Handle&& handle) noexcept;
+void take_token(Token&& token) noexcept;
+
+void one_part_with_bytes(::foundation::core::Record<Handle> one) { take(static_cast<Handle&&>(one.part)); }
+
+void one_empty_part(::foundation::core::Record<Token> one) { take_token(static_cast<Token&&>(one.part)); }
+
+void each_cell(Pair pair) {
+    take(static_cast<Handle&&>(static_cast<Cell<0, Handle>&>(pair).part));
+    take(static_cast<Handle&&>(static_cast<Cell<1, Handle>&>(pair).part));
+}
+
+void one_cell(Pair pair) { take(static_cast<Handle&&>(static_cast<Cell<0, Handle>&>(pair).part)); }
+
+}  // namespace planted

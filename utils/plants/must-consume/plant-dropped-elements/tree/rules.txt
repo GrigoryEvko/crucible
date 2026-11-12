@@ -1,0 +1,8 @@
+# The rule table of this plant.  The unit of src/ is quarantined, and it can
+# name the Record family and the vocabulary of the linear marker of the
+# repository.
+
+admit foundation::core | the Record family, whose parts the planted code initializes
+admit foundation::linear | the vocabulary of the linear marker, which the planted code names
+admit std::move | a cast to an rvalue reference
+quarantine src/

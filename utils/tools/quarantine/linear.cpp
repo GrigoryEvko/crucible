@@ -64,6 +64,17 @@
 //     collects no garbage between such an event and the PLUGIN_PRE_GENERICIZE
 //     of its function, and each collection clears the records of the events.
 //
+// THE DROPPED ELEMENTS
+//     The front end folds an element of a braced list that moves an empty
+//     token to an empty constant.  It then drops the initialization of an
+//     empty field from the CONSTRUCTOR, so the tree keeps no sign of the move,
+//     as in Record tokens{std::move(first), std::move(second)} of two tokens.
+//     The event of the fold of an element gives the move.  An element whose
+//     folded tree the body, with the originals of its folds, does not hold is
+//     dropped.  The rule gives the move of a dropped element to one statement
+//     of the body: the declaration, the expression statement or the return
+//     with the last start at or before the location of the move.
+//
 // THE DOORS
 //     A door ends each linear value of its frame (P10 of the plan).  A
 //     function that carries the annotation drop_door or detach_door is a door,
@@ -101,17 +112,27 @@
 //     ledger row holds no line of an exit.
 //
 // THE FIELDS
-//     An object of a class that is linear by its parts, with no linear base,
-//     gets one slot for each linear field.  A move of a field consumes its
-//     slot, and the move of the last field consumes the object.  A move of the
-//     whole after a move of a field, or of a field after a move of the whole,
-//     is a second consume.  A reference to a field borrows it.
+//     An object of a class that is linear by its parts gets one slot for each
+//     linear field.  The fields of a base that is linear by its parts count as
+//     fields of the object, as the parts of a Record in the cells of its bases
+//     do.  The object gets no field slot when a base carries the annotation
+//     linear, or when two paths of bases reach one field.  A move of a field
+//     consumes its slot, and the move of the last field consumes the object.
+//     The field of a move is the innermost field that is no base on the way
+//     from the move to the object.  A move of the whole after a move of a
+//     field, or of a field after a move of the whole, is a second consume.  A
+//     reference to a field borrows it.
 //
 // THE ACCESSORS
 //     After a move cast, the walk to the tracked object goes through a member
 //     function with no qualifier && that gives an lvalue reference to a linear
-//     value, such as operator* or value() of std::optional.  The move of that
-//     reference consumes the object.
+//     value, such as operator* or value() of std::optional.  The rule reads
+//     the return statements of the body of each such accessor at its own
+//     PLUGIN_PRE_GENERICIZE.  When each one gives the same field of *this, the
+//     move of the reference consumes that field only.  Else the move consumes
+//     the object.  An accessor whose body the unit genericizes after the
+//     caller, such as a member template with a declared return type, has no
+//     such fact, and its move consumes the object.
 //
 // THE CAPTURES
 //     A lambda initializes a capture by reference with the address of the
@@ -238,6 +259,24 @@ struct EmptyAssignment {
 
 std::vector<EmptyAssignment> empty_assignments;
 std::unordered_map<tree, std::size_t> empty_assignment_of_source;
+
+// THE FOLDS: a fold of an element of a braced list that moves a linear local
+// or parameter.  The front end drops the folded element of an empty field from
+// its CONSTRUCTOR, so the tree can lose the move (THE DROPPED ELEMENTS).
+struct ElementFold {
+    tree original = NULL_TREE;
+    tree folded = NULL_TREE;
+    tree moved = NULL_TREE;  // the local or the parameter that ORIGINAL moves
+    location_t location = UNKNOWN_LOCATION;
+};
+
+std::vector<ElementFold> element_folds;
+
+// THE ACCESSORS: the DECL_UID of the field of *this that the return statements
+// of each accessor give, by the DECL_UID of the accessor, or kWholeObject.  No
+// collection reuses a DECL_UID, so the facts stay for the unit.
+constexpr int kWholeObject = -1;
+std::unordered_map<int, int> accessor_fields;
 
 tree strip_conversions(tree node) {
     for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
@@ -423,6 +462,41 @@ TypeFacts facts_of(tree type, int depth = 0) {
 Linearity linearity_of(tree type) { return facts_of(type).linearity; }
 
 bool is_linear_type(tree type) { return linearity_of(type) != Linearity::none; }
+
+// Adds each linear field of the class TYPE to FIELDS: its own fields, and the
+// fields of each base that is linear by its parts (THE FIELDS).  Returns false,
+// which fails closed, when a base carries the annotation linear, when two
+// paths of bases reach one field, or when the walk reaches its bound.
+// Complexity: linear in the bases and the fields, and quadratic in the linear
+// fields for the test of a second path.
+bool collect_linear_fields(tree type, std::vector<tree>& fields, int depth) {
+    if (depth > kTypeDepth) {
+        return false;
+    }
+    if (tree binfo = TYPE_BINFO(type)) {
+        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+            tree base = TYPE_MAIN_VARIANT(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)));
+            Linearity base_linearity = linearity_of(base);
+            if (base_linearity == Linearity::direct) {
+                return false;
+            }
+            if (base_linearity == Linearity::derived && !collect_linear_fields(base, fields, depth + 1)) {
+                return false;
+            }
+        }
+    }
+    for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+        if (TREE_CODE(field) != FIELD_DECL || DECL_FIELD_IS_BASE(field) || TREE_TYPE(field) == NULL_TREE
+            || TYPE_REF_P(TREE_TYPE(field)) || !is_linear_type(TREE_TYPE(field))) {
+            continue;
+        }
+        if (std::find(fields.begin(), fields.end(), field) != fields.end()) {
+            return false;
+        }
+        fields.push_back(field);
+    }
+    return true;
+}
 
 // True when a temporary of TYPE drops a linear value at its end: TYPE is
 // linear, and the end of its scope is no door.
@@ -611,6 +685,35 @@ struct PendingFinding {
 // passes.  A loop that reaches the bound keeps the state of its last pass.
 constexpr int kLoopPasses = 6;
 
+// The state of the walk of a body for THE DROPPED ELEMENTS: each node of the
+// body and of the originals of its folds, and each statement that can own the
+// move of a dropped element.
+struct PresenceWalk {
+    hash_set<tree> visited;
+    std::vector<tree> statements;
+};
+
+tree walk_presence(tree* node_pointer, int* walk_subtrees, void* data) {
+    tree node = *node_pointer;
+    if (node == NULL_TREE || TYPE_P(node)) {
+        *walk_subtrees = 0;
+        return NULL_TREE;
+    }
+    auto& walk = *static_cast<PresenceWalk*>(data);
+    tree_code code = TREE_CODE(node);
+    if ((code == DECL_EXPR || code == EXPR_STMT || code == RETURN_EXPR) && EXPR_HAS_LOCATION(node)) {
+        walk.statements.push_back(node);
+    }
+    auto found = folded_initializers.find(node);
+    if (found != folded_initializers.end()) {
+        for (const FoldEntry& entry : found->second) {
+            tree original = entry.original;
+            cp_walk_tree(&original, walk_presence, data, &walk.visited);
+        }
+    }
+    return NULL_TREE;
+}
+
 // True when the special member FUNCTION moves or transfers a linear value by
 // its contract: a move constructor or a move assignment, or a constructor or
 // an assignment of a class that carries the annotation linear (THE OBJECTS).
@@ -628,6 +731,7 @@ public:
     Analysis(tree function, bool is_door) : function_(function), is_door_(is_door) {}
 
     void run() {
+        collect_orphans();
         scopes_.emplace_back();
         FlowState entry;
         if (!is_exempt_function()) {
@@ -671,8 +775,74 @@ private:
     // UNKNOWN_LOCATION at the end of the body.
     location_t next_statement_ = UNKNOWN_LOCATION;
     bool is_unanalyzed_ = false;
+    // THE DROPPED ELEMENTS: the original of each dropped element of this
+    // body, and the statement that owns its move.
+    struct Orphan {
+        tree original = NULL_TREE;
+        tree statement = NULL_TREE;
+        location_t location = UNKNOWN_LOCATION;
+    };
+    std::vector<Orphan> orphans_;
 
     bool is_exempt_function() const { return is_transfer_function(function_); }
+
+    // THE DROPPED ELEMENTS: each fold of an element that moves a local or a
+    // parameter of this function, whose folded tree the body and the originals
+    // of its folds do not hold, with the statement that owns the move.  The
+    // walk takes the folds of this function from the list.  Complexity: linear
+    // in the body, and in the folds times the statements.
+    void collect_orphans() {
+        auto is_of_function = [this](const ElementFold& fold) { return DECL_CONTEXT(fold.moved) == function_; };
+        std::vector<ElementFold> folds;
+        for (const ElementFold& fold : element_folds) {
+            if (is_of_function(fold)) {
+                folds.push_back(fold);
+            }
+        }
+        if (folds.empty()) {
+            return;
+        }
+        element_folds.erase(std::remove_if(element_folds.begin(), element_folds.end(), is_of_function),
+                            element_folds.end());
+        PresenceWalk walk;
+        tree body = DECL_SAVED_TREE(function_);
+        cp_walk_tree(&body, walk_presence, &walk, &walk.visited);
+        for (const ElementFold& fold : folds) {
+            if (walk.visited.contains(fold.folded)) {
+                continue;
+            }
+            location_t where = expansion_point(fold.location);
+            tree owner = NULL_TREE;
+            location_t owner_start = UNKNOWN_LOCATION;
+            for (tree statement : walk.statements) {
+                location_t start = expansion_point(EXPR_LOCATION(statement));
+                bool is_at_or_before = linemap_compare_locations(line_table, start, where) >= 0;
+                if (is_at_or_before
+                    && (owner == NULL_TREE || linemap_compare_locations(line_table, owner_start, start) >= 0)) {
+                    owner = statement;
+                    owner_start = start;
+                }
+            }
+            if (owner != NULL_TREE) {
+                orphans_.push_back(Orphan{fold.original, owner, fold.location});
+            }
+        }
+    }
+
+    // The moves of the dropped elements that the statement STATEMENT owns.
+    void resolve_orphans(tree statement, FlowState& state) {
+        for (const Orphan& orphan : orphans_) {
+            if (orphan.statement != statement) {
+                continue;
+            }
+            bool saw_rvalue = false;
+            tree field = NULL_TREE;
+            tree source = strip_to_tracked(orphan.original, saw_rvalue, &field);
+            if (source != NULL_TREE && saw_rvalue) {
+                consume(source, field, state, orphan.location);
+            }
+        }
+    }
 
     // Gives DECL a slot when it is a tracked object (THE OBJECTS).
     bool track(tree decl, std::size_t& slot) {
@@ -724,28 +894,22 @@ private:
         return true;
     }
 
-    // THE FIELDS: an object of a class that is linear by its parts, with no
-    // linear base, gets one slot for each linear field.  A move of a field
-    // consumes its slot, and the move of the last linear field consumes the
-    // object.  A class that carries the annotation hides its fields.
+    // THE FIELDS: an object of a class that is linear by its parts gets one
+    // slot for each linear field, also of each base that is linear by its
+    // parts.  A move of a field consumes its slot, and the move of the last
+    // linear field consumes the object.  A class that carries the annotation
+    // hides its fields.  Complexity: linear in the bases and the fields.
     void add_field_slots(std::size_t slot, tree type) {
         type = TYPE_MAIN_VARIANT(type);
         if (!CLASS_TYPE_P(type) || linearity_of(type) != Linearity::derived) {
             return;
         }
-        if (tree binfo = TYPE_BINFO(type)) {
-            for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
-                if (is_linear_type(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)))) {
-                    return;
-                }
-            }
+        std::vector<tree> linear_fields;
+        if (!collect_linear_fields(type, linear_fields, 0)) {
+            return;
         }
         std::vector<std::size_t> fields;
-        for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
-            if (TREE_CODE(field) != FIELD_DECL || DECL_FIELD_IS_BASE(field) || TREE_TYPE(field) == NULL_TREE
-                || TYPE_REF_P(TREE_TYPE(field)) || !is_linear_type(TREE_TYPE(field))) {
-                continue;
-            }
+        for (tree field : linear_fields) {
             Slot part;
             part.decl = slots_[slot].decl;
             part.field = field;
@@ -821,6 +985,20 @@ private:
         return original;
     }
 
+    // The slot field of the tracked object DECL whose DECL_UID is FIELD_UID, or
+    // null when the object has no slot for it (THE ACCESSORS).
+    tree field_by_uid(tree decl, int field_uid) const {
+        if (field_uid == kWholeObject) {
+            return NULL_TREE;
+        }
+        for (std::size_t part : slots_[slot_of_.at(decl)].fields) {
+            if (static_cast<int>(DECL_UID(slots_[part].field)) == field_uid) {
+                return slots_[part].field;
+            }
+        }
+        return NULL_TREE;
+    }
+
     // The tracked object that NODE names through the casts of THE CONSUMES, or
     // null.  SAW_RVALUE is true when a cast to an rvalue reference or std::move
     // is on the way.  With FIELD, the walk also goes through a member access
@@ -828,11 +1006,18 @@ private:
     // or null for the whole object.  After a move cast, it goes through an
     // accessor: a member function that gives a reference to a linear value of
     // its object, such as operator* or value() of std::optional.  The move of
-    // that reference consumes the object (THE ACCESSORS).
+    // that reference consumes the field that the accessor gives, or the object
+    // (THE ACCESSORS).
     tree strip_to_tracked(tree node, bool& saw_rvalue, tree* field = nullptr) const {
         if (field != nullptr) {
             *field = NULL_TREE;
         }
+        // The innermost field that is no base on the way, and whether a base
+        // of the object comes with no such field after it.
+        tree leaf = NULL_TREE;
+        bool is_base_only = false;
+        // The DECL_UID of the field that the last accessor on the way gives.
+        int accessor_field = kWholeObject;
         for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
             node = unfolded(node, NULL_TREE);
             switch (TREE_CODE(node)) {
@@ -866,13 +1051,21 @@ private:
                 case TARGET_EXPR:
                     node = TARGET_EXPR_INITIAL(node);
                     continue;
-                case COMPONENT_REF:
-                    if (field == nullptr || TREE_CODE(TREE_OPERAND(node, 1)) != FIELD_DECL) {
+                case COMPONENT_REF: {
+                    tree member = TREE_OPERAND(node, 1);
+                    if (field == nullptr || TREE_CODE(member) != FIELD_DECL) {
                         return NULL_TREE;
                     }
-                    *field = TREE_OPERAND(node, 1);
+                    if (!DECL_FIELD_IS_BASE(member)) {
+                        leaf = member;
+                        is_base_only = false;
+                    } else if (leaf == NULL_TREE) {
+                        is_base_only = true;
+                    }
+                    accessor_field = kWholeObject;
                     node = TREE_OPERAND(node, 0);
                     continue;
+                }
                 case CALL_EXPR: {
                     tree callee = cp_get_callee_fndecl_nofold(node);
                     if (is_move_cast(callee) && call_expr_nargs(node) >= 1) {
@@ -881,9 +1074,10 @@ private:
                         continue;
                     }
                     if (saw_rvalue && is_accessor(callee) && call_expr_nargs(node) >= 1) {
-                        if (field != nullptr) {
-                            *field = NULL_TREE;
-                        }
+                        auto summary = accessor_fields.find(static_cast<int>(DECL_UID(callee)));
+                        accessor_field = summary != accessor_fields.end() ? summary->second : kWholeObject;
+                        leaf = NULL_TREE;
+                        is_base_only = false;
                         node = CALL_EXPR_ARG(node, 0);
                         continue;
                     }
@@ -896,10 +1090,15 @@ private:
                         auto referent = referent_of_.find(node);
                         found = referent != referent_of_.end() ? referent->second : NULL_TREE;
                     }
-                    if (found != NULL_TREE && field != nullptr && *field != NULL_TREE
-                        && slot_for(found, *field) == kNoParent) {
+                    if (found == NULL_TREE || field == nullptr) {
+                        return found;
+                    }
+                    // A base of the object with no field after it is no
+                    // field slot, and neither is a field with no slot.
+                    if (is_base_only || (leaf != NULL_TREE && slot_for(found, leaf) == kNoParent)) {
                         return NULL_TREE;
                     }
+                    *field = leaf != NULL_TREE ? leaf : field_by_uid(found, accessor_field);
                     return found;
                 }
                 default:
@@ -1079,6 +1278,7 @@ private:
                 return;
             case DECL_EXPR:
                 walk_declaration(DECL_EXPR_DECL(node), state);
+                resolve_orphans(node, state);
                 return;
             case CLEANUP_STMT:
                 // The cleanup runs at each exit of the body.  It is no consume.
@@ -1147,6 +1347,7 @@ private:
                 return;
             case RETURN_EXPR:
                 walk_expression(TREE_OPERAND(node, 0), state);
+                resolve_orphans(node, state);
                 exit_scopes(state, 0, false);
                 state.is_reachable = false;
                 return;
@@ -1165,10 +1366,11 @@ private:
             case EXPR_STMT:
                 if (is_void_constant(EXPR_STMT_EXPR(node))) {
                     walk_removed_assignments(node, state);
-                    return;
+                } else {
+                    check_discarded(EXPR_STMT_EXPR(node));
+                    walk_expression(EXPR_STMT_EXPR(node), state);
                 }
-                check_discarded(EXPR_STMT_EXPR(node));
-                walk_expression(EXPR_STMT_EXPR(node), state);
+                resolve_orphans(node, state);
                 return;
             default:
                 break;
@@ -1389,6 +1591,11 @@ private:
                 return;
             case TARGET_EXPR:
                 walk_expression(TARGET_EXPR_INITIAL(node), state);
+                return;
+            case EXPR_STMT:
+                // An expression statement inside a CLEANUP_POINT_EXPR.
+                walk_expression(EXPR_STMT_EXPR(node), state);
+                resolve_orphans(node, state);
                 return;
             case CALL_EXPR:
             case AGGR_INIT_EXPR:
@@ -2710,6 +2917,78 @@ bool has_scope_door(tree type) {
         && (carries_door_annotation(destructor) || door_row_of(destructor) != nullptr);
 }
 
+// The DECL_UID of the field of *this that the expression NODE names through
+// casts and member accesses, the innermost field that is no base, or
+// kWholeObject when NODE names *this itself or no member of *this (THE
+// ACCESSORS).  OBJECT is the object parameter of the function.
+int member_field_of(tree node, tree object) {
+    tree leaf = NULL_TREE;
+    for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
+        node = tree_strip_any_location_wrapper(node);
+        switch (TREE_CODE(node)) {
+            case NOP_EXPR:
+            case CONVERT_EXPR:
+            case VIEW_CONVERT_EXPR:
+            case NON_LVALUE_EXPR:
+            case ADDR_EXPR:
+            case INDIRECT_REF:
+            case SAVE_EXPR:
+            case CLEANUP_POINT_EXPR:
+                node = TREE_OPERAND(node, 0);
+                continue;
+            case COMPONENT_REF:
+                if (TREE_CODE(TREE_OPERAND(node, 1)) == FIELD_DECL && !DECL_FIELD_IS_BASE(TREE_OPERAND(node, 1))) {
+                    leaf = TREE_OPERAND(node, 1);
+                }
+                node = TREE_OPERAND(node, 0);
+                continue;
+            case PARM_DECL:
+                return node == object && leaf != NULL_TREE ? static_cast<int>(DECL_UID(leaf)) : kWholeObject;
+            default:
+                return kWholeObject;
+        }
+    }
+    return kWholeObject;
+}
+
+// The state of the walk of the return statements of one accessor.
+struct ReturnWalk {
+    tree object = NULL_TREE;
+    int field = kWholeObject;
+    bool saw_return = false;
+};
+
+tree walk_returns(tree* node_pointer, int* walk_subtrees, void* data) {
+    tree node = *node_pointer;
+    if (node == NULL_TREE || TYPE_P(node) || TREE_CODE(node) == LAMBDA_EXPR) {
+        *walk_subtrees = 0;
+        return NULL_TREE;
+    }
+    if (TREE_CODE(node) != RETURN_EXPR) {
+        return NULL_TREE;
+    }
+    auto& walk = *static_cast<ReturnWalk*>(data);
+    tree value = TREE_OPERAND(node, 0);
+    if (value != NULL_TREE && (TREE_CODE(value) == INIT_EXPR || TREE_CODE(value) == MODIFY_EXPR)) {
+        value = TREE_OPERAND(value, 1);
+    }
+    int field = member_field_of(value, walk.object);
+    walk.field = !walk.saw_return || walk.field == field ? field : kWholeObject;
+    walk.saw_return = true;
+    return NULL_TREE;
+}
+
+// Keeps the field of *this that the accessor FUNCTION gives (THE ACCESSORS):
+// the field of each of its return statements when they agree, else the
+// object.  Complexity: linear in the body.
+void note_accessor_field(tree function) {
+    ReturnWalk walk;
+    walk.object = DECL_ARGUMENTS(function);
+    tree body = DECL_SAVED_TREE(function);
+    cp_walk_tree_without_duplicates(&body, walk_returns, &walk);
+    accessor_fields[static_cast<int>(DECL_UID(function))] = walk.saw_return ? walk.field : kWholeObject;
+}
+
 // True when the rule reads the body of FUNCTION in this unit (THE BODIES).
 bool is_read_here(tree function, Place& place) {
     place = place_of(DECL_SOURCE_LOCATION(function), Scope::quarantine);
@@ -2736,6 +3015,11 @@ void on_pre_genericize_linear(void* gcc_data, void*) {
     }
     if (DECL_LANG_SPECIFIC(function) != nullptr && DECL_DEFAULTED_FN(function)) {
         return;
+    }
+    // The fact of an accessor serves each caller in this unit, also when the
+    // rule does not read the body of the accessor here (THE ACCESSORS).
+    if (linear_mode.checks_must_consume && is_accessor(function)) {
+        note_accessor_field(function);
     }
     Place place;
     if (!is_read_here(function, place)) {
@@ -2790,7 +3074,66 @@ void on_finish_decl_linear(void* gcc_data, void*) {
     }
 }
 
-// PLUGIN_FOLDED_INITIALIZER (THE FOLDS).
+// The linear local or parameter that NODE moves through casts and std::move,
+// or null (THE DROPPED ELEMENTS).
+tree moved_linear_decl(tree node) {
+    bool saw_rvalue = false;
+    for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
+        node = tree_strip_any_location_wrapper(node);
+        switch (TREE_CODE(node)) {
+            case NOP_EXPR:
+            case CONVERT_EXPR:
+            case NON_LVALUE_EXPR:
+            case VIEW_CONVERT_EXPR:
+            case IMPLICIT_CONV_EXPR:
+            case STATIC_CAST_EXPR:
+                if (TREE_TYPE(node) != NULL_TREE && TYPE_REF_P(TREE_TYPE(node))
+                    && TYPE_REF_IS_RVALUE(TREE_TYPE(node))) {
+                    saw_rvalue = true;
+                }
+                node = TREE_OPERAND(node, 0);
+                continue;
+            case ADDR_EXPR:
+            case INDIRECT_REF:
+            case CLEANUP_POINT_EXPR:
+            case SAVE_EXPR:
+            case PAREN_EXPR:
+                node = TREE_OPERAND(node, 0);
+                continue;
+            case TARGET_EXPR:
+                node = TARGET_EXPR_INITIAL(node);
+                continue;
+            case CALL_EXPR: {
+                tree callee = cp_get_callee_fndecl_nofold(node);
+                if (!is_move_cast(callee) || call_expr_nargs(node) < 1) {
+                    return NULL_TREE;
+                }
+                saw_rvalue = saw_rvalue || DECL_NAME(callee) != linear_names.forward;
+                node = CALL_EXPR_ARG(node, 0);
+                continue;
+            }
+            case VAR_DECL:
+            case PARM_DECL:
+                return saw_rvalue && !TREE_STATIC(node) && is_linear_or_reference(TREE_TYPE(node)) ? node : NULL_TREE;
+            default:
+                return NULL_TREE;
+        }
+    }
+    return NULL_TREE;
+}
+
+tree find_located(tree* node_pointer, int* walk_subtrees, void*) {
+    tree node = *node_pointer;
+    if (node == NULL_TREE || TYPE_P(node)) {
+        *walk_subtrees = 0;
+        return NULL_TREE;
+    }
+    return EXPR_P(node) && EXPR_HAS_LOCATION(node) ? node : NULL_TREE;
+}
+
+// PLUGIN_FOLDED_INITIALIZER (THE FOLDS).  The fold of an element that moves a
+// linear local or parameter is kept for THE DROPPED ELEMENTS, at the location
+// of the first node of the original with one.
 void on_folded_initializer(void* gcc_data, void*) {
     const auto* data = static_cast<const plugin_folded_initializer_data*>(gcc_data);
     if (data == nullptr || data->original == NULL_TREE || data->folded == NULL_TREE || data->original == data->folded
@@ -2798,6 +3141,17 @@ void on_folded_initializer(void* gcc_data, void*) {
         return;
     }
     folded_initializers[data->folded].push_back(FoldEntry{data->object, data->original});
+    if (data->kind != PLUGIN_FOLDED_ELEMENT && data->kind != PLUGIN_FOLDED_ARRAY_ELEMENT) {
+        return;
+    }
+    tree moved = moved_linear_decl(data->original);
+    if (moved == NULL_TREE) {
+        return;
+    }
+    tree original = data->original;
+    tree located = cp_walk_tree_without_duplicates(&original, find_located, nullptr);
+    location_t location = located != NULL_TREE ? EXPR_LOCATION(located) : data->location;
+    element_folds.push_back(ElementFold{data->original, data->folded, moved, location});
 }
 
 // PLUGIN_EMPTY_CLASS_ASSIGNMENT (THE FOLDS).
@@ -2819,6 +3173,7 @@ void on_linear_collection(void*, void*) {
     folded_initializers.clear();
     empty_assignments.clear();
     empty_assignment_of_source.clear();
+    element_folds.clear();
 }
 
 }  // namespace

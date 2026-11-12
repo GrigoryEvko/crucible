@@ -1,0 +1,12 @@
+# The move of an empty token into a dropped element of a Record consumes the
+# token in its statement: a declaration, a return, a call argument and a branch.
+# The token that no move consumes is a finding, and each token of the two
+# branches is consumed on one path only.
+
+compile dropped src/dropped.cpp must-consume=on
+flag dropped -freflection
+exit dropped pass
+judge dropped
+finding dropped must-consume unconsumed src/dropped.cpp:48:11 | planted::one_moved: second
+finding dropped must-consume unconsumed-on-path src/dropped.cpp:54:11 | planted::branches: first
+finding dropped must-consume unconsumed-on-path src/dropped.cpp:55:11 | planted::branches: second

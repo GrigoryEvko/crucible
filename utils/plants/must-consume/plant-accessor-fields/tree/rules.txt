@@ -1,0 +1,6 @@
+# The rule table of this plant.  The unit of src/ is quarantined, and it can
+# name the vocabulary of the linear marker of the repository.
+
+admit foundation::linear | the vocabulary of the linear marker, which the planted code names
+admit std::size_t | the type of the index of a cell
+quarantine src/

@@ -1,0 +1,50 @@
+// An accessor that gives one field of *this, as at() of a Record does.  The
+// move of its reference consumes that field only: a move of one of two parts
+// leaves the other live, and a move of each part through the accessor
+// consumes the object one time.  An accessor that gives a different field on
+// two returns gives no field, and its move consumes the object.
+#include <foundation/Linear.h>
+
+#include <cstddef>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Handle {
+    int value = 0;
+    constexpr Handle() noexcept = default;
+    constexpr Handle(Handle&&) noexcept = default;
+    constexpr Handle& operator=(Handle&&) noexcept { return *this; }
+    Handle(const Handle&) = delete;
+};
+
+template <std::size_t I, class T>
+struct Cell {
+    T part;
+};
+
+struct Pair : Cell<0, Handle>, Cell<1, Handle> {
+    template <std::size_t I>
+    constexpr auto& at() & noexcept {
+        return static_cast<Cell<I, Handle>&>(*this).part;
+    }
+
+    Handle& pick(bool first) & noexcept {
+        if (first) {
+            return static_cast<Cell<0, Handle>&>(*this).part;
+        }
+        return static_cast<Cell<1, Handle>&>(*this).part;
+    }
+};
+
+void take(Handle&& handle) noexcept;
+
+void one_moved(Pair pair) { take(static_cast<Handle&&>(pair.at<0>())); }
+
+void each_moved(Pair pair) {
+    take(static_cast<Handle&&>(pair.at<0>()));
+    take(static_cast<Handle&&>(pair.at<1>()));
+}
+
+void picked(Pair pair, bool first) { take(static_cast<Handle&&>(pair.pick(first))); }
+
+}  // namespace planted

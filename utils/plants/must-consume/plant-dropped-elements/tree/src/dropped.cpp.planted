@@ -1,0 +1,63 @@
+// The moves of empty tokens into the parts of a Record.  The front end folds
+// each such element to an empty constant and drops it from the initializer,
+// so only the event of the fold gives the move.  Each move consumes its token
+// in the statement that holds it: a declaration, a return and a call
+// argument, and one branch of an if.  The token that no move consumes is a
+// finding.
+#include <foundation/Linear.h>
+#include <foundation/core/Record.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+using One = ::foundation::core::Record<Token>;
+using Two = ::foundation::core::Record<Token, Token>;
+
+void take(Two&& tokens) noexcept;
+void take_one(One&& token) noexcept;
+
+void declared() {
+    Token first;
+    Token second;
+    Two tokens{std::move(first), std::move(second)};
+    take(std::move(tokens));
+}
+
+Two returned() {
+    Token first;
+    Token second;
+    return Two{std::move(first), std::move(second)};
+}
+
+void argument() {
+    Token first;
+    Token second;
+    take(Two{std::move(first), std::move(second)});
+}
+
+void one_moved() {
+    Token first;
+    Token second;
+    One token{std::move(first)};
+    take_one(std::move(token));
+}
+
+void branches(bool flag) {
+    Token first;
+    Token second;
+    if (flag) {
+        take_one(One{std::move(first)});
+    } else {
+        take_one(One{std::move(second)});
+    }
+}
+
+}  // namespace planted

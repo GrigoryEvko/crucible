@@ -1,0 +1,9 @@
+# The move of the reference of an accessor that gives one field consumes that
+# field: a move of one of two parts leaves the object live, and a move of each
+# part consumes it one time.  An accessor with two fields consumes the object.
+
+compile accessors src/accessors.cpp must-consume=on
+flag accessors -freflection
+exit accessors pass
+judge accessors
+finding accessors must-consume unconsumed src/accessors.cpp:41:21 | planted::one_moved: pair
