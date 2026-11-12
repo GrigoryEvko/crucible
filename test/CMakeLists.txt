@@ -4951,8 +4951,12 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # prose and of the rule decide-cite-ratio parse small planted files.  The test
 # of the memo of the file hashes hashes
 # planted files, and the test of the run of mypy runs a planted mypy.
+# The rule clang-format runs in eight parts.  With a cold cache on 2026-11-12,
+# one run on each file used 1,578 G user instructions, more than the limit of a
+# test of the rule step-cost.  The eight parts used 121 G to 270 G each.
 crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR}
-  TREES admitted-audit decide-cite-ratio derived-files prose-bans)
+  TREES admitted-audit decide-cite-ratio derived-files prose-bans
+  PARTS clang-format 8)
 # The rules of the engine elf read the objects, the static libraries and the
 # compile database of this build (cmake/Guards.cmake).  The test modules of
 # the runner of the engine, of the module of its ledgers of one set and of its

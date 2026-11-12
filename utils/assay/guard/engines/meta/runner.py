@@ -30,6 +30,18 @@ THE FAMILIES
     of a module.  Each other attribute, such as plant_context, comes from the
     family module.
 
+THE PARTS
+    A call with --part K/N reads part K of N of the files of a rule.  Only a
+    rule whose module sets READS_PARTS to True takes --part, and that rule
+    reads its files through part_of() of its context.  part_files() orders
+    the files by their size, the largest first, and part K holds each N-th
+    file from the position K.  The parts of a tree are thus disjoint, and
+    together they hold each file.  The run judges only the ledger rows of the
+    files of the part.  The parts of one rule run at the same time, and each
+    part writes its warnings to the file RULE.partK.txt of the warnings
+    directory (assay.core.report, THE WARNINGS DIRECTORY).  The tsast engine
+    reads its parts with the same function.
+
 THE REFUSED KINDS
     A rule module can name the kinds of the findings that no ledger row
     admits, in its constant REFUSED_KINDS.  Such a finding tells that the
@@ -116,6 +128,8 @@ ENGINES = "utils/assay/guard/engines"
 FAMILY_TABLE = "RULES"
 # The constant of a rule module that names the kinds of the findings that no ledger row admits (THE REFUSED KINDS).
 REFUSED_KINDS = "REFUSED_KINDS"
+# The constant of a rule module that is True when the rule reads a part of its files (THE PARTS).
+READS_PARTS = "READS_PARTS"
 
 
 class NotApplicable(Exception):
@@ -141,24 +155,44 @@ class RuleContext(Protocol):
         """
 
 
+def part_files(root: Path, paths: Sequence[str], part: tuple[int, int]) -> list[str]:
+    """Return the files of part K of N of the paths, sorted (THE PARTS).
+
+    Args:
+        root: The root of the tree of the paths
+        paths: The files, relative to the root
+        part: (K, N) with 1 <= K <= N
+
+    Complexity: O(f log f) for f files, with one stat of each file.
+    """
+    index, count = part
+    ordered = sorted(paths, key=lambda path: (-(root / path).stat().st_size, path))
+    return sorted(ordered[index - 1 :: count])
+
+
 class MetaContext:
-    """The tree that a meta rule reads: its root, its build directory, its guide and its registry.
+    """The tree that a meta rule reads: its root, its build directory, its guide, its registry and its part.
 
     The guide is the path of the guide of the tree relative to its root:
     CLAUDE.md, or a planted guide of a plant.  The context reads the registry
-    and the tracked files one time, on the first use.
+    and the tracked files one time, on the first use.  The part is (K, N) for
+    part K of N of the files of a rule (THE PARTS), or None for each file.
     """
 
-    __slots__ = ("_problems", "_registry", "_tracked", "build_dir", "guide", "root")
+    __slots__ = ("_covered", "_problems", "_registry", "_tracked", "build_dir", "guide", "part", "root")
 
-    def __init__(self, root: Path, build_dir: Path | None = None, guide: str = GUIDE) -> None:
-        """Keep the root, the build directory and the path of the guide."""
+    def __init__(
+        self, root: Path, build_dir: Path | None = None, guide: str = GUIDE, part: tuple[int, int] | None = None
+    ) -> None:
+        """Keep the root, the build directory, the path of the guide and the part of the call."""
         self.root = root
         self.build_dir = build_dir
         self.guide = guide
+        self.part = part
         self._registry: rule_registry.Registry | None = None
         self._problems: list[rows_grammar.RowsError] = []
         self._tracked: tuple[str, ...] | None = None
+        self._covered: frozenset[str] | None = None
 
     def registry_text(self) -> str:
         """Return the text of the registry of the tree, or an empty text when the tree has none."""
@@ -196,12 +230,28 @@ class MetaContext:
                 raise NotApplicable(f"the tree {self.root} is not a git work tree: {problem}") from None
         return self._tracked
 
+    def part_of(self, paths: Sequence[str]) -> list[str]:
+        """Return the files of the part of the call, or each file with no part (THE PARTS).
+
+        Complexity: O(f log f) for f files.
+        """
+        if self.part is None:
+            return list(paths)
+        chosen = part_files(self.root, paths, self.part)
+        self._covered = frozenset(chosen)
+        return chosen
+
+    def is_covered(self, key: rule_ledger.Key) -> bool:
+        """Return whether the run judges a ledger row: each row with no part, and a row of a file of the part."""
+        return self._covered is None or key.path in self._covered
+
     def findings_of(self, rule: rule_registry.Rule) -> list[check_report.Finding]:
         """Return the findings of the function findings(context) of the module of a rule.
 
         Raises:
             NotApplicable: If the rule does not apply to the tree
         """
+        self._covered = None
         return list(rule_module(rule).findings(self))
 
 
@@ -461,6 +511,11 @@ def refused_kinds(rule: rule_registry.Rule) -> frozenset[str]:
     The module of the rule names them in its constant REFUSED_KINDS.  A rule with no such constant has none.
     """
     return frozenset(getattr(rule_module(rule), REFUSED_KINDS, frozenset()))
+
+
+def reads_parts(rule: rule_registry.Rule) -> bool:
+    """Return True when the module of a rule sets READS_PARTS to True, and the rule then takes --part (THE PARTS)."""
+    return getattr(rule_module(rule), READS_PARTS, False) is True
 
 
 def module_judged(rule: rule_registry.Rule, context: RuleContext) -> list[check_report.Finding]:

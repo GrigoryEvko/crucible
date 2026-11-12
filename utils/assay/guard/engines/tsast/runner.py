@@ -34,11 +34,11 @@ THE PARSE ERRORS
     such file that it reads, because the rule cannot read the file.
 
 THE PARTS
-    A call with --part K/N reads part K of N of the files of a rule, and only
-    a rule that calls part_of() reads a part.  part_of() orders the files by
-    their size, the largest first, and the part holds each N-th file from
-    the position K.  The run judges only the ledger rows of the files of the
-    part.  The parts of one rule run at the same time.  Each part writes
+    A call with --part K/N reads part K of N of the files of a rule.  Only a
+    rule whose module sets READS_PARTS to True takes --part, and that rule
+    calls part_of().  part_of() takes the files of the part from part_files()
+    of assay.guard.engines.meta.runner (THE PARTS of that module).  The run
+    judges only the ledger rows of the files of the part.  The parts of one rule run at the same time.  Each part writes
     its warnings to the file RULE.partK.txt of the warnings directory
     (assay.core.report, THE WARNINGS DIRECTORY).  A part then does not
     replace or remove the warnings of a different part.
@@ -188,11 +188,9 @@ class TsastContext:
         """
         if self.part is None:
             return list(paths)
-        index, count = self.part
-        ordered = sorted(paths, key=lambda path: (-(self.root / path).stat().st_size, path))
-        chosen = ordered[index - 1::count]
+        chosen = meta_runner.part_files(self.root, paths, self.part)
         self._covered = frozenset(chosen)
-        return sorted(chosen)
+        return chosen
 
     def is_covered(self, key: rule_ledger.Key) -> bool:
         """Return whether the run judges a ledger row: each row with no part, and a row of a file of the part."""

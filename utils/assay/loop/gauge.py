@@ -62,8 +62,9 @@ THE EDIT
     statement.  Before each build, check_edit_format() runs the pinned
     clang-format of the rule clang-format on the edited header.  When the
     formatter changes the header, the gauge stops before the build.  Each run
-    of the test guard_clang_format of the copy then gives a failure.  With no
-    install of the pin, the gauge prints a note, and that test does not apply.
+    of the tests of the rule clang-format of the copy then gives a failure.
+    With no install of the pin, the gauge prints a note, and these tests do
+    not apply.
 
 THE TESTS WITH A FAILURE
     Each test step gives ctest the option --output-junit, with a report in
@@ -315,7 +316,10 @@ def check_edit_format(tree: Path) -> str | None:
     try:
         program = clang_format.formatter()
     except NotApplicable as problem:
-        return f"the gauge does not check the format of the edit, and the test guard_clang_format does not apply: {problem}"
+        return (
+            f"the gauge does not check the format of the edit, and the tests of the rule clang-format do not apply: "
+            f"{problem}"
+        )
     verdict = clang_format.single_verdict(tree, program, EDIT_HEADER.as_posix())
     if not verdict.kind:
         return None
@@ -326,7 +330,7 @@ def check_edit_format(tree: Path) -> str | None:
     else:
         what = f"gives no verdict on {EDIT_HEADER} after the edit: {verdict.detail}"
     raise GaugeError(
-        f"the pinned clang-format {what}.  Each run of the test guard_clang_format of the copy then gives "
+        f"the pinned clang-format {what}.  Each run of the tests of the rule clang-format of the copy then gives "
         f"a failure.  Make edited_text() of utils/assay/loop/gauge.py write the shape of the .clang-format "
         f"of the tree"
     )
@@ -789,8 +793,8 @@ def format_case(record_case: Callable[[str, bool], None]) -> None:
     """Make sure that the pinned clang-format makes no change to the edited header of this tree, with the longest mark.
 
     The case copies the header and the .clang-format of the tree into a scratch tree, and it edits the copy.  With no
-    install of the pinned clang-format, the case prints that it does not run.  The test guard_clang_format then does
-    not apply too.
+    install of the pinned clang-format, the case prints that it does not run.  The tests of the rule clang-format then
+    do not apply too.
 
     Args:
         record_case: The recorder of one case of the self-test

@@ -29,6 +29,16 @@ THE RUNS
     the same time, and the batches have about the same bytes (batches_of()).
     Each call of the formatter reads no standard input.
 
+THE PARTS
+    The rule reads the part of the call (THE PARTS of
+    assay.guard.engines.meta.runner).  ctest runs it in parts, so each test
+    stays below the instruction limit of a test of the rule step-cost when
+    the cache is cold.  A part of N runs the formatter on MAX_JOBS / N jobs,
+    so the N parts together run MAX_JOBS jobs, as one run on each file does.
+    Only part 1 gives the error of a tree with no file of THE FILES.  The
+    findings of the N parts together are then the findings of one run on
+    each file.
+
 THE CACHE
     The cache clang-format of assay.core.cache keeps one entry for each file
     that the formatter does not change.  The name of the entry is the SHA-256
@@ -47,8 +57,8 @@ THE KINDS
                   .clang-format
     The entity of each finding is empty, and the path names the file.
 
-Complexity: one read and one hash of each file of the scope, and one
-formatter run for each file that the cache does not hold.
+Complexity: one read and one hash of each file of the part, and one
+formatter run for each file of the part that the cache does not hold.
 """
 
 import hashlib
@@ -61,6 +71,8 @@ from assay.guard.engines.meta.runner import MetaContext, pinned_program
 from assay.readers import tool_reports
 
 RULE = "clang-format"
+# The rule reads the part of the call through part_of() (THE PARTS).
+READS_PARTS = True
 SUFFIXES = frozenset({".h", ".hpp", ".cpp", ".cc", ".cxx"})
 EXCLUDED_DIRECTORY = "papers"
 EXCLUDED_PREFIX = "build"
@@ -68,8 +80,8 @@ EXCLUDED_NAME = "vmlinux.h"
 # The tool of assay.setup.install that gives the formatter (THE FORMATTER).
 TOOL = "clang-format"
 CONFIGURATION_FILES = (".clang-format", ".clang-format-ignore")
-# The batches at the same time: the job count of the package (THE JOB COUNT of assay.core.proc), and the batches of
-# one job.
+# The batches at the same time of one run on each file: the job count of the package (THE JOB COUNT of
+# assay.core.proc), and the batches of one job.  A part of N has MAX_JOBS / N jobs (THE PARTS).
 MAX_JOBS = proc.DEFAULT_JOBS
 BATCHES_PER_JOB = 4
 CACHE_NAME = "clang-format"
@@ -200,17 +212,17 @@ def batch_verdicts(root: Path, program: Path, files: list[str]) -> dict[str, Ver
     return {path: single_verdict(root, program, path) for path in files}
 
 
-def batches_of(root: Path, files: list[str]) -> list[list[str]]:
+def batches_of(root: Path, files: list[str], jobs: int = MAX_JOBS) -> list[list[str]]:
     """Put the files into batches (THE RUNS).
 
-    The files go into BATCHES_PER_JOB times MAX_JOBS batches, or into one
+    The files go into BATCHES_PER_JOB times `jobs` batches, or into one
     batch for each file when there are fewer files.  They go into the
     batches in turn, the largest file first.  The batches then take about the
     same time.
 
     Complexity: O(n log n) in the number of files, for the sort by bytes.
     """
-    count = min(len(files), MAX_JOBS * BATCHES_PER_JOB)
+    count = min(len(files), jobs * BATCHES_PER_JOB)
     batches: list[list[str]] = [[] for _ in range(count)]
     by_size = sorted(files, key=lambda path: (-(root / path).stat().st_size, path))
     for index, path in enumerate(by_size):
@@ -218,17 +230,17 @@ def batches_of(root: Path, files: list[str]) -> list[list[str]]:
     return batches
 
 
-def all_verdicts(root: Path, program: Path, files: list[str]) -> dict[str, Verdict]:
-    """Return the verdict of each file, with MAX_JOBS batches at the same time.
+def all_verdicts(root: Path, program: Path, files: list[str], jobs: int = MAX_JOBS) -> dict[str, Verdict]:
+    """Return the verdict of each file, with `jobs` batches at the same time.
 
     Complexity: one formatter run for each batch, and one more for each file of a batch that fails.
     """
-    batches = batches_of(root, files)
+    batches = batches_of(root, files, jobs)
     verdicts: dict[str, Verdict] = {}
     if len(batches) > 1:
         from concurrent.futures import ThreadPoolExecutor
 
-        with ThreadPoolExecutor(max_workers=min(MAX_JOBS, len(batches))) as pool:
+        with ThreadPoolExecutor(max_workers=min(jobs, len(batches))) as pool:
             for result in pool.map(lambda batch: batch_verdicts(root, program, batch), batches):
                 verdicts.update(result)
     else:
@@ -253,7 +265,7 @@ def finding_of(path: str, verdict: Verdict) -> check_report.Finding:
 
 
 def findings(context: MetaContext) -> list[check_report.Finding]:
-    """Give each file that the formatter changes or cannot format (THE KINDS).
+    """Give each file of the part of the call that the formatter changes or cannot format (THE KINDS, THE PARTS).
 
     Raises:
         NotApplicable: If the pinned clang-format is not installed, or the root is not a git work tree
@@ -262,8 +274,12 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
     program = formatter()
     scope = [path for path in context.tracked() if is_in_scope(path)]
     if not scope:
+        if context.part is not None and context.part[0] != 1:
+            return []
         message = f"the tree {root} holds no C++ file of the scope, and the rule gives no verdict.  Name the root"
         return [check_report.Finding("error", CONFIGURATION_FILES[0], 0, RULE, message, "failed")]
+    scope = context.part_of(scope)
+    jobs = max(1, MAX_JOBS // context.part[1]) if context.part is not None else MAX_JOBS
     directory = cache.cache_root(CACHE_NAME)
     identity = run_identity(root, program)
     names: dict[str, str] = {}
@@ -275,7 +291,7 @@ def findings(context: MetaContext) -> list[check_report.Finding]:
         if directory is None or not is_cached(directory, names[path]):
             missed.append(path)
     found: list[check_report.Finding] = []
-    for path, verdict in sorted(all_verdicts(root, program, missed).items()):
+    for path, verdict in sorted(all_verdicts(root, program, missed, jobs).items()):
         if verdict.kind:
             found.append(finding_of(path, verdict))
         elif directory is not None:

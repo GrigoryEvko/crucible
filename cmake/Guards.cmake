@@ -44,42 +44,74 @@ function(crucible_rule_limit rule out_var)
   set(${out_var} "${limit}" PARENT_SCOPE)
 endfunction()
 
-# crucible_meta_rule_tests(<warnings-dir> [TREES <rule>...])
+# crucible_meta_rule_tests(<warnings-dir> [TREES <rule>...] [PARTS <rule> <count>...])
 #
 # Register two tests for each rule of the engine meta: guard_ID runs the rule on the tree, and
 # guard_ID_witness runs it on each plant and control of utils/plants/ID/.  The rule registry
 # reads the tests of this build directory, so each rule gets --build-dir.  A rule that does not apply
 # to the tree exits 77, and ctest shows a skip.  The guard_ID of
 # each rule of TREES reads the parse trees of the tree, so it requires the fixture tsast_trees.  The rule
-# registry refuses a rule that reads the trees and is not in TREES.
+# registry refuses a rule that reads the trees and is not in TREES.  PARTS gives pairs of a rule and a
+# count N of 2 or more.  Such a rule gets the tests guard_ID_K for K from 1 to N in place of guard_ID, and each
+# one runs part K of N of the files of the rule (THE PARTS of assay.guard.engines.meta.runner).
 function(crucible_meta_rule_tests warnings_dir)
-  cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "TREES")
+  cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "TREES;PARTS")
   crucible_rule_rows("^rule[ \t]+[a-z0-9-]+[ \t]+(.*[ \t])?engine=meta[ \t]" rows)
   list(LENGTH rows row_count)
   if(row_count EQUAL 0)
     message(FATAL_ERROR "utils/registry.txt: the registry holds no rule of the engine meta, and the build registers "
                         "the tests of those rules.  Make sure that each meta rule row has the field engine=meta.")
   endif()
+  set(part_rules "")
+  set(part_counts "")
+  set(pairs ${arg_PARTS})
+  while(pairs)
+    list(LENGTH pairs pair_words)
+    if(pair_words LESS 2)
+      message(FATAL_ERROR "crucible_meta_rule_tests: PARTS holds the rule ${pairs} with no count.  Give each rule "
+                          "of PARTS a count N of 2 or more.")
+    endif()
+    list(POP_FRONT pairs part_rule part_count)
+    if(NOT part_count MATCHES "^[1-9][0-9]*$" OR part_count LESS 2 OR part_rule IN_LIST part_rules)
+      message(FATAL_ERROR "crucible_meta_rule_tests: PARTS gives the rule ${part_rule} the count ${part_count}.  "
+                          "Give each rule of PARTS one count N of 2 or more.")
+    endif()
+    list(APPEND part_rules "${part_rule}")
+    list(APPEND part_counts "${part_count}")
+  endwhile()
   set(meta_rules "")
   foreach(row IN LISTS rows)
     string(REGEX MATCH "^rule[ \t]+([a-z0-9-]+)" match "${row}")
     set(rule "${CMAKE_MATCH_1}")
     list(APPEND meta_rules "${rule}")
     string(REPLACE "-" "_" test_name "guard_${rule}")
-    crucible_script_test(NAME ${test_name}
-      COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${rule} --build-dir ${CMAKE_BINARY_DIR}
-              --warnings-dir ${warnings_dir})
+    list(FIND part_rules "${rule}" part_index)
+    set(check_tests "")
+    if(part_index EQUAL -1)
+      crucible_script_test(NAME ${test_name}
+        COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${rule} --build-dir ${CMAKE_BINARY_DIR}
+                --warnings-dir ${warnings_dir})
+      list(APPEND check_tests ${test_name})
+    else()
+      list(GET part_counts ${part_index} parts)
+      foreach(part RANGE 1 ${parts})
+        crucible_script_test(NAME ${test_name}_${part}
+          COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --rule ${rule} --part ${part}/${parts}
+                  --build-dir ${CMAKE_BINARY_DIR} --warnings-dir ${warnings_dir})
+        list(APPEND check_tests ${test_name}_${part})
+      endforeach()
+    endif()
     crucible_script_test(NAME ${test_name}_witness
       COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard witness --rule ${rule})
-    set_tests_properties(${test_name} ${test_name}_witness PROPERTIES LABELS "ci_guard;meta" SKIP_RETURN_CODE 77)
+    set_tests_properties(${check_tests} ${test_name}_witness PROPERTIES LABELS "ci_guard;meta" SKIP_RETURN_CODE 77)
     if(rule IN_LIST arg_TREES)
-      set_tests_properties(${test_name} PROPERTIES FIXTURES_REQUIRED tsast_trees)
+      set_tests_properties(${check_tests} PROPERTIES FIXTURES_REQUIRED tsast_trees)
     endif()
   endforeach()
-  foreach(rule IN LISTS arg_TREES)
+  foreach(rule IN LISTS arg_TREES part_rules)
     if(NOT rule IN_LIST meta_rules)
-      message(FATAL_ERROR "crucible_meta_rule_tests: the rule ${rule} of TREES is no rule of the engine meta in "
-                          "utils/registry.txt.  Remove it from TREES, or correct its name.")
+      message(FATAL_ERROR "crucible_meta_rule_tests: the rule ${rule} of TREES or PARTS is no rule of the engine meta "
+                          "in utils/registry.txt.  Remove it, or correct its name.")
     endif()
   endforeach()
 endfunction()

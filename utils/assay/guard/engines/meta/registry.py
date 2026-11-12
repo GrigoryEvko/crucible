@@ -115,18 +115,18 @@ PARTS_BY_NAME = {part.name: part for part in PARTS}
 class PartContext(MetaContext):
     """The context of a plant of one part (THE PLANTS): the context that the part gives, and the name of the part."""
 
-    __slots__ = ("part",)
+    __slots__ = ("part_name",)
 
-    def __init__(self, context: MetaContext, part: str) -> None:
+    def __init__(self, context: MetaContext, part_name: str) -> None:
         """Keep the root, the build directory and the guide of the context of the part, and the name of the part."""
         super().__init__(context.root, context.build_dir, context.guide)
-        self.part = part
+        self.part_name = part_name
 
 
 def selected_parts(context: MetaContext) -> tuple[Part, ...]:
     """Return the parts that a run reads: the part of a plant (THE PLANTS), else each part."""
     if isinstance(context, PartContext):
-        return (PARTS_BY_NAME[context.part],)
+        return (PARTS_BY_NAME[context.part_name],)
     return PARTS
 
 

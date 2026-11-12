@@ -13,8 +13,10 @@ through the runner of its engine, which judges its findings against its ledger
 (assay.core.ledger).  The engines meta, tsast, plugin, elf and build have a
 runner.
 The tsast rules of one call share the trees that they read
-(assay.guard.engines.tsast.runner, THE SHARED TREES), and --part K/N gives
-them part K of N of their files (THE PARTS).  The plugin rules of one call
+(assay.guard.engines.tsast.runner, THE SHARED TREES).  --part K/N gives a
+meta rule or a tsast rule part K of N of its files, and only a rule whose
+module sets READS_PARTS takes it (assay.guard.engines.meta.runner, THE
+PARTS).  The plugin rules of one call
 read the sections of the objects of the build one time
 (assay.guard.engines.plugin.runner, THE SECTIONS).  The elf rules of one call
 read each fact of the build one time (assay.guard.engines.elf.runner, THE
@@ -53,6 +55,8 @@ RUNNERS = (rule_registry.Engine.META, rule_registry.Engine.TSAST, rule_registry.
            rule_registry.Engine.ELF, rule_registry.Engine.BUILD)
 # The engines of the rules that read the objects of a build.
 BUILD_ENGINES = (rule_registry.Engine.PLUGIN, rule_registry.Engine.ELF)
+# The engines of the rules that can read a part of their files (THE PARTS of assay.guard.engines.meta.runner).
+PART_ENGINES = (rule_registry.Engine.META, rule_registry.Engine.TSAST)
 
 
 def load_registry() -> rule_registry.Registry | None:
@@ -168,9 +172,11 @@ def main(argv: list[str]) -> int:
     part = parsed_part(options.part) if options.part is not None else None
     if not isinstance(chosen, str) and options.part is not None and part is None:
         chosen = f"the part {options.part} is not K/N with 1 <= K <= N"
-    if not isinstance(chosen, str) and part is not None \
-            and any(rule.engine != rule_registry.Engine.TSAST for rule in chosen):
-        chosen = "only a rule of the engine tsast reads a part of its files"
+    if not isinstance(chosen, str) and part is not None:
+        whole = [rule.id for rule in chosen if rule.engine not in PART_ENGINES or not runner.reads_parts(rule)]
+        if whole:
+            chosen = (f"the rule {', '.join(whole)} reads no part of its files.  Give --part only to a meta rule or a "
+                      f"tsast rule whose module sets READS_PARTS")
     if not isinstance(chosen, str) and options.paths \
             and any(rule.engine != rule_registry.Engine.BUILD for rule in chosen):
         chosen = "only a rule of the engine build reads the paths of --path"
@@ -182,8 +188,10 @@ def main(argv: list[str]) -> int:
         return 2
     root = options.root.resolve()
     build_dir = options.build_dir.resolve() if options.build_dir is not None else None
-    context = runner.MetaContext(root, build_dir)
-    statuses = [runner.run(rule, context, options.warnings_dir) for rule in chosen
+    context = runner.MetaContext(root, build_dir, part=part)
+    kept = context.is_covered if part is not None else None
+    key = f"part{part[0]}" if part is not None else None
+    statuses = [runner.run(rule, context, options.warnings_dir, kept, key) for rule in chosen
                 if rule.engine == rule_registry.Engine.META]
     tree_rules = [rule for rule in chosen if rule.engine == rule_registry.Engine.TSAST]
     if tree_rules:

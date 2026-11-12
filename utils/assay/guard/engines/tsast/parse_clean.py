@@ -29,6 +29,8 @@ from assay.readers import tsast
 
 RULE = "parse-clean"
 KIND = "unparseable"
+# The rule reads the part of the call through part_of() (THE PARTS of assay.guard.engines.meta.runner).
+READS_PARTS = True
 # The workers of the fill of all parts together: the job count of the package, as tsast gives it to one call.
 FILL_WORKERS = proc.DEFAULT_JOBS
 
