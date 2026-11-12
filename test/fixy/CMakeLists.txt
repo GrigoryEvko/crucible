@@ -119,7 +119,8 @@ fixy_neg_compile_test(neg_qtt_grade_that_only_compares_equal
   "required for the satisfaction of .same_as<decltype \\(Grade\\), foundation::algebra::lattices::QttGrade>. \\[with Grade = <unnamed>::LookalikeGrade\\{\\}\\]")
 
 # A body CRUCIBLE_PRE reaches its consteval trap when a constant
-# expression steps a Monotonic backward or sets a WriteOnce twice.
+# expression steps a Monotonic backward, sets a WriteOnce or a
+# WriteOnceNonNull twice, or sets a WriteOnceNonNull to null.
 fixy_neg_compile_test(neg_mutation_monotonic_step_backward
   "non-constant condition for static assertion"
   "in .constexpr. expansion of .counter\\.fixy::Monotonic<unsigned int(, std::less<unsigned int> )?>::advance\\(5\\)."
@@ -127,6 +128,14 @@ fixy_neg_compile_test(neg_mutation_monotonic_step_backward
 fixy_neg_compile_test(neg_mutation_write_once_twice
   "non-constant condition for static assertion"
   "in .constexpr. expansion of .slot\\.fixy::WriteOnce<int>::set\\(2\\)."
+  "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+fixy_neg_compile_test(neg_mutation_write_once_non_null_twice
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .slot\\.fixy::WriteOnceNonNull<int\\*>::set\\(\\(& second\\)\\)."
+  "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+fixy_neg_compile_test(neg_mutation_write_once_non_null_null
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .slot\\.fixy::WriteOnceNonNull<int\\*>::set\\(0\\)."
   "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
 # No mutation wrapper is assignable.  An assignment moves a counter
@@ -4294,20 +4303,6 @@ fixy_neg_compile_test(neg_handle_publish_once_copied
 fixy_neg_compile_test(neg_handle_publish_slot_pointer_pointee
   "static assertion failed"
   "PublishSlot<T> hands off a T\\*, so T is the pointee")
-
-# The three preconditions of SetOnce, reached in a constant evaluation.
-fixy_neg_compile_test(neg_handle_set_once_null
-  "non-constant condition for static assertion"
-  "in .constexpr. expansion of .slot\\.fixy::handle::SetOnce<int>::set\\(0\\)."
-  "fixy/handle/Once\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
-fixy_neg_compile_test(neg_handle_set_once_twice
-  "non-constant condition for static assertion"
-  "in .constexpr. expansion of .slot\\.fixy::handle::SetOnce<int>::set\\(\\(& second\\)\\)."
-  "fixy/handle/Once\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
-fixy_neg_compile_test(neg_handle_set_once_reset_unset
-  "non-constant condition for static assertion"
-  "in .constexpr. expansion of .slot\\.fixy::handle::SetOnce<int>::reset\\(\\)."
-  "fixy/handle/Once\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
 # Once::call and Lazy::get_or_init each refuse, at the door, an argument
 # their body cannot use as it must.

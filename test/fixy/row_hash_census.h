@@ -795,7 +795,6 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::concurrent::Pipeline, ^^PipelineWitness},
     {^^::fixy::concurrent::PipelineDag, ^^PipelineDagWitness},
 
-    {^^::fixy::handle::SetOnce, ^^::fixy::handle::SetOnce<int>},
     {^^::fixy::handle::Lazy, ^^::fixy::handle::Lazy<int>},
     {^^::fixy::handle::PublishOnce, ^^::fixy::handle::PublishOnce<int>},
     {^^::fixy::handle::PublishSlot, ^^::fixy::handle::PublishSlot<int>},

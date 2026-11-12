@@ -211,7 +211,7 @@ that the axis does not apply to the row.
 | `mint_version_source` | `include/fixy/EpochVersioned.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_write_once` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
-| `mint_write_once_non_null` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_write_once_non_null` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 6 |
 
 ## include/fixy/channels/
 

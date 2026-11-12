@@ -2,9 +2,8 @@
 //
 // Four handles, one question each.  PublishOnce takes exactly one
 // publisher ever.  PublishSlot takes one again and again and lets a
-// consumer take the pointer back.  SetOnce is the non-atomic slot that
-// refuses a second set.  Once gates a body so it runs once across
-// threads, and Lazy is a value built on that gate.
+// consumer take the pointer back.  Once gates a body so it runs once
+// across threads, and Lazy is a value built on that gate.
 //
 // Two of these claims are runtime-only.  PublishOnce's double-publish
 // abort is deliberately NOT a contract clause — the header says why: a
@@ -66,8 +65,6 @@ static_assert(sizeof(h::PublishSlot<Payload>) >= 64);
 static_assert(alignof(h::PublishSlot<Payload>) >= 64);
 static_assert(alignof(h::Once) >= 64);
 
-static_assert(sizeof(h::SetOnce<Payload>) == sizeof(Payload*));
-
 // Every one of these is a channel identity: an address other threads
 // reach, or a slot whose duplication would split ownership.
 static_assert(!std::is_copy_constructible_v<h::PublishOnce<Payload>>);
@@ -77,14 +74,6 @@ static_assert(!std::is_move_constructible_v<h::PublishSlot<Payload>>);
 static_assert(!std::is_copy_constructible_v<h::Once>);
 static_assert(!std::is_move_constructible_v<h::Once>);
 static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
-
-// SetOnce is the exception: it is a plain pointer slot with no atomic
-// and no cross-thread role, so it copies.  It does not assign: an
-// assignment of an unset slot would clear a set one, and the precondition
-// of set would never see it.
-static_assert(std::is_copy_constructible_v<h::SetOnce<Payload>>);
-static_assert(!std::is_copy_assignable_v<h::SetOnce<Payload>>);
-static_assert(!std::is_move_assignable_v<h::SetOnce<Payload>>);
 
 // ── Runtime: the two publication slots ───────────────────────────────
 
@@ -135,50 +124,6 @@ static_assert(!std::is_move_assignable_v<h::SetOnce<Payload>>);
     }
     if (slot.has_pending() || slot.consume() != nullptr) {
         std::fprintf(stderr, "consume left the slot occupied\n");
-        return 1;
-    }
-    return 0;
-}
-
-[[nodiscard]] int set_once_runs() {
-    Payload first{1, 1.0};
-    Payload second{2, 2.0};
-    h::SetOnce<Payload> slot{};
-
-    if (slot.has_value() || static_cast<bool>(slot) || slot.get() != nullptr) {
-        std::fprintf(stderr, "a fresh SetOnce held a pointer\n");
-        return 1;
-    }
-
-    if (!slot.try_set(&first)) {
-        std::fprintf(stderr, "try_set refused the first claim\n");
-        return 1;
-    }
-    // A second claim is refused, and the first survives it.
-    if (slot.try_set(&second)) {
-        std::fprintf(stderr, "try_set accepted a second claim\n");
-        return 1;
-    }
-    if (slot.get() != &first) {
-        std::fprintf(stderr, "the refused claim overwrote the slot\n");
-        return 1;
-    }
-
-    // Null is the unset state, so it can never be stored: a slot that
-    // accepted it could not report it back.
-    h::SetOnce<Payload> other{};
-    if (other.try_set(nullptr)) {
-        std::fprintf(stderr, "try_set stored a null\n");
-        return 1;
-    }
-    if (other.has_value()) {
-        std::fprintf(stderr, "the refused null left the slot occupied\n");
-        return 1;
-    }
-
-    slot.reset();
-    if (slot.has_value()) {
-        std::fprintf(stderr, "reset left the slot occupied\n");
         return 1;
     }
     return 0;
@@ -417,7 +362,6 @@ template <typename Body>
 int main() {
     if (const int rc = publish_once_runs(); rc != 0) return rc;
     if (const int rc = publish_slot_runs(); rc != 0) return rc;
-    if (const int rc = set_once_runs(); rc != 0) return rc;
     if (const int rc = once_runs_exactly_once(); rc != 0) return rc;
     if (const int rc = lazy_initializes_once_single_threaded(); rc != 0) return rc;
     if (const int rc = lazy_initializes_once(); rc != 0) return rc;
