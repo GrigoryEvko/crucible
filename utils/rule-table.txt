@@ -284,7 +284,6 @@ allow F0_primitives <numeric> until Scalar | the saturating operations and std::
 allow F1_lattices <expected> until Choice | std::expected, a value or an error
 allow F1_lattices <functional> until Ref | std::invoke and the function types in most uses, and the comparators std::less, std::greater and std::identity
 allow F1_lattices <limits> until Scalar | std::numeric_limits
-allow F1_diag <charconv> until Report | std::to_chars and std::from_chars
 allow F1_diag <cstdio> until Report | std::fprintf to stderr in most uses.  The Os family replaces the file streams of fixy/os/OwnedFile.h
 allow F1_diag <source_location> until Report | std::source_location, the place of a call
 allow F1_diag <system_error> until Os | std::error_code in most uses.  The Report family replaces std::errc of the JSON emitter
