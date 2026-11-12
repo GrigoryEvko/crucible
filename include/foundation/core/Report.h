@@ -70,6 +70,7 @@
 // src/foundation/ContractHandler.cpp.  A report in progress on one thread
 // makes a second fatal report on that thread abort at once.
 
+#include <foundation/core/Number.h>
 #include <foundation/core/Text.h>
 
 #include <cstddef>
@@ -116,27 +117,17 @@ consteval void check_fmt_text_(char const* text, std::size_t length, std::size_t
     if (placeholders < arguments) fmt_text_has_fewer_placeholders_than_arguments();
 }
 
-// A character type.  A concept and not a variable template, so no
-// translation unit can specialize it and admit a character as an integer.
-template <class T>
-concept CharacterType = std::is_same_v<T, char> || std::is_same_v<T, wchar_t> || std::is_same_v<T, char8_t>
-                     || std::is_same_v<T, char16_t> || std::is_same_v<T, char32_t>;
-
 }  // namespace detail
 
-// An integer argument of a report: an integral type that is not
-// cv-qualified, not bool and not a character type.  signed char and
-// unsigned char are integers, so a std::uint8_t is written as a number.
+// A type that a report can write: an Integer and a Float of the Scalar
+// family, a bool and a TextView.  An Integer is not bool and not a
+// character type, and signed char and unsigned char are integers, so a
+// std::uint8_t is written as a number.  The argument of a report binds to
+// a reference, so an argument type is never a reference.  A deduced
+// argument type is never cv-qualified, so each arm refuses a cv-qualified
+// type.
 template <class T>
-concept FmtInteger = std::is_integral_v<T> && std::is_same_v<T, std::remove_cv_t<T>> && !std::is_same_v<T, bool>
-                  && !detail::CharacterType<T>;
-
-// A type that a report can write.  The argument of a report binds to a
-// reference, so an argument type is never a reference.  A deduced argument
-// type is never cv-qualified, so each arm refuses a cv-qualified type.
-template <class T>
-concept Formattable = FmtInteger<T> || std::is_same_v<T, bool> || std::is_same_v<T, TextView>
-                   || std::is_same_v<T, float> || std::is_same_v<T, double>;
+concept Formattable = Integer<T> || Float<T> || std::is_same_v<T, bool> || std::is_same_v<T, TextView>;
 
 // The streams that a report can write to.
 enum class Sink : std::uint8_t {
