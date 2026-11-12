@@ -27,9 +27,28 @@
 # same object, when the two compiles both use ccache or both do not.  A
 # debugger that starts in the build root finds each source file.
 #
-# The maps do not use -ffile-prefix-map, which also sets -fmacro-prefix-map.
-# That map changes __FILE__ and the file name of a source location, and the
-# tree gives no macro map at this time.
+# crucible_relocatable_objects() also gives the macro prefix maps.  They
+# change __FILE__, __builtin_FILE(), std::source_location and
+# std::meta::source_location_of.  So a Site of the Report family holds a path
+# from the source root, and a file of the build directory starts with
+# @build/, the name that the rule table gives it.  Two checkouts and two build
+# directories then give the same text of a report, with and without ccache.
+# GCC uses the last map that matches a path, and an empty old prefix matches
+# each path.  The maps, from the first to the last:
+#   ""                  a path of the build directory that ccache gives with
+#                       no prefix, such as gen/x.h
+#   "/"                 an absolute path outside the two roots stays as it is
+#   source root         a path of the source root in a compile with no ccache
+#   source from build   a path of the source root that ccache gives
+#   build root          a path of the build directory with no ccache
+# ccache hashes only the name of a map option, and not its text.  The text
+# changes only with the roots.  A compile with other roots reads other paths,
+# so it gets a hit only when the remapped text is the same.
+#
+# The tree gives no -ffile-prefix-map.  That option also sets the debug map,
+# and the debug maps above keep the objects of two build roots the same.  A
+# gdb that starts in a different directory finds each source file after
+# `set substitute-path . BUILD_DIR`, where BUILD_DIR is the build root.
 #
 # The producer string of the debug information records the options of the
 # compile, and GCC applies no map to them.  The plugin options of the tree name
@@ -164,5 +183,10 @@ macro(crucible_relocatable_objects)
   add_compile_options(
     "$<$<COMPILE_LANGUAGE:CXX>:-fdebug-prefix-map=${CMAKE_SOURCE_DIR}=${_crucible_source_from_build}>"
     "$<$<COMPILE_LANGUAGE:CXX>:-fdebug-prefix-map=${CMAKE_BINARY_DIR}=.>"
-    "$<$<COMPILE_LANGUAGE:CXX>:-gno-record-gcc-switches>")
+    "$<$<COMPILE_LANGUAGE:CXX>:-gno-record-gcc-switches>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-fmacro-prefix-map==@build/>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-fmacro-prefix-map=/=/>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-fmacro-prefix-map=${CMAKE_SOURCE_DIR}/=>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-fmacro-prefix-map=${_crucible_source_from_build}/=>"
+    "$<$<COMPILE_LANGUAGE:CXX>:-fmacro-prefix-map=${CMAKE_BINARY_DIR}/=@build/>")
 endmacro()

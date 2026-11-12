@@ -11,7 +11,9 @@ PROBE_REPORT (test/harness/probe_report.cpp) writes a pass line and reports,
 and then fails an assert.  Its standard output must hold the exact bytes,
 its standard error must hold the report and the text of the failed assert
 with its condition, its file and line and its function, and it must end by
-SIGABRT.
+SIGABRT.  The file is the path of the probe from the source root, because
+the macro maps of cmake/Ccache.cmake give that path to each build directory
+and each checkout, with and without ccache.
 
 PROBE_FATAL_TWICE (test/harness/probe_fatal_twice.cpp) catches two fatal
 exits on one thread with abort probes.  Then it opens a second arm of the
@@ -39,6 +41,8 @@ import subprocess
 import sys
 
 ASSERT_LINE = re.compile(r"^the assert is on line ([0-9]+)$", re.M)
+# The path of probe_report from the source root.
+PROBE_REPORT_PATH = "test/harness/probe_report.cpp"
 LONG_LINE = "the fifty characters of one line of the long text\n"
 EXPECTED_OUT = ("probe_report: the pass line\n"
                 "3 of -4 on the out sink, true, {braces}\n"
@@ -116,14 +120,15 @@ def check_report_probe(probe: str, emulator: list[str]) -> bool:
     result = run(probe, emulator)
     fatal = "foundation: fatal: assert: queue_depth == 4\n  at "
     line = ASSERT_LINE.search(result.stderr)
-    site = f"probe_report.cpp:{line.group(1) if line else '?'} in main\n"
+    site = f"queue_depth == 4\n  at {PROBE_REPORT_PATH}:{line.group(1) if line else '?'} in main\n"
     passed = check(result.returncode == -signal.SIGABRT, "the failed assert ends the process by SIGABRT", result)
     passed = check(result.stdout == EXPECTED_OUT, "standard output holds the pass line and the reports", result) and passed
     passed = check(result.stderr.startswith("[text] on the err sink\n"), "standard error holds the report",
                    result) and passed
     passed = check(line is not None, "standard error holds the line of the assert", result) and passed
     passed = check(fatal in result.stderr, "the report of the assert names its condition", result) and passed
-    passed = check(site in result.stderr, "the report of the assert names its file, its line and its function",
+    passed = check(site in result.stderr,
+                   "the report of the assert names its file from the source root, its line and its function",
                    result) and passed
     return passed
 
