@@ -133,7 +133,7 @@ std::size_t format_window_(char* out, std::size_t capacity, std::size_t skip, ch
 
 namespace foundation::core {
 
-void report(Sink sink, Fmt<> fmt) noexcept { detail::report_(sink, detail::FmtDoor::text_of_(fmt), nullptr, 0); }
+void report(Sink sink, Fmt<> fmt) noexcept { detail::report_(sink, detail::fmt_text_(fmt), nullptr, 0); }
 
 }  // namespace foundation::core
 

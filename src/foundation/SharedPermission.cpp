@@ -30,7 +30,7 @@ void shared_permission_pool_saturated_abort_() noexcept {
         core::detail::FmtArg{core::detail::FmtArgKind::text, 0, Tag::description.data(), Tag::description.size()},
         core::detail::FmtArg{core::detail::FmtArgKind::text, 0, Tag::remediation.data(), Tag::remediation.size()},
     };
-    core::detail::report_(core::Sink::Err, core::detail::FmtDoor::text_of_(saturated_text), arguments,
+    core::detail::report_(core::Sink::Err, core::detail::fmt_text_(saturated_text), arguments,
                           sizeof arguments / sizeof arguments[0]);
     os::abort_process();
 }

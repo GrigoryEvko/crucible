@@ -63,8 +63,6 @@ namespace foundation::core {
 
 namespace detail {
 
-struct FmtDoor;
-
 // The consteval constructor of Fmt calls one of these functions when its
 // text breaks a rule.  No function has a definition, so the call is no
 // constant expression, and the error of the compiler names the rule.
@@ -127,6 +125,34 @@ enum class Sink : std::uint8_t {
     Err
 };
 
+class Site;
+
+template <class... Args>
+    requires(Formattable<Args> && ...)
+class Fmt;
+
+namespace detail {
+
+// The doors of the functions of the family to the parts of a Site and of a
+// Fmt.  Each part comes out by value, so no caller keeps a reference into a
+// Site or a Fmt.  The constructors of Site and Fmt are consteval, so each
+// text is a constant of static storage and cannot dangle.  The rule owners
+// keeps each caller outside the base out of detail.
+[[nodiscard]] constexpr char const* site_file_(Site const& site) noexcept;
+[[nodiscard]] constexpr char const* site_function_(Site const& site) noexcept;
+[[nodiscard]] constexpr std::uint32_t site_line_(Site const& site) noexcept;
+
+template <class... Args>
+[[nodiscard]] constexpr char const* fmt_text_(Fmt<Args...> const& fmt) noexcept;
+template <class... Args>
+[[nodiscard]] constexpr char const* fmt_file_(Fmt<Args...> const& fmt) noexcept;
+template <class... Args>
+[[nodiscard]] constexpr char const* fmt_function_(Fmt<Args...> const& fmt) noexcept;
+template <class... Args>
+[[nodiscard]] constexpr std::uint32_t fmt_line_(Fmt<Args...> const& fmt) noexcept;
+
+}  // namespace detail
+
 // The place of a call.  The default arguments read the place where the
 // constructor runs, which is the call that takes a default Site.
 class Site final {
@@ -143,7 +169,9 @@ public:
     }
 
 private:
-    friend struct detail::FmtDoor;
+    friend constexpr char const* detail::site_file_(Site const& site) noexcept;
+    friend constexpr char const* detail::site_function_(Site const& site) noexcept;
+    friend constexpr std::uint32_t detail::site_line_(Site const& site) noexcept;
 
     char const* file_;
     char const* function_;
@@ -171,11 +199,43 @@ public:
     }
 
 private:
-    friend struct detail::FmtDoor;
+    template <class... Others>
+    friend constexpr char const* detail::fmt_text_(Fmt<Others...> const& fmt) noexcept;
+    template <class... Others>
+    friend constexpr char const* detail::fmt_file_(Fmt<Others...> const& fmt) noexcept;
+    template <class... Others>
+    friend constexpr char const* detail::fmt_function_(Fmt<Others...> const& fmt) noexcept;
+    template <class... Others>
+    friend constexpr std::uint32_t detail::fmt_line_(Fmt<Others...> const& fmt) noexcept;
 
     char const* text_;
     Site site_;
 };
+
+namespace detail {
+
+constexpr char const* site_file_(Site const& site) noexcept { return site.file_; }
+constexpr char const* site_function_(Site const& site) noexcept { return site.function_; }
+constexpr std::uint32_t site_line_(Site const& site) noexcept { return site.line_; }
+
+template <class... Args>
+constexpr char const* fmt_text_(Fmt<Args...> const& fmt) noexcept {
+    return fmt.text_;
+}
+template <class... Args>
+constexpr char const* fmt_file_(Fmt<Args...> const& fmt) noexcept {
+    return site_file_(fmt.site_);
+}
+template <class... Args>
+constexpr char const* fmt_function_(Fmt<Args...> const& fmt) noexcept {
+    return site_function_(fmt.site_);
+}
+template <class... Args>
+constexpr std::uint32_t fmt_line_(Fmt<Args...> const& fmt) noexcept {
+    return site_line_(fmt.site_);
+}
+
+}  // namespace detail
 
 namespace detail {
 
@@ -211,31 +271,6 @@ template <class T>
         return FmtArg{FmtArgKind::unsigned_integer, static_cast<std::uint64_t>(value), nullptr, 0};
     }
 }
-
-// The door of the functions of the family to the parts of a Fmt and a
-// Site.  Each part comes out by value, so no caller keeps a reference into
-// a Fmt.
-struct FmtDoor {
-    template <class... Args>
-    [[nodiscard]] static constexpr char const* text_of_(Fmt<Args...> const& fmt) noexcept {
-        return fmt.text_;
-    }
-    template <class... Args>
-    [[nodiscard]] static constexpr char const* file_of_(Fmt<Args...> const& fmt) noexcept {
-        return fmt.site_.file_;
-    }
-    template <class... Args>
-    [[nodiscard]] static constexpr char const* function_of_(Fmt<Args...> const& fmt) noexcept {
-        return fmt.site_.function_;
-    }
-    template <class... Args>
-    [[nodiscard]] static constexpr std::uint32_t line_of_(Fmt<Args...> const& fmt) noexcept {
-        return fmt.site_.line_;
-    }
-    [[nodiscard]] static constexpr char const* file_of_(Site const& site) noexcept { return site.file_; }
-    [[nodiscard]] static constexpr char const* function_of_(Site const& site) noexcept { return site.function_; }
-    [[nodiscard]] static constexpr std::uint32_t line_of_(Site const& site) noexcept { return site.line_; }
-};
 
 // Writes `foundation: fatal: TEXT` and the site to standard error.  Then it
 // stops in a debugger when one is attached, and aborts.  The text takes no
@@ -294,14 +329,14 @@ template <class First, class... Rest>
 [[gnu::cold, gnu::noinline]] void report(Sink sink, Fmt<std::type_identity_t<First>, std::type_identity_t<Rest>...> fmt,
                                          First first, Rest... rest) noexcept {
     detail::FmtArg const arguments[1 + sizeof...(Rest)] = {detail::fmt_arg_of_(first), detail::fmt_arg_of_(rest)...};
-    detail::report_(sink, detail::FmtDoor::text_of_(fmt), arguments, 1 + sizeof...(Rest));
+    detail::report_(sink, detail::fmt_text_(fmt), arguments, 1 + sizeof...(Rest));
 }
 
 // Writes the text and the site to standard error, and ends the process.  A
 // search for `fatal(` finds each fatal exit of the code.
 [[noreturn, gnu::always_inline]] inline void fatal(Fmt<> fmt) noexcept {
-    detail::report_fatal_(detail::FmtDoor::text_of_(fmt), detail::FmtDoor::file_of_(fmt),
-                          detail::FmtDoor::line_of_(fmt), detail::FmtDoor::function_of_(fmt));
+    detail::report_fatal_(detail::fmt_text_(fmt), detail::fmt_file_(fmt), detail::fmt_line_(fmt),
+                          detail::fmt_function_(fmt));
 }
 
 // The same, with arguments.
@@ -309,17 +344,16 @@ template <class First, class... Rest>
 [[noreturn, gnu::cold, gnu::noinline]] void
 fatal(Fmt<std::type_identity_t<First>, std::type_identity_t<Rest>...> const& fmt, First first, Rest... rest) noexcept {
     detail::FmtArg const arguments[1 + sizeof...(Rest)] = {detail::fmt_arg_of_(first), detail::fmt_arg_of_(rest)...};
-    detail::report_fatal_with_(detail::FmtDoor::text_of_(fmt), detail::FmtDoor::file_of_(fmt),
-                               detail::FmtDoor::line_of_(fmt), detail::FmtDoor::function_of_(fmt), arguments,
-                               1 + sizeof...(Rest));
+    detail::report_fatal_with_(detail::fmt_text_(fmt), detail::fmt_file_(fmt), detail::fmt_line_(fmt),
+                               detail::fmt_function_(fmt), arguments, 1 + sizeof...(Rest));
 }
 
 // The point that control never reaches, such as the arm after a switch
 // that handles each enumerator.  A value outside the enumerators reaches
 // it, and the process ends with the site.
 [[noreturn, gnu::always_inline]] inline void unreachable(Site site = Site{}) noexcept {
-    detail::report_fatal_("control reached a point that the code marks as unreachable", detail::FmtDoor::file_of_(site),
-                          detail::FmtDoor::line_of_(site), detail::FmtDoor::function_of_(site));
+    detail::report_fatal_("control reached a point that the code marks as unreachable", detail::site_file_(site),
+                          detail::site_line_(site), detail::site_function_(site));
 }
 
 }  // namespace foundation::core

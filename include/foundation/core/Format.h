@@ -33,12 +33,11 @@ template <std::size_t Capacity, class... Args>
                                                  Fmt<std::type_identity_t<Args>...> const& fmt, Args... args) noexcept {
     std::size_t length = 0;
     if constexpr (sizeof...(Args) == 0) {
-        length =
-            detail::format_window_(detail::text_bytes_(out), Capacity, 0, detail::FmtDoor::text_of_(fmt), nullptr, 0);
+        length = detail::format_window_(detail::text_bytes_(out), Capacity, 0, detail::fmt_text_(fmt), nullptr, 0);
     } else {
         detail::FmtArg const arguments[sizeof...(Args)] = {detail::fmt_arg_of_(args)...};
-        length = detail::format_window_(detail::text_bytes_(out), Capacity, 0, detail::FmtDoor::text_of_(fmt),
-                                        arguments, sizeof...(Args));
+        length = detail::format_window_(detail::text_bytes_(out), Capacity, 0, detail::fmt_text_(fmt), arguments,
+                                        sizeof...(Args));
     }
     detail::text_resize_(out, length);
     if (length > Capacity) return err(Truncated{});

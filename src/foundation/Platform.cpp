@@ -101,7 +101,7 @@ void fail_invariant(char const* what, char const* predicate, char const* file, i
     if (is_debugger_present()) __builtin_trap();
     core::detail::FmtArg const arguments[] = {text_argument(what), text_argument(predicate), text_argument(file),
                                               core::detail::fmt_arg_of_(line)};
-    core::detail::report_(core::Sink::Err, core::detail::FmtDoor::text_of_(failure_text), arguments,
+    core::detail::report_(core::Sink::Err, core::detail::fmt_text_(failure_text), arguments,
                           sizeof arguments / sizeof arguments[0]);
     os::abort_process();
 }
