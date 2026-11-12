@@ -196,14 +196,17 @@ void test_class_value() {
 void test_cache_line() {
     CacheLine<Atomic<std::uint64_t>> head{std::uint64_t{4}};
     CacheLine<Tally> tally{};
-    CRUCIBLE_FATAL_INVARIANT(head.get().load_acquire() == 4);
-    head.get().store_release(8);
-    CRUCIBLE_FATAL_INVARIANT(head.get().load_acquire() == 8);
-    tally.get().add(1);
-    CRUCIBLE_FATAL_INVARIANT(tally.get().read() == 1);
+    CRUCIBLE_FATAL_INVARIANT(head->load_acquire() == 4);
+    (*head).store_release(8);
+    CRUCIBLE_FATAL_INVARIANT((*head).load_acquire() == 8);
+    tally->add(1);
+    CRUCIBLE_FATAL_INVARIANT(tally->read() == 1);
+    CacheLine<Atomic<std::uint64_t>> const& read_only = head;
+    CRUCIBLE_FATAL_INVARIANT(read_only->load_acquire() == 8 && (*read_only).load_acquire() == 8);
     CRUCIBLE_FATAL_INVARIANT(std::bit_cast<std::uintptr_t>(&head) % 64 == 0);
     CRUCIBLE_FATAL_INVARIANT(std::bit_cast<std::uintptr_t>(&tally) % 64 == 0);
-    CRUCIBLE_FATAL_INVARIANT(std::bit_cast<std::uintptr_t>(&head.get()) == std::bit_cast<std::uintptr_t>(&head));
+    CRUCIBLE_FATAL_INVARIANT(static_cast<void const*>(&*head) == static_cast<void const*>(&head));
+    CRUCIBLE_FATAL_INVARIANT(static_cast<void const*>(head.operator->()) == static_cast<void const*>(&head));
 }
 
 // The property: a random sequence of operations on one cell agrees with
@@ -332,7 +335,7 @@ void test_read_modify_write_under_contention() {
             // Each token goes into the cell one time and comes out one time,
             // so the sum of the tokens that came out, with the last one in
             // the cell, is the sum of all the tokens.
-            token_sum.get().add(token.exchange_acq_rel(worker * steps_per_worker + step + 1));
+            token_sum->add(token.exchange_acq_rel(worker * steps_per_worker + step + 1));
         }
     });
     CRUCIBLE_FATAL_INVARIANT(remaining.load_acquire() == 0);
@@ -341,17 +344,17 @@ void test_read_modify_write_under_contention() {
     CRUCIBLE_FATAL_INVARIANT(highest.load_acquire() == last_signed_step * 4 + 3);
     CRUCIBLE_FATAL_INVARIANT(lowest.load_acquire() == -(last_signed_step * 4 + 3));
     std::uint64_t const token_count = 4 * steps_per_worker;
-    CRUCIBLE_FATAL_INVARIANT(token_sum.get().read() + token.load_acquire() == token_count * (token_count + 1) / 2);
+    CRUCIBLE_FATAL_INVARIANT(token_sum->read() + token.load_acquire() == token_count * (token_count + 1) / 2);
 }
 
 void test_tally_under_contention() {
     CacheLine<Tally> tally{};
     run_on_four_threads([&tally] {
         for (std::uint64_t step = 0; step < steps_per_worker; ++step) {
-            tally.get().add(1);
+            tally->add(1);
         }
     });
-    CRUCIBLE_FATAL_INVARIANT(tally.get().read() == 4 * steps_per_worker);
+    CRUCIBLE_FATAL_INVARIANT(tally->read() == 4 * steps_per_worker);
 }
 
 // A release store publishes the plain writes before it, and an acquire
@@ -365,19 +368,19 @@ void test_release_publishes_to_acquire() {
     CacheLine<Atomic<std::uint64_t>> role{std::uint64_t{0}};
     CacheLine<Tally> complete_reads{};
     run_on_four_threads([&] {
-        bool const is_writer = role.get().fetch_add_acq_rel(1) == 0;
+        bool const is_writer = role->fetch_add_acq_rel(1) == 0;
         if (is_writer) {
             payload_first = 0x1111;
             payload_second = 0x2222;
-            published.get().store_release(1);
+            published->store_release(1);
             return;
         }
-        while (published.get().load_acquire() == 0) {
+        while (published->load_acquire() == 0) {
             CRUCIBLE_SPIN_PAUSE;
         }
-        if (payload_first == 0x1111 && payload_second == 0x2222) complete_reads.get().add(1);
+        if (payload_first == 0x1111 && payload_second == 0x2222) complete_reads->add(1);
     });
-    CRUCIBLE_FATAL_INVARIANT(complete_reads.get().read() == 3);
+    CRUCIBLE_FATAL_INVARIANT(complete_reads->read() == 3);
 }
 
 }  // namespace

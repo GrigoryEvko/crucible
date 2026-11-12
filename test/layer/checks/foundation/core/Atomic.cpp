@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 namespace foundation::core {
 
@@ -135,10 +136,22 @@ static_assert(SetsBits<Atomic<std::uint32_t>> && SetsBits<Atomic<std::uint8_t>>)
 static_assert(!SetsBits<Atomic<int>> && !SetsBits<Atomic<bool>> && !SetsBits<Atomic<Phase>>);
 static_assert(Exchanges<Atomic<int>> && Exchanges<Atomic<bool>> && Exchanges<Atomic<Phase>> && Exchanges<Atomic<Pair>>);
 
-// A borrow of a temporary CacheLine is refused.
+// A CacheLine always holds its cell, so the dereference borrows it from an
+// lvalue.  A borrow of a temporary CacheLine is refused.  No member named
+// get borrows with no key.
 template <class C>
-concept BorrowsFromTemporary = requires(C&& line) { static_cast<C&&>(line).get(); };
-static_assert(!BorrowsFromTemporary<CacheLine<int>>);
+concept DereferencesTemporary = requires(C&& line) { *static_cast<C&&>(line); };
+template <class C>
+concept ArrowsTemporary = requires(C&& line) { static_cast<C&&>(line).operator->(); };
+template <class C>
+concept HasGet = requires(C& line) { line.get(); };
+static_assert(std::is_same_v<decltype(*std::declval<CacheLine<int>&>()), int&>);
+static_assert(std::is_same_v<decltype(*std::declval<CacheLine<int> const&>()), int const&>);
+static_assert(std::is_same_v<decltype(std::declval<CacheLine<int>&>().operator->()), int*>);
+static_assert(std::is_same_v<decltype(std::declval<CacheLine<int> const&>().operator->()), int const*>);
+static_assert(!DereferencesTemporary<CacheLine<int>> && !DereferencesTemporary<CacheLine<int> const>);
+static_assert(!ArrowsTemporary<CacheLine<int>> && !ArrowsTemporary<CacheLine<int> const>);
+static_assert(!HasGet<CacheLine<int>> && !HasGet<CacheLine<int> const>);
 
 }  // namespace detail::atomic_checks
 

@@ -37,6 +37,7 @@
 //
 // CacheLine<T> aligns a cell to 64 bytes and pads it to a multiple of 64
 // bytes, so the type states that no other data shares its cache line.
+// *line and line->member borrow the cell.
 //
 // Tally is a statistics counter.  add() is a fetch-add with acq_rel order,
 // which is the same locked instruction on x86-64, and read() is an acquire
@@ -197,6 +198,9 @@ public:
 template <class T>
 concept CacheLineCell = std::is_object_v<T> && !std::is_array_v<T>;
 
+// A CacheLine always holds its cell, so *line and line->member are total.
+// A borrow of a temporary line dangles at the end of the full expression,
+// so the rvalue forms are deleted.
 template <CacheLineCell T>
 class alignas(64) CacheLine {
     T cell_;
@@ -207,11 +211,17 @@ public:
     explicit constexpr CacheLine(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args&&...>)
         : cell_(static_cast<Args&&>(args)...) {}
 
-    [[nodiscard]] constexpr T& get() & noexcept { return cell_; }
-    [[nodiscard]] constexpr T const& get() const& noexcept { return cell_; }
+    [[nodiscard]] constexpr T& operator*() & noexcept { return cell_; }
+    [[nodiscard]] constexpr T const& operator*() const& noexcept { return cell_; }
+    [[nodiscard]] constexpr T* operator->() & noexcept { return __builtin_addressof(cell_); }
+    [[nodiscard]] constexpr T const* operator->() const& noexcept { return __builtin_addressof(cell_); }
 
-    T& get() && = delete("a borrow of a temporary CacheLine dangles at the end of the full expression");
-    T const& get() const&& = delete("a borrow of a temporary CacheLine dangles at the end of the full expression");
+    T& operator*() && = delete("a borrow of a temporary CacheLine dangles at the end of the full expression");
+    T const&
+    operator*() const&& = delete("a borrow of a temporary CacheLine dangles at the end of the full expression");
+    T* operator->() && = delete("a borrow of a temporary CacheLine dangles at the end of the full expression");
+    T const*
+    operator->() const&& = delete("a borrow of a temporary CacheLine dangles at the end of the full expression");
 };
 
 class Tally : ::foundation::Pinned<Tally> {

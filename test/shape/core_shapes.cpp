@@ -136,6 +136,10 @@ struct NetError8 final {
 
 [[gnu::used]] std::uint64_t tally_read(fixy::Tally const& tally) noexcept { return tally.read(); }
 
+[[gnu::used]] std::uint64_t cache_line_load(fixy::CacheLine<fixy::Atomic<std::uint64_t>> const& line) noexcept {
+    return line->load_acquire();
+}
+
 // ── Region ──────────────────────────────────────────────────────────────────
 
 [[gnu::used]] std::uint32_t view_sum(fixy::View<std::uint32_t const> view) noexcept {
@@ -345,6 +349,12 @@ struct RawWindow final {
 
 [[gnu::used]] std::uint64_t tally_read_raw(std::atomic<std::uint64_t> const& counter) noexcept {
     return counter.load(std::memory_order_relaxed);
+}
+
+// A CacheLine replaces a cell that the code aligns by hand, so the raw form
+// reads the cell with no CacheLine around it.
+[[gnu::used]] std::uint64_t cache_line_load_raw(fixy::Atomic<std::uint64_t> const& cell) noexcept {
+    return cell.load_acquire();
 }
 
 [[gnu::used]] std::uint32_t view_sum_raw(std::uint32_t const* first, std::size_t count) noexcept {

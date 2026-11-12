@@ -2073,8 +2073,14 @@ foundation_neg_compile_test(neg_core_atomic_copied
   "use of deleted function .foundation::core::Atomic<int>::Atomic\\(const foundation::core::Atomic<int>&\\)."
   "Pinned<T>: stable address")
 foundation_neg_compile_test(neg_core_cache_line_borrow_of_temporary
-  "use of deleted function .T& foundation::core::CacheLine<T>::get\\(\\) && \\[with T = int\\]."
+  "use of deleted function .T& foundation::core::CacheLine<T>::operator\\*\\(\\) && \\[with T = int\\]."
   "a borrow of a temporary CacheLine dangles at the end of the full expression")
+foundation_neg_compile_test(neg_core_cache_line_arrow_of_temporary
+  "use of deleted function .T\\* foundation::core::CacheLine<T>::operator->\\(\\) && \\[with T = foundation::core::Tally\\]."
+  "a borrow of a temporary CacheLine dangles at the end of the full expression")
+foundation_neg_compile_test(neg_core_cache_line_get
+  "has no member named .get."
+  ".class foundation::core::CacheLine<int>.")
 
 # ── The Scalar family: decode and enum_from ───────────────────────────
 #
