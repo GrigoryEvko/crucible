@@ -1,0 +1,9 @@
+// A quarantined unit that expands the macro of a base header.  The macro owns
+// the tokens that it spells, so the expansion gives no use.
+#include <foundation/effects/Detail.h>
+
+namespace planted {
+
+int step_through_macro(int value) { return FOUNDATION_PLANT_STEP(value); }
+
+}  // namespace planted

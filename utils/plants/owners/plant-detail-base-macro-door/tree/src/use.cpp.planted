@@ -1,0 +1,11 @@
+// A quarantined unit that expands the macro of a base header, and that also
+// calls the detail function of the macro by its qualified name.
+#include <foundation/effects/Detail.h>
+
+namespace planted {
+
+int step_through_macro(int value) { return FOUNDATION_PLANT_STEP(value); }
+
+int step_through_door(int value) { return ::foundation::effects::detail::helper(value); }
+
+}  // namespace planted

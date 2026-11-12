@@ -1,0 +1,7 @@
+# A macro of a base header names the detail namespace of the layer, and a
+# quarantined unit expands the macro.  The base macro owns the tokens that
+# it spells, so the expansion gives no use.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use

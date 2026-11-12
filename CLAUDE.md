@@ -3124,7 +3124,7 @@ Each type of the base has these properties:
 ### The families on main
 
 `include/foundation/core/` holds the first part of six families: Choice, Region, Ref, Atomic, Report and Scalar. `include/fixy/Core.h` gives their public names in namespace `fixy`. Record, Os, Protocol and Check are planned. The other types of the six families are planned too. If the code and plan §11 do not agree, the code is correct:
-- `Option` has no `consume()`. Its fatal unwrap is `expect(reason)`. A loop of zero or one turns, `match()` and `value_or()` are the other operations that read the payload.
+- `Option` has no `consume()`. Its fatal unwrap is `expect(reason)`. A loop of zero or one turns, `match()`, `value_or()`, `ok_or()` and `CRUCIBLE_TRY` are the other operations that read the payload.
 - `cas_acq_rel(expected, desired)` of `Atomic` gives a `Result<Unit, CasRefusal<T>>`. The error holds the value that the cell held.
 - `Atomic<T>` accepts only a value that is trivially copyable, has one bit pattern for each value, and has lock-free atomic operations. `Atomic` rejects a type with padding and a floating-point type.
 - `Atomic` has no relaxed operation. The only thread that writes a cell keeps its own copy of the value, and it publishes each change with `store_release`. A relaxed read of its own cell, `load_owned` of plan §11.6, needs a proof type that shows that the thread is the only writer. That type does not exist at this time.

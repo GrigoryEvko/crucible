@@ -1,0 +1,11 @@
+// A base header with a detail namespace of the layer, and a macro whose body
+// calls a detail function, as CRUCIBLE_TRY of foundation/core/Choice.h does.
+#pragma once
+
+namespace foundation::effects::detail {
+
+inline int helper(int value) noexcept { return value + 1; }
+
+}  // namespace foundation::effects::detail
+
+#define FOUNDATION_PLANT_STEP(value) ::foundation::effects::detail::helper(value)

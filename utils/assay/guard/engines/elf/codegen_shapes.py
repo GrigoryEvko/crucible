@@ -524,6 +524,29 @@ PROBES: tuple[Probe, ...] = (
         branches=True,
     ),
     Probe(
+        "option_try",
+        "CRUCIBLE_TRY of an Option is one test of the tag.  The value takes a second test of the tag in expect, which "
+        "the optimizer removes, because no code writes the operand between the two tests",
+    ),
+    Probe(
+        "result_try",
+        "CRUCIBLE_TRY of a Result is one test of the tag, and the optimizer removes the second test of the tag in "
+        "expect, so the two sides hold the same instructions.  At -O3, the family form falls through to the return of "
+        "the value and the raw form falls through to the return of the error, so the targets of the branches are "
+        f"different.  {HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a branch "
+        "to a trap",
+        branches=True,
+    ),
+    Probe(
+        "result_try_convert",
+        "CRUCIBLE_TRY of a Result whose error converts to the error of the caller is one test of the tag, and the two "
+        "sides hold the same instructions.  The conversion of the error is one zero extension of its byte in each "
+        "form.  At -O3, the family form falls through to the return of the value and the raw form falls through to the "
+        f"return of the error, so the targets of the branches are different.  {HARDENED_BUILDS}.  On the hot path, "
+        "these flags add a second test of each edge, with a branch to a trap",
+        branches=True,
+    ),
+    Probe(
         "result_expect",
         "Result::expect adds one test and one branch to a call of the fatal exit.  The value is the low word of the "
         "register and the tag is bit 32, as in std::expected, so the test of the tag takes a shift.  "

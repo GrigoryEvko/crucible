@@ -6,6 +6,8 @@
 // Result<T, E> holds one T or one error E.  A partial operation of the
 // base gives a Result, and its caller handles the error with the same
 // roads as for an Option: match(), ok(), err(), value_or() and expect().
+// CRUCIBLE_TRY takes the value, or returns the error to the caller of the
+// function.
 // An error is a value: a scoped enum, or a trivially copyable class of at
 // most 16 bytes, so an error never allocates.  An error can also be a
 // linear class, so a failed operation can give a resource back.  Err<E>
@@ -982,4 +984,105 @@ public:
     }
 };
 
+namespace detail {
+
+// An Option of a payload.  The concept reads only T and the template
+// Option, so a unit cannot change its answer.
+template <class T>
+concept IsOption = requires { typename T::value_type; } && std::same_as<T, Option<typename T::value_type>>;
+
+// A Result of a value and an error.
+template <class T>
+concept IsResult = requires {
+    typename T::value_type;
+    typename T::error_type;
+} && std::same_as<T, Result<typename T::value_type, typename T::error_type>>;
+
+// The operand of CRUCIBLE_TRY: an rvalue of an Option or a Result that is
+// not const, so the macro can consume it.
+template <class Hold>
+concept TryOperand = std::is_rvalue_reference_v<Hold> && !std::is_const_v<std::remove_reference_t<Hold>>
+                  && (IsOption<std::remove_cvref_t<Hold>> || IsResult<std::remove_cvref_t<Hold>>);
+
+// The value of a helper of CRUCIBLE_TRY when the macro refuses its operand.
+// The static_assert of the macro stops the compile.  This value converts to
+// each type, so the rest of the macro gives no second error.  No run gets
+// to the conversion.
+struct TryRefused final {
+    template <class U>
+    [[noreturn]] operator U() const noexcept {
+        unreachable();
+    }
+};
+
+// True when the operand holds no value or holds an error.
+template <class Hold>
+[[nodiscard]] constexpr bool try_failed_(Hold const& hold) noexcept {
+    if constexpr (IsOption<std::remove_cvref_t<Hold>>) {
+        return hold.is_none();
+    } else if constexpr (IsResult<std::remove_cvref_t<Hold>>) {
+        return hold.is_err();
+    } else {
+        return false;
+    }
+}
+
+// The return of a failed operand: none for an Option, and the Err of the
+// error for a Result.  The return statement of the macro converts it.
+template <class Hold>
+[[nodiscard]] constexpr auto try_propagate_(Hold&& hold) noexcept {
+    using Choice = std::remove_cvref_t<Hold>;
+    if constexpr (!TryOperand<Hold&&>) {
+        return TryRefused{};
+    } else if constexpr (IsOption<Choice>) {
+        static_cast<void>(hold);
+        return none;
+    } else {
+        using Error = typename Choice::error_type;
+        return Err<Error>{static_cast<Choice&&>(hold).err().expect("CRUCIBLE_TRY tested the error")};
+    }
+}
+
+// The value of an operand that holds one, and Unit for a Result of Unit.
+template <class Hold>
+[[nodiscard]] constexpr auto try_take_(Hold&& hold) noexcept {
+    using Choice = std::remove_cvref_t<Hold>;
+    if constexpr (!TryOperand<Hold&&>) {
+        return TryRefused{};
+    } else if constexpr (IsResult<Choice> && std::same_as<typename Choice::value_type, Unit>) {
+        static_cast<Choice&&>(hold).expect("CRUCIBLE_TRY tested the value");
+        return Unit{};
+    } else {
+        return static_cast<Choice&&>(hold).expect("CRUCIBLE_TRY tested the value");
+    }
+}
+
+}  // namespace detail
+
 }  // namespace foundation::core
+
+// CRUCIBLE_TRY(name, operand) gives the value of an Option or a Result to a
+// new local `name`.  When the operand holds no value, the function returns
+// none.  When it holds an error, the function returns the Err of the error,
+// and the return converts it to the error of the function.  The operand is
+// a temporary or std::move(local), and the macro evaluates it one time.
+//
+//   CRUCIBLE_TRY(slot, find_slot(key));
+//   CRUCIBLE_TRY(_, close_door());        a value of Unit, discarded
+//
+// The macro is a sequence of statements, so it cannot be the body of an if
+// with no braces, and one line holds one CRUCIBLE_TRY.  In a lambda, the
+// return leaves the lambda.  The second test of the value is a test that
+// the optimizer removes, because no code writes the operand between the
+// two tests.
+#define CRUCIBLE_TRY_JOIN_(left, right) left##right
+#define CRUCIBLE_TRY_HOLD_(line) CRUCIBLE_TRY_JOIN_(crucible_try_hold_, line)
+#define CRUCIBLE_TRY(name, ...)                                                                           \
+    auto&& CRUCIBLE_TRY_HOLD_(__LINE__) = (__VA_ARGS__);                                                  \
+    static_assert(::foundation::core::detail::TryOperand<decltype(CRUCIBLE_TRY_HOLD_(__LINE__))>,         \
+                  "CRUCIBLE_TRY consumes a Result or an Option: give it a temporary or std::move(name)"); \
+    if (::foundation::core::detail::try_failed_(CRUCIBLE_TRY_HOLD_(__LINE__)))                            \
+        return ::foundation::core::detail::try_propagate_(                                                \
+            static_cast<decltype(CRUCIBLE_TRY_HOLD_(__LINE__))>(CRUCIBLE_TRY_HOLD_(__LINE__)));           \
+    auto name = ::foundation::core::detail::try_take_(                                                    \
+        static_cast<decltype(CRUCIBLE_TRY_HOLD_(__LINE__))>(CRUCIBLE_TRY_HOLD_(__LINE__)))

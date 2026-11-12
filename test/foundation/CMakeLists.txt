@@ -1886,7 +1886,10 @@ foundation_neg_compile_test(neg_core_fixed_text_zero_capacity
 # and a niche that a payload declares must be well formed.  An Err of a
 # different error converts only through an implicit conversion that does not
 # throw, and an Option and a Result do not convert to each other.
+# CRUCIBLE_TRY consumes an rvalue of an Option or a Result, in a function
+# whose return takes the failure.
 foundation_test(test_core_choice)
+foundation_test(test_core_try)
 
 foundation_neg_compile_test(neg_core_option_reference_payload
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
@@ -1969,6 +1972,31 @@ foundation_neg_compile_test(neg_core_result_from_none
 foundation_neg_compile_test(neg_core_option_ok_or_integer_error
   "no matching function for call to .foundation::core::Option<int>::ok_or\\(int\\)."
   "required for the satisfaction of .ErrorValue<E>. \\[with E = int\\]")
+foundation_neg_compile_test(neg_core_try_lvalue_operand
+  "static assertion failed: CRUCIBLE_TRY consumes a Result or an Option: give it a temporary or std::move\\(name\\)"
+  "in expansion of macro .CRUCIBLE_TRY.")
+foundation_neg_compile_test(neg_core_try_non_choice_operand
+  "static assertion failed: CRUCIBLE_TRY consumes a Result or an Option: give it a temporary or std::move\\(name\\)"
+  "in expansion of macro .CRUCIBLE_TRY.")
+foundation_neg_compile_test(neg_core_try_result_in_option_function
+  "use of deleted function .foundation::core::Option<T>::Option\\(foundation::core::Err<F>\\) \\[with F = Code. T = int\\]."
+  "a Result carries an error that an Option drops")
+foundation_neg_compile_test(neg_core_try_option_in_result_function
+  "use of deleted function .foundation::core::Result<T, E>::Result\\(foundation::core::NoValue\\) \\[with T = int. E = Code\\]."
+  "an empty Option has no error for a Result")
+foundation_neg_compile_test(neg_core_try_void_function
+  "return-statement with a value, in function returning .void."
+  "in expansion of macro .CRUCIBLE_TRY.")
+foundation_neg_compile_test(neg_core_try_constructor
+  "returning a value from a constructor"
+  "in expansion of macro .CRUCIBLE_TRY.")
+foundation_neg_compile_test(neg_core_try_twice_on_one_line
+  "conflicting declaration .auto&& crucible_try_hold_[0-9]+."
+  "in expansion of macro .CRUCIBLE_TRY.")
+foundation_neg_compile_test(neg_core_try_unbraced_if
+  ".crucible_try_hold_[0-9]+. was not declared in this scope"
+  "template argument 1 is invalid"
+  "unused variable .crucible_try_hold_[0-9]+.")
 
 # ── The Ref family: Box ───────────────────────────────────────────────
 #

@@ -62,6 +62,17 @@ enum class Code32 : std::uint32_t {
     late = 2
 };
 
+// An error of one byte, and the error of a caller that takes it through an
+// implicit conversion.
+enum class Code8 : std::uint8_t {
+    lost = 1
+};
+
+struct NetError8 final {
+    Code8 code = Code8::lost;
+    constexpr NetError8(Code8 from) noexcept : code{from} {}
+};
+
 // ── Atomic ──────────────────────────────────────────────────────────────────
 
 [[gnu::used]] std::uint64_t atomic_load(fixy::Atomic<std::uint64_t> const& cell) noexcept {
@@ -181,6 +192,25 @@ option_expect_niche(fixy::Option<fixy::View<std::uint32_t const>> option) noexce
 // ok_or gives the payload of an Option as a Result, in the same register.
 [[gnu::used]] fixy::Result<std::uint32_t, Code32> option_ok_or(fixy::Option<std::uint32_t> option) noexcept {
     return std::move(option).ok_or(Code32::gone);
+}
+
+// CRUCIBLE_TRY is one test of the tag.  The value takes a second test of
+// the tag, which the optimizer removes.
+[[gnu::used]] fixy::Option<std::uint32_t> option_try(fixy::Option<std::uint32_t> option) noexcept {
+    CRUCIBLE_TRY(value, std::move(option));
+    return fixy::some(value + 1u);
+}
+
+[[gnu::used]] fixy::Result<std::uint32_t, Code32> result_try(fixy::Result<std::uint32_t, Code32> result) noexcept {
+    CRUCIBLE_TRY(value, std::move(result));
+    return value + 1u;
+}
+
+// The error of the callee converts to the error of the caller.
+[[gnu::used]] fixy::Result<std::uint32_t, NetError8>
+result_try_convert(fixy::Result<std::uint32_t, Code8> result) noexcept {
+    CRUCIBLE_TRY(value, std::move(result));
+    return value + 1u;
 }
 
 // A Result of a value of four bytes and an error of four bytes, as a
@@ -352,6 +382,23 @@ struct RawWindow final {
 [[gnu::used]] std::expected<std::uint32_t, Code32> option_ok_or_raw(std::optional<std::uint32_t> option) noexcept {
     if (option) return *option;
     return std::unexpected(Code32::gone);
+}
+
+[[gnu::used]] std::optional<std::uint32_t> option_try_raw(std::optional<std::uint32_t> option) noexcept {
+    if (!option) return std::nullopt;
+    return *option + 1u;
+}
+
+[[gnu::used]] std::expected<std::uint32_t, Code32>
+result_try_raw(std::expected<std::uint32_t, Code32> result) noexcept {
+    if (!result) return std::unexpected(result.error());
+    return *result + 1u;
+}
+
+[[gnu::used]] std::expected<std::uint32_t, NetError8>
+result_try_convert_raw(std::expected<std::uint32_t, Code8> result) noexcept {
+    if (!result) return std::unexpected(NetError8{result.error()});
+    return *result + 1u;
 }
 
 [[gnu::used]] std::uint32_t result_expect_raw(std::expected<std::uint32_t, Code32> result) noexcept { return *result; }

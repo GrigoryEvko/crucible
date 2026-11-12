@@ -1,0 +1,8 @@
+# A quarantined unit expands the macro of a base header, and the expansion
+# gives no use.  The same unit spells the detail function of the macro, and
+# that spelling is a use.
+
+compile use src/use.cpp stage=c
+exit use pass
+judge use
+finding use owners detail-use src/use.cpp:9:66 | planted::step_through_door(int): foundation::effects::detail
