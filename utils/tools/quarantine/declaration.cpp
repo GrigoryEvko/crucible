@@ -114,8 +114,10 @@
 //     and a getter of kAccessors are accessors, and a mint is a door of its
 //     own rule.  A hatch of kHatches is the kind hatch, and each other door is
 //     the kind bare-door.  A deleted function, a friend with no body, a
-//     private or protected member and a name that ends with an underscore are
-//     no door.  The entity is the function_signature of the door.
+//     private or protected member, and a function that is no member and
+//     whose name ends with an underscore are no door.  A public member whose
+//     name ends with an underscore is a door.  The entity is the
+//     function_signature of the door.
 //
 // THE SURFACE
 //     A caller names each member of the surface of a class through the
@@ -1624,8 +1626,11 @@ struct Door {
 
 // The door of FUNCTION, which can hand out a raw reference or pointer (THE
 // RULE escape-doors).  An operator other than a conversion, a mint, a getter
-// whose name kAccessors holds and a name that ends with an underscore are no
-// door.  A hatch of kHatches is the kind hatch.
+// whose name kAccessors holds and a function that is no member and whose name
+// ends with an underscore are no door.  A member that a caller names through
+// a class is part of the surface of the class, whatever its name, so a
+// member whose name ends with an underscore is a door.  A hatch of kHatches
+// is the kind hatch.
 Door door_of(tree function) {
     Door door;
     if (DECL_CONV_FN_P(function)) {
@@ -1638,7 +1643,9 @@ Door door_of(tree function) {
         return door;
     }
     std::string name = identifier_text(DECL_NAME(function));
-    if (name.empty() || name.back() == '_' || is_one_of(name, kAccessors, sizeof(kAccessors) / sizeof(kAccessors[0]))) {
+    bool is_internal_helper = !name.empty() && name.back() == '_' && !DECL_FUNCTION_MEMBER_P(function);
+    bool is_accessor = is_one_of(name, kAccessors, sizeof(kAccessors) / sizeof(kAccessors[0]));
+    if (name.empty() || is_internal_helper || is_accessor) {
         return door;
     }
     if (is_one_of(name, kHatches, sizeof(kHatches) / sizeof(kHatches[0]))) {

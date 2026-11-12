@@ -1,15 +1,16 @@
 # Each public function of a base header that returns a reference or a raw
 # pointer and is no accessor and no mint is a finding of the rule escape-doors:
 # a free function, a function template, a decltype(auto) return, a getter with
-# no accessor name, a conversion and a hidden friend with a body.  A hatch,
-# such as release, is the kind hatch.  The doors make Holder guard its
-# storage, so its public data member is the kind public-member.  In the mode
-# error each finding is an error.
+# no accessor name, a conversion, a hidden friend with a body and a public
+# member with a trailing underscore.  A hatch, such as release, is the kind
+# hatch.  The doors make Holder guard its storage, so its public data member
+# is the kind public-member.  In the mode error each finding is an error.
 compile report doors.cpp
 flag report -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Doors.h
 exit report pass
 finding report escape-doors public-member include/fixy/Doors.h:21:9 | plant::Holder::raw
 finding report escape-doors bare-door include/fixy/Doors.h:27:17 | plant::befriended(plant::Holder&)
+finding report escape-doors bare-door include/fixy/Doors.h:29:10 | plant::Holder::steal_()
 finding report escape-doors hatch include/fixy/Doors.h:23:10 | plant::Holder::release()
 finding report escape-doors bare-door include/fixy/Doors.h:24:10 | plant::Holder::peek_raw()
 finding report escape-doors bare-door include/fixy/Doors.h:25:5 | plant::Holder::operator int*()
@@ -22,6 +23,7 @@ flag error -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Doors.h
 exit error fail
 error error include/fixy/Doors.h:21 | quarantine: public-member plant::Holder::raw;
 error error include/fixy/Doors.h:27 | quarantine: bare-door plant::befriended(plant::Holder&);
+error error include/fixy/Doors.h:29 | quarantine: bare-door plant::Holder::steal_();
 error error include/fixy/Doors.h:23 | quarantine: hatch plant::Holder::release();
 error error include/fixy/Doors.h:24 | quarantine: bare-door plant::Holder::peek_raw();
 error error include/fixy/Doors.h:25 | quarantine: bare-door plant::Holder::operator int*();

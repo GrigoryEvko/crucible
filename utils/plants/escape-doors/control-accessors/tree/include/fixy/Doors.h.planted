@@ -13,8 +13,6 @@ struct Holder {
     int& operator*() { return raw; }
     // A value return hands out no reference.
     int copy() const { return raw; }
-    // A name with a trailing underscore is an internal helper.
-    int& internal_() { return raw; }
     // A deleted function is no door.
     int& removed() = delete;
     // A friend declaration with no body names a function of a different place.
@@ -25,6 +23,9 @@ private:
     // A private member is no door.
     int& hidden() { return raw; }
 };
+
+// A free function with a trailing underscore is an internal helper.
+inline int& internal_(Value& value) { return value.raw; }
 
 // A mint is a door of its own rule.
 [[nodiscard]] constexpr Value& mint_value(Value& value) noexcept { return value; }

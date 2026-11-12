@@ -15,7 +15,9 @@ THE RULE
         kind hatch: an explicit and discouraged door
       * Each other door is the kind bare-door, a conversion too.
     A deleted function, a friend declaration with no body, a `private` or a
-    `protected` member and a name that ends with an underscore are no door.
+    `protected` member, and a function that is no member and whose name ends
+    with an underscore are no door.  A public member whose name ends with an
+    underscore is a door, because a caller names it through its class.
 
 THE SURFACE
     A caller names the public members of a class, of each public base at each

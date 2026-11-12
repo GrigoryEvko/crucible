@@ -3,8 +3,9 @@
 # a public using-declaration makes public, also through a dependent base.  It
 # refuses the door, the hatch and the data member of a public base outside
 # the base headers.  A public base or a using-declaration that a template
-# parameter gives is the kind unread-surface.  In the mode error each finding
-# is an error.
+# parameter gives is the kind unread-surface.  A public door of a base header
+# is one finding at its own declaration, also when a class inherits it or a
+# using-declaration gives it.  In the mode error each finding is an error.
 compile report surface.cpp
 flag report -I ../outside -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Surface.h
 exit report pass
@@ -17,6 +18,7 @@ finding report escape-doors hatch include/fixy/Surface.h:39:7 | plant::FromLibra
 finding report escape-doors public-member include/fixy/Surface.h:39:7 | plant::FromLibrary via library::LibraryBase::field
 finding report escape-doors unread-surface include/fixy/Surface.h:46:7 | plant::Mixin : T0_0
 finding report escape-doors unread-surface include/fixy/Surface.h:51:17 | plant::Exporter using exported
+finding report escape-doors bare-door include/fixy/Surface.h:59:24 | plant::LeakyBase::steal_the_pointer()
 
 compile error surface.cpp mode=error findings=report errors=report
 flag error -I ../outside -fplugin-arg-crucible_quarantine-sentinel=include/fixy/Surface.h

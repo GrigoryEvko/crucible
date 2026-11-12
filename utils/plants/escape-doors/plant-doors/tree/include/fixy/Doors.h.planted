@@ -25,6 +25,8 @@ struct Holder {
     operator int*() { return &raw; }
     // A hidden friend with a body is a function that lookup finds.
     friend int& befriended(Holder& holder) { return holder.raw; }
+    // A public member with a trailing underscore is on the surface too.
+    int& steal_() { return raw; }
 };
 
 }  // namespace plant

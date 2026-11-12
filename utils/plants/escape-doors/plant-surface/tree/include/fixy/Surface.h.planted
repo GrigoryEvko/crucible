@@ -51,4 +51,22 @@ public:
     using Base::exported;
 };
 
+// A public door of a base header is one finding at its own declaration: a
+// class that inherits it publicly, or that a using-declaration gives it,
+// adds no second finding.
+class LeakyBase {
+public:
+    [[nodiscard]] int* steal_the_pointer() noexcept { return &value_; }
+
+private:
+    int value_ = 0;
+};
+
+class InheritsTheDoor : public LeakyBase {};
+
+class ReExportsTheDoor : private LeakyBase {
+public:
+    using LeakyBase::steal_the_pointer;
+};
+
 }  // namespace plant
