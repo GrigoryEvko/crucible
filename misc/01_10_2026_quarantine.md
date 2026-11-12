@@ -1084,8 +1084,8 @@ A `Result` has no loop, because a loop over the value drops the error with no tr
 |---|---|---|---|---|
 | `Record<A, B>{a, b}` | Aggregate initialization. A narrowing conversion does not compile | none | - | main |
 | `Record(Ts...) -> Record<Ts...>` | The deduction guide. `return {std::move(value), std::move(next)};` builds a return | none | - | main |
-| `at(index<I>())` | `&` and `const&`, for `I` below the count of parts | one member access | `at` | design |
-| `at(index<I>())` on `&&` | Deleted: "write auto [first, second] = std::move(record)", because a move of one part drops the others | - | - | design |
+| `at(index<I>())` | `&` and `const&`, for `I` below the count of parts. `Record.h` declares `StaticIndex<I>` and does not include `Index.h` | one member access | `at` | main |
+| `at(index<I>())` on `&&` and `const&&` | Deleted: "write auto [first, second] = std::move(record)", because a move of one part drops the others, and a reference into a temporary dangles | - | - | main |
 | `size()` | `static consteval` | none | `size` | main |
 | `types` | `Pack<Ts...>` | none | - | main |
 | `auto [a, b] = record;` | The protocol of `std::tuple_size` and `std::tuple_element` (their class forms) and the hidden friend hook `get<I>`. `auto [a, b] = std::move(record)` moves each part one time. A binding in a quarantined file gives no finding | none | binding | main |

@@ -2128,7 +2128,8 @@ foundation_neg_compile_test(neg_core_surface_not_class
 # A Record is an aggregate of parts that are objects, not arrays and not
 # cv-qualified, with a move that does not throw.  It has no converting
 # constructor, and its list initialization refuses a narrowing conversion.
-# A structured binding names each part.  == and <=> compare two Records of
+# A structured binding names each part, and at() takes a constant index below
+# the count of parts on a named Record only.  == and <=> compare two Records of
 # one type only, and only when each part has the operator.  The Pack
 # operations take a Pack only, an index below the count, and a type that is
 # in the Pack one time.
@@ -2168,6 +2169,12 @@ foundation_neg_compile_test(neg_core_record_equal_other_types
 foundation_neg_compile_test(neg_core_record_order_other_category
   "no match for .operator<=>. \\(operand types are .const foundation::core::Record<int, SignedOrder>. and .const foundation::core::Record<int, SignedOrder>.\\)"
   "the expression .\\(RecordOrderedPart<Ts> && ...\\) \\[with Ts = \\{int, SignedOrder\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_record_at_of_rvalue
+  "use of deleted function .void foundation::core::Record<Ts>::at\\(foundation::core::StaticIndex<I>\\) && \\[with long unsigned int I = 0. Ts = \\{int, long int\\}\\].: write auto \\[first, second\\] = std::move\\(record\\), because a move of one part drops the others"
+  "neg_core_record_at_of_rvalue.cpp:11")
+foundation_neg_compile_test(neg_core_record_at_out_of_range
+  "no matching function for call to .foundation::core::Record<int, long int>::at\\(foundation::core::StaticIndex<2>\\)."
+  "the expression .I < sizeof ... \\(Ts ...\\) \\[with I = 2. Ts = \\{int, long int\\}\\]. evaluated to .false.")
 # The hook get<I> of a binding carries the annotation binding_hook, and the
 # rule binding-hook of the plugin refuses a direct call of it.
 foundation_neg_compile_test(neg_core_record_hook_lvalue_call

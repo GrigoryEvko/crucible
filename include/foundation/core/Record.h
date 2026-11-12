@@ -25,6 +25,12 @@
 // foundation/Linear.h, and the rule binding-hook of the plugin refuses each
 // call of the hook outside the initializer of a name of a binding.
 //
+// at(index<I>()) gives the part at the constant index I of a Record that a
+// name holds, with no branch.  index<I>() is in foundation/core/Index.h.  An
+// index that is not below the count of parts does not compile.  at() of an
+// rvalue Record does not compile, because a move of one part drops the
+// others: a binding of the moved Record gives out each part.
+//
 // A part is an object type that is not an array, not cv-qualified and not
 // abstract, with a destructor that does not throw.  A part that moves, moves
 // with no throw, so a move of a Record never stops after one part.  A
@@ -94,6 +100,11 @@ concept PackType = !std::is_const_v<P> && !std::is_volatile_v<P> && std::meta::h
 
 template <RecordElement... Ts>
 struct Record;
+
+// The proof of a constant index, of foundation/core/Index.h.  A Record reads
+// I from its type, so the Record needs no more of that header.
+template <std::size_t I>
+struct StaticIndex;
 
 namespace detail {
 
@@ -236,6 +247,29 @@ struct Record : detail::RecordCells<std::index_sequence_for<Ts...>, Ts...> {
     using types = Pack<Ts...>;
 
     [[nodiscard]] static consteval std::size_t size() noexcept { return sizeof...(Ts); }
+
+    // The part at the constant index I, as a member access.  The result
+    // types are deduced, because a Record of no part cannot name a part type
+    // in a declaration.  The two rvalue forms are deleted, so a reference
+    // into a temporary Record and a move of one part do not compile.
+    template <std::size_t I>
+        requires(I < sizeof...(Ts))
+    [[nodiscard]] constexpr auto& at(StaticIndex<I>) & noexcept {
+        return static_cast<detail::RecordCell<I, Ts...[I]>&>(*this).part;
+    }
+    template <std::size_t I>
+        requires(I < sizeof...(Ts))
+    [[nodiscard]] constexpr auto const& at(StaticIndex<I>) const& noexcept {
+        return static_cast<detail::RecordCell<I, Ts...[I]> const&>(*this).part;
+    }
+    template <std::size_t I>
+        requires(I < sizeof...(Ts))
+    void at(StaticIndex<I>) && = delete("write auto [first, second] = std::move(record), because a move of one part "
+                                        "drops the others");
+    template <std::size_t I>
+        requires(I < sizeof...(Ts))
+    void at(StaticIndex<I>) const&& = delete("bind the Record to a name, because a reference into a temporary "
+                                             "Record dangles at the end of the full expression");
 
     // The two compares fold over the parts in order.  The lexicographic
     // compare stops at the first part that is not equivalent.  The cells

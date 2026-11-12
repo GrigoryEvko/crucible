@@ -2,6 +2,7 @@
 
 #include <foundation/core/Record.h>
 
+#include <foundation/core/Index.h>
 #include <foundation/core/Scalar.h>
 #include <foundation/core/Text.h>
 #include <foundation/core/Verbs.h>
@@ -207,6 +208,36 @@ static_assert(!RecordElement<int[2]> && !RecordElement<void>);
 // type.
 static_assert(std::is_same_v<decltype(part_of<1>(Record<int, long, char>{})), long>);
 static_assert(part_of<2>(Record<int, long, char>{1, 2, 'c'}) == 'c');
+
+// at() of a constant index: a reference to the part of a named Record, of
+// the part type and the constness of the Record.  An index that is not below
+// the count of parts, and an rvalue Record, give no at().
+template <class R, std::size_t I>
+concept HasLvalueAt = requires(R& record, StaticIndex<I> proof) { record.at(proof); };
+template <class R, std::size_t I>
+concept HasRvalueAt = requires(R& record, StaticIndex<I> proof) { static_cast<R&&>(record).at(proof); };
+
+using IntLong = Record<int, long>;
+static_assert(std::is_same_v<decltype(std::declval<IntLong&>().at(index<1>())), long&>);
+static_assert(std::is_same_v<decltype(std::declval<IntLong const&>().at(index<0>())), int const&>);
+static_assert(HasLvalueAt<IntLong, 1> && HasLvalueAt<IntLong const, 1>);
+static_assert(!HasLvalueAt<IntLong, 2> && !HasLvalueAt<Record<>, 0>);
+static_assert(!HasRvalueAt<IntLong, 0> && !HasRvalueAt<IntLong const, 0>);
+
+// A write through at() reaches the part, and a read through the const form
+// gives it back, in a constant evaluation.
+[[nodiscard]] consteval long write_through_at() {
+    IntLong pair{1, 2};
+    pair.at(index<1>()) = 7;
+    IntLong const& view = pair;
+    return view.at(index<0>()) + view.at(index<1>());
+}
+static_assert(write_through_at() == 8);
+
+// at() changes no property of a Record: a Record of plain parts stays an
+// aggregate, trivially copyable and a structural type.
+static_assert(std::is_aggregate_v<IntLong> && std::is_trivially_copyable_v<IntLong>);
+static_assert(first_part_of<Plain{9u, 0.5, {}}> == 9u);
 
 // The compares, at compile time.
 static_assert(Record<int, int>{1, 2} == Record<int, int>{1, 2});

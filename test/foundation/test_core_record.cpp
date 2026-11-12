@@ -2,6 +2,8 @@
 
 #include <foundation/core/Record.h>
 
+#include <foundation/core/Index.h>
+#include <foundation/core/Ref.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 
@@ -94,6 +96,19 @@ void test_bindings() {
     // block.
     auto const& [low, high] = make_pair(5u, 6u);
     CRUCIBLE_FATAL_INVARIANT(low == 5u && high == 6u);
+}
+
+void test_at() {
+    // at() of a constant index reaches the part of a named Record, also a
+    // part that only moves, and it reaches the object that a binding names.
+    using ::foundation::core::to;
+    Record<int, CountedPart> held{4, CountedPart{5}};
+    held.at(::foundation::core::index<0>()) = 6;
+    Record<int, CountedPart> const& view = held;
+    auto const& [number, counted] = view;
+    CRUCIBLE_FATAL_INVARIANT(view.at(::foundation::core::index<0>()) == 6 && number == 6);
+    CRUCIBLE_FATAL_INVARIANT(::foundation::core::same_object(to(view.at(::foundation::core::index<1>())), to(counted)));
+    CRUCIBLE_FATAL_INVARIANT(counted.label() == 5);
 }
 
 void test_binding_moves_each_part_one_time() {
@@ -288,6 +303,7 @@ void test_agrees_with_the_model() {
 int main() {
     test_initialization();
     test_bindings();
+    test_at();
     test_binding_moves_each_part_one_time();
     test_binding_pack();
     test_compare();
