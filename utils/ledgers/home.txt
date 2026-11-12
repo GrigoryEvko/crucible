@@ -158,7 +158,7 @@ include/foundation/algebra/ClaimOrientation.h | open-read | 1 | foundation::alge
 include/foundation/algebra/Lattice.h | open-read | 1 | foundation::algebra::detail::lattice_laws::laws_hold | -
 include/foundation/algebra/Lattice.h | open-read | 1 | foundation::algebra::detail::lattice_laws::semiring_laws_hold | -
 include/foundation/algebra/lattices/MonotoneLattice.h | open-read | 1 | foundation::algebra::lattices::monotone_bounds | -
-include/foundation/core/Choice.h | open-read | 1 | foundation::core::niche | a payload type states its empty value with a specialization beside its definition, so the trait is an extension point by design.  HasNiche selects only the storage form of an Option, and a payload equal to the empty value fails the precondition of the slot
+include/foundation/core/Choice.h | open-read | 1 | foundation::core::niche | a payload type states its empty value with a specialization beside its definition, or with the members of the member protocol, so the trait is an extension point by design.  WellFormedNiche is the one gate that reads it, and it refuses a niche that is not well formed.  A niche selects only the storage form of an Option, and a payload equal to the empty value fails the check of the slot
 include/foundation/diag/Insights.h | open-read | 1 | foundation::diag::has_insights_v | -
 include/foundation/diag/Insights.h | open-read | 1 | foundation::diag::has_substantive_insights_v | -
 include/foundation/diag/Insights.h | open-read | 2 | foundation::diag::is_diagnostic_class_v | -

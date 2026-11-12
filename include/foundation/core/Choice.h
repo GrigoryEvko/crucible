@@ -69,13 +69,100 @@ struct NoValue final {
 
 inline constexpr NoValue none{};
 
-// The payload of an Option: an object type that is not an array, not
-// cv-qualified and not the empty marker itself.  The move and the
-// destructor do not throw, so a move never leaves a half-moved Option.
+namespace detail {
+
+// The kind of the mark that Err declares.  No other class of the family
+// names it.
+struct ErrorMarkKind final {};
+
+// An Err<E>.  An Err marks a return, and it is not a value, so the payload
+// gate and the error gate refuse it.  The concept reads only a member of T,
+// so a unit cannot change its answer for a different type.
 template <class T>
-concept ChoicePayload =
-    std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>
-    && !std::same_as<T, NoValue> && std::is_nothrow_move_constructible_v<T> && std::is_nothrow_destructible_v<T>;
+concept ErrMark = requires { typename T::mark_kind; } && std::same_as<typename T::mark_kind, ErrorMarkKind>;
+
+}  // namespace detail
+
+// The niche protocol.  A payload type T with an empty value that no valid
+// T holds can specialize niche<T> with two static members:
+//
+//   static constexpr T empty() noexcept;              the empty value
+//   static constexpr bool is_empty(T const&) noexcept;
+//
+// A class can also give the two members itself, which a class in a
+// namespace that cannot specialize niche needs:
+//
+//   static constexpr T niche_empty() noexcept;        the empty value
+//   constexpr bool is_niche_empty() const noexcept;
+//
+// The members must be public.  The primary template declares no niche, so a
+// type with no specialization and no member of the protocol has no niche.
+// A niche payload has trivial copy and move constructors and a trivial
+// destructor, so the ABI passes the Option in registers.  Its assignment can
+// be user-provided, as the assignment of a type that holds a byte seal is.
+template <class T>
+struct niche {
+    // A specialization does not repeat this member, so its absence tells
+    // that a type declares a niche.
+    using undeclared_niche = void;
+};
+
+namespace detail {
+
+// A class that names a member of the member protocol.
+template <class T>
+concept NamesMemberNiche = requires { &T::niche_empty; } || requires { &T::is_niche_empty; };
+
+}  // namespace detail
+
+// The niche of a class that gives the members of the protocol.  A class
+// that gives only one of the two members, or a member of the wrong type,
+// declares a niche that is not well formed, and the payload gate refuses it.
+template <class T>
+    requires detail::NamesMemberNiche<T>
+struct niche<T> {
+    [[nodiscard]] static constexpr T empty() noexcept
+        requires requires {
+            { T::niche_empty() } noexcept -> std::same_as<T>;
+        }
+    {
+        return T::niche_empty();
+    }
+
+    [[nodiscard]] static constexpr bool is_empty(T const& value) noexcept
+        requires requires(T const& held) {
+            { held.is_niche_empty() } noexcept -> std::same_as<bool>;
+        }
+    {
+        return value.is_niche_empty();
+    }
+};
+
+// The type declares no niche, or its niche is well formed.  A type declares
+// a niche when niche<T> is a specialization.  A well formed niche has the
+// trivial copy, move and destructor of the protocol, and its two members
+// have the types of the protocol and do not throw.  Its empty value is a
+// constant, and is_empty gives true for it.  A malformed niche would give
+// the plain or the owning form with no message, so the payload gate refuses
+// it.  This gate is the one gate that reads niche<T>.
+template <class T>
+concept WellFormedNiche =
+    requires { typename niche<T>::undeclared_niche; }
+    || (std::is_trivially_copy_constructible_v<T> && std::is_trivially_move_constructible_v<T>
+        && std::is_trivially_destructible_v<T> && std::is_nothrow_copy_assignable_v<T> && requires(T const& value) {
+               { niche<T>::empty() } noexcept -> std::same_as<T>;
+               { niche<T>::is_empty(value) } noexcept -> std::same_as<bool>;
+               typename std::bool_constant<niche<T>::is_empty(niche<T>::empty())>;
+           } && niche<T>::is_empty(niche<T>::empty()));
+
+// The payload of an Option: an object type that is not an array, not
+// cv-qualified, not the empty marker itself and not the mark of an error.
+// The move and the destructor do not throw, so a move never leaves a
+// half-moved Option.  A niche that the type declares is well formed.
+template <class T>
+concept ChoicePayload = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>
+                     && !std::same_as<T, NoValue> && !detail::ErrMark<T> && std::is_nothrow_move_constructible_v<T>
+                     && std::is_nothrow_destructible_v<T> && WellFormedNiche<T>;
 
 // A payload that a member can drop or copy.  A linear payload is not one,
 // because its loss or its copy changes what the program can prove.  A
@@ -95,28 +182,6 @@ concept PlainPayload = std::is_trivially_copyable_v<T> && std::is_trivially_dest
 template <ChoicePayload T>
 class Option;
 
-// The niche protocol.  A payload type T with an empty value that no valid
-// T holds can specialize niche<T> with two static members:
-//
-//   static constexpr T empty() noexcept;              the empty value
-//   static constexpr bool is_empty(T const&) noexcept;
-//
-// The primary template has no members, so a type with no specialization
-// has no niche.  A niche payload has trivial copy and move constructors and
-// a trivial destructor, so the ABI passes the Option in registers.  Its
-// assignment can be user-provided, as the assignment of a type that holds
-// a byte seal is.
-template <class T>
-struct niche {};
-
-template <class T>
-concept HasNiche =
-    std::is_trivially_copy_constructible_v<T> && std::is_trivially_move_constructible_v<T>
-    && std::is_trivially_destructible_v<T> && std::is_nothrow_copy_assignable_v<T> && requires(T const& value) {
-           { niche<T>::empty() } noexcept -> std::same_as<T>;
-           { niche<T>::is_empty(value) } noexcept -> std::same_as<bool>;
-       };
-
 namespace detail {
 
 struct NoPayload final {};
@@ -132,14 +197,16 @@ enum class OptionForm : unsigned char {
     owning,
 };
 
-// A niche payload copies, so it is never linear.  A linear payload takes
-// the owning form also when its bytes are trivially copyable.  Each branch
-// that the form does not take stays out of the instantiation, so a payload
-// with a niche is never walked: a member of such a payload can name its
-// Option, which is not complete while its form is chosen.
+// A payload that declares a niche takes the niche form.  The payload gate
+// holds WellFormedNiche<T>, so its niche is well formed.  A niche payload
+// copies, so it is never linear.  A linear payload takes the owning form
+// also when its bytes are trivially copyable.  Each branch that the form
+// does not take stays out of the instantiation, so a payload with a niche
+// is never walked: a member of such a payload can name its Option, which is
+// not complete while its form is chosen.
 template <class T>
 consteval OptionForm option_form_for() noexcept {
-    if constexpr (HasNiche<T>) {
+    if constexpr (!requires { typename niche<T>::undeclared_niche; }) {
         return OptionForm::niche;
     } else if constexpr (PlainPayload<T>) {
         return OptionForm::plain;
@@ -439,9 +506,10 @@ struct Unit final {
 // member is refused, because the reference cannot be assigned and can
 // outlive its object.  A linear error gives a resource back to the caller
 // of a failed operation.  It moves and ends with no throw, and only a
-// consumer of the Result gives it out.
+// consumer of the Result gives it out.  An Err marks a return, so it is
+// not an error value itself.
 template <class E>
-concept ErrorValue = !std::is_const_v<E> && !std::is_volatile_v<E>
+concept ErrorValue = !std::is_const_v<E> && !std::is_volatile_v<E> && !detail::ErrMark<E>
                   && (std::is_scoped_enum_v<E>
                       || (std::is_class_v<E> && std::is_trivially_copyable_v<E> && std::is_trivially_destructible_v<E>
                           && std::is_trivially_copy_assignable_v<E> && sizeof(E) <= 16)
@@ -452,6 +520,8 @@ concept ErrorValue = !std::is_const_v<E> && !std::is_volatile_v<E>
 // never meet in one conversion.
 template <ErrorValue E>
 struct Err final {
+    using mark_kind = detail::ErrorMarkKind;
+
     E error;
 };
 
@@ -546,9 +616,10 @@ public:
 // `return value;` and `return err(code);` give a Result.  A Result of a
 // value that owns something gives the value out once: after expect(),
 // value_or(), ok() or the rvalue match(), the Result holds the moved-from
-// value, and the use-after-move guard refuses a second use.
+// value, and the use-after-move guard refuses a second use.  The payload
+// gate refuses each Err, so a value and an Err never meet in one
+// conversion.
 template <ChoicePayload T, ErrorValue E>
-    requires(!std::same_as<T, Err<E>>)
 class [[nodiscard]] Result {
     detail::ResultSlot<T, E> slot_;
 

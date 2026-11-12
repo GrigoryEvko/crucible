@@ -258,6 +258,26 @@ void test_niche_empty_value_aborts() {
     CRUCIBLE_FATAL_INVARIANT(empty_value_aborts);
 }
 
+// A payload that gives the member niche protocol.  A class that cannot
+// specialize niche, such as a class in an anonymous namespace, gives its
+// empty value through its own members.
+struct MemberSlot {
+    std::uint32_t raw = 0;
+    [[nodiscard]] static constexpr MemberSlot niche_empty() noexcept { return MemberSlot{0xFFFFFFFFu}; }
+    [[nodiscard]] constexpr bool is_niche_empty() const noexcept { return raw == 0xFFFFFFFFu; }
+};
+
+void test_member_niche_payload() {
+    static_assert(sizeof(Option<MemberSlot>) == sizeof(MemberSlot));
+    Option<MemberSlot> empty_slot{};
+    Option<MemberSlot> held_slot = Option<MemberSlot>::some(MemberSlot{6});
+    CRUCIBLE_FATAL_INVARIANT(empty_slot.is_none() && held_slot.is_some());
+    CRUCIBLE_FATAL_INVARIANT(static_cast<Option<MemberSlot>&&>(held_slot).expect("the slot was built").raw == 6);
+    bool const empty_value_aborts =
+        ::foundation::test::aborts([] { static_cast<void>(Option<MemberSlot>::some(MemberSlot{0xFFFFFFFFu})); });
+    CRUCIBLE_FATAL_INVARIANT(empty_value_aborts);
+}
+
 // The property: for each value and each choice of empty or full, the
 // Option agrees with a plain model of one flag and one value.  The loop
 // makes one turn exactly when the model holds a value, and expect,
@@ -416,6 +436,7 @@ int main() {
     test_match();
     test_niche_payload();
     test_niche_empty_value_aborts();
+    test_member_niche_payload();
     test_agrees_with_plain_model();
     test_result_roads();
     test_result_of_unit();

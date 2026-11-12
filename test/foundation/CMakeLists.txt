@@ -1865,7 +1865,8 @@ foundation_neg_compile_test(neg_core_fixed_text_zero_capacity
 # An Option holds an object whose move does not throw.  The reason of
 # expect() is a text of a report.  A cursor of a temporary and a copy of an
 # owning Option are refused.  The error of a Result is a scoped enum or a
-# small trivially copyable class, and a Result of an Err is refused.
+# small trivially copyable class.  An Err is neither a payload nor an error,
+# and a niche that a payload declares must be well formed.
 foundation_test(test_core_choice)
 
 foundation_neg_compile_test(neg_core_option_reference_payload
@@ -1894,7 +1895,7 @@ foundation_neg_compile_test(neg_core_result_owning_error
   "class foundation::core::Result \\[with T = int. E = CountedError\\]")
 foundation_neg_compile_test(neg_core_result_err_payload
   "template constraint failure for .template<class T, class E>  requires \\(ChoicePayload<T>\\) && \\(ErrorValue<E>\\)"
-  "the expression .!\\(same_as<T, foundation::core::Err<E> >\\) \\[with T = foundation::core::Err<Code>. E = Code\\]. evaluated to .false.")
+  "the expression .!\\(ErrMark<T>\\) \\[with T = foundation::core::Err<Code>\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_option_match_one_arm
   "no matching function for call to .foundation::core::Option<int>::match\\(main\\(\\)::<lambda\\(int\\)>\\)."
   "candidate expects 2 arguments, 1 provided")
@@ -1904,6 +1905,27 @@ foundation_neg_compile_test(neg_core_option_match_returns_reference
 foundation_neg_compile_test(neg_core_option_match_arm_types
   "no matching function for call to .foundation::core::Option<int>::match\\(main\\(\\)::<lambda\\(int\\)>, main\\(\\)::<lambda\\(\\)>\\)."
   "the expression .is_same_v<_Tp, _Up> \\[with _Tp = int. _Up = long int\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_option_err_payload
+  "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
+  "the expression .!\\(ErrMark<T>\\) \\[with T = foundation::core::Err<Code>\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_result_other_err_payload
+  "template constraint failure for .template<class T, class E>  requires \\(ChoicePayload<T>\\) && \\(ErrorValue<E>\\)"
+  "the expression .!\\(ErrMark<T>\\) \\[with T = foundation::core::Err<Other>\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_result_err_mark_error
+  "template constraint failure for .template<class T, class E>  requires \\(ChoicePayload<T>\\) && \\(ErrorValue<E>\\)"
+  "the expression .!\\(ErrMark<E>\\) \\[with E = foundation::core::Err<Code>\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_option_niche_throwing_empty
+  "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
+  "required for the satisfaction of .WellFormedNiche<T>. \\[with T = SlotNumber\\]")
+foundation_neg_compile_test(neg_core_option_niche_owning_payload
+  "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
+  "required for the satisfaction of .WellFormedNiche<T>. \\[with T = Handle\\]")
+foundation_neg_compile_test(neg_core_option_niche_member_half_protocol
+  "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
+  "required for the satisfaction of .WellFormedNiche<T>. \\[with T = SlotNumber\\]")
+foundation_neg_compile_test(neg_core_option_niche_member_wrong_type
+  "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
+  "required for the satisfaction of .WellFormedNiche<T>. \\[with T = SlotNumber\\]")
 
 # ── The Ref family: Box ───────────────────────────────────────────────
 #

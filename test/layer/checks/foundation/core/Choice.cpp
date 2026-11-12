@@ -76,6 +76,36 @@ static_assert(!ChoicePayload<int[4]>);
 static_assert(!ChoicePayload<void>);
 static_assert(!ChoicePayload<NoValue>);
 
+// The niche gate: a declared niche is well formed, or the payload gate
+// refuses the payload.  A class can give the niche through its own members.
+struct MemberSlot {
+    std::uint32_t raw = 0;
+    [[nodiscard]] static constexpr MemberSlot niche_empty() noexcept { return MemberSlot{0xFFFFFFFFu}; }
+    [[nodiscard]] constexpr bool is_niche_empty() const noexcept { return raw == 0xFFFFFFFFu; }
+};
+
+struct HalfMemberSlot {
+    std::uint32_t raw = 0;
+    [[nodiscard]] static constexpr HalfMemberSlot niche_empty() noexcept { return HalfMemberSlot{0xFFFFFFFFu}; }
+};
+
+// A niche whose empty value is_empty does not see.
+struct BlindSlot {
+    std::uint32_t raw = 0;
+    [[nodiscard]] static constexpr BlindSlot niche_empty() noexcept { return BlindSlot{0xFFFFFFFFu}; }
+    [[nodiscard]] constexpr bool is_niche_empty() const noexcept { return raw == 0; }
+};
+
+static_assert(WellFormedNiche<int> && option_form_of<int> == OptionForm::plain);
+static_assert(WellFormedNiche<SlotNumber> && option_form_of<SlotNumber> == OptionForm::niche);
+static_assert(WellFormedNiche<MemberSlot>);
+static_assert(!WellFormedNiche<HalfMemberSlot> && !ChoicePayload<HalfMemberSlot>);
+static_assert(!WellFormedNiche<BlindSlot> && !ChoicePayload<BlindSlot>);
+static_assert(option_form_of<MemberSlot> == OptionForm::niche);
+static_assert(sizeof(Option<MemberSlot>) == sizeof(MemberSlot));
+static_assert(Option<MemberSlot>{}.is_none());
+static_assert(Option<MemberSlot>::some(MemberSlot{2}).expect("a constant slot").raw == 2);
+
 // No dereference and no conversion to bool.
 template <class O>
 concept Dereferences = requires(O option) { *option; };
@@ -215,6 +245,18 @@ static_assert(!ErrorValue<bool>);
 static_assert(!ErrorValue<TooWideError>);
 static_assert(!ErrorValue<CountedError>);
 static_assert(!ErrorValue<Code const>);
+
+// An Err marks a return.  It is neither a payload nor an error value.
+static_assert(std::is_trivially_copyable_v<Err<Code>> && sizeof(Err<Code>) <= 16);
+static_assert(!ErrorValue<Err<Code>> && !ErrorValue<Err<WideError>>);
+static_assert(!ChoicePayload<Err<Code>> && !ChoicePayload<Err<WideError>>);
+
+// Only the mark kind of Err makes a class a mark.
+struct NamesMarkKind {
+    using mark_kind = int;
+    std::uint32_t raw = 0;
+};
+static_assert(ChoicePayload<NamesMarkKind> && ErrorValue<NamesMarkKind>);
 
 // The layout: the value or the error, and one flag.  A Result of trivially
 // copyable parts is trivially copyable, so the ABI gives a small one back
