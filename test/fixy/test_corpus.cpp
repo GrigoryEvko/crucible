@@ -55,10 +55,10 @@ using ::fixy::IsAccepted;
 static_assert(std::tuple_size_v<corpus::Entries> == 6);
 static_assert(corpus::corpus_size == std::tuple_size_v<corpus::Entries>);
 
-// Every entry declared in fixy::corpus is in the tuple, read from the
+// Every entry declared under fixy::corpus is in the tuple, read from the
 // vantage point of this translation unit.
 struct corpus_test_site final {};
-static_assert(corpus::corpus_entries_declared_but_not_joined<corpus_test_site>().empty());
+static_assert(corpus::corpus_is_joined<corpus_test_site>());
 
 // ---------------------------------------------------------------------
 // One witness per entry, unique to it.  The walk asks every other entry

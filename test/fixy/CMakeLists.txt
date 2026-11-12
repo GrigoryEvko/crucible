@@ -596,6 +596,12 @@ fixy_neg_compile_test(neg_collision_call_shape_without_reading
 fixy_neg_compile_test(neg_collision_protocol_without_reading
   "static assertion failed: fixy/Collision\\.h: the Protocol grade of this binding has no reading in fixy::collision::detail::protocol_reading_"
   "spawn_outlives_frame_\\(\\) \\[with G = fixture::detached_thread\\]")
+# The check file of fixy/collision/Report.h walks each declaration of the
+# spawn family, which is a sample set outside the roster.  The fixture plants
+# a template with no reading before the check file, and the check names it.
+fixy_neg_compile_test(neg_collision_spawn_declaration_without_reading
+  "static assertion failed: fixy/Collision\\.h: a declaration of fixy::atom::spawn has no reading in protocol_reading_"
+  "the comparison reduces to .\\(\\^\\^fixy::atom::spawn::probe_unread_spawn == \\^\\^void\\).")
 
 # The constant-time family and the failure family.  The constant-time
 # claim is the Security grade atom::constant_time, and a failure is the
@@ -769,11 +775,20 @@ fixy_neg_compile_test(neg_corpus_classified_bg_export_policy
   "Corpus entry classified_bg_without_declassify"
   "fixy::fn<int, fixy::atom::with<foundation::effects::Effect::Bg>, fixy::atom::declassify<fixy::tags::secret_policy::AuditedLogging> >::tier5_composition_ok_.+ evaluates to false")
 
-# An entry declared in fixy::corpus and left out of Entries refuses
-# nothing, so the walk over the declarations names it.
+# An entry declared under fixy::corpus and left out of Entries refuses
+# nothing, so the walk over the declarations names it.  The walk reads each
+# nested namespace, and it names each class template outside
+# fixy::corpus::detail, because it cannot tell whether a specialization of
+# a template is an entry.
 fixy_neg_compile_test(neg_corpus_entry_declared_not_joined
-  "static assertion failed: fixy/Corpus.h: these corpus entries are declared in fixy::corpus and missing from Entries, so they refuse nothing: forgotten_entry\\."
-  "Name each one in the Entries tuple")
+  "static assertion failed: fixy/Corpus\\.h: these declarations under fixy::corpus refuse nothing: fixy::corpus::forgotten_entry\\."
+  "Name each entry in the Entries tuple")
+fixy_neg_compile_test(neg_corpus_entry_in_nested_namespace
+  "static assertion failed: fixy/Corpus\\.h: these declarations under fixy::corpus refuse nothing: fixy::corpus::extra::nested_entry\\."
+  "Name each entry in the Entries tuple")
+fixy_neg_compile_test(neg_corpus_entry_template
+  "static assertion failed: fixy/Corpus\\.h: these declarations under fixy::corpus refuse nothing: template<int Variant> struct fixy::corpus::generated_entry\\."
+  "so it refuses a class template outside fixy::corpus::detail")
 
 # The tier chain itself: one message per bad pack.  fn asks the tiers in
 # order and stops at the first failure, because a later tier's question
@@ -967,7 +982,6 @@ fixy_neg_compile_test(neg_atom_planted_in_family
 fixy_neg_compile_test(neg_atom_specialized_outside_its_header
   "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 2\\]: every entry in the pack must be an atom of the closed catalog"
   "fixy::fn<int, fixy::atom::stdio::write<user_code::private_stream> >::tier2_atoms_ok_.+ evaluates to false")
-
 # The name of an atom is its key in the row hash, so IsAtom refuses an
 # atom whose argument has no stable identity: a closure type, and a class
 # with internal linkage.  The strict Refinement pole is no witness, so

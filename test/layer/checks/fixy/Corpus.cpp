@@ -44,8 +44,7 @@ namespace detail {
 struct corpus_header_site_ final {};
 }  // namespace detail
 
-static_assert(corpus_entries_declared_but_not_joined<detail::corpus_header_site_>().empty(),
-              corpus_join_diagnostic<detail::corpus_header_site_>());
+static_assert(corpus_is_joined<detail::corpus_header_site_>());
 
 namespace detail::corpus_self_test {
 

@@ -415,18 +415,27 @@ using Entries =
 inline constexpr std::size_t corpus_size = std::tuple_size_v<Entries>;
 
 // ---------------------------------------------------------------------
-// Every entry declared in this namespace is in the corpus.
+// Every entry declared under this namespace is in the corpus.
 //
 // Entries is a hand list, because its order is the order the walk
-// consults.  An entry declared in fixy::corpus and left out of it
-// matches nothing and refuses nothing.  So this walk reads the declarations,
-// and it answers with the name of each entry that Entries does not hold.
+// consults.  An entry declared under fixy::corpus and left out of it
+// matches nothing and refuses nothing.  So this walk reads the
+// declarations, and it answers with the name of each entry that Entries
+// does not hold.  It reads each nested namespace and each complete class,
+// at each depth.
+//
+// An entry is a class.  The walk cannot tell whether a specialization of a
+// class template is an entry without an instantiation, and an
+// instantiation can stop the build with a static assertion of the template
+// (fixy/Atom.h says why beside every_atom_in_is_rostered_).  So the walk
+// names each class template under fixy::corpus outside fixy::corpus::detail,
+// which holds the helpers of the matchers.
 //
 // The Site parameter gives each caller a vantage point of its own, as in
 // fixy/collision/Report.h.  std::meta::members_of answers as of the point
 // where the walk is instantiated, and each caller passes its own tag type,
 // so its call walks the namespace as its translation unit has it at that
-// line.  The walk is O(members of the namespace × corpus size).
+// line.  The walk is O(declarations under the namespace × corpus size).
 
 namespace detail {
 
@@ -443,43 +452,65 @@ concept IsCorpusEntry = std::derived_from<Candidate, ::foundation::diag::tag_bas
     return false;
 }
 
-}  // namespace detail
-
-template <class Site>
-[[nodiscard]] consteval std::string corpus_entries_declared_but_not_joined() {
-    std::string offenders;
+// The offenders under Scope, appended to offenders: each entry that
+// Entries does not hold, and each class template outside
+// fixy::corpus::detail.  Each name after the first follows ", ".  The walk
+// recurses into each nested namespace and into each complete class.  It
+// reads a class only when it is complete, so that a class that a
+// translation unit declares and does not define stops nothing.
+template <class Site, std::meta::info Scope, bool InDetail>
+consteval void append_corpus_offenders_(std::string& offenders, bool& found) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto member : std::define_static_array(
                       static_cast<::foundation::reflect::anchored_t<^^Site, std::vector<std::meta::info>>>(
-                          std::meta::members_of(^^::fixy::corpus, std::meta::access_context::current())))) {
-        if constexpr (std::meta::is_type(member)) {
+                          std::meta::members_of(Scope, std::meta::access_context::current())))) {
+        bool is_offender = false;
+        if constexpr (std::meta::is_namespace(member) && !std::meta::is_namespace_alias(member)) {
+            append_corpus_offenders_<Site, member, InDetail || member == ^^::fixy::corpus::detail>(offenders, found);
+        } else if constexpr (std::meta::is_class_template(member)) {
+            is_offender = !InDetail;
+        } else if constexpr (std::meta::is_type(member) && !std::meta::is_type_alias(member)
+                             && std::meta::is_class_type(member) && std::meta::is_complete_type(member)) {
             using Candidate = [:member:];
-            if constexpr (detail::IsCorpusEntry<Candidate>) {
-                if (!detail::is_in_entries_(std::meta::dealias(member))) {
-                    if (!offenders.empty()) offenders += ", ";
-                    offenders += std::meta::identifier_of(member);
-                }
-            }
+            if constexpr (IsCorpusEntry<Candidate>) is_offender = !is_in_entries_(std::meta::dealias(member));
+            append_corpus_offenders_<Site, member, InDetail>(offenders, found);
+        }
+        if (is_offender) {
+            offenders += found ? ", " : "";
+            offenders += std::meta::display_string_of(member);
+            found = true;
         }
     }
 #pragma GCC diagnostic pop
-    return offenders;
 }
 
-// The diagnostic names each entry that the walk finds, so a reader gets
-// the entry and the one line to edit.  It is empty when every entry is
-// joined.
+}  // namespace detail
+
+// The diagnostic names each offender that the walk finds, so a reader gets
+// the declaration and the one line to edit.  It is empty when each entry is
+// joined and no class template stands outside fixy::corpus::detail.
 template <class Site>
 [[nodiscard]] consteval std::string_view corpus_join_diagnostic() {
-    const std::string offenders = corpus_entries_declared_but_not_joined<Site>();
-    if (offenders.empty()) return {};
     ::foundation::reflect::anchored_t<^^Site, std::string> message =
-        "fixy/Corpus.h: these corpus entries are declared in fixy::corpus and missing from Entries, so they "
-        "refuse nothing: ";
-    message += offenders;
-    message += ".  Name each one in the Entries tuple, at the place in the order where the walk must consult it.";
+        "fixy/Corpus.h: these declarations under fixy::corpus refuse nothing: ";
+    bool found = false;
+    detail::append_corpus_offenders_<Site, ^^::fixy::corpus, false>(message, found);
+    if (!found) return {};
+    message += ".  Name each entry in the Entries tuple, at the place in the order where the walk must consult "
+               "it.  Declare an entry as a class: the walk cannot tell whether a specialization of a class template "
+               "is an entry, so it refuses a class template outside fixy::corpus::detail.";
     return std::define_static_string(message);
+}
+
+// The check of the join.  The assertion here names each offender, so a
+// caller reads the call in a constant initializer and asserts nothing of
+// its own.
+template <class Site>
+[[nodiscard]] consteval bool corpus_is_joined() {
+    constexpr std::string_view diagnostic = corpus_join_diagnostic<Site>();
+    static_assert(diagnostic.size() == 0, diagnostic);
+    return true;
 }
 
 namespace detail {

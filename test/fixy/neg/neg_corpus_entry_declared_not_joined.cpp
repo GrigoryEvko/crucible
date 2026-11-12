@@ -7,13 +7,9 @@
 
 #include <fixy/Corpus.h>
 
-#include <string_view>
-
 namespace fixy::corpus {
 
 struct forgotten_entry final : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "forgotten_entry";
-
     template <class Type, class... Atoms>
     [[nodiscard]] static consteval bool matches() noexcept {
         return true;
@@ -26,7 +22,6 @@ namespace fixture_site {
 struct here final {};
 }  // namespace fixture_site
 
-static_assert(::fixy::corpus::corpus_entries_declared_but_not_joined<fixture_site::here>().empty(),
-              ::fixy::corpus::corpus_join_diagnostic<fixture_site::here>());
+[[maybe_unused]] constexpr bool joined = ::fixy::corpus::corpus_is_joined<fixture_site::here>();
 
 int main() { return 0; }
