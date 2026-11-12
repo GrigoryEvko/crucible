@@ -2,6 +2,7 @@
 
 #include <fixy/Core.h>
 
+#include <compare>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
@@ -49,9 +50,15 @@ static_assert(std::is_same_v<::fixy::WideProduct<unsigned>, ::foundation::core::
 static_assert(::fixy::widening_mul(std::uint8_t{16}, std::uint8_t{16}).high == 1);
 static_assert(::fixy::min(2, 3) == 2 && ::fixy::max(2, 3) == 3 && ::fixy::clamp(9, ::fixy::bounds<0, 5>()) == 5);
 static_assert(std::is_same_v<::fixy::Bounds<int>, ::foundation::core::Bounds<int>>);
-static_assert(::fixy::compare(-1, 1u) < 0 && ::fixy::fits<std::uint8_t>(255) && !::fixy::fits<std::uint8_t>(256));
+static_assert(std::is_lt(::fixy::compare(-1, 1u)) && ::fixy::fits<std::uint8_t>(255)
+              && !::fixy::fits<std::uint8_t>(256));
 static_assert(::fixy::unsigned_abs(-3) == 3u && ::fixy::abs_diff(2, 7) == 5u);
 static_assert(::fixy::narrow<std::uint8_t>(300).is_none() && ::fixy::wrapping_narrow<std::uint8_t>(300) == 44);
 static_assert(::fixy::saturating_narrow<std::uint8_t>(300) == 255 && ::fixy::widen<long>(3) == 3);
+static_assert(::fixy::popcount(0xF0u) == 4 && ::fixy::countl_zero(std::uint8_t{1}) == 7 && ::fixy::bit_width(5u) == 3);
+static_assert(::fixy::countr_zero(8u) == 3 && ::fixy::countl_one(0xF0000000u) == 4 && ::fixy::countr_one(7u) == 3);
+static_assert(::fixy::has_single_bit(64u) && ::fixy::bit_floor(100u) == 64u && ::fixy::bit_ceil(100u).is_some());
+static_assert(::fixy::rotl(std::uint8_t{0x81}, 1) == 3 && ::fixy::rotr(std::uint8_t{0x81}, 1) == 0xC0);
+static_assert(::fixy::low_mask<std::uint16_t>(4) == 15 && ::fixy::byteswap(std::uint16_t{0x1234}) == 0x3412);
 
 }  // namespace fixy::detail::core_checks

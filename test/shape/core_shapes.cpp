@@ -33,6 +33,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <compare>
 #include <expected>
 #include <limits>
@@ -328,6 +329,20 @@ result_try_convert(fixy::Result<std::uint32_t, Code8> result) noexcept {
 
 [[gnu::used]] std::uint64_t scalar_widen(std::uint32_t value) noexcept { return fixy::widen<std::uint64_t>(value); }
 
+[[gnu::used]] int scalar_popcount(std::uint64_t value) noexcept { return fixy::popcount(value); }
+
+[[gnu::used]] int scalar_countl_zero(std::uint64_t value) noexcept { return fixy::countl_zero(value); }
+
+[[gnu::used]] std::uint64_t scalar_rotl(std::uint64_t value, int count) noexcept { return fixy::rotl(value, count); }
+
+[[gnu::used]] std::uint32_t scalar_byteswap(std::uint32_t value) noexcept { return fixy::byteswap(value); }
+
+[[gnu::used]] fixy::Option<std::uint32_t> scalar_bit_ceil(std::uint32_t value) noexcept {
+    return fixy::bit_ceil(value);
+}
+
+[[gnu::used]] std::uint64_t scalar_low_mask(int count) noexcept { return fixy::low_mask<std::uint64_t>(count); }
+
 // ── Linear and the permission tokens ────────────────────────────────────────
 
 struct ProbeRegion final {
@@ -593,6 +608,27 @@ struct RawBounds final {
 }
 
 [[gnu::used]] std::uint64_t scalar_widen_raw(std::uint32_t value) noexcept { return value; }
+
+[[gnu::used]] int scalar_popcount_raw(std::uint64_t value) noexcept { return std::popcount(value); }
+
+[[gnu::used]] int scalar_countl_zero_raw(std::uint64_t value) noexcept { return std::countl_zero(value); }
+
+[[gnu::used]] std::uint64_t scalar_rotl_raw(std::uint64_t value, int count) noexcept { return std::rotl(value, count); }
+
+[[gnu::used]] std::uint32_t scalar_byteswap_raw(std::uint32_t value) noexcept { return std::byteswap(value); }
+
+// std::bit_ceil is undefined past the top bit, so the raw form tests the
+// range first.
+[[gnu::used]] std::optional<std::uint32_t> scalar_bit_ceil_raw(std::uint32_t value) noexcept {
+    if (value > (std::uint32_t{1} << 31)) return std::nullopt;
+    return std::bit_ceil(value);
+}
+
+[[gnu::used]] std::uint64_t scalar_low_mask_raw(int count) noexcept {
+    if (count <= 0) return 0;
+    if (count >= 64) return ~std::uint64_t{0};
+    return (std::uint64_t{1} << count) - 1;
+}
 
 // The raw form of a token is an empty class that the ABI passes in no
 // register.

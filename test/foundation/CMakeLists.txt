@@ -2237,6 +2237,17 @@ foundation_neg_compile_test(neg_core_scalar_unsigned_abs_unsigned
   "no matching function for call to .unsigned_abs\\(unsigned int\\)."
   "the expression .is_signed_v<T> \\[with T = unsigned int\\]. evaluated to .false.")
 
+# The bit operations.  Each operation other than byteswap takes an unsigned
+# value, and the Integer gate refuses bool.
+foundation_test(test_core_scalar_bits)
+
+foundation_neg_compile_test(neg_core_scalar_popcount_signed
+  "no matching function for call to .popcount\\(int\\)."
+  "the expression .is_unsigned_v<T> \\[with T = int\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_scalar_rotl_bool
+  "no matching function for call to .rotl\\(bool, int\\)."
+  "the expression .!\\(same_as<T, bool>\\) \\[with T = bool\\]. evaluated to .false.")
+
 # ── The Region family: View, copy and fill ────────────────────────────
 #
 # A View borrows a run of objects with a fixed or a dynamic extent.  A

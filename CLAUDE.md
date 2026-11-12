@@ -1416,7 +1416,7 @@ Rule: prefetch 8-16 iterations ahead; `locality = 0` for streaming reads (don't 
 
 1. `[[likely]]` / `[[unlikely]]` on predictable branches.
 2. `__builtin_expect_with_probability(x, v, p)` for explicit probabilities.
-3. **Predication**: replace `if (x > limit) x = limit` with `x = fixy::min(x, limit)`. The compiler then gives a `cmov`. `fixy::min` is a planned part of the Scalar family (§XXII).
+3. **Predication**: replace `if (x > limit) x = limit` with `x = fixy::min(x, limit)`. The compiler then gives a `cmov`. `fixy::min` is part of the Scalar family (`include/foundation/core/Compare.h`, §XXII).
 4. **Switch on small dense enum** — compiler generates jump table; one indirect branch.
 5. A switch that handles each enumerator also has a `default` arm (`-Werror=switch-default`). The arm calls `fixy::unreachable()`, which ends the process in each build, and it does not call `std::unreachable()` (§IV).
 6. **Branchless bit tricks** where appropriate: `x & -cond` for conditional zeroing.

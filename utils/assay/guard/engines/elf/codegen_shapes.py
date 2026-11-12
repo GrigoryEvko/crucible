@@ -639,6 +639,20 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe("scalar_narrow_saturating", "saturating_narrow is the two compares and the two selects of the raw clamp"),
     Probe("scalar_widen", "widen is the zero extension of the raw form, with no check"),
+    Probe("scalar_popcount", "popcount is the count of std::popcount"),
+    Probe("scalar_countl_zero", "countl_zero of 0 is the width, as std::countl_zero gives it"),
+    Probe("scalar_rotl", "rotl is one rol, because the rol instruction takes its count modulo 64"),
+    Probe("scalar_byteswap", "byteswap is the one bswap of std::byteswap"),
+    Probe(
+        "scalar_bit_ceil",
+        "bit_ceil is the range test and the shift of the raw form, and the Option comes back in one register.  The "
+        "raw form tests value <= 1 with a branch.  The family form has no such test, because its count of 0 is the "
+        "width.  For -march=x86-64, which has no lzcnt, GCC gives that count with a test of zero and a branch, so "
+        "the two forms have a different branch.  For -march=x86-64-v3 and -march=x86-64-v4, lzcnt gives the count "
+        f"with no branch.  {HARDENED_BUILDS}.  These flags add a second test of each edge, with a branch to a trap",
+        branches=True,
+    ),
+    Probe("scalar_low_mask", "low_mask is the two range tests and the shift of the raw form"),
     Probe("linear_consume", "the ABI passes a Linear in a register, as it passes its value, and consume is a move"),
     Probe("linear_assign", "the user-provided move assignment of a Linear is the store of its value"),
     Probe("token_pass", "a token is empty and its move constructor is trivial, so a pass moves no byte"),

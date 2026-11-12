@@ -18,6 +18,7 @@
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Atomic.h>
+#include <foundation/core/Bits.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Compare.h>
 #include <foundation/core/Convert.h>
@@ -139,5 +140,19 @@ using ::foundation::core::narrow;
 using ::foundation::core::saturating_narrow;
 using ::foundation::core::widen;
 using ::foundation::core::wrapping_narrow;
+
+using ::foundation::core::bit_ceil;
+using ::foundation::core::bit_floor;
+using ::foundation::core::bit_width;
+using ::foundation::core::byteswap;
+using ::foundation::core::countl_one;
+using ::foundation::core::countl_zero;
+using ::foundation::core::countr_one;
+using ::foundation::core::countr_zero;
+using ::foundation::core::has_single_bit;
+using ::foundation::core::low_mask;
+using ::foundation::core::popcount;
+using ::foundation::core::rotl;
+using ::foundation::core::rotr;
 
 }  // namespace fixy
