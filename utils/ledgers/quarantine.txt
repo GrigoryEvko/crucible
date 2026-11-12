@@ -296,8 +296,8 @@ include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<system_error> | 8 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 56 | - | -
-include/fixy/session/ | base-std-entity | 490 | - | -
-include/fixy/session/ | base-std-object | 219 | - | -
+include/fixy/session/ | base-std-entity | 480 | - | -
+include/fixy/session/ | base-std-object | 212 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
 include/fixy/session/ | replace-pending:<atomic> | 2 | - | -
