@@ -7,6 +7,8 @@
 
 #include <fixy/Federation.h>
 
+#include <fixy/Core.h>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -173,6 +175,11 @@ template <typename LocalCipher>
     return std::move(admitted);
 }
 
+// The type of the value of a Result, for a check in an unevaluated operand.
+// The function has no definition, so no call can run.
+template <typename Value, typename Error>
+Value value_type_of(fixy::Result<Value, Error> const& result) noexcept;
+
 // True when the admittance refused the handshake for the reason.  The read
 // takes nothing out of the Result.
 template <typename Admitted>
@@ -191,7 +198,7 @@ int check_admits_once() {
                                                                         fed::PeerKeyFingerprint{42}, fed::Nonce{1});
     auto admitted = admit(admission, local_cipher, handshake);
     if (!admitted.is_ok()) return 10;
-    static_assert(std::is_same_v<typename std::remove_cvref_t<decltype(admitted)>::value_type::tag_type,
+    static_assert(std::is_same_v<typename decltype(value_type_of(admitted))::tag_type,
                                  fp::tag::FederatedPeer<FederationTestOrg>>);
     auto replayed = admit(admission, local_cipher, handshake);
     if (!refused_with(replayed, fed::AdmittanceError::Replayed)) return 11;

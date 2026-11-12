@@ -58,6 +58,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/core/Report.h>
+#include <foundation/reflect/Instance.h>
 
 #include <concepts>
 #include <cstddef>
@@ -76,15 +77,18 @@ inline constexpr NoValue none{};
 
 namespace detail {
 
-// The kind of the mark that Err declares.  No other class of the family
-// names it.
+// The annotation of the mark Err.  No other class of the family carries it.
 struct ErrorMarkKind final {};
 
 // An Err<E>.  An Err marks a return, and it is not a value, so the payload
-// gate and the error gate refuse it.  The concept reads only a member of T,
-// so a unit cannot change its answer for a different type.
+// gate and the error gate refuse it.  The concept reads only the annotations
+// of the class T, so a unit cannot change its answer for a different type.
 template <class T>
-concept ErrMark = requires { typename T::mark_kind; } && std::same_as<typename T::mark_kind, ErrorMarkKind>;
+concept ErrMark = std::is_class_v<T> && ::foundation::linear::carries_annotation(^^T, ^^ErrorMarkKind);
+
+// The annotation of the primary template of niche.  A specialization does
+// not carry it, so its absence tells that a type declares a niche.
+struct UndeclaredNiche final {};
 
 }  // namespace detail
 
@@ -106,13 +110,13 @@ concept ErrMark = requires { typename T::mark_kind; } && std::same_as<typename T
 // destructor, so the ABI passes the Option in registers.  Its assignment can
 // be user-provided, as the assignment of a type that holds a byte seal is.
 template <class T>
-struct niche {
-    // A specialization does not repeat this member, so its absence tells
-    // that a type declares a niche.
-    using undeclared_niche = void;
-};
+struct[[= detail::UndeclaredNiche{}]] niche {};
 
 namespace detail {
+
+// True when niche<T> is the primary template, so T declares no niche.
+template <class T>
+concept UndeclaredNicheOf = ::foundation::linear::carries_annotation(^^niche<T>, ^^UndeclaredNiche);
 
 // A class that names a member of the member protocol.
 template <class T>
@@ -152,7 +156,7 @@ struct niche<T> {
 // it.  This gate is the one gate that reads niche<T>.
 template <class T>
 concept WellFormedNiche =
-    requires { typename niche<T>::undeclared_niche; }
+    detail::UndeclaredNicheOf<T>
     || (std::is_trivially_copy_constructible_v<T> && std::is_trivially_move_constructible_v<T>
         && std::is_trivially_destructible_v<T> && std::is_nothrow_copy_assignable_v<T> && requires(T const& value) {
                { niche<T>::empty() } noexcept -> std::same_as<T>;
@@ -213,24 +217,28 @@ concept ErrorValue = !std::is_const_v<E> && !std::is_volatile_v<E> && !detail::E
 template <class F, class E>
 concept ErrorConvertsTo = ErrorValue<F> && ErrorValue<E> && !std::same_as<F, E> && std::is_nothrow_convertible_v<F, E>;
 
-// The mark of an error, so that an error and a value of the same type
-// never meet in one conversion.
-template <ErrorValue E>
-struct Err final {
-    using mark_kind = detail::ErrorMarkKind;
-
-    E error;
-};
-
-[[nodiscard]] constexpr auto err(ErrorValue auto error) noexcept {
-    return Err<decltype(error)>{static_cast<decltype(error)&&>(error)};
-}
-
 template <ChoicePayload T>
 class Option;
 
 template <ChoicePayload T, ErrorValue E>
 class Result;
+
+// The mark of an error, so that an error and a value of the same type
+// never meet in one conversion.  Only a Result reads the error of the mark.
+template <ErrorValue E>
+class[[= detail::ErrorMarkKind{}]] Err final {
+    E error_;
+
+    template <ChoicePayload T, ErrorValue F>
+    friend class Result;
+
+public:
+    constexpr explicit Err(E error) noexcept : error_{static_cast<E&&>(error)} {}
+};
+
+[[nodiscard]] constexpr auto err(ErrorValue auto error) noexcept {
+    return Err<decltype(error)>{static_cast<decltype(error)&&>(error)};
+}
 
 namespace detail {
 
@@ -256,7 +264,7 @@ enum class OptionForm : unsigned char {
 // not complete while its form is chosen.
 template <class T>
 consteval OptionForm option_form_for() noexcept {
-    if constexpr (!requires { typename niche<T>::undeclared_niche; }) {
+    if constexpr (!UndeclaredNicheOf<T>) {
         return OptionForm::niche;
     } else if constexpr (PlainPayload<T>) {
         return OptionForm::plain;
@@ -406,8 +414,6 @@ class [[nodiscard]] Option {
         : slot_{tag, static_cast<U&&>(value)} {}
 
 public:
-    using value_type = T;
-
     constexpr Option() noexcept = default;
     constexpr Option(NoValue) noexcept {}
 
@@ -889,11 +895,8 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] Result {
     }
 
 public:
-    using value_type = T;
-    using error_type = E;
-
     constexpr Result(T value) noexcept : slot_{detail::AlternativeAt<1>{}, static_cast<T&&>(value)} {}
-    constexpr Result(Err<E> error) noexcept : slot_{detail::AlternativeAt<0>{}, static_cast<E&&>(error.error)} {}
+    constexpr Result(Err<E> error) noexcept : slot_{detail::AlternativeAt<0>{}, static_cast<E&&>(error.error_)} {}
 
     // The error of a callee converts to the error of the caller, so
     // `return err(net_error);` and a propagated error need no match.  The
@@ -901,7 +904,7 @@ public:
     template <ErrorValue F>
         requires ErrorConvertsTo<F, E>
     constexpr Result(Err<F> error) noexcept
-        : slot_{detail::AlternativeAt<0>{}, converted_error_<F>(static_cast<F&&>(error.error))} {}
+        : slot_{detail::AlternativeAt<0>{}, converted_error_<F>(static_cast<F&&>(error.error_))} {}
 
     template <class F>
     Result(Err<F>) = delete(
@@ -999,17 +1002,14 @@ public:
 
 namespace detail {
 
-// An Option of a payload.  The concept reads only T and the template
-// Option, so a unit cannot change its answer.
+// An Option of a payload.  The concept reads only the reflection of T and
+// the template Option, so a unit cannot change its answer.
 template <class T>
-concept IsOption = requires { typename T::value_type; } && std::same_as<T, Option<typename T::value_type>>;
+concept IsOption = ::foundation::reflect::IsInstanceOf<T, ^^Option>;
 
 // A Result of a value and an error.
 template <class T>
-concept IsResult = requires {
-    typename T::value_type;
-    typename T::error_type;
-} && std::same_as<T, Result<typename T::value_type, typename T::error_type>>;
+concept IsResult = ::foundation::reflect::IsInstanceOf<T, ^^Result>;
 
 // The operand of CRUCIBLE_TRY: an rvalue of an Option or a Result that is
 // not const, so the macro can consume it.
@@ -1051,18 +1051,18 @@ template <class Hold>
         static_cast<void>(hold);
         return none;
     } else {
-        using Error = typename Choice::error_type;
-        return Err<Error>{static_cast<Choice&&>(hold).err().expect("CRUCIBLE_TRY tested the error")};
+        return err(static_cast<Choice&&>(hold).err().expect("CRUCIBLE_TRY tested the error"));
     }
 }
 
-// The value of an operand that holds one, and Unit for a Result of Unit.
+// The value of an operand that holds one, and Unit for a Result of Unit,
+// whose expect() gives void.
 template <class Hold>
 [[nodiscard]] constexpr auto try_take_(Hold&& hold) noexcept {
     using Choice = std::remove_cvref_t<Hold>;
     if constexpr (!TryOperand<Hold&&>) {
         return TryRefused{};
-    } else if constexpr (IsResult<Choice> && std::same_as<typename Choice::value_type, Unit>) {
+    } else if constexpr (std::is_void_v<decltype(static_cast<Choice&&>(hold).expect("a Unit"))>) {
         static_cast<Choice&&>(hold).expect("CRUCIBLE_TRY tested the value");
         return Unit{};
     } else {

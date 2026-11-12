@@ -896,6 +896,13 @@ inline constexpr StatedZero kZeros[] = {
      "an owned buffer of characters: it holds storage and makes no claim about what the characters hold"},
     {^^::foundation::core::Truncated,
      "the error of a format() whose text needs more than its buffer: it holds nothing"},
+    {^^::foundation::core::SurfaceVerdict,
+     "the answer of the protocol check of a family type: a text of a constant evaluation, never a value in a "
+     "kernel signature"},
+    {^^::foundation::core::DereferenceProtocol,
+     "a grant of the protocol check: an argument of a template, and never a value in a kernel signature"},
+    {^^::foundation::core::CursorProtocol,
+     "a grant of the protocol check: an argument of a template, and never a value in a kernel signature"},
 
     {^^fa::is_graded_specialization, kMetafunction},
     {^^fa::graded_modality, kMetafunction},

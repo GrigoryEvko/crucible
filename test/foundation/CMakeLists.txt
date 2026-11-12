@@ -2018,6 +2018,24 @@ foundation_neg_compile_test(neg_core_try_unbraced_if
   ".crucible_try_hold_[0-9]+. was not declared in this scope"
   "template argument 1 is invalid"
   "unused variable .crucible_try_hold_[0-9]+.")
+foundation_neg_compile_test(neg_core_surface_open_name
+  "static assertion failed: the public member constexpr bool Probe::has_value\\(\\) const of Probe is no shared verb, no language protocol and no name of the family list"
+  "in expansion of macro .CRUCIBLE_CLOSED_SURFACE.")
+foundation_neg_compile_test(neg_core_surface_open_base
+  "static assertion failed: the public member Base::raw of Probe is no shared verb, no language protocol and no name of the family list"
+  "in expansion of macro .CRUCIBLE_CLOSED_SURFACE.")
+foundation_neg_compile_test(neg_core_surface_member_type
+  "static assertion failed: the public member Probe<int>::value_type \\{aka int\\} of Probe<int> is no shared verb, no language protocol and no name of the family list"
+  "in expansion of macro .CRUCIBLE_CLOSED_SURFACE.")
+foundation_neg_compile_test(neg_core_surface_ungranted_dereference
+  "static assertion failed: the public member constexpr int Probe::operator\\*\\(\\) const of Probe is no shared verb, no language protocol and no name of the family list"
+  "in expansion of macro .CRUCIBLE_CLOSED_SURFACE.")
+foundation_neg_compile_test(neg_core_surface_unknown_grant
+  "no matching function for call to .closed_surface<Probe, CallProtocol>\\(const foundation::core::TextView&\\)."
+  "the expression .\\(\\.\\.\\. && LanguageProtocolGrant<Grants>\\) \\[with Grants = \\{CallProtocol\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_surface_not_class
+  "no matching function for call to .closed_surface<int>\\(foundation::core::TextView\\)."
+  "the expression .is_class_v<T> \\[with T = int\\]. evaluated to .false.")
 
 # ── The Ref family: Box ───────────────────────────────────────────────
 #

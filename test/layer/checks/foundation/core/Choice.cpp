@@ -4,6 +4,7 @@
 
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
+#include <foundation/core/Verbs.h>
 
 #include <cstdint>
 #include <type_traits>
@@ -471,11 +472,10 @@ static_assert(!std::is_copy_constructible_v<Result<HoldsToken, Code>>);
 // A linear payload has no value_or() and no mutable cursor.  A loop over a
 // mutable Option of a linear payload takes the const cursor, so a move
 // through it is a copy, which the payload refuses.
-template <class O>
-concept GivesValueOr = requires(O option, typename O::value_type fallback) {
-    static_cast<O&&>(option).value_or(static_cast<typename O::value_type&&>(fallback));
-};
-static_assert(!GivesValueOr<Option<Token>> && GivesValueOr<Option<Owner>>);
+template <class O, class T>
+concept GivesValueOr =
+    requires(O option, T fallback) { static_cast<O&&>(option).value_or(static_cast<T&&>(fallback)); };
+static_assert(!GivesValueOr<Option<Token>, Token> && GivesValueOr<Option<Owner>, Owner>);
 static_assert(std::is_same_v<decltype(std::declval<Option<Token>&>().begin()), OptionCursor<Token const>>);
 static_assert(std::is_same_v<decltype(std::declval<Option<Owner>&>().begin()), OptionCursor<Owner>>);
 
@@ -505,6 +505,36 @@ static_assert(refused_with(6).match([](int&&) noexcept { return 0; },
                          [](Token const& token) noexcept { return token.handle; });
 }
 static_assert(read_refusal() == 7);
+
+// ── The closed surface ────────────────────────────────────────────────
+
+// The family list of plan section 11.2, and the two members of the niche
+// protocol that the section designs.  CRUCIBLE_TRY is a macro, and no type
+// has a member of its name.
+inline constexpr TextView choice_names{
+    "none NoValue Unit Err err some is_some is_none value_or ok_or is_ok is_err ok is which niche empty is_empty"};
+
+// Each form of an Option, and each Result, gives only the shared verbs, the
+// language protocols and the names of the list.
+CRUCIBLE_CLOSED_SURFACE(choice_names, Option<int>);
+CRUCIBLE_CLOSED_SURFACE(choice_names, Option<SlotNumber>);
+CRUCIBLE_CLOSED_SURFACE(choice_names, Option<Owner>);
+CRUCIBLE_CLOSED_SURFACE(choice_names, Option<Token>);
+CRUCIBLE_CLOSED_SURFACE(choice_names, Result<int, Code>);
+CRUCIBLE_CLOSED_SURFACE(choice_names, Result<Unit, Code>);
+CRUCIBLE_CLOSED_SURFACE(choice_names, Result<Owner, Token>);
+CRUCIBLE_CLOSED_SURFACE(choice_names, Err<Code>);
+CRUCIBLE_CLOSED_SURFACE(choice_names, Err<Token>);
+CRUCIBLE_CLOSED_SURFACE(choice_names, Unit);
+CRUCIBLE_CLOSED_SURFACE(choice_names, NoValue);
+CRUCIBLE_CLOSED_SURFACE(choice_names, niche<int>);
+CRUCIBLE_CLOSED_SURFACE(choice_names, niche<MemberSlot>);
+
+// The cursor of a loop over an Option takes the cursor protocol, and no
+// other type of the family takes a dereference.
+CRUCIBLE_CLOSED_SURFACE(choice_names, OptionCursor<int>, CursorProtocol);
+CRUCIBLE_CLOSED_SURFACE(choice_names, OptionCursor<int const>, CursorProtocol);
+static_assert(!closed_surface<OptionCursor<int>>(choice_names).is_closed());
 
 }  // namespace detail::choice_checks
 
