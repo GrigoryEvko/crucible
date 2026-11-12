@@ -1764,6 +1764,11 @@ foundation_neg_compile_test(neg_stable_identity_function_reader_specialized
 foundation_neg_compile_test(neg_stable_function_name_id_specialized
   "expected initializer before .<. token"
   "neg_stable_function_name_id_specialized\\.cpp:18:[0-9]+: error:")
+# Only function_key makes a key, so a holder that pairs one function with
+# a pointer to a different function is refused.
+foundation_neg_compile_test(neg_stable_function_name_id_of_a_forged_holder
+  "uncaught exception of type .std::meta::exception.*a function id takes the reflection of a function key"
+  "neg_stable_function_name_id_of_a_forged_holder\\.cpp:21:[0-9]+: error:")
 
 # ── The owned buffers ─────────────────────────────────────────────────
 #

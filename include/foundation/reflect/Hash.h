@@ -233,11 +233,19 @@ struct identity_verdict {
     std::meta::info culprit{};
 };
 
-// The holder that the key of a function names.  A type that is no key
-// stops the build.
+// The pointer that a holder holds: its second template argument.
+[[nodiscard]] consteval std::meta::info pointer_of_holder(std::meta::info holder) {
+    return std::meta::template_arguments_of(holder)[1];
+}
+
+// The holder that the key of a function names.  Only function_key makes a
+// key.  A unit can write a holder whose function is not the function that
+// its pointer names, and that holder stops the build too, because the ids
+// read the identity of the one and the name of the other.
 [[nodiscard]] consteval std::meta::info holder_of_key(std::meta::info key) {
     key = std::meta::dealias(key);
-    if (!std::meta::has_template_arguments(key) || std::meta::template_of(key) != ^^function_holder) {
+    const bool is_holder = std::meta::has_template_arguments(key) && std::meta::template_of(key) == ^^function_holder;
+    if (!is_holder || key != std::meta::dealias(std::meta::substitute(^^function_key, {pointer_of_holder(key)}))) {
         throw std::meta::exception(u8"foundation::reflect: a function id takes the reflection of a function key, "
                                    u8"written ^^function_key<&f>.",
                                    key);
@@ -251,10 +259,9 @@ struct identity_verdict {
     return std::meta::extract<std::meta::info>(std::meta::template_arguments_of(holder_of_key(key))[0]);
 }
 
-// The pointer that the key of a function holds: the second template
-// argument of its holder.
+// The pointer that the key of a function holds.
 [[nodiscard]] consteval std::meta::info pointer_of_key(std::meta::info key) {
-    return std::meta::template_arguments_of(holder_of_key(key))[1];
+    return pointer_of_holder(holder_of_key(key));
 }
 
 // The function that a template argument of pointer-to-function type
