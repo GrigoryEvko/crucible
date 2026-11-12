@@ -276,11 +276,10 @@ include/fixy/handle/ | replace-pending:<cstdio> | 1 | - | -
 include/fixy/handle/ | replace-pending:<cstdlib> | 1 | - | -
 include/fixy/os/ | base-c-library-call | 15 | - | -
 include/fixy/os/ | base-c-library-object | 11 | - | -
-include/fixy/os/ | base-std-entity | 276 | - | -
-include/fixy/os/ | base-std-object | 131 | - | -
+include/fixy/os/ | base-std-entity | 271 | - | -
+include/fixy/os/ | base-std-object | 127 | - | -
 include/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
-include/fixy/os/ | replace-pending:<array> | 2 | - | -
-include/fixy/os/ | replace-pending:<atomic> | 1 | - | -
+include/fixy/os/ | replace-pending:<array> | 1 | - | -
 include/fixy/os/ | replace-pending:<cerrno> | 3 | - | -
 include/fixy/os/ | replace-pending:<climits> | 1 | - | -
 include/fixy/os/ | replace-pending:<cstdio> | 1 | - | -
@@ -288,7 +287,6 @@ include/fixy/os/ | replace-pending:<ctime> | 1 | - | -
 include/fixy/os/ | replace-pending:<expected> | 12 | - | -
 include/fixy/os/ | replace-pending:<filesystem> | 1 | - | -
 include/fixy/os/ | replace-pending:<limits> | 1 | - | -
-include/fixy/os/ | replace-pending:<mutex> | 1 | - | -
 include/fixy/os/ | replace-pending:<optional> | 1 | - | -
 include/fixy/os/ | replace-pending:<span> | 2 | - | -
 include/fixy/os/ | replace-pending:<string> | 2 | - | -
@@ -367,7 +365,7 @@ include/foundation/permissions/ | replace-pending:<optional> | 1 | - | -
 include/foundation/permissions/ | replace-pending:<string_view> | 3 | - | -
 include/foundation/permissions/ | replace-pending:<tuple> | 2 | - | -
 include/foundation/permissions/ | replace-pending:<vector> | 3 | - | -
-include/foundation/reflect/ | base-std-entity | 194 | - | -
+include/foundation/reflect/ | base-std-entity | 193 | - | -
 include/foundation/reflect/ | base-std-object | 65 | - | -
 include/foundation/reflect/ | replace-pending:<array> | 3 | - | -
 include/foundation/reflect/ | replace-pending:<bit> | 1 | - | -
@@ -477,7 +475,7 @@ test/fixy/ | region | 1 | PROBE: a signal reaches a thread that waits in the fut
 test/fixy/ | replace-pending:<limits> | 30 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 20 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 3373 | - | -
+test/fixy/ | std-entity | 3371 | - | -
 test/fixy/ | std-object | 1269 | - | -
 test/fixy/neg/ | c-array-object | 53 | - | -
 test/fixy/neg/ | c-library-call | 253 | - | -
@@ -504,7 +502,7 @@ test/foundation/ | region | 1 | PROBE: decode walks a C array of enumerations, t
 test/foundation/ | replace-pending:<limits> | 57 | - | -
 test/foundation/ | replace-pending:std::bit_cast | 9 | - | -
 test/foundation/ | replace-pending:std::source_location | 8 | - | -
-test/foundation/ | std-entity | 609 | - | -
+test/foundation/ | std-entity | 608 | - | -
 test/foundation/ | std-object | 201 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -

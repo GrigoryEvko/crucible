@@ -11,6 +11,8 @@
 //                                         checks and main
 //   ..._threads.cpp                       the producer thread gate
 //   ..._replay.cpp                        replay, divergence and recovery
+//   ..._alignment.cpp                     the alignment to the head of a
+//                                         published region
 //   ..._pool.cpp                          the pool behind the replay
 //   ..._pure.cpp                          dispatch_op_pure against
 //                                         dispatch_op
@@ -145,6 +147,8 @@ int main() {
     test_dispatch_basic();
     test_dispatch_divergence();
     test_dispatch_recovery();
+    test_alignment_continues_inside_the_matched_ops();
+    test_alignment_ends_after_its_bound();
     test_dispatch_data_flow();
     test_dispatch_pool_bounds();
     test_dispatch_pure_matches_dispatch_op();

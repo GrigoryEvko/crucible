@@ -38,6 +38,7 @@
 #include <crucible/warden/Policy.h>
 #include <crucible/warden/WatchdogVerdict.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Checked.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/FixedArray.h>
@@ -147,6 +148,16 @@ public:
     // compile time for a constant and at run time otherwise.
     [[nodiscard]] static constexpr AlignmentPos alignment_pos_at(uint8_t pos) noexcept {
         return ::fixy::mint_refined<::fixy::bounded_above<ALIGNMENT_POS_MAX>>(pos);
+    }
+
+    // The most ops that an alignment against a region of region_ops ops reads
+    // before it ends with no match.  A stream that holds the region repeats
+    // it, so the head of the region starts within one period after any op,
+    // and its K ops complete the match.  An alignment that reads one period
+    // and K ops with no match is in a stream that does not hold the region.
+    // try_align_ then ends the wait, and the ops go to the ring again.
+    [[nodiscard]] static constexpr uint32_t alignment_bound(uint32_t region_ops) noexcept {
+        return ::fixy::saturating_add(region_ops, ALIGNMENT_K);
     }
 
     // The constructors, the destructor and flush have no cold attribute.  A
@@ -686,6 +697,7 @@ private:
         // still open.
         pending_activation_ = nullptr;
         alignment_pos_ = alignment_pos_at(0);
+        alignment_ops_ = 0;
 
         region_cache_.insert(ctx_.active_region());
 
@@ -739,7 +751,8 @@ private:
 
         if (pending_activation_) {
             // Nothing is recorded during alignment, because it would create
-            // false iteration boundaries in the background detector.
+            // false iteration boundaries in the background detector.  The
+            // bound of try_align_ ends an alignment that finds no match.
             try_align_(fg, entry.schema_hash, entry.shape_hash);
         } else {
             (void)record_op(ve, metas, n_metas, scope_hash, callsite_hash);
@@ -759,6 +772,7 @@ private:
 
         pending_activation_ = region;
         alignment_pos_ = alignment_pos_at(0);
+        alignment_ops_ = 0;
     }
 
     // A sliding-window match against the region's first K ops.
@@ -780,6 +794,7 @@ private:
         // non-constant when the compiler folds this body.
         const auto* region = pending_activation_;
         CRUCIBLE_DEBUG_ASSERT(region != nullptr);
+        ++alignment_ops_;
 
         const uint8_t pos = alignment_pos_.value();
         if (schema == region->ops[pos].schema_hash && shape == region->ops[pos].shape_hash) {
@@ -788,11 +803,7 @@ private:
             // function is not called again past that point.
             alignment_pos_ = alignment_pos_at(static_cast<uint8_t>(pos + uint8_t{1}));
         } else {
-            // A mismatch resets, but this op may itself be a fresh start.
-            alignment_pos_ = alignment_pos_at(0);
-            if (region->num_ops > 0 && schema == region->ops[0].schema_hash && shape == region->ops[0].shape_hash) {
-                alignment_pos_ = alignment_pos_at(1);
-            }
+            alignment_pos_ = alignment_pos_at(restart_after_mismatch_(*region, pos, schema, shape));
         }
 
         // A region shorter than K is matched in full instead.
@@ -824,7 +835,41 @@ private:
 
             mode_.publish_compiled();
             pending_activation_ = nullptr;
+            return;
         }
+
+        // The stream does not hold the region (alignment_bound).  The region
+        // goes to the cache, as a stale pending region does, and the next op
+        // goes to the ring, so the background can publish a region of the
+        // stream that the foreground sees.
+        if (alignment_ops_ >= alignment_bound(region->num_ops)) {
+            region_cache_.insert(region);
+            pending_activation_ = nullptr;
+            alignment_pos_ = alignment_pos_at(0);
+        }
+    }
+
+    // The match length after the op (schema, shape) did not match region op
+    // pos.  The last `border` ops seen are region ops pos - border to pos - 1.
+    // They and this op continue a match when they equal the first border ops
+    // and this op equals op border.  The longest such border wins, as in the
+    // Knuth-Morris-Pratt search.  A restart at op 0 only misses the start A A A
+    // A B in the stream A A A A A B, and then the alignment never completes:
+    // nothing is recorded during alignment, so no other region replaces it.
+    // O(K^2) for K = ALIGNMENT_K, on a cold path.
+    [[nodiscard, gnu::cold]] static uint8_t restart_after_mismatch_(const RegionNode& region, uint8_t pos,
+                                                                    SchemaHash schema, ShapeHash shape) noexcept {
+        for (uint32_t border = pos; border-- > 0;) {
+            bool is_border = true;
+            for (uint32_t i = 0; i < border && is_border; ++i) {
+                const auto& early = region.ops[i];
+                const auto& late = region.ops[uint32_t{pos} - border + i];
+                is_border = early.schema_hash == late.schema_hash && early.shape_hash == late.shape_hash;
+            }
+            if (is_border && schema == region.ops[border].schema_hash && shape == region.ops[border].shape_hash)
+                return static_cast<uint8_t>(border + 1);
+        }
+        return 0;
     }
 
     // Walks the region's ops to recover each external slot's data pointer
@@ -926,9 +971,11 @@ private:
     // than a publish-once cell because divergence recovery publishes
     // several regions over one process lifetime.
     ::fixy::handle::PublishSlot<RegionNode> pending_region_;
-    // The four below are foreground-only.
+    // The five below are foreground-only.
     RegionNode* pending_activation_{nullptr};
     AlignmentPos alignment_pos_ = alignment_pos_at(0);
+    // The ops that the alignment of pending_activation_ read (alignment_bound).
+    uint32_t alignment_ops_ = 0;
     CrucibleContext ctx_;
     RegionCache region_cache_;
 

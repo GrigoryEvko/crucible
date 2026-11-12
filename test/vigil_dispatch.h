@@ -54,6 +54,11 @@ void test_dispatch_basic();
 void test_dispatch_divergence();
 void test_dispatch_recovery();
 
+// The alignment to the head of a published region
+// (test_vigil_dispatch_alignment.cpp).
+void test_alignment_continues_inside_the_matched_ops();
+void test_alignment_ends_after_its_bound();
+
 // The pool behind the compiled iterations (test_vigil_dispatch_pool.cpp).
 void test_dispatch_data_flow();
 void test_dispatch_pool_bounds();

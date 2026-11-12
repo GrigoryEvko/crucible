@@ -329,8 +329,8 @@ crucible_contract_ignore_target(test_crucible_context_migration_ignore)
 # Each group of tests is a source file of its own, so that no translation
 # unit compiles all of them.
 crucible_test(test_vigil_dispatch test_vigil_dispatch.cpp test_vigil_dispatch_threads.cpp
-  test_vigil_dispatch_replay.cpp test_vigil_dispatch_pool.cpp test_vigil_dispatch_pure.cpp
-  test_vigil_dispatch_pure_recovery.cpp)
+  test_vigil_dispatch_replay.cpp test_vigil_dispatch_alignment.cpp test_vigil_dispatch_pool.cpp
+  test_vigil_dispatch_pure.cpp test_vigil_dispatch_pure_recovery.cpp)
 # The run of each model test is in several source files: the op packets,
 # the compiled replay, and the run up to the memory plan with main.
 crucible_test(test_mlp_trace test_mlp_trace.cpp test_mlp_trace_ops.cpp test_mlp_trace_replay.cpp)
