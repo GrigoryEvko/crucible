@@ -54,9 +54,11 @@ THE FIVE KINDS
                     the header of the family, and each atom must be in the
                     file of its seal.  A directive that names a family header
                     forges that seal check, and no property of a type can
-                    refuse it.  The kind reads each preprocessor directive of
-                    the parse tree whose name after `#` is `line` or starts
-                    with a digit.  A comment and a string literal are nodes of
+                    refuse it.  The kind reads the preprocessing tokens of
+                    each preprocessor directive of the parse tree.  It refuses
+                    a directive whose name after `#` or `%:` is `line` or a
+                    number, also with a line splice in the name or a comment
+                    before it.  A comment and a string literal are nodes of
                     their own, so a text `#line` in them gives no finding.  A
                     macro body cannot hold a directive.  The kind reads each
                     C++ file of the tree, also under test/, bench/ and fuzz/.
@@ -121,8 +123,8 @@ THE ENTITY
     `HOLDER: NAME` for file-stream and process-start, and
     `HOLDER: reinterpret_cast<TYPE>` for reinterpret-cast, with the spelling
     of the source (`tsast.spelled()`).  It is `HOLDER: DIRECTIVE` for
-    line-directive, with the directive and its argument as the source spells
-    them.  An include of `<fstream>` has the
+    line-directive, with the preprocessing tokens of the directive.  An
+    include of `<fstream>` has the
     name `#include <fstream>`.  When the tree shows no target type of a cast,
     as in a body that does not parse, the entity has `reinterpret_cast`
     alone.  HOLDER is the signature of the function that holds the site
@@ -165,8 +167,9 @@ CAST_KEYWORD = "reinterpret_cast"
 # The name of a #line directive after `#`.  A GNU line marker has a number in place of the name.
 LINE_NAME = "line"
 DIGITS = frozenset("0123456789")
-# The line splice of the preprocessor, which a directive name can hold.
-LINE_SPLICE = "\\\n"
+# The first token of a directive, and its digraph, and the kind of a preprocessing number (tsast.Token).
+DIRECTIVE_MARKS = ("#", "%:")
+NUMBER_KIND = "number"
 EXCLUDED_DIRECTORIES = frozenset({"test", "examples", "third_party", "external", "vendor"})
 # The directories that each kind reads, in the scope of the registry.
 RESERVE_ROOTS = ("include/", "src/", "bench/")
@@ -891,26 +894,32 @@ def cast_references(root: tsast.Node) -> Iterator[tuple[tsast.Node, str]]:
         yield node, cast_of(node)
 
 
-def is_line_directive(directive: str) -> bool:
-    """Return True when the text of a directive is `#line` or a GNU line marker, with or without a space or a splice.
+def line_directive(text: str) -> str | None:
+    """Return the spelling of a directive when its text is `#line` or a GNU line marker, else None.
 
-    The name of the directive is the text after `#` with no space, no tab and no line splice.
+    The text is the text of a preprocessor directive of the parse tree.  The preprocessing tokens of the text come
+    after the line splices, and a comment gives no token (`tsast.pp_tokens`).  The first token is `#` or its digraph
+    `%:`, and the second is the name `line` or a number.  A splice in the name, a comment after `#` and the digraph
+    thus give no different answer.  Complexity: linear in the length of the text.
     """
-    name = "".join(directive.removeprefix("#").replace(LINE_SPLICE, "").split())
-    return name == LINE_NAME or (bool(name) and name[0] in DIGITS)
+    tokens = tsast.pp_tokens(text)
+    if len(tokens) < 2 or tokens[0].text not in DIRECTIVE_MARKS:
+        return None
+    name = tokens[1]
+    if name.text != LINE_NAME and not (name.kind == NUMBER_KIND and name.text[0] in DIGITS):
+        return None
+    return " ".join([tokens[0].text + name.text, *(token.text for token in tokens[2:])])
 
 
 def line_directives(root: tsast.Node) -> Iterator[tuple[tsast.Node, str]]:
     """Yield each line directive of a root and its spelling, in the sequence of the source (line-directive).
 
-    Complexity: linear in the nodes of the root.
+    Complexity: linear in the nodes of the root and in the text of each directive.
     """
     for node in root.descendants("preproc_call"):
-        directive = node.child_by_field("directive")
-        if directive is None or not is_line_directive(directive.text):
-            continue
-        argument = node.child_by_field("argument")
-        yield node, directive.text if argument is None else f"{directive.text} {argument.text.strip()}"
+        spelling = line_directive(node.text)
+        if spelling is not None:
+            yield node, spelling
 
 
 def holds(roots: tuple[str, ...], path: str, others: tuple[str, ...] = ()) -> bool:

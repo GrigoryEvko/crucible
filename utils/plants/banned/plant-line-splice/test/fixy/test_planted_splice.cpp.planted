@@ -1,0 +1,12 @@
+// A test that forges the file of an atom family with a line splice in the name of the directive.
+#include <fixy/Atom.h>
+
+#li\
+ne 40 "include/fixy/atoms/Os.h"
+namespace fixy::atom::io {
+
+struct planted_atom final {};
+
+}  // namespace fixy::atom::io
+
+int main() { return 0; }

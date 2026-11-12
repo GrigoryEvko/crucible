@@ -1,0 +1,11 @@
+// A bench that forges the file of an atom family with a comment between # and the line marker.
+#include <fixy/Atom.h>
+
+# /* the marker */ 12 "include/fixy/atoms/Os.h" 1
+namespace fixy::atom::io {
+
+struct planted_atom final {};
+
+}  // namespace fixy::atom::io
+
+int main() { return 0; }

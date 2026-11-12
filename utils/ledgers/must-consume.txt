@@ -25,13 +25,12 @@ include/foundation/core/ | unconsumed | 1 | - | -
 src/ | unconsumed | 5 | - | -
 test/ | unconsumed | 70 | - | -
 test/fixy/ | assign-over-live | 4 | - | -
-test/fixy/ | discarded-temporary | 8 | - | -
+test/fixy/ | discarded-temporary | 5 | - | -
 test/fixy/ | double-consume | 5 | - | -
-test/fixy/ | unconsumed | 235 | - | -
+test/fixy/ | unconsumed | 225 | - | -
 test/foundation/ | discarded-temporary | 2 | - | -
-test/foundation/ | double-consume | 1 | - | -
 test/foundation/ | unconsumed | 24 | - | -
 test/layer/checks/fixy/ | unconsumed | 1 | - | -
 test/layer/checks/fixy/channels/ | unconsumed | 9 | - | -
-test/layer/checks/foundation/core/ | unconsumed | 2 | - | -
+test/layer/checks/foundation/core/ | unconsumed | 1 | - | -
 test/layer/checks/foundation/permissions/ | unconsumed | 5 | - | -
