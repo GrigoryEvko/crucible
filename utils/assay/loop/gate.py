@@ -152,9 +152,11 @@ THE RUN OF A CONFIGURATION
          configuration of the full suite.  That command runs only the tests
          with an input that changed, and each test of a rule that reads a
          build.  The file of --only is in the directory of the logs.
-         Then each test that is red runs one more time, alone, one test at
-         a time.  A test that is red alone too rejects the commit.  A test
-         that is green alone is a flaky test, and no retry hides it: the
+         Then each test that is red runs one more time apart from the
+         suite.  The red tests run at the same time, in one run of ctest
+         with the jobs of the step, and each one keeps its own verdict.  A
+         test that is red alone too rejects the commit.  A test that is
+         green alone is a flaky test, and no retry hides it: the
          gate writes its name, and the verdict gives it (Verdict.flaky).
          The landing writes it in the verdict of each request of the run
          (assay.loop.land, THE FLAKY TESTS).
@@ -163,7 +165,7 @@ THE RUN OF A CONFIGURATION
          kind, such as the tests guard_plugin and guard_artifact_symbols.
          A second run of these checks gives no new verdict.  A test that gives
          a skip does not reject the commit, and the gate writes its name.
-         A red test that runs alone writes its output to its log.
+         The run of the red tests writes their output to one log.
       4. A configuration of objects, after step 3 with no problem: `guard
          check --rule reconfigure-noop --build-dir BUILD` (RECONFIGURE_RULE).
          The rule configures the build of the warm tree again and builds it
@@ -1194,7 +1196,11 @@ class Step:
         return final, ledgers
 
     def red_alone(self, configuration: Configuration, names: Sequence[str]) -> list[str]:
-        """Run each test alone, one at a time, and return the names of the tests that are red alone too.
+        """Run each red test one more time apart from the suite, and return the names of the tests that are red again.
+
+        The tests run at the same time, in one run of ctest with the jobs of the step (THE RUN OF A CONFIGURATION).
+        The report of that run gives the status of each test.  A test with no status in the report is red.  The limit
+        of the run is ALONE_S for each test, the time of the tests one after the other.
 
         Raises:
             GateError: If the CMake cache of the build names no ctest
@@ -1210,20 +1216,16 @@ class Step:
         except cmake_pin.PinError as problem:
             raise GateError(str(problem)) from None
         logs.mkdir(parents=True, exist_ok=True)
-        red: list[str] = []
-        for name in names:
-            selection.write_text(f"{name}\n", encoding="utf-8")
-            report.unlink(missing_ok=True)
-            command = [ctest, "--test-dir", str(build), "--tests-from-file", str(selection)]
-            command += ["--timeout", str(int(ALONE_S)), "--output-on-failure", "--output-junit", str(report)]
-            self.run_logged(command, f"{configuration.name}.alone.{name}.log", self.environment, ALONE_S)
-            try:
-                status = ctest_reader.results(report).get(name, ctest_reader.TestStatus.NOTRUN)
-            except ctest_reader.CtestError:
-                status = ctest_reader.TestStatus.NOTRUN
-            if status in RED:
-                red.append(name)
-        return red
+        selection.write_text("".join(f"{name}\n" for name in names), encoding="utf-8")
+        report.unlink(missing_ok=True)
+        command = [ctest, "--test-dir", str(build), "--tests-from-file", str(selection), "-j", str(self.jobs)]
+        command += ["--timeout", str(int(ALONE_S)), "--output-on-failure", "--output-junit", str(report)]
+        self.run_logged(command, f"{configuration.name}.alone.log", self.environment, ALONE_S * len(names))
+        try:
+            statuses = ctest_reader.results(report)
+        except ctest_reader.CtestError:
+            statuses = {}
+        return [name for name in names if statuses.get(name, ctest_reader.TestStatus.NOTRUN) in RED]
 
     def run_parse(self, configuration: Configuration) -> list[str]:
         """Do steps 1 and 2 of THE RUN OF A CONFIGURATION for a parse configuration, and give each problem."""

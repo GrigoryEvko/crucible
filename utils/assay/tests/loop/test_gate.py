@@ -134,6 +134,8 @@ if mode == "build":
 statuses = {"test_passes": "run"}
 if mode in ("flaky", "broken"):
     statuses["test_" + mode] = "fail"
+if mode == "both":
+    statuses["test_flaky"] = statuses["test_broken"] = "fail"
 if mode == "moves":
     ledger = pathlib.Path("utils/ledgers/home.txt").read_text()
     statuses["test_ledger"] = "fail" if "include/old.h" in ledger else "run"
@@ -191,7 +193,8 @@ with open(build / "cmake.txt", "a", encoding="utf-8") as handle:
 """
 # The planted ctest: the listing of a build is the file tests.json of the build.  A test that runs alone is green,
 # unless it is test_broken, or test_ledger before the write of its ledger.  A fall of door-unit makes no test red,
-# because a ledger fails only on a growth (THE POLICIES of assay.core.ledger).
+# because a ledger fails only on a growth (THE POLICIES of assay.core.ledger).  Each run of red tests adds one line to
+# alone-runs.txt of the build: the value of -j and the names of the tests.
 CTEST = """import pathlib
 import sys
 
@@ -200,6 +203,9 @@ if "--show-only=json-v1" in words:
     print(pathlib.Path(words[words.index("--test-dir") + 1], "tests.json").read_text())
     sys.exit(0)
 names = pathlib.Path(words[words.index("--tests-from-file") + 1]).read_text().split()
+jobs = words[words.index("-j") + 1] if "-j" in words else "-"
+with open(pathlib.Path(words[words.index("--test-dir") + 1], "alone-runs.txt"), "a") as handle:
+    handle.write(" ".join([jobs, *names]) + "\\n")
 report = pathlib.Path(words[words.index("--output-junit") + 1])
 red = {"test_broken"}
 reads = pathlib.Path("utils/ledgers/home.txt")
@@ -585,6 +591,24 @@ def run_cases(expect: testing.Expect) -> None:
             verdict.is_accepted
             and (build / "base.txt").read_text(encoding="utf-8") == "-"
             and (build / "checks.txt").read_text(encoding="utf-8") == "reconfigure-noop -\n",
+        )
+        alone_runs = build / "alone-runs.txt"
+        alone_runs.unlink(missing_ok=True)
+        parallel = replace(planted_gate(work, root, tree, "both"), jobs=4)
+
+        def run_both(planted: gate.Gate = parallel) -> gate.Verdict:
+            return planted.check(candidate, False)
+
+        both, _ = testing.captured(run_both)
+        runs = alone_runs.read_text(encoding="utf-8").splitlines() if alone_runs.is_file() else []
+        expect(
+            f"two red tests run again at the same time, in one run of ctest with the jobs of the step, and each keeps "
+            f"its own verdict: {runs}",
+            runs == ["4 test_broken test_flaky"]
+            and not both.is_accepted
+            and "red alone too: test_broken," in both.problems[0]
+            and both.focus == (gate.Focus("default", ("test_broken",)),)
+            and both.flaky == ("default: test_flaky",),
         )
 
 
