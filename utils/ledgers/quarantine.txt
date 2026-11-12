@@ -502,7 +502,7 @@ test/fixy/ | replace-pending:std::source_location | 7 | - | -
 test/fixy/ | std-entity | 3333 | - | -
 test/fixy/ | std-object | 1257 | - | -
 test/fixy/neg/ | c-array-object | 53 | - | -
-test/fixy/neg/ | c-library-call | 267 | - | -
+test/fixy/neg/ | c-library-call | 269 | - | -
 test/fixy/neg/ | c-library-object | 2 | - | -
 test/fixy/neg/ | detail-use | 225 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
@@ -715,7 +715,7 @@ test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 9 | - | -
 test/session_oracle/ | std-entity | 26 | - | -
 test/session_oracle/ | std-object | 1385 | - | -
-test/shape/ | opted-out | 103 | ORACLE: the raw form that the shape of each family probe is compared with | -
+test/shape/ | opted-out | 118 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/singleton_neg/ | std-entity | 4 | - | -
 test/swiss_table_neg/ | replace-pending:<limits> | 1 | - | -

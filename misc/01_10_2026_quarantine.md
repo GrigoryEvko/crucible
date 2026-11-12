@@ -1162,9 +1162,9 @@ The fixed ring stays `fixy::CyclicBuffer` of `fixy/CyclicBuffer.h`, which keeps 
 | `window<N>(offset)` | `Option<View<T, N>>`. Then N reads with no check | one branch | - | main |
 | conversions | `View<T>` to `View<T const>`, and a fixed extent to `View<T>`. No conversion removes a const or adds a fixed extent | none | - | main |
 | `Option<View<T>>` | The size of a `View`, through the niche of the view | none | - | main |
-| `get(i)` | `Option<Ref<T>>`, after `Ref` of G3 | one branch | `get` | design |
-| `at(i)` | `Index<Extent>` for a fixed extent, `BrandedIndex<Brand>` in a branded scope | no branch | `at` | design |
-| `indices()` | The proven indexes of a loop: `Index<N>` or `BrandedIndex<Brand>` | the loop bound | `for` | design |
+| `get(i)` | `Option<Ref<T>>`. `Region.h` declares it, and `Array.h` defines it with the Ref family | one branch | `get` | main |
+| `at(i)` | `Index<Extent>` for a fixed extent, `BrandedIndex<Brand>` in a branded scope | no branch | `at` | main for `Index`, design for `BrandedIndex` |
+| `indices()` | The proven indexes of a loop: `Index<N>` or `BrandedIndex<Brand>` | the loop bound | `for` | main for `Index`, design for `BrandedIndex` |
 | `split_at(k)` | `Option<Record<View<T>, View<T>>>` | one branch | - | design |
 | `mint_branded_scope(view, body)` | The body gets the view with a fresh brand, and the mints of its `BrandedIndex` | none | `mint_*` | design |
 
@@ -1174,14 +1174,14 @@ The constructor from raw parts is private, and only the doors of the base reach 
 
 | Operation | Owners | Contract | Cost | Verb | State |
 |---|---|---|---|---|---|
-| `at(Index<N>)`, `at(index<I>())` | `FixedArray` | Total | no branch | `at` | design |
-| `get(i)` | each owner, a growable owner only in `with_view` | `Option<Ref<T>>` | one branch | `get` | design |
-| `view()` | `FixedArray`, `FixedList`, `HeapArray`, `FixedText` | `&` and `const&`. The `&&` form is deleted | none | `view` | main for `FixedText`, design for the others |
+| `at(Index<N>)`, `at(index<I>())` | `FixedArray` | Total | no branch | `at` | main |
+| `get(i)` | each owner, a growable owner only in `with_view` | `Option<Ref<T>>` | one branch | `get` | main for `FixedArray` and `HeapArray`, design for the others |
+| `view()` | `FixedArray`, `FixedList`, `HeapArray`, `FixedText` | `&` and `const&`. The `&&` form is deleted | none | `view` | main for `FixedText`, `FixedArray` and `HeapArray`, design for `FixedList` |
 | `for (x : owner)`, `size()` | each owner, a growable owner only in `with_view` | As for a `View` | the loop bound | `for`, `size` | design |
 | `push(v)` | `FixedList` | `Result<Ref<T>, Full<T>>` | one compare | `push` | design |
 | `take_last()`, `take_first()` | `FixedList` and `GrowList` (last), `HeapRing` (first and last) | `Option<T>`: the element moves out | one compare | - | new |
 | `clear()` | `FixedList`, a droppable element only | Ends each element | the count | - | new |
-| `mint_heap_array(alloc, count, fill)` | `HeapArray` | Each element is `fill`. `Align` states the alignment of the storage, as `AlignedBuffer` does | one allocation | `mint_*` | design |
+| `mint_heap_array(alloc, count, fill)` | `HeapArray` | Each element is `fill`. `Align` states the alignment of the storage, as `AlignedBuffer` does. A count of zero allocates nothing | one allocation | `mint_*` | main |
 | `mint_heap_array_written(alloc, count, body)` | `HeapArray` of an implicit-lifetime `T` | The body gets a view that only writes, and the mint gives the array after the body | one allocation | `mint_*` | design |
 | `mint_grow_list(maximum)`, `mint_heap_ring(minimum, maximum)` | `GrowList`, `GrowText`, `HeapRing` | Empty, with no allocation. The maximum bounds each growth (the principle P5 of the linear design). Each growable owner states its maximum here (P6) | none | `mint_*` | new |
 | `append(alloc, v)` | `GrowList`, `GrowText`, `HeapRing` | `Result<Unit, Full<T>>` (P6). A growth past the maximum refuses, and `Full<T>` gives a linear value back. It gives no reference. A `HeapRing` doubles its capacity from its minimum up to its maximum | a visible O(n) event at each growth | `append` | design |

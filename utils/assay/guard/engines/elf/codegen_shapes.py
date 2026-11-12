@@ -477,6 +477,30 @@ PROBES: tuple[Probe, ...] = (
         "fill of bytes is the memset of the raw form.  The memset builtin accepts the null pointer of an empty View "
         "with the count 0, so the fill does no test for an empty View",
     ),
+    Probe("fixed_array_at", "at of a FixedArray with an Index is the load of the raw subscript, with no bounds test"),
+    Probe("index_check", "the check of an Index is one compare, and the empty Option is the count of the Index"),
+    Probe("text_window", "window of a TextView gives its Option with no test of the niche of the Option"),
+    Probe(
+        "text_window_digits",
+        "a loop over the window of a TextView is the bounds compare of the window and the loop of a raw pointer, with "
+        "no call.  The family side tests an empty window with a compare of two pointers, and the raw side tests the "
+        f"count, so the second tests that the hardening adds go to a different compare.  {HARDENED_BUILDS}.  At -O1, "
+        "the loop over the Option of the window keeps the test of its niche",
+        checks=(TRAP,),
+        branches=True,
+    ),
+    Probe(
+        "view_window_sum",
+        "a loop over the window of a View is the bounds compare of the window and the loop of a raw pointer, with no "
+        "call.  The family side tests an empty window and the tail of the vector loop with compares of two pointers, "
+        "and the raw side tests the counts, so the second tests that the hardening adds go to different compares.  "
+        f"{HARDENED_BUILDS}",
+        checks=(TRAP,),
+        branches=True,
+    ),
+    Probe("view_reverse_sum", "a loop over reverse() of a View is the backward loop of a raw pointer"),
+    Probe("view_windows_sum", "a loop over windows<2>() of a View is the loop of a raw pointer over each run"),
+    Probe("view_chunks_sum", "a loop over chunks<4>() of a View is the loop of a raw pointer with a step of four"),
     Probe(
         "box_read",
         f"A read through the dereference of a Box adds one test and one branch to a call of the fatal exit.  {HARDENED_BUILDS}.  On the hot path, "

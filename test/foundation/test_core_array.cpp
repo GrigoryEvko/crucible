@@ -118,6 +118,35 @@ void test_fixed_array_view_fill_and_copy() {
     assert(!(target == source));
 }
 
+// get gives a Ref of the element below the count, and no value at or past
+// the count, for a View of each extent and for a FixedArray.
+void test_get_reads_below_the_count() {
+    FixedArray<int, 4> numbers{4, 8, 15, 16};
+    FixedArray<int, 4> const& fixed = numbers;
+    View<int> const elements = numbers.view();
+    assert(*elements.get(2).expect("the position is below the count") == 15);
+    assert(elements.get(4).is_none());
+    assert(elements.get(~std::size_t{0}).is_none());
+    *elements.get(0).expect("the position is below the count") = 5;
+    assert(numbers.at(index<0>()) == 5);
+
+    View<int const, 4> const fixed_view = fixed.view();
+    assert(*fixed_view.get(3).expect("the position is below the count") == 16);
+    assert(fixed_view.get(4).is_none());
+
+    *numbers.get(1).expect("the position is below the count") = 9;
+    assert(numbers.at(index<1>()) == 9);
+    assert(*fixed.get(1).expect("the position is below the count") == 9);
+    assert(fixed.get(4).is_none());
+
+    // A Ref from get reaches the element of the array.
+    ::foundation::core::Ref<int> const third = numbers.get(2).expect("the position is below the count");
+    assert(::foundation::core::same_object(third, numbers.get(2).expect("the position is below the count")));
+
+    View<int const> const empty{};
+    assert(empty.get(0).is_none());
+}
+
 void test_fixed_array_of_a_type_with_no_default() {
     FixedArray<NoDefault, 3> const values{NoDefault{1}, NoDefault{2}, NoDefault{3}};
     int total = 0;
@@ -161,6 +190,7 @@ int main() {
     test_fixed_array_starts_with_zeros();
     test_fixed_array_reads_at_proven_indexes();
     test_fixed_array_view_fill_and_copy();
+    test_get_reads_below_the_count();
     test_fixed_array_of_a_type_with_no_default();
     test_fixed_array_agrees_with_std_array();
     crucible::test::pass("test_core_array: all tests passed\n");

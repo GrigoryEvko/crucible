@@ -124,6 +124,66 @@ static_assert(write_and_read() == 10 * 1 + 20 * 2 + 30 * 3);
 }
 static_assert(view_reads() == 7 + 8 + 9 + 10 + 10);
 
+// get reads below the count and gives no value at the count, in a constant
+// evaluation too.
+[[nodiscard]] consteval int get_reads() noexcept {
+    FixedArray<int, 3> array{5, 6, 7};
+    int total = *array.get(2).expect("2 is below 3");
+    *array.get(0).expect("0 is below 3") = 1;
+    total += array.at(index<0>());
+    return array.get(3).is_none() ? total : -1;
+}
+static_assert(get_reads() == 8);
+
+// A HeapArray holds a pointer and a count.  It moves, it does not copy, and
+// the allocation capability is the first argument of its one door.
+struct AllocationTag final {
+    using grants_allocation = void;
+};
+struct OtherTag final {};
+struct MoveOnlyElement final {
+    MoveOnlyElement() noexcept = default;
+    MoveOnlyElement(MoveOnlyElement&&) noexcept = default;
+    MoveOnlyElement(MoveOnlyElement const&) = delete;
+};
+static_assert(sizeof(HeapArray<std::uint32_t>) == 2 * sizeof(std::size_t));
+static_assert(sizeof(HeapArray<std::uint8_t, 4096>) == 2 * sizeof(std::size_t));
+static_assert(std::is_nothrow_move_constructible_v<HeapArray<int>>
+              && std::is_nothrow_move_assignable_v<HeapArray<int>>);
+static_assert(!std::is_copy_constructible_v<HeapArray<int>> && !std::is_copy_assignable_v<HeapArray<int>>);
+static_assert(!std::is_trivially_copyable_v<HeapArray<int>>);
+static_assert(CanMintHeapArray<int, alignof(int), AllocationTag>);
+static_assert(!CanMintHeapArray<int, alignof(int), OtherTag>);
+static_assert(!CanMintHeapArray<MoveOnlyElement, alignof(MoveOnlyElement), AllocationTag>);
+static_assert(!CanMintHeapArray<int, 3, AllocationTag>);
+static_assert(!CanMintHeapArray<std::uint64_t, 4, AllocationTag>);
+static_assert(!::foundation::linear::is_linear_v<HeapArray<int>>);
+
+// A HeapArray of a linear element is linear, so each path of its holder
+// consumes it, and its destructor is no silent drop of the elements.
+struct[[= ::foundation::linear::linear{}]] LinearToken final {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+    LinearToken() noexcept = default;
+    LinearToken(LinearToken&&) noexcept = default;
+    LinearToken& operator=(LinearToken&&) noexcept { return *this; }
+    LinearToken(LinearToken const&) = delete;
+};
+static_assert(::foundation::linear::is_linear_v<HeapArray<LinearToken>>);
+
+static_assert(ViewsTemporary<HeapArray<int>&> && !ViewsTemporary<HeapArray<int>>);
+static_assert(!ViewsTemporary<HeapArray<int> const>);
+
+// The empty array holds no storage, in a constant evaluation too.
+[[nodiscard]] consteval std::size_t empty_reads() noexcept {
+    HeapArray<int> const empty{};
+    std::size_t turns = 0;
+    for (int const element : empty) {
+        turns += static_cast<std::size_t>(element) + 1;
+    }
+    return empty.size() + turns + (empty.get(0).is_none() ? 0 : 1);
+}
+static_assert(empty_reads() == 0);
+
 }  // namespace detail::array_checks
 
 }  // namespace foundation::core

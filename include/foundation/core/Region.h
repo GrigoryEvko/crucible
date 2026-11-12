@@ -264,6 +264,12 @@ public:
         return IndexRange<Extent>{};
     }
 
+    // The element at position, as an Option of a Ref, or no value at or past
+    // the count: one compare.  Array.h defines it, because this header does
+    // not include the Ref family.  A unit that calls it without Array.h
+    // gets a compile error, because the return type is not deduced.
+    [[nodiscard]] constexpr auto get(std::size_t position) const noexcept;
+
     // The loop `for (T& element : view.reverse())` reads each element one
     // time, from the last element.
     [[nodiscard]] constexpr auto reverse() const noexcept { return detail::ReverseRange<T>{View<T>{*this}}; }

@@ -173,6 +173,71 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
 
 [[gnu::used]] void view_fill(fixy::View<std::uint8_t> view) noexcept { fixy::fill(view, std::uint8_t{0}); }
 
+[[gnu::used]] std::uint32_t fixed_array_at(::foundation::core::FixedArray<std::uint32_t, 16> const& array,
+                                           fixy::Index<16> position) noexcept {
+    return array.at(position);
+}
+
+[[gnu::used]] fixy::Option<fixy::Index<16>> index_check(std::size_t position) noexcept {
+    return fixy::Index<16>::check(position);
+}
+
+[[gnu::used]] fixy::Option<fixy::TextView> text_window(fixy::TextView text, std::size_t offset,
+                                                       std::size_t count) noexcept {
+    return text.window(offset, count);
+}
+
+// The value of the digits of a run of a text: a loop over the Option of the
+// window of the run, and a loop over the characters of the window.
+[[gnu::used]] std::uint32_t text_window_digits(fixy::TextView text, std::size_t offset, std::size_t count) noexcept {
+    std::uint32_t value = 0;
+    for (fixy::TextView run : text.window(offset, count)) {
+        for (char const character : run) {
+            value = value * 10u + static_cast<std::uint32_t>(character - '0');
+        }
+    }
+    return value;
+}
+
+// The sum of a run of a View: a loop over the Option of the window of the
+// run, and a loop over the elements of the window.
+[[gnu::used]] std::uint32_t view_window_sum(fixy::View<std::uint32_t const> view, std::size_t offset,
+                                            std::size_t count) noexcept {
+    std::uint32_t sum = 0;
+    for (fixy::View<std::uint32_t const> run : view.window(offset, count)) {
+        for (std::uint32_t const element : run) {
+            sum += element;
+        }
+    }
+    return sum;
+}
+
+[[gnu::used]] std::uint32_t view_reverse_sum(fixy::View<std::uint32_t const> view) noexcept {
+    std::uint32_t sum = 0;
+    for (std::uint32_t element : view.reverse()) {
+        sum += element;
+    }
+    return sum;
+}
+
+// Each run of two consecutive elements, with a step of one element.
+[[gnu::used]] std::uint32_t view_windows_sum(fixy::View<std::uint32_t const> view) noexcept {
+    std::uint32_t sum = 0;
+    for (fixy::View<std::uint32_t const, 2> run : view.windows<2>()) {
+        sum += run.at(fixy::index<0>()) ^ run.at(fixy::index<1>());
+    }
+    return sum;
+}
+
+// Each run of four elements, with a step of four elements.
+[[gnu::used]] std::uint32_t view_chunks_sum(fixy::View<std::uint32_t const> view) noexcept {
+    std::uint32_t sum = 0;
+    for (fixy::View<std::uint32_t const, 4> run : view.chunks<4>()) {
+        sum += run.at(fixy::index<0>()) ^ run.at(fixy::index<3>());
+    }
+    return sum;
+}
+
 // ── Ref, Choice and Report ──────────────────────────────────────────────────
 
 [[gnu::used]] std::uint32_t box_read(fixy::Box<Payload>& box) noexcept { return box->value; }
@@ -414,6 +479,11 @@ struct RawWindow final {
     std::size_t count;
 };
 
+struct RawText final {
+    char const* first;
+    std::size_t count;
+};
+
 [[gnu::used]] std::uint64_t atomic_load_raw(std::atomic<std::uint64_t> const& cell) noexcept {
     return cell.load(std::memory_order_acquire);
 }
@@ -500,6 +570,73 @@ struct RawWindow final {
 }
 
 [[gnu::used]] void view_fill_raw(std::uint8_t* first, std::size_t count) noexcept { std::memset(first, 0, count); }
+
+[[gnu::used]] std::uint32_t fixed_array_at_raw(std::uint32_t const* first, std::uint32_t position) noexcept {
+    return first[position];
+}
+
+// An Option of an Index has the niche of the count: 16 is the empty value.
+[[gnu::used]] std::uint32_t index_check_raw(std::size_t position) noexcept {
+    return position < 16 ? static_cast<std::uint32_t>(position) : 16u;
+}
+
+[[gnu::used]] RawText text_window_raw(char const* first, std::size_t size, std::size_t offset,
+                                      std::size_t count) noexcept {
+    if (offset > size || count > size - offset) [[unlikely]] {
+        return RawText{nullptr, ~std::size_t{0}};
+    }
+    return RawText{first + offset, count};
+}
+
+[[gnu::used]] std::uint32_t text_window_digits_raw(char const* first, std::size_t size, std::size_t offset,
+                                                   std::size_t count) noexcept {
+    std::uint32_t value = 0;
+    if (offset > size || count > size - offset) [[unlikely]] {
+        return value;
+    }
+    for (char const* cursor = first + offset; cursor != first + offset + count; ++cursor) {
+        value = value * 10u + static_cast<std::uint32_t>(*cursor - '0');
+    }
+    return value;
+}
+
+[[gnu::used]] std::uint32_t view_window_sum_raw(std::uint32_t const* first, std::size_t size, std::size_t offset,
+                                                std::size_t count) noexcept {
+    std::uint32_t sum = 0;
+    if (offset > size || count > size - offset) [[unlikely]] {
+        return sum;
+    }
+    for (std::uint32_t const* cursor = first + offset; cursor != first + offset + count; ++cursor) {
+        sum += *cursor;
+    }
+    return sum;
+}
+
+[[gnu::used]] std::uint32_t view_reverse_sum_raw(std::uint32_t const* first, std::size_t count) noexcept {
+    std::uint32_t sum = 0;
+    for (std::uint32_t const* after = first + count; after != first; --after) {
+        sum += after[-1];
+    }
+    return sum;
+}
+
+[[gnu::used]] std::uint32_t view_windows_sum_raw(std::uint32_t const* first, std::size_t count) noexcept {
+    std::uint32_t sum = 0;
+    std::uint32_t const* const end = count < 2 ? first : first + (count - 1);
+    for (std::uint32_t const* cursor = first; cursor != end; ++cursor) {
+        sum += cursor[0] ^ cursor[1];
+    }
+    return sum;
+}
+
+[[gnu::used]] std::uint32_t view_chunks_sum_raw(std::uint32_t const* first, std::size_t count) noexcept {
+    std::uint32_t sum = 0;
+    std::uint32_t const* const end = first + count / 4 * 4;
+    for (std::uint32_t const* cursor = first; cursor != end; cursor += 4) {
+        sum += cursor[0] ^ cursor[3];
+    }
+    return sum;
+}
 
 [[gnu::used]] std::uint32_t box_read_raw(std::unique_ptr<Payload>& box) noexcept { return box->value; }
 

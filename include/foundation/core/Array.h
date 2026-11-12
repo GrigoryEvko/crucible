@@ -1,8 +1,13 @@
 #pragma once
 
-// The arrays of the Region family: an owner of exactly N elements.
+// The arrays of the Region family: an owner of exactly N elements, and an
+// owner of a count of elements on the heap that its mint fixes.
 //
 //   FixedArray<T, N>    N elements inline, in the object itself
+//   HeapArray<T, Align> count elements on the heap, at the alignment Align
+//
+// This header also defines get(position) of a View, because it includes
+// the Ref family, and Region.h does not.
 //
 // A FixedArray fills each element at its construction.  The default
 // constructor value-initializes each element, so an array of integers holds
@@ -29,16 +34,48 @@
 //
 // A FixedArray copies and moves its elements, and it is trivially copyable
 // when its element is, so the ABI passes a small array in registers.
+//
+// THE HEAP ARRAY
+//   mint_heap_array(alloc, count, fill)   the one door: count copies of
+//                       fill in storage from the allocation door of
+//                       foundation/core/Heap.h.  The allocation capability
+//                       comes first, so each allocation shows at its call.
+//                       A count of zero allocates nothing
+//   size(), view(), the loop, get(position), and the iteration verbs, as
+//                       a FixedArray gives them
+//
+// A HeapArray owns its storage alone.  A move gives the storage to the
+// target and leaves the source empty, and the destructor ends each element
+// and gives the storage back.  An empty HeapArray, also the default one,
+// holds no storage.  A HeapArray of a linear element is linear itself, so
+// each path of its holder consumes it.
 
+#include <foundation/Linear.h>
 #include <foundation/core/Algorithms.h>
+#include <foundation/core/Arithmetic.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Heap.h>
 #include <foundation/core/Index.h>
+#include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
+#include <foundation/core/Report.h>
 
 #include <cstddef>
+#include <new>
 #include <type_traits>
 #include <utility>
 
 namespace foundation::core {
+
+template <class T, std::size_t Extent>
+    requires ViewElement<T> && ViewExtent<T, Extent>
+constexpr auto View<T, Extent>::get(std::size_t position) const noexcept {
+    using Result = Option<Ref<T>>;
+    if (position >= size()) [[unlikely]] {
+        return Result{none};
+    }
+    return Result::some(Ref<T>::to(first_[position]));
+}
 
 // The element of an owner of the Region family: an object type that is not
 // an array and not cv-qualified, whose destructor does not throw.  A const
@@ -130,6 +167,16 @@ public:
     T const&
         at(Index<N>) const&& = delete("an element of a temporary FixedArray dangles at the end of the full expression");
 
+    // The element at a position that no type proves, as an Option of a
+    // Ref, or no value at or past N: one compare.
+    [[nodiscard]] constexpr Option<Ref<T>> get(std::size_t position) & noexcept { return view().get(position); }
+    [[nodiscard]] constexpr Option<Ref<T const>> get(std::size_t position) const& noexcept {
+        return view().get(position);
+    }
+    void get(std::size_t) && = delete("an element of a temporary FixedArray dangles at the end of the full expression");
+    void
+    get(std::size_t) const&& = delete("an element of a temporary FixedArray dangles at the end of the full expression");
+
     // Each index of the array, in order: the loop
     // `for (Index<N> index : array.indices())`.
     [[nodiscard]] static constexpr IndexRange<N> indices() noexcept { return IndexRange<N>{}; }
@@ -179,5 +226,205 @@ public:
         return equal(left.view(), right.view());
     }
 };
+
+// ── HeapArray ──────────────────────────────────────────────────────────────
+
+namespace detail {
+
+// The alignment of the storage of a HeapArray: a power of two, and at least
+// the alignment of the element.
+template <class T, std::size_t Align>
+concept HeapArrayAlignment = Align != 0 && (Align & (Align - 1)) == 0 && Align >= alignof(T);
+
+// The bytes of the storage of count elements of T, rounded up to the
+// alignment.  A count past the largest count of a View, or with bytes that
+// do not fit in size_t, ends the process.  Complexity: O(1).
+template <class T, std::size_t Align>
+[[nodiscard]] constexpr std::size_t heap_array_bytes_(std::size_t count) noexcept {
+    if (count > max_view_count(sizeof(T))) [[unlikely]] {
+        fatal("a HeapArray of {} elements of {} bytes is longer than the largest View", count, sizeof(T));
+    }
+    std::size_t const element_bytes =
+        checked_mul(count, sizeof(T)).expect("the bytes of the elements of a HeapArray fit in size_t");
+    std::size_t const padded =
+        checked_add(element_bytes, Align - 1).expect("the bytes of a HeapArray at its alignment fit in size_t");
+    return padded & ~(Align - 1);
+}
+
+}  // namespace detail
+
+// The arguments of mint_heap_array: an element that copies with no throw,
+// an alignment of the storage, and the allocation capability.
+template <class T, std::size_t Align, class Marker>
+concept CanMintHeapArray = OwnedElement<T> && detail::HeapArrayAlignment<T, Align> && AllocationCapability<Marker>
+                        && std::is_nothrow_copy_constructible_v<T>;
+
+template <class T, std::size_t Align = alignof(T)>
+    requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
+class HeapArray;
+
+template <class T, std::size_t Align = alignof(T), class Marker>
+    requires CanMintHeapArray<T, Align, Marker>
+[[nodiscard]] HeapArray<T, Align> mint_heap_array(Marker allocation, std::size_t count, T const& fill) noexcept;
+
+template <class T, std::size_t Align>
+    requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
+class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]] HeapArray final {
+    T* first_ = nullptr;
+    std::size_t count_ = 0;
+
+    constexpr HeapArray(T* first, std::size_t count) noexcept : first_{first}, count_{count} {}
+
+    template <class U, std::size_t OtherAlign, class Marker>
+        requires CanMintHeapArray<U, OtherAlign, Marker>
+    friend HeapArray<U, OtherAlign> mint_heap_array(Marker allocation, std::size_t count, U const& fill) noexcept;
+
+    // Ends each element from the last, and gives the storage back to the
+    // allocation door with the bytes and the alignment of the mint.  An
+    // empty array holds no storage.  Complexity: O(count).
+    constexpr void release_() noexcept {
+        if (first_ == nullptr) {
+            return;
+        }
+        if constexpr (!std::is_trivially_destructible_v<T>) {
+            for (std::size_t position = count_; position != 0; --position) {
+                first_[position - 1].~T();
+            }
+        }
+        detail::heap_release_(static_cast<void*>(first_), detail::heap_array_bytes_<T, Align>(count_), Align);
+        first_ = nullptr;
+        count_ = 0;
+    }
+
+public:
+    using element_type = T;
+
+    // The empty array: no element and no storage.
+    constexpr HeapArray() noexcept = default;
+
+    constexpr HeapArray(HeapArray&& other) noexcept : first_{other.first_}, count_{other.count_} {
+        other.first_ = nullptr;
+        other.count_ = 0;
+    }
+
+    // Ends each element that this array holds, and takes the storage of
+    // other.
+    constexpr HeapArray& operator=(HeapArray&& other) noexcept {
+        if (this != &other) {
+            release_();
+            first_ = other.first_;
+            count_ = other.count_;
+            other.first_ = nullptr;
+            other.count_ = 0;
+        }
+        return *this;
+    }
+
+    HeapArray(HeapArray const&) = delete("a HeapArray owns its storage alone: a copy would free the storage two times");
+    HeapArray&
+    operator=(HeapArray const&) = delete("a HeapArray owns its storage alone: a copy would free the storage two times");
+
+    constexpr ~HeapArray() { release_(); }
+
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return count_; }
+
+    // The View of the elements.  It borrows this array.  The mint bounds
+    // the count and gives storage for each count above zero, so the door
+    // of the View does no test at run time.
+    [[nodiscard]] constexpr View<T> view() & noexcept {
+        [[assume(count_ <= max_view_count(sizeof(T)))]];
+        [[assume((first_ == nullptr) == (count_ == 0))]];
+        return detail::view_over_(first_, count_);
+    }
+    [[nodiscard]] constexpr View<T const> view() const& noexcept {
+        [[assume(count_ <= max_view_count(sizeof(T)))]];
+        [[assume((first_ == nullptr) == (count_ == 0))]];
+        return detail::view_over_(static_cast<T const*>(first_), count_);
+    }
+    void view() && = delete("a view of a temporary HeapArray points into storage that the full expression frees");
+    void view() const&& = delete("a view of a temporary HeapArray points into storage that the full expression frees");
+
+    // The loop `for (T& element : array)`.
+    [[nodiscard]] constexpr ViewCursor<T> begin() & noexcept { return view().begin(); }
+    [[nodiscard]] constexpr ViewCursor<T> end() & noexcept { return view().end(); }
+    [[nodiscard]] constexpr ViewCursor<T const> begin() const& noexcept { return view().begin(); }
+    [[nodiscard]] constexpr ViewCursor<T const> end() const& noexcept { return view().end(); }
+    void begin() && = delete("a cursor of a temporary HeapArray points into storage that the full expression frees");
+    void end() && = delete("a cursor of a temporary HeapArray points into storage that the full expression frees");
+    void
+    begin() const&& = delete("a cursor of a temporary HeapArray points into storage that the full expression frees");
+    void end() const&& = delete("a cursor of a temporary HeapArray points into storage that the full expression frees");
+
+    // The element at position, as an Option of a Ref, or no value at or
+    // past the count: one compare.
+    [[nodiscard]] constexpr Option<Ref<T>> get(std::size_t position) & noexcept { return view().get(position); }
+    [[nodiscard]] constexpr Option<Ref<T const>> get(std::size_t position) const& noexcept {
+        return view().get(position);
+    }
+    void get(std::size_t) && = delete("an element of a temporary HeapArray dangles at the end of the full expression");
+    void
+    get(std::size_t) const&& = delete("an element of a temporary HeapArray dangles at the end of the full expression");
+
+    // The iteration verbs of the View of the elements.
+    [[nodiscard]] constexpr auto reverse() & noexcept { return view().reverse(); }
+    [[nodiscard]] constexpr auto reverse() const& noexcept { return view().reverse(); }
+    void
+    reverse() const&& = delete("a loop over a temporary HeapArray points into storage that the full expression frees");
+
+    template <std::size_t Width>
+        requires ViewExtent<T, Width> && (Width != dynamic_extent)
+    [[nodiscard]] constexpr auto windows() & noexcept {
+        return view().template windows<Width>();
+    }
+    template <std::size_t Width>
+        requires ViewExtent<T, Width> && (Width != dynamic_extent)
+    [[nodiscard]] constexpr auto windows() const& noexcept {
+        return view().template windows<Width>();
+    }
+    template <std::size_t Width>
+    void
+    windows() const&& = delete("a loop over a temporary HeapArray points into storage that the full expression frees");
+
+    template <std::size_t Width>
+        requires ViewExtent<T, Width> && (Width != dynamic_extent)
+    [[nodiscard]] constexpr auto chunks() & noexcept {
+        return view().template chunks<Width>();
+    }
+    template <std::size_t Width>
+        requires ViewExtent<T, Width> && (Width != dynamic_extent)
+    [[nodiscard]] constexpr auto chunks() const& noexcept {
+        return view().template chunks<Width>();
+    }
+    template <std::size_t Width>
+    void
+    chunks() const&& = delete("a loop over a temporary HeapArray points into storage that the full expression frees");
+
+    // Two arrays are equal when they hold the same count of elements, and
+    // each element equals the element at the same position of the other.
+    [[nodiscard]] friend constexpr bool operator==(HeapArray const& left, HeapArray const& right) noexcept
+        requires detail::ComparableElement<T>
+    {
+        return equal(left.view(), right.view());
+    }
+};
+
+// The storage holds count elements at the alignment Align, and each
+// element is a copy of fill.  A count of zero gives the empty array and
+// allocates nothing.  The door never gives a null pointer, and a count
+// whose bytes do not fit ends the process before the allocation.
+// Complexity: one allocation and O(count) copies.
+template <class T, std::size_t Align, class Marker>
+    requires CanMintHeapArray<T, Align, Marker>
+[[nodiscard]] HeapArray<T, Align> mint_heap_array(Marker /*allocation*/, std::size_t count, T const& fill) noexcept {
+    if (count == 0) {
+        return HeapArray<T, Align>{};
+    }
+    std::size_t const bytes = detail::heap_array_bytes_<T, Align>(count);
+    T* const first = static_cast<T*>(detail::heap_allocate_(bytes, Align));
+    for (std::size_t position = 0; position != count; ++position) {
+        ::new(static_cast<void*>(first + position)) T(fill);
+    }
+    return HeapArray<T, Align>{first, count};
+}
 
 }  // namespace foundation::core

@@ -666,6 +666,9 @@ witness <foundation/core/Index.h> private | foundation::core::IndexCursor<4> | f
 witness <foundation/core/Region.h> private | foundation::core::detail::ReverseCursor<int> | foundation::core::detail::ReverseCursor<int>{forge::rvalue<int*>(), forge::rvalue<int*>()}
 witness <foundation/core/Region.h> private | foundation::core::detail::WindowCursor<int, 2> | foundation::core::detail::WindowCursor<int, 2>{forge::rvalue<int*>(), forge::rvalue<int*>()}
 witness <foundation/core/Region.h> private | foundation::core::detail::ChunkCursor<int, 2> | foundation::core::detail::ChunkCursor<int, 2>{forge::rvalue<int*>(), forge::rvalue<int*>()}
+# A HeapArray comes only from mint_heap_array, so no pointer that a caller
+# holds becomes an owner, and the destructor frees only storage of the door.
+witness <foundation/core/Array.h> private | foundation::core::HeapArray<int> | foundation::core::HeapArray<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
 
 # -- The graded substrate --------------------------------------------
 # A grade that nothing derives is paired with a value only through a key,

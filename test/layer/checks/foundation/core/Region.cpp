@@ -371,6 +371,8 @@ CRUCIBLE_CLOSED_SURFACE(region_names, StaticIndex<2>);
 CRUCIBLE_CLOSED_SURFACE(region_names, IndexRange<4>);
 CRUCIBLE_CLOSED_SURFACE(region_names, FixedArray<int, 4>);
 CRUCIBLE_CLOSED_SURFACE(region_names, FixedArray<Record, 1>);
+CRUCIBLE_CLOSED_SURFACE(region_names, HeapArray<int>);
+CRUCIBLE_CLOSED_SURFACE(region_names, HeapArray<std::uint8_t, 64>);
 CRUCIBLE_CLOSED_SURFACE(region_names, LengthMismatch);
 CRUCIBLE_CLOSED_SURFACE(region_names, detail::ReverseRange<int>);
 CRUCIBLE_CLOSED_SURFACE(region_names, detail::WindowRange<int const, 2>);

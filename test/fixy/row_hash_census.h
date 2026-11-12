@@ -919,6 +919,8 @@ inline constexpr StatedZero kZeros[] = {
      "the loop over the indexes of a count: it holds nothing, and it is never a value in a signature"},
     {^^::foundation::core::FixedArray,
      "an inline array of elements: it holds storage and makes no claim about what the elements hold"},
+    {^^::foundation::core::HeapArray,
+     "an array of elements on the heap: it holds storage and makes no claim about what the elements hold"},
     // The Scalar family.
     {^^::foundation::core::WideProduct, kPayload},
     {^^::foundation::core::Bounds,

@@ -2413,6 +2413,35 @@ foundation_neg_compile_test(neg_core_lower_bound_float_key
   "no matching function for call to .lower_bound_by_key\\(foundation::core::View<const float, 4>, bound_of\\(const foundation::core::FixedArray<float, 4>&\\)::<lambda\\(float\\)>, float\\)."
   "required for the satisfaction of .KeyOf<Key, typename std::remove_const<_Tp>::type>. \\[with Key = bound_of::._anon_[0-9]+; T = const float\\]")
 
+# get of a View and of an owner gives an Option of a Ref: Array.h defines
+# it, so Region.h alone cannot call it, and get of a temporary owner is
+# refused.  A HeapArray comes only from mint_heap_array, which takes the
+# allocation capability, an element that copies and an alignment that is a
+# power of two.  It does not copy, and a view of a temporary is refused.
+foundation_test(test_core_heap_array)
+
+foundation_neg_compile_test(neg_core_view_get_without_array
+  "use of .constexpr auto foundation::core::View<T, Extent>::get\\(std::size_t\\) const \\[with T = const int; long unsigned int Extent = 18446744073709551615; std::size_t = long unsigned int\\]. before deduction of .auto."
+  "In function .bool has_element\\(foundation::core::View<const int>\\).")
+foundation_neg_compile_test(neg_core_fixed_array_get_of_temporary
+  "use of deleted function .void foundation::core::FixedArray<T, N>::get\\(std::size_t\\) && \\[with T = int; long unsigned int N = 4; std::size_t = long unsigned int\\]."
+  "an element of a temporary FixedArray dangles at the end of the full expression")
+foundation_neg_compile_test(neg_core_heap_array_without_allocation_marker
+  "no matching function for call to .mint_heap_array\\(foundation::effects::cap::IO, int, int\\)."
+  "no type named .grants_allocation. in .struct foundation::effects::cap::IO.")
+foundation_neg_compile_test(neg_core_heap_array_fill_not_copyable
+  "no matching function for call to .mint_heap_array\\(foundation::effects::cap::Alloc, int, const MoveOnly&\\)."
+  "the expression .is_nothrow_copy_constructible_v<T> \\[with T = MoveOnly\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_heap_array_alignment_not_power
+  "no matching function for call to .mint_heap_array<int, 12>\\(foundation::effects::cap::Alloc, int, int\\)."
+  "the expression .\\(Align & Align - 1\\) == 0 \\[with Align = 12\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_heap_array_copied
+  "use of deleted function .foundation::core::HeapArray<T, Align>::HeapArray\\(const foundation::core::HeapArray<T, Align>&\\) \\[with T = int; long unsigned int Align = 4\\]."
+  "a HeapArray owns its storage alone: a copy would free the storage two times")
+foundation_neg_compile_test(neg_core_heap_array_view_of_temporary
+  "use of deleted function .void foundation::core::HeapArray<T, Align>::view\\(\\) && \\[with T = int; long unsigned int Align = 4\\]."
+  "a view of a temporary HeapArray points into storage that the full expression frees")
+
 # ── The door directory of the base floor: foundation/os ───────────────
 #
 # The file door reads a file of /proc into a FixedText, gives the error of
