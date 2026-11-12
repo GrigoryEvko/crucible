@@ -145,8 +145,13 @@ class Ref {
 
 public:
     // A Ref of an object, with the key that only RefDoor builds.  A reference
-    // is never null, so no key makes a null Ref.
-    constexpr Ref(T& object, detail::RefKey const& /*key*/) noexcept : object_{__builtin_addressof(object)} {}
+    // is never null, so no key makes a null Ref.  The build keeps each null
+    // test (-fno-delete-null-pointer-checks).  Thus the assume tells the
+    // optimizer that the pointer is not null, and the optimizer removes the
+    // niche test of an Option of this Ref.
+    constexpr Ref(T& object, detail::RefKey const& /*key*/) noexcept : object_{__builtin_addressof(object)} {
+        [[assume(object_ != nullptr)]];
+    }
 
     // Adds a const to the target, erases the brand, or does the two.
     template <class U, class UBrand>
