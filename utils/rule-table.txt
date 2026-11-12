@@ -689,6 +689,14 @@ witness <foundation/core/Array.h> private | foundation::core::HeapArray<int> | f
 # that a caller holds becomes an index, and no pointer becomes a pair.
 witness <foundation/core/Array.h> private | foundation::core::detail::EnumerateCursor<int, 4, forge::brand> | foundation::core::detail::EnumerateCursor<int, 4, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
 witness <foundation/core/Array.h> private | foundation::core::detail::ZipCursor<int, int, forge::brand> | foundation::core::detail::ZipCursor<int, int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<int*>(), forge::rvalue<int*>()}
+# A branded view, its indexes, its ranges and its cursors come only from
+# mint_branded_scope, so no number becomes an index of a scope.
+witness <foundation/core/Branded.h> private | foundation::core::BrandedIndex<forge::brand> | foundation::core::BrandedIndex<forge::brand>{forge::rvalue<unsigned int>()}
+witness <foundation/core/Branded.h> private | foundation::core::BrandedView<int, forge::brand> | foundation::core::BrandedView<int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned int>()}
+witness <foundation/core/Branded.h> private | foundation::core::detail::BrandedIndexRange<forge::brand> | foundation::core::detail::BrandedIndexRange<forge::brand>{forge::rvalue<unsigned long>()}
+witness <foundation/core/Branded.h> private | foundation::core::detail::BrandedIndexCursor<forge::brand> | foundation::core::detail::BrandedIndexCursor<forge::brand>{forge::rvalue<unsigned long>(), forge::rvalue<unsigned long>()}
+witness <foundation/core/Branded.h> private | foundation::core::detail::BrandedEnumerateRange<int, forge::brand> | foundation::core::detail::BrandedEnumerateRange<int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
+witness <foundation/core/Branded.h> private | foundation::core::detail::BrandedEnumerateCursor<int, forge::brand> | foundation::core::detail::BrandedEnumerateCursor<int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned long>(), forge::rvalue<unsigned long>()}
 
 # -- The graded substrate --------------------------------------------
 # A grade that nothing derives is paired with a value only through a key,

@@ -152,6 +152,16 @@
       "constructor": "\\bBox\\("
     },
     {
+      "name": "neg_witness_core_brandedindex_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBrandedIndex\\("
+    },
+    {
+      "name": "neg_witness_core_brandedview_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBrandedView\\("
+    },
+    {
       "name": "neg_witness_core_ctext_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bCText\\("
@@ -165,6 +175,26 @@
       "name": "neg_witness_core_detail_boxkey_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bBoxKey\\("
+    },
+    {
+      "name": "neg_witness_core_detail_brandedenumeratecursor_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBrandedEnumerateCursor\\("
+    },
+    {
+      "name": "neg_witness_core_detail_brandedenumeraterange_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBrandedEnumerateRange\\("
+    },
+    {
+      "name": "neg_witness_core_detail_brandedindexcursor_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBrandedIndexCursor\\("
+    },
+    {
+      "name": "neg_witness_core_detail_brandedindexrange_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBrandedIndexRange\\("
     },
     {
       "name": "neg_witness_core_detail_chunkcursor_direct_construction",
@@ -1043,6 +1073,30 @@
     {
       "type": "foundation::core::detail::ZipCursor<int, int, forge::brand>",
       "header": "foundation/core/Array.h"
+    },
+    {
+      "type": "foundation::core::BrandedIndex<forge::brand>",
+      "header": "foundation/core/Branded.h"
+    },
+    {
+      "type": "foundation::core::BrandedView<int, forge::brand>",
+      "header": "foundation/core/Branded.h"
+    },
+    {
+      "type": "foundation::core::detail::BrandedIndexRange<forge::brand>",
+      "header": "foundation/core/Branded.h"
+    },
+    {
+      "type": "foundation::core::detail::BrandedIndexCursor<forge::brand>",
+      "header": "foundation/core/Branded.h"
+    },
+    {
+      "type": "foundation::core::detail::BrandedEnumerateRange<int, forge::brand>",
+      "header": "foundation/core/Branded.h"
+    },
+    {
+      "type": "foundation::core::detail::BrandedEnumerateCursor<int, forge::brand>",
+      "header": "foundation/core/Branded.h"
     },
     {
       "type": "foundation::algebra::grade_key<forge::brand>",

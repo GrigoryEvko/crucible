@@ -3,6 +3,7 @@
 #include <foundation/core/Region.h>
 
 #include <foundation/core/Array.h>
+#include <foundation/core/Branded.h>
 #include <foundation/core/List.h>
 #include <foundation/core/Verbs.h>
 
@@ -359,6 +360,10 @@ inline constexpr TextView region_names{
     "GrowList HeapRing RingView FixedTable HeapTable Full Held LengthMismatch dynamic_extent element_type extent "
     "capacity window split_at indices index check raw rest take take_first take_last clear with_view freeze"};
 
+// The brand that the check of a branded type names.  A program gets each
+// brand from mint_branded_scope.
+struct SurfaceBrand final {};
+
 // Each type of the family gives only the shared verbs, the language
 // protocols and the names of the list.
 CRUCIBLE_CLOSED_SURFACE(region_names, View<int>);
@@ -377,6 +382,8 @@ CRUCIBLE_CLOSED_SURFACE(region_names, HeapArray<std::uint8_t, 64>);
 CRUCIBLE_CLOSED_SURFACE(region_names, FixedList<int, 4>);
 CRUCIBLE_CLOSED_SURFACE(region_names, FixedList<Record, 2>);
 CRUCIBLE_CLOSED_SURFACE(region_names, Full<int>);
+CRUCIBLE_CLOSED_SURFACE(region_names, BrandedIndex<SurfaceBrand>);
+CRUCIBLE_CLOSED_SURFACE(region_names, BrandedView<int, SurfaceBrand>);
 CRUCIBLE_CLOSED_SURFACE(region_names, LengthMismatch);
 CRUCIBLE_CLOSED_SURFACE(region_names, detail::ReverseRange<int>);
 CRUCIBLE_CLOSED_SURFACE(region_names, detail::WindowRange<int const, 2>);

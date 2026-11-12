@@ -1,0 +1,9 @@
+# A static local of a generic body keeps a BrandedIndex of the first scope,
+# and the second call of the same instance of the mint reads it in a scope of
+# fewer elements.  The rule brand-escape reports the static local, and the
+# compile passes, because the rule is in report mode.
+
+compile static_body src/static_body.cpp linear-shapes=on
+flag static_body -freflection
+exit static_body pass
+finding static_body brand-escape escaped-static src/static_body.cpp:19:62 | planted::KeepsLastIndex::operator(): kept, a brand of a library

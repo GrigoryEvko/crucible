@@ -936,6 +936,11 @@ inline constexpr StatedZero kZeros[] = {
      "an array of elements on the heap: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::FixedList,
      "an inline list of at most N elements: it holds storage and makes no claim about what the elements hold"},
+    {^^::foundation::core::BrandedIndex,
+     "the proof of an index below the count of one branded scope: it lives inside the scope, and it is never a value "
+     "in a kernel signature"},
+    {^^::foundation::core::BrandedView,
+     "the View of one branded scope: it owns nothing, and it lives inside the body of the scope"},
     {^^::foundation::core::Full,
      "the error of a push into a full owner: it holds nothing, or the linear value of the push, and makes no claim"},
     // The Scalar family.

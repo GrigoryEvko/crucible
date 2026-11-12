@@ -1,0 +1,33 @@
+// A known gap of brand-escape.  mint_branded_scope gives each instance of
+// its template one brand, so the two calls of scope_of share the brand of one
+// instance.  The static local of the generic body keeps the last index of the
+// first scope, a scope of eight elements.  The second call reads that index
+// in a scope of two elements, where at() does no check.  The rule reports the
+// static local, but it is in report mode, so the compile passes.  When
+// brand-escape refuses a static local that holds a brand of a branded scope,
+// this control fails, and it becomes a negative fixture.
+#include <foundation/core/Array.h>
+#include <foundation/core/Branded.h>
+
+namespace planted {
+
+namespace core = ::foundation::core;
+
+struct KeepsLastIndex final {
+    template <class Brand>
+    int operator()(core::BrandedView<int, Brand> view) const noexcept {
+        static core::Option<core::BrandedIndex<Brand>> const kept = view.index(view.size() - 1);
+        return view.at(core::Option<core::BrandedIndex<Brand>>{kept}.expect("the first scope keeps its last index"));
+    }
+};
+
+int scope_of(core::View<int> view) { return core::mint_branded_scope(view, KeepsLastIndex{}); }
+
+int escape() {
+    core::FixedArray<int, 8> wide{};
+    core::FixedArray<int, 2> narrow{};
+    int const first = scope_of(core::View<int>{wide.view()});
+    return first + scope_of(core::View<int>{narrow.view()});
+}
+
+}  // namespace planted

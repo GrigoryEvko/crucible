@@ -19,6 +19,7 @@
 #include <foundation/core/Array.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Bits.h>
+#include <foundation/core/Branded.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Compare.h>
 #include <foundation/core/Convert.h>
@@ -104,6 +105,8 @@ using ::foundation::core::Tally;
 // The scans all_of and any_of of the Region family stay in foundation::core:
 // fixy::all_of and fixy::any_of are the combinators of the refinement
 // predicates of fixy/Predicates.h.
+using ::foundation::core::BrandedIndex;
+using ::foundation::core::BrandedView;
 using ::foundation::core::ByteImageable;
 using ::foundation::core::bytes;
 using ::foundation::core::copy;
@@ -123,6 +126,7 @@ using ::foundation::core::IndexCount;
 using ::foundation::core::IndexRange;
 using ::foundation::core::LengthMismatch;
 using ::foundation::core::lower_bound_by_key;
+using ::foundation::core::mint_branded_scope;
 using ::foundation::core::mint_heap_array;
 using ::foundation::core::starts_with;
 using ::foundation::core::StaticIndex;

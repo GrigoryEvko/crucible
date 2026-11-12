@@ -1,0 +1,8 @@
+# The rule table of the control control-known-gap-static-in-generic-body of
+# the rule brand-escape.  The unit of src/ is quarantined.  The headers of the
+# repository are outside the root of the control, so the table admits the
+# core family.
+
+admit foundation::core | the core family, whose branded scope the planted code calls
+
+quarantine src/

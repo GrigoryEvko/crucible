@@ -2660,6 +2660,22 @@ foundation_test(test_core_heap_array)
 # time, and the model of a FixedArray and a count agrees with each step.
 foundation_test(test_core_list)
 
+# The branded scope gives proven indexes of a View of a dynamic extent: each
+# index reads the element of the model, and a cursor never leaves its loop.
+foundation_test(test_core_branded)
+
+# The mint refuses a body whose result holds the brand and an explicit
+# template argument, and an index of one scope is no index of another.
+foundation_neg_compile_test(neg_core_branded_scope_gives_index
+  "no matching function for call to .mint_branded_scope\\(foundation::core::View<int, 4>, main\\(\\)::<lambda\\(auto:7\\)>\\)."
+  "template argument deduction/substitution failed")
+foundation_neg_compile_test(neg_core_branded_scope_names_brand
+  "no matching function for call to .mint_branded_scope<int>\\(foundation::core::View<int, 4>, main\\(\\)::<lambda\\(auto:7\\)>\\)."
+  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_branded_index_of_other_scope
+  "cannot convert .BrandedIndex<foundation::core::<lambda\\(\\)>>. to .BrandedIndex<foundation::core::<lambda\\(\\)>>."
+  "initializing argument 1 of .constexpr T& foundation::core::BrandedView<T, Brand>::at\\(foundation::core::BrandedIndex<Brand>\\) const \\[with T = int; Brand = foundation::core::<lambda\\(\\)>\\].")
+
 # A push into or a view of a temporary list is refused, and a list of a
 # linear element has no clear().
 foundation_neg_compile_test(neg_core_fixed_list_push_of_temporary

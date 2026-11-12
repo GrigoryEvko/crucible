@@ -300,6 +300,7 @@ that the axis does not apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_box` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 7 |
+| `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 5 |
 | `mint_identity` | `include/foundation/core/Identity.h` | Y | - | Y | · | token | · | HS14: 2 |
 | `mint_sole_writer` | `include/foundation/core/Atomic.h` | Y | Y | Y | Y | token | · | HS14: 7 |
@@ -344,4 +345,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 84 | 46 | 29 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 116 | 53 | 60 | 3 | 0 | 4 |
+| substrate (`include/foundation/`, `include/fixy/`) | 117 | 53 | 61 | 3 | 0 | 4 |
