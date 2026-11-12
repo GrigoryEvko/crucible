@@ -1,0 +1,13 @@
+# An assignment over a live linear value drops that value: the finding
+# assign-over-live at the assignment.  The source of the assignment is a
+# consume.  The front end keeps no target of a trivial assignment of an empty
+# class, and the event PLUGIN_EMPTY_CLASS_ASSIGNMENT of the fifth GCC patch
+# gives it, with the location at the end of the assignment.  An assignment
+# after a consume, and a value that a call gives back into its local, give no
+# line.
+
+compile assign src/assign.cpp must-consume=on
+flag assign -freflection
+exit assign pass
+judge assign
+finding assign must-consume assign-over-live src/assign.cpp:23:40 | planted::over_a_live_value: held

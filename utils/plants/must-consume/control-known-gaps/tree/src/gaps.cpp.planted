@@ -1,0 +1,29 @@
+// The known gaps of the rule.  The front end folds the initializer of a
+// temporary that a reference extends, and it gives no event
+// PLUGIN_FOLDED_INITIALIZER for that fold.  So the move of the parameter into
+// the call is not in the tree, and the parameter is unconsumed.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+struct Pair {
+    Token left;
+    Token right;
+};
+
+[[= ::foundation::linear::drop_door{}]] constexpr Pair split(Token&&) noexcept { return Pair{}; }
+void take(Pair&& pair) noexcept;
+
+void extended_temporary(Token&& parent) {
+    auto&& pair = split(static_cast<Token&&>(parent));
+    take(static_cast<Pair&&>(pair));
+}
+
+}  // namespace planted

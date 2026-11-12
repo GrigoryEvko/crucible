@@ -1,0 +1,44 @@
+// A switch whose default case leaves a linear local with no consume.  A case
+// that falls through to a case that consumes is no finding, and a switch
+// whose default case ends its path with a call that does not return is no
+// finding either.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+constexpr Token mint() noexcept { return Token{}; }
+void take(Token&& token) noexcept;
+int pick() noexcept;
+[[noreturn]] void stop() noexcept;
+
+void default_drops() {
+    Token token = mint();
+    switch (pick()) {
+        case 0:
+            take(static_cast<Token&&>(token));
+            break;
+        default:
+            break;
+    }
+}
+
+void falls_through() {
+    Token token = mint();
+    switch (pick()) {
+        case 0:
+        case 1:
+            take(static_cast<Token&&>(token));
+            break;
+        default:
+            stop();
+    }
+}
+
+}  // namespace planted

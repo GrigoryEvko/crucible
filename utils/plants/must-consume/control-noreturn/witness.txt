@@ -1,0 +1,8 @@
+# A call of a function that does not return ends its path: a linear local
+# that each other path consumes gives no line.  A consume in each branch of an
+# if statement and of a conditional expression gives no line either.
+
+compile noreturn src/noreturn.cpp must-consume=on
+flag noreturn -freflection
+exit noreturn pass
+judge noreturn

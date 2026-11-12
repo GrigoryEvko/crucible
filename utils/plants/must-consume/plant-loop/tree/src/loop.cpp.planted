@@ -1,0 +1,44 @@
+// A loop that consumes an outer linear local: a second turn consumes it again,
+// and a loop of zero turns leaves it with no consume.  A local of the body that
+// a continue leaves with no consume is a finding too.  A local of the body that
+// each turn consumes is no finding.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+constexpr Token mint() noexcept { return Token{}; }
+void take(Token&& token) noexcept;
+bool decide() noexcept;
+
+void outer_local(int count) {
+    Token token = mint();
+    for (int index = 0; index < count; ++index) {
+        take(static_cast<Token&&>(token));
+    }
+}
+
+void continue_path(int count) {
+    for (int index = 0; index < count; ++index) {
+        Token turn = mint();
+        if (decide()) {
+            continue;
+        }
+        take(static_cast<Token&&>(turn));
+    }
+}
+
+void each_turn(int count) {
+    while (count-- > 0) {
+        Token turn = mint();
+        take(static_cast<Token&&>(turn));
+    }
+}
+
+}  // namespace planted

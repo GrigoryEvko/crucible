@@ -1,0 +1,95 @@
+// A linear local that moves into a different linear local is consumed there.
+// The initializer of each such local is a constant, so the front end folds
+// it, and the event PLUGIN_FOLDED_INITIALIZER gives the move back: the
+// initializer of a variable, an element of an aggregate, and a call of a
+// constexpr constructor.  A value that a call gives back by return and that an
+// assignment puts back into its local is a consume and a new value.  An
+// argument of an empty class by value is the argument and an EMPTY_CLASS_EXPR
+// after it, in a call and in the initializer of a base.  An lvalue reference
+// to a local borrows it and does not consume it, and a move through the
+// reference consumes the local.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+struct Holder {
+    Token token;
+};
+
+struct Owner {
+    constexpr explicit Owner(Token&& given) noexcept : token(static_cast<Token&&>(given)) {}
+    Token token;
+};
+
+struct Base {
+    constexpr Base(int, Token given) noexcept : token(static_cast<Token&&>(given)) {}
+    Token token;
+};
+
+struct Derived : Base {
+    constexpr explicit Derived(Token given) noexcept : Base{1, static_cast<Token&&>(given)} {}
+};
+
+constexpr Token mint() noexcept { return Token{}; }
+constexpr Token pass(Token&& token) noexcept { return static_cast<Token&&>(token); }
+void take(Token&& token) noexcept;
+void take_by_value(Token token) noexcept;
+void take_holder(Holder&& holder) noexcept;
+void take_owner(Owner&& owner) noexcept;
+
+void into_a_local() {
+    Token first = mint();
+    Token second = static_cast<Token&&>(first);
+    take(static_cast<Token&&>(second));
+}
+
+void through_a_call() {
+    Token first = mint();
+    Token back = pass(static_cast<Token&&>(first));
+    take(static_cast<Token&&>(back));
+}
+
+void into_an_aggregate() {
+    Token first = mint();
+    Holder holder{static_cast<Token&&>(first)};
+    take_holder(static_cast<Holder&&>(holder));
+}
+
+void into_a_constructor() {
+    Token first = mint();
+    Owner owner(static_cast<Token&&>(first));
+    take_owner(static_cast<Owner&&>(owner));
+}
+
+void by_value() {
+    Token first = mint();
+    take_by_value(static_cast<Token&&>(first));
+}
+
+void borrowed_then_moved() {
+    Token first = mint();
+    Token const& reader = first;
+    static_cast<void>(reader);
+    take(static_cast<Token&&>(first));
+}
+
+void moved_through_a_reference() {
+    Token first = mint();
+    Token& alias = first;
+    take(static_cast<Token&&>(alias));
+}
+
+void handed_back() {
+    Token value = mint();
+    value = pass(static_cast<Token&&>(value));
+    take(static_cast<Token&&>(value));
+}
+
+}  // namespace planted

@@ -1,0 +1,9 @@
+// A base unit with a body that drops a linear parameter.  The main file of a
+// base unit is its own sentinel.
+#include <fixy/Uses.h>
+
+namespace planted {
+
+void main_drop(Token&& token) noexcept { static_cast<void>(token); }
+
+}  // namespace planted

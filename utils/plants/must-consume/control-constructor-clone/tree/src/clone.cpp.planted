@@ -1,0 +1,32 @@
+// A constructor that consumes a linear parameter through the initializer of a
+// member.  GCC gives each clone of a constructor and of a destructor a second
+// event on a body that cp_genericize lowered, and the lowered body does not
+// show the consume.  The rule reads only the body of the constructor itself.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+void note() noexcept;
+
+class Owner {
+public:
+    explicit Owner(Token&& token) noexcept : held_(static_cast<Token&&>(token)) { note(); }
+    ~Owner() { note(); }
+
+private:
+    Token held_;
+};
+
+void make_owner() {
+    Owner owner(Token{});
+    static_cast<void>(owner);
+}
+
+}  // namespace planted

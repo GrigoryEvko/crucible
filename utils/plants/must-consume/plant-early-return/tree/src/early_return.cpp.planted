@@ -1,0 +1,25 @@
+// A linear local that an early return leaves with no consume.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+constexpr Token mint() noexcept { return Token{}; }
+void take(Token&& token) noexcept;
+bool decide() noexcept;
+
+void early_return() {
+    Token token = mint();
+    if (decide()) {
+        return;
+    }
+    take(static_cast<Token&&>(token));
+}
+
+}  // namespace planted

@@ -1,0 +1,61 @@
+// Each exit from linearity is a named door.  A door ends each linear value of
+// its frame: a function with the annotation drop_door or detach_door, a
+// function that a linear-door row names, and the drop door of the marker.  The
+// end of the scope of a value of a class with the annotation scope_end_door is
+// its door, and so is the end of the scope of a class whose linear parts each
+// have such a class.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+struct [[= ::foundation::linear::linear{}]][[= ::foundation::linear::scope_end_door{}]] Guard {
+    constexpr Guard() noexcept = default;
+    constexpr Guard(Guard&&) noexcept = default;
+    constexpr Guard& operator=(Guard&&) noexcept { return *this; }
+    Guard(const Guard&) = delete;
+    ~Guard() {}
+};
+
+struct GuardHolder {
+    Guard guard;
+};
+
+constexpr Token mint() noexcept { return Token{}; }
+
+[[= ::foundation::linear::drop_door{}]] void ended_by_annotation(Token&& token) noexcept {
+    Token ended(static_cast<Token&&>(token));
+    static_cast<void>(ended);
+}
+
+[[= ::foundation::linear::detach_door{}]] void detached(Token&& token, int reason) noexcept {
+    static_cast<void>(token);
+    static_cast<void>(reason);
+}
+
+void ended_by_row(Token&& token) noexcept { static_cast<void>(token); }
+
+void use_doors() {
+    ended_by_annotation(mint());
+    detached(mint(), 1);
+    ended_by_row(mint());
+    ::foundation::linear::drop(mint());
+}
+
+void scope_doors() {
+    Guard guard;
+    GuardHolder holder{Guard{}};
+    static_cast<void>(guard);
+    static_cast<void>(holder);
+}
+
+static_assert(::foundation::linear::is_linear_v<Guard>);
+static_assert(::foundation::linear::is_linear_v<GuardHolder>);
+
+}  // namespace planted

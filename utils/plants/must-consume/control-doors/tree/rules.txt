@@ -1,0 +1,7 @@
+# The rule table of this plant.  The unit of src/ is quarantined, and it can
+# name the vocabulary of the linear marker of the repository.  The
+# linear-door row names a door that carries no annotation.
+
+admit foundation::linear | the vocabulary of the linear marker, which the planted code names
+quarantine src/
+linear-door planted::ended_by_row | the planted door that the roster names

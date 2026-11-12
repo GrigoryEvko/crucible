@@ -49,11 +49,12 @@ THE KEYS OF A COMPILE
                     default is the limit of the row padded-list
                     of utils/registry.txt, as for each compile of the tree
       build=PATH, stamps=PATH, stamp=TEXT, sentinel=PATH, not-standalone=PATH,
-      library-records=on
+      library-records=on, must-consume=on
                     the plugin arguments, with no default.  A sentinel is
                     relative to the root, and each other PATH is a path of
                     the manifest.  Only a compile with library-records=on has
-                    the records of the library code
+                    the records of the library code, and only a compile with
+                    must-consume=on has the lines of the rule must-consume
     The value "-" gives no argument.
       out=no        no argument out.  By default the witness gives out=DIR, a
                     directory of its own, and reads the report file there
@@ -229,6 +230,7 @@ PLUGIN_KEYS = (
     "padded-list-limit",
     "not-standalone",
     "library-records",
+    "must-consume",
 )
 PATH_KEYS = frozenset({"root", "rules", "build", "stamps", "not-standalone"})
 DEFAULTS = {"root": ".", "rules": "rules.txt", "mode": "report"}

@@ -1,0 +1,10 @@
+# The paths of a switch: the default case leaves the local with no consume,
+# and the case that consumes it joins at the end of the switch, so the local
+# leaves its scope with a consume on some paths only.  A fall-through to a
+# case that consumes and a default case that does not return give no line.
+
+compile switch src/switch.cpp must-consume=on
+flag switch -freflection
+exit switch pass
+judge switch
+finding switch must-consume unconsumed-on-path src/switch.cpp:22:11 | planted::default_drops: token

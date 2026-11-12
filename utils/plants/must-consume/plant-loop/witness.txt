@@ -1,0 +1,12 @@
+# The fixed point of a loop: the second turn of a loop consumes an outer
+# local again (double-consume), and the path of zero turns leaves it with no
+# consume (unconsumed-on-path).  A continue leaves a local of the body with no
+# consume.  A local of the body that each turn consumes gives no line.
+
+compile loop src/loop.cpp must-consume=on
+flag loop -freflection
+exit loop pass
+judge loop
+finding loop must-consume unconsumed-on-path src/loop.cpp:21:11 | planted::outer_local: token
+finding loop must-consume double-consume src/loop.cpp:23:13 | planted::outer_local: token
+finding loop must-consume unconsumed src/loop.cpp:29:15 | planted::continue_path: turn

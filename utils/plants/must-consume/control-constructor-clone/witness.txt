@@ -1,0 +1,11 @@
+# A clone of a constructor or of a destructor gets a second event on a lowered
+# body, and the rule skips it.  The constructor consumes its parameter through
+# the initializer of a member, so the unit gives no line.  The class has a
+# user-provided destructor, so it cannot move and is not linear: a local of
+# the class leaves its scope through its destructor.  An object compile makes
+# the clones, so this control compiles to an object.
+
+compile clone src/clone.cpp must-consume=on stage=c
+flag clone -freflection
+exit clone pass
+judge clone

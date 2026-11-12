@@ -1,0 +1,24 @@
+// A linear local that moves into a different local and then moves a second
+// time.  The first move is a folded initializer.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+constexpr Token mint() noexcept { return Token{}; }
+void take(Token&& token) noexcept;
+
+void moved_twice() {
+    Token first = mint();
+    Token second = static_cast<Token&&>(first);
+    take(static_cast<Token&&>(first));
+    take(static_cast<Token&&>(second));
+}
+
+}  // namespace planted

@@ -227,6 +227,15 @@
 #       NAME, is the kind denied-syscall of the rule syscalls in
 #       each file that a build compiles.  No ledger row admits it.  A NAME
 #       has one deny row at most, and the reason is necessary
+#   linear-door FUNCTION | REASON
+#       FUNCTION is a door of the rule must-consume: it ends each linear
+#       value of its frame (utils/tools/quarantine/linear.cpp, THE DOORS).
+#       FUNCTION is a qualified name with no template arguments, and it
+#       names each overload of that name.  A function with the annotation
+#       drop_door or detach_door of include/foundation/Linear.h is a door
+#       with no row.  These rows are the roster of the other doors, and the
+#       rule refuses a row whose function no unit of the build reads.  A
+#       FUNCTION has one linear-door row at most, and the reason is necessary
 #
 # THE LONGEST PATH
 #   When the PATHs of two rows hold one file, the longer PATH decides.  A
@@ -508,6 +517,17 @@ deny set_robust_list set_tid_address arch_prctl set_thread_area rseq | a call th
 deny setuid setgid setreuid setregid setresuid setresgid setgroups setfsuid setfsgid | a change of the credentials: the C library gives the change to each thread of the process, and a raw call changes one thread
 deny brk | a change of the program break, which the allocator of the C library owns
 deny exit exit_group | an exit with no run of the exit handlers of the C library and no flush of its streams
+
+# The doors of the rule must-consume that carry no annotation.  Each one ends
+# a linear value of its frame by its contract, so the rule does not report
+# that value.
+linear-door foundation::permissions::mint_permission_split | the split ends the parent token, which it takes by an unnamed parameter, and mints the two child tokens
+linear-door foundation::permissions::mint_permission_combine | the combine ends the two child tokens, which it takes by unnamed parameters, and mints the parent token
+linear-door foundation::permissions::mint_permission_split_n | the split ends the parent token, which it takes by an unnamed parameter, and mints each child token
+linear-door foundation::permissions::mint_permission_combine_n | the combine ends each child token, which it takes by an unnamed parameter, and mints the parent token
+linear-door foundation::permissions::mint_permission_share | the share ends the exclusive token, which it takes by an unnamed parameter, and mints a share of the region
+linear-door foundation::permissions::mint_permission_after_loan | the door ends the loan when it comes back, and it takes the parked token out of its carrier
+linear-door fixy::OwnedRegion::recombine | the door ends the receipt of the split, and it takes the permission out of each shard to combine the region
 
 # The witness rows.  Each class of the base that attests to a fact that it
 # cannot see, and the door that it keeps.  Edit a row, and then write the

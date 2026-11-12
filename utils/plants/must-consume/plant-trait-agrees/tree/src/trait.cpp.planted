@@ -1,0 +1,65 @@
+// The plugin and the trait is_linear_v of include/foundation/Linear.h give one
+// answer.  Each linear class has a static_assert of the trait and a local that
+// the code drops, and each class that is not linear has a static_assert and a
+// local that gives no line.  The base header fixy/Carriers.h holds the library
+// classes and the union that hold a linear member.
+#include <foundation/Linear.h>
+#include <fixy/Carriers.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+template <bool IsLinear>
+struct [[= ::foundation::linear::linear_when<IsLinear>]] Maybe {
+    constexpr Maybe() noexcept = default;
+    constexpr Maybe(Maybe&&) noexcept = default;
+    constexpr Maybe& operator=(Maybe&&) noexcept { return *this; }
+    Maybe(const Maybe&) = delete;
+};
+
+struct Holder {
+    Token token;
+};
+
+struct Pinned {
+    Pinned() = default;
+    Pinned(Pinned&&) = delete;
+    Token token;
+};
+
+struct Ended {
+    ~Ended() {}
+    Token token;
+};
+
+static_assert(::foundation::linear::is_linear_v<Token>);
+static_assert(::foundation::linear::is_linear_v<Maybe<true>>);
+static_assert(::foundation::linear::is_linear_v<Holder>);
+static_assert(!::foundation::linear::is_linear_v<Maybe<false>>);
+static_assert(!::foundation::linear::is_linear_v<Pinned>);
+static_assert(!::foundation::linear::is_linear_v<Ended>);
+
+void drops() {
+    Token token;
+    Maybe<true> marked;
+    Holder holder;
+    Maybe<false> unmarked;
+    Pinned pinned;
+    Ended ended;
+    static_cast<void>(token);
+    static_cast<void>(marked);
+    static_cast<void>(holder);
+    static_cast<void>(unmarked);
+    static_cast<void>(pinned);
+    static_cast<void>(ended);
+}
+
+void carriers_of_a_token() { carriers<Token>(); }
+
+}  // namespace planted

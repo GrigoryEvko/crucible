@@ -1,0 +1,12 @@
+# The known gaps of the rule.  Each finding below is a false finding.  A change
+# that closes a gap makes this control fail: that change removes the finding
+# from this list, so the list only becomes shorter.
+#
+# gaps.cpp:24  the front end folds the initializer of a temporary that a
+#              reference extends, and it gives no event of that fold.  So the
+#              rule does not see the move of the parameter into the call.
+
+compile gaps src/gaps.cpp must-consume=on
+flag gaps -freflection
+exit gaps pass
+finding gaps must-consume unconsumed src/gaps.cpp:24:33 | planted::extended_temporary: parent

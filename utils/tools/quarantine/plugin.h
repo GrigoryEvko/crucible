@@ -27,6 +27,8 @@
 //         body.cpp         the family library code: the code of a library in
 //                          each function that the unit compiles, from an RTL
 //                          pass
+//         linear.cpp       the family linear: the paths of a body and the
+//                          linear values on them, for the rule must-consume
 //         contract.cpp     the contract rule
 //
 // THE RULE TABLE
@@ -324,6 +326,19 @@
 //     outside-door          a use of an entity of an owner row of the kind
 //                           outside the sites of the row
 //     denied-syscall        a raw call of a system call that a deny row names
+//     The rule must-consume of the family linear (linear.cpp, THE KINDS):
+//     unconsumed            a linear object that leaves its scope at an exit,
+//                           and no path to that exit consumes it
+//     unconsumed-on-path    a linear object that leaves its scope at an exit,
+//                           and only some paths to that exit consume it
+//     double-consume        a consume of a linear object that a path consumed
+//     assign-over-live      an assignment to a linear object that holds a value
+//                           that a path did not consume
+//     discarded-temporary   a linear temporary that the code discards
+//     unanalyzed            a function with a goto or a label
+//     door                  no finding: one record of each linear-door row of
+//                           the rule table that a unit read, for the module of
+//                           the rule, which refuses a row with no record
 //     The records of the library code (body.cpp, THE RECORDS) come from the
 //     instructions of each function that the unit compiles.  They have no
 //     rule of the registry.  The tag library-records stands in the place of
@@ -672,6 +687,7 @@ enum class Rule : std::uint8_t {
     syscalls,
     home,
     owners,
+    must_consume,
     // No rule of the registry: the tag of the records of the library code
     // (THE RULES AND THE KINDS).
     library_records,
@@ -864,6 +880,14 @@ enum class Kind : std::uint8_t {
     member_splice,
     open_static_member,
     walked_return,
+    // The family linear (linear.cpp).
+    linear_unconsumed,
+    linear_unconsumed_on_path,
+    linear_double_consume,
+    linear_assign_over_live,
+    linear_discarded_temporary,
+    linear_unanalyzed,
+    linear_door,
     // The family library code (body.cpp).
     library_inlined,
     library_call,
@@ -915,6 +939,8 @@ inline const char* rule_name(Rule rule) {
             return "home";
         case Rule::owners:
             return "owners";
+        case Rule::must_consume:
+            return "must-consume";
         case Rule::library_records:
             return "library-records";
     }
@@ -1113,6 +1139,20 @@ inline const char* kind_name(Kind kind) {
             return "open-static-member";
         case Kind::walked_return:
             return "walked-return";
+        case Kind::linear_unconsumed:
+            return "unconsumed";
+        case Kind::linear_unconsumed_on_path:
+            return "unconsumed-on-path";
+        case Kind::linear_double_consume:
+            return "double-consume";
+        case Kind::linear_assign_over_live:
+            return "assign-over-live";
+        case Kind::linear_discarded_temporary:
+            return "discarded-temporary";
+        case Kind::linear_unanalyzed:
+            return "unanalyzed";
+        case Kind::linear_door:
+            return "door";
         case Kind::library_inlined:
             return "inlined";
         case Kind::library_call:
@@ -1219,6 +1259,14 @@ inline Rule rule_of(Kind kind) {
         case Kind::open_static_member:
         case Kind::walked_return:
             return Rule::owners;
+        case Kind::linear_unconsumed:
+        case Kind::linear_unconsumed_on_path:
+        case Kind::linear_double_consume:
+        case Kind::linear_assign_over_live:
+        case Kind::linear_discarded_temporary:
+        case Kind::linear_unanalyzed:
+        case Kind::linear_door:
+            return Rule::must_consume;
         case Kind::library_inlined:
         case Kind::library_call:
         case Kind::library_reference:
@@ -1236,8 +1284,8 @@ inline bool is_each_mode_kind(Kind kind) {
 }
 
 // True when a rule of the families declaration property (declaration.cpp),
-// expression shape (expression.cpp), owner (owner.cpp) and home (home.cpp)
-// gives the kind, or the rule door-unit (include.cpp).  Such a finding is an
+// expression shape (expression.cpp), owner (owner.cpp), home (home.cpp) and
+// linear (linear.cpp) gives the kind, or the rule door-unit (include.cpp).  Such a finding is an
 // error only in the mode error, no opt-out region covers it, and no enforce
 // mode changes it.  The module of its rule judges it against the ledger of the
 // rule.  plugin.cpp reports each such line in one way (report_family).
@@ -1257,6 +1305,7 @@ inline bool is_family_kind(Kind kind) {
         case Rule::syscalls:
         case Rule::home:
         case Rule::owners:
+        case Rule::must_consume:
         case Rule::library_records:
             return true;
         default:
@@ -1267,14 +1316,15 @@ inline bool is_family_kind(Kind kind) {
 // True when a line of a family kind is a record: a fact for a reader of the
 // records, and no finding of its rule.  The record of a mint, the record of an
 // alias of a class with a member mint, the line of a grant set that the unit
-// compared, a site that a home row admits (at-home), and each record of the
-// library code.
+// compared, a site that a home row admits (at-home), a linear-door row that
+// the unit read (door), and each record of the library code.
 inline bool is_record_kind(Kind kind) {
     switch (kind) {
         case Kind::mint_record:
         case Kind::mint_alias:
         case Kind::grant_compared:
         case Kind::home_at_home:
+        case Kind::linear_door:
         case Kind::library_inlined:
         case Kind::library_call:
         case Kind::library_reference:
@@ -1393,6 +1443,13 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"owners", "member-splice"},
     {"owners", "open-static-member"},
     {"owners", "walked-return"},
+    {"must-consume", "unconsumed"},
+    {"must-consume", "unconsumed-on-path"},
+    {"must-consume", "double-consume"},
+    {"must-consume", "assign-over-live"},
+    {"must-consume", "discarded-temporary"},
+    {"must-consume", "unanalyzed"},
+    {"must-consume", "door"},
 };
 
 // True when the entity is part of the key of a finding: two findings of such
@@ -2305,6 +2362,9 @@ void walk_home();
 // body.cpp: the family library code, the pass that reads the instructions of
 // each function.
 void register_library_code(const char* plugin_name);
+
+// linear.cpp: the family linear, the rule must-consume.
+void register_linear(const char* plugin_name);
 
 // plugin.cpp: the report of the unit.
 void report(bool can_add_dependencies);

@@ -1,0 +1,41 @@
+// A call of a function that does not return ends its path, so the linear
+// local leaves no scope on that path.  Each other path consumes it.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+constexpr Token mint() noexcept { return Token{}; }
+void take(Token&& token) noexcept;
+bool decide() noexcept;
+[[noreturn]] void stop() noexcept;
+
+void stops_on_one_path() {
+    Token token = mint();
+    if (decide()) {
+        stop();
+    }
+    take(static_cast<Token&&>(token));
+}
+
+void consumes_in_each_branch() {
+    Token token = mint();
+    if (decide()) {
+        take(static_cast<Token&&>(token));
+    } else {
+        take(static_cast<Token&&>(token));
+    }
+}
+
+void consumes_on_the_right_of_a_condition() {
+    Token token = mint();
+    decide() ? take(static_cast<Token&&>(token)) : stop();
+}
+
+}  // namespace planted

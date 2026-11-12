@@ -1,0 +1,8 @@
+# The rule table of this plant.  The planted header of include/ and the unit
+# of src/base/ are base files, and the unit of src/ is quarantined.  Each can
+# name the vocabulary of the linear marker of the repository.
+
+layer floor 0 include/ src/base/
+allow floor <foundation/Linear.h>
+admit foundation::linear | the vocabulary of the linear marker, which the planted code names
+quarantine src/

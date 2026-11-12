@@ -1,0 +1,12 @@
+# A door ends each linear value of its frame, so its body gives no line: a
+# function with the annotation drop_door or detach_door, a function of a
+# linear-door row, and the drop door of the marker.  The row gives the record
+# door, which is no finding.  The end of the scope of a class with the
+# annotation scope_end_door, or of a class whose linear parts each have such a
+# class, is a door too.
+
+compile doors src/doors.cpp must-consume=on
+flag doors -freflection
+exit doors pass
+judge doors
+finding doors must-consume door src/doors.cpp:42:6 | planted::ended_by_row

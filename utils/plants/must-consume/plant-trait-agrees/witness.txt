@@ -1,0 +1,20 @@
+# The plugin reads the marker as the trait is_linear_v does: a class with the
+# annotation linear, an instance of linear_when<true>, and a class that can
+# move and holds a linear member.  An instance of linear_when<false>, a class
+# that cannot move and a class with a user-provided destructor and no move
+# constructor are not linear.  A union, std::optional, std::expected, std::pair
+# and std::tuple with a linear member are linear.  The static_asserts of the
+# unit hold, and each local of a linear class gives a line.
+
+compile trait src/trait.cpp must-consume=on
+flag trait -freflection
+exit trait pass
+judge trait
+finding trait must-consume unconsumed src/trait.cpp:49:11 | planted::drops: token
+finding trait must-consume unconsumed src/trait.cpp:50:17 | planted::drops: marked
+finding trait must-consume unconsumed src/trait.cpp:51:12 | planted::drops: holder
+finding trait must-consume unconsumed include/fixy/Carriers.h:32:15 | planted::carriers: either
+finding trait must-consume unconsumed include/fixy/Carriers.h:33:22 | planted::carriers: optional
+finding trait must-consume unconsumed include/fixy/Carriers.h:34:27 | planted::carriers: expected
+finding trait must-consume unconsumed include/fixy/Carriers.h:35:23 | planted::carriers: pair
+finding trait must-consume unconsumed include/fixy/Carriers.h:36:24 | planted::carriers: tuple

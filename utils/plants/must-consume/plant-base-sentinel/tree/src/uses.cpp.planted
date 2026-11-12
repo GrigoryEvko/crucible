@@ -1,0 +1,13 @@
+// A quarantined unit that includes the base header fixy/Uses.h and
+// instantiates its template with a linear type.
+#include <fixy/Uses.h>
+
+namespace planted {
+
+void use() {
+    header_drop(Token{});
+    template_drop(Token{});
+    template_drop(1);
+}
+
+}  // namespace planted

@@ -1,0 +1,9 @@
+# A moved linear local that moves a second time is the finding
+# double-consume, at the second consume.  The first move is a folded
+# initializer, which the event PLUGIN_FOLDED_INITIALIZER gives.
+
+compile twice src/twice.cpp must-consume=on
+flag twice -freflection
+exit twice pass
+judge twice
+finding twice must-consume double-consume src/twice.cpp:20:9 | planted::moved_twice: first

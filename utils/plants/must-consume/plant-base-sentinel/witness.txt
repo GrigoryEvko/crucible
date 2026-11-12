@@ -1,0 +1,29 @@
+# A body of a base header that is no instance of a template counts only in the
+# sentinel unit of the header: the unit whose argument sentinel names the
+# header, and the base unit whose main file holds the body.  An instance of a
+# template counts in each unit that makes it, and an instance with a type that
+# is not linear gives no line.  A parse and an object compile of one unit give
+# the same lines.
+
+compile sentinel src/uses.cpp sentinel=include/fixy/Uses.h must-consume=on stage=c
+flag sentinel -freflection
+exit sentinel pass
+judge sentinel
+finding sentinel must-consume unconsumed include/fixy/Uses.h:16:33 | planted::header_drop: token
+finding sentinel must-consume unconsumed include/fixy/Uses.h:19:24 | planted::template_drop: value
+
+compile parse src/uses.cpp sentinel=include/fixy/Uses.h must-consume=on stage=syntax findings=sentinel
+flag parse -freflection
+exit parse pass
+
+compile plain src/uses.cpp must-consume=on
+flag plain -freflection
+exit plain pass
+judge plain
+finding plain must-consume unconsumed include/fixy/Uses.h:19:24 | planted::template_drop: value
+
+compile main src/base/main.cpp must-consume=on
+flag main -freflection
+exit main pass
+judge main
+finding main must-consume unconsumed src/base/main.cpp:7:24 | planted::main_drop: token

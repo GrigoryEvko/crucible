@@ -1,0 +1,8 @@
+# A linear local that an early return leaves with no consume is the finding
+# unconsumed, at the declaration of the local.
+
+compile early src/early_return.cpp must-consume=on
+flag early -freflection
+exit early pass
+judge early
+finding early must-consume unconsumed src/early_return.cpp:18:11 | planted::early_return: token

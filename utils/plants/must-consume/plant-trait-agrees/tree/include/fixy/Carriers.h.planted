@@ -1,0 +1,44 @@
+// A base header with a template of library classes and a union that hold a
+// linear member.  The trait and the plugin read each one as linear, so each
+// local of an instance with a linear type gives a line in the unit that makes
+// the instance.
+#pragma once
+
+#include <foundation/Linear.h>
+
+#include <expected>
+#include <optional>
+#include <tuple>
+#include <utility>
+
+namespace planted {
+
+template <class T>
+union Either {
+    Either() noexcept : number{0} {}
+    Either(Either&&) noexcept : number{0} {}
+    ~Either() {}
+    T token;
+    int number;
+};
+
+template <class T>
+void carriers() {
+    static_assert(::foundation::linear::is_linear_v<Either<T>>);
+    static_assert(::foundation::linear::is_linear_v<std::optional<T>>);
+    static_assert(::foundation::linear::is_linear_v<std::expected<T, int>>);
+    static_assert(::foundation::linear::is_linear_v<std::pair<T, int>>);
+    static_assert(::foundation::linear::is_linear_v<std::tuple<T, int>>);
+    Either<T> either;
+    std::optional<T> optional;
+    std::expected<T, int> expected;
+    std::pair<T, int> pair;
+    std::tuple<T, int> tuple;
+    static_cast<void>(either);
+    static_cast<void>(optional);
+    static_cast<void>(expected);
+    static_cast<void>(pair);
+    static_cast<void>(tuple);
+}
+
+}  // namespace planted

@@ -1,0 +1,43 @@
+// An assignment over a linear local that holds a live value drops that value.
+// Trivial has a trivial move assignment and is empty, so the front end keeps
+// only the source of the assignment, and the event
+// PLUGIN_EMPTY_CLASS_ASSIGNMENT gives the target.  An assignment after a
+// consume gives the local a new value, and it is no finding.  A source with a
+// side effect, such as a call that gives the value back, stays in the tree.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Trivial {
+    constexpr Trivial() noexcept = default;
+    constexpr Trivial(Trivial&&) noexcept {}
+    Trivial& operator=(Trivial&&) noexcept = default;
+    Trivial(const Trivial&) = delete;
+};
+
+void take(Trivial&& value) noexcept;
+
+void over_a_live_value() {
+    Trivial held;
+    Trivial other;
+    held = static_cast<Trivial&&>(other);
+    take(static_cast<Trivial&&>(held));
+}
+
+void after_a_consume() {
+    Trivial held;
+    Trivial other;
+    take(static_cast<Trivial&&>(held));
+    held = static_cast<Trivial&&>(other);
+    take(static_cast<Trivial&&>(held));
+}
+
+Trivial pass(Trivial&& value) noexcept;
+
+void handed_back() {
+    Trivial held;
+    held = pass(static_cast<Trivial&&>(held));
+    take(static_cast<Trivial&&>(held));
+}
+
+}  // namespace planted

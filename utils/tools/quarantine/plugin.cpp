@@ -99,6 +99,12 @@
 //                    Quarantine.cmake gives it to each compile of the tree.
 //                    A compile with no such argument, such as a compile of a
 //                    plant of a different rule, has no record of the family
+//     must-consume=on
+//                    run the rule must-consume of the family linear on each
+//                    body (linear.cpp).  Quarantine.cmake gives it to each
+//                    compile of the tree.  A compile of a plant of a different
+//                    rule has no such argument, so its report holds no line of
+//                    the rule
 //
 // THE DEPENDENCIES
 //     utils/assay/loop/stamps.py writes DIR/modes/PATH for each source file of
@@ -558,6 +564,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     std::string not_standalone_argument;
     bool has_padded_limit = false;
     bool records_library_code = false;
+    bool checks_must_consume = false;
     for (int index = 0; index < plugin_info->argc; ++index) {
         std::string key = plugin_info->argv[index].key;
         std::string value = plugin_info->argv[index].value != nullptr ? plugin_info->argv[index].value : "";
@@ -603,9 +610,17 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
                 return 1;
             }
             records_library_code = true;
+        } else if (key == "must-consume") {
+            if (value != "on") {
+                error("quarantine: must-consume is %qs; give must-consume=on to run the rule must-consume on each "
+                      "body, or no such argument",
+                      value.c_str());
+                return 1;
+            }
+            checks_must_consume = true;
         } else {
             error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out, stamps, stamp, "
-                  "kinds, sentinel, not-standalone, padded-list-limit and library-records",
+                  "kinds, sentinel, not-standalone, padded-list-limit, library-records and must-consume",
                   key.c_str());
             return 1;
         }
@@ -659,6 +674,9 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     register_owner(plugin_info->base_name);
     if (records_library_code) {
         register_library_code(plugin_info->base_name);
+    }
+    if (checks_must_consume) {
+        register_linear(plugin_info->base_name);
     }
     front_end_parse_file = lang_hooks.parse_file;
     lang_hooks.parse_file = parse_and_walk;

@@ -1,0 +1,12 @@
+# A move of a linear local into a different linear local, an aggregate or a
+# constructor is a consume, also when the front end folds the initializer to a
+# constant.  The event PLUGIN_FOLDED_INITIALIZER of the fifth GCC patch gives
+# the move back.  An argument of an empty class by value is a consume, in a call
+# and in the initializer of a base.  An lvalue reference to a local is a borrow
+# and no consume, and a move through it consumes the local.  A value that a
+# call gives back and that an assignment puts back into its local gives no line.
+
+compile moved src/moved.cpp must-consume=on
+flag moved -freflection
+exit moved pass
+judge moved

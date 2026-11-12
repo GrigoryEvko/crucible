@@ -1,0 +1,23 @@
+#pragma once
+
+// A base header with a body that drops a linear parameter, and a template
+// with the same body.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+inline void header_drop(Token&& token) noexcept { static_cast<void>(token); }
+
+template <class T>
+void template_drop(T&& value) noexcept {
+    static_cast<void>(value);
+}
+
+}  // namespace planted
