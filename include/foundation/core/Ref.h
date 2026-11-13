@@ -358,15 +358,17 @@ public:
     // The borrow of the whole object as a Ref with the fresh brand of the
     // call.  The Ref has no test, so a loop reads the object through it at
     // the cost of a raw pointer.  The pack refuses each explicit argument, so
-    // no caller names the brand.
+    // no caller names the brand.  The result type names the brand through
+    // undeducible_brand_t, so the address of view with a target type that
+    // names a different brand deduces no brand, and it matches no overload.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
-    [[nodiscard]] Ref<T, Fresh> view() & noexcept {
+    [[nodiscard]] Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>> view() & noexcept {
         return detail::RefDoor::lend<Fresh>(*held_());
     }
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
-    [[nodiscard]] Ref<T const, Fresh> view() const& noexcept {
+    [[nodiscard]] Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>> view() const& noexcept {
         T const& object = *held_();
         return detail::RefDoor::lend<Fresh>(object);
     }
