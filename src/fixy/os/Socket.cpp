@@ -142,7 +142,9 @@ UnitResult set_hardware_timestamping_(int socket, core::TextView interface_name)
     if (interface_name.size() >= interface_name_capacity) {
         return core::err(os::Errno::enametoolong);
     }
-    HardwareTimestampConfig const config{
+    // Not const: the kernel writes the receive filter that it applies back
+    // into this record (SIOCSHWTSTAMP in <linux/net_tstamp.h>).
+    HardwareTimestampConfig config{
         .flags = 0,
         .transmit = hardware_transmit_on,
         .receive_filter = hardware_filter_all,

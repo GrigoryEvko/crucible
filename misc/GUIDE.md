@@ -3227,12 +3227,10 @@ At this time, each system header that a base file includes has a `door` row. A b
 
 The session watch of `fixy/session/Watch.h` keeps its cold code in `src/fixy/session/Watch.cpp`, which includes no system header. Rule R20 of the plan, as the owner amended it on 2026-10-11, lets a door change a signal disposition only in a call that takes an Init context, or in its own handler to put back the disposition that such a call replaced. So the hooks of the watch install only through `mint_watch_hooks`, which takes an Init context, and a claim of a session installs none. The mint calls the signal door `fixy/os/Signal.h`, the exit hook door `fixy/os/ExitHooks.h` and the fork hook of the thread door. The signal door sets an alternate signal stack on the thread that installs the handlers, and the thread door sets one on each thread that it starts, from the guarded memory door. A thread that the base does not start gets no alternate stack.
 
-No system type is part of a public signature of a door. An integer typedef of the C library, such as `::off_t`, is a system type too. At this time, thirteen public signatures of the doors do not obey this rule:
-- `fixy::time::PtpClockReader::caps()` returns `std::expected<::ptp_clock_caps, std::error_code>`, which holds a kernel struct
-- `fixy::time::nanos_from_timespec` takes a `std::timespec`, a struct of the C library
+No system type is part of a public signature of a door. An integer typedef of the C library, such as `::off_t`, is a system type too. At this time, ten public signatures of the doors do not obey this rule:
 - `fixy::time::clockid_for` returns a `::clockid_t`
 - `fixy::fs::mint_file`, `fixy::fs::mint_durable_truncate_file` and `fixy::fs::mint_durable_append_file` take a `::mode_t`
-- `fixy::fs::file_size` returns an `::off_t`, and `fixy::mmap::mint_mmap`, `fixy::OwnedMmap::mint_region` and the two overloads of `fixy::io::zerocopy_transfer` take one
+- `fixy::mmap::mint_mmap`, `fixy::OwnedMmap::mint_region` and the two overloads of `fixy::io::zerocopy_transfer` take an `::off_t`
 - `fixy::OwnedFile::get()` and `fixy::OwnedFile::release()` return a `std::FILE*`, a struct of the C library.
 
 Slice 4.1 of the plan removes each of these. A base record replaces each struct, and a base type replaces each integer typedef of the C library. In the same slice, each door returns a `Result` with the error type of the Os family.
