@@ -1,12 +1,20 @@
 // A stream that starts with ops that never occur again still compiles its
 // loop, and the background pipeline holds a bounded trace while it searches.
+//
+// The foreground of the test waits for the pipeline many times.  Each wait
+// sleeps between two reads of a counter of the pipeline, and it does not
+// spin.  A spin runs instructions for each moment that the pipeline needs,
+// so its count increases with the load of the host.  The launcher of the
+// test limits the user instructions of the test.
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/IterationDetector.h>
 #include <crucible/MetaLog.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Vigil.h>
+#include <fixy/Ctx.h>
 #include <fixy/FixedArray.h>
+#include <fixy/os/Time.h>
 
 #include "test_assert.h"
 #include "test_harness.h"
@@ -21,6 +29,19 @@ using crucible::TraceRing;
 using crucible::Vigil;
 
 namespace {
+
+// The pause between two reads of a counter of the pipeline, in nanoseconds.
+constexpr uint64_t kPollNanos = 100000;
+
+// Waits until the background pipeline processed each op that the ring
+// holds, as Vigil::flush does.  The foreground is the one producer of the
+// ring, so the ops of the ring do not change during the wait.
+void wait_for_pipeline(const Vigil& vigil) {
+    const fixy::TestRunnerCtx runner{foundation::effects::testing::test()};
+    const auto pause = fixy::time::mint_bounded_sleep<kPollNanos>(runner);
+    while (!vigil.flush_complete())
+        (void)pause.sleep_for(kPollNanos);
+}
 
 crucible::TensorMeta make_meta(uint64_t address) noexcept {
     crucible::TensorMeta meta{};
@@ -74,12 +95,12 @@ bool record_wide(Vigil& vigil, uint64_t schema, uint64_t shape, uint64_t address
 // iterations.  Returns the iterations of the loop that the region took, or
 // zero when no region came.
 uint32_t iterations_of_loop_to_region(Vigil& vigil) {
-    vigil.flush();
+    wait_for_pipeline(vigil);
     for (uint32_t iteration = 0; iteration < 400; ++iteration) {
         const uint64_t base = 0x40000000 + uint64_t{iteration} * 0x10000;
         for (uint64_t op = 0; op < 8; ++op)
             (void)record(vigil, 0x100 + op, 0x200 + op, base + op * 0x100, base + (op + 1) * 0x100);
-        vigil.flush();
+        wait_for_pipeline(vigil);
         if (vigil.active_region() != nullptr) return iteration + 1;
     }
     return 0;
@@ -91,7 +112,7 @@ uint32_t iterations_of_loop_to_region(Vigil& vigil) {
 uint32_t iterations_to_region(Vigil& vigil, uint64_t prefix_ops) {
     for (uint64_t i = 0; i < prefix_ops; ++i) {
         (void)record(vigil, 0x1000000 + i, 0x2000000 + i, 0x100000 + i * 0x100, 0x100080 + i * 0x100);
-        if ((i & 0x3fff) == 0) vigil.flush();
+        if ((i & 0x3fff) == 0) wait_for_pipeline(vigil);
     }
     return iterations_of_loop_to_region(vigil);
 }
@@ -127,7 +148,7 @@ void test_log_that_fills_is_released_again() {
     uint64_t refused_ops = 0;
     for (uint64_t i = 0; i < 600000; ++i) {
         if (record_wide(vigil, 0x5000000 + i, 0x6000000 + i, 0x10000000 + i * 0x200)) ++refused_ops;
-        if ((i & 0x3fff) == 0) vigil.flush();
+        if ((i & 0x3fff) == 0) wait_for_pipeline(vigil);
     }
     assert(refused_ops > 0 && "the prefix did not fill the metadata log");
     const uint32_t iterations = iterations_of_loop_to_region(vigil);
@@ -151,23 +172,24 @@ MetaLog& pipeline_log() {
 void test_detect_stage_holds_a_bounded_trace() {
     // Ops that never occur again give no period.  The detect stage holds
     // only the ops that a future iteration can claim: at most half of the
-    // history of the detector and K ops more.
+    // history of the detector and K ops more.  The stream fills the largest
+    // history, and then it moves through a second full history.
     BackgroundThread bt;
     TraceRing& ring = pipeline_ring();
     bt.start(&ring, &pipeline_log());
-    constexpr uint64_t kOps = uint64_t{3} * IterationDetector::HISTORY_MAX_CAPACITY;
+    const fixy::TestRunnerCtx runner{foundation::effects::testing::test()};
+    const auto pause = fixy::time::mint_bounded_sleep<kPollNanos>(runner);
+    constexpr uint64_t kOps = uint64_t{2} * IterationDetector::HISTORY_MAX_CAPACITY;
     for (uint64_t i = 0; i < kOps; ++i) {
         TraceRing::Entry entry{};
         entry.schema_hash = crucible::SchemaHash{0x3000000 + i};
         entry.shape_hash = crucible::ShapeHash{0x4000000 + i};
-        while (!ring.try_append(entry, MetaIndex::none())) {
-            CRUCIBLE_SPIN_PAUSE;
-        }
+        while (!ring.try_append(entry, MetaIndex::none()))
+            (void)pause.sleep_for(kPollNanos);
     }
     const uint64_t target = ring.total_produced();
-    while (bt.total_processed.load_acquire() < target) {
-        CRUCIBLE_SPIN_PAUSE;
-    }
+    while (bt.total_processed.load_acquire() < target)
+        (void)pause.sleep_for(kPollNanos);
     assert(bt.pending_op_count() <= IterationDetector::HISTORY_MAX_CAPACITY / 2 + IterationDetector::K);
     assert(bt.detector.pos_ - bt.detector.base_ <= IterationDetector::HISTORY_MAX_CAPACITY);
     bt.stop();
