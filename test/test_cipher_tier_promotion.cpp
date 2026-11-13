@@ -7,7 +7,6 @@
 #include <foundation/reflect/EnumName.h>
 
 #include "test_assert.h"
-#include <expected>
 #include <cstdio>
 #include <optional>
 #include <type_traits>
@@ -88,25 +87,25 @@ void test_promote_and_demote_preserve_value() {
 void test_restore_returns_expected_warm_handle() {
     constexpr ContentHash hash{0xC003000000000003ULL};
     auto restored = mint_restore<ContentHash>(::fixy::mint_band<tier::Cold<ContentHash>>(hash), hash);
-    assert(restored.has_value());
-    static_assert(std::is_same_v<decltype(restored), std::expected<tier::Warm<ContentHash>, RestoreError>>);
-    ContentHash restored_hash = std::move(restored.value()).consume();
+    assert(restored.is_ok());
+    static_assert(std::is_same_v<decltype(restored), ::fixy::Result<tier::Warm<ContentHash>, RestoreError>>);
+    ContentHash restored_hash = std::move(restored).expect("the restore of a matching hash succeeds").consume();
     assert(restored_hash == hash);
 }
 
 void test_restore_error_surface() {
     constexpr ContentHash hash{0xD004000000000004ULL};
     auto empty_key = mint_restore<ContentHash>(::fixy::mint_band<tier::Cold<ContentHash>>(hash), ContentHash{});
-    assert(!empty_key.has_value());
-    assert(empty_key.error() == RestoreError::EmptyContentHash);
+    assert(empty_key.is_err());
+    assert(empty_key.err().expect("the restore refuses an empty key") == RestoreError::EmptyContentHash);
 
     auto empty_handle = mint_restore<ContentHash>(::fixy::mint_band<tier::Cold<ContentHash>>(ContentHash{}), hash);
-    assert(!empty_handle.has_value());
-    assert(empty_handle.error() == RestoreError::EmptyColdHandle);
+    assert(empty_handle.is_err());
+    assert(empty_handle.err().expect("the restore refuses an empty handle") == RestoreError::EmptyColdHandle);
 
     auto mismatch = mint_restore<ContentHash>(::fixy::mint_band<tier::Cold<ContentHash>>(ContentHash{0xE005ULL}), hash);
-    assert(!mismatch.has_value());
-    assert(mismatch.error() == RestoreError::ContentHashMismatch);
+    assert(mismatch.is_err());
+    assert(mismatch.err().expect("the restore refuses a mismatch") == RestoreError::ContentHashMismatch);
 }
 
 // The endpoint of the hot promotion: one hot-tier value and End, over a

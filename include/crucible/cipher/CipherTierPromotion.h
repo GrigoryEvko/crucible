@@ -6,13 +6,13 @@
 
 #include <crucible/Types.h>
 #include <fixy/Bands.h>
+#include <fixy/Core.h>
 #include <fixy/session/Delegate.h>
 #include <fixy/session/Protocol.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <concepts>
-#include <expected>
 #include <type_traits>
 #include <utility>
 
@@ -103,19 +103,19 @@ using HotTierHandle = ::fixy::cipher_tier::Hot<T>;
 
 template <typename T>
     requires RestorableTier<T>
-[[nodiscard]] constexpr std::expected<WarmTierHandle<T>, RestoreError>
+[[nodiscard]] constexpr ::fixy::Result<WarmTierHandle<T>, RestoreError>
 mint_restore(ColdTierHandle<T> cold_handle,
              ContentHash content_hash) noexcept(std::is_nothrow_move_constructible_v<T>) {
     if (!static_cast<bool>(content_hash)) {
-        return std::unexpected(RestoreError::EmptyContentHash);
+        return ::fixy::err(RestoreError::EmptyContentHash);
     }
 
     const ContentHash cold_projected = content_hash_projection<T>::project(cold_handle.peek());
     if (!static_cast<bool>(cold_projected)) {
-        return std::unexpected(RestoreError::EmptyColdHandle);
+        return ::fixy::err(RestoreError::EmptyColdHandle);
     }
     if (cold_projected != content_hash) {
-        return std::unexpected(RestoreError::ContentHashMismatch);
+        return ::fixy::err(RestoreError::ContentHashMismatch);
     }
 
     return mint_promote<CipherTierTag_v::Cold, CipherTierTag_v::Warm>(std::move(cold_handle));
