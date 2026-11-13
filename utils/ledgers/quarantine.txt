@@ -96,7 +96,7 @@ bench/ | door-header | 2 | - | -
 bench/ | inline-asm | 3 | - | -
 bench/ | raw-function-pointer | 1 | - | -
 bench/ | raw-new-delete | 2 | - | -
-bench/ | raw-pointer-object | 303 | - | -
+bench/ | raw-pointer-object | 238 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 9 | - | -
 bench/ | std-entity | 961 | - | -
@@ -169,7 +169,7 @@ include/crucible/observe/ | replace-pending:<limits> | 1 | - | -
 include/crucible/observe/ | std-entity | 19 | - | -
 include/crucible/observe/ | std-object | 21 | - | -
 include/crucible/perf/ | c-array-object | 4 | - | -
-include/crucible/perf/ | raw-pointer-object | 11 | - | -
+include/crucible/perf/ | raw-pointer-object | 3 | - | -
 include/crucible/perf/ | std-entity | 4 | - | -
 include/crucible/perf/ | std-object | 10 | - | -
 include/crucible/perf/detail/ | c-array-object | 1 | - | -
@@ -183,7 +183,7 @@ include/crucible/perf/detail/ | std-object | 6 | - | -
 include/crucible/topology/ | std-object | 2 | - | -
 include/crucible/warden/ | c-library-call | 18 | - | -
 include/crucible/warden/ | door-header | 1 | - | -
-include/crucible/warden/ | raw-pointer-object | 28 | - | -
+include/crucible/warden/ | raw-pointer-object | 27 | - | -
 include/crucible/warden/ | replace-pending:std::bit_cast | 4 | - | -
 include/crucible/warden/ | std-entity | 2 | - | -
 include/crucible/warden/ | std-object | 1 | - | -
@@ -382,7 +382,7 @@ src/perf/ | c-library-object | 4 | - | -
 src/perf/ | compiler-builtin | 1 | - | -
 src/perf/ | door-header | 1 | - | -
 src/perf/ | foreign-symbol | 14 | - | -
-src/perf/ | raw-pointer-object | 15 | - | -
+src/perf/ | raw-pointer-object | 7 | - | -
 src/perf/ | replace-pending:std::bit_cast | 2 | - | -
 src/perf/ | std-entity | 60 | - | -
 src/perf/ | std-object | 1 | - | -

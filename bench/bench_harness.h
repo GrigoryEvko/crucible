@@ -426,7 +426,7 @@ namespace detail {
 // Per-facade availability is queried via Senses accessors:
 //   senses_instance()->sense_hub()    — 96-counter mmap snapshot
 //   senses_instance()->sched_switch() — per-tenant off-CPU timeline
-// Either may return nullptr if that facade failed to attach (missing
+// Either may return none if that facade failed to attach (missing
 // CAP_BPF, kernel.unprivileged_bpf_disabled=2, kernel too old);
 // senses_instance() itself is never nullptr (Senses is a value).
 
@@ -1398,11 +1398,11 @@ private:
     struct SampleWindow {
         uint64_t freq_start = 0;
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        const ::crucible::perf::SenseHub* hub = nullptr;
+        ::fixy::Option<::fixy::Ref<::crucible::perf::SenseHub const>> hub{};
         // SchedSwitch — see detail::senses_instance() docblock for cost
         // analysis.  Pre/post are ~1 ns volatile loads each; the walk
         // happens at print time on bg thread, never per-iteration.
-        const ::crucible::perf::SchedSwitch* sw = nullptr;
+        ::fixy::Option<::fixy::Ref<::crucible::perf::SchedSwitch const>> sw{};
         ::crucible::perf::Snapshot bpf_pre{};
         uint64_t sched_pre_idx = 0;
 #endif
@@ -1436,8 +1436,10 @@ private:
         const ::crucible::perf::Senses* senses = detail::senses_instance();
         window.hub = senses->sense_hub();
         window.sw = senses->sched_switch();
-        if (window.hub != nullptr) window.bpf_pre = window.hub->read();
-        if (window.sw != nullptr) window.sched_pre_idx = window.sw->timeline_write_index();
+        for (auto const hub : window.hub)
+            window.bpf_pre = hub->read();
+        for (auto const sw : window.sw)
+            window.sched_pre_idx = sw->timeline_write_index();
 #endif
         return window;
     }
@@ -1453,14 +1455,14 @@ private:
 
         const auto wall1 = std::chrono::steady_clock::now();
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        const ::crucible::perf::SenseHub* hub = window.hub;
-        const ::crucible::perf::SchedSwitch* sw = window.sw;
         ::crucible::perf::Snapshot const& bpf_pre = window.bpf_pre;
         const uint64_t sched_pre_idx = window.sched_pre_idx;
         ::crucible::perf::Snapshot bpf_post{};
         uint64_t sched_post_idx = 0;
-        if (hub != nullptr) bpf_post = hub->read();
-        if (sw != nullptr) sched_post_idx = sw->timeline_write_index();
+        for (auto const hub : window.hub)
+            bpf_post = hub->read();
+        for (auto const sw : window.sw)
+            sched_post_idx = sw->timeline_write_index();
 #endif
         const uint64_t freq_end = detail::read_cpu_freq_hz(pinned_cpu.raw());
         // The measurement ends here, and so does the pin.  A failed restore
@@ -1523,7 +1525,7 @@ private:
         }
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        if (hub != nullptr) {
+        for (auto const hub : window.hub) {
             r.bpf_delta = bpf_post - bpf_pre;
             // attached_programs() returns Refined<bounded_above<64>, size_t>
             // — the type carries a structural ≤64 bound that
@@ -1542,10 +1544,14 @@ private:
         // ≤TIMELINE_CAPACITY events per bench.
         r.sched_pre_idx = sched_pre_idx;
         r.sched_post_idx = sched_post_idx;
-        if (sw != nullptr && sched_post_idx > sched_pre_idx) {
+        // With no scheduler counter, the view stays empty and both indexes
+        // stay zero, so the walk below does nothing.
+        ::fixy::Borrowed<const ::crucible::perf::TimelineSchedEvent, ::crucible::perf::SchedSwitch> view{};
+        for (auto const sw : window.sw)
+            view = sw->timeline_view();
+        if (sched_post_idx > sched_pre_idx) {
             const uint64_t window_size =
                 std::min(sched_post_idx - sched_pre_idx, static_cast<uint64_t>(::crucible::perf::TIMELINE_CAPACITY));
-            const auto view = sw->timeline_view();
             const auto* events = view.data();
             if (events != nullptr) {
                 constexpr uint32_t K = Report::kSchedOffCpuTopK;
@@ -1876,9 +1882,9 @@ inline void print_system_info(FILE* out = stdout) {
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     const ::crucible::perf::Senses* senses = detail::senses_instance();
-    const ::crucible::perf::SenseHub* hub = senses->sense_hub();
+    auto hub = senses->sense_hub();
     const auto cov = senses->coverage();
-    if (hub != nullptr) {
+    if (hub.is_some()) {
         // Show both the SenseHub-internal tracepoint count and the
         // Senses-aggregator coverage, so a 0/2 attached banner is
         // distinguishable from a partial sense_hub-only attach.
@@ -1886,7 +1892,8 @@ inline void print_system_info(FILE* out = stdout) {
                      "  BPF senses: harness subset loaded "
                      "(SenseHub=%zu tracepoints, %zu/2 harness facades; "
                      "full suite is reported by bench_perf_loader)\n",
-                     hub->attached_programs().value(), cov.attached_count());
+                     std::move(hub).expect("the test above found the hub")->attached_programs().value(),
+                     cov.attached_count());
     } else if (cov.attached_count() > 0) {
         std::fprintf(out,
                      "  BPF senses: harness subset partial — %zu/2 facades attached "

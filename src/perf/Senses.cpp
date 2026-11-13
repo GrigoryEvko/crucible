@@ -7,13 +7,12 @@ namespace crucible::perf {
 namespace {
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-// The address of the facade that option holds, or null when it holds none.
+// A borrow of the facade that option holds, or none when it holds none.
 template <class Facade>
-[[nodiscard]] const Facade* address_in(::fixy::Option<Facade> const& option) noexcept {
-    for (Facade const& facade : option) {
-        return &facade;
-    }
-    return nullptr;
+[[nodiscard]] ::fixy::Option<::fixy::Ref<Facade const>> borrow_of(::fixy::Option<Facade> const& option) noexcept {
+    using Borrow = ::fixy::Option<::fixy::Ref<Facade const>>;
+    return option.match([](Facade const& facade) noexcept { return Borrow::some(::fixy::to(facade)); },
+                        [] noexcept { return Borrow{::fixy::none}; });
 }
 #endif
 
@@ -36,7 +35,7 @@ Senses::~Senses() noexcept = default;
 // carries Block, and each load waits in the kernel for the verifier.
 //
 // A build with no BPF substrate has no facade to load.  The load then gives
-// a Senses that attaches nothing, and each accessor gives nullptr.
+// a Senses that attaches nothing, and each accessor gives none.
 
 Senses Senses::load_subset(::fixy::InitLoadCtx const& init, SensesMask which) noexcept {
     // State is stack-constructed.  A noexcept load path must not allocate: a
@@ -62,67 +61,67 @@ Senses Senses::load_subset(::fixy::InitLoadCtx const& init, SensesMask which) no
 
 Senses Senses::load_all(::fixy::InitLoadCtx const& init) noexcept { return load_subset(init, SensesMask::all()); }
 
-const SenseHub* Senses::sense_hub() const noexcept {
+::fixy::Option<::fixy::Ref<SenseHub const>> Senses::sense_hub() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     for (State const& state : state_) {
-        return address_in(state.sense_hub);
+        return borrow_of(state.sense_hub);
     }
 #endif
-    return nullptr;
+    return ::fixy::none;
 }
 
-const SchedSwitch* Senses::sched_switch() const noexcept {
+::fixy::Option<::fixy::Ref<SchedSwitch const>> Senses::sched_switch() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     for (State const& state : state_) {
-        return address_in(state.sched_switch);
+        return borrow_of(state.sched_switch);
     }
 #endif
-    return nullptr;
+    return ::fixy::none;
 }
 
-const PmuSample* Senses::pmu_sample() const noexcept {
+::fixy::Option<::fixy::Ref<PmuSample const>> Senses::pmu_sample() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     for (State const& state : state_) {
-        return address_in(state.pmu_sample);
+        return borrow_of(state.pmu_sample);
     }
 #endif
-    return nullptr;
+    return ::fixy::none;
 }
 
-const LockContention* Senses::lock_contention() const noexcept {
+::fixy::Option<::fixy::Ref<LockContention const>> Senses::lock_contention() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     for (State const& state : state_) {
-        return address_in(state.lock_contention);
+        return borrow_of(state.lock_contention);
     }
 #endif
-    return nullptr;
+    return ::fixy::none;
 }
 
-const SyscallLatency* Senses::syscall_latency() const noexcept {
+::fixy::Option<::fixy::Ref<SyscallLatency const>> Senses::syscall_latency() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     for (State const& state : state_) {
-        return address_in(state.syscall_latency);
+        return borrow_of(state.syscall_latency);
     }
 #endif
-    return nullptr;
+    return ::fixy::none;
 }
 
-const SchedTpBtf* Senses::sched_tp_btf() const noexcept {
+::fixy::Option<::fixy::Ref<SchedTpBtf const>> Senses::sched_tp_btf() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     for (State const& state : state_) {
-        return address_in(state.sched_tp_btf);
+        return borrow_of(state.sched_tp_btf);
     }
 #endif
-    return nullptr;
+    return ::fixy::none;
 }
 
-const SyscallTpBtf* Senses::syscall_tp_btf() const noexcept {
+::fixy::Option<::fixy::Ref<SyscallTpBtf const>> Senses::syscall_tp_btf() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     for (State const& state : state_) {
-        return address_in(state.syscall_tp_btf);
+        return borrow_of(state.syscall_tp_btf);
     }
 #endif
-    return nullptr;
+    return ::fixy::none;
 }
 
 CoverageReport Senses::coverage() const noexcept {

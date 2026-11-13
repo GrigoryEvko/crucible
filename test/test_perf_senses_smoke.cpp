@@ -62,34 +62,34 @@ int main() {
     // For every facade, the coverage report and the accessor must
     // agree about whether it came up.
     const auto cov = s.coverage();
-    if ((cov.sense_hub_attached) != (s.sense_hub() != nullptr)) {
+    if ((cov.sense_hub_attached) != (s.sense_hub().is_some())) {
         std::fprintf(stderr,
                      "Senses: coverage.sense_hub_attached (%d) disagrees with "
-                     "sense_hub() != nullptr (%d)\n",
-                     cov.sense_hub_attached, s.sense_hub() != nullptr);
+                     "sense_hub().is_some() (%d)\n",
+                     cov.sense_hub_attached, s.sense_hub().is_some());
         return 1;
     }
-    if ((cov.sched_switch_attached) != (s.sched_switch() != nullptr)) {
+    if ((cov.sched_switch_attached) != (s.sched_switch().is_some())) {
         std::fprintf(stderr, "Senses: sched_switch coverage mismatch\n");
         return 1;
     }
-    if ((cov.pmu_sample_attached) != (s.pmu_sample() != nullptr)) {
+    if ((cov.pmu_sample_attached) != (s.pmu_sample().is_some())) {
         std::fprintf(stderr, "Senses: pmu_sample coverage mismatch\n");
         return 1;
     }
-    if ((cov.lock_contention_attached) != (s.lock_contention() != nullptr)) {
+    if ((cov.lock_contention_attached) != (s.lock_contention().is_some())) {
         std::fprintf(stderr, "Senses: lock_contention coverage mismatch\n");
         return 1;
     }
-    if ((cov.syscall_latency_attached) != (s.syscall_latency() != nullptr)) {
+    if ((cov.syscall_latency_attached) != (s.syscall_latency().is_some())) {
         std::fprintf(stderr, "Senses: syscall_latency coverage mismatch\n");
         return 1;
     }
-    if ((cov.sched_tp_btf_attached) != (s.sched_tp_btf() != nullptr)) {
+    if ((cov.sched_tp_btf_attached) != (s.sched_tp_btf().is_some())) {
         std::fprintf(stderr, "Senses: sched_tp_btf coverage mismatch\n");
         return 1;
     }
-    if ((cov.syscall_tp_btf_attached) != (s.syscall_tp_btf() != nullptr)) {
+    if ((cov.syscall_tp_btf_attached) != (s.syscall_tp_btf().is_some())) {
         std::fprintf(stderr, "Senses: syscall_tp_btf coverage mismatch\n");
         return 1;
     }
@@ -108,23 +108,23 @@ int main() {
                                                                 .pmu_sample = true,
                                                             });
     const auto sub_cov = sub.coverage();
-    if (sub.sched_switch() != nullptr || sub_cov.sched_switch_attached) {
+    if (sub.sched_switch().is_some() || sub_cov.sched_switch_attached) {
         std::fprintf(stderr, "Senses::load_subset masked off sched_switch but it's loaded\n");
         return 1;
     }
-    if (sub.lock_contention() != nullptr || sub_cov.lock_contention_attached) {
+    if (sub.lock_contention().is_some() || sub_cov.lock_contention_attached) {
         std::fprintf(stderr, "Senses::load_subset masked off lock_contention but it's loaded\n");
         return 1;
     }
-    if (sub.syscall_latency() != nullptr || sub_cov.syscall_latency_attached) {
+    if (sub.syscall_latency().is_some() || sub_cov.syscall_latency_attached) {
         std::fprintf(stderr, "Senses::load_subset masked off syscall_latency but it's loaded\n");
         return 1;
     }
-    if (sub.sched_tp_btf() != nullptr || sub_cov.sched_tp_btf_attached) {
+    if (sub.sched_tp_btf().is_some() || sub_cov.sched_tp_btf_attached) {
         std::fprintf(stderr, "Senses::load_subset masked off sched_tp_btf but it's loaded\n");
         return 1;
     }
-    if (sub.syscall_tp_btf() != nullptr || sub_cov.syscall_tp_btf_attached) {
+    if (sub.syscall_tp_btf().is_some() || sub_cov.syscall_tp_btf_attached) {
         std::fprintf(stderr, "Senses::load_subset masked off syscall_tp_btf but it's loaded\n");
         return 1;
     }
@@ -143,31 +143,31 @@ int main() {
                      moved_from_cov.attached_count());
         return 1;
     }
-    if (s.sense_hub() != nullptr) {
+    if (s.sense_hub().is_some()) {
         std::fprintf(stderr, "Senses: moved-from sense_hub() not null\n");
         return 1;
     }
-    if (s.sched_switch() != nullptr) {
+    if (s.sched_switch().is_some()) {
         std::fprintf(stderr, "Senses: moved-from sched_switch() not null\n");
         return 1;
     }
-    if (s.pmu_sample() != nullptr) {
+    if (s.pmu_sample().is_some()) {
         std::fprintf(stderr, "Senses: moved-from pmu_sample() not null\n");
         return 1;
     }
-    if (s.lock_contention() != nullptr) {
+    if (s.lock_contention().is_some()) {
         std::fprintf(stderr, "Senses: moved-from lock_contention() not null\n");
         return 1;
     }
-    if (s.syscall_latency() != nullptr) {
+    if (s.syscall_latency().is_some()) {
         std::fprintf(stderr, "Senses: moved-from syscall_latency() not null\n");
         return 1;
     }
-    if (s.sched_tp_btf() != nullptr) {
+    if (s.sched_tp_btf().is_some()) {
         std::fprintf(stderr, "Senses: moved-from sched_tp_btf() not null\n");
         return 1;
     }
-    if (s.syscall_tp_btf() != nullptr) {
+    if (s.syscall_tp_btf().is_some()) {
         std::fprintf(stderr, "Senses: moved-from syscall_tp_btf() not null\n");
         return 1;
     }
@@ -184,31 +184,31 @@ int main() {
                      reloaded_cov.attached_count());
         return 1;
     }
-    if (reloaded.sense_hub() != nullptr) {
+    if (reloaded.sense_hub().is_some()) {
         std::fprintf(stderr, "Senses: move-assigned-from sense_hub() not null\n");
         return 1;
     }
-    if (reloaded.sched_switch() != nullptr) {
+    if (reloaded.sched_switch().is_some()) {
         std::fprintf(stderr, "Senses: move-assigned-from sched_switch() not null\n");
         return 1;
     }
-    if (reloaded.pmu_sample() != nullptr) {
+    if (reloaded.pmu_sample().is_some()) {
         std::fprintf(stderr, "Senses: move-assigned-from pmu_sample() not null\n");
         return 1;
     }
-    if (reloaded.lock_contention() != nullptr) {
+    if (reloaded.lock_contention().is_some()) {
         std::fprintf(stderr, "Senses: move-assigned-from lock_contention() not null\n");
         return 1;
     }
-    if (reloaded.syscall_latency() != nullptr) {
+    if (reloaded.syscall_latency().is_some()) {
         std::fprintf(stderr, "Senses: move-assigned-from syscall_latency() not null\n");
         return 1;
     }
-    if (reloaded.sched_tp_btf() != nullptr) {
+    if (reloaded.sched_tp_btf().is_some()) {
         std::fprintf(stderr, "Senses: move-assigned-from sched_tp_btf() not null\n");
         return 1;
     }
-    if (reloaded.syscall_tp_btf() != nullptr) {
+    if (reloaded.syscall_tp_btf().is_some()) {
         std::fprintf(stderr, "Senses: move-assigned-from syscall_tp_btf() not null\n");
         return 1;
     }

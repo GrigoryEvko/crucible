@@ -71,13 +71,16 @@ public:
 
     [[nodiscard]] static Senses load_subset(::fixy::InitLoadCtx const&, SensesMask which) noexcept;
 
-    [[nodiscard]] const SenseHub* sense_hub() const noexcept;
-    [[nodiscard]] const SchedSwitch* sched_switch() const noexcept;
-    [[nodiscard]] const PmuSample* pmu_sample() const noexcept;
-    [[nodiscard]] const LockContention* lock_contention() const noexcept;
-    [[nodiscard]] const SyscallLatency* syscall_latency() const noexcept;
-    [[nodiscard]] const SchedTpBtf* sched_tp_btf() const noexcept;
-    [[nodiscard]] const SyscallTpBtf* syscall_tp_btf() const noexcept;
+    // Each accessor gives a borrow of its facade, or none when the facade
+    // did not load, when the Senses is moved from, or in a build with no
+    // BPF substrate.  The borrow lives as long as this Senses.
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<SenseHub const>> sense_hub() const noexcept;
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<SchedSwitch const>> sched_switch() const noexcept;
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<PmuSample const>> pmu_sample() const noexcept;
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<LockContention const>> lock_contention() const noexcept;
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<SyscallLatency const>> syscall_latency() const noexcept;
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<SchedTpBtf const>> sched_tp_btf() const noexcept;
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<SyscallTpBtf const>> syscall_tp_btf() const noexcept;
 
     [[nodiscard]] CoverageReport coverage() const noexcept;
 

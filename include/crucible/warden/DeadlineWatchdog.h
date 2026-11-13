@@ -132,8 +132,8 @@ public:
             return WatchdogVerdict::InsufficientData;
         }
 
-        const ::crucible::perf::SchedSwitch* sched = senses_->sched_switch();
-        if (sched == nullptr) {
+        auto sched = senses_->sched_switch();
+        if (sched.is_none()) {
             // The counter is not attached, which happens on an older
             // kernel or without the capability to load it. That is an
             // absence of signal, not evidence of health.
@@ -153,7 +153,7 @@ public:
             return WatchdogVerdict::InsufficientData;
         }
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        const uint64_t count = sched->context_switches();
+        const uint64_t count = std::move(sched).expect("the test above found the counter")->context_switches();
 
         if (window_started_ns_ == 0) {
             window_started_ns_ = now_ns;

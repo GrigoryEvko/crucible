@@ -236,7 +236,7 @@ int main() {
         const ::crucible::perf::Senses senses =
             ::crucible::perf::Senses::load_subset(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
                                                   ::crucible::perf::SensesMask{.sched_switch = true});
-        if (senses.sched_switch() == nullptr) {
+        if (senses.sched_switch().is_none()) {
             std::fprintf(stderr, "[skipped] no sched_switch source on this host\n");
         } else {
             DeadlineWatchdog sensing = mint_deadline_watchdog(startup, &senses, policy);

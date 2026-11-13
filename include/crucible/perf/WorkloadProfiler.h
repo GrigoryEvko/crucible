@@ -120,11 +120,11 @@ public:
 
         // A load that attached only some of its facades still yields a
         // Senses, so the hub can be absent even here.
-        const auto* hub = senses_->sense_hub();
-        if (hub == nullptr) return pass_through_(decision);
+        auto hub = senses_->sense_hub();
+        if (hub.is_none()) return pass_through_(decision);
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        const auto current = hub->read();
+        const auto current = std::move(hub).expect("the test above found the hub")->read();
         if (first_call_) {
             last_ = current;
             first_call_ = false;
