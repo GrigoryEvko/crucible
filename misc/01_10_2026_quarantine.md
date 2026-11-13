@@ -979,6 +979,7 @@ The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLooku
 | `PlainPayload<T>`, `DroppablePayload<T>` | The plain form, and a payload that a member can drop or copy | main |
 | `HoldsLinearAlternative<Ts...>` | A sum with an alternative that is not droppable. `Option`, `Result` and `OneOf` then carry the linear marker through `linear_when`, because the union of their storage cannot move and the trait reads no member of a class that cannot move | main |
 | `ComparablePart<T>` | A part whose `==` gives exactly `bool` and does not throw, and that is not a floating-point type | main |
+| `TakesPayloadByValue<Arm, T>`, `HoldsNoBorrow<R>` | An arm of an rvalue match whose call takes `T` by value, read by reflection, and a result with no reference, no address and no closure whose captures reflection cannot read. An arm that reflection cannot read is refused | main |
 | `HasNiche<T>`, `WellFormedNiche<T>` | A payload that declares its empty value. A declared niche that is not complete fails. A statement `is_empty_never_built` is a constant of type `bool` | main, design |
 | `OneOfAlternatives<Ts...>` | 2 to 255 alternatives, each a `ChoicePayload`, with no type two times. The value of the tag fits in one byte | main |
 | `ErrorConvertsTo<F, E>` | `F` is not `E`, and `F` converts to `E` with no throw | design |
@@ -994,7 +995,7 @@ The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLooku
 | `Option<T>::some(v)` | Full. The empty value of a niche ends the process | one test for a niche payload, and none when the niche states `is_empty_never_built` | - | main |
 | `some(v)` | A free function that gives `Option<remove_cvref_t<V>>`, with no conversion | as `some` | - | design |
 | `is_some()`, `is_none()` | The state | a load | - | main |
-| `match(on_some, on_none)` | `&&` consumes, `const&` borrows. A temporary has no borrow match, so no arm gives a reference into it. The rule borrow-match of the plugin refuses an arm of the borrow match that assigns, moves or changes the Option | one branch | `match` | main |
+| `match(on_some, on_none)` | `&&` consumes, `const&` borrows. The `&&` form takes each arm whose parameter is a value, and its result holds no reference and no address, so no arm gives a view into a payload that ends. A deleted twin of each refusal gives its reason. A const temporary has no borrow match. The rule borrow-match of the plugin refuses an arm of the borrow match that assigns, moves or changes the Option | one branch | `match` | main |
 | `for (x : option)` | Zero or one turn. A linear payload has no mutable loop | one test | `for` | main |
 | `value_or(fallback)` | `&&`, a droppable payload only | one select | - | main |
 | `expect(why)` | `&&`. An empty `Option` ends the process | one branch to a cold call | `expect` | main |
@@ -1015,7 +1016,7 @@ The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLooku
 | `err()` | `const&` copies a droppable `E`. `&&` moves a linear `E` and drops the value, so a linear `T` has no `&&` form | one branch | - | main |
 | `value_or(fallback)` | `&&`, a droppable `T` and `E` only | one select | - | main |
 | `expect(why)` | `&&`. Gives `void` for `Unit` | one branch to a cold call | `expect` | main |
-| `match(on_ok, on_err)` | `&&` and `const&`. A temporary has no borrow match. The rule borrow-match refuses an arm of the borrow match that writes the Result | one branch | `match` | main |
+| `match(on_ok, on_err)` | `&&` and `const&`. The `&&` form takes each part by value and gives no reference and no address, as for `Option`. A const temporary has no borrow match. The rule borrow-match refuses an arm of the borrow match that writes the Result | one branch | `match` | main |
 | The move assignment, `==` | As for `Option`. A value or an `Err` binds to the deleted overload | as for `Option` | compare | main |
 | The layout | The sum with its tag, also for a value with a niche and an error with one value. Such a `Result` is a transient return value that goes back in two registers at 16 bytes, so a niche form saves no memory. Its `is_ok()` would test the address against null under `-fno-delete-null-pointer-checks` (`fixed_list_push`: 24 against 17 instructions at `-O3`, measured on 2026-11-12), so a change to the niche form needs a new measurement | - | - | main |
 
@@ -1028,7 +1029,7 @@ A `Result` has no loop, because a loop over the value drops the error with no tr
 | `OneOf(v)` | Implicit from one of `Ts`, with no conversion, no default constructor and no empty state | a move | - | main |
 | `is<T>()` | `T` is one of `Ts` | one compare | - | main |
 | `expect<T>(why)` | `&&`. Another alternative ends the process | one branch to a cold call | `expect` | main |
-| `match(arms...)` | `&&` and `const&`. One arm for each alternative in the order of `Ts`. The last alternative takes the last branch, so `match` has no fatal path. The `&&` form gives no reference, and a temporary has no borrow match. The rule borrow-match refuses an arm of the borrow match that writes the OneOf | one compare for each alternative | `match` | main |
+| `match(arms...)` | `&&` and `const&`. One arm for each alternative in the order of `Ts`. The last alternative takes the last branch, so `match` has no fatal path. The `&&` form takes each alternative by value and gives no reference and no address, as for `Option`, and a const temporary has no borrow match. The rule borrow-match refuses an arm of the borrow match that writes the OneOf | one compare for each alternative | `match` | main |
 | `get<T>()` | `Option<Ref<T>>`, after `Ref` of G3 | one compare | `get` | design |
 | `which()` | `Index<sizeof...(Ts)>`, after `Index<N>` of G4 | a load | - | design |
 | The move assignment, `==` | As for `Option`. A value of an alternative binds to the deleted overload | as for `Option`, and one compare of each tag before the active alternative | compare | main |

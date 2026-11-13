@@ -112,7 +112,7 @@ install_fatal_handlers_(FatalReport report) noexcept {
     g_fatal_report.store_release(report);
     PreviousStack replaced{};
     install_alternate_stack_(replaced).match(
-        [](::foundation::os::GuardedRegion&& region) {
+        [](::foundation::os::GuardedRegion region) {
             static_cast<::foundation::os::GuardedRegion&&>(region).keep_until_exit();
         },
         [] {});

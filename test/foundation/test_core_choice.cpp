@@ -238,9 +238,10 @@ void test_linear_payload() {
         }
         CRUCIBLE_FATAL_INVARIANT(seen_handle == 51 && target.is_some());
         int const matched = static_cast<Option<CountedToken>&&>(target).match(
-            [](CountedToken&& token) noexcept {
-                CountedToken const kept{static_cast<CountedToken&&>(token)};
-                return kept.handle();
+            [](CountedToken token) noexcept {
+                int const handle = token.handle();
+                ::foundation::linear::drop(static_cast<CountedToken&&>(token));
+                return handle;
             },
             [] noexcept { return 0; });
         CRUCIBLE_FATAL_INVARIANT(matched == 51 && live_tokens == 0);
@@ -283,10 +284,9 @@ void test_match() {
         Option<CountedOwner> source = Option<CountedOwner>::some(CountedOwner{31});
         bool source_was_empty_in_arm = false;
         int const handle = static_cast<Option<CountedOwner>&&>(source).match(
-            [&source, &source_was_empty_in_arm](CountedOwner&& owner) noexcept {
+            [&source, &source_was_empty_in_arm](CountedOwner owner) noexcept {
                 source_was_empty_in_arm = source.is_none();
-                CountedOwner const kept{static_cast<CountedOwner&&>(owner)};
-                return kept.handle();
+                return owner.handle();
             },
             [] noexcept { return 0; });
         CRUCIBLE_FATAL_INVARIANT(handle == 31 && source_was_empty_in_arm && source.is_none());
@@ -427,7 +427,7 @@ void test_result_roads() {
     auto const coded = [](Refusal refusal) noexcept { return refusal == Refusal::closed ? -2 : -3; };
     CRUCIBLE_FATAL_INVARIANT(even.match(doubled, coded) == 8);
     CRUCIBLE_FATAL_INVARIANT(odd.match(doubled, coded) == -2);
-    CRUCIBLE_FATAL_INVARIANT(half_of(6).match([](int&& value) noexcept { return value; }, coded) == 3);
+    CRUCIBLE_FATAL_INVARIANT(half_of(6).match([](int value) noexcept { return value; }, coded) == 3);
 
     bool const error_expect_aborts =
         ::crucible::test::aborts([] { static_cast<void>(half_of(7).expect("the test value is odd on purpose")); });
@@ -497,11 +497,13 @@ void test_result_linear_error() {
         CRUCIBLE_FATAL_INVARIANT(read_handle == 61 && live_tokens == 1);
         CountedToken const given_back = refuse_with(62).err().expect("the operation was refused");
         CRUCIBLE_FATAL_INVARIANT(given_back.handle() == 62 && live_tokens == 2);
-        int const moved_handle = refuse_with(63).match([](int&&) noexcept { return 0; },
-                                                       [](CountedToken&& token) noexcept {
-                                                           CountedToken const kept{static_cast<CountedToken&&>(token)};
-                                                           return kept.handle();
-                                                       });
+        int const moved_handle =
+            refuse_with(63).match([](int) noexcept { return 0; },
+                                  [](CountedToken token) noexcept {
+                                      int const handle = token.handle();
+                                      ::foundation::linear::drop(static_cast<CountedToken&&>(token));
+                                      return handle;
+                                  });
         CRUCIBLE_FATAL_INVARIANT(moved_handle == 63 && live_tokens == 2);
         // The Result of a linear error is linear, so the const match leaves it
         // to a consumer.  The drop door ends it.

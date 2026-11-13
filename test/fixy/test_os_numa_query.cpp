@@ -199,7 +199,7 @@ void test_parse_of_counter_texts() {
     auto const is_format_error =
         [](fixy::Result<fixy::numa::NodeAllocationCounters, fixy::numa::NumaQueryError> const& parsed) {
             return parsed.err().match(
-                [](fixy::numa::NumaQueryError const& error) {
+                [](fixy::numa::NumaQueryError error) {
                     return error.step == fixy::numa::NumaQueryStep::CounterFormat && error.error_number == 0;
                 },
                 [] { return false; });

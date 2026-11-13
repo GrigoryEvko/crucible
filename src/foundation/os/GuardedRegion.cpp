@@ -4,6 +4,7 @@
 
 #include <foundation/os/GuardedRegion.h>
 
+#include <foundation/core/Choice.h>
 #include <foundation/core/Report.h>
 #include <foundation/os/MapWords.h>
 #include <foundation/os/Syscall.h>
@@ -39,19 +40,16 @@ core::Result<GuardedRegion, Errno> map_guarded_region(std::size_t usable_bytes) 
     std::size_t const rounded =
         usable_bytes == 0 ? kGuardBytes : (usable_bytes + kGuardBytes - 1) / kGuardBytes * kGuardBytes;
     std::size_t const total = kGuardBytes + rounded;
-    return result_of(raw_syscall(Syscall::mmap, Word{}, total, kProtectNone, kMapPrivateAnonymous, kNoFile, 0))
-        .match(
-            [rounded, total](std::uint64_t address) -> core::Result<GuardedRegion, Errno> {
-                char* const first = __builtin_bit_cast(char*, address);
-                core::Result<std::uint64_t, Errno> const opened =
-                    result_of(raw_syscall(Syscall::mprotect, first + kGuardBytes, rounded, kProtectReadWrite));
-                if (opened.is_err()) {
-                    static_cast<void>(raw_syscall(Syscall::munmap, first, total));
-                    return core::err(opened.err().value_or(Errno::enomem));
-                }
-                return detail::GuardedRegionDoor::build(first, total);
-            },
-            [](Errno error) -> core::Result<GuardedRegion, Errno> { return core::err(error); });
+    CRUCIBLE_TRY(address,
+                 result_of(raw_syscall(Syscall::mmap, Word{}, total, kProtectNone, kMapPrivateAnonymous, kNoFile, 0)));
+    char* const first = __builtin_bit_cast(char*, address);
+    core::Result<std::uint64_t, Errno> const opened =
+        result_of(raw_syscall(Syscall::mprotect, first + kGuardBytes, rounded, kProtectReadWrite));
+    if (opened.is_err()) {
+        static_cast<void>(raw_syscall(Syscall::munmap, first, total));
+        return core::err(opened.err().value_or(Errno::enomem));
+    }
+    return detail::GuardedRegionDoor::build(first, total);
 }
 
 GuardedRegion::~GuardedRegion() {

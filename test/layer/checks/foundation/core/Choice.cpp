@@ -354,7 +354,7 @@ static_assert(borrowed_match_keeps_the_payload());
 
 [[nodiscard]] consteval bool moved_match_empties_the_source() noexcept {
     Option<Owner> source = Option<Owner>::some(Owner{5});
-    int const seen = static_cast<Option<Owner>&&>(source).match([](Owner&& owner) noexcept { return owner.handle; },
+    int const seen = static_cast<Option<Owner>&&>(source).match([](Owner owner) noexcept { return owner.handle; },
                                                                 [] noexcept { return 0; });
     return seen == 5 && source.is_none();
 }
@@ -549,9 +549,9 @@ constexpr bool expects_half = requires { typename std::integral_constant<int, ch
 static_assert(expects_half<4>);
 static_assert(!expects_half<5>);
 
-// The rvalue match gives up its source, so an arm that gives a reference
-// is refused, and the borrow match keeps its source, so a reference into
-// it is a borrow.
+// The rvalue match gives up its source, so an arm that takes its part by
+// reference is refused, and so is a result that holds a borrow.  The borrow
+// match keeps its source, so a reference into it is a borrow.
 inline constexpr int fallback_number = 0;
 using NumberBorrow = int const&;
 template <class R>
@@ -559,13 +559,92 @@ constexpr bool moved_match_gives_reference = requires(R result) {
     static_cast<R&&>(result).match([](int&& value) noexcept -> NumberBorrow { return value; },
                                    [](Code) noexcept -> NumberBorrow { return fallback_number; });
 };
+template <class R>
+constexpr bool moved_match_takes_reference = requires(R result) {
+    static_cast<R&&>(result).match([](int const & value) noexcept { return value; }, [](Code) noexcept { return 0; });
+};
+template <class R>
+constexpr bool moved_match_gives_borrow = requires(R result) {
+    static_cast<R&&>(result).match([](int) noexcept -> NumberBorrow { return fallback_number; },
+                                   [](Code) noexcept -> NumberBorrow { return fallback_number; });
+};
 static_assert(!moved_match_gives_reference<Result<int, Code>>);
+static_assert(!moved_match_takes_reference<Result<int, Code>> && !moved_match_gives_borrow<Result<int, Code>>);
 template <class R>
 constexpr bool borrowed_match_gives_reference = requires(R const& result) {
     result.match([](NumberBorrow value) noexcept -> NumberBorrow { return value; },
                  [](Code) noexcept -> NumberBorrow { return fallback_number; });
 };
 static_assert(borrowed_match_gives_reference<Result<int, Code>>);
+
+// ── The arms of an rvalue match ───────────────────────────────────────
+
+// An arm takes its part by value.  Reflection reads the call operator of a
+// closure, an inherited and a static call operator, the instance of a generic
+// call operator for the part, and the parameter of a function.  A reference
+// parameter, a parameter of a different type, an explicit object parameter
+// and a class with two call operators are refused, also when one of the two is
+// a template.
+struct TwoCalls {
+    [[nodiscard]] int operator()(int) const noexcept { return 0; }
+    [[nodiscard]] int operator()(long) const noexcept { return 1; }
+};
+struct TemplateAndReference {
+    [[nodiscard]] int operator()(int const&) const noexcept { return 0; }
+    template <class Part>
+    [[nodiscard]] int operator()(Part) const noexcept {
+        return 1;
+    }
+};
+struct OneCall {
+    [[nodiscard]] int operator()(int) const noexcept { return 0; }
+};
+struct InheritsCall : OneCall {};
+struct StaticCall {
+    [[nodiscard]] static int operator()(int) noexcept { return 0; }
+};
+struct StaticReference {
+    [[nodiscard]] static int operator()(int const&) noexcept { return 0; }
+};
+struct ExplicitObject {
+    [[nodiscard]] int operator()(this ExplicitObject const&, int) noexcept { return 0; }
+};
+[[nodiscard]] int arm_function(int) noexcept;
+static_assert(TakesPayloadByValue<InheritsCall, int> && TakesPayloadByValue<StaticCall, int>);
+static_assert(!TakesPayloadByValue<StaticReference, int> && !TakesPayloadByValue<ExplicitObject, int>);
+static_assert(!TakesPayloadByValue<TemplateAndReference, int>);
+static_assert(TakesPayloadByValue<decltype([](int) noexcept { return 0; }), int>);
+static_assert(TakesPayloadByValue<decltype([](int const) noexcept { return 0; }), int>);
+static_assert(TakesPayloadByValue<decltype([](auto) noexcept { return 0; }), int>);
+static_assert(TakesPayloadByValue<decltype(&arm_function), int> && TakesPayloadByValue<decltype(arm_function)&, int>);
+static_assert(!TakesPayloadByValue<decltype([](int&&) noexcept { return 0; }), int>);
+static_assert(!TakesPayloadByValue<decltype([](int const&) noexcept { return 0; }), int>);
+static_assert(!TakesPayloadByValue<decltype([](auto&&) noexcept { return 0; }), int>);
+static_assert(!TakesPayloadByValue<decltype([](auto const&) noexcept { return 0; }), int>);
+static_assert(!TakesPayloadByValue<decltype([](long) noexcept { return 0; }), int>);
+static_assert(!TakesPayloadByValue<TwoCalls, int>);
+
+// The result of an rvalue match holds no borrow: no reference, no address,
+// and no closure whose captures reflection cannot read, also a capture by
+// value.
+struct HoldsReference {
+    int const& at;
+};
+static_assert(HoldsNoBorrow<int> && HoldsNoBorrow<void> && HoldsNoBorrow<Code>);
+static_assert(HoldsNoBorrow<Result<int, Code>> && HoldsNoBorrow<Option<Owner>> && HoldsNoBorrow<Option<SlotNumber>>);
+static_assert(!HoldsNoBorrow<int const&> && !HoldsNoBorrow<int*> && !HoldsNoBorrow<int Owner::*>);
+static_assert(!HoldsNoBorrow<TextView> && !HoldsNoBorrow<HoldsReference> && !HoldsNoBorrow<TextView[2]>);
+static_assert(!HoldsNoBorrow<Option<TextView>> && !HoldsNoBorrow<Result<int, TextView>>);
+static_assert(!HoldsNoBorrow<Option<int*>> && !HoldsNoBorrow<Option<Result<int, TextView>>>);
+static_assert(HoldsNoBorrow<Option<Result<int, Code>>> && HoldsNoBorrow<Result<Option<int>, Code>>);
+[[nodiscard]] consteval bool closure_holds_borrow() noexcept {
+    int number = 0;
+    auto const reads = [&number] noexcept { return number; };
+    auto const copies = [number] noexcept { return number; };
+    return !HoldsNoBorrow<decltype(reads)> && !HoldsNoBorrow<decltype(copies)>
+        && HoldsNoBorrow<decltype([] noexcept { return 0; })>;
+}
+static_assert(closure_holds_borrow());
 
 // A temporary Result takes the deleted borrow match of an rvalue, so no arm
 // gives a reference into it.
@@ -668,8 +747,7 @@ static_assert(!::foundation::linear::is_linear_v<Result<Owner, Code>>);
 // and the rvalue match give the error once, and the const match reads it.
 [[nodiscard]] consteval Result<int, Token> refused_with(int handle) noexcept { return err(Token{handle}); }
 static_assert(refused_with(5).err().expect("the operation was refused").handle == 5);
-static_assert(refused_with(6).match([](int&&) noexcept { return 0; },
-                                    [](Token&& token) noexcept { return Token{static_cast<Token&&>(token)}.handle; })
+static_assert(refused_with(6).match([](int) noexcept { return 0; }, [](Token token) noexcept { return token.handle; })
               == 6);
 [[nodiscard]] consteval int read_refusal() noexcept {
     Result<int, Token> refused = refused_with(7);

@@ -28,7 +28,7 @@ test/fixy/ | double-consume | 5 | - | -
 test/fixy/ | unconsumed | 208 | - | -
 test/fixy/ | unconsumed-on-path | 1 | - | -
 test/foundation/ | discarded-temporary | 2 | - | -
-test/foundation/ | unconsumed | 15 | - | -
+test/foundation/ | unconsumed | 13 | - | -
 test/foundation/ | unconsumed-on-path | 1 | - | -
 test/layer/checks/fixy/ | unconsumed | 1 | - | -
 test/layer/checks/fixy/channels/ | unconsumed | 9 | - | -

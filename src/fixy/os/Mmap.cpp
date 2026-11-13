@@ -23,10 +23,9 @@ namespace os = ::foundation::os;
 
 core::Result<void*, os::Errno> map_region_(std::size_t length, int protection, int flags, int descriptor,
                                            std::int64_t offset) noexcept {
-    return os::result_of(os::raw_syscall(os::Syscall::mmap, os::Word{}, length, protection, flags, descriptor, offset))
-        .match(
-            [](std::uint64_t address) -> core::Result<void*, os::Errno> { return __builtin_bit_cast(void*, address); },
-            [](os::Errno error) -> core::Result<void*, os::Errno> { return core::err(error); });
+    CRUCIBLE_TRY(address, os::result_of(os::raw_syscall(os::Syscall::mmap, os::Word{}, length, protection, flags,
+                                                        descriptor, offset)));
+    return __builtin_bit_cast(void*, address);
 }
 
 void unmap_region_(void* address, std::size_t length) noexcept {

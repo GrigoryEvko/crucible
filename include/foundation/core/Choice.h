@@ -63,9 +63,11 @@
 #include <foundation/OpenExtension.h>
 #include <foundation/core/Report.h>
 #include <foundation/reflect/Instance.h>
+#include <foundation/reflect/TypeComponents.h>
 
 #include <concepts>
 #include <cstddef>
+#include <meta>
 #include <new>
 #include <type_traits>
 
@@ -406,6 +408,128 @@ template <class... Ts>
     requires OneOfAlternatives<Ts...>
 class OneOf;
 
+namespace detail {
+
+// The function type of the address of a call: the function of a pointer to a
+// member function, and the function of a pointer to a static call operator.
+template <class Address>
+struct CallFunction final {
+    using type = std::remove_pointer_t<Address>;
+};
+
+template <class Function, class Owner>
+struct CallFunction<Function Owner::*> final {
+    using type = Function;
+};
+
+// The type of the one parameter of a function type, or the null reflection.
+// An explicit object parameter counts, so a call operator with one gives two.
+[[nodiscard]] consteval std::meta::info one_parameter_of_(std::meta::info function_type) {
+    auto const parameter_types = std::meta::parameters_of(std::meta::dealias(function_type));
+    return parameter_types.size() == 1 ? parameter_types[0] : std::meta::info{};
+}
+
+// The type of the parameter of the call of an arm with one rvalue of the
+// payload, or the null reflection.  A function, and a pointer or a reference
+// to one, gives its one parameter.  A class gives the one parameter of its one
+// call operator.  The address of a call operator that is no template and has
+// no overload gives its type with no walk of the members.  A call operator
+// that is a template takes the payload as its one template argument, as a
+// deduction from an rvalue of the payload gives it.  Each other shape gives
+// the null reflection: no call operator or more than one, a call of more than
+// one parameter, an explicit object parameter, and a template that the
+// payload does not fit.  The function is a template, so only a unit that
+// matches a sum reads an arm.  Complexity: constant for a function and for a
+// call operator that is no template, else linear in the members of the arm.
+template <class Arm, class Payload>
+[[nodiscard]] consteval std::meta::info arm_parameter_of_() {
+    using Bare = std::remove_cvref_t<Arm>;
+    if constexpr (std::is_function_v<std::remove_pointer_t<Bare>>) {
+        return detail::one_parameter_of_(^^std::remove_pointer_t<Bare>);
+    } else if constexpr (requires { &Bare::operator(); }) {
+        return detail::one_parameter_of_(^^typename CallFunction<decltype(&Bare::operator())>::type);
+    } else if constexpr (!std::is_class_v<Bare>) {
+        return std::meta::info{};
+    } else {
+        std::meta::info call{};
+        std::size_t call_count = 0;
+        for (std::meta::info const member : std::meta::members_of(^^Bare, std::meta::access_context::current())) {
+            bool const is_operator =
+                std::meta::is_operator_function(member) || std::meta::is_operator_function_template(member);
+            if (!is_operator || std::meta::operator_of(member) != std::meta::operators::op_parentheses) continue;
+            call = member;
+            ++call_count;
+        }
+        if (call_count != 1) return std::meta::info{};
+        if (std::meta::is_function_template(call)) {
+            if (!std::meta::can_substitute(call, {^^Payload})) return std::meta::info{};
+            call = std::meta::substitute(call, {^^Payload});
+        }
+        auto const parameters = std::meta::parameters_of(call);
+        if (parameters.size() != 1 || std::meta::is_explicit_object_parameter(parameters[0])) return std::meta::info{};
+        return std::meta::type_of(parameters[0]);
+    }
+}
+
+// True when the arm takes the payload by value: the parameter of its call is
+// the payload type, with no reference.  An arm whose call reflection cannot
+// read fails closed.
+template <class Arm, class Payload>
+[[nodiscard]] consteval bool takes_payload_by_value_() {
+    std::meta::info const parameter = detail::arm_parameter_of_<Arm, Payload>();
+    return parameter != std::meta::info{} && !std::meta::is_reference_type(parameter)
+        && std::meta::dealias(std::meta::remove_cv(parameter)) == std::meta::dealias(^^Payload);
+}
+
+// True when a value of the type holds a borrow: a reference, a pointer, a
+// pointer to a member, or a class whose state reflection cannot read, such as
+// a closure with captures.  The walk reads each element of an array, and each
+// base and each non-static data member of a class or a union.  An Option, a
+// Result and a OneOf hold only their payloads and a tag, so the walk reads
+// their arguments and not their slots.  Complexity: linear in the parts of the
+// type.
+[[nodiscard]] consteval bool holds_borrow_(std::meta::info type) {
+    if (std::meta::is_reference_type(type)) return true;
+    type = std::meta::dealias(std::meta::remove_cv(std::meta::dealias(type)));
+    if (std::meta::is_pointer_type(type) || std::meta::is_member_pointer_type(type)) return true;
+    if (std::meta::is_array_type(type)) return holds_borrow_(std::meta::remove_all_extents(type));
+    if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return false;
+    if (std::meta::has_template_arguments(type)) {
+        std::meta::info const family = std::meta::template_of(type);
+        if (family == ^^Option || family == ^^Result || family == ^^OneOf) {
+            auto const payloads = std::meta::template_arguments_of(type);
+            for (std::size_t index = 0; index < payloads.size(); ++index) {
+                if (holds_borrow_(payloads[index])) return true;
+            }
+            return false;
+        }
+    }
+    ::foundation::reflect::TypeNode const node{type, true};
+    if (::foundation::reflect::holds_unreadable_state(node)) return true;
+    for (::foundation::reflect::TypeNode const& part : ::foundation::reflect::member_components_of(node)) {
+        if (!part.is_held_by_value || holds_borrow_(part.type)) return true;
+    }
+    return false;
+}
+
+}  // namespace detail
+
+// An arm of an rvalue match that takes its payload by value.  The match ends
+// the payload, so a parameter of a reference type would name an object that
+// ends.  Reflection reads the call of the arm, and an arm whose call it cannot
+// read is refused.
+template <class Arm, class Payload>
+concept TakesPayloadByValue = detail::takes_payload_by_value_<Arm, Payload>();
+
+// A result of an rvalue match that holds no borrow.  The match ends the
+// payload, so a reference or an address in the result could name an object
+// that ends.  The concept refuses each reference and each address, also an
+// address of an object that the payload does not hold.  An arithmetic value,
+// an enumerator and void pass with no reflection.
+template <class Given>
+concept HoldsNoBorrow =
+    std::is_arithmetic_v<Given> || std::is_enum_v<Given> || std::is_void_v<Given> || !detail::holds_borrow_(^^Given);
+
 // The mark of an error, so that an error and a value of the same type
 // never meet in one conversion.  Only a Result reads the error of the mark.
 template <ErrorValue E>
@@ -649,12 +773,12 @@ public:
     // the two arms give the same type.  A call with one arm does not
     // compile, so no caller forgets the empty case.  The rvalue form moves
     // the payload out first, so the Option is empty when on_some runs.  The
-    // payload then lives in the match only, so an arm that gives a
-    // reference is refused: the reference would dangle.
+    // payload then ends in the match, so on_some takes it by value, and the
+    // result holds no borrow: a reference or an address would dangle.
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, T&&> && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T&&>, std::invoke_result_t<OnNone>>
-              && (!std::is_reference_v<std::invoke_result_t<OnNone>>)
+              && TakesPayloadByValue<OnSome, T> && HoldsNoBorrow<std::invoke_result_t<OnNone>>
     constexpr std::invoke_result_t<OnNone> match(OnSome&& on_some,
                                                  OnNone&& on_none) && noexcept(std::is_nothrow_invocable_v<OnSome, T&&>
                                                                                && std::is_nothrow_invocable_v<OnNone>) {
@@ -663,6 +787,26 @@ public:
         slot_.clear_();
         return static_cast<OnSome&&>(on_some)(static_cast<T&&>(taken));
     }
+
+    // An arm of the rvalue match that takes its payload by reference binds
+    // to this overload, so the refusal gives its reason.
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T&&> && std::is_invocable_v<OnNone>
+                  && std::same_as<std::invoke_result_t<OnSome, T&&>, std::invoke_result_t<OnNone>>
+                  && (!TakesPayloadByValue<OnSome, T>)
+    void match(OnSome&& on_some, OnNone&& on_none) && = delete(
+        "an arm of the rvalue match takes its payload by value, so it names no object that the match ends: write the "
+        "parameter as a value, or name the Option and match its borrow");
+
+    // A result of the rvalue match that holds a borrow binds to this
+    // overload, so the refusal gives its reason.
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T&&> && std::is_invocable_v<OnNone>
+                  && std::same_as<std::invoke_result_t<OnSome, T&&>, std::invoke_result_t<OnNone>>
+                  && TakesPayloadByValue<OnSome, T> && (!HoldsNoBorrow<std::invoke_result_t<OnNone>>)
+    void match(OnSome&& on_some, OnNone&& on_none) && = delete(
+        "the result of the rvalue match holds no borrow, because the payload ends in the match: give a value with "
+        "no reference and no address, or name the Option and match its borrow");
 
     // The total match of a borrow: on_some gets the payload as a const
     // reference, and the Option keeps it.  The rule borrow-match of the
@@ -677,10 +821,11 @@ public:
         return static_cast<OnSome&&>(on_some)(slot_.payload_());
     }
 
-    // A temporary Option that the borrow match would take binds to this
-    // overload, so an arm cannot give a reference into an object that the
-    // full expression ends.  The constraint is that of the borrow match, so a
-    // call with the wrong arms gets the refusal of its arms.
+    // A const rvalue of an Option that the borrow match would take binds to
+    // this overload, so an arm cannot give a reference into an object that the
+    // full expression ends.  An rvalue that is not const binds to the rvalue
+    // match.  The constraint is that of the borrow match, so a call with the
+    // wrong arms gets the refusal of its arms.
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
                   && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
@@ -1303,19 +1448,41 @@ public:
     // The total match: on_ok gets the value, or on_err gets the error, and
     // the two arms give the same type.  A call with one arm does not
     // compile, so no caller forgets the error.  The rvalue form gives up
-    // the Result, which is often a temporary, so an arm that gives a
-    // reference is refused: the reference would dangle.  The error goes to
-    // on_err as an rvalue, so a linear error moves to the arm.
+    // the Result, which is often a temporary, so each arm takes its part by
+    // value, and the result holds no borrow: a reference or an address would
+    // dangle.  A linear part moves into its arm.
     template <class OnOk, class OnErr>
         requires std::is_invocable_v<OnOk, T&&> && std::is_invocable_v<OnErr, E>
               && std::same_as<std::invoke_result_t<OnOk, T&&>, std::invoke_result_t<OnErr, E>>
-              && (!std::is_reference_v<std::invoke_result_t<OnErr, E>>)
+              && TakesPayloadByValue<OnOk, T> && TakesPayloadByValue<OnErr, E>
+              && HoldsNoBorrow<std::invoke_result_t<OnErr, E>>
     constexpr std::invoke_result_t<OnErr, E>
     match(OnOk&& on_ok,
           OnErr&& on_err) && noexcept(std::is_nothrow_invocable_v<OnOk, T&&> && std::is_nothrow_invocable_v<OnErr, E>) {
         if (!slot_.holds_()) return static_cast<OnErr&&>(on_err)(static_cast<E&&>(slot_.error_()));
         return static_cast<OnOk&&>(on_ok)(static_cast<T&&>(slot_.value_()));
     }
+
+    // An arm of the rvalue match that takes its part by reference binds to
+    // this overload, so the refusal gives its reason.
+    template <class OnOk, class OnErr>
+        requires std::is_invocable_v<OnOk, T&&> && std::is_invocable_v<OnErr, E>
+                  && std::same_as<std::invoke_result_t<OnOk, T&&>, std::invoke_result_t<OnErr, E>>
+                  && (!(TakesPayloadByValue<OnOk, T> && TakesPayloadByValue<OnErr, E>))
+    void match(OnOk&& on_ok, OnErr&& on_err) && = delete(
+        "an arm of the rvalue match takes its part by value, so it names no object that the match ends: write the "
+        "parameter as a value, or name the Result and match its borrow");
+
+    // A result of the rvalue match that holds a borrow binds to this
+    // overload, so the refusal gives its reason.
+    template <class OnOk, class OnErr>
+        requires std::is_invocable_v<OnOk, T&&> && std::is_invocable_v<OnErr, E>
+                  && std::same_as<std::invoke_result_t<OnOk, T&&>, std::invoke_result_t<OnErr, E>>
+                  && TakesPayloadByValue<OnOk, T> && TakesPayloadByValue<OnErr, E>
+                  && (!HoldsNoBorrow<std::invoke_result_t<OnErr, E>>)
+    void match(OnOk&& on_ok, OnErr&& on_err) && = delete(
+        "the result of the rvalue match holds no borrow, because each part ends in its arm: give a value with no "
+        "reference and no address, or name the Result and match its borrow");
 
     // The total match of a borrow: on_ok gets the value and on_err gets the
     // error, each as a const reference, and the Result keeps them.  The rule
@@ -1331,10 +1498,11 @@ public:
         return static_cast<OnOk&&>(on_ok)(slot_.value_());
     }
 
-    // A temporary Result that the borrow match would take binds to this
-    // overload, so an arm cannot give a reference into an object that the
-    // full expression ends.  The constraint is that of the borrow match, so a
-    // call with the wrong arms gets the refusal of its arms.
+    // A const rvalue of a Result that the borrow match would take binds to
+    // this overload, so an arm cannot give a reference into an object that the
+    // full expression ends.  An rvalue that is not const binds to the rvalue
+    // match.  The constraint is that of the borrow match, so a call with the
+    // wrong arms gets the refusal of its arms.
     template <class OnOk, class OnErr>
         requires std::is_invocable_v<OnOk, T const&> && std::is_invocable_v<OnErr, E const&>
                   && std::same_as<std::invoke_result_t<OnOk, T const&>, std::invoke_result_t<OnErr, E const&>>

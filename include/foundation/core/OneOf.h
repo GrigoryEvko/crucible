@@ -146,18 +146,42 @@ public:
     // that position, the arm of the active alternative gets its value, and
     // each arm gives the same type.  A call with an arm too many or too few
     // does not compile, so no caller forgets an alternative.  The rvalue form
-    // gives up the OneOf, which is often a temporary, so an arm that gives a
-    // reference is refused: the reference would dangle.  The conjunction
-    // reads the arms with the alternatives only when the counts agree.
+    // gives up the OneOf, which is often a temporary, so each arm takes its
+    // alternative by value, and the result holds no borrow: a reference or an
+    // address would dangle.  The conjunction reads the arms with the
+    // alternatives only when the counts agree.
     template <class... Arms>
         requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts &&> && ...)
              && (std::same_as<std::invoke_result_t<Arms, Ts &&>, std::invoke_result_t<Arms...[0], Ts...[0] &&>> && ...)
-             && (!std::is_reference_v<std::invoke_result_t<Arms...[0], Ts...[0] &&>>)
+             && (TakesPayloadByValue<Arms, Ts> && ...) && HoldsNoBorrow<std::invoke_result_t<Arms...[0], Ts...[0]&&>>
     constexpr std::invoke_result_t<Arms...[0], Ts...[0]&&>
     match(Arms&&... arms) && noexcept((std::is_nothrow_invocable_v<Arms, Ts&&> && ...)) {
         using Result = std::invoke_result_t<Arms...[0], Ts...[0]&&>;
         return static_cast<OneOf&&>(*this).template moved_from_<0, Result>(static_cast<Arms&&>(arms)...);
     }
+
+    // An arm of the rvalue match that takes its alternative by reference
+    // binds to this overload, so the refusal gives its reason.
+    template <class... Arms>
+        requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts &&> && ...)
+                 && (std::same_as<std::invoke_result_t<Arms, Ts &&>, std::invoke_result_t<Arms...[0], Ts...[0] &&>>
+                     && ...)
+                 && (!(TakesPayloadByValue<Arms, Ts> && ...))
+    void match(Arms&&... arms) && = delete("an arm of the rvalue match takes its alternative by value, so it names no "
+                                           "object that the match ends: write the parameter as a value, or name the "
+                                           "OneOf and match its borrow");
+
+    // A result of the rvalue match that holds a borrow binds to this
+    // overload, so the refusal gives its reason.
+    template <class... Arms>
+        requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts &&> && ...)
+                 && (std::same_as<std::invoke_result_t<Arms, Ts &&>, std::invoke_result_t<Arms...[0], Ts...[0] &&>>
+                     && ...)
+                 && (TakesPayloadByValue<Arms, Ts> && ...)
+                 && (!HoldsNoBorrow<std::invoke_result_t<Arms...[0], Ts...[0] &&>>)
+    void match(Arms&&... arms) && = delete("the result of the rvalue match holds no borrow, because each alternative "
+                                           "ends in its arm: give a value with no reference and no address, or name "
+                                           "the OneOf and match its borrow");
 
     // The total match of a borrow: the arm of the active alternative gets its
     // value as a const reference, and the OneOf keeps it.  The rule
@@ -173,10 +197,11 @@ public:
         return this->template borrowed_from_<0, Result>(static_cast<Arms&&>(arms)...);
     }
 
-    // A temporary OneOf that the borrow match would take binds to this
-    // overload, so an arm cannot give a reference into an object that the
-    // full expression ends.  The constraint is that of the borrow match, so a
-    // call with the wrong arms gets the refusal of its arms.
+    // A const rvalue of a OneOf that the borrow match would take binds to
+    // this overload, so an arm cannot give a reference into an object that the
+    // full expression ends.  An rvalue that is not const binds to the rvalue
+    // match.  The constraint is that of the borrow match, so a call with the
+    // wrong arms gets the refusal of its arms.
     template <class... Arms>
         requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts const&> && ...)
                  && (std::same_as<std::invoke_result_t<Arms, Ts const&>,

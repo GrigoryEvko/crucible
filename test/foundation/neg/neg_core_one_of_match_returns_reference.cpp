@@ -1,5 +1,5 @@
-// The rvalue match gives up the OneOf, so an arm that gives a reference into
-// its value is refused: the reference would dangle.
+// The rvalue match gives up the OneOf, so a reference in its result would
+// dangle when it names the value.  The match refuses each reference result.
 
 #include <foundation/core/OneOf.h>
 
@@ -13,5 +13,5 @@ using NumberRef = int const&;
 int main() {
     ::foundation::core::OneOf<int, Code> reading{3};
     return static_cast<::foundation::core::OneOf<int, Code>&&>(reading).match(
-        [](int&& value) noexcept -> NumberRef { return value; }, [](Code&&) noexcept -> NumberRef { return fallback; });
+        [](int) noexcept -> NumberRef { return fallback; }, [](Code) noexcept -> NumberRef { return fallback; });
 }

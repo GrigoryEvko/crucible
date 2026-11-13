@@ -129,12 +129,8 @@ static_assert(borrowed_match() == 10);
 // source keeps the moved-from owner.
 [[nodiscard]] consteval int moved_owner() noexcept {
     OneOf<Owner, int> source{Owner{4}};
-    int const seen = static_cast<OneOf<Owner, int>&&>(source).match(
-        [](Owner&& owner) noexcept {
-            Owner const kept{static_cast<Owner&&>(owner)};
-            return kept.handle;
-        },
-        [](int) noexcept { return 0; });
+    int const seen = static_cast<OneOf<Owner, int>&&>(source).match([](Owner owner) noexcept { return owner.handle; },
+                                                                    [](int) noexcept { return 0; });
     return source.is<Owner>() ? seen : -1;
 }
 static_assert(moved_owner() == 4);
@@ -177,7 +173,17 @@ concept BorrowedMatchGivesReference = requires(O const& value) {
 static_assert(!MatchesWithTwoArms<OneOf<int, Code8, long>>);
 static_assert(!MatchesWithTwoTypes<OneOf<int, Code8, long>>);
 static_assert(!MovedMatchGivesReference<OneOf<int, Code8, long>>);
+template <class O>
+concept MovedMatchTakesReference = requires(O value) {
+    static_cast<O&&>(value).match([](int) noexcept { return 0; }, [](Code8&&) noexcept { return 0; },
+                                  [](auto const&) noexcept { return 0; });
+};
+static_assert(!MovedMatchTakesReference<OneOf<int, Code8, long>>);
 static_assert(BorrowedMatchGivesReference<OneOf<int, Code8, long>>);
+
+// A OneOf holds a borrow when one of its alternatives holds one.
+static_assert(HoldsNoBorrow<OneOf<int, Code8, long>> && HoldsNoBorrow<Option<OneOf<int, Code8>>>);
+static_assert(!HoldsNoBorrow<OneOf<int, TextView>> && !HoldsNoBorrow<Result<OneOf<int*, Code8>, Code8>>);
 
 // A OneOf of plain alternatives keeps its trivial assignment.  An owning
 // OneOf has a move assignment, which drops the active alternative, so a

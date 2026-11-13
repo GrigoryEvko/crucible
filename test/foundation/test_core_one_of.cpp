@@ -138,7 +138,7 @@ void test_linear_alternative() {
     {
         OneOf<CountedToken, Refusal> held{CountedToken{51}};
         int const matched = static_cast<OneOf<CountedToken, Refusal>&&>(held).match(
-            [](CountedToken&& token) noexcept {
+            [](CountedToken token) noexcept {
                 int const handle = token.handle();
                 ::foundation::linear::drop(static_cast<CountedToken&&>(token));
                 return handle;

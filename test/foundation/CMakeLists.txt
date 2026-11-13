@@ -2034,8 +2034,14 @@ foundation_neg_compile_test(neg_core_option_match_one_arm
   "no matching function for call to .foundation::core::Option<int>::match\\(main\\(\\)::<lambda\\(int\\)>\\)."
   "candidate expects 2 arguments, 1 provided")
 foundation_neg_compile_test(neg_core_option_match_returns_reference
-  "no matching function for call to .foundation::core::Option<int>::match\\(main\\(\\)::<lambda\\(int&&\\)>, main\\(\\)::<lambda\\(\\)>\\)."
-  "the expression .!\\(is_reference_v<typename std::invoke_result<OnNone>::type>\\) \\[with OnNone = main::._anon_[0-9]+\\]. evaluated to .false.")
+  "use of deleted function .void foundation::core::Option<T>::match\\(OnSome&&, OnNone&&\\) && \\[with OnSome = main\\(\\)::<lambda\\(int\\)>; OnNone = main\\(\\)::<lambda\\(\\)>; T = int\\]."
+  "the result of the rvalue match holds no borrow, because the payload ends in the match")
+foundation_neg_compile_test(neg_core_option_match_arm_takes_reference
+  "use of deleted function .void foundation::core::Option<T>::match\\(OnSome&&, OnNone&&\\) && \\[with OnSome = main\\(\\)::<lambda\\(Numbers&&\\)>; OnNone = main\\(\\)::<lambda\\(\\)>; T = foundation::core::FixedArray<int, 4>\\]."
+  "an arm of the rvalue match takes its payload by value, so it names no object that the match ends")
+foundation_neg_compile_test(neg_core_result_match_gives_borrow
+  "use of deleted function .void foundation::core::Result<T, E>::match\\(OnOk&&, OnErr&&\\) && \\[with OnOk = main\\(\\)::<lambda\\(Numbers\\)>; OnErr = main\\(\\)::<lambda\\(Code\\)>; T = foundation::core::FixedArray<int, 4>; E = Code\\]."
+  "the result of the rvalue match holds no borrow, because each part ends in its arm")
 foundation_neg_compile_test(neg_core_option_match_arm_types
   "no matching function for call to .foundation::core::Option<int>::match\\(main\\(\\)::<lambda\\(int\\)>, main\\(\\)::<lambda\\(\\)>\\)."
   "the expression .is_same_v<_Tp, _Up> \\[with _Tp = int. _Up = long int\\]. evaluated to .false.")
@@ -2149,8 +2155,14 @@ foundation_neg_compile_test(neg_core_one_of_match_arm_types
   "no matching function for call to .foundation::core::OneOf<int, Code>::match\\(main\\(\\)::<lambda\\(int\\)>, main\\(\\)::<lambda\\(Code\\)>\\)."
   "the expression .\\(same_as<typename std::invoke_result<Arms, Ts&&>::type, typename std::invoke_result<Arms \\.\\.\\.\\[0\\],")
 foundation_neg_compile_test(neg_core_one_of_match_returns_reference
-  "no matching function for call to .foundation::core::OneOf<int, Code>::match\\(main\\(\\)::<lambda\\(int&&\\)>, main\\(\\)::<lambda\\(Code&&\\)>\\)."
-  "the expression .!\\(is_reference_v<typename std::invoke_result<Arms \\.\\.\\.\\[0\\],")
+  "use of deleted function .void foundation::core::OneOf<Ts>::match\\(Arms&& \\.\\.\\.\\) && \\[with Arms = \\{main\\(\\)::<lambda\\(int\\)>, main\\(\\)::<lambda\\(Code\\)>\\}; Ts = \\{int, Code\\}\\]."
+  "the result of the rvalue match holds no borrow, because each alternative ends in its arm")
+foundation_neg_compile_test(neg_core_one_of_match_gives_borrow
+  "use of deleted function .void foundation::core::OneOf<Ts>::match\\(Arms&& \\.\\.\\.\\) && \\[with Arms = \\{main\\(\\)::<lambda\\(int\\)>, main\\(\\)::<lambda\\(Code\\)>\\}; Ts = \\{int, Code\\}\\]."
+  "the result of the rvalue match holds no borrow, because each alternative ends in its arm")
+foundation_neg_compile_test(neg_core_one_of_match_arm_takes_reference
+  "use of deleted function .void foundation::core::OneOf<Ts>::match\\(Arms&& \\.\\.\\.\\) && \\[with Arms = \\{main\\(\\)::<lambda\\(auto:[0-9]+&&\\)>, main\\(\\)::<lambda\\(Code\\)>\\}; Ts = \\{int, Code\\}\\]."
+  "an arm of the rvalue match takes its alternative by value, so it names no object that the match ends")
 foundation_neg_compile_test(neg_core_one_of_is_non_member
   "no matching function for call to .foundation::core::OneOf<int, long int>::is<short int>\\(\\) const."
   "required for the satisfaction of .AlternativeOf<T, Ts \\.\\.\\.>. \\[with T = short int. Ts = \\{int, long int\\}\\]")

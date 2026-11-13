@@ -46,11 +46,9 @@ constexpr int kRingFlags = os::kMapShared | os::kMapPopulate;
 // error of the map.
 [[nodiscard]] core::Result<void*, os::Errno> map_part(int descriptor, std::size_t bytes,
                                                       std::uint64_t offset) noexcept {
-    return os::result_of(
-               os::raw_syscall(os::Syscall::mmap, os::Word{}, bytes, kRingProtection, kRingFlags, descriptor, offset))
-        .match(
-            [](std::uint64_t address) -> core::Result<void*, os::Errno> { return __builtin_bit_cast(void*, address); },
-            [](os::Errno error) -> core::Result<void*, os::Errno> { return core::err(error); });
+    CRUCIBLE_TRY(address, os::result_of(os::raw_syscall(os::Syscall::mmap, os::Word{}, bytes, kRingProtection,
+                                                        kRingFlags, descriptor, offset)));
+    return __builtin_bit_cast(void*, address);
 }
 
 void unmap_part(void* address, std::size_t bytes) noexcept {
