@@ -240,8 +240,8 @@ struct CogIdentity {
 
     // The character storage behind these views lives in the topology
     // arena, which must outlive this identity.
-    VendorClaim<std::string_view> vendor{};
-    VendorClaim<std::string_view> model{};
+    VendorClaim<::fixy::TextView> vendor{};
+    VendorClaim<::fixy::TextView> model{};
 
     // Opaque to this file. A vendor encodes a version number, a build
     // number or a hash of the image as it pleases, and the only

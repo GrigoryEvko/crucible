@@ -35,7 +35,7 @@ static void test_enum_names_come_from_reflection() {
 static void test_lspci_and_graph_materialization() {
     eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
     auto snapshot = topology::mint_discovery_snapshot(ctx);
-    constexpr std::string_view lspci = "Slot:\t0000:00:00.0\n"
+    constexpr ::fixy::TextView lspci = "Slot:\t0000:00:00.0\n"
                                        "Class:\tPCI bridge\n"
                                        "Vendor:\tIntel Corporation\n"
                                        "Device:\tRoot Port\n"
@@ -59,7 +59,7 @@ static void test_lspci_and_graph_materialization() {
     assert(element_at(snapshot.nodes(), 0).kind == cog::CogKind::PcieRoot);
     assert(element_at(snapshot.nodes(), 1).kind == cog::CogKind::NicPort);
     assert(element_at(snapshot.nodes(), 2).kind == cog::CogKind::Gpu);
-    assert(element_at(snapshot.nodes(), 1).vendor.value() == std::string_view{"Mellanox Technologies"});
+    assert(element_at(snapshot.nodes(), 1).vendor.value() == ::fixy::TextView{"Mellanox Technologies"});
 
     auto graph = snapshot.graph(ctx);
     assert(graph.node_count() == 3);
@@ -81,17 +81,17 @@ static void test_ethtool_features_and_lldp() {
     };
     std::uint16_t const local_idx = snapshot.add_node(local).expect("an empty snapshot has room for a node");
 
-    constexpr std::string_view info = "driver: mlx5_core\n"
+    constexpr ::fixy::TextView info = "driver: mlx5_core\n"
                                       "firmware-version: 22.39.1002\n"
                                       "bus-info: 0000:65:00.0\n";
     auto info_status = topology::parse_ethtool_info(topology::tag_external_discovery_text(info), snapshot, local_idx);
     assert(info_status.is_ok());
-    assert(element_at(snapshot.node_facts(), local_idx).driver.value() == std::string_view{"mlx5_core"});
-    assert(element_at(snapshot.node_facts(), local_idx).firmware.value() == std::string_view{"22.39.1002"});
+    assert(element_at(snapshot.node_facts(), local_idx).driver.value() == ::fixy::TextView{"mlx5_core"});
+    assert(element_at(snapshot.node_facts(), local_idx).firmware.value() == ::fixy::TextView{"22.39.1002"});
     assert(element_at(snapshot.nodes(), local_idx).firmware_revision.value()
-           == topology::stable_discovery_hash(std::string_view{"22.39.1002"}));
+           == topology::stable_discovery_hash(::fixy::TextView{"22.39.1002"}));
 
-    constexpr std::string_view features = "tcp-segmentation-offload: on\n"
+    constexpr ::fixy::TextView features = "tcp-segmentation-offload: on\n"
                                           "generic-segmentation-offload: on\n"
                                           "generic-receive-offload: on\n"
                                           "large-receive-offload: off\n"
@@ -108,7 +108,7 @@ static void test_ethtool_features_and_lldp() {
     // key, so the parser sets only the four bits above.
     assert(bits.popcount() == 4);
 
-    constexpr std::string_view lldp = "Interface: eth0\n"
+    constexpr ::fixy::TextView lldp = "Interface: eth0\n"
                                       "LineRate: 100G\n"
                                       "SysName: tor-a\n"
                                       "PortID: swp17\n";
@@ -134,7 +134,7 @@ static void test_lldp_record_state_reset() {
     });
     assert(local_idx.is_ok());
 
-    constexpr std::string_view lldp = "Interface: eth0\n"
+    constexpr ::fixy::TextView lldp = "Interface: eth0\n"
                                       "LineRate: 100G\n"
                                       "SysName: tor-a\n"
                                       "PortID: swp17\n"
@@ -176,7 +176,7 @@ static void test_static_gates() {
     static_assert(!topology::CtxFitsDiscoveryBg<int>);
     static_assert(!topology::DiscoveryShape<0, 1>);
     static_assert(topology::DiscoveryShape<1, 1>);
-    static_assert(sizeof(topology::ExternalDiscoveryText) == sizeof(std::string_view));
+    static_assert(sizeof(topology::ExternalDiscoveryText) == sizeof(::fixy::TextView));
     static_assert(std::is_trivially_destructible_v<topology::DiscoverySnapshot<16, 32>>);
     static_assert(!std::is_default_constructible_v<topology::DiscoverySnapshot<16, 32>>);
     static_assert(std::is_same_v<decltype(topology::mint_discovery_snapshot(std::declval<eff::ColdInitCtx const&>())),

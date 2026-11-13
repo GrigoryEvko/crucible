@@ -1455,7 +1455,7 @@ crucible_neg_compile_test(neg_topology_discovery_direct_construct
     "DiscoverySnapshot<MaxNodes, MaxEdges>::DiscoverySnapshot\\(\\)")
 crucible_neg_compile_test(neg_topology_discovery_raw_lspci_text
     "could not convert .\\(const char\\*\\)\"Slot:.* from .const char\\*. to .crucible::topology::ExternalDiscoveryText."
-    "fixy::Tagged<std::basic_string_view<char>, fixy::tags::source::External>")
+    "fixy::Tagged<foundation::core::TextView, fixy::tags::source::External>")
 crucible_neg_compile_test(neg_topology_discovery_zero_nodes
     "no matching function for call to .mint_discovery_snapshot<0, 1>.fixy::ColdInitCtx&"
     "required for the satisfaction of .DiscoveryShape<MaxNodes, MaxEdges>. \\[with MaxNodes = 0; MaxEdges = 1\\]")
@@ -1530,7 +1530,7 @@ crucible_neg_compile_test(neg_topology_telemetry_snapshot_direct_construct
     "candidate 1: .constexpr crucible::topology::NicTelemetrySnapshot::NicTelemetrySnapshot\\(crucible::cog::Uuid, ")
 crucible_neg_compile_test(neg_topology_telemetry_raw_netdev_text
     "could not convert .\\(const char\\*\\).rx_bytes: 1.012.. from .const char\\*."
-    "to .crucible::topology::ExternalTelemetryText. \\{aka .fixy::Tagged<std::basic_string_view<char>, fixy::tags::source::External>.\\}")
+    "to .crucible::topology::ExternalTelemetryText. \\{aka .fixy::Tagged<foundation::core::TextView, fixy::tags::source::External>.\\}")
 crucible_neg_compile_test(neg_topology_telemetry_snapshot_raw_netdev
     "could not convert .crucible::topology::NetdevCounters\\{0, 0, 0, 0, 0, 0, 0, 0, 0, 0\\}. from .crucible::topology::NetdevCounters."
     "to .crucible::topology::DeclaredNetdevCounters. \\{aka .fixy::Tagged<crucible::topology::NetdevCounters, fixy::tags::source::KernelTelemetry>.\\}")

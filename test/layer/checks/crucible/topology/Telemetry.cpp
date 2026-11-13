@@ -4,7 +4,7 @@
 
 namespace crucible::topology {
 
-static_assert(sizeof(ExternalTelemetryText) == sizeof(std::string_view));
+static_assert(sizeof(ExternalTelemetryText) == sizeof(::fixy::TextView));
 static_assert(sizeof(DeclaredNetdevCounters) == sizeof(NetdevCounters));
 static_assert(sizeof(DeclaredQdiscBacklog) == sizeof(QdiscBacklog));
 static_assert(sizeof(DeclaredSysctlSnapshot) == sizeof(SysctlSnapshot));

@@ -7,6 +7,7 @@
 #include "../harness.h"
 
 #include <crucible/topology/Telemetry.h>
+#include <foundation/Quarantine.h>
 
 namespace crucible::fuzz::boundary {
 
@@ -28,7 +29,10 @@ namespace crucible::fuzz::boundary {
 inline void run_telemetry_text(std::span<const std::uint8_t> bytes) {
     ByteCursor cursor{bytes};
     const auto which = cursor.take<std::uint8_t>();
-    const auto text = topology::tag_external_telemetry_text(as_text(cursor.rest()));
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the fuzzer gives the host text as a pointer to raw bytes and a count")
+    const std::string_view raw = as_text(cursor.rest());
+    const auto text = topology::tag_external_telemetry_text(::fixy::mint_foreign_text(raw.data(), raw.size()));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     switch (which % 3) {
         case 0:
             (void)topology::parse_netdev_counters(text);

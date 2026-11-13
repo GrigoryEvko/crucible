@@ -21,12 +21,11 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::topology {
 
-using ExternalTelemetryText = ::fixy::Tagged<std::string_view, ::fixy::tags::source::External>;
+using ExternalTelemetryText = ::fixy::Tagged<::fixy::TextView, ::fixy::tags::source::External>;
 using PositiveEffectiveBandwidthBps = ::fixy::Positive<double>;
 
 enum class NicTelemetryError : std::uint8_t {
@@ -106,7 +105,7 @@ concept CtxFitsNicTelemetryRead =
     ::foundation::effects::IsExecCtx<Ctx>
     && ::foundation::effects::CtxOwnsAnyOf<Ctx, ::foundation::effects::Effect::Init, ::foundation::effects::Effect::Bg>;
 
-[[nodiscard]] constexpr ExternalTelemetryText tag_external_telemetry_text(std::string_view text) noexcept {
+[[nodiscard]] constexpr ExternalTelemetryText tag_external_telemetry_text(::fixy::TextView text) noexcept {
     return ::fixy::mint_tagged<::fixy::tags::source::External>(text);
 }
 

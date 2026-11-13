@@ -7,8 +7,8 @@ namespace crucible::topology {
 static_assert(DiscoveryReport::max_statuses <= std::numeric_limits<std::uint8_t>::max(),
               "DiscoveryReport::size_ must be able to name every slot");
 
-static_assert(sizeof(ExternalDiscoveryText) == sizeof(std::string_view));
-static_assert(sizeof(VendorDiscoveryString) == sizeof(std::string_view));
+static_assert(sizeof(ExternalDiscoveryText) == sizeof(::fixy::TextView));
+static_assert(sizeof(VendorDiscoveryString) == sizeof(::fixy::TextView));
 static_assert(DiscoveryShape<1, 1>);
 static_assert(!DiscoveryShape<0, 1>);
 static_assert(std::is_trivially_destructible_v<DiscoveryNodeFact>);

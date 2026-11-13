@@ -1,89 +1,47 @@
 #include <crucible/topology/Discovery.h>
 
-#include <algorithm>
-#include <charconv>
-#include <system_error>
-#include <string_view>
-#include <utility>
+#include <crucible/topology/TextFields.h>
 
 namespace crucible::topology {
 
 namespace {
 
-[[nodiscard]] constexpr std::string_view trim(std::string_view s) noexcept {
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r' || s.front() == '\n')) {
-        s.remove_prefix(1);
-    }
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' || s.back() == '\n')) {
-        s.remove_suffix(1);
-    }
-    return s;
-}
+using ::fixy::TextView;
 
-[[nodiscard]] constexpr std::pair<std::string_view, std::string_view> split_key_value(std::string_view line) noexcept {
-    const std::size_t colon = line.find(':');
-    if (colon != std::string_view::npos) {
-        return {trim(line.substr(0, colon)), trim(line.substr(colon + 1))};
-    }
-    const std::size_t tab = line.find('\t');
-    if (tab != std::string_view::npos) {
-        return {trim(line.substr(0, tab)), trim(line.substr(tab + 1))};
-    }
-    return {trim(line), std::string_view{}};
-}
+// A record line of a discovery tool is a key, a colon or a tab, and a value.
+[[nodiscard]] constexpr text::Field split_key_value(TextView line) noexcept { return text::split_field(line, ":\t"); }
 
-[[nodiscard]] constexpr bool contains_ci(std::string_view haystack, std::string_view needle) noexcept {
-    if (needle.empty() || needle.size() > haystack.size()) {
-        return false;
-    }
-    auto lower = [](char c) constexpr noexcept {
-        return c >= 'A' && c <= 'Z' ? static_cast<char>(c + ('a' - 'A')) : c;
-    };
-    for (std::size_t i = 0; i + needle.size() <= haystack.size(); ++i) {
-        bool matched = true;
-        for (std::size_t j = 0; j < needle.size(); ++j) {
-            if (lower(haystack[i + j]) != lower(needle[j])) {
-                matched = false;
-                break;
-            }
-        }
-        if (matched) {
-            return true;
-        }
-    }
-    return false;
-}
-
-[[nodiscard]] constexpr DiscoveryNodeKind node_kind_from_lspci(std::string_view cls, std::string_view dev) noexcept {
-    if (contains_ci(cls, "ethernet") || contains_ci(cls, "network")) {
+[[nodiscard]] constexpr DiscoveryNodeKind node_kind_from_lspci(TextView cls, TextView dev) noexcept {
+    if (text::contains_ignoring_case(cls, "ethernet") || text::contains_ignoring_case(cls, "network")) {
         return DiscoveryNodeKind::NicPort;
     }
-    if (contains_ci(cls, "vga") || contains_ci(cls, "3d") || contains_ci(dev, "gpu") || contains_ci(dev, "nvidia")
-        || contains_ci(dev, "amd")) {
+    if (text::contains_ignoring_case(cls, "vga") || text::contains_ignoring_case(cls, "3d")
+        || text::contains_ignoring_case(dev, "gpu") || text::contains_ignoring_case(dev, "nvidia")
+        || text::contains_ignoring_case(dev, "amd")) {
         return DiscoveryNodeKind::Gpu;
     }
-    if (contains_ci(cls, "non-volatile") || contains_ci(dev, "nvme")) {
+    if (text::contains_ignoring_case(cls, "non-volatile") || text::contains_ignoring_case(dev, "nvme")) {
         return DiscoveryNodeKind::NvmeNamespace;
     }
-    if (contains_ci(cls, "bridge")) {
+    if (text::contains_ignoring_case(cls, "bridge")) {
         return DiscoveryNodeKind::PcieRoot;
     }
     return DiscoveryNodeKind::PcieLaneGroup;
 }
 
-[[nodiscard]] constexpr std::uint64_t parse_line_rate(std::string_view value) noexcept {
-    std::uint64_t number = 0;
-    auto first = value.data();
-    auto last = value.data() + value.size();
-    auto [ptr, ec] = std::from_chars(first, last, number);
-    if (ec != std::errc{} || number == 0) {
+// The bytes per second of a line rate such as "100G", "25000M" or a plain
+// count of bits per second.  Zero when the text starts with no number or the
+// number is zero.
+[[nodiscard]] constexpr std::uint64_t parse_line_rate(TextView value) noexcept {
+    std::uint64_t const number = text::leading_u64(value).value_or(0);
+    if (number == 0) {
         return 0;
     }
-    std::string_view suffix{ptr, static_cast<std::size_t>(last - ptr)};
-    if (contains_ci(suffix, "g")) {
+    TextView const suffix = text::tail(value, text::leading_digits(value));
+    if (text::contains_ignoring_case(suffix, "g")) {
         return number * 1000ull * 1000ull * 1000ull / 8ull;
     }
-    if (contains_ci(suffix, "m")) {
+    if (text::contains_ignoring_case(suffix, "m")) {
         return number * 1000ull * 1000ull / 8ull;
     }
     return number;
@@ -91,10 +49,9 @@ namespace {
 
 template <std::size_t MaxNodes, std::size_t MaxEdges>
 [[nodiscard]] ::fixy::Result<::fixy::Unit, DiscoveryError>
-flush_lspci_record(DiscoverySnapshot<MaxNodes, MaxEdges>& snapshot, std::string_view slot, std::string_view cls,
-                   std::string_view vendor, std::string_view device, std::uint16_t& records,
-                   std::uint16_t& admitted) noexcept {
-    if (slot.empty() && cls.empty() && vendor.empty() && device.empty()) {
+flush_lspci_record(DiscoverySnapshot<MaxNodes, MaxEdges>& snapshot, TextView slot, TextView cls, TextView vendor,
+                   TextView device, std::uint16_t& records, std::uint16_t& admitted) noexcept {
+    if (slot.size() == 0 && cls.size() == 0 && vendor.size() == 0 && device.size() == 0) {
         return ::fixy::Unit{};
     }
     ++records;
@@ -123,37 +80,34 @@ flush_lspci_record(DiscoverySnapshot<MaxNodes, MaxEdges>& snapshot, std::string_
 
 ::fixy::Result<DiscoverySourceStatus, DiscoveryError>
 parse_lspci_vmm_tree(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapshot) noexcept {
-    std::string_view input = text.value();
-    if (trim(input).empty()) {
+    TextView input = text.value();
+    if (text::trim(input).size() == 0) {
         return ::fixy::err(DiscoveryError::EmptyInput);
     }
 
     std::uint16_t records = 0;
     std::uint16_t admitted = 0;
-    std::string_view slot{};
-    std::string_view cls{};
-    std::string_view vendor{};
-    std::string_view device{};
+    TextView slot{};
+    TextView cls{};
+    TextView vendor{};
+    TextView device{};
 
-    while (!input.empty()) {
-        const std::size_t nl = input.find('\n');
-        std::string_view line = nl == std::string_view::npos ? input : input.substr(0, nl);
-        input = nl == std::string_view::npos ? std::string_view{} : input.substr(nl + 1);
-        line = trim(line);
-        if (line.empty()) {
+    while (input.size() != 0) {
+        TextView const line = text::trim(text::take_line(input));
+        if (line.size() == 0) {
             CRUCIBLE_TRY(_, flush_lspci_record(snapshot, slot, cls, vendor, device, records, admitted));
-            slot = cls = vendor = device = {};
+            slot = cls = vendor = device = TextView{};
             continue;
         }
-        auto [key, value] = split_key_value(line);
-        if (key == "Slot") {
-            slot = value;
-        } else if (key == "Class") {
-            cls = value;
-        } else if (key == "Vendor") {
-            vendor = value;
-        } else if (key == "Device") {
-            device = value;
+        text::Field const field = split_key_value(line);
+        if (field.key == "Slot") {
+            slot = field.value;
+        } else if (field.key == "Class") {
+            cls = field.value;
+        } else if (field.key == "Vendor") {
+            vendor = field.value;
+        } else if (field.key == "Device") {
+            device = field.value;
         }
     }
     CRUCIBLE_TRY(_, flush_lspci_record(snapshot, slot, cls, vendor, device, records, admitted));
@@ -173,28 +127,25 @@ parse_ethtool_info(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapsho
     if (node_index >= snapshot.node_count()) {
         return ::fixy::err(DiscoveryError::InvalidNodeIndex);
     }
-    std::string_view input = text.value();
-    if (trim(input).empty()) {
+    TextView input = text.value();
+    if (text::trim(input).size() == 0) {
         return ::fixy::err(DiscoveryError::EmptyInput);
     }
 
     std::uint16_t records = 0;
-    std::string_view driver{};
-    std::string_view firmware{};
-    std::string_view bus{};
-    while (!input.empty()) {
-        const std::size_t nl = input.find('\n');
-        std::string_view line = nl == std::string_view::npos ? input : input.substr(0, nl);
-        input = nl == std::string_view::npos ? std::string_view{} : input.substr(nl + 1);
-        auto [key, value] = split_key_value(line);
-        if (key == "driver") {
-            driver = value;
+    TextView driver{};
+    TextView firmware{};
+    TextView bus{};
+    while (input.size() != 0) {
+        text::Field const field = split_key_value(text::take_line(input));
+        if (field.key == "driver") {
+            driver = field.value;
             ++records;
-        } else if (key == "firmware-version") {
-            firmware = value;
+        } else if (field.key == "firmware-version") {
+            firmware = field.value;
             ++records;
-        } else if (key == "bus-info") {
-            bus = value;
+        } else if (field.key == "bus-info") {
+            bus = field.value;
             ++records;
         }
     }
@@ -202,7 +153,7 @@ parse_ethtool_info(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapsho
     DiscoveryNodeFact fact = *snapshot.node_facts().get(node_index).expect("the node index is below the node count");
     fact.driver = tag_vendor_discovery_string(driver);
     fact.firmware = tag_vendor_discovery_string(firmware);
-    fact.bus_info = bus.empty() ? fact.bus_info : tag_vendor_discovery_string(bus);
+    fact.bus_info = bus.size() == 0 ? fact.bus_info : tag_vendor_discovery_string(bus);
     CRUCIBLE_TRY(_, snapshot.update_node(node_index, fact));
     DiscoverySourceStatus status{
         .source = DiscoverySource::EthtoolInfo,
@@ -217,31 +168,27 @@ parse_ethtool_info(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapsho
 
 ::fixy::Result<::fixy::Bits<cog::NicFeature>, DiscoveryError>
 parse_ethtool_features(ExternalDiscoveryText text) noexcept {
-    std::string_view input = text.value();
-    if (trim(input).empty()) {
+    TextView input = text.value();
+    if (text::trim(input).size() == 0) {
         return ::fixy::err(DiscoveryError::EmptyInput);
     }
     ::fixy::Bits<cog::NicFeature> bits{};
-    while (!input.empty()) {
-        const std::size_t nl = input.find('\n');
-        std::string_view line = nl == std::string_view::npos ? input : input.substr(0, nl);
-        input = nl == std::string_view::npos ? std::string_view{} : input.substr(nl + 1);
-        auto [key, value] = split_key_value(line);
-        const bool enabled = contains_ci(value, "on");
-        if (!enabled) {
+    while (input.size() != 0) {
+        text::Field const field = split_key_value(text::take_line(input));
+        if (!text::contains_ignoring_case(field.value, "on")) {
             continue;
         }
-        if (contains_ci(key, "tcp-segmentation-offload")) {
+        if (text::contains_ignoring_case(field.key, "tcp-segmentation-offload")) {
             bits.set(cog::NicFeature::Tso);
-        } else if (contains_ci(key, "generic-segmentation-offload")) {
+        } else if (text::contains_ignoring_case(field.key, "generic-segmentation-offload")) {
             bits.set(cog::NicFeature::Gso);
-        } else if (contains_ci(key, "generic-receive-offload")) {
+        } else if (text::contains_ignoring_case(field.key, "generic-receive-offload")) {
             bits.set(cog::NicFeature::Gro);
-        } else if (contains_ci(key, "large-receive-offload")) {
+        } else if (text::contains_ignoring_case(field.key, "large-receive-offload")) {
             bits.set(cog::NicFeature::Lro);
-        } else if (contains_ci(key, "rx-vlan-offload")) {
+        } else if (text::contains_ignoring_case(field.key, "rx-vlan-offload")) {
             bits.set(cog::NicFeature::Rss);
-        } else if (contains_ci(key, "hw-tc-offload")) {
+        } else if (text::contains_ignoring_case(field.key, "hw-tc-offload")) {
             bits.set(cog::NicFeature::TcEbpf);
         }
     }
@@ -250,8 +197,8 @@ parse_ethtool_features(ExternalDiscoveryText text) noexcept {
 
 ::fixy::Result<DiscoverySourceStatus, DiscoveryError>
 parse_lldp_neighbors(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapshot) noexcept {
-    std::string_view input = text.value();
-    if (trim(input).empty()) {
+    TextView input = text.value();
+    if (text::trim(input).size() == 0) {
         return ::fixy::err(DiscoveryError::EmptyInput);
     }
     if (snapshot.node_count() == 0) {
@@ -260,12 +207,12 @@ parse_lldp_neighbors(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snaps
 
     std::uint16_t records = 0;
     std::uint16_t admitted = 0;
-    std::string_view iface{};
-    std::string_view sys_name{};
-    std::string_view port_id{};
-    std::string_view line_rate{};
+    TextView iface{};
+    TextView sys_name{};
+    TextView port_id{};
+    TextView line_rate{};
     auto flush = [&]() noexcept -> ::fixy::Result<::fixy::Unit, DiscoveryError> {
-        if (iface.empty() && sys_name.empty() && port_id.empty()) {
+        if (iface.size() == 0 && sys_name.size() == 0 && port_id.size() == 0) {
             return ::fixy::Unit{};
         }
         ++records;
@@ -286,25 +233,22 @@ parse_lldp_neighbors(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snaps
         return ::fixy::Unit{};
     };
 
-    while (!input.empty()) {
-        const std::size_t nl = input.find('\n');
-        std::string_view line = nl == std::string_view::npos ? input : input.substr(0, nl);
-        input = nl == std::string_view::npos ? std::string_view{} : input.substr(nl + 1);
-        line = trim(line);
-        if (line.empty()) {
+    while (input.size() != 0) {
+        TextView const line = text::trim(text::take_line(input));
+        if (line.size() == 0) {
             CRUCIBLE_TRY(_, flush());
-            iface = sys_name = port_id = line_rate = {};
+            iface = sys_name = port_id = line_rate = TextView{};
             continue;
         }
-        auto [key, value] = split_key_value(line);
-        if (key == "Interface") {
-            iface = value;
-        } else if (key == "LineRate") {
-            line_rate = value;
-        } else if (key == "SysName" || key == "SysName:") {
-            sys_name = value;
-        } else if (key == "PortID" || key == "PortID:") {
-            port_id = value;
+        text::Field const field = split_key_value(line);
+        if (field.key == "Interface") {
+            iface = field.value;
+        } else if (field.key == "LineRate") {
+            line_rate = field.value;
+        } else if (field.key == "SysName" || field.key == "SysName:") {
+            sys_name = field.value;
+        } else if (field.key == "PortID" || field.key == "PortID:") {
+            port_id = field.value;
         }
     }
     CRUCIBLE_TRY(_, flush());

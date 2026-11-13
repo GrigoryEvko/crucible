@@ -70,7 +70,7 @@ static void test_enumerator_names() {
 }
 
 static void test_parsers_and_drop_rate() {
-    constexpr std::string_view netdev = "rx_bytes: 1000\n"
+    constexpr ::fixy::TextView netdev = "rx_bytes: 1000\n"
                                         "tx_bytes: 2000\n"
                                         "rx_packets: 100\n"
                                         "tx_packets: 100\n"
@@ -82,7 +82,7 @@ static void test_parsers_and_drop_rate() {
     assert(counters.value().rx_bytes == 1000);
     assert(topology::netdev_drop_ppm(counters.value()) == 15000);
 
-    constexpr std::string_view qdisc = "backlog: 4096b 7p\n"
+    constexpr ::fixy::TextView qdisc = "backlog: 4096b 7p\n"
                                        "drops: 3\n"
                                        "overlimits: 4\n";
     auto const backlog =
@@ -90,7 +90,7 @@ static void test_parsers_and_drop_rate() {
     assert(backlog.value().backlog_bytes == 4096);
     assert(backlog.value().backlog_packets == 7);
 
-    constexpr std::string_view sysctl = "net.core.rmem_max = 67108864\n"
+    constexpr ::fixy::TextView sysctl = "net.core.rmem_max = 67108864\n"
                                         "net.core.wmem_max = 67108864\n"
                                         "net.core.busy_poll = 50\n"
                                         "net.ipv4.tcp_rmem_max = 33554432\n"
@@ -208,7 +208,7 @@ static void test_static_gates() {
     static_assert(!topology::CtxFitsNicTelemetryRead<int>);
     static_assert(!std::is_default_constructible_v<topology::NicTelemetrySnapshot>);
     static_assert(!std::is_default_constructible_v<topology::NicTelemetryHistory<4>>);
-    static_assert(sizeof(topology::ExternalTelemetryText) == sizeof(std::string_view));
+    static_assert(sizeof(topology::ExternalTelemetryText) == sizeof(::fixy::TextView));
     static_assert(sizeof(topology::DeclaredNetdevCounters) == sizeof(topology::NetdevCounters));
     static_assert(std::is_trivially_destructible_v<topology::NicTelemetrySnapshot>);
     // The per-socket sample and the health class of a link have two names,

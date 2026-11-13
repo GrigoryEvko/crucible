@@ -151,7 +151,7 @@ public:
         if (contains_(id.uuid)) {
             return std::unexpected(HyParViewError::DuplicatePeer);
         }
-        if (active_count_ == config_.active_size.value()) {
+        if (active_count_ >= MaxActive || active_count_ == config_.active_size.value()) {
             return std::unexpected(HyParViewError::ActiveViewFull);
         }
         rng_seed_ = mix_uuid_seed_(rng_seed_, id.uuid);

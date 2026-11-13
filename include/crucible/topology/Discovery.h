@@ -18,7 +18,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::topology {
@@ -26,8 +25,8 @@ namespace crucible::topology {
 // The text a discovery parser reads comes from a tool or a peer, never from
 // this process.  A parser takes only this type, so a caller must name the
 // source with mint_tagged before the parser sees a byte.
-using ExternalDiscoveryText = ::fixy::Tagged<std::string_view, ::fixy::tags::source::External>;
-using VendorDiscoveryString = cog::VendorClaim<std::string_view>;
+using ExternalDiscoveryText = ::fixy::Tagged<::fixy::TextView, ::fixy::tags::source::External>;
+using VendorDiscoveryString = cog::VendorClaim<::fixy::TextView>;
 
 enum class DiscoveryError : std::uint8_t {
     EmptyInput = 0,
@@ -154,11 +153,11 @@ concept CtxFitsDiscoveryBg =
 // foundation::reflect::enum_name gives the log spelling of the four enums
 // above.
 
-[[nodiscard]] constexpr ExternalDiscoveryText tag_external_discovery_text(std::string_view text) noexcept {
+[[nodiscard]] constexpr ExternalDiscoveryText tag_external_discovery_text(::fixy::TextView text) noexcept {
     return ::fixy::mint_tagged<::fixy::tags::source::External>(text);
 }
 
-[[nodiscard]] constexpr VendorDiscoveryString tag_vendor_discovery_string(std::string_view text) noexcept {
+[[nodiscard]] constexpr VendorDiscoveryString tag_vendor_discovery_string(::fixy::TextView text) noexcept {
     return ::fixy::mint_tagged<::fixy::tags::source::Vendor>(text);
 }
 
@@ -200,10 +199,10 @@ concept CtxFitsDiscoveryBg =
     }
 }
 
-[[nodiscard]] constexpr std::uint64_t stable_discovery_hash(std::string_view a, std::string_view b = {},
-                                                            std::string_view c = {}) noexcept {
+[[nodiscard]] constexpr std::uint64_t stable_discovery_hash(::fixy::TextView a, ::fixy::TextView b = {},
+                                                            ::fixy::TextView c = {}) noexcept {
     std::uint64_t h = 1469598103934665603ull;
-    auto mix = [&h](std::string_view s) constexpr noexcept {
+    auto mix = [&h](::fixy::TextView s) constexpr noexcept {
         for (char ch : s) {
             h ^= static_cast<std::uint64_t>(static_cast<unsigned char>(ch));
             h *= 1099511628211ull;
