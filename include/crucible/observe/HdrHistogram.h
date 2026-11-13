@@ -1,18 +1,15 @@
 #pragma once
 
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/concurrent/PermissionedSpscChannel.h>
 #include <foundation/Platform.h>
 #include <foundation/ThreadLocalRef.h>
 
-#include <array>
-#include <atomic>
-#include <bit>
 #include <cmath>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -32,7 +29,7 @@ namespace detail {
     if (x <= 1) {
         return 1;
     }
-    return std::uint64_t{1} << std::bit_width(x - 1);
+    return std::uint64_t{1} << ::fixy::bit_width(x - 1);
 }
 
 template <std::uint8_t Significant, std::uint64_t MaxValue>
@@ -42,12 +39,13 @@ struct HdrLayout {
 
     static constexpr std::uint64_t sub_bucket_count = next_power_of_two(pow10_u64(Significant) * 2);
     static constexpr std::uint64_t sub_bucket_half_count = sub_bucket_count / 2;
-    static constexpr unsigned sub_bucket_half_count_magnitude = std::countr_zero(sub_bucket_half_count);
+    static constexpr unsigned sub_bucket_half_count_magnitude =
+        static_cast<unsigned>(::fixy::countr_zero(sub_bucket_half_count));
     static constexpr std::uint64_t sub_bucket_mask = sub_bucket_count - 1;
 
     [[nodiscard]] static constexpr std::uint32_t bucket_index(std::uint64_t value) noexcept {
         const std::uint64_t normalized = value | sub_bucket_mask;
-        const auto bit_count = static_cast<unsigned>(std::bit_width(normalized));
+        const auto bit_count = static_cast<unsigned>(::fixy::bit_width(normalized));
         return bit_count > sub_bucket_half_count_magnitude + 1 ? bit_count - sub_bucket_half_count_magnitude - 1 : 0;
     }
 
@@ -131,9 +129,15 @@ public:
         return ::fixy::mint_refined<::fixy::in_range<std::uint64_t{0}, MaxValue>>(value);
     }
 
+    // The slot of each value of value_type is below bucket_slots: the slot
+    // grows with the value, and a static_assert bounds the slot of MaxValue.
+    // Thus the clamp changes no slot.  The clamp lets the optimizer prove the
+    // bound, so the check of the Index costs no branch.
     CRUCIBLE_HOT void record(value_type value) noexcept {
-        const std::size_t index = layout_type::counts_index(value.value());
-        counts_[index].fetch_add(1, std::memory_order_relaxed);
+        const std::size_t slot = ::fixy::min(layout_type::counts_index(value.value()), bucket_slots - 1);
+        static_cast<void>(
+            counts_.at(::fixy::Index<bucket_slots>::check(slot).expect("a clamped slot is below bucket_slots"))
+                .fetch_add_acq_rel(1));
         // acq_rel, not release. A release-only read-modify-write does not
         // synchronize with a second producer's release-only one. Producer Y
         // reads producer X's incremented value, but the read half of Y's
@@ -144,10 +148,10 @@ public:
         // end and returns MaxValue. acq_rel builds the transitive chain from
         // X's stores through X's release, Y's acquiring read-modify-write
         // and Y's release to the reader's acquire.
-        total_count_.fetch_add(1, std::memory_order_acq_rel);
+        static_cast<void>(total_count_.fetch_add_acq_rel(1));
     }
 
-    [[nodiscard]] std::uint64_t total_count() const noexcept { return total_count_.load(std::memory_order_acquire); }
+    [[nodiscard]] std::uint64_t total_count() const noexcept { return total_count_.load_acquire(); }
 
     [[nodiscard]] std::uint64_t percentile(double pct) const noexcept {
         const std::uint64_t total = total_count();
@@ -170,10 +174,10 @@ public:
         }
 
         std::uint64_t seen = 0;
-        for (std::size_t i = 0; i < counts_.size(); ++i) {
-            seen += counts_[i].load(std::memory_order_relaxed);
+        for (auto const [index, count] : counts_.enumerate()) {
+            seen += count->load_acquire();
             if (seen >= rank) {
-                return layout_type::value_from_index(i);
+                return layout_type::value_from_index(index.raw());
             }
         }
         return MaxValue;
@@ -191,10 +195,11 @@ public:
         // times count is exact in 128 bits, and MaxValue times a realistic
         // sample count stays far below 2^128.
         wide_unsigned sum = 0;
-        for (std::size_t i = 0; i < counts_.size(); ++i) {
-            const std::uint64_t count = counts_[i].load(std::memory_order_relaxed);
+        for (auto const [index, cell] : counts_.enumerate()) {
+            const std::uint64_t count = cell->load_acquire();
             if (count != 0) {
-                sum += static_cast<wide_unsigned>(layout_type::value_from_index(i)) * static_cast<wide_unsigned>(count);
+                sum += static_cast<wide_unsigned>(layout_type::value_from_index(index.raw()))
+                     * static_cast<wide_unsigned>(count);
             }
         }
         const wide_unsigned total128 = static_cast<wide_unsigned>(total);
@@ -214,30 +219,30 @@ public:
         // target.
         const std::uint64_t avg = mean();
         wide_unsigned sum_sq = 0;
-        for (std::size_t i = 0; i < counts_.size(); ++i) {
-            const std::uint64_t count = counts_[i].load(std::memory_order_relaxed);
+        for (auto const [index, cell] : counts_.enumerate()) {
+            const std::uint64_t count = cell->load_acquire();
             if (count != 0) {
-                const wide_signed delta =
-                    static_cast<wide_signed>(layout_type::value_from_index(i)) - static_cast<wide_signed>(avg);
+                const wide_signed delta = static_cast<wide_signed>(layout_type::value_from_index(index.raw()))
+                                        - static_cast<wide_signed>(avg);
                 const wide_unsigned sq = static_cast<wide_unsigned>(delta * delta);
                 sum_sq += sq * static_cast<wide_unsigned>(count);
             }
         }
         const double variance = static_cast<double>(sum_sq) / static_cast<double>(total);
-        return static_cast<std::uint64_t>(std::sqrt(variance) + 0.5);
+        return static_cast<std::uint64_t>(::fixy::fp::sqrt(variance) + 0.5);
     }
 
     void merge_from(const HdrHistogram& other) noexcept {
-        for (std::size_t i = 0; i < counts_.size(); ++i) {
-            const std::uint64_t count = other.counts_[i].load(std::memory_order_relaxed);
+        for (auto const [index, cell] : other.counts_.enumerate()) {
+            const std::uint64_t count = cell->load_acquire();
             if (count != 0) {
-                counts_[i].fetch_add(count, std::memory_order_relaxed);
+                static_cast<void>(counts_.at(index).fetch_add_acq_rel(count));
             }
         }
         // acq_rel for the same reason as record. Concurrent merges into one
         // histogram form a read-modify-write chain on total_count_, and the
         // acquire half is what publishes the bucket writes along it.
-        total_count_.fetch_add(other.total_count(), std::memory_order_acq_rel);
+        static_cast<void>(total_count_.fetch_add_acq_rel(other.total_count()));
     }
 
     void add_from(const HdrHistogram& other) noexcept { merge_from(other); }
@@ -246,31 +251,31 @@ public:
     // subtract racing a merge, form a read-modify-write chain on
     // total_count_ whose success ordering decides what the chain publishes.
     void subtract_from(const HdrHistogram& other) noexcept {
-        for (std::size_t i = 0; i < counts_.size(); ++i) {
-            const std::uint64_t count = other.counts_[i].load(std::memory_order_relaxed);
+        for (auto const [index, cell] : other.counts_.enumerate()) {
+            const std::uint64_t count = cell->load_acquire();
             if (count != 0) {
-                saturating_sub(counts_[i], count);
+                saturating_sub(counts_.at(index), count);
             }
         }
-        saturating_sub(total_count_, other.total_count(), std::memory_order_acq_rel);
+        saturating_sub(total_count_, other.total_count());
     }
 
     void reset() noexcept {
         for (auto& count : counts_) {
-            count.store(0, std::memory_order_relaxed);
+            count.store_release(0);
         }
-        total_count_.store(0, std::memory_order_relaxed);
+        total_count_.store_release(0);
     }
 
     template <typename Fn>
     std::size_t for_each_nonzero(Fn&& fn) const {
         std::size_t emitted = 0;
-        for (std::size_t i = 0; i < counts_.size(); ++i) {
-            const std::uint64_t count = counts_[i].load(std::memory_order_relaxed);
+        for (auto const [index, cell] : counts_.enumerate()) {
+            const std::uint64_t count = cell->load_acquire();
             if (count != 0) {
                 fn(EncodedBucket{
-                    .index = static_cast<std::uint32_t>(i),
-                    .lowest_value = layout_type::value_from_index(i),
+                    .index = static_cast<std::uint32_t>(index.raw()),
+                    .lowest_value = layout_type::value_from_index(index.raw()),
                     .count = count,
                 });
                 ++emitted;
@@ -279,20 +284,25 @@ public:
         return emitted;
     }
 
-    SerializeResult serialize_log_into(std::span<LogEncodedBucket> out) const noexcept {
+    // Writes each nonzero bucket that fits into out, in slot order, and
+    // counts each nonzero bucket.
+    SerializeResult serialize_log_into(::fixy::View<LogEncodedBucket> out) const noexcept {
         SerializeResult result{.written = 0, .required = 0};
-        for (std::size_t i = 0; i < counts_.size(); ++i) {
-            const std::uint64_t count = counts_[i].load(std::memory_order_relaxed);
+        for (auto const [index, cell] : counts_.enumerate()) {
+            const std::uint64_t count = cell->load_acquire();
             if (count == 0) {
                 continue;
             }
-            if (result.written < out.size()) {
-                out[result.written] = LogEncodedBucket{
-                    .index = static_cast<std::uint32_t>(i),
-                    .count = count,
-                };
-                ++result.written;
-            }
+            out.get(result.written)
+                .match(
+                    [&](auto slot) noexcept {
+                        *slot = LogEncodedBucket{
+                            .index = static_cast<std::uint32_t>(index.raw()),
+                            .count = count,
+                        };
+                        ++result.written;
+                    },
+                    []() noexcept {});
             ++result.required;
         }
         return result;
@@ -305,19 +315,25 @@ private:
     __extension__ using wide_unsigned = unsigned __int128;
     __extension__ using wide_signed = __int128;
 
-    static void saturating_sub(std::atomic<std::uint64_t>& dst, std::uint64_t amount,
-                               std::memory_order success = std::memory_order_relaxed) noexcept {
-        std::uint64_t observed = dst.load(std::memory_order_relaxed);
-        while (true) {
+    // Subtracts amount from the cell, and stops at zero.  A refused
+    // compare-exchange gives the value that the cell held, and the next turn
+    // starts from it.
+    static void saturating_sub(::fixy::Atomic<std::uint64_t>& dst, std::uint64_t amount) noexcept {
+        std::uint64_t observed = dst.load_acquire();
+        bool is_done = false;
+        while (!is_done) {
             const std::uint64_t desired = observed > amount ? observed - amount : 0;
-            if (dst.compare_exchange_weak(observed, desired, success, std::memory_order_relaxed)) {
-                return;
-            }
+            is_done = dst.cas_acq_rel(observed, desired)
+                          .match([](::fixy::Unit) noexcept { return true; },
+                                 [&observed](::fixy::CasRefusal<std::uint64_t> refusal) noexcept {
+                                     observed = refusal.observed;
+                                     return false;
+                                 });
         }
     }
 
-    alignas(64) std::array<std::atomic<std::uint64_t>, bucket_slots> counts_{};
-    alignas(64) std::atomic<std::uint64_t> total_count_{0};
+    alignas(64)::foundation::core::FixedArray<::fixy::Atomic<std::uint64_t>, bucket_slots> counts_{};
+    alignas(64)::fixy::Atomic<std::uint64_t> total_count_{};
 };
 
 // UniqueTag is mandatory. The per-thread shard cell is keyed on the tag, so
@@ -342,10 +358,11 @@ public:
         return histogram_type::checked_value(value);
     }
 
-    CRUCIBLE_HOT void record(value_type value) noexcept { shards_[thread_shard_()].record(value); }
+    CRUCIBLE_HOT void record(value_type value) noexcept { shards_.at(thread_shard_()).record(value); }
 
     CRUCIBLE_HOT void record_on_shard(std::size_t shard, value_type value) noexcept {
-        shards_[shard % ShardCount].record(value);
+        shards_.at(ShardIndex::check(shard % ShardCount).expect("a shard modulo ShardCount is below ShardCount"))
+            .record(value);
     }
 
     void merge_into(histogram_type& out) const noexcept {
@@ -369,20 +386,25 @@ public:
     }
 
 private:
+    using ShardIndex = ::fixy::Index<ShardCount>;
+
     // The cell stores the shard index plus one. Zero-initialized storage
     // then reads as "this thread has picked no shard yet", because a real
-    // index plus one is never zero.
-    [[nodiscard]] CRUCIBLE_HOT std::size_t thread_shard_() noexcept {
+    // index plus one is never zero.  A cell that is not zero holds at most
+    // ShardCount, so the clamp changes no shard.  The clamp lets the
+    // optimizer prove the bound, so the check of the Index costs no branch.
+    [[nodiscard]] CRUCIBLE_HOT ShardIndex thread_shard_() noexcept {
         const ::foundation::ThreadLocalRef<UniqueTag, std::size_t> cell{};
         std::size_t& cached_plus_one = cell.peek_mut();
         if (cached_plus_one == 0) [[unlikely]] {
-            cached_plus_one = (next_thread_shard_.fetch_add(1, std::memory_order_relaxed) % ShardCount) + 1;
+            cached_plus_one = (next_thread_shard_.fetch_add_acq_rel(1) % ShardCount) + 1;
         }
-        return cached_plus_one - 1;
+        return ShardIndex::check(::fixy::min(cached_plus_one - 1, ShardCount - 1))
+            .expect("a clamped shard is below ShardCount");
     }
 
-    alignas(64) std::array<histogram_type, ShardCount> shards_{};
-    alignas(64) std::atomic<std::uint64_t> next_thread_shard_{0};
+    alignas(64)::foundation::core::FixedArray<histogram_type, ShardCount> shards_{};
+    alignas(64)::fixy::Atomic<std::uint64_t> next_thread_shard_{};
 };
 
 template <typename H>
