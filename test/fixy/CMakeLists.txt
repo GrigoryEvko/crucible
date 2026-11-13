@@ -4909,6 +4909,29 @@ fixy_neg_compile_test(neg_os_socket_unmapped_kind
   "no matching function for call"
   "mint_socket<\\{anonymous\\}::NotASocketKind>\\(\\{anonymous\\}::IoBlockCtx&\\)")
 
+# The perf event mint and the identity reads.  The first fixture is a
+# context without Block, and the second a context without IO: the row of
+# the perf_event_open syscall atom demands the two.  Each second regex holds
+# the anonymous-namespace prefix that the compiler emits and the source
+# does not.
+fixy_test(test_os_perf_event)
+fixy_neg_compile_test(neg_os_perf_event_ctx_lacks_block
+  "no matching function for call"
+  "mint_perf_event\\(\\{anonymous\\}::IoOnlyCtx&, const fixy::perf::Event&, int, fixy::process::ProcessId\\)")
+fixy_neg_compile_test(neg_os_perf_event_ctx_lacks_io
+  "no matching function for call"
+  "mint_perf_event\\(\\{anonymous\\}::BlockOnlyCtx&, const fixy::perf::Event&, int, fixy::process::ProcessId\\)")
+# The read of a count needs a context that admits the row of a read.
+fixy_neg_compile_test(neg_os_perf_event_read_count_ctx_lacks_block
+  "no matching function for call"
+  "read_count\\(\\{anonymous\\}::IoOnlyCtx&, const fixy::fs::OwnedFd&\\)")
+
+# The environment door reads the variables that the test sets, and an
+# absent variable.
+fixy_test(test_os_environment)
+set_tests_properties(test_os_environment PROPERTIES ENVIRONMENT_MODIFICATION
+  "CRUCIBLE_TEST_DOOR_VALUE=set:door value;CRUCIBLE_TEST_DOOR_EMPTY=set:;CRUCIBLE_TEST_DOOR_ABSENT=unset:")
+
 fixy_neg_compile_test(neg_os_fs_mint_file_duplicate_mode
   "no matching function for call"
   "mode<fixy::fs::open_mode::WriteTruncate> >\\(\\{anonymous\\}::IoBlockCtx&")

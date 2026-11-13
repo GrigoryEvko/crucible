@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <type_traits>
 #include <utility>
+#include "perf_capabilities.h"
 #include "test_assert.h"
 
 namespace {
@@ -38,6 +39,7 @@ int main() {
     ::fixy::Option<crucible::perf::SchedTpBtf> loaded =
         crucible::perf::load_sched_tp_btf(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SchedTpBtf>>);
+    if (loaded.is_none()) return crucible::test::verdict_of_no_load("perf::load_sched_tp_btf()");
 
     for (crucible::perf::SchedTpBtf& hub : loaded) {
         const auto attached = hub.attached_programs();

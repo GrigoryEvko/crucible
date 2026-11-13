@@ -3,19 +3,16 @@
 #include <crucible/perf/detail/BpfHub.h>
 
 #include <fixy/Core.h>
-#include <fixy/Tagged.h>
+#include <fixy/Qtt.h>
+#include <fixy/os/Environment.h>
+#include <fixy/os/PerfEvent.h>
+#include <fixy/os/Process.h>
 #include <foundation/Pinned.h>
 #include <foundation/core/Array.h>
 #include <foundation/os/File.h>
 
-#include <linux/perf_event.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-
-#include <cerrno>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <span>
 #include <utility>
 
@@ -33,25 +30,26 @@ using ::crucible::perf::detail::verbose;
 struct PmuSampleRingTag {};
 using PmuSampleRing = detail::RingLayout<PmuSampleHeader, PmuSampleEvent, PMU_SAMPLE_CAPACITY>;
 
-// A perf_event_open fd is not a libbpf map fd, even though both reduce to
-// int.  The separate tag keeps the two distinguishable at the type level.
-namespace local_source {
-struct PerfEvent {};
-}  // namespace local_source
-using PerfFd = ::fixy::Tagged<int, local_source::PerfEvent>;
-static_assert(sizeof(PerfFd) == sizeof(int));
+// The class of the period of an event, and the environment variable that
+// can override the period of each class.
+enum class PeriodClass : uint8_t {
+    hardware,
+    software,
+    dynamic,
+};
 
-// strtoull accepts a leading '-' and returns the negation in unsigned
-// arithmetic, so "-5" parses to a value near the maximum of the type.  As a
-// sample period that suppresses sampling altogether, which is why the leading
-// '-' is rejected outright and the fallback is used instead.
-[[nodiscard]] uint64_t env_period(const char* name, uint64_t fallback) noexcept {
-    const char* v = std::getenv(name);
-    if (v == nullptr || v[0] == '\0' || v[0] == '-') return fallback;
-    char* end = nullptr;
-    const unsigned long long parsed = std::strtoull(v, &end, 10);
-    if (end == v || parsed == 0) return fallback;
-    return static_cast<uint64_t>(parsed);
+// The period that the variable name of the environment gives, or fallback
+// when the variable is absent, is no decimal number, or is zero.  The grammar
+// of fixy::parse refuses a sign, so "-5" does not become a value near the
+// maximum of the type, which would suppress sampling altogether.
+[[nodiscard]] uint64_t env_period(::fixy::CText name, uint64_t fallback) noexcept {
+    return ::fixy::env::read_variable(name).match(
+        [fallback](::fixy::TextView text) noexcept {
+            return ::fixy::parse<uint64_t>(text).match(
+                [fallback](uint64_t period) noexcept { return period == 0 ? fallback : period; },
+                [fallback](::fixy::ParseError) noexcept { return fallback; });
+        },
+        [fallback] noexcept { return fallback; });
 }
 [[nodiscard]] uint64_t period_hw(uint64_t fallback) noexcept {
     static const uint64_t kP = env_period("CRUCIBLE_PERF_PMU_PERIOD_HW", fallback);
@@ -65,17 +63,16 @@ static_assert(sizeof(PerfFd) == sizeof(int));
     static const uint64_t kP = env_period("CRUCIBLE_PERF_PMU_PERIOD_SW", fallback);
     return kP;
 }
-[[nodiscard]] uint64_t resolve_period(uint32_t perf_type, bool is_dynamic, uint64_t default_period) noexcept {
-    if (is_dynamic) return period_ibs(default_period);
-    if (perf_type == PERF_TYPE_SOFTWARE) return period_sw(default_period);
-    return period_hw(default_period);
-}
-
-// glibc exposes no perf_event_open wrapper, so the call goes through the raw
-// syscall entry point.
-[[nodiscard]] long perf_event_open_syscall(perf_event_attr* attr, pid_t pid, int cpu, int group_fd,
-                                           unsigned long flags) noexcept {
-    return ::syscall(SYS_perf_event_open, attr, pid, cpu, group_fd, flags);
+[[nodiscard]] uint64_t resolve_period(PeriodClass period_class, uint64_t default_period) noexcept {
+    switch (period_class) {
+        case PeriodClass::dynamic:
+            return period_ibs(default_period);
+        case PeriodClass::software:
+            return period_sw(default_period);
+        case PeriodClass::hardware:
+        default:
+            return period_hw(default_period);
+    }
 }
 
 // The characters of text before its first newline.
@@ -95,8 +92,10 @@ static_assert(sizeof(PerfFd) == sizeof(int));
 
 struct PmuEventSpec {
     detail::ForeignName prog_name{};
-    uint32_t perf_type = 0;
-    uint64_t perf_config = 0;
+    // The event of a fixed PMU.  A dynamic event takes its type from sysfs
+    // at the load, and its config is zero.
+    ::fixy::perf::Event event{};
+    PeriodClass period_class = PeriodClass::hardware;
     uint64_t sample_period = 0;
     bool is_dynamic = false;
     // The sysfs file of the type id of a dynamic PMU, for a dynamic event.
@@ -104,40 +103,31 @@ struct PmuEventSpec {
     ::fixy::TextView friendly_name{};
 };
 
-// The kernel packs a hardware-cache event descriptor into one config word.
-constexpr uint64_t hw_cache_config(uint32_t cache, uint32_t op, uint32_t result) noexcept {
-    return static_cast<uint64_t>(cache) | (static_cast<uint64_t>(op) << 8) | (static_cast<uint64_t>(result) << 16);
-}
-
 // One row for each perf_event program in the BPF object.
 constexpr std::size_t kEventSpecCount = 8;
 
 constexpr ::foundation::core::FixedArray<PmuEventSpec, kEventSpecCount> kEventSpecs{
     PmuEventSpec{
         .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_llc"),
-        .perf_type = PERF_TYPE_HW_CACHE,
-        .perf_config =
-            hw_cache_config(PERF_COUNT_HW_CACHE_LL, PERF_COUNT_HW_CACHE_OP_READ, PERF_COUNT_HW_CACHE_RESULT_MISS),
+        .event = ::fixy::perf::cache_read_miss(::fixy::perf::Cache::last_level),
         .sample_period = 10000,
         .friendly_name = "LLC-miss",
     },
     PmuEventSpec{
         .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_branch"),
-        .perf_type = PERF_TYPE_HARDWARE,
-        .perf_config = PERF_COUNT_HW_BRANCH_MISSES,
+        .event = ::fixy::perf::hardware_event(::fixy::perf::HardwareEvent::branch_misses),
         .sample_period = 10000,
         .friendly_name = "branch-miss",
     },
     PmuEventSpec{
         .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_dtlb"),
-        .perf_type = PERF_TYPE_HW_CACHE,
-        .perf_config =
-            hw_cache_config(PERF_COUNT_HW_CACHE_DTLB, PERF_COUNT_HW_CACHE_OP_READ, PERF_COUNT_HW_CACHE_RESULT_MISS),
+        .event = ::fixy::perf::cache_read_miss(::fixy::perf::Cache::data_tlb),
         .sample_period = 10000,
         .friendly_name = "DTLB-miss",
     },
     PmuEventSpec{
         .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_ibs_op"),
+        .period_class = PeriodClass::dynamic,
         .sample_period = 100000,
         .is_dynamic = true,
         .dynamic_path = "/sys/bus/event_source/devices/ibs_op/type",
@@ -145,6 +135,7 @@ constexpr ::foundation::core::FixedArray<PmuEventSpec, kEventSpecCount> kEventSp
     },
     PmuEventSpec{
         .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_ibs_fetch"),
+        .period_class = PeriodClass::dynamic,
         .sample_period = 100000,
         .is_dynamic = true,
         .dynamic_path = "/sys/bus/event_source/devices/ibs_fetch/type",
@@ -152,15 +143,15 @@ constexpr ::foundation::core::FixedArray<PmuEventSpec, kEventSpecCount> kEventSp
     },
     PmuEventSpec{
         .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_sw_pagefault_maj"),
-        .perf_type = PERF_TYPE_SOFTWARE,
-        .perf_config = PERF_COUNT_SW_PAGE_FAULTS_MAJ,
+        .event = ::fixy::perf::software_event(::fixy::perf::SoftwareEvent::major_page_faults),
+        .period_class = PeriodClass::software,
         .sample_period = 1,
         .friendly_name = "major-pagefault",
     },
     PmuEventSpec{
         .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_sw_cpu_migration"),
-        .perf_type = PERF_TYPE_SOFTWARE,
-        .perf_config = PERF_COUNT_SW_CPU_MIGRATIONS,
+        .event = ::fixy::perf::software_event(::fixy::perf::SoftwareEvent::cpu_migrations),
+        .period_class = PeriodClass::software,
         .sample_period = 1,
         .friendly_name = "cpu-migration",
     },
@@ -168,38 +159,24 @@ constexpr ::foundation::core::FixedArray<PmuEventSpec, kEventSpecCount> kEventSp
     // that raises them.  x86-64 always reads back zero.
     PmuEventSpec{
         .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_sw_alignment_fault"),
-        .perf_type = PERF_TYPE_SOFTWARE,
-        .perf_config = PERF_COUNT_SW_ALIGNMENT_FAULTS,
+        .event = ::fixy::perf::software_event(::fixy::perf::SoftwareEvent::alignment_faults),
+        .period_class = PeriodClass::software,
         .sample_period = 1,
         .friendly_name = "alignment-fault",
     },
 };
 
-// The perf event fd that each kept link reads.  A link must go before its
-// fd, so the State declares this holder before its BPF object.  Members go
-// in reverse order, and the object destroys its links before these fds
-// close.
-struct PerfFds : ::foundation::NonMovable<PerfFds> {
-    ::fixy::FixedList<PerfFd, kEventSpecCount> fds{};
-
-    PerfFds() noexcept = default;
-
-    ~PerfFds() {
-        for (const PerfFd fd : fds) {
-            ::close(fd.value());
-        }
-    }
-};
-
 }  // namespace
 
+// The link of each event owns the descriptor of the event: libbpf closes the
+// descriptor when the object destroys the link.  So the state holds no
+// descriptor of its own.
 struct PmuSample::State : ::foundation::NonMovable<PmuSample::State> {
     // Each event spec settles once, so the link table holds one slot for
     // each spec, and settle() never sees an outcome past its bound.
     static constexpr int kMaxLinks = 8;
     static_assert(kEventSpecCount == static_cast<std::size_t>(kMaxLinks), "Give each event spec one link slot.");
 
-    PerfFds perf_fds{};
     detail::BpfObject<kMaxLinks> object{};
     ::fixy::Option<detail::ReadOnlyMapping<PmuSampleRingTag>> timeline{};
 };
@@ -229,16 +206,16 @@ namespace {
         .attach_advice = "no perf_event programs attached (apply CAP_PERFMON; kernel.perf_event_paranoid > 2 "
                          "blocks unprivileged use)",
     };
-    if (!loaded.object.open_and_load(spec)) return false;
+    if (!loaded.object.open_and_load(ctx, spec)) return false;
 
     // A failure below is per event type rather than fatal.  A machine without
     // the IBS driver has no dynamic type, and a restrictive
     // perf_event_paranoid setting blocks the hardware events while still
     // permitting the software ones.
-    const uint32_t tgid = detail::current_tgid().value();
+    ::fixy::process::ProcessId const process = ::fixy::process::current_process(ctx);
 
     for (const PmuEventSpec& event : kEventSpecs) {
-        uint32_t perf_type = event.perf_type;
+        ::fixy::perf::Event perf_event = event.event;
         if (event.is_dynamic) {
             ::fixy::Option<uint32_t> const dynamic_type = read_dynamic_pmu_type(event.dynamic_path);
             if (dynamic_type.is_none()) {
@@ -252,7 +229,7 @@ namespace {
                 continue;
             }
             for (uint32_t const type : dynamic_type) {
-                perf_type = type;
+                perf_event = ::fixy::perf::Event{.type = type, .config = 0};
             }
         }
 
@@ -268,52 +245,50 @@ namespace {
             continue;
         }
 
-        // The BPF program filters kernel addresses out anyway, but excluding
-        // them at the perf layer saves the BPF invocation entirely.
-        const uint64_t effective_period = resolve_period(perf_type, event.is_dynamic, event.sample_period);
-        perf_event_attr attr{};
-        attr.size = sizeof(attr);
-        attr.type = perf_type;
-        attr.config = event.perf_config;
-        attr.sample_period = effective_period;
-        attr.exclude_kernel = 1;
-        attr.exclude_hv = 1;
-        attr.disabled = 0;
-
-        // A positive pid with cpu set to -1 tracks that process on every CPU
-        // the kernel schedules it on.
-        const long fd_raw = perf_event_open_syscall(&attr, static_cast<pid_t>(tgid),
-                                                    /*cpu=*/-1, /*group_fd=*/-1, /*flags=*/0);
-        if (fd_raw < 0) {
+        // The BPF program filters kernel addresses out anyway, but the door
+        // opens each event for user space only, which saves the BPF
+        // invocation entirely.  The event follows the first thread of the
+        // process on every CPU that the kernel schedules it on.
+        const uint64_t effective_period = resolve_period(event.period_class, event.sample_period);
+        ::fixy::fs::OwnedFd descriptor =
+            ::fixy::perf::mint_perf_event(ctx, perf_event, effective_period, process)
+                .match(
+                    [](::fixy::Linear<::fixy::fs::OwnedFd> opened) noexcept -> ::fixy::fs::OwnedFd {
+                        return std::move(opened).consume();
+                    },
+                    [&event](::foundation::os::Errno error) noexcept -> ::fixy::fs::OwnedFd {
+                        if (verbose()) {
+                            ::fixy::report(::fixy::Sink::Err,
+                                           "[crucible::perf] pmu_sample {} perf_event_open failed (error {})\n",
+                                           event.friendly_name, std::to_underlying(error));
+                        }
+                        return ::fixy::fs::OwnedFd{};
+                    });
+        if (!descriptor.is_open()) {
             loaded.object.settle(nullptr);
-            if (verbose()) {
-                ::fixy::report(::fixy::Sink::Err, "[crucible::perf] pmu_sample {} perf_event_open failed (error {})\n",
-                               event.friendly_name, errno);
-            }
             continue;
         }
-        const PerfFd perf_fd = ::fixy::mint_tagged<local_source::PerfEvent>(static_cast<int>(fd_raw));
 
-        bpf_link* const link = bpf_program__attach_perf_event(prog, perf_fd.value());
+        bpf_link* const link = bpf_program__attach_perf_event(prog, descriptor.get());
+        const int error = detail::libbpf_errno(link);
+        // A live link owns the descriptor: libbpf closes it when the object
+        // destroys the link, also when settle() refuses the link.  The handle
+        // then gives the descriptor up.  The handle of a failed attach closes
+        // the descriptor at the end of the iteration.
+        if (link != nullptr && error == 0) {
+            static_cast<void>(descriptor.release());
+        }
         if (!loaded.object.settle(link)) {
-            const long err = libbpf_get_error(link);
-            // This owner closes the descriptor of the event at the end of
-            // the block.
-            PerfFds rejected{};
-            static_cast<void>(rejected.fds.push(perf_fd).expect("an empty owner has room for one descriptor"));
             if (verbose()) {
                 ::fixy::report(::fixy::Sink::Err, "[crucible::perf] pmu_sample {} attach failed (error {})\n",
-                               event.friendly_name, err != 0 ? static_cast<int>(-err) : errno);
+                               event.friendly_name, error);
             }
             continue;
         }
-        // One fd for each kept link, and the object keeps at most one link
-        // for each of the kEventSpecCount specs, so the push has room.
-        static_cast<void>(loaded.perf_fds.fds.push(perf_fd).expect("each spec keeps at most one descriptor"));
 
         if (verbose()) {
             ::fixy::report(::fixy::Sink::Err, "[crucible::perf] pmu_sample attached {} type={} config={} period={}\n",
-                           event.friendly_name, perf_type, event.perf_config, effective_period);
+                           event.friendly_name, perf_event.type, perf_event.config, effective_period);
         }
     }
 

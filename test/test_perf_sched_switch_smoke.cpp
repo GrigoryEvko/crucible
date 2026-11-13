@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <type_traits>
 #include <utility>
+#include "perf_capabilities.h"
 #include "test_assert.h"
 
 namespace {
@@ -69,6 +70,7 @@ int main() {
     ::fixy::Option<crucible::perf::SchedSwitch> loaded =
         crucible::perf::load_sched_switch(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SchedSwitch>>);
+    if (loaded.is_none()) return crucible::test::verdict_of_no_load("perf::load_sched_switch()");
 
     for (crucible::perf::SchedSwitch& hub : loaded) {
         // The kernel-side program carries exactly one tracepoint, so attached

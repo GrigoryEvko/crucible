@@ -10,6 +10,7 @@
 #include <cstdlib>  // setenv
 #include <type_traits>
 #include <utility>
+#include "perf_capabilities.h"
 #include "test_assert.h"
 
 namespace {
@@ -99,6 +100,13 @@ int main() {
                      "(have 7 facades, got %zu)\n",
                      cov.attached_count());
         return 1;
+    }
+    // A process with the BPF capabilities loads each of the seven facades.
+    // A process without them loads none, runs the checks of the empty
+    // senses below, and ends with one skip line.
+    bool const is_each_loaded = cov.attached_count() == 7;
+    if (!is_each_loaded && crucible::test::can_load_bpf()) {
+        return crucible::test::verdict_of_no_load("perf::Senses::load_all()");
     }
 
     // Loading a subset must leave every facade outside the mask
@@ -234,6 +242,7 @@ int main() {
 
     (void)moved_into;
     (void)assigned_into;
+    if (!is_each_loaded) return crucible::test::verdict_of_no_load("perf::Senses::load_all()");
 #endif
 
     crucible::test::pass("perf::Senses smoke OK\n");

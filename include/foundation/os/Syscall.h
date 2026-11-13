@@ -100,6 +100,8 @@ enum class Syscall : std::uint8_t {
     mlock2,
     munlock,
     prctl,
+    gettid,
+    perf_event_open,
 };
 
 // True when the call can wait with no bound for another thread or process,

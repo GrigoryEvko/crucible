@@ -10,7 +10,7 @@ reason include/foundation/effects/ | Effect.h declares Row, Computation, ExecCtx
 reason include/foundation/permissions/ | Fwd.h declares Permission and SharedPermission for the headers that name a token and do not include Permission.h.  Include the header of the definition in each user of Fwd.h, and remove Fwd.h
 include/fixy/ | elsewhere | 5 | - | -
 include/fixy/ | friend | 2 | - | -
-include/fixy/os/ | elsewhere | 5 | - | -
+include/fixy/os/ | elsewhere | 6 | - | -
 include/fixy/os/ | friend | 1 | - | -
 include/fixy/session/ | elsewhere | 9 | - | -
 include/foundation/core/ | elsewhere | 1 | - | -

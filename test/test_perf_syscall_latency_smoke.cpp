@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <type_traits>
 #include <utility>
+#include "perf_capabilities.h"
 #include "test_assert.h"
 
 namespace {
@@ -67,6 +68,7 @@ int main() {
     ::fixy::Option<crucible::perf::SyscallLatency> loaded =
         crucible::perf::load_syscall_latency(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SyscallLatency>>);
+    if (loaded.is_none()) return crucible::test::verdict_of_no_load("perf::load_syscall_latency()");
 
     for (crucible::perf::SyscallLatency& hub : loaded) {
         const auto attached_refined = hub.attached_programs();

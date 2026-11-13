@@ -127,6 +127,8 @@ test/fixy/test_forgeable_proofs.cpp | unchecked-use | admit | forgeable_proofs::
 test/fixy/test_fp_polynomial.cpp | detail-use | 1 | (anonymous namespace)::box_muller_pair_matches_the_pin(): fixy::fp::detail | reads the pinned Box-Muller pair of the polynomial header
 test/fixy/test_os_numa_placement.cpp | detail-use | 1 | (anonymous namespace)::policy_at(void*): fixy::detail | sizes a probe mask with the node-mask constants of the layer
 test/fixy/test_os_numa_placement.cpp | detail-use | 2 | namespace-scope: fixy::detail | sizes a probe mask with the node-mask constants of the layer
+test/fixy/test_os_perf_event.cpp | detail-use | 2 | (anonymous namespace)::attributes_match_the_kernel(fixy::perf::Event, uint64_t): fixy::perf::detail | compares the words and the record of the attributes of the perf event door with <linux/perf_event.h>, which the door does not include
+test/fixy/test_os_perf_event.cpp | detail-use | 16 | namespace-scope: fixy::perf::detail | compares the words and the record of the attributes of the perf event door with <linux/perf_event.h>, which the door does not include
 test/fixy/test_os_sched.cpp | detail-use | 2 | (anonymous namespace)::deadline_door_reaches_the_kernel(): fixy::sched::detail | calls the deadline door, which no mint reaches without CAP_SYS_NICE, and puts back SCHED_OTHER through the policy door
 test/fixy/test_os_time.cpp | detail-use | 1 | (anonymous namespace)::ptp_reader_refuses_what_it_cannot_stamp(): fixy::time::detail | checks the PTP clock-id helper, which no door reaches without a device
 test/fixy/test_owned_mmap.cpp | detail-use | 1 | namespace-scope: fixy::atom::detail | uses the sample leak rationale as a leak atom

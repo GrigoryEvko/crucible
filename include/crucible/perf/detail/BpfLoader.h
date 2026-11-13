@@ -3,33 +3,28 @@
 #include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/handle/Once.h>
+#include <fixy/os/Environment.h>
+#include <fixy/os/Fs.h>
+#include <fixy/os/Process.h>
 #include <foundation/Platform.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/os/PathText.h>
 
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 #include <bpf/libbpf_legacy.h>  // libbpf_get_error
-#include <fcntl.h>  // AT_FDCWD, AT_EACCESS
-#include <sys/syscall.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include <cstdarg>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <string>
-#include <string_view>
 
 namespace crucible::perf::detail {
 
 namespace source {
-struct Kernel {};
 struct BpfMap {};
 }  // namespace source
 
-using Tgid = ::fixy::Tagged<uint32_t, source::Kernel>;
-using Tid = ::fixy::Tagged<uint32_t, source::Kernel>;
 using Fd = ::fixy::Tagged<int, source::BpfMap>;
 
 // A name of a BPF object, map or program.  libbpf reads it up to its zero,
@@ -44,24 +39,35 @@ struct ForeignName {
 #define CRUCIBLE_PERF_FOREIGN_NAME(literal) \
     (::crucible::perf::detail::ForeignName{.abi = (literal), .text = ::fixy::TextView{literal}})
 
-[[nodiscard]] inline Tgid current_tgid() noexcept {
-    return ::fixy::mint_tagged<source::Kernel>(static_cast<uint32_t>(::getpid()));
-}
-
-[[nodiscard]] inline Tid current_tid() noexcept {
-    return ::fixy::mint_tagged<source::Kernel>(static_cast<uint32_t>(::syscall(SYS_gettid)));
-}
+// A load reads the tracepoint files of tracefs, the id of the process and
+// the id of the calling thread, so its context admits the file calls and
+// the identity reads.
+template <class Ctx>
+concept CtxFitsBpfLoad =
+    ::foundation::effects::IsExecCtx<Ctx> && ::fixy::fs::CtxAdmitsFs<Ctx> && ::fixy::process::CtxFitsIdentityRead<Ctx>;
 
 [[nodiscard]] inline Fd map_fd(bpf_map* m) noexcept { return ::fixy::mint_tagged<source::BpfMap>(bpf_map__fd(m)); }
+
+// The characters of a name that libbpf gives, up to its zero.  A null name
+// is empty.  The characters live as long as the libbpf object that holds
+// the name.  Complexity: one pass over the characters.
+[[nodiscard]] inline ::fixy::TextView foreign_name(const char* name) noexcept {
+    if (name == nullptr) return ::fixy::TextView{};
+    std::size_t count = 0;
+    while (name[count] != '\0') {
+        ++count;
+    }
+    return ::fixy::mint_foreign_text(name, count);
+}
 
 // A function-local static in an inline function has one instance
 // across every translation unit that includes this header, so the
 // first of these calls anywhere decides the answer for every caller.
 // A setenv after that first call has no effect.
 
-[[nodiscard]] inline bool env_true(const char* name) noexcept {
-    const char* v = std::getenv(name);
-    return v != nullptr && v[0] == '1';
+[[nodiscard]] inline bool env_true(::fixy::CText name) noexcept {
+    return ::fixy::env::read_variable(name).match(
+        [](::fixy::TextView value) noexcept { return ::fixy::starts_with(value, "1"); }, [] noexcept { return false; });
 }
 
 [[nodiscard]] inline bool quiet() noexcept {
@@ -97,63 +103,69 @@ CRUCIBLE_PROCESS_WIDE inline void install_libbpf_log_cb_once() noexcept {
 [[nodiscard]] inline bpf_map* find_rodata(bpf_object* obj) noexcept {
     bpf_map* map = nullptr;
     bpf_object__for_each_map(map, obj) {
-        const char* n = bpf_map__name(map);
-        if (n == nullptr) continue;
-        const std::string_view name{n};
-        if (name.ends_with(".rodata")) return map;
+        if (::fixy::ends_with(foreign_name(bpf_map__name(map)), ".rodata")) return map;
     }
     return nullptr;
 }
 
-// The probe runs through faccessat with AT_EACCESS rather than
-// access(F_OK).  /sys/kernel/tracing is mode 0700 root, so a non-root
-// process needs CAP_DAC_READ_SEARCH to traverse it.  The bare access
-// syscall answers for the real uid, and the kernel therefore clears
-// the effective capability set for the length of the check whenever
-// the real uid is not 0 and SECURE_NO_SETUID_FIXUP is unset.  A
-// setcap-ed process loses CAP_DAC_READ_SEARCH for that one call, every
-// tracepoint then probes as missing, and every program is disabled.
-// AT_EACCESS checks the effective ids and keeps the capabilities.
-// Root reaches the same answer either way, because uid 0 bypasses DAC.
+// The probe reads the status of the id file of the tracepoint.  The status
+// read judges each directory of the path with the effective ids and the
+// capabilities of the process.  /sys/kernel/tracing is mode 0700 root, so a
+// process that is not root needs CAP_DAC_READ_SEARCH to traverse it, and a
+// setcap-ed process keeps that capability for the read.  The bare access
+// syscall answers for the real uid, and the kernel then clears the
+// effective capabilities for the length of the check, so every tracepoint
+// would probe as missing.  Root reaches the same answer either way, because
+// uid 0 bypasses DAC.
 
-[[nodiscard]] inline bool tracepoint_exists(const char* category_slash_event) noexcept {
-    std::string path = "/sys/kernel/tracing/events/";
-    path.append(category_slash_event);
-    path.append("/id");
-    if (::faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS) == 0) return true;
-    path.assign("/sys/kernel/debug/tracing/events/");
-    path.append(category_slash_event);
-    path.append("/id");
-    return ::faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS) == 0;
+// The longest path of a probe: the debugfs root, the event and "/id".
+inline constexpr std::size_t kTracepointPathBytes = 512;
+
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] bool has_tracepoint_id(Ctx const& ctx, ::fixy::CText root, ::fixy::TextView event) noexcept {
+    ::foundation::os::PathText<kTracepointPathBytes> path{};
+    bool const is_built =
+        path.append(root).is_ok() && path.append(event).is_ok() && path.append(::fixy::CText{"/id"}).is_ok();
+    return is_built && ::fixy::fs::has_entry(ctx, path.c_text()).value_or(false);
+}
+
+// True when the kernel carries the tracepoint category_slash_event, at the
+// tracefs path or at the debugfs path.  A probe that the kernel refuses
+// reads as a missing tracepoint.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] bool tracepoint_exists(Ctx const& ctx, ::fixy::TextView category_slash_event) noexcept {
+    return has_tracepoint_id(ctx, "/sys/kernel/tracing/events/", category_slash_event)
+        || has_tracepoint_id(ctx, "/sys/kernel/debug/tracing/events/", category_slash_event);
 }
 
 // A load fails for the whole object when any one program names a
 // tracepoint this kernel does not carry, so the missing ones lose
 // their autoload flag before the load rather than after it.
-inline void disable_unavailable_programs(bpf_object* obj) noexcept {
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+void disable_unavailable_programs(Ctx const& ctx, bpf_object* obj) noexcept {
+    constexpr ::fixy::TextView kPrefix = "tracepoint/";
     bpf_program* prog = nullptr;
     bpf_object__for_each_program(prog, obj) {
-        const char* sec = bpf_program__section_name(prog);
-        if (sec == nullptr) continue;
-        static constexpr const char kPrefix[] = "tracepoint/";
-        if (std::strncmp(sec, kPrefix, sizeof(kPrefix) - 1) != 0) continue;
-        const char* tp = sec + (sizeof(kPrefix) - 1);
-        if (!tracepoint_exists(tp)) {
+        ::fixy::TextView const section = foreign_name(bpf_program__section_name(prog));
+        if (!::fixy::starts_with(section, kPrefix)) continue;
+        ::fixy::TextView const event =
+            section.window(kPrefix.size(), section.size() - kPrefix.size()).value_or(::fixy::TextView{});
+        if (!tracepoint_exists(ctx, event)) {
             (void)bpf_program__set_autoload(prog, false);
         }
     }
 }
 
-// libbpf reports an error two ways.  A pointer-returning entry point
-// encodes the errno into the returned pointer, and libbpf_get_error
-// decodes it as a positive value, so the sign flips here to reach the
-// POSIX convention.  An int-returning entry point already returns
-// -errno and needs no decode.  The fallback covers a null pointer that
-// carries no encoded error.
+// The error number of the libbpf call that gave p, or zero for a pointer
+// that is no error.  libbpf 1.0 and later give null and set errno, and
+// libbpf_get_error reads that errno for a null pointer, so the read is
+// right only directly after the call.  An older libbpf encodes the error in
+// the pointer, and libbpf_get_error decodes it.  The sign flips to the
+// POSIX convention.
 
-[[nodiscard]] inline int libbpf_errno(const void* p, int fallback) noexcept {
-    const long le = libbpf_get_error(p);
-    return le ? static_cast<int>(-le) : fallback;
-}
+[[nodiscard]] inline int libbpf_errno(const void* p) noexcept { return static_cast<int>(-libbpf_get_error(p)); }
 
 }  // namespace crucible::perf::detail

@@ -43,7 +43,7 @@ SenseHub::~SenseHub() = default;
     };
     using State = detail::FacadeDoor::State<SenseHub>;
     return detail::FacadeDoor::load<SenseHub>(ctx, [&ctx, &facade, &spec](State& state) noexcept {
-        if (!state.object.load(spec)) return false;
+        if (!state.object.load(ctx, spec)) return false;
         state.counters = detail::map_array<SenseHubCountersTag>(
             ctx, state.object, facade.text, CRUCIBLE_PERF_FOREIGN_NAME("counters"), NUM_COUNTERS * sizeof(uint64_t));
         if (state.counters.is_none()) return false;
@@ -53,7 +53,7 @@ SenseHub::~SenseHub() = default;
 }
 
 Snapshot SenseHub::read() const noexcept {
-    Snapshot snapshot;
+    Snapshot snapshot{};
     for (::fixy::Box<State> const& state : state_) {
         for (detail::ReadOnlyMapping<SenseHubCountersTag> const& mapped : state->counters) {
             // The BPF producer bumps each counter with a full-barrier add, so
@@ -62,8 +62,8 @@ Snapshot SenseHub::read() const noexcept {
             // reads above it.  __atomic_load_n through a volatile-qualified
             // pointer is a GCC extension.
             const volatile uint64_t* __restrict src = std::bit_cast<const volatile uint64_t*>(mapped.data());
-            for (uint32_t i = 0; i < NUM_COUNTERS; ++i) {
-                snapshot.counters[i] = __atomic_load_n(&src[i], __ATOMIC_ACQUIRE);
+            for (::fixy::Index<NUM_COUNTERS> const i : ::fixy::IndexRange<NUM_COUNTERS>{}) {
+                snapshot.counters.at(i) = __atomic_load_n(&src[i.raw()], __ATOMIC_ACQUIRE);
             }
         }
     }

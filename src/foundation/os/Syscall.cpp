@@ -231,6 +231,10 @@ constexpr long kNoCall = -1;
             return __NR_munlock;
         case Syscall::prctl:
             return __NR_prctl;
+        case Syscall::gettid:
+            return __NR_gettid;
+        case Syscall::perf_event_open:
+            return __NR_perf_event_open;
         default:
             return kNoCall;
     }
@@ -356,8 +360,9 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // the memory policy door uses
 // MPOL_MF_MOVE, which came in 2.6.16.  move_pages came in 2.6.18.  futex came
 // in 2.6.0, and the futex door uses FUTEX_WAIT_BITSET, which came in 2.6.25.
-// sched_setattr and sched_getattr came in 3.14, renameat2 in 3.15, mlock2 in
-// 4.4, copy_file_range in 4.5 and io_uring_setup in 5.1.
+// perf_event_open came in 2.6.31, sched_setattr and sched_getattr in 3.14,
+// renameat2 in 3.15, mlock2 in 4.4, copy_file_range in 4.5 and io_uring_setup
+// in 5.1.  gettid came before 2.6.0.
 [[nodiscard]] constexpr KernelVersion introduced_in(Syscall call) noexcept {
     KernelVersion added = kFirstRelease;
     switch (call) {
@@ -374,6 +379,9 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
             break;
         case Syscall::futex:
             added = KernelVersion{2, 6, 25};
+            break;
+        case Syscall::perf_event_open:
+            added = KernelVersion{2, 6, 31};
             break;
         case Syscall::sched_setattr:
         case Syscall::sched_getattr:
@@ -419,6 +427,7 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::mlock:
         case Syscall::munlock:
         case Syscall::prctl:
+        case Syscall::gettid:
         default:
             break;
     }
@@ -429,11 +438,13 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // FEATURE CALLS of foundation/os/KernelFloor.h): renameat2 gives the commit
 // that refuses an existing target, copy_file_range the copy between two
 // files, io_uring_setup the ring of io_uring, sched_setattr and sched_getattr
-// the scheduling attributes, and mlock2 the lock of a page when it faults in.
-// The door gives the error enosys of an older kernel to its caller.
+// the scheduling attributes, mlock2 the lock of a page when it faults in, and
+// perf_event_open a perf event.  The door gives the error enosys of an older
+// kernel to its caller.
 [[nodiscard]] constexpr bool is_feature_call(Syscall call) noexcept {
     return call == Syscall::renameat2 || call == Syscall::copy_file_range || call == Syscall::io_uring_setup
-        || call == Syscall::sched_setattr || call == Syscall::sched_getattr || call == Syscall::mlock2;
+        || call == Syscall::sched_setattr || call == Syscall::sched_getattr || call == Syscall::mlock2
+        || call == Syscall::perf_event_open;
 }
 
 // The largest release that an enumerator of Syscall needs, other than a

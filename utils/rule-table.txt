@@ -841,11 +841,12 @@ witness <fixy/os/OwnedFile.h> private | fixy::OwnedFile | fixy::OwnedFile{stdout
 witness <fixy/os/OwnedFile.h> deleted | fixy::OwnedFileDoor | fixy::OwnedFileDoor{}
 witness <fixy/os/Io.h> private | fixy::io::IoUringRing | fixy::io::IoUringRing{{3, nullptr, 0, nullptr, 0, nullptr, 0, 0, 0}}
 witness <fixy/os/Fd.h> private | fixy::fs::OwnedFd | fixy::fs::OwnedFd{3}
-# The three doors of OwnedFd.  No object of a door exists, its members
+# The four doors of OwnedFd.  No object of a door exists, its members
 # are private, and its friends are the gated mints that open a descriptor.
 witness <fixy/os/Fs.h> deleted | fixy::fs::FileDoor | fixy::fs::FileDoor{}
 witness <fixy/os/Socket.h> deleted | fixy::net::SocketDoor | fixy::net::SocketDoor{}
 witness <fixy/os/Time.h> deleted | fixy::time::PtpDeviceDoor | fixy::time::PtpDeviceDoor{}
+witness <fixy/os/PerfEvent.h> deleted | fixy::perf::PerfEventDoor | fixy::perf::PerfEventDoor{}
 witness <fixy/os/Fs.h> private | fixy::fs::Dirfd | fixy::fs::Dirfd{forge::rvalue<fixy::fs::OwnedFd>()}
 
 # The five doors of the pipeline.  Each class exists only as the

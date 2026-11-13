@@ -497,6 +497,11 @@
       "constructor": "\\bOwnedRegion\\("
     },
     {
+      "name": "neg_witness_perf_perfeventdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bPerfEventDoor\\("
+    },
+    {
       "name": "neg_witness_permissions_detail_row_cell_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\brow_cell\\("
@@ -1322,6 +1327,10 @@
     {
       "type": "fixy::time::PtpDeviceDoor",
       "header": "fixy/os/Time.h"
+    },
+    {
+      "type": "fixy::perf::PerfEventDoor",
+      "header": "fixy/os/PerfEvent.h"
     },
     {
       "type": "fixy::fs::Dirfd",

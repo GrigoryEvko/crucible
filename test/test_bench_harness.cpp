@@ -332,17 +332,19 @@ void test_compare() {
 void test_snapshot_subtract() {
     using ::crucible::perf::Snapshot;
     using ::crucible::perf::NUM_COUNTERS;
+    using Slot = ::fixy::Index<NUM_COUNTERS>;
+    using Slots = ::fixy::IndexRange<NUM_COUNTERS>;
 
     {
         Snapshot pre{};
         Snapshot post{};
-        for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
-            pre.counters[i] = static_cast<std::uint64_t>(i) * 10u;
-            post.counters[i] = pre.counters[i] + static_cast<std::uint64_t>(i) + 1u;
+        for (Slot const i : Slots{}) {
+            pre.counters.at(i) = i.raw() * 10u;
+            post.counters.at(i) = pre.counters.at(i) + i.raw() + 1u;
         }
         const Snapshot d = post - pre;
-        for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
-            CHECK(d.counters[i] == static_cast<std::uint64_t>(i) + 1u);
+        for (Slot const i : Slots{}) {
+            CHECK(d.counters.at(i) == i.raw() + 1u);
         }
     }
 
@@ -351,22 +353,22 @@ void test_snapshot_subtract() {
     {
         Snapshot pre{};
         Snapshot post{};
-        for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
-            pre.counters[i] = 100u;
-            post.counters[i] = 150u;
+        for (Slot const i : Slots{}) {
+            pre.counters.at(i) = 100u;
+            post.counters.at(i) = 150u;
         }
         // A slot in the middle rather than at either end, so that an
         // off-by-one in the clamp cannot be mistaken for correct.
-        constexpr std::size_t k = 17;
-        pre.counters[k] = 200u;
-        post.counters[k] = 50u;
+        constexpr Slot k = ::fixy::index<17>();
+        pre.counters.at(k) = 200u;
+        post.counters.at(k) = 50u;
 
         const Snapshot d = post - pre;
-        for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
+        for (Slot const i : Slots{}) {
             if (i == k) {
-                CHECK(d.counters[i] == 0u);
+                CHECK(d.counters.at(i) == 0u);
             } else {
-                CHECK(d.counters[i] == 50u);
+                CHECK(d.counters.at(i) == 50u);
             }
         }
     }
@@ -375,13 +377,13 @@ void test_snapshot_subtract() {
     {
         Snapshot pre{};
         Snapshot post{};
-        for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
-            pre.counters[i] = UINT64_MAX;
-            post.counters[i] = 0u;
+        for (Slot const i : Slots{}) {
+            pre.counters.at(i) = UINT64_MAX;
+            post.counters.at(i) = 0u;
         }
         const Snapshot d = post - pre;
-        for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
-            CHECK(d.counters[i] == 0u);
+        for (Slot const i : Slots{}) {
+            CHECK(d.counters.at(i) == 0u);
         }
     }
 
@@ -389,15 +391,15 @@ void test_snapshot_subtract() {
         const Snapshot empty_a{};
         const Snapshot empty_b{};
         const Snapshot d = empty_a - empty_b;
-        for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
-            CHECK(d.counters[i] == 0u);
+        for (Slot const i : Slots{}) {
+            CHECK(d.counters.at(i) == 0u);
         }
     }
 
     {
         Snapshot s{};
-        s.counters[::crucible::perf::SCHED_CTX_VOL] = 12345u;
-        s.counters[::crucible::perf::MEM_PAGE_FAULTS_MIN] = 67u;
+        s.counters.at(::fixy::index<::crucible::perf::SCHED_CTX_VOL>()) = 12345u;
+        s.counters.at(::fixy::index<::crucible::perf::MEM_PAGE_FAULTS_MIN>()) = 67u;
         CHECK(s[::crucible::perf::SCHED_CTX_VOL] == 12345u);
         CHECK(s[::crucible::perf::MEM_PAGE_FAULTS_MIN] == 67u);
     }

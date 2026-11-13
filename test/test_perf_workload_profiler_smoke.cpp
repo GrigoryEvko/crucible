@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <type_traits>
 #include <utility>
+#include "perf_capabilities.h"
 #include "test_assert.h"
 
 namespace {
@@ -138,6 +139,12 @@ int main() {
         // both stay at zero.
         const auto second = profiler.recommend_bare(l3_budget);
         const bool senses_attached = senses.coverage().sense_hub_attached;
+        // A process with the BPF capabilities must attach the hub.  A
+        // process without them runs the checks of an unattached hub below,
+        // and the test prints one skip line for the attached part.
+        if (!senses_attached) {
+            failures += crucible::test::verdict_of_no_load("perf::WorkloadProfiler with an attached sense hub");
+        }
 
         // The exact factor depends on the host topology, so it is not
         // asserted.  What is asserted is direction: the profiler may

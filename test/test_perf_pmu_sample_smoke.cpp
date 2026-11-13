@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <type_traits>
 #include <utility>
+#include "perf_capabilities.h"
 #include "test_assert.h"
 
 namespace {
@@ -75,6 +76,7 @@ int main() {
     ::fixy::Option<crucible::perf::PmuSample> loaded =
         crucible::perf::load_pmu_sample(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::PmuSample>>);
+    if (loaded.is_none()) return crucible::test::verdict_of_no_load("perf::load_pmu_sample()");
 
     for (crucible::perf::PmuSample& hub : loaded) {
         const auto attached_refined = hub.attached_programs();

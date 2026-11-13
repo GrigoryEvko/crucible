@@ -5,10 +5,10 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
+#include <foundation/core/Array.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -109,9 +109,15 @@ enum Idx : uint32_t {
 };
 
 struct Snapshot {
-    std::array<uint64_t, NUM_COUNTERS> counters{};
+    ::foundation::core::FixedArray<uint64_t, NUM_COUNTERS> counters{};
 
-    [[nodiscard]] uint64_t operator[](Idx i) const noexcept { return counters[static_cast<uint32_t>(i)]; }
+    // The counter at i, or zero for NUM_COUNTERS, which is no slot.
+    [[nodiscard]] uint64_t operator[](Idx i) const noexcept {
+        for (auto const& value : counters.get(static_cast<std::size_t>(i))) {
+            return *value;
+        }
+        return 0;
+    }
 
     // Most counters accumulate, so b - a is the delta over the run.
     // The slots below are instantaneous gauges: the kernel-side program
@@ -127,9 +133,9 @@ struct Snapshot {
     // difference saturates at zero and a gauge that decreased reads as
     // no delta.  Read the true gauge value from the later snapshot.
     [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
-        Snapshot r;
-        for (size_t i = 0; i < NUM_COUNTERS; ++i) {
-            r.counters[i] = ::fixy::saturating_sub(counters[i], older.counters[i]);
+        Snapshot r{};
+        for (::fixy::Index<NUM_COUNTERS> const i : ::fixy::IndexRange<NUM_COUNTERS>{}) {
+            r.counters.at(i) = ::fixy::saturating_sub(counters.at(i), older.counters.at(i));
         }
         return r;
     }

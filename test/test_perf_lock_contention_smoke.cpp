@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <type_traits>
 #include <utility>
+#include "perf_capabilities.h"
 #include "test_assert.h"
 
 namespace {
@@ -66,6 +67,7 @@ int main() {
     ::fixy::Option<crucible::perf::LockContention> loaded =
         crucible::perf::load_lock_contention(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::LockContention>>);
+    if (loaded.is_none()) return crucible::test::verdict_of_no_load("perf::load_lock_contention()");
 
     for (crucible::perf::LockContention& hub : loaded) {
         // The kernel-side program carries two tracepoints, one on futex

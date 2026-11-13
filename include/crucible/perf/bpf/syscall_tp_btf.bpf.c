@@ -42,9 +42,11 @@ struct {
 } syscall_timeline SEC(".maps");
 
 /*
- * The raw tracepoint hands over its arguments as an untyped array. Slot 0 is
- * an unused context pointer, slot 1 the register state at entry and slot 2 the
- * syscall number.
+ * A BTF tracepoint hands over the arguments of the tracepoint as an untyped
+ * array, without the data pointer that the typedef btf_trace_sys_enter of the
+ * kernel names first. sys_enter has two arguments: slot 0 is the register
+ * state at entry and slot 1 the syscall number. The verifier refuses a read
+ * of a slot past the last argument.
  *
  * A BTF tracepoint needs a kernel built with CONFIG_DEBUG_INFO_BTF, which is
  * what puts /sys/kernel/btf/vmlinux in place, and kernel 5.5 or newer.
@@ -54,7 +56,7 @@ int handle_sys_enter_btf(u64* ctx) {
     if (!is_target()) return 0;
 
     __u32 tid = get_tid();
-    long syscall_id = (long)ctx[2];
+    long syscall_id = (long)ctx[1];
 
     struct syscall_start_val val = {
         .ts = bpf_ktime_get_ns(),
@@ -66,8 +68,8 @@ int handle_sys_enter_btf(u64* ctx) {
 }
 
 /*
- * The argument array here holds an unused context pointer, the register state
- * and the syscall return value.
+ * The argument array here holds the register state and the syscall return
+ * value. The handler reads neither.
  */
 SEC("tp_btf/sys_exit")
 int handle_sys_exit_btf(u64* ctx) {

@@ -5,6 +5,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
+#include <foundation/core/Array.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
@@ -36,7 +37,7 @@ struct TimelineSchedEvent {
 
 struct TimelineHeader {
     uint64_t write_idx;
-    uint64_t _pad[7];
+    ::foundation::core::FixedArray<uint64_t, 7> _pad;
 };
 
 // This value mirrors the ring size the kernel-side program was built

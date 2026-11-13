@@ -22,10 +22,8 @@
 #include <foundation/permissions/Permission.h>
 
 #include <bit>
-#include <cerrno>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <inplace_vector>
 #include <span>
@@ -93,14 +91,20 @@ public:
     // section names.  False means that the facade is unavailable, and the
     // reason is already reported.  What a failed load opened is released
     // by the destructor.
-    [[nodiscard]] bool load(const LoadSpec& spec) noexcept { return open_and_load(spec) && attach_all_(spec); }
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires CtxFitsBpfLoad<Ctx>
+    [[nodiscard]] bool load(Ctx const& ctx, const LoadSpec& spec) noexcept {
+        return open_and_load(ctx, spec) && attach_all_(spec);
+    }
 
     // Opens the bytecode, writes this process's tgid into target_tgid,
     // turns off the programs whose tracepoints are missing, loads, and adds
     // the calling thread to our_tids.  A facade whose programs need an
     // attach target that the section cannot name, such as a perf event fd,
     // calls this and then settles each program itself.
-    [[nodiscard]] bool open_and_load(const LoadSpec& spec) noexcept {
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires CtxFitsBpfLoad<Ctx>
+    [[nodiscard]] bool open_and_load(Ctx const& ctx, const LoadSpec& spec) noexcept {
         install_libbpf_log_cb_once();
 
         bpf_object_open_opts opts{};
@@ -112,18 +116,18 @@ public:
         // dropped here and never stored.
         if (opened == nullptr || libbpf_get_error(opened) != 0) {
             report_unavailable(spec.facade.text, "bpf_object__open_mem", "failed (corrupt embedded bytecode; rebuild)",
-                               libbpf_errno(opened, errno));
+                               libbpf_errno(opened));
             return false;
         }
         obj_ = opened;
 
-        patch_target_tgid_();
-        if (spec.probe_tracepoints) disable_unavailable_programs(obj_);
+        patch_target_tgid_(::fixy::process::current_process(ctx));
+        if (spec.probe_tracepoints) disable_unavailable_programs(ctx, obj_);
         if (const int err = bpf_object__load(obj_); err != 0) {
             report_unavailable(spec.facade.text, "bpf_object__load", spec.load_advice, -err);
             return false;
         }
-        register_calling_thread_();
+        register_calling_thread_(::fixy::process::current_thread(ctx));
         return true;
     }
 
@@ -133,7 +137,7 @@ public:
     // integer.  True means that the link is kept.
     bool settle(bpf_link* link) noexcept {
         CRUCIBLE_PRE(links_.size() + attach_failures_.get() < static_cast<std::size_t>(MaxLinks));
-        if (link == nullptr || libbpf_get_error(link) != 0) {
+        if (link == nullptr || libbpf_errno(link) != 0) {
             attach_failures_.bump();
             return false;
         }
@@ -183,14 +187,14 @@ private:
     // Every object declares target_tgid as the first variable of its
     // .rodata, so the tgid goes at offset 0.  The section holds a handful
     // of bytes, and the copy runs once per load.
-    void patch_target_tgid_() noexcept {
+    void patch_target_tgid_(::fixy::process::ProcessId process) noexcept {
         bpf_map* const rodata = find_rodata(obj_);
         if (rodata == nullptr) return;
         std::size_t size = 0;
         const void* const current = bpf_map__initial_value(rodata, &size);
         if (current == nullptr || size < sizeof(uint32_t)) return;
         std::string rewritten(static_cast<const char*>(current), size);
-        const uint32_t tgid = current_tgid().value();
+        const uint32_t tgid = std::to_underlying(process);
         std::memcpy(rewritten.data(), &tgid, sizeof(tgid));
         (void)bpf_map__set_initial_value(rodata, rewritten.data(), size);
     }
@@ -198,10 +202,10 @@ private:
     // A sched_switch program runs in the context of the task that switches
     // out, so it recognises one of our own threads switching in by its tid
     // in our_tids.  An object without that map needs nothing here.
-    void register_calling_thread_() noexcept {
+    void register_calling_thread_(::fixy::process::ThreadId thread) noexcept {
         bpf_map* const our_tids = find_map("our_tids");
         if (our_tids == nullptr) return;
-        const uint32_t tid = current_tid().value();
+        const uint32_t tid = std::to_underlying(thread);
         const uint8_t present = 1;
         (void)bpf_map_update_elem(map_fd(our_tids).value(), &tid, &present, BPF_ANY);
     }
@@ -223,12 +227,12 @@ private:
         bpf_object__for_each_program(prog, obj_) {
             if (!bpf_program__autoload(prog)) continue;
             bpf_link* const link = bpf_program__attach(prog);
+            // The error number is read before settle(), which calls libbpf
+            // again and can change errno.
+            const int error = libbpf_errno(link);
             if (settle(link) || !verbose()) continue;
-            const long err = libbpf_get_error(link);
-            const char* const section = bpf_program__section_name(prog);
-            std::fprintf(stderr, "[crucible::perf] %s attach failed for %s (%s)\n", spec.facade.abi,
-                         section != nullptr ? section : "<anon>",
-                         std::strerror(err != 0 ? static_cast<int>(-err) : errno));
+            ::fixy::report(::fixy::Sink::Err, "[crucible::perf] {} attach failed for {} (error {})\n", spec.facade.text,
+                           foreign_name(bpf_program__section_name(prog)), error);
         }
         return require_attached(spec);
     }
@@ -415,11 +419,11 @@ template <class State, class Value, class Read>
 // Loads a ring facade.  An empty result means that the facade is
 // unavailable, and the reason is already reported.
 template <class Facade, ::foundation::effects::IsExecCtx Ctx>
-    requires CtxFitsMapArray<Ctx>
+    requires CtxFitsMapArray<Ctx> && CtxFitsBpfLoad<Ctx>
 [[nodiscard]] ::fixy::Option<Facade> load_ring(Ctx const& ctx, const RingSpec& spec) noexcept {
     using State = FacadeDoor::State<Facade>;
     return FacadeDoor::load<Facade>(ctx, [&ctx, &spec](State& state) noexcept {
-        if (!state.object.load(spec.load)) return false;
+        if (!state.object.load(ctx, spec.load)) return false;
         state.timeline = map_array<typename State::tag_type>(ctx, state.object, spec.load.facade.text,
                                                              spec.timeline_map, State::layout::bytes);
         if (state.timeline.is_none()) return false;

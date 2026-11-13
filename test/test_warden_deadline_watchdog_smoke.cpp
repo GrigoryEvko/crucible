@@ -18,6 +18,7 @@
 #include <system_error>
 #include <type_traits>
 #include <utility>
+#include "perf_capabilities.h"
 #include "test_assert.h"
 
 // The two constants below are asserted here because this file is
@@ -232,12 +233,13 @@ int main() {
 
         // With a scheduler source, a real reading opens the window and a
         // failed read changes nothing.  The source needs a BPF load, so a
-        // host without the capability skips this part.
+        // process with the BPF capabilities must load it, and a process
+        // without them skips this part.
         const ::crucible::perf::Senses senses =
             ::crucible::perf::Senses::load_subset(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
                                                   ::crucible::perf::SensesMask{.sched_switch = true});
         if (senses.sched_switch().is_none()) {
-            std::fprintf(stderr, "[skipped] no sched_switch source on this host\n");
+            failures += crucible::test::verdict_of_no_load("warden::DeadlineWatchdog with a sched_switch source");
         } else {
             DeadlineWatchdog sensing = mint_deadline_watchdog(startup, &senses, policy);
             const auto boot_clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Boot>(runner);

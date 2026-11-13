@@ -344,7 +344,7 @@ struct sense_meta {
     uint32_t num_gauges;  // offset 12
     uint64_t layout_hash;  // offset 16
     uint32_t build_tag;  // offset 24
-    uint8_t _pad[36];  // offset 28 to 63
+    ::foundation::core::FixedArray<uint8_t, 36> _pad;  // offset 28 to 63
 };
 
 // A counter is meaningful only as a difference between two readings,

@@ -107,7 +107,7 @@ examples/fn/ | raw-pointer-object | 7 | - | -
 examples/fn/ | replace-pending:std::bit_cast | 2 | - | -
 examples/fn/ | std-entity | 10 | - | -
 examples/fn/ | std-object | 3 | - | -
-include/crucible/ | c-array-object | 53 | - | -
+include/crucible/ | c-array-object | 52 | - | -
 include/crucible/ | c-library-call | 42 | - | -
 include/crucible/ | compiler-builtin | 4 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
@@ -115,8 +115,8 @@ include/crucible/ | raw-new-delete | 4 | - | -
 include/crucible/ | raw-pointer-object | 422 | - | -
 include/crucible/ | replace-pending:<limits> | 6 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 16 | - | -
-include/crucible/ | std-entity | 260 | - | -
-include/crucible/ | std-object | 61 | - | -
+include/crucible/ | std-entity | 255 | - | -
+include/crucible/ | std-object | 59 | - | -
 include/crucible/cipher/ | c-library-call | 3 | - | -
 include/crucible/cipher/ | raw-pointer-object | 6 | - | -
 include/crucible/cipher/ | std-entity | 35 | - | -
@@ -132,21 +132,16 @@ include/crucible/mimic/ | std-entity | 4 | - | -
 include/crucible/mimic/ | std-object | 5 | - | -
 include/crucible/observe/ | std-entity | 5 | - | -
 include/crucible/observe/ | std-object | 6 | - | -
-include/crucible/perf/ | c-array-object | 4 | - | -
 include/crucible/perf/ | raw-pointer-object | 3 | - | -
-include/crucible/perf/ | std-entity | 4 | - | -
-include/crucible/perf/ | std-object | 1 | - | -
-include/crucible/perf/detail/ | c-array-object | 1 | - | -
-include/crucible/perf/detail/ | c-library-call | 42 | - | -
+include/crucible/perf/detail/ | c-library-call | 29 | - | -
 include/crucible/perf/detail/ | c-library-object | 19 | - | -
-include/crucible/perf/detail/ | door-header | 1 | - | -
-include/crucible/perf/detail/ | raw-pointer-object | 35 | - | -
+include/crucible/perf/detail/ | raw-pointer-object | 29 | - | -
 include/crucible/perf/detail/ | replace-pending:std::bit_cast | 4 | - | -
-include/crucible/perf/detail/ | std-entity | 20 | - | -
-include/crucible/perf/detail/ | std-object | 6 | - | -
+include/crucible/perf/detail/ | std-entity | 12 | - | -
+include/crucible/perf/detail/ | std-object | 4 | - | -
 include/crucible/warden/ | c-library-call | 1 | - | -
 include/crucible/warden/ | raw-pointer-object | 15 | - | -
-include/crucible/warden/ | std-entity | 2 | - | -
+include/crucible/warden/ | std-entity | 1 | - | -
 include/crucible/warden/ | std-object | 1 | - | -
 include/fixy/ | base-c-library-call | 5 | - | -
 include/fixy/ | base-std-entity | 395 | - | -
@@ -312,7 +307,6 @@ include/foundation/reflect/ | replace-pending:<string_view> | 5 | - | -
 include/foundation/reflect/ | replace-pending:<tuple> | 1 | - | -
 include/foundation/reflect/ | replace-pending:<vector> | 4 | - | -
 src/ | c-library-call | 2 | - | -
-src/ | compiler-builtin | 2 | - | -
 src/ | raw-new-delete | 3 | - | -
 src/ | raw-pointer-object | 25 | - | -
 src/ | std-entity | 157 | - | -
@@ -329,16 +323,15 @@ src/foundation/ | replace-pending:<atomic> | 1 | - | -
 src/foundation/ | replace-pending:<csignal> | 1 | - | -
 src/foundation/os/ | base-std-entity | 28 | - | -
 src/perf/ | c-array-object | 7 | - | -
-src/perf/ | c-library-call | 22 | - | -
-src/perf/ | c-library-object | 4 | - | -
+src/perf/ | c-library-call | 15 | - | -
+src/perf/ | c-library-object | 2 | - | -
 src/perf/ | compiler-builtin | 1 | - | -
-src/perf/ | door-header | 1 | - | -
 src/perf/ | foreign-symbol | 14 | - | -
-src/perf/ | raw-pointer-object | 7 | - | -
+src/perf/ | raw-pointer-object | 3 | - | -
 src/perf/ | replace-pending:std::bit_cast | 2 | - | -
-src/perf/ | std-entity | 8 | - | -
-test/ | c-array-object | 224 | - | -
-test/ | c-library-call | 903 | - | -
+src/perf/ | std-entity | 7 | - | -
+test/ | c-array-object | 223 | - | -
+test/ | c-library-call | 901 | - | -
 test/ | c-library-object | 15 | - | -
 test/ | compiler-builtin | 1 | - | -
 test/ | door-header | 20 | - | -
@@ -349,8 +342,8 @@ test/ | raw-new-delete | 41 | - | -
 test/ | raw-pointer-object | 592 | - | -
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 95 | - | -
-test/ | std-entity | 1865 | - | -
-test/ | std-object | 675 | - | -
+test/ | std-entity | 1822 | - | -
+test/ | std-object | 674 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
 test/cipher_neg/ | raw-pointer-object | 8 | - | -
 test/cipher_neg/ | std-entity | 23 | - | -
@@ -374,6 +367,7 @@ test/fixy/ | c-library-call | 1476 | - | -
 test/fixy/ | c-library-object | 9 | - | -
 test/fixy/ | door-header | 22 | - | -
 test/fixy/ | opted-out | 16 | ORACLE: the C library reports the attributes of the calling thread | -
+test/fixy/ | opted-out | 3 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
 test/fixy/ | opted-out | 7 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper | -
 test/fixy/ | opted-out | 20 | PROBE: a signal reaches a thread that waits in the futex door | -
 test/fixy/ | opted-out | 1 | PROBE: cheat 19 forges is_graded_wrapper_v, and GradedWrapper must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -395,6 +389,7 @@ test/fixy/ | raw-function-pointer | 41 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
 test/fixy/ | raw-pointer-object | 159 | - | -
 test/fixy/ | region | 1 | ORACLE: the C library reports the attributes of the calling thread | -
+test/fixy/ | region | 1 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
 test/fixy/ | region | 1 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper | -
 test/fixy/ | region | 1 | PROBE: a signal reaches a thread that waits in the futex door | -
 test/fixy/ | region | 1 | PROBE: cheat 19 forges is_graded_wrapper_v, and GradedWrapper must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -576,7 +571,7 @@ test/fuzz/property/ | raw-function-pointer | 2 | - | -
 test/fuzz/property/ | raw-pointer-object | 62 | - | -
 test/fuzz/property/ | replace-pending:<limits> | 36 | - | -
 test/fuzz/property/ | std-entity | 197 | - | -
-test/fuzz/property/ | std-object | 55 | - | -
+test/fuzz/property/ | std-object | 54 | - | -
 test/graph_neg/ | raw-pointer-object | 6 | - | -
 test/kernel_neg/ | raw-pointer-object | 1 | - | -
 test/kernel_neg/ | replace-pending:<limits> | 1 | - | -
@@ -595,7 +590,6 @@ test/layer/checks/crucible/observe/ | std-entity | 3 | - | -
 test/layer/checks/crucible/observe/ | std-object | 1 | - | -
 test/layer/checks/crucible/topology/ | replace-pending:<limits> | 1 | - | -
 test/layer/checks/crucible/topology/ | std-object | 1 | - | -
-test/layer/checks/crucible/warden/ | std-entity | 1 | - | -
 test/layer/checks/fixy/ | c-array-object | 9 | - | -
 test/layer/checks/fixy/ | c-library-call | 1 | - | -
 test/layer/checks/fixy/ | raw-pointer-object | 10 | - | -
@@ -643,8 +637,6 @@ test/layer/checks/foundation/reflect/ | raw-pointer-object | 5 | - | -
 test/layer/checks/foundation/reflect/ | std-entity | 44 | - | -
 test/layer/checks/foundation/reflect/ | std-object | 17 | - | -
 test/memory_neg/ | raw-pointer-object | 2 | - | -
-test/memory_neg/ | std-entity | 11 | - | -
-test/memory_neg/ | std-object | 6 | - | -
 test/mimic_neg/ | std-entity | 1 | - | -
 test/mimic_neg/ | std-object | 2 | - | -
 test/perf_neg/ | std-entity | 1 | - | -

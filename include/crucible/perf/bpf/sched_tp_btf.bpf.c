@@ -55,9 +55,10 @@ struct {
 } sched_timeline SEC(".maps");
 
 /*
- * The raw tracepoint hands over its arguments as an untyped array. Slot 0 is
- * an unused context pointer, slot 1 the preempt flag, slot 2 the outgoing
- * task, slot 3 the incoming task and slot 4 the previous state.
+ * A BTF tracepoint hands over the arguments of the tracepoint as an untyped
+ * array, without the data pointer that the typedef btf_trace_sched_switch of
+ * the kernel names first. Slot 0 is the preempt flag, slot 1 the outgoing
+ * task, slot 2 the incoming task and slot 3 the previous state.
  *
  * It runs in the outgoing task's context, so bpf_get_stackid() below captures
  * that task's stack.
@@ -67,8 +68,8 @@ struct {
  */
 SEC("tp_btf/sched_switch")
 int handle_sched_switch_btf(u64* ctx) {
-    struct task_struct* prev = (struct task_struct*)ctx[2];
-    struct task_struct* next = (struct task_struct*)ctx[3];
+    struct task_struct* prev = (struct task_struct*)ctx[1];
+    struct task_struct* next = (struct task_struct*)ctx[2];
 
     __u64 ts = bpf_ktime_get_ns();
     __u32 prev_pid = BPF_CORE_READ(prev, pid);

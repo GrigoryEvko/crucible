@@ -604,6 +604,19 @@ has_entry_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noexc
     return detail::has_entry_at_(dir.get(), ::foundation::core::detail::c_text_first_(path));
 }
 
+// True when an entry is at path, and false when no entry is there.  The
+// kernel reads a relative path from the current directory.  The status read
+// judges each directory of the path with the effective ids and the
+// capabilities of the process, as an open does.  A symbolic link at the last
+// part of path is an entry, and the call does not follow it.
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<bool, ::foundation::os::Errno>
+has_entry(Ctx const&, ::foundation::core::CText path) noexcept {
+    return detail::has_entry_at_(::foundation::os::kAtCurrentDirectory,
+                                 ::foundation::core::detail::c_text_first_(path));
+}
+
 // The three calls below read and write through a handle that is open.
 // A signal that interrupts a read or a write restarts it, and every other
 // error returns.  read_full stops at the end of the file, so it returns

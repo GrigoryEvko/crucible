@@ -7,9 +7,10 @@
 // <filesystem>.  A header that only holds a descriptor, or only asks for
 // the gate, includes this header and does not pay for that parse.
 //
-// The handle has a private constructor, and three door classes make the
-// open and socket calls: FileDoor in fixy/os/Fs.h, SocketDoor in
-// fixy/os/Socket.h and PtpDeviceDoor in fixy/os/Time.h.  The members of
+// The handle has a private constructor, and four door classes make the
+// open, socket and perf_event_open calls: FileDoor in fixy/os/Fs.h,
+// SocketDoor in fixy/os/Socket.h, PtpDeviceDoor in fixy/os/Time.h and
+// PerfEventDoor in fixy/os/PerfEvent.h.  The members of
 // each door are private, and its friends are the gated mints that use
 // it.  So a descriptor that is owned is a descriptor the kernel handed
 // out to a gated mint.
@@ -80,6 +81,10 @@ namespace fixy::time {
 class PtpDeviceDoor;
 }  // namespace fixy::time
 
+namespace fixy::perf {
+class PerfEventDoor;
+}  // namespace fixy::perf
+
 namespace fixy::fs {
 
 // Exclusive ownership of one descriptor, closed on destruction.
@@ -87,10 +92,10 @@ namespace fixy::fs {
 // The constructor that claims a descriptor is private.  With a public
 // one, a caller can hand the handle any small integer — stdin, a
 // descriptor another object still owns — and the destructor closes it
-// on scope exit.  The three door classes above are
-// its only friends.  Each makes the ::open or ::socket call itself and
-// builds a handle only from what the kernel returned, and each admits
-// only the gated mints that use it.
+// on scope exit.  The four door classes above are
+// its only friends.  Each makes the open, socket or perf_event_open call
+// itself and builds a handle only from what the kernel returned, and each
+// admits only the gated mints that use it.
 class [[nodiscard]] OwnedFd {
     int fd_ = -1;
 
@@ -99,6 +104,7 @@ class [[nodiscard]] OwnedFd {
     friend class FileDoor;
     friend class ::fixy::net::SocketDoor;
     friend class ::fixy::time::PtpDeviceDoor;
+    friend class ::fixy::perf::PerfEventDoor;
 
 public:
     // The empty handle owns nothing and closes nothing, so it stays

@@ -344,6 +344,27 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     return 0;
 }
 
+// The entry check of a full path reads the path with no directory handle.
+// It sees an entry that exists, sees no entry for a name that no directory
+// holds, and gives the error of the kernel for a path that does not resolve.
+[[nodiscard]] int has_entry_reads_a_full_path() {
+    IoBlockCtx ctx{eff::testing::test()};
+    if (!fs::has_entry(ctx, "/proc/self/status").value_or(false)) {
+        fixy::report(fixy::Sink::Err, "has_entry did not see /proc/self/status\n");
+        return 1;
+    }
+    if (fs::has_entry(ctx, "/proc/self/no-such-entry").value_or(true)) {
+        fixy::report(fixy::Sink::Err, "has_entry saw an entry that does not exist\n");
+        return 1;
+    }
+    if (fs::has_entry(ctx, "/proc/self/status/below-a-file").err().value_or(foundation::os::Errno{})
+        != foundation::os::Errno::enotdir) {
+        fixy::report(fixy::Sink::Err, "has_entry under a file did not give ENOTDIR\n");
+        return 1;
+    }
+    return 0;
+}
+
 // The PathText of a sanitized path holds its characters, and a path longer
 // than the capacity gives ENAMETOOLONG.
 [[nodiscard]] int path_text_of_a_sanitized_path() {
@@ -377,6 +398,7 @@ int main() {
     if (const int rc = full_reads_and_writes_round_trip(scratch); rc != 0) return rc;
     if (const int rc = calls_under_a_directory(scratch); rc != 0) return rc;
     if (const int rc = open_under_a_directory_refuses_a_symbolic_link(); rc != 0) return rc;
+    if (const int rc = has_entry_reads_a_full_path(); rc != 0) return rc;
     if (const int rc = path_text_of_a_sanitized_path(); rc != 0) return rc;
     return 0;
 }

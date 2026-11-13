@@ -16,11 +16,13 @@
 //   other door needs: renameat2 for the commit that refuses an existing
 //   target, copy_file_range for the copy between two files, io_uring_setup
 //   for the ring of io_uring, sched_setattr and sched_getattr for the
-//   scheduling attributes of fixy/os/Sched.h, and mlock2 for the lock of a
-//   page when it faults in (fixy/os/Pages.h).  Its door gives the error enosys
+//   scheduling attributes of fixy/os/Sched.h, mlock2 for the lock of a page
+//   when it faults in (fixy/os/Pages.h), and perf_event_open for a perf
+//   event of fixy/os/PerfEvent.h.  Its door gives the error enosys
 //   of an older kernel to its caller in the Result of the door.  An older
 //   kernel then refuses the feature and not the process, so the minimum does
-//   not count the release of a feature call.
+//   not count the release of a feature call.  A kernel with no perf events
+//   also gives enosys for perf_event_open.
 //
 // The start-up check is a function of that door file that the loader runs
 // before main, and before the constructors of the other objects, in each

@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <type_traits>
 #include <utility>
+#include "perf_capabilities.h"
 #include "test_assert.h"
 
 namespace {
@@ -51,15 +52,15 @@ static_assert(sizeof(crucible::perf::SenseHub) == sizeof(::fixy::Option<::fixy::
 int main() {
     // Two empty snapshots subtract to zero in every slot, with no
     // underflow and no garbage.
-    crucible::perf::Snapshot before;
-    crucible::perf::Snapshot after;
+    crucible::perf::Snapshot before{};
+    crucible::perf::Snapshot after{};
     auto identity_delta = after - before;
-    for (uint32_t i = 0; i < crucible::perf::NUM_COUNTERS; ++i) {
-        if (identity_delta.counters[i] != 0u) {
+    for (::fixy::Index<crucible::perf::NUM_COUNTERS> const i : ::fixy::IndexRange<crucible::perf::NUM_COUNTERS>{}) {
+        if (identity_delta.counters.at(i) != 0u) {
             std::fprintf(stderr,
                          "perf::Snapshot::operator- — empty-empty delta non-zero "
-                         "at slot %u\n",
-                         i);
+                         "at slot %zu\n",
+                         i.raw());
             return 1;
         }
     }
@@ -67,16 +68,16 @@ int main() {
     // A gauge slot can fall between two reads, leaving the older value
     // above the newer one.  The subtraction saturates to zero there
     // rather than wrapping.
-    crucible::perf::Snapshot older;
-    crucible::perf::Snapshot newer;
-    older.counters[crucible::perf::FD_CURRENT] = 1024;
-    newer.counters[crucible::perf::FD_CURRENT] = 7;  // closed FDs
+    crucible::perf::Snapshot older{};
+    crucible::perf::Snapshot newer{};
+    older.counters.at(::fixy::index<crucible::perf::FD_CURRENT>()) = 1024;
+    newer.counters.at(::fixy::index<crucible::perf::FD_CURRENT>()) = 7;  // closed FDs
     auto gauge_delta = newer - older;
-    if (gauge_delta.counters[crucible::perf::FD_CURRENT] != 0u) {
+    if (gauge_delta[crucible::perf::FD_CURRENT] != 0u) {
         std::fprintf(stderr,
                      "perf::Snapshot::operator- — gauge underflow not "
                      "saturated to zero: got %llu\n",
-                     static_cast<unsigned long long>(gauge_delta.counters[crucible::perf::FD_CURRENT]));
+                     static_cast<unsigned long long>(gauge_delta[crucible::perf::FD_CURRENT]));
         return 1;
     }
 
@@ -84,21 +85,20 @@ int main() {
     // subtraction must give back the exact difference without
     // saturating.  A refactor that swapped the operands or saturated in
     // both directions breaks here.
-    crucible::perf::Snapshot run_pre;
-    crucible::perf::Snapshot run_post;
-    run_pre.counters[crucible::perf::SCHED_CTX_INVOL] = 1000;
-    run_post.counters[crucible::perf::SCHED_CTX_INVOL] = 1042;
-    run_pre.counters[crucible::perf::NET_TX_BYTES] = 8000000;
-    run_post.counters[crucible::perf::NET_TX_BYTES] = 8000064;
+    crucible::perf::Snapshot run_pre{};
+    crucible::perf::Snapshot run_post{};
+    run_pre.counters.at(::fixy::index<crucible::perf::SCHED_CTX_INVOL>()) = 1000;
+    run_post.counters.at(::fixy::index<crucible::perf::SCHED_CTX_INVOL>()) = 1042;
+    run_pre.counters.at(::fixy::index<crucible::perf::NET_TX_BYTES>()) = 8000000;
+    run_post.counters.at(::fixy::index<crucible::perf::NET_TX_BYTES>()) = 8000064;
     auto run_delta = run_post - run_pre;
-    if (run_delta.counters[crucible::perf::SCHED_CTX_INVOL] != 42u
-        || run_delta.counters[crucible::perf::NET_TX_BYTES] != 64u) {
+    if (run_delta[crucible::perf::SCHED_CTX_INVOL] != 42u || run_delta[crucible::perf::NET_TX_BYTES] != 64u) {
         std::fprintf(stderr,
                      "perf::Snapshot::operator- — monotonic forward delta wrong: "
                      "SCHED_CTX_INVOL got %llu (want 42), NET_TX_BYTES got %llu "
                      "(want 64)\n",
-                     static_cast<unsigned long long>(run_delta.counters[crucible::perf::SCHED_CTX_INVOL]),
-                     static_cast<unsigned long long>(run_delta.counters[crucible::perf::NET_TX_BYTES]));
+                     static_cast<unsigned long long>(run_delta[crucible::perf::SCHED_CTX_INVOL]),
+                     static_cast<unsigned long long>(run_delta[crucible::perf::NET_TX_BYTES]));
         return 1;
     }
 
@@ -119,8 +119,10 @@ int main() {
     ::fixy::Option<crucible::perf::SenseHub> loaded =
         crucible::perf::load_sense_hub(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SenseHub>>);
-    // Either outcome is valid.  A populated hub also carries counters
-    // that must agree with each other.
+    // A process with the BPF capabilities must load.  A process without them
+    // skips.  A populated hub also carries counters that must agree with
+    // each other.
+    if (loaded.is_none()) return crucible::test::verdict_of_no_load("perf::load_sense_hub()");
     for (crucible::perf::SenseHub& hub : loaded) {
         // Both counters come back refined against an upper bound that
         // the implementation enforces at construction.  Pinning the
@@ -184,12 +186,12 @@ int main() {
         const auto attached_after = hub.attached_programs();
         const auto failures_after = hub.attach_failures();
 
-        for (uint32_t i = 0; i < crucible::perf::NUM_COUNTERS; ++i) {
-            if (zeroed_snapshot.counters[i] != 0u) {
+        for (::fixy::Index<crucible::perf::NUM_COUNTERS> const i : ::fixy::IndexRange<crucible::perf::NUM_COUNTERS>{}) {
+            if (zeroed_snapshot.counters.at(i) != 0u) {
                 std::fprintf(stderr,
-                             "perf::SenseHub::read() on moved-from — slot %u "
+                             "perf::SenseHub::read() on moved-from — slot %zu "
                              "should be 0, got %llu\n",
-                             i, static_cast<unsigned long long>(zeroed_snapshot.counters[i]));
+                             i.raw(), static_cast<unsigned long long>(zeroed_snapshot.counters.at(i)));
                 return 1;
             }
         }
