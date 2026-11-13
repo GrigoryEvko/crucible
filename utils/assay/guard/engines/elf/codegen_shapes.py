@@ -480,12 +480,8 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "ref_option_load",
-        "load_acquire of a cell of an Option of a Ref is the acquire load of the pointer in a build with no hardening, "
-        "because the null pointer is the empty word and the empty value of the niche, and the optimizer removes the "
-        f"test of the empty word.  {HARDENED_BUILDS}.  The assume of the constructor of a Ref keeps the test of the "
-        "empty word until these flags run, so the family side keeps that test and its branch, and these flags add a "
-        "second test of a copy, with a branch to a trap",
-        branches=True,
+        "load_acquire of a cell of an Option of a Ref is the acquire load of the pointer, because the null pointer is "
+        "the empty word and the empty value of the niche, and the optimizer removes the test of the empty word",
     ),
     Probe(
         "ref_option_store",
@@ -567,7 +563,6 @@ PROBES: tuple[Probe, ...] = (
         "tests the count, so the second tests that the hardening adds go to a different compare.  "
         f"{HARDENED_BUILDS}",
         checks=(TRAP,),
-        branches=True,
     ),
     Probe(
         "box_read",

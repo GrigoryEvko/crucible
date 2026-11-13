@@ -163,13 +163,14 @@ class Ref {
 
 public:
     // A Ref of an object, with the key that only RefDoor builds.  A reference
-    // is never null, so no key makes a null Ref.  The build keeps each null
-    // test (-fno-delete-null-pointer-checks).  Thus the assume tells the
-    // optimizer that the pointer is not null, and the optimizer removes the
-    // niche test of an Option of this Ref.
-    constexpr Ref(T& object, detail::RefKey const& /*key*/) noexcept : object_{__builtin_addressof(object)} {
-        [[assume(object_ != nullptr)]];
-    }
+    // is never null, so no key makes a null Ref.  The niche of a Ref states
+    // that no door builds the null pointer, so an Option of a Ref has no null
+    // test.  The constructor has no [[assume]] that the pointer is not null.
+    // That condition reads a member through this, so GCC makes it an .ASSUME
+    // call, and -fharden-conditional-branches then keeps a branch that the
+    // optimizer removes with no assume, such as the null test of the decode
+    // of an atomic word.
+    constexpr Ref(T& object, detail::RefKey const& /*key*/) noexcept : object_{__builtin_addressof(object)} {}
 
     // Adds a const to the target, erases the brand, or does the two.
     template <class U, class UBrand>
