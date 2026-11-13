@@ -1878,20 +1878,6 @@ crucible_neg_compile_test(neg_ckernel_id_raw_uint8_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<[0-9]+>\\(\\), unsigned char>\\(255\\)")
 
-# CKernelTable::SizeCounter is BoundedMonotonic<uint32_t,
-# CKERNEL_TABLE_CAP>.  The door mint_bounded_monotonic must refuse CAP + 1
-# (the edge of the bound) and UINT32_MAX (the wide miss).  The second
-# regex names the door and the refused value, and the third names the
-# precondition of the constructor.
-crucible_neg_compile_test(neg_ckernel_table_size_above_cap
-  "__builtin_trap.*is not a constant expression"
-  "fixy::mint_bounded_monotonic<unsigned int, 256>\\(\\(\\(\\(uint32_t\\)crucible::CKERNEL_TABLE_CAP\\) \\+ 1\\)\\)"
-  "BoundedMonotonic<unsigned int, 256>::within_bound_")
-crucible_neg_compile_test(neg_ckernel_table_size_uint32_max
-  "__builtin_trap.*is not a constant expression"
-  "fixy::mint_bounded_monotonic<unsigned int, 256>\\(4294967295\\)"
-  "BoundedMonotonic<unsigned int, 256>::within_bound_")
-
 # The global CKernelTable carries source::Singleton provenance.  A raw
 # pointer and a pointer with a different tag must not satisfy a consumer
 # of the singleton.
@@ -1906,22 +1892,6 @@ crucible_neg_compile_test(neg_ckernel_singleton_cross_tag
 crucible_neg_compile_test(neg_publish_static_ckernel_table_temporary
   "use of deleted function .void crucible::publish_static_ckernel_table\\(const StaticCKernelTable&&\\)."
   "the lifetime of a temporary table stops at the end of the statement")
-
-# SchemaTable::SizeCounter is BoundedMonotonic<uint32_t, SCHEMA_TABLE_CAP>,
-# and the door mint_bounded_monotonic refuses a value past the bound in
-# constant evaluation.  The check in register_name is a second defence.
-#   * _above_cap: the edge of the bound (CAP + 1).  It fails when the bound
-#     widens past SCHEMA_TABLE_CAP.
-#   * _uint32_max: the wide miss (UINT32_MAX).  It fails when the counter
-#     becomes a plain Monotonic<uint32_t>.
-crucible_neg_compile_test(neg_schema_table_size_above_cap
-  "__builtin_trap.*is not a constant expression"
-  "fixy::mint_bounded_monotonic<unsigned int, 512>\\(\\(\\(\\(uint32_t\\)crucible::SCHEMA_TABLE_CAP\\) \\+ 1\\)\\)"
-  "BoundedMonotonic<unsigned int, 512>::within_bound_")
-crucible_neg_compile_test(neg_schema_table_size_uint32_max
-  "__builtin_trap.*is not a constant expression"
-  "fixy::mint_bounded_monotonic<unsigned int, 512>\\(4294967295\\)"
-  "BoundedMonotonic<unsigned int, 512>::within_bound_")
 
 # SchemaTable::lookup() returns
 # LookupName = Tagged<Borrowed<const char, SchemaTable>, source::Interned>.

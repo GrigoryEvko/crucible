@@ -4,7 +4,7 @@
 #include <crucible/RegistrationSeal.h>
 #include <crucible/Types.h>
 #include <fixy/Borrowed.h>
-#include <fixy/Mutation.h>
+#include <fixy/Core.h>
 #include <fixy/ScopedView.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
@@ -13,19 +13,13 @@
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
 
-#include <algorithm>
-#include <array>
 #include <bit>
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <limits>
-#include <memory>
 #include <optional>
-#include <span>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible {
@@ -34,14 +28,13 @@ static constexpr uint32_t SCHEMA_TABLE_CAP = 512;
 
 // pad holds the four bytes after the length, so the entry has no padding
 // byte.  With -ftrivial-auto-var-init=zero, GCC writes zero to each padding
-// hole of each of the 512 entries of an automatic table, one store for each
-// hole.  test/test_schema_table.cpp makes sure that the entry has no padding
-// byte.
+// hole of each entry of an automatic table, one store for each hole.
+// test/test_schema_table.cpp makes sure that the entry has no padding byte.
 struct SchemaEntry {
     SchemaHash hash;
     const char* name = nullptr;  // owned: malloc'd copy, freed in clear()
     uint32_t name_len = 0;  // cached byte length; excludes trailing NUL
-    uint8_t pad[4]{};
+    uint32_t pad = 0;
 };
 
 namespace schema_state {
@@ -64,8 +57,6 @@ concept SchemaNameSource =
 // write that no view and no seal can refuse.
 class SchemaTable {
 public:
-    using SizeCounter = ::fixy::BoundedMonotonic<uint32_t, SCHEMA_TABLE_CAP>;
-
     SchemaTable() = default;
 
     SchemaTable(const SchemaTable&) = delete("owns malloc'd name strings");
@@ -148,27 +139,41 @@ public:
 
     // The unqualified form is safe in either phase. The overload taking a
     // sealed view exists so a caller holding the borrow past the registration
-    // phase can say so at the call site.
-    [[nodiscard]] LookupName lookup(SchemaHash hash) const noexcept { return lookup_from_entry_(lookup_entry_(hash)); }
+    // phase can say so at the call site.  A hash that the table does not hold
+    // gives the empty borrow.  Complexity: O(log n).
+    [[nodiscard]] LookupName lookup(SchemaHash hash) const noexcept {
+        const auto found = entries_.get(position_of_(hash));
+        for (const auto& entry : found) {
+            if (entry->hash == hash) {
+                return ::fixy::mint_tagged<::fixy::tags::source::Interned>(BorrowedName{entry->name, entry->name_len});
+            }
+        }
+        return ::fixy::mint_tagged<::fixy::tags::source::Interned>(BorrowedName{});
+    }
 
     [[nodiscard]] LookupName lookup(SealedView const&, SchemaHash hash) const noexcept { return lookup(hash); }
 
     // The name without the "aten::" namespace, as a borrow of the same copy.
     [[nodiscard]] LookupName short_name(SchemaHash hash) const noexcept {
-        constexpr std::string_view kAtenPrefix = "aten::";
+        constexpr ::fixy::TextView kAtenPrefix = "aten::";
         const LookupName full = lookup(hash);
-        const BorrowedName& view = full.value();
-        if (!std::string_view{view.data(), view.size()}.starts_with(kAtenPrefix)) return full;
+        const BorrowedName& name = full.value();
+        if (name.size() < kAtenPrefix.size()) return full;
+        std::size_t position = 0;
+        for (const char expected : kAtenPrefix) {
+            if (name[position] != expected) return full;
+            ++position;
+        }
         return ::fixy::mint_tagged<::fixy::tags::source::Interned>(
-            view.subview(kAtenPrefix.size(), view.size() - kAtenPrefix.size()));
+            name.subview(kAtenPrefix.size(), name.size() - kAtenPrefix.size()));
     }
 
-    [[nodiscard]] uint32_t count() const noexcept { return size_.get(); }
+    [[nodiscard]] uint32_t count() const noexcept { return static_cast<uint32_t>(entries_.size()); }
 
     // The registered entries, sorted by hash.  Before the seal, only the
     // registering thread may read them, because a write can run at the
     // same time on no other thread.  After the seal, any thread may read.
-    [[nodiscard]] std::span<const SchemaEntry> entries() const noexcept { return {entries_.data(), size_.get()}; }
+    [[nodiscard]] ::fixy::View<const SchemaEntry> entries() const noexcept { return entries_.view(); }
 
     // Empties the table and opens it again.  A sealed table that opens again
     // takes writes, so only a test that reuses one table across cases may
@@ -183,72 +188,56 @@ public:
 
 private:
     // Runs inside the write section, so no seal and no other writer runs
-    // at the same time.
+    // at the same time.  One pass in the order of the hashes keeps that
+    // order: the carried entry changes place with each entry of a larger
+    // hash, so each such entry moves one place up, and the last one goes to
+    // the end.  Complexity: O(n).
     void write_name_(SchemaHash hash, const char* name) {
-        if (SchemaEntry* existing = lookup_entry_(hash)) {
-            const auto dup = duplicate_name_(name);
-            std::free(std::bit_cast<char*>(existing->name));
-            existing->name = dup.name;
-            existing->name_len = dup.name_len;
-            CRUCIBLE_POST(0, lookup_entry_(hash) != nullptr);
-            return;
+        const DuplicatedName copy = duplicate_name_(name);
+        SchemaEntry carried{.hash = hash, .name = copy.name, .name_len = copy.name_len};
+        for (SchemaEntry& entry : entries_) {
+            // Before the first change of place, each entry has a smaller hash
+            // than the new one, so an equal hash is the entry of this hash.
+            if (entry.hash == carried.hash) {
+                release_name_(entry);
+                entry.name = carried.name;
+                entry.name_len = carried.name_len;
+                CRUCIBLE_POST(0, is_registered_(hash));
+                return;
+            }
+            if (carried.hash < entry.hash) ::fixy::swap(entry, carried);
         }
-        // Exhausting the cap aborts rather than returning quietly. A quiet
-        // return leaves every later schema unregistered, and the resulting
-        // fallback dispatch shows up far from the registration that was lost.
-        if (size_.get() >= SCHEMA_TABLE_CAP) [[unlikely]] {
-            std::fprintf(stderr,
-                         "crucible: SchemaTable full (%u/%u entries); bump "
-                         "SCHEMA_TABLE_CAP or audit Vessel schema registrations\n",
-                         size_.get(), SCHEMA_TABLE_CAP);
-            std::abort();
+        // A full table ends the process.  A quiet return leaves each later
+        // schema unregistered, and the fallback dispatch that results shows
+        // far from the registration that was lost.
+        if (entries_.push(carried).is_err()) [[unlikely]] {
+            ::fixy::fatal("crucible: the schema table holds SCHEMA_TABLE_CAP names.  Raise SCHEMA_TABLE_CAP in "
+                          "crucible/SchemaTable.h, or register fewer schemas");
         }
-        const auto dup = duplicate_name_(name);
-        entries_[size_.get()] = {
-            .hash = hash,
-            .name = dup.name,
-            .name_len = dup.name_len,
-        };
-        size_.bump();
-        // The sort is what lookup's binary search depends on. Dropping it
-        // leaves the new entry findable only by luck, which is why the first
-        // postcondition below reads the entry back.
-        std::ranges::sort(std::span<SchemaEntry>{entries_.data(), size_.get()}, {}, &SchemaEntry::hash);
-        CRUCIBLE_POST(0, lookup_entry_(hash) != nullptr);
-        CRUCIBLE_POST(0, size_.get() <= SCHEMA_TABLE_CAP);
+        CRUCIBLE_POST(0, is_registered_(hash));
     }
 
-    // Binary search over the sorted live prefix.  One body serves the writer,
-    // which gets a mutable entry, and the readers, which get a const one.
-    template <typename Self>
-    [[nodiscard]] auto lookup_entry_(this Self& self, SchemaHash hash) noexcept
-        -> std::conditional_t<std::is_const_v<Self>, const SchemaEntry*, SchemaEntry*> {
-        const std::span live{self.entries_.data(), self.size_.get()};
-        const auto it = std::ranges::lower_bound(live, hash, {}, &SchemaEntry::hash);
-        return (it != live.end() && it->hash == hash) ? &*it : nullptr;
+    // The position of the first entry whose hash is not below hash.  The
+    // entries are in the order of their hashes.  Complexity: O(log n).
+    [[nodiscard]] std::size_t position_of_(SchemaHash hash) const noexcept {
+        return ::fixy::lower_bound_by_key(
+            entries_.view(), [](const SchemaEntry& entry) noexcept { return entry.hash.raw(); }, hash.raw());
     }
 
-    [[nodiscard]] static LookupName lookup_from_entry_(const SchemaEntry* entry) noexcept {
-        if (!entry || !entry->name) return ::fixy::mint_tagged<::fixy::tags::source::Interned>(BorrowedName{});
-        return ::fixy::mint_tagged<::fixy::tags::source::Interned>(BorrowedName{entry->name, entry->name_len});
-    }
+    [[nodiscard]] bool is_registered_(SchemaHash hash) const noexcept { return lookup(hash).value().data() != nullptr; }
 
-    // This is the one place the size counter runs backwards, so it cannot be
-    // assigned. Constructing a fresh counter in place re-establishes the
-    // monotonicity and bound invariants from a known floor.
+    // The bit_cast drops const so free() accepts the pointer.  The
+    // allocation is the own mutable storage of the table.
+    static void release_name_(SchemaEntry& entry) noexcept { std::free(std::bit_cast<char*>(entry.name)); }
+
     void release_names_() noexcept {
-        for (auto& entry : std::span<SchemaEntry>{entries_.data(), size_.get()}) {
-            // The bit_cast drops const so free() accepts the pointer. The
-            // allocation is our own mutable storage.
-            std::free(std::bit_cast<char*>(entry.name));
-            entry.name = nullptr;
-            entry.name_len = 0;
+        for (SchemaEntry& entry : entries_) {
+            release_name_(entry);
         }
-        std::construct_at(&size_, ::fixy::mint_bounded_monotonic<uint32_t, SCHEMA_TABLE_CAP>(0u));
+        entries_.clear();
     }
 
-    std::array<SchemaEntry, SCHEMA_TABLE_CAP> entries_{};
-    SizeCounter size_ = ::fixy::mint_bounded_monotonic<uint32_t, SCHEMA_TABLE_CAP>(0u);
+    ::fixy::FixedList<SchemaEntry, SCHEMA_TABLE_CAP> entries_{};
     RegistrationSeal seal_;
 
     struct DuplicatedName {
@@ -258,11 +247,13 @@ private:
 
     [[nodiscard]] static DuplicatedName duplicate_name_(const char* s) {
         const auto len = std::strlen(s);
-        if (len > std::numeric_limits<uint32_t>::max()) [[unlikely]]
-            std::abort();
+        if (len > ::fixy::max_of<uint32_t>) [[unlikely]] {
+            ::fixy::fatal("crucible: a schema name is longer than 4 GiB, and the schema table refuses it");
+        }
         auto* p = static_cast<char*>(std::malloc(len + 1));
-        if (!p) [[unlikely]]
-            std::abort();
+        if (!p) [[unlikely]] {
+            ::fixy::fatal("crucible: the schema table cannot allocate the copy of a schema name");
+        }
         std::memcpy(p, s, len + 1);
         return DuplicatedName{
             .name = p,

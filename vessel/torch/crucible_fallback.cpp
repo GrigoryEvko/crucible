@@ -779,15 +779,18 @@ CRUCIBLE_API uint32_t crucible_dispatch_schema_count() {
 CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, const char** out_name) {
     const auto global_entries = crucible::global_schema_table().entries();
     const auto late_entries = crucible::late_schema_table().entries();
-    const crucible::SchemaEntry* entry = nullptr;
-    if (i < global_entries.size())
-        entry = &global_entries[i];
-    else if (i - global_entries.size() < late_entries.size())
-        entry = &late_entries[i - global_entries.size()];
-    if (entry == nullptr) return 0;
-    if (out_hash) *out_hash = entry->hash.raw();
-    if (out_name) *out_name = entry->name;
-    return 1;
+    const auto write_entry = [out_hash, out_name](const crucible::SchemaEntry& entry) noexcept {
+        if (out_hash) *out_hash = entry.hash.raw();
+        if (out_name) *out_name = entry.name;
+        return 1;
+    };
+    if (i < global_entries.size()) {
+        for (const auto& entry : global_entries.get(i))
+            return write_entry(*entry);
+    }
+    for (const auto& entry : late_entries.get(i - global_entries.size()))
+        return write_entry(*entry);
+    return 0;
 }
 
 }  // extern "C"

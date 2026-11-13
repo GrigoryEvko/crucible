@@ -8,7 +8,6 @@
 #include <crucible/RegistrationSeal.h>
 #include <crucible/Types.h>
 #include <fixy/Core.h>
-#include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <fixy/ScopedView.h>
 #include <fixy/Tagged.h>
@@ -18,15 +17,9 @@
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
 
-#include <algorithm>
-#include <array>
 #include <atomic>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <memory>
 #include <optional>
-#include <span>
 #include <type_traits>
 
 namespace crucible {
@@ -38,12 +31,14 @@ static constexpr uint32_t CKERNEL_TABLE_CAP = 256;
 struct CKernelEntry {
     SchemaHash schema_hash;
     CKernelId id;
-    // pad holds the seven bytes after the identifier, so the entry has no
-    // padding byte.  With -ftrivial-auto-var-init=zero, GCC writes zero to
-    // each padding hole of each of the 256 entries of an automatic table, one
-    // store for each hole.  test/test_ckernel.cpp makes sure that the entry
-    // has no padding byte.
-    uint8_t pad[7]{};
+    // pad0, pad1 and pad2 hold the seven bytes after the identifier, so the
+    // entry has no padding byte.  With -ftrivial-auto-var-init=zero, GCC
+    // writes zero to each padding hole of each entry of an automatic table,
+    // one store for each hole.  test/test_ckernel.cpp makes sure that the
+    // entry has no padding byte.
+    uint8_t pad0 = 0;
+    uint16_t pad1 = 0;
+    uint32_t pad2 = 0;
 };
 
 namespace ckernel_state {
@@ -55,8 +50,6 @@ struct Sealed {};
 // write that no view and no seal can refuse.
 class CKernelTable {
 public:
-    using SizeCounter = ::fixy::BoundedMonotonic<uint32_t, CKERNEL_TABLE_CAP>;
-
     CKernelTable() = default;
 
     CKernelTable(const CKernelTable&) = delete("table is a global registration singleton; no copies");
@@ -130,63 +123,59 @@ public:
     // gnu::pure lets the optimiser cache a result across calls. That is sound
     // only because registration finishes and the table is sealed before any
     // classifying reader runs. An interleaved registration would invalidate it.
+    // Complexity: O(log n).
     [[nodiscard, gnu::pure]] CKernelId classify(SchemaHash schema_hash) const noexcept {
-        uint32_t lo = 0, hi = size_.get();
-        while (lo < hi) {
-            const uint32_t mid = lo + (hi - lo) / 2;
-            if (entries_[mid].schema_hash == schema_hash) return entries_[mid].id;
-            if (entries_[mid].schema_hash < schema_hash)
-                lo = mid + 1;
-            else
-                hi = mid;
+        const auto found = entries_.get(::fixy::lower_bound_by_key(
+            entries_.view(), [](const CKernelEntry& entry) noexcept { return entry.schema_hash.raw(); },
+            schema_hash.raw()));
+        for (const auto& entry : found) {
+            if (entry->schema_hash == schema_hash) return entry->id;
         }
         return CKernelId::OPAQUE;
     }
 
-    [[nodiscard]] uint32_t count() const noexcept { return size_.get(); }
+    [[nodiscard]] uint32_t count() const noexcept { return static_cast<uint32_t>(entries_.size()); }
 
     // Empties the table and opens it again.  A sealed table that opens again
     // takes writes, so only a test that reuses one table across cases may
     // do this: it takes the test context, which code that ships cannot mint.
     // The caller makes sure that no other thread uses the table.
-    //
-    // Rewinding the counter is the one non-monotonic mutation the type
-    // otherwise forbids, so the counter is reconstructed in place rather than
-    // assigned, re-establishing its bound and its ordering from a known floor.
     void clear(::foundation::effects::Test const& test) noexcept {
-        std::construct_at(&size_, ::fixy::mint_bounded_monotonic<uint32_t, CKERNEL_TABLE_CAP>(0u));
+        entries_.clear();
         seal_.reopen(test);
-        CRUCIBLE_POST(0, size_.get() == 0u);
+        CRUCIBLE_POST(0, count() == 0u);
         CRUCIBLE_POST(0, !is_sealed());
     }
 
 private:
     // Runs inside the write section, so no seal and no other writer runs
-    // at the same time.
+    // at the same time.  One pass in the order of the hashes keeps that
+    // order: the carried entry changes place with each entry of a larger
+    // hash, so each such entry moves one place up, and the last one goes to
+    // the end.  Complexity: O(n).
     void write_op_(SchemaHash schema_hash, CKernelId id) {
-        for (uint32_t i = 0; i < size_.get(); i++) {
-            if (entries_[i].schema_hash == schema_hash) {
-                entries_[i].id = id;
+        CKernelEntry carried{.schema_hash = schema_hash, .id = id};
+        for (CKernelEntry& entry : entries_) {
+            // Before the first change of place, each entry has a smaller hash
+            // than the new one, so an equal hash is the entry of this hash.
+            if (entry.schema_hash == carried.schema_hash) {
+                entry.id = id;
                 CRUCIBLE_POST(0, classify(schema_hash) == id);
                 return;
             }
+            if (carried.schema_hash < entry.schema_hash) ::fixy::swap(entry, carried);
         }
-        if (size_.get() >= CKERNEL_TABLE_CAP) [[unlikely]] {
-            std::fprintf(stderr,
-                         "crucible: CKernelTable full (%u/%u entries); bump "
-                         "CKERNEL_TABLE_CAP or audit Vessel schema registrations\n",
-                         size_.get(), CKERNEL_TABLE_CAP);
-            std::abort();
+        // A full table ends the process.  A dropped registration leaves
+        // classify() at OPAQUE for that one schema, and that shows only much
+        // later, at replay, on the trace that uses it.
+        if (entries_.push(carried).is_err()) [[unlikely]] {
+            ::fixy::fatal("crucible: the kernel table holds CKERNEL_TABLE_CAP schemas.  Raise CKERNEL_TABLE_CAP in "
+                          "crucible/CKernel.h, or register fewer schemas");
         }
-        entries_[size_.get()] = {.schema_hash = schema_hash, .id = id};
-        size_.bump();
-        std::ranges::sort(std::span{entries_.data(), size_.get()}, {}, &CKernelEntry::schema_hash);
         CRUCIBLE_POST(0, classify(schema_hash) == id);
-        CRUCIBLE_POST(0, size_.get() <= CKERNEL_TABLE_CAP);
     }
 
-    std::array<CKernelEntry, CKERNEL_TABLE_CAP> entries_{};
-    SizeCounter size_ = ::fixy::mint_bounded_monotonic<uint32_t, CKERNEL_TABLE_CAP>(0u);
+    ::fixy::FixedList<CKernelEntry, CKERNEL_TABLE_CAP> entries_{};
     RegistrationSeal seal_;
 };
 

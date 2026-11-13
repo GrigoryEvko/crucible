@@ -10,6 +10,6 @@
 int main() {
     crucible::SchemaTable table;
     table.seal();
-    table.entries_[0].hash = crucible::SchemaHash{0x42};
+    table.entries_.clear();
     return 0;
 }

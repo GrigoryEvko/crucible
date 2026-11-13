@@ -41,7 +41,6 @@
 #include <latch>
 #include <memory>
 #include <optional>
-#include <span>
 #include <thread>
 
 namespace {
@@ -128,9 +127,9 @@ struct SchemaRace {
     }
 
     [[nodiscard]] static uint32_t read_sealed(Table const& table, uint32_t /*round*/) {
-        const std::span<const crucible::SchemaEntry> entries = table.entries();
-        for (size_t i = 1; i < entries.size(); ++i)
-            assert(entries[i - 1].hash < entries[i].hash);
+        const ::fixy::View<const crucible::SchemaEntry> entries = table.entries();
+        for (const auto pair : entries.windows<2>())
+            assert(pair.at(::fixy::index<0>()).hash < pair.at(::fixy::index<1>()).hash);
         return static_cast<uint32_t>(entries.size());
     }
 
