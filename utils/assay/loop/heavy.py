@@ -5,7 +5,13 @@ THE POOL
     heavy job is a configuration of a run of the gate, a `loop test` with no
     jobserver, or a command of `loop heavy`.  The pool is the directory
     POOL_NAME of the work root of assay.core.cache, with one file for each
-    slot.  The pool has the CPU count of the process as its size.  A
+    slot.  The variable POOL_VARIABLE moves the pool to a different
+    directory (private_pool()).  A self-test that starts `loop test` holds a
+    private pool, because the gate runs it in a lease of the gate (THE
+    PRIORITY OF THE GATE).  The leases of the gate can hold each slot of the
+    host, and their jobs then wait for the test, so a lease of the test in
+    the pool of the host waits for ever.  The pool has the CPU count of the
+    process as its size.  A
     process holds a slot with an exclusive lock of flock(2) on the file of
     the slot.  The kernel frees the lock when the process ends, also on
     SIGKILL, so a slot never stays lost.  No daemon owns the slots.
@@ -148,6 +154,7 @@ import math
 import os
 import random
 import secrets
+import tempfile
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -186,6 +193,10 @@ BUILD_PARALLEL_VARIABLE = "CMAKE_BUILD_PARALLEL_LEVEL"
 # The pool of the slots of the host in the work root, the directory of the markers of the leases in it, and the digits
 # of the name of a slot file (THE POOL).
 POOL_NAME = "slots"
+# The variable that names a different directory of the pool, and the prefix of the directory of a private pool (THE
+# POOL).
+POOL_VARIABLE = "CRUCIBLE_SLOT_POOL"
+PRIVATE_PREFIX = "crucible-slots-"
 LEASES_NAME = "leases"
 SLOT_WIDTH = 4
 MARKER_SUFFIX = ".lease"
@@ -391,8 +402,33 @@ class Pool:
 
 
 def host_pool() -> Pool:
-    """Return the slot pool of this host: POOL_NAME in the work root, with the CPU count of the process (THE POOL)."""
-    return Pool(cache.work_root() / POOL_NAME, proc.DEFAULT_JOBS)
+    """Return the slot pool of this host, with the CPU count of the process as its size (THE POOL).
+
+    The directory is the value of POOL_VARIABLE when the variable is set, else POOL_NAME in the work root.
+    """
+    moved = os.environ.get(POOL_VARIABLE)
+    return Pool(Path(moved) if moved else cache.work_root() / POOL_NAME, proc.DEFAULT_JOBS)
+
+
+@contextlib.contextmanager
+def private_pool() -> Iterator[Path]:
+    """Give this process and each child a new empty pool for the block, and remove it after the block (THE POOL).
+
+    No other lease uses the pool, so a lease in it gets its first slots at once.
+
+    Yields:
+        The directory of the pool
+    """
+    saved = os.environ.get(POOL_VARIABLE)
+    with tempfile.TemporaryDirectory(prefix=PRIVATE_PREFIX) as directory:
+        os.environ[POOL_VARIABLE] = directory
+        try:
+            yield Path(directory)
+        finally:
+            if saved is None:
+                os.environ.pop(POOL_VARIABLE, None)
+            else:
+                os.environ[POOL_VARIABLE] = saved
 
 
 def room_for(read: Reader) -> int | None:

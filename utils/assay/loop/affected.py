@@ -2669,10 +2669,14 @@ def call_cases(ctest: str, expect: DetailedExpect) -> None:
         expect("with a jobserver in MAKEFLAGS, the build gets no -j and no CMAKE_BUILD_PARALLEL_LEVEL",
                status == 0 and fake.build_words() == (["--build", str(fake.build_dir)], "unset"), output)
         status, output = fake.call("--only", str(selects_none), variables=(level,), should_build=True)
+        private = heavy.host_pool().directory
         expect("with no jobserver, the run takes a lease of the slot pool, and the build obeys its jobserver: no -j and "
                "no CMAKE_BUILD_PARALLEL_LEVEL",
                status == 0 and fake.build_words() == (["--build", str(fake.build_dir)], "unset")
                and "memory: " in output, output)
+        expect("the lease of the run is in the private pool of the self-test, not in the pool of the host",
+               private.name.startswith(heavy.PRIVATE_PREFIX) and any(private.glob("[0-9]" * heavy.SLOT_WIDTH)),
+               str(private))
 
         cmake.plant(fake.build_dir, cache={"CMAKE_HOME_DIRECTORY": str(fake.source_dir)})
         status, output = fake.call()
@@ -2754,8 +2758,9 @@ def main(argv: list[str]) -> int:
     if options.self_test:
         try:
             ctest = options.ctest or cmake_pin.pinned_program("ctest")
-            # The self-test starts with an empty shared store, and it writes nothing into the store of the user.
-            with cache.scratch_root():
+            # The self-test starts with an empty shared store, and it writes nothing into the store of the user.  Its
+            # runs take their slots from a private pool, not from the pool of the host (THE POOL of assay.loop.heavy).
+            with cache.scratch_root(), heavy.private_pool():
                 return self_test(ctest)
         except (RunnerError, cmake_pin.PinError) as error:
             print(f"loop test --self-test: {error}")
