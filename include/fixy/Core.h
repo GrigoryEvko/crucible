@@ -38,6 +38,7 @@
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
+#include <foundation/core/RunSet.h>
 #include <foundation/core/Scalar.h>
 #include <foundation/core/Text.h>
 #include <foundation/core/Values.h>
@@ -138,6 +139,8 @@ using ::foundation::core::lower_bound_by_key;
 using ::foundation::core::mint_branded_scope;
 using ::foundation::core::mint_foreign_view;
 using ::foundation::core::mint_heap_array;
+using ::foundation::core::RunOf;
+using ::foundation::core::RunSet;
 using ::foundation::core::starts_with;
 using ::foundation::core::StaticIndex;
 using ::foundation::core::View;

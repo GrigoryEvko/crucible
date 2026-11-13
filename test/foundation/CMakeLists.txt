@@ -2374,6 +2374,10 @@ foundation_neg_compile_test(neg_core_bump_arena_make_with_destructor
   "no matching function for call to .foundation::core::BumpArena::make<Ended>\\(foundation::core::Alloc\\)."
   "the expression .is_trivially_destructible_v<T> \\[with T = Ended\\]. evaluated to .false.")
 
+# Runs that share a table of counts.  A write of a View of a different count
+# ends the process, and the test catches the abort.
+foundation_test(test_core_run_set)
+
 foundation_neg_compile_test(neg_core_ref_of_temporary
   "use of deleted function .void foundation::core::to\\(T&&\\) \\[with Refused = \\{\\}; T = int\\]."
   "a Ref of a temporary dangles at the end of the full expression")

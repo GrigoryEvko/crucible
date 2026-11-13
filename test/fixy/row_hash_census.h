@@ -913,6 +913,10 @@ inline constexpr StatedZero kZeros[] = {
      "a borrow of a run of elements: it owns nothing and makes no claim about what the elements hold"},
     {^^::foundation::core::ViewCursor,
      "the position of a loop over a View: it lives inside the loop, and it is never a value in a signature"},
+    {^^::foundation::core::RunSet,
+     "a borrow of some runs of elements and their counts: it owns nothing and makes no claim about what the "
+     "elements hold"},
+    {^^::foundation::core::RunOf, "the element type and the slot of one run of a RunSet: it holds no value"},
     {^^::foundation::core::TextView,
      "a borrow of a run of characters: it owns nothing and makes no claim about what the characters hold"},
     {^^::foundation::core::CText,
