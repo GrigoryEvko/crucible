@@ -190,14 +190,21 @@ admit_comm_fusion(ir::DeclaredIr001Node<ComputeNode> producer, ir::DeclaredIr001
         participants = comm_node.attrs.participants.count.value();
         algorithm = comm_node.attrs.algorithm;
     }
-    auto const count = net::admit_network_participant_count(participants);
-    if (!count.has_value()) {
+    // The recipe admits the participant count, and for a collective also the
+    // algorithm at that count.
+    bool const is_admitted =
+        net::admit_network_participant_count(participants)
+            .match(
+                [&]([[maybe_unused]] net::NetworkParticipantCount count) noexcept {
+                    if constexpr (std::same_as<typename CommNode::attrs_type, ir::CollectiveAttrs>) {
+                        return net::algorithm_eligible(constraints, algorithm, count).is_ok();
+                    } else {
+                        return true;
+                    }
+                },
+                [](net::NetworkRecipeError) noexcept { return false; });
+    if (!is_admitted) {
         return std::unexpected(CommPhaseError::RecipeForbidsAlgorithm);
-    }
-    if constexpr (std::same_as<typename CommNode::attrs_type, ir::CollectiveAttrs>) {
-        if (!net::algorithm_eligible(constraints, algorithm, *count).has_value()) {
-            return std::unexpected(CommPhaseError::RecipeForbidsAlgorithm);
-        }
     }
 
     auto const producer_hash = producer.value().content_hash;

@@ -46,18 +46,18 @@ void test_names_and_layout() {
                   "the refined chunk count keeps a byte copy from building the constraints");
 
     assert(net::network_recipe_error_name(net::NetworkRecipeError::InvalidChunkCount)
-           == std::string_view{"InvalidChunkCount"});
+           == ::fixy::TextView{"InvalidChunkCount"});
     assert(net::network_collective_algorithm_name(net::NetworkCollectiveAlgorithm::RecursiveHalvingDoubling)
-           == std::string_view{"RecursiveHalvingDoubling"});
+           == ::fixy::TextView{"RecursiveHalvingDoubling"});
     assert(net::network_equivalence_class_name(net::NetworkEquivalenceClass::ByteIdentical)
-           == std::string_view{"ByteIdentical"});
+           == ::fixy::TextView{"ByteIdentical"});
 
-    assert(net::admit_network_chunk_count(1).has_value());
-    assert(net::admit_network_chunk_count(net::kNetworkRecipeMaxChunks).has_value());
-    assert(!net::admit_network_chunk_count(0).has_value());
-    assert(!net::admit_network_chunk_count(net::kNetworkRecipeMaxChunks + 1u).has_value());
-    assert(net::admit_network_participant_count(2).has_value());
-    assert(!net::admit_network_participant_count(0).has_value());
+    assert(net::admit_network_chunk_count(1).is_ok());
+    assert(net::admit_network_chunk_count(net::kNetworkRecipeMaxChunks).is_ok());
+    assert(net::admit_network_chunk_count(0).is_err());
+    assert(net::admit_network_chunk_count(net::kNetworkRecipeMaxChunks + 1u).is_err());
+    assert(net::admit_network_participant_count(2).is_ok());
+    assert(net::admit_network_participant_count(0).is_err());
 
     crucible::test::pass("  test_names_and_layout: PASSED\n");
 }
@@ -96,26 +96,26 @@ void test_runtime_constraints_by_tier() {
 }
 
 void test_algorithm_admission() {
-    auto four = *net::admit_network_participant_count(4);
-    auto three = *net::admit_network_participant_count(3);
+    auto four = net::admit_network_participant_count(4).expect("four participants are admitted");
+    auto three = net::admit_network_participant_count(3).expect("three participants are admitted");
     auto ordered = net::query_constraints(recipe(crucible::ReductionDeterminism::ORDERED),
                                           net::NetworkReductionLaws{.associative = true, .commutative = true});
     auto strict = net::query_constraints(recipe(crucible::ReductionDeterminism::BITEXACT_STRICT),
                                          net::NetworkReductionLaws{.associative = true, .commutative = true});
 
-    assert(net::algorithm_eligible(ordered, net::NetworkCollectiveAlgorithm::Ring, three).has_value());
-    assert(net::algorithm_eligible(ordered, net::NetworkCollectiveAlgorithm::Sharp, three).has_value());
-    assert(net::algorithm_eligible(ordered, net::NetworkCollectiveAlgorithm::TopKCompressed, three).has_value());
-    assert(
-        net::algorithm_eligible(ordered, net::NetworkCollectiveAlgorithm::RecursiveHalvingDoubling, four).has_value());
+    assert(net::algorithm_eligible(ordered, net::NetworkCollectiveAlgorithm::Ring, three).is_ok());
+    assert(net::algorithm_eligible(ordered, net::NetworkCollectiveAlgorithm::Sharp, three).is_ok());
+    assert(net::algorithm_eligible(ordered, net::NetworkCollectiveAlgorithm::TopKCompressed, three).is_ok());
+    assert(net::algorithm_eligible(ordered, net::NetworkCollectiveAlgorithm::RecursiveHalvingDoubling, four).is_ok());
 
     auto rhd_bad = net::algorithm_eligible(ordered, net::NetworkCollectiveAlgorithm::RecursiveHalvingDoubling, three);
-    assert(!rhd_bad.has_value());
-    assert(rhd_bad.error() == net::NetworkRecipeError::NonPowerOfTwoParticipantSet);
+    assert(rhd_bad.is_err());
+    assert(std::move(rhd_bad).err().expect("the participant count is not a power of two")
+           == net::NetworkRecipeError::NonPowerOfTwoParticipantSet);
 
-    assert(!net::algorithm_eligible(strict, net::NetworkCollectiveAlgorithm::Sharp, four).has_value());
-    assert(!net::algorithm_eligible(strict, net::NetworkCollectiveAlgorithm::TopKCompressed, four).has_value());
-    assert(net::algorithm_eligible(strict, net::NetworkCollectiveAlgorithm::FecProtected, four).has_value());
+    assert(net::algorithm_eligible(strict, net::NetworkCollectiveAlgorithm::Sharp, four).is_err());
+    assert(net::algorithm_eligible(strict, net::NetworkCollectiveAlgorithm::TopKCompressed, four).is_err());
+    assert(net::algorithm_eligible(strict, net::NetworkCollectiveAlgorithm::FecProtected, four).is_ok());
 
     crucible::test::pass("  test_algorithm_admission: PASSED\n");
 }

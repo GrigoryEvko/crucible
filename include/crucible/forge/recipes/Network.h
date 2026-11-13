@@ -1,6 +1,7 @@
 #pragma once
 
 #include <crucible/NumericalRecipe.h>
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
@@ -8,8 +9,6 @@
 
 #include <cstdint>
 #include <concepts>
-#include <expected>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::forge::recipes {
@@ -66,29 +65,29 @@ struct NetworkReductionLaws {
 using DeclaredNetworkRecipeConstraints =
     ::fixy::Tagged<NetworkRecipeConstraints, ::fixy::tags::source::NetworkRecipeRegistry>;
 
-[[nodiscard]] std::string_view network_recipe_error_name(NetworkRecipeError error) noexcept;
+[[nodiscard]] ::fixy::TextView network_recipe_error_name(NetworkRecipeError error) noexcept;
 
-[[nodiscard]] std::string_view network_collective_algorithm_name(NetworkCollectiveAlgorithm algorithm) noexcept;
+[[nodiscard]] ::fixy::TextView network_collective_algorithm_name(NetworkCollectiveAlgorithm algorithm) noexcept;
 
-[[nodiscard]] std::string_view network_equivalence_class_name(NetworkEquivalenceClass eq) noexcept;
+[[nodiscard]] ::fixy::TextView network_equivalence_class_name(NetworkEquivalenceClass eq) noexcept;
 
 [[nodiscard]] constexpr bool is_power_of_two_participant_count(NetworkParticipantCount participants) noexcept {
     auto const count = participants.value();
     return count != 0u && (count & static_cast<std::uint16_t>(count - 1u)) == 0u;
 }
 
-[[nodiscard]] constexpr std::expected<NetworkChunkCount, NetworkRecipeError>
+[[nodiscard]] constexpr ::fixy::Result<NetworkChunkCount, NetworkRecipeError>
 admit_network_chunk_count(std::uint8_t count) noexcept {
     if (count == 0u || count > kNetworkRecipeMaxChunks) {
-        return std::unexpected(NetworkRecipeError::InvalidChunkCount);
+        return ::fixy::err(NetworkRecipeError::InvalidChunkCount);
     }
     return ::fixy::mint_refined<kNetworkChunkRange>(count);
 }
 
-[[nodiscard]] constexpr std::expected<NetworkParticipantCount, NetworkRecipeError>
+[[nodiscard]] constexpr ::fixy::Result<NetworkParticipantCount, NetworkRecipeError>
 admit_network_participant_count(std::uint16_t count) noexcept {
     if (count == 0u) {
-        return std::unexpected(NetworkRecipeError::EmptyParticipantSet);
+        return ::fixy::err(NetworkRecipeError::EmptyParticipantSet);
     }
     return ::fixy::mint_refined<::fixy::positive>(count);
 }
@@ -129,39 +128,47 @@ admit_network_participant_count(std::uint16_t count) noexcept {
     return query_constraints(recipe, NetworkReductionLaws{});
 }
 
-[[nodiscard]] constexpr std::expected<void, NetworkRecipeError>
+namespace detail {
+
+// Unit when the recipe permits the algorithm, and the refusal of the recipe
+// when it does not.
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, NetworkRecipeError>
+permitted_or_refused(bool is_permitted) noexcept {
+    if (!is_permitted) {
+        return ::fixy::err(NetworkRecipeError::AlgorithmForbiddenByRecipe);
+    }
+    return ::fixy::Unit{};
+}
+
+}  // namespace detail
+
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, NetworkRecipeError>
 algorithm_eligible(DeclaredNetworkRecipeConstraints constraints, NetworkCollectiveAlgorithm algorithm,
                    NetworkParticipantCount participants) noexcept {
     auto const& raw = constraints.value();
     switch (algorithm) {
         case NetworkCollectiveAlgorithm::Ring:
-            return raw.ring_eligible ? std::expected<void, NetworkRecipeError>{}
-                                     : std::unexpected(NetworkRecipeError::AlgorithmForbiddenByRecipe);
+            return detail::permitted_or_refused(raw.ring_eligible);
         case NetworkCollectiveAlgorithm::DeterministicTree:
-            return raw.deterministic_tree_eligible ? std::expected<void, NetworkRecipeError>{}
-                                                   : std::unexpected(NetworkRecipeError::AlgorithmForbiddenByRecipe);
+            return detail::permitted_or_refused(raw.deterministic_tree_eligible);
         case NetworkCollectiveAlgorithm::Sharp:
-            return raw.sharp_eligible ? std::expected<void, NetworkRecipeError>{}
-                                      : std::unexpected(NetworkRecipeError::AlgorithmForbiddenByRecipe);
+            return detail::permitted_or_refused(raw.sharp_eligible);
         case NetworkCollectiveAlgorithm::RecursiveHalvingDoubling:
             if (!raw.recursive_halving_doubling_eligible) {
-                return std::unexpected(NetworkRecipeError::AlgorithmForbiddenByRecipe);
+                return ::fixy::err(NetworkRecipeError::AlgorithmForbiddenByRecipe);
             }
             if (!is_power_of_two_participant_count(participants)) {
-                return std::unexpected(NetworkRecipeError::NonPowerOfTwoParticipantSet);
+                return ::fixy::err(NetworkRecipeError::NonPowerOfTwoParticipantSet);
             }
-            return {};
+            return ::fixy::Unit{};
         case NetworkCollectiveAlgorithm::TopKCompressed:
-            return raw.lossy_compression_allowed ? std::expected<void, NetworkRecipeError>{}
-                                                 : std::unexpected(NetworkRecipeError::AlgorithmForbiddenByRecipe);
+            return detail::permitted_or_refused(raw.lossy_compression_allowed);
         case NetworkCollectiveAlgorithm::Quantized:
-            return raw.quantization_allowed ? std::expected<void, NetworkRecipeError>{}
-                                            : std::unexpected(NetworkRecipeError::AlgorithmForbiddenByRecipe);
+            return detail::permitted_or_refused(raw.quantization_allowed);
         case NetworkCollectiveAlgorithm::FecProtected:
-            return raw.fec_allowed ? std::expected<void, NetworkRecipeError>{}
-                                   : std::unexpected(NetworkRecipeError::AlgorithmForbiddenByRecipe);
+            return detail::permitted_or_refused(raw.fec_allowed);
         default:
-            return std::unexpected(NetworkRecipeError::AlgorithmForbiddenByRecipe);
+            return ::fixy::err(NetworkRecipeError::AlgorithmForbiddenByRecipe);
     }
 }
 

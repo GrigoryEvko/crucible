@@ -203,14 +203,21 @@ plan_network_kernel(CogMimic<Kind> const& mimic, ir::DeclaredIr001Node<Node> nod
         }
     }(raw_node);
 
-    auto const count = net::admit_network_participant_count(participants);
-    if (!count.has_value()) {
+    // The recipe admits the participant count, and for a collective also the
+    // algorithm at that count.
+    bool const is_admitted =
+        net::admit_network_participant_count(participants)
+            .match(
+                [&]([[maybe_unused]] net::NetworkParticipantCount count) noexcept {
+                    if constexpr (std::same_as<typename Node::attrs_type, ir::CollectiveAttrs>) {
+                        return net::algorithm_eligible(constraints, raw_node.attrs.algorithm, count).is_ok();
+                    } else {
+                        return true;
+                    }
+                },
+                [](net::NetworkRecipeError) noexcept { return false; });
+    if (!is_admitted) {
         return std::unexpected(NetworkBackendError::RecipeForbidsAlgorithm);
-    }
-    if constexpr (std::same_as<typename Node::attrs_type, ir::CollectiveAttrs>) {
-        if (auto ok = net::algorithm_eligible(constraints, raw_node.attrs.algorithm, *count); !ok.has_value()) {
-            return std::unexpected(NetworkBackendError::RecipeForbidsAlgorithm);
-        }
     }
 
     auto artifact = ::fixy::mint_tagged<typename NetworkBackendTraits<Vendor>::source>(NetworkKernelArtifact{

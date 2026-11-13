@@ -2,7 +2,7 @@
 
 namespace crucible::forge::recipes {
 
-std::string_view network_recipe_error_name(NetworkRecipeError error) noexcept {
+::fixy::TextView network_recipe_error_name(NetworkRecipeError error) noexcept {
     switch (error) {
         case NetworkRecipeError::None:
             return "None";
@@ -19,7 +19,7 @@ std::string_view network_recipe_error_name(NetworkRecipeError error) noexcept {
     }
 }
 
-std::string_view network_collective_algorithm_name(NetworkCollectiveAlgorithm algorithm) noexcept {
+::fixy::TextView network_collective_algorithm_name(NetworkCollectiveAlgorithm algorithm) noexcept {
     switch (algorithm) {
         case NetworkCollectiveAlgorithm::Ring:
             return "Ring";
@@ -40,7 +40,7 @@ std::string_view network_collective_algorithm_name(NetworkCollectiveAlgorithm al
     }
 }
 
-std::string_view network_equivalence_class_name(NetworkEquivalenceClass eq) noexcept {
+::fixy::TextView network_equivalence_class_name(NetworkEquivalenceClass eq) noexcept {
     switch (eq) {
         case NetworkEquivalenceClass::ApproximateRelative:
             return "ApproximateRelative";
