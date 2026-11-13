@@ -10,6 +10,7 @@
 #include <fixy/Tags.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Identity.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -195,17 +196,19 @@ class TcamRules;
 // The proof that one table installed one rule.  The constructor is private
 // and the rule table is the one friend, so a handle comes only from
 // add_rule.  The copy is deleted, so the Linear wrapper around a handle is
-// its one owner.  The table also compares the slot, the generation and the
-// target of each handle, so a handle whose rule was removed reaches no slot.
+// its one owner.  The table also compares its identity, the slot and the
+// generation of each handle.  So a handle of a different table, or of a
+// removed rule, reaches no slot.
 class TcamRuleHandle {
+    ::foundation::core::Identity table_;
     cog::Uuid target_uuid_{};
     TcamRuleId rule_id_ = ::fixy::mint_refined<::fixy::non_zero>(std::uint64_t{1});
     std::uint64_t slot_ = 0;
     std::uint64_t generation_ = 0;
 
-    constexpr TcamRuleHandle(cog::Uuid target_uuid, TcamRuleId rule_id, std::uint64_t slot,
-                             std::uint64_t generation) noexcept
-        : target_uuid_{target_uuid}, rule_id_{rule_id}, slot_{slot}, generation_{generation} {}
+    constexpr TcamRuleHandle(::foundation::core::Identity table, cog::Uuid target_uuid, TcamRuleId rule_id,
+                             std::uint64_t slot, std::uint64_t generation) noexcept
+        : table_{table}, target_uuid_{target_uuid}, rule_id_{rule_id}, slot_{slot}, generation_{generation} {}
 
     template <std::uint32_t MaxRules, ::fixy::UnsignedInteger Generation>
         requires TcamTableShape<MaxRules>
@@ -218,11 +221,13 @@ public:
     // A move leaves generation 0 in the source, and no slot holds generation
     // 0, so a moved-from handle reaches no slot.
     constexpr TcamRuleHandle(TcamRuleHandle&& other) noexcept
-        : target_uuid_{other.target_uuid_},
+        : table_{other.table_},
+          target_uuid_{other.target_uuid_},
           rule_id_{other.rule_id_},
           slot_{other.slot_},
           generation_{::fixy::exchange(other.generation_, 0)} {}
     constexpr TcamRuleHandle& operator=(TcamRuleHandle&& other) noexcept {
+        table_ = other.table_;
         target_uuid_ = other.target_uuid_;
         rule_id_ = other.rule_id_;
         slot_ = other.slot_;
@@ -357,6 +362,9 @@ class TcamRules : public ::foundation::Pinned<TcamRules<MaxRules, Generation>> {
     };
 
     DeclaredTcamTable plan_;
+    // Each table mints its identity when it starts, and the table is
+    // pinned.  So two tables of one plan have different identities.
+    ::foundation::core::Identity identity_;
     ::foundation::core::FixedArray<Slot, MaxRules> slots_{};
     std::uint32_t installed_ = 0;
     std::uint32_t retired_ = 0;
@@ -369,20 +377,21 @@ class TcamRules : public ::foundation::Pinned<TcamRules<MaxRules, Generation>> {
     }
 
     // The slot that the handle names.  A handle of a removed rule, a handle
-    // of a different target and a moved-from handle name no slot.
+    // of a different table and a moved-from handle name no slot.  Only this
+    // table gives a handle its identity, so the identity also fixes the target.
     [[nodiscard]] constexpr ::fixy::Result<SlotIndex, TcamError> slot_for(TcamRuleHandle const& handle) const noexcept {
         CRUCIBLE_TRY(index, SlotIndex::check(handle.slot()).ok_or(TcamError::InvalidRuleHandle));
         Slot const& slot = slots_.at(index);
         if (!slot.occupied || ::fixy::widen<std::uint64_t>(slot.generation) != handle.generation()
-            || slot.rule.rule_id.value() != handle.rule_id().value()
-            || handle.target_uuid() != plan_.value().target().uuid) {
+            || slot.rule.rule_id.value() != handle.rule_id().value() || handle.table_ != identity_) {
             return ::fixy::err(TcamError::InvalidRuleHandle);
         }
         return index;
     }
 
 public:
-    explicit constexpr TcamRules(DeclaredTcamTable plan) noexcept : plan_{std::move(plan)} {}
+    explicit TcamRules(DeclaredTcamTable plan) noexcept
+        : plan_{std::move(plan)}, identity_{::foundation::core::mint_identity()} {}
 
     [[nodiscard]] constexpr TcamTablePlan const& plan() const noexcept { return plan_.value(); }
 
@@ -405,7 +414,7 @@ public:
                 slot.counter = 0;
                 slot.occupied = true;
                 ++installed_;
-                TcamRuleHandle handle{plan_.value().target().uuid, slot.rule.rule_id, index.raw(),
+                TcamRuleHandle handle{identity_, plan_.value().target().uuid, slot.rule.rule_id, index.raw(),
                                       ::fixy::widen<std::uint64_t>(slot.generation)};
                 return ::fixy::mint_linear<TcamRuleHandle>(std::move(handle));
             }

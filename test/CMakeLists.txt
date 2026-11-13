@@ -3137,12 +3137,12 @@ crucible_neg_compile_test(neg_tcam_rule_handle_copy
   "use of deleted function .fixy::Qtt<Grade, T>::Qtt\\(const fixy::Qtt<Grade, T>&\\) .with auto Grade = foundation::algebra::lattices::QttGrade::One. T = crucible::cntp::tcam::TcamRuleHandle.."
   "Linear<T> and Affine<T> are move-only. use std::move or drop\\(\\)")
 crucible_neg_compile_test(neg_tcam_rule_handle_forge
-  "error: .constexpr crucible::cntp::tcam::TcamRuleHandle::TcamRuleHandle\\(crucible::cog::Uuid, crucible::cntp::tcam::TcamRuleId, uint64_t, uint64_t\\). is private within this context"
+  "error: .constexpr crucible::cntp::tcam::TcamRuleHandle::TcamRuleHandle\\(foundation::core::Identity, crucible::cog::Uuid, crucible::cntp::tcam::TcamRuleId, uint64_t, uint64_t\\). is private within this context"
   "include/crucible/cntp/Tcam.h:[0-9]+:[0-9]+: note: declared private here")
 crucible_neg_compile_test(neg_tcam_rule_handle_mint_linear
-  "no matching function for call to .mint_linear<crucible::cntp::tcam::TcamRuleHandle>\\(crucible::cog::Uuid, fixy::Refinement<fixy::IsNonZero\\(\\), long unsigned int, false>, uint32_t, uint32_t\\)."
-  ".crucible::cntp::tcam::TcamRuleHandle. is not constructible from .crucible::cog::Uuid, fixy::Refinement<fixy::IsNonZero\\(\\), long unsigned int, false>, unsigned int, unsigned int., because"
-  "TcamRuleHandle::TcamRuleHandle\\(crucible::cog::Uuid, crucible::cntp::tcam::TcamRuleId, uint64_t, uint64_t\\). is private within this context")
+  "no matching function for call to .mint_linear<crucible::cntp::tcam::TcamRuleHandle>\\(foundation::core::Identity, crucible::cog::Uuid, fixy::Refinement<fixy::IsNonZero\\(\\), long unsigned int, false>, uint32_t, uint32_t\\)."
+  ".crucible::cntp::tcam::TcamRuleHandle. is not constructible from .foundation::core::Identity, crucible::cog::Uuid, fixy::Refinement<fixy::IsNonZero\\(\\), long unsigned int, false>, unsigned int, unsigned int., because"
+  "TcamRuleHandle::TcamRuleHandle\\(foundation::core::Identity, crucible::cog::Uuid, crucible::cntp::tcam::TcamRuleId, uint64_t, uint64_t\\). is private within this context")
 crucible_neg_compile_test(neg_tcam_mint_bg_ctx
   "no matching function for call to .mint_tcam_table\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::NicPortTargetCaps&, "
   "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::Init> >. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, "

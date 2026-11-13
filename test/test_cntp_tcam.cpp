@@ -223,9 +223,8 @@ void test_slot_bound_caps_available_rules() {
 }
 
 // Two tables put the same rule in the same slot at the same generation.
-// The target of the plan is the one difference, and it keeps the handle of
-// one table out of the other.  A slot that a removal freed takes the next
-// generation.
+// The identity of each table keeps the handle of one table out of the
+// other.  A slot that a removal freed takes the next generation.
 void test_foreign_handle_and_generation() {
     auto nic_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(),
                                           tcam::admit_tcam_entries(4).expect("4 entries fit"));
@@ -253,6 +252,40 @@ void test_foreign_handle_and_generation() {
     assert(sw_table.remove_rule(std::move(sw_handle)).is_ok());
     assert(nic_table.remove_rule(std::move(again)).is_ok());
     crucible::test::pass("  test_foreign_handle_and_generation: PASSED\n");
+}
+
+// Two tables from one plan have the same target.  The two put the same rule
+// in the same slot at the same generation, so the two handles hold the same
+// target, rule, slot and generation.  The second table refuses the handle of
+// the first table, and its own rule and counter do not change.
+void test_tables_of_one_plan_refuse_each_other_handles() {
+    auto table_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(),
+                                            tcam::admit_tcam_entries(4).expect("4 entries fit"));
+    tcam::DeclaredTcamTable const plan = take(std::move(table_plan));
+
+    tcam::TcamRules<4> first_table{plan};
+    tcam::TcamRules<4> second_table{plan};
+    tcam::DeclaredTcamFlowRule const declared = take(tcam::declare_tcam_rule(flow_rule()));
+
+    tcam::OwnedTcamRule first_handle = take(first_table.add_rule(declared));
+    tcam::OwnedTcamRule second_handle = take(second_table.add_rule(declared));
+    assert(first_handle.peek().target_uuid() == second_handle.peek().target_uuid());
+    assert(first_handle.peek().rule_id().value() == second_handle.peek().rule_id().value());
+    assert(first_handle.peek().slot() == second_handle.peek().slot());
+    assert(first_handle.peek().generation() == second_handle.peek().generation());
+
+    assert(error_of(second_table.query_counter(first_handle)) == tcam::TcamError::InvalidRuleHandle);
+    assert(error_of(second_table.note_match(first_handle, 5)) == tcam::TcamError::InvalidRuleHandle);
+    assert(take(second_table.query_counter(second_handle)) == 0);
+    assert(error_of(first_table.query_counter(second_handle)) == tcam::TcamError::InvalidRuleHandle);
+
+    assert(error_of(second_table.remove_rule(std::move(first_handle))) == tcam::TcamError::InvalidRuleHandle);
+    assert(second_table.installed_rules() == 1);
+    assert(take(second_table.query_counter(second_handle)) == 0);
+    assert(second_table.remove_rule(std::move(second_handle)).is_ok());
+    assert(second_table.installed_rules() == 0);
+    assert(first_table.installed_rules() == 1);
+    crucible::test::pass("  test_tables_of_one_plan_refuse_each_other_handles: PASSED\n");
 }
 
 // One slot gives each generation one time.  A table with an 8-bit
@@ -406,6 +439,7 @@ int main() {
     test_rule_table_lifecycle();
     test_slot_bound_caps_available_rules();
     test_foreign_handle_and_generation();
+    test_tables_of_one_plan_refuse_each_other_handles();
     test_generation_never_comes_back();
     test_backend_boundary();
     test_apply_paths_are_stubbed();
