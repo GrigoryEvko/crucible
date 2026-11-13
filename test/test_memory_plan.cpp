@@ -201,9 +201,8 @@ int main() {
     // death_op among the slots.  The helper excludes external slots, so only the
     // internal live set is checked.
     using crucible::live_intervals_disjoint_at;
-    std::span<const crucible::TensorSlot> slot_span{&slots.at(::foundation::core::index<0>()), N};
     for (uint32_t t = 0; t <= 7; ++t) {
-        bool disjoint = live_intervals_disjoint_at<4>(slot_span, OpIndex{t});
+        bool disjoint = live_intervals_disjoint_at<4>(slots.view(), OpIndex{t});
         assert(disjoint);
     }
 

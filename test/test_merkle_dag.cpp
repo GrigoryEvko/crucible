@@ -339,13 +339,13 @@ namespace {
     assert(crucible::feedback_signature({}) == 0);
     assert(crucible::feedback_signature(loop->feedback_edges) != 0);
 
-    crucible::RegionNode* collected[16]{};
-    uint32_t n_collected = crucible::collect_regions(loop, std::span{collected, 16});
+    ::foundation::core::FixedArray<crucible::RegionNode*, 16> collected{};
+    uint32_t n_collected = crucible::collect_regions(loop, collected.view());
     // Two body regions, counted once, plus the region after the loop.
     assert(n_collected == 3);
-    assert(collected[0] == body_r1);
-    assert(collected[1] == body_r2);
-    assert(collected[2] == final_region);
+    assert(collected.at(::fixy::index<0>()) == body_r1);
+    assert(collected.at(::fixy::index<1>()) == body_r2);
+    assert(collected.at(::fixy::index<2>()) == final_region);
 
     uint32_t exec_count = 0;
     std::vector<ContentHash> replay_log;

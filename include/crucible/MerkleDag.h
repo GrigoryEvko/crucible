@@ -88,7 +88,7 @@ struct MemoryPlan {
 // A live set larger than MaxLive, or an interval whose endpoint sum
 // overflows, returns false — neither case can support a disjointness claim.
 template <std::size_t MaxLive>
-[[nodiscard]] constexpr bool live_intervals_disjoint_at(std::span<const TensorSlot> slots, OpIndex op) noexcept {
+[[nodiscard]] constexpr bool live_intervals_disjoint_at(::fixy::View<const TensorSlot> slots, OpIndex op) noexcept {
     std::array<::foundation::decide::Interval<std::uint64_t>, MaxLive> live{};
     std::size_t n = 0;
     const std::uint32_t t = op.raw();
@@ -844,11 +844,12 @@ inline void recompute_merkle(TraceNode* node) {
     node->merkle_hash = compute_merkle_hash(node);
 }
 
-[[nodiscard]] inline uint32_t collect_regions(TraceNode* node, std::span<RegionNode*> out, uint32_t count = 0) {
+[[nodiscard]] inline uint32_t collect_regions(TraceNode* node, ::fixy::View<RegionNode*> out, uint32_t count = 0) {
     while (node && count < out.size()) {
         switch (node->kind) {
             case TraceNodeKind::REGION:
-                out[count++] = static_cast<RegionNode*>(node);
+                *out.get(count).expect("the count is below the size of out") = static_cast<RegionNode*>(node);
+                ++count;
                 break;
             case TraceNodeKind::BRANCH: {
                 auto* branch = static_cast<BranchNode*>(node);
@@ -884,12 +885,14 @@ inline void recompute_merkle(TraceNode* node) {
     CRUCIBLE_PRE(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash));
     CRUCIBLE_PRE(recipe == nullptr || !recipe->hash.is_sentinel());
     constexpr uint32_t MAX_REGIONS = 1024;
-    RegionNode* existing_regions[MAX_REGIONS];
+    ::foundation::core::FixedArray<RegionNode*, MAX_REGIONS> existing_regions{};
+    const ::fixy::View<RegionNode*, MAX_REGIONS> existing_view = existing_regions.view();
     uint32_t num_existing = 0;
 
     TraceNode* walk = existing_continuation;
     while (walk && walk->kind == TraceNodeKind::REGION && num_existing < MAX_REGIONS) {
-        existing_regions[num_existing++] = static_cast<RegionNode*>(walk);
+        *existing_view.get(num_existing).expect("the count is below MAX_REGIONS") = static_cast<RegionNode*>(walk);
+        ++num_existing;
         walk = walk->next;
     }
 
@@ -901,7 +904,7 @@ inline void recompute_merkle(TraceNode* node) {
 
     while (ex_idx > 0 && new_pos > 0) {
         ex_idx--;
-        RegionNode* region = existing_regions[ex_idx];
+        RegionNode* region = *existing_view.get(ex_idx).expect("ex_idx is below num_existing");
         const uint32_t region_ops = region->num_ops();
         if (new_pos < region_ops) break;
 

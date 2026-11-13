@@ -58,7 +58,6 @@
 
 #include <array>
 #include <cstdint>
-#include <span>
 
 namespace {
 
@@ -178,9 +177,8 @@ int main(int argc, char** argv) {
             // (B) No-overlap at every op boundary, via the canonical
             //     production oracle (MaxLive=kMaxSlots caps the live set,
             //     which can never exceed num_slots <= kMaxSlots).
-            const std::span<const TensorSlot> span1{&slots1.at(::foundation::core::index<0>()), num_slots};
             for (uint32_t t = 0; t <= max_death; ++t) {
-                if (!live_intervals_disjoint_at<kMaxSlots>(span1, OpIndex{t})) return false;
+                if (!live_intervals_disjoint_at<kMaxSlots>(set_slots1, OpIndex{t})) return false;
             }
 
             // (C) Containment: internal slots fit the pool; external
