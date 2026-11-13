@@ -4,26 +4,31 @@
 1.
 
 The cases hold the scope of each tier, and the jobs of a planted plan in their sequence.  They hold the budget of a
-runner of evidence, the stop of a run at its deadline, and a step that cannot run.  They also hold the text of the
-report and the usage of the command.  A run removes each report other than the last ones of its tier.
+runner of evidence, the stop of a run at its deadline, and a step that cannot run.  They hold a job of tests in its
+heavy step, which must not wait for its own lock.  They also hold the text of the report and the usage of the command.
+A run removes each report other than the last ones of its tier.
 """
 
 import os
 import tempfile
+import time
 from pathlib import Path
 
-from assay.core import testing
+from assay.core import git, jobserver, paths, testing
 from assay.core.exit import ExitCode
 from assay.loop import entry, heavy, plan, tiers
 from assay.loop.evidence import status as evidence_status
 from assay.loop.evidence import store as evidence_store
 from assay.loop.evidence import targets as evidence_targets
+from assay.readers import ninja as ninja_reader
 
 GATE = tiers.Tier.GATE
 NIGHTLY = tiers.Tier.NIGHTLY
 RELEASE = tiers.Tier.RELEASE
 CONFIGURE = tiers.PresetKind.CONFIGURE
 TEST = tiers.PresetKind.TEST
+# The budget of the job of tests_lock_cases(), in seconds.  A job that waits for its own lock uses all of it.
+LOCK_BUDGET_S = 60.0
 
 
 def planted_presets() -> tiers.Tiers:
@@ -204,6 +209,47 @@ def run_cases(expect: testing.Expect) -> None:
     )
 
 
+def tests_lock_cases(expect: testing.Expect) -> None:
+    """Hold a job of tests in its heavy step: its `loop test` does not wait for the lock of the job (THE WORK, 2).
+
+    The job holds the lock of the heavy steps in the exclusive mode.  A lease of the slot pool asks for the same lock in
+    the shared mode, so a `loop test` with a lease waits until the budget ends.  The case runs the real `loop test`
+    through a planted master in a planted repository, with a private pool and with no MAKEFLAGS.  The build of the job
+    has no CMake cache, so `loop test` stops with exit 2 after its decision about the lease.
+    """
+    with (
+        tempfile.TemporaryDirectory(prefix="entry-lock-") as work_text,
+        heavy.private_pool(),
+        testing.environment_variable(jobserver.VARIABLE, None),
+    ):
+        work = Path(work_text)
+        root = work / "main"
+        root.mkdir()
+        git.init(root)
+        (root / "file.txt").write_text("one\n", encoding="utf-8")
+        git.commit_all(root, "one")
+        masters = root / "utils" / "bin"
+        masters.mkdir(parents=True)
+        (masters / "loop").symlink_to(paths.LOOP)
+        build = root / "build"
+        build.mkdir()
+        ninja_reader.graph_file(build).write_text("", encoding="utf-8")
+        logs = work / "logs"
+        logs.mkdir()
+        preset = tiers.PresetTier(CONFIGURE, "base", GATE, build=build)
+        runner = entry.Runner(root, NIGHTLY, 2, logs, tiers.Tiers((preset,), (), ()))
+        job = entry.Job(entry.JobKind.TESTS, "base", build)
+        started = time.monotonic()
+        outcome, _ = testing.captured(lambda: runner.run(0, job, started + LOCK_BUDGET_S))
+        wall_s = time.monotonic() - started
+        log = (logs / "00-tests-base.log").read_text(encoding="utf-8", errors="replace")
+    expect(
+        f"a job of tests runs `loop test` in its heavy step, and `loop test` does not wait for the lock of the job: "
+        f"{outcome.state} after {wall_s:.1f} s of {LOCK_BUDGET_S:.0f} s, {outcome.summary}",
+        outcome.state is entry.State.FAILED and wall_s < LOCK_BUDGET_S and "loop test: " in log,
+    )
+
+
 def report_cases(expect: testing.Expect) -> None:
     """Hold the text of the report of a run, and the removal of each report other than the last ones (THE REPORT)."""
     failing = evidence_status.Row(
@@ -282,5 +328,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (scope_cases, jobs_cases, budget_cases, run_cases, report_cases, usage_cases),
+        (scope_cases, jobs_cases, budget_cases, run_cases, tests_lock_cases, report_cases, usage_cases),
     )

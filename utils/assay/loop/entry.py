@@ -19,7 +19,10 @@ THE WORK
          the tier gate first and then in the sequence of the presets file.
          The job configures its build when the build has no graph, and runs
          `loop test BUILD`.  That command runs only the tests with no current
-         pass in its state or in the shared store (assay.loop.affected).  A
+         pass in its state or in the shared store (assay.loop.affected).  It
+         gets MAKEFLAGS of a jobserver with the jobs of the step, so it takes
+         no lease of the slot pool.  A lease asks for the lock of the heavy
+         steps in the shared mode, and the job holds that lock.  A
          configure preset with no plain test preset and with a filtered test
          preset in the scope builds the target all.  Then it runs `ctest
          --preset Q` of each such test preset Q
@@ -115,11 +118,11 @@ import shutil
 import socket
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from assay.core import cli, git, paths, proc
+from assay.core import cli, git, jobserver, paths, proc
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
@@ -395,10 +398,18 @@ class Runner:
         """Return the words that run a master of the tree."""
         return [sys.executable, str(self.root / "utils" / "bin" / name)]
 
-    def logged(self, words: Sequence[str], log: Path, deadline: float, limit_s: float | None = None) -> int | None:
+    def logged(
+        self,
+        words: Sequence[str],
+        log: Path,
+        deadline: float,
+        limit_s: float | None = None,
+        variables: Mapping[str, str] | None = None,
+    ) -> int | None:
         """Run one command in the tree with its outputs in a log, and give its exit, or None when the budget ends.
 
-        A program that cannot start gives the exit TOOL_FAILED, and the log gives the reason.
+        The command gets STEP_VARIABLE of assay.loop.heavy and `variables`.  A program that cannot start gives the exit
+        TOOL_FAILED, and the log gives the reason.
         """
         left = deadline - time.monotonic() if limit_s is None else limit_s
         if left <= 0:
@@ -407,7 +418,7 @@ class Runner:
             list(words),
             timeout_s=left,
             cwd=self.root,
-            env=proc.environment({heavy.STEP_VARIABLE: heavy.STEP_VALUE}),
+            env=proc.environment({heavy.STEP_VARIABLE: heavy.STEP_VALUE, **(variables or {})}),
             stdout=log,
             stderr=proc.Output.MERGE,
             stop=proc.Stop.INTERRUPT,
@@ -480,11 +491,19 @@ class Runner:
         return Outcome(job, State.PASSED, f"each unit parses, and the rules {', '.join(COUNTED_RULES)} hold")
 
     def tests(self, job: Job, build: Path, prefix: Path, deadline: float, jobs: int) -> Outcome:
-        """Build a build and run each test with no current pass through `loop test` (THE WORK, 2)."""
+        """Build a build and run each test with no current pass through `loop test` (THE WORK, 2).
+
+        The caller holds the lock of a heavy step.  `loop test` gets MAKEFLAGS of a jobserver of `jobs` jobs, so it
+        takes no lease, and it does not wait for that lock.
+        """
         before = len(loop_history.read_lines(build))
         words = [*self.master("loop"), "test", str(build), "-j", str(jobs)]
         log = Path(f"{prefix}.log")
-        status = self.logged(words, log, deadline)
+        try:
+            with jobserver.serving(jobs) as server:
+                status = self.logged(words, log, deadline, variables={jobserver.VARIABLE: server.makeflags})
+        except jobserver.JobserverError as problem:
+            return Outcome(job, State.FAILED, f"the jobserver of `loop test` cannot be made: {problem}")
         lines = loop_history.read_lines(build)
         block = lines[-1].get("tests") if len(lines) > before else None
         ran, stored, failed = (int(loop_history.number(block, name) or 0) for name in ("selected", "skipped", "failed"))

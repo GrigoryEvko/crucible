@@ -75,6 +75,13 @@ THE LOCK
     other apart.  The kernel removes the lock when the process ends, also on
     a signal.
 
+    A child of a holder does not share the lock of its parent.  The child
+    opens the file again, and flock(2) sees a different open file.  A child
+    that asks for the lock then waits for its parent, and the parent waits
+    for the child.  For this reason, a holder gives its command MAKEFLAGS of
+    a jobserver (THE COMMAND OF A STEP), and `loop test` with such a
+    jobserver takes no lease (assay.loop.affected, THE JOBSERVER).
+
 THE PRIORITY OF THE GATE
     The gate of `loop land` is the one serial path of each landing
     (assay.loop.land).  All work trees of the host wait for it, because no
