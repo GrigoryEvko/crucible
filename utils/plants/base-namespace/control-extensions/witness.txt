@@ -1,0 +1,12 @@
+# The extensions that a file outside the base can write give no line of the
+# rule base-namespace: a coherent specialization of a template with the open
+# mark, such as niche<T>, in the file that defines T, an overload beside the
+# own type of the file, a friend that names a function of the base, a
+# using-directive in a namespace of the file before the header, and a
+# using-directive in a function body and of the global namespace after the
+# last include.  The rule specialization-home admits the specialization, and
+# its record open-extension stands at the home of the template.
+compile extensions src/extensions.cpp mode=error specialization-home=on base-namespace=on
+exit extensions pass
+finding extensions specialization-home open-extension include/foundation/core/Niche.h:9:96 | foundation::core::niche
+judge extensions

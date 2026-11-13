@@ -5,6 +5,7 @@
 // template-id of a concept declares nothing.
 
 #include <fixy/ScopedView.h>
+#include <foundation/Quarantine.h>
 
 namespace {
 
@@ -14,7 +15,9 @@ struct ViewBrand {};
 
 }  // namespace
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 template <>
 inline constexpr bool fixy::IsScopedView<fixy::ScopedView<Carrier, Ready, ViewBrand>> = false;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() { return 0; }

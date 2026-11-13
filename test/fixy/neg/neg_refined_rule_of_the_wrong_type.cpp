@@ -8,13 +8,17 @@
 // the namespace as it stands where the header defines it.  Then the
 // fixture calls the walk.
 
+#include <foundation/Quarantine.h>
+
 #include <meta>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::refined::admitted_implications {
 
 consteval bool returns_bool(std::meta::info premise, std::meta::info conclusion) { return premise != conclusion; }
 
 }  // namespace fixy::refined::admitted_implications
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 #include <fixy/Predicates.h>
 

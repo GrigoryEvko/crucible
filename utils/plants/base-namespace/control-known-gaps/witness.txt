@@ -1,0 +1,7 @@
+# The rule base-namespace gives no line for two routes that change the base:
+# a forward declaration of a class template of the base before the header
+# that defines it, which adds a default template argument, and a declaration
+# of the global namespace before a header of the base, which a qualified call
+# ::name of the base reaches.  This control pins the two gaps.
+compile gaps src/gaps.cpp mode=error base-namespace=on
+exit gaps pass

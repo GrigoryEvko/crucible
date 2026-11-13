@@ -9,10 +9,13 @@
 
 #include <fixy/Fn.h>
 #include <fixy/atoms/Sync.h>
+#include <foundation/Quarantine.h>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::atom::sync {
 struct planted_wait final : atom_of<Axis::Synchronization> {};
 }  // namespace fixy::atom::sync
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::sync::planted_wait> refused{};

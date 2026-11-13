@@ -15,13 +15,16 @@
 
 #include <fixy/Atom.h>
 #include <fixy/atoms/Sync.h>
+#include <foundation/Quarantine.h>
 
 #include <tuple>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::atom::detail {
 using probe_orphan_atom_roster = std::tuple<int>;
 using probe_joined_atom_roster = sync_atom_roster;
 }  // namespace fixy::atom::detail
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 #include "../../layer/checks/fixy/collision/Report.cpp"
 

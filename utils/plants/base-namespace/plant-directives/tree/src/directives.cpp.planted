@@ -1,0 +1,16 @@
+// A using-directive of the global namespace before a header of the base, and
+// a using-directive of a namespace of the base, change the lookup of the base.
+
+namespace evil {
+constexpr int pick(long) { return 1; }
+}  // namespace evil
+
+using namespace evil;
+
+#include <foundation/picks.h>
+
+namespace foundation::picks {
+using namespace ::evil;
+}  // namespace foundation::picks
+
+static_assert(foundation::picks::PicksLong<long>);

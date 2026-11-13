@@ -13,7 +13,7 @@
 
 #include <cstdint>
 
-namespace foundation::test {
+namespace crucible::test {
 
 struct PhiloxBlock {
     std::uint32_t word0 = 0;
@@ -88,4 +88,4 @@ private:
     int used_ = 4;
 };
 
-}  // namespace foundation::test
+}  // namespace crucible::test

@@ -5,7 +5,9 @@
 // the direct members of fixy::corpus alone does not see it.
 
 #include <fixy/Corpus.h>
+#include <foundation/Quarantine.h>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::corpus::extra {
 
 struct nested_entry final : ::foundation::diag::tag_base {
@@ -16,6 +18,7 @@ struct nested_entry final : ::foundation::diag::tag_base {
 };
 
 }  // namespace fixy::corpus::extra
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace fixture_site {
 struct here final {};

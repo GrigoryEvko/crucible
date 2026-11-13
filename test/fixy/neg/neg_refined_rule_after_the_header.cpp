@@ -7,9 +7,11 @@
 // ask, so it stops the build.
 
 #include <fixy/Predicates.h>
+#include <foundation/Quarantine.h>
 
 #include <meta>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::refined::admitted_implications {
 
 consteval rule_verdict late_rule(std::meta::info premise, std::meta::info conclusion) {
@@ -17,6 +19,7 @@ consteval rule_verdict late_rule(std::meta::info premise, std::meta::info conclu
 }
 
 }  // namespace fixy::refined::admitted_implications
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 static_assert(!fixy::PredicateImplies<fixy::bounded_below<2>, fixy::non_zero>);
 

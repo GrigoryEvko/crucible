@@ -65,7 +65,7 @@ fixy/CanonicalOrder.cpp | 0.2 | ::fixy::tags::admitted_retags
 fixy/Collision.cpp | 13.1 | unknown
 fixy/Corpus.cpp | 1.8 | ::fixy::corpus, ::fixy::tags::secret_policy, unknown
 fixy/Fn.cpp | 7.2 | ::foundation::effects::resource, ::foundation::permissions::permission_rows, unknown
-fixy/Machine.cpp | 0.0 | ::fixy::machine::admitted_transitions, unknown
+fixy/Machine.cpp | 0.0 | ::fixy::machine::no_edges, unknown
 fixy/OwnedRegion.cpp | 0.5 | ::foundation::permissions::permission_rows
 fixy/Predicates.cpp | unmeasured | ::fixy::refined::admitted_implications
 fixy/Reject.cpp | 5.9 | unknown

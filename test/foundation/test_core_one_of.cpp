@@ -87,7 +87,7 @@ void test_expect() {
     CRUCIBLE_FATAL_INVARIANT(read_word(0x12345u).expect<std::uint32_t>("a wide word") == 0x12345u);
     CRUCIBLE_FATAL_INVARIANT(read_word(9u).expect<std::uint16_t>("a narrow word") == 9u);
     CRUCIBLE_FATAL_INVARIANT(read_word(0u).expect<Refusal>("a refused word") == Refusal::closed);
-    bool const other_expect_aborts = ::foundation::test::aborts(
+    bool const other_expect_aborts = ::crucible::test::aborts(
         [] { static_cast<void>(read_word(9u).expect<std::uint32_t>("the test word is narrow on purpose")); });
     CRUCIBLE_FATAL_INVARIANT(other_expect_aborts);
 }
@@ -153,7 +153,7 @@ void test_linear_alternative() {
 // is<T> holds, the match and expect<T> give the value, and a copy holds the
 // same alternative.
 void test_agrees_with_model() {
-    ::foundation::test::PhiloxStream stream{0x5EEDC401CE000003u};
+    ::crucible::test::PhiloxStream stream{0x5EEDC401CE000003u};
     for (int trial = 0; trial < 4096; ++trial) {
         std::uint64_t const wide = stream.next_wide();
         std::uint32_t const tag = static_cast<std::uint32_t>(stream.below(4u));

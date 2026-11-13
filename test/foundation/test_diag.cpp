@@ -539,7 +539,7 @@ void test_macro_captures_location() {
 
 // The aborting emitters reach the sink first, then abort.
 void test_abort_emitters_reach_sink_then_abort() {
-    using foundation::test::aborts;
+    using crucible::test::aborts;
     auto previous = diag::set_violation_sink(&capture_sink);
 
     reset_capture();

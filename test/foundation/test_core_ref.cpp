@@ -202,7 +202,7 @@ struct Slots {
 // second Ref reaches its slot through a const view of the slot.
 void test_agrees_with_plain_model() {
     Slots slots{};
-    ::foundation::test::PhiloxStream stream{0x5EEDB0C5000000C3u};
+    ::crucible::test::PhiloxStream stream{0x5EEDB0C5000000C3u};
     for (int trial = 0; trial < 512; ++trial) {
         std::uint64_t const first_index = stream.below(4);
         std::uint64_t const second_index = stream.below(4);

@@ -1,0 +1,9 @@
+# A using-directive of the global namespace before a header of the base gives
+# an unqualified call of a gate of the base the names of the directive, and
+# the static assertion shows that the gate finds them.  A using-directive in a
+# namespace of the base is a finding at each place in the unit.  Each one is a
+# compile error in each mode.
+compile directives src/directives.cpp base-namespace=on errors=directives
+exit directives fail
+finding directives base-namespace using-directive src/directives.cpp:8:17 | evil
+finding directives base-namespace using-directive src/directives.cpp:13:17 | evil

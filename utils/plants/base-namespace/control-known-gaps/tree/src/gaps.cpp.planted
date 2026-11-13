@@ -1,0 +1,26 @@
+// Two routes that change the base and that the rule base-namespace does not
+// refuse at this time.  Each static assertion shows that the route works.
+
+namespace evil {
+struct Evil {
+    long first = 0;
+    long second = 0;
+};
+}  // namespace evil
+
+// A forward declaration of a class template that the base defines later
+// gives no event, and GCC moves the location of the class to its definition.
+// The declaration adds a default template argument.
+namespace foundation::later {
+template <class T, class U = evil::Evil>
+struct Later;
+}  // namespace foundation::later
+
+// A declaration of the global namespace before the header, which the
+// qualified call ::global_admit of the base reaches.
+constexpr bool global_admit(evil::Evil) { return true; }
+
+#include <foundation/later.h>
+
+static_assert(foundation::later::Later<int>::width == 16);
+static_assert(foundation::later::ReadsGlobal<evil::Evil>);

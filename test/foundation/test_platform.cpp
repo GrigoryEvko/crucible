@@ -19,7 +19,7 @@ CRUCIBLE_CONST int doubled(int const value) noexcept { return value * 2; }
 }  // namespace
 
 int main() {
-    using foundation::test::aborts;
+    using crucible::test::aborts;
 
     if (doubled(21) != 42) return 1;
 

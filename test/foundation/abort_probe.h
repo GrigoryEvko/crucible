@@ -33,8 +33,9 @@
 // Use it only for a guard that is expected to fire.  An abort raised while
 // nothing is armed ends the process, as it should.
 //
-// This is the foundation-layer copy of test/test_abort_probe.h; the two are
-// kept identical in shape and differ only in namespace.
+// This is the foundation-layer copy of test/test_abort_probe.h.  The two
+// have the same shape and the same namespace, and this copy names only the
+// base type foundation::core::Atomic.  No unit includes the two.
 
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Report.h>
@@ -45,7 +46,7 @@
 #include <pthread.h>
 #include <unistd.h>
 
-namespace foundation::test {
+namespace crucible::test {
 
 inline std::jmp_buf abort_probe_return;
 inline thread_local volatile sig_atomic_t abort_probe_armed = 0;
@@ -98,4 +99,4 @@ template <typename Body>
     return did_abort;
 }
 
-}  // namespace foundation::test
+}  // namespace crucible::test

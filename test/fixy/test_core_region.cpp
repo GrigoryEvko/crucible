@@ -291,15 +291,15 @@ void test_cursor_at_the_end_aborts() {
     auto region = map_region(ctx, owner, page_bytes);
     fixy::View<std::uint64_t> words = region.view<std::uint64_t>().expect("a page holds whole words");
     fixy::View<std::uint64_t> pair = words.window(0, 2).expect("two words fit");
-    bool const end_read_aborts = ::foundation::test::aborts([&pair] { static_cast<void>(*pair.end()); });
-    bool const past_end_step_aborts = ::foundation::test::aborts([&pair] {
+    bool const end_read_aborts = ::crucible::test::aborts([&pair] { static_cast<void>(*pair.end()); });
+    bool const past_end_step_aborts = ::crucible::test::aborts([&pair] {
         auto cursor = pair.begin();
         ++cursor;
         ++cursor;
         ++cursor;
     });
     fixy::View<std::uint64_t> empty = words.window(0, 0).expect("an empty window fits");
-    bool const empty_read_aborts = ::foundation::test::aborts([&empty] { static_cast<void>(*empty.begin()); });
+    bool const empty_read_aborts = ::crucible::test::aborts([&empty] { static_cast<void>(*empty.begin()); });
     CRUCIBLE_FATAL_INVARIANT(end_read_aborts && past_end_step_aborts && empty_read_aborts);
 }
 
@@ -314,7 +314,7 @@ void test_agrees_with_plain_model() {
     fixy::View<std::uint64_t> first = first_region.view<std::uint64_t>().expect("a page holds whole words");
     fixy::View<std::uint64_t> second = second_region.view<std::uint64_t>().expect("a page holds whole words");
     std::uint64_t const base = address_of_first(first);
-    ::foundation::test::PhiloxStream stream{0x5EED0E610000D001u};
+    ::crucible::test::PhiloxStream stream{0x5EED0E610000D001u};
     for (std::uint64_t& word : first) {
         word = stream.next_wide();
     }

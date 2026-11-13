@@ -1,0 +1,13 @@
+#pragma once
+
+namespace foundation::gates {
+
+constexpr bool named_admit(int) { return false; }
+constexpr bool late_admit(int) { return false; }
+
+// The qualified call binds each overload that the unit declares before this
+// gate, also an overload of a different file.
+template <class T>
+concept ReadsNamed = gates::named_admit(T{});
+
+}  // namespace foundation::gates

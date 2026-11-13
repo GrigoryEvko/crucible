@@ -9,13 +9,16 @@
 // the chain from the range to non_negative.
 
 #include <fixy/Predicates.h>
+#include <foundation/Quarantine.h>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::refined::admitted_implications {
 
 inline constexpr ::foundation::fail_closed::edge<predicate_t<::fixy::non_negative>, predicate_t<::fixy::positive>>
     late_edge{};
 
 }  // namespace fixy::refined::admitted_implications
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 static_assert(fixy::PredicateImplies<fixy::in_range<0, 7>, fixy::positive>);
 

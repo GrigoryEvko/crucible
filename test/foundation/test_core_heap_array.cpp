@@ -145,7 +145,7 @@ void test_equality() {
 // A count whose View would be longer than the largest View ends the process
 // before the allocation.
 void test_too_long_aborts() {
-    bool const too_long_aborts = ::foundation::test::aborts([] {
+    bool const too_long_aborts = ::crucible::test::aborts([] {
         HeapArray<std::uint64_t> const huge =
             mint_heap_array(::foundation::effects::Alloc{}, ~std::size_t{0} / 4, std::uint64_t{0});
         static_cast<void>(huge);
@@ -158,7 +158,7 @@ void test_too_long_aborts() {
 // shows in the loop.  A plain count and a plain sum are the model.
 void test_agrees_with_plain_model() {
     ::foundation::effects::Alloc const alloc{};
-    ::foundation::test::PhiloxStream stream{0x5EEDA77A00000001u};
+    ::crucible::test::PhiloxStream stream{0x5EEDA77A00000001u};
     for (int trial = 0; trial < 256; ++trial) {
         std::size_t const count = stream.below(300);
         std::uint32_t const fill = static_cast<std::uint32_t>(stream.next_wide());

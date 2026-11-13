@@ -5,6 +5,7 @@
 // from the seal stops the build.
 
 #include <fixy/session/Subtype.h>
+#include <foundation/Quarantine.h>
 
 namespace {
 
@@ -13,9 +14,11 @@ inline constexpr bool long_weakens_to_int_v = std::is_same_v<T, long> && std::is
 
 }  // namespace
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::session::payload_axioms {
 inline constexpr ::fixy::session::transition::subsort_axiom long_to_int{.weakens = ^^::long_weakens_to_int_v};
 }  // namespace fixy::session::payload_axioms
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     return ::fixy::session::is_subtype_sync_v<::fixy::session::Send<long, ::fixy::session::End>,

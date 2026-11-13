@@ -16,7 +16,9 @@
 // header and runs its checks.
 
 #include <fixy/Atom.h>
+#include <foundation/Quarantine.h>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::atom::ctrl {
 struct unrostered_control_flow final : atom_of<Axis::ControlFlow> {};
 }  // namespace fixy::atom::ctrl
@@ -24,6 +26,7 @@ struct unrostered_control_flow final : atom_of<Axis::ControlFlow> {};
 namespace fixy::atom::stack {
 struct unrostered_stack_use final : atom_of<Axis::StackUse> {};
 }  // namespace fixy::atom::stack
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 #include "../../layer/checks/fixy/atoms/Ctrl.cpp"
 #include "../../layer/checks/fixy/atoms/Stack.cpp"

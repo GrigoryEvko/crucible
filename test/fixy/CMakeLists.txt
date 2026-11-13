@@ -745,10 +745,10 @@ fixy_neg_compile_test(neg_security_class_value_specialized_trait
   "neg_security_class_value_specialized_trait\\.cpp:12:[0-9]+: error:")
 fixy_neg_compile_test(neg_security_carrier_specialized_trait
   "template-id .IsClassifiedCarrier<fixy::atom::as_secret>. used as a declarator"
-  "neg_security_carrier_specialized_trait\\.cpp:10:[0-9]+: error: too many template headers for .fixy::atom::IsClassifiedCarrier. \\(should be 0\\)")
+  "neg_security_carrier_specialized_trait\\.cpp:12:[0-9]+: error: too many template headers for .fixy::atom::IsClassifiedCarrier. \\(should be 0\\)")
 fixy_neg_compile_test(neg_security_constant_time_specialized_trait
   "template-id .IsConstantTime<fixy::atom::as_secret>. used as a declarator"
-  "neg_security_constant_time_specialized_trait\\.cpp:10:[0-9]+: error: too many template headers for .fixy::atom::IsConstantTime. \\(should be 0\\)")
+  "neg_security_constant_time_specialized_trait\\.cpp:12:[0-9]+: error: too many template headers for .fixy::atom::IsConstantTime. \\(should be 0\\)")
 
 # The six corpus entries.  Each floors on its entry name and on a phrase
 # of the citation the entry carries, so a fixture cannot pass against an
@@ -1453,7 +1453,7 @@ fixy_neg_compile_test(neg_scoped_view_escapes_through_private_member
 # the audit is refused.
 fixy_neg_compile_test(neg_scoped_view_specialized_trait
   "template-id .IsScopedView<fixy::ScopedView<.anonymous.::Carrier, .anonymous.::Ready, .anonymous.::ViewBrand> >. used as a declarator"
-  "neg_scoped_view_specialized_trait\\.cpp:18:[0-9]+: error: too many template headers for .fixy::IsScopedView. \\(should be 0\\)")
+  "neg_scoped_view_specialized_trait\\.cpp:20:[0-9]+: error: too many template headers for .fixy::IsScopedView. \\(should be 0\\)")
 
 # A transition whose edge is not declared in the namespace the machine
 # names fails the MachineTransition constraint on transition_to.

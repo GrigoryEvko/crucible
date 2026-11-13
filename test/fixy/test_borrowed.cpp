@@ -23,7 +23,7 @@ namespace {
 using ::fixy::Borrowed;
 using ::fixy::BorrowedRef;
 using ::fixy::WeakRef;
-using ::foundation::test::aborts;
+using ::crucible::test::aborts;
 
 struct OwnerA {
     int dummy = 0;

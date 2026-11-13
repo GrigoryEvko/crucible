@@ -25,7 +25,7 @@ template <class T>
 }
 
 void test_decode_of_each_word() {
-    ::foundation::test::PhiloxStream stream{100};
+    ::crucible::test::PhiloxStream stream{100};
     for (int index = 0; index < 100000; ++index) {
         std::uint64_t const wide = stream.next_wide();
         auto const narrow = static_cast<std::uint32_t>(wide);
@@ -41,7 +41,7 @@ void test_decode_of_each_word() {
 }
 
 void test_order_is_the_order_of_the_words() {
-    ::foundation::test::PhiloxStream stream{101};
+    ::crucible::test::PhiloxStream stream{101};
     for (int index = 0; index < 100000; ++index) {
         std::uint32_t const left = stream.next_word();
         std::uint32_t const right = stream.next_word();

@@ -8,6 +8,7 @@
 // Expected diagnostic: the specialization is refused, and it names the
 // concept.
 #include <fixy/session/Handle.h>
+#include <foundation/Quarantine.h>
 
 namespace neg_sess_seal_handle_admits_send_types {
 struct Region {
@@ -16,10 +17,12 @@ struct Region {
 using Moves = ::fixy::session::Transferable<int, Region>;
 }  // namespace neg_sess_seal_handle_admits_send_types
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::session::detail {
 template <>
 inline constexpr bool
     handle_admits_send_v<::foundation::permissions::EmptyPermSet, neg_sess_seal_handle_admits_send_types::Moves> = true;
 }  // namespace fixy::session::detail
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() { return 0; }

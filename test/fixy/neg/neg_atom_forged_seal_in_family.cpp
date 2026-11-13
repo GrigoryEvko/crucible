@@ -7,11 +7,14 @@
 // family, and this file is not that header, so tier 2 refuses the pack.
 
 #include <fixy/Fn.h>
+#include <foundation/Quarantine.h>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::atom::spawn {
 inline constexpr atom_seal atom_namespace_seal{};
 struct forged_spawn final : atom_of<Axis::Protocol> {};
 }  // namespace fixy::atom::spawn
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::spawn::forged_spawn> refused{};

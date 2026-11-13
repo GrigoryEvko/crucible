@@ -21,11 +21,10 @@ using ::foundation::core::detail::heap_allocate_;
 // A request of zero bytes, and an alignment that is not a power of two, end
 // the process.  The door gives no storage on these paths.
 void test_bad_requests_abort() {
-    bool const zero_bytes_aborts = ::foundation::test::aborts([] { static_cast<void>(heap_allocate_(0, 8)); });
-    bool const zero_alignment_aborts = ::foundation::test::aborts([] { static_cast<void>(heap_allocate_(8, 0)); });
-    bool const odd_alignment_aborts = ::foundation::test::aborts([] { static_cast<void>(heap_allocate_(8, 24)); });
-    bool const large_odd_alignment_aborts =
-        ::foundation::test::aborts([] { static_cast<void>(heap_allocate_(64, 48)); });
+    bool const zero_bytes_aborts = ::crucible::test::aborts([] { static_cast<void>(heap_allocate_(0, 8)); });
+    bool const zero_alignment_aborts = ::crucible::test::aborts([] { static_cast<void>(heap_allocate_(8, 0)); });
+    bool const odd_alignment_aborts = ::crucible::test::aborts([] { static_cast<void>(heap_allocate_(8, 24)); });
+    bool const large_odd_alignment_aborts = ::crucible::test::aborts([] { static_cast<void>(heap_allocate_(64, 48)); });
     CRUCIBLE_FATAL_INVARIANT(zero_bytes_aborts && zero_alignment_aborts);
     CRUCIBLE_FATAL_INVARIANT(odd_alignment_aborts && large_odd_alignment_aborts);
 }
@@ -44,9 +43,9 @@ void test_bad_requests_abort() {
 void test_exhausted_memory_aborts() {
 #if !defined(__SANITIZE_ADDRESS__) && !defined(__SANITIZE_THREAD__)
     bool const plain_aborts =
-        ::foundation::test::aborts([] { static_cast<void>(heap_allocate_(too_large_request(), 8)); });
+        ::crucible::test::aborts([] { static_cast<void>(heap_allocate_(too_large_request(), 8)); });
     bool const aligned_aborts =
-        ::foundation::test::aborts([] { static_cast<void>(heap_allocate_(too_large_request(), 64)); });
+        ::crucible::test::aborts([] { static_cast<void>(heap_allocate_(too_large_request(), 64)); });
     CRUCIBLE_FATAL_INVARIANT(plain_aborts && aligned_aborts);
 #endif
 }

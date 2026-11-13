@@ -135,7 +135,7 @@ void for_each_edge(auto&& body) {
 
 template <class T>
 void test_each_operation_of_the_bits() {
-    ::foundation::test::PhiloxStream stream{sizeof(T) == 4 ? 60u : 61u};
+    ::crucible::test::PhiloxStream stream{sizeof(T) == 4 ? 60u : 61u};
     auto const check_against_each_edge = [](WordOf<T> edge) {
         for_each_edge<T>([edge](WordOf<T> other) { check_bits<T>(edge, other); });
     };
@@ -156,7 +156,7 @@ void test_each_operation_of_the_bits() {
 // the key puts -0 first.
 template <class T>
 void test_total_key_keeps_the_order() {
-    ::foundation::test::PhiloxStream stream{sizeof(T) == 4 ? 62u : 63u};
+    ::crucible::test::PhiloxStream stream{sizeof(T) == 4 ? 62u : 63u};
     for (int index = 0; index < 200000; ++index) {
         T const left = value_of<T>(static_cast<WordOf<T>>(stream.next_wide()));
         T const right = value_of<T>(static_cast<WordOf<T>>(stream.next_wide()));
@@ -170,7 +170,7 @@ void test_total_key_keeps_the_order() {
 // sqrt of a square is exact, sqrt of +inf is +inf, and sqrt keeps -0.
 template <class T>
 void test_sqrt_of_squares_and_limits() {
-    ::foundation::test::PhiloxStream stream{sizeof(T) == 4 ? 64u : 65u};
+    ::crucible::test::PhiloxStream stream{sizeof(T) == 4 ? 64u : 65u};
     std::uint64_t const bound = sizeof(T) == 4 ? (std::uint64_t{1} << 12) : (std::uint64_t{1} << 26);
     for (int index = 0; index < 100000; ++index) {
         auto const root = static_cast<T>(stream.below(bound));
@@ -186,7 +186,7 @@ void test_sqrt_of_squares_and_limits() {
 // fma of small integers is exact, an fma that overflows gives an infinity,
 // and the one rounding keeps the low bits of a product.
 void test_fma_rounds_one_time() {
-    ::foundation::test::PhiloxStream stream{66};
+    ::crucible::test::PhiloxStream stream{66};
     for (int index = 0; index < 100000; ++index) {
         auto const left = static_cast<std::int64_t>(stream.below(1u << 21)) - (1 << 20);
         auto const right = static_cast<std::int64_t>(stream.below(1u << 21)) - (1 << 20);

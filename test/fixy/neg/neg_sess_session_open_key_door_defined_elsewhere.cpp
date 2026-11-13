@@ -10,6 +10,7 @@
 // Expected diagnostic: the constructor of the key is private in this
 // context.
 #include <fixy/session/Handle.h>
+#include <foundation/Quarantine.h>
 
 #include <source_location>
 
@@ -20,6 +21,7 @@ struct Wire {
 struct Region {};
 }  // namespace neg_sess_session_open_key_door_defined_elsewhere_types
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::session {
 class AsyncChannelDoor {
 public:
@@ -31,5 +33,6 @@ public:
     }
 };
 }  // namespace fixy::session
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() { return 0; }

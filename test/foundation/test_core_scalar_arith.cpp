@@ -213,7 +213,7 @@ void check_edges() {
 
 template <class T>
 void check_random(std::uint64_t seed, int count) {
-    ::foundation::test::PhiloxStream stream{seed};
+    ::crucible::test::PhiloxStream stream{seed};
     for (int index = 0; index < count; ++index) {
         T const left = static_cast<T>(stream.next_wide());
         T const right = static_cast<T>(stream.next_wide());
@@ -272,7 +272,7 @@ void test_widening_mul() {
             check_widening(static_cast<std::uint8_t>(left), static_cast<std::uint8_t>(right));
         }
     }
-    ::foundation::test::PhiloxStream stream{48};
+    ::crucible::test::PhiloxStream stream{48};
     for (int index = 0; index < 100000; ++index) {
         std::uint64_t const left = stream.next_wide();
         std::uint64_t const right = stream.next_wide();
@@ -299,7 +299,7 @@ template <class T>
 }
 
 void test_gcd_against_euclid() {
-    ::foundation::test::PhiloxStream stream{49};
+    ::crucible::test::PhiloxStream stream{49};
     for (int index = 0; index < 100000; ++index) {
         std::uint64_t const left = stream.next_wide();
         std::uint64_t const right = stream.next_wide() >> stream.below(64);

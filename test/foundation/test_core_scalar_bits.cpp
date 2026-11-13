@@ -167,14 +167,14 @@ void test_each_value_of_8_and_16_bits() {
     for (int value = 0; value < 65536; ++value) {
         check_counts(static_cast<std::uint16_t>(value));
     }
-    ::foundation::test::PhiloxStream stream{50};
+    ::crucible::test::PhiloxStream stream{50};
     for (int index = 0; index < 4096; ++index) {
         check_rotations(static_cast<std::uint16_t>(stream.next_wide()));
     }
 }
 
 void test_philox_values_of_32_and_64_bits() {
-    ::foundation::test::PhiloxStream stream{51};
+    ::crucible::test::PhiloxStream stream{51};
     for (int index = 0; index < 100000; ++index) {
         // A shift of the draw reaches the values with many leading zeros.
         std::uint64_t const wide = stream.next_wide() >> stream.below(64);
@@ -199,7 +199,7 @@ void test_masks_and_signed_byteswap() {
         auto const byte = static_cast<std::int8_t>(value);
         CRUCIBLE_FATAL_INVARIANT(core::byteswap(opaque(byte)) == byte);
     }
-    ::foundation::test::PhiloxStream stream{52};
+    ::crucible::test::PhiloxStream stream{52};
     for (int index = 0; index < 10000; ++index) {
         std::uint64_t const wide = stream.next_wide();
         auto const signed_wide = static_cast<std::int64_t>(wide);

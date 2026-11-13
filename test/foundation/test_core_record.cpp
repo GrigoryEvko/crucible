@@ -264,8 +264,8 @@ template <class R>
 // trials.
 template <class... Ts>
 void check_against_the_model(std::uint64_t seed, int trials) {
-    ::foundation::test::PhiloxStream stream{seed};
-    ::foundation::test::PhiloxStream replay{seed};
+    ::crucible::test::PhiloxStream stream{seed};
+    ::crucible::test::PhiloxStream replay{seed};
     for (int trial = 0; trial < trials; ++trial) {
         Record<Ts...> const left{static_cast<Ts>(stream.below(3))...};
         Record<Ts...> const right{static_cast<Ts>(stream.below(3))...};

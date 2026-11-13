@@ -53,15 +53,15 @@ class SessionFromMachine;
 // constructor a caller might reach.
 //
 // Args build the State.  The machine's relation namespace defaults to
-// the shared one, exactly as it does for a machine minted directly.
-template <typename Proto, typename State, std::meta::info Edges = ^^::fixy::machine::admitted_transitions,
-          typename... Args>
+// fixy::machine::no_edges, exactly as it does for a machine minted
+// directly.
+template <typename Proto, typename State, std::meta::info Edges = ^^::fixy::machine::no_edges, typename... Args>
     requires WellFormedRunnableProtocol<Proto> && std::is_constructible_v<State, Args...>
 [[nodiscard]] constexpr auto
 mint_session_from_machine(Args&&... args) noexcept(std::is_nothrow_constructible_v<State, Args...>)
     -> SessionFromMachine<State, Proto, Edges>;
 
-template <typename State, typename Proto, std::meta::info Edges = ^^::fixy::machine::admitted_transitions>
+template <typename State, typename Proto, std::meta::info Edges = ^^::fixy::machine::no_edges>
 class [[nodiscard]] SessionFromMachine : public ::foundation::Pinned<SessionFromMachine<State, Proto, Edges>> {
     static_assert(is_well_formed_v<Proto>, "fixy::session::diagnostic [Protocol_Ill_Formed]: "
                                            "SessionFromMachine<State, Proto>: Proto must be well-formed "

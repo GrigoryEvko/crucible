@@ -112,7 +112,7 @@ void test_text_operations_agree_with_std() {
     std::size_t const model_size = model_letters.size();
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     assert(letters.size() == model_size);
-    ::foundation::test::PhiloxStream stream{0x7E57F1ED0000C003u};
+    ::crucible::test::PhiloxStream stream{0x7E57F1ED0000C003u};
     for (int trial = 0; trial < 4096; ++trial) {
         std::size_t const offset = stream.below(letters.size() + 1);
         std::size_t const size = stream.below(letters.size() - offset + 1);
@@ -150,7 +150,7 @@ void test_text_operations_agree_with_std() {
 // The property: find, find_if and count_if of random runs of integers give
 // the answers of the std algorithms.
 void test_view_scans_agree_with_std() {
-    ::foundation::test::PhiloxStream stream{0x5CA45CA40000D004u};
+    ::crucible::test::PhiloxStream stream{0x5CA45CA40000D004u};
     FixedArray<std::uint32_t, 64> run;
     auto const is_small = [](std::uint32_t value) noexcept { return value < 2; };
     for (int trial = 0; trial < 2048; ++trial) {

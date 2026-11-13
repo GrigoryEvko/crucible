@@ -1,0 +1,24 @@
+#pragma once
+
+namespace foundation::gates {
+
+// The base declares the function template, and a different header gives its
+// body.  A unit that includes only this header can give a body of its own.
+template <class T>
+constexpr bool declared_admit(T const&);
+
+template <class T>
+concept ReadsDeclared = gates::declared_admit(T{});
+
+struct Box {
+    int value = 0;
+    static const int count;
+    void poke();
+};
+
+constexpr int defaulted(int first, int second) { return first + second; }
+
+// The base declares the class, and no file of the base defines it.
+struct Opaque;
+
+}  // namespace foundation::gates

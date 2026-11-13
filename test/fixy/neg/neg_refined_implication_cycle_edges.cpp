@@ -8,6 +8,7 @@
 // the fixture calls the walk.  The planted edges also stand outside the
 // seal of the relation, so each query of the walk also stops at the seal.
 
+#include <foundation/Quarantine.h>
 #include <foundation/diag/FailClosed.h>
 
 #include <type_traits>
@@ -19,6 +20,7 @@ inline constexpr auto second_name = [](auto x) constexpr noexcept { return x >= 
 
 }  // namespace planted
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::refined::admitted_implications {
 
 inline constexpr ::foundation::fail_closed::edge<std::remove_cv_t<decltype(planted::first_name)>,
@@ -29,6 +31,7 @@ inline constexpr ::foundation::fail_closed::edge<std::remove_cv_t<decltype(plant
     second_implies_first{};
 
 }  // namespace fixy::refined::admitted_implications
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 #include <fixy/Predicates.h>
 

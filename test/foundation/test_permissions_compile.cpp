@@ -44,30 +44,22 @@ void run_test(const char* name, F&& body) {
 
 }  // namespace
 
+// Each tag states its row with a permission_row member of its own
+// definition.
 namespace permission_row_compile_tags {
 
-struct Whole {};
-struct IoChild {};
-struct BlockChild {};
+struct Whole {
+    using permission_row =
+        ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
+};
+struct IoChild {
+    using permission_row = ::foundation::effects::Row<::foundation::effects::Effect::IO>;
+};
+struct BlockChild {
+    using permission_row = ::foundation::effects::Row<::foundation::effects::Effect::Block>;
+};
 
 }  // namespace permission_row_compile_tags
-
-// The rows are edges of the closed relation, declared before the first
-// mint of the tags.
-namespace foundation::permissions::permission_rows {
-
-inline constexpr ::foundation::fail_closed::edge<
-    permission_row_compile_tags::Whole,
-    ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>>
-    compile_whole{};
-inline constexpr ::foundation::fail_closed::edge<permission_row_compile_tags::IoChild,
-                                                 ::foundation::effects::Row<::foundation::effects::Effect::IO>>
-    compile_io_child{};
-inline constexpr ::foundation::fail_closed::edge<permission_row_compile_tags::BlockChild,
-                                                 ::foundation::effects::Row<::foundation::effects::Effect::Block>>
-    compile_block_child{};
-
-}  // namespace foundation::permissions::permission_rows
 
 namespace foundation::permissions {
 

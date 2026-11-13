@@ -6,7 +6,9 @@
 // vantage point of this translation unit, and it names the entry.
 
 #include <fixy/Corpus.h>
+#include <foundation/Quarantine.h>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::corpus {
 
 struct forgotten_entry final : ::foundation::diag::tag_base {
@@ -17,6 +19,7 @@ struct forgotten_entry final : ::foundation::diag::tag_base {
 };
 
 }  // namespace fixy::corpus
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace fixture_site {
 struct here final {};

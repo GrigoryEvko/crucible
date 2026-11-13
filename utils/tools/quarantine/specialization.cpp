@@ -84,13 +84,10 @@
 //     also after its definition, so a forward declaration moves its home.
 //     Such a declaration needs extern, and GCC keeps that flag on the
 //     pattern.  So a variable template with extern and an initializer gives
-//     the kind forward-declaration at the place that GCC keeps.
-//
-// THE BASE ROOTS
-//     A template of the namespace foundation or fixy has its home in a base
-//     file.  The kind foreign-primary stands at the home of such a template
-//     in a different file: a forward declaration of a template of the base
-//     before its header, and a new template of a base namespace in a test.
+//     the kind forward-declaration at the place that GCC keeps.  A template
+//     of the namespace foundation or fixy that a file outside the base
+//     declares first is a finding of the rule base-namespace too
+//     (namespace.cpp).
 //
 // THE KINDS
 //     specialization     a site outside the home of a template with no open
@@ -98,15 +95,13 @@
 //     orphan             a site outside the home of a template with the open
 //                        mark that is not coherent (THE COHERENCE).  Its
 //                        entity is the template
-//     foreign-primary    the home of a template of a base root outside the
-//                        base.  Its entity is the template
 //     forward-declaration
 //                        a variable template that a unit declares with
 //                        extern before its definition, at that declaration
 //     open-extension     a record: a template with the open mark, at its home
 //
 // THE ERRORS
-//     Each finding of the first four kinds is a compile error in each build
+//     Each finding of the first three kinds is a compile error in each build
 //     and each mode (is_each_mode_kind of plugin.h), so a forged
 //     specialization does not compile.  The record open-extension is no
 //     error, and the module of the rule judges it against the ledger.  The
@@ -128,10 +123,6 @@
 namespace crucible_plugin {
 
 namespace {
-
-// The base roots of THE BASE ROOTS, and the paths of their base files.
-constexpr const char* kBaseRoots[] = {"foundation", "fixy"};
-constexpr const char* kBasePaths[] = {"include/foundation/", "include/fixy/", "src/foundation/", "src/fixy/"};
 
 // The facts of the home of one template (THE HOME): whether the rule reads the
 // template, whether the open mark opens it, whether it is a function
@@ -186,21 +177,6 @@ bool carries_open_mark(tree general) {
     return carries_base_annotation(attributes, names.open_extension, NULL_TREE);
 }
 
-// True when GENERAL stands in a namespace of a base root (THE BASE ROOTS).
-bool is_in_base_root(tree general) {
-    tree top = top_namespace(general);
-    if (top == NULL_TREE || DECL_NAME(top) == NULL_TREE) {
-        return false;
-    }
-    const char* name = IDENTIFIER_POINTER(DECL_NAME(top));
-    for (const char* root : kBaseRoots) {
-        if (std::strcmp(name, root) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
 // True when GENERAL is a variable template that a declaration with extern
 // introduced before its definition (THE FORWARD DECLARATION).
 bool is_forward_declared_variable(tree general) {
@@ -209,18 +185,9 @@ bool is_forward_declared_variable(tree general) {
         && DECL_INITIAL(result) != NULL_TREE;
 }
 
-bool is_base_path(const std::string& path) {
-    for (const char* prefix : kBasePaths) {
-        if (has_prefix(path, prefix)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 // The facts of the home of GENERAL, a most general template, made and kept on
 // the first request.  The first request also gives the record open-extension
-// of a marked template and the finding foreign-primary, at the home.
+// of a marked template and the finding forward-declaration, at the home.
 // Complexity: O(depth of the scopes and the attributes) on the first request.
 const TemplateHome& home_of(tree general) {
     auto found = homes_by_template.find(general);
@@ -241,9 +208,6 @@ const TemplateHome& home_of(tree general) {
         Place place = site_place(defining);
         if (place.file != nullptr && home.is_open) {
             add_finding(Kind::specialization_open_extension, nullptr, place, home.entity);
-        }
-        if (place.file != nullptr && is_in_base_root(general) && !is_base_path(home.path)) {
-            add_finding(Kind::specialization_foreign_primary, nullptr, place, home.entity);
         }
         if (place.file != nullptr && is_forward_declared_variable(general)) {
             add_finding(Kind::specialization_forward_declaration, nullptr, place, home.entity);
@@ -414,15 +378,6 @@ void report_specialization(const Finding& finding) {
                    "specialize the template in the file that defines each of its arguments, or in its home %qs", home);
             break;
         }
-        case Kind::specialization_foreign_primary:
-            error_at(finding.spelling,
-                     "this file declares the template %qs of the base first, outside the base, so the home of the "
-                     "template moves here",
-                     entity);
-            inform(finding.spelling,
-                   "include the header of the template and remove the declaration, or move the template into the "
-                   "base");
-            break;
         case Kind::specialization_forward_declaration:
             error_at(finding.spelling,
                      "this file declares the variable template %qs with %<extern%> before its definition, so the home "

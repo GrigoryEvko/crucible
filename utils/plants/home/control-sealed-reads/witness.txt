@@ -1,22 +1,23 @@
-# With the rule specialization-home on, a gate that reads a sealed template is
-# closed: a class template or a variable template that the unit defines, that
-# no row governs and that has no open mark.  The rule specialization-home
-# refuses each specialization of such a template outside its home, so no
-# unit changes the answer of the gate.  A gate over a variable template, a
-# class trait, a member function and a member variable template of a class
-# template, and a requires-clause, gives no line, also in a crucible header
-# and in a check file.  So does a gate over a class template that the unit
-# only declares, when the header holds a specialization of it or when it is a
-# template of a base root in a base header, and a gate
+# With the rules specialization-home and base-namespace on, a gate that reads
+# a sealed template is closed: a class template or a variable template that
+# the unit defines, that no row governs and that has no open mark.  The rule
+# specialization-home refuses each specialization of such a template outside
+# its home, so no unit changes the answer of the gate.  A gate over a variable
+# template, a class trait, a member function and a member variable template
+# of a class template, and a requires-clause, gives no line, also in a
+# crucible header and in a check file.  So does a gate over a class template
+# that the unit only declares, when the header holds a specialization of it
+# or when it is a template of a base root in a base header, which the rule
+# base-namespace refuses to define outside the base, and a gate
 # over a sealed template whose definition reads only sealed templates: at a
 # second depth, through a template argument, and through a recursion.
-compile layer src/layer.cpp mode=error specialization-home=on
+compile layer src/layer.cpp mode=error specialization-home=on base-namespace=on
 flag layer -fplugin-arg-crucible_quarantine-sentinel=include/foundation/gates.h
 exit layer pass
-compile crucible src/crucible.cpp mode=error specialization-home=on
+compile crucible src/crucible.cpp mode=error specialization-home=on base-namespace=on
 flag crucible -fplugin-arg-crucible_quarantine-sentinel=include/crucible/gates.h
 exit crucible pass
-compile check_file test/layer/checks/foundation/gates.cpp mode=error specialization-home=on
+compile check_file test/layer/checks/foundation/gates.cpp mode=error specialization-home=on base-namespace=on
 exit check_file pass
 # A function template that the unit defines is sealed also when a home row
 # governs it, because the rule specialization-home refuses each explicit

@@ -7,6 +7,7 @@
 // Expected diagnostic: the specialization is refused, and it names the
 // concept.
 #include <fixy/session/Handle.h>
+#include <foundation/Quarantine.h>
 
 namespace neg_sess_seal_perm_set_admits_close_types {
 struct Region {
@@ -15,9 +16,11 @@ struct Region {
 using Lent = ::foundation::permissions::PermSet<::fixy::session::LentOut<Region>>;
 }  // namespace neg_sess_seal_perm_set_admits_close_types
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::session::detail {
 template <>
 inline constexpr bool perm_set_admits_close_v<neg_sess_seal_perm_set_admits_close_types::Lent> = true;
 }  // namespace fixy::session::detail
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() { return 0; }

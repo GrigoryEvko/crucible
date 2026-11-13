@@ -1,0 +1,32 @@
+// Each declaration of the namespace of the base before the header changes
+// the lookup of the base, and each one is a finding.
+
+namespace evil {
+struct Evil {};
+constexpr bool evil_admit(Evil) { return true; }
+}  // namespace evil
+
+namespace foundation::gates {
+// A new overload, which the qualified call of the gate binds.
+constexpr bool named_admit(evil::Evil) { return true; }
+// A new function template overload.
+template <class T>
+constexpr bool named_admit(T const&, int) { return true; }
+// A forward declaration of a function that the header defines.
+constexpr bool late_admit(int);
+// A using-declaration brings the overload of a different namespace in.
+using evil::evil_admit;
+struct Planted {};
+inline constexpr int planted_value = 1;
+using PlantedAlias = int;
+template <class T>
+concept PlantedConcept = true;
+namespace aliased = ::evil;
+inline namespace hidden {
+constexpr int hidden_value = 2;
+}  // namespace hidden
+}  // namespace foundation::gates
+
+#include <foundation/gates.h>
+
+static_assert(foundation::gates::ReadsNamed<evil::Evil>);

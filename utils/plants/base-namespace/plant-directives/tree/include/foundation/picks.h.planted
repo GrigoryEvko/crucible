@@ -1,0 +1,11 @@
+#pragma once
+
+namespace foundation::picks {
+
+// The unqualified call of the gate looks in the namespace of the gate, then
+// in each enclosing namespace up to the global namespace.  Each
+// using-directive of those scopes adds names to the lookup.
+template <class T>
+concept PicksLong = (pick(T{}) == 1);
+
+}  // namespace foundation::picks

@@ -1,0 +1,20 @@
+# A file outside the base declares each kind of entity in a namespace of the
+# base before the header: a new overload that the qualified call of a gate of
+# the base binds, a function template overload, a forward declaration of a
+# function of the base, a using-declaration, a class, a variable, an alias, a
+# concept, a namespace alias and a member of an inline namespace.  The static
+# assertion shows that the new overload changes the answer of the gate.  Each
+# declaration is a compile error in each mode.
+compile overloads src/overloads.cpp base-namespace=on errors=overloads
+exit overloads fail
+finding overloads base-namespace declaration src/overloads.cpp:11:16 | foundation::gates::named_admit
+finding overloads base-namespace declaration src/overloads.cpp:14:16 | foundation::gates::named_admit
+finding overloads base-namespace declaration src/overloads.cpp:16:16 | foundation::gates::late_admit
+finding overloads base-namespace declaration src/overloads.cpp:18:13 | foundation::gates::evil_admit
+finding overloads base-namespace declaration src/overloads.cpp:19:8 | foundation::gates::Planted
+finding overloads base-namespace declaration src/overloads.cpp:20:22 | foundation::gates::planted_value
+finding overloads base-namespace declaration src/overloads.cpp:21:7 | foundation::gates::PlantedAlias
+finding overloads base-namespace declaration src/overloads.cpp:23:9 | foundation::gates::PlantedConcept
+finding overloads base-namespace declaration src/overloads.cpp:24:11 | foundation::gates::aliased
+finding overloads base-namespace declaration src/overloads.cpp:26:15 | foundation::gates::hidden_value
+judge overloads

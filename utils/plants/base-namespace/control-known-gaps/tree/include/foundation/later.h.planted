@@ -1,0 +1,17 @@
+#pragma once
+
+// A base header that declares a function of the global namespace, and calls
+// it with a qualifier.
+constexpr bool global_admit(int) { return false; }
+
+namespace foundation::later {
+
+template <class T, class U>
+struct Later {
+    static constexpr int width = sizeof(U);
+};
+
+template <class T>
+concept ReadsGlobal = ::global_admit(T{});
+
+}  // namespace foundation::later

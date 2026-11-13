@@ -7,6 +7,7 @@
 // parent's, and its permission could be minted under a context that
 // admits no IO.  A derived tag declares no row of its own.
 
+#include <foundation/Quarantine.h>
 #include <foundation/permissions/Permission.h>
 
 namespace user_code {
@@ -18,9 +19,11 @@ struct shard {
 };
 }  // namespace user_code
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace foundation::permissions::permission_rows {
 inline constexpr ::foundation::fail_closed::edge<user_code::shard, ::foundation::effects::Row<>> laundered_shard{};
 }  // namespace foundation::permissions::permission_rows
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // The requirement is the one use of the row, so the refusal is the only
 // error.

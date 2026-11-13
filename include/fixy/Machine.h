@@ -16,8 +16,8 @@
 // specialization for each edge would be open: any translation unit that
 // sees the primary can add a pair.  Each machine names its own
 // namespace as the Edges parameter.  A machine that names none reads
-// the shared fixy::machine::admitted_transitions, which the macro at the
-// foot of this file appends to.
+// fixy::machine::no_edges, which holds no edge, so it admits only a move
+// to its own state.
 
 #include <foundation/Platform.h>
 #include <foundation/diag/FailClosed.h>
@@ -30,27 +30,27 @@
 
 namespace fixy {
 
-// The shared relation.  An edge declared here is admitted by every
-// machine that names no relation of its own.
-namespace machine::admitted_transitions {}
+// The relation of a machine that names none.  It holds no edge, and the
+// home row of the rule table admits no declaration in it.
+namespace machine::no_edges {}
 
 // A same-state move replaces the payload without changing the
 // conceptual state, so the diagonal needs no declaration.
-template <typename From, typename To, std::meta::info Edges = ^^machine::admitted_transitions>
+template <typename From, typename To, std::meta::info Edges = ^^machine::no_edges>
 inline constexpr bool machine_transition_v =
     std::is_same_v<From, To> || ::foundation::fail_closed::Admitted<Edges, From, To>;
 
 // A concept rather than the bare trait, so a rejected edge is reported
 // as one unsatisfied constraint naming both states and the relation.
-template <typename From, typename To, std::meta::info Edges = ^^machine::admitted_transitions>
+template <typename From, typename To, std::meta::info Edges = ^^machine::no_edges>
 concept MachineTransition = machine_transition_v<From, To, Edges>;
 
-template <typename State, std::meta::info Edges = ^^machine::admitted_transitions>
+template <typename State, std::meta::info Edges = ^^machine::no_edges>
 class Machine;
 
 // The one way into the machine.  Every later state is reached through
 // the transition relation.
-template <typename State, std::meta::info Edges = ^^machine::admitted_transitions, typename... Args>
+template <typename State, std::meta::info Edges = ^^machine::no_edges, typename... Args>
     requires std::is_constructible_v<State, Args...>
 [[nodiscard]] constexpr Machine<State, Edges>
 mint_machine(Args&&... args) noexcept(std::is_nothrow_constructible_v<State, Args...>);
@@ -164,18 +164,3 @@ inline constexpr bool can_transition_v = detail::can_transition_impl<M, NewState
 }  // namespace mach
 
 }  // namespace fixy
-
-// Appends one edge to the shared relation.  Opens a namespace, so it
-// must appear at namespace scope, and From and To are looked up from
-// inside fixy::machine::admitted_transitions, so a state declared in a
-// named namespace is written with its qualification.  The variable has
-// internal linkage, so two translation units that admit different
-// edges under the same counter value do not collide.  The relation is read the
-// first time a pair is checked against it, so every edge comes before
-// the first transition in the translation unit.
-#define CRUCIBLE_MACHINE_EDGE_CAT2_(a, b) a##b
-#define CRUCIBLE_MACHINE_EDGE_CAT_(a, b) CRUCIBLE_MACHINE_EDGE_CAT2_(a, b)
-#define CRUCIBLE_ADMIT_MACHINE_TRANSITION(From, To)                                                               \
-    namespace fixy::machine::admitted_transitions {                                                               \
-    constexpr ::foundation::fail_closed::edge<From, To> CRUCIBLE_MACHINE_EDGE_CAT_(machine_edge_, __COUNTER__){}; \
-    }

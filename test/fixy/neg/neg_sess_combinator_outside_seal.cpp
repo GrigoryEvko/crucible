@@ -9,6 +9,7 @@
 //
 // Expected diagnostic: a registration stands outside its seal.
 #include <fixy/session/Protocol.h>
+#include <foundation/Quarantine.h>
 
 namespace {
 
@@ -19,6 +20,7 @@ struct Absorb {};
 
 }  // namespace
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::session::combinators {
 inline constexpr ::fixy::session::transition::combinator user_emit{
     .shape = ^^::Emit,
@@ -33,5 +35,6 @@ inline constexpr ::fixy::session::transition::combinator user_absorb{
     .dual = ^^::Emit,
     .payload_variance = ::fixy::session::transition::variance::contravariant};
 }  // namespace fixy::session::combinators
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() { return ::fixy::session::is_send_v<Emit<int, ::fixy::session::End>> ? 0 : 1; }

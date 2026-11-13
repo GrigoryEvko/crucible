@@ -138,7 +138,7 @@ void test_full_gives_a_linear_value_back() {
 // the model, in order, and refuses a push exactly when the model is full.
 void test_list_agrees_with_the_model() {
     constexpr std::size_t capacity = 16;
-    ::foundation::test::PhiloxStream stream{0x0F1E2D3C4B5A6978u};
+    ::crucible::test::PhiloxStream stream{0x0F1E2D3C4B5A6978u};
     FixedList<std::uint64_t, capacity> list;
     FixedArray<std::uint64_t, capacity> model{};
     std::size_t count = 0;

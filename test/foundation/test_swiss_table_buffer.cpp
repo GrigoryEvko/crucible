@@ -83,7 +83,7 @@ using HugeBuffer = ::foundation::SwissTableBuffer<HugeSlot>;
 }  // namespace
 
 int main() {
-    using foundation::test::aborts;
+    using crucible::test::aborts;
 
     if (const int failed = layout_is_one_block(); failed != 0) return 10 + failed;
     if (const int failed = slots_hold_values(); failed != 0) return 20 + failed;

@@ -60,7 +60,7 @@ void test_scope_of_an_empty_view() {
 // The property: for random runs and random windows, each index of the scope
 // reads the element of the model at the same position.
 void test_scope_agrees_with_the_index_model() {
-    ::foundation::test::PhiloxStream stream{0x6B7A8C9D0E1F2031u};
+    ::crucible::test::PhiloxStream stream{0x6B7A8C9D0E1F2031u};
     Run run;
     for (int trial = 0; trial < 512; ++trial) {
         for (std::uint64_t& value : run) {
@@ -88,13 +88,13 @@ void test_scope_agrees_with_the_index_model() {
 void test_cursors_at_the_end_abort() {
     FixedArray<int, 3> values{1, 2, 3};
     bool const aborts_each = mint_branded_scope(values.view(), [](auto view) noexcept {
-        bool const index_read = ::foundation::test::aborts([&view] { static_cast<void>(*view.indices().end()); });
-        bool const index_step = ::foundation::test::aborts([&view] {
+        bool const index_read = ::crucible::test::aborts([&view] { static_cast<void>(*view.indices().end()); });
+        bool const index_step = ::crucible::test::aborts([&view] {
             auto cursor = view.indices().end();
             ++cursor;
         });
-        bool const pair_read = ::foundation::test::aborts([&view] { static_cast<void>(*view.enumerate().end()); });
-        bool const pair_step = ::foundation::test::aborts([&view] {
+        bool const pair_read = ::crucible::test::aborts([&view] { static_cast<void>(*view.enumerate().end()); });
+        bool const pair_step = ::crucible::test::aborts([&view] {
             auto cursor = view.enumerate().end();
             ++cursor;
         });

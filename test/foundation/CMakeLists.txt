@@ -704,25 +704,22 @@ foundation_neg_compile_test(neg_contract_specifier_template_member
 # makes each of its findings a compile error in each build.  Its error does
 # not start with "quarantine: ", so the regexes read it, as they read the
 # error of the contract rule.  One fixture for each kind: a specialization
-# outside the home of its template, a template of the base that a file
-# outside the base declares first, and a variable template that a file
+# outside the home of its template, and a variable template that a file
 # declares with extern before its header.  The first regex gives the place
 # and the error, and the second the forged template.  The variable template
-# of the last fixture is a template of the base, so its declaration is also
-# the first declaration of a base template outside the base.  Each of its two
-# regexes then gives one of the two errors, with the place and the template.
+# of the last fixture is a template of the base, so its declaration is also a
+# declaration in a namespace of the base outside the base, which the rule
+# base-namespace refuses.  Each of its two regexes then gives one of the two
+# errors, with the place and the template.
 # Two fixtures hold the orphan rule of an extension point: a niche of a base
 # type, which forges a null Ref through the niche key, and a niche of each
 # pointer type, which no file owns.
 foundation_neg_compile_test(neg_specialization_home_explicit
   "neg_specialization_home_explicit\\.cpp:10:[0-9]+: error: this file specializes the template .* outside its home .include/foundation/effects/Resources\\.h."
   "the template .foundation::effects::resource::SmBudget. outside its home")
-foundation_neg_compile_test(neg_specialization_home_foreign_primary
-  "neg_specialization_home_foreign_primary\\.cpp:10:[0-9]+: error: this file declares the template .* of the base first, outside the base"
-  "the template .foundation::forged::planted_trait. of the base")
 foundation_neg_compile_test(neg_specialization_home_forward_declaration
   "neg_specialization_home_forward_declaration\\.cpp:12:[0-9]+: error: this file declares the variable template .foundation::algebra::is_graded_v. with .extern. before its definition"
-  "neg_specialization_home_forward_declaration\\.cpp:12:[0-9]+: error: this file declares the template .foundation::algebra::is_graded_v. of the base first, outside the base")
+  "neg_specialization_home_forward_declaration\\.cpp:12:[0-9]+: error: this file declares .foundation::algebra::is_graded_v. in a namespace of the base, outside the base")
 foundation_neg_compile_test(neg_specialization_home_orphan_ref
   "neg_specialization_home_orphan_ref\\.cpp:19:[0-9]+: error: this file specializes the extension point .foundation::core::niche. for a type that a different file defines"
   "the extension point .foundation::core::niche. for a type")
@@ -758,6 +755,26 @@ foundation_neg_compile_test(neg_specialization_home_detail_alternative_of
 foundation_neg_compile_test(neg_specialization_home_orphan_partial
   "neg_specialization_home_orphan_partial\\.cpp:9:[0-9]+: error: this file specializes the extension point .foundation::core::niche. for a type that a different file defines"
   "specialize the template in the file that defines each of its arguments")
+
+# The rule base-namespace of utils/tools/quarantine/namespace.cpp makes each
+# declaration in a namespace of the base outside the base a compile error in
+# each build.  Its error does not start with "quarantine: ", so the regexes
+# read it.  The fixtures hold a new template of the base, a new overload
+# before the header, the body of a member that the base only declares, and a
+# using-directive of the global namespace before a header of the base.  The
+# first regex gives the place and the error, and the second the action.
+foundation_neg_compile_test(neg_base_namespace_planted_template
+  "neg_base_namespace_planted_template\\.cpp:10:[0-9]+: error: this file declares .foundation::forged::planted_trait. in a namespace of the base, outside the base"
+  "declare the entity in a namespace of this file")
+foundation_neg_compile_test(neg_base_namespace_overload_before_header
+  "neg_base_namespace_overload_before_header\\.cpp:9:[0-9]+: error: this file declares .foundation::core::unreachable. in a namespace of the base, outside the base"
+  "a new overload changes which function a call of the base reaches")
+foundation_neg_compile_test(neg_base_namespace_text_cursor_body
+  "neg_base_namespace_text_cursor_body\\.cpp:10:[0-9]+: error: this file declares .foundation::core::TextView::begin. in a namespace of the base, outside the base"
+  "a body of a function that the base only declares replaces the code of the base")
+foundation_neg_compile_test(neg_base_namespace_global_directive
+  "neg_base_namespace_global_directive\\.cpp:11:[0-9]+: error: this using-directive of the namespace .planted. can change a lookup of the base, outside the base"
+  "at the global scope before a file of the base")
 
 # test/CMakeLists.txt registers test_reflect for test/test_reflect.cpp,
 # and a CMake target name is global.  This target carries the name of
@@ -1320,13 +1337,13 @@ foundation_neg_compile_test(neg_capability_forged_by_start_lifetime_as
 # template.
 foundation_neg_compile_test(neg_capability_specialized_trait
   "template-id .IsCapability<.anonymous.::Fake>. used as a declarator"
-  "neg_capability_specialized_trait\\.cpp:16:[0-9]+: error: too many template headers for .foundation::effects::IsCapability. \\(should be 0\\)")
+  "neg_capability_specialized_trait\\.cpp:18:[0-9]+: error: too many template headers for .foundation::effects::IsCapability. \\(should be 0\\)")
 foundation_neg_compile_test(neg_capability_effect_specialized_trait
   "template-id .cap_of<>. for .consteval foundation::effects::Effect foundation::effects::cap_of\\(std::meta::info\\). does not match any template declaration"
   "neg_capability_effect_specialized_trait\\.cpp:13:[0-9]+: error:")
 foundation_neg_compile_test(neg_instance_of_specialized_trait
   "template-id .IsInstanceOf<.anonymous.::Fake, \\^\\^template<foundation::effects::Effect Cap, class Source> class foundation::effects::Capability>. used as a declarator"
-  "neg_instance_of_specialized_trait\\.cpp:17:[0-9]+: error: too many template headers for .foundation::reflect::IsInstanceOf. \\(should be 0\\)")
+  "neg_instance_of_specialized_trait\\.cpp:19:[0-9]+: error: too many template headers for .foundation::reflect::IsInstanceOf. \\(should be 0\\)")
 foundation_neg_compile_test(neg_bg_exec_ctx_forged_by_bit_cast
   "no matching function for call to .bit_cast<foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<"
   "is_trivially_copyable_v<_To> .with _To = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<")
@@ -1400,7 +1417,7 @@ foundation_neg_compile_test(neg_permission_row_undeclared_tag
 # One row has one source.
 foundation_neg_compile_test(neg_permission_row_declared_twice
   "uncaught exception of type .std::meta::exception.. .what\\(\\).: .permission_row: a tag declares its row twice"
-  "neg_permission_row_declared_twice\\.cpp:17:[0-9]+: error: non-constant condition for static assertion")
+  "neg_permission_row_declared_twice\\.cpp:20:[0-9]+: error: non-constant condition for static assertion")
 
 # The public row alias refuses a tag with no row, rather than read as
 # void, and it refuses a member that names a type which is not a row.
@@ -1663,7 +1680,7 @@ foundation_neg_compile_test(neg_diag_mint_diagnostic_refuses_the_tag_base_itself
 # compile, also when the condition holds.
 foundation_neg_compile_test(neg_diag_assert_refuses_a_tag_outside_the_catalog
   ".LooksLikeACatalogTag. is not a member of .foundation::diag::Category."
-  "neg_diag_assert_refuses_a_tag_outside_the_catalog\\.cpp:12:[0-9]+: error:")
+  "neg_diag_assert_refuses_a_tag_outside_the_catalog\\.cpp:15:[0-9]+: error:")
 
 # A tag accessor over a plain type, and category_of_v over a tag that the
 # closed Catalog does not hold, each reach a static_assert in the header.

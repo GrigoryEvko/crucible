@@ -10,12 +10,16 @@
 // the namespace as it stands where the header defines it.  Then the
 // fixture calls the walk.
 
+#include <foundation/Quarantine.h>
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::refined::admitted_implications {
 
 // Neither an edge nor a rule.
 struct not_a_rule {};
 
 }  // namespace fixy::refined::admitted_implications
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 #include <fixy/Predicates.h>
 

@@ -28,7 +28,7 @@ namespace {
 
 using ::fixy::Affine;
 using ::fixy::Linear;
-using ::foundation::test::aborts;
+using ::crucible::test::aborts;
 
 // Without the key this TU would prove nothing, and it would prove it
 // quietly: every `aborts` expectation below would simply report false.

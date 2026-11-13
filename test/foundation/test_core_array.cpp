@@ -31,7 +31,7 @@ struct NoDefault {
 // The check of an index is a value exactly when the number is below the
 // count.  A plain compare is the model.
 void test_index_check_agrees_with_the_model() {
-    ::foundation::test::PhiloxStream stream{0x1D3C4ECC0000A001u};
+    ::crucible::test::PhiloxStream stream{0x1D3C4ECC0000A001u};
     for (int trial = 0; trial < 4096; ++trial) {
         std::size_t const raw = stream.below(40);
         auto checked = Index<32>::check(raw);
@@ -56,8 +56,8 @@ void test_index_range_visits_each_index_in_order() {
 // A cursor of an IndexRange never makes an index past its range: a read at
 // the end and a step past the end end the process in each build.
 void test_index_cursor_at_the_end_aborts() {
-    bool const end_read_aborts = ::foundation::test::aborts([] { static_cast<void>((*IndexRange<3>::end()).raw()); });
-    bool const past_end_step_aborts = ::foundation::test::aborts([] {
+    bool const end_read_aborts = ::crucible::test::aborts([] { static_cast<void>((*IndexRange<3>::end()).raw()); });
+    bool const past_end_step_aborts = ::crucible::test::aborts([] {
         auto cursor = IndexRange<1>::begin();
         ++cursor;
         ++cursor;
@@ -162,7 +162,7 @@ void test_fixed_array_of_a_type_with_no_default() {
 // The property: random writes at checked indexes give the elements of the
 // same writes into a std::array.
 void test_fixed_array_agrees_with_std_array() {
-    ::foundation::test::PhiloxStream stream{0xA77A1E5E0000B002u};
+    ::crucible::test::PhiloxStream stream{0xA77A1E5E0000B002u};
     FixedArray<std::uint64_t, 64> array;
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ORACLE: std::array is the model of the writes of a FixedArray")
     std::array<std::uint64_t, 64> model{};

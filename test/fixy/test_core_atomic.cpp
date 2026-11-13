@@ -400,7 +400,7 @@ void test_word_option_cell() {
 // operations on a cell of an Option of a seat agrees with a plain model, a
 // number with zero for the empty Option.
 void test_word_option_agrees_with_plain_model() {
-    ::foundation::test::PhiloxStream stream{0x5EEDA703000000C6u};
+    ::crucible::test::PhiloxStream stream{0x5EEDA703000000C6u};
     Atomic<SeatOption> cell{};
     std::uint32_t model = 0;
     for (int step = 0; step < 20000; ++step) {
@@ -434,7 +434,7 @@ void test_word_option_store_of_empty_word_aborts() {
     using LossyOption = ::foundation::core::Option<LossySeat>;
     Atomic<LossyOption> cell{};
     CRUCIBLE_FATAL_INVARIANT(
-        ::foundation::test::aborts([&cell] { cell.store_release(LossyOption::some(LossySeat::of(1))); }));
+        ::crucible::test::aborts([&cell] { cell.store_release(LossyOption::some(LossySeat::of(1))); }));
     CRUCIBLE_FATAL_INVARIANT(cell.load_acquire().is_none());
     cell.store_release(LossyOption::some(LossySeat::of(2)));
     CRUCIBLE_FATAL_INVARIANT(cell.load_acquire().is_some());
@@ -525,7 +525,7 @@ void test_cache_line() {
 // The property: a random sequence of operations on one cell agrees with
 // a plain model that applies the same operations to an integer.
 void test_agrees_with_plain_model() {
-    ::foundation::test::PhiloxStream stream{0x5EEDA703000000C3u};
+    ::crucible::test::PhiloxStream stream{0x5EEDA703000000C3u};
     Atomic<std::uint64_t> cell{};
     std::uint64_t model = 0;
     for (int step = 0; step < 20000; ++step) {
@@ -579,7 +579,7 @@ void test_agrees_with_plain_model() {
 // The same property for the signed bounds, where the order of the
 // operands differs from the order of their bits.
 void test_signed_bounds_agree_with_plain_model() {
-    ::foundation::test::PhiloxStream stream{0x5EEDA703000000C4u};
+    ::crucible::test::PhiloxStream stream{0x5EEDA703000000C4u};
     Atomic<std::int64_t> cell{};
     std::int64_t model = 0;
     for (int step = 0; step < 20000; ++step) {
@@ -799,7 +799,7 @@ void test_sole_writer_single_thread() {
 // plain model, and each read of the writer and each acquire read give the
 // value of the model.
 void test_sole_writer_agrees_with_plain_model() {
-    ::foundation::test::PhiloxStream stream{0x5EEDA703000000C5u};
+    ::crucible::test::PhiloxStream stream{0x5EEDA703000000C5u};
     auto writer = mint_sole_writer<HeadRole>();
     Atomic<std::uint64_t, decltype(writer)> cell{};
     std::uint64_t model = 0;

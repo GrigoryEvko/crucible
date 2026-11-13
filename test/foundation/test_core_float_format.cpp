@@ -232,7 +232,7 @@ void test_float_mixes_with_other_arguments() {
 // Each bit pattern: the high bits choose the binade, so each class of value
 // occurs.
 void test_random_bit_patterns_agree_with_the_oracle() {
-    ::foundation::test::PhiloxStream stream{0x6F72616E676531ULL};
+    ::crucible::test::PhiloxStream stream{0x6F72616E676531ULL};
     for (int round = 0; round < 20000; ++round) {
         expect_double(stream.next_wide());
         expect_float(stream.next_word());
@@ -242,7 +242,7 @@ void test_random_bit_patterns_agree_with_the_oracle() {
 // Each binade at its smallest mantissa, where the gap below is half of the
 // gap above, at its largest mantissa and at a random mantissa, with each sign.
 void test_each_binade_agrees_with_the_oracle() {
-    ::foundation::test::PhiloxStream stream{0x62696E616465ULL};
+    ::crucible::test::PhiloxStream stream{0x62696E616465ULL};
     for (std::uint64_t biased = 0; biased < 0x7FFU; ++biased) {
         for (std::uint64_t sign = 0; sign < 2U; ++sign) {
             std::uint64_t const base = (sign << 63U) | (biased << 52U);
@@ -267,7 +267,7 @@ void test_each_binade_agrees_with_the_oracle() {
 // form holds the exact integer: 2^53 to 2^80 for a double and 2^24 to 2^40
 // for a float.
 void test_subnormals_and_wide_integers_agree_with_the_oracle() {
-    ::foundation::test::PhiloxStream stream{0x7375626E6F726DULL};
+    ::crucible::test::PhiloxStream stream{0x7375626E6F726DULL};
     for (int round = 0; round < 4000; ++round) {
         expect_double(stream.next_wide() & 0x000FFFFFFFFFFFFFULL);
         expect_float(stream.next_word() & 0x007FFFFFU);

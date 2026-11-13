@@ -221,7 +221,7 @@ void test_a_share_of_a_region_of_the_same_site_aborts() {
     CRUCIBLE_TEST_REQUIRE(guard_a.has_value());
     auto read = ::fixy::mint_shared_read(ctx, *guard_a, shared_a);
     CRUCIBLE_TEST_REQUIRE(read[0] == 7);
-    CRUCIBLE_TEST_REQUIRE(::foundation::test::aborts([&] { (void)::fixy::mint_shared_read(ctx, *guard_a, shared_b); }));
+    CRUCIBLE_TEST_REQUIRE(::crucible::test::aborts([&] { (void)::fixy::mint_shared_read(ctx, *guard_a, shared_b); }));
 }
 
 // The door takes the base and the count out of the region it consumes.

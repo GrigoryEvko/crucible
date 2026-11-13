@@ -27,6 +27,8 @@
 //         specialization.cpp
 //                          the family specialization home: the home of each
 //                          template of the tree, and its open mark
+//         namespace.cpp    the family base namespace: each declaration of a
+//                          namespace of the base outside the base
 //         body.cpp        the family library code: the code of a library in
 //                          each function that the unit compiles, from an RTL
 //                          pass
@@ -396,13 +398,21 @@
 //     orphan                a specialization of a template with the open mark
 //                           outside its home, in a file that does not define
 //                           each of its arguments
-//     foreign-primary      the primary declaration of a template of the
-//                           namespace foundation or fixy outside the base
 //     forward-declaration   a variable template that a unit declares with
 //                           extern before its definition, at that declaration
 //     open-extension        no finding: one record of each template with the
 //                           open mark, at its home, for the module of the rule,
 //                           which refuses a record that no ledger row admits
+//     The rule base-namespace of the family base namespace (namespace.cpp, THE
+//     KINDS).  Each finding of the rule is an error in each mode, and an
+//     opt-out region covers it (is_each_mode_kind):
+//     declaration           a declaration of the namespace foundation or fixy,
+//                           or of a namespace inside them, that a file outside
+//                           the base spells, also a redeclaration and the
+//                           definition of an entity of the base
+//     using-directive       a using-directive of such a namespace, and a
+//                           using-directive of the global namespace before a
+//                           file of the base in the unit
 //     The records of the library code (body.cpp, THE RECORDS) come from the
 //     instructions of each function that the unit compiles.  They have no
 //     rule of the registry.  The tag library-records stands in the place of
@@ -761,6 +771,7 @@ enum class Rule : std::uint8_t {
     brand_escape,
     brand_reentry,
     specialization_home,
+    base_namespace,
     // No rule of the registry: the tag of the records of the library code
     // (THE RULES AND THE KINDS).
     library_records,
@@ -985,9 +996,11 @@ enum class Kind : std::uint8_t {
     // The family specialization home (specialization.cpp).
     specialization_outside_home,
     specialization_orphan,
-    specialization_foreign_primary,
     specialization_forward_declaration,
     specialization_open_extension,
+    // The family base namespace (namespace.cpp).
+    base_namespace_declaration,
+    base_namespace_using_directive,
     // The family library code (body.cpp).
     library_inlined,
     library_call,
@@ -1059,6 +1072,8 @@ inline const char* rule_name(Rule rule) {
             return "brand-reentry";
         case Rule::specialization_home:
             return "specialization-home";
+        case Rule::base_namespace:
+            return "base-namespace";
         case Rule::library_records:
             return "library-records";
     }
@@ -1317,12 +1332,14 @@ inline const char* kind_name(Kind kind) {
             return "specialization";
         case Kind::specialization_orphan:
             return "orphan";
-        case Kind::specialization_foreign_primary:
-            return "foreign-primary";
         case Kind::specialization_forward_declaration:
             return "forward-declaration";
         case Kind::specialization_open_extension:
             return "open-extension";
+        case Kind::base_namespace_declaration:
+            return "declaration";
+        case Kind::base_namespace_using_directive:
+            return "using-directive";
         case Kind::library_inlined:
             return "inlined";
         case Kind::library_call:
@@ -1468,10 +1485,12 @@ inline Rule rule_of(Kind kind) {
             return Rule::brand_reentry;
         case Kind::specialization_outside_home:
         case Kind::specialization_orphan:
-        case Kind::specialization_foreign_primary:
         case Kind::specialization_forward_declaration:
         case Kind::specialization_open_extension:
             return Rule::specialization_home;
+        case Kind::base_namespace_declaration:
+        case Kind::base_namespace_using_directive:
+            return Rule::base_namespace;
         case Kind::library_inlined:
         case Kind::library_call:
         case Kind::library_reference:
@@ -1484,9 +1503,9 @@ inline Rule rule_of(Kind kind) {
 
 // True for a kind whose finding is an error in each mode: the contract rule,
 // the rules binding-hook and borrow-match, the unit facts, the findings of the
-// rule specialization-home and the escapes of a scope brand of the rule
-// brand-escape (THE SCOPE BRANDS of linear.cpp).  No enforce mode changes such
-// a finding, and an opt-out region covers it.
+// rules specialization-home and base-namespace, and the escapes of a scope
+// brand of the rule brand-escape (THE SCOPE BRANDS of linear.cpp).  No enforce
+// mode changes such a finding, and an opt-out region covers it.
 inline bool is_each_mode_kind(Kind kind) {
     switch (kind) {
         case Kind::contract_specifier:
@@ -1498,8 +1517,9 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::brand_scope_return:
         case Kind::specialization_outside_home:
         case Kind::specialization_orphan:
-        case Kind::specialization_foreign_primary:
         case Kind::specialization_forward_declaration:
+        case Kind::base_namespace_declaration:
+        case Kind::base_namespace_using_directive:
             return true;
         default:
             return false;
@@ -1711,9 +1731,10 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"brand-reentry", "reentry"},
     {"specialization-home", "specialization"},
     {"specialization-home", "orphan"},
-    {"specialization-home", "foreign-primary"},
     {"specialization-home", "forward-declaration"},
     {"specialization-home", "open-extension"},
+    {"base-namespace", "declaration"},
+    {"base-namespace", "using-directive"},
 };
 
 // True when the entity is part of the key of a finding: two findings of such
@@ -1740,8 +1761,9 @@ inline bool is_name_kind(Kind kind) {
         case Kind::fast_math_override:
         case Kind::specialization_outside_home:
         case Kind::specialization_orphan:
-        case Kind::specialization_foreign_primary:
         case Kind::specialization_forward_declaration:
+        case Kind::base_namespace_declaration:
+        case Kind::base_namespace_using_directive:
         case Kind::brand_scope_static:
         case Kind::brand_scope_return:
             return true;
@@ -2680,6 +2702,17 @@ bool read_template_home(tree template_decl);
 bool reads_template_sites(tree template_decl);
 void note_template_site(tree template_decl, tree arguments, location_t location);
 void report_specialization(const Finding& finding);
+
+// namespace.cpp: the family base namespace, the rule base-namespace.
+// finish_base_namespace() walks the namespaces of the base after the parse,
+// and judges each using-directive of the global namespace (THE READS).
+// report_base_namespace() gives the error of one finding that no region opts
+// out (THE ERRORS).  is_base_namespace_active() is true when the compile runs
+// the rule.
+void register_base_namespace(const char* plugin_name);
+bool is_base_namespace_active();
+void finish_base_namespace();
+void report_base_namespace(const Finding& finding);
 
 // body.cpp: the family library code, the pass that reads the instructions of
 // each function.

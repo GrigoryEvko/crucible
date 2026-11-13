@@ -476,6 +476,7 @@ test/fixy/ | opted-out | 1 | PROBE: cheat 55 forges is_recipe_spec_v, and IsReci
 test/fixy/ | opted-out | 11 | PROBE: the seal test forges each payload view, gate and cell for a refused payload | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 1 | PROBE: the test forges stdio::write for a private stream, and IsAtom must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 2 | PROBE: the test forges the wire word of a keyed step and of a branch of a keyed choice | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/fixy/ | opted-out | 1 | PROBE: the test plants an atom in a shipped family, and IsAtom must refuse it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/fixy/ | raw-function-pointer | 41 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
 test/fixy/ | raw-pointer-object | 159 | - | -
@@ -496,6 +497,7 @@ test/fixy/ | region | 1 | PROBE: cheat 55 forges is_recipe_spec_v, and IsRecipeS
 test/fixy/ | region | 1 | PROBE: the seal test forges each payload view, gate and cell for a refused payload | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: the test forges stdio::write for a private stream, and IsAtom must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: the test forges the wire word of a keyed step and of a branch of a keyed choice | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/fixy/ | region | 1 | PROBE: the test plants an atom in a shipped family, and IsAtom must refuse it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/fixy/ | replace-pending:<limits> | 30 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 15 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
@@ -523,6 +525,7 @@ test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges stdio::write with the
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges the call operator of InRange<1, 9> for int | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 5 | PROBE: the fixture needs a borrowed range of the library, which no base type gives | the overload of mint_borrowed for a borrowed rvalue range takes only a range of the library, such as std::span
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture plants a corpus entry template of the base | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/fixy/neg/ | opted-out | 48 | PROBE: the fixture plants a declaration in a base namespace, and a check refuses it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture plants a spawn template of the base with no reading | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 4 | PROBE: the fixture takes the address of a member mint with a target type | only a pointer to member takes the address of a member mint, and the result of the admittance is a std::pair
 test/fixy/neg/ | opted-out | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
@@ -546,6 +549,7 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture forges stdio::write with the ax
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges the call operator of InRange<1, 9> for int | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 2 | PROBE: the fixture needs a borrowed range of the library, which no base type gives | the overload of mint_borrowed for a borrowed rvalue range takes only a range of the library, such as std::span
 test/fixy/neg/ | region | 1 | PROBE: the fixture plants a corpus entry template of the base | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/fixy/neg/ | region | 35 | PROBE: the fixture plants a declaration in a base namespace, and a check refuses it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/fixy/neg/ | region | 1 | PROBE: the fixture plants a spawn template of the base with no reading | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member mint with a target type | only a pointer to member takes the address of a member mint, and the result of the admittance is a std::pair
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
@@ -604,6 +608,7 @@ test/foundation/neg/ | opted-out | 1 | PROBE: the fixture forges relation_state_
 test/foundation/neg/ | opted-out | 1 | PROBE: the fixture forges relation_state_at of ingest with a view of other cells | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | opted-out | 3 | PROBE: the fixture forges row_cell_at of an IO tag with a copy of a pure cell | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | opted-out | 3 | PROBE: the fixture forges row_cell_at of an IO tag with the walk of a pure tag | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/foundation/neg/ | opted-out | 6 | PROBE: the fixture plants a declaration in a base namespace, and a check refuses it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/foundation/neg/ | opted-out | 1 | PROBE: the fixture plants a tag template of the base with no alias | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | opted-out | 1 | PROBE: the probe forges a niche of a Ref to show that Ref gives a niche no friend | -
 test/foundation/neg/ | opted-out | 1 | PROBE: the probe specializes the Ref door to show that it cannot write the pointer | -
@@ -617,6 +622,7 @@ test/foundation/neg/ | region | 1 | PROBE: the fixture forges relation_state_at 
 test/foundation/neg/ | region | 1 | PROBE: the fixture forges relation_state_at of ingest with a view of other cells | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | region | 1 | PROBE: the fixture forges row_cell_at of an IO tag with a copy of a pure cell | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | region | 1 | PROBE: the fixture forges row_cell_at of an IO tag with the walk of a pure tag | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/foundation/neg/ | region | 6 | PROBE: the fixture plants a declaration in a base namespace, and a check refuses it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/foundation/neg/ | region | 1 | PROBE: the fixture plants a tag template of the base with no alias | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | region | 1 | PROBE: the probe forges a niche of a Ref to show that Ref gives a niche no friend | -
 test/foundation/neg/ | region | 1 | PROBE: the probe specializes the Ref door to show that it cannot write the pointer | -

@@ -8,6 +8,7 @@
 // from every edge.  The planted edges also stand outside the seal of the
 // relation, so each query of the walk also stops at the seal.
 
+#include <foundation/Quarantine.h>
 #include <foundation/diag/FailClosed.h>
 
 #include <type_traits>
@@ -24,6 +25,7 @@ using not_below_four_t = std::remove_cv_t<decltype(not_below_four)>;
 
 }  // namespace planted
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::refined::admitted_implications {
 
 inline constexpr ::foundation::fail_closed::edge<planted::above_three_t, planted::at_least_four_t> ring_one{};
@@ -31,6 +33,7 @@ inline constexpr ::foundation::fail_closed::edge<planted::at_least_four_t, plant
 inline constexpr ::foundation::fail_closed::edge<planted::not_below_four_t, planted::above_three_t> ring_three{};
 
 }  // namespace fixy::refined::admitted_implications
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 #include <fixy/Predicates.h>
 

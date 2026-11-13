@@ -4,6 +4,7 @@
 // hold.  The friend is gone.  A read proof comes from a Permission or a
 // live share, and the definition below reaches a private constructor.
 
+#include <foundation/Quarantine.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 
@@ -13,11 +14,13 @@ struct Region {
 };
 }  // namespace
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace foundation::permissions::host {
 struct BorrowIssuer {
     static ReadView<Region> issue() noexcept { return ReadView<Region>{}; }
 };
 }  // namespace foundation::permissions::host
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     auto proof = ::foundation::permissions::host::BorrowIssuer::issue();

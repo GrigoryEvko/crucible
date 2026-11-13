@@ -205,12 +205,12 @@ void build_in_spent_hole(CountedHole& hole) {
 // spend gave the storage back, so the body owns no allocation.  The consume
 // after each helper is the one spend of the Hole of the body.
 void test_spend_of_moved_from_aborts() {
-    bool const consume_aborts = ::foundation::test::aborts([] {
+    bool const consume_aborts = ::crucible::test::aborts([] {
         CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::Alloc{});
         consume_two_times(hole);
         std::move(hole).consume();
     });
-    bool const build_aborts = ::foundation::test::aborts([] {
+    bool const build_aborts = ::crucible::test::aborts([] {
         CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::Alloc{});
         build_in_spent_hole(hole);
         std::move(hole).consume();
@@ -224,7 +224,7 @@ void test_hole_of_moved_from_box_aborts() {
     CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::Alloc{});
     Box<Counted> source = mint_box<Counted>(std::move(hole), std::uint64_t{4});
     Box<Counted> target{std::move(source)};
-    bool const hole_aborts = ::foundation::test::aborts([&source] { mint_hole(std::move(source)).consume(); });
+    bool const hole_aborts = ::crucible::test::aborts([&source] { mint_hole(std::move(source)).consume(); });
     CRUCIBLE_FATAL_INVARIANT(hole_aborts);
     CRUCIBLE_FATAL_INVARIANT(target->label() == 4);
 }

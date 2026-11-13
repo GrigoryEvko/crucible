@@ -71,7 +71,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // std::tuple of the same parts.  The values are small, so equal prefixes
 // are frequent.  Linear in the count of trials.
 void test_compares_agree_with_the_tuple() {
-    ::foundation::test::PhiloxStream stream{0x5EEDC0DE0000B001u};
+    ::crucible::test::PhiloxStream stream{0x5EEDC0DE0000B001u};
     for (int trial = 0; trial < 50000; ++trial) {
         auto const first = static_cast<std::uint32_t>(stream.below(3));
         auto const second = static_cast<std::uint8_t>(stream.below(3));

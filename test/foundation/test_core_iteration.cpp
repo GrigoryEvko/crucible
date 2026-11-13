@@ -30,7 +30,7 @@ using Run = FixedArray<std::uint64_t, run_size>;
     return run.at(Index<run_size>::check(position).expect("the position is below the size of the run"));
 }
 
-void fill_with_stream(Run& run, ::foundation::test::PhiloxStream& stream) {
+void fill_with_stream(Run& run, ::crucible::test::PhiloxStream& stream) {
     for (std::uint64_t& value : run) {
         value = stream.next_wide();
     }
@@ -128,7 +128,7 @@ void test_zip_of_a_dynamic_extent_compares_the_counts() {
 // position of the model, and chunks<5>() starts a run at each fifth
 // position, with the rest after the last whole chunk.
 void test_verbs_agree_with_the_index_model() {
-    ::foundation::test::PhiloxStream stream{0x17E2A7E50000E005u};
+    ::crucible::test::PhiloxStream stream{0x17E2A7E50000E005u};
     Run run;
     for (int trial = 0; trial < 1024; ++trial) {
         fill_with_stream(run, stream);
@@ -191,34 +191,34 @@ void test_verbs_agree_with_the_index_model() {
 void test_cursors_at_the_end_abort() {
     FixedArray<int, 4> const values{1, 2, 3, 4};
     bool const reverse_read_aborts =
-        ::foundation::test::aborts([&values] { static_cast<void>(*values.reverse().end()); });
-    bool const reverse_step_aborts = ::foundation::test::aborts([&values] {
+        ::crucible::test::aborts([&values] { static_cast<void>(*values.reverse().end()); });
+    bool const reverse_step_aborts = ::crucible::test::aborts([&values] {
         auto cursor = values.reverse().end();
         ++cursor;
     });
     bool const window_read_aborts =
-        ::foundation::test::aborts([&values] { static_cast<void>(*values.windows<2>().end()); });
-    bool const window_step_aborts = ::foundation::test::aborts([&values] {
+        ::crucible::test::aborts([&values] { static_cast<void>(*values.windows<2>().end()); });
+    bool const window_step_aborts = ::crucible::test::aborts([&values] {
         auto cursor = values.windows<4>().begin();
         ++cursor;
         ++cursor;
     });
     bool const chunk_read_aborts =
-        ::foundation::test::aborts([&values] { static_cast<void>(*values.chunks<3>().end()); });
-    bool const chunk_step_aborts = ::foundation::test::aborts([&values] {
+        ::crucible::test::aborts([&values] { static_cast<void>(*values.chunks<3>().end()); });
+    bool const chunk_step_aborts = ::crucible::test::aborts([&values] {
         auto cursor = values.chunks<4>().begin();
         ++cursor;
         ++cursor;
     });
     bool const enumerate_read_aborts =
-        ::foundation::test::aborts([&values] { static_cast<void>(*values.enumerate().end()); });
-    bool const enumerate_step_aborts = ::foundation::test::aborts([&values] {
+        ::crucible::test::aborts([&values] { static_cast<void>(*values.enumerate().end()); });
+    bool const enumerate_step_aborts = ::crucible::test::aborts([&values] {
         auto cursor = values.enumerate().end();
         ++cursor;
     });
     bool const zip_read_aborts =
-        ::foundation::test::aborts([&values] { static_cast<void>(*zip(values.view(), values.view()).end()); });
-    bool const zip_step_aborts = ::foundation::test::aborts([&values] {
+        ::crucible::test::aborts([&values] { static_cast<void>(*zip(values.view(), values.view()).end()); });
+    bool const zip_step_aborts = ::crucible::test::aborts([&values] {
         auto cursor = zip(values.view(), values.view()).end();
         ++cursor;
     });

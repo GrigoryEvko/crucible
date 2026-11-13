@@ -1,11 +1,12 @@
-# With the rule specialization-home on, a gate stays open when it reads a
-# template that the rule does not seal: a template with the open mark, a
-# template that a home row governs, and a crucible class template that the
-# unit only declares and does not specialize.  An open mark and a row admit
+# With the rules specialization-home and base-namespace on, a gate stays open
+# when it reads a template that the rules do not seal: a template with the
+# open mark, a template that a home row governs, and a crucible class
+# template that the unit only declares and does not specialize.  An open
+# mark and a row admit
 # a specialization in a different file, and a different file can give the
 # definition of a crucible template that the unit only declares.  A class
 # template of a base root that the base only declares is sealed, because the
-# rule specialization-home refuses its definition outside the base.  The
+# rule base-namespace refuses its definition outside the base.  The
 # function template open_f is sealed, because the unit defines it and the
 # rule refuses its explicit specialization outside its home, so its three
 # reads give no line (plant-adl-reads holds the call that stays open).
@@ -17,7 +18,7 @@
 # a class template at its home, and a cycle of two traits.  The unit forge
 # specializes the open trait in a different file, and its static assertions
 # show that each such gate changes its answer.
-compile layer src/layer.cpp mode=error specialization-home=on
+compile layer src/layer.cpp mode=error specialization-home=on base-namespace=on
 flag layer -fplugin-arg-crucible_quarantine-sentinel=include/foundation/gates.h
 exit layer fail
 finding layer home open-read include/foundation/gates.h:15:59 | foundation::gates::marked_trait

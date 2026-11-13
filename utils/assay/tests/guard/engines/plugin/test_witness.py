@@ -261,16 +261,14 @@ def comparison_cases(expect: testing.Expect) -> None:
         ],
     )
     forged = sections.Finding("unit.cpp", 9, 8, "specialization-home", "specialization", "fixy::is_trait")
-    primary = sections.Finding("unit.cpp", 10, 8, "specialization-home", "foreign-primary", "fixy::own")
     forward = sections.Finding("unit.cpp", 11, 19, "specialization-home", "forward-declaration", "fixy::flag_v")
     mark = sections.Finding("a.h", 4, 8, "specialization-home", "open-extension", "fixy::open")
     expect(
         "derived_errors() gives the error of each kind of the rule specialization-home in the mode report, and no "
         "error for the record open-extension",
-        witness.derived_errors([forged, primary, forward, mark], False)
+        witness.derived_errors([forged, forward, mark], False)
         == [
             ("unit.cpp:9", "this file specializes the template 'fixy::is_trait' outside its home"),
-            ("unit.cpp:10", "this file declares the template 'fixy::own' of the base first, outside the base"),
             (
                 "unit.cpp:11",
                 "this file declares the variable template 'fixy::flag_v' with 'extern' before its definition",
@@ -279,7 +277,21 @@ def comparison_cases(expect: testing.Expect) -> None:
     )
     expect(
         "derived_notes() gives no note for a kind of the rule specialization-home that is an error in each mode",
-        witness.derived_notes([forged, primary, forward]) == [],
+        witness.derived_notes([forged, forward]) == [],
+    )
+    planted = sections.Finding("unit.cpp", 10, 8, "base-namespace", "declaration", "fixy::own")
+    directive = sections.Finding("unit.cpp", 12, 17, "base-namespace", "using-directive", "evil")
+    expect(
+        "derived_errors() gives the error of each kind of the rule base-namespace in the mode report",
+        witness.derived_errors([planted, directive], False)
+        == [
+            ("unit.cpp:10", "this file declares 'fixy::own' in a namespace of the base, outside the base"),
+            ("unit.cpp:12", "this using-directive of the namespace 'evil' can change a lookup of the base"),
+        ],
+    )
+    expect(
+        "derived_notes() gives no note for a kind of the rule base-namespace",
+        witness.derived_notes([planted, directive]) == [],
     )
     work, plugin, repo = Path("/w/one"), Path("/r/build/p.so"), Path("/r")
     expect(

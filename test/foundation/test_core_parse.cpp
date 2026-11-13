@@ -518,7 +518,7 @@ void expect_wide_value(std::uint64_t magnitude, bool is_negative, std::uint64_t 
 // magnitudes next to the limits of the 64-bit types.
 template <class T>
 void expect_random_values(std::uint64_t seed) {
-    ::foundation::test::PhiloxStream stream{seed};
+    ::crucible::test::PhiloxStream stream{seed};
     for (int round = 0; round < 20000; ++round) {
         std::uint64_t const width = 1U + stream.below(64U);
         std::uint64_t const mask = width == 64U ? ~std::uint64_t{0} : (std::uint64_t{1} << width) - 1U;
@@ -549,7 +549,7 @@ void test_random_values_read_back() {
 // for each type.
 template <class T>
 void expect_random_text(std::uint64_t seed) {
-    ::foundation::test::PhiloxStream stream{seed};
+    ::crucible::test::PhiloxStream stream{seed};
     Case<T> text;
     if (stream.below(3U) == 0U) text.put('-');
     if (stream.below(3U) == 0U) {
@@ -571,7 +571,7 @@ void expect_random_text(std::uint64_t seed) {
 }
 
 void test_random_texts_agree_with_the_reference_and_the_oracle() {
-    ::foundation::test::PhiloxStream seeds{0x7061727365746578ULL};
+    ::crucible::test::PhiloxStream seeds{0x7061727365746578ULL};
     for (int round = 0; round < 20000; ++round) {
         std::uint64_t const seed = seeds.next_wide();
         expect_random_text<std::int8_t>(seed);

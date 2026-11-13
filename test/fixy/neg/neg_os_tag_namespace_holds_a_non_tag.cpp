@@ -12,6 +12,9 @@
 // header holds no checks, so the fixture includes the check file of the
 // header, which includes the header and runs its checks.
 
+#include <foundation/Quarantine.h>
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::io::engine {
 
 // Neither empty nor final: not the shape of a tag.
@@ -20,6 +23,7 @@ struct DriftedIntoTheNamespace {
 };
 
 }  // namespace fixy::io::engine
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 #include "../../layer/checks/fixy/atoms/Os.cpp"
 

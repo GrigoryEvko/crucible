@@ -152,7 +152,7 @@ void check_round_trip(std::int64_t value) {
 }
 
 void test_round_trip_of_philox_values() {
-    ::foundation::test::PhiloxStream stream{42};
+    ::crucible::test::PhiloxStream stream{42};
     for (int index = 0; index < 200000; ++index) {
         // A random width reaches the edges of each type.
         std::int64_t const value = static_cast<std::int64_t>(stream.next_wide()) >> stream.below(64);
@@ -169,7 +169,7 @@ void test_round_trip_of_philox_values() {
 // k and q in 0 to 3 is exact in a double, and its truncation is k, or k + 1
 // for a negative k with q > 0.
 void test_narrow_of_a_double_truncates_toward_zero() {
-    ::foundation::test::PhiloxStream stream{43};
+    ::crucible::test::PhiloxStream stream{43};
     for (int index = 0; index < 200000; ++index) {
         auto const whole = static_cast<std::int32_t>(stream.next_word());
         auto const quarters = static_cast<int>(stream.below(4));

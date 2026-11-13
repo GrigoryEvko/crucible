@@ -65,8 +65,8 @@
 //
 // THE PLACE
 //     The place of a site is the expansion point of its location.  A
-//     declaration that a macro makes stands in the file that expands the macro,
-//     as a call of CRUCIBLE_ADMIT_MACHINE_TRANSITION does.  A site in a header
+//     declaration that a macro makes stands in the file that expands the
+//     macro.  A site in a header
 //     outside the source root is no site.  The check file of a header,
 //     test/layer/checks/LAYER/PATH.cpp, stands where include/LAYER/PATH.h
 //     stands, because it holds the checks of that header (CLAUDE.md section XV).
@@ -122,8 +122,8 @@
 //     defines the template first moves the home there, and that
 //     specialization then stands outside the home.  So is a class template
 //     of the namespace foundation or fixy whose home is a header of the two
-//     layers: the rule specialization-home refuses its definition outside
-//     the base (THE BASE ROOTS of specialization.cpp).  A function template
+//     layers: the rule base-namespace refuses its definition outside the
+//     base (namespace.cpp).  A function template
 //     is sealed when the unit defines it or deletes it, also when a row
 //     governs it or it has the open mark, because the rule
 //     specialization-home refuses each explicit specialization of it outside
@@ -831,8 +831,11 @@ bool has_specialization_at_home(tree general) {
 
 // True when GENERAL is a template of the namespace foundation or fixy whose
 // home is a header of the two layers (THE SEALED TEMPLATES).  The rule
-// specialization-home refuses its definition in a file outside the base.
+// base-namespace refuses its definition in a file outside the base.
 bool is_base_root_template(tree general) {
+    if (!is_base_namespace_active()) {
+        return false;
+    }
     tree top = top_namespace(general);
     if (top == NULL_TREE || DECL_NAME(top) == NULL_TREE) {
         return false;

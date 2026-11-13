@@ -1,0 +1,41 @@
+// The extensions of the base that a file outside the base can write: a
+// coherent specialization of a template with the open mark for a type of
+// this file, an overload beside the own type of this file, a friend that
+// names a function of the base, and a using-directive in a namespace of this
+// file, in a function body and after the last include.
+
+namespace own_names {
+constexpr int spare = 0;
+}  // namespace own_names
+
+namespace own {
+using namespace ::own_names;
+}  // namespace own
+
+#include <foundation/core/Niche.h>
+
+namespace own {
+
+struct Slot {
+    int raw = 0;
+    friend constexpr int foundation::core::weigh(int value);
+};
+
+constexpr int weigh(Slot slot) { return slot.raw; }
+
+}  // namespace own
+
+template <>
+struct foundation::core::niche<own::Slot> {
+    static constexpr bool has_niche = true;
+};
+
+using namespace foundation::core;
+
+constexpr int read_slot() {
+    using namespace ::own;
+    return weigh(Slot{4});
+}
+
+static_assert(foundation::core::niche<own::Slot>::has_niche);
+static_assert(read_slot() == 4);

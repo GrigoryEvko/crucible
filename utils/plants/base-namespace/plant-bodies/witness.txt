@@ -1,0 +1,13 @@
+# A file outside the base gives the body of a function template that the base
+# only declares, defines a member function, a static data member and a class
+# of the base, and declares a function of the base again after the header
+# with a new default argument.  The static assertions show that the body and
+# the default argument change the base.  Each site is a compile error in each
+# mode.
+compile bodies src/bodies.cpp base-namespace=on errors=bodies
+exit bodies fail
+finding bodies base-namespace declaration src/bodies.cpp:12:16 | foundation::gates::declared_admit
+finding bodies base-namespace declaration src/bodies.cpp:17:6 | foundation::gates::Box::poke
+finding bodies base-namespace declaration src/bodies.cpp:18:11 | foundation::gates::Box::count
+finding bodies base-namespace declaration src/bodies.cpp:21:27 | foundation::gates::Opaque
+finding bodies base-namespace declaration src/bodies.cpp:28:50 | foundation::gates::defaulted

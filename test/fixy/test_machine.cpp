@@ -4,9 +4,9 @@
 // fixy::mach project and gate on that relation, and the walk runs a
 // second time through a volatile seed so the state is not folded away.
 //
-// The two edges are declared once each way: in a per-machine namespace,
-// and in the shared relation through CRUCIBLE_ADMIT_MACHINE_TRANSITION,
-// so both spellings are exercised.
+// The two edges stand in a per-machine namespace.  A machine that names
+// no relation reads fixy::machine::no_edges, which admits only a move to
+// the same state.
 
 #include <fixy/Machine.h>
 
@@ -44,19 +44,13 @@ inline constexpr ::foundation::fail_closed::edge<Connecting, Connected> connecti
 
 using ConnMachine = Machine<Disconnected, ^^connection_edges>;
 
-// The shared relation, through the macro: the same two edges, for a
-// machine that names no relation of its own.
-CRUCIBLE_ADMIT_MACHINE_TRANSITION(Disconnected, Connecting)
-CRUCIBLE_ADMIT_MACHINE_TRANSITION(Connecting, Connected)
-
 // The relation is what the machine names, and nothing else.
 static_assert(MachineTransition<Disconnected, Connecting, ^^connection_edges>);
 static_assert(MachineTransition<Connecting, Connected, ^^connection_edges>);
 static_assert(!MachineTransition<Connected, Connecting, ^^connection_edges>, "the inverse needs its own edge");
 static_assert(!MachineTransition<Disconnected, Connected, ^^connection_edges>, "no edge skips a state");
-static_assert(MachineTransition<Disconnected, Connecting>, "the macro appended to the shared relation");
-static_assert(MachineTransition<Connecting, Connected>);
-static_assert(!MachineTransition<Connected, Disconnected>);
+static_assert(!MachineTransition<Disconnected, Connecting>, "a machine that names no relation admits no edge");
+static_assert(MachineTransition<Connecting, Connecting>, "the diagonal needs no edge");
 
 // The three helpers of fixy::mach.
 static_assert(std::is_same_v<fmach::state_of_t<ConnMachine>, Disconnected>,
@@ -80,8 +74,8 @@ static_assert(fmach::can_transition_v<ConnMachine, Connecting>,
 static_assert(fmach::can_transition_v<Machine<Connecting, ^^connection_edges>, Connected>,
               "Connecting -> Connected must be a valid transition.");
 
-static_assert(fmach::can_transition_v<Machine<Disconnected>, Connecting>,
-              "the shared relation admits the macro's edge for a machine that names no relation.");
+static_assert(!fmach::can_transition_v<Machine<Disconnected>, Connecting>,
+              "a machine that names no relation admits no edge.");
 
 static_assert(!fmach::can_transition_v<int, Connecting>, "can_transition_v must reject when M is not a Machine.");
 
@@ -102,9 +96,9 @@ static_assert(!std::is_default_constructible_v<ConnMachine>);
 // over another, so an edge admitted in one cannot be borrowed by the other.
 static_assert(!std::is_same_v<ConnMachine, Machine<Disconnected>>);
 static_assert(ConnMachine::edges == ^^connection_edges);
-static_assert(Machine<Disconnected>::edges == ^^fixy::machine::admitted_transitions);
+static_assert(Machine<Disconnected>::edges == ^^fixy::machine::no_edges);
 
-// Both relations walk the same path in a constant expression.
+// The relation walks its path in a constant expression.
 [[nodiscard]] consteval int walk_per_machine() noexcept {
     auto m_disc = mint_machine<Disconnected, ^^connection_edges>();
     auto m_conn = transition_to(std::move(m_disc), Connecting{1});
@@ -113,13 +107,13 @@ static_assert(Machine<Disconnected>::edges == ^^fixy::machine::admitted_transiti
 }
 static_assert(walk_per_machine() == 42);
 
-[[nodiscard]] consteval int walk_shared() noexcept {
-    auto m_disc = mint_machine<Disconnected>();
-    auto m_conn = transition_to(std::move(m_disc), Connecting{1});
-    auto m_done = transition_to(std::move(m_conn), Connected{43});
-    return std::move(m_done).extract().fd;
+// A machine that names no relation moves only to its own state.
+[[nodiscard]] consteval int walk_same_state() noexcept {
+    auto m_conn = mint_machine<Connecting>(1);
+    auto m_again = transition_to(std::move(m_conn), Connecting{43});
+    return std::move(m_again).extract().attempt;
 }
-static_assert(walk_shared() == 43);
+static_assert(walk_same_state() == 43);
 
 namespace {
 

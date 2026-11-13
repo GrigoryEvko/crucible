@@ -150,7 +150,7 @@ void test_consume_of_moved_from_aborts() {
     Box<int> source = mint_box<int>(::foundation::effects::Alloc{}, 1);
     Box<int> target{std::move(source)};
     bool const moved_from_consume_aborts =
-        ::foundation::test::aborts([&source] { static_cast<void>(std::move(source).consume()); });
+        ::crucible::test::aborts([&source] { static_cast<void>(std::move(source).consume()); });
     CRUCIBLE_FATAL_INVARIANT(moved_from_consume_aborts);
     CRUCIBLE_FATAL_INVARIANT(*target == 1);
 }
@@ -160,12 +160,12 @@ void test_consume_of_moved_from_aborts() {
 void test_borrow_of_moved_from_aborts() {
     Box<int> source = mint_box<int>(::foundation::effects::Alloc{}, 2);
     Box<int> target{std::move(source)};
-    bool const view_aborts = ::foundation::test::aborts([&source] { static_cast<void>(source.view()); });
-    bool const star_aborts = ::foundation::test::aborts([&source] { static_cast<void>(*source); });
+    bool const view_aborts = ::crucible::test::aborts([&source] { static_cast<void>(source.view()); });
+    bool const star_aborts = ::crucible::test::aborts([&source] { static_cast<void>(*source); });
     Box<int> const& fixed_source = source;
     bool const fixed_view_aborts =
-        ::foundation::test::aborts([&fixed_source] { static_cast<void>(fixed_source.view()); });
-    bool const fixed_star_aborts = ::foundation::test::aborts([&fixed_source] { static_cast<void>(*fixed_source); });
+        ::crucible::test::aborts([&fixed_source] { static_cast<void>(fixed_source.view()); });
+    bool const fixed_star_aborts = ::crucible::test::aborts([&fixed_source] { static_cast<void>(*fixed_source); });
     CRUCIBLE_FATAL_INVARIANT(view_aborts && star_aborts && fixed_view_aborts && fixed_star_aborts);
     CRUCIBLE_FATAL_INVARIANT(*target == 2);
 }
@@ -202,7 +202,7 @@ void test_each_alignment() {
 // the values.
 void test_agrees_with_plain_model() {
     ::foundation::effects::Alloc const alloc{};
-    ::foundation::test::PhiloxStream stream{0x5EEDB0C5000000A1u};
+    ::crucible::test::PhiloxStream stream{0x5EEDB0C5000000A1u};
     for (int trial = 0; trial < 512; ++trial) {
         std::uint64_t const model_value = stream.next_wide();
         Box<std::uint64_t> source = mint_box<std::uint64_t>(alloc, model_value);

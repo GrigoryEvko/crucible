@@ -9,6 +9,7 @@
 // concept.
 #include <fixy/session/Delegate.h>
 #include <fixy/session/Projection.h>
+#include <foundation/Quarantine.h>
 
 namespace neg_sess_seal_delegates_to_own_peer_types {
 struct Wire {
@@ -23,9 +24,11 @@ using Handed = ::fixy::session::DelegatedSession<TalksToBob, Wire, ::fixy::sessi
 using HandsToBob = ::fixy::session::Send<::fixy::session::PeerMsg<Bob, Hand, Handed>, ::fixy::session::End>;
 }  // namespace neg_sess_seal_delegates_to_own_peer_types
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::session {
 template <>
 inline constexpr bool delegates_to_own_peer_v<neg_sess_seal_delegates_to_own_peer_types::HandsToBob> = false;
 }  // namespace fixy::session
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() { return 0; }

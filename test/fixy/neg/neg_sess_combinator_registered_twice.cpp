@@ -9,6 +9,7 @@
 // Expected diagnostic: the registry holds a combinator registration that
 // its seal does not count.
 #include <fixy/session/Registry.h>
+#include <foundation/Quarantine.h>
 
 namespace fixy::session {
 template <typename T, typename Rest>
@@ -17,6 +18,7 @@ template <typename T, typename Rest>
 struct Recv;
 }  // namespace fixy::session
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::session::combinators {
 inline constexpr ::fixy::session::transition::combinator send_again{
     .shape = ^^::fixy::session::Send,
@@ -25,6 +27,7 @@ inline constexpr ::fixy::session::transition::combinator send_again{
     .dual = ^^::fixy::session::Recv,
     .payload_variance = ::fixy::session::transition::variance::invariant};
 }  // namespace fixy::session::combinators
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 #include <fixy/session/Protocol.h>
 

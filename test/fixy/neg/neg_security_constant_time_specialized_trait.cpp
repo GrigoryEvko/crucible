@@ -5,8 +5,11 @@
 // the template-id of a concept declares nothing.
 
 #include <fixy/Atom.h>
+#include <foundation/Quarantine.h>
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 template <>
 inline constexpr bool fixy::atom::IsConstantTime<fixy::atom::as_secret> = true;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() { return 0; }

@@ -1,0 +1,32 @@
+// Each definition of an entity of the base outside the base, and each
+// redeclaration after the header, is a finding.
+
+#include <foundation/gates.h>
+
+namespace evil {
+struct Evil {};
+}  // namespace evil
+
+// A body of a function template that the base only declares.
+template <class T>
+constexpr bool foundation::gates::declared_admit(T const&) {
+    return true;
+}
+
+// A member function and a static data member of a class of the base.
+void foundation::gates::Box::poke() { value = 1; }
+const int foundation::gates::Box::count = 0;
+
+// The definition of a class that the base only declares.
+struct foundation::gates::Opaque {
+    int hidden = 0;
+};
+
+// A redeclaration after the header adds a default argument.  GCC keeps the
+// location of the first declaration, in the header.
+namespace foundation::gates {
+constexpr int defaulted(int first, int second = 2);
+}  // namespace foundation::gates
+
+static_assert(foundation::gates::ReadsDeclared<evil::Evil>);
+static_assert(foundation::gates::defaulted(1) == 3);

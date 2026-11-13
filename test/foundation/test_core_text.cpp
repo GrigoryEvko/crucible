@@ -81,8 +81,8 @@ void test_fixed_text_loop_and_clear() {
 // past the end end the process in each build.
 void test_text_cursor_at_the_end_aborts() {
     TextView const pair{"ab"};
-    bool const end_read_aborts = ::foundation::test::aborts([&pair] { static_cast<void>(*pair.end()); });
-    bool const past_end_step_aborts = ::foundation::test::aborts([&pair] {
+    bool const end_read_aborts = ::crucible::test::aborts([&pair] { static_cast<void>(*pair.end()); });
+    bool const past_end_step_aborts = ::crucible::test::aborts([&pair] {
         auto cursor = pair.begin();
         ++cursor;
         ++cursor;

@@ -202,12 +202,12 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // A word of each magnitude: the shift makes a small word as frequent as a
 // large word.
-[[nodiscard]] std::uint64_t draw_word(::foundation::test::PhiloxStream& stream) noexcept {
+[[nodiscard]] std::uint64_t draw_word(::crucible::test::PhiloxStream& stream) noexcept {
     return stream.next_wide() >> stream.below(64);
 }
 
 // A signed value of each magnitude and of each sign.
-[[nodiscard]] std::int64_t draw_signed(::foundation::test::PhiloxStream& stream) noexcept {
+[[nodiscard]] std::int64_t draw_signed(::crucible::test::PhiloxStream& stream) noexcept {
     std::uint64_t const magnitude = draw_word(stream);
     return static_cast<std::int64_t>(stream.below(2) == 0 ? magnitude : 0 - magnitude);
 }
@@ -239,7 +239,7 @@ void check_bits(std::uint64_t word, int count) {
 // The bit operations agree with <bit> for each word and each count, also
 // for the minimum of int as a count.  Linear in the count of trials.
 void test_bit_operations_agree() {
-    ::foundation::test::PhiloxStream stream{0x5EED00000000B175u};
+    ::crucible::test::PhiloxStream stream{0x5EED00000000B175u};
     for (int trial = 0; trial < 20000; ++trial) {
         std::uint64_t const word = opaque(draw_word(stream));
         check_bits(word, opaque(static_cast<int>(stream.next_word())));
@@ -290,7 +290,7 @@ void check_compares(std::int64_t signed_value, std::uint64_t unsigned_value, std
 // clamp agree with <algorithm> for integers.  Linear in the count of
 // trials.
 void test_compares_agree() {
-    ::foundation::test::PhiloxStream stream{0x5EED00000000C0A7u};
+    ::crucible::test::PhiloxStream stream{0x5EED00000000C0A7u};
     for (int trial = 0; trial < 20000; ++trial) {
         check_compares(opaque(draw_signed(stream)), opaque(draw_word(stream)), opaque(draw_signed(stream)));
     }
@@ -326,7 +326,7 @@ void check_gcd(std::int64_t left, std::int64_t right) {
 // gives a gcd other than 1.  gcd of the minimum of a signed type has no std
 // answer, so the factors are below 2^21.  Linear in the count of trials.
 void test_arithmetic_agrees() {
-    ::foundation::test::PhiloxStream stream{0x5EED00000000A417u};
+    ::crucible::test::PhiloxStream stream{0x5EED00000000A417u};
     for (int trial = 0; trial < 20000; ++trial) {
         check_arithmetic(opaque(static_cast<std::int32_t>(draw_signed(stream))),
                          opaque(static_cast<std::int32_t>(draw_signed(stream))));
@@ -447,7 +447,7 @@ void test_floats_agree() {
             }
         }
     }
-    ::foundation::test::PhiloxStream stream{0x5EED00000000F10Au};
+    ::crucible::test::PhiloxStream stream{0x5EED00000000F10Au};
     constexpr std::uint64_t one_bits = 0x3FF0000000000000u;
     for (int trial = 0; trial < 20000; ++trial) {
         double const left = core::bit_cast<double>(opaque(stream.next_wide()));

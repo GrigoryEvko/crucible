@@ -4,6 +4,7 @@
 // would for a variable template.  IsInstanceOf is a concept, and the
 // template-id of a concept declares nothing.
 
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Capability.h>
 #include <foundation/reflect/Instance.h>
 
@@ -13,7 +14,9 @@ struct Fake final {};
 
 }  // namespace
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 template <>
 inline constexpr bool foundation::reflect::IsInstanceOf<Fake, ^^foundation::effects::Capability> = true;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() { return 0; }

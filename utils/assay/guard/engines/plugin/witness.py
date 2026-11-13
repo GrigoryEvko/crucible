@@ -49,15 +49,16 @@ THE KEYS OF A COMPILE
                     default is the limit of the row padded-list
                     of utils/registry.txt, as for each compile of the tree
       build=PATH, stamps=PATH, stamp=TEXT, sentinel=PATH, not-standalone=PATH,
-      library-records=on, must-consume=on, linear-shapes=on, specialization-home=on
+      library-records=on, must-consume=on, linear-shapes=on, specialization-home=on,
+      base-namespace=on
                     the plugin arguments, with no default.  A sentinel is
                     relative to the root, and each other PATH is a path of
                     the manifest.  Only a compile with library-records=on has
                     the records of the library code, only a compile with
                     linear-shapes=on has the lines of the rules of the shapes
                     of the family linear, and only a compile with
-                    must-consume=on or specialization-home=on has the lines
-                    of that rule
+                    must-consume=on, specialization-home=on or
+                    base-namespace=on has the lines of that rule
     The value "-" gives no argument.
       out=no        no argument out.  By default the witness gives out=DIR, a
                     directory of its own, and reads the report file there
@@ -112,16 +113,17 @@ THE DERIVED DIAGNOSTICS
     its location.  The key errors=OTHER says that the errors of the compile
     are the finding rows of the compile OTHER.  In the mode report, only a
     finding of the rules of EACH_MODE_RULES, a finding of a kind of
-    SPECIALIZATION_ERRORS of the rule specialization-home, and a finding of a
-    kind of SCOPE_ERRORS of the rule brand-escape, gives an error.
+    SPECIALIZATION_ERRORS of the rule specialization-home, a finding of a
+    kind of BASE_NAMESPACE_ERRORS of the rule base-namespace, and a finding
+    of a kind of SCOPE_ERRORS of the rule brand-escape give an error.
     The message of the error of each other finding holds
     "quarantine: KIND ENTITY" with a semicolon after the entity.  A finding of the rule
     contract-specifier gives the error of the contract rule, a finding of the
     rules binding-hook and borrow-match gives the start of its error, and a
-    finding of the rule specialization-home or of a scope kind of the rule
-    brand-escape gives the text of its kind.  The record open-extension of
-    the rule specialization-home is no finding, so it gives no error in each
-    mode.  A
+    finding of the rules specialization-home and base-namespace or of a scope
+    kind of the rule brand-escape gives the text of its kind.  The record
+    open-extension of the rule specialization-home is no finding, so it gives
+    no error in each mode.  A
     finding at the line 0, a fact of all the unit, gives an error with no
     location.
     The key notes=OTHER says that each finding row of OTHER gives a note
@@ -244,6 +246,7 @@ PLUGIN_KEYS = (
     "must-consume",
     "linear-shapes",
     "specialization-home",
+    "base-namespace",
 )
 PATH_KEYS = frozenset({"root", "rules", "build", "stamps", "not-standalone"})
 DEFAULTS = {"root": ".", "rules": "rules.txt", "mode": "report"}
@@ -277,8 +280,14 @@ SPECIALIZATION_RULE = "specialization-home"
 SPECIALIZATION_ERRORS = {
     "specialization": "this file specializes the template '{entity}' outside its home",
     "orphan": "this file specializes the extension point '{entity}' for a type that a different file defines",
-    "foreign-primary": "this file declares the template '{entity}' of the base first, outside the base",
     "forward-declaration": "this file declares the variable template '{entity}' with 'extern' before its definition",
+}
+# The rule base-namespace, and the start of the error of each of its kinds (THE ERRORS of
+# utils/tools/quarantine/namespace.cpp).
+BASE_NAMESPACE_RULE = "base-namespace"
+BASE_NAMESPACE_ERRORS = {
+    "declaration": "this file declares '{entity}' in a namespace of the base, outside the base",
+    "using-directive": "this using-directive of the namespace '{entity}' can change a lookup of the base",
 }
 # The record of the rule specialization-home.  A record is no finding, so it gives no error in each mode.
 SPECIALIZATION_RECORD = "open-extension"
@@ -775,11 +784,12 @@ def diagnostic_difference(
 
 def is_each_mode(finding: plugin_sections.Finding) -> bool:
     """Return True for a finding that gives an error in each mode: a finding of a rule of EACH_MODE_RULES, a kind of
-    SPECIALIZATION_ERRORS of the rule specialization-home, or a kind of SCOPE_ERRORS of the rule brand-escape (THE
-    DERIVED DIAGNOSTICS)."""
+    SPECIALIZATION_ERRORS of the rule specialization-home, a kind of BASE_NAMESPACE_ERRORS of the rule
+    base-namespace, or a kind of SCOPE_ERRORS of the rule brand-escape (THE DERIVED DIAGNOSTICS)."""
     return (
         finding.rule in EACH_MODE_RULES
         or (finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS)
+        or (finding.rule == BASE_NAMESPACE_RULE and finding.kind in BASE_NAMESPACE_ERRORS)
         or (finding.rule == BRAND_ESCAPE_RULE and finding.kind in SCOPE_ERRORS)
     )
 
@@ -805,6 +815,8 @@ def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: b
             errors.append((place, BORROW_ERROR.format(entity=finding.entity)))
         elif finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS:
             errors.append((place, SPECIALIZATION_ERRORS[finding.kind].format(entity=finding.entity)))
+        elif finding.rule == BASE_NAMESPACE_RULE and finding.kind in BASE_NAMESPACE_ERRORS:
+            errors.append((place, BASE_NAMESPACE_ERRORS[finding.kind].format(entity=finding.entity)))
         elif finding.rule == BRAND_ESCAPE_RULE and finding.kind in SCOPE_ERRORS:
             errors.append((place, SCOPE_ERRORS[finding.kind]))
         else:

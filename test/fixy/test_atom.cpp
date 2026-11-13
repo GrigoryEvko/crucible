@@ -215,9 +215,13 @@ struct private_stream final {};
 
 }  // namespace
 
+// The rule base-namespace of the quarantine plugin makes this declaration a
+// compile error outside an opt-out region.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test plants an atom in a shipped family, and IsAtom must refuse it")
 namespace fixy::atom::ctrl {
 struct planted_flow final : atom_of<Axis::ControlFlow> {};
 }  // namespace fixy::atom::ctrl
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // The rule specialization-home of the quarantine plugin makes this
 // specialization a compile error outside an opt-out region.

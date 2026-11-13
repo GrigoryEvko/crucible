@@ -74,7 +74,7 @@ void check_each_time_pair(Rep value) {
 }
 
 void test_convert_agrees_with_the_model() {
-    ::foundation::test::PhiloxStream stream{80};
+    ::crucible::test::PhiloxStream stream{80};
     for (int index = 0; index < 100000; ++index) {
         // A shift of the draw reaches the small numbers and the whole numbers
         // of each unit.
@@ -96,7 +96,7 @@ void test_convert_agrees_with_the_model() {
 
 // A conversion to a finer unit and back gives the number again.
 void test_convert_round_trips() {
-    ::foundation::test::PhiloxStream stream{81};
+    ::crucible::test::PhiloxStream stream{81};
     for (int index = 0; index < 100000; ++index) {
         auto const value = static_cast<std::int64_t>(stream.next_wide() >> 34) - (std::int64_t{1} << 29);
         core::Quantity<unit::Second, std::int64_t> const seconds{opaque(value)};
@@ -108,7 +108,7 @@ void test_convert_round_trips() {
 
 // The arithmetic of quantities is the arithmetic of their numbers.
 void test_arithmetic_keeps_the_unit() {
-    ::foundation::test::PhiloxStream stream{82};
+    ::crucible::test::PhiloxStream stream{82};
     for (int index = 0; index < 100000; ++index) {
         auto const left = static_cast<std::int32_t>(stream.next_word());
         auto const right = static_cast<std::int32_t>(stream.next_word());

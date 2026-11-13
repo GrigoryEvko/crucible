@@ -53,7 +53,7 @@ public:
 };
 
 void test_exchange_and_swap_of_words() {
-    ::foundation::test::PhiloxStream stream{70};
+    ::crucible::test::PhiloxStream stream{70};
     for (int index = 0; index < 100000; ++index) {
         std::uint64_t const first = stream.next_wide();
         std::uint64_t const second = stream.next_wide();

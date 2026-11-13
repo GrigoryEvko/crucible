@@ -117,6 +117,12 @@
 //                    (specialization.cpp).  Quarantine.cmake gives it to each
 //                    compile of the tree, and a compile of a plant of a
 //                    different rule has no such argument
+//     base-namespace=on
+//                    run the rule base-namespace of the family base namespace
+//                    on each declaration of a namespace of the base
+//                    (namespace.cpp).  Quarantine.cmake gives it to each
+//                    compile of the tree, and a compile of a plant of a
+//                    different rule has no such argument
 //
 // THE DEPENDENCIES
 //     utils/assay/loop/stamps.py writes DIR/modes/PATH for each source file of
@@ -408,6 +414,7 @@ void walk_unit() {
     walk_owner();
     finish_linear_rules();
     finish_borrow_matches();
+    finish_base_namespace();
 }
 
 // The parse of the unit, and then the walks of its end.  When the parse
@@ -587,8 +594,9 @@ void report(bool can_add_dependencies) {
         bool is_file_error =
             is_include_kind(finding.kind) ? finding.file->is_include_error_mode : finding.file->is_error_mode;
         bool is_error = state.is_error_mode || is_file_error || is_language;
-        // The contract rule, the unit facts, the rule specialization-home and
-        // the escapes of a scope brand give an error in each mode.
+        // The contract rule, the unit facts, the rules specialization-home and
+        // base-namespace and the escapes of a scope brand give an error in
+        // each mode.
         if (finding.kind == Kind::contract_specifier && !is_out) {
             report_contract(finding);
         } else if (finding.kind == Kind::binding_hook && !is_out) {
@@ -597,6 +605,8 @@ void report(bool can_add_dependencies) {
             report_borrow_match(finding);
         } else if (rule_of_finding == Rule::specialization_home && !is_out) {
             report_specialization(finding);
+        } else if (rule_of_finding == Rule::base_namespace && !is_out) {
+            report_base_namespace(finding);
         } else if (rule_of_finding == Rule::brand_escape && !is_out) {
             report_scope_escape(finding);
         } else if (is_each_mode_kind(finding.kind) && !is_out) {
@@ -670,6 +680,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     bool checks_must_consume = false;
     bool checks_linear_shapes = false;
     bool checks_specialization_home = false;
+    bool checks_base_namespace = false;
     for (int index = 0; index < plugin_info->argc; ++index) {
         std::string key = plugin_info->argv[index].key;
         std::string value = plugin_info->argv[index].value != nullptr ? plugin_info->argv[index].value : "";
@@ -738,10 +749,18 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
                 return 1;
             }
             checks_specialization_home = true;
+        } else if (key == "base-namespace") {
+            if (value != "on") {
+                error("quarantine: base-namespace is %qs; give base-namespace=on to run the rule base-namespace, or "
+                      "no such argument",
+                      value.c_str());
+                return 1;
+            }
+            checks_base_namespace = true;
         } else {
             error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out, stamps, stamp, "
                   "kinds, sentinel, not-standalone, padded-list-limit, library-records, must-consume, "
-                  "linear-shapes and specialization-home",
+                  "linear-shapes, specialization-home and base-namespace",
                   key.c_str());
             return 1;
         }
@@ -802,6 +821,9 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     }
     if (checks_specialization_home) {
         register_specialization_home(plugin_info->base_name);
+    }
+    if (checks_base_namespace) {
+        register_base_namespace(plugin_info->base_name);
     }
     front_end_parse_file = lang_hooks.parse_file;
     lang_hooks.parse_file = parse_and_walk;

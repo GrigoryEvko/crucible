@@ -239,7 +239,7 @@ void require_mixed_rebuild_aborts(Split split) {
     static_assert(std::is_same_v<decltype(parts_a), decltype(parts_b)>, "one split site is one type");
     using Whole = std::remove_cvref_t<decltype(std::get<0>(parts_a.shards))>::brand_type;
     using Region = OwnedRegion<std::uint64_t, DataA, Whole>;
-    CRUCIBLE_TEST_REQUIRE(::foundation::test::aborts([&] {
+    CRUCIBLE_TEST_REQUIRE(::crucible::test::aborts([&] {
         auto mixed = std::tuple{std::move(std::get<0>(parts_a.shards)), std::move(std::get<1>(parts_b.shards))};
         (void)Region::recombine(std::move(parts_a.witness), std::move(mixed));
     }));
@@ -261,7 +261,7 @@ void require_recombine_aborts_without_shard() {
     auto parts = split_branded_in_two(storage);
     using Region = OwnedRegion<std::uint64_t, DataA,
                                typename std::remove_cvref_t<decltype(std::get<0>(parts.shards))>::brand_type>;
-    CRUCIBLE_TEST_REQUIRE(::foundation::test::aborts([&] {
+    CRUCIBLE_TEST_REQUIRE(::crucible::test::aborts([&] {
         auto kept = std::move(std::get<KeptIndex>(parts.shards));
         (void)Region::recombine(std::move(parts.witness), std::move(parts.shards));
         kept.span()[0] = 7;

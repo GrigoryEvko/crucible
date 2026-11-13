@@ -1,0 +1,15 @@
+#pragma once
+
+#include <foundation/OpenExtension.h>
+
+namespace foundation::core {
+
+// A type states its niche beside its own definition, in each file.
+template <class T>
+struct [[= ::foundation::open_extension{"a type states its niche beside its own definition"}]] niche {
+    static constexpr bool has_niche = false;
+};
+
+constexpr int weigh(int value) { return value; }
+
+}  // namespace foundation::core

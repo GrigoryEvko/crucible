@@ -35,7 +35,7 @@ static_assert(MachineTransition<Connecting, Connected, ^^connection_edges>);
 static_assert(MachineTransition<Connected, Connected, ^^connection_edges>, "the diagonal needs no declaration");
 static_assert(!MachineTransition<Connecting, Disconnected, ^^connection_edges>, "the relation is one-way");
 static_assert(!MachineTransition<Disconnected, Connected, ^^connection_edges>, "no edge skips a state");
-static_assert(!MachineTransition<Disconnected, Connecting>, "an edge in one relation is not in the shared one");
+static_assert(!MachineTransition<Disconnected, Connecting>, "a machine that names no relation admits no edge");
 
 static_assert(std::is_same_v<mach::state_of_t<ConnMachine>, Disconnected>);
 static_assert(std::is_same_v<mach::state_of_t<Machine<int>&>, int>, "state_of_t<Machine<int>&> must project to int");

@@ -116,7 +116,7 @@ template <typename T, std::size_t Alignment>
 }  // namespace
 
 int main() {
-    using foundation::test::aborts;
+    using crucible::test::aborts;
 
     if (const int failed = alignment_is_honoured(); failed != 0) return 10 + failed;
     if (const int failed = huge_page_buffer_is_one_page(); failed != 0) return 20 + failed;

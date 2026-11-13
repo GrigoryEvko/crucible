@@ -20,7 +20,7 @@ namespace {
 
 namespace fa = ::foundation::algebra;
 using ::fixy::Stale;
-using ::foundation::test::aborts;
+using ::crucible::test::aborts;
 using SS = fa::lattices::StalenessSemiring;
 namespace st = fa::lattices::staleness;
 

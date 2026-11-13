@@ -35,19 +35,19 @@ enum class Phase : std::uint8_t {
 
 void test_fatal_ends_the_process() {
     bool const fatal_aborts =
-        ::foundation::test::aborts([] { ::foundation::core::fatal("the test stops here on purpose"); });
+        ::crucible::test::aborts([] { ::foundation::core::fatal("the test stops here on purpose"); });
     CRUCIBLE_FATAL_INVARIANT(fatal_aborts);
 }
 
 void test_unreachable_ends_the_process() {
-    bool const unreachable_aborts = ::foundation::test::aborts([] { ::foundation::core::unreachable(); });
+    bool const unreachable_aborts = ::crucible::test::aborts([] { ::foundation::core::unreachable(); });
     CRUCIBLE_FATAL_INVARIANT(unreachable_aborts);
 }
 
 // A fatal exit with arguments ends the process too.  test/harness/
 // check_output.py reads the text of a fatal exit.
 void test_fatal_with_arguments_ends_the_process() {
-    bool const fatal_aborts = ::foundation::test::aborts([] {
+    bool const fatal_aborts = ::crucible::test::aborts([] {
         ::foundation::core::fatal("the test stops at {} of {} on purpose, {}", 3, -4,
                                   ::foundation::core::TextView{"with a text"});
     });
@@ -69,7 +69,7 @@ void test_switch_reaches_unreachable_only_outside_the_enumerators() {
     CRUCIBLE_FATAL_INVARIANT(weight_of(Phase::done) == 3);
     for (std::uint8_t raw = 3; raw < 6; ++raw) {
         Phase const outside = static_cast<Phase>(raw);
-        bool const outside_aborts = ::foundation::test::aborts([outside] { static_cast<void>(weight_of(outside)); });
+        bool const outside_aborts = ::crucible::test::aborts([outside] { static_cast<void>(weight_of(outside)); });
         CRUCIBLE_FATAL_INVARIANT(outside_aborts);
     }
 }
@@ -78,10 +78,9 @@ void test_switch_reaches_unreachable_only_outside_the_enumerators() {
 // second arm while the first arm is open is a fatal exit, and the first arm
 // catches it.  After that, the probe arms again.
 void test_abort_probe_refuses_a_second_open_arm() {
-    bool const second_arm_aborts =
-        ::foundation::test::aborts([] { static_cast<void>(::foundation::test::aborts([] {})); });
+    bool const second_arm_aborts = ::crucible::test::aborts([] { static_cast<void>(::crucible::test::aborts([] {})); });
     CRUCIBLE_FATAL_INVARIANT(second_arm_aborts);
-    bool const later_arm_aborts = ::foundation::test::aborts([] { ::foundation::core::unreachable(); });
+    bool const later_arm_aborts = ::crucible::test::aborts([] { ::foundation::core::unreachable(); });
     CRUCIBLE_FATAL_INVARIANT(later_arm_aborts);
 }
 

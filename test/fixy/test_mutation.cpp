@@ -31,7 +31,7 @@ using ::fixy::Monotonic;
 using ::fixy::OrderedAppendOnly;
 using ::fixy::WriteOnce;
 using ::fixy::WriteOnceNonNull;
-using ::foundation::test::aborts;
+using ::crucible::test::aborts;
 
 // ── Storage regimes ──────────────────────────────────────────────────
 //

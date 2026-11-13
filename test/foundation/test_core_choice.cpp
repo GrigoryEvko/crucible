@@ -112,7 +112,7 @@ void test_expect_empties_the_source() {
 
 void test_expect() {
     CRUCIBLE_FATAL_INVARIANT(Option<int>::some(7).expect("the test gives a seven") == 7);
-    bool const empty_expect_aborts = ::foundation::test::aborts(
+    bool const empty_expect_aborts = ::crucible::test::aborts(
         [] { static_cast<void>(Option<int>{}.expect("the test option is empty on purpose")); });
     CRUCIBLE_FATAL_INVARIANT(empty_expect_aborts);
 }
@@ -140,10 +140,10 @@ void test_loop() {
 // empty Option.
 void test_end_cursor_read_aborts() {
     Option<int> holder = Option<int>::some(9);
-    bool const end_read_aborts = ::foundation::test::aborts([&holder] { static_cast<void>(*holder.end()); });
+    bool const end_read_aborts = ::crucible::test::aborts([&holder] { static_cast<void>(*holder.end()); });
     CRUCIBLE_FATAL_INVARIANT(end_read_aborts);
     Option<int> empty{};
-    bool const empty_read_aborts = ::foundation::test::aborts([&empty] { static_cast<void>(*empty.begin()); });
+    bool const empty_read_aborts = ::crucible::test::aborts([&empty] { static_cast<void>(*empty.begin()); });
     CRUCIBLE_FATAL_INVARIANT(empty_read_aborts);
 }
 
@@ -207,7 +207,7 @@ void test_owning_assignment() {
 // flag and one value gives equal pairs.  The values come from a small range,
 // so equal payloads occur often.
 void test_equality_agrees_with_plain_model() {
-    ::foundation::test::PhiloxStream stream{0x5EEDC401CE000002u};
+    ::crucible::test::PhiloxStream stream{0x5EEDC401CE000002u};
     for (int trial = 0; trial < 4096; ++trial) {
         std::uint64_t const left_value = stream.next_word() & 3u;
         std::uint64_t const right_value = stream.next_word() & 3u;
@@ -311,7 +311,7 @@ void test_niche_payload() {
 // so Option::some refuses it in each build.
 void test_niche_empty_value_aborts() {
     bool const empty_value_aborts =
-        ::foundation::test::aborts([] { static_cast<void>(Option<SlotNumber>::some(SlotNumber{0xFFFFFFFFu})); });
+        ::crucible::test::aborts([] { static_cast<void>(Option<SlotNumber>::some(SlotNumber{0xFFFFFFFFu})); });
     CRUCIBLE_FATAL_INVARIANT(empty_value_aborts);
 }
 
@@ -335,7 +335,7 @@ void test_member_niche_payload() {
     CRUCIBLE_FATAL_INVARIANT(empty_slot.is_none() && held_slot.is_some());
     CRUCIBLE_FATAL_INVARIANT(static_cast<Option<MemberSlot>&&>(held_slot).expect("the slot was built").raw == 6);
     bool const empty_value_aborts =
-        ::foundation::test::aborts([] { static_cast<void>(Option<MemberSlot>::some(MemberSlot{0xFFFFFFFFu})); });
+        ::crucible::test::aborts([] { static_cast<void>(Option<MemberSlot>::some(MemberSlot{0xFFFFFFFFu})); });
     CRUCIBLE_FATAL_INVARIANT(empty_value_aborts);
 }
 
@@ -367,7 +367,7 @@ void test_niche_validity_of_bit_copy() {
 // makes one turn exactly when the model holds a value, and expect,
 // value_or and match give the value back.
 void test_agrees_with_plain_model() {
-    ::foundation::test::PhiloxStream stream{0x5EEDC401CE000001u};
+    ::crucible::test::PhiloxStream stream{0x5EEDC401CE000001u};
     for (int trial = 0; trial < 4096; ++trial) {
         std::uint64_t const model_value = stream.next_wide();
         bool const model_holds = (stream.next_word() & 1u) != 0;
@@ -430,7 +430,7 @@ void test_result_roads() {
     CRUCIBLE_FATAL_INVARIANT(half_of(6).match([](int&& value) noexcept { return value; }, coded) == 3);
 
     bool const error_expect_aborts =
-        ::foundation::test::aborts([] { static_cast<void>(half_of(7).expect("the test value is odd on purpose")); });
+        ::crucible::test::aborts([] { static_cast<void>(half_of(7).expect("the test value is odd on purpose")); });
     CRUCIBLE_FATAL_INVARIANT(error_expect_aborts);
 }
 
@@ -443,7 +443,7 @@ void test_result_of_unit() {
     close_when(true).expect("an open door closes");
     CRUCIBLE_FATAL_INVARIANT(close_when(false).is_err());
     bool const unit_expect_aborts =
-        ::foundation::test::aborts([&close_when] { close_when(false).expect("the test door is closed on purpose"); });
+        ::crucible::test::aborts([&close_when] { close_when(false).expect("the test door is closed on purpose"); });
     CRUCIBLE_FATAL_INVARIANT(unit_expect_aborts);
 }
 
@@ -513,7 +513,7 @@ void test_result_linear_error() {
 // The property: half_of agrees with a plain model for random values, on
 // each road to the value and to the error.
 void test_result_agrees_with_plain_model() {
-    ::foundation::test::PhiloxStream stream{0x5EEDC401CE000002u};
+    ::crucible::test::PhiloxStream stream{0x5EEDC401CE000002u};
     for (int trial = 0; trial < 4096; ++trial) {
         int const value = static_cast<int>(stream.below(1u << 20));
         bool const model_is_even = value % 2 == 0;

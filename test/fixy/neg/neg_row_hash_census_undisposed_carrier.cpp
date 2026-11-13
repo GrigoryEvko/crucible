@@ -12,8 +12,12 @@
 //
 // Expected diagnostic: a carrier in a censused namespace is unproven.
 
+#include <foundation/Quarantine.h>
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")
 namespace fixy::session {
 class UndisposedDoor {};
 }  // namespace fixy::session
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 #include "../row_hash_census.h"

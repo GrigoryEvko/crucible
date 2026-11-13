@@ -224,7 +224,7 @@ void test_decode_refuses_the_empty_value_of_a_niche() {
     assert(decode<NicheWord>(opaque(std::uint32_t{0xFFFFFFFFu})).is_none());
     assert(decode<NicheWord>(opaque(std::uint32_t{0xFFFFFFFEu})).is_some());
     assert(decode<NicheWord>(opaque(std::uint32_t{0})).expect("0 is no empty value").value == 0);
-    ::foundation::test::PhiloxStream stream{90};
+    ::crucible::test::PhiloxStream stream{90};
     for (int index = 0; index < 100000; ++index) {
         std::uint32_t const word = stream.next_word();
         std::uint64_t const flag = stream.below(3);
@@ -239,7 +239,7 @@ void test_decode_refuses_the_empty_value_of_a_niche() {
 // bit_cast keeps each bit, and a float source is a source: each pattern
 // goes to a word and back.
 void test_bit_cast_keeps_each_bit() {
-    ::foundation::test::PhiloxStream stream{91};
+    ::crucible::test::PhiloxStream stream{91};
     for (int index = 0; index < 100000; ++index) {
         std::uint64_t const wide = stream.next_wide();
         auto const narrow = static_cast<std::uint32_t>(wide);

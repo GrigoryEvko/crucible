@@ -25,7 +25,7 @@ namespace {
 namespace fa = ::foundation::algebra;
 using ::fixy::Refined;
 using ::fixy::SealedRefined;
-using ::foundation::test::aborts;
+using ::crucible::test::aborts;
 
 struct TwoWords {
     std::uint64_t lo = 0;
