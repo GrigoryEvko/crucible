@@ -13,6 +13,12 @@ namespace topology = crucible::topology;
 namespace cog = crucible::cog;
 namespace eff = ::fixy;
 
+// The element at position of a view that the test filled.
+template <class T>
+[[nodiscard]] static T const& element_at(::fixy::View<T const> view, std::size_t position) {
+    return *view.get(position).expect("the test reads an element that the view holds");
+}
+
 // The log spelling of the four enums comes from reflection.
 static void test_enum_names_come_from_reflection() {
     using ::foundation::reflect::enum_name;
@@ -44,24 +50,23 @@ static void test_lspci_and_graph_materialization() {
                                        "Vendor:\tNVIDIA Corporation\n"
                                        "Device:\tH100 PCIe\n";
 
-    auto status = topology::parse_lspci_vmm_tree(topology::tag_external_discovery_text(lspci), snapshot);
-    assert(status.has_value());
-    assert(status->records_seen == 3);
-    assert(status->records_admitted == 3);
+    auto const status = topology::parse_lspci_vmm_tree(topology::tag_external_discovery_text(lspci), snapshot)
+                            .expect("the lspci tree parses");
+    assert(status.records_seen == 3);
+    assert(status.records_admitted == 3);
     assert(snapshot.node_count() == 3);
     assert(snapshot.edge_count() == 2);
-    assert(snapshot.nodes()[0].kind == cog::CogKind::PcieRoot);
-    assert(snapshot.nodes()[1].kind == cog::CogKind::NicPort);
-    assert(snapshot.nodes()[2].kind == cog::CogKind::Gpu);
-    assert(snapshot.nodes()[1].vendor.value() == std::string_view{"Mellanox Technologies"});
+    assert(element_at(snapshot.nodes(), 0).kind == cog::CogKind::PcieRoot);
+    assert(element_at(snapshot.nodes(), 1).kind == cog::CogKind::NicPort);
+    assert(element_at(snapshot.nodes(), 2).kind == cog::CogKind::Gpu);
+    assert(element_at(snapshot.nodes(), 1).vendor.value() == std::string_view{"Mellanox Technologies"});
 
     auto graph = snapshot.graph(ctx);
     assert(graph.node_count() == 3);
     assert(graph.edge_count() == 2);
-    auto edge = graph.edge_by_id(topology::EdgeId{0});
-    assert(edge != nullptr);
-    assert(edge->kind == topology::LinkKind::PciE);
-    assert(edge->peer == &snapshot.nodes()[1]);
+    topology::TopologyEdge const edge = graph.edge_by_id(topology::EdgeId{0}).expect("the graph holds edge 0");
+    assert(edge.kind == topology::LinkKind::PciE);
+    assert(edge.peer == topology::NodeId{1});
     crucible::test::pass("  test_lspci_and_graph_materialization: PASSED\n");
 }
 
@@ -74,17 +79,16 @@ static void test_ethtool_features_and_lldp() {
         .model = topology::tag_vendor_discovery_string("ConnectX-6"),
         .bus_info = topology::tag_vendor_discovery_string("0000:65:00.0"),
     };
-    auto local_idx = snapshot.add_node(local);
-    assert(local_idx.has_value());
+    std::uint16_t const local_idx = snapshot.add_node(local).expect("an empty snapshot has room for a node");
 
     constexpr std::string_view info = "driver: mlx5_core\n"
                                       "firmware-version: 22.39.1002\n"
                                       "bus-info: 0000:65:00.0\n";
-    auto info_status = topology::parse_ethtool_info(topology::tag_external_discovery_text(info), snapshot, *local_idx);
-    assert(info_status.has_value());
-    assert(snapshot.node_facts()[*local_idx].driver.value() == std::string_view{"mlx5_core"});
-    assert(snapshot.node_facts()[*local_idx].firmware.value() == std::string_view{"22.39.1002"});
-    assert(snapshot.nodes()[*local_idx].firmware_revision.value()
+    auto info_status = topology::parse_ethtool_info(topology::tag_external_discovery_text(info), snapshot, local_idx);
+    assert(info_status.is_ok());
+    assert(element_at(snapshot.node_facts(), local_idx).driver.value() == std::string_view{"mlx5_core"});
+    assert(element_at(snapshot.node_facts(), local_idx).firmware.value() == std::string_view{"22.39.1002"});
+    assert(element_at(snapshot.nodes(), local_idx).firmware_revision.value()
            == topology::stable_discovery_hash(std::string_view{"22.39.1002"}));
 
     constexpr std::string_view features = "tcp-segmentation-offload: on\n"
@@ -93,29 +97,29 @@ static void test_ethtool_features_and_lldp() {
                                           "large-receive-offload: off\n"
                                           "tls-hw-tx-offload: on\n"
                                           "hw-tc-offload: on\n";
-    auto bits = topology::parse_ethtool_features(topology::tag_external_discovery_text(features));
-    assert(bits.has_value());
-    assert(bits->test(cog::NicFeature::Tso));
-    assert(bits->test(cog::NicFeature::Gso));
-    assert(bits->test(cog::NicFeature::Gro));
-    assert(!bits->test(cog::NicFeature::Lro));
-    assert(bits->test(cog::NicFeature::TcEbpf));
+    auto const bits = topology::parse_ethtool_features(topology::tag_external_discovery_text(features))
+                          .expect("the feature list parses");
+    assert(bits.test(cog::NicFeature::Tso));
+    assert(bits.test(cog::NicFeature::Gso));
+    assert(bits.test(cog::NicFeature::Gro));
+    assert(!bits.test(cog::NicFeature::Lro));
+    assert(bits.test(cog::NicFeature::TcEbpf));
     // The input also sets tls-hw-tx-offload to on.  No NicFeature names that
     // key, so the parser sets only the four bits above.
-    assert(bits->popcount() == 4);
+    assert(bits.popcount() == 4);
 
     constexpr std::string_view lldp = "Interface: eth0\n"
                                       "LineRate: 100G\n"
                                       "SysName: tor-a\n"
                                       "PortID: swp17\n";
-    auto status = topology::parse_lldp_neighbors(topology::tag_external_discovery_text(lldp), snapshot);
-    assert(status.has_value());
-    assert(status->records_admitted == 1);
+    auto const status = topology::parse_lldp_neighbors(topology::tag_external_discovery_text(lldp), snapshot)
+                            .expect("the neighbour list parses");
+    assert(status.records_admitted == 1);
     assert(snapshot.node_count() == 2);
     assert(snapshot.edge_count() == 1);
     auto graph = snapshot.graph(ctx);
-    assert(graph.edges()[0].kind == topology::LinkKind::Ethernet);
-    assert(graph.edges()[0].bandwidth_bytes_per_sec.value() == 12500000000ull);
+    assert(element_at(graph.edges(), 0).kind == topology::LinkKind::Ethernet);
+    assert(element_at(graph.edges(), 0).bandwidth_bytes_per_sec.value() == 12500000000ull);
     crucible::test::pass("  test_ethtool_features_and_lldp:       PASSED\n");
 }
 
@@ -128,7 +132,7 @@ static void test_lldp_record_state_reset() {
         .model = topology::tag_vendor_discovery_string("ConnectX-6"),
         .bus_info = topology::tag_vendor_discovery_string("0000:65:00.0"),
     });
-    assert(local_idx.has_value());
+    assert(local_idx.is_ok());
 
     constexpr std::string_view lldp = "Interface: eth0\n"
                                       "LineRate: 100G\n"
@@ -138,14 +142,14 @@ static void test_lldp_record_state_reset() {
                                       "Interface: eth0\n"
                                       "SysName: tor-b\n"
                                       "PortID: swp18\n";
-    auto status = topology::parse_lldp_neighbors(topology::tag_external_discovery_text(lldp), snapshot);
-    assert(status.has_value());
-    assert(status->records_admitted == 2);
+    auto const status = topology::parse_lldp_neighbors(topology::tag_external_discovery_text(lldp), snapshot)
+                            .expect("the neighbour list parses");
+    assert(status.records_admitted == 2);
     assert(snapshot.edge_count() == 2);
 
     auto graph = snapshot.graph(ctx);
-    assert(graph.edges()[0].bandwidth_bytes_per_sec.value() == 12500000000ull);
-    assert(graph.edges()[1].bandwidth_bytes_per_sec.value() == 0);
+    assert(element_at(graph.edges(), 0).bandwidth_bytes_per_sec.value() == 12500000000ull);
+    assert(element_at(graph.edges(), 1).bandwidth_bytes_per_sec.value() == 0);
     crucible::test::pass("  test_lldp_record_state_reset:         PASSED\n");
 }
 
@@ -155,12 +159,12 @@ static void test_graceful_empty_live_discovery() {
     auto result = topology::discover_local_topology(ctx, snapshot);
     assert(result.node_count() == 0);
     assert(snapshot.report().view().size() == 1);
-    assert(snapshot.report().view()[0].outcome == topology::DiscoveryOutcome::NotAttempted);
+    assert(element_at(snapshot.report().view(), 0).outcome == topology::DiscoveryOutcome::NotAttempted);
 
     eff::BgDrainCtx bg{::foundation::effects::testing::bg()};
-    auto trigger = topology::notify_rediscovery_trigger(bg, topology::DiscoverySource::Udev);
-    assert(trigger.has_value());
-    assert(trigger->source == topology::DiscoverySource::Udev);
+    auto const trigger =
+        topology::notify_rediscovery_trigger(bg, topology::DiscoverySource::Udev).expect("a trigger gives a status");
+    assert(trigger.source == topology::DiscoverySource::Udev);
     crucible::test::pass("  test_graceful_empty_live_discovery:   PASSED\n");
 }
 

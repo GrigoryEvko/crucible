@@ -120,10 +120,10 @@ namespace {
 
 }  // namespace
 
-std::expected<DeclaredNetdevCounters, NicTelemetryError> parse_netdev_counters(ExternalTelemetryText text) noexcept {
+::fixy::Result<DeclaredNetdevCounters, NicTelemetryError> parse_netdev_counters(ExternalTelemetryText text) noexcept {
     std::string_view input = text.value();
     if (trim(input).empty()) {
-        return std::unexpected(NicTelemetryError::EmptyInput);
+        return ::fixy::err(NicTelemetryError::EmptyInput);
     }
     NetdevCounters counters{};
     std::uint16_t admitted = 0;
@@ -162,15 +162,15 @@ std::expected<DeclaredNetdevCounters, NicTelemetryError> parse_netdev_counters(E
         ++admitted;
     }
     if (admitted == 0) {
-        return std::unexpected(NicTelemetryError::MissingRequiredField);
+        return ::fixy::err(NicTelemetryError::MissingRequiredField);
     }
     return declare_netdev_counters(counters);
 }
 
-std::expected<DeclaredQdiscBacklog, NicTelemetryError> parse_qdisc_backlog(ExternalTelemetryText text) noexcept {
+::fixy::Result<DeclaredQdiscBacklog, NicTelemetryError> parse_qdisc_backlog(ExternalTelemetryText text) noexcept {
     std::string_view input = text.value();
     if (trim(input).empty()) {
-        return std::unexpected(NicTelemetryError::EmptyInput);
+        return ::fixy::err(NicTelemetryError::EmptyInput);
     }
     QdiscBacklog backlog{};
     std::uint16_t admitted = 0;
@@ -193,15 +193,15 @@ std::expected<DeclaredQdiscBacklog, NicTelemetryError> parse_qdisc_backlog(Exter
         }
     }
     if (admitted == 0) {
-        return std::unexpected(NicTelemetryError::MissingRequiredField);
+        return ::fixy::err(NicTelemetryError::MissingRequiredField);
     }
     return declare_qdisc_backlog(backlog);
 }
 
-std::expected<DeclaredSysctlSnapshot, NicTelemetryError> parse_sysctl_snapshot(ExternalTelemetryText text) noexcept {
+::fixy::Result<DeclaredSysctlSnapshot, NicTelemetryError> parse_sysctl_snapshot(ExternalTelemetryText text) noexcept {
     std::string_view input = text.value();
     if (trim(input).empty()) {
-        return std::unexpected(NicTelemetryError::EmptyInput);
+        return ::fixy::err(NicTelemetryError::EmptyInput);
     }
     SysctlSnapshot snapshot{};
     std::uint16_t admitted = 0;
@@ -228,7 +228,7 @@ std::expected<DeclaredSysctlSnapshot, NicTelemetryError> parse_sysctl_snapshot(E
         ++admitted;
     }
     if (admitted == 0) {
-        return std::unexpected(NicTelemetryError::MissingRequiredField);
+        return ::fixy::err(NicTelemetryError::MissingRequiredField);
     }
     return declare_sysctl_snapshot(snapshot);
 }

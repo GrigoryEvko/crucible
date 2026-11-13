@@ -90,12 +90,12 @@ namespace {
 }
 
 template <std::size_t MaxNodes, std::size_t MaxEdges>
-[[nodiscard]] std::expected<void, DiscoveryError>
+[[nodiscard]] ::fixy::Result<::fixy::Unit, DiscoveryError>
 flush_lspci_record(DiscoverySnapshot<MaxNodes, MaxEdges>& snapshot, std::string_view slot, std::string_view cls,
                    std::string_view vendor, std::string_view device, std::uint16_t& records,
                    std::uint16_t& admitted) noexcept {
     if (slot.empty() && cls.empty() && vendor.empty() && device.empty()) {
-        return {};
+        return ::fixy::Unit{};
     }
     ++records;
     DiscoveryNodeKind node_kind = node_kind_from_lspci(cls, device);
@@ -106,32 +106,26 @@ flush_lspci_record(DiscoverySnapshot<MaxNodes, MaxEdges>& snapshot, std::string_
         .bus_info = tag_vendor_discovery_string(slot),
     };
     fact.level = default_level_for(fact.kind);
-    auto added = snapshot.add_node(fact);
-    if (!added.has_value()) {
-        return std::unexpected(added.error());
-    }
+    CRUCIBLE_TRY(added, snapshot.add_node(fact));
     ++admitted;
-    if (*added != 0) {
+    if (added != 0) {
         DiscoveryEdgeFact edge{
             .from_node = 0,
-            .to_node = *added,
+            .to_node = added,
             .kind = LinkKind::PciE,
         };
-        auto edge_added = snapshot.add_edge(edge);
-        if (!edge_added.has_value()) {
-            return std::unexpected(edge_added.error());
-        }
+        CRUCIBLE_TRY(_, snapshot.add_edge(edge));
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
 }  // namespace
 
-std::expected<DiscoverySourceStatus, DiscoveryError> parse_lspci_vmm_tree(ExternalDiscoveryText text,
-                                                                          DefaultDiscoverySnapshot& snapshot) noexcept {
+::fixy::Result<DiscoverySourceStatus, DiscoveryError>
+parse_lspci_vmm_tree(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapshot) noexcept {
     std::string_view input = text.value();
     if (trim(input).empty()) {
-        return std::unexpected(DiscoveryError::EmptyInput);
+        return ::fixy::err(DiscoveryError::EmptyInput);
     }
 
     std::uint16_t records = 0;
@@ -147,10 +141,7 @@ std::expected<DiscoverySourceStatus, DiscoveryError> parse_lspci_vmm_tree(Extern
         input = nl == std::string_view::npos ? std::string_view{} : input.substr(nl + 1);
         line = trim(line);
         if (line.empty()) {
-            auto flushed = flush_lspci_record(snapshot, slot, cls, vendor, device, records, admitted);
-            if (!flushed.has_value()) {
-                return std::unexpected(flushed.error());
-            }
+            CRUCIBLE_TRY(_, flush_lspci_record(snapshot, slot, cls, vendor, device, records, admitted));
             slot = cls = vendor = device = {};
             continue;
         }
@@ -165,10 +156,7 @@ std::expected<DiscoverySourceStatus, DiscoveryError> parse_lspci_vmm_tree(Extern
             device = value;
         }
     }
-    auto flushed = flush_lspci_record(snapshot, slot, cls, vendor, device, records, admitted);
-    if (!flushed.has_value()) {
-        return std::unexpected(flushed.error());
-    }
+    CRUCIBLE_TRY(_, flush_lspci_record(snapshot, slot, cls, vendor, device, records, admitted));
     DiscoverySourceStatus status{
         .source = DiscoverySource::PcieLspci,
         .outcome = admitted == records ? DiscoveryOutcome::Complete : DiscoveryOutcome::Partial,
@@ -180,14 +168,14 @@ std::expected<DiscoverySourceStatus, DiscoveryError> parse_lspci_vmm_tree(Extern
     return status;
 }
 
-std::expected<DiscoverySourceStatus, DiscoveryError>
+::fixy::Result<DiscoverySourceStatus, DiscoveryError>
 parse_ethtool_info(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapshot, std::uint16_t node_index) noexcept {
     if (node_index >= snapshot.node_count()) {
-        return std::unexpected(DiscoveryError::InvalidNodeIndex);
+        return ::fixy::err(DiscoveryError::InvalidNodeIndex);
     }
     std::string_view input = text.value();
     if (trim(input).empty()) {
-        return std::unexpected(DiscoveryError::EmptyInput);
+        return ::fixy::err(DiscoveryError::EmptyInput);
     }
 
     std::uint16_t records = 0;
@@ -211,14 +199,11 @@ parse_ethtool_info(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapsho
         }
     }
 
-    DiscoveryNodeFact fact = snapshot.node_facts()[node_index];
+    DiscoveryNodeFact fact = *snapshot.node_facts().get(node_index).expect("the node index is below the node count");
     fact.driver = tag_vendor_discovery_string(driver);
     fact.firmware = tag_vendor_discovery_string(firmware);
     fact.bus_info = bus.empty() ? fact.bus_info : tag_vendor_discovery_string(bus);
-    auto updated = snapshot.update_node(node_index, fact);
-    if (!updated.has_value()) {
-        return std::unexpected(updated.error());
-    }
+    CRUCIBLE_TRY(_, snapshot.update_node(node_index, fact));
     DiscoverySourceStatus status{
         .source = DiscoverySource::EthtoolInfo,
         .outcome = records == 0 ? DiscoveryOutcome::Failed : DiscoveryOutcome::Complete,
@@ -230,11 +215,11 @@ parse_ethtool_info(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapsho
     return status;
 }
 
-std::expected<::fixy::Bits<cog::NicFeature>, DiscoveryError>
+::fixy::Result<::fixy::Bits<cog::NicFeature>, DiscoveryError>
 parse_ethtool_features(ExternalDiscoveryText text) noexcept {
     std::string_view input = text.value();
     if (trim(input).empty()) {
-        return std::unexpected(DiscoveryError::EmptyInput);
+        return ::fixy::err(DiscoveryError::EmptyInput);
     }
     ::fixy::Bits<cog::NicFeature> bits{};
     while (!input.empty()) {
@@ -263,14 +248,14 @@ parse_ethtool_features(ExternalDiscoveryText text) noexcept {
     return bits;
 }
 
-std::expected<DiscoverySourceStatus, DiscoveryError> parse_lldp_neighbors(ExternalDiscoveryText text,
-                                                                          DefaultDiscoverySnapshot& snapshot) noexcept {
+::fixy::Result<DiscoverySourceStatus, DiscoveryError>
+parse_lldp_neighbors(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapshot) noexcept {
     std::string_view input = text.value();
     if (trim(input).empty()) {
-        return std::unexpected(DiscoveryError::EmptyInput);
+        return ::fixy::err(DiscoveryError::EmptyInput);
     }
     if (snapshot.node_count() == 0) {
-        return std::unexpected(DiscoveryError::InvalidNodeIndex);
+        return ::fixy::err(DiscoveryError::InvalidNodeIndex);
     }
 
     std::uint16_t records = 0;
@@ -279,9 +264,9 @@ std::expected<DiscoverySourceStatus, DiscoveryError> parse_lldp_neighbors(Extern
     std::string_view sys_name{};
     std::string_view port_id{};
     std::string_view line_rate{};
-    auto flush = [&]() noexcept -> std::expected<void, DiscoveryError> {
+    auto flush = [&]() noexcept -> ::fixy::Result<::fixy::Unit, DiscoveryError> {
         if (iface.empty() && sys_name.empty() && port_id.empty()) {
-            return {};
+            return ::fixy::Unit{};
         }
         ++records;
         DiscoveryNodeFact peer{
@@ -290,21 +275,15 @@ std::expected<DiscoverySourceStatus, DiscoveryError> parse_lldp_neighbors(Extern
             .model = tag_vendor_discovery_string(sys_name),
             .bus_info = tag_vendor_discovery_string(port_id),
         };
-        auto idx = snapshot.add_node(peer);
-        if (!idx.has_value()) {
-            return std::unexpected(idx.error());
-        }
-        auto edge = snapshot.add_edge(DiscoveryEdgeFact{
-            .from_node = 0,
-            .to_node = *idx,
-            .kind = LinkKind::Ethernet,
-            .bandwidth_bytes_per_sec = parse_line_rate(line_rate),
-        });
-        if (!edge.has_value()) {
-            return std::unexpected(edge.error());
-        }
+        CRUCIBLE_TRY(idx, snapshot.add_node(peer));
+        CRUCIBLE_TRY(_, snapshot.add_edge(DiscoveryEdgeFact{
+                            .from_node = 0,
+                            .to_node = idx,
+                            .kind = LinkKind::Ethernet,
+                            .bandwidth_bytes_per_sec = parse_line_rate(line_rate),
+                        }));
         ++admitted;
-        return {};
+        return ::fixy::Unit{};
     };
 
     while (!input.empty()) {
@@ -313,10 +292,7 @@ std::expected<DiscoverySourceStatus, DiscoveryError> parse_lldp_neighbors(Extern
         input = nl == std::string_view::npos ? std::string_view{} : input.substr(nl + 1);
         line = trim(line);
         if (line.empty()) {
-            auto flushed = flush();
-            if (!flushed.has_value()) {
-                return std::unexpected(flushed.error());
-            }
+            CRUCIBLE_TRY(_, flush());
             iface = sys_name = port_id = line_rate = {};
             continue;
         }
@@ -331,10 +307,7 @@ std::expected<DiscoverySourceStatus, DiscoveryError> parse_lldp_neighbors(Extern
             port_id = value;
         }
     }
-    auto flushed = flush();
-    if (!flushed.has_value()) {
-        return std::unexpected(flushed.error());
-    }
+    CRUCIBLE_TRY(_, flush());
 
     DiscoverySourceStatus status{
         .source = DiscoverySource::Lldp,

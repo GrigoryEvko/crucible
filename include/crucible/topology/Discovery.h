@@ -1,6 +1,6 @@
 #pragma once
 
-// The graph that graph() returns holds non-owning spans.  A snapshot owns the
+// The graph that graph() returns holds non-owning views.  A snapshot owns the
 // node and edge storage, and the graph is only a view over it.  A graph built
 // over storage local to a function would dangle at the return.
 
@@ -8,18 +8,16 @@
 #include <crucible/cog/TargetCaps.h>
 #include <crucible/topology/TopologyGraph.h>
 #include <fixy/Bits.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/core/Array.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
-#include <limits>
-#include <span>
 #include <string_view>
 #include <type_traits>
 
@@ -85,43 +83,26 @@ struct DiscoverySourceStatus {
     DiscoveryError error = DiscoveryError::EmptyInput;
 };
 
-// `size` used to sit public beside the array, so push() was not its
-// only writer.  A stored 255 then read as "not full" against the
-// equality test this carried, and push() wrote statuses[255] on a
-// 16-element array; view() handed the same range to every reader.
-// Both members are private now and push() is the only writer, so a
-// size above max_statuses is unrepresentable and neither accessor
-// needs a bound check.  A check would not have helped in production
-// anyway: the release build ships -DNDEBUG with no
-// _GLIBCXX_ASSERTIONS, so std::array::operator[] is unchecked there.
+// At most max_statuses statuses, in the order of their pushes.  push() is
+// the only writer, and a push into a full report keeps the report as it is.
 class DiscoveryReport {
 public:
     static constexpr std::size_t max_statuses = 16;
 
     constexpr DiscoveryReport() noexcept = default;
 
-    [[nodiscard]] constexpr std::span<const DiscoverySourceStatus> view() const noexcept {
-        return {statuses_.data(), size_};
-    }
+    [[nodiscard]] constexpr ::fixy::View<DiscoverySourceStatus const> view() const noexcept { return statuses_.view(); }
 
-    [[nodiscard]] constexpr std::size_t size() const noexcept { return size_; }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return statuses_.size(); }
 
-    [[nodiscard]] constexpr bool empty() const noexcept { return size_ == 0; }
+    [[nodiscard]] constexpr bool empty() const noexcept { return statuses_.size() == 0; }
 
-    [[nodiscard]] constexpr bool full() const noexcept { return size_ >= max_statuses; }
+    [[nodiscard]] constexpr bool full() const noexcept { return statuses_.size() >= max_statuses; }
 
-    [[nodiscard]] constexpr bool push(DiscoverySourceStatus status) noexcept {
-        if (full()) {
-            return false;
-        }
-        statuses_[size_] = status;
-        ++size_;
-        return true;
-    }
+    [[nodiscard]] constexpr bool push(DiscoverySourceStatus status) noexcept { return statuses_.push(status).is_ok(); }
 
 private:
-    std::array<DiscoverySourceStatus, max_statuses> statuses_{};
-    std::uint8_t size_ = 0;
+    ::fixy::FixedList<DiscoverySourceStatus, max_statuses> statuses_{};
 };
 
 // Each pad member of the two facts holds bytes that the compiler would
@@ -134,14 +115,14 @@ struct DiscoveryNodeFact {
     cog::Uuid uuid{};
     cog::CogLevel level = cog::CogLevel::L0_Atomic;
     cog::CogKind kind = cog::CogKind::Gpu;
-    std::uint8_t pad_after_kind[6]{};
+    ::foundation::core::FixedArray<std::uint8_t, 6> pad_after_kind{};
     VendorDiscoveryString vendor{};
     VendorDiscoveryString model{};
     VendorDiscoveryString driver{};
     VendorDiscoveryString firmware{};
     VendorDiscoveryString bus_info{};
     std::int16_t numa_node = -1;
-    std::uint8_t pad_after_numa_node[6]{};
+    ::foundation::core::FixedArray<std::uint8_t, 6> pad_after_numa_node{};
     cog::NicPortTargetCaps nic_caps{};
 };
 
@@ -149,12 +130,12 @@ struct DiscoveryEdgeFact {
     std::uint16_t from_node = 0;
     std::uint16_t to_node = 0;
     LinkKind kind = LinkKind::Unknown;
-    std::uint8_t pad_after_kind[3]{};
+    ::foundation::core::FixedArray<std::uint8_t, 3> pad_after_kind{};
     std::uint64_t bandwidth_bytes_per_sec = 0;
     std::uint64_t rtt_ns_p50 = 0;
     std::uint64_t rtt_ns_p99 = 0;
     float drop_rate = 0.0f;
-    std::uint8_t pad_tail[4]{};
+    ::foundation::core::FixedArray<std::uint8_t, 4> pad_tail{};
 };
 
 template <std::size_t MaxNodes, std::size_t MaxEdges>
@@ -261,20 +242,21 @@ class DiscoverySnapshot {
     constexpr DiscoverySnapshot() noexcept = default;
 
 public:
-    [[nodiscard]] constexpr std::span<const cog::CogIdentity> nodes() const noexcept {
-        return {nodes_.data(), node_count_};
+    // Each count is at most the capacity of its table, so each window fits.
+    [[nodiscard]] constexpr ::fixy::View<cog::CogIdentity const> nodes() const noexcept {
+        return nodes_.view().window(0, node_count_).value_or(::fixy::View<cog::CogIdentity const>{});
     }
 
-    [[nodiscard]] constexpr std::span<const TopologyEdge> edges() const noexcept {
-        return {edges_.data(), edge_count_};
+    [[nodiscard]] constexpr ::fixy::View<TopologyEdge const> edges() const noexcept {
+        return edges_.view().window(0, edge_count_).value_or(::fixy::View<TopologyEdge const>{});
     }
 
-    [[nodiscard]] constexpr std::span<const DiscoveryNodeFact> node_facts() const noexcept {
-        return {node_facts_.data(), node_count_};
+    [[nodiscard]] constexpr ::fixy::View<DiscoveryNodeFact const> node_facts() const noexcept {
+        return node_facts_.view().window(0, node_count_).value_or(::fixy::View<DiscoveryNodeFact const>{});
     }
 
-    [[nodiscard]] constexpr std::span<const DiscoveryEdgeFact> edge_facts() const noexcept {
-        return {edge_facts_.data(), edge_count_};
+    [[nodiscard]] constexpr ::fixy::View<DiscoveryEdgeFact const> edge_facts() const noexcept {
+        return edge_facts_.view().window(0, edge_count_).value_or(::fixy::View<DiscoveryEdgeFact const>{});
     }
 
     [[nodiscard]] constexpr std::size_t node_count() const noexcept { return node_count_; }
@@ -283,19 +265,21 @@ public:
 
     [[nodiscard]] constexpr DiscoveryReport const& report() const noexcept { return report_; }
 
-    [[nodiscard]] constexpr std::expected<std::uint16_t, DiscoveryError> add_node(DiscoveryNodeFact fact) noexcept {
+    [[nodiscard]] constexpr ::fixy::Result<std::uint16_t, DiscoveryError> add_node(DiscoveryNodeFact fact) noexcept {
         if (node_count_ == MaxNodes) {
-            return std::unexpected(DiscoveryError::TooManyNodes);
+            return ::fixy::err(DiscoveryError::TooManyNodes);
         }
         const std::uint16_t idx = static_cast<std::uint16_t>(node_count_);
+        ::fixy::Index<MaxNodes> const slot =
+            ::fixy::Index<MaxNodes>::check(node_count_).expect("a snapshot that is not full has a free node slot");
         if (fact.uuid.is_zero()) {
             const std::uint64_t lo =
                 stable_discovery_hash(fact.bus_info.value(), fact.vendor.value(), fact.model.value());
             fact.uuid = cog::Uuid{0xD15C0111ull, lo};
         }
         fact.level = fact.level == cog::CogLevel::L0_Atomic ? default_level_for(fact.kind) : fact.level;
-        node_facts_[node_count_] = fact;
-        nodes_[node_count_] = cog::CogIdentity{
+        node_facts_.at(slot) = fact;
+        nodes_.at(slot) = cog::CogIdentity{
             .uuid = fact.uuid,
             .level = fact.level,
             .kind = fact.kind,
@@ -308,34 +292,39 @@ public:
         return idx;
     }
 
-    [[nodiscard]] constexpr std::expected<void, DiscoveryError> update_node(std::uint16_t idx,
-                                                                            DiscoveryNodeFact fact) noexcept {
+    [[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, DiscoveryError> update_node(std::uint16_t idx,
+                                                                                     DiscoveryNodeFact fact) noexcept {
         if (idx >= node_count_) {
-            return std::unexpected(DiscoveryError::InvalidNodeIndex);
+            return ::fixy::err(DiscoveryError::InvalidNodeIndex);
         }
-        node_facts_[idx] = fact;
-        nodes_[idx].uuid = fact.uuid;
-        nodes_[idx].level = fact.level;
-        nodes_[idx].kind = fact.kind;
-        nodes_[idx].vendor = fact.vendor;
-        nodes_[idx].model = fact.model;
-        nodes_[idx].firmware_revision = firmware_claim(fact);
-        return {};
+        ::fixy::Index<MaxNodes> const slot =
+            ::fixy::Index<MaxNodes>::check(idx).expect("an index below the node count is below the capacity");
+        node_facts_.at(slot) = fact;
+        cog::CogIdentity& node = nodes_.at(slot);
+        node.uuid = fact.uuid;
+        node.level = fact.level;
+        node.kind = fact.kind;
+        node.vendor = fact.vendor;
+        node.model = fact.model;
+        node.firmware_revision = firmware_claim(fact);
+        return ::fixy::Unit{};
     }
 
-    [[nodiscard]] constexpr std::expected<std::uint16_t, DiscoveryError> add_edge(DiscoveryEdgeFact fact) noexcept {
+    [[nodiscard]] constexpr ::fixy::Result<std::uint16_t, DiscoveryError> add_edge(DiscoveryEdgeFact fact) noexcept {
         if (edge_count_ == MaxEdges) {
-            return std::unexpected(DiscoveryError::TooManyEdges);
+            return ::fixy::err(DiscoveryError::TooManyEdges);
         }
         if (fact.from_node >= node_count_ || fact.to_node >= node_count_) {
-            return std::unexpected(DiscoveryError::InvalidNodeIndex);
+            return ::fixy::err(DiscoveryError::InvalidNodeIndex);
         }
         const std::uint16_t idx = static_cast<std::uint16_t>(edge_count_);
-        edge_facts_[edge_count_] = fact;
-        edges_[edge_count_] = TopologyEdge{
+        ::fixy::Index<MaxEdges> const slot =
+            ::fixy::Index<MaxEdges>::check(edge_count_).expect("a snapshot that is not full has a free edge slot");
+        edge_facts_.at(slot) = fact;
+        edges_.at(slot) = TopologyEdge{
             .id = EdgeId{idx},
             .kind = fact.kind,
-            .peer = &nodes_[fact.to_node],
+            .peer = NodeId{fact.to_node},
             .bandwidth_bytes_per_sec =
                 ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.bandwidth_bytes_per_sec),
             .rtt_ns_p50 = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.rtt_ns_p50),
@@ -361,10 +350,10 @@ private:
         return ::fixy::mint_tagged<::fixy::tags::source::Vendor>(stable_discovery_hash(fact.firmware.value()));
     }
 
-    std::array<DiscoveryNodeFact, MaxNodes> node_facts_{};
-    std::array<DiscoveryEdgeFact, MaxEdges> edge_facts_{};
-    std::array<cog::CogIdentity, MaxNodes> nodes_{};
-    std::array<TopologyEdge, MaxEdges> edges_{};
+    ::foundation::core::FixedArray<DiscoveryNodeFact, MaxNodes> node_facts_{};
+    ::foundation::core::FixedArray<DiscoveryEdgeFact, MaxEdges> edge_facts_{};
+    ::foundation::core::FixedArray<cog::CogIdentity, MaxNodes> nodes_{};
+    ::foundation::core::FixedArray<TopologyEdge, MaxEdges> edges_{};
     std::size_t node_count_ = 0;
     std::size_t edge_count_ = 0;
     DiscoveryReport report_{};
@@ -390,7 +379,7 @@ discover_local_topology(Ctx const& ctx, DiscoverySnapshot<MaxNodes, MaxEdges>& s
 
 template <class Ctx>
     requires CtxFitsDiscoveryBg<Ctx>
-[[nodiscard]] constexpr std::expected<DiscoverySourceStatus, DiscoveryError>
+[[nodiscard]] constexpr ::fixy::Result<DiscoverySourceStatus, DiscoveryError>
 notify_rediscovery_trigger(Ctx const&, DiscoverySource source) noexcept {
     return DiscoverySourceStatus{
         .source = source,
@@ -399,16 +388,16 @@ notify_rediscovery_trigger(Ctx const&, DiscoverySource source) noexcept {
     };
 }
 
-[[nodiscard]] std::expected<DiscoverySourceStatus, DiscoveryError>
+[[nodiscard]] ::fixy::Result<DiscoverySourceStatus, DiscoveryError>
 parse_lspci_vmm_tree(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapshot) noexcept;
 
-[[nodiscard]] std::expected<DiscoverySourceStatus, DiscoveryError>
+[[nodiscard]] ::fixy::Result<DiscoverySourceStatus, DiscoveryError>
 parse_ethtool_info(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapshot, std::uint16_t node_index) noexcept;
 
-[[nodiscard]] std::expected<::fixy::Bits<cog::NicFeature>, DiscoveryError>
+[[nodiscard]] ::fixy::Result<::fixy::Bits<cog::NicFeature>, DiscoveryError>
 parse_ethtool_features(ExternalDiscoveryText text) noexcept;
 
-[[nodiscard]] std::expected<DiscoverySourceStatus, DiscoveryError>
+[[nodiscard]] ::fixy::Result<DiscoverySourceStatus, DiscoveryError>
 parse_lldp_neighbors(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapshot) noexcept;
 
 }  // namespace crucible::topology

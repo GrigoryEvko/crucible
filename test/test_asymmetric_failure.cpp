@@ -129,7 +129,8 @@ static void test_synthetic_round_and_transition_events() {
     assert(detector.event_count() >= 1);
     auto const events = detector.events();
     std::size_t const last_event = detector.event_count() - 1u;
-    assert(events[last_event].to == topology::FailureClass::TxBroken);
+    assert(events.get(last_event).expect("the detector recorded the last event")->to
+           == topology::FailureClass::TxBroken);
     assert(topology::health_state_for_failure(topology::FailureClass::TxBroken, topology::HealthState::Healthy)
            == topology::HealthState::Suspect);
 

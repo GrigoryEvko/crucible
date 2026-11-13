@@ -2,7 +2,6 @@
 
 #include <crucible/observe/HdrHistogram.h>
 
-#include <algorithm>
 #include <cerrno>
 #include <cstddef>
 #include <cstring>
@@ -29,8 +28,8 @@ using BandwidthHistogram = observe::HdrHistogram<2, 1000000000000ull>;
 
 [[nodiscard]] constexpr std::uint32_t sat_u32_mul(std::uint32_t a, std::uint32_t b) noexcept {
     const std::uint64_t product = static_cast<std::uint64_t>(a) * b;
-    return product > std::numeric_limits<std::uint32_t>::max() ? std::numeric_limits<std::uint32_t>::max()
-                                                               : static_cast<std::uint32_t>(product);
+    return product > ::fixy::max_of<std::uint32_t> ? ::fixy::max_of<std::uint32_t>
+                                                   : static_cast<std::uint32_t>(product);
 }
 
 [[nodiscard]] constexpr CongestionMode mode_from_ca_state(std::uint8_t state) noexcept {
@@ -110,7 +109,7 @@ using BandwidthHistogram = observe::HdrHistogram<2, 1000000000000ull>;
     std::uint32_t ppm = 0;
     if (info.dctcp_ab_tot != 0) {
         const std::uint64_t scaled = (static_cast<std::uint64_t>(info.dctcp_ab_ecn) * 1000000ull) / info.dctcp_ab_tot;
-        ppm = static_cast<std::uint32_t>(std::min<std::uint64_t>(scaled, 1000000));
+        ppm = static_cast<std::uint32_t>(::fixy::min(scaled, std::uint64_t{1000000}));
     }
     return DctcpFields{
         .alpha_q10 = info.dctcp_alpha,
@@ -122,7 +121,7 @@ using BandwidthHistogram = observe::HdrHistogram<2, 1000000000000ull>;
 [[nodiscard]] CongestionSample decode_tcp_info(tcp_info const& info, cntp::CcAlgorithm algorithm) noexcept {
     const std::uint32_t mss = positive_or_one_u32(info.tcpi_snd_mss);
     const std::uint32_t cwnd_bytes = sat_u32_mul(positive_or_one_u32(info.tcpi_snd_cwnd), mss);
-    const std::uint32_t ssthresh_packets = info.tcpi_snd_ssthresh == std::numeric_limits<std::uint32_t>::max()
+    const std::uint32_t ssthresh_packets = info.tcpi_snd_ssthresh == ::fixy::max_of<std::uint32_t>
                                              ? info.tcpi_snd_cwnd
                                              : positive_or_one_u32(info.tcpi_snd_ssthresh);
     const std::uint32_t ssthresh_bytes = sat_u32_mul(ssthresh_packets, mss);
@@ -148,7 +147,7 @@ using BandwidthHistogram = observe::HdrHistogram<2, 1000000000000ull>;
 
     if (state.delivered != 0) {
         const std::uint64_t scaled = (static_cast<std::uint64_t>(state.delivered_ce) * 1000000ull) / state.delivered;
-        state.dctcp.ecn_mark_ppm = static_cast<std::uint32_t>(std::min<std::uint64_t>(scaled, 1000000));
+        state.dctcp.ecn_mark_ppm = static_cast<std::uint32_t>(::fixy::min(scaled, std::uint64_t{1000000}));
     }
     return state;
 }
@@ -161,12 +160,12 @@ void record_sample(CongestionAggregate& aggregate, RttHistogram& rtt_hist, Bandw
     aggregate.retrans_count += state.retrans_count;
     aggregate.lost_count += state.lost_count;
     aggregate.mean_btl_bw_bps += state.btl_bw_bps.value();
-    aggregate.ecn_mark_ppm = std::max(aggregate.ecn_mark_ppm, state.dctcp.ecn_mark_ppm);
+    aggregate.ecn_mark_ppm = ::fixy::max(aggregate.ecn_mark_ppm, state.dctcp.ecn_mark_ppm);
     if (mode_worse(state.mode, aggregate.worst_mode)) {
         aggregate.worst_mode = state.mode;
     }
-    const std::uint64_t rtt_value = std::min(state.rt_prop_us.value(), RttHistogram::max_trackable_value);
-    const std::uint64_t bw_value = std::min(state.btl_bw_bps.value(), BandwidthHistogram::max_trackable_value);
+    const std::uint64_t rtt_value = ::fixy::min(state.rt_prop_us.value(), RttHistogram::max_trackable_value);
+    const std::uint64_t bw_value = ::fixy::min(state.btl_bw_bps.value(), BandwidthHistogram::max_trackable_value);
     rtt_hist.record(RttHistogram::checked_value(rtt_value));
     bw_hist.record(BandwidthHistogram::checked_value(bw_value));
 }
@@ -183,8 +182,8 @@ void finalize_aggregate(CongestionAggregate& aggregate, RttHistogram& rtt_hist, 
 
 }  // namespace
 
-std::expected<TcpInfoSnapshot, TelemetryError> detail::harvest_socket_keyed(cntp::detail::SocketOptionKey const& key,
-                                                                            cntp::SocketFd fd) noexcept {
+::fixy::Result<TcpInfoSnapshot, TelemetryError> detail::harvest_socket_keyed(cntp::detail::SocketOptionKey const& key,
+                                                                             cntp::SocketFd fd) noexcept {
     tcp_info info{};
     socklen_t info_len = sizeof(info);
     const int tcp_rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_INFO, &info, &info_len);
@@ -197,7 +196,7 @@ std::expected<TcpInfoSnapshot, TelemetryError> detail::harvest_socket_keyed(cntp
         static_cast<socklen_t>(offsetof(tcp_info, tcpi_delivered_ce) + sizeof(info.tcpi_delivered_ce));
     if (tcp_rc != 0 || info_len < kRequiredInfoLen) {
         static_cast<void>(errno);
-        return std::unexpected(TelemetryError::GetTcpInfoFailed);
+        return ::fixy::err(TelemetryError::GetTcpInfoFailed);
     }
 
     cntp::CcAlgorithm const algorithm = cntp::detail::query_cc_selection_for_socket_keyed(key, fd).match(
@@ -226,28 +225,28 @@ std::expected<TcpInfoSnapshot, TelemetryError> detail::harvest_socket_keyed(cntp
 }
 
 CongestionAggregate aggregate_congestion(cog::CogIdentity const& nic,
-                                         std::span<const TcpInfoSnapshot> samples) noexcept {
+                                         ::fixy::View<TcpInfoSnapshot const> samples) noexcept {
     CongestionAggregate aggregate{
         .nic_uuid = nic.uuid,
     };
     RttHistogram rtt_hist{};
     BandwidthHistogram bw_hist{};
 
-    for (auto const& sample : samples) {
+    for (TcpInfoSnapshot const& sample : samples) {
         record_sample(aggregate, rtt_hist, bw_hist, sample);
     }
     finalize_aggregate(aggregate, rtt_hist, bw_hist);
     return aggregate;
 }
 
-std::expected<CongestionAggregate, TelemetryError>
+::fixy::Result<CongestionAggregate, TelemetryError>
 detail::harvest_per_link_keyed(cntp::detail::SocketOptionKey const& key, cog::CogIdentity const& nic,
-                               std::span<const cntp::SocketFd> active_fds) noexcept {
+                               ::fixy::View<cntp::SocketFd const> active_fds) noexcept {
     if (!is_nic_cog(nic)) {
-        return std::unexpected(TelemetryError::InvalidNicCog);
+        return ::fixy::err(TelemetryError::InvalidNicCog);
     }
-    if (active_fds.empty()) {
-        return std::unexpected(TelemetryError::EmptySampleSet);
+    if (active_fds.size() == 0) {
+        return ::fixy::err(TelemetryError::EmptySampleSet);
     }
 
     CongestionAggregate aggregate{
@@ -255,12 +254,9 @@ detail::harvest_per_link_keyed(cntp::detail::SocketOptionKey const& key, cog::Co
     };
     RttHistogram rtt_hist{};
     BandwidthHistogram bw_hist{};
-    for (auto fd : active_fds) {
-        auto sample = harvest_socket_keyed(key, fd);
-        if (!sample.has_value()) {
-            return std::unexpected(sample.error());
-        }
-        record_sample(aggregate, rtt_hist, bw_hist, *sample);
+    for (cntp::SocketFd const fd : active_fds) {
+        CRUCIBLE_TRY(sample, harvest_socket_keyed(key, fd));
+        record_sample(aggregate, rtt_hist, bw_hist, sample);
     }
     finalize_aggregate(aggregate, rtt_hist, bw_hist);
     return aggregate;

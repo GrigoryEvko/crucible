@@ -66,6 +66,12 @@ private:
 
 }  // namespace
 
+// The error of a result that the test knows to hold one.
+template <class T>
+[[nodiscard]] static topology::PtpError error_of(::fixy::Result<T, topology::PtpError> const& result) {
+    return result.err().expect("the result holds an error");
+}
+
 static cog::CogIdentity nic(std::uint64_t lo) {
     cog::CogIdentity id{};
     id.uuid = cog::Uuid{0x129, lo};
@@ -122,13 +128,12 @@ static void test_handle_status_and_timestamp() {
     auto handle = topology::mint_ptp_handle(eff::ColdInitCtx{::foundation::effects::testing::init()}, nic(3),
                                             std::move(fd).expect("9 is not negative"), status);
     assert(handle.status().synchronized());
-    assert(handle.latest_timestamp().error() == topology::PtpError::NoTimestamp);
+    assert(error_of(handle.latest_timestamp()) == topology::PtpError::NoTimestamp);
 
     handle.record_timestamp(eff::BgDrainCtx{::foundation::effects::testing::bg()},
                             ::fixy::mint_tagged<::fixy::tags::source::Ptp>(std::uint64_t{123456}), 5);
-    auto latest = handle.latest_timestamp();
-    assert(latest.has_value());
-    assert(latest->value() == 123456);
+    auto const latest = handle.latest_timestamp().expect("the handle recorded a timestamp");
+    assert(latest.value() == 123456);
     assert(handle.latest_timestamp_sequence() == 5);
 
     auto const degraded = ::fixy::mint_tagged<::fixy::tags::source::Ptp>(topology::PtpStatus{
@@ -258,17 +263,17 @@ static void test_daemon_report_boundary() {
 }
 
 static void test_timestamped_packet_view() {
-    std::array<std::byte, 4> payload{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
+    ::foundation::core::FixedArray<std::byte, 4> const payload{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
     auto const stamp = ::fixy::mint_tagged<::fixy::tags::source::Ptp>(std::uint64_t{55});
-    auto packet = topology::timestamp_packet_view(std::span<const std::byte>{payload}, stamp, 8);
-    assert(packet.has_value());
-    assert(packet->payload.size() == payload.size());
-    assert(packet->timestamp_ns.value() == 55);
-    assert(packet->sequence == 8);
+    auto const packet =
+        topology::timestamp_packet_view(payload.view(), stamp, 8).expect("a payload with bytes gives a packet");
+    assert(packet.payload.size() == payload.size());
+    assert(packet.timestamp_ns.value() == 55);
+    assert(packet.sequence == 8);
 
-    auto empty = topology::timestamp_packet_view(std::span<const std::byte>{}, stamp, 9);
-    assert(!empty.has_value());
-    assert(empty.error() == topology::PtpError::Degraded);
+    auto empty = topology::timestamp_packet_view(::fixy::View<std::byte const>{}, stamp, 9);
+    assert(empty.is_err());
+    assert(error_of(empty) == topology::PtpError::Degraded);
     crucible::test::pass("  test_timestamped_packet_view: PASSED\n");
 }
 
@@ -281,21 +286,22 @@ static void test_linux_boundaries_if_available() {
     auto absent = topology::admit_ptp_device_index(254);
     assert(absent.is_ok());
     auto missing = topology::open_ptp_clock(bg_fs, std::move(absent).expect("254 is a device index"));
-    if (!missing.has_value()) {
-        assert(missing.error() == topology::PtpError::OpenClockFailed);
+    if (missing.is_err()) {
+        assert(error_of(missing) == topology::PtpError::OpenClockFailed);
     }
 
     auto index0 = topology::admit_ptp_device_index(0);
     assert(index0.is_ok());
     auto clock = topology::open_ptp_clock(bg_fs, std::move(index0).expect("0 is a device index"));
-    if (clock.has_value()) {
-        auto stamp = topology::ptp_now(*clock);
-        assert(stamp.has_value() || stamp.error() == topology::PtpError::ClockReadFailed
-               || stamp.error() == topology::PtpError::TimestampOverflow);
-        auto caps = topology::query_ptp_clock_caps(*clock);
-        assert(caps.has_value() || caps.error() == topology::PtpError::ClockCapsUnavailable);
+    if (clock.is_ok()) {
+        topology::PtpClockReader const reader = std::move(clock).expect("the clock opened");
+        auto stamp = topology::ptp_now(reader);
+        assert(stamp.is_ok() || error_of(stamp) == topology::PtpError::ClockReadFailed
+               || error_of(stamp) == topology::PtpError::TimestampOverflow);
+        auto caps = topology::query_ptp_clock_caps(reader);
+        assert(caps.is_ok() || error_of(caps) == topology::PtpError::ClockCapsUnavailable);
     } else {
-        assert(clock.error() == topology::PtpError::OpenClockFailed);
+        assert(error_of(clock) == topology::PtpError::OpenClockFailed);
     }
 
     TestSocket socket{::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0)};
@@ -303,21 +309,21 @@ static void test_linux_boundaries_if_available() {
     auto sock_fd = crucible::cntp::admit_socket_fd(socket.raw());
     assert(sock_fd.has_value());
     auto enabled = topology::enable_socket_timestamping(*sock_fd);
-    assert(enabled.has_value() || enabled.error() == topology::PtpError::SocketTimestampingFailed);
+    assert(enabled.is_ok() || error_of(enabled) == topology::PtpError::SocketTimestampingFailed);
 
     auto lo = crucible::cntp::NicInterfaceName::from("lo");
     assert(lo.has_value());
     auto configured = topology::configure_hardware_timestamping(*sock_fd, *lo);
-    assert(configured.has_value() || configured.error() == topology::PtpError::HardwareTimestampingFailed);
+    assert(configured.is_ok() || error_of(configured) == topology::PtpError::HardwareTimestampingFailed);
 
     std::array<std::byte, 8> payload{};
     auto empty = topology::recv_with_hw_timestamp(*sock_fd, std::span<std::byte>{});
-    assert(!empty.has_value());
-    assert(empty.error() == topology::PtpError::InvalidReceiveBuffer);
+    assert(empty.is_err());
+    assert(error_of(empty) == topology::PtpError::InvalidReceiveBuffer);
 
     auto recv = topology::recv_with_hw_timestamp(*sock_fd, std::span<std::byte>{payload});
-    assert(recv.has_value() || recv.error() == topology::PtpError::RecvFailed
-           || recv.error() == topology::PtpError::NoTimestamp);
+    assert(recv.is_ok() || error_of(recv) == topology::PtpError::RecvFailed
+           || error_of(recv) == topology::PtpError::NoTimestamp);
     crucible::test::pass("  test_linux_boundaries_if_available: PASSED\n");
 }
 

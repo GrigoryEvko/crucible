@@ -40,7 +40,9 @@ inline void run_discovery_text(std::span<const std::uint8_t> bytes) {
             break;
         case 1: {
             topology::DiscoveryNodeFact local{.kind = cog::CogKind::NicPort};
-            if (auto index = snapshot.add_node(local)) (void)topology::parse_ethtool_info(text, snapshot, *index);
+            snapshot.add_node(local).match(
+                [&](std::uint16_t index) { (void)topology::parse_ethtool_info(text, snapshot, index); },
+                [](topology::DiscoveryError) {});
             break;
         }
         case 2:

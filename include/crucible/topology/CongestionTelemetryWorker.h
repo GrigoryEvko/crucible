@@ -2,18 +2,16 @@
 
 #include <crucible/observe/Observation.h>
 #include <crucible/topology/CongestionTelemetry.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <foundation/Pinned.h>
+#include <foundation/core/Array.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/EnumName.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
-#include <memory>
-#include <span>
 #include <type_traits>
 
 namespace crucible::topology {
@@ -35,8 +33,10 @@ inline constexpr std::uint32_t kCongestionMetricBase = 0x43430000u;
 // One observation for each slot.
 inline constexpr std::size_t kCongestionObservationCount = ::foundation::reflect::enum_count<CongestionMetricSlot>;
 
-using CongestionObservationSet = std::array<::crucible::observe::ObservationSnapshot, kCongestionObservationCount>;
-using CongestionObservationBatch = std::array<::crucible::observe::Observation, kCongestionObservationCount>;
+using CongestionObservationSet =
+    ::foundation::core::FixedArray<::crucible::observe::ObservationSnapshot, kCongestionObservationCount>;
+using CongestionObservationBatch =
+    ::foundation::core::FixedArray<::crucible::observe::Observation, kCongestionObservationCount>;
 
 template <class Ctx>
 concept CtxFitsCongestionTelemetryStart =
@@ -62,7 +62,7 @@ concept CtxFitsCongestionTelemetryPoll = CtxFitsCongestionTelemetryHarvest<Ctx> 
 [[nodiscard]] constexpr CongestionObservationBatch congestion_observations(
     std::uint16_t link_slot, topology::CongestionAggregate const& aggregate, std::uint64_t sequence,
     ::crucible::observe::ObservationSource source = ::crucible::observe::ObservationSource::Runtime) noexcept {
-    return CongestionObservationBatch{{
+    return CongestionObservationBatch{
         ::crucible::observe::make_observation(::crucible::observe::ObservationKind::Metric, source,
                                               congestion_metric_id(link_slot, CongestionMetricSlot::SampleCount),
                                               aggregate.sample_count, sequence),
@@ -93,7 +93,7 @@ concept CtxFitsCongestionTelemetryPoll = CtxFitsCongestionTelemetryHarvest<Ctx> 
         ::crucible::observe::make_observation(::crucible::observe::ObservationKind::Metric, source,
                                               congestion_metric_id(link_slot, CongestionMetricSlot::WorstMode),
                                               static_cast<std::uint64_t>(aggregate.worst_mode), sequence),
-    }};
+    };
 }
 
 inline void publish_congestion(
@@ -101,8 +101,8 @@ inline void publish_congestion(
     std::uint64_t sequence,
     ::crucible::observe::ObservationSource source = ::crucible::observe::ObservationSource::Runtime) noexcept {
     CongestionObservationBatch const observations = congestion_observations(link_slot, aggregate, sequence, source);
-    for (std::size_t i = 0; i < observations.size(); ++i) {
-        ::crucible::observe::record_observation(sinks[i], observations[i]);
+    for (::fixy::Index<kCongestionObservationCount> const index : observations.indices()) {
+        ::crucible::observe::record_observation(sinks.at(index), observations.at(index));
     }
 }
 
@@ -128,7 +128,9 @@ class CongestionTelemetryWorker : public ::foundation::Pinned<CongestionTelemetr
         std::uint64_t sequence = 0;
     };
 
-    std::array<Slot, MaxLinks> slots_{};
+    using SlotIndex = ::fixy::Index<MaxLinks>;
+
+    ::foundation::core::FixedArray<Slot, MaxLinks> slots_{};
     topology::TelemetrySchedule schedule_{};
 
     template <std::size_t Links, std::size_t Flows, class Ctx>
@@ -137,85 +139,78 @@ class CongestionTelemetryWorker : public ::foundation::Pinned<CongestionTelemetr
 
     constexpr CongestionTelemetryWorker() noexcept = default;
 
-    // The started slot of this NIC, or nullptr.  One lookup serves the
-    // const and the mutable callers.
-    template <class Self>
-    [[nodiscard]] constexpr auto find(this Self& self, cog::CogIdentity const& nic) noexcept
-        -> decltype(std::addressof(self.slots_[0])) {
-        for (auto& slot : self.slots_) {
+    // The index of the started slot of this NIC, or the error LinkNotStarted.
+    // Complexity: linear in the slots.
+    [[nodiscard]] constexpr ::fixy::Result<SlotIndex, topology::TelemetryError>
+    find(cog::CogIdentity const& nic) const noexcept {
+        for (SlotIndex const index : slots_.indices()) {
+            Slot const& slot = slots_.at(index);
             if (slot.occupied && slot.nic.uuid == nic.uuid) {
-                return std::addressof(slot);
+                return index;
             }
         }
-        return nullptr;
+        return ::fixy::err(topology::TelemetryError::LinkNotStarted);
     }
 
 public:
     template <class Ctx>
         requires CtxFitsCongestionTelemetryStart<Ctx>
-    [[nodiscard]] constexpr std::expected<void, topology::TelemetryError>
-    start(Ctx const&, std::span<const cog::CogIdentity> nics, topology::TelemetrySchedule schedule = {}) noexcept {
+    [[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, topology::TelemetryError>
+    start(Ctx const&, ::fixy::View<cog::CogIdentity const> nics, topology::TelemetrySchedule schedule = {}) noexcept {
         if (nics.size() > MaxLinks) {
-            return std::unexpected(topology::TelemetryError::TooManyLinks);
+            return ::fixy::err(topology::TelemetryError::TooManyLinks);
         }
-        for (auto const& nic : nics) {
+        for (cog::CogIdentity const& nic : nics) {
             if (!topology::is_nic_cog(nic)) {
-                return std::unexpected(topology::TelemetryError::InvalidNicCog);
+                return ::fixy::err(topology::TelemetryError::InvalidNicCog);
             }
         }
-        for (auto& slot : slots_) {
+        for (Slot& slot : slots_) {
             slot = Slot{};
         }
-        for (std::size_t i = 0; i < nics.size(); ++i) {
-            slots_[i].occupied = true;
-            slots_[i].nic = nics[i];
-            slots_[i].last.nic_uuid = nics[i].uuid;
+        // The count of the NICs is at most MaxLinks, so each NIC finds a slot.
+        auto slot = slots_.begin();
+        for (cog::CogIdentity const& nic : nics) {
+            (*slot).occupied = true;
+            (*slot).nic = nic;
+            (*slot).last.nic_uuid = nic.uuid;
+            ++slot;
         }
         schedule_ = schedule;
-        return {};
+        return ::fixy::Unit{};
     }
 
     [[nodiscard]] constexpr topology::TelemetrySchedule schedule() const noexcept { return schedule_; }
 
     template <class Ctx>
         requires CtxFitsCongestionTelemetryHarvest<Ctx>
-    [[nodiscard]] std::expected<topology::CongestionAggregate, topology::TelemetryError>
-    record_link(Ctx const&, cog::CogIdentity const& nic, std::span<const topology::TcpInfoSnapshot> samples,
+    [[nodiscard]] ::fixy::Result<topology::CongestionAggregate, topology::TelemetryError>
+    record_link(Ctx const&, cog::CogIdentity const& nic, ::fixy::View<topology::TcpInfoSnapshot const> samples,
                 std::uint64_t sequence) noexcept {
-        Slot* slot = find(nic);
-        if (slot == nullptr) {
-            return std::unexpected(topology::TelemetryError::LinkNotStarted);
-        }
-        slot->last = topology::aggregate_congestion(nic, samples);
-        slot->sequence = sequence;
-        return slot->last;
+        CRUCIBLE_TRY(index, find(nic));
+        Slot& slot = slots_.at(index);
+        slot.last = topology::aggregate_congestion(nic, samples);
+        slot.sequence = sequence;
+        return slot.last;
     }
 
     template <class Ctx>
         requires CtxFitsCongestionTelemetryPoll<Ctx>
-    [[nodiscard]] std::expected<topology::CongestionAggregate, topology::TelemetryError>
-    poll_link(Ctx const& ctx, cog::CogIdentity const& nic, std::span<const cntp::SocketFd> active_fds,
+    [[nodiscard]] ::fixy::Result<topology::CongestionAggregate, topology::TelemetryError>
+    poll_link(Ctx const& ctx, cog::CogIdentity const& nic, ::fixy::View<cntp::SocketFd const> active_fds,
               std::uint64_t sequence) noexcept {
-        Slot* slot = find(nic);
-        if (slot == nullptr) {
-            return std::unexpected(topology::TelemetryError::LinkNotStarted);
-        }
-        auto aggregate = topology::harvest_per_link(ctx, nic, active_fds);
-        if (!aggregate.has_value()) {
-            return std::unexpected(aggregate.error());
-        }
-        slot->last = *aggregate;
-        slot->sequence = sequence;
-        return slot->last;
+        CRUCIBLE_TRY(index, find(nic));
+        CRUCIBLE_TRY(aggregate, topology::harvest_per_link(ctx, nic, active_fds));
+        Slot& slot = slots_.at(index);
+        slot.last = aggregate;
+        slot.sequence = sequence;
+        return slot.last;
     }
 
-    [[nodiscard]] constexpr std::expected<topology::CongestionAggregate, topology::TelemetryError>
+    [[nodiscard]] constexpr ::fixy::Result<topology::CongestionAggregate, topology::TelemetryError>
     last(cog::CogIdentity const& nic) const noexcept {
-        Slot const* slot = find(nic);
-        if (slot == nullptr) {
-            return std::unexpected(topology::TelemetryError::LinkNotStarted);
-        }
-        return slot->last;
+        CRUCIBLE_TRY(index, find(nic));
+        return slots_.at(index).last;
     }
 };
 

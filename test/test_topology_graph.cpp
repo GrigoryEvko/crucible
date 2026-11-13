@@ -16,7 +16,6 @@
 #include <bit>
 #include <cstdint>
 #include <cstdio>
-#include <span>
 #include <string_view>
 #include <type_traits>
 
@@ -101,7 +100,7 @@ static void test_default_topology_edge() {
     static_assert([] {
         topology::TopologyEdge const zero{};
         return zero.id.is_none() && zero.kind == topology::LinkKind::Unknown
-            && zero.state == topology::CongestionState::Healthy && zero.peer == nullptr
+            && zero.state == topology::CongestionState::Healthy && zero.peer.is_none()
             && zero.bandwidth_bytes_per_sec.value() == 0 && zero.rtt_ns_p50.value() == 0 && zero.rtt_ns_p99.value() == 0
             && std::bit_cast<std::uint32_t>(zero.drop_rate.value()) == 0u;
     }());
@@ -110,7 +109,7 @@ static void test_default_topology_edge() {
     assert(e.id.is_none());
     assert(e.kind == topology::LinkKind::Unknown);
     assert(e.state == topology::CongestionState::Healthy);
-    assert(e.peer == nullptr);
+    assert(e.peer.is_none());
     assert(e.bandwidth_bytes_per_sec.value() == 0);
     assert(e.rtt_ns_p50.value() == 0);
     assert(e.rtt_ns_p99.value() == 0);
@@ -127,36 +126,36 @@ static void test_mint_topology_graph_round_trip() {
     // Three nodes in a line, joined by two links.  Each link is stored
     // as a pair of half-edges, one per direction, which is where the
     // four edges come from.
-    cog::CogIdentity nodes[3]{};
-    nodes[0].uuid = cog::Uuid{0x1ULL, 0x1ULL};
-    nodes[0].kind = cog::CogKind::Gpu;
-    nodes[1].uuid = cog::Uuid{0x2ULL, 0x2ULL};
-    nodes[1].kind = cog::CogKind::NicPort;
-    nodes[2].uuid = cog::Uuid{0x3ULL, 0x3ULL};
-    nodes[2].kind = cog::CogKind::NvSwitch;
+    using ::fixy::index;
+    ::foundation::core::FixedArray<cog::CogIdentity, 3> nodes{};
+    nodes.at(index<0>()).uuid = cog::Uuid{0x1ULL, 0x1ULL};
+    nodes.at(index<0>()).kind = cog::CogKind::Gpu;
+    nodes.at(index<1>()).uuid = cog::Uuid{0x2ULL, 0x2ULL};
+    nodes.at(index<1>()).kind = cog::CogKind::NicPort;
+    nodes.at(index<2>()).uuid = cog::Uuid{0x3ULL, 0x3ULL};
+    nodes.at(index<2>()).kind = cog::CogKind::NvSwitch;
 
-    topology::TopologyEdge edges[4]{};
-    edges[0].id = topology::EdgeId{0};
-    edges[0].kind = topology::LinkKind::PciE;
-    edges[0].peer = &nodes[1];
-    edges[0].bandwidth_bytes_per_sec =
+    ::foundation::core::FixedArray<topology::TopologyEdge, 4> edges{};
+    edges.at(index<0>()).id = topology::EdgeId{0};
+    edges.at(index<0>()).kind = topology::LinkKind::PciE;
+    edges.at(index<0>()).peer = topology::NodeId{1};
+    edges.at(index<0>()).bandwidth_bytes_per_sec =
         ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(std::uint64_t{32} * 1024 * 1024 * 1024);
 
-    edges[1].id = topology::EdgeId{1};
-    edges[1].kind = topology::LinkKind::PciE;
-    edges[1].peer = &nodes[0];  // reverse half-edge
+    edges.at(index<1>()).id = topology::EdgeId{1};
+    edges.at(index<1>()).kind = topology::LinkKind::PciE;
+    edges.at(index<1>()).peer = topology::NodeId{0};  // reverse half-edge
 
-    edges[2].id = topology::EdgeId{2};
-    edges[2].kind = topology::LinkKind::Ethernet;
-    edges[2].peer = &nodes[2];
+    edges.at(index<2>()).id = topology::EdgeId{2};
+    edges.at(index<2>()).kind = topology::LinkKind::Ethernet;
+    edges.at(index<2>()).peer = topology::NodeId{2};
 
-    edges[3].id = topology::EdgeId{3};
-    edges[3].kind = topology::LinkKind::Ethernet;
-    edges[3].peer = &nodes[1];
+    edges.at(index<3>()).id = topology::EdgeId{3};
+    edges.at(index<3>()).kind = topology::LinkKind::Ethernet;
+    edges.at(index<3>()).peer = topology::NodeId{1};
 
     eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
-    auto g = topology::mint_topology_graph(ctx, std::span<const cog::CogIdentity>{nodes, 3},
-                                           std::span<const topology::TopologyEdge>{edges, 4});
+    auto g = topology::mint_topology_graph(ctx, nodes.view(), edges.view());
 
     volatile auto nc = g.node_count();
     volatile auto ec = g.edge_count();
@@ -165,27 +164,27 @@ static void test_mint_topology_graph_round_trip() {
     assert(g.nodes().size() == 3);
     assert(g.edges().size() == 4);
 
-    auto* e0 = g.edge_by_id(topology::EdgeId{0});
-    assert(e0 != nullptr);
-    assert(e0->kind == topology::LinkKind::PciE);
-    assert(e0->peer == &nodes[1]);
+    topology::TopologyEdge const e0 = g.edge_by_id(topology::EdgeId{0}).expect("the graph holds edge 0");
+    assert(e0.kind == topology::LinkKind::PciE);
+    assert(e0.peer == topology::NodeId{1});
 
-    auto* e3 = g.edge_by_id(topology::EdgeId{3});
-    assert(e3 != nullptr);
-    assert(e3->peer == &nodes[1]);
+    topology::TopologyEdge const e3 = g.edge_by_id(topology::EdgeId{3}).expect("the graph holds edge 3");
+    assert(e3.peer == topology::NodeId{1});
 
-    auto* miss = g.edge_by_id(topology::EdgeId{42});
-    assert(miss == nullptr);
+    assert(g.edge_by_id(topology::EdgeId{42}).is_none());
 
-    topology::TopologyEdge const* incident_buf[8]{};
-    auto found = g.edges_incident_on(&nodes[1], std::span<topology::TopologyEdge const*>{incident_buf, 8});
+    ::foundation::core::FixedArray<topology::EdgeId, 8> incident{};
+    auto found = g.edges_incident_on(topology::NodeId{1}, incident.view());
     // The middle node is named as the far end of both links, once
     // from each side.
     assert(found == 2);
+    assert(incident.at(index<0>()) == topology::EdgeId{0});
+    assert(incident.at(index<1>()) == topology::EdgeId{3});
 
-    auto found_on_end_node = g.edges_incident_on(&nodes[0], std::span<topology::TopologyEdge const*>{incident_buf, 8});
+    auto found_on_end_node = g.edges_incident_on(topology::NodeId{0}, incident.view());
     // An end node is named by one half-edge only.
     assert(found_on_end_node == 1);
+    assert(incident.at(index<0>()) == topology::EdgeId{1});
 
     crucible::test::pass("  test_mint_topology_graph_round_trip:  PASSED\n");
 }
@@ -195,14 +194,14 @@ static void test_mint_topology_graph_round_trip() {
 static void test_empty_topology_graph() {
     static_assert([] {
         eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
-        auto g = topology::mint_topology_graph(ctx, std::span<const cog::CogIdentity>{},
-                                               std::span<const topology::TopologyEdge>{});
+        auto g = topology::mint_topology_graph(ctx, ::fixy::View<cog::CogIdentity const>{},
+                                               ::fixy::View<topology::TopologyEdge const>{});
         return g.node_count() == 0 && g.edge_count() == 0;
     }());
 
     eff::ColdInitCtx ctx{::foundation::effects::testing::init()};
-    auto g = topology::mint_topology_graph(ctx, std::span<const cog::CogIdentity>{},
-                                           std::span<const topology::TopologyEdge>{});
+    auto g = topology::mint_topology_graph(ctx, ::fixy::View<cog::CogIdentity const>{},
+                                           ::fixy::View<topology::TopologyEdge const>{});
     volatile auto nc = g.node_count();
     volatile auto ec = g.edge_count();
     assert(nc == 0);

@@ -13,7 +13,7 @@ namespace topology = crucible::topology;
         nic, 1, topology::NetdevCounters{}, topology::declare_qdisc_backlog(topology::QdiscBacklog{}),
         topology::declare_sysctl_snapshot(topology::SysctlSnapshot{}), tcp,
         topology::declare_nic_thermal_sample(topology::NicThermalSample{}), 1);
-    return snapshot.has_value() ? 0 : 1;
+    return snapshot.is_ok() ? 0 : 1;
 }
 
 int main() { return 0; }

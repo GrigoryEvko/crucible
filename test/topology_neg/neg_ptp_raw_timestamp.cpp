@@ -6,11 +6,10 @@
 #include <crucible/topology/Ptp.h>
 
 #include <cstddef>
-#include <span>
 
 int main() {
-    std::byte b{0};
-    auto packet = crucible::topology::timestamp_packet_view(std::span<const std::byte>{&b, 1}, 42u, 1);
+    ::foundation::core::FixedArray<std::byte, 1> const bytes{std::byte{0}};
+    auto packet = crucible::topology::timestamp_packet_view(bytes.view(), 42u, 1);
     (void)packet;
     return 0;
 }

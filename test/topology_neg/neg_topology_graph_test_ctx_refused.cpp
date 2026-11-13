@@ -8,13 +8,11 @@
 
 #include <crucible/topology/TopologyGraph.h>
 
-#include <span>
-
 namespace topology = crucible::topology;
 namespace cog = crucible::cog;
 
-inline constexpr std::span<const cog::CogIdentity> kNoNodes{};
-inline constexpr std::span<const topology::TopologyEdge> kNoEdges{};
+inline constexpr ::fixy::View<cog::CogIdentity const> kNoNodes{};
+inline constexpr ::fixy::View<topology::TopologyEdge const> kNoEdges{};
 
 [[maybe_unused]] static auto try_mint_with_test_ctx() {
     ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};

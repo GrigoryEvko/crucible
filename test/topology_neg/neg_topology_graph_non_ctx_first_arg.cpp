@@ -7,13 +7,11 @@
 
 #include <crucible/topology/TopologyGraph.h>
 
-#include <span>
-
 namespace topology = crucible::topology;
 namespace cog = crucible::cog;
 
-inline constexpr std::span<const cog::CogIdentity> kNoNodes{};
-inline constexpr std::span<const topology::TopologyEdge> kNoEdges{};
+inline constexpr ::fixy::View<cog::CogIdentity const> kNoNodes{};
+inline constexpr ::fixy::View<topology::TopologyEdge const> kNoEdges{};
 
 [[maybe_unused]] static auto try_mint_with_int_ctx() {
     return topology::mint_topology_graph(int{0}, kNoNodes, kNoEdges);

@@ -8,6 +8,7 @@
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/topology/CongestionTelemetry.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <fixy/Stale.h>
@@ -18,11 +19,8 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
-#include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <string_view>
 #include <type_traits>
 
@@ -128,13 +126,13 @@ concept CtxFitsNicTelemetryRead =
     return ::fixy::mint_tagged<::fixy::tags::source::KernelTelemetry>(sample);
 }
 
-[[nodiscard]] std::expected<DeclaredNetdevCounters, NicTelemetryError>
+[[nodiscard]] ::fixy::Result<DeclaredNetdevCounters, NicTelemetryError>
 parse_netdev_counters(ExternalTelemetryText text) noexcept;
 
-[[nodiscard]] std::expected<DeclaredQdiscBacklog, NicTelemetryError>
+[[nodiscard]] ::fixy::Result<DeclaredQdiscBacklog, NicTelemetryError>
 parse_qdisc_backlog(ExternalTelemetryText text) noexcept;
 
-[[nodiscard]] std::expected<DeclaredSysctlSnapshot, NicTelemetryError>
+[[nodiscard]] ::fixy::Result<DeclaredSysctlSnapshot, NicTelemetryError>
 parse_sysctl_snapshot(ExternalTelemetryText text) noexcept;
 
 [[nodiscard]] constexpr std::uint64_t netdev_drop_ppm(NetdevCounters counters) noexcept {
@@ -145,7 +143,7 @@ parse_sysctl_snapshot(ExternalTelemetryText text) noexcept;
         return 0;
     }
     const long double ppm = static_cast<long double>(dropped) * 1000000.0L / static_cast<long double>(packets);
-    return static_cast<std::uint64_t>(std::min<long double>(1000000.0L, ppm));
+    return static_cast<std::uint64_t>(ppm < 1000000.0L ? ppm : 1000000.0L);
 }
 
 [[nodiscard]] constexpr std::uint64_t sysctl_throughput_ceiling_bps(SysctlSnapshot sysctl,
@@ -153,9 +151,9 @@ parse_sysctl_snapshot(ExternalTelemetryText text) noexcept;
     if (rtt_us == 0) {
         rtt_us = 1;
     }
-    std::uint64_t window = std::max(sysctl.rmem_max_bytes, sysctl.wmem_max_bytes);
-    window = std::max<std::uint64_t>(window, sysctl.tcp_rmem_max_bytes);
-    window = std::max<std::uint64_t>(window, sysctl.tcp_wmem_max_bytes);
+    std::uint64_t window = ::fixy::max(sysctl.rmem_max_bytes, sysctl.wmem_max_bytes);
+    window = ::fixy::max(window, std::uint64_t{sysctl.tcp_rmem_max_bytes});
+    window = ::fixy::max(window, std::uint64_t{sysctl.tcp_wmem_max_bytes});
     if (window == 0) {
         return UINT64_MAX;
     }
@@ -171,11 +169,13 @@ class NicTelemetrySnapshot;
 template <std::size_t Window>
 class NicTelemetryHistory;
 
-[[nodiscard]] constexpr std::expected<NicTelemetrySnapshot, NicTelemetryError>
-mint_nic_telemetry_snapshot(cog::CogIdentity const& nic, std::uint64_t line_rate_bps, DeclaredNetdevCounters netdev,
-                            DeclaredQdiscBacklog qdisc, DeclaredSysctlSnapshot sysctl, TcpInfoSnapshot tcp,
-                            DeclaredNicThermalSample thermal, std::uint64_t sequence,
-                            NicTelemetryPolicy policy = {}) noexcept;
+// A Result of NicTelemetrySnapshot, or the error InvalidNicCog.  The return
+// type is deduced, because the snapshot is incomplete here and in the class.
+[[nodiscard]] constexpr auto mint_nic_telemetry_snapshot(cog::CogIdentity const& nic, std::uint64_t line_rate_bps,
+                                                         DeclaredNetdevCounters netdev, DeclaredQdiscBacklog qdisc,
+                                                         DeclaredSysctlSnapshot sysctl, TcpInfoSnapshot tcp,
+                                                         DeclaredNicThermalSample thermal, std::uint64_t sequence,
+                                                         NicTelemetryPolicy policy = {}) noexcept;
 
 // One NIC at one sequence number. The mint is the only door: it checks
 // that the cog is a NIC and computes the effective bandwidth from the
@@ -199,10 +199,6 @@ public:
     [[nodiscard]] constexpr std::uint64_t sequence() const noexcept { return sequence_; }
 
 private:
-    // The empty slot of a history. Only the history builds one, and it
-    // never reads a slot that no record filled.
-    constexpr NicTelemetrySnapshot() noexcept = default;
-
     constexpr NicTelemetrySnapshot(cog::Uuid nic_uuid, std::uint64_t line_rate_bps, DeclaredNetdevCounters netdev,
                                    DeclaredQdiscBacklog qdisc, DeclaredSysctlSnapshot sysctl, TcpInfoSnapshot tcp,
                                    DeclaredNicThermalSample thermal, std::uint64_t sequence) noexcept
@@ -215,14 +211,11 @@ private:
           thermal_{::fixy::Stale<DeclaredNicThermalSample>::at(thermal, sequence)},
           sequence_{sequence} {}
 
-    friend constexpr std::expected<NicTelemetrySnapshot, NicTelemetryError>
-    mint_nic_telemetry_snapshot(cog::CogIdentity const& nic, std::uint64_t line_rate_bps, DeclaredNetdevCounters netdev,
-                                DeclaredQdiscBacklog qdisc, DeclaredSysctlSnapshot sysctl, TcpInfoSnapshot tcp,
-                                DeclaredNicThermalSample thermal, std::uint64_t sequence,
-                                NicTelemetryPolicy policy) noexcept;
-
-    template <std::size_t Window>
-    friend class NicTelemetryHistory;
+    friend constexpr auto mint_nic_telemetry_snapshot(cog::CogIdentity const& nic, std::uint64_t line_rate_bps,
+                                                      DeclaredNetdevCounters netdev, DeclaredQdiscBacklog qdisc,
+                                                      DeclaredSysctlSnapshot sysctl, TcpInfoSnapshot tcp,
+                                                      DeclaredNicThermalSample thermal, std::uint64_t sequence,
+                                                      NicTelemetryPolicy policy) noexcept;
 
     cog::Uuid nic_uuid_{};
     line_rate_type line_rate_bps_{};
@@ -236,38 +229,37 @@ private:
 };
 
 // The base is at least one bit per second, so the positive mint passes.
-[[nodiscard]] constexpr std::expected<PositiveEffectiveBandwidthBps, NicTelemetryError>
+[[nodiscard]] constexpr PositiveEffectiveBandwidthBps
 compute_effective_bandwidth(NicTelemetrySnapshot const& snapshot, NicTelemetryPolicy policy = {}) noexcept {
     auto const& tcp = snapshot.tcp().peek().value();
-    const std::uint64_t rtt_us = std::max<std::uint64_t>(1, tcp.rt_prop_us.value());
+    const std::uint64_t rtt_us = ::fixy::max(std::uint64_t{1}, tcp.rt_prop_us.value());
     const std::uint64_t line_rate =
         snapshot.line_rate_bps().value() == 0 ? UINT64_MAX : snapshot.line_rate_bps().value();
     const std::uint64_t sysctl_ceiling = sysctl_throughput_ceiling_bps(snapshot.sysctl().peek().value(), rtt_us);
     const std::uint64_t tcp_btl = tcp.btl_bw_bps.value();
 
-    long double base = static_cast<long double>(std::min({line_rate, sysctl_ceiling, tcp_btl}));
+    long double base = static_cast<long double>(::fixy::min(::fixy::min(line_rate, sysctl_ceiling), tcp_btl));
     const long double in_flight_bps =
         static_cast<long double>(tcp.in_flight_bytes) * 8000000.0L / static_cast<long double>(rtt_us);
     const long double penalty = in_flight_bps * static_cast<long double>(policy.fairness_penalty_ppm) / 1000000.0L;
-    base = std::max<long double>(1.0L, base - penalty);
+    const long double reduced = base - penalty;
+    base = 1.0L < reduced ? reduced : 1.0L;
     return ::fixy::mint_refined<::fixy::positive>(static_cast<double>(base));
 }
 
-[[nodiscard]] constexpr std::expected<NicTelemetrySnapshot, NicTelemetryError>
-mint_nic_telemetry_snapshot(cog::CogIdentity const& nic, std::uint64_t line_rate_bps, DeclaredNetdevCounters netdev,
-                            DeclaredQdiscBacklog qdisc, DeclaredSysctlSnapshot sysctl, TcpInfoSnapshot tcp,
-                            DeclaredNicThermalSample thermal, std::uint64_t sequence,
-                            NicTelemetryPolicy policy) noexcept {
+[[nodiscard]] constexpr auto mint_nic_telemetry_snapshot(cog::CogIdentity const& nic, std::uint64_t line_rate_bps,
+                                                         DeclaredNetdevCounters netdev, DeclaredQdiscBacklog qdisc,
+                                                         DeclaredSysctlSnapshot sysctl, TcpInfoSnapshot tcp,
+                                                         DeclaredNicThermalSample thermal, std::uint64_t sequence,
+                                                         NicTelemetryPolicy policy) noexcept {
+    using Minted = ::fixy::Result<NicTelemetrySnapshot, NicTelemetryError>;
     if (!is_nic_cog(nic) || nic.uuid.is_zero()) {
-        return std::unexpected(NicTelemetryError::InvalidNicCog);
+        return Minted{::fixy::err(NicTelemetryError::InvalidNicCog)};
     }
     NicTelemetrySnapshot snapshot{nic.uuid, line_rate_bps, netdev, qdisc, sysctl, tcp, thermal, sequence};
-    auto effective = compute_effective_bandwidth(snapshot, policy);
-    if (!effective.has_value()) {
-        return std::unexpected(effective.error());
-    }
-    snapshot.effective_bandwidth_bps_ = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(effective->value());
-    return snapshot;
+    PositiveEffectiveBandwidthBps const effective = compute_effective_bandwidth(snapshot, policy);
+    snapshot.effective_bandwidth_bps_ = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(effective.value());
+    return Minted{snapshot};
 }
 
 template <std::size_t Window, class Ctx>
@@ -277,13 +269,19 @@ template <std::size_t Window, class Ctx>
 // A ring of the last Window snapshots. The mint is the only door. Every
 // write takes a background context, and every read takes a context that
 // owns the history.
+//
+// The list fills in the order of the records.  When it holds Window
+// snapshots, each record replaces the oldest one, at the position next_.
 template <std::size_t Window>
 class NicTelemetryHistory {
     static_assert(Window > 0, "NicTelemetryHistory requires at least one slot");
     static_assert(Window <= UINT16_MAX, "NicTelemetryHistory stores bounded history indices in uint16_t");
 
-    std::array<NicTelemetrySnapshot, Window> snapshots_{};
-    std::uint16_t count_ = 0;
+    // The slots of the list: Window, and one slot for a zero Window, so a
+    // zero Window fails only at its static_assert above.
+    static constexpr std::size_t kSlots = Window == 0 ? 1 : Window;
+
+    ::fixy::FixedList<NicTelemetrySnapshot, kSlots> snapshots_{};
     std::uint16_t next_ = 0;
 
     constexpr NicTelemetryHistory() noexcept = default;
@@ -292,68 +290,78 @@ class NicTelemetryHistory {
         requires CtxFitsNicTelemetryMint<Ctx>
     friend constexpr NicTelemetryHistory<W> mint_nic_telemetry_history(Ctx const&) noexcept;
 
+    [[nodiscard]] constexpr std::uint16_t count_() const noexcept {
+        return static_cast<std::uint16_t>(snapshots_.size());
+    }
+
     [[nodiscard]] constexpr std::uint16_t oldest_index() const noexcept {
-        if (count_ < Window) {
+        if (snapshots_.size() < Window) {
             return 0;
         }
         return next_;
     }
 
     [[nodiscard]] constexpr std::uint16_t newest_index() const noexcept {
-        return next_ == 0 ? static_cast<std::uint16_t>(Window - 1u) : static_cast<std::uint16_t>(next_ - 1u);
+        return next_ == 0 ? static_cast<std::uint16_t>(snapshots_.size() - 1u) : static_cast<std::uint16_t>(next_ - 1u);
+    }
+
+    // The snapshot at a position below the count of the list.
+    [[nodiscard]] constexpr NicTelemetrySnapshot const& at(std::uint16_t position) const noexcept {
+        return *snapshots_.get(position).expect("a ring position is below the count of the history");
     }
 
 public:
     template <class Ctx>
         requires CtxFitsNicTelemetryRead<Ctx>
     [[nodiscard]] constexpr std::uint16_t count(Ctx const&) const noexcept {
-        return count_;
+        return count_();
     }
 
     template <class Ctx>
         requires CtxFitsNicTelemetryRecord<Ctx>
     [[nodiscard]] constexpr NicTelemetryError record(Ctx const&, NicTelemetrySnapshot const& snapshot) noexcept {
-        snapshots_[next_] = snapshot;
-        next_ = static_cast<std::uint16_t>((next_ + 1u) % Window);
-        if (count_ < Window) {
-            ++count_;
+        if (snapshots_.size() < Window) {
+            static_cast<void>(snapshots_.push(snapshot));
+        } else {
+            *snapshots_.get(next_).expect("a full history holds a snapshot at each position") = snapshot;
         }
+        next_ = static_cast<std::uint16_t>((next_ + 1u) % Window);
         return NicTelemetryError::None;
     }
 
     template <class Ctx>
         requires CtxFitsNicTelemetryRead<Ctx>
-    [[nodiscard]] constexpr std::expected<NicTelemetrySnapshot, NicTelemetryError>
+    [[nodiscard]] constexpr ::fixy::Result<NicTelemetrySnapshot, NicTelemetryError>
     current_snapshot(Ctx const&) const noexcept {
-        if (count_ == 0) {
-            return std::unexpected(NicTelemetryError::EmptyHistory);
+        if (snapshots_.size() == 0) {
+            return ::fixy::err(NicTelemetryError::EmptyHistory);
         }
-        return snapshots_[newest_index()];
+        return at(newest_index());
     }
 
     template <class Ctx>
         requires CtxFitsNicTelemetryRead<Ctx>
-    [[nodiscard]] constexpr std::expected<NicTelemetryDrift, NicTelemetryError>
+    [[nodiscard]] constexpr ::fixy::Result<NicTelemetryDrift, NicTelemetryError>
     detect_drift(Ctx const&, NicTelemetryPolicy policy = {}) const noexcept {
-        if (count_ == 0) {
-            return std::unexpected(NicTelemetryError::EmptyHistory);
+        if (snapshots_.size() == 0) {
+            return ::fixy::err(NicTelemetryError::EmptyHistory);
         }
-        auto const& oldest = snapshots_[oldest_index()];
+        NicTelemetrySnapshot const& oldest = at(oldest_index());
         NicTelemetryDrift drift{
             .nic_uuid = oldest.nic_uuid(),
-            .observed_samples = count_,
+            .observed_samples = count_(),
         };
-        if (count_ < policy.min_drift_samples) {
+        if (count_() < policy.min_drift_samples) {
             return drift;
         }
-        auto const& newest = snapshots_[newest_index()];
+        NicTelemetrySnapshot const& newest = at(newest_index());
         const double baseline = oldest.effective_bandwidth_bps().value();
         const double observed = newest.effective_bandwidth_bps().value();
         if (baseline <= 0.0 || observed >= baseline) {
             return drift;
         }
         const double drop = (baseline - observed) * 1000000.0 / baseline;
-        drift.bandwidth_drop_ppm = static_cast<std::uint32_t>(std::min<double>(1000000.0, drop));
+        drift.bandwidth_drop_ppm = static_cast<std::uint32_t>(::fixy::min(1000000.0, drop));
         drift.degraded = drift.bandwidth_drop_ppm >= policy.drift_drop_ppm;
         return drift;
     }

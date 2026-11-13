@@ -2,20 +2,18 @@
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/observe/HdrHistogram.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Pinned.h>
+#include <foundation/core/Array.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
-#include <array>
-#include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <type_traits>
 
 namespace crucible::topology {
@@ -81,16 +79,19 @@ struct PingmeshPairStats {
     std::uint64_t stddev_latency_ns = 0;
 };
 
+// Each byte of the anomaly is a member, so a report of many anomalies has
+// no padding byte.
 struct PingmeshAnomaly {
     PingmeshPairStats stats{};
     std::uint32_t zscore_milli = 0;
     bool anomalous = false;
+    ::foundation::core::FixedArray<std::uint8_t, 3> pad_tail{};
 };
 
+// The anomalous pairs of one detection, in the order of the pair grid.
 template <std::size_t MaxPairs>
 struct PingmeshAnomalyReport {
-    std::array<PingmeshAnomaly, MaxPairs> entries{};
-    std::size_t count = 0;
+    ::fixy::FixedList<PingmeshAnomaly, MaxPairs> entries{};
 };
 
 template <class Ctx>
@@ -108,15 +109,15 @@ namespace detail {
 // One of these structs sits in every cell of an all-pairs grid, and separate
 // threads record into neighbouring cells at the same time.  Without the
 // alignment two cells share one cache line and those threads then contend for
-// it.  The five atomics inside one cell are written by the single thread that
+// it.  The five cells inside one struct are written by the single thread that
 // recorded that pair, so keeping them together is wanted.  The alignment
 // separates cells from each other and nothing else.
 struct alignas(64) AtomicPingmeshPairCounters {
-    std::atomic<std::uint64_t> sent{0};
-    std::atomic<std::uint64_t> delivered{0};
-    std::atomic<std::uint64_t> lost{0};
-    std::atomic<std::uint64_t> rejected{0};
-    std::atomic<std::uint64_t> last_sequence{0};
+    ::fixy::Tally sent{};
+    ::fixy::Tally delivered{};
+    ::fixy::Tally lost{};
+    ::fixy::Tally rejected{};
+    ::fixy::Atomic<std::uint64_t> last_sequence{};
 };
 
 [[nodiscard]] constexpr std::uint32_t zscore_milli(std::uint64_t value, std::uint64_t mean,
@@ -142,8 +143,8 @@ class Pingmesh;
 template <::foundation::effects::IsExecCtx Ctx, std::size_t MaxPeers, std::uint8_t Significant = 2,
           std::uint64_t MaxLatencyNs = 60000000000ull>
     requires CtxFitsPingmeshMint<Ctx>
-[[nodiscard]] constexpr Pingmesh<MaxPeers, Significant, MaxLatencyNs> mint_pingmesh(Ctx const&,
-                                                                                    PingmeshConfig config = {}) noexcept;
+[[nodiscard]] constexpr Pingmesh<MaxPeers, Significant, MaxLatencyNs>
+mint_pingmesh(Ctx const&, PingmeshConfig config = {}) noexcept;
 
 template <std::size_t MaxPeers, std::uint8_t Significant, std::uint64_t MaxLatencyNs>
 class Pingmesh : public ::foundation::Pinned<Pingmesh<MaxPeers, Significant, MaxLatencyNs>> {
@@ -162,36 +163,56 @@ public:
     };
 
 private:
-    PingmeshConfig config_{};
-    std::array<PeerSlot, MaxPeers> peers_{};
-    std::array<bool, max_pairs> enabled_pairs_{};
-    std::array<histogram_type, max_pairs> latency_{};
-    std::array<detail::AtomicPingmeshPairCounters, max_pairs> counters_{};
+    // The slots of the tables: MaxPeers, and two slots for a MaxPeers below
+    // two, so such a MaxPeers fails only at its static_assert above.
+    static constexpr std::size_t kPeerSlots = MaxPeers > 1 ? MaxPeers : 2;
+    static constexpr std::size_t kPairSlots = kPeerSlots * kPeerSlots;
 
-    [[nodiscard]] static constexpr std::size_t pair_index(std::size_t src, std::size_t dst) noexcept {
-        return src * MaxPeers + dst;
+    using PeerIndex = ::fixy::Index<kPeerSlots>;
+    using PairIndex = ::fixy::Index<kPairSlots>;
+
+    PingmeshConfig config_{};
+    ::foundation::core::FixedArray<PeerSlot, kPeerSlots> peers_{};
+    ::foundation::core::FixedArray<bool, kPairSlots> enabled_pairs_{};
+    ::foundation::core::FixedArray<histogram_type, kPairSlots> latency_{};
+    ::foundation::core::FixedArray<detail::AtomicPingmeshPairCounters, kPairSlots> counters_{};
+
+    // The cell of the directed pair from src to dst.  The product of two
+    // indexes below kPeerSlots is below kPairSlots, so the check cannot fail.
+    [[nodiscard]] static constexpr PairIndex pair_index(PeerIndex src, PeerIndex dst) noexcept {
+        return PairIndex::check(src.raw() * kPeerSlots + dst.raw())
+            .expect("the cell of two peer indexes is inside the pair grid");
     }
 
-    [[nodiscard]] std::size_t find_peer(cog::Uuid uuid) const noexcept {
-        for (std::size_t i = 0; i < MaxPeers; ++i) {
-            if (peers_[i].active && peers_[i].peer.uuid == uuid) {
-                return i;
+    // The index of the active slot of the peer, or no value.  Complexity:
+    // linear in the peers.
+    [[nodiscard]] ::fixy::Option<PeerIndex> find_peer(cog::Uuid uuid) const noexcept {
+        for (PeerIndex const index : peers_.indices()) {
+            PeerSlot const& slot = peers_.at(index);
+            if (slot.active && slot.peer.uuid == uuid) {
+                return ::fixy::some(index);
             }
         }
-        return MaxPeers;
+        return ::fixy::none;
     }
 
-    [[nodiscard]] PingmeshError validate_pair(std::size_t src, std::size_t dst) const noexcept {
-        if (src == MaxPeers || dst == MaxPeers) {
-            return PingmeshError::UnknownPeer;
+    // The cell of the pair from src to dst, two different registered peers.
+    [[nodiscard]] ::fixy::Result<PairIndex, PingmeshError> locate_pair(cog::Uuid src, cog::Uuid dst) const noexcept {
+        CRUCIBLE_TRY(src_index, find_peer(src).ok_or(PingmeshError::UnknownPeer));
+        CRUCIBLE_TRY(dst_index, find_peer(dst).ok_or(PingmeshError::UnknownPeer));
+        if (src_index == dst_index) {
+            return ::fixy::err(PingmeshError::SelfPair);
         }
-        if (src == dst) {
-            return PingmeshError::SelfPair;
+        return pair_index(src_index, dst_index);
+    }
+
+    // The cell of the pair from src to dst, when the pair is enabled.
+    [[nodiscard]] ::fixy::Result<PairIndex, PingmeshError> enabled_pair(cog::Uuid src, cog::Uuid dst) const noexcept {
+        CRUCIBLE_TRY(index, locate_pair(src, dst));
+        if (!enabled_pairs_.at(index)) {
+            return ::fixy::err(PingmeshError::DisabledPair);
         }
-        if (!enabled_pairs_[pair_index(src, dst)]) {
-            return PingmeshError::DisabledPair;
-        }
-        return PingmeshError::None;
+        return index;
     }
 
     template <::foundation::effects::IsExecCtx Ctx, std::size_t Peers, std::uint8_t Sig, std::uint64_t MaxNs>
@@ -207,10 +228,10 @@ private:
         if (peer.uuid.is_zero()) {
             return PingmeshError::ZeroPeer;
         }
-        if (find_peer(peer.uuid) != MaxPeers) {
+        if (find_peer(peer.uuid).is_some()) {
             return PingmeshError::DuplicatePeer;
         }
-        for (auto& slot : peers_) {
+        for (PeerSlot& slot : peers_) {
             if (!slot.active) {
                 slot.peer = peer;
                 slot.active = true;
@@ -221,23 +242,41 @@ private:
     }
 
     void enable_all_registered_pairs() noexcept {
-        for (std::size_t src = 0; src < MaxPeers; ++src) {
-            for (std::size_t dst = 0; dst < MaxPeers; ++dst) {
-                enabled_pairs_[pair_index(src, dst)] = src != dst && peers_[src].active && peers_[dst].active;
+        for (PeerIndex const src : peers_.indices()) {
+            for (PeerIndex const dst : peers_.indices()) {
+                enabled_pairs_.at(pair_index(src, dst)) = src != dst && peers_.at(src).active && peers_.at(dst).active;
             }
         }
+    }
+
+    // The statistics of the cell of the pair from src to dst.
+    [[nodiscard]] PingmeshPairStats stats_of(PairIndex index, cog::Uuid src, cog::Uuid dst) const noexcept {
+        detail::AtomicPingmeshPairCounters const& counters = counters_.at(index);
+        histogram_type const& hist = latency_.at(index);
+        return PingmeshPairStats{
+            .src = src,
+            .dst = dst,
+            .sent = counters.sent.read(),
+            .delivered = counters.delivered.read(),
+            .lost = counters.lost.read(),
+            .rejected = counters.rejected.read(),
+            .last_sequence = counters.last_sequence.load_acquire(),
+            .p50_latency_ns = hist.percentile(50.0),
+            .p99_latency_ns = hist.percentile(99.0),
+            .mean_latency_ns = hist.mean(),
+            .stddev_latency_ns = hist.std_dev(),
+        };
     }
 
 public:
     [[nodiscard]] PingmeshConfig config() const noexcept { return config_; }
 
-    [[nodiscard]] std::span<const PeerSlot, MaxPeers> peers() const noexcept {
-        return std::span<const PeerSlot, MaxPeers>{peers_};
-    }
+    [[nodiscard]] ::fixy::View<PeerSlot const, kPeerSlots> peers() const noexcept { return peers_.view(); }
 
+    // Complexity: quadratic in the peers, for the test of duplicates.
     template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsPingmeshMint<Ctx>
-    [[nodiscard]] PingmeshError start_probing(Ctx const&, std::span<const cog::CogIdentity> peers) noexcept {
+    [[nodiscard]] PingmeshError start_probing(Ctx const&, ::fixy::View<cog::CogIdentity const> peers) noexcept {
         if (peers.size() < 2) {
             return PingmeshError::InsufficientPeers;
         }
@@ -245,24 +284,28 @@ public:
             return PingmeshError::Full;
         }
 
-        for (std::size_t i = 0; i < peers.size(); ++i) {
-            if (peers[i].uuid.is_zero()) {
+        std::size_t position = 0;
+        for (cog::CogIdentity const& peer : peers) {
+            if (peer.uuid.is_zero()) {
                 return PingmeshError::ZeroPeer;
             }
-            if (find_peer(peers[i].uuid) != MaxPeers) {
+            if (find_peer(peer.uuid).is_some()) {
                 return PingmeshError::DuplicatePeer;
             }
-            for (std::size_t j = i + 1; j < peers.size(); ++j) {
-                if (peers[i].uuid == peers[j].uuid) {
+            std::size_t other_position = 0;
+            for (cog::CogIdentity const& other : peers) {
+                if (other_position > position && other.uuid == peer.uuid) {
                     return PingmeshError::DuplicatePeer;
                 }
+                ++other_position;
             }
+            ++position;
         }
 
-        for (auto const& peer : peers) {
-            auto const err = register_peer(peer);
-            if (err != PingmeshError::None) {
-                return err;
+        for (cog::CogIdentity const& peer : peers) {
+            PingmeshError const error = register_peer(peer);
+            if (error != PingmeshError::None) {
+                return error;
             }
         }
         enable_all_registered_pairs();
@@ -275,107 +318,83 @@ public:
     template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsPingmeshMint<Ctx>
     [[nodiscard]] PingmeshError enable_pair(Ctx const&, cog::Uuid src, cog::Uuid dst) noexcept {
-        auto const src_i = find_peer(src);
-        auto const dst_i = find_peer(dst);
-        auto const err = validate_pair(src_i, dst_i);
-        if (err == PingmeshError::DisabledPair) {
-            enabled_pairs_[pair_index(src_i, dst_i)] = true;
-            return PingmeshError::None;
-        }
-        return err;
+        return locate_pair(src, dst).match(
+            [&](PairIndex index) {
+                enabled_pairs_.at(index) = true;
+                return PingmeshError::None;
+            },
+            [](PingmeshError error) { return error; });
     }
 
     template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsPingmeshRecord<Ctx>
     [[nodiscard]] PingmeshError record_measurement(Ctx const&,
                                                    DeclaredPingmeshMeasurement const& measurement) noexcept {
-        auto const& value = measurement.value();
-        auto const src = find_peer(value.src);
-        auto const dst = find_peer(value.dst);
-        auto const pair_err = validate_pair(src, dst);
-        if (pair_err != PingmeshError::None) {
-            return pair_err;
-        }
+        PingmeshMeasurement const& value = measurement.value();
+        return enabled_pair(value.src, value.dst)
+            .match(
+                [&](PairIndex index) {
+                    detail::AtomicPingmeshPairCounters& counters = counters_.at(index);
+                    counters.sent.add(1);
+                    counters.last_sequence.store_release(value.sequence);
 
-        auto const index = pair_index(src, dst);
-        auto& counters = counters_[index];
-        counters.sent.fetch_add(1, std::memory_order_relaxed);
-        counters.last_sequence.store(value.sequence, std::memory_order_release);
+                    if (value.status == PingmeshProbeStatus::Lost) {
+                        counters.lost.add(1);
+                        return PingmeshError::None;
+                    }
+                    if (value.status == PingmeshProbeStatus::Rejected) {
+                        counters.rejected.add(1);
+                        return PingmeshError::None;
+                    }
 
-        if (value.status == PingmeshProbeStatus::Lost) {
-            counters.lost.fetch_add(1, std::memory_order_relaxed);
-            return PingmeshError::None;
-        }
-        if (value.status == PingmeshProbeStatus::Rejected) {
-            counters.rejected.fetch_add(1, std::memory_order_relaxed);
-            return PingmeshError::None;
-        }
-
-        auto const latency_ns = value.latency_ns.value();
-        if (latency_ns > MaxLatencyNs) {
-            counters.rejected.fetch_add(1, std::memory_order_relaxed);
-            return PingmeshError::LatencyOutOfRange;
-        }
-        latency_[index].record(histogram_type::checked_value(latency_ns));
-        counters.delivered.fetch_add(1, std::memory_order_relaxed);
-        return PingmeshError::None;
+                    std::uint64_t const latency_ns = value.latency_ns.value();
+                    if (latency_ns > MaxLatencyNs) {
+                        counters.rejected.add(1);
+                        return PingmeshError::LatencyOutOfRange;
+                    }
+                    latency_.at(index).record(histogram_type::checked_value(latency_ns));
+                    counters.delivered.add(1);
+                    return PingmeshError::None;
+                },
+                [](PingmeshError error) { return error; });
     }
 
-    [[nodiscard]] histogram_type const* per_pair_latency(cog::Uuid src, cog::Uuid dst) const noexcept {
-        auto const src_i = find_peer(src);
-        auto const dst_i = find_peer(dst);
-        if (validate_pair(src_i, dst_i) != PingmeshError::None) {
-            return nullptr;
-        }
-        return &latency_[pair_index(src_i, dst_i)];
+    // The latency histogram of the enabled pair from src to dst, or no value.
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<histogram_type const>> per_pair_latency(cog::Uuid src,
+                                                                                     cog::Uuid dst) const noexcept {
+        using Latency = ::fixy::Option<::fixy::Ref<histogram_type const>>;
+        ::fixy::Result<PairIndex, PingmeshError> const located = enabled_pair(src, dst);
+        return located.match([&](PairIndex const& index) { return Latency::some(::fixy::to(latency_.at(index))); },
+                             [](PingmeshError const&) { return Latency{::fixy::none}; });
     }
 
     [[nodiscard]] PingmeshPairStats pair_stats(cog::Uuid src, cog::Uuid dst) const noexcept {
-        auto const src_i = find_peer(src);
-        auto const dst_i = find_peer(dst);
-        if (validate_pair(src_i, dst_i) != PingmeshError::None) {
-            return {};
-        }
-
-        auto const index = pair_index(src_i, dst_i);
-        auto const& counters = counters_[index];
-        auto const& hist = latency_[index];
-        return PingmeshPairStats{
-            .src = src,
-            .dst = dst,
-            .sent = counters.sent.load(std::memory_order_relaxed),
-            .delivered = counters.delivered.load(std::memory_order_relaxed),
-            .lost = counters.lost.load(std::memory_order_relaxed),
-            .rejected = counters.rejected.load(std::memory_order_relaxed),
-            .last_sequence = counters.last_sequence.load(std::memory_order_acquire),
-            .p50_latency_ns = hist.percentile(50.0),
-            .p99_latency_ns = hist.percentile(99.0),
-            .mean_latency_ns = hist.mean(),
-            .stddev_latency_ns = hist.std_dev(),
-        };
+        return enabled_pair(src, dst).match([&](PairIndex index) { return stats_of(index, src, dst); },
+                                            [](PingmeshError) { return PingmeshPairStats{}; });
     }
 
-    // The detector is cumulative.  The window argument is accepted and
-    // ignored, because this carrier keeps no time-bucketed history.
-    [[nodiscard]] PingmeshAnomalyReport<max_pairs>
-    detect_anomalies(std::chrono::nanoseconds /* window */ = {}) const noexcept {
+    // The detector is cumulative, because this carrier keeps no
+    // time-bucketed history.  Complexity: linear in the pairs.
+    [[nodiscard]] PingmeshAnomalyReport<max_pairs> detect_anomalies() const noexcept {
         PingmeshAnomalyReport<max_pairs> report{};
         auto const threshold = config_.anomaly_zscore_milli.value();
-        for (std::size_t src = 0; src < MaxPeers; ++src) {
-            for (std::size_t dst = 0; dst < MaxPeers; ++dst) {
-                auto const index = pair_index(src, dst);
-                if (!enabled_pairs_[index]) {
+        for (PeerIndex const src : peers_.indices()) {
+            for (PeerIndex const dst : peers_.indices()) {
+                PairIndex const index = pair_index(src, dst);
+                if (!enabled_pairs_.at(index)) {
                     continue;
                 }
-                auto stats = pair_stats(peers_[src].peer.uuid, peers_[dst].peer.uuid);
+                PingmeshPairStats const stats = stats_of(index, peers_.at(src).peer.uuid, peers_.at(dst).peer.uuid);
                 auto const z =
                     detail::zscore_milli(stats.p99_latency_ns, stats.mean_latency_ns, stats.stddev_latency_ns);
                 if (z >= threshold || stats.lost != 0 || stats.rejected != 0) {
-                    report.entries[report.count++] = PingmeshAnomaly{
+                    // The report holds one entry for each pair, so the push
+                    // cannot find the report full.
+                    static_cast<void>(report.entries.push(PingmeshAnomaly{
                         .stats = stats,
                         .zscore_milli = z,
                         .anomalous = true,
-                    };
+                    }));
                 }
             }
         }

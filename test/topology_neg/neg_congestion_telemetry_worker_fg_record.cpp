@@ -7,8 +7,6 @@
 
 #include <crucible/topology/CongestionTelemetryWorker.h>
 
-#include <array>
-#include <span>
 #include <utility>
 
 int main() {
@@ -18,12 +16,11 @@ int main() {
     nic.kind = crucible::cog::CogKind::NicPort;
 
     auto worker = topology::mint_congestion_telemetry_worker<1, 1>(init);
-    std::array nics{nic};
-    auto started = worker.start(init, std::span{nics});
+    ::foundation::core::FixedArray<crucible::cog::CogIdentity, 1> const nics{nic};
+    auto started = worker.start(init, nics.view());
     (void)started;
-    std::array<topology::TcpInfoSnapshot, 1> samples{};
     return sizeof(worker.record_link(std::declval<::fixy::HotFgCtx const&>(), nic,
-                                     std::span<const topology::TcpInfoSnapshot>{samples}, 1))
+                                     ::fixy::View<topology::TcpInfoSnapshot const>{}, 1))
                 == 0
              ? 1
              : 0;

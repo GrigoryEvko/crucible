@@ -10,5 +10,5 @@ int main() {
     auto history =
         crucible::topology::mint_nic_telemetry_history<2>(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
     ::fixy::TestRunnerCtx runner{::foundation::effects::testing::test()};
-    return history.current_snapshot(runner).has_value() ? 1 : 0;
+    return history.current_snapshot(runner).is_ok() ? 1 : 0;
 }

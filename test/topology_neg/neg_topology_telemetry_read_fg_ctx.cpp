@@ -9,7 +9,7 @@
 [[maybe_unused]] static int read_from_foreground(::fixy::HotFgCtx const& fg) {
     auto history =
         crucible::topology::mint_nic_telemetry_history<2>(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
-    return history.current_snapshot(fg).has_value() ? 1 : 0;
+    return history.current_snapshot(fg).is_ok() ? 1 : 0;
 }
 
 int main() { return 0; }

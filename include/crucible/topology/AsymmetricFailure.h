@@ -4,21 +4,18 @@
 #include <crucible/observe/SyntheticProbe.h>
 #include <crucible/topology/Health.h>
 #include <fixy/Bits.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <foundation/Pinned.h>
+#include <foundation/core/Array.h>
 #include <foundation/diag/Tag.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
-#include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
-#include <span>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::topology {
@@ -44,10 +41,10 @@ enum class FailureSignal : std::uint32_t {
 };
 
 struct AsymmetricFailureDetected : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "AsymmetricFailureDetected";
-    static constexpr std::string_view description =
+    static constexpr ::foundation::diag::tag_text_literal name = "AsymmetricFailureDetected";
+    static constexpr ::foundation::diag::tag_text_literal description =
         "Bidirectional probes or witness votes detected a one-way or gray path failure.";
-    static constexpr std::string_view remediation =
+    static constexpr ::foundation::diag::tag_text_literal remediation =
         "Prefer path-swap or route-around policy before quarantining the peer; "
         "only quarantine when multi-vantage votes agree that the peer is dead.";
 };
@@ -141,6 +138,10 @@ class AsymmetricFailureDetector
     static_assert(Window <= 8, "AsymmetricFailureDetector local state is cache-line sized for Window <= 8");
     static_assert(MaxWitnesses > 0, "AsymmetricFailureDetector requires witness slots");
 
+    // The slots of a probe ring: Window, and one slot for a zero Window, so
+    // a zero Window fails only at its static_assert above.
+    static constexpr std::size_t kRingSlots = Window == 0 ? 1 : Window;
+
     struct WitnessSlot {
         bool occupied = false;
         cog::Uuid witness_uuid{};
@@ -151,8 +152,8 @@ class AsymmetricFailureDetector
     struct alignas(64) PeerSlot {
         bool occupied = false;
         cog::Uuid peer_uuid{};
-        std::array<bool, Window> outbound{};
-        std::array<bool, Window> inbound{};
+        ::foundation::core::FixedArray<bool, kRingSlots> outbound{};
+        ::foundation::core::FixedArray<bool, kRingSlots> inbound{};
         DirectionWindow outbound_window{};
         DirectionWindow inbound_window{};
         FailureClass last_class = FailureClass::Inconclusive;
@@ -160,10 +161,12 @@ class AsymmetricFailureDetector
     };
     static_assert(sizeof(PeerSlot) <= 64, "AsymmetricFailureDetector keeps local peer state within one cache line");
 
-    std::array<PeerSlot, MaxPeers> peers_{};
-    std::array<std::array<WitnessSlot, MaxWitnesses>, MaxPeers> witnesses_{};
-    std::array<AsymmetricFailureEvent, MaxPeers * 4> events_{};
-    std::size_t next_event_ = 0;
+    static constexpr std::size_t kMaxEvents = MaxPeers * 4;
+
+    ::foundation::core::FixedArray<PeerSlot, MaxPeers> peers_{};
+    ::foundation::core::FixedArray<::foundation::core::FixedArray<WitnessSlot, MaxWitnesses>, MaxPeers> witnesses_{};
+    ::foundation::core::FixedArray<AsymmetricFailureEvent, kMaxEvents> events_{};
+    ::fixy::Index<kMaxEvents> next_event_ = ::fixy::index<0>();
     std::size_t event_count_ = 0;
     AsymmetricFailurePolicy policy_{};
 
@@ -174,56 +177,62 @@ class AsymmetricFailureDetector
 
     explicit constexpr AsymmetricFailureDetector(AsymmetricFailurePolicy policy) noexcept : policy_{policy} {}
 
-    // The occupied slot of this peer, or nullptr.  One body serves the
-    // const readers and the mutating recorders.
-    [[nodiscard]] constexpr auto find(this auto& self, cog::Uuid const& uuid) noexcept {
-        for (auto& slot : self.peers_) {
+    // The index of the occupied slot of this peer, or no value.
+    // Complexity: linear in the slots.
+    [[nodiscard]] constexpr ::fixy::Option<::fixy::Index<MaxPeers>> find(cog::Uuid const& uuid) const noexcept {
+        for (::fixy::Index<MaxPeers> const index : peers_.indices()) {
+            PeerSlot const& slot = peers_.at(index);
             if (slot.occupied && slot.peer_uuid == uuid) {
-                return std::addressof(slot);
+                return ::fixy::some(index);
             }
         }
-        return decltype(std::addressof(self.peers_.front())){nullptr};
+        return ::fixy::none;
     }
 
-    // The slot of this peer, claimed from a free slot on first sight.  A
-    // zero identity is never a peer.
-    [[nodiscard]] constexpr PeerSlot* find_or_insert(cog::CogIdentity const& peer) noexcept {
+    // The index of the slot of this peer, claimed from a free slot on first
+    // sight.  A zero identity is never a peer.
+    [[nodiscard]] constexpr ::fixy::Option<::fixy::Index<MaxPeers>>
+    find_or_insert(cog::CogIdentity const& peer) noexcept {
         if (peer.uuid.is_zero()) {
-            return nullptr;
+            return ::fixy::none;
         }
-        if (PeerSlot* found = find(peer.uuid)) {
+        ::fixy::Option<::fixy::Index<MaxPeers>> found = find(peer.uuid);
+        if (found.is_some()) {
             return found;
         }
-        for (auto& slot : peers_) {
+        for (::fixy::Index<MaxPeers> const index : peers_.indices()) {
+            PeerSlot& slot = peers_.at(index);
             if (!slot.occupied) {
                 slot.occupied = true;
                 slot.peer_uuid = peer.uuid;
-                return std::addressof(slot);
+                return ::fixy::some(index);
             }
         }
-        return nullptr;
+        return ::fixy::none;
     }
 
-    [[nodiscard]] constexpr std::size_t slot_index(PeerSlot const& slot) const noexcept {
-        return static_cast<std::size_t>(&slot - peers_.data());
-    }
-
-    static constexpr void push_sample(std::array<bool, Window>& ring, DirectionWindow& window, bool success) noexcept {
+    // The cursor of a window is below Window in each state, so its check
+    // cannot fail.
+    static constexpr void push_sample(::foundation::core::FixedArray<bool, kRingSlots>& ring, DirectionWindow& window,
+                                      bool success) noexcept {
+        ::fixy::Index<kRingSlots> const next =
+            ::fixy::Index<kRingSlots>::check(window.next).expect("the cursor of a probe window is below its size");
         if (window.count == Window) {
-            if (ring[window.next]) {
+            if (ring.at(next)) {
                 --window.successes;
             }
         } else {
             ++window.count;
         }
-        ring[window.next] = success;
+        ring.at(next) = success;
         if (success) {
             ++window.successes;
         }
-        window.next = static_cast<std::uint16_t>((window.next + 1u) % Window);
+        window.next = static_cast<std::uint16_t>(detail::next_ring_index(next).raw());
     }
 
-    [[nodiscard]] constexpr FailureSummary summarize(PeerSlot const& slot) const noexcept {
+    [[nodiscard]] constexpr FailureSummary summarize(::fixy::Index<MaxPeers> index) const noexcept {
+        PeerSlot const& slot = peers_.at(index);
         FailureSummary out{};
         out.peer_uuid = slot.peer_uuid;
         out.outbound_samples = slot.outbound_window.count;
@@ -253,8 +262,7 @@ class AsymmetricFailureDetector
             out.signals.set(FailureSignal::LocalInboundFailed);
         }
 
-        auto const& witnesses = witnesses_[slot_index(slot)];
-        for (auto const& witness : witnesses) {
+        for (WitnessSlot const& witness : witnesses_.at(index)) {
             if (!witness.occupied) {
                 continue;
             }
@@ -290,7 +298,7 @@ class AsymmetricFailureDetector
     }
 
     constexpr void append_event(PeerSlot& slot, FailureClass from, FailureSummary const& summary) noexcept {
-        events_[next_event_] = AsymmetricFailureEvent{
+        events_.at(next_event_) = AsymmetricFailureEvent{
             .peer_uuid = slot.peer_uuid,
             .from = from,
             .to = summary.with_witnesses,
@@ -299,18 +307,76 @@ class AsymmetricFailureDetector
             .witness_reachable = summary.witness_reachable,
             .sequence = summary.sequence,
         };
-        next_event_ = (next_event_ + 1u) % events_.size();
-        if (event_count_ < events_.size()) {
+        next_event_ = detail::next_ring_index(next_event_);
+        if (event_count_ < kMaxEvents) {
             ++event_count_;
         }
         slot.last_class = summary.with_witnesses;
     }
 
-    constexpr void record_if_transition(PeerSlot& slot) noexcept {
-        FailureSummary const summary = summarize(slot);
+    constexpr void record_if_transition(::fixy::Index<MaxPeers> index) noexcept {
+        FailureSummary const summary = summarize(index);
+        PeerSlot& slot = peers_.at(index);
         if (summary.with_witnesses != slot.last_class) {
             append_event(slot, slot.last_class, summary);
         }
+    }
+
+    // Pushes one probe sample into the outbound or the inbound window of
+    // the peer, after the sequence advances.
+    [[nodiscard]] constexpr bool record_probe(cog::CogIdentity const& peer, bool is_outbound, bool success,
+                                              std::uint64_t sequence) noexcept {
+        return find_or_insert(peer).match(
+            [&](::fixy::Index<MaxPeers> index) {
+                PeerSlot& slot = peers_.at(index);
+                if (!slot.sequence.try_advance(sequence)) {
+                    return false;
+                }
+                if (is_outbound) {
+                    push_sample(slot.outbound, slot.outbound_window, success);
+                } else {
+                    push_sample(slot.inbound, slot.inbound_window, success);
+                }
+                record_if_transition(index);
+                return true;
+            },
+            [] { return false; });
+    }
+
+    // Records the vote of witness for the peer of index.  A vote older than
+    // the last vote of the witness, or a new witness with no free slot, is
+    // refused.
+    [[nodiscard]] constexpr bool record_vote(::fixy::Index<MaxPeers> index, cog::CogIdentity const& witness,
+                                             bool witness_reaches_target, std::uint64_t sequence) noexcept {
+        PeerSlot& slot = peers_.at(index);
+        if (sequence < slot.sequence.get()) {
+            return false;
+        }
+        ::foundation::core::FixedArray<WitnessSlot, MaxWitnesses>& witnesses = witnesses_.at(index);
+        for (WitnessSlot& existing : witnesses) {
+            if (existing.occupied && existing.witness_uuid == witness.uuid) {
+                if (sequence < existing.sequence.get()) {
+                    return false;
+                }
+                static_cast<void>(slot.sequence.try_advance(sequence));
+                static_cast<void>(existing.sequence.try_advance(sequence));
+                existing.reachable = witness_reaches_target;
+                record_if_transition(index);
+                return true;
+            }
+        }
+        for (WitnessSlot& existing : witnesses) {
+            if (!existing.occupied) {
+                existing.occupied = true;
+                existing.witness_uuid = witness.uuid;
+                existing.reachable = witness_reaches_target;
+                static_cast<void>(slot.sequence.try_advance(sequence));
+                static_cast<void>(existing.sequence.try_advance(sequence));
+                record_if_transition(index);
+                return true;
+            }
+        }
+        return false;
     }
 
 public:
@@ -320,26 +386,14 @@ public:
         requires CtxFitsAsymmetricFailureRecord<Ctx>
     [[nodiscard]] constexpr bool record_outbound(Ctx const&, cog::CogIdentity const& peer, bool success,
                                                  std::uint64_t sequence) noexcept {
-        PeerSlot* slot = find_or_insert(peer);
-        if (slot == nullptr || !slot->sequence.try_advance(sequence)) {
-            return false;
-        }
-        push_sample(slot->outbound, slot->outbound_window, success);
-        record_if_transition(*slot);
-        return true;
+        return record_probe(peer, true, success, sequence);
     }
 
     template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsAsymmetricFailureRecord<Ctx>
     [[nodiscard]] constexpr bool record_inbound(Ctx const&, cog::CogIdentity const& peer, bool success,
                                                 std::uint64_t sequence) noexcept {
-        PeerSlot* slot = find_or_insert(peer);
-        if (slot == nullptr || !slot->sequence.try_advance(sequence)) {
-            return false;
-        }
-        push_sample(slot->inbound, slot->inbound_window, success);
-        record_if_transition(*slot);
-        return true;
+        return record_probe(peer, false, success, sequence);
     }
 
     template <::foundation::effects::IsExecCtx Ctx>
@@ -348,7 +402,7 @@ public:
                                                         observe::ProbeOutcome outbound,
                                                         observe::ProbeOutcome inbound) noexcept {
         return record_outbound(ctx, peer, outbound.ok(), outbound.sequence)
-            && record_inbound(ctx, peer, inbound.ok(), std::max(outbound.sequence, inbound.sequence));
+            && record_inbound(ctx, peer, inbound.ok(), ::fixy::max(outbound.sequence, inbound.sequence));
     }
 
     template <::foundation::effects::IsExecCtx Ctx>
@@ -359,67 +413,37 @@ public:
         if (witness.uuid.is_zero()) {
             return false;
         }
-        PeerSlot* slot = find_or_insert(target);
-        if (slot == nullptr || sequence < slot->sequence.get()) {
-            return false;
-        }
-        auto& witnesses = witnesses_[slot_index(*slot)];
-        for (auto& existing : witnesses) {
-            if (existing.occupied && existing.witness_uuid == witness.uuid) {
-                if (sequence < existing.sequence.get()) {
-                    return false;
-                }
-                (void)slot->sequence.try_advance(sequence);
-                (void)existing.sequence.try_advance(sequence);
-                existing.reachable = witness_reaches_target;
-                record_if_transition(*slot);
-                return true;
-            }
-        }
-        for (auto& existing : witnesses) {
-            if (!existing.occupied) {
-                existing.occupied = true;
-                existing.witness_uuid = witness.uuid;
-                existing.reachable = witness_reaches_target;
-                (void)slot->sequence.try_advance(sequence);
-                (void)existing.sequence.try_advance(sequence);
-                record_if_transition(*slot);
-                return true;
-            }
-        }
-        return false;
+        return find_or_insert(target).match(
+            [&](::fixy::Index<MaxPeers> index) {
+                return record_vote(index, witness, witness_reaches_target, sequence);
+            },
+            [] { return false; });
     }
 
     [[nodiscard]] constexpr FailureClass classify(cog::CogIdentity const& peer) const noexcept {
-        PeerSlot const* slot = find(peer.uuid);
-        if (slot == nullptr) {
-            return FailureClass::Inconclusive;
-        }
-        return summarize(*slot).local;
+        return find(peer.uuid).match([&](::fixy::Index<MaxPeers> index) { return summarize(index).local; },
+                                     [] { return FailureClass::Inconclusive; });
     }
 
     [[nodiscard]] constexpr FailureClass classify_with_witnesses(cog::CogIdentity const& peer) const noexcept {
-        PeerSlot const* slot = find(peer.uuid);
-        if (slot == nullptr) {
-            return FailureClass::Inconclusive;
-        }
-        return summarize(*slot).with_witnesses;
+        return find(peer.uuid).match([&](::fixy::Index<MaxPeers> index) { return summarize(index).with_witnesses; },
+                                     [] { return FailureClass::Inconclusive; });
     }
 
     [[nodiscard]] constexpr FailureSummary summary(cog::CogIdentity const& peer) const noexcept {
-        PeerSlot const* slot = find(peer.uuid);
-        if (slot == nullptr) {
-            FailureSummary missing{};
-            missing.peer_uuid = peer.uuid;
-            missing.signals.set(FailureSignal::InsufficientLocalSamples);
-            missing.signals.set(FailureSignal::InsufficientWitnesses);
-            return missing;
-        }
-        return summarize(*slot);
+        return find(peer.uuid).match([&](::fixy::Index<MaxPeers> index) { return summarize(index); },
+                                     [&] {
+                                         FailureSummary missing{};
+                                         missing.peer_uuid = peer.uuid;
+                                         missing.signals.set(FailureSignal::InsufficientLocalSamples);
+                                         missing.signals.set(FailureSignal::InsufficientWitnesses);
+                                         return missing;
+                                     });
     }
 
-    [[nodiscard]] constexpr std::span<const AsymmetricFailureEvent> events() const noexcept {
-        return std::span<const AsymmetricFailureEvent>{events_.data(), event_count_};
+    // The events in the order of their slots in the ring.
+    [[nodiscard]] constexpr ::fixy::View<AsymmetricFailureEvent const> events() const noexcept {
+        return events_.view().window(0, event_count_).value_or(::fixy::View<AsymmetricFailureEvent const>{});
     }
 
     [[nodiscard]] constexpr std::size_t event_count() const noexcept { return event_count_; }

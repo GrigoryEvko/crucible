@@ -1525,8 +1525,8 @@ crucible_neg_compile_test(neg_topology_telemetry_history_direct_construct
     ".constexpr crucible::topology::NicTelemetryHistory<Window>::NicTelemetryHistory\\(\\) \\[with long unsigned int Window = 4\\]. is private within this context"
     "topology/Telemetry.h:[0-9]+:[0-9]+: note: declared private here")
 crucible_neg_compile_test(neg_topology_telemetry_snapshot_direct_construct
-    ".constexpr crucible::topology::NicTelemetrySnapshot::NicTelemetrySnapshot\\(\\). is private within this context"
-    "topology/Telemetry.h:[0-9]+:[0-9]+: note: declared private here")
+    "no matching function for call to .crucible::topology::NicTelemetrySnapshot::NicTelemetrySnapshot\\(\\)."
+    "candidate 1: .constexpr crucible::topology::NicTelemetrySnapshot::NicTelemetrySnapshot\\(crucible::cog::Uuid, ")
 crucible_neg_compile_test(neg_topology_telemetry_raw_netdev_text
     "could not convert .\\(const char\\*\\).rx_bytes: 1.012.. from .const char\\*."
     "to .crucible::topology::ExternalTelemetryText. \\{aka .fixy::Tagged<std::basic_string_view<char>, fixy::tags::source::External>.\\}")
@@ -2960,8 +2960,8 @@ crucible_neg_compile_test(neg_congestion_telemetry_raw_fd_harvest
   "no matching function for call to .harvest_socket\\(fixy::TestRunnerCtx&, int\\)."
   "cannot convert .3. \\(type .int.\\) to type .crucible::cntp::SocketFd. \\{aka .fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>.\\}")
 crucible_neg_compile_test(neg_congestion_telemetry_raw_state_aggregate
-  "could not convert .std::span<crucible::topology::CongestionSample, 1>\\(samples\\)."
-  "to .span<const fixy::Tagged<crucible::topology::CongestionSample, fixy::tags::source::TcpInfo>,")
+  "could not convert .samples.foundation::core::FixedArray<crucible::topology::CongestionSample, 1>::view\\(\\)."
+  "to .View<const fixy::Tagged<crucible::topology::CongestionSample, fixy::tags::source::TcpInfo>,")
 crucible_neg_compile_test(neg_congestion_telemetry_worker_fg_record
   "no matching function for call to .crucible::topology::CongestionTelemetryWorker<1, 1>::record_link\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >&"
   "required for the satisfaction of .CtxFitsCongestionTelemetryHarvest<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")

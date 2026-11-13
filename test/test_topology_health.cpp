@@ -102,7 +102,8 @@ static void test_phi_delay_drives_suspect_state() {
     assert(snapshot.peek().issues.test(topology::HealthIssue::PhiSuspect)
            || snapshot.peek().issues.test(topology::HealthIssue::PhiQuarantine));
     assert(scorer.transition_event_count() == 1);
-    assert(scorer.transition_events()[0].from == topology::HealthState::Healthy);
+    assert(scorer.transition_events().get(0).expect("the scorer recorded one transition")->from
+           == topology::HealthState::Healthy);
     crucible::test::pass("  test_phi_delay_drives_suspect_state: PASSED\n");
 }
 

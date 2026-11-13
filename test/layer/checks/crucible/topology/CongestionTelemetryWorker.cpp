@@ -12,9 +12,9 @@ static_assert(std::is_trivially_copyable_v<CongestionObservationBatch>);
 static_assert(
     [] {
         CongestionObservationBatch const batch = congestion_observations(1, topology::CongestionAggregate{}, 0);
-        for (std::size_t index = 0; index < batch.size(); ++index) {
-            auto const slot = static_cast<CongestionMetricSlot>(index);
-            if (batch[index].metric_id != congestion_metric_id(1, slot)) {
+        for (::fixy::Index<kCongestionObservationCount> const index : batch.indices()) {
+            auto const slot = static_cast<CongestionMetricSlot>(index.raw());
+            if (batch.at(index).metric_id != congestion_metric_id(1, slot)) {
                 return false;
             }
         }

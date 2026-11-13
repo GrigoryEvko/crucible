@@ -4,11 +4,10 @@
 
 #include "test_assert.h"
 
-#include <array>
 #include <concepts>
 #include <cstdio>
-#include <span>
 #include <string_view>
+#include <utility>
 #include <type_traits>
 
 #include <sys/socket.h>
@@ -104,14 +103,14 @@ void test_names_and_admission() {
 }
 
 void test_aggregate_and_drift() {
-    std::array samples{
+    ::foundation::core::FixedArray<topology::TcpInfoSnapshot, 4> const samples{
         sample(1000000000, 100, topology::CongestionMode::Open),
         sample(800000000, 120, topology::CongestionMode::BbrProbeBw),
         sample(600000000, 150, topology::CongestionMode::Recovery),
         sample(500000000, 180, topology::CongestionMode::Loss),
     };
 
-    auto aggregate = topology::aggregate_congestion(nic(1), std::span{samples});
+    auto aggregate = topology::aggregate_congestion(nic(1), samples.view());
     assert(aggregate.nic_uuid == nic(1).uuid);
     assert(aggregate.sample_count == samples.size());
     assert(aggregate.p95_rtt_us >= 150);
@@ -135,34 +134,35 @@ void test_worker_recording() {
     eff::BgDrainCtx bg{::foundation::effects::testing::bg()};
     auto worker = topology::mint_congestion_telemetry_worker<2, 8>(init);
 
-    std::array nics{nic(10), nic(11)};
-    auto start = worker.start(init, std::span{nics});
-    assert(start.has_value());
+    ::foundation::core::FixedArray<cog::CogIdentity, 2> const nics{nic(10), nic(11)};
+    cog::CogIdentity const& first_nic = nics.at(::fixy::index<0>());
+    auto start = worker.start(init, nics.view());
+    assert(start.is_ok());
 
-    std::array samples{
+    ::foundation::core::FixedArray<topology::TcpInfoSnapshot, 2> const samples{
         sample(900000000, 90, topology::CongestionMode::Open),
         sample(700000000, 110, topology::CongestionMode::Cwr),
     };
-    auto recorded = worker.record_link(bg, nics[0], std::span{samples}, 1);
-    assert(recorded.has_value());
-    assert(recorded->sample_count == samples.size());
-    auto last = worker.last(nics[0]);
-    assert(last.has_value());
-    assert(last->sample_count == samples.size());
+    auto const recorded =
+        worker.record_link(bg, first_nic, samples.view(), 1).expect("the worker started the link of the first nic");
+    assert(recorded.sample_count == samples.size());
+    auto const last = worker.last(first_nic).expect("the worker recorded the link of the first nic");
+    assert(last.sample_count == samples.size());
 
     auto unstarted = worker.last(nic(99));
-    assert(!unstarted.has_value());
-    assert(unstarted.error() == topology::TelemetryError::LinkNotStarted);
+    assert(unstarted.is_err());
+    assert(unstarted.err().expect("the link did not start") == topology::TelemetryError::LinkNotStarted);
 
-    std::array bad_nics{gpu(1)};
-    auto bad_start = worker.start(init, std::span{bad_nics});
-    assert(!bad_start.has_value());
-    assert(bad_start.error() == topology::TelemetryError::InvalidNicCog);
+    ::foundation::core::FixedArray<cog::CogIdentity, 1> const bad_nics{gpu(1)};
+    auto bad_start = worker.start(init, bad_nics.view());
+    assert(bad_start.is_err());
+    assert(bad_start.err().expect("a gpu is no nic") == topology::TelemetryError::InvalidNicCog);
 
     topology::CongestionObservationSet sinks{};
-    topology::publish_congestion(sinks, 0, *last, 7);
-    auto p95 =
-        observe::latest_observation(sinks[static_cast<std::size_t>(topology::CongestionMetricSlot::P95BandwidthBps)]);
+    topology::publish_congestion(sinks, 0, last, 7);
+    auto p95 = observe::latest_observation(
+        *sinks.get(static_cast<std::size_t>(topology::CongestionMetricSlot::P95BandwidthBps))
+             .expect("the set holds one sink for each slot"));
     assert(p95.metric_id == topology::congestion_metric_id(0, topology::CongestionMetricSlot::P95BandwidthBps));
     assert(p95.sequence == 7);
     crucible::test::pass("  test_worker_recording: PASSED\n");
@@ -178,21 +178,22 @@ void test_live_tcp_info_if_available() {
     // the IO and Block that the socket option gate asks for.
     eff::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
     auto harvested = topology::harvest_socket(test_ctx, *fd);
-    if (!harvested.has_value()) {
+    if (harvested.is_err()) {
         ::fixy::report(::fixy::Sink::Out, "  test_live_tcp_info_if_available: SKIPPED\n");
         return;
     }
-    assert(harvested->value().rt_prop_us.value() > 0);
-    assert(harvested->value().cwnd_bytes.value() > 0);
+    topology::TcpInfoSnapshot const snapshot = std::move(harvested).expect("the harvest of the socket succeeded");
+    assert(snapshot.value().rt_prop_us.value() > 0);
+    assert(snapshot.value().cwnd_bytes.value() > 0);
 
-    std::array fds{*fd};
-    auto aggregate = topology::harvest_per_link(test_ctx, nic(77), std::span{fds});
-    assert(aggregate.has_value());
-    assert(aggregate->sample_count == 1);
+    ::foundation::core::FixedArray<cntp::SocketFd, 1> const fds{*fd};
+    auto const aggregate =
+        topology::harvest_per_link(test_ctx, nic(77), fds.view()).expect("the harvest of a nic link succeeded");
+    assert(aggregate.sample_count == 1);
 
-    auto wrong_cog = topology::harvest_per_link(test_ctx, gpu(88), std::span{fds});
-    assert(!wrong_cog.has_value());
-    assert(wrong_cog.error() == topology::TelemetryError::InvalidNicCog);
+    auto wrong_cog = topology::harvest_per_link(test_ctx, gpu(88), fds.view());
+    assert(wrong_cog.is_err());
+    assert(wrong_cog.err().expect("a gpu is no nic") == topology::TelemetryError::InvalidNicCog);
     crucible::test::pass("  test_live_tcp_info_if_available: PASSED\n");
 }
 
@@ -209,12 +210,12 @@ void test_aggregate_finalize_guard() {
     assert(empty.p95_btl_bw_bps == 0);
     assert(empty.nic_uuid == nic(101).uuid);
 
-    std::array samples{
+    ::foundation::core::FixedArray<topology::TcpInfoSnapshot, 3> const samples{
         sample(100000000ull, 1500ull, topology::CongestionMode::BbrProbeBw),
         sample(200000000ull, 2500ull, topology::CongestionMode::BbrProbeBw),
         sample(300000000ull, 3500ull, topology::CongestionMode::BbrProbeBw),
     };
-    auto agg = topology::aggregate_congestion(nic(102), std::span<const topology::TcpInfoSnapshot>{samples});
+    auto agg = topology::aggregate_congestion(nic(102), samples.view());
     assert(agg.sample_count == 3);
     assert(agg.mean_btl_bw_bps == 200000000ull);
     assert(agg.nic_uuid == nic(102).uuid);

@@ -21,7 +21,6 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -123,11 +122,13 @@ using DeclaredPtpDaemonReport = ::fixy::Tagged<PtpDaemonReport, ::fixy::tags::so
 using DeclaredPtpDiagnostic = ::fixy::Tagged<PtpDiagnostic, ::fixy::tags::source::Ptp>;
 
 struct TimestampedPacketView {
-    std::span<const std::byte> payload{};
+    ::fixy::View<std::byte const> payload{};
     PtpTimestampNs timestamp_ns{};
     std::uint64_t sequence = 0;
 };
 
+// The payload borrows the receive buffer of recv_with_hw_timestamp, which
+// gives the buffer to the kernel.
 struct TimestampedPacket {
     std::span<std::byte> payload{};
     std::size_t size = 0;
@@ -239,36 +240,31 @@ public:
     [[nodiscard]] PtpClockFd clock_fd() const noexcept { return clock_fd_; }
 
     // Every value that store_status writes comes from a positive field, and
-    // the atomics start positive, so each atomic holds a positive value at
+    // the cells start positive, so each cell holds a positive value at
     // every instant, torn read or not.  The checked mints below never fire.
+    //
+    // Each payload load is an acquire load.  A payload load that reads a
+    // store of a writer then happens after the first epoch increment of that
+    // writer, so the closing epoch load reads a different epoch, and the loop
+    // tries again.  No payload load moves before the opening epoch load or
+    // after the closing one.
     [[nodiscard]] PtpStatus status() const noexcept {
         for (;;) {
-            auto const before = status_epoch_.load(std::memory_order_acquire);
+            std::uint64_t const before = status_epoch_.load_acquire();
             if ((before & 1u) != 0u) {
                 continue;
             }
 
             PtpStatus out{
-                .servo = static_cast<PtpServoState>(servo_.load(std::memory_order_relaxed)),
-                .offset_from_master_ns = offset_from_master_ns_.load(std::memory_order_relaxed),
-                .mean_path_delay_ns =
-                    ::fixy::mint_refined<::fixy::positive>(mean_path_delay_ns_.load(std::memory_order_relaxed)),
-                .frequency_adjustment_ppb = frequency_adjustment_ppb_.load(std::memory_order_relaxed),
-                .skew_bound_ns = ::fixy::mint_refined<::fixy::positive>(skew_bound_ns_.load(std::memory_order_relaxed)),
-                .sequence = sequence_.load(std::memory_order_relaxed),
+                .servo = servo_.load_acquire(),
+                .offset_from_master_ns = offset_from_master_ns_.load_acquire(),
+                .mean_path_delay_ns = ::fixy::mint_refined<::fixy::positive>(mean_path_delay_ns_.load_acquire()),
+                .frequency_adjustment_ppb = frequency_adjustment_ppb_.load_acquire(),
+                .skew_bound_ns = ::fixy::mint_refined<::fixy::positive>(skew_bound_ns_.load_acquire()),
+                .sequence = sequence_.load_acquire(),
             };
 
-            // The acquire on the opening load at the top of the loop orders
-            // the payload loads after itself, but an acquire orders only what
-            // follows it.  Nothing in the closing load stops the six relaxed
-            // loads above from sinking past it, so without this fence the
-            // epoch can compare equal across a payload the writer tore.  The
-            // fence makes the payload loads happen before the re-read on both
-            // the compiler and the hardware side.  On x86 it emits no
-            // instruction, because TSO already forbids load-load reordering;
-            // on aarch64 it lowers to dmb ishld, where the reordering is real.
-            std::atomic_thread_fence(std::memory_order_acquire);
-            auto const after = status_epoch_.load(std::memory_order_acquire);
+            std::uint64_t const after = status_epoch_.load_acquire();
             if (before == after) {
                 return out;
             }
@@ -284,20 +280,20 @@ public:
     template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsPtpRecord<Ctx>
     void record_timestamp(Ctx const&, PtpTimestampNs timestamp, std::uint64_t sequence) noexcept {
-        latest_timestamp_ns_.store(timestamp.value(), std::memory_order_release);
-        timestamp_sequence_.store(sequence, std::memory_order_release);
-        has_timestamp_.store(true, std::memory_order_release);
+        latest_timestamp_ns_.store_release(timestamp.value());
+        timestamp_sequence_.store_release(sequence);
+        has_timestamp_.store_release(true);
     }
 
-    [[nodiscard]] std::expected<PtpTimestampNs, PtpError> latest_timestamp() const noexcept {
-        if (!has_timestamp_.load(std::memory_order_acquire)) {
-            return std::unexpected(PtpError::NoTimestamp);
+    [[nodiscard]] ::fixy::Result<PtpTimestampNs, PtpError> latest_timestamp() const noexcept {
+        if (!has_timestamp_.load_acquire()) {
+            return ::fixy::err(PtpError::NoTimestamp);
         }
-        return ::fixy::mint_tagged<::fixy::tags::source::Ptp>(latest_timestamp_ns_.load(std::memory_order_acquire));
+        return ::fixy::mint_tagged<::fixy::tags::source::Ptp>(latest_timestamp_ns_.load_acquire());
     }
 
     [[nodiscard]] std::uint64_t latest_timestamp_sequence() const noexcept {
-        return timestamp_sequence_.load(std::memory_order_acquire);
+        return timestamp_sequence_.load_acquire();
     }
 
 private:
@@ -311,29 +307,32 @@ private:
         store_status(initial_status);
     }
 
+    // The epoch is odd while a store is in progress.  Each payload store is a
+    // release store, so a reader that sees it also sees the odd epoch before
+    // it (status()).
     void store_status(PtpStatus const& status) noexcept {
-        status_epoch_.fetch_add(1, std::memory_order_acq_rel);
-        servo_.store(static_cast<std::uint8_t>(status.servo), std::memory_order_relaxed);
-        offset_from_master_ns_.store(status.offset_from_master_ns, std::memory_order_relaxed);
-        mean_path_delay_ns_.store(status.mean_path_delay_ns.value(), std::memory_order_relaxed);
-        frequency_adjustment_ppb_.store(status.frequency_adjustment_ppb, std::memory_order_relaxed);
-        skew_bound_ns_.store(status.skew_bound_ns.value(), std::memory_order_relaxed);
-        sequence_.store(status.sequence, std::memory_order_relaxed);
-        status_epoch_.fetch_add(1, std::memory_order_release);
+        static_cast<void>(status_epoch_.fetch_add_acq_rel(1));
+        servo_.store_release(status.servo);
+        offset_from_master_ns_.store_release(status.offset_from_master_ns);
+        mean_path_delay_ns_.store_release(status.mean_path_delay_ns.value());
+        frequency_adjustment_ppb_.store_release(status.frequency_adjustment_ppb);
+        skew_bound_ns_.store_release(status.skew_bound_ns.value());
+        sequence_.store_release(status.sequence);
+        static_cast<void>(status_epoch_.fetch_add_acq_rel(1));
     }
 
     cog::CogIdentity nic_{};
     PtpClockFd clock_fd_ = ::fixy::mint_refined<::fixy::non_negative>(0);
-    std::atomic<std::uint64_t> status_epoch_{0};
-    std::atomic<std::uint8_t> servo_{static_cast<std::uint8_t>(PtpServoState::Unknown)};
-    std::atomic<std::int64_t> offset_from_master_ns_{0};
-    std::atomic<std::uint64_t> mean_path_delay_ns_{1};
-    std::atomic<std::int64_t> frequency_adjustment_ppb_{0};
-    std::atomic<std::uint64_t> skew_bound_ns_{1000};
-    std::atomic<std::uint64_t> sequence_{0};
-    std::atomic<std::uint64_t> latest_timestamp_ns_{0};
-    std::atomic<std::uint64_t> timestamp_sequence_{0};
-    std::atomic<bool> has_timestamp_{false};
+    ::fixy::Atomic<std::uint64_t> status_epoch_{};
+    ::fixy::Atomic<PtpServoState> servo_{PtpServoState::Unknown};
+    ::fixy::Atomic<std::int64_t> offset_from_master_ns_{};
+    ::fixy::Atomic<std::uint64_t> mean_path_delay_ns_{std::uint64_t{1}};
+    ::fixy::Atomic<std::int64_t> frequency_adjustment_ppb_{};
+    ::fixy::Atomic<std::uint64_t> skew_bound_ns_{std::uint64_t{1000}};
+    ::fixy::Atomic<std::uint64_t> sequence_{};
+    ::fixy::Atomic<std::uint64_t> latest_timestamp_ns_{};
+    ::fixy::Atomic<std::uint64_t> timestamp_sequence_{};
+    ::fixy::Atomic<bool> has_timestamp_{false};
 };
 
 template <::foundation::effects::IsExecCtx Ctx>
@@ -350,27 +349,29 @@ template <::foundation::effects::IsExecCtx Ctx>
 // system.
 template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::time::CtxFitsPtpClockReaderMint<Ctx>
-[[nodiscard]] std::expected<PtpClockReader, PtpError> open_ptp_clock(Ctx const& ctx, PtpDeviceIndex index) noexcept {
+[[nodiscard]] ::fixy::Result<PtpClockReader, PtpError> open_ptp_clock(Ctx const& ctx, PtpDeviceIndex index) noexcept {
     auto reader = ::fixy::time::mint_ptp_clock_reader(ctx, index);
     if (!reader) {
-        return std::unexpected(PtpError::OpenClockFailed);
+        return ::fixy::err(PtpError::OpenClockFailed);
     }
     return std::move(*reader);
 }
 
-[[nodiscard]] std::expected<TimestampedPacketView, PtpError>
-timestamp_packet_view(std::span<const std::byte> payload, PtpTimestampNs timestamp, std::uint64_t sequence) noexcept;
+[[nodiscard]] ::fixy::Result<TimestampedPacketView, PtpError>
+timestamp_packet_view(::fixy::View<std::byte const> payload, PtpTimestampNs timestamp, std::uint64_t sequence) noexcept;
 
-[[nodiscard]] std::expected<PtpClockCaps, PtpError> query_ptp_clock_caps(PtpClockReader const& clock) noexcept;
+[[nodiscard]] ::fixy::Result<PtpClockCaps, PtpError> query_ptp_clock_caps(PtpClockReader const& clock) noexcept;
 
-[[nodiscard]] std::expected<PtpTimestampNs, PtpError> ptp_now(PtpClockReader const& clock) noexcept;
+[[nodiscard]] ::fixy::Result<PtpTimestampNs, PtpError> ptp_now(PtpClockReader const& clock) noexcept;
 
-[[nodiscard]] std::expected<void, PtpError> enable_socket_timestamping(cntp::SocketFd socket) noexcept;
+[[nodiscard]] ::fixy::Result<::fixy::Unit, PtpError> enable_socket_timestamping(cntp::SocketFd socket) noexcept;
 
-[[nodiscard]] std::expected<void, PtpError> configure_hardware_timestamping(cntp::SocketFd control_socket,
-                                                                            cntp::NicInterfaceName iface) noexcept;
+[[nodiscard]] ::fixy::Result<::fixy::Unit, PtpError>
+configure_hardware_timestamping(cntp::SocketFd control_socket, cntp::NicInterfaceName iface) noexcept;
 
-[[nodiscard]] std::expected<TimestampedPacket, PtpError> recv_with_hw_timestamp(cntp::SocketFd socket,
-                                                                                std::span<std::byte> buffer) noexcept;
+// The buffer is a std::span, because the call gives its address to the
+// kernel and a View gives no address.
+[[nodiscard]] ::fixy::Result<TimestampedPacket, PtpError> recv_with_hw_timestamp(cntp::SocketFd socket,
+                                                                                 std::span<std::byte> buffer) noexcept;
 
 }  // namespace crucible::topology

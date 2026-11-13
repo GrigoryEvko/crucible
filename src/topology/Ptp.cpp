@@ -27,20 +27,21 @@ namespace {
     return error == std::errc::value_too_large ? PtpError::TimestampOverflow : PtpError::ClockReadFailed;
 }
 
-[[nodiscard]] std::expected<PtpTimestampNs, PtpError> timestamp_from_timespec(timespec const& ts) noexcept {
+[[nodiscard]] ::fixy::Result<PtpTimestampNs, PtpError> timestamp_from_timespec(timespec const& ts) noexcept {
     auto const nanos = ::fixy::time::nanos_from_timespec(ts);
     if (!nanos) {
-        return std::unexpected(timestamp_error(nanos.error()));
+        return ::fixy::err(timestamp_error(nanos.error()));
     }
     return ::fixy::mint_tagged<::fixy::tags::source::Ptp>(*nanos);
 }
 
 }  // namespace
 
-std::expected<TimestampedPacketView, PtpError>
-timestamp_packet_view(std::span<const std::byte> payload, PtpTimestampNs timestamp, std::uint64_t sequence) noexcept {
-    if (payload.empty()) {
-        return std::unexpected(PtpError::Degraded);
+::fixy::Result<TimestampedPacketView, PtpError> timestamp_packet_view(::fixy::View<std::byte const> payload,
+                                                                      PtpTimestampNs timestamp,
+                                                                      std::uint64_t sequence) noexcept {
+    if (payload.size() == 0) {
+        return ::fixy::err(PtpError::Degraded);
     }
     return TimestampedPacketView{
         .payload = payload,
@@ -49,10 +50,10 @@ timestamp_packet_view(std::span<const std::byte> payload, PtpTimestampNs timesta
     };
 }
 
-std::expected<PtpClockCaps, PtpError> query_ptp_clock_caps(PtpClockReader const& clock) noexcept {
+::fixy::Result<PtpClockCaps, PtpError> query_ptp_clock_caps(PtpClockReader const& clock) noexcept {
     auto const caps = clock.caps();
     if (!caps) {
-        return std::unexpected(PtpError::ClockCapsUnavailable);
+        return ::fixy::err(PtpError::ClockCapsUnavailable);
     }
     return PtpClockCaps{
         .max_adjustment_ppb = caps->max_adj,
@@ -70,28 +71,28 @@ std::expected<PtpClockCaps, PtpError> query_ptp_clock_caps(PtpClockReader const&
 // The reading is stamped as a PHC reading by the reader, which read it from
 // the clock of its own descriptor.  The value keeps that provenance under
 // the Ptp source tag.
-std::expected<PtpTimestampNs, PtpError> ptp_now(PtpClockReader const& clock) noexcept {
+::fixy::Result<PtpTimestampNs, PtpError> ptp_now(PtpClockReader const& clock) noexcept {
     auto reading = clock.read();
     if (!reading) {
-        return std::unexpected(timestamp_error(reading.error()));
+        return ::fixy::err(timestamp_error(reading.error()));
     }
     return ::fixy::mint_tagged<::fixy::tags::source::Ptp>(std::move(*reading).consume());
 }
 
-std::expected<void, PtpError> enable_socket_timestamping(cntp::SocketFd socket) noexcept {
+::fixy::Result<::fixy::Unit, PtpError> enable_socket_timestamping(cntp::SocketFd socket) noexcept {
     const int flags = SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_RAW_HARDWARE
                     | SOF_TIMESTAMPING_SOFTWARE | SOF_TIMESTAMPING_OPT_CMSG | SOF_TIMESTAMPING_OPT_TSONLY;
     const int rc =
         ::setsockopt(socket.value(), SOL_SOCKET, SO_TIMESTAMPING, &flags, static_cast<socklen_t>(sizeof(flags)));
     if (rc != 0) {
         static_cast<void>(errno);
-        return std::unexpected(PtpError::SocketTimestampingFailed);
+        return ::fixy::err(PtpError::SocketTimestampingFailed);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
-std::expected<void, PtpError> configure_hardware_timestamping(cntp::SocketFd control_socket,
-                                                              cntp::NicInterfaceName iface) noexcept {
+::fixy::Result<::fixy::Unit, PtpError> configure_hardware_timestamping(cntp::SocketFd control_socket,
+                                                                       cntp::NicInterfaceName iface) noexcept {
     hwtstamp_config config{
         .flags = 0,
         .tx_type = HWTSTAMP_TX_ON,
@@ -123,15 +124,15 @@ std::expected<void, PtpError> configure_hardware_timestamping(cntp::SocketFd con
     const int rc = ::ioctl(control_socket.value(), SIOCSHWTSTAMP, &request);
     if (rc != 0) {
         static_cast<void>(errno);
-        return std::unexpected(PtpError::HardwareTimestampingFailed);
+        return ::fixy::err(PtpError::HardwareTimestampingFailed);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
-std::expected<TimestampedPacket, PtpError> recv_with_hw_timestamp(cntp::SocketFd socket,
-                                                                  std::span<std::byte> buffer) noexcept {
+::fixy::Result<TimestampedPacket, PtpError> recv_with_hw_timestamp(cntp::SocketFd socket,
+                                                                   std::span<std::byte> buffer) noexcept {
     if (buffer.empty()) {
-        return std::unexpected(PtpError::InvalidReceiveBuffer);
+        return ::fixy::err(PtpError::InvalidReceiveBuffer);
     }
 
     iovec iov{
@@ -152,7 +153,7 @@ std::expected<TimestampedPacket, PtpError> recv_with_hw_timestamp(cntp::SocketFd
     const auto nread = ::recvmsg(socket.value(), &msg, MSG_DONTWAIT);
     if (nread <= 0) {
         static_cast<void>(errno);
-        return std::unexpected(PtpError::RecvFailed);
+        return ::fixy::err(PtpError::RecvFailed);
     }
 
     for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
@@ -160,29 +161,26 @@ std::expected<TimestampedPacket, PtpError> recv_with_hw_timestamp(cntp::SocketFd
             continue;
         }
         if (cmsg->cmsg_len < CMSG_LEN(sizeof(timespec) * 3u)) {
-            return std::unexpected(PtpError::MalformedTimestampControl);
+            return ::fixy::err(PtpError::MalformedTimestampControl);
         }
 
         auto const ts = ::foundation::lifetime::start_as_array<timespec>(CMSG_DATA(cmsg), 3);
         const bool has_hardware = timespec_nonzero(ts[2]);
         const bool has_software = timespec_nonzero(ts[0]);
         if (!has_hardware && !has_software) {
-            return std::unexpected(PtpError::NoTimestamp);
+            return ::fixy::err(PtpError::NoTimestamp);
         }
 
-        auto timestamp = timestamp_from_timespec(has_hardware ? ts[2] : ts[0]);
-        if (!timestamp.has_value()) {
-            return std::unexpected(timestamp.error());
-        }
+        CRUCIBLE_TRY(timestamp, timestamp_from_timespec(has_hardware ? ts[2] : ts[0]));
         return TimestampedPacket{
             .payload = buffer.first(static_cast<std::size_t>(nread)),
             .size = static_cast<std::size_t>(nread),
-            .timestamp_ns = *timestamp,
+            .timestamp_ns = timestamp,
             .hardware = has_hardware,
         };
     }
 
-    return std::unexpected(PtpError::NoTimestamp);
+    return ::fixy::err(PtpError::NoTimestamp);
 }
 
 }  // namespace crucible::topology
