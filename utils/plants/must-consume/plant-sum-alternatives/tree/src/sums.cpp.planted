@@ -1,0 +1,60 @@
+// A sum with a linear alternative is linear: an Option of a token, a Result
+// with a token as its error, and a OneOf with a token as one alternative.  Each
+// drops function moves its sum to a consumer on one path only, so each sum
+// gives a line.  The function keeps_each moves each sum and gives no line.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/OneOf.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+enum class Code : unsigned char { closed };
+
+using Held = ::foundation::core::Option<Token>;
+using Refused = ::foundation::core::Result<int, Token>;
+using Either = ::foundation::core::OneOf<Token, Code>;
+
+static_assert(::foundation::linear::is_linear_v<Held>);
+static_assert(::foundation::linear::is_linear_v<Refused>);
+static_assert(::foundation::linear::is_linear_v<Either>);
+
+void take_held(Held&& held) noexcept;
+void take_refused(Refused&& refused) noexcept;
+void take_either(Either&& either) noexcept;
+
+void drops_option(bool is_kept) {
+    Held held = Held::some(Token{1});
+    if (is_kept) take_held(static_cast<Held&&>(held));
+}
+
+void drops_result(bool is_kept) {
+    Refused refused{::foundation::core::err(Token{2})};
+    if (is_kept) take_refused(static_cast<Refused&&>(refused));
+}
+
+void drops_one_of(bool is_kept) {
+    Either either{Token{3}};
+    if (is_kept) take_either(static_cast<Either&&>(either));
+}
+
+void keeps_each() {
+    Held held = Held::some(Token{4});
+    Refused refused{::foundation::core::err(Token{5})};
+    Either either{Token{6}};
+    take_held(static_cast<Held&&>(held));
+    take_refused(static_cast<Refused&&>(refused));
+    take_either(static_cast<Either&&>(either));
+}
+
+}  // namespace planted

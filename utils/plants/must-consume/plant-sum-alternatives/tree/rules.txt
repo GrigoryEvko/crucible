@@ -1,0 +1,7 @@
+# The rule table of this plant.  The unit of src/ is quarantined, and it can
+# name the Choice family and the vocabulary of the linear marker of the
+# repository.
+
+admit foundation::core | the Choice family, whose sums the planted code holds
+admit foundation::linear | the vocabulary of the linear marker, which the planted code names
+quarantine src/

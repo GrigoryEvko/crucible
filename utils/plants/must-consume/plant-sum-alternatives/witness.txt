@@ -1,0 +1,12 @@
+# The plugin reads a sum with a linear alternative as linear, as the trait
+# is_linear_v does: an Option of a token, a Result with a token as its error,
+# and a OneOf with a token as one alternative.  A sum that one path drops gives
+# a line, and a sum that each path moves gives no line.
+
+compile sums src/sums.cpp must-consume=on
+flag sums -freflection
+exit sums pass
+judge sums
+finding sums must-consume unconsumed-on-path src/sums.cpp:37:10 | planted::drops_option: held
+finding sums must-consume unconsumed-on-path src/sums.cpp:42:13 | planted::drops_result: refused
+finding sums must-consume unconsumed-on-path src/sums.cpp:47:12 | planted::drops_one_of: either
