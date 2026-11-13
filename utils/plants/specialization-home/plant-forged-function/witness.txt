@@ -1,0 +1,23 @@
+# An explicit specialization of a function template of the base in a test
+# file gives the function a different body: a read with no bounds check, and
+# a door that befriends its template and reads a private member.  A
+# declaration with no body, a deleted specialization and a specialization of
+# a member function template of a class are sites too.  Each one is a
+# compile error in each mode, and the module of the rule refuses each line.
+# Each one is also a route of the rule proof-routes.
+compile forge test/forge.cpp specialization-home=on errors=forge
+exit forge fail
+finding forge quarantine raw-pointer-object test/forge.cpp:11:46 | first
+finding forge specialization-home specialization test/forge.cpp:11:15 | foundation::plant::element_at
+finding forge proof-routes function-specialization test/forge.cpp:11:15 | function-specialization: foundation::plant::element_at
+finding forge specialization-home specialization test/forge.cpp:17:15 | foundation::plant::door
+finding forge proof-routes function-specialization test/forge.cpp:17:15 | function-specialization: foundation::plant::door
+finding forge specialization-home specialization test/forge.cpp:24:15 | foundation::plant::door
+finding forge proof-routes function-specialization test/forge.cpp:24:15 | function-specialization: foundation::plant::door
+finding forge specialization-home specialization test/forge.cpp:26:15 | foundation::plant::door
+finding forge proof-routes function-specialization test/forge.cpp:26:15 | function-specialization: foundation::plant::door
+finding forge specialization-home specialization test/forge.cpp:28:15 | foundation::plant::Sealed::pick
+finding forge proof-routes function-specialization test/forge.cpp:28:15 | function-specialization: foundation::plant::Sealed::pick
+judge forge
+compile forge_error test/forge.cpp mode=error specialization-home=on findings=forge errors=forge
+exit forge_error fail

@@ -22,10 +22,3 @@ struct test_global<int> {};
 
 static_assert(foundation::plant::is_admitted_v<int*>);
 static_assert(own_trait<int>::value);
-
-// An explicit specialization of a function template is a route of the rule
-// proof-routes in each file, and no line of this rule.
-template <>
-constexpr int foundation::plant::pick<int>(int) {
-    return 1;
-}

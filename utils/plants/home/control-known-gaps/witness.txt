@@ -1,0 +1,8 @@
+# The rules home and specialization-home give no line for three routes that
+# change the answer of a gate of the base: an overload beside the own type of
+# a file that argument-dependent lookup finds for a function that is not a
+# template, a new overload in a namespace of the base that a file declares
+# before the header, and a definition of a function template of the base that
+# the base only declares.  This control pins the three gaps.
+compile gaps src/gaps.cpp mode=error specialization-home=on
+exit gaps pass

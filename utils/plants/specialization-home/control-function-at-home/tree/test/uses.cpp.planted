@@ -1,0 +1,11 @@
+#include <foundation/Reads.h>
+
+// A test file calls the function template and gives it an overload of its
+// own, which is no specialization.
+struct Widget {};
+
+constexpr int width_of(Widget const&) noexcept { return 0; }
+
+static_assert(foundation::plant::width_of(true) == 1);
+static_assert(foundation::plant::width_of(2) == 4);
+static_assert(width_of(Widget{}) == 0);

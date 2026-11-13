@@ -18,3 +18,12 @@ flag crucible -fplugin-arg-crucible_quarantine-sentinel=include/crucible/gates.h
 exit crucible pass
 compile check_file test/layer/checks/foundation/gates.cpp mode=error specialization-home=on
 exit check_file pass
+# A function template that the unit defines is sealed also when a home row
+# governs it, because the rule specialization-home refuses each explicit
+# specialization of it outside its file.  So a gate that names it with a
+# qualifier gives no line.  The concept of the namespace of the row gives the
+# record at-home.
+compile rowed src/rowed.cpp mode=error specialization-home=on
+flag rowed -fplugin-arg-crucible_quarantine-sentinel=include/foundation/rowed.h
+exit rowed pass
+finding rowed home at-home include/foundation/rowed.h:14:9 | foundation::gates::admitted

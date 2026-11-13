@@ -726,6 +726,38 @@ foundation_neg_compile_test(neg_specialization_home_forward_declaration
 foundation_neg_compile_test(neg_specialization_home_orphan_ref
   "neg_specialization_home_orphan_ref\\.cpp:19:[0-9]+: error: this file specializes the extension point .foundation::core::niche. for a type that a different file defines"
   "the extension point .foundation::core::niche. for a type")
+# An explicit specialization of a function template outside its home is a
+# site of the rule too.  A friend function template of a class of the
+# language, a member template of a door and a befriended detail template give
+# each specialization the private members of the class.  Each fixture reads
+# only the texts of the rule, so a change of the class does not change it.
+foundation_neg_compile_test(neg_specialization_home_member_ref_door
+  "neg_specialization_home_member_ref_door\\.cpp:15:[0-9]+: error: this file specializes the template .foundation::core::detail::RefDoor::lend. outside its home .include/foundation/core/Ref\\.h."
+  "an explicit specialization gives the function a different body")
+foundation_neg_compile_test(neg_specialization_home_friend_box
+  "neg_specialization_home_friend_box\\.cpp:14:[0-9]+: error: this file specializes the template .foundation::core::mint_box. outside its home .include/foundation/core/Ref\\.h."
+  "an explicit specialization gives the function a different body")
+foundation_neg_compile_test(neg_specialization_home_friend_address_of
+  "neg_specialization_home_friend_address_of\\.cpp:15:[0-9]+: error: this file specializes the template .foundation::core::address_of. outside its home .include/foundation/core/Ref\\.h."
+  "an explicit specialization gives the function a different body")
+foundation_neg_compile_test(neg_specialization_home_friend_heap_array
+  "neg_specialization_home_friend_heap_array\\.cpp:15:[0-9]+: error: this file specializes the template .foundation::core::mint_heap_array. outside its home .include/foundation/core/Array\\.h."
+  "an explicit specialization gives the function a different body")
+foundation_neg_compile_test(neg_specialization_home_friend_sole_writer
+  "neg_specialization_home_friend_sole_writer\\.cpp:16:[0-9]+: error: this file specializes the template .foundation::core::mint_sole_writer. outside its home .include/foundation/core/Atomic\\.h."
+  "an explicit specialization gives the function a different body")
+foundation_neg_compile_test(neg_specialization_home_detail_view_over
+  "neg_specialization_home_detail_view_over\\.cpp:13:[0-9]+: error: this file specializes the template .foundation::core::detail::view_over_. outside its home .include/foundation/core/Region\\.h."
+  "an explicit specialization gives the function a different body")
+foundation_neg_compile_test(neg_specialization_home_detail_text_bytes
+  "neg_specialization_home_detail_text_bytes\\.cpp:11:[0-9]+: error: this file specializes the template .foundation::core::detail::text_bytes_. outside its home .include/foundation/core/Text\\.h."
+  "an explicit specialization gives the function a different body")
+foundation_neg_compile_test(neg_specialization_home_detail_fmt_text
+  "neg_specialization_home_detail_fmt_text\\.cpp:11:[0-9]+: error: this file specializes the template .foundation::core::detail::fmt_text_. outside its home .include/foundation/core/Report\\.h."
+  "an explicit specialization gives the function a different body")
+foundation_neg_compile_test(neg_specialization_home_detail_alternative_of
+  "neg_specialization_home_detail_alternative_of\\.cpp:15:[0-9]+: error: this file specializes the template .foundation::core::detail::alternative_of_. outside its home .include/foundation/core/Choice\\.h."
+  "an explicit specialization gives the function a different body")
 foundation_neg_compile_test(neg_specialization_home_orphan_partial
   "neg_specialization_home_orphan_partial\\.cpp:9:[0-9]+: error: this file specializes the extension point .foundation::core::niche. for a type that a different file defines"
   "specialize the template in the file that defines each of its arguments")

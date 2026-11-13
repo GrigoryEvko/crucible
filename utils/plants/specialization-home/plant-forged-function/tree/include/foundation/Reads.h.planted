@@ -1,0 +1,32 @@
+#pragma once
+
+namespace foundation::plant {
+
+// A read with a bounds check, which a gate and a caller trust.
+template <class T>
+constexpr T element_at(T const* first, unsigned count, unsigned index) noexcept {
+    return index < count ? first[index] : T{};
+}
+
+// A door of a sealed class: the class befriends the template, so each
+// specialization of the door is a friend.
+template <class T>
+constexpr int door(T const&) noexcept {
+    return 0;
+}
+
+class Sealed {
+    int secret_ = 7;
+
+    template <class T>
+    friend constexpr int door(T const&) noexcept;
+
+public:
+    // A member function template of a class.
+    template <class T>
+    constexpr int pick(T value) const noexcept {
+        return static_cast<int>(value);
+    }
+};
+
+}  // namespace foundation::plant

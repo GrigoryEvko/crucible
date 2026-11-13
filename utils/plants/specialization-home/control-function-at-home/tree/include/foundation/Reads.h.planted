@@ -1,0 +1,16 @@
+#pragma once
+
+namespace foundation::plant {
+
+template <class T>
+constexpr int width_of(T const&) noexcept {
+    return static_cast<int>(sizeof(T));
+}
+
+// The home of the template holds its explicit specializations.
+template <>
+constexpr int width_of<bool>(bool const&) noexcept {
+    return 1;
+}
+
+}  // namespace foundation::plant

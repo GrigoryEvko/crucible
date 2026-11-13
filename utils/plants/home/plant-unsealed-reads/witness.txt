@@ -1,12 +1,14 @@
 # With the rule specialization-home on, a gate stays open when it reads a
-# template that the rule does not seal: a function template, a template with
-# the open mark, a template that a home row governs, and a crucible class
-# template that the unit only declares and does not specialize.  The rule
-# specialization-home reads no function template, an open mark and a row
-# admit a specialization in a different file, and a different file can give
-# the definition of a crucible template that the unit only declares.  A class
+# template that the rule does not seal: a template with the open mark, a
+# template that a home row governs, and a crucible class template that the
+# unit only declares and does not specialize.  An open mark and a row admit
+# a specialization in a different file, and a different file can give the
+# definition of a crucible template that the unit only declares.  A class
 # template of a base root that the base only declares is sealed, because the
-# rule specialization-home refuses its definition outside the base.
+# rule specialization-home refuses its definition outside the base.  The
+# function template open_f is sealed, because the unit defines it and the
+# rule refuses its explicit specialization outside its home, so its three
+# reads give no line (plant-adl-reads holds the call that stays open).
 #
 # A gate over a sealed template reads each open template that the
 # definition of the sealed template reads, at each depth: through a variable
@@ -18,30 +20,24 @@
 compile layer src/layer.cpp mode=error specialization-home=on
 flag layer -fplugin-arg-crucible_quarantine-sentinel=include/foundation/gates.h
 exit layer fail
-finding layer home open-read include/foundation/gates.h:14:53 | foundation::gates::open_f
 finding layer home open-read include/foundation/gates.h:15:59 | foundation::gates::marked_trait
 finding layer home open-read include/foundation/gates.h:16:53 | foundation::gates::row_trait
 finding layer home open-read include/foundation/gates.h:30:41 | foundation::gates::marked_trait
 finding layer home open-read include/foundation/gates.h:31:40 | foundation::gates::marked_trait
-finding layer home open-read include/foundation/gates.h:32:62 | foundation::gates::open_f
 finding layer home open-read include/foundation/gates.h:33:76 | foundation::gates::marked_trait
 finding layer home open-read include/foundation/gates.h:34:66 | foundation::gates::marked_trait
 finding layer home open-read include/foundation/gates.h:35:64 | foundation::gates::row_trait
 finding layer home open-read include/foundation/gates.h:36:42 | foundation::gates::marked_trait
-finding layer home open-read include/foundation/gates.h:37:50 | foundation::gates::open_f
 finding layer home open-read include/foundation/gates.h:40:64 | foundation::gates::row_trait
 finding layer specialization-home open-extension include/foundation/gates.h:9:96 | foundation::gates::marked_trait
-error layer include/foundation/gates.h:14 | quarantine: open-read foundation::gates::open_f;
 error layer include/foundation/gates.h:15 | quarantine: open-read foundation::gates::marked_trait;
 error layer include/foundation/gates.h:16 | quarantine: open-read foundation::gates::row_trait;
 error layer include/foundation/gates.h:30 | quarantine: open-read foundation::gates::marked_trait;
 error layer include/foundation/gates.h:31 | quarantine: open-read foundation::gates::marked_trait;
-error layer include/foundation/gates.h:32 | quarantine: open-read foundation::gates::open_f;
 error layer include/foundation/gates.h:33 | quarantine: open-read foundation::gates::marked_trait;
 error layer include/foundation/gates.h:34 | quarantine: open-read foundation::gates::marked_trait;
 error layer include/foundation/gates.h:35 | quarantine: open-read foundation::gates::row_trait;
 error layer include/foundation/gates.h:36 | quarantine: open-read foundation::gates::marked_trait;
-error layer include/foundation/gates.h:37 | quarantine: open-read foundation::gates::open_f;
 error layer include/foundation/gates.h:40 | quarantine: open-read foundation::gates::row_trait;
 compile crucible src/crucible.cpp mode=error specialization-home=on
 flag crucible -fplugin-arg-crucible_quarantine-sentinel=include/crucible/gates.h

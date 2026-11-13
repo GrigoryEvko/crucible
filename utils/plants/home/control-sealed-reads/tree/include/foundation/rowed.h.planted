@@ -1,0 +1,16 @@
+#pragma once
+
+namespace foundation::gates::admitted {
+
+// A function template that a home row governs.  The rule specialization-home
+// refuses each explicit specialization of it outside this file, so a gate
+// that names it with a qualifier is closed.
+template <class T>
+constexpr bool admit(T const&) noexcept {
+    return false;
+}
+
+template <class T>
+concept ReadsRowedFunction = admitted::admit(T{});
+
+}  // namespace foundation::gates::admitted

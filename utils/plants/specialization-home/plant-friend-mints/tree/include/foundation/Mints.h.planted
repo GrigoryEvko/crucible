@@ -1,0 +1,112 @@
+#pragma once
+
+#include <foundation/OpenExtension.h>
+
+namespace foundation::plant {
+
+// An allocation capability: each empty class with this member type passes.
+template <class Marker>
+concept GrantsAllocation = requires { typename Marker::grants_allocation; };
+
+// The shape of mint_box and mint_heap_array: the one door of an owner is a
+// constrained friend template with a marker parameter.
+template <class T>
+class Box;
+
+template <class T, class Marker>
+    requires GrantsAllocation<Marker>
+Box<T> mint_box(Marker allocation) noexcept;
+
+template <class T>
+class Box {
+    T* object_ = nullptr;
+
+    explicit Box(T* object) noexcept : object_{object} {}
+
+    template <class U, class Marker>
+        requires GrantsAllocation<Marker>
+    friend Box<U> mint_box(Marker allocation) noexcept;
+};
+
+template <class T, class Marker>
+    requires GrantsAllocation<Marker>
+Box<T> mint_box(Marker) noexcept {
+    return Box<T>{nullptr};
+}
+
+// The shape of address_of: a friend template over a branded handle.
+template <class T, class Brand>
+struct Handle {
+    T* object = nullptr;
+};
+
+class Address;
+
+template <class T, class Brand>
+Address address_of(Handle<T, Brand> handle) noexcept;
+
+class Address {
+    unsigned long value_ = 0;
+
+    constexpr explicit Address(unsigned long value) noexcept : value_{value} {}
+
+    template <class T, class Brand>
+    friend Address address_of(Handle<T, Brand> handle) noexcept;
+};
+
+template <class T, class Brand>
+Address address_of(Handle<T, Brand>) noexcept {
+    return Address{0};
+}
+
+// The shape of mint_sole_writer: a pack, then a brand with a default, and a
+// key that befriends the mint.
+template <class Role, class Brand>
+class SoleWriter;
+
+template <class Role, class... Arguments, class Brand = decltype([] {})>
+    requires(sizeof...(Arguments) == 0)
+constexpr SoleWriter<Role, Brand> mint_sole_writer() noexcept;
+
+class sole_writer_key {
+    constexpr sole_writer_key() noexcept {}
+
+public:
+    constexpr sole_writer_key(sole_writer_key const&) noexcept {}
+
+private:
+    template <class Role, class... Arguments, class Brand>
+        requires(sizeof...(Arguments) == 0)
+    friend constexpr SoleWriter<Role, Brand> mint_sole_writer() noexcept;
+};
+
+template <class Role, class Brand>
+class SoleWriter {
+public:
+    explicit constexpr SoleWriter(sole_writer_key) noexcept {}
+};
+
+template <class Role, class... Arguments, class Brand>
+    requires(sizeof...(Arguments) == 0)
+constexpr SoleWriter<Role, Brand> mint_sole_writer() noexcept {
+    return SoleWriter<Role, Brand>{sole_writer_key{}};
+}
+
+// A friend template with the open mark: the mark does not open a function
+// template.
+template <class T>
+[[= ::foundation::open_extension{"a function template has no extension point"}]] constexpr int open_door(T const&) noexcept;
+
+class Vault {
+    int secret_ = 7;
+
+    template <class T>
+    friend constexpr int open_door(T const&) noexcept;
+};
+
+template <class T>
+constexpr int open_door(T const&) noexcept {
+    return 0;
+}
+
+}  // namespace foundation::plant

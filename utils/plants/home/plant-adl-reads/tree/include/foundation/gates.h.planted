@@ -1,0 +1,14 @@
+#pragma once
+
+namespace foundation::gates {
+
+template <class T>
+constexpr bool admit(T const&) {
+    return false;
+}
+
+template <class T> concept ReadsQualified = gates::admit(T{});
+template <class T> concept ReadsUnqualified = admit(T{});
+template <class T> concept ReadsTemplateId = admit<T>(T{});
+
+}  // namespace foundation::gates

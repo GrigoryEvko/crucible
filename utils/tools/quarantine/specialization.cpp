@@ -7,16 +7,19 @@
 // one mark opens a template that the design extends from each file.
 //
 // THE TEMPLATES
-//     Each class template and each variable template whose home stands in a
-//     file of the source root or of the build directory.  A template of a
-//     header outside the root, such as std::tuple_size, is no template of the
-//     rule, and neither is a template of a host file or of a kernel file.  A
-//     template that a home row of the rule table governs is a template of the
-//     rule home (home.cpp, THE ROWS), and the rule home gives this rule each
-//     other template (home.cpp, THE TEMPLATES WITH NO ROW).  The rule
-//     proof-routes refuses an explicit specialization of a function template
-//     in each file (expression.cpp, THE PROOF ROUTES), so this rule reads no
-//     function template.
+//     Each class template, variable template and function template whose
+//     home stands in a file of the source root or of the build directory.  A
+//     template of a header outside the root, such as std::tuple_size, is no
+//     template of the rule, and neither is a template of a host file or of a
+//     kernel file.  A template that a home row of the rule table governs is a
+//     template of the rule home (home.cpp, THE ROWS), and the rule home gives
+//     this rule each other template (home.cpp, THE TEMPLATES WITH NO ROW).
+//     An explicit specialization of a function template can give the function
+//     a different body, such as one with no bounds check, and it is a friend
+//     of each class that befriends the template.  So a function template
+//     stays in its home as a class template does, also when a home row
+//     governs it, and also with a marker or a brand that the file of the
+//     specialization defines.
 //
 // THE HOME
 //     The home of a template is the file that defines it, or the file of its
@@ -26,16 +29,20 @@
 //
 // THE SITES
 //     The family home reads the sites of a template (home.cpp, THE SITES):
-//     each explicit and each partial specialization on its lists, and each
-//     explicit specialization of a member of an implicit instantiation.  The
-//     place of a site is the expansion point of its location.
+//     each explicit and each partial specialization on its lists, each
+//     explicit specialization of a member of an implicit instantiation, and
+//     each explicit specialization of a function template.  The place of a
+//     site is the expansion point of its location.
 //
 // THE OPEN MARK
-//     A template that the design opens to each file carries the P3394
-//     annotation foundation::open_extension of
+//     A class template or a variable template that the design opens to each
+//     file carries the P3394 annotation foundation::open_extension of
 //     include/foundation/OpenExtension.h on its primary declaration, with its
 //     reason.  A coherent specialization of a marked template is no finding
-//     (THE COHERENCE).  GCC
+//     (THE COHERENCE).  The mark does not open a function template: a
+//     specialization for a marker of the file would still be a friend of each
+//     class that befriends the template, and a type extends a function
+//     through an overload beside its own definition.  GCC
 //     merges the annotation of a redeclaration into the template, and an
 //     annotation keeps no location, so a second declaration in a different
 //     file can add the mark.  Thus each marked template gives the record
@@ -127,13 +134,21 @@ constexpr const char* kBaseRoots[] = {"foundation", "fixy"};
 constexpr const char* kBasePaths[] = {"include/foundation/", "include/fixy/", "src/foundation/", "src/fixy/"};
 
 // The facts of the home of one template (THE HOME): whether the rule reads the
-// template, whether it carries the open mark, the path that a site compares,
-// and the qualified name of the template.
+// template, whether the open mark opens it, whether it is a function
+// template, the path that a site compares, and the qualified name of the
+// template.
 struct TemplateHome {
     bool is_tree = false;
     bool is_open = false;
+    bool is_function = false;
     std::string path;
     std::string entity;
+};
+
+// The facts of a template that the error of a site gives (THE ERRORS).
+struct SiteHome {
+    std::string path;
+    bool is_function = false;
 };
 
 bool is_active = false;
@@ -142,10 +157,9 @@ bool is_active = false;
 // (on_collection), because a tree keys the map.
 std::unordered_map<tree, TemplateHome> homes_by_template;
 
-// The home path of each template of the rule by its qualified name, for the
-// error of a site (THE ERRORS).  No tree keys the map, so it stays for the
-// unit.
-std::unordered_map<std::string, std::string> home_paths_by_entity;
+// The home of each template of the rule by its qualified name, for the error
+// of a site (THE ERRORS).  No tree keys the map, so it stays for the unit.
+std::unordered_map<std::string, SiteHome> site_homes_by_entity;
 
 struct Names {
     tree open_extension = NULL_TREE;
@@ -217,11 +231,13 @@ const TemplateHome& home_of(tree general) {
     location_t defining = defining_location(general);
     const FileEntry* file = file_at(defining);
     if (file != nullptr && file->file_class != FileClass::exempt) {
+        tree result = DECL_TEMPLATE_RESULT(general);
         home.is_tree = true;
         home.path = read_as(file->relative);
         home.entity = qualified_name(general);
-        home.is_open = carries_open_mark(general);
-        home_paths_by_entity.emplace(home.entity, home.path);
+        home.is_function = result != NULL_TREE && TREE_CODE(result) == FUNCTION_DECL;
+        home.is_open = !home.is_function && carries_open_mark(general);
+        site_homes_by_entity.emplace(home.entity, SiteHome{home.path, home.is_function});
         Place place = site_place(defining);
         if (place.file != nullptr && home.is_open) {
             add_finding(Kind::specialization_open_extension, nullptr, place, home.entity);
@@ -363,11 +379,22 @@ void note_template_site(tree template_decl, tree arguments, location_t location)
 
 void report_specialization(const Finding& finding) {
     const char* entity = finding.entity.c_str();
+    auto found = site_homes_by_entity.find(finding.entity);
+    const char* home = found != site_homes_by_entity.end() ? found->second.path.c_str() : "";
+    bool is_function = found != site_homes_by_entity.end() && found->second.is_function;
     switch (finding.kind) {
         case Kind::specialization_outside_home: {
-            auto found = home_paths_by_entity.find(finding.entity);
-            const char* home = found != home_paths_by_entity.end() ? found->second.c_str() : "";
             error_at(finding.spelling, "this file specializes the template %qs outside its home %qs", entity, home);
+            if (is_function) {
+                inform(finding.spelling,
+                       "an explicit specialization gives the function a different body, and it is a friend of "
+                       "each class that befriends the template, also for a marker or a brand of this file");
+                inform(finding.spelling,
+                       "move the specialization into %qs.  The open mark does not open a function template, so a "
+                       "type of a different file extends the function through an overload beside its definition",
+                       home);
+                break;
+            }
             inform(finding.spelling,
                    "C++ has no orphan rule, so a specialization in a different file changes what each gate that "
                    "reads the template admits");
@@ -378,8 +405,6 @@ void report_specialization(const Finding& finding) {
             break;
         }
         case Kind::specialization_orphan: {
-            auto found = home_paths_by_entity.find(finding.entity);
-            const char* home = found != home_paths_by_entity.end() ? found->second.c_str() : "";
             error_at(finding.spelling,
                      "this file specializes the extension point %qs for a type that a different file defines", entity);
             inform(finding.spelling,

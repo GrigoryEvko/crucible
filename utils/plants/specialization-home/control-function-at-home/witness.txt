@@ -1,0 +1,8 @@
+# An explicit specialization of a function template in its home is at home,
+# and a call and an overload of a different scope in a test file are no
+# sites.  No compile gives a line.
+compile uses test/uses.cpp specialization-home=on
+exit uses pass
+judge uses
+compile uses_error test/uses.cpp mode=error specialization-home=on findings=uses
+exit uses_error pass

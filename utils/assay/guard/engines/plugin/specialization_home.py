@@ -3,12 +3,16 @@
 THE RULE
     C++ has no orphan rule, so each unit can specialize each template that it
     can name.  A specialization of a trait in a different file changes what
-    each gate that reads the trait admits.  The quarantine plugin reads each
-    class template and each variable template of the tree that no home row of
-    the rule table governs (utils/tools/quarantine/specialization.cpp).  The
+    each gate that reads the trait admits, and an explicit specialization of a
+    function template gives the function a different body, which is a friend
+    of each class that befriends the template.  The quarantine plugin reads
+    each class template and variable template of the tree that no home row of
+    the rule table governs, and each function template of the tree
+    (utils/tools/quarantine/specialization.cpp).  The
     home of a template is the file that defines it, and the check file of a
     header stands where the header stands.  The kinds of its lines:
-      specialization    an explicit or partial specialization, or an explicit
+      specialization    an explicit or partial specialization, an explicit
+                        specialization of a function template, or an explicit
                         specialization of a member of an instance, outside the
                         home of a template with no open mark
       orphan            such a site of a template with the open mark, in a
@@ -26,8 +30,9 @@ THE RULE
                         declaration as the home, also after the definition
       open-extension    a record: a template with the annotation
                         foundation::open_extension, at its home
-    A template with the open mark is open to each file for the types that the
-    file defines.  GCC merges the mark
+    A class template or a variable template with the open mark is open to
+    each file for the types that the file defines.  The mark does not open a
+    function template.  GCC merges the mark
     of a second declaration into the template, so a file can add the mark to
     a template of a different file.  The rule then judges each record
     open-extension as a finding, and only a ledger row admits it: the ledger

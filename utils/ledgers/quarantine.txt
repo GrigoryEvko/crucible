@@ -523,6 +523,7 @@ test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges stdio::write with the
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges the call operator of InRange<1, 9> for int | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture plants a corpus entry template of the base | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture plants a spawn template of the base with no reading | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/fixy/neg/ | opted-out | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | raw-function-pointer | 2 | - | -
 test/fixy/neg/ | raw-new-delete | 1 | - | -
 test/fixy/neg/ | raw-pointer-object | 31 | - | -
@@ -543,6 +544,7 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture forges stdio::write with the ax
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges the call operator of InRange<1, 9> for int | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture plants a corpus entry template of the base | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture plants a spawn template of the base with no reading | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 6 | - | -
 test/fixy/neg/ | std-entity | 203 | - | -
@@ -587,6 +589,8 @@ test/foundation/neg/ | c-library-call | 2 | - | -
 test/foundation/neg/ | detail-use | 84 | - | each fixture uses a private name of the base for its probe, such as a check, a context key or a test lattice
 test/foundation/neg/ | door-use | 2 | - | the fixture defines a door owner again, and its probe shows that the build refuses the second definition
 test/foundation/neg/ | lifetime-start | 11 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
+test/foundation/neg/ | opted-out | 1 | PROBE: a forged address_of shows that Address has no constructor from an integer | -
+test/foundation/neg/ | opted-out | 1 | PROBE: a forged mint of a Box shows that Box has no constructor from a pointer | -
 test/foundation/neg/ | opted-out | 1 | PROBE: the fixture forges ExecCtx with a row that its source does not permit | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | opted-out | 1 | PROBE: the fixture forges ExecCtx with no capability source | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | opted-out | 1 | PROBE: the fixture forges relation_cells_at of ingest with a copy of other cells | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -596,6 +600,7 @@ test/foundation/neg/ | opted-out | 3 | PROBE: the fixture forges row_cell_at of 
 test/foundation/neg/ | opted-out | 3 | PROBE: the fixture forges row_cell_at of an IO tag with the walk of a pure tag | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | opted-out | 1 | PROBE: the fixture plants a tag template of the base with no alias | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | opted-out | 1 | PROBE: the probe forges a niche of a Ref to show that Ref gives a niche no friend | -
+test/foundation/neg/ | opted-out | 1 | PROBE: the probe specializes the Ref door to show that it cannot write the pointer | -
 test/foundation/neg/ | raw-pointer-object | 18 | - | -
 test/foundation/neg/ | region | 1 | PROBE: a forged address_of shows that Address has no constructor from an integer | the forged specialization stands in a PROBE: region, so the fixture shows the error of its body and not the error of a rule
 test/foundation/neg/ | region | 1 | PROBE: a forged mint of a Box shows that Box has no constructor from a pointer | the forged specialization stands in a PROBE: region, so the fixture shows the error of its body and not the error of a rule
@@ -608,6 +613,7 @@ test/foundation/neg/ | region | 1 | PROBE: the fixture forges row_cell_at of an 
 test/foundation/neg/ | region | 1 | PROBE: the fixture forges row_cell_at of an IO tag with the walk of a pure tag | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | region | 1 | PROBE: the fixture plants a tag template of the base with no alias | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | region | 1 | PROBE: the probe forges a niche of a Ref to show that Ref gives a niche no friend | -
+test/foundation/neg/ | region | 1 | PROBE: the probe specializes the Ref door to show that it cannot write the pointer | -
 test/foundation/neg/ | std-entity | 75 | - | -
 test/foundation/neg/ | std-object | 51 | - | -
 test/fuzz/boundary/ | c-array-object | 1 | - | -

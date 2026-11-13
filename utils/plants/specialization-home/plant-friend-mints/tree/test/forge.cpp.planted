@@ -1,0 +1,37 @@
+#include <foundation/Mints.h>
+
+namespace fp = ::foundation::plant;
+
+// A marker, a brand, a role and a type of this file.
+struct FakeMarker {
+    using grants_allocation = void;
+};
+struct ProbeBrand {};
+struct HeadRole {};
+struct Mine {};
+
+int stolen = 0;
+
+// The marker of this file reaches the private constructor of Box.
+template <>
+fp::Box<int> fp::mint_box<int, FakeMarker>(FakeMarker) noexcept {
+    return fp::Box<int>{&stolen};
+}
+
+// The brand of this file reaches the private constructor of Address.
+template <>
+fp::Address fp::address_of<int, ProbeBrand>(fp::Handle<int, ProbeBrand>) noexcept {
+    return fp::Address{1};
+}
+
+// The brand of this file gets the key that only the mint makes.
+template <>
+constexpr fp::SoleWriter<HeadRole, ProbeBrand> fp::mint_sole_writer<HeadRole>() noexcept {
+    return fp::SoleWriter<HeadRole, ProbeBrand>{fp::sole_writer_key{}};
+}
+
+// The open mark admits no specialization for a type of this file.
+template <>
+constexpr int fp::open_door<Mine>(Mine const&) noexcept {
+    return 1;
+}

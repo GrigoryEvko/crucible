@@ -1,0 +1,17 @@
+# A gate that calls a function template with no qualifier and a dependent
+# argument gets each overload that argument-dependent lookup finds at the
+# instantiation, also one that a file outside the base declares beside its own
+# type.  So the template stays open, although the unit defines it and the rule
+# specialization-home seals it: the call and the call of a template-id are
+# open reads.  A gate that calls the template with a qualifier reads the
+# sealed template, and it gives no line.  The file forge.cpp shows the route:
+# its overload makes the gate admit its type.
+compile layer src/layer.cpp mode=error specialization-home=on
+flag layer -fplugin-arg-crucible_quarantine-sentinel=include/foundation/gates.h
+exit layer fail
+finding layer home open-read include/foundation/gates.h:11:52 | foundation::gates::admit
+finding layer home open-read include/foundation/gates.h:12:54 | foundation::gates::admit
+error layer include/foundation/gates.h:11 | quarantine: open-read foundation::gates::admit;
+error layer include/foundation/gates.h:12 | quarantine: open-read foundation::gates::admit;
+compile forge src/forge.cpp specialization-home=on
+exit forge pass

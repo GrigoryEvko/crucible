@@ -1,0 +1,3 @@
+#include <foundation/rowed.h>
+
+static_assert(!foundation::gates::admitted::ReadsRowedFunction<int>);

@@ -1,0 +1,12 @@
+#include <foundation/Admitted.h>
+
+namespace fp = ::foundation::plant;
+
+struct Mine {};
+
+// The home row of the namespace admits no specialization of its function
+// template in this file.
+template <>
+constexpr bool fp::admitted::admit<Mine>(Mine const&) noexcept {
+    return true;
+}

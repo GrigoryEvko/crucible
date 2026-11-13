@@ -1,0 +1,33 @@
+# A friend function template gives each of its specializations the private
+# members of the class that befriends it.  A test file that specializes such
+# a template with a marker, a brand or a role of its own reaches the private
+# constructor of an owner, or the key that only the mint makes.  The plant
+# holds the marker shape of mint_box and mint_heap_array, the branded shape of
+# address_of and the key shape of mint_sole_writer.  The open mark
+# does not open a function template, so a specialization of a marked friend
+# template for a type of the file is a site too, and the mark gives no record.
+# Each site is a compile error in each mode, and the module of the rule
+# refuses each line.  Each one is also a route of the rule proof-routes.
+compile forge test/forge.cpp specialization-home=on errors=forge
+exit forge fail
+finding forge specialization-home specialization test/forge.cpp:17:14 | foundation::plant::mint_box
+finding forge proof-routes function-specialization test/forge.cpp:17:14 | function-specialization: foundation::plant::mint_box
+finding forge specialization-home specialization test/forge.cpp:23:13 | foundation::plant::address_of
+finding forge proof-routes function-specialization test/forge.cpp:23:13 | function-specialization: foundation::plant::address_of
+finding forge specialization-home specialization test/forge.cpp:29:48 | foundation::plant::mint_sole_writer
+finding forge proof-routes function-specialization test/forge.cpp:29:48 | function-specialization: foundation::plant::mint_sole_writer
+finding forge specialization-home specialization test/forge.cpp:35:15 | foundation::plant::open_door
+finding forge proof-routes function-specialization test/forge.cpp:35:15 | function-specialization: foundation::plant::open_door
+judge forge
+compile forge_error test/forge.cpp mode=error specialization-home=on findings=forge errors=forge
+exit forge_error fail
+# A home row of a namespace does not admit a specialization of a function
+# template of the namespace outside its file either.  So that site is a site
+# of this rule, and not the kind outside-home of the rule home.  The
+# declaration of the template in its home gives the record at-home.
+compile row test/row.cpp specialization-home=on errors=row
+exit row fail
+finding row specialization-home specialization test/row.cpp:10:16 | foundation::plant::admitted::admit
+finding row proof-routes function-specialization test/row.cpp:10:16 | function-specialization: foundation::plant::admitted::admit
+finding row home at-home include/foundation/Admitted.h:8:16 | foundation::plant::admitted
+judge row

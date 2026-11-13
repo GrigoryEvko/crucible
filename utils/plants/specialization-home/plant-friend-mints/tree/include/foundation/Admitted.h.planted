@@ -1,0 +1,12 @@
+#pragma once
+
+namespace foundation::plant::admitted {
+
+// A function template that a home row governs: the row does not admit a
+// specialization outside the file of the template.
+template <class T>
+constexpr bool admit(T const&) noexcept {
+    return false;
+}
+
+}  // namespace foundation::plant::admitted

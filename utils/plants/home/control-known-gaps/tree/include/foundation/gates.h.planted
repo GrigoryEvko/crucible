@@ -1,0 +1,14 @@
+#pragma once
+
+namespace foundation::gates {
+
+constexpr bool plain_admit(int) { return false; }
+constexpr bool named_admit(int) { return false; }
+template <class T>
+constexpr bool declared_admit(T const&);
+
+template <class T> concept ReadsPlain = plain_admit(T{});
+template <class T> concept ReadsNamed = gates::named_admit(T{});
+template <class T> concept ReadsDeclared = gates::declared_admit(T{});
+
+}  // namespace foundation::gates

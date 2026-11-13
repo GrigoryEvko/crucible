@@ -1,0 +1,5 @@
+# The rule table of the control of the function templates of the rule
+# specialization-home: include/foundation/ is base code, and test/ is
+# quarantined.
+layer low 0 include/foundation/
+quarantine test/

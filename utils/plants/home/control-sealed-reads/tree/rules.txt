@@ -1,7 +1,9 @@
 # The rule table of the control of the sealed gates of the rule home:
 # include/foundation/ is base code, and include/crucible/, src/ and test/ are
-# quarantined.  No home row governs a template of the gates.
+# quarantined.  No home row governs a template of the gates, other than the
+# namespace of rowed.h.
 layer low 0 include/foundation/
 quarantine include/crucible/
 quarantine src/
 quarantine test/
+home trait foundation::gates::admitted include/foundation/rowed.h | a fail-closed namespace of the control, which holds a function template

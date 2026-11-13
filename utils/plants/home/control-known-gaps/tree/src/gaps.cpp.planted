@@ -1,0 +1,32 @@
+// Three routes that change the answer of a gate of the base and that no rule
+// refuses at this time.  Each static assertion shows that the route works.
+
+namespace evil {
+struct Evil {};
+}  // namespace evil
+
+// A new overload in a namespace of the base, which a file declares before the
+// header.  The qualified call of the gate binds the overloads that it sees at
+// its definition, and this one is among them.
+namespace foundation::gates {
+constexpr bool named_admit(evil::Evil) { return true; }
+}  // namespace foundation::gates
+
+#include <foundation/gates.h>
+
+// An overload beside the own type of a file, which argument-dependent lookup
+// finds for a call of a function that is not a template.
+namespace evil {
+constexpr bool plain_admit(Evil) { return true; }
+}  // namespace evil
+
+// A definition of a function template of the base that the base only
+// declares.
+template <class T>
+constexpr bool foundation::gates::declared_admit(T const&) {
+    return true;
+}
+
+static_assert(foundation::gates::ReadsPlain<evil::Evil>);
+static_assert(foundation::gates::ReadsNamed<evil::Evil>);
+static_assert(foundation::gates::ReadsDeclared<evil::Evil>);

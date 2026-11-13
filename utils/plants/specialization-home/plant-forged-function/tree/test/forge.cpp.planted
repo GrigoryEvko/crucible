@@ -1,0 +1,32 @@
+#include <foundation/Reads.h>
+
+namespace fp = ::foundation::plant;
+
+struct Evil {
+    int value = 0;
+};
+
+// A different body with no bounds check.
+template <>
+constexpr int fp::element_at<int>(int const* first, unsigned, unsigned index) noexcept {
+    return first[index];
+}
+
+// A specialization of a door reads a private member of the sealed class.
+template <>
+constexpr int fp::door<fp::Sealed>(fp::Sealed const& sealed) noexcept {
+    return sealed.secret_;
+}
+
+// A declaration with no body, a deleted specialization, and a member
+// function template of a class of the base.
+template <>
+constexpr int fp::door<Evil>(Evil const&) noexcept;
+template <>
+constexpr int fp::door<long>(long const&) noexcept = delete;
+template <>
+constexpr int fp::Sealed::pick<Evil>(Evil value) const noexcept {
+    return value.value;
+}
+
+static_assert(fp::door(fp::Sealed{}) == 7);

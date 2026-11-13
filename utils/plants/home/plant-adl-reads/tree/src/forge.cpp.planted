@@ -1,0 +1,12 @@
+#include <foundation/gates.h>
+
+// A file outside the base gives the call of a gate an overload beside its own
+// type.  Argument-dependent lookup finds it at the instantiation, so the gate
+// admits the type, and no specialization stands in the file.
+namespace evil {
+struct Evil {};
+constexpr bool admit(Evil const&) { return true; }
+}  // namespace evil
+
+static_assert(foundation::gates::ReadsUnqualified<evil::Evil>);
+static_assert(!foundation::gates::ReadsQualified<evil::Evil>);
