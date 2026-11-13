@@ -4,7 +4,9 @@
 // file checks what only a running kernel can answer: that the descriptor
 // the mint returns is a socket of the kind the tag names, that it does not
 // survive execve, that a netlink request gets its reply through the door,
-// and that each TCP option of the door reaches the TCP option of the kernel.
+// that each TCP option of the door reaches the TCP option of the kernel,
+// and that the timestamp calls reach the kernel.  The check file of the
+// header holds the walk of the control data of each kind of message.
 
 #include <fixy/Core.h>
 #include <fixy/os/Socket.h>
@@ -12,6 +14,7 @@
 #include <foundation/core/Array.h>
 
 #include <fcntl.h>
+#include <linux/net_tstamp.h>
 #include <linux/netlink.h>
 #include <sys/socket.h>
 
@@ -108,12 +111,77 @@ struct LinkDumpRequest final {
     return 0;
 }
 
+// The door sets SO_TIMESTAMPING, and the kernel reads back the flags of
+// <linux/net_tstamp.h>.
+[[nodiscard]] int check_socket_timestamping() noexcept {
+    IoBlockCtx ctx{eff::testing::test()};
+    fixy::fs::OwnedFd const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
+    if (!tcp.is_open()) return 31;
+    fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(tcp.get());
+    if (fixy::net::set_socket_timestamping(ctx, socket).is_err()) return 32;
+    int const flags = SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_SOFTWARE
+                    | SOF_TIMESTAMPING_RAW_HARDWARE | SOF_TIMESTAMPING_OPT_CMSG | SOF_TIMESTAMPING_OPT_TSONLY;
+    if (!socket_option_is(tcp.get(), SO_TIMESTAMPING, flags)) return 33;
+    return 0;
+}
+
+// The loopback interface has no hardware clock.  The kernel refuses
+// SIOCSHWTSTAMP on it with eperm for a caller with no CAP_NET_ADMIN, and
+// with eopnotsupp for a caller with it.  A name past the limit is refused
+// before the kernel sees it, and a name at the limit is not.
+[[nodiscard]] int check_hardware_timestamping() noexcept {
+    using foundation::os::Errno;
+    IoBlockCtx ctx{eff::testing::test()};
+    fixy::fs::OwnedFd const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
+    if (!tcp.is_open()) return 41;
+    fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(tcp.get());
+    auto const loopback = fixy::net::set_hardware_timestamping(ctx, socket, "lo");
+    if (loopback.is_ok()) return 42;
+    Errno const refusal = loopback.err().value_or(Errno::eio);
+    if (refusal != Errno::eperm && refusal != Errno::eopnotsupp) return 43;
+    if (fixy::net::set_hardware_timestamping(ctx, socket, "sixteen-chars-xx").err().value_or(Errno::eio)
+        != Errno::enametoolong) {
+        return 44;
+    }
+    if (fixy::net::set_hardware_timestamping(ctx, socket, "fifteen-chars-x").err().value_or(Errno::enametoolong)
+        == Errno::enametoolong) {
+        return 45;
+    }
+    return 0;
+}
+
+// A netlink socket with no message gives eagain, and the kernel puts no
+// stamp on a netlink message, so its control data holds no stamp message.
+[[nodiscard]] int check_receive_with_timestamps() noexcept {
+    IoBlockCtx ctx{eff::testing::test()};
+    fixy::fs::OwnedFd const netlink = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::NetlinkRoute>(ctx));
+    if (!netlink.is_open()) return 51;
+    if (fixy::net::bind_netlink(ctx, netlink).is_err()) return 52;
+    fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(netlink.get());
+    foundation::core::FixedArray<std::byte, 8192> reply{};
+    if (fixy::net::receive_with_timestamps(ctx, socket, reply.view()).err().value_or(foundation::os::Errno::eio)
+        != foundation::os::Errno::eagain) {
+        return 53;
+    }
+    LinkDumpRequest const request{};
+    if (fixy::net::send_bytes(ctx, netlink, foundation::core::bytes(request)).value_or(0) != sizeof(request)) return 54;
+    auto received = fixy::net::receive_with_timestamps(ctx, socket, reply.view());
+    if (received.is_err()) return 55;
+    fixy::net::TimestampedReceive const message = std::move(received).expect("the receive gave a message");
+    if (message.count < 16 || message.count > reply.size()) return 56;
+    if (!message.control.is<fixy::net::NoTimestampMessage>()) return 57;
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     int failed = check_netlink_route_socket();
     if (failed == 0) failed = check_netlink_calls();
     if (failed == 0) failed = check_tcp_options();
+    if (failed == 0) failed = check_socket_timestamping();
+    if (failed == 0) failed = check_hardware_timestamping();
+    if (failed == 0) failed = check_receive_with_timestamps();
     if (failed != 0) {
         std::fprintf(stderr, "test_os_socket: check %d failed\n", failed);
         return failed;

@@ -218,6 +218,8 @@ constexpr long kNoCall = -1;
             return __NR_sendto;
         case Syscall::recvfrom:
             return __NR_recvfrom;
+        case Syscall::recvmsg:
+            return __NR_recvmsg;
         default:
             return kNoCall;
     }
@@ -398,6 +400,7 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::bind:
         case Syscall::sendto:
         case Syscall::recvfrom:
+        case Syscall::recvmsg:
         default:
             break;
     }

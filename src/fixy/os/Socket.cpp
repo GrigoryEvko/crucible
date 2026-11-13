@@ -1,13 +1,19 @@
 // The socket door of fixy (fixy/os/SocketCalls.h): the options, the bind,
-// the send and the receive of a socket.  It issues the raw primitive of
-// foundation/os/Syscall.h.  It is the one includer of <linux/tcp.h>, for the
-// names of the TCP options.  It includes no header of the C library, because
-// some declarations of the two kinds of header conflict.  A call that a
-// signal interrupts runs again.
+// the send and the receive of a socket, and the stamps of a receive.  It
+// issues the raw primitive of foundation/os/Syscall.h.  It is the one
+// includer of <linux/tcp.h>, for the names of the TCP options.  It includes
+// no header of the C library, because some declarations of the two kinds of
+// header conflict.  The words and the records of the timestamp calls come
+// from fixy/os/SocketCalls.h (THE KERNEL WORDS).  A call that a signal
+// interrupts runs again.
 
 #include <fixy/os/SocketCalls.h>
 
+#include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Compare.h>
+#include <foundation/core/Region.h>
+#include <foundation/core/Text.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/Syscall.h>
 
@@ -127,6 +133,65 @@ CountResult receive_with_flags_(int socket, void* first, std::size_t count, int 
         word = os::raw_syscall(os::Syscall::recvfrom, socket, first, count, flags, 0, 0);
     } while (word == kInterrupted);
     return count_of(word);
+}
+
+UnitResult set_hardware_timestamping_(int socket, core::TextView interface_name) noexcept {
+    if (is_closed(socket)) {
+        return core::err(os::Errno::ebadf);
+    }
+    if (interface_name.size() >= interface_name_capacity) {
+        return core::err(os::Errno::enametoolong);
+    }
+    HardwareTimestampConfig const config{
+        .flags = 0,
+        .transmit = hardware_transmit_on,
+        .receive_filter = hardware_filter_all,
+    };
+    // The name fills the front of the name field, and the zero of the empty
+    // field ends it.
+    InterfaceRequest request{};
+    core::copy(request.name.view().window(0, interface_name.size()).expect("the name is below the capacity"),
+               core::detail::view_over_(core::detail::text_first_(interface_name), interface_name.size()))
+        .expect("the window has the count of the name");
+    request.data = os::Word{static_cast<void const*>(&config)}.bits();
+    long word = 0;
+    do {
+        word = os::raw_syscall(os::Syscall::ioctl, socket, set_hardware_timestamping_request,
+                               static_cast<void const*>(&request));
+    } while (word == kInterrupted);
+    return unit_of(word);
+}
+
+core::Result<TimestampedReceive, os::Errno> receive_with_timestamps_(int socket, void* first, std::size_t count,
+                                                                     int flags) noexcept {
+    using Received = core::Result<TimestampedReceive, os::Errno>;
+    if (is_closed(socket)) {
+        return core::err(os::Errno::ebadf);
+    }
+    // 256 bytes hold the SCM_TIMESTAMPING message and the other messages
+    // that a receive can carry.  A cut message gives ShortTimestampMessage.
+    core::FixedArray<std::byte, 256> control{};
+    IoVector const vector{.base = os::Word{static_cast<void const*>(first)}.bits(), .length = count};
+    MessageHeader message{
+        .vectors = os::Word{static_cast<void const*>(&vector)}.bits(),
+        .vector_count = 1,
+        .control = os::Word{static_cast<void const*>(first_of_(core::detail::ViewDoor::key(), control.view()))}.bits(),
+        .control_length = control.size(),
+    };
+    long word = 0;
+    do {
+        word = os::raw_syscall(os::Syscall::recvmsg, socket, static_cast<void const*>(&message), flags);
+    } while (word == kInterrupted);
+    return count_of(word).match(
+        [&message, &control, count](std::size_t received) -> Received {
+            std::size_t const written = core::min(static_cast<std::size_t>(message.control_length), control.size());
+            return TimestampedReceive{
+                .count = core::min(received, count),
+                .control = read_timestamp_control_(
+                    control.view().window(0, written).expect("the kernel writes at most the control capacity")),
+            };
+        },
+        [](os::Errno error) -> Received { return core::err(error); });
 }
 
 }  // namespace fixy::net::detail

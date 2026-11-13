@@ -145,15 +145,15 @@ mint_socket(Ctx const&) noexcept {
 
 // THE SOCKET CALLS
 //   Each call takes the descriptor of a socket: the NonNegative<int> of a
-//   TCP socket that the caller holds, or the OwnedFd of a netlink socket of
+//   socket that the caller holds, or the OwnedFd of a netlink socket of
 //   mint_socket.  The door file src/fixy/os/Socket.cpp issues each call
 //   with the raw primitive (fixy/os/SocketCalls.h), and gives the error of
 //   the kernel in a Result.  A call that a signal interrupts runs again.
-//   send_bytes and receive_bytes pass MSG_DONTWAIT and never wait: a
-//   netlink request of the kernel queues its reply before the send returns,
-//   and the receive of a dump makes its next part.  A receive with no bytes
-//   gives eagain.  Each call takes a context that admits the row of the
-//   network family of the syscall catalog.
+//   send_bytes, receive_bytes and receive_with_timestamps pass MSG_DONTWAIT
+//   and never wait: a netlink request of the kernel queues its reply before
+//   the send returns, and the receive of a dump makes its next part.  A
+//   receive with no bytes gives eagain.  Each call takes a context that
+//   admits the row of the network family of the syscall catalog.
 
 using socket_call_row_t =
     eff::lift_row_t<::fixy::atom::syscall::family<::fixy::atom::syscall::SyscallFamily::NetworkIo>>;
@@ -281,6 +281,47 @@ template <eff::IsExecCtx Ctx>
 receive_bytes(Ctx const&, ::fixy::fs::OwnedFd const& socket, ::foundation::core::View<std::byte> buffer) noexcept {
     return detail::receive_with_flags_(socket.get(), first_of_(::foundation::core::detail::ViewDoor::key(), buffer),
                                        buffer.size(), MSG_DONTWAIT);
+}
+
+// The longest name of a network interface of the kernel, with no zero
+// (IFNAMSIZ of the kernel, less one).
+inline constexpr std::size_t interface_name_bytes = detail::interface_name_capacity - 1;
+
+// Turns on the receive stamps of a socket (SO_TIMESTAMPING): the software
+// stamp of the kernel, and the raw stamp of the hardware clock of the NIC
+// when the NIC takes one.  receive_with_timestamps gives the stamps of each
+// datagram.
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsSocketCall<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+set_socket_timestamping(Ctx const&, NonNegative<int> socket) noexcept {
+    std::uint32_t const flags = detail::receive_timestamping_flags;
+    return detail::set_option_(socket.value(), SOL_SOCKET, SO_TIMESTAMPING, &flags, sizeof(flags));
+}
+
+// Turns on the hardware stamps of the NIC of the network interface
+// interface_name (SIOCSHWTSTAMP): a stamp of each sent packet and of each
+// received packet.  The kernel needs CAP_NET_ADMIN for the call, and a NIC
+// with no hardware clock refuses it.  A name of more than
+// interface_name_bytes characters gives enametoolong.
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsSocketCall<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+set_hardware_timestamping(Ctx const&, NonNegative<int> socket, ::foundation::core::TextView interface_name) noexcept {
+    return detail::set_hardware_timestamping_(socket.value(), interface_name);
+}
+
+// Receives one datagram into buffer with the stamps of its control data
+// (SCM_TIMESTAMPING).  The count is the count of the bytes that the kernel
+// wrote into buffer, at most its size.  It does not wait: a socket with no
+// datagram gives eagain.  The control data holds no stamp when the socket
+// has no SO_TIMESTAMPING (set_socket_timestamping).
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsSocketCall<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<TimestampedReceive, ::foundation::os::Errno>
+receive_with_timestamps(Ctx const&, NonNegative<int> socket, ::foundation::core::View<std::byte> buffer) noexcept {
+    return detail::receive_with_timestamps_(
+        socket.value(), first_of_(::foundation::core::detail::ViewDoor::key(), buffer), buffer.size(), MSG_DONTWAIT);
 }
 
 }  // namespace fixy::net
