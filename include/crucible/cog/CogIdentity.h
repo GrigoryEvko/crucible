@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Platform.h>
@@ -235,7 +236,7 @@ struct CogIdentity {
     Uuid uuid;
     CogLevel level = CogLevel::L0_Atomic;
     CogKind kind = CogKind::Gpu;
-    std::uint8_t pad[6]{};
+    ::foundation::core::FixedArray<std::uint8_t, 6> pad{};
 
     // The character storage behind these views lives in the topology
     // arena, which must outlive this identity.

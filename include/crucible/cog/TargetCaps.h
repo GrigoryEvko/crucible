@@ -2,6 +2,7 @@
 
 #include <crucible/cog/CogIdentity.h>
 #include <fixy/Bits.h>
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
@@ -9,7 +10,6 @@
 
 #include <array>
 #include <cstdint>
-#include <span>
 #include <type_traits>
 
 namespace crucible::cog {
@@ -192,20 +192,20 @@ struct GpuTargetCaps {
 // padding byte.
 struct NicPortTargetCaps {
     VendorClaim<LinkLayer> link_layer{};
-    std::uint8_t pad_after_link_layer[7]{};
+    ::foundation::core::FixedArray<std::uint8_t, 7> pad_after_link_layer{};
     VendorClaim<std::uint64_t> line_rate_bytes_per_sec{};
     ValidMtu mtu_bytes = ::fixy::mint_refined<valid_mtu>(std::uint16_t{1500});
 
     VendorClaim<std::uint16_t> max_tx_queues{};
     VendorClaim<std::uint16_t> max_rx_queues{};
-    std::uint8_t pad_after_rx_queues[2]{};
+    ::foundation::core::FixedArray<std::uint8_t, 2> pad_after_rx_queues{};
     VendorClaim<std::uint32_t> max_qp_count{};  // RDMA queue pairs
     VendorClaim<std::uint32_t> max_cq_count{};  // RDMA completion queues
     VendorClaim<std::uint32_t> max_mr_count{};  // RDMA memory regions
-    std::uint8_t pad_after_mr_count[4]{};
+    ::foundation::core::FixedArray<std::uint8_t, 4> pad_after_mr_count{};
     VendorClaim<std::uint64_t> max_mr_size_bytes{};
     VendorClaim<std::uint32_t> tcam_entries{};
-    std::uint8_t pad_after_tcam_entries[4]{};
+    ::foundation::core::FixedArray<std::uint8_t, 4> pad_after_tcam_entries{};
 
     // Line rate that survives PCIe, driver and kernel overhead.
     CalibratedValue<std::uint64_t> effective_bandwidth_bytes_per_sec{};
@@ -218,15 +218,15 @@ struct NicPortTargetCaps {
     VendorClaim<std::uint16_t> pcie_root_complex_id{};
     VendorClaim<PcieGen> pcie_gen{};
     VendorClaim<std::uint8_t> pcie_lanes{};
-    std::uint8_t pad_after_pcie_lanes[4]{};
+    ::foundation::core::FixedArray<std::uint8_t, 4> pad_after_pcie_lanes{};
 
-    // Peer GPUs this port can reach by direct DMA. The span points into
+    // Peer GPUs this port can reach by direct DMA. The View points into
     // an arena this struct does not own and which must outlive it. An
-    // empty span means no peers, or discovery has not run.
-    std::span<const CogIdentity> gpu_direct_peers{};
+    // empty View means no peers, or discovery has not run.
+    ::fixy::View<CogIdentity const> gpu_direct_peers{};
 
     ::fixy::Bits<NicFeature> features{};
-    std::uint8_t pad_tail[4]{};
+    ::foundation::core::FixedArray<std::uint8_t, 4> pad_tail{};
 };
 
 struct NvSwitchTargetCaps {
