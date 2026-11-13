@@ -493,8 +493,8 @@ public:
     public:
         static constexpr uint32_t CAP = 64;
 
-        void push(RegionNode* region) noexcept {
-            slots_[static_cast<uint32_t>(total_.peek_relaxed() % CAP)] = region;
+        void push(RegionNode& region) noexcept {
+            slots_[static_cast<uint32_t>(total_.peek_relaxed() % CAP)] = ::fixy::WeakRef<RegionNode>{region};
             (void)total_.bump();
         }
 
@@ -508,18 +508,18 @@ public:
         }
 
         // age 0 is the most recently published region.  The bound is size()
-        // rather than CAP so that a fresh queue cannot hand back the null a
-        // never-written slot still holds.  The clause is the in-body macro
-        // because its predicate reaches a member through `this`, which a
-        // plain pre() skips when the compiler folds this body.
-        [[nodiscard]] RegionNode* at(uint32_t age) const noexcept {
+        // rather than CAP so that a fresh queue cannot hand back the empty
+        // reference a never-written slot still holds.  The clause is the
+        // in-body macro because its predicate reaches a member through
+        // `this`, which a plain pre() skips when the compiler folds this body.
+        [[nodiscard]] ::fixy::WeakRef<RegionNode> at(uint32_t age) const noexcept {
             CRUCIBLE_PRE(age < size());
             const uint64_t seen = total_.get();
             return slots_[static_cast<uint32_t>((seen + CAP - 1u - age) % CAP)];
         }
 
     private:
-        RegionNode* slots_[CAP]{};
+        ::fixy::FixedArray<::fixy::WeakRef<RegionNode>, CAP> slots_{};
         ::fixy::AtomicMonotonic<uint64_t> total_ = ::fixy::mint_atomic_monotonic<uint64_t>(0);
     };
 
@@ -704,10 +704,10 @@ public:
     // alone.
     struct BgTraceBatch {
         uint32_t count = 0;
-        TraceRing::Entry entries[BATCH_SIZE]{};
-        MetaIndex meta_starts[BATCH_SIZE]{};
-        ScopeHash scope_hashes[BATCH_SIZE]{};
-        CallsiteHash callsite_hashes[BATCH_SIZE]{};
+        ::fixy::FixedArray<TraceRing::Entry, BATCH_SIZE> entries{};
+        ::fixy::FixedArray<MetaIndex, BATCH_SIZE> meta_starts{};
+        ::fixy::FixedArray<ScopeHash, BATCH_SIZE> scope_hashes{};
+        ::fixy::FixedArray<CallsiteHash, BATCH_SIZE> callsite_hashes{};
     };
 
     struct BgBuildWork {
@@ -901,7 +901,7 @@ private:
         SlotId slot_id;
         uint8_t port = 0;
         uint8_t gen = 0;
-        uint8_t pad[6]{};
+        ::foundation::core::FixedArray<uint8_t, 6> pad{};
     };
 
     static_assert(sizeof(PtrSlot) == 24, "PtrSlot should be 24 bytes");
@@ -920,7 +920,7 @@ private:
         int8_t device_idx = -1;
         Layout layout = Layout::Strided;
         bool is_external = false;
-        uint8_t pad[3]{};
+        ::foundation::core::FixedArray<uint8_t, 3> pad{};
     };
 
     static_assert(sizeof(SlotInfo) == 24, "SlotInfo: matches TensorSlot bulk region");
@@ -928,7 +928,7 @@ private:
     // old_op, old_port and old_slot carry the displaced entry and are
     // meaningful only when was_alias is true.
     struct InsertResult {
-        PtrSlot* slot = nullptr;
+        ::fixy::WeakRef<PtrSlot> slot{};
         bool was_alias = false;
         OpIndex old_op;
         uint8_t old_port = 0;
@@ -968,10 +968,14 @@ private:
                 slot.port = port;
                 slot.slot_id = slot_id;
                 slot.gen = gen;
-                return {.slot = &slot, .was_alias = false, .old_op = {}, .old_port = 0, .old_slot = {}};
+                return {.slot = ::fixy::WeakRef<PtrSlot>{slot},
+                        .was_alias = false,
+                        .old_op = {},
+                        .old_port = 0,
+                        .old_slot = {}};
             }
             if (slot.key.value() == key) {
-                InsertResult result{.slot = &slot,
+                InsertResult result{.slot = ::fixy::WeakRef<PtrSlot>{slot},
                                     .was_alias = (slot.op_index != op_index),
                                     .old_op = slot.op_index,
                                     .old_port = slot.port,
@@ -983,7 +987,7 @@ private:
                 return result;
             }
         }
-        return {.slot = nullptr, .was_alias = false, .old_op = {}, .old_port = 0, .old_slot = {}};  // table full
+        return {.slot = {}, .was_alias = false, .old_op = {}, .old_port = 0, .old_slot = {}};  // table full
     }
 
     struct PtrLookup {

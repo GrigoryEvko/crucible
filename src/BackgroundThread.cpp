@@ -77,9 +77,10 @@ struct BackgroundThread::Pipeline {
     template <class Consumer>
     class StageInput {
         Consumer inner_;
-        BackgroundThread* owner_;
+        ::fixy::Ref<BackgroundThread> owner_;
 
-        StageInput(Consumer&& inner, BackgroundThread& owner) noexcept : inner_{std::move(inner)}, owner_{&owner} {}
+        StageInput(Consumer&& inner, BackgroundThread& owner) noexcept
+            : inner_{std::move(inner)}, owner_{::fixy::to(owner)} {}
         friend struct BackgroundThread;
 
     public:
@@ -113,7 +114,7 @@ struct BackgroundThread::Pipeline {
     // iteration, so the stage can serve the owner mailbox before any
     // region arrives.
     struct BgSinkProducerHandle {
-        BackgroundThread* owner = nullptr;
+        ::fixy::WeakRef<BackgroundThread> owner{};
 
         [[nodiscard]] bool try_push(BgPipelineDone* const& done) noexcept {
             delete done;
@@ -341,7 +342,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
 
     memory.published = PublishedRegion{.region = &published.get(), .reset_point = reset_point};
 
-    uncompiled_regions.push(&published.get());
+    uncompiled_regions.push(published.get());
     active_region.store(&published.get(), std::memory_order_release);
     owner_marks_ = RegionMarks{};
     if (region_ready_cb) {
@@ -383,7 +384,7 @@ bool BackgroundThread::is_held_(::fixy::WeakRef<const RegionNode> region) const 
     }
     const uint32_t queued = uncompiled_regions.size();
     for (uint32_t age = 0; age < queued; ++age) {
-        if (::fixy::WeakRef<const RegionNode>::from_raw(uncompiled_regions.at(age)) == region) return true;
+        if (::fixy::WeakRef<const RegionNode>{uncompiled_regions.at(age).get()} == region) return true;
     }
     return false;
 }
@@ -408,7 +409,7 @@ uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {
 }
 
 void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename TraceBatchChannel::ProducerHandle&& out) {
-    BackgroundThread* const owner = &in.owner();
+    BackgroundThread& owner = in.owner();
     while (!in.try_pop()) {
         CRUCIBLE_SPIN_PAUSE;
     }
@@ -416,10 +417,11 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename Trac
     auto batch = std::make_unique<BgTraceBatch>();
 
     while (true) {
-        if (owner->stop_requested.peek()) break;
+        if (owner.stop_requested.peek()) break;
 
-        batch->count = owner->ring.get()->try_pop_batch(batch->entries, batch->meta_starts, batch->scope_hashes,
-                                                        batch->callsite_hashes, BATCH_SIZE);
+        batch->count =
+            owner.ring.get()->try_pop_batch(batch->entries.data(), batch->meta_starts.data(),
+                                            batch->scope_hashes.data(), batch->callsite_hashes.data(), BATCH_SIZE);
 
         if (batch->count == 0) {
             CRUCIBLE_SPIN_PAUSE;
@@ -431,8 +433,9 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename Trac
         batch = std::make_unique<BgTraceBatch>();
     }
 
-    batch->count = owner->ring.get()->try_pop_batch(batch->entries, batch->meta_starts, batch->scope_hashes,
-                                                    batch->callsite_hashes, BATCH_SIZE);
+    batch->count =
+        owner.ring.get()->try_pop_batch(batch->entries.data(), batch->meta_starts.data(), batch->scope_hashes.data(),
+                                        batch->callsite_hashes.data(), BATCH_SIZE);
     if (batch->count > 0) {
         push_pipeline(out, batch.get());
         batch.release();
@@ -444,7 +447,7 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename Trac
 
 void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
                                                    typename BuildWorkChannel::ProducerHandle&& out) {
-    BackgroundThread* const owner = &in.owner();
+    BackgroundThread& owner = in.owner();
     while (true) {
         auto maybe_batch = in.try_pop();
         if (!maybe_batch) {
@@ -463,27 +466,27 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
         // the ops through this reference.
         BgTraceBatch const& ops = *batch;
 
-        for (uint32_t i = 0; i < batch->count; ++i) {
-            owner->apply_due_reset_();
-            ++owner->stream_ops_;
+        for (uint32_t i = 0; i < ops.count; ++i) {
+            owner.apply_due_reset_();
+            ++owner.stream_ops_;
 
-            owner->pending_ops_.push(ops.entries[i], ops.meta_starts[i],
-                                     owner->take_record_start_(ops.entries[i], ops.meta_starts[i]), ops.scope_hashes[i],
-                                     ops.callsite_hashes[i]);
+            owner.pending_ops_.push(ops.entries[i], ops.meta_starts[i],
+                                    owner.take_record_start_(ops.entries[i], ops.meta_starts[i]), ops.scope_hashes[i],
+                                    ops.callsite_hashes[i]);
 
-            if (owner->detector.check(batch->entries[i].schema_hash, batch->entries[i].shape_hash)) {
-                if (auto work = std::unique_ptr<BgBuildWork>(owner->prepare_iteration_build_work())) {
+            if (owner.detector.check(ops.entries[i].schema_hash, ops.entries[i].shape_hash)) {
+                if (auto work = std::unique_ptr<BgBuildWork>(owner.prepare_iteration_build_work())) {
                     push_pipeline(out, work.get());
                     work.release();
                 }
             }
-            owner->drop_unclaimable_ops_();
+            owner.drop_unclaimable_ops_();
         }
         // A reset at the end of the batch applies now, so the detector holds
         // no ops of the trace that diverged while it waits for the next op.
-        owner->apply_due_reset_();
+        owner.apply_due_reset_();
 
-        auto commit = std::unique_ptr<BgBuildWork>(owner->make_commit_work(batch->count));
+        auto commit = std::unique_ptr<BgBuildWork>(owner.make_commit_work(ops.count));
         push_pipeline(out, commit.get());
         commit.release();
     }
@@ -563,12 +566,12 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
 // cannot taint the build stage's owner pointer.
 void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProducerHandle&& out) {
     const ::foundation::effects::Bg bg = ::foundation::effects::host::BackgroundOwner::mint_background_context();
-    BackgroundThread* const owner = &in.owner();
-    CRUCIBLE_ASSERT(out.owner == owner);
-    const OwnerMailboxScope mailbox{*owner, PublishStage{}};
+    BackgroundThread& owner = in.owner();
+    CRUCIBLE_ASSERT(out.owner.try_get() == &owner);
+    const OwnerMailboxScope mailbox{owner, PublishStage{}};
 
     while (true) {
-        owner->serve_owner_mailbox_(PublishStage{});
+        owner.serve_owner_mailbox_(PublishStage{});
         auto maybe_publish = in.try_pop();
         if (!maybe_publish) {
             CRUCIBLE_SPIN_PAUSE;
@@ -591,8 +594,8 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
             // reset.  The release comes first, so a caller that sees the
             // count after a flush sees the tail too.  The bump's release
             // pairs with the foreground's acquire load.
-            owner->release_meta_log(PublishStage{}, publish->meta_floor);
-            (void)PublishStageAuth::commit(owner->total_processed, publish->commit_count);
+            owner.release_meta_log(PublishStage{}, publish->meta_floor);
+            (void)PublishStageAuth::commit(owner.total_processed, publish->commit_count);
             continue;
         }
 
@@ -608,11 +611,11 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
         // a region.  The region memory frees when its parts end here.
         BuiltRegion region = std::move(publish->region);
         const StreamPoint reset_point = publish->reset_point;
-        if (reset_point != owner->requested_reset()) {
+        if (reset_point != owner.requested_reset()) {
             continue;
         }
 
-        owner->publish_region(bg, PublishStage{}, std::move(region), reset_point);
+        owner.publish_region(bg, PublishStage{}, std::move(region), reset_point);
     }
 }
 
@@ -700,8 +703,8 @@ void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
         ::fixy::concurrent::mint_stage<&Pipeline::DetectIterationFn>(ctx, std::move(trace_cons), std::move(build_prod));
     auto build_stage =
         ::fixy::concurrent::mint_stage<&Pipeline::BuildTraceFn>(ctx, std::move(build_cons), std::move(publish_prod));
-    auto publish_stage = ::fixy::concurrent::mint_stage<&Pipeline::MakeRegionFn>(ctx, std::move(publish_cons),
-                                                                                 Pipeline::BgSinkProducerHandle{this});
+    auto publish_stage = ::fixy::concurrent::mint_stage<&Pipeline::MakeRegionFn>(
+        ctx, std::move(publish_cons), Pipeline::BgSinkProducerHandle{::fixy::WeakRef<BackgroundThread>{*this}});
 
     auto pipeline = ::fixy::concurrent::mint_pipeline(ctx, std::move(drain_stage), std::move(detect_stage),
                                                       std::move(build_stage), std::move(publish_stage));
@@ -828,13 +831,15 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
     map_gen_++;
     if (map_gen_ == 0) [[unlikely]] {
         // Generation wrapped, so stale slots would read as current.
-        std::fill_n(scratch_map_.data(), map_cap_.get(), PtrSlot{});
+        for (uint32_t index = 0; index < map_cap_.get(); ++index)
+            scratch_map_[index] = PtrSlot{};
         map_gen_ = 1;
     }
 
     // Value-initialize only the portion this call uses.
     uint32_t slot_cap = ::fixy::min(slot_cap_max_.get(), ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
-    std::fill_n(scratch_slots_.data(), slot_cap, SlotInfo{});
+    for (uint32_t index = 0; index < slot_cap; ++index)
+        scratch_slots_[index] = SlotInfo{};
     uint32_t next_slot_raw = 0;
 
     // The edge buffer needs no initialization: num_edges bounds every
@@ -1192,10 +1197,10 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
     // operation, while the direct reuse matching below already captures
     // most same-size matches and keeps the list short.
     //
-    // Neither array is initialized.  free_list_count bounds every read.
+    // free_list_count bounds every read.
     constexpr uint32_t MAX_FREE = 4096;
-    uint64_t free_list_sizes[MAX_FREE];
-    uint64_t free_list_offsets[MAX_FREE];
+    ::fixy::FixedArray<uint64_t, MAX_FREE> free_list_sizes{};
+    ::fixy::FixedArray<uint64_t, MAX_FREE> free_list_offsets{};
     uint32_t free_list_count = 0;
     uint64_t pool_end = 0;
 
@@ -1241,11 +1246,11 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
         // free list entirely.
         uint32_t dying_count_capped = num_dying < MAX_PER_OP ? num_dying : MAX_PER_OP;
         uint32_t born_count_capped = num_born < MAX_PER_OP ? num_born : MAX_PER_OP;
-        bool dying_consumed[MAX_PER_OP]{};
-        bool born_assigned[MAX_PER_OP]{};
+        ::fixy::FixedArray<bool, MAX_PER_OP> dying_consumed{};
+        ::fixy::FixedArray<bool, MAX_PER_OP> born_assigned{};
 
         if (dying_count_capped > 0 && born_count_capped > 0) {
-            DyingInfo dying_slot_info[MAX_PER_OP];
+            ::fixy::FixedArray<DyingInfo, MAX_PER_OP> dying_slot_info{};
             for (uint32_t i = 0; i < dying_count_capped; i++) {
                 uint32_t dying_slot_id = dead_slots[dying_begin + i];
                 dying_slot_info[i] = {.aligned_size =

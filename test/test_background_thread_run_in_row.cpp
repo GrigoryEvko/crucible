@@ -135,26 +135,27 @@ void test_uncompiled_queue_is_bounded() {
     assert(queue.size() == 0u);
     assert(queue.total() == 0u);
 
-    // The pointers are never dereferenced by the queue, so distinct
-    // non-null bit patterns stand in for regions.
-    auto fake = [](uint64_t i) { return std::bit_cast<crucible::RegionNode*>(uintptr_t{0x1000} + i * 0x40); };
+    // The queue never reads a region, so default nodes stand in for the
+    // published regions.  Each push names a node of its own.
+    constexpr uint64_t OVERRUN = 4u * CAP + 3u;
+    static ::fixy::FixedArray<crucible::RegionNode, OVERRUN> regions{};
+    auto region_at = [](uint64_t i) { return ::fixy::WeakRef<crucible::RegionNode>{regions[i]}; };
 
     for (uint64_t i = 0; i < CAP; ++i) {
-        queue.push(fake(i));
+        queue.push(regions[i]);
         assert(queue.total() == i + 1);
         assert(queue.size() == i + 1);
-        assert(queue.at(0) == fake(i) && "age 0 is the newest");
+        assert(queue.at(0) == region_at(i) && "age 0 is the newest");
     }
 
     // One past the bound: the total keeps counting, the retention does not.
-    constexpr uint64_t OVERRUN = 4u * CAP + 3u;
     for (uint64_t i = CAP; i < OVERRUN; ++i)
-        queue.push(fake(i));
+        queue.push(regions[i]);
 
     assert(queue.total() == OVERRUN);
     assert(queue.size() == CAP && "retention must stop at the bound");
     for (uint32_t age = 0; age < CAP; ++age)
-        assert(queue.at(age) == fake(OVERRUN - 1 - age) && "the bound keeps the newest CAP, in order");
+        assert(queue.at(age) == region_at(OVERRUN - 1 - age) && "the bound keeps the newest CAP, in order");
 
     crucible::test::pass("  uncompiled_queue_bounded:                  "
                          "PASSED (pushed={}, retained={})\n",
