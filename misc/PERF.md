@@ -599,7 +599,7 @@ Enabling user-space rdpmc is the single biggest perf win in the entire design. W
 Three settings, all controllable at Keeper startup:
 
 1. **`/proc/sys/kernel/perf_event_paranoid ≤ 2`** (default on most distros). Allows CAP_PERFMON users to open hardware counters.
-2. **`CAP_PERFMON`** capability on the Crucible binary. We set this via `setcap` in the build, same mechanism already used for CAP_BPF in `bench-caps` target.
+2. **`CAP_PERFMON`** capability on the Crucible process. On a development host, the launcher `/usr/local/bin/crucible-caps` gives it, together with CAP_BPF, as an ambient capability (`utils/assay/loop/caps.py`).
 3. **`attr.exclude_kernel = 0`** AND userspace has `CAP_PERFMON` — the kernel refuses `rdpmc` on kernel-space counters unprivileged.
 
 If any of these fails, graceful fallback to `read(fd)` syscall path (~500 ns per group read). Fallback is logged clearly at startup; users will see it.

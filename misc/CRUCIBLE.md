@@ -2656,7 +2656,7 @@ Keeper startup (§14.1) invokes `crucible::rt::apply(Policy::production())` as t
 
 ### 16.6 Capabilities needed
 
-The runtime needs specific Linux capabilities to enable each mechanism. Keeper is shipped with file capabilities via `setcap` (from the operator's deployment tooling); dev laptops use `bench-caps` CMake target. Matrix:
+The runtime needs specific Linux capabilities to enable each mechanism. Keeper is shipped with file capabilities via `setcap` (from the operator's deployment tooling). A development host runs a privileged command through the launcher `/usr/local/bin/crucible-caps` (`utils/assay/loop/caps.py`). Matrix:
 
 | Mechanism | Required capability | Fallback if missing |
 |-----------|---------------------|---------------------|
@@ -2759,7 +2759,7 @@ Regression-testing Crucible at the ML-workload level runs a short (~500 step) tr
 - THP stays at kernel default (usually `madvise`-driven)
 - Watchdog disabled (laptop won't wedge)
 - io_uring still preferred (no permission needed)
-- Sense hub attached if `bench-caps` has been run
+- Sense hub attached if the process runs through the launcher `crucible-caps`
 
 Laptop benches show numbers 2-5× noisier than production, but relative comparisons (A vs B) still hold via Mann-Whitney U. The `Policy::production()` mode is reserved for CI runs on dedicated bench nodes with proper caps and isolcpus.
 
