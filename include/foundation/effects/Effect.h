@@ -39,6 +39,7 @@
 //     error types apart, and never through a row.  fixy/Collision.h
 //     reads both spellings.
 
+#include <foundation/core/Heap.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Hash.h>
@@ -144,19 +145,12 @@ template <Effect E>
 // body into a compile error rather than a silent change of contract.
 namespace cap {
 
-struct Alloc {
-    // The families of foundation/core take this tag where they allocate.
-    // That layer is below this one and names no type of it, so its gate
-    // reads this member.
-    using grants_allocation = void;
-
-    constexpr Alloc() noexcept = default;
-    constexpr Alloc(const Alloc&) noexcept = default;
-    constexpr Alloc(Alloc&&) noexcept = default;
-    constexpr Alloc& operator=(const Alloc&) noexcept = default;
-    constexpr Alloc& operator=(Alloc&&) noexcept = default;
-    ~Alloc() = default;
-};
+// The allocation doors of foundation/core take the tag of that layer and no
+// other type, so this name is an alias of it and not a type of its own.  The
+// alias is a member of this namespace, so the bare tag of Effect::Alloc in
+// foundation/effects/Capability.h finds it by its identifier.  A
+// using-declaration is no member, and that search would not find it.
+using Alloc = ::foundation::core::Alloc;
 
 struct IO {
     constexpr IO() noexcept = default;

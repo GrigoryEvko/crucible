@@ -208,10 +208,9 @@ static_assert(two_calls_give_two_brands());
 
 // A HeapArray holds a pointer and a count.  It moves, it does not copy, and
 // the allocation capability is the first argument of its one door.
-struct AllocationTag final {
+struct OtherTag final {
     using grants_allocation = void;
 };
-struct OtherTag final {};
 struct MoveOnlyElement final {
     MoveOnlyElement() noexcept = default;
     MoveOnlyElement(MoveOnlyElement&&) noexcept = default;
@@ -223,11 +222,11 @@ static_assert(std::is_nothrow_move_constructible_v<HeapArray<int>>
               && std::is_nothrow_move_assignable_v<HeapArray<int>>);
 static_assert(!std::is_copy_constructible_v<HeapArray<int>> && !std::is_copy_assignable_v<HeapArray<int>>);
 static_assert(!std::is_trivially_copyable_v<HeapArray<int>>);
-static_assert(CanMintHeapArray<int, alignof(int), AllocationTag>);
+static_assert(CanMintHeapArray<int, alignof(int), Alloc>);
 static_assert(!CanMintHeapArray<int, alignof(int), OtherTag>);
-static_assert(!CanMintHeapArray<MoveOnlyElement, alignof(MoveOnlyElement), AllocationTag>);
-static_assert(!CanMintHeapArray<int, 3, AllocationTag>);
-static_assert(!CanMintHeapArray<std::uint64_t, 4, AllocationTag>);
+static_assert(!CanMintHeapArray<MoveOnlyElement, alignof(MoveOnlyElement), Alloc>);
+static_assert(!CanMintHeapArray<int, 3, Alloc>);
+static_assert(!CanMintHeapArray<std::uint64_t, 4, Alloc>);
 static_assert(!::foundation::linear::is_linear_v<HeapArray<int>>);
 
 // A HeapArray of a linear element is linear, so each path of its holder

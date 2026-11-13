@@ -3995,7 +3995,7 @@ crucible_neg_compile_test(neg_alloc_class_heap_at_pool_fence
 # An allocation has the lifetime of its arena, and the deleted `&&` twin of
 # each allocating member refuses a call on a temporary arena.
 crucible_neg_compile_test(neg_arena_alloc_on_temporary
-  "use of deleted function .T\\* crucible::Arena::alloc_obj\\(foundation::effects::Alloc\\) && \\[with T = int. foundation::effects::Alloc = foundation::effects::cap::Alloc\\]."
+  "use of deleted function .T\\* crucible::Arena::alloc_obj\\(foundation::effects::Alloc\\) && \\[with T = int. foundation::effects::Alloc = foundation::core::Alloc\\]."
   "a temporary arena releases this memory at the end of the statement")
 
 # ─── IsCacheableFunction concept rejection ────────────────────────

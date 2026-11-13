@@ -9,23 +9,25 @@ namespace foundation::core {
 
 namespace detail::heap_checks {
 
-// A stand-in for the allocation tag of foundation/effects, which is above
-// this layer.
-struct TestAllocation {
+// A marker of a test file with the member that the structural gate of an
+// earlier tree read.  It is not the tag, so it does not pass.
+struct HomemadeMarker {
     using grants_allocation = void;
 };
 
 struct NoMarker {};
 
-struct MarkerWithState {
-    using grants_allocation = void;
-    int state = 0;
-};
+// The allocation tag is empty and costs nothing.
+static_assert(std::is_empty_v<Alloc>);
+static_assert(std::is_trivially_copyable_v<Alloc>);
+static_assert(std::is_nothrow_default_constructible_v<Alloc>);
 
-// The allocation tag.
-static_assert(AllocationCapability<TestAllocation>);
+// The gate takes the tag and no other type.
+static_assert(AllocationCapability<Alloc>);
+static_assert(!AllocationCapability<HomemadeMarker>);
 static_assert(!AllocationCapability<NoMarker>);
-static_assert(!AllocationCapability<MarkerWithState>);
+static_assert(!AllocationCapability<Alloc const>);
+static_assert(!AllocationCapability<Alloc&>);
 static_assert(!AllocationCapability<int>);
 
 // The door takes the bytes and the alignment, and it gives a pointer that

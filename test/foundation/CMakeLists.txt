@@ -2337,9 +2337,12 @@ foundation_neg_compile_test(neg_core_ref_compared
 
 foundation_neg_compile_test(neg_core_box_without_allocation_marker
   "no matching function for call to .mint_box<int>\\(foundation::effects::cap::IO, int\\)."
-  "no type named .grants_allocation. in .struct foundation::effects::cap::IO.")
+  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
+foundation_neg_compile_test(neg_core_box_homemade_marker
+  "no matching function for call to .mint_box<int>\\(HomemadeMarker, int\\)."
+  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = HomemadeMarker\\]")
 foundation_neg_compile_test(neg_core_box_not_constructible
-  "no matching function for call to .mint_box<int>\\(foundation::effects::cap::Alloc, const char \\[6\\]\\)."
+  "no matching function for call to .mint_box<int>\\(foundation::core::Alloc, const char \\[6\\]\\)."
   ".int. is not constructible from .const char \\(&\\)\\[6\\].")
 foundation_neg_compile_test(neg_core_box_array_payload
   "template constraint failure for .template<class T>  requires  BoxPayload<T> class foundation::core::Box."
@@ -2767,12 +2770,12 @@ foundation_neg_compile_test(neg_core_fixed_array_get_of_temporary
   "an element of a temporary FixedArray dangles at the end of the full expression")
 foundation_neg_compile_test(neg_core_heap_array_without_allocation_marker
   "no matching function for call to .mint_heap_array\\(foundation::effects::cap::IO, int, int\\)."
-  "no type named .grants_allocation. in .struct foundation::effects::cap::IO.")
+  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
 foundation_neg_compile_test(neg_core_heap_array_fill_not_copyable
-  "no matching function for call to .mint_heap_array\\(foundation::effects::cap::Alloc, int, const MoveOnly&\\)."
+  "no matching function for call to .mint_heap_array\\(foundation::core::Alloc, int, const MoveOnly&\\)."
   "the expression .is_nothrow_copy_constructible_v<T> \\[with T = MoveOnly\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_heap_array_alignment_not_power
-  "no matching function for call to .mint_heap_array<int, 12>\\(foundation::effects::cap::Alloc, int, int\\)."
+  "no matching function for call to .mint_heap_array<int, 12>\\(foundation::core::Alloc, int, int\\)."
   "the expression .\\(Align & Align - 1\\) == 0 \\[with Align = 12\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_heap_array_copied
   "use of deleted function .foundation::core::HeapArray<T, Align>::HeapArray\\(const foundation::core::HeapArray<T, Align>&\\) \\[with T = int; long unsigned int Align = 4\\]."

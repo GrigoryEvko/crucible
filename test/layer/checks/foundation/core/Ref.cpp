@@ -16,12 +16,6 @@ namespace foundation::core {
 
 namespace detail::ref_checks {
 
-// A stand-in for the allocation tag of foundation/effects, which is above
-// this layer.
-struct TestAllocation {
-    using grants_allocation = void;
-};
-
 struct NoMarker {};
 
 struct Abstract {
@@ -67,11 +61,11 @@ static_assert(!BoxPayload<void>);
 static_assert(!BoxPayload<Abstract>);
 
 // The gate of the mint.
-static_assert(CanMintBox<int, TestAllocation>);
-static_assert(CanMintBox<int, TestAllocation, int>);
+static_assert(CanMintBox<int, Alloc>);
+static_assert(CanMintBox<int, Alloc, int>);
 static_assert(!CanMintBox<int, NoMarker, int>);
-static_assert(!CanMintBox<int, TestAllocation, char const*>);
-static_assert(!CanMintBox<int[2], TestAllocation>);
+static_assert(!CanMintBox<int, Alloc, char const*>);
+static_assert(!CanMintBox<int[2], Alloc>);
 
 // ── Ref ────────────────────────────────────────────────────────────────
 

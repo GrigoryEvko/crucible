@@ -13,7 +13,7 @@
 // The door is in namespace detail, and the rule owners refuses a use of it
 // outside the base and the check files.  Code outside the base gets heap
 // storage only from an owner of the base, and each such owner takes the
-// allocation capability (AllocationCapability) at its mint.
+// allocation capability Alloc at its mint (AllocationCapability).
 //
 // The door does not fail.  A request of zero bytes or of an alignment that
 // is not a power of two ends the process through fatal(), and so does a
@@ -22,16 +22,29 @@
 
 #include <concepts>
 #include <cstddef>
-#include <type_traits>
 
 namespace foundation::core {
 
-// The tag that shows an allocation at a call site.  foundation/effects is
-// above this layer, so the gate reads the member that its allocation tag
-// declares, and not the type.  The tag is empty and costs nothing.
+// The allocation capability: the tag that shows an allocation at a call
+// site.  foundation/effects gives it the name cap::Alloc with an alias, and
+// the contexts Bg, Init and Test hold it, so ::foundation::effects::Alloc
+// and bg.alloc name this one type.  The tag is empty and costs nothing.
+// The explicit noexcept on each special member turns a future throwing body
+// into a compile error.
+struct Alloc {
+    constexpr Alloc() noexcept = default;
+    constexpr Alloc(Alloc const&) noexcept = default;
+    constexpr Alloc(Alloc&&) noexcept = default;
+    constexpr Alloc& operator=(Alloc const&) noexcept = default;
+    constexpr Alloc& operator=(Alloc&&) noexcept = default;
+    ~Alloc() = default;
+};
+
+// The gate of each allocation door of the base: the tag is Alloc and no
+// other type.  A tag of a different name does not pass, so each allocation
+// shows the word Alloc at its call site.
 template <class Marker>
-concept AllocationCapability = std::is_empty_v<Marker> && std::is_trivially_copyable_v<Marker>
-                            && std::same_as<typename Marker::grants_allocation, void>;
+concept AllocationCapability = std::same_as<Marker, Alloc>;
 
 namespace detail {
 
