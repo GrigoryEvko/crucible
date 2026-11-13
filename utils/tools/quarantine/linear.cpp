@@ -174,7 +174,8 @@
 //                           static object, an alias outside a body, and the type
 //                           of a local container of the library or function
 //                           pointer.  A brand that a template argument of the
-//                           function or of its class gave is bound (THE BRANDS)
+//                           function or of its class gave is bound (THE BRANDS).
+//                           A scope brand gives the kinds of THE SCOPE BRANDS
 //       brand-reentry       a call with an argument of a brand that the caller
 //                           made, whose callee can reach the caller again in the
 //                           call graph of the bodies of the unit
@@ -191,6 +192,30 @@
 //     The type of a value argument holds a brand too, such as the parameter of
 //     the function of a stage.  Each other brand came from a mint call or a
 //     decltype in the scope itself.
+//
+// THE SCOPE BRANDS
+//     A scope brand names one call of a scope mint, such as mint_branded_scope
+//     of include/foundation/core/Branded.h.  CRUCIBLE_SCOPE_BRAND of
+//     include/foundation/Brand.h writes it: a lambda whose call operator
+//     carries the annotation foundation::brand::scope_brand, which reflection
+//     reads too.  One call site of the mint gives each of its calls one brand,
+//     so a value of the brand that outlives one call stands in for a value of
+//     the next call.  An index of a long view then reads past the end of a
+//     short view.  A value of a scope brand therefore leaves no call of its
+//     mint, also when a template argument gave the brand:
+//       scope-static        an object with static or thread storage duration
+//                           whose type holds a scope brand: a static or a
+//                           thread_local local, and a static data member, a
+//                           variable template instance or a variable at
+//                           namespace scope that a body names
+//       scope-return        a scope mint whose result holds its own scope
+//                           brand, also in a capture of a closure or a field of
+//                           a local class
+//     Each finding of the two kinds is a compile error in each build and each
+//     mode (is_each_mode_kind of plugin.h).  The message does not start with
+//     "quarantine: ", so a regex of a negative fixture reads it.  A value of a
+//     scope brand that a type erases, such as a function object that captures
+//     an index, holds no brand in its type, and the rule cannot see it.
 
 #include "plugin.h"
 
@@ -219,6 +244,8 @@ struct LinearNames {
     tree lifetime = NULL_TREE;  // the namespace foundation::lifetime
     tree no_start_over_bytes = NULL_TREE;
     tree brand_type = NULL_TREE;
+    tree brand = NULL_TREE;  // the namespace foundation::brand
+    tree scope_brand = NULL_TREE;
     tree drop_door = NULL_TREE;
     tree detach_door = NULL_TREE;
     tree scope_end_door = NULL_TREE;
@@ -287,9 +314,10 @@ tree strip_conversions(tree node) {
 }
 
 // True when ATTRIBUTES hold an annotation of the class foundation::SPACE::NAME
-// of the vocabulary of include/foundation/Linear.h, or of
-// include/foundation/ByteSeal.h when SPACE is lifetime, with foundation::linear
-// as the default namespace.
+// of the vocabulary of include/foundation/Linear.h, of
+// include/foundation/ByteSeal.h when SPACE is lifetime, or of
+// include/foundation/Brand.h when SPACE is brand, with foundation::linear as
+// the default namespace.
 bool carries_annotation(tree attributes, tree name, tree space = NULL_TREE) {
     return carries_base_annotation(attributes, name, space != NULL_TREE ? space : linear_names.linear);
 }
@@ -2041,12 +2069,35 @@ bool is_written_by_fresh_brand(tree type) {
     return false;
 }
 
+// True when TYPE is a scope brand: a closure with the shape of a brand whose
+// call operator carries the annotation foundation::brand::scope_brand
+// (THE SCOPE BRANDS).
+bool is_scope_brand(tree type) {
+    if (!has_brand_shape(type)) {
+        return false;
+    }
+    tree call = lambda_function(TYPE_MAIN_VARIANT(type));
+    return call != NULL_TREE && carries_annotation(DECL_ATTRIBUTES(call), linear_names.scope_brand, linear_names.brand);
+}
+
 // True when TYPE is a fresh brand: a closure with the shape of a brand that
-// CRUCIBLE_FRESH_BRAND of include/foundation/Brand.h writes.  A class that
-// names a closure as its member brand_type gives a fresh brand too
-// (collect_brands).  A closure with the shape of a brand that no class names
-// as its brand, such as a label of a session, is no brand.
-bool is_brand_closure(tree type) { return has_brand_shape(type) && is_written_by_fresh_brand(type); }
+// CRUCIBLE_FRESH_BRAND of include/foundation/Brand.h writes, or a scope brand.
+// A class that names a closure as its member brand_type gives a fresh brand
+// too (collect_brands).  A closure with the shape of a brand that no class
+// names as its brand, such as a label of a session, is no brand.
+bool is_brand_closure(tree type) {
+    return has_brand_shape(type) && (is_written_by_fresh_brand(type) || is_scope_brand(type));
+}
+
+// The first scope brand of BRANDS, or null.
+tree first_scope_brand(const std::vector<tree>& brands) {
+    for (tree brand : brands) {
+        if (is_scope_brand(brand)) {
+            return brand;
+        }
+    }
+    return NULL_TREE;
+}
 
 // The closure that the class TYPE or one of its bases names as its member
 // brand_type, or null.
@@ -2256,7 +2307,8 @@ void check_class(tree type, int depth = 0);
 
 // The checks of an object with static or thread storage duration: a brand in
 // it escapes each run of its mint site, and a class of the library with a
-// linear argument drops its values.
+// linear argument drops its values.  A scope brand gives the kind
+// scope-static, which is an error in each mode (THE SCOPE BRANDS).
 void check_static_object(tree decl, const std::string& owner) {
     tree type = TREE_TYPE(decl);
     if (type == NULL_TREE || type == error_mark_node || uses_template_parms(type)) {
@@ -2265,7 +2317,9 @@ void check_static_object(tree decl, const std::string& owner) {
     std::string entity = owner + ": " + simple_name(decl);
     std::vector<tree> held;
     collect_brands(type, held);
-    if (!held.empty()) {
+    if (tree scope = first_scope_brand(held)) {
+        record_shape(Kind::brand_scope_static, DECL_SOURCE_LOCATION(decl), entity + ", " + brand_text(scope));
+    } else if (!held.empty()) {
         record_shape(Kind::brand_escaped_static, DECL_SOURCE_LOCATION(decl), entity + ", " + brand_text(held.front()));
     }
     if (tree holder = library_holder_of(type)) {
@@ -2359,9 +2413,38 @@ void check_class(tree type, int depth) {
     }
 }
 
+// The brands that the instance FUNCTION mints: the argument of each parameter
+// of its innermost template parameter list whose default is a closure.
+// Complexity: linear in the template parameters.
+std::vector<tree> fresh_arguments_of(tree function) {
+    std::vector<tree> fresh;
+    if (DECL_LANG_SPECIFIC(function) == nullptr || DECL_TEMPLATE_INFO(function) == NULL_TREE) {
+        return fresh;
+    }
+    tree template_decl = DECL_TI_TEMPLATE(function);
+    if (template_decl == NULL_TREE || TREE_CODE(template_decl) != TEMPLATE_DECL) {
+        return fresh;
+    }
+    tree parameters = innermost_parameters_of(template_decl);
+    tree arguments = DECL_TI_ARGS(function) != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(DECL_TI_ARGS(function)) : NULL_TREE;
+    if (parameters == NULL_TREE || arguments == NULL_TREE || TREE_CODE(arguments) != TREE_VEC) {
+        return fresh;
+    }
+    int count = std::min(TREE_VEC_LENGTH(parameters), TREE_VEC_LENGTH(arguments));
+    for (int index = 0; index < count; ++index) {
+        tree argument = TREE_VEC_ELT(arguments, index);
+        tree default_argument = TREE_PURPOSE(TREE_VEC_ELT(parameters, index));
+        if (argument != NULL_TREE && TYPE_P(argument) && is_closure_default(default_argument)) {
+            fresh.push_back(TYPE_MAIN_VARIANT(argument));
+        }
+    }
+    return fresh;
+}
+
 // The checks of the signature of a function whose body the unit reads: a
 // return value and a parameter of a class of the library with a linear
-// argument, and a fresh brand that the function made and returns.
+// argument, a fresh brand that the function made and returns, and a scope
+// brand that the function mints and returns (THE SCOPE BRANDS).
 void check_signature(tree function) {
     std::string name = function_text(function);
     location_t location = DECL_SOURCE_LOCATION(function);
@@ -2374,6 +2457,14 @@ void check_signature(tree function) {
         }
         if (tree brand = unbound_brand(result, function)) {
             record_shape(Kind::brand_escaped_return, location, name + ": " + brand_text(brand));
+        }
+        std::vector<tree> held;
+        collect_brands(result, held);
+        for (tree fresh : fresh_arguments_of(function)) {
+            if (is_scope_brand(fresh) && std::find(held.begin(), held.end(), fresh) != held.end()) {
+                record_shape(Kind::brand_scope_return, location,
+                             name + ": the result " + type_text(result) + ", " + brand_text(fresh));
+            }
         }
         check_class(result);
     }
@@ -2624,6 +2715,28 @@ void check_local(tree decl, const ShapeWalk& walk) {
     }
 }
 
+// A variable outside each function that a body names, such as a static data
+// member or an instance of a variable template: each one has static or thread
+// storage duration.  A scope brand in its type is the kind scope-static (THE
+// SCOPE BRANDS).  The walk of a body reads each local of static storage
+// duration in its BIND_EXPR.
+void check_named_static(tree decl, const ShapeWalk& walk) {
+    if (!VAR_P(decl) || decl_function_context(decl) != NULL_TREE) {
+        return;
+    }
+    tree type = TREE_TYPE(decl);
+    if (type == NULL_TREE || type == error_mark_node || uses_template_parms(type)) {
+        return;
+    }
+    std::vector<tree> held;
+    collect_brands(type, held);
+    if (tree scope = first_scope_brand(held)) {
+        location_t location = walk.last_location != UNKNOWN_LOCATION ? walk.last_location : DECL_SOURCE_LOCATION(decl);
+        record_shape(Kind::brand_scope_static, location,
+                     walk.name + ": " + qualified_name(decl) + ", " + brand_text(scope));
+    }
+}
+
 void note_linear_variable(tree variable, ShapeWalk& walk) {
     if (VAR_P(variable) && !TREE_STATIC(variable) && is_linear_or_reference(TREE_TYPE(variable))) {
         walk.has_linear = true;
@@ -2639,6 +2752,7 @@ tree walk_shapes(tree* node_pointer, int* walk_subtrees, void* data) {
     if (TYPE_P(node) || DECL_P(node)) {
         *walk_subtrees = 0;
         note_linear_variable(node, walk);
+        check_named_static(node, walk);
         return NULL_TREE;
     }
     if (EXPR_P(node) && EXPR_HAS_LOCATION(node)) {
@@ -3127,6 +3241,33 @@ void check_linear_alias(tree decl) {
     check_alias(decl, CP_DECL_CONTEXT(decl), qualified_name(CP_DECL_CONTEXT(decl)));
 }
 
+// The error of one finding of the kinds of THE SCOPE BRANDS that no region
+// opts out.
+void report_scope_escape(const Finding& finding) {
+    if (finding.kind == Kind::brand_scope_static) {
+        error_at(finding.spelling,
+                 "an object of static or thread storage duration holds a value of a scope brand, so the value "
+                 "outlives the call of its mint: %s",
+                 finding.entity.c_str());
+        inform(finding.spelling,
+               "one call site of a scope mint gives each of its calls one brand, so the object carries a value of "
+               "one call into the next call, such as an index of a long view into a short view");
+        inform(finding.spelling, "keep the value in an object of automatic storage duration in the body of the scope");
+    } else if (finding.kind == Kind::brand_scope_return) {
+        error_at(finding.spelling, "a scope mint gives a result that holds its own scope brand: %s",
+                 finding.entity.c_str());
+        inform(finding.spelling,
+               "the result leaves the call of the mint, so a value of the brand outlives its scope, also when a "
+               "capture of a closure or a field of a local class holds it");
+        inform(finding.spelling, "give a result that holds no value of the scope, such as the number of an index");
+    } else {
+        return;
+    }
+    inform(finding.spelling,
+           "a test of the escape itself puts it in a %<CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: reason\")%> region of "
+           "%<foundation/Quarantine.h%>");
+}
+
 // The rule brand-reentry at the end of the unit (plugin.cpp, walk_unit): each
 // body of the unit gave its edges of the call graph by then.
 void finish_linear_rules() {
@@ -3145,6 +3286,8 @@ void register_linear(const char* plugin_name, bool checks_must_consume, bool che
     linear_names.lifetime = get_identifier("lifetime");
     linear_names.no_start_over_bytes = get_identifier("no_start_over_bytes");
     linear_names.brand_type = get_identifier("brand_type");
+    linear_names.brand = get_identifier("brand");
+    linear_names.scope_brand = get_identifier("scope_brand");
     linear_names.drop_door = get_identifier("drop_door");
     linear_names.detach_door = get_identifier("detach_door");
     linear_names.scope_end_door = get_identifier("scope_end_door");

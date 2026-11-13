@@ -138,6 +138,17 @@ struct undeducible_brand {
 template <class Brand>
 using undeducible_brand_t = typename undeducible_brand<Brand>::type;
 
+// The mark of a scope brand.  A scope brand names one call of a scope mint,
+// such as mint_branded_scope of foundation/core/Branded.h, and no value of it
+// outlives that call.  One call site gives each of its calls one brand, so a
+// value that one call keeps would stand in for a value of the next call.
+// CRUCIBLE_SCOPE_BRAND puts this annotation on the call operator of its
+// lambda, and reflection and the rule brand-escape of the quarantine plugin
+// read it.  The plugin makes each object of static or thread storage duration
+// that holds the brand a compile error, and each result of the mint that holds
+// it.
+struct scope_brand {};
+
 }  // namespace foundation::brand
 
 // The fresh brand, for a mint's LAST template parameter and nowhere
@@ -146,3 +157,7 @@ using undeducible_brand_t = typename undeducible_brand<Brand>::type;
 // mint would share one brand.  The result type of the mint names the
 // parameter through undeducible_brand_t, so no deduction replaces it.
 #define CRUCIBLE_FRESH_BRAND decltype([] {})
+
+// The fresh brand of a scope mint, with the mark foundation::brand::scope_brand
+// on the call operator of its lambda.  It obeys each rule of a fresh brand.
+#define CRUCIBLE_SCOPE_BRAND decltype([][[= ::foundation::brand::scope_brand{}]] {})

@@ -2753,6 +2753,17 @@ foundation_neg_compile_test(neg_core_branded_index_of_other_scope
   "cannot convert .BrandedIndex<foundation::core::<lambda\\(\\)>>. to .BrandedIndex<foundation::core::<lambda\\(\\)>>."
   "initializing argument 1 of .constexpr T& foundation::core::BrandedView<T, Brand>::at\\(foundation::core::BrandedIndex<Brand>\\) const \\[with T = int; Brand = foundation::core::<lambda\\(\\)>\\].")
 
+# The brand of a branded scope is a scope brand, so no value of it outlives a
+# call of the mint: the rule brand-escape refuses a static local of the body
+# that keeps an index for the next call, and a result that holds an index in a
+# capture of a closure, which the gate of the mint does not see.
+foundation_neg_compile_test(neg_branded_scope_static_local
+  "an object of static or thread storage duration holds a value of a scope brand, so the value outlives the call of its mint"
+  "KeepsLastIndex::operator\\(\\): kept")
+foundation_neg_compile_test(neg_branded_scope_returns_closure
+  "a scope mint gives a result that holds its own scope brand"
+  "foundation::core::mint_branded_scope: the result .anonymous.::ReturnsClosure::operator\\(\\)")
+
 # A push into or a view of a temporary list is refused, and a list of a
 # linear element has no clear().
 foundation_neg_compile_test(neg_core_fixed_list_push_of_temporary

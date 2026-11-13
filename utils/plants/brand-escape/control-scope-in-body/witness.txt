@@ -1,0 +1,11 @@
+# A value of a scope brand that stays in the body of its scope gives no line:
+# a local, a helper that takes and gives an index of the scope, and a result
+# that holds no value of the scope.  A static object of a plain fresh brand
+# gives the line escaped-static of the ledger of the rule, and the compile
+# passes.
+
+compile in_body src/in_body.cpp linear-shapes=on
+flag in_body -freflection
+exit in_body pass
+finding in_body brand-escape escaped-static src/in_body.cpp:28:23 | planted::plain_static: kept, the brand of src/Scope.h:27
+finding in_body mint mint src/Scope.h:29:28 | planted::mint_plain() \| name=mint_plain static=0 shape=token template=1 nodiscard=1 constexpr=0 noexcept=1 constrained=1 gated=0 projection=0 defined=1 class=- owner=-

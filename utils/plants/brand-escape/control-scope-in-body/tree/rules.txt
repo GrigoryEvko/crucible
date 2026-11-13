@@ -1,0 +1,8 @@
+# The rule table of the control control-scope-in-body of the rule
+# brand-escape.  The units and the header of the scope mint are quarantined.
+# The headers of the repository are outside the root of the control, so the
+# table admits the mark that CRUCIBLE_SCOPE_BRAND writes.
+
+admit foundation::brand::scope_brand | the mark of a scope brand, which CRUCIBLE_SCOPE_BRAND writes
+
+quarantine src/

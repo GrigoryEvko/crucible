@@ -31,10 +31,12 @@
 //
 // A brand belongs to an instance of the mint, not to one call.  A loop or a
 // pointer to the mint calls one instance again, so a static local of the
-// body can keep an index for a later scope of fewer elements.  The check of
-// at() is then missing.  The rule brand-escape reports such a static local,
-// but only in report mode
-// (utils/plants/brand-escape/control-known-gap-static-in-generic-body/).
+// body could keep an index for a later scope of fewer elements, and at() has
+// no check.  The brand is a scope brand (CRUCIBLE_SCOPE_BRAND of
+// foundation/Brand.h), so the rule brand-escape of the quarantine plugin
+// makes each object of static or thread storage duration that holds it a
+// compile error, and each result of the mint that holds it in a capture or a
+// field (neg_branded_scope_static_local, neg_branded_scope_returns_closure).
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
@@ -348,7 +350,7 @@ concept CanMintBrandedScope =
 // ends the process.  The pack refuses each explicit argument, so no caller
 // names the brand.
 template <class... Refused, class T, std::size_t Extent, class Body,
-          ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0 && CanMintBrandedScope<T, Body, Fresh>)
 [[nodiscard]] constexpr auto mint_branded_scope(View<T, Extent> view, Body&& body) noexcept {
     std::size_t const count = view.size();

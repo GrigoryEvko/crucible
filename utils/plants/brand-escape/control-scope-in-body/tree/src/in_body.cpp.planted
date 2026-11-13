@@ -1,0 +1,32 @@
+// A value of a scope brand that stays in the body of its scope: a local, a
+// helper that takes and gives an index of the scope, and a result that holds
+// no value of the scope.  A static object of a plain fresh brand stays a line
+// of the ledger of the rule, and no error.
+
+#include "Scope.h"
+
+namespace planted {
+
+template <class Brand>
+Index<Brand> previous(View<Brand> view, Index<Brand> index) noexcept {
+    return index.value == 0 ? view.last() : Index<Brand>{index.value - 1};
+}
+
+struct ReadsInBody {
+    template <class Brand>
+    unsigned operator()(View<Brand> view) const noexcept {
+        Index<Brand> const last = view.last();
+        return previous(view, last).value + last.value;
+    }
+};
+
+unsigned scope_of(unsigned count) noexcept { return scope(count, ReadsInBody{}); }
+
+unsigned twice() noexcept { return scope_of(8) + scope_of(2); }
+
+unsigned plain_static() noexcept {
+    static auto const kept = mint_plain();
+    return kept.value;
+}
+
+}  // namespace planted

@@ -1,0 +1,33 @@
+#pragma once
+
+// A scope mint with the shape of mint_branded_scope, and a mint of a plain
+// fresh brand.
+
+#include <foundation/Brand.h>
+
+namespace planted {
+
+template <class Brand>
+struct Index {
+    unsigned value = 0;
+};
+
+template <class Brand>
+struct View {
+    unsigned count = 0;
+    [[nodiscard]] Index<Brand> last() const noexcept { return Index<Brand>{count - 1}; }
+};
+
+template <class... Refused, class Body, class Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0)
+[[nodiscard]] auto scope(unsigned count, Body body) noexcept {
+    return body(View<Fresh>{count});
+}
+
+template <class... Refused, class Fresh = CRUCIBLE_FRESH_BRAND>
+    requires(sizeof...(Refused) == 0)
+[[nodiscard]] Index<Fresh> mint_plain() noexcept {
+    return Index<Fresh>{};
+}
+
+}  // namespace planted

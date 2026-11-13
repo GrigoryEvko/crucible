@@ -1,0 +1,8 @@
+# The rule table of the plant plant-scope-escapes of the rule brand-escape.
+# The unit and the header of the scope mint are quarantined.  The headers of
+# the repository are outside the root of the plant, so the table admits the
+# mark that CRUCIBLE_SCOPE_BRAND writes.
+
+admit foundation::brand::scope_brand | the mark of a scope brand, which CRUCIBLE_SCOPE_BRAND writes
+
+quarantine src/

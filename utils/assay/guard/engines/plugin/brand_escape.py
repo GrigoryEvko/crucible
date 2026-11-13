@@ -22,6 +22,21 @@ THE RULE
     The entity names the place of the lambda of the brand, because GCC prints
     each brand as <lambda()>.
 
+THE SCOPE BRANDS
+    A scope brand names one call of a scope mint, such as mint_branded_scope
+    of include/foundation/core/Branded.h, and CRUCIBLE_SCOPE_BRAND writes it
+    with the annotation foundation::brand::scope_brand.  A value of it leaves
+    no call of the mint, also when a template argument gave the brand
+    (linear.cpp, THE SCOPE BRANDS).  The two kinds:
+      scope-static              an object with static or thread storage
+                                duration that holds a scope brand, also a
+                                static data member or a variable template
+                                instance that a body names
+      scope-return              a scope mint whose result holds its own brand
+    The plugin makes each line of the two kinds a compile error in each build
+    and each mode, so no object holds one.  No ledger row admits such a line,
+    and a write refuses a build that holds one.
+
 THE LEDGER, THE WRITE
     assay.guard.engines.plugin.linear_family.
 
@@ -53,6 +68,16 @@ ACTIONS = {
         "escaped-alias",
     )
 }
+# The kinds of THE SCOPE BRANDS.  Each line is a compile error, and no ledger row admits one.
+SCOPE_KINDS = ("scope-static", "scope-return")
+ACTIONS["scope-static"] = (
+    "an object of static or thread storage duration holds a value of a scope brand, so the value outlives the call "
+    "of its mint.  Keep the value in an object of automatic storage duration in the body of the scope"
+)
+ACTIONS["scope-return"] = (
+    "a scope mint gives a result that holds its own scope brand.  Give a result that holds no value of the scope, "
+    "such as the number of an index"
+)
 
 
 def findings(context: runner.PluginContext) -> list[check_report.Finding]:
@@ -66,5 +91,10 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
 
 
 def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
-    """Write the ledger of the rule from the lines of the builds of the request (THE WRITE of linear_family)."""
-    return linear_family.write(rule, request)
+    """Write the ledger of the rule from the lines of the builds of the request (THE WRITE of linear_family).
+
+    A line of a kind of SCOPE_KINDS is a problem of the build, so the write refuses the build.
+    """
+    return linear_family.write(
+        rule, request, lambda context: linear_family.build_counts(rule, context, problem_kinds=SCOPE_KINDS)
+    )

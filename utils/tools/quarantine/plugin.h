@@ -380,6 +380,11 @@
 //     escaped-return, escaped-member, escaped-static, escaped-container,
 //     escaped-function-pointer, escaped-alias
 //                           brand-escape: a fresh brand that leaves its scope
+//     scope-static, scope-return
+//                           brand-escape: a value of a scope brand that
+//                           outlives the call of its mint (THE SCOPE BRANDS of
+//                           linear.cpp).  Each finding of the two kinds is an
+//                           error in each mode (is_each_mode_kind)
 //     reentry               brand-reentry: a branded value in a call that can
 //                           reach the function that minted the brand again
 //     The rule specialization-home of the family specialization home
@@ -974,6 +979,8 @@ enum class Kind : std::uint8_t {
     brand_escaped_container,
     brand_escaped_function_pointer,
     brand_escaped_alias,
+    brand_scope_static,
+    brand_scope_return,
     brand_reentry,
     // The family specialization home (specialization.cpp).
     specialization_outside_home,
@@ -1300,6 +1307,10 @@ inline const char* kind_name(Kind kind) {
             return "escaped-function-pointer";
         case Kind::brand_escaped_alias:
             return "escaped-alias";
+        case Kind::brand_scope_static:
+            return "scope-static";
+        case Kind::brand_scope_return:
+            return "scope-return";
         case Kind::brand_reentry:
             return "reentry";
         case Kind::specialization_outside_home:
@@ -1450,6 +1461,8 @@ inline Rule rule_of(Kind kind) {
         case Kind::brand_escaped_container:
         case Kind::brand_escaped_function_pointer:
         case Kind::brand_escaped_alias:
+        case Kind::brand_scope_static:
+        case Kind::brand_scope_return:
             return Rule::brand_escape;
         case Kind::brand_reentry:
             return Rule::brand_reentry;
@@ -1470,9 +1483,10 @@ inline Rule rule_of(Kind kind) {
 }
 
 // True for a kind whose finding is an error in each mode: the contract rule,
-// the rules binding-hook and borrow-match, the unit facts and the findings of
-// the rule specialization-home.  No enforce mode changes such a finding, and
-// an opt-out region covers it.
+// the rules binding-hook and borrow-match, the unit facts, the findings of the
+// rule specialization-home and the escapes of a scope brand of the rule
+// brand-escape (THE SCOPE BRANDS of linear.cpp).  No enforce mode changes such
+// a finding, and an opt-out region covers it.
 inline bool is_each_mode_kind(Kind kind) {
     switch (kind) {
         case Kind::contract_specifier:
@@ -1480,6 +1494,8 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::borrow_match:
         case Kind::contract_semantic:
         case Kind::fast_math_override:
+        case Kind::brand_scope_static:
+        case Kind::brand_scope_return:
         case Kind::specialization_outside_home:
         case Kind::specialization_orphan:
         case Kind::specialization_foreign_primary:
@@ -1690,6 +1706,8 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"brand-escape", "escaped-container"},
     {"brand-escape", "escaped-function-pointer"},
     {"brand-escape", "escaped-alias"},
+    {"brand-escape", "scope-static"},
+    {"brand-escape", "scope-return"},
     {"brand-reentry", "reentry"},
     {"specialization-home", "specialization"},
     {"specialization-home", "orphan"},
@@ -1724,6 +1742,8 @@ inline bool is_name_kind(Kind kind) {
         case Kind::specialization_orphan:
         case Kind::specialization_foreign_primary:
         case Kind::specialization_forward_declaration:
+        case Kind::brand_scope_static:
+        case Kind::brand_scope_return:
             return true;
         default:
             return is_family_kind(kind);
@@ -2674,9 +2694,51 @@ void check_linear_alias(tree decl);
 // linear.cpp: the rule brand-reentry at the end of the unit, from the walks of
 // plugin.cpp after the parse.
 void finish_linear_rules();
+// linear.cpp: the error of one finding of the kinds scope-static and
+// scope-return of the rule brand-escape that no region opts out (THE SCOPE
+// BRANDS of linear.cpp).
+void report_scope_escape(const Finding& finding);
 
 // plugin.cpp: the report of the unit.
 void report(bool can_add_dependencies);
+
+// ── The fresh brands ────────────────────────────────────────────────────
+
+// True when ARGUMENT, the default argument of a template parameter, is the
+// closure type of a lambda or a value of a closure type: the fresh brand of a
+// mint, as CRUCIBLE_FRESH_BRAND and CRUCIBLE_SCOPE_BRAND of
+// include/foundation/Brand.h write it.  In a template, the default of a type
+// parameter can be a decltype of the lambda expression, and each use of the
+// default makes a closure of its own.
+inline bool is_closure_default(tree argument) {
+    if (argument == NULL_TREE || argument == error_mark_node) {
+        return false;
+    }
+    if (TYPE_P(argument)) {
+        if (TREE_CODE(argument) == DECLTYPE_TYPE) {
+            tree expression = DECLTYPE_TYPE_EXPR(argument);
+            return expression != NULL_TREE && TREE_CODE(expression) == LAMBDA_EXPR;
+        }
+        return LAMBDA_TYPE_P(TYPE_MAIN_VARIANT(argument));
+    }
+    tree value = tree_strip_any_location_wrapper(argument);
+    if (TREE_CODE(value) == LAMBDA_EXPR) {
+        return true;
+    }
+    tree type = TREE_TYPE(value);
+    return type != NULL_TREE && TYPE_P(type) && LAMBDA_TYPE_P(TYPE_MAIN_VARIANT(type));
+}
+
+// The innermost template parameter list of the most general template of
+// TEMPLATE_DECL, which holds each default argument, or null.
+inline tree innermost_parameters_of(tree template_decl) {
+    tree general = most_general_template(template_decl);
+    if (general == NULL_TREE) {
+        general = template_decl;
+    }
+    tree levels = DECL_TEMPLATE_PARMS(general);
+    return levels != NULL_TREE ? INNERMOST_TEMPLATE_PARMS(levels) : NULL_TREE;
+}
 
 // ── The callees of a call ───────────────────────────────────────────────
 

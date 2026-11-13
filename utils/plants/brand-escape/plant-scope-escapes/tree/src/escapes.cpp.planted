@@ -1,0 +1,105 @@
+// Each route that carries a value of a scope brand across two calls of one
+// instance of the scope mint.  One call site of the mint gives each of its
+// calls one brand, so each body below keeps the last index of a scope of
+// eight elements and reads it in a scope of two.  Each route is an error in
+// each mode.
+
+#include "Scope.h"
+
+namespace planted {
+
+template <class Brand>
+inline Index<Brand> slot{};
+
+template <class Brand>
+struct Holder {
+    static inline Index<Brand> kept{};
+};
+
+struct KeepsInStaticLocal {
+    template <class Brand>
+    unsigned operator()(View<Brand> view) const noexcept {
+        static Index<Brand> const kept = view.last();
+        return kept.value;
+    }
+};
+
+struct KeepsInThreadLocal {
+    template <class Brand>
+    unsigned operator()(View<Brand> view) const noexcept {
+        thread_local Index<Brand> const kept = view.last();
+        return kept.value;
+    }
+};
+
+struct KeepsInLocalClass {
+    template <class Brand>
+    unsigned operator()(View<Brand> view) const noexcept {
+        struct Keeper {
+            static unsigned keep(Index<Brand> index) noexcept {
+                static Index<Brand> const kept = index;
+                return kept.value;
+            }
+        };
+        return Keeper::keep(view.last());
+    }
+};
+
+struct KeepsInVariableTemplate {
+    template <class Brand>
+    unsigned operator()(View<Brand> view) const noexcept {
+        if (slot<Brand>.value == 0) {
+            slot<Brand> = view.last();
+        }
+        return slot<Brand>.value;
+    }
+};
+
+struct KeepsInStaticMember {
+    template <class Brand>
+    unsigned operator()(View<Brand> view) const noexcept {
+        if (Holder<Brand>::kept.value == 0) {
+            Holder<Brand>::kept = view.last();
+        }
+        return Holder<Brand>::kept.value;
+    }
+};
+
+struct ReturnsIndex {
+    template <class Brand>
+    Index<Brand> operator()(View<Brand> view) const noexcept {
+        return view.last();
+    }
+};
+
+struct ReturnsClosure {
+    template <class Brand>
+    auto operator()(View<Brand> view) const noexcept {
+        Index<Brand> const index = view.last();
+        return [index] { return index.value; };
+    }
+};
+
+// One call site of the mint for each body, so each call has one brand.
+template <class Body>
+unsigned scope_of(unsigned count) noexcept {
+    return scope(count, Body{});
+}
+
+template <class Body>
+unsigned twice() noexcept {
+    return scope_of<Body>(8) + scope_of<Body>(2);
+}
+
+unsigned escape() noexcept {
+    return twice<KeepsInStaticLocal>() + twice<KeepsInThreadLocal>() + twice<KeepsInLocalClass>()
+         + twice<KeepsInVariableTemplate>() + twice<KeepsInStaticMember>();
+}
+
+unsigned leak() noexcept {
+    auto const index = scope(8, ReturnsIndex{});
+    auto const closure = scope(8, ReturnsClosure{});
+    return index.value + closure();
+}
+
+}  // namespace planted

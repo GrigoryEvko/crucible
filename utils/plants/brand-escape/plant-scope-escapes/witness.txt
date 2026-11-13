@@ -1,0 +1,23 @@
+# Each route that carries a value of a scope brand across two calls of one
+# instance of a scope mint is an error in each mode: a static local, a
+# thread_local local, a static local of a local class, an instance of a
+# variable template, a static data member of an instance of a class template,
+# and a result of the mint that holds the brand directly or in a capture of a
+# closure.  A body names the variable template and the static data member, and
+# the instance of the variable template also gives a line at its declaration.
+
+compile escapes src/escapes.cpp linear-shapes=on errors=escapes
+flag escapes -freflection
+exit escapes fail
+finding escapes brand-escape scope-return src/Scope.h:24:20 | planted::scope: the result planted::Index<planted::<lambda()> >, the brand of src/Scope.h:22
+finding escapes brand-escape scope-return src/Scope.h:24:20 | planted::scope: the result planted::ReturnsClosure::operator()<planted::<lambda()> >(planted::View<planted::<lambda()> >) const::<lambda()>, the brand of src/Scope.h:22
+finding escapes brand-escape scope-static src/escapes.cpp:22:35 | planted::KeepsInStaticLocal::operator(): kept, the brand of src/Scope.h:22
+finding escapes brand-escape scope-static src/escapes.cpp:30:41 | planted::KeepsInThreadLocal::operator(): kept, the brand of src/Scope.h:22
+finding escapes brand-escape scope-static src/escapes.cpp:40:43 | planted::KeepsInLocalClass::operator()::Keeper::keep: kept, the brand of src/Scope.h:22
+finding escapes brand-escape scope-static src/escapes.cpp:12:21 | planted: slot, the brand of src/Scope.h:22
+finding escapes brand-escape scope-static src/escapes.cpp:51:13 | planted::KeepsInVariableTemplate::operator(): planted::slot, the brand of src/Scope.h:22
+finding escapes brand-escape scope-static src/escapes.cpp:61:28 | planted::KeepsInStaticMember::operator(): planted::Holder::kept, the brand of src/Scope.h:22
+finding escapes process-wide-state unmarked-static src/escapes.cpp:16:32 | planted::Holder::kept
+finding escapes process-wide-state unmarked-static src/escapes.cpp:12:21 | planted::slot
+text escapes | keep the value in an object of automatic storage duration in the body of the scope
+text escapes | give a result that holds no value of the scope, such as the number of an index

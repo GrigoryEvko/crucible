@@ -111,14 +111,17 @@ THE DERIVED DIAGNOSTICS
     In the mode error, each finding that no region opts out is an error at
     its location.  The key errors=OTHER says that the errors of the compile
     are the finding rows of the compile OTHER.  In the mode report, only a
-    finding of the rules of EACH_MODE_RULES, and a finding of a kind of
-    SPECIALIZATION_ERRORS of the rule specialization-home, gives an error.
+    finding of the rules of EACH_MODE_RULES, a finding of a kind of
+    SPECIALIZATION_ERRORS of the rule specialization-home, and a finding of a
+    kind of SCOPE_ERRORS of the rule brand-escape, gives an error.
     The message of the error of each other finding holds
     "quarantine: KIND ENTITY" with a semicolon after the entity.  A finding of the rule
     contract-specifier gives the error of the contract rule, a finding of the
     rules binding-hook and borrow-match gives the start of its error, and a
-    finding of the rule specialization-home gives the text of its kind.  Its
-    record open-extension is no finding, so it gives no error in each mode.  A
+    finding of the rule specialization-home or of a scope kind of the rule
+    brand-escape gives the text of its kind.  The record open-extension of
+    the rule specialization-home is no finding, so it gives no error in each
+    mode.  A
     finding at the line 0, a fact of all the unit, gives an error with no
     location.
     The key notes=OTHER says that each finding row of OTHER gives a note
@@ -279,6 +282,13 @@ SPECIALIZATION_ERRORS = {
 }
 # The record of the rule specialization-home.  A record is no finding, so it gives no error in each mode.
 SPECIALIZATION_RECORD = "open-extension"
+# The rule brand-escape, and the start of the error of each of its kinds that is an error in each mode: the escapes of
+# a scope brand (THE SCOPE BRANDS of utils/tools/quarantine/linear.cpp).  Its other kinds are lines of a ledger.
+BRAND_ESCAPE_RULE = "brand-escape"
+SCOPE_ERRORS = {
+    "scope-static": "an object of static or thread storage duration holds a value of a scope brand",
+    "scope-return": "a scope mint gives a result that holds its own scope brand",
+}
 # The error of the plugin after a refused rule table.
 FAILED_PLUGIN = "failed to initialize plugin"
 # The error of the rows grammar for a carriage return.  assay.core.rows and rows.h of the plugin give this text.
@@ -764,10 +774,13 @@ def diagnostic_difference(
 
 
 def is_each_mode(finding: plugin_sections.Finding) -> bool:
-    """Return True for a finding that gives an error in each mode: a finding of a rule of EACH_MODE_RULES, or a kind
-    of SPECIALIZATION_ERRORS of the rule specialization-home (THE DERIVED DIAGNOSTICS)."""
-    return finding.rule in EACH_MODE_RULES or (
-        finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS
+    """Return True for a finding that gives an error in each mode: a finding of a rule of EACH_MODE_RULES, a kind of
+    SPECIALIZATION_ERRORS of the rule specialization-home, or a kind of SCOPE_ERRORS of the rule brand-escape (THE
+    DERIVED DIAGNOSTICS)."""
+    return (
+        finding.rule in EACH_MODE_RULES
+        or (finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS)
+        or (finding.rule == BRAND_ESCAPE_RULE and finding.kind in SCOPE_ERRORS)
     )
 
 
@@ -792,6 +805,8 @@ def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: b
             errors.append((place, BORROW_ERROR.format(entity=finding.entity)))
         elif finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS:
             errors.append((place, SPECIALIZATION_ERRORS[finding.kind].format(entity=finding.entity)))
+        elif finding.rule == BRAND_ESCAPE_RULE and finding.kind in SCOPE_ERRORS:
+            errors.append((place, SCOPE_ERRORS[finding.kind]))
         else:
             errors.append((place, f"{QUARANTINE_PREFIX}{finding.kind} {finding.entity};"))
     return errors
