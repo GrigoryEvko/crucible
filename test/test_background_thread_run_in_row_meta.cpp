@@ -2,17 +2,10 @@
 // the copy of its records that a built graph holds.
 //
 // The foreground appends the tensor metadata of each op to the metadata log.
-// The pipeline releases the metadata of an iteration when it is done with it,
-// and the release moves the tail of the log.  The tail only moves forward, and
-// one thread writes it: the publish stage.  The works reach the publish stage
-// in the order of the recording, so each release is past the one before.
-//
-// A build that meets an op with tensors and no metadata index makes no graph.
-// The metadata that it read before that op is dead, and the release of it goes
-// to the publish stage too.  The build stage runs ahead of the publish stage,
-// so a release from the build stage passes the end of a graph that is still
-// on its way to the publish stage.  The publish of that graph then moves the
-// tail back, and the contract of the tail stops the process.
+// Each commit marker of the pipeline carries a release floor: the oldest
+// record that a later work can hold.  The publish stage moves the tail to the
+// floor of each marker, and it is the one thread that writes the tail.  The
+// publish of a region and a build that meets an overflow move no tail.
 
 #include "background_thread_run_in_row.h"
 
@@ -104,8 +97,7 @@ void seal_global_tables() {
 namespace test_background_thread_run_in_row {
 
 // A build that meets an op with tensors and no metadata index makes no graph.
-// It reports the end of the metadata that it read, and it leaves the tail
-// alone, because only the publish stage writes the tail.
+// It leaves the tail alone, because only the publish stage writes the tail.
 void test_overflow_build_leaves_tail() {
     using namespace meta_rig;
     seal_global_tables();
@@ -117,7 +109,7 @@ void test_overflow_build_leaves_tail() {
 
     Work overflowing;
     (void)overflowing.push_op_with_meta(*metalog, 0);
-    const uint64_t read_end = overflowing.push_op_with_meta(*metalog, 1);
+    (void)overflowing.push_op_with_meta(*metalog, 1);
     overflowing.push_op_without_meta(2);
 
     crucible::Arena scratch{size_t{1} << 16};
@@ -125,11 +117,9 @@ void test_overflow_build_leaves_tail() {
         bt.build_trace_from(test.alloc, scratch, overflowing.count, overflowing.trace, overflowing.meta_starts,
                             overflowing.scope_hashes, overflowing.callsite_hashes);
     assert(built.is_err());
-    assert(built.err().expect("the build stops at the op with no metadata").meta_end == read_end);
     assert(metalog->tail.get() == 0u && "the build stage moved the tail of the metadata log");
 
-    // The overflow at the first op reads no metadata, so the release is
-    // empty.
+    // The overflow at the first op reads no metadata.
     Work overflowing_at_start;
     overflowing_at_start.push_op_without_meta(3);
     (void)overflowing_at_start.push_op_with_meta(*metalog, 4);
@@ -137,7 +127,6 @@ void test_overflow_build_leaves_tail() {
         test.alloc, scratch, overflowing_at_start.count, overflowing_at_start.trace, overflowing_at_start.meta_starts,
         overflowing_at_start.scope_hashes, overflowing_at_start.callsite_hashes);
     assert(built_at_start.is_err());
-    assert(built_at_start.err().expect("the build stops at the first op").meta_end == 0u);
     assert(metalog->tail.get() == 0u);
 
     crucible::test::pass("  overflow_build_leaves_tail:                PASSED\n");
@@ -145,8 +134,8 @@ void test_overflow_build_leaves_tail() {
 
 // The order that the pipeline permits: the build stage builds a graph and
 // then meets an overflow in the next work, before the publish stage publishes
-// the graph.  The publish stage then applies the release of each work in the
-// order of the works, and the tail only moves forward.
+// the graph.  The publish moves no tail.  Each release moves the tail to a
+// floor past it, and a floor at or before the tail changes nothing.
 void test_publish_stage_releases_in_order() {
     using namespace meta_rig;
     seal_global_tables();
@@ -180,8 +169,12 @@ void test_publish_stage_releases_in_order() {
     bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
         bt.publish_region(bg, stage, std::move(built).expect("the first work builds").region,
                           BackgroundThread::StreamPoint{});
-        assert(metalog->tail.get() == first_end);
-        bt.release_meta_log(stage, overflowed.err().expect("the second work overflows").meta_end);
+        assert(bt.meta_log.get()->tail.get() == 0u && "the publish of a region moved the tail");
+        bt.release_meta_log(stage, first_end);
+        assert(bt.meta_log.get()->tail.get() == first_end);
+        bt.release_meta_log(stage, 1);
+        assert(bt.meta_log.get()->tail.get() == first_end && "a floor before the tail moved the tail");
+        bt.release_meta_log(stage, overflow_end);
     });
     assert(metalog->tail.get() == overflow_end);
 
@@ -189,8 +182,10 @@ void test_publish_stage_releases_in_order() {
 }
 
 // The release goes through the four stages of a running pipeline.  The last
-// iteration that the detector cuts meets the overflow, so its release is the
-// last move of the tail, and the tail ends at the metadata that it read.
+// iteration that the detector cuts meets the overflow, and the work makes no
+// region.  The floor of the last commit marker is the position of the K ops
+// that the detect stage keeps, so the tail ends at the head: each record is
+// free.
 void test_pipeline_releases_after_overflow() {
     using namespace meta_rig;
 
@@ -244,16 +239,17 @@ void test_pipeline_releases_after_overflow() {
     bt.stop();
 
     assert(overflow_end != 0u);
-    assert(metalog->tail.get() == overflow_end && "the publish stage did not apply the release of the last iteration");
+    assert(bt.meta_log.get()->tail.get() == bt.meta_log.get()->head.get()
+           && "the floor of the last commit marker did not release each record");
 
     crucible::test::pass("  pipeline_releases_after_overflow:          PASSED (tail={})\n",
                          static_cast<unsigned long long>(metalog->tail.get()));
 }
 
 // The ops of a built graph hold a copy of the run of the metadata log that
-// the build read.  The publish stage releases the run when it publishes the
-// region.  The foreground then writes new records over the run.  The region
-// lives as long as the arena, and no op points into the buffer of the log.
+// the build read.  The floor of a later commit marker releases the run, and
+// the foreground then writes new records over it.  The region lives as long
+// as its memory, and no op points into the buffer of the log.
 void test_built_graph_owns_its_metadata() {
     using namespace meta_rig;
     seal_global_tables();
@@ -286,10 +282,11 @@ void test_built_graph_owns_its_metadata() {
         assert(crucible::raw_tensor_dim(metas[0].sizes[0]) == 64);
     }
 
-    // The region of the publish holds the same ops, and the release moves
-    // the tail past the run.
+    // The region of the publish holds the same ops, and a release to the end
+    // of the run moves the tail past it.
     bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
         bt.publish_region(bg, stage, std::move(parts), BackgroundThread::StreamPoint{});
+        bt.release_meta_log(stage, OPS);
     });
     const crucible::RegionNode* const region = bt.active_region.load(std::memory_order_acquire);
     assert(region != nullptr && region->ops == graph->ops);
@@ -336,6 +333,7 @@ void test_build_and_release_pass_two_to_the_32() {
 
     bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
         bt.publish_region(bg, stage, std::move(parts), BackgroundThread::StreamPoint{});
+        bt.release_meta_log(stage, run_end);
     });
     assert(metalog->tail.get() == run_end && "the release did not move the tail past 2^32");
 

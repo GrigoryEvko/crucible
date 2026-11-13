@@ -221,17 +221,18 @@ struct BackgroundThread {
     IterationDetector detector;
 
     // The ops that the detect stage holds, from the oldest op that a future
-    // iteration can hold to the newest op.  It is a ring of four parallel
+    // iteration can hold to the newest op.  It is a ring of five parallel
     // arrays that grows by doubling.  The detect stage drops each op that
     // IterationDetector::oldest_claimable() passes, so the ring holds at
     // most half of the history of the detector and K ops more, and it never
     // grows past IterationDetector::HISTORY_MAX_CAPACITY ops.  At that
-    // capacity it takes 44 MiB.
+    // capacity it takes 48 MiB.
     class PendingOps {
     public:
-        // Adds the newest op.  Complexity: O(1), and O(n) when the ring
-        // grows.
-        void push(TraceRing::Entry const& entry, MetaIndex meta_start, ScopeHash scope_hash,
+        // Adds the newest op.  record_start is the position of the op in the
+        // stream of records of the metadata log.  Complexity: O(1), and O(n)
+        // when the ring grows.
+        void push(TraceRing::Entry const& entry, MetaIndex meta_start, uint64_t record_start, ScopeHash scope_hash,
                   CallsiteHash callsite_hash);
 
         // Drops the count oldest ops.  A count past size() drops each op.
@@ -252,6 +253,9 @@ struct BackgroundThread {
         [[nodiscard]] MetaIndex meta_start(uint64_t index) const noexcept {
             return meta_starts_[(head_ + index) & mask_];
         }
+        [[nodiscard]] uint64_t record_start(uint64_t index) const noexcept {
+            return record_starts_[(head_ + index) & mask_];
+        }
         [[nodiscard]] ScopeHash scope_hash(uint64_t index) const noexcept {
             return scope_hashes_[(head_ + index) & mask_];
         }
@@ -266,6 +270,7 @@ struct BackgroundThread {
 
         ::foundation::AlignedBuffer<TraceRing::Entry> entries_;
         ::foundation::AlignedBuffer<MetaIndex> meta_starts_;
+        ::foundation::AlignedBuffer<uint64_t> record_starts_;
         ::foundation::AlignedBuffer<ScopeHash> scope_hashes_;
         ::foundation::AlignedBuffer<CallsiteHash> callsite_hashes_;
         // The capacity minus one, zero before the first push.
@@ -278,6 +283,24 @@ struct BackgroundThread {
 private:
     // The ops that the detect stage holds.  The detect stage owns it.
     PendingOps pending_ops_;
+
+    // The position in the stream of records after the records of the last
+    // op that the detect stage read with a metadata index.  The detect stage
+    // owns it.  The first start() sets it to the tail of the metadata log.
+    uint64_t meta_cursor_ = 0;
+
+    // The position of the op that the detect stage reads, from its metadata
+    // index: the index when it is valid, else the cursor.  A valid index
+    // moves the cursor past the records of the op.  A valid index before the
+    // cursor ends the process, because a later release would then pass the
+    // records of that op before its build copies them.
+    [[nodiscard]] uint64_t take_record_start_(TraceRing::Entry const& entry, MetaIndex meta_start) noexcept;
+
+    // The oldest record that a later work can hold: the position of the
+    // oldest held op, or the cursor when the detect stage holds no op.
+    [[nodiscard]] uint64_t meta_floor_() const noexcept {
+        return pending_ops_.size() == 0 ? meta_cursor_ : pending_ops_.record_start(0);
+    }
 
 public:
     // Read the count only after a flush, when the detect stage waits for
@@ -316,10 +339,6 @@ public:
         // The slots of the memory plan.
         ::foundation::AlignedBuffer<TensorSlot> slots;
         ContentHash content_hash;
-        // The end of the run of the metadata log that the build read, as a
-        // count of records (MetaLog::head).  The publish stage releases the
-        // run.
-        uint64_t max_meta_end = 0;
     };
 
     // A build: the trace graph, in the scratch arena that the caller gave,
@@ -509,8 +528,8 @@ public:
     // recorded before the last divergence.  The publish stage discards it.
     // A region that the publish stage gave out just before a request is
     // stale too, so the producer also compares the point of each region
-    // that it takes.  Commit markers and releases carry no region, and no
-    // reset drops them.
+    // that it takes.  Commit markers carry no region, and no reset drops
+    // them.
     //
     // The producer requests with acquire and release order before it puts
     // the op at the point, so the detect stage reads the request before it
@@ -642,6 +661,9 @@ public:
         // The point of the last reset before the cut of this work.
         // Meaningless on a commit-only marker, which is never dropped.
         StreamPoint reset_point{};
+        // On a commit-only marker, the oldest record that a later work can
+        // hold (meta_floor_() when the detect stage made the marker).
+        uint64_t meta_floor = 0;
         // The ops of the iteration, completed_len of each, and each value
         // initialized before the copy.  completed_len is at most
         // IterationDetector::MAX_PERIOD, so the four buffers take at most
@@ -663,11 +685,10 @@ public:
     // region message owns the parts of its region, so the region memory
     // moves with it.
     //
-    // Three shapes flow through the channel, and kind names each one:
+    // Two shapes flow through the channel, and kind names each one:
     //   Region   region holds a value: an iteration region to publish.
-    //   Commit   region is empty: a marker that carries the entry count.
-    //   Release  region is empty: the end of the metadata that a build read
-    //            before it met an op with tensors and no metadata index.
+    //   Commit   region is empty: a marker that carries the entry count and
+    //            the release floor of the metadata log.
     //
     // The marker has to travel through the publish stage so that
     // total_processed advances only after every region ahead of it has been
@@ -676,24 +697,23 @@ public:
     // the caller then observes a compiled mode with no pending region, or an
     // active region whose plan is not finished.
     //
-    // The release travels through the publish stage too.  That stage is the
-    // one writer of the tail of the metadata log, and the works reach it in
-    // the order of the recording, so each release is past the one before.  A
-    // release from the build stage can pass the end of a region that is still
-    // on its way to the publish stage.  The publish of that region then moves
-    // the tail back, and the contract of the tail stops the process.
+    // The floor travels with the marker for the same reason.  The publish
+    // stage is the one writer of the tail of the metadata log.  Each work
+    // that holds a record before the floor went into the channels before the
+    // marker, and the build stage copied its records before it sent the
+    // marker on, because each channel is FIFO.
     struct BgGraphPublish {
         enum class Kind : uint8_t {
             Region,
-            Commit,
-            Release
+            Commit
         };
         Kind kind = Kind::Commit;
         // The parts of the region.  Only a region message holds them.
         BuiltRegion region{};
         uint32_t commit_count = 0;
-        // The new tail of the metadata log.  Only a release sets it.
-        uint64_t meta_end = 0;
+        // The release floor of the metadata log.  Only a commit marker sets
+        // it.
+        uint64_t meta_floor = 0;
         // Carried through from the BgBuildWork this came from, so a reset
         // that lands while the build stage is mid-graph is still caught
         // here, one stage later.
@@ -701,7 +721,7 @@ public:
     };
 
     // Makes a commit marker: a work item that carries only the count of
-    // entries that one batch consumed.
+    // entries that one batch consumed and the release floor after them.
     [[nodiscard]] BgBuildWork* make_commit_work(uint32_t count);
 
     // The detect stage calls this at each iteration boundary that the
@@ -716,18 +736,13 @@ public:
     // can hold them.
     void drop_unclaimable_ops_() noexcept;
 
-    // Discards a region that the publish stage will not publish.  Its memory
-    // frees when the parts end.  The metadata log is a ring the foreground
-    // keeps writing into, so its tail has to advance past the entries this
-    // build read or the log fills for good.
-    void discard_region(PublishStage const& stage, BuiltRegion parts) CRUCIBLE_NO_THREAD_SAFETY;
-
-    // Moves the tail of the metadata log to meta_end, which gives the entries
-    // before it back to the foreground.  Zero releases nothing.  The publish
-    // stage is the one writer of the tail, and the proof shows that the
-    // caller is that stage.  A meta_end that does not move the tail forward
-    // fails the contract of the tail.
-    void release_meta_log(PublishStage const& stage, uint64_t meta_end) CRUCIBLE_NO_THREAD_SAFETY;
+    // The one release of the metadata log.  The publish stage calls it at
+    // each commit marker with the floor of the marker.  It moves the tail to
+    // the floor when the floor is past the tail, which gives the records
+    // before the floor back to the foreground.  A floor at or before the tail
+    // changes nothing, and a floor past the head ends the process.  The proof
+    // shows that the caller is the publish stage, the one writer of the tail.
+    void release_meta_log(PublishStage const& stage, uint64_t meta_floor) CRUCIBLE_NO_THREAD_SAFETY;
 
     // Makes the RegionNode and the memory plan of the region, publishes the
     // region and gives its memory to the region store.  The background
@@ -981,13 +996,9 @@ public:
 
     // The error of a build that meets an op with tensors and no metadata
     // index.  The foreground records such an op when the metadata log is
-    // full, and the build then makes no graph.  meta_end is the end of the
-    // metadata that the build read before that op, or zero when it read none.
-    // The build does not release that metadata, because only the publish
-    // stage writes the tail of the log (release_meta_log).
-    struct MetaLogOverflow {
-        uint64_t meta_end = 0;
-    };
+    // full, and the build then makes no graph.  The build releases nothing.
+    // The floor of a later commit marker passes the records of the work.
+    struct MetaLogOverflow {};
 
     // A graph and the parts of its region, or the overflow that stopped the
     // build.

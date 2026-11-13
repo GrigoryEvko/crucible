@@ -141,18 +141,18 @@ struct BackgroundThread::Pipeline {
     static void DetectIterationFn(TraceBatchInput&& in, typename BuildWorkChannel::ProducerHandle&& out);
 
     // The build stage builds a trace graph from each work item and
-    // forwards commit markers unchanged.  For a work item that met the
-    // overflow of the metadata log, it forwards a release.  It forwards the
-    // stop sentinel, a null BgBuildWork*, as a null BgGraphPublish*.
+    // forwards commit markers unchanged.  A work item that met the overflow
+    // of the metadata log sends nothing.  It forwards the stop sentinel, a
+    // null BgBuildWork*, as a null BgGraphPublish*.
     //
     // The pipeline runs this body as the entry of its own thread, so the
     // body takes the background context of that thread from the door.
     static void BuildTraceFn(BuildWorkInput&& in, typename GraphPublishChannel::ProducerHandle&& out);
 
     // The publish stage publishes each region whose reset point is the
-    // requested point, discards each stale one, advances total_processed at
-    // each commit marker, and applies each release.  It is the one writer of
-    // the tail of the metadata log.
+    // requested point, discards each stale one, and at each commit marker
+    // releases the metadata log to the floor of the marker and advances
+    // total_processed.  It is the one writer of the tail of the metadata log.
     //
     // The channel is SPSC FIFO, so a commit marker can only arrive here
     // after every region produced from its batch and from preceding batches
@@ -175,7 +175,19 @@ BackgroundThread::BgBuildWork* BackgroundThread::make_commit_work(uint32_t count
     auto* work = new BgBuildWork{};
     work->commit_only = true;
     work->commit_count = count;
+    work->meta_floor = meta_floor_();
     return work;
+}
+
+// The foreground appends the records of an op before its ring entry, so a
+// ring that refuses the entry leaves records that no op names.  A later
+// valid index is then past the cursor, and the records between the two are
+// dead.  The floor passes them with the next op.
+uint64_t BackgroundThread::take_record_start_(TraceRing::Entry const& entry, MetaIndex meta_start) noexcept {
+    if (!meta_start.is_valid()) return meta_cursor_;
+    CRUCIBLE_FATAL_INVARIANT(meta_start.raw() >= meta_cursor_);
+    meta_cursor_ = meta_start.raw() + entry.num_inputs + entry.num_outputs;
+    return meta_start.raw();
 }
 
 // The ring grows to the next power of two, and the oldest held op moves to
@@ -187,29 +199,33 @@ void BackgroundThread::PendingOps::grow_() {
     CRUCIBLE_FATAL_INVARIANT(new_capacity <= IterationDetector::HISTORY_MAX_CAPACITY);
     auto entries = ::foundation::AlignedBuffer<TraceRing::Entry>::allocate_value_initialized(new_capacity);
     auto meta_starts = ::foundation::AlignedBuffer<MetaIndex>::allocate_value_initialized(new_capacity);
+    auto record_starts = ::foundation::AlignedBuffer<uint64_t>::allocate_value_initialized(new_capacity);
     auto scope_hashes = ::foundation::AlignedBuffer<ScopeHash>::allocate_value_initialized(new_capacity);
     auto callsite_hashes = ::foundation::AlignedBuffer<CallsiteHash>::allocate_value_initialized(new_capacity);
     for (uint64_t index = 0; index < count_; ++index) {
         entries[index] = entry(index);
         meta_starts[index] = meta_start(index);
+        record_starts[index] = record_start(index);
         scope_hashes[index] = scope_hash(index);
         callsite_hashes[index] = callsite_hash(index);
     }
     entries_ = std::move(entries);
     meta_starts_ = std::move(meta_starts);
+    record_starts_ = std::move(record_starts);
     scope_hashes_ = std::move(scope_hashes);
     callsite_hashes_ = std::move(callsite_hashes);
     mask_ = new_capacity - 1;
     head_ = 0;
 }
 
-void BackgroundThread::PendingOps::push(TraceRing::Entry const& entry, MetaIndex meta_start, ScopeHash scope_hash,
-                                        CallsiteHash callsite_hash) {
+void BackgroundThread::PendingOps::push(TraceRing::Entry const& entry, MetaIndex meta_start, uint64_t record_start,
+                                        ScopeHash scope_hash, CallsiteHash callsite_hash) {
     if (mask_ == 0 || count_ == mask_ + 1) [[unlikely]]
         grow_();
     const uint64_t slot = (head_ + count_) & mask_;
     entries_[slot] = entry;
     meta_starts_[slot] = meta_start;
+    record_starts_[slot] = record_start;
     scope_hashes_[slot] = scope_hash;
     callsite_hashes_[slot] = callsite_hash;
     ++count_;
@@ -270,17 +286,16 @@ void BackgroundThread::apply_due_reset_() noexcept {
     applied_reset_.advance(requested);
 }
 
-void BackgroundThread::discard_region(PublishStage const& stage, BuiltRegion parts) {
-    release_meta_log(stage, parts.max_meta_end);
-}
-
-// The precondition of the release is the contract of the tail: meta_end is
-// past the tail, which advance_tail checks.  The postcondition is the store
-// itself, so the body states it once.
-void BackgroundThread::release_meta_log(PublishStage const&, uint64_t meta_end) {
-    if (meta_end > 0) {
-        meta_log.get()->advance_tail(meta_end);
-    }
+// The floor is the position of a held op or the cursor of the detect stage,
+// and the detect stage read each record before the cursor after the producer
+// published it.  So a floor past the head means that the positions disagree
+// with the log, and a tail past the head would give the producer slots that
+// it did not write.
+void BackgroundThread::release_meta_log(PublishStage const&, uint64_t meta_floor) {
+    MetaLog& log = *meta_log.get();
+    if (meta_floor <= log.tail.get()) return;
+    CRUCIBLE_FATAL_INVARIANT(meta_floor <= log.head.get());
+    log.advance_tail(meta_floor);
 }
 
 // The node and the plan go into buffers of the region, and the arrays of the
@@ -296,7 +311,6 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     }
     if (free_index == REGION_STORE_CAP) [[unlikely]] {
         ++regions_dropped_full_;
-        discard_region(stage, std::move(parts));
         return;
     }
     RegionMemory& memory = region_store_[free_index];
@@ -317,7 +331,6 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
         std::move(sweep).end();
     }
 
-    release_meta_log(stage, memory.parts.max_meta_end);
     recompute_merkle(&region);
     const ::fixy::WeakRef<RegionNode> published{region};
     last_published_ = ::fixy::WeakRef<const RegionNode>{region};
@@ -450,7 +463,9 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
             owner->apply_due_reset_();
             ++owner->stream_ops_;
 
-            owner->pending_ops_.push(ops.entries[i], ops.meta_starts[i], ops.scope_hashes[i], ops.callsite_hashes[i]);
+            owner->pending_ops_.push(ops.entries[i], ops.meta_starts[i],
+                                     owner->take_record_start_(ops.entries[i], ops.meta_starts[i]), ops.scope_hashes[i],
+                                     ops.callsite_hashes[i]);
 
             if (owner->detector.check(batch->entries[i].schema_hash, batch->entries[i].shape_hash)) {
                 if (auto work = std::unique_ptr<BgBuildWork>(owner->prepare_iteration_build_work())) {
@@ -498,25 +513,18 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
             auto publish = std::make_unique<BgGraphPublish>();
             publish->kind = BgGraphPublish::Kind::Commit;
             publish->commit_count = work->commit_count;
+            publish->meta_floor = work->meta_floor;
             publish->reset_point = work->reset_point;
             push_pipeline(out, publish.get());
             publish.release();
             continue;
         }
 
-        // A stale work item is deliberately still built here rather
-        // than dropped on the spot.  Dropping it would save the build,
-        // but the metadata entries it covers still have to be
-        // released or the log fills for good, and the only thing that
-        // knows that range is the scan inside build_trace_from.  Doing
-        // it here instead would put a second copy of "where does this
-        // work's metadata end" in the tree, which is the kind of
-        // duplicate that drifts.
-        //
-        // So the stale check sits one stage on, at the publish, where
-        // the region carries its own max_meta_end.  The cost is one
-        // wasted build per in-flight region per divergence, on a path
-        // that only runs when replay has already failed.
+        // A stale work item is still built here.  The publish stage drops
+        // its region, and that one check also catches a reset requested
+        // while the build stage is mid-graph.  The cost is one wasted build
+        // per in-flight region per divergence, on a path that only runs when
+        // replay has already failed.
         //
         // One epoch of the build scratch covers this work item.  The graph
         // and its CSR arrays die at its end.  The region does not point
@@ -526,20 +534,10 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
             owner->build_trace_from(ctx.cap().alloc, owner->build_scratch_, work->completed_len, work->trace.data(),
                                     work->meta_starts.data(), work->scope_hashes.data(), work->callsite_hashes.data());
 
-        // A work that met the overflow sends its release, and no region.  The
-        // publish stage applies the release after each region of an earlier
-        // work, so the tail of the metadata log only moves forward.
+        // A work that met the overflow sends no region.  The floor of a later
+        // commit marker releases its records.
         if (built.is_err()) {
             std::move(epoch).end();
-            const MetaLogOverflow overflow = built.err().expect("the build stopped at an overflow");
-            if (overflow.meta_end > 0) {
-                auto release = std::make_unique<BgGraphPublish>();
-                release->kind = BgGraphPublish::Kind::Release;
-                release->meta_end = overflow.meta_end;
-                release->reset_point = work->reset_point;
-                push_pipeline(out, release.get());
-                release.release();
-            }
             continue;
         }
 
@@ -580,18 +578,14 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
 
         if (publish->kind == BgGraphPublish::Kind::Commit) {
             // The marker sits strictly after every publish message from
-            // the same and earlier batches, so this bump happens-after
-            // every publish above.  Its release pairs with the
-            // foreground's acquire load.
+            // the same and earlier batches, so the release and the bump
+            // happen after every publish above.  A reset does not drop a
+            // marker, so its floor releases records on each side of a
+            // reset.  The release comes first, so a caller that sees the
+            // count after a flush sees the tail too.  The bump's release
+            // pairs with the foreground's acquire load.
+            owner->release_meta_log(PublishStage{}, publish->meta_floor);
             (void)PublishStageAuth::commit(owner->total_processed, publish->commit_count);
-            continue;
-        }
-
-        // A release carries no region, so a reset does not drop it.  The
-        // metadata that it names is dead on each side of a reset, and the
-        // foreground has to be able to use that space again.
-        if (publish->kind == BgGraphPublish::Kind::Release) {
-            owner->release_meta_log(PublishStage{}, publish->meta_end);
             continue;
         }
 
@@ -600,21 +594,14 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
         // Publishing it would hand that shape back to a foreground that has
         // already fallen back to recording.
         //
-        // The stale check sits here rather than at the build stage, so that
-        // the region's own max_meta_end is the one thing that decides which
-        // metadata range to release.  It also catches a reset requested
-        // while the build stage was mid-graph.  A request can come between
-        // this check and the publication, so the foreground does the same
-        // check when it takes a region.
-        //
-        // The discard frees the memory of the region.  The metadata log
-        // needs the hand-off too: the entries this build read are dead
-        // either way, and the foreground has to be able to reuse that
-        // space.
+        // The stale check sits here rather than at the build stage, so it
+        // also catches a reset requested while the build stage was
+        // mid-graph.  A request can come between this check and the
+        // publication, so the foreground does the same check when it takes
+        // a region.  The region memory frees when its parts end here.
         BuiltRegion region = std::move(publish->region);
         const StreamPoint reset_point = publish->reset_point;
         if (reset_point != owner->requested_reset()) {
-            owner->discard_region(PublishStage{}, std::move(region));
             continue;
         }
 
@@ -636,6 +623,10 @@ void BackgroundThread::start(TraceRing* ring_ptr, MetaLog* meta_log_ptr, int32_t
     // background context of that thread from the door.
     if (!pipeline_) {
         pipeline_ = std::make_unique<Pipeline>();
+        // The first op of the ring owns the first record that the log has
+        // not released.  A later start keeps the cursor, because the ring
+        // keeps the ops that the last pipeline did not read.
+        meta_cursor_ = meta_log.get()->tail.get();
     }
     pipeline_->thread = std::jthread([this](std::stop_token) noexcept {
         run_in_row(::fixy::BgLoadCtx{::foundation::effects::host::BackgroundOwner::mint_background_context()});
@@ -764,10 +755,8 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
         MetaIndex ms = meta_data[i];
         const auto& re = trace_data[i];
         if (!ms.is_valid() && (re.num_inputs + re.num_outputs) > 0) {
-            // Overflow on an op that did have tensors.  The publish stage
-            // releases the metadata that the scan read, in the order of the
-            // works.
-            return ::fixy::err(MetaLogOverflow{.meta_end = max_meta_end});
+            // Overflow on an op that did have tensors.
+            return ::fixy::err(MetaLogOverflow{});
         }
         if (ms.is_valid()) {
             if (!first_meta.is_valid()) first_meta = ms;
@@ -1097,8 +1086,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
                                             .metas = std::move(meta_buffer),
                                             .side_arrays = std::move(side_buffer),
                                             .slots = std::move(slots),
-                                            .content_hash = graph->content_hash,
-                                            .max_meta_end = max_meta_end}};
+                                            .content_hash = graph->content_hash}};
 }
 
 MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage,
