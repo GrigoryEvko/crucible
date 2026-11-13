@@ -53,19 +53,8 @@ struct Calibrated {};
 // External timestamp received from a peer, which must be admitted
 // explicitly before it can drive ordering decisions.
 struct Hlc {};
-// Local marks a write authored by this replica. Gossiped marks state
-// received by anti-entropy exchange and admitted at the merge
-// boundary.
+// Local marks a write authored by this replica.
 struct Local {};
-struct Gossiped {};
-// Identity admitted into the SWIM membership view. Raw discovery
-// output must be admitted explicitly before it can drive peer-health
-// or gossip-fanout decisions.
-struct SwimMember {};
-// Identity admitted into the bounded active and passive overlay. Raw
-// discovery output and foreign membership tags cannot drive overlay
-// repair or broadcast fanout.
-struct HyParView {};
 // Broadcast messages and repair summaries admitted at the broadcast
 // tree boundary. Raw message identifiers and overlay peer identities
 // cannot drive eager and lazy tree transitions.
