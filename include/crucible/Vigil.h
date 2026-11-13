@@ -962,11 +962,14 @@ private:
 
             for (uint32_t i = 0; i < region.num_ops() && !ptr; i++) {
                 const auto& te = region.op_at(i);
-                if (!te.input_slot_ids) continue;
-                for (uint16_t j = 0; j < te.num_inputs; j++) {
-                    if (te.input_slot_ids[j] == target) {
-                        ptr = raw_data_ptr(te.input_metas[j]);
-                        break;
+                // An op with no slot ids or no metadata of its inputs has no
+                // pair of the two, and the zip gives an error.
+                for (auto const& pairs : ::fixy::zip(te.input_slot_ids(), te.input_metas()).ok()) {
+                    for (auto [slot_id, meta] : pairs) {
+                        if (*slot_id == target) {
+                            ptr = raw_data_ptr(*meta);
+                            break;
+                        }
                     }
                 }
             }

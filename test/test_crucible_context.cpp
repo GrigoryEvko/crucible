@@ -77,17 +77,17 @@ static void test_initial_state() {
 }
 
 static void test_activate() {
-    SlotId out[1] = {SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> out{SlotId{0}};
 
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{100};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{200};
-    ops.at(::foundation::core::index<0>()).num_outputs = 1;
-    ops.at(::foundation::core::index<0>()).output_slot_ids = out;
+    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out.view());
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{101};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{201};
-    ops.at(::foundation::core::index<1>()).num_outputs = 1;
-    ops.at(::foundation::core::index<1>()).output_slot_ids = out;
+    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<1>()).set_output_slot_ids(out.view());
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());
@@ -123,21 +123,21 @@ static void test_activate_no_plan() {
 }
 
 static void test_full_replay() {
-    SlotId out0[1] = {SlotId{0}};
-    SlotId out1[1] = {SlotId{1}};
+    ::foundation::core::FixedArray<SlotId, 1> out0{SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> out1{SlotId{1}};
 
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{100};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{200};
-    ops.at(::foundation::core::index<0>()).num_outputs = 1;
-    ops.at(::foundation::core::index<0>()).output_slot_ids = out0;
-    ops.at(::foundation::core::index<0>()).num_inputs = 0;
+    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out0.view());
+    ops.at(::foundation::core::index<0>()).set_num_inputs(0);
 
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{101};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{201};
-    ops.at(::foundation::core::index<1>()).num_outputs = 1;
-    ops.at(::foundation::core::index<1>()).output_slot_ids = out1;
-    ops.at(::foundation::core::index<1>()).num_inputs = 0;
+    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<1>()).set_output_slot_ids(out1.view());
+    ops.at(::foundation::core::index<1>()).set_num_inputs(0);
 
     ::foundation::core::FixedArray<TensorSlot, 2> slots{};
     auto plan = make_simple_plan(slots.view());
@@ -173,15 +173,15 @@ static void test_full_replay() {
 }
 
 static void test_divergence() {
-    SlotId out[1] = {SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> out{SlotId{0}};
 
     ::foundation::core::FixedArray<TraceEntry, 3> ops{};
     for (uint32_t i = 0; i < 3; i++) {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{100 + i};
         op.shape_hash = ShapeHash{200 + i};
-        op.num_outputs = 1;
-        op.output_slot_ids = out;
+        op.set_num_outputs(1);
+        op.set_output_slot_ids(out.view());
     }
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
@@ -210,13 +210,13 @@ static void test_divergence() {
 }
 
 static void test_reactivate() {
-    SlotId out[1] = {SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> out{SlotId{0}};
 
     ::foundation::core::FixedArray<TraceEntry, 1> ops_a{};
     ops_a.at(::foundation::core::index<0>()).schema_hash = SchemaHash{10};
     ops_a.at(::foundation::core::index<0>()).shape_hash = ShapeHash{20};
-    ops_a.at(::foundation::core::index<0>()).num_outputs = 1;
-    ops_a.at(::foundation::core::index<0>()).output_slot_ids = out;
+    ops_a.at(::foundation::core::index<0>()).set_num_outputs(1);
+    ops_a.at(::foundation::core::index<0>()).set_output_slot_ids(out.view());
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots_a{};
     auto plan_a = make_simple_plan(slots_a.view());
@@ -226,17 +226,18 @@ static void test_reactivate() {
 
     // The second region shares no hash with the first, so a stale guard
     // would diverge rather than silently match.
-    SlotId out_b[2] = {SlotId{0}, SlotId{1}};
+    ::foundation::core::FixedArray<SlotId, 1> out_b0{SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> out_b1{SlotId{1}};
 
     ::foundation::core::FixedArray<TraceEntry, 2> ops_b{};
     ops_b.at(::foundation::core::index<0>()).schema_hash = SchemaHash{30};
     ops_b.at(::foundation::core::index<0>()).shape_hash = ShapeHash{40};
-    ops_b.at(::foundation::core::index<0>()).num_outputs = 1;
-    ops_b.at(::foundation::core::index<0>()).output_slot_ids = &out_b[0];
+    ops_b.at(::foundation::core::index<0>()).set_num_outputs(1);
+    ops_b.at(::foundation::core::index<0>()).set_output_slot_ids(out_b0.view());
     ops_b.at(::foundation::core::index<1>()).schema_hash = SchemaHash{31};
     ops_b.at(::foundation::core::index<1>()).shape_hash = ShapeHash{41};
-    ops_b.at(::foundation::core::index<1>()).num_outputs = 1;
-    ops_b.at(::foundation::core::index<1>()).output_slot_ids = &out_b[1];
+    ops_b.at(::foundation::core::index<1>()).set_num_outputs(1);
+    ops_b.at(::foundation::core::index<1>()).set_output_slot_ids(out_b1.view());
 
     ::foundation::core::FixedArray<TensorSlot, 2> slots_b{};
     auto plan_b = make_simple_plan(slots_b.view());
@@ -269,16 +270,16 @@ static void test_reactivate() {
 }
 
 static void test_external_slots() {
-    SlotId out[1] = {SlotId{0}};
-    SlotId in[1] = {SlotId{1}};
+    ::foundation::core::FixedArray<SlotId, 1> out{SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> in{SlotId{1}};
 
     ::foundation::core::FixedArray<TraceEntry, 1> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{50};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{60};
-    ops.at(::foundation::core::index<0>()).num_outputs = 1;
-    ops.at(::foundation::core::index<0>()).output_slot_ids = out;
-    ops.at(::foundation::core::index<0>()).num_inputs = 1;
-    ops.at(::foundation::core::index<0>()).input_slot_ids = in;
+    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out.view());
+    ops.at(::foundation::core::index<0>()).set_num_inputs(1);
+    ops.at(::foundation::core::index<0>()).set_input_slot_ids(in.view());
 
     ::foundation::core::FixedArray<TensorSlot, 2> slots{};
     slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
@@ -385,25 +386,25 @@ static void test_integration_sweep_line() {
     auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
     assert(plan != nullptr);
 
-    SlotId op0_out[1] = {SlotId{0}};
-    SlotId op0_in[1] = {SlotId{2}};
-    SlotId op1_out[1] = {SlotId{1}};
-    SlotId op1_in[1] = {SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> op0_out{SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> op0_in{SlotId{2}};
+    ::foundation::core::FixedArray<SlotId, 1> op1_out{SlotId{1}};
+    ::foundation::core::FixedArray<SlotId, 1> op1_in{SlotId{0}};
 
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{0xAA};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{0xBB};
-    ops.at(::foundation::core::index<0>()).num_outputs = 1;
-    ops.at(::foundation::core::index<0>()).output_slot_ids = op0_out;
-    ops.at(::foundation::core::index<0>()).num_inputs = 1;
-    ops.at(::foundation::core::index<0>()).input_slot_ids = op0_in;
+    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<0>()).set_output_slot_ids(op0_out.view());
+    ops.at(::foundation::core::index<0>()).set_num_inputs(1);
+    ops.at(::foundation::core::index<0>()).set_input_slot_ids(op0_in.view());
 
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{0xCC};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{0xDD};
-    ops.at(::foundation::core::index<1>()).num_outputs = 1;
-    ops.at(::foundation::core::index<1>()).output_slot_ids = op1_out;
-    ops.at(::foundation::core::index<1>()).num_inputs = 1;
-    ops.at(::foundation::core::index<1>()).input_slot_ids = op1_in;
+    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<1>()).set_output_slot_ids(op1_out.view());
+    ops.at(::foundation::core::index<1>()).set_num_inputs(1);
+    ops.at(::foundation::core::index<1>()).set_input_slot_ids(op1_in.view());
 
     RegionNode region{};
     init_region(&region, ops.view(), plan);
@@ -449,17 +450,17 @@ static void test_integration_sweep_line() {
 // The divergence count belongs to the context, not to an activation, so
 // it survives deactivate and re-activate.
 static void test_divergence_counter() {
-    SlotId out[1] = {SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> out{SlotId{0}};
 
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{10};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{20};
-    ops.at(::foundation::core::index<0>()).num_outputs = 1;
-    ops.at(::foundation::core::index<0>()).output_slot_ids = out;
+    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out.view());
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{11};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{21};
-    ops.at(::foundation::core::index<1>()).num_outputs = 1;
-    ops.at(::foundation::core::index<1>()).output_slot_ids = out;
+    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<1>()).set_output_slot_ids(out.view());
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());

@@ -112,6 +112,12 @@ public:
         requires(I < sizeof...(Runs))
     static constexpr std::size_t slot_of = pack_at_t<I, Pack<Runs...>>::slot;
 
+    // What the set borrows, for the payload walk of
+    // fixy/concurrent/PayloadRow.h: a function type with one pointer
+    // parameter for the element of each run.  The walk reads the target of
+    // each parameter, so it reads each element type of the set.
+    using value_type = void(typename Runs::element_type*...);
+
 private:
     template <std::size_t I>
     using First_ = detail::RunFirst_<I, element_t<I>>;

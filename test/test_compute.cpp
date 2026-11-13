@@ -176,47 +176,47 @@ int main() {
     std::printf("  plan: pool=%lu bytes, %u slots (%u external)\n", static_cast<unsigned long>(plan->pool_bytes),
                 plan->num_slots(), plan->num_external);
 
-    SlotId op0_in[2] = {SlotId{SL_X}, SlotId{SL_W1}};
-    SlotId op0_out[1] = {SlotId{SL_MM1}};
+    ::foundation::core::FixedArray<SlotId, 2> op0_in{SlotId{SL_X}, SlotId{SL_W1}};
+    ::foundation::core::FixedArray<SlotId, 1> op0_out{SlotId{SL_MM1}};
 
-    SlotId op1_in[1] = {SlotId{SL_MM1}};
-    SlotId op1_out[1] = {SlotId{SL_REL}};
+    ::foundation::core::FixedArray<SlotId, 1> op1_in{SlotId{SL_MM1}};
+    ::foundation::core::FixedArray<SlotId, 1> op1_out{SlotId{SL_REL}};
 
-    SlotId op2_in[2] = {SlotId{SL_REL}, SlotId{SL_W2}};
-    SlotId op2_out[1] = {SlotId{SL_MM2}};
+    ::foundation::core::FixedArray<SlotId, 2> op2_in{SlotId{SL_REL}, SlotId{SL_W2}};
+    ::foundation::core::FixedArray<SlotId, 1> op2_out{SlotId{SL_MM2}};
 
-    SlotId op3_in[1] = {SlotId{SL_MM2}};
-    SlotId op3_out[1] = {SlotId{SL_SM}};
+    ::foundation::core::FixedArray<SlotId, 1> op3_in{SlotId{SL_MM2}};
+    ::foundation::core::FixedArray<SlotId, 1> op3_out{SlotId{SL_SM}};
 
     ::foundation::core::FixedArray<TraceEntry, N_OPS> ops{};
 
     ops.at(::fixy::index<0>()).schema_hash = H_MM1;
     ops.at(::fixy::index<0>()).shape_hash = S_MM1;
-    ops.at(::fixy::index<0>()).num_inputs = 2;
-    ops.at(::fixy::index<0>()).num_outputs = 1;
-    ops.at(::fixy::index<0>()).input_slot_ids = op0_in;
-    ops.at(::fixy::index<0>()).output_slot_ids = op0_out;
+    ops.at(::fixy::index<0>()).set_num_inputs(2);
+    ops.at(::fixy::index<0>()).set_num_outputs(1);
+    ops.at(::fixy::index<0>()).set_input_slot_ids(op0_in.view());
+    ops.at(::fixy::index<0>()).set_output_slot_ids(op0_out.view());
 
     ops.at(::fixy::index<1>()).schema_hash = H_RELU;
     ops.at(::fixy::index<1>()).shape_hash = S_RELU;
-    ops.at(::fixy::index<1>()).num_inputs = 1;
-    ops.at(::fixy::index<1>()).num_outputs = 1;
-    ops.at(::fixy::index<1>()).input_slot_ids = op1_in;
-    ops.at(::fixy::index<1>()).output_slot_ids = op1_out;
+    ops.at(::fixy::index<1>()).set_num_inputs(1);
+    ops.at(::fixy::index<1>()).set_num_outputs(1);
+    ops.at(::fixy::index<1>()).set_input_slot_ids(op1_in.view());
+    ops.at(::fixy::index<1>()).set_output_slot_ids(op1_out.view());
 
     ops.at(::fixy::index<2>()).schema_hash = H_MM2;
     ops.at(::fixy::index<2>()).shape_hash = S_MM2;
-    ops.at(::fixy::index<2>()).num_inputs = 2;
-    ops.at(::fixy::index<2>()).num_outputs = 1;
-    ops.at(::fixy::index<2>()).input_slot_ids = op2_in;
-    ops.at(::fixy::index<2>()).output_slot_ids = op2_out;
+    ops.at(::fixy::index<2>()).set_num_inputs(2);
+    ops.at(::fixy::index<2>()).set_num_outputs(1);
+    ops.at(::fixy::index<2>()).set_input_slot_ids(op2_in.view());
+    ops.at(::fixy::index<2>()).set_output_slot_ids(op2_out.view());
 
     ops.at(::fixy::index<3>()).schema_hash = H_SOFTMAX;
     ops.at(::fixy::index<3>()).shape_hash = S_SOFTMAX;
-    ops.at(::fixy::index<3>()).num_inputs = 1;
-    ops.at(::fixy::index<3>()).num_outputs = 1;
-    ops.at(::fixy::index<3>()).input_slot_ids = op3_in;
-    ops.at(::fixy::index<3>()).output_slot_ids = op3_out;
+    ops.at(::fixy::index<3>()).set_num_inputs(1);
+    ops.at(::fixy::index<3>()).set_num_outputs(1);
+    ops.at(::fixy::index<3>()).set_input_slot_ids(op3_in.view());
+    ops.at(::fixy::index<3>()).set_output_slot_ids(op3_out.view());
 
     RegionNode region{};
     region.kind = TraceNodeKind::REGION;

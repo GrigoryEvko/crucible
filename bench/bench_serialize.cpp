@@ -11,7 +11,6 @@
 #include <span>
 #include <vector>
 
-#include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
 #include <foundation/effects/Effect.h>
@@ -25,10 +24,18 @@ static constexpr auto A = BG.alloc;
 
 // Avoids collision with crucible::make_region — this one builds a region
 // populated with realistic (schema/shape/scope/callsite, 2-input GEMM)
-// op rows.  The ops and the region are in dag_arena, and the arrays of each
-// op are in arena.
-static RegionNode* synth_region(Arena& arena, ::fixy::BumpArena& dag_arena, uint32_t num_ops) {
+// op rows.  The ops, their arrays and the region are in dag_arena.
+static RegionNode* synth_region(::fixy::BumpArena& dag_arena, uint32_t num_ops) {
     const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(A, num_ops, TraceEntry{});
+
+    // Each input and the output of each op have one metadata.
+    TensorMeta meta{};
+    meta.ndim = 2;
+    meta.sizes[0] = tensor_dim(128);
+    meta.sizes[1] = tensor_dim(256);
+    meta.strides[0] = tensor_dim(256);
+    meta.strides[1] = tensor_dim(1);
+    meta.dtype = ScalarType::Float;
 
     for (uint32_t i = 0; i < num_ops; i++) {
         auto& te = *ops.get(i).expect("i is below num_ops");
@@ -36,38 +43,21 @@ static RegionNode* synth_region(Arena& arena, ::fixy::BumpArena& dag_arena, uint
         te.shape_hash = ShapeHash{0xBBBB000000000000ULL + i};
         te.scope_hash = ScopeHash{0xCCCC000000000000ULL + i};
         te.callsite_hash = CallsiteHash{0xDDDD000000000000ULL + i};
-        te.num_inputs = 2;
-        te.num_outputs = 1;
-        te.num_scalar_args = 0;
+        te.set_num_inputs(2);
+        te.set_num_outputs(1);
+        te.set_num_scalar_args(0);
         te.kernel_id = CKernelId::GEMM_MM;
 
-        te.input_metas = arena.alloc_array<TensorMeta>(A, 2);
-        std::uninitialized_value_construct_n(te.input_metas, 2);
-        for (uint16_t j = 0; j < 2; j++) {
-            te.input_metas[j].ndim = 2;
-            te.input_metas[j].sizes[0] = tensor_dim(128);
-            te.input_metas[j].sizes[1] = tensor_dim(256);
-            te.input_metas[j].strides[0] = tensor_dim(256);
-            te.input_metas[j].strides[1] = tensor_dim(1);
-            te.input_metas[j].dtype = ScalarType::Float;
-        }
-        te.output_metas = arena.alloc_array<TensorMeta>(A, 1);
-        std::uninitialized_value_construct_n(te.output_metas, 1);
-        te.output_metas[0].ndim = 2;
-        te.output_metas[0].sizes[0] = tensor_dim(128);
-        te.output_metas[0].sizes[1] = tensor_dim(256);
-        te.output_metas[0].strides[0] = tensor_dim(256);
-        te.output_metas[0].strides[1] = tensor_dim(1);
-        te.output_metas[0].dtype = ScalarType::Float;
+        te.set_input_metas(dag_arena.array(A, 2, meta));
+        te.set_output_metas(dag_arena.array(A, 1, meta));
 
-        te.input_trace_indices = arena.alloc_array<OpIndex>(A, 2);
-        te.input_trace_indices[0] = (i >= 1) ? OpIndex{i - 1} : OpIndex::none();
-        te.input_trace_indices[1] = OpIndex::none();
-        te.input_slot_ids = arena.alloc_array<SlotId>(A, 2);
-        te.input_slot_ids[0] = SlotId{i};
-        te.input_slot_ids[1] = SlotId{100 + i};
-        te.output_slot_ids = arena.alloc_array<SlotId>(A, 1);
-        te.output_slot_ids[0] = SlotId{200 + i};
+        const ::fixy::View<OpIndex> producers = dag_arena.array(A, 2, OpIndex::none());
+        if (i >= 1) *producers.get(0).expect("the op has two inputs") = OpIndex{i - 1};
+        te.set_input_trace_indices(producers);
+        const ::fixy::View<SlotId> input_slots = dag_arena.array(A, 2, SlotId{i});
+        *input_slots.get(1).expect("the op has two inputs") = SlotId{100 + i};
+        te.set_input_slot_ids(input_slots);
+        te.set_output_slot_ids(dag_arena.array(A, 1, SlotId{200 + i}));
     }
 
     return make_region(A, dag_arena, ops);
@@ -87,9 +77,8 @@ int main() {
         // Per-size fixture: one arena, one region, one wire buffer sized
         // generously for the worst-case row shape. Lives across both
         // (ser, deser) Runs.
-        Arena arena{1 << 20};
         ::fixy::BumpArena dag_arena{1 << 20};
-        RegionNode* region = synth_region(arena, dag_arena, num_ops);
+        RegionNode* region = synth_region(dag_arena, num_ops);
 
         const size_t wire_cap =
             64 + num_ops * (40 + 2 * sizeof(TensorMeta) + sizeof(TensorMeta) + 3 * 3 * sizeof(uint32_t));

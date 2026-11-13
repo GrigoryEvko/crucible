@@ -28,9 +28,14 @@
 // fixy::report.  The text takes the placeholders of fixy::Fmt.  The text
 // is written before the call returns, so a pass line before a later
 // failure stays in the log.
+//
+// element_at(view, position) gives one element of a View, and run_of gives
+// a new array of the arena that holds some values.  A test builds and reads
+// the arrays of a traced op with them.
 
 #include <fixy/Core.h>
 
+#include <cstddef>
 #include <type_traits>
 
 namespace crucible::test {
@@ -47,6 +52,26 @@ template <class First, class... Rest>
 [[gnu::cold, gnu::noinline]] void pass(::fixy::Fmt<std::type_identity_t<First>, std::type_identity_t<Rest>...> text,
                                        First first, Rest... rest) noexcept {
     ::fixy::report(::fixy::Sink::Out, text, first, rest...);
+}
+
+// The element at position of a View, for a test that reads or writes one
+// element by its position.  A position at or past the count ends the
+// process.
+template <class T>
+[[nodiscard]] T& element_at(::fixy::View<T> view, std::size_t position) noexcept {
+    return *view.get(position).expect("a test reads an element at or past the count of its View");
+}
+
+// The values in a new array of the arena, in order.  The alloc argument is
+// the allocation capability of the test.
+template <class Marker, class First, class... Rest>
+[[nodiscard]] ::fixy::View<First> run_of(Marker alloc, ::fixy::BumpArena& arena, First first, Rest... rest) noexcept {
+    ::fixy::View<First> const run = arena.array(alloc, 1 + sizeof...(Rest), first);
+    if constexpr (sizeof...(Rest) > 0) {
+        std::size_t position = 1;
+        ((element_at(run, position++) = static_cast<First>(rest)), ...);
+    }
+    return run;
 }
 
 }  // namespace crucible::test

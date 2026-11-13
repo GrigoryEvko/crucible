@@ -333,7 +333,7 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     // Count total tensor metas across all ops.
     uint32_t total_metas = 0;
     for (const crucible::TraceEntry& te : region->ops) {
-        total_metas += static_cast<uint32_t>(te.num_inputs + te.num_outputs);
+        total_metas += static_cast<uint32_t>(te.num_inputs() + te.num_outputs());
     }
 
     // Header: "CRTR" + version + num_ops + num_metas = 16B.
@@ -349,9 +349,9 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         rec.shape_hash = te.shape_hash;
         rec.scope_hash = te.scope_hash;
         rec.callsite_hash = te.callsite_hash;
-        rec.num_inputs = te.num_inputs;
-        rec.num_outputs = te.num_outputs;
-        rec.num_scalars = te.num_scalar_args;
+        rec.num_inputs = te.num_inputs();
+        rec.num_outputs = te.num_outputs();
+        rec.num_scalars = te.num_scalar_args();
         rec.grad_enabled = te.grad_enabled ? 1 : 0;
         // Pack all op_flags back into one byte for on-disk format.
         uint8_t flags = 0;
@@ -360,17 +360,21 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         flags |= (static_cast<uint8_t>(te.training_phase) & 0x3) << crucible::op_flag::PHASE_SHIFT;
         if (te.torch_function) flags |= crucible::op_flag::TORCH_FUNCTION;
         rec.inference_mode = flags;
-        const uint16_t ns = te.num_scalar_args < 5 ? te.num_scalar_args : 5;
-        for (uint16_t s = 0; s < ns; s++)
-            rec.scalar_values[s] = te.scalar_args ? te.scalar_args[s] : 0;
+        // The record stores the first five scalars.  An absent array leaves
+        // the zeros of the record.
+        uint16_t stored = 0;
+        for (const int64_t value : te.scalar_args()) {
+            if (stored == 5) break;
+            rec.scalar_values[stored++] = value;
+        }
         w(&rec, sizeof(rec), 1);
     }
 
     // Meta records: TRACE_META_BYTES each (TensorMeta layout).
     for (const crucible::TraceEntry& te : region->ops) {
-        for (const auto& m : te.input_span())
+        for (const auto& m : te.input_metas())
             w(&m, sizeof(crucible::TensorMeta), 1);
-        for (const auto& m : te.output_span())
+        for (const auto& m : te.output_metas())
             w(&m, sizeof(crucible::TensorMeta), 1);
     }
 

@@ -34,8 +34,8 @@ constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foregrou
 // slot 256 B of a dummy pool.
 struct BenchRegion {
     ::fixy::HeapArray<TraceEntry> ops{};
-    SlotId* out_slots = nullptr;
-    SlotId* in_slots = nullptr;
+    ::fixy::HeapArray<SlotId> out_slots{};
+    ::fixy::HeapArray<SlotId> in_slots{};
     ::fixy::HeapArray<TensorSlot> slots{};
     MemoryPlan plan{};
     RegionNode region{};
@@ -43,22 +43,23 @@ struct BenchRegion {
 
     explicit BenchRegion(uint32_t n) : num_ops{n} {
         ops = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, TraceEntry{});
-        out_slots = static_cast<SlotId*>(std::calloc(n, sizeof(SlotId)));
-        in_slots = static_cast<SlotId*>(std::calloc(n, sizeof(SlotId)));
+        out_slots = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, SlotId{});
+        in_slots = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, SlotId{});
         slots = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, TensorSlot{});
-        CRUCIBLE_BENCH_CHECK(out_slots != nullptr && in_slots != nullptr);
 
         for (uint32_t i = 0; i < n; i++) {
-            out_slots[i] = SlotId{i};
-            in_slots[i] = SlotId{(i > 0) ? (i - 1) : (n - 1)};
+            const ::fixy::View<SlotId> out_slot = out_slots.view().window(i, 1).expect("i is below n");
+            const ::fixy::View<SlotId> in_slot = in_slots.view().window(i, 1).expect("i is below n");
+            ::fixy::fill(out_slot, SlotId{i});
+            ::fixy::fill(in_slot, SlotId{(i > 0) ? (i - 1) : (n - 1)});
 
             TraceEntry& op = *ops.get(i).expect("i is below n");
             op.schema_hash = SchemaHash{1000 + i};
             op.shape_hash = ShapeHash{2000 + i};
-            op.num_outputs = 1;
-            op.output_slot_ids = &out_slots[i];
-            op.num_inputs = 1;
-            op.input_slot_ids = &in_slots[i];
+            op.set_num_outputs(1);
+            op.set_output_slot_ids(out_slot);
+            op.set_num_inputs(1);
+            op.set_input_slot_ids(in_slot);
         }
 
         uint32_t i = 0;
@@ -87,11 +88,6 @@ struct BenchRegion {
         region.kind = TraceNodeKind::REGION;
         region.ops = ops.view();
         region.plan = &plan;
-    }
-
-    ~BenchRegion() {
-        std::free(out_slots);
-        std::free(in_slots);
     }
 
     BenchRegion(const BenchRegion&) = delete;

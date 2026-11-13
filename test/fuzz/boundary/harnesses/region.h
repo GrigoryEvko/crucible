@@ -38,17 +38,21 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
         }
     }
     for (const TraceEntry& op : region.ops) {
-        for (std::uint16_t j = 0; j < op.num_inputs; ++j)
-            claim_meta_in_range(harness, op.input_metas[j]);
-        for (std::uint16_t j = 0; j < op.num_outputs; ++j)
-            claim_meta_in_range(harness, op.output_metas[j]);
+        // The loader gives each op each array of its count.
+        CRUCIBLE_FUZZ_CLAIM(harness, op.input_metas().size() == op.num_inputs());
+        CRUCIBLE_FUZZ_CLAIM(harness, op.output_metas().size() == op.num_outputs());
+        for (const TensorMeta& meta : op.input_metas())
+            claim_meta_in_range(harness, meta);
+        for (const TensorMeta& meta : op.output_metas())
+            claim_meta_in_range(harness, meta);
     }
     CRUCIBLE_FUZZ_CLAIM(harness, region.content_hash == compute_content_hash(region.ops));
 }
 
 // A region the way the recorder builds one: two operations with one input
 // and one output each, and with a plan of two slots when with_plan is set.
-// The ops, the region and the slots of the plan are in dag_arena.
+// The ops, their arrays, the region and the slots of the plan are in
+// dag_arena.
 [[nodiscard]] inline RegionNode* build_seed_region(Arena& arena, ::fixy::BumpArena& dag_arena, bool with_plan) {
     const auto alloc = test_alloc();
     constexpr std::uint32_t kOps = 2;
@@ -56,22 +60,18 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
     for (std::uint32_t i = 0; i < kOps; ++i) {
         TraceEntry& op = *ops.get(i).expect("i is below kOps");
         op.schema_hash = SchemaHash{0xCAFE0000u + i};
-        op.num_inputs = 1;
-        op.num_outputs = 1;
-        op.input_metas = arena.alloc_array<TensorMeta>(alloc, 1);
-        op.input_metas[0] = {};
-        op.input_metas[0].ndim = 1;
-        op.input_metas[0].sizes[0] = tensor_dim(16);
-        op.input_metas[0].strides[0] = tensor_dim(1);
-        op.input_metas[0].dtype = ScalarType::Float;
-        op.output_metas = arena.alloc_array<TensorMeta>(alloc, 1);
-        op.output_metas[0] = op.input_metas[0];
-        op.input_trace_indices = arena.alloc_array<OpIndex>(alloc, 1);
-        op.input_trace_indices[0] = OpIndex{};
-        op.input_slot_ids = arena.alloc_array<SlotId>(alloc, 1);
-        op.input_slot_ids[0] = with_plan ? SlotId{0} : SlotId{};
-        op.output_slot_ids = arena.alloc_array<SlotId>(alloc, 1);
-        op.output_slot_ids[0] = SlotId{i};
+        op.set_num_inputs(1);
+        op.set_num_outputs(1);
+        TensorMeta meta{};
+        meta.ndim = 1;
+        meta.sizes[0] = tensor_dim(16);
+        meta.strides[0] = tensor_dim(1);
+        meta.dtype = ScalarType::Float;
+        op.set_input_metas(dag_arena.array(alloc, 1, meta));
+        op.set_output_metas(dag_arena.array(alloc, 1, meta));
+        op.set_input_trace_indices(dag_arena.array(alloc, 1, OpIndex{}));
+        op.set_input_slot_ids(dag_arena.array(alloc, 1, with_plan ? SlotId{0} : SlotId{}));
+        op.set_output_slot_ids(dag_arena.array(alloc, 1, SlotId{i}));
     }
     RegionNode* region = make_region(alloc, dag_arena, ops);
     if (with_plan) {

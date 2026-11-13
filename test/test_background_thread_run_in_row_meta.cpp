@@ -274,12 +274,13 @@ void test_built_graph_owns_its_metadata() {
     const crucible::TensorMeta* const log_begin = metalog->entries_buffer_.data();
     const crucible::TensorMeta* const log_end = log_begin + MetaLog::CAPACITY;
     for (uint32_t op = 0; op < OPS; ++op) {
-        const crucible::TensorMeta* const metas = graph->ops[op].output_metas;
-        assert(metas != nullptr);
+        // element_at ends the process when the op holds no output metadata.
+        const crucible::TensorMeta& first_meta = crucible::test::element_at(graph->ops[op].output_metas(), 0);
+        const crucible::TensorMeta* const metas = &first_meta;
         assert((before(metas, log_begin) || !before(metas, log_end))
                && "an op of the graph points into the buffer of the metadata log");
-        assert(crucible::raw_data_ptr(metas[0]) == crucible::raw_data_ptr(output_meta(op)));
-        assert(crucible::raw_tensor_dim(metas[0].sizes[0]) == 64);
+        assert(crucible::raw_data_ptr(first_meta) == crucible::raw_data_ptr(output_meta(op)));
+        assert(crucible::raw_tensor_dim(first_meta.sizes[0]) == 64);
     }
 
     // The region of the publish holds the same ops, and a release to the end
@@ -326,9 +327,8 @@ void test_build_and_release_pass_two_to_the_32() {
                                                              work.meta_starts, work.scope_hashes, work.callsite_hashes);
     auto [graph, parts] = std::move(built).expect("the work builds a graph");
     for (uint32_t op = 0; op < OPS; ++op) {
-        const crucible::TensorMeta* const metas = graph->ops[op].output_metas;
-        assert(metas != nullptr);
-        assert(crucible::raw_data_ptr(metas[0]) == crucible::raw_data_ptr(output_meta(op)));
+        const crucible::TensorMeta& first_meta = crucible::test::element_at(graph->ops[op].output_metas(), 0);
+        assert(crucible::raw_data_ptr(first_meta) == crucible::raw_data_ptr(output_meta(op)));
     }
 
     bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {

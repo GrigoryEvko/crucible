@@ -11,7 +11,6 @@
 // Exit zero means every malformed byte was rejected and the untouched
 // bytes still round-trip.
 
-#include <crucible/Arena.h>
 #include <crucible/Serialize.h>
 #include <foundation/effects/Effect.h>
 
@@ -25,10 +24,8 @@
 namespace {
 
 // Returns the number of bytes written, or zero if the region could not be
-// built.  The op and the region are in an arena of the call, and the arrays
-// of the op are in arena.
-[[nodiscard]] size_t build_and_serialize(::foundation::effects::Test bg, crucible::Arena& arena,
-                                         std::span<uint8_t> out_buf) {
+// built.  The op, its arrays and the region are in an arena of the call.
+[[nodiscard]] size_t build_and_serialize(::foundation::effects::Test bg, std::span<uint8_t> out_buf) {
     ::fixy::BumpArena dag_arena{1 << 16};
     const ::fixy::View<crucible::TraceEntry> ops =
         dag_arena.array<crucible::TraceEntry>(bg.alloc, 1, crucible::TraceEntry{});
@@ -38,26 +35,23 @@ namespace {
     op.shape_hash = crucible::ShapeHash{0x100};
     op.scope_hash = crucible::ScopeHash{0x200};
     op.callsite_hash = crucible::CallsiteHash{0x300};
-    op.num_inputs = 1;
-    op.num_outputs = 0;
-    op.num_scalar_args = 0;
+    op.set_num_inputs(1);
+    op.set_num_outputs(0);
+    op.set_num_scalar_args(0);
     op.grad_enabled = true;
 
-    auto* in_metas = arena.alloc_array<crucible::TensorMeta>(bg.alloc, 1);
-    std::uninitialized_value_construct_n(in_metas, 1);
-    in_metas[0].ndim = 1;
-    in_metas[0].sizes[0] = crucible::tensor_dim(8);
-    in_metas[0].strides[0] = crucible::tensor_dim(1);
-    in_metas[0].dtype = crucible::ScalarType::Float;
-    in_metas[0].device_type = crucible::DeviceType::CPU;
-    in_metas[0].device_idx = -1;
-    in_metas[0].layout = crucible::Layout::Strided;
-    op.input_metas = in_metas;
+    crucible::TensorMeta in_meta{};
+    in_meta.ndim = 1;
+    in_meta.sizes[0] = crucible::tensor_dim(8);
+    in_meta.strides[0] = crucible::tensor_dim(1);
+    in_meta.dtype = crucible::ScalarType::Float;
+    in_meta.device_type = crucible::DeviceType::CPU;
+    in_meta.device_idx = -1;
+    in_meta.layout = crucible::Layout::Strided;
+    op.set_input_metas(crucible::test::run_of(bg.alloc, dag_arena, in_meta));
 
-    op.input_trace_indices = arena.alloc_array<crucible::OpIndex>(bg.alloc, 1);
-    op.input_trace_indices[0] = crucible::OpIndex{0};
-    op.input_slot_ids = arena.alloc_array<crucible::SlotId>(bg.alloc, 1);
-    op.input_slot_ids[0] = crucible::SlotId{};
+    op.set_input_trace_indices(crucible::test::run_of(bg.alloc, dag_arena, crucible::OpIndex{0}));
+    op.set_input_slot_ids(crucible::test::run_of(bg.alloc, dag_arena, crucible::SlotId{}));
 
     auto* region = crucible::make_region(bg.alloc, dag_arena, ops);
     if (region == nullptr) return 0;
@@ -96,10 +90,9 @@ constexpr size_t kMetaLayout = kMetaDevice + 1 + 1;  // +device_idx, layout byte
 
 [[gnu::cold]] int main() {
     auto bg = ::foundation::effects::testing::test();
-    crucible::Arena arena(1 << 16);
 
     uint8_t buf[65536];
-    const size_t n = build_and_serialize(bg, arena, std::span<uint8_t>{buf, sizeof(buf)});
+    const size_t n = build_and_serialize(bg, std::span<uint8_t>{buf, sizeof(buf)});
     if (n == 0) {
         std::fprintf(stderr, "serialize failed\n");
         return 1;

@@ -78,13 +78,13 @@ MemoryPlan make_plan(::fixy::View<TensorSlot> slots) {
 
 // Two operations with the same hashes in each region, so the first one is
 // the shared prefix of a switch at position 1.
-void make_ops(::fixy::View<TraceEntry> ops, SlotId* outputs) {
+void make_ops(::fixy::View<TraceEntry> ops, ::fixy::View<SlotId> outputs) {
     for (std::uint32_t index = 0; index < 2; index++) {
         TraceEntry& op = *ops.get(index).expect("a test region holds two ops");
         op.schema_hash = SchemaHash{100 + index};
         op.shape_hash = ShapeHash{200 + index};
-        op.num_outputs = 1;
-        op.output_slot_ids = &outputs[index];
+        op.set_num_outputs(1);
+        op.set_output_slot_ids(outputs.window(index, 1).expect("a test region has one output for each op"));
     }
 }
 
@@ -104,16 +104,16 @@ void init_region(RegionNode* region, ::fixy::View<TraceEntry> ops, MemoryPlan* p
 // whose plan has new_count slots.  The first operation of the new region
 // writes slot new_slot.  Returns the result of the switch.
 bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
-    SlotId old_outputs[2] = {SlotId{0}, SlotId{1}};
+    ::foundation::core::FixedArray<SlotId, 2> old_outputs{SlotId{0}, SlotId{1}};
     ::foundation::core::FixedArray<TraceEntry, 2> old_ops{};
-    make_ops(old_ops.view(), old_outputs);
+    make_ops(old_ops.view(), old_outputs.view());
     MemoryPlan old_plan = make_plan(old_slots.view());
     RegionNode old_region{};
     init_region(&old_region, old_ops.view(), &old_plan);
 
-    SlotId new_outputs[2] = {SlotId{new_slot}, SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 2> new_outputs{SlotId{new_slot}, SlotId{0}};
     ::foundation::core::FixedArray<TraceEntry, 2> new_ops{};
-    make_ops(new_ops.view(), new_outputs);
+    make_ops(new_ops.view(), new_outputs.view());
     MemoryPlan new_plan =
         make_plan(new_slots.view().window(0, new_count).expect("a test plan holds at most kWideSlots slots"));
     RegionNode new_region{};

@@ -300,21 +300,20 @@ private:
             const auto& old_te = old_region.op_at(i);
             const auto& new_te = alt.op_at(i);
 
-            if (!old_te.output_slot_ids || !new_te.output_slot_ids) continue;
+            // An op with no output slot ids has nothing to migrate.
+            const ::fixy::View<const SlotId> old_ids = old_te.output_slot_ids();
+            const ::fixy::View<const SlotId> new_ids = new_te.output_slot_ids();
+            if (old_ids.size() == 0 || new_ids.size() == 0) continue;
 
-            // Armed in a release build. The loop below runs to old_te's
-            // output count and indexes new_te's array with the same j, so a
-            // new entry with fewer outputs is read past its end. The slot id
-            // that comes back is arbitrary, it selects an arbitrary entry of
-            // new_plan.slots, and the offset there becomes the destination
-            // of the memcpy at the bottom of this function. The prefix ops
-            // carry identical schema and shape hashes, which is exactly why
-            // unequal output counts mean the region pair is corrupt.
-            CRUCIBLE_FATAL_INVARIANT(old_te.num_outputs == new_te.num_outputs);
+            // Armed in a release build. The loop below pairs the output slot
+            // ids of the two ops. The prefix ops carry identical schema and
+            // shape hashes, which is exactly why unequal output counts mean
+            // the region pair is corrupt.
+            CRUCIBLE_FATAL_INVARIANT(old_te.num_outputs() == new_te.num_outputs());
 
-            for (uint16_t j = 0; j < old_te.num_outputs; j++) {
-                const SlotId old_sid = old_te.output_slot_ids[j];
-                const SlotId new_sid = new_te.output_slot_ids[j];
+            for (auto [old_id, new_id] : ::fixy::zip(old_ids, new_ids).expect("the output counts are equal")) {
+                const SlotId old_sid = *old_id;
+                const SlotId new_sid = *new_id;
 
                 if (!old_sid.is_valid() || !new_sid.is_valid()) continue;
 

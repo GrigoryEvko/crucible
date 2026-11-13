@@ -58,10 +58,11 @@
 // path's own inputs: it starts from a TraceEntry array it builds itself,
 // so a recorder that captured the wrong metadata would still pass.
 
-#include <crucible/Arena.h>
 #include <crucible/BackgroundThread.h>
 #include <crucible/MerkleDag.h>
 #include <foundation/effects/Effect.h>
+
+#include "test_assert.h"
 
 #include <bit>
 #include <cstdint>
@@ -71,7 +72,6 @@
 
 namespace {
 
-using crucible::Arena;
 using crucible::CallsiteHash;
 using crucible::DeviceType;
 using crucible::Layout;
@@ -105,7 +105,7 @@ constexpr uint32_t kNumSlots = 12;
 // `data_ptr_base` is the only thing that differs between the two builds.
 // It stands for the run-to-run variation the allocator produces, and the
 // hashes must not see it.
-void build_ops(::foundation::effects::Test ctx, Arena& arena, ::fixy::View<TraceEntry> ops,
+void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena& arena, ::fixy::View<TraceEntry> ops,
                uint64_t data_ptr_base) noexcept {
     for (uint32_t op_index = 0; op_index < kNumOps; op_index++) {
         TraceEntry& entry = *ops.get(op_index).expect("op_index is below kNumOps");
@@ -116,14 +116,14 @@ void build_ops(::foundation::effects::Test ctx, Arena& arena, ::fixy::View<Trace
         entry.shape_hash = ShapeHash{mix(seed)};
         entry.scope_hash = ScopeHash{mix(seed ^ 0x11)};
         entry.callsite_hash = CallsiteHash{mix(seed ^ 0x22)};
-        entry.num_inputs = static_cast<uint16_t>(1 + (seed % 3));
-        entry.num_outputs = 1;
-        entry.num_scalar_args = static_cast<uint16_t>(seed % 3);
+        entry.set_num_inputs(static_cast<uint16_t>(1 + (seed % 3)));
+        entry.set_num_outputs(1);
+        entry.set_num_scalar_args(static_cast<uint16_t>(seed % 3));
         entry.grad_enabled = ((seed & 0x100) != 0);
 
-        auto* metas = arena.alloc_array<TensorMeta>(ctx.alloc, entry.num_inputs);
-        for (uint16_t input_index = 0; input_index < entry.num_inputs; input_index++) {
-            TensorMeta& meta = metas[input_index];
+        const ::fixy::View<TensorMeta> metas = arena.array<TensorMeta>(ctx.alloc, entry.num_inputs(), TensorMeta{});
+        for (uint16_t input_index = 0; input_index < entry.num_inputs(); input_index++) {
+            TensorMeta& meta = crucible::test::element_at(metas, input_index);
             meta = TensorMeta{};
             meta.ndim = 4;
             meta.dtype = ScalarType::Float;
@@ -138,14 +138,15 @@ void build_ops(::foundation::effects::Test ctx, Arena& arena, ::fixy::View<Trace
             const std::uintptr_t address = data_ptr_base + (uint64_t{op_index} * 64 + input_index) * 4096;
             meta.data_ptr = crucible::external_data_ptr(std::bit_cast<void*>(address));
         }
-        entry.input_metas = metas;
+        entry.set_input_metas(metas);
 
-        if (entry.num_scalar_args > 0) {
-            auto* scalars = arena.alloc_array<int64_t>(ctx.alloc, entry.num_scalar_args);
-            for (uint16_t scalar_index = 0; scalar_index < entry.num_scalar_args; scalar_index++) {
-                scalars[scalar_index] = static_cast<int64_t>(mix(seed ^ (uint64_t{scalar_index} << 32)) % 4096);
+        if (entry.num_scalar_args() > 0) {
+            const ::fixy::View<int64_t> scalars = arena.array<int64_t>(ctx.alloc, entry.num_scalar_args(), int64_t{0});
+            for (uint16_t scalar_index = 0; scalar_index < entry.num_scalar_args(); scalar_index++) {
+                crucible::test::element_at(scalars, scalar_index) =
+                    static_cast<int64_t>(mix(seed ^ (uint64_t{scalar_index} << 32)) % 4096);
             }
-            entry.scalar_args = scalars;
+            entry.set_scalar_args(scalars);
         }
     }
 }
@@ -189,7 +190,7 @@ struct Built {
 // and main() checks that the two values actually came out different so this
 // cannot silently decay back into one pin.
 [[nodiscard]] Built build_once(::foundation::effects::Test ctx, uint64_t data_ptr_base) noexcept {
-    Arena arena(1 << 20);
+    ::fixy::BumpArena arena{1 << 20};
     ::fixy::BumpArena dag_arena{1 << 20};
     crucible::BackgroundThread bt;
 

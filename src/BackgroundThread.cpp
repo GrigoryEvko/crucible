@@ -990,16 +990,6 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
         total_metas = static_cast<uint32_t>(run_length);
     }
 
-    // One auxiliary block holds scalars, trace indices and slot ids.
-    // The section order keeps every section naturally aligned:
-    //   [int64_t scalars]  align 8
-    //   [OpIndex indices]  align 4
-    //   [SlotId in_slots]  align 4
-    //   [SlotId out_slots] align 4
-    size_t aux_bytes =
-        static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
-        + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);
-
     ::foundation::AlignedBuffer<TraceEntry> op_buffer =
         ::foundation::AlignedBuffer<TraceEntry>::allocate_value_initialized(count);
     auto* ops = op_buffer.data();
@@ -1011,9 +1001,23 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
         meta_log.get()->copy_run(first_meta.raw(), meta_buffer.view());
     }
 
-    ::foundation::AlignedBuffer<std::byte, alignof(int64_t)> side_buffer =
-        ::foundation::AlignedBuffer<std::byte, alignof(int64_t)>::allocate(aux_bytes);
-    char* aux_cursor = static_cast<char*>(static_cast<void*>(side_buffer.data()));
+    // The other arrays of the ops: the scalars, the producer of each input,
+    // and the slot ids of the inputs and then the outputs of each op.  Each
+    // op takes its windows in order, so a cursor for each buffer gives the
+    // start of the next window.
+    ::foundation::AlignedBuffer<int64_t> scalar_buffer =
+        ::foundation::AlignedBuffer<int64_t>::allocate_value_initialized(total_scalars);
+    ::foundation::AlignedBuffer<OpIndex> producer_buffer =
+        ::foundation::AlignedBuffer<OpIndex>::allocate_value_initialized(total_inputs);
+    ::foundation::AlignedBuffer<SlotId> slot_buffer =
+        ::foundation::AlignedBuffer<SlotId>::allocate_value_initialized(total_inputs + total_outputs);
+    const ::fixy::View<TensorMeta> meta_run = meta_buffer.view();
+    const ::fixy::View<int64_t> scalar_run = scalar_buffer.view();
+    const ::fixy::View<OpIndex> producer_run = producer_buffer.view();
+    const ::fixy::View<SlotId> slot_run = slot_buffer.view();
+    size_t scalar_cursor = 0;
+    size_t producer_cursor = 0;
+    size_t slot_cursor = 0;
 
     map_gen_++;
     if (map_gen_ == 0) [[unlikely]] {
@@ -1081,8 +1085,8 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
         te.shape_hash = re.shape_hash;
         te.scope_hash = scope_data[i];
         te.callsite_hash = callsite_data[i];
-        te.num_inputs = re.num_inputs;
-        te.num_outputs = re.num_outputs;
+        te.set_num_inputs(re.num_inputs);
+        te.set_num_outputs(re.num_outputs);
         te.grad_enabled = (re.op_flags & op_flag::GRAD_ENABLED) != 0;
         te.kernel_id = classify_kernel(re.schema_hash);
 
@@ -1101,41 +1105,45 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
         // compile out.
         contract_assert(re.num_scalar_args <= 5);
         uint16_t n_scalars = ::fixy::min(re.num_scalar_args, uint16_t{5});
-        te.num_scalar_args = n_scalars;
+        te.set_num_scalar_args(n_scalars);
 
+        // The windows of this op.  An op with no metadata keeps the empty
+        // Views, and its loops below run no step.
+        ::fixy::View<TensorMeta> input_metas{};
+        ::fixy::View<TensorMeta> output_metas{};
+        ::fixy::View<OpIndex> producers{};
+        ::fixy::View<SlotId> input_slot_ids{};
+        ::fixy::View<SlotId> output_slot_ids{};
         if (ms.is_valid()) {
             uint16_t n_in = re.num_inputs;
             uint16_t n_out = re.num_outputs;
 
             const uint64_t meta_offset = ms.raw() - first_meta.raw();
-            te.input_metas = meta_base + meta_offset;
-            te.output_metas = meta_base + meta_offset + n_in;
+            input_metas = meta_run.window(meta_offset, n_in).expect("the copied run holds the metadata of each op");
+            output_metas =
+                meta_run.window(meta_offset + n_in, n_out).expect("the copied run holds the metadata of each op");
 
-            // Each section of the auxiliary block begins its lifetime as
-            // a typed array here, so the later bulk memcpy writes into
-            // live objects rather than raw storage.
-            te.scalar_args = (n_scalars > 0)
-                               ? ::foundation::lifetime::start_as_array<int64_t>(aux_cursor, n_scalars).data()
-                               : nullptr;
-            aux_cursor += n_scalars * sizeof(int64_t);
-            te.input_trace_indices = ::foundation::lifetime::start_as_array<OpIndex>(aux_cursor, n_in).data();
-            aux_cursor += n_in * sizeof(OpIndex);
-            te.input_slot_ids = ::foundation::lifetime::start_as_array<SlotId>(aux_cursor, n_in).data();
-            aux_cursor += n_in * sizeof(SlotId);
-            te.output_slot_ids = ::foundation::lifetime::start_as_array<SlotId>(aux_cursor, n_out).data();
-            aux_cursor += n_out * sizeof(SlotId);
+            const ::fixy::View<int64_t> scalars =
+                scalar_run.window(scalar_cursor, n_scalars).expect("the scan counted the scalars of each op");
+            scalar_cursor += n_scalars;
+            ::fixy::copy(scalars, re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
+                .expect("the two runs hold the scalars of the op");
+            producers = producer_run.window(producer_cursor, n_in).expect("the scan counted the inputs of each op");
+            producer_cursor += n_in;
+            input_slot_ids = slot_run.window(slot_cursor, n_in).expect("the scan counted the inputs of each op");
+            slot_cursor += n_in;
+            output_slot_ids = slot_run.window(slot_cursor, n_out).expect("the scan counted the outputs of each op");
+            slot_cursor += n_out;
 
-            if (n_scalars > 0) std::memcpy(te.scalar_args, re.scalar_values.data(), n_scalars * sizeof(int64_t));
-
+            te.set_input_metas(input_metas);
+            te.set_output_metas(output_metas);
+            te.set_scalar_args(scalars);
+            te.set_input_trace_indices(producers);
+            te.set_input_slot_ids(input_slot_ids);
+            te.set_output_slot_ids(output_slot_ids);
         } else {
-            te.input_metas = nullptr;
-            te.output_metas = nullptr;
-            te.scalar_args = nullptr;
-            te.input_trace_indices = nullptr;
-            te.input_slot_ids = nullptr;
-            te.output_slot_ids = nullptr;
-            te.num_inputs = 0;
-            te.num_outputs = 0;
+            te.set_num_inputs(0);
+            te.set_num_outputs(0);
         }
 
         // Both branches above fully populate `te`, so one fold covers
@@ -1164,12 +1172,15 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
             }
         }
 
-        for (uint16_t j = 0; j < te.num_inputs; j++) {
-            void* input_ptr = raw_data_ptr(te.input_metas[j]);
+        for (uint16_t j = 0; j < te.num_inputs(); j++) {
+            const TensorMeta& input_meta = *input_metas.get(j).expect("the window holds each input of the op");
+            OpIndex& producer = *producers.get(j).expect("the window holds each input of the op");
+            SlotId& input_slot = *input_slot_ids.get(j).expect("the window holds each input of the op");
+            void* input_ptr = raw_data_ptr(input_meta);
             auto lookup = ptr_map_lookup(local_map, local_gen, local_mask, input_ptr);
-            te.input_trace_indices[j] = lookup.op_index;
+            producer = lookup.op_index;
             if (lookup.op_index.is_valid()) {
-                te.input_slot_ids[j] = lookup.slot_id;
+                input_slot = lookup.slot_id;
                 // Armed in a release build too. The very next statement
                 // writes local_edges[num_edges], so a cap that the edge
                 // count has already reached runs off an arena array and
@@ -1194,26 +1205,28 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
                 // First sight of an external tensor, such as a parameter
                 // or a data-loader output.
                 SlotId new_slot{next_slot_raw++};
-                te.input_slot_ids[j] = new_slot;
+                input_slot = new_slot;
                 auto& slot_info = local_slots[new_slot.raw()];
                 slot_info.birth_op = OpIndex{0};
                 slot_info.death_op = OpIndex{i};
                 slot_info.is_external = true;
-                slot_info.nbytes = compute_storage_nbytes_det(external_tensor_meta(te.input_metas[j])).peek().value();
-                slot_info.dtype = te.input_metas[j].dtype;
-                slot_info.device_type = te.input_metas[j].device_type;
-                slot_info.device_idx = te.input_metas[j].device_idx;
-                slot_info.layout = te.input_metas[j].layout;
+                slot_info.nbytes = compute_storage_nbytes_det(external_tensor_meta(input_meta)).peek().value();
+                slot_info.dtype = input_meta.dtype;
+                slot_info.device_type = input_meta.device_type;
+                slot_info.device_idx = input_meta.device_idx;
+                slot_info.layout = input_meta.layout;
                 (void)ptr_map_insert(local_map, local_gen, local_mask, input_ptr, OpIndex{}, 0, new_slot);
             } else {
-                te.input_slot_ids[j] = SlotId{};
+                input_slot = SlotId{};
             }
         }
 
-        for (uint16_t j = 0; j < te.num_outputs; j++) {
-            void* output_ptr = raw_data_ptr(te.output_metas[j]);
+        for (uint16_t j = 0; j < te.num_outputs(); j++) {
+            const TensorMeta& output_meta = *output_metas.get(j).expect("the window holds each output of the op");
+            SlotId& output_slot = *output_slot_ids.get(j).expect("the window holds each output of the op");
+            void* output_ptr = raw_data_ptr(output_meta);
             if (!output_ptr) {
-                te.output_slot_ids[j] = SlotId{};
+                output_slot = SlotId{};
                 continue;
             }
 
@@ -1221,12 +1234,12 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
                                          static_cast<uint8_t>(j), SlotId{0});
 
             if (result.was_alias) {
-                te.output_slot_ids[j] = result.old_slot;
+                output_slot = result.old_slot;
                 if (result.old_slot.raw() < slot_cap) {
                     auto& slot_info = local_slots[result.old_slot.raw()];
                     slot_info.death_op = std::max(slot_info.death_op, OpIndex{i});
                     const uint64_t output_nbytes =
-                        compute_storage_nbytes_det(external_tensor_meta(te.output_metas[j])).peek().value();
+                        compute_storage_nbytes_det(external_tensor_meta(output_meta)).peek().value();
                     slot_info.nbytes = ::fixy::max(slot_info.nbytes, output_nbytes);
                 }
                 if (result.old_op.is_valid()) {
@@ -1247,15 +1260,15 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
                 slot_info.birth_op = OpIndex{i};
                 slot_info.death_op = OpIndex{i};
                 slot_info.is_external = false;
-                slot_info.nbytes = compute_storage_nbytes_det(external_tensor_meta(te.output_metas[j])).peek().value();
-                slot_info.dtype = te.output_metas[j].dtype;
-                slot_info.device_type = te.output_metas[j].device_type;
-                slot_info.device_idx = te.output_metas[j].device_idx;
-                slot_info.layout = te.output_metas[j].layout;
-                te.output_slot_ids[j] = new_slot;
+                slot_info.nbytes = compute_storage_nbytes_det(external_tensor_meta(output_meta)).peek().value();
+                slot_info.dtype = output_meta.dtype;
+                slot_info.device_type = output_meta.device_type;
+                slot_info.device_idx = output_meta.device_idx;
+                slot_info.layout = output_meta.layout;
+                output_slot = new_slot;
                 if (result.slot) result.slot->slot_id = new_slot;
             } else {
-                te.output_slot_ids[j] = SlotId{};
+                output_slot = SlotId{};
             }
         }
     }
@@ -1264,15 +1277,21 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
     ::foundation::AlignedBuffer<TensorSlot> slots =
         ::foundation::AlignedBuffer<TensorSlot>::allocate_value_initialized(num_slots);
     if (num_slots > 0) {
-        static_assert(sizeof(SlotInfo) == 24);
-        static_assert(offsetof(TensorSlot, nbytes) == 8);
-        static_assert(offsetof(SlotInfo, nbytes) == 0);
         for (uint32_t slot_idx = 0; slot_idx < num_slots; slot_idx++) {
-            // The offset is assigned later by compute_memory_plan.
-            slots[slot_idx].offset_bytes = 0;
-            std::memcpy(&slots[slot_idx].nbytes, &local_slots[slot_idx], sizeof(SlotInfo));
-            slots[slot_idx].slot_id = SlotId{slot_idx};
-            std::memset(slots[slot_idx].pad2, 0, sizeof(slots[slot_idx].pad2));
+            // compute_memory_plan sets the offset later.
+            SlotInfo const& info = local_slots[slot_idx];
+            slots[slot_idx] = TensorSlot{.offset_bytes = 0,
+                                         .nbytes = info.nbytes,
+                                         .birth_op = info.birth_op,
+                                         .death_op = info.death_op,
+                                         .dtype = info.dtype,
+                                         .device_type = info.device_type,
+                                         .device_idx = info.device_idx,
+                                         .layout = info.layout,
+                                         .is_external = info.is_external,
+                                         .pad = {},
+                                         .slot_id = SlotId{slot_idx},
+                                         .pad2 = {}};
         }
     }
 
@@ -1287,7 +1306,9 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
     return BuiltTrace{.graph = ::fixy::WeakRef<TraceGraph>{*graph},
                       .region = BuiltRegion{.ops = std::move(op_buffer),
                                             .metas = std::move(meta_buffer),
-                                            .side_arrays = std::move(side_buffer),
+                                            .scalars = std::move(scalar_buffer),
+                                            .producers = std::move(producer_buffer),
+                                            .slot_ids = std::move(slot_buffer),
                                             .slots = std::move(slots),
                                             .content_hash = graph->content_hash}};
 }

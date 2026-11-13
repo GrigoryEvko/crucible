@@ -126,10 +126,10 @@ struct ReplayEngine {
 
         current_ = cursor_;
 
-        // The slot identifiers live on this entry's second cache line, and the
-        // caller asks for them almost immediately. The casts are byte
-        // arithmetic for the builtin's address. No array of characters begins
-        // life here.
+        // The pointers of the slot ids and their counts end on the line after
+        // the hashes of this entry, and the caller asks for them almost
+        // immediately. The casts are byte arithmetic for the builtin's
+        // address. No array of characters begins life here.
         __builtin_prefetch(static_cast<const char*>(static_cast<const void*>(cursor_)) + 64, 0, 3);
 
         ++cursor_;
@@ -147,18 +147,18 @@ struct ReplayEngine {
     }
 
     // The pointer for one of the last matched operation's outputs.  It points
-    // into the pool, and the engine does not own the pool.
+    // into the pool, and the engine does not own the pool.  An op with no
+    // array of slot ids gives the empty View, so the bound refuses each index
+    // of it.  The window folds into the bound, so the read has no second
+    // check.  The member is read into a local, so no contract reads a member
+    // through this.
     [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const {
-        CRUCIBLE_PRE(current_ != nullptr);
-        CRUCIBLE_PRE(current_->output_slot_ids != nullptr);
-        // The count guard is not redundant with the range check: at a count of
-        // zero the upper bound below underflows to the largest value and the
-        // range admits everything. No index into a zero-output operation
-        // exists, so this catches a later change that opens the path.
-        CRUCIBLE_PRE(current_->num_outputs > 0u);
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint16_t>(
-            j, 0u, static_cast<std::uint16_t>(current_->num_outputs - 1u)));
-        SlotId const sid = current_->output_slot_ids[j];
+        const TraceEntry* const matched = current_;
+        CRUCIBLE_PRE(matched != nullptr);
+        ::fixy::View<const SlotId> const slot_ids = matched->output_slot_ids();
+        CRUCIBLE_PRE(j < slot_ids.size());
+        SlotId const sid =
+            slot_ids.window<1>(j).expect("the precondition bounds the output index").at(::fixy::index<0>());
         void* const result = sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
         // Dropping the validity test would index the table with the sentinel
         // and return either a stale slot or a read past the end of the table.
@@ -168,12 +168,12 @@ struct ReplayEngine {
 
     // The same for one of the inputs.
     [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const {
-        CRUCIBLE_PRE(current_ != nullptr);
-        CRUCIBLE_PRE(current_->input_slot_ids != nullptr);
-        CRUCIBLE_PRE(current_->num_inputs > 0u);
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint16_t>(
-            j, 0u, static_cast<std::uint16_t>(current_->num_inputs - 1u)));
-        SlotId const sid = current_->input_slot_ids[j];
+        const TraceEntry* const matched = current_;
+        CRUCIBLE_PRE(matched != nullptr);
+        ::fixy::View<const SlotId> const slot_ids = matched->input_slot_ids();
+        CRUCIBLE_PRE(j < slot_ids.size());
+        SlotId const sid =
+            slot_ids.window<1>(j).expect("the precondition bounds the input index").at(::fixy::index<0>());
         void* const result = sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
         CRUCIBLE_POST(result, result == nullptr || sid.is_valid());
         return result;

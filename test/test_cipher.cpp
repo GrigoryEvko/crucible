@@ -1,4 +1,3 @@
-#include <crucible/Arena.h>
 #include <crucible/Cipher.h>
 #include <crucible/MerkleDag.h>
 
@@ -39,10 +38,9 @@ static auto g_test = ::foundation::effects::testing::test();
 }
 
 // The salt goes into the schema hashes, so two salts give two regions with
-// two content hashes.  The ops and the region are in dag_arena, and the
-// arrays of each op are in arena.
-static crucible::RegionNode* make_test_region(crucible::Arena& arena, ::fixy::BumpArena& dag_arena,
-                                              std::uint64_t salt = 0) {
+// two content hashes.  The ops, their arrays and the region are in
+// dag_arena.
+static crucible::RegionNode* make_test_region(::fixy::BumpArena& dag_arena, std::uint64_t salt = 0) {
     constexpr uint32_t NUM_OPS = 2;
     const ::fixy::View<crucible::TraceEntry> ops =
         dag_arena.array<crucible::TraceEntry>(g_test.alloc, NUM_OPS, crucible::TraceEntry{});
@@ -50,27 +48,19 @@ static crucible::RegionNode* make_test_region(crucible::Arena& arena, ::fixy::Bu
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         crucible::TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
         op.schema_hash = crucible::SchemaHash{0xCAFE0000 + i + (salt << 8)};
-        op.num_inputs = 1;
-        op.num_outputs = 1;
+        op.set_num_inputs(1);
+        op.set_num_outputs(1);
 
-        op.input_metas = arena.alloc_array<crucible::TensorMeta>(g_test.alloc, 1);
-        op.input_metas[0] = {};
-        op.input_metas[0].ndim = 1;
-        op.input_metas[0].sizes[0] = ::crucible::tensor_dim(16);
-        op.input_metas[0].strides[0] = ::crucible::tensor_dim(1);
-        op.input_metas[0].dtype = crucible::ScalarType::Float;
-
-        op.output_metas = arena.alloc_array<crucible::TensorMeta>(g_test.alloc, 1);
-        op.output_metas[0] = op.input_metas[0];
-
-        op.input_trace_indices = arena.alloc_array<crucible::OpIndex>(g_test.alloc, 1);
-        op.input_trace_indices[0] = crucible::OpIndex{};
-
-        op.input_slot_ids = arena.alloc_array<crucible::SlotId>(g_test.alloc, 1);
-        op.input_slot_ids[0] = crucible::SlotId{};
-
-        op.output_slot_ids = arena.alloc_array<crucible::SlotId>(g_test.alloc, 1);
-        op.output_slot_ids[0] = crucible::SlotId{i};
+        crucible::TensorMeta meta{};
+        meta.ndim = 1;
+        meta.sizes[0] = ::crucible::tensor_dim(16);
+        meta.strides[0] = ::crucible::tensor_dim(1);
+        meta.dtype = crucible::ScalarType::Float;
+        op.set_input_metas(crucible::test::run_of(g_test.alloc, dag_arena, meta));
+        op.set_output_metas(crucible::test::run_of(g_test.alloc, dag_arena, meta));
+        op.set_input_trace_indices(crucible::test::run_of(g_test.alloc, dag_arena, crucible::OpIndex{}));
+        op.set_input_slot_ids(crucible::test::run_of(g_test.alloc, dag_arena, crucible::SlotId{}));
+        op.set_output_slot_ids(crucible::test::run_of(g_test.alloc, dag_arena, crucible::SlotId{i}));
     }
 
     auto* region = crucible::make_region(g_test.alloc, dag_arena, ops);
@@ -152,7 +142,6 @@ int main() {
     char* dir = mkdtemp(tmpdir);
     assert(dir != nullptr && "mkdtemp failed");
 
-    crucible::Arena arena(1 << 16);
     ::fixy::BumpArena dag_arena{1 << 16};
 
     {
@@ -168,7 +157,7 @@ int main() {
         assert(std::filesystem::is_directory(std::string(dir) + "/objects"));
     }
 
-    auto* region = make_test_region(arena, dag_arena);
+    auto* region = make_test_region(dag_arena);
     const crucible::ContentHash expected_hash = region->content_hash;
     assert(static_cast<bool>(expected_hash));
 
@@ -269,9 +258,8 @@ int main() {
         char* dir_ca = mkdtemp(tmpl_ca);
         assert(dir_ca != nullptr);
 
-        crucible::Arena ca_arena(1 << 16);
         ::fixy::BumpArena ca_dag_arena{1 << 16};
-        auto* ca_region = make_test_region(ca_arena, ca_dag_arena);
+        auto* ca_region = make_test_region(ca_dag_arena);
         const auto ca_payload = crucible::Cipher::content_addressed(ca_region);
 
         auto cipher = open_cipher(dir_ca);
@@ -319,9 +307,8 @@ int main() {
         assert(sender_dir != nullptr);
         assert(receiver_dir != nullptr);
 
-        crucible::Arena ca_arena(1 << 16);
         ::fixy::BumpArena ca_dag_arena{1 << 16};
-        auto* ca_region = make_test_region(ca_arena, ca_dag_arena);
+        auto* ca_region = make_test_region(ca_dag_arena);
         const auto ca_payload = crucible::Cipher::content_addressed(ca_region);
 
         auto sender = open_cipher(sender_dir);
@@ -359,7 +346,7 @@ int main() {
         // it as proof and repeats no check of its own.
         auto ov = cipher.mint_open_view(store_ctx());
         const auto hash =
-            cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(make_test_region(arena, dag_arena)));
+            cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(make_test_region(dag_arena)));
         assert(static_cast<bool>(hash));
         commit_head(cipher, ov, hash, 100);
         assert(cipher.head() == hash);
@@ -446,7 +433,6 @@ int main() {
         char tmpl_cache[] = "/tmp/crucible_cipher_cache_XXXXXX";
         char* dir_cache = mkdtemp(tmpl_cache);
         assert(dir_cache != nullptr);
-        crucible::Arena cache_arena(1 << 20);
         ::fixy::BumpArena cache_dag_arena{1 << 20};
         auto cipher = open_cipher(dir_cache);
         auto ov = cipher.mint_open_view(store_ctx());
@@ -458,7 +444,7 @@ int main() {
                 assert(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.front(), read_arena)
                            .cache_hit());
             }
-            const auto* distinct_region = make_test_region(cache_arena, cache_dag_arena, i + 1);
+            const auto* distinct_region = make_test_region(cache_dag_arena, i + 1);
             hashes[i] = cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(distinct_region));
             assert(static_cast<bool>(hashes[i]));
         }

@@ -482,14 +482,18 @@ public:
         CRUCIBLE_POST(0, input_slots_[node_id.raw()] != nullptr);
     }
 
-    void set_output_slots(::foundation::effects::Alloc a, NodeId node_id, std::span<const SlotId> slots) {
+    // Copies the slots into the arena of the graph.  Complexity: O(slots).
+    void set_output_slots(::foundation::effects::Alloc a, NodeId node_id, ::fixy::View<const SlotId> slots) {
         CRUCIBLE_PRE(node_id.raw() < num_nodes_.get());
-        if (slots.empty()) {
+        if (slots.size() == 0) {
             output_slots_[node_id.raw()] = nullptr;
             return;
         }
         output_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(a, slots.size());
-        std::memcpy(output_slots_[node_id.raw()], slots.data(), slots.size_bytes());
+        std::size_t position = 0;
+        for (const SlotId slot : slots) {
+            output_slots_[node_id.raw()][position++] = slot;
+        }
 
         CRUCIBLE_POST(0, output_slots_[node_id.raw()] != nullptr);
     }

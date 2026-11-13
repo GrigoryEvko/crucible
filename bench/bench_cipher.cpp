@@ -18,7 +18,6 @@
 #include <span>
 #include <vector>
 
-#include <crucible/Arena.h>
 #include <crucible/Cipher.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
@@ -37,31 +36,25 @@ using namespace crucible;
 static const auto BG = ::foundation::effects::testing::bg();
 static constexpr auto A = BG.alloc;
 
-// The ops and the region are in dag_arena, and the arrays of each op are in
-// arena.
-static RegionNode* synth_region(Arena& arena, ::fixy::BumpArena& dag_arena, uint32_t num_ops, uint64_t salt) {
+// The ops, their arrays and the region are in dag_arena.
+static RegionNode* synth_region(::fixy::BumpArena& dag_arena, uint32_t num_ops, uint64_t salt) {
+    TensorMeta meta{};
+    meta.ndim = 1;
+    meta.sizes[0] = tensor_dim(64);
+    meta.strides[0] = tensor_dim(1);
+    meta.dtype = ScalarType::Float;
     const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(A, num_ops, TraceEntry{});
     for (uint32_t i = 0; i < num_ops; i++) {
         auto& te = *ops.get(i).expect("i is below num_ops");
         te.schema_hash = SchemaHash{salt ^ (0xAAAAULL + i)};
         te.shape_hash = ShapeHash{salt ^ (0xBBBBULL + i)};
-        te.num_inputs = 1;
-        te.num_outputs = 1;
-        te.input_metas = arena.alloc_array<TensorMeta>(A, 1);
-        std::uninitialized_value_construct_n(te.input_metas, 1);
-        te.input_metas[0].ndim = 1;
-        te.input_metas[0].sizes[0] = tensor_dim(64);
-        te.input_metas[0].strides[0] = tensor_dim(1);
-        te.input_metas[0].dtype = ScalarType::Float;
-        te.output_metas = arena.alloc_array<TensorMeta>(A, 1);
-        std::uninitialized_value_construct_n(te.output_metas, 1);
-        te.output_metas[0] = te.input_metas[0];
-        te.input_trace_indices = arena.alloc_array<OpIndex>(A, 1);
-        std::uninitialized_value_construct_n(te.input_trace_indices, 1);
-        te.input_slot_ids = arena.alloc_array<SlotId>(A, 1);
-        std::uninitialized_value_construct_n(te.input_slot_ids, 1);
-        te.output_slot_ids = arena.alloc_array<SlotId>(A, 1);
-        std::uninitialized_value_construct_n(te.output_slot_ids, 1);
+        te.set_num_inputs(1);
+        te.set_num_outputs(1);
+        te.set_input_metas(dag_arena.array(A, 1, meta));
+        te.set_output_metas(dag_arena.array(A, 1, meta));
+        te.set_input_trace_indices(dag_arena.array(A, 1, OpIndex{}));
+        te.set_input_slot_ids(dag_arena.array(A, 1, SlotId{}));
+        te.set_output_slot_ids(dag_arena.array(A, 1, SlotId{}));
     }
     return make_region(A, dag_arena, ops);
 }
@@ -71,8 +64,12 @@ static RegionNode* synth_region(Arena& arena, ::fixy::BumpArena& dag_arena, uint
 // constructor, so the stored bytes do not depend on the arena.
 static void check_unset_ids(const RegionNode& region) {
     for (const TraceEntry& op_record : region.ops) {
-        CRUCIBLE_BENCH_CHECK(!op_record.input_trace_indices[0].is_valid());
-        CRUCIBLE_BENCH_CHECK(!op_record.input_slot_ids[0].is_valid() && !op_record.output_slot_ids[0].is_valid());
+        for (const OpIndex producer : op_record.input_trace_indices())
+            CRUCIBLE_BENCH_CHECK(!producer.is_valid());
+        for (const SlotId slot_id : op_record.input_slot_ids())
+            CRUCIBLE_BENCH_CHECK(!slot_id.is_valid());
+        for (const SlotId slot_id : op_record.output_slot_ids())
+            CRUCIBLE_BENCH_CHECK(!slot_id.is_valid());
     }
 }
 
@@ -112,9 +109,8 @@ int main() {
         auto cipher = Cipher::open(ctx, A, ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()));
         auto open_view = cipher.mint_open_view(ctx);
 
-        Arena warm_arena{1 << 18};
         ::fixy::BumpArena warm_dag_arena{1 << 18};
-        auto* warm_region = synth_region(warm_arena, warm_dag_arena, num_ops, 0xC0FFEE + num_ops);
+        auto* warm_region = synth_region(warm_dag_arena, num_ops, 0xC0FFEE + num_ops);
         check_unset_ids(*warm_region);
         const auto warm_payload = Cipher::content_addressed(warm_region);
         (void)cipher.store(ctx, open_view, warm_payload);  // prime the warm path
@@ -139,9 +135,8 @@ int main() {
         reports.push_back([&] {
             uint64_t salt = static_cast<uint64_t>(num_ops) << 32;
             return bench::run(label_cold, [&] {
-                Arena region_arena{1 << 18};
                 ::fixy::BumpArena region_dag_arena{1 << 18};
-                auto* r = synth_region(region_arena, region_dag_arena, num_ops, ++salt);
+                auto* r = synth_region(region_dag_arena, num_ops, ++salt);
                 auto h = cipher.store(ctx, open_view, Cipher::content_addressed(r));
                 bench::do_not_optimize(h);
             });

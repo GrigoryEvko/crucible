@@ -30,7 +30,6 @@
 #include "bench_harness.h"
 #include "bench_trace.h"
 
-#include <crucible/Arena.h>
 #include <crucible/BackgroundThread.h>
 #include <foundation/effects/Effect.h>
 #include <crucible/MerkleDag.h>
@@ -83,17 +82,17 @@ void print_phase_table(PhaseTiming* phases, uint32_t n, double total_ns, uint64_
     std::printf("  %-22s  %8.1f  %8.2f  100.0%%\n", "TOTAL (measured)", ns_per, total_ns / 1e6);
 }
 
-// build_trace gives an op with no metadata null arrays and zero counts.  The
-// copy of its loop in the P2a phase does the same, so no field of such an op
-// keeps the bytes that the arena held before.
-void check_ops_without_metas(const TraceEntry* ops, const MetaIndex* meta_data, uint32_t count) {
-    for (uint32_t i = 0; i < count; i++) {
-        if (meta_data[i].is_valid()) continue;
-        const TraceEntry& op_record = ops[i];
-        CRUCIBLE_BENCH_CHECK(op_record.input_metas == nullptr && op_record.output_metas == nullptr);
-        CRUCIBLE_BENCH_CHECK(op_record.scalar_args == nullptr && op_record.input_trace_indices == nullptr);
-        CRUCIBLE_BENCH_CHECK(op_record.input_slot_ids == nullptr && op_record.output_slot_ids == nullptr);
-        CRUCIBLE_BENCH_CHECK(op_record.num_inputs == 0 && op_record.num_outputs == 0);
+// build_trace gives an op with no metadata no arrays and zero tensor counts.
+// The copy of its loop in the P2a phase does the same.
+void check_ops_without_metas(::fixy::View<const TraceEntry> ops, const MetaIndex* meta_data) {
+    uint32_t i = 0;
+    for (const TraceEntry& op_record : ops) {
+        const bool has_metas = meta_data[i++].is_valid();
+        if (has_metas) continue;
+        CRUCIBLE_BENCH_CHECK(op_record.input_metas().size() == 0 && op_record.output_metas().size() == 0);
+        CRUCIBLE_BENCH_CHECK(op_record.scalar_args().size() == 0 && op_record.input_trace_indices().size() == 0);
+        CRUCIBLE_BENCH_CHECK(op_record.input_slot_ids().size() == 0 && op_record.output_slot_ids().size() == 0);
+        CRUCIBLE_BENCH_CHECK(op_record.num_inputs() == 0 && op_record.num_outputs() == 0);
     }
 }
 
@@ -251,9 +250,9 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     const uint32_t count = trace.num_ops;
     const double nspc = bench::Timer::ns_per_cycle();
-    // The phases that copy the loop of build_trace take raw arrays from
-    // scratch.  build_trace itself takes its graph from build_scratch.
-    Arena scratch{arena_bytes};
+    // The phases that copy the loop of build_trace take their buffers from
+    // the heap, as build_trace does.  build_trace takes its graph from
+    // build_scratch.
     ::fixy::BumpArena build_scratch{arena_bytes};
 
     uint32_t trace_total_inputs = 0, trace_total_outputs = 0;
@@ -307,8 +306,6 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     // ── P1: Alloc + PtrMap gen + memset ───────────────────────────
     double ns_p1 = 0;
     for (uint32_t iter = 0; iter < iters; iter++) {
-        ArenaEpoch epoch = scratch.open_epoch();
-
         uint32_t total_inputs = 0, total_outputs = 0, total_scalars = 0;
         for (uint32_t i = 0; i < count; i++) {
             total_inputs += trace.entries[i].num_inputs;
@@ -318,14 +315,11 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         const uint64_t t0 = bench::rdtsc_start();
 
-        auto* ops = scratch.alloc_array<TraceEntry>(A, count);
-        const size_t aux_bytes =
-            static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
-            + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);
-        char* aux = (aux_bytes > 0) ? static_cast<char*>(scratch.alloc(
-                                          A, ::fixy::mint_refined<::fixy::positive>(aux_bytes),
-                                          ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(int64_t)})))
-                                    : nullptr;
+        auto op_buffer = ::foundation::AlignedBuffer<TraceEntry>::allocate_value_initialized(count);
+        auto scalar_buffer = ::foundation::AlignedBuffer<int64_t>::allocate_value_initialized(total_scalars);
+        auto producer_buffer = ::foundation::AlignedBuffer<OpIndex>::allocate_value_initialized(total_inputs);
+        auto slot_buffer =
+            ::foundation::AlignedBuffer<SlotId>::allocate_value_initialized(total_inputs + total_outputs);
         bg.ensure_scratch_buffers(total_inputs, total_outputs);
         const uint32_t slot_cap =
             std::min(bg.slot_cap_max_.get(), std::max(uint32_t{256}, total_inputs + total_outputs));
@@ -333,9 +327,10 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         const uint64_t t1 = bench::rdtsc_end();
 
-        bench::do_not_optimize(ops);
-        bench::do_not_optimize(aux);
-        std::move(epoch).end();
+        bench::do_not_optimize(op_buffer.data());
+        bench::do_not_optimize(scalar_buffer.data());
+        bench::do_not_optimize(producer_buffer.data());
+        bench::do_not_optimize(slot_buffer.data());
         ns_p1 += static_cast<double>(t1 - t0) * nspc;
     }
 
@@ -373,7 +368,6 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     // ── P2a: Copy fields (no hash, no PtrMap) ─────────────────────
     double ns_p2a = 0;
     for (uint32_t iter = 0; iter < iters; iter++) {
-        ArenaEpoch epoch = scratch.open_epoch();
         bench::refill_meta_log(meta_log, trace);
 
         const TraceRing::Entry* trace_data = trace.entries.data();
@@ -397,33 +391,38 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             total_scalars += std::min(re.num_scalar_args, uint16_t(5));
         }
 
-        auto* ops = scratch.alloc_array<TraceEntry>(A, count);
+        auto op_buffer = ::foundation::AlignedBuffer<TraceEntry>::allocate_value_initialized(count);
         const uint32_t total_metas =
             first_meta.is_valid() ? static_cast<uint32_t>(max_meta_end - first_meta.raw()) : uint32_t{0};
         auto meta_buffer = ::foundation::AlignedBuffer<TensorMeta>::allocate_value_initialized(total_metas);
         meta_log.copy_run(first_meta.raw(), meta_buffer.view());
-        TensorMeta* meta_base = meta_buffer.data();
-        const size_t aux_bytes =
-            static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
-            + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);
-        char* aux_cursor = (aux_bytes > 0) ? static_cast<char*>(scratch.alloc(
-                                                 A, ::fixy::mint_refined<::fixy::positive>(aux_bytes),
-                                                 ::fixy::mint_refined<::fixy::power_of_two>(size_t{alignof(int64_t)})))
-                                           : nullptr;
+        auto scalar_buffer = ::foundation::AlignedBuffer<int64_t>::allocate_value_initialized(total_scalars);
+        auto producer_buffer = ::foundation::AlignedBuffer<OpIndex>::allocate_value_initialized(total_inputs);
+        auto slot_buffer =
+            ::foundation::AlignedBuffer<SlotId>::allocate_value_initialized(total_inputs + total_outputs);
+        const ::fixy::View<TraceEntry> ops = op_buffer.view();
+        const ::fixy::View<TensorMeta> meta_run = meta_buffer.view();
+        const ::fixy::View<int64_t> scalar_run = scalar_buffer.view();
+        const ::fixy::View<OpIndex> producer_run = producer_buffer.view();
+        const ::fixy::View<SlotId> slot_run = slot_buffer.view();
+        size_t scalar_cursor = 0;
+        size_t producer_cursor = 0;
+        size_t slot_cursor = 0;
 
         const uint64_t t0 = bench::rdtsc_start();
 
-        for (uint32_t i = 0; i < count; i++) {
+        uint32_t i = 0;
+        for (TraceEntry& te : ops) {
             const auto& re = trace_data[i];
             const MetaIndex ms = meta_data[i];
-            auto& te = ops[i];
 
             te.schema_hash = re.schema_hash;
             te.shape_hash = re.shape_hash;
             te.scope_hash = scope_data[i];
             te.callsite_hash = callsite_data[i];
-            te.num_inputs = re.num_inputs;
-            te.num_outputs = re.num_outputs;
+            ++i;
+            te.set_num_inputs(re.num_inputs);
+            te.set_num_outputs(re.num_outputs);
             te.grad_enabled = (re.op_flags & op_flag::GRAD_ENABLED) != 0;
 
             const uint8_t flags = re.op_flags;
@@ -433,42 +432,37 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
             te.kernel_id = CKernelId::OPAQUE;
             const uint16_t n_scalars = std::min(re.num_scalar_args, uint16_t(5));
-            te.num_scalar_args = n_scalars;
+            te.set_num_scalar_args(n_scalars);
 
-            if (ms.is_valid()) {
-                const uint16_t n_in = re.num_inputs;
-                const uint16_t n_out = re.num_outputs;
-                const uint64_t meta_offset = ms.raw() - first_meta.raw();
-                te.input_metas = meta_base + meta_offset;
-                te.output_metas = meta_base + meta_offset + n_in;
-                te.scalar_args = (n_scalars > 0)
-                                   ? ::foundation::lifetime::start_as_array<int64_t>(aux_cursor, n_scalars).data()
-                                   : nullptr;
-                aux_cursor += n_scalars * sizeof(int64_t);
-                te.input_trace_indices = ::foundation::lifetime::start_as_array<OpIndex>(aux_cursor, n_in).data();
-                aux_cursor += n_in * sizeof(OpIndex);
-                te.input_slot_ids = ::foundation::lifetime::start_as_array<SlotId>(aux_cursor, n_in).data();
-                aux_cursor += n_in * sizeof(SlotId);
-                te.output_slot_ids = ::foundation::lifetime::start_as_array<SlotId>(aux_cursor, n_out).data();
-                aux_cursor += n_out * sizeof(SlotId);
-                if (n_scalars > 0) std::memcpy(te.scalar_args, re.scalar_values.data(), n_scalars * sizeof(int64_t));
-            } else {
-                te.input_metas = nullptr;
-                te.output_metas = nullptr;
-                te.scalar_args = nullptr;
-                te.input_trace_indices = nullptr;
-                te.input_slot_ids = nullptr;
-                te.output_slot_ids = nullptr;
-                te.num_inputs = 0;
-                te.num_outputs = 0;
+            if (!ms.is_valid()) {
+                te.set_num_inputs(0);
+                te.set_num_outputs(0);
+                continue;
             }
+            const uint16_t n_in = re.num_inputs;
+            const uint16_t n_out = re.num_outputs;
+            const uint64_t meta_offset = ms.raw() - first_meta.raw();
+            te.set_input_metas(meta_run.window(meta_offset, n_in).expect("the copied run holds each op"));
+            te.set_output_metas(meta_run.window(meta_offset + n_in, n_out).expect("the copied run holds each op"));
+            const ::fixy::View<int64_t> scalars =
+                scalar_run.window(scalar_cursor, n_scalars).expect("the scan counted the scalars");
+            scalar_cursor += n_scalars;
+            ::fixy::copy(scalars, re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
+                .expect("the two runs hold the scalars of the op");
+            te.set_scalar_args(scalars);
+            te.set_input_trace_indices(
+                producer_run.window(producer_cursor, n_in).expect("the scan counted the inputs"));
+            producer_cursor += n_in;
+            te.set_input_slot_ids(slot_run.window(slot_cursor, n_in).expect("the scan counted the inputs"));
+            slot_cursor += n_in;
+            te.set_output_slot_ids(slot_run.window(slot_cursor, n_out).expect("the scan counted the outputs"));
+            slot_cursor += n_out;
         }
 
         const uint64_t t1 = bench::rdtsc_end();
-        bench::do_not_optimize(ops);
+        bench::do_not_optimize(op_buffer.data());
         ns_p2a += static_cast<double>(t1 - t0) * nspc;
-        check_ops_without_metas(ops, meta_data, count);
-        std::move(epoch).end();
+        check_ops_without_metas(op_buffer.view(), meta_data);
     }
 
     // ── P2b: Content hash only ────────────────────────────────────
@@ -488,8 +482,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             for (uint32_t i = 0; i < count; i++) {
                 const auto& te = ref_ops[i];
                 content_h = detail::combine_ids(content_h, te.schema_hash.raw());
-                for (uint16_t j = 0; j < te.num_inputs; j++) {
-                    const TensorMeta& m = te.input_metas[j];
+                for (const TensorMeta& m : te.input_metas()) {
                     uint64_t dim_h = 0;
                     for (uint8_t d = 0; d < m.ndim; d++) {
                         dim_h ^= static_cast<uint64_t>(raw_tensor_dim(m.sizes[d])) * detail::kDimMix[d];
@@ -500,12 +493,13 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                                                | (static_cast<uint64_t>(static_cast<uint8_t>(m.device_idx)) << 16);
                     content_h = detail::combine_ids(content_h, dim_h ^ meta_packed);
                 }
-                if (te.num_scalar_args > 0) {
-                    const uint16_t n = std::min(te.num_scalar_args, uint16_t{5});
-                    for (uint16_t s = 0; s < n; s++) {
-                        content_h ^= static_cast<uint64_t>(te.scalar_args[s]);
-                        content_h *= 0x100000001b3ULL;
-                    }
+                // The pipeline stores at most five scalars of an op.
+                uint16_t folded = 0;
+                for (const int64_t value : te.scalar_args()) {
+                    if (folded == 5) break;
+                    content_h ^= static_cast<uint64_t>(value);
+                    content_h *= 0x100000001b3ULL;
+                    ++folded;
                 }
             }
 
@@ -537,11 +531,13 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
             for (uint32_t i = 0; i < count; i++) {
                 const auto& te = ref_ops[i];
-                for (uint16_t j = 0; j < te.num_outputs; j++) {
-                    void* ptr = raw_data_ptr(te.output_metas[j]);
+                uint8_t port = 0;
+                for (const TensorMeta& m : te.output_metas()) {
+                    void* ptr = raw_data_ptr(m);
                     if (ptr)
-                        (void)BackgroundThread::ptr_map_insert(local_map, local_gen, local_mask, ptr, OpIndex{i},
-                                                               static_cast<uint8_t>(j), SlotId{0});
+                        (void)BackgroundThread::ptr_map_insert(local_map, local_gen, local_mask, ptr, OpIndex{i}, port,
+                                                               SlotId{0});
+                    ++port;
                 }
             }
 
@@ -550,8 +546,8 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             uint32_t dummy_edges = 0;
             for (uint32_t i = 0; i < count; i++) {
                 const auto& te = ref_ops[i];
-                for (uint16_t j = 0; j < te.num_inputs; j++) {
-                    void* ptr = raw_data_ptr(te.input_metas[j]);
+                for (const TensorMeta& m : te.input_metas()) {
+                    void* ptr = raw_data_ptr(m);
                     auto lookup = BackgroundThread::ptr_map_lookup(local_map, local_gen, local_mask, ptr);
                     if (lookup.op_index.is_valid()) dummy_edges++;
                 }
@@ -588,11 +584,13 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             uint32_t aliases = 0;
             for (uint32_t i = 0; i < count; i++) {
                 const auto& te = ref_ops[i];
-                for (uint16_t j = 0; j < te.num_outputs; j++) {
-                    void* ptr = raw_data_ptr(te.output_metas[j]);
+                uint8_t port = 0;
+                for (const TensorMeta& m : te.output_metas()) {
+                    void* ptr = raw_data_ptr(m);
+                    const uint8_t this_port = port++;
                     if (!ptr) continue;
                     auto result = BackgroundThread::ptr_map_insert(local_map, local_gen, local_mask, ptr, OpIndex{i},
-                                                                   static_cast<uint8_t>(j), SlotId{0});
+                                                                   this_port, SlotId{0});
                     if (result.was_alias) aliases++;
                 }
             }
@@ -617,21 +615,28 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             std::memcpy(bg.scratch_slots_.data(), saved_slots.data(), num_slots * sizeof(BackgroundThread::SlotInfo));
-            ArenaEpoch epoch = scratch.open_epoch();
 
             const uint64_t t0 = bench::rdtsc_start();
 
-            auto* slots = scratch.alloc_array<TensorSlot>(A, num_slots);
+            auto slots = ::foundation::AlignedBuffer<TensorSlot>::allocate_value_initialized(num_slots);
             for (uint32_t s = 0; s < num_slots; s++) {
-                slots[s].offset_bytes = 0;
-                std::memcpy(&slots[s].nbytes, &bg.scratch_slots_[s], sizeof(BackgroundThread::SlotInfo));
-                slots[s].slot_id = SlotId{s};
-                std::memset(slots[s].pad2, 0, sizeof(slots[s].pad2));
+                BackgroundThread::SlotInfo const& info = bg.scratch_slots_[s];
+                slots[s] = TensorSlot{.offset_bytes = 0,
+                                      .nbytes = info.nbytes,
+                                      .birth_op = info.birth_op,
+                                      .death_op = info.death_op,
+                                      .dtype = info.dtype,
+                                      .device_type = info.device_type,
+                                      .device_idx = info.device_idx,
+                                      .layout = info.layout,
+                                      .is_external = info.is_external,
+                                      .pad = {},
+                                      .slot_id = SlotId{s},
+                                      .pad2 = {}};
             }
 
             const uint64_t t1 = bench::rdtsc_end();
-            bench::do_not_optimize(slots);
-            std::move(epoch).end();
+            bench::do_not_optimize(slots.data());
             ns_p3 += static_cast<double>(t1 - t0) * nspc;
         }
     }

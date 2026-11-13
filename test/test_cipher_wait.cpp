@@ -3,7 +3,6 @@
 // return type, so a hot-path consumer that will only accept a spin-class
 // wait refuses the value at compile time instead of stalling on it.
 
-#include <crucible/Arena.h>
 #include <crucible/Cipher.h>
 #include <crucible/MerkleDag.h>
 #include <fixy/Bands.h>
@@ -37,7 +36,6 @@ using crucible::Cipher;
 
 using crucible::ContentHash;
 using crucible::RegionNode;
-using crucible::Arena;
 using crucible::TraceEntry;
 using crucible::SchemaHash;
 using crucible::OpIndex;
@@ -49,36 +47,30 @@ using ::fixy::WaitStrategy_v;
 
 static auto g_test = ::foundation::effects::testing::test();
 
-// The ops and the region are in dag_arena, and the arrays of each op are in
-// arena.
-static RegionNode* make_test_region(Arena& arena, ::fixy::BumpArena& dag_arena, uint32_t seed) {
+// The ops, their arrays and the region are in dag_arena.
+static RegionNode* make_test_region(::fixy::BumpArena& dag_arena, uint32_t seed) {
     constexpr uint32_t NUM_OPS = 1;
     const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(g_test.alloc, NUM_OPS, TraceEntry{});
     TraceEntry& op = *ops.get(0).expect("the region holds one op");
     op.schema_hash = SchemaHash{0xDEADBEEF00000000ULL + seed};
-    op.num_inputs = 1;
-    op.num_outputs = 1;
-    op.input_metas = arena.alloc_array<TensorMeta>(g_test.alloc, 1);
-    op.input_metas[0] = {};
-    op.input_metas[0].ndim = 1;
-    op.input_metas[0].sizes[0] = ::crucible::tensor_dim(16);
-    op.input_metas[0].strides[0] = ::crucible::tensor_dim(1);
-    op.input_metas[0].dtype = ScalarType::Float;
-    op.output_metas = arena.alloc_array<TensorMeta>(g_test.alloc, 1);
-    op.output_metas[0] = op.input_metas[0];
-    op.input_trace_indices = arena.alloc_array<OpIndex>(g_test.alloc, 1);
-    op.input_trace_indices[0] = OpIndex{};
-    op.input_slot_ids = arena.alloc_array<SlotId>(g_test.alloc, 1);
-    op.input_slot_ids[0] = SlotId{};
-    op.output_slot_ids = arena.alloc_array<SlotId>(g_test.alloc, 1);
-    op.output_slot_ids[0] = SlotId{seed};
+    op.set_num_inputs(1);
+    op.set_num_outputs(1);
+    TensorMeta meta{};
+    meta.ndim = 1;
+    meta.sizes[0] = ::crucible::tensor_dim(16);
+    meta.strides[0] = ::crucible::tensor_dim(1);
+    meta.dtype = ScalarType::Float;
+    op.set_input_metas(crucible::test::run_of(g_test.alloc, dag_arena, meta));
+    op.set_output_metas(crucible::test::run_of(g_test.alloc, dag_arena, meta));
+    op.set_input_trace_indices(crucible::test::run_of(g_test.alloc, dag_arena, OpIndex{}));
+    op.set_input_slot_ids(crucible::test::run_of(g_test.alloc, dag_arena, SlotId{}));
+    op.set_output_slot_ids(crucible::test::run_of(g_test.alloc, dag_arena, SlotId{seed}));
     return crucible::make_region(g_test.alloc, dag_arena, ops);
 }
 
 static void test_store_pinned_bit_equality(const char* dir) {
-    Arena arena(1 << 16);
     ::fixy::BumpArena dag_arena{1 << 16};
-    auto* region = make_test_region(arena, dag_arena, 1);
+    auto* region = make_test_region(dag_arena, 1);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -90,9 +82,8 @@ static void test_store_pinned_bit_equality(const char* dir) {
 }
 
 static void test_store_pinned_type_identity(const char* dir) {
-    Arena arena(1 << 16);
     ::fixy::BumpArena dag_arena{1 << 16};
-    auto* region = make_test_region(arena, dag_arena, 2);
+    auto* region = make_test_region(dag_arena, 2);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -108,9 +99,8 @@ static void test_store_pinned_type_identity(const char* dir) {
 }
 
 static void test_store_pinned_payload_route(const char* dir) {
-    Arena arena(1 << 16);
     ::fixy::BumpArena dag_arena{1 << 16};
-    auto* region = make_test_region(arena, dag_arena, 3);
+    auto* region = make_test_region(dag_arena, 3);
     auto cipher = open_cipher(dir);
 
     auto view = cipher.mint_open_view(store_ctx());
@@ -147,9 +137,8 @@ static ContentHash block_fence_consumer(W wrapped) noexcept {
 }
 
 static void test_e2e_block_fence_consumer(const char* dir) {
-    Arena arena(1 << 16);
     ::fixy::BumpArena dag_arena{1 << 16};
-    auto* region = make_test_region(arena, dag_arena, 4);
+    auto* region = make_test_region(dag_arena, 4);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);

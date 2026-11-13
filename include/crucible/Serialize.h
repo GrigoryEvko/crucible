@@ -381,15 +381,20 @@ inline Header read_header(Reader& r) {
     return h;
 }
 
-// The first element of a run that the loader takes from the arena, for a
-// field of a region that holds a pointer and not a View.  A run of no
-// elements gives the null pointer, which such a field holds for no elements.
-template <class T>
-[[nodiscard]] T* first_element_(::fixy::View<T> elements) noexcept {
-    for (T& first : elements) {
-        return &first;
+// Writes each element of an array of an entry, or count copies of absent
+// when the entry holds no such array.  An array of an entry holds its count
+// or no element.  Complexity: O(count).
+template <class T, class Write>
+void write_run_(::fixy::View<const T> run, uint16_t count, T const& absent, Write&& write) {
+    if (run.size() != count) {
+        for (uint16_t position = 0; position < count; position++) {
+            write(absent);
+        }
+        return;
     }
-    return nullptr;
+    for (T const& element : run) {
+        write(element);
+    }
 }
 
 }  // namespace detail_ser
@@ -439,9 +444,9 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
         w.w(te.shape_hash.raw());
         w.w(te.scope_hash.raw());
         w.w(te.callsite_hash.raw());
-        w.w(te.num_inputs);
-        w.w(te.num_outputs);
-        w.w(te.num_scalar_args);
+        w.w(te.num_inputs());
+        w.w(te.num_outputs());
+        w.w(te.num_scalar_args());
         w.w(te.grad_enabled);
         // One byte, laid out the same way the recording ring lays it out.
         {
@@ -454,28 +459,17 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
         }
         w.w(std::to_underlying(te.kernel_id));
 
-        for (uint16_t j = 0; j < te.num_inputs; j++) {
-            write_meta(w, te.input_metas ? te.input_metas[j] : TensorMeta{});
-        }
-        for (uint16_t j = 0; j < te.num_outputs; j++) {
-            write_meta(w, te.output_metas ? te.output_metas[j] : TensorMeta{});
-        }
-        for (uint16_t j = 0; j < te.num_scalar_args; j++) {
-            const int64_t val = (te.scalar_args) ? te.scalar_args[j] : int64_t{0};
-            w.w(val);
-        }
-        for (uint16_t j = 0; j < te.num_inputs; j++) {
-            const uint32_t idx = te.input_trace_indices ? te.input_trace_indices[j].raw() : UINT32_MAX;
-            w.w(idx);
-        }
-        for (uint16_t j = 0; j < te.num_inputs; j++) {
-            const uint32_t sid = te.input_slot_ids ? te.input_slot_ids[j].raw() : UINT32_MAX;
-            w.w(sid);
-        }
-        for (uint16_t j = 0; j < te.num_outputs; j++) {
-            const uint32_t sid = te.output_slot_ids ? te.output_slot_ids[j].raw() : UINT32_MAX;
-            w.w(sid);
-        }
+        // An absent array writes the zero metadata, the zero scalar and the
+        // none id for each element of its count.
+        const auto write_one_meta = [&w](TensorMeta const& meta) { write_meta(w, meta); };
+        write_run_(te.input_metas(), te.num_inputs(), TensorMeta{}, write_one_meta);
+        write_run_(te.output_metas(), te.num_outputs(), TensorMeta{}, write_one_meta);
+        write_run_(te.scalar_args(), te.num_scalar_args(), int64_t{0}, [&w](int64_t value) { w.w(value); });
+        write_run_(te.input_trace_indices(), te.num_inputs(), OpIndex{},
+                   [&w](OpIndex producer) { w.w(producer.raw()); });
+        const auto write_one_slot = [&w](SlotId slot_id) { w.w(slot_id.raw()); };
+        write_run_(te.input_slot_ids(), te.num_inputs(), SlotId{}, write_one_slot);
+        write_run_(te.output_slot_ids(), te.num_outputs(), SlotId{}, write_one_slot);
     }
 
     return w.ok ? w.pos : 0;
@@ -560,12 +554,15 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
         te.shape_hash = ShapeHash{r.r<uint64_t>()};
         te.scope_hash = ScopeHash{r.r<uint64_t>()};
         te.callsite_hash = CallsiteHash{r.r<uint64_t>()};
-        te.num_inputs = r.r<uint16_t>();
-        te.num_outputs = r.r<uint16_t>();
-        te.num_scalar_args = r.r<uint16_t>();
-        if (te.num_inputs > CDAG_MAX_INPUTS) return std::nullopt;
-        if (te.num_outputs > CDAG_MAX_OUTPUTS) return std::nullopt;
-        if (te.num_scalar_args > CDAG_MAX_SCALAR_ARGS) return std::nullopt;
+        const uint16_t num_inputs = r.r<uint16_t>();
+        const uint16_t num_outputs = r.r<uint16_t>();
+        const uint16_t num_scalar_args = r.r<uint16_t>();
+        if (num_inputs > CDAG_MAX_INPUTS) return std::nullopt;
+        if (num_outputs > CDAG_MAX_OUTPUTS) return std::nullopt;
+        if (num_scalar_args > CDAG_MAX_SCALAR_ARGS) return std::nullopt;
+        te.set_num_inputs(num_inputs);
+        te.set_num_outputs(num_outputs);
+        te.set_num_scalar_args(num_scalar_args);
         te.grad_enabled = r.read_bool();
         {
             // The writer sets only these bits, so a byte with another bit
@@ -590,28 +587,32 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
             te.kernel_id = make_ckernel_id(::fixy::mint_refined<kValidCKernelIdBound>(raw_kernel_id));
         }
 
-        te.input_metas = detail_ser::first_element_(arena.array<TensorMeta>(a, te.num_inputs, TensorMeta{}));
-        for (uint16_t j = 0; j < te.num_inputs; j++) {
-            te.input_metas[j] = read_meta(r);
+        const ::fixy::View<TensorMeta> input_metas = arena.array<TensorMeta>(a, num_inputs, TensorMeta{});
+        for (TensorMeta& meta : input_metas) {
+            meta = read_meta(r);
         }
+        te.set_input_metas(input_metas);
 
-        te.output_metas = detail_ser::first_element_(arena.array<TensorMeta>(a, te.num_outputs, TensorMeta{}));
-        for (uint16_t j = 0; j < te.num_outputs; j++) {
-            te.output_metas[j] = read_meta(r);
+        const ::fixy::View<TensorMeta> output_metas = arena.array<TensorMeta>(a, num_outputs, TensorMeta{});
+        for (TensorMeta& meta : output_metas) {
+            meta = read_meta(r);
         }
+        te.set_output_metas(output_metas);
 
-        te.scalar_args = detail_ser::first_element_(arena.array<int64_t>(a, te.num_scalar_args, int64_t{0}));
-        for (uint16_t j = 0; j < te.num_scalar_args; j++) {
-            te.scalar_args[j] = r.r<int64_t>();
+        const ::fixy::View<int64_t> scalar_args = arena.array<int64_t>(a, num_scalar_args, int64_t{0});
+        for (int64_t& value : scalar_args) {
+            value = r.r<int64_t>();
         }
+        te.set_scalar_args(scalar_args);
 
-        te.input_trace_indices = detail_ser::first_element_(arena.array<OpIndex>(a, te.num_inputs, OpIndex{}));
-        for (uint16_t j = 0; j < te.num_inputs; j++) {
-            te.input_trace_indices[j] = OpIndex{r.r<uint32_t>()};
+        const ::fixy::View<OpIndex> producers = arena.array<OpIndex>(a, num_inputs, OpIndex{});
+        for (OpIndex& producer : producers) {
+            producer = OpIndex{r.r<uint32_t>()};
         }
+        te.set_input_trace_indices(producers);
 
-        te.input_slot_ids = detail_ser::first_element_(arena.array<SlotId>(a, te.num_inputs, SlotId{}));
-        for (uint16_t j = 0; j < te.num_inputs; j++) {
+        const ::fixy::View<SlotId> input_slot_ids = arena.array<SlotId>(a, num_inputs, SlotId{});
+        for (SlotId& slot_id : input_slot_ids) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // A slot id indexes the replay slot table, and replay checks only
             // that the id is not the none sentinel: the upper bound is a
@@ -624,18 +625,20 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
             if (plan != nullptr && sid.is_valid() && sid.raw() >= plan->num_slots()) [[unlikely]] {
                 return std::nullopt;
             }
-            te.input_slot_ids[j] = sid;
+            slot_id = sid;
         }
+        te.set_input_slot_ids(input_slot_ids);
 
-        te.output_slot_ids = detail_ser::first_element_(arena.array<SlotId>(a, te.num_outputs, SlotId{}));
-        for (uint16_t j = 0; j < te.num_outputs; j++) {
+        const ::fixy::View<SlotId> output_slot_ids = arena.array<SlotId>(a, num_outputs, SlotId{});
+        for (SlotId& slot_id : output_slot_ids) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // The same bound as for the input slot ids above.
             if (plan != nullptr && sid.is_valid() && sid.raw() >= plan->num_slots()) [[unlikely]] {
                 return std::nullopt;
             }
-            te.output_slot_ids[j] = sid;
+            slot_id = sid;
         }
+        te.set_output_slot_ids(output_slot_ids);
     }
 
     if (!r.ok) return std::nullopt;

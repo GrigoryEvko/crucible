@@ -9,7 +9,6 @@
 #include <span>
 #include <vector>
 
-#include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
 #include <foundation/effects/Effect.h>
 
@@ -19,28 +18,25 @@ using namespace crucible;
 
 static constexpr auto A = ::foundation::effects::testing::bg().alloc;
 
-static ::fixy::HeapArray<TraceEntry> make_ops(Arena& arena, uint32_t count, uint8_t ndim, uint16_t num_inputs) {
+// Each input and the output of each op have one metadata.
+static ::fixy::HeapArray<TraceEntry> make_ops(::fixy::BumpArena& arena, uint32_t count, uint8_t ndim,
+                                              uint16_t num_inputs) {
+    TensorMeta meta{};
+    meta.ndim = ndim;
+    meta.dtype = ScalarType::Float;
+    meta.device_type = DeviceType::CUDA;
+    for (uint8_t d = 0; d < ndim; d++) {
+        meta.sizes[d] = tensor_dim((d == ndim - 1) ? 128 : 32);
+        meta.strides[d] = tensor_dim((d == ndim - 1) ? 1 : 128);
+    }
     ::fixy::HeapArray<TraceEntry> ops = ::fixy::mint_heap_array(A, count, TraceEntry{});
     for (uint32_t i = 0; i < count; i++) {
         auto& te = *ops.get(i).expect("i is below count");
         te.schema_hash = SchemaHash{0xAAAA000000000000ULL ^ i};
-        te.num_inputs = num_inputs;
-        te.num_outputs = 1;
-        te.input_metas = arena.alloc_array<TensorMeta>(A, num_inputs);
-        std::uninitialized_value_construct_n(te.input_metas, num_inputs);
-        for (uint16_t j = 0; j < num_inputs; j++) {
-            auto& m = te.input_metas[j];
-            m.ndim = ndim;
-            m.dtype = ScalarType::Float;
-            m.device_type = DeviceType::CUDA;
-            for (uint8_t d = 0; d < ndim; d++) {
-                m.sizes[d] = tensor_dim((d == ndim - 1) ? 128 : 32);
-                m.strides[d] = tensor_dim((d == ndim - 1) ? 1 : 128);
-            }
-        }
-        te.output_metas = arena.alloc_array<TensorMeta>(A, 1);
-        std::uninitialized_value_construct_n(te.output_metas, 1);
-        te.output_metas[0] = te.input_metas[0];
+        te.set_num_inputs(num_inputs);
+        te.set_num_outputs(1);
+        te.set_input_metas(arena.array(A, num_inputs, meta));
+        te.set_output_metas(arena.array(A, 1, meta));
     }
     return ops;
 }
@@ -69,7 +65,7 @@ int main() {
     std::vector<bench::Report> reports;
 
     for (const auto& c : cfgs) {
-        Arena arena{1 << 20};
+        ::fixy::BumpArena arena{1 << 20};
         auto ops = make_ops(arena, c.n, c.ndim, c.ins);
         const ::fixy::View<const TraceEntry> span = ops.view();
 

@@ -1,4 +1,3 @@
-#include <crucible/Arena.h>
 #include <crucible/Serialize.h>
 #include <foundation/effects/Effect.h>
 #include "test_assert.h"
@@ -47,7 +46,6 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
 
 [[gnu::cold]] int main() {
     auto test = ::foundation::effects::testing::test();
-    crucible::Arena arena(1 << 16);
     ::fixy::BumpArena dag_arena{1 << 16};
 
     constexpr uint32_t NUM_OPS = 3;
@@ -62,9 +60,9 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         op.shape_hash = crucible::ShapeHash{0x100 + i};
         op.scope_hash = crucible::ScopeHash{0x200 + i};
         op.callsite_hash = crucible::CallsiteHash{0x300 + i};
-        op.num_inputs = 2;
-        op.num_outputs = 1;
-        op.num_scalar_args = 1;
+        op.set_num_inputs(2);
+        op.set_num_outputs(1);
+        op.set_num_scalar_args(1);
         op.grad_enabled = (i % 2 == 0);
         // Vary op_flags across ops to exercise bit-packing round-trip.
         op.inference_mode = (i == 0);
@@ -72,27 +70,16 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         op.training_phase = static_cast<crucible::TrainingPhase>(i % 4);
         op.torch_function = (i == 2);
 
-        op.input_metas = arena.alloc_array<crucible::TensorMeta>(test.alloc, 2);
-        op.input_metas[0] = make_meta(4, 8);
-        op.input_metas[1] = make_meta(4, 8);
-        op.input_metas[0].storage_nbytes = kLargeStorageBytes;
-
-        op.output_metas = arena.alloc_array<crucible::TensorMeta>(test.alloc, 1);
-        op.output_metas[0] = make_meta(4, 8);
-
-        op.scalar_args = arena.alloc_array<int64_t>(test.alloc, 1);
-        op.scalar_args[0] = static_cast<int64_t>(i * 42);
-
-        op.input_trace_indices = arena.alloc_array<crucible::OpIndex>(test.alloc, 2);
-        op.input_trace_indices[0] = (i > 0) ? crucible::OpIndex{i - 1} : crucible::OpIndex{};
-        op.input_trace_indices[1] = crucible::OpIndex{};
-
-        op.input_slot_ids = arena.alloc_array<crucible::SlotId>(test.alloc, 2);
-        op.input_slot_ids[0] = (i > 0) ? crucible::SlotId{(i - 1) * 10} : crucible::SlotId{};
-        op.input_slot_ids[1] = crucible::SlotId{};
-
-        op.output_slot_ids = arena.alloc_array<crucible::SlotId>(test.alloc, 1);
-        op.output_slot_ids[0] = crucible::SlotId{i * 10};
+        crucible::TensorMeta large_input = make_meta(4, 8);
+        large_input.storage_nbytes = kLargeStorageBytes;
+        op.set_input_metas(crucible::test::run_of(test.alloc, dag_arena, large_input, make_meta(4, 8)));
+        op.set_output_metas(crucible::test::run_of(test.alloc, dag_arena, make_meta(4, 8)));
+        op.set_scalar_args(crucible::test::run_of(test.alloc, dag_arena, static_cast<int64_t>(i * 42)));
+        op.set_input_trace_indices(crucible::test::run_of(
+            test.alloc, dag_arena, (i > 0) ? crucible::OpIndex{i - 1} : crucible::OpIndex{}, crucible::OpIndex{}));
+        op.set_input_slot_ids(crucible::test::run_of(
+            test.alloc, dag_arena, (i > 0) ? crucible::SlotId{(i - 1) * 10} : crucible::SlotId{}, crucible::SlotId{}));
+        op.set_output_slot_ids(crucible::test::run_of(test.alloc, dag_arena, crucible::SlotId{i * 10}));
     }
 
     auto* region = crucible::make_region(test.alloc, dag_arena, ops);
@@ -123,9 +110,9 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         assert(loaded_op.schema_hash == source_op.schema_hash);
         assert(loaded_op.shape_hash == source_op.shape_hash);
         assert(loaded_op.scope_hash == source_op.scope_hash);
-        assert(loaded_op.num_inputs == source_op.num_inputs);
-        assert(loaded_op.num_outputs == source_op.num_outputs);
-        assert(loaded_op.num_scalar_args == source_op.num_scalar_args);
+        assert(loaded_op.num_inputs() == source_op.num_inputs());
+        assert(loaded_op.num_outputs() == source_op.num_outputs());
+        assert(loaded_op.num_scalar_args() == source_op.num_scalar_args());
 
         // These five fields share one packed byte on the wire.
         assert(loaded_op.grad_enabled == source_op.grad_enabled);
@@ -134,39 +121,40 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         assert(loaded_op.training_phase == source_op.training_phase);
         assert(loaded_op.torch_function == source_op.torch_function);
 
-        for (uint16_t j = 0; j < source_op.num_inputs; j++) {
-            assert(crucible::raw_data_ptr(loaded_op.input_metas[j]) == nullptr
-                   && "data_ptr must be null after deserialization");
-            assert(crucible::raw_grad_fn_hash(source_op.input_metas[j]) != 0
+        for (uint16_t j = 0; j < source_op.num_inputs(); j++) {
+            const crucible::TensorMeta& loaded_meta = crucible::test::element_at(loaded_op.input_metas(), j);
+            const crucible::TensorMeta& source_meta = crucible::test::element_at(source_op.input_metas(), j);
+            assert(crucible::raw_data_ptr(loaded_meta) == nullptr && "data_ptr must be null after deserialization");
+            assert(crucible::raw_grad_fn_hash(source_meta) != 0
                    && "test fixture must exercise non-zero Family-B input");
-            assert(crucible::raw_grad_fn_hash(loaded_op.input_metas[j]) == 0
-                   && "grad_fn_hash must be zero after deserialization");
-            assert(loaded_op.input_metas[j].ndim == source_op.input_metas[j].ndim);
-            assert(loaded_op.input_metas[j].dtype == source_op.input_metas[j].dtype);
-            assert(crucible::raw_tensor_dim(loaded_op.input_metas[j].sizes[0])
-                   == crucible::raw_tensor_dim(source_op.input_metas[j].sizes[0]));
-            assert(crucible::raw_tensor_dim(loaded_op.input_metas[j].sizes[1])
-                   == crucible::raw_tensor_dim(source_op.input_metas[j].sizes[1]));
-            assert(crucible::raw_tensor_dim(loaded_op.input_metas[j].strides[0])
-                   == crucible::raw_tensor_dim(source_op.input_metas[j].strides[0]));
-            assert(crucible::raw_tensor_dim(loaded_op.input_metas[j].strides[1])
-                   == crucible::raw_tensor_dim(source_op.input_metas[j].strides[1]));
+            assert(crucible::raw_grad_fn_hash(loaded_meta) == 0 && "grad_fn_hash must be zero after deserialization");
+            assert(loaded_meta.ndim == source_meta.ndim);
+            assert(loaded_meta.dtype == source_meta.dtype);
+            assert(crucible::raw_tensor_dim(loaded_meta.sizes[0]) == crucible::raw_tensor_dim(source_meta.sizes[0]));
+            assert(crucible::raw_tensor_dim(loaded_meta.sizes[1]) == crucible::raw_tensor_dim(source_meta.sizes[1]));
+            assert(crucible::raw_tensor_dim(loaded_meta.strides[0])
+                   == crucible::raw_tensor_dim(source_meta.strides[0]));
+            assert(crucible::raw_tensor_dim(loaded_meta.strides[1])
+                   == crucible::raw_tensor_dim(source_meta.strides[1]));
         }
-        for (uint16_t j = 0; j < source_op.num_outputs; j++) {
-            assert(crucible::raw_data_ptr(loaded_op.output_metas[j]) == nullptr);
-            assert(crucible::raw_grad_fn_hash(source_op.output_metas[j]) != 0);
-            assert(crucible::raw_grad_fn_hash(loaded_op.output_metas[j]) == 0);
+        for (uint16_t j = 0; j < source_op.num_outputs(); j++) {
+            const crucible::TensorMeta& loaded_meta = crucible::test::element_at(loaded_op.output_metas(), j);
+            const crucible::TensorMeta& source_meta = crucible::test::element_at(source_op.output_metas(), j);
+            assert(crucible::raw_data_ptr(loaded_meta) == nullptr);
+            assert(crucible::raw_grad_fn_hash(source_meta) != 0);
+            assert(crucible::raw_grad_fn_hash(loaded_meta) == 0);
         }
 
-        assert(loaded_op.input_metas[0].storage_nbytes == kLargeStorageBytes
+        assert(crucible::test::element_at(loaded_op.input_metas(), 0).storage_nbytes == kLargeStorageBytes
                && "a storage size above 4 GiB must keep each of its 64 bits");
 
-        assert(loaded_op.scalar_args[0] == source_op.scalar_args[0]);
+        assert(crucible::test::element_at(loaded_op.scalar_args(), 0)
+               == crucible::test::element_at(source_op.scalar_args(), 0));
 
-        assert(loaded_op.input_trace_indices[0] == source_op.input_trace_indices[0]);
-        assert(loaded_op.input_slot_ids[0] == source_op.input_slot_ids[0]);
-        assert(loaded_op.input_slot_ids[1] == source_op.input_slot_ids[1]);
-        assert(loaded_op.output_slot_ids[0] == source_op.output_slot_ids[0]);
+        assert(crucible::test::element_at(loaded_op.input_trace_indices(), 0)
+               == crucible::test::element_at(source_op.input_trace_indices(), 0));
+        assert(::fixy::equal(loaded_op.input_slot_ids(), source_op.input_slot_ids()));
+        assert(::fixy::equal(loaded_op.output_slot_ids(), source_op.output_slot_ids()));
     }
 
     const crucible::ContentHash recomputed = crucible::compute_content_hash(loaded->ops);

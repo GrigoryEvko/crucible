@@ -360,9 +360,12 @@ public:
         ::foundation::AlignedBuffer<TraceEntry> ops;
         // The tensor metadata of the ops.  An op points into this buffer.
         ::foundation::AlignedBuffer<TensorMeta> metas;
-        // The scalars, the trace indices and the slot ids of the ops.  An op
-        // points into this buffer.
-        ::foundation::AlignedBuffer<std::byte, alignof(int64_t)> side_arrays;
+        // The scalars, the producer of each input, and the slot ids of the
+        // inputs and the outputs of the ops.  An op points into these
+        // buffers.
+        ::foundation::AlignedBuffer<int64_t> scalars;
+        ::foundation::AlignedBuffer<OpIndex> producers;
+        ::foundation::AlignedBuffer<SlotId> slot_ids;
         // The slots of the memory plan.
         ::foundation::AlignedBuffer<TensorSlot> slots;
         ContentHash content_hash;
@@ -906,9 +909,9 @@ private:
     static_assert(sizeof(PtrMapKey) == sizeof(void*), "Tagged<void*,External> must collapse to sizeof(void*) "
                                                       "(regime-1 EBO) so PtrSlot stays at 24 bytes");
 
-    // The field order matches the bulk-copyable region of TensorSlot at
-    // offsets 8 through 31, so the slot build of build_trace_from copies the
-    // whole block with one 24-byte memcpy instead of ten field assignments.
+    // The fields are the fields of TensorSlot from nbytes to is_external, in
+    // the same order.  The slot build of build_trace_from copies each field
+    // into its TensorSlot.
     struct SlotInfo {
         uint64_t nbytes = 0;
         OpIndex birth_op;

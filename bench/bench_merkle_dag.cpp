@@ -60,60 +60,48 @@ void check_meta_tail(const TensorMeta& meta) {
         CRUCIBLE_BENCH_CHECK(raw_tensor_dim(meta.sizes[d]) == 0 && raw_tensor_dim(meta.strides[d]) == 0);
 }
 
-TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, Arena& arena, uint16_t n_in, uint16_t n_out,
+// One metadata of rank ndim with random sizes, strides and data pointer.
+TensorMeta make_synthetic_meta(uint8_t ndim) {
+    TensorMeta m{};
+    m.ndim = ndim;
+    m.dtype = ScalarType::Float;
+    m.device_type = DeviceType::CUDA;
+    m.device_idx = 0;
+    for (uint8_t d = 0; d < ndim; d++) {
+        m.sizes[d] = tensor_dim(static_cast<int64_t>(32 + (bench_rand() % 256)));
+        m.strides[d] = tensor_dim(static_cast<int64_t>(1 + (bench_rand() % 64)));
+    }
+    m.data_ptr = external_data_ptr(
+        std::bit_cast<void*>(static_cast<std::uintptr_t>(0x7f0000000000ULL + bench_rand() % 0x100000)));
+    check_meta_tail(m);
+    return m;
+}
+
+TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, ::fixy::BumpArena& arena, uint16_t n_in, uint16_t n_out,
                                 uint16_t n_scalar, uint8_t ndim) {
     TraceEntry te{};
     te.schema_hash = SchemaHash{bench_rand()};
     te.shape_hash = ShapeHash{bench_rand()};
     te.scope_hash = ScopeHash{bench_rand()};
     te.callsite_hash = CallsiteHash{bench_rand()};
-    te.num_inputs = n_in;
-    te.num_outputs = n_out;
-    te.num_scalar_args = n_scalar;
+    te.set_num_inputs(n_in);
+    te.set_num_outputs(n_out);
+    te.set_num_scalar_args(n_scalar);
     te.grad_enabled = true;
     te.kernel_id = CKernelId::OPAQUE;
 
-    if (n_in > 0) {
-        te.input_metas = arena.alloc_array<TensorMeta>(a, n_in);
-        std::uninitialized_value_construct_n(te.input_metas, n_in);
-        for (uint16_t j = 0; j < n_in; j++) {
-            auto& m = te.input_metas[j];
-            m.ndim = ndim;
-            m.dtype = ScalarType::Float;
-            m.device_type = DeviceType::CUDA;
-            m.device_idx = 0;
-            for (uint8_t d = 0; d < ndim; d++) {
-                m.sizes[d] = tensor_dim(static_cast<int64_t>(32 + (bench_rand() % 256)));
-                m.strides[d] = tensor_dim(static_cast<int64_t>(1 + (bench_rand() % 64)));
-            }
-            m.data_ptr = external_data_ptr(
-                std::bit_cast<void*>(static_cast<std::uintptr_t>(0x7f0000000000ULL + bench_rand() % 0x100000)));
-            check_meta_tail(m);
-        }
-    }
-    if (n_out > 0) {
-        te.output_metas = arena.alloc_array<TensorMeta>(a, n_out);
-        std::uninitialized_value_construct_n(te.output_metas, n_out);
-        for (uint16_t j = 0; j < n_out; j++) {
-            auto& m = te.output_metas[j];
-            m.ndim = ndim;
-            m.dtype = ScalarType::Float;
-            m.device_type = DeviceType::CUDA;
-            m.device_idx = 0;
-            for (uint8_t d = 0; d < ndim; d++) {
-                m.sizes[d] = tensor_dim(static_cast<int64_t>(32 + (bench_rand() % 256)));
-                m.strides[d] = tensor_dim(static_cast<int64_t>(1 + (bench_rand() % 64)));
-            }
-            m.data_ptr = external_data_ptr(
-                std::bit_cast<void*>(static_cast<std::uintptr_t>(0x7f0000000000ULL + bench_rand() % 0x100000)));
-            check_meta_tail(m);
-        }
-    }
-    if (n_scalar > 0) {
-        te.scalar_args = arena.alloc_array<int64_t>(a, n_scalar);
-        for (uint16_t s = 0; s < n_scalar; s++)
-            te.scalar_args[s] = static_cast<int64_t>(bench_rand());
-    }
+    const ::fixy::View<TensorMeta> input_metas = arena.array(a, n_in, TensorMeta{});
+    for (TensorMeta& m : input_metas)
+        m = make_synthetic_meta(ndim);
+    te.set_input_metas(input_metas);
+    const ::fixy::View<TensorMeta> output_metas = arena.array(a, n_out, TensorMeta{});
+    for (TensorMeta& m : output_metas)
+        m = make_synthetic_meta(ndim);
+    te.set_output_metas(output_metas);
+    const ::fixy::View<int64_t> scalars = arena.array(a, n_scalar, int64_t{0});
+    for (int64_t& value : scalars)
+        value = static_cast<int64_t>(bench_rand());
+    te.set_scalar_args(scalars);
     return te;
 }
 
@@ -132,7 +120,7 @@ int main(int argc, char* argv[]) {
     // ── compute_content_hash at three region sizes ───────────────────
     reports.push_back([] {
         auto test = ::foundation::effects::testing::test();
-        Arena arena{1 << 16};
+        ::fixy::BumpArena arena{1 << 16};
         constexpr uint32_t N = 8;
         ::foundation::core::FixedArray<TraceEntry, N> ops{};
         bench_rng_state = 0xDEADBEEFCAFEBABEULL;
@@ -146,7 +134,7 @@ int main(int argc, char* argv[]) {
 
     reports.push_back([] {
         auto test = ::foundation::effects::testing::test();
-        Arena arena{1 << 20};
+        ::fixy::BumpArena arena{1 << 20};
         ::fixy::BumpArena ops_arena{1 << 20};
         constexpr uint32_t N = 481;
         const ::fixy::View<TraceEntry> ops = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
@@ -164,7 +152,7 @@ int main(int argc, char* argv[]) {
 
     reports.push_back([] {
         auto test = ::foundation::effects::testing::test();
-        Arena arena{1 << 20};
+        ::fixy::BumpArena arena{1 << 20};
         ::fixy::BumpArena ops_arena{1 << 20};
         constexpr uint32_t N = 1110;
         const ::fixy::View<TraceEntry> ops = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
@@ -183,7 +171,7 @@ int main(int argc, char* argv[]) {
     // ── make_region (481 ops) ────────────────────────────────────────
     reports.push_back([] {
         auto test = ::foundation::effects::testing::test();
-        Arena data_arena{1 << 20};
+        ::fixy::BumpArena data_arena{1 << 20};
         ::fixy::BumpArena ops_arena{1 << 20};
         constexpr uint32_t N = 481;
         const ::fixy::View<TraceEntry> ops = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
@@ -200,7 +188,7 @@ int main(int argc, char* argv[]) {
     // ── compute_merkle_hash ──────────────────────────────────────────
     reports.push_back([] {
         auto test = ::foundation::effects::testing::test();
-        Arena arena{1 << 20};
+        ::fixy::BumpArena arena{1 << 20};
         ::fixy::BumpArena dag_arena{1 << 20};
         constexpr uint32_t N = 481;
         const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});

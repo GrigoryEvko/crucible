@@ -28,6 +28,17 @@ using LoweredGraph = ::fixy::Tagged<Graph*, Source>;
 using lower_trace_required_row =
     ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc>;
 
+namespace detail {
+
+// The id at position of an array of an entry, or the none id when the entry
+// holds no such array.
+template <class Id>
+[[nodiscard]] inline Id id_or_none(::fixy::View<const Id> ids, uint16_t position) noexcept {
+    return ids.get(position).match([](auto id) { return Id{*id}; }, [] { return Id{}; });
+}
+
+}  // namespace detail
+
 // One graph node per recorded op, plus one input node per external tensor,
 // which is any tensor with a slot but no producing op in this trace.
 //
@@ -53,22 +64,27 @@ lower_trace_to_graph(::foundation::effects::Alloc a, LowerTraceGraph<Source> tra
 
     for (uint32_t i = 0; i < num_ops; i++) {
         const TraceEntry& te = tg.ops[i];
-        if (!te.input_trace_indices || !te.input_slot_ids) continue;
+        // An op with no producers or no slot ids of its inputs adds no input
+        // node.
+        const ::fixy::View<const OpIndex> producers = te.input_trace_indices();
+        const ::fixy::View<const SlotId> slot_ids = te.input_slot_ids();
+        if (producers.size() != te.num_inputs() || slot_ids.size() != te.num_inputs()) continue;
 
-        for (uint16_t j = 0; j < te.num_inputs; j++) {
-            if (te.input_trace_indices[j].is_valid()) continue;
-            const SlotId sid = te.input_slot_ids[j];
+        for (uint16_t j = 0; j < te.num_inputs(); j++) {
+            if (detail::id_or_none(producers, j).is_valid()) continue;
+            const SlotId sid = detail::id_or_none(slot_ids, j);
             if (!sid.is_valid() || sid.raw() >= num_slots) continue;
             if (extern_map[sid.raw()]) continue;
 
-            const TensorMeta& m = te.input_metas[j];
+            const TensorMeta& m = *te.input_metas().get(j).expect("an external input of a traced op has its metadata");
             ::fixy::FixedArray<const Expr*, 8> sizes{};
             const uint8_t ndim = (m.ndim <= 8) ? m.ndim : 8;
             for (uint8_t d = 0; d < ndim; d++)
                 sizes[d] = pool.integer(a, raw_tensor_dim(m.sizes[d]));
 
             auto* inp = graph.add_input(a, m.dtype, m.device_idx, std::span{sizes.data(), ndim});
-            graph.set_output_slots(a, inp->id, std::span{&sid, 1u});
+            const ::foundation::core::FixedArray<SlotId, 1> input_slot{sid};
+            graph.set_output_slots(a, inp->id, input_slot.view());
             extern_map[sid.raw()] = inp;
         }
     }
@@ -85,20 +101,20 @@ lower_trace_to_graph(::foundation::effects::Alloc a, LowerTraceGraph<Source> tra
         int8_t dev = -1;
         ::fixy::FixedArray<const Expr*, 8> sizes{};
 
-        if (te.num_outputs > 0 && te.output_metas) {
-            const TensorMeta& m = te.output_metas[0];
+        for (const TensorMeta& m : te.output_metas()) {
             ndim = (m.ndim <= 8) ? m.ndim : 8;
             dtype = m.dtype;
             dev = m.device_idx;
             for (uint8_t d = 0; d < ndim; d++)
                 sizes[d] = pool.integer(a, raw_tensor_dim(m.sizes[d]));
+            break;
         }
 
         // Counted first, then collected, because the count sizes the arrays.
         uint16_t real_count = 0;
-        for (uint16_t j = 0; j < te.num_inputs; j++) {
-            const OpIndex tidx = te.input_trace_indices ? te.input_trace_indices[j] : OpIndex{};
-            const SlotId sid = te.input_slot_ids ? te.input_slot_ids[j] : SlotId{};
+        for (uint16_t j = 0; j < te.num_inputs(); j++) {
+            const OpIndex tidx = detail::id_or_none(te.input_trace_indices(), j);
+            const SlotId sid = detail::id_or_none(te.input_slot_ids(), j);
 
             if (tidx.is_valid() && tidx.raw() < num_ops) {
                 real_count++;
@@ -112,9 +128,9 @@ lower_trace_to_graph(::foundation::effects::Alloc a, LowerTraceGraph<Source> tra
         auto* in_slots = arena.alloc_array<SlotId>(a, alloc_n);
         uint16_t k = 0;
 
-        for (uint16_t j = 0; j < te.num_inputs; j++) {
-            const OpIndex tidx = te.input_trace_indices ? te.input_trace_indices[j] : OpIndex{};
-            const SlotId sid = te.input_slot_ids ? te.input_slot_ids[j] : SlotId{};
+        for (uint16_t j = 0; j < te.num_inputs(); j++) {
+            const OpIndex tidx = detail::id_or_none(te.input_trace_indices(), j);
+            const SlotId sid = detail::id_or_none(te.input_slot_ids(), j);
 
             GraphNode* dep = nullptr;
             if (tidx.is_valid() && tidx.raw() < num_ops) {
@@ -141,11 +157,10 @@ lower_trace_to_graph(::foundation::effects::Alloc a, LowerTraceGraph<Source> tra
             node->kind = kind;
         }
 
-        if (te.num_outputs > 1) node->num_outputs = te.num_outputs;
+        if (te.num_outputs() > 1) node->num_outputs = te.num_outputs();
 
         if (real_count > 0) graph.set_input_slots(a, node->id, std::span{in_slots, real_count});
-        if (te.output_slot_ids && te.num_outputs > 0)
-            graph.set_output_slots(a, node->id, std::span<const SlotId>{te.output_slot_ids, te.num_outputs});
+        if (te.output_slot_ids().size() > 0) graph.set_output_slots(a, node->id, te.output_slot_ids());
 
         op_to_node[i] = node;
     }

@@ -493,19 +493,19 @@ namespace {
         e_six_diff.schema_hash = SchemaHash{0xAA};
         e_ten.schema_hash = SchemaHash{0xAA};
 
-        int64_t s_five[5] = {1, 2, 3, 4, 5};
-        int64_t s_six[6] = {1, 2, 3, 4, 5, 99};
-        int64_t s_six_diff[6] = {1, 2, 3, 4, 5, 7};
-        int64_t s_ten[10] = {1, 2, 3, 4, 5, 99, 100, 101, 102, 103};
+        ::foundation::core::FixedArray<int64_t, 5> s_five{1, 2, 3, 4, 5};
+        ::foundation::core::FixedArray<int64_t, 6> s_six{1, 2, 3, 4, 5, 99};
+        ::foundation::core::FixedArray<int64_t, 6> s_six_diff{1, 2, 3, 4, 5, 7};
+        ::foundation::core::FixedArray<int64_t, 10> s_ten{1, 2, 3, 4, 5, 99, 100, 101, 102, 103};
 
-        e_five.scalar_args = s_five;
-        e_five.num_scalar_args = 5;
-        e_six.scalar_args = s_six;
-        e_six.num_scalar_args = 6;
-        e_six_diff.scalar_args = s_six_diff;
-        e_six_diff.num_scalar_args = 6;
-        e_ten.scalar_args = s_ten;
-        e_ten.num_scalar_args = 10;
+        e_five.set_num_scalar_args(5);
+        e_five.set_scalar_args(s_five.view());
+        e_six.set_num_scalar_args(6);
+        e_six.set_scalar_args(s_six.view());
+        e_six_diff.set_num_scalar_args(6);
+        e_six_diff.set_scalar_args(s_six_diff.view());
+        e_ten.set_num_scalar_args(10);
+        e_ten.set_scalar_args(s_ten.view());
 
         auto h_five = hash_one_op(e_five);
         auto h_six = hash_one_op(e_six);
@@ -544,32 +544,32 @@ namespace {
             return fold.finish();
         };
 
-        crucible::TensorMeta input_meta{};
+        ::foundation::core::FixedArray<crucible::TensorMeta, 1> input_meta{};
 
         crucible::TraceEntry e_empty{};
         e_empty.schema_hash = SchemaHash{0x11};
 
         crucible::TraceEntry e_count_only{};
         e_count_only.schema_hash = SchemaHash{0x22};
-        e_count_only.num_scalar_args = 3;  // scalar_args deliberately stays null
+        e_count_only.set_num_scalar_args(3);  // the array of scalars stays absent
 
-        int64_t s_one[1] = {42};
+        ::foundation::core::FixedArray<int64_t, 1> s_one{42};
         crucible::TraceEntry e_one{};
         e_one.schema_hash = SchemaHash{0x33};
-        e_one.scalar_args = s_one;
-        e_one.num_scalar_args = 1;
+        e_one.set_num_scalar_args(1);
+        e_one.set_scalar_args(s_one.view());
 
         // Five values is the boundary a clamped fold stops at.
-        int64_t s_five[5] = {9, 8, 7, 6, 5};
+        ::foundation::core::FixedArray<int64_t, 5> s_five{9, 8, 7, 6, 5};
         crucible::TraceEntry e_five{};
         e_five.schema_hash = SchemaHash{0x44};
-        e_five.scalar_args = s_five;
-        e_five.num_scalar_args = 5;
+        e_five.set_num_scalar_args(5);
+        e_five.set_scalar_args(s_five.view());
 
         crucible::TraceEntry e_tensor{};
         e_tensor.schema_hash = SchemaHash{0x55};
-        e_tensor.num_inputs = 1;
-        e_tensor.input_metas = &input_meta;
+        e_tensor.set_num_inputs(1);
+        e_tensor.set_input_metas(input_meta.view());
 
         for (const auto* op : {&e_empty, &e_count_only, &e_one, &e_five, &e_tensor}) {
             const ::foundation::core::FixedArray<crucible::TraceEntry, 1> single{*op};
@@ -629,15 +629,16 @@ namespace {
         // and neither shape is special, but the vectors keep using a tensor
         // with a real dtype and device: a vector should exercise the ordinary
         // path, and the two former collapse shapes have their own block below.
-        crucible::TensorMeta real_meta{};
-        real_meta.dtype = crucible::ScalarType::Float;
-        real_meta.device_type = crucible::DeviceType::CUDA;
-        real_meta.device_idx = 0;
+        ::foundation::core::FixedArray<crucible::TensorMeta, 1> real_meta{};
+        crucible::TensorMeta& real_input = real_meta.at(::foundation::core::index<0>());
+        real_input.dtype = crucible::ScalarType::Float;
+        real_input.device_type = crucible::DeviceType::CUDA;
+        real_input.device_idx = 0;
 
         crucible::TraceEntry e_real_tensor{};
         e_real_tensor.schema_hash = SchemaHash{0x66};
-        e_real_tensor.num_inputs = 1;
-        e_real_tensor.input_metas = &real_meta;
+        e_real_tensor.set_num_inputs(1);
+        e_real_tensor.set_input_metas(real_meta.view());
 
         const ::foundation::core::FixedArray<crucible::TraceEntry, 5> real_mix{e_empty, e_count_only, e_one, e_five,
                                                                                e_real_tensor};
@@ -715,11 +716,11 @@ namespace {
     // special any more.  These assertions are the other side of the ones that
     // used to pin the defect: same two metas, opposite expectation.
     {
-        auto with_meta = [](uint64_t schema, crucible::TensorMeta* meta) {
+        auto with_meta = [](uint64_t schema, ::fixy::View<crucible::TensorMeta> meta) {
             crucible::TraceEntry e{};
             e.schema_hash = SchemaHash{schema};
-            e.num_inputs = 1;
-            e.input_metas = meta;
+            e.set_num_inputs(1);
+            e.set_input_metas(meta);
             return e;
         };
         auto no_tensor = [](uint64_t schema) {
@@ -728,13 +729,14 @@ namespace {
             return e;
         };
 
-        crucible::TensorMeta undefined_meta{};  // dtype Undefined == -1
-        crucible::TensorMeta zero_packed_meta{};
-        zero_packed_meta.dtype = crucible::ScalarType::Byte;
-        zero_packed_meta.device_type = crucible::DeviceType::CPU;
-        zero_packed_meta.device_idx = 0;
+        ::foundation::core::FixedArray<crucible::TensorMeta, 1> undefined_meta{};  // dtype Undefined == -1
+        ::foundation::core::FixedArray<crucible::TensorMeta, 1> zero_packed_meta{};
+        crucible::TensorMeta& zero_packed = zero_packed_meta.at(::foundation::core::index<0>());
+        zero_packed.dtype = crucible::ScalarType::Byte;
+        zero_packed.device_type = crucible::DeviceType::CPU;
+        zero_packed.device_idx = 0;
 
-        for (auto* meta : {&undefined_meta, &zero_packed_meta}) {
+        for (const ::fixy::View<crucible::TensorMeta> meta : {undefined_meta.view(), zero_packed_meta.view()}) {
             const ::foundation::core::FixedArray<crucible::TraceEntry, 2> region_a{no_tensor(0xAAAA),
                                                                                    with_meta(0x5555, meta)};
             const ::foundation::core::FixedArray<crucible::TraceEntry, 2> region_b{no_tensor(0xBBBB),
@@ -748,7 +750,7 @@ namespace {
         }
 
         // The zero-packed case used to produce the sentinel hash outright.
-        assert(hash_one_op(with_meta(0x5555, &zero_packed_meta)).raw() != 0
+        assert(hash_one_op(with_meta(0x5555, zero_packed_meta.view())).raw() != 0
                && "a uint8 tensor on CPU:0 hashes to the KernelCache empty-slot sentinel again");
 
         // A single mix is xor-symmetric, so a fold flattened into one xor

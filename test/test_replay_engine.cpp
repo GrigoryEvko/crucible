@@ -29,9 +29,9 @@ using crucible::Layout;
 using crucible::SchemaHash;
 using crucible::ShapeHash;
 
-// Of the entry fields a caller fills in, only schema_hash, shape_hash,
-// num_outputs, output_slot_ids, num_inputs and input_slot_ids reach the
-// replay engine.  The rest are left at their defaults on purpose.
+// Of the entry fields a caller fills in, only schema_hash, shape_hash, the
+// two counts and the two arrays of slot ids reach the replay engine.  The
+// rest are left at their defaults on purpose.
 static void init_region(RegionNode* r, ::fixy::View<TraceEntry> ops) {
     ::new(r) RegionNode{};
     r->kind = TraceNodeKind::REGION;
@@ -68,17 +68,17 @@ static MemoryPlan make_simple_plan(::fixy::View<TensorSlot> slots) {
 }
 
 static void test_linear_match() {
-    SlotId out_slots[3][1] = {{SlotId{0}}, {SlotId{1}}, {SlotId{2}}};
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena arena{4096};
 
     ::foundation::core::FixedArray<TraceEntry, 3> ops{};
     for (uint32_t i = 0; i < 3; i++) {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{100 + i};
         op.shape_hash = ShapeHash{200 + i};
-        op.num_outputs = 1;
-        op.output_slot_ids = out_slots[i];
-        op.num_inputs = 0;
-        op.input_slot_ids = nullptr;
+        op.set_num_outputs(1);
+        op.set_output_slot_ids(crucible::test::run_of(test.alloc, arena, SlotId{i}));
+        op.set_num_inputs(0);
     }
 
     RegionNode region{};
@@ -125,15 +125,15 @@ static void test_linear_match() {
 }
 
 static void test_schema_divergence() {
-    SlotId out_slot[1] = {SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
 
     ::foundation::core::FixedArray<TraceEntry, 3> ops{};
     for (uint32_t i = 0; i < 3; i++) {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{100 + i};
         op.shape_hash = ShapeHash{200};
-        op.num_outputs = 1;
-        op.output_slot_ids = out_slot;
+        op.set_num_outputs(1);
+        op.set_output_slot_ids(out_slot.view());
     }
 
     RegionNode region{};
@@ -162,17 +162,17 @@ static void test_schema_divergence() {
 }
 
 static void test_shape_divergence() {
-    SlotId out_slot[1] = {SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
 
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{100};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{200};
-    ops.at(::foundation::core::index<0>()).num_outputs = 1;
-    ops.at(::foundation::core::index<0>()).output_slot_ids = out_slot;
+    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out_slot.view());
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{101};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{201};
-    ops.at(::foundation::core::index<1>()).num_outputs = 1;
-    ops.at(::foundation::core::index<1>()).output_slot_ids = out_slot;
+    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<1>()).set_output_slot_ids(out_slot.view());
 
     RegionNode region{};
     init_region(&region, ops.view());
@@ -196,17 +196,17 @@ static void test_shape_divergence() {
 }
 
 static void test_reset() {
-    SlotId out_slot[1] = {SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
 
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{10};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{20};
-    ops.at(::foundation::core::index<0>()).num_outputs = 1;
-    ops.at(::foundation::core::index<0>()).output_slot_ids = out_slot;
+    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out_slot.view());
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{11};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{21};
-    ops.at(::foundation::core::index<1>()).num_outputs = 1;
-    ops.at(::foundation::core::index<1>()).output_slot_ids = out_slot;
+    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<1>()).set_output_slot_ids(out_slot.view());
 
     RegionNode region{};
     init_region(&region, ops.view());
@@ -237,24 +237,23 @@ static void test_reset() {
 // Op 1 reads the slot op 0 writes, so the two ops alias one pool
 // region through different entries.
 static void test_input_ptr() {
-    SlotId out0[1] = {SlotId{0}};
-    SlotId out1[1] = {SlotId{1}};
-    SlotId in1[1] = {SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> out0{SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> out1{SlotId{1}};
+    ::foundation::core::FixedArray<SlotId, 1> in1{SlotId{0}};
 
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{50};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{60};
-    ops.at(::foundation::core::index<0>()).num_outputs = 1;
-    ops.at(::foundation::core::index<0>()).output_slot_ids = out0;
-    ops.at(::foundation::core::index<0>()).num_inputs = 0;
-    ops.at(::foundation::core::index<0>()).input_slot_ids = nullptr;
+    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out0.view());
+    ops.at(::foundation::core::index<0>()).set_num_inputs(0);
 
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{51};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{61};
-    ops.at(::foundation::core::index<1>()).num_outputs = 1;
-    ops.at(::foundation::core::index<1>()).output_slot_ids = out1;
-    ops.at(::foundation::core::index<1>()).num_inputs = 1;
-    ops.at(::foundation::core::index<1>()).input_slot_ids = in1;
+    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<1>()).set_output_slot_ids(out1.view());
+    ops.at(::foundation::core::index<1>()).set_num_inputs(1);
+    ops.at(::foundation::core::index<1>()).set_input_slot_ids(in1.view());
 
     RegionNode region{};
     init_region(&region, ops.view());
@@ -280,13 +279,13 @@ static void test_input_ptr() {
 }
 
 static void test_invalid_slot() {
-    SlotId out[2] = {SlotId{0}, SlotId::none()};
+    ::foundation::core::FixedArray<SlotId, 2> out{SlotId{0}, SlotId::none()};
 
     ::foundation::core::FixedArray<TraceEntry, 1> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{77};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{88};
-    ops.at(::foundation::core::index<0>()).num_outputs = 2;
-    ops.at(::foundation::core::index<0>()).output_slot_ids = out;
+    ops.at(::foundation::core::index<0>()).set_num_outputs(2);
+    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out.view());
 
     RegionNode region{};
     init_region(&region, ops.view());
@@ -308,15 +307,15 @@ static void test_invalid_slot() {
 }
 
 static void test_current_entry() {
-    SlotId out[1] = {SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> out{SlotId{0}};
 
     ::foundation::core::FixedArray<TraceEntry, 3> ops{};
     for (uint32_t i = 0; i < 3; i++) {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{300 + i};
         op.shape_hash = ShapeHash{400 + i};
-        op.num_outputs = 1;
-        op.output_slot_ids = out;
+        op.set_num_outputs(1);
+        op.set_output_slot_ids(out.view());
     }
 
     RegionNode region{};
@@ -401,25 +400,25 @@ static void test_integration_with_pool() {
     alignas(256) char fake_param[128];
     pool.register_external(SlotId{2}, ::fixy::mint_refined<::fixy::non_null, void*>(fake_param), pv);
 
-    SlotId op0_out[1] = {SlotId{0}};
-    SlotId op0_in[1] = {SlotId{2}};
-    SlotId op1_out[1] = {SlotId{1}};
-    SlotId op1_in[1] = {SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> op0_out{SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> op0_in{SlotId{2}};
+    ::foundation::core::FixedArray<SlotId, 1> op1_out{SlotId{1}};
+    ::foundation::core::FixedArray<SlotId, 1> op1_in{SlotId{0}};
 
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{0xAAAA};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{0xBBBB};
-    ops.at(::foundation::core::index<0>()).num_outputs = 1;
-    ops.at(::foundation::core::index<0>()).output_slot_ids = op0_out;
-    ops.at(::foundation::core::index<0>()).num_inputs = 1;
-    ops.at(::foundation::core::index<0>()).input_slot_ids = op0_in;
+    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<0>()).set_output_slot_ids(op0_out.view());
+    ops.at(::foundation::core::index<0>()).set_num_inputs(1);
+    ops.at(::foundation::core::index<0>()).set_input_slot_ids(op0_in.view());
 
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{0xCCCC};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{0xDDDD};
-    ops.at(::foundation::core::index<1>()).num_outputs = 1;
-    ops.at(::foundation::core::index<1>()).output_slot_ids = op1_out;
-    ops.at(::foundation::core::index<1>()).num_inputs = 1;
-    ops.at(::foundation::core::index<1>()).input_slot_ids = op1_in;
+    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
+    ops.at(::foundation::core::index<1>()).set_output_slot_ids(op1_out.view());
+    ops.at(::foundation::core::index<1>()).set_num_inputs(1);
+    ops.at(::foundation::core::index<1>()).set_input_slot_ids(op1_in.view());
 
     RegionNode region{};
     init_region(&region, ops.view());

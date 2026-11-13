@@ -177,8 +177,8 @@ void check_cpu_slot(const TensorSlot& slot) {
 // we allocate those too — even though the pointers we write through
 // fake_ptr don't point at real storage.
 //
-// The ops, the region and the slots are in dag_arena.  The arrays of each
-// op and the plan are in arena.
+// The ops, their arrays, the region and the slots are in dag_arena.  The
+// plan is in arena.
 struct BenchRegion {
     ::foundation::effects::Test test = ::foundation::effects::testing::test();
     Arena arena{1 << 16};
@@ -192,28 +192,20 @@ struct BenchRegion {
             TraceEntry& op = *ops.get(i).expect("i is below n_ops");
             op.schema_hash = schemas[i];
             op.shape_hash = shapes[i];
-            op.num_inputs = (i == 0) ? 0 : 1;
-            op.num_outputs = 1;
+            op.set_num_inputs((i == 0) ? 0 : 1);
+            op.set_num_outputs(1);
 
+            TensorMeta meta{};
+            meta.ndim = 1;
+            meta.sizes[0] = tensor_dim(1024);
+            meta.strides[0] = tensor_dim(1);
+            meta.dtype = ScalarType::Float;
             if (i > 0) {
-                op.input_metas = std::construct_at(arena.alloc_obj<TensorMeta>(test.alloc));
-                op.input_metas[0].ndim = 1;
-                op.input_metas[0].sizes[0] = tensor_dim(1024);
-                op.input_metas[0].strides[0] = tensor_dim(1);
-                op.input_metas[0].dtype = ScalarType::Float;
+                op.set_input_metas(dag_arena.array(test.alloc, 1, meta));
+                op.set_input_slot_ids(dag_arena.array(test.alloc, 1, SlotId{i - 1}));
             }
-            op.output_metas = std::construct_at(arena.alloc_obj<TensorMeta>(test.alloc));
-            op.output_metas[0].ndim = 1;
-            op.output_metas[0].sizes[0] = tensor_dim(1024);
-            op.output_metas[0].strides[0] = tensor_dim(1);
-            op.output_metas[0].dtype = ScalarType::Float;
-
-            op.output_slot_ids = arena.alloc_array<SlotId>(test.alloc, 1);
-            op.output_slot_ids[0] = SlotId{i};
-            if (i > 0) {
-                op.input_slot_ids = arena.alloc_array<SlotId>(test.alloc, 1);
-                op.input_slot_ids[0] = SlotId{i - 1};
-            }
+            op.set_output_metas(dag_arena.array(test.alloc, 1, meta));
+            op.set_output_slot_ids(dag_arena.array(test.alloc, 1, SlotId{i}));
         }
 
         region = make_region(test.alloc, dag_arena, ops);

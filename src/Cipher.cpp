@@ -337,9 +337,9 @@ struct IndexLine {
         sz += 64 + region.plan->num_slots() * sizeof(TensorSlot);
     }
     for (const TraceEntry& te : region.ops) {
-        const size_t n_in = te.num_inputs;
-        const size_t n_out = te.num_outputs;
-        const size_t n_sca = te.num_scalar_args;
+        const size_t n_in = te.num_inputs();
+        const size_t n_out = te.num_outputs();
+        const size_t n_sca = te.num_scalar_args();
         sz += 40;  // fixed per-op header
         sz += (n_in + n_out) * sizeof(TensorMeta);
         sz += n_sca * sizeof(int64_t);

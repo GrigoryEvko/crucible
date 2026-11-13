@@ -2,8 +2,8 @@
 
 // A bump allocator over a list of blocks, and the epoch that ends its bytes.
 //
-// New code takes fixy::BumpArena.  This arena stays only for the nodes of the
-// Merkle DAG with their codec and loaders, and for the symbolic-engine sketch.
+// New code takes fixy::BumpArena.  In the product code, only the
+// symbolic-engine sketch (Graph.h, ExprPool.h and Lower.h) uses this arena.
 //
 // An allocation is a bump of an offset in the current block.  When the block
 // is full, the arena moves to the next block that holds the request.  Block k

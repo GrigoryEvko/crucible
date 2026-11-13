@@ -71,15 +71,15 @@
     assert(add_node->num_inputs == 2);
 
     // An input node reads no slot, because it is itself the source.
-    crucible::SlotId inp0_out_slots[] = {crucible::SlotId{0}};
-    crucible::SlotId inp1_out_slots[] = {crucible::SlotId{1}};
-    graph.set_output_slots(test.alloc, crucible::NodeId{0}, inp0_out_slots);
-    graph.set_output_slots(test.alloc, crucible::NodeId{1}, inp1_out_slots);
+    const ::foundation::core::FixedArray<crucible::SlotId, 1> inp0_out_slots{crucible::SlotId{0}};
+    const ::foundation::core::FixedArray<crucible::SlotId, 1> inp1_out_slots{crucible::SlotId{1}};
+    graph.set_output_slots(test.alloc, crucible::NodeId{0}, inp0_out_slots.view());
+    graph.set_output_slots(test.alloc, crucible::NodeId{1}, inp1_out_slots.view());
 
     crucible::SlotId add_in_slots[] = {crucible::SlotId{0}, crucible::SlotId{1}};
-    crucible::SlotId add_out_slots[] = {crucible::SlotId{2}};
+    const ::foundation::core::FixedArray<crucible::SlotId, 1> add_out_slots{crucible::SlotId{2}};
     graph.set_input_slots(test.alloc, crucible::NodeId{2}, add_in_slots);
-    graph.set_output_slots(test.alloc, crucible::NodeId{2}, add_out_slots);
+    graph.set_output_slots(test.alloc, crucible::NodeId{2}, add_out_slots.view());
 
     // A slot table that was never set reads back as null rather than
     // as an empty table.

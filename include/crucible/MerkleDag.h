@@ -9,7 +9,6 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <fixy/Bands.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
@@ -43,9 +42,6 @@ inline constexpr uint8_t IS_CONJ = 1 << 5;
 
 struct TensorSlot {
     uint64_t offset_bytes = 0;
-    // nbytes through pad form a 24-byte block that is copied as one unit.
-    // Reordering these members, or moving slot_id in among them, breaks
-    // that copy.
     uint64_t nbytes = 0;
     OpIndex birth_op;
     OpIndex death_op;
@@ -143,21 +139,37 @@ compute_storage_nbytes_det(ExternalTensorMeta meta) {
         compute_storage_nbytes(meta));
 }
 
-// Every variable-length array here is arena-allocated and outlives the entry.
+// The record of one op.  Its arrays are in the memory of the region or of
+// the trace, and the entry only borrows them.  Three counts give their
+// lengths: the inputs, the outputs and the scalar arguments.  An array can
+// be absent at a count above zero, such as the scalar arguments of an op
+// with no tensors.  Its View is then empty, and the count stays.  So a
+// reader that writes one value for each input reads the count.
 struct TraceEntry {
     SchemaHash schema_hash;
     ShapeHash shape_hash;
     ScopeHash scope_hash;
     CallsiteHash callsite_hash;
 
-    TensorMeta* input_metas = nullptr;
-    TensorMeta* output_metas = nullptr;
-    uint16_t num_inputs = 0;
-    uint16_t num_outputs = 0;
+private:
+    // The slot of each count, and the index of each array.  The slot ids
+    // come first, because the replay reads them for each op.
+    static constexpr std::size_t kInputCount = 0;
+    static constexpr std::size_t kOutputCount = 1;
+    static constexpr std::size_t kScalarCount = 2;
+    static constexpr std::size_t kOutputSlotIds = 0;
+    static constexpr std::size_t kInputSlotIds = 1;
+    static constexpr std::size_t kInputTraceIndices = 2;
+    static constexpr std::size_t kInputMetas = 3;
+    static constexpr std::size_t kOutputMetas = 4;
+    static constexpr std::size_t kScalarArgs = 5;
 
-    int64_t* scalar_args = nullptr;  // null when num_scalar_args == 0
-    uint16_t num_scalar_args = 0;
+    ::fixy::RunSet<uint16_t, ::fixy::RunOf<SlotId, kOutputCount>, ::fixy::RunOf<SlotId, kInputCount>,
+                   ::fixy::RunOf<OpIndex, kInputCount>, ::fixy::RunOf<TensorMeta, kInputCount>,
+                   ::fixy::RunOf<TensorMeta, kOutputCount>, ::fixy::RunOf<int64_t, kScalarCount>>
+        arrays_{};
 
+public:
     bool grad_enabled = false;
     bool inference_mode = false;
 
@@ -169,42 +181,35 @@ struct TraceEntry {
     TrainingPhase training_phase = TrainingPhase::FORWARD;
     bool torch_function = false;
 
-    OpIndex* input_trace_indices = nullptr;  // producer op of each input
-    SlotId* input_slot_ids = nullptr;
-    SlotId* output_slot_ids = nullptr;
+    // The counts.  A new count drops each array of that count.
+    [[nodiscard]] uint16_t num_inputs() const noexcept { return arrays_.count<kInputCount>(); }
+    [[nodiscard]] uint16_t num_outputs() const noexcept { return arrays_.count<kOutputCount>(); }
+    [[nodiscard]] uint16_t num_scalar_args() const noexcept { return arrays_.count<kScalarCount>(); }
+    void set_num_inputs(uint16_t count) noexcept { arrays_.set_count<kInputCount>(count); }
+    void set_num_outputs(uint16_t count) noexcept { arrays_.set_count<kOutputCount>(count); }
+    void set_num_scalar_args(uint16_t count) noexcept { arrays_.set_count<kScalarCount>(count); }
 
-    [[nodiscard]] ::fixy::Borrowed<const TensorMeta, TraceEntry> input_span() const {
-        return input_metas ? ::fixy::Borrowed<const TensorMeta, TraceEntry>{input_metas, num_inputs}
-                           : ::fixy::Borrowed<const TensorMeta, TraceEntry>{};
+    // The arrays.  An absent array gives the empty View.
+    [[nodiscard]] ::fixy::View<const TensorMeta> input_metas() const noexcept { return arrays_.view<kInputMetas>(); }
+    [[nodiscard]] ::fixy::View<const TensorMeta> output_metas() const noexcept { return arrays_.view<kOutputMetas>(); }
+    [[nodiscard]] ::fixy::View<const int64_t> scalar_args() const noexcept { return arrays_.view<kScalarArgs>(); }
+    // The producer op of each input.
+    [[nodiscard]] ::fixy::View<const OpIndex> input_trace_indices() const noexcept {
+        return arrays_.view<kInputTraceIndices>();
     }
-    [[nodiscard]] ::fixy::Borrowed<TensorMeta, TraceEntry> input_span() {
-        return input_metas ? ::fixy::Borrowed<TensorMeta, TraceEntry>{input_metas, num_inputs}
-                           : ::fixy::Borrowed<TensorMeta, TraceEntry>{};
+    [[nodiscard]] ::fixy::View<const SlotId> input_slot_ids() const noexcept { return arrays_.view<kInputSlotIds>(); }
+    [[nodiscard]] ::fixy::View<const SlotId> output_slot_ids() const noexcept { return arrays_.view<kOutputSlotIds>(); }
+
+    // The elements of an array.  The View holds the count of the array, or
+    // the process ends.
+    void set_input_metas(::fixy::View<TensorMeta> metas) noexcept { arrays_.set<kInputMetas>(metas); }
+    void set_output_metas(::fixy::View<TensorMeta> metas) noexcept { arrays_.set<kOutputMetas>(metas); }
+    void set_scalar_args(::fixy::View<int64_t> scalars) noexcept { arrays_.set<kScalarArgs>(scalars); }
+    void set_input_trace_indices(::fixy::View<OpIndex> producers) noexcept {
+        arrays_.set<kInputTraceIndices>(producers);
     }
-    [[nodiscard]] ::fixy::Borrowed<const TensorMeta, TraceEntry> output_span() const {
-        return output_metas ? ::fixy::Borrowed<const TensorMeta, TraceEntry>{output_metas, num_outputs}
-                            : ::fixy::Borrowed<const TensorMeta, TraceEntry>{};
-    }
-    [[nodiscard]] ::fixy::Borrowed<TensorMeta, TraceEntry> output_span() {
-        return output_metas ? ::fixy::Borrowed<TensorMeta, TraceEntry>{output_metas, num_outputs}
-                            : ::fixy::Borrowed<TensorMeta, TraceEntry>{};
-    }
-    [[nodiscard]] ::fixy::Borrowed<const int64_t, TraceEntry> scalar_span() const {
-        return scalar_args ? ::fixy::Borrowed<const int64_t, TraceEntry>{scalar_args, num_scalar_args}
-                           : ::fixy::Borrowed<const int64_t, TraceEntry>{};
-    }
-    [[nodiscard]] ::fixy::Borrowed<const OpIndex, TraceEntry> trace_index_span() const {
-        return input_trace_indices ? ::fixy::Borrowed<const OpIndex, TraceEntry>{input_trace_indices, num_inputs}
-                                   : ::fixy::Borrowed<const OpIndex, TraceEntry>{};
-    }
-    [[nodiscard]] ::fixy::Borrowed<const SlotId, TraceEntry> input_slot_span() const {
-        return input_slot_ids ? ::fixy::Borrowed<const SlotId, TraceEntry>{input_slot_ids, num_inputs}
-                              : ::fixy::Borrowed<const SlotId, TraceEntry>{};
-    }
-    [[nodiscard]] ::fixy::Borrowed<const SlotId, TraceEntry> output_slot_span() const {
-        return output_slot_ids ? ::fixy::Borrowed<const SlotId, TraceEntry>{output_slot_ids, num_outputs}
-                               : ::fixy::Borrowed<const SlotId, TraceEntry>{};
-    }
+    void set_input_slot_ids(::fixy::View<SlotId> slot_ids) noexcept { arrays_.set<kInputSlotIds>(slot_ids); }
+    void set_output_slot_ids(::fixy::View<SlotId> slot_ids) noexcept { arrays_.set<kOutputSlotIds>(slot_ids); }
 };
 
 // The condition a BranchNode checks to select an arm.
@@ -576,13 +581,13 @@ private:
     // separate steps for that reason; they are disjoint in meaning, and a
     // permutation cannot lose either one.
     //
-    // Every producer sizes the scalar_args allocation to num_scalar_args, so the
-    // loop over it is in bounds.  A null scalar_args contributes the count only.
+    // An array of the entry holds its count or no element, so each loop
+    // reads the View alone.  An absent array of scalars contributes the count
+    // only.
     [[gnu::always_inline]] static void fold_entry_(uint64_t& content_hash_state, const TraceEntry& op_record) noexcept {
         content_hash_state = detail::combine_ids(content_hash_state, op_record.schema_hash.raw());
 
-        for (uint16_t j = 0; j < op_record.num_inputs; j++) {
-            const TensorMeta& input_meta = op_record.input_metas[j];
+        for (const TensorMeta& input_meta : op_record.input_metas()) {
             const uint64_t per_dim_hash_xor = raw_dim_hash(detail::dim_hash_simd_det(input_meta));
             uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(input_meta.dtype))
                                  | (static_cast<uint64_t>(std::to_underlying(input_meta.device_type)) << 8)
@@ -590,12 +595,10 @@ private:
             content_hash_state = detail::combine_ids(content_hash_state, per_dim_hash_xor ^ meta_packed);
         }
 
-        content_hash_state = detail::combine_ids(content_hash_state, static_cast<uint64_t>(op_record.num_scalar_args));
-        if (op_record.scalar_args) {
-            for (uint16_t s = 0; s < op_record.num_scalar_args; s++) {
-                content_hash_state =
-                    detail::combine_ids(content_hash_state, static_cast<uint64_t>(op_record.scalar_args[s]));
-            }
+        content_hash_state =
+            detail::combine_ids(content_hash_state, static_cast<uint64_t>(op_record.num_scalar_args()));
+        for (const int64_t scalar : op_record.scalar_args()) {
+            content_hash_state = detail::combine_ids(content_hash_state, static_cast<uint64_t>(scalar));
         }
     }
 

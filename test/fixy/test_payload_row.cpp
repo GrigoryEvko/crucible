@@ -39,16 +39,16 @@ int g_failures = 0;
 
 // The rosters, pinned.  A new family is one roster line plus one pin
 // here, which is what puts it in front of a reviewer.  The three rosters
-// hold fifteen entries, because one Graded entry stands for every band
+// hold sixteen entries, because one Graded entry stands for every band
 // spelling.
 static_assert(std::size(c::detail::row_carrying_payload_families) == 2,
               "Two families carry a row of their own: a Computation carries the row it was produced under, "
               "and a Capability conveys the effect it authorizes.  A third means a new kind of payload "
               "whose rule has to be written beside its roster entry.");
-static_assert(sizeof(c::detail::transparent_payload_families) == 13 * sizeof(std::meta::info),
-              "Thirteen families hide a payload and add nothing.  The Graded entry covers every band spelling. "
-              "The four containers (WriteOnce, FixedArray, AlignedBuffer, std::vector) hide their elements.  A "
-              "new wrapper that unwraps is one line here.");
+static_assert(sizeof(c::detail::transparent_payload_families) == 14 * sizeof(std::meta::info),
+              "Fourteen families hide a payload and add nothing.  The Graded entry covers every band spelling. "
+              "The five containers (WriteOnce, FixedArray, AlignedBuffer, RunSet, std::vector) hide their "
+              "elements.  A new wrapper that unwraps is one line here.");
 static_assert(std::size(c::detail::leaf_payload_families) == 1,
               "One family is admitted as a leaf.  Every entry is a claim that the template hides no effect "
               "row, which is why a leaf needs a line rather than falling through to a default.");
@@ -100,8 +100,15 @@ void a_container_reports_its_element() {
     EXPECT((std::is_same_v<c::payload_row_t<::fixy::FixedArray<BgComp, 5>>, eff::Row<eff::Effect::Bg>>));
     EXPECT((std::is_same_v<c::payload_row_t<std::vector<BgComp>>, eff::Row<eff::Effect::Bg>>));
     EXPECT((std::is_same_v<c::payload_row_t<::foundation::AlignedBuffer<BgComp>>, eff::Row<eff::Effect::Bg>>));
+    // A RunSet hides the element of each run, so a row of one run reaches
+    // the set.
+    using ::foundation::core::RunOf;
+    using ::foundation::core::RunSet;
+    EXPECT((std::is_same_v<c::payload_row_t<RunSet<std::uint16_t, RunOf<std::uint32_t, 0>, RunOf<BgComp, 0>>>,
+                           eff::Row<eff::Effect::Bg>>));
 
     EXPECT((std::is_same_v<c::payload_row_t<::fixy::WriteOnce<std::uint32_t>>, eff::Row<>>));
+    EXPECT((std::is_same_v<c::payload_row_t<RunSet<std::uint16_t, RunOf<std::int64_t, 0>>>, eff::Row<>>));
     EXPECT((std::is_same_v<c::payload_row_t<::fixy::FixedArray<std::int64_t, 5>>, eff::Row<>>));
     EXPECT((std::is_same_v<c::payload_row_t<::foundation::AlignedBuffer<unsigned long, 64>>, eff::Row<>>));
     EXPECT((std::is_same_v<c::payload_row_t<std::vector<std::uint32_t>>, eff::Row<>>));
@@ -127,6 +134,6 @@ int main() {
         std::fprintf(stderr, "test_payload_row: %d failure(s)\n", g_failures);
         return 1;
     }
-    std::printf("test_payload_row: fifteen roster entries answer for every payload, and the rest are refused\n");
+    std::printf("test_payload_row: sixteen roster entries answer for every payload, and the rest are refused\n");
     return 0;
 }

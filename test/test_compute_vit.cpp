@@ -119,86 +119,44 @@ int main() {
     std::printf("  plan: pool=%lu bytes, %u slots (%u external)\n", static_cast<unsigned long>(plan->pool_bytes),
                 plan->num_slots(), plan->num_external);
 
-    SlotId op0_in[] = {SlotId{SL_X}, SlotId{SL_G1}, SlotId{SL_B1}};
-    SlotId op0_out[] = {SlotId{SL_NORM1}};
-
-    SlotId op1_in[] = {SlotId{SL_NORM1}, SlotId{SL_WQ}};
-    SlotId op1_out[] = {SlotId{SL_Q}};
-
-    SlotId op2_in[] = {SlotId{SL_NORM1}, SlotId{SL_WK}};
-    SlotId op2_out[] = {SlotId{SL_K}};
-
-    SlotId op3_in[] = {SlotId{SL_NORM1}, SlotId{SL_WV}};
-    SlotId op3_out[] = {SlotId{SL_V}};
-
-    SlotId op4_in[] = {SlotId{SL_Q}, SlotId{SL_K}, SlotId{SL_V}};
-    SlotId op4_out[] = {SlotId{SL_ATTN}};
-
-    SlotId op5_in[] = {SlotId{SL_ATTN}, SlotId{SL_WOUT}};
-    SlotId op5_out[] = {SlotId{SL_PROJ}};
-
-    SlotId op6_in[] = {SlotId{SL_PROJ}, SlotId{SL_X}};
-    SlotId op6_out[] = {SlotId{SL_RES1}};
-
-    SlotId op7_in[] = {SlotId{SL_RES1}, SlotId{SL_G2}, SlotId{SL_B2}};
-    SlotId op7_out[] = {SlotId{SL_NORM2}};
-
-    SlotId op8_in[] = {SlotId{SL_NORM2}, SlotId{SL_WFF1}};
-    SlotId op8_out[] = {SlotId{SL_FF1}};
-
-    SlotId op9_in[] = {SlotId{SL_FF1}};
-    SlotId op9_out[] = {SlotId{SL_RELU}};
-
-    SlotId op10_in[] = {SlotId{SL_RELU}, SlotId{SL_WFF2}};
-    SlotId op10_out[] = {SlotId{SL_FF2}};
-
-    SlotId op11_in[] = {SlotId{SL_FF2}, SlotId{SL_RES1}};
-    SlotId op11_out[] = {SlotId{SL_RES2}};
-
-    SlotId op12_in[] = {SlotId{SL_RES2}};
-    SlotId op12_out[] = {SlotId{SL_CLS}};
-
-    SlotId op13_in[] = {SlotId{SL_CLS}, SlotId{SL_WHEAD}};
-    SlotId op13_out[] = {SlotId{SL_LOGITS}};
-
-    SlotId op14_in[] = {SlotId{SL_LOGITS}};
-    SlotId op14_out[] = {SlotId{SL_PROBS}};
+    // The slot ids of each op are arrays of this arena.
+    ::fixy::BumpArena runs{size_t{1} << 16};
+    const auto slots_of = [&](auto... slot_numbers) noexcept {
+        return crucible::test::run_of(test.alloc, runs, SlotId{slot_numbers}...);
+    };
 
     struct OpDef {
         SchemaHash schema;
         ShapeHash shape;
-        SlotId* in;
-        uint16_t n_in;
-        SlotId* out;
-        uint16_t n_out;
+        ::fixy::View<SlotId> in;
+        ::fixy::View<SlotId> out;
     };
-    OpDef defs[N_OPS] = {
-        {.schema = H_LN1, .shape = S_LN1, .in = op0_in, .n_in = 3, .out = op0_out, .n_out = 1},
-        {.schema = H_MMQ, .shape = S_MMQ, .in = op1_in, .n_in = 2, .out = op1_out, .n_out = 1},
-        {.schema = H_MMK, .shape = S_MMK, .in = op2_in, .n_in = 2, .out = op2_out, .n_out = 1},
-        {.schema = H_MMV, .shape = S_MMV, .in = op3_in, .n_in = 2, .out = op3_out, .n_out = 1},
-        {.schema = H_SDPA, .shape = S_SDPA, .in = op4_in, .n_in = 3, .out = op4_out, .n_out = 1},
-        {.schema = H_MMOUT, .shape = S_MMOUT, .in = op5_in, .n_in = 2, .out = op5_out, .n_out = 1},
-        {.schema = H_ADD1, .shape = S_ADD1, .in = op6_in, .n_in = 2, .out = op6_out, .n_out = 1},
-        {.schema = H_LN2, .shape = S_LN2, .in = op7_in, .n_in = 3, .out = op7_out, .n_out = 1},
-        {.schema = H_MMFF1, .shape = S_MMFF1, .in = op8_in, .n_in = 2, .out = op8_out, .n_out = 1},
-        {.schema = H_RELU, .shape = S_RELU, .in = op9_in, .n_in = 1, .out = op9_out, .n_out = 1},
-        {.schema = H_MMFF2, .shape = S_MMFF2, .in = op10_in, .n_in = 2, .out = op10_out, .n_out = 1},
-        {.schema = H_ADD2, .shape = S_ADD2, .in = op11_in, .n_in = 2, .out = op11_out, .n_out = 1},
-        {.schema = H_IDXSEL, .shape = S_IDXSEL, .in = op12_in, .n_in = 1, .out = op12_out, .n_out = 1},
-        {.schema = H_MMHEAD, .shape = S_MMHEAD, .in = op13_in, .n_in = 2, .out = op13_out, .n_out = 1},
-        {.schema = H_SOFTMAX, .shape = S_SOFTMAX, .in = op14_in, .n_in = 1, .out = op14_out, .n_out = 1},
+    const ::foundation::core::FixedArray<OpDef, N_OPS> defs{
+        OpDef{.schema = H_LN1, .shape = S_LN1, .in = slots_of(SL_X, SL_G1, SL_B1), .out = slots_of(SL_NORM1)},
+        OpDef{.schema = H_MMQ, .shape = S_MMQ, .in = slots_of(SL_NORM1, SL_WQ), .out = slots_of(SL_Q)},
+        OpDef{.schema = H_MMK, .shape = S_MMK, .in = slots_of(SL_NORM1, SL_WK), .out = slots_of(SL_K)},
+        OpDef{.schema = H_MMV, .shape = S_MMV, .in = slots_of(SL_NORM1, SL_WV), .out = slots_of(SL_V)},
+        OpDef{.schema = H_SDPA, .shape = S_SDPA, .in = slots_of(SL_Q, SL_K, SL_V), .out = slots_of(SL_ATTN)},
+        OpDef{.schema = H_MMOUT, .shape = S_MMOUT, .in = slots_of(SL_ATTN, SL_WOUT), .out = slots_of(SL_PROJ)},
+        OpDef{.schema = H_ADD1, .shape = S_ADD1, .in = slots_of(SL_PROJ, SL_X), .out = slots_of(SL_RES1)},
+        OpDef{.schema = H_LN2, .shape = S_LN2, .in = slots_of(SL_RES1, SL_G2, SL_B2), .out = slots_of(SL_NORM2)},
+        OpDef{.schema = H_MMFF1, .shape = S_MMFF1, .in = slots_of(SL_NORM2, SL_WFF1), .out = slots_of(SL_FF1)},
+        OpDef{.schema = H_RELU, .shape = S_RELU, .in = slots_of(SL_FF1), .out = slots_of(SL_RELU)},
+        OpDef{.schema = H_MMFF2, .shape = S_MMFF2, .in = slots_of(SL_RELU, SL_WFF2), .out = slots_of(SL_FF2)},
+        OpDef{.schema = H_ADD2, .shape = S_ADD2, .in = slots_of(SL_FF2, SL_RES1), .out = slots_of(SL_RES2)},
+        OpDef{.schema = H_IDXSEL, .shape = S_IDXSEL, .in = slots_of(SL_RES2), .out = slots_of(SL_CLS)},
+        OpDef{.schema = H_MMHEAD, .shape = S_MMHEAD, .in = slots_of(SL_CLS, SL_WHEAD), .out = slots_of(SL_LOGITS)},
+        OpDef{.schema = H_SOFTMAX, .shape = S_SOFTMAX, .in = slots_of(SL_LOGITS), .out = slots_of(SL_PROBS)},
     };
 
     ::foundation::core::FixedArray<TraceEntry, N_OPS> ops{};
-    for (uint32_t i = 0; i < N_OPS; i++) {
-        TraceEntry& op = *ops.get(i).expect("i is below N_OPS");
-        op.schema_hash = defs[i].schema;
-        op.shape_hash = defs[i].shape;
-        op.num_inputs = defs[i].n_in;
-        op.num_outputs = defs[i].n_out;
-        op.input_slot_ids = defs[i].in;
-        op.output_slot_ids = defs[i].out;
+    for (auto [op, def] : ::fixy::zip(ops.view(), defs.view())) {
+        op->schema_hash = def->schema;
+        op->shape_hash = def->shape;
+        op->set_num_inputs(static_cast<uint16_t>(def->in.size()));
+        op->set_num_outputs(static_cast<uint16_t>(def->out.size()));
+        op->set_input_slot_ids(def->in);
+        op->set_output_slot_ids(def->out);
     }
 
     RegionNode region{};
