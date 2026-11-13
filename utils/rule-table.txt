@@ -669,8 +669,10 @@ witness <foundation/core/Ref.h> no-match | foundation::core::Address | foundatio
 witness <foundation/core/Ref.h> private | foundation::core::detail::AddressKey | foundation::core::detail::AddressKey{}
 witness <foundation/core/Identity.h> private | foundation::core::Identity | foundation::core::Identity{forge::rvalue<unsigned long>()}
 # A View comes only from an owner of the base layer, so no pointer and no
-# count that a caller holds become a View.
+# count that a caller holds become a View.  The door from a reference to an
+# array takes the key that only ViewDoor builds.
 witness <foundation/core/Region.h> private | foundation::core::View<int> | foundation::core::View<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
+witness <foundation/core/Region.h> private | foundation::core::detail::ViewKey | foundation::core::detail::ViewKey{}
 # A cursor of a View or of a TextView takes the key that only
 # ViewCursorDoor builds, so each cursor comes from the run that it walks.
 witness <foundation/core/Cursor.h> no-match | foundation::core::ViewCursor<int> | foundation::core::ViewCursor<int>{forge::rvalue<int*>(), forge::rvalue<int*>()}

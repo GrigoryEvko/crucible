@@ -159,6 +159,28 @@ void test_fixed_array_of_a_type_with_no_default() {
     assert(values == same);
 }
 
+// The sum of the elements of an array, for a constant evaluation.
+constexpr std::uint32_t sum_of(FixedArray<std::uint32_t, 4> const& values) noexcept {
+    std::uint32_t sum = 0;
+    for (std::uint32_t const value : values) {
+        sum += value;
+    }
+    return sum;
+}
+
+// The View of a FixedArray comes from a reference to its array, with no
+// compare with a null pointer.  The build sets -fno-delete-null-pointer-checks,
+// and with it GCC 16 does not fold the compare of the address of a
+// block-scope static object with a null pointer in a constant evaluation.  A
+// loop over a static FixedArray is then a constant expression only when the
+// View has no such compare.
+void test_fixed_array_view_of_a_static_is_constant() {
+    static constexpr FixedArray<std::uint32_t, 4> values{1, 2, 3, 4};
+    static constexpr std::uint32_t sum = sum_of(values);
+    static_assert(sum == 10);
+    assert(sum_of(values) == 10);
+}
+
 // The property: random writes at checked indexes give the elements of the
 // same writes into a std::array.
 void test_fixed_array_agrees_with_std_array() {
@@ -193,6 +215,7 @@ int main() {
     test_fixed_array_view_fill_and_copy();
     test_get_reads_below_the_count();
     test_fixed_array_of_a_type_with_no_default();
+    test_fixed_array_view_of_a_static_is_constant();
     test_fixed_array_agrees_with_std_array();
     crucible::test::pass("test_core_array: all tests passed\n");
     return 0;

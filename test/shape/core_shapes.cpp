@@ -313,6 +313,16 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
     return sum;
 }
 
+// The first and the last element of a run of four elements: a loop over the
+// Option of the window<4>, and two reads at constant indexes of the run.
+[[gnu::used]] std::uint32_t view_window_fixed(fixy::View<std::uint32_t const> view, std::size_t offset) noexcept {
+    std::uint32_t value = 0;
+    for (fixy::View<std::uint32_t const, 4> run : view.window<4>(offset)) {
+        value = run.at(fixy::index<0>()) ^ run.at(fixy::index<3>());
+    }
+    return value;
+}
+
 [[gnu::used]] std::uint32_t view_reverse_sum(fixy::View<std::uint32_t const> view) noexcept {
     std::uint32_t sum = 0;
     for (std::uint32_t element : view.reverse()) {
@@ -384,6 +394,26 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
 // The last element of a FixedList, or zero for an empty list.
 [[gnu::used]] std::uint32_t fixed_list_take_last(fixy::FixedList<std::uint32_t, 64>& list) noexcept {
     return list.take_last().value_or(0u);
+}
+
+// The sum of the elements of a FixedArray: the loop of a raw pointer over the
+// elements, with no test of the address of the array.
+[[gnu::used]] std::uint32_t fixed_array_sum(::foundation::core::FixedArray<std::uint32_t, 16> const& array) noexcept {
+    std::uint32_t sum = 0;
+    for (std::uint32_t const element : array) {
+        sum += element;
+    }
+    return sum;
+}
+
+// The sum of the elements of a FixedList: the loop of a raw pointer up to the
+// count, with no test of the address of the list.
+[[gnu::used]] std::uint32_t fixed_list_sum(fixy::FixedList<std::uint32_t, 64> const& list) noexcept {
+    std::uint32_t sum = 0;
+    for (std::uint32_t const element : list) {
+        sum += element;
+    }
+    return sum;
 }
 
 // ── Ref, Choice and Report ──────────────────────────────────────────────────
@@ -908,6 +938,14 @@ struct RawList final {
     return sum;
 }
 
+[[gnu::used]] std::uint32_t view_window_fixed_raw(std::uint32_t const* first, std::size_t size,
+                                                  std::size_t offset) noexcept {
+    if (offset > size || 4 > size - offset) [[unlikely]] {
+        return 0;
+    }
+    return first[offset] ^ first[offset + 3];
+}
+
 [[gnu::used]] std::uint32_t view_reverse_sum_raw(std::uint32_t const* first, std::size_t count) noexcept {
     std::uint32_t sum = 0;
     for (std::uint32_t const* after = first + count; after != first; --after) {
@@ -983,6 +1021,22 @@ struct RawList final {
     }
     --list.count;
     return list.slots[list.count];
+}
+
+[[gnu::used]] std::uint32_t fixed_array_sum_raw(std::array<std::uint32_t, 16> const& array) noexcept {
+    std::uint32_t sum = 0;
+    for (std::uint32_t const element : array) {
+        sum += element;
+    }
+    return sum;
+}
+
+[[gnu::used]] std::uint32_t fixed_list_sum_raw(RawList const& list) noexcept {
+    std::uint32_t sum = 0;
+    for (std::uint32_t const* cursor = list.slots; cursor != list.slots + list.count; ++cursor) {
+        sum += *cursor;
+    }
+    return sum;
 }
 
 [[gnu::used]] std::uint32_t box_read_raw(std::unique_ptr<Payload>& box) noexcept { return box->value; }

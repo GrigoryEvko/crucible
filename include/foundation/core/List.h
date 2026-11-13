@@ -114,6 +114,11 @@ private:
     [[nodiscard]] constexpr T* slot(std::size_t position) noexcept { return &elements_[position]; }
     [[nodiscard]] constexpr T const* slot(std::size_t position) const noexcept { return &elements_[position]; }
 
+    // The array of the N slots.  The reference reads no slot, so it is
+    // valid also when a slot holds no element.
+    [[nodiscard]] constexpr T (&slots() noexcept)[N] { return elements_; }
+    [[nodiscard]] constexpr T const (&slots() const noexcept)[N] { return elements_; }
+
 public:
     constexpr ListSlots() noexcept
         requires std::is_trivially_default_constructible_v<T>
@@ -298,14 +303,18 @@ public:
     }
 
     // The View of the elements.  It borrows this list, and a push or a take
-    // ends what it borrows.
+    // ends what it borrows.  The count is at most N, and the first count
+    // slots hold the elements, so the View comes from a reference to the
+    // array of the slots, with no test of a null pointer.  A constant
+    // evaluation of an empty list gives the empty View, because the union
+    // starts no element, and the evaluation names no member of it.
     [[nodiscard]] constexpr View<T> view() & noexcept {
         if consteval {
             if (count_ == 0) {
                 return View<T>{};
             }
         }
-        return detail::view_over_(first_(), size());
+        return View<T>{detail::ViewDoor::key(), slots_.slots(), size()};
     }
     [[nodiscard]] constexpr View<T const> view() const& noexcept {
         if consteval {
@@ -313,7 +322,7 @@ public:
                 return View<T const>{};
             }
         }
-        return detail::view_over_(first_(), size());
+        return View<T const>{detail::ViewDoor::key(), slots_.slots(), size()};
     }
     void view() && = delete("a view of a temporary FixedList points into an object that the full expression ends");
     void view() const&& = delete("a view of a temporary FixedList points into an object that the full expression ends");

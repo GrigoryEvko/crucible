@@ -129,9 +129,13 @@ public:
 
     [[nodiscard]] static constexpr std::size_t size() noexcept { return N; }
 
-    // The View of the elements.  It borrows this array.
-    [[nodiscard]] constexpr View<T, N> view() & noexcept { return detail::view_over_<N>(&elements_[0]); }
-    [[nodiscard]] constexpr View<T const, N> view() const& noexcept { return detail::view_over_<N>(&elements_[0]); }
+    // The View of the elements.  It borrows this array.  The View comes from
+    // a reference to the array of the N elements, with no test of a null
+    // pointer.
+    [[nodiscard]] constexpr View<T, N> view() & noexcept { return View<T, N>{detail::ViewDoor::key(), elements_}; }
+    [[nodiscard]] constexpr View<T const, N> view() const& noexcept {
+        return View<T const, N>{detail::ViewDoor::key(), elements_};
+    }
     void view() && = delete("a view of a temporary FixedArray points into an object that the full expression ends");
     void
     view() const&& = delete("a view of a temporary FixedArray points into an object that the full expression ends");

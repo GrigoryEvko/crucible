@@ -533,6 +533,13 @@ PROBES: tuple[Probe, ...] = (
         checks=(TRAP,),
         branches=True,
     ),
+    Probe(
+        "view_window_fixed",
+        "a loop over the window<4> of a View is the bounds compare of the raw form and two loads, with no test of the "
+        "niche of the Option.  The family side computes the address of the run with one lea, and the raw side reads "
+        "the two elements with two indexed loads",
+        longer=1,
+    ),
     Probe("view_reverse_sum", "a loop over reverse() of a View is the backward loop of a raw pointer"),
     Probe("view_windows_sum", "a loop over windows<2>() of a View is the loop of a raw pointer over each run"),
     Probe("view_chunks_sum", "a loop over chunks<4>() of a View is the loop of a raw pointer with a step of four"),
@@ -549,6 +556,15 @@ PROBES: tuple[Probe, ...] = (
         f"goes to that compare.  {HARDENED_BUILDS}",
         checks=(TRAP,),
         branches=True,
+    ),
+    Probe(
+        "fixed_array_sum",
+        "a loop over a FixedArray is the counted loop of a raw pointer over the elements, with no test of the address "
+        "of the array",
+    ),
+    Probe(
+        "fixed_list_sum",
+        "a loop over a FixedList is the loop of a raw pointer up to the count, with no test of the address of the list",
     ),
     Probe(
         "view_enumerate_sum", "a loop over enumerate() of a View of a fixed extent is the counted loop of a raw pointer"

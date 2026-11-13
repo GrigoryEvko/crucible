@@ -183,6 +183,39 @@ void test_iteration_verbs_of_a_list() {
     assert(list.chunks<2>().rest().size() == 1);
 }
 
+// A list of the first count numbers from 1, for a constant evaluation.
+constexpr FixedList<int, 4> list_of(int count) noexcept {
+    FixedList<int, 4> list;
+    for (int value = 1; value <= count; ++value) {
+        static_cast<void>(list.push(value).expect("the list has room"));
+    }
+    return list;
+}
+
+constexpr int sum_of(FixedList<int, 4> const& list) noexcept {
+    int sum = 0;
+    for (int const element : list) {
+        sum += element;
+    }
+    return sum;
+}
+
+// The View of a FixedList comes from a reference to the array of its slots,
+// with no compare with a null pointer.  The build sets
+// -fno-delete-null-pointer-checks, and with it GCC 16 does not fold the
+// compare of the address of a block-scope static object with a null pointer
+// in a constant evaluation.  A loop over a static FixedList is then a
+// constant expression only when the View has no such compare.
+void test_view_of_a_static_list_is_constant() {
+    static constexpr FixedList<int, 4> three = list_of(3);
+    static constexpr FixedList<int, 4> none = list_of(0);
+    static constexpr int sum = sum_of(three);
+    static constexpr int empty_sum = sum_of(none);
+    static_assert(sum == 6 && empty_sum == 0);
+    assert(sum_of(three) == 6 && sum_of(none) == 0);
+    assert(none.view().size() == 0);
+}
+
 }  // namespace
 
 int main() {
@@ -192,6 +225,7 @@ int main() {
     test_full_gives_a_linear_value_back();
     test_list_agrees_with_the_model();
     test_iteration_verbs_of_a_list();
+    test_view_of_a_static_list_is_constant();
     crucible::test::pass("test_core_list: all tests passed\n");
     return 0;
 }

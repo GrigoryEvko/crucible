@@ -7,8 +7,10 @@
 // holds the count.  A View owns nothing, and an owner gives it out.  The
 // constructor from raw parts is private, and only the base layer reaches
 // it, through detail::view_over_, so no pointer that a caller holds becomes
-// a View.  The seal refuses std::bit_cast, so no bytes become a View
-// either.
+// a View.  An owner that proves its run, such as a FixedArray or a
+// FixedList, makes its View from a reference to its array with the key of
+// detail::ViewDoor, which has no test of a null pointer.  The seal
+// refuses std::bit_cast, so no bytes become a View either.
 //
 // The operations:
 //
@@ -124,6 +126,29 @@ struct ViewCount<dynamic_extent> {
     [[nodiscard]] constexpr std::size_t value() const noexcept { return count; }
 };
 
+// The key of the constructors of a View from a reference to an array: the
+// door of the base layer for a run that its owner proves, with no check.  A
+// reference is never null, so the constructor has no test of the pointer,
+// also with -fno-delete-null-pointer-checks.  ViewDoor is the
+// one friend of the key, and only ViewDoor builds it.  The key and the door
+// hold no template, so no explicit specialization of a template reaches the
+// key.  The rule owners keeps each caller outside the base out of detail.
+struct ViewDoor;
+
+class [[nodiscard]] ViewKey final {
+    friend struct ViewDoor;
+
+    constexpr ViewKey() noexcept {}
+    constexpr ViewKey(ViewKey const&) noexcept {}
+
+public:
+    ViewKey& operator=(ViewKey const&) = delete("a key of a View lives for one construction");
+};
+
+struct ViewDoor {
+    [[nodiscard]] static constexpr ViewKey key() noexcept { return ViewKey{}; }
+};
+
 // The door from raw parts to a View, for the owners of the base layer.
 // The rule owners keeps each other caller out.
 template <class T>
@@ -226,6 +251,24 @@ public:
     constexpr View() noexcept
         requires(Extent == dynamic_extent)
     = default;
+
+    // The door of the base layer: the first count elements of an array of
+    // Count elements, which the caller proves live, with count at most
+    // Count, and no check.  An owner whose invariant bounds its count, such
+    // as a FixedList, makes its View through it.  The type of the array
+    // bounds Count by max_view_count.
+    template <std::size_t Count>
+        requires(Extent == dynamic_extent && ViewExtent<T, Count>)
+    constexpr View(detail::ViewKey const& /*key*/, T (&elements)[Count], std::size_t count) noexcept
+        : first_{elements}, count_{count} {}
+
+    // The door of the base layer for a fixed extent: the elements of an
+    // array of Extent elements, which the caller proves live, with no check.
+    // An owner of Extent elements, such as a FixedArray, makes its View
+    // through it.
+    template <std::size_t Count>
+        requires(Extent != dynamic_extent && Count == Extent)
+    constexpr View(detail::ViewKey const& /*key*/, T (&elements)[Count]) noexcept : first_{elements} {}
 
     // Adds a const to the element, or drops the fixed extent, or both.
     template <class U, std::size_t OtherExtent>
@@ -349,9 +392,13 @@ public:
         // The window fits and holds at least one element, so this View holds
         // one, and its door gave it a pointer that is not null.  The
         // optimizer then knows that the window is not the empty value of
-        // the niche, and the Option needs no test.
-        [[assume(first_ != nullptr)]];
-        return Result::some(View<T, Window>{first_ + offset});
+        // the niche, and the Option needs no test.  The assume reads a local
+        // pointer.  With an assume on the member first_, GCC 16 kept the
+        // View in memory and kept the test of the niche, and the probe
+        // view_window_fixed of a Release build had 15 more instructions.
+        T* const first = first_ + offset;
+        [[assume(first != nullptr)]];
+        return Result::some(View<T, Window>{first});
     }
 };
 
