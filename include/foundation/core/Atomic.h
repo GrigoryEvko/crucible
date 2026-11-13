@@ -346,18 +346,22 @@ template <class Role, class Brand>
 class SoleWriter;
 
 // The one door to a sole writer.  The fresh brand is the last template
-// parameter, after a pack, so a caller can name the role and nothing else.
-// An explicit second argument goes into the pack, and the constraint refuses
-// it.
+// parameter, after a pack, so an explicit second argument goes into the pack,
+// and the constraint refuses it.  The result type holds the brand in
+// undeducible_brand_t, so no type sets the brand by deduction.  An address of
+// the mint with a target type that names a held brand then matches no
+// specialization, and the declared type of an explicit specialization sets
+// no brand, so no specialization becomes a friend of the key.
 template <class Role, class... Arguments, class Brand = CRUCIBLE_FRESH_BRAND>
     requires detail::SoleWriterMint<Role, Arguments...>
-[[nodiscard]] constexpr SoleWriter<Role, Brand> mint_sole_writer() noexcept;
+[[nodiscard]] constexpr SoleWriter<Role, ::foundation::brand::undeducible_brand_t<Brand>> mint_sole_writer() noexcept;
 
 // The key of the constructor of a sole writer.  Only mint_sole_writer makes
-// one.  The two constructors are user-provided, so std::bit_cast and a
-// lifetime start over bytes build no key.  The key stays in this namespace,
-// because a friend declaration in a nested namespace would declare a
-// different mint there.
+// one, and no explicit specialization of the mint matches its declaration.
+// The two constructors are user-provided, so std::bit_cast and a lifetime
+// start over bytes build no key.  The key stays in this namespace, because a
+// friend declaration in a nested namespace would declare a different mint
+// there.
 class sole_writer_key final {
     constexpr sole_writer_key() noexcept {}
 
@@ -367,7 +371,7 @@ public:
 private:
     template <class Role, class... Arguments, class Brand>
         requires detail::SoleWriterMint<Role, Arguments...>
-    friend constexpr SoleWriter<Role, Brand> mint_sole_writer() noexcept;
+    friend constexpr SoleWriter<Role, ::foundation::brand::undeducible_brand_t<Brand>> mint_sole_writer() noexcept;
 };
 
 // The proof of the one thread that writes a cell (THE CELL OF ONE WRITER).
@@ -412,7 +416,7 @@ private:
 
 template <class Role, class... Arguments, class Brand>
     requires detail::SoleWriterMint<Role, Arguments...>
-[[nodiscard]] constexpr SoleWriter<Role, Brand> mint_sole_writer() noexcept {
+[[nodiscard]] constexpr SoleWriter<Role, ::foundation::brand::undeducible_brand_t<Brand>> mint_sole_writer() noexcept {
     return SoleWriter<Role, Brand>{sole_writer_key{}};
 }
 

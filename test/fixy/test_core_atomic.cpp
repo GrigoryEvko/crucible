@@ -145,6 +145,15 @@ using ::foundation::core::to;
 struct HeadRole {};
 struct TailRole {};
 
+// True when the address of the mint with a target type of the brand Held
+// gives a function, as deduction from the target type would.  The result
+// type holds the brand in a context that deduction cannot set, so a target
+// type of a held brand gives no second writer of it.
+template <class Held>
+concept AddressTakesBrand = requires {
+    static_cast<::foundation::core::SoleWriter<HeadRole, Held> (*)() noexcept>(&mint_sole_writer<HeadRole>);
+};
+
 namespace eff = ::foundation::effects;
 using WorkerCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>>;
 
@@ -700,6 +709,8 @@ void test_word_option_publishes_to_acquire() {
 // with load_owned, and each read agrees with load_acquire.
 void test_sole_writer_single_thread() {
     auto writer = mint_sole_writer<HeadRole>();
+    static_assert(!AddressTakesBrand<decltype(writer)::brand_type>,
+                  "the address of the mint with a target type of the held brand gives no second writer of it");
     Atomic<std::uint64_t, decltype(writer)> head{std::uint64_t{3}};
     CRUCIBLE_FATAL_INVARIANT(head.load_owned(writer) == 3 && head.load_acquire() == 3);
     head.store_release(writer, head.load_owned(writer) + 4);

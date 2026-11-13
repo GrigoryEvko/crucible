@@ -743,9 +743,6 @@ foundation_neg_compile_test(neg_specialization_home_friend_address_of
 foundation_neg_compile_test(neg_specialization_home_friend_heap_array
   "neg_specialization_home_friend_heap_array\\.cpp:15:[0-9]+: error: this file specializes the template .foundation::core::mint_heap_array. outside its home .include/foundation/core/Array\\.h."
   "an explicit specialization gives the function a different body")
-foundation_neg_compile_test(neg_specialization_home_friend_sole_writer
-  "neg_specialization_home_friend_sole_writer\\.cpp:16:[0-9]+: error: this file specializes the template .foundation::core::mint_sole_writer. outside its home .include/foundation/core/Atomic\\.h."
-  "an explicit specialization gives the function a different body")
 foundation_neg_compile_test(neg_specialization_home_detail_view_over
   "neg_specialization_home_detail_view_over\\.cpp:13:[0-9]+: error: this file specializes the template .foundation::core::detail::view_over_. outside its home .include/foundation/core/Region\\.h."
   "an explicit specialization gives the function a different body")
@@ -2432,6 +2429,12 @@ foundation_neg_compile_test(neg_core_sole_writer_mint_role_not_class
 foundation_neg_compile_test(neg_core_sole_writer_mint_named_brand
   "no matching function for call to .mint_sole_writer<.*HeadRole, HeldBrand>\\(\\)."
   "the expression .sizeof ... \\(Arguments ...\\) == 0 \\[with Arguments = .*\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_sole_writer_bound_to_held_brand
+  "invalid initialization of non-const reference of type .foundation::core::SoleWriter<\\{anonymous\\}::HeadRole, foundation::core::<lambda\\(\\)> > \\(&\\)\\(\\) noexcept. from an rvalue of type .<unresolved overloaded function type>."
+  "neg_core_sole_writer_bound_to_held_brand\\.cpp:18:[0-9]+: error:")
+foundation_neg_compile_test(neg_core_sole_writer_forged_specialization
+  "template-id .mint_sole_writer<\\{anonymous\\}::OtherRole>. for .constexpr foundation::core::SoleWriter<\\{anonymous\\}::OtherRole, foundation::core::<lambda\\(\\)> > foundation::core::mint_sole_writer\\(\\). does not match any template declaration"
+  "candidate is: .template<class Role, class ... Arguments, class Brand>  requires  SoleWriterMint<Role, Arguments ...> constexpr foundation::core::SoleWriter<Role, typename foundation::brand::undeducible_brand<Brand>::type> foundation::core::mint_sole_writer\\(\\).")
 foundation_neg_compile_test(neg_core_sole_writer_copied
   "use of deleted function .foundation::core::SoleWriter<Role, Brand>::SoleWriter\\(const foundation::core::SoleWriter<Role, Brand>&\\)"
   "SoleWriter: a copy gives the cell a second writer")
