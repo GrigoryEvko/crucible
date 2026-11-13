@@ -834,7 +834,10 @@ public:
                uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY;
 
     // Signals the drain stage to stop and joins the pipeline thread.  The
-    // pipeline joins its stage threads before the thread ends.
+    // pipeline joins its stage threads before the thread ends.  The signal
+    // does not wake a sleeping drain stage, so the stage reads it at the end
+    // of its sleep, within RING_MAX_SLEEP_NANOS (0.2 ms).  That bound comes
+    // from the margin of the trace ring, which a sleep must not fill.
     void stop() CRUCIBLE_NO_THREAD_SAFETY;
 
     ~BackgroundThread() CRUCIBLE_NO_THREAD_SAFETY;
