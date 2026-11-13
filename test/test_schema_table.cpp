@@ -67,11 +67,10 @@ static void test_empty_lookup_returns_nullptr() {
 
 static void test_register_and_lookup() {
     SchemaTable t;
-    const auto mv = t.mint_mutable_view(kVigilForeground);
-    assert(mv.has_value());
-    reg(t, *mv, H(0x100), S("aten::mm"));
-    reg(t, *mv, H(0x200), S("aten::add.Tensor"));
-    reg(t, *mv, H(0x300), S("aten::linear"));
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    reg(t, mv, H(0x100), S("aten::mm"));
+    reg(t, mv, H(0x200), S("aten::add.Tensor"));
+    reg(t, mv, H(0x300), S("aten::linear"));
 
     assert(eq(t.lookup(H(0x100)), "aten::mm"));
     assert(eq(t.lookup(H(0x200)), "aten::add.Tensor"));
@@ -82,11 +81,10 @@ static void test_register_and_lookup() {
 
 static void test_short_name_strips_aten_prefix() {
     SchemaTable t;
-    const auto mv = t.mint_mutable_view(kVigilForeground);
-    assert(mv.has_value());
-    reg(t, *mv, H(0x100), S("aten::mm"));
-    reg(t, *mv, H(0x200), S("aten::scaled_dot_product_attention"));
-    reg(t, *mv, H(0x300), S("prim::TupleConstruct"));  // non-aten
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    reg(t, mv, H(0x100), S("aten::mm"));
+    reg(t, mv, H(0x200), S("aten::scaled_dot_product_attention"));
+    reg(t, mv, H(0x300), S("prim::TupleConstruct"));  // non-aten
 
     assert(eq(t.short_name(H(0x100)), "mm"));
     assert(eq(t.short_name(H(0x200)), "scaled_dot_product_attention"));
@@ -97,11 +95,10 @@ static void test_short_name_strips_aten_prefix() {
 
 static void test_idempotent_re_register() {
     SchemaTable t;
-    const auto mv = t.mint_mutable_view(kVigilForeground);
-    assert(mv.has_value());
-    reg(t, *mv, H(0x42), S("first"));
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    reg(t, mv, H(0x42), S("first"));
     assert(t.count() == 1);
-    reg(t, *mv, H(0x42), S("updated"));  // same hash, new name
+    reg(t, mv, H(0x42), S("updated"));  // same hash, new name
     assert(t.count() == 1);  // no duplicate
     assert(eq(t.lookup(H(0x42)), "updated"));
     crucible::test::pass("  test_re_register:               PASSED\n");
@@ -109,15 +106,14 @@ static void test_idempotent_re_register() {
 
 static void test_binary_search_across_many() {
     SchemaTable t;
-    const auto mv = t.mint_mutable_view(kVigilForeground);
-    assert(mv.has_value());
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
     constexpr uint32_t N = 256;
     char names[N][16];
     for (uint32_t i = 0; i < N; ++i) {
         std::snprintf(names[i], sizeof(names[i]), "op_%u", i);
         // Deterministic but shuffled — test sort-on-insert.
         const uint64_t key = 0x9E3779B97F4A7C15ULL * (i + 1);
-        reg(t, *mv, SchemaHash{key}, S(names[i]));
+        reg(t, mv, SchemaHash{key}, S(names[i]));
     }
     assert(t.count() == N);
     for (uint32_t i = 0; i < N; ++i) {
@@ -132,9 +128,8 @@ static void test_binary_search_across_many() {
 
 static void test_global_table_convenience() {
     global_schema_table().clear(test_ctx());  // this table outlives the test
-    const auto gv = global_schema_table().mint_mutable_view(kVigilForeground);
-    assert(gv.has_value());
-    const bool was_registered = register_schema_name(*gv, H(0xAA), S("aten::relu"));
+    const auto gv = global_schema_table().mint_mutable_view(kVigilForeground).expect("a cleared table is open");
+    const bool was_registered = register_schema_name(gv, H(0xAA), S("aten::relu"));
     assert(was_registered);
     assert(eq(schema_name(H(0xAA)), "aten::relu"));
     assert(eq(schema_short_name(H(0xAA)), "relu"));
@@ -145,9 +140,8 @@ static void test_global_table_convenience() {
 
 static void test_null_name_is_noop() {
     SchemaTable t;
-    const auto mv = t.mint_mutable_view(kVigilForeground);
-    assert(mv.has_value());
-    reg(t, *mv, H(0x77), S(nullptr));  // must not crash or corrupt
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    reg(t, mv, H(0x77), S(nullptr));  // must not crash or corrupt
     assert(t.count() == 0);
     assert(missing(t.lookup(H(0x77))));
     crucible::test::pass("  test_null_name:                 PASSED\n");
@@ -169,16 +163,15 @@ static void test_sealed_table_mints_no_mutable_view() {
     // well: a sealed table hands out no view that could write to it.
     SchemaTable t;
     t.seal();
-    assert(!t.mint_mutable_view(kVigilForeground).has_value());
+    assert(t.mint_mutable_view(kVigilForeground).is_none());
     assert(t.count() == 0);
     crucible::test::pass("  test_sealed_no_mutable_view:    PASSED\n");
 }
 
 static void test_clear_resets_seal() {
     SchemaTable t;
-    const auto mv = t.mint_mutable_view(kVigilForeground);
-    assert(mv.has_value());
-    reg(t, *mv, H(0xAB), S("aten::matmul"));
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    reg(t, mv, H(0xAB), S("aten::matmul"));
     t.seal();
     assert(t.is_sealed());
     assert(t.count() == 1);
@@ -187,9 +180,8 @@ static void test_clear_resets_seal() {
     assert(!t.is_sealed());
     assert(t.count() == 0);
     // After clear, the table is Mutable again — register works.
-    const auto mv_after_clear = t.mint_mutable_view(kVigilForeground);
-    assert(mv_after_clear.has_value());
-    reg(t, *mv_after_clear, H(0xCD), S("aten::add"));
+    const auto mv_after_clear = t.mint_mutable_view(kVigilForeground).expect("a cleared table is open");
+    reg(t, mv_after_clear, H(0xCD), S("aten::add"));
     assert(t.count() == 1);
     assert(eq(t.lookup(H(0xCD)), "aten::add"));
     crucible::test::pass("  test_clear_resets_seal:         PASSED\n");
@@ -199,16 +191,15 @@ static void test_write_after_seal_through_an_older_view_is_refused() {
     // The view proves only that the table was open when it was minted.  A
     // seal that lands between the mint and the write must refuse the write.
     SchemaTable t;
-    const auto mv = t.mint_mutable_view(kVigilForeground);
-    assert(mv.has_value());
-    reg(t, *mv, H(0x10), S("aten::before"));
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    reg(t, mv, H(0x10), S("aten::before"));
     t.seal();
-    const bool was_registered = t.register_name(*mv, H(0x20), S("aten::after"));
+    const bool was_registered = t.register_name(mv, H(0x20), S("aten::after"));
     assert(!was_registered);
     assert(t.count() == 1);
     assert(missing(t.lookup(H(0x20))));
     // A write to an existing hash is refused too, and keeps the old name.
-    const bool was_renamed = t.register_name(*mv, H(0x10), S("aten::renamed"));
+    const bool was_renamed = t.register_name(mv, H(0x10), S("aten::renamed"));
     assert(!was_renamed);
     assert(eq(t.lookup(H(0x10)), "aten::before"));
     crucible::test::pass("  test_write_after_seal_refused:  PASSED\n");
@@ -216,9 +207,8 @@ static void test_write_after_seal_through_an_older_view_is_refused() {
 
 static void test_typed_register_with_mutable_view() {
     SchemaTable t;
-    const auto mv = t.mint_mutable_view(kVigilForeground);
-    assert(mv.has_value());
-    reg(t, *mv, H(0xBEEF), S("aten::conv2d"));
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    reg(t, mv, H(0xBEEF), S("aten::conv2d"));
     assert(eq(t.lookup(H(0xBEEF)), "aten::conv2d"));
     crucible::test::pass("  test_typed_register:            PASSED\n");
 }
@@ -227,10 +217,9 @@ static void test_sanitized_boundary_name_registers() {
     // A name from the C ABI registers only after the boundary check, which
     // the retag from ABIBoundary to Sanitized records.
     SchemaTable t;
-    const auto mv = t.mint_mutable_view(kVigilForeground);
-    assert(mv.has_value());
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
     auto sanitized = ::fixy::mint_tagged<source::ABIBoundary>("aten::from_abi").retag<source::Sanitized>();
-    reg(t, *mv, H(0xAB1), sanitized);
+    reg(t, mv, H(0xAB1), sanitized);
     assert(eq(t.lookup(H(0xAB1)), "aten::from_abi"));
     crucible::test::pass("  test_sanitized_boundary_name:   PASSED\n");
 }
@@ -239,10 +228,9 @@ static void test_lookup_works_post_seal() {
     // Sealing stops writers, not readers.  Lookup is the background
     // thread's path and has to keep working afterwards.
     SchemaTable t;
-    const auto mv = t.mint_mutable_view(kVigilForeground);
-    assert(mv.has_value());
-    reg(t, *mv, H(0x111), S("aten::sum"));
-    reg(t, *mv, H(0x222), S("aten::mean"));
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    reg(t, mv, H(0x111), S("aten::sum"));
+    reg(t, mv, H(0x222), S("aten::mean"));
     t.seal();
 
     const auto sv = t.mint_sealed_view();

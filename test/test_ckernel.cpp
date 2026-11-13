@@ -138,10 +138,9 @@ int main() {
     {
         CKernelTable t;
         assert(!t.is_sealed());
-        const auto mv = t.mint_mutable_view(kVigilForeground);
-        assert(mv.has_value());
+        const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
 
-        const bool was_registered = t.register_op(*mv, SchemaHash{0x1}, CKernelId::GEMM_MM);
+        const bool was_registered = t.register_op(mv, SchemaHash{0x1}, CKernelId::GEMM_MM);
         assert(was_registered);
         assert(t.count() == 1);
 
@@ -152,13 +151,13 @@ int main() {
         assert(t.is_sealed());
 
         // A sealed table mints no mutable view, in every build mode.
-        assert(!t.mint_mutable_view(kVigilForeground).has_value());
+        assert(t.mint_mutable_view(kVigilForeground).is_none());
 
         // A view minted before the seal proves only that the table was open
         // then.  Its write after the seal is refused and changes nothing.
-        const bool was_added_after_seal = t.register_op(*mv, SchemaHash{0x3}, CKernelId::SDPA);
+        const bool was_added_after_seal = t.register_op(mv, SchemaHash{0x3}, CKernelId::SDPA);
         assert(!was_added_after_seal);
-        const bool was_replaced_after_seal = t.register_op(*mv, SchemaHash{0x1}, CKernelId::SDPA);
+        const bool was_replaced_after_seal = t.register_op(mv, SchemaHash{0x1}, CKernelId::SDPA);
         assert(!was_replaced_after_seal);
         assert(t.count() == 1);
         assert(t.classify(SchemaHash{0x1}) == CKernelId::GEMM_MM);
@@ -169,18 +168,16 @@ int main() {
         assert(!t.is_sealed());
         assert(t.count() == 0);
 
-        const auto mv_after_clear = t.mint_mutable_view(kVigilForeground);
-        assert(mv_after_clear.has_value());
-        const bool was_registered_after_clear = t.register_op(*mv_after_clear, SchemaHash{0x2}, CKernelId::SDPA);
+        const auto mv_after_clear = t.mint_mutable_view(kVigilForeground).expect("a cleared table is open");
+        const bool was_registered_after_clear = t.register_op(mv_after_clear, SchemaHash{0x2}, CKernelId::SDPA);
         assert(was_registered_after_clear);
         assert(t.classify(SchemaHash{0x2}) == CKernelId::SDPA);
     }
 
     {
         CKernelTable t;
-        const auto mv = t.mint_mutable_view(kVigilForeground);
-        assert(mv.has_value());
-        const bool was_registered = t.register_op(*mv, SchemaHash{0x42}, CKernelId::CONV2D);
+        const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+        const bool was_registered = t.register_op(mv, SchemaHash{0x42}, CKernelId::CONV2D);
         assert(was_registered);
         assert(t.classify(SchemaHash{0x42}) == CKernelId::CONV2D);
     }
@@ -189,11 +186,10 @@ int main() {
     // must keep working once the table is sealed.
     {
         CKernelTable t;
-        const auto mv = t.mint_mutable_view(kVigilForeground);
-        assert(mv.has_value());
-        const bool was_mm_registered = t.register_op(*mv, SchemaHash{0x111}, CKernelId::GEMM_MM);
+        const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+        const bool was_mm_registered = t.register_op(mv, SchemaHash{0x111}, CKernelId::GEMM_MM);
         assert(was_mm_registered);
-        const bool was_norm_registered = t.register_op(*mv, SchemaHash{0x222}, CKernelId::LAYER_NORM);
+        const bool was_norm_registered = t.register_op(mv, SchemaHash{0x222}, CKernelId::LAYER_NORM);
         assert(was_norm_registered);
         t.seal();
         assert(t.classify(SchemaHash{0x111}) == CKernelId::GEMM_MM);

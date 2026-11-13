@@ -1,8 +1,8 @@
 // SchemaTable::lookup — sorted binary-search op-name resolution.
 //
 // Not on the bg drain hot path; diagnostic / visualization only. Still
-// measured for parity with CKernelTable since they share the "sorted
-// array + std::ranges::sort on insert" pattern.
+// measured for parity with CKernelTable, because the two tables keep their
+// entries in the order of the hashes.
 
 #include <cstdint>
 #include <cstdio>
@@ -24,8 +24,8 @@ int main() {
     SchemaTable table{};
     // The view asks for the context of a Vigil's producer claim.  The bench
     // uses no Vigil, so it takes that context from the test door.
-    const auto mutable_view = table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>());
-    CRUCIBLE_FATAL_INVARIANT(mutable_view.has_value());
+    const auto mutable_view = table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>())
+                                  .expect("a fresh table mints a mutable view");
     SchemaHash hashes[N];
     char names[N][16];
     for (uint32_t i = 0; i < N; i++) {
@@ -33,7 +33,7 @@ int main() {
         hashes[i] = SchemaHash{h};
         std::snprintf(names[i], sizeof(names[i]), "aten::op%u", i);
         const bool was_registered = table.register_name(
-            *mutable_view, hashes[i],
+            mutable_view, hashes[i],
             ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(static_cast<const char*>(names[i])));
         CRUCIBLE_FATAL_INVARIANT(was_registered);
     }

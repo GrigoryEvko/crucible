@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <optional>
 #include <type_traits>
 
 namespace crucible {
@@ -88,10 +87,10 @@ public:
     // a Vigil's producer claim.  The sealed view is for readers, and a
     // reader on the background thread holds no such claim.  A registration
     // is cold, so the view also checks the calling thread at run time.
-    [[nodiscard]] std::optional<MutableView> mint_mutable_view(VigilFgCtx const& fg) const noexcept {
+    [[nodiscard]] ::fixy::Option<MutableView> mint_mutable_view(VigilFgCtx const& fg) const noexcept {
         ::foundation::effects::host::require_brand_thread(fg);
-        if (is_sealed()) return std::nullopt;
-        return ::fixy::mint_view<schema_state::Mutable>(*this);
+        if (is_sealed()) return ::fixy::none;
+        return ::fixy::Option<MutableView>::some(::fixy::mint_view<schema_state::Mutable>(*this));
     }
 
     [[nodiscard]] SealedView mint_sealed_view() const noexcept {
@@ -299,14 +298,14 @@ template <SchemaNameSource Tag>
 template <SchemaNameSource Tag>
 inline void register_schema_name(VigilFgCtx const& fg, SchemaHash hash, SchemaTable::Name<Tag> const& name) {
     SchemaTable& global_table = global_schema_table();
-    if (const auto global_view = global_table.mint_mutable_view(fg)) {
-        if (global_table.register_name(*global_view, hash, name)) return;
+    for (const SchemaTable::MutableView& global_view : global_table.mint_mutable_view(fg)) {
+        if (global_table.register_name(global_view, hash, name)) return;
     }
     // Nothing seals the late table, so its view exists and its write lands.
     SchemaTable& late_table = late_schema_table();
-    const auto late_view = late_table.mint_mutable_view(fg);
-    CRUCIBLE_FATAL_INVARIANT(late_view.has_value());
-    const bool was_registered_late = late_table.register_name(*late_view, hash, name);
+    const SchemaTable::MutableView late_view =
+        late_table.mint_mutable_view(fg).expect("nothing seals the late schema table, so it mints a mutable view");
+    const bool was_registered_late = late_table.register_name(late_view, hash, name);
     CRUCIBLE_FATAL_INVARIANT(was_registered_late);
 }
 

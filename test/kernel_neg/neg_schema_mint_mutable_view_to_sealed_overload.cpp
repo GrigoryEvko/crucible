@@ -24,8 +24,9 @@ int main() {
     crucible::SchemaTable t;
     // A default-constructed table is not sealed, so mint_mutable_view
     // returns a view.
-    const auto mv = t.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>());
+    const auto mv = t.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>())
+                        .expect("an open table mints a mutable view");
 
-    requires_sealed_view(*mv);
+    requires_sealed_view(mv);
     return 0;
 }

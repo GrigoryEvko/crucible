@@ -40,10 +40,11 @@ void process_wide_write() noexcept {
         crucible::CKernelId::EWISE_ADD);
     CRUCIBLE_FATAL_INVARIANT(was_kernel_registered);
 
-    const auto view = crucible::global_schema_table().mint_mutable_view(kVigilForeground);
-    CRUCIBLE_FATAL_INVARIANT(view.has_value());
+    const auto view = crucible::global_schema_table()
+                          .mint_mutable_view(kVigilForeground)
+                          .expect("no code seals the global schema table before the writer runs");
     const bool was_name_registered = crucible::register_schema_name(
-        *view, crucible::SchemaHash{kNamedHash}, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(kSchemaName));
+        view, crucible::SchemaHash{kNamedHash}, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(kSchemaName));
     CRUCIBLE_FATAL_INVARIANT(was_name_registered);
 }
 

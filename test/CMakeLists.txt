@@ -1914,10 +1914,10 @@ crucible_neg_compile_test(neg_schema_table_lookup_cross_tag
 #   * neg_schema_register_abi_boundary_name: a C ABI name that the entry did
 #     not retag is refused at register_schema_name.
 crucible_neg_compile_test(neg_schema_register_external_name
-  "neg_schema_register_external_name.cpp:24:31: error: no matching function for call to .crucible::SchemaTable::register_name"
+  "neg_schema_register_external_name.cpp:25:31: error: no matching function for call to .crucible::SchemaTable::register_name"
   "required for the satisfaction of .SchemaNameSource<Tag>. \\[with Tag = fixy::tags::source::External\\]")
 crucible_neg_compile_test(neg_schema_register_abi_boundary_name
-  "neg_schema_register_abi_boundary_name.cpp:22:42: error: no matching function for call to .register_schema_name"
+  "neg_schema_register_abi_boundary_name.cpp:23:42: error: no matching function for call to .register_schema_name"
   "required for the satisfaction of .SchemaNameSource<Tag>. \\[with Tag = fixy::tags::source::ABIBoundary\\]")
 
 # SymbolTable::add() returns
@@ -4312,13 +4312,13 @@ crucible_neg_compile_test(neg_schema_mint_mutable_view_in_field
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "! fixy::contains_scoped_view<OffendingSchemaContainer>\\(\\). evaluates to false")
 
-# A sealed table mints no mutable view.  The view comes back optional, so
-# a registration that forgets the seal does not compile.
+# A sealed table mints no mutable view.  The view comes back as an Option,
+# so a registration that forgets the seal does not compile.
 crucible_neg_compile_test(neg_schema_mutable_view_unchecked
-  "\\(type .std::optional<fixy::ScopedView<crucible::SchemaTable, crucible::schema_state::Mutable> >.\\) to type .const crucible::SchemaTable::MutableView&."
+  "\\(type .foundation::core::Option<fixy::ScopedView<crucible::SchemaTable, crucible::schema_state::Mutable> >.\\) to type .const crucible::SchemaTable::MutableView&."
   "neg_schema_mutable_view_unchecked.cpp:12")
 crucible_neg_compile_test(neg_ckernel_mutable_view_unchecked
-  "cannot convert .std::optional<fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Mutable> >."
+  "cannot convert .foundation::core::Option<fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Mutable> >."
   "neg_ckernel_mutable_view_unchecked.cpp:12")
 
 # Lock-free readers read a sealed table, so every write goes through the

@@ -40,7 +40,6 @@
 #include <cstdio>
 #include <latch>
 #include <memory>
-#include <optional>
 #include <thread>
 
 namespace {
@@ -166,7 +165,8 @@ struct KernelRace {
 template <typename Table>
 struct Round {
     Table table;
-    std::optional<typename Table::MutableView> view = table.mint_mutable_view(kVigilForeground);
+    typename Table::MutableView view =
+        table.mint_mutable_view(kVigilForeground).expect("a fresh table mints a mutable view");
     std::latch start{WRITER_COUNT + 1};
     RegisteredFlags registered{};
     uint32_t count_at_seal = 0;
@@ -215,7 +215,7 @@ template <typename Race>
                 arrive_and_wait(state.start);
                 run_writer(
                     round, writer,
-                    [&state](crucible::SchemaHash hash) { return Race::register_one(state.table, *state.view, hash); },
+                    [&state](crucible::SchemaHash hash) { return Race::register_one(state.table, state.view, hash); },
                     state.registered[writer]);
             }
         }};
@@ -260,10 +260,6 @@ int main() {
     // thread starts.  They are too large for the stack.
     const auto schema_rounds = std::make_unique<Rounds<SchemaRace>>();
     const auto kernel_rounds = std::make_unique<Rounds<KernelRace>>();
-    for (uint32_t round = 0; round < ROUND_COUNT; ++round) {
-        assert((*schema_rounds)[round].view.has_value());
-        assert((*kernel_rounds)[round].view.has_value());
-    }
     {
         // Each thread joins at the end of this block.
         std::array<ChainThreads, 2 * CHAIN_COUNT> chains;

@@ -31,11 +31,12 @@ int main() {
     crucible::CKernelTable t;
     // t is in Mutable state (default-constructed, sealed_ = false), so
     // mint_mutable_view returns a view.
-    const auto mv = t.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>());
+    const auto mv = t.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>())
+                        .expect("an open table mints a mutable view");
 
-    // requires_sealed_view takes ScopedView<CKernelTable, Sealed>.  *mv
+    // requires_sealed_view takes ScopedView<CKernelTable, Sealed>.  mv
     // is ScopedView<CKernelTable, Mutable>.  Distinct template
     // instantiations: GCC rejects the call at overload resolution.
-    requires_sealed_view(*mv);
+    requires_sealed_view(mv);
     return 0;
 }

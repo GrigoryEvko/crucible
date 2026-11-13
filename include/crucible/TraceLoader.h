@@ -31,7 +31,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <optional>
 #include <type_traits>
 #include <vector>
 
@@ -216,7 +215,7 @@ template <class Field>
 // empty view means that the table is sealed, and the names then stay out.
 template <::fixy::CtxFitsFileOpen Ctx>
 [[nodiscard]] inline ::fixy::Result<LoadedTrace, TraceLoadError>
-load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableView> const& schema_table_view,
+load_trace_(Ctx const& io, const char* path, ::fixy::Option<SchemaTable::MutableView> const& schema_table_view,
             bool should_register_names) {
     // A report names no path, because a report writes no raw text.  Each
     // caller knows the path that it gave.
@@ -324,7 +323,7 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
         // table.  The trace itself still loads.
         if (!should_register_names) {
             num_names = 0;
-        } else if (!schema_table_view) {
+        } else if (schema_table_view.is_none()) {
             ::fixy::report(::fixy::Sink::Err,
                            "load_trace: the schema table is sealed, so the {} names of the trace are not registered\n",
                            num_names);
@@ -349,7 +348,12 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
             // every later write.
             auto name = ::fixy::mint_tagged<::fixy::tags::source::External>(static_cast<const char*>(name_buf))
                             .retag<::fixy::tags::source::Sanitized>();
-            if (!register_schema_name(*schema_table_view, SchemaHash{schema_hash_raw}, name)) break;
+            const bool was_registered = schema_table_view.match(
+                [&](SchemaTable::MutableView const& view) {
+                    return register_schema_name(view, SchemaHash{schema_hash_raw}, name);
+                },
+                [] noexcept { return false; });
+            if (!was_registered) break;
         }
     }
 
@@ -425,7 +429,7 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
 // writes there.
 template <::fixy::CtxFitsFileOpen Ctx>
 [[nodiscard]] inline ::fixy::Result<LoadedTrace, TraceLoadError> load_trace(Ctx const& io, const char* path) {
-    return load_trace_(io, path, std::nullopt, false);
+    return load_trace_(io, path, ::fixy::none, false);
 }
 
 // Loads the trace at path, and puts its schema names into the global table.

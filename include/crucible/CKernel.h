@@ -19,7 +19,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <optional>
 #include <type_traits>
 
 namespace crucible {
@@ -85,10 +84,10 @@ public:
     // classifying reader on the background thread holds no such claim.  A
     // registration is cold, so the view also checks the calling thread at
     // run time.
-    [[nodiscard]] std::optional<MutableView> mint_mutable_view(VigilFgCtx const& fg) const noexcept {
+    [[nodiscard]] ::fixy::Option<MutableView> mint_mutable_view(VigilFgCtx const& fg) const noexcept {
         ::foundation::effects::host::require_brand_thread(fg);
-        if (is_sealed()) return std::nullopt;
-        return ::fixy::mint_view<ckernel_state::Mutable>(*this);
+        if (is_sealed()) return ::fixy::none;
+        return ::fixy::Option<MutableView>::some(::fixy::mint_view<ckernel_state::Mutable>(*this));
     }
 
     [[nodiscard]] SealedView mint_sealed_view() const noexcept {
@@ -193,10 +192,11 @@ CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline CKernelTableSingleton global_ckernel_
 [[nodiscard]] inline bool register_schema_hash(VigilFgCtx const& fg,
                                                ::fixy::Tagged<SchemaHash, ::fixy::tags::source::External> schema_hash,
                                                CKernelId id) {
-    CKernelTable* table = global_ckernel_table().value();
-    const auto view = table->mint_mutable_view(fg);
-    if (!view) return false;
-    return table->register_op(*view, schema_hash.value(), id);
+    CKernelTable& table = *global_ckernel_table().value();
+    for (const CKernelTable::MutableView& view : table.mint_mutable_view(fg)) {
+        return table.register_op(view, schema_hash.value(), id);
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------
