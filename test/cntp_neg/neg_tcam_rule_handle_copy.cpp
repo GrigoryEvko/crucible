@@ -24,9 +24,10 @@ int main() {
 
     ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
     auto plan = tcam::mint_tcam_table(init, nic, caps, tcam::admit_tcam_entries(4).value());
-    tcam::TcamRules<4> table{plan.value()};
-    auto handle = table.add_rule(tcam::declare_tcam_rule(tcam::TcamFlowRule{}).value());
-    auto copy = handle.value();
+    tcam::TcamRules<4> table{std::move(plan).expect("the plan fits the caps")};
+    auto handle = table.add_rule(tcam::declare_tcam_rule(tcam::TcamFlowRule{}).expect("the rule is valid"))
+                      .expect("the table has a free slot");
+    auto copy = handle;
     (void)copy;
     return 0;
 }

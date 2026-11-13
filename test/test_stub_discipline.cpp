@@ -147,18 +147,16 @@ void test_tcam_force_returns_vendor_unavailable() {
 
     ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
     auto declared_plan = tcam::mint_tcam_table(init, nic, caps, tcam::admit_tcam_entries(4).value());
-    assert(declared_plan.has_value());
-    assert(!declared_plan->value().backend_ready());
+    tcam::DeclaredTcamTable const plan = std::move(declared_plan).expect("the plan fits the caps");
+    assert(!plan.value().backend_ready());
 
     tcam::TcamFlowRule rule{};
     rule.rule_id = tcam::admit_tcam_rule_id(1).value();
     rule.action.kind = tcam::FlowAction::Drop;
-    auto declared_rule = tcam::declare_tcam_rule(rule);
-    assert(declared_rule.has_value());
+    tcam::DeclaredTcamFlowRule const declared_rule = tcam::declare_tcam_rule(rule).expect("the rule is valid");
 
-    auto force = tcam::force_tcam_backend_boundary(*declared_plan, *declared_rule);
-    assert(!force.has_value());
-    assert(force.error() == tcam::TcamError::VendorBackendUnavailable);
+    auto force = tcam::force_tcam_backend_boundary(plan, declared_rule);
+    assert(force.err() == ::fixy::some(tcam::TcamError::VendorBackendUnavailable));
     crucible::test::pass("  test_tcam_force_returns_vendor_unavailable: PASSED\n");
 }
 

@@ -3123,7 +3123,7 @@ crucible_neg_compile_test(neg_tcam_zero_entry_count
   "in .constexpr. expansion of .fixy::mint_refined<InRange<1, 65536>\\(\\), unsigned int>\\(0\\)."
   ".__builtin_trap\\(\\). is not a constant expression")
 crucible_neg_compile_test(neg_tcam_static_table_zero
-  "template constraint failure for .template<unsigned int MaxRules>  requires  TcamTableShape<MaxRules> class crucible::cntp::tcam::TcamRules."
+  "template constraint failure for .template<unsigned int MaxRules, class Generation>  requires \\(UnsignedInteger<Generation>\\) && \\(TcamTableShape<MaxRules>\\) class crucible::cntp::tcam::TcamRules."
   "required for the satisfaction of .TcamTableShape<MaxRules>. .with MaxRules = 0.")
 crucible_neg_compile_test(neg_tcam_table_plan_default
   "no matching function for call to .fixy::Tagged<crucible::cntp::tcam::TcamTablePlan, fixy::tags::source::TcamTable>::Tagged\\(<brace-enclosed initializer list>\\)."
@@ -3131,17 +3131,17 @@ crucible_neg_compile_test(neg_tcam_table_plan_default
   "no matching function for call to .crucible::cntp::tcam::TcamTablePlan::TcamTablePlan\\(\\).")
 crucible_neg_compile_test(neg_tcam_raw_rule_add
   "cannot convert .crucible::cntp::tcam::TcamFlowRule. to .crucible::cntp::tcam::DeclaredTcamFlowRule."
-  "initializing argument 1 of .constexpr std::expected<fixy::Qtt<foundation::algebra::lattices::QttGrade::One, crucible::cntp::tcam::TcamRuleHandle>, crucible::cntp::tcam::TcamError> crucible::cntp::tcam::TcamRules<MaxRules>::add_rule\\(")
+  "initializing argument 1 of .constexpr foundation::core::Result<fixy::Qtt<foundation::algebra::lattices::QttGrade::One, crucible::cntp::tcam::TcamRuleHandle>, crucible::cntp::tcam::TcamError> crucible::cntp::tcam::TcamRules<MaxRules, Generation>::add_rule\\(")
 crucible_neg_compile_test(neg_tcam_rule_handle_copy
   "use of deleted function .fixy::Qtt<Grade, T>::Qtt\\(const fixy::Qtt<Grade, T>&\\) .with auto Grade = foundation::algebra::lattices::QttGrade::One. T = crucible::cntp::tcam::TcamRuleHandle.."
   "Linear<T> and Affine<T> are move-only. use std::move or drop\\(\\)")
 crucible_neg_compile_test(neg_tcam_rule_handle_forge
-  "error: .constexpr crucible::cntp::tcam::TcamRuleHandle::TcamRuleHandle\\(crucible::cog::Uuid, crucible::cntp::tcam::TcamRuleId, uint32_t, uint32_t\\). is private within this context"
+  "error: .constexpr crucible::cntp::tcam::TcamRuleHandle::TcamRuleHandle\\(crucible::cog::Uuid, crucible::cntp::tcam::TcamRuleId, uint64_t, uint64_t\\). is private within this context"
   "include/crucible/cntp/Tcam.h:[0-9]+:[0-9]+: note: declared private here")
 crucible_neg_compile_test(neg_tcam_rule_handle_mint_linear
   "no matching function for call to .mint_linear<crucible::cntp::tcam::TcamRuleHandle>\\(crucible::cog::Uuid, fixy::Refinement<fixy::IsNonZero\\(\\), long unsigned int, false>, uint32_t, uint32_t\\)."
   ".crucible::cntp::tcam::TcamRuleHandle. is not constructible from .crucible::cog::Uuid, fixy::Refinement<fixy::IsNonZero\\(\\), long unsigned int, false>, unsigned int, unsigned int., because"
-  "TcamRuleHandle::TcamRuleHandle\\(crucible::cog::Uuid, crucible::cntp::tcam::TcamRuleId, uint32_t, uint32_t\\). is private within this context")
+  "TcamRuleHandle::TcamRuleHandle\\(crucible::cog::Uuid, crucible::cntp::tcam::TcamRuleId, uint64_t, uint64_t\\). is private within this context")
 crucible_neg_compile_test(neg_tcam_mint_bg_ctx
   "no matching function for call to .mint_tcam_table\\(fixy::BgDrainCtx&, crucible::cog::CogIdentity&, crucible::cog::NicPortTargetCaps&, "
   "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::Init> >. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, "

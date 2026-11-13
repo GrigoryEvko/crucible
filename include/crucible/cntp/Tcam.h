@@ -2,7 +2,7 @@
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
-#include <fixy/Checked.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Qtt.h>
 #include <fixy/Refined.h>
@@ -15,8 +15,6 @@
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/EnumName.h>
 
-#include <algorithm>
-#include <array>
 #include <concepts>
 #include <cstdint>
 #include <expected>
@@ -139,18 +137,12 @@ class TcamTablePlan;
 
 using DeclaredTcamTable = ::fixy::Tagged<TcamTablePlan, ::fixy::tags::source::TcamTable>;
 
-// The one door to a table plan.  It checks that the target carries a TCAM
-// and that the caps hold the capacity.
-template <::foundation::effects::IsExecCtx Ctx, class Caps>
-    requires CtxFitsTcamMint<Ctx, Caps>
-[[nodiscard]] constexpr std::expected<DeclaredTcamTable, TcamError>
-mint_tcam_table(Ctx const&, cog::CogIdentity target, Caps const& caps, TcamEntryCount capacity,
-                bool backend_ready = false) noexcept;
+class TcamTableDoor;
 
 // A table plan that mint_tcam_table checked.  The constructor is private and
-// the mint is the one friend, so no default, aggregate or copied-then-edited
-// plan goes around the target and capacity checks.  The fields are private
-// for the same reason.
+// the door of the mint is the one friend, so no default, aggregate or
+// copied-then-edited plan goes around the target and capacity checks.  The
+// fields are private for the same reason.
 class TcamTablePlan {
     cog::CogIdentity target_{};
     TcamTargetKind target_kind_ = TcamTargetKind::NicPort;
@@ -161,10 +153,7 @@ class TcamTablePlan {
                             bool backend_ready) noexcept
         : target_{target}, target_kind_{target_kind}, capacity_{capacity}, backend_ready_{backend_ready} {}
 
-    template <::foundation::effects::IsExecCtx FriendCtx, class FriendCaps>
-        requires CtxFitsTcamMint<FriendCtx, FriendCaps>
-    friend constexpr std::expected<DeclaredTcamTable, TcamError>
-    mint_tcam_table(FriendCtx const&, cog::CogIdentity, FriendCaps const&, TcamEntryCount, bool) noexcept;
+    friend class TcamTableDoor;
 
 public:
     [[nodiscard]] constexpr cog::CogIdentity const& target() const noexcept { return target_; }
@@ -173,7 +162,33 @@ public:
     [[nodiscard]] constexpr bool backend_ready() const noexcept { return backend_ready_; }
 };
 
-template <std::uint32_t MaxRules>
+// The one door to a table plan.  It checks that the target carries a TCAM
+// and that the caps hold the capacity.
+template <::foundation::effects::IsExecCtx Ctx, class Caps>
+    requires CtxFitsTcamMint<Ctx, Caps>
+[[nodiscard]] constexpr ::fixy::Result<DeclaredTcamTable, TcamError>
+mint_tcam_table(Ctx const&, cog::CogIdentity target, Caps const& caps, TcamEntryCount capacity,
+                bool backend_ready = false) noexcept;
+
+// The constructor of a table plan.  Its one member is private, and the
+// mint is its one friend.  The friend names the Result of a plan, so it
+// stands after the plan is complete.
+class TcamTableDoor {
+    [[nodiscard]] static constexpr TcamTablePlan build(cog::CogIdentity target, TcamTargetKind target_kind,
+                                                       TcamEntryCount capacity, bool backend_ready) noexcept {
+        return TcamTablePlan{target, target_kind, capacity, backend_ready};
+    }
+
+    template <::foundation::effects::IsExecCtx FriendCtx, class FriendCaps>
+        requires CtxFitsTcamMint<FriendCtx, FriendCaps>
+    friend constexpr ::fixy::Result<DeclaredTcamTable, TcamError>
+    mint_tcam_table(FriendCtx const&, cog::CogIdentity, FriendCaps const&, TcamEntryCount, bool) noexcept;
+};
+
+// Generation is the word of the generation counter of each slot.  A slot
+// whose counter has no next value retires, so no generation of a slot
+// comes back.
+template <std::uint32_t MaxRules, ::fixy::UnsignedInteger Generation = std::uint64_t>
     requires TcamTableShape<MaxRules>
 class TcamRules;
 
@@ -185,28 +200,41 @@ class TcamRules;
 class TcamRuleHandle {
     cog::Uuid target_uuid_{};
     TcamRuleId rule_id_ = ::fixy::mint_refined<::fixy::non_zero>(std::uint64_t{1});
-    std::uint32_t slot_ = 0;
-    std::uint32_t generation_ = 0;
+    std::uint64_t slot_ = 0;
+    std::uint64_t generation_ = 0;
 
-    constexpr TcamRuleHandle(cog::Uuid target_uuid, TcamRuleId rule_id, std::uint32_t slot,
-                             std::uint32_t generation) noexcept
+    constexpr TcamRuleHandle(cog::Uuid target_uuid, TcamRuleId rule_id, std::uint64_t slot,
+                             std::uint64_t generation) noexcept
         : target_uuid_{target_uuid}, rule_id_{rule_id}, slot_{slot}, generation_{generation} {}
 
-    template <std::uint32_t MaxRules>
+    template <std::uint32_t MaxRules, ::fixy::UnsignedInteger Generation>
         requires TcamTableShape<MaxRules>
     friend class TcamRules;
 
 public:
     TcamRuleHandle(TcamRuleHandle const&) = delete("a handle is the one owner of an installed rule");
     TcamRuleHandle& operator=(TcamRuleHandle const&) = delete("a handle is the one owner of an installed rule");
-    constexpr TcamRuleHandle(TcamRuleHandle&&) noexcept = default;
-    constexpr TcamRuleHandle& operator=(TcamRuleHandle&&) noexcept = default;
+
+    // A move leaves generation 0 in the source, and no slot holds generation
+    // 0, so a moved-from handle reaches no slot.
+    constexpr TcamRuleHandle(TcamRuleHandle&& other) noexcept
+        : target_uuid_{other.target_uuid_},
+          rule_id_{other.rule_id_},
+          slot_{other.slot_},
+          generation_{::fixy::exchange(other.generation_, 0)} {}
+    constexpr TcamRuleHandle& operator=(TcamRuleHandle&& other) noexcept {
+        target_uuid_ = other.target_uuid_;
+        rule_id_ = other.rule_id_;
+        slot_ = other.slot_;
+        generation_ = ::fixy::exchange(other.generation_, 0);
+        return *this;
+    }
     constexpr ~TcamRuleHandle() = default;
 
     [[nodiscard]] constexpr cog::Uuid target_uuid() const noexcept { return target_uuid_; }
     [[nodiscard]] constexpr TcamRuleId rule_id() const noexcept { return rule_id_; }
-    [[nodiscard]] constexpr std::uint32_t slot() const noexcept { return slot_; }
-    [[nodiscard]] constexpr std::uint32_t generation() const noexcept { return generation_; }
+    [[nodiscard]] constexpr std::uint64_t slot() const noexcept { return slot_; }
+    [[nodiscard]] constexpr std::uint64_t generation() const noexcept { return generation_; }
 };
 
 using DeclaredTcamFlowRule = ::fixy::Tagged<TcamFlowRule, ::fixy::tags::source::TcamFlowRule>;
@@ -229,134 +257,128 @@ using OwnedTcamRule = ::fixy::Linear<TcamRuleHandle>;
     return ::fixy::mint_refined<tcam_priority_range>(priority);
 }
 
-[[nodiscard]] constexpr std::expected<void, TcamError> validate_tcam_match(FiveTuple match) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, TcamError> validate_tcam_match(FiveTuple match) noexcept {
     if (match.src_prefix_bits > 32u || match.dst_prefix_bits > 32u) {
-        return std::unexpected(TcamError::InvalidMatchParameter);
+        return ::fixy::err(TcamError::InvalidMatchParameter);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
-[[nodiscard]] constexpr std::expected<void, TcamError> validate_tcam_action(TcamFlowAction const& action) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, TcamError>
+validate_tcam_action(TcamFlowAction const& action) noexcept {
     if ((action.kind == FlowAction::Redirect || action.kind == FlowAction::Mirror) && action.redirect_ifindex == 0u) {
-        return std::unexpected(TcamError::InvalidActionParameter);
+        return ::fixy::err(TcamError::InvalidActionParameter);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
 // The rule id and the DSCP are refined, so the match and the action are the
 // fields left to check.
-[[nodiscard]] constexpr std::expected<void, TcamError> validate_tcam_rule(TcamFlowRule const& rule) noexcept {
-    auto match_valid = validate_tcam_match(rule.match);
-    if (!match_valid.has_value()) {
-        return std::unexpected(match_valid.error());
-    }
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, TcamError> validate_tcam_rule(TcamFlowRule const& rule) noexcept {
+    CRUCIBLE_TRY(_, validate_tcam_match(rule.match));
     return validate_tcam_action(rule.action);
 }
 
-[[nodiscard]] constexpr std::expected<DeclaredTcamFlowRule, TcamError> declare_tcam_rule(TcamFlowRule rule) noexcept {
-    auto valid = validate_tcam_rule(rule);
-    if (!valid.has_value()) {
-        return std::unexpected(valid.error());
-    }
+[[nodiscard]] constexpr ::fixy::Result<DeclaredTcamFlowRule, TcamError> declare_tcam_rule(TcamFlowRule rule) noexcept {
+    CRUCIBLE_TRY(_, validate_tcam_rule(rule));
     return ::fixy::mint_tagged<::fixy::tags::source::TcamFlowRule>(std::move(rule));
 }
 
-[[nodiscard]] constexpr std::expected<void, TcamError>
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, TcamError>
 validate_tcam_target(cog::CogIdentity target, cog::NicPortTargetCaps const& caps) noexcept {
     if (target.uuid.is_zero()) {
-        return std::unexpected(TcamError::ZeroTargetCog);
+        return ::fixy::err(TcamError::ZeroTargetCog);
     }
     if (target.kind != cog::CogKind::NicPort) {
-        return std::unexpected(TcamError::WrongTargetKind);
+        return ::fixy::err(TcamError::WrongTargetKind);
     }
     if (!caps.features.test(cog::NicFeature::Tcam)) {
-        return std::unexpected(TcamError::MissingTcamCapability);
+        return ::fixy::err(TcamError::MissingTcamCapability);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
-[[nodiscard]] constexpr std::expected<void, TcamError>
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, TcamError>
 validate_tcam_target(cog::CogIdentity target, cog::NvSwitchTargetCaps const& caps) noexcept {
     if (target.uuid.is_zero()) {
-        return std::unexpected(TcamError::ZeroTargetCog);
+        return ::fixy::err(TcamError::ZeroTargetCog);
     }
     if (target.kind != cog::CogKind::NvSwitch) {
-        return std::unexpected(TcamError::WrongTargetKind);
+        return ::fixy::err(TcamError::WrongTargetKind);
     }
     if (!caps.features.test(cog::SwitchFeature::Tcam)) {
-        return std::unexpected(TcamError::MissingTcamCapability);
+        return ::fixy::err(TcamError::MissingTcamCapability);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
-[[nodiscard]] constexpr std::expected<void, TcamError>
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, TcamError>
 validate_tcam_capacity(TcamEntryCount requested, cog::NicPortTargetCaps const& caps) noexcept {
     if (requested.value() > caps.tcam_entries.value()) {
-        return std::unexpected(TcamError::CapacityExceeded);
+        return ::fixy::err(TcamError::CapacityExceeded);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
-[[nodiscard]] constexpr std::expected<void, TcamError>
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, TcamError>
 validate_tcam_capacity(TcamEntryCount requested, cog::NvSwitchTargetCaps const& caps) noexcept {
     if (requested.value() > caps.tcam_entries.value()) {
-        return std::unexpected(TcamError::CapacityExceeded);
+        return ::fixy::err(TcamError::CapacityExceeded);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
 template <::foundation::effects::IsExecCtx Ctx, class Caps>
     requires CtxFitsTcamMint<Ctx, Caps>
-[[nodiscard]] constexpr std::expected<DeclaredTcamTable, TcamError>
+[[nodiscard]] constexpr ::fixy::Result<DeclaredTcamTable, TcamError>
 mint_tcam_table(Ctx const&, cog::CogIdentity target, Caps const& caps, TcamEntryCount capacity,
                 bool backend_ready) noexcept {
-    auto target_valid = validate_tcam_target(target, caps);
-    if (!target_valid.has_value()) {
-        return std::unexpected(target_valid.error());
-    }
-    auto capacity_valid = validate_tcam_capacity(capacity, caps);
-    if (!capacity_valid.has_value()) {
-        return std::unexpected(capacity_valid.error());
-    }
+    CRUCIBLE_TRY(_, validate_tcam_target(target, caps));
+    CRUCIBLE_TRY(_, validate_tcam_capacity(capacity, caps));
     constexpr TcamTargetKind target_kind =
         std::same_as<Caps, cog::NicPortTargetCaps> ? TcamTargetKind::NicPort : TcamTargetKind::Switch;
     return ::fixy::mint_tagged<::fixy::tags::source::TcamTable>(
-        TcamTablePlan{target, target_kind, capacity, backend_ready});
+        TcamTableDoor::build(target, target_kind, capacity, backend_ready));
 }
 
-template <std::uint32_t MaxRules>
+template <std::uint32_t MaxRules, ::fixy::UnsignedInteger Generation>
     requires TcamTableShape<MaxRules>
-class TcamRules : public ::foundation::Pinned<TcamRules<MaxRules>> {
+class TcamRules : public ::foundation::Pinned<TcamRules<MaxRules, Generation>> {
+    using SlotIndex = ::fixy::Index<MaxRules>;
+
+    // The generation of a slot starts at 1, so the generation 0 of a
+    // moved-from handle matches no slot.
     struct Slot {
         TcamFlowRule rule{};
-        std::uint32_t generation = 1;
         std::uint64_t counter = 0;
+        Generation generation = 1;
         bool occupied = false;
+        bool retired = false;
     };
 
     DeclaredTcamTable plan_;
-    std::array<Slot, MaxRules> slots_{};
+    ::foundation::core::FixedArray<Slot, MaxRules> slots_{};
     std::uint32_t installed_ = 0;
+    std::uint32_t retired_ = 0;
 
     // The table holds no more rules than the plan asks for, and no more
-    // than its own slots.
+    // than its slots that did not retire.
     [[nodiscard]] constexpr std::uint32_t rule_limit() const noexcept {
         std::uint32_t const planned = plan_.value().capacity().value();
-        return std::min(planned, MaxRules);
+        return ::fixy::min(planned, MaxRules - retired_);
     }
 
-    [[nodiscard]] constexpr std::expected<std::uint32_t, TcamError>
-    slot_for(TcamRuleHandle const& handle) const noexcept {
-        if (handle.slot() >= MaxRules) {
-            return std::unexpected(TcamError::InvalidRuleHandle);
-        }
-        Slot const& slot = slots_[handle.slot()];
-        if (!slot.occupied || slot.generation != handle.generation()
+    // The slot that the handle names.  A handle of a removed rule, a handle
+    // of a different target and a moved-from handle name no slot.
+    [[nodiscard]] constexpr ::fixy::Result<SlotIndex, TcamError> slot_for(TcamRuleHandle const& handle) const noexcept {
+        CRUCIBLE_TRY(index, SlotIndex::check(handle.slot()).ok_or(TcamError::InvalidRuleHandle));
+        Slot const& slot = slots_.at(index);
+        if (!slot.occupied || ::fixy::widen<std::uint64_t>(slot.generation) != handle.generation()
             || slot.rule.rule_id.value() != handle.rule_id().value()
             || handle.target_uuid() != plan_.value().target().uuid) {
-            return std::unexpected(TcamError::InvalidRuleHandle);
+            return ::fixy::err(TcamError::InvalidRuleHandle);
         }
-        return handle.slot();
+        return index;
     }
 
 public:
@@ -371,70 +393,62 @@ public:
         return installed_ >= limit ? 0u : limit - installed_;
     }
 
-    [[nodiscard]] constexpr std::expected<OwnedTcamRule, TcamError> add_rule(DeclaredTcamFlowRule rule) noexcept {
-        auto valid = validate_tcam_rule(rule.value());
-        if (!valid.has_value()) {
-            return std::unexpected(valid.error());
-        }
+    [[nodiscard]] constexpr ::fixy::Result<OwnedTcamRule, TcamError> add_rule(DeclaredTcamFlowRule rule) noexcept {
+        CRUCIBLE_TRY(_, validate_tcam_rule(rule.value()));
         if (installed_ >= rule_limit()) {
-            return std::unexpected(TcamError::TableFull);
+            return ::fixy::err(TcamError::TableFull);
         }
-        for (std::uint32_t i = 0; i < MaxRules; ++i) {
-            Slot& slot = slots_[i];
-            if (!slot.occupied) {
+        for (SlotIndex index : slots_.indices()) {
+            Slot& slot = slots_.at(index);
+            if (!slot.occupied && !slot.retired) {
                 slot.rule = rule.value();
                 slot.counter = 0;
                 slot.occupied = true;
                 ++installed_;
-                TcamRuleHandle handle{plan_.value().target().uuid, slot.rule.rule_id, i, slot.generation};
+                TcamRuleHandle handle{plan_.value().target().uuid, slot.rule.rule_id, index.raw(),
+                                      ::fixy::widen<std::uint64_t>(slot.generation)};
                 return ::fixy::mint_linear<TcamRuleHandle>(std::move(handle));
             }
         }
-        return std::unexpected(TcamError::TableFull);
+        return ::fixy::err(TcamError::TableFull);
     }
 
-    [[nodiscard]] constexpr std::expected<void, TcamError> remove_rule(OwnedTcamRule handle) noexcept {
+    [[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, TcamError> remove_rule(OwnedTcamRule handle) noexcept {
         TcamRuleHandle raw = std::move(handle).consume();
-        auto slot_index = slot_for(raw);
-        if (!slot_index.has_value()) {
-            return std::unexpected(slot_index.error());
-        }
-        Slot& slot = slots_[*slot_index];
+        CRUCIBLE_TRY(index, slot_for(raw));
+        Slot& slot = slots_.at(index);
         slot.occupied = false;
         slot.counter = 0;
-        ++slot.generation;
         --installed_;
-        return {};
+        ::foundation::core::checked_add(slot.generation, Generation{1})
+            .match([&slot](Generation next) noexcept { slot.generation = next; },
+                   [this, &slot]() noexcept {
+                       slot.retired = true;
+                       ++retired_;
+                   });
+        return ::fixy::Unit{};
     }
 
-    [[nodiscard]] CRUCIBLE_HOT std::expected<std::uint64_t, TcamError>
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Result<std::uint64_t, TcamError>
     query_counter(OwnedTcamRule const& handle) const noexcept {
-        auto slot_index = slot_for(handle.peek());
-        if (!slot_index.has_value()) {
-            return std::unexpected(slot_index.error());
-        }
-        return slots_[*slot_index].counter;
+        CRUCIBLE_TRY(index, slot_for(handle.peek()));
+        return slots_.at(index).counter;
     }
 
-    [[nodiscard]] constexpr std::expected<void, TcamError> note_match(OwnedTcamRule const& handle,
-                                                                      std::uint64_t count = 1) noexcept {
-        auto slot_index = slot_for(handle.peek());
-        if (!slot_index.has_value()) {
-            return std::unexpected(slot_index.error());
-        }
-        auto updated = ::fixy::checked_add(slots_[*slot_index].counter, count);
-        if (!updated.has_value()) {
-            return std::unexpected(TcamError::CounterOverflow);
-        }
-        slots_[*slot_index].counter = *updated;
-        return {};
+    [[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, TcamError> note_match(OwnedTcamRule const& handle,
+                                                                               std::uint64_t count = 1) noexcept {
+        CRUCIBLE_TRY(index, slot_for(handle.peek()));
+        Slot& slot = slots_.at(index);
+        CRUCIBLE_TRY(updated, ::foundation::core::checked_add(slot.counter, count).ok_or(TcamError::CounterOverflow));
+        slot.counter = updated;
+        return ::fixy::Unit{};
     }
 
-    [[nodiscard]] constexpr std::expected<void, TcamError> require_backend_ready() const noexcept {
+    [[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, TcamError> require_backend_ready() const noexcept {
         if (!plan_.value().backend_ready()) {
-            return std::unexpected(TcamError::VendorBackendUnavailable);
+            return ::fixy::err(TcamError::VendorBackendUnavailable);
         }
-        return {};
+        return ::fixy::Unit{};
     }
 };
 
@@ -444,16 +458,13 @@ public:
 // return success while programming nothing.
 [[nodiscard, deprecated("CRUCIBLE_STUB: no vendor path installs the rule on the "
                         "device. The success path is substrate bookkeeping, not device programming")]]
-constexpr std::expected<void, TcamError> force_tcam_backend_boundary(DeclaredTcamTable const& table,
-                                                                     DeclaredTcamFlowRule const& rule) noexcept {
-    auto valid = validate_tcam_rule(rule.value());
-    if (!valid.has_value()) {
-        return std::unexpected(valid.error());
-    }
+constexpr ::fixy::Result<::fixy::Unit, TcamError>
+force_tcam_backend_boundary(DeclaredTcamTable const& table, DeclaredTcamFlowRule const& rule) noexcept {
+    CRUCIBLE_TRY(_, validate_tcam_rule(rule.value()));
     if (!table.value().backend_ready()) {
-        return std::unexpected(TcamError::VendorBackendUnavailable);
+        return ::fixy::err(TcamError::VendorBackendUnavailable);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
 }  // namespace crucible::cntp::tcam

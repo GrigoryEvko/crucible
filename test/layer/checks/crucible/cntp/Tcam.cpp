@@ -30,7 +30,7 @@ static_assert(!std::is_default_constructible_v<TcamTablePlan>);
 static_assert(!std::is_default_constructible_v<DeclaredTcamTable>,
               "a default table plan would skip the target and capacity checks");
 static_assert(!std::is_default_constructible_v<TcamRuleHandle>);
-static_assert(!std::is_constructible_v<TcamRuleHandle, cog::Uuid, TcamRuleId, std::uint32_t, std::uint32_t>);
+static_assert(!std::is_constructible_v<TcamRuleHandle, cog::Uuid, TcamRuleId, std::uint64_t, std::uint64_t>);
 static_assert(!std::is_copy_constructible_v<TcamRuleHandle>);
 static_assert(std::is_nothrow_move_constructible_v<TcamRuleHandle>);
 
