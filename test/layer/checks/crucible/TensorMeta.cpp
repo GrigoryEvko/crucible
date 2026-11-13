@@ -30,4 +30,33 @@ static_assert(offsetof(TensorMeta, storage_nbytes) == 160);
 static_assert(offsetof(TensorMeta, grad_fn_hash) == 168);
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorMeta);
 
+// The compare of two descriptors reads each field.  A descriptor that holds a
+// different value in one field is not equal to the default descriptor, and it
+// is equal to itself.
+template <class Change>
+[[nodiscard]] consteval bool is_unequal_after(Change change) {
+    TensorMeta changed{};
+    change(changed);
+    return !(changed == TensorMeta{}) && changed == changed;
+}
+
+static_assert(TensorMeta{} == TensorMeta{});
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.sizes[0] = tensor_dim(4); }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.sizes[kMaxTensorNDim - 1] = tensor_dim(4); }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.strides[3] = tensor_dim(1); }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.data_ptr = external_data_ptr(static_cast<void*>(&meta)); }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.ndim = 2; }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.dtype = ScalarType::Int; }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.device_type = DeviceType::CUDA; }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.device_idx = 0; }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.layout = Layout::Sparse; }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.requires_grad = true; }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.flags = 1; }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.output_nr = 1; }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.storage_offset = 1; }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.version = 1; }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.pad0 = 1; }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.storage_nbytes = 1; }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.grad_fn_hash = grad_fn_hash(1); }));
+
 }  // namespace crucible

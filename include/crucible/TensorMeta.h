@@ -69,6 +69,17 @@ public:
     [[nodiscard]] constexpr int64_t* raw_data() noexcept { return lanes_; }
 
     [[nodiscard]] constexpr const int64_t* raw_data() const noexcept { return lanes_; }
+
+    // Two blocks are equal when each lane holds the same value, the lanes
+    // past ndim too.  The compare is a loop and not a defaulted compare.  In
+    // a constant evaluation that compares two blocks, GCC 16 gives the
+    // result of the first defaulted compare of a C array for the second one.
+    [[nodiscard]] friend constexpr bool operator==(TensorDimArray const& left, TensorDimArray const& right) noexcept {
+        for (std::size_t lane = 0; lane < kMaxTensorNDim; ++lane) {
+            if (left.lanes_[lane] != right.lanes_[lane]) return false;
+        }
+        return true;
+    }
 };
 
 // A size or a stride comes from PyTorch, a trace or a file. The bound is a
@@ -130,6 +141,21 @@ struct TensorMeta {
     // 64 bits.
     uint64_t storage_nbytes = 0;
     GradFnHash grad_fn_hash{};  // 0 means no grad_fn
+
+    // Two descriptors are equal when each field holds the same value.  The
+    // padding is the named member pad0, so the result is the result of a
+    // compare of the bytes.  A Tagged field has no compare of its own, so
+    // the compare reads its value, and the compare cannot be defaulted.  A
+    // new field needs a term here.
+    [[nodiscard]] friend constexpr bool operator==(TensorMeta const& left, TensorMeta const& right) noexcept {
+        return left.sizes == right.sizes && left.strides == right.strides
+            && left.data_ptr.value() == right.data_ptr.value() && left.ndim == right.ndim && left.dtype == right.dtype
+            && left.device_type == right.device_type && left.device_idx == right.device_idx
+            && left.layout == right.layout && left.requires_grad == right.requires_grad && left.flags == right.flags
+            && left.output_nr == right.output_nr && left.storage_offset == right.storage_offset
+            && left.version == right.version && left.pad0 == right.pad0 && left.storage_nbytes == right.storage_nbytes
+            && left.grad_fn_hash.value() == right.grad_fn_hash.value();
+    }
 };
 
 [[nodiscard]] inline constexpr ExternalDataPtr external_data_ptr(void* ptr) noexcept {
