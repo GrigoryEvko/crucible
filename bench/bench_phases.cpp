@@ -687,13 +687,14 @@ int main(int argc, char* argv[]) {
 
     std::printf("TSC ratio: %.4f ns/cycle\n", bench::Timer::ns_per_cycle());
 
-    auto trace = load_trace(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, trace_path);
-    if (!trace) {
+    auto loaded = load_trace(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, trace_path);
+    if (loaded.is_err()) {
         std::fprintf(stderr, "error: could not load %s\n", trace_path);
         std::fprintf(stderr, "usage: %s [file.crtrace] [iters]\n", argv[0]);
         return 1;
     }
-    std::printf("Loaded %s: %u ops, %u metas\n", trace_path, trace->num_ops, trace->num_metas);
+    const LoadedTrace trace = std::move(loaded).expect("the load holds a trace after the check of its error");
+    std::printf("Loaded %s: %u ops, %u metas\n", trace_path, trace.num_ops, trace.num_metas);
 
     const uint32_t iters = (argc >= 3) ? static_cast<uint32_t>(std::atoi(argv[2])) : kDefaultIters;
 
@@ -705,11 +706,11 @@ int main(int argc, char* argv[]) {
 
     std::printf("\n=== full pipeline (bench::run with BPF sensing) ===\n");
     std::vector<bench::Report> reports;
-    reports.push_back(run_fullpipeline(bg, meta_log, *trace));
+    reports.push_back(run_fullpipeline(bg, meta_log, trace));
     bench::emit_reports_text(reports);
 
-    bench_phases_toplevel(bg, meta_log, *trace, iters);
-    bench_phase2_subparts(bg, meta_log, *trace, iters);
+    bench_phases_toplevel(bg, meta_log, trace, iters);
+    bench_phase2_subparts(bg, meta_log, trace, iters);
 
     bench::emit_reports_json(reports, json);
 

@@ -45,20 +45,21 @@ inline void run_trace_file(std::span<const std::uint8_t> bytes) {
     const auto path = scratch_dir() / "input.crtrace";
     write_file(path, bytes);
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto trace = load_trace(ctx, path.c_str());
-    if (!trace) return;
+    auto loaded = load_trace(ctx, path.c_str());
+    if (loaded.is_err()) return;
+    const LoadedTrace trace = std::move(loaded).expect("the load holds a trace after the check of its error");
 
-    CRUCIBLE_FUZZ_CLAIM("trace_file", trace->metas.size() == trace->num_metas);
-    CRUCIBLE_FUZZ_CLAIM("trace_file", trace->entries.size() == trace->num_ops);
-    for (const TensorMeta& meta : trace->metas)
+    CRUCIBLE_FUZZ_CLAIM("trace_file", trace.metas.size() == trace.num_metas);
+    CRUCIBLE_FUZZ_CLAIM("trace_file", trace.entries.size() == trace.num_ops);
+    for (const TensorMeta& meta : trace.metas)
         claim_meta_in_range("trace_file", meta);
-    for (std::uint32_t i = 0; i < trace->num_ops; ++i) {
-        const auto& entry = trace->entries[i];
+    for (std::uint32_t i = 0; i < trace.num_ops; ++i) {
+        const auto& entry = trace.entries[i];
         const std::uint32_t tensors = std::uint32_t{entry.num_inputs} + std::uint32_t{entry.num_outputs};
         if (tensors == 0) continue;
-        const MetaIndex start = trace->meta_starts[i];
+        const MetaIndex start = trace.meta_starts[i];
         CRUCIBLE_FUZZ_CLAIM("trace_file", start.is_valid());
-        CRUCIBLE_FUZZ_CLAIM("trace_file", std::uint64_t{start.raw()} + tensors <= trace->num_metas);
+        CRUCIBLE_FUZZ_CLAIM("trace_file", std::uint64_t{start.raw()} + tensors <= trace.num_metas);
     }
 }
 

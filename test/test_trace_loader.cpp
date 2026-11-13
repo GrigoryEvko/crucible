@@ -1,5 +1,5 @@
-// A malformed trace file must be rejected with a null result rather than
-// crash the loader.
+// The loader refuses a malformed trace file with the error of its reason,
+// and it does not crash.
 
 #include <crucible/TraceLoader.h>
 #include <crucible/SchemaTable.h>
@@ -47,16 +47,19 @@ static std::string write_tmp(const void* data, size_t n) {
     return buf;
 }
 
+// True when the load refused its file for the reason error.
+static bool is_refused_as(::fixy::Result<LoadedTrace, TraceLoadError> const& loaded, TraceLoadError error) {
+    return loaded.err() == ::fixy::some(error);
+}
+
 static void test_missing_file() {
-    auto t = load_trace(kTestIo, "/definitely/does/not/exist.crtrace");
-    assert(!t);
+    assert(is_refused_as(load_trace(kTestIo, "/definitely/does/not/exist.crtrace"), TraceLoadError::OpenFailed));
     crucible::test::pass("  test_missing_file:              PASSED\n");
 }
 
 static void test_empty_file() {
     std::string path = write_tmp("", 0);
-    auto t = load_trace(kTestIo, path.c_str());
-    assert(!t);
+    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::HeaderTruncated));
     std::remove(path.c_str());
     crucible::test::pass("  test_empty_file:                PASSED\n");
 }
@@ -70,8 +73,7 @@ static void test_bad_magic() {
         uint32_t n_metas;
     } hdr{.magic = {'X', 'X', 'X', 'X'}, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 0, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
-    auto t = load_trace(kTestIo, path.c_str());
-    assert(!t);
+    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::WrongMagic));
     std::remove(path.c_str());
     crucible::test::pass("  test_bad_magic:                 PASSED\n");
 }
@@ -84,8 +86,7 @@ static void test_wrong_version() {
         uint32_t n_metas;
     } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = 99, .n_ops = 0, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
-    auto t = load_trace(kTestIo, path.c_str());
-    assert(!t);
+    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::WrongVersion));
     std::remove(path.c_str());
     crucible::test::pass("  test_wrong_version:             PASSED\n");
 }
@@ -94,8 +95,7 @@ static void test_truncated_header() {
     // Eight bytes, so the two count fields are missing.
     char buf[8] = {'C', 'R', 'T', 'R', 1, 0, 0, 0};
     std::string path = write_tmp(buf, sizeof(buf));
-    auto t = load_trace(kTestIo, path.c_str());
-    assert(!t);
+    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::HeaderTruncated));
     std::remove(path.c_str());
     crucible::test::pass("  test_truncated_header:          PASSED\n");
 }
@@ -112,8 +112,8 @@ static void test_truncated_op_records() {
     char buf[16 + 40] = {};
     std::memcpy(buf, &hdr, sizeof(hdr));
     std::string path = write_tmp(buf, sizeof(buf));
-    auto t = load_trace(kTestIo, path.c_str());
-    assert(!t);
+    // The size check refuses the counts before the loader reads a record.
+    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::CountPastFile));
     std::remove(path.c_str());
     crucible::test::pass("  test_truncated_ops:             PASSED\n");
 }
@@ -128,11 +128,10 @@ static void test_happy_path_zero_ops() {
         uint32_t n_metas;
     } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 0, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
-    auto t = load_trace(kTestIo, path.c_str());
-    assert(t);
-    assert(t->num_ops == 0);
-    assert(t->num_metas == 0);
-    assert(t->entries.empty());
+    const LoadedTrace t = load_trace(kTestIo, path.c_str()).expect("a header with zero counts loads");
+    assert(t.num_ops == 0);
+    assert(t.num_metas == 0);
+    assert(t.entries.empty());
     std::remove(path.c_str());
     crucible::test::pass("  test_happy_path_empty:          PASSED\n");
 }
@@ -147,8 +146,7 @@ static void test_adversarial_num_ops_rejected() {
         uint32_t n_metas;
     } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 0xFFFFFFFFu, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
-    auto t = load_trace(kTestIo, path.c_str());
-    assert(!t);
+    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::CountPastLimit));
     std::remove(path.c_str());
     crucible::test::pass("  test_adversarial_counts:        PASSED\n");
 }
@@ -175,14 +173,13 @@ static void test_round_trip_single_op() {
     // scalar counts and the flag bytes, all left zero.
 
     std::string path = write_tmp(buf, sizeof(buf));
-    auto t = load_trace(kTestIo, path.c_str());
+    const LoadedTrace t = load_trace(kTestIo, path.c_str()).expect("a trace of one op loads");
     std::remove(path.c_str());
-    assert(t);
-    assert(t->num_ops == 1);
-    assert(t->entries[0].schema_hash.raw() == schema);
-    assert(t->entries[0].shape_hash.raw() == shape);
-    assert(t->scope_hashes[0].raw() == scope);
-    assert(t->callsite_hashes[0].raw() == callsite);
+    assert(t.num_ops == 1);
+    assert(t.entries[0].schema_hash.raw() == schema);
+    assert(t.entries[0].shape_hash.raw() == shape);
+    assert(t.scope_hashes[0].raw() == scope);
+    assert(t.callsite_hashes[0].raw() == callsite);
     crucible::test::pass("  test_round_trip_single_op:      PASSED\n");
 }
 
@@ -238,16 +235,14 @@ static void test_schema_name_table_round_trip() {
     std::string path = write_tmp(buf.data(), buf.size());
 
     // A load with no producer context reads the names and registers none.
-    auto t_without_producer_context = load_trace(kTestIo, path.c_str());
-    assert(t_without_producer_context);
+    assert(load_trace(kTestIo, path.c_str()).is_ok());
     assert(global_schema_table().count() == 0);
 
-    auto t = load_trace(kTestIo, kVigilForeground, path.c_str());
+    const LoadedTrace t = load_trace(kTestIo, kVigilForeground, path.c_str()).expect("a trace with names loads");
     std::remove(path.c_str());
 
-    assert(t);
-    assert(t->num_ops == 0);
-    assert(t->num_metas == 0);
+    assert(t.num_ops == 0);
+    assert(t.num_metas == 0);
 
     const char* n1 = C(global_schema_table().lookup(SchemaHash{0xAAAA111122223333ULL}));
     const char* n2 = C(global_schema_table().lookup(SchemaHash{0xBBBB444455556666ULL}));
@@ -275,13 +270,12 @@ static void test_schema_name_table_corrupt_zero_len() {
     append_le<uint16_t>(buf, 0);  // CORRUPT name_len
 
     std::string path = write_tmp(buf.data(), buf.size());
-    auto t = load_trace(kTestIo, kVigilForeground, path.c_str());
-    std::remove(path.c_str());
-
     // The header and ops parsed cleanly, so the loader still returns a
     // trace.  A failure in the name table breaks that loop only.
-    assert(t);
-    assert(t->num_ops == 0);
+    const LoadedTrace t =
+        load_trace(kTestIo, kVigilForeground, path.c_str()).expect("a name of length zero ends the table only");
+    std::remove(path.c_str());
+    assert(t.num_ops == 0);
 
     // The guard fired before the registration, so the hash never
     // reached the table.
@@ -313,11 +307,10 @@ static void test_schema_name_table_corrupt_oversize_len() {
     buf.insert(buf.end(), 300, static_cast<unsigned char>(0x5A));
 
     std::string path = write_tmp(buf.data(), buf.size());
-    auto t = load_trace(kTestIo, kVigilForeground, path.c_str());
+    const LoadedTrace t =
+        load_trace(kTestIo, kVigilForeground, path.c_str()).expect("a name past the length bound ends the table only");
     std::remove(path.c_str());
-
-    assert(t);
-    assert(t->num_ops == 0);
+    assert(t.num_ops == 0);
 
     // The guard fired before the length was refined, which under
     // enforced contracts would otherwise abort.
@@ -355,8 +348,7 @@ static void test_meta_overrun_rejected() {
     // Op claims 5 tensors (3 in + 2 out) but only 2 metas exist — the
     // running meta cursor would overrun the metas vector.  Reject.
     std::string path = write_one_op_trace(/*n_metas=*/2, /*in=*/3, /*out=*/2);
-    auto t = load_trace(kTestIo, path.c_str());
-    assert(!t);
+    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::MetaRunPastCount));
     std::remove(path.c_str());
     crucible::test::pass("  test_meta_overrun_rejected:     PASSED\n");
 }
@@ -364,13 +356,12 @@ static void test_meta_overrun_rejected() {
 static void test_meta_exact_count_loads() {
     // Op claims exactly 5 tensors and 5 metas exist — in bounds, loads.
     std::string path = write_one_op_trace(/*n_metas=*/5, /*in=*/3, /*out=*/2);
-    auto t = load_trace(kTestIo, path.c_str());
-    assert(t);
-    assert(t->num_ops == 1);
-    assert(t->num_metas == 5);
-    assert(t->entries[0].num_inputs == 3);
-    assert(t->entries[0].num_outputs == 2);
-    assert(t->meta_starts[0].raw() == 0);  // sole op starts at metas[0]
+    const LoadedTrace t = load_trace(kTestIo, path.c_str()).expect("an op whose metadata fits the count loads");
+    assert(t.num_ops == 1);
+    assert(t.num_metas == 5);
+    assert(t.entries[0].num_inputs == 3);
+    assert(t.entries[0].num_outputs == 2);
+    assert(t.meta_starts[0].raw() == 0);  // sole op starts at metas[0]
     std::remove(path.c_str());
     crucible::test::pass("  test_meta_exact_count_loads:    PASSED\n");
 }
@@ -380,8 +371,7 @@ static void test_meta_count_uint16_overflow_rejected() {
     // in 32 bits it is a real claim of 65536 tensors, and the file holds
     // two metas.
     std::string path = write_one_op_trace(/*n_metas=*/2, /*in=*/65535, /*out=*/1);
-    auto t = load_trace(kTestIo, path.c_str());
-    assert(!t);
+    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::MetaRunPastCount));
     std::remove(path.c_str());
     crucible::test::pass("  test_meta_uint16_overflow:      PASSED\n");
 }
@@ -405,9 +395,8 @@ static void test_counts_past_the_file_allocate_nothing() {
         std::memcpy(buf.data() + 8, &claimed_ops, 4);
         std::memcpy(buf.data() + 12, &claimed_metas, 4);
         std::string path = write_tmp(buf.data(), buf.size());
-        auto t = load_trace(kTestIo, path.c_str());
+        assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::CountPastFile));
         std::remove(path.c_str());
-        assert(!t);
     }
     const long growth_kb = peak_resident_kb() - peak_before_kb;
     assert(growth_kb < 64 * 1024);
@@ -436,9 +425,12 @@ static bool loads_with_meta(const MetaRecord& record) {
     std::memcpy(buf.data() + 16 + 72, &num_inputs, 2);
     std::memcpy(buf.data() + 16 + 80, record.data(), record.size());
     std::string path = write_tmp(buf.data(), buf.size());
-    auto t = load_trace(kTestIo, path.c_str());
+    const auto loaded = load_trace(kTestIo, path.c_str());
     std::remove(path.c_str());
-    return t != nullptr;
+    // Only the metadata record differs from a valid trace, so a refusal has
+    // the one reason of a corrupt record.
+    assert(loaded.is_ok() || is_refused_as(loaded, TraceLoadError::MetaCorrupt));
+    return loaded.is_ok();
 }
 
 template <class Field>
@@ -495,10 +487,10 @@ static void test_names_on_a_sealed_table_are_skipped() {
     buf.insert(buf.end(), name, name + sizeof(name) - 1);
 
     std::string path = write_tmp(buf.data(), buf.size());
-    auto t = load_trace(kTestIo, kVigilForeground, path.c_str());
+    const bool is_loaded = load_trace(kTestIo, kVigilForeground, path.c_str()).is_ok();
     std::remove(path.c_str());
 
-    assert(t);
+    assert(is_loaded);
     assert(global_schema_table().is_sealed());
     assert(global_schema_table().count() == 0);
     assert(missing(global_schema_table().lookup(SchemaHash{0x5EA1ED0000000001ULL})));

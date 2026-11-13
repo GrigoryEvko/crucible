@@ -31,7 +31,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <memory>
 #include <optional>
 #include <type_traits>
 #include <vector>
@@ -97,6 +96,30 @@ struct LoadedTrace {
 
     uint32_t num_ops = 0;
     uint32_t num_metas = 0;
+};
+
+// The reason that the loader refuses a trace file.
+enum class TraceLoadError : uint8_t {
+    // The file does not open.
+    OpenFailed,
+    // The size of the file does not read.
+    SizeUnknown,
+    // The file is shorter than its header.
+    HeaderTruncated,
+    // The file does not start with the magic CRTR.
+    WrongMagic,
+    // The version is not TRACE_FORMAT_VERSION.
+    WrongVersion,
+    // A count of the header is past its limit.
+    CountPastLimit,
+    // The records of the header counts do not fit in the file.
+    CountPastFile,
+    // A read ends before the bytes that the size of the file gives.
+    ReadTruncated,
+    // A metadata record breaks a claim of its type.
+    MetaCorrupt,
+    // The metadata of an op runs past the metadata count.
+    MetaRunPastCount,
 };
 
 // The file is written and read as raw struct bytes, with no byte swap.  The
@@ -191,7 +214,7 @@ template <class Field>
 // names of the trace go into the global table through schema_table_view.  An
 // empty view means that the table is sealed, and the names then stay out.
 template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline std::unique_ptr<LoadedTrace>
+[[nodiscard]] inline ::fixy::Result<LoadedTrace, TraceLoadError>
 load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableView> const& schema_table_view,
             bool should_register_names) {
     // A report names no path, because a report writes no raw text.  Each
@@ -199,19 +222,19 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
     auto opened = ::fixy::mint_owned_file(io, path, "rb");
     if (!opened) {
         ::fixy::report(::fixy::Sink::Err, "load_trace: cannot open the trace file (error {})\n", opened.error());
-        return nullptr;
+        return ::fixy::err(TraceLoadError::OpenFailed);
     }
     const ::fixy::OwnedFile trace_file = *std::move(opened);
 
     // The size of the file bounds every count in it, so it is read first.
     if (std::fseek(trace_file.get(), 0, SEEK_END) != 0) {
         ::fixy::report(::fixy::Sink::Err, "load_trace: cannot read the size of the trace file\n");
-        return nullptr;
+        return ::fixy::err(TraceLoadError::SizeUnknown);
     }
     const long file_end = std::ftell(trace_file.get());
     if (file_end < 0 || std::fseek(trace_file.get(), 0, SEEK_SET) != 0) {
         ::fixy::report(::fixy::Sink::Err, "load_trace: cannot read the size of the trace file\n");
-        return nullptr;
+        return ::fixy::err(TraceLoadError::SizeUnknown);
     }
     const auto file_size = static_cast<uint64_t>(file_end);
 
@@ -221,24 +244,24 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
         || std::fread(&raw_num_ops, 4, 1, trace_file.get()) != 1
         || std::fread(&raw_num_metas, 4, 1, trace_file.get()) != 1) {
         ::fixy::report(::fixy::Sink::Err, "load_trace: the header of the trace file is truncated\n");
-        return nullptr;
+        return ::fixy::err(TraceLoadError::HeaderTruncated);
     }
 
     if (std::memcmp(magic, "CRTR", 4) != 0) {
         ::fixy::report(::fixy::Sink::Err, "load_trace: the trace file does not start with the magic CRTR\n");
-        return nullptr;
+        return ::fixy::err(TraceLoadError::WrongMagic);
     }
     if (version != TRACE_FORMAT_VERSION) {
         ::fixy::report(::fixy::Sink::Err, "load_trace: the trace file has the version {}, and the loader reads {}\n",
                        version, TRACE_FORMAT_VERSION);
-        return nullptr;
+        return ::fixy::err(TraceLoadError::WrongVersion);
     }
 
     if (!kTraceNumOpsBound(raw_num_ops) || !kTraceNumMetasBound(raw_num_metas)) {
         ::fixy::report(::fixy::Sink::Err,
                        "load_trace: the header counts are past their limits (num_ops={} num_metas={})\n", raw_num_ops,
                        raw_num_metas);
-        return nullptr;
+        return ::fixy::err(TraceLoadError::CountPastLimit);
     }
     // The check above refuses an out-of-range count with a message.  The
     // loader then takes each count only through the mint of its gate, so no
@@ -257,13 +280,13 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
                        "load_trace: the header counts do not fit in the file "
                        "(num_ops={} num_metas={}, {} bytes after the header)\n",
                        num_ops, num_metas, after_header);
-        return nullptr;
+        return ::fixy::err(TraceLoadError::CountPastFile);
     }
 
     std::vector<TraceOpRecord> records(num_ops);
     if (num_ops > 0 && std::fread(records.data(), sizeof(TraceOpRecord), num_ops, trace_file.get()) != num_ops) {
         ::fixy::report(::fixy::Sink::Err, "load_trace: the op records are truncated\n");
-        return nullptr;
+        return ::fixy::err(TraceLoadError::ReadTruncated);
     }
 
     // Each record is read into a buffer of its full length and decoded from
@@ -273,7 +296,7 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
     for (uint32_t i = 0; i < num_metas; i++) {
         if (std::fread(raw_record.data(), TRACE_META_BYTES, 1, trace_file.get()) != 1) {
             ::fixy::report(::fixy::Sink::Err, "load_trace: the metadata records are truncated\n");
-            return nullptr;
+            return ::fixy::err(TraceLoadError::ReadTruncated);
         }
         const bool is_decoded = decode_trace_meta(raw_record.data())
                                     .match(
@@ -286,7 +309,7 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
             ::fixy::report(::fixy::Sink::Err,
                            "load_trace: the metadata record {} breaks a claim of its type, so the trace is corrupt\n",
                            i);
-            return nullptr;
+            return ::fixy::err(TraceLoadError::MetaCorrupt);
         }
     }
 
@@ -329,20 +352,20 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
         }
     }
 
-    auto trace = std::make_unique<LoadedTrace>();
-    trace->num_ops = num_ops;
-    trace->num_metas = num_metas;
-    trace->metas = std::move(metas);
+    LoadedTrace trace{};
+    trace.num_ops = num_ops;
+    trace.num_metas = num_metas;
+    trace.metas = std::move(metas);
 
-    trace->entries.resize(num_ops);
-    trace->meta_starts.resize(num_ops);
-    trace->scope_hashes.resize(num_ops);
-    trace->callsite_hashes.resize(num_ops);
+    trace.entries.resize(num_ops);
+    trace.meta_starts.resize(num_ops);
+    trace.scope_hashes.resize(num_ops);
+    trace.callsite_hashes.resize(num_ops);
 
     uint32_t meta_cursor = 0;
     for (uint32_t i = 0; i < num_ops; i++) {
         const auto& op_record = records[i];
-        auto& entry = trace->entries[i];
+        auto& entry = trace.entries[i];
 
         entry.schema_hash = op_record.schema_hash;
         entry.shape_hash = op_record.shape_hash;
@@ -379,16 +402,16 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
                                "load_trace: the metadata of op {} ({} tensors at the cursor {}) "
                                "runs past num_metas={}\n",
                                i, total_tensors, meta_cursor, num_metas);
-                return nullptr;
+                return ::fixy::err(TraceLoadError::MetaRunPastCount);
             }
-            trace->meta_starts[i] = MetaIndex{meta_cursor};
+            trace.meta_starts[i] = MetaIndex{meta_cursor};
             meta_cursor += total_tensors;
         } else {
-            trace->meta_starts[i] = MetaIndex::none();
+            trace.meta_starts[i] = MetaIndex::none();
         }
 
-        trace->scope_hashes[i] = op_record.scope_hash;
-        trace->callsite_hashes[i] = op_record.callsite_hash;
+        trace.scope_hashes[i] = op_record.scope_hash;
+        trace.callsite_hashes[i] = op_record.callsite_hash;
     }
 
     return trace;
@@ -400,7 +423,7 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
 // global table, because only a thread that holds a Vigil's producer claim
 // writes there.
 template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline std::unique_ptr<LoadedTrace> load_trace(Ctx const& io, const char* path) {
+[[nodiscard]] inline ::fixy::Result<LoadedTrace, TraceLoadError> load_trace(Ctx const& io, const char* path) {
     return load_trace_(io, path, std::nullopt, false);
 }
 
@@ -409,7 +432,8 @@ template <::fixy::CtxFitsFileOpen Ctx>
 // owns the file reads, and fg proves that the caller holds a Vigil's
 // producer claim, which the table asks for before it takes a name.
 template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline std::unique_ptr<LoadedTrace> load_trace(Ctx const& io, VigilFgCtx const& fg, const char* path) {
+[[nodiscard]] inline ::fixy::Result<LoadedTrace, TraceLoadError> load_trace(Ctx const& io, VigilFgCtx const& fg,
+                                                                            const char* path) {
     return load_trace_(io, path, global_schema_table().mint_mutable_view(fg), true);
 }
 

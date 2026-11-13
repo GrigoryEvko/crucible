@@ -371,25 +371,27 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; i++) {
         reports.push_back([path = argv[i]] {
             auto test = ::foundation::effects::testing::test();
-            auto trace = load_trace(::fixy::TestRunnerCtx{test}, path);
-            if (!trace) {
+            auto loaded_trace = load_trace(::fixy::TestRunnerCtx{test}, path);
+            if (loaded_trace.is_err()) {
                 std::fprintf(stderr, "[skip] could not load %s\n", path);
                 return bench::run("build_trace (skipped — load fail)", [] { asm volatile("" ::: "memory"); });
             }
-            std::fprintf(stderr, "[trace] %s: %u ops, %u metas\n", path, trace->num_ops, trace->num_metas);
+            const LoadedTrace trace =
+                std::move(loaded_trace).expect("the load holds a trace after the check of its error");
+            std::fprintf(stderr, "[trace] %s: %u ops, %u metas\n", path, trace.num_ops, trace.num_metas);
 
             MetaLog meta_log;
             meta_log.reset();
 
             BackgroundThread bg;
             bg.meta_log.set(&meta_log);
-            const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace->num_ops) * 256);
+            const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
             ::fixy::BumpArena scratch{arena_bytes};
 
             char label[128];
-            std::snprintf(label, sizeof(label), "build_trace (%u ops, from %s)", trace->num_ops, path);
+            std::snprintf(label, sizeof(label), "build_trace (%u ops, from %s)", trace.num_ops, path);
             return bench::run(label, [&] {
-                const auto& loaded = *trace;
+                const LoadedTrace& loaded = trace;
                 scratch.with_epoch([&]() noexcept {
                     bench::refill_meta_log(meta_log, loaded);
                     auto built = bg.build_trace_from(test.alloc, scratch, loaded.num_ops, loaded.entries.data(),
