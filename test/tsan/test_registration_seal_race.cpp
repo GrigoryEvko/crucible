@@ -122,7 +122,8 @@ struct SchemaRace {
     using Table = crucible::SchemaTable;
 
     [[nodiscard]] static bool register_one(Table& table, Table::MutableView const& view, crucible::SchemaHash hash) {
-        return table.register_name(view, hash, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>("aten::race"));
+        return table.register_name(
+            view, hash, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::race"}));
     }
 
     [[nodiscard]] static uint32_t read_sealed(Table const& table, uint32_t /*round*/) {
@@ -133,7 +134,7 @@ struct SchemaRace {
     }
 
     [[nodiscard]] static bool is_present(Table const& table, crucible::SchemaHash hash) {
-        return table.lookup(hash).value().data() != nullptr;
+        return table.lookup(hash).is_some();
     }
 };
 

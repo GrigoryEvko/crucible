@@ -231,26 +231,20 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
 
 // ── Schema-name typed lookup ───────────────────────────────────────
 //
-// `crucible::schema_name(SchemaHash)` returns a typed borrow from the
-// interned-name storage of the global SchemaTable.  The table admits a
-// name only when it is Sanitized (a boundary checked it) or
-// FromInternal (it crossed no boundary).  The table owns the bytes that
-// it returns, so the borrow is tagged `source::Interned`.  That tag is
-// different from the raw C ABI input (`source::ABIBoundary`) that
-// crucible_register_schema_name receives.  The Borrowed<..., SchemaTable>
-// payload also shows the lifetime of the owner to the reader.
+// `crucible::schema_name(SchemaHash)` gives a C text in the interned-name
+// storage of the schema tables.  The table admits a name only when it is
+// Sanitized (a boundary checked it) or FromInternal (it crossed no
+// boundary).  The table owns the characters that it gives, so the text is
+// tagged `source::Interned`.  That tag is different from the raw C ABI input
+// (`source::ABIBoundary`) that crucible_register_schema_name receives.
 //
-// Returns an empty typed borrow when the hash is unknown — callers
-// branch on `.value().data() == nullptr`.  Lifetime: borrowed from the
-// SchemaTable; valid for the lifetime of the program once registered.
+// An unknown hash gives no value.  The text borrows the storage of the table,
+// which keeps it until a registration of the same hash replaces the name.
 
 using TypedSchemaName = crucible::SchemaTable::LookupName;
 
-static_assert(sizeof(TypedSchemaName) == sizeof(crucible::SchemaTable::BorrowedName));
-static_assert(alignof(TypedSchemaName) == alignof(crucible::SchemaTable::BorrowedName));
-static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
-
-[[nodiscard]] CRUCIBLE_HOT TypedSchemaName schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
+[[nodiscard]] CRUCIBLE_HOT ::fixy::Option<TypedSchemaName>
+schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
     return crucible::schema_name(schema_hash);
 }
 

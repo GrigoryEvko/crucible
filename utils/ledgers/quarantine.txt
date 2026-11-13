@@ -88,15 +88,15 @@ reason vessel/ | The unit vessel of section 14.1 of the plan misc/01_10_2026_qua
 @build/ | c-array-object | 7 | - | -
 @build/test/fixy/armed_roster/ | c-array-object | 1 | - | -
 @build/test/fuzz/generated/ | std-object | 15 | - | -
-bench/ | c-array-object | 125 | - | -
-bench/ | c-library-call | 719 | - | -
+bench/ | c-array-object | 124 | - | -
+bench/ | c-library-call | 718 | - | -
 bench/ | c-library-object | 17 | - | -
 bench/ | compiler-builtin | 12 | - | -
 bench/ | door-header | 2 | - | -
 bench/ | inline-asm | 3 | - | -
 bench/ | raw-function-pointer | 1 | - | -
 bench/ | raw-new-delete | 2 | - | -
-bench/ | raw-pointer-object | 214 | - | -
+bench/ | raw-pointer-object | 211 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
 bench/ | std-entity | 880 | - | -
@@ -107,16 +107,16 @@ examples/fn/ | raw-pointer-object | 7 | - | -
 examples/fn/ | replace-pending:std::bit_cast | 2 | - | -
 examples/fn/ | std-entity | 10 | - | -
 examples/fn/ | std-object | 3 | - | -
-include/crucible/ | c-array-object | 54 | - | -
-include/crucible/ | c-library-call | 57 | - | -
+include/crucible/ | c-array-object | 53 | - | -
+include/crucible/ | c-library-call | 53 | - | -
 include/crucible/ | compiler-builtin | 4 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
 include/crucible/ | raw-new-delete | 6 | - | -
-include/crucible/ | raw-pointer-object | 450 | - | -
+include/crucible/ | raw-pointer-object | 444 | - | -
 include/crucible/ | replace-pending:<limits> | 6 | - | -
-include/crucible/ | replace-pending:std::bit_cast | 19 | - | -
+include/crucible/ | replace-pending:std::bit_cast | 18 | - | -
 include/crucible/ | std-entity | 272 | - | -
-include/crucible/ | std-object | 67 | - | -
+include/crucible/ | std-object | 66 | - | -
 include/crucible/canopy/ | c-library-call | 1 | - | -
 include/crucible/canopy/ | c-library-object | 1 | - | -
 include/crucible/canopy/ | inline-asm | 2 | - | -
@@ -342,7 +342,7 @@ src/ | c-library-call | 2 | - | -
 src/ | compiler-builtin | 2 | - | -
 src/ | raw-new-delete | 3 | - | -
 src/ | raw-pointer-object | 29 | - | -
-src/ | std-entity | 163 | - | -
+src/ | std-entity | 161 | - | -
 src/ | std-object | 36 | - | -
 src/canopy/ | std-object | 1 | - | -
 src/fixy/os/ | base-std-entity | 153 | - | -
@@ -371,8 +371,8 @@ src/topology/ | door-header | 1 | - | -
 src/topology/ | raw-pointer-object | 1 | - | -
 src/topology/ | std-entity | 10 | - | -
 src/topology/ | std-object | 3 | - | -
-test/ | c-array-object | 240 | - | -
-test/ | c-library-call | 950 | - | -
+test/ | c-array-object | 239 | - | -
+test/ | c-library-call | 941 | - | -
 test/ | c-library-object | 16 | - | -
 test/ | compiler-builtin | 1 | - | -
 test/ | door-header | 24 | - | -
@@ -380,10 +380,10 @@ test/ | foreign-symbol | 13 | - | -
 test/ | inline-asm | 1 | - | -
 test/ | raw-function-pointer | 23 | - | -
 test/ | raw-new-delete | 41 | - | -
-test/ | raw-pointer-object | 633 | - | -
+test/ | raw-pointer-object | 622 | - | -
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 103 | - | -
-test/ | std-entity | 2449 | - | -
+test/ | std-entity | 2448 | - | -
 test/ | std-object | 844 | - | -
 test/canopy_neg/ | raw-pointer-object | 1 | - | -
 test/canopy_neg/ | std-entity | 10 | - | -
@@ -723,6 +723,9 @@ vessel/torch/ | c-library-object | 1 | - | -
 vessel/torch/ | foreign-symbol | 20 | - | -
 vessel/torch/ | raw-new-delete | 2 | - | -
 vessel/torch/ | raw-pointer-object | 76 | - | -
+vessel/torch/ | region | 1 | ABI: ctypes reads the name as a C text up to its zero | -
+vessel/torch/ | region | 1 | ABI: fwrite of the C library reads the characters of the name | -
+vessel/torch/ | region | 1 | ABI: the C caller gives the name as a pointer, and strnlen gave its length | -
 vessel/torch/ | replace-pending:std::bit_cast | 4 | - | -
 vessel/torch/ | std-entity | 5 | - | -
 vessel/torch/ | std-object | 3 | - | -

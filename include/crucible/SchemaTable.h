@@ -3,7 +3,6 @@
 #include <crucible/ForegroundCtx.h>
 #include <crucible/RegistrationSeal.h>
 #include <crucible/Types.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/ScopedView.h>
 #include <fixy/Tagged.h>
@@ -11,29 +10,28 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Grow.h>
 #include <foundation/effects/Effect.h>
 
-#include <bit>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <cstring>
 #include <type_traits>
 
 namespace crucible {
 
 static constexpr uint32_t SCHEMA_TABLE_CAP = 512;
 
-// pad holds the four bytes after the length, so the entry has no padding
-// byte.  With -ftrivial-auto-var-init=zero, GCC writes zero to each padding
-// hole of each entry of an automatic table, one store for each hole.
-// test/test_schema_table.cpp makes sure that the entry has no padding byte.
+// The longest name that the table holds, in characters.  A PyTorch operator
+// name with its overload is shorter than 256 characters.
+inline constexpr std::size_t SCHEMA_NAME_MAX = 4096;
+
+// The name holds its characters and one zero after them, so a C caller reads
+// the name through foreign_c_str.  The text of an entry that no registration
+// wrote holds no storage.
 struct SchemaEntry {
     SchemaHash hash;
-    const char* name = nullptr;  // owned: malloc'd copy, freed in clear()
-    uint32_t name_len = 0;  // cached byte length; excludes trailing NUL
-    uint32_t pad = 0;
+    ::foundation::core::GrowText name = ::foundation::core::mint_grow_text(SCHEMA_NAME_MAX + 1);
 };
 
 namespace schema_state {
@@ -58,12 +56,12 @@ class SchemaTable {
 public:
     SchemaTable() = default;
 
-    SchemaTable(const SchemaTable&) = delete("owns malloc'd name strings");
-    SchemaTable& operator=(const SchemaTable&) = delete("owns malloc'd name strings");
-    SchemaTable(SchemaTable&&) = delete("owns malloc'd name strings");
-    SchemaTable& operator=(SchemaTable&&) = delete("owns malloc'd name strings");
+    SchemaTable(const SchemaTable&) = delete("owns the storage of its names");
+    SchemaTable& operator=(const SchemaTable&) = delete("owns the storage of its names");
+    SchemaTable(SchemaTable&&) = delete("owns the storage of its names");
+    SchemaTable& operator=(SchemaTable&&) = delete("owns the storage of its names");
 
-    ~SchemaTable() { release_names_(); }
+    ~SchemaTable() = default;
 
     // Waits for a registration that is in progress, then seals.  A reader
     // that observes the seal observes every registered entry
@@ -107,64 +105,71 @@ public:
     }
 
     template <SchemaNameSource Tag>
-    using Name = ::fixy::Tagged<const char*, Tag>;
+    using Name = ::fixy::Tagged<::fixy::TextView, Tag>;
     using SanitizedName = Name<::fixy::tags::source::Sanitized>;
     using InternalName = Name<::fixy::tags::source::FromInternal>;
 
-    // A looked-up name is a borrow of the table's own copy, and the table is
-    // the interning owner that made it canonical for its hash.  It claims
-    // neither provenance of the registration, because the table keeps one
-    // copy per hash whichever producer wrote it.
-    using BorrowedName = ::fixy::Borrowed<const char, SchemaTable>;
-    using LookupName = ::fixy::Tagged<BorrowedName, ::fixy::tags::source::Interned>;
-
-    static_assert(sizeof(LookupName) == sizeof(BorrowedName));
-    static_assert(std::is_trivially_copy_constructible_v<LookupName>);
+    // A looked-up name is a C text in the storage of the table, and the
+    // table is the interning owner that made it canonical for its hash.  It
+    // claims neither provenance of the registration, because the table keeps
+    // one copy per hash whichever producer wrote it.  A registration of the
+    // same hash again ends the storage of the old copy.
+    using LookupName = ::fixy::Tagged<::fixy::CText, ::fixy::tags::source::Interned>;
 
     // The view's type is the proof that the table was not sealed when the
     // view was minted.  The seal can still land between the mint and the
     // write, so the write runs inside the section of the seal.  It returns
-    // false, and writes nothing, when the table was sealed first.  A null
+    // false, and writes nothing, when the table was sealed first.  An empty
     // name is not a registration, and it returns true without a write.
     // The view names the table it proves, and a view of another table
     // proves nothing about this one, so that is checked in every build mode.
     template <SchemaNameSource Tag>
     [[nodiscard]] bool register_name(MutableView const& view, SchemaHash hash, Name<Tag> const& name_tag) {
         CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
-        const char* name = name_tag.value();
-        if (!name) return true;
+        const ::fixy::TextView name = name_tag.value();
+        if (name.size() == 0) return true;
         return seal_.with_write_section([&] { write_name_(hash, name); });
     }
 
     // The unqualified form is safe in either phase. The overload taking a
     // sealed view exists so a caller holding the borrow past the registration
     // phase can say so at the call site.  A hash that the table does not hold
-    // gives the empty borrow.  Complexity: O(log n).
-    [[nodiscard]] LookupName lookup(SchemaHash hash) const noexcept {
+    // gives no value.  Complexity: O(log n) and the length of the name.
+    [[nodiscard]] ::fixy::Option<LookupName> lookup(SchemaHash hash) const noexcept {
         const auto found = entries_.get(position_of_(hash));
         for (const auto& entry : found) {
-            if (entry->hash == hash) {
-                return ::fixy::mint_tagged<::fixy::tags::source::Interned>(BorrowedName{entry->name, entry->name_len});
-            }
+            if (entry->hash == hash) return ::fixy::some(name_of(*entry));
         }
-        return ::fixy::mint_tagged<::fixy::tags::source::Interned>(BorrowedName{});
+        return ::fixy::none;
     }
 
-    [[nodiscard]] LookupName lookup(SealedView const&, SchemaHash hash) const noexcept { return lookup(hash); }
+    [[nodiscard]] ::fixy::Option<LookupName> lookup(SealedView const&, SchemaHash hash) const noexcept {
+        return lookup(hash);
+    }
 
-    // The name without the "aten::" namespace, as a borrow of the same copy.
-    [[nodiscard]] LookupName short_name(SchemaHash hash) const noexcept {
+    // The name without the "aten::" namespace, in the storage of the same
+    // copy.  The rest of a name ends with the same zero.
+    [[nodiscard]] ::fixy::Option<LookupName> short_name(SchemaHash hash) const noexcept {
         constexpr ::fixy::TextView kAtenPrefix = "aten::";
-        const LookupName full = lookup(hash);
-        const BorrowedName& name = full.value();
-        if (name.size() < kAtenPrefix.size()) return full;
-        std::size_t position = 0;
-        for (const char expected : kAtenPrefix) {
-            if (name[position] != expected) return full;
-            ++position;
+        const auto found = entries_.get(position_of_(hash));
+        for (const auto& entry : found) {
+            if (entry->hash != hash) break;
+            const ::fixy::TextView stored = entry->name.view();
+            if (!::fixy::starts_with(stored, kAtenPrefix)) return ::fixy::some(name_of(*entry));
+            const ::fixy::TextView rest = stored.window(kAtenPrefix.size(), stored.size() - kAtenPrefix.size())
+                                              .expect("the prefix is a part of the name");
+            return ::fixy::some(::fixy::mint_tagged<::fixy::tags::source::Interned>(
+                ::foundation::core::mint_c_text(rest).expect("the table keeps one zero after each name")));
         }
+        return ::fixy::none;
+    }
+
+    // The name of an entry as a C text.  The table keeps one zero after the
+    // characters of each name, so the C text always exists.  Complexity:
+    // the length of the name.
+    [[nodiscard]] static LookupName name_of(SchemaEntry const& entry) noexcept {
         return ::fixy::mint_tagged<::fixy::tags::source::Interned>(
-            name.subview(kAtenPrefix.size(), name.size() - kAtenPrefix.size()));
+            ::foundation::core::mint_c_text(entry.name.view()).expect("the table keeps one zero after each name"));
     }
 
     [[nodiscard]] uint32_t count() const noexcept { return static_cast<uint32_t>(entries_.size()); }
@@ -179,7 +184,7 @@ public:
     // do this: it takes the test context, which code that ships cannot mint.
     // The caller makes sure that no other thread uses the table.
     void clear(::foundation::effects::Test const& test) {
-        release_names_();
+        entries_.clear();
         seal_.reopen(test);
         CRUCIBLE_POST(0, count() == 0u);
         CRUCIBLE_POST(0, !is_sealed());
@@ -191,16 +196,13 @@ private:
     // order: the carried entry changes place with each entry of a larger
     // hash, so each such entry moves one place up, and the last one goes to
     // the end.  Complexity: O(n).
-    void write_name_(SchemaHash hash, const char* name) {
-        const DuplicatedName copy = duplicate_name_(name);
-        SchemaEntry carried{.hash = hash, .name = copy.name, .name_len = copy.name_len};
+    void write_name_(SchemaHash hash, ::fixy::TextView name) {
+        SchemaEntry carried{.hash = hash, .name = copy_name_(name)};
         for (SchemaEntry& entry : entries_) {
             // Before the first change of place, each entry has a smaller hash
             // than the new one, so an equal hash is the entry of this hash.
             if (entry.hash == carried.hash) {
-                release_name_(entry);
-                entry.name = carried.name;
-                entry.name_len = carried.name_len;
+                ::fixy::swap(entry.name, carried.name);
                 CRUCIBLE_POST(0, is_registered_(hash));
                 return;
             }
@@ -209,11 +211,33 @@ private:
         // A full table ends the process.  A quiet return leaves each later
         // schema unregistered, and the fallback dispatch that results shows
         // far from the registration that was lost.
-        if (entries_.push(carried).is_err()) [[unlikely]] {
+        if (entries_.push(static_cast<SchemaEntry&&>(carried)).is_err()) [[unlikely]] {
             ::fixy::fatal("crucible: the schema table holds SCHEMA_TABLE_CAP names.  Raise SCHEMA_TABLE_CAP in "
                           "crucible/SchemaTable.h, or register fewer schemas");
         }
         CRUCIBLE_POST(0, is_registered_(hash));
+    }
+
+    // The characters of name before its first zero, and one zero after them.
+    // A registration is cold, and its context holds no allocation capability,
+    // so the copy takes the bare allocation tag.  Complexity: the length of
+    // the name.
+    [[nodiscard]] static ::foundation::core::GrowText copy_name_(::fixy::TextView name) {
+        const ::fixy::Option<std::size_t> zero = ::fixy::find(name, '\0');
+        const ::fixy::TextView characters = zero.match(
+            [name](std::size_t position) noexcept {
+                return name.window(0, position).expect("the zero is a character of the name");
+            },
+            [name] noexcept { return name; });
+        if (characters.size() > SCHEMA_NAME_MAX) [[unlikely]] {
+            ::fixy::fatal("crucible: a schema name is longer than SCHEMA_NAME_MAX characters.  Raise SCHEMA_NAME_MAX "
+                          "in crucible/SchemaTable.h");
+        }
+        const ::foundation::effects::Alloc alloc{};
+        ::foundation::core::GrowText copy = ::foundation::core::mint_grow_text(SCHEMA_NAME_MAX + 1);
+        copy.append(alloc, characters).expect("the name fits below the maximum of its text");
+        copy.append(alloc, '\0').expect("the zero fits below the maximum of its text");
+        return copy;
     }
 
     // The position of the first entry whose hash is not below hash.  The
@@ -223,42 +247,10 @@ private:
             entries_.view(), [](const SchemaEntry& entry) noexcept { return entry.hash.raw(); }, hash.raw());
     }
 
-    [[nodiscard]] bool is_registered_(SchemaHash hash) const noexcept { return lookup(hash).value().data() != nullptr; }
-
-    // The bit_cast drops const so free() accepts the pointer.  The
-    // allocation is the own mutable storage of the table.
-    static void release_name_(SchemaEntry& entry) noexcept { std::free(std::bit_cast<char*>(entry.name)); }
-
-    void release_names_() noexcept {
-        for (SchemaEntry& entry : entries_) {
-            release_name_(entry);
-        }
-        entries_.clear();
-    }
+    [[nodiscard]] bool is_registered_(SchemaHash hash) const noexcept { return lookup(hash).is_some(); }
 
     ::fixy::FixedList<SchemaEntry, SCHEMA_TABLE_CAP> entries_{};
     RegistrationSeal seal_;
-
-    struct DuplicatedName {
-        const char* name = nullptr;
-        uint32_t name_len = 0;
-    };
-
-    [[nodiscard]] static DuplicatedName duplicate_name_(const char* s) {
-        const auto len = std::strlen(s);
-        if (len > ::fixy::max_of<uint32_t>) [[unlikely]] {
-            ::fixy::fatal("crucible: a schema name is longer than 4 GiB, and the schema table refuses it");
-        }
-        auto* p = static_cast<char*>(std::malloc(len + 1));
-        if (!p) [[unlikely]] {
-            ::fixy::fatal("crucible: the schema table cannot allocate the copy of a schema name");
-        }
-        std::memcpy(p, s, len + 1);
-        return DuplicatedName{
-            .name = p,
-            .name_len = static_cast<uint32_t>(len),
-        };
-    }
 };
 
 // The global is sealed before any second thread starts, so a registration
@@ -312,15 +304,15 @@ inline void register_schema_name(VigilFgCtx const& fg, SchemaHash hash, SchemaTa
 // The two lookups read the global table first and the late table second.
 // While a Vigil records, call them only from the thread that holds its
 // producer claim, because the late table is never sealed.
-[[nodiscard]] inline SchemaTable::LookupName schema_name(SchemaHash hash) {
-    const SchemaTable::LookupName global_name = global_schema_table().lookup(hash);
-    if (global_name.value().data() != nullptr) return global_name;
+[[nodiscard]] inline ::fixy::Option<SchemaTable::LookupName> schema_name(SchemaHash hash) {
+    ::fixy::Option<SchemaTable::LookupName> global_name = global_schema_table().lookup(hash);
+    if (global_name.is_some()) return global_name;
     return late_schema_table().lookup(hash);
 }
 
-[[nodiscard]] inline SchemaTable::LookupName schema_short_name(SchemaHash hash) {
-    const SchemaTable::LookupName global_name = global_schema_table().short_name(hash);
-    if (global_name.value().data() != nullptr) return global_name;
+[[nodiscard]] inline ::fixy::Option<SchemaTable::LookupName> schema_short_name(SchemaHash hash) {
+    ::fixy::Option<SchemaTable::LookupName> global_name = global_schema_table().short_name(hash);
+    if (global_name.is_some()) return global_name;
     return late_schema_table().short_name(hash);
 }
 

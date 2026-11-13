@@ -26,6 +26,8 @@
 #include <crucible/SchemaTable.h>
 #include <crucible/TraceLoader.h>
 #include <crucible/Vigil.h>
+#include <fixy/Core.h>
+#include <foundation/Quarantine.h>
 
 #include <cstddef>
 #include <cstdio>
@@ -289,15 +291,24 @@ void crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const
     // The checks above are the boundary's sanitizer, and the retag records
     // that they ran.  The name is never dropped: a sealed global table sends
     // it to the late table.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the C caller gives the name as a pointer, and strnlen gave its length")
+    const ::fixy::TextView name_text = ::foundation::core::mint_foreign_text(name, len);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     const auto name_tag =
-        ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name).retag<::fixy::tags::source::Sanitized>();
+        ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name_text).retag<::fixy::tags::source::Sanitized>();
     crucible::register_schema_name(fg, crucible::SchemaHash{schema_hash}, name_tag);
 }
 
 const char* crucible_schema_name(uint64_t schema_hash) noexcept {
     // crucible::schema_name reads through both tables.  A caller cannot tell
-    // which one accepted the registration, and should not have to.
-    return crucible::schema_name(crucible::SchemaHash{schema_hash}).value().data();
+    // which one accepted the registration, and should not have to.  An
+    // unknown hash gives NULL.
+    for (const crucible::SchemaTable::LookupName& name : crucible::schema_name(crucible::SchemaHash{schema_hash})) {
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: ctypes reads the name as a C text up to its zero")
+        return ::foundation::core::foreign_c_str(name.value());
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    }
+    return nullptr;
 }
 
 int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
@@ -385,9 +396,7 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     const auto& table = crucible::global_schema_table();
     const auto& late = crucible::late_schema_table();
 
-    const auto is_in_global = [&table](crucible::SchemaHash hash) noexcept {
-        return table.lookup(hash).value().data() != nullptr;
-    };
+    const auto is_in_global = [&table](crucible::SchemaHash hash) noexcept { return table.lookup(hash).is_some(); };
 
     // The count is written before the records, so it has to be the
     // post-dedup count, not the sum of the two sizes.
@@ -397,11 +406,14 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     w(&num_names, 4, 1);
 
     const auto write_entry = [&w](const crucible::SchemaEntry& entry) {
+        const ::fixy::CText name = crucible::SchemaTable::name_of(entry).value();
         uint64_t sh = entry.hash.raw();
-        auto name_len = static_cast<uint16_t>(entry.name_len);
+        auto name_len = static_cast<uint16_t>(name.size());
         w(&sh, 8, 1);
         w(&name_len, 2, 1);
-        w(entry.name, 1, name_len);
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: fwrite of the C library reads the characters of the name")
+        w(::foundation::core::foreign_c_str(name), 1, name_len);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     };
 
     for (const crucible::SchemaEntry& entry : table.entries())

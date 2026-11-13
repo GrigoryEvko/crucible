@@ -12,6 +12,6 @@ int main() {
     auto sv = t.mint_sealed_view();
 
     t.register_name(sv, crucible::SchemaHash{0x42},
-                    ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(static_cast<const char*>("aten::mm")));
+                    ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::mm"}));
     return 0;
 }

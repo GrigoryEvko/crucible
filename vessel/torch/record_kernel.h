@@ -41,6 +41,7 @@
 #include <fixy/Fn.h>
 #include <fixy/Role.h>
 #include <fixy/Tagged.h>
+#include <foundation/Quarantine.h>
 
 #include <crucible/CKernel.h>
 #include <crucible/SchemaTable.h>
@@ -451,7 +452,7 @@ inline constexpr c10::DispatchKeySet kAfterCrucibleKeyset =
 }
 
 // One past the longest name the table holds, so the buffer is exact: it never
-// truncates and it never allocates.
+// truncates and it never allocates.  The last place holds the zero.
 inline constexpr size_t kQualifiedOpNameCapacity = longest_qualified_op_name() + 1;
 
 class QualifiedOpName {
@@ -459,22 +460,29 @@ public:
     explicit QualifiedOpName(const OpEntry& row) noexcept {
         const std::string_view name{row.name};
         const std::string_view overload{row.overload};
-        size_t next = 0;
         for (const char character : name)
-            text_[next++] = character;
+            text_.push(character).expect("the capacity holds the longest name");
         if (!overload.empty()) {
-            text_[next++] = '.';
+            text_.push('.').expect("the capacity holds the longest name");
             for (const char character : overload)
-                text_[next++] = character;
+                text_.push(character).expect("the capacity holds the longest name");
         }
-        CRUCIBLE_PRE(next < kQualifiedOpNameCapacity);
-        text_[next] = '\0';
+        text_.push('\0').expect("the capacity holds the longest name and its zero");
     }
 
-    [[nodiscard]] const char* c_str() const noexcept { return text_.data(); }
+    // The name as a C text.  The constructor puts one zero after the name.
+    [[nodiscard]] ::fixy::CText c_text() const noexcept {
+        return ::foundation::core::mint_c_text(text_.view()).expect("the constructor puts one zero after the name");
+    }
+
+    [[nodiscard]] const char* c_str() const noexcept {
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: Library::impl of PyTorch takes the operator name as a C text")
+        return ::foundation::core::foreign_c_str(c_text());
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    }
 
 private:
-    std::array<char, kQualifiedOpNameCapacity> text_{};
+    ::fixy::FixedText<kQualifiedOpNameCapacity> text_{};
 };
 
 // =====================================================================
@@ -1223,7 +1231,7 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         // the name.
         const QualifiedOpName name{aten_op_table[TableIndex]};
         crucible::register_schema_name(vigil.mint_producer_context(), kSchemaHash,
-                                       ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(name.c_str()));
+                                       ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(name.c_text().view()));
         schema_name_registered.store(true, std::memory_order_relaxed);
     }
 

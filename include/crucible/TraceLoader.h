@@ -519,19 +519,15 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> path,
             const ::fixy::View<std::byte> name_read =
                 name_bytes.view().window(0, name_len).expect("a name of a bounded length fits in its buffer");
             if (detail::read_exact_(io, trace_file, name_read).is_err()) break;
-            // The table takes a name that a zero ends.  The buffer holds one
-            // byte past the longest name, and that byte stays zero.
-            char name_buf[SCHEMA_NAME_LEN_MAX + 1]{};
-            uint16_t position = 0;
+            ::fixy::FixedText<SCHEMA_NAME_LEN_MAX> name_text{};
             for (const std::byte name_byte : name_read) {
-                name_buf[position] = static_cast<char>(name_byte);
-                ++position;
+                name_text.push(static_cast<char>(name_byte)).expect("a name of a bounded length fits in its text");
             }
-            // Bounded and terminated here, which is what lets the bytes cross
-            // from untrusted file content into the table.  A seal that lands
-            // during the load ends the table here too: the table refuses
-            // every later write.
-            auto name = ::fixy::mint_tagged<::fixy::tags::source::External>(static_cast<const char*>(name_buf))
+            // Bounded here, which is what lets the bytes cross from untrusted
+            // file content into the table.  The table copies the characters
+            // before the first zero.  A seal that lands during the load ends
+            // the table here too: the table refuses every later write.
+            auto name = ::fixy::mint_tagged<::fixy::tags::source::External>(name_text.view())
                             .retag<::fixy::tags::source::Sanitized>();
             const bool was_registered = schema_table_view.match(
                 [&](SchemaTable::MutableView const& view) {

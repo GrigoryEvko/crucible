@@ -53,8 +53,8 @@ static_assert(::fixy::MintableTag<::fixy::tags::source::ABIBoundary>);
 static_assert(!::fixy::MintableTag<::fixy::tags::source::Sanitized>);
 
 // A typed data pointer collapses to the bare pointer width.  A typed
-// schema name wraps a borrowed span, and the tag collapses around it
-// while the span keeps its owner and its byte length visible.
+// schema name is a C text in the storage of the table, and the tag
+// collapses around it.
 
 static_assert(
     std::is_same_v<decltype(crucible::vessel::data_ptr_typed(std::declval<TypedMeta>(), 0)), ExternalDataPtr>);
@@ -64,8 +64,8 @@ static_assert(alignof(ExternalDataPtr) == alignof(void*));
 static_assert(std::is_trivially_copy_constructible_v<ExternalDataPtr>);
 
 static_assert(std::is_same_v<TypedSchemaName, crucible::SchemaTable::LookupName>);
-static_assert(sizeof(TypedSchemaName) == sizeof(crucible::SchemaTable::BorrowedName));
-static_assert(alignof(TypedSchemaName) == alignof(crucible::SchemaTable::BorrowedName));
+static_assert(sizeof(TypedSchemaName) == sizeof(::fixy::CText));
+static_assert(alignof(TypedSchemaName) == alignof(::fixy::CText));
 static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
 
 // The data pointer's provenance differs from the containing meta's, so
@@ -78,8 +78,7 @@ static_assert(!std::is_convertible_v<::fixy::Tagged<void*, ::fixy::tags::trust::
 
 // A validated name and raw input from the boundary cannot be confused
 // for one another.
-static_assert(!std::is_convertible_v<
-              ::fixy::Tagged<crucible::SchemaTable::BorrowedName, ::fixy::tags::source::External>, TypedSchemaName>);
+static_assert(!std::is_convertible_v<::fixy::Tagged<::fixy::CText, ::fixy::tags::source::External>, TypedSchemaName>);
 
 int g_failures = 0;
 
@@ -224,32 +223,34 @@ void test_schema_name_typed() {
 
     constexpr crucible::VigilFgCtx fg = ::foundation::effects::testing::foreground<crucible::Vigil>();
     for (const crucible::SchemaTable::MutableView& view : crucible::global_schema_table().mint_mutable_view(fg)) {
-        const bool was_a_registered =
-            crucible::register_schema_name(view, crucible::SchemaHash{hash_a},
-                                           ::fixy::mint_tagged<::fixy::tags::source::FromInternal>("aten::test_op_a"));
+        const bool was_a_registered = crucible::register_schema_name(
+            view, crucible::SchemaHash{hash_a},
+            ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::test_op_a"}));
         EXPECT(was_a_registered, "an open schema table must take the first registration");
-        const bool was_b_registered =
-            crucible::register_schema_name(view, crucible::SchemaHash{hash_b},
-                                           ::fixy::mint_tagged<::fixy::tags::source::FromInternal>("aten::test_op_b"));
+        const bool was_b_registered = crucible::register_schema_name(
+            view, crucible::SchemaHash{hash_b},
+            ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::test_op_b"}));
         EXPECT(was_b_registered, "an open schema table must take the second registration");
     }
 
-    auto a = crucible::vessel::schema_name_typed(crucible::SchemaHash{hash_a});
-    auto b = crucible::vessel::schema_name_typed(crucible::SchemaHash{hash_b});
+    // The characters of a name that the table gives, or no character for an
+    // unknown hash.
+    const auto view_of = [](::fixy::Option<TypedSchemaName> const& name) noexcept {
+        return name.match([](TypedSchemaName const& found) noexcept { return found.value().view(); },
+                          [] noexcept { return ::fixy::TextView{}; });
+    };
 
-    EXPECT(a.value().data() != nullptr, "registered name a must lookup");
-    EXPECT(b.value().data() != nullptr, "registered name b must lookup");
-    EXPECT(a.value().data() != b.value().data(), "distinct schema hashes must yield distinct name pointers");
-    EXPECT(a.value().size() == std::strlen("aten::test_op_a"), "typed schema name must preserve byte length");
+    const auto a = crucible::vessel::schema_name_typed(crucible::SchemaHash{hash_a});
+    const auto b = crucible::vessel::schema_name_typed(crucible::SchemaHash{hash_b});
+    EXPECT(a.is_some() && view_of(a) == ::fixy::TextView{"aten::test_op_a"}, "registered name a must lookup");
+    EXPECT(b.is_some() && view_of(b) == ::fixy::TextView{"aten::test_op_b"}, "registered name b must lookup");
 
-    auto a2 = crucible::vessel::schema_name_typed(crucible::SchemaHash{hash_a});
-    EXPECT(a2.value().data() == a.value().data(), "repeated lookup must return same interned pointer (stability)");
-    EXPECT(a2.value().size() == a.value().size(), "repeated lookup must preserve same interned span length");
+    const auto a2 = crucible::vessel::schema_name_typed(crucible::SchemaHash{hash_a});
+    EXPECT(view_of(a2) == view_of(a), "a repeated lookup must give the same name");
 
-    // An unknown hash yields an empty typed view, and a caller at the C
-    // boundary branches on its null data pointer.
-    auto missing = crucible::vessel::schema_name_typed(crucible::SchemaHash{0xDEADC0DEDEADC0DEULL});
-    EXPECT(missing.value().data() == nullptr, "unknown schema hash must return null typed view");
+    // An unknown hash gives no name, and the C boundary gives NULL for it.
+    const auto missing = crucible::vessel::schema_name_typed(crucible::SchemaHash{0xDEADC0DEDEADC0DEULL});
+    EXPECT(missing.is_none(), "an unknown schema hash must give no name");
 }
 
 void test_abi_version_constant() {

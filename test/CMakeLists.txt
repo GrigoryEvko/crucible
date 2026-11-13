@@ -1894,17 +1894,18 @@ crucible_neg_compile_test(neg_publish_static_ckernel_table_temporary
   "use of deleted function .void crucible::publish_static_ckernel_table\\(const StaticCKernelTable&&\\)."
   "the lifetime of a temporary table stops at the end of the statement")
 
-# SchemaTable::lookup() returns
-# LookupName = Tagged<Borrowed<const char, SchemaTable>, source::Interned>.
-#   * neg_schema_table_lookup_raw_const_char: the typed borrow does not
-#     convert to a raw const char* without .value().data().
+# SchemaTable::lookup() returns an Option of
+# LookupName = Tagged<CText, source::Interned>.
+#   * neg_schema_table_lookup_raw_const_char: the typed text does not
+#     convert to a raw const char*.  Only foreign_c_str in an ABI region
+#     gives its address.
 #   * neg_schema_table_lookup_cross_tag: interned table output does not pass
 #     as source::External.
 crucible_neg_compile_test(neg_schema_table_lookup_raw_const_char
-  "cannot convert .crucible::SchemaTable::LookupName. \\{aka .fixy::Tagged<fixy::Borrowed<const char, crucible::SchemaTable>, fixy::tags::source::Interned>.\\} to .const char\\*. in initialization"
-  "neg_schema_table_lookup_raw_const_char.cpp:18")
+  "cannot convert .foundation::core::Option<fixy::Tagged<foundation::core::CText, fixy::tags::source::Interned> >. to .const char\\*. in initialization"
+  "neg_schema_table_lookup_raw_const_char.cpp:17")
 crucible_neg_compile_test(neg_schema_table_lookup_cross_tag
-  "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Interned>. to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>. requested"
+  "conversion from .Option<Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Interned>>. to non-scalar type .Option<Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>>. requested"
   "neg_schema_table_lookup_cross_tag.cpp:23")
 
 # The schema table admits a name only when its tag satisfies
@@ -4572,18 +4573,17 @@ crucible_neg_compile_test(neg_vessel_typed_meta_wrong_tag
 # data_ptr_typed returns Tagged<void*, source::External>; refusing
 # implicit conversion into Tagged<void*, source::Sanitized> stops a
 # refactor from laundering raw-FFI bytes into the trust-validated
-# slot the dispatch path expects.  schema_name_typed returns
-# Tagged<Borrowed<const char, SchemaTable>, source::Sanitized>;
-# refusing the converse (Sanitized → External) keeps validated names
-# and unsanitized FFI input distinguishable at the type level.  Two
-# fixtures, two directions of the wrong-tag axis, so neither retag
-# direction can silently launder.
+# slot the dispatch path expects.  schema_name_typed returns an Option of
+# Tagged<CText, source::Interned>; refusing the converse (Interned →
+# External) keeps validated names and unsanitized FFI input
+# distinguishable at the type level.  Two fixtures, two directions of the
+# wrong-tag axis, so neither retag direction can silently launder.
 crucible_neg_compile_test(neg_data_ptr_typed_wrong_tag
     "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
     "to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Sanitized>. requested")
 crucible_neg_compile_test(neg_schema_name_typed_wrong_tag
-    "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Interned>. to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>. requested"
-    "neg_schema_name_typed_wrong_tag.cpp:25")
+    "conversion from .Option<Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Interned>>. to non-scalar type .Option<Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>>. requested"
+    "neg_schema_name_typed_wrong_tag.cpp:24")
 
 # These fixtures pin crucible::live_intervals_disjoint_at<MaxLive>,
 # the production cite that lifts decide::intervals_pairwise_disjoint to

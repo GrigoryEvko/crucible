@@ -44,7 +44,8 @@ void process_wide_write() noexcept {
                           .mint_mutable_view(kVigilForeground)
                           .expect("no code seals the global schema table before the writer runs");
     const bool was_name_registered = crucible::register_schema_name(
-        view, crucible::SchemaHash{kNamedHash}, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(kSchemaName));
+        view, crucible::SchemaHash{kNamedHash},
+        ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{kSchemaName}));
     CRUCIBLE_FATAL_INVARIANT(was_name_registered);
 }
 

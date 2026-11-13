@@ -19,6 +19,7 @@
 #include <fixy/Core.h>
 #include <fixy/FixedArray.h>
 #include <fixy/Tagged.h>
+#include <foundation/Quarantine.h>
 
 #include <c10/core/CrucibleState.h>
 
@@ -228,8 +229,11 @@ struct SchemaInfo {
     // The tables take names only from a thread that holds a Vigil's producer
     // claim, which the caller checked.  The global table is sealed by now,
     // so the name goes to the late table, which the vessel library reads.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: PyTorch gives the operator name in a std::string")
+    const ::fixy::TextView full_name_text = ::foundation::core::mint_foreign_text(full_name.data(), full_name.size());
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     crucible::register_schema_name(vigil.mint_producer_context(), schema_hash,
-                                   ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(full_name.c_str()));
+                                   ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(full_name_text));
 
     // Authoritative mutability from schema alias annotations.
     // Catches both in-place ops (add_.Tensor: self(a!)) and out= variants
@@ -781,7 +785,9 @@ CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, 
     const auto late_entries = crucible::late_schema_table().entries();
     const auto write_entry = [out_hash, out_name](const crucible::SchemaEntry& entry) noexcept {
         if (out_hash) *out_hash = entry.hash.raw();
-        if (out_name) *out_name = entry.name;
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the C caller reads the name as a C text up to its zero")
+        if (out_name) *out_name = ::foundation::core::foreign_c_str(crucible::SchemaTable::name_of(entry).value());
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
         return 1;
     };
     if (i < global_entries.size()) {

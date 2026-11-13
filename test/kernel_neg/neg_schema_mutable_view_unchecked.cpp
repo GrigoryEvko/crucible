@@ -11,6 +11,6 @@ int main() {
     crucible::SchemaTable table;
     table.register_name(table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>()),
                         crucible::SchemaHash{0x42},
-                        ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(static_cast<const char*>("aten::mm")));
+                        ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::mm"}));
     return 0;
 }

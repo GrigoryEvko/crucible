@@ -137,8 +137,7 @@ void test_the_reader_sees_each_write(const Library& writer, const Library& reade
             "the reader library sees the static kernel table that the writer published");
     require(classify(pwl::kRegisteredHash) == std::to_underlying(crucible::CKernelId::EWISE_ADD),
             "the reader library sees the kernel that the writer registered");
-    const char* const name = schema_name(pwl::kNamedHash);
-    require(name != nullptr && std::strcmp(name, pwl::kSchemaName) == 0,
+    require(schema_name(pwl::kNamedHash) == ::fixy::TextView{pwl::kSchemaName},
             "the reader library sees the schema name that the writer registered");
     crucible::test::pass("  test_the_reader_sees_each_write: PASSED\n");
 }

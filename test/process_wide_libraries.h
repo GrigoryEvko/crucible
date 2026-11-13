@@ -8,6 +8,7 @@
 // is compiled into the two libraries, and it gives the address of each object
 // as the library that asks sees it.
 
+#include <fixy/Core.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 
@@ -59,7 +60,7 @@ extern "C" {
 
 // Defined in the reader library.
 [[gnu::visibility("default")]] std::uint8_t process_wide_classify(std::uint64_t schema_hash) noexcept;
-[[gnu::visibility("default")]] const char* process_wide_schema_name(std::uint64_t schema_hash) noexcept;
+[[gnu::visibility("default")]] ::fixy::TextView process_wide_schema_name(std::uint64_t schema_hash) noexcept;
 [[gnu::visibility("default")]] int process_wide_is_brand_usable() noexcept;
 [[gnu::visibility("default")]] int process_wide_does_second_claim_abort() noexcept;
 

@@ -4,8 +4,6 @@
 #include "test_assert.h"
 
 #include <cstdint>
-#include <cstdio>
-#include <cstring>
 
 using namespace crucible;
 namespace source = ::fixy::tags::source;
@@ -14,15 +12,15 @@ static SchemaHash H(uint64_t v) { return SchemaHash{v}; }
 
 // The inputs here are string literals in the source, so crucible produced
 // them: they register as internal names.
-static SchemaTable::InternalName S(const char* s) { return ::fixy::mint_tagged<source::FromInternal>(s); }
+static SchemaTable::InternalName S(::fixy::TextView s) { return ::fixy::mint_tagged<source::FromInternal>(s); }
 
-static const char* C(SchemaTable::LookupName name) { return name.value().data(); }
+static bool missing(::fixy::Option<SchemaTable::LookupName> const& name) { return name.is_none(); }
 
-static bool missing(SchemaTable::LookupName name) { return name.value().data() == nullptr; }
-
-static bool eq(SchemaTable::LookupName name, const char* expected) {
-    const auto& view = name.value();
-    return view.data() != nullptr && view.size() == std::strlen(expected) && std::strcmp(view.data(), expected) == 0;
+// True when the table gives the expected characters.
+static bool eq(::fixy::Option<SchemaTable::LookupName> const& name, ::fixy::TextView expected) {
+    return name.match(
+        [expected](SchemaTable::LookupName const& found) noexcept { return found.value().view() == expected; },
+        [] noexcept { return false; });
 }
 
 // A registration into an open table always lands.
@@ -42,9 +40,8 @@ static_assert(!SchemaNameSource<source::Interned>);
 static_assert(std::is_same_v<SchemaTable::LookupName::tag_type, source::Interned>);
 
 template <typename Tag>
-concept registers_as = requires(SchemaTable& t, SchemaTable::MutableView const& v, ::fixy::Tagged<const char*, Tag> n) {
-    t.register_name(v, SchemaHash{1}, n);
-};
+concept registers_as = requires(SchemaTable& t, SchemaTable::MutableView const& v,
+                                ::fixy::Tagged<::fixy::TextView, Tag> n) { t.register_name(v, SchemaHash{1}, n); };
 static_assert(registers_as<source::Sanitized>);
 static_assert(registers_as<source::FromInternal>);
 static_assert(!registers_as<source::External>, "a raw external name must not reach the table");
@@ -104,23 +101,28 @@ static void test_idempotent_re_register() {
     crucible::test::pass("  test_re_register:               PASSED\n");
 }
 
+// The name of operation i of the search test.
+static ::fixy::FixedText<16> op_name(uint32_t i) {
+    ::fixy::FixedText<16> name{};
+    static_cast<void>(::fixy::format(name, "op_{}", i).expect("op_ and a 32-bit number fit in 16 characters"));
+    return name;
+}
+
 static void test_binary_search_across_many() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
     constexpr uint32_t N = 256;
-    char names[N][16];
     for (uint32_t i = 0; i < N; ++i) {
-        std::snprintf(names[i], sizeof(names[i]), "op_%u", i);
         // Deterministic but shuffled — test sort-on-insert.
         const uint64_t key = 0x9E3779B97F4A7C15ULL * (i + 1);
-        reg(t, mv, SchemaHash{key}, S(names[i]));
+        const ::fixy::FixedText<16> name = op_name(i);
+        reg(t, mv, SchemaHash{key}, S(name.view()));
     }
     assert(t.count() == N);
     for (uint32_t i = 0; i < N; ++i) {
         const uint64_t key = 0x9E3779B97F4A7C15ULL * (i + 1);
-        const char* got = C(t.lookup(SchemaHash{key}));
-        assert(got != nullptr);
-        assert(std::strcmp(got, names[i]) == 0);
+        const ::fixy::FixedText<16> name = op_name(i);
+        assert(eq(t.lookup(SchemaHash{key}), name.view()));
     }
     assert(missing(t.lookup(H(0xCAFEBABEDEADBEEFULL))));
     crucible::test::pass("  test_binary_search:             PASSED\n");
@@ -138,13 +140,26 @@ static void test_global_table_convenience() {
     crucible::test::pass("  test_global_helpers:            PASSED\n");
 }
 
-static void test_null_name_is_noop() {
+static void test_empty_name_is_noop() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    reg(t, mv, H(0x77), S(nullptr));  // must not crash or corrupt
+    reg(t, mv, H(0x77), S(::fixy::TextView{}));  // must not crash or corrupt
     assert(t.count() == 0);
     assert(missing(t.lookup(H(0x77))));
-    crucible::test::pass("  test_null_name:                 PASSED\n");
+    crucible::test::pass("  test_empty_name:                PASSED\n");
+}
+
+// A name holds the characters before its first zero, as a C reader sees it.
+static void test_name_ends_at_its_first_zero() {
+    SchemaTable t;
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    ::fixy::FixedText<16> name{"aten::mm"};
+    name.push('\0').expect("the name fits");
+    name.append("tail").expect("the name fits");
+    reg(t, mv, H(0x78), S(name.view()));
+    assert(eq(t.lookup(H(0x78)), "aten::mm"));
+    assert(eq(t.short_name(H(0x78)), "mm"));
+    crucible::test::pass("  test_name_ends_at_first_zero:   PASSED\n");
 }
 
 static void test_default_is_mutable_and_seal_flips() {
@@ -218,7 +233,8 @@ static void test_sanitized_boundary_name_registers() {
     // the retag from ABIBoundary to Sanitized records.
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    auto sanitized = ::fixy::mint_tagged<source::ABIBoundary>("aten::from_abi").retag<source::Sanitized>();
+    auto sanitized =
+        ::fixy::mint_tagged<source::ABIBoundary>(::fixy::TextView{"aten::from_abi"}).retag<source::Sanitized>();
     reg(t, mv, H(0xAB1), sanitized);
     assert(eq(t.lookup(H(0xAB1)), "aten::from_abi"));
     crucible::test::pass("  test_sanitized_boundary_name:   PASSED\n");
@@ -255,7 +271,8 @@ int main() {
     test_idempotent_re_register();
     test_binary_search_across_many();
     test_global_table_convenience();
-    test_null_name_is_noop();
+    test_empty_name_is_noop();
+    test_name_ends_at_its_first_zero();
     test_default_is_mutable_and_seal_flips();
     test_sealed_table_mints_no_mutable_view();
     test_clear_resets_seal();
@@ -264,6 +281,6 @@ int main() {
     test_sanitized_boundary_name_registers();
     test_lookup_works_post_seal();
     test_entry_has_no_padding_byte();
-    crucible::test::pass("test_schema_table: 15 groups, all passed\n");
+    crucible::test::pass("test_schema_table: 16 groups, all passed\n");
     return 0;
 }

@@ -14,8 +14,10 @@ std::uint8_t process_wide_classify(std::uint64_t schema_hash) noexcept {
     return std::to_underlying(crucible::classify_kernel(crucible::SchemaHash{schema_hash}));
 }
 
-const char* process_wide_schema_name(std::uint64_t schema_hash) noexcept {
-    return crucible::schema_name(crucible::SchemaHash{schema_hash}).value().data();
+::fixy::TextView process_wide_schema_name(std::uint64_t schema_hash) noexcept {
+    const auto name = crucible::schema_name(crucible::SchemaHash{schema_hash});
+    return name.match([](crucible::SchemaTable::LookupName const& found) noexcept { return found.value().view(); },
+                      [] noexcept { return ::fixy::TextView{}; });
 }
 
 int process_wide_is_brand_usable() noexcept {

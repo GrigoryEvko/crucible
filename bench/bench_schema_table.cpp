@@ -27,14 +27,14 @@ int main() {
     const auto mutable_view = table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>())
                                   .expect("a fresh table mints a mutable view");
     SchemaHash hashes[N];
-    char names[N][16];
     for (uint32_t i = 0; i < N; i++) {
         const uint64_t h = 0x9E3779B97F4A7C15ULL * (i + 1);
         hashes[i] = SchemaHash{h};
-        std::snprintf(names[i], sizeof(names[i]), "aten::op%u", i);
+        ::fixy::FixedText<16> name{};
+        const ::fixy::TextView name_view =
+            ::fixy::format(name, "aten::op{}", i).expect("aten::op and a number below 250 fit in 16 characters");
         const bool was_registered = table.register_name(
-            mutable_view, hashes[i],
-            ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(static_cast<const char*>(names[i])));
+            mutable_view, hashes[i], ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(name_view));
         CRUCIBLE_FATAL_INVARIANT(was_registered);
     }
 
@@ -47,23 +47,23 @@ int main() {
             return bench::run("lookup hit  (250-entry table)", [&] {
                 const auto h = hashes[idx];
                 idx = (idx + 1) % N;
-                const char* n = table.lookup(h).value().data();
-                bench::do_not_optimize(n);
+                const bool is_found = table.lookup(h).is_some();
+                bench::do_not_optimize(is_found);
             });
         }(),
         [&] {
             uint64_t miss_key = 0xDEADBEEFCAFEBABEULL;
-            return bench::run("lookup miss (returns nullptr)", [&] {
+            return bench::run("lookup miss (returns no name)", [&] {
                 miss_key = miss_key * 6364136223846793005ULL + 1442695040888963407ULL;
-                const char* n = table.lookup(SchemaHash{miss_key}).value().data();
-                bench::do_not_optimize(n);
+                const bool is_found = table.lookup(SchemaHash{miss_key}).is_some();
+                bench::do_not_optimize(is_found);
             });
         }(),
         [&] {
             const auto hot = hashes[N / 2];
             return bench::run("short_name(strip aten::)", [&] {
-                const char* n = table.short_name(hot).value().data();
-                bench::do_not_optimize(n);
+                const bool is_found = table.short_name(hot).is_some();
+                bench::do_not_optimize(is_found);
             });
         }(),
     };

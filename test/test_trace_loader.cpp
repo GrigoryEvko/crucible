@@ -22,9 +22,14 @@
 
 using namespace crucible;
 
-static const char* C(SchemaTable::LookupName name) { return name.value().data(); }
+// True when the table gives the expected characters.
+static bool is_named(::fixy::Option<SchemaTable::LookupName> const& name, ::fixy::TextView expected) {
+    return name.match(
+        [expected](SchemaTable::LookupName const& found) noexcept { return found.value().view() == expected; },
+        [] noexcept { return false; });
+}
 
-static bool missing(SchemaTable::LookupName name) { return name.value().data() == nullptr; }
+static bool missing(::fixy::Option<SchemaTable::LookupName> const& name) { return name.is_none(); }
 
 // A load that registers schema names takes the context of a Vigil's producer
 // claim.  These tests load without a Vigil, so they take that context from
@@ -255,12 +260,9 @@ static void test_schema_name_table_round_trip() {
     assert(t.num_ops == 0);
     assert(t.num_metas == 0);
 
-    const char* n1 = C(global_schema_table().lookup(SchemaHash{0xAAAA111122223333ULL}));
-    const char* n2 = C(global_schema_table().lookup(SchemaHash{0xBBBB444455556666ULL}));
-    const char* n3 = C(global_schema_table().lookup(SchemaHash{0xCCCC777788889999ULL}));
-    assert(n1 && std::strcmp(n1, "aten::add") == 0);
-    assert(n2 && std::strcmp(n2, "aten::mul") == 0);
-    assert(n3 && std::strcmp(n3, "aten::matmul") == 0);
+    assert(is_named(global_schema_table().lookup(SchemaHash{0xAAAA111122223333ULL}), "aten::add"));
+    assert(is_named(global_schema_table().lookup(SchemaHash{0xBBBB444455556666ULL}), "aten::mul"));
+    assert(is_named(global_schema_table().lookup(SchemaHash{0xCCCC777788889999ULL}), "aten::matmul"));
 
     assert(missing(global_schema_table().lookup(SchemaHash{0xDEADBEEFULL})));
 
