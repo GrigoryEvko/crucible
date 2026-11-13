@@ -15,7 +15,6 @@
 #include <cstdint>
 #include <memory>
 #include <type_traits>
-#include <vector>
 
 #include <crucible/IterationDetector.h>
 #include <crucible/MetaLog.h>
@@ -336,20 +335,10 @@ public:
     // ops.
     [[nodiscard]] uint64_t pending_op_count() const noexcept { return pending_ops_.size(); }
 
-    // The four vectors run in parallel, one element per op, and hold a trace
-    // that build_trace() reads.  A bench fills them.  The pipeline does not
-    // use them: the detect stage holds its ops in a PendingOps.
-    // current_meta_starts holds MetaIndex::none() for an op with no tensor
-    // arguments.
-    std::vector<TraceRing::Entry> current_trace;
-    std::vector<MetaIndex> current_meta_starts;
-    std::vector<ScopeHash> current_scope_hashes;
-    std::vector<CallsiteHash> current_callsite_hashes;
-
     // Own cache line: the background writes it, the foreground reads it for
-    // diagnostics.  Sharing a line with the vectors above would invalidate
-    // the foreground's copy on every push_back.  The foreground reads it
-    // while the detect stage writes it, so the counter is atomic.
+    // diagnostics.  Sharing a line with the held ops above would invalidate
+    // the foreground's copy on each push.  The foreground reads it while the
+    // detect stage writes it, so the counter is atomic.
     alignas(64)::fixy::AtomicMonotonic<uint32_t> iterations_completed = ::fixy::mint_atomic_monotonic<uint32_t>(0);
 
     // The count of work items that the build stage built.  It skips each
@@ -1072,21 +1061,15 @@ public:
     // build.
     using TraceBuild = ::fixy::Result<BuiltTrace, MetaLogOverflow>;
 
-    // Turns ring entries plus tensor metadata into a CSR property graph in
-    // scratch, and the parts of its region.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild build_trace(::foundation::effects::Alloc a,
-                                                                      ::fixy::BumpArena& scratch, uint32_t count)
-        CRUCIBLE_NO_THREAD_SAFETY {
-        return build_trace_from(a, scratch, count, current_trace.data(), current_meta_starts.data(),
-                                current_scope_hashes.data(), current_callsite_hashes.data());
-    }
-
-    // build_trace over caller-owned arrays: count entries of trace_data,
-    // with meta_data, scope_data and callsite_data in parallel.  The build
-    // stage calls it on each work item.  It reads the metadata log and never
-    // writes its tail.  The graph and its CSR arrays go into scratch.  The
-    // ops, their tensor metadata, their side arrays and their slots go into
-    // the parts of the region, which own their memory.
+    // Turns count ring entries and their tensor metadata into a CSR property
+    // graph in scratch, and the parts of its region.  The caller owns the
+    // arrays: count entries of trace_data, with meta_data, scope_data and
+    // callsite_data in parallel.  meta_data holds MetaIndex::none() for an op
+    // with no tensor arguments.  The build stage calls it on each work item.
+    // It reads the metadata log and never writes its tail.  The graph and
+    // its CSR arrays go into scratch.  The ops, their tensor metadata, their
+    // side arrays and their slots go into the parts of the region, which own
+    // their memory.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild
     build_trace_from(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, uint32_t count,
                      const TraceRing::Entry* trace_data, const MetaIndex* meta_data, const ScopeHash* scope_data,

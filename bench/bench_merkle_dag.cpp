@@ -6,7 +6,7 @@
 //   - compute_merkle_hash() on a built RegionNode
 //   - build_csr() adjacency construction
 //   - compute_memory_plan() sweep-line
-//   - build_trace() full pipeline (arena + PtrMap + slot tracking + CSR)
+//   - build_trace_from() full pipeline (arena + PtrMap + slot tracking + CSR)
 //   - optional: build_trace from loaded .crtrace file(s) (pass as argv)
 //
 // Simulates ResNet-18 (481 ops) and GPT-style (1110 ops) iteration sizes.
@@ -350,21 +350,18 @@ int main(int argc, char* argv[]) {
                     metas[j].data_ptr = external_data_ptr(
                         std::bit_cast<void*>(static_cast<std::uintptr_t>(0x7f0000000000ULL + (i * 8 + j) * 0x1000)));
                 }
-                // build_trace reads the metas at the indices in current_meta_starts, so this call
-                // does not use the returned index.
+                // The build reads the metas at the indices in saved_meta, so this call does not
+                // use the returned index.
                 (void)meta_log.try_append(metas, total_metas);
             }
         };
 
         ::fixy::BumpArena scratch{1 << 20};
         return bench::run("build_trace (481 ops, full pipeline)", [&] {
-            bg.current_trace = saved_trace;
-            bg.current_meta_starts = saved_meta;
-            bg.current_scope_hashes = saved_scope;
-            bg.current_callsite_hashes = saved_callsite;
             scratch.with_epoch([&]() noexcept {
                 repopulate_meta_log();
-                auto built = bg.build_trace(test.alloc, scratch, N);
+                auto built = bg.build_trace_from(test.alloc, scratch, n, saved_trace.data(), saved_meta.data(),
+                                                 saved_scope.data(), saved_callsite.data());
                 bench::do_not_optimize(built);
             });
         });
@@ -392,14 +389,12 @@ int main(int argc, char* argv[]) {
             char label[128];
             std::snprintf(label, sizeof(label), "build_trace (%u ops, from %s)", trace->num_ops, path);
             return bench::run(label, [&] {
-                bg.current_trace.assign(trace->entries.begin(), trace->entries.end());
-                bg.current_meta_starts.assign(trace->meta_starts.begin(), trace->meta_starts.end());
-                bg.current_scope_hashes.assign(trace->scope_hashes.begin(), trace->scope_hashes.end());
-                bg.current_callsite_hashes.assign(trace->callsite_hashes.begin(), trace->callsite_hashes.end());
                 const auto& loaded = *trace;
                 scratch.with_epoch([&]() noexcept {
                     bench::refill_meta_log(meta_log, loaded);
-                    auto built = bg.build_trace(test.alloc, scratch, loaded.num_ops);
+                    auto built = bg.build_trace_from(test.alloc, scratch, loaded.num_ops, loaded.entries.data(),
+                                                     loaded.meta_starts.data(), loaded.scope_hashes.data(),
+                                                     loaded.callsite_hashes.data());
                     bench::do_not_optimize(built);
                 });
             });

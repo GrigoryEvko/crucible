@@ -97,13 +97,20 @@ void check_ops_without_metas(const TraceEntry* ops, const MetaIndex* meta_data, 
     }
 }
 
+// Builds the trace graph of the recorded trace into scratch.  The build reads
+// the arrays of the trace and does not write them.
+BackgroundThread::TraceBuild build_recorded(BackgroundThread& bg, ::fixy::BumpArena& scratch,
+                                            const LoadedTrace& trace) {
+    return bg.build_trace_from(A, scratch, trace.num_ops, trace.entries.data(), trace.meta_starts.data(),
+                               trace.scope_hashes.data(), trace.callsite_hashes.data());
+}
+
 // ── Top-level Report via bench::run ──────────────────────────────────
 //
 // The full build_trace pipeline on a real recorded trace. The body
 // opens an epoch of the scratch arena and refills the MetaLog every call,
-// then runs build_trace, then ends the epoch. Scope / callsite / meta
-// cursors are restored to their recorded values each sample so every
-// sample is independent and measures the same work.
+// then runs the build, then ends the epoch. The build does not write the
+// arrays of the trace, so each sample measures the same work.
 bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace) {
     const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     ::fixy::BumpArena scratch{arena_bytes};
@@ -114,13 +121,9 @@ bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const Lo
     bench::Run r{label};
     if (const int c = bench::env_core(); c >= 0) (void)r.core(c);
     return r.samples(500).warmup(10).batch(1).measure([&] {
-        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         scratch.with_epoch([&]() noexcept {
             bench::refill_meta_log(meta_log, trace);
-            auto built = bg.build_trace(A, scratch, trace.num_ops);
+            auto built = build_recorded(bg, scratch, trace);
             bench::do_not_optimize(built);
         });
     });
@@ -144,13 +147,9 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
     // Warmup: 5 full pipeline runs to hit the cache.
     for (uint32_t w = 0; w < 5; w++) {
-        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         scratch.with_epoch([&]() noexcept {
             bench::refill_meta_log(meta_log, trace);
-            auto built = bg.build_trace(A, scratch, trace.num_ops);
+            auto built = build_recorded(bg, scratch, trace);
             bench::do_not_optimize(built);
         });
     }
@@ -160,15 +159,11 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     std::vector<double> samples(iters);
 
     for (uint32_t iter = 0; iter < iters; iter++) {
-        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         const double ns = scratch.with_epoch([&]() noexcept {
             bench::refill_meta_log(meta_log, trace);
 
             const uint64_t t0 = bench::rdtsc_start();
-            auto built = bg.build_trace(A, scratch, trace.num_ops);
+            auto built = build_recorded(bg, scratch, trace);
             const uint64_t t1 = bench::rdtsc_end();
 
             bench::do_not_optimize(built);
@@ -186,16 +181,12 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     double ns_csr = 0;
     double ns_memplan = 0;
     {
-        // One full build_trace to get realistic edge data.
-        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        // The graph of the reference build stays in ref_scratch until the end
-        // of this block, so the copies need no epoch.
+        // One full build to get realistic edge data.  The graph of the
+        // reference build stays in ref_scratch until the end of this block,
+        // so the copies need no epoch.
         ::fixy::BumpArena ref_scratch{arena_bytes};
         bench::refill_meta_log(meta_log, trace);
-        auto [ref, ref_region] = bg.build_trace(A, ref_scratch, trace.num_ops).expect("the recorded trace builds");
+        auto [ref, ref_region] = build_recorded(bg, ref_scratch, trace).expect("the recorded trace builds");
 
         const uint32_t num_ops = ref->num_ops.get_assuming_set();
         const uint32_t num_slots = ref->num_slots.get_assuming_set();
@@ -272,25 +263,18 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     (void)trace_total_inputs;
     (void)trace_total_outputs;
 
-    // One build_trace to prime scratch buffers and reference ops.
-    bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
-    bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
-    bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
-    bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
+    // One build to prime scratch buffers and reference ops.
     build_scratch.with_epoch([&]() noexcept {
         bench::refill_meta_log(meta_log, trace);
-        auto ref = bg.build_trace(A, build_scratch, count);
+        auto ref = build_recorded(bg, build_scratch, trace);
         bench::do_not_optimize(ref);
     });
 
     // ── P0: Pre-scan ──────────────────────────────────────────────
     double ns_p0 = 0;
     for (uint32_t iter = 0; iter < iters; iter++) {
-        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
-
-        const TraceRing::Entry* trace_data = bg.current_trace.data();
-        const MetaIndex* meta_data = bg.current_meta_starts.data();
+        const TraceRing::Entry* trace_data = trace.entries.data();
+        const MetaIndex* meta_data = trace.meta_starts.data();
 
         const uint64_t t0 = bench::rdtsc_start();
 
@@ -360,12 +344,11 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     // touch of each page of the copy.
     double ns_p1b = 0;
     {
-        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bench::refill_meta_log(meta_log, trace);
         uint64_t max_meta_end = 0;
         MetaIndex first_meta = MetaIndex::none();
         for (uint32_t i = 0; i < count; i++) {
-            const MetaIndex ms = bg.current_meta_starts[i];
+            const MetaIndex ms = trace.meta_starts[i];
             if (ms.is_valid()) {
                 if (!first_meta.is_valid()) first_meta = ms;
                 const uint64_t end = ms.raw() + trace.entries[i].num_inputs + trace.entries[i].num_outputs;
@@ -391,17 +374,13 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     // ── P2a: Copy fields (no hash, no PtrMap) ─────────────────────
     double ns_p2a = 0;
     for (uint32_t iter = 0; iter < iters; iter++) {
-        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         ArenaEpoch epoch = scratch.open_epoch();
         bench::refill_meta_log(meta_log, trace);
 
-        const TraceRing::Entry* trace_data = bg.current_trace.data();
-        const MetaIndex* meta_data = bg.current_meta_starts.data();
-        const ScopeHash* scope_data = bg.current_scope_hashes.data();
-        const CallsiteHash* callsite_data = bg.current_callsite_hashes.data();
+        const TraceRing::Entry* trace_data = trace.entries.data();
+        const MetaIndex* meta_data = trace.meta_starts.data();
+        const ScopeHash* scope_data = trace.scope_hashes.data();
+        const CallsiteHash* callsite_data = trace.callsite_hashes.data();
 
         uint64_t max_meta_end = 0;
         MetaIndex first_meta = MetaIndex::none();
@@ -495,14 +474,10 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     // ── P2b: Content hash only ────────────────────────────────────
     double ns_p2b = 0;
     {
-        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         // The region of the build owns the ops, so the ops outlive the epoch.
         BackgroundThread::BuiltTrace ref = build_scratch.with_epoch([&]() noexcept {
             bench::refill_meta_log(meta_log, trace);
-            return bg.build_trace(A, build_scratch, count).expect("the recorded trace builds");
+            return build_recorded(bg, build_scratch, trace).expect("the recorded trace builds");
         });
         TraceEntry* ref_ops = ref.region.ops.data();
 
@@ -543,14 +518,10 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     // ── P2c: PtrMap lookup ────────────────────────────────────────
     double ns_p2c = 0;
     {
-        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         // The region of the build owns the ops, so the ops outlive the epoch.
         BackgroundThread::BuiltTrace ref = build_scratch.with_epoch([&]() noexcept {
             bench::refill_meta_log(meta_log, trace);
-            return bg.build_trace(A, build_scratch, count).expect("the recorded trace builds");
+            return build_recorded(bg, build_scratch, trace).expect("the recorded trace builds");
         });
         TraceEntry* ref_ops = ref.region.ops.data();
 
@@ -595,14 +566,10 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     // ── P2d: PtrMap insert ────────────────────────────────────────
     double ns_p2d = 0;
     {
-        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         // The region of the build owns the ops, so the ops outlive the epoch.
         BackgroundThread::BuiltTrace ref = build_scratch.with_epoch([&]() noexcept {
             bench::refill_meta_log(meta_log, trace);
-            return bg.build_trace(A, build_scratch, count).expect("the recorded trace builds");
+            return build_recorded(bg, build_scratch, trace).expect("the recorded trace builds");
         });
         TraceEntry* ref_ops = ref.region.ops.data();
 
@@ -639,13 +606,9 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     // ── P3: Slot copy ─────────────────────────────────────────────
     double ns_p3 = 0;
     {
-        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         const uint32_t num_slots = build_scratch.with_epoch([&]() noexcept {
             bench::refill_meta_log(meta_log, trace);
-            auto [ref_graph, ref_region] = bg.build_trace(A, build_scratch, count).expect("the recorded trace builds");
+            auto [ref_graph, ref_region] = build_recorded(bg, build_scratch, trace).expect("the recorded trace builds");
             return ref_graph->num_slots.get_assuming_set();
         });
 
