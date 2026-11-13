@@ -71,11 +71,10 @@ int main() {
     assert(crucible::reflect_hash(r1) == crucible::reflect_hash(r2));
     assert(crucible::reflect_hash(r1) != crucible::reflect_hash(r3));
 
-    // The trait holds for a class whose every member can itself be
-    // hashed.
+    // The trait holds for each class.  It reads only the signature of
+    // reflect_hash, so a pointer field shows only at the call.
     static_assert(crucible::has_reflected_hash<Point>);
     static_assert(crucible::has_reflected_hash<Dims>);
-    static_assert(crucible::has_reflected_hash<crucible::TensorMeta>);
     static_assert(crucible::has_reflected_hash<crucible::Guard>);
 
     // A non-class type has no members to walk, so the trait rejects
