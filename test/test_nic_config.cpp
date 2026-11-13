@@ -41,44 +41,44 @@ template <typename Config>
 
 void test_admission() {
     auto ring = nic::admit_ring_size(4096);
-    assert(ring.has_value());
-    assert(ring->value() == 4096);
+    assert(ring.is_ok());
+    assert(std::move(ring).expect("4096 slots fit").value() == 4096);
 
     auto non_power = nic::admit_ring_size(1000);
-    assert(!non_power.has_value());
-    assert(non_power.error() == nic::NicConfigError::InvalidRingSize);
+    assert(non_power.is_err());
+    assert(non_power.err() == ::fixy::some(nic::NicConfigError::InvalidRingSize));
 
     auto huge_ring = nic::admit_ring_size(16384);
-    assert(!huge_ring.has_value());
-    assert(huge_ring.error() == nic::NicConfigError::InvalidRingSize);
+    assert(huge_ring.is_err());
+    assert(huge_ring.err() == ::fixy::some(nic::NicConfigError::InvalidRingSize));
 
     auto queues = nic::admit_queue_count(64);
-    assert(queues.has_value());
-    assert(queues->value() == 64);
+    assert(queues.is_ok());
+    assert(std::move(queues).expect("64 queues fit").value() == 64);
 
     auto zero_queues = nic::admit_queue_count(0);
-    assert(!zero_queues.has_value());
-    assert(zero_queues.error() == nic::NicConfigError::InvalidQueueCount);
+    assert(zero_queues.is_err());
+    assert(zero_queues.err() == ::fixy::some(nic::NicConfigError::InvalidQueueCount));
 
     auto rss = nic::admit_rss_table_size(4097);
-    assert(!rss.has_value());
-    assert(rss.error() == nic::NicConfigError::InvalidRssTableSize);
+    assert(rss.is_err());
+    assert(rss.err() == ::fixy::some(nic::NicConfigError::InvalidRssTableSize));
 
     auto busy = nic::admit_busy_poll_us(50);
-    assert(busy.has_value());
-    assert(busy->value() == 50);
+    assert(busy.is_ok());
+    assert(std::move(busy).expect("50 us fits").value() == 50);
 
     auto too_busy = nic::admit_busy_poll_us(1000001);
-    assert(!too_busy.has_value());
-    assert(too_busy.error() == nic::NicConfigError::InvalidBusyPollUs);
+    assert(too_busy.is_err());
+    assert(too_busy.err() == ::fixy::some(nic::NicConfigError::InvalidBusyPollUs));
 
     auto zero_bytes = nic::admit_sysctl_bytes(0);
-    assert(!zero_bytes.has_value());
-    assert(zero_bytes.error() == nic::NicConfigError::InvalidSysctlBytes);
+    assert(zero_bytes.is_err());
+    assert(zero_bytes.err() == ::fixy::some(nic::NicConfigError::InvalidSysctlBytes));
 
     auto zero_rto = nic::admit_tcp_rto_min_us(0);
-    assert(!zero_rto.has_value());
-    assert(zero_rto.error() == nic::NicConfigError::InvalidTcpRtoMinUs);
+    assert(zero_rto.is_err());
+    assert(zero_rto.err() == ::fixy::some(nic::NicConfigError::InvalidTcpRtoMinUs));
 
     crucible::test::pass("  test_admission: PASSED\n");
 }
@@ -88,9 +88,9 @@ void test_mint_and_apply_boundaries() {
     assert(iface.has_value());
 
     nic::EthtoolConfig ethtool{};
-    ethtool.tx_queues = *nic::admit_queue_count(16);
-    ethtool.rx_queues = *nic::admit_queue_count(16);
-    ethtool.combined_queues = *nic::admit_queue_count(16);
+    ethtool.tx_queues = nic::admit_queue_count(16).expect("16 queues fit");
+    ethtool.rx_queues = nic::admit_queue_count(16).expect("16 queues fit");
+    ethtool.combined_queues = nic::admit_queue_count(16).expect("16 queues fit");
     ethtool.offloads = ::fixy::Bits<nic::NicOffload>{
         nic::NicOffload::Tso,
         nic::NicOffload::Gso,
@@ -103,8 +103,8 @@ void test_mint_and_apply_boundaries() {
     qdisc.max_quantum = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{16384});
 
     nic::SysctlConfig sysctl{};
-    sysctl.busy_poll_us = *nic::admit_busy_poll_us(50);
-    sysctl.tcp_rto_min_us = *nic::admit_tcp_rto_min_us(10000);
+    sysctl.busy_poll_us = nic::admit_busy_poll_us(50).expect("50 us fits");
+    sysctl.tcp_rto_min_us = nic::admit_tcp_rto_min_us(10000).expect("10 ms fits");
     auto valid_sysctl = nic::validate_sysctl_config(sysctl);
     assert(valid_sysctl.has_value());
 
@@ -163,9 +163,9 @@ void test_identity_and_sysctl_validation() {
     assert(wrong_kind.error() == nic::NicConfigError::NonNicCog);
 
     nic::SysctlConfig invalid{};
-    invalid.tcp_rmem.min = *nic::admit_sysctl_bytes(4096);
-    invalid.tcp_rmem.pressure = *nic::admit_sysctl_bytes(2048);
-    invalid.tcp_rmem.max = *nic::admit_sysctl_bytes(8192);
+    invalid.tcp_rmem.min = nic::admit_sysctl_bytes(4096).expect("4096 bytes fit");
+    invalid.tcp_rmem.pressure = nic::admit_sysctl_bytes(2048).expect("2048 bytes fit");
+    invalid.tcp_rmem.max = nic::admit_sysctl_bytes(8192).expect("8192 bytes fit");
     auto declared = nic::declare_sysctl_config(invalid);
     assert(!declared.has_value());
     assert(declared.error() == nic::NicConfigError::InvalidTcpMemoryTriple);
@@ -226,8 +226,8 @@ void test_apply_paths_are_stubbed() {
     assert(iface.has_value());
 
     nic::EthtoolConfig ethtool{};
-    ethtool.tx_queues = *nic::admit_queue_count(8);
-    ethtool.rx_queues = *nic::admit_queue_count(8);
+    ethtool.tx_queues = nic::admit_queue_count(8).expect("8 queues fit");
+    ethtool.rx_queues = nic::admit_queue_count(8).expect("8 queues fit");
 
     // A configuration that does not ask for privileged work.
     auto deferred = nic::mint_nic_config(init_ctx(), nic_identity(), *iface, ethtool);

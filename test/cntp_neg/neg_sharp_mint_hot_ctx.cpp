@@ -17,6 +17,7 @@ int main() {
     caps.features.set(cog::SwitchFeature::Sharp);
 
     const ::fixy::HotFgCtx hot = ::foundation::effects::testing::foreground();
-    auto result = shp::mint_sharp_fabric_plan(hot, sw, caps, *shp::admit_sharp_participant_count(8));
+    auto result = shp::mint_sharp_fabric_plan(
+        hot, sw, caps, shp::admit_sharp_participant_count(8).expect("8 participants is positive"));
     return result.has_value() ? 0 : 1;
 }

@@ -39,10 +39,10 @@ bool send_int(Wire& wire, int& value) noexcept {
 }
 
 cntp::DeclaredPathSwapPlan make_plan_for(std::uint64_t flow_id, std::uint64_t old_path_id, std::uint64_t new_path_id) {
-    auto flow = cntp::admit_path_id(flow_id).value();
-    auto old_path = cntp::admit_path_id(old_path_id).value();
-    auto new_path = cntp::admit_path_id(new_path_id).value();
-    auto timeout = cntp::admit_swap_timeout_ns(1000).value();
+    auto flow = cntp::admit_path_id(flow_id).expect("the flow id is positive");
+    auto old_path = cntp::admit_path_id(old_path_id).expect("the old path id is positive");
+    auto new_path = cntp::admit_path_id(new_path_id).expect("the new path id is positive");
+    auto timeout = cntp::admit_swap_timeout_ns(1000).expect("1000 ns is positive");
     auto plan = cntp::mint_path_swap_plan(flow, old_path, new_path, timeout);
     assert(plan.has_value());
     return *plan;
@@ -66,15 +66,15 @@ void test_admission() {
     assert(cntp::swap_state_name(static_cast<cntp::SwapState>(200)) == std::string_view{"<unknown SwapState>"});
 
     auto zero_path = cntp::admit_path_id(0);
-    assert(!zero_path.has_value());
-    assert(zero_path.error() == cntp::SwapError::InvalidPathId);
+    assert(zero_path.is_err());
+    assert(zero_path.err() == ::fixy::some(cntp::SwapError::InvalidPathId));
 
     auto zero_timeout = cntp::admit_swap_timeout_ns(0);
-    assert(!zero_timeout.has_value());
-    assert(zero_timeout.error() == cntp::SwapError::Timeout);
+    assert(zero_timeout.is_err());
+    assert(zero_timeout.err() == ::fixy::some(cntp::SwapError::Timeout));
 
-    auto id = cntp::admit_path_id(1).value();
-    auto timeout = cntp::admit_swap_timeout_ns(10).value();
+    auto id = cntp::admit_path_id(1).expect("1 is positive");
+    auto timeout = cntp::admit_swap_timeout_ns(10).expect("10 ns is positive");
     auto same = cntp::mint_path_swap_plan(id, id, id, timeout);
     assert(!same.has_value());
     assert(same.error() == cntp::SwapError::SamePath);

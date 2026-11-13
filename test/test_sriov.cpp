@@ -51,68 +51,68 @@ cntp::NicInterfaceName iface() {
 }
 
 sriov::DeclaredSrIovPlan two_vf_plan(bool allow_privileged_apply = false) {
-    auto plan = sriov::mint_sriov_plan(init_ctx(), nic_identity(), sriov_caps(), iface(), *sriov::admit_vf_count(2), {},
-                                       allow_privileged_apply);
+    auto plan = sriov::mint_sriov_plan(init_ctx(), nic_identity(), sriov_caps(), iface(),
+                                       sriov::admit_vf_count(2).expect("2 functions fit"), {}, allow_privileged_apply);
     assert(plan.has_value());
     return *plan;
 }
 
 void test_admission() {
     auto count = sriov::admit_vf_count(8);
-    assert(count.has_value());
-    assert(count->value() == 8);
+    assert(count.is_ok());
+    assert(std::move(count).expect("8 functions fit").value() == 8);
 
     auto zero_count = sriov::admit_vf_count(0);
-    assert(!zero_count.has_value());
-    assert(zero_count.error() == sriov::SrIovError::InvalidVfCount);
+    assert(zero_count.is_err());
+    assert(zero_count.err() == ::fixy::some(sriov::SrIovError::InvalidVfCount));
 
     auto index = sriov::admit_vf_index(4095);
-    assert(index.has_value());
+    assert(index.is_ok());
     auto bad_index = sriov::admit_vf_index(4096);
-    assert(!bad_index.has_value());
-    assert(bad_index.error() == sriov::SrIovError::InvalidVfIndex);
+    assert(bad_index.is_err());
+    assert(bad_index.err() == ::fixy::some(sriov::SrIovError::InvalidVfIndex));
 
     auto vlan = sriov::admit_vlan(4094);
-    assert(vlan.has_value());
-    assert(vlan->value() == 4094);
+    assert(vlan.is_ok());
+    assert(std::move(vlan).expect("4094 is a VLAN id").value() == 4094);
 
     auto bad_vlan = sriov::admit_vlan(4095);
-    assert(!bad_vlan.has_value());
-    assert(bad_vlan.error() == sriov::SrIovError::InvalidVlan);
+    assert(bad_vlan.is_err());
+    assert(bad_vlan.err() == ::fixy::some(sriov::SrIovError::InvalidVlan));
 
     auto bad_rate = sriov::admit_rate_limit_mbps(1000000001ull);
-    assert(!bad_rate.has_value());
-    assert(bad_rate.error() == sriov::SrIovError::InvalidRateLimit);
+    assert(bad_rate.is_err());
+    assert(bad_rate.err() == ::fixy::some(sriov::SrIovError::InvalidRateLimit));
 
     auto bad_limit = sriov::admit_resource_limit(1000001);
-    assert(!bad_limit.has_value());
-    assert(bad_limit.error() == sriov::SrIovError::InvalidResourceLimit);
+    assert(bad_limit.is_err());
+    assert(bad_limit.err() == ::fixy::some(sriov::SrIovError::InvalidResourceLimit));
 
     auto mac = sriov::admit_mac(sriov::MacAddress::locally_administered(7));
-    assert(mac.has_value());
-    assert(mac->value().bytes[5] == 7);
+    assert(mac.is_ok());
+    assert(std::move(mac).expect("the address is unicast").value().bytes[5] == 7);
 
     auto multicast = sriov::admit_mac(sriov::MacAddress{{0x01, 0, 0, 0, 0, 1}});
-    assert(!multicast.has_value());
-    assert(multicast.error() == sriov::SrIovError::InvalidMac);
+    assert(multicast.is_err());
+    assert(multicast.err() == ::fixy::some(sriov::SrIovError::InvalidMac));
 
     auto zero_mac = sriov::admit_mac(sriov::MacAddress{});
-    assert(!zero_mac.has_value());
-    assert(zero_mac.error() == sriov::SrIovError::InvalidMac);
+    assert(zero_mac.is_err());
+    assert(zero_mac.err() == ::fixy::some(sriov::SrIovError::InvalidMac));
 
     crucible::test::pass("  test_admission: PASSED\n");
 }
 
 void test_mint_and_handles() {
     sriov::VfConfig config{};
-    config.mac = *sriov::admit_mac(sriov::MacAddress::locally_administered(9));
-    config.vlan = *sriov::admit_vlan(42);
-    config.rate_limit_mbps = *sriov::admit_rate_limit_mbps(100000);
-    config.max_qps = *sriov::admit_resource_limit(1024);
-    config.max_mrs = *sriov::admit_resource_limit(2048);
+    config.mac = sriov::admit_mac(sriov::MacAddress::locally_administered(9)).expect("the address is unicast");
+    config.vlan = sriov::admit_vlan(42).expect("42 is a VLAN id");
+    config.rate_limit_mbps = sriov::admit_rate_limit_mbps(100000).expect("100 Gbps fits");
+    config.max_qps = sriov::admit_resource_limit(1024).expect("1024 pairs fit");
+    config.max_mrs = sriov::admit_resource_limit(2048).expect("2048 regions fit");
 
-    auto plan =
-        sriov::mint_sriov_plan(init_ctx(), nic_identity(), sriov_caps(), iface(), *sriov::admit_vf_count(4), config);
+    auto plan = sriov::mint_sriov_plan(init_ctx(), nic_identity(), sriov_caps(), iface(),
+                                       sriov::admit_vf_count(4).expect("4 functions fit"), config);
     assert(plan.has_value());
     static_assert(std::same_as<std::remove_cvref_t<decltype(*plan)>, sriov::DeclaredSrIovPlan>);
     assert(plan->value().num_vfs.value() == 4);
@@ -127,12 +127,12 @@ void test_mint_and_handles() {
     assert((*materialized)[0].identity().uuid != (*materialized)[1].identity().uuid);
     assert((*materialized)[3].index().value() == 3);
 
-    auto second = sriov::vf_handle_at(*plan, *sriov::admit_vf_index(1));
+    auto second = sriov::vf_handle_at(*plan, sriov::admit_vf_index(1).expect("1 is a function index"));
     assert(second.has_value());
     assert(second->index().value() == 1);
     assert(second->identity().uuid == (*materialized)[1].identity().uuid);
 
-    auto out_of_range = sriov::vf_handle_at(*plan, *sriov::admit_vf_index(4));
+    auto out_of_range = sriov::vf_handle_at(*plan, sriov::admit_vf_index(4).expect("4 is a function index"));
     assert(!out_of_range.has_value());
     assert(out_of_range.error() == sriov::SrIovError::VfIndexOutOfRange);
 
@@ -150,25 +150,27 @@ void test_mint_and_handles() {
 }
 
 void test_identity_and_capability_gates() {
-    auto zero =
-        sriov::mint_sriov_plan(init_ctx(), cog::CogIdentity{}, sriov_caps(), iface(), *sriov::admit_vf_count(1));
+    auto zero = sriov::mint_sriov_plan(init_ctx(), cog::CogIdentity{}, sriov_caps(), iface(),
+                                       sriov::admit_vf_count(1).expect("1 function fits"));
     assert(!zero.has_value());
     assert(zero.error() == sriov::SrIovError::ZeroCog);
 
     auto gpu = nic_identity();
     gpu.kind = cog::CogKind::Gpu;
-    auto wrong_kind = sriov::mint_sriov_plan(init_ctx(), gpu, sriov_caps(), iface(), *sriov::admit_vf_count(1));
+    auto wrong_kind = sriov::mint_sriov_plan(init_ctx(), gpu, sriov_caps(), iface(),
+                                             sriov::admit_vf_count(1).expect("1 function fits"));
     assert(!wrong_kind.has_value());
     assert(wrong_kind.error() == sriov::SrIovError::NonNicCog);
 
     auto caps = sriov_caps();
     caps.features.unset(cog::NicFeature::SrIov);
-    auto missing_cap = sriov::mint_sriov_plan(init_ctx(), nic_identity(), caps, iface(), *sriov::admit_vf_count(1));
+    auto missing_cap = sriov::mint_sriov_plan(init_ctx(), nic_identity(), caps, iface(),
+                                              sriov::admit_vf_count(1).expect("1 function fits"));
     assert(!missing_cap.has_value());
     assert(missing_cap.error() == sriov::SrIovError::MissingSrIovCapability);
 
     auto no_name = sriov::mint_sriov_plan(init_ctx(), nic_identity(), sriov_caps(), cntp::NicInterfaceName{},
-                                          *sriov::admit_vf_count(1));
+                                          sriov::admit_vf_count(1).expect("1 function fits"));
     assert(!no_name.has_value());
     assert(no_name.error() == sriov::SrIovError::InvalidInterfaceName);
 

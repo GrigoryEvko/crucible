@@ -9,6 +9,7 @@
 #include <crucible/cntp/Pacing.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
@@ -175,27 +176,27 @@ concept CtxFitsSrIovMint =
     ::foundation::effects::IsExecCtx<Ctx>
     && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Init>>;
 
-[[nodiscard]] constexpr std::expected<VfCount, SrIovError> admit_vf_count(std::uint16_t count) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<VfCount, SrIovError> admit_vf_count(std::uint16_t count) noexcept {
     return ::fixy::admit_refined<vf_count_bound>(count, SrIovError::InvalidVfCount);
 }
 
-[[nodiscard]] constexpr std::expected<VfIndex, SrIovError> admit_vf_index(std::uint16_t index) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<VfIndex, SrIovError> admit_vf_index(std::uint16_t index) noexcept {
     return ::fixy::admit_refined<vf_index_bound>(index, SrIovError::InvalidVfIndex);
 }
 
-[[nodiscard]] constexpr std::expected<VfVlanId, SrIovError> admit_vlan(std::uint16_t vlan) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<VfVlanId, SrIovError> admit_vlan(std::uint16_t vlan) noexcept {
     return ::fixy::admit_refined<vf_vlan_bound>(vlan, SrIovError::InvalidVlan);
 }
 
-[[nodiscard]] constexpr std::expected<VfRateLimitMbps, SrIovError> admit_rate_limit_mbps(std::uint64_t rate) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<VfRateLimitMbps, SrIovError> admit_rate_limit_mbps(std::uint64_t rate) noexcept {
     return ::fixy::admit_refined<vf_rate_limit_bound>(rate, SrIovError::InvalidRateLimit);
 }
 
-[[nodiscard]] constexpr std::expected<VfResourceLimit, SrIovError> admit_resource_limit(std::uint32_t limit) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<VfResourceLimit, SrIovError> admit_resource_limit(std::uint32_t limit) noexcept {
     return ::fixy::admit_refined<vf_resource_limit_bound>(limit, SrIovError::InvalidResourceLimit);
 }
 
-[[nodiscard]] constexpr std::expected<VfMacAddress, SrIovError> admit_mac(MacAddress mac) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<VfMacAddress, SrIovError> admit_mac(MacAddress mac) noexcept {
     return ::fixy::admit_refined<vf_mac_valid>(mac, SrIovError::InvalidMac);
 }
 

@@ -146,12 +146,12 @@ void test_tcam_force_returns_vendor_unavailable() {
     caps.tcam_entries = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(4);
 
     ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
-    auto declared_plan = tcam::mint_tcam_table(init, nic, caps, tcam::admit_tcam_entries(4).value());
+    auto declared_plan = tcam::mint_tcam_table(init, nic, caps, tcam::admit_tcam_entries(4).expect("4 entries fit"));
     tcam::DeclaredTcamTable const plan = std::move(declared_plan).expect("the plan fits the caps");
     assert(!plan.value().backend_ready());
 
     tcam::TcamFlowRule rule{};
-    rule.rule_id = tcam::admit_tcam_rule_id(1).value();
+    rule.rule_id = tcam::admit_tcam_rule_id(1).expect("the rule id is not zero");
     rule.action.kind = tcam::FlowAction::Drop;
     tcam::DeclaredTcamFlowRule const declared_rule = tcam::declare_tcam_rule(rule).expect("the rule is valid");
 

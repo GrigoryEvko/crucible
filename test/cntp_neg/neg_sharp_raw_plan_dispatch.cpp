@@ -20,7 +20,7 @@ int main() {
     const crucible::NumericalRecipe recipe{};
     const shp::SharpFabricPlan plan{
         .fabric_switch = {},
-        .participant_count = *shp::admit_sharp_participant_count(8),
+        .participant_count = shp::admit_sharp_participant_count(8).expect("8 participants is positive"),
     };
     auto result = shp::dispatch_sharp_allreduce(input, output, recipe,
                                                 shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);

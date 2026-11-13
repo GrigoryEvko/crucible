@@ -39,7 +39,7 @@ template <std::size_t N>
 template <typename Packet>
 [[nodiscard]] Packet equation_packet(std::uint64_t mask, std::byte fill) noexcept {
     Packet packet{};
-    packet.source_bytes = Packet::admit_source_bytes(Packet::max_source_bytes).value();
+    packet.source_bytes = Packet::admit_source_bytes(Packet::max_source_bytes).expect("the full capacity fits");
     packet.mask = mask;
     packet.payload.fill(fill);
     return packet;
@@ -172,7 +172,7 @@ int main() {
     {
         auto bad = Packet{};
         bad.symbol_count = 7;
-        bad.source_bytes = Packet::admit_source_bytes(16).value();
+        bad.source_bytes = Packet::admit_source_bytes(16).expect("16 bytes fit");
         bad.mask = 1;
 
         auto shape_decoder = ci::mint_fountain_decoder<8, 4>(init);

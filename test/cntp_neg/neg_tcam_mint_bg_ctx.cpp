@@ -26,7 +26,7 @@ int main() {
     caps.tcam_entries = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(4);
 
     ::fixy::BgDrainCtx drain{::foundation::effects::testing::bg()};
-    auto table = tcam::mint_tcam_table(drain, nic, caps, tcam::admit_tcam_entries(1).value());
+    auto table = tcam::mint_tcam_table(drain, nic, caps, tcam::admit_tcam_entries(1).expect("1 entry fits"));
     (void)table;
     return 0;
 }

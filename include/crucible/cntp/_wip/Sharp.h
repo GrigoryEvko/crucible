@@ -8,6 +8,7 @@
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/OffloadTarget.h>
 #include <crucible/cog/TargetCaps.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Qtt.h>
 #include <fixy/Refined.h>
@@ -182,7 +183,7 @@ concept SharpEligibleRecipe =
     }
 }
 
-[[nodiscard]] constexpr std::expected<SharpParticipantCount, SharpError>
+[[nodiscard]] constexpr ::fixy::Result<SharpParticipantCount, SharpError>
 admit_sharp_participant_count(std::uint16_t count) noexcept {
     return ::fixy::admit_refined<::fixy::positive>(count, SharpError::EmptyParticipantSet);
 }

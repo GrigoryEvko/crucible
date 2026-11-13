@@ -5,6 +5,7 @@
 
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/cog/CogIdentity.h>
+#include <fixy/Core.h>
 #include <fixy/Qtt.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
@@ -138,16 +139,16 @@ struct PoolEvent {
 
 using DeclaredPoolEvent = ::fixy::Tagged<PoolEvent, ::fixy::tags::source::ConnectionPool>;
 
-[[nodiscard]] constexpr std::expected<PositivePoolSize, PoolError> admit_pool_size(std::uint16_t size) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<PositivePoolSize, PoolError> admit_pool_size(std::uint16_t size) noexcept {
     return ::fixy::admit_refined<::fixy::positive>(size, PoolError::InvalidPoolSize);
 }
 
-[[nodiscard]] constexpr std::expected<PositiveIdleTimeoutNs, PoolError>
+[[nodiscard]] constexpr ::fixy::Result<PositiveIdleTimeoutNs, PoolError>
 admit_idle_timeout_ns(std::uint64_t ns) noexcept {
     return ::fixy::admit_refined<::fixy::positive>(ns, PoolError::InvalidIdleTimeout);
 }
 
-[[nodiscard]] constexpr std::expected<PositiveConnectionId, PoolError> admit_connection_id(std::uint64_t id) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<PositiveConnectionId, PoolError> admit_connection_id(std::uint64_t id) noexcept {
     return ::fixy::admit_refined<::fixy::positive>(id, PoolError::InvalidConnectionId);
 }
 

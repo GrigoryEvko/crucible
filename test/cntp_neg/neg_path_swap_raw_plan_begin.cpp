@@ -11,8 +11,9 @@ int main() {
     ::fixy::ColdInitCtx init{fe::testing::init()};
     ::fixy::BgLoadCtx bg{fe::testing::bg()};
     auto swapper = cntp::mint_path_swapper(init);
-    auto declared = cntp::mint_path_swap_plan(cntp::admit_path_id(1).value(), cntp::admit_path_id(2).value(),
-                                              cntp::admit_path_id(3).value(), cntp::admit_swap_timeout_ns(9).value());
+    auto declared = cntp::mint_path_swap_plan(
+        cntp::admit_path_id(1).expect("1 is positive"), cntp::admit_path_id(2).expect("2 is positive"),
+        cntp::admit_path_id(3).expect("3 is positive"), cntp::admit_swap_timeout_ns(9).expect("9 ns is positive"));
     cntp::PathSwapPlan raw = declared.value().value();
     auto result = swapper.begin_swap(bg, raw, 0);
     (void)result;

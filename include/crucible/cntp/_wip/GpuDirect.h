@@ -8,6 +8,7 @@
 #include <crucible/cog/OffloadTarget.h>
 #include <crucible/cog/TargetCaps.h>
 #include <fixy/Bits.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Qtt.h>
 #include <fixy/Refined.h>
@@ -152,17 +153,17 @@ template <class Ctx>
 concept CtxFitsGpuDirectMint = ::foundation::effects::IsExecCtx<Ctx>
                             && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>;
 
-[[nodiscard]] constexpr std::expected<GpuVirtualAddress, GpuDirectError>
+[[nodiscard]] constexpr ::fixy::Result<GpuVirtualAddress, GpuDirectError>
 admit_gpu_virtual_address(std::uintptr_t address) noexcept {
     return ::fixy::admit_refined<::fixy::non_zero>(address, GpuDirectError::NullGpuAddress);
 }
 
-[[nodiscard]] inline std::expected<GpuVirtualAddress, GpuDirectError>
+[[nodiscard]] inline ::fixy::Result<GpuVirtualAddress, GpuDirectError>
 admit_gpu_virtual_address(void const* address) noexcept {
     return admit_gpu_virtual_address(std::bit_cast<std::uintptr_t>(address));
 }
 
-[[nodiscard]] constexpr std::expected<GpuDirectByteCount, GpuDirectError>
+[[nodiscard]] constexpr ::fixy::Result<GpuDirectByteCount, GpuDirectError>
 admit_gpu_direct_bytes(std::uint64_t bytes) noexcept {
     return ::fixy::admit_refined<::fixy::positive>(bytes, GpuDirectError::InvalidByteCount);
 }

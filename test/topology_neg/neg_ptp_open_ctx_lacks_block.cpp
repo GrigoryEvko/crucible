@@ -8,7 +8,7 @@
 
 int main() {
     ::fixy::BgDrainCtx bg{::foundation::effects::testing::bg()};
-    auto index = crucible::topology::admit_ptp_device_index(0).value();
+    auto index = crucible::topology::admit_ptp_device_index(0).expect("0 is a device index");
     auto clock = crucible::topology::open_ptp_clock(bg, index);
     (void)clock;
     return 0;

@@ -2,6 +2,7 @@
 
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/cog/CogIdentity.h>
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
@@ -119,7 +120,7 @@ struct TelemetrySchedule {
     PositiveSamplePeriodNs idle_period_ns = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{10000000000});
 };
 
-[[nodiscard]] constexpr std::expected<PositiveSamplePeriodNs, TelemetryError>
+[[nodiscard]] constexpr ::fixy::Result<PositiveSamplePeriodNs, TelemetryError>
 admit_sample_period_ns(std::uint64_t ns) noexcept {
     return ::fixy::admit_refined<::fixy::positive>(ns, TelemetryError::DeadlineOverflow);
 }

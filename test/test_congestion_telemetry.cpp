@@ -95,11 +95,11 @@ void test_names_and_admission() {
     assert(::foundation::reflect::enum_name(static_cast<topology::CongestionMode>(mode))
            == std::string_view{"BbrProbeRtt"});
     auto zero = topology::admit_sample_period_ns(0);
-    assert(!zero.has_value());
-    assert(zero.error() == topology::TelemetryError::DeadlineOverflow);
+    assert(zero.is_err());
+    assert(zero.err() == ::fixy::some(topology::TelemetryError::DeadlineOverflow));
     auto period = topology::admit_sample_period_ns(1000);
-    assert(period.has_value());
-    assert(period->value() == 1000);
+    assert(period.is_ok());
+    assert(std::move(period).expect("1000 ns is positive").value() == 1000);
     crucible::test::pass("  test_names_and_admission: PASSED\n");
 }
 

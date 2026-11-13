@@ -80,7 +80,7 @@ struct FountainPacket {
 
     // The one door to a byte count.  A count outside the range comes back
     // as the error, so a wire decoder can refuse the packet and go on.
-    [[nodiscard]] static constexpr std::expected<source_byte_count, FountainError>
+    [[nodiscard]] static constexpr ::fixy::Result<source_byte_count, FountainError>
     admit_source_bytes(std::size_t bytes) noexcept {
         return ::fixy::admit_refined<source_bytes_range>(bytes, FountainError::InvalidInputSize);
     }
@@ -239,7 +239,7 @@ public:
     static constexpr std::size_t symbol_bytes = SymbolBytes;
     static constexpr std::size_t max_source_bytes = packet_type::max_source_bytes;
 
-    [[nodiscard]] static constexpr std::expected<source_byte_count, FountainError>
+    [[nodiscard]] static constexpr ::fixy::Result<source_byte_count, FountainError>
     admit_source_bytes(std::size_t bytes) noexcept {
         return packet_type::admit_source_bytes(bytes);
     }
@@ -247,13 +247,13 @@ public:
     [[nodiscard]] std::expected<void, FountainError> start_encoding(std::span<const std::byte> input,
                                                                     FountainSeed seed) noexcept {
         auto admitted = admit_source_bytes(input.size());
-        if (!admitted) {
-            return std::unexpected(admitted.error());
+        if (admitted.is_err()) {
+            return std::unexpected(admitted.err().expect("the admission refused the count"));
         }
 
         input_ = input;
         seed_ = seed;
-        source_bytes_ = *admitted;
+        source_bytes_ = std::move(admitted).expect("the admission took the count");
         next_id_ = 0;
         active_ = true;
         return {};
@@ -283,10 +283,10 @@ public:
     [[nodiscard]] std::expected<packet_type, FountainError>
     encode_packet(std::span<const std::byte> input, FountainSeed seed, std::uint32_t encoding_id) const noexcept {
         auto admitted = admit_source_bytes(input.size());
-        if (!admitted) {
-            return std::unexpected(admitted.error());
+        if (admitted.is_err()) {
+            return std::unexpected(admitted.err().expect("the admission refused the count"));
         }
-        return encode_packet(input, seed, *admitted, encoding_id);
+        return encode_packet(input, seed, std::move(admitted).expect("the admission took the count"), encoding_id);
     }
 
     template <ByteContiguousBuffer Input>

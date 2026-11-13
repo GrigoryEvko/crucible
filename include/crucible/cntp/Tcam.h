@@ -240,15 +240,15 @@ public:
 using DeclaredTcamFlowRule = ::fixy::Tagged<TcamFlowRule, ::fixy::tags::source::TcamFlowRule>;
 using OwnedTcamRule = ::fixy::Linear<TcamRuleHandle>;
 
-[[nodiscard]] constexpr std::expected<TcamRuleId, TcamError> admit_tcam_rule_id(std::uint64_t id) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<TcamRuleId, TcamError> admit_tcam_rule_id(std::uint64_t id) noexcept {
     return ::fixy::admit_refined<::fixy::non_zero>(id, TcamError::InvalidRuleId);
 }
 
-[[nodiscard]] constexpr std::expected<TcamEntryCount, TcamError> admit_tcam_entries(std::uint32_t entries) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<TcamEntryCount, TcamError> admit_tcam_entries(std::uint32_t entries) noexcept {
     return ::fixy::admit_refined<tcam_entry_range>(entries, TcamError::InvalidEntryCount);
 }
 
-[[nodiscard]] constexpr std::expected<TcamDscp, TcamError> admit_tcam_dscp(std::uint8_t dscp) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<TcamDscp, TcamError> admit_tcam_dscp(std::uint8_t dscp) noexcept {
     return ::fixy::admit_refined<tcam_dscp_range>(dscp, TcamError::InvalidActionParameter);
 }
 

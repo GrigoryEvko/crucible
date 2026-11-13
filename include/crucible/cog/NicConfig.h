@@ -15,6 +15,7 @@
 #include <crucible/cog/NicOffloadAudit.h>
 #include <crucible/cog/TargetCaps.h>
 #include <fixy/Bits.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
@@ -215,27 +216,28 @@ concept CtxFitsNicConfigMint =
     ::foundation::effects::IsExecCtx<Ctx>
     && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Init>>;
 
-[[nodiscard]] constexpr std::expected<NicRingSize, NicConfigError> admit_ring_size(std::uint16_t size) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<NicRingSize, NicConfigError> admit_ring_size(std::uint16_t size) noexcept {
     return ::fixy::admit_refined<ring_size_bound>(size, NicConfigError::InvalidRingSize);
 }
 
-[[nodiscard]] constexpr std::expected<NicQueueCount, NicConfigError> admit_queue_count(std::uint16_t count) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<NicQueueCount, NicConfigError> admit_queue_count(std::uint16_t count) noexcept {
     return ::fixy::admit_refined<queue_count_bound>(count, NicConfigError::InvalidQueueCount);
 }
 
-[[nodiscard]] constexpr std::expected<RssTableSize, NicConfigError> admit_rss_table_size(std::uint16_t count) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<RssTableSize, NicConfigError>
+admit_rss_table_size(std::uint16_t count) noexcept {
     return ::fixy::admit_refined<queue_count_bound>(count, NicConfigError::InvalidRssTableSize);
 }
 
-[[nodiscard]] constexpr std::expected<SysctlBytes, NicConfigError> admit_sysctl_bytes(std::uint64_t bytes) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<SysctlBytes, NicConfigError> admit_sysctl_bytes(std::uint64_t bytes) noexcept {
     return ::fixy::admit_refined<sysctl_bytes_bound>(bytes, NicConfigError::InvalidSysctlBytes);
 }
 
-[[nodiscard]] constexpr std::expected<BusyPollUs, NicConfigError> admit_busy_poll_us(std::uint32_t us) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<BusyPollUs, NicConfigError> admit_busy_poll_us(std::uint32_t us) noexcept {
     return ::fixy::admit_refined<busy_poll_us_bound>(us, NicConfigError::InvalidBusyPollUs);
 }
 
-[[nodiscard]] constexpr std::expected<TcpRtoMinUs, NicConfigError> admit_tcp_rto_min_us(std::uint32_t us) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<TcpRtoMinUs, NicConfigError> admit_tcp_rto_min_us(std::uint32_t us) noexcept {
     return ::fixy::admit_refined<tcp_rto_min_us_bound>(us, NicConfigError::InvalidTcpRtoMinUs);
 }
 

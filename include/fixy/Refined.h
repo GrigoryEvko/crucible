@@ -37,12 +37,12 @@
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/algebra/lattices/BoolLattice.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Choice.h>
 #include <foundation/reflect/Instance.h>
 
 #include <compare>
 #include <concepts>
 #include <cstddef>
-#include <expected>
 #include <meta>
 #include <span>
 #include <type_traits>
@@ -311,10 +311,10 @@ mint_sealed_refined_trusted(T value) noexcept(std::is_nothrow_move_constructible
 // caller) where a refusal is an expected outcome rather than a defect.
 template <auto Pred, typename T, typename Error>
     requires PredicateInvocableOn<Pred, T> && std::is_scoped_enum_v<Error>
-[[nodiscard]] constexpr std::expected<Refined<Pred, T>, Error>
+[[nodiscard]] constexpr ::foundation::core::Result<Refined<Pred, T>, Error>
 admit_refined(T value, Error refusal) noexcept(std::is_nothrow_move_constructible_v<T>) {
     if (!Pred(value)) {
-        return std::unexpected(refusal);
+        return ::foundation::core::err(refusal);
     }
     return mint_refined<Pred>(std::move(value));
 }

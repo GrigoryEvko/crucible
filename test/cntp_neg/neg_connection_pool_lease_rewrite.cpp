@@ -19,7 +19,7 @@ int main() {
     cog::CogIdentity second{};
     second.uuid = cog::Uuid{2, 2};
     auto socket = cntp::admit_socket_fd(3).value();
-    auto id = cntp::admit_connection_id(4).value();
+    auto id = cntp::admit_connection_id(4).expect("4 is positive");
     auto held = cntp::mint_connection<cntp::TransportClass::Tcp>(socket, first, id).value();
     auto other = cntp::mint_connection<cntp::TransportClass::Tcp>(socket, second, id).value();
     auto added = pool.add_connection(bg, std::move(held));

@@ -9,7 +9,7 @@ int main() {
     crucible::cog::CogIdentity nic{};
     nic.uuid = crucible::cog::Uuid{0x129, 4};
     nic.kind = crucible::cog::CogKind::NicPort;
-    auto fd = crucible::topology::admit_ptp_clock_fd(6).value();
+    auto fd = crucible::topology::admit_ptp_clock_fd(6).expect("6 is not negative");
     crucible::topology::PtpHandle handle{nic, fd, crucible::topology::PtpStatus{}};
     (void)handle;
     return 0;

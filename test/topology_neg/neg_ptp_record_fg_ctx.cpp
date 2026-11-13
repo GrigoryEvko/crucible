@@ -13,7 +13,7 @@ int main() {
     crucible::cog::CogIdentity nic{};
     nic.uuid = crucible::cog::Uuid{0x129, 2};
     nic.kind = crucible::cog::CogKind::NicPort;
-    auto fd = crucible::topology::admit_ptp_clock_fd(5).value();
+    auto fd = crucible::topology::admit_ptp_clock_fd(5).expect("5 is not negative");
     ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
     auto handle = crucible::topology::mint_ptp_handle(init, nic, fd);
     auto const stamp = ::fixy::mint_tagged<::fixy::tags::source::Ptp>(std::uint64_t{7});

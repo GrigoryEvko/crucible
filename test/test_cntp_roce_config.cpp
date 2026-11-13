@@ -25,48 +25,48 @@ void test_admission_and_names() {
     static_assert(::foundation::reflect::enum_name(cntp::RoceError::InvalidDscp) == std::string_view{"InvalidDscp"});
 
     auto pfc = cntp::admit_pfc_priorities(0b00001000);
-    assert(pfc.has_value());
-    assert(pfc->value() == 0b00001000);
+    assert(pfc.is_ok());
+    assert(std::move(pfc).expect("one priority is set").value() == 0b00001000);
 
     auto zero_pfc = cntp::admit_pfc_priorities(0);
-    assert(!zero_pfc.has_value());
-    assert(zero_pfc.error() == cntp::RoceError::InvalidPfcPriorityMask);
+    assert(zero_pfc.is_err());
+    assert(zero_pfc.err() == ::fixy::some(cntp::RoceError::InvalidPfcPriorityMask));
 
     auto dscp = cntp::admit_roce_dscp(26);
-    assert(dscp.has_value());
-    assert(dscp->value() == 26);
+    assert(dscp.is_ok());
+    assert(std::move(dscp).expect("26 is a DSCP value").value() == 26);
 
     // The DSCP field is six bits wide, so 63 is the last value it takes.
-    assert(cntp::admit_roce_dscp(63).has_value());
+    assert(cntp::admit_roce_dscp(63).is_ok());
     auto invalid_dscp = cntp::admit_roce_dscp(64);
-    assert(!invalid_dscp.has_value());
-    assert(invalid_dscp.error() == cntp::RoceError::InvalidDscp);
+    assert(invalid_dscp.is_err());
+    assert(invalid_dscp.err() == ::fixy::some(cntp::RoceError::InvalidDscp));
 
     auto alpha = cntp::admit_dcqcn_alpha_ppm(500000);
-    assert(alpha.has_value());
-    assert(alpha->value() == 500000);
+    assert(alpha.is_ok());
+    assert(std::move(alpha).expect("half of one million fits").value() == 500000);
 
     auto alpha_zero = cntp::admit_dcqcn_alpha_ppm(0);
-    assert(!alpha_zero.has_value());
-    assert(alpha_zero.error() == cntp::RoceError::InvalidDcqcnAlpha);
+    assert(alpha_zero.is_err());
+    assert(alpha_zero.err() == ::fixy::some(cntp::RoceError::InvalidDcqcnAlpha));
 
     // An alpha is a fraction of one million parts, so one million is the
     // whole and one part more is refused.
-    assert(cntp::admit_dcqcn_alpha_ppm(1000000).has_value());
-    assert(cntp::admit_dcqcn_alpha_ppm(1000001).error() == cntp::RoceError::InvalidDcqcnAlpha);
+    assert(cntp::admit_dcqcn_alpha_ppm(1000000).is_ok());
+    assert(cntp::admit_dcqcn_alpha_ppm(1000001).err() == ::fixy::some(cntp::RoceError::InvalidDcqcnAlpha));
 
     auto target = cntp::admit_dcqcn_target_packets(5);
-    assert(target.has_value());
-    assert(target->value() == 5);
+    assert(target.is_ok());
+    assert(std::move(target).expect("5 packets is positive").value() == 5);
 
     auto target_zero = cntp::admit_dcqcn_target_packets(0);
-    assert(!target_zero.has_value());
-    assert(target_zero.error() == cntp::RoceError::InvalidDcqcnTargetPackets);
+    assert(target_zero.is_err());
+    assert(target_zero.err() == ::fixy::some(cntp::RoceError::InvalidDcqcnTargetPackets));
 
     auto ce = cntp::admit_dcqcn_ce_threshold_bytes(64 * 1024);
-    assert(ce.has_value());
-    assert(ce->value() == 64 * 1024);
-    assert(cntp::admit_dcqcn_ce_threshold_bytes(0).error() == cntp::RoceError::InvalidCeThresholdBytes);
+    assert(ce.is_ok());
+    assert(std::move(ce).expect("64 KiB is positive").value() == 64 * 1024);
+    assert(cntp::admit_dcqcn_ce_threshold_bytes(0).err() == ::fixy::some(cntp::RoceError::InvalidCeThresholdBytes));
 
     crucible::test::pass("  test_admission_and_names: PASSED\n");
 }

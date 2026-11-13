@@ -24,7 +24,8 @@ int main() {
     caps.features.set(cog::SwitchFeature::Sharp);
 
     ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
-    auto plan = shp::mint_sharp_fabric_plan(init, sw, caps, *shp::admit_sharp_participant_count(8), true, true);
+    auto plan = shp::mint_sharp_fabric_plan(
+        init, sw, caps, shp::admit_sharp_participant_count(8).expect("8 participants is positive"), true, true);
     auto context = shp::mint_sharp_context(init, *plan);
 
     std::array<float, 1> input{1.0f};

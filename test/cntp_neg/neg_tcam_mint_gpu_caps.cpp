@@ -17,7 +17,8 @@ int main() {
     gpu.kind = cog::CogKind::Gpu;
 
     ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
-    auto table = tcam::mint_tcam_table(init, gpu, cog::GpuTargetCaps{}, tcam::admit_tcam_entries(1).value());
+    auto table =
+        tcam::mint_tcam_table(init, gpu, cog::GpuTargetCaps{}, tcam::admit_tcam_entries(1).expect("1 entry fits"));
     (void)table;
     return 0;
 }

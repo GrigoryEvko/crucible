@@ -22,8 +22,8 @@ static_assert(!CtxFitsFountainMint<::fixy::BgDrainCtx, 8, 16, 8, LtFountain>,
               "a codec is built at start-up, not on a background drain");
 static_assert(!CtxFitsFountainMint<::fixy::ColdInitCtx, 8, 16, 7, LtFountain>,
               "a decoder needs an equation slot for each source symbol");
-static_assert(!FountainPacket<8, 16>::admit_source_bytes(0).has_value());
-static_assert(!FountainPacket<8, 16>::admit_source_bytes(129).has_value());
-static_assert(FountainPacket<8, 16>::admit_source_bytes(128).value().value() == 128);
+static_assert(FountainPacket<8, 16>::admit_source_bytes(0).is_err());
+static_assert(FountainPacket<8, 16>::admit_source_bytes(129).is_err());
+static_assert(FountainPacket<8, 16>::admit_source_bytes(128).expect("the full capacity fits").value() == 128);
 
 }  // namespace crucible::cntp

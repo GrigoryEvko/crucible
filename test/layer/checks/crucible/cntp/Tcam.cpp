@@ -14,9 +14,9 @@ static_assert(TcamTableShape<1>);
 static_assert(TcamTableShape<kMaxStaticTcamRules>);
 static_assert(!TcamTableShape<0>);
 static_assert(!TcamTableShape<kMaxStaticTcamRules + 1>);
-static_assert(!admit_tcam_entries(0).has_value());
-static_assert(!admit_tcam_entries(kMaxStaticTcamRules + 1).has_value());
-static_assert(admit_tcam_entries(kMaxStaticTcamRules).value().value() == kMaxStaticTcamRules);
+static_assert(admit_tcam_entries(0).is_err());
+static_assert(admit_tcam_entries(kMaxStaticTcamRules + 1).is_err());
+static_assert(admit_tcam_entries(kMaxStaticTcamRules).expect("the largest count fits").value() == kMaxStaticTcamRules);
 static_assert(CtxFitsTcamMint<::fixy::ColdInitCtx, cog::NicPortTargetCaps>);
 static_assert(CtxFitsTcamMint<::fixy::ColdInitCtx, cog::NvSwitchTargetCaps>);
 static_assert(!CtxFitsTcamMint<::fixy::BgDrainCtx, cog::NicPortTargetCaps>,

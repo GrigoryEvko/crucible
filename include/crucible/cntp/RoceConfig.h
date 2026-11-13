@@ -5,6 +5,7 @@
 // mint and the pause-counter reads are real.  Nothing installs the policy.
 
 #include <crucible/cntp/Pacing.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/os/Path.h>
 #include <fixy/Refined.h>
@@ -164,25 +165,25 @@ template <::foundation::effects::IsExecCtx Ctx>
 
 }  // namespace detail::roce
 
-[[nodiscard]] constexpr std::expected<PfcPriorityMask, RoceError> admit_pfc_priorities(std::uint8_t mask) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<PfcPriorityMask, RoceError> admit_pfc_priorities(std::uint8_t mask) noexcept {
     return ::fixy::admit_refined<pfc_priority_mask>(mask, RoceError::InvalidPfcPriorityMask);
 }
 
-[[nodiscard]] constexpr std::expected<RoceDscp, RoceError> admit_roce_dscp(std::uint8_t dscp) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<RoceDscp, RoceError> admit_roce_dscp(std::uint8_t dscp) noexcept {
     return ::fixy::admit_refined<roce_dscp_bits>(dscp, RoceError::InvalidDscp);
 }
 
-[[nodiscard]] constexpr std::expected<DcqcnAlphaPpm, RoceError>
+[[nodiscard]] constexpr ::fixy::Result<DcqcnAlphaPpm, RoceError>
 admit_dcqcn_alpha_ppm(std::uint32_t alpha_ppm) noexcept {
     return ::fixy::admit_refined<dcqcn_alpha_ppm>(alpha_ppm, RoceError::InvalidDcqcnAlpha);
 }
 
-[[nodiscard]] constexpr std::expected<DcqcnTargetPackets, RoceError>
+[[nodiscard]] constexpr ::fixy::Result<DcqcnTargetPackets, RoceError>
 admit_dcqcn_target_packets(std::uint16_t packets) noexcept {
     return ::fixy::admit_refined<::fixy::positive>(packets, RoceError::InvalidDcqcnTargetPackets);
 }
 
-[[nodiscard]] constexpr std::expected<DcqcnCeThresholdBytes, RoceError>
+[[nodiscard]] constexpr ::fixy::Result<DcqcnCeThresholdBytes, RoceError>
 admit_dcqcn_ce_threshold_bytes(std::uint32_t bytes) noexcept {
     return ::fixy::admit_refined<::fixy::positive>(bytes, RoceError::InvalidCeThresholdBytes);
 }

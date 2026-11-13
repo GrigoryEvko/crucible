@@ -23,7 +23,7 @@ int main() {
     caps.tcam_entries = ::fixy::mint_tagged<::fixy::tags::source::Vendor, std::uint32_t>(4);
 
     ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
-    auto plan = tcam::mint_tcam_table(init, nic, caps, tcam::admit_tcam_entries(4).value());
+    auto plan = tcam::mint_tcam_table(init, nic, caps, tcam::admit_tcam_entries(4).expect("4 entries fit"));
     tcam::TcamRules<4> table{std::move(plan).expect("the plan fits the caps")};
     auto handle = table.add_rule(tcam::declare_tcam_rule(tcam::TcamFlowRule{}).expect("the rule is valid"))
                       .expect("the table has a free slot");

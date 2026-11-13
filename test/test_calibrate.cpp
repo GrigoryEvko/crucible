@@ -33,67 +33,67 @@ cog::CogIdentity nic_identity() {
 
 void test_admission() {
     auto iterations = cog::admit_calibration_iterations(1000);
-    assert(iterations.has_value());
-    assert(iterations->value() == 1000u);
+    assert(iterations.is_ok());
+    assert(std::move(iterations).expect("1000 iterations fit").value() == 1000u);
 
     auto bad_iterations = cog::admit_calibration_iterations(0);
-    assert(!bad_iterations.has_value());
-    assert(bad_iterations.error() == cog::CalibrationError::InvalidIterations);
+    assert(bad_iterations.is_err());
+    assert(bad_iterations.err() == ::fixy::some(cog::CalibrationError::InvalidIterations));
 
     auto warmup = cog::admit_warmup_iterations(0);
-    assert(warmup.has_value());
-    assert(warmup->value() == 0u);
+    assert(warmup.is_ok());
+    assert(std::move(warmup).expect("no warmup fits").value() == 0u);
 
     auto trim = cog::admit_trim_basis_points(100);
-    assert(trim.has_value());
-    assert(trim->value() == 100u);
+    assert(trim.is_ok());
+    assert(std::move(trim).expect("100 basis points fit").value() == 100u);
 
     auto too_much_trim = cog::admit_trim_basis_points(1001);
-    assert(!too_much_trim.has_value());
-    assert(too_much_trim.error() == cog::CalibrationError::InvalidTrimBasisPoints);
+    assert(too_much_trim.is_err());
+    assert(too_much_trim.err() == ::fixy::some(cog::CalibrationError::InvalidTrimBasisPoints));
 
     auto latency = cog::admit_latency_quantiles(cog::LatencyQuantiles{100u, 500u, 900u});
-    assert(latency.has_value());
-    assert(latency->value().p99_ns == 500u);
+    assert(latency.is_ok());
+    assert(std::move(latency).expect("the quantiles are ordered").value().p99_ns == 500u);
 
     auto zero_latency = cog::admit_latency_quantiles(cog::LatencyQuantiles{0u, 1u, 2u});
-    assert(!zero_latency.has_value());
-    assert(zero_latency.error() == cog::CalibrationError::InvalidLatencyQuantiles);
+    assert(zero_latency.is_err());
+    assert(zero_latency.err() == ::fixy::some(cog::CalibrationError::InvalidLatencyQuantiles));
 
     auto inverted_latency = cog::admit_latency_quantiles(cog::LatencyQuantiles{20u, 10u, 30u});
-    assert(!inverted_latency.has_value());
-    assert(inverted_latency.error() == cog::CalibrationError::InvalidLatencyQuantiles);
+    assert(inverted_latency.is_err());
+    assert(inverted_latency.err() == ::fixy::some(cog::CalibrationError::InvalidLatencyQuantiles));
 
     auto throughput = cog::admit_throughput_per_sec(989.0e12);
-    assert(throughput.has_value());
-    assert(throughput->value() > 900.0e12);
+    assert(throughput.is_ok());
+    assert(std::move(throughput).expect("the throughput is finite and positive").value() > 900.0e12);
 
     auto bad_throughput = cog::admit_throughput_per_sec(-1.0);
-    assert(!bad_throughput.has_value());
-    assert(bad_throughput.error() == cog::CalibrationError::InvalidThroughput);
+    assert(bad_throughput.is_err());
+    assert(bad_throughput.err() == ::fixy::some(cog::CalibrationError::InvalidThroughput));
 
     // A NaN fails the positive conjunct and an infinity fails the ceiling.
-    assert(!cog::admit_throughput_per_sec(std::numeric_limits<double>::quiet_NaN()).has_value());
-    assert(!cog::admit_throughput_per_sec(std::numeric_limits<double>::infinity()).has_value());
-    assert(!cog::admit_throughput_per_sec(0.0).has_value());
+    assert(cog::admit_throughput_per_sec(std::numeric_limits<double>::quiet_NaN()).is_err());
+    assert(cog::admit_throughput_per_sec(std::numeric_limits<double>::infinity()).is_err());
+    assert(cog::admit_throughput_per_sec(0.0).is_err());
 
     auto bad_drift = cog::admit_drift_basis_points(0);
-    assert(!bad_drift.has_value());
-    assert(bad_drift.error() == cog::CalibrationError::InvalidDriftBasisPoints);
-    assert(!cog::admit_drift_basis_points(10001).has_value());
-    assert(cog::admit_drift_basis_points(10000).has_value());
+    assert(bad_drift.is_err());
+    assert(bad_drift.err() == ::fixy::some(cog::CalibrationError::InvalidDriftBasisPoints));
+    assert(cog::admit_drift_basis_points(10001).is_err());
+    assert(cog::admit_drift_basis_points(10000).is_ok());
 
-    assert(!cog::admit_runtime_budget_ms(0).has_value());
-    assert(cog::admit_runtime_budget_ms(86400000u).has_value());
-    assert(!cog::admit_runtime_budget_ms(86400001u).has_value());
+    assert(cog::admit_runtime_budget_ms(0).is_err());
+    assert(cog::admit_runtime_budget_ms(86400000u).is_ok());
+    assert(cog::admit_runtime_budget_ms(86400001u).is_err());
 
     // A count above the storage width is refused before the narrowing,
     // never truncated into range.
     auto wide_count = cog::admit_sample_count(65536u + 7u);
-    assert(!wide_count.has_value());
-    assert(wide_count.error() == cog::CalibrationError::InvalidSampleCount);
-    assert(!cog::admit_sample_count(0u).has_value());
-    assert(cog::admit_sample_count(65535u)->value() == 65535u);
+    assert(wide_count.is_err());
+    assert(wide_count.err() == ::fixy::some(cog::CalibrationError::InvalidSampleCount));
+    assert(cog::admit_sample_count(0u).is_err());
+    assert(cog::admit_sample_count(65535u).expect("65535 samples fit").value() == 65535u);
 
     crucible::test::pass("  test_admission: PASSED\n");
 }
@@ -102,9 +102,9 @@ void test_latency_entry_and_result() {
     auto latency = cog::admit_latency_quantiles(cog::LatencyQuantiles{100u, 500u, 900u});
     auto throughput = cog::admit_throughput_per_sec(989.0e12);
     auto samples = cog::admit_sample_count(1024);
-    assert(latency.has_value());
-    assert(throughput.has_value());
-    assert(samples.has_value());
+    assert(latency.is_ok());
+    assert(throughput.is_ok());
+    assert(samples.is_ok());
 
     cog::CalibrationSample<cog::CogKind::Gpu> sample{
         .opcode = cog::GpuOpcode::GemmPlain,
@@ -113,9 +113,9 @@ void test_latency_entry_and_result() {
         .transpose_mode = cog::TransposeMode::Nn,
         .message_size_bucket = cog::MessageSizeBucket::None,
         .latency_cycles = 320000u,
-        .latency = *latency,
-        .throughput_per_sec = *throughput,
-        .sample_count = *samples,
+        .latency = std::move(latency).expect("the quantiles are ordered"),
+        .throughput_per_sec = std::move(throughput).expect("the throughput is finite and positive"),
+        .sample_count = std::move(samples).expect("1024 samples fit"),
     };
     auto entry = cog::make_latency_entry(sample);
     assert(entry.opcode == cog::GpuOpcode::GemmPlain);
@@ -151,17 +151,17 @@ void test_nic_result() {
     auto latency = cog::admit_latency_quantiles(cog::LatencyQuantiles{1500u, 2500u, 5500u});
     auto throughput = cog::admit_throughput_per_sec(6.25e9);
     auto samples = cog::admit_sample_count(4096);
-    assert(latency.has_value());
-    assert(throughput.has_value());
-    assert(samples.has_value());
+    assert(latency.is_ok());
+    assert(throughput.is_ok());
+    assert(samples.is_ok());
 
     cog::CalibrationSample<cog::CogKind::NicPort> sample{
         .opcode = cog::NicOpcode::RdmaWrite,
         .message_size_bucket = cog::MessageSizeBucket::M64B,
         .latency_cycles = 4500u,
-        .latency = *latency,
-        .throughput_per_sec = *throughput,
-        .sample_count = *samples,
+        .latency = std::move(latency).expect("the quantiles are ordered"),
+        .throughput_per_sec = std::move(throughput).expect("the throughput is finite and positive"),
+        .sample_count = std::move(samples).expect("4096 samples fit"),
     };
     auto entry = cog::make_latency_entry(sample);
     std::array<cog::OpcodeLatencyEntry<cog::CogKind::NicPort>, 1> rows{entry};
@@ -215,8 +215,8 @@ void test_backend_boundaries() {
 
 void test_drift_gate() {
     cog::DriftSignal below{
-        .observed_drift_bps = *cog::admit_drift_basis_points(500),
-        .threshold_bps = *cog::admit_drift_basis_points(1000),
+        .observed_drift_bps = cog::admit_drift_basis_points(500).expect("500 basis points fit"),
+        .threshold_bps = cog::admit_drift_basis_points(1000).expect("1000 basis points fit"),
     };
     assert(!cog::should_recalibrate(below));
     auto below_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(bg_ctx(), gpu_identity(), below);
@@ -224,8 +224,8 @@ void test_drift_gate() {
     assert(below_result.error() == cog::CalibrationError::DriftBelowThreshold);
 
     cog::DriftSignal above{
-        .observed_drift_bps = *cog::admit_drift_basis_points(1200),
-        .threshold_bps = *cog::admit_drift_basis_points(1000),
+        .observed_drift_bps = cog::admit_drift_basis_points(1200).expect("1200 basis points fit"),
+        .threshold_bps = cog::admit_drift_basis_points(1000).expect("1000 basis points fit"),
     };
     assert(cog::should_recalibrate(above));
     auto above_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(bg_ctx(), gpu_identity(), above);

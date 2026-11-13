@@ -27,16 +27,17 @@ namespace {
     auto socket = cntp::admit_socket_fd(fd);
     auto cid = cntp::admit_connection_id(connection_id);
     assert(socket.has_value());
-    assert(cid.has_value());
-    auto conn = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(*socket, id, *cid);
+    assert(cid.is_ok());
+    auto conn = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(
+        *socket, id, std::move(cid).expect("the connection id is positive"));
     assert(conn.has_value());
     return std::move(*conn);
 }
 
 [[nodiscard]] cntp::PoolConfig config(std::uint16_t per_remote, std::uint64_t idle_ns) {
     return cntp::PoolConfig{
-        .max_per_remote = cntp::admit_pool_size(per_remote).value(),
-        .max_idle_ns = cntp::admit_idle_timeout_ns(idle_ns).value(),
+        .max_per_remote = cntp::admit_pool_size(per_remote).expect("the pool size is positive"),
+        .max_idle_ns = cntp::admit_idle_timeout_ns(idle_ns).expect("the idle timeout is positive"),
     };
 }
 
@@ -56,23 +57,24 @@ void test_admission_and_names() {
     auto id = cntp::admit_connection_id(77);
     auto zero_id = cntp::admit_connection_id(0);
 
-    assert(size.has_value());
-    assert(!zero_size.has_value());
-    assert(zero_size.error() == cntp::PoolError::InvalidPoolSize);
-    assert(idle.has_value());
-    assert(!zero_idle.has_value());
-    assert(zero_idle.error() == cntp::PoolError::InvalidIdleTimeout);
-    assert(id.has_value());
-    assert(!zero_id.has_value());
-    assert(zero_id.error() == cntp::PoolError::InvalidConnectionId);
+    assert(size.is_ok());
+    assert(zero_size.is_err());
+    assert(zero_size.err() == ::fixy::some(cntp::PoolError::InvalidPoolSize));
+    assert(idle.is_ok());
+    assert(zero_idle.is_err());
+    assert(zero_idle.err() == ::fixy::some(cntp::PoolError::InvalidIdleTimeout));
+    assert(id.is_ok());
+    assert(zero_id.is_err());
+    assert(zero_id.err() == ::fixy::some(cntp::PoolError::InvalidConnectionId));
+    auto const admitted_id = std::move(id).expect("77 is positive");
 
     cog::CogIdentity empty{};
     auto socket = cntp::admit_socket_fd(100).value();
-    auto bad = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(socket, empty, *id);
+    auto bad = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(socket, empty, admitted_id);
     assert(!bad.has_value());
     assert(bad.error() == cntp::PoolError::InvalidRemoteCog);
 
-    auto good = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(socket, remote(9), *id);
+    auto good = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(socket, remote(9), admitted_id);
     assert(good.has_value());
     assert(good->peek().socket().value() == 100);
     assert(good->peek().remote_uuid() == remote(9).uuid);

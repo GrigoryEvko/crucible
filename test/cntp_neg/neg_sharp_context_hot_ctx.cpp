@@ -17,7 +17,8 @@ int main() {
     caps.features.set(cog::SwitchFeature::Sharp);
 
     ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
-    auto plan = shp::mint_sharp_fabric_plan(init, sw, caps, *shp::admit_sharp_participant_count(8), true, true);
+    auto plan = shp::mint_sharp_fabric_plan(
+        init, sw, caps, shp::admit_sharp_participant_count(8).expect("8 participants is positive"), true, true);
     const ::fixy::HotFgCtx hot = ::foundation::effects::testing::foreground();
     auto context = shp::mint_sharp_context(hot, *plan);
     return context.has_value() ? 0 : 1;

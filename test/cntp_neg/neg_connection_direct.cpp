@@ -11,7 +11,7 @@ int main() {
     cog::CogIdentity remote{};
     remote.uuid = cog::Uuid{1, 2};
     auto socket = cntp::admit_socket_fd(3).value();
-    auto id = cntp::admit_connection_id(4).value();
+    auto id = cntp::admit_connection_id(4).expect("4 is positive");
     auto minted = cntp::mint_connection<cntp::TransportClass::Tcp>(socket, remote, id);
     (void)minted;
     auto forged = ::fixy::mint_linear<cntp::Connection<cntp::TransportClass::Tcp>>(socket, cog::Uuid{}, id);

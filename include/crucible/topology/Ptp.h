@@ -10,6 +10,7 @@
 
 #include <crucible/cntp/Pacing.h>
 #include <crucible/cog/CogIdentity.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
@@ -156,11 +157,11 @@ concept CtxFitsPtpRecord =
     ::foundation::effects::IsExecCtx<Ctx>
     && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
 
-[[nodiscard]] constexpr std::expected<PtpClockFd, PtpError> admit_ptp_clock_fd(int fd) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<PtpClockFd, PtpError> admit_ptp_clock_fd(int fd) noexcept {
     return ::fixy::admit_refined<::fixy::non_negative>(fd, PtpError::InvalidClockFd);
 }
 
-[[nodiscard]] constexpr std::expected<PtpDeviceIndex, PtpError> admit_ptp_device_index(std::uint16_t index) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<PtpDeviceIndex, PtpError> admit_ptp_device_index(std::uint16_t index) noexcept {
     return ::fixy::admit_refined<::fixy::bounded_above<std::uint16_t{255}>>(index, PtpError::InvalidDeviceIndex);
 }
 

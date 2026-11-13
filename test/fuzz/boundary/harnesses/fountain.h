@@ -45,8 +45,8 @@ inline void run_fountain(std::span<const std::uint8_t> bytes) {
         // A wire decoder admits the count before it builds the packet.
         const auto source_bytes = std::size_t{cursor.take<std::uint16_t>()};
         auto admitted = Packet::admit_source_bytes(source_bytes);
-        if (!admitted) continue;
-        packet.source_bytes = *admitted;
+        if (admitted.is_err()) continue;
+        packet.source_bytes = std::move(admitted).expect("the admission took the count");
         packet.mask = cursor.take<std::uint64_t>();
         const auto payload = cursor.take_bytes(packet.payload.size());
         for (std::size_t i = 0; i < payload.size(); ++i)

@@ -16,6 +16,6 @@ int main() {
     caps.features.set(cog::NicFeature::SrIov);
     auto iface = crucible::cntp::NicInterfaceName::from("eth0").value();
     auto result = sriov::mint_sriov_plan(::fixy::BgDrainCtx{::foundation::effects::testing::bg()}, id, caps, iface,
-                                         *sriov::admit_vf_count(1));
+                                         sriov::admit_vf_count(1).expect("1 function fits"));
     return result.has_value() ? 0 : 1;
 }

@@ -11,7 +11,8 @@
 int main() {
     namespace tcam = crucible::cntp::tcam;
 
-    tcam::TcamRuleHandle forged{crucible::cog::Uuid{1, 2}, tcam::admit_tcam_rule_id(1).value(), std::uint32_t{0},
+    tcam::TcamRuleHandle forged{crucible::cog::Uuid{1, 2},
+                                tcam::admit_tcam_rule_id(1).expect("the rule id is not zero"), std::uint32_t{0},
                                 std::uint32_t{1}};
     return static_cast<int>(forged.slot());
 }

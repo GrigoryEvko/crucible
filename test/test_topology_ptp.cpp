@@ -87,12 +87,12 @@ static void test_name_accessors() {
 
 static void test_fd_and_nic_admission() {
     auto bad_fd = topology::admit_ptp_clock_fd(-1);
-    assert(!bad_fd.has_value());
-    assert(bad_fd.error() == topology::PtpError::InvalidClockFd);
+    assert(bad_fd.is_err());
+    assert(bad_fd.err() == ::fixy::some(topology::PtpError::InvalidClockFd));
 
     auto fd = topology::admit_ptp_clock_fd(7);
-    assert(fd.has_value());
-    assert(fd->value() == 7);
+    assert(fd.is_ok());
+    assert(std::move(fd).expect("7 is not negative").value() == 7);
     assert(topology::ptp_capable_cog(nic(1)));
 
     auto gpu = nic(2);
@@ -100,17 +100,17 @@ static void test_fd_and_nic_admission() {
     assert(!topology::ptp_capable_cog(gpu));
 
     auto index = topology::admit_ptp_device_index(12);
-    assert(index.has_value());
-    assert(index->value() == 12);
+    assert(index.is_ok());
+    assert(std::move(index).expect("12 is a device index").value() == 12);
     auto too_high = topology::admit_ptp_device_index(256);
-    assert(!too_high.has_value());
-    assert(too_high.error() == topology::PtpError::InvalidDeviceIndex);
+    assert(too_high.is_err());
+    assert(too_high.err() == ::fixy::some(topology::PtpError::InvalidDeviceIndex));
     crucible::test::pass("  test_fd_and_nic_admission:  PASSED\n");
 }
 
 static void test_handle_status_and_timestamp() {
     auto fd = topology::admit_ptp_clock_fd(9);
-    assert(fd.has_value());
+    assert(fd.is_ok());
     topology::PtpStatus status{
         .servo = topology::PtpServoState::Slave,
         .offset_from_master_ns = 12,
@@ -119,8 +119,8 @@ static void test_handle_status_and_timestamp() {
         .skew_bound_ns = skew_bound(90),
         .sequence = 4,
     };
-    auto handle =
-        topology::mint_ptp_handle(eff::ColdInitCtx{::foundation::effects::testing::init()}, nic(3), *fd, status);
+    auto handle = topology::mint_ptp_handle(eff::ColdInitCtx{::foundation::effects::testing::init()}, nic(3),
+                                            std::move(fd).expect("9 is not negative"), status);
     assert(handle.status().synchronized());
     assert(handle.latest_timestamp().error() == topology::PtpError::NoTimestamp);
 
@@ -173,9 +173,9 @@ static bool status_is_self_consistent(topology::PtpStatus const& observed) noexc
 
 static void test_status_seqlock_never_tears() {
     auto fd = topology::admit_ptp_clock_fd(11);
-    assert(fd.has_value());
-    auto handle = topology::mint_ptp_handle(eff::ColdInitCtx{::foundation::effects::testing::init()}, nic(4), *fd,
-                                            status_at_tick(0));
+    assert(fd.is_ok());
+    auto handle = topology::mint_ptp_handle(eff::ColdInitCtx{::foundation::effects::testing::init()}, nic(4),
+                                            std::move(fd).expect("11 is not negative"), status_at_tick(0));
 
     constexpr std::uint64_t ticks = 200000;
     std::atomic<bool> writer_done{false};
@@ -279,15 +279,15 @@ static void test_timestamped_packet_view() {
 static void test_linux_boundaries_if_available() {
     BgFsCtx const bg_fs{::foundation::effects::testing::bg()};
     auto absent = topology::admit_ptp_device_index(254);
-    assert(absent.has_value());
-    auto missing = topology::open_ptp_clock(bg_fs, *absent);
+    assert(absent.is_ok());
+    auto missing = topology::open_ptp_clock(bg_fs, std::move(absent).expect("254 is a device index"));
     if (!missing.has_value()) {
         assert(missing.error() == topology::PtpError::OpenClockFailed);
     }
 
     auto index0 = topology::admit_ptp_device_index(0);
-    assert(index0.has_value());
-    auto clock = topology::open_ptp_clock(bg_fs, *index0);
+    assert(index0.is_ok());
+    auto clock = topology::open_ptp_clock(bg_fs, std::move(index0).expect("0 is a device index"));
     if (clock.has_value()) {
         auto stamp = topology::ptp_now(*clock);
         assert(stamp.has_value() || stamp.error() == topology::PtpError::ClockReadFailed

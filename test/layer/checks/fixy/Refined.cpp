@@ -10,9 +10,10 @@ enum class Refusal : std::uint8_t {
     NotPositive
 };
 
-static_assert(admit_refined<positive>(3, Refusal::NotPositive).value().value() == 3);
-static_assert(admit_refined<positive>(0, Refusal::NotPositive).error() == Refusal::NotPositive);
-static_assert(admit_refined<positive>(-1, Refusal::NotPositive).error() == Refusal::NotPositive);
+static_assert(admit_refined<positive>(3, Refusal::NotPositive).expect("3 is positive").value() == 3);
+static_assert(admit_refined<positive>(0, Refusal::NotPositive).err() == ::foundation::core::some(Refusal::NotPositive));
+static_assert(admit_refined<positive>(-1, Refusal::NotPositive).err()
+              == ::foundation::core::some(Refusal::NotPositive));
 
 }  // namespace detail::admit_refined_self_test
 

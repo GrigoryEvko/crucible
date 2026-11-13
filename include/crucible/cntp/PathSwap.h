@@ -4,6 +4,7 @@
 // background state machine drives the swap, and its last step hands the
 // session to a new transport resource.  No in-flight data moves with it.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
@@ -154,11 +155,12 @@ concept CtxFitsPathSwapRead = ::fixy::spin::CtxMayBlock<Ctx>;
 template <class Resource>
 concept PathSwapSessionResource = ::fixy::session::SessionResource<Resource>;
 
-[[nodiscard]] constexpr std::expected<PositivePathId, SwapError> admit_path_id(std::uint64_t id) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<PositivePathId, SwapError> admit_path_id(std::uint64_t id) noexcept {
     return ::fixy::admit_refined<::fixy::positive>(id, SwapError::InvalidPathId);
 }
 
-[[nodiscard]] constexpr std::expected<PositiveNanoseconds, SwapError> admit_swap_timeout_ns(std::uint64_t ns) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<PositiveNanoseconds, SwapError>
+admit_swap_timeout_ns(std::uint64_t ns) noexcept {
     return ::fixy::admit_refined<::fixy::positive>(ns, SwapError::Timeout);
 }
 

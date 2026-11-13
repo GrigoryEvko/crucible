@@ -10,6 +10,7 @@
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/OpcodeLatencyTable.h>
 #include <crucible/cog/TargetCaps.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <fixy/Stale.h>
@@ -164,22 +165,22 @@ struct CalibrationResult {
 // the predicate runs, a refused value reports its own error, and an
 // admitted one is minted through the checked door.
 
-[[nodiscard]] constexpr std::expected<CalibrationIterations, CalibrationError>
+[[nodiscard]] constexpr ::fixy::Result<CalibrationIterations, CalibrationError>
 admit_calibration_iterations(std::uint32_t iterations) noexcept {
     return ::fixy::admit_refined<calibration_iterations_bound>(iterations, CalibrationError::InvalidIterations);
 }
 
-[[nodiscard]] constexpr std::expected<WarmupIterations, CalibrationError>
+[[nodiscard]] constexpr ::fixy::Result<WarmupIterations, CalibrationError>
 admit_warmup_iterations(std::uint32_t iterations) noexcept {
     return ::fixy::admit_refined<warmup_iterations_bound>(iterations, CalibrationError::InvalidWarmupIterations);
 }
 
-[[nodiscard]] constexpr std::expected<TrimBasisPoints, CalibrationError>
+[[nodiscard]] constexpr ::fixy::Result<TrimBasisPoints, CalibrationError>
 admit_trim_basis_points(std::uint16_t basis_points) noexcept {
     return ::fixy::admit_refined<trim_basis_points_bound>(basis_points, CalibrationError::InvalidTrimBasisPoints);
 }
 
-[[nodiscard]] constexpr std::expected<RuntimeBudgetMs, CalibrationError>
+[[nodiscard]] constexpr ::fixy::Result<RuntimeBudgetMs, CalibrationError>
 admit_runtime_budget_ms(std::uint32_t runtime_ms) noexcept {
     return ::fixy::admit_refined<runtime_budget_ms_bound>(runtime_ms, CalibrationError::InvalidRuntimeBudgetMs);
 }
@@ -187,26 +188,28 @@ admit_runtime_budget_ms(std::uint32_t runtime_ms) noexcept {
 // The count arrives as the width a bench harness counts in, so the range
 // check runs before the narrowing and a count above the storage width is
 // refused, never truncated.
-[[nodiscard]] constexpr std::expected<CalibrationSampleCount, CalibrationError>
+[[nodiscard]] constexpr ::fixy::Result<CalibrationSampleCount, CalibrationError>
 admit_sample_count(std::uint32_t samples) noexcept {
-    if (samples > std::numeric_limits<std::uint16_t>::max()) {
-        return std::unexpected(CalibrationError::InvalidSampleCount);
-    }
-    return ::fixy::admit_refined<measured_sample_count>(static_cast<std::uint16_t>(samples),
-                                                        CalibrationError::InvalidSampleCount);
+    return ::fixy::narrow<std::uint16_t>(samples).match(
+        [](std::uint16_t narrowed) noexcept {
+            return ::fixy::admit_refined<measured_sample_count>(narrowed, CalibrationError::InvalidSampleCount);
+        },
+        []() noexcept -> ::fixy::Result<CalibrationSampleCount, CalibrationError> {
+            return ::fixy::err(CalibrationError::InvalidSampleCount);
+        });
 }
 
-[[nodiscard]] constexpr std::expected<CalibrationLatencyQuantiles, CalibrationError>
+[[nodiscard]] constexpr ::fixy::Result<CalibrationLatencyQuantiles, CalibrationError>
 admit_latency_quantiles(LatencyQuantiles q) noexcept {
     return ::fixy::admit_refined<calibration_quantiles_valid>(q, CalibrationError::InvalidLatencyQuantiles);
 }
 
-[[nodiscard]] constexpr std::expected<CalibratedThroughput, CalibrationError>
+[[nodiscard]] constexpr ::fixy::Result<CalibratedThroughput, CalibrationError>
 admit_throughput_per_sec(double throughput) noexcept {
     return ::fixy::admit_refined<finite_positive_throughput>(throughput, CalibrationError::InvalidThroughput);
 }
 
-[[nodiscard]] constexpr std::expected<DriftBasisPoints, CalibrationError>
+[[nodiscard]] constexpr ::fixy::Result<DriftBasisPoints, CalibrationError>
 admit_drift_basis_points(std::uint16_t basis_points) noexcept {
     return ::fixy::admit_refined<drift_basis_points_bound>(basis_points, CalibrationError::InvalidDriftBasisPoints);
 }

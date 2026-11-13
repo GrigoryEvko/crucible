@@ -14,8 +14,8 @@ namespace gd = crucible::cntp::_wip::gpu_direct;
 
 int main() {
     const gd::GpuDirectMrPlan plan{
-        .gpu_base = *gd::admit_gpu_virtual_address(0x1000u),
-        .bytes = *gd::admit_gpu_direct_bytes(4096),
+        .gpu_base = gd::admit_gpu_virtual_address(0x1000u).expect("the address is not null"),
+        .bytes = gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"),
     };
     auto result = gd::register_gpu_memory(plan);
     return result.has_value() ? 0 : 1;

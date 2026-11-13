@@ -60,7 +60,7 @@ cog::NvSwitchTargetCaps switch_caps(std::uint32_t entries = 4096) {
 
 tcam::TcamFlowRule flow_rule(tcam::FlowAction action = tcam::FlowAction::Drop, std::uint32_t redirect_ifindex = 0) {
     return tcam::TcamFlowRule{
-        .rule_id = *tcam::admit_tcam_rule_id(0x148),
+        .rule_id = tcam::admit_tcam_rule_id(0x148).expect("the rule id is not zero"),
         .match =
             tcam::FiveTuple{
                 .src_ipv4_be = 0x0a000001u,
@@ -77,7 +77,7 @@ tcam::TcamFlowRule flow_rule(tcam::FlowAction action = tcam::FlowAction::Drop, s
             tcam::TcamFlowAction{
                 .kind = action,
                 .redirect_ifindex = redirect_ifindex,
-                .dscp = *tcam::admit_tcam_dscp(46),
+                .dscp = tcam::admit_tcam_dscp(46).expect("46 is a DSCP value"),
             },
         .priority = *tcam::admit_tcam_priority(10),
         .audit_to_cipher = true,
@@ -115,16 +115,16 @@ void test_admission_and_names() {
     assert(tcam::tcam_target_kind_name(tcam::TcamTargetKind::Switch) == std::string_view{"Switch"});
     assert(tcam::tcam_error_name(static_cast<tcam::TcamError>(200)) == std::string_view{"<unknown TcamError>"});
 
-    assert(tcam::admit_tcam_rule_id(1).has_value());
-    assert(!tcam::admit_tcam_rule_id(0).has_value());
-    assert(tcam::admit_tcam_rule_id(0).error() == tcam::TcamError::InvalidRuleId);
-    assert(tcam::admit_tcam_entries(1).has_value());
-    assert(!tcam::admit_tcam_entries(0).has_value());
-    assert(!tcam::admit_tcam_entries(tcam::kMaxStaticTcamRules + 1).has_value());
-    assert(tcam::admit_tcam_entries(0).error() == tcam::TcamError::InvalidEntryCount);
-    assert(tcam::admit_tcam_dscp(63).has_value());
-    assert(!tcam::admit_tcam_dscp(64).has_value());
-    assert(tcam::admit_tcam_dscp(64).error() == tcam::TcamError::InvalidActionParameter);
+    assert(tcam::admit_tcam_rule_id(1).is_ok());
+    assert(tcam::admit_tcam_rule_id(0).is_err());
+    assert(tcam::admit_tcam_rule_id(0).err() == ::fixy::some(tcam::TcamError::InvalidRuleId));
+    assert(tcam::admit_tcam_entries(1).is_ok());
+    assert(tcam::admit_tcam_entries(0).is_err());
+    assert(tcam::admit_tcam_entries(tcam::kMaxStaticTcamRules + 1).is_err());
+    assert(tcam::admit_tcam_entries(0).err() == ::fixy::some(tcam::TcamError::InvalidEntryCount));
+    assert(tcam::admit_tcam_dscp(63).is_ok());
+    assert(tcam::admit_tcam_dscp(64).is_err());
+    assert(tcam::admit_tcam_dscp(64).err() == ::fixy::some(tcam::TcamError::InvalidActionParameter));
     assert(tcam::admit_tcam_priority(std::numeric_limits<std::uint16_t>::max()).has_value());
 
     auto bad_redirect = tcam::declare_tcam_rule(flow_rule(tcam::FlowAction::Redirect));
@@ -139,39 +139,45 @@ void test_admission_and_names() {
 }
 
 void test_table_minting() {
-    auto table = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(64));
+    auto table = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(),
+                                       tcam::admit_tcam_entries(64).expect("64 entries fit"));
     tcam::DeclaredTcamTable const plan = take(std::move(table));
     assert(plan.value().target_kind() == tcam::TcamTargetKind::NicPort);
     assert(plan.value().capacity().value() == 64);
     assert(plan.value().target().uuid == nic_identity().uuid);
     assert(!plan.value().backend_ready());
 
-    auto sw = tcam::mint_tcam_table(init_ctx(), switch_identity(), switch_caps(), *tcam::admit_tcam_entries(128));
+    auto sw = tcam::mint_tcam_table(init_ctx(), switch_identity(), switch_caps(),
+                                    tcam::admit_tcam_entries(128).expect("128 entries fit"));
     tcam::DeclaredTcamTable const switch_plan = take(std::move(sw));
     assert(switch_plan.value().target_kind() == tcam::TcamTargetKind::Switch);
 
     auto no_cap = nic_caps();
     no_cap.features.unset(cog::NicFeature::Tcam);
-    auto missing = tcam::mint_tcam_table(init_ctx(), nic_identity(), no_cap, *tcam::admit_tcam_entries(64));
+    auto missing = tcam::mint_tcam_table(init_ctx(), nic_identity(), no_cap,
+                                         tcam::admit_tcam_entries(64).expect("64 entries fit"));
     assert(error_of(std::move(missing)) == tcam::TcamError::MissingTcamCapability);
 
-    auto over = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(4), *tcam::admit_tcam_entries(8));
+    auto over = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(4),
+                                      tcam::admit_tcam_entries(8).expect("8 entries fit"));
     assert(error_of(std::move(over)) == tcam::TcamError::CapacityExceeded);
 
-    auto wrong =
-        tcam::mint_tcam_table(init_ctx(), nic_identity(cog::CogKind::Gpu), nic_caps(), *tcam::admit_tcam_entries(64));
+    auto wrong = tcam::mint_tcam_table(init_ctx(), nic_identity(cog::CogKind::Gpu), nic_caps(),
+                                       tcam::admit_tcam_entries(64).expect("64 entries fit"));
     assert(error_of(std::move(wrong)) == tcam::TcamError::WrongTargetKind);
 
     auto zero_target = nic_identity();
     zero_target.uuid = cog::Uuid{};
-    auto zero = tcam::mint_tcam_table(init_ctx(), zero_target, nic_caps(), *tcam::admit_tcam_entries(64));
+    auto zero = tcam::mint_tcam_table(init_ctx(), zero_target, nic_caps(),
+                                      tcam::admit_tcam_entries(64).expect("64 entries fit"));
     assert(error_of(std::move(zero)) == tcam::TcamError::ZeroTargetCog);
 
     crucible::test::pass("  test_table_minting: PASSED\n");
 }
 
 void test_rule_table_lifecycle() {
-    auto table_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(1));
+    auto table_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(),
+                                            tcam::admit_tcam_entries(1).expect("1 entry fits"));
 
     tcam::TcamRules<4> table{take(std::move(table_plan))};
     tcam::DeclaredTcamFlowRule const declared = take(tcam::declare_tcam_rule(flow_rule()));
@@ -199,7 +205,8 @@ void test_rule_table_lifecycle() {
 // A table that owns fewer slots than its plan asks for reports only the
 // rules that it can hold.
 void test_slot_bound_caps_available_rules() {
-    auto table_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(64));
+    auto table_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(),
+                                            tcam::admit_tcam_entries(64).expect("64 entries fit"));
 
     tcam::TcamRules<2> table{take(std::move(table_plan))};
     assert(table.available_rules_remaining() == 2);
@@ -220,8 +227,10 @@ void test_slot_bound_caps_available_rules() {
 // one table out of the other.  A slot that a removal freed takes the next
 // generation.
 void test_foreign_handle_and_generation() {
-    auto nic_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4));
-    auto sw_plan = tcam::mint_tcam_table(init_ctx(), switch_identity(), switch_caps(), *tcam::admit_tcam_entries(4));
+    auto nic_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(),
+                                          tcam::admit_tcam_entries(4).expect("4 entries fit"));
+    auto sw_plan = tcam::mint_tcam_table(init_ctx(), switch_identity(), switch_caps(),
+                                         tcam::admit_tcam_entries(4).expect("4 entries fit"));
 
     tcam::TcamRules<4> nic_table{take(std::move(nic_plan))};
     tcam::TcamRules<4> sw_table{take(std::move(sw_plan))};
@@ -286,12 +295,13 @@ void test_generation_never_comes_back() {
 void test_backend_boundary() {
     tcam::DeclaredTcamFlowRule const declared = take(tcam::declare_tcam_rule(flow_rule()));
 
-    auto ready_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), true);
+    auto ready_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(),
+                                            tcam::admit_tcam_entries(4).expect("4 entries fit"), true);
     tcam::DeclaredTcamTable const ready_table = take(std::move(ready_plan));
     assert(tcam::force_tcam_backend_boundary(ready_table, declared).is_ok());
 
-    auto pending_plan =
-        tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), false);
+    auto pending_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(),
+                                              tcam::admit_tcam_entries(4).expect("4 entries fit"), false);
     tcam::DeclaredTcamTable const pending_table = take(std::move(pending_plan));
     assert(error_of(tcam::force_tcam_backend_boundary(pending_table, declared))
            == tcam::TcamError::VendorBackendUnavailable);
@@ -327,7 +337,8 @@ void test_apply_paths_are_stubbed() {
 
     // Success here is a transition inside this process and nothing
     // more.
-    auto ready_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), true);
+    auto ready_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(),
+                                            tcam::admit_tcam_entries(4).expect("4 entries fit"), true);
     tcam::DeclaredTcamTable const ready_table = take(std::move(ready_plan));
     assert(tcam::force_tcam_backend_boundary(ready_table, declared).is_ok());
 
@@ -349,8 +360,8 @@ void test_apply_paths_are_stubbed() {
 
     // The unavailable error must stay reachable, or the ready path
     // would be the only outcome the code can produce.
-    auto pending_plan =
-        tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(), *tcam::admit_tcam_entries(4), false);
+    auto pending_plan = tcam::mint_tcam_table(init_ctx(), nic_identity(), nic_caps(),
+                                              tcam::admit_tcam_entries(4).expect("4 entries fit"), false);
     tcam::DeclaredTcamTable const pending_table = take(std::move(pending_plan));
     assert(error_of(tcam::force_tcam_backend_boundary(pending_table, declared))
            == tcam::TcamError::VendorBackendUnavailable);
