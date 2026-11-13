@@ -23,5 +23,5 @@ int main() {
                     .expect("a SHARP switch makes a plan");
     ::fixy::BgDrainCtx bg{::foundation::effects::testing::bg()};
     auto context = shp::mint_sharp_context(bg, plan);
-    return context.has_value() ? 0 : 1;
+    return context.is_ok() ? 0 : 1;
 }

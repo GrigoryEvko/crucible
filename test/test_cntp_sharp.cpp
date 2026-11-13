@@ -1,11 +1,9 @@
 #include <crucible/cntp/_wip/Sharp.h>
 #include <fixy/Ctx.h>
 
-#include <array>
 #include "test_assert.h"
 #include <concepts>
 #include <cstdio>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -62,9 +60,25 @@ crucible::NumericalRecipe recipe(crucible::ReductionDeterminism determinism = cr
     return r;
 }
 
+// The error of a context mint.  A context is linear, so the context of a
+// mint that succeeds ends here, and the error then holds no value.
+[[nodiscard]] ::fixy::Option<shp::SharpError> context_error(::fixy::Result<shp::SharpContext, shp::SharpError> minted) {
+    return std::move(minted).match(
+        [](shp::SharpContext context) noexcept {
+            drop(std::move(context));
+            return ::fixy::Option<shp::SharpError>{::fixy::none};
+        },
+        [](shp::SharpError error) noexcept { return ::fixy::some(error); });
+}
+
+// The value of a dispatch that succeeds in this test.
+[[nodiscard]] shp::DeclaredSharpDispatch take(::fixy::Result<shp::DeclaredSharpDispatch, shp::SharpError> result) {
+    return std::move(result).expect("the call succeeds in this test");
+}
+
 void test_admission_and_names() {
-    assert(shp::sharp_error_name(shp::SharpError::RuntimeUnavailable) == std::string_view{"RuntimeUnavailable"});
-    assert(shp::sharp_fallback_name(shp::SharpFallback::BitexactTree) == std::string_view{"BitexactTree"});
+    assert(shp::sharp_error_name(shp::SharpError::RuntimeUnavailable) == "RuntimeUnavailable");
+    assert(shp::sharp_fallback_name(shp::SharpFallback::BitexactTree) == "BitexactTree");
 
     auto count = shp::admit_sharp_participant_count(8);
     assert(count.is_ok());
@@ -116,26 +130,27 @@ void test_recipe_eligibility() {
                                             shp::admit_sharp_participant_count(8).expect("8 participants is positive"))
                     .expect("a SHARP switch makes a plan");
 
-    auto eligible = shp::eligibility_check(recipe(crucible::ReductionDeterminism::BITEXACT_TC),
-                                           shp::sharp_recipe_laws<GoodRecipe>(), plan);
-    assert(eligible.has_value());
-    assert(eligible->value().fallback == shp::SharpFallback::None);
+    shp::DeclaredSharpDispatch const eligible = take(shp::eligibility_check(
+        recipe(crucible::ReductionDeterminism::BITEXACT_TC), shp::sharp_recipe_laws<GoodRecipe>(), plan));
+    assert(eligible.value().fallback == shp::SharpFallback::None);
+    assert(eligible.value().participant_count == 8);
 
     auto strict = shp::eligibility_check(recipe(crucible::ReductionDeterminism::BITEXACT_STRICT),
                                          shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
-    assert(!strict.has_value());
-    assert(strict.error() == shp::SharpError::BitexactStrictForbidden);
+    assert(strict.err() == ::fixy::some(shp::SharpError::BitexactStrictForbidden));
+
+    auto non_associative =
+        shp::eligibility_check(recipe(), shp::SharpRecipeLaws{.associative = false, .commutative = true}, plan);
+    assert(non_associative.err() == ::fixy::some(shp::SharpError::RecipeNotAssociative));
 
     auto non_commutative =
         shp::eligibility_check(recipe(), shp::SharpRecipeLaws{.associative = true, .commutative = false}, plan);
-    assert(!non_commutative.has_value());
-    assert(non_commutative.error() == shp::SharpError::RecipeNotCommutative);
+    assert(non_commutative.err() == ::fixy::some(shp::SharpError::RecipeNotCommutative));
 
     auto unsupported_dtype =
         shp::eligibility_check(recipe(crucible::ReductionDeterminism::ORDERED, crucible::ScalarType::Bool),
                                shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
-    assert(!unsupported_dtype.has_value());
-    assert(unsupported_dtype.error() == shp::SharpError::UnsupportedScalarType);
+    assert(unsupported_dtype.err() == ::fixy::some(shp::SharpError::UnsupportedScalarType));
 
     crucible::test::pass("  test_recipe_eligibility: PASSED\n");
 }
@@ -147,60 +162,57 @@ void test_dispatch_boundary() {
                                             shp::admit_sharp_participant_count(8).expect("8 participants is positive"))
                     .expect("a SHARP switch makes a plan");
 
-    std::array<float, 4> input{1.0f, 2.0f, 3.0f, 4.0f};
-    std::array<float, 4> output{};
-    auto unavailable =
-        shp::dispatch_sharp_allreduce(input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), plan);
-    assert(unavailable.has_value());
-    assert(unavailable->value().fallback == shp::SharpFallback::RingOrTree);
-    assert(unavailable->value().element_count == input.size());
+    ::foundation::core::FixedArray<float, 4> const input_values{1.0f, 2.0f, 3.0f, 4.0f};
+    ::foundation::core::FixedArray<float, 4> output_values{};
+    ::fixy::View<float const> const input = input_values.view();
+    ::fixy::View<float> const output = output_values.view();
+    shp::DeclaredSharpDispatch const unavailable =
+        take(shp::dispatch_sharp_allreduce(input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), plan));
+    assert(unavailable.value().fallback == shp::SharpFallback::RingOrTree);
+    assert(unavailable.value().element_count == input.size());
 
     auto deferred_plan =
         shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(),
                                     shp::admit_sharp_participant_count(8).expect("8 participants is positive"), true)
             .expect("a loaded runtime makes a plan");
-    auto deferred =
-        shp::dispatch_sharp_allreduce(input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), deferred_plan);
-    assert(deferred.has_value());
-    assert(deferred->value().fallback == shp::SharpFallback::RingOrTree);
+    shp::DeclaredSharpDispatch const deferred = take(
+        shp::dispatch_sharp_allreduce(input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), deferred_plan));
+    assert(deferred.value().fallback == shp::SharpFallback::RingOrTree);
 
-    auto deferred_context = shp::mint_sharp_context(init, deferred_plan);
-    assert(!deferred_context.has_value());
-    assert(deferred_context.error() == shp::SharpError::DispatchDeferred);
-    auto unloaded_context = shp::mint_sharp_context(init, plan);
-    assert(!unloaded_context.has_value());
-    assert(unloaded_context.error() == shp::SharpError::RuntimeUnavailable);
+    assert(context_error(shp::mint_sharp_context(init, deferred_plan))
+           == ::fixy::some(shp::SharpError::DispatchDeferred));
+    assert(context_error(shp::mint_sharp_context(init, plan)) == ::fixy::some(shp::SharpError::RuntimeUnavailable));
 
     auto backend_plan = shp::mint_sharp_fabric_plan(
                             init, switch_identity(), switch_caps(),
                             shp::admit_sharp_participant_count(8).expect("8 participants is positive"), true, true)
                             .expect("a plan that asks for the backend makes a plan");
-    auto backend =
-        shp::dispatch_sharp_allreduce(input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), backend_plan);
-    assert(backend.has_value());
-    assert(backend->value().fallback == shp::SharpFallback::RingOrTree);
+    shp::DeclaredSharpDispatch const backend = take(
+        shp::dispatch_sharp_allreduce(input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), backend_plan));
+    assert(backend.value().fallback == shp::SharpFallback::RingOrTree);
 
-    auto strict_fallback =
+    shp::DeclaredSharpDispatch const strict_fallback = take(
         shp::dispatch_sharp_allreduce(input, output, recipe(crucible::ReductionDeterminism::BITEXACT_STRICT),
-                                      shp::SharpRecipeLaws{.associative = true, .commutative = true}, backend_plan);
-    assert(strict_fallback.has_value());
-    assert(strict_fallback->value().fallback == shp::SharpFallback::BitexactTree);
+                                      shp::SharpRecipeLaws{.associative = true, .commutative = true}, backend_plan));
+    assert(strict_fallback.value().fallback == shp::SharpFallback::BitexactTree);
 
-    std::array<float, 2> short_output{};
-    auto shape = shp::dispatch_sharp_allreduce(input, short_output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(),
-                                               backend_plan);
-    assert(!shape.has_value());
-    assert(shape.error() == shp::SharpError::OutputShapeMismatch);
+    ::foundation::core::FixedArray<float, 2> short_values{};
+    auto shape = shp::dispatch_sharp_allreduce(input, short_values.view(), recipe(),
+                                               shp::sharp_recipe_laws<GoodRecipe>(), backend_plan);
+    assert(shape.err() == ::fixy::some(shp::SharpError::OutputShapeMismatch));
 
-    auto context = shp::mint_sharp_context(init, backend_plan);
-    assert(context.has_value());
-    assert(context->peek().switch_uuid() == switch_identity().uuid);
-    assert(context->peek().participant_count().value() == 8);
-    shp::SharpReducer reducer{std::move(*context)};
+    shp::SharpContext context =
+        shp::mint_sharp_context(init, backend_plan).expect("a plan that asks for the backend makes a context");
+    assert(context.peek().switch_uuid() == switch_identity().uuid);
+    assert(context.peek().participant_count().value() == 8);
+    shp::SharpReducer reducer{std::move(context)};
     auto reduced =
         reducer.allreduce_via_sharp(bg, input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), backend_plan);
-    assert(!reduced.has_value());
-    assert(reduced.error() == shp::SharpError::VendorBackendUnavailable);
+    assert(reduced.err() == ::fixy::some(shp::SharpError::VendorBackendUnavailable));
+
+    auto short_reduced = reducer.allreduce_via_sharp(bg, input, short_values.view(), recipe(),
+                                                     shp::sharp_recipe_laws<GoodRecipe>(), backend_plan);
+    assert(short_reduced.err() == ::fixy::some(shp::SharpError::OutputShapeMismatch));
 
     auto other_plan = shp::mint_sharp_fabric_plan(
                           init, switch_identity(), switch_caps(),
@@ -208,8 +220,7 @@ void test_dispatch_boundary() {
                           .expect("a plan of four participants makes a plan");
     auto mismatch =
         reducer.allreduce_via_sharp(bg, input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), other_plan);
-    assert(!mismatch.has_value());
-    assert(mismatch.error() == shp::SharpError::ParticipantCountMismatch);
+    assert(mismatch.err() == ::fixy::some(shp::SharpError::ParticipantCountMismatch));
 
     crucible::test::pass("  test_dispatch_boundary: PASSED\n");
 }

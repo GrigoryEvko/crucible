@@ -4,99 +4,46 @@
 
 namespace crucible::cntp::_wip::gpu_direct {
 
-std::string_view gpu_direct_error_name(GpuDirectError error) noexcept {
-    switch (error) {
-        case GpuDirectError::None:
-            return "None";
-        case GpuDirectError::ZeroGpuCog:
-            return "ZeroGpuCog";
-        case GpuDirectError::ZeroPeerCog:
-            return "ZeroPeerCog";
-        case GpuDirectError::NonGpuCog:
-            return "NonGpuCog";
-        case GpuDirectError::NonNicCog:
-            return "NonNicCog";
-        case GpuDirectError::NonNvmeCog:
-            return "NonNvmeCog";
-        case GpuDirectError::MissingGpuRdmaCapability:
-            return "MissingGpuRdmaCapability";
-        case GpuDirectError::MissingNicRdmaCapability:
-            return "MissingNicRdmaCapability";
-        case GpuDirectError::MissingGpuStorageCapability:
-            return "MissingGpuStorageCapability";
-        case GpuDirectError::PcieRootUnknown:
-            return "PcieRootUnknown";
-        case GpuDirectError::PcieRootMismatch:
-            return "PcieRootMismatch";
-        case GpuDirectError::NullGpuAddress:
-            return "NullGpuAddress";
-        case GpuDirectError::InvalidByteCount:
-            return "InvalidByteCount";
-        case GpuDirectError::InvalidAccess:
-            return "InvalidAccess";
-        case GpuDirectError::PeerModuleUnavailable:
-            return "PeerModuleUnavailable";
-        case GpuDirectError::RegistrationDeferred:
-            return "RegistrationDeferred";
-        case GpuDirectError::VendorBackendUnavailable:
-            return "VendorBackendUnavailable";
-        case GpuDirectError::StorageBackendUnavailable:
-            return "StorageBackendUnavailable";
-        default:
-            return "<unknown GpuDirectError>";
-    }
+::fixy::TextView gpu_direct_error_name(GpuDirectError error) noexcept {
+    return ::foundation::core::enum_name_text(error);
 }
 
-std::string_view mr_access_flag_name(MrAccessFlag flag) noexcept {
-    switch (flag) {
-        case MrAccessFlag::LocalRead:
-            return "LocalRead";
-        case MrAccessFlag::LocalWrite:
-            return "LocalWrite";
-        case MrAccessFlag::RemoteRead:
-            return "RemoteRead";
-        case MrAccessFlag::RemoteWrite:
-            return "RemoteWrite";
-        case MrAccessFlag::RemoteAtomic:
-            return "RemoteAtomic";
-        default:
-            return "<unknown MrAccessFlag>";
-    }
-}
+::fixy::TextView mr_access_flag_name(MrAccessFlag flag) noexcept { return ::foundation::core::enum_name_text(flag); }
 
-std::expected<OwnedGpuDirectMr, GpuDirectError>
+::fixy::Result<OwnedGpuDirectMr, GpuDirectError>
 GpuDirectMrRegistry::register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept {
     auto const& raw = plan.value();
     if (raw.gpu.uuid.is_zero()) {
-        return std::unexpected(GpuDirectError::ZeroGpuCog);
+        return ::fixy::err(GpuDirectError::ZeroGpuCog);
     }
     if (raw.nic.uuid.is_zero()) {
-        return std::unexpected(GpuDirectError::ZeroPeerCog);
+        return ::fixy::err(GpuDirectError::ZeroPeerCog);
     }
     if (raw.gpu_base.value() == 0u) {
-        return std::unexpected(GpuDirectError::NullGpuAddress);
+        return ::fixy::err(GpuDirectError::NullGpuAddress);
     }
     if (raw.bytes.value() == 0u) {
-        return std::unexpected(GpuDirectError::InvalidByteCount);
+        return ::fixy::err(GpuDirectError::InvalidByteCount);
     }
     if (!access_valid(raw.access)) {
-        return std::unexpected(GpuDirectError::InvalidAccess);
+        return ::fixy::err(GpuDirectError::InvalidAccess);
     }
     if (!raw.peer_module_loaded) {
-        return std::unexpected(GpuDirectError::PeerModuleUnavailable);
+        return ::fixy::err(GpuDirectError::PeerModuleUnavailable);
     }
     if (!raw.allow_backend_registration) {
-        return std::unexpected(GpuDirectError::RegistrationDeferred);
+        return ::fixy::err(GpuDirectError::RegistrationDeferred);
     }
-    return std::unexpected(GpuDirectError::VendorBackendUnavailable);
+    return ::fixy::err(GpuDirectError::VendorBackendUnavailable);
 }
 
-std::expected<void, GpuDirectError> GpuDirectMrRegistry::deregister_gpu_memory(OwnedGpuDirectMr memory) noexcept {
+::fixy::Result<::fixy::Unit, GpuDirectError>
+GpuDirectMrRegistry::deregister_gpu_memory(OwnedGpuDirectMr memory) noexcept {
     const GpuDirectMrHandle handle = std::move(memory).consume();
     if (handle.gpu_uuid().is_zero() || handle.nic_uuid().is_zero()) {
-        return std::unexpected(GpuDirectError::ZeroPeerCog);
+        return ::fixy::err(GpuDirectError::ZeroPeerCog);
     }
-    return std::unexpected(GpuDirectError::VendorBackendUnavailable);
+    return ::fixy::err(GpuDirectError::VendorBackendUnavailable);
 }
 
 // The free functions forward to the stub methods of the registry, and each
@@ -104,31 +51,28 @@ std::expected<void, GpuDirectError> GpuDirectMrRegistry::deregister_gpu_memory(O
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
-std::expected<OwnedGpuDirectMr, GpuDirectError> register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept {
+::fixy::Result<OwnedGpuDirectMr, GpuDirectError> register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept {
     GpuDirectMrRegistry registry{};
     return registry.register_gpu_memory(plan);
 }
 
-std::expected<void, GpuDirectError> deregister_gpu_memory(OwnedGpuDirectMr memory) noexcept {
+::fixy::Result<::fixy::Unit, GpuDirectError> deregister_gpu_memory(OwnedGpuDirectMr memory) noexcept {
     GpuDirectMrRegistry registry{};
     return registry.deregister_gpu_memory(std::move(memory));
 }
 
-std::expected<void, GpuDirectError> read_from_nvme(DeclaredGpuDirectStoragePlan plan) noexcept {
+::fixy::Result<::fixy::Unit, GpuDirectError> read_from_nvme(DeclaredGpuDirectStoragePlan plan) noexcept {
     auto const& raw = plan.value();
     if (raw.gpu.uuid.is_zero()) {
-        return std::unexpected(GpuDirectError::ZeroGpuCog);
+        return ::fixy::err(GpuDirectError::ZeroGpuCog);
     }
     if (raw.nvme.uuid.is_zero()) {
-        return std::unexpected(GpuDirectError::ZeroPeerCog);
+        return ::fixy::err(GpuDirectError::ZeroPeerCog);
     }
-    if (!raw.storage_backend_loaded || !raw.allow_backend_io) {
-        return std::unexpected(GpuDirectError::StorageBackendUnavailable);
-    }
-    return std::unexpected(GpuDirectError::StorageBackendUnavailable);
+    return ::fixy::err(GpuDirectError::StorageBackendUnavailable);
 }
 
-std::expected<void, GpuDirectError> write_to_nvme(DeclaredGpuDirectStoragePlan plan) noexcept {
+::fixy::Result<::fixy::Unit, GpuDirectError> write_to_nvme(DeclaredGpuDirectStoragePlan plan) noexcept {
     return read_from_nvme(plan);
 }
 

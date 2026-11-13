@@ -18,5 +18,5 @@ int main() {
         .bytes = gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"),
     };
     auto result = gd::register_gpu_memory(plan);
-    return result.has_value() ? 0 : 1;
+    return result.is_ok() ? 0 : 1;
 }

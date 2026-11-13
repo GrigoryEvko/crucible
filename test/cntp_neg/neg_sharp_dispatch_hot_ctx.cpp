@@ -10,7 +10,6 @@
 #include <crucible/cntp/_wip/Sharp.h>
 #include <fixy/Ctx.h>
 
-#include <array>
 #include <utility>
 
 namespace cog = crucible::cog;
@@ -28,14 +27,14 @@ int main() {
                                             shp::admit_sharp_participant_count(8).expect("8 participants is positive"),
                                             true, true)
                     .expect("a SHARP switch makes a plan");
-    auto context = shp::mint_sharp_context(init, plan);
+    shp::SharpContext context = shp::mint_sharp_context(init, plan).expect("the plan asks for the backend");
 
-    std::array<float, 1> input{1.0f};
-    std::array<float, 1> output{};
+    ::foundation::core::FixedArray<float, 1> const input{1.0f};
+    ::foundation::core::FixedArray<float, 1> output{};
     const crucible::NumericalRecipe recipe{};
-    shp::SharpReducer reducer{std::move(*context)};
+    shp::SharpReducer reducer{std::move(context)};
     const ::fixy::HotFgCtx hot = ::foundation::effects::testing::foreground();
-    auto result = reducer.allreduce_via_sharp(hot, input, output, recipe,
+    auto result = reducer.allreduce_via_sharp(hot, input.view(), output.view(), recipe,
                                               shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
-    return result.has_value() ? 0 : 1;
+    return result.is_ok() ? 0 : 1;
 }

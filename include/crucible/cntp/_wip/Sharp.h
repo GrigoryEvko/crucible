@@ -19,9 +19,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
-#include <span>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -137,10 +134,11 @@ private:
           runtime_loaded_{runtime_loaded},
           allow_backend_dispatch_{allow_backend_dispatch} {}
 
+    // A Result<SharpContext, SharpError>.  The type of a Result needs a
+    // complete handle, so the return type is deduced at the definition.
     template <class Ctx>
         requires CtxFitsSharpMint<Ctx>
-    friend constexpr std::expected<SharpContext, SharpError> mint_sharp_context(Ctx const&,
-                                                                                DeclaredSharpFabricPlan plan) noexcept;
+    friend constexpr auto mint_sharp_context(Ctx const&, DeclaredSharpFabricPlan plan) noexcept;
 
     cog::Uuid switch_uuid_{};
     SharpParticipantCount participant_count_;
@@ -168,8 +166,8 @@ concept SharpEligibleRecipe =
     DeclaresAssociative<Recipe> && DeclaresCommutative<Recipe> && DeclaresReductionDeterminism<Recipe>
     && Recipe::associative && Recipe::commutative && Recipe::determinism != ReductionDeterminism::BITEXACT_STRICT;
 
-[[nodiscard]] std::string_view sharp_error_name(SharpError error) noexcept;
-[[nodiscard]] std::string_view sharp_fallback_name(SharpFallback fb) noexcept;
+[[nodiscard]] ::fixy::TextView sharp_error_name(SharpError error) noexcept;
+[[nodiscard]] ::fixy::TextView sharp_fallback_name(SharpFallback fallback) noexcept;
 
 [[nodiscard]] constexpr bool sharp_scalar_supported(ScalarType dtype) noexcept {
     switch (dtype) {
@@ -201,22 +199,10 @@ validate_sharp_switch(cog::CogIdentity const& fabric_switch, cog::NvSwitchTarget
                                                                                            sharp_target_refusals);
 }
 
-[[nodiscard]] constexpr std::expected<void, SharpError> validate_sharp_recipe(SharpRecipeLaws laws,
-                                                                              NumericalRecipe const& recipe) noexcept {
-    if (!laws.associative) {
-        return std::unexpected(SharpError::RecipeNotAssociative);
-    }
-    if (!laws.commutative) {
-        return std::unexpected(SharpError::RecipeNotCommutative);
-    }
-    if (recipe.determinism == ReductionDeterminism::BITEXACT_STRICT) {
-        return std::unexpected(SharpError::BitexactStrictForbidden);
-    }
-    if (!sharp_scalar_supported(recipe.accum_dtype)) {
-        return std::unexpected(SharpError::UnsupportedScalarType);
-    }
-    return {};
-}
+// A switch reduces a recipe that is associative and commutative, that fixes
+// no order of the reduction, and whose accumulator type the switch supports.
+[[nodiscard]] ::fixy::Result<::fixy::Unit, SharpError> validate_sharp_recipe(SharpRecipeLaws laws,
+                                                                             NumericalRecipe const& recipe) noexcept;
 
 [[nodiscard]] constexpr SharpFallback fallback_for_ineligible(SharpError error) noexcept {
     switch (error) {
@@ -275,35 +261,29 @@ mint_sharp_fabric_plan(Ctx const&, cog::CogIdentity fabric_switch, cog::NvSwitch
 template <class Ctx>
     requires CtxFitsSharpMint<Ctx>
 [[deprecated("CRUCIBLE_STUB: no SHARP runtime opens a context. The flags of the plan alone decide the result")]]
-[[nodiscard]] constexpr std::expected<SharpContext, SharpError>
+[[nodiscard]] constexpr auto
 mint_sharp_context(Ctx const&, DeclaredSharpFabricPlan plan) noexcept {
+    using Minted = ::fixy::Result<SharpContext, SharpError>;
     auto const& raw = plan.value();
     if (!raw.runtime_loaded) {
-        return std::unexpected(SharpError::RuntimeUnavailable);
+        return Minted{::fixy::err(SharpError::RuntimeUnavailable)};
     }
     if (!raw.allow_backend_dispatch) {
-        return std::unexpected(SharpError::DispatchDeferred);
+        return Minted{::fixy::err(SharpError::DispatchDeferred)};
     }
-    return ::fixy::mint_linear<SharpContextHandle>(SharpContextHandle{
+    return Minted{::fixy::mint_linear<SharpContextHandle>(SharpContextHandle{
         raw.fabric_switch.uuid,
         raw.participant_count,
         raw.runtime_loaded,
         raw.allow_backend_dispatch,
-    });
+    })};
 }
 
-[[nodiscard]] constexpr std::expected<DeclaredSharpDispatch, SharpError>
-eligibility_check(NumericalRecipe const& recipe, SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) noexcept {
-    auto recipe_valid = validate_sharp_recipe(laws, recipe);
-    if (!recipe_valid.has_value()) {
-        return std::unexpected(recipe_valid.error());
-    }
-    return ::fixy::mint_tagged<wip_source::Sharp>(SharpDispatchResult{
-        .fallback = SharpFallback::None,
-        .participant_count = plan.value().participant_count.value(),
-        .element_count = 0,
-    });
-}
+// The dispatch of a recipe that a switch reduces: no fallback, and the
+// participant count of the plan.  The error of validate_sharp_recipe for
+// each other recipe.
+[[nodiscard]] ::fixy::Result<DeclaredSharpDispatch, SharpError>
+eligibility_check(NumericalRecipe const& recipe, SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) noexcept;
 
 [[nodiscard]] constexpr DeclaredSharpDispatch fallback_dispatch(SharpError reason, DeclaredSharpFabricPlan plan,
                                                                 std::uint64_t element_count = 0) noexcept {
@@ -325,34 +305,24 @@ public:
         requires CtxFitsSharpDispatch<Ctx>
     [[nodiscard, deprecated("CRUCIBLE_STUB: no switch reduces. A valid request returns DispatchDeferred, "
                             "RuntimeUnavailable or VendorBackendUnavailable")]]
-    std::expected<DeclaredSharpDispatch, SharpError>
-    allreduce_via_sharp(Ctx const&, std::span<const float> input, std::span<float> output,
+    ::fixy::Result<DeclaredSharpDispatch, SharpError>
+    allreduce_via_sharp(Ctx const&, ::fixy::View<float const> input, ::fixy::View<float> output,
                         NumericalRecipe const& recipe, SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) noexcept {
-        if (input.size() != output.size()) {
-            return std::unexpected(SharpError::OutputShapeMismatch);
-        }
-        auto eligible = eligibility_check(recipe, laws, plan);
-        if (!eligible.has_value()) {
-            return std::unexpected(eligible.error());
-        }
-        auto const& handle = context_.peek();
-        if (handle.switch_uuid() != plan.value().fabric_switch.uuid
-            || handle.participant_count().value() != plan.value().participant_count.value()) {
-            return std::unexpected(SharpError::ParticipantCountMismatch);
-        }
-        if (!handle.runtime_loaded()) {
-            return std::unexpected(SharpError::RuntimeUnavailable);
-        }
-        if (!handle.allow_backend_dispatch()) {
-            return std::unexpected(SharpError::DispatchDeferred);
-        }
-        return std::unexpected(SharpError::VendorBackendUnavailable);
+        return run_allreduce_(input, output, recipe, laws, plan);
     }
+
+private:
+    // The body of allreduce_via_sharp, in Sharp.cpp.  It checks the shapes,
+    // the recipe and the plan against the context, and then gives the error
+    // that tells why no switch reduces.
+    [[nodiscard]] ::fixy::Result<DeclaredSharpDispatch, SharpError>
+    run_allreduce_(::fixy::View<float const> input, ::fixy::View<float> output, NumericalRecipe const& recipe,
+                   SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) const noexcept;
 };
 
 [[nodiscard, deprecated("CRUCIBLE_STUB: no switch reduces. Returns a fallback for every request")]]
-std::expected<DeclaredSharpDispatch, SharpError>
-dispatch_sharp_allreduce(std::span<const float> input, std::span<float> output, NumericalRecipe const& recipe,
+::fixy::Result<DeclaredSharpDispatch, SharpError>
+dispatch_sharp_allreduce(::fixy::View<float const> input, ::fixy::View<float> output, NumericalRecipe const& recipe,
                          SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) noexcept;
 
 }  // namespace crucible::cntp::_wip::sharp

@@ -8,13 +8,11 @@
 
 #include <crucible/cntp/_wip/GpuDirect.h>
 
-#include <expected>
-
 namespace gd = crucible::cntp::_wip::gpu_direct;
 
 namespace {
 
-[[maybe_unused]] std::expected<gd::OwnedGpuDirectMr, gd::GpuDirectError>
+[[maybe_unused]] ::fixy::Result<gd::OwnedGpuDirectMr, gd::GpuDirectError>
 register_once(gd::DeclaredGpuDirectMrPlan plan) noexcept {
     return gd::register_gpu_memory(plan);
 }

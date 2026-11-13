@@ -18,8 +18,6 @@
 
 #include <bit>
 #include <cstdint>
-#include <expected>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::cntp::_wip::gpu_direct {
@@ -63,8 +61,8 @@ enum class MrAccessFlag : std::uint8_t {
     RemoteAtomic = 1u << 4,
 };
 
-[[nodiscard]] std::string_view gpu_direct_error_name(GpuDirectError error) noexcept;
-[[nodiscard]] std::string_view mr_access_flag_name(MrAccessFlag flag) noexcept;
+[[nodiscard]] ::fixy::TextView gpu_direct_error_name(GpuDirectError error) noexcept;
+[[nodiscard]] ::fixy::TextView mr_access_flag_name(MrAccessFlag flag) noexcept;
 
 using GpuVirtualAddress = ::fixy::Refined<::fixy::non_zero, std::uintptr_t>;
 using GpuDirectByteCount = ::fixy::Positive<std::uint64_t>;
@@ -337,27 +335,27 @@ public:
 
     [[nodiscard, deprecated("CRUCIBLE_STUB: no driver registers the region. A valid plan returns "
                             "PeerModuleUnavailable, RegistrationDeferred or VendorBackendUnavailable")]]
-    std::expected<OwnedGpuDirectMr, GpuDirectError> register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept;
+    ::fixy::Result<OwnedGpuDirectMr, GpuDirectError> register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept;
 
     [[nodiscard, deprecated("CRUCIBLE_STUB: no driver deregisters the region. A valid handle returns "
                             "VendorBackendUnavailable")]]
-    std::expected<void, GpuDirectError> deregister_gpu_memory(OwnedGpuDirectMr memory) noexcept;
+    ::fixy::Result<::fixy::Unit, GpuDirectError> deregister_gpu_memory(OwnedGpuDirectMr memory) noexcept;
 };
 
 [[nodiscard, deprecated("CRUCIBLE_STUB: no driver registers the region. A valid plan returns "
                         "PeerModuleUnavailable, RegistrationDeferred or VendorBackendUnavailable")]]
-std::expected<OwnedGpuDirectMr, GpuDirectError> register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept;
+::fixy::Result<OwnedGpuDirectMr, GpuDirectError> register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept;
 
 [[nodiscard, deprecated("CRUCIBLE_STUB: no driver deregisters the region. A valid handle returns "
                         "VendorBackendUnavailable")]]
-std::expected<void, GpuDirectError> deregister_gpu_memory(OwnedGpuDirectMr memory) noexcept;
+::fixy::Result<::fixy::Unit, GpuDirectError> deregister_gpu_memory(OwnedGpuDirectMr memory) noexcept;
 
 [[nodiscard, deprecated("CRUCIBLE_STUB: no storage I/O reaches the device. A valid plan returns "
                         "StorageBackendUnavailable")]]
-std::expected<void, GpuDirectError> read_from_nvme(DeclaredGpuDirectStoragePlan plan) noexcept;
+::fixy::Result<::fixy::Unit, GpuDirectError> read_from_nvme(DeclaredGpuDirectStoragePlan plan) noexcept;
 
 [[nodiscard, deprecated("CRUCIBLE_STUB: no storage I/O reaches the device. A valid plan returns "
                         "StorageBackendUnavailable")]]
-std::expected<void, GpuDirectError> write_to_nvme(DeclaredGpuDirectStoragePlan plan) noexcept;
+::fixy::Result<::fixy::Unit, GpuDirectError> write_to_nvme(DeclaredGpuDirectStoragePlan plan) noexcept;
 
 }  // namespace crucible::cntp::_wip::gpu_direct

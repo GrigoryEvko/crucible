@@ -3077,7 +3077,7 @@ crucible_neg_compile_test(neg_sharp_dispatch_hot_ctx
   "no matching function for call to .crucible::cntp::_wip::sharp::SharpReducer::allreduce_via_sharp\\(const fixy::HotFgCtx&, "
   "required for the satisfaction of .CtxFitsSharpDispatch<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 crucible_neg_compile_test(neg_sharp_dispatch_is_a_stub
-  "crucible::cntp::_wip::sharp::dispatch_sharp_allreduce\\(std::span<const float>, std::span<float>, const crucible::NumericalRecipe&, SharpRecipeLaws, DeclaredSharpFabricPlan\\). is deprecated: CRUCIBLE_STUB: no switch reduces"
+  "crucible::cntp::_wip::sharp::dispatch_sharp_allreduce\\(foundation::core::View<const float>, foundation::core::View<float>, const crucible::NumericalRecipe&, SharpRecipeLaws, DeclaredSharpFabricPlan\\). is deprecated: CRUCIBLE_STUB: no switch reduces"
   "\\[-Werror=deprecated-declarations\\]")
 
 # cntp/Tcam.h, the hardware ACL and flow-rule substrate.

@@ -4,8 +4,8 @@
 #include "test_assert.h"
 #include <concepts>
 #include <cstdio>
-#include <string_view>
 #include <type_traits>
+#include <utility>
 
 // The registration and storage calls carry a CRUCIBLE_STUB deprecation,
 // because no driver stands behind them.  This file calls them on purpose to
@@ -68,9 +68,22 @@ gd::PeerPlacement same_root() {
     };
 }
 
+// The error of a registration.  A region is linear, so the region of a
+// registration that succeeds ends here, and the error then holds no value.
+[[nodiscard]] ::fixy::Option<gd::GpuDirectError>
+registration_error(::fixy::Result<gd::OwnedGpuDirectMr, gd::GpuDirectError> registered) {
+    return std::move(registered)
+        .match(
+            [](gd::OwnedGpuDirectMr region) noexcept {
+                drop(std::move(region));
+                return ::fixy::Option<gd::GpuDirectError>{::fixy::none};
+            },
+            [](gd::GpuDirectError error) noexcept { return ::fixy::some(error); });
+}
+
 void test_admission_and_names() {
-    assert(gd::gpu_direct_error_name(gd::GpuDirectError::PcieRootMismatch) == std::string_view{"PcieRootMismatch"});
-    assert(gd::mr_access_flag_name(gd::MrAccessFlag::RemoteWrite) == std::string_view{"RemoteWrite"});
+    assert(gd::gpu_direct_error_name(gd::GpuDirectError::PcieRootMismatch) == "PcieRootMismatch");
+    assert(gd::mr_access_flag_name(gd::MrAccessFlag::RemoteWrite) == "RemoteWrite");
 
     auto address = gd::admit_gpu_virtual_address(0x1000u);
     assert(address.is_ok());
@@ -169,9 +182,8 @@ void test_registration_boundary() {
                                             gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"))
                     .expect("a GPU and a NIC on one PCIe root make a plan");
 
-    auto missing_module = gd::register_gpu_memory(plan);
-    assert(!missing_module.has_value());
-    assert(missing_module.error() == gd::GpuDirectError::PeerModuleUnavailable);
+    assert(registration_error(gd::register_gpu_memory(plan))
+           == ::fixy::some(gd::GpuDirectError::PeerModuleUnavailable));
 
     auto deferred =
         gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), same_root(),
@@ -179,9 +191,8 @@ void test_registration_boundary() {
                                     gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"),
                                     gd::mrc_write_access(), true)
             .expect("a plan with the peer module makes a plan");
-    auto reg_deferred = gd::register_gpu_memory(deferred);
-    assert(!reg_deferred.has_value());
-    assert(reg_deferred.error() == gd::GpuDirectError::RegistrationDeferred);
+    assert(registration_error(gd::register_gpu_memory(deferred))
+           == ::fixy::some(gd::GpuDirectError::RegistrationDeferred));
 
     auto unavailable =
         gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), same_root(),
@@ -189,9 +200,8 @@ void test_registration_boundary() {
                                     gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"),
                                     gd::mrc_write_access(), true, true)
             .expect("a plan that asks for the backend makes a plan");
-    auto reg_unavailable = gd::register_gpu_memory(unavailable);
-    assert(!reg_unavailable.has_value());
-    assert(reg_unavailable.error() == gd::GpuDirectError::VendorBackendUnavailable);
+    assert(registration_error(gd::register_gpu_memory(unavailable))
+           == ::fixy::some(gd::GpuDirectError::VendorBackendUnavailable));
 
     crucible::test::pass("  test_registration_boundary: PASSED\n");
 }
@@ -206,12 +216,8 @@ void test_storage_plan_boundary() {
     static_assert(std::same_as<decltype(plan), gd::DeclaredGpuDirectStoragePlan>);
     assert(plan.value().storage_offset_bytes == 128);
 
-    auto read = gd::read_from_nvme(plan);
-    assert(!read.has_value());
-    assert(read.error() == gd::GpuDirectError::StorageBackendUnavailable);
-    auto write = gd::write_to_nvme(plan);
-    assert(!write.has_value());
-    assert(write.error() == gd::GpuDirectError::StorageBackendUnavailable);
+    assert(gd::read_from_nvme(plan).err() == ::fixy::some(gd::GpuDirectError::StorageBackendUnavailable));
+    assert(gd::write_to_nvme(plan).err() == ::fixy::some(gd::GpuDirectError::StorageBackendUnavailable));
 
     auto unknown_root =
         gd::mint_gpu_direct_storage_plan(init, gpu_identity(), gpu_caps(), nvme_identity(), gd::PeerPlacement{},

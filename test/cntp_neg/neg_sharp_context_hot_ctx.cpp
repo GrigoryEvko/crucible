@@ -23,5 +23,5 @@ int main() {
                     .expect("a SHARP switch makes a plan");
     const ::fixy::HotFgCtx hot = ::foundation::effects::testing::foreground();
     auto context = shp::mint_sharp_context(hot, plan);
-    return context.has_value() ? 0 : 1;
+    return context.is_ok() ? 0 : 1;
 }

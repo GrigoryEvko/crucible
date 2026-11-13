@@ -9,15 +9,12 @@
 
 #include <crucible/cntp/_wip/Sharp.h>
 
-#include <expected>
-#include <span>
-
 namespace shp = crucible::cntp::_wip::sharp;
 
 namespace {
 
-[[maybe_unused]] std::expected<shp::DeclaredSharpDispatch, shp::SharpError>
-dispatch_once(std::span<const float> input, std::span<float> output, crucible::NumericalRecipe const& recipe,
+[[maybe_unused]] ::fixy::Result<shp::DeclaredSharpDispatch, shp::SharpError>
+dispatch_once(::fixy::View<float const> input, ::fixy::View<float> output, crucible::NumericalRecipe const& recipe,
               shp::SharpRecipeLaws laws, shp::DeclaredSharpFabricPlan plan) noexcept {
     return shp::dispatch_sharp_allreduce(input, output, recipe, laws, plan);
 }
