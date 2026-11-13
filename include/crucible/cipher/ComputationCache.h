@@ -16,13 +16,13 @@
 // same computation. Two peers that exchange keys must either share a
 // toolchain or fold a discriminator for it into the key.
 
+#include <fixy/Core.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Hash.h>
 
-#include <atomic>
 #include <cstdint>
 #include <meta>
 #include <string_view>
@@ -137,19 +137,18 @@ template <auto FnPtr, typename RowOrBlind, typename... Args>
 }
 
 template <auto FnPtr, typename RowOrBlind, typename... Args>
-inline std::atomic<CompiledBody*> compiled_body_slot{nullptr};
+inline ::fixy::Atomic<CompiledBody*> compiled_body_slot{nullptr};
 
 template <auto FnPtr, typename RowOrBlind, typename... Args>
 [[nodiscard]] CompiledBody* load_slot() noexcept {
-    return compiled_body_slot<FnPtr, RowOrBlind, Args...>.load(std::memory_order_acquire);
+    return compiled_body_slot<FnPtr, RowOrBlind, Args...>.load_acquire();
 }
 
-// The first writer wins and a later one is discarded in silence.
+// The first writer wins.  A refused swap means that a body is in the slot,
+// so a later writer drops the refusal in silence.
 template <auto FnPtr, typename RowOrBlind, typename... Args>
 void publish_slot(CompiledBody* body) noexcept {
-    CompiledBody* expected = nullptr;
-    compiled_body_slot<FnPtr, RowOrBlind, Args...>.compare_exchange_strong(expected, body, std::memory_order_acq_rel,
-                                                                           std::memory_order_acquire);
+    static_cast<void>(compiled_body_slot<FnPtr, RowOrBlind, Args...>.cas_acq_rel(nullptr, body));
 }
 
 }  // namespace detail
