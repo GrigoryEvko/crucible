@@ -22,9 +22,9 @@ static cog::CogIdentity peer(std::uint64_t lo) {
 
 static void test_name_accessors() {
     assert(observe::transport_probe_kind_name(observe::TransportProbeKind::FederationMtls)
-           == std::string_view{"FederationMtls"});
+           == ::fixy::TextView{"FederationMtls"});
     assert(observe::synthetic_probe_failure_name(observe::SyntheticProbeFailureClass::Completion)
-           == std::string_view{"Completion"});
+           == ::fixy::TextView{"Completion"});
     crucible::test::pass("  test_name_accessors:            PASSED\n");
 }
 
@@ -58,7 +58,7 @@ static void test_register_and_record_success() {
                                      .bytes_transferred = 256,
                                      .sequence = 9,
                                  },
-                                 &observations));
+                                 observations));
 
     auto const stats = runner.stats(p, observe::TransportProbeKind::FederationMtls);
     assert(stats.scheduled == 1);
