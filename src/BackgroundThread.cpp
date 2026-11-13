@@ -1188,12 +1188,12 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
                     const TraceRing::Entry& next_re = trace_data.at(next);
                     if (next_re.num_inputs > 0) {
                         uint32_t bucket_idx = hash_ptr(raw_data_ptr(meta_base[next_off])) & local_mask;
-                        __builtin_prefetch(&local_map[bucket_idx], 0, 1);
+                        ::fixy::prefetch<::fixy::PrefetchAccess::read, 1>(local_map[bucket_idx]);
                     }
                     if (next_re.num_outputs > 0) {
                         const uint64_t out_off = next_off + next_re.num_inputs;
                         uint32_t bucket_idx = hash_ptr(raw_data_ptr(meta_base[out_off])) & local_mask;
-                        __builtin_prefetch(&local_map[bucket_idx], 1, 1);
+                        ::fixy::prefetch<::fixy::PrefetchAccess::write, 1>(local_map[bucket_idx]);
                     }
                 },
                 [] noexcept {});
