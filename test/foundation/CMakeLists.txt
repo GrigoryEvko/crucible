@@ -2429,6 +2429,12 @@ foundation_neg_compile_test(neg_core_box_consume_lvalue
 foundation_neg_compile_test(neg_core_box_consume_not_movable
   "no matching function for call to .foundation::core::Box<Fixed>::consume\\(\\)."
   "the expression .is_nothrow_move_constructible_v<T> \\[with T = Fixed\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_box_mint_of_declared_type
+  "no matching function for call to .mint_box<Engine>\\(foundation::core::Alloc\\)."
+  "required for the satisfaction of .CompleteBoxPayload<T>. \\[with T = Engine\\]")
+foundation_neg_compile_test(neg_core_box_end_of_declared_type
+  "static assertion failed: a Box ends its object only where the type of the object is complete"
+  "define the destructor of the owner where the type is defined")
 
 # A Hole holds the storage of one object with no object in it.  Its mint
 # from the allocation door takes the allocation tag and a shape of a power

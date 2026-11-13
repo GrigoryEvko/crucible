@@ -58,7 +58,19 @@ static_assert(!BoxPayload<int[4]>);
 static_assert(!BoxPayload<int const>);
 static_assert(!BoxPayload<int&>);
 static_assert(!BoxPayload<void>);
-static_assert(!BoxPayload<Abstract>);
+
+// A Box of a type that is only declared is a type of one pointer.  The
+// mint and the end of the object need the complete type, so no unit makes
+// or ends the object of such a Box.  An abstract class is a Box type that no
+// mint makes.
+struct OnlyDeclared;
+static_assert(BoxPayload<OnlyDeclared>);
+static_assert(sizeof(Box<OnlyDeclared>) == sizeof(void*));
+static_assert(!CompleteBoxPayload<OnlyDeclared>);
+static_assert(BoxPayload<Abstract>);
+static_assert(!CompleteBoxPayload<Abstract>);
+static_assert(CompleteBoxPayload<int>);
+static_assert(CompleteBoxPayload<OverAligned>);
 
 // The gate of the mint.
 static_assert(CanMintBox<int, Alloc>);
@@ -66,6 +78,8 @@ static_assert(CanMintBox<int, Alloc, int>);
 static_assert(!CanMintBox<int, NoMarker, int>);
 static_assert(!CanMintBox<int, Alloc, char const*>);
 static_assert(!CanMintBox<int[2], Alloc>);
+static_assert(!CanMintBox<OnlyDeclared, Alloc>);
+static_assert(!CanMintBox<Abstract, Alloc>);
 
 // ── Ref ────────────────────────────────────────────────────────────────
 

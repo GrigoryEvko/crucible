@@ -216,6 +216,50 @@ void test_agrees_with_plain_model() {
     }
 }
 
+// An owner that holds a Box of a type that this point only declares.  The
+// owner defines its constructor and its destructor below, where the type is
+// complete, as an owner in a header and its source file do.
+struct Engine;
+
+class EngineOwner {
+public:
+    explicit EngineOwner(int level) noexcept;
+    EngineOwner(EngineOwner const&) = delete;
+    EngineOwner& operator=(EngineOwner const&) = delete;
+    ~EngineOwner();
+
+    [[nodiscard]] int power() const noexcept;
+
+private:
+    Box<Engine> engine_;
+};
+
+struct Engine {
+    explicit Engine(int value) noexcept : power{value} { ++live_objects; }
+    Engine(Engine const&) = delete;
+    Engine& operator=(Engine const&) = delete;
+    ~Engine() { --live_objects; }
+
+    int power = 0;
+};
+
+EngineOwner::EngineOwner(int level) noexcept : engine_{mint_box<Engine>(::foundation::effects::Alloc{}, level)} {}
+
+EngineOwner::~EngineOwner() = default;
+
+int EngineOwner::power() const noexcept { return engine_->power; }
+
+// The owner makes the object of the declared type and ends it one time.
+void test_box_of_a_declared_type() {
+    CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
+    {
+        EngineOwner const owner{7};
+        CRUCIBLE_FATAL_INVARIANT(owner.power() == 7);
+        CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
+}
+
 }  // namespace
 
 int main() {
@@ -227,5 +271,6 @@ int main() {
     test_borrow_of_moved_from_aborts();
     test_each_alignment();
     test_agrees_with_plain_model();
+    test_box_of_a_declared_type();
     return 0;
 }

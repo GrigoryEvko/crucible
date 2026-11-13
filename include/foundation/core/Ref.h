@@ -318,11 +318,22 @@ struct atomic_word<Ref<T, Brand>> {
     }
 };
 
-// The object of a Box: a complete object type that is not an array, not
-// cv-qualified and not abstract, with a destructor that does not throw.
+// The type of a Box: an object type that is not an array and not
+// cv-qualified.  The type can be one that is only declared, so a Box can be
+// a member of a class in a header that does not define the type of its
+// object.
 template <class T>
-concept BoxPayload = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>
-                  && !std::is_abstract_v<T> && std::is_nothrow_destructible_v<T>;
+concept BoxPayload = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>;
+
+// The object of a Box where a Box makes it or ends it: a payload of a
+// complete type that is not abstract, with a destructor that does not throw.
+// The mints and the end of the object test it.  The test of the size comes
+// first, so the two traits never read a type that is only declared.  So an
+// owner of a Box of a declared type defines its destructor where the type is
+// complete.
+template <class T>
+concept CompleteBoxPayload =
+    BoxPayload<T> && requires { sizeof(T); } && !std::is_abstract_v<T> && std::is_nothrow_destructible_v<T>;
 
 // The size and the alignment of a Hole: a size of at least one byte, and an
 // alignment that is a power of two.
@@ -335,7 +346,7 @@ template <std::size_t Size, std::size_t Align>
 class Hole;
 
 template <class T, class Marker, class... Args>
-concept CanMintBox = BoxPayload<T> && AllocationCapability<Marker> && std::constructible_from<T, Args&&...>;
+concept CanMintBox = CompleteBoxPayload<T> && AllocationCapability<Marker> && std::constructible_from<T, Args&&...>;
 
 namespace detail {
 
@@ -389,11 +400,19 @@ template <BoxPayload T>
 class [[nodiscard]] Box {
     T* object_ = nullptr;
 
+    // Ends the object and gives its storage back.  A unit where T is only
+    // declared gets one error here, and no error of the size or the
+    // destructor of T.
     void destroy_() noexcept {
-        if (object_ != nullptr) {
-            object_->~T();
-            detail::heap_release_(static_cast<void*>(object_), sizeof(T), alignof(T));
-            object_ = nullptr;
+        if constexpr (CompleteBoxPayload<T>) {
+            if (object_ != nullptr) {
+                object_->~T();
+                detail::heap_release_(static_cast<void*>(object_), sizeof(T), alignof(T));
+                object_ = nullptr;
+            }
+        } else {
+            static_assert(false, "a Box ends its object only where the type of the object is complete: define the "
+                                 "destructor of the owner where the type is defined");
         }
     }
 
@@ -430,17 +449,20 @@ public:
     // is a specialization of Box outside its home, and the rule
     // specialization-home refuses it in each build.
     template <class... Args>
-        requires std::constructible_from<T, Args&&...>
+        requires CompleteBoxPayload<T> && std::constructible_from<T, Args&&...>
     explicit Box(detail::BoxKey const& /*key*/, Args&&... args) noexcept
         : object_{::new(detail::heap_allocate_(sizeof(T), alignof(T))) T(static_cast<Args&&>(args)...)} {}
 
     // Builds the object from the arguments in the storage of a Hole of the
     // size and the alignment of T, with no call of the allocation door.  The
     // Hole is then empty, and a Hole that holds no storage ends the process
-    // through fatal().  Only mint_box holds the key.
-    template <class... Args>
-        requires std::constructible_from<T, Args&&...>
-    explicit Box(detail::BoxKey const& /*key*/, Hole<sizeof(T), alignof(T)>&& hole, Args&&... args) noexcept
+    // through fatal().  Only mint_box holds the key.  The shape of the Hole
+    // is a parameter of this template, so a Box of a declared type names no
+    // size of T.
+    template <std::size_t Size, std::size_t Align, class... Args>
+        requires CompleteBoxPayload<T> && (Size == sizeof(T)) && (Align == alignof(T))
+              && std::constructible_from<T, Args&&...>
+    explicit Box(detail::BoxKey const& /*key*/, Hole<Size, Align>&& hole, Args&&... args) noexcept
         : object_{::new(std::move(hole).detach_()) T(static_cast<Args&&>(args)...)} {}
 
     Box(Box&& other) noexcept : object_{other.object_} { other.object_ = nullptr; }
@@ -597,7 +619,7 @@ template <std::size_t Size, std::size_t Align, class Marker>
 // A Hole of the storage of a Box that the caller gives up.  The object of
 // the Box ends, and its storage stays with no call of the door.  A Box that
 // holds no object ends the process through fatal().
-template <BoxPayload T>
+template <CompleteBoxPayload T>
 [[nodiscard]] Hole<sizeof(T), alignof(T)> mint_hole(Box<T>&& box) noexcept {
     return Hole<sizeof(T), alignof(T)>{detail::HoleDoor::key(), std::move(box)};
 }
@@ -606,7 +628,7 @@ template <BoxPayload T>
 // alignment of T, so the Box gives back the storage that the Hole holds.
 template <class T, std::size_t Size, std::size_t Align, class... Args>
 concept CanMintBoxInHole =
-    BoxPayload<T> && Size == sizeof(T) && Align == alignof(T) && std::constructible_from<T, Args&&...>;
+    CompleteBoxPayload<T> && Size == sizeof(T) && Align == alignof(T) && std::constructible_from<T, Args&&...>;
 
 // A Box of the object that the arguments build in the storage of a Hole
 // that the caller gives up.  The mint calls no allocation door, so it takes
