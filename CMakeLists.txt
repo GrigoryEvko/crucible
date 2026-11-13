@@ -450,6 +450,7 @@ add_library(fixy STATIC
   src/fixy/os/MonotonicClock.cpp
   src/fixy/os/NumaCounters.cpp
   src/fixy/os/NumaPlacement.cpp
+  src/fixy/os/Pages.cpp
   src/fixy/os/Sched.cpp
   src/fixy/os/Signal.cpp
   src/fixy/os/Socket.cpp

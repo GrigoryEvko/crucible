@@ -491,7 +491,7 @@ cite fixy::InRange in_range all_in_range
 cite fixy::BoundedAbove in_range bounded_above
 cite fixy::BoundedBelow in_range bounded_below
 
-grant include/crucible/warden/Hardening.h crucible::warden::hardening_syscall_atoms fixy::atom::syscall::SyscallId include/fixy/os/Sched.h include/fixy/os/CpuPinned.h
+grant include/crucible/warden/Hardening.h crucible::warden::hardening_syscall_atoms fixy::atom::syscall::SyscallId include/fixy/os/Sched.h include/fixy/os/CpuPinned.h include/fixy/os/Pages.h
 
 # The owner rows of the kinds lifetime-start and outside-door.
 owner owners lifetime-start std::start_lifetime_as include/foundation/Lifetime.h | an array of proofs, an aggregate that holds a proof and an array start each give a pointer to a proof whose lifetime never started, and only the checked start of foundation/Lifetime.h refuses the three routes at compile time

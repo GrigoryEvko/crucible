@@ -36,15 +36,27 @@ sched_setscheduler_sys(int policy, int rt_priority) noexcept {
         ::foundation::os::Syscall::sched_setscheduler, kCallingThread, policy, static_cast<void const*>(&priority)));
 }
 
+// The kernel reads as many bytes as the field size names, so the door sets it
+// to the size of the first published struct sched_attr.
 ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-sched_setattr_sys(std::uint64_t runtime_ns, std::uint64_t deadline_ns, std::uint64_t period_ns) noexcept {
-    ::foundation::os::KernelSchedAttr attributes{};
-    attributes.policy = static_cast<std::uint32_t>(::foundation::os::kSchedDeadline);
-    attributes.runtime_ns = runtime_ns;
-    attributes.deadline_ns = deadline_ns;
-    attributes.period_ns = period_ns;
+sched_setattr_sys(::foundation::os::KernelSchedAttr const& attributes) noexcept {
+    ::foundation::os::KernelSchedAttr sized = attributes;
+    sized.size = ::foundation::os::kSchedAttrSize;
     return ::foundation::os::unit_of(::foundation::os::raw_syscall(
-        ::foundation::os::Syscall::sched_setattr, kCallingThread, static_cast<void const*>(&attributes), kNoFlags));
+        ::foundation::os::Syscall::sched_setattr, kCallingThread, static_cast<void const*>(&sized), kNoFlags));
+}
+
+// The kernel writes at most the size argument of bytes, and it writes the
+// size that it filled into the field size.
+::foundation::core::Result<::foundation::os::KernelSchedAttr, ::foundation::os::Errno> sched_getattr_sys() noexcept {
+    using Read = ::foundation::core::Result<::foundation::os::KernelSchedAttr, ::foundation::os::Errno>;
+    ::foundation::os::KernelSchedAttr attributes{};
+    long const word = ::foundation::os::raw_syscall(::foundation::os::Syscall::sched_getattr, kCallingThread,
+                                                    static_cast<void const*>(&attributes),
+                                                    ::foundation::os::kSchedAttrSize, kNoFlags);
+    return ::foundation::os::result_of(word).match(
+        [&attributes](std::uint64_t) -> Read { return attributes; },
+        [](::foundation::os::Errno error) -> Read { return ::foundation::core::err(error); });
 }
 
 // The thread id zero names the calling thread, and the kernel sets the nice

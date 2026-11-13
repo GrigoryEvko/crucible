@@ -84,6 +84,7 @@ static_assert(kAdviseNoHugePage == MADV_NOHUGEPAGE, "kAdviseNoHugePage is not MA
 static_assert(kAdviseDontDump == MADV_DONTDUMP, "kAdviseDontDump is not MADV_DONTDUMP of <linux/mman.h>");
 static_assert(kAdviseWipeOnFork == MADV_WIPEONFORK, "kAdviseWipeOnFork is not MADV_WIPEONFORK of <linux/mman.h>");
 static_assert(kAdviseCollapse == MADV_COLLAPSE, "kAdviseCollapse is not MADV_COLLAPSE of <linux/mman.h>");
+static_assert(kLockOnFault == MLOCK_ONFAULT, "kLockOnFault is not MLOCK_ONFAULT of <linux/mman.h>");
 
 // The argument words of foundation/os/MemoryPolicyWords.h are the words of the
 // kernel header.
@@ -220,6 +221,16 @@ constexpr long kNoCall = -1;
             return __NR_recvfrom;
         case Syscall::recvmsg:
             return __NR_recvmsg;
+        case Syscall::sched_getattr:
+            return __NR_sched_getattr;
+        case Syscall::mlock:
+            return __NR_mlock;
+        case Syscall::mlock2:
+            return __NR_mlock2;
+        case Syscall::munlock:
+            return __NR_munlock;
+        case Syscall::prctl:
+            return __NR_prctl;
         default:
             return kNoCall;
     }
@@ -345,8 +356,8 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // the memory policy door uses
 // MPOL_MF_MOVE, which came in 2.6.16.  move_pages came in 2.6.18.  futex came
 // in 2.6.0, and the futex door uses FUTEX_WAIT_BITSET, which came in 2.6.25.
-// sched_setattr came in 3.14, renameat2 in 3.15, copy_file_range in 4.5 and
-// io_uring_setup in 5.1.
+// sched_setattr and sched_getattr came in 3.14, renameat2 in 3.15, mlock2 in
+// 4.4, copy_file_range in 4.5 and io_uring_setup in 5.1.
 [[nodiscard]] constexpr KernelVersion introduced_in(Syscall call) noexcept {
     KernelVersion added = kFirstRelease;
     switch (call) {
@@ -365,10 +376,14 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
             added = KernelVersion{2, 6, 25};
             break;
         case Syscall::sched_setattr:
+        case Syscall::sched_getattr:
             added = KernelVersion{3, 14, 0};
             break;
         case Syscall::renameat2:
             added = KernelVersion{3, 15, 0};
+            break;
+        case Syscall::mlock2:
+            added = KernelVersion{4, 4, 0};
             break;
         case Syscall::copy_file_range:
             added = KernelVersion{4, 5, 0};
@@ -401,6 +416,9 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::sendto:
         case Syscall::recvfrom:
         case Syscall::recvmsg:
+        case Syscall::mlock:
+        case Syscall::munlock:
+        case Syscall::prctl:
         default:
             break;
     }
@@ -410,12 +428,12 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // True when the call is a feature that the caller of a door chooses (THE
 // FEATURE CALLS of foundation/os/KernelFloor.h): renameat2 gives the commit
 // that refuses an existing target, copy_file_range the copy between two
-// files, io_uring_setup the ring of io_uring, and sched_setattr the policy
-// SCHED_DEADLINE.  The door gives the error enosys of an older kernel to its
-// caller.
+// files, io_uring_setup the ring of io_uring, sched_setattr and sched_getattr
+// the scheduling attributes, and mlock2 the lock of a page when it faults in.
+// The door gives the error enosys of an older kernel to its caller.
 [[nodiscard]] constexpr bool is_feature_call(Syscall call) noexcept {
     return call == Syscall::renameat2 || call == Syscall::copy_file_range || call == Syscall::io_uring_setup
-        || call == Syscall::sched_setattr;
+        || call == Syscall::sched_setattr || call == Syscall::sched_getattr || call == Syscall::mlock2;
 }
 
 // The largest release that an enumerator of Syscall needs, other than a

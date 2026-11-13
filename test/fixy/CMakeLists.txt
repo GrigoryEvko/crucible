@@ -4418,6 +4418,7 @@ fixy_neg_compile_test(neg_os_ptp_clock_reader_ctx_lacks_block
   "required for the satisfaction of .CtxFitsPtpClockReaderMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO> >\\]"
   "Es = \\{foundation::effects::Effect::IO, foundation::effects::Effect::Block\\}\\]. evaluated to .false.")
 fixy_test(test_os_sched)
+fixy_test(test_os_pages)
 
 # A SCHED_DEADLINE class carries its CBS budget in the type.  A budget
 # that the kernel does not admit fails the class-body static_assert at the

@@ -343,8 +343,12 @@ static_assert(!can_apply_mask<int>);
 void deadline_door_reaches_the_kernel() {
     namespace core = ::foundation::core;
     namespace os = ::foundation::os;
-    core::Result<core::Unit, os::Errno> const applied =
-        fixy::sched::detail::sched_setattr_sys(1000000, 10000000, 10000000);
+    os::KernelSchedAttr deadline{};
+    deadline.policy = static_cast<std::uint32_t>(os::kSchedDeadline);
+    deadline.runtime_ns = 1000000;
+    deadline.deadline_ns = 10000000;
+    deadline.period_ns = 10000000;
+    core::Result<core::Unit, os::Errno> const applied = fixy::sched::detail::sched_setattr_sys(deadline);
     bool const is_policy_set = applied.is_ok();
     bool const is_refused_by_a_check =
         applied.match([](core::Unit) noexcept { return false; },
@@ -353,6 +357,39 @@ void deadline_door_reaches_the_kernel() {
     if (is_policy_set) {
         bool const is_put_back = fixy::sched::detail::sched_setscheduler_sys(os::kSchedNormal, 0).is_ok();
         CRUCIBLE_FATAL_INVARIANT(is_put_back);
+    }
+}
+
+// The two attribute doors.  The thread reads its attributes and sets the
+// same attributes again, which needs no privilege, and a second read gives
+// the same fields.  The case then asks for SCHED_FIFO.  An unprivileged
+// thread gets EPERM.  A privileged thread gets the policy, and the attributes
+// of the first read put the thread back.
+void attribute_doors_read_and_put_back_the_attributes() {
+    namespace core = ::foundation::core;
+    namespace os = ::foundation::os;
+    BgWitness bg{eff::testing::bg()};
+
+    os::KernelSchedAttr const first = fixy::sched::read_sched_attributes(bg).expect("the thread reads its attributes");
+    CRUCIBLE_FATAL_INVARIANT(first.size == os::kSchedAttrSize);
+    fixy::sched::apply_sched_attributes(bg, first).expect("the thread sets the attributes that it read");
+    os::KernelSchedAttr const second = fixy::sched::read_sched_attributes(bg).expect("the thread reads them again");
+    CRUCIBLE_FATAL_INVARIANT(second.policy == first.policy && second.nice == first.nice
+                             && second.priority == first.priority && second.flags == first.flags);
+
+    os::KernelSchedAttr fifo{};
+    fifo.policy = static_cast<std::uint32_t>(os::kSchedFifo);
+    fifo.priority = 1;
+    core::Result<core::Unit, os::Errno> const applied = fixy::sched::apply_sched_attributes(bg, fifo);
+    bool const is_refused = applied.match([](core::Unit) noexcept { return false; },
+                                          [](os::Errno error) noexcept { return error == os::Errno::eperm; });
+    CRUCIBLE_FATAL_INVARIANT(applied.is_ok() || is_refused);
+    if (applied.is_ok()) {
+        os::KernelSchedAttr const real_time = fixy::sched::read_sched_attributes(bg).expect("the thread reads FIFO");
+        CRUCIBLE_FATAL_INVARIANT(real_time.policy == static_cast<std::uint32_t>(os::kSchedFifo));
+        fixy::sched::apply_sched_attributes(bg, first).expect("the first attributes put the thread back");
+        os::KernelSchedAttr const back = fixy::sched::read_sched_attributes(bg).expect("the thread reads them back");
+        CRUCIBLE_FATAL_INVARIANT(back.policy == first.policy && back.nice == first.nice);
     }
 }
 
@@ -365,5 +402,6 @@ int main() {
     if (const int rc = thread_name_reaches_the_kernel(); rc != 0) return rc;
     if (const int rc = scheduler_mints_reach_the_kernel(); rc != 0) return rc;
     deadline_door_reaches_the_kernel();
+    attribute_doors_read_and_put_back_the_attributes();
     return 0;
 }

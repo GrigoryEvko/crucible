@@ -112,10 +112,28 @@ namespace detail {
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 sched_setscheduler_sys(int policy, int rt_priority) noexcept;
 
-// Sets the policy SCHED_DEADLINE of the calling thread, with its budget in
-// nanoseconds.
+// Sets the scheduling attributes of the calling thread.  The door writes the
+// field size itself, so the kernel reads the first published struct
+// sched_attr.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-sched_setattr_sys(std::uint64_t runtime_ns, std::uint64_t deadline_ns, std::uint64_t period_ns) noexcept;
+sched_setattr_sys(::foundation::os::KernelSchedAttr const& attributes) noexcept;
+
+// The scheduling attributes of the calling thread, in the layout of the
+// first published struct sched_attr.
+[[nodiscard]] ::foundation::core::Result<::foundation::os::KernelSchedAttr, ::foundation::os::Errno>
+sched_getattr_sys() noexcept;
+
+// The attributes of the policy SCHED_DEADLINE, with its budget in
+// nanoseconds.
+[[nodiscard]] constexpr ::foundation::os::KernelSchedAttr
+deadline_attributes(std::uint64_t runtime_ns, std::uint64_t deadline_ns, std::uint64_t period_ns) noexcept {
+    ::foundation::os::KernelSchedAttr attributes{};
+    attributes.policy = static_cast<std::uint32_t>(::foundation::os::kSchedDeadline);
+    attributes.runtime_ns = runtime_ns;
+    attributes.deadline_ns = deadline_ns;
+    attributes.period_ns = period_ns;
+    return attributes;
+}
 
 // Sets the nice value of the calling thread.  On Linux, the target of the
 // call is the thread, and not each thread of the process.
@@ -127,7 +145,7 @@ template <SchedulerPolicy_v Policy>
 apply_scheduler_policy(int rt_priority, std::uint64_t runtime_ns, std::uint64_t deadline_ns,
                        std::uint64_t period_ns) noexcept {
     if constexpr (Policy == SchedulerPolicy_v::Deadline) {
-        return sched_setattr_sys(runtime_ns, deadline_ns, period_ns);
+        return sched_setattr_sys(deadline_attributes(runtime_ns, deadline_ns, period_ns));
     } else {
         return sched_setscheduler_sys(sched_policy_constant(Policy), rt_priority);
     }
@@ -281,6 +299,29 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsRuntimeAffinity<Ctx>
 [[nodiscard]] ::foundation::core::Result<AffinityMask, ::foundation::os::Errno> read_affinity(Ctx const&) noexcept {
     return sf::detail::sched_getaffinity_sys();
+}
+
+// The scheduling attributes of the calling thread: the policy, the flags, the
+// nice value, the real-time priority and the deadline budget.  The read
+// changes nothing.  An older kernel than 3.14 gives enosys.  The gate is the
+// gate of the other scheduling doors.
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsRuntimeAffinity<Ctx>
+[[nodiscard]] ::foundation::core::Result<::foundation::os::KernelSchedAttr, ::foundation::os::Errno>
+read_sched_attributes(Ctx const&) noexcept {
+    return detail::sched_getattr_sys();
+}
+
+// Sets the scheduling attributes of the calling thread.  A real-time policy,
+// the deadline policy and a lower nice value need CAP_SYS_NICE, and an
+// unprivileged thread gets eperm.  Attributes that read_sched_attributes gave
+// put the thread back in the state of that read.  This is not a mint: no
+// proof claims the attributes after the call.
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsRuntimeAffinity<Ctx>
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+apply_sched_attributes(Ctx const&, ::foundation::os::KernelSchedAttr const& attributes) noexcept {
+    return detail::sched_setattr_sys(attributes);
 }
 
 class PriorAffinity;

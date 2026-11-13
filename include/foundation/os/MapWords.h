@@ -1,7 +1,7 @@
 #pragma once
 
 // The argument words of a memory map of the doors: the protections, the
-// flags of a map, and the advice words of madvise.  The values are the
+// flags of a map, the advice words of madvise, and the flag of mlock2.  The values are the
 // values of <linux/mman.h> on x86_64 and on aarch64.  The door file
 // src/foundation/os/Syscall.cpp holds a check of each value against that
 // header.  A door that includes a header of the C library cannot include
@@ -65,5 +65,9 @@ inline constexpr int kAdviseNoHugePage = 15;
 inline constexpr int kAdviseDontDump = 16;
 inline constexpr int kAdviseWipeOnFork = 18;
 inline constexpr int kAdviseCollapse = 25;
+
+// The flag of mlock2 that locks each page of a range when it faults in, and
+// not at the call.  MLOCK_ONFAULT.
+inline constexpr unsigned kLockOnFault = 0x01;
 
 }  // namespace foundation::os

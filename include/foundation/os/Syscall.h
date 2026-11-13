@@ -95,6 +95,11 @@ enum class Syscall : std::uint8_t {
     sendto,
     recvfrom,
     recvmsg,
+    sched_getattr,
+    mlock,
+    mlock2,
+    munlock,
+    prctl,
 };
 
 // True when the call can wait with no bound for another thread or process,
