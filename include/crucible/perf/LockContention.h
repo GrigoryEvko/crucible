@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fixy/Borrowed.h>
+#include <fixy/Checked.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <foundation/effects/Ctx.h>
@@ -48,14 +49,10 @@ public:
         uint64_t timeline_index = 0;
 
         [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
-            Snapshot r;
-            if (__builtin_sub_overflow(wait_count, older.wait_count, &r.wait_count)) [[unlikely]] {
-                r.wait_count = 0;
-            }
-            if (__builtin_sub_overflow(timeline_index, older.timeline_index, &r.timeline_index)) [[unlikely]] {
-                r.timeline_index = 0;
-            }
-            return r;
+            return Snapshot{
+                .wait_count = ::fixy::saturating_sub(wait_count, older.wait_count),
+                .timeline_index = ::fixy::saturating_sub(timeline_index, older.timeline_index),
+            };
         }
     };
 

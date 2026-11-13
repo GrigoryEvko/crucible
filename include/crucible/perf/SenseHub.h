@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fixy/Borrowed.h>
+#include <fixy/Checked.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <foundation/effects/Ctx.h>
@@ -122,17 +123,10 @@ struct Snapshot {
     // Unsigned subtraction would wrap those to near 2^64, so the
     // difference saturates at zero and a gauge that decreased reads as
     // no delta.  Read the true gauge value from the later snapshot.
-    //
-    // std::sub_sat states this directly, but libstdc++ does not define
-    // __cpp_lib_saturation_arithmetic yet.
     [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
         Snapshot r;
         for (size_t i = 0; i < NUM_COUNTERS; ++i) {
-            uint64_t diff = 0;
-            if (__builtin_sub_overflow(counters[i], older.counters[i], &diff)) [[unlikely]] {
-                diff = 0;
-            }
-            r.counters[i] = diff;
+            r.counters[i] = ::fixy::saturating_sub(counters[i], older.counters[i]);
         }
         return r;
     }

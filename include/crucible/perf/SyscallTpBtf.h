@@ -3,6 +3,7 @@
 #include <crucible/perf/SyscallLatency.h>  // for TimelineSyscallEvent, TimelineHeader, TIMELINE_CAPACITY
 
 #include <fixy/Borrowed.h>
+#include <fixy/Checked.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <foundation/effects/Ctx.h>
@@ -27,14 +28,10 @@ public:
         uint64_t timeline_index = 0;
 
         [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
-            Snapshot r;
-            if (__builtin_sub_overflow(total_syscalls, older.total_syscalls, &r.total_syscalls)) [[unlikely]] {
-                r.total_syscalls = 0;
-            }
-            if (__builtin_sub_overflow(timeline_index, older.timeline_index, &r.timeline_index)) [[unlikely]] {
-                r.timeline_index = 0;
-            }
-            return r;
+            return Snapshot{
+                .total_syscalls = ::fixy::saturating_sub(total_syscalls, older.total_syscalls),
+                .timeline_index = ::fixy::saturating_sub(timeline_index, older.timeline_index),
+            };
         }
     };
 

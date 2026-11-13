@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fixy/Borrowed.h>
+#include <fixy/Checked.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <foundation/effects/Ctx.h>
@@ -62,11 +63,7 @@ public:
         uint64_t samples = 0;
 
         [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
-            Snapshot r;
-            if (__builtin_sub_overflow(samples, older.samples, &r.samples)) [[unlikely]] {
-                r.samples = 0;
-            }
-            return r;
+            return Snapshot{.samples = ::fixy::saturating_sub(samples, older.samples)};
         }
     };
 
