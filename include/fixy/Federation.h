@@ -317,11 +317,14 @@ public:
     // the refusal.  The token of the local cipher comes back beside the
     // result on each path, with the brand that it came in with.  The token
     // for the peer is linear, so the Result gives it only to a consumer.
+    // The result type holds the fresh brand where deduction cannot set it
+    // (foundation/Brand.h).
     template <typename... Explicit, typename LocalBrand, typename Brand = CRUCIBLE_FRESH_BRAND>
         requires ::fixy::federation::AdmittanceNamesNoBrand<Explicit...>
     [[nodiscard]] constexpr std::pair<
         Permission<::fixy::federation::LocalCipherTag, LocalBrand>,
-        ::fixy::Result<Permission<tag::FederatedPeer<Org>, Brand>, ::fixy::federation::AdmittanceError>>
+        ::fixy::Result<Permission<tag::FederatedPeer<Org>, ::foundation::brand::undeducible_brand_t<Brand>>,
+                       ::fixy::federation::AdmittanceError>>
     mint_federation_admittance(Permission<::fixy::federation::LocalCipherTag, LocalBrand>&& local_cipher,
                                ::fixy::federation::FederationHandshake const& handshake) noexcept {
         ::fixy::Result<::fixy::Unit, ::fixy::federation::AdmittanceError> const verdict =

@@ -86,11 +86,12 @@ concept CarrierDeclaresViewState = requires(Carrier const& c) {
 
 // The single point at which a state is asserted.
 //
-// The fresh brand is the last template parameter, after the two the
-// call site can name, so `mint_view<Ready>(carrier)` is the whole
-// spelling and no caller can hand in a brand of its own choosing.
-template <typename Tag, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
-    requires CarrierDeclaresViewState<Carrier, Tag>
+// `mint_view<Ready>(carrier)` is the whole spelling.  The pack Refused
+// takes each explicit template argument after the tag and the constraint
+// refuses it, so no caller hands in a carrier type or a brand of its own
+// choosing (foundation/Brand.h).
+template <typename Tag, typename... Refused, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
+    requires(sizeof...(Refused) == 0 && CarrierDeclaresViewState<Carrier, Tag>)
 [[nodiscard]] constexpr ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>
 mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept;
 
@@ -103,10 +104,38 @@ mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept;
 // The twin carries the same constraint as the factory, so a carrier
 // that declares no predicate for the tag is refused by the gate that
 // names the reason rather than by the twin, whose message names the
-// lifetime instead.
-template <typename Tag, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
+// lifetime instead.  The twin names no brand, because it gives no view.
+template <typename Tag, typename Carrier>
     requires CarrierDeclaresViewState<Carrier, Tag>
-constexpr ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>> mint_view(Carrier const&&) =
+void mint_view(Carrier const&&) =
+    delete("a view over a temporary carrier outlives it; bind the carrier to a name that outlives the view");
+
+// A one-shot state proof, for a transition the holder must prove the
+// right to make and hands over rather than shares.  The token is gone
+// after it is consumed, so the transition happens at most once.
+//
+// This bounds the token, not observation of the carrier: separate
+// copyable views minted in parallel still read it.  Guard the
+// transition method with its own state precondition to cover a view
+// that has gone stale.
+template <typename Carrier, typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
+using LinearScopedView = Linear<ScopedView<Carrier, Tag, Brand>>;
+
+// The linear form builds its view through the private constructor, as
+// mint_view does, so the view carries the fresh brand of this site.
+//
+// The gate is the same one, spelled here rather than only inherited from
+// the inner call, so the refusal lands on this factory's name.
+template <typename Tag, typename... Refused, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
+    requires(sizeof...(Refused) == 0 && CarrierDeclaresViewState<Carrier, Tag>)
+[[nodiscard]] constexpr LinearScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>
+mint_linear_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept;
+
+// The linear form carries its view further than the scoped one does, so
+// it needs the same twin and needs it more.
+template <typename Tag, typename Carrier>
+    requires CarrierDeclaresViewState<Carrier, Tag>
+void mint_linear_view(Carrier const&&) =
     delete("a view over a temporary carrier outlives it; bind the carrier to a name that outlives the view");
 
 template <typename Carrier, typename Tag, typename Brand>
@@ -137,10 +166,15 @@ class [[nodiscard]] ScopedView {
     // The constraint is repeated here because a friend declaration whose
     // constraints differ from the factory's declares a different
     // template, and the friendship would then attach to nothing.
-    template <typename Tag_, typename Carrier_, typename Fresh_>
-        requires CarrierDeclaresViewState<Carrier_, Tag_>
+    template <typename Tag_, typename... Refused_, typename Carrier_, typename Fresh_>
+        requires(sizeof...(Refused_) == 0 && CarrierDeclaresViewState<Carrier_, Tag_>)
     friend constexpr ScopedView<Carrier_, Tag_, view_brand_t<Carrier_, Fresh_>>
     mint_view(Carrier_ const& c CRUCIBLE_LIFETIMEBOUND) noexcept;
+
+    template <typename Tag_, typename... Refused_, typename Carrier_, typename Fresh_>
+        requires(sizeof...(Refused_) == 0 && CarrierDeclaresViewState<Carrier_, Tag_>)
+    friend constexpr LinearScopedView<Carrier_, Tag_, view_brand_t<Carrier_, Fresh_>>
+    mint_linear_view(Carrier_ const& c CRUCIBLE_LIFETIMEBOUND) noexcept;
 
 public:
     using carrier_type = Carrier;
@@ -190,45 +224,22 @@ public:
     static void operator delete[](void*, std::align_val_t) = delete;
 };
 
-template <typename Tag, typename Carrier, typename Fresh>
-    requires CarrierDeclaresViewState<Carrier, Tag>
+template <typename Tag, typename... Refused, typename Carrier, typename Fresh>
+    requires(sizeof...(Refused) == 0 && CarrierDeclaresViewState<Carrier, Tag>)
 [[nodiscard]] constexpr ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>
 mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept {
     CRUCIBLE_PRE(view_ok(c, std::type_identity<Tag>{}));
     return ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>{c};
 }
 
-// A one-shot state proof, for a transition the holder must prove the
-// right to make and hands over rather than shares.  The token is gone
-// after it is consumed, so the transition happens at most once.
-//
-// This bounds the token, not observation of the carrier: separate
-// copyable views minted in parallel still read it.  Guard the
-// transition method with its own state precondition to cover a view
-// that has gone stale.
-template <typename Carrier, typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
-using LinearScopedView = Linear<ScopedView<Carrier, Tag, Brand>>;
-
-// The brand is passed through to mint_view by name, because a bare
-// `mint_view<Tag>(c)` here would draw a second fresh brand for the
-// inner call and the linear view would not carry this site's.
-//
-// The gate is the same one, spelled here rather than only inherited from
-// the inner call, so the refusal lands on this factory's name.
-template <typename Tag, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
-    requires CarrierDeclaresViewState<Carrier, Tag>
+template <typename Tag, typename... Refused, typename Carrier, typename Fresh>
+    requires(sizeof...(Refused) == 0 && CarrierDeclaresViewState<Carrier, Tag>)
 [[nodiscard]] constexpr LinearScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>
 mint_linear_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept {
     CRUCIBLE_PRE(view_ok(c, std::type_identity<Tag>{}));
-    return mint_linear<ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>>(mint_view<Tag, Carrier, Fresh>(c));
+    return mint_linear<ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>>(
+        ScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>>{c});
 }
-
-// The linear form carries its view further than the scoped one does, so
-// it needs the same twin and needs it more.
-template <typename Tag, typename Carrier, typename Fresh = CRUCIBLE_FRESH_BRAND>
-    requires CarrierDeclaresViewState<Carrier, Tag>
-constexpr LinearScopedView<Carrier, Tag, view_brand_t<Carrier, Fresh>> mint_linear_view(Carrier const&&) =
-    delete("a view over a temporary carrier outlives it; bind the carrier to a name that outlives the view");
 
 template <typename T>
 consteval bool contains_scoped_view();

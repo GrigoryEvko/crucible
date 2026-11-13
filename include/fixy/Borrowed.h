@@ -147,17 +147,19 @@ using range_element_t = std::remove_reference_t<std::ranges::range_reference_t<R
 
 // A branded borrow of one object.  The brand is the carrier's own when
 // the carrier has one, so the borrow is pinned to that instance, and a
-// fresh one otherwise.
-template <class T, class Fresh = CRUCIBLE_FRESH_BRAND>
-    requires std::is_object_v<T>
+// fresh one otherwise.  The pack Refused takes each explicit template
+// argument and the constraint refuses it, so no caller spells the fresh
+// brand (foundation/Brand.h).
+template <class... Refused, class T, class Fresh = CRUCIBLE_FRESH_BRAND>
+    requires(sizeof...(Refused) == 0 && std::is_object_v<T>)
 [[nodiscard]] constexpr BorrowedRef<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>
 mint_borrowed_ref(T& ref CRUCIBLE_LIFETIMEBOUND) noexcept;
 
 // A borrow of a temporary dangles at the end of the statement.  The
 // forwarding reference is the better match for an rvalue, and it is
 // constrained away from lvalues so a named object still reaches the
-// mint above.
-template <class T, class Fresh = CRUCIBLE_FRESH_BRAND>
+// mint above.  The twin names no brand, because it gives no borrow.
+template <class T>
     requires(!std::is_lvalue_reference_v<T>)
 constexpr auto mint_borrowed_ref(T&&) = delete("a borrow of a temporary dangles at the end of the full expression; "
                                                "bind the object to a name first");
@@ -165,18 +167,22 @@ constexpr auto mint_borrowed_ref(T&&) = delete("a borrow of a temporary dangles 
 // A branded borrow of a contiguous range, tagged with its owner.  The
 // range is taken by lvalue reference, or by rvalue when it is a
 // borrowed range whose elements outlive it, such as a span.  Every
-// other rvalue selects the deleted twin.
-template <class Source, class R, class Fresh = CRUCIBLE_FRESH_BRAND>
-    requires(std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && !IsBorrowed<R>)
-[[nodiscard]] constexpr Borrowed<range_element_t<R>, Source, Fresh> mint_borrowed(R&& range
-                                                                                  CRUCIBLE_LIFETIMEBOUND) noexcept;
+// other rvalue selects the deleted twin.  The pack Refused takes each
+// explicit template argument after the owner, and the result type holds
+// the fresh brand where deduction cannot set it (foundation/Brand.h).
+template <class Source, class... Refused, class R, class Fresh = CRUCIBLE_FRESH_BRAND>
+    requires(sizeof...(Refused) == 0
+             && std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && !IsBorrowed<R>)
+[[nodiscard]] constexpr Borrowed<range_element_t<R>, Source, ::foundation::brand::undeducible_brand_t<Fresh>>
+mint_borrowed(R&& range CRUCIBLE_LIFETIMEBOUND) noexcept;
 
-template <class Source, class R, class Fresh = CRUCIBLE_FRESH_BRAND>
-    requires(!std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && std::ranges::borrowed_range<R>
-             && !IsBorrowed<R>)
-[[nodiscard]] constexpr Borrowed<range_element_t<R>, Source, Fresh> mint_borrowed(R&& range) noexcept;
+template <class Source, class... Refused, class R, class Fresh = CRUCIBLE_FRESH_BRAND>
+    requires(sizeof...(Refused) == 0 && !std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R>
+             && std::ranges::borrowed_range<R> && !IsBorrowed<R>)
+[[nodiscard]] constexpr Borrowed<range_element_t<R>, Source, ::foundation::brand::undeducible_brand_t<Fresh>>
+mint_borrowed(R&& range) noexcept;
 
-template <class Source, class R, class Fresh = CRUCIBLE_FRESH_BRAND>
+template <class Source, class R>
     requires(!std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && !std::ranges::borrowed_range<R>
              && !IsBorrowed<R>)
 constexpr auto mint_borrowed(R&&) = delete("a borrow of a temporary range dangles at the end of the full expression; "
@@ -211,8 +217,8 @@ private:
     // be claimed for a second object by spelling it.
     constexpr BorrowedRef(detail::borrow_mint_t, T& ref) noexcept : ptr_{&ref} {}
 
-    template <class U, class Fresh>
-        requires std::is_object_v<U>
+    template <class... URefused, class U, class Fresh>
+        requires(sizeof...(URefused) == 0 && std::is_object_v<U>)
     friend constexpr BorrowedRef<U, ::foundation::brand::inherited_or_fresh_brand_t<U, Fresh>>
     mint_borrowed_ref(U& ref CRUCIBLE_LIFETIMEBOUND) noexcept;
 
@@ -286,15 +292,17 @@ private:
     // The branded door, for the mints and for subview.
     constexpr Borrowed(detail::borrow_mint_t, span_type span) noexcept : span_{span} {}
 
-    template <class USource, class R, class Fresh>
-        requires(std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && !IsBorrowed<R>)
-    friend constexpr Borrowed<range_element_t<R>, USource, Fresh> mint_borrowed(R&& range
-                                                                                CRUCIBLE_LIFETIMEBOUND) noexcept;
+    template <class USource, class... URefused, class R, class Fresh>
+        requires(sizeof...(URefused) == 0
+                 && std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && !IsBorrowed<R>)
+    friend constexpr Borrowed<range_element_t<R>, USource, ::foundation::brand::undeducible_brand_t<Fresh>>
+    mint_borrowed(R&& range CRUCIBLE_LIFETIMEBOUND) noexcept;
 
-    template <class USource, class R, class Fresh>
-        requires(!std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && std::ranges::borrowed_range<R>
-                 && !IsBorrowed<R>)
-    friend constexpr Borrowed<range_element_t<R>, USource, Fresh> mint_borrowed(R&& range) noexcept;
+    template <class USource, class... URefused, class R, class Fresh>
+        requires(sizeof...(URefused) == 0 && !std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R>
+                 && std::ranges::borrowed_range<R> && !IsBorrowed<R>)
+    friend constexpr Borrowed<range_element_t<R>, USource, ::foundation::brand::undeducible_brand_t<Fresh>>
+    mint_borrowed(R&& range) noexcept;
 
     // A borrow of a branded region is minted in OwnedRegion.h and
     // carries the region's brand, so it needs this door too.
@@ -377,25 +385,27 @@ public:
     }
 };
 
-template <class T, class Fresh>
-    requires std::is_object_v<T>
+template <class... Refused, class T, class Fresh>
+    requires(sizeof...(Refused) == 0 && std::is_object_v<T>)
 [[nodiscard]] constexpr BorrowedRef<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>
 mint_borrowed_ref(T& ref CRUCIBLE_LIFETIMEBOUND) noexcept {
     return BorrowedRef<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>{detail::borrow_mint_t{}, ref};
 }
 
-template <class Source, class R, class Fresh>
-    requires(std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && !IsBorrowed<R>)
-[[nodiscard]] constexpr Borrowed<range_element_t<R>, Source, Fresh> mint_borrowed(R&& range
-                                                                                  CRUCIBLE_LIFETIMEBOUND) noexcept {
+template <class Source, class... Refused, class R, class Fresh>
+    requires(sizeof...(Refused) == 0
+             && std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && !IsBorrowed<R>)
+[[nodiscard]] constexpr Borrowed<range_element_t<R>, Source, ::foundation::brand::undeducible_brand_t<Fresh>>
+mint_borrowed(R&& range CRUCIBLE_LIFETIMEBOUND) noexcept {
     return Borrowed<range_element_t<R>, Source, Fresh>{
         detail::borrow_mint_t{}, std::span<range_element_t<R>>{std::ranges::data(range), std::ranges::size(range)}};
 }
 
-template <class Source, class R, class Fresh>
-    requires(!std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && std::ranges::borrowed_range<R>
-             && !IsBorrowed<R>)
-[[nodiscard]] constexpr Borrowed<range_element_t<R>, Source, Fresh> mint_borrowed(R&& range) noexcept {
+template <class Source, class... Refused, class R, class Fresh>
+    requires(sizeof...(Refused) == 0 && !std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R>
+             && std::ranges::borrowed_range<R> && !IsBorrowed<R>)
+[[nodiscard]] constexpr Borrowed<range_element_t<R>, Source, ::foundation::brand::undeducible_brand_t<Fresh>>
+mint_borrowed(R&& range) noexcept {
     return Borrowed<range_element_t<R>, Source, Fresh>{
         detail::borrow_mint_t{}, std::span<range_element_t<R>>{std::ranges::data(range), std::ranges::size(range)}};
 }

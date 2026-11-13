@@ -1297,12 +1297,17 @@ fixy_neg_compile_test(neg_federation_policy_admits_specialized
 fixy_neg_compile_test(neg_federation_admittance_names_brand
   "no matching function for call to .foundation::permissions::FederationAdmission<NegBrandOrg>::mint_federation_admittance<\\{anonymous\\}::HeldBrand>"
   "required for the satisfaction of .AdmittanceNamesNoBrand<Explicit \\.\\.\\.>. \\[with Explicit = \\{<unnamed>::HeldBrand\\}\\]")
+# The address of the admittance with a target type cannot deduce the brand
+# of the peer token, because the result type holds it in undeducible_brand.
+fixy_neg_compile_test(neg_federation_admittance_address_names_brand
+  "no matches converting function .mint_federation_admittance. to type"
+  "typename foundation::brand::undeducible_brand<Brand>::type")
 
 # An admittance writes the replay window, so a const admission admits
 # nobody.
 fixy_neg_compile_test(neg_federation_admittance_const_admission
   "passing .const foundation::permissions::FederationAdmission<NegConstOrg>. as .this. argument discards qualifiers"
-  "in call to .constexpr std::pair<foundation::permissions::Permission<fixy::federation::LocalCipherTag, LocalBrand>, foundation::core::Result<foundation::permissions::Permission<foundation::permissions::tag::FederatedPeer<Org>, Brand>, fixy::federation::AdmittanceError> > foundation::permissions::FederationAdmission<Org>::mint_federation_admittance")
+  "in call to .constexpr std::pair<foundation::permissions::Permission<fixy::federation::LocalCipherTag, LocalBrand>, foundation::core::Result<foundation::permissions::Permission<foundation::permissions::tag::FederatedPeer<Org>, typename foundation::brand::undeducible_brand<Brand>::type>, fixy::federation::AdmittanceError> > foundation::permissions::FederationAdmission<Org>::mint_federation_admittance")
 
 # Verified -> Unverified has no edge in admitted_retags; the member
 # retag fails its constraint and the note names RetagAllowed with the
@@ -1491,6 +1496,25 @@ fixy_neg_compile_test(neg_borrowed_branded_from_pointer_and_count
 fixy_neg_compile_test(neg_borrowed_rebrand
   "no matching function for call to .fixy::Borrowed<int, .anonymous.::Owner, fixy::<lambda\\(\\)> >::Borrowed"
   "the expression .is_same_v<Brand, foundation::brand::DefaultBrand> \\[with Brand = fixy::")
+
+# A caller cannot give a mint of a borrow the brand of a borrow that it
+# holds.  An explicit template argument lands in the pack Refused, and the
+# binding of a target type cannot deduce the brand of the result.
+fixy_neg_compile_test(neg_borrowed_ref_names_held_brand
+  "no matching function for call to .mint_borrowed_ref<int, HeldBrand>\\(int&\\)."
+  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int, ")
+fixy_neg_compile_test(neg_borrowed_names_held_brand
+  "no matching function for call to .mint_borrowed<.anonymous.::Owner, fixy::FixedArray<int, 2>&, HeldBrand>"
+  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{fixy::FixedArray<int, 2>&, ")
+fixy_neg_compile_test(neg_borrowed_address_names_held_brand
+  "invalid initialization of non-const reference of type .HeldBorrow \\(&\\)\\(fixy::FixedArray<int, 2>&\\) noexcept."
+  "from an rvalue of type .<unresolved overloaded function type>.")
+fixy_neg_compile_test(neg_borrowed_span_names_held_brand
+  "no matching function for call to .mint_borrowed<.anonymous.::Owner, std::span<int, [0-9]+>, HeldBrand>"
+  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{std::span<int, [0-9]+>, ")
+fixy_neg_compile_test(neg_borrowed_span_address_names_held_brand
+  "invalid initialization of non-const reference of type .HeldBorrow \\(&\\)\\(std::span<int>&&\\) noexcept."
+  "from an rvalue of type .<unresolved overloaded function type>.")
 
 # A WeakRef over a reference type has no pointer to form.
 fixy_neg_compile_test(neg_weak_ref_of_a_reference
@@ -5368,6 +5392,15 @@ fixy_neg_compile_test(neg_scoped_view_linear_carrier_declares_no_state
 fixy_neg_compile_test(neg_scoped_view_linear_tag_has_no_predicate
   "no matching function for call to .mint_linear_view<"
   "required for the satisfaction of .CarrierDeclaresViewState<Carrier, Tag>. .with Carrier = .*CarrierOpenOnly. Tag = .*Closed")
+
+# A caller cannot give a view the brand of a view that it holds: an
+# explicit template argument after the tag lands in the pack Refused.
+fixy_neg_compile_test(neg_scoped_view_names_held_brand
+  "no matching function for call to .mint_view<fixy::detail::sv_test_tag, fixy::detail::sv_test_carrier, HeldBrand>"
+  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{fixy::detail::sv_test_carrier, ")
+fixy_neg_compile_test(neg_linear_view_names_held_brand
+  "no matching function for call to .mint_linear_view<fixy::detail::sv_test_tag, fixy::detail::sv_test_carrier, HeldBrand>"
+  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{fixy::detail::sv_test_carrier, ")
 
 # Two mints of a borrow are two brands.
 fixy_neg_compile_test(neg_brand_borrowed_cross_brand
