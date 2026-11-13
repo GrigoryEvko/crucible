@@ -434,7 +434,7 @@ import tempfile
 import threading
 import zlib
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Protocol
@@ -496,6 +496,8 @@ SHARDS = 8
 SHARD_DIRECTORY = "shards"
 # The time of one poll of one ctest run, while other runs wait for a slot (THE SHARDS).
 SHARD_POLL_S = 0.05
+# The number of names of selected tests that ctest did not run, in the error line of a run (dropped_tests()).
+DROPPED_SHOWN = 10
 # The variable that gives `cmake --build` a job count when its command gives none (THE JOBSERVER).
 BUILD_PARALLEL_VARIABLE = "CMAKE_BUILD_PARALLEL_LEVEL"
 # The words in uppercase of a boolean property of ctest, such as WILL_FAIL, that give the value yes.
@@ -1463,6 +1465,18 @@ def _run_inherited(command: list[str], environment: dict[str, str] | None = None
         raise RunnerError(str(problem)) from None
 
 
+def dropped_tests(selected: Sequence[str], statuses: Mapping[str, ctest_reader.TestStatus]) -> list[str]:
+    """Return the selected tests that ctest did not run, in the order of `selected`.
+
+    ctest 4.4.2 under a jobserver can end a run before it starts a test with DEPENDS, when the run also holds a
+    disabled test.  It then exits with status 0.  The script counts each such test as a failure, so a dropped test
+    cannot give a false pass.  A disabled test has the status DISABLED, and it is not in the result.  O(n) in the
+    selected tests.
+    """
+    return [name for name in selected
+            if statuses.get(name, ctest_reader.TestStatus.NOTRUN) == ctest_reader.TestStatus.NOTRUN]
+
+
 def test_layers(tests: tuple[ctest_reader.TestEntry, ...], names: list[str], jobs: int) -> list[list[str]]:
     """Return the selected tests in layers of the property DEPENDS (THE LAYERS).
 
@@ -1922,8 +1936,13 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
         if status != 0 and failed == 0 and counts[ctest_reader.TestStatus.NOTRUN] == 0:
             print(f"loop test: ctest exited with status {status} after its tests, and no test failed: read its "
                   f"lines above.")
+        dropped = dropped_tests(selected, statuses)
+        if dropped and status == 0 and failed == 0:
+            check_report.write_line(f"loop test: ctest exited with status 0, but it did not run {len(dropped)} "
+                                    f"selected tests: {' '.join(dropped[:DROPPED_SHOWN])}.  The script counts "
+                                    f"this run as a failure.", is_error=True)
         save_history(recorder, build_dir)
-        return 0 if status == 0 and failed == 0 else 1
+        return 0 if status == 0 and failed == 0 and not dropped else 1
 
 
 # ── Self-test ──────────────────────────────────────────────────────────────
@@ -2543,6 +2562,14 @@ def unit_cases(expect: DetailedExpect) -> None:
     no_table = bytearray(synthetic_elf(allocated=b"A"))
     struct.pack_into("<Q", no_table, elf_file.SECTION_TABLE_AT, 0)
     expect("data_sections refuses a file with no section header table", is_refused(bytes(no_table)))
+    # A selected test with no status is a test that ctest dropped.  A disabled test and a skip code are not drops.
+    status_of = ctest_reader.TestStatus
+    statuses = {"ran": status_of.RUN, "failed": status_of.FAIL, "skip": status_of.SKIPPED, "off": status_of.DISABLED,
+                "marked": status_of.NOTRUN}
+    expect("dropped_tests names each selected test that ctest did not run, and no other test",
+           dropped_tests(["ran", "lost", "failed", "skip", "off", "marked"], statuses) == ["lost", "marked"])
+    expect("dropped_tests gives no test when each selected test has a status that is not NOTRUN",
+           dropped_tests(["ran", "skip", "off"], statuses) == [])
     expect("program_index skips cmake -E env", program_index(("/x/cmake", "-E", "env", "A=1", "/b/t")) == 4)
     expect("program_index skips valgrind options", program_index(("/v/valgrind", "-q", "/b/t", "x")) == 2)
     launched = ("/usr/bin/python3", "-S", f"/s/utils/bin/{LOOP_MASTER}", LAUNCHER_SUBCOMMAND, "--build-dir",
