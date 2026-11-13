@@ -1,18 +1,17 @@
 #pragma once
 
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
+#include <foundation/core/Array.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <memory>
 #include <optional>
-#include <string_view>
 
 namespace crucible::perf {
 
@@ -30,12 +29,12 @@ namespace v2 {
 inline constexpr std::size_t NUM_COUNTERS = 256;
 inline constexpr std::size_t NUM_GAUGES = 64;
 inline constexpr uint32_t BUILD_TAG = 0xDEB6;
-inline constexpr std::string_view BUILD_NAME = "extended";
+inline constexpr ::fixy::TextView BUILD_NAME = "extended";
 #else
 inline constexpr std::size_t NUM_COUNTERS = 128;
 inline constexpr std::size_t NUM_GAUGES = 32;
 inline constexpr uint32_t BUILD_TAG = 0xBA51;
-inline constexpr std::string_view BUILD_NAME = "basic";
+inline constexpr ::fixy::TextView BUILD_NAME = "basic";
 #endif
 
 inline constexpr uint32_t SENSE_HUB_VERSION = 2;
@@ -356,27 +355,41 @@ struct sense_meta {
 
 struct CounterDelta;
 
-struct alignas(64) CounterSnapshot {
-    std::array<uint64_t, NUM_COUNTERS> values{};
+// The value at position of values, or zero when the position is past the
+// end.  Each enumerator of Idx and Gauge is below its count, so the zero
+// arm is not reached.
+template <std::size_t Count>
+[[nodiscard]] constexpr uint64_t value_at(::foundation::core::FixedArray<uint64_t, Count> const& values,
+                                          std::size_t position) noexcept {
+    for (auto const& value : values.get(position)) {
+        return *value;
+    }
+    return 0;
+}
 
-    [[nodiscard]] uint64_t operator[](Idx i) const noexcept { return values[static_cast<uint32_t>(i)]; }
+struct alignas(64) CounterSnapshot {
+    ::foundation::core::FixedArray<uint64_t, NUM_COUNTERS> values{};
+
+    [[nodiscard]] uint64_t operator[](Idx i) const noexcept { return value_at(values, static_cast<std::size_t>(i)); }
 
     [[nodiscard]] CounterDelta operator-(const CounterSnapshot& older) const noexcept;
 };
 
 struct alignas(64) CounterDelta {
-    std::array<uint64_t, NUM_COUNTERS> deltas{};
+    ::foundation::core::FixedArray<uint64_t, NUM_COUNTERS> deltas{};
 
-    [[nodiscard]] uint64_t operator[](Idx i) const noexcept { return deltas[static_cast<uint32_t>(i)]; }
+    [[nodiscard]] uint64_t operator[](Idx i) const noexcept { return value_at(deltas, static_cast<std::size_t>(i)); }
 };
 
 inline CounterDelta CounterSnapshot::operator-(const CounterSnapshot& older) const noexcept {
     CounterDelta d;
-    for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
+    for (::fixy::Index<NUM_COUNTERS> const i : ::fixy::IndexRange<NUM_COUNTERS>{}) {
         // A counter only counts upward, so an ordered pair of readings
         // never underflows here.  The clamp covers a torn read and a
         // caller that passed the two readings the wrong way round.
-        d.deltas[i] = (values[i] >= older.values[i]) ? (values[i] - older.values[i]) : 0;
+        uint64_t const now = values.at(i);
+        uint64_t const before = older.values.at(i);
+        d.deltas.at(i) = now >= before ? now - before : 0;
     }
     return d;
 }
@@ -386,9 +399,9 @@ inline CounterDelta CounterSnapshot::operator-(const CounterSnapshot& older) con
 // and makes a difference of two gauges a compile error.
 
 struct alignas(64) GaugeSnapshot {
-    std::array<uint64_t, NUM_GAUGES> values{};
+    ::foundation::core::FixedArray<uint64_t, NUM_GAUGES> values{};
 
-    [[nodiscard]] uint64_t operator[](Gauge g) const noexcept { return values[static_cast<uint32_t>(g)]; }
+    [[nodiscard]] uint64_t operator[](Gauge g) const noexcept { return value_at(values, static_cast<std::size_t>(g)); }
 };
 
 struct FullSnapshot {
@@ -445,7 +458,7 @@ public:
 
     static constexpr std::size_t num_counters() noexcept { return v2::NUM_COUNTERS; }
     static constexpr std::size_t num_gauges() noexcept { return v2::NUM_GAUGES; }
-    static constexpr std::string_view build_name() noexcept { return v2::BUILD_NAME; }
+    static constexpr ::fixy::TextView build_name() noexcept { return v2::BUILD_NAME; }
 
     SenseHubV2(const SenseHubV2&) = delete("SenseHubV2 owns unique BPF object + mmap; copying would double-close");
     SenseHubV2&

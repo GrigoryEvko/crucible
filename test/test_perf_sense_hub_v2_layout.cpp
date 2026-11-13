@@ -62,15 +62,15 @@ int main() {
     v2::CounterSnapshot before;
     v2::CounterSnapshot after;
 
-    after.values[0] = 9;
-    before.values[1] = 7;
+    after.values.at(::fixy::index<0>()) = 9;
+    before.values.at(::fixy::index<1>()) = 7;
 
     const v2::CounterDelta delta = after - before;
-    if (delta.deltas[0] != 9) {
+    if (delta.deltas.at(::fixy::index<0>()) != 9) {
         std::fprintf(stderr, "SenseHubV2 delta failed at slot 0\n");
         return 1;
     }
-    if (delta.deltas[1] != 0) {
+    if (delta.deltas.at(::fixy::index<1>()) != 0) {
         std::fprintf(stderr, "SenseHubV2 delta did not saturate at slot 1\n");
         return 1;
     }
