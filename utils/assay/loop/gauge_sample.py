@@ -2,8 +2,8 @@
 
 THE SAMPLE
     The sample is fixed in SAMPLE below, so each run measures the same files.
-    It holds eleven translation units that cover the cost range of the tree,
-    from a small foundation test to the slowest tool, and five negative
+    It holds eight translation units that cover the cost range of the tree,
+    from a small foundation test to a large test of fixy, and five negative
     fixtures.  A change to the sample makes each earlier table incomparable,
     so change it only together with a new baseline.
 
@@ -69,14 +69,11 @@ from assay.readers import compdb
 SAMPLE: tuple[tuple[str, bool], ...] = (
     ("test/foundation/test_row_hash.cpp", False),
     ("test/test_arena.cpp", False),
-    ("src/canopy/Lifeguard.cpp", False),
     ("test/fixy/test_collision.cpp", False),
     ("test/test_region_cache_repeated.cpp", False),
     ("test/test_cipher.cpp", False),
     ("test/fixy/test_session_handle.cpp", False),
     ("test/fixy/test_owned_region_every_total_0.cpp", False),
-    ("test/test_ledger.cpp", False),
-    ("utils/tools/crucible_hwprobe.cpp", False),
     ("test/fixy/test_session_global_attack_two_roles_1.cpp", False),
     ("test/fixy/neg/neg_atom_cv_qualified_rejected.cpp", True),
     ("test/foundation/neg/neg_aligned_buffer_copied.cpp", True),

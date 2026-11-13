@@ -21,14 +21,6 @@ include/crucible/BackgroundThread.h | heavy-include | 1 | <memory> | the class h
 include/crucible/Cipher.h | heavy-include | 1 | <filesystem> | the store makes its object directory with std::filesystem::create_directories, and it makes the path of HEAD with the operator / of std::filesystem::path
 include/crucible/Serialize.h | heavy-include | 1 | <memory> | the reader makes the variant counter of a node with std::construct_at, because the counter refuses a step to the value 0 that a file can hold
 include/crucible/cntp/Fec.h | heavy-include | 1 | <arm_neon.h> | -
-include/crucible/ledger/HostFingerprint.h | heavy-include | 1 | <filesystem> | the reader gives fixy::sanitize_path a tagged std::filesystem::path, because that function takes no other path type
-include/crucible/ledger/LedgerStore.h | heavy-include | 1 | <chrono> | the store reads the wall clock with std::chrono::system_clock, because the time to live of an entry is an age across processes and reboots
-include/crucible/ledger/LedgerStore.h | heavy-include | 1 | <filesystem> | the store makes its directories and its file paths, and removes its files, with std::filesystem
-include/crucible/ledger/ProbeSupport.h | heavy-include | 1 | <chrono> | monotonic_nanos() reads the monotonic clock with std::chrono::steady_clock for the age of a memo of a measurement
-include/crucible/ledger/RefreshDaemon.h | heavy-include | 1 | <chrono> | the wait for the next refresh gives std::chrono::seconds to try_acquire_for of the wakeup semaphore
-include/crucible/ledger/RefreshDaemon.h | heavy-include | 1 | <memory> | the daemon publishes its view in a std::shared_ptr, and mint_refresh_daemon gives the daemon in a std::unique_ptr
-include/crucible/ledger/RefreshDaemon.h | heavy-include | 1 | <thread> | the daemon does its loop on a std::jthread, and the loop stops at the std::stop_token of that thread
-include/crucible/ledger/probes/CacheTier.h | heavy-include | 1 | <thread> | the probe pins a std::thread to the CPU that it measures, and a second std::thread writes the remote region first, on the remote node
 include/fixy/Borrowed.h | heavy-include | 1 | <ranges> | the constructors from a range accept only a std::ranges::contiguous_range that is a std::ranges::borrowed_range, and they read std::ranges::data and std::ranges::size
 include/fixy/Budgeted.h | heavy-include | 1 | <memory> | a moved-from source gets the unbounded grade again through std::destroy_at and std::construct_at, because Graded sets its grade only when it makes the object
 include/fixy/EpochVersioned.h | heavy-include | 1 | <memory> | a moved-from source gets the genesis version again through std::destroy_at and std::construct_at, because Graded sets its grade only when it makes the object

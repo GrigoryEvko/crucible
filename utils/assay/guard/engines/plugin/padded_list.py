@@ -7,8 +7,8 @@ THE RULE
     element of a list, with no loop.  A list of 256 padded ledger entries,
     returned through std::expected, gave a function of 934 KB of machine
     code.  The compile of each file that included it used 75 s more.  Make
-    each padding byte a member, as include/crucible/ledger/Verdict.h does with
-    `pad`.
+    each padding byte a member, as include/crucible/cog/CogIdentity.h does
+    with `pad`.
 
     A list is an array of a class or a union.  Such an array in a
     specialization of a class template or in a class with no name is a list
@@ -116,7 +116,7 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
                 f"the {item.kind.removeprefix('padded-')} {padded.entity} holds a list of {padded.count} elements, "
                 f"and each element has {padded.holes} padding bits.  With -ftrivial-auto-var-init=zero, each "
                 f"automatic object of it gets one store for each hole of each element, with no loop.  Make each "
-                f"padding byte a member, as include/crucible/ledger/Verdict.h does with pad.  An element type with "
+                f"padding byte a member, as include/crucible/cog/CogIdentity.h does with pad.  An element type with "
                 f"padding on purpose gets a ledger row with its reason",
                 item.kind,
                 item.entity,

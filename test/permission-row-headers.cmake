@@ -10,7 +10,6 @@ set(CRUCIBLE_PERMISSION_ROW_HEADERS
     crucible/cntp/BackpressureRuntime.h
     crucible/cntp/ConnectionPoolRuntime.h
     crucible/cntp/PathSwap.h
-    crucible/ledger/ProbeSupport.h
     crucible/observe/Metrics.h
     crucible/perf/detail/BpfHub.h
     crucible/warden/Quarantine.h

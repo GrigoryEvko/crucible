@@ -73,12 +73,10 @@ include/fixy/session/            Binary and multiparty session types, subtyping,
 include/crucible/                Layer 3, namespace crucible: the runtime.  Arena, TraceRing,
                                  MetaLog, TraceGraph, MerkleDag, Graph, ExprPool, CKernel, Philox,
                                  Serialize, ReplayEngine, PoolAllocator, Vigil, RecipeRegistry
-include/crucible/canopy/         Mesh membership and gossip: SWIM, HyParView, Plumtree, CRDTs
 include/crucible/cipher/         The computation cache and its federation protocol
 include/crucible/cntp/           The CNTP network transport: congestion control, pacing, FEC
 include/crucible/cog/            Hardware identity: NIC setup and audit, TargetCaps, latency tables
 include/crucible/forge/          IR001 operation kinds and the network recipe table
-include/crucible/ledger/         The hardware-capability ledger and its probes
 include/crucible/mimic/          Fences, semaphores and the Cog projection of the backends
 include/crucible/observe/        Metrics, health observations, histograms, synthetic probes
 include/crucible/perf/           BPF sensors: scheduler, syscalls, lock contention, PMU samples

@@ -209,14 +209,6 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
 endif()
 crucible_test(test_meta_log)
 crucible_test(test_symbol_table)
-crucible_test(test_hlc)
-crucible_test(test_vector_clock)
-crucible_test(test_crdt)
-crucible_test(test_swim)
-crucible_test(test_hyparview)
-crucible_test(test_lifeguard)
-crucible_test(test_plumtree)
-crucible_test(test_scuttlebutt)
 crucible_test(test_cntp_backpressure)
 crucible_test(test_cntp_connection_pool)
 crucible_test(test_cntp_congestion_control)
@@ -524,12 +516,9 @@ endforeach()
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/permission_row/permission_row_headers.h"
      CONTENT "#pragma once\n@_permission_row_includes@" @ONLY)
 crucible_test(test_permission_row_roster)
-# crucible/ledger/ProbeSupport.h declares a tag and includes bench_harness.h.
-target_include_directories(test_permission_row_roster PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/permission_row"
-                           ${CMAKE_SOURCE_DIR}/bench)
+target_include_directories(test_permission_row_roster PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/permission_row")
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
-crucible_test(test_ledger)
 # Writes the files of one CPU of a planted sysfs tree under ROOT: the id of
 # its package, its core id and an L3 of 32 MB that the CPUs of SHARED share.
 # A test reads such a tree through Topology::probe_tree.
@@ -542,16 +531,11 @@ function(crucible_planted_sysfs_cpu root cpu package core shared)
   file(CONFIGURE OUTPUT "${cpu_dir}/topology/core_id" CONTENT "${core}\n")
   file(CONFIGURE OUTPUT "${cpu_dir}/topology/physical_package_id" CONTENT "${package}\n")
 endfunction()
-# A sysfs tree of one socket with two L3 instances: cpu0 and cpu1 have the
-# package 0, and each CPU has an L3 of its own.
-set(_two_l3_root "${CMAKE_CURRENT_BINARY_DIR}/sysfs_two_l3_one_socket")
-crucible_planted_sysfs_cpu("${_two_l3_root}" 0 0 0 0)
-crucible_planted_sysfs_cpu("${_two_l3_root}" 1 0 1 1)
 # A sysfs tree of two sockets that are not the same, with the package ids 0
 # and 2.  The package 0 has cpu0 to cpu3: two cores with two threads each, an
 # L3 for each core and the NUMA nodes 0 and 1.  The package 2 has cpu4 and
 # cpu5: two cores that number from 0 again, one L3 and the node 3.  The
-# Topology test (test/fixy) reads the tree too.
+# Topology test (test/fixy) reads the tree.
 set(CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT "${CMAKE_CURRENT_BINARY_DIR}/sysfs_two_packages")
 crucible_planted_sysfs_cpu("${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}" 0 0 0 "0,2")
 crucible_planted_sysfs_cpu("${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}" 1 0 1 "1,3")
@@ -562,22 +546,6 @@ crucible_planted_sysfs_cpu("${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}" 5 2 1 "4-5")
 file(CONFIGURE OUTPUT "${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}/devices/system/node/node0/cpulist" CONTENT "0-1\n")
 file(CONFIGURE OUTPUT "${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}/devices/system/node/node1/cpulist" CONTENT "2-3\n")
 file(CONFIGURE OUTPUT "${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}/devices/system/node/node3/cpulist" CONTENT "4-5\n")
-target_compile_definitions(test_ledger PRIVATE TWO_L3_SYSFS_ROOT="${_two_l3_root}"
-                                               TWO_PACKAGE_SYSFS_ROOT="${CRUCIBLE_TWO_PACKAGE_SYSFS_ROOT}")
-# The probes time through bench/bench_harness.h rather than carrying their
-# own rig — the harness already reports the quantiles, the within-run
-# coefficient of variation and the drift check a ledger evidence record
-# needs.  Same include-path dependency crucible_hwprobe has, and an include
-# path only: this is not a bench target and takes none of the bench tree's
-# -O3 -march=native.
-# The refresh policy and each probe family have a test and a translation
-# unit of their own, so the streaming measurement of the vector width runs
-# beside the other tests and not after them, and no unit compiles every probe.
-foreach(_ledger_probe_test test_ledger_probes test_ledger_probes_refresh test_ledger_probes_cache_tier
-        test_ledger_probes_huge_page test_ledger_probes_vector_width)
-  crucible_test(${_ledger_probe_test})
-  target_include_directories(${_ledger_probe_test} PRIVATE ${CMAKE_SOURCE_DIR}/bench)
-endforeach()
 crucible_test(test_topology_discovery)
 crucible_test(test_topology_graph)
 crucible_test(test_topology_health)
@@ -642,10 +610,8 @@ target_include_directories(test_bench_check PRIVATE ${CMAKE_SOURCE_DIR}/bench)
 # policy arithmetic / guard object semantics, not live scheduler calls).
 crucible_test(test_warden_policy)
 # Each affinity change outside fixy/os goes through the recording door, so
-# an older pin proof stops being in force.  ledger/ProbeSupport.h includes
-# bench_harness.h.
+# an older pin proof stops being in force.
 crucible_test(test_pin_event_door)
-target_include_directories(test_pin_event_door PRIVATE ${CMAKE_SOURCE_DIR}/bench)
 
 # crucible::perf::SenseHub sentinel TU.
 # Verifies the observability substrate compiles + links
@@ -720,7 +686,7 @@ crucible_test(test_registration_seal_race
 #
 # A fixture lives in test/<subject>_neg/.  The subject is the part of the
 # runtime that the fixture checks: a directory of include/crucible
-# (canopy_neg, cntp_neg, cog_neg), or a family of its top-level headers
+# (cntp_neg, cog_neg), or a family of its top-level headers
 # (trace_neg, vigil_neg, dag_neg).  A registration names the fixture by its
 # file name only.  The harness finds the one subject directory that holds
 # the file, and the name of that directory is the ctest label.  A fixture
@@ -1026,75 +992,6 @@ crucible_neg_compile_test(neg_offload_target_feature_of_other_schema
 crucible_neg_compile_test(neg_offload_target_no_kind
     "no matching function for call to .validate_offload_target<crucible::cog::SwitchFeature::AdaptiveRouting>\\("
     "the expression .sizeof \\.\\.\\. \\(\\(Kinds \\.\\.\\.\\)\\) > 0 \\[with Kinds = \\{\\}\\]. evaluated to .false.")
-
-# ─── ledger/Ledger.h HS14 fixtures ────────────────────────────────
-#
-# Two fixtures pinning the two halves of CtxFitsLedgerStore, so a
-# regression that dropped either conjunct is still caught by the other:
-# * neg_ledger_view_hot_fg_ctx — HotFgCtx carries Row<>, claiming
-#   nothing.  Missing both IO and Block.  This is the mismatch that
-#   matters in practice: the hot path consults a value someone else
-#   measured, and a caller that loaded the file itself would turn a
-#   ~2 ns dispatch into a disk read.
-# * neg_ledger_view_init_ctx_cannot_block — ColdInitCtx carries
-#   Row<Init, Alloc, IO>, so it CAN touch the kernel.  Missing only
-#   Block, because cap_permitted_row<Init> deliberately omits it:
-#   initialization is not permitted to park on a disk.
-crucible_neg_compile_test(neg_ledger_view_hot_fg_ctx
-    "constraint|constraints.*not satisfied|no matching function"
-    "CtxFitsLedgerStore")
-crucible_neg_compile_test(neg_ledger_view_init_ctx_cannot_block
-    "constraint|constraints.*not satisfied|no matching function"
-    "CtxFitsLedgerStore")
-
-# The host probe reads procfs and sysfs, so CtxFitsHostProbe admits a
-# context only when it owns IO and Block.  The foreground context owns
-# neither, and the startup context owns IO but not Block.
-crucible_neg_compile_test(neg_host_probe_hot_fg_ctx
-    "no matching function for call to .probe_host_facts\\(const fixy::HotFgCtx&\\)."
-    "required for the satisfaction of .CtxFitsHostProbe<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_test(neg_host_probe_init_ctx_cannot_block
-    "no matching function for call to .probe_competence\\(const fixy::ColdInitCtx&\\)."
-    "required for the satisfaction of .CtxFitsHostProbe<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
-
-# ─── ledger/RefreshDaemon.h HS14 fixtures ─────────────────────────
-#
-# Three fixtures pinning the three conjuncts of CtxFitsRefreshDaemon
-# separately, so a regression that dropped any one is caught:
-# * neg_refresh_daemon_test_ctx_lacks_bg — TestRunnerCtx has IO and
-#   Block and satisfies CtxFitsLedgerStore.  It lacks only Bg.  This is
-#   the fixture that matters: without it, dropping Bg leaves the concept
-#   identical to CtxFitsLedgerStore and the other two keep passing.
-# * neg_refresh_daemon_compile_ctx_cannot_block — BgCompileCtx has Bg
-#   and IO.  It lacks only Block.  The opposite conjunct from the above.
-# * neg_refresh_daemon_hot_fg_ctx — HotFgCtx carries Row<>, missing all
-#   three.  The blunt case, with the worst consequence.
-#
-# The regex deliberately omits `static assertion`.  With Bg removed the
-# fixture fails on its own premise assert instead of on the mint, and a
-# looser pattern would read that as a pass.
-crucible_neg_compile_test(neg_refresh_daemon_test_ctx_lacks_bg
-    "constraint|constraints.*not satisfied|no matching function"
-    "CtxFitsRefreshDaemon")
-crucible_neg_compile_test(neg_refresh_daemon_compile_ctx_cannot_block
-    "constraint|constraints.*not satisfied|no matching function"
-    "CtxFitsRefreshDaemon")
-crucible_neg_compile_test(neg_refresh_daemon_hot_fg_ctx
-    "constraint|constraints.*not satisfied|no matching function"
-    "CtxFitsRefreshDaemon")
-
-# ledger/ProbeSupport.h includes <bench_harness.h> for bench::Report,
-# bench::Compare and bench::compare.  Each ledger fixture needs bench/ on
-# its include path.  Without it a fixture fails on the missing include,
-# and the driver can report that failure as a pass for a reason that has
-# nothing to do with the constraint under test.
-foreach(ledger_fixture IN ITEMS
-        neg_ledger_view_hot_fg_ctx neg_ledger_view_init_ctx_cannot_block
-        neg_host_probe_hot_fg_ctx neg_host_probe_init_ctx_cannot_block
-        neg_refresh_daemon_test_ctx_lacks_bg neg_refresh_daemon_compile_ctx_cannot_block
-        neg_refresh_daemon_hot_fg_ctx)
-  target_include_directories(${ledger_fixture} PRIVATE ${CMAKE_SOURCE_DIR}/bench)
-endforeach()
 
 # ─── OpcodeLatencyTable HS14 fixtures ─────────────────────────────
 #
@@ -2403,38 +2300,6 @@ crucible_neg_compile_test(neg_sdc_detect_padded_result
   "constraint|constraints.*not satisfied"
     "SdcComparableResult")
 
-# canopy/Hlc.h, the hybrid logical clock.
-#   * neg_hlc_raw_timestamp_to_tagged: a raw HlcTimestamp does not
-#     convert to a timestamp of the clock.
-#   * neg_hlc_cross_source_timestamp: an External timestamp does not
-#     convert to a timestamp of the clock.
-#   * neg_hlc_direct_ctor: the constructor is private, and the mint is
-#     its only friend.
-#   * neg_hlc_mint_test_context: the mint takes the init context and
-#     refuses a test context.
-#   * neg_hlc_mint_background_context: the mint refuses a background
-#     context.
-#   * neg_hlc_mint_without_capability: the mint has no overload without
-#     a context.
-crucible_neg_compile_test(neg_hlc_raw_timestamp_to_tagged
-  "could not convert|cannot convert|no matching function"
-  "HlcClockTimestamp")
-crucible_neg_compile_test(neg_hlc_cross_source_timestamp
-  "could not convert|cannot convert|no matching function"
-  "source::External")
-crucible_neg_compile_test(neg_hlc_direct_ctor
-  "Hlc::Hlc\\(\\). is private within this context"
-  "declared private here")
-crucible_neg_compile_test(neg_hlc_mint_test_context
-  "could not convert|no matching function|cannot convert"
-    "effects::Test|effects::Init")
-crucible_neg_compile_test(neg_hlc_mint_background_context
-  "could not convert|no matching function|cannot convert"
-    "effects::Bg|effects::Init")
-crucible_neg_compile_test(neg_hlc_mint_without_capability
-  "no matching function|too few arguments"
-    "mint_hlc")
-
 # The three mints of the runtime metrics channel, one fixture each:
 # the writer mint refuses the permission of the reader role, and the
 # two reader mints refuse a call without a metrics channel.
@@ -2447,281 +2312,6 @@ crucible_neg_compile_test(neg_observe_mint_keeper_metrics_reader_without_channel
 crucible_neg_compile_test(neg_observe_mint_canopy_metrics_reader_int_channel
   "no matching function|could not convert|cannot convert|invalid initialization|cannot bind"
   "RuntimeMetricsChannel|int")
-
-# canopy/VectorClock.h, the operational vector clock.
-#   * neg_vector_clock_zero_nodes: a clock with no node fails the node
-#     bound of the mint.
-#   * neg_vector_clock_cross_n_snapshot: snapshots of different node
-#     counts are different types, so one does not cross an API boundary
-#     sized for the other.
-#   * neg_vector_clock_direct_ctor: the constructor is private, and
-#     mint_vector_clock is the only door.
-#   * neg_vector_clock_mint_test_context and
-#     neg_vector_clock_mint_background_context: the mint takes Init, and
-#     neither a Test nor a background context converts to it.
-crucible_neg_compile_test(neg_vector_clock_zero_nodes
-  "required for the satisfaction of .VectorClockNodeBound<MaxNodes>. \\[with MaxNodes = 0\\]"
-  "the expression .MaxNodes > 0 \\[with MaxNodes = 0\\]. evaluated to .false.")
-crucible_neg_compile_test(neg_vector_clock_cross_n_snapshot
-  "could not convert .three. from"
-  ".VectorClockSnapshot<3>. to .VectorClockSnapshot<4>.")
-crucible_neg_compile_test(neg_vector_clock_direct_ctor
-  "VectorClock<MaxNodes, Tag>::VectorClock\\(node_index_type\\) \\[with long unsigned int MaxNodes = 4. Tag = void. node_index_type = fixy::Refinement<fixy::BoundedAbove<3>\\(\\), short unsigned int, false>\\]"
-  "is private within this context")
-crucible_neg_compile_test(neg_vector_clock_mint_test_context
-  "no matching function for call to .mint_vector_clock<4>\\(foundation::effects::Test, int\\)."
-  "cannot convert .foundation::effects::testing::test\\(\\). \\(type .foundation::effects::Test.\\) to type .foundation::effects::Init.")
-crucible_neg_compile_test(neg_vector_clock_mint_background_context
-  "no matching function for call to .mint_vector_clock<4>\\(foundation::effects::Bg, int\\)."
-  "cannot convert .foundation::effects::testing::bg\\(\\). \\(type .foundation::effects::Bg.\\) to type .foundation::effects::Init.")
-
-# canopy/Crdt.h, the state-based CRDT substrate.
-#   * neg_crdt_gset_raw_add: a local write is a LocalWrite, and a raw value
-#     does not convert to one.
-#   * neg_crdt_merge_raw_state: a merge takes received state only as
-#     gossiped state, and raw state matches no merge.
-#   * neg_crdt_merge_local_state: state from the local door is not
-#     gossiped state at a merge.
-#   * neg_crdt_lww_partial_clock: an LWW clock must be totally ordered, and
-#     a vector-clock snapshot is not.
-#   * neg_crdt_mv_register_unordered_value: an MV-register value must be
-#     totally ordered, so that concurrent versions sort in one order.
-#   * neg_crdt_gset_floating_value and neg_crdt_gset_pointer_value: the slot
-#     hash admits only enums and integers.
-#   * neg_crdt_counter_update_raw_fields: raw integers do not build a
-#     counter update, because its replica and its amount are refinements.
-crucible_neg_compile_test(neg_crdt_gset_raw_add
-  "cannot convert .int. to"
-  "fixy::Tagged<int, fixy::tags::source::Local>")
-crucible_neg_compile_test(neg_crdt_merge_raw_state
-  "no matching function for call to .crucible::canopy::GSet<int, 8>::merge"
-  "merge\\(crucible::canopy::detail::BoundedHashSetState<int, 8>&\\)")
-crucible_neg_compile_test(neg_crdt_merge_local_state
-  "no matching function for call to .crucible::canopy::GSet<int, 8>::merge"
-  "BoundedHashSetState<int, 8>, fixy::tags::source::Local>&\\)")
-crucible_neg_compile_test(neg_crdt_lww_partial_clock
-  "template constraint failure for .template<class V, class Clock>"
-  "three_way_comparable<Clock, std::strong_ordering>. \\[with Clock = crucible::canopy::VectorClockSnapshot<4, void>\\]")
-crucible_neg_compile_test(neg_crdt_mv_register_unordered_value
-  "template constraint failure for .template<class V, long unsigned int MaxVersions"
-  "totally_ordered<V>. \\[with V = EqualityOnlyPayload\\]")
-crucible_neg_compile_test(neg_crdt_gset_floating_value
-  "template constraint failure for .template<class T, long unsigned int Capacity>"
-  "HashableValue<T>. \\[with T = double\\]")
-crucible_neg_compile_test(neg_crdt_gset_pointer_value
-  "template constraint failure for .template<class T, long unsigned int Capacity>"
-  "HashableValue<T>. \\[with T = int\\*\\]")
-crucible_neg_compile_test(neg_crdt_counter_update_raw_fields
-  "could not convert .9. from .int. to"
-  "fixy::Refinement<fixy::BoundedAbove<3>\\(\\), short unsigned int, false>")
-
-# canopy/Swim.h, the bounded SWIM membership.
-#   * neg_swim_zero_max_peers: a zero peer bound fails the shape of the
-#     mint.
-#   * neg_swim_raw_peer_add: add_peer takes a SWIM member, and a raw
-#     identity does not convert to one.
-#   * neg_swim_external_peer_add: an External identity is not a SWIM
-#     member.
-#   * neg_swim_direct_ctor: the constructor is private, and
-#     mint_swim_membership is the only door.
-#   * neg_swim_mint_test_context and neg_swim_mint_background_context: the
-#     mint takes Init, and neither a Test nor a background context
-#     converts to it.
-#   * neg_swim_witness_count_assign: the count of a witness set is a slot
-#     count, so it cannot be set past the capacity.
-crucible_neg_compile_test(neg_swim_zero_max_peers
-  "required for the satisfaction of .SwimShape<MaxPeers, MaxPiggyback>. \\[with MaxPeers = 0. MaxPiggyback = 32\\]"
-  "the expression .Capacity > 0 \\[with Capacity = 0\\]. evaluated to .false.")
-crucible_neg_compile_test(neg_swim_raw_peer_add
-  "cannot convert .crucible::cog::CogIdentity. to .crucible::canopy::SwimMembership<4, 32>::peer_type."
-  "aka .fixy::Tagged<crucible::cog::CogIdentity, fixy::tags::source::SwimMember>.")
-crucible_neg_compile_test(neg_swim_external_peer_add
-  "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>."
-  "to .Tagged<\\[...\\],fixy::tags::source::SwimMember>.")
-crucible_neg_compile_test(neg_swim_direct_ctor
-  "SwimMembership<MaxPeers, MaxPiggyback>::SwimMembership\\(std::span<const fixy::Tagged<crucible::cog::CogIdentity, fixy::tags::source::SwimMember> >, crucible::canopy::SwimConfig\\)"
-  "is private within this context")
-crucible_neg_compile_test(neg_swim_mint_test_context
-  "no matching function for call to .mint_swim_membership\\(foundation::effects::Test\\)."
-  "cannot convert .foundation::effects::testing::test\\(\\). \\(type .foundation::effects::Test.\\) to type .foundation::effects::Init.")
-crucible_neg_compile_test(neg_swim_mint_background_context
-  "no matching function for call to .mint_swim_membership<4>\\(foundation::effects::Bg\\)."
-  "cannot convert .foundation::effects::testing::bg\\(\\). \\(type .foundation::effects::Bg.\\) to type .foundation::effects::Init.")
-crucible_neg_compile_test(neg_swim_witness_count_assign
-  "no match for .operator=. \\(operand types are .crucible::canopy::SlotCount<4>."
-  "and .uint16_t.")
-
-# canopy/HyParView.h, the bounded active and passive overlay.
-#   * neg_hyparview_zero_active, neg_hyparview_active_exceeds_passive: the
-#     shape of the mint refuses a zero active capacity and an active
-#     capacity above the passive capacity.
-#   * neg_hyparview_raw_peer_join, neg_hyparview_cross_tag_peer: join takes
-#     an overlay peer, and neither a raw nor an External identity converts
-#     to one.
-#   * neg_hyparview_raw_shuffle, neg_hyparview_external_shuffle: a received
-#     shuffle is gossiped, and neither a raw nor an External shuffle
-#     converts to one.
-#   * neg_hyparview_direct_ctor: the constructor is private, and
-#     mint_hyparview is the only door.
-#   * neg_hyparview_mint_test_context and
-#     neg_hyparview_mint_background_context: the mint takes Init, and
-#     neither a Test nor a background context converts to it.
-crucible_neg_compile_test(neg_hyparview_zero_active
-  "required for the satisfaction of .HyParViewShape<MaxActive, MaxPassive>. \\[with MaxActive = 0. MaxPassive = 8\\]"
-  "the expression .Capacity > 0 \\[with Capacity = 0\\]. evaluated to .false.")
-crucible_neg_compile_test(neg_hyparview_active_exceeds_passive
-  "required for the satisfaction of .HyParViewShape<MaxActive, MaxPassive>. \\[with MaxActive = 8. MaxPassive = 4\\]"
-  "the expression .MaxActive <= MaxPassive \\[with MaxActive = 8. MaxPassive = 4\\]. evaluated to .false.")
-crucible_neg_compile_test(neg_hyparview_raw_peer_join
-  "cannot convert .crucible::cog::CogIdentity. to .crucible::canopy::HyParViewPeer."
-  "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::HyParViewError> crucible::canopy::HyParViewMembership<MaxActive, MaxPassive>::join\\(crucible::canopy::HyParViewPeer\\)")
-crucible_neg_compile_test(neg_hyparview_cross_tag_peer
-  "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>. to .Tagged<\\[...\\],fixy::tags::source::HyParView>."
-  "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::HyParViewError> crucible::canopy::HyParViewMembership<MaxActive, MaxPassive>::join\\(crucible::canopy::HyParViewPeer\\)")
-crucible_neg_compile_test(neg_hyparview_raw_shuffle
-  "cannot convert .crucible::canopy::HyParViewShuffle<8>. to .crucible::canopy::GossipedHyParViewShuffle<8>."
-  "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::HyParViewError> crucible::canopy::HyParViewMembership<MaxActive, MaxPassive>::apply_shuffle\\(crucible::canopy::GossipedHyParViewShuffle<MaxPassive>\\)")
-crucible_neg_compile_test(neg_hyparview_external_shuffle
-  "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>. to .Tagged<\\[...\\],fixy::tags::source::Gossiped>."
-  "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::HyParViewError> crucible::canopy::HyParViewMembership<MaxActive, MaxPassive>::apply_shuffle\\(crucible::canopy::GossipedHyParViewShuffle<MaxPassive>\\)")
-crucible_neg_compile_test(neg_hyparview_direct_ctor
-  "HyParViewMembership<MaxActive, MaxPassive>::HyParViewMembership\\(std::span<const fixy::Tagged<crucible::cog::CogIdentity, fixy::tags::source::HyParView> >, std::span<const fixy::Tagged<crucible::cog::CogIdentity, fixy::tags::source::HyParView> >, crucible::canopy::HyParViewConfig\\)"
-  "is private within this context")
-crucible_neg_compile_test(neg_hyparview_mint_test_context
-  "no matching function for call to .mint_hyparview<4>\\(foundation::effects::Test\\)."
-  "cannot convert .foundation::effects::testing::test\\(\\). \\(type .foundation::effects::Test.\\) to type .foundation::effects::Init.")
-crucible_neg_compile_test(neg_hyparview_mint_background_context
-  "no matching function for call to .mint_hyparview<4>\\(foundation::effects::Bg\\)."
-  "cannot convert .foundation::effects::testing::bg\\(\\). \\(type .foundation::effects::Bg.\\) to type .foundation::effects::Init.")
-
-# canopy/Plumtree.h, the eager and lazy broadcast tree.
-#   * neg_plumtree_zero_peers, neg_plumtree_overlay_too_large: the shape
-#     gate of the mint refuses a zero peer capacity and an overlay whose
-#     active view does not fit the link slots.
-#   * neg_plumtree_raw_peer, neg_plumtree_external_peer: a link takes an
-#     overlay peer, and neither a raw nor an External identity converts to
-#     one.
-#   * neg_plumtree_raw_message, neg_plumtree_external_message: a received
-#     message is gossiped.
-#   * neg_plumtree_raw_ihave, neg_plumtree_external_ihave: a received
-#     repair summary is gossiped.
-#   * neg_plumtree_direct_ctor: the constructor is private, and
-#     mint_plumtree is the only door.
-#   * neg_plumtree_mint_test_context and
-#     neg_plumtree_mint_background_context: the mint takes Init, and
-#     neither a Test nor a background context converts to it.
-crucible_neg_compile_test(neg_plumtree_zero_peers
-  "required for the satisfaction of .PlumtreeShape<MaxPeers, MaxHistory>. \\[with MaxPeers = 0. MaxHistory = 8\\]"
-  "the expression .Capacity > 0 \\[with Capacity = 0\\]. evaluated to .false.")
-crucible_neg_compile_test(neg_plumtree_overlay_too_large
-  "required for the satisfaction of .PlumtreeFitsOverlay<MaxPeers, MaxHistory, HyMaxActive, HyMaxPassive>. \\[with MaxPeers = 4. MaxHistory = 8. HyMaxActive = 8. HyMaxPassive = 64\\]"
-  "the expression .HyMaxActive <= MaxPeers \\[with HyMaxActive = 8. MaxPeers = 4\\]. evaluated to .false.")
-crucible_neg_compile_test(neg_plumtree_raw_peer
-  "cannot convert .crucible::cog::CogIdentity. to .crucible::canopy::HyParViewPeer."
-  "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::add_eager_peer\\(crucible::canopy::HyParViewPeer\\)")
-crucible_neg_compile_test(neg_plumtree_external_peer
-  "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>. to .Tagged<\\[...\\],fixy::tags::source::HyParView>."
-  "initializing argument 1 of .constexpr std::expected<void, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::add_lazy_peer\\(crucible::canopy::HyParViewPeer\\)")
-crucible_neg_compile_test(neg_plumtree_raw_message
-  "cannot convert .crucible::canopy::PlumtreeMessage. to .crucible::canopy::GossipedPlumtreeMessage."
-  "initializing argument 2 of .constexpr std::expected<crucible::canopy::PlumtreeReceivePlan<MaxPeers, MaxHistory>, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::receive_message\\(crucible::canopy::HyParViewPeer, crucible::canopy::GossipedPlumtreeMessage\\)")
-crucible_neg_compile_test(neg_plumtree_external_message
-  "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>. to .Tagged<\\[...\\],fixy::tags::source::Gossiped>."
-  "initializing argument 2 of .constexpr std::expected<crucible::canopy::PlumtreeReceivePlan<MaxPeers, MaxHistory>, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::receive_message\\(crucible::canopy::HyParViewPeer, crucible::canopy::GossipedPlumtreeMessage\\)")
-crucible_neg_compile_test(neg_plumtree_raw_ihave
-  "cannot convert .crucible::canopy::PlumtreeIHave<8>. to .crucible::canopy::GossipedPlumtreeIHave<8>."
-  "initializing argument 2 of .constexpr std::expected<crucible::canopy::PlumtreeRepairPlan<MaxHistory>, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::receive_ihave\\(crucible::canopy::HyParViewPeer, crucible::canopy::GossipedPlumtreeIHave<MaxHistory>\\)")
-crucible_neg_compile_test(neg_plumtree_external_ihave
-  "cannot convert .Tagged<\\[...\\],fixy::tags::source::External>. to .Tagged<\\[...\\],fixy::tags::source::Gossiped>."
-  "initializing argument 2 of .constexpr std::expected<crucible::canopy::PlumtreeRepairPlan<MaxHistory>, crucible::canopy::PlumtreeError> crucible::canopy::PlumtreeBroadcast<MaxPeers, MaxHistory>::receive_ihave\\(crucible::canopy::HyParViewPeer, crucible::canopy::GossipedPlumtreeIHave<MaxHistory>\\)")
-crucible_neg_compile_test(neg_plumtree_direct_ctor
-  "PlumtreeBroadcast<MaxPeers, MaxHistory>::PlumtreeBroadcast\\(const crucible::canopy::HyParViewMembership<[A-Za-z]+, [A-Za-z]+>&, crucible::canopy::PlumtreeConfig\\)"
-  "is private within this context")
-crucible_neg_compile_test(neg_plumtree_mint_test_context
-  "no matching function for call to .mint_plumtree<4, 8>\\(foundation::effects::Test, crucible::canopy::HyParViewMembership<4, 8>&\\)."
-  "cannot convert .foundation::effects::testing::test\\(\\). \\(type .foundation::effects::Test.\\) to type .foundation::effects::Init.")
-crucible_neg_compile_test(neg_plumtree_mint_background_context
-  "no matching function for call to .mint_plumtree<4, 8>\\(foundation::effects::Bg, crucible::canopy::HyParViewMembership<4, 8>&\\)."
-  "cannot convert .foundation::effects::testing::bg\\(\\). \\(type .foundation::effects::Bg.\\) to type .foundation::effects::Init.")
-
-# canopy/Lifeguard.h, the SWIM false-positive reduction.
-#   * neg_lifeguard_zero_peers: a zero peer bound fails the shape of the
-#     mint.
-#   * neg_lifeguard_raw_local_peer: the local identity must be a SWIM
-#     member, and a raw identity does not convert to one.
-#   * neg_lifeguard_direct_ctor: the constructor is private, and
-#     mint_lifeguard_swim is the only door, also for a caller that holds
-#     Init.
-#   * neg_lifeguard_mint_test_context and
-#     neg_lifeguard_mint_background_context: the mint takes Init, and
-#     neither a Test nor a background context converts to it.
-#   * neg_lifeguard_event_count_advance: the count of an event batch is a
-#     slot count, so it cannot be advanced past the capacity.
-crucible_neg_compile_test(neg_lifeguard_zero_peers
-  "required for the satisfaction of .LifeguardShape<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>. \\[with MaxPeers = 0. MaxPiggyback = 8. RttWindow = 4. MaxEvents = 8\\]"
-  "the expression .Capacity > 0 \\[with Capacity = 0\\]. evaluated to .false.")
-crucible_neg_compile_test(neg_lifeguard_raw_local_peer
-  "no matching function for call to .mint_lifeguard_swim<4>\\(foundation::effects::Init, crucible::cog::CogIdentity&\\)."
-  "cannot convert .local. \\(type .crucible::cog::CogIdentity.\\) to type .crucible::canopy::SwimPeer.")
-crucible_neg_compile_test(neg_lifeguard_direct_ctor
-  "LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>::LifeguardSwim\\(foundation::effects::Init, crucible::canopy::SwimPeer,"
-  "is private within this context")
-crucible_neg_compile_test(neg_lifeguard_mint_test_context
-  "no matching function for call to .mint_lifeguard_swim<4>\\(foundation::effects::Test,"
-  "cannot convert .foundation::effects::testing::test\\(\\). \\(type .foundation::effects::Test.\\) to type .foundation::effects::Init.")
-crucible_neg_compile_test(neg_lifeguard_mint_background_context
-  "no matching function for call to .mint_lifeguard_swim<4>\\(foundation::effects::Bg, crucible::canopy::SwimPeer\\)."
-  "cannot convert .foundation::effects::testing::bg\\(\\). \\(type .foundation::effects::Bg.\\) to type .foundation::effects::Init.")
-crucible_neg_compile_test(neg_lifeguard_event_count_advance
-  "no match for .operator\\+\\+."
-  "\\(operand type is .crucible::canopy::SlotCount<4>.\\)")
-
-# canopy/Scuttlebutt.h, the bounded anti-entropy substrate.
-#   * neg_scuttlebutt_zero_max_peers: a zero peer bound fails the shape.
-#   * neg_scuttlebutt_raw_key_register: a raw key does not register a
-#     CRDT.  The key must be a local key.
-#   * neg_scuttlebutt_raw_delta_apply: a raw delta is not a gossiped delta.
-#   * neg_scuttlebutt_raw_digest_compare: a raw digest is not a gossiped
-#     digest.
-#   * neg_scuttlebutt_non_crdt_publish: publish requires a CRDT.
-#   * neg_scuttlebutt_direct_ctor: the constructor is private, and
-#     mint_scuttlebutt is the only door.
-#   * neg_scuttlebutt_mint_test_context and
-#     neg_scuttlebutt_mint_background_context: the mint takes Init, and
-#     neither a Test nor a background context converts to it.
-#   * neg_scuttlebutt_digest_count_assign and
-#     neg_scuttlebutt_request_count_advance: a table count has one mutator,
-#     which refuses at the capacity, so it cannot be assigned or advanced.
-crucible_neg_compile_test(neg_scuttlebutt_zero_max_peers
-  "template constraint failure for .template<long unsigned int MaxPeers, long unsigned int MaxKeys>"
-  "ScuttlebuttShape<MaxPeers, MaxKeys>. \\[with MaxPeers = 0. MaxKeys = 4\\]")
-crucible_neg_compile_test(neg_scuttlebutt_raw_key_register
-  "no matching function for call to .crucible::canopy::ScuttlebuttSync<4, 4>::register_state\\(crucible::canopy::ScuttlebuttKey&"
-  "cannot convert .key. \\(type .crucible::canopy::ScuttlebuttKey.\\) to type .crucible::canopy::LocalScuttlebuttKey.")
-crucible_neg_compile_test(neg_scuttlebutt_raw_delta_apply
-  "cannot convert .crucible::canopy::ScuttlebuttDelta<crucible::canopy::detail::BoundedHashSetState<long unsigned int, 4> >. to"
-  "fixy::Tagged<crucible::canopy::ScuttlebuttDelta<crucible::canopy::detail::BoundedHashSetState<long unsigned int, 4> >, fixy::tags::source::Gossiped>")
-crucible_neg_compile_test(neg_scuttlebutt_raw_digest_compare
-  "cannot convert .crucible::canopy::ScuttlebuttDigest<4, 4>. to"
-  "fixy::Tagged<crucible::canopy::ScuttlebuttDigest<4, 4>, fixy::tags::source::Gossiped>")
-crucible_neg_compile_test(neg_scuttlebutt_non_crdt_publish
-  "no matching function for call to .crucible::canopy::ScuttlebuttSync<4, 4>::publish_local_change"
-  "required for the satisfaction of .ScuttlebuttCrdt<C>. \\[with C = NotCrdt\\]")
-crucible_neg_compile_test(neg_scuttlebutt_direct_ctor
-  "ScuttlebuttSync<MaxPeers, MaxKeys>::ScuttlebuttSync\\(peer_type, std::span<"
-  "is private within this context")
-crucible_neg_compile_test(neg_scuttlebutt_mint_test_context
-  "could not convert .foundation::effects::testing::test\\(\\)."
-  "from .foundation::effects::Test. to .foundation::effects::Init.")
-crucible_neg_compile_test(neg_scuttlebutt_mint_background_context
-  "could not convert .foundation::effects::testing::bg\\(\\)."
-  "from .foundation::effects::Bg. to .foundation::effects::Init.")
-crucible_neg_compile_test(neg_scuttlebutt_digest_count_assign
-  "no match for .operator=. \\(operand types are .crucible::canopy::SlotCount<4>."
-  "and .uint16_t.")
-crucible_neg_compile_test(neg_scuttlebutt_request_count_advance
-  "no match for .operator\\+\\+."
-  "\\(operand type is .crucible::canopy::SlotCount<4>.\\)")
 
 # cntp/CongestionControl.h per-socket TCP CC selection.
 #   * neg_congestion_control_raw_algorithm_apply: raw enum values cannot

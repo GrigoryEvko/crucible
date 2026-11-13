@@ -12,7 +12,6 @@ reason test/ | the tests drop tokens and handles at the end of a test, consume a
 bench/ | discarded-temporary | 2 | - | -
 bench/ | unconsumed | 8 | - | -
 include/crucible/cntp/ | unconsumed | 25 | - | -
-include/crucible/ledger/ | unconsumed | 1 | - | -
 include/crucible/perf/detail/ | unconsumed | 1 | - | -
 include/fixy/ | unconsumed | 3 | - | -
 include/fixy/channels/ | unconsumed | 1 | - | -

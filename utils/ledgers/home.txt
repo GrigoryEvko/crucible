@@ -13,7 +13,6 @@
 format 1
 rule home
 include/crucible/Expr.h | second-body | admit | crucible::detail::combine_ids | the copy in crucible::detail that the runtime headers fold through
-include/crucible/canopy/Crdt.h | open-read | 1 | crucible::canopy::admit_gossiped | the requires-expression of Crdt asks only whether a call of the function compiles.  An explicit specialization keeps the type of the call, so it can delete the call and refuse a type, but it cannot admit one
 include/crucible/mimic/CogMimic.h | open-read | 1 | foundation::algebra::detail::graded::inside_order | a gate over a sealed template reads this function template through the definition of the sealed template, and a different file can give it an overload or an explicit specialization
 include/crucible/mimic/CogMimic.h | open-read | 1 | foundation::algebra::equivalent | a gate over a sealed template reads this function template through the definition of the sealed template, and a different file can give it an overload or an explicit specialization
 include/crucible/mimic/Semaphore.h | open-read | 1 | foundation::reflect::for_each_enumerator | a gate over a sealed function template reads each template that a dependent call with no qualifier names in its definition, because argument-dependent lookup can find an overload of a different file

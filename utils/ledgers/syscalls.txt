@@ -12,9 +12,6 @@
 # configuration of the gate writes the lower count into this file.
 format 1
 rule syscalls
-include/crucible/canopy/Hlc.h | raw-syscall | 1 | crucible::canopy::Hlc::read_realtime_ns_(): clock_gettime | effects::Init.  Only mint_hlc builds a clock, and it takes the init context.  The read gives the physical part of a hybrid logical time
-include/crucible/ledger/LedgerStore.h | raw-syscall | 1 | crucible::ledger::store_detail::temp_filename(crucible::ledger::HostFingerprint): getpid | effects::IO.  The process id names the temporary file of one ledger write, so two writers never share a file.  The ledger write that calls it holds IO
-include/crucible/ledger/ProbeSupport.h | raw-syscall | 1 | crucible::ledger::ProbeRegion::create(const crucible::ledger::LedgerIoCtx&, std::size_t, crucible::ledger::PagePolicy): madvise | effects::IO and effects::Block of the context of the probe.  The advice is a hint, and a kernel with no huge page support refuses it with no damage to the region
 include/crucible/perf/detail/BpfLoader.h | raw-syscall | 1 | crucible::perf::detail::current_tgid(): getpid | effects::Init.  The BPF loader writes the thread group id into its filter when it loads under an init context
 include/crucible/perf/detail/BpfLoader.h | raw-syscall | 1 | crucible::perf::detail::current_tid(): syscall(SYS_gettid) | effects::Init.  A load under an init context reads the id of the thread, and the call changes nothing
 include/crucible/perf/detail/BpfLoader.h | raw-syscall | 2 | crucible::perf::detail::tracepoint_exists(const char*): faccessat | effects::Init.  A load under an init context makes sure that a tracepoint file exists, at the tracefs path and at the debugfs path.  AT_EACCESS keeps the effective capabilities of the process

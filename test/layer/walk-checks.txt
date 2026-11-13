@@ -23,9 +23,6 @@ crucible/SymbolTable.cpp | 0.1 | ::fixy::tags::admitted_retags
 crucible/TensorMeta.cpp | 0.0 | ::fixy::tags::admitted_retags
 crucible/TraceRing.cpp | 0.1 | unknown
 crucible/Types.cpp | 0.2 | ::crucible
-crucible/canopy/Crdt.cpp | 0.2 | ::fixy::tags::admitted_retags
-crucible/canopy/Hlc.cpp | 0.0 | ::fixy::tags::admitted_retags
-crucible/canopy/Lifeguard.cpp | 0.4 | ::fixy::tags::admitted_retags
 crucible/cipher/CipherDurable.cpp | unmeasured | unknown
 crucible/cipher/CipherTierPromotion.cpp | 0.3 | ::fixy::session::combinators, unknown
 crucible/cipher/ComputationCache.cpp | 0.1 | ::foundation::effects::resource, ::foundation::permissions::permission_rows
@@ -49,8 +46,6 @@ crucible/cog/SrIov.cpp | 0.8 | ::fixy::tags::admitted_retags
 crucible/cog/TargetCaps.cpp | 0.6 | ::fixy::tags::admitted_retags
 crucible/forge/_wip/Phases/Comm.cpp | 1.5 | ::fixy::tags::admitted_retags
 crucible/forge/recipes/Network.cpp | 0.1 | ::fixy::tags::admitted_retags
-crucible/ledger/HostFingerprint.cpp | 0.4 | unknown
-crucible/ledger/Verdict.cpp | 0.7 | ::fixy::tags::admitted_retags
 crucible/mimic/CogMimic.cpp | 0.8 | ::fixy::tags::admitted_retags
 crucible/mimic/_wip/network/Backend.cpp | 1.6 | ::fixy::tags::admitted_retags
 crucible/perf/detail/BpfLoader.cpp | 0.1 | ::fixy::tags::admitted_retags

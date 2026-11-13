@@ -6,15 +6,14 @@
 // affinity that goes around the door leaves an older proof in force while
 // the thread runs under another mask.
 //
-// The three changes below were raw calls of sched_setaffinity: the pin of
-// warden::Hardening::apply, the restore of warden::AppliedPolicy::revert and
-// the helper pin of ledger::pin_this_thread_to.  Each case earns a proof,
-// makes the change, and asks that the proof is no longer in force.
+// The two changes below were raw calls of sched_setaffinity: the pin of
+// warden::Hardening::apply and the restore of warden::AppliedPolicy::revert.
+// Each case earns a proof, makes the change, and asks that the proof is no
+// longer in force.
 //
 // Each proof pins the calling thread to CPU 0.  A cpuset without CPU 0
 // refuses the pin, and the test then reports a skip.
 
-#include <crucible/ledger/ProbeSupport.h>
 #include <crucible/warden/Hardening.h>
 #include <fixy/Ctx.h>
 #include <fixy/os/CpuPinned.h>
@@ -76,13 +75,6 @@ int main() {
     require(!applied.affinity_applied(), "revert gives the prior mask back");
     require(second.has_value() && !second->is_in_force(),
             "a pin proof stayed in force after AppliedPolicy::revert restored the mask");
-
-    // The helper pin of the ledger probes.
-    auto third = fixy::sched::mint_affinity<kCore0>(background);
-    require(third.has_value() && third->is_in_force(), "a third earned pin is in force");
-    require(crucible::ledger::pin_this_thread_to(background, 0), "the probe helper pins the thread to CPU 0");
-    require(third.has_value() && !third->is_in_force(),
-            "a pin proof stayed in force after ledger::pin_this_thread_to pinned the thread");
 
     // A restore on another thread changes nothing and says so.
     auto prior = fixy::sched::apply_affinity_to_cpu(background, 0);

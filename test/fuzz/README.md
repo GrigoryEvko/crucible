@@ -24,7 +24,7 @@ To run more iterations, or to run a failure again with its seed:
 
 A boundary is a place where bytes from outside the process become typed
 values: a region or branch image, a Cipher store on disk, a federation
-entry, a trace file, the hardware ledger, a session-event log, the
+entry, a trace file, a session-event log, the
 Reed-Solomon and fountain decoders, and the text that the runtime reads
 from sysfs, procfs and host tools.  Each boundary has one harness in
 `boundary/harnesses/<name>.h`, with two functions:

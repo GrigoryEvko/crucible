@@ -358,7 +358,6 @@ add_library(crucible_dialect INTERFACE)
 # need `handle_contract_violation` at link time, because GCC 16 libstdc++
 # ships no default.  The weak symbol lets a production binary override it.
 add_library(crucible STATIC
-  src/canopy/Lifeguard.cpp
   src/cog/NumaNic.cpp
   src/cog/NicConfig.cpp
   src/cog/NicOffloadAudit.cpp
@@ -482,69 +481,6 @@ target_link_libraries(crucible PUBLIC fixy)
 # PTRDIFF_MAX gives no diagnostic.  The arena, HS10 and the saturating
 # size arithmetic hold the allocation discipline of the tree.
 
-# canopy/Hlc.h (off-limits to edit here) static_asserts
-# std::atomic<unsigned __int128>::is_always_lock_free on every non-x86
-# target and refuses to build otherwise — a hidden libstdc++ mutex
-# fallback would tank now() latency on the canopy hot path.
-#
-# EMPIRICAL FINDING (CI run 26714227806, stock GCC 16 / ubuntu-24.04-arm):
-# the property is FALSE for EVERY safe -march, including armv8.4-a (LSE2).
-# Stock GCC 16 only reports a lock-free 128-bit atomic with FEAT_LSE128
-# (armv9.4-a+lse128) — exactly what Hlc.h's own comment names ("AArch64
-# without LSE-128"). The GitHub arm runner's CPU lacks LSE128 (else the
-# -march=native candidate below would have passed), and forcing +lse128
-# on non-LSE128 silicon would compile but SIGILL at runtime on the
-# 128-bit RMW path (LSE128-only SWPP/LDCLRP). So no runtime-safe flag
-# exists on this runner — and this probe is now a pure PERFORMANCE
-# optimization, not a build gate: canopy/Hlc.h carries a spinlock-guarded
-# fallback for exactly the is_always_lock_free == false case, so the
-# build SUCCEEDS regardless. The probe only buys the faster lock-free
-# now() path when a flag genuinely flips is_always_lock_free true (e.g.
-# future LSE128 runners via -march=native, or toolchains where
-# -mno-outline-atomics suffices). No-op on x86; strictly cannot regress.
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-  include(CheckCXXSourceCompiles)
-  set(_crucible_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
-  set(_crucible_lockfree128_flags "")
-  set(_crucible_lockfree128_idx 0)
-  # Safest-first: (1) base-ISA inline LL/SC, runs on every aarch64;
-  # (2) exact-runner match, guaranteed executable since build==run host;
-  # (3) forced armv8.4-a LSE2 baseline as a last resort.
-  foreach(_crucible_lf128_cand
-            "-mno-outline-atomics"
-            "-mno-outline-atomics -march=native"
-            "-mno-outline-atomics -march=armv8.4-a")
-    set(CMAKE_REQUIRED_FLAGS "-std=c++26 ${_crucible_lf128_cand}")
-    check_cxx_source_compiles("
-#include <atomic>
-#include <cstdint>
-static_assert(std::atomic<unsigned __int128>::is_always_lock_free,
-              \"need a lock-free 128-bit atomic\");
-int main() {}
-" CRUCIBLE_AARCH64_LOCKFREE128_${_crucible_lockfree128_idx})
-    if(CRUCIBLE_AARCH64_LOCKFREE128_${_crucible_lockfree128_idx})
-      set(_crucible_lockfree128_flags "${_crucible_lf128_cand}")
-      break()
-    endif()
-    math(EXPR _crucible_lockfree128_idx "${_crucible_lockfree128_idx} + 1")
-  endforeach()
-  set(CMAKE_REQUIRED_FLAGS "${_crucible_saved_required_flags}")
-  if(_crucible_lockfree128_flags STREQUAL "")
-    message(STATUS
-      "aarch64: no safe flag yields a lock-free 128-bit atomic (runner "
-      "lacks FEAT_LSE128); canopy/Hlc.h uses its spinlock-guarded "
-      "fallback — build succeeds, now() takes the locked path here.")
-  else()
-    # Plain codegen flags (no -std dependency) → safe in CMAKE_CXX_FLAGS;
-    # global so every TU that transitively includes Hlc.h is covered,
-    # including the standalone neg-compile fixtures that don't link crucible.
-    string(APPEND CMAKE_CXX_FLAGS " ${_crucible_lockfree128_flags}")
-    message(STATUS
-      "aarch64 lock-free 128-bit atomic enabled via: "
-      "${_crucible_lockfree128_flags}")
-  endif()
-endif()
-
 # C++26-only flags — applied at target level where -std=c++26 is active
 # (applying them in CMAKE_CXX_FLAGS would poison CMake's compiler-probe).
 target_compile_options(crucible_dialect INTERFACE
@@ -588,35 +524,6 @@ add_executable(dump_row_hashes
   utils/tools/dump_row_hashes.cpp
 )
 target_link_libraries(dump_row_hashes PRIVATE fixy)
-
-# The one-shot writer for the hardware-capability ledger.
-#
-# Fingerprints the host, judges whether the host is fit to measure
-# anything, measures whatever the ledger is missing or has let go stale,
-# and commits to $XDG_CACHE_HOME/crucible/hwledger.  The runtime reads
-# that file through crucible::ledger::mint_ledger_view and never
-# measures on its own.
-#
-# It reaches into bench/ for bench_harness.h rather than carrying its
-# own timing rig: the harness already reports the quantiles, the
-# within-run coefficient of variation and the drift check that a ledger
-# evidence record wants.  That is an include path only — the tool is not
-# a bench target, is built in every configuration, and does not take the
-# bench tree's -O3 -march=native.
-#
-# Each probe family compiles in a translation unit of its own, so that each
-# compile job stays short, and utils/tools/crucible_hwprobe_probes.h
-# declares the one door from main to each unit.
-add_executable(crucible_hwprobe
-  utils/tools/crucible_hwprobe.cpp
-  utils/tools/crucible_hwprobe_cache_tier.cpp
-  utils/tools/crucible_hwprobe_huge_page.cpp
-  utils/tools/crucible_hwprobe_timer_floor.cpp
-  utils/tools/crucible_hwprobe_vector_width.cpp
-)
-target_link_libraries(crucible_hwprobe PRIVATE crucible)
-target_include_directories(crucible_hwprobe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/bench)
-set_target_properties(crucible_hwprobe PROPERTIES OUTPUT_NAME crucible-hwprobe)
 
 # ── eBPF observability substrate (crucible::perf::SenseHub etc.) ────
 #
@@ -1392,7 +1299,7 @@ endif()
 #
 # `observe` costs one predicate evaluation and one not-taken branch per
 # guarded call.  Every source file in the `crucible` static library is
-# cold — cntp, canopy, topology, observe, cog — and none of them
+# cold — cntp, topology, observe, cog — and none of them
 # instantiate the recording chain, so that branch lands where nobody is
 # counting nanoseconds.
 #

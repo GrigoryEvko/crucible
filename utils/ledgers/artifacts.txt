@@ -46,7 +46,6 @@ rule artifacts
 @build/tests | static-member | 1 | libc_nonshared.a(pthread_atfork.oS) | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tests | static-member | 1 | libgcc.a(cpuinfo.o) | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | needed | 1 | libasan.so.8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/tools | needed | 1 | libbpf.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | needed | 1 | libc.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | needed | 1 | libgcc_s.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | needed | 1 | libm.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
@@ -54,7 +53,6 @@ rule artifacts
 @build/tools | needed | 1 | libtsan.so.2 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | needed | 1 | libubsan.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/tools | runpath | 1 | {toolchain}/usr/lib64 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
-@build/tools | static-member | 1 | libgcc.a(cpuinfo.o) | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | needed | 1 | ld-linux-x86-64.so.2 | a new toolchain: each link runs the pinned mold 3.0.0
 @build/vessel | needed | 1 | libasan.so.8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | needed | 1 | libbpf.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts

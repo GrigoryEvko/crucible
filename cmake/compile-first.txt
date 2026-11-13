@@ -47,14 +47,12 @@ bench_swiss_table
 bench_swmr_session
 bench_trace_ring
 crucible_cipher
-crucible_hwprobe
 crucible_vessel
 crucible_vigil
 fixy
 fuzz_harness_cipher_store
 fuzz_harness_fec
 fuzz_harness_fountain
-fuzz_harness_ledger
 fuzz_harness_region
 fuzz_harness_trace_file
 layer_walks_across_headers_0
@@ -81,7 +79,6 @@ test_collision
 test_compute
 test_concurrent_spawn
 test_concurrent_swmr_session
-test_crdt
 test_crucible_context
 test_diag
 test_endpoint
@@ -92,10 +89,6 @@ test_forgeable_proofs
 test_fs
 test_iteration_detector
 test_lattices_bands
-test_ledger
-test_ledger_probes
-test_ledger_probes_cache_tier
-test_ledger_probes_refresh
 test_lower
 test_merkle_dag
 test_meta_log
@@ -104,7 +97,6 @@ test_os_spawn
 test_owned_region
 test_permission_row_roster
 test_pin_event_door
-test_plumtree
 test_region_cache
 test_registration_seal_race
 test_resnet

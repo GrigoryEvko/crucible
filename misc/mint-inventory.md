@@ -56,18 +56,6 @@ that the axis does not apply to the row.
 | `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 
-## include/crucible/canopy/
-
-| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
-|---|---|---|---|---|---|---|---|---|
-| `mint_hlc` | `include/crucible/canopy/Hlc.h` | Y | Y | Y | · | token | · | HS14: 3 |
-| `mint_hyparview` | `include/crucible/canopy/HyParView.h` | Y | Y | Y | Y | token | · | HS14: 19 |
-| `mint_lifeguard_swim` | `include/crucible/canopy/Lifeguard.h` | Y | Y | Y | Y | token | · | HS14: 4 |
-| `mint_plumtree` | `include/crucible/canopy/Plumtree.h` | Y | Y | Y | Y | token | · | HS14: 10 |
-| `mint_scuttlebutt` | `include/crucible/canopy/Scuttlebutt.h` | Y | Y | Y | Y | token | · | HS14: 6 |
-| `mint_swim_membership` | `include/crucible/canopy/Swim.h` | Y | Y | Y | Y | token | · | HS14: 5 |
-| `mint_vector_clock` | `include/crucible/canopy/VectorClock.h` | Y | Y | Y | Y | token | · | HS14: 3 |
-
 ## include/crucible/cipher/
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
@@ -115,14 +103,6 @@ that the axis does not apply to the row.
 |---|---|---|---|---|---|---|---|---|
 | `mint_nic_config` | `include/crucible/cog/NicConfig.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_sriov_plan` | `include/crucible/cog/SrIov.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-
-## include/crucible/ledger/
-
-| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
-|---|---|---|---|---|---|---|---|---|
-| `mint_ledger_view(const T0_0&)` | `include/crucible/ledger/Ledger.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
-| `mint_ledger_view(const T0_0&, crucible::ledger::HostFingerprint)` | `include/crucible/ledger/Ledger.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
-| `mint_refresh_daemon` | `include/crucible/ledger/RefreshDaemon.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 
 ## include/crucible/mimic/
 
@@ -353,5 +333,5 @@ that the axis does not apply to the row.
 
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
-| crucible (`include/crucible/`) | 84 | 46 | 29 | 9 | 0 | 10 |
+| crucible (`include/crucible/`) | 74 | 43 | 22 | 9 | 0 | 10 |
 | substrate (`include/foundation/`, `include/fixy/`) | 126 | 54 | 69 | 3 | 0 | 4 |

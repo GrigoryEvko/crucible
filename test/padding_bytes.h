@@ -137,7 +137,7 @@ void expect_no_padding_byte() noexcept {
     if (padding_bits != 0u) {
         std::fprintf(stderr,
                      "%s has %zu padding bits.  Make each padding byte a member, as "
-                     "include/crucible/ledger/Verdict.h does with pad.\n",
+                     "include/crucible/cog/CogIdentity.h does with pad.\n",
                      std::define_static_string(std::meta::display_string_of(Type)), padding_bits);
     }
     assert(padding_bits == 0u);
