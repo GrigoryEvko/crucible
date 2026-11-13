@@ -105,20 +105,37 @@ THE WAIT
     seconds.  When the queue holds the file NUMBER.verdict with its token,
     the landing reads that verdict.  It gives its work tree the update of the
     verdict (THE INDEX AND THE WORKING TREE).  Then it writes the lines of the
-    verdict and exits with its status.  When the landing gets the lock of the warm tree, it is
-    the holder of the tree (THE HOLDER).  flock(2) wakes a waiter in no
-    specified sequence, but the holder takes the requests in the sequence of
-    their numbers.
+    verdict and exits with its status.  When the landing gets the lock of a free lane
+    (free_lane() of assay.loop.gate), it is the holder of the tree of that
+    lane (THE HOLDER, THE LANES).  The holder takes the requests in the
+    sequence of their numbers.
 
     A landing of an earlier copy of this module writes no request.  It waits
-    for the same lock with flock(2), and it runs alone when it gets the lock.
-    A request then cannot land two times, because only a holder of the lock
-    reads the queue.
+    for the lock of the first lane with flock(2), and it runs alone when it
+    gets the lock (THE LANES of assay.loop.gate).
+
+THE LANES
+    Up to MAX_LANES holders run at the same time, each in the warm tree of
+    its lane (THE LANES of assay.loop.gate).  A holder claims each request of
+    its batch with an exclusive lock of flock(2) on the file NUMBER.claim of
+    the queue, with no wait (claimed()).  A different holder takes no request
+    with a claim, so no request lands two times.  The kernel frees the claims
+    of a holder that ends.  The holder frees each claim at the end of its
+    batch, so a request that waits for the next batch goes to the next holder.
+
+    Two lanes race only at the compare-and-swap.  The lane that loses
+    composes its requests again on the new commit of the branch, and its gate
+    runs again (THE COMPARE-AND-SWAP).  THE REDUCE and THE BUILT FILES of a
+    lane fold only into the commit of that lane.
+
+    The request file of this copy holds the field claims.  An earlier copy of
+    this module claims no request.  The holder of a lane after the first one
+    then takes no batch while a request of an earlier copy waits.
 
 THE HOLDER
     The holder of the tree takes the requests of the queue in the sequence
-    of the numbers.  It takes each request with no verdict and with a
-    process that holds its lock.  A request with a lock and no request file
+    of the numbers.  It takes each request with no verdict, with no claim of
+    a different holder, and with a process that holds its lock (THE LANES).  A request with a lock and no request file
     can come next.  The holder waits INCOMPLETE_S seconds for its request
     file, and then it takes the requests after it.  It takes the requests with
     the git directory and the branch of the first one, and the others wait
@@ -483,6 +500,7 @@ LOCK_SUFFIX = ".lock"
 REQUEST_SUFFIX = ".request"
 VERDICT_SUFFIX = ".verdict"
 JOURNAL_SUFFIX = ".journal"
+CLAIM_SUFFIX = ".claim"
 PATCH_MARK = ".patch-"
 REQUEST_FORMAT = 2
 # The bytes of the random token of a request (THE QUEUE).
@@ -620,7 +638,8 @@ class Queued:
 
     `branch` is the branch of HEAD of the work tree, and `common` is its shared git directory (THE HOLDER).  `token` is
     the random token of the request, and its verdict holds the same token (THE QUEUE).  `head` is the commit of HEAD of
-    the work tree at the request, or "" (THE TREE).
+    the work tree at the request, or "" (THE TREE).  `is_claiming` tells that the process of the request runs a copy of
+    this module that claims each request that it takes (THE LANES).
     """
 
     number: int
@@ -631,6 +650,7 @@ class Queued:
     common: str = ""
     token: str = ""
     head: str = ""
+    is_claiming: bool = False
 
     @property
     def name(self) -> str:
@@ -729,8 +749,9 @@ type Check = Callable[[gate.Candidate, bool], gate.Verdict]
 type Decide = Callable[[Queued, Decision], None]
 # The check that tells if the process of a request holds its lock (THE COMPARE-AND-SWAP).
 type IsAlive = Callable[[Queued], bool]
-# The holder of the tree: it takes the work directory and the queue, and it tells if a batch was there (THE WAIT).
-type Holder = Callable[[Path, Path], bool]
+# The holder of the tree of a lane: it takes the work directory, the queue and the lane, and it tells if a batch was
+# there (THE WAIT, THE LANES).
+type Holder = Callable[[Path, Path, int], bool]
 
 
 # ── The request ────────────────────────────────────────────────────────────
@@ -1959,8 +1980,11 @@ class BatchLanding:
         return found
 
 
-def write_records(work: Path, mode: str, records: Sequence[RunRecord]) -> None:
-    """Append one line of JSON for each run of the gate to the file RECORDS of the work directory (THE RECORD)."""
+def write_records(work: Path, mode: str, records: Sequence[RunRecord], lane: int = 0) -> None:
+    """Append one line of JSON for each run of the gate to the file RECORDS of the work directory (THE RECORD).
+
+    The line gives the lane of the run, from 1 (THE LANES).
+    """
     if not records:
         return
     work.mkdir(parents=True, exist_ok=True)
@@ -1970,6 +1994,7 @@ def write_records(work: Path, mode: str, records: Sequence[RunRecord]) -> None:
             line = {
                 "time": loop_history.iso_now(),
                 "mode": mode,
+                "lane": lane + 1,
                 "base": not run.numbers,
                 "head": run.candidate.head,
                 "commit": run.candidate.commit,
@@ -2054,6 +2079,7 @@ def encoded_request(queued: Queued, patch_names: Sequence[str]) -> bytes:
         "paths": list(request.paths),
         "jobs": queued.options.jobs,
         "every": queued.options.is_every,
+        "claims": True,
     }
     return (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
 
@@ -2117,7 +2143,7 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
         text_list(record.get("paths"), "paths"),
     )
     options = Options(False, False, is_every=every, jobs=jobs)
-    return Queued(number, Path(root), request, options, branch, common, token, head)
+    return Queued(number, Path(root), request, options, branch, common, token, head, record.get("claims") is True)
 
 
 @contextlib.contextmanager
@@ -2155,7 +2181,7 @@ def remove_request(queue: Path, number: int) -> None:
 
     A holder then takes no request of a process that left the queue, and it finds no file of a request with no lock.
     """
-    for suffix in (REQUEST_SUFFIX, VERDICT_SUFFIX, JOURNAL_SUFFIX):
+    for suffix in (REQUEST_SUFFIX, VERDICT_SUFFIX, JOURNAL_SUFFIX, CLAIM_SUFFIX):
         queue_file(queue, number, suffix).unlink(missing_ok=True)
     for path in paths.listing(queue, f"{number:0{NUMBER_WIDTH}d}{PATCH_MARK}*"):
         path.unlink(missing_ok=True)
@@ -2259,6 +2285,31 @@ def is_alive(queue: Path, queued: Queued) -> bool:
     return heavy.is_held(queue_file(queue, queued.number, LOCK_SUFFIX))
 
 
+def is_claimed(queue: Path, number: int) -> bool:
+    """Tell if the holder of a different lane holds the claim of a request (THE LANES)."""
+    return heavy.is_held(queue_file(queue, number, CLAIM_SUFFIX))
+
+
+def claimed(stack: contextlib.ExitStack, queue: Path, batch: Sequence[Queued]) -> list[Queued]:
+    """Take the claim of each request of a batch with no wait, keep each claim in the stack, and give the claimed ones.
+
+    A request whose claim a different holder took between the read of the queue and the claim drops out of the batch
+    (THE LANES).
+    """
+    found: list[Queued] = []
+    for queued in batch:
+        claim = queue_file(queue, queued.number, CLAIM_SUFFIX)
+        descriptor = os.open(claim, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o644)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(descriptor)
+            continue
+        stack.callback(os.close, descriptor)
+        found.append(queued)
+    return found
+
+
 def has_journal_verdict(queue: Path, queued: Queued) -> bool:
     """Give a request with a journal the verdict that the journal settles, and tell if the request then has a verdict.
 
@@ -2322,6 +2373,8 @@ def waiting_requests(queue: Path, pause: heavy.Pause = time.sleep) -> list[Queue
             if not heavy.is_held(lock):
                 remove_request(queue, number)
                 continue
+            if is_claimed(queue, number):
+                continue
             request_file = queue_file(queue, number, REQUEST_SUFFIX)
             try:
                 data = request_file.read_bytes()
@@ -2363,7 +2416,7 @@ def batch_of(found: Sequence[Queued]) -> list[Queued]:
 
 
 def held_gate(
-    work: Path, batch: Sequence[Queued], check: Check | None
+    work: Path, batch: Sequence[Queued], check: Check | None, lane: int = 0
 ) -> tuple[Check, contextlib.AbstractContextManager[None]]:
     """Return the check of the gate of a batch and the session of the gate that the holder holds (THE HOLDER).
 
@@ -2378,7 +2431,7 @@ def held_gate(
     jobs = min(item.options.jobs for item in batch)
     is_every = any(item.options.is_every for item in batch)
     repository = repository_of(batch[0])
-    planned = gate.Gate(heavy.main_work_tree(repository), work, jobs, is_every)
+    planned = gate.Gate(heavy.main_work_tree(repository), work, jobs, is_every, lane=lane)
 
     def run_check(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
         """Run the gate with the logs of the run in a directory of its own."""
@@ -2405,7 +2458,7 @@ def refused_queue(queue: Path, problem: Exception) -> bool:
     count = 0
     for lock in paths.listing(queue, f"*{LOCK_SUFFIX}"):
         number = number_of(lock)
-        if number is None or not heavy.is_held(lock):
+        if number is None or not heavy.is_held(lock) or is_claimed(queue, number):
             continue
         verdict_file = queue_file(queue, number, VERDICT_SUFFIX)
         try:
@@ -2421,20 +2474,31 @@ def refused_queue(queue: Path, problem: Exception) -> bool:
     return True
 
 
-def hold(work: Path, queue: Path, check: Check | None = None, pause: heavy.Pause = time.sleep) -> bool:
-    """Land one batch of the queue as the holder of the tree, and tell if a batch was there (THE HOLDER).
+def hold(work: Path, queue: Path, check: Check | None = None, pause: heavy.Pause = time.sleep, lane: int = 0) -> bool:
+    """Land one batch of the queue as the holder of the warm tree of a lane, and tell if a batch was there (THE HOLDER).
 
-    The caller holds the lock of the warm tree.  With no planted check, the batch runs the gate of assay.loop.gate on
-    the shared git directory of its first request.  It holds the session of the gate, which goes before each other
-    heavy step (THE PRIORITY OF THE GATE of assay.loop.heavy).  Each run of the gate writes its logs into a directory
-    of its own.
+    The caller holds the lock of the warm tree of the lane.  The holder claims each request of its batch (THE LANES).
+    With no planted check, the batch runs the gate of assay.loop.gate on the shared git directory of its first request.
+    It holds the session of the gate, which goes before each other heavy step (THE PRIORITY OF THE GATE of
+    assay.loop.heavy).  Each run of the gate writes its logs into a directory of its own.
     """
-    try:
-        batch = batch_of(waiting_requests(queue, pause))
-    except Exception as problem:  # noqa: BLE001
-        return refused_queue(queue, problem)
-    if not batch:
-        return False
+    with contextlib.ExitStack() as claims:
+        try:
+            found = waiting_requests(queue, pause)
+            if lane > 0 and not all(item.is_claiming for item in found):
+                return False
+            batch = claimed(claims, queue, batch_of(found))
+        except Exception as problem:  # noqa: BLE001
+            return refused_queue(queue, problem)
+        if not batch:
+            return False
+        return held_batch(work, queue, batch, check, pause, lane)
+
+
+def held_batch(
+    work: Path, queue: Path, batch: Sequence[Queued], check: Check | None, pause: heavy.Pause, lane: int
+) -> bool:
+    """Land a claimed batch as the holder of the warm tree of a lane, write the records, and give True (THE HOLDER)."""
     decided: set[int] = set()
 
     def decide(queued: Queued, decision: Decision) -> None:
@@ -2447,9 +2511,9 @@ def hold(work: Path, queue: Path, check: Check | None = None, pause: heavy.Pause
 
     landing: BatchLanding | None = None
     try:
-        gated, session = held_gate(work, batch, check)
+        gated, session = held_gate(work, batch, check, lane)
         shown = " ".join(item.name for item in batch)
-        check_report.write_line(f"loop land: the holder of the tree lands the batch {shown}")
+        check_report.write_line(f"loop land: the holder of the tree of lane {lane + 1} lands the batch {shown}")
         with session:
             landing = BatchLanding(batch, gated, decide, pause, functools.partial(is_alive, queue), Journal(queue))
             landing.land(batch)
@@ -2459,12 +2523,17 @@ def hold(work: Path, queue: Path, check: Check | None = None, pause: heavy.Pause
         settle(batch, decide, landing, failure)
     finally:
         try:
-            write_records(work, "land", landing.records() if landing is not None else [])
+            write_records(work, "land", landing.records() if landing is not None else [], lane)
         except Exception as problem:  # noqa: BLE001
             check_report.write_line(
                 f"loop land: the record of the runs cannot be written: {error_text(problem)}", is_error=True
             )
     return True
+
+
+def hold_lane(work: Path, queue: Path, lane: int) -> bool:
+    """Land one batch of the queue as the holder of the warm tree of a lane, with the gate (THE HOLDER, THE LANES)."""
+    return hold(work, queue, lane=lane)
 
 
 def settle(batch: Sequence[Queued], decide: Decide, landing: BatchLanding | None, failure: Decision) -> None:
@@ -2502,7 +2571,7 @@ def landing(
     root: Path,
     request: Request,
     options: Options,
-    holder: Holder = hold,
+    holder: Holder = hold_lane,
     pause: heavy.Pause = time.sleep,
 ) -> int:
     """Write the request into the queue, wait for its verdict or for the lock, and return its exit (THE WAIT).
@@ -2518,10 +2587,10 @@ def landing(
         check_report.write_line(f"loop land: the request waits in the queue as {own.name}")
         decision = read_decision(queue, own.number, own.token)
         while decision is None:
-            with gate.tree_lock(work, wait=False) as is_held:
-                while is_held:
+            with gate.free_lane(work) as lane:
+                while lane is not None:
                     decision = read_decision(queue, own.number, own.token)
-                    if decision is not None or not holder(work, queue):
+                    if decision is not None or not holder(work, queue, lane):
                         break
             if decision is None:
                 pause(POLL_S)

@@ -153,7 +153,7 @@ THE RUN OF A CONFIGURATION
          build.  The file of --only is in the directory of the logs.
          Then each test that is red runs one more time apart from the
          suite.  The red tests run at the same time, in one run of ctest
-         with the cap of the lease, and each one keeps its own verdict.  A
+         with the jobs of the lease, and each one keeps its own verdict.  A
          test that is red in that run too ("red alone too") rejects the
          commit.  A test that is green in that run ("green alone") is a
          flaky test, and no retry hides it: the
@@ -189,15 +189,19 @@ THE JOBSERVER
     (assay.core.jobserver), and each command of the configuration gets the
     variable MAKEFLAGS of that jobserver.  The pump of the lease adds slots
     while the configuration uses each one, and it gives idle slots back to
-    the pool.  A configuration in its test phase then cannot take the jobs of
-    a different configuration, and the slots of the host go to each heavy
-    job of the host.  The wait for the first slot watches the stop event.
+    the pool.  It grows past the slice only while no different lease waits.
+    A configuration in its test phase then cannot take the jobs of a
+    different configuration that waits, and the slots of the host go to each
+    heavy job of the host.  The leases of the gate go before the other
+    leases of the host (THE POOL of assay.loop.heavy).  The wait for the
+    first slot watches the stop event.
     The gate holds one slot of the jobserver for each command that it runs:
     its implicit slot, or one token.  The command then runs its first job
     on that slot.  ninja, ctest and `loop syntax` take one token for each
     other job.  `loop test` gives its build no -j with the jobserver,
     because ninja obeys the jobserver only with no -j (assay.loop.affected).
-    ctest and the pool of `loop syntax` get -j with the cap of the lease.
+    ctest and the pool of `loop syntax` get -j with the most slots of the
+    lease, and the tokens of the jobserver then decide.
     The verdict gives the wait of each configuration for its first slot, and
     the sum of its slots over its time (Verdict.wait_seconds and
     Verdict.slot_seconds).  Its time in step_seconds starts after that wait.
@@ -346,10 +350,22 @@ THE LOGS
     as the output of a test that was red in the suite and green alone.
 
 THE LOCK OF THE TREE
-    One landing at a time uses the warm tree.  tree_lock() holds an
-    exclusive lock of flock(2) on the file LOCK of the work directory.  It
-    waits for the lock, or with no wait it tells that a different landing
-    holds it.  session() holds the lock and gives the gate.
+    One landing at a time uses a warm tree.  tree_lock() holds an exclusive
+    lock of flock(2) on the lock file of the warm tree of a lane in the work
+    directory.  It waits for the lock, or with no wait it tells that a
+    different landing holds it.  session() holds the lock of the first lane
+    and gives the gate.
+
+THE LANES
+    Up to MAX_LANES landings run at the same time, each in a warm tree of
+    its own: TREE, TREE-2 and TREE-3, each with its own build directories.
+    free_lane() holds the lock of the first free lane.  A holder of the
+    first lane also holds the lock of PRIMARY.  A lane after the first one is
+    free only while that lock is held, so only while a holder of this copy
+    of the module holds the first lane.  An earlier copy of the module takes
+    only the first lane, and it reads the queue with no claim
+    (assay.loop.land, THE LANES).  It then never runs at the same time as a
+    different lane.
 
 `guard selftest tests.loop.test_gate` does a test of the module on a planted repository.
 """
@@ -382,6 +398,10 @@ from assay.setup import pins as cmake_pin
 TREE = "tree"
 LOCK = "tree.lock"
 LOGS = "logs"
+# The most lanes, and the lock that a holder of the first lane holds (THE LANES).  On 2026-11-13, a warm tree held 22 GB
+# and the disk of the work root had 257 GB free, so three warm trees fit with room.
+MAX_LANES = 3
+PRIMARY = "primary.lock"
 # The name of the directory of the logs of one run, before its number, and the directories of the runs that stay (THE
 # LOGS).
 RUN_MARK = "run-"
@@ -840,7 +860,8 @@ class Gate:
     `jobs` is the most jobs of the lease of one configuration, with SLICE of assay.loop.heavy as the most (slice).
     `read` is the reader of the available memory, which gives the cap of a lease (THE MEMORY of assay.loop.heavy).
     `run` names the directory of the logs of one run in LOGS, or it is "" for LOGS itself (THE LOGS).  `pool` is the
-    slot pool of the leases, or None for the pool of the host (THE JOBSERVER).
+    slot pool of the leases, or None for the pool of the host (THE JOBSERVER).  `lane` names the warm tree (THE
+    LANES).
     """
 
     root: Path
@@ -850,6 +871,7 @@ class Gate:
     read: heavy.Reader = heavy.available_gb
     run: str = ""
     pool: heavy.Pool | None = None
+    lane: int = 0
 
     @property
     def slice(self) -> int:
@@ -858,8 +880,8 @@ class Gate:
 
     @property
     def tree(self) -> Path:
-        """The warm tree."""
-        return self.work / TREE
+        """The warm tree of the lane of the gate (THE LANES)."""
+        return self.work / tree_name(self.lane)
 
     @property
     def logs(self) -> Path:
@@ -1126,7 +1148,9 @@ class Step:
         Raises:
             Stopped: If the stop event is set before the lease holds a slot
         """
-        with heavy.leased(self.gate.root, self.gate.slice, self.gate.pool, self.gate.read, self.stop) as share:
+        with heavy.leased(
+            self.gate.root, self.gate.slice, self.gate.pool, self.gate.read, self.stop, is_gate=True
+        ) as share:
             if share is None:
                 raise Stopped
             yield share
@@ -1369,7 +1393,7 @@ class Step:
     ) -> list[str]:
         """Run each red test one more time apart from the suite, and return the names of the tests that are red again.
 
-        The tests run at the same time, in one run of ctest with the cap of the lease (THE RUN OF A CONFIGURATION).
+        The tests run at the same time, in one run of ctest with the jobs of the lease (THE RUN OF A CONFIGURATION).
         The report of that run gives the status of each test.  A test with no status in the report is red.  The limit
         of the run is ALONE_S for each test, the time of the tests one after the other.  The files of the run have the
         name of its round (log_name()).
@@ -1573,25 +1597,56 @@ def next_run(work: Path) -> str:
     return name
 
 
+def tree_name(lane: int) -> str:
+    """Return the name of the warm tree of a lane in the work directory: TREE, then TREE-2 and TREE-3 (THE LANES)."""
+    return TREE if lane == 0 else f"{TREE}-{lane + 1}"
+
+
+def lock_name(lane: int) -> str:
+    """Return the name of the lock file of the warm tree of a lane in the work directory (THE LANES)."""
+    return LOCK if lane == 0 else f"{tree_name(lane)}.lock"
+
+
 @contextlib.contextmanager
-def tree_lock(work: Path, wait: bool = True) -> Iterator[bool]:
-    """Hold the lock of the warm tree for the block, and give True (THE LOCK OF THE TREE).
+def tree_lock(work: Path, wait: bool = True, lane: int = 0) -> Iterator[bool]:
+    """Hold the lock of the warm tree of a lane for the block, and give True (THE LOCK OF THE TREE).
 
     With a wait, the block waits while a different landing holds the lock.  With no wait, the block gets False
-    immediately when a different landing holds it, and holds nothing.
+    immediately when a different landing holds it, and holds nothing.  A holder of the first lane also holds the lock
+    of PRIMARY (THE LANES).
     """
     work.mkdir(parents=True, exist_ok=True)
-    with open(work / LOCK, "a", encoding="ascii") as handle:
+    lock = work / lock_name(lane)
+    with open(lock, "a", encoding="ascii") as handle, open(work / PRIMARY, "a", encoding="ascii") as primary:
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
             is_held = True
         except BlockingIOError:
             is_held = False
         if not is_held and wait:
-            check_report.write_line(f"loop land: a different landing holds {work / LOCK}, and this one waits")
+            check_report.write_line(f"loop land: a different landing holds {lock}, and this one waits")
             fcntl.flock(handle, fcntl.LOCK_EX)
             is_held = True
+        if is_held and lane == 0:
+            fcntl.flock(primary, fcntl.LOCK_EX)
         yield is_held
+
+
+@contextlib.contextmanager
+def free_lane(work: Path) -> Iterator[int | None]:
+    """Hold the lock of the first free lane for the block, and give its number, or None when no lane is free.
+
+    A lane after the first one is free only while a holder of this copy of the module holds the first lane (THE
+    LANES).  Complexity: one try of the lock of each lane.
+    """
+    for lane in range(MAX_LANES):
+        if lane > 0 and not heavy.is_held(work / PRIMARY):
+            break
+        with tree_lock(work, wait=False, lane=lane) as is_held:
+            if is_held:
+                yield lane
+                return
+    yield None
 
 
 @contextlib.contextmanager

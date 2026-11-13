@@ -33,6 +33,8 @@ THE VALVE
     writes `count` bytes.  Valve.pull(count) reads at most `count` bytes with
     no wait, and it gives the count that it read.  The valve reads only
     bytes that the FIFO holds.  It never takes a token that a child holds.
+    Valve.wait_idle(timeout) waits until the FIFO holds a byte, for example
+    a token that a child gives back.
 
 THE CLIENT
     client_of(environment) gives the client of the jobserver that MAKEFLAGS
@@ -214,6 +216,11 @@ class Valve:
         """Return the bytes that the FIFO holds at this time: the idle tokens."""
         answer = fcntl.ioctl(self._descriptor, termios.FIONREAD, struct.pack("i", 0))
         return int(struct.unpack("i", answer)[0])
+
+    def wait_idle(self, timeout_s: float) -> bool:
+        """Wait at most `timeout_s` seconds until the FIFO holds an idle token, and tell if it holds one."""
+        readable, _, _ = select.select([self._descriptor], [], [], timeout_s)
+        return bool(readable)
 
     def put(self, count: int) -> None:
         """Write `count` tokens into the FIFO."""

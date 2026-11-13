@@ -15,6 +15,8 @@ The cases of the pool use a planted pool.  A lease must keep its cap, take
 only free slots, grow while its job uses each slot, and give idle slots
 back.  SIGKILL of a holder must free each of its slots.  A lease that holds
 each slot must give its idle slots above its fair share to a hungry lease.
+A lease that is not of the gate must give its idle slots to a waiting lease
+of the gate, and a waiting exclusive step must stop each new lease.
 """
 
 import contextlib
@@ -414,6 +416,73 @@ def fair_cases(expect: testing.Expect) -> None:
         )
 
 
+def priority_cases(expect: testing.Expect) -> None:
+    """Hold THE PRIORITY OF THE GATE in the pool and THE TURNSTILE.
+
+    A lease that is not of the gate gives its idle slots to a waiting lease of the gate at once.  An exclusive step
+    that waits stops each new lease, and runs after the lease in flight.
+    """
+    with tempfile.TemporaryDirectory(prefix="heavy-priority-") as work_text:
+        root = Path(work_text)
+        pool = heavy.Pool(root / "slots", 4)
+
+        def gate_after_other() -> tuple[int, float]:
+            """Hold a lease of each slot that is not of the gate, and start a lease of the gate in a thread."""
+            got: list[tuple[int, float]] = []
+            with heavy.leased(root, 4, pool, reader([MUCH_MEMORY_GB])) as other:
+                testing.wait_until(lambda: other is not None and other.lease.held == pool.size, limit_s=5.0)
+
+                def gate_lease() -> None:
+                    """Wait for a lease of the gate, and keep its first slots and its wait."""
+                    with heavy.leased(root, 4, pool, reader([MUCH_MEMORY_GB]), is_gate=True) as share:
+                        if share is not None:
+                            got.append((share.lease.held, share.wait_s))
+
+                worker = threading.Thread(target=gate_lease)
+                worker.start()
+                worker.join(10.0)
+            return got[0] if got else (0, -1.0)
+
+        (held, wait_s), _ = testing.captured(gate_after_other)
+        expect(
+            f"a lease that holds each slot idle gives them to a waiting lease of the gate at once: {held} slots after "
+            f"{wait_s:.2f} s",
+            held >= 1 and 0.0 <= wait_s < heavy.IDLE_TICKS * heavy.TICK_S,
+        )
+        order: list[str] = []
+        lease_free = threading.Event()
+
+        def writer() -> None:
+            """Run an exclusive step after the lease in flight."""
+            with heavy.heavy_lock(root):
+                order.append("step")
+
+        def late_lease() -> None:
+            """Start a lease after the step waits."""
+            with heavy.leased(root, 1, pool, reader([MUCH_MEMORY_GB])):
+                order.append("late lease")
+
+        def run() -> None:
+            """Hold a lease, start a waiting step, then a late lease, and end the first lease."""
+            with heavy.leased(root, 1, pool, reader([MUCH_MEMORY_GB])):
+                step = threading.Thread(target=writer)
+                step.start()
+                testing.wait_until(lambda: has_waiter(heavy.lock_path(root)), limit_s=5.0)
+                late = threading.Thread(target=late_lease)
+                late.start()
+                time.sleep(4 * heavy.WAIT_S)
+                order.append("first lease ends")
+            lease_free.set()
+            step.join(10.0)
+            late.join(10.0)
+
+        testing.captured(run)
+        expect(
+            f"a waiting exclusive step stops a new lease, and runs when the lease in flight ends: {order}",
+            order == ["first lease ends", "step", "late lease"],
+        )
+
+
 def cycled(client: jobserver.Client, stop: threading.Event) -> None:
     """Use one slot of a jobserver after the other for a short job, until the stop event."""
     while not stop.is_set():
@@ -428,5 +497,15 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (memory_cases, step_cases, lock_cases, gate_cases, exit_cases, lease_cases, kill_cases, fair_cases),
+        (
+            memory_cases,
+            step_cases,
+            lock_cases,
+            gate_cases,
+            exit_cases,
+            lease_cases,
+            kill_cases,
+            fair_cases,
+            priority_cases,
+        ),
     )

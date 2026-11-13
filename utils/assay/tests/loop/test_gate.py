@@ -25,6 +25,7 @@ write of that file from the build of default before the suite, and the fold
 of the write into its commit.
 """
 
+import fcntl
 import json
 import os
 import sys
@@ -657,7 +658,7 @@ def run_cases(expect: testing.Expect) -> None:
         expect(
             f"two red tests run again at the same time, in one run of ctest with the jobs of the step, and each keeps "
             f"its own verdict: {runs}",
-            runs == ["4 test_broken test_flaky"]
+            runs == [f"{POOL_SLOTS} test_broken test_flaky"]
             and not both.is_accepted
             and "red alone too: test_broken," in both.problems[0]
             and both.focus == (gate.Focus("default", ("test_broken",)),)
@@ -1007,7 +1008,7 @@ def touched_cases(expect: testing.Expect) -> None:
         cases = (
             ("the module of a rule that reads the build", BUILD_RULE_MODULE, objects, f"--only {BUILD_RULE_TEST}"),
             ("a self-test module that reads no build", "utils/assay/tests/sample/test_one.py", ("default",), ""),
-            ("a module of the test launcher", LAUNCHER_MODULE, objects, "-j 1 --build-only"),
+            ("a module of the test launcher", LAUNCHER_MODULE, objects, f"-j {POOL_SLOTS} --build-only"),
         )
         for label, path, expected, shown in cases:
             commit = commit_change(root, path, "VALUE = 2\n", f"Change {path}")
@@ -1026,7 +1027,7 @@ def touched_cases(expect: testing.Expect) -> None:
             checked.unlink(missing_ok=True)
             only = planted.logs / "bench-fuzz.only.txt"
             last = lines[-1] if lines else ""
-            if last.startswith("-j 1 --only ") and only.is_file():
+            if last.startswith(f"-j {POOL_SLOTS} --only ") and only.is_file():
                 last = f"--only {only.read_text(encoding='utf-8').strip()}"
             leases = printed.count("memory: ")
             reconfigured = ["reconfigure-noop -"] if lines else []
@@ -1074,7 +1075,7 @@ def thread_cases(expect: testing.Expect) -> None:
             f"each configuration gets MAKEFLAGS of the jobserver of a lease of its own with the slice of the gate, "
             f"and each FIFO goes at the end of the check: {flags[0]}",
             verdict.is_accepted
-            and all(text.startswith("-j8 --jobserver-auth=fifo:") for text in flags)
+            and all(text.startswith(f"-j{POOL_SLOTS} --jobserver-auth=fifo:") for text in flags)
             and len(set(fifos)) == len(builds)
             and not any(fifo.exists() for fifo in fifos)
             and len(verdict.wait_seconds) == len(verdict.slot_seconds) == len(builds),
@@ -1089,10 +1090,10 @@ def thread_cases(expect: testing.Expect) -> None:
         greedy = replace(planted_gate(work, root, tree, "greedy", {"build-release": "count"}), jobs=8)
         verdict, printed = testing.captured(lambda: greedy.check(gate.Candidate(head, commit, ("test/a.cpp",)), False))
         taken = [(tree / name / "tokens.txt").read_text(encoding="utf-8") for name in ("build", "build-release")]
-        holds = verdict.is_accepted and int(taken[0]) <= 7 and int(taken[1]) >= heavy.START_SLOTS - 1
+        holds = verdict.is_accepted and int(taken[0]) < POOL_SLOTS and int(taken[1]) >= heavy.START_SLOTS - 1
         label = (
             f"a configuration that takes each token that it can does not take the tokens of a different "
-            f"configuration: the greedy one holds {taken[0]} of at most 7, and the other one gets {taken[1]}"
+            f"configuration: the greedy one holds {taken[0]}, and the other one gets {taken[1]}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
         rule_commit = commit_change(root, BUILD_RULE_MODULE, "VALUE = 3\n", "Change the rule")
@@ -1120,7 +1121,7 @@ def thread_cases(expect: testing.Expect) -> None:
 
 
 def memory_cases(expect: testing.Expect) -> None:
-    """Hold THE JOBSERVER with a small memory: the jobserver and each -j get the cap of the lease."""
+    """Hold THE JOBSERVER with a small memory: the jobserver and each -j get the jobs that the memory holds."""
     with tempfile.TemporaryDirectory(prefix="gate-memory-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -1273,8 +1274,8 @@ def base_run_cases(expect: testing.Expect) -> None:
         holds = (
             batch_verdict.focus == (gate.Focus("release", ("test_broken",)),)
             and set(ran) == {"build-release", "build-bench-fuzz"}
-            and ran["build-release"][-1].startswith("-j 1 --only ")
-            and ran["build-bench-fuzz"] == ["-j 1"]
+            and ran["build-release"][-1].startswith(f"-j {POOL_SLOTS} --only ")
+            and ran["build-bench-fuzz"] == [f"-j {POOL_SLOTS}"]
             and base_verdict.configurations == ("release", "bench-fuzz")
             and base_verdict.problems == batch_verdict.problems
             and base_verdict.final == head
@@ -1364,6 +1365,23 @@ def lock_cases(expect: testing.Expect) -> None:
                 expect("with no wait, the lock tells at once that a different holder holds it", not is_held)
         with gate.tree_lock(work / "land", wait=False) as is_held:
             expect("with no wait, a free lock is held for the block", is_held)
+        lanes: list[int | None] = []
+        with gate.free_lane(work / "land") as first_lane:
+            lanes.append(first_lane)
+            with gate.free_lane(work / "land") as second_lane:
+                lanes.append(second_lane)
+                with gate.free_lane(work / "land") as third_lane, gate.free_lane(work / "land") as no_lane:
+                    lanes += [third_lane, no_lane]
+        with open(work / "land" / gate.LOCK, "a", encoding="ascii") as earlier:
+            fcntl.flock(earlier, fcntl.LOCK_EX)
+            with gate.free_lane(work / "land") as beside_earlier:
+                lanes.append(beside_earlier)
+        expect(
+            f"each landing takes the first free lane, the lanes end at MAX_LANES, and a holder of the first lane with "
+            f"no lock of PRIMARY, such as an earlier copy, leaves no lane free: {lanes}",
+            lanes == [0, 1, 2, None, None]
+            and gate.Gate(work, work / "land", 1, False, lane=2).tree == work / "land" / "tree-3",
+        )
         names = [gate.next_run(work / "land") for _ in range(gate.RUNS_KEPT + 2)]
         kept = [path.name for path in sorted((work / "land" / gate.LOGS).iterdir())]
         expect(

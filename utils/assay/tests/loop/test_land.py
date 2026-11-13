@@ -122,11 +122,11 @@ def check(candidate, is_retry):
     return gate.Verdict(("debug",), (), 1.0)
 
 
-def holder(held_work, queue):
+def holder(held_work, queue, lane):
     after = part.get("holds_after")
     if not part.get("holds") or (after and not pathlib.Path(after).exists()):
         return False
-    return land.hold(held_work, queue, check, lambda _seconds: None)
+    return land.hold(held_work, queue, check, lambda _seconds: None, lane)
 
 
 own = (part["own"],) if part["own"] else ()
@@ -1477,7 +1477,7 @@ def landing_queue_cases(expect: testing.Expect, work: Path, root: Path) -> None:
                 root,
                 request_of(("Add r3",), own=("r3.txt",)),
                 options(),
-                lambda held_work, held_queue: land.hold(held_work, held_queue, passing(seen), no_pause),
+                lambda held_work, held_queue, lane: land.hold(held_work, held_queue, passing(seen), no_pause, lane),
                 no_pause,
             )
         )
@@ -1504,9 +1504,51 @@ def landing_queue_cases(expect: testing.Expect, work: Path, root: Path) -> None:
         [item["subject"] for item in records[-1]["requests"]] == ["Add r1", "Add r2", "Add r3"]
         and all(item["result"] == land.LANDED for item in records[-1]["requests"])
         and records[-1]["landed"] is True
-        and records[-1]["base"] is False,
+        and records[-1]["base"] is False
+        and records[-1]["lane"] == 1,
     )
     hold_drop_cases(expect, work, root)
+    claim_cases(expect, work, root)
+
+
+def claim_cases(expect: testing.Expect, work: Path, root: Path) -> None:
+    """Hold THE LANES: a holder takes no request that a different holder claims, and no batch beside an earlier copy."""
+    queue = land.queue_of(work, root)
+    (root / "c1.txt").write_text("claimed\n", encoding="utf-8")
+    (root / "c2.txt").write_text("free\n", encoding="utf-8")
+    head = git.head(root)
+    seen: list[tuple[gate.Candidate, bool]] = []
+    with (
+        waiting(queue, root, request_of(("Add c1",), own=("c1.txt",))) as first,
+        waiting(queue, root, request_of(("Add c2",), own=("c2.txt",))) as second,
+        open(land.queue_file(queue, first.number, land.CLAIM_SUFFIX), "a", encoding="ascii") as other_claim,
+    ):
+        fcntl.flock(other_claim, fcntl.LOCK_EX)
+        took, _ = testing.captured(lambda: land.hold(work, queue, passing(seen), no_pause, 1))
+        decisions = [land.read_decision(queue, item.number, item.token) for item in (first, second)]
+        expect(
+            "a holder of a second lane takes no request that a different holder claims, and lands the other one",
+            took
+            and decisions[0] is None
+            and decisions[1] is not None
+            and decisions[1].status == 0
+            and subjects_since(root, head) == ["Add c2"],
+        )
+        fcntl.flock(other_claim, fcntl.LOCK_UN)
+        request_file = land.queue_file(queue, first.number, land.REQUEST_SUFFIX)
+        record = json.loads(request_file.read_text(encoding="utf-8"))
+        record.pop("claims")
+        request_file.write_text(json.dumps(record) + "\n", encoding="utf-8")
+        later, _ = testing.captured(lambda: land.hold(work, queue, passing(seen), no_pause, 1))
+        expect(
+            "a holder of a second lane takes no batch while a request of an earlier copy waits",
+            not later and land.read_decision(queue, first.number, first.token) is None,
+        )
+        first_lane, _ = testing.captured(lambda: land.hold(work, queue, passing(seen), no_pause, 0))
+        expect(
+            "the holder of the first lane takes the request of an earlier copy",
+            first_lane and land.read_decision(queue, first.number, first.token) is not None,
+        )
 
 
 def hold_drop_cases(expect: testing.Expect, work: Path, root: Path) -> None:
@@ -1940,11 +1982,21 @@ def log_lines(log: Path) -> list[str]:
     return log.read_text(encoding="utf-8").splitlines() if log.is_file() else []
 
 
+def only_first_lane(work: Path, lanes: contextlib.ExitStack) -> None:
+    """Hold each lane of a work directory after the first one in the stack, so the planted processes share one lane.
+
+    THE LANES gives the lanes.  A case of one lane then holds the batch of one holder.
+    """
+    for lane in range(1, gate.MAX_LANES):
+        lanes.enter_context(gate.tree_lock(work, wait=False, lane=lane))
+
+
 def process_cases(expect: testing.Expect) -> None:
     """Hold landings of planted processes: one batch, a holder that ends, an interrupt, and a holder of an earlier copy."""
-    with tempfile.TemporaryDirectory(prefix="land-process-") as work_text:
+    with tempfile.TemporaryDirectory(prefix="land-process-") as work_text, contextlib.ExitStack() as lanes:
         base = Path(work_text)
         work, root, log = base / "work-batch", base / "repo-batch", base / "batch.log"
+        only_first_lane(work, lanes)
         head = planted_repository(root)
         for index in (1, 2, 3):
             (root / f"r{index}.txt").write_text(f"{index}\n", encoding="utf-8")
@@ -1961,6 +2013,7 @@ def process_cases(expect: testing.Expect) -> None:
             and git.is_index_clean(root, "HEAD"),
         )
         work, root, log = base / "work-ends", base / "repo-ends", base / "ends.log"
+        only_first_lane(work, lanes)
         head = planted_repository(root)
         for index in (1, 2, 3):
             (root / f"r{index}.txt").write_text(f"{index}\n", encoding="utf-8")
@@ -1979,13 +2032,14 @@ def process_cases(expect: testing.Expect) -> None:
             and log_lines(log) == ["Add r1", "Add r2"]
             and subjects_since(root, head) == ["Add r2", "Add r3"],
         )
-        interrupt_cases(expect, base)
-        revert_process_cases(expect, base)
+        interrupt_cases(expect, base, lanes)
+        revert_process_cases(expect, base, lanes)
 
 
-def interrupt_cases(expect: testing.Expect, base: Path) -> None:
+def interrupt_cases(expect: testing.Expect, base: Path, lanes: contextlib.ExitStack) -> None:
     """Hold an interrupt of a waiting landing in the gate, and a holder of the warm tree of an earlier copy."""
     work, root, log = base / "work-interrupt", base / "repo-interrupt", base / "interrupt.log"
+    only_first_lane(work, lanes)
     head = planted_repository(root)
     go = base / "go"
     for index in (1, 2, 3):
@@ -2011,6 +2065,7 @@ def interrupt_cases(expect: testing.Expect, base: Path) -> None:
         and subjects_since(root, head) == ["Add r1", "Add r3"],
     )
     work, root, log = base / "work-earlier", base / "repo-earlier", base / "earlier.log"
+    only_first_lane(work, lanes)
     head = planted_repository(root)
     (root / "old.txt").write_text("a landing of an earlier copy\n", encoding="utf-8")
     (root / "r1.txt").write_text("1\n", encoding="utf-8")
@@ -2025,12 +2080,13 @@ def interrupt_cases(expect: testing.Expect, base: Path) -> None:
     )
 
 
-def revert_process_cases(expect: testing.Expect, base: Path) -> None:
+def revert_process_cases(expect: testing.Expect, base: Path, lanes: contextlib.ExitStack) -> None:
     """Hold processes with a patch of a file and an own path with an earlier copy of it: in one batch and after a swap.
 
     The copy of the own path has one more line, and the patch does not apply to it.
     """
     work, root, log = base / "work-revert", base / "repo-revert", base / "revert.log"
+    only_first_lane(work, lanes)
     head = planted_repository(root)
     patch = base / "revert.patch"
     (root / "shared.txt").write_text("alpha\ndelta\n", encoding="utf-8")
@@ -2048,6 +2104,7 @@ def revert_process_cases(expect: testing.Expect, base: Path) -> None:
         and subjects_since(root, head) == ["Change a line"],
     )
     work, root, log = base / "work-after", base / "repo-after", base / "after.log"
+    only_first_lane(work, lanes)
     head = planted_repository(root)
     (root / "shared.txt").write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
     go = base / "go-after"

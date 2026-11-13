@@ -12,25 +12,41 @@ THE POOL
 
     A lease is the slots of one job (leased()).  Its cap is the slice of
     the caller, with SLICE as the usual value, the size of the pool, and the
-    jobs that the memory holds (THE MEMORY).  The lease waits until one slot
-    is free, and it takes at most START_SLOTS free slots.  It makes a
-    jobserver of its cap with one token for each slot less one
+    jobs that the memory holds (THE MEMORY).  Its most slots (the burst) are
+    the size of the pool, or the jobs of the memory.  The lease waits until
+    one slot is free, and it takes at most START_SLOTS free slots.  It makes
+    a jobserver of its burst with one token for each slot less one
     (assay.core.jobserver, THE SERVER).  Its job gives MAKEFLAGS of that
     jobserver to each command.  A thread of the lease (the pump) looks at
     the idle tokens of the FIFO each TICK_S seconds (THE VALVE):
-      * No idle token: the job uses each slot.  The pump doubles the slots,
-        with the cap, the free slots and the memory as the limits.
+      * No idle token: the job uses each slot, and the lease is hungry.
+        The pump doubles the slots, with the free slots and the memory as
+        limits.  It grows to the burst while no different lease waits, and
+        to the cap else.  A lease waits when it is hungry and holds less
+        than its cap.
+      * A different lease waits: the pump pulls each idle token above the
+        cap at once.  A lease then grows past its cap only on slots that no
+        different lease wants, and no lease keeps a slot that it does not
+        use.
+      * A different hungry lease of the same class holds less than its fair
+        share: the pump pulls each idle token above its own fair share at
+        once, and it does not grow above that share.  The fair share is the
+        size of the pool divided by the count of the leases of the class.
       * Idle tokens for IDLE_TICKS ticks: the pump pulls them, with one
         slot as the minimum, and it frees their slots.  It does not grow
         for HOLDOFF_S seconds after that.
-      * A different lease is hungry and holds less than its fair share: the
-        pump pulls each idle token above its own fair share at once, and it
-        does not grow above that share.  The fair share is the size of the
-        pool divided by the count of the leases.
-    The pump pulls only idle tokens, so it never stops a job that runs.
-    Each lease writes its slots and its hunger into a marker file in the
-    directory LEASES_NAME of the pool, which it locks.  A marker with no
-    lock is the marker of a process that ended, and a reader removes it.
+    The pump pulls only idle tokens, so it never stops a job that runs.  A
+    lease that must give slots back waits on the FIFO between two ticks.  It
+    pulls a token that a child gives back before the child takes it again.
+    Each lease writes its slots, its cap, its hunger and its class into a
+    marker file in the directory LEASES_NAME of the pool, which it locks.  A
+    marker with no lock is the marker of a process that ended, and a reader
+    removes it.
+
+    The leases of a run of the gate (leased() with is_gate) go first.  While
+    a lease of the gate waits, a different lease takes no slot when it
+    starts, does not grow, and gives each idle token above one at once.  The
+    leases of the gate share the pool fairly among themselves.
 
     A token that a child holds when SIGKILL ends it does not come back to
     the FIFO.  The job then runs one job less, and the lease keeps the
@@ -42,7 +58,7 @@ THE LOCK
     the file LOCK_FILE of the main work tree in the shared mode, so the
     leases run at the same time.  An exclusive heavy step, such as a step of
     `loop nightly`, holds an exclusive lock on that file.  No lease then
-    runs at the same time as it.  The main work
+    runs at the same time as it (THE TURNSTILE).  The main work
     tree is the parent of the git directory that each work tree of the
     repository shares.  Each work tree then finds the same file.  The lock is
     a lock of flock(2), as the program flock(1) takes it.  A heavy step of
@@ -55,10 +71,11 @@ THE PRIORITY OF THE GATE
     (assay.loop.land).  All work trees of the host wait for it, because no
     change gets on main before the gate accepts it.  A heavy step of a work
     tree only makes its own work shorter.  For this reason, the gate goes
-    first.  A session of the gate holds an exclusive lock of flock(2) on the
-    file GATE_FILE for all of its batch (gate_session()).  That file is
+    first.  A session of the gate holds a lock of flock(2) in the shared
+    mode on the file GATE_FILE for all of its batch (gate_session()), so the
+    sessions of the lanes of the gate run at the same time.  That file is
     adjacent to LOCK_FILE.  A heavy step that is not a step of the gate
-    takes that lock in the shared mode and frees it immediately.  Then it
+    takes that lock in the exclusive mode and frees it immediately.  Then it
     waits for LOCK_FILE, and it holds nothing while it waits.  The session
     then gets its lock with no wait.  When the step gets LOCK_FILE, it looks
     again.  When a session started while it waited, it frees LOCK_FILE and
@@ -67,12 +84,28 @@ THE PRIORITY OF THE GATE
     do not look at GATE_FILE.  The kernel frees the lock of a session that
     ends, also on a signal.
 
+THE TURNSTILE
+    An exclusive heavy step goes before each new lease (writer preference).
+    The step and each new lease pass the file TURN_FILE, which is adjacent
+    to LOCK_FILE.  The step holds an exclusive lock of TURN_FILE while it
+    waits for its exclusive lock of LOCK_FILE, and it frees TURN_FILE when it
+    gets LOCK_FILE.  A new lease holds TURN_FILE only while it waits for its
+    shared lock of LOCK_FILE.  So a waiting step stops each new lease, and it
+    waits only for the leases that run.  A lease that waits behind a running
+    step holds TURN_FILE, and the next step then waits for that lease.  The
+    steps and the leases then take turns, and neither one waits for ever.
+
 THE COMMAND OF A STEP
     `loop heavy` holds a lease of -j slots in its own process, on
     descriptors that the command does not get (THE POOL).  A process that
     the command starts and that continues after it then does not keep the
     slots.  The command gets MAKEFLAGS of the jobserver of the lease, and
-    the variable STEP_VARIABLE.  The gate of `loop land` takes a lease for
+    the variable STEP_VARIABLE.  It does not get the variable
+    BUILD_PARALLEL_VARIABLE, because `cmake --build` gives ninja -j from it,
+    and ninja obeys the jobserver only with no -j.  So `loop heavy -j 32 --
+    cmake --build build` builds in the lease, and `loop heavy -j 32 --
+    ctest --test-dir build -j 32` tests in it.  ctest obeys the jobserver
+    also with -j.  The gate of `loop land` takes a lease for
     each configuration.  A landing in an exclusive heavy step then waits
     for itself, and `loop land` refuses to run with that variable
     (assay.loop.land, THE LOCK OF A HEAVY STEP).
@@ -128,6 +161,8 @@ from assay.core.paths import REPO_ROOT
 LOCK_FILE = Path(".worktrees/.grun/heavy.lock")
 # The lock file of a session of the gate, relative to the main work tree of the repository (THE PRIORITY OF THE GATE).
 GATE_FILE = Path(".worktrees/.grun/gate.lock")
+# The turnstile in front of LOCK_FILE, relative to the main work tree of the repository (THE TURNSTILE).
+TURN_FILE = Path(".worktrees/.grun/turn.lock")
 # The memory of one job, in GB (THE MEMORY).  On 2026-11-11, 1030 compile records of the Debug build gave a mean peak
 # memory of 0.23 GB and a 90th percentile of 0.40 GB.  The 99th percentile was 0.51 GB, and the largest peak was
 # 0.76 GB.  GB_PER_JOB is approximately that 99th percentile.
@@ -142,6 +177,9 @@ SIGNAL_EXIT_BASE = 128
 # The variable that the command of a step gets, and its value (THE COMMAND OF A STEP).
 STEP_VARIABLE = "CRUCIBLE_HEAVY_STEP"
 STEP_VALUE = "1"
+# The variable that makes `cmake --build` give ninja -j, which the command of a step does not get (THE COMMAND OF A
+# STEP).
+BUILD_PARALLEL_VARIABLE = "CMAKE_BUILD_PARALLEL_LEVEL"
 # The pool of the slots of the host in the work root, the directory of the markers of the leases in it, and the digits
 # of the name of a slot file (THE POOL).
 POOL_NAME = "slots"
@@ -201,17 +239,22 @@ def gate_path(root: Path) -> Path:
     return main_work_tree(root) / GATE_FILE
 
 
+def turn_path(root: Path) -> Path:
+    """Return the turnstile in front of the lock of the heavy steps of the repository of a tree (THE TURNSTILE)."""
+    return main_work_tree(root) / TURN_FILE
+
+
 @contextlib.contextmanager
 def gate_session(root: Path = REPO_ROOT) -> Iterator[None]:
-    """Hold the lock of a session of the gate exclusively for the block (THE PRIORITY OF THE GATE).
+    """Hold the lock of a session of the gate in the shared mode for the block (THE PRIORITY OF THE GATE).
 
-    The block waits only while a different session holds the lock, because a heavy step holds no shared lock while
-    it waits.
+    The sessions of the lanes of the gate run at the same time.  The block does not wait for a heavy step, because a
+    heavy step holds no lock of GATE_FILE while it waits.
     """
     path = gate_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="ascii") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+        fcntl.flock(handle, fcntl.LOCK_SH)
         try:
             yield
         finally:
@@ -238,15 +281,15 @@ def is_held(path: Path) -> bool:
 
 
 def is_gate_running(handle: IO[str]) -> bool:
-    """Tell if a session of the gate holds its lock: the shared mode is not free (THE PRIORITY OF THE GATE)."""
-    return is_locked(handle, fcntl.LOCK_SH)
+    """Tell if a session of the gate holds its lock: the exclusive mode is not free (THE PRIORITY OF THE GATE)."""
+    return is_locked(handle, fcntl.LOCK_EX)
 
 
 def wait_for_gate(handle: IO[str]) -> None:
     """Wait while a session of the gate holds its lock, and hold nothing after the wait (THE PRIORITY OF THE GATE)."""
     if is_gate_running(handle):
         check_report.write_line("heavy: a session of the gate runs, and the step waits for it")
-        fcntl.flock(handle, fcntl.LOCK_SH)
+        fcntl.flock(handle, fcntl.LOCK_EX)
         fcntl.flock(handle, fcntl.LOCK_UN)
 
 
@@ -281,11 +324,19 @@ def heavy_lock(root: Path, is_gate_step: bool = False, is_session: SessionCheck 
     """
     path = lock_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="ascii") as handle, open(gate_path(root), "a", encoding="ascii") as gate_handle:
+    with (
+        open(path, "a", encoding="ascii") as handle,
+        open(gate_path(root), "a", encoding="ascii") as gate_handle,
+        open(turn_path(root), "a", encoding="ascii") as turn,
+    ):
         while True:
             if not is_gate_step:
                 wait_for_gate(gate_handle)
-            fcntl.flock(handle, fcntl.LOCK_EX)
+            fcntl.flock(turn, fcntl.LOCK_EX)
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX)
+            finally:
+                fcntl.flock(turn, fcntl.LOCK_UN)
             if is_gate_step or not is_session(gate_handle):
                 break
             fcntl.flock(handle, fcntl.LOCK_UN)
@@ -349,23 +400,38 @@ def room_for(read: Reader) -> int | None:
 
 @dataclass(frozen=True, slots=True)
 class Demand:
-    """The leases of the pool at one time: their count, and the count of the other hungry leases below the fair share."""
+    """The other leases of the pool at one time, from their markers (THE POOL).
+
+    `active` counts the leases of the class of the reader, with the reader.  A lease waits when it is hungry and holds
+    less than its cap.  `peers_below_fair` counts the hungry leases of the class of the reader below the fair share of
+    that class, the size of the pool divided by `active`.
+    """
 
     active: int
-    hungry_others: int
+    waiting_gate: int
+    waiting_other: int
+    peers_below_fair: int
+
+    @property
+    def is_waiting(self) -> bool:
+        """Tell if a different lease waits."""
+        return self.waiting_gate + self.waiting_other > 0
 
 
 class Lease:
     """The slots of the pool that one job holds, and the marker of the job (THE POOL).
 
-    One thread at a time changes the slots: the pump while it runs, else the owner of the lease.
+    `cap` is the slice of the job, and `is_gate` tells that the job is a part of a run of the gate (THE PRIORITY OF THE
+    GATE).  One thread at a time changes the slots: the pump while it runs, else the owner of the lease.
     """
 
-    __slots__ = ("_held", "_marker", "_marker_path", "hungry", "pool", "slot_seconds")
+    __slots__ = ("_held", "_marker", "_marker_path", "cap", "hungry", "is_gate", "pool", "slot_seconds")
 
-    def __init__(self, pool: Pool) -> None:
-        """Keep the pool, and hold no slot and no marker."""
+    def __init__(self, pool: Pool, cap: int, is_gate: bool) -> None:
+        """Keep the pool, the cap and the class, and hold no slot and no marker."""
         self.pool = pool
+        self.cap = cap
+        self.is_gate = is_gate
         self._held: list[int] = []
         self._marker = -1
         self._marker_path = Path()
@@ -390,9 +456,10 @@ class Lease:
         self.mark()
 
     def mark(self) -> None:
-        """Write the slots and the hunger of the lease into its marker."""
+        """Write the slots, the cap, the hunger and the class of the lease into its marker, in fixed widths."""
         if self._marker >= 0:
-            os.pwrite(self._marker, f"{self.held:6d} {int(self.hungry)}\n".encode("ascii"), 0)
+            line = f"{self.held:6d} {self.cap:6d} {int(self.hungry)} {int(self.is_gate)}\n"
+            os.pwrite(self._marker, line.encode("ascii"), 0)
 
     def take(self, count: int) -> int:
         """Take at most `count` free slots with no wait, and return the count taken.
@@ -427,10 +494,12 @@ class Lease:
     def demand(self) -> Demand:
         """Read the markers of the pool, remove each one with no lock, and give the demand (THE POOL).
 
+        A marker that does not read as four numbers counts as a lease of the class of the reader that does not wait.
         Complexity: linear in the markers.
         """
         active = 1
-        hungry: list[int] = []
+        waiting_gate = waiting_other = 0
+        peers: list[int] = []
         for path in sorted((self.pool.directory / LEASES_NAME).glob(f"*{MARKER_SUFFIX}")):
             if path == self._marker_path:
                 continue
@@ -442,14 +511,22 @@ class Lease:
                 if not is_locked_descriptor(descriptor):
                     path.unlink(missing_ok=True)
                     continue
-                words = os.pread(descriptor, 16, 0).split()
+                words = os.pread(descriptor, 32, 0).split()
             finally:
                 os.close(descriptor)
-            active += 1
-            if len(words) == 2 and words[1] == b"1" and words[0].isdigit():
-                hungry.append(int(words[0]))
+            if len(words) != 4 or not all(word.isdigit() for word in words):
+                active += 1
+                continue
+            held, cap, hungry, gate = (int(word) for word in words)
+            is_waiting = hungry == 1 and held < cap
+            waiting_gate += int(is_waiting and gate == 1)
+            waiting_other += int(is_waiting and gate == 0)
+            if gate == int(self.is_gate):
+                active += 1
+                if hungry == 1:
+                    peers.append(held)
         fair = max(1, self.pool.size // active)
-        return Demand(active, sum(1 for held in hungry if held < fair))
+        return Demand(active, waiting_gate, waiting_other, sum(1 for held in peers if held < fair))
 
     def close(self) -> None:
         """Free each slot, and remove the marker."""
@@ -470,29 +547,65 @@ def is_locked_descriptor(descriptor: int) -> bool:
     return False
 
 
-def pumped(lease: Lease, opened: jobserver.Valve, cap: int, read: Reader, stop: threading.Event) -> None:
+def pulled_count(lease: Lease, demand: Demand, idle: int, idle_ticks: int) -> int:
+    """Return the count of idle tokens that the pump pulls at one tick (THE POOL).
+
+    A lease that is not of the gate gives each idle token above one while a lease of the gate waits.  A lease above its
+    cap gives the idle tokens above its cap while a different lease waits.  A lease above its fair share gives the idle
+    tokens above that share while a hungry lease of its class holds less.  Else a lease gives its idle tokens after
+    IDLE_TICKS ticks, with one slot as the minimum.
+    """
+    fair = max(1, lease.pool.size // demand.active)
+    if not lease.is_gate and demand.waiting_gate:
+        return min(idle, lease.held - 1)
+    if lease.held > lease.cap and demand.is_waiting:
+        return min(idle, lease.held - lease.cap)
+    if lease.held > fair and demand.peers_below_fair:
+        return min(idle, lease.held - fair)
+    return min(idle, lease.held - 1) if idle_ticks >= IDLE_TICKS else 0
+
+
+def grown_count(lease: Lease, demand: Demand, burst: int) -> int:
+    """Return the count of slots that the pump tries to add at one tick to a lease that uses each slot (THE POOL).
+
+    The count doubles the slots.  A lease grows to `burst` while no different lease waits, and to its cap else.  A lease
+    with a hungry peer below the fair share grows only to that share.  A lease that is not of the gate does not grow
+    while a lease of the gate waits.
+    """
+    if not lease.is_gate and demand.waiting_gate:
+        return 0
+    limit = lease.cap if demand.is_waiting else burst
+    if demand.peers_below_fair:
+        limit = min(limit, max(1, lease.pool.size // demand.active))
+    return max(0, min(lease.held, limit - lease.held))
+
+
+def pumped(lease: Lease, opened: jobserver.Valve, burst: int, read: Reader, stop: threading.Event) -> None:
     """Change the slots of a lease to the use of its job, each TICK_S seconds, until the stop event (THE POOL).
 
     The lease holds one slot more than the tokens of its jobserver.  The function puts one token for each new slot,
-    and it frees one slot for each token that it pulls.
+    and it frees one slot for each token that it pulls.  `burst` is the most slots of the lease, the jobs of its
+    jobserver.
     """
     idle_ticks = 0
     hold_until = 0.0
     last = time.monotonic()
-    while not stop.wait(TICK_S):
+    is_draining = False
+    while not stop.is_set():
+        # A lease that must give slots back waits for the next token that a child gives back, and pulls it before the
+        # child takes it again.  Each other tick waits for the stop event.
+        if is_draining:
+            opened.wait_idle(TICK_S)
+        elif stop.wait(TICK_S):
+            break
         now = time.monotonic()
         lease.slot_seconds += lease.held * (now - last)
         last = now
         idle = opened.idle()
         demand = lease.demand()
-        fair = max(1, lease.pool.size // demand.active)
         if idle > 0:
             idle_ticks += 1
-            surplus = lease.held - fair if demand.hungry_others else 0
-            count = min(idle, surplus) if surplus > 0 else 0
-            if not count and idle_ticks >= IDLE_TICKS:
-                count = min(idle, lease.held - 1)
-            pulled = opened.pull(count)
+            pulled = opened.pull(pulled_count(lease, demand, idle, idle_ticks))
             lease.give(pulled)
             if pulled:
                 idle_ticks = 0
@@ -500,14 +613,13 @@ def pumped(lease: Lease, opened: jobserver.Valve, cap: int, read: Reader, stop: 
             lease.hungry = False
         else:
             idle_ticks = 0
-            lease.hungry = lease.held < cap
-            if lease.hungry and now >= hold_until:
-                count = min(lease.held, cap - lease.held)
-                if demand.hungry_others:
-                    count = min(count, max(0, fair - lease.held))
-                room = room_for(read) if count > 0 else None
-                opened.put(lease.take(count if room is None else min(count, room)))
+            lease.hungry = lease.held < burst
+            count = grown_count(lease, demand, burst) if lease.hungry and now >= hold_until else 0
+            room = room_for(read) if count > 0 else None
+            opened.put(lease.take(count if room is None else min(count, room)))
         lease.mark()
+        is_yielding = not lease.is_gate and demand.waiting_gate > 0 and lease.held > 1
+        is_draining = is_yielding or (lease.held > lease.cap and demand.is_waiting)
     lease.slot_seconds += lease.held * (time.monotonic() - last)
 
 
@@ -530,16 +642,29 @@ class Share:
         return {jobserver.VARIABLE: self.server.makeflags}
 
 
-def held_shared(handle: IO[str], stop: threading.Event | None, pause: Pause) -> bool:
-    """Wait for the lock of LOCK_FILE in the shared mode, and tell if the lock is held.  A set stop event gives False."""
+def held_flock(handle: IO[str], mode: int, stop: threading.Event | None, pause: Pause) -> bool:
+    """Wait for a lock of flock(2) in a mode, and tell if the lock is held.  A set stop event gives False."""
     while True:
         try:
-            fcntl.flock(handle, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            fcntl.flock(handle, mode | fcntl.LOCK_NB)
             return True
         except BlockingIOError:
             if stop is not None and stop.is_set():
                 return False
             pause(WAIT_S)
+
+
+def held_shared(handle: IO[str], turn: IO[str], stop: threading.Event | None, pause: Pause) -> bool:
+    """Pass the turnstile, and wait for the lock of LOCK_FILE in the shared mode (THE TURNSTILE).
+
+    The function holds the lock of TURN_FILE only while it waits for the shared lock.  A set stop event gives False.
+    """
+    if not held_flock(turn, fcntl.LOCK_EX, stop, pause):
+        return False
+    try:
+        return held_flock(handle, fcntl.LOCK_SH, stop, pause)
+    finally:
+        fcntl.flock(turn, fcntl.LOCK_UN)
 
 
 @contextlib.contextmanager
@@ -550,11 +675,14 @@ def leased(
     read: Reader = available_gb,
     stop: threading.Event | None = None,
     pause: Pause = time.sleep,
+    is_gate: bool = False,
 ) -> Iterator[Share | None]:
-    """Hold a lease of at most `want` slots of the pool for the block, and give its share (THE POOL).
+    """Hold a lease with the cap `want` of the pool for the block, and give its share (THE POOL).
 
     The block gets None when the stop event is set before the lease holds a slot.  The lease also holds LOCK_FILE of
-    the repository of root in the shared mode (THE LOCK).
+    the repository of root in the shared mode (THE LOCK, THE TURNSTILE).  A lease of the gate goes before each other
+    lease (THE PRIORITY OF THE GATE).  The jobs of the share are the most slots of the lease: the size of the pool, or
+    the jobs of the memory.
 
     Raises:
         jobserver.JobserverError: If the jobserver of the lease cannot be made
@@ -567,33 +695,39 @@ def leased(
     started = time.monotonic()
     value = read()
     cap = jobs_for_memory(max(1, min(want, chosen.size)), lambda: value)
+    burst = max(cap, jobs_for_memory(chosen.size, lambda: value))
     if value is None:
         check_report.write_line(f"memory: {MEMORY_FILE} gives no {MEMORY_FIELD}, so the lease keeps {cap} jobs")
     else:
-        check_report.write_line(f"memory: available {value:.1f} GB, {cap} of {want} jobs")
-    lease = Lease(chosen)
-    with open(lock, "a", encoding="ascii") as handle:
+        check_report.write_line(f"memory: available {value:.1f} GB, {cap} of {want} jobs, {burst} at most")
+    lease = Lease(chosen, cap, is_gate)
+    with open(lock, "a", encoding="ascii") as handle, open(turn_path(root), "a", encoding="ascii") as turn:
         try:
-            if not held_shared(handle, stop, pause):
+            if not held_shared(handle, turn, stop, pause):
                 yield None
                 return
             lease.register()
-            while not lease.take(min(START_SLOTS, cap)):
+            while True:
+                is_yielding = not lease.is_gate and lease.demand().waiting_gate > 0
+                if not is_yielding and lease.take(min(START_SLOTS, cap)):
+                    break
                 if stop is not None and stop.is_set():
                     yield None
                     return
                 pause(WAIT_S)
             wait_s = time.monotonic() - started
+            lease.hungry = False
+            lease.mark()
             halt = threading.Event()
             with (
-                jobserver.serving(cap, lease.held - 1) as server,
+                jobserver.serving(burst, lease.held - 1) as server,
                 jobserver.valve(server.path) as opened,
                 jobserver.connected(server.path) as client,
             ):
-                pump = threading.Thread(target=pumped, args=(lease, opened, cap, read, halt), daemon=True)
+                pump = threading.Thread(target=pumped, args=(lease, opened, burst, read, halt), daemon=True)
                 pump.start()
                 try:
-                    yield Share(server, client, cap, wait_s, lease)
+                    yield Share(server, client, burst, wait_s, lease)
                 finally:
                     halt.set()
                     pump.join()
@@ -634,12 +768,14 @@ def main(argv: list[str]) -> int:
         with leased(options.directory.resolve(), options.jobs) as share:
             if share is None:
                 return ExitCode.TOOL_FAILED
+            environment = proc.environment({STEP_VARIABLE: STEP_VALUE, **share.environment})
+            environment.pop(BUILD_PARALLEL_VARIABLE, None)
             completed = proc.run(
                 proc.Command(
                     command,
                     timeout_s=proc.BUILD_S,
                     cwd=options.directory,
-                    env=proc.environment({STEP_VARIABLE: STEP_VALUE, **share.environment}),
+                    env=environment,
                     stdout=proc.Output.INHERIT,
                     stderr=proc.Output.INHERIT,
                 )
