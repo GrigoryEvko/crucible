@@ -16,6 +16,7 @@
 // concept keeps them out of every reduction here.
 
 #include <foundation/Platform.h>
+#include <foundation/core/Region.h>
 
 #include <bit>
 #include <concepts>
@@ -228,6 +229,23 @@ template <typename V>
         static_cast<const typename V::value_type*>(__builtin_assume_aligned(ptr, alignof(typename V::raw_type)));
     typename V::raw_type raw;
     std::memcpy(&raw, aligned, sizeof(raw));
+    return V{raw};
+}
+
+// A View of the bytes of one register of V: an element of one byte that a
+// copy can read, and exactly as many elements as the register has bytes.
+template <typename V, typename Byte, std::size_t Bytes>
+concept RegisterBytes = requires { typename V::raw_type; } && sizeof(Byte) == 1
+                     && std::is_trivially_copyable_v<Byte> && Bytes == sizeof(typename V::raw_type);
+
+// The load of a vector from the bytes of one register, the lowest lane
+// first.  The type of the View proves the count, so the copy has no check,
+// and the bytes need no alignment.
+template <typename V, typename Byte, std::size_t Bytes>
+    requires RegisterBytes<V, Byte, Bytes>
+[[nodiscard]] CRUCIBLE_INLINE V load(core::View<Byte, Bytes> bytes) noexcept {
+    typename V::raw_type raw{};
+    __builtin_memcpy(&raw, first_of_(core::detail::ViewDoor::key(), bytes), sizeof(raw));
     return V{raw};
 }
 

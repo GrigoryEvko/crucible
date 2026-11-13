@@ -81,6 +81,22 @@ static void test_load() {
     crucible::test::pass("  test_load: PASSED\n");
 }
 
+// A load from the bytes of one register gives each lane its little-endian
+// word, the lowest lane first.  The window starts at an odd offset, so the
+// load reads an address with no alignment.
+static void test_load_bytes() {
+    ::foundation::core::FixedArray<std::byte, 33> bytes{};
+    for (auto index : bytes.indices()) {
+        bytes.at(index) = static_cast<std::byte>(index.raw() + 1);
+    }
+    auto const v = simd::load<simd::u64x4>(bytes.view().window<32>(1).expect("32 bytes fit after the first"));
+    assert(v[0] == 0x0908070605040302ULL);
+    assert(v[1] == 0x11100F0E0D0C0B0AULL);
+    assert(v[2] == 0x1918171615141312ULL);
+    assert(v[3] == 0x21201F1E1D1C1B1AULL);
+    crucible::test::pass("  test_load_bytes: PASSED\n");
+}
+
 static void test_reduce_xor_sum() {
     std::array<int64_t, 8> values{0, 1, 2, 3, 4, 5, 6, 7};
     auto input = simd::load<simd::i64x8>(values.data());
@@ -282,6 +298,7 @@ int main() {
     test_prefix_mask();
     test_det_safe_simd_concept();
     test_load();
+    test_load_bytes();
     test_reduce_xor_sum();
     test_reduce_or_and();
     test_reduce_max_min();

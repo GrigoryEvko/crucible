@@ -5,8 +5,8 @@
 namespace crucible::cntp {
 
 static_assert(sizeof(IntegrityHash) == sizeof(std::uint64_t));
-static_assert(sizeof(IntegrityOwnedPayload<std::span<const std::byte>>) == sizeof(std::span<const std::byte>));
-static_assert(sizeof(IntegrityWrappedMessage<std::span<const std::byte>>)
-              == sizeof(std::span<const std::byte>) + sizeof(std::uint64_t));
+static_assert(sizeof(IntegrityOwnedPayload<::fixy::View<std::byte const>>) == sizeof(::fixy::View<std::byte const>));
+static_assert(sizeof(IntegrityWrappedMessage<::fixy::View<std::byte const>>)
+              == sizeof(::fixy::View<std::byte const>) + sizeof(std::uint64_t));
 
 }  // namespace crucible::cntp

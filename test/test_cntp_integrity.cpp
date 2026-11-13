@@ -1,74 +1,79 @@
 #include <crucible/cntp/Integrity.h>
 
-#include <array>
 #include "test_assert.h"
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <type_traits>
 #include <utility>
 
-int main() {
-    namespace ci = crucible::cntp;
+namespace {
 
+namespace ci = crucible::cntp;
+
+using HelloBytes = ::foundation::core::FixedArray<std::byte, 5>;
+using PayloadBytes = ::foundation::core::FixedArray<std::byte, 96>;
+
+// The error of an unwrap.  A verified payload is linear, so the payload of an
+// unwrap that succeeds ends here, and the error then holds no value.
+[[nodiscard]] ::fixy::Option<ci::IntegrityError>
+unwrap_error(ci::IntegrityWrappedMessage<ci::IntegrityOwnedPayload<PayloadBytes>> message) {
+    return ci::unwrap(std::move(message))
+        .match(
+            [](ci::IntegrityVerifiedPayload<PayloadBytes> verified) noexcept {
+                (void)std::move(verified).into().consume();
+                return ::fixy::Option<ci::IntegrityError>{::fixy::none};
+            },
+            [](ci::IntegrityError error) noexcept { return ::fixy::some(error); });
+}
+
+}  // namespace
+
+int main() {
     static_assert(sizeof(ci::IntegrityHash) == sizeof(std::uint64_t));
-    static_assert(sizeof(ci::IntegrityOwnedPayload<std::array<std::byte, 5>>) == sizeof(std::array<std::byte, 5>));
-    static_assert(!std::copy_constructible<ci::IntegrityOwnedPayload<std::array<std::byte, 5>>>);
-    static_assert(ci::ByteContiguousPayload<std::array<std::byte, 5>>);
-    static_assert(ci::ByteContiguousPayload<std::span<const std::byte>>);
+    static_assert(sizeof(ci::IntegrityOwnedPayload<HelloBytes>) == sizeof(HelloBytes));
+    static_assert(!std::copy_constructible<ci::IntegrityOwnedPayload<HelloBytes>>);
+    static_assert(ci::ByteContiguousPayload<HelloBytes>);
+    static_assert(ci::ByteContiguousPayload<::fixy::View<std::byte const>>);
     static_assert(!ci::ByteContiguousPayload<std::uint64_t>);
 
-    std::array<std::byte, 0> empty{};
-    assert(ci::xxhash64_raw(std::span<const std::byte>{empty}) == 0xEF46DB3751D8E999ULL);
+    assert(ci::xxhash64_raw(::fixy::View<std::byte const>{}) == 0xEF46DB3751D8E999ULL);
 
-    std::array<std::byte, 5> hello{
+    HelloBytes const hello{
         std::byte{0x68}, std::byte{0x65}, std::byte{0x6C}, std::byte{0x6C}, std::byte{0x6F},
     };
-    auto hello_hash = ci::xxhash64(std::span<const std::byte>{hello});
-    assert(hello_hash.has_value());
-    assert(hello_hash->value() == 0x26C7827D889F6DA3ULL);
+    assert(ci::xxhash64(hello.view()).expect("the hash of hello is not zero").value() == 0x26C7827D889F6DA3ULL);
 
-    std::array<std::byte, 96> payload{};
-    for (std::size_t i = 0; i < payload.size(); ++i) {
-        payload[i] = static_cast<std::byte>((i * 17U + 3U) & 0xFFU);
+    PayloadBytes payload{};
+    for (auto index : payload.indices()) {
+        payload.at(index) = static_cast<std::byte>((index.raw() * 17U + 3U) & 0xFFU);
     }
 
-    auto one_shot = ci::xxhash64(std::span<const std::byte>{payload});
-    assert(one_shot.has_value());
+    std::uint64_t const one_shot = ci::xxhash64(payload.view()).expect("the hash of the payload is not zero").value();
 
     auto stream = ci::xxhash64_streaming();
-    assert(stream.update(std::span<const std::byte>{payload.data(), 7}).has_value());
-    assert(stream.update(std::span<const std::byte>{payload.data() + 7, 25}).has_value());
-    assert(stream.update(std::span<const std::byte>{payload.data() + 32, 64}).has_value());
-    auto streamed = stream.digest();
-    assert(streamed.has_value());
-    assert(streamed->value() == one_shot->value());
+    auto const bytes = payload.view();
+    assert(stream.update(bytes.window(0, 7).expect("seven bytes fit")).is_ok());
+    assert(stream.update(bytes.window(7, 25).expect("25 bytes fit")).is_ok());
+    assert(stream.update(bytes.window(32, 64).expect("64 bytes fit")).is_ok());
+    assert(stream.digest().expect("the digest is not zero").value() == one_shot);
 
-    auto wrapped = ci::wrap(payload);
-    assert(wrapped.has_value());
-    assert(wrapped->hash.value() == one_shot->value());
+    auto wrapped = ci::wrap(payload).expect("the hash of the payload is not zero");
+    assert(wrapped.hash.value() == one_shot);
 
-    auto verified = ci::unwrap(std::move(wrapped).value());
-    assert(verified.has_value());
-    static_assert(std::same_as<std::remove_cvref_t<decltype(verified.value())>,
-                               ci::IntegrityVerifiedPayload<std::array<std::byte, 96>>>);
-    assert(verified->value().peek()[0] == std::byte{3});
+    auto verified = ci::unwrap(std::move(wrapped)).expect("the hash of the payload matches");
+    static_assert(std::same_as<decltype(verified), ci::IntegrityVerifiedPayload<PayloadBytes>>);
+    assert(verified.value().peek().at(::fixy::index<0>()) == std::byte{3});
 
-    auto owned_payload = std::move(*verified).into();
+    auto owned_payload = std::move(verified).into();
     auto restored_payload = std::move(owned_payload).consume();
-    assert(restored_payload[95] == payload[95]);
+    assert(restored_payload.at(::fixy::index<95>()) == payload.at(::fixy::index<95>()));
 
-    auto tampered_wrapped = ci::wrap(payload);
-    assert(tampered_wrapped.has_value());
-    auto tampered = std::move(tampered_wrapped).value();
-    tampered.payload.peek_mut()[5] = std::byte{0xEE};
-    auto rejected = ci::unwrap(std::move(tampered));
-    assert(!rejected.has_value());
-    assert(rejected.error() == ci::IntegrityError::HashMismatch);
+    auto tampered = ci::wrap(payload).expect("the hash of the payload is not zero");
+    tampered.payload.peek_mut().at(::fixy::index<5>()) = std::byte{0xEE};
+    assert(unwrap_error(std::move(tampered)).expect("the unwrap refuses a changed payload")
+           == ci::IntegrityError::HashMismatch);
 
-    auto zero = ci::admit_integrity_hash(0);
-    assert(!zero.has_value());
-    assert(zero.error() == ci::IntegrityError::ZeroHash);
+    assert(ci::admit_integrity_hash(0).err().expect("a zero hash is refused") == ci::IntegrityError::ZeroHash);
 
     ci::IntegrityPolicy sampled{
         .mode = ci::IntegrityMode::Sampled,

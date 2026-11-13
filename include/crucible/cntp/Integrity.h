@@ -4,22 +4,17 @@
 // the hash is platform-independent so a receiver on other hardware recomputes
 // the same value.
 
+#include <fixy/Core.h>
 #include <fixy/Qtt.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <foundation/Platform.h>
 #include <foundation/Simd.h>
+#include <foundation/contracts/Pre.h>
 
-#include <array>
-#include <bit>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <expected>
-#include <iterator>
-#include <limits>
-#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -95,22 +90,13 @@ template <typename Payload>
 using IntegrityVerifiedPayload =
     ::fixy::Tagged<IntegrityOwnedPayload<Payload>, ::fixy::tags::source::IntegrityVerified>;
 
-template <typename T>
-concept BytePayloadElement =
-    std::same_as<std::remove_cv_t<T>, std::byte> || (sizeof(T) == 1 && std::is_trivially_copyable_v<T>);
-
+// A payload whose bytes are one contiguous run: a View of bytes, or an owner
+// whose view() gives one, such as a FixedArray or a HeapArray of bytes.
 template <typename Payload>
-concept HasContiguousPayloadData = requires(Payload const& payload) {
-    std::data(payload);
-    std::size(payload);
-};
-
-template <typename Payload>
-using payload_data_pointer_t = decltype(std::data(std::declval<Payload const&>()));
-
-template <typename Payload>
-concept ByteContiguousPayload = HasContiguousPayloadData<Payload> && std::is_pointer_v<payload_data_pointer_t<Payload>>
-                             && BytePayloadElement<std::remove_pointer_t<payload_data_pointer_t<Payload>>>;
+concept ByteContiguousPayload =
+    std::convertible_to<Payload const&, ::fixy::View<std::byte const>> || requires(Payload const& payload) {
+        { payload.view() } -> std::convertible_to<::fixy::View<std::byte const>>;
+    };
 
 namespace detail {
 
@@ -121,40 +107,25 @@ inline constexpr std::uint64_t xxh_prime64_4 = 9650029242287828579ULL;
 inline constexpr std::uint64_t xxh_prime64_5 = 2870177450012600261ULL;
 inline constexpr std::size_t xxh_stripe_bytes = 32;
 
-[[nodiscard, gnu::pure]] inline std::uint64_t load_le64(std::byte const* ptr) noexcept {
-    std::uint64_t out = 0;
-    std::memcpy(&out, ptr, sizeof(out));
-    if constexpr (std::endian::native == std::endian::big) {
-        out = std::byteswap(out);
-    }
-    return out;
+// The word whose little-endian image is the bytes of word.  The platform is
+// little-endian (foundation/Platform.h), so the copy of the bytes is the word.
+[[nodiscard, gnu::pure]] inline std::uint64_t load_le64(::fixy::View<std::byte const, 8> word) noexcept {
+    ::foundation::core::FixedArray<std::byte, 8> image{};
+    ::fixy::copy(image.view(), word);
+    return ::fixy::bit_cast<std::uint64_t>(image);
 }
 
-[[nodiscard, gnu::pure]] inline std::uint32_t load_le32(std::byte const* ptr) noexcept {
-    std::uint32_t out = 0;
-    std::memcpy(&out, ptr, sizeof(out));
-    if constexpr (std::endian::native == std::endian::big) {
-        out = std::byteswap(out);
-    }
-    return out;
+[[nodiscard, gnu::pure]] inline std::uint32_t load_le32(::fixy::View<std::byte const, 4> word) noexcept {
+    ::foundation::core::FixedArray<std::byte, 4> image{};
+    ::fixy::copy(image.view(), word);
+    return ::fixy::bit_cast<std::uint32_t>(image);
 }
 
 [[nodiscard, gnu::const]] CRUCIBLE_HOT std::uint64_t round64(std::uint64_t acc, std::uint64_t lane) noexcept {
     acc += lane * xxh_prime64_2;
-    acc = std::rotl(acc, 31);
+    acc = ::fixy::rotl(acc, 31);
     acc *= xxh_prime64_1;
     return acc;
-}
-
-[[nodiscard]] CRUCIBLE_HOT ::foundation::simd::u64x4 load_stripe_le64(std::byte const* ptr) noexcept {
-    alignas(32) std::array<std::uint64_t, 4> lanes{};
-    std::memcpy(lanes.data(), ptr, xxh_stripe_bytes);
-    if constexpr (std::endian::native == std::endian::big) {
-        for (auto& lane : lanes) {
-            lane = std::byteswap(lane);
-        }
-    }
-    return ::foundation::simd::load_aligned<::foundation::simd::u64x4>(lanes.data());
 }
 
 [[nodiscard, gnu::const]] CRUCIBLE_HOT ::foundation::simd::u64x4 rotl64(::foundation::simd::u64x4 value,
@@ -178,84 +149,107 @@ inline constexpr std::size_t xxh_stripe_bytes = 32;
     return hash;
 }
 
-CRUCIBLE_HOT void process_stripe(std::byte const* ptr, std::uint64_t& v1, std::uint64_t& v2, std::uint64_t& v3,
-                                 std::uint64_t& v4) noexcept {
+// One round of the four accumulators over one stripe.  The lanes of the
+// stripe are its four little-endian words, in order.
+CRUCIBLE_HOT void process_stripe(::fixy::View<std::byte const, xxh_stripe_bytes> stripe, std::uint64_t& v1,
+                                 std::uint64_t& v2, std::uint64_t& v3, std::uint64_t& v4) noexcept {
     using ::foundation::simd::u64x4;
 
-    alignas(32) std::array<std::uint64_t, 4> acc_values{v1, v2, v3, v4};
-    auto acc = ::foundation::simd::load_aligned<u64x4>(acc_values.data());
+    u64x4 acc{u64x4::raw_type{v1, v2, v3, v4}};
 
     // The simd facade offers binary operators only, so these are written out
     // rather than as compound assignments.
-    acc = acc + load_stripe_le64(ptr) * u64x4(xxh_prime64_2);
+    acc = acc + ::foundation::simd::load<u64x4>(stripe) * u64x4(xxh_prime64_2);
     acc = rotl64(acc, 31);
     acc = acc * u64x4(xxh_prime64_1);
 
-    ::foundation::simd::store_aligned(acc, acc_values.data());
-    v1 = acc_values[0];
-    v2 = acc_values[1];
-    v3 = acc_values[2];
-    v4 = acc_values[3];
+    v1 = acc[0];
+    v2 = acc[1];
+    v3 = acc[2];
+    v4 = acc[3];
 }
 
-[[nodiscard]] CRUCIBLE_HOT std::uint64_t finalize_tail(std::uint64_t hash, std::byte const* ptr,
-                                                       std::size_t len) noexcept {
-    while (len >= 8) {
-        hash ^= round64(0, load_le64(ptr));
-        hash = std::rotl(hash, 27) * xxh_prime64_1 + xxh_prime64_4;
-        ptr += 8;
-        len -= 8;
+// The step of the word at the constant position Word of a tail, when the
+// tail holds that word.
+template <std::size_t Word>
+[[nodiscard]] CRUCIBLE_HOT std::uint64_t tail_word(std::uint64_t hash, ::fixy::View<std::byte const> tail) noexcept {
+    if (tail.size() < (Word + 1) * 8) {
+        return hash;
     }
-    if (len >= 4) {
-        hash ^= static_cast<std::uint64_t>(load_le32(ptr)) * xxh_prime64_1;
-        hash = std::rotl(hash, 23) * xxh_prime64_2 + xxh_prime64_3;
-        ptr += 4;
-        len -= 4;
+    hash ^= round64(0, load_le64(tail.window<8>(Word * 8).expect("the word lies inside the tail")));
+    return ::fixy::rotl(hash, 27) * xxh_prime64_1 + xxh_prime64_4;
+}
+
+// The step of the byte at the constant position Byte of the last bytes of a
+// tail, when they hold that byte.
+template <std::size_t Byte>
+[[nodiscard]] CRUCIBLE_HOT std::uint64_t tail_byte(std::uint64_t hash, ::fixy::View<std::byte const> bytes) noexcept {
+    if (bytes.size() <= Byte) {
+        return hash;
     }
-    while (len != 0) {
-        hash ^= static_cast<std::uint64_t>(*ptr) * xxh_prime64_5;
-        hash = std::rotl(hash, 11) * xxh_prime64_1;
-        ++ptr;
-        --len;
+    std::byte const byte = bytes.window<1>(Byte).expect("the byte lies inside the rest").at(::fixy::index<0>());
+    hash ^= static_cast<std::uint64_t>(byte) * xxh_prime64_5;
+    return ::fixy::rotl(hash, 11) * xxh_prime64_1;
+}
+
+// The tail of fewer than one stripe: each word of eight bytes, then a half
+// of four bytes when one is left, then each byte.  A tail holds at most three
+// words and three bytes, so each step is one test of a count with a constant
+// position, and the code has no loop.
+[[nodiscard]] CRUCIBLE_HOT std::uint64_t finalize_tail(std::uint64_t hash,
+                                                       ::fixy::View<std::byte const> tail) noexcept {
+    CRUCIBLE_PRE(tail.size() < xxh_stripe_bytes);
+
+    hash = tail_word<0>(hash, tail);
+    hash = tail_word<1>(hash, tail);
+    hash = tail_word<2>(hash, tail);
+
+    ::fixy::View<std::byte const> const rest = tail.chunks<8>().rest();
+    if (rest.size() >= 4) {
+        hash ^=
+            static_cast<std::uint64_t>(load_le32(rest.window<4>(0).expect("the half starts the rest"))) * xxh_prime64_1;
+        hash = ::fixy::rotl(hash, 23) * xxh_prime64_2 + xxh_prime64_3;
     }
+
+    ::fixy::View<std::byte const> const bytes = rest.chunks<4>().rest();
+    hash = tail_byte<0>(hash, bytes);
+    hash = tail_byte<1>(hash, bytes);
+    hash = tail_byte<2>(hash, bytes);
     return avalanche64(hash);
 }
 
 template <ByteContiguousPayload Payload>
-[[nodiscard]] inline std::span<const std::byte> payload_bytes(Payload const& payload) noexcept {
-    auto const* ptr = std::data(payload);
-    auto const count = static_cast<std::size_t>(std::size(payload));
-    return std::as_bytes(std::span{ptr, count});
+[[nodiscard]] constexpr ::fixy::View<std::byte const> payload_bytes(Payload const& payload) noexcept {
+    if constexpr (requires { payload.view(); }) {
+        return payload.view();
+    } else {
+        return payload;
+    }
 }
 
 }  // namespace detail
 
-[[nodiscard]] inline std::expected<IntegrityHash, IntegrityError> admit_integrity_hash(std::uint64_t hash) noexcept {
-    if (hash == 0) {
-        return std::unexpected(IntegrityError::ZeroHash);
-    }
-    return ::fixy::mint_refined<::fixy::non_zero>(hash);
+[[nodiscard]] constexpr ::fixy::Result<IntegrityHash, IntegrityError>
+admit_integrity_hash(std::uint64_t hash) noexcept {
+    return ::fixy::admit_refined<::fixy::non_zero>(hash, IntegrityError::ZeroHash);
 }
 
-[[nodiscard]] CRUCIBLE_HOT std::uint64_t xxhash64_raw(std::span<const std::byte> data,
+[[nodiscard]] CRUCIBLE_HOT std::uint64_t xxhash64_raw(::fixy::View<std::byte const> data,
                                                       std::uint64_t seed = 0) noexcept {
-    std::byte const* ptr = data.data();
-    std::size_t len = data.size();
+    auto const stripes = data.chunks<detail::xxh_stripe_bytes>();
 
     std::uint64_t hash = 0;
-    if (len >= detail::xxh_stripe_bytes) {
+    if (data.size() >= detail::xxh_stripe_bytes) {
         std::uint64_t v1 = seed + detail::xxh_prime64_1 + detail::xxh_prime64_2;
         std::uint64_t v2 = seed + detail::xxh_prime64_2;
         std::uint64_t v3 = seed;
         std::uint64_t v4 = seed - detail::xxh_prime64_1;
 
-        do {
-            detail::process_stripe(ptr, v1, v2, v3, v4);
-            ptr += detail::xxh_stripe_bytes;
-            len -= detail::xxh_stripe_bytes;
-        } while (len >= detail::xxh_stripe_bytes);
+        for (::fixy::View<std::byte const, detail::xxh_stripe_bytes> stripe : stripes) {
+            detail::process_stripe(stripe, v1, v2, v3, v4);
+        }
 
-        hash = std::rotl(v1, 1) + std::rotl(v2, 7) + std::rotl(v3, 12) + std::rotl(v4, 18);
+        hash = ::fixy::rotl(v1, 1) + ::fixy::rotl(v2, 7) + ::fixy::rotl(v3, 12) + ::fixy::rotl(v4, 18);
         hash = detail::merge_round64(hash, v1);
         hash = detail::merge_round64(hash, v2);
         hash = detail::merge_round64(hash, v3);
@@ -265,11 +259,11 @@ template <ByteContiguousPayload Payload>
     }
 
     hash += data.size();
-    return detail::finalize_tail(hash, ptr, len);
+    return detail::finalize_tail(hash, stripes.rest());
 }
 
-[[nodiscard]] inline std::expected<IntegrityHash, IntegrityError> xxhash64(std::span<const std::byte> data,
-                                                                           std::uint64_t seed = 0) noexcept {
+[[nodiscard]] inline ::fixy::Result<IntegrityHash, IntegrityError> xxhash64(::fixy::View<std::byte const> data,
+                                                                            std::uint64_t seed = 0) noexcept {
     return admit_integrity_hash(xxhash64_raw(data, seed));
 }
 
@@ -282,50 +276,54 @@ public:
           v3_{seed},
           v4_{seed - detail::xxh_prime64_1} {}
 
-    [[nodiscard]] CRUCIBLE_HOT std::expected<void, IntegrityError> update(std::span<const std::byte> data) noexcept {
-        if (data.empty()) {
-            return {};
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Result<::fixy::Unit, IntegrityError>
+    update(::fixy::View<std::byte const> data) noexcept {
+        if (data.size() == 0) {
+            return ::fixy::Unit{};
         }
-        if (data.size() > std::numeric_limits<std::uint64_t>::max() - total_len_) {
-            return std::unexpected(IntegrityError::LengthOverflow);
+        if (data.size() > ::fixy::max_of<std::uint64_t> - total_len_) {
+            return ::fixy::err(IntegrityError::LengthOverflow);
         }
-
         total_len_ += data.size();
-        std::byte const* ptr = data.data();
-        std::size_t len = data.size();
 
-        if (memory_size_ + len < detail::xxh_stripe_bytes) {
-            std::memcpy(memory_.data() + memory_size_, ptr, len);
-            memory_size_ += len;
-            return {};
+        // The room is the count of the bytes that complete the held stripe.
+        std::size_t const held = held_bytes();
+        std::size_t const room = detail::xxh_stripe_bytes - held;
+        if (data.size() < room) {
+            ::fixy::copy(memory_.view().window(held, data.size()).expect("the bytes fit in the room"), data)
+                .expect("the window has the count of the bytes");
+            memory_size_ = held + data.size();
+            return ::fixy::Unit{};
         }
 
-        if (memory_size_ != 0) {
-            const std::size_t fill = detail::xxh_stripe_bytes - memory_size_;
-            std::memcpy(memory_.data() + memory_size_, ptr, fill);
-            detail::process_stripe(memory_.data(), v1_, v2_, v3_, v4_);
-            ptr += fill;
-            len -= fill;
+        ::fixy::View<std::byte const> rest = data;
+        if (held != 0) {
+            ::fixy::copy(memory_.view().window(held, room).expect("the room ends at the end of the stripe"),
+                         data.window(0, room).expect("the bytes fill the room"))
+                .expect("the two windows have the count of the room");
+            detail::process_stripe(memory_.view(), v1_, v2_, v3_, v4_);
+            rest = data.window(room, data.size() - room).expect("the bytes after the room");
             memory_size_ = 0;
         }
 
-        while (len >= detail::xxh_stripe_bytes) {
-            detail::process_stripe(ptr, v1_, v2_, v3_, v4_);
-            ptr += detail::xxh_stripe_bytes;
-            len -= detail::xxh_stripe_bytes;
+        auto const stripes = rest.chunks<detail::xxh_stripe_bytes>();
+        for (::fixy::View<std::byte const, detail::xxh_stripe_bytes> stripe : stripes) {
+            detail::process_stripe(stripe, v1_, v2_, v3_, v4_);
         }
 
-        if (len != 0) {
-            std::memcpy(memory_.data(), ptr, len);
-            memory_size_ = len;
+        auto const tail = stripes.rest();
+        if (tail.size() != 0) {
+            ::fixy::copy(memory_.view().window(0, tail.size()).expect("the tail is shorter than one stripe"), tail)
+                .expect("the window has the count of the tail");
+            memory_size_ = tail.size();
         }
-        return {};
+        return ::fixy::Unit{};
     }
 
-    [[nodiscard]] inline std::expected<IntegrityHash, IntegrityError> digest() const noexcept {
+    [[nodiscard]] inline ::fixy::Result<IntegrityHash, IntegrityError> digest() const noexcept {
         std::uint64_t hash = 0;
         if (total_len_ >= detail::xxh_stripe_bytes) {
-            hash = std::rotl(v1_, 1) + std::rotl(v2_, 7) + std::rotl(v3_, 12) + std::rotl(v4_, 18);
+            hash = ::fixy::rotl(v1_, 1) + ::fixy::rotl(v2_, 7) + ::fixy::rotl(v3_, 12) + ::fixy::rotl(v4_, 18);
             hash = detail::merge_round64(hash, v1_);
             hash = detail::merge_round64(hash, v2_);
             hash = detail::merge_round64(hash, v3_);
@@ -335,17 +333,26 @@ public:
         }
 
         hash += total_len_;
-        return admit_integrity_hash(detail::finalize_tail(hash, memory_.data(), memory_size_));
+        return admit_integrity_hash(detail::finalize_tail(
+            hash, memory_.view().window(0, held_bytes()).expect("the held bytes are part of the memory")));
     }
 
 private:
+    // The count of the bytes in memory_.  It is below one stripe in each
+    // state, because update() processes each full stripe.
+    [[nodiscard]] constexpr std::size_t held_bytes() const noexcept {
+        std::size_t const held = memory_size_;
+        [[assume(held < detail::xxh_stripe_bytes)]];
+        return held;
+    }
+
     std::uint64_t seed_ = 0;
     std::uint64_t total_len_ = 0;
     std::uint64_t v1_ = 0;
     std::uint64_t v2_ = 0;
     std::uint64_t v3_ = 0;
     std::uint64_t v4_ = 0;
-    std::array<std::byte, detail::xxh_stripe_bytes> memory_{};
+    ::foundation::core::FixedArray<std::byte, detail::xxh_stripe_bytes> memory_{};
     std::size_t memory_size_ = 0;
 };
 
@@ -354,28 +361,30 @@ private:
 }
 
 template <ByteContiguousPayload Payload>
-[[nodiscard]] inline std::expected<IntegrityWrappedMessage<IntegrityOwnedPayload<Payload>>, IntegrityError>
+[[nodiscard]] inline ::fixy::Result<IntegrityWrappedMessage<IntegrityOwnedPayload<Payload>>, IntegrityError>
 wrap(Payload payload) noexcept(std::is_nothrow_move_constructible_v<Payload>) {
     auto hash = xxhash64(detail::payload_bytes(payload));
-    if (!hash) {
-        return std::unexpected(hash.error());
+    if (hash.is_err()) {
+        return ::fixy::err(hash.err().expect("the hash holds its refusal"));
     }
     return IntegrityWrappedMessage<IntegrityOwnedPayload<Payload>>{
         .payload = ::fixy::mint_linear<Payload>(std::move(payload)),
-        .hash = *hash,
+        .hash = std::move(hash).expect("the hash is admitted"),
     };
 }
 
+// The hash of the payload must be the hash of the message.  A payload whose
+// hash is zero has no admitted hash, so it gives ZeroHash.
 template <ByteContiguousPayload Payload>
-[[nodiscard]] inline std::expected<IntegrityVerifiedPayload<Payload>, IntegrityError>
+[[nodiscard]] inline ::fixy::Result<IntegrityVerifiedPayload<Payload>, IntegrityError>
 unwrap(IntegrityWrappedMessage<IntegrityOwnedPayload<Payload>> message) noexcept(
     std::is_nothrow_move_constructible_v<Payload>) {
-    auto actual = xxhash64(detail::payload_bytes(message.payload.peek()));
-    if (!actual) {
-        return std::unexpected(actual.error());
+    std::uint64_t const actual = xxhash64_raw(detail::payload_bytes(message.payload.peek()));
+    if (actual == 0) {
+        return ::fixy::err(IntegrityError::ZeroHash);
     }
-    if (actual->value() != message.hash.value()) {
-        return std::unexpected(IntegrityError::HashMismatch);
+    if (actual != message.hash.value()) {
+        return ::fixy::err(IntegrityError::HashMismatch);
     }
     return ::fixy::mint_tagged<::fixy::tags::source::External>(std::move(message.payload))
         .template retag<::fixy::tags::source::IntegrityVerified>();

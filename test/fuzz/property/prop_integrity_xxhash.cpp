@@ -54,10 +54,9 @@
 #include <crucible/cntp/Integrity.h>
 #include <fixy/Core.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <span>
+#include <utility>
 
 namespace {
 
@@ -74,7 +73,7 @@ enum class LenMode : std::uint8_t {
 };
 
 struct Spec {
-    std::array<std::byte, kMaxLen> bytes{};
+    ::foundation::core::FixedArray<std::byte, kMaxLen> bytes{};
     std::uint32_t len = 0;
     std::uint64_t hash_seed = 0;  // 0 half the time, else random
     std::uint64_t chunk_seed = 0;  // drives the Random-chunking split
@@ -100,9 +99,14 @@ struct Spec {
     }
 }
 
+// The populated prefix of the bytes of a spec.
+[[nodiscard]] ::fixy::View<std::byte const> prefix_of(const Spec& spec) noexcept {
+    return spec.bytes.view().window(0, spec.len).expect("the length is at most kMaxLen");
+}
+
 // One-shot raw hash over the populated prefix.
 [[nodiscard]] std::uint64_t one_shot_raw(const Spec& spec) noexcept {
-    return ci::xxhash64_raw(std::span<const std::byte>{spec.bytes.data(), spec.len}, spec.hash_seed);
+    return ci::xxhash64_raw(prefix_of(spec), spec.hash_seed);
 }
 
 // Stream `spec` through a fresh state with the given chunk plan, then
@@ -113,12 +117,13 @@ template <typename ChunkFn>
     auto state = ci::xxhash64_streaming(spec.hash_seed);
     if (!feed(state)) return false;  // an update() reported an error
 
-    const auto digested = state.digest();
+    auto digested = state.digest();
     if (expected_raw == 0) {
         // Both paths feed admit_integrity_hash → both must reject 0.
-        return !digested.has_value() && digested.error() == ci::IntegrityError::ZeroHash;
+        return digested.is_err()
+            && digested.err().expect("the digest holds its refusal") == ci::IntegrityError::ZeroHash;
     }
-    return digested.has_value() && digested->value() == expected_raw;
+    return digested.is_ok() && std::move(digested).expect("the digest is admitted").value() == expected_raw;
 }
 
 }  // namespace
@@ -135,8 +140,9 @@ int main(int argc, char** argv) {
             Spec spec{};
             spec.mode = rng.pick<LenMode>();
             spec.len = gen_len(rng, spec.mode);
-            for (std::uint32_t i = 0; i < spec.len; ++i) {
-                spec.bytes[i] = static_cast<std::byte>(rng.next32() & 0xFFu);
+            for (auto index : spec.bytes.indices()) {
+                if (index.raw() >= spec.len) break;
+                spec.bytes.at(index) = static_cast<std::byte>(rng.next32() & 0xFFu);
             }
             spec.hash_seed = (rng.next_below(2u) == 0u) ? 0u : rng.next64();
             spec.chunk_seed = rng.next64();
@@ -144,13 +150,12 @@ int main(int argc, char** argv) {
         },
         // ── Property ──
         [](const Spec& spec) noexcept -> bool {
-            const std::byte* base = spec.bytes.data();
+            const auto bytes = prefix_of(spec);
             const std::uint64_t expected_raw = one_shot_raw(spec);
 
             // Strategy 1 — Whole: a single update of the entire payload.
-            const bool whole_ok = streamed_matches(spec, expected_raw, [&](ci::XxHash64State& st) noexcept -> bool {
-                return st.update(std::span<const std::byte>{base, spec.len}).has_value();
-            });
+            const bool whole_ok = streamed_matches(
+                spec, expected_raw, [&](ci::XxHash64State& st) noexcept -> bool { return st.update(bytes).is_ok(); });
             if (!whole_ok) return false;
 
             // Strategy 2 — ByteWise: one byte per update.  Maximal carry
@@ -159,7 +164,7 @@ int main(int argc, char** argv) {
             // never reaches.
             const bool bytewise_ok = streamed_matches(spec, expected_raw, [&](ci::XxHash64State& st) noexcept -> bool {
                 for (std::uint32_t i = 0; i < spec.len; ++i) {
-                    if (!st.update(std::span<const std::byte>{base + i, 1}).has_value()) {
+                    if (!st.update(bytes.window(i, 1).expect("the byte is part of the prefix")).is_ok()) {
                         return false;
                     }
                 }
@@ -182,14 +187,15 @@ int main(int argc, char** argv) {
                 while (offset < spec.len && draws < kMaxDraws) {
                     const std::uint32_t remaining = spec.len - offset;
                     const std::uint32_t take = chunk_rng.next_below(remaining + 1u);
-                    if (!st.update(std::span<const std::byte>{base + offset, take}).has_value()) {
+                    if (!st.update(bytes.window(offset, take).expect("the chunk is part of the prefix")).is_ok()) {
                         return false;
                     }
                     offset += take;
                     ++draws;
                 }
                 if (offset < spec.len
-                    && !st.update(std::span<const std::byte>{base + offset, spec.len - offset}).has_value()) {
+                    && !st.update(bytes.window(offset, spec.len - offset).expect("the rest is part of the prefix"))
+                            .is_ok()) {
                     return false;
                 }
                 return true;

@@ -4,6 +4,7 @@
 #include <crucible/canopy/SlotTable.h>
 #include <crucible/cntp/Integrity.h>
 #include <crucible/cog/CogIdentity.h>
+#include <fixy/Core.h>
 #include <fixy/FixedArray.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
@@ -104,15 +105,15 @@ struct PlumtreeRepairPlan {
 };
 
 [[nodiscard]] inline std::expected<PlumtreeMessageId, PlumtreeError>
-plumtree_message_id(std::span<const std::byte> payload) noexcept {
-    if (payload.empty()) {
+plumtree_message_id(::fixy::View<std::byte const> payload) noexcept {
+    if (payload.size() == 0) {
         return std::unexpected(PlumtreeError::EmptyMessage);
     }
     auto id = cntp::xxhash64(payload);
-    if (!id) {
+    if (id.is_err()) {
         return std::unexpected(PlumtreeError::EmptyMessage);
     }
-    return ::fixy::mint_tagged<::fixy::tags::source::Plumtree>(*id);
+    return ::fixy::mint_tagged<::fixy::tags::source::Plumtree>(std::move(id).expect("the hash is admitted"));
 }
 
 [[nodiscard]] constexpr PlumtreeMessageHash plumtree_message_hash(PlumtreeMessageId id) noexcept {
@@ -190,7 +191,7 @@ public:
     }
 
     [[nodiscard]] std::expected<broadcast_plan_type, PlumtreeError>
-    publish(std::span<const std::byte> payload) noexcept {
+    publish(::fixy::View<std::byte const> payload) noexcept {
         auto message = make_message_(payload);
         if (!message) {
             return std::unexpected(message.error());
@@ -293,8 +294,8 @@ private:
                                                            HyParViewMembership<A, Q> const&, PlumtreeConfig) noexcept;
 
     [[nodiscard]] std::expected<PlumtreeMessage, PlumtreeError>
-    make_message_(std::span<const std::byte> payload) const noexcept {
-        if (payload.empty()) {
+    make_message_(::fixy::View<std::byte const> payload) const noexcept {
+        if (payload.size() == 0) {
             return std::unexpected(PlumtreeError::EmptyMessage);
         }
         if (payload.size() > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {

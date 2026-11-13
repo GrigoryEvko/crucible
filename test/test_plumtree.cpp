@@ -90,17 +90,17 @@ int main() {
     assert(!full.has_value());
     assert(full.error() == cc::PlumtreeError::CapacityExceeded);
 
-    std::array<std::byte, 5> payload{
+    ::foundation::core::FixedArray<std::byte, 5> const payload{
         std::byte{0x70}, std::byte{0x6c}, std::byte{0x75}, std::byte{0x6d}, std::byte{0x21},
     };
-    auto id = cc::plumtree_message_id(std::span<const std::byte>{payload});
+    auto id = cc::plumtree_message_id(payload.view());
     assert(id.has_value());
 
-    auto empty = cc::plumtree_message_id(std::span<const std::byte>{});
+    auto empty = cc::plumtree_message_id(::fixy::View<std::byte const>{});
     assert(!empty.has_value());
     assert(empty.error() == cc::PlumtreeError::EmptyMessage);
 
-    auto published = broadcast.publish(std::span<const std::byte>{payload});
+    auto published = broadcast.publish(payload.view());
     assert(published.has_value());
     assert(published->message.id_hash == cc::plumtree_message_hash(*id));
     assert(published->message.payload_bytes == payload.size());
@@ -122,13 +122,13 @@ int main() {
     assert(duplicate_receive->kind == cc::PlumtreeReceiveKind::Duplicate);
     assert(broadcast.link_state(peer(1).uuid).value() == cc::PlumtreeLinkState::Lazy);
 
-    std::array<std::byte, 4> other_payload{
+    ::foundation::core::FixedArray<std::byte, 4> const other_payload{
         std::byte{0x44},
         std::byte{0x41},
         std::byte{0x54},
         std::byte{0x41},
     };
-    auto other_id = cc::plumtree_message_id(std::span<const std::byte>{other_payload});
+    auto other_id = cc::plumtree_message_id(other_payload.view());
     assert(other_id.has_value());
     cc::PlumtreeMessage unseen_msg{
         .id_hash = cc::plumtree_message_hash(*other_id),
@@ -147,12 +147,12 @@ int main() {
 
     cc::PlumtreeIHave<8> ihave{};
     assert(ihave.push(cc::plumtree_message_hash(*other_id)));
-    auto missing_payload = std::array<std::byte, 3>{
+    ::foundation::core::FixedArray<std::byte, 3> const missing_payload{
         std::byte{0x6e},
         std::byte{0x65},
         std::byte{0x77},
     };
-    auto missing_id = cc::plumtree_message_id(std::span<const std::byte>{missing_payload});
+    auto missing_id = cc::plumtree_message_id(missing_payload.view());
     assert(missing_id.has_value());
     assert(ihave.push(cc::plumtree_message_hash(*missing_id)));
     auto repair = broadcast.receive_ihave(hp(2), gossiped(ihave));
@@ -161,13 +161,13 @@ int main() {
     assert(repair->requested.size().value() == 1);
     assert(repair->requested.slots[0] == cc::plumtree_message_hash(*missing_id));
 
-    auto promote_payload = std::array<std::byte, 4>{
+    ::foundation::core::FixedArray<std::byte, 4> const promote_payload{
         std::byte{0x70},
         std::byte{0x72},
         std::byte{0x6f},
         std::byte{0x6d},
     };
-    auto promote_id = cc::plumtree_message_id(std::span<const std::byte>{promote_payload});
+    auto promote_id = cc::plumtree_message_id(promote_payload.view());
     assert(promote_id.has_value());
     cc::PlumtreeIHave<8> promote_ihave{};
     assert(promote_ihave.push(cc::plumtree_message_hash(*promote_id)));

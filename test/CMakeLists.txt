@@ -3259,7 +3259,7 @@ crucible_neg_compile_test(neg_integrity_raw_hash_field
   ".aka .fixy::Refinement<fixy::IsNonZero\\(\\), long unsigned int, false>.")
 crucible_neg_compile_test(neg_integrity_non_contiguous_wrap
   "no matching function for call to .wrap\\(NotWireBytes\\)."
-  "required for the satisfaction of .HasContiguousPayloadData<Payload>. .with Payload = NotWireBytes.")
+  "required for the satisfaction of .ByteContiguousPayload<Payload>. .with Payload = NotWireBytes.")
 
 # cntp/Fec.h GF(256) systematic Reed-Solomon primitive.
 #   * neg_fec_zero_k / neg_fec_zero_m: shard counts must be positive.

@@ -38,6 +38,11 @@ static_assert(!can_mask<std::int32_t, 3>, "a mask has the shape of a vector");
 static_assert(can_vec<char, 16> && can_vec<double, 2>);
 static_assert(!can_vec<bool, 8> && !can_vec<int, 6> && !can_vec<volatile int, 8>);
 
+// A load from bytes reads exactly the bytes of one register.
+static_assert(RegisterBytes<u64x4, std::byte const, 32> && RegisterBytes<u8x16, std::uint8_t, 16>);
+static_assert(!RegisterBytes<u64x4, std::byte const, 16>, "a load reads exactly the bytes of one register");
+static_assert(!RegisterBytes<u64x4, std::uint64_t const, 4>, "the View holds bytes, not lanes");
+
 }  // namespace detail::simd_self_test
 
 }  // namespace foundation::simd
