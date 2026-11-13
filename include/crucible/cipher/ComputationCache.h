@@ -25,7 +25,6 @@
 
 #include <cstdint>
 #include <meta>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::cipher {
@@ -64,15 +63,6 @@ template <auto FnPtr, typename... Args>
 concept HasStableKeyIdentity = IsCacheableFunction<FnPtr> && ::foundation::reflect::HasStableFunctionIdentity<FnPtr>
                             && ::foundation::reflect::HasStableIdentity<std::remove_pointer_t<decltype(FnPtr)>>
                             && (::foundation::reflect::HasStableIdentity<Args> && ...);
-
-namespace detail {
-
-inline constexpr std::string_view kUnstableKeyIdentity =
-    "computation_cache_key: the function, its signature or an argument type has no stable identity.  The key "
-    "folds each printed name, and a closure or an unnamed class prints a name that differs between translation "
-    "units or is shared by different types.  Key a named function over named types.";
-
-}  // namespace detail
 
 // Unfenced, the row parameter would take any type. A type that is not
 // a row folds to a zero contribution, which silently produces a key
@@ -131,7 +121,11 @@ template <auto FnPtr, typename RowOrBlind, typename... Args>
         ((k = ::foundation::reflect::combine_ids(k, ::foundation::reflect::stable_type_id(^^Args))), ...);
         return k;
     } else {
-        static_assert(::crucible::cipher::HasStableKeyIdentity<FnPtr, Args...>, kUnstableKeyIdentity);
+        static_assert(::crucible::cipher::HasStableKeyIdentity<FnPtr, Args...>,
+                      "computation_cache_key: the function, its signature or an argument type has no stable "
+                      "identity.  The key folds each printed name, and a closure or an unnamed class prints a name "
+                      "that differs between translation units or is shared by different types.  Key a named "
+                      "function over named types.");
         return 0;
     }
 }
