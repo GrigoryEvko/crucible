@@ -549,6 +549,14 @@ PROBES: tuple[Probe, ...] = (
         "these flags add a copy of the pointer and a second test of the copy, with a branch to a trap",
         checks=("fatal",),
     ),
+    Probe(
+        "box_in_hole",
+        "mint_box in a Hole is the placement new of the raw form in the storage of the Hole, with no call of the "
+        "allocation door.  It adds one test of the storage and one branch to a call of the fatal exit, the clear of "
+        "the Hole, and the store of the object pointer into the Box that the call gives back.  "
+        f"{HARDENED_BUILDS}.  On the hot path, these flags add a second test of the storage, with a branch to a trap",
+        checks=("fatal",),
+    ),
     Probe("ref_read", "a read through a Ref is the load of a raw pointer: a Ref has no empty state, so it has no test"),
     Probe(
         "option_expect",

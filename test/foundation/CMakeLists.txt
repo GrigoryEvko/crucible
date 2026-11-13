@@ -2300,6 +2300,10 @@ foundation_neg_compile_test(neg_core_identity_from_integer
   "constexpr foundation::core::Identity::Identity\\([a-z_:0-9]+\\). is private within this context"
   "declared private here")
 foundation_test(test_core_box)
+# The test counts the calls of the allocation door: each reference of the
+# link to the allocator of the C library goes to a wrapper of the test.
+foundation_test(test_core_hole)
+target_link_options(test_core_hole PRIVATE -Wl,--wrap=malloc,--wrap=aligned_alloc,--wrap=calloc,--wrap=free)
 
 foundation_neg_compile_test(neg_core_ref_of_temporary
   "use of deleted function .void foundation::core::to\\(T&&\\) \\[with Refused = \\{\\}; T = int\\]."
@@ -2356,6 +2360,36 @@ foundation_neg_compile_test(neg_core_box_consume_lvalue
 foundation_neg_compile_test(neg_core_box_consume_not_movable
   "no matching function for call to .foundation::core::Box<Fixed>::consume\\(\\)."
   "the expression .is_nothrow_move_constructible_v<T> \\[with T = Fixed\\]. evaluated to .false.")
+
+# A Hole holds the storage of one object with no object in it.  Its mint
+# from the allocation door takes the allocation tag and a shape of a power
+# of two.  Its mint from a Box takes a Box that the caller gives up.  A Box
+# builds in a Hole of its exact size and alignment that the caller gives up.
+foundation_neg_compile_test(neg_core_hole_without_allocation_tag
+  "no matching function for call to .mint_hole<8, 8>\\(foundation::effects::cap::IO\\)."
+  "required for the satisfaction of .CanMintHole<Size, Align, Marker>. \\[with Size = 8; Align = 8; Marker = foundation::effects::cap::IO\\]")
+foundation_neg_compile_test(neg_core_hole_alignment_not_power
+  "no matching function for call to .mint_hole<24, 12>\\(foundation::core::Alloc\\)."
+  "the expression .\\(Align & Align - 1\\) == 0 \\[with Align = 12\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_hole_of_lvalue_box
+  "no matching function for call to .mint_hole\\(foundation::core::Box<long unsigned int>&\\)."
+  "cannot bind rvalue reference of type .foundation::core::Box<long unsigned int>&&. to lvalue of type .foundation::core::Box<long unsigned int>.")
+foundation_neg_compile_test(neg_core_hole_of_const_box
+  "no matching function for call to .mint_hole\\(std::remove_reference<const foundation::core::Box<long unsigned int>&>::type\\)."
+  "have incompatible cv-qualifiers")
+foundation_neg_compile_test(neg_core_box_in_hole_of_other_size
+  "no matching function for call to .mint_box<uint64_t>\\(std::remove_reference<foundation::core::Hole<16, 8>&>::type, uint64_t\\)."
+  "the expression .Size == sizeof \\(T\\) \\[with Size = 16; T = long unsigned int\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_box_in_hole_of_other_alignment
+  "no matching function for call to .mint_box<TwoWords>\\(std::remove_reference<foundation::core::Hole<8, 8>&>::type\\)."
+  "the expression .Align == alignof \\(T\\) \\[with Align = 8; T = TwoWords\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_box_in_lvalue_hole
+  "no matching function for call to .mint_box<uint64_t>\\(foundation::core::Hole<8, 8>&, uint64_t\\)."
+  "cannot bind rvalue reference of type .foundation::core::Hole<8, 8>&&. to lvalue of type .foundation::core::Hole<8, 8>.")
+foundation_neg_compile_test(neg_core_hole_copied
+  "use of deleted function .foundation::core::Hole<Size, Align>::Hole\\(const foundation::core::Hole<Size, Align>&\\) \\[with long unsigned int Size = 8; long unsigned int Align = 8\\]."
+  "a Hole owns its storage alone: a copy would free the storage two times")
+
 foundation_neg_compile_test(neg_core_box_mint_forged_body
   "no matching function for call to .foundation::core::Box<int>::Box\\(<brace-enclosed initializer list>\\)."
   "cannot convert .& stolen. \\(type .int\\*.\\) to type .const foundation::core::detail::BoxKey&.")

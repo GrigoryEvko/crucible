@@ -504,7 +504,7 @@ test/fixy/ | std-object | 1257 | - | -
 test/fixy/neg/ | c-array-object | 53 | - | -
 test/fixy/neg/ | c-library-call | 5 | - | -
 test/fixy/neg/ | c-library-object | 2 | - | -
-test/fixy/neg/ | detail-use | 246 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
+test/fixy/neg/ | detail-use | 247 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -558,6 +558,7 @@ test/foundation/ | c-library-call | 413 | - | -
 test/foundation/ | c-library-object | 7 | - | -
 test/foundation/ | door-header | 7 | - | -
 test/foundation/ | foreign-symbol | 5 | - | -
+test/foundation/ | opted-out | 16 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
 test/foundation/ | opted-out | 2 | ORACLE: memcpy is the model of the bytes of an object | -
 test/foundation/ | opted-out | 4 | ORACLE: std::array is the model of the writes of a FixedArray | -
 test/foundation/ | opted-out | 5 | ORACLE: std::from_chars reads the integer that parse reads from a text | -
@@ -572,6 +573,7 @@ test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis,
 test/foundation/ | raw-function-pointer | 17 | - | -
 test/foundation/ | raw-new-delete | 2 | - | -
 test/foundation/ | raw-pointer-object | 46 | - | -
+test/foundation/ | region | 1 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
 test/foundation/ | region | 1 | ORACLE: memcpy is the model of the bytes of an object | -
 test/foundation/ | region | 1 | ORACLE: std::array is the model of the writes of a FixedArray | -
 test/foundation/ | region | 1 | ORACLE: std::from_chars reads the integer that parse reads from a text | -
@@ -733,7 +735,7 @@ test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 9 | - | -
 test/session_oracle/ | std-entity | 26 | - | -
 test/session_oracle/ | std-object | 1385 | - | -
-test/shape/ | opted-out | 181 | ORACLE: the raw form that the shape of each family probe is compared with | -
+test/shape/ | opted-out | 184 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/singleton_neg/ | std-entity | 4 | - | -
 test/swiss_table_neg/ | replace-pending:<limits> | 1 | - | -

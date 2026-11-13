@@ -46,10 +46,17 @@
 // ends the process through fatal().  The test is one compare with a branch
 // to a cold call.  A loop that reads the object many times takes one Ref
 // with view() before the loop, and the Ref has no test.
+//
+// A Hole of foundation/core/Credit.h holds the storage of a Box with no
+// object in it.  mint_hole(std::move(box)) ends the object and keeps the
+// storage, and mint_box<T>(std::move(hole), args...) builds a T in the
+// storage of a Hole of the exact size and alignment of T.  Neither mint
+// calls the allocation door.
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Credit.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Report.h>
 
@@ -58,6 +65,7 @@
 #include <cstdint>
 #include <new>
 #include <type_traits>
+#include <utility>
 
 namespace foundation::core {
 
@@ -66,15 +74,6 @@ namespace foundation::core {
 // nothing.
 template <class T>
 concept RefTarget = std::is_object_v<T> && !std::is_array_v<T> && !std::is_volatile_v<T>;
-
-// The object of a Box: a complete object type that is not an array, not
-// cv-qualified and not abstract, with a destructor that does not throw.
-template <class T>
-concept BoxPayload = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>
-                  && !std::is_abstract_v<T> && std::is_nothrow_destructible_v<T>;
-
-template <BoxPayload T>
-class Box;
 
 template <RefTarget T, ::foundation::brand::IsBrand Brand = ::foundation::brand::DefaultBrand>
 class Ref;
@@ -330,6 +329,22 @@ class [[nodiscard]] Box {
         return object_;
     }
 
+    // The mint of a Hole from a Box calls vacate_ through the constructor of
+    // the Hole.  Hole is a class template, so no unit outside its home can
+    // specialize it.
+    template <std::size_t Size, std::size_t Align>
+        requires HoleShape<Size, Align>
+    friend class Hole;
+
+    // Ends the object and gives the storage to a Hole.  The Box then holds
+    // no object.
+    [[nodiscard]] void* vacate_() noexcept {
+        T* const object = held_();
+        object->~T();
+        object_ = nullptr;
+        return static_cast<void*>(object);
+    }
+
 public:
     // Takes the storage of the size and the alignment of T from the
     // allocation door, and builds the object from the arguments in it.  Only
@@ -340,6 +355,15 @@ public:
         requires std::constructible_from<T, Args&&...>
     explicit Box(detail::BoxKey const& /*key*/, Args&&... args) noexcept
         : object_{::new(detail::heap_allocate_(sizeof(T), alignof(T))) T(static_cast<Args&&>(args)...)} {}
+
+    // Builds the object from the arguments in the storage of a Hole of the
+    // size and the alignment of T, with no call of the allocation door.  The
+    // Hole is then empty, and a Hole that holds no storage ends the process
+    // through fatal().  Only mint_box holds the key.
+    template <class... Args>
+        requires std::constructible_from<T, Args&&...>
+    explicit Box(detail::BoxKey const& /*key*/, Hole<sizeof(T), alignof(T)>&& hole, Args&&... args) noexcept
+        : object_{::new(std::move(hole).detach_()) T(static_cast<Args&&>(args)...)} {}
 
     Box(Box&& other) noexcept : object_{other.object_} { other.object_ = nullptr; }
 
@@ -409,6 +433,21 @@ template <class T, class Marker, class... Args>
     requires CanMintBox<T, Marker, Args...>
 [[nodiscard]] Box<T> mint_box(Marker /*allocation*/, Args&&... args) noexcept {
     return Box<T>{detail::BoxDoor::key(), static_cast<Args&&>(args)...};
+}
+
+// The gate of the mint of a Box in a Hole: the Hole has the exact size and
+// alignment of T, so the Box gives back the storage that the Hole holds.
+template <class T, std::size_t Size, std::size_t Align, class... Args>
+concept CanMintBoxInHole =
+    BoxPayload<T> && Size == sizeof(T) && Align == alignof(T) && std::constructible_from<T, Args&&...>;
+
+// A Box of the object that the arguments build in the storage of a Hole
+// that the caller gives up.  The mint calls no allocation door, so it takes
+// no allocation capability: the mint of the Hole took it.
+template <class T, std::size_t Size, std::size_t Align, class... Args>
+    requires CanMintBoxInHole<T, Size, Align, Args...>
+[[nodiscard]] Box<T> mint_box(Hole<Size, Align>&& hole, Args&&... args) noexcept {
+    return Box<T>{detail::BoxDoor::key(), std::move(hole), static_cast<Args&&>(args)...};
 }
 
 }  // namespace foundation::core

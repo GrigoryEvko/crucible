@@ -84,7 +84,9 @@ using ::foundation::core::pack_unique_v;
 using ::foundation::core::Record;
 
 using ::foundation::core::Box;
+using ::foundation::core::Hole;
 using ::foundation::core::mint_box;
+using ::foundation::core::mint_hole;
 using ::foundation::core::Address;
 using ::foundation::core::address_of;
 using ::foundation::core::Ref;

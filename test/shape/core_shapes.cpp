@@ -377,6 +377,14 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
 
 [[gnu::used]] std::uint32_t box_read(fixy::Box<Payload>& box) noexcept { return box->value; }
 
+// A Box built in a Hole: one test of the storage of the Hole with a branch
+// to a cold call, the clear of the Hole, and the build of the object in the
+// storage.  No call of the allocation door.
+[[gnu::used]] fixy::Box<Payload> box_in_hole(fixy::Hole<sizeof(Payload), alignof(Payload)>&& hole,
+                                             std::uint32_t value) noexcept {
+    return fixy::mint_box<Payload>(std::move(hole), value);
+}
+
 // A read through a Ref is the load of a raw pointer.  A Ref has no empty
 // state, so the read has no test.
 [[gnu::used]] std::uint32_t ref_read(fixy::Ref<Payload const, RefProbeBrand> ref) noexcept { return ref->value; }
@@ -947,6 +955,10 @@ struct RawList final {
 }
 
 [[gnu::used]] std::uint32_t box_read_raw(std::unique_ptr<Payload>& box) noexcept { return box->value; }
+
+[[gnu::used]] Payload* box_in_hole_raw(void* storage, std::uint32_t value) noexcept {
+    return ::new(storage) Payload{value};
+}
 
 [[gnu::used]] std::uint32_t ref_read_raw(Payload const* payload) noexcept { return payload->value; }
 

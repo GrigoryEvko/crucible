@@ -251,6 +251,55 @@ concept ViewNamesBrand = requires(B& box) { box.template view<CheckBrand>(); };
 static_assert(!ViewNamesBrand<Box<int>>);
 static_assert(!HasGet<Box<int>>);
 
+// ── Hole ───────────────────────────────────────────────────────────────
+
+// One pointer.  A Hole is linear: move-only, with a move and an end that do
+// not throw, and not trivially copyable.
+static_assert(sizeof(Hole<8, 8>) == sizeof(void*));
+static_assert(sizeof(Hole<4096, 4096>) == sizeof(void*));
+static_assert(::foundation::linear::is_linear_v<Hole<8, 8>>);
+static_assert(!std::is_copy_constructible_v<Hole<8, 8>>);
+static_assert(!std::is_copy_assignable_v<Hole<8, 8>>);
+static_assert(std::is_nothrow_move_constructible_v<Hole<8, 8>>);
+static_assert(std::is_nothrow_move_assignable_v<Hole<8, 8>>);
+static_assert(!std::is_trivially_copyable_v<Hole<8, 8>>);
+static_assert(!std::is_default_constructible_v<Hole<8, 8>>);
+
+// No pointer becomes a Hole, and each constructor takes the key, which only
+// HoleDoor builds.
+static_assert(!std::is_constructible_v<Hole<8, 8>, void*>);
+static_assert(!std::is_constructible_v<Hole<8, 8>, Box<std::uint64_t>&&>);
+static_assert(!std::is_default_constructible_v<detail::HoleKey>);
+static_assert(!std::is_copy_constructible_v<detail::HoleKey>);
+static_assert(!std::is_copy_assignable_v<detail::HoleKey>);
+static_assert(!std::is_trivially_copyable_v<detail::HoleKey>);
+
+// The shape of a Hole: a size of one byte or more, and an alignment that is
+// a power of two.
+static_assert(HoleShape<1, 1>);
+static_assert(HoleShape<24, 8>);
+static_assert(!HoleShape<0, 8>);
+static_assert(!HoleShape<8, 0>);
+static_assert(!HoleShape<8, 12>);
+
+// The gate of the mint of a Hole takes the allocation tag only.
+static_assert(CanMintHole<8, 8, Alloc>);
+static_assert(!CanMintHole<8, 8, NoMarker>);
+static_assert(!CanMintHole<8, 3, Alloc>);
+
+// A Box builds in a Hole of its exact size and alignment only.
+static_assert(CanMintBoxInHole<std::uint64_t, sizeof(std::uint64_t), alignof(std::uint64_t), std::uint64_t>);
+static_assert(!CanMintBoxInHole<std::uint64_t, 16, alignof(std::uint64_t)>);
+static_assert(!CanMintBoxInHole<std::uint64_t, sizeof(std::uint64_t), 16>);
+static_assert(!CanMintBoxInHole<std::uint32_t, sizeof(std::uint64_t), alignof(std::uint64_t)>);
+static_assert(!CanMintBoxInHole<std::uint64_t, sizeof(std::uint64_t), alignof(std::uint64_t), char const*>);
+
+// The mint of a Hole from a Box gives a Hole of the size and the alignment
+// of the object.  The fixture neg_core_hole_of_lvalue_box shows that the
+// mint takes an rvalue Box only.
+static_assert(std::is_same_v<decltype(mint_hole(std::declval<Box<std::uint64_t>>())),
+                             Hole<sizeof(std::uint64_t), alignof(std::uint64_t)>>);
+
 // ── The closed surface ─────────────────────────────────────────────────
 
 // The family list of the Ref family (plan section 11.5).  Each public member
@@ -258,13 +307,14 @@ static_assert(!HasGet<Box<int>>);
 // this list.  Ref and Box have no empty state, so they take the dereference.
 inline constexpr TextView ref_names{"Ref to same_object downcast KindFamily KindTagged Box mint_box BumpArena make "
                                     "array copy_text Slot emplace clear FnRef CallRef Address address_of is_aligned "
-                                    "Hole"};
+                                    "Hole mint_hole"};
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int, CheckBrand>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int const, CheckBrand>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<Abstract, CheckBrand>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Box<int>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Box<OverAligned>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Address);
+CRUCIBLE_CLOSED_SURFACE(ref_names, Hole<8, 8>);
 
 }  // namespace detail::ref_checks
 

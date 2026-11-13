@@ -876,6 +876,8 @@ inline constexpr StatedZero kZeros[] = {
      "the position of a loop over an Option: it lives inside the loop, and it is never a value in a signature"},
     {^^::foundation::core::Box,
      "an owned allocation of one object: it holds storage and makes no claim about what the object holds"},
+    {^^::foundation::core::Hole,
+     "the owned storage of one object with no object in it: it holds storage and makes no claim about a value"},
     {^^::foundation::core::Ref,
      "a borrow of one object: it owns nothing and makes no claim about what the object holds"},
     {^^::foundation::core::Address,

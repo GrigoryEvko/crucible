@@ -227,6 +227,9 @@ PROBE_FILES: dict[str, str] = {
         "expect() and the rvalue match() leave an Option empty, and the move of an owning Option leaves the source "
         "empty"
     ),
+    "test/foundation/test_core_hole.cpp": (
+        "a second spend of a Hole and the mint of a Hole from a moved-from Box abort"
+    ),
     "test/foundation/test_core_one_of.cpp": (
         "the move of an owning OneOf leaves the moved-from alternative in the source, which the source still holds"
     ),
