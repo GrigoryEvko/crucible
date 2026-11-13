@@ -333,19 +333,15 @@ int main(int argc, char* argv[]) {
         static ::fixy::FixedArray<MetaIndex, 4096> meta_batch{};
         static ::fixy::FixedArray<ScopeHash, 4096> scope_batch{};
         static ::fixy::FixedArray<CallsiteHash, 4096> callsite_batch{};
+        // The first n entries of the four batches are the drained trace.  No
+        // later code writes the batches.
         const uint32_t n = ring->drain(batch.view(), meta_batch.view(), scope_batch.view(), callsite_batch.view());
-
-        std::vector<TraceRing::Entry> saved_trace(batch.begin(), batch.begin() + n);
-        std::vector<MetaIndex> saved_meta(meta_batch.begin(), meta_batch.begin() + n);
-        std::vector<ScopeHash> saved_scope(scope_batch.begin(), scope_batch.begin() + n);
-        std::vector<CallsiteHash> saved_callsite(callsite_batch.begin(), callsite_batch.begin() + n);
 
         auto repopulate_meta_log = [&] {
             meta_log.reset();
             bench_rng_state = 0x1111222233334444ULL;
             for (uint32_t i = 0; i < n; i++) {
-                const uint16_t total_metas =
-                    static_cast<uint16_t>(saved_trace[i].num_inputs + saved_trace[i].num_outputs);
+                const uint16_t total_metas = static_cast<uint16_t>(batch[i].num_inputs + batch[i].num_outputs);
                 TensorMeta metas[8]{};
                 for (uint16_t j = 0; j < total_metas && j < 8; j++) {
                     metas[j].ndim = 4;
@@ -354,7 +350,7 @@ int main(int argc, char* argv[]) {
                     metas[j].data_ptr = external_data_ptr(
                         std::bit_cast<void*>(static_cast<std::uintptr_t>(0x7f0000000000ULL + (i * 8 + j) * 0x1000)));
                 }
-                // The build reads the metas at the indices in saved_meta, so this call does not
+                // The build reads the metas at the indices in meta_batch, so this call does not
                 // use the returned index.
                 (void)meta_log.try_append(metas, total_metas);
             }
@@ -364,8 +360,8 @@ int main(int argc, char* argv[]) {
         return bench::run("build_trace (481 ops, full pipeline)", [&] {
             scratch.with_epoch([&]() noexcept {
                 repopulate_meta_log();
-                auto built = bg.build_trace_from(test.alloc, scratch, n, saved_trace.data(), saved_meta.data(),
-                                                 saved_scope.data(), saved_callsite.data());
+                auto built = bg.build_trace_from(test.alloc, scratch, n, batch.data(), meta_batch.data(),
+                                                 scope_batch.data(), callsite_batch.data());
                 bench::do_not_optimize(built);
             });
         });
@@ -375,7 +371,12 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; i++) {
         reports.push_back([path = argv[i]] {
             auto test = ::foundation::effects::testing::test();
-            auto loaded_trace = load_trace(::fixy::TestRunnerCtx{test}, path);
+            // A path that fails the path check counts as a file that does not open.
+            auto sanitized_path =
+                ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{path}));
+            auto loaded_trace =
+                sanitized_path ? load_trace(::fixy::TestRunnerCtx{test}, std::move(*sanitized_path))
+                               : ::fixy::Result<LoadedTrace, TraceLoadError>{::fixy::err(TraceLoadError::OpenFailed)};
             if (loaded_trace.is_err()) {
                 std::fprintf(stderr, "[skip] could not load %s\n", path);
                 return bench::run("build_trace (skipped — load fail)", [] { asm volatile("" ::: "memory"); });

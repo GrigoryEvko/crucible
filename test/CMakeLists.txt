@@ -4364,7 +4364,7 @@ crucible_neg_compile_test(neg_trace_loader_names_other_brand
 # Block.  The foreground context of a Vigil owns neither.
 crucible_neg_compile_test(neg_trace_loader_refuses_foreground_io
   "no matching function for call to .load_trace.foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<crucible::Vigil>, foundation::effects::Row<> >"
-  "required for the satisfaction of .CtxFitsFileOpen<Ctx>."
+  "required for the satisfaction of .CtxFitsTraceLoad<Ctx>."
   "neg_trace_loader_refuses_foreground_io.cpp:10")
 
 # The view mints of CrucibleContext, PoolAllocator and ReplayEngine.  Each

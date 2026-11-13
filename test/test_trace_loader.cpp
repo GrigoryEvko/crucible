@@ -4,14 +4,15 @@
 #include <crucible/TraceLoader.h>
 #include <crucible/SchemaTable.h>
 #include <fixy/Ctx.h>
+#include <fixy/FixedArray.h>
 
 #include "test_assert.h"
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <limits>
 #include <string>
 #include <sys/resource.h>
@@ -47,19 +48,29 @@ static std::string write_tmp(const void* data, size_t n) {
     return buf;
 }
 
+// The sanitized form of the path of a test file.  No path of these tests
+// holds a ".." component, so each one passes the check.
+static ::fixy::Path<::fixy::tags::source::Sanitized> sanitized(const std::string& raw) {
+    auto checked =
+        ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{raw}));
+    assert(checked.has_value());
+    return std::move(*checked);
+}
+
 // True when the load refused its file for the reason error.
 static bool is_refused_as(::fixy::Result<LoadedTrace, TraceLoadError> const& loaded, TraceLoadError error) {
     return loaded.err() == ::fixy::some(error);
 }
 
 static void test_missing_file() {
-    assert(is_refused_as(load_trace(kTestIo, "/definitely/does/not/exist.crtrace"), TraceLoadError::OpenFailed));
+    assert(is_refused_as(load_trace(kTestIo, sanitized("/definitely/does/not/exist.crtrace")),
+                         TraceLoadError::OpenFailed));
     crucible::test::pass("  test_missing_file:              PASSED\n");
 }
 
 static void test_empty_file() {
     std::string path = write_tmp("", 0);
-    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::HeaderTruncated));
+    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::HeaderTruncated));
     std::remove(path.c_str());
     crucible::test::pass("  test_empty_file:                PASSED\n");
 }
@@ -73,7 +84,7 @@ static void test_bad_magic() {
         uint32_t n_metas;
     } hdr{.magic = {'X', 'X', 'X', 'X'}, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 0, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
-    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::WrongMagic));
+    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::WrongMagic));
     std::remove(path.c_str());
     crucible::test::pass("  test_bad_magic:                 PASSED\n");
 }
@@ -86,7 +97,7 @@ static void test_wrong_version() {
         uint32_t n_metas;
     } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = 99, .n_ops = 0, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
-    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::WrongVersion));
+    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::WrongVersion));
     std::remove(path.c_str());
     crucible::test::pass("  test_wrong_version:             PASSED\n");
 }
@@ -95,7 +106,7 @@ static void test_truncated_header() {
     // Eight bytes, so the two count fields are missing.
     char buf[8] = {'C', 'R', 'T', 'R', 1, 0, 0, 0};
     std::string path = write_tmp(buf, sizeof(buf));
-    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::HeaderTruncated));
+    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::HeaderTruncated));
     std::remove(path.c_str());
     crucible::test::pass("  test_truncated_header:          PASSED\n");
 }
@@ -113,7 +124,7 @@ static void test_truncated_op_records() {
     std::memcpy(buf, &hdr, sizeof(hdr));
     std::string path = write_tmp(buf, sizeof(buf));
     // The size check refuses the counts before the loader reads a record.
-    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::CountPastFile));
+    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::CountPastFile));
     std::remove(path.c_str());
     crucible::test::pass("  test_truncated_ops:             PASSED\n");
 }
@@ -128,7 +139,7 @@ static void test_happy_path_zero_ops() {
         uint32_t n_metas;
     } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 0, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
-    const LoadedTrace t = load_trace(kTestIo, path.c_str()).expect("a header with zero counts loads");
+    const LoadedTrace t = load_trace(kTestIo, sanitized(path)).expect("a header with zero counts loads");
     assert(t.num_ops == 0);
     assert(t.num_metas == 0);
     assert(t.entries.empty());
@@ -146,7 +157,7 @@ static void test_adversarial_num_ops_rejected() {
         uint32_t n_metas;
     } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 0xFFFFFFFFu, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
-    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::CountPastLimit));
+    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::CountPastLimit));
     std::remove(path.c_str());
     crucible::test::pass("  test_adversarial_counts:        PASSED\n");
 }
@@ -173,7 +184,7 @@ static void test_round_trip_single_op() {
     // scalar counts and the flag bytes, all left zero.
 
     std::string path = write_tmp(buf, sizeof(buf));
-    const LoadedTrace t = load_trace(kTestIo, path.c_str()).expect("a trace of one op loads");
+    const LoadedTrace t = load_trace(kTestIo, sanitized(path)).expect("a trace of one op loads");
     std::remove(path.c_str());
     assert(t.num_ops == 1);
     assert(t.entries[0].schema_hash.raw() == schema);
@@ -235,10 +246,10 @@ static void test_schema_name_table_round_trip() {
     std::string path = write_tmp(buf.data(), buf.size());
 
     // A load with no producer context reads the names and registers none.
-    assert(load_trace(kTestIo, path.c_str()).is_ok());
+    assert(load_trace(kTestIo, sanitized(path)).is_ok());
     assert(global_schema_table().count() == 0);
 
-    const LoadedTrace t = load_trace(kTestIo, kVigilForeground, path.c_str()).expect("a trace with names loads");
+    const LoadedTrace t = load_trace(kTestIo, kVigilForeground, sanitized(path)).expect("a trace with names loads");
     std::remove(path.c_str());
 
     assert(t.num_ops == 0);
@@ -273,7 +284,7 @@ static void test_schema_name_table_corrupt_zero_len() {
     // The header and ops parsed cleanly, so the loader still returns a
     // trace.  A failure in the name table breaks that loop only.
     const LoadedTrace t =
-        load_trace(kTestIo, kVigilForeground, path.c_str()).expect("a name of length zero ends the table only");
+        load_trace(kTestIo, kVigilForeground, sanitized(path)).expect("a name of length zero ends the table only");
     std::remove(path.c_str());
     assert(t.num_ops == 0);
 
@@ -307,8 +318,8 @@ static void test_schema_name_table_corrupt_oversize_len() {
     buf.insert(buf.end(), 300, static_cast<unsigned char>(0x5A));
 
     std::string path = write_tmp(buf.data(), buf.size());
-    const LoadedTrace t =
-        load_trace(kTestIo, kVigilForeground, path.c_str()).expect("a name past the length bound ends the table only");
+    const LoadedTrace t = load_trace(kTestIo, kVigilForeground, sanitized(path))
+                              .expect("a name past the length bound ends the table only");
     std::remove(path.c_str());
     assert(t.num_ops == 0);
 
@@ -348,7 +359,7 @@ static void test_meta_overrun_rejected() {
     // Op claims 5 tensors (3 in + 2 out) but only 2 metas exist — the
     // running meta cursor would overrun the metas vector.  Reject.
     std::string path = write_one_op_trace(/*n_metas=*/2, /*in=*/3, /*out=*/2);
-    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::MetaRunPastCount));
+    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::MetaRunPastCount));
     std::remove(path.c_str());
     crucible::test::pass("  test_meta_overrun_rejected:     PASSED\n");
 }
@@ -356,7 +367,7 @@ static void test_meta_overrun_rejected() {
 static void test_meta_exact_count_loads() {
     // Op claims exactly 5 tensors and 5 metas exist — in bounds, loads.
     std::string path = write_one_op_trace(/*n_metas=*/5, /*in=*/3, /*out=*/2);
-    const LoadedTrace t = load_trace(kTestIo, path.c_str()).expect("an op whose metadata fits the count loads");
+    const LoadedTrace t = load_trace(kTestIo, sanitized(path)).expect("an op whose metadata fits the count loads");
     assert(t.num_ops == 1);
     assert(t.num_metas == 5);
     assert(t.entries[0].num_inputs == 3);
@@ -371,7 +382,7 @@ static void test_meta_count_uint16_overflow_rejected() {
     // in 32 bits it is a real claim of 65536 tensors, and the file holds
     // two metas.
     std::string path = write_one_op_trace(/*n_metas=*/2, /*in=*/65535, /*out=*/1);
-    assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::MetaRunPastCount));
+    assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::MetaRunPastCount));
     std::remove(path.c_str());
     crucible::test::pass("  test_meta_uint16_overflow:      PASSED\n");
 }
@@ -395,7 +406,7 @@ static void test_counts_past_the_file_allocate_nothing() {
         std::memcpy(buf.data() + 8, &claimed_ops, 4);
         std::memcpy(buf.data() + 12, &claimed_metas, 4);
         std::string path = write_tmp(buf.data(), buf.size());
-        assert(is_refused_as(load_trace(kTestIo, path.c_str()), TraceLoadError::CountPastFile));
+        assert(is_refused_as(load_trace(kTestIo, sanitized(path)), TraceLoadError::CountPastFile));
         std::remove(path.c_str());
     }
     const long growth_kb = peak_resident_kb() - peak_before_kb;
@@ -405,7 +416,7 @@ static void test_counts_past_the_file_allocate_nothing() {
 
 // One metadata record as the file carries it.  A record of zeros is a
 // valid descriptor of rank zero.
-using MetaRecord = std::array<uint8_t, sizeof(TensorMeta)>;
+using MetaRecord = ::fixy::FixedArray<uint8_t, sizeof(TensorMeta)>;
 
 template <class Field>
 static void set_meta_field(MetaRecord& record, std::size_t field_offset, Field value) {
@@ -425,7 +436,7 @@ static bool loads_with_meta(const MetaRecord& record) {
     std::memcpy(buf.data() + 16 + 72, &num_inputs, 2);
     std::memcpy(buf.data() + 16 + 80, record.data(), record.size());
     std::string path = write_tmp(buf.data(), buf.size());
-    const auto loaded = load_trace(kTestIo, path.c_str());
+    const auto loaded = load_trace(kTestIo, sanitized(path));
     std::remove(path.c_str());
     // Only the metadata record differs from a valid trace, so a refusal has
     // the one reason of a corrupt record.
@@ -487,7 +498,7 @@ static void test_names_on_a_sealed_table_are_skipped() {
     buf.insert(buf.end(), name, name + sizeof(name) - 1);
 
     std::string path = write_tmp(buf.data(), buf.size());
-    const bool is_loaded = load_trace(kTestIo, kVigilForeground, path.c_str()).is_ok();
+    const bool is_loaded = load_trace(kTestIo, kVigilForeground, sanitized(path)).is_ok();
     std::remove(path.c_str());
 
     assert(is_loaded);

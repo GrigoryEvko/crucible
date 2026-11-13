@@ -686,7 +686,12 @@ int main(int argc, char* argv[]) {
 
     std::printf("TSC ratio: %.4f ns/cycle\n", bench::Timer::ns_per_cycle());
 
-    auto loaded = load_trace(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, trace_path);
+    // A path that fails the path check counts as a file that does not open.
+    auto sanitized_path =
+        ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{trace_path}));
+    auto loaded = sanitized_path ? load_trace(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
+                                              std::move(*sanitized_path))
+                                 : ::fixy::Result<LoadedTrace, TraceLoadError>{::fixy::err(TraceLoadError::OpenFailed)};
     if (loaded.is_err()) {
         std::fprintf(stderr, "error: could not load %s\n", trace_path);
         std::fprintf(stderr, "usage: %s [file.crtrace] [iters]\n", argv[0]);
