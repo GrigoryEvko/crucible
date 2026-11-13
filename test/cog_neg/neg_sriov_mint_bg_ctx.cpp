@@ -14,7 +14,7 @@ int main() {
     id.kind = cog::CogKind::NicPort;
     cog::NicPortTargetCaps caps{};
     caps.features.set(cog::NicFeature::SrIov);
-    auto iface = crucible::cntp::NicInterfaceName::from("eth0").value();
+    auto iface = crucible::cntp::NicInterfaceName::from("eth0").expect("eth0 is an interface name");
     auto result = sriov::mint_sriov_plan(::fixy::BgDrainCtx{::foundation::effects::testing::bg()}, id, caps, iface,
                                          sriov::admit_vf_count(1).expect("1 function fits"));
     return result.is_ok() ? 0 : 1;

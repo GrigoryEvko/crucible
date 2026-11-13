@@ -212,7 +212,7 @@ concept CtxFitsSrIovMint =
 }
 
 [[nodiscard]] constexpr bool interface_name_present(cntp::NicInterfaceName interface) noexcept {
-    return !interface.view().empty();
+    return interface.view().size() != 0;
 }
 
 [[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, SrIovError>

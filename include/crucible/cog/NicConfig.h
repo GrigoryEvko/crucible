@@ -244,7 +244,7 @@ admit_rss_table_size(std::uint16_t count) noexcept {
 }
 
 [[nodiscard]] constexpr bool interface_name_present(cntp::NicInterfaceName interface) noexcept {
-    return !interface.view().empty();
+    return interface.view().size() != 0;
 }
 
 [[nodiscard]] constexpr bool same_interface(cntp::NicInterfaceName lhs, cntp::NicInterfaceName rhs) noexcept {

@@ -10,10 +10,10 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 int main() {
-    auto iface = crucible::cntp::NicInterfaceName::from("eth0");
-    crucible::cntp::RoceConfig raw{.interface = *iface};
+    auto iface = crucible::cntp::NicInterfaceName::from("eth0").expect("eth0 is an interface name");
+    crucible::cntp::RoceConfig raw{.interface = iface};
     auto result = crucible::cntp::apply_roce_config(raw);
-    return result.has_value() ? 0 : 1;
+    return result.is_ok() ? 0 : 1;
 }
 
 #pragma GCC diagnostic pop

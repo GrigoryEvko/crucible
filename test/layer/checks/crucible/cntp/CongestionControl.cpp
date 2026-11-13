@@ -22,13 +22,6 @@ static_assert(!CtxFitsSocketOption<IoOnlyCtx>, "a context without Block must not
 static_assert(!CtxFitsSocketOption<BgOnlyCtx>, "a context without IO must not enter the kernel.");
 static_assert(!CtxFitsSocketOption<int>);
 
-// The key has no public constructor, no copy and no move, so a body that
-// takes it is reachable only through a gated form.
-static_assert(!std::is_default_constructible_v<SocketOptionKey>);
-static_assert(!std::is_copy_constructible_v<SocketOptionKey>);
-static_assert(!std::is_move_constructible_v<SocketOptionKey>);
-static_assert(!std::is_aggregate_v<SocketOptionKey>);
-
 }  // namespace detail::socket_option_invariants
 
 }  // namespace crucible::cntp

@@ -78,9 +78,7 @@ void test_name_admission() {
     assert(longest.view().size() == cntp::KernelCcName::max_bytes - 1);
     assert(error_of(cntp::KernelCcName::from("0123456789abcdef")) == cntp::CcError::InvalidAlgorithmName);
 
-    auto fd = cntp::admit_socket_fd(-1);
-    assert(!fd.has_value());
-    assert(fd.error() == cntp::CcError::InvalidSocketFd);
+    assert(error_of(cntp::admit_socket_fd(-1)) == cntp::CcError::InvalidSocketFd);
 
     crucible::test::pass("  test_name_admission:                     PASSED\n");
 }
@@ -150,8 +148,7 @@ void test_live_socket_roundtrip_if_available() {
     TestSocket socket{::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)};
     assert(socket.valid());
 
-    auto fd = cntp::admit_socket_fd(socket.raw());
-    assert(fd.has_value());
+    cntp::SocketFd const fd = take(cntp::admit_socket_fd(socket.raw()));
 
     ::fixy::InitLoadCtx load{fe::testing::init()};
     auto availability = cntp::read_available_congestion_control(load);
@@ -167,14 +164,14 @@ void test_live_socket_roundtrip_if_available() {
     }
     cntp::DeclaredCcChoice const chosen = take(std::move(choice));
 
-    assert(cntp::set_cc_for_socket(load, *fd, chosen).is_ok());
+    assert(cntp::set_cc_for_socket(load, fd, chosen).is_ok());
 
     // The kernel echoes back the name it was given, and the reverse
     // mapping is one-to-one per BBR version, so the query returns the
     // algorithm that was set and not a neighbouring one.
-    assert(take(cntp::query_cc_for_socket(load, *fd)) == chosen.value().algorithm);
+    assert(take(cntp::query_cc_for_socket(load, fd)) == chosen.value().algorithm);
 
-    cntp::CcSelection const selection = take(cntp::query_cc_selection_for_socket(load, *fd));
+    cntp::CcSelection const selection = take(cntp::query_cc_selection_for_socket(load, fd));
     assert(selection.kernel_name.view().size() != 0);
 
     crucible::test::pass("  test_live_socket_roundtrip_if_available: PASSED\n");
@@ -184,8 +181,7 @@ void test_live_socket_roundtrip_if_available() {
 // call.  Admission requires only a non-negative descriptor, so this value
 // passes it, and the kernel then refuses the descriptor.
 void test_gated_forms_report_kernel_refusal() {
-    auto fd = cntp::admit_socket_fd(/*invalid*/ 0xFFFE);
-    assert(fd.has_value());
+    cntp::SocketFd const fd = take(cntp::admit_socket_fd(/*invalid*/ 0xFFFE));
 
     auto choice = cntp::mint_cc_choice<cntp::CcAlgorithm::Cubic, cntp::LinkClass::CrossDatacenter>();
 
@@ -194,9 +190,9 @@ void test_gated_forms_report_kernel_refusal() {
     // gate refuses.
     ::fixy::InitLoadCtx load{fe::testing::init()};
 
-    assert(error_of(cntp::set_cc_for_socket(load, *fd, choice)) == cntp::CcError::SetSockOptFailed);
-    assert(error_of(cntp::query_cc_for_socket(load, *fd)) == cntp::CcError::GetSockOptFailed);
-    assert(error_of(cntp::query_cc_selection_for_socket(load, *fd)) == cntp::CcError::GetSockOptFailed);
+    assert(error_of(cntp::set_cc_for_socket(load, fd, choice)) == cntp::CcError::SetSockOptFailed);
+    assert(error_of(cntp::query_cc_for_socket(load, fd)) == cntp::CcError::GetSockOptFailed);
+    assert(error_of(cntp::query_cc_selection_for_socket(load, fd)) == cntp::CcError::GetSockOptFailed);
 
     // The list changes nothing and depends only on the running kernel, so
     // kernel_supports must answer from the same list for every algorithm.

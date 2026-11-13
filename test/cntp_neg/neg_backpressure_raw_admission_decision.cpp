@@ -6,7 +6,7 @@
 
 int main() {
     namespace cntp = crucible::cntp;
-    cntp::AdmissionDecision const raw{.socket = cntp::admit_socket_fd(3).value()};
+    cntp::AdmissionDecision const raw{.socket = cntp::admit_socket_fd(3).expect("3 is not negative")};
     cntp::DeclaredAdmissionDecision declared = raw;
     return static_cast<int>(declared.value().retry_after_ms);
 }

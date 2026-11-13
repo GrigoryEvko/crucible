@@ -7,22 +7,15 @@
 #include <crucible/cntp/Pacing.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
-#include <fixy/os/Path.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/os/Fs.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/os/File.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
-#include <filesystem>
-#include <limits>
-#include <span>
-#include <string_view>
 #include <type_traits>
-#include <utility>
 
 namespace crucible::cntp {
 
@@ -99,73 +92,55 @@ namespace detail::roce {
 // A counter is decimal digits with optional white space around them.  A
 // value past the range of 64 bits is refused, not wrapped.  O(n) in the
 // length of the text.
-[[nodiscard]] constexpr std::expected<std::uint64_t, RoceError> parse_counter(std::string_view text) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<std::uint64_t, RoceError> parse_counter(::fixy::TextView text) noexcept {
     std::uint64_t value = 0;
-    std::size_t pos = 0;
-    while (pos < text.size() && is_space(text[pos])) {
-        ++pos;
-    }
-    const std::size_t first_digit = pos;
-    while (pos < text.size() && text[pos] >= '0' && text[pos] <= '9') {
-        const auto digit = static_cast<std::uint64_t>(text[pos] - '0');
-        if (value > (std::numeric_limits<std::uint64_t>::max() - digit) / 10u) {
-            return std::unexpected(RoceError::CounterParseFailed);
+    std::size_t digit_count = 0;
+    bool is_past_digits = false;
+    for (char const character : text) {
+        bool const is_digit = character >= '0' && character <= '9';
+        if (is_digit && !is_past_digits) {
+            auto const digit = static_cast<std::uint64_t>(character - '0');
+            if (value > (::fixy::max_of<std::uint64_t> - digit) / 10u) {
+                return ::fixy::err(RoceError::CounterParseFailed);
+            }
+            value = value * 10u + digit;
+            ++digit_count;
+        } else if (is_space(character)) {
+            is_past_digits = digit_count != 0;
+        } else {
+            return ::fixy::err(RoceError::CounterParseFailed);
         }
-        value = value * 10u + digit;
-        ++pos;
     }
-    if (pos == first_digit) {
-        return std::unexpected(RoceError::CounterParseFailed);
-    }
-    while (pos < text.size()) {
-        if (!is_space(text[pos])) {
-            return std::unexpected(RoceError::CounterParseFailed);
-        }
-        ++pos;
+    if (digit_count == 0) {
+        return ::fixy::err(RoceError::CounterParseFailed);
     }
     return value;
 }
 
-inline constexpr std::string_view sysfs_net_root = "/sys/class/net";
-inline constexpr std::string_view rx_pause_leaf = "rx_pause_frames";
-inline constexpr std::string_view tx_pause_leaf = "tx_pause_frames";
+inline constexpr ::fixy::TextView rx_pause_leaf = "statistics/rx_pause_frames";
+inline constexpr ::fixy::TextView tx_pause_leaf = "statistics/tx_pause_frames";
 
 // A counter holds at most twenty digits and a newline, so a read that fills
-// the buffer is not a counter, and it is refused rather than cut short.
+// the text is not a counter, and it is refused rather than cut short.
 inline constexpr std::size_t counter_read_bytes = 64;
 
-// Reads one statistics counter of the interface through the fs door.  The
-// path is held under the sysfs root, so an interface name of ".." or "."
-// cannot reach a file outside the directory of its own interface.
+// Reads one statistics counter of the interface through the file door of
+// the base.  The door takes no context, so the gate of this function holds
+// the row of the read.  The path stays in the sysfs directory of the
+// interface, because a NicInterfaceName is not "." or "..".
 template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::fs::CtxFitsFileMint<Ctx, ProcFileReadMode>
-[[nodiscard]] std::expected<std::uint64_t, RoceError> read_counter(Ctx const& ctx, NicInterfaceName iface,
-                                                                   std::string_view leaf) noexcept {
-    const std::filesystem::path root{sysfs_net_root};
-    auto path = ::fixy::sanitize::path_traversal::sanitize_path_root_locked(
-        ::fixy::mint_tagged<::fixy::tags::source::External>(root / iface.view() / "statistics" / leaf), root);
-    if (!path.has_value()) {
-        return std::unexpected(RoceError::CounterUnavailable);
+[[nodiscard]] ::fixy::Result<std::uint64_t, RoceError> read_counter(Ctx const&, NicInterfaceName iface,
+                                                                    ::fixy::TextView leaf) noexcept {
+    ::crucible::cntp::detail::InterfacePath const path = ::crucible::cntp::detail::interface_path_of(iface, leaf);
+    ::fixy::FixedText<counter_read_bytes> text{};
+    if (::foundation::os::read_file(path.c_text(), text).is_err() || text.size() == 0) {
+        return ::fixy::err(RoceError::CounterUnavailable);
     }
-    const ::fixy::fs::OwnedFd fd =
-        ::fixy::fs::mint_file<ProcFileReadMode>(ctx, std::move(*path))
-            .match(
-                [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd {
-                    return std::move(opened).consume();
-                },
-                [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
-    if (!fd.is_open()) {
-        return std::unexpected(RoceError::CounterUnavailable);
+    if (text.size() == counter_read_bytes) {
+        return ::fixy::err(RoceError::CounterParseFailed);
     }
-    std::array<char, counter_read_bytes> text{};
-    std::size_t const nread = ::fixy::fs::read_full(ctx, fd, std::as_writable_bytes(std::span{text})).value_or(0);
-    if (nread == 0) {
-        return std::unexpected(RoceError::CounterUnavailable);
-    }
-    if (nread == text.size()) {
-        return std::unexpected(RoceError::CounterParseFailed);
-    }
-    return parse_counter(std::string_view{text.data(), nread});
+    return parse_counter(text.view());
 }
 
 }  // namespace detail::roce
@@ -213,15 +188,16 @@ template <std::uint8_t PfcPriorities = 0b00001000, std::uint8_t Dscp = 26>
 // The refined fields already hold these bounds.  The check reads the same
 // predicates again, so a value that entered through mint_refined_trusted is
 // still refused here.
-[[nodiscard]] constexpr std::expected<void, RoceError> validate_roce_config(DeclaredRoceConfig const& config) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, RoceError>
+validate_roce_config(DeclaredRoceConfig const& config) noexcept {
     auto const& raw = config.value();
     if (raw.enable_pfc && !pfc_priority_mask(raw.pfc_priorities.value())) {
-        return std::unexpected(RoceError::InvalidPfcPriorityMask);
+        return ::fixy::err(RoceError::InvalidPfcPriorityMask);
     }
     if (!roce_dscp_bits(raw.roce_dscp.value())) {
-        return std::unexpected(RoceError::InvalidDscp);
+        return ::fixy::err(RoceError::InvalidDscp);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
 // Carries [[deprecated]] not because it is going away but because the
@@ -230,51 +206,35 @@ template <std::uint8_t PfcPriorities = 0b00001000, std::uint8_t Dscp = 26>
 // carry no such attribute.
 [[nodiscard, deprecated("CRUCIBLE_STUB: no sysfs or vendor tool installs RoCEv2 "
                         "policy. Returns PrivilegedApplyDeferred or VendorBackendUnavailable")]]
-constexpr std::expected<void, RoceError> apply_roce_config(DeclaredRoceConfig const& config) noexcept {
-    auto valid = validate_roce_config(config);
-    if (!valid.has_value()) {
-        return std::unexpected(valid.error());
-    }
+constexpr ::fixy::Result<::fixy::Unit, RoceError> apply_roce_config(DeclaredRoceConfig const& config) noexcept {
+    CRUCIBLE_TRY(_, validate_roce_config(config));
     if (!config.value().allow_privileged_apply) {
-        return std::unexpected(RoceError::PrivilegedApplyDeferred);
+        return ::fixy::err(RoceError::PrivilegedApplyDeferred);
     }
-    return std::unexpected(RoceError::VendorBackendUnavailable);
+    return ::fixy::err(RoceError::VendorBackendUnavailable);
 }
 
-[[nodiscard]] constexpr std::expected<PfcPauseStats, RoceError>
-parse_pfc_pause_counters(std::string_view rx_text, std::string_view tx_text) noexcept {
-    auto rx = detail::roce::parse_counter(rx_text);
-    if (!rx.has_value()) {
-        return std::unexpected(rx.error());
-    }
-    auto tx = detail::roce::parse_counter(tx_text);
-    if (!tx.has_value()) {
-        return std::unexpected(tx.error());
-    }
+[[nodiscard]] constexpr ::fixy::Result<PfcPauseStats, RoceError>
+parse_pfc_pause_counters(::fixy::TextView rx_text, ::fixy::TextView tx_text) noexcept {
+    CRUCIBLE_TRY(rx, detail::roce::parse_counter(rx_text));
+    CRUCIBLE_TRY(tx, detail::roce::parse_counter(tx_text));
     return PfcPauseStats{
-        .rx_pause_frames = *rx,
-        .tx_pause_frames = *tx,
+        .rx_pause_frames = rx,
+        .tx_pause_frames = tx,
     };
 }
 
-// The two counters are files under sysfs, and the fs door that opens them
-// counts an open and a read as IO and Block, so only a context that carries
-// both can read them.
+// The two counters are files under sysfs.  The open and the read of a file
+// count as IO and Block, so only a context that carries both can read them.
 template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::fs::CtxFitsFileMint<Ctx, ProcFileReadMode>
-[[nodiscard]] std::expected<PfcPauseStats, RoceError> query_pfc_pause_counters(Ctx const& ctx,
-                                                                               NicInterfaceName iface) noexcept {
-    auto rx = detail::roce::read_counter(ctx, iface, detail::roce::rx_pause_leaf);
-    if (!rx.has_value()) {
-        return std::unexpected(rx.error());
-    }
-    auto tx = detail::roce::read_counter(ctx, iface, detail::roce::tx_pause_leaf);
-    if (!tx.has_value()) {
-        return std::unexpected(tx.error());
-    }
+[[nodiscard]] ::fixy::Result<PfcPauseStats, RoceError> query_pfc_pause_counters(Ctx const& ctx,
+                                                                                NicInterfaceName iface) noexcept {
+    CRUCIBLE_TRY(rx, detail::roce::read_counter(ctx, iface, detail::roce::rx_pause_leaf));
+    CRUCIBLE_TRY(tx, detail::roce::read_counter(ctx, iface, detail::roce::tx_pause_leaf));
     return PfcPauseStats{
-        .rx_pause_frames = *rx,
-        .tx_pause_frames = *tx,
+        .rx_pause_frames = rx,
+        .tx_pause_frames = tx,
     };
 }
 
@@ -300,7 +260,7 @@ constexpr DcqcnState query_dcqcn_state(NicInterfaceName iface) noexcept {
 // Separate from verify_dcqcn_active so the mapping is checkable without a
 // working backend.  The Active and Inactive arms are unreachable while no
 // probe exists, and the static_asserts below hold them correct.
-[[nodiscard]] constexpr std::expected<bool, RoceError> dcqcn_state_to_bool(DcqcnState state) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<bool, RoceError> dcqcn_state_to_bool(DcqcnState state) noexcept {
     switch (state) {
         case DcqcnState::Active:
             return true;
@@ -308,7 +268,7 @@ constexpr DcqcnState query_dcqcn_state(NicInterfaceName iface) noexcept {
             return false;
         case DcqcnState::BackendUnavailable:
         default:
-            return std::unexpected(RoceError::DcqcnStatusUnavailable);
+            return ::fixy::err(RoceError::DcqcnStatusUnavailable);
     }
 }
 
@@ -317,7 +277,7 @@ constexpr DcqcnState query_dcqcn_state(NicInterfaceName iface) noexcept {
 // code calls query_dcqcn_state and branches on the state instead.
 [[nodiscard, deprecated("CRUCIBLE_STUB: this chains on query_dcqcn_state, which reads "
                         "nothing, so it always returns RoceError::DcqcnStatusUnavailable")]]
-constexpr std::expected<bool, RoceError> verify_dcqcn_active(NicInterfaceName iface) noexcept {
+constexpr ::fixy::Result<bool, RoceError> verify_dcqcn_active(NicInterfaceName iface) noexcept {
     // The suppression covers this one call, so a caller outside this
     // function still sees the warning at its own call site.
 #pragma GCC diagnostic push

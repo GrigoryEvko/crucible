@@ -106,7 +106,11 @@ namespace {
     // check exists to confirm.
     CRUCIBLE_FATAL_INVARIANT(iface.view().size() < IFNAMSIZ);
     ifreq request{};
-    std::memcpy(request.ifr_name, iface.view().data(), iface.view().size());
+    std::size_t position = 0;
+    for (char const character : iface.view()) {
+        request.ifr_name[position] = character;
+        ++position;
+    }
     request.ifr_name[iface.view().size()] = '\0';
     request.ifr_data = static_cast<char*>(static_cast<void*>(&config));
 

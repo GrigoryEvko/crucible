@@ -13,7 +13,7 @@ int main() {
     namespace cntp = crucible::cntp;
 
     ::fixy::BgDrainCtx drain{::foundation::effects::testing::bg()};
-    auto fd = cntp::admit_socket_fd(0).value();
+    auto fd = cntp::admit_socket_fd(0).expect("0 is not negative");
     auto rate = cntp::admit_pacing_rate(1000000).expect("a positive rate");
     auto result = cntp::set_socket_pacing_rate(drain, fd, rate);
     (void)result;

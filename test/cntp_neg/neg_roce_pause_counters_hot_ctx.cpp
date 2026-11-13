@@ -4,7 +4,7 @@
 #include <crucible/cntp/RoceConfig.h>
 
 int main() {
-    auto iface = crucible::cntp::NicInterfaceName::from("eth0");
-    auto counters = crucible::cntp::query_pfc_pause_counters(::foundation::effects::testing::foreground(), *iface);
-    return counters.has_value() ? 0 : 1;
+    auto iface = crucible::cntp::NicInterfaceName::from("eth0").expect("eth0 is an interface name");
+    auto counters = crucible::cntp::query_pfc_pause_counters(::foundation::effects::testing::foreground(), iface);
+    return counters.is_ok() ? 0 : 1;
 }

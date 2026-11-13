@@ -9,8 +9,8 @@
 int main() {
     ::fixy::InitLoadCtx load{::foundation::effects::testing::init()};
     auto controller = crucible::cntp::mint_incast_controller<1>(load);
-    auto fd = crucible::cntp::admit_socket_fd(3);
-    auto result = controller.configure_socket(load, *fd, crucible::cntp::IncastConfig{});
+    auto fd = crucible::cntp::admit_socket_fd(3).expect("3 is not negative");
+    auto result = controller.configure_socket(load, fd, crucible::cntp::IncastConfig{});
     (void)result;
     return 0;
 }

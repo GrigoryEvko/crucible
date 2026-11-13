@@ -84,8 +84,7 @@ void test_admission() {
 }
 
 void test_mint_and_apply_boundaries() {
-    auto iface = cntp::NicInterfaceName::from("eth0");
-    assert(iface.has_value());
+    cntp::NicInterfaceName const iface = cntp::NicInterfaceName::from("eth0").expect("eth0 is an interface name");
 
     nic::EthtoolConfig ethtool{};
     ethtool.tx_queues = nic::admit_queue_count(16).expect("16 queues fit");
@@ -108,7 +107,7 @@ void test_mint_and_apply_boundaries() {
     auto valid_sysctl = nic::validate_sysctl_config(sysctl);
     assert(valid_sysctl.is_ok());
 
-    auto minted = nic::mint_nic_config(init_ctx(), nic_identity(), *iface, ethtool, qdisc, sysctl)
+    auto minted = nic::mint_nic_config(init_ctx(), nic_identity(), iface, ethtool, qdisc, sysctl)
                       .expect("a NicPort identity and a named interface make a configuration");
     static_assert(std::same_as<decltype(minted), nic::DeclaredNicConfig>);
     assert(minted.value().identity.kind == cog::CogKind::NicPort);
@@ -134,7 +133,7 @@ void test_mint_and_apply_boundaries() {
     auto sysctl_apply = nic::apply_sysctl(declared_sysctl);
     assert(sysctl_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
 
-    auto privileged = nic::mint_nic_config(init_ctx(), nic_identity(), *iface, ethtool, qdisc, sysctl, true)
+    auto privileged = nic::mint_nic_config(init_ctx(), nic_identity(), iface, ethtool, qdisc, sysctl, true)
                           .expect("a privileged request makes a configuration too");
     auto privileged_apply = nic::apply_config(privileged);
     assert(privileged_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedBackendUnavailable));
@@ -143,15 +142,14 @@ void test_mint_and_apply_boundaries() {
 }
 
 void test_identity_and_sysctl_validation() {
-    auto iface = cntp::NicInterfaceName::from("eth0");
-    assert(iface.has_value());
+    cntp::NicInterfaceName const iface = cntp::NicInterfaceName::from("eth0").expect("eth0 is an interface name");
 
-    auto zero = nic::mint_nic_config(init_ctx(), cog::CogIdentity{}, *iface);
+    auto zero = nic::mint_nic_config(init_ctx(), cog::CogIdentity{}, iface);
     assert(zero.err() == ::fixy::some(nic::NicConfigError::ZeroCog));
 
     auto gpu = nic_identity();
     gpu.kind = cog::CogKind::Gpu;
-    auto wrong_kind = nic::mint_nic_config(init_ctx(), gpu, *iface);
+    auto wrong_kind = nic::mint_nic_config(init_ctx(), gpu, iface);
     assert(wrong_kind.err() == ::fixy::some(nic::NicConfigError::NonNicCog));
 
     nic::SysctlConfig invalid{};
@@ -175,13 +173,13 @@ void test_identity_and_sysctl_validation() {
 
     nic::NicConfigPlan mismatch{};
     mismatch.identity = nic_identity();
-    mismatch.ethtool.interface = *iface;
-    mismatch.qdisc.interface = cntp::NicInterfaceName::from("eth1").value();
+    mismatch.ethtool.interface = iface;
+    mismatch.qdisc.interface = cntp::NicInterfaceName::from("eth1").expect("eth1 is an interface name");
     assert(nic::validate_nic_config(mismatch).err() == ::fixy::some(nic::NicConfigError::InterfaceMismatch));
     auto mismatched_apply = nic::apply_config(unvalidated_tag(mismatch));
     assert(mismatched_apply.err() == ::fixy::some(nic::NicConfigError::InterfaceMismatch));
 
-    auto query = nic::query_current(nic_identity(), *iface);
+    auto query = nic::query_current(nic_identity(), iface);
     assert(query.err() == ::fixy::some(nic::NicConfigError::QueryDeferred));
 
     crucible::test::pass("  test_identity_and_sysctl_validation: PASSED\n");
@@ -207,15 +205,14 @@ void test_apply_paths_are_stubbed() {
     static_assert(std::is_same_v<decltype(nic::privileged_apply_implemented), const bool>,
                   "The marker must be a compile-time bool.");
 
-    auto iface = cntp::NicInterfaceName::from("eth0");
-    assert(iface.has_value());
+    cntp::NicInterfaceName const iface = cntp::NicInterfaceName::from("eth0").expect("eth0 is an interface name");
 
     nic::EthtoolConfig ethtool{};
     ethtool.tx_queues = nic::admit_queue_count(8).expect("8 queues fit");
     ethtool.rx_queues = nic::admit_queue_count(8).expect("8 queues fit");
 
     // A configuration that does not ask for privileged work.
-    auto deferred = nic::mint_nic_config(init_ctx(), nic_identity(), *iface, ethtool)
+    auto deferred = nic::mint_nic_config(init_ctx(), nic_identity(), iface, ethtool)
                         .expect("a NicPort identity and a named interface make a configuration");
     auto deferred_apply = nic::apply_config(deferred);
     assert(deferred_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
@@ -229,13 +226,13 @@ void test_apply_paths_are_stubbed() {
     assert(deferred_qdisc.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
 
     // One that does ask, and is told the backend is missing.
-    auto requested = nic::mint_nic_config(init_ctx(), nic_identity(), *iface, ethtool, {}, {}, true)
+    auto requested = nic::mint_nic_config(init_ctx(), nic_identity(), iface, ethtool, {}, {}, true)
                          .expect("a privileged request makes a configuration too");
     auto requested_apply = nic::apply_config(requested);
     assert(requested_apply.err() == ::fixy::some(nic::NicConfigError::PrivilegedBackendUnavailable));
 
     // The read side defers in the same way the write side does.
-    auto query = nic::query_current(nic_identity(), *iface);
+    auto query = nic::query_current(nic_identity(), iface);
     assert(query.err() == ::fixy::some(nic::NicConfigError::QueryDeferred));
 
     crucible::test::pass("  test_apply_paths_are_stubbed: PASSED\n");

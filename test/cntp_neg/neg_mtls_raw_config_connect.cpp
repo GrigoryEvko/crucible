@@ -16,7 +16,7 @@ int main() {
         .client_key = ::fixy::mint_secret<MtlsPrivateKeyBytes>(),
         .policy = {},
     };
-    auto fd = admit_socket_fd(3).value();
+    auto fd = admit_socket_fd(3).expect("3 is not negative");
     auto dns = MtlsDnsName::from("peer.example.org").expect("the name is a DNS name");
     auto fp = ::fixy::mint_tagged<::fixy::tags::source::Mtls>(MtlsSha256Fingerprint{});
     auto result = connect_mtls(fd, raw, dns, fp);

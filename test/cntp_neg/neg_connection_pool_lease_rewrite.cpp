@@ -18,7 +18,7 @@ int main() {
     first.uuid = cog::Uuid{1, 1};
     cog::CogIdentity second{};
     second.uuid = cog::Uuid{2, 2};
-    auto socket = cntp::admit_socket_fd(3).value();
+    auto socket = cntp::admit_socket_fd(3).expect("3 is not negative");
     auto id = cntp::admit_connection_id(4).expect("4 is positive");
     auto held = cntp::mint_connection<cntp::TransportClass::Tcp>(socket, first, id).expect("the remote is valid");
     auto other = cntp::mint_connection<cntp::TransportClass::Tcp>(socket, second, id).expect("the remote is valid");

@@ -36,8 +36,7 @@ void test_admission_helpers() {
     static_assert(cntp::admission_decision_kind_name(cntp::AdmissionDecisionKind::RejectedResource)
                   == "rejected_resource");
 
-    auto fd = cntp::admit_socket_fd(11);
-    assert(fd.has_value());
+    assert(cntp::admit_socket_fd(11).is_ok());
     assert(cntp::admit_backpressure_credit(4096).is_ok());
     assert(error_of(cntp::admit_backpressure_credit(0)) == cntp::BackpressureError::InvalidCreditBytes);
     assert(cntp::admit_connection_limit(8).is_ok());
@@ -70,9 +69,9 @@ void test_credit_flow_control() {
     ::fixy::BgDrainCtx bg{fe::testing::bg()};
     auto controller = cntp::mint_credit_flow_control<2>(init);
 
-    auto fd0 = cntp::admit_socket_fd(20).value();
-    auto fd1 = cntp::admit_socket_fd(21).value();
-    auto fd2 = cntp::admit_socket_fd(22).value();
+    auto fd0 = cntp::admit_socket_fd(20).expect("20 is not negative");
+    auto fd1 = cntp::admit_socket_fd(21).expect("21 is not negative");
+    auto fd2 = cntp::admit_socket_fd(22).expect("22 is not negative");
     cntp::PositiveBackpressureBytes const initial = take(cntp::admit_backpressure_credit(1024));
     cntp::PositiveBackpressureBytes const grant = take(cntp::admit_backpressure_credit(512));
     cntp::PositiveBackpressureBytes const consume = take(cntp::admit_backpressure_credit(1536));
@@ -99,7 +98,7 @@ void test_credit_flow_control_parallel_grants() {
     ::fixy::BgDrainCtx bg{fe::testing::bg()};
     auto controller = cntp::mint_credit_flow_control<1>(init);
 
-    auto fd = cntp::admit_socket_fd(23).value();
+    auto fd = cntp::admit_socket_fd(23).expect("23 is not negative");
     cntp::PositiveBackpressureBytes const one = take(cntp::admit_backpressure_credit(1));
     assert(controller.start_flow(bg_load, fd, one).is_ok());
 
@@ -133,7 +132,7 @@ void test_credit_flow_control_parallel_start_same_fd() {
     ::fixy::BgLoadCtx bg_load{fe::testing::bg()};
     auto controller = cntp::mint_credit_flow_control<1>(init);
 
-    auto fd = cntp::admit_socket_fd(24).value();
+    auto fd = cntp::admit_socket_fd(24).expect("24 is not negative");
     cntp::PositiveBackpressureBytes const first = take(cntp::admit_backpressure_credit(1));
     cntp::PositiveBackpressureBytes const second = take(cntp::admit_backpressure_credit(2));
 
@@ -144,7 +143,7 @@ void test_credit_flow_control_parallel_start_same_fd() {
     starter_a.join();
     starter_b.join();
 
-    auto fd2 = cntp::admit_socket_fd(25).value();
+    auto fd2 = cntp::admit_socket_fd(25).expect("25 is not negative");
     assert(error_of(controller.start_flow(bg_load, fd2, first)) == cntp::BackpressureError::TooManyCreditFlows);
     std::uint32_t const current = take(controller.current_credit(fd)).value();
     assert(current == 1u || current == 2u);
@@ -167,9 +166,9 @@ void test_admission_controller() {
     assert(error_of(controller.register_resource_limit(init, smem_limit))
            == cntp::BackpressureError::TooManyResourceLimits);
 
-    auto fd0 = cntp::admit_socket_fd(30).value();
-    auto fd1 = cntp::admit_socket_fd(31).value();
-    auto fd2 = cntp::admit_socket_fd(32).value();
+    auto fd0 = cntp::admit_socket_fd(30).expect("30 is not negative");
+    auto fd1 = cntp::admit_socket_fd(31).expect("31 is not negative");
+    auto fd2 = cntp::admit_socket_fd(32).expect("32 is not negative");
     cntp::PositiveBackpressureBytes const credit = take(cntp::admit_backpressure_credit(4096));
     cntp::ConnectionRequest const req0{.socket = fd0, .initial_credit = credit};
     cntp::ConnectionRequest const req1{.socket = fd1, .initial_credit = credit};

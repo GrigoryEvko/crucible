@@ -5,9 +5,8 @@
 #include <crucible/cntp/RoceConfig.h>
 
 int main() {
-    auto iface = crucible::cntp::NicInterfaceName::from("eth0");
-    auto external =
-        ::fixy::mint_tagged<::fixy::tags::source::External>(crucible::cntp::RoceConfig{.interface = *iface});
+    auto iface = crucible::cntp::NicInterfaceName::from("eth0").expect("eth0 is an interface name");
+    auto external = ::fixy::mint_tagged<::fixy::tags::source::External>(crucible::cntp::RoceConfig{.interface = iface});
     auto valid = crucible::cntp::validate_roce_config(external);
-    return valid.has_value() ? 0 : 1;
+    return valid.is_ok() ? 0 : 1;
 }

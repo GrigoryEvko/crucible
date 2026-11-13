@@ -5,7 +5,6 @@
 #include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
-#include <limits>
 #include <string_view>
 #include <type_traits>
 
@@ -71,11 +70,21 @@ void test_admission_and_names() {
     crucible::test::pass("  test_admission_and_names: PASSED\n");
 }
 
-void test_config_minting_and_validation() {
-    auto iface = cntp::NicInterfaceName::from("eth0");
-    assert(iface.has_value());
+// The error of a call that fails in this test.  A call that succeeds ends
+// the process.
+template <class Value>
+cntp::RoceError error_of(::fixy::Result<Value, cntp::RoceError> result) {
+    return std::move(result).err().expect("the call fails in this test");
+}
 
-    auto config = cntp::mint_roce_config<0b00001000, 26>(*iface);
+[[nodiscard]] cntp::NicInterfaceName interface_named(::fixy::TextView name) {
+    return cntp::NicInterfaceName::from(name).expect("the test names a valid interface");
+}
+
+void test_config_minting_and_validation() {
+    cntp::NicInterfaceName const iface = interface_named("eth0");
+
+    auto config = cntp::mint_roce_config<0b00001000, 26>(iface);
     static_assert(std::same_as<decltype(config), cntp::DeclaredRoceConfig>);
     assert(config.value().interface.view() == "eth0");
     assert(config.value().enable_pfc);
@@ -87,80 +96,71 @@ void test_config_minting_and_validation() {
     assert(config.value().dcqcn.alpha_ppm.value() == 500000);
     assert(config.value().dcqcn.target_packets.value() == 5);
 
-    auto valid = cntp::validate_roce_config(config);
-    assert(valid.has_value());
+    assert(cntp::validate_roce_config(config).is_ok());
 
-    auto apply = cntp::apply_roce_config(config);
-    assert(!apply.has_value());
-    assert(apply.error() == cntp::RoceError::PrivilegedApplyDeferred);
+    assert(error_of(cntp::apply_roce_config(config)) == cntp::RoceError::PrivilegedApplyDeferred);
 
-    auto privileged = cntp::mint_roce_config<0b00001000, 26>(*iface, cntp::DcqcnParams{}, true);
-    auto privileged_apply = cntp::apply_roce_config(privileged);
-    assert(!privileged_apply.has_value());
-    assert(privileged_apply.error() == cntp::RoceError::VendorBackendUnavailable);
+    auto privileged = cntp::mint_roce_config<0b00001000, 26>(iface, cntp::DcqcnParams{}, true);
+    assert(error_of(cntp::apply_roce_config(privileged)) == cntp::RoceError::VendorBackendUnavailable);
 
     // A value that entered through the trusted door skips the predicate.
     // The validation reads the predicate again and refuses it.
-    cntp::RoceConfig forged{.interface = *iface};
+    cntp::RoceConfig forged{.interface = iface};
     forged.roce_dscp = ::fixy::mint_refined_trusted<cntp::roce_dscp_bits>(std::uint8_t{64});
-    auto forged_valid = cntp::validate_roce_config(::fixy::mint_tagged<src::RoceConfig>(forged));
-    assert(!forged_valid.has_value());
-    assert(forged_valid.error() == cntp::RoceError::InvalidDscp);
+    assert(error_of(cntp::validate_roce_config(::fixy::mint_tagged<src::RoceConfig>(forged)))
+           == cntp::RoceError::InvalidDscp);
 
     crucible::test::pass("  test_config_minting_and_validation: PASSED\n");
 }
 
 void test_pause_counter_parse() {
-    auto parsed = cntp::parse_pfc_pause_counters(" 17\n", "23\n");
-    assert(parsed.has_value());
-    assert(parsed->rx_pause_frames == 17);
-    assert(parsed->tx_pause_frames == 23);
+    cntp::PfcPauseStats const parsed =
+        cntp::parse_pfc_pause_counters(" 17\n", "23\n").expect("two counters with white space parse");
+    assert(parsed.rx_pause_frames == 17);
+    assert(parsed.tx_pause_frames == 23);
 
-    auto bad = cntp::parse_pfc_pause_counters("17x", "23\n");
-    assert(!bad.has_value());
-    assert(bad.error() == cntp::RoceError::CounterParseFailed);
+    assert(error_of(cntp::parse_pfc_pause_counters("17x", "23\n")) == cntp::RoceError::CounterParseFailed);
+    assert(error_of(cntp::parse_pfc_pause_counters("1 7", "23\n")) == cntp::RoceError::CounterParseFailed);
+    assert(error_of(cntp::parse_pfc_pause_counters("0x11", "23\n")) == cntp::RoceError::CounterParseFailed);
 
     // The largest counter parses, and one more is refused, not wrapped.
-    auto widest = cntp::parse_pfc_pause_counters("18446744073709551615\n", "0");
-    assert(widest.has_value());
-    assert(widest->rx_pause_frames == std::numeric_limits<std::uint64_t>::max());
-    auto overflow = cntp::parse_pfc_pause_counters("0", "18446744073709551616");
-    assert(!overflow.has_value());
-    assert(overflow.error() == cntp::RoceError::CounterParseFailed);
+    cntp::PfcPauseStats const widest =
+        cntp::parse_pfc_pause_counters("18446744073709551615\n", "0").expect("the largest counter parses");
+    assert(widest.rx_pause_frames == ::fixy::max_of<std::uint64_t>);
+    assert(error_of(cntp::parse_pfc_pause_counters("0", "18446744073709551616"))
+           == cntp::RoceError::CounterParseFailed);
 
-    auto blank = cntp::parse_pfc_pause_counters("   ", "1");
-    assert(!blank.has_value());
-    assert(blank.error() == cntp::RoceError::CounterParseFailed);
+    assert(error_of(cntp::parse_pfc_pause_counters("   ", "1")) == cntp::RoceError::CounterParseFailed);
 
     crucible::test::pass("  test_pause_counter_parse: PASSED\n");
 }
 
 void test_live_surfaces_if_available() {
     ::fixy::InitLoadCtx load{fe::testing::init()};
-    auto lo = cntp::NicInterfaceName::from("lo");
-    assert(lo.has_value());
+    cntp::NicInterfaceName const lo = interface_named("lo");
 
-    auto counters = cntp::query_pfc_pause_counters(load, *lo);
-    if (!counters.has_value()) {
-        assert(counters.error() == cntp::RoceError::CounterUnavailable
-               || counters.error() == cntp::RoceError::CounterParseFailed);
+    auto counters = cntp::query_pfc_pause_counters(load, lo);
+    if (counters.is_err()) {
+        cntp::RoceError const refusal = error_of(std::move(counters));
+        assert(refusal == cntp::RoceError::CounterUnavailable || refusal == cntp::RoceError::CounterParseFailed);
         ::fixy::report(::fixy::Sink::Out, "  test_live_pfc_pause_counters: SKIPPED\n");
     } else {
         crucible::test::pass("  test_live_pfc_pause_counters: PASSED\n");
     }
 
-    // An interface name may be "..", and the read stays under the sysfs
-    // root, so that name reaches no file.
-    auto parent = cntp::NicInterfaceName::from("..");
-    assert(parent.has_value());
-    auto escaped = cntp::query_pfc_pause_counters(load, *parent);
-    assert(!escaped.has_value());
-    assert(escaped.error() == cntp::RoceError::CounterUnavailable);
+    // A counter of an interface that does not exist is refused.
+    assert(error_of(cntp::query_pfc_pause_counters(load, interface_named("no-such-nic.0")))
+           == cntp::RoceError::CounterUnavailable);
+
+    // No interface name is "." or "..", so the path of a counter stays in
+    // the sysfs directory of its interface.
+    assert(cntp::NicInterfaceName::from("..").is_err());
+    assert(cntp::NicInterfaceName::from(".").is_err());
 
     // With no vendor probe in place the answer is explicitly unknown, not
     // inactive. A caller has to be able to tell "the card says off" from "we
     // did not ask".
-    auto state = cntp::query_dcqcn_state(*lo);
+    auto state = cntp::query_dcqcn_state(lo);
     assert(state == cntp::DcqcnState::BackendUnavailable);
     static_assert(::foundation::reflect::enum_name(cntp::DcqcnState::BackendUnavailable)
                   == std::string_view{"BackendUnavailable"});
@@ -169,9 +169,7 @@ void test_live_surfaces_if_available() {
 
     // The boolean-shaped accessor maps that unknown state onto its own error
     // code, so a caller written against it keeps working unchanged.
-    auto dcqcn = cntp::verify_dcqcn_active(*lo);
-    assert(!dcqcn.has_value());
-    assert(dcqcn.error() == cntp::RoceError::DcqcnStatusUnavailable);
+    assert(error_of(cntp::verify_dcqcn_active(lo)) == cntp::RoceError::DcqcnStatusUnavailable);
 
     crucible::test::pass("  test_live_surfaces_if_available: PASSED\n");
 }
@@ -189,25 +187,18 @@ void test_apply_paths_are_stubbed() {
     static_assert(std::is_same_v<decltype(cntp::privileged_apply_implemented), const bool>,
                   "the honesty trait must be a compile-time bool");
 
-    auto iface = cntp::NicInterfaceName::from("eth0");
-    assert(iface.has_value());
+    cntp::NicInterfaceName const iface = interface_named("eth0");
 
-    auto deferred = cntp::mint_roce_config<0b00001000, 26>(*iface);
-    auto deferred_apply = cntp::apply_roce_config(deferred);
-    assert(!deferred_apply.has_value());
-    assert(deferred_apply.error() == cntp::RoceError::PrivilegedApplyDeferred);
+    auto deferred = cntp::mint_roce_config<0b00001000, 26>(iface);
+    assert(error_of(cntp::apply_roce_config(deferred)) == cntp::RoceError::PrivilegedApplyDeferred);
 
-    auto requested = cntp::mint_roce_config<0b00001000, 26>(*iface, cntp::DcqcnParams{}, true);
-    auto requested_apply = cntp::apply_roce_config(requested);
-    assert(!requested_apply.has_value());
-    assert(requested_apply.error() == cntp::RoceError::VendorBackendUnavailable);
+    auto requested = cntp::mint_roce_config<0b00001000, 26>(iface, cntp::DcqcnParams{}, true);
+    assert(error_of(cntp::apply_roce_config(requested)) == cntp::RoceError::VendorBackendUnavailable);
 
     // The read side is stubbed in step with the write side.
-    auto state = cntp::query_dcqcn_state(*iface);
+    auto state = cntp::query_dcqcn_state(iface);
     assert(state == cntp::DcqcnState::BackendUnavailable);
-    auto verify = cntp::verify_dcqcn_active(*iface);
-    assert(!verify.has_value());
-    assert(verify.error() == cntp::RoceError::DcqcnStatusUnavailable);
+    assert(error_of(cntp::verify_dcqcn_active(iface)) == cntp::RoceError::DcqcnStatusUnavailable);
 
     crucible::test::pass("  test_apply_paths_are_stubbed: PASSED\n");
 }

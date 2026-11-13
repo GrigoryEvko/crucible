@@ -42,11 +42,7 @@ cog::NicPortTargetCaps sriov_caps() {
     return caps;
 }
 
-cntp::NicInterfaceName iface() {
-    auto name = cntp::NicInterfaceName::from("ens7f0");
-    assert(name.has_value());
-    return *name;
-}
+cntp::NicInterfaceName iface() { return cntp::NicInterfaceName::from("ens7f0").expect("ens7f0 is an interface name"); }
 
 sriov::DeclaredSrIovPlan two_vf_plan(bool allow_privileged_apply = false) {
     return sriov::mint_sriov_plan(init_ctx(), nic_identity(), sriov_caps(), iface(),

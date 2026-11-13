@@ -13,7 +13,7 @@ int main() {
     namespace cntp = crucible::cntp;
 
     ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
-    auto fd = cntp::admit_socket_fd(0).value();
+    auto fd = cntp::admit_socket_fd(0).expect("0 is not negative");
     auto choice = cntp::mint_cc_choice<cntp::CcAlgorithm::Cubic, cntp::LinkClass::CrossDatacenter>();
     auto result = cntp::set_cc_for_socket(init, fd, choice);
     (void)result;

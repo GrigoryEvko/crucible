@@ -2960,10 +2960,10 @@ crucible_neg_compile_test(neg_roce_dscp_above_max
   "required for the satisfaction of .ValidRoceDscp<Dscp>. \\[with Dscp = 64\\]")
 crucible_neg_compile_test(neg_roce_raw_config_apply
   "invalid initialization of reference of type .const crucible::cntp::DeclaredRoceConfig&. .* from expression of type .crucible::cntp::RoceConfig."
-  "in passing argument 1 of .constexpr std::expected<void, crucible::cntp::RoceError> crucible::cntp::apply_roce_config\\(const DeclaredRoceConfig&\\).")
+  "in passing argument 1 of .constexpr foundation::core::Result<foundation::core::Unit, crucible::cntp::RoceError> crucible::cntp::apply_roce_config\\(const DeclaredRoceConfig&\\).")
 crucible_neg_compile_test(neg_roce_config_wrong_source
   "invalid initialization of reference of type .const crucible::cntp::DeclaredRoceConfig&. .* from expression of type .fixy::Tagged<crucible::cntp::RoceConfig, fixy::tags::source::External>."
-  "in passing argument 1 of .constexpr std::expected<void, crucible::cntp::RoceError> crucible::cntp::validate_roce_config\\(const DeclaredRoceConfig&\\).")
+  "in passing argument 1 of .constexpr foundation::core::Result<foundation::core::Unit, crucible::cntp::RoceError> crucible::cntp::validate_roce_config\\(const DeclaredRoceConfig&\\).")
 crucible_neg_compile_test(neg_roce_pause_counters_without_block
   "no matching function for call to .query_pfc_pause_counters\\(fixy::ColdInitCtx&, crucible::cntp::NicInterfaceName&\\)."
   "required for the satisfaction of .CtxFitsFileMint<Ctx, fixy::atom::fs::mode<fixy::fs::open_mode::ReadOnly> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")

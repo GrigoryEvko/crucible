@@ -1,9 +1,5 @@
 #include <crucible/cntp/CongestionControl.h>
 
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
-
 namespace crucible::cntp {
 
 namespace {
@@ -130,30 +126,6 @@ void add_algorithm(CcAvailability& availability, CcAlgorithm algorithm) noexcept
         .algorithm = algorithm,
         .kernel_name = admitted,
     };
-}
-
-::fixy::Result<CcSelection, CcError> detail::query_cc_selection_for_socket_keyed(SocketOptionKey const&,
-                                                                                 SocketFd fd) noexcept {
-    std::array<char, KernelCcName::max_bytes> optname{};
-    socklen_t len = static_cast<socklen_t>(optname.size());
-    const int rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_CONGESTION, optname.data(), &len);
-    if (rc != 0) {
-        return ::fixy::err(CcError::GetSockOptFailed);
-    }
-
-    // The kernel writes the name and its zero, and len counts the bytes that
-    // it wrote.  The name is the characters before the first zero.
-    const auto bounded_len =
-        static_cast<std::size_t>(len) < optname.size() ? static_cast<std::size_t>(len) : optname.size();
-    ::fixy::FixedText<KernelCcName::max_bytes> received{};
-    for (std::size_t index = 0; index < bounded_len; ++index) {
-        char const character = optname[index];
-        if (character == '\0') {
-            break;
-        }
-        received.push(character).expect("the text holds as many characters as the buffer");
-    }
-    return selection_of_kernel_name(received.view());
 }
 
 }  // namespace crucible::cntp

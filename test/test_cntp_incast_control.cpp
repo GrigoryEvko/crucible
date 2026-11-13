@@ -105,28 +105,25 @@ void test_credit_pacing_state() {
     ::fixy::BgDrainCtx bg{fe::testing::bg()};
     auto controller = cntp::mint_incast_controller<2>(init);
 
-    auto fd0 = cntp::admit_socket_fd(10);
-    auto fd1 = cntp::admit_socket_fd(11);
-    auto fd2 = cntp::admit_socket_fd(12);
+    cntp::SocketFd const fd0 = cntp::admit_socket_fd(10).expect("10 is not negative");
+    cntp::SocketFd const fd1 = cntp::admit_socket_fd(11).expect("11 is not negative");
+    cntp::SocketFd const fd2 = cntp::admit_socket_fd(12).expect("12 is not negative");
     cntp::PositiveCreditBytes const initial = take(cntp::admit_credit_bytes(4096));
     cntp::PositiveCreditBytes const extra = take(cntp::admit_credit_bytes(1024));
-    assert(fd0.has_value());
-    assert(fd1.has_value());
-    assert(fd2.has_value());
 
-    assert(controller.start_credit_flow(init, *fd0, initial).is_ok());
-    assert(take(controller.outstanding_credit(*fd0)).value() == 4096);
+    assert(controller.start_credit_flow(init, fd0, initial).is_ok());
+    assert(take(controller.outstanding_credit(fd0)).value() == 4096);
 
-    cntp::IncastCreditGrant const grant = take(controller.issue_credit(bg, *fd0, extra, 7));
-    assert(grant.fd.value() == fd0->value());
+    cntp::IncastCreditGrant const grant = take(controller.issue_credit(bg, fd0, extra, 7));
+    assert(grant.fd.value() == fd0.value());
     assert(grant.bytes.value() == extra.value());
     assert(grant.sequence == 7);
 
     // The consume call polls once and never blocks.  The first drains the
     // whole balance, 4096 started plus 1024 issued, and the second finds
     // nothing left because no further credit was granted between them.
-    assert(take(controller.try_consume_credit(bg, *fd0)).value() == 5120);
-    assert(error_of(controller.try_consume_credit(bg, *fd0)) == cntp::IncastError::CreditUnavailable);
+    assert(take(controller.try_consume_credit(bg, fd0)).value() == 5120);
+    assert(error_of(controller.try_consume_credit(bg, fd0)) == cntp::IncastError::CreditUnavailable);
 
     // The signature must carry no timeout parameter.  A parameter that is
     // accepted and then ignored reads as a working timeout to every
@@ -135,8 +132,8 @@ void test_credit_pacing_state() {
         ::fixy::BgDrainCtx const&, cntp::SocketFd) noexcept;
     static_cast<void>(static_cast<ConsumeFn>(&cntp::IncastController<2>::try_consume_credit<::fixy::BgDrainCtx>));
 
-    assert(controller.start_credit_flow(init, *fd1, initial).is_ok());
-    assert(error_of(controller.start_credit_flow(init, *fd2, initial)) == cntp::IncastError::TooManyFlows);
+    assert(controller.start_credit_flow(init, fd1, initial).is_ok());
+    assert(error_of(controller.start_credit_flow(init, fd2, initial)) == cntp::IncastError::TooManyFlows);
 
     crucible::test::pass("  test_credit_pacing_state: PASSED\n");
 }
@@ -145,14 +142,13 @@ void test_live_rto_if_available() {
     TestSocket socket{::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)};
     assert(socket.valid());
 
-    auto fd = cntp::admit_socket_fd(socket.raw());
+    cntp::SocketFd const fd = cntp::admit_socket_fd(socket.raw()).expect("an open socket has a descriptor");
     cntp::PositiveRtoMinUsec const rto = take(cntp::admit_rto_min_usec(10000));
-    assert(fd.has_value());
 
     // The timeout is a socket option, and the test runner context carries
     // the IO and Block that the socket option gate asks for.
     ::fixy::TestRunnerCtx test_ctx{fe::testing::test()};
-    auto set = cntp::set_socket_rto_min_usec(test_ctx, *fd, rto);
+    auto set = cntp::set_socket_rto_min_usec(test_ctx, fd, rto);
     if (set.is_err()) {
         cntp::IncastError const refusal = error_of(std::move(set));
         assert(refusal == cntp::IncastError::SetRtoMinFailed || refusal == cntp::IncastError::UnsupportedRtoMinSockOpt);

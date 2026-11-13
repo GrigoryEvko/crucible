@@ -9,7 +9,7 @@
 
 int main() {
     ::fixy::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
-    auto iface = crucible::cntp::NicInterfaceName::from("eth0").value();
+    auto iface = crucible::cntp::NicInterfaceName::from("eth0").expect("eth0 is an interface name");
     crucible::cntp::QdiscConfig raw{
         .interface = iface,
         .required = crucible::cntp::Qdisc::Fq,

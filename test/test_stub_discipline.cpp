@@ -97,7 +97,7 @@ void test_nic_apply_returns_privileged_deferred() {
     namespace cntp = crucible::cntp;
 
     nic::EthtoolConfig ethtool{};
-    ethtool.interface = cntp::NicInterfaceName::from("lo").value();
+    ethtool.interface = cntp::NicInterfaceName::from("lo").expect("lo is an interface name");
     auto declared = nic::declare_ethtool_config(ethtool).expect("an ethtool configuration of lo is valid");
     auto applied = nic::apply_ethtool(declared);
     assert(applied.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
@@ -112,7 +112,7 @@ void test_sriov_query_returns_query_deferred() {
     cog::CogIdentity physical{};
     physical.uuid = cog::Uuid{0x87u, 0x42u};
     physical.kind = cog::CogKind::NicPort;
-    auto iface = cntp::NicInterfaceName::from("eth0").value();
+    auto iface = cntp::NicInterfaceName::from("eth0").expect("eth0 is an interface name");
     auto query = sriov::query_current(physical, iface);
     assert(query.err() == ::fixy::some(sriov::SrIovError::QueryDeferred));
     crucible::test::pass("  test_sriov_query_returns_query_deferred: PASSED\n");
@@ -121,13 +121,12 @@ void test_sriov_query_returns_query_deferred() {
 void test_roce_dcqcn_state_unavailable() {
     namespace cntp = crucible::cntp;
 
-    auto iface = cntp::NicInterfaceName::from("lo").value();
+    auto iface = cntp::NicInterfaceName::from("lo").expect("lo is an interface name");
     auto state = cntp::query_dcqcn_state(iface);
     assert(state == cntp::DcqcnState::BackendUnavailable);
 
     auto verify = cntp::verify_dcqcn_active(iface);
-    assert(!verify.has_value());
-    assert(verify.error() == cntp::RoceError::DcqcnStatusUnavailable);
+    assert(verify.err() == ::fixy::some(cntp::RoceError::DcqcnStatusUnavailable));
     crucible::test::pass("  test_roce_dcqcn_state_unavailable: PASSED\n");
 }
 

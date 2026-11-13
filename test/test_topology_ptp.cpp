@@ -306,22 +306,22 @@ static void test_linux_boundaries_if_available() {
 
     TestSocket socket{::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0)};
     assert(socket.valid());
-    auto sock_fd = crucible::cntp::admit_socket_fd(socket.raw());
-    assert(sock_fd.has_value());
-    auto enabled = topology::enable_socket_timestamping(*sock_fd);
+    crucible::cntp::SocketFd const sock_fd =
+        crucible::cntp::admit_socket_fd(socket.raw()).expect("an open socket has a descriptor");
+    auto enabled = topology::enable_socket_timestamping(sock_fd);
     assert(enabled.is_ok() || error_of(enabled) == topology::PtpError::SocketTimestampingFailed);
 
-    auto lo = crucible::cntp::NicInterfaceName::from("lo");
-    assert(lo.has_value());
-    auto configured = topology::configure_hardware_timestamping(*sock_fd, *lo);
+    crucible::cntp::NicInterfaceName const lo =
+        crucible::cntp::NicInterfaceName::from("lo").expect("lo is an interface name");
+    auto configured = topology::configure_hardware_timestamping(sock_fd, lo);
     assert(configured.is_ok() || error_of(configured) == topology::PtpError::HardwareTimestampingFailed);
 
     std::array<std::byte, 8> payload{};
-    auto empty = topology::recv_with_hw_timestamp(*sock_fd, std::span<std::byte>{});
+    auto empty = topology::recv_with_hw_timestamp(sock_fd, std::span<std::byte>{});
     assert(empty.is_err());
     assert(error_of(empty) == topology::PtpError::InvalidReceiveBuffer);
 
-    auto recv = topology::recv_with_hw_timestamp(*sock_fd, std::span<std::byte>{payload});
+    auto recv = topology::recv_with_hw_timestamp(sock_fd, std::span<std::byte>{payload});
     assert(recv.is_ok() || error_of(recv) == topology::PtpError::RecvFailed
            || error_of(recv) == topology::PtpError::NoTimestamp);
     crucible::test::pass("  test_linux_boundaries_if_available: PASSED\n");

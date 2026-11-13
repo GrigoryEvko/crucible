@@ -33,15 +33,32 @@ inline void run_cntp_text(std::span<const std::uint8_t> bytes) {
     ByteCursor cursor{bytes};
     const auto which = cursor.take<std::uint8_t>();
     switch (which % 3) {
-        case 0:
-            (void)cntp::parse_tc_qdisc_show(as_text(cursor.rest()));
+        case 0: {
+            // The output of tc qdisc show is some short lines, so the harness
+            // gives the parser at most 4096 characters of it.
+            ::fixy::FixedText<4096> shown{};
+            while (!cursor.is_empty() && shown.push(cursor.take<char>()).is_ok()) {}
+            (void)cntp::parse_tc_qdisc_show(shown.view());
             break;
+        }
         case 1: {
-            const std::string_view text = as_text(cursor.rest());
-            const std::size_t split = text.find('\x1f');
-            const std::string_view rx = text.substr(0, split);
-            const std::string_view tx = split == std::string_view::npos ? std::string_view{} : text.substr(split + 1);
-            (void)cntp::parse_pfc_pause_counters(rx, tx);
+            // The product reads at most counter_read_bytes characters of a
+            // counter, so the harness gives the parser at most as many of
+            // each text.  A character past that bound is dropped.
+            ::fixy::FixedText<cntp::detail::roce::counter_read_bytes> rx{};
+            ::fixy::FixedText<cntp::detail::roce::counter_read_bytes> tx{};
+            bool is_past_split = false;
+            while (!cursor.is_empty()) {
+                char const character = cursor.take<char>();
+                if (!is_past_split && character == '\x1f') {
+                    is_past_split = true;
+                } else if (is_past_split) {
+                    static_cast<void>(tx.push(character).is_ok());
+                } else {
+                    static_cast<void>(rx.push(character).is_ok());
+                }
+            }
+            (void)cntp::parse_pfc_pause_counters(rx.view(), tx.view());
             break;
         }
         default: {

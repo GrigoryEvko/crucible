@@ -4,7 +4,7 @@
 #include <crucible/cntp/RoceConfig.h>
 
 int main() {
-    auto iface = crucible::cntp::NicInterfaceName::from("eth0");
-    auto config = crucible::cntp::mint_roce_config<0, 26>(*iface);
+    auto iface = crucible::cntp::NicInterfaceName::from("eth0").expect("eth0 is an interface name");
+    auto config = crucible::cntp::mint_roce_config<0, 26>(iface);
     return config.value().enable_pfc ? 0 : 1;
 }

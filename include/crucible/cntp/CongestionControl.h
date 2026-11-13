@@ -2,7 +2,6 @@
 
 #include <fixy/Bits.h>
 #include <fixy/Core.h>
-#include <fixy/os/Path.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/atoms/Os.h>
@@ -14,14 +13,10 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
+#include <foundation/os/File.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
-#include <filesystem>
-#include <span>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -129,11 +124,8 @@ template <class Module>
 concept CustomCcModule = requires { Module::congestion_control_name(); }
                       && requires { requires KernelCcName::from(Module::congestion_control_name()).is_ok(); };
 
-[[nodiscard]] constexpr std::expected<SocketFd, CcError> admit_socket_fd(int fd) noexcept {
-    if (fd < 0) {
-        return std::unexpected(CcError::InvalidSocketFd);
-    }
-    return ::fixy::mint_refined<::fixy::non_negative>(fd);
+[[nodiscard]] constexpr ::fixy::Result<SocketFd, CcError> admit_socket_fd(int fd) noexcept {
+    return ::fixy::admit_refined<::fixy::non_negative>(fd, CcError::InvalidSocketFd);
 }
 
 [[nodiscard]] constexpr ::fixy::Result<KernelCcName, CcError> kernel_name_for(CcAlgorithm algorithm) noexcept {
@@ -186,14 +178,14 @@ template <class Module, LinkClass Link>
 [[nodiscard]] ::fixy::Result<CcAvailability, CcError>
 parse_available_congestion_control(::fixy::TextView text) noexcept;
 
-// The kernel lists its algorithms in a file under /proc.  The fs door
-// opens it, and that door counts an open and a read as IO and Block, so
-// only a context that carries both can ask what the kernel supports.
+// The kernel lists its algorithms in a file under /proc.  The open and the
+// read of a file count as IO and Block, so only a context that carries both
+// can ask what the kernel supports.
 using ProcFileReadMode = ::fixy::atom::fs::mode<::fixy::fs::open_mode::ReadOnly>;
 
 namespace detail {
 
-inline constexpr std::string_view available_cc_path = "/proc/sys/net/ipv4/tcp_available_congestion_control";
+inline constexpr ::fixy::CText available_cc_path = "/proc/sys/net/ipv4/tcp_available_congestion_control";
 
 // The list is one short line.  A longer file is read up to this bound, and
 // the parse then refuses the cut name.
@@ -201,35 +193,14 @@ inline constexpr std::size_t available_cc_capacity = 512;
 
 }  // namespace detail
 
-// The path is a literal, and it still takes the traversal check, because
-// that check is the one way to a path the door accepts.  The read goes
-// through the same door, under the same context.
+// The file door of the base reads the list.  It takes no context, so the
+// gate of this function holds the row of the read.
 template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::fs::CtxFitsFileMint<Ctx, ProcFileReadMode>
-[[nodiscard]] ::fixy::Result<CcAvailability, CcError> read_available_congestion_control(Ctx const& ctx) noexcept {
-    auto path = ::fixy::sanitize_path(
-        ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{detail::available_cc_path}));
-    if (!path.has_value()) {
-        return ::fixy::err(CcError::SysctlUnavailable);
-    }
-    const ::fixy::fs::OwnedFd fd =
-        ::fixy::fs::mint_file<ProcFileReadMode>(ctx, std::move(*path))
-            .match(
-                [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd {
-                    return std::move(opened).consume();
-                },
-                [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
-    if (!fd.is_open()) {
-        return ::fixy::err(CcError::SysctlUnavailable);
-    }
-    std::array<char, detail::available_cc_capacity> text{};
-    std::size_t const bytes_read = ::fixy::fs::read_full(ctx, fd, std::as_writable_bytes(std::span{text})).value_or(0);
-    if (bytes_read == 0) {
-        return ::fixy::err(CcError::SysctlUnavailable);
-    }
+[[nodiscard]] ::fixy::Result<CcAvailability, CcError> read_available_congestion_control(Ctx const&) noexcept {
     ::fixy::FixedText<detail::available_cc_capacity> listed{};
-    for (std::size_t index = 0; index < bytes_read; ++index) {
-        listed.push(text[index]).expect("read_full reads at most the size of the buffer");
+    if (::foundation::os::read_file(detail::available_cc_path, listed).is_err() || listed.size() == 0) {
+        return ::fixy::err(CcError::SysctlUnavailable);
     }
     return parse_available_congestion_control(listed.view());
 }
@@ -284,51 +255,9 @@ concept CtxFitsSocketOption =
 
 namespace detail {
 
-class SocketOptionKey;
-
-// The one door to a key.  It takes a context that admits the socket
-// option row, so a body that takes a key runs only under such a context.
-template <::foundation::effects::IsExecCtx Ctx>
-    requires ::crucible::cntp::CtxFitsSocketOption<Ctx>
-[[nodiscard]] constexpr auto socket_option_key_(Ctx const&) noexcept -> SocketOptionKey;
-
-// The proof that a context admitted the socket option row.  The
-// constructor is private and socket_option_key_ is its one friend.  The
-// copy and the move are deleted, so a key stays in the scope that made it,
-// and an out-of-line socket option body takes it by reference.
-class SocketOptionKey {
-    constexpr SocketOptionKey() noexcept = default;
-
-    // Trailing return type on purpose: the parser takes `>::` after a
-    // leading return type as a nested-name-specifier.
-    template <::foundation::effects::IsExecCtx FriendCtx>
-        requires ::crucible::cntp::CtxFitsSocketOption<FriendCtx>
-    friend constexpr auto socket_option_key_(FriendCtx const&) noexcept -> SocketOptionKey;
-
-public:
-    SocketOptionKey(SocketOptionKey const&) = delete("a key proves one gated scope, and a copy would carry it out");
-    SocketOptionKey&
-    operator=(SocketOptionKey const&) = delete("a key proves one gated scope, and a copy would carry it out");
-    SocketOptionKey(SocketOptionKey&&) = delete("a key proves one gated scope, and a move would carry it out");
-    SocketOptionKey&
-    operator=(SocketOptionKey&&) = delete("a key proves one gated scope, and a move would carry it out");
-    ~SocketOptionKey() = default;
-};
-
-template <::foundation::effects::IsExecCtx Ctx>
-    requires ::crucible::cntp::CtxFitsSocketOption<Ctx>
-[[nodiscard]] constexpr auto socket_option_key_(Ctx const&) noexcept -> SocketOptionKey {
-    return SocketOptionKey{};
-}
-
 // The selection of a name that the kernel gave for a socket.  A name that
 // KernelCcName::from() refuses, or that names no algorithm, is an error.
 [[nodiscard]] ::fixy::Result<CcSelection, CcError> selection_of_kernel_name(::fixy::TextView name) noexcept;
-
-// The read of TCP_CONGESTION for a body that holds a key and no context.
-// It calls getsockopt, because each call of the socket door takes a context.
-[[nodiscard]] ::fixy::Result<CcSelection, CcError> query_cc_selection_for_socket_keyed(SocketOptionKey const&,
-                                                                                       SocketFd fd) noexcept;
 
 }  // namespace detail
 

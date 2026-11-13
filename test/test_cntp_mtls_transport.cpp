@@ -158,9 +158,8 @@ void test_policy_and_peer_admission() {
             .err()
         == ::fixy::some(cntp::MtlsError::CertificatePinMismatch));
 
-    auto fd = cntp::admit_socket_fd(3);
-    assert(fd.has_value());
-    assert(cntp::connect_mtls(*fd, config, allowed, pin).err() == ::fixy::some(cntp::MtlsError::BackendUnavailable));
+    cntp::SocketFd const fd = cntp::admit_socket_fd(3).expect("3 is not negative");
+    assert(cntp::connect_mtls(fd, config, allowed, pin).err() == ::fixy::some(cntp::MtlsError::BackendUnavailable));
 
     crucible::test::pass("  test_policy_and_peer_admission: PASSED\n");
 }
@@ -230,15 +229,14 @@ void test_data_plane_is_stub() {
     auto config = cntp::mint_mtls_config(std::move(ca), std::move(cert), std::move(key), policy);
     assert(cntp::validate_mtls_config(config).is_ok());
 
-    auto fd = cntp::admit_socket_fd(7);
-    assert(fd.has_value());
-    assert(cntp::connect_mtls(*fd, config, peer_dns, pin).err() == ::fixy::some(cntp::MtlsError::BackendUnavailable));
+    cntp::SocketFd const fd = cntp::admit_socket_fd(7).expect("7 is not negative");
+    assert(cntp::connect_mtls(fd, config, peer_dns, pin).err() == ::fixy::some(cntp::MtlsError::BackendUnavailable));
 
     // A peer that fails policy is refused for that reason, not for
     // the missing backend.  Were it the other way round, a genuine
     // policy rejection would hide behind the stub's refusal.
     cntp::MtlsDnsName const unauthorized_dns = take(cntp::MtlsDnsName::from("rogue-peer.example.org"));
-    assert(cntp::connect_mtls(*fd, config, unauthorized_dns, pin).err()
+    assert(cntp::connect_mtls(fd, config, unauthorized_dns, pin).err()
            == ::fixy::some(cntp::MtlsError::PeerNameNotAllowed));
 
     crucible::test::pass("  test_data_plane_is_stub:        PASSED\n");

@@ -5,7 +5,7 @@
 // per-flow pacing BBR depends on.
 
 int main() {
-    auto iface = crucible::cntp::NicInterfaceName::from("eth0").value();
+    auto iface = crucible::cntp::NicInterfaceName::from("eth0").expect("eth0 is an interface name");
     auto config = crucible::cntp::mint_bbr_qdisc_config<crucible::cntp::Qdisc::Pfifo>(iface);
     (void)config;
     return 0;

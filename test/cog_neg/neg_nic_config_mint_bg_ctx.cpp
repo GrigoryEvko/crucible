@@ -13,7 +13,7 @@ int main() {
     cog::CogIdentity id{};
     id.uuid = cog::Uuid{1, 2};
     id.kind = cog::CogKind::NicPort;
-    auto iface = cntp::NicInterfaceName::from("eth0").value();
+    auto iface = cntp::NicInterfaceName::from("eth0").expect("eth0 is an interface name");
     auto config = nic::mint_nic_config(::fixy::BgDrainCtx{::foundation::effects::testing::bg()}, id, iface);
     return config.is_ok() ? 0 : 1;
 }
