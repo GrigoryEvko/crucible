@@ -6,7 +6,6 @@
 #include <foundation/Platform.h>
 #include <foundation/ThreadLocalRef.h>
 
-#include <cmath>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -165,10 +164,17 @@ public:
         // The rank is computed in double, never long double. long double is
         // 80-bit on x86 and 64-bit on aarch64, so one pct and total pair
         // could pick a different bucket near a boundary on different hosts.
-        // IEEE-754 double multiply, divide and ceil are correctly rounded
-        // and bit-identical on every target.
+        // IEEE-754 double multiply and divide are correctly rounded and
+        // bit-identical on every target.
+        //
+        // rank_f is in [0, total], so the conversion truncates it toward zero
+        // with no overflow.  A fraction above that whole number adds one, so
+        // rank is the ceiling of rank_f, with no call of the math library.
         const double rank_f = (pct / 100.0) * static_cast<double>(total);
-        std::uint64_t rank = static_cast<std::uint64_t>(std::ceil(rank_f));
+        std::uint64_t rank = static_cast<std::uint64_t>(rank_f);
+        if (static_cast<double>(rank) < rank_f) {
+            ++rank;
+        }
         if (rank == 0) {
             rank = 1;
         }
