@@ -25,6 +25,14 @@
 //   placeholders that differs from the count of arguments.  The refusal
 //   names its rule (detail::fmt_*), and the build stops at the call.
 //
+// THE DOORS TO THE PARTS
+//   The functions of the family read the text and the site of a Site and of
+//   a Fmt through the doors of detail.  Each door is a function that is no
+//   template, so no file can give a door an explicit specialization with a
+//   different body.  The parts of a Fmt do not depend on its argument types,
+//   so one class that is no template, detail::FmtParts, holds them, and each
+//   Fmt derives from it.
+//
 // fatal() and unreachable() end the process in each build, with each
 // contract semantic.  They are [[noreturn]], so the optimizer knows that
 // control does not continue after them.  They are inline functions that load
@@ -39,8 +47,8 @@ namespace foundation::core {
 
 namespace detail {
 
-// The consteval constructor of Fmt calls one of these functions when its
-// text breaks a rule.  No function has a definition, so the call is no
+// The consteval constructor of FmtParts calls one of these functions when
+// its text breaks a rule.  No function has a definition, so the call is no
 // constant expression, and the error of the compiler names the rule.
 void fmt_text_is_empty() noexcept;
 void fmt_text_has_no_terminating_zero() noexcept;
@@ -79,28 +87,24 @@ consteval void check_fmt_text_(char const* text, std::size_t length, std::size_t
 
 class Site;
 
-template <class... Args>
-class Fmt;
-
 namespace detail {
+
+class FmtParts;
 
 // The doors of the functions of the family to the parts of a Site and of a
 // Fmt.  Each part comes out by value, so no caller keeps a reference into a
-// Site or a Fmt.  The constructors of Site and Fmt are consteval, so each
-// text is a constant of static storage and cannot dangle.  The rule owners
-// keeps each caller outside the base out of detail.
+// Site or a Fmt.  The constructors of Site and FmtParts are consteval, so
+// each text is a constant of static storage and cannot dangle.  A Fmt
+// converts to its FmtParts, so each door of a Fmt takes the FmtParts.  The
+// rule owners keeps each caller outside the base out of detail.
 [[nodiscard]] constexpr char const* site_file_(Site const& site) noexcept;
 [[nodiscard]] constexpr char const* site_function_(Site const& site) noexcept;
 [[nodiscard]] constexpr std::uint32_t site_line_(Site const& site) noexcept;
 
-template <class... Args>
-[[nodiscard]] constexpr char const* fmt_text_(Fmt<Args...> const& fmt) noexcept;
-template <class... Args>
-[[nodiscard]] constexpr char const* fmt_file_(Fmt<Args...> const& fmt) noexcept;
-template <class... Args>
-[[nodiscard]] constexpr char const* fmt_function_(Fmt<Args...> const& fmt) noexcept;
-template <class... Args>
-[[nodiscard]] constexpr std::uint32_t fmt_line_(Fmt<Args...> const& fmt) noexcept;
+[[nodiscard]] constexpr char const* fmt_text_(FmtParts const& fmt) noexcept;
+[[nodiscard]] constexpr char const* fmt_file_(FmtParts const& fmt) noexcept;
+[[nodiscard]] constexpr char const* fmt_function_(FmtParts const& fmt) noexcept;
+[[nodiscard]] constexpr std::uint32_t fmt_line_(FmtParts const& fmt) noexcept;
 
 }  // namespace detail
 
@@ -129,6 +133,35 @@ private:
     std::uint32_t line_;
 };
 
+namespace detail {
+
+// The parts of each Fmt: the checked text and the Site of the call.  The
+// constructor is consteval, and it checks the text for the count of
+// arguments, so each FmtParts holds a constant text with its terminating
+// zero.  The assignment is deleted, so no code writes the parts of one count
+// of arguments over the parts of a Fmt of a different count.
+class FmtParts {
+public:
+    consteval FmtParts(char const* text, std::size_t length, std::size_t arguments, Site site) noexcept
+        : text_{text}, site_{site} {
+        check_fmt_text_(text, length, arguments);
+    }
+
+    FmtParts(FmtParts const&) = default;
+    FmtParts& operator=(FmtParts const&) = delete("the parts of a Fmt come only from the check of its constructor");
+
+private:
+    friend constexpr char const* fmt_text_(FmtParts const& fmt) noexcept;
+    friend constexpr char const* fmt_file_(FmtParts const& fmt) noexcept;
+    friend constexpr char const* fmt_function_(FmtParts const& fmt) noexcept;
+    friend constexpr std::uint32_t fmt_line_(FmtParts const& fmt) noexcept;
+
+    char const* text_;
+    Site site_;
+};
+
+}  // namespace detail
+
 // The text of a report and the place of the call that gives it.  The place
 // comes from scalar default arguments and not from a default Site.  A
 // default argument of class type is a temporary, and the range of a for
@@ -141,27 +174,12 @@ private:
 // and foundation/core/Format.h that writes the arguments asks for
 // Formattable of each one, so a Fmt of each other type writes nothing.
 template <class... Args>
-class Fmt final {
+class Fmt final : public detail::FmtParts {
 public:
     template <std::size_t Length>
     consteval Fmt(char const (&text)[Length], char const* file = __builtin_FILE(), int line = __builtin_LINE(),
                   char const* function = __builtin_FUNCTION()) noexcept
-        : text_{text}, site_{file, line, function} {
-        detail::check_fmt_text_(text, Length, sizeof...(Args));
-    }
-
-private:
-    template <class... Others>
-    friend constexpr char const* detail::fmt_text_(Fmt<Others...> const& fmt) noexcept;
-    template <class... Others>
-    friend constexpr char const* detail::fmt_file_(Fmt<Others...> const& fmt) noexcept;
-    template <class... Others>
-    friend constexpr char const* detail::fmt_function_(Fmt<Others...> const& fmt) noexcept;
-    template <class... Others>
-    friend constexpr std::uint32_t detail::fmt_line_(Fmt<Others...> const& fmt) noexcept;
-
-    char const* text_;
-    Site site_;
+        : detail::FmtParts{text, Length, sizeof...(Args), Site{file, line, function}} {}
 };
 
 namespace detail {
@@ -170,22 +188,10 @@ constexpr char const* site_file_(Site const& site) noexcept { return site.file_;
 constexpr char const* site_function_(Site const& site) noexcept { return site.function_; }
 constexpr std::uint32_t site_line_(Site const& site) noexcept { return site.line_; }
 
-template <class... Args>
-constexpr char const* fmt_text_(Fmt<Args...> const& fmt) noexcept {
-    return fmt.text_;
-}
-template <class... Args>
-constexpr char const* fmt_file_(Fmt<Args...> const& fmt) noexcept {
-    return site_file_(fmt.site_);
-}
-template <class... Args>
-constexpr char const* fmt_function_(Fmt<Args...> const& fmt) noexcept {
-    return site_function_(fmt.site_);
-}
-template <class... Args>
-constexpr std::uint32_t fmt_line_(Fmt<Args...> const& fmt) noexcept {
-    return site_line_(fmt.site_);
-}
+constexpr char const* fmt_text_(FmtParts const& fmt) noexcept { return fmt.text_; }
+constexpr char const* fmt_file_(FmtParts const& fmt) noexcept { return site_file_(fmt.site_); }
+constexpr char const* fmt_function_(FmtParts const& fmt) noexcept { return site_function_(fmt.site_); }
+constexpr std::uint32_t fmt_line_(FmtParts const& fmt) noexcept { return site_line_(fmt.site_); }
 
 // Writes `foundation: fatal: TEXT` and the site to standard error.  Then it
 // stops in a debugger when one is attached, and aborts.  The text takes no

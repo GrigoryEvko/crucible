@@ -25,6 +25,15 @@ static_assert(std::is_trivially_copyable_v<Site> && std::is_trivially_copyable_v
 static_assert(!std::is_convertible_v<char const*, Fmt<>>);
 static_assert(std::is_convertible_v<char const (&)[6], Fmt<>>);
 
+// The parts of a Fmt are checked for its count of arguments.  No Fmt comes
+// from the parts of a different Fmt, and no assignment writes the parts of
+// a Fmt, also through its base.
+static_assert(!std::is_constructible_v<Fmt<int>, FmtParts const&>);
+static_assert(!std::is_constructible_v<Fmt<int>, Fmt<int, int> const&>);
+static_assert(!std::is_copy_assignable_v<FmtParts> && !std::is_copy_assignable_v<Fmt<>>);
+static_assert(!std::is_move_assignable_v<FmtParts> && !std::is_move_assignable_v<Fmt<int>>);
+static_assert(std::is_base_of_v<FmtParts, Fmt<int, TextView>>);
+
 // A text has a placeholder `{}` for each argument, and `{{` and `}}` for a
 // brace.  It holds no other brace, no zero byte and at least one character.
 // Each refused text fails the consteval constructor, so the build stops.

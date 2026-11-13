@@ -746,9 +746,6 @@ foundation_neg_compile_test(neg_specialization_home_detail_view_over
 foundation_neg_compile_test(neg_specialization_home_detail_text_bytes
   "neg_specialization_home_detail_text_bytes\\.cpp:11:[0-9]+: error: this file specializes the template .foundation::core::detail::text_bytes_. outside its home .include/foundation/core/Text\\.h."
   "an explicit specialization gives the function a different body")
-foundation_neg_compile_test(neg_specialization_home_detail_fmt_text
-  "neg_specialization_home_detail_fmt_text\\.cpp:11:[0-9]+: error: this file specializes the template .foundation::core::detail::fmt_text_. outside its home .include/foundation/core/Fatal\\.h."
-  "an explicit specialization gives the function a different body")
 foundation_neg_compile_test(neg_specialization_home_detail_alternative_of
   "neg_specialization_home_detail_alternative_of\\.cpp:15:[0-9]+: error: this file specializes the template .foundation::core::detail::alternative_of_. outside its home .include/foundation/core/Choice\\.h."
   "an explicit specialization gives the function a different body")
@@ -1938,6 +1935,12 @@ foundation_neg_compile_test(neg_core_fmt_lone_brace
 foundation_neg_compile_test(neg_core_fmt_brace_spec
   "call to consteval function .foundation::core::Fmt<int>\\(\"the mask is \\{:x\\}\", __builtin_FILE\\(\\), __builtin_LINE\\(\\), __builtin_FUNCTION\\(\\)\\). is not a constant expression"
   "call to non-.constexpr. function .void foundation::core::detail::fmt_text_holds_a_brace_that_is_no_placeholder_and_no_escape\\(\\).")
+foundation_neg_compile_test(neg_core_fmt_door_specialized
+  "template-id .fmt_text_<>. for .constexpr const char\\* foundation::core::detail::fmt_text_\\(const foundation::core::Fmt<long int>&\\). does not match any template declaration"
+  "candidate is: .constexpr const char\\* foundation::core::detail::fmt_text_\\(const FmtParts&\\).")
+foundation_neg_compile_test(neg_core_fmt_parts_assigned
+  "use of deleted function .foundation::core::detail::FmtParts& foundation::core::detail::FmtParts::operator=\\(const foundation::core::detail::FmtParts&\\)."
+  "the parts of a Fmt come only from the check of its constructor")
 foundation_neg_compile_test(neg_core_fmt_argument_long_double
   "no matching function for call to .fatal\\(const char \\[16\\], long double\\)."
   "required for the satisfaction of .Formattable<First>. \\[with First = long double\\]")
