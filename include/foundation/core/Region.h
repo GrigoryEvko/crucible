@@ -866,17 +866,139 @@ zip(View<First, FirstExtent> first, View<Second, SecondExtent> second) noexcept 
     return detail::ZipRange<First, Second, Fresh>{first, second};
 }
 
+namespace detail {
+
+// The largest copy of a fixed extent, in bytes, that copy() does with the
+// words of copy_small_.  GCC expands a memmove builtin of a constant size
+// inline only where it optimizes for speed.  It calls the library memmove
+// in a block that it thinks cold, and under AddressSanitizer for most
+// sizes.  The words of copy_small_ give no call in each block of each build.
+inline constexpr std::size_t small_copy_bytes = 64;
+
+// The width of the widest word of copy_small_: the width of a vector
+// register of the target.
+#if defined(__AVX512F__)
+inline constexpr std::size_t widest_copy_word = 64;
+#elif defined(__AVX__)
+inline constexpr std::size_t widest_copy_word = 32;
+#else
+inline constexpr std::size_t widest_copy_word = 16;
+#endif
+
+// The word of Width bytes, for one load of copy_small_: an unsigned integer,
+// or a vector of bytes for 16 bytes or more.
+template <std::size_t Width>
+struct CopyWord;
+template <>
+struct CopyWord<1> {
+    using type = std::uint8_t;
+};
+template <>
+struct CopyWord<2> {
+    using type = std::uint16_t;
+};
+template <>
+struct CopyWord<4> {
+    using type = std::uint32_t;
+};
+template <>
+struct CopyWord<8> {
+    using type = std::uint64_t;
+};
+template <>
+struct CopyWord<16> {
+    using type [[gnu::vector_size(16)]] = std::uint8_t;
+};
+template <>
+struct CopyWord<32> {
+    using type [[gnu::vector_size(32)]] = std::uint8_t;
+};
+template <>
+struct CopyWord<64> {
+    using type [[gnu::vector_size(64)]] = std::uint8_t;
+};
+
+// The width of the first word of a copy of bytes: the largest power of two
+// that is at most bytes and at most widest_copy_word.
+[[nodiscard]] consteval std::size_t copy_word_width_(std::size_t bytes) noexcept {
+    std::size_t width = widest_copy_word;
+    while (width > bytes) {
+        width /= 2;
+    }
+    return width;
+}
+
+// The width of the tail word of a rest of bytes: the smallest power of two
+// that is at least bytes.
+[[nodiscard]] consteval std::size_t copy_tail_width_(std::size_t bytes) noexcept {
+    std::size_t width = 1;
+    while (width < bytes) {
+        width *= 2;
+    }
+    return width;
+}
+
+// The word of Width bytes at from.  The size of the builtin is the size of
+// a local word, so GCC folds the builtin to one load in each block.
+template <std::size_t Width>
+[[nodiscard]] inline typename CopyWord<Width>::type load_copy_word_(unsigned char const* from) noexcept {
+    typename CopyWord<Width>::type word{};
+    __builtin_memcpy(&word, from, Width);
+    return word;
+}
+
+// Writes the Width bytes of word at to.  GCC folds the builtin to one store.
+template <std::size_t Width>
+inline void store_copy_word_(unsigned char* to, typename CopyWord<Width>::type word) noexcept {
+    __builtin_memcpy(to, &word, Width);
+}
+
+// Copies Bytes bytes from source to target with words.  The copy loads the
+// first word.  When one more word of its width fits after it, the copy
+// copies the rest with this function.  Else a tail word ends at the end of
+// the run, and it can overlap the first word.  The copy stores the first
+// word last, so each load comes before each store and the two runs can
+// overlap.
+//
+// An overlap of two words writes some bytes two times, with the same value
+// each time.  The words are the words of the inline memmove of GCC for the
+// same size.
+template <std::size_t Bytes>
+    requires(Bytes > 0 && Bytes <= small_copy_bytes)
+inline void copy_small_(unsigned char* target, unsigned char const* source) noexcept {
+    constexpr std::size_t width = copy_word_width_(Bytes);
+    auto const first = load_copy_word_<width>(source);
+    if constexpr (Bytes >= 2 * width) {
+        copy_small_<Bytes - width>(target + width, source + width);
+    } else if constexpr (Bytes > width) {
+        constexpr std::size_t tail_width = copy_tail_width_(Bytes - width);
+        auto const tail = load_copy_word_<tail_width>(source + (Bytes - tail_width));
+        store_copy_word_<tail_width>(target + (Bytes - tail_width), tail);
+    }
+    store_copy_word_<width>(target, first);
+}
+
+}  // namespace detail
+
 // Copies the elements of src into dst, two Views of one fixed extent.  The
-// type gives the two the same count, so the copy cannot fail.  The copy is
-// a memmove, so two views of one run can overlap.  A View<T> converts to a
-// View<T const> of the same run, so no type proves that the two do not
-// overlap.  On x86_64, glibc resolves memcpy and memmove to one function,
-// so the memmove runs the code of the memcpy of the raw form.
+// type gives the two the same count, so the copy cannot fail.  Two Views of
+// one run can overlap, because a View<T> converts to a View<T const> of the
+// same run.  So the copy gives dst the values that src held before the
+// copy.  A copy of at most detail::small_copy_bytes takes the words of
+// detail::copy_small_, so a copy of a record calls no library function in
+// each build.  A larger copy is one memmove builtin.  On x86_64, glibc
+// resolves memcpy and memmove to one function.
 template <class T, std::size_t Extent>
     requires RegionCopyElement<T> && (Extent != dynamic_extent)
 void copy(View<T, Extent> dst, std::type_identity_t<View<T const, Extent>> src) noexcept {
-    __builtin_memmove(first_of_(detail::ViewDoor::key(), dst), first_of_(detail::ViewDoor::key(), src),
-                      Extent * sizeof(T));
+    constexpr std::size_t bytes = Extent * sizeof(T);
+    void* const target = first_of_(detail::ViewDoor::key(), dst);
+    void const* const source = first_of_(detail::ViewDoor::key(), src);
+    if constexpr (bytes <= detail::small_copy_bytes) {
+        detail::copy_small_<bytes>(static_cast<unsigned char*>(target), static_cast<unsigned char const*>(source));
+    } else {
+        __builtin_memmove(target, source, bytes);
+    }
 }
 
 // Copies the elements of src into dst, two Views of a dynamic extent.  The

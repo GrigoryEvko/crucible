@@ -32,15 +32,11 @@ constexpr std::size_t qdisc_kind_bytes = 16;
 
 // The record T at offset of bytes, or no value when the bytes end before
 // the end of T.  T is a record of integers, so each bit pattern is a value.
-// The loop copies one byte at a time: fixy::copy is a memmove, and a build
-// with no inlining calls memmove of libc for a record of 16 bytes or more.
 template <class T>
 [[nodiscard]] ::fixy::Option<T> read_record(::fixy::View<std::byte const> bytes, std::size_t offset) noexcept {
     CRUCIBLE_TRY(part, bytes.window<sizeof(T)>(offset));
     ::foundation::core::FixedArray<std::byte, sizeof(T)> image{};
-    for (auto [target, source] : ::fixy::zip(image.view(), part)) {
-        *target = *source;
-    }
+    ::fixy::copy(image.view(), part);
     return ::fixy::some(::fixy::bit_cast<T>(image));
 }
 

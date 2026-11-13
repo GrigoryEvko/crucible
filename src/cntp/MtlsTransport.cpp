@@ -58,14 +58,9 @@ namespace crucible::cntp {
         return ::fixy::err(MtlsError::CertificateTooLarge);
     }
 
-    // A loop of bytes, and not a memmove: the library imports no memmove.
     MtlsCertificateBytes out{};
-    ::fixy::View<std::byte> const target =
-        out.bytes.view().window(0, pem.size()).expect("the certificate is at most max_bytes");
-    for (auto [destination, source] :
-         ::fixy::zip(target, pem).expect("a window of the size of the certificate has that size")) {
-        *destination = *source;
-    }
+    ::fixy::copy(out.bytes.view().window(0, pem.size()).expect("the certificate is at most max_bytes"), pem)
+        .expect("a window of the size of the certificate has that size");
     out.size = static_cast<std::uint16_t>(pem.size());
     return ::fixy::mint_linear<MtlsCertificateBytes>(std::move(out));
 }

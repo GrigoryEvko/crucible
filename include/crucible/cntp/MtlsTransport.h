@@ -321,14 +321,9 @@ admit_private_key_pem(::fixy::View<std::byte const> pem) noexcept {
         return ::fixy::err(MtlsError::PrivateKeyTooLarge);
     }
 
-    // A loop of bytes, and not a memmove, as in admit_x509_certificate_pem.
     MtlsPrivateKeyBytes out{};
-    ::fixy::View<std::byte> const target =
-        out.bytes.view().window(0, pem.size()).expect("the key is at most max_bytes");
-    for (auto [destination, source] :
-         ::fixy::zip(target, pem).expect("a window of the size of the key has that size")) {
-        *destination = *source;
-    }
+    ::fixy::copy(out.bytes.view().window(0, pem.size()).expect("the key is at most max_bytes"), pem)
+        .expect("a window of the size of the key has that size");
     out.nbytes = static_cast<std::uint16_t>(pem.size());
     out.algorithm = Algorithm;
     return ::fixy::mint_secret<MtlsPrivateKeyBytes>(std::move(out));

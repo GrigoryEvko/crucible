@@ -173,6 +173,99 @@ void test_windows() {
     CRUCIBLE_FATAL_INVARIANT(erased.size() == 8);
 }
 
+// The copy of a fixed extent runs in a function that the optimizer does not
+// see through, so the copy takes the form of the build and folds no value.
+template <class T, std::size_t Count>
+[[gnu::noipa]] void copy_fixed_opaque(fixy::View<T, Count> target, fixy::View<T const, Count> source) {
+    fixy::copy(target, source);
+}
+
+// The byte at a position of the pattern of a run.  Two adjacent positions
+// hold different bytes, so a copy with a wrong offset changes a byte.
+[[nodiscard]] std::uint8_t pattern_byte(std::size_t position) { return static_cast<std::uint8_t>(position * 7 + 3); }
+
+// A copy of Count bytes between two windows of one run that start shift
+// bytes apart.  The source window comes first or the target window comes
+// first.  After the copy, the target window holds the bytes that the source
+// window held before it, and each other byte keeps its value.
+template <std::size_t Count>
+void expect_overlapping_copy(fixy::View<std::uint8_t> run, std::size_t shift, bool is_source_first) {
+    std::size_t position = 0;
+    for (std::uint8_t& byte : run) {
+        byte = pattern_byte(position);
+        ++position;
+    }
+    std::size_t const source_at = is_source_first ? 0 : shift;
+    std::size_t const target_at = is_source_first ? shift : 0;
+    copy_fixed_opaque<std::uint8_t, Count>(run.window<Count>(target_at).expect("the target fits in the run"),
+                                           run.window<Count>(source_at).expect("the source fits in the run"));
+    position = 0;
+    for (std::uint8_t const byte : run) {
+        bool const is_in_target = position >= target_at && position < target_at + Count;
+        std::size_t const origin = is_in_target ? position - target_at + source_at : position;
+        CRUCIBLE_FATAL_INVARIANT(byte == pattern_byte(origin));
+        ++position;
+    }
+}
+
+// The four overlaps of a copy of Count bytes: a shift of one byte and a
+// shift of Count - 1 bytes, each with the source first and with the target
+// first.
+template <std::size_t Count>
+void expect_overlapping_copies(fixy::View<std::uint8_t> run) {
+    expect_overlapping_copy<Count>(run, 1, true);
+    expect_overlapping_copy<Count>(run, 1, false);
+    expect_overlapping_copy<Count>(run, Count - 1, true);
+    expect_overlapping_copy<Count>(run, Count - 1, false);
+}
+
+// A copy of a fixed extent between two windows of one run moves the bytes,
+// for each size class of the copy: one word, a first word and a tail word,
+// two or more words of the widest width with a tail word, and the memmove
+// past 64 bytes.  A record of 24 bytes takes the same check with a shift of
+// one record.
+template <class Owner>
+void expect_overlapping_fixed_copies(IoBlockCtx const& ctx, Owner const& owner) {
+    auto byte_region = map_region(ctx, owner, page_bytes);
+    fixy::View<std::uint8_t> run = byte_region.template view<std::uint8_t>()
+                                       .expect("a page holds whole bytes")
+                                       .window(0, 256)
+                                       .expect("a page holds 256 bytes");
+    expect_overlapping_copies<1>(run);
+    expect_overlapping_copies<3>(run);
+    expect_overlapping_copies<7>(run);
+    expect_overlapping_copies<8>(run);
+    expect_overlapping_copies<16>(run);
+    expect_overlapping_copies<20>(run);
+    expect_overlapping_copies<31>(run);
+    expect_overlapping_copies<32>(run);
+    expect_overlapping_copies<33>(run);
+    expect_overlapping_copies<48>(run);
+    expect_overlapping_copies<63>(run);
+    expect_overlapping_copies<64>(run);
+    expect_overlapping_copies<65>(run);
+    expect_overlapping_copies<100>(run);
+
+    auto record_region = map_region(ctx, owner, 3 * page_bytes);
+    fixy::View<Record> records = record_region.template view<Record>().expect("three pages hold whole records");
+    std::uint64_t key = 0;
+    for (Record& record : records.window(0, 3).expect("three records fit")) {
+        record = Record{.key = key, .count = static_cast<std::uint32_t>(key + 1), .flags = 7, .extra = key * 5};
+        ++key;
+    }
+    copy_fixed_opaque<Record, 2>(records.window<2>(1).expect("two records fit"),
+                                 records.window<2>(0).expect("two records fit"));
+    // The records 0 and 1 move to the positions 1 and 2, and the record at
+    // position 0 keeps its value.
+    std::uint64_t position = 0;
+    for (Record const& record : records.window(0, 3).expect("three records fit")) {
+        std::uint64_t const expected_key = position == 0 ? 0 : position - 1;
+        CRUCIBLE_FATAL_INVARIANT(record.key == expected_key && record.count == expected_key + 1
+                                 && record.extra == expected_key * 5);
+        ++position;
+    }
+}
+
 void test_copy() {
     IoBlockCtx const ctx{eff::testing::test()};
     auto const source_owner = perm::mint_permission_root<ScratchRegion>();
@@ -203,6 +296,8 @@ void test_copy() {
     fixy::View<std::uint64_t const, 4> fixed_source = source.window<4>(200).expect("four words fit");
     fixy::copy(fixed_target, fixed_source);
     CRUCIBLE_FATAL_INVARIANT(hold_same_values<std::uint64_t>(fixed_target, fixed_source));
+
+    expect_overlapping_fixed_copies(ctx, source_owner);
 }
 
 // The fill runs in a function that the optimizer does not see through.  A

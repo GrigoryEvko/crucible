@@ -4755,6 +4755,24 @@ fixy_neg_compile_test(neg_owned_mmap_forged_address
 # mutable borrow of it, and no View of a temporary mapping exists.
 fixy_test(test_core_region)
 
+# ── The imports of fixy::copy ────────────────────────────────────────
+#
+# A fixed copy of at most 64 bytes compiles to loads and stores in each
+# build, so a library that copies a record imports no memmove.  The two
+# objects link fixy, so they take the flags of the libraries of the tree.
+# check_copy_imports.cmake reads their undefined symbols:
+# the fixed copies import no memmove and no memcpy, and the control, a copy
+# of a count of run time, imports memmove.
+add_library(copy_imports_fixed OBJECT copy_imports_fixed.cpp)
+target_link_libraries(copy_imports_fixed PRIVATE fixy)
+add_library(copy_imports_dynamic OBJECT copy_imports_dynamic.cpp)
+target_link_libraries(copy_imports_dynamic PRIVATE fixy)
+crucible_script_test(NAME copy_imports
+  COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DFIXED=$<TARGET_OBJECTS:copy_imports_fixed>
+          -DDYNAMIC=$<TARGET_OBJECTS:copy_imports_dynamic>
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/check_copy_imports.cmake)
+set_tests_properties(copy_imports PROPERTIES LABELS "fixy")
+
 fixy_neg_compile_test(neg_owned_mmap_view_of_temporary
   "use of deleted function .void fixy::OwnedMmap<Tag, Prot, Share, Brand>::view\\(\\) && .with T = int"
   "a View of a temporary mapping dangles when the mapping unmaps")
