@@ -7,6 +7,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
+#include <foundation/Quarantine.h>
 
 #include "abort_probe.h"
 #include "philox_stream.h"
@@ -82,6 +83,29 @@ void test_each_alternative() {
     CRUCIBLE_FATAL_INVARIANT(narrow.is<std::uint16_t>() && !narrow.is<std::uint32_t>());
     CRUCIBLE_FATAL_INVARIANT(refused.is<Refusal>());
     CRUCIBLE_FATAL_INVARIANT(wide.which().raw() == 0 && refused.which().raw() == 1 && narrow.which().raw() == 2);
+}
+
+// The bytes of a Reading whose tag names no alternative: the storage word,
+// and a tag word whose low byte is the tag.
+struct ForgedBytes {
+    std::uint32_t storage = 7;
+    std::uint32_t tag_word = 200;
+};
+static_assert(sizeof(ForgedBytes) == sizeof(Reading));
+
+// A copy of bytes over a plain OneOf can write a tag that names no
+// alternative, and no rule refuses each such copy at compile time.  which()
+// then ends the process, so no Index leaves its range.
+void test_which_refuses_a_forged_tag() {
+    bool const forged_which_aborts = ::crucible::test::aborts([] {
+        Reading forged = read_word(9u);
+        ForgedBytes const bytes{};
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a copy of bytes writes a tag that names no alternative of a OneOf")
+        __builtin_memcpy(static_cast<void*>(&forged), &bytes, sizeof(Reading));
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+        static_cast<void>(forged.which());
+    });
+    CRUCIBLE_FATAL_INVARIANT(forged_which_aborts);
 }
 
 void test_expect() {
@@ -228,6 +252,7 @@ void test_agrees_with_model() {
 
 int main() {
     test_each_alternative();
+    test_which_refuses_a_forged_tag();
     test_expect();
     test_match();
     test_get();

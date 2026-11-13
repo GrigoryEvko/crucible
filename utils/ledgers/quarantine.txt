@@ -572,6 +572,7 @@ test/foundation/ | opted-out | 18 | ORACLE: the differential test of Record and 
 test/foundation/ | opted-out | 88 | ORACLE: the differential test of the Scalar family against the std forms | the std forms that the differential test of the Scalar family compares with
 test/foundation/ | opted-out | 8 | ORACLE: the std algorithms are the model of the scans | -
 test/foundation/ | opted-out | 1 | PROBE: a bit copy of zero bytes into a Ref, as a decode of wire bytes makes | a test of the validity test makes a Ref with zero bytes through a bit copy, as a decode of wire bytes does
+test/foundation/ | opted-out | 1 | PROBE: a copy of bytes writes a tag that names no alternative of a OneOf | the test of which() copies bytes that hold a tag outside the alternatives over a OneOf in a PROBE region
 test/foundation/ | opted-out | 2 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | raw-function-pointer | 17 | - | -
@@ -587,6 +588,7 @@ test/foundation/ | region | 1 | ORACLE: the differential test of Record and Pack
 test/foundation/ | region | 1 | ORACLE: the differential test of the Scalar family against the std forms | the std forms that the differential test of the Scalar family compares with
 test/foundation/ | region | 1 | ORACLE: the std algorithms are the model of the scans | -
 test/foundation/ | region | 1 | PROBE: a bit copy of zero bytes into a Ref, as a decode of wire bytes makes | a test of the validity test makes a Ref with zero bytes through a bit copy, as a decode of wire bytes does
+test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of a OneOf | the test of which() copies bytes that hold a tag outside the alternatives over a OneOf in a PROBE region
 test/foundation/ | region | 1 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | replace-pending:<limits> | 57 | - | -

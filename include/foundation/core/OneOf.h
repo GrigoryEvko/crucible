@@ -14,8 +14,9 @@
 // alternative.  get<T>() lends the active alternative as an Option of a Ref
 // of the Ref family, with no value for a different alternative.  is<T>()
 // tells the active alternative, and which() gives its index as an Index<N>
-// of the Region family.  The type has no operator*, no operator-> and no
-// operator bool, and it is [[nodiscard]].
+// of the Region family, after one compare of the tag with the count.  The
+// type has no operator*, no operator-> and no operator bool, and it is
+// [[nodiscard]].
 //
 // The storage is the sum of the family (Choice.h).  The sum of plain
 // alternatives holds the storage and a tag, and it is trivially copyable.
@@ -137,12 +138,19 @@ public:
     constexpr OneOf(U&& value) noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<U>, U&&>)
         : slot_{detail::AlternativeAt<detail::index_in_v<std::remove_cvref_t<U>, Ts...>>{}, static_cast<U&&>(value)} {}
 
-    // The index of the active alternative, as an Index of the Region family:
-    // one load.  Each constructor of the slot writes the index of the
-    // alternative that it builds, so the tag is below sizeof...(Ts) in each
-    // state, and the door of Index needs no check.
+    // The index of the active alternative, as an Index of the Region family.
+    // Each constructor of the slot writes the index of the alternative that
+    // it builds.  But a copy of bytes over a plain OneOf, such as a copy that
+    // a byte buffer or a union member makes, can write a tag outside the
+    // alternatives, and a read through the Index would then leave its range.
+    // So which() compares the tag with the count one time, and a tag that
+    // names no alternative ends the process.
     [[nodiscard]] constexpr Index<sizeof...(Ts)> which() const noexcept {
-        return Index<sizeof...(Ts)>{detail::IndexDoor::key(), index_()};
+        std::size_t const tag = index_();
+        if (tag >= sizeof...(Ts)) [[unlikely]] {
+            fatal("OneOf::which: the tag names no alternative, so a copy of bytes made this OneOf");
+        }
+        return Index<sizeof...(Ts)>{detail::IndexDoor::key(), tag};
     }
 
     // True when the active alternative is T.  The cost is one compare.

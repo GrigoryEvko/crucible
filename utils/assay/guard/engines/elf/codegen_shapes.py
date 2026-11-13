@@ -727,8 +727,11 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "one_of_which",
-        "which() of a OneOf is the load of its tag, as the raw form of a tagged storage word is, because the index "
-        "door of the Region family does no check",
+        "which() of a OneOf is the load of its tag and one compare with the count of the alternatives, with a branch "
+        "to a call of the fatal exit.  A copy of bytes over a plain OneOf can write a tag outside the alternatives, and "
+        f"the Index that which() gives is trusted with no second check.  {HARDENED_BUILDS}.  On the hot path, these "
+        "flags add a second compare of the tag, with a branch to a trap",
+        checks=("fatal",),
     ),
     Probe(
         "one_of_get",
