@@ -149,11 +149,14 @@ _DTYPE_MAP = {
     torch.bool: 11,
     torch.bfloat16: 15,
 }
-# Add FP8/extended types if available in this PyTorch build.
+# Add FP8/extended types if available in this PyTorch build.  uint16, uint32
+# and uint64 keep their c10 ordinals, which name no crucible element type, so
+# the trust ladder of the C ABI refuses an operation with such a tensor.
 for _name, _ord in [
     ("float8_e5m2", 23), ("float8_e4m3fn", 24),
     ("float8_e5m2fnuz", 25), ("float8_e4m3fnuz", 26),
     ("uint16", 27), ("uint32", 28), ("uint64", 29),
+    ("float8_e8m0fnu", 44), ("float4_e2m1fn_x2", 45),
 ]:
     _dt = getattr(torch, _name, None)
     if _dt is not None:
@@ -171,7 +174,8 @@ _DEVICE_MAP = {
     "privateuseone": 20,
 }
 
-# c10::Layout ordinals.
+# The ordinals of crucible::Layout, which differ from the c10 ordinals from
+# sparse_csc on.
 _LAYOUT_MAP = {
     torch.strided: 0,
     torch.sparse_coo: 1,
@@ -182,6 +186,27 @@ for _name, _ord in [("sparse_csr", 2), ("sparse_csc", 3),
     _ly = getattr(torch, _name, None)
     if _ly is not None:
         _LAYOUT_MAP[_ly] = _ord
+
+# The byte of an element type, a device or a layout that crucible does not
+# name.  No enumerator of crucible::ScalarType, crucible::DeviceType or
+# crucible::Layout has this value, so the trust ladder of the C ABI refuses
+# the operation, as the decoders of the native vessel refuse it.
+_UNNAMED_ORDINAL = 127
+
+
+def _dtype_ordinal(dtype: torch.dtype) -> int:
+    """Return the crucible ordinal of an element type, or _UNNAMED_ORDINAL."""
+    return _DTYPE_MAP.get(dtype, _UNNAMED_ORDINAL)
+
+
+def _device_ordinal(device_type: str) -> int:
+    """Return the crucible ordinal of a device type name, or _UNNAMED_ORDINAL."""
+    return _DEVICE_MAP.get(device_type, _UNNAMED_ORDINAL)
+
+
+def _layout_ordinal(layout: torch.layout) -> int:
+    """Return the crucible ordinal of a layout, or _UNNAMED_ORDINAL."""
+    return _LAYOUT_MAP.get(layout, _UNNAMED_ORDINAL)
 
 
 # ─── Scalar encoding ───────────────────────────────────────────────
@@ -521,11 +546,11 @@ class CrucibleMode(TorchDispatchMode):
             meta.sizes[d] = 0
             meta.strides[d] = 0
         meta.data_ptr = tensor.data_ptr() if tensor.layout == torch.strided else 0
-        meta.dtype = _DTYPE_MAP.get(tensor.dtype, -1)
+        meta.dtype = _dtype_ordinal(tensor.dtype)
         dev = tensor.device
-        meta.device_type = _DEVICE_MAP.get(dev.type, 0)
+        meta.device_type = _device_ordinal(dev.type)
         meta.device_idx = dev.index if dev.index is not None else -1
-        meta.layout = _LAYOUT_MAP.get(tensor.layout, 0)
+        meta.layout = _layout_ordinal(tensor.layout)
         meta.requires_grad = 1 if tensor.requires_grad else 0
 
         # Packed flags: is_leaf|is_contiguous|has_grad_fn|is_view|is_neg|is_conj

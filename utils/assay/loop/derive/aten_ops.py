@@ -208,15 +208,26 @@ CKERNEL_MAP: dict[str, str] = {
 
 OPAQUE = "OPAQUE"
 
+# The overloads whose operation is not the operation of their base name. The
+# one-argument aten::where(Tensor condition) -> Tensor[] is nonzero: it gives
+# the index tensors of the true elements, and their length depends on the
+# data. The taxonomy has no identifier for nonzero, so the overload is OPAQUE.
+CKERNEL_OVERLOAD_MAP: dict[tuple[str, str], str] = {
+    ("aten::where", ""): OPAQUE,
+}
 
-def ckernel_for(base_name: str) -> str:
-    """The CKernelId for an ATen base name, or OPAQUE when unrecognised.
+
+def ckernel_for(base_name: str, overload: str) -> str:
+    """The CKernelId for an ATen operator, or OPAQUE when unrecognised.
 
     The base name arrives `aten::`-prefixed and may carry the leading
     underscore of an internal spelling or the trailing underscore of an
     in-place variant. Both fold away, because the taxonomy gives one
-    identifier per mathematical operation.
+    identifier per mathematical operation. An overload of
+    CKERNEL_OVERLOAD_MAP takes its own identifier.
     """
+    if (base_name, overload) in CKERNEL_OVERLOAD_MAP:
+        return CKERNEL_OVERLOAD_MAP[(base_name, overload)]
     stem = base_name.removeprefix("aten::")
     stem = stem.rstrip("_")
     stem = stem.lstrip("_")
@@ -408,7 +419,7 @@ def ops_of_tree(tree: tsast.Tree, model: ModuleType) -> list[Op]:
             tensor_arg_mask=tensor_mask,
             tensor_list_mask=list_mask,
             is_mutable=mutable,
-            ckernel=ckernel_for(strings["name"]),
+            ckernel=ckernel_for(strings["name"], strings["overload_name"]),
         ))
     return ops
 

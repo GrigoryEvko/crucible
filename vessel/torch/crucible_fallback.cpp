@@ -105,9 +105,11 @@ using crucible::vessel::fnv1a_bytes;
 using crucible::vessel::fnv1a_str;
 using crucible::vessel::kFnvOffset;
 using crucible::vessel::kFnvPrime;
+using crucible::vessel::InputOverflow;
 using crucible::vessel::MAX_INLINE_METAS;
 using crucible::vessel::MetaCount;
 using crucible::vessel::ScalarArgs;
+using crucible::vessel::scalar_result_meta;
 using crucible::vessel::backward_depth;
 using crucible::vessel::compute_shape_hash;
 using crucible::vessel::fill_meta;
@@ -285,10 +287,26 @@ struct SchemaInfo {
 
 struct ExtractionResult {
     MetaCount counts;
-    ScalarArgs scalars;
+    ScalarArgs<true> scalars;
+    // The input tensors past MAX_INLINE_METAS, which the overflow digest of
+    // entry_slots.h folds.
+    InputOverflow overflow;
     // False when an enumeration of a tensor names no crucible enumerator
     // (fill_meta).  The fallback then records nothing.
     bool is_each_enumeration_named = true;
+
+    // One defined input tensor: a meta of the array while it has room, and a
+    // fold of the overflow digest after that.
+    void add_input(const at::Tensor& tensor, crucible::TensorMeta* metas) {
+        if (counts.inputs < MAX_INLINE_METAS) {
+            if (!fill_meta(metas[counts.inputs], tensor)) is_each_enumeration_named = false;
+            counts.inputs++;
+            return;
+        }
+        crucible::TensorMeta meta{};
+        if (!fill_meta(meta, tensor)) is_each_enumeration_named = false;
+        overflow.fold(meta);
+    }
 };
 
 [[nodiscard]] static ExtractionResult extract_inputs(const torch::jit::Stack& stack, size_t args_begin, size_t num_args,
@@ -300,10 +318,7 @@ struct ExtractionResult {
 
         if (iv.isTensor()) {
             const auto& t = iv.toTensor();
-            if (t.defined() && r.counts.inputs < MAX_INLINE_METAS) {
-                if (!fill_meta(metas[r.counts.inputs], t)) r.is_each_enumeration_named = false;
-                r.counts.inputs++;
-            }
+            if (t.defined()) r.add_input(t, metas);
         } else if (iv.isTensorList()) {
             // Same proxy hazard as the OptionalTensorList branch below: the
             // c10::List iterator dereferences to a proxy whose conversion
@@ -311,10 +326,7 @@ struct ExtractionResult {
             // and -Wdangling-reference fires. Take the element by value.
             for (const auto ref : iv.toTensorList()) {
                 const at::Tensor t = ref;
-                if (t.defined() && r.counts.inputs < MAX_INLINE_METAS) {
-                    if (!fill_meta(metas[r.counts.inputs], t)) r.is_each_enumeration_named = false;
-                    r.counts.inputs++;
-                }
+                if (t.defined()) r.add_input(t, metas);
             }
         } else if (iv.isOptionalTensorList()) {
             // c10::List iterator dereferences to a proxy object (like
@@ -322,22 +334,26 @@ struct ExtractionResult {
             // -Wrange-loop-bind-reference. Use value to avoid the warning.
             for (const auto ref : iv.toOptionalTensorList()) {
                 const auto opt = static_cast<std::optional<at::Tensor>>(ref);
-                if (opt.has_value() && opt->defined() && r.counts.inputs < MAX_INLINE_METAS) {
-                    if (!fill_meta(metas[r.counts.inputs], *opt)) r.is_each_enumeration_named = false;
-                    r.counts.inputs++;
-                }
+                if (opt.has_value() && opt->defined()) r.add_input(*opt, metas);
             }
         } else if (iv.isInt() || iv.isDouble() || iv.isBool()) {
             r.scalars.push(scalar_to_int64(iv));
         } else if (iv.isIntList()) {
             // IntList args (e.g., size=[3,4] in reshape, padding=[1,2] in conv).
-            // Pack first elements into scalar slots (up to 5 total).
             for (int64_t elem : iv.toIntList()) {
                 r.scalars.push(elem);
             }
         } else if (iv.isDoubleList()) {
             for (double elem : iv.toDoubleList()) {
                 r.scalars.push(std::bit_cast<int64_t>(elem));
+            }
+        } else if (iv.isList() && iv.toList().elementType()->kind() == c10::NumberType::Kind) {
+            // A Scalar[] argument boxes into a list of numbers.  Each element
+            // contributes as a Scalar argument does: a complex one gives
+            // nothing.
+            for (const auto ref : iv.toList()) {
+                const c10::IValue element = ref;
+                if (element.isInt() || element.isDouble() || element.isBool()) r.scalars.push(scalar_to_int64(element));
             }
         }
     }
@@ -368,6 +384,17 @@ static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, 
                     if (!fill_meta(metas[counts.total()], t)) extracted.is_each_enumeration_named = false;
                     counts.outputs++;
                 }
+            }
+        } else if (iv.isDouble() || iv.isComplexDouble() || iv.isBool() || iv.isInt()) {
+            // A scalar result, such as the value of _local_scalar_dense,
+            // gets a meta of rank zero, as on the unboxed path.
+            if (counts.total() < MAX_INLINE_METAS) {
+                const crucible::ScalarType dtype = iv.isDouble()        ? crucible::ScalarType::Double
+                                                 : iv.isComplexDouble() ? crucible::ScalarType::ComplexDouble
+                                                 : iv.isBool()          ? crucible::ScalarType::Bool
+                                                                        : crucible::ScalarType::Long;
+                metas[counts.total()] = scalar_result_meta(dtype);
+                counts.outputs++;
             }
         }
     }
@@ -469,7 +496,6 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     crucible::TensorMeta inline_metas[MAX_INLINE_METAS]{};
     ExtractionResult extracted = extract_inputs(*stack, args_begin, num_args, inline_metas);
     MetaCount& counts = extracted.counts;
-    ScalarArgs const& scalars = extracted.scalars;
 
     // -- Compute hashes + mutability -----------------------------------
     const auto [schema_hash, is_mutable, is_foreach] = get_schema_info(*vigil, op, schema);
@@ -493,7 +519,7 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     entry.shape_hash = shape_hash;
     entry.num_inputs = counts.inputs;
     entry.num_outputs = counts.outputs;
-    entry.num_scalar_args = scalars.count;
+    crucible::vessel::write_scalar_slots(entry, extracted.scalars, extracted.overflow);
 
     // Pack op_flags: 5 bits of per-op context.
     uint8_t flags = 0;
@@ -503,9 +529,6 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     flags |= phase_flag_bits(is_foreach);
     if (dispatch_keys.has(c10::DispatchKey::Python)) flags |= crucible::op_flag::TORCH_FUNCTION;
     entry.op_flags = flags;
-
-    for (uint16_t s = 0; s < scalars.count; s++)
-        entry.scalar_values[s] = scalars.values[s];
 
     // -- Scope hash from TLS (set by Python module hooks) -------------
     const auto scope_hash = crucible::ScopeHash{state.scope_hash()};

@@ -595,6 +595,7 @@ crucible_test(test_background_thread_run_in_row test_background_thread_run_in_ro
 crucible_test(test_computation_cache_federation)
 
 crucible_test(test_vessel_api_typed)
+crucible_test(test_vessel_entry_slots)
 crucible_test(test_storage_nbytes_simd)
 crucible_test(test_trace_ring_pop_batch)
 crucible_test(test_expr_pool_fast_symbol)

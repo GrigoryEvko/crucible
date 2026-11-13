@@ -58,6 +58,7 @@
 #include <torch/library.h>
 
 #include "aten_op_table.h"
+#include "entry_slots.h"
 #include "vessel_api_typed.h"
 
 #include <algorithm>
@@ -104,37 +105,16 @@ inline constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
 
 // =====================================================================
 // What one operation contributes to a trace entry
+//
+// The metadata limit, the scalar slots and the overflow digest live in
+// entry_slots.h, which holds no PyTorch type.
 // =====================================================================
-
-// The metadata slots one entry can carry. Both recording paths stop here, so
-// an operation with more tensors records its first MAX_INLINE_METAS and
-// reports the count it recorded, identically on either path.
-inline constexpr uint32_t MAX_INLINE_METAS = 32;
 
 struct MetaCount {
     uint16_t inputs = 0;
     uint16_t outputs = 0;
 
     [[nodiscard]] uint32_t total() const { return static_cast<uint32_t>(inputs) + outputs; }
-};
-
-// The five scalar slots the trace entry stores inline. `count` saturates,
-// which is what makes the two paths report the same number for an operation
-// carrying more.
-//
-// The width is taken from the entry field it is copied into. The unboxed path
-// certifies its entries at compile time from this constant, so a count that
-// can exceed the field has to fail the build rather than the entry.
-struct ScalarArgs {
-    static constexpr uint16_t kCapacity =
-        static_cast<uint16_t>(decltype(crucible::TraceRing::Entry::scalar_values)::capacity);
-
-    int64_t values[kCapacity]{};
-    uint16_t count = 0;
-
-    void push(int64_t value) {
-        if (count < kCapacity) values[count++] = value;
-    }
 };
 
 // =====================================================================
@@ -220,6 +200,8 @@ struct ScalarArgs {
     CRUCIBLE_MIRROR_SCALAR(Float8_e4m3fn);
     CRUCIBLE_MIRROR_SCALAR(Float8_e5m2fnuz);
     CRUCIBLE_MIRROR_SCALAR(Float8_e4m3fnuz);
+    CRUCIBLE_MIRROR_SCALAR(Float8_e8m0fnu);
+    CRUCIBLE_MIRROR_SCALAR(Float4_e2m1fn_x2);
 #undef CRUCIBLE_MIRROR_SCALAR
 
     // Undefined is the one deliberate divergence of the element types. c10
@@ -509,10 +491,11 @@ private:
 // The boxing rules the table encodes, from ATen/core/ivalue.h:
 //   * ScalarType, Layout and MemoryFormat box into the Int tag (:991-1005),
 //     so each contributes its ordinal.
-//   * Device, Generator, Storage, Stream, a string and an ArrayRef<Scalar>
-//     carry tags of their own, so each contributes nothing.
+//   * Device, Generator, Storage, Stream and a string carry tags of their
+//     own, so each contributes nothing.
 //   * A Scalar boxes by its payload: Int, Double or Bool contributes, and
-//     ComplexDouble does not.
+//     ComplexDouble does not.  An ArrayRef<Scalar> boxes into a list of
+//     numbers, and each element contributes as a Scalar does.
 //   * A concrete SymInt boxes into Int and contributes. A symbolic one boxes
 //     into the SymInt tag and does not.
 //   * An absent optional boxes into None and contributes nothing.
@@ -535,6 +518,7 @@ enum class ArgumentKind : uint8_t {
     IntegerList,
     DoubleList,
     SymIntList,
+    ScalarList,
     // An optional or an OptionalArrayRef. Contributes what its payload
     // contributes when it holds one.
     Optional,
@@ -594,6 +578,8 @@ template <class T>
         return ArgumentKind::SymIntList;
     else if constexpr (std::is_same_v<Arg, at::ArrayRef<double>>)
         return ArgumentKind::DoubleList;
+    else if constexpr (std::is_same_v<Arg, at::ArrayRef<at::Scalar>>)
+        return ArgumentKind::ScalarList;
     else if constexpr (std::is_enum_v<Arg>)
         return ArgumentKind::Enumerator;
     else if constexpr (std::integral<Arg>)
@@ -636,6 +622,40 @@ template <class... Args>
     return mask;
 }
 
+// The count that stands for more scalars than the inline slots hold.
+inline constexpr uint32_t kMoreThanInlineScalars = uint32_t{kInlineScalars} + 1;
+
+// True for a type that fills one scalar slot as an argument: a bool, an
+// integer, an enumerator, a double, a Scalar or a SymInt.  As a result, such
+// a type boxes into one scalar of the stack.
+template <class T>
+inline constexpr bool is_scalar_kind_v =
+    argument_kind_of<T>() == ArgumentKind::Bool || argument_kind_of<T>() == ArgumentKind::Integer
+    || argument_kind_of<T>() == ArgumentKind::Enumerator || argument_kind_of<T>() == ArgumentKind::Double
+    || argument_kind_of<T>() == ArgumentKind::Scalar || argument_kind_of<T>() == ArgumentKind::SymInt;
+
+// The scalar slots one argument can fill, with kMoreThanInlineScalars for a
+// list, whose length has no compile-time bound.
+template <class T>
+[[nodiscard]] consteval uint32_t scalar_bound_of() noexcept {
+    constexpr ArgumentKind kind = argument_kind_of<T>();
+    if constexpr (kind == ArgumentKind::Optional)
+        return scalar_bound_of<optional_payload_t<T>>();
+    else if constexpr (is_scalar_kind_v<T>)
+        return 1;
+    else if constexpr (kind == ArgumentKind::IntegerList || kind == ArgumentKind::DoubleList
+                       || kind == ArgumentKind::SymIntList || kind == ArgumentKind::ScalarList)
+        return kMoreThanInlineScalars;
+    else
+        return 0;
+}
+
+// The scalar slots the arguments can fill.  Each term is at most
+// kMoreThanInlineScalars, so the sum of the 32 arguments of an operator
+// cannot overflow.
+template <class... Args>
+inline constexpr uint32_t scalar_bound_v = (uint32_t{0} + ... + scalar_bound_of<Args>());
+
 // ---------------------------------------------------------------------
 // The table classifies every parameter type the fork's 3110 operators use.
 // The list is the measured inventory of `using schema` parameter types, in
@@ -670,7 +690,7 @@ static_assert(argument_kind_of<at::OptionalSymIntArrayRef>() == ArgumentKind::Op
 static_assert(argument_kind_of<std::optional<c10::SymInt>>() == ArgumentKind::Optional);
 static_assert(argument_kind_of<at::ScalarType>() == ArgumentKind::Enumerator);
 static_assert(argument_kind_of<const std::optional<at::Scalar>&>() == ArgumentKind::Optional);
-static_assert(argument_kind_of<at::ArrayRef<at::Scalar>>() == ArgumentKind::Ignored);
+static_assert(argument_kind_of<at::ArrayRef<at::Scalar>>() == ArgumentKind::ScalarList);
 static_assert(argument_kind_of<std::optional<at::ArrayRef<double>>>() == ArgumentKind::Optional);
 static_assert(argument_kind_of<std::array<bool, 3>>() == ArgumentKind::Ignored);
 static_assert(argument_kind_of<const at::ITensorListRef&>() == ArgumentKind::TensorList);
@@ -749,9 +769,10 @@ inline constexpr bool reflection_agrees_with_codegen_v =
 // =====================================================================
 
 // MAX_INLINE_METAS stands for "no smaller bound", which makes the clamp below
-// a plain minimum.
+// a plain minimum.  A scalar result fills one slot with a meta of rank zero,
+// and each other result that is not a tensor fills none.
 template <class T>
-inline constexpr uint32_t result_meta_bound_v = 0;
+inline constexpr uint32_t result_meta_bound_v = is_scalar_kind_v<T> ? 1 : 0;
 template <>
 inline constexpr uint32_t result_meta_bound_v<at::Tensor> = 1;
 template <class T>
@@ -766,13 +787,19 @@ inline constexpr uint32_t result_meta_bound_v<std::tuple<Ts...>> =
 // Recording one operation
 // =====================================================================
 
-template <uint32_t Capacity>
+// MayOverflow is true when the operation can carry more scalars than the
+// inline slots or more input tensors than Capacity.  Then the Recording
+// folds each scalar and each input tensor past Capacity into the overflow
+// digest of entry_slots.h.  An operation that cannot overflow keeps the
+// state and the code of a Recording with no digest.
+template <uint32_t Capacity, bool MayOverflow>
 struct Recording {
     static_assert(Capacity <= MAX_INLINE_METAS, "a Recording must not admit more metadata than either path records");
 
     std::array<crucible::TensorMeta, Capacity> metas{};
     MetaCount counts{};
-    ScalarArgs scalars{};
+    ScalarArgs<MayOverflow> scalars{};
+    [[no_unique_address]] typename input_overflow_of<MayOverflow>::type overflow{};
     // False when an enumeration of a recorded tensor names no crucible
     // enumerator.  append_trace_entry then records nothing.
     bool is_each_enumeration_named = true;
@@ -781,7 +808,20 @@ struct Recording {
         if (tensor.defined() && counts.inputs < Capacity) {
             if (!fill_meta(metas[counts.inputs], tensor)) is_each_enumeration_named = false;
             counts.inputs++;
+        } else if constexpr (MayOverflow) {
+            if (tensor.defined()) add_overflow_input(tensor);
         }
+    }
+
+    // An input past Capacity, which the overflow digest folds.  Its
+    // enumerations must name crucible enumerators, as those of an inline
+    // input must.
+    [[gnu::noinline]] void add_overflow_input(const at::Tensor& tensor)
+        requires MayOverflow
+    {
+        crucible::TensorMeta meta{};
+        if (!fill_meta(meta, tensor)) is_each_enumeration_named = false;
+        overflow.fold(meta);
     }
 
     // Outputs follow the inputs in one array, which is the order the MetaLog
@@ -792,13 +832,21 @@ struct Recording {
             counts.outputs++;
         }
     }
+
+    // A result that is one scalar, as the meta of scalar_result_meta.
+    void add_scalar_output(crucible::ScalarType dtype) {
+        if (counts.total() < Capacity) {
+            metas[counts.total()] = scalar_result_meta(dtype);
+            counts.outputs++;
+        }
+    }
 };
 
 // One argument, classified by the table above and recorded accordingly. An
 // Optional recurses once into its payload, which the payload witnesses prove
 // terminates.
-template <uint32_t Capacity, class T>
-void record_argument(Recording<Capacity>& recording, const T& value) {
+template <uint32_t Capacity, bool MayOverflow, class T>
+void record_argument(Recording<Capacity, MayOverflow>& recording, const T& value) {
     constexpr ArgumentKind kind = argument_kind_of<T>();
 
     if constexpr (kind == ArgumentKind::Tensor) {
@@ -845,21 +893,55 @@ void record_argument(Recording<Capacity>& recording, const T& value) {
     } else if constexpr (kind == ArgumentKind::SymIntList) {
         for (const c10::SymInt& element : value)
             record_argument(recording, element);
+    } else if constexpr (kind == ArgumentKind::ScalarList) {
+        for (const at::Scalar& element : value)
+            record_argument(recording, element);
     } else {
         static_assert(kind == ArgumentKind::Ignored, "every ArgumentKind must have a branch");
+    }
+}
+
+// A result that is one scalar.  The boxed fallback reads it off the stack as
+// an IValue of the tag Double, ComplexDouble, Bool or Int, and the element
+// type of its meta follows the tag.  A symbolic SymInt boxes into a tag of
+// its own and gives no meta.
+template <uint32_t Capacity, bool MayOverflow, class T>
+void record_scalar_result(Recording<Capacity, MayOverflow>& recording, const T& value) {
+    constexpr ArgumentKind kind = argument_kind_of<T>();
+    if constexpr (kind == ArgumentKind::Bool) {
+        recording.add_scalar_output(crucible::ScalarType::Bool);
+    } else if constexpr (kind == ArgumentKind::Integer || kind == ArgumentKind::Enumerator) {
+        recording.add_scalar_output(crucible::ScalarType::Long);
+    } else if constexpr (kind == ArgumentKind::Double) {
+        recording.add_scalar_output(crucible::ScalarType::Double);
+    } else if constexpr (kind == ArgumentKind::Scalar) {
+        if (value.isFloatingPoint()) {
+            recording.add_scalar_output(crucible::ScalarType::Double);
+        } else if (value.isComplex()) {
+            recording.add_scalar_output(crucible::ScalarType::ComplexDouble);
+        } else if (value.isBoolean()) {
+            recording.add_scalar_output(crucible::ScalarType::Bool);
+        } else if (value.isIntegral(/*includeBool=*/false)) {
+            recording.add_scalar_output(crucible::ScalarType::Long);
+        }
+    } else {
+        static_assert(kind == ArgumentKind::SymInt, "every scalar kind must have a branch");
+        if (value.maybe_as_int().has_value()) recording.add_scalar_output(crucible::ScalarType::Long);
     }
 }
 
 // One result. The boxed fallback reads return values off the stack, where a
 // tuple return has already been flattened into one slot per element, so
 // destructuring the tuple reaches the same elements in the same order. A
-// result that is neither a tensor nor a list of them contributes nothing,
-// which is what the fallback does with one.
-template <uint32_t Capacity, class T>
-void record_result(Recording<Capacity>& recording, const T& result) {
+// result that is neither a tensor, a scalar nor a list of tensors
+// contributes nothing, which is what the fallback does with one.
+template <uint32_t Capacity, bool MayOverflow, class T>
+void record_result(Recording<Capacity, MayOverflow>& recording, const T& result) {
     using Result = std::remove_cvref_t<T>;
     if constexpr (std::is_same_v<Result, at::Tensor>) {
         recording.add_output(result);
+    } else if constexpr (is_scalar_kind_v<Result>) {
+        record_scalar_result(recording, result);
     } else if constexpr (result_meta_bound_v<Result> == 0) {
         // Nothing to record. Named rather than left to a trailing else so
         // that a tensor-bearing shape cannot fall through here silently.
@@ -988,23 +1070,35 @@ template <bool IsMutable, bool IsForeach>
 // The entry the unboxed path builds for one operator, with each bounded field
 // at the largest value it can take. The input and output counts are each at
 // most `capacity`, because Recording stops both at its capacity. The scalar
-// count is at most ScalarArgs::kCapacity, because push saturates there.
+// count is at most kInlineScalars, because write_scalar_slots writes at most
+// that many slots, the overflow digest included.
 [[nodiscard]] consteval crucible::TraceRing::Entry unboxed_entry_ceiling(crucible::SchemaHash schema_hash,
                                                                          uint32_t capacity) {
     crucible::TraceRing::Entry entry{};
     entry.schema_hash = schema_hash;
     entry.num_inputs = static_cast<uint16_t>(capacity);
     entry.num_outputs = static_cast<uint16_t>(capacity);
-    entry.num_scalar_args = ScalarArgs::kCapacity;
+    entry.num_scalar_args = kInlineScalars;
     return entry;
+}
+
+// The scalar slots of an entry, from the Recording of its operation.
+template <uint32_t Capacity>
+void write_recorded_scalars(crucible::TraceRing::Entry& entry, const Recording<Capacity, false>& recording) noexcept {
+    write_scalar_slots(entry, recording.scalars);
+}
+
+template <uint32_t Capacity>
+void write_recorded_scalars(crucible::TraceRing::Entry& entry, const Recording<Capacity, true>& recording) noexcept {
+    write_scalar_slots(entry, recording.scalars, recording.overflow);
 }
 
 // Builds the entry and hands it to the Vigil. The schema hash arrives as an
 // argument rather than as a template parameter so that one instantiation
 // serves every operator of the same capacity, mutability and kernel family,
 // which is around a hundred rather than 3110.
-template <bool IsMutable, bool IsForeach, uint32_t Capacity>
-void append_trace_entry(const Recording<Capacity>& recording, crucible::SchemaHash schema_hash,
+template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow>
+void append_trace_entry(const Recording<Capacity, MayOverflow>& recording, crucible::SchemaHash schema_hash,
                         crucible::ShapeHash shape_hash, c10::DispatchKeySet dispatch_keys, crucible::Vigil* vigil,
                         crucible::ScopeHash scope_hash) {
     // A tensor whose element type, device or layout names no crucible
@@ -1019,10 +1113,8 @@ void append_trace_entry(const Recording<Capacity>& recording, crucible::SchemaHa
     entry.shape_hash = shape_hash;
     entry.num_inputs = recording.counts.inputs;
     entry.num_outputs = recording.counts.outputs;
-    entry.num_scalar_args = recording.scalars.count;
     entry.op_flags = entry_op_flags<IsMutable, IsForeach>(dispatch_keys);
-    for (uint16_t i = 0; i < recording.scalars.count; i++)
-        entry.scalar_values[i] = recording.scalars.values[i];
+    write_recorded_scalars(entry, recording);
 
     // The trust ladder, discharged at compile time. Every bound it checks has
     // a compile-time ceiling on this path, and RecordKernel asserts that
@@ -1091,6 +1183,13 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     static constexpr uint32_t kCapacity =
         std::min(MAX_INLINE_METAS, kInputBound + result_meta_bound_v<std::remove_cvref_t<Ret>>);
 
+    // True when the operator can carry more scalars than the inline slots,
+    // or more input tensors than kCapacity: a list argument has no length
+    // bound at compile time.  Only such an operator folds the overflow
+    // digest of entry_slots.h.
+    static constexpr bool kMayOverflow = scalar_bound_v<Args...> > kInlineScalars
+                                      || aten_op_table[TableIndex].tensor_list_mask != 0u || kInputBound > kCapacity;
+
     // append_trace_entry certifies this operator's entries without a runtime
     // check. That is sound only while the ladder accepts the largest entry
     // this operator can build: a schema hash other than zero, both tensor
@@ -1138,7 +1237,7 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
 
         // Inputs before the operation runs, because an out= argument is
         // written by it.
-        Recording<kCapacity> recording{};
+        Recording<kCapacity, kMayOverflow> recording{};
         (record_argument(recording, args), ...);
         const auto shape_hash = compute_shape_hash(recording.metas.data(), recording.counts.inputs);
         const auto scope_hash = crucible::ScopeHash{c10::CrucibleState::get_tls_state().scope_hash()};

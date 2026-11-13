@@ -356,6 +356,16 @@ void test_c10_decoders_map_by_name() {
     EXPECT(decode_c10_scalar_type(int8_t{12}).is_none(), "the c10 ordinal of qint8 decodes to no value");
     EXPECT(decode_c10_scalar_type(int8_t{27}).is_none(), "the c10 ordinal of uint16 decodes to no value");
     EXPECT(decode_c10_scalar_type(int8_t{-1}).is_none(), "a negative ordinal decodes to no value");
+    EXPECT(decode_c10_scalar_type(int8_t{44}).value_or(crucible::ScalarType::Undefined)
+               == crucible::ScalarType::Float8_e8m0fnu,
+           "the c10 ordinal of float8_e8m0fnu decodes to Float8_e8m0fnu");
+    EXPECT(decode_c10_scalar_type(int8_t{45}).value_or(crucible::ScalarType::Undefined)
+               == crucible::ScalarType::Float4_e2m1fn_x2,
+           "the c10 ordinal of float4_e2m1fn_x2 decodes to Float4_e2m1fn_x2");
+    EXPECT(crucible::element_size(crucible::ScalarType::Float8_e8m0fnu).raw() == 1,
+           "one element of float8_e8m0fnu is one byte");
+    EXPECT(crucible::element_size(crucible::ScalarType::Float4_e2m1fn_x2).raw() == 1,
+           "one element of float4_e2m1fn_x2 is the byte that holds two values");
 
     EXPECT(decode_c10_device_type(int8_t{1}).value_or(crucible::DeviceType::CPU) == crucible::DeviceType::CUDA,
            "the c10 ordinal of CUDA decodes to CUDA");

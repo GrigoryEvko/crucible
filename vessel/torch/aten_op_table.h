@@ -20,7 +20,7 @@
 //   native_functions.yaml   sha256 d5652932897b83934c8f387e66157884a251372482d077074d556b28df31fc83
 //                           2590 `- func:` entries, all matched
 //   operator structs        3110
-//   classified              344 (2766 OPAQUE)
+//   classified              343 (2767 OPAQUE)
 
 #include <crucible/CKernel.h>
 
@@ -3154,7 +3154,7 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::where", "ScalarSelf", 0x0385a2d6482ac1c2ULL, 3, 0x00000005, 0x00000000, CKernelId::EWISE_WHERE, false},
     OpEntry{"aten::where", "ScalarOther", 0xe7303b19420ff89aULL, 3, 0x00000003, 0x00000000, CKernelId::EWISE_WHERE, false},
     OpEntry{"aten::where", "Scalar", 0xa01284800ee47c78ULL, 3, 0x00000001, 0x00000000, CKernelId::EWISE_WHERE, false},
-    OpEntry{"aten::where", "", 0x3209b28c284d36b2ULL, 1, 0x00000001, 0x00000000, CKernelId::EWISE_WHERE, false},
+    OpEntry{"aten::where", "", 0x3209b28c284d36b2ULL, 1, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::xlogy", "Tensor", 0xb39a6044a867b017ULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::xlogy", "Scalar_Self", 0x1aec7890b5f21775ULL, 2, 0x00000002, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::xlogy", "Scalar_Other", 0x161df226b6ab9887ULL, 2, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},

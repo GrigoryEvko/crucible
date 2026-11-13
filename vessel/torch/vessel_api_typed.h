@@ -359,27 +359,27 @@ enum class C10Layout : int8_t {
     Jagged = 7,
 };
 
-// The crucible element type of a c10 element type, or no value.  The c10
-// undefined type has an ordinal that names no crucible enumerator, and the
-// caller maps it before the call.
+// The crucible element type of a c10 element type, or no value.  Each c10
+// ordinal is zero or more.  The one negative crucible enumerator is
+// Undefined, which c10 spells with a different ordinal, so the caller maps
+// the c10 undefined type before the call.
 [[nodiscard]] CRUCIBLE_HOT constexpr ::fixy::Option<crucible::ScalarType>
 decode_c10_scalar_type(int8_t ordinal) noexcept {
-    if (ordinal < 0 || !crucible::valid_scalar_type(ordinal)) return ::fixy::none;
-    return ::fixy::Option<crucible::ScalarType>::some(static_cast<crucible::ScalarType>(ordinal));
+    if (ordinal < 0) return ::fixy::none;
+    return ::fixy::enum_from<crucible::ScalarType>(ordinal);
 }
 
 // The crucible device type of a c10 device type, or no value.
 [[nodiscard]] CRUCIBLE_HOT constexpr ::fixy::Option<crucible::DeviceType>
 decode_c10_device_type(int8_t ordinal) noexcept {
-    if (!crucible::valid_device_type(ordinal)) return ::fixy::none;
-    return ::fixy::Option<crucible::DeviceType>::some(static_cast<crucible::DeviceType>(ordinal));
+    return ::fixy::enum_from<crucible::DeviceType>(ordinal);
 }
 
-// The crucible layout of a c10 layout, or no value.  The map goes by the
-// name of each layout, because the ordinals differ from SparseCsc on.
-[[nodiscard]] CRUCIBLE_HOT constexpr ::fixy::Option<crucible::Layout> decode_c10_layout(int8_t ordinal) noexcept {
+// The crucible layout of a c10 layout.  The map goes by the name of each
+// layout, because the ordinals differ from SparseCsc on.
+[[nodiscard]] CRUCIBLE_HOT constexpr ::fixy::Option<crucible::Layout> layout_of_c10(C10Layout layout) noexcept {
     using Decoded = ::fixy::Option<crucible::Layout>;
-    switch (static_cast<C10Layout>(ordinal)) {
+    switch (layout) {
         case C10Layout::Strided:
             return Decoded::some(crucible::Layout::Strided);
         case C10Layout::Sparse:
@@ -394,9 +394,17 @@ decode_c10_device_type(int8_t ordinal) noexcept {
             return Decoded::some(crucible::Layout::SparseBsc);
         case C10Layout::Mkldnn:
         case C10Layout::Jagged:
-        default:
             return ::fixy::none;
+        default:
+            ::fixy::unreachable();
     }
+}
+
+// The crucible layout of a c10 layout ordinal, or no value.
+[[nodiscard]] CRUCIBLE_HOT constexpr ::fixy::Option<crucible::Layout> decode_c10_layout(int8_t ordinal) noexcept {
+    return ::fixy::enum_from<C10Layout>(ordinal).match(
+        [](C10Layout layout) noexcept { return layout_of_c10(layout); },
+        [] noexcept { return ::fixy::Option<crucible::Layout>{::fixy::none}; });
 }
 
 // The tag a recording entry point accepts.  TraceRing owns the pointer

@@ -67,6 +67,12 @@ enum class ScalarType : int8_t {
     Float8_e4m3fn = 24,
     Float8_e5m2fnuz = 25,
     Float8_e4m3fnuz = 26,
+    // An exponent of eight bits with no sign and no mantissa.  It holds the
+    // shared scale of a block of narrow values.
+    Float8_e8m0fnu = 44,
+    // Two values of four bits in one byte.  One element of this type is the
+    // byte, so the extents of a tensor count bytes and not values.
+    Float4_e2m1fn_x2 = 45,
     Undefined = -1,
 };
 
@@ -84,6 +90,8 @@ CRUCIBLE_CONST constexpr ElementBytes element_size(ScalarType const t) noexcept 
             case ScalarType::Float8_e4m3fn:
             case ScalarType::Float8_e5m2fnuz:
             case ScalarType::Float8_e4m3fnuz:
+            case ScalarType::Float8_e8m0fnu:
+            case ScalarType::Float4_e2m1fn_x2:
                 return ElementBytes{1};
             case ScalarType::Short:
             case ScalarType::Half:
@@ -121,7 +129,9 @@ enum class DeviceType : int8_t {
     PrivateUse1 = 20,
 };
 
-// The ordinals mirror the foreign runtime's exactly.
+// The ordinals mirror the foreign runtime's up to SparseCsr.  The foreign
+// runtime puts Mkldnn at 3, which crucible does not name, so the ordinals
+// differ from SparseCsc on, and the vessel maps a foreign layout by name.
 enum class Layout : int8_t {
     Strided = 0,
     Sparse = 1,

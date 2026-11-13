@@ -168,32 +168,12 @@ using ValidNDim = ::fixy::Refined<::fixy::bounded_above<kMaxTensorNDim>, uint8_t
 // dtype passes through this predicate first. It fails closed.
 //
 // Each predicate here is a named class. A refinement folds the name of its
-// predicate into its row hash, and a closure type has no stable name.
+// predicate into its row hash, and a closure type has no stable name.  Each
+// predicate asks enum_from, which reads the enumerators of the enumeration
+// by reflection, so a new enumerator needs no edit here.
 struct IsValidScalarType {
     constexpr bool operator()(auto raw) const noexcept {
-        switch (static_cast<ScalarType>(static_cast<std::int8_t>(raw))) {
-            case ScalarType::Byte:
-            case ScalarType::Char:
-            case ScalarType::Short:
-            case ScalarType::Int:
-            case ScalarType::Long:
-            case ScalarType::Half:
-            case ScalarType::Float:
-            case ScalarType::Double:
-            case ScalarType::ComplexHalf:
-            case ScalarType::ComplexFloat:
-            case ScalarType::ComplexDouble:
-            case ScalarType::Bool:
-            case ScalarType::BFloat16:
-            case ScalarType::Float8_e5m2:
-            case ScalarType::Float8_e4m3fn:
-            case ScalarType::Float8_e5m2fnuz:
-            case ScalarType::Float8_e4m3fnuz:
-            case ScalarType::Undefined:
-                return true;
-            default:
-                return false;
-        }
+        return ::fixy::enum_from<ScalarType>(static_cast<std::int8_t>(raw)).is_some();
     }
 };
 
@@ -211,19 +191,7 @@ using ValidScalarType = ::fixy::Refined<valid_scalar_type, std::int8_t>;
 // byte corrupts that identity without any other symptom.
 struct IsValidDeviceType {
     constexpr bool operator()(auto raw) const noexcept {
-        switch (static_cast<DeviceType>(static_cast<std::int8_t>(raw))) {
-            case DeviceType::CPU:
-            case DeviceType::CUDA:
-            case DeviceType::MKLDNN:
-            case DeviceType::HIP:
-            case DeviceType::XLA:
-            case DeviceType::MPS:
-            case DeviceType::Meta:
-            case DeviceType::PrivateUse1:
-                return true;
-            default:
-                return false;
-        }
+        return ::fixy::enum_from<DeviceType>(static_cast<std::int8_t>(raw)).is_some();
     }
 };
 
@@ -237,21 +205,10 @@ using ValidDeviceType = ::fixy::Refined<valid_device_type, std::int8_t>;
 
 // Layout is dense, so an upper bound would appear to be enough. It is not:
 // the byte is signed, and a bound of five accepts every negative value.
-// Naming the cases also survives Layout gaining an enumerator. Like the
-// device type, an invalid layout corrupts the content hash silently.
+// Like the device type, an invalid layout corrupts the content hash silently.
 struct IsValidLayout {
     constexpr bool operator()(auto raw) const noexcept {
-        switch (static_cast<Layout>(static_cast<std::int8_t>(raw))) {
-            case Layout::Strided:
-            case Layout::Sparse:
-            case Layout::SparseCsr:
-            case Layout::SparseCsc:
-            case Layout::SparseBsr:
-            case Layout::SparseBsc:
-                return true;
-            default:
-                return false;
-        }
+        return ::fixy::enum_from<Layout>(static_cast<std::int8_t>(raw)).is_some();
     }
 };
 
