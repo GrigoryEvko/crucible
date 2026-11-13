@@ -3,6 +3,7 @@
 #include <crucible/Philox.h>
 #include <crucible/cntp/Fec.h>
 #include <fixy/Bands.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Qtt.h>
 #include <fixy/Refined.h>
@@ -163,7 +164,7 @@ template <std::size_t SourceSymbols>
     requires(SourceSymbols > 0 && SourceSymbols <= 64)
 [[nodiscard]] CRUCIBLE_HOT std::uint64_t repair_mask(std::uint32_t encoding_id, FountainSeed seed) noexcept {
     const auto degree_rng = Philox::generate_det(repair_offset(encoding_id, 0), seed).peek();
-    const auto degree = sample_ideal_soliton_degree<SourceSymbols>(degree_rng[0]);
+    const auto degree = sample_ideal_soliton_degree<SourceSymbols>(degree_rng.at(::fixy::index<0>()));
 
     std::array<std::uint8_t, SourceSymbols> permutation{};
     for (std::size_t i = 0; i < SourceSymbols; ++i) {
@@ -179,7 +180,8 @@ template <std::size_t SourceSymbols>
         // is biased.  The residual bias is span/2^64, at most 2^-58 for
         // span <= 64.  The __uint128_t multiply is bit-identical on every
         // supported platform, so the draw stays deterministic.
-        const auto uniform64 = (static_cast<std::uint64_t>(rng[1]) << 32U) | static_cast<std::uint64_t>(rng[0]);
+        const auto uniform64 = (static_cast<std::uint64_t>(rng.at(::fixy::index<1>())) << 32U)
+                             | static_cast<std::uint64_t>(rng.at(::fixy::index<0>()));
         const auto product = static_cast<__uint128_t>(uniform64) * static_cast<__uint128_t>(span);
         const auto j = i + static_cast<std::size_t>(product >> 64U);
         std::swap(permutation[i], permutation[j]);

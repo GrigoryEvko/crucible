@@ -57,6 +57,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Philox.h>
+#include <fixy/Core.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
@@ -126,7 +127,7 @@ static_assert(!DenseEnum<std::uint8_t>);
 //
 // Per-iteration RNG: Philox-backed counter-mode generator.
 // Each call to next32() consumes one 32-bit value from the iteration's
-// 4×32 random pool, refilling via Philox::generate when exhausted.
+// 4×32 random pool, refilling via fixy::Philox4x32::generate when exhausted.
 // next64() composes two next32() calls.
 //
 // Pure: same (seed, iteration) → same sequence.  No global state.
@@ -138,7 +139,8 @@ public:
     [[nodiscard]] uint32_t next32() noexcept {
         if (cursor_ >= 4) [[unlikely]]
             refill_();
-        return pool_[cursor_++];
+        // refill_ sets the cursor to 0, so the cursor is below 4 here.
+        return pool_.at(::fixy::Index<4>::check(cursor_++).expect("the cursor of the pool is below 4"));
     }
 
     // Uniform [0, 2^64).
@@ -173,7 +175,7 @@ private:
         // tuple ensures statistical independence across pools
         // within the same iteration.
         const uint64_t pool_ctr = (iteration_ << 32) ^ static_cast<uint64_t>(block_idx_);
-        pool_ = Philox::generate(pool_ctr, seed_);
+        pool_ = ::fixy::Philox4x32::generate(pool_ctr, seed_);
         cursor_ = 0;
         ++block_idx_;
     }
@@ -181,7 +183,7 @@ private:
     uint64_t seed_;
     uint64_t iteration_;
     uint32_t block_idx_ = 0;
-    Philox::Ctr pool_{};
+    ::fixy::Philox4x32::Counter pool_{};
     uint32_t cursor_ = 4;  // forces initial refill
 };
 

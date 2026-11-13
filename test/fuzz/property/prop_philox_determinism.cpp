@@ -6,8 +6,8 @@
 // same rand_bits, regardless of which chip / which thread / when."
 //
 // Property 1 (determinism):
-//   For any (offset, key) pair, Philox::generate produces the
-//   SAME 4-u32 Ctr across every invocation, forever.
+//   For any (offset, key) pair, fixy::Philox4x32::generate produces the
+//   SAME block of four words across every invocation, forever.
 //
 // Property 2 (decorrelation):
 //   Different (offset, key) → different outputs with high
@@ -29,6 +29,7 @@
 
 #include <crucible/Philox.h>
 #include <crucible/Types.h>
+#include <fixy/Core.h>
 
 int main(int argc, char** argv) {
     using namespace crucible;
@@ -53,13 +54,11 @@ int main(int argc, char** argv) {
         },
         [](const auto& p) {
             // Property 1: determinism.  The SAME (offset, key)
-            // always produces the SAME Ctr.  Eight repeated calls
+            // always produces the SAME block.  Eight repeated calls
             // must all yield identical output bits.
-            const auto first = Philox::generate(p.offset_a, p.key_a);
+            const auto first = ::fixy::Philox4x32::generate(p.offset_a, p.key_a);
             for (int k = 0; k < 8; ++k) {
-                const auto again = Philox::generate(p.offset_a, p.key_a);
-                if (again[0] != first[0] || again[1] != first[1] || again[2] != first[2] || again[3] != first[3])
-                    return false;
+                if (!(::fixy::Philox4x32::generate(p.offset_a, p.key_a) == first)) return false;
             }
 
             // Property 2: decorrelation.  Two distinct (offset, key)
@@ -67,9 +66,7 @@ int main(int argc, char** argv) {
             // of collision: ~2^-128, negligible).  Skip the check if
             // we happen to generate the same inputs.
             if (p.offset_a == p.offset_b && p.key_a == p.key_b) return true;
-            const auto other = Philox::generate(p.offset_b, p.key_b);
-            if (other[0] == first[0] && other[1] == first[1] && other[2] == first[2] && other[3] == first[3])
-                return false;
+            if (::fixy::Philox4x32::generate(p.offset_b, p.key_b) == first) return false;
 
             // Property 3: op_key determinism.  Pure function; same
             // inputs → same output.

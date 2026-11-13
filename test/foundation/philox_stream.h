@@ -2,11 +2,10 @@
 
 // A Philox4x32-10 stream for the property tests of the base families.
 //
-// The rounds are the rounds of include/crucible/Philox.h.  A test of the
-// base layer cannot include that header: it is above the base, and its
-// API gives std::array values.  The checks below compare this copy with
-// the published reference vectors, which test/test_philox.cpp also
-// checks, so a drift of either copy fails a build.
+// The rounds are the rounds of include/foundation/core/Philox.h.  The checks
+// below compare this copy with the published reference vectors, which
+// test/layer/checks/foundation/core/Philox.cpp also checks, so a drift of
+// either copy fails a build.
 //
 // The stream gives the words of block 0, then of block 1, and so on, for
 // one key.  The same key gives the same words on each run and on each

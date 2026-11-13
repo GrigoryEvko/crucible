@@ -5,7 +5,7 @@
 // Property:
 //   For every (counter, key) octuple drawn at random, the SIMD
 //   philox_batch8 produces output bit-identical to scalar
-//   Philox::generate on every one of its 8 lanes.
+//   fixy::Philox4x32::generate on every one of its 8 lanes.
 //
 // What this catches that the unit test in test_philox_simd does not:
 //
@@ -33,13 +33,27 @@
 
 #include "property_runner.h"
 
-#include <crucible/Philox.h>
 #include <crucible/PhiloxSimd.h>
+#include <fixy/Core.h>
 #include <foundation/Simd.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
+
+namespace {
+
+// The vector of the word Word of each of the eight blocks, lane by lane.
+// The generator constructor is the only way to materialize a vec lane by
+// lane (operator[] is value-returning const).
+template <std::size_t Word, class Blocks>
+[[nodiscard]] foundation::simd::u32x8 lanes_of_word(Blocks const& blocks) noexcept {
+    return foundation::simd::u32x8(
+        [&](auto lane) noexcept -> uint32_t { return blocks[decltype(lane)::value].at(::fixy::index<Word>()); });
+}
+
+}  // namespace
 
 int main(int argc, char** argv) {
     using namespace crucible;
@@ -53,8 +67,8 @@ int main(int argc, char** argv) {
         [](Rng& rng) {
             // 8 octuples of (counter, key) = 8 × (4 + 2) = 48 u32 values.
             struct Inputs {
-                std::array<Philox::Ctr, 8> counters;
-                std::array<Philox::Key, 8> keys;
+                std::array<::fixy::Philox4x32::Counter, 8> counters;
+                std::array<::fixy::Philox4x32::Key, 8> keys;
             };
             Inputs inputs{};
             for (std::size_t i = 0; i < 8; ++i) {
@@ -66,44 +80,39 @@ int main(int argc, char** argv) {
         [](const auto& inputs) {
             using foundation::simd::u32x8;
 
-            // Build SoA inputs from the AoS octuple.  The generator
-            // constructor is the only way to materialize a vec
-            // lane-by-lane (operator[] is value-returning const).
-            auto build_ctr_word = [&](std::size_t word) {
-                return u32x8(
-                    [&](auto lane) noexcept -> uint32_t { return inputs.counters[decltype(lane)::value][word]; });
-            };
-            auto build_key_word = [&](std::size_t word) {
-                return u32x8([&](auto lane) noexcept -> uint32_t { return inputs.keys[decltype(lane)::value][word]; });
-            };
-
-            const u32x8 ctr0 = build_ctr_word(0);
-            const u32x8 ctr1 = build_ctr_word(1);
-            const u32x8 ctr2 = build_ctr_word(2);
-            const u32x8 ctr3 = build_ctr_word(3);
-            const u32x8 key0 = build_key_word(0);
-            const u32x8 key1 = build_key_word(1);
+            // Build SoA inputs from the AoS octuple.
+            const u32x8 ctr0 = lanes_of_word<0>(inputs.counters);
+            const u32x8 ctr1 = lanes_of_word<1>(inputs.counters);
+            const u32x8 ctr2 = lanes_of_word<2>(inputs.counters);
+            const u32x8 ctr3 = lanes_of_word<3>(inputs.counters);
+            const u32x8 key0 = lanes_of_word<0>(inputs.keys);
+            const u32x8 key1 = lanes_of_word<1>(inputs.keys);
 
             const auto batch = philox_batch8(ctr0, ctr1, ctr2, ctr3, key0, key1);
 
             // For each lane, compute the scalar oracle and assert
             // bit-identical match across all 4 output words.
             for (std::size_t lane = 0; lane < 8; ++lane) {
-                const auto scalar = Philox::generate(inputs.counters[lane], inputs.keys[lane]);
+                const auto& counter = inputs.counters[lane];
+                const auto& key = inputs.keys[lane];
+                const auto scalar = ::fixy::Philox4x32::generate(counter, key);
                 const int li = static_cast<int>(lane);
+                const uint32_t word0 = scalar.at(::fixy::index<0>());
+                const uint32_t word1 = scalar.at(::fixy::index<1>());
+                const uint32_t word2 = scalar.at(::fixy::index<2>());
+                const uint32_t word3 = scalar.at(::fixy::index<3>());
 
-                if (batch.r0[li] != scalar[0] || batch.r1[li] != scalar[1] || batch.r2[li] != scalar[2]
-                    || batch.r3[li] != scalar[3]) {
+                if (batch.r0[li] != word0 || batch.r1[li] != word1 || batch.r2[li] != word2 || batch.r3[li] != word3) {
                     std::fprintf(stderr,
                                  "\n[lane %zu] SIMD/scalar divergence:\n"
                                  "  ctr  = {%08x, %08x, %08x, %08x}\n"
                                  "  key  = {%08x, %08x}\n"
                                  "  scalar: %08x %08x %08x %08x\n"
                                  "  simd:   %08x %08x %08x %08x\n",
-                                 lane, inputs.counters[lane][0], inputs.counters[lane][1], inputs.counters[lane][2],
-                                 inputs.counters[lane][3], inputs.keys[lane][0], inputs.keys[lane][1], scalar[0],
-                                 scalar[1], scalar[2], scalar[3], batch.r0[li], batch.r1[li], batch.r2[li],
-                                 batch.r3[li]);
+                                 lane, counter.at(::fixy::index<0>()), counter.at(::fixy::index<1>()),
+                                 counter.at(::fixy::index<2>()), counter.at(::fixy::index<3>()),
+                                 key.at(::fixy::index<0>()), key.at(::fixy::index<1>()), word0, word1, word2, word3,
+                                 batch.r0[li], batch.r1[li], batch.r2[li], batch.r3[li]);
                     return false;
                 }
             }

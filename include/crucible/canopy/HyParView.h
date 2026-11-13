@@ -1,10 +1,10 @@
 #pragma once
 
-#include <crucible/Philox.h>
 #include <crucible/canopy/SlotTable.h>
 #include <crucible/canopy/Swim.h>
 #include <crucible/cog/CogIdentity.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <fixy/FixedArray.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
@@ -207,13 +207,14 @@ public:
         // partition the rotation order keeps reaching the same subset of
         // peers, so nothing ever crosses the partition.  A pseudo-random
         // target is uniform over the active view and breaks that pin.
-        const Philox::Ctr rand = next_random_();
-        const std::uint16_t target_idx = static_cast<std::uint16_t>(rand[0] % active_count_);
+        const ::fixy::Philox4x32::Counter rand = next_random_();
+        const std::uint16_t target_idx = static_cast<std::uint16_t>(rand.at(::fixy::index<0>()) % active_count_);
 
         shuffle_plan_type out{.target = active_[target_idx]};
         const std::uint16_t limit = std::min<std::uint16_t>(config_.passive_random_walk_length.value(), passive_count_);
         if (limit != 0) {
-            const std::uint16_t passive_start = static_cast<std::uint16_t>(rand[1] % passive_count_);
+            const std::uint16_t passive_start =
+                static_cast<std::uint16_t>(rand.at(::fixy::index<1>()) % passive_count_);
             for (std::uint16_t i = 0; i < limit; ++i) {
                 const std::uint16_t idx = static_cast<std::uint16_t>((passive_start + i) % passive_count_);
                 // The sample has MaxPassive slots, and limit is at most
@@ -289,8 +290,8 @@ private:
         if (passive_count_ == 0) {
             return;
         }
-        const Philox::Ctr rand = next_random_();
-        const std::uint16_t idx = static_cast<std::uint16_t>(rand[0] % passive_count_);
+        const ::fixy::Philox4x32::Counter rand = next_random_();
+        const std::uint16_t idx = static_cast<std::uint16_t>(rand.at(::fixy::index<0>()) % passive_count_);
         passive_[idx] = peer;
     }
 
@@ -317,8 +318,8 @@ private:
         }
         // The random pick carries the same partition-healing argument as the
         // shuffle plan.
-        const Philox::Ctr rand = next_random_();
-        const std::uint16_t idx = static_cast<std::uint16_t>(rand[0] % passive_count_);
+        const ::fixy::Philox4x32::Counter rand = next_random_();
+        const std::uint16_t idx = static_cast<std::uint16_t>(rand.at(::fixy::index<0>()) % passive_count_);
         cog::CogIdentity promoted = passive_[idx];
         (void)remove_(passive_, passive_count_, promoted.uuid);
         active_[active_count_] = promoted;
@@ -339,8 +340,8 @@ private:
         return seed;
     }
 
-    constexpr Philox::Ctr next_random_() noexcept {
-        const Philox::Ctr out = Philox::generate(rng_counter_, rng_seed_);
+    constexpr ::fixy::Philox4x32::Counter next_random_() noexcept {
+        const ::fixy::Philox4x32::Counter out = ::fixy::Philox4x32::generate(rng_counter_, rng_seed_);
         ++rng_counter_;
         return out;
     }

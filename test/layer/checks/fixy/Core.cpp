@@ -112,5 +112,7 @@ static_assert(::fixy::DecodableFrom<bool, std::uint8_t> && !::fixy::Enumerated<i
 struct CoreTag;
 static_assert(sizeof(::fixy::Option<::fixy::Id<CoreTag, std::uint32_t>>) == 4);
 static_assert(::fixy::Digest<CoreTag>{5}.raw() == 5u);
+static_assert(std::is_same_v<::fixy::Philox4x32, ::foundation::core::Philox4x32>
+              && ::fixy::Philox4x32::generate(0u, 0u) == ::fixy::Philox4x32::generate({0u, 0u, 0u, 0u}, {0u, 0u}));
 
 }  // namespace fixy::detail::core_checks

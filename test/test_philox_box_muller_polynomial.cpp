@@ -6,6 +6,7 @@
 
 #include <crucible/Philox.h>
 #include <fixy/Bands.h>
+#include <fixy/Core.h>
 
 #include <bit>
 #include <cmath>
@@ -108,9 +109,11 @@ void test_statistical_sanity() {
     for (int i = 0; i < kPairs; ++i) {
         // Drawing the inputs from the generator keeps the sample from
         // inheriting the structure of one linear-congruential sequence.
-        const Philox::Ctr c = Philox::generate(Philox::Ctr{static_cast<std::uint32_t>(i), 0u, 0u, 0u},
-                                               Philox::Key{0x9E3779B9u, 0xBB67AE85u});
-        const auto [z1, z2] = Philox::box_muller_polynomial_det(c[0], c[1]).peek();
+        const ::fixy::Philox4x32::Counter c =
+            ::fixy::Philox4x32::generate(::fixy::Philox4x32::Counter{static_cast<std::uint32_t>(i), 0u, 0u, 0u},
+                                         ::fixy::Philox4x32::Key{0x9E3779B9u, 0xBB67AE85u});
+        const auto [z1, z2] =
+            Philox::box_muller_polynomial_det(c.at(::fixy::index<0>()), c.at(::fixy::index<1>())).peek();
         for (float z : {z1, z2}) {
             ++count;
             const double delta = static_cast<double>(z) - mean;

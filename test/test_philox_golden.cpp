@@ -31,13 +31,13 @@ template <class T>
 }
 
 [[nodiscard]] constexpr Words block_of(std::uint64_t offset, std::uint64_t key) noexcept {
-    return fixy::bit_cast<Words>(crucible::Philox::generate(offset, key));
+    return fixy::bit_cast<Words>(fixy::Philox4x32::generate(offset, key));
 }
 
 // The block of the full counter and key: no word of either is zero.
 [[nodiscard]] constexpr Words block_of_full_counter() noexcept {
     return fixy::bit_cast<Words>(
-        crucible::Philox::generate({0x01234567u, 0x89ABCDEFu, 0xFEDCBA98u, 0x76543210u}, {0xDEADBEEFu, 0xCAFEBABEu}));
+        fixy::Philox4x32::generate({0x01234567u, 0x89ABCDEFu, 0xFEDCBA98u, 0x76543210u}, {0xDEADBEEFu, 0xCAFEBABEu}));
 }
 
 static_assert(block_of(0, 0) == Words{0x6627E8D5u, 0xE169C58Du, 0xBC57AC4Cu, 0x9B00DBD8u});

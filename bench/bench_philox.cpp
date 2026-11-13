@@ -14,12 +14,14 @@
 
 #include <crucible/Philox.h>
 #include <crucible/PhiloxSimd.h>
+#include <fixy/Core.h>
 #include <foundation/Simd.h>
 
 #include "bench_harness.h"
 
 using crucible::ContentHash;
 using crucible::Philox;
+using ::fixy::Philox4x32;
 
 int main() {
     bench::print_system_info();
@@ -39,8 +41,8 @@ int main() {
     volatile uint32_t op_idx = 7;
     const ContentHash content_hash{0xfeedfacecafeULL};
 
-    auto make_ctr = [](uint32_t a) noexcept { return Philox::Ctr{a, a + 1, a + 2, a + 3}; };
-    auto make_key = [](uint32_t a) noexcept { return Philox::Key{a, a + 1}; };
+    auto make_ctr = [](uint32_t a) noexcept { return Philox4x32::Counter{a, a + 1, a + 2, a + 3}; };
+    auto make_key = [](uint32_t a) noexcept { return Philox4x32::Key{a, a + 1}; };
 
     // 16 KB scratch for the streaming fill — alignas(64) so the store
     // path hits full cache-line writes.
@@ -52,12 +54,12 @@ int main() {
     bench::Report reports[] = {
         bench::run("generate(offset, key)           [4×u32 = 16B]",
                    [&] {
-                       auto ctr = Philox::generate(offset, key);
+                       auto ctr = Philox4x32::generate(offset, key);
                        bench::do_not_optimize(ctr);
                    }),
         bench::run("generate raw 4×32 Ctr+Key",
                    [&] {
-                       auto r = Philox::generate(make_ctr(seed), make_key(seed + 4));
+                       auto r = Philox4x32::generate(make_ctr(seed), make_key(seed + 4));
                        bench::do_not_optimize(r);
                    }),
         // Counter increments per iteration — mimics per-thread invocation
@@ -65,7 +67,7 @@ int main() {
         [&] {
             uint64_t i = 0;
             return bench::run("generate streaming (i++, key)", [&] {
-                auto ctr = Philox::generate(i++, key);
+                auto ctr = Philox4x32::generate(i++, key);
                 bench::do_not_optimize(ctr);
             });
         }(),
@@ -89,11 +91,11 @@ int main() {
         bench::run("fill 4096 u32 (16 KB batch)",
                    [&] {
                        for (size_t i = 0; i < BUF_WORDS; i += 4) {
-                           auto c = Philox::generate(static_cast<uint64_t>(i), key);
-                           scratch[i + 0] = c[0];
-                           scratch[i + 1] = c[1];
-                           scratch[i + 2] = c[2];
-                           scratch[i + 3] = c[3];
+                           auto c = Philox4x32::generate(static_cast<uint64_t>(i), key);
+                           scratch[i + 0] = c.at(::fixy::index<0>());
+                           scratch[i + 1] = c.at(::fixy::index<1>());
+                           scratch[i + 2] = c.at(::fixy::index<2>());
+                           scratch[i + 3] = c.at(::fixy::index<3>());
                        }
                        bench::do_not_optimize(scratch[0]);
                    }),
@@ -165,14 +167,11 @@ int main() {
     // Determinism sanity check — same inputs, same bits. Philox is
     // stateless, so this must never fail; any drift means the algorithm
     // has been miscompiled or a wrong-endianness assumption crept in.
-    auto r1 = Philox::generate(uint64_t{1}, uint64_t{2});
-    auto r2 = Philox::generate(uint64_t{1}, uint64_t{2});
-    for (int i = 0; i < 4; ++i) {
-        const auto lane = static_cast<std::size_t>(i);
-        if (r1[lane] != r2[lane]) {
-            std::fprintf(stderr, "\n[FATAL] Philox non-deterministic!\n");
-            return 1;
-        }
+    auto r1 = Philox4x32::generate(uint64_t{1}, uint64_t{2});
+    auto r2 = Philox4x32::generate(uint64_t{1}, uint64_t{2});
+    if (r1 != r2) {
+        std::fprintf(stderr, "\n[FATAL] Philox non-deterministic!\n");
+        return 1;
     }
     std::printf("\nphilox: deterministic, ok\n");
 

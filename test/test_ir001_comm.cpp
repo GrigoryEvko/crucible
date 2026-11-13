@@ -1,5 +1,5 @@
-#include <crucible/Philox.h>
 #include <crucible/forge/Ir001/Comm.h>
+#include <fixy/Core.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>
@@ -18,8 +18,8 @@ namespace {
 constexpr std::array<std::uint64_t, 7> hash_inputs() {
     std::array<std::uint64_t, 7> words{0, ~std::uint64_t{0}, 0x9e3779b97f4a7c15ULL};
     for (std::uint64_t index = 0; index < 4; ++index) {
-        auto const lanes = crucible::Philox::generate(index, 0x51ULL);
-        words[3 + index] = (std::uint64_t{lanes[0]} << 32) | lanes[1];
+        auto const lanes = ::fixy::Philox4x32::generate(index, 0x51ULL);
+        words[3 + index] = (std::uint64_t{lanes.at(::fixy::index<0>())} << 32) | lanes.at(::fixy::index<1>());
     }
     return words;
 }

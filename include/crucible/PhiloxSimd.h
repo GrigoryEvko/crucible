@@ -13,7 +13,7 @@
 // is defined. The high half comes from widening to sixty-four bits and
 // shifting, which is what the scalar routine's high-multiply does.
 
-#include <crucible/Philox.h>
+#include <fixy/Core.h>
 #include <foundation/Platform.h>
 #include <foundation/Simd.h>
 
@@ -34,10 +34,10 @@ philox_batch8(::foundation::simd::u32x8 ctr0, ::foundation::simd::u32x8 ctr1, ::
     using ::foundation::simd::u32x8;
     using ::foundation::simd::u64x8;
 
-    const u32x8 m0(Philox::M0);
-    const u32x8 m1(Philox::M1);
-    const u32x8 w0(Philox::W0);
-    const u32x8 w1(Philox::W1);
+    const u32x8 m0(::fixy::Philox4x32::multiplier0);
+    const u32x8 m1(::fixy::Philox4x32::multiplier1);
+    const u32x8 w0(::fixy::Philox4x32::weyl_step0);
+    const u32x8 w1(::fixy::Philox4x32::weyl_step1);
 
     for (int round = 0; round < 10; ++round) {
         const u32x8 lo0 = ctr0 * m0;

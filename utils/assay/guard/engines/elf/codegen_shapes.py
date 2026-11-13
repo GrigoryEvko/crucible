@@ -807,6 +807,11 @@ PROBES: tuple[Probe, ...] = (
         "convert to a coarser unit is the division by a constant of the raw form, and it multiplies the quotient back "
         "where the raw form takes the remainder",
     ),
+    Probe(
+        "scalar_philox_generate",
+        "Philox4x32::generate is the ten rounds of the std::array form, two 64-bit products and four xor operations "
+        "in each round, and the at() reads of a FixedArray block are the subscripts of the raw form",
+    ),
     Probe("linear_consume", "the ABI passes a Linear in a register, as it passes its value, and consume is a move"),
     Probe("linear_assign", "the user-provided move assignment of a Linear is the store of its value"),
     Probe("token_pass", "a token is empty and its move constructor is trivial, so a pass moves no byte"),

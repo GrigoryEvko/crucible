@@ -99,8 +99,8 @@ bench/ | raw-new-delete | 2 | - | -
 bench/ | raw-pointer-object | 319 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 9 | - | -
-bench/ | std-entity | 1159 | - | -
-bench/ | std-object | 293 | - | -
+bench/ | std-entity | 1153 | - | -
+bench/ | std-object | 285 | - | -
 examples/fn/ | c-array-object | 9 | - | -
 examples/fn/ | c-library-call | 12 | - | -
 examples/fn/ | raw-pointer-object | 7 | - | -
@@ -116,15 +116,15 @@ include/crucible/ | raw-new-delete | 14 | - | -
 include/crucible/ | raw-pointer-object | 582 | - | -
 include/crucible/ | replace-pending:<limits> | 10 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 35 | - | -
-include/crucible/ | std-entity | 534 | - | -
-include/crucible/ | std-object | 194 | - | -
+include/crucible/ | std-entity | 520 | - | -
+include/crucible/ | std-object | 183 | - | -
 include/crucible/canopy/ | c-library-call | 1 | - | -
 include/crucible/canopy/ | c-library-object | 1 | - | -
 include/crucible/canopy/ | inline-asm | 2 | - | -
 include/crucible/canopy/ | raw-pointer-object | 13 | - | -
 include/crucible/canopy/ | replace-pending:<limits> | 22 | - | -
-include/crucible/canopy/ | std-entity | 182 | - | -
-include/crucible/canopy/ | std-object | 137 | - | -
+include/crucible/canopy/ | std-entity | 178 | - | -
+include/crucible/canopy/ | std-object | 132 | - | -
 include/crucible/cipher/ | c-library-call | 3 | - | -
 include/crucible/cipher/ | raw-pointer-object | 7 | - | -
 include/crucible/cipher/ | replace-pending:<limits> | 1 | - | -
@@ -135,8 +135,8 @@ include/crucible/cntp/ | compiler-builtin | 2 | - | -
 include/crucible/cntp/ | raw-pointer-object | 38 | - | -
 include/crucible/cntp/ | replace-pending:<limits> | 12 | - | -
 include/crucible/cntp/ | replace-pending:std::bit_cast | 12 | - | -
-include/crucible/cntp/ | std-entity | 477 | - | -
-include/crucible/cntp/ | std-object | 296 | - | -
+include/crucible/cntp/ | std-entity | 474 | - | -
+include/crucible/cntp/ | std-object | 294 | - | -
 include/crucible/cntp/_wip/ | raw-pointer-object | 1 | - | -
 include/crucible/cntp/_wip/ | replace-pending:std::bit_cast | 1 | - | -
 include/crucible/cntp/_wip/ | std-entity | 45 | - | -
@@ -432,8 +432,8 @@ test/ | raw-new-delete | 43 | - | -
 test/ | raw-pointer-object | 678 | - | -
 test/ | replace-pending:<limits> | 14 | - | -
 test/ | replace-pending:std::bit_cast | 104 | - | -
-test/ | std-entity | 5575 | - | -
-test/ | std-object | 1874 | - | -
+test/ | std-entity | 5288 | - | -
+test/ | std-object | 1823 | - | -
 test/canopy_neg/ | raw-pointer-object | 1 | - | -
 test/canopy_neg/ | std-entity | 10 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
@@ -629,8 +629,8 @@ test/fuzz/property/ | compiler-builtin | 4 | - | -
 test/fuzz/property/ | raw-function-pointer | 2 | - | -
 test/fuzz/property/ | raw-pointer-object | 79 | - | -
 test/fuzz/property/ | replace-pending:<limits> | 44 | - | -
-test/fuzz/property/ | std-entity | 413 | - | -
-test/fuzz/property/ | std-object | 136 | - | -
+test/fuzz/property/ | std-entity | 412 | - | -
+test/fuzz/property/ | std-object | 131 | - | -
 test/graph_neg/ | raw-pointer-object | 6 | - | -
 test/kernel_neg/ | raw-pointer-object | 1 | - | -
 test/kernel_neg/ | replace-pending:<limits> | 1 | - | -
@@ -723,7 +723,7 @@ test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 9 | - | -
 test/session_oracle/ | std-entity | 26 | - | -
 test/session_oracle/ | std-object | 1385 | - | -
-test/shape/ | opted-out | 166 | ORACLE: the raw form that the shape of each family probe is compared with | -
+test/shape/ | opted-out | 180 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/singleton_neg/ | std-entity | 4 | - | -
 test/swiss_table_neg/ | replace-pending:<limits> | 1 | - | -

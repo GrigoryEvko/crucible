@@ -31,6 +31,7 @@
 #include <foundation/core/Number.h>
 #include <foundation/core/OneOf.h>
 #include <foundation/core/Parse.h>
+#include <foundation/core/Philox.h>
 #include <foundation/core/Quantity.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Ref.h>
@@ -201,6 +202,8 @@ using ::foundation::core::Exchangeable;
 
 using ::foundation::core::Digest;
 using ::foundation::core::Id;
+
+using ::foundation::core::Philox4x32;
 
 // The arithmetic of a Quantity is a set of overloads of checked_*, wrapping_*
 // and saturating_* in foundation::core, which argument-dependent lookup

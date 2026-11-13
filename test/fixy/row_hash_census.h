@@ -951,6 +951,8 @@ inline constexpr StatedZero kZeros[] = {
      "a number with a unit: its unit is a part of its type, and it makes no claim that a grade carries"},
     {^^::foundation::core::Id, "a number whose kind is its tag: an id, which makes no claim that a grade carries"},
     {^^::foundation::core::Digest, "a hash whose kind is its tag: a value, which makes no claim that a grade carries"},
+    {^^::foundation::core::Philox4x32,
+     "the counter-based generator: a holder of static functions and constants, never a value in a kernel signature"},
     {^^::foundation::core::SurfaceVerdict,
      "the answer of the protocol check of a family type: a text of a constant evaluation, never a value in a "
      "kernel signature"},

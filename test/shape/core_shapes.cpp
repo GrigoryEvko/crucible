@@ -33,6 +33,7 @@
 #include <cstring>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <compare>
@@ -659,6 +660,12 @@ scalar_quantity_to_coarser(fixy::Quantity<fixy::unit::Millisecond, std::uint32_t
     return fixy::convert<fixy::unit::Second>(value);
 }
 
+[[gnu::used]] std::uint32_t scalar_philox_generate(std::uint64_t offset, std::uint64_t key) noexcept {
+    fixy::Philox4x32::Counter const block = fixy::Philox4x32::generate(offset, key);
+    return block.at(fixy::index<0>()) ^ block.at(fixy::index<1>()) ^ block.at(fixy::index<2>())
+         ^ block.at(fixy::index<3>());
+}
+
 // ── Linear and the permission tokens ────────────────────────────────────────
 
 struct ProbeRegion final {
@@ -1218,6 +1225,24 @@ struct RawBounds final {
 [[gnu::used]] std::optional<std::uint32_t> scalar_quantity_to_coarser_raw(std::uint32_t value) noexcept {
     if (value % 1000u != 0) return std::nullopt;
     return value / 1000u;
+}
+
+// The ten rounds of Philox4x32-10 over a std::array counter and key, with
+// one 64-bit product for the two halves of each multiplied word.
+[[gnu::used]] std::uint32_t scalar_philox_generate_raw(std::uint64_t offset, std::uint64_t key) noexcept {
+    std::array<std::uint32_t, 4> counter{static_cast<std::uint32_t>(offset), static_cast<std::uint32_t>(offset >> 32),
+                                         0u, 0u};
+    std::array<std::uint32_t, 2> words{static_cast<std::uint32_t>(key), static_cast<std::uint32_t>(key >> 32)};
+    for (int round = 0; round < 10; round++) {
+        std::uint64_t const product0 = std::uint64_t{0xD2511F53u} * counter[0];
+        std::uint64_t const product1 = std::uint64_t{0xCD9E8D57u} * counter[2];
+        counter = {
+            static_cast<std::uint32_t>(product1 >> 32) ^ counter[1] ^ words[0], static_cast<std::uint32_t>(product1),
+            static_cast<std::uint32_t>(product0 >> 32) ^ counter[3] ^ words[1], static_cast<std::uint32_t>(product0)};
+        words[0] += 0x9E3779B9u;
+        words[1] += 0xBB67AE85u;
+    }
+    return counter[0] ^ counter[1] ^ counter[2] ^ counter[3];
 }
 
 // The raw form of a token is an empty class that the ABI passes in no
