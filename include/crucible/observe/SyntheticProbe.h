@@ -13,7 +13,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::observe {
@@ -105,10 +104,12 @@ enum class SyntheticProbeFailureClass : std::uint8_t {
 }
 
 struct SyntheticProbeFailure : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "SyntheticProbeFailure";
-    static constexpr std::string_view description = "A synthetic transport probe failed for a peer/protocol pair.";
-    static constexpr std::string_view remediation = "Route the failure class into Health/Quarantine policy and "
-                                                    "inspect the concrete transport executor that produced it.";
+    static constexpr ::foundation::diag::tag_text_literal name = "SyntheticProbeFailure";
+    static constexpr ::foundation::diag::tag_text_literal description =
+        "A synthetic transport probe failed for a peer/protocol pair.";
+    static constexpr ::foundation::diag::tag_text_literal remediation =
+        "Route the failure class into Health/Quarantine policy and "
+        "inspect the concrete transport executor that produced it.";
 };
 
 struct ProbeConfig {
