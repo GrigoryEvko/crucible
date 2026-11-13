@@ -77,23 +77,22 @@ struct CrucibleContext {
     CrucibleContext(CrucibleContext&&) = delete("PoolAllocator has interior pointers into pool");
     CrucibleContext& operator=(CrucibleContext&&) = delete("PoolAllocator has interior pointers into pool");
 
-    [[nodiscard]] bool activate(const RegionNode* region) CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(region != nullptr);
-        if (!region->plan) [[unlikely]]
+    [[nodiscard]] bool activate(const RegionNode& region) CRUCIBLE_NO_THREAD_SAFETY {
+        if (!region.plan) [[unlikely]]
             return false;
 
         if (mode_ == ContextMode::COMPILED) deactivate();
 
-        pool_.init(region->plan);
+        pool_.init(region.plan);
         engine_.init(region, ReplayEngine::PoolBorrow{pool_});
-        active_region_ = ::fixy::mint_tagged<::fixy::tags::source::Vigil>(region);
+        active_region_ = ::fixy::mint_tagged<::fixy::tags::source::Vigil>(&region);
         mode_ = ContextMode::COMPILED;
 
         // The mode and the active region move together. Every compiled-mode
         // method requires the first and dereferences the second, so publishing
         // one without the other leaves a pair that no method can safely act on.
         CRUCIBLE_POST(0, mode_ == ContextMode::COMPILED);
-        CRUCIBLE_POST(0, active_region_.value() == region);
+        CRUCIBLE_POST(0, active_region_.value() == &region);
         return true;
     }
 
@@ -142,7 +141,7 @@ struct CrucibleContext {
         if (!alt.plan) [[unlikely]]
             return false;
 
-        if (div_pos == 0) return activate(&alt);
+        if (div_pos == 0) return activate(alt);
 
         // Armed in a release build, unlike the two beliefs further down this
         // file. A null plan here does not fault: migrate_prefix_slots_ reads
@@ -160,7 +159,7 @@ struct CrucibleContext {
         pool_.init(alt.plan);
         migrate_prefix_slots_(old_region, alt, old_pool.base, div_pos);
 
-        engine_.init(&alt, ReplayEngine::PoolBorrow{pool_});
+        engine_.init(alt, ReplayEngine::PoolBorrow{pool_});
         active_region_ = ::fixy::mint_tagged<::fixy::tags::source::Vigil>(&alt);
 
         // Replay the prefix the two regions share, so the new region resumes
@@ -237,8 +236,11 @@ struct CrucibleContext {
     [[nodiscard]] uint32_t compiled_iterations() const { return compiled_iterations_.get(); }
     [[nodiscard]] uint32_t diverged_count() const { return diverged_count_.get(); }
     // The Vigil owns the region, and this context only points at it.  The
-    // pointer does not point into this context, and it has no twin.
-    [[nodiscard]] const RegionNode* active_region() const { return active_region_.value(); }
+    // reference does not point into this context, and it has no twin.  It
+    // is empty while the context records.
+    [[nodiscard]] ::fixy::WeakRef<const RegionNode> active_region() const {
+        return ::fixy::WeakRef<const RegionNode>::from_raw(active_region_.value());
+    }
 
     [[nodiscard]] const ReplayEngine& engine() const& { return engine_; }
     const ReplayEngine& engine() const&& =

@@ -207,7 +207,7 @@ int main() {
     region.plan = plan;
 
     CrucibleContext ctx;
-    assert(ctx.activate(&region));
+    assert(ctx.activate(region));
     assert(ctx.is_compiled());
 
     auto cv = ctx.mint_compiled_view(kVigilForeground);

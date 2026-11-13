@@ -345,7 +345,7 @@ int main() {
         PoolAllocator pool;
         pool.init(br.plan);
         ReplayEngine engine;
-        engine.init(br.region, ReplayEngine::PoolBorrow{pool});
+        engine.init(*br.region, ReplayEngine::PoolBorrow{pool});
         auto av = engine.mint_active_view(kVigilForeground);
 
         uint32_t op_idx = 0;
@@ -367,7 +367,7 @@ int main() {
         BenchRegion br;
         br.build(NUM_OPS, SCHEMA, SHAPE);
         CrucibleContext ctx;
-        (void)ctx.activate(br.region);
+        (void)ctx.activate(*br.region);
 
         uint32_t op_idx = 0;
         auto cv = ctx.mint_compiled_view(kVigilForeground);
@@ -392,7 +392,7 @@ int main() {
         BenchRegion br;
         br.build(BIG, big_sch, big_shp);
         CrucibleContext ctx;
-        (void)ctx.activate(br.region);
+        (void)ctx.activate(*br.region);
 
         uint32_t op_idx = 0;
         auto cv = ctx.mint_compiled_view(kVigilForeground);

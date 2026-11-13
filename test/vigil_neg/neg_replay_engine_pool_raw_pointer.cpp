@@ -10,7 +10,7 @@
 
 int main() {
     crucible::ReplayEngine engine{};
-    const crucible::RegionNode* region = nullptr;
+    const crucible::RegionNode region{};
     const crucible::PoolAllocator* pool = nullptr;
     engine.init(region, pool);
     return 0;

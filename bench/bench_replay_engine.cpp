@@ -171,10 +171,10 @@ int main() {
         pool.init(&br.plan);
 
         ReplayEngine engine;
-        engine.init(&br.region, ReplayEngine::PoolBorrow{pool});
+        engine.init(br.region, ReplayEngine::PoolBorrow{pool});
 
         CrucibleContext ctx;
-        (void)ctx.activate(&br.region);
+        (void)ctx.activate(br.region);
 
         char label1[64], label2[64], label3[64], label4[64];
         std::snprintf(label1, sizeof(label1), "advance only           [%4u ops]", n);

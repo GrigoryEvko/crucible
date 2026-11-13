@@ -63,7 +63,7 @@ void test_pipeline_multi_iteration() {
     assert(region2->plan != nullptr);
 
     CrucibleContext ctx;
-    assert(ctx.activate(region2));
+    assert(ctx.activate(*region2));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv);

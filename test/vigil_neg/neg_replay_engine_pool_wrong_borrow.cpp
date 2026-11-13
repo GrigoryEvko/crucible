@@ -12,6 +12,6 @@
 int main() {
     crucible::ReplayEngine engine{};
     crucible::RegionNode region{};
-    engine.init(&region, ::fixy::BorrowedRef<crucible::RegionNode>{region});
+    engine.init(region, ::fixy::BorrowedRef<crucible::RegionNode>{region});
     return 0;
 }

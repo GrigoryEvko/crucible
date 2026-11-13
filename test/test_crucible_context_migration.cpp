@@ -117,9 +117,9 @@ bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
     init_region(&new_region, new_ops, &new_plan);
 
     CrucibleContext context;
-    assert(context.activate(&old_region));
+    assert(context.activate(old_region));
     const bool was_switched = context.switch_region(new_region, 1);
-    return was_switched && context.active_region() == &new_region;
+    return was_switched && context.active_region().try_get() == &new_region;
 }
 
 struct ChildResult {

@@ -35,7 +35,7 @@ void test_pipeline_data_flow() {
     assert(region != nullptr);
 
     CrucibleContext ctx;
-    assert(ctx.activate(region));
+    assert(ctx.activate(*region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     assert(ctx.advance(SCHEMA[0], SHAPE[0], cv) == ReplayStatus::MATCH);
@@ -87,7 +87,7 @@ void test_pipeline_pool_bounds() {
     assert(region != nullptr);
 
     CrucibleContext ctx;
-    assert(ctx.activate(region));
+    assert(ctx.activate(*region));
 
     auto* pool_base = static_cast<uint8_t*>(ctx.pool().pool_base());
     uint64_t pool_bytes = ctx.pool().pool_bytes();

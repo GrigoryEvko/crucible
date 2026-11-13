@@ -649,8 +649,7 @@ private:
         const uint64_t before = held_regions_.sequence.load_acquire();
         held_regions_.sequence.store_release(before + 1);
         held_regions_.cells[0].store_release(pending_activation_);
-        held_regions_.cells[1].store_release(
-            ::fixy::WeakRef<const RegionNode>::from_raw(replay_.context().active_region()));
+        held_regions_.cells[1].store_release(replay_.context().active_region());
         held_regions_.cells[2].store_release(
             ::fixy::WeakRef<const RegionNode>::from_raw(taken_region_.load_acquire().try_get()));
         for (uint32_t age = 0; age < RegionCache::CAP; ++age) {
@@ -725,7 +724,7 @@ private:
         alignment_ops_ = 0;
 
         // The context is compiled, so it replays a region.
-        const auto diverged = ::fixy::WeakRef<const RegionNode>::from_raw(replay_.context().active_region());
+        const ::fixy::WeakRef<const RegionNode> diverged = replay_.context().active_region();
         region_cache_.insert(diverged.get());
 
         // Look for a cached region that matches at the divergence position,
@@ -988,8 +987,7 @@ private:
         if (div_pos > 0) {
             // A divergence position above zero comes from a compiled
             // context, which holds an active region.  get() checks it.
-            const RegionNode& old_region =
-                ::fixy::WeakRef<const RegionNode>::from_raw(replay_.context().active_region()).get();
+            const RegionNode& old_region = replay_.context().active_region().get();
 
             if (div_pos > alt.num_ops) return false;
 
@@ -1006,7 +1004,7 @@ private:
         // Pinning it here catches a refactor that skips the publication or
         // publishes the wrong region, which would otherwise keep dispatching
         // against the stale one.
-        CRUCIBLE_POST(0, replay_.context().active_region() == &alt);
+        CRUCIBLE_POST(0, replay_.context().active_region() == ::fixy::WeakRef<const RegionNode>{alt});
         return true;
     }
 
@@ -1077,7 +1075,7 @@ private:
         // Replays region from its first op, or records when the region has
         // no memory plan.  Returns true when the context replays.
         [[nodiscard]] bool activate(const RegionNode& region) {
-            if (!ctx_.activate(&region)) {
+            if (!ctx_.activate(region)) {
                 deactivate();
                 return false;
             }

@@ -225,7 +225,7 @@ int main() {
     region.plan = plan;
 
     CrucibleContext ctx;
-    assert(ctx.activate(&region));
+    assert(ctx.activate(region));
     assert(ctx.is_compiled());
 
     // The view is minted once, because the context stays compiled for

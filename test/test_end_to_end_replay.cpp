@@ -59,9 +59,9 @@ void test_pipeline_basic() {
 
     CrucibleContext ctx;
     assert(ctx.is_recording());
-    assert(ctx.activate(region));
+    assert(ctx.activate(*region));
     assert(ctx.is_compiled());
-    assert(ctx.active_region() == region);
+    assert(ctx.active_region().try_get() == region);
     assert(ctx.pool().is_initialized());
 
     auto cv = ctx.mint_compiled_view(kVigilForeground);
@@ -116,7 +116,7 @@ void test_pipeline_divergence() {
     assert(region != nullptr);
 
     CrucibleContext ctx;
-    assert(ctx.activate(region));
+    assert(ctx.activate(*region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     for (uint32_t i = 0; i < 3; i++) {

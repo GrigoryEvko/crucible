@@ -89,7 +89,7 @@ static void test_linear_match() {
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     ReplayEngine engine;
-    engine.init(&region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ReplayEngine::PoolBorrow{pool});
     auto av = engine.mint_active_view(kVigilForeground);
 
     assert(engine.is_initialized());
@@ -142,7 +142,7 @@ static void test_schema_divergence() {
     pool.init(&plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
-    engine.init(&region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ReplayEngine::PoolBorrow{pool});
     auto av = engine.mint_active_view(kVigilForeground);
     assert(engine.advance(SchemaHash{100}, ShapeHash{200}, av) == ReplayStatus::MATCH);
 
@@ -180,7 +180,7 @@ static void test_shape_divergence() {
     pool.init(&plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
-    engine.init(&region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ReplayEngine::PoolBorrow{pool});
     auto av = engine.mint_active_view(kVigilForeground);
     assert(engine.advance(SchemaHash{100}, ShapeHash{200}, av) == ReplayStatus::MATCH);
 
@@ -214,7 +214,7 @@ static void test_reset() {
     pool.init(&plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
-    engine.init(&region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ReplayEngine::PoolBorrow{pool});
     auto av = engine.mint_active_view(kVigilForeground);
     assert(engine.advance(SchemaHash{10}, ShapeHash{20}, av) == ReplayStatus::MATCH);
     assert(engine.advance(SchemaHash{11}, ShapeHash{21}, av) == ReplayStatus::COMPLETE);
@@ -262,7 +262,7 @@ static void test_input_ptr() {
     pool.init(&plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
-    engine.init(&region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ReplayEngine::PoolBorrow{pool});
     auto av = engine.mint_active_view(kVigilForeground);
     assert(engine.advance(SchemaHash{50}, ShapeHash{60}, av) == ReplayStatus::MATCH);
     assert(engine.output_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
@@ -294,7 +294,7 @@ static void test_invalid_slot() {
     pool.init(&plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
-    engine.init(&region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ReplayEngine::PoolBorrow{pool});
     auto av = engine.mint_active_view(kVigilForeground);
     assert(engine.advance(SchemaHash{77}, ShapeHash{88}, av) == ReplayStatus::COMPLETE);
 
@@ -324,7 +324,7 @@ static void test_current_entry() {
     pool.init(&plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
-    engine.init(&region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ReplayEngine::PoolBorrow{pool});
     auto av = engine.mint_active_view(kVigilForeground);
     for (uint32_t i = 0; i < 3; i++) {
         auto s = engine.advance(SchemaHash{300 + i}, ShapeHash{400 + i}, av);
@@ -421,7 +421,7 @@ static void test_integration_with_pool() {
     init_region(&region, ops, 2);
 
     ReplayEngine engine;
-    engine.init(&region, ReplayEngine::PoolBorrow{pool});
+    engine.init(region, ReplayEngine::PoolBorrow{pool});
     auto av = engine.mint_active_view(kVigilForeground);
     assert(engine.advance(SchemaHash{0xAAAA}, ShapeHash{0xBBBB}, av) == ReplayStatus::MATCH);
     assert(engine.output_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));

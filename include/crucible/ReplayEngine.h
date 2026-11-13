@@ -61,12 +61,11 @@ struct ReplayEngine {
     ReplayEngine& operator=(ReplayEngine&&) = delete("non-owning pointers would alias with moved-from cursor");
 
     // An empty region is legitimate, but a non-empty one must have operations.
-    void init(const RegionNode* region, PoolBorrow pool) CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(region != nullptr);
+    void init(const RegionNode& region, PoolBorrow pool) CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(pool->is_initialized());
-        CRUCIBLE_PRE(::foundation::decide::valid_span(region->num_ops, region->ops));
-        ops_ = region->ops;
-        end_ = region->ops + region->num_ops;
+        CRUCIBLE_PRE(::foundation::decide::valid_span(region.num_ops, region.ops));
+        ops_ = region.ops;
+        end_ = region.ops + region.num_ops;
         cursor_ = ops_;
         current_ = nullptr;
         // The precondition above already established what minting this view
@@ -90,7 +89,7 @@ struct ReplayEngine {
         // three fold trivially true, which is exactly why they need that.
         CRUCIBLE_POST(0, cursor_ == ops_);
         CRUCIBLE_POST(0, slot_table_ != nullptr);
-        CRUCIBLE_POST(0, end_ == ops_ + region->num_ops);
+        CRUCIBLE_POST(0, end_ == ops_ + region.num_ops);
     }
 
     // Rewinds to the first operation for the next iteration. The last matched
