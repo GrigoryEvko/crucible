@@ -777,10 +777,10 @@ target_link_libraries(crucible PUBLIC crucible_perf)
 
 # ── The Vigil runtime: src/Vigil.cpp, src/BackgroundThread.cpp, src/TraceGraph.cpp ──
 #
-# The cold bodies of crucible/Vigil.h, crucible/BackgroundThread.h and crucible/TraceGraph.h: the
-# construction of a Vigil, the background pipeline, the trace graph build
-# and the memory plan.  A translation unit that includes the two headers
-# then compiles no part of the pipeline.
+# The cold bodies of crucible/Vigil.h, crucible/BackgroundThread.h and
+# crucible/TraceGraph.h: the construction of a Vigil, the background
+# pipeline, the trace graph build and the memory plan.  A translation unit
+# that includes the three headers then compiles no part of the pipeline.
 #
 # These bodies are a library of their own, and libcrucible.a does not hold
 # them.  The pipeline starts its threads through std::jthread, and the
