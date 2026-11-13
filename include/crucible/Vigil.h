@@ -52,13 +52,14 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Grow.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
-#include <string>
 #include <utility>  // std::move, std::forward
 
 // A Box holds the telemetry and the watchdog, so this header only declares
@@ -96,10 +97,16 @@ public:
     using ModeCell = ::fixy::session::vigil_mode::ModeCell;
 
     struct Config {
+        // The most characters of cipher_path.  It is the bound of the root of
+        // the store, Cipher::MAX_ROOT_PATH_BYTES, and src/Vigil.cpp checks
+        // that the two agree.
+        static constexpr size_t CIPHER_PATH_MAX = 4096;
+
         int32_t rank = -1;
         int32_t world_size = 0;
         uint64_t device_capability = 0;
-        std::string cipher_path;  // empty = no persistence
+        // The root directory of the store.  An empty path gives no store.
+        ::foundation::core::GrowText cipher_path = ::foundation::core::mint_grow_text(CIPHER_PATH_MAX);
 
         // Enabling this loads the scheduler-switch tracing subprogram and
         // observes the dispatcher's preempt count once per region

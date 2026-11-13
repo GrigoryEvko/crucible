@@ -79,8 +79,12 @@ int main() {
     char* dir = mkdtemp(tmpdir);
     assert(dir != nullptr);
 
+    // The text of the path copies each character of the directory.
     crucible::Vigil::Config cfg;
-    cfg.cipher_path = dir;
+    for (std::size_t index = 0; dir[index] != '\0'; ++index) {
+        cfg.cipher_path.append(::foundation::effects::testing::test().alloc, dir[index])
+            .expect("the directory fits the bound of the path");
+    }
     crucible::Vigil vigil(std::move(cfg));
 
     assert(!vigil.is_compiled());

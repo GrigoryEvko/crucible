@@ -12,11 +12,13 @@
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/DeadlineWatchdog.h>
 #include <fixy/Core.h>
-#include <foundation/core/Grow.h>
 
 #include <utility>
 
 namespace crucible {
+
+static_assert(Vigil::Config::CIPHER_PATH_MAX == Cipher::MAX_ROOT_PATH_BYTES,
+              "the bound of Vigil::Config::cipher_path must be the bound of the root of the store");
 
 Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
     : cfg_(std::move(cfg)),
@@ -28,20 +30,14 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
     ring_->reset();
     meta_log_->reset();
 
-    // The text of the root copies the characters of the configured path.  An
-    // empty path, or a path longer than the store takes, gives no store.
-    ::foundation::core::GrowText root_text = ::foundation::core::mint_grow_text(Cipher::MAX_ROOT_PATH_BYTES);
-    bool is_root_copied = true;
-    for (std::size_t index = 0; index < cfg_.cipher_path.size(); ++index) {
-        is_root_copied = is_root_copied && root_text.append(startup.cap().alloc, cfg_.cipher_path[index]).is_ok();
-    }
-    if (is_root_copied && root_text.size() != 0) {
-        // The configured path is operator-supplied, so it crosses the
-        // trust boundary here and is declared external until the store's
-        // own sanitizer promotes it.
+    // An empty path gives no store.  The configured path is operator-supplied,
+    // so it crosses the trust boundary here and is declared external until
+    // the store's own sanitizer promotes it.
+    if (cfg_.cipher_path.size() != 0) {
         cipher_ = ::fixy::some(::fixy::mint_box<Cipher>(
-            startup.cap().alloc, Cipher::open(startup, startup.cap().alloc,
-                                              ::fixy::mint_tagged<::fixy::tags::source::External>(root_text.view()))));
+            startup.cap().alloc,
+            Cipher::open(startup, startup.cap().alloc,
+                         ::fixy::mint_tagged<::fixy::tags::source::External>(cfg_.cipher_path.view()))));
     }
 
     bg_.set_region_ready_callback(this, [](void* self, ::foundation::effects::Bg const& bg,
