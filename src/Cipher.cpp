@@ -765,19 +765,14 @@ Cipher::CommitResult Cipher::advance_head(OpenView const&, ContentHash content_h
     return ::fixy::Unit{};
 }
 
-// HEAD holds the hash in hexadecimal, with a newline after it.
-// std::from_chars is exception-free, unlike std::stoull which throws on
-// malformed input, so a corrupt HEAD gives no hash and the caller falls
-// through to the log.
-::fixy::Option<ContentHash> Cipher::parse_head_(std::span<const char> bytes) noexcept {
-    uint64_t raw = 0;
-    const char* begin = bytes.data();
-    const char* end = bytes.data() + bytes.size();
-    auto [p, ec] = std::from_chars(begin, end, raw, /*base=*/16);
-    if (ec == std::errc{} && p != begin) {
-        return ::fixy::some(ContentHash{raw});
-    }
-    return ::fixy::none;
+// HEAD holds the hash in hexadecimal, with a newline after it.  The digits
+// are the characters before the first newline, or the whole text when it
+// holds no newline.  A corrupt HEAD gives no hash.
+::fixy::Option<ContentHash> Cipher::parse_head_(::fixy::TextView text) noexcept {
+    const std::size_t digit_count = ::fixy::find(text, '\n').value_or(text.size());
+    return ::foundation::core::parse_hex<std::uint64_t>(text.window(0, digit_count).value_or(::fixy::TextView{}))
+        .match([](std::uint64_t raw) -> ::fixy::Option<ContentHash> { return ::fixy::some(ContentHash{raw}); },
+               [](::fixy::ParseError) -> ::fixy::Option<ContentHash> { return ::fixy::none; });
 }
 
 auto Cipher::obj_path(uint64_t hash) const -> ::fixy::Tagged<std::string, ::fixy::tags::source::CipherPath> {

@@ -4636,16 +4636,16 @@ crucible_neg_compile_test(neg_dispatch_result_compiled_op_index_on_record
     "in .constexpr. expansion of .result.crucible::DispatchResult::compiled_op_index\\(\\)."
     "crucible/CrucibleContext.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
-# Cipher::open takes the root as fixy::Path<fixy::tags::source::External>,
-# so every operator-supplied path is tagged at the boundary, and open runs
-# the sanitizer itself.  It refuses a bare string and a path that a caller
+# Cipher::open takes the root as a text tagged External, so every
+# operator-supplied path is tagged at the boundary, and open runs the
+# sanitizer itself.  It refuses a bare string and a path that a caller
 # tagged Sanitized.
 crucible_neg_compile_test(neg_cipher_open_rejects_bare_string
-    "no matching function for call to .crucible::Cipher::open.const fixy::TestRunnerCtx&, const char .35.."
-    "to type .fixy::Path<fixy::tags::source::External>.")
+    "no matching function for call to .crucible::Cipher::open.const fixy::TestRunnerCtx&, const foundation::effects::cap::Alloc&, const char .35.."
+    "to type .crucible::Cipher::RootText. .aka .fixy::Tagged<foundation::core::TextView, fixy::tags::source::External>..")
 crucible_neg_compile_test(neg_cipher_open_rejects_sanitized_input
-    "no matching function for call to .crucible::Cipher::open.const fixy::TestRunnerCtx&, std::remove_reference<fixy::Tagged<std::filesystem::__cxx11::path, fixy::tags::source::Sanitized>&>::type."
-    "aka .fixy::Tagged<std::filesystem::__cxx11::path, fixy::tags::source::Sanitized>... to type .fixy::Path<fixy::tags::source::External>.")
+    "no matching function for call to .crucible::Cipher::open.const fixy::TestRunnerCtx&, const foundation::effects::cap::Alloc&, std::remove_reference<fixy::Tagged<std::filesystem::__cxx11::path, fixy::tags::source::Sanitized>&>::type."
+    "aka .fixy::Tagged<std::filesystem::__cxx11::path, fixy::tags::source::Sanitized>... to type .crucible::Cipher::RootText. .aka .fixy::Tagged<foundation::core::TextView, fixy::tags::source::External>..")
 
 # Each fixture file under test/*_neg/ has a registration above.  A file with
 # no registration never compiles, so the gate that it names has no witness.

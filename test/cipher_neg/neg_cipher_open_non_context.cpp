@@ -8,8 +8,8 @@
 #include <crucible/Cipher.h>
 
 int main() {
-    auto cipher = ::crucible::Cipher::open(::foundation::effects::testing::test(),
-                                           ::fixy::mint_tagged<::fixy::tags::source::External>(
-                                               std::filesystem::path{"/tmp/crucible_neg_open_non_context"}));
+    auto cipher = ::crucible::Cipher::open(
+        ::foundation::effects::testing::test(), ::foundation::effects::testing::test().alloc,
+        ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::TextView{"/tmp/crucible_neg_open_non_context"}));
     return cipher.is_open() ? 0 : 1;
 }

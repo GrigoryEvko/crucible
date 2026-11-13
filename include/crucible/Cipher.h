@@ -40,6 +40,7 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Grow.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -141,6 +142,10 @@ class CRUCIBLE_OWNER Cipher {
 public:
     static constexpr std::size_t MAX_ROOT_PATH_BYTES = 4096;
 
+    // HEAD holds sixteen hexadecimal digits and a newline.  A longer HEAD is
+    // corrupt, so the open reads at most this many bytes of it.
+    static constexpr std::size_t MAX_HEAD_BYTES = 32;
+
     using ContentAddressedRegionPayload = cipher::ContentAddressedPayload<RegionNode>;
     using LoadedContentAddressedRegionPayload = cipher::LoadedContentAddressedPayload<RegionNode>;
     using SessionEvent = ::fixy::session::SessionEvent;
@@ -158,17 +163,33 @@ public:
         return cipher::content_addressed_payload(region);
     }
 
+    // The text of a root.  The root comes from an operator, so it crosses a
+    // trust boundary, and the caller tags it External.
+    using RootText = ::fixy::Tagged<::fixy::TextView, ::fixy::tags::source::External>;
+
     // The open call creates the object directory and reads HEAD and the
-    // log.  Its context must admit IO and Block.
+    // log.  Its context must admit IO and Block, and the read of the log
+    // takes the allocation capability.
     //
     // The path check here is string-level only.  Symlink defense lives in
     // the O_NOFOLLOW-anchored openat helpers of src/Cipher.cpp.
     template <typename Ctx>
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
-    [[gnu::cold]] static Cipher open(Ctx const& ctx, ::fixy::Path<::fixy::tags::source::External> root_external) {
+    [[gnu::cold]] static Cipher open(Ctx const& ctx, ::foundation::effects::Alloc allocation, RootText root_text) {
         Cipher c;
+        if (root_text.value().size() > MAX_ROOT_PATH_BYTES) {
+            return c;
+        }
 
-        auto sanitized_e = ::fixy::sanitize_path(std::move(root_external));
+        // The sanitizer reads a std::filesystem::path, so the path copies
+        // the characters of the text.  Complexity: linear in the length of
+        // the text.
+        std::string root_chars;
+        for (const char character : root_text.value()) {
+            root_chars.push_back(character);
+        }
+        auto sanitized_e = ::fixy::sanitize_path(
+            ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{std::move(root_chars)}));
         if (!sanitized_e) {
             return c;
         }
@@ -186,11 +207,6 @@ public:
         [[assume(root_set)]];
         std::filesystem::create_directories(root + "/objects");
 
-        // The root passed the sanitizer and holds no `..`, so the HEAD path
-        // under it passes too.
-        auto head_sanitized = ::fixy::sanitize_path(
-            ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{root} / "HEAD"));
-
         // The root opens with O_NOFOLLOW, so a symlinked root fails with
         // ELOOP.  Abort rather than continue: the durable-on-return
         // contract needs a root directory whose identity is stable for
@@ -202,30 +218,17 @@ public:
 
         // The log is the record of the commits, so its last commit is the
         // head.  HEAD can lag the log after a failed HEAD write, and it is
-        // read only when the log holds no commit.  A corrupt HEAD gives no
-        // head.
+        // read only when the log holds no commit.  A missing, long or
+        // corrupt HEAD gives no head.
         c.head_ = c.latest_committed_head();
         if (c.head_) {
             return c;
         }
-        ::fixy::fs::OwnedFd const head_fd =
-            head_sanitized
-                ? ::fixy::fs::mint_file<::fixy::fs::read_only>(ctx, std::move(*head_sanitized))
-                      .match(
-                          [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd {
-                              return std::move(opened).consume();
-                          },
-                          [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; })
-                : ::fixy::fs::OwnedFd{};
-        if (head_fd.is_open()) {
-            std::array<char, 32> buf{};
-            std::size_t const n =
-                ::fixy::fs::read_full(ctx, head_fd, std::as_writable_bytes(std::span<char>{buf})).value_or(0);
-            if (n > 0) {
-                c.head_ = parse_head_(std::span<const char>{buf.data(), n}).value_or(ContentHash{});
-            }
-        }
-
+        ::foundation::core::GrowText head_text = ::foundation::core::mint_grow_text(MAX_HEAD_BYTES);
+        c.head_ =
+            ::fixy::fs::read_whole_at(ctx, allocation, c.root_dirfd_, "HEAD", head_text)
+                .match([&head_text](std::size_t) { return parse_head_(head_text.view()).value_or(ContentHash{}); },
+                       [](::foundation::os::Errno) { return ContentHash{}; });
         return c;
     }
 
@@ -502,9 +505,9 @@ private:
 
     [[nodiscard]] ContentHash persist_session_events_(OpenView const&, std::span<const SessionEvent> events);
 
-    // The head hash that a HEAD file names, or none when the bytes do not
-    // start with a hexadecimal number.
-    [[nodiscard]] static ::fixy::Option<ContentHash> parse_head_(std::span<const char> bytes) noexcept;
+    // The head hash that the text of a HEAD file names, or none when the
+    // text before its first newline is no hexadecimal number.
+    [[nodiscard]] static ::fixy::Option<ContentHash> parse_head_(::fixy::TextView text) noexcept;
 
     [[nodiscard]] auto obj_path(uint64_t hash) const -> ::fixy::Tagged<std::string, ::fixy::tags::source::CipherPath>;
 

@@ -61,7 +61,6 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
 
     empty_scratch_dir();
     const std::filesystem::path root = scratch_dir() / "store";
-    std::filesystem::create_directories(root / "objects");
 
     ByteCursor cursor{bytes};
     write_file(root / "HEAD", take_chunk(cursor));
@@ -87,7 +86,13 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
     const auto extra_index_lines = take_chunk(cursor);
 
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto cipher = Cipher::open(ctx, ::fixy::mint_tagged<::fixy::tags::source::External>(root));
+    // The text of the root copies the characters of the directory.
+    ::foundation::core::GrowText root_text = ::foundation::core::mint_grow_text(Cipher::MAX_ROOT_PATH_BYTES);
+    for (std::size_t index = 0; root.c_str()[index] != '\0'; ++index) {
+        root_text.append(test_alloc(), root.c_str()[index]).expect("the text holds each character of the directory");
+    }
+    auto cipher =
+        Cipher::open(ctx, test_alloc(), ::fixy::mint_tagged<::fixy::tags::source::External>(root_text.view()));
     const auto view = cipher.mint_open_view(ctx);
 
     const std::filesystem::path session_dir = root / "session_events" / hex16(session_raw);

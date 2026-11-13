@@ -28,9 +28,14 @@ static auto g_test = ::foundation::effects::testing::test();
 
 // The root path crosses a trust boundary, and every call site here has
 // to say so.  The helper keeps that declaration from swamping the calls.
-[[nodiscard]] static crucible::Cipher open_cipher(const std::string& dir) {
-    return crucible::Cipher::open(store_ctx(),
-                                  ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{dir}));
+// The text of the root copies the characters of the directory.
+[[nodiscard]] static crucible::Cipher open_cipher(const char* dir) {
+    ::foundation::core::GrowText root = ::foundation::core::mint_grow_text(crucible::Cipher::MAX_ROOT_PATH_BYTES);
+    for (std::size_t index = 0; dir[index] != '\0'; ++index) {
+        root.append(g_test.alloc, dir[index]).expect("the text holds each character of the directory");
+    }
+    return crucible::Cipher::open(store_ctx(), g_test.alloc,
+                                  ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()));
 }
 
 // The salt goes into the schema hashes, so two salts give two regions with
@@ -183,10 +188,9 @@ int main() {
         auto ov = cipher.mint_open_view(store_ctx());
         ::fixy::BumpArena arena2{1 << 16};
         auto loaded_ca = cipher.load_content_addressed(ov, g_test.alloc, expected_hash, arena2);
-        auto* loaded = loaded_ca.get();
-        assert(loaded != nullptr && "load() must succeed for a stored hash");
-        assert(loaded->content_hash == expected_hash);
-        assert(loaded->num_ops() == region->num_ops());
+        assert(loaded_ca.get() != nullptr && "load() must succeed for a stored hash");
+        assert(loaded_ca.get()->content_hash == expected_hash);
+        assert(loaded_ca.get()->num_ops() == region->num_ops());
     }
 
     {
@@ -344,8 +348,7 @@ int main() {
         // Minting the view is itself the check.  Every call below takes
         // it as proof and repeats no check of its own.
         auto ov = cipher.mint_open_view(store_ctx());
-        auto* region2 = make_test_region(arena, dag_arena);
-        const auto hash = cipher.store(ov, crucible::Cipher::content_addressed(region2));
+        const auto hash = cipher.store(ov, crucible::Cipher::content_addressed(make_test_region(arena, dag_arena)));
         assert(static_cast<bool>(hash));
         commit_head(cipher, ov, hash, 100);
         assert(cipher.head() == hash);

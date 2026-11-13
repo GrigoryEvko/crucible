@@ -35,8 +35,14 @@ using crucible::Cipher;
 using crucible::ContentHash;
 namespace eff = ::foundation::effects;
 
+// The text of the root copies the characters of the directory.
 [[nodiscard]] static Cipher open_cipher(const std::string& dir) {
-    return Cipher::open(store_ctx(), ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{dir}));
+    ::foundation::core::GrowText root = ::foundation::core::mint_grow_text(Cipher::MAX_ROOT_PATH_BYTES);
+    for (std::size_t index = 0; index < dir.size(); ++index) {
+        root.append(store_ctx().cap().alloc, dir[index]).expect("the text holds each character of the directory");
+    }
+    return Cipher::open(store_ctx(), store_ctx().cap().alloc,
+                        ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()));
 }
 
 // Records one event and requires that the commit happened.
@@ -543,6 +549,26 @@ static void test_failed_head_write_keeps_the_logged_commit(const crucible::test:
     crucible::test::pass("  failed_head_write_keeps_logged_commit:  PASSED\n");
 }
 
+// The open reads HEAD when the log holds no commit.  HEAD holds sixteen
+// hexadecimal digits and a newline, and the open reads the digits before
+// the newline.  The store then has a head and no logged step.
+static void test_head_without_logged_commit(const crucible::test::ScratchDir& scratch) {
+    constexpr ContentHash kHash{0xABCDEF0123456789ULL};
+    {
+        auto cipher = open_cipher(scratch.file("head_only"));
+        auto view = cipher.mint_open_view(store_ctx());
+        record(cipher, store_ctx(), view, kHash, 1u);
+    }
+
+    std::filesystem::remove(scratch.file("head_only/log"));
+    auto reopened = open_cipher(scratch.file("head_only"));
+    auto view = reopened.mint_open_view(store_ctx());
+    assert(reopened.head() == kHash);
+    assert(reopened.hash_at_step(view, 1u) == ContentHash{});
+
+    crucible::test::pass("  head_without_logged_commit:             PASSED\n");
+}
+
 int main() {
     // A scratch directory of this process, so the test is hermetic.
     const crucible::test::ScratchDir scratch{"crucible_test_record_event"};
@@ -569,7 +595,8 @@ int main() {
     test_pre_clause_orthogonal(base.c_str());
     test_failed_log_append_moves_no_head(scratch);
     test_failed_head_write_keeps_the_logged_commit(scratch);
+    test_head_without_logged_commit(scratch);
 
-    crucible::test::pass("test_cipher_record_event: 18 groups, all passed\n");
+    crucible::test::pass("test_cipher_record_event: 19 groups, all passed\n");
     return 0;
 }

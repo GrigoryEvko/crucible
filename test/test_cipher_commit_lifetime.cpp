@@ -46,8 +46,14 @@ using ::fixy::cipher_tier::Warm;
 
 static auto g_test = ::foundation::effects::testing::test();
 
+// The text of the root copies the characters of the directory.
 [[nodiscard]] static Cipher open_cipher(const std::filesystem::path& dir) {
-    return Cipher::open(store_ctx(), ::fixy::mint_tagged<::fixy::tags::source::External>(dir));
+    ::foundation::core::GrowText root = ::foundation::core::mint_grow_text(Cipher::MAX_ROOT_PATH_BYTES);
+    const char* const chars = dir.c_str();
+    for (std::size_t index = 0; chars[index] != '\0'; ++index) {
+        root.append(g_test.alloc, chars[index]).expect("the text holds each character of the directory");
+    }
+    return Cipher::open(store_ctx(), g_test.alloc, ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()));
 }
 
 // The band's door is the one site that asserts a lifetime.

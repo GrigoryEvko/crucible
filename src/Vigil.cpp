@@ -12,8 +12,8 @@
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/DeadlineWatchdog.h>
 #include <fixy/Core.h>
+#include <foundation/core/Grow.h>
 
-#include <filesystem>
 #include <utility>
 
 namespace crucible {
@@ -28,13 +28,20 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
     ring_->reset();
     meta_log_->reset();
 
-    if (!cfg_.cipher_path.empty()) {
+    // The text of the root copies the characters of the configured path.  An
+    // empty path, or a path longer than the store takes, gives no store.
+    ::foundation::core::GrowText root_text = ::foundation::core::mint_grow_text(Cipher::MAX_ROOT_PATH_BYTES);
+    bool is_root_copied = true;
+    for (std::size_t index = 0; index < cfg_.cipher_path.size(); ++index) {
+        is_root_copied = is_root_copied && root_text.append(startup.cap().alloc, cfg_.cipher_path[index]).is_ok();
+    }
+    if (is_root_copied && root_text.size() != 0) {
         // The configured path is operator-supplied, so it crosses the
         // trust boundary here and is declared external until the store's
         // own sanitizer promotes it.
         cipher_ = ::fixy::some(::fixy::mint_box<Cipher>(
-            startup.cap().alloc, Cipher::open(startup, ::fixy::mint_tagged<::fixy::tags::source::External>(
-                                                           std::filesystem::path{cfg_.cipher_path}))));
+            startup.cap().alloc, Cipher::open(startup, startup.cap().alloc,
+                                              ::fixy::mint_tagged<::fixy::tags::source::External>(root_text.view()))));
     }
 
     bg_.set_region_ready_callback(this, [](void* self, ::foundation::effects::Bg const& bg,

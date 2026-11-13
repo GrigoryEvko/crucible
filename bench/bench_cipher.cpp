@@ -104,8 +104,12 @@ int main() {
         // three benches for this num_ops.  Distinct 'salt' per size
         // avoids collisions in the dedup hash space.
         const auto ctx = store_ctx();
-        auto cipher =
-            Cipher::open(ctx, ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{dir}));
+        // The text of the root copies the characters of the directory.
+        ::foundation::core::GrowText root = ::foundation::core::mint_grow_text(Cipher::MAX_ROOT_PATH_BYTES);
+        for (std::size_t index = 0; dir[index] != '\0'; ++index) {
+            root.append(A, dir[index]).expect("the text holds each character of the directory");
+        }
+        auto cipher = Cipher::open(ctx, A, ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()));
         auto open_view = cipher.mint_open_view(ctx);
 
         Arena warm_arena{1 << 18};

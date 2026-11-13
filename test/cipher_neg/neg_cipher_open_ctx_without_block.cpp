@@ -9,9 +9,10 @@
 #include <fixy/Ctx.h>
 
 int main() {
-    const ::fixy::ColdInitCtx startup{::foundation::effects::testing::init()};
-    auto cipher =
-        ::crucible::Cipher::open(startup, ::fixy::mint_tagged<::fixy::tags::source::External>(
-                                              std::filesystem::path{"/tmp/crucible_neg_open_ctx_without_block"}));
+    const auto source = ::foundation::effects::testing::init();
+    const ::fixy::ColdInitCtx startup{source};
+    auto cipher = ::crucible::Cipher::open(startup, source.alloc,
+                                           ::fixy::mint_tagged<::fixy::tags::source::External>(
+                                               ::fixy::TextView{"/tmp/crucible_neg_open_ctx_without_block"}));
     return cipher.is_open() ? 0 : 1;
 }

@@ -25,8 +25,14 @@
 
 using crucible::Cipher;
 
+// The text of the root copies the characters of the directory.
 [[nodiscard]] static Cipher open_cipher(const char* dir) {
-    return Cipher::open(store_ctx(), ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{dir}));
+    ::foundation::core::GrowText root = ::foundation::core::mint_grow_text(Cipher::MAX_ROOT_PATH_BYTES);
+    for (std::size_t index = 0; dir[index] != '\0'; ++index) {
+        root.append(store_ctx().cap().alloc, dir[index]).expect("the text holds each character of the directory");
+    }
+    return Cipher::open(store_ctx(), store_ctx().cap().alloc,
+                        ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()));
 }
 
 using crucible::ContentHash;
