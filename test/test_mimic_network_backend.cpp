@@ -54,17 +54,17 @@ crucible::NumericalRecipe recipe(crucible::ReductionDeterminism det) {
     return r;
 }
 
-std::array<cog::CogIdentity, 4> peers() {
-    std::array<cog::CogIdentity, 4> out{};
-    for (std::uint64_t i = 0; i < out.size(); ++i) {
-        out[i].uuid = cog::Uuid{0x1111ULL, i + 1};
-        out[i].kind = cog::CogKind::NicPort;
-        out[i].level = cog::CogLevel::L0_Atomic;
+::foundation::core::FixedArray<cog::CogIdentity, 4> peers() {
+    ::foundation::core::FixedArray<cog::CogIdentity, 4> out{};
+    for (auto const index : out.indices()) {
+        out.at(index).uuid = cog::Uuid{0x1111ULL, index.raw() + 1};
+        out.at(index).kind = cog::CogKind::NicPort;
+        out.at(index).level = cog::CogLevel::L0_Atomic;
     }
     return out;
 }
 
-ir::AllReduceOp all_reduce(std::span<const cog::CogIdentity> p, net::NetworkCollectiveAlgorithm algorithm) {
+ir::AllReduceOp all_reduce(::fixy::View<cog::CogIdentity const> p, net::NetworkCollectiveAlgorithm algorithm) {
     ir::AllReduceOp node{};
     node.attrs.input.meta = tensor();
     node.attrs.input.slot = crucible::SlotId{1};
@@ -145,7 +145,7 @@ void test_cpu_stub_signals_unavailable() {
     auto cpu_identity = identity_for<cog::CogKind::CpuSocket>(cog::Uuid{0xCAFEULL, 1});
     auto cpu = mimic_for<cog::CogKind::CpuSocket>(cpu_identity);
     auto planned = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(
-        cpu, ir::admit_ir001_node(all_reduce(p, net::NetworkCollectiveAlgorithm::Ring)), constraints);
+        cpu, ir::admit_ir001_node(all_reduce(p.view(), net::NetworkCollectiveAlgorithm::Ring)), constraints);
 
     assert(!planned.has_value());
     assert(planned.error() == mb::NetworkBackendError::BackendUnavailable);
@@ -188,7 +188,7 @@ void test_empty_content_hash_rejected_with_distinct_error() {
     // be reached through it. A node minted under the Ir001 tag without the
     // admission step keeps the hash it was built with, which is how a caller
     // that skips admission reaches the planner, and the pre-check must catch it.
-    auto raw_node = all_reduce(p, net::NetworkCollectiveAlgorithm::Ring);
+    auto raw_node = all_reduce(p.view(), net::NetworkCollectiveAlgorithm::Ring);
     raw_node.content_hash = crucible::ContentHash{0};
     auto declared = ::fixy::mint_tagged<::fixy::tags::source::Ir001>(raw_node);
 
@@ -208,7 +208,7 @@ void test_recipe_rejection() {
     auto nic_identity = identity_for<cog::CogKind::NicPort>(cog::Uuid{0xCAFEULL, 3});
     auto nic = mimic_for<cog::CogKind::NicPort>(nic_identity);
     auto planned = mb::plan_network_kernel<mb::NetworkBackendVendor::Mellanox>(
-        nic, ir::admit_ir001_node(all_reduce(p, net::NetworkCollectiveAlgorithm::Sharp)), strict);
+        nic, ir::admit_ir001_node(all_reduce(p.view(), net::NetworkCollectiveAlgorithm::Sharp)), strict);
 
     assert(!planned.has_value());
     assert(planned.error() == mb::NetworkBackendError::RecipeForbidsAlgorithm);
@@ -227,14 +227,14 @@ void test_changed_identity_rejected() {
 
     cpu_identity.uuid = cog::Uuid{};
     auto zeroed = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(
-        cpu, ir::admit_ir001_node(all_reduce(p, net::NetworkCollectiveAlgorithm::Ring)), constraints);
+        cpu, ir::admit_ir001_node(all_reduce(p.view(), net::NetworkCollectiveAlgorithm::Ring)), constraints);
     assert(!zeroed.has_value());
     assert(zeroed.error() == mb::NetworkBackendError::UnsupportedCogKind);
 
     cpu_identity.uuid = cog::Uuid{0xCAFEULL, 5};
     cpu_identity.kind = cog::CogKind::CpuCore;
     auto rekinded = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(
-        cpu, ir::admit_ir001_node(all_reduce(p, net::NetworkCollectiveAlgorithm::Ring)), constraints);
+        cpu, ir::admit_ir001_node(all_reduce(p.view(), net::NetworkCollectiveAlgorithm::Ring)), constraints);
     assert(!rekinded.has_value());
     assert(rekinded.error() == mb::NetworkBackendError::UnsupportedCogKind);
 

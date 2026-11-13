@@ -59,12 +59,12 @@ crucible::NumericalRecipe recipe() {
     return r;
 }
 
-std::array<crucible::cog::CogIdentity, 2> peers() {
-    std::array<crucible::cog::CogIdentity, 2> out{};
-    out[0].uuid = crucible::cog::Uuid{1, 10};
-    out[0].kind = crucible::cog::CogKind::Gpu;
-    out[1].uuid = crucible::cog::Uuid{1, 11};
-    out[1].kind = crucible::cog::CogKind::Gpu;
+::foundation::core::FixedArray<crucible::cog::CogIdentity, 2> peers() {
+    ::foundation::core::FixedArray<crucible::cog::CogIdentity, 2> out{};
+    out.at(::fixy::index<0>()).uuid = crucible::cog::Uuid{1, 10};
+    out.at(::fixy::index<0>()).kind = crucible::cog::CogKind::Gpu;
+    out.at(::fixy::index<1>()).uuid = crucible::cog::Uuid{1, 11};
+    out.at(::fixy::index<1>()).kind = crucible::cog::CogKind::Gpu;
     return out;
 }
 
@@ -77,7 +77,7 @@ void test_taxonomy() {
 
     auto all_reduce = ir::ir001_op_info(ir::Ir001OpKind::AllReduce);
     assert(all_reduce.category == ir::Ir001OpCategory::CollectiveSync);
-    assert(all_reduce.name == std::string_view{"all_reduce"});
+    assert(all_reduce.name == ::fixy::TextView{"all_reduce"});
     assert(all_reduce.side_effecting);
     assert(all_reduce.network_visible);
 
@@ -107,7 +107,7 @@ void test_collective_node_admission() {
     op.attrs.output.meta = tensor(crucible::ScalarType::Float);
     op.attrs.output.slot = crucible::SlotId{8};
     op.attrs.participants.peers =
-        ::fixy::mint_tagged<::fixy::tags::source::Ir001>(std::span<const crucible::cog::CogIdentity>{p});
+        ::fixy::mint_tagged<::fixy::tags::source::Ir001>(::fixy::View<crucible::cog::CogIdentity const>{p.view()});
     op.attrs.participants.count = ::fixy::mint_refined<ir::kIr001ParticipantRange>(std::uint16_t{2});
     op.attrs.recipe = recipe();
     op.attrs.algorithm = crucible::forge::recipes::NetworkCollectiveAlgorithm::Ring;
@@ -146,10 +146,10 @@ void test_collective_node_admission() {
     assert(recipe_hash != header.content_hash);
 
     auto changed_peer = p;
-    changed_peer[1].uuid = crucible::cog::Uuid{1, 12};
+    changed_peer.at(::fixy::index<1>()).uuid = crucible::cog::Uuid{1, 12};
     auto changed_participants = op;
-    changed_participants.attrs.participants.peers =
-        ::fixy::mint_tagged<::fixy::tags::source::Ir001>(std::span<const crucible::cog::CogIdentity>{changed_peer});
+    changed_participants.attrs.participants.peers = ::fixy::mint_tagged<::fixy::tags::source::Ir001>(
+        ::fixy::View<crucible::cog::CogIdentity const>{changed_peer.view()});
     auto const peer_hash = ir::serialize_ir001_header(ir::admit_ir001_node(changed_participants)).content_hash;
     assert(peer_hash != header.content_hash);
 

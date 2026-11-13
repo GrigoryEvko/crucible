@@ -5,6 +5,7 @@
 #include <crucible/Types.h>
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/forge/recipes/Network.h>
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
@@ -12,12 +13,9 @@
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Hash.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <concepts>
-#include <span>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -128,7 +126,7 @@ using Ir001TimeoutMs = ::fixy::Refined<kIr001TimeoutRange, std::uint32_t>;
 struct Ir001OpInfo {
     Ir001OpKind kind = Ir001OpKind::Gemm;
     Ir001OpCategory category = Ir001OpCategory::Compute;
-    std::string_view name{};
+    ::fixy::TextView name{};
     bool side_effecting = false;
     bool network_visible = false;
 };
@@ -181,8 +179,8 @@ struct Ir001OpInfo {
 // snake case, so CopyHostToDevice reads copy_host_to_device.  Deriving the
 // name from the enumerator keeps a new kind from shipping without one.  A
 // value that no enumerator holds names itself "<unknown Ir001OpKind>".
-[[nodiscard]] constexpr std::string_view ir001_op_kind_name(Ir001OpKind kind) noexcept {
-    return ::foundation::reflect::enum_words<Ir001OpKind, '_'>(kind);
+[[nodiscard]] constexpr ::fixy::TextView ir001_op_kind_name(Ir001OpKind kind) noexcept {
+    return ::foundation::core::enum_words_text<Ir001OpKind, '_'>(kind);
 }
 
 [[nodiscard]] constexpr Ir001OpInfo ir001_op_info(Ir001OpKind kind) noexcept {
@@ -207,10 +205,10 @@ struct TensorPort {
     SlotId slot = SlotId::none();
 };
 
-using DeclaredPeerSet = ::fixy::Tagged<std::span<const cog::CogIdentity>, ::fixy::tags::source::Ir001>;
+using DeclaredPeerSet = ::fixy::Tagged<::fixy::View<cog::CogIdentity const>, ::fixy::tags::source::Ir001>;
 
 struct PeerSetRef {
-    DeclaredPeerSet peers = ::fixy::mint_tagged<::fixy::tags::source::Ir001>(std::span<const cog::CogIdentity>{});
+    DeclaredPeerSet peers = ::fixy::mint_tagged<::fixy::tags::source::Ir001>(::fixy::View<cog::CogIdentity const>{});
     Ir001ParticipantCount count = ::fixy::mint_refined<kIr001ParticipantRange>(std::uint16_t{1});
 };
 
@@ -264,13 +262,13 @@ template <typename E>
 }
 
 [[nodiscard]] constexpr std::uint64_t hash_peer_set(std::uint64_t h, PeerSetRef const& participants) noexcept {
-    auto const peers = participants.peers.value();
+    ::fixy::View<cog::CogIdentity const> const peers = participants.peers.value();
     h = combine_ids(h, participants.count.value());
     h = combine_ids(h, peers.size());
-    auto const declared = static_cast<std::size_t>(participants.count.value());
-    auto const n = peers.size() < declared ? peers.size() : declared;
-    for (std::size_t i = 0; i < n; ++i) {
-        h = hash_cog_identity(h, peers[i]);
+    // The hash reads at most the declared count of peers.
+    std::size_t const hashed = ::fixy::min(peers.size(), ::fixy::widen<std::size_t>(participants.count.value()));
+    for (cog::CogIdentity const& peer : peers.window(0, hashed).value_or(::fixy::View<cog::CogIdentity const>{})) {
+        h = hash_cog_identity(h, peer);
     }
     return h;
 }

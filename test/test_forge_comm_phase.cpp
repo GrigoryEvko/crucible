@@ -59,11 +59,11 @@ crucible::NumericalRecipe recipe(crucible::ReductionDeterminism det) {
     return r;
 }
 
-std::array<crucible::cog::CogIdentity, 4> peers() {
-    std::array<crucible::cog::CogIdentity, 4> out{};
-    for (std::uint64_t i = 0; i < out.size(); ++i) {
-        out[i].uuid = crucible::cog::Uuid{7, i + 1};
-        out[i].kind = crucible::cog::CogKind::Gpu;
+::foundation::core::FixedArray<crucible::cog::CogIdentity, 4> peers() {
+    ::foundation::core::FixedArray<crucible::cog::CogIdentity, 4> out{};
+    for (auto const index : out.indices()) {
+        out.at(index).uuid = crucible::cog::Uuid{7, index.raw() + 1};
+        out.at(index).kind = crucible::cog::CogKind::Gpu;
     }
     return out;
 }
@@ -100,7 +100,7 @@ RecvNode recv_node() {
 }
 
 template <class Node>
-Node collective_node(std::span<const crucible::cog::CogIdentity> p, net::NetworkCollectiveAlgorithm algorithm) {
+Node collective_node(::fixy::View<crucible::cog::CogIdentity const> p, net::NetworkCollectiveAlgorithm algorithm) {
     Node node{};
     node.attrs.input.meta = tensor(crucible::ScalarType::Float);
     node.attrs.input.slot = crucible::SlotId{6};
@@ -187,11 +187,12 @@ void test_recipe_and_algorithm_blocks() {
 
     auto strict_reduce = phase::admit_comm_fusion<phase::CommFusionPattern::ReduceOnRecv, crucible::cog::CogKind::Gpu>(
         ir::admit_ir001_node(recv_node()),
-        ir::admit_ir001_node(collective_node<AllReduceNode>(p, net::NetworkCollectiveAlgorithm::Ring)), strict);
+        ir::admit_ir001_node(collective_node<AllReduceNode>(p.view(), net::NetworkCollectiveAlgorithm::Ring)), strict);
     assert(!strict_reduce.has_value());
     assert(strict_reduce.error() == phase::CommPhaseError::RecipeForbidsPattern);
 
-    auto odd_peers = collective_node<AllReduceNode>(p, net::NetworkCollectiveAlgorithm::RecursiveHalvingDoubling);
+    auto odd_peers =
+        collective_node<AllReduceNode>(p.view(), net::NetworkCollectiveAlgorithm::RecursiveHalvingDoubling);
     odd_peers.attrs.participants.count = ::fixy::mint_refined<ir::kIr001ParticipantRange>(std::uint16_t{3});
     auto bad_algorithm = phase::admit_comm_fusion<phase::CommFusionPattern::ReduceOnRecv, crucible::cog::CogKind::Gpu>(
         ir::admit_ir001_node(recv_node()), ir::admit_ir001_node(odd_peers), ordered);
