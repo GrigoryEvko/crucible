@@ -17,7 +17,6 @@ include/crucible/perf/detail/ | unconsumed | 1 | - | -
 include/fixy/ | unconsumed | 3 | - | -
 include/fixy/channels/ | unconsumed | 1 | - | -
 include/fixy/concurrent/ | unconsumed | 2 | - | -
-include/fixy/session/ | assign-over-live | 1 | - | -
 include/fixy/session/ | unconsumed | 13 | - | -
 src/ | unconsumed | 5 | - | -
 test/ | unconsumed | 38 | - | -

@@ -99,24 +99,24 @@ bench/ | raw-new-delete | 2 | - | -
 bench/ | raw-pointer-object | 223 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 9 | - | -
-bench/ | std-entity | 908 | - | -
-bench/ | std-object | 254 | - | -
+bench/ | std-entity | 898 | - | -
+bench/ | std-object | 249 | - | -
 examples/fn/ | c-array-object | 9 | - | -
 examples/fn/ | c-library-call | 12 | - | -
 examples/fn/ | raw-pointer-object | 7 | - | -
 examples/fn/ | replace-pending:std::bit_cast | 2 | - | -
 examples/fn/ | std-entity | 10 | - | -
 examples/fn/ | std-object | 3 | - | -
-include/crucible/ | c-array-object | 56 | - | -
-include/crucible/ | c-library-call | 84 | - | -
-include/crucible/ | compiler-builtin | 17 | - | -
+include/crucible/ | c-array-object | 55 | - | -
+include/crucible/ | c-library-call | 69 | - | -
+include/crucible/ | compiler-builtin | 10 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
 include/crucible/ | raw-new-delete | 6 | - | -
-include/crucible/ | raw-pointer-object | 467 | - | -
+include/crucible/ | raw-pointer-object | 461 | - | -
 include/crucible/ | replace-pending:<limits> | 6 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 27 | - | -
-include/crucible/ | std-entity | 301 | - | -
-include/crucible/ | std-object | 89 | - | -
+include/crucible/ | std-entity | 289 | - | -
+include/crucible/ | std-object | 83 | - | -
 include/crucible/canopy/ | c-library-call | 1 | - | -
 include/crucible/canopy/ | c-library-object | 1 | - | -
 include/crucible/canopy/ | inline-asm | 2 | - | -
@@ -133,8 +133,6 @@ include/crucible/cntp/ | compiler-builtin | 2 | - | -
 include/crucible/cntp/ | replace-pending:<limits> | 1 | - | -
 include/crucible/cntp/ | std-entity | 63 | - | -
 include/crucible/cntp/ | std-object | 34 | - | -
-include/crucible/cntp/_wip/ | raw-pointer-object | 1 | - | -
-include/crucible/cntp/_wip/ | replace-pending:std::bit_cast | 1 | - | -
 include/crucible/cog/ | raw-pointer-object | 1 | - | -
 include/crucible/cog/ | std-entity | 5 | - | -
 include/crucible/cog/ | std-object | 5 | - | -
@@ -160,7 +158,7 @@ include/crucible/mimic/ | std-entity | 4 | - | -
 include/crucible/mimic/ | std-object | 5 | - | -
 include/crucible/observe/ | c-library-call | 1 | - | -
 include/crucible/observe/ | std-entity | 5 | - | -
-include/crucible/observe/ | std-object | 13 | - | -
+include/crucible/observe/ | std-object | 10 | - | -
 include/crucible/perf/ | c-array-object | 4 | - | -
 include/crucible/perf/ | raw-pointer-object | 3 | - | -
 include/crucible/perf/ | std-entity | 4 | - | -
@@ -205,8 +203,8 @@ include/fixy/atoms/ | base-std-object | 10 | - | -
 include/fixy/atoms/ | replace-pending:<array> | 3 | - | -
 include/fixy/atoms/ | replace-pending:<tuple> | 16 | - | -
 include/fixy/atoms/ | replace-pending:<vector> | 1 | - | -
-include/fixy/channels/ | base-std-entity | 20 | - | -
-include/fixy/channels/ | base-std-object | 7 | - | -
+include/fixy/channels/ | base-std-entity | 18 | - | -
+include/fixy/channels/ | base-std-object | 5 | - | -
 include/fixy/channels/ | replace-pending:<atomic> | 1 | - | -
 include/fixy/channels/ | replace-pending:<expected> | 1 | - | -
 include/fixy/channels/ | replace-pending:<optional> | 2 | - | -
@@ -220,15 +218,15 @@ include/fixy/collision/ | replace-pending:<string> | 1 | - | -
 include/fixy/collision/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/collision/ | replace-pending:<vector> | 1 | - | -
 include/fixy/concurrent/ | base-c-library-call | 4 | - | -
-include/fixy/concurrent/ | base-std-entity | 129 | - | -
-include/fixy/concurrent/ | base-std-object | 49 | - | -
+include/fixy/concurrent/ | base-std-entity | 127 | - | -
+include/fixy/concurrent/ | base-std-object | 48 | - | -
 include/fixy/concurrent/ | replace-pending:<algorithm> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<array> | 6 | - | -
 include/fixy/concurrent/ | replace-pending:<atomic> | 3 | - | -
 include/fixy/concurrent/ | replace-pending:<bit> | 3 | - | -
 include/fixy/concurrent/ | replace-pending:<cstring> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<limits> | 1 | - | -
-include/fixy/concurrent/ | replace-pending:<optional> | 8 | - | -
+include/fixy/concurrent/ | replace-pending:<optional> | 7 | - | -
 include/fixy/concurrent/ | replace-pending:<span> | 3 | - | -
 include/fixy/concurrent/ | replace-pending:<string> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<string_view> | 1 | - | -
@@ -266,8 +264,8 @@ include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<system_error> | 4 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 56 | - | -
-include/fixy/session/ | base-std-entity | 480 | - | -
-include/fixy/session/ | base-std-object | 212 | - | -
+include/fixy/session/ | base-std-entity | 476 | - | -
+include/fixy/session/ | base-std-object | 202 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
 include/fixy/session/ | replace-pending:<atomic> | 2 | - | -
@@ -348,16 +346,16 @@ src/ | c-library-call | 31 | - | -
 src/ | compiler-builtin | 2 | - | -
 src/ | door-header | 1 | - | -
 src/ | raw-new-delete | 3 | - | -
-src/ | raw-pointer-object | 39 | - | -
-src/ | std-entity | 290 | - | -
-src/ | std-object | 85 | - | -
+src/ | raw-pointer-object | 37 | - | -
+src/ | std-entity | 284 | - | -
+src/ | std-object | 83 | - | -
 src/canopy/ | std-object | 1 | - | -
-src/cntp/ | c-library-call | 10 | - | -
+src/cntp/ | c-library-call | 7 | - | -
 src/cntp/ | c-library-object | 8 | - | -
-src/cntp/ | door-header | 5 | - | -
+src/cntp/ | door-header | 3 | - | -
 src/cntp/ | raw-pointer-object | 7 | - | -
-src/cntp/ | std-entity | 28 | - | -
-src/cntp/ | std-object | 9 | - | -
+src/cntp/ | std-entity | 26 | - | -
+src/cntp/ | std-object | 8 | - | -
 src/fixy/os/ | base-std-entity | 153 | - | -
 src/fixy/os/ | base-std-object | 63 | - | -
 src/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
@@ -378,17 +376,17 @@ src/perf/ | foreign-symbol | 14 | - | -
 src/perf/ | raw-pointer-object | 7 | - | -
 src/perf/ | replace-pending:std::bit_cast | 2 | - | -
 src/perf/ | std-entity | 8 | - | -
-src/topology/ | c-library-call | 11 | - | -
-src/topology/ | c-library-object | 12 | - | -
-src/topology/ | door-header | 3 | - | -
+src/topology/ | c-library-call | 8 | - | -
+src/topology/ | c-library-object | 7 | - | -
+src/topology/ | door-header | 1 | - | -
 src/topology/ | raw-pointer-object | 1 | - | -
 src/topology/ | std-entity | 14 | - | -
 src/topology/ | std-object | 3 | - | -
 test/ | c-array-object | 316 | - | -
-test/ | c-library-call | 952 | - | -
+test/ | c-library-call | 950 | - | -
 test/ | c-library-object | 16 | - | -
 test/ | compiler-builtin | 1 | - | -
-test/ | door-header | 25 | - | -
+test/ | door-header | 24 | - | -
 test/ | foreign-symbol | 13 | - | -
 test/ | inline-asm | 1 | - | -
 test/ | raw-function-pointer | 23 | - | -
@@ -396,13 +394,13 @@ test/ | raw-new-delete | 41 | - | -
 test/ | raw-pointer-object | 642 | - | -
 test/ | replace-pending:<limits> | 13 | - | -
 test/ | replace-pending:std::bit_cast | 103 | - | -
-test/ | std-entity | 2657 | - | -
-test/ | std-object | 907 | - | -
+test/ | std-entity | 2629 | - | -
+test/ | std-object | 899 | - | -
 test/canopy_neg/ | raw-pointer-object | 1 | - | -
 test/canopy_neg/ | std-entity | 10 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
 test/cipher_neg/ | raw-pointer-object | 8 | - | -
-test/cipher_neg/ | std-entity | 60 | - | -
+test/cipher_neg/ | std-entity | 45 | - | -
 test/cipher_neg/ | std-object | 16 | - | -
 test/cipher_neg/ | unchecked-use | 2 | - | the fixture reads the type of a private member of the Cipher with an unchecked walk, for the type of its probe
 test/cntp_neg/ | raw-pointer-object | 1 | - | -
@@ -465,8 +463,8 @@ test/fixy/ | region | 1 | PROBE: the test plants an atom in a shipped family, an
 test/fixy/ | replace-pending:<limits> | 30 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 15 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 3218 | - | -
-test/fixy/ | std-object | 1217 | - | -
+test/fixy/ | std-entity | 3138 | - | -
+test/fixy/ | std-object | 1139 | - | -
 test/fixy/neg/ | c-array-object | 53 | - | -
 test/fixy/neg/ | c-library-call | 5 | - | -
 test/fixy/neg/ | c-library-object | 2 | - | -
@@ -519,8 +517,8 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member m
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/neg/ | std-entity | 199 | - | -
-test/fixy/neg/ | std-object | 116 | - | -
+test/fixy/neg/ | std-entity | 196 | - | -
+test/fixy/neg/ | std-object | 112 | - | -
 test/foundation/ | c-array-object | 59 | - | -
 test/foundation/ | c-library-call | 413 | - | -
 test/foundation/ | c-library-object | 7 | - | -
@@ -617,7 +615,7 @@ test/fuzz/boundary/harnesses/ | compiler-builtin | 1 | - | -
 test/fuzz/boundary/harnesses/ | opted-out | 6 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
 test/fuzz/boundary/harnesses/ | raw-pointer-object | 16 | - | -
 test/fuzz/boundary/harnesses/ | region | 2 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
-test/fuzz/boundary/harnesses/ | std-entity | 225 | - | -
+test/fuzz/boundary/harnesses/ | std-entity | 221 | - | -
 test/fuzz/boundary/harnesses/ | std-object | 108 | - | -
 test/fuzz/property/ | c-array-object | 20 | - | -
 test/fuzz/property/ | c-library-call | 48 | - | -
@@ -711,7 +709,7 @@ test/session_oracle/ | door-header | 1 | - | -
 test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 9 | - | -
 test/session_oracle/ | std-entity | 26 | - | -
-test/session_oracle/ | std-object | 1385 | - | -
+test/session_oracle/ | std-object | 1383 | - | -
 test/shape/ | opted-out | 199 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/singleton_neg/ | std-entity | 4 | - | -

@@ -12,11 +12,11 @@ include/crucible/cntp/_wip/ | pinned-holder | 1 | - | -
 include/fixy/ | library-holder | 4 | - | -
 include/fixy/concurrent/ | library-holder | 3 | - | -
 include/fixy/os/ | library-holder | 3 | - | -
-include/fixy/session/ | library-holder | 27 | - | -
+include/fixy/session/ | library-holder | 24 | - | -
 include/foundation/permissions/ | library-holder | 8 | - | -
 include/foundation/permissions/ | pinned-holder | 1 | - | -
 test/ | library-holder | 4 | - | -
-test/fixy/ | library-holder | 19 | - | -
+test/fixy/ | library-holder | 16 | - | -
 test/fixy/ | pinned-holder | 1 | - | -
 test/foundation/ | library-holder | 2 | - | -
 test/layer/checks/foundation/ | pinned-holder | 1 | - | -

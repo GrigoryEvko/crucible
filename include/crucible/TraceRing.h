@@ -83,9 +83,8 @@ enum class ScalarType2 : uint8_t {
 
 namespace tracering_hw {
 
-// One source of truth: this value is the third argument of every prefetch
-// builtin in try_append, so editing it edits the emitted instruction rather
-// than a description of it.
+// This value is the locality of each prefetch in try_append.  A change of the
+// value changes the emitted instruction, and not a description of it.
 inline constexpr int kPrefetchLocality = 3;
 
 // The widest instruction class the ring issues: loads, stores and a prefetch
@@ -231,10 +230,11 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         // still busy with its own post-append work.
         {
             const uint32_t next_slot = (slot + 1u) & MASK;
-            __builtin_prefetch(&entries[next_slot], 1, tracering_hw::kPrefetchLocality);
-            __builtin_prefetch(&meta_starts[next_slot], 1, tracering_hw::kPrefetchLocality);
-            __builtin_prefetch(&scope_hashes[next_slot], 1, tracering_hw::kPrefetchLocality);
-            __builtin_prefetch(&callsite_hashes[next_slot], 1, tracering_hw::kPrefetchLocality);
+            constexpr ::fixy::PrefetchAccess write_access = ::fixy::PrefetchAccess::write;
+            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(entries[next_slot]);
+            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(meta_starts[next_slot]);
+            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(scope_hashes[next_slot]);
+            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(callsite_hashes[next_slot]);
         }
 
         // This release publishes all four slot writes above to the consumer.

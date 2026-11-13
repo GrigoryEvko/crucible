@@ -1,5 +1,5 @@
-// Tests of foundation/core/Ref.h: to, Ref, same_object, address_of and
-// Option<Ref<T, Brand>>.
+// Tests of foundation/core/Ref.h: to, Ref, same_object, address_of, prefetch
+// and Option<Ref<T, Brand>>.
 
 #include <foundation/core/Ref.h>
 
@@ -17,6 +17,8 @@ using ::foundation::core::Address;
 using ::foundation::core::address_of;
 using ::foundation::core::none;
 using ::foundation::core::Option;
+using ::foundation::core::prefetch;
+using ::foundation::core::PrefetchAccess;
 using ::foundation::core::Ref;
 using ::foundation::core::same_object;
 using ::foundation::core::to;
@@ -176,6 +178,42 @@ void test_address() {
     CRUCIBLE_FATAL_INVARIANT(address_of(to(number)).is_aligned<alignof(int)>());
 }
 
+// True when a prefetch of a named object of type T compiles.
+template <PrefetchAccess Access, int Locality, class T>
+concept PrefetchesObject = requires(T const& object) { prefetch<Access, Locality>(object); };
+
+// True when a prefetch of a temporary of type T compiles.
+template <PrefetchAccess Access, int Locality, class T>
+concept PrefetchesTemporary = requires { prefetch<Access, Locality>(T{}); };
+
+// A prefetch compiles for each access and each locality from 0 to 3, and it
+// changes no value.  A locality outside 0 to 3, an access outside the two
+// enumerators and a temporary do not compile.
+void test_prefetch() {
+    Pair pair{3, 4};
+    LineAligned line{};
+    line.value = 7;
+    HidesAddress hidden{9};
+    prefetch<PrefetchAccess::read, 0>(pair);
+    prefetch<PrefetchAccess::read, 1>(pair.first);
+    prefetch<PrefetchAccess::read, 2>(line);
+    prefetch<PrefetchAccess::read, 3>(hidden);
+    prefetch<PrefetchAccess::write, 0>(pair.second);
+    prefetch<PrefetchAccess::write, 1>(line.value);
+    prefetch<PrefetchAccess::write, 2>(hidden);
+    prefetch<PrefetchAccess::write, 3>(line);
+    CRUCIBLE_FATAL_INVARIANT(pair.first == 3 && pair.second == 4);
+    CRUCIBLE_FATAL_INVARIANT(line.value == 7 && hidden.value == 9);
+
+    static_assert(PrefetchesObject<PrefetchAccess::read, 0, Pair>);
+    static_assert(PrefetchesObject<PrefetchAccess::write, 3, Pair>);
+    static_assert(!PrefetchesObject<PrefetchAccess::read, 4, Pair>);
+    static_assert(!PrefetchesObject<PrefetchAccess::write, -1, Pair>);
+    static_assert(!PrefetchesObject<static_cast<PrefetchAccess>(2), 3, Pair>);
+    static_assert(!PrefetchesTemporary<PrefetchAccess::read, 3, Pair>);
+    static_assert(!PrefetchesTemporary<PrefetchAccess::write, 0, Pair>);
+}
+
 // Four slots, which a plain index selects.
 struct Slots {
     std::uint64_t zero = 0;
@@ -225,6 +263,7 @@ int main() {
     test_abstract_target();
     test_option_of_ref();
     test_address();
+    test_prefetch();
     test_agrees_with_plain_model();
     return 0;
 }

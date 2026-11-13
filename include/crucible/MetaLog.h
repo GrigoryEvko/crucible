@@ -21,6 +21,7 @@
 
 #include <fixy/Aliases.h>
 #include <fixy/Bands.h>
+#include <fixy/Core.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <fixy/Stale.h>
@@ -186,12 +187,14 @@ struct CRUCIBLE_OWNER MetaLog {
         // and 128 of a record. Issuing them before the publishing store
         // rather than after gives them the whole of the caller's remaining
         // work to complete in. The prefetch itself has no bearing on when
-        // the copy above becomes visible.
+        // the copy above becomes visible.  Each prefetch prepares a write, and
+        // the locality 3 keeps the line in each level of the cache.
         {
             const TensorMeta& next_record = entries_buffer_.data()[(h + n) & MASK];
-            __builtin_prefetch(&next_record.sizes, 1 /*write*/, 3 /*high locality*/);
-            __builtin_prefetch(&next_record.strides, 1 /*write*/, 3 /*high locality*/);
-            __builtin_prefetch(&next_record.data_ptr, 1 /*write*/, 3 /*high locality*/);
+            constexpr ::fixy::PrefetchAccess write_access = ::fixy::PrefetchAccess::write;
+            ::fixy::prefetch<write_access, 3>(next_record.sizes);
+            ::fixy::prefetch<write_access, 3>(next_record.strides);
+            ::fixy::prefetch<write_access, 3>(next_record.data_ptr);
         }
 
         // This release publishes the copy above to the consumer.

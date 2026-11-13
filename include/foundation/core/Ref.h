@@ -22,6 +22,9 @@
 // of the object, which answers is_aligned<N>() and ==, and gives no pointer
 // back.
 //
+// prefetch<Access, Locality>(object) asks the cache for the line of one
+// object.  The hint changes no value.
+//
 // Box<T> owns one object of type T on the heap.  The one door is
 // mint_box<T>(alloc, args...): it takes the storage from the allocation
 // door of foundation/core/Heap.h, builds the object from the arguments, and
@@ -274,6 +277,32 @@ template <RefTarget T, ::foundation::brand::IsBrand Brand>
 [[nodiscard]] Address address_of(Ref<T, Brand> ref) noexcept {
     return Address{__builtin_bit_cast(std::uintptr_t, __builtin_addressof(*ref)), detail::AddressDoor::key()};
 }
+
+// The access that a prefetch prepares.  A write asks for the line in the
+// state that lets a store change it with no second request.
+enum class PrefetchAccess : unsigned char {
+    read = 0,
+    write = 1,
+};
+
+// Asks the cache for the line that holds the first byte of one object.
+// Locality is the third operand of __builtin_prefetch, from 0 to 3: 0 keeps
+// the line for one use, and 3 keeps it in each level of the cache.  The hint
+// changes no value, so the program gives the same result with or without
+// it.  The function always inlines, so a call gives the one instruction of
+// the builtin.
+template <PrefetchAccess Access, int Locality, RefTarget T>
+    requires(Access == PrefetchAccess::read || Access == PrefetchAccess::write) && (Locality >= 0 && Locality <= 3)
+[[gnu::always_inline]] inline void prefetch(T const& object) noexcept {
+    __builtin_prefetch(__builtin_addressof(object), static_cast<int>(Access), Locality);
+}
+
+// A temporary ends at the end of the full expression, so its line has no
+// later use.
+template <PrefetchAccess Access, int Locality, class T>
+    requires(!std::is_lvalue_reference_v<T>)
+void prefetch(T&& object) = delete("a prefetch of a temporary asks for a line that the full expression ends: "
+                                   "prefetch an object that has a name");
 
 // The empty value of an Option of a Ref: the null pointer, which no Ref
 // holds.  Option<Ref<T, Brand>> then has the size of one pointer.  The
