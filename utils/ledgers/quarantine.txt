@@ -108,7 +108,7 @@ examples/fn/ | replace-pending:std::bit_cast | 2 | - | -
 examples/fn/ | std-entity | 10 | - | -
 examples/fn/ | std-object | 3 | - | -
 include/crucible/ | c-array-object | 59 | - | -
-include/crucible/ | c-library-call | 156 | - | -
+include/crucible/ | c-library-call | 129 | - | -
 include/crucible/ | c-library-object | 4 | - | -
 include/crucible/ | compiler-builtin | 28 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
@@ -116,8 +116,8 @@ include/crucible/ | raw-new-delete | 13 | - | -
 include/crucible/ | raw-pointer-object | 516 | - | -
 include/crucible/ | replace-pending:<limits> | 9 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 34 | - | -
-include/crucible/ | std-entity | 396 | - | -
-include/crucible/ | std-object | 127 | - | -
+include/crucible/ | std-entity | 391 | - | -
+include/crucible/ | std-object | 125 | - | -
 include/crucible/canopy/ | c-library-call | 1 | - | -
 include/crucible/canopy/ | c-library-object | 1 | - | -
 include/crucible/canopy/ | inline-asm | 2 | - | -
@@ -138,12 +138,11 @@ include/crucible/cntp/ | std-entity | 281 | - | -
 include/crucible/cntp/ | std-object | 145 | - | -
 include/crucible/cntp/_wip/ | raw-pointer-object | 1 | - | -
 include/crucible/cntp/_wip/ | replace-pending:std::bit_cast | 1 | - | -
-include/crucible/cntp/_wip/ | std-entity | 45 | - | -
-include/crucible/cntp/_wip/ | std-object | 42 | - | -
-include/crucible/cog/ | c-array-object | 7 | - | -
+include/crucible/cntp/_wip/ | std-entity | 20 | - | -
+include/crucible/cntp/_wip/ | std-object | 21 | - | -
 include/crucible/cog/ | raw-pointer-object | 2 | - | -
-include/crucible/cog/ | std-entity | 9 | - | -
-include/crucible/cog/ | std-object | 14 | - | -
+include/crucible/cog/ | std-entity | 5 | - | -
+include/crucible/cog/ | std-object | 10 | - | -
 include/crucible/forge/Ir001/ | std-entity | 6 | - | -
 include/crucible/forge/Ir001/ | std-object | 4 | - | -
 include/crucible/forge/_wip/Phases/ | std-entity | 3 | - | -
@@ -353,7 +352,7 @@ include/foundation/permissions/ | replace-pending:<optional> | 1 | - | -
 include/foundation/permissions/ | replace-pending:<string_view> | 3 | - | -
 include/foundation/permissions/ | replace-pending:<tuple> | 2 | - | -
 include/foundation/permissions/ | replace-pending:<vector> | 3 | - | -
-include/foundation/reflect/ | base-std-entity | 140 | - | -
+include/foundation/reflect/ | base-std-entity | 134 | - | -
 include/foundation/reflect/ | base-std-object | 54 | - | -
 include/foundation/reflect/ | replace-pending:<array> | 3 | - | -
 include/foundation/reflect/ | replace-pending:<bit> | 1 | - | -
@@ -417,8 +416,8 @@ test/ | raw-new-delete | 43 | - | -
 test/ | raw-pointer-object | 662 | - | -
 test/ | replace-pending:<limits> | 13 | - | -
 test/ | replace-pending:std::bit_cast | 103 | - | -
-test/ | std-entity | 3489 | - | -
-test/ | std-object | 1227 | - | -
+test/ | std-entity | 3427 | - | -
+test/ | std-object | 1202 | - | -
 test/canopy_neg/ | raw-pointer-object | 1 | - | -
 test/canopy_neg/ | std-entity | 10 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
@@ -427,8 +426,8 @@ test/cipher_neg/ | std-entity | 60 | - | -
 test/cipher_neg/ | std-object | 16 | - | -
 test/cipher_neg/ | unchecked-use | 2 | - | the fixture reads the type of a private member of the Cipher with an unchecked walk, for the type of its probe
 test/cntp_neg/ | raw-pointer-object | 1 | - | -
-test/cntp_neg/ | std-entity | 24 | - | -
-test/cntp_neg/ | std-object | 28 | - | -
+test/cntp_neg/ | std-entity | 22 | - | -
+test/cntp_neg/ | std-object | 24 | - | -
 test/cog_neg/ | std-entity | 3 | - | -
 test/cog_neg/ | std-object | 1 | - | -
 test/ct/ | c-array-object | 5 | - | -
@@ -664,7 +663,6 @@ test/layer/checks/crucible/canopy/ | std-object | 1 | - | -
 test/layer/checks/crucible/cipher/ | std-entity | 1 | - | -
 test/layer/checks/crucible/cntp/ | replace-pending:<limits> | 3 | - | -
 test/layer/checks/crucible/cntp/ | std-entity | 16 | - | -
-test/layer/checks/crucible/cog/ | std-entity | 6 | - | -
 test/layer/checks/crucible/cog/ | std-object | 19 | - | -
 test/layer/checks/crucible/ledger/ | std-entity | 6 | - | -
 test/layer/checks/crucible/mimic/ | std-entity | 4 | - | -

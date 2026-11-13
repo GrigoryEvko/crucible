@@ -77,6 +77,25 @@ void test_fixed_text_loop_and_clear() {
     assert(text.size() == 0 && text.view() == TextView{});
 }
 
+enum class Lane : std::uint8_t {
+    Send,
+    ReceiveQueue,
+};
+
+// The name of an enumerator comes from a value that only the run knows, so
+// the call runs at run time.  A value that no enumerator holds gives the
+// sentinel.
+void test_enum_name_text_at_run_time() {
+    std::uint8_t volatile raw = 1;
+    Lane const queue = static_cast<Lane>(raw);
+    assert(::foundation::core::enum_name_text(queue) == TextView{"ReceiveQueue"});
+    assert((::foundation::core::enum_words_text<Lane, '_'>(queue) == TextView{"receive_queue"}));
+    raw = 7;
+    Lane const unknown = static_cast<Lane>(raw);
+    assert(::foundation::core::enum_name_text(unknown) == TextView{"<unknown Lane>"});
+    assert((::foundation::core::enum_words_text<Lane, '-'>(unknown) == TextView{"<unknown Lane>"}));
+}
+
 // A cursor of a text never leaves the text: a read at the end and a step
 // past the end end the process in each build.
 void test_text_cursor_at_the_end_aborts() {
@@ -159,6 +178,7 @@ int main() {
     test_fixed_text_starts_empty();
     test_text_view_reads_its_characters();
     test_fixed_text_loop_and_clear();
+    test_enum_name_text_at_run_time();
     test_text_cursor_at_the_end_aborts();
     test_format_writes_integers_in_decimal();
     test_format_writes_bools_and_texts();

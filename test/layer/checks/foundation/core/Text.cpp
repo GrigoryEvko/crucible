@@ -2,6 +2,7 @@
 
 #include <foundation/core/Text.h>
 
+#include <cstdint>
 #include <type_traits>
 
 namespace foundation::core {
@@ -75,6 +76,26 @@ static_assert(!HasFixedText<0>);
 }
 static_assert(size_after_resize(3) == 3);
 static_assert(size_after_resize(9) == 4);
+
+// The name of an enumerator is a TextView of its identifier, or of the
+// sentinel when no enumerator holds the value.  A zero follows each text.
+// The read of that zero is a constant expression only when the storage
+// holds the byte, so a text with no zero fails the build here.
+enum class Lane : std::uint8_t {
+    Send,
+    CopyHostToDevice,
+    Alias = Send,
+};
+[[nodiscard]] consteval bool ends_with_zero(TextView text) noexcept { return text_first_(text)[text.size()] == '\0'; }
+static_assert(enum_name_text(Lane::Send) == TextView{"Send"});
+static_assert(enum_name_text(Lane::Alias) == TextView{"Send"});
+static_assert(enum_name_text(static_cast<Lane>(9)) == TextView{"<unknown Lane>"});
+static_assert(enum_words_text<Lane, '-'>(Lane::CopyHostToDevice) == TextView{"copy-host-to-device"});
+static_assert(enum_words_text<Lane, '_'>(static_cast<Lane>(9)) == TextView{"<unknown Lane>"});
+static_assert(ends_with_zero(enum_name_text(Lane::CopyHostToDevice)));
+static_assert(ends_with_zero(enum_name_text(static_cast<Lane>(9))));
+static_assert(ends_with_zero(enum_words_text<Lane, '_'>(Lane::CopyHostToDevice)));
+static_assert(ends_with_zero(enum_words_text<Lane, '_'>(static_cast<Lane>(9))));
 
 }  // namespace detail::text_checks
 

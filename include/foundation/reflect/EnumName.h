@@ -133,28 +133,34 @@ inline constexpr std::size_t enum_count = std::meta::enumerators_of(^^E).size();
 namespace detail {
 
 // The text is "<unknown E>" with the unqualified name of E.  It lives
-// in a static array of its own length, so the view stays valid for the
-// whole program.  A name function of one enum instantiates the sentinel
-// where the function stands, and the array costs almost nothing there.
-// A call of std::define_static_string would instantiate that function.
+// in a static array of its own length and one zero, so the view stays
+// valid for the whole program.  A zero follows each name of this header,
+// as it follows the text of a reflection, so a TextView of the base can
+// borrow each one (foundation/core/Text.h).  A name function of one enum
+// instantiates the sentinel where the function stands, and the array costs
+// almost nothing there.  A call of std::define_static_string would
+// instantiate that function.
 
 template <ScopedEnum E>
 [[nodiscard]] consteval std::string_view make_unknown_enum_sentinel() {
-    static constexpr std::string_view prefix = "<unknown ";
+    static constexpr char prefix[] = "<unknown ";
+    static constexpr std::size_t prefix_size = sizeof(prefix) - 1;
     static constexpr std::string_view name = std::meta::identifier_of(^^E);
-    static constexpr auto text = [] consteval {
-        std::array<char, prefix.size() + name.size() + 1> chars{};
-        const char* const head = prefix.data();
-        const char* const tail = name.data();
-        char* const target = chars.data();
-        for (std::size_t index = 0; index < prefix.size(); ++index)
-            target[index] = head[index];
-        for (std::size_t index = 0; index < name.size(); ++index)
-            target[prefix.size() + index] = tail[index];
-        target[prefix.size() + name.size()] = '>';
+    static constexpr std::size_t name_size = name.size();
+    struct SentinelChars {
+        char bytes[prefix_size + name_size + 2]{};
+    };
+    static constexpr SentinelChars text = [] consteval {
+        SentinelChars chars{};
+        char const* const tail = name.data();
+        for (std::size_t index = 0; index < prefix_size; ++index)
+            chars.bytes[index] = prefix[index];
+        for (std::size_t index = 0; index < name_size; ++index)
+            chars.bytes[prefix_size + index] = tail[index];
+        chars.bytes[prefix_size + name_size] = '>';
         return chars;
     }();
-    return std::string_view{text.data(), text.size()};
+    return std::string_view{text.bytes, prefix_size + name_size + 1};
 }
 
 }  // namespace detail
@@ -226,5 +232,32 @@ template <ScopedEnum E, char Separator>
 #pragma GCC diagnostic pop
     return words;
 }
+
+namespace detail {
+
+// The parts of a name of this header: its first character and its count of
+// characters.  A zero follows the last character.  foundation/core/Text.h
+// makes a TextView of the two parts, because a file of the language names
+// no member of std::string_view.
+struct NameChars final {
+    char const* first = "";
+    std::size_t size = 0;
+};
+
+// The parts of the name that enum_name gives.
+template <ScopedEnum E>
+[[nodiscard]] constexpr NameChars enum_name_chars(E value) noexcept {
+    std::string_view const name = enum_name(value);
+    return NameChars{name.data(), name.size()};
+}
+
+// The parts of the words that enum_words gives.
+template <ScopedEnum E, char Separator>
+[[nodiscard]] constexpr NameChars enum_words_chars(E value) noexcept {
+    std::string_view const words = enum_words<E, Separator>(value);
+    return NameChars{words.data(), words.size()};
+}
+
+}  // namespace detail
 
 }  // namespace foundation::reflect

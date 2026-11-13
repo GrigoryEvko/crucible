@@ -41,10 +41,20 @@
 //   member and each friend of a class of this header has its definition in
 //   this header, so no other file can define one with the access of the
 //   class.
+//
+// THE NAME OF AN ENUMERATOR
+//   enum_name_text(value) gives the identifier of the enumerator that holds
+//   value, and enum_words_text<E, Separator>(value) gives it in lower-case
+//   words.  They give the texts of enum_name and enum_words of
+//   foundation/reflect/EnumName.h as a TextView.  That header is on a lower
+//   layer than this one, so it cannot name a TextView itself.  Each text has
+//   static storage and a zero after its last character, so the view never
+//   dangles.
 
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Cursor.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
 
@@ -294,5 +304,24 @@ constexpr void text_resize_(FixedText<Capacity>& text, std::size_t count) noexce
 }
 
 }  // namespace detail
+
+// The identifier of the enumerator that holds value, or "<unknown E>" when
+// no enumerator holds it.  When two enumerators share a value, the first in
+// declaration order wins.  Complexity: one compare for each enumerator.
+template <::foundation::reflect::ScopedEnum E>
+[[nodiscard]] constexpr TextView enum_name_text(E value) noexcept {
+    ::foundation::reflect::detail::NameChars const name = ::foundation::reflect::detail::enum_name_chars(value);
+    return detail::c_text_over_(name.first, name.size).view();
+}
+
+// The identifier of the enumerator that holds value in lower-case words
+// with Separator between two words, or "<unknown E>" when no enumerator
+// holds it.  Complexity: one compare for each enumerator.
+template <::foundation::reflect::ScopedEnum E, char Separator>
+[[nodiscard]] constexpr TextView enum_words_text(E value) noexcept {
+    ::foundation::reflect::detail::NameChars const words =
+        ::foundation::reflect::detail::enum_words_chars<E, Separator>(value);
+    return detail::c_text_over_(words.first, words.size).view();
+}
 
 }  // namespace foundation::core
