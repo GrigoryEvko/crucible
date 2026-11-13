@@ -19,11 +19,14 @@
 
 namespace crucible {
 
-Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup) : cfg_(std::move(cfg)), tx_log_{startup} {
-    ring_ = std::make_unique<TraceRing>();
+Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
+    : cfg_(std::move(cfg)),
+      ring_owner_{::fixy::mint_box<TraceRing>(startup.cap().alloc)},
+      ring_{ring_owner_.view()},
+      meta_log_owner_{::fixy::mint_box<MetaLog>(startup.cap().alloc)},
+      meta_log_{meta_log_owner_.view()},
+      tx_log_{startup} {
     ring_->reset();
-
-    meta_log_ = std::make_unique<MetaLog>();
     meta_log_->reset();
 
     if (!cfg_.cipher_path.empty()) {
@@ -51,7 +54,7 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup) : cfg_(std::move(cf
             ::crucible::warden::mint_deadline_watchdog(startup, senses_.get(), cfg_.watchdog_policy));
     }
 
-    bg_.start(ring_.get(), meta_log_.get(), cfg_.rank, cfg_.world_size, cfg_.device_capability);
+    bg_.start(&*ring_, &*meta_log_, cfg_.rank, cfg_.world_size, cfg_.device_capability);
 }
 
 Vigil::~Vigil() = default;

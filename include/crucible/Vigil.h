@@ -1015,8 +1015,14 @@ private:
     // the background thread before anything that thread touches goes away.
 
     Config cfg_;
-    std::unique_ptr<TraceRing> ring_;
-    std::unique_ptr<MetaLog> meta_log_;
+    // The owners of the ring and of the metadata log, and a borrow of each
+    // that the record path reads.  A borrow has no test, so the record path
+    // pays no branch for its owner.  Each owner is declared before its
+    // borrow, so the constructor makes the borrow from a built owner.
+    ::fixy::Box<TraceRing> ring_owner_;
+    ::fixy::Ref<TraceRing> ring_;
+    ::fixy::Box<MetaLog> meta_log_owner_;
+    ::fixy::Ref<MetaLog> meta_log_;
     // Owned by the publish stage: each member takes that stage's proof, and
     // the foreground reaches the log only through run_on_publish_stage.
     TransactionLog<16, BackgroundThread::PublishStage> tx_log_;
