@@ -58,30 +58,18 @@ int main() {
     assert(crucible::reflect_hash(g1) == crucible::reflect_hash(g2));
     assert(crucible::reflect_hash(g1) != crucible::reflect_hash(g3));
 
-    crucible::TensorMeta m1{};
-    m1.ndim = 2;
-    m1.sizes[0] = ::crucible::tensor_dim(32);
-    m1.sizes[1] = ::crucible::tensor_dim(64);
-    m1.strides[0] = ::crucible::tensor_dim(64);
-    m1.strides[1] = ::crucible::tensor_dim(1);
-    m1.dtype = crucible::ScalarType::Float;
-    m1.device_type = crucible::DeviceType::CUDA;
-    m1.device_idx = 0;
+    // A recipe holds enums, a flag set and a strong hash, and no pointer.
+    crucible::NumericalRecipe r1{};
+    r1.accum_dtype = crucible::ScalarType::Float;
+    r1.out_dtype = crucible::ScalarType::Half;
+    r1.reduction_algo = crucible::ReductionAlgo::KAHAN;
 
-    crucible::TensorMeta m2 = m1;
-    crucible::TensorMeta m3 = m1;
-    m3.sizes[1] = ::crucible::tensor_dim(128);
+    crucible::NumericalRecipe r2 = r1;
+    crucible::NumericalRecipe r3 = r1;
+    r3.rounding = crucible::RoundingMode::RZ;
 
-    assert(crucible::reflect_hash(m1) == crucible::reflect_hash(m2));
-    assert(crucible::reflect_hash(m1) != crucible::reflect_hash(m3));
-
-    std::fprintf(stderr, "reflect_print(Point): ");
-    crucible::reflect_print(p1, stderr);
-    std::fprintf(stderr, "\n");
-
-    std::fprintf(stderr, "reflect_print(Guard): ");
-    crucible::reflect_print(g1, stderr);
-    std::fprintf(stderr, "\n");
+    assert(crucible::reflect_hash(r1) == crucible::reflect_hash(r2));
+    assert(crucible::reflect_hash(r1) != crucible::reflect_hash(r3));
 
     // The trait holds for a class whose every member can itself be
     // hashed.

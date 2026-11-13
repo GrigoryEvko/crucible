@@ -3609,6 +3609,12 @@ crucible_neg_compile_test(neg_reflect_pack_field_unsupported_category
   "static assertion failed: T is outside IsReflectFieldSupported: pack_field handles enum, integral"
   "In instantiation of .constexpr uint64_t crucible::detail_reflect::pack_field\\(const T&\\) .with T = int Target::\\*.")
 
+# reflect_hash refuses a pointer field, because an address changes from run
+# to run.
+crucible_neg_compile_test(neg_reflect_hash_pointer_field
+  "static assertion failed: reflect_hash refuses a pointer field"
+  "crucible::detail_reflect::hash_field")
+
 # ─── Philox op_key DetSafe gate neg-compiles (2 fixtures) ───────────
 #
 # The raw per-op key derivation API is not public.  Production callers

@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
 // pack_field covers exactly the categories IsReflectFieldSupported
-// names: enum, integral, floating-point, pointer, array and class.  A
+// names: enum, integral, floating-point, array and class.  A
 // member of any other category must reach the trailing static_assert.
 //
 // The array arm was absent until recently, so a struct with a C array
