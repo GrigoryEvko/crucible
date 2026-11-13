@@ -58,12 +58,12 @@
 
 #include <atomic>
 #include <cstdint>
-#include <memory>
 #include <string>
 #include <utility>  // std::move, std::forward
 
-// The telemetry and the watchdog are held through pointers, so this header
-// only declares them.  src/Vigil.cpp includes their headers.
+// A Box holds the telemetry and the watchdog, so this header only declares
+// them.  src/Vigil.cpp includes their headers, and it defines each special
+// member of Vigil that makes or ends a Box.
 namespace crucible::perf {
 class Senses;
 }  // namespace crucible::perf
@@ -438,10 +438,12 @@ public:
     template <class Ctx>
         requires ::crucible::cipher::CtxFitsCipherCommit<Ctx>
     [[nodiscard, gnu::cold]] bool persist(Ctx const& ctx) {
-        if (!cipher_) return false;
-        const RegionNode* region = active_region();
-        if (!region) return false;
-        return persist_into_(ctx, *cipher_, region);
+        for (::fixy::Box<Cipher>& cipher : cipher_) {
+            const RegionNode* region = active_region();
+            if (!region) return false;
+            return persist_into_(ctx, *cipher, region);
+        }
+        return false;
     }
 
     // Loads the most recent stored region and makes it active, activating
@@ -453,14 +455,16 @@ public:
     template <class Ctx>
         requires ::foundation::effects::CtxAdmits<Ctx, ::crucible::CipherSessionEventPersistenceRow>
     [[nodiscard, gnu::cold]] bool load(Ctx const& ctx, ::foundation::effects::Alloc a) {
-        if (!cipher_) return false;
-        const VigilFgCtx fg = assert_producer_thread_();
-        RegionNode* region = load_head_(ctx, a, *cipher_);
-        if (!region) return false;
-        // Each region cut before the load holds ops that ran before it.
-        bg_.request_mark(ring_total_produced());
-        adopt_region_(fg, *region);
-        return true;
+        for (::fixy::Box<Cipher>& cipher : cipher_) {
+            const VigilFgCtx fg = assert_producer_thread_();
+            RegionNode* region = load_head_(ctx, a, *cipher);
+            if (!region) return false;
+            // Each region cut before the load holds ops that ran before it.
+            bg_.request_mark(ring_total_produced());
+            adopt_region_(fg, *region);
+            return true;
+        }
+        return false;
     }
 
     // Pre-allocated pointer for output j of the current op.  Valid only
@@ -552,7 +556,7 @@ public:
     //
     // True does not imply a usable verdict yet.  The first window always
     // reports InsufficientData while the baseline is captured.
-    [[nodiscard]] bool watchdog_enabled() const noexcept { return wd_ != nullptr; }
+    [[nodiscard]] bool watchdog_enabled() const noexcept { return wd_.is_some(); }
 
     // The acquire load pairs with the release store on the background
     // thread.  Reads InsufficientData when no region transition has happened
@@ -1024,9 +1028,12 @@ private:
     // Owned by the publish stage: each member takes that stage's proof, and
     // the foreground reaches the log only through run_on_publish_stage.
     TransactionLog<16, BackgroundThread::PublishStage> tx_log_;
-    // The store, when the configuration names a path.  It is held through
-    // a pointer, so this header only declares the class.
-    std::unique_ptr<Cipher> cipher_;
+    // The store, when the configuration names a path.  A Box holds it, so
+    // this header only declares the class.  The member has no initializer
+    // here: an initializer makes each unit that includes this header define
+    // the constructor of the Option, which can end the Box.  The constructor
+    // in src/Vigil.cpp makes the empty Option.
+    ::fixy::Option<::fixy::Box<Cipher>> cipher_;
     // Every dispatch and every record must come from one and the same
     // thread.  Another thread entering breaks the ring's single-producer
     // protocol and can corrupt the head-to-tail relationship.  The claim
@@ -1142,9 +1149,10 @@ private:
     // drives the watchdog.
     //
     // The constructor makes the two objects only when the configuration
-    // asks for the watchdog, and each is null otherwise.
-    std::unique_ptr<::crucible::perf::Senses> senses_;
-    std::unique_ptr<::crucible::warden::DeadlineWatchdog> wd_;
+    // asks for the watchdog, and each Option is empty otherwise.  The two
+    // members have no initializer, for the reason that cipher_ gives.
+    ::fixy::Option<::fixy::Box<::crucible::perf::Senses>> senses_;
+    ::fixy::Option<::fixy::Box<::crucible::warden::DeadlineWatchdog>> wd_;
     ::fixy::Atomic<::crucible::warden::WatchdogVerdict> wd_last_verdict_{
         ::crucible::warden::WatchdogVerdict::InsufficientData};
     ::fixy::Atomic<uint32_t> wd_healthy_count_{};

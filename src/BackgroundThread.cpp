@@ -61,6 +61,9 @@ struct GraphPublishTag {};
 struct BackgroundThread::Pipeline {
     // The thread that runs run_in_row.  start() sets it, and stop() joins it.
     std::jthread thread;
+    // True after the first start().  Only the thread that owns the
+    // BackgroundThread reads and writes it.
+    bool has_started = false;
 
     using StartChannel =
         ::fixy::concurrent::spsc_channel_t<BgPipelineStart, 1, decltype(detail::bg_pipeline::start_root())>;
@@ -170,7 +173,9 @@ struct BackgroundThread::Pipeline {
     static void MakeRegionFn(GraphPublishInput&& in, BgSinkProducerHandle&& out);
 };
 
-BackgroundThread::BackgroundThread() = default;
+// The constructor takes no context, so the one allocation of the pipeline
+// takes the bare allocation tag.
+BackgroundThread::BackgroundThread() : pipeline_{::fixy::mint_box<Pipeline>(::foundation::effects::Alloc{})} {}
 
 BackgroundThread::BgBuildWork* BackgroundThread::make_commit_work(uint32_t count) {
     auto* work = new BgBuildWork{};
@@ -625,15 +630,15 @@ void BackgroundThread::start(TraceRing* ring_ptr, MetaLog* meta_log_ptr, int32_t
     world_size = world_size_;
     device_capability = ::fixy::mint_tagged<::fixy::tags::source::Meridian>(device_cap);
     stop_requested.reset_in_quiescent_context(::fixy::handle::OneShotFlag::QuiescenceProof{});
-    // The lambda is the entry of the pipeline thread, so it takes the
-    // background context of that thread from the door.
-    if (!pipeline_) {
-        pipeline_ = std::make_unique<Pipeline>();
+    if (!pipeline_->has_started) {
+        pipeline_->has_started = true;
         // The first op of the ring owns the first record that the log has
         // not released.  A later start keeps the cursor, because the ring
         // keeps the ops that the last pipeline did not read.
         meta_cursor_ = meta_log.get()->tail.get();
     }
+    // The lambda is the entry of the pipeline thread, so it takes the
+    // background context of that thread from the door.
     pipeline_->thread = std::jthread([this]() noexcept {
         run_in_row(::fixy::BgLoadCtx{::foundation::effects::host::BackgroundOwner::mint_background_context()});
     });
@@ -641,7 +646,7 @@ void BackgroundThread::start(TraceRing* ring_ptr, MetaLog* meta_log_ptr, int32_t
 
 void BackgroundThread::stop() {
     stop_requested.signal();
-    if (pipeline_ && pipeline_->thread.joinable()) {
+    if (pipeline_->thread.joinable()) {
         pipeline_->thread.join();
     }
 }

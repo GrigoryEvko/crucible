@@ -522,10 +522,11 @@ private:
     // end of each stage and the four stage functions.  src/BackgroundThread.cpp
     // defines it, so no other translation unit compiles a channel type.  The
     // class is nested, so its stage functions reach the private state of the
-    // thread that they serve.  start() makes the one object that holds the
-    // thread, and the destructor of this class joins it.
+    // thread that they serve.  The constructor makes the one object that
+    // holds the thread, start() starts the thread, and the destructor of this
+    // class joins it.
     struct Pipeline;
-    std::unique_ptr<Pipeline> pipeline_;
+    ::fixy::Box<Pipeline> pipeline_;
 
 public:
     // Total entries fully processed.  The write surface is friend-gated to

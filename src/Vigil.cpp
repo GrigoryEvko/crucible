@@ -14,7 +14,6 @@
 #include <fixy/Core.h>
 
 #include <filesystem>
-#include <memory>
 #include <utility>
 
 namespace crucible {
@@ -33,8 +32,9 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
         // The configured path is operator-supplied, so it crosses the
         // trust boundary here and is declared external until the store's
         // own sanitizer promotes it.
-        cipher_ = std::make_unique<Cipher>(Cipher::open(
-            startup, ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{cfg_.cipher_path})));
+        cipher_ = ::fixy::some(::fixy::mint_box<Cipher>(
+            startup.cap().alloc, Cipher::open(startup, ::fixy::mint_tagged<::fixy::tags::source::External>(
+                                                           std::filesystem::path{cfg_.cipher_path}))));
     }
 
     bg_.set_region_ready_callback(this, [](void* self, ::foundation::effects::Bg const& bg,
@@ -48,10 +48,14 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
     // without a null check.  Attach failure is not an error here: every
     // observation then returns InsufficientData.
     if (cfg_.enable_deadline_watchdog) {
-        senses_ = std::make_unique<::crucible::perf::Senses>(
+        // A Box keeps the address of its object when it moves, so the
+        // borrow of the watchdog stays valid after the move into senses_.
+        ::fixy::Box<::crucible::perf::Senses> senses = ::fixy::mint_box<::crucible::perf::Senses>(
+            startup.cap().alloc,
             ::crucible::perf::Senses::load_subset(startup, ::crucible::perf::SensesMask{.sched_switch = true}));
-        wd_ = std::make_unique<::crucible::warden::DeadlineWatchdog>(
-            ::crucible::warden::mint_deadline_watchdog(startup, senses_.get(), cfg_.watchdog_policy));
+        wd_ = ::fixy::some(::fixy::mint_box<::crucible::warden::DeadlineWatchdog>(
+            startup.cap().alloc, ::crucible::warden::mint_deadline_watchdog(startup, &*senses, cfg_.watchdog_policy)));
+        senses_ = ::fixy::some(std::move(senses));
     }
 
     bg_.start(&*ring_, &*meta_log_, cfg_.rank, cfg_.world_size, cfg_.device_capability);
@@ -59,7 +63,10 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
 
 Vigil::~Vigil() = default;
 
-ContentHash Vigil::head_hash() const noexcept { return cipher_ ? cipher_->head() : ContentHash{}; }
+ContentHash Vigil::head_hash() const noexcept {
+    return cipher_.match([](::fixy::Box<Cipher> const& cipher) noexcept { return cipher->head(); },
+                         []() noexcept { return ContentHash{}; });
+}
 
 bool Vigil::rollback() {
     const VigilFgCtx fg = assert_producer_thread_();
@@ -150,8 +157,8 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // The observation is presented with a background-drain context
     // because this runs on the region-publishing thread, not the
     // foreground.
-    if (wd_) {
-        const auto v = wd_->observe(::fixy::BgDrainCtx{bg});
+    for (::fixy::Box<::crucible::warden::DeadlineWatchdog>& watchdog : wd_) {
+        const auto v = watchdog->observe(::fixy::BgDrainCtx{bg});
         wd_last_verdict_.store_release(v);
         switch (v) {
             case ::crucible::warden::WatchdogVerdict::Healthy:
