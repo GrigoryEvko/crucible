@@ -1,4 +1,4 @@
-// A file outside Report.h writes an explicit specialization of the template
+// A file outside Fatal.h writes an explicit specialization of the template
 // detail::fmt_text_, which Fmt befriends.  The body gives a format text that
 // the consteval check of Fmt did not read, so a report reads arguments that
 // the call did not give.  The rule specialization-home refuses the

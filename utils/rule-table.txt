@@ -669,10 +669,12 @@ witness <foundation/core/Ref.h> no-match | foundation::core::Address | foundatio
 witness <foundation/core/Ref.h> private | foundation::core::detail::AddressKey | foundation::core::detail::AddressKey{}
 witness <foundation/core/Identity.h> private | foundation::core::Identity | foundation::core::Identity{forge::rvalue<unsigned long>()}
 # A View comes only from an owner of the base layer, so no pointer and no
-# count that a caller holds become a View, and a cursor of a View comes
-# only from the View.
+# count that a caller holds become a View.
 witness <foundation/core/Region.h> private | foundation::core::View<int> | foundation::core::View<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
-witness <foundation/core/Region.h> private | foundation::core::ViewCursor<int> | foundation::core::ViewCursor<int>{forge::rvalue<int*>(), forge::rvalue<int*>()}
+# A cursor of a View or of a TextView takes the key that only
+# ViewCursorDoor builds, so each cursor comes from the run that it walks.
+witness <foundation/core/Cursor.h> no-match | foundation::core::ViewCursor<int> | foundation::core::ViewCursor<int>{forge::rvalue<int*>(), forge::rvalue<int*>()}
+witness <foundation/core/Cursor.h> private | foundation::core::detail::ViewCursorKey | foundation::core::detail::ViewCursorKey{}
 # A TextView comes only from a literal or from an owner of the base layer,
 # so no pointer and no count that a caller holds become a TextView.
 witness <foundation/core/Text.h> private | foundation::core::TextView | foundation::core::TextView{forge::rvalue<char const*>(), forge::rvalue<unsigned long>()}

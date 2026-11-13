@@ -968,7 +968,7 @@ The concepts of the verbs (`Iterable`, `Sum`, `Fallible`, `Lookup`, `ProvenLooku
 
 **The idea.** A value that can be absent, and the result of an operation that can fail, is a closed sum. The roads to a payload are `match`, a loop of zero or one turns (`Option` only), `value_or`, `expect` and `CRUCIBLE_TRY`. No type of the family has `operator*`, `operator->` or `operator bool`. Each type is `[[nodiscard]]`, and each operation is `constexpr` and `noexcept`.
 
-**The headers.** `include/foundation/core/Choice.h` (main), and `include/foundation/core/OneOf.h` (main), because the includers of `Choice.h` do not read `OneOf`. They include `<cstddef>`, `<concepts>`, `<new>`, `<type_traits>`, `foundation/ByteSeal.h`, `foundation/Linear.h` and `foundation/core/Report.h`.
+**The headers.** `include/foundation/core/Choice.h` (main), and `include/foundation/core/OneOf.h` (main), because the includers of `Choice.h` do not read `OneOf`. They include `<cstddef>`, `<concepts>`, `<new>`, `<type_traits>`, `foundation/ByteSeal.h`, `foundation/Linear.h` and `foundation/core/Fatal.h`.
 
 **The gates.**
 
@@ -1131,7 +1131,7 @@ A `Result` has no loop, because a loop over the value drops the error with no tr
 
 **The idea.** Each array, buffer, text, run of bytes, pointer with a count, and C array is one contiguous region. A region has an owner kind and an extent kind, and each kind gives one set of verbs and one small set of free operations. An index is checked by its type, or by the one explicit branch of `get`.
 
-**The headers.** `include/foundation/core/Region.h`, `include/foundation/core/Text.h`, `Index.h`, `Array.h` and `Algorithms.h` (main), and one header for each other owner kind (design): `List.h`, `Ring.h` and `Table.h`. `Index.h` holds `Index<N>`, `StaticIndex<I>` and `index<I>()`. `Text.h` uses no other family, so the Report family can take a `TextView`. So `Text.h` declares the loop and `window` of a `TextView`, and `Region.h` defines them.
+**The headers.** `include/foundation/core/Region.h`, `include/foundation/core/Text.h`, `Index.h`, `Array.h` and `Algorithms.h` (main), and one header for each other owner kind (design): `List.h`, `Ring.h` and `Table.h`. `Index.h` holds `Index<N>`, `StaticIndex<I>` and `index<I>()`. `Cursor.h` holds `ViewCursor`, the cursor of a `View` and of a `TextView`. The Report family takes a `TextView`, so `Report.h` includes `Text.h`. `Text.h` includes the Choice family and `Cursor.h`, which end the process through `Fatal.h`, and it defines the loop and `window` of a `TextView` itself, so each member of a class of `Text.h` has its definition in `Text.h`.
 
 **The merges.** Slice 4.3 merges five base headers into the family (Appendix E):
 - `fixy/FixedArray.h` into `FixedArray`
@@ -1476,7 +1476,7 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 
 **The idea.** Each text that the program writes goes through one checked formatter into a region, and out through one sink with no buffer. Each fatal exit and each point that control never reaches goes through one cold function with a site. Each number that the program reads from a text goes through one parser.
 
-**The headers.** `include/foundation/core/Report.h`, `include/foundation/core/Format.h` and `include/foundation/core/Parse.h` (main). The cold functions are in `src/foundation/core/Report.cpp` and `src/foundation/ContractHandler.cpp`. The sink write is in `src/foundation/os/ReportSink.cpp`, and it issues the raw write of `foundation/os/Syscall.h`.
+**The headers.** `include/foundation/core/Fatal.h`, `include/foundation/core/Report.h`, `include/foundation/core/Format.h` and `include/foundation/core/Parse.h` (main). `Fatal.h` holds `Site`, `Fmt`, the `fatal()` with no argument and `unreachable()`, and it names no text type, so the Choice family and the cursor of the Region family can end the process below `Text.h`. `Report.h` holds `Formattable`, `report()` and the `fatal()` with arguments, and each function that writes the arguments of a `Fmt` asks for `Formattable` of each one. The cold functions are in `src/foundation/core/Report.cpp` and `src/foundation/ContractHandler.cpp`. The sink write is in `src/foundation/os/ReportSink.cpp`, and it issues the raw write of `foundation/os/Syscall.h`.
 
 **The API.**
 

@@ -227,6 +227,11 @@
       "constructor": "\\bReverseCursor\\("
     },
     {
+      "name": "neg_witness_core_detail_viewcursorkey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bViewCursorKey\\("
+    },
+    {
       "name": "neg_witness_core_detail_windowcursor_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bWindowCursor\\("
@@ -298,7 +303,7 @@
     },
     {
       "name": "neg_witness_core_viewcursor_direct_construction",
-      "reason": "is private within this context",
+      "reason": "no matching function for call",
       "constructor": "\\bViewCursor\\("
     },
     {
@@ -1043,7 +1048,11 @@
     },
     {
       "type": "foundation::core::ViewCursor<int>",
-      "header": "foundation/core/Region.h"
+      "header": "foundation/core/Cursor.h"
+    },
+    {
+      "type": "foundation::core::detail::ViewCursorKey",
+      "header": "foundation/core/Cursor.h"
     },
     {
       "type": "foundation::core::TextView",

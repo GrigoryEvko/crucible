@@ -747,7 +747,7 @@ foundation_neg_compile_test(neg_specialization_home_detail_text_bytes
   "neg_specialization_home_detail_text_bytes\\.cpp:11:[0-9]+: error: this file specializes the template .foundation::core::detail::text_bytes_. outside its home .include/foundation/core/Text\\.h."
   "an explicit specialization gives the function a different body")
 foundation_neg_compile_test(neg_specialization_home_detail_fmt_text
-  "neg_specialization_home_detail_fmt_text\\.cpp:11:[0-9]+: error: this file specializes the template .foundation::core::detail::fmt_text_. outside its home .include/foundation/core/Report\\.h."
+  "neg_specialization_home_detail_fmt_text\\.cpp:11:[0-9]+: error: this file specializes the template .foundation::core::detail::fmt_text_. outside its home .include/foundation/core/Fatal\\.h."
   "an explicit specialization gives the function a different body")
 foundation_neg_compile_test(neg_specialization_home_detail_alternative_of
   "neg_specialization_home_detail_alternative_of\\.cpp:15:[0-9]+: error: this file specializes the template .foundation::core::detail::alternative_of_. outside its home .include/foundation/core/Choice\\.h."
@@ -769,8 +769,8 @@ foundation_neg_compile_test(neg_base_namespace_planted_template
 foundation_neg_compile_test(neg_base_namespace_overload_before_header
   "neg_base_namespace_overload_before_header\\.cpp:9:[0-9]+: error: this file declares .foundation::core::unreachable. in a namespace of the base, outside the base"
   "a new overload changes which function a call of the base reaches")
-foundation_neg_compile_test(neg_base_namespace_text_cursor_body
-  "neg_base_namespace_text_cursor_body\\.cpp:10:[0-9]+: error: this file declares .foundation::core::TextView::begin. in a namespace of the base, outside the base"
+foundation_neg_compile_test(neg_base_namespace_fatal_exit_body
+  "neg_base_namespace_fatal_exit_body\\.cpp:12:[0-9]+: error: this file declares .foundation::core::detail::report_fatal_. in a namespace of the base, outside the base"
   "a body of a function that the base only declares replaces the code of the base")
 foundation_neg_compile_test(neg_base_namespace_global_directive
   "neg_base_namespace_global_directive\\.cpp:11:[0-9]+: error: this using-directive of the namespace .planted. can change a lookup of the base, outside the base"
@@ -1939,14 +1939,14 @@ foundation_neg_compile_test(neg_core_fmt_brace_spec
   "call to consteval function .foundation::core::Fmt<int>\\(\"the mask is \\{:x\\}\", __builtin_FILE\\(\\), __builtin_LINE\\(\\), __builtin_FUNCTION\\(\\)\\). is not a constant expression"
   "call to non-.constexpr. function .void foundation::core::detail::fmt_text_holds_a_brace_that_is_no_placeholder_and_no_escape\\(\\).")
 foundation_neg_compile_test(neg_core_fmt_argument_long_double
-  "template constraint failure for .template<class ... Args>  requires \\(Formattable<Args> && ...\\) class foundation::core::Fmt."
-  "the expression .\\(Formattable<Args> && ...\\) \\[with Args = \\{long double\\}\\]. evaluated to .false.")
+  "no matching function for call to .fatal\\(const char \\[16\\], long double\\)."
+  "required for the satisfaction of .Formattable<First>. \\[with First = long double\\]")
 foundation_neg_compile_test(neg_core_fmt_argument_float16
-  "template constraint failure for .template<class ... Args>  requires \\(Formattable<Args> && ...\\) class foundation::core::Fmt."
-  "the expression .\\(Formattable<Args> && ...\\) \\[with Args = \\{_Float16\\}\\]. evaluated to .false.")
+  "no matching function for call to .fatal\\(const char \\[16\\], const _Float16&\\)."
+  "required for the satisfaction of .Formattable<First>. \\[with First = _Float16\\]")
 foundation_neg_compile_test(neg_core_fmt_argument_pointer
-  "template constraint failure for .template<class ... Args>  requires \\(Formattable<Args> && ...\\) class foundation::core::Fmt."
-  "the expression .\\(Formattable<Args> && ...\\) \\[with Args = \\{int\\*\\}\\]. evaluated to .false.")
+  "no matching function for call to .report\\(foundation::core::Sink, const char \\[20\\], int\\*\\)."
+  "required for the satisfaction of .Formattable<First>. \\[with First = int\\*\\]")
 foundation_neg_compile_test(neg_core_fatal_runtime_text
   "no matching function for call to .fatal\\(const char\\*\\)."
   "no known conversion for argument 1 from .const char\\*. to .foundation::core::Fmt<>.")
@@ -1968,6 +1968,9 @@ foundation_neg_compile_test(neg_core_format_temporary_text
 foundation_neg_compile_test(neg_core_format_result_dropped
   "ignoring return value of .foundation::core::Result<foundation::core::TextView, foundation::core::Truncated> foundation::core::format\\("
   "declared with attribute .nodiscard.")
+foundation_neg_compile_test(neg_core_format_argument_long_double
+  "no matching function for call to .format\\(foundation::core::FixedText<32>&, const char \\[16\\], long double\\)."
+  "the expression .\\(Formattable<Args> && ...\\) \\[with Args = \\{long double\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_fixed_text_view_of_temporary
   "use of deleted function .foundation::core::TextView foundation::core::FixedText<Capacity>::view\\(\\) const && \\[with long unsigned int Capacity = 8\\]."
   "a view of a temporary FixedText points into an object that the full expression ends")
@@ -2775,9 +2778,15 @@ foundation_neg_compile_test(neg_core_fixed_array_subscript
 foundation_neg_compile_test(neg_core_fixed_array_at_wider_index
   "no matching function for call to .foundation::core::FixedArray<int, 4>::at\\(foundation::core::Index<8>&\\) const."
   "In function .int read_past\\(const foundation::core::FixedArray<int, 4>&, foundation::core::Index<8>\\).")
-foundation_neg_compile_test(neg_core_text_window_without_region
-  "use of .constexpr auto foundation::core::TextView::window\\(std::size_t, std::size_t\\) const. before deduction of .auto."
-  "In function .bool has_window\\(foundation::core::TextView\\).")
+foundation_neg_compile_test(neg_core_text_view_window_member_forged
+  "no declaration matches .constexpr auto foundation::core::TextView::window\\(std::size_t, std::size_t\\) const."
+  ".class foundation::core::TextView. defined here")
+foundation_neg_compile_test(neg_core_text_view_cursor_member_forged
+  "redefinition of .constexpr foundation::core::ViewCursor<const char> foundation::core::TextView::begin\\(\\) const."
+  "foundation::core::TextView::begin\\(\\) const. previously defined here")
+foundation_neg_compile_test(neg_core_fixed_text_cursor_member_forged
+  "redefinition of .constexpr foundation::core::ViewCursor<const char> foundation::core::FixedText<Capacity>::begin\\(\\) const &."
+  "foundation::core::FixedText<Capacity>::begin\\(\\) const &. previously declared here")
 foundation_neg_compile_test(neg_core_bytes_of_padded
   "no matching function for call to .bytes\\(const Padded&\\)."
   "the expression .has_unique_object_representations_v<T> \\[with T = Padded\\]. evaluated to .false.")

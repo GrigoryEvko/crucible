@@ -29,6 +29,7 @@ namespace foundation::core {
 struct Truncated final {};
 
 template <std::size_t Capacity, class... Args>
+    requires(Formattable<Args> && ...)
 [[nodiscard]] Result<TextView, Truncated> format(FixedText<Capacity>& out,
                                                  Fmt<std::type_identity_t<Args>...> const& fmt, Args... args) noexcept {
     std::size_t length = 0;
@@ -45,6 +46,7 @@ template <std::size_t Capacity, class... Args>
 }
 
 template <std::size_t Capacity, class... Args>
+    requires(Formattable<Args> && ...)
 void format(FixedText<Capacity>&& out, Fmt<std::type_identity_t<Args>...> const& fmt, Args... args) =
     delete("format() gives a view of its FixedText, and a temporary FixedText ends with the full expression");
 

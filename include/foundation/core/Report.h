@@ -1,29 +1,20 @@
 #pragma once
 
-// The Report family: the place of a call, the checked text of a report, the
-// report to a sink, and the fatal exit.
+// The Report family: the report to a sink, and the fatal exit with
+// arguments.
 //
-//   Site                  the file, the line and the function of a call
-//   Fmt<Args...>          a string literal with one placeholder for each
-//                         argument, and the Site of its call
 //   report(sink, fmt, args...)
 //                         writes the text with the arguments to a sink:
 //                         Sink::Out (standard output) or Sink::Err
 //                         (standard error)
 //   fatal(fmt, args...)   writes the text with the arguments and the site
 //                         to standard error, and ends the process
-//   unreachable()         the same, for a point that the code marks as one
-//                         that control never reaches
 //
-// format() of foundation/core/Format.h writes a text into a FixedText.
-//
-// THE TEXT OF A REPORT
-//   `{}` is a placeholder, and each placeholder takes the next argument.
-//   `{{` writes `{`, and `}}` writes `}`.  Each other brace is refused.  The
-//   constructor of Fmt is consteval: it refuses a text with no terminating
-//   zero, a zero byte before the end, a stray brace, and a count of
-//   placeholders that differs from the count of arguments.  The refusal
-//   names its rule (detail::fmt_*), and the build stops at the call.
+// foundation/core/Fatal.h gives Site, Fmt<Args...>, the fatal() with no
+// argument and unreachable(), with the rules of the text of a report.  It
+// names no text type, so a family below foundation/core/Text.h can end the
+// process.  This header includes it.  format() of foundation/core/Format.h
+// writes a text into a FixedText.
 //
 // THE ARGUMENTS
 //   An argument is an integer, a bool, a TextView, a float or a double.  An
@@ -60,9 +51,7 @@
 //
 // fatal() and unreachable() end the process in each build, with each
 // contract semantic.  They are [[noreturn]], so the optimizer knows that
-// control does not continue after them.  unreachable() and the fatal()
-// with no argument are inline functions that load the texts and the line
-// into registers and call one cold function.  The fatal() with arguments is
+// control does not continue after them.  The fatal() with arguments is
 // itself a cold function (THE TWO FORMS below).  So the hot path keeps only
 // the branch to the cold call.
 //
@@ -70,6 +59,7 @@
 // src/foundation/ContractHandler.cpp.  A report in progress on one thread
 // makes a second fatal report on that thread abort at once.
 
+#include <foundation/core/Fatal.h>
 #include <foundation/core/Number.h>
 #include <foundation/core/Text.h>
 
@@ -79,53 +69,14 @@
 
 namespace foundation::core {
 
-namespace detail {
-
-// The consteval constructor of Fmt calls one of these functions when its
-// text breaks a rule.  No function has a definition, so the call is no
-// constant expression, and the error of the compiler names the rule.
-void fmt_text_is_empty() noexcept;
-void fmt_text_has_no_terminating_zero() noexcept;
-void fmt_text_holds_a_zero_byte_before_its_end() noexcept;
-void fmt_text_holds_a_brace_that_is_no_placeholder_and_no_escape() noexcept;
-void fmt_text_has_more_placeholders_than_arguments() noexcept;
-void fmt_text_has_fewer_placeholders_than_arguments() noexcept;
-
-// Checks the text of a Fmt: a string literal of length bytes, with its
-// terminating zero, and with one placeholder for each of the arguments.
-// It is a function and not a part of the constructor template, so the
-// check compiles one time for each translation unit and not one time for
-// each length of a literal.
-consteval void check_fmt_text_(char const* text, std::size_t length, std::size_t arguments) noexcept {
-    if (length < 2) fmt_text_is_empty();
-    if (text[length - 1] != '\0') fmt_text_has_no_terminating_zero();
-    std::size_t placeholders = 0;
-    for (std::size_t index = 0; index + 1 < length; ++index) {
-        char const byte = text[index];
-        if (byte == '\0') {
-            fmt_text_holds_a_zero_byte_before_its_end();
-        } else if (byte == '{' && text[index + 1] == '}') {
-            ++placeholders;
-            ++index;
-        } else if ((byte == '{' || byte == '}') && text[index + 1] == byte) {
-            ++index;
-        } else if (byte == '{' || byte == '}') {
-            fmt_text_holds_a_brace_that_is_no_placeholder_and_no_escape();
-        }
-    }
-    if (placeholders > arguments) fmt_text_has_more_placeholders_than_arguments();
-    if (placeholders < arguments) fmt_text_has_fewer_placeholders_than_arguments();
-}
-
-}  // namespace detail
-
 // A type that a report can write: an Integer and a Float of the Scalar
 // family, a bool and a TextView.  An Integer is not bool and not a
 // character type, and signed char and unsigned char are integers, so a
 // std::uint8_t is written as a number.  The argument of a report binds to
 // a reference, so an argument type is never a reference.  A deduced
 // argument type is never cv-qualified, so each arm refuses a cv-qualified
-// type.
+// type.  Each function that writes the arguments of a Fmt asks for this
+// concept of each one.
 template <class T>
 concept Formattable = Integer<T> || Float<T> || std::is_same_v<T, bool> || std::is_same_v<T, TextView>;
 
@@ -134,118 +85,6 @@ enum class Sink : std::uint8_t {
     Out,
     Err
 };
-
-class Site;
-
-template <class... Args>
-    requires(Formattable<Args> && ...)
-class Fmt;
-
-namespace detail {
-
-// The doors of the functions of the family to the parts of a Site and of a
-// Fmt.  Each part comes out by value, so no caller keeps a reference into a
-// Site or a Fmt.  The constructors of Site and Fmt are consteval, so each
-// text is a constant of static storage and cannot dangle.  The rule owners
-// keeps each caller outside the base out of detail.
-[[nodiscard]] constexpr char const* site_file_(Site const& site) noexcept;
-[[nodiscard]] constexpr char const* site_function_(Site const& site) noexcept;
-[[nodiscard]] constexpr std::uint32_t site_line_(Site const& site) noexcept;
-
-template <class... Args>
-[[nodiscard]] constexpr char const* fmt_text_(Fmt<Args...> const& fmt) noexcept;
-template <class... Args>
-[[nodiscard]] constexpr char const* fmt_file_(Fmt<Args...> const& fmt) noexcept;
-template <class... Args>
-[[nodiscard]] constexpr char const* fmt_function_(Fmt<Args...> const& fmt) noexcept;
-template <class... Args>
-[[nodiscard]] constexpr std::uint32_t fmt_line_(Fmt<Args...> const& fmt) noexcept;
-
-}  // namespace detail
-
-// The place of a call.  The default arguments read the place where the
-// constructor runs, which is the call that takes a default Site.
-class Site final {
-public:
-    consteval Site(char const* file = __builtin_FILE(), int line = __builtin_LINE(),
-                   char const* function = __builtin_FUNCTION()) noexcept
-        : file_{file}, function_{function}, line_{static_cast<std::uint32_t>(line)} {
-        // The constructor walks to the terminating zero of each name.  A
-        // read of a null name, or past the end of a constant array with no
-        // zero, is no constant expression, so the build stops at the call.
-        // The report then never reads past the end of a name.
-        for (char const* cursor = file; *cursor != '\0'; ++cursor) {}
-        for (char const* cursor = function; *cursor != '\0'; ++cursor) {}
-    }
-
-private:
-    friend constexpr char const* detail::site_file_(Site const& site) noexcept;
-    friend constexpr char const* detail::site_function_(Site const& site) noexcept;
-    friend constexpr std::uint32_t detail::site_line_(Site const& site) noexcept;
-
-    char const* file_;
-    char const* function_;
-    std::uint32_t line_;
-};
-
-// The text of a report and the place of the call that gives it.  The place
-// comes from scalar default arguments and not from a default Site.  A
-// default argument of class type is a temporary, and the range of a for
-// loop extends the life of each temporary, so the temporary would be no
-// constant there.
-//
-// A call takes the text as Fmt<std::type_identity_t<Args>...>, so the
-// arguments of the call give Args, and the literal converts to the Fmt
-// with the checks of those Args.
-template <class... Args>
-    requires(Formattable<Args> && ...)
-class Fmt final {
-public:
-    template <std::size_t Length>
-    consteval Fmt(char const (&text)[Length], char const* file = __builtin_FILE(), int line = __builtin_LINE(),
-                  char const* function = __builtin_FUNCTION()) noexcept
-        : text_{text}, site_{file, line, function} {
-        detail::check_fmt_text_(text, Length, sizeof...(Args));
-    }
-
-private:
-    template <class... Others>
-    friend constexpr char const* detail::fmt_text_(Fmt<Others...> const& fmt) noexcept;
-    template <class... Others>
-    friend constexpr char const* detail::fmt_file_(Fmt<Others...> const& fmt) noexcept;
-    template <class... Others>
-    friend constexpr char const* detail::fmt_function_(Fmt<Others...> const& fmt) noexcept;
-    template <class... Others>
-    friend constexpr std::uint32_t detail::fmt_line_(Fmt<Others...> const& fmt) noexcept;
-
-    char const* text_;
-    Site site_;
-};
-
-namespace detail {
-
-constexpr char const* site_file_(Site const& site) noexcept { return site.file_; }
-constexpr char const* site_function_(Site const& site) noexcept { return site.function_; }
-constexpr std::uint32_t site_line_(Site const& site) noexcept { return site.line_; }
-
-template <class... Args>
-constexpr char const* fmt_text_(Fmt<Args...> const& fmt) noexcept {
-    return fmt.text_;
-}
-template <class... Args>
-constexpr char const* fmt_file_(Fmt<Args...> const& fmt) noexcept {
-    return site_file_(fmt.site_);
-}
-template <class... Args>
-constexpr char const* fmt_function_(Fmt<Args...> const& fmt) noexcept {
-    return site_function_(fmt.site_);
-}
-template <class... Args>
-constexpr std::uint32_t fmt_line_(Fmt<Args...> const& fmt) noexcept {
-    return site_line_(fmt.site_);
-}
-
-}  // namespace detail
 
 namespace detail {
 
@@ -289,13 +128,8 @@ template <class T>
     }
 }
 
-// Writes `foundation: fatal: TEXT` and the site to standard error.  Then it
-// stops in a debugger when one is attached, and aborts.  The text takes no
-// argument, and its escapes `{{` and `}}` are written as one brace.
-[[noreturn, gnu::cold]] void report_fatal_(char const* text, char const* file, std::uint32_t line,
-                                           char const* function) noexcept;
-
-// The same, for a text with count arguments.
+// Writes the text with count arguments and the site to standard error, as
+// report_fatal_ of foundation/core/Fatal.h does for a text with no argument.
 [[noreturn, gnu::cold]] void report_fatal_with_(char const* text, char const* file, std::uint32_t line,
                                                 char const* function, FmtArg const* arguments,
                                                 std::size_t count) noexcept;
@@ -318,9 +152,9 @@ void write_sink_(Sink sink, char const* bytes, std::size_t count) noexcept;
 }  // namespace detail
 
 // THE FORMS OF report() AND fatal()
-//   The fatal() with no argument is inline.  It loads the parts of its text
-//   into registers and calls one cold function, and the caller builds no
-//   object on its stack.
+//   The fatal() with no argument is inline (foundation/core/Fatal.h).  It
+//   loads the parts of its text into registers and calls one cold function,
+//   and the caller builds no object on its stack.
 //
 //   Each other form is a cold function that is not inline.  report() takes
 //   its text by value: the caller writes the text into the argument area
@@ -343,34 +177,23 @@ void write_sink_(Sink sink, char const* bytes, std::size_t count) noexcept;
 
 // The same, with arguments.
 template <class First, class... Rest>
+    requires(Formattable<First> && (Formattable<Rest> && ...))
 [[gnu::cold, gnu::noinline]] void report(Sink sink, Fmt<std::type_identity_t<First>, std::type_identity_t<Rest>...> fmt,
                                          First first, Rest... rest) noexcept {
     detail::FmtArg const arguments[1 + sizeof...(Rest)] = {detail::fmt_arg_of_(first), detail::fmt_arg_of_(rest)...};
     detail::report_(sink, detail::fmt_text_(fmt), arguments, 1 + sizeof...(Rest));
 }
 
-// Writes the text and the site to standard error, and ends the process.  A
-// search for `fatal(` finds each fatal exit of the code.
-[[noreturn, gnu::always_inline]] inline void fatal(Fmt<> fmt) noexcept {
-    detail::report_fatal_(detail::fmt_text_(fmt), detail::fmt_file_(fmt), detail::fmt_line_(fmt),
-                          detail::fmt_function_(fmt));
-}
-
-// The same, with arguments.
+// Writes the text with the arguments and the site to standard error, and
+// ends the process.  A search for `fatal(` finds each fatal exit of the
+// code.
 template <class First, class... Rest>
+    requires(Formattable<First> && (Formattable<Rest> && ...))
 [[noreturn, gnu::cold, gnu::noinline]] void
 fatal(Fmt<std::type_identity_t<First>, std::type_identity_t<Rest>...> const& fmt, First first, Rest... rest) noexcept {
     detail::FmtArg const arguments[1 + sizeof...(Rest)] = {detail::fmt_arg_of_(first), detail::fmt_arg_of_(rest)...};
     detail::report_fatal_with_(detail::fmt_text_(fmt), detail::fmt_file_(fmt), detail::fmt_line_(fmt),
                                detail::fmt_function_(fmt), arguments, 1 + sizeof...(Rest));
-}
-
-// The point that control never reaches, such as the arm after a switch
-// that handles each enumerator.  A value outside the enumerators reaches
-// it, and the process ends with the site.
-[[noreturn, gnu::always_inline]] inline void unreachable(Site site = Site{}) noexcept {
-    detail::report_fatal_("control reached a point that the code marks as unreachable", detail::site_file_(site),
-                          detail::site_line_(site), detail::site_function_(site));
 }
 
 }  // namespace foundation::core

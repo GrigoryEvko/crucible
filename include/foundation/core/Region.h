@@ -34,9 +34,8 @@
 // of the append, and the copy into the window compiles to the memmove of
 // the raw form.
 //
-// This header also defines the reads of the characters of a TextView and of
-// a FixedText, which foundation/core/Text.h declares: the loop gives a
-// ViewCursor<char const>, and window() gives an Option<TextView>.
+// The loop of a View gives the cursor of foundation/core/Cursor.h, which a
+// TextView of foundation/core/Text.h gives too.
 //
 // get(position) gives an Option of a Ref, so this header includes the Ref
 // family and defines the body of get itself.  A unit that includes only
@@ -45,6 +44,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Cursor.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Report.h>
@@ -148,47 +148,6 @@ class ZipRange;
 
 }  // namespace detail
 
-// The position of a loop over a View.  It comes only from begin() and
-// end() of a View, and the seal refuses std::bit_cast and a lifetime start
-// over bytes.  A cursor knows the end of its View.  A read or a step at the
-// end ends the process in each build, so a cursor never leaves its View.
-// A loop compares the cursor with the end before each read and each step,
-// and the optimizer removes the two checks there, so the count of the View
-// is the only bound of the loop.
-template <class Element>
-class ViewCursor {
-    Element* at_ = nullptr;
-    Element* end_ = nullptr;
-    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
-
-    template <class T, std::size_t Extent>
-        requires ViewElement<T> && ViewExtent<T, Extent>
-    friend class View;
-    friend class TextView;
-
-    constexpr ViewCursor(Element* at, Element* end) noexcept : at_{at}, end_{end} {}
-
-public:
-    [[nodiscard]] constexpr Element& operator*() const noexcept {
-        if (at_ == end_) [[unlikely]] {
-            fatal("a read through the end cursor of a View");
-        }
-        return *at_;
-    }
-
-    constexpr ViewCursor& operator++() noexcept {
-        if (at_ == end_) [[unlikely]] {
-            fatal("a step past the end cursor of a View");
-        }
-        ++at_;
-        return *this;
-    }
-
-    [[nodiscard]] friend constexpr bool operator==(ViewCursor const& left, ViewCursor const& right) noexcept {
-        return left.at_ == right.at_;
-    }
-};
-
 template <class T, std::size_t Extent>
     requires ViewElement<T> && ViewExtent<T, Extent>
 class View {
@@ -261,9 +220,11 @@ public:
         return count;
     }
 
-    [[nodiscard]] constexpr ViewCursor<T> begin() const noexcept { return ViewCursor<T>{first_, first_ + size()}; }
+    [[nodiscard]] constexpr ViewCursor<T> begin() const noexcept {
+        return ViewCursor<T>{detail::ViewCursorDoor::key(), first_, first_ + size()};
+    }
     [[nodiscard]] constexpr ViewCursor<T> end() const noexcept {
-        return ViewCursor<T>{first_ + size(), first_ + size()};
+        return ViewCursor<T>{detail::ViewCursorDoor::key(), first_ + size(), first_ + size()};
     }
 
     // The element at a proven index of a View of a fixed extent.  The type
@@ -601,40 +562,6 @@ public:
 };
 
 }  // namespace detail
-
-// The reads of the characters of a TextView, which foundation/core/Text.h
-// declares.  The cursor holds the place and the end of the text, as the
-// cursor of a View does.
-constexpr auto TextView::begin() const noexcept { return ViewCursor<char const>{first_, first_ + size()}; }
-
-constexpr auto TextView::end() const noexcept {
-    char const* const last = first_ + size();
-    return ViewCursor<char const>{last, last};
-}
-
-// The window fits, so its count is at most the count of this text, which
-// size() bounds.  The optimizer then knows that the count is not the empty
-// value of the niche, and the Option needs no test.
-constexpr auto TextView::window(std::size_t offset, std::size_t count) const noexcept {
-    using Result = Option<TextView>;
-    if (offset > size() || count > size() - offset) [[unlikely]] {
-        return Result{none};
-    }
-    [[assume(count <= static_cast<std::size_t>(__PTRDIFF_MAX__))]];
-    return Result::some(TextView{first_ + offset, count});
-}
-
-template <std::size_t Capacity>
-    requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(__PTRDIFF_MAX__))
-constexpr auto FixedText<Capacity>::begin() const& noexcept {
-    return view().begin();
-}
-
-template <std::size_t Capacity>
-    requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(__PTRDIFF_MAX__))
-constexpr auto FixedText<Capacity>::end() const& noexcept {
-    return view().end();
-}
 
 // The error of a copy between two Views of a dynamic extent whose counts
 // differ.

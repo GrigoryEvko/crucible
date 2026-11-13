@@ -61,7 +61,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/OpenExtension.h>
-#include <foundation/core/Report.h>
+#include <foundation/core/Fatal.h>
 #include <foundation/reflect/Instance.h>
 #include <foundation/reflect/TypeComponents.h>
 

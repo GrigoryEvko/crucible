@@ -229,8 +229,8 @@ TARGET_WORDS = ("-march=", "-mtune=", "-mcpu=")
 
 # ── The constants of the core part ─────────────────────────────────
 
-# The exit function of include/foundation/core/Report.h: each cold function of `foundation::core::detail` with a
-# name that starts with report_.
+# The exit function of include/foundation/core/Fatal.h and include/foundation/core/Report.h: each cold function of
+# `foundation::core::detail` with a name that starts with report_.
 FATAL_PREFIX = "foundation::core::detail::report_"
 RAW_SUFFIX = "_raw"
 COLD_SUFFIX = " [clone .cold]"

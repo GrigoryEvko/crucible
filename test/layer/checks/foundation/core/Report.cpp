@@ -120,15 +120,19 @@ static_assert(BuildsSite<0> && BuildsSite<1>);
 static_assert(!BuildsSite<2>);
 static_assert(!BuildsSite<3>);
 
-// A text takes an integer, a bool, a TextView, a float or a double.  A
+// A report takes an integer, a bool, a TextView, a float or a double.  A
 // character, a long double, each other floating type, a pointer, an array,
-// an enumeration and each other type has no formatter, so the text refuses
-// it.
+// an enumeration and each other type has no formatter, so Formattable
+// refuses it.  Each function that writes the arguments of a text asks for
+// Formattable of each one: report(), fatal() with arguments and format().
+// The fixtures neg_core_fmt_argument_* and neg_core_format_argument_* show
+// the refusal of each function.  A Fmt of such a type compiles, because
+// foundation/core/Fatal.h names no text type, and no function writes it.
 enum class Colour : unsigned char {
     red
 };
 template <class... Args>
-concept TakesArguments = requires { typename Fmt<Args...>; };
+concept TakesArguments = (Formattable<Args> && ...);
 static_assert(TakesArguments<>);
 static_assert(TakesArguments<int, unsigned long long, signed char, unsigned char, short, long>);
 static_assert(TakesArguments<bool, TextView>);
@@ -152,6 +156,9 @@ static_assert(!TakesArguments<int, long double>);
 // cv-qualified type, an integer as a bool.
 static_assert(!TakesArguments<int const> && !TakesArguments<int volatile> && !TakesArguments<unsigned const>);
 static_assert(!TakesArguments<bool const> && !TakesArguments<double const> && !TakesArguments<TextView const>);
+// A Fmt of a refused type is a type of the same size, and no function writes
+// its arguments.
+static_assert(sizeof(Fmt<long double>) == sizeof(Fmt<>));
 
 // Each argument reaches the cold formatter as its kind and its bits.  A
 // signed value keeps its two's complement bits.

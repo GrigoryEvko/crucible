@@ -32,15 +32,19 @@
 //   characters from offset, or no value when they do not fit.  The free
 //   operations of foundation/core/Algorithms.h search and compare texts.
 //
-//   This header uses no other family, so the Report family can take a
-//   TextView as an argument of a report.  The loop and the window give a
-//   cursor and an Option, which are above the Report family.  So this header
-//   declares begin(), end() and window() with a deduced type, and
-//   foundation/core/Region.h defines them.  A unit that reads a TextView
-//   without Region.h does not compile: the compiler refuses the use of a
-//   function whose type it has not deduced.
+//   The Report family takes a TextView as an argument of a report, so
+//   foundation/core/Report.h includes this header.  The loop gives the
+//   cursor of foundation/core/Cursor.h, and the window gives an Option of
+//   the Choice family.  These two headers end the process through
+//   foundation/core/Fatal.h, which names no text type, so this header
+//   includes them and defines begin(), end() and window() itself.  Each
+//   member and each friend of a class of this header has its definition in
+//   this header, so no other file can define one with the access of the
+//   class.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Cursor.h>
 
 #include <cstddef>
 
@@ -48,15 +52,6 @@ namespace foundation::core {
 
 class TextView;
 class CText;
-
-// The niche protocol of the Choice family and its key.  This header gives
-// the niche of a TextView, so an Option of a window has the size of a
-// TextView.
-template <class T>
-struct niche;
-
-template <class T>
-class niche_key;
 
 template <std::size_t Capacity>
     requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(__PTRDIFF_MAX__))
@@ -128,12 +123,20 @@ public:
     }
 
     // The loop `for (char c : text)` reads each character one time, in
-    // order.  The cursor of foundation/core/Region.h never leaves the text.
-    [[nodiscard]] constexpr auto begin() const noexcept;
-    [[nodiscard]] constexpr auto end() const noexcept;
+    // order.  The cursor holds the place and the end of the text, as the
+    // cursor of a View does, so it never leaves the text.
+    [[nodiscard]] constexpr ViewCursor<char const> begin() const noexcept {
+        return ViewCursor<char const>{detail::ViewCursorDoor::key(), first_, first_ + size()};
+    }
+    [[nodiscard]] constexpr ViewCursor<char const> end() const noexcept {
+        char const* const last = first_ + size();
+        return ViewCursor<char const>{detail::ViewCursorDoor::key(), last, last};
+    }
 
     // The count characters from offset, as an Option<TextView>, or no value
-    // when they do not fit.  One branch.
+    // when they do not fit.  One branch.  The return type is deduced, so the
+    // Option is named only where this class is complete and its niche below
+    // it is visible.
     [[nodiscard]] constexpr auto window(std::size_t offset, std::size_t count) const noexcept;
 
     // Two texts are equal when they hold the same characters in the same
@@ -160,6 +163,18 @@ struct niche<TextView> {
         return text.size_ == ~std::size_t{0};
     }
 };
+
+// The window fits, so its count is at most the count of this text, which
+// size() bounds.  The optimizer then knows that the count is not the empty
+// value of the niche, and the Option needs no test.
+constexpr auto TextView::window(std::size_t offset, std::size_t count) const noexcept {
+    using Result = Option<TextView>;
+    if (offset > size() || count > size() - offset) [[unlikely]] {
+        return Result{none};
+    }
+    [[assume(count <= static_cast<std::size_t>(__PTRDIFF_MAX__))]];
+    return Result::some(TextView{first_ + offset, count});
+}
 
 // A borrowed run of characters with a zero after its last character.  A
 // call of the kernel that takes a path reads it up to the zero, so a door
@@ -232,10 +247,9 @@ public:
 
     // The loop `for (char c : text)` reads each character that the buffer
     // holds.  A loop over a temporary binds it to a reference first, and a
-    // cursor of an rvalue is refused.  foundation/core/Region.h defines the
-    // two cursors, as it defines those of a TextView.
-    [[nodiscard]] constexpr auto begin() const& noexcept;
-    [[nodiscard]] constexpr auto end() const& noexcept;
+    // cursor of an rvalue is refused.
+    [[nodiscard]] constexpr ViewCursor<char const> begin() const& noexcept { return view().begin(); }
+    [[nodiscard]] constexpr ViewCursor<char const> end() const& noexcept { return view().end(); }
     void
     begin() const&& = delete("a cursor of a temporary FixedText points into an object that the full expression ends");
     void

@@ -100,8 +100,9 @@ THE SIX KINDS
         or consteval is a stub, and a call of a stub does not count.
         A call of an exit of the Report family through fixy or
         foundation::core does not count, when
-        include/foundation/core/Report.h declares the exit without
-        constexpr or consteval.  A call in a static_assert, in an expansion
+        include/foundation/core/Fatal.h or include/foundation/core/Report.h
+        declares the exit without constexpr or consteval.  A call in a
+        static_assert, in an expansion
         statement or in the initializer of a constexpr local belongs to
         the kinds above.  Only the outermost constant call counts.
     A template context is one of these, when it holds the node:
@@ -245,9 +246,10 @@ LITERALS = frozenset(
     }
 )
 CASTS = frozenset({"static_cast", "const_cast", "reinterpret_cast", "dynamic_cast"})
-# The header of the exits of the Report family, and the qualifiers of a call
-# of an exit.  include/fixy/Core.h names each exit in namespace fixy.
-REPORT_HEADER = "include/foundation/core/Report.h"
+# The headers of the exits of the Report family, and the qualifiers of a call
+# of an exit.  Fatal.h declares the exits with no argument, and Report.h the
+# exits with arguments.  include/fixy/Core.h names each exit in namespace fixy.
+REPORT_HEADERS = ("include/foundation/core/Fatal.h", "include/foundation/core/Report.h")
 REPORT_QUALIFIERS = frozenset({("fixy",), ("foundation", "core")})
 # The node types with a body at namespace scope.  A static_assert with an
 # ancestor of a different type is in a class, a function, a lambda or a
@@ -1545,7 +1547,8 @@ def findings(context: TsastContext) -> list[check_report.Finding]:
     headers = [path for path in context.scope_files() if path.endswith(HEADER_SUFFIXES)]
     trees = list(context.trees(headers))
     macros = macro_table(trees, context.macro_bodies(trees))
-    exits = report_exits(next((tree for tree in trees if tree.path.as_posix() == REPORT_HEADER), None))
+    by_path = {tree.path.as_posix(): tree for tree in trees}
+    exits = frozenset().union(*(report_exits(by_path.get(header)) for header in REPORT_HEADERS))
     for tree in trees:
         found += [item_finding(item) for item in header_items(tree, macros, exits)]
     found += check_file_findings(context)
