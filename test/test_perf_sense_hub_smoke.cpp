@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <memory>
 #include <type_traits>
 #include <utility>
 #include "test_assert.h"
@@ -43,10 +42,9 @@ static_assert(std::is_move_constructible_v<crucible::perf::SenseHub>,
 // it, and every consumer holding one in static storage would quietly pay
 // the cache footprint.
 struct DummyState {};
-static_assert(sizeof(crucible::perf::SenseHub) == sizeof(std::unique_ptr<DummyState>),
-              "SenseHub must equal sizeof(std::unique_ptr<State>); a regression "
-              "indicates a non-EBO field was added without [[no_unique_address]] "
-              "(or a polymorphic vptr crept in via a virtual function)");
+static_assert(sizeof(crucible::perf::SenseHub) == sizeof(::fixy::Option<::fixy::Box<DummyState>>),
+              "SenseHub must equal the size of an Option of a Box of its state.  A larger size "
+              "means that a field was added");
 
 }  // namespace
 

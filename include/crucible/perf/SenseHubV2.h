@@ -10,7 +10,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 
 namespace crucible::perf {
 
@@ -462,9 +461,11 @@ public:
 
 private:
     struct State;
-    std::unique_ptr<State> state_;
 
-    explicit SenseHubV2(std::unique_ptr<State>) noexcept;
+    // The stub load builds no state, so no constructor takes one.  The member
+    // has no default initializer: one here would end a Box in each unit that
+    // sees only the declaration of State.
+    ::fixy::Option<::fixy::Box<State>> state_;
 };
 
 // The load takes the startup load context.  Its row carries Block,

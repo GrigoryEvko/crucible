@@ -12,7 +12,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 
 namespace crucible::perf {
 
@@ -74,9 +73,12 @@ private:
     // The door builds the facade in each load.
     friend struct detail::FacadeDoor;
     struct State;
-    SchedTpBtf() noexcept;
+    explicit SchedTpBtf(::fixy::Box<State> state) noexcept;
 
-    std::unique_ptr<State> state_;
+    // A moved-from facade holds no state.  Each constructor sets the member,
+    // so it has no default initializer: one here would end a Box in each unit
+    // that sees only the declaration of State.
+    ::fixy::Option<::fixy::Box<State>> state_;
 };
 
 // The BTF-typed raw tracepoint needs a kernel built with

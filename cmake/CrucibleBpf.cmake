@@ -22,9 +22,10 @@
 #
 # Discovery (libbpf, BPF-capable clang, xxd, optional setcap) runs
 # at module load.  If any required tool is missing, CRUCIBLE_HAVE_BPF
-# is forced OFF and crucible_bpf_program() becomes a no-op (graceful
-# degradation: every consumer that wraps SenseHub::load() in
-# `if constexpr (CRUCIBLE_HAVE_BPF)` simply gets stub behaviour).
+# is forced OFF and crucible_bpf_program() becomes a no-op.  A consumer
+# puts each call of a facade load, such as load_sense_hub(), in an arm of
+# `#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF`, and the Senses
+# aggregate then attaches nothing.
 #
 # The module compiles N programs into the production crucible library,
 # so Vigil, Cipher and runtime observation can consume them.

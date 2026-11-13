@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <memory>
 #include <type_traits>
 #include <utility>
 #include "test_assert.h"
@@ -27,9 +26,9 @@ static_assert(std::is_move_constructible_v<crucible::perf::SchedTpBtf>,
               "SchedTpBtf must be movable so it can be emplaced into std::optional");
 
 struct DummyState {};
-static_assert(sizeof(crucible::perf::SchedTpBtf) == sizeof(std::unique_ptr<DummyState>),
-              "SchedTpBtf must equal sizeof(unique_ptr<State>) — guards against "
-              "field bloat");
+static_assert(sizeof(crucible::perf::SchedTpBtf) == sizeof(::fixy::Option<::fixy::Box<DummyState>>),
+              "SchedTpBtf must equal the size of an Option of a Box of its state.  A larger size "
+              "means that a field was added");
 
 }  // namespace
 

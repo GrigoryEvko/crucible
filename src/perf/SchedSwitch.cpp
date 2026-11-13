@@ -4,8 +4,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <span>
+#include <utility>
 
 extern "C" {
 extern const unsigned char sched_switch_bpf_bytecode[];
@@ -20,7 +20,8 @@ struct SchedSwitchRingTag {};
 
 struct SchedSwitch::State : detail::RingState<SchedSwitchRingTag, TimelineSchedEvent> {};
 
-SchedSwitch::SchedSwitch() noexcept = default;
+SchedSwitch::SchedSwitch(::fixy::Box<State> state) noexcept
+    : state_{::fixy::Option<::fixy::Box<State>>::some(std::move(state))} {}
 SchedSwitch::SchedSwitch(SchedSwitch&&) noexcept = default;
 SchedSwitch& SchedSwitch::operator=(SchedSwitch&&) noexcept = default;
 SchedSwitch::~SchedSwitch() = default;
@@ -40,21 +41,20 @@ SchedSwitch::~SchedSwitch() = default;
     return detail::load_ring<SchedSwitch>(ctx, spec);
 }
 
-uint64_t SchedSwitch::context_switches() const noexcept { return state_ != nullptr ? state_->count() : 0; }
+uint64_t SchedSwitch::context_switches() const noexcept { return detail::ring_count(state_); }
 
 ::fixy::Borrowed<const TimelineSchedEvent, SchedSwitch> SchedSwitch::timeline_view() const noexcept {
-    return state_ != nullptr ? state_->events<SchedSwitch>()
-                             : ::fixy::Borrowed<const TimelineSchedEvent, SchedSwitch>{};
+    return detail::ring_events<SchedSwitch>(state_);
 }
 
-uint64_t SchedSwitch::timeline_write_index() const noexcept { return state_ != nullptr ? state_->write_index() : 0; }
+uint64_t SchedSwitch::timeline_write_index() const noexcept { return detail::ring_write_index(state_); }
 
 ::fixy::MaxBounded<8, std::size_t> SchedSwitch::attached_programs() const noexcept {
-    return detail::attached_programs(state_.get());
+    return detail::attached_programs(state_);
 }
 
 ::fixy::MaxBounded<8, std::size_t> SchedSwitch::attach_failures() const noexcept {
-    return detail::attach_failures(state_.get());
+    return detail::attach_failures(state_);
 }
 
 SchedSwitch::Snapshot SchedSwitch::snapshot() const noexcept {

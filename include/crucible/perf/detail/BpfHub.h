@@ -28,9 +28,9 @@
 #include <cstdio>
 #include <cstring>
 #include <inplace_vector>
-#include <memory>
 #include <span>
 #include <string>
+#include <utility>
 
 namespace crucible::perf::detail {
 
@@ -357,6 +357,7 @@ struct RingLayout {
 template <class Tag, class Event>
 struct RingState : ::foundation::NonMovable<RingState<Tag, Event>> {
     using tag_type = Tag;
+    using event_type = Event;
     using layout = RingLayout<TimelineHeader, Event, TIMELINE_CAPACITY>;
     static constexpr int kMaxLinks = 8;
 
@@ -381,23 +382,35 @@ struct RingState : ::foundation::NonMovable<RingState<Tag, Event>> {
     }
 };
 
+// The state that a facade holds on the heap.  A moved-from facade holds
+// none, and each read of it gives zero or an empty view.
+template <class State>
+using HeldState = ::fixy::Option<::fixy::Box<State>>;
+
 // The door to the private state of a facade.  Each facade names this door
 // as its one friend, so each load of a facade builds the facade here.
 struct FacadeDoor {
     template <class Facade>
     using State = typename Facade::State;
 
-    // Builds a facade and its state, and gives the facade when
-    // fill(state) is true.  An empty result means that the facade is
-    // unavailable, and fill already reported the reason.
-    template <class Facade, class Fill>
-    [[nodiscard]] static ::fixy::Option<Facade> load(Fill fill) noexcept {
-        Facade facade{};
-        facade.state_ = std::make_unique<State<Facade>>();
-        if (!fill(*facade.state_)) return ::fixy::none;
-        return ::fixy::Option<Facade>::some(std::move(facade));
+    // Builds the state of a facade with the allocation capability of ctx,
+    // and gives the facade when fill(state) is true.  An empty result means
+    // that the facade is unavailable, and fill already reported the reason.
+    template <class Facade, ::foundation::effects::IsExecCtx Ctx, class Fill>
+    [[nodiscard]] static ::fixy::Option<Facade> load(Ctx const& ctx, Fill fill) noexcept {
+        ::fixy::Box<State<Facade>> state = ::fixy::mint_box<State<Facade>>(ctx.cap().alloc);
+        if (!fill(*state)) return ::fixy::none;
+        return ::fixy::Option<Facade>::some(Facade{std::move(state)});
     }
 };
+
+// read(state) of the state that a facade holds, or fallback for a
+// moved-from facade.
+template <class State, class Value, class Read>
+[[nodiscard]] Value read_held(HeldState<State> const& held, Value fallback, Read read) noexcept {
+    return held.match([&read](::fixy::Box<State> const& state) noexcept -> Value { return read(*state); },
+                      [&fallback] noexcept -> Value { return fallback; });
+}
 
 // Loads a ring facade.  An empty result means that the facade is
 // unavailable, and the reason is already reported.
@@ -405,7 +418,7 @@ template <class Facade, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsMapArray<Ctx>
 [[nodiscard]] ::fixy::Option<Facade> load_ring(Ctx const& ctx, const RingSpec& spec) noexcept {
     using State = FacadeDoor::State<Facade>;
-    return FacadeDoor::load<Facade>([&ctx, &spec](State& state) noexcept {
+    return FacadeDoor::load<Facade>(ctx, [&ctx, &spec](State& state) noexcept {
         if (!state.object.load(spec.load)) return false;
         state.timeline = map_array<typename State::tag_type>(ctx, state.object, spec.load.facade.text,
                                                              spec.timeline_map, State::layout::bytes);
@@ -421,17 +434,36 @@ template <class Facade, ::foundation::effects::IsExecCtx Ctx>
     });
 }
 
-// A facade with no state reports zero for both attach counts.
+// The three reads of a ring facade.
 template <class State>
-[[nodiscard]] ::fixy::MaxBounded<State::kMaxLinks, std::size_t> attached_programs(const State* state) noexcept {
-    return state != nullptr ? state->object.attached()
-                            : ::fixy::mint_refined<::fixy::bounded_above<State::kMaxLinks>>(std::size_t{0});
+[[nodiscard]] uint64_t ring_count(HeldState<State> const& held) noexcept {
+    return read_held(held, uint64_t{0}, [](State const& state) noexcept { return state.count(); });
 }
 
 template <class State>
-[[nodiscard]] ::fixy::MaxBounded<State::kMaxLinks, std::size_t> attach_failures(const State* state) noexcept {
-    return state != nullptr ? state->object.attach_failures()
-                            : ::fixy::mint_refined<::fixy::bounded_above<State::kMaxLinks>>(std::size_t{0});
+[[nodiscard]] uint64_t ring_write_index(HeldState<State> const& held) noexcept {
+    return read_held(held, uint64_t{0}, [](State const& state) noexcept { return state.write_index(); });
+}
+
+template <class Owner, class State>
+[[nodiscard]] ::fixy::Borrowed<const typename State::event_type, Owner>
+ring_events(HeldState<State> const& held) noexcept {
+    return read_held(held, ::fixy::Borrowed<const typename State::event_type, Owner>{},
+                     [](State const& state) noexcept { return state.template events<Owner>(); });
+}
+
+// A moved-from facade reports zero for both attach counts.
+template <class State>
+[[nodiscard]] ::fixy::MaxBounded<State::kMaxLinks, std::size_t>
+attached_programs(HeldState<State> const& held) noexcept {
+    return read_held(held, ::fixy::mint_refined<::fixy::bounded_above<State::kMaxLinks>>(std::size_t{0}),
+                     [](State const& state) noexcept { return state.object.attached(); });
+}
+
+template <class State>
+[[nodiscard]] ::fixy::MaxBounded<State::kMaxLinks, std::size_t> attach_failures(HeldState<State> const& held) noexcept {
+    return read_held(held, ::fixy::mint_refined<::fixy::bounded_above<State::kMaxLinks>>(std::size_t{0}),
+                     [](State const& state) noexcept { return state.object.attach_failures(); });
 }
 
 }  // namespace crucible::perf::detail

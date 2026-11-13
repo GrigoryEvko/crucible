@@ -16,8 +16,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <memory>
 #include <span>
+#include <utility>
 
 extern "C" {
 extern const unsigned char pmu_sample_bpf_bytecode[];
@@ -204,7 +204,8 @@ struct PmuSample::State : ::foundation::NonMovable<PmuSample::State> {
     ::fixy::Option<detail::ReadOnlyMapping<PmuSampleRingTag>> timeline{};
 };
 
-PmuSample::PmuSample() noexcept = default;
+PmuSample::PmuSample(::fixy::Box<State> state) noexcept
+    : state_{::fixy::Option<::fixy::Box<State>>::some(std::move(state))} {}
 PmuSample::PmuSample(PmuSample&&) noexcept = default;
 PmuSample& PmuSample::operator=(PmuSample&&) noexcept = default;
 PmuSample::~PmuSample() = default;
@@ -328,24 +329,26 @@ namespace {
 
 ::fixy::Option<PmuSample> load_pmu_sample(::fixy::InitLoadCtx const& ctx) noexcept {
     return detail::FacadeDoor::load<PmuSample>(
-        [&ctx](detail::FacadeDoor::State<PmuSample>& state) noexcept { return fill_state(state, ctx); });
+        ctx, [&ctx](detail::FacadeDoor::State<PmuSample>& state) noexcept { return fill_state(state, ctx); });
 }
 
 ::fixy::Borrowed<const PmuSampleEvent, PmuSample> PmuSample::timeline_view() const noexcept {
-    return state_ != nullptr ? PmuSampleRing::events<PmuSample>(state_->timeline)
-                             : ::fixy::Borrowed<const PmuSampleEvent, PmuSample>{};
+    return detail::read_held(
+        state_, ::fixy::Borrowed<const PmuSampleEvent, PmuSample>{},
+        [](State const& state) noexcept { return PmuSampleRing::events<PmuSample>(state.timeline); });
 }
 
 uint64_t PmuSample::timeline_write_index() const noexcept {
-    return state_ != nullptr ? PmuSampleRing::write_index(state_->timeline) : 0;
+    return detail::read_held(state_, uint64_t{0},
+                             [](State const& state) noexcept { return PmuSampleRing::write_index(state.timeline); });
 }
 
 ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> PmuSample::attached_programs() const noexcept {
-    return detail::attached_programs(state_.get());
+    return detail::attached_programs(state_);
 }
 
 ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> PmuSample::attach_failures() const noexcept {
-    return detail::attach_failures(state_.get());
+    return detail::attach_failures(state_);
 }
 
 PmuSample::Snapshot PmuSample::snapshot() const noexcept { return Snapshot{.samples = timeline_write_index()}; }

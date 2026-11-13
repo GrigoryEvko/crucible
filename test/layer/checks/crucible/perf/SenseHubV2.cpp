@@ -14,10 +14,9 @@ static_assert(sizeof(sense_meta) == 64, "sense_meta must be exactly one cache li
 }  // namespace v2
 
 struct DummyStateV2 {};
-static_assert(sizeof(SenseHubV2) == sizeof(std::unique_ptr<DummyStateV2>),
-              "SenseHubV2 must be EBO-equivalent to unique_ptr<State> — regression "
-              "indicates a non-EBO field crept in (likely a missing [[no_unique_address]] "
-              "or a polymorphic vptr).");
+static_assert(sizeof(SenseHubV2) == sizeof(::fixy::Option<::fixy::Box<DummyStateV2>>),
+              "SenseHubV2 must equal the size of an Option of a Box of its state.  A larger size means that a "
+              "field was added.");
 
 // Block is the atom that decides this gate.  ColdInitCtx and
 // BgCompileCtx both carry Alloc and IO, and the gate rejects both for

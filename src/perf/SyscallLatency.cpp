@@ -4,8 +4,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <span>
+#include <utility>
 
 extern "C" {
 extern const unsigned char syscall_latency_bpf_bytecode[];
@@ -20,7 +20,8 @@ struct SyscallLatencyRingTag {};
 
 struct SyscallLatency::State : detail::RingState<SyscallLatencyRingTag, TimelineSyscallEvent> {};
 
-SyscallLatency::SyscallLatency() noexcept = default;
+SyscallLatency::SyscallLatency(::fixy::Box<State> state) noexcept
+    : state_{::fixy::Option<::fixy::Box<State>>::some(std::move(state))} {}
 SyscallLatency::SyscallLatency(SyscallLatency&&) noexcept = default;
 SyscallLatency& SyscallLatency::operator=(SyscallLatency&&) noexcept = default;
 SyscallLatency::~SyscallLatency() = default;
@@ -45,21 +46,20 @@ SyscallLatency::~SyscallLatency() = default;
     return detail::load_ring<SyscallLatency>(ctx, spec);
 }
 
-uint64_t SyscallLatency::total_syscalls() const noexcept { return state_ != nullptr ? state_->count() : 0; }
+uint64_t SyscallLatency::total_syscalls() const noexcept { return detail::ring_count(state_); }
 
 ::fixy::Borrowed<const TimelineSyscallEvent, SyscallLatency> SyscallLatency::timeline_view() const noexcept {
-    return state_ != nullptr ? state_->events<SyscallLatency>()
-                             : ::fixy::Borrowed<const TimelineSyscallEvent, SyscallLatency>{};
+    return detail::ring_events<SyscallLatency>(state_);
 }
 
-uint64_t SyscallLatency::timeline_write_index() const noexcept { return state_ != nullptr ? state_->write_index() : 0; }
+uint64_t SyscallLatency::timeline_write_index() const noexcept { return detail::ring_write_index(state_); }
 
 ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> SyscallLatency::attached_programs() const noexcept {
-    return detail::attached_programs(state_.get());
+    return detail::attached_programs(state_);
 }
 
 ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> SyscallLatency::attach_failures() const noexcept {
-    return detail::attach_failures(state_.get());
+    return detail::attach_failures(state_);
 }
 
 SyscallLatency::Snapshot SyscallLatency::snapshot() const noexcept {

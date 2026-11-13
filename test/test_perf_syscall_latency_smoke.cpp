@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <memory>
 #include <type_traits>
 #include <utility>
 #include "test_assert.h"
@@ -56,10 +55,9 @@ static_assert(std::is_move_constructible_v<crucible::perf::SyscallLatency>,
               "process-wide std::optional");
 
 struct DummyState {};
-static_assert(sizeof(crucible::perf::SyscallLatency) == sizeof(std::unique_ptr<DummyState>),
-              "SyscallLatency must equal sizeof(unique_ptr<State>). A larger size "
-              "means a non-EBO field was added without [[no_unique_address]], or a "
-              "polymorphic vptr crept in");
+static_assert(sizeof(crucible::perf::SyscallLatency) == sizeof(::fixy::Option<::fixy::Box<DummyState>>),
+              "SyscallLatency must equal the size of an Option of a Box of its state.  A larger size "
+              "means that a field was added");
 
 }  // namespace
 

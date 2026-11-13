@@ -10,7 +10,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 
 namespace crucible::perf {
 
@@ -106,8 +105,12 @@ private:
     // The door builds the facade in each load.
     friend struct detail::FacadeDoor;
     struct State;
-    PmuSample() noexcept;
-    std::unique_ptr<State> state_;
+    explicit PmuSample(::fixy::Box<State> state) noexcept;
+
+    // A moved-from facade holds no state.  Each constructor sets the member,
+    // so it has no default initializer: one here would end a Box in each unit
+    // that sees only the declaration of State.
+    ::fixy::Option<::fixy::Box<State>> state_;
 };
 
 // An event type the machine does not support is skipped, so a partial

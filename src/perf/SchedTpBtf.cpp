@@ -4,8 +4,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <span>
+#include <utility>
 
 extern "C" {
 extern const unsigned char sched_tp_btf_bpf_bytecode[];
@@ -20,7 +20,8 @@ struct SchedTpBtfRingTag {};
 
 struct SchedTpBtf::State : detail::RingState<SchedTpBtfRingTag, TimelineSchedEvent> {};
 
-SchedTpBtf::SchedTpBtf() noexcept = default;
+SchedTpBtf::SchedTpBtf(::fixy::Box<State> state) noexcept
+    : state_{::fixy::Option<::fixy::Box<State>>::some(std::move(state))} {}
 SchedTpBtf::SchedTpBtf(SchedTpBtf&&) noexcept = default;
 SchedTpBtf& SchedTpBtf::operator=(SchedTpBtf&&) noexcept = default;
 SchedTpBtf::~SchedTpBtf() = default;
@@ -43,20 +44,20 @@ SchedTpBtf::~SchedTpBtf() = default;
     return detail::load_ring<SchedTpBtf>(ctx, spec);
 }
 
-uint64_t SchedTpBtf::context_switches() const noexcept { return state_ != nullptr ? state_->count() : 0; }
+uint64_t SchedTpBtf::context_switches() const noexcept { return detail::ring_count(state_); }
 
 ::fixy::Borrowed<const TimelineSchedEvent, SchedTpBtf> SchedTpBtf::timeline_view() const noexcept {
-    return state_ != nullptr ? state_->events<SchedTpBtf>() : ::fixy::Borrowed<const TimelineSchedEvent, SchedTpBtf>{};
+    return detail::ring_events<SchedTpBtf>(state_);
 }
 
-uint64_t SchedTpBtf::timeline_write_index() const noexcept { return state_ != nullptr ? state_->write_index() : 0; }
+uint64_t SchedTpBtf::timeline_write_index() const noexcept { return detail::ring_write_index(state_); }
 
 ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> SchedTpBtf::attached_programs() const noexcept {
-    return detail::attached_programs(state_.get());
+    return detail::attached_programs(state_);
 }
 
 ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> SchedTpBtf::attach_failures() const noexcept {
-    return detail::attach_failures(state_.get());
+    return detail::attach_failures(state_);
 }
 
 SchedTpBtf::Snapshot SchedTpBtf::snapshot() const noexcept {

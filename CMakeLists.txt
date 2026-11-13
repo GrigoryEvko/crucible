@@ -632,8 +632,8 @@ set_target_properties(crucible_hwprobe PROPERTIES OUTPUT_NAME crucible-hwprobe)
 # crucible_perf is in each build.  A build with no BPF substrate puts only
 # the Senses aggregate (src/perf/Senses.cpp) into it.  Each load of that
 # aggregate then attaches nothing, as on a host that refuses each load.  Only
-# a build with CRUCIBLE_HAVE_BPF=1 defines the facades, such as
-# SenseHub::load.  Put each direct call of a facade member in an arm of
+# a build with CRUCIBLE_HAVE_BPF=1 defines the facades and their loads, such
+# as load_sense_hub.  Put each direct call of a facade in an arm of
 # `#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF`.
 #
 # Add a new program: write include/crucible/perf/bpf/<name>.bpf.c

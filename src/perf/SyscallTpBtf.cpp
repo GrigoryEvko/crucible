@@ -4,8 +4,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <span>
+#include <utility>
 
 extern "C" {
 extern const unsigned char syscall_tp_btf_bpf_bytecode[];
@@ -20,7 +20,8 @@ struct SyscallTpBtfRingTag {};
 
 struct SyscallTpBtf::State : detail::RingState<SyscallTpBtfRingTag, TimelineSyscallEvent> {};
 
-SyscallTpBtf::SyscallTpBtf() noexcept = default;
+SyscallTpBtf::SyscallTpBtf(::fixy::Box<State> state) noexcept
+    : state_{::fixy::Option<::fixy::Box<State>>::some(std::move(state))} {}
 SyscallTpBtf::SyscallTpBtf(SyscallTpBtf&&) noexcept = default;
 SyscallTpBtf& SyscallTpBtf::operator=(SyscallTpBtf&&) noexcept = default;
 SyscallTpBtf::~SyscallTpBtf() = default;
@@ -47,21 +48,20 @@ SyscallTpBtf::~SyscallTpBtf() = default;
     return detail::load_ring<SyscallTpBtf>(ctx, spec);
 }
 
-uint64_t SyscallTpBtf::total_syscalls() const noexcept { return state_ != nullptr ? state_->count() : 0; }
+uint64_t SyscallTpBtf::total_syscalls() const noexcept { return detail::ring_count(state_); }
 
 ::fixy::Borrowed<const TimelineSyscallEvent, SyscallTpBtf> SyscallTpBtf::timeline_view() const noexcept {
-    return state_ != nullptr ? state_->events<SyscallTpBtf>()
-                             : ::fixy::Borrowed<const TimelineSyscallEvent, SyscallTpBtf>{};
+    return detail::ring_events<SyscallTpBtf>(state_);
 }
 
-uint64_t SyscallTpBtf::timeline_write_index() const noexcept { return state_ != nullptr ? state_->write_index() : 0; }
+uint64_t SyscallTpBtf::timeline_write_index() const noexcept { return detail::ring_write_index(state_); }
 
 ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> SyscallTpBtf::attached_programs() const noexcept {
-    return detail::attached_programs(state_.get());
+    return detail::attached_programs(state_);
 }
 
 ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> SyscallTpBtf::attach_failures() const noexcept {
-    return detail::attach_failures(state_.get());
+    return detail::attach_failures(state_);
 }
 
 SyscallTpBtf::Snapshot SyscallTpBtf::snapshot() const noexcept {

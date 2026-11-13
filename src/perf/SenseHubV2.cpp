@@ -1,15 +1,11 @@
 #include <crucible/perf/SenseHubV2.h>
 #include <crucible/perf/ProcGauges.h>
 
-#include <utility>
-
 namespace crucible::perf {
 
 struct SenseHubV2::State {
     int placeholder = 0;
 };
-
-SenseHubV2::SenseHubV2(std::unique_ptr<State> s) noexcept : state_{std::move(s)} {}
 
 SenseHubV2::SenseHubV2(SenseHubV2&&) noexcept = default;
 SenseHubV2& SenseHubV2::operator=(SenseHubV2&&) noexcept = default;

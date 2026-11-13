@@ -4,8 +4,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <span>
+#include <utility>
 
 extern "C" {
 extern const unsigned char lock_contention_bpf_bytecode[];
@@ -20,7 +20,8 @@ struct LockContentionRingTag {};
 
 struct LockContention::State : detail::RingState<LockContentionRingTag, TimelineLockEvent> {};
 
-LockContention::LockContention() noexcept = default;
+LockContention::LockContention(::fixy::Box<State> state) noexcept
+    : state_{::fixy::Option<::fixy::Box<State>>::some(std::move(state))} {}
 LockContention::LockContention(LockContention&&) noexcept = default;
 LockContention& LockContention::operator=(LockContention&&) noexcept = default;
 LockContention::~LockContention() = default;
@@ -44,21 +45,20 @@ LockContention::~LockContention() = default;
     return detail::load_ring<LockContention>(ctx, spec);
 }
 
-uint64_t LockContention::wait_count() const noexcept { return state_ != nullptr ? state_->count() : 0; }
+uint64_t LockContention::wait_count() const noexcept { return detail::ring_count(state_); }
 
 ::fixy::Borrowed<const TimelineLockEvent, LockContention> LockContention::timeline_view() const noexcept {
-    return state_ != nullptr ? state_->events<LockContention>()
-                             : ::fixy::Borrowed<const TimelineLockEvent, LockContention>{};
+    return detail::ring_events<LockContention>(state_);
 }
 
-uint64_t LockContention::timeline_write_index() const noexcept { return state_ != nullptr ? state_->write_index() : 0; }
+uint64_t LockContention::timeline_write_index() const noexcept { return detail::ring_write_index(state_); }
 
 ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> LockContention::attached_programs() const noexcept {
-    return detail::attached_programs(state_.get());
+    return detail::attached_programs(state_);
 }
 
 ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> LockContention::attach_failures() const noexcept {
-    return detail::attach_failures(state_.get());
+    return detail::attach_failures(state_);
 }
 
 LockContention::Snapshot LockContention::snapshot() const noexcept {
