@@ -31,8 +31,8 @@ std::optional<SyscallTpBtf> SyscallTpBtf::load(::fixy::InitLoadCtx const& ctx) n
     // missing, every recorded start entry stays unconsumed until the LRU
     // hash map evicts it.
     const detail::RingSpec spec{
-        .load = {.facade = "syscall_tp_btf",
-                 .object_name = "crucible_syscall_tp_btf",
+        .load = {.facade = CRUCIBLE_PERF_FOREIGN_NAME("syscall_tp_btf"),
+                 .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_syscall_tp_btf"),
                  .bytecode =
                      std::span{syscall_tp_btf_bpf_bytecode, static_cast<std::size_t>(syscall_tp_btf_bpf_bytecode_len)},
                  .probe_tracepoints = false,
@@ -41,8 +41,8 @@ std::optional<SyscallTpBtf> SyscallTpBtf::load(::fixy::InitLoadCtx const& ctx) n
                  .min_attached = 2,
                  .attach_advice = "expected 2 tp_btf attachments (sys_enter and sys_exit), got fewer (kernel "
                                   "missing BTF for sys_enter or sys_exit, or partial CAP_BPF rejection)"},
-        .timeline_map = "syscall_timeline",
-        .counter_map = "total_syscalls",
+        .timeline_map = CRUCIBLE_PERF_FOREIGN_NAME("syscall_timeline"),
+        .counter_map = CRUCIBLE_PERF_FOREIGN_NAME("total_syscalls"),
         .counter_fallback = "total_syscalls() returns 0",
     };
     auto state = detail::load_ring<State>(ctx, spec);

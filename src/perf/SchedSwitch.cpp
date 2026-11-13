@@ -28,14 +28,14 @@ SchedSwitch::~SchedSwitch() = default;
 
 std::optional<SchedSwitch> SchedSwitch::load(::fixy::InitLoadCtx const& ctx) noexcept {
     const detail::RingSpec spec{
-        .load = {.facade = "sched_switch",
-                 .object_name = "crucible_sched_switch",
+        .load = {.facade = CRUCIBLE_PERF_FOREIGN_NAME("sched_switch"),
+                 .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_sched_switch"),
                  .bytecode =
                      std::span{sched_switch_bpf_bytecode, static_cast<std::size_t>(sched_switch_bpf_bytecode_len)},
                  .attach_advice = "no programs attached (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; kernel "
                                   "missing sched_switch tracepoint)"},
-        .timeline_map = "sched_timeline",
-        .counter_map = "cs_count",
+        .timeline_map = CRUCIBLE_PERF_FOREIGN_NAME("sched_timeline"),
+        .counter_map = CRUCIBLE_PERF_FOREIGN_NAME("cs_count"),
         .counter_fallback = "context_switches() returns 0",
     };
     auto state = detail::load_ring<State>(ctx, spec);

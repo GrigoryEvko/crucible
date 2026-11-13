@@ -9,6 +9,7 @@
 #include <crucible/perf/detail/BpfLoader.h>
 
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <fixy/Mutation.h>
 #include <fixy/os/OwnedMmap.h>
 #include <fixy/Refined.h>
@@ -17,9 +18,8 @@
 #include <foundation/Pinned.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/os/Auxiliary.h>
 #include <foundation/permissions/Permission.h>
-
-#include <unistd.h>
 
 #include <bit>
 #include <cerrno>
@@ -29,29 +29,31 @@
 #include <cstring>
 #include <inplace_vector>
 #include <memory>
-#include <optional>
 #include <span>
 #include <string>
 
 namespace crucible::perf::detail {
 
-// One line on stderr about a facade that did not come up.  `what` names
-// the step or the map, and `why` says what went wrong and what to do.
-inline void report_unavailable(const char* facade, const char* what, const char* why, int err = 0) noexcept {
+// One line on stderr about a facade that did not come up.  what names the
+// step or the map, and why says what went wrong and what to do.  A nonzero
+// error is the error number of the kernel.
+inline void report_unavailable(::fixy::TextView facade, ::fixy::TextView what, ::fixy::TextView why,
+                               int error = 0) noexcept {
     if (quiet()) return;
-    if (err != 0) {
-        std::fprintf(stderr, "[crucible::perf] %s unavailable: %s %s (%s)\n", facade, what, why, std::strerror(err));
+    if (error != 0) {
+        ::fixy::report(::fixy::Sink::Err, "[crucible::perf] {} unavailable: {} {} (error {})\n", facade, what, why,
+                       error);
     } else {
-        std::fprintf(stderr, "[crucible::perf] %s unavailable: %s %s\n", facade, what, why);
+        ::fixy::report(::fixy::Sink::Err, "[crucible::perf] {} unavailable: {} {}\n", facade, what, why);
     }
 }
 
 // What a facade tells the loader about its BPF object.
 struct LoadSpec {
     // The name in every report line, such as "sched_switch".
-    const char* facade = nullptr;
+    ForeignName facade{};
     // The libbpf object name, such as "crucible_sched_switch".
-    const char* object_name = nullptr;
+    ForeignName object_name{};
     std::span<const unsigned char> bytecode{};
     // One missing tracepoint fails the load of the whole object, so the
     // loader turns off each program whose tracepoint the kernel lacks.  A
@@ -59,12 +61,12 @@ struct LoadSpec {
     // is the check.
     bool probe_tracepoints = true;
     // The advice printed when bpf_object__load fails.
-    const char* load_advice = "(apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; verifier rejected, missing CAP_BPF, "
-                              "or kernel too old)";
+    ::fixy::TextView load_advice = "(apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; verifier rejected, missing "
+                                   "CAP_BPF, or kernel too old)";
     // A facade with fewer attached programs than this is unavailable.
     std::size_t min_attached = 1;
     // The advice printed when fewer than min_attached programs attach.
-    const char* attach_advice = nullptr;
+    ::fixy::TextView attach_advice{};
 };
 
 // A BPF object opened from embedded bytecode and loaded, with the links of
@@ -103,13 +105,13 @@ public:
 
         bpf_object_open_opts opts{};
         opts.sz = sizeof(opts);
-        opts.object_name = spec.object_name;
+        opts.object_name = spec.object_name.abi;
         bpf_object* const opened = bpf_object__open_mem(spec.bytecode.data(), spec.bytecode.size(), &opts);
         // libbpf returns null or a pointer that encodes an errno.  Closing
         // the second would dereference the encoded integer, so it is
         // dropped here and never stored.
         if (opened == nullptr || libbpf_get_error(opened) != 0) {
-            report_unavailable(spec.facade, "bpf_object__open_mem", "failed (corrupt embedded bytecode; rebuild)",
+            report_unavailable(spec.facade.text, "bpf_object__open_mem", "failed (corrupt embedded bytecode; rebuild)",
                                libbpf_errno(opened, errno));
             return false;
         }
@@ -118,7 +120,7 @@ public:
         patch_target_tgid_();
         if (spec.probe_tracepoints) disable_unavailable_programs(obj_);
         if (const int err = bpf_object__load(obj_); err != 0) {
-            report_unavailable(spec.facade, "bpf_object__load", spec.load_advice, -err);
+            report_unavailable(spec.facade.text, "bpf_object__load", spec.load_advice, -err);
             return false;
         }
         register_calling_thread_();
@@ -147,7 +149,7 @@ public:
     // the reason is reported here.
     [[nodiscard]] bool require_attached(const LoadSpec& spec) const noexcept {
         if (links_.size() >= spec.min_attached) return true;
-        report_unavailable(spec.facade, "attach:", spec.attach_advice);
+        report_unavailable(spec.facade.text, "attach:", spec.attach_advice);
         return false;
     }
 
@@ -169,12 +171,12 @@ public:
 
     // A facade calls this once its maps are in place, so a partial attach
     // is reported only for a facade that did come up.
-    void report_partial(const char* facade) const noexcept {
+    void report_partial(::fixy::TextView facade) const noexcept {
         if (quiet() || attach_failures_.get() == 0) return;
-        std::fprintf(stderr,
-                     "[crucible::perf] %s partial: %zu program(s) failed to attach "
-                     "(set CRUCIBLE_PERF_VERBOSE=1 to see which)\n",
-                     facade, attach_failures_.get());
+        ::fixy::report(::fixy::Sink::Err,
+                       "[crucible::perf] {} partial: {} program(s) failed to attach "
+                       "(set CRUCIBLE_PERF_VERBOSE=1 to see which)\n",
+                       facade, attach_failures_.get());
     }
 
 private:
@@ -214,7 +216,7 @@ private:
             if (bpf_program__autoload(prog)) ++programs;
         }
         if (programs > static_cast<std::size_t>(MaxLinks)) {
-            report_unavailable(spec.facade, "attach:",
+            report_unavailable(spec.facade.text, "attach:",
                                "the object has more programs than the facade has link slots (raise its capacity)");
             return false;
         }
@@ -224,7 +226,7 @@ private:
             if (settle(link) || !verbose()) continue;
             const long err = libbpf_get_error(link);
             const char* const section = bpf_program__section_name(prog);
-            std::fprintf(stderr, "[crucible::perf] %s attach failed for %s (%s)\n", spec.facade,
+            std::fprintf(stderr, "[crucible::perf] %s attach failed for %s (%s)\n", spec.facade.abi,
                          section != nullptr ? section : "<anon>",
                          std::strerror(err != 0 ? static_cast<int>(-err) : errno));
         }
@@ -261,22 +263,22 @@ concept CtxFitsMapArray =
 // unavailable, and the reason is already reported.
 template <class Tag, int MaxLinks, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsMapArray<Ctx>
-[[nodiscard]] std::optional<ReadOnlyMapping<Tag>> map_array(Ctx const& ctx, const BpfObject<MaxLinks>& object,
-                                                            const char* facade, const char* map_name,
-                                                            std::size_t bytes) noexcept {
-    bpf_map* const map = object.find_map(map_name);
+[[nodiscard]] ::fixy::Option<ReadOnlyMapping<Tag>> map_array(Ctx const& ctx, const BpfObject<MaxLinks>& object,
+                                                             ::fixy::TextView facade, ForeignName map_name,
+                                                             std::size_t bytes) noexcept {
+    bpf_map* const map = object.find_map(map_name.abi);
     if (map == nullptr) {
-        report_unavailable(facade, map_name, "map not found in object (bytecode and header out of sync; rebuild)");
-        return std::nullopt;
+        report_unavailable(facade, map_name.text, "map not found in object (bytecode and header out of sync; rebuild)");
+        return ::fixy::none;
     }
-    // sysconf returns -1 inside some hardened sandboxes.  The rounding
-    // below needs a positive power of two.
-    const long page_raw = ::sysconf(_SC_PAGESIZE);
-    if (page_raw <= 0 || !std::has_single_bit(static_cast<unsigned long>(page_raw))) {
-        report_unavailable(facade, "sysconf(_SC_PAGESIZE)", "gave no usable page size (hardened sandbox?)", errno);
-        return std::nullopt;
+    // The rounding below needs a positive power of two.  The auxiliary
+    // vector gives no entry, or the value zero, inside some sandboxes.
+    std::size_t const page =
+        ::foundation::os::read_auxiliary(::foundation::os::AuxiliaryEntry::page_size).value_or(std::uint64_t{0});
+    if (!::fixy::has_single_bit(page)) {
+        report_unavailable(facade, "page size", "the auxiliary vector gave no usable page size (hardened sandbox?)");
+        return ::fixy::none;
     }
-    const auto page = static_cast<std::size_t>(page_raw);
     const std::size_t length = (bytes + page - 1) & ~(page - 1);
     // The mapping is on the erased identity of its tag, because a facade
     // names the type of its mapping member before the root exists.  The
@@ -288,23 +290,23 @@ template <class Tag, int MaxLinks, ::foundation::effects::IsExecCtx Ctx>
             ::foundation::permissions::mint_permission_root<bpf_map_region<Tag>>());
     auto mapped = ReadOnlyMapping<Tag>::mint_region(ctx, owner, map_fd(map).value(), length, 0);
     if (!mapped) {
-        report_unavailable(facade, map_name,
+        report_unavailable(facade, map_name.text,
                            "mmap failed (apply CAP_BPF; BPF_F_MMAPABLE needs CAP_BPF or kernel 5.5 or later)",
                            mapped.error().value());
-        return std::nullopt;
+        return ::fixy::none;
     }
-    return std::optional<ReadOnlyMapping<Tag>>{std::move(*mapped)};
+    return ::fixy::Option<ReadOnlyMapping<Tag>>::some(std::move(*mapped));
 }
 
 // What a ring facade tells the loader beyond its object: the ring map and
 // the one-element counter map beside it.
 struct RingSpec {
     LoadSpec load{};
-    const char* timeline_map = nullptr;
-    const char* counter_map = nullptr;
+    ForeignName timeline_map{};
+    ForeignName counter_map{};
     // What a caller sees when the counter map is missing, such as
     // "context_switches() returns 0".
-    const char* counter_fallback = nullptr;
+    ::fixy::TextView counter_fallback{};
 };
 
 // The layout of a mapped ring that a BPF program writes: a Header with a
@@ -323,25 +325,29 @@ struct RingLayout {
     // atomic load at each field access.
     template <class Owner, class Tag>
     [[nodiscard]] static ::fixy::Borrowed<const Event, Owner>
-    events(const std::optional<ReadOnlyMapping<Tag>>& mapping) noexcept {
-        if (!mapping) return ::fixy::Borrowed<const Event, Owner>{};
-        auto* const base = std::bit_cast<volatile uint8_t*>(mapping->data());
-        auto* const first = ::foundation::lifetime::start_as_array<Event>(
-                                std::bit_cast<const uint8_t*>(base + sizeof(Header)), Capacity)
-                                .data();
-        return ::fixy::Borrowed<const Event, Owner>{first, Capacity};
+    events(const ::fixy::Option<ReadOnlyMapping<Tag>>& mapping) noexcept {
+        for (ReadOnlyMapping<Tag> const& mapped : mapping) {
+            auto* const base = std::bit_cast<volatile uint8_t*>(mapped.data());
+            auto* const first = ::foundation::lifetime::start_as_array<Event>(
+                                    std::bit_cast<const uint8_t*>(base + sizeof(Header)), Capacity)
+                                    .data();
+            return ::fixy::Borrowed<const Event, Owner>{first, Capacity};
+        }
+        return ::fixy::Borrowed<const Event, Owner>{};
     }
 
     // The volatile load needs no acquire fence.  The BPF program advances
     // write_idx with a barriered add, and a timestamp marks a finished
     // event, so a reader checks it before it trusts the rest of an event.
     template <class Tag>
-    [[nodiscard]] static uint64_t write_index(const std::optional<ReadOnlyMapping<Tag>>& mapping) noexcept {
-        if (!mapping) return 0;
-        auto* const base = std::bit_cast<volatile uint8_t*>(mapping->data());
-        const volatile Header* const header =
-            ::foundation::lifetime::start_as_array<Header>(std::bit_cast<const uint8_t*>(base), 1).data();
-        return header->write_idx;
+    [[nodiscard]] static uint64_t write_index(const ::fixy::Option<ReadOnlyMapping<Tag>>& mapping) noexcept {
+        for (ReadOnlyMapping<Tag> const& mapped : mapping) {
+            auto* const base = std::bit_cast<volatile uint8_t*>(mapped.data());
+            const volatile Header* const header =
+                ::foundation::lifetime::start_as_array<Header>(std::bit_cast<const uint8_t*>(base), 1).data();
+            return header->write_idx;
+        }
+        return 0;
     }
 };
 
@@ -355,7 +361,7 @@ struct RingState : ::foundation::NonMovable<RingState<Tag, Event>> {
     static constexpr int kMaxLinks = 8;
 
     BpfObject<kMaxLinks> object{};
-    std::optional<ReadOnlyMapping<Tag>> timeline{};
+    ::fixy::Option<ReadOnlyMapping<Tag>> timeline{};
     // The counter map is not mmap-able, so every read costs one bpf
     // syscall through this fd.  A missing map leaves it at -1.
     Fd counter = ::fixy::mint_tagged<source::BpfMap>(-1);
@@ -382,16 +388,16 @@ template <class State, ::foundation::effects::IsExecCtx Ctx>
 [[nodiscard]] std::unique_ptr<State> load_ring(Ctx const& ctx, const RingSpec& spec) noexcept {
     auto state = std::make_unique<State>();
     if (!state->object.load(spec.load)) return nullptr;
-    state->timeline = map_array<typename State::tag_type>(ctx, state->object, spec.load.facade, spec.timeline_map,
+    state->timeline = map_array<typename State::tag_type>(ctx, state->object, spec.load.facade.text, spec.timeline_map,
                                                           State::layout::bytes);
-    if (!state->timeline) return nullptr;
-    if (bpf_map* const counter = state->object.find_map(spec.counter_map); counter != nullptr) {
+    if (state->timeline.is_none()) return nullptr;
+    if (bpf_map* const counter = state->object.find_map(spec.counter_map.abi); counter != nullptr) {
         state->counter = map_fd(counter);
     } else if (verbose()) {
-        std::fprintf(stderr, "[crucible::perf] %s %s map missing: %s\n", spec.load.facade, spec.counter_map,
-                     spec.counter_fallback);
+        ::fixy::report(::fixy::Sink::Err, "[crucible::perf] {} {} map missing: {}\n", spec.load.facade.text,
+                       spec.counter_map.text, spec.counter_fallback);
     }
-    state->object.report_partial(spec.load.facade);
+    state->object.report_partial(spec.load.facade.text);
     return state;
 }
 

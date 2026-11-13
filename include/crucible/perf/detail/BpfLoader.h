@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/handle/Once.h>
 #include <foundation/Platform.h>
@@ -30,6 +31,18 @@ struct BpfMap {};
 using Tgid = ::fixy::Tagged<uint32_t, source::Kernel>;
 using Tid = ::fixy::Tagged<uint32_t, source::Kernel>;
 using Fd = ::fixy::Tagged<int, source::BpfMap>;
+
+// A name of a BPF object, map or program.  libbpf reads it up to its zero,
+// and a report reads the same characters as a TextView.  The macro
+// CRUCIBLE_PERF_FOREIGN_NAME makes one from a string literal, so the pointer
+// has static storage.
+struct ForeignName {
+    const char* abi = "";
+    ::fixy::TextView text{};
+};
+
+#define CRUCIBLE_PERF_FOREIGN_NAME(literal) \
+    (::crucible::perf::detail::ForeignName{.abi = (literal), .text = ::fixy::TextView{literal}})
 
 [[nodiscard]] inline Tgid current_tgid() noexcept {
     return ::fixy::mint_tagged<source::Kernel>(static_cast<uint32_t>(::getpid()));

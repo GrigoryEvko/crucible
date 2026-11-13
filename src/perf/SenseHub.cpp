@@ -24,7 +24,7 @@ struct SenseHub::State : ::foundation::NonMovable<SenseHub::State> {
     static constexpr int kMaxLinks = 64;
 
     detail::BpfObject<kMaxLinks> object{};
-    std::optional<detail::ReadOnlyMapping<SenseHubCountersTag>> counters{};
+    ::fixy::Option<detail::ReadOnlyMapping<SenseHubCountersTag>> counters{};
 };
 
 SenseHub::SenseHub() noexcept = default;
@@ -33,20 +33,20 @@ SenseHub& SenseHub::operator=(SenseHub&&) noexcept = default;
 SenseHub::~SenseHub() = default;
 
 std::optional<SenseHub> SenseHub::load(::fixy::InitLoadCtx const& ctx) noexcept {
-    constexpr const char* facade = "BPF sense hub";
+    constexpr detail::ForeignName facade = CRUCIBLE_PERF_FOREIGN_NAME("BPF sense hub");
     const detail::LoadSpec spec{
         .facade = facade,
-        .object_name = "crucible_senses",
+        .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_senses"),
         .bytecode = std::span{sense_hub_bpf_bytecode, static_cast<std::size_t>(sense_hub_bpf_bytecode_len)},
         .attach_advice = "no programs attached (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; kernel missing "
                          "every tracepoint, or lacking CAP_PERFMON or CAP_DAC_READ_SEARCH)",
     };
     auto state = std::make_unique<State>();
     if (!state->object.load(spec)) return std::nullopt;
-    state->counters =
-        detail::map_array<SenseHubCountersTag>(ctx, state->object, facade, "counters", NUM_COUNTERS * sizeof(uint64_t));
-    if (!state->counters) return std::nullopt;
-    state->object.report_partial(facade);
+    state->counters = detail::map_array<SenseHubCountersTag>(
+        ctx, state->object, facade.text, CRUCIBLE_PERF_FOREIGN_NAME("counters"), NUM_COUNTERS * sizeof(uint64_t));
+    if (state->counters.is_none()) return std::nullopt;
+    state->object.report_partial(facade.text);
 
     SenseHub hub;
     hub.state_ = std::move(state);
@@ -55,25 +55,28 @@ std::optional<SenseHub> SenseHub::load(::fixy::InitLoadCtx const& ctx) noexcept 
 
 Snapshot SenseHub::read() const noexcept {
     Snapshot snapshot;
-    if (state_ == nullptr || !state_->counters) return snapshot;
-    // The BPF producer bumps each counter with a full-barrier add, so an
-    // acquire load here makes every kernel-side store that precedes a bump
-    // visible, and stops the compiler hoisting later reads above it.
-    // __atomic_load_n through a volatile-qualified pointer is a GCC
-    // extension.
-    const volatile uint64_t* __restrict src = std::bit_cast<const volatile uint64_t*>(state_->counters->data());
-    for (uint32_t i = 0; i < NUM_COUNTERS; ++i) {
-        snapshot.counters[i] = __atomic_load_n(&src[i], __ATOMIC_ACQUIRE);
+    if (state_ == nullptr) return snapshot;
+    for (detail::ReadOnlyMapping<SenseHubCountersTag> const& mapped : state_->counters) {
+        // The BPF producer bumps each counter with a full-barrier add, so an
+        // acquire load here makes every kernel-side store that precedes a
+        // bump visible, and stops the compiler hoisting later reads above
+        // it.  __atomic_load_n through a volatile-qualified pointer is a GCC
+        // extension.
+        const volatile uint64_t* __restrict src = std::bit_cast<const volatile uint64_t*>(mapped.data());
+        for (uint32_t i = 0; i < NUM_COUNTERS; ++i) {
+            snapshot.counters[i] = __atomic_load_n(&src[i], __ATOMIC_ACQUIRE);
+        }
     }
     return snapshot;
 }
 
 ::fixy::Borrowed<const volatile uint64_t, SenseHub> SenseHub::counters_view() const noexcept {
-    if (state_ == nullptr || !state_->counters) {
-        return ::fixy::Borrowed<const volatile uint64_t, SenseHub>{};
+    if (state_ == nullptr) return ::fixy::Borrowed<const volatile uint64_t, SenseHub>{};
+    for (detail::ReadOnlyMapping<SenseHubCountersTag> const& mapped : state_->counters) {
+        return ::fixy::Borrowed<const volatile uint64_t, SenseHub>{std::bit_cast<volatile uint64_t*>(mapped.data()),
+                                                                   NUM_COUNTERS};
     }
-    return ::fixy::Borrowed<const volatile uint64_t, SenseHub>{
-        std::bit_cast<volatile uint64_t*>(state_->counters->data()), NUM_COUNTERS};
+    return ::fixy::Borrowed<const volatile uint64_t, SenseHub>{};
 }
 
 ::fixy::Refined<::fixy::bounded_above<64>, std::size_t> SenseHub::attached_programs() const noexcept {

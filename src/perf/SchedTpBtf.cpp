@@ -28,8 +28,8 @@ SchedTpBtf::~SchedTpBtf() = default;
 
 std::optional<SchedTpBtf> SchedTpBtf::load(::fixy::InitLoadCtx const& ctx) noexcept {
     const detail::RingSpec spec{
-        .load = {.facade = "sched_tp_btf",
-                 .object_name = "crucible_sched_tp_btf",
+        .load = {.facade = CRUCIBLE_PERF_FOREIGN_NAME("sched_tp_btf"),
+                 .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_sched_tp_btf"),
                  .bytecode =
                      std::span{sched_tp_btf_bpf_bytecode, static_cast<std::size_t>(sched_tp_btf_bpf_bytecode_len)},
                  .probe_tracepoints = false,
@@ -37,8 +37,8 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::fixy::InitLoadCtx const& ctx) noexc
                                 "CONFIG_DEBUG_INFO_BTF=n, or verifier rejected)",
                  .attach_advice = "no programs attached (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; kernel "
                                   "missing BTF for sched_switch tracepoint)"},
-        .timeline_map = "sched_timeline",
-        .counter_map = "cs_count",
+        .timeline_map = CRUCIBLE_PERF_FOREIGN_NAME("sched_timeline"),
+        .counter_map = CRUCIBLE_PERF_FOREIGN_NAME("cs_count"),
         .counter_fallback = "context_switches() returns 0",
     };
     auto state = detail::load_ring<State>(ctx, spec);

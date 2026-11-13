@@ -2,8 +2,11 @@
 
 #include <crucible/perf/detail/BpfHub.h>
 
+#include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <foundation/Pinned.h>
+#include <foundation/core/Array.h>
+#include <foundation/os/File.h>
 
 #include <linux/perf_event.h>
 #include <sys/syscall.h>
@@ -12,11 +15,7 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
-#include <cstring>
-#include <fstream>
-#include <inplace_vector>
 #include <memory>
 #include <optional>
 #include <span>
@@ -80,25 +79,30 @@ static_assert(sizeof(PerfFd) == sizeof(int));
     return ::syscall(SYS_perf_event_open, attr, pid, cpu, group_fd, flags);
 }
 
+// The characters of text before its first newline.
+[[nodiscard]] ::fixy::TextView first_line(::fixy::TextView text) noexcept {
+    std::size_t const newline = ::fixy::find(text, '\n').value_or(text.size());
+    return text.window(0, newline).value_or(::fixy::TextView{});
+}
+
 // An IBS event carries a dynamic PMU type id that the kernel allocates at
 // boot when the driver registers, and publishes through sysfs.  A system
-// without that driver has no such file, which reads back as -1.
-[[nodiscard]] int read_dynamic_pmu_type(const char* path) noexcept {
-    std::ifstream file(path);
-    if (!file.is_open()) return -1;
-    int type = -1;
-    file >> type;
-    return file.fail() ? -1 : type;
+// without that driver has no such file, and the type then has no value.
+[[nodiscard]] ::fixy::Option<uint32_t> read_dynamic_pmu_type(::fixy::CText path) noexcept {
+    ::fixy::FixedText<32> text{};
+    if (::foundation::os::read_file(path, text).is_err()) return ::fixy::none;
+    return ::fixy::parse<uint32_t>(first_line(text.view())).ok();
 }
 
 struct PmuEventSpec {
-    const char* prog_name;
-    uint32_t perf_type;
-    uint64_t perf_config;
-    uint64_t sample_period;
-    bool is_dynamic;
-    const char* dynamic_path;
-    const char* friendly_name;
+    detail::ForeignName prog_name{};
+    uint32_t perf_type = 0;
+    uint64_t perf_config = 0;
+    uint64_t sample_period = 0;
+    bool is_dynamic = false;
+    // The sysfs file of the type id of a dynamic PMU, for a dynamic event.
+    ::fixy::CText dynamic_path{};
+    ::fixy::TextView friendly_name{};
 };
 
 // The kernel packs a hardware-cache event descriptor into one config word.
@@ -106,39 +110,78 @@ constexpr uint64_t hw_cache_config(uint32_t cache, uint32_t op, uint32_t result)
     return static_cast<uint64_t>(cache) | (static_cast<uint64_t>(op) << 8) | (static_cast<uint64_t>(result) << 16);
 }
 
-const PmuEventSpec kEventSpecs[] = {
-    {"pmu_llc", PERF_TYPE_HW_CACHE,
-     hw_cache_config(PERF_COUNT_HW_CACHE_LL, PERF_COUNT_HW_CACHE_OP_READ, PERF_COUNT_HW_CACHE_RESULT_MISS), 10000,
-     false, nullptr, "LLC-miss"},
+// One row for each perf_event program in the BPF object.
+constexpr std::size_t kEventSpecCount = 8;
 
-    {"pmu_branch", PERF_TYPE_HARDWARE, PERF_COUNT_HW_BRANCH_MISSES, 10000, false, nullptr, "branch-miss"},
-
-    {"pmu_dtlb", PERF_TYPE_HW_CACHE,
-     hw_cache_config(PERF_COUNT_HW_CACHE_DTLB, PERF_COUNT_HW_CACHE_OP_READ, PERF_COUNT_HW_CACHE_RESULT_MISS), 10000,
-     false, nullptr, "DTLB-miss"},
-
-    {"pmu_ibs_op", 0, 0, 100000, true, "/sys/bus/event_source/devices/ibs_op/type", "IBS-op"},
-
-    {"pmu_ibs_fetch", 0, 0, 100000, true, "/sys/bus/event_source/devices/ibs_fetch/type", "IBS-fetch"},
-
-    {"pmu_sw_pagefault_maj", PERF_TYPE_SOFTWARE, PERF_COUNT_SW_PAGE_FAULTS_MAJ, 1, false, nullptr, "major-pagefault"},
-
-    {"pmu_sw_cpu_migration", PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_MIGRATIONS, 1, false, nullptr, "cpu-migration"},
-
+constexpr ::foundation::core::FixedArray<PmuEventSpec, kEventSpecCount> kEventSpecs{
+    PmuEventSpec{
+        .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_llc"),
+        .perf_type = PERF_TYPE_HW_CACHE,
+        .perf_config =
+            hw_cache_config(PERF_COUNT_HW_CACHE_LL, PERF_COUNT_HW_CACHE_OP_READ, PERF_COUNT_HW_CACHE_RESULT_MISS),
+        .sample_period = 10000,
+        .friendly_name = "LLC-miss",
+    },
+    PmuEventSpec{
+        .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_branch"),
+        .perf_type = PERF_TYPE_HARDWARE,
+        .perf_config = PERF_COUNT_HW_BRANCH_MISSES,
+        .sample_period = 10000,
+        .friendly_name = "branch-miss",
+    },
+    PmuEventSpec{
+        .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_dtlb"),
+        .perf_type = PERF_TYPE_HW_CACHE,
+        .perf_config =
+            hw_cache_config(PERF_COUNT_HW_CACHE_DTLB, PERF_COUNT_HW_CACHE_OP_READ, PERF_COUNT_HW_CACHE_RESULT_MISS),
+        .sample_period = 10000,
+        .friendly_name = "DTLB-miss",
+    },
+    PmuEventSpec{
+        .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_ibs_op"),
+        .sample_period = 100000,
+        .is_dynamic = true,
+        .dynamic_path = "/sys/bus/event_source/devices/ibs_op/type",
+        .friendly_name = "IBS-op",
+    },
+    PmuEventSpec{
+        .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_ibs_fetch"),
+        .sample_period = 100000,
+        .is_dynamic = true,
+        .dynamic_path = "/sys/bus/event_source/devices/ibs_fetch/type",
+        .friendly_name = "IBS-fetch",
+    },
+    PmuEventSpec{
+        .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_sw_pagefault_maj"),
+        .perf_type = PERF_TYPE_SOFTWARE,
+        .perf_config = PERF_COUNT_SW_PAGE_FAULTS_MAJ,
+        .sample_period = 1,
+        .friendly_name = "major-pagefault",
+    },
+    PmuEventSpec{
+        .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_sw_cpu_migration"),
+        .perf_type = PERF_TYPE_SOFTWARE,
+        .perf_config = PERF_COUNT_SW_CPU_MIGRATIONS,
+        .sample_period = 1,
+        .friendly_name = "cpu-migration",
+    },
     // The alignment-fault counter reports events only on an architecture
     // that raises them.  x86-64 always reads back zero.
-    {"pmu_sw_alignment_fault", PERF_TYPE_SOFTWARE, PERF_COUNT_SW_ALIGNMENT_FAULTS, 1, false, nullptr,
-     "alignment-fault"},
+    PmuEventSpec{
+        .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_sw_alignment_fault"),
+        .perf_type = PERF_TYPE_SOFTWARE,
+        .perf_config = PERF_COUNT_SW_ALIGNMENT_FAULTS,
+        .sample_period = 1,
+        .friendly_name = "alignment-fault",
+    },
 };
-constexpr size_t kEventSpecCount = sizeof(kEventSpecs) / sizeof(kEventSpecs[0]);
-static_assert(kEventSpecCount == 8, "Event spec table must hold one row per perf_event program in the BPF object");
 
 // The perf event fd that each kept link reads.  A link must go before its
 // fd, so the State declares this holder before its BPF object.  Members go
 // in reverse order, and the object destroys its links before these fds
 // close.
 struct PerfFds : ::foundation::NonMovable<PerfFds> {
-    std::inplace_vector<PerfFd, kEventSpecCount> fds{};
+    ::fixy::FixedList<PerfFd, kEventSpecCount> fds{};
 
     PerfFds() noexcept = default;
 
@@ -159,7 +202,7 @@ struct PmuSample::State : ::foundation::NonMovable<PmuSample::State> {
 
     PerfFds perf_fds{};
     detail::BpfObject<kMaxLinks> object{};
-    std::optional<detail::ReadOnlyMapping<PmuSampleRingTag>> timeline{};
+    ::fixy::Option<detail::ReadOnlyMapping<PmuSampleRingTag>> timeline{};
 };
 
 PmuSample::PmuSample() noexcept = default;
@@ -168,13 +211,13 @@ PmuSample& PmuSample::operator=(PmuSample&&) noexcept = default;
 PmuSample::~PmuSample() = default;
 
 std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const& ctx) noexcept {
-    constexpr const char* facade = "pmu_sample";
+    constexpr detail::ForeignName facade = CRUCIBLE_PERF_FOREIGN_NAME("pmu_sample");
     // A perf_event program needs no tracepoint probe.  The verifier does
     // not care whether the PMU exists, and perf_event_open below reports an
     // unavailable one.
     const detail::LoadSpec spec{
         .facade = facade,
-        .object_name = "crucible_pmu_sample",
+        .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_pmu_sample"),
         .bytecode = std::span{pmu_sample_bpf_bytecode, static_cast<std::size_t>(pmu_sample_bpf_bytecode_len)},
         .probe_tracepoints = false,
         .load_advice = "(apply CAP_BPF+CAP_PERFMON; verifier rejected, missing CAP_BPF, or kernel too old)",
@@ -182,7 +225,8 @@ std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const& ctx) noexcep
                          "blocks unprivileged use)",
     };
     auto state = std::make_unique<State>();
-    if (!state->object.open_and_load(spec)) return std::nullopt;
+    State& loaded = *state;
+    if (!loaded.object.open_and_load(spec)) return std::nullopt;
 
     // A failure below is per event type rather than fatal.  A machine without
     // the IBS driver has no dynamic type, and a restrictive
@@ -193,28 +237,30 @@ std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const& ctx) noexcep
     for (const PmuEventSpec& event : kEventSpecs) {
         uint32_t perf_type = event.perf_type;
         if (event.is_dynamic) {
-            const int dynamic_type = read_dynamic_pmu_type(event.dynamic_path);
-            if (dynamic_type < 0) {
-                state->object.settle(nullptr);
+            ::fixy::Option<uint32_t> const dynamic_type = read_dynamic_pmu_type(event.dynamic_path);
+            if (dynamic_type.is_none()) {
+                loaded.object.settle(nullptr);
                 if (verbose()) {
-                    std::fprintf(stderr,
-                                 "[crucible::perf] pmu_sample %s skipped "
-                                 "(dynamic PMU type not available; not an AMD host?)\n",
-                                 event.friendly_name);
+                    ::fixy::report(::fixy::Sink::Err,
+                                   "[crucible::perf] pmu_sample {} skipped "
+                                   "(dynamic PMU type not available; not an AMD host?)\n",
+                                   event.friendly_name);
                 }
                 continue;
             }
-            perf_type = static_cast<uint32_t>(dynamic_type);
+            for (uint32_t const type : dynamic_type) {
+                perf_type = type;
+            }
         }
 
-        bpf_program* const prog = state->object.find_program(event.prog_name);
+        bpf_program* const prog = loaded.object.find_program(event.prog_name.abi);
         if (prog == nullptr) {
-            state->object.settle(nullptr);
+            loaded.object.settle(nullptr);
             if (verbose()) {
-                std::fprintf(stderr,
-                             "[crucible::perf] pmu_sample program '%s' not found "
-                             "(bytecode and spec table out of sync; rebuild)\n",
-                             event.prog_name);
+                ::fixy::report(::fixy::Sink::Err,
+                               "[crucible::perf] pmu_sample program '{}' not found "
+                               "(bytecode and spec table out of sync; rebuild)\n",
+                               event.prog_name.text);
             }
             continue;
         }
@@ -236,43 +282,40 @@ std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const& ctx) noexcep
         const long fd_raw = perf_event_open_syscall(&attr, static_cast<pid_t>(tgid),
                                                     /*cpu=*/-1, /*group_fd=*/-1, /*flags=*/0);
         if (fd_raw < 0) {
-            state->object.settle(nullptr);
+            loaded.object.settle(nullptr);
             if (verbose()) {
-                std::fprintf(stderr, "[crucible::perf] pmu_sample %s perf_event_open failed (%s)\n",
-                             event.friendly_name, std::strerror(errno));
+                ::fixy::report(::fixy::Sink::Err, "[crucible::perf] pmu_sample {} perf_event_open failed (error {})\n",
+                               event.friendly_name, errno);
             }
             continue;
         }
         const PerfFd perf_fd = ::fixy::mint_tagged<local_source::PerfEvent>(static_cast<int>(fd_raw));
 
         bpf_link* const link = bpf_program__attach_perf_event(prog, perf_fd.value());
-        if (!state->object.settle(link)) {
+        if (!loaded.object.settle(link)) {
             const long err = libbpf_get_error(link);
             ::close(perf_fd.value());
             if (verbose()) {
-                std::fprintf(stderr, "[crucible::perf] pmu_sample %s attach failed (%s)\n", event.friendly_name,
-                             std::strerror(err != 0 ? static_cast<int>(-err) : errno));
+                ::fixy::report(::fixy::Sink::Err, "[crucible::perf] pmu_sample {} attach failed (error {})\n",
+                               event.friendly_name, err != 0 ? static_cast<int>(-err) : errno);
             }
             continue;
         }
         // One fd for each kept link, and the object keeps at most one link
         // for each of the kEventSpecCount specs, so the push has room.
-        state->perf_fds.fds.push_back(perf_fd);
+        static_cast<void>(loaded.perf_fds.fds.push(perf_fd).expect("each spec keeps at most one descriptor"));
 
         if (verbose()) {
-            std::fprintf(stderr,
-                         "[crucible::perf] pmu_sample attached %-15s "
-                         "type=%u config=0x%llx period=%llu\n",
-                         event.friendly_name, perf_type, static_cast<unsigned long long>(event.perf_config),
-                         static_cast<unsigned long long>(effective_period));
+            ::fixy::report(::fixy::Sink::Err, "[crucible::perf] pmu_sample attached {} type={} config={} period={}\n",
+                           event.friendly_name, perf_type, event.perf_config, effective_period);
         }
     }
 
-    if (!state->object.require_attached(spec)) return std::nullopt;
-    state->timeline =
-        detail::map_array<PmuSampleRingTag>(ctx, state->object, facade, "pmu_sample_buf", PmuSampleRing::bytes);
-    if (!state->timeline) return std::nullopt;
-    state->object.report_partial(facade);
+    if (!loaded.object.require_attached(spec)) return std::nullopt;
+    loaded.timeline = detail::map_array<PmuSampleRingTag>(
+        ctx, loaded.object, facade.text, CRUCIBLE_PERF_FOREIGN_NAME("pmu_sample_buf"), PmuSampleRing::bytes);
+    if (loaded.timeline.is_none()) return std::nullopt;
+    loaded.object.report_partial(facade.text);
 
     PmuSample hub;
     hub.state_ = std::move(state);

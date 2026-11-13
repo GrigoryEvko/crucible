@@ -31,15 +31,15 @@ std::optional<LockContention> LockContention::load(::fixy::InitLoadCtx const& ct
     // the exit one missing, wait-start entries fill the map to its capacity,
     // and contention data is lost silently past that point.
     const detail::RingSpec spec{
-        .load = {.facade = "lock_contention",
-                 .object_name = "crucible_lock_contention",
+        .load = {.facade = CRUCIBLE_PERF_FOREIGN_NAME("lock_contention"),
+                 .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_lock_contention"),
                  .bytecode = std::span{lock_contention_bpf_bytecode,
                                        static_cast<std::size_t>(lock_contention_bpf_bytecode_len)},
                  .min_attached = 2,
                  .attach_advice = "expected 2 tracepoint attachments (sys_enter_futex and sys_exit_futex), got "
                                   "fewer (kernel missing futex syscall tracepoints, or partial CAP_BPF rejection)"},
-        .timeline_map = "lock_timeline",
-        .counter_map = "lock_wait_count",
+        .timeline_map = CRUCIBLE_PERF_FOREIGN_NAME("lock_timeline"),
+        .counter_map = CRUCIBLE_PERF_FOREIGN_NAME("lock_wait_count"),
         .counter_fallback = "wait_count() returns 0",
     };
     auto state = detail::load_ring<State>(ctx, spec);

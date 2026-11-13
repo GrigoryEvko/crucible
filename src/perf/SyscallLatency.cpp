@@ -32,15 +32,15 @@ std::optional<SyscallLatency> SyscallLatency::load(::fixy::InitLoadCtx const& ct
     // the facade records useless half-events until the LRU hash map evicts
     // them.
     const detail::RingSpec spec{
-        .load = {.facade = "syscall_latency",
-                 .object_name = "crucible_syscall_latency",
+        .load = {.facade = CRUCIBLE_PERF_FOREIGN_NAME("syscall_latency"),
+                 .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_syscall_latency"),
                  .bytecode = std::span{syscall_latency_bpf_bytecode,
                                        static_cast<std::size_t>(syscall_latency_bpf_bytecode_len)},
                  .min_attached = 2,
                  .attach_advice = "expected 2 tracepoint attachments (raw_syscalls/sys_enter and sys_exit), got "
                                   "fewer (kernel missing raw_syscalls tracepoints, or partial CAP_BPF rejection)"},
-        .timeline_map = "syscall_timeline",
-        .counter_map = "total_syscalls",
+        .timeline_map = CRUCIBLE_PERF_FOREIGN_NAME("syscall_timeline"),
+        .counter_map = CRUCIBLE_PERF_FOREIGN_NAME("total_syscalls"),
         .counter_fallback = "total_syscalls() returns 0",
     };
     auto state = detail::load_ring<State>(ctx, spec);
