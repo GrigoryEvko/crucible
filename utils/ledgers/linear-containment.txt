@@ -20,7 +20,6 @@ include/fixy/os/ | library-holder | 6 | - | -
 include/fixy/session/ | library-holder | 27 | - | -
 include/foundation/permissions/ | library-holder | 8 | - | -
 include/foundation/permissions/ | pinned-holder | 1 | - | -
-src/cntp/ | library-holder | 1 | - | -
 src/cntp/_wip/ | library-holder | 2 | - | -
 test/ | library-holder | 4 | - | -
 test/fixy/ | library-holder | 19 | - | -

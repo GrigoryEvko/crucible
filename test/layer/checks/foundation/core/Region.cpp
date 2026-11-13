@@ -4,6 +4,7 @@
 
 #include <foundation/core/Array.h>
 #include <foundation/core/Branded.h>
+#include <foundation/core/Grow.h>
 #include <foundation/core/List.h>
 #include <foundation/core/Verbs.h>
 
@@ -382,6 +383,9 @@ CRUCIBLE_CLOSED_SURFACE(region_names, HeapArray<std::uint8_t, 64>);
 CRUCIBLE_CLOSED_SURFACE(region_names, FixedList<int, 4>);
 CRUCIBLE_CLOSED_SURFACE(region_names, FixedList<Record, 2>);
 CRUCIBLE_CLOSED_SURFACE(region_names, Full<int>);
+CRUCIBLE_CLOSED_SURFACE(region_names, GrowList<int>);
+CRUCIBLE_CLOSED_SURFACE(region_names, GrowList<Record>);
+CRUCIBLE_CLOSED_SURFACE(region_names, GrowText);
 CRUCIBLE_CLOSED_SURFACE(region_names, BrandedIndex<SurfaceBrand>);
 CRUCIBLE_CLOSED_SURFACE(region_names, BrandedView<int, SurfaceBrand>);
 CRUCIBLE_CLOSED_SURFACE(region_names, LengthMismatch);

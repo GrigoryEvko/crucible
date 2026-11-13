@@ -257,6 +257,16 @@
       "constructor": "\\bZipCursor\\("
     },
     {
+      "name": "neg_witness_core_growlist_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bGrowList\\("
+    },
+    {
+      "name": "neg_witness_core_growtext_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bGrowText\\("
+    },
+    {
       "name": "neg_witness_core_heaparray_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bHeapArray\\("
@@ -1128,6 +1138,14 @@
     {
       "type": "foundation::core::detail::HeapArrayKey",
       "header": "foundation/core/Array.h"
+    },
+    {
+      "type": "foundation::core::GrowList<int>",
+      "header": "foundation/core/Grow.h"
+    },
+    {
+      "type": "foundation::core::GrowText",
+      "header": "foundation/core/Grow.h"
     },
     {
       "type": "foundation::core::detail::EnumerateCursor<int, 4, forge::brand>",

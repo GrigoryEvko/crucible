@@ -322,6 +322,7 @@ rule artifact-symbols
 @build/libfoundation.a | libc-allow | 1 | aligned_alloc | -
 @build/libfoundation.a | libc-allow | 1 | free | -
 @build/libfoundation.a | libc-allow | 1 | malloc | -
+@build/libfoundation.a | libc-allow | 1 | memcpy | -
 @build/libfoundation.a | libc-allow | 1 | memset | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libfoundation.a | libc-allow | 1 | read | -
 @build/libfoundation.a | libc-allow | 1 | write | -

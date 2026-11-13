@@ -39,6 +39,17 @@
 // The loop of a View gives the cursor of foundation/core/Cursor.h, which a
 // TextView of foundation/core/Text.h gives too.
 //
+// THE FOREIGN DOORS
+//   mint_foreign_view(first, count)   the read-only View of a run that a
+//                       foreign ABI gives, such as the bytes of the fuzz
+//                       entry or the data of a tensor.  Each bit pattern of
+//                       the element is a value
+//   mint_foreign_text(first, count)   the TextView of such a run of
+//                       characters
+// The two mints check the count, the null pointer and the alignment, and
+// they cannot prove that the run lives.  A call stands only at the edge of a
+// foreign ABI, in an opt-out region of the class ABI.
+//
 // get(position) gives an Option of a Ref, so this header includes the Ref
 // family and defines the body of get itself.  A unit that includes only
 // this header then cannot give get a body of its own.
@@ -444,6 +455,51 @@ template <std::size_t Extent, class T>
     }
     return View<T, Extent>{ViewDoor::key(), first};
 }
+
+}  // namespace detail
+
+// ── The doors of a foreign run ─────────────────────────────────────────
+
+// The element of a run that a foreign ABI writes, such as the bytes of the
+// fuzz entry, the data of a PyTorch tensor or a record of a BPF ring buffer.
+// The foreign side can write each bit pattern, so each bit pattern of the
+// element is a value: no bool, no enumeration with an enumerator and no
+// pointer (BitValid).
+template <class T>
+concept ForeignElement = ViewElement<T> && !std::is_const_v<T> && BitValid<T>;
+
+// The View of the count elements at first, which a foreign ABI gives.  The
+// View only reads.  The mint ends the process for a count past
+// max_view_count, for a null pointer with a count, and for a pointer that is
+// not aligned for T.  It does not prove that the run lives: the caller keeps
+// the foreign run alive while it uses the View.  So a call stands at the
+// edge of a foreign ABI only, in an opt-out region of the class ABI.  The
+// address of a run is no constant of the compile, so the mint runs only at
+// run time.
+template <class T>
+    requires ForeignElement<T>
+[[nodiscard]] View<T const> mint_foreign_view(T const* first, std::size_t count) noexcept {
+    if (count != 0 && (__builtin_bit_cast(std::uintptr_t, first) & (alignof(T) - 1)) != 0) [[unlikely]] {
+        fatal("mint_foreign_view got a pointer that is not aligned for its element of {} bytes", alignof(T));
+    }
+    return detail::view_over_(first, count);
+}
+
+// The TextView of the count characters at first, which a foreign ABI gives.
+// The mint ends the process for a count past __PTRDIFF_MAX__ and for a null
+// pointer with a count.  As for mint_foreign_view, the caller keeps the run
+// alive, and a call stands only in an opt-out region of the class ABI.
+[[nodiscard]] inline TextView mint_foreign_text(char const* first, std::size_t count) noexcept {
+    if (count > max_view_count(1)) [[unlikely]] {
+        fatal("mint_foreign_text got a count past the largest count of a TextView");
+    }
+    if (first == nullptr && count != 0) [[unlikely]] {
+        fatal("mint_foreign_text got a null pointer with a count");
+    }
+    return detail::text_over_(first, count);
+}
+
+namespace detail {
 
 // The cursors of the iteration verbs obey the rule of a ViewCursor: each
 // cursor knows the end of its loop, a read or a step at the end ends the

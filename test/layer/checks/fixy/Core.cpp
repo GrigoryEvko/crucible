@@ -70,6 +70,11 @@ struct CoreCheckRole {};
 }
 static_assert(sole_writer_names_are_one_entity());
 static_assert(std::is_same_v<::fixy::View<int, 4>, ::foundation::core::View<int, 4>>);
+static_assert(::fixy::ForeignElement<float> && !::fixy::ForeignElement<bool>);
+static_assert(std::is_same_v<decltype(::fixy::mint_foreign_view(static_cast<float const*>(nullptr), 0)),
+                             ::fixy::View<float const>>);
+static_assert(
+    std::is_same_v<decltype(::fixy::mint_foreign_text(static_cast<char const*>(nullptr), 0)), ::fixy::TextView>);
 static_assert(::fixy::dynamic_extent == ::foundation::core::dynamic_extent);
 static_assert(std::is_same_v<::fixy::Site, ::foundation::core::Site>);
 static_assert(std::is_same_v<::fixy::Fmt<>, ::foundation::core::Fmt<>>);

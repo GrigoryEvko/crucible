@@ -59,6 +59,7 @@ using ::foundation::core::unreachable;
 
 using ::foundation::core::CText;
 using ::foundation::core::FixedText;
+using ::foundation::core::mint_foreign_text;
 using ::foundation::core::TextView;
 
 using ::foundation::core::niche_key;
@@ -123,6 +124,7 @@ using ::foundation::core::fill;
 using ::foundation::core::find;
 using ::foundation::core::find_if;
 using ::foundation::core::FixedList;
+using ::foundation::core::ForeignElement;
 using ::foundation::core::Full;
 using ::foundation::core::HeapArray;
 using ::foundation::core::Index;
@@ -132,6 +134,7 @@ using ::foundation::core::IndexRange;
 using ::foundation::core::LengthMismatch;
 using ::foundation::core::lower_bound_by_key;
 using ::foundation::core::mint_branded_scope;
+using ::foundation::core::mint_foreign_view;
 using ::foundation::core::mint_heap_array;
 using ::foundation::core::starts_with;
 using ::foundation::core::StaticIndex;

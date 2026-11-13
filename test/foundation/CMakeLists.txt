@@ -2858,6 +2858,43 @@ foundation_test(test_core_heap_array)
 # time, and the model of a FixedArray and a count agrees with each step.
 foundation_test(test_core_list)
 
+# A GrowList and a GrowText grow through many doublings up to the maximum of
+# their mint, refuse an append past it, move each element at a growth and end
+# it one time.  The foreign doors give a View and a TextView of a run that a
+# caller holds.
+foundation_test(test_core_grow)
+
+# An append takes the allocation capability, a list refuses an element whose
+# move can throw, and a text does not copy.
+foundation_neg_compile_test(neg_core_grow_list_append_without_allocation_marker
+  "no matching function for call to .foundation::core::GrowList<int>::append\\(foundation::effects::cap::IO, int\\)."
+  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
+foundation_neg_compile_test(neg_core_grow_list_throwing_move
+  "no matching function for call to .mint_grow_list<ThrowingMove>\\(int\\)."
+  "the expression .is_nothrow_move_constructible_v<T> \\[with T = ThrowingMove\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_grow_text_append_without_allocation_marker
+  "no matching function for call to .foundation::core::GrowText::append\\(foundation::effects::cap::IO, const char \\[9\\]\\)."
+  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
+foundation_neg_compile_test(neg_core_grow_text_copied
+  "use of deleted function .foundation::core::GrowText::GrowText\\(const foundation::core::GrowText&\\)."
+  "a copy of a GrowText allocates, and no allocation capability shows at a copy")
+
+# A foreign run holds each bit pattern, so its View refuses a bool and an
+# enumeration with enumerators.  The text door takes a run of char, and its
+# result is the one TextView of the run.
+foundation_neg_compile_test(neg_core_foreign_view_bool_element
+  "no matching function for call to .mint_foreign_view\\(const bool\\*, int\\)."
+  "required for the satisfaction of .BitValid<T>. \\[with T = bool\\]")
+foundation_neg_compile_test(neg_core_foreign_view_enumeration_element
+  "no matching function for call to .mint_foreign_view\\(const Mode\\*, int\\)."
+  "required for the satisfaction of .BitValid<T>. \\[with T = Mode\\]")
+foundation_neg_compile_test(neg_core_foreign_text_result_dropped
+  "ignoring return value of .foundation::core::TextView foundation::core::mint_foreign_text\\(const char\\*, std::size_t\\)."
+  "declared with attribute .nodiscard.")
+foundation_neg_compile_test(neg_core_foreign_text_byte_run
+  "invalid conversion from .const unsigned char\\*. to .const char\\*."
+  "initializing argument 1 of .foundation::core::TextView foundation::core::mint_foreign_text\\(const char\\*, std::size_t\\).")
+
 # The branded scope gives proven indexes of a View of a dynamic extent: each
 # index reads the element of the model, and a cursor never leaves its loop.
 foundation_test(test_core_branded)

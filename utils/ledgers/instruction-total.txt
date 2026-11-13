@@ -20,5 +20,5 @@
 #   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT
 format 1
 rule instruction-total
-- | x86_64-debug-asan | 9472940293606 | fixtures | The measure of 2026-11-12 of a Debug build.  The families of the base after 3dd0be3c4 add tests, fixtures and check files, and the brand of Ref adds Identity with its test, its check file and six fixtures
-- | x86_64-debug-asan | 10257025691399 | objects | The measure of 2026-11-12 of a Debug build.  The families of the base after 3dd0be3c4 add tests, fixtures and check files, and the brand of Ref adds Identity with its test, its check file and six fixtures
+- | x86_64-debug-asan | 10038994299147 | fixtures | The migration of the product code onto the base adds the Grow, BumpArena and door types with their tests and the fixtures that the mint rule asks for, and main reached the 5% budget at 5015513ce.
+- | x86_64-debug-asan | 10731388277629 | objects | The migration of the product code onto the base adds the Grow, BumpArena and door types with their tests and the fixtures that the mint rule asks for, and main reached the 5% budget at 5015513ce.

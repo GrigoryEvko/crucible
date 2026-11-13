@@ -942,6 +942,10 @@ inline constexpr StatedZero kZeros[] = {
      "an array of elements on the heap: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::FixedList,
      "an inline list of at most N elements: it holds storage and makes no claim about what the elements hold"},
+    {^^::foundation::core::GrowList,
+     "a list of elements on the heap that grows: it holds storage and makes no claim about what the elements hold"},
+    {^^::foundation::core::GrowText,
+     "a text on the heap that grows: it holds characters and makes no claim about them"},
     {^^::foundation::core::BrandedIndex,
      "the proof of an index below the count of one branded scope: it lives inside the scope, and it is never a value "
      "in a kernel signature"},

@@ -69,6 +69,7 @@ void text_literal_holds_a_zero_byte_before_its_end() noexcept;
 // The doors of the base to the parts of a text.  The rule owners keeps
 // each caller outside the base out.
 [[nodiscard]] constexpr char const* text_first_(TextView text) noexcept;
+[[nodiscard]] constexpr TextView text_over_(char const* first, std::size_t size) noexcept;
 [[nodiscard]] constexpr char const* c_text_first_(CText text) noexcept;
 [[nodiscard]] constexpr CText c_text_over_(char const* first, std::size_t size) noexcept;
 
@@ -92,6 +93,7 @@ class TextView {
     friend class FixedText;
     friend class CText;
     friend constexpr char const* detail::text_first_(TextView text) noexcept;
+    friend constexpr TextView detail::text_over_(char const* first, std::size_t size) noexcept;
     friend struct niche<TextView>;
 
     constexpr TextView(char const* first, std::size_t size) noexcept : first_{first}, size_{size} {}
@@ -262,6 +264,12 @@ public:
 namespace detail {
 
 constexpr char const* text_first_(TextView text) noexcept { return text.first_; }
+
+// A TextView over the size characters at first.  The caller is an owner of
+// the base that holds the characters, such as a GrowText, or a door that
+// checked the raw parts of a foreign run.  The size is at most
+// __PTRDIFF_MAX__, and first is not null when the size is above zero.
+constexpr TextView text_over_(char const* first, std::size_t size) noexcept { return TextView{first, size}; }
 
 // The first character of a CText.  A zero follows its last character.
 constexpr char const* c_text_first_(CText text) noexcept { return text.first_; }
