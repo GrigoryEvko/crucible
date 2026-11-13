@@ -98,11 +98,9 @@ void test_nic_apply_returns_privileged_deferred() {
 
     nic::EthtoolConfig ethtool{};
     ethtool.interface = cntp::NicInterfaceName::from("lo").value();
-    auto declared = nic::declare_ethtool_config(ethtool);
-    assert(declared.has_value());
-    auto applied = nic::apply_ethtool(*declared);
-    assert(!applied.has_value());
-    assert(applied.error() == nic::NicConfigError::PrivilegedApplyDeferred);
+    auto declared = nic::declare_ethtool_config(ethtool).expect("an ethtool configuration of lo is valid");
+    auto applied = nic::apply_ethtool(declared);
+    assert(applied.err() == ::fixy::some(nic::NicConfigError::PrivilegedApplyDeferred));
     crucible::test::pass("  test_nic_apply_returns_privileged_deferred: PASSED\n");
 }
 
@@ -116,8 +114,7 @@ void test_sriov_query_returns_query_deferred() {
     physical.kind = cog::CogKind::NicPort;
     auto iface = cntp::NicInterfaceName::from("eth0").value();
     auto query = sriov::query_current(physical, iface);
-    assert(!query.has_value());
-    assert(query.error() == sriov::SrIovError::QueryDeferred);
+    assert(query.err() == ::fixy::some(sriov::SrIovError::QueryDeferred));
     crucible::test::pass("  test_sriov_query_returns_query_deferred: PASSED\n");
 }
 

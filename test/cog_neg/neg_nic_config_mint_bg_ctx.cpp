@@ -15,5 +15,5 @@ int main() {
     id.kind = cog::CogKind::NicPort;
     auto iface = cntp::NicInterfaceName::from("eth0").value();
     auto config = nic::mint_nic_config(::fixy::BgDrainCtx{::foundation::effects::testing::bg()}, id, iface);
-    return config.has_value() ? 0 : 1;
+    return config.is_ok() ? 0 : 1;
 }

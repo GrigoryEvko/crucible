@@ -2,51 +2,39 @@
 
 namespace crucible::cog::nic {
 
-std::expected<void, NicConfigError> apply_config(DeclaredNicConfig config) noexcept {
-    auto valid = validate_nic_config(config.value());
-    if (!valid.has_value()) {
-        return std::unexpected(valid.error());
-    }
+::fixy::Result<::fixy::Unit, NicConfigError> apply_config(DeclaredNicConfig config) noexcept {
+    CRUCIBLE_TRY(_, validate_nic_config(config.value()));
     if (!config.value().allow_privileged_apply) {
-        return std::unexpected(NicConfigError::PrivilegedApplyDeferred);
+        return ::fixy::err(NicConfigError::PrivilegedApplyDeferred);
     }
-    return std::unexpected(NicConfigError::PrivilegedBackendUnavailable);
+    return ::fixy::err(NicConfigError::PrivilegedBackendUnavailable);
 }
 
-std::expected<void, NicConfigError> apply_ethtool(DeclaredEthtoolConfig config) noexcept {
-    auto valid = validate_ethtool_config(config.value());
-    if (!valid.has_value()) {
-        return std::unexpected(valid.error());
-    }
-    return std::unexpected(NicConfigError::PrivilegedApplyDeferred);
+::fixy::Result<::fixy::Unit, NicConfigError> apply_ethtool(DeclaredEthtoolConfig config) noexcept {
+    CRUCIBLE_TRY(_, validate_ethtool_config(config.value()));
+    return ::fixy::err(NicConfigError::PrivilegedApplyDeferred);
 }
 
-std::expected<void, NicConfigError> apply_qdisc(DeclaredQdiscConfig config) noexcept {
-    auto valid = validate_qdisc_config(config.value());
-    if (!valid.has_value()) {
-        return std::unexpected(valid.error());
-    }
-    return std::unexpected(NicConfigError::PrivilegedApplyDeferred);
+::fixy::Result<::fixy::Unit, NicConfigError> apply_qdisc(DeclaredQdiscConfig config) noexcept {
+    CRUCIBLE_TRY(_, validate_qdisc_config(config.value()));
+    return ::fixy::err(NicConfigError::PrivilegedApplyDeferred);
 }
 
-std::expected<void, NicConfigError> apply_sysctl(DeclaredSysctlConfig config) noexcept {
-    auto valid = validate_sysctl_config(config.value());
-    if (!valid.has_value()) {
-        return std::unexpected(valid.error());
-    }
-    return std::unexpected(NicConfigError::PrivilegedApplyDeferred);
+::fixy::Result<::fixy::Unit, NicConfigError> apply_sysctl(DeclaredSysctlConfig config) noexcept {
+    CRUCIBLE_TRY(_, validate_sysctl_config(config.value()));
+    return ::fixy::err(NicConfigError::PrivilegedApplyDeferred);
 }
 
-std::expected<DeclaredNicConfig, NicConfigError> query_current(CogIdentity identity,
-                                                               cntp::NicInterfaceName interface) noexcept {
+::fixy::Result<DeclaredNicConfig, NicConfigError> query_current(CogIdentity identity,
+                                                                cntp::NicInterfaceName interface) noexcept {
     static_cast<void>(interface);
     if (identity.uuid.is_zero()) {
-        return std::unexpected(NicConfigError::ZeroCog);
+        return ::fixy::err(NicConfigError::ZeroCog);
     }
     if (identity.kind != CogKind::NicPort) {
-        return std::unexpected(NicConfigError::NonNicCog);
+        return ::fixy::err(NicConfigError::NonNicCog);
     }
-    return std::unexpected(NicConfigError::QueryDeferred);
+    return ::fixy::err(NicConfigError::QueryDeferred);
 }
 
 }  // namespace crucible::cog::nic

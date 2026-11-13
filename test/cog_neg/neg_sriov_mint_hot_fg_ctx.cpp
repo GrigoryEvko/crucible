@@ -12,7 +12,7 @@ namespace sriov = crucible::cog::sriov;
 [[maybe_unused]] static int mint_from_foreground(::fixy::HotFgCtx const& fg, crucible::cntp::NicInterfaceName iface) {
     auto result = sriov::mint_sriov_plan(fg, cog::CogIdentity{}, cog::NicPortTargetCaps{}, iface,
                                          sriov::admit_vf_count(1).expect("1 function fits"));
-    return result.has_value() ? 0 : 1;
+    return result.is_ok() ? 0 : 1;
 }
 
 int main() { return 0; }

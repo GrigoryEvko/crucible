@@ -20,10 +20,7 @@
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Hash.h>
 
-#include <array>
 #include <cstdint>
-#include <expected>
-#include <span>
 #include <type_traits>
 
 namespace crucible::cog::sriov {
@@ -72,7 +69,7 @@ inline constexpr VfIndex first_vf_index = ::fixy::mint_refined<vf_index_bound>(s
 inline constexpr VfResourceLimit no_resource_limit = ::fixy::mint_refined<vf_resource_limit_bound>(std::uint32_t{0});
 
 struct MacAddress {
-    std::array<std::uint8_t, 6> bytes{};
+    ::foundation::core::FixedArray<std::uint8_t, 6> bytes{};
 
     [[nodiscard]] static constexpr MacAddress locally_administered(std::uint8_t suffix) noexcept {
         return MacAddress{{0x02u, 0x00u, 0x00u, 0x00u, 0x00u, suffix}};
@@ -85,9 +82,10 @@ struct MacAddress {
         return true;
     }
 
-    [[nodiscard]] constexpr bool is_multicast() const noexcept { return (bytes[0] & 0x01u) != 0u; }
+    // The low bit of the first octet marks a group address.
+    [[nodiscard]] constexpr bool is_multicast() const noexcept { return (bytes.at(::fixy::index<0>()) & 0x01u) != 0u; }
 
-    constexpr auto operator<=>(MacAddress const&) const noexcept = default;
+    [[nodiscard]] constexpr bool operator==(MacAddress const&) const noexcept = default;
 };
 
 // A virtual function takes a unicast identity. The zero address names no
@@ -137,17 +135,12 @@ using DeclaredSrIovPlan = ::fixy::Tagged<SrIovPlan, ::fixy::tags::source::SrIov>
     return vf;
 }
 
-class VfHandle;
-
-[[nodiscard]] constexpr std::expected<std::span<VfHandle>, SrIovError>
-materialize_vf_handles(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept;
-
-[[nodiscard]] constexpr std::expected<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan,
-                                                                         VfIndex index) noexcept;
+class VfHandleDoor;
 
 // A handle names one virtual function of a declared plan. Only the two
-// functions above build one, from the plan, so a handle cannot name a
-// function under a parent that no plan admitted.
+// functions materialize_vf_handles and vf_handle_at build one, from the
+// plan, so a handle cannot name a function under a parent that no plan
+// admitted.
 class VfHandle {
 public:
     // The empty slot of a handle buffer. It names no function, and
@@ -162,13 +155,31 @@ private:
     constexpr VfHandle(CogIdentity physical, VfIndex index) noexcept
         : index_{index}, parent_uuid_{physical.uuid}, identity_{derive_vf_identity(physical, index)} {}
 
-    friend constexpr std::expected<std::span<VfHandle>, SrIovError>
-    materialize_vf_handles(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept;
-    friend constexpr std::expected<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan, VfIndex index) noexcept;
+    friend class VfHandleDoor;
 
     VfIndex index_ = first_vf_index;
     Uuid parent_uuid_{};
     CogIdentity identity_{};
+};
+
+[[nodiscard]] constexpr ::fixy::Result<::fixy::View<VfHandle>, SrIovError>
+materialize_vf_handles(DeclaredSrIovPlan plan, ::fixy::View<VfHandle> out) noexcept;
+
+[[nodiscard]] constexpr ::fixy::Result<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan,
+                                                                          VfIndex index) noexcept;
+
+// The door to the private constructor of a handle.  A Result of a handle
+// needs a complete VfHandle, so the class of the handle cannot name the
+// two functions as friends.  This class names them, and only they build a
+// handle through it.
+class VfHandleDoor {
+    [[nodiscard]] static constexpr VfHandle build(CogIdentity physical, VfIndex index) noexcept {
+        return VfHandle{physical, index};
+    }
+
+    friend constexpr ::fixy::Result<::fixy::View<VfHandle>, SrIovError>
+    materialize_vf_handles(DeclaredSrIovPlan plan, ::fixy::View<VfHandle> out) noexcept;
+    friend constexpr ::fixy::Result<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan, VfIndex index) noexcept;
 };
 
 template <class Ctx>
@@ -204,36 +215,34 @@ concept CtxFitsSrIovMint =
     return !interface.view().empty();
 }
 
-[[nodiscard]] constexpr std::expected<void, SrIovError> validate_physical(CogIdentity physical,
-                                                                          NicPortTargetCaps const& caps) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, SrIovError>
+validate_physical(CogIdentity physical, NicPortTargetCaps const& caps) noexcept {
     if (physical.uuid.is_zero()) {
-        return std::unexpected(SrIovError::ZeroCog);
+        return ::fixy::err(SrIovError::ZeroCog);
     }
     if (physical.kind != CogKind::NicPort) {
-        return std::unexpected(SrIovError::NonNicCog);
+        return ::fixy::err(SrIovError::NonNicCog);
     }
     if (!caps.features.test(NicFeature::SrIov)) {
-        return std::unexpected(SrIovError::MissingSrIovCapability);
+        return ::fixy::err(SrIovError::MissingSrIovCapability);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
 // Every field of a VfConfig is refined, so a plan needs no check of its
 // default function beyond the checks of the physical port and the name.
-[[nodiscard]] constexpr std::expected<void, SrIovError> validate_plan(SrIovPlan const& plan,
-                                                                      NicPortTargetCaps const& caps) noexcept {
-    if (auto physical = validate_physical(plan.physical, caps); !physical.has_value()) {
-        return physical;
-    }
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, SrIovError> validate_plan(SrIovPlan const& plan,
+                                                                               NicPortTargetCaps const& caps) noexcept {
+    CRUCIBLE_TRY(_, validate_physical(plan.physical, caps));
     if (!interface_name_present(plan.interface)) {
-        return std::unexpected(SrIovError::InvalidInterfaceName);
+        return ::fixy::err(SrIovError::InvalidInterfaceName);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
 template <class Ctx>
     requires CtxFitsSrIovMint<Ctx>
-[[nodiscard]] constexpr std::expected<DeclaredSrIovPlan, SrIovError>
+[[nodiscard]] constexpr ::fixy::Result<DeclaredSrIovPlan, SrIovError>
 mint_sriov_plan(Ctx const&, CogIdentity physical, NicPortTargetCaps caps, cntp::NicInterfaceName interface,
                 VfCount num_vfs, VfConfig default_vf = {}, bool allow_privileged_apply = false) noexcept {
     SrIovPlan plan{
@@ -243,9 +252,7 @@ mint_sriov_plan(Ctx const&, CogIdentity physical, NicPortTargetCaps caps, cntp::
         .default_vf = default_vf,
         .allow_privileged_apply = allow_privileged_apply,
     };
-    if (auto valid = validate_plan(plan, caps); !valid.has_value()) {
-        return std::unexpected(valid.error());
-    }
+    CRUCIBLE_TRY(_, validate_plan(plan, caps));
     return ::fixy::mint_tagged<::fixy::tags::source::SrIov>(plan);
 }
 
@@ -255,26 +262,28 @@ mint_sriov_plan(Ctx const&, CogIdentity physical, NicPortTargetCaps caps, cntp::
     return ::fixy::mint_tagged<::fixy::tags::source::SrIov>(config);
 }
 
-// An index below num_vfs, which is at most 4096, is at most 4095, so the
-// checked mint of each index passes.
-[[nodiscard]] constexpr std::expected<std::span<VfHandle>, SrIovError>
-materialize_vf_handles(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept {
+// The first num_vfs slots of out take the handles, and the call gives the
+// View of those slots.  A View of fewer slots has no such window, so the
+// call refuses it.  An index below num_vfs, which is at most 4096, is at
+// most 4095, so the checked mint of each index passes.
+[[nodiscard]] constexpr ::fixy::Result<::fixy::View<VfHandle>, SrIovError>
+materialize_vf_handles(DeclaredSrIovPlan plan, ::fixy::View<VfHandle> out) noexcept {
     const std::uint16_t count = plan.value().num_vfs.value();
-    if (out.size() < count) {
-        return std::unexpected(SrIovError::InsufficientHandleCapacity);
+    CRUCIBLE_TRY(handles, out.window(0, count).ok_or(SrIovError::InsufficientHandleCapacity));
+    std::uint16_t next_index = 0;
+    for (VfHandle& handle : handles) {
+        handle = VfHandleDoor::build(plan.value().physical, ::fixy::mint_refined<vf_index_bound>(next_index));
+        ++next_index;
     }
-    for (std::uint16_t i = 0; i < count; ++i) {
-        out[i] = VfHandle{plan.value().physical, ::fixy::mint_refined<vf_index_bound>(i)};
-    }
-    return out.first(count);
+    return handles;
 }
 
-[[nodiscard]] constexpr std::expected<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan,
-                                                                         VfIndex index) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan,
+                                                                          VfIndex index) noexcept {
     if (index.value() >= plan.value().num_vfs.value()) {
-        return std::unexpected(SrIovError::VfIndexOutOfRange);
+        return ::fixy::err(SrIovError::VfIndexOutOfRange);
     }
-    return VfHandle{plan.value().physical, index};
+    return VfHandleDoor::build(plan.value().physical, index);
 }
 
 // Every method below and every free function that mirrors one is a
@@ -289,30 +298,31 @@ public:
     [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend creates virtual "
                             "functions; returns PrivilegedApplyDeferred or "
                             "PrivilegedBackendUnavailable")]]
-    std::expected<std::span<VfHandle>, SrIovError> enable(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept;
+    ::fixy::Result<::fixy::View<VfHandle>, SrIovError> enable(DeclaredSrIovPlan plan,
+                                                              ::fixy::View<VfHandle> out) noexcept;
 
     [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend configures a "
                             "virtual function; returns PrivilegedApplyDeferred")]]
-    std::expected<void, SrIovError> configure_vf(VfHandle handle, DeclaredVfConfig config) noexcept;
+    ::fixy::Result<::fixy::Unit, SrIovError> configure_vf(VfHandle handle, DeclaredVfConfig config) noexcept;
 
     [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend removes virtual "
                             "functions; returns PrivilegedApplyDeferred or "
                             "PrivilegedBackendUnavailable")]]
-    std::expected<void, SrIovError> disable(DeclaredSrIovPlan plan) noexcept;
+    ::fixy::Result<::fixy::Unit, SrIovError> disable(DeclaredSrIovPlan plan) noexcept;
 };
 
 [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend creates virtual "
                         "functions")]]
-std::expected<std::span<VfHandle>, SrIovError> enable(DeclaredSrIovPlan plan, std::span<VfHandle> out) noexcept;
+::fixy::Result<::fixy::View<VfHandle>, SrIovError> enable(DeclaredSrIovPlan plan, ::fixy::View<VfHandle> out) noexcept;
 [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend configures a "
                         "virtual function")]]
-std::expected<void, SrIovError> configure_vf(VfHandle handle, DeclaredVfConfig config) noexcept;
+::fixy::Result<::fixy::Unit, SrIovError> configure_vf(VfHandle handle, DeclaredVfConfig config) noexcept;
 [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend removes virtual "
                         "functions")]]
-std::expected<void, SrIovError> disable(DeclaredSrIovPlan plan) noexcept;
+::fixy::Result<::fixy::Unit, SrIovError> disable(DeclaredSrIovPlan plan) noexcept;
 [[nodiscard, deprecated("CRUCIBLE_STUB: no backend reads the live virtual-function "
                         "layout; returns SrIovError::QueryDeferred")]]
-std::expected<DeclaredSrIovPlan, SrIovError> query_current(CogIdentity physical,
-                                                           cntp::NicInterfaceName interface) noexcept;
+::fixy::Result<DeclaredSrIovPlan, SrIovError> query_current(CogIdentity physical,
+                                                            cntp::NicInterfaceName interface) noexcept;
 
 }  // namespace crucible::cog::sriov

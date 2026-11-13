@@ -10,4 +10,4 @@ namespace sriov = crucible::cog::sriov;
 constexpr sriov::VfMacAddress bad_mac =
     ::fixy::mint_refined<sriov::vf_mac_valid>(sriov::MacAddress{{0x01u, 0x00u, 0x00u, 0x00u, 0x00u, 0x01u}});
 
-int main() { return static_cast<int>(bad_mac.value().bytes[0]); }
+int main() { return static_cast<int>(bad_mac.value().bytes.at(::fixy::index<0>())); }

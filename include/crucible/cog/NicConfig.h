@@ -25,8 +25,6 @@
 #include <foundation/effects/Row.h>
 
 #include <cstdint>
-#include <expected>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::cog::nic {
@@ -91,7 +89,7 @@ enum class QdiscKind : std::uint8_t {
     Prio = 4,
 };
 
-[[nodiscard]] constexpr std::string_view qdisc_kind_name(QdiscKind kind) noexcept {
+[[nodiscard]] constexpr ::fixy::TextView qdisc_kind_name(QdiscKind kind) noexcept {
     switch (kind) {
         case QdiscKind::Fq:
             return "fq";
@@ -253,44 +251,42 @@ admit_rss_table_size(std::uint16_t count) noexcept {
     return lhs.view() == rhs.view();
 }
 
-[[nodiscard]] constexpr std::expected<void, NicConfigError>
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, NicConfigError>
 validate_ethtool_config(EthtoolConfig const& config) noexcept {
     if (!interface_name_present(config.interface)) {
-        return std::unexpected(NicConfigError::InvalidInterfaceName);
+        return ::fixy::err(NicConfigError::InvalidInterfaceName);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
-[[nodiscard]] constexpr std::expected<void, NicConfigError> validate_qdisc_config(QdiscConfig const& config) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, NicConfigError>
+validate_qdisc_config(QdiscConfig const& config) noexcept {
     if (!interface_name_present(config.interface)) {
-        return std::unexpected(NicConfigError::InvalidInterfaceName);
+        return ::fixy::err(NicConfigError::InvalidInterfaceName);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
-[[nodiscard]] constexpr std::expected<void, NicConfigError>
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, NicConfigError>
 validate_sysctl_config(SysctlConfig const& config) noexcept {
     if (!tcp_memory_triple_ordered(config.tcp_rmem) || !tcp_memory_triple_ordered(config.tcp_wmem)) {
-        return std::unexpected(NicConfigError::InvalidTcpMemoryTriple);
+        return ::fixy::err(NicConfigError::InvalidTcpMemoryTriple);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
-[[nodiscard]] constexpr std::expected<void, NicConfigError> validate_nic_config(NicConfigPlan const& plan) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, NicConfigError>
+validate_nic_config(NicConfigPlan const& plan) noexcept {
     if (plan.identity.uuid.is_zero()) {
-        return std::unexpected(NicConfigError::ZeroCog);
+        return ::fixy::err(NicConfigError::ZeroCog);
     }
     if (plan.identity.kind != CogKind::NicPort) {
-        return std::unexpected(NicConfigError::NonNicCog);
+        return ::fixy::err(NicConfigError::NonNicCog);
     }
-    if (auto valid = validate_ethtool_config(plan.ethtool); !valid.has_value()) {
-        return valid;
-    }
-    if (auto valid = validate_qdisc_config(plan.qdisc); !valid.has_value()) {
-        return valid;
-    }
+    CRUCIBLE_TRY(_, validate_ethtool_config(plan.ethtool));
+    CRUCIBLE_TRY(_, validate_qdisc_config(plan.qdisc));
     if (!same_interface(plan.ethtool.interface, plan.qdisc.interface)) {
-        return std::unexpected(NicConfigError::InterfaceMismatch);
+        return ::fixy::err(NicConfigError::InterfaceMismatch);
     }
     return validate_sysctl_config(plan.sysctl);
 }
@@ -301,11 +297,9 @@ namespace detail {
 // configuration before it writes the source tag. A configuration that
 // fails the check gets its error, not the tag.
 template <typename Config, auto Validate>
-[[nodiscard]] constexpr std::expected<::fixy::Tagged<Config, ::fixy::tags::source::NicConfig>, NicConfigError>
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Tagged<Config, ::fixy::tags::source::NicConfig>, NicConfigError>
 declare_validated(Config const& config) noexcept {
-    if (auto valid = Validate(config); !valid.has_value()) {
-        return std::unexpected(valid.error());
-    }
+    CRUCIBLE_TRY(_, Validate(config));
     return ::fixy::mint_tagged<::fixy::tags::source::NicConfig>(config);
 }
 
@@ -313,7 +307,7 @@ declare_validated(Config const& config) noexcept {
 
 template <class Ctx>
     requires CtxFitsNicConfigMint<Ctx>
-[[nodiscard]] constexpr std::expected<DeclaredNicConfig, NicConfigError>
+[[nodiscard]] constexpr ::fixy::Result<DeclaredNicConfig, NicConfigError>
 mint_nic_config(Ctx const&, CogIdentity identity, cntp::NicInterfaceName interface, EthtoolConfig ethtool = {},
                 QdiscConfig qdisc = {}, SysctlConfig sysctl = {}, bool allow_privileged_apply = false) noexcept {
     ethtool.interface = interface;
@@ -327,17 +321,17 @@ mint_nic_config(Ctx const&, CogIdentity identity, cntp::NicInterfaceName interfa
     });
 }
 
-[[nodiscard]] constexpr std::expected<DeclaredEthtoolConfig, NicConfigError>
+[[nodiscard]] constexpr ::fixy::Result<DeclaredEthtoolConfig, NicConfigError>
 declare_ethtool_config(EthtoolConfig const& config) noexcept {
     return detail::declare_validated<EthtoolConfig, validate_ethtool_config>(config);
 }
 
-[[nodiscard]] constexpr std::expected<DeclaredQdiscConfig, NicConfigError>
+[[nodiscard]] constexpr ::fixy::Result<DeclaredQdiscConfig, NicConfigError>
 declare_qdisc_config(QdiscConfig const& config) noexcept {
     return detail::declare_validated<QdiscConfig, validate_qdisc_config>(config);
 }
 
-[[nodiscard]] constexpr std::expected<DeclaredSysctlConfig, NicConfigError>
+[[nodiscard]] constexpr ::fixy::Result<DeclaredSysctlConfig, NicConfigError>
 declare_sysctl_config(SysctlConfig const& config) noexcept {
     return detail::declare_validated<SysctlConfig, validate_sysctl_config>(config);
 }
@@ -373,19 +367,19 @@ audit_features_from_offloads(::fixy::Bits<NicOffload> offloads) noexcept {
 [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend drives the NIC "
                         "configuration interfaces; returns PrivilegedApplyDeferred or "
                         "PrivilegedBackendUnavailable")]]
-std::expected<void, NicConfigError> apply_config(DeclaredNicConfig config) noexcept;
+::fixy::Result<::fixy::Unit, NicConfigError> apply_config(DeclaredNicConfig config) noexcept;
 [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend applies ring, "
                         "queue or hash settings; returns PrivilegedApplyDeferred")]]
-std::expected<void, NicConfigError> apply_ethtool(DeclaredEthtoolConfig config) noexcept;
+::fixy::Result<::fixy::Unit, NicConfigError> apply_ethtool(DeclaredEthtoolConfig config) noexcept;
 [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend installs queueing "
                         "disciplines; returns PrivilegedApplyDeferred")]]
-std::expected<void, NicConfigError> apply_qdisc(DeclaredQdiscConfig config) noexcept;
+::fixy::Result<::fixy::Unit, NicConfigError> apply_qdisc(DeclaredQdiscConfig config) noexcept;
 [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend writes the kernel "
                         "network tunables; returns PrivilegedApplyDeferred")]]
-std::expected<void, NicConfigError> apply_sysctl(DeclaredSysctlConfig config) noexcept;
+::fixy::Result<::fixy::Unit, NicConfigError> apply_sysctl(DeclaredSysctlConfig config) noexcept;
 [[nodiscard, deprecated("CRUCIBLE_STUB: no backend reads the live NIC "
                         "configuration; returns NicConfigError::QueryDeferred")]]
-std::expected<DeclaredNicConfig, NicConfigError> query_current(CogIdentity identity,
-                                                               cntp::NicInterfaceName interface) noexcept;
+::fixy::Result<DeclaredNicConfig, NicConfigError> query_current(CogIdentity identity,
+                                                                cntp::NicInterfaceName interface) noexcept;
 
 }  // namespace crucible::cog::nic

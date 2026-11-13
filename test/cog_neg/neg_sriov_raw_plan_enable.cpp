@@ -13,7 +13,7 @@ namespace sriov = crucible::cog::sriov;
 
 int main() {
     sriov::SrIovPlan plan{};
-    sriov::VfHandle handle{};
-    auto result = sriov::enable(plan, std::span<sriov::VfHandle>{&handle, 1});
-    return result.has_value() ? 0 : 1;
+    ::foundation::core::FixedArray<sriov::VfHandle, 1> handles{};
+    auto result = sriov::enable(plan, handles.view());
+    return result.is_ok() ? 0 : 1;
 }

@@ -14,5 +14,5 @@ namespace nic = crucible::cog::nic;
 int main() {
     nic::NicConfigPlan raw{};
     auto result = nic::apply_config(raw);
-    return result.has_value() ? 0 : 1;
+    return result.is_ok() ? 0 : 1;
 }

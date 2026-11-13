@@ -2864,7 +2864,7 @@ crucible_neg_compile_test(neg_sriov_zero_vfs
     "fixy::mint_refined<InRange<1, 4096>\\(\\), short unsigned int>\\(0\\)")
 crucible_neg_compile_test(neg_sriov_multicast_mac
     "__builtin_trap\\(\\).* is not a constant expression"
-    "fixy::mint_refined<crucible::cog::sriov::IsAssignableVfMac\\(\\), crucible::cog::sriov::MacAddress>\\(crucible::cog::sriov::MacAddress\\{std::array<unsigned char, 6>.*\\{1, 0, 0, 0, 0, 1\\}")
+    "fixy::mint_refined<crucible::cog::sriov::IsAssignableVfMac\\(\\), crucible::cog::sriov::MacAddress>\\(crucible::cog::sriov::MacAddress\\{foundation::core::FixedArray<unsigned char, 6>.*\\{1, 0, 0, 0, 0, 1\\}")
 crucible_neg_compile_test(neg_sriov_mint_bg_ctx
     "no matching function for call to .mint_sriov_plan\\(fixy::BgDrainCtx"
     "required for the satisfaction of .CtxFitsSrIovMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")

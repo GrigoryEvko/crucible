@@ -12,7 +12,7 @@ namespace cntp = crucible::cntp;
 
 [[maybe_unused]] static int mint_from_foreground(::fixy::HotFgCtx const& fg, cntp::NicInterfaceName iface) {
     auto config = nic::mint_nic_config(fg, cog::CogIdentity{}, iface);
-    return config.has_value() ? 0 : 1;
+    return config.is_ok() ? 0 : 1;
 }
 
 int main() { return 0; }
