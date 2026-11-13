@@ -2396,6 +2396,8 @@ crucible_neg_compile_test(neg_synthetic_probe_raw_kind_mask
 #     cross the SdcConfig boundary.
 #   * neg_sdc_detect_direct_construct — a detector is built only through
 #     mint_sdc_detector, so its constructor is private.
+#   * neg_sdc_detect_padded_result — a result with a padding byte has no
+#     bitwise compare, because no replica writes its padding.
 crucible_neg_compile_test(neg_sdc_detect_mint_bg_ctx
   "constraint|constraints.*not satisfied"
     "CtxFitsSdcMint")
@@ -2414,6 +2416,9 @@ crucible_neg_compile_test(neg_sdc_detect_sampling_rate_above_max
 crucible_neg_compile_test(neg_sdc_detect_direct_construct
   "is private within this context"
   "SdcDetector<MaxCogs, MaxEvents>::SdcDetector\\(crucible::observe::SdcConfig\\)")
+crucible_neg_compile_test(neg_sdc_detect_padded_result
+  "constraint|constraints.*not satisfied"
+    "SdcComparableResult")
 
 # canopy/Hlc.h, the hybrid logical clock.
 #   * neg_hlc_raw_timestamp_to_tagged: a raw HlcTimestamp does not

@@ -4,6 +4,7 @@
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/observe/Observation.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
@@ -14,19 +15,10 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
-#include <array>
-#include <cmath>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <expected>
-#include <limits>
-#include <memory>
-#include <span>
 #include <string_view>
 #include <type_traits>
-#include <utility>
 
 namespace crucible::observe {
 
@@ -77,6 +69,20 @@ struct SdcEvent {
     cog::Uuid comparison_cog{};
 };
 
+// The bytes of a result, which the bitwise compare reads.
+template <typename T>
+using SdcResultBytes = ::foundation::core::FixedArray<std::byte, sizeof(T)>;
+
+// A result that the detector can compare bit for bit: a plain value with no
+// padding bit.  No replica writes a padding bit, so two equal results can
+// differ there.
+template <typename T>
+concept SdcComparableResult = ::fixy::DecodableFrom<SdcResultBytes<T>, T>;
+
+// The result of one replica of a work.
+template <class Work>
+using SdcWorkResult = std::remove_cvref_t<std::invoke_result_t<Work&, cog::CogIdentity&>>;
+
 template <class Ctx>
 concept CtxFitsSdcMint =
     ::foundation::effects::IsExecCtx<Ctx>
@@ -98,41 +104,30 @@ namespace detail {
     return value;
 }
 
-template <typename T>
-[[nodiscard]] bool bitwise_equal(T const& a, T const& b) noexcept {
-    static_assert(std::is_trivially_copyable_v<T>, "SDC bitwise comparison requires trivially copyable results.");
-    return std::memcmp(std::addressof(a), std::addressof(b), sizeof(T)) == 0;
+template <SdcComparableResult T>
+[[nodiscard]] constexpr bool bitwise_equal(T const& a, T const& b) noexcept {
+    return ::fixy::bit_cast<SdcResultBytes<T>>(a) == ::fixy::bit_cast<SdcResultBytes<T>>(b);
 }
 
-template <typename T>
-[[nodiscard]] bool tolerance_equal(T const& a, T const& b, std::uint64_t tolerance) noexcept {
-    if constexpr (std::integral<T>) {
-        using U = std::make_unsigned_t<T>;
-        // Sub-int operands promote to int for the subtraction. Casting back
-        // to U is the intended magnitude, the absolute difference modulo
-        // 2^bits, and keeps the path clean under -Werror=conversion. The
-        // template then compiles at every integral width, not only at int
-        // and wider.
-        U const delta = [&]() -> U {
-            if constexpr (std::signed_integral<T>) {
-                return a >= b ? static_cast<U>(static_cast<U>(a) - static_cast<U>(b))
-                              : static_cast<U>(static_cast<U>(b) - static_cast<U>(a));
-            } else {
-                return a >= b ? static_cast<U>(a - b) : static_cast<U>(b - a);
-            }
-        }();
-        return static_cast<std::uint64_t>(delta) <= tolerance;
-    } else if constexpr (std::floating_point<T>) {
-        auto const delta = std::fabs(a - b);
-        return delta <= static_cast<decltype(delta)>(tolerance);
+// An integer compares by its true distance, which abs_diff gives with no
+// overflow at each width.  A float compares by the magnitude of its
+// difference, so a NaN operand is never within the tolerance.  Each other
+// result compares bit for bit.
+template <SdcComparableResult T>
+[[nodiscard]] constexpr bool tolerance_equal(T const& a, T const& b, std::uint64_t tolerance) noexcept {
+    if constexpr (::fixy::Integer<T>) {
+        return ::fixy::widen<std::uint64_t>(::fixy::abs_diff(a, b)) <= tolerance;
+    } else if constexpr (::fixy::Float<T>) {
+        T const delta = ::fixy::fp::abs(a - b);
+        return delta <= static_cast<T>(tolerance);
     } else {
         return bitwise_equal(a, b);
     }
 }
 
-template <typename T>
-[[nodiscard]] bool equivalent(T const& a, T const& b, SdcComparisonStrategy strategy,
-                              std::uint64_t tolerance) noexcept {
+template <SdcComparableResult T>
+[[nodiscard]] constexpr bool equivalent(T const& a, T const& b, SdcComparisonStrategy strategy,
+                                        std::uint64_t tolerance) noexcept {
     switch (strategy) {
         case SdcComparisonStrategy::BitwiseEqual:
             return bitwise_equal(a, b);
@@ -159,7 +154,7 @@ class SdcDetector : public ::foundation::Pinned<SdcDetector<MaxCogs, MaxEvents>>
     static_assert(MaxCogs > 0, "SdcDetector requires at least one Cog slot.");
     static_assert(MaxEvents > 0, "SdcDetector requires an event ring.");
     // An event names a slot and a replica count in 16 bits.
-    static_assert(MaxCogs <= std::numeric_limits<std::uint16_t>::max(),
+    static_assert(MaxCogs <= ::fixy::max_of<std::uint16_t>,
                   "SdcDetector slot indices and replica counts must fit the 16-bit event fields.");
 
 public:
@@ -173,11 +168,15 @@ public:
     };
 
 private:
+    using CogIndex = ::fixy::Index<MaxCogs>;
+    using EventIndex = ::fixy::Index<MaxEvents>;
+
     SdcConfig config_{};
-    std::array<CogSlot, MaxCogs> cogs_{};
-    std::array<SdcEvent, MaxEvents> events_{};
+    ::foundation::core::FixedArray<CogSlot, MaxCogs> cogs_{};
+    ::foundation::core::FixedArray<SdcEvent, MaxEvents> events_{};
     std::uint64_t event_sequence_ = 0;
-    std::size_t event_cursor_ = 0;
+    // The slot of the next event.
+    EventIndex event_cursor_ = ::fixy::index<0>();
     std::size_t active_cogs_ = 0;
 
     template <class Ctx, std::size_t Cogs, std::size_t Events>
@@ -186,14 +185,28 @@ private:
 
     constexpr explicit SdcDetector(SdcConfig config) noexcept : config_{config} {}
 
-    // The slot of an active Cog with this identity, or nullptr.
-    [[nodiscard]] constexpr CogSlot const* find_cog(cog::CogIdentity const& cog) const noexcept {
-        for (CogSlot const& slot : cogs_) {
-            if (slot.active && slot.cog.uuid == cog.uuid) {
-                return std::addressof(slot);
+    // The slot of an active Cog with this identity, or no value.
+    [[nodiscard]] constexpr ::fixy::Option<CogIndex> find_cog(cog::CogIdentity const& cog) const noexcept {
+        for (CogIndex const slot : cogs_.indices()) {
+            CogSlot const& entry = cogs_.at(slot);
+            if (entry.active && entry.cog.uuid == cog.uuid) {
+                return ::fixy::Option<CogIndex>::some(slot);
             }
         }
-        return nullptr;
+        return ::fixy::none;
+    }
+
+    // The slot after cursor, and the first slot after the last one.
+    [[nodiscard]] static constexpr EventIndex next_event_slot(EventIndex cursor) noexcept {
+        return EventIndex::check(cursor.raw() + 1u).value_or(::fixy::index<0>());
+    }
+
+    // The slot before cursor, and the last slot before the first one.
+    [[nodiscard]] static constexpr EventIndex previous_event_slot(EventIndex cursor) noexcept {
+        if (cursor.raw() == 0) {
+            return ::fixy::index<MaxEvents - 1>();
+        }
+        return EventIndex::check(cursor.raw() - 1u).value_or(::fixy::index<0>());
     }
 
     // Every event carries the strategy and tolerance it was judged under.
@@ -204,22 +217,25 @@ private:
                         .tolerance_units = config_.tolerance_units};
     }
 
-    [[nodiscard]] SdcEvent record_event(SdcEvent event) noexcept {
+    void record_event(SdcEvent event) noexcept {
         event.sequence = ++event_sequence_;
-        events_[event_cursor_] = event;
-        event_cursor_ = (event_cursor_ + 1u) % events_.size();
-        return event;
+        events_.at(event_cursor_) = event;
+        event_cursor_ = next_event_slot(event_cursor_);
     }
 
 public:
     [[nodiscard]] SdcConfig config() const noexcept { return config_; }
 
-    [[nodiscard]] std::span<const CogSlot, MaxCogs> cogs() const noexcept {
-        return std::span<const CogSlot, MaxCogs>{cogs_};
-    }
+    [[nodiscard]] ::fixy::View<CogSlot const, MaxCogs> cogs() const noexcept { return cogs_.view(); }
 
-    [[nodiscard]] std::span<const SdcEvent, MaxEvents> events() const noexcept {
-        return std::span<const SdcEvent, MaxEvents>{events_};
+    [[nodiscard]] ::fixy::View<SdcEvent const, MaxEvents> events() const noexcept { return events_.view(); }
+
+    // The last recorded event, or no value before the first event.
+    [[nodiscard]] ::fixy::Option<SdcEvent> latest_event() const noexcept {
+        if (event_sequence_ == 0) {
+            return ::fixy::none;
+        }
+        return ::fixy::Option<SdcEvent>::some(events_.at(previous_event_slot(event_cursor_)));
     }
 
     [[nodiscard]] std::size_t active_cog_count() const noexcept { return active_cogs_; }
@@ -230,73 +246,86 @@ public:
     }
 
     [[nodiscard]] bool register_cog(cog::CogIdentity cog) noexcept {
-        if (cog.uuid.is_zero() || find_cog(cog) != nullptr) {
+        if (cog.uuid.is_zero() || find_cog(cog).is_some()) {
             return false;
         }
-        if (active_cogs_ >= cogs_.size()) {
-            return false;
-        }
-        cogs_[active_cogs_] = CogSlot{.cog = cog, .mismatch_count = 0, .active = true};
-        ++active_cogs_;
-        return true;
+        return CogIndex::check(active_cogs_)
+            .match(
+                [&](CogIndex slot) noexcept {
+                    cogs_.at(slot) = CogSlot{.cog = cog, .mismatch_count = 0, .active = true};
+                    ++active_cogs_;
+                    return true;
+                },
+                [] noexcept { return false; });
     }
 
+    // Runs work on the first redundancy_factor Cogs and compares each result
+    // with the result of the first Cog.  The ring of events holds the full
+    // event of each run, and an error gives its kind.
     template <class Ctx, class Work>
-        requires CtxFitsSdcRun<Ctx>
+        requires CtxFitsSdcRun<Ctx> && SdcComparableResult<SdcWorkResult<Work>>
     [[nodiscard]] auto run_with_redundancy(Ctx const&,
-                                           Work&& work) noexcept(noexcept(std::forward<Work>(work)(cogs_[0].cog)))
-        -> std::expected<SdcVerified<std::remove_cvref_t<decltype(std::forward<Work>(work)(cogs_[0].cog))>>, SdcEvent> {
-        using Result = std::remove_cvref_t<decltype(std::forward<Work>(work)(cogs_[0].cog))>;
-        static_assert(std::is_trivially_copyable_v<Result>,
-                      "SdcDetector results must be trivially copyable for deterministic comparison.");
+                                           Work&& work) noexcept(std::is_nothrow_invocable_v<Work&, cog::CogIdentity&>)
+        -> ::fixy::Result<SdcVerified<SdcWorkResult<Work>>, SdcEventKind> {
+        using Result = SdcWorkResult<Work>;
 
         std::size_t const required = config_.redundancy_factor.value();
         if (active_cogs_ < required) {
-            return std::unexpected(record_event(make_event(SdcEventKind::InsufficientReplicas, active_cogs_)));
+            record_event(make_event(SdcEventKind::InsufficientReplicas, active_cogs_));
+            return ::fixy::err(SdcEventKind::InsufficientReplicas);
         }
 
         Work& body = work;
-        Result primary = body(cogs_[0].cog);
-        for (std::size_t i = 1; i < required; ++i) {
-            Result replica = body(cogs_[i].cog);
+        CogSlot& primary_slot = cogs_.at(::fixy::index<0>());
+        Result primary = body(primary_slot.cog);
+        for (CogIndex const slot : cogs_.indices()) {
+            if (slot.raw() == 0) {
+                continue;
+            }
+            if (slot.raw() >= required) {
+                break;
+            }
+            CogSlot& comparison_slot = cogs_.at(slot);
+            Result replica = body(comparison_slot.cog);
             if (!detail::equivalent(primary, replica, config_.strategy, config_.tolerance_units)) {
-                auto& primary_slot = cogs_[0];
-                auto& comparison_slot = cogs_[i];
                 // A count that wrapped to zero would clear a suspect Cog.
                 primary_slot.mismatch_count = ::foundation::sat::add_sat(primary_slot.mismatch_count, std::uint16_t{1});
                 comparison_slot.mismatch_count =
                     ::foundation::sat::add_sat(comparison_slot.mismatch_count, std::uint16_t{1});
 
-                SdcEvent event = make_event(SdcEventKind::Mismatch, i + 1u);
-                event.comparison_slot = static_cast<std::uint16_t>(i);
+                SdcEvent event = make_event(SdcEventKind::Mismatch, slot.raw() + 1u);
+                event.comparison_slot = static_cast<std::uint16_t>(slot.raw());
                 event.mismatch_count = comparison_slot.mismatch_count;
                 event.primary_cog = primary_slot.cog.uuid;
                 event.comparison_cog = comparison_slot.cog.uuid;
-                return std::unexpected(record_event(event));
+                record_event(event);
+                return ::fixy::err(SdcEventKind::Mismatch);
             }
         }
 
         SdcEvent event = make_event(SdcEventKind::Verified, required);
-        event.primary_cog = cogs_[0].cog.uuid;
-        (void)record_event(event);
+        event.primary_cog = primary_slot.cog.uuid;
+        record_event(event);
         return ::fixy::mint_tagged<::fixy::tags::source::SdcVerified>(primary);
     }
 
     [[nodiscard]] bool should_quarantine(cog::CogIdentity const& cog) const noexcept {
-        CogSlot const* const slot = find_cog(cog);
-        return slot != nullptr && slot->mismatch_count >= config_.suspect_after_mismatches.value();
+        return find_cog(cog).match(
+            [this](CogIndex slot) noexcept {
+                return cogs_.at(slot).mismatch_count >= config_.suspect_after_mismatches.value();
+            },
+            [] noexcept { return false; });
     }
 
     [[nodiscard]] bool publish_latest(ObservationSnapshot& sink) const noexcept {
-        if (event_sequence_ == 0) {
-            return false;
-        }
-        std::size_t const cursor = event_cursor_ == 0 ? events_.size() - 1u : event_cursor_ - 1u;
-        SdcEvent const& event = events_[cursor];
-        record_observation(sink,
-                           make_observation(ObservationKind::Metric, ObservationSource::Runtime, config_.metric_id_base,
-                                            static_cast<std::uint64_t>(event.kind), event.sequence));
-        return true;
+        return latest_event().match(
+            [&](SdcEvent event) noexcept {
+                record_observation(sink, make_observation(ObservationKind::Metric, ObservationSource::Runtime,
+                                                          config_.metric_id_base,
+                                                          static_cast<std::uint64_t>(event.kind), event.sequence));
+                return true;
+            },
+            [] noexcept { return false; });
     }
 };
 

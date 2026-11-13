@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <limits>
 #include <type_traits>
+#include <utility>
 #include "test_assert.h"
 
 namespace {
@@ -58,11 +59,12 @@ void test_redundant_equal_results_mint_verified_tag() {
         detector.run_with_redundancy(eff::BgDrainCtx{::foundation::effects::testing::bg()},
                                      [](cog::CogIdentity const&) noexcept { return std::uint64_t{0xfeedcafe}; });
 
-    CRUCIBLE_REQUIRE(verified.has_value());
-    CRUCIBLE_REQUIRE(verified->value() == 0xfeedcafeull);
-    static_assert(std::is_same_v<decltype(*verified), observe::SdcVerified<std::uint64_t>&>);
-    CRUCIBLE_REQUIRE(detector.events()[0].kind == observe::SdcEventKind::Verified);
-    CRUCIBLE_REQUIRE(detector.events()[0].compared_replicas == 2);
+    static_assert(
+        std::is_same_v<decltype(verified), ::fixy::Result<observe::SdcVerified<std::uint64_t>, observe::SdcEventKind>>);
+    CRUCIBLE_REQUIRE(verified.is_ok());
+    CRUCIBLE_REQUIRE(std::move(verified).expect("the two replicas agree").value() == 0xfeedcafeull);
+    CRUCIBLE_REQUIRE(detector.events().at(::fixy::index<0>()).kind == observe::SdcEventKind::Verified);
+    CRUCIBLE_REQUIRE(detector.events().at(::fixy::index<0>()).compared_replicas == 2);
 }
 
 void test_mismatch_records_implicated_cog_and_threshold() {
@@ -81,15 +83,16 @@ void test_mismatch_records_implicated_cog_and_threshold() {
         eff::BgDrainCtx{::foundation::effects::testing::bg()},
         [](cog::CogIdentity const& id) noexcept { return id.uuid.lo == 12 ? std::uint32_t{8} : std::uint32_t{7}; });
 
-    CRUCIBLE_REQUIRE(!result.has_value());
-    CRUCIBLE_REQUIRE(result.error().kind == observe::SdcEventKind::Mismatch);
-    CRUCIBLE_REQUIRE(result.error().strategy == observe::SdcComparisonStrategy::BitwiseEqual);
-    CRUCIBLE_REQUIRE(result.error().primary_slot == 0);
-    CRUCIBLE_REQUIRE(result.error().comparison_slot == 1);
-    CRUCIBLE_REQUIRE(result.error().compared_replicas == 2);
-    CRUCIBLE_REQUIRE(result.error().mismatch_count == 1);
-    CRUCIBLE_REQUIRE(result.error().primary_cog == primary.uuid);
-    CRUCIBLE_REQUIRE(result.error().comparison_cog == bad.uuid);
+    CRUCIBLE_REQUIRE(result.err().value_or(observe::SdcEventKind::Verified) == observe::SdcEventKind::Mismatch);
+    auto const event = detector.latest_event().expect("the mismatch records an event");
+    CRUCIBLE_REQUIRE(event.kind == observe::SdcEventKind::Mismatch);
+    CRUCIBLE_REQUIRE(event.strategy == observe::SdcComparisonStrategy::BitwiseEqual);
+    CRUCIBLE_REQUIRE(event.primary_slot == 0);
+    CRUCIBLE_REQUIRE(event.comparison_slot == 1);
+    CRUCIBLE_REQUIRE(event.compared_replicas == 2);
+    CRUCIBLE_REQUIRE(event.mismatch_count == 1);
+    CRUCIBLE_REQUIRE(event.primary_cog == primary.uuid);
+    CRUCIBLE_REQUIRE(event.comparison_cog == bad.uuid);
     CRUCIBLE_REQUIRE(detector.should_quarantine(bad));
     CRUCIBLE_REQUIRE(!detector.should_quarantine(make_cog(13)));
 }
@@ -108,9 +111,10 @@ void test_mismatch_count_saturates() {
     for (std::uint32_t run = 0; run < runs; ++run) {
         auto result = detector.run_with_redundancy(eff::BgDrainCtx{::foundation::effects::testing::bg()},
                                                    [](cog::CogIdentity const& id) noexcept { return id.uuid.lo; });
-        CRUCIBLE_REQUIRE(!result.has_value());
+        CRUCIBLE_REQUIRE(result.is_err());
     }
-    CRUCIBLE_REQUIRE(detector.cogs()[1].mismatch_count == std::numeric_limits<std::uint16_t>::max());
+    CRUCIBLE_REQUIRE(detector.cogs().at(::fixy::index<1>()).mismatch_count
+                     == std::numeric_limits<std::uint16_t>::max());
     CRUCIBLE_REQUIRE(detector.should_quarantine(bad));
 }
 
@@ -131,9 +135,9 @@ void test_arithmetic_tolerance_allows_small_delta() {
         eff::BgDrainCtx{::foundation::effects::testing::bg()},
         [](cog::CogIdentity const& id) noexcept { return id.uuid.lo == 21 ? std::int32_t{100} : std::int32_t{101}; });
 
-    CRUCIBLE_REQUIRE(result.has_value());
-    CRUCIBLE_REQUIRE(result->value() == 100);
-    CRUCIBLE_REQUIRE(detector.events()[0].kind == observe::SdcEventKind::Verified);
+    CRUCIBLE_REQUIRE(result.is_ok());
+    CRUCIBLE_REQUIRE(std::move(result).expect("the three replicas agree within the tolerance").value() == 100);
+    CRUCIBLE_REQUIRE(detector.events().at(::fixy::index<0>()).kind == observe::SdcEventKind::Verified);
 }
 
 void test_signed_tolerance_does_not_use_modular_distance() {
@@ -150,8 +154,8 @@ void test_signed_tolerance_does_not_use_modular_distance() {
         eff::BgDrainCtx{::foundation::effects::testing::bg()},
         [](cog::CogIdentity const& id) noexcept { return id.uuid.lo == 24 ? std::int32_t{0} : std::int32_t{-1}; });
 
-    CRUCIBLE_REQUIRE(result.has_value());
-    CRUCIBLE_REQUIRE(result->value() == 0);
+    CRUCIBLE_REQUIRE(result.is_ok());
+    CRUCIBLE_REQUIRE(std::move(result).expect("the distance of 0 and -1 is 1").value() == 0);
 }
 
 void test_insufficient_replicas_and_observation_publication() {
@@ -164,8 +168,8 @@ void test_insufficient_replicas_and_observation_publication() {
 
     auto result = detector.run_with_redundancy(eff::BgDrainCtx{::foundation::effects::testing::bg()},
                                                [](cog::CogIdentity const&) noexcept { return std::uint64_t{1}; });
-    CRUCIBLE_REQUIRE(!result.has_value());
-    CRUCIBLE_REQUIRE(result.error().kind == observe::SdcEventKind::InsufficientReplicas);
+    CRUCIBLE_REQUIRE(result.err().value_or(observe::SdcEventKind::Verified)
+                     == observe::SdcEventKind::InsufficientReplicas);
 
     observe::ObservationSnapshot sink{};
     CRUCIBLE_REQUIRE(detector.publish_latest(sink));
