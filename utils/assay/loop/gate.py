@@ -403,9 +403,10 @@ TREE = "tree"
 LOCK = "tree.lock"
 LOGS = "logs"
 # The lock that a holder of the first lane holds, and the count of the lanes (THE LANES).  The pool caps the slots of
-# all the lanes together, so each lane past the slots of the busy lanes fills only idle slots.
+# all the lanes together, so each lane past the slots of the busy lanes fills only idle slots.  The count comes from the
+# CPUs and not from the slots of the pool, because each lane has a warm tree of its own.
 PRIMARY = "primary.lock"
-LANES = max(1, heavy.host_pool().size // heavy.SLICE)
+LANES = max(1, proc.DEFAULT_JOBS // heavy.SLICE)
 # The name of the directory of the logs of one run, before its number, and the directories of the runs that stay (THE
 # LOGS).
 RUN_MARK = "run-"

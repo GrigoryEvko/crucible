@@ -10,8 +10,8 @@ THE POOL
     private pool, because the gate runs it in a lease of the gate (THE
     PRIORITY OF THE GATE).  The leases of the gate can hold each slot of the
     host, and their jobs then wait for the test, so a lease of the test in
-    the pool of the host waits for ever.  The pool has the CPU count of the
-    process as its size.  A
+    the pool of the host waits for ever.  The pool has SLOTS_PER_CPU slots
+    for each CPU of the process.  A
     process holds a slot with an exclusive lock of flock(2) on the file of
     the slot.  The kernel frees the lock when the process ends, also on
     SIGKILL, so a slot never stays lost.  No daemon owns the slots.
@@ -193,6 +193,11 @@ BUILD_PARALLEL_VARIABLE = "CMAKE_BUILD_PARALLEL_LEVEL"
 # The pool of the slots of the host in the work root, the directory of the markers of the leases in it, and the digits
 # of the name of a slot file (THE POOL).
 POOL_NAME = "slots"
+# The slots of the pool for each CPU of the process (THE POOL).  A job of the gate waits for much of its time: a test
+# waits for its children, and a check in Python uses one core.  On 2026-11-13, 35 leases of the gate held each of the
+# 224 slots of one slot for each CPU, and the load of the host was 49.  With two slots for each CPU, 40 jobs at the same
+# time get approximately 11 slots each.
+SLOTS_PER_CPU = 2
 # The variable that names a different directory of the pool, and the prefix of the directory of a private pool (THE
 # POOL).
 POOL_VARIABLE = "CRUCIBLE_SLOT_POOL"
@@ -402,12 +407,12 @@ class Pool:
 
 
 def host_pool() -> Pool:
-    """Return the slot pool of this host, with the CPU count of the process as its size (THE POOL).
+    """Return the slot pool of this host, with SLOTS_PER_CPU slots for each CPU of the process (THE POOL).
 
     The directory is the value of POOL_VARIABLE when the variable is set, else POOL_NAME in the work root.
     """
     moved = os.environ.get(POOL_VARIABLE)
-    return Pool(Path(moved) if moved else cache.work_root() / POOL_NAME, proc.DEFAULT_JOBS)
+    return Pool(Path(moved) if moved else cache.work_root() / POOL_NAME, proc.DEFAULT_JOBS * SLOTS_PER_CPU)
 
 
 @contextlib.contextmanager

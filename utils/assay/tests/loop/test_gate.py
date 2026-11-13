@@ -35,7 +35,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
-from assay.core import git, paths, testing
+from assay.core import git, paths, proc, testing
 from assay.core import registry as rule_registry
 from assay.loop import gate, heavy, syntax
 from assay.loop import inputs as guard_inputs
@@ -1381,7 +1381,7 @@ def lock_cases(expect: testing.Expect) -> None:
             f"no lock of PRIMARY, such as an earlier copy, leaves no lane free: {lanes}",
             lanes == [0, 1, 2, None, None]
             and gate.Gate(work, work / "land", 1, False, lane=2).tree == work / "land" / "tree-3"
-            and gate.LANES == max(1, heavy.host_pool().size // heavy.SLICE),
+            and gate.LANES == max(1, proc.DEFAULT_JOBS // heavy.SLICE),
         )
         names = [gate.next_run(work / "land") for _ in range(gate.RUNS_KEPT + 2)]
         kept = [path.name for path in sorted((work / "land" / gate.LOGS).iterdir())]
