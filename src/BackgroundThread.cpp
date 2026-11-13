@@ -70,10 +70,12 @@ struct GraphPublishTag {};
 //
 // The drain stage sleeps only after a spin that found no op, so a steady
 // stream of records never meets a sleep.  A burst that starts in a sleep
-// fills the ring until the sleep ends.  A foreground that records one op in
-// each 10 ns puts 20000 ops into the ring in RING_MAX_SLEEP_NANOS, less than
-// a third of the CAPACITY of the ring.  So the ring does not refuse an op
-// because the drain stage sleeps.
+// fills the ring until the drain stage runs again.  A foreground that records
+// one op in each 10 ns puts 20000 ops into the ring in RING_MAX_SLEEP_NANOS,
+// less than a third of the CAPACITY of the ring.  But the scheduler can run
+// the drain stage later than its deadline when each core has work.  A burst
+// of more than CAPACITY ops then meets a full ring, and the ring refuses the
+// ops past it.
 inline constexpr uint32_t SPIN_ROUNDS = 2048;
 inline constexpr uint64_t MIN_SLEEP_NANOS = 50000;
 // The longest sleep of the drain stage, and of a producer that waits for a
