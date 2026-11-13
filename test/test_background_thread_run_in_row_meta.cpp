@@ -112,7 +112,7 @@ void test_overflow_build_leaves_tail() {
     (void)overflowing.push_op_with_meta(*metalog, 1);
     overflowing.push_op_without_meta(2);
 
-    crucible::Arena scratch{size_t{1} << 16};
+    ::fixy::BumpArena scratch{size_t{1} << 16};
     const BackgroundThread::TraceBuild built =
         bt.build_trace_from(test.alloc, scratch, overflowing.count, overflowing.trace, overflowing.meta_starts,
                             overflowing.scope_hashes, overflowing.callsite_hashes);
@@ -156,7 +156,7 @@ void test_publish_stage_releases_in_order() {
     const uint64_t overflow_end = overflowing.push_op_with_meta(*metalog, 4);
     overflowing.push_op_without_meta(5);
 
-    crucible::Arena scratch{size_t{1} << 16};
+    ::fixy::BumpArena scratch{size_t{1} << 16};
     BackgroundThread::TraceBuild built = bt.build_trace_from(
         test.alloc, scratch, first.count, first.trace, first.meta_starts, first.scope_hashes, first.callsite_hashes);
     assert(built.is_ok());
@@ -265,7 +265,7 @@ void test_built_graph_owns_its_metadata() {
     for (uint32_t op = 0; op < OPS; ++op)
         (void)work.push_op_with_meta(*metalog, op);
 
-    crucible::Arena scratch{size_t{1} << 16};
+    ::fixy::BumpArena scratch{size_t{1} << 16};
     BackgroundThread::TraceBuild built = bt.build_trace_from(test.alloc, scratch, work.count, work.trace,
                                                              work.meta_starts, work.scope_hashes, work.callsite_hashes);
     auto [graph, parts] = std::move(built).expect("the work builds a graph");
@@ -321,7 +321,7 @@ void test_build_and_release_pass_two_to_the_32() {
         run_end = work.push_op_with_meta(*metalog, op);
     assert(run_end == uint64_t{BELOW_WRAP} + OPS);
 
-    crucible::Arena scratch{size_t{1} << 16};
+    ::fixy::BumpArena scratch{size_t{1} << 16};
     BackgroundThread::TraceBuild built = bt.build_trace_from(test.alloc, scratch, work.count, work.trace,
                                                              work.meta_starts, work.scope_hashes, work.callsite_hashes);
     auto [graph, parts] = std::move(built).expect("the work builds a graph");

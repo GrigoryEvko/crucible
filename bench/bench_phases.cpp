@@ -106,7 +106,7 @@ void check_ops_without_metas(const TraceEntry* ops, const MetaIndex* meta_data, 
 // sample is independent and measures the same work.
 bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace) {
     const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
-    Arena scratch{arena_bytes};
+    ::fixy::BumpArena scratch{arena_bytes};
 
     char label[64];
     std::snprintf(label, sizeof(label), "build_trace (full pipeline, %u ops)", trace.num_ops);
@@ -118,11 +118,11 @@ bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const Lo
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        ArenaEpoch epoch = scratch.open_epoch();
-        bench::refill_meta_log(meta_log, trace);
-        auto built = bg.build_trace(A, scratch, trace.num_ops);
-        bench::do_not_optimize(built);
-        std::move(epoch).end();
+        scratch.with_epoch([&]() noexcept {
+            bench::refill_meta_log(meta_log, trace);
+            auto built = bg.build_trace(A, scratch, trace.num_ops);
+            bench::do_not_optimize(built);
+        });
     });
 }
 
@@ -138,7 +138,8 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
     const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     const double nspc = bench::Timer::ns_per_cycle();
-    Arena scratch{arena_bytes};
+    ::fixy::BumpArena scratch{arena_bytes};
+    Arena plan_scratch{arena_bytes};
 
     // Warmup: 5 full pipeline runs to hit the cache.
     for (uint32_t w = 0; w < 5; w++) {
@@ -146,11 +147,11 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        ArenaEpoch epoch = scratch.open_epoch();
-        bench::refill_meta_log(meta_log, trace);
-        auto built = bg.build_trace(A, scratch, trace.num_ops);
-        bench::do_not_optimize(built);
-        std::move(epoch).end();
+        scratch.with_epoch([&]() noexcept {
+            bench::refill_meta_log(meta_log, trace);
+            auto built = bg.build_trace(A, scratch, trace.num_ops);
+            bench::do_not_optimize(built);
+        });
     }
 
     // Measurement: run build_trace N times, accumulate.
@@ -162,16 +163,16 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        ArenaEpoch epoch = scratch.open_epoch();
-        bench::refill_meta_log(meta_log, trace);
+        const double ns = scratch.with_epoch([&]() noexcept {
+            bench::refill_meta_log(meta_log, trace);
 
-        const uint64_t t0 = bench::rdtsc_start();
-        auto built = bg.build_trace(A, scratch, trace.num_ops);
-        const uint64_t t1 = bench::rdtsc_end();
+            const uint64_t t0 = bench::rdtsc_start();
+            auto built = bg.build_trace(A, scratch, trace.num_ops);
+            const uint64_t t1 = bench::rdtsc_end();
 
-        bench::do_not_optimize(built);
-        std::move(epoch).end();
-        const double ns = static_cast<double>(t1 - t0) * nspc;
+            bench::do_not_optimize(built);
+            return static_cast<double>(t1 - t0) * nspc;
+        });
         total_ns += ns;
         samples[iter] = ns;
     }
@@ -189,27 +190,27 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        ArenaEpoch ref_epoch = scratch.open_epoch();
+        // The graph of the reference build stays in ref_scratch until the end
+        // of this block, so the copies need no epoch.
+        ::fixy::BumpArena ref_scratch{arena_bytes};
         bench::refill_meta_log(meta_log, trace);
-        auto [ref, ref_region] = bg.build_trace(A, scratch, trace.num_ops).expect("the recorded trace builds");
+        auto [ref, ref_region] = bg.build_trace(A, ref_scratch, trace.num_ops).expect("the recorded trace builds");
 
         const uint32_t num_ops = ref->num_ops.get_assuming_set();
         const uint32_t num_slots = ref->num_slots.get_assuming_set();
-        const uint32_t num_edges = ref->fwd_offsets[num_ops];
 
-        std::vector<Edge> saved_edges(num_edges);
-        for (uint32_t i = 0; i < num_ops; i++) {
-            for (uint32_t e = ref->fwd_offsets[i]; e < ref->fwd_offsets[i + 1]; e++) {
-                saved_edges[e] = ref->fwd_edges[e];
-            }
+        // The forward edges are in the order of their sources.
+        std::vector<Edge> saved_edges(ref->num_edges.get_assuming_set());
+        uint32_t edge_position = 0;
+        for (const Edge& edge : ref->fwd_edges) {
+            saved_edges[edge_position++] = edge;
         }
 
         std::vector<TensorSlot> saved_slots(ref->slots, ref->slots + num_slots);
-        std::move(ref_epoch).end();
 
         // build_csr
         for (uint32_t iter = 0; iter < iters; iter++) {
-            Arena csr_arena{1 << 18};
+            ::fixy::BumpArena csr_arena{1 << 18};
             auto* graph2 = alloc_trace_graph(A, csr_arena);
             graph2->ops = nullptr;
 
@@ -223,13 +224,13 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         // compute_memory_plan
         for (uint32_t iter = 0; iter < iters; iter++) {
-            ArenaEpoch plan_epoch = scratch.open_epoch();
-            auto* s = scratch.alloc_array<TensorSlot>(A, num_slots);
+            ArenaEpoch plan_epoch = plan_scratch.open_epoch();
+            auto* s = plan_scratch.alloc_array<TensorSlot>(A, num_slots);
             std::memcpy(s, saved_slots.data(), num_slots * sizeof(TensorSlot));
 
             MemoryPlan plan_storage{};
             const uint64_t t0 = bench::rdtsc_start();
-            auto* plan = bg.compute_memory_plan(A, plan_storage, scratch, s, num_slots);
+            auto* plan = bg.compute_memory_plan(A, plan_storage, plan_scratch, s, num_slots);
             const uint64_t t1 = bench::rdtsc_end();
 
             bench::do_not_optimize(plan);
@@ -254,7 +255,10 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     const uint32_t count = trace.num_ops;
     const double nspc = bench::Timer::ns_per_cycle();
+    // The phases that copy the loop of build_trace take raw arrays from
+    // scratch.  build_trace itself takes its graph from build_scratch.
     Arena scratch{arena_bytes};
+    ::fixy::BumpArena build_scratch{arena_bytes};
 
     uint32_t trace_total_inputs = 0, trace_total_outputs = 0;
     for (uint32_t i = 0; i < count; i++) {
@@ -269,13 +273,11 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
     bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
     bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-    {
-        ArenaEpoch prime_epoch = scratch.open_epoch();
+    build_scratch.with_epoch([&]() noexcept {
         bench::refill_meta_log(meta_log, trace);
-        auto ref = bg.build_trace(A, scratch, count);
+        auto ref = bg.build_trace(A, build_scratch, count);
         bench::do_not_optimize(ref);
-        std::move(prime_epoch).end();
-    }
+    });
 
     // ── P0: Pre-scan ──────────────────────────────────────────────
     double ns_p0 = 0;
@@ -493,11 +495,12 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        ArenaEpoch ref_epoch = scratch.open_epoch();
-        bench::refill_meta_log(meta_log, trace);
-        auto [ref_graph, ref_region] = bg.build_trace(A, scratch, count).expect("the recorded trace builds");
-        TraceEntry* ref_ops = ref_graph->ops;
-        std::move(ref_epoch).end();
+        // The region of the build owns the ops, so the ops outlive the epoch.
+        BackgroundThread::BuiltTrace ref = build_scratch.with_epoch([&]() noexcept {
+            bench::refill_meta_log(meta_log, trace);
+            return bg.build_trace(A, build_scratch, count).expect("the recorded trace builds");
+        });
+        TraceEntry* ref_ops = ref.region.ops.data();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             const uint64_t t0 = bench::rdtsc_start();
@@ -540,11 +543,12 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        ArenaEpoch ref_epoch = scratch.open_epoch();
-        bench::refill_meta_log(meta_log, trace);
-        auto [ref_graph, ref_region] = bg.build_trace(A, scratch, count).expect("the recorded trace builds");
-        TraceEntry* ref_ops = ref_graph->ops;
-        std::move(ref_epoch).end();
+        // The region of the build owns the ops, so the ops outlive the epoch.
+        BackgroundThread::BuiltTrace ref = build_scratch.with_epoch([&]() noexcept {
+            bench::refill_meta_log(meta_log, trace);
+            return bg.build_trace(A, build_scratch, count).expect("the recorded trace builds");
+        });
+        TraceEntry* ref_ops = ref.region.ops.data();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             bg.map_gen_++;
@@ -591,11 +595,12 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        ArenaEpoch ref_epoch = scratch.open_epoch();
-        bench::refill_meta_log(meta_log, trace);
-        auto [ref_graph, ref_region] = bg.build_trace(A, scratch, count).expect("the recorded trace builds");
-        TraceEntry* ref_ops = ref_graph->ops;
-        std::move(ref_epoch).end();
+        // The region of the build owns the ops, so the ops outlive the epoch.
+        BackgroundThread::BuiltTrace ref = build_scratch.with_epoch([&]() noexcept {
+            bench::refill_meta_log(meta_log, trace);
+            return bg.build_trace(A, build_scratch, count).expect("the recorded trace builds");
+        });
+        TraceEntry* ref_ops = ref.region.ops.data();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             bg.map_gen_++;
@@ -634,11 +639,11 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
         bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
         bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
-        ArenaEpoch ref_epoch = scratch.open_epoch();
-        bench::refill_meta_log(meta_log, trace);
-        auto [ref_graph, ref_region] = bg.build_trace(A, scratch, count).expect("the recorded trace builds");
-        const uint32_t num_slots = ref_graph->num_slots.get_assuming_set();
-        std::move(ref_epoch).end();
+        const uint32_t num_slots = build_scratch.with_epoch([&]() noexcept {
+            bench::refill_meta_log(meta_log, trace);
+            auto [ref_graph, ref_region] = bg.build_trace(A, build_scratch, count).expect("the recorded trace builds");
+            return ref_graph->num_slots.get_assuming_set();
+        });
 
         std::vector<BackgroundThread::SlotInfo> saved_slots(bg.scratch_slots_.data(),
                                                             bg.scratch_slots_.data() + num_slots);

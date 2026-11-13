@@ -212,12 +212,13 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1, int8_t dev = 0, vo
                 .slot_id = SlotId{5},
                 .pad2 = {}};
 
-    auto* graph_tg = crucible::alloc_trace_graph(test.alloc, arena);
+    ::fixy::BumpArena graph_arena{1 << 16};
+    auto* graph_tg = crucible::alloc_trace_graph(test.alloc, graph_arena);
     graph_tg->ops = ops;
     graph_tg->slots = slots;
     graph_tg->num_slots.set(NUM_SLOTS);
     graph_tg->max_meta_end.set(0);
-    crucible::build_csr(test.alloc, arena, graph_tg, edges, 2, NUM_OPS);
+    crucible::build_csr(test.alloc, graph_arena, graph_tg, edges, 2, NUM_OPS);
 
     crucible::Graph graph(test.alloc, &pool);
     using Recorded = ::fixy::tags::source::Recorded;
@@ -379,13 +380,14 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1, int8_t dev = 0, vo
                  .slot_id = SlotId{2},
                  .pad2 = {}};
 
-    auto* const tg2 = crucible::alloc_trace_graph(test.alloc, arena2);
+    ::fixy::BumpArena graph_arena2{1 << 16};
+    auto* const tg2 = crucible::alloc_trace_graph(test.alloc, graph_arena2);
     tg2->ops = ops2;
     tg2->slots = slots2;
     tg2->num_slots.set(3);
     tg2->max_meta_end.set(0);
     // No DFG edges (all inputs are external or null).
-    crucible::build_csr(test.alloc, arena2, tg2, nullptr, 0, 1);
+    crucible::build_csr(test.alloc, graph_arena2, tg2, nullptr, 0, 1);
 
     crucible::Graph graph2(test.alloc, &pool);
     RecordedGraph lowered2 = crucible::lower_trace_to_graph<LowerBgAllocRow>(

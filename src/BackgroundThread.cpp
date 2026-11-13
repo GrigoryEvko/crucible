@@ -539,20 +539,19 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
         // One epoch of the build scratch covers this work item.  The graph
         // and its CSR arrays die at its end.  The region does not point
         // into the scratch, so its parts go on alone.
-        ArenaEpoch epoch = owner->build_scratch_.open_epoch();
-        TraceBuild built =
-            owner->build_trace_from(ctx.cap().alloc, owner->build_scratch_, work->completed_len, work->trace.data(),
-                                    work->meta_starts.data(), work->scope_hashes.data(), work->callsite_hashes.data());
+        TraceBuild built = owner->build_scratch_.with_epoch([&]() noexcept {
+            return owner->build_trace_from(ctx.cap().alloc, owner->build_scratch_, work->completed_len,
+                                           work->trace.data(), work->meta_starts.data(), work->scope_hashes.data(),
+                                           work->callsite_hashes.data());
+        });
 
         // A work that met the overflow sends no region.  The floor of a later
         // commit marker releases its records.
         if (built.is_err()) {
-            std::move(epoch).end();
             continue;
         }
 
         BuiltRegion region = std::move(built).expect("the build made a graph").region;
-        std::move(epoch).end();
 
         auto publish = std::make_unique<BgGraphPublish>(BgGraphPublish{
             .kind = BgGraphPublish::Kind::Region, .region = std::move(region), .reset_point = work->reset_point});
@@ -749,8 +748,9 @@ void BackgroundThread::ensure_scratch_buffers(uint32_t total_inputs, uint32_t to
     }
 }
 
-BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::effects::Alloc a, Arena& scratch,
-                                                                uint32_t count, const TraceRing::Entry* trace_data,
+BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::effects::Alloc a,
+                                                                ::fixy::BumpArena& scratch, uint32_t count,
+                                                                const TraceRing::Entry* trace_data,
                                                                 const MetaIndex* meta_data, const ScopeHash* scope_data,
                                                                 const CallsiteHash* callsite_data) {
     CRUCIBLE_PRE(::foundation::decide::valid_span(count, trace_data));

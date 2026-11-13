@@ -774,9 +774,9 @@ set_property(SOURCE src/perf/Senses.cpp APPEND PROPERTY
 # without an extra `target_link_libraries` call.
 target_link_libraries(crucible PUBLIC crucible_perf)
 
-# ── The Vigil runtime: src/Vigil.cpp and src/BackgroundThread.cpp ──
+# ── The Vigil runtime: src/Vigil.cpp, src/BackgroundThread.cpp, src/TraceGraph.cpp ──
 #
-# The cold bodies of crucible/Vigil.h and crucible/BackgroundThread.h: the
+# The cold bodies of crucible/Vigil.h, crucible/BackgroundThread.h and crucible/TraceGraph.h: the
 # construction of a Vigil, the background pipeline, the trace graph build
 # and the memory plan.  A translation unit that includes the two headers
 # then compiles no part of the pipeline.
@@ -796,6 +796,7 @@ target_link_libraries(crucible PUBLIC crucible_perf)
 # is in libfixy.a, so this library links fixy, and fixy links foundation.
 add_library(crucible_vigil STATIC
   src/BackgroundThread.cpp
+  src/TraceGraph.cpp
   src/Vigil.cpp)
 target_include_directories(crucible_vigil PUBLIC include/)
 target_compile_definitions(crucible_vigil PRIVATE $<TARGET_PROPERTY:crucible,INTERFACE_COMPILE_DEFINITIONS>)

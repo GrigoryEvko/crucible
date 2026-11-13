@@ -444,7 +444,7 @@ private:
     // The arena of the trace graph and its CSR arrays.  Only the build stage
     // uses it, and an epoch covers one work item: the build stage ends it
     // after it moves the parts of the region into the message.
-    Arena build_scratch_{size_t{1} << 20};
+    ::fixy::BumpArena build_scratch_{size_t{1} << 20};
 
     // The arena of the sweep of each memory plan.  Only the publish stage
     // uses it, and an epoch covers one publish.
@@ -1075,8 +1075,9 @@ public:
 
     // Turns ring entries plus tensor metadata into a CSR property graph in
     // scratch, and the parts of its region.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild build_trace(::foundation::effects::Alloc a, Arena& scratch,
-                                                                      uint32_t count) CRUCIBLE_NO_THREAD_SAFETY {
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild build_trace(::foundation::effects::Alloc a,
+                                                                      ::fixy::BumpArena& scratch, uint32_t count)
+        CRUCIBLE_NO_THREAD_SAFETY {
         return build_trace_from(a, scratch, count, current_trace.data(), current_meta_starts.data(),
                                 current_scope_hashes.data(), current_callsite_hashes.data());
     }
@@ -1088,9 +1089,9 @@ public:
     // ops, their tensor metadata, their side arrays and their slots go into
     // the parts of the region, which own their memory.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild
-    build_trace_from(::foundation::effects::Alloc a, Arena& scratch, uint32_t count, const TraceRing::Entry* trace_data,
-                     const MetaIndex* meta_data, const ScopeHash* scope_data, const CallsiteHash* callsite_data)
-        CRUCIBLE_NO_THREAD_SAFETY;
+    build_trace_from(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, uint32_t count,
+                     const TraceRing::Entry* trace_data, const MetaIndex* meta_data, const ScopeHash* scope_data,
+                     const CallsiteHash* callsite_data) CRUCIBLE_NO_THREAD_SAFETY;
 
     // Orders birth and death events with an O(n + k) counting sort, then
     // assigns offsets with a sweep line.  The alignment is what the GPU

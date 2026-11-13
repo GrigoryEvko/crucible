@@ -1,12 +1,9 @@
 #pragma once
 
 #include <cstdint>
-#include <cstring>
-#include <new>
-#include <span>
 
-#include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
+#include <fixy/Core.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <foundation/contracts/Decide.h>
@@ -60,12 +57,12 @@ struct TraceGraph {
     BuiltCount num_ops = ::fixy::mint_write_once<uint32_t>();
 
     // Sorted by source, so a walk answers which ops consume a given output.
-    Edge* fwd_edges = nullptr;
-    uint32_t* fwd_offsets = nullptr;  // num_ops + 1 entries
+    ::fixy::View<Edge> fwd_edges{};
+    ::fixy::View<uint32_t> fwd_offsets{};  // num_ops + 1 entries
 
     // Sorted by destination, so a walk answers which op produced a given input.
-    Edge* rev_edges = nullptr;
-    uint32_t* rev_offsets = nullptr;  // num_ops + 1 entries
+    ::fixy::View<Edge> rev_edges{};
+    ::fixy::View<uint32_t> rev_offsets{};  // num_ops + 1 entries
 
     BuiltCount num_edges = ::fixy::mint_write_once<uint32_t>();
 
@@ -79,28 +76,15 @@ struct TraceGraph {
     // arena.  The owner of the log can release the run after the build.
     ::fixy::WriteOnce<uint64_t> max_meta_end = ::fixy::mint_write_once<uint64_t>();
 
-    // The arrays are in the arena, and not in this struct.
-    [[nodiscard, gnu::pure]] const Edge* fwd_begin(OpIndex i) const noexcept {
-        return fwd_edges + fwd_offsets[checked_index_(i)];
-    }
-    [[nodiscard, gnu::pure]] const Edge* fwd_end(OpIndex i) const noexcept {
-        return fwd_edges + fwd_offsets[checked_index_(i) + 1];
-    }
-    [[nodiscard, gnu::pure]] uint32_t out_degree(OpIndex i) const noexcept {
-        const uint32_t index = checked_index_(i);
-        return fwd_offsets[index + 1] - fwd_offsets[index];
-    }
+    // The edges whose source is op i.  The arrays are in the arena, and not
+    // in this struct.  The four bodies are in src/TraceGraph.cpp, because no
+    // hot path reads the edges.
+    [[nodiscard]] ::fixy::View<const Edge> fwd_of(OpIndex i) const noexcept;
+    [[nodiscard]] uint32_t out_degree(OpIndex i) const noexcept;
 
-    [[nodiscard, gnu::pure]] const Edge* rev_begin(OpIndex i) const noexcept {
-        return rev_edges + rev_offsets[checked_index_(i)];
-    }
-    [[nodiscard, gnu::pure]] const Edge* rev_end(OpIndex i) const noexcept {
-        return rev_edges + rev_offsets[checked_index_(i) + 1];
-    }
-    [[nodiscard, gnu::pure]] uint32_t in_degree(OpIndex i) const noexcept {
-        const uint32_t index = checked_index_(i);
-        return rev_offsets[index + 1] - rev_offsets[index];
-    }
+    // The edges whose destination is op i.
+    [[nodiscard]] ::fixy::View<const Edge> rev_of(OpIndex i) const noexcept;
+    [[nodiscard]] uint32_t in_degree(OpIndex i) const noexcept;
 
     [[nodiscard, gnu::pure]] const TraceEntry& op(OpIndex i) const noexcept { return ops[checked_index_(i)]; }
 
@@ -123,56 +107,42 @@ private:
         CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(i.raw(), 0u, n_ops - 1u));
         return i.raw();
     }
+
+    // The offset at index of a CSR offset array.  The build gives each array
+    // num_ops + 1 entries, so each index below that has an offset.
+    [[nodiscard]] static uint32_t offset_(::fixy::View<const uint32_t> offsets, uint32_t index) noexcept;
+
+    // The edges between the offsets of op index and of the op after it.
+    [[nodiscard]] static ::fixy::View<const Edge>
+    edges_of_(::fixy::View<const Edge> edges, ::fixy::View<const uint32_t> offsets, uint32_t index) noexcept;
 };
 
-[[nodiscard]] inline TraceGraph* alloc_trace_graph(::foundation::effects::Alloc a,
-                                                   Arena& arena CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return ::new(arena.alloc_obj<TraceGraph>(a)) TraceGraph{};
-}
+// The graph is in the arena.  make gives a Ref, and the build stage keeps the
+// graph through a pointer for the length of one epoch.  The bodies of this
+// function and of build_csr are in src/TraceGraph.cpp, so a unit that includes
+// this header compiles no part of the build.
+[[nodiscard]] TraceGraph* alloc_trace_graph(::foundation::effects::Alloc a,
+                                            ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND) noexcept;
 
 // The graph is in the arena, and a temporary arena releases it at the end of
 // the statement.  This twin refuses a temporary arena.
-TraceGraph* alloc_trace_graph(::foundation::effects::Alloc, Arena&&) =
+TraceGraph* alloc_trace_graph(::foundation::effects::Alloc, ::fixy::BumpArena&&) =
     delete("a temporary arena releases the graph at the end of the statement. Use an arena that has a name");
+
+namespace detail {
+
+// The element at index of an array of the CSR build.  The counting sort
+// computes each index below the count of the array.
+template <class T>
+[[nodiscard]] T& csr_element_(::fixy::View<T> elements, uint32_t index) noexcept {
+    return *elements.get(index).expect("a CSR index is below the count of its array");
+}
+
+}  // namespace detail
 
 // Counting sort into both adjacency arrays, linear in ops plus edges. The
 // caller owns the graph struct. Only the arrays inside it are allocated here.
-inline void build_csr(::foundation::effects::Alloc a, Arena& arena, TraceGraph* graph, const Edge* edges,
-                      uint32_t num_edges, uint32_t num_ops) {
-    graph->num_edges.set(num_edges);
-    graph->num_ops.set(num_ops);
-
-    // Allocating zero elements yields a null pointer, and passing null to
-    // memset or memcpy is undefined even for a zero length.
-    if (num_ops == 0) return;
-
-    graph->fwd_edges = arena.alloc_array<Edge>(a, num_edges);
-    graph->fwd_offsets = arena.alloc_array<uint32_t>(a, num_ops + 1);
-    graph->rev_edges = arena.alloc_array<Edge>(a, num_edges);
-    graph->rev_offsets = arena.alloc_array<uint32_t>(a, num_ops + 1);
-
-    std::memset(graph->fwd_offsets, 0, (num_ops + 1) * sizeof(uint32_t));
-    std::memset(graph->rev_offsets, 0, (num_ops + 1) * sizeof(uint32_t));
-
-    for (uint32_t e = 0; e < num_edges; e++) {
-        graph->fwd_offsets[edges[e].src.raw() + 1]++;
-        graph->rev_offsets[edges[e].dst.raw() + 1]++;
-    }
-
-    for (uint32_t i = 1; i <= num_ops; i++) {
-        graph->fwd_offsets[i] += graph->fwd_offsets[i - 1];
-        graph->rev_offsets[i] += graph->rev_offsets[i - 1];
-    }
-
-    auto* fwd_cursor = arena.alloc_array<uint32_t>(a, num_ops);
-    auto* rev_cursor = arena.alloc_array<uint32_t>(a, num_ops);
-    std::memcpy(fwd_cursor, graph->fwd_offsets, num_ops * sizeof(uint32_t));
-    std::memcpy(rev_cursor, graph->rev_offsets, num_ops * sizeof(uint32_t));
-
-    for (uint32_t e = 0; e < num_edges; e++) {
-        graph->fwd_edges[fwd_cursor[edges[e].src.raw()]++] = edges[e];
-        graph->rev_edges[rev_cursor[edges[e].dst.raw()]++] = edges[e];
-    }
-}
+void build_csr(::foundation::effects::Alloc a, ::fixy::BumpArena& arena, TraceGraph* graph, const Edge* edges,
+               uint32_t num_edges, uint32_t num_ops);
 
 }  // namespace crucible

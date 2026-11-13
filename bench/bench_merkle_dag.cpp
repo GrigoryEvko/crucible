@@ -229,7 +229,7 @@ int main(int argc, char* argv[]) {
                                               .pad = 0});
         }
         return bench::run("build_csr (481 ops, 900 edges)", [&] {
-            Arena csr_arena{1 << 16};
+            ::fixy::BumpArena csr_arena{1 << 16};
             auto* graph = alloc_trace_graph(test.alloc, csr_arena);
             graph->ops = nullptr;
             build_csr(test.alloc, csr_arena, graph, edges, NUM_EDGES, NUM_OPS);
@@ -351,18 +351,17 @@ int main(int argc, char* argv[]) {
             }
         };
 
-        Arena scratch{1 << 20};
+        ::fixy::BumpArena scratch{1 << 20};
         return bench::run("build_trace (481 ops, full pipeline)", [&] {
             bg.current_trace = saved_trace;
             bg.current_meta_starts = saved_meta;
             bg.current_scope_hashes = saved_scope;
             bg.current_callsite_hashes = saved_callsite;
-            ArenaEpoch epoch = scratch.open_epoch();
-            repopulate_meta_log();
-
-            auto built = bg.build_trace(test.alloc, scratch, N);
-            bench::do_not_optimize(built);
-            std::move(epoch).end();
+            scratch.with_epoch([&]() noexcept {
+                repopulate_meta_log();
+                auto built = bg.build_trace(test.alloc, scratch, N);
+                bench::do_not_optimize(built);
+            });
         });
     }());
 
@@ -383,7 +382,7 @@ int main(int argc, char* argv[]) {
             BackgroundThread bg;
             bg.meta_log.set(&meta_log);
             const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace->num_ops) * 256);
-            Arena scratch{arena_bytes};
+            ::fixy::BumpArena scratch{arena_bytes};
 
             char label[128];
             std::snprintf(label, sizeof(label), "build_trace (%u ops, from %s)", trace->num_ops, path);
@@ -392,11 +391,12 @@ int main(int argc, char* argv[]) {
                 bg.current_meta_starts.assign(trace->meta_starts.begin(), trace->meta_starts.end());
                 bg.current_scope_hashes.assign(trace->scope_hashes.begin(), trace->scope_hashes.end());
                 bg.current_callsite_hashes.assign(trace->callsite_hashes.begin(), trace->callsite_hashes.end());
-                ArenaEpoch epoch = scratch.open_epoch();
-                bench::refill_meta_log(meta_log, *trace);
-                auto built = bg.build_trace(test.alloc, scratch, trace->num_ops);
-                bench::do_not_optimize(built);
-                std::move(epoch).end();
+                const auto& loaded = *trace;
+                scratch.with_epoch([&]() noexcept {
+                    bench::refill_meta_log(meta_log, loaded);
+                    auto built = bg.build_trace(test.alloc, scratch, loaded.num_ops);
+                    bench::do_not_optimize(built);
+                });
             });
         }());
     }

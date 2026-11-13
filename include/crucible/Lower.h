@@ -164,8 +164,8 @@ lower_trace_to_graph(::foundation::effects::Alloc a, LowerTraceGraph<Source> tra
     uint32_t n_outputs = 0;
     for (uint32_t i = 0; i < num_ops; i++) {
         bool has_df_consumer = false;
-        for (const Edge* e = tg.fwd_begin(OpIndex{i}); e != tg.fwd_end(OpIndex{i}); e++) {
-            if (e->kind == EdgeKind::DATA_FLOW) {
+        for (const Edge& e : tg.fwd_of(OpIndex{i})) {
+            if (e.kind == EdgeKind::DATA_FLOW) {
                 has_df_consumer = true;
                 break;
             }

@@ -400,36 +400,48 @@ void test_published_regions_keep_their_hashes() {
                          bt.uncompiled_regions.size(), static_cast<unsigned long long>(bt.uncompiled_regions.total()));
 }
 
+// Pushes iters iterations of family A through bt, waits until the pipeline
+// processed each op, and stops bt.  Gives the count of published regions.
+static uint64_t run_family_a(BackgroundThread& bt, TraceRing& ring, MetaLog& metalog, uint32_t iters) {
+    using namespace publish_rig;
+    bt.start(&ring, &metalog);
+    for (uint32_t iter = 0; iter < iters; ++iter)
+        for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
+            push(ring, Gate::FAMILY_A, op);
+
+    const uint64_t target = ring.total_produced();
+    while (bt.total_processed.load_acquire() < target) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
+    bt.stop();
+    return bt.uncompiled_regions.total();
+}
+
 // A long run keeps the bytes of its scratch arenas.  The build stage ends an
 // epoch of its scratch arena after each work item, and the publish stage ends
 // an epoch of its own after each memory plan.  Each arena then holds the
-// blocks of its largest epoch, and no more blocks for each region.  The run
-// has no foreground, so the region store releases each region that neither
-// the uncompiled queue nor the last publish holds.
+// blocks of its largest epoch, and no more blocks for each region.  A short
+// run of the same trace has the same largest epoch, so the two runs hold the
+// same bytes.  The run has no foreground, so the region store releases each
+// region that neither the uncompiled queue nor the last publish holds.
 void test_long_run_keeps_its_scratch() {
     using namespace publish_rig;
     constexpr uint32_t LONG_RUN_ITERS = 10000;
 
     auto test = ::foundation::effects::testing::test();
+    BackgroundThread short_bt;
+    ::fixy::Box<TraceRing> short_ring = ::fixy::mint_box<TraceRing>(test.alloc);
+    ::fixy::Box<MetaLog> short_metalog = ::fixy::mint_box<MetaLog>(test.alloc);
+    const uint64_t short_published = run_family_a(short_bt, *short_ring, *short_metalog, A_ITERS);
+    assert(short_published >= 1 && "the short run published no region, so its arenas witness nothing");
+
     BackgroundThread bt;
     ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(test.alloc);
     ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc);
-    const size_t scratch_before = bt.scratch_retained_bytes();
-
-    bt.start(&*ring, &*metalog);
-    for (uint32_t iter = 0; iter < LONG_RUN_ITERS; ++iter)
-        for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-            push(*ring, Gate::FAMILY_A, op);
-
-    const uint64_t target = ring->total_produced();
-    while (bt.total_processed.load_acquire() < target) {
-        CRUCIBLE_SPIN_PAUSE;
-    }
-    bt.stop();
-
-    const uint64_t published = bt.uncompiled_regions.total();
+    const uint64_t published = run_family_a(bt, *ring, *metalog, LONG_RUN_ITERS);
     assert(published >= LONG_RUN_ITERS / 2 && "the run published too few regions to witness the scratch");
-    assert(bt.scratch_retained_bytes() == scratch_before && "a scratch arena kept more blocks after its epochs");
+    assert(bt.scratch_retained_bytes() == short_bt.scratch_retained_bytes()
+           && "a scratch arena kept more blocks after its epochs");
 
     uint32_t stored = 0;
     uint64_t dropped = 0;

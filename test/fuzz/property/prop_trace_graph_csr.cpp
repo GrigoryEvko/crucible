@@ -34,8 +34,8 @@
 
 #include "property_runner.h"
 
-#include <crucible/Arena.h>
 #include <crucible/TraceGraph.h>
+#include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
 #include <algorithm>
@@ -84,6 +84,16 @@ void materialize(const GraphSpec& spec, crucible::Edge* out) noexcept {
         && a.dst_port == b.dst_port && a.kind == b.kind;
 }
 
+// The offset at index of a CSR offset array, which holds num_ops + 1 entries.
+[[nodiscard]] uint32_t offset_at(::fixy::View<const uint32_t> offsets, uint32_t index) noexcept {
+    return *offsets.get(index).expect("the index is at most the op count");
+}
+
+// The edge at position k of a CSR edge array.
+[[nodiscard]] const crucible::Edge& edge_at(::fixy::View<const crucible::Edge> edges, uint32_t k) noexcept {
+    return *edges.get(k).expect("the position is below the edge count");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -91,8 +101,8 @@ int main(int argc, char** argv) {
     using crucible::Edge;
     using crucible::OpIndex;
     using crucible::TraceGraph;
-    using crucible::Arena;
     using crucible::build_csr;
+    using fixy::BumpArena;
 
     const Config cfg = parse_args(argc, argv, 20000);  // O(E log E) per iter
 
@@ -120,18 +130,19 @@ int main(int argc, char** argv) {
             materialize(spec, in_edges);
 
             auto test = ::foundation::effects::testing::test();
-            Arena arena{1 << 16};
+            BumpArena arena{1 << 16};
             TraceGraph graph{};
             build_csr(test.alloc, arena, &graph, in_edges, num_edges, num_ops);
 
             // (A) Offset shape — forward and reverse.
-            const uint32_t* fwd = graph.fwd_offsets;
-            const uint32_t* rev = graph.rev_offsets;
-            if (fwd == nullptr || rev == nullptr) return false;
-            if (fwd[0] != 0u || rev[0] != 0u) return false;
-            if (fwd[num_ops] != num_edges || rev[num_ops] != num_edges) return false;
+            const ::fixy::View<const uint32_t> fwd = graph.fwd_offsets;
+            const ::fixy::View<const uint32_t> rev = graph.rev_offsets;
+            if (fwd.size() != num_ops + 1u || rev.size() != num_ops + 1u) return false;
+            if (offset_at(fwd, 0) != 0u || offset_at(rev, 0) != 0u) return false;
+            if (offset_at(fwd, num_ops) != num_edges || offset_at(rev, num_ops) != num_edges) return false;
             for (uint32_t v = 0; v < num_ops; ++v) {
-                if (fwd[v + 1] < fwd[v] || rev[v + 1] < rev[v]) return false;
+                if (offset_at(fwd, v + 1) < offset_at(fwd, v) || offset_at(rev, v + 1) < offset_at(rev, v))
+                    return false;
             }
 
             // (C) Degree consistency — count input edges per src / dst.
@@ -142,8 +153,8 @@ int main(int argc, char** argv) {
                 ++dst_count[spec.edges[e].dst];
             }
             for (uint32_t v = 0; v < num_ops; ++v) {
-                if (fwd[v + 1] - fwd[v] != src_count[v]) return false;
-                if (rev[v + 1] - rev[v] != dst_count[v]) return false;
+                if (offset_at(fwd, v + 1) - offset_at(fwd, v) != src_count[v]) return false;
+                if (offset_at(rev, v + 1) - offset_at(rev, v) != dst_count[v]) return false;
             }
 
             // (B) Bucketing + stability + preservation via an INDEPENDENT
@@ -158,7 +169,7 @@ int main(int argc, char** argv) {
                 std::stable_sort(order.begin(), order.begin() + num_edges,
                                  [&](uint32_t x, uint32_t y) { return spec.edges[x].src < spec.edges[y].src; });
                 for (uint32_t k = 0; k < num_edges; ++k) {
-                    if (!edge_eq(graph.fwd_edges[k], in_edges[order[k]])) return false;
+                    if (!edge_eq(edge_at(graph.fwd_edges, k), in_edges[order[k]])) return false;
                 }
 
                 // Reverse: stable sort indices by dst.
@@ -167,23 +178,23 @@ int main(int argc, char** argv) {
                 std::stable_sort(order.begin(), order.begin() + num_edges,
                                  [&](uint32_t x, uint32_t y) { return spec.edges[x].dst < spec.edges[y].dst; });
                 for (uint32_t k = 0; k < num_edges; ++k) {
-                    if (!edge_eq(graph.rev_edges[k], in_edges[order[k]])) return false;
+                    if (!edge_eq(edge_at(graph.rev_edges, k), in_edges[order[k]])) return false;
                 }
             }
 
             // (D) Determinism — rebuild on a fresh arena, compare bytes.
             Edge in_edges2[kMaxEdges]{};
             materialize(spec, in_edges2);
-            Arena arena2{1 << 16};
+            BumpArena arena2{1 << 16};
             TraceGraph graph2{};
             build_csr(test.alloc, arena2, &graph2, in_edges2, num_edges, num_ops);
             for (uint32_t v = 0; v <= num_ops; ++v) {
-                if (graph2.fwd_offsets[v] != fwd[v]) return false;
-                if (graph2.rev_offsets[v] != rev[v]) return false;
+                if (offset_at(graph2.fwd_offsets, v) != offset_at(fwd, v)) return false;
+                if (offset_at(graph2.rev_offsets, v) != offset_at(rev, v)) return false;
             }
             for (uint32_t k = 0; k < num_edges; ++k) {
-                if (!edge_eq(graph2.fwd_edges[k], graph.fwd_edges[k])) return false;
-                if (!edge_eq(graph2.rev_edges[k], graph.rev_edges[k])) return false;
+                if (!edge_eq(edge_at(graph2.fwd_edges, k), edge_at(graph.fwd_edges, k))) return false;
+                if (!edge_eq(edge_at(graph2.rev_edges, k), edge_at(graph.rev_edges, k))) return false;
             }
 
             return true;
