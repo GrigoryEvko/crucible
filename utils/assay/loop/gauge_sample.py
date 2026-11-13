@@ -68,7 +68,7 @@ from assay.readers import compdb
 # fixture.  The order is the order of the table.
 SAMPLE: tuple[tuple[str, bool], ...] = (
     ("test/foundation/test_row_hash.cpp", False),
-    ("test/test_arena.cpp", False),
+    ("test/foundation/test_core_bump_arena.cpp", False),
     ("test/fixy/test_collision.cpp", False),
     ("test/test_region_cache_repeated.cpp", False),
     ("test/test_cipher.cpp", False),

@@ -232,16 +232,6 @@ crucible_test(test_vigil_unrepeated_prefix)
 crucible_test(test_vigil_idle_wait)
 crucible_test(test_background_thread_refused_ops)
 crucible_test(test_vigil_record_count)
-crucible_test(test_arena)
-crucible_test(test_arena_epoch)
-# The read after the end of an epoch ends the process only in a build with
-# AddressSanitizer, so the program is a test only there.  The test passes on
-# the text of the report, and the exit status does not decide it.
-if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
-  crucible_test(test_arena_epoch_poison)
-  set_tests_properties(test_arena_epoch_poison PROPERTIES
-    PASS_REGULAR_EXPRESSION "AddressSanitizer: use-after-poison")
-endif()
 crucible_test(test_trace_ring)
 crucible_test(test_merkle_dag)
 crucible_test(test_memory_plan)
@@ -340,7 +330,6 @@ crucible_test(test_philox)
 crucible_test(test_philox_golden)
 crucible_test(test_philox_simd)
 crucible_test(test_philox_det)
-crucible_test(test_arena_alloc_class)
 crucible_test(test_pool_allocator_alloc_class)
 crucible_test(test_cipher_wait)
 crucible_test(test_cipher_publish_tier)
@@ -3534,12 +3523,6 @@ crucible_neg_compile_test(neg_replay_engine_pool_wrong_borrow
 crucible_neg_compile_test(neg_alloc_class_heap_at_pool_fence
   "no matching function for call to .hot_path_slot_consumer"
   "the expression .satisfies_v<Slot, foundation::algebra::lattices::AllocClassTag::Pool> \\[with Slot = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::AllocClassLattice::At<foundation::algebra::lattices::AllocClassTag::Heap>, int\\*>\\]. evaluated to .false.")
-
-# An allocation has the lifetime of its arena, and the deleted `&&` twin of
-# each allocating member refuses a call on a temporary arena.
-crucible_neg_compile_test(neg_arena_alloc_on_temporary
-  "use of deleted function .T\\* crucible::Arena::alloc_obj\\(foundation::effects::Alloc\\) && \\[with T = int. foundation::effects::Alloc = foundation::core::Alloc\\]."
-  "a temporary arena releases this memory at the end of the statement")
 
 # ─── IsCacheableFunction concept rejection ────────────────────────
 # `auto FnPtr` accepts ANY structural NTTP — without the concept

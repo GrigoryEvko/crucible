@@ -1,7 +1,7 @@
 # Benchmark targets — O3 + native, no sanitizers.
 # Built separately from tests:
 #   cmake --preset bench && cmake --build --preset bench
-#   ./build-bench/bench/bench_arena
+#   ./build-bench/bench/bench_trace_ring
 #
 # A bench loads the eBPF sense hub only with three Linux capabilities:
 #
@@ -48,7 +48,6 @@ function(crucible_bench name)
 endfunction()
 
 # ── Migrated to the new bench::Run / Report / Compare API ─────────────
-crucible_bench(bench_arena)
 crucible_bench(bench_meta_zero)
 crucible_bench(bench_observe_metrics_swmr)
 crucible_bench(bench_cipher)

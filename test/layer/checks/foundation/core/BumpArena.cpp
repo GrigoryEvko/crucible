@@ -37,6 +37,10 @@ struct Throws {
     explicit Throws(int /*value*/) noexcept(false) {}
 };
 
+// The fields of an arena come first and fit in one cache line, and the table
+// of blocks follows them.  Each bump reads only the first three fields.
+static_assert(sizeof(BumpArena) <= 64 + BumpArena::max_blocks * (sizeof(std::byte*) + sizeof(std::size_t)));
+
 // An arena does not copy and does not move, because an epoch names it.
 static_assert(!std::is_copy_constructible_v<BumpArena> && !std::is_copy_assignable_v<BumpArena>);
 static_assert(!std::is_move_constructible_v<BumpArena> && !std::is_move_assignable_v<BumpArena>);

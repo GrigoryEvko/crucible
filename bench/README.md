@@ -8,7 +8,7 @@ optional bootstrap CIs; optional Mann-Whitney U for A/B comparisons.
 
 ```
 cmake --preset bench
-python3 utils/bin/loop bench bench_arena
+python3 utils/bin/loop bench bench_trace_ring
 ```
 
 `loop bench` builds the bench and runs it on a reserved core. It runs the bench through the
@@ -144,7 +144,7 @@ and the launcher is ready. To run one bench by hand, put the launcher before it:
 
 ```
 /usr/local/bin/crucible-caps --inh-caps +bpf,+perfmon,+dac_read_search \
-    --ambient-caps +bpf,+perfmon,+dac_read_search -- ./build-bench/bench/bench_arena
+    --ambient-caps +bpf,+perfmon,+dac_read_search -- ./build-bench/bench/bench_trace_ring
 ```
 
 The ambient set gives the capabilities to each child process too. If BPF still does not
@@ -157,11 +157,11 @@ observability code.
 
 | Variable | Controls | Default | Example |
 |----------|----------|---------|---------|
-| `CRUCIBLE_BENCH_SAMPLES` | Per-bench sample count when `.samples(N)` not set. | `100000` | `CRUCIBLE_BENCH_SAMPLES=1000000 ./bench_arena` |
-| `CRUCIBLE_BENCH_CORE` | CPU to pin to (read by individual bench mains). `-1` → harness auto-pick (first isolcpu, else current). | `-1` | `CRUCIBLE_BENCH_CORE=3 ./bench_arena` |
-| `CRUCIBLE_BENCH_JSON` | Emit one-JSON-object-per-bench instead of text when non-empty and not `"0"`. | unset | `CRUCIBLE_BENCH_JSON=1 ./bench_arena > out.jsonl` |
-| `CRUCIBLE_PERF_VERBOSE` | Route libbpf log callbacks to stderr (load / verifier diagnostics). | unset | `CRUCIBLE_PERF_VERBOSE=1 ./bench_arena` |
-| `CRUCIBLE_PERF_QUIET` | Suppress the one-line BPF load-failure diagnostic. | unset | `CRUCIBLE_PERF_QUIET=1 ./bench_arena` |
+| `CRUCIBLE_BENCH_SAMPLES` | Per-bench sample count when `.samples(N)` not set. | `100000` | `CRUCIBLE_BENCH_SAMPLES=1000000 ./bench_trace_ring` |
+| `CRUCIBLE_BENCH_CORE` | CPU to pin to (read by individual bench mains). `-1` → harness auto-pick (first isolcpu, else current). | `-1` | `CRUCIBLE_BENCH_CORE=3 ./bench_trace_ring` |
+| `CRUCIBLE_BENCH_JSON` | Emit one-JSON-object-per-bench instead of text when non-empty and not `"0"`. | unset | `CRUCIBLE_BENCH_JSON=1 ./bench_trace_ring > out.jsonl` |
+| `CRUCIBLE_PERF_VERBOSE` | Route libbpf log callbacks to stderr (load / verifier diagnostics). | unset | `CRUCIBLE_PERF_VERBOSE=1 ./bench_trace_ring` |
+| `CRUCIBLE_PERF_QUIET` | Suppress the one-line BPF load-failure diagnostic. | unset | `CRUCIBLE_PERF_QUIET=1 ./bench_trace_ring` |
 
 ## Interpreting "clean" vs non-clean
 

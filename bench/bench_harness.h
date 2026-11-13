@@ -1986,8 +1986,7 @@ static_assert(std::is_same_v<decltype(::fixy::sched::mint_priority<-10>(::fixy::
 
 // One-shot: build a Run with env-driven core pinning and measure body.
 // For benches that need .samples()/.warmup() overrides, construct Run
-// directly and apply env_core() manually — see measure_in_epochs in
-// bench_arena.cpp for the fluent-builder form.
+// directly and apply env_core() manually.
 template <typename Body>
 [[nodiscard]] inline Report run(std::string name, Body&& body) {
     Run r{std::move(name)};

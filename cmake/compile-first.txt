@@ -5,7 +5,6 @@
 # sequence of the compiles of a build, and no rule judges it.  The record OBJECT.cost of the build
 # launcher gives the user instructions of each compile.  Add a target with a long compile, and
 # remove a target when its compiles become short.
-bench_arena
 bench_cipher
 bench_ckernel
 bench_concurrent_queues

@@ -59,8 +59,8 @@ Usage
     guard selftest loop.bench
 
     Each ARG after -- goes to each bench.  The default set is the hot-path
-    latency set: bench_trace_ring, bench_arena, bench_swiss_table,
-    bench_philox and bench_pool_allocator.
+    latency set: bench_trace_ring, bench_swiss_table, bench_philox and
+    bench_pool_allocator.
 
 Exit 0 when each bench passed, or the exit status of the first bench that failed.  Exit 1 when a step failed, and 2 on
 a usage error or a failed self-test.
@@ -87,7 +87,7 @@ DEFAULT_PRESET = "bench"
 # The cache entry that tells if the build loads BPF programs (THE CAPABILITIES).  cmake/CrucibleBpf.cmake writes it.
 BPF_ENTRY = "CRUCIBLE_HAVE_BPF"
 # The hot-path latency set.  bench_dispatch and bench_meta_log are not in it, because their builds drift.
-DEFAULT_TARGETS = ("bench_trace_ring", "bench_arena", "bench_swiss_table", "bench_philox", "bench_pool_allocator")
+DEFAULT_TARGETS = ("bench_trace_ring", "bench_swiss_table", "bench_philox", "bench_pool_allocator")
 # The CPU directory of sysfs and the root of the cgroup v2 hierarchy (THE RESERVED CPUS).
 CPU_ROOT = Path("/sys/devices/system/cpu")
 CGROUP_ROOT = Path("/sys/fs/cgroup")

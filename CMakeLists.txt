@@ -1527,7 +1527,7 @@ endif()
 # a Release build with CRUCIBLE_BENCH=OFF, where this whole block is
 # inert — so the bench and the adapter now share one semantic.
 #
-# The four that remain are unmeasured on a quiet box.  Each leaves this
+# The three that remain are unmeasured on a quiet box.  Each leaves this
 # list when it has its own number, not before.
 #
 # bench/ declares zero `add_test`, so there is no committed per-op
@@ -1549,7 +1549,6 @@ if(CMAKE_BUILD_TYPE MATCHES "Release" AND CRUCIBLE_BENCH)
   set(CRUCIBLE_CONTRACT_IGNORE_TUS
     ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_trace_ring.cpp     # TraceRing push/pop
     ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_meta_log.cpp       # MetaLog append
-    ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_arena.cpp          # Arena bump allocation
     ${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_pool_allocator.cpp # PoolAllocator slot lookup
   )
   set_source_files_properties(
