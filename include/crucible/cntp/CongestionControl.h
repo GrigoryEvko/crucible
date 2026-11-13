@@ -56,8 +56,8 @@ enum class CcError : std::uint8_t {
     GetSockOptFailed,
 };
 
-[[nodiscard]] std::string_view cc_algorithm_name(CcAlgorithm algorithm) noexcept;
-[[nodiscard]] std::string_view link_class_name(LinkClass link) noexcept;
+[[nodiscard]] ::fixy::TextView cc_algorithm_name(CcAlgorithm algorithm) noexcept;
+[[nodiscard]] ::fixy::TextView link_class_name(LinkClass link) noexcept;
 
 using SocketFd = ::fixy::NonNegative<int>;
 using CcAlgorithmMask = ::fixy::Bits<CcAlgorithm>;

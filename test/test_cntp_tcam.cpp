@@ -110,10 +110,10 @@ tcam::TcamError error_of(::fixy::Result<tcam::OwnedTcamRule, tcam::TcamError> re
 }
 
 void test_admission_and_names() {
-    assert(tcam::tcam_error_name(tcam::TcamError::CapacityExceeded) == std::string_view{"CapacityExceeded"});
-    assert(tcam::flow_action_name(tcam::FlowAction::Mirror) == std::string_view{"Mirror"});
-    assert(tcam::tcam_target_kind_name(tcam::TcamTargetKind::Switch) == std::string_view{"Switch"});
-    assert(tcam::tcam_error_name(static_cast<tcam::TcamError>(200)) == std::string_view{"<unknown TcamError>"});
+    assert(tcam::tcam_error_name(tcam::TcamError::CapacityExceeded) == "CapacityExceeded");
+    assert(tcam::flow_action_name(tcam::FlowAction::Mirror) == "Mirror");
+    assert(tcam::tcam_target_kind_name(tcam::TcamTargetKind::Switch) == "Switch");
+    assert(tcam::tcam_error_name(static_cast<tcam::TcamError>(200)) == "<unknown TcamError>");
 
     assert(tcam::admit_tcam_rule_id(1).is_ok());
     assert(tcam::admit_tcam_rule_id(0).is_err());

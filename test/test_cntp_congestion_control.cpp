@@ -229,8 +229,8 @@ int main() {
     static_assert(std::is_trivially_copyable_v<cntp::CcSelection>);
     static_assert(std::same_as<cntp::DeclaredCcChoice::tag_type, ::fixy::tags::source::CcAlgorithm>);
 
-    assert(cntp::cc_algorithm_name(cntp::CcAlgorithm::Bbr3) == std::string_view{"bbr3"});
-    assert(cntp::link_class_name(cntp::LinkClass::PublicInternet) == std::string_view{"public-internet"});
+    assert(cntp::cc_algorithm_name(cntp::CcAlgorithm::Bbr3) == "bbr3");
+    assert(cntp::link_class_name(cntp::LinkClass::PublicInternet) == "public-internet");
 
     ::fixy::report(::fixy::Sink::Out, "test_cntp_congestion_control:\n");
     test_name_admission();

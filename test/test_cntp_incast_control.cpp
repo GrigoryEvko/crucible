@@ -60,7 +60,7 @@ cntp::IncastError error_of(::fixy::Result<Value, cntp::IncastError> result) {
 }
 
 void test_admission_and_names() {
-    assert(cntp::incast_error_name(cntp::IncastError::CreditUnavailable) == std::string_view{"CreditUnavailable"});
+    assert(cntp::incast_error_name(cntp::IncastError::CreditUnavailable) == "CreditUnavailable");
 
     assert(take(cntp::admit_credit_bytes(64 * 1024)).value() == 64 * 1024);
     assert(error_of(cntp::admit_credit_bytes(0)) == cntp::IncastError::InvalidCreditBytes);

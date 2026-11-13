@@ -6,36 +6,7 @@
 
 namespace crucible::cntp {
 
-std::string_view incast_error_name(IncastError error) noexcept {
-    switch (error) {
-        case IncastError::InvalidSocketFd:
-            return "InvalidSocketFd";
-        case IncastError::InvalidCreditBytes:
-            return "InvalidCreditBytes";
-        case IncastError::InvalidRtoMin:
-            return "InvalidRtoMin";
-        case IncastError::InvalidSenderCount:
-            return "InvalidSenderCount";
-        case IncastError::AlgorithmUnavailable:
-            return "AlgorithmUnavailable";
-        case IncastError::SetCcFailed:
-            return "SetCcFailed";
-        case IncastError::SetRtoMinFailed:
-            return "SetRtoMinFailed";
-        case IncastError::UnsupportedRtoMinSockOpt:
-            return "UnsupportedRtoMinSockOpt";
-        case IncastError::TooManyFlows:
-            return "TooManyFlows";
-        case IncastError::FlowNotStarted:
-            return "FlowNotStarted";
-        case IncastError::CreditOverflow:
-            return "CreditOverflow";
-        case IncastError::CreditUnavailable:
-            return "CreditUnavailable";
-        default:
-            return "<unknown IncastError>";
-    }
-}
+::fixy::TextView incast_error_name(IncastError error) noexcept { return ::foundation::core::enum_name_text(error); }
 
 ::fixy::Result<::fixy::Unit, IncastError> detail::set_socket_rto_min_usec_keyed(SocketOptionKey const&, SocketFd fd,
                                                                                 PositiveRtoMinUsec rto_min) noexcept {

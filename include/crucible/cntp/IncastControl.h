@@ -12,7 +12,6 @@
 #include <foundation/effects/Ctx.h>
 
 #include <cstdint>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::cntp {
@@ -34,7 +33,7 @@ enum class IncastError : std::uint8_t {
     CreditUnavailable,
 };
 
-[[nodiscard]] std::string_view incast_error_name(IncastError error) noexcept;
+[[nodiscard]] ::fixy::TextView incast_error_name(IncastError error) noexcept;
 
 using PositiveCreditBytes = ::fixy::Positive<std::uint32_t>;
 using PositiveRtoMinUsec = ::fixy::Positive<std::uint32_t>;

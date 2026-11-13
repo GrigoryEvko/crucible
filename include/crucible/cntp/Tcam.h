@@ -14,12 +14,10 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
-#include <foundation/reflect/EnumName.h>
 
 #include <concepts>
 #include <cstdint>
 #include <expected>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -67,14 +65,14 @@ enum class FlowAction : std::uint8_t {
 
 // The log spelling of each enum comes from reflection.  A value that names
 // no enumerator reads as "<unknown E>".
-[[nodiscard]] constexpr std::string_view tcam_error_name(TcamError error) noexcept {
-    return ::foundation::reflect::enum_name(error);
+[[nodiscard]] constexpr ::fixy::TextView tcam_error_name(TcamError error) noexcept {
+    return ::foundation::core::enum_name_text(error);
 }
-[[nodiscard]] constexpr std::string_view tcam_target_kind_name(TcamTargetKind kind) noexcept {
-    return ::foundation::reflect::enum_name(kind);
+[[nodiscard]] constexpr ::fixy::TextView tcam_target_kind_name(TcamTargetKind kind) noexcept {
+    return ::foundation::core::enum_name_text(kind);
 }
-[[nodiscard]] constexpr std::string_view flow_action_name(FlowAction action) noexcept {
-    return ::foundation::reflect::enum_name(action);
+[[nodiscard]] constexpr ::fixy::TextView flow_action_name(FlowAction action) noexcept {
+    return ::foundation::core::enum_name_text(action);
 }
 
 inline constexpr std::uint8_t kMaxTcamDscp = 63;

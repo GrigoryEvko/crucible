@@ -17,11 +17,9 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
-#include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -70,12 +68,12 @@ enum class SwapError : std::uint8_t {
 };
 
 // The name of a state or of an error is the identifier of its enumerator.
-[[nodiscard]] constexpr std::string_view swap_state_name(SwapState state) noexcept {
-    return ::foundation::reflect::enum_name(state);
+[[nodiscard]] constexpr ::fixy::TextView swap_state_name(SwapState state) noexcept {
+    return ::foundation::core::enum_name_text(state);
 }
 
-[[nodiscard]] constexpr std::string_view swap_error_name(SwapError error) noexcept {
-    return ::foundation::reflect::enum_name(error);
+[[nodiscard]] constexpr ::fixy::TextView swap_error_name(SwapError error) noexcept {
+    return ::foundation::core::enum_name_text(error);
 }
 
 using PositivePathId = ::fixy::Positive<std::uint64_t>;

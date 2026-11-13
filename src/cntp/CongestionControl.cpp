@@ -29,7 +29,7 @@ void add_algorithm(CcAvailability& availability, CcAlgorithm algorithm) noexcept
 
 }  // namespace
 
-std::string_view cc_algorithm_name(CcAlgorithm algorithm) noexcept {
+::fixy::TextView cc_algorithm_name(CcAlgorithm algorithm) noexcept {
     switch (algorithm) {
         case CcAlgorithm::Bbr3:
             return "bbr3";
@@ -52,7 +52,7 @@ std::string_view cc_algorithm_name(CcAlgorithm algorithm) noexcept {
     }
 }
 
-std::string_view link_class_name(LinkClass link) noexcept {
+::fixy::TextView link_class_name(LinkClass link) noexcept {
     switch (link) {
         case LinkClass::CrossDatacenter:
             return "cross-datacenter";

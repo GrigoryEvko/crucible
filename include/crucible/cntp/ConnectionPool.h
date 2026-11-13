@@ -10,10 +10,8 @@
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
-#include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::cntp {
@@ -51,16 +49,16 @@ enum class PoolEventKind : std::uint8_t {
 // The name of a transport class or of an error is the identifier of its
 // enumerator.  An event kind reads in lower-case words joined by '_', as a
 // log line spells it.
-[[nodiscard]] constexpr std::string_view transport_class_name(TransportClass cls) noexcept {
-    return ::foundation::reflect::enum_name(cls);
+[[nodiscard]] constexpr ::fixy::TextView transport_class_name(TransportClass cls) noexcept {
+    return ::foundation::core::enum_name_text(cls);
 }
 
-[[nodiscard]] constexpr std::string_view pool_error_name(PoolError error) noexcept {
-    return ::foundation::reflect::enum_name(error);
+[[nodiscard]] constexpr ::fixy::TextView pool_error_name(PoolError error) noexcept {
+    return ::foundation::core::enum_name_text(error);
 }
 
-[[nodiscard]] constexpr std::string_view pool_event_kind_name(PoolEventKind kind) noexcept {
-    return ::foundation::reflect::enum_words<PoolEventKind, '_'>(kind);
+[[nodiscard]] constexpr ::fixy::TextView pool_event_kind_name(PoolEventKind kind) noexcept {
+    return ::foundation::core::enum_words_text<PoolEventKind, '_'>(kind);
 }
 
 template <TransportClass T>

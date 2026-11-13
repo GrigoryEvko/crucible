@@ -67,13 +67,11 @@ cntp::PoolError error_of(::fixy::Result<MtlsConnection, cntp::PoolError> result)
 }
 
 void test_admission_and_names() {
-    static_assert(cntp::transport_class_name(cntp::TransportClass::RdmaRcQp) == std::string_view{"RdmaRcQp"});
-    static_assert(cntp::pool_error_name(cntp::PoolError::PoolFull) == std::string_view{"PoolFull"});
-    static_assert(cntp::pool_event_kind_name(cntp::PoolEventKind::Returned) == std::string_view{"returned"});
-    static_assert(cntp::pool_event_kind_name(cntp::PoolEventKind::EvictedUnhealthy)
-                  == std::string_view{"evicted_unhealthy"});
-    assert(cntp::transport_class_name(static_cast<cntp::TransportClass>(255))
-           == std::string_view{"<unknown TransportClass>"});
+    static_assert(cntp::transport_class_name(cntp::TransportClass::RdmaRcQp) == "RdmaRcQp");
+    static_assert(cntp::pool_error_name(cntp::PoolError::PoolFull) == "PoolFull");
+    static_assert(cntp::pool_event_kind_name(cntp::PoolEventKind::Returned) == "returned");
+    static_assert(cntp::pool_event_kind_name(cntp::PoolEventKind::EvictedUnhealthy) == "evicted_unhealthy");
+    assert(cntp::transport_class_name(static_cast<cntp::TransportClass>(255)) == "<unknown TransportClass>");
 
     auto size = cntp::admit_pool_size(4);
     auto zero_size = cntp::admit_pool_size(0);

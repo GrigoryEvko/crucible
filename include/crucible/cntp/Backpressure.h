@@ -7,7 +7,6 @@
 #include <foundation/effects/Resources.h>
 
 #include <cstdint>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::cntp {
@@ -36,7 +35,7 @@ enum class AdmissionDecisionKind : std::uint8_t {
 };
 
 // The spelling of each outcome that an operator log line uses.
-[[nodiscard]] constexpr std::string_view admission_decision_kind_name(AdmissionDecisionKind kind) noexcept {
+[[nodiscard]] constexpr ::fixy::TextView admission_decision_kind_name(AdmissionDecisionKind kind) noexcept {
     switch (kind) {
         case AdmissionDecisionKind::Accepted:
             return "accepted";

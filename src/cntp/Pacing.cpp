@@ -58,7 +58,7 @@ struct QdiscDumpRequest {
 
 }  // namespace
 
-std::string_view qdisc_name(Qdisc qdisc) noexcept {
+::fixy::TextView qdisc_name(Qdisc qdisc) noexcept {
     switch (qdisc) {
         case Qdisc::Fq:
             return "fq";

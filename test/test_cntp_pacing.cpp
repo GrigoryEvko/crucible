@@ -100,7 +100,7 @@ cntp::PacingError error_of(::fixy::Result<Value, cntp::PacingError> result) {
 void test_qdisc_parse() {
     cntp::Qdisc const fq = take(cntp::qdisc_from_kernel_name("fq"));
     assert(fq == cntp::Qdisc::Fq);
-    assert(cntp::qdisc_name(fq) == std::string_view{"fq"});
+    assert(cntp::qdisc_name(fq) == "fq");
 
     assert(take(cntp::qdisc_from_kernel_name("fq_codel")) == cntp::Qdisc::FqCodel);
     assert(take(cntp::qdisc_from_kernel_name("pfifo_fast")) == cntp::Qdisc::Pfifo);

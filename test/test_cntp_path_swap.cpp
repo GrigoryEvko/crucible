@@ -59,9 +59,9 @@ cntp::DeclaredPathSwapPlan make_other_plan() { return make_plan_for(11, 40, 50);
 }
 
 void test_admission() {
-    static_assert(cntp::swap_state_name(cntp::SwapState::Draining) == std::string_view{"Draining"});
-    static_assert(cntp::swap_error_name(cntp::SwapError::SamePath) == std::string_view{"SamePath"});
-    assert(cntp::swap_state_name(static_cast<cntp::SwapState>(200)) == std::string_view{"<unknown SwapState>"});
+    static_assert(cntp::swap_state_name(cntp::SwapState::Draining) == "Draining");
+    static_assert(cntp::swap_error_name(cntp::SwapError::SamePath) == "SamePath");
+    assert(cntp::swap_state_name(static_cast<cntp::SwapState>(200)) == "<unknown SwapState>");
 
     auto zero_path = cntp::admit_path_id(0);
     assert(zero_path.is_err());

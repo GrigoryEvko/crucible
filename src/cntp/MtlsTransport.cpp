@@ -5,46 +5,9 @@
 
 namespace crucible::cntp {
 
-std::string_view mtls_error_name(MtlsError error) noexcept {
-    switch (error) {
-        case MtlsError::EmptyCertificate:
-            return "EmptyCertificate";
-        case MtlsError::CertificateTooLarge:
-            return "CertificateTooLarge";
-        case MtlsError::EmptyPrivateKey:
-            return "EmptyPrivateKey";
-        case MtlsError::PrivateKeyTooLarge:
-            return "PrivateKeyTooLarge";
-        case MtlsError::EmptyPeerName:
-            return "EmptyPeerName";
-        case MtlsError::InvalidPeerName:
-            return "InvalidPeerName";
-        case MtlsError::TooManyPeerNames:
-            return "TooManyPeerNames";
-        case MtlsError::EmptyFingerprint:
-            return "EmptyFingerprint";
-        case MtlsError::UnsupportedTlsVersion:
-            return "UnsupportedTlsVersion";
-        case MtlsError::UnsupportedCipherSuite:
-            return "UnsupportedCipherSuite";
-        case MtlsError::PeerVerificationDisabled:
-            return "PeerVerificationDisabled";
-        case MtlsError::PeerCertificateNotRequired:
-            return "PeerCertificateNotRequired";
-        case MtlsError::PeerNameNotAllowed:
-            return "PeerNameNotAllowed";
-        case MtlsError::CertificatePinMismatch:
-            return "CertificatePinMismatch";
-        case MtlsError::BackendUnavailable:
-            return "BackendUnavailable";
-        case MtlsError::KtlsOffloadDeferred:
-            return "KtlsOffloadDeferred";
-        default:
-            return "<unknown MtlsError>";
-    }
-}
+::fixy::TextView mtls_error_name(MtlsError error) noexcept { return ::foundation::core::enum_name_text(error); }
 
-std::string_view tls_version_name(TlsVersion version) noexcept {
+::fixy::TextView tls_version_name(TlsVersion version) noexcept {
     switch (version) {
         case TlsVersion::V10:
             return "TLS1.0";
@@ -59,7 +22,7 @@ std::string_view tls_version_name(TlsVersion version) noexcept {
     }
 }
 
-std::string_view mtls_cipher_suite_name(MtlsCipherSuite suite) noexcept {
+::fixy::TextView mtls_cipher_suite_name(MtlsCipherSuite suite) noexcept {
     switch (suite) {
         case MtlsCipherSuite::TlsAes256GcmSha384:
             return "TLS_AES_256_GCM_SHA384";
@@ -74,7 +37,7 @@ std::string_view mtls_cipher_suite_name(MtlsCipherSuite suite) noexcept {
     }
 }
 
-std::string_view mtls_key_algorithm_name(MtlsKeyAlgorithm algorithm) noexcept {
+::fixy::TextView mtls_key_algorithm_name(MtlsKeyAlgorithm algorithm) noexcept {
     switch (algorithm) {
         case MtlsKeyAlgorithm::Ed25519:
             return "ED25519";

@@ -65,10 +65,10 @@ enum class MtlsKeyAlgorithm : std::uint8_t {
     RsaPkcs1,
 };
 
-[[nodiscard]] std::string_view mtls_error_name(MtlsError error) noexcept;
-[[nodiscard]] std::string_view tls_version_name(TlsVersion version) noexcept;
-[[nodiscard]] std::string_view mtls_cipher_suite_name(MtlsCipherSuite suite) noexcept;
-[[nodiscard]] std::string_view mtls_key_algorithm_name(MtlsKeyAlgorithm algorithm) noexcept;
+[[nodiscard]] ::fixy::TextView mtls_error_name(MtlsError error) noexcept;
+[[nodiscard]] ::fixy::TextView tls_version_name(TlsVersion version) noexcept;
+[[nodiscard]] ::fixy::TextView mtls_cipher_suite_name(MtlsCipherSuite suite) noexcept;
+[[nodiscard]] ::fixy::TextView mtls_key_algorithm_name(MtlsKeyAlgorithm algorithm) noexcept;
 
 template <TlsVersion Version>
 concept SupportedMtlsVersion = Version == TlsVersion::V13;

@@ -49,7 +49,7 @@ enum class PacingError : std::uint8_t {
     SetSockOptFailed,
 };
 
-[[nodiscard]] std::string_view qdisc_name(Qdisc qdisc) noexcept;
+[[nodiscard]] ::fixy::TextView qdisc_name(Qdisc qdisc) noexcept;
 
 using PositivePacingRate = ::fixy::Positive<std::uint64_t>;
 using PositiveFqParam = ::fixy::Positive<std::uint32_t>;

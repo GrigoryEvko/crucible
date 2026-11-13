@@ -34,7 +34,7 @@ void test_admission_helpers() {
     static_assert(::foundation::reflect::enum_name(cntp::BackpressureError::CreditOverflow)
                   == std::string_view{"CreditOverflow"});
     static_assert(cntp::admission_decision_kind_name(cntp::AdmissionDecisionKind::RejectedResource)
-                  == std::string_view{"rejected_resource"});
+                  == "rejected_resource");
 
     auto fd = cntp::admit_socket_fd(11);
     assert(fd.has_value());

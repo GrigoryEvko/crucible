@@ -66,11 +66,10 @@ error_of(::fixy::Result<cntp::MtlsCertificate, cntp::MtlsError> admitted) {
 }
 
 void test_name_and_error_surfaces() {
-    assert(cntp::mtls_error_name(cntp::MtlsError::BackendUnavailable) == std::string_view{"BackendUnavailable"});
-    assert(cntp::tls_version_name(cntp::TlsVersion::V13) == std::string_view{"TLS1.3"});
-    assert(cntp::mtls_cipher_suite_name(cntp::MtlsCipherSuite::TlsAes256GcmSha384)
-           == std::string_view{"TLS_AES_256_GCM_SHA384"});
-    assert(cntp::mtls_key_algorithm_name(cntp::MtlsKeyAlgorithm::Ed25519) == std::string_view{"ED25519"});
+    assert(cntp::mtls_error_name(cntp::MtlsError::BackendUnavailable) == "BackendUnavailable");
+    assert(cntp::tls_version_name(cntp::TlsVersion::V13) == "TLS1.3");
+    assert(cntp::mtls_cipher_suite_name(cntp::MtlsCipherSuite::TlsAes256GcmSha384) == "TLS_AES_256_GCM_SHA384");
+    assert(cntp::mtls_key_algorithm_name(cntp::MtlsKeyAlgorithm::Ed25519) == "ED25519");
 
     cntp::MtlsDnsName const dns = take(cntp::MtlsDnsName::from("relay-a.example.org"));
     assert(dns.view() == "relay-a.example.org");
