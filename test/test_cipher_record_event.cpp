@@ -17,7 +17,6 @@
 #include <charconv>
 #include <cstdio>
 #include <cstdlib>
-#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -44,7 +43,13 @@ namespace eff = ::foundation::effects;
 template <typename Ctx>
 static void record(Cipher& cipher, Ctx const& ctx, Cipher::OpenView const& view, ContentHash hash, std::uint64_t step) {
     const auto recorded = cipher.record_event(ctx, view, hash, step);
-    assert(recorded.has_value() && "record_event must commit when the clock read succeeds");
+    assert(recorded.is_ok() && "record_event must commit when the clock read succeeds");
+}
+
+// The step of a commit that failed.
+[[nodiscard]] static Cipher::CommitError failure_of(Cipher::CommitResult const& recorded) {
+    assert(recorded.is_err() && "the commit must report the failed write");
+    return recorded.err().expect("the commit failed");
 }
 
 // The whole content of a file, or an empty string when it does not open.
@@ -311,10 +316,10 @@ static void test_t10_api_surface_pinned(const char* base_dir) {
 
     using Ctx = ::fixy::TestRunnerCtx;
     using Result = decltype(cipher.record_event(std::declval<Ctx const&>(), view, ContentHash{1u}, std::uint64_t{1u}));
-    static_assert(std::is_same_v<Result, std::expected<void, std::error_code>>);
+    static_assert(std::is_same_v<Result, ::fixy::Result<::fixy::Unit, Cipher::CommitError>>);
 
     // A context, the view and two runtime arguments.
-    static_assert(std::is_invocable_r_v<std::expected<void, std::error_code>,
+    static_assert(std::is_invocable_r_v<::fixy::Result<::fixy::Unit, Cipher::CommitError>,
                                         decltype([](Cipher& c, Ctx const& ctx, Cipher::OpenView const& v, ContentHash h,
                                                     std::uint64_t s) { return c.record_event(ctx, v, h, s); }),
                                         Cipher&, Ctx const&, Cipher::OpenView const&, ContentHash, std::uint64_t>);
@@ -483,6 +488,63 @@ static void test_pre_clause_orthogonal(const char* base_dir) {
     crucible::test::pass("  pre_clause_orthogonal:                  PASSED\n");
 }
 
+// A store opened at a path makes a directory there.  A directory at the
+// path of the log or of the temporary HEAD file makes that write fail,
+// also for the root user.
+
+// The log append is the commit.  When it fails, the commit reports the
+// failure and the head does not move, in memory and in HEAD.
+static void test_failed_log_append_moves_no_head(const crucible::test::ScratchDir& scratch) {
+    assert(open_cipher(scratch.file("log_blocked/log")).is_open());
+
+    constexpr ContentHash kHash{0xA11CE5EEDULL};
+    constexpr std::uint64_t kStep = 3u;
+    {
+        auto cipher = open_cipher(scratch.file("log_blocked"));
+        auto view = cipher.mint_open_view(store_ctx());
+        assert(failure_of(cipher.record_event(store_ctx(), view, kHash, kStep)) == Cipher::CommitError::log_append);
+        assert(cipher.head() == ContentHash{});
+        assert(cipher.hash_at_step(view, kStep) == ContentHash{});
+    }
+
+    // The log holds no commit, so the open reads HEAD.  The failed commit
+    // wrote no HEAD, so the reopen has no head.
+    auto reopened = open_cipher(scratch.file("log_blocked"));
+    auto view = reopened.mint_open_view(store_ctx());
+    assert(reopened.head() == ContentHash{});
+    assert(reopened.hash_at_step(view, kStep) == ContentHash{});
+
+    crucible::test::pass("  failed_log_append_moves_no_head:        PASSED\n");
+}
+
+// A failed HEAD write comes after a durable log append.  The commit
+// reports the failure, and the commit stands: the head moves in memory,
+// and a reopen takes the same head from the log, while HEAD still names
+// the commit before it.
+static void test_failed_head_write_keeps_the_logged_commit(const crucible::test::ScratchDir& scratch) {
+    constexpr ContentHash kFirst{0x0F1257ULL};
+    constexpr ContentHash kSecond{0x5EC0DDULL};
+    {
+        auto cipher = open_cipher(scratch.file("head_blocked"));
+        auto view = cipher.mint_open_view(store_ctx());
+        record(cipher, store_ctx(), view, kFirst, 1u);
+
+        assert(open_cipher(scratch.file("head_blocked/HEAD.tmp")).is_open());
+
+        assert(failure_of(cipher.record_event(store_ctx(), view, kSecond, 2u)) == Cipher::CommitError::head_write);
+        assert(cipher.head() == kSecond);
+        assert(cipher.hash_at_step(view, 2u) == kSecond);
+    }
+
+    auto reopened = open_cipher(scratch.file("head_blocked"));
+    auto view = reopened.mint_open_view(store_ctx());
+    assert(reopened.head() == kSecond);
+    assert(reopened.hash_at_step(view, 1u) == kFirst);
+    assert(reopened.hash_at_step(view, 2u) == kSecond);
+
+    crucible::test::pass("  failed_head_write_keeps_logged_commit:  PASSED\n");
+}
+
 int main() {
     // A scratch directory of this process, so the test is hermetic.
     const crucible::test::ScratchDir scratch{"crucible_test_record_event"};
@@ -507,7 +569,9 @@ int main() {
     test_external_visibility();
     test_canonical_row_acceptance(base.c_str());
     test_pre_clause_orthogonal(base.c_str());
+    test_failed_log_append_moves_no_head(scratch);
+    test_failed_head_write_keeps_the_logged_commit(scratch);
 
-    crucible::test::pass("test_cipher_record_event: 16 groups, all passed\n");
+    crucible::test::pass("test_cipher_record_event: 18 groups, all passed\n");
     return 0;
 }

@@ -9,6 +9,12 @@
 //
 // ts_ns is a reading of CLOCK_MONOTONIC in nanoseconds.
 //
+// The log is the record of the commits, and HEAD is a copy of its last
+// commit.  A commit reaches the log before HEAD, so HEAD never names a
+// commit that the log does not hold.  A failed or interrupted HEAD write
+// leaves HEAD behind the log, so the open takes the head from the log, and
+// it reads HEAD only when the log holds no commit.
+//
 // A Cipher is not thread-safe.  One thread owns it.
 //
 // The members that read or write files, and the members that encode a
@@ -18,6 +24,7 @@
 #include <crucible/Types.h>
 #include <crucible/cipher/SessionPersistenceSurface.h>
 #include <fixy/Bands.h>
+#include <fixy/Core.h>
 #include <fixy/Mutation.h>
 #include <fixy/os/Path.h>
 #include <fixy/Refined.h>
@@ -198,9 +205,14 @@ public:
 
         c.load_log();
 
-        // HEAD is the authoritative pointer and overrides the log's last
-        // hash.  A corrupt HEAD falls through to the log.
-        bool head_from_file = false;
+        // The log is the record of the commits, so its last commit is the
+        // head.  HEAD can lag the log after a failed HEAD write, and it is
+        // read only when the log holds no commit.  A corrupt HEAD gives no
+        // head.
+        c.head_ = c.latest_committed_head();
+        if (c.head_) {
+            return c;
+        }
         auto head_file = head_sanitized ? ::fixy::fs::mint_file<::fixy::fs::read_only>(ctx, std::move(*head_sanitized))
                                         : std::expected<::fixy::Linear<::fixy::fs::OwnedFd>, std::error_code>{
                                               std::unexpected{std::make_error_code(std::errc::invalid_argument)}};
@@ -212,12 +224,8 @@ public:
                 const std::optional<ContentHash> parsed_head = parse_head_(std::span<const char>{buf.data(), *n});
                 if (parsed_head) {
                     c.head_ = *parsed_head;
-                    head_from_file = true;
                 }
             }
-        }
-        if (!head_from_file) {
-            c.head_ = c.latest_committed_head();
         }
 
         return c;
@@ -357,29 +365,42 @@ public:
                   "Session-event persistence uses the same IO+Block row fence "
                   "as Cipher::record_event.");
 
-    // Moves the head to content_hash at step_id, and appends the commit to
-    // the log with a reading of the monotonic clock.  The reader comes from
-    // the context, so the reading keeps its clock type until the log entry
-    // encodes it.  A failed clock read changes nothing and gives the error
-    // of the read.
+    // The step of a commit that failed.
+    enum class CommitError : std::uint8_t {
+        clock_read,
+        log_append,
+        head_write,
+    };
+
+    using CommitResult = ::fixy::Result<::fixy::Unit, CommitError>;
+
+    // Appends the commit of content_hash at step_id to the log, with a
+    // reading of the monotonic clock, and then writes HEAD.  The reader
+    // comes from the context, so the reading keeps its clock type until the
+    // log entry encodes it.
+    //
+    // The log append is the commit.  A failed clock read or log append
+    // changes nothing in memory, and HEAD does not move.  A log write that
+    // passed before a failed flush can leave the record in the file, and a
+    // reopen then reads that commit.  A failed HEAD write comes after a
+    // durable append, so the commit stands: the head moves, and only HEAD
+    // lags the log.  Each failure gives the step that failed.
     //
     // content_hash must be non-zero.  Zero is the sentinel for "no content",
     // so a step recorded with hash zero is indistinguishable from "before
     // the first commit" and corrupts the binary search in hash_at_step.
     template <typename Ctx>
         requires cipher::CtxFitsCipherCommit<Ctx>
-    [[nodiscard]] std::expected<void, std::error_code> record_event(Ctx const& ctx, OpenView const& view,
-                                                                    ContentHash content_hash, uint64_t step_id) {
+    [[nodiscard]] CommitResult record_event(Ctx const& ctx, OpenView const& view, ContentHash content_hash,
+                                            uint64_t step_id) {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         const ::fixy::time::MonotonicClock clock =
             ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
         auto committed_at = clock.read();
         if (!committed_at) [[unlikely]] {
-            return std::unexpected{committed_at.error()};
+            return ::fixy::err(CommitError::clock_read);
         }
-        advance_head(view, content_hash, step_id, *committed_at);
-        CRUCIBLE_POST(0, head_ == content_hash);
-        return {};
+        return advance_head(view, content_hash, step_id, *committed_at);
     }
 
     // Stores one batch of session events and indexes it.  The events must
@@ -478,8 +499,8 @@ private:
     // commit, and a clock reader is the only source of one.  The in-memory
     // event and the log line are the two wire forms, and each takes the
     // nanosecond count of the reading.
-    void advance_head(OpenView const&, ContentHash content_hash, uint64_t step_id,
-                      ::fixy::MonotonicClockBytes<std::uint64_t> committed_at);
+    [[nodiscard]] CommitResult advance_head(OpenView const&, ContentHash content_hash, uint64_t step_id,
+                                            ::fixy::MonotonicClockBytes<std::uint64_t> committed_at);
 
     [[nodiscard]] ContentHash persist_session_events_(OpenView const&, std::span<const SessionEvent> events);
 

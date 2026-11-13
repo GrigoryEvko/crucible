@@ -599,7 +599,7 @@ private:
         auto open_view = store.mint_open_view(ctx);
         const ContentHash hash = store.store(open_view, Store::content_addressed(region));
         if (!hash) return false;
-        return store.record_event(ctx, open_view, hash, step_.get()).has_value();
+        return store.record_event(ctx, open_view, hash, step_.get()).is_ok();
     }
 
     template <class Ctx, class Store>

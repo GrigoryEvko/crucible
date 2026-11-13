@@ -82,7 +82,7 @@ static std::string object_path(const char* dir, crucible::ContentHash hash) {
 static void commit_head(crucible::Cipher& cipher, crucible::Cipher::OpenView const& view, crucible::ContentHash hash,
                         std::uint64_t step) {
     const auto committed = cipher.record_event(store_ctx(), view, hash, step);
-    assert(committed.has_value() && "record_event must commit when the clock read succeeds");
+    assert(committed.is_ok() && "record_event must commit when the clock read succeeds");
 }
 
 // A reading of CLOCK_MONOTONIC in nanoseconds, from the reader that the

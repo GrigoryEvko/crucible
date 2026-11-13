@@ -167,7 +167,7 @@ int main() {
         reports.push_back(bench::run(label_record_event, [&] {
             const uint64_t step = ++record_step;
             const ContentHash event_hash{warm_h.raw() ^ step};
-            const bool recorded = cipher.record_event(ctx, open_view, event_hash, step).has_value();
+            const bool recorded = cipher.record_event(ctx, open_view, event_hash, step).is_ok();
             bench::do_not_optimize(recorded);
         }));
 

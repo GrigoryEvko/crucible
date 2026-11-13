@@ -174,9 +174,10 @@ public:
 //
 // Write-tmp-and-rename is the alternative and it loses here: logs grow
 // without bound and a rename does not compose with an append.  If a
-// write somehow does straddle the block boundary, load_log skips the
-// malformed trailing line, the in-memory log still holds the event, and
-// HEAD carries the authoritative pointer.
+// crash tears a record that straddles the block boundary, load_log skips
+// the malformed trailing line.  The commit of that record then did not
+// happen, and HEAD did not move, because a commit writes HEAD only after
+// its log record is durable.
 //
 // EINTR is retried on write, fdatasync and fsync.  Failure needs no
 // cleanup, since the file is append-only by construction.  Returns true
@@ -374,26 +375,11 @@ ContentHash Cipher::store(OpenView const&, ContentAddressedRegionPayload payload
 
     std::filesystem::create_directories(std::filesystem::path(path).parent_path());
 
-    std::ofstream f(path, std::ios::binary);
-    if (!f) return ContentHash{};
-    f.write(static_cast<const char*>(static_cast<const void*>(buf.data())), static_cast<std::streamsize>(n));
-    if (!f) return ContentHash{};
-
-    // Close the stream before the fdatasync barrier so the userspace
-    // buffer reaches the kernel.  A crash between the write and the
-    // destructor's flush would otherwise lose the bytes silently, and a
-    // hash this function returns must be loadable after a crash.
-    //
-    // The barrier re-opens the file read-only because libstdc++ does not
-    // portably expose the ofstream's descriptor.
-    //
-    // fdatasync rather than fsync is sufficient.  Objects are immutable
-    // content-addressed payloads, so the inode never changes after
-    // creation, and only the data plus the metadata needed to locate it
-    // need durable ordering.
-    f.close();
-    if (!f) return ContentHash{};
-    if (!fdatasync_at_(root_dirfd_.get(), obj_rel)) {
+    // The replace writes a temporary file, flushes its bytes, and renames
+    // it onto the object.  A reader then sees the whole object or no
+    // object, and a hash that this function returns is loadable after a
+    // crash.
+    if (!atomic_write_at_(root_dirfd_.get(), obj_rel, std::span<const uint8_t>{buf.data(), n})) {
         return ContentHash{};
     }
 
@@ -431,9 +417,9 @@ Cipher::LoadedContentAddressedRegionPayload Cipher::load_content_addressed(OpenV
     const std::string& path = path_tagged.value();
     if (!std::filesystem::exists(path)) return nullptr;
 
+    // tellg gives -1 for a stream that did not open, so the test of raw
+    // also refuses a failed open.
     std::ifstream f(path, std::ios::binary);
-    if (!f) return nullptr;
-
     f.seekg(0, std::ios::end);
     const auto raw = f.tellg();
     if (raw < 0) return nullptr;
@@ -446,8 +432,10 @@ Cipher::LoadedContentAddressedRegionPayload Cipher::load_content_addressed(OpenV
     f.seekg(0, std::ios::beg);
 
     std::vector<uint8_t> buf(validated_len.value());
+    // A short read sets the fail bit, and tellg then gives -1.  A full
+    // read leaves the stream at the end, where tellg gives the length.
     f.read(static_cast<char*>(static_cast<void*>(buf.data())), static_cast<std::streamsize>(validated_len.value()));
-    if (!f) return nullptr;
+    if (static_cast<size_t>(f.tellg()) != len) return nullptr;
 
     const std::optional<LoadedRegionNode> loaded_region = deserialize_region(a, std::span<const uint8_t>{buf}, arena);
     // The file name is the key, and anyone who writes the store can put
@@ -716,32 +704,20 @@ ContentHash Cipher::latest_committed_head() const noexcept {
     return ContentHash{};
 }
 
-void Cipher::advance_head(OpenView const&, ContentHash content_hash, uint64_t step_id,
-                          ::fixy::MonotonicClockBytes<std::uint64_t> committed_at) {
+Cipher::CommitResult Cipher::advance_head(OpenView const&, ContentHash content_hash, uint64_t step_id,
+                                          ::fixy::MonotonicClockBytes<std::uint64_t> committed_at) {
     // Weakly increasing, not strictly: duplicate step ids are accepted
     // at this gate.  The strict consecutive-by-one check belongs to the
     // session-event batch invariant, not to the head log.
     if (!log_.empty()) {
         CRUCIBLE_PRE(log_.back().step_id().value <= step_id);
     }
-    head_ = content_hash;
-
-    // Ignoring the helper's result is deliberate.  A failed HEAD write
-    // leaves the cached head_ set and the log append below as the
-    // recovery anchor: the next open() recovers the committed pointer
-    // by scanning the log even when HEAD is stale or missing.
-    {
-        char hex[16];
-        hex16_(content_hash.raw(), hex);
-        std::uint8_t buf[17];
-        std::memcpy(buf, hex, 16);
-        buf[16] = static_cast<std::uint8_t>('\n');
-        (void)atomic_write_at_(root_dirfd_.get(), "HEAD", std::span<const std::uint8_t>{buf, sizeof(buf)});
-    }
-
     const std::uint64_t committed_at_ns = committed_at.peek();
-    log_.append(SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted, ::fixy::session::StepId{step_id},
-                                           ::fixy::session::StateHash{content_hash.raw()}, committed_at_ns));
+
+    // The log record is the commit, and it is durable before HEAD moves.
+    // A failed append changes no state in memory, so this store and a
+    // reopen agree.  A write that passed before a failed flush can leave
+    // the record in the file, and a reopen then reads that commit.
     {
         // Record layout: "<step_id>,<16-hex content_hash>,<ts>\n".
         // Longest form is 20 decimal digits + 1 + 16 + 1 + 20 decimal
@@ -763,14 +739,33 @@ void Cipher::advance_head(OpenView const&, ContentHash content_hash, uint64_t st
         if (ec2 != std::errc{}) std::abort();
         off = static_cast<std::size_t>(p2 - rec);
         rec[off++] = '\n';
-        (void)atomic_append_at_(
-            root_dirfd_.get(), "log",
-            std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(static_cast<const void*>(rec)), off});
+        if (!atomic_append_at_(
+                root_dirfd_.get(), "log",
+                std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(static_cast<const void*>(rec)), off})) {
+            return ::fixy::err(CommitError::log_append);
+        }
     }
+    log_.append(SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted, ::fixy::session::StepId{step_id},
+                                           ::fixy::session::StateHash{content_hash.raw()}, committed_at_ns));
+    head_ = content_hash;
+
+    // HEAD is a copy of the last commit of the log.  A failed write leaves
+    // HEAD at an earlier commit, and the open takes the head from the log.
+    char hex[16];
+    hex16_(content_hash.raw(), hex);
+    std::uint8_t buf[17];
+    std::memcpy(buf, hex, 16);
+    buf[16] = static_cast<std::uint8_t>('\n');
+    const bool is_head_written =
+        atomic_write_at_(root_dirfd_.get(), "HEAD", std::span<const std::uint8_t>{buf, sizeof(buf)});
 
     CRUCIBLE_POST(0, head_ == content_hash);
     CRUCIBLE_POST(0, !log_.empty());
     CRUCIBLE_POST(0, log_.back().step_id().value == step_id);
+    if (!is_head_written) {
+        return ::fixy::err(CommitError::head_write);
+    }
+    return ::fixy::Unit{};
 }
 
 // HEAD holds the hash in hexadecimal, with a newline after it.
