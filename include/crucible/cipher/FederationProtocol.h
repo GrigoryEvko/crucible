@@ -62,14 +62,12 @@
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
-#include <foundation/reflect/EnumName.h>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <span>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::cipher::federation {
@@ -148,8 +146,8 @@ enum class FederationError : std::uint8_t {
 // The name is the enumerator's identifier, read by reflection, so a new
 // error cannot be added without a name.  A value that no enumerator
 // holds prints "<unknown FederationError>".
-[[nodiscard]] inline constexpr std::string_view federation_error_name(FederationError e) noexcept {
-    return ::foundation::reflect::enum_name(e);
+[[nodiscard]] inline constexpr ::fixy::TextView federation_error_name(FederationError e) noexcept {
+    return ::foundation::core::enum_name_text(e);
 }
 
 // The rejection rules are checked in the body and reported, rather

@@ -548,8 +548,8 @@ static void test_error_name_coverage() {
         E::ZeroKey, E::ReservedNonZero, E::TruncatedHeader,    E::TruncatedPayload,           E::OutputBufferTooSmall,
     };
     for (auto e : all) {
-        const auto nm = fed::federation_error_name(e);
-        assert(!nm.empty());
+        const ::fixy::TextView nm = fed::federation_error_name(e);
+        assert(nm.size() != 0);
         assert(nm != "<unknown FederationError>");
     }
 
