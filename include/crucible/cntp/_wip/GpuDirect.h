@@ -16,7 +16,6 @@
 #include <foundation/Pinned.h>
 #include <foundation/effects/Ctx.h>
 
-#include <bit>
 #include <cstdint>
 #include <type_traits>
 
@@ -154,11 +153,6 @@ concept CtxFitsGpuDirectMint = ::foundation::effects::IsExecCtx<Ctx>
 [[nodiscard]] constexpr ::fixy::Result<GpuVirtualAddress, GpuDirectError>
 admit_gpu_virtual_address(std::uintptr_t address) noexcept {
     return ::fixy::admit_refined<::fixy::non_zero>(address, GpuDirectError::NullGpuAddress);
-}
-
-[[nodiscard]] inline ::fixy::Result<GpuVirtualAddress, GpuDirectError>
-admit_gpu_virtual_address(void const* address) noexcept {
-    return admit_gpu_virtual_address(std::bit_cast<std::uintptr_t>(address));
 }
 
 [[nodiscard]] constexpr ::fixy::Result<GpuDirectByteCount, GpuDirectError>

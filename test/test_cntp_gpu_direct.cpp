@@ -93,10 +93,6 @@ void test_admission_and_names() {
     assert(null_address.is_err());
     assert(null_address.err() == ::fixy::some(gd::GpuDirectError::NullGpuAddress));
 
-    auto null_pointer = gd::admit_gpu_virtual_address(static_cast<void const*>(nullptr));
-    assert(null_pointer.is_err());
-    assert(null_pointer.err() == ::fixy::some(gd::GpuDirectError::NullGpuAddress));
-
     auto bytes = gd::admit_gpu_direct_bytes(4096);
     assert(bytes.is_ok());
     assert(std::move(bytes).expect("4096 bytes is positive").value() == 4096);
