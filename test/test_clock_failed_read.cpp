@@ -282,12 +282,12 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
         }
     }
     const auto commit = [&log, &owner](crucible::Transaction* tx, crucible::RegionNode* region) {
-        return log.commit(owner, tx, ::fixy::mint_tagged<::fixy::tags::source::Arena>(region), region->content_hash,
+        return log.commit(owner, *tx, ::fixy::mint_tagged<::fixy::tags::source::Arena>(region), region->content_hash,
                           region->merkle_hash);
     };
 
     give_each_read(7, 0);
-    auto* first = log.begin_tx(owner, 1);
+    auto* first = &log.begin_tx(owner, 1);
     tally.expect(holds_reading(first, 7000000000, "begin_tx of the first transaction at 7 s"));
 
     fail_each_read(EIO);
@@ -295,11 +295,11 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
     tally.expect(holds_no_reading(first, "commit of the first transaction under a failed read"));
 
     give_each_read(8, 0);
-    tally.expect(log.activate(owner, first) == nullptr);
+    tally.expect(log.activate(owner, *first).try_get() == nullptr);
     tally.expect(holds_reading(first, 8000000000, "activate of the first transaction at 8 s"));
 
     fail_each_read(EIO);
-    auto* second = log.begin_tx(owner, 2);
+    auto* second = &log.begin_tx(owner, 2);
     tally.expect(holds_no_reading(second, "begin_tx of the second transaction under a failed read"));
 
     give_each_read(9, 0);
@@ -307,16 +307,16 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
     tally.expect(holds_reading(second, 9000000000, "commit of the second transaction at 9 s"));
 
     fail_each_read(EIO);
-    tally.expect(log.activate(owner, second) == first);
+    tally.expect(log.activate(owner, *second).try_get() == first);
     tally.expect(holds_no_reading(first, "the first transaction, displaced under a failed read"));
     tally.expect(holds_no_reading(second, "activate of the second transaction under a failed read"));
 
     give_each_read(10, 0);
-    auto* third = log.begin_tx(owner, 3);
+    auto* third = &log.begin_tx(owner, 3);
     give_each_read(11, 0);
     tally.expect(commit(third, regions[2]));
     give_each_read(12, 0);
-    tally.expect(log.activate(owner, third) == second);
+    tally.expect(log.activate(owner, *third).try_get() == second);
     tally.expect(holds_reading(second, 12000000000, "the second transaction, displaced at 12 s"));
     tally.expect(holds_reading(third, 12000000000, "activate of the third transaction at 12 s"));
 

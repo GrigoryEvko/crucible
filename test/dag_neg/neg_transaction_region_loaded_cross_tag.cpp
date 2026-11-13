@@ -26,7 +26,7 @@ private:
 int main() {
     const Owner owner = Owner::claim();
     crucible::TransactionLog<16, Owner> log{::fixy::TestRunnerCtx{::foundation::effects::testing::test()}};
-    auto* tx = log.begin_tx(owner, 1);
+    auto& tx = log.begin_tx(owner, 1);
     crucible::Arena arena{1024};
     const std::optional<crucible::LoadedRegionNode> loaded = crucible::deserialize_region(
         ::foundation::effects::testing::test().alloc, std::span<const std::uint8_t>{}, arena);

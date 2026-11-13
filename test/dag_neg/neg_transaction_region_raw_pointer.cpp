@@ -26,7 +26,7 @@ private:
 int main() {
     const Owner owner = Owner::claim();
     crucible::TransactionLog<16, Owner> log{::fixy::TestRunnerCtx{::foundation::effects::testing::test()}};
-    auto* tx = log.begin_tx(owner, 1);
+    auto& tx = log.begin_tx(owner, 1);
     crucible::RegionNode* region = nullptr;
     (void)log.commit(owner, tx, region, crucible::ContentHash{}, crucible::MerkleHash{1});
     return 0;

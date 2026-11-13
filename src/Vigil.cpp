@@ -75,12 +75,13 @@ bool Vigil::rollback() {
         // it reads the mark, and none gives the foreground a region cut
         // before the rollback.
         bg_.request_mark(ops_before);
-        if (const Transaction* tx = tx_log_.active(stage)) {
-            restored = ::fixy::WeakRef<RegionNode>::from_raw(tx->region.value());
+        const ::fixy::WeakRef<Transaction> active = tx_log_.active(stage);
+        if (active.has_value()) {
+            restored = ::fixy::WeakRef<RegionNode>::from_raw(active->region.value());
             // The foreground gets the region outside the publication slot,
             // so the store keeps it until the foreground writes its holders
             // again.
-            bg_.keep_region(stage, ::fixy::WeakRef<const RegionNode>::from_raw(tx->region.value()));
+            bg_.keep_region(stage, ::fixy::WeakRef<const RegionNode>::from_raw(active->region.value()));
         }
     });
     if (!restored_one) return false;
@@ -113,7 +114,7 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // reserved.  The background thread is the sole writer.
     const uint64_t step = step_.bump();
 
-    auto* tx = tx_log_.begin_tx(stage, step);
+    Transaction& tx = tx_log_.begin_tx(stage, step);
     // The result is discarded because a state-machine logic error here
     // is not something the background thread can recover from.
     //
