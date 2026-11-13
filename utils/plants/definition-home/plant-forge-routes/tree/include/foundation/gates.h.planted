@@ -1,0 +1,59 @@
+#pragma once
+
+#include <foundation/other.h>
+
+namespace foundation::gates {
+
+// A function template that the header declares, and a different file can
+// give a body.
+template <class T>
+constexpr bool declared_admit(T const&);
+
+struct Box {
+    int value = 0;
+    // A constexpr member with no body in the unit.
+    constexpr int peek() const noexcept;
+
+private:
+    // A friend class that a different header defines.
+    friend class ::foundation::other::Spy;
+    // A friend class template that the unit does not define.
+    template <class T>
+    friend class Shadow;
+};
+
+// Two constrained partial specializations of one shape, and an explicit
+// specialization that the header declares and does not define.
+template <class T>
+struct Picked;
+template <class T>
+    requires(sizeof(T) <= 4)
+struct Picked<T*> {};
+template <class T>
+    requires(sizeof(T) > 4)
+struct Picked<T*> {};
+template <>
+struct Picked<char>;
+
+template <class T>
+class Holder {
+    // A friend that matches two constrained partial specializations.
+    friend struct Picked<T*>;
+    int hidden = 0;
+};
+
+class Sealed {
+    // A friend explicit specialization with no definition in the unit.
+    friend struct Picked<char>;
+    int hidden = 0;
+};
+
+}  // namespace foundation::gates
+
+// A member, a member class and a friend of a class of a different header,
+// which this header defines.
+inline int foundation::other::Spy::look() const noexcept { return hidden; }
+struct foundation::other::Spy::Inner {
+    int copy = 0;
+};
+inline int foundation::other::peek_spy(Spy const& spy) noexcept { return spy.hidden; }

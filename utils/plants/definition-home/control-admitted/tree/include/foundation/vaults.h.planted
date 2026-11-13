@@ -1,0 +1,80 @@
+#pragma once
+
+namespace foundation::vaults {
+
+namespace host {
+class Owner;
+}  // namespace host
+
+// A class with its one body in a base source file, and an out-of-line
+// function.
+class Door;
+int open_door(int code) noexcept;
+
+class Vault {
+public:
+    // Out-of-line members with their bodies in a base source file.
+    explicit Vault(int seed) noexcept;
+    ~Vault();
+    static int count;
+
+    // A member that the class defines, a defaulted member, and a member
+    // that this header defines after the class.
+    [[nodiscard]] int read() const noexcept { return hidden_; }
+    Vault(Vault const&) = default;
+    void reset() noexcept;
+
+private:
+    // A friend class and an out-of-line friend function with their bodies
+    // in a base source file, a hidden friend, and a friend that a home row
+    // names.
+    friend class Door;
+    friend int open_door(int code) noexcept;
+    friend constexpr bool operator==(Vault const& left, Vault const& right) noexcept {
+        return left.hidden_ == right.hidden_;
+    }
+    friend class host::Owner;
+    int hidden_ = 0;
+};
+
+inline void Vault::reset() noexcept { hidden_ = 0; }
+
+// A friend that a template parameter names.
+template <class Authority>
+class Keyed {
+    friend Authority;
+    int hidden = 0;
+};
+
+// A friend template whose partial specialization gives each body.
+template <class T>
+struct Slot;
+template <class T>
+struct Slot<T*> {
+    T* pointer = nullptr;
+};
+
+class Table {
+    template <class T>
+    friend struct Slot;
+    int hidden = 0;
+};
+
+// A friend specialization that matches one constrained partial
+// specialization, whose constraints are those of the class template that
+// names the friend.
+template <class T>
+concept Small = sizeof(T) <= 8;
+template <class T>
+struct Mark;
+template <Small T>
+class Tagged {
+    friend struct Mark<Tagged>;
+    T hidden{};
+};
+template <Small T>
+struct Mark<Tagged<T>> {
+    int seen = 0;
+};
+
+}  // namespace foundation::vaults

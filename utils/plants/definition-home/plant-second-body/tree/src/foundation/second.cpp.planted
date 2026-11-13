@@ -1,0 +1,8 @@
+#include <foundation/doors.h>
+
+namespace foundation::doors {
+
+// A second body of the same symbol in a different base source file.
+int open_door(int code) noexcept { return code + 1; }
+
+}  // namespace foundation::doors

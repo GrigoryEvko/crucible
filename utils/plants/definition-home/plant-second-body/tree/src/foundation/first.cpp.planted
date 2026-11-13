@@ -1,0 +1,7 @@
+#include <foundation/doors.h>
+
+namespace foundation::doors {
+
+int open_door(int code) noexcept { return code; }
+
+}  // namespace foundation::doors

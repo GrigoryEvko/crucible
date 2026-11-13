@@ -1,0 +1,3 @@
+// The sentinel unit of include/foundation/forged.h.
+
+#include <foundation/forged.h>

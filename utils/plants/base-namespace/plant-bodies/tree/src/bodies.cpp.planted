@@ -28,5 +28,12 @@ namespace foundation::gates {
 constexpr int defaulted(int first, int second = 2);
 }  // namespace foundation::gates
 
+// A body of a member function of the base, in a namespace of the base that
+// the file opens again.
+namespace foundation::gates {
+constexpr int Box::peek() const noexcept { return value + 1; }
+}  // namespace foundation::gates
+
+static_assert(foundation::gates::Box{}.peek() == 1);
 static_assert(foundation::gates::ReadsDeclared<evil::Evil>);
 static_assert(foundation::gates::defaulted(1) == 3);

@@ -1,0 +1,7 @@
+#pragma once
+
+#include <foundation/vault.h>
+
+// A header of src/ gives the member an inline body, so each unit that
+// includes it reads that body, and no symbol records it.
+inline int foundation::doors::Vault::read() const noexcept { return hidden + 1; }

@@ -1,0 +1,19 @@
+#pragma once
+
+#include <foundation/slots.h>
+
+namespace foundation::fence {
+
+// A different header of the base gives the friend template an explicit and
+// a partial specialization, each with the access of the class Table.
+template <>
+struct Slot<int> {
+    int value = 0;
+};
+
+template <class T>
+struct Slot<T&> {
+    int seen = 0;
+};
+
+}  // namespace foundation::fence

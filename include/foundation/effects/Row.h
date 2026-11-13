@@ -131,8 +131,12 @@ struct canonical_row<Row<>> {
 template <Effect E0, Effect... Es>
 struct canonical_row<Row<E0, Es...>> {
 private:
+    // Only the decltype below names build, so no call instantiates its body.
+    // The body keeps its definition in this header.
     template <std::size_t... Is>
-    static auto build(std::index_sequence<Is...>) -> Row<detail::canonical_effect_pack_v<E0, Es...>.data[Is]...>;
+    static auto build(std::index_sequence<Is...>) -> Row<detail::canonical_effect_pack_v<E0, Es...>.data[Is]...> {
+        return {};
+    }
 
 public:
     using type = decltype(build(std::make_index_sequence<detail::canonical_effect_pack_v<E0, Es...>.count>{}));

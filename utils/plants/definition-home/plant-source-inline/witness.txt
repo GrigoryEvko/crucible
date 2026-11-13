@@ -1,0 +1,9 @@
+# A header of src/ gives an out-of-line member of a class of include/ an
+# inline body.  The unit of the class header admits the member, because it
+# has no body there.  The unit of the source file gives the finding
+# elsewhere at the inline body, and the module of the rule refuses it.
+compile door src/foundation/door.cpp definition-home=on base-namespace=on
+exit door pass
+judge door
+finding door definition-home elsewhere src/foundation/private.h:7:12 | foundation::doors::Vault::read, a member of the class foundation::doors::Vault defined in include/foundation/vault.h
+finding door definition-home body src/foundation/door.cpp:5:5 | _ZN10foundation5doors4peekERKNS0_5VaultE foundation::doors::peek

@@ -1,0 +1,3 @@
+// The sentinel unit of include/foundation/gates.h.
+
+#include <foundation/gates.h>

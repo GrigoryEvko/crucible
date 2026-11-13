@@ -575,9 +575,13 @@ concept MintArgs = permission_mint_args_shaped(MaxCtx, NPerms, {^^Args...});
 // The permission tags of Args past the leading contexts, as a tuple of
 // tags, and the row check every ctx-bound mint shares: each named tag
 // is admitted by the one context.
+// Only the decltype of perm_tags_t names perm_tags_, so no call instantiates
+// its body.  The body keeps its definition in this header.
 template <typename... Args, std::size_t... Is>
 consteval auto perm_tags_(std::index_sequence<Is...>) noexcept
-    -> std::tuple<perm_tag_t<Args...[Is + leading_ctx_count({^^Args...})]>...>;
+    -> std::tuple<perm_tag_t<Args...[Is + leading_ctx_count({^^Args...})]>...> {
+    return {};
+}
 
 template <typename... Args>
 using perm_tags_t =

@@ -1,0 +1,9 @@
+#pragma once
+
+namespace foundation::doors {
+
+// A class that a different header defines.  The unit of this header does not
+// include that header, so only the join of the records sees the definition.
+struct Opaque;
+
+}  // namespace foundation::doors

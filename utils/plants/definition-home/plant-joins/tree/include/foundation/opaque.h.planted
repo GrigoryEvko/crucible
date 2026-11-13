@@ -1,0 +1,10 @@
+#pragma once
+
+namespace foundation::doors {
+
+// The definition of a class that a different header declares.
+struct Opaque {
+    int hidden = 0;
+};
+
+}  // namespace foundation::doors

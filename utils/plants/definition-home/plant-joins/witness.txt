@@ -1,0 +1,14 @@
+# One header declares a class that a different header defines, and neither
+# unit includes the other header.  So each unit gives only records, and the
+# module of the rule joins them: the class is the finding elsewhere at its
+# declaration.
+compile doors test/doors.cpp sentinel=include/foundation/doors.h definition-home=on base-namespace=on
+exit doors pass
+judge doors
+finding doors definition-home declared include/foundation/doors.h:7:8 | foundation::doors::Opaque
+finding doors definition-home header include/foundation/doors.h:1:1 | include/foundation/doors.h
+compile opaque test/opaque.cpp sentinel=include/foundation/opaque.h definition-home=on base-namespace=on
+exit opaque pass
+judge opaque
+finding opaque definition-home defined include/foundation/opaque.h:6:8 | foundation::doors::Opaque
+finding opaque definition-home header include/foundation/opaque.h:1:1 | include/foundation/opaque.h

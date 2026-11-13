@@ -1,0 +1,29 @@
+# The header declares a function template and a constexpr member with no
+# body, names a friend class of a different header, a friend class template
+# that no file defines, a friend that matches two constrained partial
+# specializations and a friend explicit specialization with no definition.
+# It also defines a member, a member class and a friend of a class of a
+# different header.  Each is a finding of the rule, and the module of the
+# rule gives an error for each.  The records name the classes of the header,
+# the class template whose partial specializations give each body, and the
+# header of the unit.
+compile gates test/sentinel.cpp sentinel=include/foundation/gates.h definition-home=on base-namespace=on
+exit gates pass
+judge gates
+finding gates definition-home undefined include/foundation/gates.h:10:16 | foundation::gates::declared_admit
+finding gates definition-home friend include/foundation/gates.h:12:8 | foundation::other::Spy defined in include/foundation/other.h
+finding gates definition-home friend include/foundation/gates.h:12:8 | foundation::gates::Shadow with no definition in the unit
+finding gates definition-home undefined include/foundation/gates.h:15:19 | foundation::gates::Box::peek
+finding gates definition-home friend include/foundation/gates.h:39:7 | a friend specialization of foundation::gates::Picked<T0_0*> that matches a constrained partial specialization, or more than one
+finding gates definition-home friend include/foundation/gates.h:45:7 | foundation::gates::Picked<char> with no definition in the unit
+finding gates definition-home elsewhere include/foundation/gates.h:55:12 | foundation::other::Spy::look, a member of the class foundation::other::Spy defined in include/foundation/other.h
+finding gates definition-home elsewhere include/foundation/gates.h:56:32 | foundation::other::Spy::Inner, a member of the class foundation::other::Spy defined in include/foundation/other.h
+finding gates definition-home elsewhere include/foundation/gates.h:59:12 | foundation::other::peek_spy, a friend of the class foundation::other::Spy defined in include/foundation/other.h
+finding gates definition-home declared include/foundation/gates.h:28:8 | foundation::gates::Picked template
+finding gates definition-home defined include/foundation/gates.h:12:8 | foundation::gates::Box
+finding gates definition-home defined include/foundation/gates.h:39:7 | foundation::gates::Holder
+finding gates definition-home defined include/foundation/gates.h:45:7 | foundation::gates::Sealed
+finding gates definition-home header include/foundation/gates.h:1:1 | include/foundation/gates.h
+# A parse of the same unit gives the same lines.
+compile parse test/sentinel.cpp sentinel=include/foundation/gates.h definition-home=on base-namespace=on stage=syntax findings=gates
+exit parse pass

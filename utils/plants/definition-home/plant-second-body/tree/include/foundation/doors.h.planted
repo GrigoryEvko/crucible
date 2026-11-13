@@ -1,0 +1,8 @@
+#pragma once
+
+namespace foundation::doors {
+
+// An out-of-line function with its one body in a base source file.
+int open_door(int code) noexcept;
+
+}  // namespace foundation::doors

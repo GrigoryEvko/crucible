@@ -129,6 +129,13 @@
 //                    Quarantine.cmake gives it to each compile of the tree,
 //                    and a compile of a plant of a different rule has no such
 //                    argument
+//     definition-home=on
+//                    run the rule definition-home of the family definition
+//                    home on the header of the argument sentinel, and give
+//                    the records of the classes of a base source file
+//                    (definition.cpp).  Quarantine.cmake gives it to each
+//                    compile of the tree, and a compile of a plant of a
+//                    different rule has no such argument
 //
 // THE DEPENDENCIES
 //     utils/assay/loop/stamps.py writes DIR/modes/PATH for each source file of
@@ -422,6 +429,7 @@ void walk_unit() {
     finish_borrow_matches();
     finish_base_namespace();
     walk_fresh_brands();
+    finish_definition_home();
 }
 
 // The parse of the unit, and then the walks of its end.  When the parse
@@ -691,6 +699,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     bool checks_specialization_home = false;
     bool checks_base_namespace = false;
     bool checks_fresh_brand = false;
+    bool checks_definition_home = false;
     for (int index = 0; index < plugin_info->argc; ++index) {
         std::string key = plugin_info->argv[index].key;
         std::string value = plugin_info->argv[index].value != nullptr ? plugin_info->argv[index].value : "";
@@ -775,10 +784,18 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
                 return 1;
             }
             checks_fresh_brand = true;
+        } else if (key == "definition-home") {
+            if (value != "on") {
+                error("quarantine: definition-home is %qs; give definition-home=on to run the rule definition-home, "
+                      "or no such argument",
+                      value.c_str());
+                return 1;
+            }
+            checks_definition_home = true;
         } else {
             error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out, stamps, stamp, "
                   "kinds, sentinel, not-standalone, padded-list-limit, library-records, must-consume, "
-                  "linear-shapes, specialization-home, base-namespace and fresh-brand",
+                  "linear-shapes, specialization-home, base-namespace, fresh-brand and definition-home",
                   key.c_str());
             return 1;
         }
@@ -845,6 +862,9 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     }
     if (checks_fresh_brand) {
         register_fresh_brand(plugin_info->base_name);
+    }
+    if (checks_definition_home) {
+        register_definition_home(plugin_info->base_name);
     }
     front_end_parse_file = lang_hooks.parse_file;
     lang_hooks.parse_file = parse_and_walk;

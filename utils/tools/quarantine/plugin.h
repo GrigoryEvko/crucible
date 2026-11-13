@@ -424,6 +424,28 @@
 //     using-directive       a using-directive of such a namespace, and a
 //                           using-directive of the global namespace before a
 //                           file of the base in the unit
+//     The rule definition-home of the family definition home (definition.cpp,
+//     THE KINDS) reads the header of the argument sentinel only.  A finding of
+//     the rule is an error only in the mode error, and the module of the rule
+//     judges it against the ledger of the rule (is_family_kind):
+//     friend                a friend declaration of a class of the header that
+//                           names an entity that the header does not define
+//     elsewhere             an entity that the header declares, with its
+//                           definition in a different file of the unit, and
+//                           a definition in the header of a member or a
+//                           friend of a class of a different file
+//     undefined             an entity that the header declares, with no
+//                           definition in the unit, other than a class of a
+//                           namespace and an out-of-line entity
+//     declared, defined, header, homed, body
+//                           no finding: the records of a class that the
+//                           header declares and the unit does not define, of
+//                           a class that the header or a base source file
+//                           defines, of the header of the unit, of a friend
+//                           that a home row names, and of an out-of-line
+//                           entity that a base source file defines.  The
+//                           module of the rule joins them over the build
+//                           (definition.cpp, THE CLASSES)
 //     The records of the library code (body.cpp, THE RECORDS) come from the
 //     instructions of each function that the unit compiles.  They have no
 //     rule of the registry.  The tag library-records stands in the place of
@@ -784,6 +806,7 @@ enum class Rule : std::uint8_t {
     specialization_home,
     base_namespace,
     fresh_brand,
+    definition_home,
     // No rule of the registry: the tag of the records of the library code
     // (THE RULES AND THE KINDS).
     library_records,
@@ -1016,6 +1039,15 @@ enum class Kind : std::uint8_t {
     // The family fresh brand (fresh_brand.cpp).
     fresh_deduced_brand,
     fresh_named_brand,
+    // The family definition home (definition.cpp).
+    definition_friend,
+    definition_elsewhere,
+    definition_undefined,
+    definition_declared,
+    definition_defined,
+    definition_header,
+    definition_homed,
+    definition_body,
     // The family library code (body.cpp).
     library_inlined,
     library_call,
@@ -1091,6 +1123,8 @@ inline const char* rule_name(Rule rule) {
             return "base-namespace";
         case Rule::fresh_brand:
             return "fresh-brand";
+        case Rule::definition_home:
+            return "definition-home";
         case Rule::library_records:
             return "library-records";
     }
@@ -1361,6 +1395,22 @@ inline const char* kind_name(Kind kind) {
             return "deduced-brand";
         case Kind::fresh_named_brand:
             return "named-brand";
+        case Kind::definition_friend:
+            return "friend";
+        case Kind::definition_elsewhere:
+            return "elsewhere";
+        case Kind::definition_undefined:
+            return "undefined";
+        case Kind::definition_declared:
+            return "declared";
+        case Kind::definition_defined:
+            return "defined";
+        case Kind::definition_header:
+            return "header";
+        case Kind::definition_homed:
+            return "homed";
+        case Kind::definition_body:
+            return "body";
         case Kind::library_inlined:
             return "inlined";
         case Kind::library_call:
@@ -1515,6 +1565,15 @@ inline Rule rule_of(Kind kind) {
         case Kind::fresh_deduced_brand:
         case Kind::fresh_named_brand:
             return Rule::fresh_brand;
+        case Kind::definition_friend:
+        case Kind::definition_elsewhere:
+        case Kind::definition_undefined:
+        case Kind::definition_declared:
+        case Kind::definition_defined:
+        case Kind::definition_header:
+        case Kind::definition_homed:
+        case Kind::definition_body:
+            return Rule::definition_home;
         case Kind::library_inlined:
         case Kind::library_call:
         case Kind::library_reference:
@@ -1554,8 +1613,8 @@ inline bool is_each_mode_kind(Kind kind) {
 
 // True when a rule of the families declaration property (declaration.cpp),
 // expression shape (expression.cpp), owner (owner.cpp), home (home.cpp),
-// specialization home (specialization.cpp) and linear (linear.cpp) gives the
-// kind, or the rule door-unit (include.cpp).  Such a finding is an
+// specialization home (specialization.cpp), definition home (definition.cpp)
+// and linear (linear.cpp) gives the kind, or the rule door-unit (include.cpp).  Such a finding is an
 // error only in the mode error, no opt-out region covers it, and no enforce
 // mode changes it.  The module of its rule judges it against the ledger of the
 // rule.  plugin.cpp reports each such line in one way (report_family).  A
@@ -1588,6 +1647,7 @@ inline bool is_family_kind(Kind kind) {
         case Rule::brand_escape:
         case Rule::brand_reentry:
         case Rule::specialization_home:
+        case Rule::definition_home:
         case Rule::library_records:
             return true;
         default:
@@ -1599,8 +1659,9 @@ inline bool is_family_kind(Kind kind) {
 // records, and no finding of its rule.  The record of a mint, the record of an
 // alias of a class with a member mint, the line of a grant set that the unit
 // compared, a site that a home row admits (at-home), a linear-door row that
-// the unit read (door), a template with the open mark (open-extension), and
-// each record of the library code.
+// the unit read (door), a template with the open mark (open-extension), the
+// five records of the rule definition-home, and each record of the library
+// code.
 inline bool is_record_kind(Kind kind) {
     switch (kind) {
         case Kind::mint_record:
@@ -1609,6 +1670,11 @@ inline bool is_record_kind(Kind kind) {
         case Kind::home_at_home:
         case Kind::linear_door:
         case Kind::specialization_open_extension:
+        case Kind::definition_declared:
+        case Kind::definition_defined:
+        case Kind::definition_header:
+        case Kind::definition_homed:
+        case Kind::definition_body:
         case Kind::library_inlined:
         case Kind::library_call:
         case Kind::library_reference:
@@ -1763,6 +1829,9 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"base-namespace", "using-directive"},
     {"fresh-brand", "deduced-brand"},
     {"fresh-brand", "named-brand"},
+    {"definition-home", "friend"},
+    {"definition-home", "elsewhere"},
+    {"definition-home", "undefined"},
 };
 
 // True when the entity is part of the key of a finding: two findings of such
@@ -2751,6 +2820,20 @@ void register_base_namespace(const char* plugin_name);
 bool is_base_namespace_active();
 void finish_base_namespace();
 void report_base_namespace(const Finding& finding);
+// namespace.cpp: in_base_namespace() is true for the namespace foundation or
+// fixy of the global namespace and each namespace inside it (THE NAMESPACES of
+// namespace.cpp).  enclosing_namespace_of() gives the namespace that holds
+// DECL through each class, or NULL_TREE for a declaration of a function scope,
+// and CLASS_SCOPE gets the outermost class that holds DECL, or NULL_TREE.
+bool in_base_namespace(tree ns);
+tree enclosing_namespace_of(tree decl, tree& class_scope);
+
+// definition.cpp: the family definition home, the rule definition-home.
+// finish_definition_home() walks the header of the argument sentinel after
+// the parse, or the classes of a base source file (THE READS, THE CLASSES of
+// definition.cpp).
+void register_definition_home(const char* plugin_name);
+void finish_definition_home();
 
 // body.cpp: the family library code, the pass that reads the instructions of
 // each function.

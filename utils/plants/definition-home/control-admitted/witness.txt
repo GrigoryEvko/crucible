@@ -1,0 +1,30 @@
+# Each form that the rule admits: out-of-line members, a friend class and an
+# out-of-line friend function with their one body in a base source file, a
+# member that the header defines, a defaulted member, a hidden friend, a
+# friend that a home row names, a friend that a template parameter names, a
+# friend template whose partial specialization gives each body, and a friend
+# that matches one partial specialization with the constraints of the class
+# template that names it.  The module
+# of the rule joins the records of the two compiles and gives no error.  The
+# rule proof-routes reads the friend template too.
+compile vaults test/vaults.cpp sentinel=include/foundation/vaults.h definition-home=on base-namespace=on
+exit vaults pass
+judge vaults
+finding vaults definition-home declared include/foundation/vaults.h:11:7 | foundation::vaults::Door
+finding vaults definition-home homed include/foundation/vaults.h:14:7 | foundation::vaults::host::Owner home owner line 6 include/foundation/owner.h
+finding vaults definition-home defined include/foundation/vaults.h:14:7 | foundation::vaults::Vault
+finding vaults definition-home defined include/foundation/vaults.h:44:7 | foundation::vaults::Keyed
+finding vaults definition-home declared include/foundation/vaults.h:51:8 | foundation::vaults::Slot template
+finding vaults definition-home defined include/foundation/vaults.h:57:7 | foundation::vaults::Table
+finding vaults definition-home declared include/foundation/vaults.h:69:8 | foundation::vaults::Mark template
+finding vaults definition-home defined include/foundation/vaults.h:71:7 | foundation::vaults::Tagged
+finding vaults definition-home header include/foundation/vaults.h:1:1 | include/foundation/vaults.h
+finding vaults proof-routes friend-template-specialization include/foundation/vaults.h:53:8 | friend-template-specialization: foundation::vaults::Slot
+compile source src/foundation/vaults.cpp definition-home=on base-namespace=on
+exit source pass
+judge source
+finding source definition-home defined src/foundation/vaults.cpp:5:7 | foundation::vaults::Door
+finding source definition-home body src/foundation/vaults.cpp:10:5 | _ZN10foundation6vaults9open_doorEi foundation::vaults::open_door
+finding source definition-home body src/foundation/vaults.cpp:12:1 | _ZN10foundation6vaults5VaultC4Ei foundation::vaults::Vault::Vault
+finding source definition-home body src/foundation/vaults.cpp:14:1 | _ZN10foundation6vaults5VaultD4Ev foundation::vaults::Vault::~Vault
+finding source definition-home body src/foundation/vaults.cpp:16:5 | _ZN10foundation6vaults5Vault5countE foundation::vaults::Vault::count

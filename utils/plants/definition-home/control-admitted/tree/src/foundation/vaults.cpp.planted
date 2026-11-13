@@ -1,0 +1,18 @@
+#include <foundation/vaults.h>
+
+namespace foundation::vaults {
+
+class Door {
+public:
+    static int open(Vault const& vault) noexcept { return vault.hidden_; }
+};
+
+int open_door(int code) noexcept { return code; }
+
+Vault::Vault(int seed) noexcept : hidden_(seed) {}
+
+Vault::~Vault() { hidden_ = 0; }
+
+int Vault::count = 0;
+
+}  // namespace foundation::vaults

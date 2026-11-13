@@ -1188,7 +1188,12 @@ instructions to a compile of six units of 2.8 to 39.2 billion instructions:
 `fresh-brand=on` of each compile adds the rule `fresh-brand` (§XXI "Fresh
 brands"). On 2026-11-13, that rule added 2.7 to 20.5 million user instructions
 to a compile of six units of 3.7 to 39.2 billion instructions: 0.05% to 0.09%
-of the compile with the plugin, and 0.06% of their sum. ccache ignores the paths in the plugin arguments, so
+of the compile with the plugin, and 0.06% of their sum. The
+argument `definition-home=on` of each compile adds the rule `definition-home`
+(§XXII "The base and the quarantined tree (R1)"). On 2026-11-13, that rule
+added 0.4 to 13.9 million user instructions to a compile of six units of 3.9
+to 39.2 billion instructions: 0.003% to 0.22% of the compile with the plugin,
+and 0.04% of their sum. The sentinel unit of a base header pays the most. ccache ignores the paths in the plugin arguments, so
 the build directories of two work trees share the cache. ccache also hashes
 the enforce rows of the rule table.
 
@@ -3096,6 +3101,15 @@ A file outside the base declares nothing in the namespace `foundation` or `fixy`
 - A using-directive in such a namespace, and a using-directive of the global namespace before a file of the base in the unit.
 
 An explicit or a partial specialization is no site, because the rules `home` and `specialization-home` judge it. A coherent specialization of a template with the open mark, such as `niche<T>` in the file of `T`, is then the one extension of the base that a different file can write. A type of a different file extends a function of the base through an overload beside its own definition. The control `control-known-gaps` of `utils/plants/base-namespace/` pins the routes that the rule does not see.
+
+In the base, each entity that a header of `include/foundation` or `include/fixy` declares has its definition in that header. A unit that includes only the header can give a definition of its own, and a definition of a member or of a friend has the access of the class. The rule `definition-home` of the quarantine plugin (`utils/tools/quarantine/definition.cpp`) reads each such header in its sentinel unit. It gives a line for each of these items:
+- A friend that the header does not define
+- A definition in a different file of the unit, and a definition of a member or a friend of a class of a different file in the header, or with inline, constexpr or a template in a file of `src/foundation` or `src/fixy`
+- An entity with no definition in the unit.
+
+An out-of-line entity has one body in the program, in a source file: a function with external linkage and no inline, constexpr or template, or a static data member with no inline or constexpr. Such a member, friend or function gives no line when its body is in `src/foundation` or `src/fixy`, where §XV rule 3 and the door rule R4 put it. A friend that a home row of the rule table names gives no line either, because the rule `home` refuses each definition outside the paths of its row. A unit cannot see a definition in a file that it does not include. So the plugin gives records of each class that a header declares or defines, and of each body of a base source file. The module of the rule (`utils/assay/guard/engines/plugin/definition_home.py`) joins the records over the build.
+
+A class that a header declares and a different header defines is a finding, and so is a class or a symbol that two files define. A class that no file defines, such as a tag, or a class template whose partial specializations give each body, is no finding. The module refuses a build in which a header of the two layers has no record of its sentinel unit. The rule is in report mode: `utils/ledgers/definition-home.txt` counts the findings of each directory and kind, and each count row gives its reason. The control `control-known-gaps` of `utils/plants/definition-home/` pins a route that the rule does not see.
 
 ### The rule for each new line (R6)
 

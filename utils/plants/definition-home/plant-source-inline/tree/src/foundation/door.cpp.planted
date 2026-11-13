@@ -1,0 +1,7 @@
+#include "private.h"
+
+namespace foundation::doors {
+
+int peek(Vault const& vault) noexcept { return vault.read(); }
+
+}  // namespace foundation::doors

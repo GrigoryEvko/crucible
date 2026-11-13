@@ -1,0 +1,22 @@
+#pragma once
+
+namespace foundation::fence {
+
+// A class template whose partial specialization gives each body, and a class
+// that names the template as a friend.  The rule definition-home admits the
+// friend, because the rule specialization-home holds each specialization to
+// this header.
+template <class T>
+struct Slot;
+template <class T>
+struct Slot<T*> {
+    T* pointer = nullptr;
+};
+
+class Table {
+    template <class T>
+    friend struct Slot;
+    int hidden = 0;
+};
+
+}  // namespace foundation::fence

@@ -693,8 +693,12 @@ template <typename... Ts>
     return indices;
 }
 
+// Only a decltype names reassemble_tuple_impl, so no call instantiates its
+// body.  The body keeps its definition in this header.
 template <typename Tuple, std::size_t... Is>
-auto reassemble_tuple_impl(std::index_sequence<Is...>) -> std::tuple<std::tuple_element_t<Is, Tuple>...>;
+auto reassemble_tuple_impl(std::index_sequence<Is...>) -> std::tuple<std::tuple_element_t<Is, Tuple>...> {
+    return {};
+}
 
 }  // namespace detail
 
@@ -710,9 +714,13 @@ private:
         }
     }();
 
+    // Only the decltype below names build, so no call instantiates its body.
+    // The body keeps its definition in this header.
     template <std::size_t... Is>
     static auto build(std::index_sequence<Is...>)
-        -> std::tuple<std::tuple_element_t<sorted_indices[Is], source_tuple>...>;
+        -> std::tuple<std::tuple_element_t<sorted_indices[Is], source_tuple>...> {
+        return {};
+    }
 
 public:
     using type = decltype(build(std::make_index_sequence<sizeof...(Ts)>{}));

@@ -123,38 +123,6 @@ std::vector<GlobalDirective> global_directives;
 // time.
 std::unordered_set<tree> walked_namespaces;
 
-// True when NS is a namespace of the base (THE NAMESPACES).  Complexity:
-// O(depth of the namespaces).
-bool is_base_namespace(tree ns) {
-    if (ns == NULL_TREE || TREE_CODE(ns) != NAMESPACE_DECL || ns == global_namespace) {
-        return false;
-    }
-    tree top = top_namespace(ns);
-    return top != global_namespace && (DECL_NAME(top) == names.foundation || DECL_NAME(top) == names.fixy);
-}
-
-// The namespace that holds DECL through each class, or NULL_TREE for a
-// declaration of a function scope.  CLASS_SCOPE gets the outermost class that
-// holds DECL, or NULL_TREE.
-tree enclosing_namespace(tree decl, tree& class_scope) {
-    class_scope = NULL_TREE;
-    tree current = TYPE_P(decl) ? CP_TYPE_CONTEXT(TYPE_MAIN_VARIANT(decl)) : CP_DECL_CONTEXT(decl);
-    for (int depth = 0; current != NULL_TREE && depth < kTypeDepth; ++depth) {
-        if (TREE_CODE(current) == NAMESPACE_DECL) {
-            return current;
-        }
-        if (TREE_CODE(current) == FUNCTION_DECL) {
-            return NULL_TREE;
-        }
-        if (!TYPE_P(current)) {
-            return NULL_TREE;
-        }
-        class_scope = TYPE_MAIN_VARIANT(current);
-        current = CP_TYPE_CONTEXT(class_scope);
-    }
-    return NULL_TREE;
-}
-
 // True when the rule judges a declaration in FILE (THE FILES): a file of the
 // root or of the build directory that is not of the base, not a host file
 // and not a kernel file.  A check file of a header of the base counts as its
@@ -258,8 +226,8 @@ void judge_declaration(tree decl, location_t location, bool may_read_parser) {
         return;
     }
     tree class_scope = NULL_TREE;
-    tree ns = enclosing_namespace(decl, class_scope);
-    if (!is_base_namespace(ns)) {
+    tree ns = enclosing_namespace_of(decl, class_scope);
+    if (!in_base_namespace(ns)) {
         return;
     }
     if (class_scope != NULL_TREE) {
@@ -329,7 +297,7 @@ void on_using_form(void* gcc_data, void*) {
     switch (data->kind) {
         case PLUGIN_USING_DECLARATION:
         case PLUGIN_NAMESPACE_ALIAS:
-            if (is_base_namespace(scope) && data->decl != NULL_TREE && DECL_P(data->decl)) {
+            if (in_base_namespace(scope) && data->decl != NULL_TREE && DECL_P(data->decl)) {
                 record_site(Kind::base_namespace_declaration, data->location, qualified_name(data->decl));
             }
             return;
@@ -338,7 +306,7 @@ void on_using_form(void* gcc_data, void*) {
                 return;
             }
             std::string entity = qualified_name(data->target);
-            if (is_base_namespace(scope)) {
+            if (in_base_namespace(scope)) {
                 record_site(Kind::base_namespace_using_directive, data->location, entity);
             } else if (scope == global_namespace && is_judged_at(data->location)) {
                 global_directives.push_back(GlobalDirective{data->location, std::move(entity)});
@@ -438,6 +406,35 @@ location_t last_base_map_start() {
 }
 
 }  // namespace
+
+bool in_base_namespace(tree ns) {
+    static tree const foundation = get_identifier("foundation");
+    static tree const fixy = get_identifier("fixy");
+    if (ns == NULL_TREE || TREE_CODE(ns) != NAMESPACE_DECL || ns == global_namespace) {
+        return false;
+    }
+    tree top = top_namespace(ns);
+    return top != global_namespace && (DECL_NAME(top) == foundation || DECL_NAME(top) == fixy);
+}
+
+tree enclosing_namespace_of(tree decl, tree& class_scope) {
+    class_scope = NULL_TREE;
+    tree current = TYPE_P(decl) ? CP_TYPE_CONTEXT(TYPE_MAIN_VARIANT(decl)) : CP_DECL_CONTEXT(decl);
+    for (int depth = 0; current != NULL_TREE && depth < kTypeDepth; ++depth) {
+        if (TREE_CODE(current) == NAMESPACE_DECL) {
+            return current;
+        }
+        if (TREE_CODE(current) == FUNCTION_DECL) {
+            return NULL_TREE;
+        }
+        if (!TYPE_P(current)) {
+            return NULL_TREE;
+        }
+        class_scope = TYPE_MAIN_VARIANT(current);
+        current = CP_TYPE_CONTEXT(class_scope);
+    }
+    return NULL_TREE;
+}
 
 bool is_base_namespace_active() { return is_active; }
 

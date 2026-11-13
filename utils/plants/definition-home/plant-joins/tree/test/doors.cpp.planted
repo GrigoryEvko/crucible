@@ -1,0 +1,3 @@
+// The sentinel unit of include/foundation/doors.h.
+
+#include <foundation/doors.h>

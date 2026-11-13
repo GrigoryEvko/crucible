@@ -50,7 +50,7 @@ THE KEYS OF A COMPILE
                     of utils/registry.txt, as for each compile of the tree
       build=PATH, stamps=PATH, stamp=TEXT, sentinel=PATH, not-standalone=PATH,
       library-records=on, must-consume=on, linear-shapes=on, specialization-home=on,
-      base-namespace=on, fresh-brand=on
+      base-namespace=on, fresh-brand=on, definition-home=on
                     the plugin arguments, with no default.  A sentinel is
                     relative to the root, and each other PATH is a path of
                     the manifest.  Only a compile with library-records=on has
@@ -58,8 +58,8 @@ THE KEYS OF A COMPILE
                     linear-shapes=on has the lines of the rules of the shapes
                     of the family linear, and only a compile with
                     must-consume=on, specialization-home=on,
-                    base-namespace=on or fresh-brand=on has the lines of
-                    that rule
+                    base-namespace=on, fresh-brand=on or definition-home=on
+                    has the lines of that rule
     The value "-" gives no argument.
       out=no        no argument out.  By default the witness gives out=DIR, a
                     directory of its own, and reads the report file there
@@ -250,6 +250,7 @@ PLUGIN_KEYS = (
     "specialization-home",
     "base-namespace",
     "fresh-brand",
+    "definition-home",
 )
 PATH_KEYS = frozenset({"root", "rules", "build", "stamps", "not-standalone"})
 DEFAULTS = {"root": ".", "rules": "rules.txt", "mode": "report"}

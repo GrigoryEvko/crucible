@@ -1,0 +1,19 @@
+#pragma once
+
+namespace foundation::other {
+
+// A class of a different header, whose members and friend a forged header
+// defines.
+class Spy {
+public:
+    int look() const noexcept;
+    struct Inner;
+
+private:
+    friend int peek_spy(Spy const& spy) noexcept;
+    int hidden = 0;
+};
+
+int peek_spy(Spy const& spy) noexcept;
+
+}  // namespace foundation::other

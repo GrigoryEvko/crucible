@@ -1,0 +1,9 @@
+# A known gap of the rule (definition.cpp, WHAT THE FAMILY DOES NOT READ).  The
+# header declares a class that a different header defines, and its check file
+# includes that header after it.  GCC moves the location of the class to its
+# definition, so the unit gives no record declared and no finding.  The
+# module of the rule gives no error.
+compile gap test/layer/checks/foundation/gap.cpp sentinel=include/foundation/gap.h definition-home=on base-namespace=on
+exit gap pass
+judge gap
+finding gap definition-home header include/foundation/gap.h:1:1 | include/foundation/gap.h

@@ -1,0 +1,11 @@
+# The fence of a friend template whose partial specialization gives each
+# body (definition.cpp, THE KINDS).  A different header of the base gives the
+# template an explicit and a partial specialization.  The rule
+# specialization-home refuses each, in each mode.
+compile fence test/forged.cpp sentinel=include/foundation/forged.h specialization-home=on definition-home=on base-namespace=on errors=fence
+exit fence fail
+finding fence specialization-home specialization include/foundation/forged.h:10:8 | foundation::fence::Slot
+finding fence specialization-home specialization include/foundation/forged.h:15:8 | foundation::fence::Slot
+finding fence proof-routes friend-template-specialization include/foundation/forged.h:10:8 | friend-template-specialization: foundation::fence::Slot
+finding fence proof-routes friend-template-specialization include/foundation/forged.h:15:8 | friend-template-specialization: foundation::fence::Slot
+finding fence definition-home header include/foundation/forged.h:1:1 | include/foundation/forged.h

@@ -1,0 +1,13 @@
+# Two base source files give a body of one out-of-line function.  No unit
+# sees the two bodies, so each unit gives its record body, and the module of
+# the rule joins them: the later body is the finding elsewhere.  An archive
+# of the two objects links one of them and gives no error, so only the join
+# sees the second body.
+compile first src/foundation/first.cpp definition-home=on base-namespace=on
+exit first pass
+judge first
+finding first definition-home body src/foundation/first.cpp:5:5 | _ZN10foundation5doors9open_doorEi foundation::doors::open_door
+compile second src/foundation/second.cpp definition-home=on base-namespace=on
+exit second pass
+judge second
+finding second definition-home body src/foundation/second.cpp:6:5 | _ZN10foundation5doors9open_doorEi foundation::doors::open_door

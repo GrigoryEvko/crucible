@@ -1,0 +1,9 @@
+#pragma once
+
+namespace foundation::gap {
+
+struct Hidden {
+    int value = 0;
+};
+
+}  // namespace foundation::gap

@@ -1,0 +1,3 @@
+// The sentinel unit of include/foundation/vaults.h.
+
+#include <foundation/vaults.h>

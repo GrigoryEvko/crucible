@@ -1,0 +1,15 @@
+#pragma once
+
+namespace foundation::doors {
+
+// An out-of-line member, which the rule admits with no body in the unit of
+// the header.
+class Vault {
+public:
+    int read() const noexcept;
+
+private:
+    int hidden = 0;
+};
+
+}  // namespace foundation::doors

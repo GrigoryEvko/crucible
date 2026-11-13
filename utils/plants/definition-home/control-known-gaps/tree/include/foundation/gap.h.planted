@@ -1,0 +1,10 @@
+#pragma once
+
+namespace foundation::gap {
+
+// A class that a different header defines.  The check file of this header
+// includes that header after this one, so GCC moves the location of the class
+// to its definition, and the unit sees no declaration in this header.
+struct Hidden;
+
+}  // namespace foundation::gap

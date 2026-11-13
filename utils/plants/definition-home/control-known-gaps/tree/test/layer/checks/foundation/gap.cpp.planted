@@ -1,0 +1,8 @@
+// The check file of include/foundation/gap.h.  It includes the header of the
+// definition of foundation::gap::Hidden after the header.
+
+#include <foundation/gap.h>
+
+#include <foundation/hidden.h>
+
+static_assert(sizeof(foundation::gap::Hidden) == sizeof(int));
