@@ -2857,6 +2857,44 @@ foundation_neg_compile_test(neg_core_heap_array_mint_forged_body
   "no matching function for call to .foundation::core::HeapArray<int>::HeapArray\\(<brace-enclosed initializer list>\\)."
   "HeapArray\\(const foundation::core::detail::HeapArrayKey&, std::size_t, const T&\\) requires  is_nothrow_copy_constructible_v<T>")
 
+# The address of a function that gives a Ref with a target type, and an
+# explicit specialization with a declared type, set no brand.  The result
+# type holds the brand in undeducible_brand_t, so the fresh default applies,
+# and a type that names a held brand matches no function.
+foundation_neg_compile_test(neg_core_fixed_array_get_brand_from_target_type
+  "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedArray<int, 4>::\\*\\)\\(std::size_t\\) & noexcept."
+  "typename foundation::brand::undeducible_brand<Fresh>::type> > foundation::core::FixedArray<T, N>::get\\(std::size_t\\) &")
+foundation_neg_compile_test(neg_core_fixed_array_get_const_brand_from_target_type
+  "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedArray<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
+  "typename foundation::brand::undeducible_brand<Fresh>::type> > foundation::core::FixedArray<T, N>::get\\(std::size_t\\) const &")
+foundation_neg_compile_test(neg_core_heap_array_get_brand_from_target_type
+  "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<int, \\{anonymous\\}::Held> > \\(class foundation::core::HeapArray<int, 4>::\\*\\)\\(std::size_t\\) & noexcept."
+  "typename foundation::brand::undeducible_brand<Fresh>::type> > foundation::core::HeapArray<T, Align>::get\\(std::size_t\\) &")
+foundation_neg_compile_test(neg_core_heap_array_get_const_brand_from_target_type
+  "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::HeapArray<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
+  "typename foundation::brand::undeducible_brand<Fresh>::type> > foundation::core::HeapArray<T, Align>::get\\(std::size_t\\) const &")
+foundation_neg_compile_test(neg_core_fixed_list_push_brand_from_target_type
+  "no matches converting function .push. to type .using Pick = class foundation::core::Result<foundation::core::Ref<int, \\{anonymous\\}::Held>, foundation::core::Full<int> > \\(class foundation::core::FixedList<int, 4>::\\*\\)\\(int\\) & noexcept."
+  "typename foundation::brand::undeducible_brand<Fresh>::type>, foundation::core::Full<T> > foundation::core::FixedList<T, N>::push\\(T\\) &")
+foundation_neg_compile_test(neg_core_fixed_list_get_brand_from_target_type
+  "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedList<int, 4>::\\*\\)\\(std::size_t\\) & noexcept."
+  "typename foundation::brand::undeducible_brand<Fresh>::type> > foundation::core::FixedList<T, N>::get\\(std::size_t\\) &")
+foundation_neg_compile_test(neg_core_fixed_list_get_const_brand_from_target_type
+  "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedList<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
+  "typename foundation::brand::undeducible_brand<Fresh>::type> > foundation::core::FixedList<T, N>::get\\(std::size_t\\) const &")
+foundation_neg_compile_test(neg_core_zip_fixed_brand_from_target_type
+  "invalid .static_cast. from type .<unresolved overloaded function type>. to type .Pick."
+  "foundation::core::detail::ZipRange<int, int, \\{anonymous\\}::Held> \\(\\*\\)\\(foundation::core::View<int, 4>, foundation::core::View<int, 4>\\) noexcept")
+foundation_neg_compile_test(neg_core_zip_dynamic_brand_from_target_type
+  "invalid .static_cast. from type .<unresolved overloaded function type>. to type .Pick."
+  "foundation::core::Result<foundation::core::detail::ZipRange<int, int, \\{anonymous\\}::Held>, foundation::core::LengthMismatch> \\(\\*\\)\\(foundation::core::View<int>, foundation::core::View<int, 4>\\) noexcept")
+foundation_neg_compile_test(neg_core_zip_fixed_brand_from_specialization
+  "template-id .zip<>. for .constexpr foundation::core::detail::ZipRange<int, int, \\{anonymous\\}::Held> foundation::core::zip\\(View<int, 4>, View<int, 4>\\). does not match any template declaration"
+  "foundation::core::detail::ZipRange<First, Second, typename foundation::brand::undeducible_brand<Fresh>::type> foundation::core::zip")
+foundation_neg_compile_test(neg_core_zip_dynamic_brand_from_specialization
+  "template-id .zip<>. for .constexpr foundation::core::Result<foundation::core::detail::ZipRange<int, int, \\{anonymous\\}::Held>, foundation::core::LengthMismatch> foundation::core::zip\\(View<int, 18446744073709551615>, View<int, 4>\\). does not match any template declaration"
+  "foundation::core::Result<foundation::core::detail::ZipRange<First, Second, typename foundation::brand::undeducible_brand<Fresh>::type>, foundation::core::LengthMismatch>")
+
 # enumerate() needs the proven indexes of indices(), so a View of a dynamic
 # extent has none.  zip of two Views of different fixed extents is refused
 # at compile time, and the loop of a temporary array is refused.

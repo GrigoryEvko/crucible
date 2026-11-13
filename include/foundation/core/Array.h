@@ -232,12 +232,14 @@ public:
 // The pairs of two Views of one fixed extent.  The type proves the counts
 // equal, so the loop needs no compare before its first step.  Each Ref of
 // one call has the fresh brand of that call, and the pack refuses each
-// explicit argument.
+// explicit argument.  The result type holds the brand in
+// undeducible_brand_t, so neither a target type nor the declared type of a
+// specialization sets it (foundation/Brand.h).
 template <class... Refused, class First, class Second, std::size_t Extent,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
     requires(sizeof...(Refused) == 0 && Extent != dynamic_extent)
-[[nodiscard]] constexpr detail::ZipRange<First, Second, Fresh> zip(View<First, Extent> first,
-                                                                   View<Second, Extent> second) noexcept {
+[[nodiscard]] constexpr detail::ZipRange<First, Second, ::foundation::brand::undeducible_brand_t<Fresh>>
+zip(View<First, Extent> first, View<Second, Extent> second) noexcept {
     return detail::ZipRange<First, Second, Fresh>{first, second};
 }
 
@@ -250,11 +252,12 @@ void zip(View<First, FirstExtent>, View<Second, SecondExtent>) =
 
 // The pairs of two Views when a View has a dynamic extent: the loop, or
 // LengthMismatch when the counts differ.  One compare.  Each Ref of one call
-// has the fresh brand of that call.
+// has the fresh brand of that call, and deduction cannot set it.
 template <class... Refused, class First, std::size_t FirstExtent, class Second, std::size_t SecondExtent,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
     requires(sizeof...(Refused) == 0 && (FirstExtent == dynamic_extent || SecondExtent == dynamic_extent))
-[[nodiscard]] constexpr Result<detail::ZipRange<First, Second, Fresh>, LengthMismatch>
+[[nodiscard]] constexpr Result<detail::ZipRange<First, Second, ::foundation::brand::undeducible_brand_t<Fresh>>,
+                               LengthMismatch>
 zip(View<First, FirstExtent> first, View<Second, SecondExtent> second) noexcept {
     if (first.size() != second.size()) {
         return err(LengthMismatch{});
@@ -354,15 +357,18 @@ public:
 
     // The element at a position that no type proves, as an Option of a
     // Ref with the fresh brand of the call, or no value at or past N: one
-    // compare.  The pack refuses each explicit argument.
+    // compare.  The pack refuses each explicit argument, and the result
+    // type holds the brand in undeducible_brand_t.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
-    [[nodiscard]] constexpr Option<Ref<T, Fresh>> get(std::size_t position) & noexcept {
+    [[nodiscard]] constexpr Option<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>>
+    get(std::size_t position) & noexcept {
         return detail::element_at_<Fresh>(&elements_[0], N, position);
     }
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
-    [[nodiscard]] constexpr Option<Ref<T const, Fresh>> get(std::size_t position) const& noexcept {
+    [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
+    get(std::size_t position) const& noexcept {
         return detail::element_at_<Fresh>(&elements_[0], N, position);
     }
     void get(std::size_t) && = delete("an element of a temporary FixedArray dangles at the end of the full expression");
@@ -593,15 +599,18 @@ public:
 
     // The element at position, as an Option of a Ref with the fresh brand
     // of the call, or no value at or past the count: one compare.  The pack
-    // refuses each explicit argument.
+    // refuses each explicit argument, and the result type holds the brand in
+    // undeducible_brand_t.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
-    [[nodiscard]] constexpr Option<Ref<T, Fresh>> get(std::size_t position) & noexcept {
+    [[nodiscard]] constexpr Option<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>>
+    get(std::size_t position) & noexcept {
         return detail::element_at_<Fresh>(first_, count_, position);
     }
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
-    [[nodiscard]] constexpr Option<Ref<T const, Fresh>> get(std::size_t position) const& noexcept {
+    [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
+    get(std::size_t position) const& noexcept {
         return detail::element_at_<Fresh>(static_cast<T const*>(first_), count_, position);
     }
     void get(std::size_t) && = delete("an element of a temporary HeapArray dangles at the end of the full expression");

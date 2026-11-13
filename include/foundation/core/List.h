@@ -256,10 +256,12 @@ public:
 
     // Puts value after the last element, and gives a Ref with the fresh brand
     // of the call, or Full<T> when the list holds N elements.  One compare.
-    // The pack refuses each explicit argument.
+    // The pack refuses each explicit argument, and the result type holds the
+    // brand in undeducible_brand_t.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
-    [[nodiscard]] constexpr Result<Ref<T, Fresh>, Full<T>> push(T value) & noexcept {
+    [[nodiscard]] constexpr Result<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>, Full<T>>
+    push(T value) & noexcept {
         if (count_ == N) [[unlikely]] {
             if constexpr (::foundation::linear::is_linear_type(^^T)) {
                 return err(Full<T>{static_cast<T&&>(value)});
@@ -330,10 +332,12 @@ public:
 
     // The element at position, as an Option of a Ref with the fresh brand of
     // the call, or no value at or past size(): one compare.  The pack refuses
-    // each explicit argument.
+    // each explicit argument, and the result type holds the brand in
+    // undeducible_brand_t.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
-    [[nodiscard]] constexpr Option<Ref<T, Fresh>> get(std::size_t position) & noexcept {
+    [[nodiscard]] constexpr Option<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>>
+    get(std::size_t position) & noexcept {
         if (position >= size()) {
             return Option<Ref<T, Fresh>>{none};
         }
@@ -341,7 +345,8 @@ public:
     }
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
-    [[nodiscard]] constexpr Option<Ref<T const, Fresh>> get(std::size_t position) const& noexcept {
+    [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
+    get(std::size_t position) const& noexcept {
         if (position >= size()) {
             return Option<Ref<T const, Fresh>>{none};
         }
