@@ -271,7 +271,7 @@ void test_built_graph_owns_its_metadata() {
     auto [graph, parts] = std::move(built).expect("the work builds a graph");
 
     const std::less<const crucible::TensorMeta*> before{};
-    const crucible::TensorMeta* const log_begin = metalog->entries;
+    const crucible::TensorMeta* const log_begin = metalog->entries_buffer_.data();
     const crucible::TensorMeta* const log_end = log_begin + MetaLog::CAPACITY;
     for (uint32_t op = 0; op < OPS; ++op) {
         const crucible::TensorMeta* const metas = graph->ops[op].output_metas;

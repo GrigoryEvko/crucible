@@ -33,7 +33,6 @@
 // order that thread produced. Refer to the serialisation note in
 // vessel/torch/crucible_native.py.
 
-#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -193,10 +192,10 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // advances, so an observation that moved backwards is a lost acquire.
     alignas(64)::fixy::Monotonic<uint64_t> cached_tail_ = ::fixy::mint_monotonic<uint64_t>(0);
 
-    alignas(64) std::array<Entry, CAPACITY> entries{};
-    std::array<MetaIndex, CAPACITY> meta_starts{};
-    std::array<ScopeHash, CAPACITY> scope_hashes{};
-    std::array<CallsiteHash, CAPACITY> callsite_hashes{};
+    alignas(64)::fixy::FixedArray<Entry, CAPACITY> entries{};
+    ::fixy::FixedArray<MetaIndex, CAPACITY> meta_starts{};
+    ::fixy::FixedArray<ScopeHash, CAPACITY> scope_hashes{};
+    ::fixy::FixedArray<CallsiteHash, CAPACITY> callsite_hashes{};
 
     TraceRing() noexcept {
         crucible::warden::register_hot_region(this, sizeof(*this),

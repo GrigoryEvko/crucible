@@ -50,7 +50,7 @@ struct CRUCIBLE_OWNER MetaLog {
     // AtomicMonotonic carries its own alignas(64) and is 64 bytes wide, so
     // head fills bytes 0 through 63 by itself. An append therefore touches
     // two of the producer's lines, not one: head's, and the line after it
-    // that holds cached_tail_, the buffer owner and the entries pointer. The
+    // that holds cached_tail_ and the buffer owner with its base. The
     // consumer's counter starts at byte 128 and sits alone, which is the
     // part that matters — neither thread ever invalidates a line the other
     // is reading.
@@ -73,18 +73,16 @@ struct CRUCIBLE_OWNER MetaLog {
     // free space, so acting on it is safe. The type enforces the direction,
     // since a value that moved backwards would mean a lost acquire.
     ::fixy::Monotonic<uint64_t> cached_tail_ = ::fixy::mint_monotonic<uint64_t>(0);
+    // The buffer holds its base as its first word, so an indexed access on
+    // the hot path is one load of that word from this object.
     ::foundation::AlignedBuffer<TensorMeta, ::foundation::huge_page_bytes> entries_buffer_;
-    // A cached projection of the buffer's base, so an indexed access on the
-    // hot path stays one load with no indirection through the owner.
-    TensorMeta* entries = nullptr;
 
     alignas(64)::fixy::AtomicMonotonic<uint64_t> tail = ::fixy::mint_atomic_monotonic<uint64_t>(0);
 
     MetaLog()
         : entries_buffer_{
               ::foundation::AlignedBuffer<TensorMeta, ::foundation::huge_page_bytes>::allocate_value_initialized(
-                  CAPACITY)},
-          entries{entries_buffer_.data()} {
+                  CAPACITY)} {
         // The allocation faults the whole buffer in here rather than one page
         // at a time under the recording thread.
         //
@@ -133,13 +131,13 @@ struct CRUCIBLE_OWNER MetaLog {
         // one is not a trade a runtime constructor can make. MADV_COLLAPSE,
         // which puts the stall where the caller chooses, is the shape to
         // reach for if huge pages are wanted later.
-        crucible::warden::register_hot_region(entries, entries_buffer_.bytes(),
+        crucible::warden::register_hot_region(entries_buffer_.data(), entries_buffer_.bytes(),
                                               /*huge=*/true, "MetaLog.entries");
     }
 
     ~MetaLog() {
-        if (entries != nullptr) {
-            crucible::warden::unregister_hot_region(entries);
+        if (entries_buffer_) {
+            crucible::warden::unregister_hot_region(entries_buffer_.data());
         }
     }
 
@@ -176,26 +174,25 @@ struct CRUCIBLE_OWNER MetaLog {
         uint32_t end_pos = start_pos + n;
 
         if (end_pos <= CAPACITY) [[likely]] {
-            std::memcpy(&entries[start_pos], metas, n * sizeof(TensorMeta));
+            std::memcpy(entries_buffer_.data() + start_pos, metas, n * sizeof(TensorMeta));
         } else {
             // The run wraps the end of the buffer, so it splits in two.
             uint32_t first_chunk = CAPACITY - start_pos;
-            std::memcpy(&entries[start_pos], metas, first_chunk * sizeof(TensorMeta));
-            std::memcpy(&entries[0], metas + first_chunk, (n - first_chunk) * sizeof(TensorMeta));
+            std::memcpy(entries_buffer_.data() + start_pos, metas, first_chunk * sizeof(TensorMeta));
+            std::memcpy(entries_buffer_.data(), metas + first_chunk, (n - first_chunk) * sizeof(TensorMeta));
         }
 
-        // One record spans three cache lines, hence three prefetches. Issuing
-        // them before the publishing store rather than after gives them the
-        // whole of the caller's remaining work to complete in. The prefetch
-        // itself has no bearing on when the copy above becomes visible.
+        // One record spans three cache lines, hence three prefetches. The
+        // sizes, the strides and the data pointer start at the offsets 0, 64
+        // and 128 of a record. Issuing them before the publishing store
+        // rather than after gives them the whole of the caller's remaining
+        // work to complete in. The prefetch itself has no bearing on when
+        // the copy above becomes visible.
         {
-            uint32_t next_pos = static_cast<uint32_t>((h + n) & MASK);
-            // Byte arithmetic for the builtin's address only. No array of
-            // characters begins life here.
-            const char* next_ptr = static_cast<const char*>(static_cast<const void*>(&entries[next_pos]));
-            __builtin_prefetch(next_ptr, 1 /*write*/, 3 /*high locality*/);
-            __builtin_prefetch(next_ptr + 64, 1 /*write*/, 3 /*high locality*/);
-            __builtin_prefetch(next_ptr + 128, 1 /*write*/, 3 /*high locality*/);
+            const TensorMeta& next_record = entries_buffer_.data()[(h + n) & MASK];
+            __builtin_prefetch(&next_record.sizes, 1 /*write*/, 3 /*high locality*/);
+            __builtin_prefetch(&next_record.strides, 1 /*write*/, 3 /*high locality*/);
+            __builtin_prefetch(&next_record.data_ptr, 1 /*write*/, 3 /*high locality*/);
         }
 
         // This release publishes the copy above to the consumer.
@@ -245,15 +242,16 @@ struct CRUCIBLE_OWNER MetaLog {
         if (count == 0) return;
         const uint32_t start_pos = static_cast<uint32_t>(start & MASK);
         const uint32_t first_chunk = (count <= CAPACITY - start_pos) ? count : CAPACITY - start_pos;
-        std::memcpy(dst, &entries[start_pos], first_chunk * sizeof(TensorMeta));
+        std::memcpy(dst, entries_buffer_.data() + start_pos, first_chunk * sizeof(TensorMeta));
         if (count > first_chunk) {
-            std::memcpy(dst + first_chunk, &entries[0], (count - first_chunk) * sizeof(TensorMeta));
+            std::memcpy(dst + first_chunk, entries_buffer_.data(), (count - first_chunk) * sizeof(TensorMeta));
         }
         // The first and the last record of the copy are the records at the
         // two ends of the run.  A start without the mask, or a split of the
         // run at the wrong slot, puts a different record at one end.
-        CRUCIBLE_POST(0, std::memcmp(&dst[0], &entries[start_pos], sizeof(TensorMeta)) == 0);
-        CRUCIBLE_POST(0, std::memcmp(&dst[count - 1], &entries[(start + count - 1) & MASK], sizeof(TensorMeta)) == 0);
+        CRUCIBLE_POST(0, std::memcmp(&dst[0], entries_buffer_.data() + start_pos, sizeof(TensorMeta)) == 0);
+        const uint64_t last_pos = (start + count - 1) & MASK;
+        CRUCIBLE_POST(0, std::memcmp(&dst[count - 1], entries_buffer_.data() + last_pos, sizeof(TensorMeta)) == 0);
     }
 
     // The consumer is the one writer of tail, so its relaxed load reads its

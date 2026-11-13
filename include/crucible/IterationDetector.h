@@ -1,11 +1,12 @@
 #pragma once
 
-#include <algorithm>
 #include <cstdint>
 #include <utility>
 
 #include <crucible/Expr.h>
 #include <crucible/Types.h>
+#include <fixy/Core.h>
+#include <fixy/FixedArray.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <foundation/AlignedBuffer.h>
@@ -149,7 +150,7 @@ struct IterationDetector {
 
     // A ring of periods that broke at least once. It survives
     // restart_after_divergence(), and only reset() clears it.
-    RefutedPeriod refuted_[REFUTED_CAPACITY]{};
+    ::fixy::FixedArray<RefutedPeriod, REFUTED_CAPACITY> refuted_{};
     uint32_t refuted_count_ = 0;
     uint32_t refuted_next_ = 0;
 
@@ -464,13 +465,13 @@ private:
     void break_(uint32_t period, uint64_t body_sum, uint32_t breaks) {
         for (uint32_t i = 0; i < refuted_count_; ++i) {
             if (refuted_[i].period == period && refuted_[i].body_sum == body_sum) {
-                refuted_[i].breaks = std::min(BREAKS_TO_REFUTE, refuted_[i].breaks + breaks);
+                refuted_[i].breaks = ::fixy::min(BREAKS_TO_REFUTE, refuted_[i].breaks + breaks);
                 return;
             }
         }
         refuted_[refuted_next_] = RefutedPeriod{.period = period,
                                                 .body_sum = body_sum,
-                                                .breaks = std::min(BREAKS_TO_REFUTE, breaks),
+                                                .breaks = ::fixy::min(BREAKS_TO_REFUTE, breaks),
                                                 .broke_since_restart = false};
         refuted_next_ = (refuted_next_ + 1) % REFUTED_CAPACITY;
         if (refuted_count_ < REFUTED_CAPACITY) ++refuted_count_;
