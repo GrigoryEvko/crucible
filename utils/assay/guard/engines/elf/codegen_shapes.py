@@ -467,6 +467,20 @@ PROBES: tuple[Probe, ...] = (
         "removes the check of the empty word of the full Option",
     ),
     Probe(
+        "ref_option_load",
+        "load_acquire of a cell of an Option of a Ref is the acquire load of the pointer in a build with no hardening, "
+        "because the null pointer is the empty word and the empty value of the niche, and the optimizer removes the "
+        f"test of the empty word.  {HARDENED_BUILDS}.  The assume of the constructor of a Ref keeps the test of the "
+        "empty word until these flags run, so the family side keeps that test and its branch, and these flags add a "
+        "second test of a copy, with a branch to a trap",
+        branches=True,
+    ),
+    Probe(
+        "ref_option_store",
+        "store_release of an Option of a Ref is the release store of the pointer, because no Ref holds the null "
+        "pointer and the optimizer removes the check of the empty word",
+    ),
+    Probe(
         "view_sum",
         "a range-for over a View is the loop of a raw pointer, because the optimizer removes the checks of the "
         "cursor.  Outside the loops, the family side compares the end pointer with the start, and the raw side "

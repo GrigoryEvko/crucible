@@ -735,7 +735,7 @@ test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 9 | - | -
 test/session_oracle/ | std-entity | 26 | - | -
 test/session_oracle/ | std-object | 1385 | - | -
-test/shape/ | opted-out | 184 | ORACLE: the raw form that the shape of each family probe is compared with | -
+test/shape/ | opted-out | 190 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/singleton_neg/ | std-entity | 4 | - | -
 test/swiss_table_neg/ | replace-pending:<limits> | 1 | - | -

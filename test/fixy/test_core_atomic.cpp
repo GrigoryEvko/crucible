@@ -440,6 +440,69 @@ void test_word_option_store_of_empty_word_aborts() {
     CRUCIBLE_FATAL_INVARIANT(cell.load_acquire().is_some());
 }
 
+// The brand of the slots of the word test, and a slot that states it.  A Ref
+// of a branded object takes the brand of the object, so to() of two slots
+// gives one Ref type, and one cell holds the two Refs.
+struct SlotBrand {};
+
+struct BrandedSlot {
+    using brand_type = SlotBrand;
+    int value = 0;
+};
+
+using SlotRef = ::foundation::core::Ref<BrandedSlot, SlotBrand>;
+using RefOption = ::foundation::core::Option<SlotRef>;
+using RefWord = ::foundation::core::atomic_word<SlotRef>;
+
+// True when a key of the type Key opens the from_word of a Ref, and from_word
+// then gives a Ref with no throw.
+template <class Key>
+concept OpensRefWord = requires(Key const& key) {
+    { RefWord::from_word(key, RefWord::empty_word) } noexcept -> std::same_as<SlotRef>;
+};
+
+// True when the Option holds a Ref of the slot.
+[[nodiscard]] bool holds_object(RefOption option, BrandedSlot& slot) noexcept {
+    return std::move(option).match(
+        [&slot](SlotRef ref) noexcept { return ::foundation::core::same_object(ref, to(slot)); },
+        []() noexcept { return false; });
+}
+
+// The word of a Ref: a cell of an Option of a Ref holds the pointer of the
+// object, each read lends the object again with the brand of the Ref, and the
+// empty Option is the null word.  The word protocol takes only the key of its
+// cell, and the door of a Ref takes no key of the Atomic family.
+void test_ref_word_round_trip() {
+    static_assert(::foundation::core::AtomicWordProtocol<SlotRef>);
+    static_assert(::foundation::core::AtomicValue<RefOption> && sizeof(Atomic<RefOption>) == sizeof(RefOption));
+    static_assert(OpensRefWord<::foundation::core::atomic_word_key<SlotRef>>);
+    static_assert(!OpensRefWord<::foundation::core::atomic_word_key<int>>);
+    static_assert(!std::is_constructible_v<SlotRef, BrandedSlot&, ::foundation::core::atomic_word_key<SlotRef> const&>);
+
+    BrandedSlot first{.value = 1};
+    BrandedSlot second{.value = 2};
+    static_assert(std::is_same_v<decltype(to(first)), SlotRef>);
+    Atomic<RefOption> cell{};
+    CRUCIBLE_FATAL_INVARIANT(cell.load_acquire().is_none());
+    cell.store_release(RefOption::some(to(first)));
+    CRUCIBLE_FATAL_INVARIANT(holds_object(cell.load_acquire(), first));
+    CRUCIBLE_FATAL_INVARIANT(holds_object(cell.exchange_acq_rel(RefOption::some(to(second))), first));
+    CRUCIBLE_FATAL_INVARIANT(holds_object(cell.load_acquire(), second));
+
+    auto const refused = cell.cas_acq_rel(RefOption::some(to(first)), RefOption{});
+    CRUCIBLE_FATAL_INVARIANT(refused.is_err() && holds_object(observed_by(refused, RefOption{}), second));
+    CRUCIBLE_FATAL_INVARIANT(cell.cas_acq_rel(RefOption::some(to(second)), RefOption{}).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(cell.load_acquire().is_none());
+
+    // A cell of a Ref gives Refs of its brand, and each one reaches the
+    // object of the Ref that the cell holds.
+    Atomic<SlotRef> plain{to(first)};
+    static_assert(std::is_same_v<decltype(plain.load_acquire()), SlotRef>);
+    CRUCIBLE_FATAL_INVARIANT(::foundation::core::same_object(plain.load_acquire(), to(first)));
+    plain.load_acquire()->value = 5;
+    CRUCIBLE_FATAL_INVARIANT(first.value == 5);
+}
+
 void test_cache_line() {
     CacheLine<Atomic<std::uint64_t>> head{std::uint64_t{4}};
     CacheLine<Tally> tally{};
@@ -854,6 +917,7 @@ int main() {
     test_word_option_cell();
     test_word_option_agrees_with_plain_model();
     test_word_option_store_of_empty_word_aborts();
+    test_ref_word_round_trip();
     test_cache_line();
     test_agrees_with_plain_model();
     test_signed_bounds_agree_with_plain_model();

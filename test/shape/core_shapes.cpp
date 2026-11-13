@@ -233,6 +233,18 @@ namespace {
     cell.store_release(value);
 }
 
+// The cell of an Option of a Ref holds the pointer of the object, and the
+// null pointer is the empty Option.
+using ShapeRefOption = fixy::Option<fixy::Ref<Payload, RefProbeBrand>>;
+
+[[gnu::used]] ShapeRefOption ref_option_load(fixy::Atomic<ShapeRefOption> const& cell) noexcept {
+    return cell.load_acquire();
+}
+
+[[gnu::used]] void ref_option_store(fixy::Atomic<ShapeRefOption>& cell, ShapeRefOption value) noexcept {
+    cell.store_release(value);
+}
+
 // ── Region ──────────────────────────────────────────────────────────────────
 
 [[gnu::used]] std::uint32_t view_sum(fixy::View<std::uint32_t const> view) noexcept {
@@ -806,6 +818,16 @@ struct RawList final {
 }
 
 [[gnu::used]] void word_option_store_raw(std::atomic<std::uint32_t>& cell, std::uint32_t value) noexcept {
+    cell.store(value, std::memory_order_release);
+}
+
+// The raw form of a cell of an Option of a Ref is a cell of a pointer, with
+// the null pointer for no object.
+[[gnu::used]] Payload* ref_option_load_raw(std::atomic<Payload*> const& cell) noexcept {
+    return cell.load(std::memory_order_acquire);
+}
+
+[[gnu::used]] void ref_option_store_raw(std::atomic<Payload*>& cell, Payload* value) noexcept {
     cell.store(value, std::memory_order_release);
 }
 

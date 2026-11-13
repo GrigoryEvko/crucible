@@ -1270,7 +1270,7 @@ Each owner fills each element on its mint, or takes a fill value: no owner reads
 
 **The idea.** One object is reached through a reference that is never null (`Ref`). It has one owner on the heap (`Box`), lives in an arena (`BumpArena::make`), or lives in storage with an explicit lifetime (`Slot`). A function is reached through `FnRef` or `CallRef`. With Region, this gives one grid of one object or many objects, borrowed, owned, in an arena or inline.
 
-**The header.** `include/foundation/core/Ref.h` (main), with the parts of the linear design in `foundation/core/Credit.h` and `foundation/core/Identity.h` (section 11.10). `Ref.h` and `Region.h` include `Credit.h`, and `Region.h` never includes `Ref.h`.
+**The header.** `include/foundation/core/Ref.h` (main), with the parts of the linear design in `foundation/core/Credit.h` and `foundation/core/Identity.h` (section 11.10). `Ref.h` and `Region.h` include `Credit.h`, and `Region.h` never includes `Ref.h`. `Ref.h` includes `Atomic.h` for the word of a Ref (section 11.6), and `Atomic.h` never includes `Ref.h`.
 
 **The merges.** Slice 4.3 merges `fixy/Borrowed.h` and `fixy/SharedRegion.h` into `View` and the Ref family (Appendix E). `fixy/ScopedView.h` and `fixy/OwnedRegion.h` stay (Appendix E.1). A borrow of one object becomes a `Ref<T, Brand>`, and a borrow of a run becomes a `View` (section 11.4).
 
@@ -1357,8 +1357,8 @@ Each owner fills each element on its mint, or takes a fill value: no owner reads
 | `SoleWriter<Role, Brand>`, `mint_sole_writer<Role>()` | The proof of the writer: a linear token with no bytes, with the shape of a `Permission`. The mint is its one door, and each call site of the mint gives a fresh brand | none | main |
 | `Atomic<Option<X>>` for a niche `X` | An empty cell or a full cell of one word. A niche `Option` has the bytes of its payload and one bit pattern for each value, so `AtomicValue` admits it, and a compare-and-swap compares the `Option` as one word. A plain `Option` has a tag and padding, and `AtomicValue` refuses it | as `Atomic` | main |
 | `atomic_word<T>`, `atomic_word_key<T>` | The word protocol of a value that keeps an invariant, beside the definition of its type: a `word_type` (an integer, an enum or a pointer), `to_word(value)`, `from_word(key, word)` and a constant `empty_word`. Only a cell makes the key, so only a cell makes a value from a word. The word of `Option<X>` is the word of `X`, and `empty_word` is the empty `Option` | as `Atomic` | main |
-| `Atomic<Option<Ref<T>>>` | A pointer that a thread publishes. `Option<Ref<T>>` holds the word of `Ref<T>`, one pointer, so the cell is lock-free | as `Atomic` | design, after `atomic_word<Ref<T>>` in `Ref.h` |
-| `CacheLine<T>` | Aligns a cell to 64 bytes and pads it to a multiple of 64 bytes. `*line` and `line->member` borrow the cell (main). `line.view()` gives a `Ref` of the Ref family | none | main, new |
+| `Atomic<Option<Ref<T>>>` | A pointer that a thread publishes. `Option<Ref<T>>` holds the word of `Ref<T>`, one pointer, so the cell is lock-free. `atomic_word<Ref<T, Brand>>` is in `Ref.h`, beside `niche<Ref>`, because the rule specialization-home refuses a specialization of an open template for a type of a different file | as `Atomic` | main |
+| `CacheLine<T>` | Aligns a cell to 64 bytes and pads it to a multiple of 64 bytes. `*line` and `line->member` borrow the cell (main). `Atomic.h` never includes `Ref.h`, so the `view()` that gives a `Ref` of the line is a free function in a header that includes the two | none | main, new |
 | `Tally` | A statistics counter. `add(n)` is a fetch-add with acq_rel order, and `read()` is an acquire load. A value of a `Tally` orders no other data | one locked add | main |
 | the relaxed and seq_cst operations of `ChaseLevDeque`, and `fence_seq_cst` | `detail` code of the base, with a citation of the algorithm | as the algorithm | design |
 

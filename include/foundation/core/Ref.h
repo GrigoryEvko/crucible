@@ -15,10 +15,12 @@
 // erased brand DefaultBrand, and nothing converts it back.  same_object(a, b)
 // tells if two Refs reach one object.  A Ref has no ==, no default value and
 // no conversion from a pointer.  Option<Ref<T, Brand>> has the size of one
-// pointer: the null pointer is its empty value, and no Ref holds it.  A Ref
-// owns nothing, so a Ref that outlives its object dangles.  address_of(ref)
-// gives the Address of the object, which answers is_aligned<N>() and ==, and
-// gives no pointer back.
+// pointer: the null pointer is its empty value, and no Ref holds it.  The
+// word of a Ref in an atomic cell is that pointer, so an
+// Atomic<Option<Ref<T, Brand>>> holds one pointer.  A Ref owns nothing, so a
+// Ref that outlives its object dangles.  address_of(ref) gives the Address
+// of the object, which answers is_aligned<N>() and ==, and gives no pointer
+// back.
 //
 // Box<T> owns one object of type T on the heap.  The one door is
 // mint_box<T>(alloc, args...): it takes the storage from the allocation
@@ -55,6 +57,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Credit.h>
 #include <foundation/core/Heap.h>
@@ -274,6 +277,28 @@ struct niche<Ref<T, Brand>> {
     [[nodiscard]] static constexpr bool is_empty(niche_key<Ref<T, Brand>> const& key,
                                                  Ref<T, Brand> const& ref) noexcept {
         return niche_is_null_(key, ref);
+    }
+};
+
+// The word of a Ref in an atomic cell (THE WORD OF A VALUE of Atomic.h): the
+// pointer of its object.  No Ref holds the null pointer, so the null pointer
+// is the empty word, and the cell of an Option of a Ref holds one pointer.
+// Only a cell makes the key of from_word, and a cell holds only words that
+// to_word gave.  So from_word lends the object of the word again, with the
+// brand of the Ref, through the door of this file.  The door takes no key of
+// the Atomic family.
+template <RefTarget T, ::foundation::brand::IsBrand Brand>
+struct atomic_word<Ref<T, Brand>> {
+    using word_type = T*;
+    static constexpr word_type empty_word = nullptr;
+
+    [[nodiscard]] static constexpr word_type to_word(Ref<T, Brand> const& ref) noexcept {
+        return __builtin_addressof(*ref);
+    }
+
+    [[nodiscard]] static constexpr Ref<T, Brand> from_word(atomic_word_key<Ref<T, Brand>> const& /*key*/,
+                                                           word_type word) noexcept {
+        return detail::RefDoor::lend<Brand>(*word);
     }
 };
 
