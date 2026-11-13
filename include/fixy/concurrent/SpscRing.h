@@ -10,13 +10,13 @@
 
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Choice.h>
 
 #include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <optional>
 #include <span>
 
 // The claims the carriers in this header make that no lattice grades.
@@ -65,15 +65,16 @@ public:
         return true;
     }
 
-    [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
+    // The oldest item, or no value when the ring is empty.
+    [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop() noexcept {
         const std::uint64_t t = tail_.peek_relaxed();
         const std::uint64_t h = head_.get();
         if (h == t) [[unlikely]] {
-            return std::nullopt;
+            return ::foundation::core::none;
         }
         const T result = buffer_[t & MASK];
         tail_.advance_sole_writer_from(t, t + 1);
-        return result;
+        return ::foundation::core::Option<T>::some(result);
     }
 
     // The bulk copies go through std::memcpy rather than a std::simd

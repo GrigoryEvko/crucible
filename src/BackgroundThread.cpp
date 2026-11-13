@@ -575,7 +575,7 @@ uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {
 void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename TraceBatchChannel::ProducerHandle&& out) {
     BackgroundThread& owner = in.owner();
     detail::bg_pipeline::ChannelPark& next = in.parks().trace_batches;
-    while (!in.try_pop()) {
+    while (in.try_pop().is_none()) {
         CRUCIBLE_SPIN_PAUSE;
     }
 
@@ -620,13 +620,13 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
     detail::bg_pipeline::StageIdle idle{detail::bg_pipeline::RING_MAX_SLEEP_NANOS};
     while (true) {
         auto maybe_batch = in.try_pop();
-        if (!maybe_batch) {
+        if (maybe_batch.is_none()) {
             wait_for_item(in, parks.trace_batches, idle, false);
             continue;
         }
         idle.reset();
 
-        std::unique_ptr<BgTraceBatch> batch{*maybe_batch};
+        std::unique_ptr<BgTraceBatch> batch{std::move(maybe_batch).expect("the test above found an item")};
         if (!batch) {
             BgBuildWork* stop = nullptr;
             push_pipeline(in.ctx(), parks.build_work, out, stop);
@@ -672,13 +672,13 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
 
     while (true) {
         auto maybe_work = in.try_pop();
-        if (!maybe_work) {
+        if (maybe_work.is_none()) {
             wait_for_item(in, parks.build_work, idle, false);
             continue;
         }
         idle.reset();
 
-        std::unique_ptr<BgBuildWork> work{*maybe_work};
+        std::unique_ptr<BgBuildWork> work{std::move(maybe_work).expect("the test above found an item")};
         if (!work) {
             BgGraphPublish* stop = nullptr;
             push_pipeline(ctx, parks.graph_publish, out, stop);
@@ -748,7 +748,7 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
     while (true) {
         owner.serve_owner_mailbox_(PublishStage{});
         auto maybe_publish = in.try_pop();
-        if (!maybe_publish) {
+        if (maybe_publish.is_none()) {
             // A job in the owner mailbox gives no wake, so the park is
             // timed, and the stage serves the mailbox after each park.
             wait_for_item(in, in.parks().graph_publish, idle, true);
@@ -756,7 +756,7 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
         }
         idle.reset();
 
-        std::unique_ptr<BgGraphPublish> publish{*maybe_publish};
+        std::unique_ptr<BgGraphPublish> publish{std::move(maybe_publish).expect("the test above found an item")};
         if (!publish) {
             // The sink takes each value at its first push.
             auto done = std::make_unique<BgPipelineDone>();

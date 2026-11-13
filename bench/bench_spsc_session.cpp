@@ -75,11 +75,7 @@ constexpr auto kForeground = ::foundation::effects::testing::foreground();
 
 // The transports of the typed arms: each tries once.
 constexpr auto try_push_item = [](auto& producer, Item& item) noexcept { return producer.try_push(item); };
-constexpr auto try_pop_item = [](auto& consumer) noexcept -> ::fixy::Option<Item> {
-    auto const popped = consumer.try_pop();
-    if (!popped.has_value()) return ::fixy::none;
-    return ::fixy::some(*popped);
-};
+constexpr auto try_pop_item = [](auto& consumer) noexcept -> ::fixy::Option<Item> { return consumer.try_pop(); };
 
 // A rejected push means the next pop finds an empty ring, so the arm does
 // not measure a round trip.  The arm stops at the first one.
@@ -89,7 +85,7 @@ constexpr auto try_pop_item = [](auto& consumer) noexcept -> ::fixy::Option<Item
     std::abort();
 }
 
-// The bare pop takes the value out of the optional, so the barrier sees an
+// The bare pop takes the value out of the Option, so the barrier sees an
 // Item, as it does after the typed receive.
 [[nodiscard]] inline Item pop_value(auto& consumer) noexcept { return consumer.try_pop().value_or(Item{0}); }
 

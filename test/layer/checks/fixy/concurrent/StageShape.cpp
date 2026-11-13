@@ -8,7 +8,7 @@ namespace detail::stage_shape_self_test {
 
 template <typename T>
 struct fake_consumer {
-    [[nodiscard]] std::optional<T> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<T> try_pop() noexcept { return {}; }
 };
 
 template <typename T>

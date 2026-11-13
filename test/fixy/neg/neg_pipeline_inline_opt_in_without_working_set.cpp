@@ -8,14 +8,13 @@
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>
 
-#include <optional>
 #include <type_traits>
 
 namespace {
 
 template <typename T>
 struct ConsumerWithoutWs {
-    [[nodiscard]] std::optional<T> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<T> try_pop() noexcept { return {}; }
 };
 
 template <typename T>

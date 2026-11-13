@@ -6,14 +6,13 @@
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>
 
-#include <optional>
 #include <utility>
 
 namespace {
 
 template <typename T>
 struct FakeConsumer {
-    [[nodiscard]] std::optional<T> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<T> try_pop() noexcept { return {}; }
 };
 
 template <typename T>

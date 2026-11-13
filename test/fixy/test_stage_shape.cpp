@@ -19,7 +19,6 @@
 #include <fixy/concurrent/StageShape.h>
 
 #include <cstdio>
-#include <optional>
 #include <type_traits>
 
 namespace {
@@ -91,7 +90,7 @@ static_assert(!c::PipelineStage<&real_takes_channels>);
 
 template <typename T>
 struct fake_consumer {
-    [[nodiscard]] std::optional<T> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<T> try_pop() noexcept { return {}; }
 };
 
 template <typename T>

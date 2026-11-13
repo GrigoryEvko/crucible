@@ -25,7 +25,6 @@
 #include <foundation/permissions/Permission.h>
 
 #include <cstdio>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -47,7 +46,7 @@ int g_failures = 0;
 // ── the synthetics, one per pole and one per near-miss ───────────────
 
 struct synth_consumer {
-    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<int> try_pop() noexcept { return {}; }
 };
 
 struct synth_producer {
@@ -63,7 +62,7 @@ struct synth_reader {
 };
 
 struct synth_hybrid {
-    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<int> try_pop() noexcept { return {}; }
     [[nodiscard]] bool try_push(int const&) noexcept { return true; }
 };
 
@@ -155,15 +154,15 @@ void the_recognized_handles_carry_a_value() {
     EXPECT(producer.try_push(7));
 
     auto popped = consumer.try_pop();
-    EXPECT(popped.has_value());
-    if (popped.has_value()) {
-        EXPECT(*popped == 7);
+    EXPECT(popped.is_some());
+    if (popped.is_some()) {
+        EXPECT(std::move(popped).expect("the test above found an item") == 7);
     }
 
-    // An empty channel reports empty through the optional, which is the
+    // An empty channel reports empty through the Option, which is the
     // shape is_consumer_handle_v insists on.
     auto empty = consumer.try_pop();
-    EXPECT(!empty.has_value());
+    EXPECT(empty.is_none());
 }
 
 }  // namespace

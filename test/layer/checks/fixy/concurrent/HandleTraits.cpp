@@ -9,7 +9,7 @@ namespace detail::handle_traits_self_test {
 // ── the consumer and producer poles ─────────────────────────────────
 
 struct synthetic_consumer {
-    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<int> try_pop() noexcept { return {}; }
 };
 
 struct synthetic_producer {
@@ -17,7 +17,7 @@ struct synthetic_producer {
 };
 
 struct synthetic_hybrid {
-    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<int> try_pop() noexcept { return {}; }
     [[nodiscard]] bool try_push(int const&) noexcept { return true; }
 };
 
@@ -30,12 +30,12 @@ struct synthetic_value_pop {
 };
 
 struct synthetic_overloaded_pop {
-    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
-    [[nodiscard]] std::optional<int> try_pop(int) noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<int> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<int> try_pop(int) noexcept { return {}; }
 };
 
 struct synthetic_double_consumer {
-    [[nodiscard]] std::optional<double> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<double> try_pop() noexcept { return {}; }
 };
 
 struct synthetic_void_push {
@@ -212,17 +212,17 @@ struct producer_on_a {
 };
 struct consumer_on_a {
     using channel_type = channel_a;
-    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<int> try_pop() noexcept { return {}; }
 };
 struct consumer_on_b {
     using channel_type = channel_b;
-    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<int> try_pop() noexcept { return {}; }
 };
 
 // A consumer and a producer on channel a that report their identity.
 struct reporting_consumer_on_a {
     using channel_type = channel_a;
-    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<int> try_pop() noexcept { return {}; }
     [[nodiscard]] ::foundation::ChannelIdentity<channel_a> channel_identity() const noexcept { return {}; }
 };
 struct reporting_producer_on_a {

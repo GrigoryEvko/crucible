@@ -37,11 +37,7 @@ using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg,
 // The transports of the channel protocols try once.  A full channel or an
 // empty one makes the session wait and try again.
 constexpr auto push_int = [](auto& handle, int& value) noexcept -> bool { return handle.try_push(value); };
-constexpr auto pop_int = [](auto& handle) noexcept -> ::fixy::Option<int> {
-    auto const popped = handle.try_pop();
-    if (!popped.has_value()) return ::fixy::none;
-    return ::fixy::some(*popped);
-};
+constexpr auto pop_int = [](auto& handle) noexcept -> ::fixy::Option<int> { return handle.try_pop(); };
 
 // ── The bridge ───────────────────────────────────────────────────────
 
@@ -100,8 +96,8 @@ using EndpointSpsc = c::spsc_channel_t<int, 8, decltype(endpoint_root())>;
 
     if (!producer.try_send(7)) return fail("the producer endpoint was refused below capacity");
     if (producer.size_approx() != 1) return fail("the producer endpoint saw the wrong size");
-    const std::optional<int> got = consumer.try_recv();
-    if (!got || *got != 7) return fail("the consumer endpoint read the wrong value");
+    // An empty read gives the value -1, which no send gave.
+    if (consumer.try_recv().value_or(-1) != 7) return fail("the consumer endpoint read the wrong value");
 
     // A moved endpoint takes the handle along, and the new endpoint still
     // reaches the channel.
@@ -135,8 +131,10 @@ using StageOut = c::spsc_channel_t<int, 8, decltype(stage_out_root())>;
 
 // The body doubles each value it drains.
 void doubling_stage(StageIn::ConsumerHandle&& in, StageOut::ProducerHandle&& out) noexcept {
-    while (const std::optional<int> value = in.try_pop()) {
-        (void)out.try_push(*value * 2);
+    while (true) {
+        auto value = in.try_pop();
+        if (value.is_none()) break;
+        (void)out.try_push(std::move(value).expect("the test above found an item") * 2);
     }
 }
 
@@ -161,9 +159,8 @@ void doubling_stage(StageIn::ConsumerHandle&& in, StageOut::ProducerHandle&& out
     auto stage = channels::mint_stage_from_endpoints<&doubling_stage>(ctx, std::move(in_ep), std::move(out_ep));
     std::move(stage).run();
 
-    const std::optional<int> first = drain.try_pop();
-    const std::optional<int> second = drain.try_pop();
-    if (!first || !second || *first != 2 || *second != 4) return fail("the stage did not run its body");
+    if (drain.try_pop().value_or(-1) != 2 || drain.try_pop().value_or(-1) != 4)
+        return fail("the stage did not run its body");
     return 0;
 }
 
@@ -177,8 +174,10 @@ using FeedIn = c::spsc_channel_t<int, 8, decltype(feed_in_root())>;
 using FeedOut = c::mpsc_channel_t<int, 8, decltype(feed_out_root())>;
 
 void forwarding_stage(FeedIn::ConsumerHandle&& in, FeedOut::ProducerHandle&& out) noexcept {
-    while (const std::optional<int> value = in.try_pop()) {
-        (void)out.try_push(*value + 100);
+    while (true) {
+        auto value = in.try_pop();
+        if (value.is_none()) break;
+        (void)out.try_push(std::move(value).expect("the test above found an item") + 100);
     }
 }
 
@@ -205,9 +204,8 @@ void forwarding_stage(FeedIn::ConsumerHandle&& in, FeedOut::ProducerHandle&& out
         channels::mint_endpoint<FeedOut, channels::Direction::Producer>(ctx, std::move(*out_producer)));
     std::move(stage).run();
 
-    const std::optional<int> first = drain.try_pop();
-    const std::optional<int> second = drain.try_pop();
-    if (!first || !second || *first != 101 || *second != 102) return fail("the stage did not feed the MPSC channel");
+    if (drain.try_pop().value_or(-1) != 101 || drain.try_pop().value_or(-1) != 102)
+        return fail("the stage did not feed the MPSC channel");
     return 0;
 }
 
@@ -224,9 +222,12 @@ using FanOut = c::spsc_channel_t<int, 8, decltype(fan_out_root())>;
 // The body sums one value from each input.
 void summing_stage(FanLeft::ConsumerHandle&& left, FanRight::ConsumerHandle&& right,
                    FanOut::ProducerHandle&& out) noexcept {
-    const std::optional<int> a = left.try_pop();
-    const std::optional<int> b = right.try_pop();
-    if (a && b) (void)out.try_push(*a + *b);
+    auto from_left = left.try_pop();
+    auto from_right = right.try_pop();
+    if (from_left.is_some() && from_right.is_some()) {
+        (void)out.try_push(std::move(from_left).expect("the test above found an item")
+                           + std::move(from_right).expect("the test above found an item"));
+    }
 }
 
 [[nodiscard]] int mpmc_stage_from_endpoints_runs_its_body() {
@@ -257,8 +258,7 @@ void summing_stage(FanLeft::ConsumerHandle&& left, FanRight::ConsumerHandle&& ri
                                                                        out.producer(std::move(out_producer_perm))));
     std::move(stage).run();
 
-    const std::optional<int> sum = drain.try_pop();
-    if (!sum || *sum != 7) return fail("the fan-in stage did not run its body");
+    if (drain.try_pop().value_or(-1) != 7) return fail("the fan-in stage did not run its body");
     return 0;
 }
 
@@ -274,8 +274,10 @@ auto swmr_in_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Wh
 using SwmrIn = c::spsc_channel_t<int, 8, decltype(swmr_in_root())>;
 
 void publishing_stage(SwmrIn::ConsumerHandle&& in, LastValueWriter&& writer) noexcept {
-    while (const std::optional<int> value = in.try_pop()) {
-        writer.publish(*value);
+    while (true) {
+        auto value = in.try_pop();
+        if (value.is_none()) break;
+        writer.publish(std::move(value).expect("the test above found an item"));
     }
 }
 
@@ -319,8 +321,7 @@ using RecordSpsc = c::spsc_channel_t<int, 8, decltype(record_root())>;
     auto after_send = std::move(recorded).send(11, push_int);
     std::move(after_send).detach(s::detach_reason::InfiniteLoopProtocol{});
 
-    const std::optional<int> got = consumer.try_pop();
-    if (!got || *got != 11) return fail("the recorded endpoint did not send its value");
+    if (consumer.try_pop().value_or(-1) != 11) return fail("the recorded endpoint did not send its value");
     if (log.size() == 0 || log[0].op() != s::SessionOp::Send) return fail("the recorded endpoint wrote no send event");
     return 0;
 }

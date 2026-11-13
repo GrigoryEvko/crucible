@@ -33,7 +33,6 @@
 #include <foundation/reflect/Signature.h>
 
 #include <cstddef>
-#include <optional>
 #include <type_traits>
 #include <tuple>
 #include <utility>
@@ -490,7 +489,7 @@ template <typename T>
 struct FakeConsumer {
     using channel_type = FakeChannel<T>;
     static constexpr std::size_t per_call_working_set = 64;
-    [[nodiscard]] std::optional<T> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<T> try_pop() noexcept { return {}; }
 };
 
 template <typename T>

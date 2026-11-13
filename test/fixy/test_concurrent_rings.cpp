@@ -16,10 +16,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
-#include <optional>
 #include <span>
 #include <thread>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace c = fixy::concurrent;
@@ -91,7 +91,7 @@ using MpscWide = c::MpscRing<int, 128>;
         std::fprintf(stderr, "a fresh SPSC ring did not read as empty\n");
         return 1;
     }
-    if (ring.try_pop().has_value()) {
+    if (ring.try_pop().is_some()) {
         std::fprintf(stderr, "an empty SPSC ring returned an item\n");
         return 1;
     }
@@ -114,9 +114,10 @@ using MpscWide = c::MpscRing<int, 128>;
 
     // FIFO, and the ring wraps: after draining and refilling, the
     // positions are past the buffer end and the mask brings them back.
+    // An empty pop gives the value -1, which no push gave.
     for (int i = 0; i < 8; ++i) {
-        const auto item = ring.try_pop();
-        if (!item || item->value != i) {
+        const Plain item = ring.try_pop().value_or(Plain{-1, 0});
+        if (item.value != i) {
             std::fprintf(stderr, "SPSC pop %d came back out of order\n", i);
             return 1;
         }
@@ -153,7 +154,7 @@ using MpscWide = c::MpscRing<int, 128>;
 
 [[nodiscard]] int mpsc_single_threaded() {
     Mpsc ring{};
-    if (!ring.empty_approx() || ring.try_pop().has_value()) {
+    if (!ring.empty_approx() || ring.try_pop().is_some()) {
         std::fprintf(stderr, "a fresh MPSC ring did not read as empty\n");
         return 1;
     }
@@ -170,8 +171,8 @@ using MpscWide = c::MpscRing<int, 128>;
     }
 
     for (int i = 0; i < 8; ++i) {
-        const auto item = ring.try_pop();
-        if (!item || item->value != i) {
+        const Plain item = ring.try_pop().value_or(Plain{-1, 0});
+        if (item.value != i) {
             std::fprintf(stderr, "MPSC pop %d came back out of order\n", i);
             return 1;
         }
@@ -267,11 +268,13 @@ using MpscWide = c::MpscRing<int, 128>;
         });
 
         while (received < kItems) {
-            if (const auto item = ring.try_pop()) {
+            auto item = ring.try_pop();
+            if (item.is_some()) {
                 // FIFO is a property of the ring, not of the schedule:
                 // one producer means the order is the push order.
-                if (*item != next_expected) {
-                    std::fprintf(stderr, "SPSC delivered %d where %d was owed\n", *item, next_expected);
+                const int value = std::move(item).expect("the test above found an item");
+                if (value != next_expected) {
+                    std::fprintf(stderr, "SPSC delivered %d where %d was owed\n", value, next_expected);
                     return 1;
                 }
                 ++next_expected;
@@ -316,18 +319,20 @@ using MpscWide = c::MpscRing<int, 128>;
         }
 
         while (received < kTotal) {
-            if (const auto item = ring.try_pop()) {
-                const std::size_t who = item->producer;
+            auto popped = ring.try_pop();
+            if (popped.is_some()) {
+                const Plain item = std::move(popped).expect("the test above found an item");
+                const std::size_t who = item.producer;
                 if (who >= kProducers) {
                     std::fprintf(stderr, "MPSC delivered an item from producer %zu\n", who);
                     return 1;
                 }
-                if (item->value != last_seen[who] + 1) {
-                    std::fprintf(stderr, "MPSC reordered producer %zu: saw %d after %d\n", who, item->value,
+                if (item.value != last_seen[who] + 1) {
+                    std::fprintf(stderr, "MPSC reordered producer %zu: saw %d after %d\n", who, item.value,
                                  last_seen[who]);
                     return 1;
                 }
-                last_seen[who] = item->value;
+                last_seen[who] = item.value;
                 ++received;
             } else if (finished.load(std::memory_order_acquire) == kProducers && ring.empty_approx()) {
                 break;
@@ -407,7 +412,7 @@ static_assert(kCapacity >= kProducers * kPushesPerProducer, "the ring must hold 
         }
 
         for (;;) {
-            if (ring->try_pop().has_value()) {
+            if (ring->try_pop().is_some()) {
                 ++received;
             } else if (finished.load(std::memory_order_acquire) == kProducers && ring->empty_approx()) {
                 break;

@@ -14,7 +14,6 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
-#include <optional>
 #include <type_traits>
 #include <utility>
 #include "../test_assert.h"
@@ -31,7 +30,7 @@ template <typename T>
 struct FakeConsumer {
     using channel_type = FakeChannel<T>;
     static constexpr std::size_t per_call_working_set = 64;
-    [[nodiscard]] std::optional<T> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::fixy::Option<T> try_pop() noexcept { return {}; }
 };
 
 template <typename T>

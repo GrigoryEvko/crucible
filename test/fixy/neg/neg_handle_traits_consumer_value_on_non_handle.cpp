@@ -18,12 +18,10 @@
 
 #include <fixy/concurrent/HandleTraits.h>
 
-#include <optional>
-
 namespace {
 
 struct both_poles {
-    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<int> try_pop() noexcept { return {}; }
     [[nodiscard]] bool try_push(int const&) noexcept { return true; }
 };
 

@@ -19,17 +19,17 @@
 // the part that carries the meaning.
 
 #include <foundation/ChannelBinding.h>
+#include <foundation/core/Choice.h>
 
 #include <concepts>
 #include <cstddef>
-#include <optional>
 #include <type_traits>
 
 namespace fixy::concurrent {
 
 namespace detail {
 
-// ── the consumer pole: std::optional<P> try_pop() ───────────────────
+// ── the consumer pole: Option<P> try_pop() ──────────────────────────
 
 template <typename M>
 struct consumer_signature_decomp {
@@ -38,13 +38,13 @@ struct consumer_signature_decomp {
 };
 
 template <typename C, typename P>
-struct consumer_signature_decomp<std::optional<P> (C::*)()> {
+struct consumer_signature_decomp<::foundation::core::Option<P> (C::*)()> {
     static constexpr bool matches = true;
     using payload = P;
 };
 
 template <typename C, typename P>
-struct consumer_signature_decomp<std::optional<P> (C::*)() noexcept> {
+struct consumer_signature_decomp<::foundation::core::Option<P> (C::*)() noexcept> {
     static constexpr bool matches = true;
     using payload = P;
 };
@@ -194,7 +194,7 @@ struct has_load<T, std::void_t<decltype(&T::load)>> : std::true_type {};
 
 }  // namespace detail
 
-// The optional return is what carries the empty signal, so a try_pop that
+// The Option return is what carries the empty signal, so a try_pop that
 // returns bool and fills an out-parameter is a different endpoint shape and is
 // deliberately not admitted. A type exposing both try_pop and try_push is also
 // rejected, because nothing then decides which pole it is.

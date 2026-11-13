@@ -454,10 +454,10 @@ std::size_t drain_record_stream(H& hist, ConsumerHandle& consumer,
     std::size_t drained = 0;
     while (drained < max_records) {
         auto sample = consumer.try_pop();
-        if (!sample) {
+        if (sample.is_none()) {
             break;
         }
-        hist.record(H::checked_value(*sample));
+        hist.record(H::checked_value(std::move(sample).expect("the test above found a sample")));
         ++drained;
     }
     return drained;

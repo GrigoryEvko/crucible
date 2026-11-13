@@ -41,7 +41,6 @@
 #include <foundation/permissions/Permission.h>
 
 #include <cstddef>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -201,7 +200,7 @@ public:
             return std::move(perm_);
         }
 
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return ch_->ring_.try_pop(); }
+        [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop() noexcept { return ch_->ring_.try_pop(); }
 
         [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
         [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }

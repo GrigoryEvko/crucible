@@ -22,13 +22,13 @@
 
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Choice.h>
 
 #include <array>
 #include <atomic>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <span>
 
 // The claims the carriers in this header make that no lattice grades.
@@ -145,7 +145,7 @@ public:
     // The acquire load of the bitmap pairs with the producer's release
     // fetch_or, so the cell read below sees the published payload.
 
-    [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
+    [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop() noexcept {
         const std::uint64_t pos = tail_.peek_relaxed();
         const std::size_t cell_idx = pos & MASK;
         const std::size_t word_idx = cell_idx >> 6;
@@ -154,7 +154,7 @@ public:
 
         const std::uint64_t word = ready_[word_idx].load(std::memory_order_acquire);
         if ((word & mask) == 0) {
-            return std::nullopt;
+            return ::foundation::core::none;
         }
 
         const T item = cells_[cell_idx];
@@ -163,7 +163,7 @@ public:
         // the cleared bit.
         ready_[word_idx].fetch_and(~mask, std::memory_order_release);
         tail_.advance_sole_writer_from(pos, pos + 1);
-        return item;
+        return ::foundation::core::Option<T>::some(item);
     }
 
     // The caller guarantees no concurrent try_pop or try_pop_batch.

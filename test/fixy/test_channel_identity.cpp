@@ -192,8 +192,7 @@ constexpr Attack kAttacks[] = {
         auto held_consumer = channel.consumer(std::move(consumer));
         auto moved = std::move(held_producer);
         if (!moved.try_push(3)) return 1;
-        const std::optional<int> item = held_consumer.try_pop();
-        if (!item || *item != 3) return 1;
+        if (held_consumer.try_pop().value_or(-1) != 3) return 1;
     }
     auto [producer, consumer] = link_halves();
     auto again = channel.producer(std::move(producer));

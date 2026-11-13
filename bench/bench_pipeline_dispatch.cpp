@@ -4,6 +4,7 @@
 // large pipeline does not fit, so the router gives each stage a thread and
 // must beat the direct run.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/Stage.h>
@@ -18,7 +19,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <optional>
 #include <span>
 #include <tuple>
 #include <type_traits>
@@ -47,7 +47,7 @@ template <std::size_t Ws>
 struct Consumer {
     using channel_type = IntChannel;
     static constexpr std::size_t per_call_working_set = Ws;
-    [[nodiscard]] std::optional<int> try_pop() noexcept { return 1; }
+    [[nodiscard]] ::fixy::Option<int> try_pop() noexcept { return ::fixy::Option<int>::some(1); }
 };
 
 template <std::size_t Ws>

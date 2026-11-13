@@ -28,7 +28,6 @@
 
 #include <concepts>
 #include <cstddef>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -85,9 +84,12 @@ public:
         return handle_.try_push(v);
     }
 
+    // The Option<value_type> of the pop of the handle.  The type is deduced,
+    // so the definition of the class names no Option, and a gate that reads
+    // the class does not read the open niche of the payload.
     template <Direction D = Dir>
         requires(D == Direction::Consumer)
-    [[nodiscard, gnu::hot]] std::optional<value_type> try_recv() noexcept {
+    [[nodiscard, gnu::hot]] auto try_recv() noexcept {
         return handle_.try_pop();
     }
 

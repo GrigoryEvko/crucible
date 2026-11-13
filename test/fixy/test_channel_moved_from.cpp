@@ -188,8 +188,7 @@ constexpr Attack kAttacks[] = {
     auto producer_moved = std::move(producer);
     auto consumer_moved = std::move(consumer);
     if (!producer_moved.try_push(7)) return 1;
-    const auto item = consumer_moved.try_pop();
-    if (!item || *item != 7) return 1;
+    if (consumer_moved.try_pop().value_or(-1) != 7) return 1;
     // The release door gives each role and its token back, and the
     // released handle names no channel.  Each token opens a new handle of
     // its role with no second claim.
@@ -222,8 +221,9 @@ constexpr Attack kAttacks[] = {
             }
         }};
         while (received < kItems) {
-            if (const auto item = consumer.try_pop()) {
-                sum += *item;
+            auto item = consumer.try_pop();
+            if (item.is_some()) {
+                sum += std::move(item).expect("the test above found an item");
                 ++received;
             }
         }

@@ -18,7 +18,6 @@
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>
 
-#include <optional>
 #include <utility>
 
 namespace {
@@ -30,7 +29,7 @@ struct FakeChannel {};
 template <typename T>
 struct FakeConsumer {
     using channel_type = FakeChannel<T>;
-    [[nodiscard]] std::optional<T> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<T> try_pop() noexcept { return {}; }
 };
 
 template <typename T>

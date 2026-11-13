@@ -135,7 +135,8 @@ static_assert(c::saturating_ws_add(c::unknown_per_call_working_set - 1, 2) == c:
     auto producer = channel.producer(std::move(producer_perm));
     auto consumer = channel.consumer(std::move(consumer_perm));
 
-    if (const auto left = consumer.try_pop(); !left || *left != 100) {
+    // An empty pop gives the value -1, which no push gave.
+    if (consumer.try_pop().value_or(-1) != 100) {
         std::fprintf(stderr, "the body of with_recombined_access did not reach the ring\n");
         return 1;
     }
@@ -156,13 +157,12 @@ static_assert(c::saturating_ws_add(c::unknown_per_call_working_set - 1, 2) == c:
     }
 
     for (int i = 0; i < 8; ++i) {
-        const auto item = consumer.try_pop();
-        if (!item || *item != i) {
+        if (consumer.try_pop().value_or(-1) != i) {
             std::fprintf(stderr, "SPSC consumer got item %d out of order\n", i);
             return 1;
         }
     }
-    if (consumer.try_pop().has_value()) {
+    if (consumer.try_pop().is_some()) {
         std::fprintf(stderr, "SPSC consumer popped from an empty channel\n");
         return 1;
     }
@@ -244,13 +244,15 @@ static_assert(c::saturating_ws_add(c::unknown_per_call_working_set - 1, 2) == c:
         }
     }
 
-    const auto first_item = consumer.try_pop();
-    const auto second_item = consumer.try_pop();
-    if (!first_item || !second_item) {
+    auto first_item = consumer.try_pop();
+    auto second_item = consumer.try_pop();
+    if (first_item.is_none() || second_item.is_none()) {
         std::fprintf(stderr, "the consumer lost what the two producers pushed\n");
         return 1;
     }
-    if (*first_item + *second_item != 3) {
+    if (std::move(first_item).expect("the test above found an item")
+            + std::move(second_item).expect("the test above found an item")
+        != 3) {
         std::fprintf(stderr, "the consumer got the wrong payloads\n");
         return 1;
     }
@@ -300,8 +302,9 @@ static_assert(c::saturating_ws_add(c::unknown_per_call_working_set - 1, 2) == c:
         }
 
         while (received < kProducers * kPerProducer) {
-            if (const auto item = consumer.try_pop()) {
-                sum += *item;
+            auto item = consumer.try_pop();
+            if (item.is_some()) {
+                sum += std::move(item).expect("the test above found an item");
                 ++received;
             } else if (finished.load(std::memory_order_acquire) == kProducers && consumer.empty_approx()) {
                 break;

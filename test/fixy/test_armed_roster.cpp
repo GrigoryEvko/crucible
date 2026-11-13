@@ -62,7 +62,7 @@ struct Pusher {
     bool try_push(int) noexcept { return true; }
 };
 struct Popper {
-    std::optional<int> try_pop() noexcept { return std::nullopt; }
+    ::foundation::core::Option<int> try_pop() noexcept { return ::foundation::core::none; }
 };
 struct Publisher {
     void publish(int) noexcept {}

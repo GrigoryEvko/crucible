@@ -13,7 +13,6 @@
 #include <fixy/concurrent/Pipeline.h>
 
 #include <cstddef>
-#include <optional>
 #include <type_traits>
 
 namespace {
@@ -30,7 +29,9 @@ template <std::size_t Ws>
 struct HeavyConsumer {
     using channel_type = HeavyChannel;
     static constexpr std::size_t per_call_working_set = Ws;
-    [[nodiscard]] std::optional<int> try_pop() noexcept { return 1; }
+    [[nodiscard]] ::foundation::core::Option<int> try_pop() noexcept {
+        return ::foundation::core::Option<int>::some(1);
+    }
 };
 
 template <std::size_t Ws>

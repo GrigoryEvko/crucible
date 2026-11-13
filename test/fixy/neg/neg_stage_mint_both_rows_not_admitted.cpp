@@ -8,7 +8,6 @@
 #include <fixy/concurrent/Stage.h>
 #include <foundation/effects/Computation.h>
 
-#include <optional>
 #include <utility>
 
 namespace {
@@ -17,7 +16,7 @@ namespace eff = foundation::effects;
 
 template <typename T>
 struct FakeConsumer {
-    [[nodiscard]] std::optional<T> try_pop() noexcept { return {}; }
+    [[nodiscard]] ::foundation::core::Option<T> try_pop() noexcept { return {}; }
 };
 
 template <typename T>
