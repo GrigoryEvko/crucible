@@ -16,7 +16,9 @@ or a branch that is red with no request.  It can have a request that repairs
 a red branch, or a branch that moves.  The cases count the runs of the gate
 of each batch.  They cut a batch at a second change of a C++ file.  They drop
 a request when its process goes from the queue.  They land the falls of the
-gate.  The verdict of a landed request must name each flaky test of its run.
+gate.  Two requests that change the summary row of the mint inventory must
+compose and land with the inventory that the gate writes.  The verdict of a
+landed request must name each flaky test of its run.
 A red run that a green run of the same tree does not repeat must land its
 request, with a line that names the problem as flaky.
 
@@ -83,6 +85,8 @@ FALLEN = b"format 1\nrule demo\na.cpp | kind | 1 | entity | -\n"
 MERGE_REGISTRY = "format 1\nrule demo engine=meta scope=tracked ledger=count doc=XV | a planted refusal | fix it\n"
 MERGE_LEDGER = "utils/ledgers/demo.txt"
 MERGE_LEDGER_HEAD = "format 1\nrule demo\n"
+# The generated file that the gate writes from the build of the composed tree, for the cases of THE MERGE.
+INVENTORY = "misc/mint-inventory.md"
 # The time limit of a planted landing process, and of the wait for a file of a process, in seconds.
 CHILD_S = 60.0
 WAIT_S = 30.0
@@ -1039,6 +1043,100 @@ def fall_cases(expect: testing.Expect, work: Path) -> None:
     )
 
 
+def inventory_text(counts: Mapping[str, int]) -> str:
+    """Return a planted mint inventory in the shape of the real file: a row for each mint, and a summary row.
+
+    The summary row counts the mints and the mints with fewer than two fixtures.  A change of one row then changes the
+    summary row too, as in misc/mint-inventory.md.
+    """
+    rows = "".join(f"| `{name}` | HS14: {count} |\n" for name, count in sorted(counts.items()))
+    under = sum(1 for count in counts.values() if count < 2)
+    summary = f"| mints | under the floor |\n|---|---|\n| {len(counts)} | {under} |\n"
+    return f"# Mint inventory\n\n| mint | HS14 |\n|---|---|\n{rows}\n## Summary\n\n{summary}"
+
+
+def built_cases(expect: testing.Expect) -> None:
+    """Hold THE MERGE of a file of BUILT_FILES of assay.loop.gate: the gate writes it, and the batch lands.
+
+    Two requests of one batch each change a file and the summary row of the mint inventory, as two families that add
+    fixtures at one time do.  The second patch does not apply as text after the first.  Its merge keeps the copy of the
+    composition, and the gate writes the inventory from the build of the composed tree.
+    """
+    with tempfile.TemporaryDirectory(prefix="land-built-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        planted_repository(root)
+        (root / INVENTORY).parent.mkdir(parents=True, exist_ok=True)
+        (root / INVENTORY).write_text(inventory_text({"mint_a": 1, "mint_b": 2}), encoding="utf-8")
+        (root / "mints.txt").write_text("mint_a\nmint_b\n", encoding="utf-8")
+        (root / "fixtures.txt").write_text("mint_a\nmint_b\nmint_b\n", encoding="utf-8")
+        head = git.commit_all(root, "Add the mints, the fixtures and the inventory")
+        first_inventory = inventory_text({"mint_a": 1, "mint_b": 2, "mint_c": 2})
+        first_files = {"mints.txt": "mint_a\nmint_b\nmint_c\n", INVENTORY: first_inventory}
+        first = patch_of(root, work, "mint.patch", first_files)
+        second_inventory = inventory_text({"mint_a": 2, "mint_b": 2})
+        second_files = {"fixtures.txt": "mint_a\nmint_a\nmint_b\nmint_b\n", INVENTORY: second_inventory}
+        second = patch_of(root, work, "fixture.patch", second_files)
+        requests = [
+            request_of(("Add mint_c with two fixtures",), patches=(first,)),
+            request_of(("Add a fixture of mint_a",), patches=(second,)),
+        ]
+        after_first = land.commit_tree(root, land.compose(root, requests[0], head), requests[0].message)
+        try:
+            composed = land.compose(root, requests[1], after_first)
+            refusal = ""
+        except land.LandError as problem:
+            composed, refusal = None, str(problem)
+        expect(
+            f"a patch that changes the summary row of the inventory after a different change of it composes, keeps the "
+            f"copy of the composition, and names the inventory as a file that the gate writes: {refusal or 'composed'}",
+            composed is not None
+            and composed.built == (INVENTORY,)
+            and INVENTORY not in composed.changed
+            and INVENTORY in gate.BUILT_FILES,
+        )
+        written = inventory_text({"mint_a": 2, "mint_b": 2, "mint_c": 2})
+        seen: list[gate.Candidate] = []
+
+        def writing(candidate: gate.Candidate, _is_retry: bool) -> gate.Verdict:
+            """Write the inventory of the composed tree when the candidate names it, as THE BUILT FILES of the gate does."""
+            seen.append(candidate)
+            if INVENTORY not in candidate.built:
+                return gate.Verdict(("debug",), (), 1.0)
+            final = git.replaced_commit(root, candidate.commit, {INVENTORY: written.encode()})
+            return gate.Verdict(("debug",), (), 1.0, (), final, built=(INVENTORY,))
+
+        decisions, _ = landed(root, requests, writing)
+        lines = {number: [line.content for line in decision.lines] for number, decision in decisions.items()}
+        expect(
+            f"the batch of the two requests gives the gate one candidate that names the inventory as a changed file "
+            f"and as a file that the gate writes, and the two land: {lines}",
+            [decisions[number].status for number in (1, 2)] == [0, 0]
+            and [candidate.built for candidate in seen] == [(INVENTORY,)]
+            and INVENTORY in seen[0].changed
+            and subjects_since(root, head) == ["Add mint_c with two fixtures", "Add a fixture of mint_a"],
+        )
+        expect(
+            "the branch holds the inventory that the gate wrote and the files of the two requests, and the commit of "
+            "the first request keeps its own inventory",
+            git.show(root, "HEAD", INVENTORY) == written.encode()
+            and git.show(root, "HEAD", "mints.txt") == b"mint_a\nmint_b\nmint_c\n"
+            and git.show(root, "HEAD", "fixtures.txt") == b"mint_a\nmint_a\nmint_b\nmint_b\n"
+            and git.show(root, "HEAD~1", INVENTORY) == first_inventory.encode(),
+        )
+        expect(
+            "the verdict of the second request tells that the gate writes the inventory, and that the gate wrote it "
+            "into the landed commit",
+            any(f"the gate writes {INVENTORY} from the build of the composed tree" in line for line in lines[2])
+            and any(f"with {INVENTORY} that the gate wrote" in line for line in lines[2])
+            and not any("WARNING" in line for line in [*lines[1], *lines[2]]),
+        )
+        expect(
+            "after the update, the index and the working tree hold the inventory that the gate wrote",
+            git.is_index_clean(root, "HEAD") and (root / INVENTORY).read_text(encoding="utf-8") == written,
+        )
+
+
 def flaky_once(root: Path, name: str, seen: list[tuple[gate.Candidate, bool]]) -> land.Check:
     """Return a planted gate that rejects the first run of a commit that holds a file, as a flaky test does.
 
@@ -1985,6 +2083,7 @@ def main(argv: list[str]) -> int:
             landing_cases,
             falls_cases,
             merge_cases,
+            built_cases,
             flaky_cases,
             confirmation_cases,
             drop_cases,

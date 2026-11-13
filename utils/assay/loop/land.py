@@ -63,14 +63,17 @@ THE MERGE
       * A witness fixture and the witness manifest come from the writer of
         assay.loop.derive.witness_fixtures and the composed rule table, when
         the composition holds the code of the writer of this copy.
-      * The mint inventory needs a build, and its merge is a refusal that
-        names its writer.
+      * A file of BUILT_FILES of assay.loop.gate, such as the mint inventory,
+        needs a build.  The composition keeps its own copy, and the
+        candidate of the gate names the file.  The gate writes the file from
+        the build of the composed tree, and it folds the file into the last
+        commit (THE BUILT FILES of assay.loop.gate).
       * Each other file merges by its lines with `git merge-file`.
     Two changes of one line, one side that adds or removes a file that the
     other side changes, and a merge of a ledger that conflicts each refuse
     the request.  The refusal names each such file.  A raise or an admit of
     a patch stays a change of its row in the commit.  The verdict names each
-    merged file.
+    merged file and each file that the gate writes.
 
 THE QUEUE
     A landing writes its request into the queue of its repository before it
@@ -289,7 +292,11 @@ THE GATE
     test that is red alone on HEAD then rejects each landing.  When the gate
     builds each of its configurations, it writes the falls of the counted
     ledgers into a new commit (THE REDUCE of assay.loop.gate).  That commit
-    has the parents and the message of the last commit of the batch.
+    has the parents and the message of the last commit of the batch.  The
+    gate also writes each file that THE MERGE names for it into that commit,
+    and the message then names each such file.  The candidate names such a
+    file of each link of the batch, so the last commit holds the written
+    file.
 
     The verdict gives it, and the compare-and-swap moves the branch to it.
     Each run of the gate writes its logs into a directory of its own
@@ -504,11 +511,9 @@ DROPPED = "dropped"
 LOGS_MARK = "LOGS"
 # The start of a line of the verdict of a request that names a flaky test (THE FLAKY TESTS).
 FLAKY_MARK = "loop land: FLAKY, "
-# The directory of the ledgers and their suffix, and the generated file that the merge refuses with its writer (THE
-# MERGE).
+# The directory of the ledgers and their suffix (THE MERGE).
 LEDGER_PREFIX = "utils/ledgers/"
 LEDGER_SUFFIX = ".txt"
-BUILT_FILES = {"misc/mint-inventory.md": "loop derive mint-inventory --write --build-dir build"}
 # The files of the code of the writer of the witness fixtures, which the merge compares with this copy (THE MERGE).
 WITNESS_WRITER = (
     "utils/assay/loop/derive/witness_fixtures.py",
@@ -582,6 +587,7 @@ class Composed:
     """The result of one composition: the commit that it starts from, the tree, the changed paths, and the diff.
 
     `merged` holds each path that THE MERGE composed, and `is_summed` tells that it summed two changes of one count.
+    `built` holds each merged file of BUILT_FILES of assay.loop.gate, which the gate writes (THE MERGE).
     """
 
     head: str
@@ -590,18 +596,21 @@ class Composed:
     diff: str
     merged: tuple[str, ...] = ()
     is_summed: bool = False
+    built: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class PatchMerge:
     """The result of THE MERGE of one patch: the entry of each path that it gives, and the paths that it merged.
 
-    An entry of None removes its path.  `is_summed` tells that a ledger summed two changes of one count.
+    An entry of None removes its path.  `is_summed` tells that a ledger summed two changes of one count.  `built` holds
+    each merged file of BUILT_FILES of assay.loop.gate, which keeps the copy of the composition and gets no entry.
     """
 
     entries: tuple[tuple[git.TreeEntry | None, str], ...]
     merged: tuple[str, ...]
     is_summed: bool
+    built: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -632,7 +641,7 @@ class Queued:
 class Link:
     """One request composed on the commit before it: the request, that commit, its own commit, and its paths.
 
-    `merged` and `is_summed` come from its composition (THE MERGE).
+    `merged`, `is_summed` and `built` come from its composition (THE MERGE).
     """
 
     queued: Queued
@@ -641,6 +650,7 @@ class Link:
     changed: tuple[str, ...]
     merged: tuple[str, ...] = ()
     is_summed: bool = False
+    built: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1052,6 +1062,7 @@ def merged_patch(root: Path, scratch: Path, patch: Path, problem: str) -> PatchM
     rules = ledger_rules(root, scratch)
     entries: list[tuple[git.TreeEntry | None, str]] = []
     merged: list[str] = []
+    built: list[str] = []
     conflicts: list[str] = []
     is_summed = False
     needs_witnesses = False
@@ -1067,8 +1078,10 @@ def merged_patch(root: Path, scratch: Path, patch: Path, problem: str) -> PatchM
         try:
             if is_witness_output(path):
                 needs_witnesses = True
-            elif path in BUILT_FILES:
-                raise LandError(f"{path}: the two sides change it.  Merge main, and run `{BUILT_FILES[path]}`")
+            elif path in gate.BUILT_FILES:
+                if sides[1] is None or sides[2] is None:
+                    raise LandError(f"{path}: one side adds or removes the file, and the other side changes it")
+                built.append(path)
             elif path.startswith(LEDGER_PREFIX) and path.endswith(LEDGER_SUFFIX) and stem in rules:
                 entry, summed = merged_ledger(root, rules[stem], path, sides)
                 entries.append((entry, path))
@@ -1090,7 +1103,7 @@ def merged_patch(root: Path, scratch: Path, patch: Path, problem: str) -> PatchM
             f"{'; '.join(conflicts)}.  Merge main in the work tree, and land the request again.  git apply said: "
             f"{problem.strip()}"
         )
-    return PatchMerge(tuple(entries), tuple(merged), is_summed)
+    return PatchMerge(tuple(entries), tuple(merged), is_summed, tuple(built))
 
 
 def compose(root: Path, request: Request, head: str, with_diff: bool = False, since: str = "") -> Composed:
@@ -1116,6 +1129,7 @@ def compose(root: Path, request: Request, head: str, with_diff: bool = False, si
             git.run(scratch, "--work-tree", str(root), "add", "-A", "--", *request.paths)
         before_patches = git.write_tree(scratch)
         merged: list[str] = []
+        built: list[str] = []
         is_summed = False
         for patch in request.patches:
             applied = git.run_any_exit(scratch, "apply", "--cached", str(patch))
@@ -1125,6 +1139,7 @@ def compose(root: Path, request: Request, head: str, with_diff: bool = False, si
             if not git.set_index_entries(scratch, result.entries):
                 raise LandError("git cannot give the index of the composition the merged files")
             merged += result.merged
+            built += result.built
             is_summed = is_summed or result.is_summed
         after_patches = git.write_tree(scratch)
         patched = git.tree_changes(scratch, before_patches, after_patches)
@@ -1162,7 +1177,7 @@ def compose(root: Path, request: Request, head: str, with_diff: bool = False, si
                 )
         tree = git.write_tree(scratch)
         diff = git.index_patch(scratch, head) if with_diff else ""
-    return Composed(head, tree, changed, diff, tuple(dict.fromkeys(merged)), is_summed)
+    return Composed(head, tree, changed, diff, tuple(dict.fromkeys(merged)), is_summed, tuple(dict.fromkeys(built)))
 
 
 def commit_tree(root: Path, composed: Composed, message: str) -> str:
@@ -1184,7 +1199,7 @@ def compose_link(queued: Queued, parent: str, since: str) -> Link:
     if not composed.changed:
         raise LandError("the commit would change nothing")
     commit = commit_tree(queued.root, composed, request.message)
-    return Link(queued, parent, commit, composed.changed, composed.merged, composed.is_summed)
+    return Link(queued, parent, commit, composed.changed, composed.merged, composed.is_summed, composed.built)
 
 
 # ── The index and the working tree ─────────────────────────────────────────
@@ -1370,8 +1385,13 @@ def given_update(queued: Queued, decision: Decision) -> None:
 
 
 def chain_changed(chain: Sequence[Link]) -> tuple[str, ...]:
-    """Return each path that a chain of links changes, one time, sorted."""
-    return tuple(sorted({path for link in chain for path in link.changed}))
+    """Return each path that a chain of links changes or that the gate writes for it, one time, sorted."""
+    return tuple(sorted({path for link in chain for path in (*link.changed, *link.built)}))
+
+
+def chain_built(chain: Sequence[Link]) -> tuple[str, ...]:
+    """Return each file that the gate writes for a chain of links, one time, sorted (THE MERGE)."""
+    return tuple(sorted({path for link in chain for path in link.built}))
 
 
 def repository_of(queued: Queued) -> Path:
@@ -1409,15 +1429,33 @@ def refused(status: int, *texts: str) -> Decision:
 
 
 def merge_lines(link: Link) -> list[Line]:
-    """Return the line that names each file of a request that THE MERGE composed, or no line."""
+    """Return the line that names each file of a request that THE MERGE composed, and each file that the gate writes.
+
+    With no merged file, the result is no line.
+    """
     if not link.merged:
         return []
     summed = ", with a sum of two changes of a count, so the gate ran each configuration" if link.is_summed else ""
-    return [
+    lines = [
         Line(
             f"loop land: a patch did not apply as text, and a three-way merge composed {' '.join(link.merged)}{summed}"
         )
     ]
+    if link.built:
+        lines.append(
+            Line(
+                f"loop land: the two sides change {' '.join(link.built)}, so the composition keeps its own copy, and "
+                f"the gate writes {' '.join(link.built)} from the build of the composed tree"
+            )
+        )
+    return lines
+
+
+def written_text(verdict: gate.Verdict) -> str:
+    """Return the words of a landed line that name the ledgers and the built files that the gate wrote, or ""."""
+    falls = f", with the falls of {' '.join(verdict.ledgers)} that the gate wrote" if verdict.ledgers else ""
+    built = f", with {' '.join(verdict.built)} that the gate wrote from the build" if verdict.built else ""
+    return f"{falls}{built}"
 
 
 def flaky_of(verdict: gate.Verdict) -> list[Line]:
@@ -1538,12 +1576,17 @@ class BatchLanding:
 
         The first run of the batch runs each test, and each subsequent run runs the tests with an input that changed.
         A focus runs only the configurations and the tests of the focus (assay.loop.gate, THE RUN OF THE BASE).  A
-        chain with a count that THE MERGE summed runs each configuration.  An error of the check is a problem of the
-        commit (THE ERROR OF A RUN).
+        chain with a count that THE MERGE summed runs each configuration.  The candidate names each file that THE MERGE
+        leaves to the gate.  An error of the check is a problem of the commit (THE ERROR OF A RUN).
         """
         is_every = any(link.is_summed for link in chain)
         candidate = gate.Candidate(
-            self.base, chain[-1].commit, chain_changed(chain), focus=tuple(focus), is_every=is_every
+            self.base,
+            chain[-1].commit,
+            chain_changed(chain),
+            focus=tuple(focus),
+            is_every=is_every,
+            built=chain_built(chain),
         )
         started = time.monotonic()
         try:
@@ -1789,7 +1832,7 @@ class BatchLanding:
     def accept_check(self, accepted: Sequence[Link], verdict: gate.Verdict) -> None:
         """Give each request of --check that the gate accepts its verdict.  Nothing lands."""
         final = verdict.final or accepted[-1].commit
-        folded = f", with the falls of {' '.join(verdict.ledgers)} that the gate wrote" if verdict.ledgers else ""
+        folded = written_text(verdict)
         for link in accepted:
             line = Line(f"loop land: the gate accepts the commit {final[:SHORT_HASH]}{folded}")
             lines = (line, *merge_lines(link), *self.flaky_lines(link.queued.number))
@@ -1800,17 +1843,18 @@ class BatchLanding:
     ) -> list[tuple[Queued, Decision]]:
         """Return the verdict of each accepted request, with the update of its work tree (THE INDEX AND THE WORKING TREE).
 
-        The ledgers of THE REDUCE go to the last request of each work tree.  Complexity: linear in the paths of the
-        links.
+        The ledgers of THE REDUCE and the built files that the gate wrote go to the last request of each work tree.
+        Complexity: linear in the paths of the links.
         """
         ledgers = verdict.ledgers
+        written = (*ledgers, *verdict.built)
         last = len(accepted) - 1
         last_of_root = {link.queued.root: index for index, link in enumerate(accepted)}
-        folded = f", with the falls of {' '.join(ledgers)} that the gate wrote" if ledgers else ""
+        folded = written_text(verdict)
         decisions: list[tuple[Queued, Decision]] = []
         for index, link in enumerate(accepted):
             commit = final if index == last else link.commit
-            changed = tuple(sorted({*link.changed, *(ledgers if index == last else ())}))
+            changed = tuple(sorted({*link.changed, *(written if index == last else ())}))
             lines = [Line(f"loop land: committed {commit[:8]} on {link.parent[:8]}{folded if index == last else ''}:")]
             lines += [Line(f"  {path}") for path in changed]
             lines += merge_lines(link)
@@ -1819,10 +1863,11 @@ class BatchLanding:
                     Line(f"loop land: a batch of {len(accepted)} requests landed at {final[:SHORT_HASH]} with one swap")
                 )
             lines += self.flaky_lines(link.queued.number)
-            has_falls = bool(ledgers) and last_of_root[link.queued.root] == index
+            is_last_of_root = last_of_root[link.queued.root] == index
+            has_falls = bool(ledgers) and is_last_of_root
             update = Update(
                 final,
-                tuple(sorted({*changed, *(ledgers if has_falls else ())})),
+                tuple(sorted({*changed, *(written if is_last_of_root else ())})),
                 (accepted[-1].commit, final) if has_falls else (),
                 ledgers if has_falls else (),
                 self.base,
@@ -2557,6 +2602,12 @@ def preview(root: Path, request: Request, options: Options) -> int:
         check_report.write_line(composed.diff.rstrip("\n"))
     else:
         check_report.write_line(composed.tree)
+    if composed.built:
+        check_report.write_line(
+            f"loop land: the composition keeps its own copy of {' '.join(composed.built)}, and the gate writes it from "
+            f"the build of the composed tree",
+            is_error=True,
+        )
     return ExitCode.OK
 
 
