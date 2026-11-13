@@ -1,7 +1,7 @@
 // A Hole owns its storage alone, so a copy is refused: two Holes would give
 // the storage back two times.
 
-#include <foundation/core/Credit.h>
+#include <foundation/core/Ref.h>
 #include <foundation/effects/Effect.h>
 
 #include <utility>

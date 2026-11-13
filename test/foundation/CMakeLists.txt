@@ -2403,6 +2403,9 @@ foundation_neg_compile_test(neg_core_box_in_hole_of_other_alignment
 foundation_neg_compile_test(neg_core_box_in_lvalue_hole
   "no matching function for call to .mint_box<uint64_t>\\(foundation::core::Hole<8, 8>&, uint64_t\\)."
   "cannot bind rvalue reference of type .foundation::core::Hole<8, 8>&&. to lvalue of type .foundation::core::Hole<8, 8>.")
+foundation_neg_compile_test(neg_core_hole_forged_box
+  "redefinition of .class foundation::core::Box<T>."
+  "previous definition of .class foundation::core::Box<T>.")
 foundation_neg_compile_test(neg_core_hole_copied
   "use of deleted function .foundation::core::Hole<Size, Align>::Hole\\(const foundation::core::Hole<Size, Align>&\\) \\[with long unsigned int Size = 8; long unsigned int Align = 8\\]."
   "a Hole owns its storage alone: a copy would free the storage two times")
@@ -2827,9 +2830,11 @@ foundation_neg_compile_test(neg_core_fixed_list_view_of_temporary
   "use of deleted function .void foundation::core::FixedList<T, N>::view\\(\\) && \\[with T = int; long unsigned int N = 4\\]."
   "a view of a temporary FixedList points into an object that the full expression ends")
 
-foundation_neg_compile_test(neg_core_view_get_without_array
-  "use of .constexpr auto foundation::core::detail::element_at_\\(T\\*, std::size_t, std::size_t\\) \\[with Brand = has_element\\(foundation::core::View<const int>\\)::<lambda\\(\\)>; T = const int; std::size_t = long unsigned int\\]. before deduction of .auto."
-  "In instantiation of .constexpr auto foundation::core::View<T, Extent>::get\\(std::size_t\\) const \\[with Refused = \\{\\}; Fresh = has_element\\(foundation::core::View<const int>\\)::<lambda\\(\\)>; T = const int; long unsigned int Extent = 18446744073709551615; std::size_t = long unsigned int\\].")
+# Region.h defines the body of get of a View, so a unit that includes only
+# Region.h cannot give it a body of its own.
+foundation_neg_compile_test(neg_core_view_get_forged_body
+  "redefinition of .template<class Brand, class T>  requires  IsBrand<Brand> constexpr auto foundation::core::detail::element_at_\\(T\\*, std::size_t, std::size_t\\)."
+  "previously declared here")
 foundation_neg_compile_test(neg_core_fixed_array_get_of_temporary
   "use of deleted function .void foundation::core::FixedArray<T, N>::get\\(std::size_t\\) && \\[with T = int; long unsigned int N = 4; std::size_t = long unsigned int\\]."
   "an element of a temporary FixedArray dangles at the end of the full expression")

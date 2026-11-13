@@ -1,7 +1,7 @@
 // The alignment of a Hole is a power of two.  The gate of the mint refuses
 // the alignment 12 before the allocation door can see it.
 
-#include <foundation/core/Credit.h>
+#include <foundation/core/Ref.h>
 #include <foundation/effects/Effect.h>
 
 #include <utility>

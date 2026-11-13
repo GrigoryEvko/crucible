@@ -49,17 +49,32 @@
 // to a cold call.  A loop that reads the object many times takes one Ref
 // with view() before the loop, and the Ref has no test.
 //
-// A Hole of foundation/core/Credit.h holds the storage of a Box with no
-// object in it.  mint_hole(std::move(box)) ends the object and keeps the
-// storage, and mint_box<T>(std::move(hole), args...) builds a T in the
-// storage of a Hole of the exact size and alignment of T.  Neither mint
-// calls the allocation door.
+// A Hole<Size, Align> is the credit of the family: the heap storage of one
+// object with no object in it.  mint_hole<Size, Align>(alloc) takes the
+// storage from the allocation door, and mint_hole(std::move(box)) ends the
+// object of a Box and keeps its storage.  mint_box<T>(std::move(hole),
+// args...) builds a T in the storage of a Hole of the exact size and
+// alignment of T, with no call of the door.  consume() gives the storage
+// back.  So N steps from a Box to a Hole and back call the door one time.
+//
+// A Hole is linear, and consume() is its drop door.  The destructor also
+// gives the storage back, so a Hole that a path drops does not leak.  A move
+// leaves the source empty, and each spend of an empty Hole ends the process
+// through fatal().  No constructor of a Hole takes a pointer: one allocates
+// the storage, and one takes the storage of a Box.  The two constructors
+// take the key that only HoleDoor builds.
+//
+// Box and Hole name each other.  Each declaration of the two stands in this
+// header with its definition, so a unit that sees one declaration also sees
+// the definition, and a second definition is a compile error.  A header that
+// declared Box and did not define it would let a unit define a Box of its
+// own, which the friend declaration and the mint of a Hole would accept.
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
-#include <foundation/core/Credit.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Report.h>
 
@@ -302,10 +317,47 @@ struct atomic_word<Ref<T, Brand>> {
     }
 };
 
+// The object of a Box: a complete object type that is not an array, not
+// cv-qualified and not abstract, with a destructor that does not throw.
+template <class T>
+concept BoxPayload = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>
+                  && !std::is_abstract_v<T> && std::is_nothrow_destructible_v<T>;
+
+// The size and the alignment of a Hole: a size of at least one byte, and an
+// alignment that is a power of two.
+template <std::size_t Size, std::size_t Align>
+concept HoleShape = Size > 0 && Align > 0 && (Align & (Align - 1)) == 0;
+
+// Box takes a Hole in a constructor, and this header defines Hole after Box.
+template <std::size_t Size, std::size_t Align>
+    requires HoleShape<Size, Align>
+class Hole;
+
 template <class T, class Marker, class... Args>
 concept CanMintBox = BoxPayload<T> && AllocationCapability<Marker> && std::constructible_from<T, Args&&...>;
 
 namespace detail {
+
+// The door of the two mints of a Hole, and the key of the constructors of a
+// Hole.  HoleDoor is the one friend of the key.  The door and the key hold
+// no template, so no explicit specialization of a template reaches the key.
+// A use of namespace detail outside the base gets only a Hole of new
+// storage, or a Hole of the storage of a Box that it gives up.
+struct HoleDoor;
+
+class [[nodiscard]] HoleKey final {
+    friend struct HoleDoor;
+
+    constexpr HoleKey() noexcept {}
+    constexpr HoleKey(HoleKey const&) noexcept {}
+
+public:
+    HoleKey& operator=(HoleKey const&) = delete("a key of a Hole lives for one construction");
+};
+
+struct HoleDoor {
+    [[nodiscard]] static constexpr HoleKey key() noexcept { return HoleKey{}; }
+};
 
 // The door of mint_box, and the key of the constructor of a Box.  BoxDoor is
 // the one friend of the key, and only mint_box calls the door.  The door and
@@ -458,6 +510,95 @@ template <class T, class Marker, class... Args>
     requires CanMintBox<T, Marker, Args...>
 [[nodiscard]] Box<T> mint_box(Marker /*allocation*/, Args&&... args) noexcept {
     return Box<T>{detail::BoxDoor::key(), static_cast<Args&&>(args)...};
+}
+
+// Size bytes of heap storage at the alignment Align, with no object in it.
+// The annotation no_start_over_bytes refuses a Hole to the checked lifetime
+// start, so no bytes become a Hole that frees storage that it does not own.
+template <std::size_t Size, std::size_t Align>
+    requires HoleShape<Size, Align>
+class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] Hole {
+    void* storage_ = nullptr;
+
+    template <BoxPayload T>
+    friend class Box;
+
+    // The storage of a Hole that a path spends.  A moved-from or spent Hole
+    // holds none, and each build tests it here.
+    [[nodiscard]] void* held_() const noexcept {
+        if (storage_ == nullptr) [[unlikely]] {
+            fatal("a spend of a Hole that holds no storage: the Hole was moved from or spent");
+        }
+        return storage_;
+    }
+
+    // Gives the storage to a Box, which builds its object in it.  The Hole
+    // is then empty.
+    [[nodiscard]][[= ::foundation::linear::detach_door{}]] void* detach_() && noexcept {
+        void* const storage = held_();
+        storage_ = nullptr;
+        return storage;
+    }
+
+public:
+    // Takes Size bytes at the alignment Align from the allocation door.
+    // Only mint_hole holds the key.
+    explicit Hole(detail::HoleKey const& /*key*/) noexcept : storage_{detail::heap_allocate_(Size, Align)} {}
+
+    // Ends the object of a Box of the exact size and alignment, and takes
+    // its storage.  The Box is then empty.  Only mint_hole holds the key.
+    template <BoxPayload T>
+        requires(sizeof(T) == Size && alignof(T) == Align)
+    explicit Hole(detail::HoleKey const& /*key*/, Box<T>&& box) noexcept : storage_{box.vacate_()} {}
+
+    Hole(Hole&& other) noexcept : storage_{other.storage_} { other.storage_ = nullptr; }
+
+    Hole& operator=(Hole&& other) noexcept {
+        if (this != &other) {
+            if (storage_ != nullptr) {
+                detail::heap_release_(storage_, Size, Align);
+            }
+            storage_ = other.storage_;
+            other.storage_ = nullptr;
+        }
+        return *this;
+    }
+
+    Hole(Hole const&) = delete("a Hole owns its storage alone: a copy would free the storage two times");
+    Hole& operator=(Hole const&) = delete("a Hole owns its storage alone: a copy would free the storage two times");
+
+    ~Hole() {
+        if (storage_ != nullptr) {
+            detail::heap_release_(storage_, Size, Align);
+        }
+    }
+
+    // Gives the storage back to the allocation door.  The Hole is then
+    // empty.
+    [[= ::foundation::linear::drop_door{}]] void consume() && noexcept {
+        detail::heap_release_(held_(), Size, Align);
+        storage_ = nullptr;
+    }
+};
+
+// The gate of the mint of a Hole from the allocation capability.
+template <std::size_t Size, std::size_t Align, class Marker>
+concept CanMintHole = HoleShape<Size, Align> && AllocationCapability<Marker>;
+
+// A Hole of new storage from the allocation door.  The door never gives a
+// null pointer.
+template <std::size_t Size, std::size_t Align, class Marker>
+    requires CanMintHole<Size, Align, Marker>
+[[nodiscard]] Hole<Size, Align> mint_hole(Marker /*allocation*/) noexcept {
+    return Hole<Size, Align>{detail::HoleDoor::key()};
+}
+
+// A Hole of the storage of a Box that the caller gives up.  The object of
+// the Box ends, and its storage stays with no call of the door.  A Box that
+// holds no object ends the process through fatal().
+template <BoxPayload T>
+[[nodiscard]] Hole<sizeof(T), alignof(T)> mint_hole(Box<T>&& box) noexcept {
+    return Hole<sizeof(T), alignof(T)>{detail::HoleDoor::key(), std::move(box)};
 }
 
 // The gate of the mint of a Box in a Hole: the Hole has the exact size and

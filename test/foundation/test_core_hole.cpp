@@ -1,5 +1,5 @@
-// Tests of foundation/core/Credit.h: Hole and its two mints, and the mint of
-// a Box in a Hole of foundation/core/Ref.h.
+// Tests of the Hole of foundation/core/Ref.h: Hole and its two mints, and
+// the mint of a Box in a Hole.
 //
 // The target links with the linker option --wrap for malloc, aligned_alloc,
 // calloc and free (test/foundation/CMakeLists.txt).  Each call of the

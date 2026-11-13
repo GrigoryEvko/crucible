@@ -6,9 +6,9 @@
 //   FixedArray<T, N>    N elements inline, in the object itself
 //   HeapArray<T, Align> count elements on the heap, at the alignment Align
 //
-// This header also defines get(position) and enumerate() of a View, and the
-// free function zip(first, second), because it includes the Ref and Record
-// families, and Region.h does not.
+// This header also defines enumerate() of a View and the free function
+// zip(first, second), because it includes the Record family, and Region.h
+// does not.
 //
 // THE PAIRS
 //   view.enumerate()    each element of a View of a fixed extent with its
@@ -90,18 +90,6 @@
 namespace foundation::core {
 
 namespace detail {
-
-// The body of each get of the Region family, which Region.h declares: the
-// element at position of the count elements from first, as an Option of a
-// Ref with the brand of the public call, or no value at or past the count.
-// first is not null when count is above zero.
-template <::foundation::brand::IsBrand Brand, class T>
-[[nodiscard]] constexpr auto element_at_(T* first, std::size_t count, std::size_t position) noexcept {
-    if (position >= count) [[unlikely]] {
-        return Option<Ref<T, Brand>>{none};
-    }
-    return Option<Ref<T, Brand>>::some(RefDoor::lend<Brand>(first[position]));
-}
 
 // The cursors of enumerate() and zip obey the rule of a ViewCursor: each
 // cursor knows the end of its loop, a read or a step at the end ends the

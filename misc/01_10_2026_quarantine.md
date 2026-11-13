@@ -1165,7 +1165,7 @@ The fixed ring stays `fixy::CyclicBuffer` of `fixy/CyclicBuffer.h`, which keeps 
 | `window<N>(offset)` | `Option<View<T, N>>`. Then N reads with no check | one branch | - | main |
 | conversions | `View<T>` to `View<T const>`, and a fixed extent to `View<T>`. No conversion removes a const or adds a fixed extent | none | - | main |
 | `Option<View<T>>` | The size of a `View`, through the niche of the view | none | - | main |
-| `get(i)` | `Option<Ref<T>>`. `Region.h` declares it, and `Array.h` defines it with the Ref family | one branch | `get` | main |
+| `get(i)` | `Option<Ref<T>>`. `Region.h` includes the Ref family and defines it | one branch | `get` | main |
 | `at(i)` | `Index<Extent>` for a fixed extent, `BrandedIndex<Brand>` in a branded scope | no branch | `at` | main |
 | `indices()` | The proven indexes of a loop: `Index<N>` or `BrandedIndex<Brand>` | the loop bound | `for` | main |
 | `split_at(k)` | `Option<Record<View<T>, View<T>>>` | one branch | - | design |
@@ -1270,7 +1270,7 @@ Each owner fills each element on its mint, or takes a fill value: no owner reads
 
 **The idea.** One object is reached through a reference that is never null (`Ref`). It has one owner on the heap (`Box`), lives in an arena (`BumpArena::make`), or lives in storage with an explicit lifetime (`Slot`). A function is reached through `FnRef` or `CallRef`. With Region, this gives one grid of one object or many objects, borrowed, owned, in an arena or inline.
 
-**The header.** `include/foundation/core/Ref.h` (main), with the parts of the linear design in `foundation/core/Credit.h` and `foundation/core/Identity.h` (section 11.10). `Ref.h` and `Region.h` include `Credit.h`, and `Region.h` never includes `Ref.h`. `Ref.h` includes `Atomic.h` for the word of a Ref (section 11.6), and `Atomic.h` never includes `Ref.h`.
+**The header.** `include/foundation/core/Ref.h` (main) holds `Ref`, `Box` and `Hole`, and `foundation/core/Identity.h` holds a part of the linear design (section 11.10). `Region.h` includes `Ref.h`. `BumpArena`, whose `array` gives a `View`, has a header of its own above `Region.h`. No header of the base declares an entity that a different header defines, because a unit that includes only the declaring header can give the entity a definition of its own. `Ref.h` includes `Atomic.h` for the word of a Ref (section 11.6), and `Atomic.h` never includes `Ref.h`.
 
 **The merges.** Slice 4.3 merges `fixy/Borrowed.h` and `fixy/SharedRegion.h` into `View` and the Ref family (Appendix E). `fixy/ScopedView.h` and `fixy/OwnedRegion.h` stay (Appendix E.1). A borrow of one object becomes a `Ref<T, Brand>`, and a borrow of a run becomes a `View` (section 11.4).
 

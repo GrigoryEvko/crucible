@@ -656,8 +656,8 @@ witness <foundation/core/Ref.h> private | foundation::core::detail::BoxKey | fou
 # free only storage that a Hole or a Box allocated.  Each constructor of a
 # Hole takes the key that only HoleDoor builds, so each Hole comes through
 # mint_hole.
-witness <foundation/core/Credit.h> no-match | foundation::core::Hole<8, 8> | foundation::core::Hole<8, 8>{forge::rvalue<void*>()}
-witness <foundation/core/Credit.h> private | foundation::core::detail::HoleKey | foundation::core::detail::HoleKey{}
+witness <foundation/core/Ref.h> no-match | foundation::core::Hole<8, 8> | foundation::core::Hole<8, 8>{forge::rvalue<void*>()}
+witness <foundation/core/Ref.h> private | foundation::core::detail::HoleKey | foundation::core::detail::HoleKey{}
 # A Ref has no constructor from a pointer, so no Ref holds a null pointer.
 # A Ref of an object takes the key that only RefDoor builds, so each Ref
 # from an object comes through the door.

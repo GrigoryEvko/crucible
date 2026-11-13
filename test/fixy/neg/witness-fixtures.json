@@ -1011,11 +1011,11 @@
     },
     {
       "type": "foundation::core::Hole<8, 8>",
-      "header": "foundation/core/Credit.h"
+      "header": "foundation/core/Ref.h"
     },
     {
       "type": "foundation::core::detail::HoleKey",
-      "header": "foundation/core/Credit.h"
+      "header": "foundation/core/Ref.h"
     },
     {
       "type": "foundation::core::Ref<int, forge::brand>",

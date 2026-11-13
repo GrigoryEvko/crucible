@@ -303,8 +303,8 @@ that the axis does not apply to the row.
 | `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 14 |
 | `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 7 |
-| `mint_hole(T0_2)` | `include/foundation/core/Credit.h` | Y | - | Y | Y | token | · | HS14: 8 |
-| `mint_hole(foundation::core::Box<T0_0>&&)` | `include/foundation/core/Credit.h` | Y | - | Y | Y | token | · | HS14: 8 |
+| `mint_hole(T0_2)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 8 |
+| `mint_hole(foundation::core::Box<T0_0>&&)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 8 |
 | `mint_identity` | `include/foundation/core/Identity.h` | Y | - | Y | · | token | · | HS14: 2 |
 | `mint_sole_writer` | `include/foundation/core/Atomic.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 

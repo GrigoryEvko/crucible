@@ -37,11 +37,16 @@
 // This header also defines the reads of the characters of a TextView and of
 // a FixedText, which foundation/core/Text.h declares: the loop gives a
 // ViewCursor<char const>, and window() gives an Option<TextView>.
+//
+// get(position) gives an Option of a Ref, so this header includes the Ref
+// family and defines the body of get itself.  A unit that includes only
+// this header then cannot give get a body of its own.
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Index.h>
+#include <foundation/core/Ref.h>
 #include <foundation/core/Report.h>
 #include <foundation/core/Scalar.h>
 #include <foundation/core/Text.h>
@@ -109,11 +114,17 @@ template <std::size_t Extent, class T>
 template <class T, std::size_t Extent>
 [[nodiscard]] constexpr T* first_of_(View<T, Extent> view) noexcept;
 
-// The body of each get of the Region family, with the brand of the public
-// call.  Array.h defines it, because this header does not include the Ref
-// family.
+// The body of each get of the Region family: the element at position of the
+// count elements from first, as an Option of a Ref with the brand of the
+// public call, or no value at or past the count.  first is not null when
+// count is above zero.
 template <::foundation::brand::IsBrand Brand, class T>
-[[nodiscard]] constexpr auto element_at_(T* first, std::size_t count, std::size_t position) noexcept;
+[[nodiscard]] constexpr auto element_at_(T* first, std::size_t count, std::size_t position) noexcept {
+    if (position >= count) [[unlikely]] {
+        return Option<Ref<T, Brand>>{none};
+    }
+    return Option<Ref<T, Brand>>::some(RefDoor::lend<Brand>(first[position]));
+}
 
 // The loops of the iteration verbs reverse(), windows<W>() and chunks<W>()
 // of a View, and their cursors.  Array.h defines the loops of enumerate()
@@ -283,9 +294,6 @@ public:
     // The element at position, as an Option of a Ref with the fresh brand of
     // the call, or no value at or past the count: one compare.  The pack
     // refuses each explicit argument, so no caller names the brand.
-    // Array.h defines the body of the read, because this header does not
-    // include the Ref family.  A unit that calls it without Array.h gets a
-    // compile error, because the return type is not deduced.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr auto get(std::size_t position) const noexcept {
