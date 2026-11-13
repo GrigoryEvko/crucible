@@ -41,6 +41,7 @@
 #include <crucible/SchemaTable.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
+#include <fixy/Core.h>
 #include <fixy/os/OwnedFile.h>
 #include <fixy/Refined.h>
 
@@ -146,20 +147,20 @@ template <class Field>
 // undefined behaviour to read.  The stored address is not read: it has no
 // meaning in this process, so the field keeps its null value and a later
 // use of it fails loudly.
-[[nodiscard]] inline std::optional<TensorMeta> decode_trace_meta(const std::byte* raw) noexcept {
+[[nodiscard]] inline ::fixy::Option<TensorMeta> decode_trace_meta(const std::byte* raw) noexcept {
     using detail::trace_meta_field_;
     TensorMeta meta{};
 
     const auto ndim = trace_meta_field_<uint8_t>(raw, offsetof(TensorMeta, ndim));
-    if (ndim > kMaxTensorNDim) return std::nullopt;
+    if (ndim > kMaxTensorNDim) return ::fixy::none;
     meta.ndim = make_ndim(::fixy::mint_refined<::fixy::bounded_above<kMaxTensorNDim>>(ndim));
-    if (!detail::read_trace_dims_(raw, offsetof(TensorMeta, sizes), ndim, meta.sizes)) return std::nullopt;
-    if (!detail::read_trace_dims_(raw, offsetof(TensorMeta, strides), ndim, meta.strides)) return std::nullopt;
+    if (!detail::read_trace_dims_(raw, offsetof(TensorMeta, sizes), ndim, meta.sizes)) return ::fixy::none;
+    if (!detail::read_trace_dims_(raw, offsetof(TensorMeta, strides), ndim, meta.strides)) return ::fixy::none;
 
     const auto dtype = trace_meta_field_<int8_t>(raw, offsetof(TensorMeta, dtype));
     const auto device_type = trace_meta_field_<int8_t>(raw, offsetof(TensorMeta, device_type));
     const auto layout = trace_meta_field_<int8_t>(raw, offsetof(TensorMeta, layout));
-    if (!valid_scalar_type(dtype) || !valid_device_type(device_type) || !valid_layout(layout)) return std::nullopt;
+    if (!valid_scalar_type(dtype) || !valid_device_type(device_type) || !valid_layout(layout)) return ::fixy::none;
     meta.dtype = make_scalar_type(::fixy::mint_refined<valid_scalar_type>(dtype));
     meta.device_type = make_device_type(::fixy::mint_refined<valid_device_type>(device_type));
     meta.layout = make_layout(::fixy::mint_refined<valid_layout>(layout));
@@ -172,7 +173,7 @@ template <class Field>
     const auto device_idx = trace_meta_field_<int8_t>(raw, offsetof(TensorMeta, device_idx));
     const auto requires_grad = trace_meta_field_<uint8_t>(raw, offsetof(TensorMeta, requires_grad));
     const auto flags = trace_meta_field_<uint8_t>(raw, offsetof(TensorMeta, flags));
-    if (device_idx < -1 || requires_grad > 1 || (flags & ~known_flags) != 0) return std::nullopt;
+    if (device_idx < -1 || requires_grad > 1 || (flags & ~known_flags) != 0) return ::fixy::none;
     meta.device_idx = device_idx;
     meta.requires_grad = requires_grad == 1;
     meta.flags = flags;
@@ -182,7 +183,7 @@ template <class Field>
     meta.version = trace_meta_field_<uint32_t>(raw, offsetof(TensorMeta, version));
     meta.storage_nbytes = trace_meta_field_<uint32_t>(raw, offsetof(TensorMeta, storage_nbytes));
     meta.grad_fn_hash = grad_fn_hash(trace_meta_field_<uint64_t>(raw, offsetof(TensorMeta, grad_fn_hash)));
-    return meta;
+    return ::fixy::Option<TensorMeta>::some(meta);
 }
 
 // Loads the trace at path.  When should_register_names is true, the schema
@@ -192,21 +193,23 @@ template <::fixy::CtxFitsFileOpen Ctx>
 [[nodiscard]] inline std::unique_ptr<LoadedTrace>
 load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableView> const& schema_table_view,
             bool should_register_names) {
+    // A report names no path, because a report writes no raw text.  Each
+    // caller knows the path that it gave.
     auto opened = ::fixy::mint_owned_file(io, path, "rb");
     if (!opened) {
-        std::fprintf(stderr, "load_trace: cannot open %s: %s\n", path, std::strerror(opened.error()));
+        ::fixy::report(::fixy::Sink::Err, "load_trace: cannot open the trace file (error {})\n", opened.error());
         return nullptr;
     }
     const ::fixy::OwnedFile trace_file = *std::move(opened);
 
     // The size of the file bounds every count in it, so it is read first.
     if (std::fseek(trace_file.get(), 0, SEEK_END) != 0) {
-        std::fprintf(stderr, "load_trace: cannot size %s\n", path);
+        ::fixy::report(::fixy::Sink::Err, "load_trace: cannot read the size of the trace file\n");
         return nullptr;
     }
     const long file_end = std::ftell(trace_file.get());
     if (file_end < 0 || std::fseek(trace_file.get(), 0, SEEK_SET) != 0) {
-        std::fprintf(stderr, "load_trace: cannot size %s\n", path);
+        ::fixy::report(::fixy::Sink::Err, "load_trace: cannot read the size of the trace file\n");
         return nullptr;
     }
     const auto file_size = static_cast<uint64_t>(file_end);
@@ -216,24 +219,24 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
     if (std::fread(magic, 1, 4, trace_file.get()) != 4 || std::fread(&version, 4, 1, trace_file.get()) != 1
         || std::fread(&raw_num_ops, 4, 1, trace_file.get()) != 1
         || std::fread(&raw_num_metas, 4, 1, trace_file.get()) != 1) {
-        std::fprintf(stderr, "load_trace: truncated header in %s\n", path);
+        ::fixy::report(::fixy::Sink::Err, "load_trace: the header of the trace file is truncated\n");
         return nullptr;
     }
 
     if (std::memcmp(magic, "CRTR", 4) != 0) {
-        std::fprintf(stderr, "load_trace: bad magic in %s\n", path);
+        ::fixy::report(::fixy::Sink::Err, "load_trace: the trace file does not start with the magic CRTR\n");
         return nullptr;
     }
     if (version != 1) {
-        std::fprintf(stderr, "load_trace: unsupported version %u in %s\n", version, path);
+        ::fixy::report(::fixy::Sink::Err, "load_trace: the trace file has the version {}, and the loader reads 1\n",
+                       version);
         return nullptr;
     }
 
     if (!kTraceNumOpsBound(raw_num_ops) || !kTraceNumMetasBound(raw_num_metas)) {
-        std::fprintf(stderr,
-                     "load_trace: header counts exceed cap in %s "
-                     "(num_ops=%u num_metas=%u)\n",
-                     path, raw_num_ops, raw_num_metas);
+        ::fixy::report(::fixy::Sink::Err,
+                       "load_trace: the header counts are past their limits (num_ops={} num_metas={})\n", raw_num_ops,
+                       raw_num_metas);
         return nullptr;
     }
     // The check above refuses an out-of-range count with a message.  The
@@ -249,16 +252,16 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
     const uint64_t after_header = file_size - TRACE_HEADER_BYTES;
     const uint64_t op_bytes = uint64_t{num_ops} * sizeof(TraceOpRecord);
     if (op_bytes > after_header || uint64_t{num_metas} * MIN_TRACE_META_BYTES > after_header - op_bytes) {
-        std::fprintf(stderr,
-                     "load_trace: header counts exceed the file in %s "
-                     "(num_ops=%u num_metas=%u, %llu bytes after the header)\n",
-                     path, num_ops, num_metas, static_cast<unsigned long long>(after_header));
+        ::fixy::report(::fixy::Sink::Err,
+                       "load_trace: the header counts do not fit in the file "
+                       "(num_ops={} num_metas={}, {} bytes after the header)\n",
+                       num_ops, num_metas, after_header);
         return nullptr;
     }
 
     std::vector<TraceOpRecord> records(num_ops);
     if (num_ops > 0 && std::fread(records.data(), sizeof(TraceOpRecord), num_ops, trace_file.get()) != num_ops) {
-        std::fprintf(stderr, "load_trace: truncated op records in %s\n", path);
+        ::fixy::report(::fixy::Sink::Err, "load_trace: the op records are truncated\n");
         return nullptr;
     }
 
@@ -282,15 +285,22 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
     for (uint32_t i = 0; i < num_metas; i++) {
         raw_record.fill(std::byte{0});
         if (std::fread(raw_record.data(), meta_record_size, 1, trace_file.get()) != 1) {
-            std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
+            ::fixy::report(::fixy::Sink::Err, "load_trace: the metadata records are truncated\n");
             return nullptr;
         }
-        const std::optional<TensorMeta> meta = decode_trace_meta(raw_record.data());
-        if (!meta) [[unlikely]] {
-            std::fprintf(stderr, "load_trace: meta[%u] breaks a claim of its type in %s — corrupt trace\n", i, path);
+        const bool is_decoded = decode_trace_meta(raw_record.data())
+                                    .match(
+                                        [&metas, i](TensorMeta meta) noexcept {
+                                            metas[i] = meta;
+                                            return true;
+                                        },
+                                        [] noexcept { return false; });
+        if (!is_decoded) [[unlikely]] {
+            ::fixy::report(::fixy::Sink::Err,
+                           "load_trace: the metadata record {} breaks a claim of its type, so the trace is corrupt\n",
+                           i);
             return nullptr;
         }
-        metas[i] = *meta;
     }
 
     // The name table is optional and sits after the metadata.
@@ -304,8 +314,9 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
         if (!should_register_names) {
             num_names = 0;
         } else if (!schema_table_view) {
-            std::fprintf(stderr, "load_trace: the schema table is sealed, so the %u names in %s are not registered\n",
-                         num_names, path);
+            ::fixy::report(::fixy::Sink::Err,
+                           "load_trace: the schema table is sealed, so the {} names of the trace are not registered\n",
+                           num_names);
             num_names = 0;
         }
         for (uint32_t i = 0; i < num_names; i++) {
@@ -377,10 +388,10 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
             // underflow either, because the cursor never passes the count, and
             // it is this very check that keeps that true.
             if (total_tensors > num_metas - meta_cursor) [[unlikely]] {
-                std::fprintf(stderr,
-                             "load_trace: op[%u] meta range (%u tensors at cursor %u) "
-                             "overruns num_metas=%u in %s\n",
-                             i, total_tensors, meta_cursor, num_metas, path);
+                ::fixy::report(::fixy::Sink::Err,
+                               "load_trace: the metadata of op {} ({} tensors at the cursor {}) "
+                               "runs past num_metas={}\n",
+                               i, total_tensors, meta_cursor, num_metas);
                 return nullptr;
             }
             trace->meta_starts[i] = MetaIndex{meta_cursor};
