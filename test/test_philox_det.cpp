@@ -1,6 +1,7 @@
 #include <crucible/Philox.h>
 #include <fixy/Bands.h>
 #include <fixy/Core.h>
+#include <fixy/fp/Polynomial.h>
 
 #include "test_assert.h"
 
@@ -86,8 +87,8 @@ static void test_to_uniform_det_bit_equal() {
     }
 }
 
-static void test_box_muller_det_bit_equal() {
-    std::printf("  box_muller_det bit-equality...\n");
+static void test_box_muller_polynomial_det_bit_equal() {
+    std::printf("  box_muller_polynomial_det bit-equality...\n");
 
     constexpr std::pair<uint32_t, uint32_t> pairs[] = {
         {1u, 2u},
@@ -96,8 +97,8 @@ static void test_box_muller_det_bit_equal() {
         {0x12345678u, 0x9ABCDEF0u},
     };
     for (auto [u1, u2] : pairs) {
-        const auto [raw_first, raw_second] = Philox::box_muller(u1, u2);
-        const auto [pinned_first, pinned_second] = Philox::box_muller_det(u1, u2).peek();
+        const auto [raw_first, raw_second] = ::fixy::fp::box_muller_polynomial(u1, u2);
+        const auto [pinned_first, pinned_second] = Philox::box_muller_polynomial_det(u1, u2).peek();
         assert(std::bit_cast<uint32_t>(raw_first) == std::bit_cast<uint32_t>(pinned_first));
         assert(std::bit_cast<uint32_t>(raw_second) == std::bit_cast<uint32_t>(pinned_second));
     }
@@ -134,12 +135,6 @@ static_assert(band_tier_v<decltype(Philox::to_uniform_det(0u))> == DetSafeTier_v
 static_assert(band_tier_v<decltype(Philox::to_uniform_d_det(0u))> == DetSafeTier_v::PhiloxRng,
               "Philox::to_uniform_d_det MUST return DetSafe<PhiloxRng, double>.");
 
-static_assert(band_tier_v<decltype(Philox::box_muller_det(0u, 0u))> == DetSafeTier_v::MonotonicClockRead,
-              "Philox::box_muller_det MUST return DetSafe<MonotonicClockRead, "
-              "pair<float,float>> — the C library transcendentals (sin/cos/log) "
-              "drift by 1-3 ULPs between implementations, so the bytes are NOT "
-              "cross-platform bit-equal.");
-
 static_assert(band_tier_v<decltype(Philox::box_muller_polynomial_det(0u, 0u))> == DetSafeTier_v::PhiloxRng,
               "Philox::box_muller_polynomial_det MUST return DetSafe<PhiloxRng, "
               "pair<float,float>> — it uses IEEE 754 polynomial sin/cos/log and a "
@@ -168,14 +163,6 @@ static_assert(admissible_at_cipher_fence<decltype(Philox::to_uniform_det(0u))>,
 
 static_assert(admissible_at_cipher_fence<decltype(Philox::to_uniform_d_det(0u))>,
               "to_uniform_d_det's PhiloxRng-pinned result MUST pass the Cipher write-fence.");
-
-// The rejection below is deliberate.  It guards against a promotion
-// of the tier back to PhiloxRng that leaves the C library dependency
-// in place.
-static_assert(!admissible_at_cipher_fence<decltype(Philox::box_muller_det(0u, 0u))>,
-              "box_muller_det's MonotonicClockRead-pinned result MUST NOT pass "
-              "the Cipher write-fence — the C library sin/cos/log it calls is "
-              "not cross-platform bit-stable.");
 
 static_assert(admissible_at_cipher_fence<decltype(Philox::box_muller_polynomial_det(0u, 0u))>,
               "box_muller_polynomial_det's PhiloxRng-pinned result MUST pass the "
@@ -237,9 +224,8 @@ static void test_chain_composition() {
     assert(rng.peek() == Philox4x32::generate(uint64_t{0}, key_bytes_raw));
 }
 
-// Every wrapper here is constexpr-callable, and these variables force
-// that at compile time.  Box-Muller is absent because the standard
-// library transcendentals it calls are not constexpr.
+// Each wrapper here except box_muller_polynomial_det is constexpr, and
+// these variables force that at compile time.
 
 inline constexpr auto kCheckGenerateDetConstexpr = Philox::generate_det(uint64_t{1}, uint64_t{2});
 static_assert(band_tier_v<decltype(kCheckGenerateDetConstexpr)> == DetSafeTier_v::PhiloxRng);
@@ -274,13 +260,6 @@ static_assert(std::is_same_v<decltype(Philox::to_uniform_d_det(0u)), DetSafe<Det
               "to_uniform_d_det MUST return EXACTLY DetSafe<PhiloxRng, double>.");
 
 static_assert(std::is_same_v<Philox::NormalPair, ::fixy::Record<float, float>>);
-
-static_assert(std::is_same_v<decltype(Philox::box_muller_det(0u, 0u)),
-                             DetSafe<DetSafeTier_v::MonotonicClockRead, Philox::NormalPair>>,
-              "box_muller_det MUST return EXACTLY DetSafe<MonotonicClockRead, "
-              "Philox::NormalPair>.  Re-shaping the Box-Muller return (for "
-              "example to a FixedArray of two floats) is an API break and has to be "
-              "propagated downstream.");
 
 static_assert(std::is_same_v<decltype(Philox::box_muller_polynomial_det(0u, 0u)),
                              DetSafe<DetSafeTier_v::PhiloxRng, Philox::NormalPair>>,
@@ -358,7 +337,7 @@ static_assert(!satisfies_v<GenResult, DetSafeTier_v::Pure>,
 
 static_assert(!satisfies_v<decltype(Philox::to_uniform_det(0u)), DetSafeTier_v::Pure>);
 static_assert(!satisfies_v<decltype(Philox::to_uniform_d_det(0u)), DetSafeTier_v::Pure>);
-static_assert(!satisfies_v<decltype(Philox::box_muller_det(0u, 0u)), DetSafeTier_v::Pure>);
+static_assert(!satisfies_v<decltype(Philox::box_muller_polynomial_det(0u, 0u)), DetSafeTier_v::Pure>);
 
 // A caller emptying the wrapper into a destination buffer must not
 // pay for a copy on the way out.
@@ -464,7 +443,7 @@ int main() {
 
     test_generate_det_bit_equal_to_raw();
     test_to_uniform_det_bit_equal();
-    test_box_muller_det_bit_equal();
+    test_box_muller_polynomial_det_bit_equal();
     test_op_key_det_bit_equal();
     test_chain_composition();
     test_move_semantics_through_wrapper();

@@ -76,9 +76,9 @@ int main() {
                        float f = Philox::to_uniform(raw);
                        bench::do_not_optimize(f);
                    }),
-        bench::run("box_muller(u32, u32) → 2×f32",
+        bench::run("box_muller_polynomial_det(u32, u32) → 2×f32",
                    [&] {
-                       auto pair = Philox::box_muller(u1, u2);
+                       auto pair = Philox::box_muller_polynomial_det(u1, u2).peek();
                        bench::do_not_optimize(pair);
                    }),
         bench::run("op_key_det(master, op_idx, hash).peek()",

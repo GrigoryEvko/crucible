@@ -885,19 +885,10 @@ crucible_neg_compile_test(neg_fence_gpu_weak_strength
     "static assertion failed: device-or-wider GPU scope \\(Gpu / System\\) requires BarrierStrength >= AcqRel"
     "crucible::mimic::fence_strength_meets_scope\\(foundation::algebra::lattices::BarrierStrength::ReleaseStore, foundation::algebra::lattices::MemoryScope::Gpu\\)\\). evaluates to false")
 
-# The two Box-Muller tiers of Philox, each refused at the gate above it.
-# Two fixtures pin orthogonal corners of the (source tier, gate tier)
-# grid:
-#   1. cipher_fence — the source is the library path (MonotonicClockRead)
-#      and the gate is the Cipher write fence (PhiloxRng).  The source is
-#      below the fence, so library sin/cos/log cannot reach a replay log.
-#   2. wrong_tier_consume — the source is the polynomial path (PhiloxRng)
-#      and the gate demands Pure.  The gate is above the source, which
-#      pins the polynomial path exactly at PhiloxRng.
-# Each pins the refused gate, the tier it demands and the source band.
-crucible_neg_compile_test(neg_philox_box_muller_det_cipher_fence
-    "constraints.*not satisfied"
-    "admissible_at_cipher_fence<.*At<foundation::algebra::lattices::DetSafeTier::MonotonicClockRead>")
+# The Box-Muller transform of Philox, refused at a gate above its tier.
+# The source is the polynomial path (PhiloxRng) and the gate demands
+# Pure, which pins the polynomial path exactly at PhiloxRng.  The
+# fixture pins the refused gate, the tier it demands and the source band.
 crucible_neg_compile_test(neg_philox_box_muller_polynomial_det_wrong_tier_consume
     "constraints.*not satisfied"
     "requires_pure_tier<.*At<foundation::algebra::lattices::DetSafeTier::PhiloxRng>")

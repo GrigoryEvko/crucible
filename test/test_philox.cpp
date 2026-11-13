@@ -117,7 +117,7 @@ static void test_normal() {
 
     for (int i = 0; i < N; i++) {
         auto r = Philox4x32::generate(static_cast<uint64_t>(i), 0xCAFEBABEULL);
-        auto [n0, n1] = Philox::box_muller(r.at(::fixy::index<0>()), r.at(::fixy::index<1>()));
+        auto [n0, n1] = Philox::box_muller_polynomial_det(r.at(::fixy::index<0>()), r.at(::fixy::index<1>())).peek();
 
         sum += static_cast<double>(n0) + static_cast<double>(n1);
         sum_sq += static_cast<double>(n0) * static_cast<double>(n0) + static_cast<double>(n1) * static_cast<double>(n1);
@@ -139,7 +139,7 @@ static void test_normal() {
 
     for (int i = 0; i < 1000; i++) {
         auto r = Philox4x32::generate(static_cast<uint64_t>(i), 0ULL);
-        auto [n0, n1] = Philox::box_muller(r.at(::fixy::index<0>()), r.at(::fixy::index<1>()));
+        auto [n0, n1] = Philox::box_muller_polynomial_det(r.at(::fixy::index<0>()), r.at(::fixy::index<1>())).peek();
         assert(std::isfinite(n0) && std::isfinite(n1));
     }
 
@@ -151,7 +151,7 @@ static void test_normal() {
     // all-ones maps to one, whose logarithm is zero.
     for (uint32_t u1 : {0u, UINT32_MAX}) {
         for (uint32_t u2 : {0u, UINT32_MAX}) {
-            auto [c0, c1] = Philox::box_muller(u1, u2);
+            auto [c0, c1] = Philox::box_muller_polynomial_det(u1, u2).peek();
             assert(std::isfinite(c0) && std::isfinite(c1)
                    && "box_muller boundary corner must be finite (log(0) guard)");
         }

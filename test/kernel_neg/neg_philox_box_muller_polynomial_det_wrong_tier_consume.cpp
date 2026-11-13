@@ -7,12 +7,7 @@
 // it passes the Cipher write fence.  The lattice also has the stronger
 // Pure tier, for values that depend on declared inputs alone.  A consumer
 // that demands Pure must refuse the polynomial result, which pins the
-// boundary of that path exactly at PhiloxRng: stronger than the library
-// form, weaker than Pure.
-//
-// The sibling fixture neg_philox_box_muller_det_cipher_fence pins the other
-// corner: a source below the Cipher fence.  This one has a gate above the
-// source.
+// boundary of that path exactly at PhiloxRng.
 
 #include <crucible/Philox.h>
 #include <fixy/Bands.h>

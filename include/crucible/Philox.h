@@ -13,7 +13,6 @@
 #include <fixy/fp/Polynomial.h>
 #include <foundation/Platform.h>
 
-#include <cmath>
 #include <cstdint>
 #include <utility>
 
@@ -30,24 +29,9 @@ struct Philox {
 
     [[nodiscard]] static constexpr double to_uniform_d(uint32_t x) { return static_cast<double>(x) * kTwoToMinus32_; }
 
-    // The base has no door to the logarithm, sine and cosine of the platform
-    // math library, so this transform calls them directly.  Its tier says
-    // that the bits replay only on the machine that made them.
-    [[nodiscard]] static NormalPair box_muller(uint32_t u1_raw, uint32_t u2_raw) {
-        // The bias to (0, 1] is what keeps a zero input out of log().
-        float u1 = (static_cast<float>(u1_raw) + 1.0f) * kTwoToMinus32f_;
-        float u2 = (static_cast<float>(u2_raw) + 1.0f) * kTwoToMinus32f_;
-
-        float r = ::fixy::fp::sqrt(-2.0f * std::log(u1));
-        float theta = 6.2831853071795864f * u2;  // 2π
-
-        return {r * std::cos(theta), r * std::sin(theta)};
-    }
-
     using DetSafePhiloxCounter = ::fixy::det_safe::PhiloxRng<::fixy::Philox4x32::Counter>;
     using DetSafePhiloxFloat = ::fixy::det_safe::PhiloxRng<float>;
     using DetSafePhiloxDouble = ::fixy::det_safe::PhiloxRng<double>;
-    using DetSafeMonoClockFloatPair = ::fixy::det_safe::MonoClock<NormalPair>;
     using DetSafePhiloxFloatPair = ::fixy::det_safe::PhiloxRng<NormalPair>;
     using DetSafePureKey = ::fixy::det_safe::Pure<uint64_t>;
 
@@ -78,17 +62,9 @@ struct Philox {
         return ::fixy::mint_band<DetSafePhiloxDouble>(to_uniform_d(x));
     }
 
-    // The bytes are Philox-derived, but the transform reaches sin, cos and
-    // log in the platform math library, and those agree only to within a few
-    // units in the last place across implementations. The tier says so: this
-    // result replays on the machine that produced it and nowhere else.
-    [[nodiscard]] static DetSafeMonoClockFloatPair box_muller_det(uint32_t u1_raw, uint32_t u2_raw) {
-        return ::fixy::mint_band<DetSafeMonoClockFloatPair>(box_muller(u1_raw, u2_raw));
-    }
-
-    // Same transform with in-tree polynomial sin, cos and log and a correctly
-    // rounded square root. No platform math library, so the result is
-    // bit-identical everywhere and carries the stronger tier.
+    // The Box-Muller transform with in-tree polynomial sin, cos and log and a
+    // correctly rounded square root. It calls no platform math library, so
+    // the result is the same on each platform, bit for bit.
     [[nodiscard]] static DetSafePhiloxFloatPair box_muller_polynomial_det(uint32_t u1_raw, uint32_t u2_raw) {
         return ::fixy::mint_band<DetSafePhiloxFloatPair>(::fixy::fp::box_muller_polynomial(u1_raw, u2_raw));
     }

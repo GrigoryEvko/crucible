@@ -1,7 +1,5 @@
-// The polynomial form of Box-Muller exists because the library form is
-// not bit-stable across platforms.  Nothing here compares the two: they
-// are not meant to agree bit for bit, so a cross-check would only restate
-// that they differ.  What is checked instead is that the polynomial form
+// The polynomial form of Box-Muller calls no platform math library, so
+// its bits are the same on each platform.  The checks here are that it
 // repeats exactly, stays finite, and still produces a normal distribution.
 
 #include <crucible/Philox.h>
@@ -20,13 +18,8 @@ namespace {
 
 using crucible::Philox;
 
-// The two entry points sit at different determinism tiers.  Asserting it
-// here means a change that swaps them stops the build rather than quietly
-// moving every sampler onto the platform-dependent path.
-static_assert(::fixy::band_tier_v<decltype(Philox::box_muller_det(0u, 0u))>
-                  == ::fixy::DetSafeTier_v::MonotonicClockRead,
-              "box_muller_det must stay at the clock-read tier, the library path");
-
+// The polynomial entry point sits at the generator tier.  A change that
+// moves it to a weaker tier stops the build.
 static_assert(::fixy::band_tier_v<decltype(Philox::box_muller_polynomial_det(0u, 0u))>
                   == ::fixy::DetSafeTier_v::PhiloxRng,
               "box_muller_polynomial_det must stay at the generator tier, the "
