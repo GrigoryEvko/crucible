@@ -8,9 +8,10 @@
 
 #include <fixy/atoms/Global.h>
 #include <fixy/Axis.h>
+#include <fixy/Core.h>
 
-#include <tuple>
 #include <type_traits>
+#include <utility>
 
 // The tags of the probe singletons.  An atom whose argument has internal
 // linkage has no stable identity, and the gate refuses it.
@@ -28,8 +29,8 @@ namespace fg = ::fixy::atom::global;
 
 // The real registry: three distinct singleton atoms on the global-state
 // axis, with no edge between them.
-static_assert(std::tuple_size_v<sig::registry> == 3);
-static_assert(std::tuple_size_v<sig::init_edges> == 0);
+static_assert(::fixy::pack_size_v<sig::registry> == 3);
+static_assert(::fixy::pack_size_v<sig::init_edges> == 0);
 static_assert(sig::AcyclicInitGraph<sig::registry, sig::init_edges>);
 static_assert(std::is_same_v<sig::runtime_init_graph::registry_type, sig::registry>);
 static_assert(sig::CKernelTableSingleton::axis == ::fixy::Axis::GlobalState);
@@ -42,35 +43,42 @@ using First = fg::singleton<first_tag>;
 using Second = fg::singleton<singleton_graph_tags::second_tag>;
 using Third = fg::singleton<singleton_graph_tags::third_tag>;
 using Outside = fg::singleton<singleton_graph_tags::outside_tag>;
-using Three = std::tuple<First, Second, Third>;
+using Three = ::fixy::Pack<First, Second, Third>;
 
 // A chain has no cycle.  A self-loop and a three-cycle have one.
-static_assert(sig::AcyclicInitGraph<Three, std::tuple<sig::init_edge<First, Second>, sig::init_edge<Second, Third>>>);
-static_assert(!sig::AcyclicInitGraph<Three, std::tuple<sig::init_edge<Second, Second>>>);
-static_assert(!sig::AcyclicInitGraph<Three, std::tuple<sig::init_edge<First, Second>, sig::init_edge<Second, Third>,
-                                                       sig::init_edge<Third, First>>>);
+static_assert(sig::AcyclicInitGraph<Three, ::fixy::Pack<sig::init_edge<First, Second>, sig::init_edge<Second, Third>>>);
+static_assert(!sig::AcyclicInitGraph<Three, ::fixy::Pack<sig::init_edge<Second, Second>>>);
+static_assert(!sig::AcyclicInitGraph<Three, ::fixy::Pack<sig::init_edge<First, Second>, sig::init_edge<Second, Third>,
+                                                         sig::init_edge<Third, First>>>);
+
+// The walk retires a node only after each node with an edge into it.  A
+// chain that the registry lists in the opposite order has no cycle, and a
+// cycle that leaves one node free still has one.
+static_assert(sig::AcyclicInitGraph<Three, ::fixy::Pack<sig::init_edge<Third, Second>, sig::init_edge<Second, First>>>);
+static_assert(!sig::AcyclicInitGraph<Three, ::fixy::Pack<sig::init_edge<First, Second>, sig::init_edge<Second, Third>,
+                                                         sig::init_edge<Third, Second>>>);
 
 // Two paths into one node are not a cycle, and a repeated edge is not one.
-static_assert(sig::AcyclicInitGraph<Three, std::tuple<sig::init_edge<First, Third>, sig::init_edge<Second, Third>>>);
-static_assert(sig::AcyclicInitGraph<Three, std::tuple<sig::init_edge<First, Second>, sig::init_edge<First, Second>>>);
+static_assert(sig::AcyclicInitGraph<Three, ::fixy::Pack<sig::init_edge<First, Third>, sig::init_edge<Second, Third>>>);
+static_assert(sig::AcyclicInitGraph<Three, ::fixy::Pack<sig::init_edge<First, Second>, sig::init_edge<First, Second>>>);
 
 // An edge to a singleton outside the registry is refused, at either end.
 // A detector that dropped such an edge would report the graph acyclic.
-static_assert(!sig::EdgesNameRegisteredSingletons<Three, std::tuple<sig::init_edge<First, Outside>>>);
-static_assert(!sig::EdgesNameRegisteredSingletons<Three, std::tuple<sig::init_edge<Outside, First>>>);
-static_assert(!sig::AcyclicInitGraph<Three, std::tuple<sig::init_edge<First, Outside>>>);
+static_assert(!sig::EdgesNameRegisteredSingletons<Three, ::fixy::Pack<sig::init_edge<First, Outside>>>);
+static_assert(!sig::EdgesNameRegisteredSingletons<Three, ::fixy::Pack<sig::init_edge<Outside, First>>>);
+static_assert(!sig::AcyclicInitGraph<Three, ::fixy::Pack<sig::init_edge<First, Outside>>>);
 
-// An edge must be an init_edge, and the edges must be a tuple.
-static_assert(!sig::EdgesNameRegisteredSingletons<Three, std::tuple<std::pair<First, Second>>>);
+// An edge must be an init_edge, and the edges must be a Pack.
+static_assert(!sig::EdgesNameRegisteredSingletons<Three, ::fixy::Pack<std::pair<First, Second>>>);
 static_assert(!sig::EdgesNameRegisteredSingletons<Three, sig::init_edge<First, Second>>);
 
 // A registry holds each singleton one time, holds only singleton atoms,
-// and is a tuple.
+// and is a Pack.
 static_assert(sig::SingletonRegistry<Three>);
-static_assert(sig::SingletonRegistry<std::tuple<>>);
-static_assert(!sig::SingletonRegistry<std::tuple<First, First>>);
-static_assert(!sig::SingletonRegistry<std::tuple<First, fg::thread_local_<first_tag>>>);
-static_assert(!sig::SingletonRegistry<std::tuple<First, int>>);
+static_assert(sig::SingletonRegistry<::fixy::Pack<>>);
+static_assert(!sig::SingletonRegistry<::fixy::Pack<First, First>>);
+static_assert(!sig::SingletonRegistry<::fixy::Pack<First, fg::thread_local_<first_tag>>>);
+static_assert(!sig::SingletonRegistry<::fixy::Pack<First, int>>);
 static_assert(!sig::SingletonRegistry<First>);
 
 }  // namespace

@@ -19,14 +19,13 @@
 // outside the registry fails the gate.
 
 #include <fixy/Atom.h>
+#include <fixy/Core.h>
 #include <fixy/atoms/Global.h>
 
 #include <foundation/reflect/Instance.h>
 
-#include <array>
 #include <cstddef>
-#include <tuple>
-#include <type_traits>
+#include <cstdint>
 
 namespace crucible::singleton_init_graph {
 
@@ -49,95 +48,75 @@ struct init_edge final {
 
 namespace detail {
 
-template <class T>
-inline constexpr bool is_tuple_ = false;
-template <class... Members>
-inline constexpr bool is_tuple_<std::tuple<Members...>> = true;
+// The largest registry: the walk below holds one bit for each node.
+inline constexpr std::size_t max_registry_size = 64;
 
 // A registry entry is a singleton atom of fixy/atoms/Global.h.
 template <class Entry>
 inline constexpr bool is_singleton_atom_ =
     ::fixy::atom::IsAtom<Entry> && ::foundation::reflect::IsInstanceOf<Entry, ^^fg::singleton>;
 
-// The position of Entry in the registry, or the size of the registry when
-// the registry does not hold it.  Complexity: linear in the registry.
-template <class Entry, class... Registered>
-[[nodiscard]] consteval std::size_t position_of_(std::tuple<Registered...>* /*registry*/) noexcept {
-    std::size_t position = 0;
-    static_cast<void>(((std::is_same_v<Entry, Registered> ? false : (++position, true)) && ...));
-    return position;
-}
-
-// Every entry is a singleton atom, and no entry occurs twice.  The empty
-// registry holds no entry to read the parameter for.
-// Complexity: quadratic in the registry.
+// A Pack of at most max_registry_size entries, each a singleton atom, and
+// no entry two times.  Each other type is no registry.
+template <class Registry>
+inline constexpr bool is_registry_ = false;
 template <class... Registered>
-[[nodiscard]] consteval bool is_registry_([[maybe_unused]] std::tuple<Registered...>* registry) noexcept {
-    std::size_t index = 0;
-    bool valid = true;
-    ((valid = valid && is_singleton_atom_<Registered> && position_of_<Registered>(registry) == index, ++index), ...);
-    return valid;
-}
+inline constexpr bool is_registry_<::fixy::Pack<Registered...>> =
+    sizeof...(Registered) <= max_registry_size && (is_singleton_atom_<Registered> && ...)
+    && ::fixy::pack_unique_v<::fixy::Pack<Registered...>>;
 
-// The two ends of every edge are in the registry.  The parameter deduces
-// only a tuple of init_edge, so an edge of another type makes the call
-// ill-formed, and the concept that makes the call is not satisfied.  The
-// locals are unused when the pack of edges is empty.
+// A Pack of init_edge whose two ends are each in the registry.  Only a Pack
+// of init_edge matches the partial specialization, so an edge of a
+// different type, or edges that are no Pack, give false.
+template <class Registry, class Edges>
+inline constexpr bool edges_name_registered_ = false;
 template <class Registry, class... From, class... To>
-[[nodiscard]] consteval bool edges_name_registered_(std::tuple<init_edge<From, To>...>* /*edges*/) noexcept {
-    [[maybe_unused]] constexpr std::size_t nodes = std::tuple_size_v<Registry>;
-    [[maybe_unused]] Registry* const registry = nullptr;
-    return ((position_of_<From>(registry) < nodes && position_of_<To>(registry) < nodes) && ...);
-}
+inline constexpr bool edges_name_registered_<Registry, ::fixy::Pack<init_edge<From, To>...>> =
+    ((::fixy::pack_contains_v<From, Registry> && ::fixy::pack_contains_v<To, Registry>) && ...);
 
-// Kahn's walk: retire each node that no unretired node reaches, until
-// no node retires.  The graph has no cycle when every node retires.
+// Kahn's walk over the set of the retired nodes, one bit for each node:
+// retire each node whose edges in all come from a retired node, until no
+// node retires.  The graph has no cycle when each node retires.  The caller
+// proves that each end of each edge is in the registry one time.
 // Complexity: nodes times (nodes plus edges).
 template <class Registry, class... From, class... To>
-[[nodiscard]] consteval bool is_acyclic_(std::tuple<init_edge<From, To>...>* /*edges*/) noexcept {
-    constexpr std::size_t nodes = std::tuple_size_v<Registry>;
-    constexpr std::size_t edge_count = sizeof...(From);
-    [[maybe_unused]] Registry* const registry = nullptr;
-    const std::array<std::size_t, edge_count> sources{position_of_<From>(registry)...};
-    const std::array<std::size_t, edge_count> targets{position_of_<To>(registry)...};
-
-    std::array<std::size_t, nodes> in_degree{};
-    for (std::size_t edge = 0; edge < edge_count; ++edge)
-        ++in_degree[targets[edge]];
-
-    std::array<bool, nodes> is_retired{};
-    std::size_t retired_count = 0;
+[[nodiscard]] consteval bool retires_each_node_(::fixy::Pack<init_edge<From, To>...> /*edges*/) noexcept {
+    constexpr std::size_t nodes = ::fixy::pack_size_v<Registry>;
+    std::uint64_t retired = 0;
     bool has_progress = true;
     while (has_progress) {
         has_progress = false;
         for (std::size_t node = 0; node < nodes; ++node) {
-            if (is_retired[node] || in_degree[node] != 0) continue;
-            is_retired[node] = true;
-            ++retired_count;
+            const std::uint64_t node_bit = std::uint64_t{1} << node;
+            // A fold over the comma, because two equal edges would give a
+            // fold over || with two equal operands.
+            bool is_blocked = false;
+            ((is_blocked = is_blocked
+                        || (::fixy::pack_index_of_v<To, Registry> == node
+                            && (retired & (std::uint64_t{1} << ::fixy::pack_index_of_v<From, Registry>)) == 0)),
+             ...);
+            if ((retired & node_bit) != 0 || is_blocked) continue;
+            retired |= node_bit;
             has_progress = true;
-            for (std::size_t edge = 0; edge < edge_count; ++edge) {
-                if (sources[edge] == node) --in_degree[targets[edge]];
-            }
         }
     }
-    return retired_count == nodes;
+    return retired == ::fixy::low_mask<std::uint64_t>(static_cast<int>(nodes));
 }
 
 }  // namespace detail
 
-// A std::tuple of distinct singleton atoms.
+// A Pack of distinct singleton atoms, at most max_registry_size of them.
 template <class Registry>
-concept SingletonRegistry = detail::is_tuple_<Registry> && detail::is_registry_(static_cast<Registry*>(nullptr));
+concept SingletonRegistry = detail::is_registry_<Registry>;
 
-// A std::tuple of init_edge, each of whose ends the registry holds.
+// A Pack of init_edge, each of whose ends the registry holds.
 template <class Registry, class Edges>
-concept EdgesNameRegisteredSingletons = SingletonRegistry<Registry> && detail::is_tuple_<Edges>
-                                     && detail::edges_name_registered_<Registry>(static_cast<Edges*>(nullptr));
+concept EdgesNameRegisteredSingletons = SingletonRegistry<Registry> && detail::edges_name_registered_<Registry, Edges>;
 
 // The registry and the edges form a graph with no cycle.
 template <class Registry, class Edges>
 concept AcyclicInitGraph =
-    EdgesNameRegisteredSingletons<Registry, Edges> && detail::is_acyclic_<Registry>(static_cast<Edges*>(nullptr));
+    EdgesNameRegisteredSingletons<Registry, Edges> && detail::retires_each_node_<Registry>(Edges{});
 
 // The gate.  Naming init_graph<Registry, Edges> for a graph with a cycle,
 // or with an edge to an unregistered singleton, fails the build.
@@ -148,10 +127,10 @@ struct init_graph final {
     using edges_type = Edges;
 };
 
-using registry = std::tuple<CKernelTableSingleton, HotRegionRegistrySingleton, BpfLogCbSingleton>;
+using registry = ::fixy::Pack<CKernelTableSingleton, HotRegionRegistrySingleton, BpfLogCbSingleton>;
 
 // Empty, because no registered initializer reaches another singleton.
-using init_edges = std::tuple<>;
+using init_edges = ::fixy::Pack<>;
 
 using runtime_init_graph = init_graph<registry, init_edges>;
 
