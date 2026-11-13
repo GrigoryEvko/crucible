@@ -15,6 +15,8 @@
 #include <fixy/concurrent/PermissionedSpscChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/Stage.h>
+#include <fixy/os/Futex.h>
+#include <fixy/os/Time.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Saturate.h>
@@ -56,6 +58,134 @@ struct GraphPublishTag {};
     return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<GraphPublishTag>>();
 }
 
+// The idle wait of a stage.  A stage with no work polls SPIN_ROUNDS times,
+// and then it parks until work comes.  The foreground puts ops into the trace
+// ring with no system call, so no thread wakes the drain stage.  It sleeps
+// with a bound, and it polls the ring again after each sleep.  Each later
+// stage parks on the wait word of its input channel, and the stage before it
+// wakes it after each push.  A caller fills the owner mailbox with no wake,
+// so the park of the publish stage has a bound too.  A sleep starts at
+// MIN_SLEEP_NANOS, and each sleep with no work between doubles the bound up
+// to the longest sleep of the stage.
+//
+// The drain stage sleeps only after a spin that found no op, so a steady
+// stream of records never meets a sleep.  A burst that starts in a sleep
+// fills the ring until the sleep ends.  A foreground that records one op in
+// each 10 ns puts 20000 ops into the ring in RING_MAX_SLEEP_NANOS, less than
+// a third of the CAPACITY of the ring.  So the ring does not refuse an op
+// because the drain stage sleeps.
+inline constexpr uint32_t SPIN_ROUNDS = 2048;
+inline constexpr uint64_t MIN_SLEEP_NANOS = 50000;
+// The longest sleep of the drain stage, and of a producer that waits for a
+// free cell of a channel.
+inline constexpr uint64_t RING_MAX_SLEEP_NANOS = 200000;
+// The longest timed park of the publish stage.  It bounds only the wait of a
+// job in the owner mailbox.
+inline constexpr uint64_t MAILBOX_MAX_SLEEP_NANOS = 1000000;
+
+// The futex calls of the pipeline use words of the process that the pipeline
+// owns, so the kernel refuses a call only in a broken process.
+[[nodiscard]] inline ::fixy::Option<::fixy::futex::Deadline> deadline_after(::fixy::BgLoadCtx const& ctx,
+                                                                            uint64_t nanos) noexcept {
+    const auto clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
+    return ::fixy::some(
+        ::fixy::futex::Deadline::after(clock, nanos).expect("the monotonic clock gives the deadline of a park"));
+}
+
+// The wait word of one channel of the pipeline.  The consumer parks on it
+// when the channel is empty, and the producer wakes it after each push.  The
+// two sides change the word with a read-modify-write, so their changes have
+// one order.  A push whose exchange comes after the exchange of the consumer
+// reads PARKED and wakes the consumer.  The item of a push whose exchange
+// comes before is visible to the test of the consumer after its exchange.
+// So no wake is lost.  Each word has its own cache line.
+class alignas(64) ChannelPark {
+public:
+    // The producer calls it after each push.  It makes a system call only
+    // when the consumer parks.
+    void signal(::fixy::BgLoadCtx const& ctx) noexcept {
+        if (word_.exchange_acq_rel(IDLE) == PARKED) [[unlikely]] {
+            (void)::fixy::futex::wake_all(ctx, word_).expect("the kernel wakes a parked stage of the pipeline");
+        }
+    }
+
+    // The consumer calls it when the channel of input is empty.  It tests the
+    // channel again after the mark.  The park ends at a wake, at the
+    // deadline, or at once when the word changed after the mark.
+    template <class Input>
+    void park(::fixy::BgLoadCtx const& ctx, Input const& input,
+              ::fixy::Option<::fixy::futex::Deadline> deadline) noexcept {
+        (void)word_.exchange_acq_rel(PARKED);
+        if (!input.has_item()) {
+            (void)::fixy::futex::wait(ctx, word_, PARKED, std::move(deadline))
+                .expect("the kernel parks a stage of the pipeline on its own word");
+        }
+        word_.store_release(IDLE);
+    }
+
+private:
+    static constexpr uint32_t IDLE = 0;
+    static constexpr uint32_t PARKED = 1;
+
+    ::fixy::futex::FutexWord word_{IDLE};
+};
+
+// The wait words of the three channels that a stage parks on.  The run of
+// the pipeline holds them beside its channels.
+struct ChannelParks {
+    ChannelPark trace_batches{};
+    ChannelPark build_work{};
+    ChannelPark graph_publish{};
+};
+
+// The idle state of one stage: the polls since the last work, the bound of
+// the next sleep, and the longest sleep.
+class StageIdle {
+public:
+    explicit StageIdle(uint64_t max_sleep_nanos) noexcept : max_sleep_nanos_{max_sleep_nanos} {}
+
+    // The stage found work.
+    void reset() noexcept {
+        rounds_ = 0;
+        sleep_nanos_ = MIN_SLEEP_NANOS;
+    }
+
+    // A poll found no work in the ring or no free cell in a channel.  The
+    // stage spins, and then it sleeps for the bound.
+    void pause_or_sleep(::fixy::BgLoadCtx const& ctx) noexcept {
+        if (should_spin_()) return;
+        const ::fixy::futex::FutexWord sleep_word{0};
+        (void)::fixy::futex::wait(ctx, sleep_word, 0, deadline_after(ctx, next_sleep_nanos_()))
+            .expect("the kernel parks a stage of the pipeline on its own word");
+    }
+
+    // A poll found the channel of input empty.  The stage spins, and then it
+    // parks on the word of the channel.  A timed park ends at the bound.
+    template <class Input>
+    void pause_or_park(::fixy::BgLoadCtx const& ctx, ChannelPark& park, Input const& input, bool is_timed) noexcept {
+        if (should_spin_()) return;
+        park.park(ctx, input, is_timed ? deadline_after(ctx, next_sleep_nanos_()) : ::fixy::none);
+    }
+
+private:
+    [[nodiscard]] bool should_spin_() noexcept {
+        if (rounds_ == SPIN_ROUNDS) return false;
+        ++rounds_;
+        CRUCIBLE_SPIN_PAUSE;
+        return true;
+    }
+
+    [[nodiscard]] uint64_t next_sleep_nanos_() noexcept {
+        const uint64_t nanos = sleep_nanos_;
+        sleep_nanos_ = ::fixy::min(nanos * 2, max_sleep_nanos_);
+        return nanos;
+    }
+
+    uint32_t rounds_ = 0;
+    uint64_t sleep_nanos_ = MIN_SLEEP_NANOS;
+    uint64_t max_sleep_nanos_ = MIN_SLEEP_NANOS;
+};
+
 }  // namespace detail::bg_pipeline
 
 struct BackgroundThread::Pipeline {
@@ -75,15 +205,21 @@ struct BackgroundThread::Pipeline {
         ::fixy::concurrent::spsc_channel_t<BgGraphPublish*, 64, decltype(detail::bg_pipeline::graph_publish_root())>;
 
     // The consumer end of a stage, together with the thread the stage
-    // serves.  Only run_pipeline_ builds one, from a channel end and the
-    // thread object.
+    // serves, the context of the run and the wait words of the channels.
+    // Only run_pipeline_ builds one, from a channel end, the thread object,
+    // its context and its wait words.  A stage parks and wakes through the
+    // context, so the drain stage and the detect stage take no context from
+    // the door.
     template <class Consumer>
     class StageInput {
         Consumer inner_;
         ::fixy::Ref<BackgroundThread> owner_;
+        ::fixy::BgLoadCtx ctx_;
+        ::fixy::Ref<detail::bg_pipeline::ChannelParks> parks_;
 
-        StageInput(Consumer&& inner, BackgroundThread& owner) noexcept
-            : inner_{std::move(inner)}, owner_{::fixy::to(owner)} {}
+        StageInput(Consumer&& inner, BackgroundThread& owner, ::fixy::BgLoadCtx const& ctx,
+                   detail::bg_pipeline::ChannelParks& parks) noexcept
+            : inner_{std::move(inner)}, owner_{::fixy::to(owner)}, ctx_{ctx}, parks_{::fixy::to(parks)} {}
         friend struct BackgroundThread;
 
     public:
@@ -105,7 +241,13 @@ struct BackgroundThread::Pipeline {
 
         [[nodiscard]] decltype(std::declval<Consumer&>().try_pop()) try_pop() noexcept { return inner_.try_pop(); }
 
+        // True when the channel holds an item.  A test after the mark of a
+        // park sees each item of a push whose wake the mark could miss.
+        [[nodiscard]] bool has_item() const noexcept { return !inner_.empty_approx(); }
+
         [[nodiscard]] BackgroundThread& owner() const noexcept { return *owner_; }
+        [[nodiscard]] ::fixy::BgLoadCtx const& ctx() const noexcept { return ctx_; }
+        [[nodiscard]] detail::bg_pipeline::ChannelParks& parks() const noexcept { return *parks_; }
     };
 
     using StartInput = StageInput<typename StartChannel::ConsumerHandle>;
@@ -125,11 +267,27 @@ struct BackgroundThread::Pipeline {
         }
     };
 
+    // Pushes value into the channel of producer, and wakes the consumer when
+    // it parks on park.  A full channel means that its consumer works, and
+    // its consumer gives no wake for a free cell.  So the producer spins,
+    // and then it sleeps with a growing bound, until the push goes in.
     template <class Producer, class T>
-    static void push_pipeline(Producer& producer, T const& value) {
+    static void push_pipeline(::fixy::BgLoadCtx const& ctx, detail::bg_pipeline::ChannelPark& park, Producer& producer,
+                              T const& value) {
+        detail::bg_pipeline::StageIdle full{detail::bg_pipeline::RING_MAX_SLEEP_NANOS};
         while (!producer.try_push(value)) {
-            CRUCIBLE_SPIN_PAUSE;
+            full.pause_or_sleep(ctx);
         }
+        park.signal(ctx);
+    }
+
+    // One idle step of a stage whose input channel is empty: a poll of the
+    // spin, or a park on the word of the channel.  A timed park ends at the
+    // bound of idle.
+    template <class Input>
+    static void wait_for_item(Input const& in, detail::bg_pipeline::ChannelPark& park,
+                              detail::bg_pipeline::StageIdle& idle, bool is_timed) noexcept {
+        idle.pause_or_park(in.ctx(), park, in, is_timed);
     }
 
     // The four stages of the pipeline, in the order of its channels.
@@ -414,12 +572,16 @@ uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {
 
 void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename TraceBatchChannel::ProducerHandle&& out) {
     BackgroundThread& owner = in.owner();
+    detail::bg_pipeline::ChannelPark& next = in.parks().trace_batches;
     while (!in.try_pop()) {
         CRUCIBLE_SPIN_PAUSE;
     }
 
     auto batch = std::make_unique<BgTraceBatch>();
+    detail::bg_pipeline::StageIdle idle{detail::bg_pipeline::RING_MAX_SLEEP_NANOS};
 
+    // A stop request does not wake a sleep of this stage, so the stage reads
+    // the request at the end of its sleep, at most RING_MAX_SLEEP_NANOS later.
     while (true) {
         if (owner.stop_requested.peek()) break;
 
@@ -427,11 +589,12 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename Trac
                                                        batch->scope_hashes.view(), batch->callsite_hashes.view());
 
         if (batch->count == 0) {
-            CRUCIBLE_SPIN_PAUSE;
+            idle.pause_or_sleep(in.ctx());
             continue;
         }
+        idle.reset();
 
-        push_pipeline(out, batch.get());
+        push_pipeline(in.ctx(), next, out, batch.get());
         batch.release();
         batch = std::make_unique<BgTraceBatch>();
     }
@@ -439,28 +602,32 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename Trac
     batch->count = owner.ring.get()->try_pop_batch(batch->entries.view(), batch->meta_starts.view(),
                                                    batch->scope_hashes.view(), batch->callsite_hashes.view());
     if (batch->count > 0) {
-        push_pipeline(out, batch.get());
+        push_pipeline(in.ctx(), next, out, batch.get());
         batch.release();
     }
 
     BgTraceBatch* stop = nullptr;
-    push_pipeline(out, stop);
+    push_pipeline(in.ctx(), next, out, stop);
 }
 
 void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
                                                    typename BuildWorkChannel::ProducerHandle&& out) {
     BackgroundThread& owner = in.owner();
+    detail::bg_pipeline::ChannelParks& parks = in.parks();
+    // The park of this stage has no deadline, so the stage reads no bound.
+    detail::bg_pipeline::StageIdle idle{detail::bg_pipeline::RING_MAX_SLEEP_NANOS};
     while (true) {
         auto maybe_batch = in.try_pop();
         if (!maybe_batch) {
-            CRUCIBLE_SPIN_PAUSE;
+            wait_for_item(in, parks.trace_batches, idle, false);
             continue;
         }
+        idle.reset();
 
         std::unique_ptr<BgTraceBatch> batch{*maybe_batch};
         if (!batch) {
             BgBuildWork* stop = nullptr;
-            push_pipeline(out, stop);
+            push_pipeline(in.ctx(), parks.build_work, out, stop);
             return;
         }
 
@@ -478,7 +645,7 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
 
             if (owner.detector.check(ops.entries[i].schema_hash, ops.entries[i].shape_hash)) {
                 if (auto work = std::unique_ptr<BgBuildWork>(owner.prepare_iteration_build_work())) {
-                    push_pipeline(out, work.get());
+                    push_pipeline(in.ctx(), parks.build_work, out, work.get());
                     work.release();
                 }
             }
@@ -489,7 +656,7 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
         owner.apply_due_reset_();
 
         auto commit = std::unique_ptr<BgBuildWork>(owner.make_commit_work(ops.count));
-        push_pipeline(out, commit.get());
+        push_pipeline(in.ctx(), parks.build_work, out, commit.get());
         commit.release();
     }
 }
@@ -497,18 +664,22 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
 void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename GraphPublishChannel::ProducerHandle&& out) {
     const ::fixy::BgLoadCtx ctx{::foundation::effects::host::BackgroundOwner::mint_background_context()};
     BackgroundThread& owner = in.owner();
+    detail::bg_pipeline::ChannelParks& parks = in.parks();
+    // The park of this stage has no deadline, so the stage reads no bound.
+    detail::bg_pipeline::StageIdle idle{detail::bg_pipeline::RING_MAX_SLEEP_NANOS};
 
     while (true) {
         auto maybe_work = in.try_pop();
         if (!maybe_work) {
-            CRUCIBLE_SPIN_PAUSE;
+            wait_for_item(in, parks.build_work, idle, false);
             continue;
         }
+        idle.reset();
 
         std::unique_ptr<BgBuildWork> work{*maybe_work};
         if (!work) {
             BgGraphPublish* stop = nullptr;
-            push_pipeline(out, stop);
+            push_pipeline(ctx, parks.graph_publish, out, stop);
             return;
         }
 
@@ -524,7 +695,7 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
             publish->commit_count = work->commit_count;
             publish->meta_floor = work->meta_floor;
             publish->reset_point = work->reset_point;
-            push_pipeline(out, publish.get());
+            push_pipeline(ctx, parks.graph_publish, out, publish.get());
             publish.release();
             continue;
         }
@@ -557,7 +728,7 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
 
         auto publish = std::make_unique<BgGraphPublish>(BgGraphPublish{
             .kind = BgGraphPublish::Kind::Region, .region = std::move(region), .reset_point = work->reset_point});
-        push_pipeline(out, publish.get());
+        push_pipeline(ctx, parks.graph_publish, out, publish.get());
         publish.release();
     }
 }
@@ -570,19 +741,25 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
     BackgroundThread& owner = in.owner();
     CRUCIBLE_ASSERT(out.owner.try_get() == &owner);
     const OwnerMailboxScope mailbox{owner, PublishStage{}};
+    detail::bg_pipeline::StageIdle idle{detail::bg_pipeline::MAILBOX_MAX_SLEEP_NANOS};
 
     while (true) {
         owner.serve_owner_mailbox_(PublishStage{});
         auto maybe_publish = in.try_pop();
         if (!maybe_publish) {
-            CRUCIBLE_SPIN_PAUSE;
+            // A job in the owner mailbox gives no wake, so the park is
+            // timed, and the stage serves the mailbox after each park.
+            wait_for_item(in, in.parks().graph_publish, idle, true);
             continue;
         }
+        idle.reset();
 
         std::unique_ptr<BgGraphPublish> publish{*maybe_publish};
         if (!publish) {
+            // The sink takes each value at its first push.
             auto done = std::make_unique<BgPipelineDone>();
-            push_pipeline(out, done.get());
+            const bool is_taken = out.try_push(done.get());
+            CRUCIBLE_ASSERT(is_taken);
             done.release();
             return;
         }
@@ -665,6 +842,9 @@ void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
     Pipeline::TraceBatchChannel trace_batches;
     Pipeline::BuildWorkChannel build_work;
     Pipeline::GraphPublishChannel graph_publish;
+    // The wait words of the three channels.  They live as long as the
+    // channels, and each stage ends before this frame does.
+    detail::bg_pipeline::ChannelParks parks{};
 
     Pipeline::StartChannel start;
     auto [start_prod_perm, start_cons_perm] =
@@ -687,13 +867,14 @@ void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
             detail::bg_pipeline::graph_publish_root());
 
     auto start_prod = start.producer(std::move(start_prod_perm));
-    auto start_cons = Pipeline::StartInput{start.consumer(std::move(start_cons_perm)), *this};
+    auto start_cons = Pipeline::StartInput{start.consumer(std::move(start_cons_perm)), *this, ctx, parks};
     auto trace_prod = trace_batches.producer(std::move(trace_prod_perm));
-    auto trace_cons = Pipeline::TraceBatchInput{trace_batches.consumer(std::move(trace_cons_perm)), *this};
+    auto trace_cons = Pipeline::TraceBatchInput{trace_batches.consumer(std::move(trace_cons_perm)), *this, ctx, parks};
     auto build_prod = build_work.producer(std::move(build_prod_perm));
-    auto build_cons = Pipeline::BuildWorkInput{build_work.consumer(std::move(build_cons_perm)), *this};
+    auto build_cons = Pipeline::BuildWorkInput{build_work.consumer(std::move(build_cons_perm)), *this, ctx, parks};
     auto publish_prod = graph_publish.producer(std::move(publish_prod_perm));
-    auto publish_cons = Pipeline::GraphPublishInput{graph_publish.consumer(std::move(publish_cons_perm)), *this};
+    auto publish_cons =
+        Pipeline::GraphPublishInput{graph_publish.consumer(std::move(publish_cons_perm)), *this, ctx, parks};
 
     while (!start_prod.try_push(BgPipelineStart{})) {
         CRUCIBLE_SPIN_PAUSE;
