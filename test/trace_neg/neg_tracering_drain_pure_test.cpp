@@ -17,7 +17,7 @@ namespace eff = ::fixy;
 
 int main() {
     crucible::TraceRing ring;
-    crucible::TraceRing::Entry out[1];
-    (void)ring.drain_pure<eff::Row<eff::Effect::Test>>(out, 1);
+    ::fixy::FixedArray<crucible::TraceRing::Entry, 1> out{};
+    (void)ring.drain_pure<eff::Row<eff::Effect::Test>>(out.view());
     return 0;
 }

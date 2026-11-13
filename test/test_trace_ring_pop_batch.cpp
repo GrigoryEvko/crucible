@@ -39,24 +39,30 @@ static ScopeHash make_scope(uint64_t i) noexcept { return ScopeHash{i * 0x9E3779
 
 static CallsiteHash make_callsite(uint64_t i) noexcept { return CallsiteHash{i ^ 0xCBF29CE484222325ULL}; }
 
+// The one call of try_pop_batch in this file.  The batch drain inlines with
+// its copies, and one copy of it keeps the object below its size limit.
+[[gnu::noinline]] static uint32_t pop_batch(TraceRing& ring, ::fixy::View<TraceRing::Entry> entries,
+                                            ::fixy::View<MetaIndex> metas, ::fixy::View<ScopeHash> scopes,
+                                            ::fixy::View<CallsiteHash> calls) noexcept {
+    return ring.try_pop_batch(entries, metas, scopes, calls);
+}
+
 static void test_empty_returns_zero() {
     auto ring = std::make_unique<TraceRing>();
 
-    TraceRing::Entry out_entries[8];
-    MetaIndex out_metas[8];
-    ScopeHash out_scopes[8];
-    CallsiteHash out_calls[8];
+    ::fixy::FixedArray<TraceRing::Entry, 8> out_entries{};
+    ::fixy::FixedArray<MetaIndex, 8> out_metas{};
+    ::fixy::FixedArray<ScopeHash, 8> out_scopes{};
+    ::fixy::FixedArray<CallsiteHash, 8> out_calls{};
 
-    uint32_t n = ring->try_pop_batch(out_entries, out_metas, out_scopes, out_calls, 8);
+    uint32_t n = pop_batch(*ring, out_entries.view(), out_metas.view(), out_scopes.view(), out_calls.view());
     assert(n == 0);
     assert(ring->size().peek() == 0);
 
     crucible::test::pass("  test_empty_returns_zero: PASSED\n");
 }
 
-// A count of zero returns zero without touching the output buffers,
-// which is why the precondition permits null output pointers in that
-// one case.
+// Four empty outputs return zero and drain nothing.
 static void test_max_count_zero() {
     auto ring = std::make_unique<TraceRing>();
 
@@ -65,12 +71,8 @@ static void test_max_count_zero() {
     assert(ring->try_append(make_entry(7)));
     assert(ring->size().peek() == 1);
 
-    TraceRing::Entry out_entries[8];
-    MetaIndex out_metas[8];
-    ScopeHash out_scopes[8];
-    CallsiteHash out_calls[8];
-
-    uint32_t n = ring->try_pop_batch(out_entries, out_metas, out_scopes, out_calls, 0);
+    uint32_t n = pop_batch(*ring, ::fixy::View<TraceRing::Entry>{}, ::fixy::View<MetaIndex>{},
+                           ::fixy::View<ScopeHash>{}, ::fixy::View<CallsiteHash>{});
     assert(n == 0);
     assert(ring->size().peek() == 1);  // entry not drained
 
@@ -86,12 +88,12 @@ static void test_single_thread_fifo() {
     }
     assert(ring->size().peek() == N);
 
-    TraceRing::Entry out_entries[N];
-    MetaIndex out_metas[N];
-    ScopeHash out_scopes[N];
-    CallsiteHash out_calls[N];
+    ::fixy::FixedArray<TraceRing::Entry, N> out_entries{};
+    ::fixy::FixedArray<MetaIndex, N> out_metas{};
+    ::fixy::FixedArray<ScopeHash, N> out_scopes{};
+    ::fixy::FixedArray<CallsiteHash, N> out_calls{};
 
-    uint32_t n = ring->try_pop_batch(out_entries, out_metas, out_scopes, out_calls, N);
+    uint32_t n = pop_batch(*ring, out_entries.view(), out_metas.view(), out_scopes.view(), out_calls.view());
     assert(n == N);
     assert(ring->size().peek() == 0);
 
@@ -115,18 +117,22 @@ static void test_multi_batch_drain() {
         assert(ring->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i)));
     }
 
-    TraceRing::Entry out_entries[N];
-    MetaIndex out_metas[N];
-    ScopeHash out_scopes[N];
-    CallsiteHash out_calls[N];
+    ::fixy::FixedArray<TraceRing::Entry, N> out_entries{};
+    ::fixy::FixedArray<MetaIndex, N> out_metas{};
+    ::fixy::FixedArray<ScopeHash, N> out_scopes{};
+    ::fixy::FixedArray<CallsiteHash, N> out_calls{};
 
     // The sizes are irregular on purpose, so no drain starts or ends on
-    // a round boundary and none of them is a multiple of another.
+    // a round boundary and none of them is a multiple of another.  The
+    // last batch stops at the end of the outputs.
     constexpr uint32_t batch_sizes[] = {7, 13, 31, 64, 100, 200, 500, 100, 50};
     uint32_t total = 0;
     for (uint32_t batch_size : batch_sizes) {
-        uint32_t n = ring->try_pop_batch(out_entries + total, out_metas + total, out_scopes + total, out_calls + total,
-                                         batch_size);
+        const uint32_t batch = ::fixy::min(batch_size, N - total);
+        uint32_t n = pop_batch(*ring, out_entries.view().window(total, batch).expect("the batch fits"),
+                               out_metas.view().window(total, batch).expect("the batch fits"),
+                               out_scopes.view().window(total, batch).expect("the batch fits"),
+                               out_calls.view().window(total, batch).expect("the batch fits"));
         total += n;
         if (total >= N) break;
     }
@@ -148,18 +154,18 @@ static void test_multi_batch_drain() {
 static void test_wrap_around() {
     auto ring = std::make_unique<TraceRing>();
 
-    // The staging buffers are heap vectors: an array of half the ring's
+    // The staging buffers have static storage: an array of half the ring's
     // entries would not fit on the stack.
     constexpr uint32_t HALF = TraceRing::CAPACITY / 2;
     for (uint64_t i = 0; i < HALF; ++i) {
         assert(ring->try_append(make_entry(i)));
     }
     {
-        std::vector<TraceRing::Entry> e(HALF);
-        std::vector<MetaIndex> m(HALF);
-        std::vector<ScopeHash> s(HALF);
-        std::vector<CallsiteHash> c(HALF);
-        uint32_t n = ring->try_pop_batch(e.data(), m.data(), s.data(), c.data(), HALF);
+        static ::fixy::FixedArray<TraceRing::Entry, HALF> half_e{};
+        static ::fixy::FixedArray<MetaIndex, HALF> half_m{};
+        static ::fixy::FixedArray<ScopeHash, HALF> half_s{};
+        static ::fixy::FixedArray<CallsiteHash, HALF> half_c{};
+        uint32_t n = pop_batch(*ring, half_e.view(), half_m.view(), half_s.view(), half_c.view());
         assert(n == HALF);
     }
 
@@ -170,11 +176,11 @@ static void test_wrap_around() {
         assert(ring->try_append(make_entry(0x10000ULL + i)));
     }
 
-    std::vector<TraceRing::Entry> e(WRAP_N);
-    std::vector<MetaIndex> m(WRAP_N);
-    std::vector<ScopeHash> s(WRAP_N);
-    std::vector<CallsiteHash> c(WRAP_N);
-    uint32_t n = ring->try_pop_batch(e.data(), m.data(), s.data(), c.data(), WRAP_N);
+    ::fixy::FixedArray<TraceRing::Entry, WRAP_N> e{};
+    ::fixy::FixedArray<MetaIndex, WRAP_N> m{};
+    ::fixy::FixedArray<ScopeHash, WRAP_N> s{};
+    ::fixy::FixedArray<CallsiteHash, WRAP_N> c{};
+    uint32_t n = pop_batch(*ring, e.view(), m.view(), s.view(), c.view());
     assert(n == WRAP_N);
 
     for (uint32_t i = 0; i < WRAP_N; ++i) {
@@ -199,10 +205,16 @@ static void test_equivalence_with_single_pop() {
         assert(ring_b->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i)));
     }
 
-    std::vector<TraceRing::Entry> a_entries(N), b_entries(N);
-    std::vector<MetaIndex> a_metas(N), b_metas(N);
-    std::vector<ScopeHash> a_scopes(N), b_scopes(N);
-    std::vector<CallsiteHash> a_calls(N), b_calls(N);
+    // The outputs have static storage: the two entry arrays would not fit
+    // on the stack.
+    static ::fixy::FixedArray<TraceRing::Entry, N> a_entries{};
+    static ::fixy::FixedArray<TraceRing::Entry, N> b_entries{};
+    static ::fixy::FixedArray<MetaIndex, N> a_metas{};
+    static ::fixy::FixedArray<MetaIndex, N> b_metas{};
+    static ::fixy::FixedArray<ScopeHash, N> a_scopes{};
+    static ::fixy::FixedArray<ScopeHash, N> b_scopes{};
+    static ::fixy::FixedArray<CallsiteHash, N> a_calls{};
+    static ::fixy::FixedArray<CallsiteHash, N> b_calls{};
 
     // The seed is fixed, so a failing schedule is reproducible.
     std::mt19937_64 rng{0xCAFEBABEDEADBEEFULL};
@@ -210,15 +222,19 @@ static void test_equivalence_with_single_pop() {
     uint32_t a_total = 0;
     while (a_total < N) {
         uint32_t batch = std::min(batch_dist(rng), N - a_total);
-        uint32_t n = ring_a->try_pop_batch(a_entries.data() + a_total, a_metas.data() + a_total,
-                                           a_scopes.data() + a_total, a_calls.data() + a_total, batch);
+        uint32_t n = pop_batch(*ring_a, a_entries.view().window(a_total, batch).expect("the batch fits"),
+                               a_metas.view().window(a_total, batch).expect("the batch fits"),
+                               a_scopes.view().window(a_total, batch).expect("the batch fits"),
+                               a_calls.view().window(a_total, batch).expect("the batch fits"));
         assert(n == batch);  // the batch is clamped, so it always fills
         a_total += n;
     }
 
     for (uint32_t i = 0; i < N; ++i) {
-        uint32_t n =
-            ring_b->drain(b_entries.data() + i, 1, b_metas.data() + i, b_scopes.data() + i, b_calls.data() + i);
+        uint32_t n = ring_b->drain(b_entries.view().window(i, 1).expect("one entry fits"),
+                                   b_metas.view().window(i, 1).expect("one entry fits"),
+                                   b_scopes.view().window(i, 1).expect("one entry fits"),
+                                   b_calls.view().window(i, 1).expect("one entry fits"));
         assert(n == 1);
     }
 
@@ -268,23 +284,33 @@ static void test_spsc_stress() {
     });
 
     std::jthread consumer([&](std::stop_token /*st*/) {
-        TraceRing::Entry out_entries[64];
-        MetaIndex out_metas[64];
-        ScopeHash out_scopes[64];
-        CallsiteHash out_calls[64];
+        ::fixy::FixedArray<TraceRing::Entry, 64> out_entries{};
+        ::fixy::FixedArray<MetaIndex, 64> out_metas{};
+        ::fixy::FixedArray<ScopeHash, 64> out_scopes{};
+        ::fixy::FixedArray<CallsiteHash, 64> out_calls{};
+
+        // The first batch entries of each output.
+        const auto drain_batch = [&](uint32_t batch, bool is_pop_batch) -> uint32_t {
+            const auto entries = out_entries.view().window(0, batch).expect("the batch fits");
+            const auto metas = out_metas.view().window(0, batch).expect("the batch fits");
+            const auto scopes = out_scopes.view().window(0, batch).expect("the batch fits");
+            const auto calls = out_calls.view().window(0, batch).expect("the batch fits");
+            return is_pop_batch ? pop_batch(*ring, entries, metas, scopes, calls)
+                                : ring->drain(entries, metas, scopes, calls);
+        };
 
         uint64_t mode = 0;
         while (received.load(std::memory_order_relaxed) < N) {
             uint32_t got = 0;
             const uint64_t m = mode++ & 0x3;
             if (m == 0) {
-                got = ring->try_pop_batch(out_entries, out_metas, out_scopes, out_calls, 64);
+                got = drain_batch(64, true);
             } else if (m == 1) {
-                got = ring->try_pop_batch(out_entries, out_metas, out_scopes, out_calls, 16);
+                got = drain_batch(16, true);
             } else if (m == 2) {
-                got = ring->drain(out_entries, 32, out_metas, out_scopes, out_calls);
+                got = drain_batch(32, false);
             } else {
-                got = ring->drain(out_entries, 1, out_metas, out_scopes, out_calls);
+                got = drain_batch(1, false);
             }
 
             if (got > 0) {

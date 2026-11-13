@@ -70,7 +70,7 @@ static void test_try_append_pinned_type_identity() {
 static void test_drain_pinned_type_identity() {
     auto ring = std::make_unique<TraceRing>();
 
-    using Got = decltype(ring->drain_pinned(nullptr, 0u));
+    using Got = decltype(ring->drain_pinned(::fixy::View<TraceRing::Entry>{}));
     using Want = HotPath<HotPathTier_v::Warm, uint32_t>;
     static_assert(std::is_same_v<Got, Want>, "drain_pinned must return HotPath<Warm, uint32_t>");
     static_assert(::fixy::band_tier_v<Got> == HotPathTier_v::Warm);
@@ -203,8 +203,8 @@ static void test_metalog_full_buffer_type_pin_survives_failure() {
 
 static void test_drain_pinned_empty_ring() {
     auto ring = std::make_unique<TraceRing>();
-    TraceRing::Entry buf[4]{};
-    auto pinned = ring->drain_pinned(buf, 4);
+    ::fixy::FixedArray<TraceRing::Entry, 4> buf{};
+    auto pinned = ring->drain_pinned(buf.view());
     uint32_t got = std::move(pinned).consume();
     assert(got == 0);
 }

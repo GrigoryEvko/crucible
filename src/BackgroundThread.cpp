@@ -419,9 +419,8 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename Trac
     while (true) {
         if (owner.stop_requested.peek()) break;
 
-        batch->count =
-            owner.ring.get()->try_pop_batch(batch->entries.data(), batch->meta_starts.data(),
-                                            batch->scope_hashes.data(), batch->callsite_hashes.data(), BATCH_SIZE);
+        batch->count = owner.ring.get()->try_pop_batch(batch->entries.view(), batch->meta_starts.view(),
+                                                       batch->scope_hashes.view(), batch->callsite_hashes.view());
 
         if (batch->count == 0) {
             CRUCIBLE_SPIN_PAUSE;
@@ -433,9 +432,8 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename Trac
         batch = std::make_unique<BgTraceBatch>();
     }
 
-    batch->count =
-        owner.ring.get()->try_pop_batch(batch->entries.data(), batch->meta_starts.data(), batch->scope_hashes.data(),
-                                        batch->callsite_hashes.data(), BATCH_SIZE);
+    batch->count = owner.ring.get()->try_pop_batch(batch->entries.view(), batch->meta_starts.view(),
+                                                   batch->scope_hashes.view(), batch->callsite_hashes.view());
     if (batch->count > 0) {
         push_pipeline(out, batch.get());
         batch.release();

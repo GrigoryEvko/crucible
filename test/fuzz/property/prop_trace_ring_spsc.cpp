@@ -162,8 +162,8 @@ int main(int argc, char** argv) {
             e.schema_hash = SchemaHash{0xBEEF0000ULL | i};
             if (!ring->try_append(e)) std::abort();
         }
-        std::array<TraceRing::Entry, PREFILL> discard{};
-        if (ring->drain(discard.data(), PREFILL) != PREFILL) std::abort();
+        ::fixy::FixedArray<TraceRing::Entry, PREFILL> discard{};
+        if (ring->drain(discard.view()) != PREFILL) std::abort();
 
         // Fill to exactly CAPACITY.
         for (uint32_t i = 0; i < CAP; ++i) {
@@ -186,13 +186,13 @@ int main(int argc, char** argv) {
         // Drain everything; verify FIFO order + wrap-around memcpy.
         // Drain in two chunks so the first straddles the wrap.
         constexpr uint32_t CHUNK = 4096;
-        std::array<TraceRing::Entry, CHUNK> out_e{};
-        std::array<MetaIndex, CHUNK> out_m{};
-        std::array<ScopeHash, CHUNK> out_s{};
-        std::array<CallsiteHash, CHUNK> out_c{};
+        ::fixy::FixedArray<TraceRing::Entry, CHUNK> out_e{};
+        ::fixy::FixedArray<MetaIndex, CHUNK> out_m{};
+        ::fixy::FixedArray<ScopeHash, CHUNK> out_s{};
+        ::fixy::FixedArray<CallsiteHash, CHUNK> out_c{};
         uint32_t delivered = 0;
         while (delivered < CAP) {
-            const uint32_t got = ring->drain(out_e.data(), CHUNK, out_m.data(), out_s.data(), out_c.data());
+            const uint32_t got = ring->drain(out_e.view(), out_m.view(), out_s.view(), out_c.view());
             if (got == 0) std::abort();  // ring has CAP entries, must deliver
             for (uint32_t k = 0; k < got; ++k) {
                 const uint32_t i = delivered + k;
@@ -251,10 +251,10 @@ int main(int argc, char** argv) {
             uint64_t total_drained = 0;
 
             // Reusable drain output buffer.
-            std::array<TraceRing::Entry, MAX_OPS_PER_PHASE> out_e{};
-            std::array<MetaIndex, MAX_OPS_PER_PHASE> out_m{};
-            std::array<ScopeHash, MAX_OPS_PER_PHASE> out_s{};
-            std::array<CallsiteHash, MAX_OPS_PER_PHASE> out_c{};
+            ::fixy::FixedArray<TraceRing::Entry, MAX_OPS_PER_PHASE> out_e{};
+            ::fixy::FixedArray<MetaIndex, MAX_OPS_PER_PHASE> out_m{};
+            ::fixy::FixedArray<ScopeHash, MAX_OPS_PER_PHASE> out_s{};
+            ::fixy::FixedArray<CallsiteHash, MAX_OPS_PER_PHASE> out_c{};
 
             for (unsigned p = 0; p < K_PHASES; ++p) {
                 const uint16_t n = s.count[p];
@@ -284,7 +284,10 @@ int main(int argc, char** argv) {
                     }
                 } else {
                     const uint32_t want = static_cast<uint32_t>(n);
-                    const uint32_t got = ring->drain(out_e.data(), want, out_m.data(), out_s.data(), out_c.data());
+                    const uint32_t got = ring->drain(out_e.view().window(0, want).expect("a phase fits the buffer"),
+                                                     out_m.view().window(0, want).expect("a phase fits the buffer"),
+                                                     out_s.view().window(0, want).expect("a phase fits the buffer"),
+                                                     out_c.view().window(0, want).expect("a phase fits the buffer"));
 
                     // Consumer cannot receive more than was enqueued.
                     const uint32_t mirror_live = mirror_head - mirror_tail;

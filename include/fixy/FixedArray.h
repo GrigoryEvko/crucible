@@ -26,6 +26,7 @@
 
 #include <fixy/Refined.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Region.h>
 
 #include <array>
 #include <compare>
@@ -144,6 +145,22 @@ public:
     // resolution. A dynamic-extent span would lose that.
     [[nodiscard]] constexpr std::span<T, N> as_span() noexcept { return std::span<T, N>{data_}; }
     [[nodiscard]] constexpr std::span<const T, N> as_span() const noexcept { return std::span<const T, N>{data_}; }
+
+    // The View<T, N> of the elements, as the FixedArray of the Region
+    // family gives it.  The array owns its N elements, so the View comes
+    // through the door of the base layer, with no check.  The View borrows
+    // this array, so a View of a temporary array is refused.  The return
+    // type is deduced, so an array whose element is no View element
+    // compiles until a caller asks for its View.
+    [[nodiscard]] constexpr auto view() & noexcept {
+        return ::foundation::core::View<T, N>{::foundation::core::detail::ViewDoor::key(), data_.data()};
+    }
+    [[nodiscard]] constexpr auto view() const& noexcept {
+        return ::foundation::core::View<T const, N>{::foundation::core::detail::ViewDoor::key(), data_.data()};
+    }
+    void view() && = delete("a view of a temporary FixedArray points into an object that the full expression ends");
+    void
+    view() const&& = delete("a view of a temporary FixedArray points into an object that the full expression ends");
 
     constexpr void fill(T const& v) noexcept(std::is_nothrow_copy_assignable_v<T>) {
         for (auto& e : data_)

@@ -2199,37 +2199,6 @@ crucible_neg_compile_test(neg_metalog_append_count_uint32_max
     "__builtin_trap\\(\\). is not a constant expression"
     "in expansion of macro .CRUCIBLE_PRE.")
 
-# ─── ValidDrainCount neg-compile fixtures ─────────────────────────
-#
-# TraceRing::drain's `max_count` parameter (also drain_pinned,
-# drain_pure, try_pop_batch) has a typed Refined gate capped at
-# TraceRing::CAPACITY (1<<16 = 65 536 entries, ~5.25 MB ring).
-# `max_count > CAPACITY` is meaningless because the inner
-# std::min(available, max_count) clamps to available <= CAPACITY,
-# but the silent clamp masks call-site arithmetic bugs (UINT32_MAX
-# leaked through from disk/env/FFI parsing, oversized buffer-size
-# math).  The typed witness pins the bound at the type system so
-# any caller that constructs ValidDrainCount with an out-of-range
-# count is rejected at the constructor's pre-clause.
-#
-# Two fixtures per HS14 mandate:
-#   * neg_trace_ring_drain_count_above_max — boundary edge
-#     (CAPACITY+1) catches "bound widens to admit one more" drift.
-#   * neg_trace_ring_drain_count_uint32_max — wide miss (UINT32_MAX)
-#     catches "drop the bound entirely" regression that would
-#     degenerate the alias into a plain uint32_t typedef.
-#
-# Defense-in-depth: the `count = std::min(available, max_count)`
-# runtime clamp plus the precondition max_count <= CAPACITY
-# plus the typed witness all fire at the boundary, exposing the
-# silent clamp at enforce semantics.
-crucible_neg_compile_test(neg_trace_ring_drain_count_above_max
-  "__builtin_trap.*is not a constant expression"
-  "mint_refined<BoundedAbove<65536>\\(\\), unsigned int>\\(\\(\\(\\(uint32_t\\)crucible::TraceRing::CAPACITY\\) \\+ 1\\)\\)")
-crucible_neg_compile_test(neg_trace_ring_drain_count_uint32_max
-  "__builtin_trap.*is not a constant expression"
-  "mint_refined<BoundedAbove<65536>\\(\\), unsigned int>\\(4294967295\\)")
-
 # ─── ndim Refined<bounded_above<8>> typed gate ────────────────────
 #
 # TensorMeta::ndim is structurally bounded by the inline sizes[8] /

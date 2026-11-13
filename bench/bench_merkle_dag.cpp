@@ -322,14 +322,13 @@ int main(int argc, char* argv[]) {
         bg.ring.set(ring.get());
         bg.meta_log.set(&meta_log);
 
-        // Drain buffers heap-allocated; 4× 4096-element arrays on the
-        // stack blow past our 512 kB stack-usage budget.
-        std::vector<TraceRing::Entry> batch(4096);
-        std::vector<MetaIndex> meta_batch(4096);
-        std::vector<ScopeHash> scope_batch(4096);
-        std::vector<CallsiteHash> callsite_batch(4096);
-        const uint32_t n =
-            ring->drain(batch.data(), 4096, meta_batch.data(), scope_batch.data(), callsite_batch.data());
+        // The drain buffers have static storage; 4× 4096-element arrays on
+        // the stack blow past our 512 kB stack-usage budget.
+        static ::fixy::FixedArray<TraceRing::Entry, 4096> batch{};
+        static ::fixy::FixedArray<MetaIndex, 4096> meta_batch{};
+        static ::fixy::FixedArray<ScopeHash, 4096> scope_batch{};
+        static ::fixy::FixedArray<CallsiteHash, 4096> callsite_batch{};
+        const uint32_t n = ring->drain(batch.view(), meta_batch.view(), scope_batch.view(), callsite_batch.view());
 
         std::vector<TraceRing::Entry> saved_trace(batch.begin(), batch.begin() + n);
         std::vector<MetaIndex> saved_meta(meta_batch.begin(), meta_batch.begin() + n);

@@ -177,11 +177,57 @@ int check_whole_array_operations() {
     return 0;
 }
 
+// The View of an array has the extent N in its type, and a const array gives
+// a View of const elements.  A temporary array gives no View, because the
+// View would point into an object that the full expression ends.
+template <typename A>
+concept CanViewTemporary = requires { A{}.view(); };
+static_assert(!CanViewTemporary<FA4>, "a view of a temporary array dangles");
+
+// No conversion gives a fixed extent or drops a const, so each of these
+// holds only for the View type that the comment names.
+template <typename A>
+concept GivesFixedView = requires(A& array) { ::foundation::core::View<int, 4>{array.view()}; };
+template <typename A>
+concept GivesMutableView = requires(A const& array) { ::foundation::core::View<int, 4>{array.view()}; };
+static_assert(GivesFixedView<FA4>, "a mutable array gives View<int, 4>");
+static_assert(!GivesMutableView<FA4>, "a const array gives View<int const, 4>");
+
+// The View reads and writes the elements of the array itself.
+int check_view() {
+    FA4 a = FA4::fill_with(0);
+    a[0] = 1;
+    a[1] = 2;
+    a[2] = 3;
+    a[3] = 4;
+    ::foundation::core::View<int const, 4> const fixed_const = static_cast<FA4 const&>(a).view();
+    if (fixed_const.size() != 4) return 39;
+    int sum = 0;
+    for (int value : a.view())
+        sum += value;
+    if (sum != 10) return 40;
+
+    for (int& value : a.view())
+        value *= 10;
+    if (a[0] != 10 || a[3] != 40) return 41;
+
+    FA4 const& read_only = a;
+    ::foundation::core::View<int const> const whole = read_only.view();
+    if (whole.size() != 4) return 42;
+
+    ::foundation::core::View<int> const middle = a.view().window(1, 2).expect("two elements from the second fit");
+    for (int& value : middle)
+        value = 7;
+    if (a[0] != 10 || a[1] != 7 || a[2] != 7 || a[3] != 40) return 43;
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     if (int rc = check_whole_array_operations(); rc != 0) return rc;
     if (int rc = check_runtime_indexing(); rc != 0) return rc;
+    if (int rc = check_view(); rc != 0) return rc;
 
     return 0;
 }

@@ -6,7 +6,6 @@
 #include "test_assert.h"
 #include <cstdio>
 #include <thread>
-#include <vector>
 
 using crucible::SchemaHash;
 using crucible::ShapeHash;
@@ -31,11 +30,11 @@ void single_thread_cases() {
     assert(ring->try_append(e, MetaIndex{42}, ScopeHash{0x1234}, CallsiteHash{0x5678}));
     assert(ring->size().peek() == 1);
 
-    crucible::TraceRing::Entry out[1];
-    MetaIndex meta[1];
-    ScopeHash scope[1];
-    CallsiteHash callsite[1];
-    uint32_t n = ring->drain(out, 1, meta, scope, callsite);
+    ::fixy::FixedArray<crucible::TraceRing::Entry, 1> out{};
+    ::fixy::FixedArray<MetaIndex, 1> meta{};
+    ::fixy::FixedArray<ScopeHash, 1> scope{};
+    ::fixy::FixedArray<CallsiteHash, 1> callsite{};
+    uint32_t n = ring->drain(out.view(), meta.view(), scope.view(), callsite.view());
     assert(n == 1);
     assert(out[0].schema_hash == SchemaHash{0xDEADBEEF});
     assert(out[0].num_inputs == 2);
@@ -52,8 +51,8 @@ void single_thread_cases() {
     }
     assert(ring->size().peek() == 1000);
 
-    crucible::TraceRing::Entry batch[2048];
-    n = ring->drain(batch, 2048);
+    ::fixy::FixedArray<crucible::TraceRing::Entry, 2048> batch{};
+    n = ring->drain(batch.view());
     assert(n == 1000);
     for (uint32_t i = 0; i < 1000; i++)
         assert(batch[i].schema_hash == SchemaHash{i});
@@ -64,8 +63,8 @@ void single_thread_cases() {
     // One cache line.
     static_assert(sizeof(crucible::TraceRing::Entry) == 64);
 
-    // A null buffer is permitted when max_count is zero.
-    uint32_t zero = ring->drain(nullptr, 0);
+    // An empty output drains nothing.
+    uint32_t zero = ring->drain(::fixy::View<crucible::TraceRing::Entry>{});
     assert(zero == 0);
 
     // Wrap-around: drive head/tail past CAPACITY so drain() exercises the
@@ -77,8 +76,9 @@ void single_thread_cases() {
             wr.schema_hash = SchemaHash{i};
             assert(ring->try_append(wr));
         }
-        std::vector<crucible::TraceRing::Entry> big(CAP);
-        assert(ring->drain(big.data(), CAP) == CAP - 100);
+        // A buffer of the whole ring is too large for the stack.
+        static ::fixy::FixedArray<crucible::TraceRing::Entry, CAP> big{};
+        assert(ring->drain(big.view()) == CAP - 100);
 
         // head = tail = CAP - 100, so the next 200 appends straddle the wrap.
         for (uint32_t i = 0; i < 200; i++) {
@@ -86,7 +86,7 @@ void single_thread_cases() {
             wr.schema_hash = SchemaHash{100000 + i};
             assert(ring->try_append(wr));
         }
-        uint32_t n_wrap = ring->drain(big.data(), CAP);
+        uint32_t n_wrap = ring->drain(big.view());
         assert(n_wrap == 200);
         for (uint32_t i = 0; i < 200; i++)
             assert(big[i].schema_hash == SchemaHash{100000 + i});
@@ -131,14 +131,14 @@ void concurrent_raw_case() {
         std::jthread consumer{[&] {
             // Smaller than CAPACITY so the consumer must drain more than once.
             constexpr uint32_t DRAIN_CAP = 4096;
-            crucible::TraceRing::Entry batch_out[DRAIN_CAP];
-            MetaIndex batch_meta[DRAIN_CAP];
-            ScopeHash batch_scope[DRAIN_CAP];
-            CallsiteHash batch_csite[DRAIN_CAP];
+            ::fixy::FixedArray<crucible::TraceRing::Entry, DRAIN_CAP> batch_out{};
+            ::fixy::FixedArray<MetaIndex, DRAIN_CAP> batch_meta{};
+            ::fixy::FixedArray<ScopeHash, DRAIN_CAP> batch_scope{};
+            ::fixy::FixedArray<CallsiteHash, DRAIN_CAP> batch_csite{};
 
             uint32_t next = 0;
             while (next < N) {
-                uint32_t got = r->drain(batch_out, DRAIN_CAP, batch_meta, batch_scope, batch_csite);
+                uint32_t got = r->drain(batch_out.view(), batch_meta.view(), batch_scope.view(), batch_csite.view());
                 if (got == 0) {
                     if (producer_done.load(std::memory_order_acquire) && r->size().peek() == 0) {
                         break;
@@ -192,11 +192,11 @@ void pure_facade_cases() {
         assert(r->size().peek() == 4);
 
         {
-            crucible::TraceRing::Entry batch_out[4];
-            MetaIndex batch_meta[4];
-            ScopeHash batch_scope[4];
-            CallsiteHash batch_csite[4];
-            uint32_t got = r->drain_pure(batch_out, 4, batch_meta, batch_scope, batch_csite);
+            ::fixy::FixedArray<crucible::TraceRing::Entry, 4> batch_out{};
+            ::fixy::FixedArray<MetaIndex, 4> batch_meta{};
+            ::fixy::FixedArray<ScopeHash, 4> batch_scope{};
+            ::fixy::FixedArray<CallsiteHash, 4> batch_csite{};
+            uint32_t got = r->drain_pure(batch_out.view(), batch_meta.view(), batch_scope.view(), batch_csite.view());
             assert(got == 4);
             assert(batch_out[0].schema_hash == SchemaHash{0xCAFE0001});
             assert(batch_out[1].schema_hash == SchemaHash{0xCAFE0002});
@@ -209,7 +209,7 @@ void pure_facade_cases() {
         }
 
         {
-            uint32_t zero_drained = r->drain_pure<eff::Row<>>(nullptr, 0);
+            uint32_t zero_drained = r->drain_pure<eff::Row<>>(::fixy::View<crucible::TraceRing::Entry>{});
             assert(zero_drained == 0);
         }
 
@@ -222,12 +222,12 @@ void pure_facade_cases() {
             e6.schema_hash = SchemaHash{0xCAFE0006};
             assert(r->try_append(e6));
 
-            crucible::TraceRing::Entry one[1];
-            uint32_t g1 = r->drain_pure<eff::PureRow>(one, 1);
+            ::fixy::FixedArray<crucible::TraceRing::Entry, 1> one{};
+            uint32_t g1 = r->drain_pure<eff::PureRow>(one.view());
             assert(g1 == 1);
             assert(one[0].schema_hash == SchemaHash{0xCAFE0005});
 
-            uint32_t g2 = r->drain(one, 1);
+            uint32_t g2 = r->drain(one.view());
             assert(g2 == 1);
             assert(one[0].schema_hash == SchemaHash{0xCAFE0006});
         }
@@ -275,16 +275,17 @@ void concurrent_pure_case() {
 
         std::jthread consumer{[&] {
             constexpr uint32_t DRAIN_CAP = 2048;
-            crucible::TraceRing::Entry pure_out[DRAIN_CAP];
-            MetaIndex pure_meta[DRAIN_CAP];
-            ScopeHash pure_scope[DRAIN_CAP];
-            CallsiteHash pure_csite[DRAIN_CAP];
+            ::fixy::FixedArray<crucible::TraceRing::Entry, DRAIN_CAP> pure_out{};
+            ::fixy::FixedArray<MetaIndex, DRAIN_CAP> pure_meta{};
+            ::fixy::FixedArray<ScopeHash, DRAIN_CAP> pure_scope{};
+            ::fixy::FixedArray<CallsiteHash, DRAIN_CAP> pure_csite{};
 
             uint32_t next = 0;
             while (next < N) {
                 // Explicit Row<> here and a default template argument on the
                 // producer side, so both substitution paths run.
-                uint32_t got = r->drain_pure<eff::Row<>>(pure_out, DRAIN_CAP, pure_meta, pure_scope, pure_csite);
+                uint32_t got =
+                    r->drain_pure<eff::Row<>>(pure_out.view(), pure_meta.view(), pure_scope.view(), pure_csite.view());
                 if (got == 0) {
                     if (producer_done.load(std::memory_order_acquire) && r->size().peek() == 0) {
                         break;
@@ -326,8 +327,8 @@ void pure_edge_cases() {
             assert(r->try_append_pure(e_bare));
             assert(r->size().peek() == 1);
 
-            crucible::TraceRing::Entry one_a[1];
-            uint32_t got_a = r->drain_pure(one_a, 1);
+            ::fixy::FixedArray<crucible::TraceRing::Entry, 1> one_a{};
+            uint32_t got_a = r->drain_pure(one_a.view());
             assert(got_a == 1);
             assert(one_a[0].schema_hash == SchemaHash{0xA0AA});
             assert(r->size().peek() == 0);
@@ -351,8 +352,9 @@ void pure_edge_cases() {
             assert(!ok_overflow);
             assert(r->size().peek() == CAP);
 
-            std::vector<crucible::TraceRing::Entry> full_drain(CAP);
-            uint32_t got_b = r->drain_pure(full_drain.data(), CAP);
+            // A buffer of the whole ring is too large for the stack.
+            static ::fixy::FixedArray<crucible::TraceRing::Entry, CAP> full_drain{};
+            uint32_t got_b = r->drain_pure(full_drain.view());
             assert(got_b == CAP);
             for (uint32_t i = 0; i < CAP; ++i) {
                 assert(full_drain[i].schema_hash == SchemaHash{0xB0000000u | i});
@@ -368,8 +370,8 @@ void pure_edge_cases() {
                 pad_e.schema_hash = SchemaHash{0xC0000000u | i};
                 assert(r->try_append_pure(pad_e));
             }
-            std::vector<crucible::TraceRing::Entry> pad_drain(CAP);
-            uint32_t got_pad = r->drain_pure(pad_drain.data(), CAP);
+            static ::fixy::FixedArray<crucible::TraceRing::Entry, CAP> pad_drain{};
+            uint32_t got_pad = r->drain_pure(pad_drain.view());
             assert(got_pad == CAP - 100);
 
             for (uint32_t i = 0; i < 200; ++i) {
@@ -378,12 +380,12 @@ void pure_edge_cases() {
                 assert(r->try_append_pure(wrap_e));
             }
 
-            std::vector<crucible::TraceRing::Entry> wrap_drain(CAP);
-            std::vector<MetaIndex> wrap_meta(CAP);
-            std::vector<ScopeHash> wrap_scope(CAP);
-            std::vector<CallsiteHash> wrap_csite(CAP);
+            static ::fixy::FixedArray<crucible::TraceRing::Entry, CAP> wrap_drain{};
+            static ::fixy::FixedArray<MetaIndex, CAP> wrap_meta{};
+            static ::fixy::FixedArray<ScopeHash, CAP> wrap_scope{};
+            static ::fixy::FixedArray<CallsiteHash, CAP> wrap_csite{};
             uint32_t got_wrap =
-                r->drain_pure(wrap_drain.data(), CAP, wrap_meta.data(), wrap_scope.data(), wrap_csite.data());
+                r->drain_pure(wrap_drain.view(), wrap_meta.view(), wrap_scope.view(), wrap_csite.view());
             assert(got_wrap == 200);
             for (uint32_t i = 0; i < 200; ++i) {
                 assert(wrap_drain[i].schema_hash == SchemaHash{0xCAFE0000u | i});
@@ -393,17 +395,17 @@ void pure_edge_cases() {
             }
         }
 
-        // Each parallel-output buffer is independently nullable.
+        // Each parallel output is optional on its own: an empty View skips it.
         {
             crucible::TraceRing::Entry mix_e{};
             mix_e.schema_hash = SchemaHash{0xD0D0};
             assert(r->try_append_pure(mix_e, MetaIndex{42}, ScopeHash{0xDEAD}, CallsiteHash{0xBEEF}));
 
-            crucible::TraceRing::Entry mix_out[1];
-            MetaIndex mix_meta[1];
-            CallsiteHash mix_csite[1];
-            uint32_t got_mix = r->drain_pure(mix_out, 1, mix_meta,
-                                             /*out_scope_hashes=*/nullptr, mix_csite);
+            ::fixy::FixedArray<crucible::TraceRing::Entry, 1> mix_out{};
+            ::fixy::FixedArray<MetaIndex, 1> mix_meta{};
+            ::fixy::FixedArray<CallsiteHash, 1> mix_csite{};
+            uint32_t got_mix = r->drain_pure(mix_out.view(), mix_meta.view(),
+                                             /*out_scope_hashes=*/::fixy::View<ScopeHash>{}, mix_csite.view());
             assert(got_mix == 1);
             assert(mix_out[0].schema_hash == SchemaHash{0xD0D0});
             assert(mix_meta[0] == MetaIndex{42});
@@ -413,11 +415,11 @@ void pure_edge_cases() {
             mix_e2.schema_hash = SchemaHash{0xD2D2};
             assert(r->try_append_pure(mix_e2, MetaIndex{99}, ScopeHash{0xCAFE}, CallsiteHash{0xF00D}));
 
-            crucible::TraceRing::Entry mix_out2[1];
-            ScopeHash mix_scope2[1];
-            uint32_t got_mix2 = r->drain_pure(mix_out2, 1,
-                                              /*out_meta_starts=*/nullptr, mix_scope2,
-                                              /*out_callsite_hashes=*/nullptr);
+            ::fixy::FixedArray<crucible::TraceRing::Entry, 1> mix_out2{};
+            ::fixy::FixedArray<ScopeHash, 1> mix_scope2{};
+            uint32_t got_mix2 = r->drain_pure(mix_out2.view(),
+                                              /*out_meta_starts=*/::fixy::View<MetaIndex>{}, mix_scope2.view(),
+                                              /*out_callsite_hashes=*/::fixy::View<CallsiteHash>{});
             assert(got_mix2 == 1);
             assert(mix_out2[0].schema_hash == SchemaHash{0xD2D2});
             assert(mix_scope2[0] == ScopeHash{0xCAFE});

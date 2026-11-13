@@ -36,7 +36,6 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <type_traits>
 
 #include <crucible/Types.h>
@@ -44,6 +43,7 @@
 
 #include <fixy/Aliases.h>
 #include <fixy/Bands.h>
+#include <fixy/Core.h>
 #include <fixy/FixedArray.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
@@ -267,47 +267,83 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         return try_append(e, meta_start, scope_hash, callsite_hash);
     }
 
-    // The three parallel-array outputs are optional and may each be null.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] uint32_t
-    drain(Entry* out, uint32_t max_count, MetaIndex* out_meta_starts = nullptr, ScopeHash* out_scope_hashes = nullptr,
-          CallsiteHash* out_callsite_hashes = nullptr) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0}, CAPACITY));
-        CRUCIBLE_PRE(::foundation::decide::valid_span(max_count, out));
-        if (max_count == 0) [[unlikely]]
+    // Copies the count slots from slot_offset of one ring array into out,
+    // from out_offset.  The caller makes out the window of the drained count,
+    // and the two runs of a wrap fit it and the ring by their arithmetic.  So
+    // the optimizer removes each check of the windows and of the copy.  The
+    // offsets and the count have the width of a View count, so the tests of
+    // the caller and the checks of the windows compare the same values.
+    template <class T>
+    CRUCIBLE_INLINE static void copy_slots_(::fixy::View<T> out, std::size_t out_offset,
+                                            ::fixy::FixedArray<T, CAPACITY> const& slots, std::size_t slot_offset,
+                                            std::size_t count) noexcept {
+        ::fixy::copy(out.window(out_offset, count).expect("the run fits the drained count"),
+                     slots.view().window(slot_offset, count).expect("the run fits the ring"))
+            .expect("the two windows hold the same count");
+    }
+
+    // Drains at most out.size() entries into out.  Each of the three
+    // parallel-array outputs is optional: an empty View skips its array, and
+    // a View that is not empty holds out.size() elements.
+    [[nodiscard, gnu::hot]] uint32_t drain(::fixy::View<Entry> out, ::fixy::View<MetaIndex> out_meta_starts = {},
+                                           ::fixy::View<ScopeHash> out_scope_hashes = {},
+                                           ::fixy::View<CallsiteHash> out_callsite_hashes = {}) noexcept
+        CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(out_meta_starts.size() == 0 || out_meta_starts.size() == out.size());
+        CRUCIBLE_PRE(out_scope_hashes.size() == 0 || out_scope_hashes.size() == out.size());
+        CRUCIBLE_PRE(out_callsite_hashes.size() == 0 || out_callsite_hashes.size() == out.size());
+        if (out.size() == 0) [[unlikely]]
             return 0;
 
         const uint64_t h = head.get();
         const uint64_t t = consumer_tail_;
 
-        // Each clamp is an assignment and a conditional assignment.  GCC 16
+        // The clamp is an assignment and a conditional assignment.  GCC 16
         // at -O1 with -fsanitize=bounds-strict does not keep the bound
-        // count <= max_count of a conditional expression.  Then it reports a
-        // write past the caller's buffer in the second copy below, which no
-        // input can reach.
-        const uint32_t available = static_cast<uint32_t>(h - t);
-        uint32_t count = available;
-        if (max_count < count) count = max_count;
+        // count <= out.size() of a conditional expression.  The count and the
+        // start have the width of a View count, for the reason of copy_slots_.
+        std::size_t count = static_cast<uint32_t>(h - t);
+        if (out.size() < count) count = out.size();
         if (count == 0) [[unlikely]]
             return 0;
 
-        // A run that wraps the end of the ring splits into at most two.
-        const uint32_t start = static_cast<uint32_t>(t) & MASK;
-        uint32_t first = CAPACITY - start;
-        if (count < first) first = count;
-        const uint32_t second = count - first;
+        // The window of the drained count holds the copies.
+        const std::size_t start = t & MASK;
+        const ::fixy::View<Entry> entries_out = out.window(0, count).expect("the count fits the output");
+        const bool has_meta_starts = out_meta_starts.size() != 0;
+        const bool has_scope_hashes = out_scope_hashes.size() != 0;
+        const bool has_callsite_hashes = out_callsite_hashes.size() != 0;
+        const ::fixy::View<MetaIndex> meta_starts_out =
+            has_meta_starts ? out_meta_starts.window(0, count).expect("the count fits the output")
+                            : ::fixy::View<MetaIndex>{};
+        const ::fixy::View<ScopeHash> scope_hashes_out =
+            has_scope_hashes ? out_scope_hashes.window(0, count).expect("the count fits the output")
+                             : ::fixy::View<ScopeHash>{};
+        const ::fixy::View<CallsiteHash> callsite_hashes_out =
+            has_callsite_hashes ? out_callsite_hashes.window(0, count).expect("the count fits the output")
+                                : ::fixy::View<CallsiteHash>{};
 
-        std::memcpy(out, &entries[start], first * sizeof(Entry));
-        if (out_meta_starts) std::memcpy(out_meta_starts, &meta_starts[start], first * sizeof(MetaIndex));
-        if (out_scope_hashes) std::memcpy(out_scope_hashes, &scope_hashes[start], first * sizeof(ScopeHash));
-        if (out_callsite_hashes)
-            std::memcpy(out_callsite_hashes, &callsite_hashes[start], first * sizeof(CallsiteHash));
-
-        if (second > 0) [[unlikely]] {
-            std::memcpy(out + first, &entries[0], second * sizeof(Entry));
-            if (out_meta_starts) std::memcpy(out_meta_starts + first, &meta_starts[0], second * sizeof(MetaIndex));
-            if (out_scope_hashes) std::memcpy(out_scope_hashes + first, &scope_hashes[0], second * sizeof(ScopeHash));
-            if (out_callsite_hashes)
-                std::memcpy(out_callsite_hashes + first, &callsite_hashes[0], second * sizeof(CallsiteHash));
+        // A run that wraps the end of the ring splits into two.  The one
+        // test below proves each window of the two arms.
+        if (count <= CAPACITY - start) [[likely]] {
+            copy_slots_(entries_out, 0, entries, start, count);
+            if (has_meta_starts) copy_slots_(meta_starts_out, 0, meta_starts, start, count);
+            if (has_scope_hashes) copy_slots_(scope_hashes_out, 0, scope_hashes, start, count);
+            if (has_callsite_hashes) copy_slots_(callsite_hashes_out, 0, callsite_hashes, start, count);
+        } else {
+            const std::size_t first = CAPACITY - start;
+            const std::size_t second = count - first;
+            // first is at least one, so the second run is shorter than the
+            // count, and the bound of the count bounds the run of the ring.
+            [[assume(second < count)]];
+            copy_slots_(entries_out, 0, entries, start, first);
+            if (has_meta_starts) copy_slots_(meta_starts_out, 0, meta_starts, start, first);
+            if (has_scope_hashes) copy_slots_(scope_hashes_out, 0, scope_hashes, start, first);
+            if (has_callsite_hashes) copy_slots_(callsite_hashes_out, 0, callsite_hashes, start, first);
+            copy_slots_(entries_out, first, entries, 0, second);
+            if (has_meta_starts) copy_slots_(meta_starts_out, first, meta_starts, 0, second);
+            if (has_scope_hashes) copy_slots_(scope_hashes_out, first, scope_hashes, 0, second);
+            if (has_callsite_hashes) copy_slots_(callsite_hashes_out, first, callsite_hashes, 0, second);
         }
 
         // Publishing the new tail declares slots [t, t + count) free. The
@@ -317,21 +353,19 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         consumer_tail_ = next_tail;
         // t is the consumer's own copy of its last store to tail.
         tail.advance_sole_writer_from(t, next_tail);
-        CRUCIBLE_POST(count, count <= max_count);
-        return count;
+        CRUCIBLE_POST(count, count <= out.size());
+        // The count came from a 32-bit difference, so it fits the result.
+        return static_cast<uint32_t>(count);
     }
 
     // Warm rather than hot: the caller may allocate and copies large buffers,
     // so a consumer fenced to the hot tier rejects a value from here.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]]
-    ::fixy::HotPath<::fixy::HotPathTier_v::Warm, uint32_t>
-    drain_pinned(Entry* out, uint32_t max_count, MetaIndex* out_meta_starts = nullptr,
-                 ScopeHash* out_scope_hashes = nullptr, CallsiteHash* out_callsite_hashes = nullptr) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0}, CAPACITY));
-        CRUCIBLE_PRE(::foundation::decide::valid_span(max_count, out));
+    [[nodiscard, gnu::hot]] ::fixy::HotPath<::fixy::HotPathTier_v::Warm, uint32_t>
+    drain_pinned(::fixy::View<Entry> out, ::fixy::View<MetaIndex> out_meta_starts = {},
+                 ::fixy::View<ScopeHash> out_scope_hashes = {},
+                 ::fixy::View<CallsiteHash> out_callsite_hashes = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Warm, uint32_t>>(
-            drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes));
+            drain(out, out_meta_starts, out_scope_hashes, out_callsite_hashes));
     }
 
     // The consumer counterpart of try_append_pure. A drain touches memory
@@ -339,63 +373,74 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // consumer side declares its own context separately from this call.
     template <typename CallerRow = ::foundation::effects::Row<>>
         requires ::fixy::IsPure<CallerRow>
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] uint32_t
-    drain_pure(Entry* out, uint32_t max_count, MetaIndex* out_meta_starts = nullptr,
-               ScopeHash* out_scope_hashes = nullptr, CallsiteHash* out_callsite_hashes = nullptr) noexcept
+    [[nodiscard, gnu::hot]] uint32_t drain_pure(::fixy::View<Entry> out, ::fixy::View<MetaIndex> out_meta_starts = {},
+                                                ::fixy::View<ScopeHash> out_scope_hashes = {},
+                                                ::fixy::View<CallsiteHash> out_callsite_hashes = {}) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0}, CAPACITY));
-        CRUCIBLE_PRE(::foundation::decide::valid_span(max_count, out));
-        return drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes);
+        return drain(out, out_meta_starts, out_scope_hashes, out_callsite_hashes);
     }
 
-    // drain with every output buffer mandatory. The caller gives up the option
-    // of skipping an array, and in exchange the copies below carry no
-    // per-array null test, and a batch consumer can rely on every popped entry
-    // having all four arrays populated.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] uint32_t
-    try_pop_batch(Entry* out_entries, MetaIndex* out_meta_starts, ScopeHash* out_scope_hashes,
-                  CallsiteHash* out_callsite_hashes, uint32_t max_count) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(max_count, std::uint32_t{0}, CAPACITY));
-        CRUCIBLE_PRE(max_count == 0
-                     || (out_entries != nullptr && out_meta_starts != nullptr && out_scope_hashes != nullptr
-                         && out_callsite_hashes != nullptr));
-        if (max_count == 0) [[unlikely]]
+    // drain with every output mandatory, and the four outputs of one size.
+    // The caller gives up the option of skipping an array, and in exchange
+    // the copies below carry no test of an empty output, and a batch consumer
+    // can rely on every popped entry having all four arrays populated.  The
+    // drain stage of the background thread calls it, and the forced inline
+    // with its copies keeps that stage free of a call and of a window check.
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE uint32_t
+    try_pop_batch(::fixy::View<Entry> out_entries, ::fixy::View<MetaIndex> out_meta_starts,
+                  ::fixy::View<ScopeHash> out_scope_hashes, ::fixy::View<CallsiteHash> out_callsite_hashes) noexcept
+        CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(out_meta_starts.size() == out_entries.size());
+        CRUCIBLE_PRE(out_scope_hashes.size() == out_entries.size());
+        CRUCIBLE_PRE(out_callsite_hashes.size() == out_entries.size());
+        if (out_entries.size() == 0) [[unlikely]]
             return 0;
 
         const uint64_t h = head.get();
         const uint64_t t = consumer_tail_;
 
-        // The clamps have the form of the clamps of drain, for the same reason.
-        const uint32_t available = static_cast<uint32_t>(h - t);
-        uint32_t count = available;
-        if (max_count < count) count = max_count;
+        // The clamp and the widths have the form of those of drain, for the
+        // same reasons.
+        std::size_t count = static_cast<uint32_t>(h - t);
+        if (out_entries.size() < count) count = out_entries.size();
         if (count == 0) [[unlikely]]
             return 0;
 
-        // A run that wraps the end of the ring splits into at most two.
-        const uint32_t start = static_cast<uint32_t>(t) & MASK;
-        uint32_t first = CAPACITY - start;
-        if (count < first) first = count;
-        const uint32_t second = count - first;
+        const std::size_t start = t & MASK;
+        const ::fixy::View<Entry> entries_out = out_entries.window(0, count).expect("the count fits the output");
+        const ::fixy::View<MetaIndex> meta_starts_out =
+            out_meta_starts.window(0, count).expect("the count fits the output");
+        const ::fixy::View<ScopeHash> scope_hashes_out =
+            out_scope_hashes.window(0, count).expect("the count fits the output");
+        const ::fixy::View<CallsiteHash> callsite_hashes_out =
+            out_callsite_hashes.window(0, count).expect("the count fits the output");
 
-        std::memcpy(out_entries, &entries[start], first * sizeof(Entry));
-        std::memcpy(out_meta_starts, &meta_starts[start], first * sizeof(MetaIndex));
-        std::memcpy(out_scope_hashes, &scope_hashes[start], first * sizeof(ScopeHash));
-        std::memcpy(out_callsite_hashes, &callsite_hashes[start], first * sizeof(CallsiteHash));
-
-        if (second > 0) [[unlikely]] {
-            std::memcpy(out_entries + first, &entries[0], second * sizeof(Entry));
-            std::memcpy(out_meta_starts + first, &meta_starts[0], second * sizeof(MetaIndex));
-            std::memcpy(out_scope_hashes + first, &scope_hashes[0], second * sizeof(ScopeHash));
-            std::memcpy(out_callsite_hashes + first, &callsite_hashes[0], second * sizeof(CallsiteHash));
+        // The split of a wrapped run has the form of the split of drain.
+        if (count <= CAPACITY - start) [[likely]] {
+            copy_slots_(entries_out, 0, entries, start, count);
+            copy_slots_(meta_starts_out, 0, meta_starts, start, count);
+            copy_slots_(scope_hashes_out, 0, scope_hashes, start, count);
+            copy_slots_(callsite_hashes_out, 0, callsite_hashes, start, count);
+        } else {
+            const std::size_t first = CAPACITY - start;
+            const std::size_t second = count - first;
+            [[assume(second < count)]];
+            copy_slots_(entries_out, 0, entries, start, first);
+            copy_slots_(meta_starts_out, 0, meta_starts, start, first);
+            copy_slots_(scope_hashes_out, 0, scope_hashes, start, first);
+            copy_slots_(callsite_hashes_out, 0, callsite_hashes, start, first);
+            copy_slots_(entries_out, first, entries, 0, second);
+            copy_slots_(meta_starts_out, first, meta_starts, 0, second);
+            copy_slots_(scope_hashes_out, first, scope_hashes, 0, second);
+            copy_slots_(callsite_hashes_out, first, callsite_hashes, 0, second);
         }
 
         const uint64_t next_tail = t + count;
         consumer_tail_ = next_tail;
         // t is the consumer's own copy of its last store to tail.
         tail.advance_sole_writer_from(t, next_tail);
-        CRUCIBLE_POST(count, count <= max_count);
-        return count;
+        CRUCIBLE_POST(count, count <= out_entries.size());
+        return static_cast<uint32_t>(count);
     }
 
     // head and tail are read at different instants while both threads run, so
@@ -424,17 +469,6 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         CRUCIBLE_POST(0, cached_tail_.get() == 0);
     }
 };
-
-// A drain count that has already been checked against the ring capacity, for
-// callers that want to establish the bound once and carry the witness. Asking
-// for more than the ring holds is silently clamped inside the drain, which
-// hides both a caller that never bounded a value it read from outside and a
-// caller whose output buffer is smaller than the count it passed.
-using ValidDrainCount = ::fixy::Refined<::fixy::bounded_above<TraceRing::CAPACITY>, uint32_t>;
-
-[[nodiscard, gnu::const]] inline constexpr uint32_t make_drain_count(ValidDrainCount raw) noexcept {
-    return raw.value();
-}
 
 // The first rung of the recording trust ladder. An adapter that builds an
 // Entry out of values a foreign runtime supplied mints this tag, and the only
