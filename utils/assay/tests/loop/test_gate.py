@@ -609,6 +609,7 @@ def run_cases(expect: testing.Expect) -> None:
         gate.move_tree(root, tree, head)
         verdicts: dict[str, gate.Verdict] = {}
         outputs: dict[str, str] = {}
+        suite_reports: dict[str, bool] = {}
         for mode in ("clean", "flaky", "broken", "build", "late", "reconfigure"):
             planted = planted_gate(work, root, tree, mode)
 
@@ -616,6 +617,16 @@ def run_cases(expect: testing.Expect) -> None:
                 return planted.check(candidate, False)
 
             verdicts[mode], outputs[mode] = testing.captured(run)
+            suite_reports[mode] = (planted.logs / f"{gate.ALWAYS}.{gate.SUITE_REPORT}").is_file()
+        expect(
+            "a run with a red test keeps a copy of the report of the suite in its logs, and a run with no red test "
+            "keeps none",
+            suite_reports["flaky"]
+            and suite_reports["broken"]
+            and not suite_reports["clean"]
+            and gate.SUITE_REPORT not in outputs["clean"]
+            and gate.SUITE_REPORT in outputs["flaky"],
+        )
         expect(
             "a change of a text file runs the default build, and the gate accepts a run with no red test",
             verdicts["clean"].configurations == ("default",) and verdicts["clean"].is_accepted,

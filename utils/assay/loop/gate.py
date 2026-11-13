@@ -348,6 +348,9 @@ THE LOGS
     round after THE REDUCE puts AGAIN_MARK after the name of the
     configuration (log_name()).  The logs of the first round then stay, such
     as the output of a test that was red in the suite and green alone.
+    When a run has a red test, the gate copies the report of the suite into
+    the log SUITE_REPORT.  The next landing in the lane replaces the report in
+    the build, so only that copy keeps the output of a flaky test.
 
 THE LOCK OF THE TREE
     One landing at a time uses a warm tree.  tree_lock() holds an exclusive
@@ -414,6 +417,8 @@ RUN_WIDTH = 6
 RUNS_KEPT = 24
 # The mark after the name of the configuration in the name of a log of the round after THE REDUCE (THE LOGS).
 AGAIN_MARK = ".again"
+# The step name of the copy of the report of the suite, which holds the output of each red test (THE LOGS).
+SUITE_REPORT = "suite.junit.xml"
 # The build files of a change that selects the release build and ThreadSanitizer, as a C or C++ file does (THE
 # SELECTION, COMPILED_SUFFIXES of assay.loop.inputs).
 BUILD_FILE_NAMES = ("CMakeLists.txt", "CMakePresets.json")
@@ -1471,6 +1476,8 @@ class Step:
         elif status != 0:
             return [f"{configuration.name}: the build or the test run gives an error, see {logs / log}"], (), ()
         red = sorted(name for name, test_status in statuses.items() if test_status in RED)
+        if red:
+            shutil.copyfile(report, logs / log_name(configuration, SUITE_REPORT, is_again))
         if status != 0 and not red:
             return [f"{configuration.name}: `loop test` exits {status} with no red test, see {logs / log}"], (), ()
         skipped = sorted(name for name, test_status in statuses.items() if test_status is SKIPPED)
@@ -1481,7 +1488,10 @@ class Step:
         still = self.red_alone(configuration, red, share, is_again)
         flaky = tuple(name for name in red if name not in still)
         if flaky:
-            self.say(f"loop land: {configuration.name}: FLAKY, red in the suite and green alone: {' '.join(flaky)}")
+            self.say(
+                f"loop land: {configuration.name}: FLAKY, red in the suite and green alone: {' '.join(flaky)}, "
+                f"output in {logs / log_name(configuration, SUITE_REPORT, is_again)}"
+            )
         if still:
             return [f"{configuration.name}: red alone too: {' '.join(still)}, see {logs / log}"], tuple(still), flaky
         warnings_log = log_name(configuration, "warnings.log", is_again)
