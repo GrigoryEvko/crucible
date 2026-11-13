@@ -357,7 +357,7 @@ template <class... Refused, class T, std::size_t Extent, class Body,
     if (count > detail::max_branded_count) [[unlikely]] {
         fatal("a branded scope over a View of {} elements, past the count that an index of 4 bytes proves", count);
     }
-    T* const first = count == 0 ? nullptr : detail::first_of_(view);
+    T* const first = count == 0 ? nullptr : first_of_(detail::ViewDoor::key(), view);
     return static_cast<Body&&>(body)(detail::BrandedScopeDoor::open<Fresh>(first, count));
 }
 

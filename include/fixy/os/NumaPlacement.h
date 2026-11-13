@@ -343,7 +343,7 @@ template <typename T, std::size_t Extent, ::foundation::effects::IsExecCtx Ctx>
 [[nodiscard]] Result<PageNodeCensus, NumaQueryError> census_page_nodes(Ctx const&, View<T, Extent> range) noexcept {
     PageNodeCensus census{};
     int const error = ::foundation::os::error_number_of(::fixy::detail::census_page_nodes_(
-        ::foundation::core::detail::first_of_(range), range.size() * sizeof(T), census));
+        first_of_(::foundation::core::detail::ViewDoor::key(), range), range.size() * sizeof(T), census));
     if (error != 0) {
         return err(NumaQueryError{NumaQueryStep::PageQuery, error});
     }

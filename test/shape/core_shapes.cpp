@@ -406,6 +406,16 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
     return sum;
 }
 
+// The sum of the elements of a HeapArray: the loop of a raw pointer up to the
+// count, with no test of the pointer.
+[[gnu::used]] std::uint32_t heap_array_sum(::foundation::core::HeapArray<std::uint32_t> const& array) noexcept {
+    std::uint32_t sum = 0;
+    for (std::uint32_t const element : array) {
+        sum += element;
+    }
+    return sum;
+}
+
 // The sum of the elements of a FixedList: the loop of a raw pointer up to the
 // count, with no test of the address of the list.
 [[gnu::used]] std::uint32_t fixed_list_sum(fixy::FixedList<std::uint32_t, 64> const& list) noexcept {
@@ -781,6 +791,11 @@ struct RawList final {
     std::uint32_t count;
 };
 
+struct RawHeap final {
+    std::uint32_t* first;
+    std::size_t count;
+};
+
 [[gnu::used]] std::uint64_t atomic_load_raw(std::atomic<std::uint64_t> const& cell) noexcept {
     return cell.load(std::memory_order_acquire);
 }
@@ -1032,6 +1047,14 @@ struct RawList final {
     std::uint32_t sum = 0;
     for (std::uint32_t const element : array) {
         sum += element;
+    }
+    return sum;
+}
+
+[[gnu::used]] std::uint32_t heap_array_sum_raw(RawHeap const& array) noexcept {
+    std::uint32_t sum = 0;
+    for (std::uint32_t const* cursor = array.first; cursor != array.first + array.count; ++cursor) {
+        sum += *cursor;
     }
     return sum;
 }

@@ -21,7 +21,7 @@ constexpr int kReadOnly = kOpenReadOnly | kOpenCloseOnExec;
 // file that a read opened has no error that the caller can act on, so the
 // door does not report one.
 [[nodiscard]] core::Result<std::size_t, Errno> read_and_close(int descriptor, core::View<char> buffer) noexcept {
-    char* const first = core::detail::first_of_(buffer);
+    char* const first = first_of_(core::detail::ViewDoor::key(), buffer);
     std::size_t const capacity = buffer.size();
     std::size_t total = 0;
     bool is_at_end = false;

@@ -129,9 +129,9 @@ public:
 
     [[nodiscard]] static constexpr std::size_t size() noexcept { return N; }
 
-    // The View of the elements.  It borrows this array.  The View comes from
-    // a reference to the array of the N elements, with no test of a null
-    // pointer.
+    // The View of the elements.  It borrows this array.  The array holds N
+    // elements, so the View comes through the door of the base layer, with no
+    // check and no test of a null pointer.
     [[nodiscard]] constexpr View<T, N> view() & noexcept { return View<T, N>{detail::ViewDoor::key(), elements_}; }
     [[nodiscard]] constexpr View<T const, N> view() const& noexcept {
         return View<T const, N>{detail::ViewDoor::key(), elements_};
@@ -377,17 +377,13 @@ public:
     [[nodiscard]] constexpr std::size_t size() const noexcept { return count_; }
 
     // The View of the elements.  It borrows this array.  The mint bounds
-    // the count and gives storage for each count above zero, so the door
-    // of the View does no test at run time.
-    [[nodiscard]] constexpr View<T> view() & noexcept {
-        [[assume(count_ <= max_view_count(sizeof(T)))]];
-        [[assume((first_ == nullptr) == (count_ == 0))]];
-        return detail::view_over_(first_, count_);
-    }
+    // the count and gives storage for each count above zero, so the View
+    // comes through the door of the base layer, with no check.  An assume of
+    // these two facts on the members gave the loop of the probe
+    // heap_array_sum two checks of view_over_ and a spill to the stack.
+    [[nodiscard]] constexpr View<T> view() & noexcept { return View<T>{detail::ViewDoor::key(), first_, count_}; }
     [[nodiscard]] constexpr View<T const> view() const& noexcept {
-        [[assume(count_ <= max_view_count(sizeof(T)))]];
-        [[assume((first_ == nullptr) == (count_ == 0))]];
-        return detail::view_over_(static_cast<T const*>(first_), count_);
+        return View<T const>{detail::ViewDoor::key(), first_, count_};
     }
     void view() && = delete("a view of a temporary HeapArray points into storage that the full expression frees");
     void view() const&& = delete("a view of a temporary HeapArray points into storage that the full expression frees");

@@ -85,8 +85,8 @@ template <class T, std::size_t LeftExtent, class U, std::size_t RightExtent>
     std::size_t const count = left.size();
     if (count != right.size()) return false;
     if (count == 0) return true;
-    Element const* const first = detail::first_of_(left);
-    Element const* const second = detail::first_of_(right);
+    Element const* const first = first_of_(detail::ViewDoor::key(), left);
+    Element const* const second = first_of_(detail::ViewDoor::key(), right);
     if constexpr (detail::BytewiseEqualElement<Element>) {
         if !consteval {
             return __builtin_memcmp(first, second, count * sizeof(Element)) == 0;
@@ -107,7 +107,7 @@ template <class T, std::size_t Extent>
     requires detail::ComparableElement<std::remove_const_t<T>>
 [[nodiscard]] constexpr Option<std::size_t> find(View<T, Extent> view,
                                                  std::type_identity_t<std::remove_const_t<T>> const& value) noexcept {
-    std::remove_const_t<T> const* const first = detail::first_of_(view);
+    std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), view);
     for (std::size_t index = 0; index < view.size(); ++index) {
         if (first[index] == value) return Option<std::size_t>::some(index);
     }
@@ -148,7 +148,7 @@ template <class T, std::size_t Extent>
 template <class T, std::size_t Extent, class Predicate>
     requires detail::ElementPredicate<Predicate, std::remove_const_t<T>>
 [[nodiscard]] constexpr Option<std::size_t> find_if(View<T, Extent> view, Predicate predicate) noexcept {
-    std::remove_const_t<T> const* const first = detail::first_of_(view);
+    std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), view);
     for (std::size_t index = 0; index < view.size(); ++index) {
         if (predicate(first[index])) return Option<std::size_t>::some(index);
     }
@@ -160,7 +160,7 @@ template <class T, std::size_t Extent, class Predicate>
 template <class T, std::size_t Extent, class Predicate>
     requires detail::ElementPredicate<Predicate, std::remove_const_t<T>>
 [[nodiscard]] constexpr bool all_of(View<T, Extent> view, Predicate predicate) noexcept {
-    std::remove_const_t<T> const* const first = detail::first_of_(view);
+    std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), view);
     for (std::size_t index = 0; index < view.size(); ++index) {
         if (!predicate(first[index])) return false;
     }
@@ -172,7 +172,7 @@ template <class T, std::size_t Extent, class Predicate>
 template <class T, std::size_t Extent, class Predicate>
     requires detail::ElementPredicate<Predicate, std::remove_const_t<T>>
 [[nodiscard]] constexpr bool any_of(View<T, Extent> view, Predicate predicate) noexcept {
-    std::remove_const_t<T> const* const first = detail::first_of_(view);
+    std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), view);
     for (std::size_t index = 0; index < view.size(); ++index) {
         if (predicate(first[index])) return true;
     }
@@ -183,7 +183,7 @@ template <class T, std::size_t Extent, class Predicate>
 template <class T, std::size_t Extent, class Predicate>
     requires detail::ElementPredicate<Predicate, std::remove_const_t<T>>
 [[nodiscard]] constexpr std::size_t count_if(View<T, Extent> view, Predicate predicate) noexcept {
-    std::remove_const_t<T> const* const first = detail::first_of_(view);
+    std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), view);
     std::size_t count = 0;
     for (std::size_t index = 0; index < view.size(); ++index) {
         if (predicate(first[index])) ++count;
@@ -228,7 +228,7 @@ template <class T, std::size_t Extent, class Key>
 [[nodiscard]] constexpr std::size_t
 lower_bound_by_key(View<T, Extent> view, Key key,
                    std::invoke_result_t<Key&, std::remove_const_t<T> const&> probe) noexcept {
-    std::remove_const_t<T> const* const first = detail::first_of_(view);
+    std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), view);
     std::size_t low = 0;
     std::size_t high = view.size();
     while (low < high) {

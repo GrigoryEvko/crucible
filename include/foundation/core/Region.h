@@ -5,12 +5,12 @@
 // View<T> borrows a run of elements: a pointer and a count.  View<T, N>
 // borrows a run of exactly N elements: a pointer alone, because the type
 // holds the count.  A View owns nothing, and an owner gives it out.  The
-// constructor from raw parts is private, and only the base layer reaches
-// it, through detail::view_over_, so no pointer that a caller holds becomes
-// a View.  An owner that proves its run, such as a FixedArray or a
-// FixedList, makes its View from a reference to its array with the key of
-// detail::ViewDoor, which has no test of a null pointer.  The seal
-// refuses std::bit_cast, so no bytes become a View either.
+// constructors from raw parts take the key of detail::ViewDoor, and only the
+// base layer reaches them, so no pointer that a caller holds becomes a View.
+// An owner that proves its run, such as a FixedArray, a FixedList or a
+// HeapArray, uses them with no check and no test of a null pointer.
+// detail::view_over_ checks raw parts and then uses them.  The seal refuses
+// std::bit_cast, so no bytes become a View either.
 //
 // The operations:
 //
@@ -126,13 +126,16 @@ struct ViewCount<dynamic_extent> {
     [[nodiscard]] constexpr std::size_t value() const noexcept { return count; }
 };
 
-// The key of the constructors of a View from a reference to an array: the
-// door of the base layer for a run that its owner proves, with no check.  A
-// reference is never null, so the constructor has no test of the pointer,
-// also with -fno-delete-null-pointer-checks.  ViewDoor is the
-// one friend of the key, and only ViewDoor builds it.  The key and the door
-// hold no template, so no explicit specialization of a template reaches the
-// key.  The rule owners keeps each caller outside the base out of detail.
+// The key of the doors of the base layer to the parts of a View: the
+// constructors from raw parts, which check nothing, and first_of_, which
+// gives the pointer of a View.  An owner that proves its run, such as a
+// FixedArray, a FixedList or a HeapArray, makes its View through the key, so
+// its View has no compare, also with -fno-delete-null-pointer-checks.
+// view_over_ checks raw parts of a run and then uses the same key.  ViewDoor
+// is the one friend of the key, and only ViewDoor builds it.  The key, the
+// door and first_of_ are no templates, so no explicit specialization of a
+// template reaches the parts of a View.  The rule owners keeps each caller
+// outside the base out of detail.
 struct ViewDoor;
 
 class [[nodiscard]] ViewKey final {
@@ -148,17 +151,6 @@ public:
 struct ViewDoor {
     [[nodiscard]] static constexpr ViewKey key() noexcept { return ViewKey{}; }
 };
-
-// The door from raw parts to a View, for the owners of the base layer.
-// The rule owners keeps each other caller out.
-template <class T>
-[[nodiscard]] constexpr View<T> view_over_(T* first, std::size_t count) noexcept;
-
-template <std::size_t Extent, class T>
-[[nodiscard]] constexpr View<T, Extent> view_over_(T* first) noexcept;
-
-template <class T, std::size_t Extent>
-[[nodiscard]] constexpr T* first_of_(View<T, Extent> view) noexcept;
 
 // The body of each get of the Region family: the element at position of the
 // count elements from first, as an Option of a Ref with the brand of the
@@ -209,16 +201,9 @@ class View {
         requires ViewElement<U> && ViewExtent<U, OtherExtent>
     friend class View;
 
-    template <class U>
-    friend constexpr View<U> detail::view_over_(U* first, std::size_t count) noexcept;
-    template <std::size_t OtherExtent, class U>
-    friend constexpr View<U, OtherExtent> detail::view_over_(U* first) noexcept;
-    template <class U, std::size_t OtherExtent>
-    friend constexpr U* detail::first_of_(View<U, OtherExtent> view) noexcept;
     friend struct niche<View>;
     // The ranges of the iteration verbs read the pointer member of their View
-    // directly.  A gate that reads a View also reads their bodies, and the
-    // rule home finds a call of the function template first_of_ open.
+    // directly.
     template <class Element>
     friend class detail::ReverseRange;
     template <class Element, std::size_t Width>
@@ -252,23 +237,31 @@ public:
         requires(Extent == dynamic_extent)
     = default;
 
-    // The door of the base layer: the first count elements of an array of
-    // Count elements, which the caller proves live, with count at most
-    // Count, and no check.  An owner whose invariant bounds its count, such
-    // as a FixedList, makes its View through it.  The type of the array
-    // bounds Count by max_view_count.
-    template <std::size_t Count>
-        requires(Extent == dynamic_extent && ViewExtent<T, Count>)
-    constexpr View(detail::ViewKey const& /*key*/, T (&elements)[Count], std::size_t count) noexcept
-        : first_{elements}, count_{count} {}
+    // The door of the base layer: the count elements from first, with no
+    // check.  The caller proves the elements live, the count at most
+    // max_view_count, and first not null when the count is above zero.  An
+    // owner whose invariant gives these facts, such as a FixedList or a
+    // HeapArray, makes its View through it.
+    constexpr View(detail::ViewKey const& /*key*/, T* first, std::size_t count) noexcept
+        requires(Extent == dynamic_extent)
+        : View{first, count} {}
 
-    // The door of the base layer for a fixed extent: the elements of an
-    // array of Extent elements, which the caller proves live, with no check.
-    // An owner of Extent elements, such as a FixedArray, makes its View
-    // through it.
-    template <std::size_t Count>
-        requires(Extent != dynamic_extent && Count == Extent)
-    constexpr View(detail::ViewKey const& /*key*/, T (&elements)[Count]) noexcept : first_{elements} {}
+    // The door of the base layer for a fixed extent: the Extent elements
+    // from first, with no check.  The caller proves the elements live and
+    // first not null.  An owner of Extent elements, such as a FixedArray,
+    // makes its View through it.
+    constexpr View(detail::ViewKey const& /*key*/, T* first) noexcept
+        requires(Extent != dynamic_extent)
+        : View{first} {}
+
+    // The pointer of the first element, for the owners and the free
+    // operations of the base layer, such as copy() and fill().  It is a
+    // friend that is no template, so no explicit specialization reaches it,
+    // and the key keeps each caller outside the base out.  Argument-dependent
+    // lookup finds it: first_of_(detail::ViewDoor::key(), view).
+    [[nodiscard]] friend constexpr T* first_of_(detail::ViewKey const& /*key*/, View view) noexcept {
+        return view.first_;
+    }
 
     // Adds a const to the element, or drops the fixed extent, or both.
     template <class U, std::size_t OtherExtent>
@@ -427,6 +420,12 @@ struct niche<View<T, Extent>> {
 
 namespace detail {
 
+// The checked door from raw parts to a View, for the owners of the base
+// layer that cannot prove their parts.  It ends the process for a count past
+// max_view_count and for a null pointer with a count, and then it makes the
+// View through the key.  View names it as no friend, so an explicit
+// specialization of it reaches no private member of a View.  The rule owners
+// keeps each caller outside the base out.
 template <class T>
 [[nodiscard]] constexpr View<T> view_over_(T* first, std::size_t count) noexcept {
     if (count > max_view_count(sizeof(T))) [[unlikely]] {
@@ -435,7 +434,7 @@ template <class T>
     if (first == nullptr && count != 0) [[unlikely]] {
         fatal("view_over_ got a null pointer with a count");
     }
-    return View<T>{first, count};
+    return View<T>{ViewDoor::key(), first, count};
 }
 
 template <std::size_t Extent, class T>
@@ -443,12 +442,7 @@ template <std::size_t Extent, class T>
     if (first == nullptr) [[unlikely]] {
         fatal("view_over_ got a null pointer for a View of a fixed extent");
     }
-    return View<T, Extent>{first};
-}
-
-template <class T, std::size_t Extent>
-[[nodiscard]] constexpr T* first_of_(View<T, Extent> view) noexcept {
-    return view.first_;
+    return View<T, Extent>{ViewDoor::key(), first};
 }
 
 // The cursors of the iteration verbs obey the rule of a ViewCursor: each
@@ -814,7 +808,8 @@ zip(View<First, FirstExtent> first, View<Second, SecondExtent> second) noexcept 
 template <class T, std::size_t Extent>
     requires RegionCopyElement<T> && (Extent != dynamic_extent)
 void copy(View<T, Extent> dst, std::type_identity_t<View<T const, Extent>> src) noexcept {
-    __builtin_memmove(detail::first_of_(dst), detail::first_of_(src), Extent * sizeof(T));
+    __builtin_memmove(first_of_(detail::ViewDoor::key(), dst), first_of_(detail::ViewDoor::key(), src),
+                      Extent * sizeof(T));
 }
 
 // Copies the elements of src into dst, two Views of a dynamic extent.  The
@@ -825,7 +820,8 @@ template <class T>
     requires RegionCopyElement<T>
 [[nodiscard]] Result<Unit, LengthMismatch> copy(View<T> dst, std::type_identity_t<View<T const>> src) noexcept {
     if (dst.size() != src.size()) return err(LengthMismatch{});
-    __builtin_memmove(detail::first_of_(dst), detail::first_of_(src), dst.size() * sizeof(T));
+    __builtin_memmove(first_of_(detail::ViewDoor::key(), dst), first_of_(detail::ViewDoor::key(), src),
+                      dst.size() * sizeof(T));
     return Unit{};
 }
 
@@ -854,7 +850,7 @@ constexpr void fill(View<T, Extent> dst, std::type_identity_t<T> const& value) n
     if constexpr (detail::ByteFillElement<T>) {
         if !consteval {
             std::uint8_t const byte = decode<std::uint8_t>(value).expect("decode gives a byte for each value");
-            __builtin_memset(static_cast<void*>(detail::first_of_(dst)), byte, dst.size());
+            __builtin_memset(static_cast<void*>(first_of_(detail::ViewDoor::key(), dst)), byte, dst.size());
             return;
         }
     }

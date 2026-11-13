@@ -2901,6 +2901,15 @@ foundation_neg_compile_test(neg_core_heap_array_view_of_temporary
 foundation_neg_compile_test(neg_core_heap_array_mint_forged_body
   "no matching function for call to .foundation::core::HeapArray<int>::HeapArray\\(<brace-enclosed initializer list>\\)."
   "HeapArray\\(const foundation::core::detail::HeapArrayKey&, std::size_t, const T&\\) requires  is_nothrow_copy_constructible_v<T>")
+# View names view_over_ and first_of_ as no friend template: a forged
+# specialization of view_over_ reaches no private constructor of a View, and
+# first_of_ is a friend that is no template, so it has no specialization.
+foundation_neg_compile_test(neg_core_view_over_forged_body
+  "constexpr foundation::core::View<T, Extent>::View\\(T\\*, std::size_t\\) requires  Extent == foundation::core::dynamic_extent \\[with T = int; long unsigned int Extent = 18446744073709551615; std::size_t = long unsigned int\\]. is private within this context"
+  "declared private here")
+foundation_neg_compile_test(neg_core_view_first_of_specialized
+  "int\\* foundation::core::first_of_\\(const detail::ViewKey&, View<int>\\). should have been declared inside .foundation::core."
+  ".first_of_. is not a template function")
 
 # The address of a function that gives a Ref with a target type, and an
 # explicit specialization with a declared type, set no brand.  The result

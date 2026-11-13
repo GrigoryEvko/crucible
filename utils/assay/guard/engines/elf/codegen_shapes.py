@@ -563,6 +563,14 @@ PROBES: tuple[Probe, ...] = (
         "of the array",
     ),
     Probe(
+        "heap_array_sum",
+        "a loop over a HeapArray is the loop of a raw pointer up to the count, with no test of the pointer and no "
+        "check of the count.  Outside the loops, the family side compares the end pointer with the start, and the "
+        f"raw side tests the byte count.  {HARDENED_BUILDS}.  At x86-64-v3 and x86-64-v4, the second test of the "
+        "empty range that these flags add then gives the family side one more instruction outside the loops",
+        longer=1,
+    ),
+    Probe(
         "fixed_list_sum",
         "a loop over a FixedList is the loop of a raw pointer up to the count, with no test of the address of the list",
     ),
