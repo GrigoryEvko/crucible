@@ -39,7 +39,6 @@ include/crucible/ledger/probes/CacheTier.h | heavy-include | 1 | <thread> | the 
 include/crucible/observe/SdcDetect.h | heavy-include | 1 | <memory> | the compare and the slot lookup take each address with std::addressof, and an overloaded operator & of a result type cannot change it
 include/crucible/perf/LockContention.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
 include/crucible/perf/PmuSample.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
-include/crucible/perf/ProcGauges.h | heavy-include | 1 | <memory> | the class holds its scratch buffer of 128 KB in a std::unique_ptr, because one buffer serves each source in /proc
 include/crucible/perf/SchedSwitch.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
 include/crucible/perf/SchedTpBtf.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
 include/crucible/perf/SenseHub.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
@@ -47,10 +46,6 @@ include/crucible/perf/SenseHubV2.h | heavy-include | 1 | <memory> | the class ho
 include/crucible/perf/SyscallLatency.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
 include/crucible/perf/SyscallTpBtf.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
 include/crucible/perf/detail/BpfHub.h | heavy-include | 1 | <memory> | load_ring gives the state of a ring in a std::unique_ptr, which std::make_unique makes, because the state of a ring cannot move
-include/crucible/topology/AsymmetricFailure.h | heavy-include | 1 | <memory> | the slot lookups give the address of a slot with std::addressof, and an overloaded operator & of the slot type cannot change it
-include/crucible/topology/CongestionTelemetryWorker.h | heavy-include | 1 | <memory> | the slot lookup gives the address of a slot with std::addressof, and an overloaded operator & of the slot type cannot change it
-include/crucible/topology/Health.h | heavy-include | 1 | <memory> | the slot lookups give the address of a slot with std::addressof, and an overloaded operator & of the slot type cannot change it
-include/crucible/topology/Pingmesh.h | heavy-include | 1 | <chrono> | detect_anomalies takes its window as a std::chrono::nanoseconds parameter
 include/fixy/Borrowed.h | heavy-include | 1 | <ranges> | the constructors from a range accept only a std::ranges::contiguous_range that is a std::ranges::borrowed_range, and they read std::ranges::data and std::ranges::size
 include/fixy/Budgeted.h | heavy-include | 1 | <memory> | a moved-from source gets the unbounded grade again through std::destroy_at and std::construct_at, because Graded sets its grade only when it makes the object
 include/fixy/EpochVersioned.h | heavy-include | 1 | <memory> | a moved-from source gets the genesis version again through std::destroy_at and std::construct_at, because Graded sets its grade only when it makes the object

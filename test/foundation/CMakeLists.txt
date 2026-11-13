@@ -2358,6 +2358,22 @@ foundation_test(test_core_box)
 foundation_test(test_core_hole)
 target_link_options(test_core_hole PRIVATE -Wl,--wrap=malloc,--wrap=aligned_alloc,--wrap=calloc,--wrap=free)
 
+# The arena of the Ref family.  The poison test reads a View of an ended
+# epoch, so it passes only on the text of the report of AddressSanitizer, and
+# only a build with AddressSanitizer registers it.
+foundation_test(test_core_bump_arena)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
+  foundation_test(test_core_bump_arena_poison)
+  set_tests_properties(test_core_bump_arena_poison PROPERTIES
+    PASS_REGULAR_EXPRESSION "AddressSanitizer: use-after-poison")
+endif()
+foundation_neg_compile_test(neg_core_bump_arena_make_on_temporary
+  "use of deleted function .void foundation::core::BumpArena::make\\(Rest&& ...\\) && \\[with T = int; Rest = \\{foundation::core::Alloc, int\\}\\]."
+  "a temporary arena gives back its blocks at the end of the statement")
+foundation_neg_compile_test(neg_core_bump_arena_make_with_destructor
+  "no matching function for call to .foundation::core::BumpArena::make<Ended>\\(foundation::core::Alloc\\)."
+  "the expression .is_trivially_destructible_v<T> \\[with T = Ended\\]. evaluated to .false.")
+
 foundation_neg_compile_test(neg_core_ref_of_temporary
   "use of deleted function .void foundation::core::to\\(T&&\\) \\[with Refused = \\{\\}; T = int\\]."
   "a Ref of a temporary dangles at the end of the full expression")

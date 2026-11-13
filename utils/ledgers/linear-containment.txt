@@ -11,7 +11,7 @@ reason test/ | the tests hold tokens and handles in std::optional, std::pair and
 bench/ | library-holder | 10 | - | -
 include/crucible/ | library-holder | 1 | - | -
 include/crucible/cipher/ | library-holder | 2 | - | -
-include/crucible/cntp/ | library-holder | 5 | - | -
+include/crucible/cntp/ | library-holder | 3 | - | -
 include/crucible/cntp/_wip/ | library-holder | 1 | - | -
 include/crucible/cntp/_wip/ | pinned-holder | 1 | - | -
 include/fixy/ | library-holder | 4 | - | -

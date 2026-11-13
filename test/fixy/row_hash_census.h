@@ -878,6 +878,8 @@ inline constexpr StatedZero kZeros[] = {
      "an owned allocation of one object: it holds storage and makes no claim about what the object holds"},
     {^^::foundation::core::Hole,
      "the owned storage of one object with no object in it: it holds storage and makes no claim about a value"},
+    {^^::foundation::core::BumpArena,
+     "the blocks of an arena: it holds storage and makes no claim about the objects in it"},
     {^^::foundation::core::Ref,
      "a borrow of one object: it owns nothing and makes no claim about what the object holds"},
     {^^::foundation::core::Address,
