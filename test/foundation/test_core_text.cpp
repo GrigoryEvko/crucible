@@ -77,6 +77,22 @@ void test_fixed_text_loop_and_clear() {
     assert(text.size() == 0 && text.view() == TextView{});
 }
 
+// A FixedText from a literal, from push() and from append() at run time.  A
+// refused write keeps the characters of the buffer.
+void test_fixed_text_builds_from_characters() {
+    FixedText<8> text{"cub"};
+    char volatile letter = 'i';
+    assert(text.push(letter).is_ok());
+    assert(text.append(TextView{"c"}).is_ok());
+    assert(text.view() == TextView{"cubic"});
+    assert(text.append(TextView{"_wide"}).is_err());
+    assert(text.view() == TextView{"cubic"});
+    assert(text.append(TextView{"bbr"}).is_ok());
+    assert(text.size() == 8);
+    assert(text.push(letter).is_err());
+    assert(text.view() == TextView{"cubicbbr"});
+}
+
 enum class Lane : std::uint8_t {
     Send,
     ReceiveQueue,
@@ -178,6 +194,7 @@ int main() {
     test_fixed_text_starts_empty();
     test_text_view_reads_its_characters();
     test_fixed_text_loop_and_clear();
+    test_fixed_text_builds_from_characters();
     test_enum_name_text_at_run_time();
     test_text_cursor_at_the_end_aborts();
     test_format_writes_integers_in_decimal();

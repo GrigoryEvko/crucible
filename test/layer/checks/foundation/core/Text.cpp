@@ -77,6 +77,63 @@ static_assert(!HasFixedText<0>);
 static_assert(size_after_resize(3) == 3);
 static_assert(size_after_resize(9) == 4);
 
+// A FixedText holds the characters of a literal that fits it.  A longer
+// literal builds no FixedText, and a literal does not convert to one.
+static_assert(std::is_constructible_v<FixedText<3>, char const (&)[4]>);
+static_assert(!std::is_constructible_v<FixedText<2>, char const (&)[4]>);
+static_assert(!std::is_convertible_v<char const (&)[4], FixedText<8>>);
+[[nodiscard]] consteval bool holds_its_literal() noexcept {
+    FixedText<4> const text{"bbr"};
+    return text.size() == 3 && text.view() == TextView{"bbr"};
+}
+static_assert(holds_its_literal());
+
+// A literal with a zero byte before its end fails the consteval constructor.
+[[nodiscard]] consteval bool forms_text(int which) noexcept {
+    switch (which) {
+        case 0:
+            static_cast<void>(FixedText<4>{"abc"});
+            return true;
+        case 1:
+            static_cast<void>(FixedText<4>{"a\0c"});
+            return true;
+        default:
+            return false;
+    }
+}
+template <int Which>
+concept FormsText = requires { typename std::integral_constant<bool, forms_text(Which)>; };
+static_assert(FormsText<0>);
+static_assert(!FormsText<1>);
+
+// A constant expression builds a name and gives it by value in a Result.
+[[nodiscard]] constexpr Result<FixedText<4>, Truncated> build_name(TextView name) noexcept {
+    FixedText<4> text{};
+    if (text.append(name).is_err()) return err(Truncated{});
+    return text;
+}
+[[nodiscard]] consteval bool builds_a_name_in_a_result() noexcept {
+    FixedText<4> const fits = build_name("bbr").expect("the name fits");
+    return fits.view() == TextView{"bbr"} && build_name("cubic").is_err();
+}
+static_assert(builds_a_name_in_a_result());
+
+// push() refuses the character past the capacity.  A refused append()
+// keeps the characters that the buffer held.
+[[nodiscard]] consteval bool fills_and_refuses() noexcept {
+    FixedText<2> pair{};
+    bool const is_first_kept = pair.push('a').is_ok();
+    bool const is_second_kept = pair.push('b').is_ok();
+    bool const is_third_refused = pair.push('c').is_err();
+    FixedText<4> name{"ab"};
+    bool const is_long_refused = name.append("cde").is_err();
+    bool const is_name_kept = name.view() == TextView{"ab"};
+    bool const is_joined = name.append("cd").is_ok() && name.view() == TextView{"abcd"};
+    return is_first_kept && is_second_kept && is_third_refused && pair.view() == TextView{"ab"} && is_long_refused
+        && is_name_kept && is_joined;
+}
+static_assert(fills_and_refuses());
+
 // The name of an enumerator is a TextView of its identifier, or of the
 // sentinel when no enumerator holds the value.  A zero follows each text.
 // The read of that zero is a constant expression only when the storage

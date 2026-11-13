@@ -24,10 +24,6 @@
 
 namespace foundation::core {
 
-// The error of a format() whose text needs more characters than the
-// capacity of its FixedText.
-struct Truncated final {};
-
 template <std::size_t Capacity, class... Args>
     requires(Formattable<Args> && ...)
 [[nodiscard]] Result<TextView, Truncated> format(FixedText<Capacity>& out,

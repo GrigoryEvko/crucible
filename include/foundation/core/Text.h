@@ -22,9 +22,11 @@
 // constructor from raw parts is private, and the seal refuses std::bit_cast,
 // so no pointer that a caller holds and no bytes become a TextView.
 //
-// A FixedText starts empty.  format() of foundation/core/Format.h writes a
-// text into it.  A FixedText never holds more than N characters, and no
-// operation reads past its count.
+// A FixedText starts empty, or holds the characters of a literal that fits
+// it.  push() and append() put characters after the last one, and format()
+// of foundation/core/Format.h writes a text into it from its start.  A write
+// that does not fit gives Truncated.  A FixedText never holds more than N
+// characters, and no operation reads past its count.
 //
 // THE READS OF THE CHARACTERS
 //   A TextView gives the reads of a View: size(), the loop
@@ -67,12 +69,16 @@ template <std::size_t Capacity>
     requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(__PTRDIFF_MAX__))
 class FixedText;
 
+// The error of a write into a FixedText whose characters need more than its
+// capacity: a push(), an append() or a format() of foundation/core/Format.h.
+struct Truncated final {};
+
 namespace detail {
 
-// The consteval constructor of a TextView and of a CText calls one of these
-// functions when a literal breaks a rule.  No function has a definition, so
-// the call is no constant expression, and the error of the compiler names the
-// rule.
+// The consteval constructor of a TextView, of a CText and of a FixedText
+// calls one of these functions when a literal breaks a rule.  No function has
+// a definition, so the call is no constant expression, and the error of the
+// compiler names the rule.
 void text_literal_has_no_terminating_zero() noexcept;
 void text_literal_holds_a_zero_byte_before_its_end() noexcept;
 
@@ -244,6 +250,20 @@ public:
     // The empty text.
     constexpr FixedText() noexcept = default;
 
+    // The characters of a string literal, without its terminating zero.  A
+    // literal of more than Capacity characters builds no FixedText.  A
+    // literal with no terminating zero, or with a zero before its end, is no
+    // constant expression, and the build stops at the call.
+    template <std::size_t Length>
+        requires(Length - 1 <= Capacity)
+    consteval explicit FixedText(char const (&literal)[Length]) noexcept : size_{Length - 1} {
+        if (literal[Length - 1] != '\0') detail::text_literal_has_no_terminating_zero();
+        for (std::size_t index = 0; index + 1 < Length; ++index) {
+            if (literal[index] == '\0') detail::text_literal_holds_a_zero_byte_before_its_end();
+            bytes_[index] = literal[index];
+        }
+    }
+
     [[nodiscard]] constexpr std::size_t size() const noexcept {
         std::size_t const count = size_;
         [[assume(count <= Capacity)]];
@@ -269,6 +289,32 @@ public:
 
     // The buffer then holds no character.
     constexpr void clear() noexcept { size_ = 0; }
+
+    // Puts character after the last character, or gives Truncated when the
+    // buffer holds Capacity characters.  One compare.
+    [[nodiscard]] constexpr Result<Unit, Truncated> push(char character) & noexcept {
+        if (size_ == Capacity) [[unlikely]] {
+            return err(Truncated{});
+        }
+        bytes_[size_] = character;
+        ++size_;
+        return Unit{};
+    }
+
+    // Puts each character of text after the last character.  When they do
+    // not fit, it gives Truncated, and the buffer keeps the characters that it
+    // held.  One compare, and one copy for each character.
+    [[nodiscard]] constexpr Result<Unit, Truncated> append(TextView text) & noexcept {
+        std::size_t const count = text.size();
+        if (count > Capacity - size()) [[unlikely]] {
+            return err(Truncated{});
+        }
+        for (std::size_t index = 0; index < count; ++index) {
+            bytes_[size_ + index] = text.first_[index];
+        }
+        size_ += count;
+        return Unit{};
+    }
 };
 
 namespace detail {
