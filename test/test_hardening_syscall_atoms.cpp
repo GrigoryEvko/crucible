@@ -3,6 +3,7 @@
 // anything while it still matches the syscalls actually made.
 
 #include <crucible/warden/Hardening.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/atoms/Syscall.h>
 
@@ -10,7 +11,6 @@
 #include <foundation/effects/Row.h>
 
 #include <cstdint>
-#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -35,22 +35,22 @@ using HardeningAtoms = ::crucible::warden::hardening_syscall_atoms;
 // This count is a claim about the code that no compile-time check can
 // confirm, because the code it describes is a set of call sites rather
 // than a type.  The rule syscalls of the quarantine plugin
-// reads those call sites and compares them with the tuple.  That rule, not
+// reads those call sites and compares them with the pack.  That rule, not
 // this line, keeps the two equal.
-static_assert(std::tuple_size_v<HardeningAtoms> == 9,
+static_assert(::fixy::pack_size_v<HardeningAtoms> == 9,
               "the hardening atoms must enumerate exactly the 9 syscalls the apply path issues: "
               "sched_setaffinity, sched_setattr, mlock, mlock2, munlock, madvise, prctl, sched_getaffinity and "
               "sched_getattr.");
 
-static_assert(std::is_same_v<std::tuple_element_t<0, HardeningAtoms>, sc::per<sc::SyscallId::sched_setaffinity>>);
-static_assert(std::is_same_v<std::tuple_element_t<1, HardeningAtoms>, sc::per<sc::SyscallId::sched_setattr>>);
-static_assert(std::is_same_v<std::tuple_element_t<2, HardeningAtoms>, sc::per<sc::SyscallId::mlock>>);
-static_assert(std::is_same_v<std::tuple_element_t<3, HardeningAtoms>, sc::per<sc::SyscallId::mlock2>>);
-static_assert(std::is_same_v<std::tuple_element_t<4, HardeningAtoms>, sc::per<sc::SyscallId::munlock>>);
-static_assert(std::is_same_v<std::tuple_element_t<5, HardeningAtoms>, sc::per<sc::SyscallId::madvise>>);
-static_assert(std::is_same_v<std::tuple_element_t<6, HardeningAtoms>, sc::per<sc::SyscallId::prctl>>);
-static_assert(std::is_same_v<std::tuple_element_t<7, HardeningAtoms>, sc::per<sc::SyscallId::sched_getaffinity>>);
-static_assert(std::is_same_v<std::tuple_element_t<8, HardeningAtoms>, sc::per<sc::SyscallId::sched_getattr>>);
+static_assert(std::is_same_v<::fixy::pack_at_t<0, HardeningAtoms>, sc::per<sc::SyscallId::sched_setaffinity>>);
+static_assert(std::is_same_v<::fixy::pack_at_t<1, HardeningAtoms>, sc::per<sc::SyscallId::sched_setattr>>);
+static_assert(std::is_same_v<::fixy::pack_at_t<2, HardeningAtoms>, sc::per<sc::SyscallId::mlock>>);
+static_assert(std::is_same_v<::fixy::pack_at_t<3, HardeningAtoms>, sc::per<sc::SyscallId::mlock2>>);
+static_assert(std::is_same_v<::fixy::pack_at_t<4, HardeningAtoms>, sc::per<sc::SyscallId::munlock>>);
+static_assert(std::is_same_v<::fixy::pack_at_t<5, HardeningAtoms>, sc::per<sc::SyscallId::madvise>>);
+static_assert(std::is_same_v<::fixy::pack_at_t<6, HardeningAtoms>, sc::per<sc::SyscallId::prctl>>);
+static_assert(std::is_same_v<::fixy::pack_at_t<7, HardeningAtoms>, sc::per<sc::SyscallId::sched_getaffinity>>);
+static_assert(std::is_same_v<::fixy::pack_at_t<8, HardeningAtoms>, sc::per<sc::SyscallId::sched_getattr>>);
 
 // The row each atom lifts to.  A mapping call lifts to IO and Block;
 // fixy/atoms/Syscall.h says why.

@@ -24,7 +24,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <tuple>
 #include <utility>
 
 namespace crucible::warden {
@@ -423,15 +422,15 @@ private:
 // fixy/os/Sched.h and fixy/os/CpuPinned.h, and the page calls through
 // fixy/os/Pages.h.  The plugin follows the calls of each door to find them.
 using hardening_syscall_atoms =
-    std::tuple<::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::sched_setaffinity>,
-               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::sched_setattr>,
-               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::mlock>,
-               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::mlock2>,
-               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::munlock>,
-               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::madvise>,
-               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::prctl>,
-               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::sched_getaffinity>,
-               ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::sched_getattr>>;
+    ::fixy::Pack<::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::sched_setaffinity>,
+                 ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::sched_setattr>,
+                 ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::mlock>,
+                 ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::mlock2>,
+                 ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::munlock>,
+                 ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::madvise>,
+                 ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::prctl>,
+                 ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::sched_getaffinity>,
+                 ::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::sched_getattr>>;
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsHardeningMint<Ctx>

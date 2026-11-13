@@ -20,9 +20,9 @@ static_assert(sc::per<sc::SyscallId::prctl>::family == sc::SyscallFamily::Privil
 static_assert(sc::per<sc::SyscallId::sched_getaffinity>::family == sc::SyscallFamily::ThreadSync);
 static_assert(sc::per<sc::SyscallId::sched_getattr>::family == sc::SyscallFamily::ThreadSync);
 
-static_assert(std::tuple_size_v<hardening_syscall_atoms> == 9,
+static_assert(::fixy::pack_size_v<hardening_syscall_atoms> == 9,
               "hardening_syscall_atoms no longer holds 9 entries.  A syscall added to Hardening::apply() needs "
-              "an entry in the tuple and a family check beside it.  A syscall removed from the set changes the "
+              "an entry in the pack and a family check beside it.  A syscall removed from the set changes the "
               "cache key derived from it, so audit the removal first.  This count agrees with the code only "
               "because the rule syscalls derives the set from the call sites.  A "
               "hand-written count is a claim about the code that nothing reads the code to confirm.");
