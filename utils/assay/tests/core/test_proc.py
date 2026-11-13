@@ -6,24 +6,32 @@ cat, true and the Python of this process, so the test needs no tool of the
 tree.
 
 THE START OF A CHILD
-    On a host under load, a child can start seconds late.  No case lets a
-    limit or a timer of the test count against the start of a child:
+    On a host under load, a child can start seconds late, and the host can
+    stop this process for a time at each point.  No case lets a limit or a
+    time of the test count against such a delay:
       * The loop of a run applies the limit of the command, and nothing
         else does.  A case that needs the child in a state before the limit,
         such as a trap that it set or a line that it wrote, waits for the
         ready file of the child before it enters the loop.  The limit then
         applies after that state.
-      * A case that needs an interrupt before the limit starts a command that
-        needs no start work: the test ignores the signals itself when it
-        starts the command, and an exec keeps an ignored signal.
+      * A case that needs an interrupt makes the first waits of the loop
+        raise it (raised_in_loop()).  The interrupt then comes in the loop
+        at each speed of the host.  A timer could fire before the loop
+        starts, and the group would then get no signal.
+      * A command that must ignore the signals of an interrupt and of the
+        limit ignores them from its start: the test ignores them itself
+        when it starts the command, and an exec keeps an ignored signal.
       * The case of the bound of forked() makes each action wait for a second
         action, so the overlap does not depend on the time of a fork.
-      * A time bound of a case counts from the moment that the child is
-        ready, and not from the start.
+      * A case tells a command that a signal ended from a command that ended
+        alone by its exit, and not by a time.  The case of the stream of
+        many lines bounds the CPU time of this process, and not the wall
+        time.
 """
 
 import contextlib
 import os
+import selectors
 import signal
 import sys
 import tempfile
@@ -31,6 +39,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from unittest import mock
 
 from assay.core import jobserver, proc, testing
 from assay.core.exit import ExitCode
@@ -154,16 +163,21 @@ def limit_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
         proc.Command(["sh", "-c", 'sleep 60 & echo $!; : > "$0"; wait', str(ready)], timeout_s=0.2, grace_s=0.2)
     )
     is_ready = wait_for_file(ready)
-    waited = time.monotonic()
     problem = refuses(running.wait, proc.TimedOut)
     child_pid = (
         int(problem.completed.out.split()[0])
         if isinstance(problem, proc.TimedOut) and problem.completed and problem.completed.out.split()
         else -1
     )
+    # The shell ends on SIGTERM, or on SIGKILL when it is slow to end in the grace.  A shell that the limit does not
+    # stop ends after 60 s with the exit 0.
     expect(
-        "a command past its limit gives TimedOut with the output that it gave, soon after the limit",
-        is_ready and isinstance(problem, proc.TimedOut) and child_pid > 0 and time.monotonic() - waited < 10,
+        "a command past its limit gives TimedOut with the output that it gave, and a signal of the limit ends it",
+        is_ready
+        and isinstance(problem, proc.TimedOut)
+        and child_pid > 0
+        and problem.completed is not None
+        and problem.completed.exit in (-signal.SIGTERM, -signal.SIGKILL),
     )
     expect("no process of the group runs after the limit", child_pid > 0 and testing.is_gone(child_pid))
     # The ready file comes after the trap, and sleep keeps the ignored signal across the exec.
@@ -172,31 +186,21 @@ def limit_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
         proc.Command(["sh", "-c", "trap '' TERM; : > \"$0\"; exec sleep 60", str(ready)], timeout_s=0.2, grace_s=0.1)
     )
     is_ready = wait_for_file(ready)
-    waited = time.monotonic()
     problem = refuses(stubborn.wait, proc.TimedOut)
     expect(
         "a command that ignores SIGTERM gets SIGKILL after the grace",
         is_ready
         and isinstance(problem, proc.TimedOut)
         and problem.completed is not None
-        and problem.completed.exit == -signal.SIGKILL
-        and time.monotonic() - waited < 10,
+        and problem.completed.exit == -signal.SIGKILL,
     )
 
     class Interrupt(Exception):
-        """The error that the timer of the case raises in the loop of the run."""
+        """The error that the case raises in the loop of the run."""
 
-    def interrupt(_number: int, _frame: object) -> None:
-        raise Interrupt
-
-    previous = signal.signal(signal.SIGALRM, interrupt)
     running = proc.start(proc.Command(["sh", "-c", "sleep 60"], timeout_s=SAFE_S))
-    signal.setitimer(signal.ITIMER_REAL, 0.1)
-    try:
+    with raised_in_loop(running, Interrupt):
         caught = refuses(running.wait, Interrupt)
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous)
     expect(
         "an interrupt of the wait stops the group and then goes on",
         isinstance(caught, Interrupt) and testing.is_gone(running.pid),
@@ -213,9 +217,10 @@ def poll_cases(expect: Callable[[str, bool], None]) -> None:
     first = running.poll(0.2)
     waited_s = time.monotonic() - started
     stopped = running.stop()
+    # poll() waits at least its time.  A poll() that waits for the end of the command gives a result, and not None.
     expect(
         f"poll() of a command that runs gives None after its time, and stop() then ends the group: {waited_s:.2f} s",
-        first is None and 0.15 <= waited_s < 5.0 and stopped.exit == -signal.SIGTERM and testing.is_gone(running.pid),
+        first is None and waited_s >= 0.15 and stopped.exit == -signal.SIGTERM and testing.is_gone(running.pid),
     )
     quick = proc.start(proc.Command(python("import sys; print('done'); sys.exit(4)"), timeout_s=SAFE_S))
     found = None
@@ -239,30 +244,39 @@ def poll_cases(expect: Callable[[str, bool], None]) -> None:
     )
 
 
-def interrupted(action: Callable[[], object], interval_s: float, count: int = 1) -> bool:
-    """Run an action while a timer raises KeyboardInterrupt, as Ctrl-C does, and return whether it reached the caller.
+@contextlib.contextmanager
+def raised_in_loop(running: proc.Running, error: type[BaseException], count: int = 1) -> Iterator[None]:
+    """Make the first `count` waits of the loop of a run raise `error` in the block, as a signal in a wait does.
 
-    The timer fires count times, one time after each interval_s.  The last firing stops the timer before it raises,
-    so no firing comes after the action ends.
+    A wait of the loop is one select of the run (assay.core.proc, AN INTERRUPT).  The error then comes in the loop
+    at each speed of the host.  After the block, the selector has its own select again.
     """
-    fired = 0
+    selector = running._selector
+    real_select = selector.select
+    raised = 0
 
-    def interrupt(_number: int, _frame: object) -> None:
-        nonlocal fired
-        fired += 1
-        if fired >= count:
-            signal.setitimer(signal.ITIMER_REAL, 0)
-        raise KeyboardInterrupt
+    def select(timeout: float | None = None) -> list[tuple[selectors.SelectorKey, int]]:
+        nonlocal raised
+        if raised < count:
+            raised += 1
+            raise error
+        return real_select(timeout)
 
-    previous = signal.signal(signal.SIGALRM, interrupt)
-    signal.setitimer(signal.ITIMER_REAL, interval_s, interval_s if count > 1 else 0.0)
-    try:
-        action()
-    except KeyboardInterrupt:
-        return True
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous)
+    with mock.patch.object(selector, "select", select):
+        yield
+
+
+def interrupted(running: proc.Running, action: Callable[[], object], count: int = 1) -> bool:
+    """Run an action while the first `count` waits of the loop of a run raise KeyboardInterrupt, as Ctrl-C does.
+
+    Returns:
+        True when the KeyboardInterrupt reached the caller
+    """
+    with raised_in_loop(running, KeyboardInterrupt, count):
+        try:
+            action()
+        except KeyboardInterrupt:
+            return True
     return False
 
 
@@ -294,29 +308,32 @@ def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     """Check AN INTERRUPT: SIGINT to the group, the end of the command, and SIGKILL at a second interrupt."""
     summary = scratch / "summary.txt"
     ready = scratch / "ready"
+    # The child blocks SIGINT before its ready file, and then waits for it for 60 s.  A SIGINT that comes before the
+    # wait stays pending, and the wait takes it.  With a handler, a SIGINT just before time.sleep() runs the handler
+    # only after the sleep, and a SIGINT in a print() makes the print of the handler fail as a reentrant call.
     polite = python(
-        "import signal, sys, time\n"
-        "def stop(_n, _f):\n"
-        "    open(sys.argv[1], 'w').write('summary\\n')\n"
-        "    print('summary', flush=True)\n"
-        "    sys.exit(7)\n"
-        "signal.signal(signal.SIGINT, stop)\n"
+        "import os, signal, sys\n"
+        "signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})\n"
         "open(sys.argv[2], 'w').close()\n"
-        "print('ready', flush=True)\n"
-        "time.sleep(60)"
+        "os.write(1, b'ready\\n')\n"
+        "if signal.sigtimedwait({signal.SIGINT}, 60) is not None:\n"
+        "    open(sys.argv[1], 'w').write('summary\\n')\n"
+        "    os.write(1, b'summary\\n')\n"
+        "    sys.exit(7)"
     )
+    # After the interrupt, stop() gives the result of the command that ended, and sends no signal.  The exit tells the
+    # end of the command in its own way from an end on a signal, or from the end of its sleep.
     running = proc.start(proc.Command([*polite, str(summary), str(ready)], timeout_s=SAFE_S))
     is_ready = wait_for_file(ready)
-    started = time.monotonic()
-    reached = interrupted(running.wait, 0.1)
+    reached = interrupted(running, running.wait)
     expect(
         "an interrupt of the wait sends SIGINT to the group, waits for the end of the command, and then goes on",
         is_ready
         and reached
         and summary.is_file()
         and summary.read_text() == "summary\n"
-        and testing.is_gone(running.pid)
-        and time.monotonic() - started < 10,
+        and running.stop().exit == 7
+        and testing.is_gone(running.pid),
     )
     summary.unlink(missing_ok=True)
     ready.unlink(missing_ok=True)
@@ -325,7 +342,7 @@ def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     )
     first = next(streamed)
     rest: list[str] = []
-    reached = interrupted(lambda: rest.extend(streamed), 0.1)
+    reached = interrupted(streamed, lambda: rest.extend(streamed))
     expect(
         "an interrupt of a stream gives the lines that the command writes after SIGINT, and then goes on",
         first == "ready\n" and rest == ["summary\n"] and reached and testing.is_gone(streamed.pid),
@@ -341,21 +358,18 @@ def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
         )
     )
     next(deaf)
-    started = time.monotonic()
-    reached = interrupted(deaf.wait, 0.1, count=2)
+    reached = interrupted(deaf, deaf.wait, count=2)
     expect(
         "a second interrupt sends SIGKILL to a group that ignores SIGINT, and then goes on",
-        reached and testing.is_gone(deaf.pid) and time.monotonic() - started < 10,
+        reached and deaf.stop().exit == -signal.SIGKILL and testing.is_gone(deaf.pid),
     )
-    # sleep ignores the two signals from its exec, so the interrupt comes before the limit, also when the start of
-    # the child is slow (THE START OF A CHILD).
+    # sleep ignores the two signals from its exec, so only the SIGKILL of the limit ends it (THE START OF A CHILD).
     with ignored(signal.SIGINT, signal.SIGTERM):
         late = proc.start(proc.Command(["sleep", "60"], timeout_s=0.5, grace_s=0.1))
-    started = time.monotonic()
-    reached = interrupted(late.wait, 0.1)
+    reached = interrupted(late, late.wait)
     expect(
         "after one interrupt, the limit still stops a command that ignores SIGINT and SIGTERM",
-        reached and testing.is_gone(late.pid) and time.monotonic() - started < 10,
+        reached and late.stop().exit == -signal.SIGKILL and testing.is_gone(late.pid),
     )
     summary.unlink(missing_ok=True)
     ready.unlink(missing_ok=True)
@@ -370,7 +384,6 @@ def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
     ready.unlink(missing_ok=True)
     timed = proc.start(proc.Command([*polite, str(summary), str(ready)], timeout_s=0.5, stop=proc.Stop.INTERRUPT))
     is_ready = wait_for_file(ready)
-    started = time.monotonic()
     problem = refuses(timed.wait, proc.TimedOut)
     expect(
         "the limit of a command with the stop word interrupt sends SIGINT first, and the command ends in its own way",
@@ -379,8 +392,7 @@ def interrupt_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
         and problem.completed is not None
         and problem.completed.exit == 7
         and summary.is_file()
-        and "SIGINT" in str(problem)
-        and time.monotonic() - started < 10,
+        and "SIGINT" in str(problem),
     )
 
 
@@ -476,13 +488,14 @@ def stream_cases(expect: Callable[[str, bool], None], scratch: Path) -> None:
             stdout=proc.Output.STREAM,
         )
     )
-    # The time counts from the first line, after the start of the child.
+    # The CPU time of this process counts from the first line.  The load of the host increases the wall time of the
+    # loop much more than its CPU time.  A loop that is quadratic in the lines runs much longer than the bound.
     count = 0 if next(many, None) is None else 1
-    started = time.monotonic()
+    started = time.process_time()
     count += sum(1 for _line in many)
     expect(
-        "a stream of 200,000 lines gives each line, in a time that is linear in the lines",
-        count == 200000 and many.wait().exit == 0 and time.monotonic() - started < 10,
+        "a stream of 200,000 lines gives each line, in a CPU time that is linear in the lines",
+        count == 200000 and many.wait().exit == 0 and time.process_time() - started < 10,
     )
 
 
