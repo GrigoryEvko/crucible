@@ -1998,7 +1998,13 @@ class SelfTest:
         self.registry.write_text(rule_registry.planted([rule_registry.measured_rule("step-memory", limits, "GB")]))
 
     def write_tests(self) -> None:
-        """Write the CTestTestfile.cmake of the fake build tree."""
+        """Write the CTestTestfile.cmake of the fake build tree.
+
+        The disabled test has DEPENDS on census_reader.  ctest 4.4.2 with a jobserver can end a run before it starts
+        a test whose dependencies ended, when the run also holds a disabled test.  On 2026-11-13 it ended 15 of 1600
+        runs of this tree in that way, and none of 1600 runs with this DEPENDS.  A layer then holds the disabled test
+        with census_reader.
+        """
         bin_dir, data = self.build_dir / "bin", self.build_dir / "data"
         lines = [
             f'add_test([=[exe_ok]=] "{bin_dir}/ok"{self.extra_argument})',
@@ -2018,7 +2024,7 @@ class SelfTest:
             f'add_test([=[census_reader]=] "{shutil.which("true")}" "{self.source_dir}/test/census.py")',
             f'set_tests_properties([=[census_reader]=] PROPERTIES {DEPENDS_PROPERTY} "neg_fixture;script_guard")',
             f'add_test([=[disabled_test]=] "{bin_dir}/ok")',
-            f'set_tests_properties([=[disabled_test]=] PROPERTIES DISABLED TRUE)',
+            f'set_tests_properties([=[disabled_test]=] PROPERTIES DISABLED TRUE {DEPENDS_PROPERTY} "census_reader")',
             f'add_test([=[skip_code_test]=] "{sys.executable}" "-S" "-c" "raise SystemExit(77)")',
             "set_tests_properties([=[skip_code_test]=] PROPERTIES SKIP_RETURN_CODE 77)",
             (f'add_test([=[exe_launched]=] "{sys.executable}" "-S" "{self.launcher}" "{LAUNCHER_SUBCOMMAND}" '
@@ -2603,7 +2609,8 @@ def call_cases(ctest: str, expect: DetailedExpect) -> None:
         status, output = fake.call("-j", "2", path=f"{wrong}:{os.environ.get('PATH', '')}")
         merged = ctest_reader.results(state_dir / "junit.xml")
         expect("a wide test runs in a second ctest run, and junit.xml holds the tests of the two runs",
-               "2 layers of the property DEPENDS" in output and (state_dir / "run-1.txt").read_text() == "census_reader\n"
+               "2 layers of the property DEPENDS" in output
+               and (state_dir / "run-1.txt").read_text() == "census_reader\ndisabled_test\n"
                and merged.get("census_reader") is ctest_reader.TestStatus.RUN
                and merged.get("neg_fixture") is ctest_reader.TestStatus.RUN
                and merged.get("exe_bad") is ctest_reader.TestStatus.FAIL
