@@ -97,6 +97,49 @@ static void test_load_bytes() {
     crucible::test::pass("  test_load_bytes: PASSED\n");
 }
 
+// A store into the bytes of one register writes each lane as its
+// little-endian word, and touches no byte outside the window.  A bit cast
+// keeps each bit of the register.
+static void test_store_bytes_and_bit_cast() {
+    ::foundation::core::FixedArray<std::byte, 34> bytes{};
+    simd::u64x4 const v{simd::u64x4::raw_type{0x0807060504030201ULL, 0x100F0E0D0C0B0A09ULL, 0x1817161514131211ULL,
+                                              0x201F1E1D1C1B1A19ULL}};
+    simd::store(v, bytes.view().window<32>(1).expect("32 bytes fit after the first"));
+    for (auto index : bytes.indices()) {
+        auto const expected = index.raw() == 0 || index.raw() == 33 ? 0U : index.raw();
+        assert(bytes.at(index) == static_cast<std::byte>(expected));
+    }
+    auto const halves = simd::bit_cast<simd::vec<std::uint32_t, 8>>(v);
+    assert(halves[0] == 0x04030201U && halves[1] == 0x08070605U && halves[7] == 0x201F1E1DU);
+    assert(simd::bit_cast<simd::u64x4>(halves)[2] == v[2]);
+    crucible::test::pass("  test_store_bytes_and_bit_cast: PASSED\n");
+}
+
+// The register runs of two Views of one count: each whole run once, in
+// order, and the bytes after the last whole run as the rest.
+static void test_for_each_register_run() {
+    using Bytes = simd::vec<std::uint8_t, 16>;
+    ::foundation::core::FixedArray<std::byte, 37> target{};
+    ::foundation::core::FixedArray<std::byte, 37> source{};
+    for (auto index : source.indices()) {
+        source.at(index) = static_cast<std::byte>(index.raw() + 1);
+    }
+    int runs = 0;
+    auto const [target_rest, source_rest] = simd::for_each_register_run<Bytes>(
+        ::fixy::View<std::byte>{target.view()}, ::fixy::View<std::byte const>{source.view()},
+        [&runs](auto out, auto in) noexcept {
+            simd::store(simd::load<Bytes>(in), out);
+            ++runs;
+        });
+    assert(runs == 2);
+    assert(target_rest.size() == 5 && source_rest.size() == 5);
+    for (auto index : target.indices()) {
+        auto const expected = index.raw() < 32 ? index.raw() + 1 : 0U;
+        assert(target.at(index) == static_cast<std::byte>(expected));
+    }
+    crucible::test::pass("  test_for_each_register_run: PASSED\n");
+}
+
 static void test_reduce_xor_sum() {
     std::array<int64_t, 8> values{0, 1, 2, 3, 4, 5, 6, 7};
     auto input = simd::load<simd::i64x8>(values.data());
@@ -299,6 +342,8 @@ int main() {
     test_det_safe_simd_concept();
     test_load();
     test_load_bytes();
+    test_store_bytes_and_bit_cast();
+    test_for_each_register_run();
     test_reduce_xor_sum();
     test_reduce_or_and();
     test_reduce_max_min();

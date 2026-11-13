@@ -9,7 +9,7 @@ static_assert(!FountainShape<0, 1024, 16>);
 static_assert(!FountainShape<8, 0, 16>);
 static_assert(!FountainShape<65, 1024, 80>);
 static_assert(::fixy::qtt_consume_tracked
-              || sizeof(LinearFountainBuffer<std::span<std::byte>>) == sizeof(std::span<std::byte>));
+              || sizeof(LinearFountainBuffer<::fixy::View<std::byte>>) == sizeof(::fixy::View<std::byte>));
 
 // Each codec is reached only through its mint, and each mint takes a
 // context that admits the initialization row.

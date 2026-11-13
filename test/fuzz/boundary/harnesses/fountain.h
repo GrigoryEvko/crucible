@@ -49,17 +49,22 @@ inline void run_fountain(std::span<const std::uint8_t> bytes) {
         packet.source_bytes = std::move(admitted).expect("the admission took the count");
         packet.mask = cursor.take<std::uint64_t>();
         const auto payload = cursor.take_bytes(packet.payload.size());
-        for (std::size_t i = 0; i < payload.size(); ++i)
-            packet.payload[i] = std::byte{payload[i]};
+        for (auto index : packet.payload.indices()) {
+            if (index.raw() >= payload.size()) break;
+            packet.payload.at(index) = std::byte{payload[index.raw()]};
+        }
 
         auto state = decoder.add_packet(packet);
-        if (!state) continue;
+        if (state.is_err()) continue;
         declared_source_bytes = source_bytes;
-        if (*state == ::crucible::cntp::FountainDecodeState::Complete) {
+        if (std::move(state).expect("the decoder took the packet") == ::crucible::cntp::FountainDecodeState::Complete) {
             auto decoded = decoder.extract_decoded();
-            CRUCIBLE_FUZZ_CLAIM("fountain", decoded.has_value());
-            CRUCIBLE_FUZZ_CLAIM("fountain", decoded->size() <= Decoder::max_source_bytes);
-            CRUCIBLE_FUZZ_CLAIM("fountain", decoded->size() == declared_source_bytes);
+            CRUCIBLE_FUZZ_CLAIM("fountain", decoded.is_ok());
+            const auto decoded_bytes =
+                decoded.match([](::fixy::View<std::byte const> view) noexcept { return view.size(); },
+                              [](::crucible::cntp::FountainError) noexcept { return std::size_t{0}; });
+            CRUCIBLE_FUZZ_CLAIM("fountain", decoded_bytes <= Decoder::max_source_bytes);
+            CRUCIBLE_FUZZ_CLAIM("fountain", decoded_bytes == declared_source_bytes);
             return;
         }
     }

@@ -3,37 +3,27 @@
 #include <fixy/Qtt.h>
 #include <foundation/effects/Ctx.h>
 
-#include <algorithm>
-#include <array>
 #include "test_assert.h"
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <type_traits>
 #include <utility>
 
 namespace {
 
-template <std::size_t N>
-[[nodiscard]] constexpr std::array<std::byte, N> payload_seed() noexcept {
-    std::array<std::byte, N> bytes{};
-    for (std::size_t i = 0; i < bytes.size(); ++i) {
-        bytes[i] = static_cast<std::byte>((i * 29U + (i >> 2U) + 0xC3U) & 0xFFU);
-    }
-    return bytes;
-}
+namespace ci = crucible::cntp;
 
 template <std::size_t N>
-[[nodiscard]] constexpr bool same_prefix(std::array<std::byte, N> const& lhs, std::span<const std::byte> rhs) noexcept {
-    if (rhs.size() != N) {
-        return false;
+using Bytes = ::foundation::core::FixedArray<std::byte, N>;
+
+template <std::size_t N>
+[[nodiscard]] constexpr Bytes<N> payload_seed() noexcept {
+    Bytes<N> bytes{};
+    for (auto index : bytes.indices()) {
+        auto const i = index.raw();
+        bytes.at(index) = static_cast<std::byte>((i * 29U + (i >> 2U) + 0xC3U) & 0xFFU);
     }
-    for (std::size_t i = 0; i < N; ++i) {
-        if (lhs[i] != rhs[i]) {
-            return false;
-        }
-    }
-    return true;
+    return bytes;
 }
 
 template <typename Packet>
@@ -41,15 +31,19 @@ template <typename Packet>
     Packet packet{};
     packet.source_bytes = Packet::admit_source_bytes(Packet::max_source_bytes).expect("the full capacity fits");
     packet.mask = mask;
-    packet.payload.fill(fill);
+    ::fixy::fill(packet.payload.view(), fill);
     return packet;
+}
+
+// The error of a call that refuses its input.
+template <typename Value>
+[[nodiscard]] ci::FountainError error_of(::fixy::Result<Value, ci::FountainError> const& result) noexcept {
+    return result.err().expect("the call refuses its input");
 }
 
 }  // namespace
 
 int main() {
-    namespace ci = crucible::cntp;
-
     using Encoder = ci::FountainEncoder<8, 4>;
     using Packet = ci::FountainPacket<8, 4>;
 
@@ -62,8 +56,7 @@ int main() {
     static_assert(Encoder::max_source_bytes == 32);
     static_assert(std::is_same_v<Encoder::concurrent_budget,
                                  ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<1>>>);
-    static_assert(::fixy::qtt_consume_tracked
-                  || sizeof(ci::LinearFountainBuffer<std::array<std::byte, 16>>) == sizeof(std::array<std::byte, 16>));
+    static_assert(::fixy::qtt_consume_tracked || sizeof(ci::LinearFountainBuffer<Bytes<16>>) == sizeof(Bytes<16>));
 
     auto key = crucible::Philox::op_key_det(0x12345678ULL, 19U, crucible::ContentHash{0xCAFEBEEFULL});
 
@@ -74,25 +67,22 @@ int main() {
 
     {
         constexpr auto payload = payload_seed<29>();
-        assert(encoder.start_encoding(std::span<const std::byte>{payload}, key).has_value());
+        assert(encoder.start_encoding(payload.view(), key).is_ok());
 
         for (std::uint32_t id = 0; id < 256 && !decoder.complete(); ++id) {
-            auto packet = encoder.next_packet();
-            assert(packet.has_value());
+            auto packet = encoder.next_packet().expect("the encoder is started");
 
             const bool lost = id == 1 || id == 3 || id == 6 || id == 11 || id == 17;
             if (lost) {
                 continue;
             }
 
-            auto state = decoder.add_packet(*packet);
-            assert(state.has_value());
+            assert(decoder.add_packet(packet).is_ok());
         }
 
         assert(decoder.complete());
-        auto decoded = decoder.extract_decoded();
-        assert(decoded.has_value());
-        assert(same_prefix(payload, *decoded));
+        auto decoded = decoder.extract_decoded().expect("the decoder is complete");
+        assert(::fixy::equal(payload.view(), decoded));
     }
 
     {
@@ -107,17 +97,16 @@ int main() {
         using Probe = ci::FountainEncoder<7, 8>;
         auto probe = ci::mint_fountain_encoder<7, 8>(init);
         constexpr auto probe_payload = payload_seed<Probe::max_source_bytes>();
-        assert(probe.start_encoding(std::span<const std::byte>{probe_payload}, key).has_value());
+        assert(probe.start_encoding(probe_payload.view(), key).is_ok());
 
-        std::array<std::uint32_t, 7> inclusion{};
-        std::array<std::uint64_t, 256> masks_a{};
-        for (std::uint32_t id = 0; id < masks_a.size(); ++id) {
-            auto packet = probe.next_packet();
-            assert(packet.has_value());
-            masks_a[id] = packet->mask;
-            for (std::size_t bit = 0; bit < 7; ++bit) {
-                if ((packet->mask >> bit) & 1ULL) {
-                    inclusion[bit] += 1;
+        ::foundation::core::FixedArray<std::uint32_t, 7> inclusion{};
+        ::foundation::core::FixedArray<std::uint64_t, 256> masks_a{};
+        for (auto& mask : masks_a) {
+            auto packet = probe.next_packet().expect("the encoder is started");
+            mask = packet.mask;
+            for (auto bit : inclusion.indices()) {
+                if ((packet.mask >> bit.raw()) & 1ULL) {
+                    inclusion.at(bit) += 1;
                 }
             }
         }
@@ -126,47 +115,37 @@ int main() {
         }
 
         auto probe_again = ci::mint_fountain_encoder<7, 8>(init);
-        assert(probe_again.start_encoding(std::span<const std::byte>{probe_payload}, key).has_value());
-        for (std::uint32_t id = 0; id < masks_a.size(); ++id) {
-            auto packet = probe_again.next_packet();
-            assert(packet.has_value());
-            assert(packet->mask == masks_a[id]);
+        assert(probe_again.start_encoding(probe_payload.view(), key).is_ok());
+        for (auto const mask : masks_a) {
+            assert(probe_again.next_packet().expect("the encoder is started").mask == mask);
         }
     }
 
     {
         constexpr auto payload = payload_seed<16>();
-        auto a = encoder.encode_packet(std::span<const std::byte>{payload}, key, 12);
-        auto b = encoder.encode_packet(std::span<const std::byte>{payload}, key, 12);
-        assert(a.has_value());
-        assert(b.has_value());
-        assert(a->mask == b->mask);
-        assert(a->payload == b->payload);
+        auto a = encoder.encode_packet(payload.view(), key, 12).expect("16 bytes fit");
+        auto b = encoder.encode_packet(payload.view(), key, 12).expect("16 bytes fit");
+        assert(a.mask == b.mask);
+        assert(a.payload == b.payload);
     }
 
     {
         constexpr auto payload = payload_seed<13>();
-        auto owned_payload = ::fixy::mint_linear<std::array<std::byte, payload.size()>>(payload);
-        auto owned_packet = encoder.encode_owned(std::move(owned_payload), key, 0);
-        assert(owned_packet.has_value());
+        auto owned_payload = ::fixy::mint_linear<Bytes<payload.size()>>(payload);
+        auto owned_packet = encoder.encode_owned(std::move(owned_payload), key, 0).expect("13 bytes fit");
 
         auto owned_decoder = ci::mint_fountain_decoder<8, 4>(init);
-        auto state = owned_decoder.add_packet_owned(std::move(*owned_packet));
-        assert(state.has_value());
-        assert(*state == ci::FountainDecodeState::NeedsMore);
+        auto state = owned_decoder.add_packet_owned(std::move(owned_packet)).expect("the packet has the shape");
+        assert(state == ci::FountainDecodeState::NeedsMore);
         assert(owned_decoder.decoded_count() == 1);
     }
 
     {
-        std::array<std::byte, 0> empty{};
-        auto rejected = encoder.start_encoding(empty, key);
-        assert(!rejected.has_value());
-        assert(rejected.error() == ci::FountainError::InvalidInputSize);
+        assert(error_of(encoder.start_encoding(::fixy::View<std::byte const>{}, key))
+               == ci::FountainError::InvalidInputSize);
 
-        std::array<std::byte, Encoder::max_source_bytes + 1> too_large{};
-        rejected = encoder.start_encoding(too_large, key);
-        assert(!rejected.has_value());
-        assert(rejected.error() == ci::FountainError::InvalidInputSize);
+        Bytes<Encoder::max_source_bytes + 1> too_large{};
+        assert(error_of(encoder.start_encoding(too_large.view(), key)) == ci::FountainError::InvalidInputSize);
     }
 
     {
@@ -176,9 +155,7 @@ int main() {
         bad.mask = 1;
 
         auto shape_decoder = ci::mint_fountain_decoder<8, 4>(init);
-        auto rejected = shape_decoder.add_packet(bad);
-        assert(!rejected.has_value());
-        assert(rejected.error() == ci::FountainError::PacketShapeMismatch);
+        assert(error_of(shape_decoder.add_packet(bad)) == ci::FountainError::PacketShapeMismatch);
     }
 
     {
@@ -186,14 +163,13 @@ int main() {
         using SmallPacket = ci::FountainPacket<4, 4>;
 
         SmallDecoder small = ci::mint_fountain_decoder<4, 4, 4>(init);
-        assert(small.add_packet(equation_packet<SmallPacket>(0b0011, std::byte{0x11})).has_value());
-        assert(small.add_packet(equation_packet<SmallPacket>(0b0101, std::byte{0x22})).has_value());
-        assert(small.add_packet(equation_packet<SmallPacket>(0b0110, std::byte{0x33})).has_value());
-        assert(small.add_packet(equation_packet<SmallPacket>(0b1001, std::byte{0x44})).has_value());
+        assert(small.add_packet(equation_packet<SmallPacket>(0b0011, std::byte{0x11})).is_ok());
+        assert(small.add_packet(equation_packet<SmallPacket>(0b0101, std::byte{0x22})).is_ok());
+        assert(small.add_packet(equation_packet<SmallPacket>(0b0110, std::byte{0x33})).is_ok());
+        assert(small.add_packet(equation_packet<SmallPacket>(0b1001, std::byte{0x44})).is_ok());
 
-        auto rejected = small.add_packet(equation_packet<SmallPacket>(0b1010, std::byte{0x55}));
-        assert(!rejected.has_value());
-        assert(rejected.error() == ci::FountainError::EquationCapacityExceeded);
+        assert(error_of(small.add_packet(equation_packet<SmallPacket>(0b1010, std::byte{0x55})))
+               == ci::FountainError::EquationCapacityExceeded);
     }
 
     {
@@ -203,12 +179,10 @@ int main() {
         SmallDecoder small = ci::mint_fountain_decoder<4, 4, 4>(init);
         auto first = equation_packet<SmallPacket>(0b0011, std::byte{0x11});
         auto second = first;
-        second.payload[0] = std::byte{0x22};
+        second.payload.at(::fixy::index<0>()) = std::byte{0x22};
 
-        assert(small.add_packet(first).has_value());
-        auto rejected = small.add_packet(second);
-        assert(!rejected.has_value());
-        assert(rejected.error() == ci::FountainError::InconsistentEquation);
+        assert(small.add_packet(first).is_ok());
+        assert(error_of(small.add_packet(second)) == ci::FountainError::InconsistentEquation);
     }
 
     {
@@ -216,12 +190,10 @@ int main() {
         using SmallPacket = ci::FountainPacket<4, 4>;
 
         SmallDecoder small = ci::mint_fountain_decoder<4, 4, 4>(init);
-        assert(small.add_packet(equation_packet<SmallPacket>(0b0001, std::byte{0x11})).has_value());
+        assert(small.add_packet(equation_packet<SmallPacket>(0b0001, std::byte{0x11})).is_ok());
 
         auto conflicting = equation_packet<SmallPacket>(0b0001, std::byte{0x22});
-        auto rejected = small.add_packet(conflicting);
-        assert(!rejected.has_value());
-        assert(rejected.error() == ci::FountainError::InconsistentEquation);
+        assert(error_of(small.add_packet(conflicting)) == ci::FountainError::InconsistentEquation);
     }
 
     return 0;

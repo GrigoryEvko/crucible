@@ -7,7 +7,6 @@
 
 #include <crucible/cntp/Fec.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
@@ -19,7 +18,7 @@ struct NotWireBytes {
 int main() {
     auto rs = crucible::cntp::mint_reed_solomon<4, 2>(::foundation::effects::testing::init());
     auto input = ::fixy::mint_linear<NotWireBytes>();
-    std::array<std::byte, 6> output{};
+    ::foundation::core::FixedArray<std::byte, 6> output{};
     (void)rs.encode_owned(std::move(input), output);
     return 0;
 }

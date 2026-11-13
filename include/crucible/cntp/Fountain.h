@@ -14,16 +14,9 @@
 #include <foundation/effects/Resources.h>
 #include <foundation/effects/Row.h>
 
-#include <algorithm>
-#include <array>
-#include <bit>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <expected>
-#include <limits>
-#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -36,7 +29,7 @@ concept FountainAlgorithm = std::same_as<Algorithm, LtFountain>;
 
 template <std::size_t SourceSymbols, std::size_t SymbolBytes, std::size_t MaxEquations>
 concept FountainShape = SourceSymbols > 0 && SourceSymbols <= 64 && SymbolBytes > 0
-                     && SymbolBytes <= std::numeric_limits<std::uint16_t>::max() && MaxEquations >= SourceSymbols;
+                     && (SymbolBytes <= ::fixy::max_of<std::uint16_t>) && MaxEquations >= SourceSymbols;
 
 // A codec holds its tables by value, so a mint zeroes every byte of them.
 // That is start-up work, so the mint takes a context that admits the
@@ -67,6 +60,9 @@ using FountainSeed = Philox::DetSafePureKey;
 template <typename Buffer>
 using LinearFountainBuffer = ::fixy::Linear<Buffer>;
 
+template <std::size_t SymbolBytes>
+using FountainSymbol = ::foundation::core::FixedArray<std::byte, SymbolBytes>;
+
 template <std::size_t SourceSymbols, std::size_t SymbolBytes>
     requires FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>
 struct FountainPacket {
@@ -90,7 +86,7 @@ struct FountainPacket {
     std::uint16_t bytes_per_symbol = static_cast<std::uint16_t>(SymbolBytes);
     source_byte_count source_bytes = ::fixy::mint_refined<source_bytes_range>(std::size_t{1});
     std::uint64_t mask = 0;
-    std::array<std::byte, SymbolBytes> payload{};
+    FountainSymbol<SymbolBytes> payload{};
 };
 
 template <std::size_t SourceSymbols, std::size_t SymbolBytes>
@@ -124,7 +120,7 @@ namespace fountain_detail {
 template <std::size_t SourceSymbols>
 [[nodiscard]] consteval std::uint64_t valid_mask() noexcept {
     if constexpr (SourceSymbols == 64) {
-        return std::numeric_limits<std::uint64_t>::max();
+        return ::fixy::max_of<std::uint64_t>;
     } else {
         return (std::uint64_t{1} << SourceSymbols) - 1U;
     }
@@ -166,26 +162,33 @@ template <std::size_t SourceSymbols>
     const auto degree_rng = Philox::generate_det(repair_offset(encoding_id, 0), seed).peek();
     const auto degree = sample_ideal_soliton_degree<SourceSymbols>(degree_rng.at(::fixy::index<0>()));
 
-    std::array<std::uint8_t, SourceSymbols> permutation{};
-    for (std::size_t i = 0; i < SourceSymbols; ++i) {
-        permutation[i] = static_cast<std::uint8_t>(i);
+    ::foundation::core::FixedArray<std::uint8_t, SourceSymbols> permutation{};
+    for (auto position : permutation.indices()) {
+        permutation.at(position) = static_cast<std::uint8_t>(position.raw());
     }
 
     std::uint64_t mask = 0;
-    for (std::size_t i = 0; i < degree; ++i) {
+    for (::fixy::Index<SourceSymbols> step : permutation.indices()) {
+        const std::size_t i = step.raw();
+        if (i >= degree) {
+            break;
+        }
         const auto rng =
             Philox::generate_det(repair_offset(encoding_id, static_cast<std::uint32_t>(i + 1)), seed).peek();
         const auto span = SourceSymbols - i;
         // Lemire's nearly-divisionless range rather than `% span`, which
         // is biased.  The residual bias is span/2^64, at most 2^-58 for
         // span <= 64.  The __uint128_t multiply is bit-identical on every
-        // supported platform, so the draw stays deterministic.
+        // supported platform, so the draw stays deterministic.  The high
+        // word of the product is below span, so j is below SourceSymbols.
         const auto uniform64 = (static_cast<std::uint64_t>(rng.at(::fixy::index<1>())) << 32U)
                              | static_cast<std::uint64_t>(rng.at(::fixy::index<0>()));
         const auto product = static_cast<__uint128_t>(uniform64) * static_cast<__uint128_t>(span);
         const auto j = i + static_cast<std::size_t>(product >> 64U);
-        std::swap(permutation[i], permutation[j]);
-        mask |= std::uint64_t{1} << permutation[i];
+        [[assume(j < SourceSymbols)]];
+        ::fixy::swap(permutation.at(step),
+                     permutation.at(::fixy::Index<SourceSymbols>::check(j).expect("the draw is a remaining symbol")));
+        mask |= std::uint64_t{1} << permutation.at(step);
     }
     return mask;
 }
@@ -199,30 +202,27 @@ template <std::size_t SourceSymbols>
     return repair_mask<SourceSymbols>(encoding_id, seed);
 }
 
+// The bytes of the source symbol at position symbol of input, with zeros
+// past the end of the input.
 template <std::size_t SymbolBytes>
-CRUCIBLE_HOT void copy_symbol(std::span<const std::byte> input, std::size_t symbol,
-                              std::array<std::byte, SymbolBytes>& out) noexcept {
-    out.fill(std::byte{0});
+CRUCIBLE_HOT void copy_symbol(::fixy::View<std::byte const> input, std::size_t symbol,
+                              FountainSymbol<SymbolBytes>& out) noexcept {
+    ::fixy::fill(out.view(), std::byte{0});
 
     const auto start = symbol * SymbolBytes;
     if (start >= input.size()) {
         return;
     }
 
-    const auto live = std::min(SymbolBytes, input.size() - start);
-    std::memcpy(out.data(), input.data() + start, live);
+    const auto live = ::fixy::min(SymbolBytes, input.size() - start);
+    ::fixy::copy(out.view().window(0, live).expect("the live bytes fit in a symbol"),
+                 input.window(start, live).expect("the live bytes lie inside the input"))
+        .expect("the two windows have the count of the live bytes");
 }
 
 template <std::size_t SymbolBytes>
-[[nodiscard]] CRUCIBLE_HOT bool equal_symbol(std::array<std::byte, SymbolBytes> const& lhs,
-                                             std::byte const* rhs) noexcept {
-    return std::memcmp(lhs.data(), rhs, SymbolBytes) == 0;
-}
-
-template <std::size_t SymbolBytes>
-[[nodiscard]] CRUCIBLE_HOT bool zero_symbol(std::array<std::byte, SymbolBytes> const& symbol) noexcept {
-    std::array<std::byte, SymbolBytes> zero{};
-    return symbol == zero;
+[[nodiscard]] CRUCIBLE_HOT bool zero_symbol(FountainSymbol<SymbolBytes> const& symbol) noexcept {
+    return symbol == FountainSymbol<SymbolBytes>{};
 }
 
 }  // namespace fountain_detail
@@ -244,11 +244,11 @@ public:
         return packet_type::admit_source_bytes(bytes);
     }
 
-    [[nodiscard]] std::expected<void, FountainError> start_encoding(std::span<const std::byte> input,
-                                                                    FountainSeed seed) noexcept {
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, FountainError> start_encoding(::fixy::View<std::byte const> input,
+                                                                             FountainSeed seed) noexcept {
         auto admitted = admit_source_bytes(input.size());
         if (admitted.is_err()) {
-            return std::unexpected(admitted.err().expect("the admission refused the count"));
+            return ::fixy::err(admitted.err().expect("the admission refused the count"));
         }
 
         input_ = input;
@@ -256,48 +256,48 @@ public:
         source_bytes_ = std::move(admitted).expect("the admission took the count");
         next_id_ = 0;
         active_ = true;
-        return {};
+        return ::fixy::Unit{};
     }
 
-    [[nodiscard]] std::expected<packet_type, FountainError> next_packet() noexcept {
+    [[nodiscard]] ::fixy::Result<packet_type, FountainError> next_packet() noexcept {
         if (!active_) {
-            return std::unexpected(FountainError::EncoderNotStarted);
+            return ::fixy::err(FountainError::EncoderNotStarted);
         }
 
         auto packet = encode_packet(input_, seed_, source_bytes_, next_id_);
-        if (packet) {
+        if (packet.is_ok()) {
             ++next_id_;
         }
         return packet;
     }
 
-    [[nodiscard]] std::expected<LinearFountainPacket<SourceSymbols, SymbolBytes>, FountainError>
+    [[nodiscard]] ::fixy::Result<LinearFountainPacket<SourceSymbols, SymbolBytes>, FountainError>
     next_packet_owned() noexcept {
         auto packet = next_packet();
-        if (!packet) {
-            return std::unexpected(packet.error());
+        if (packet.is_err()) {
+            return ::fixy::err(packet.err().expect("the encoder refused the packet"));
         }
-        return ::fixy::mint_linear<packet_type>(*packet);
+        return ::fixy::mint_linear<packet_type>(std::move(packet).expect("the encoder gave the packet"));
     }
 
-    [[nodiscard]] std::expected<packet_type, FountainError>
-    encode_packet(std::span<const std::byte> input, FountainSeed seed, std::uint32_t encoding_id) const noexcept {
+    [[nodiscard]] ::fixy::Result<packet_type, FountainError>
+    encode_packet(::fixy::View<std::byte const> input, FountainSeed seed, std::uint32_t encoding_id) const noexcept {
         auto admitted = admit_source_bytes(input.size());
         if (admitted.is_err()) {
-            return std::unexpected(admitted.err().expect("the admission refused the count"));
+            return ::fixy::err(admitted.err().expect("the admission refused the count"));
         }
         return encode_packet(input, seed, std::move(admitted).expect("the admission took the count"), encoding_id);
     }
 
     template <ByteContiguousBuffer Input>
-    [[nodiscard]] std::expected<LinearFountainPacket<SourceSymbols, SymbolBytes>, FountainError>
+    [[nodiscard]] ::fixy::Result<LinearFountainPacket<SourceSymbols, SymbolBytes>, FountainError>
     encode_owned(LinearFountainBuffer<Input>&& input, FountainSeed seed, std::uint32_t encoding_id) const noexcept {
         auto raw = std::move(input).consume();
         auto packet = encode_packet(detail::bytes(raw), seed, encoding_id);
-        if (!packet) {
-            return std::unexpected(packet.error());
+        if (packet.is_err()) {
+            return ::fixy::err(packet.err().expect("the encoder refused the packet"));
         }
-        return ::fixy::mint_linear<packet_type>(*packet);
+        return ::fixy::mint_linear<packet_type>(std::move(packet).expect("the encoder gave the packet"));
     }
 
 private:
@@ -307,34 +307,32 @@ private:
         requires CtxFitsFountainMint<FriendCtx, Symbols, Bytes, Symbols, Algo>
     friend constexpr FountainEncoder<Symbols, Bytes, Algo> mint_fountain_encoder(FriendCtx const&) noexcept;
 
-    [[nodiscard]] CRUCIBLE_HOT std::expected<packet_type, FountainError>
-    encode_packet(std::span<const std::byte> input, FountainSeed seed, source_byte_count source_bytes,
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Result<packet_type, FountainError>
+    encode_packet(::fixy::View<std::byte const> input, FountainSeed seed, source_byte_count source_bytes,
                   std::uint32_t encoding_id) const noexcept {
         auto const mask = fountain_detail::packet_mask<SourceSymbols>(encoding_id, seed);
         if ((mask == 0) || ((mask & ~fountain_detail::valid_mask<SourceSymbols>()) != 0)) {
-            return std::unexpected(FountainError::PacketShapeMismatch);
+            return ::fixy::err(FountainError::PacketShapeMismatch);
         }
 
         packet_type packet{};
         packet.encoding_id = encoding_id;
         packet.source_bytes = source_bytes;
         packet.mask = mask;
-        packet.payload.fill(std::byte{0});
 
-        std::array<std::byte, SymbolBytes> symbol{};
+        FountainSymbol<SymbolBytes> symbol{};
         auto remaining = mask;
         while (remaining != 0) {
-            const auto bit = std::countr_zero(remaining);
-            const auto source = static_cast<std::size_t>(bit);
+            const auto source = static_cast<std::size_t>(::fixy::countr_zero(remaining));
             fountain_detail::copy_symbol(input, source, symbol);
-            detail::mul_xor(packet.payload.data(), symbol.data(), 1, SymbolBytes);
+            detail::mul_xor(packet.payload.view(), symbol.view(), 1);
             remaining &= remaining - 1U;
         }
 
         return packet;
     }
 
-    std::span<const std::byte> input_{};
+    ::fixy::View<std::byte const> input_{};
     FountainSeed seed_ = ::fixy::mint_band<FountainSeed>(0);
     source_byte_count source_bytes_ = ::fixy::mint_refined<packet_type::source_bytes_range>(std::size_t{1});
     std::uint32_t next_id_ = 0;
@@ -354,11 +352,8 @@ public:
     static constexpr std::size_t max_equations = MaxEquations;
     static constexpr std::size_t max_source_bytes = packet_type::max_source_bytes;
 
-    [[nodiscard]] std::expected<FountainDecodeState, FountainError> add_packet(packet_type const& packet) noexcept {
-        auto checked = validate_packet(packet);
-        if (!checked) {
-            return std::unexpected(checked.error());
-        }
+    [[nodiscard]] ::fixy::Result<FountainDecodeState, FountainError> add_packet(packet_type const& packet) noexcept {
+        CRUCIBLE_TRY(_, validate_packet(packet));
         remember_source_bytes(packet.source_bytes);
 
         Equation equation{
@@ -368,52 +363,45 @@ public:
         reduce_known(equation);
         if (equation.mask == 0) {
             if (!fountain_detail::zero_symbol(equation.payload)) {
-                return std::unexpected(FountainError::InconsistentEquation);
+                return ::fixy::err(FountainError::InconsistentEquation);
             }
             return state();
         }
 
-        if (std::popcount(equation.mask) == 1) {
-            auto resolved = admit_symbol(equation.mask, equation.payload);
-            if (!resolved) {
-                return std::unexpected(resolved.error());
-            }
-            auto peeled = peel();
-            if (!peeled) {
-                return std::unexpected(peeled.error());
-            }
+        if (::fixy::popcount(equation.mask) == 1) {
+            CRUCIBLE_TRY(_, admit_symbol(equation.mask, equation.payload));
+            CRUCIBLE_TRY(_, peel());
             return state();
         }
 
-        auto stored = store_equation(equation);
-        if (!stored) {
-            return std::unexpected(stored.error());
-        }
+        CRUCIBLE_TRY(_, store_equation(equation));
         return state();
     }
 
-    [[nodiscard]] std::expected<FountainDecodeState, FountainError>
+    [[nodiscard]] ::fixy::Result<FountainDecodeState, FountainError>
     add_packet_owned(LinearFountainPacket<SourceSymbols, SymbolBytes>&& packet) noexcept {
         auto raw = std::move(packet).consume();
         return add_packet(raw);
     }
 
-    [[nodiscard]] std::expected<std::span<const std::byte>, FountainError> extract_decoded() const noexcept {
+    [[nodiscard]] ::fixy::Result<::fixy::View<std::byte const>, FountainError> extract_decoded() const noexcept {
         if (!complete()) {
-            return std::unexpected(FountainError::DecodeIncomplete);
+            return ::fixy::err(FountainError::DecodeIncomplete);
         }
-        return std::span<const std::byte>{decoded_.data(), source_bytes_.value()};
+        return decoded_.view().window(0, source_bytes_.value()).expect("the source bytes fit in the decoded symbols");
     }
 
-    [[nodiscard]] std::expected<void, FountainError> extract_decoded(std::span<std::byte> output) const noexcept {
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, FountainError>
+    extract_decoded(::fixy::View<std::byte> output) const noexcept {
         if (!complete()) {
-            return std::unexpected(FountainError::DecodeIncomplete);
+            return ::fixy::err(FountainError::DecodeIncomplete);
         }
         if (output.size() != source_bytes_.value()) {
-            return std::unexpected(FountainError::InvalidOutputSize);
+            return ::fixy::err(FountainError::InvalidOutputSize);
         }
-        std::memcpy(output.data(), decoded_.data(), output.size());
-        return {};
+        ::fixy::copy(output, decoded_.view().window(0, output.size()).expect("the output fits in the decoded symbols"))
+            .expect("the two Views have the count of the source bytes");
+        return ::fixy::Unit{};
     }
 
     [[nodiscard]] constexpr bool complete() const noexcept {
@@ -421,7 +409,7 @@ public:
     }
 
     [[nodiscard]] constexpr std::size_t decoded_count() const noexcept {
-        return static_cast<std::size_t>(std::popcount(decoded_mask_));
+        return static_cast<std::size_t>(::fixy::popcount(decoded_mask_));
     }
 
 private:
@@ -434,13 +422,30 @@ private:
 
     struct Equation {
         std::uint64_t mask = 0;
-        std::array<std::byte, SymbolBytes> payload{};
+        FountainSymbol<SymbolBytes> payload{};
     };
 
-    [[nodiscard]] std::expected<void, FountainError> validate_packet(packet_type const& packet) const noexcept {
+    // The source symbol of the lowest bit of a mask.  validate_packet
+    // admits only the bits of valid_mask, and each equation mask is a part
+    // of a packet mask, so the bit is below SourceSymbols.
+    [[nodiscard]] static constexpr ::fixy::Index<SourceSymbols> symbol_of(std::uint64_t mask) noexcept {
+        return ::fixy::Index<SourceSymbols>::check(static_cast<std::size_t>(::fixy::countr_zero(mask)))
+            .expect("a bit of an admitted mask is a source symbol");
+    }
+
+    // The bytes of a source symbol in decoded_.
+    [[nodiscard]] constexpr ::fixy::View<std::byte const, SymbolBytes>
+    decoded_symbol(::fixy::Index<SourceSymbols> symbol) const noexcept {
+        return decoded_.view()
+            .template window<SymbolBytes>(symbol.raw() * SymbolBytes)
+            .expect("each source symbol lies inside the decoded bytes");
+    }
+
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, FountainError>
+    validate_packet(packet_type const& packet) const noexcept {
         if (packet.symbol_count != SourceSymbols || packet.bytes_per_symbol != SymbolBytes || packet.mask == 0
             || ((packet.mask & ~fountain_detail::valid_mask<SourceSymbols>()) != 0)) {
-            return std::unexpected(FountainError::PacketShapeMismatch);
+            return ::fixy::err(FountainError::PacketShapeMismatch);
         }
         // A wire decoder can build source_bytes through mint_refined_trusted,
         // which skips the bound, so the bound is not proved on arrival.  It
@@ -448,12 +453,12 @@ private:
         // source_bytes_ bytes of decoded_, which is max_source_bytes long.
         const auto claimed_source_bytes = packet.source_bytes.value();
         if (claimed_source_bytes == 0 || claimed_source_bytes > max_source_bytes) {
-            return std::unexpected(FountainError::PacketShapeMismatch);
+            return ::fixy::err(FountainError::PacketShapeMismatch);
         }
         if (have_source_bytes_ && claimed_source_bytes != source_bytes_.value()) {
-            return std::unexpected(FountainError::PacketShapeMismatch);
+            return ::fixy::err(FountainError::PacketShapeMismatch);
         }
-        return {};
+        return ::fixy::Unit{};
     }
 
     constexpr void remember_source_bytes(source_byte_count source_bytes) noexcept {
@@ -466,37 +471,37 @@ private:
     void reduce_known(Equation& equation) const noexcept {
         auto overlap = equation.mask & decoded_mask_;
         while (overlap != 0) {
-            const auto bit = std::countr_zero(overlap);
-            auto const* symbol = decoded_.data() + (static_cast<std::size_t>(bit) * SymbolBytes);
-            detail::mul_xor(equation.payload.data(), symbol, 1, SymbolBytes);
-            equation.mask &= ~(std::uint64_t{1} << bit);
+            auto const symbol = symbol_of(overlap);
+            detail::mul_xor(equation.payload.view(), decoded_symbol(symbol), 1);
+            equation.mask &= ~(std::uint64_t{1} << symbol.raw());
             overlap &= overlap - 1U;
         }
     }
 
-    [[nodiscard]] std::expected<void, FountainError>
-    admit_symbol(std::uint64_t singleton_mask, std::array<std::byte, SymbolBytes> const& payload) noexcept {
-        const auto bit = std::countr_zero(singleton_mask);
-        const auto index = static_cast<std::size_t>(bit);
-        auto* dst = decoded_.data() + index * SymbolBytes;
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, FountainError>
+    admit_symbol(std::uint64_t singleton_mask, FountainSymbol<SymbolBytes> const& payload) noexcept {
+        auto const symbol = symbol_of(singleton_mask);
 
         if ((decoded_mask_ & singleton_mask) != 0) {
-            if (!fountain_detail::equal_symbol(payload, dst)) {
-                return std::unexpected(FountainError::InconsistentEquation);
+            if (!::fixy::equal(payload.view(), decoded_symbol(symbol))) {
+                return ::fixy::err(FountainError::InconsistentEquation);
             }
-            return {};
+            return ::fixy::Unit{};
         }
 
-        std::memcpy(dst, payload.data(), SymbolBytes);
+        ::fixy::copy(decoded_.view()
+                         .template window<SymbolBytes>(symbol.raw() * SymbolBytes)
+                         .expect("each source symbol lies inside the decoded bytes"),
+                     payload.view());
         decoded_mask_ |= singleton_mask;
-        return {};
+        return ::fixy::Unit{};
     }
 
-    [[nodiscard]] std::expected<void, FountainError> peel() noexcept {
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, FountainError> peel() noexcept {
         bool progressed = true;
         while (progressed) {
             progressed = false;
-            for (auto& equation : equations_) {
+            for (Equation& equation : equations_) {
                 if (equation.mask == 0) {
                     continue;
                 }
@@ -504,50 +509,47 @@ private:
                 reduce_known(equation);
                 if (equation.mask == 0) {
                     if (!fountain_detail::zero_symbol(equation.payload)) {
-                        return std::unexpected(FountainError::InconsistentEquation);
+                        return ::fixy::err(FountainError::InconsistentEquation);
                     }
                     continue;
                 }
-                if (std::popcount(equation.mask) != 1) {
+                if (::fixy::popcount(equation.mask) != 1) {
                     continue;
                 }
 
-                auto resolved = admit_symbol(equation.mask, equation.payload);
-                if (!resolved) {
-                    return std::unexpected(resolved.error());
-                }
+                CRUCIBLE_TRY(_, admit_symbol(equation.mask, equation.payload));
                 equation.mask = 0;
                 progressed = true;
             }
         }
-        return {};
+        return ::fixy::Unit{};
     }
 
-    [[nodiscard]] std::expected<void, FountainError> store_equation(Equation equation) noexcept {
-        for (auto& existing : equations_) {
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, FountainError> store_equation(Equation const& equation) noexcept {
+        for (Equation& existing : equations_) {
             if (existing.mask == equation.mask) {
-                if (!fountain_detail::equal_symbol(equation.payload, existing.payload.data())) {
-                    return std::unexpected(FountainError::InconsistentEquation);
+                if (!(equation.payload == existing.payload)) {
+                    return ::fixy::err(FountainError::InconsistentEquation);
                 }
-                return {};
+                return ::fixy::Unit{};
             }
         }
 
-        for (auto& existing : equations_) {
+        for (Equation& existing : equations_) {
             if (existing.mask == 0) {
                 existing = equation;
-                return {};
+                return ::fixy::Unit{};
             }
         }
-        return std::unexpected(FountainError::EquationCapacityExceeded);
+        return ::fixy::err(FountainError::EquationCapacityExceeded);
     }
 
     [[nodiscard]] constexpr FountainDecodeState state() const noexcept {
         return complete() ? FountainDecodeState::Complete : FountainDecodeState::NeedsMore;
     }
 
-    std::array<Equation, MaxEquations> equations_{};
-    std::array<std::byte, SourceSymbols * SymbolBytes> decoded_{};
+    ::foundation::core::FixedArray<Equation, MaxEquations> equations_{};
+    ::foundation::core::FixedArray<std::byte, SourceSymbols * SymbolBytes> decoded_{};
     source_byte_count source_bytes_ = ::fixy::mint_refined<packet_type::source_bytes_range>(std::size_t{1});
     std::uint64_t decoded_mask_ = 0;
     bool have_source_bytes_ = false;

@@ -4,24 +4,17 @@
 // shards, each of equal length and contiguous in index order.  A peer
 // decoder must assume the same ordering.
 
+#include <fixy/Core.h>
 #include <fixy/Qtt.h>
-#include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/Simd.h>
 #include <foundation/effects/Concurrent.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Resources.h>
 
-#include <algorithm>
-#include <array>
-#include <bit>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <expected>
-#include <limits>
-#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -48,63 +41,81 @@ enum class FecError : std::uint8_t {
 template <typename Buffer>
 using LinearShardBuffer = ::fixy::Linear<Buffer>;
 
-template <typename T>
-concept ByteElement =
-    std::same_as<std::remove_cv_t<T>, std::byte> || (sizeof(T) == 1 && std::is_trivially_copyable_v<T>);
-
+// A buffer whose bytes are one contiguous run: a View of bytes, or an owner
+// whose view() gives one, such as a FixedArray or a HeapArray of bytes.
 template <typename Buffer>
 concept ByteContiguousBuffer =
-    requires(Buffer const& buffer) {
-        std::data(buffer);
-        std::size(buffer);
-    } && std::is_pointer_v<decltype(std::data(std::declval<Buffer const&>()))>
-    && ByteElement<std::remove_pointer_t<decltype(std::data(std::declval<Buffer const&>()))>>;
+    std::convertible_to<Buffer const&, ::fixy::View<std::byte const>> || requires(Buffer const& buffer) {
+        { buffer.view() } -> std::convertible_to<::fixy::View<std::byte const>>;
+    };
 
+// A buffer whose bytes a codec can write.
 template <typename Buffer>
 concept MutableByteContiguousBuffer =
-    ByteContiguousBuffer<Buffer>
-    && (!std::is_const_v<std::remove_pointer_t<decltype(std::data(std::declval<Buffer&>()))>>);
+    std::convertible_to<Buffer&, ::fixy::View<std::byte>> || requires(Buffer& buffer) {
+        { buffer.view() } -> std::convertible_to<::fixy::View<std::byte>>;
+    };
 
 namespace detail {
 
 inline constexpr std::uint16_t gf_poly = 0x11dU;
 
+using GfRow = ::foundation::core::FixedArray<std::uint8_t, 256>;
+
 struct GfTables {
-    std::array<std::uint8_t, 512> exp{};
-    std::array<std::uint8_t, 256> log{};
-    std::array<std::uint8_t, 256> inv{};
-    std::array<std::array<std::uint8_t, 256>, 256> mul{};
+    ::foundation::core::FixedArray<std::uint8_t, 512> exp{};
+    GfRow log{};
+    GfRow inv{};
+    ::foundation::core::FixedArray<GfRow, 256> mul{};
 };
+
+// The index of a byte in a table of 256 entries.  Each byte is below 256, so
+// the optimizer removes the check.
+[[nodiscard, gnu::const]] constexpr ::fixy::Index<256> byte_index(std::uint8_t value) noexcept {
+    return ::fixy::Index<256>::check(value).expect("a byte is below 256");
+}
+
+// The index of a power in the table exp, which holds 510 powers and two
+// zeros.
+[[nodiscard, gnu::const]] constexpr ::fixy::Index<512> power_index(std::size_t power) noexcept {
+    return ::fixy::Index<512>::check(power).expect("a sum of two logarithms is below 510");
+}
 
 template <class Field>
 [[nodiscard]] consteval GfTables make_gf_tables() noexcept {
     GfTables tables{};
 
     std::uint16_t x = 1;
-    for (std::uint16_t i = 0; i < 255; ++i) {
-        tables.exp[i] = static_cast<std::uint8_t>(x);
-        tables.log[static_cast<std::uint8_t>(x)] = static_cast<std::uint8_t>(i);
+    for (::fixy::Index<255> power : ::fixy::IndexRange<255>{}) {
+        tables.exp.at(power) = static_cast<std::uint8_t>(x);
+        tables.log.at(byte_index(static_cast<std::uint8_t>(x))) = static_cast<std::uint8_t>(power.raw());
         x = static_cast<std::uint16_t>(x << 1U);
         if ((x & 0x100U) != 0U) {
             x ^= gf_poly;
         }
     }
-    for (std::uint16_t i = 255; i < tables.exp.size(); ++i) {
-        tables.exp[i] = tables.exp[i - 255U];
+    for (auto power : tables.exp.indices()) {
+        if (power.raw() >= 255) {
+            tables.exp.at(power) = tables.exp.at(power_index(power.raw() - 255U));
+        }
     }
 
-    for (std::uint16_t a = 0; a < 256; ++a) {
-        for (std::uint16_t b = 0; b < 256; ++b) {
-            if (a == 0 || b == 0) {
-                tables.mul[a][b] = 0;
-            } else {
-                const auto e = static_cast<std::size_t>(tables.log[a]) + static_cast<std::size_t>(tables.log[b]);
-                tables.mul[a][b] = tables.exp[e];
+    for (auto a : tables.mul.indices()) {
+        if (a.raw() == 0) {
+            continue;
+        }
+        GfRow& row = tables.mul.at(a);
+        for (auto b : row.indices()) {
+            if (b.raw() != 0) {
+                row.at(b) = tables.exp.at(power_index(static_cast<std::size_t>(tables.log.at(a))
+                                                      + static_cast<std::size_t>(tables.log.at(b))));
             }
         }
     }
-    for (std::uint16_t a = 1; a < 256; ++a) {
-        tables.inv[a] = tables.exp[255U - tables.log[a]];
+    for (auto a : tables.inv.indices()) {
+        if (a.raw() != 0) {
+            tables.inv.at(a) = tables.exp.at(power_index(255U - tables.log.at(a)));
+        }
     }
     return tables;
 }
@@ -124,77 +135,94 @@ inline constexpr GfTables gf = make_gf_tables<Field>();
 
 template <class Field = void>
 [[nodiscard, gnu::const]] constexpr std::uint8_t mul(std::uint8_t a, std::uint8_t b) noexcept {
-    return gf<Field>.mul[a][b];
+    return gf<Field>.mul.at(byte_index(a)).at(byte_index(b));
 }
 
 template <class Field = void>
 [[nodiscard, gnu::const]] constexpr std::uint8_t inv(std::uint8_t a) noexcept {
-    return gf<Field>.inv[a];
+    return gf<Field>.inv.at(byte_index(a));
+}
+
+// The byte whose bits are the exclusive or of the bits of a byte and of a
+// value.
+[[nodiscard, gnu::const]] constexpr std::byte xor_byte(std::byte lhs, std::uint8_t rhs) noexcept {
+    return static_cast<std::byte>(static_cast<std::uint8_t>(lhs) ^ rhs);
 }
 
 template <std::size_t N>
-using SquareMatrix = std::array<std::array<std::uint8_t, N>, N>;
+using SquareMatrix = ::foundation::core::FixedArray<::foundation::core::FixedArray<std::uint8_t, N>, N>;
 
 template <std::uint8_t K, std::uint8_t M>
-using GeneratorMatrix =
-    std::array<std::array<std::uint8_t, K>, static_cast<std::size_t>(K) + static_cast<std::size_t>(M)>;
+using GeneratorMatrix = ::foundation::core::FixedArray<::foundation::core::FixedArray<std::uint8_t, K>,
+                                                       static_cast<std::size_t>(K) + static_cast<std::size_t>(M)>;
 
 template <std::uint8_t K, std::uint8_t M>
     requires ReedSolomonShape<K, M>
 [[nodiscard]] consteval GeneratorMatrix<K, M> make_generator_matrix() noexcept {
     GeneratorMatrix<K, M> matrix{};
 
-    for (std::size_t row = 0; row < K; ++row) {
-        matrix[row][row] = 1;
+    for (::fixy::Index<K> row : ::fixy::IndexRange<K>{}) {
+        matrix.at(row).at(row) = 1;
     }
 
-    for (std::size_t parity = 0; parity < M; ++parity) {
-        const auto y = static_cast<std::uint8_t>(K + parity);
-        for (std::size_t col = 0; col < K; ++col) {
-            const auto x = static_cast<std::uint8_t>(col);
-            matrix[static_cast<std::size_t>(K) + parity][col] = inv(static_cast<std::uint8_t>(x ^ y));
+    for (::fixy::Index<M> parity : ::fixy::IndexRange<M>{}) {
+        const auto y = static_cast<std::uint8_t>(K + parity.raw());
+        auto& row = matrix.at(::fixy::Index<static_cast<std::size_t>(K) + M>::check(K + parity.raw())
+                                  .expect("a parity row is a row of the matrix"));
+        for (auto col : row.indices()) {
+            row.at(col) = inv(static_cast<std::uint8_t>(static_cast<std::uint8_t>(col.raw()) ^ y));
         }
     }
     return matrix;
 }
 
+// The first row at or after col whose entry at col is not zero.
+template <std::size_t N>
+[[nodiscard]] constexpr ::fixy::Option<::fixy::Index<N>> pivot_row(SquareMatrix<N> const& matrix,
+                                                                   ::fixy::Index<N> col) noexcept {
+    for (auto row : matrix.indices()) {
+        if (row >= col && matrix.at(row).at(col) != 0) {
+            return ::fixy::some(row);
+        }
+    }
+    return ::fixy::none;
+}
+
 template <std::size_t N>
 [[nodiscard]] constexpr bool invert_matrix(SquareMatrix<N> input, SquareMatrix<N>& inverse) noexcept {
-    for (std::size_t i = 0; i < N; ++i) {
-        inverse[i].fill(0);
-        inverse[i][i] = 1;
+    for (auto row : inverse.indices()) {
+        ::fixy::fill(inverse.at(row).view(), std::uint8_t{0});
+        inverse.at(row).at(row) = 1;
     }
 
-    for (std::size_t col = 0; col < N; ++col) {
-        std::size_t pivot = col;
-        while (pivot < N && input[pivot][col] == 0) {
-            ++pivot;
-        }
-        if (pivot == N) {
+    for (auto col : input.indices()) {
+        auto found = pivot_row(input, col);
+        if (found.is_none()) {
             return false;
         }
+        auto const pivot = std::move(found).expect("the search found a pivot");
         if (pivot != col) {
-            std::swap(input[pivot], input[col]);
-            std::swap(inverse[pivot], inverse[col]);
+            ::fixy::swap(input.at(pivot), input.at(col));
+            ::fixy::swap(inverse.at(pivot), inverse.at(col));
         }
 
-        const std::uint8_t scale = inv(input[col][col]);
-        for (std::size_t j = 0; j < N; ++j) {
-            input[col][j] = mul(input[col][j], scale);
-            inverse[col][j] = mul(inverse[col][j], scale);
+        const std::uint8_t scale = inv(input.at(col).at(col));
+        for (auto j : input.indices()) {
+            input.at(col).at(j) = mul(input.at(col).at(j), scale);
+            inverse.at(col).at(j) = mul(inverse.at(col).at(j), scale);
         }
 
-        for (std::size_t row = 0; row < N; ++row) {
+        for (auto row : input.indices()) {
             if (row == col) {
                 continue;
             }
-            const std::uint8_t factor = input[row][col];
+            const std::uint8_t factor = input.at(row).at(col);
             if (factor == 0) {
                 continue;
             }
-            for (std::size_t j = 0; j < N; ++j) {
-                input[row][j] ^= mul(factor, input[col][j]);
-                inverse[row][j] ^= mul(factor, inverse[col][j]);
+            for (auto j : input.indices()) {
+                input.at(row).at(j) ^= mul(factor, input.at(col).at(j));
+                inverse.at(row).at(j) ^= mul(factor, inverse.at(col).at(j));
             }
         }
     }
@@ -202,21 +230,25 @@ template <std::size_t N>
 }
 
 #if defined(__AVX2__) || ((defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__))
+using NibbleTable = ::foundation::core::FixedArray<std::uint8_t, 32>;
+
 struct alignas(32) NibbleTables {
-    alignas(32) std::array<std::uint8_t, 32> lo{};
-    alignas(32) std::array<std::uint8_t, 32> hi{};
+    alignas(32) NibbleTable lo{};
+    alignas(32) NibbleTable hi{};
 };
 
 template <class Field = void>
 [[nodiscard]] inline NibbleTables make_nibble_tables(std::uint8_t coeff) noexcept {
     NibbleTables tables{};
-    for (std::uint8_t i = 0; i < 16; ++i) {
-        const auto lo = mul<Field>(coeff, i);
-        const auto hi = mul<Field>(coeff, static_cast<std::uint8_t>(i << 4U));
-        tables.lo[i] = lo;
-        tables.hi[i] = hi;
-        tables.lo[static_cast<std::size_t>(i) + 16U] = lo;
-        tables.hi[static_cast<std::size_t>(i) + 16U] = hi;
+    for (::fixy::Index<16> low : ::fixy::IndexRange<16>{}) {
+        const auto value = static_cast<std::uint8_t>(low.raw());
+        const auto lo = mul<Field>(coeff, value);
+        const auto hi = mul<Field>(coeff, static_cast<std::uint8_t>(value << 4U));
+        auto const upper = ::fixy::Index<32>::check(low.raw() + 16U).expect("the upper half holds 16 entries");
+        tables.lo.at(low) = lo;
+        tables.hi.at(low) = hi;
+        tables.lo.at(upper) = lo;
+        tables.hi.at(upper) = hi;
     }
     return tables;
 }
@@ -225,183 +257,170 @@ template <class Field = void>
 // A vector kernel steps one register per iteration, so its stride is the
 // size of the register type that its loads use.
 #if defined(__AVX2__)
-// One AVX2 register, as a vector of four 64-bit words.  The may_alias
-// attribute lets a load or a store reach the shard bytes.  The unaligned
-// type makes no claim about the address.
-using Avx2Register [[gnu::vector_size(32), gnu::may_alias]] = long long;
-using Avx2UnalignedRegister [[gnu::vector_size(32), gnu::may_alias, gnu::aligned(1)]] = long long;
-
-// The views of one register that the byte builtins, the 16-bit shift
-// builtin and the bitwise operations take.  Each operation of a kernel is a
-// function call.  GCC evaluates the arguments of a call from right to left,
-// and that order sets the register allocation of the kernel.
+// One AVX2 register as 32 byte lanes, and as the 16 halfword lanes that the
+// shift builtin takes.  Each operation of a kernel is a function call.  GCC
+// evaluates the arguments of a call from right to left, and that order sets
+// the register allocation of the kernel.
 using Avx2Bytes = ::foundation::simd::vec<char, 32>;
-using Avx2Halfwords = ::foundation::simd::vec<short, 16>::raw_type;
-using Avx2UnsignedWords = ::foundation::simd::vec<unsigned long long, 4>::raw_type;
-
-// A template argument does not keep the attributes of a vector type, so the
-// pointer that start_as_array gives has neither attribute.  The parameter
-// type of each function that follows puts them back before the access.
-[[nodiscard]] CRUCIBLE_INLINE Avx2Register load_aligned_avx2(const Avx2Register* source) noexcept { return *source; }
-
-[[nodiscard]] CRUCIBLE_INLINE Avx2Register load_unaligned_avx2(const Avx2UnalignedRegister* source) noexcept {
-    return *source;
-}
-
-CRUCIBLE_INLINE void store_unaligned_avx2(Avx2UnalignedRegister* target, Avx2Register value) noexcept {
-    *target = value;
-}
+using Avx2Halfwords = ::foundation::simd::vec<short, 16>;
 
 // The facade of foundation/Simd.h has no byte shuffle, and the GF(2^8)
 // nibble-table lookup needs one.  So the kernel calls the builtin of
 // vpshufb.  Each 128-bit half of the table serves the indices of its own
 // half, and the nibble tables hold the same 16 bytes in each half.
-[[nodiscard]] CRUCIBLE_INLINE Avx2Register shuffle_bytes_avx2(Avx2Register table, Avx2Register indices) noexcept {
-    return std::bit_cast<Avx2Register>(__builtin_ia32_pshufb256(std::bit_cast<Avx2Bytes::raw_type>(table),
-                                                                std::bit_cast<Avx2Bytes::raw_type>(indices)));
+[[nodiscard]] CRUCIBLE_INLINE Avx2Bytes shuffle_bytes_avx2(Avx2Bytes table, Avx2Bytes indices) noexcept {
+    return Avx2Bytes{__builtin_ia32_pshufb256(table.raw(), indices.raw())};
 }
 
 // A logical right shift of each 16-bit lane, as vpsrlw does it.
-[[nodiscard]] CRUCIBLE_INLINE Avx2Register shift_halfwords_right_avx2(Avx2Register value, int count) noexcept {
-    return std::bit_cast<Avx2Register>(__builtin_ia32_psrlwi256(std::bit_cast<Avx2Halfwords>(value), count));
+[[nodiscard]] CRUCIBLE_INLINE Avx2Bytes shift_halfwords_right_avx2(Avx2Bytes value, int count) noexcept {
+    return ::foundation::simd::bit_cast<Avx2Bytes>(
+        Avx2Halfwords{__builtin_ia32_psrlwi256(::foundation::simd::bit_cast<Avx2Halfwords>(value).raw(), count)});
 }
 
-// The bitwise operations of two registers, on unsigned 64-bit lanes.
-[[nodiscard]] CRUCIBLE_INLINE Avx2Register and_avx2(Avx2Register lhs, Avx2Register rhs) noexcept {
-    return std::bit_cast<Avx2Register>(std::bit_cast<Avx2UnsignedWords>(lhs) & std::bit_cast<Avx2UnsignedWords>(rhs));
-}
+// The bitwise operations of two registers.
+[[nodiscard]] CRUCIBLE_INLINE Avx2Bytes and_avx2(Avx2Bytes lhs, Avx2Bytes rhs) noexcept { return lhs & rhs; }
 
-[[nodiscard]] CRUCIBLE_INLINE Avx2Register xor_avx2(Avx2Register lhs, Avx2Register rhs) noexcept {
-    return std::bit_cast<Avx2Register>(std::bit_cast<Avx2UnsignedWords>(lhs) ^ std::bit_cast<Avx2UnsignedWords>(rhs));
-}
+[[nodiscard]] CRUCIBLE_INLINE Avx2Bytes xor_avx2(Avx2Bytes lhs, Avx2Bytes rhs) noexcept { return lhs ^ rhs; }
 
-CRUCIBLE_HOT void xor_bytes_avx2(std::byte* dst, std::byte const* src, std::size_t len) noexcept {
-    namespace lifetime = ::foundation::lifetime;
-    constexpr std::size_t stride_bytes = sizeof(Avx2Register);
-    std::size_t i = 0;
-    for (; i + stride_bytes <= len; i += stride_bytes) {
-        const Avx2Register a = load_unaligned_avx2(lifetime::start_as_array<const Avx2Register>(dst + i, 1).data());
-        const Avx2Register b = load_unaligned_avx2(lifetime::start_as_array<const Avx2Register>(src + i, 1).data());
-        store_unaligned_avx2(lifetime::start_as_array<Avx2Register>(dst + i, 1).data(), xor_avx2(a, b));
-    }
-    for (; i < len; ++i) {
-        dst[i] ^= src[i];
+CRUCIBLE_HOT void xor_bytes_avx2(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src) noexcept {
+    namespace simd = ::foundation::simd;
+    auto const [target_rest, source_rest] =
+        simd::for_each_register_run<Avx2Bytes>(dst, src, [](auto target, auto source) noexcept {
+            simd::store(xor_avx2(simd::load<Avx2Bytes>(target), simd::load<Avx2Bytes>(source)), target);
+        });
+    for (auto [target, source] : ::fixy::zip(target_rest, source_rest).expect("the two rests have one count")) {
+        *target = xor_byte(*target, static_cast<std::uint8_t>(*source));
     }
 }
 
 template <class Field = void>
-CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst, std::byte const* src, std::uint8_t coeff, std::size_t len) noexcept {
-    namespace lifetime = ::foundation::lifetime;
+CRUCIBLE_HOT void mul_xor_avx2(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src,
+                               std::uint8_t coeff) noexcept {
+    namespace simd = ::foundation::simd;
     if (coeff == 0) {
         return;
     }
     if (coeff == 1) {
-        xor_bytes_avx2(dst, src, len);
+        xor_bytes_avx2(dst, src);
         return;
     }
 
     const auto tables = make_nibble_tables<Field>(coeff);
-    const Avx2Register lo_table =
-        load_aligned_avx2(lifetime::start_as_array<const Avx2Register>(tables.lo.data(), 1).data());
-    const Avx2Register hi_table =
-        load_aligned_avx2(lifetime::start_as_array<const Avx2Register>(tables.hi.data(), 1).data());
-    const auto mask = std::bit_cast<Avx2Register>(Avx2Bytes{char{0x0f}}.raw());
+    const Avx2Bytes lo_table = simd::load<Avx2Bytes>(tables.lo.view());
+    const Avx2Bytes hi_table = simd::load<Avx2Bytes>(tables.hi.view());
+    const Avx2Bytes mask{char{0x0f}};
 
-    constexpr std::size_t stride_bytes = sizeof(Avx2Register);
-    std::size_t i = 0;
-    for (; i + stride_bytes <= len; i += stride_bytes) {
-        const Avx2Register bytes = load_unaligned_avx2(lifetime::start_as_array<const Avx2Register>(src + i, 1).data());
-        const Avx2Register lo = and_avx2(bytes, mask);
-        const Avx2Register hi = and_avx2(shift_halfwords_right_avx2(bytes, 4), mask);
-        const Avx2Register prod = xor_avx2(shuffle_bytes_avx2(lo_table, lo), shuffle_bytes_avx2(hi_table, hi));
-        const Avx2Register old = load_unaligned_avx2(lifetime::start_as_array<const Avx2Register>(dst + i, 1).data());
-        store_unaligned_avx2(lifetime::start_as_array<Avx2Register>(dst + i, 1).data(), xor_avx2(old, prod));
-    }
-    for (; i < len; ++i) {
-        dst[i] ^= static_cast<std::byte>(mul<Field>(static_cast<std::uint8_t>(src[i]), coeff));
+    auto const [target_rest, source_rest] =
+        simd::for_each_register_run<Avx2Bytes>(dst, src, [&](auto target, auto source) noexcept {
+            const Avx2Bytes bytes = simd::load<Avx2Bytes>(source);
+            const Avx2Bytes lo = and_avx2(bytes, mask);
+            const Avx2Bytes hi = and_avx2(shift_halfwords_right_avx2(bytes, 4), mask);
+            const Avx2Bytes prod = xor_avx2(shuffle_bytes_avx2(lo_table, lo), shuffle_bytes_avx2(hi_table, hi));
+            const Avx2Bytes old = simd::load<Avx2Bytes>(target);
+            simd::store(xor_avx2(old, prod), target);
+        });
+    for (auto [target, source] : ::fixy::zip(target_rest, source_rest).expect("the two rests have one count")) {
+        *target = xor_byte(*target, mul<Field>(static_cast<std::uint8_t>(*source), coeff));
     }
 }
 #elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
-CRUCIBLE_HOT void xor_bytes_neon(std::byte* dst, std::byte const* src, std::size_t len) noexcept {
-    namespace lifetime = ::foundation::lifetime;
-    constexpr std::size_t stride_bytes = sizeof(uint8x16_t);
-    std::size_t i = 0;
-    for (; i + stride_bytes <= len; i += stride_bytes) {
-        auto const a = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(dst + i, stride_bytes).data());
-        auto const b = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(src + i, stride_bytes).data());
-        vst1q_u8(lifetime::start_as_array<std::uint8_t>(dst + i, stride_bytes).data(), veorq_u8(a, b));
-    }
-    for (; i < len; ++i) {
-        dst[i] ^= src[i];
+// One NEON register as 16 byte lanes.  Its raw vector converts to and from
+// uint8x16_t, the type of the intrinsics.
+using NeonBytes = ::foundation::simd::vec<std::uint8_t, 16>;
+
+CRUCIBLE_HOT void xor_bytes_neon(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src) noexcept {
+    namespace simd = ::foundation::simd;
+    auto const [target_rest, source_rest] =
+        simd::for_each_register_run<NeonBytes>(dst, src, [](auto target, auto source) noexcept {
+            const NeonBytes::raw_type sum =
+                veorq_u8(simd::load<NeonBytes>(target).raw(), simd::load<NeonBytes>(source).raw());
+            simd::store(NeonBytes{sum}, target);
+        });
+    for (auto [target, source] : ::fixy::zip(target_rest, source_rest).expect("the two rests have one count")) {
+        *target = xor_byte(*target, static_cast<std::uint8_t>(*source));
     }
 }
 
 template <class Field = void>
-CRUCIBLE_HOT void mul_xor_neon(std::byte* dst, std::byte const* src, std::uint8_t coeff, std::size_t len) noexcept {
-    namespace lifetime = ::foundation::lifetime;
+CRUCIBLE_HOT void mul_xor_neon(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src,
+                               std::uint8_t coeff) noexcept {
+    namespace simd = ::foundation::simd;
     if (coeff == 0) {
         return;
     }
     if (coeff == 1) {
-        xor_bytes_neon(dst, src, len);
+        xor_bytes_neon(dst, src);
         return;
     }
 
     const auto tables = make_nibble_tables<Field>(coeff);
-    const auto lo_table = vld1q_u8(tables.lo.data());
-    const auto hi_table = vld1q_u8(tables.hi.data());
+    const auto lo_table =
+        simd::load<NeonBytes>(tables.lo.view().template window<16>(0).expect("the low half of the table")).raw();
+    const auto hi_table =
+        simd::load<NeonBytes>(tables.hi.view().template window<16>(0).expect("the low half of the table")).raw();
     const auto mask = vdupq_n_u8(0x0f);
 
-    constexpr std::size_t stride_bytes = sizeof(uint8x16_t);
-    std::size_t i = 0;
-    for (; i + stride_bytes <= len; i += stride_bytes) {
-        const auto bytes = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(src + i, stride_bytes).data());
-        const auto lo = vandq_u8(bytes, mask);
-        const auto hi = vandq_u8(vshrq_n_u8(bytes, 4), mask);
-        const auto prod = veorq_u8(vqtbl1q_u8(lo_table, lo), vqtbl1q_u8(hi_table, hi));
-        const auto old = vld1q_u8(lifetime::start_as_array<const std::uint8_t>(dst + i, stride_bytes).data());
-        vst1q_u8(lifetime::start_as_array<std::uint8_t>(dst + i, stride_bytes).data(), veorq_u8(old, prod));
-    }
-    for (; i < len; ++i) {
-        dst[i] ^= static_cast<std::byte>(mul<Field>(static_cast<std::uint8_t>(src[i]), coeff));
+    auto const [target_rest, source_rest] =
+        simd::for_each_register_run<NeonBytes>(dst, src, [&](auto target, auto source) noexcept {
+            const auto bytes = simd::load<NeonBytes>(source).raw();
+            const auto lo = vandq_u8(bytes, mask);
+            const auto hi = vandq_u8(vshrq_n_u8(bytes, 4), mask);
+            const auto prod = veorq_u8(vqtbl1q_u8(lo_table, lo), vqtbl1q_u8(hi_table, hi));
+            const auto old = simd::load<NeonBytes>(target).raw();
+            const NeonBytes::raw_type sum = veorq_u8(old, prod);
+            simd::store(NeonBytes{sum}, target);
+        });
+    for (auto [target, source] : ::fixy::zip(target_rest, source_rest).expect("the two rests have one count")) {
+        *target = xor_byte(*target, mul<Field>(static_cast<std::uint8_t>(*source), coeff));
     }
 }
 #endif
 
-CRUCIBLE_HOT void xor_bytes_scalar(std::byte* dst, std::byte const* src, std::size_t len) noexcept {
-    for (std::size_t i = 0; i < len; ++i) {
-        dst[i] ^= src[i];
+CRUCIBLE_HOT void xor_bytes_scalar(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src) noexcept {
+    for (auto [target, source] : ::fixy::zip(dst, src).expect("the two shards have one count")) {
+        *target = xor_byte(*target, static_cast<std::uint8_t>(*source));
     }
 }
 
+// The product of each byte of src and coeff, added into the byte of dst at
+// the same position.  The two Views have one count.
 template <class Field = void>
-CRUCIBLE_HOT void mul_xor(std::byte* dst, std::byte const* src, std::uint8_t coeff, std::size_t len) noexcept {
+CRUCIBLE_HOT void mul_xor(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src, std::uint8_t coeff) noexcept {
     if (coeff == 0) {
         return;
     }
 #if defined(__AVX2__)
-    mul_xor_avx2<Field>(dst, src, coeff, len);
+    mul_xor_avx2<Field>(dst, src, coeff);
 #elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
-    mul_xor_neon<Field>(dst, src, coeff, len);
+    mul_xor_neon<Field>(dst, src, coeff);
 #else
     if (coeff == 1) {
-        xor_bytes_scalar(dst, src, len);
+        xor_bytes_scalar(dst, src);
         return;
     }
-    for (std::size_t i = 0; i < len; ++i) {
-        dst[i] ^= static_cast<std::byte>(mul<Field>(static_cast<std::uint8_t>(src[i]), coeff));
+    for (auto [target, source] : ::fixy::zip(dst, src).expect("the two shards have one count")) {
+        *target = xor_byte(*target, mul<Field>(static_cast<std::uint8_t>(*source), coeff));
     }
 #endif
 }
 
 template <ByteContiguousBuffer Buffer>
-[[nodiscard]] inline std::span<const std::byte> bytes(Buffer const& buffer) noexcept {
-    return std::as_bytes(std::span{std::data(buffer), static_cast<std::size_t>(std::size(buffer))});
+[[nodiscard]] constexpr ::fixy::View<std::byte const> bytes(Buffer const& buffer) noexcept {
+    if constexpr (requires { buffer.view(); }) {
+        return buffer.view();
+    } else {
+        return buffer;
+    }
 }
 
 template <MutableByteContiguousBuffer Buffer>
-[[nodiscard]] inline std::span<std::byte> mutable_bytes(Buffer& buffer) noexcept {
-    return std::as_writable_bytes(std::span{std::data(buffer), static_cast<std::size_t>(std::size(buffer))});
+[[nodiscard]] constexpr ::fixy::View<std::byte> mutable_bytes(Buffer& buffer) noexcept {
+    if constexpr (requires { buffer.view(); }) {
+        return buffer.view();
+    } else {
+        return buffer;
+    }
 }
 
 }  // namespace detail
@@ -424,107 +443,117 @@ public:
 
     [[nodiscard]] static constexpr std::size_t encoded_size_for(std::size_t input_size) noexcept {
         const auto shard_bytes = shard_bytes_for(input_size);
-        constexpr auto max = std::numeric_limits<std::size_t>::max();
+        constexpr auto max = ::fixy::max_of<std::size_t>;
         if (shard_bytes > max / total_shards) {
             return max;
         }
         return shard_bytes * total_shards;
     }
 
-    [[nodiscard]] std::expected<void, FecError> encode(std::span<const std::byte> input,
-                                                       std::span<std::byte> output_with_parity) const noexcept {
-        if (input.empty()) {
-            return std::unexpected(FecError::InvalidInputSize);
+    // Each shard of the output is checked as a window of the output, one
+    // compare for each shard and none in the byte loops.
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, FecError>
+    encode(::fixy::View<std::byte const> input, ::fixy::View<std::byte> output_with_parity) const noexcept {
+        if (input.size() == 0) {
+            return ::fixy::err(FecError::InvalidInputSize);
         }
         const auto shard_bytes = shard_bytes_for(input.size());
         const auto expected = encoded_size_for(input.size());
-        if (expected == std::numeric_limits<std::size_t>::max()) {
-            return std::unexpected(FecError::LengthOverflow);
+        if (expected == ::fixy::max_of<std::size_t>) {
+            return ::fixy::err(FecError::LengthOverflow);
         }
         if (output_with_parity.size() != expected) {
-            return std::unexpected(FecError::InvalidOutputSize);
+            return ::fixy::err(FecError::InvalidOutputSize);
         }
 
-        std::memset(output_with_parity.data(), 0, output_with_parity.size());
-        std::memcpy(output_with_parity.data(), input.data(), input.size());
+        ::fixy::fill(output_with_parity, std::byte{0});
+        ::fixy::copy(output_with_parity.window(0, input.size()).expect("the input fits in the data shards"), input)
+            .expect("the window has the count of the input");
 
-        for (std::size_t p = 0; p < M; ++p) {
-            auto* parity = output_with_parity.data() + (static_cast<std::size_t>(K) + p) * shard_bytes;
-            for (std::size_t d = 0; d < K; ++d) {
-                auto const* data = output_with_parity.data() + d * shard_bytes;
-                detail::mul_xor(parity, data, generator()[static_cast<std::size_t>(K) + p][d], shard_bytes);
+        for (::fixy::Index<M> parity_shard : ::fixy::IndexRange<M>{}) {
+            auto const& row = generator().at(row_of(static_cast<std::size_t>(K) + parity_shard.raw()));
+            auto const parity =
+                shard_of(output_with_parity, static_cast<std::size_t>(K) + parity_shard.raw(), shard_bytes);
+            for (::fixy::Index<K> data_shard : ::fixy::IndexRange<K>{}) {
+                detail::mul_xor(parity, shard_of(output_with_parity, data_shard.raw(), shard_bytes),
+                                row.at(data_shard));
             }
         }
-        return {};
+        return ::fixy::Unit{};
     }
 
-    [[nodiscard]] std::expected<void, FecError> decode(std::span<const std::byte> received,
-                                                       std::span<const bool> erasure_mask,
-                                                       std::span<std::byte> output) const noexcept {
-        if (received.empty() || (received.size() % total_shards) != 0) {
-            return std::unexpected(FecError::InvalidInputSize);
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, FecError> decode(::fixy::View<std::byte const> received,
+                                                                ::fixy::View<bool const> erasure_mask,
+                                                                ::fixy::View<std::byte> output) const noexcept {
+        if (received.size() == 0 || (received.size() % total_shards) != 0) {
+            return ::fixy::err(FecError::InvalidInputSize);
         }
         if (erasure_mask.size() != total_shards) {
-            return std::unexpected(FecError::ErasureMaskSizeMismatch);
+            return ::fixy::err(FecError::ErasureMaskSizeMismatch);
         }
 
         const auto shard_bytes = received.size() / total_shards;
-        if (output.empty() || output.size() > static_cast<std::size_t>(K) * shard_bytes) {
-            return std::unexpected(FecError::InvalidOutputSize);
+        if (output.size() == 0 || output.size() > static_cast<std::size_t>(K) * shard_bytes) {
+            return ::fixy::err(FecError::InvalidOutputSize);
         }
 
-        std::array<std::size_t, K> selected{};
+        // The first K shards that the mask does not erase, and their rows of
+        // the generator.
+        ::foundation::core::FixedArray<std::size_t, K> selected{};
+        detail::SquareMatrix<K> decode_matrix{};
         std::size_t selected_count = 0;
         std::size_t erased_count = 0;
-        for (std::size_t i = 0; i < total_shards; ++i) {
-            if (erasure_mask[i]) {
+        auto const mask =
+            erasure_mask.template window<total_shards>(0).expect("the mask holds one flag for each shard");
+        for (::fixy::Index<total_shards> shard : ::fixy::IndexRange<total_shards>{}) {
+            if (mask.at(shard)) {
                 ++erased_count;
                 continue;
             }
             if (selected_count < K) {
-                selected[selected_count++] = i;
+                auto const slot = ::fixy::Index<K>::check(selected_count).expect("the count is below K");
+                selected.at(slot) = shard.raw();
+                decode_matrix.at(slot) = generator().at(shard);
+                ++selected_count;
             }
         }
         if (erased_count > M || selected_count < K) {
-            return std::unexpected(FecError::TooManyErasures);
+            return ::fixy::err(FecError::TooManyErasures);
         }
 
-        detail::SquareMatrix<K> decode_matrix{};
         detail::SquareMatrix<K> inverse{};
-        for (std::size_t row = 0; row < K; ++row) {
-            decode_matrix[row] = generator()[selected[row]];
-        }
         if (!detail::invert_matrix<K>(decode_matrix, inverse)) {
-            return std::unexpected(FecError::SingularMatrix);
+            return ::fixy::err(FecError::SingularMatrix);
         }
 
-        for (std::size_t out_shard = 0; out_shard < K; ++out_shard) {
-            const auto out_offset = out_shard * shard_bytes;
+        for (::fixy::Index<K> out_shard : ::fixy::IndexRange<K>{}) {
+            const auto out_offset = out_shard.raw() * shard_bytes;
             if (out_offset >= output.size()) {
                 break;
             }
-            const auto live_bytes = std::min(shard_bytes, output.size() - out_offset);
-            auto* dst = output.data() + out_offset;
-            std::memset(dst, 0, live_bytes);
+            const auto live_bytes = ::fixy::min(shard_bytes, output.size() - out_offset);
+            auto const dst = output.window(out_offset, live_bytes).expect("the live bytes lie inside the output");
+            ::fixy::fill(dst, std::byte{0});
 
-            for (std::size_t src = 0; src < K; ++src) {
-                auto const* shard = received.data() + selected[src] * shard_bytes;
-                detail::mul_xor(dst, shard, inverse[out_shard][src], live_bytes);
+            for (::fixy::Index<K> src : ::fixy::IndexRange<K>{}) {
+                auto const shard = received.window(selected.at(src) * shard_bytes, live_bytes)
+                                       .expect("a selected shard lies inside the received block");
+                detail::mul_xor(dst, shard, inverse.at(out_shard).at(src));
             }
         }
-        return {};
+        return ::fixy::Unit{};
     }
 
     template <ByteContiguousBuffer Input, MutableByteContiguousBuffer Output>
-    [[nodiscard]] std::expected<void, FecError> encode_owned(LinearShardBuffer<Input>&& input,
-                                                             Output& output) const noexcept {
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, FecError> encode_owned(LinearShardBuffer<Input>&& input,
+                                                                      Output& output) const noexcept {
         return encode(detail::bytes(input.peek()), detail::mutable_bytes(output));
     }
 
     template <ByteContiguousBuffer Input, MutableByteContiguousBuffer Output>
-    [[nodiscard]] std::expected<void, FecError> decode_owned(LinearShardBuffer<Input>&& received,
-                                                             std::span<const bool> erasure_mask,
-                                                             Output& output) const noexcept {
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, FecError> decode_owned(LinearShardBuffer<Input>&& received,
+                                                                      ::fixy::View<bool const> erasure_mask,
+                                                                      Output& output) const noexcept {
         return decode(detail::bytes(received.peek()), erasure_mask, detail::mutable_bytes(output));
     }
 
@@ -537,6 +566,17 @@ private:
     [[nodiscard]] static constexpr detail::GeneratorMatrix<K, M> const& generator() noexcept {
         static constexpr detail::GeneratorMatrix<K, M> matrix = detail::make_generator_matrix<K, M>();
         return matrix;
+    }
+
+    // The index of a row of the generator.
+    [[nodiscard]] static constexpr ::fixy::Index<total_shards> row_of(std::size_t shard) noexcept {
+        return ::fixy::Index<total_shards>::check(shard).expect("a shard is below the count of shards");
+    }
+
+    // The bytes of the shard at position shard of a block of shards.
+    [[nodiscard]] static constexpr ::fixy::View<std::byte> shard_of(::fixy::View<std::byte> block, std::size_t shard,
+                                                                    std::size_t shard_bytes) noexcept {
+        return block.window(shard * shard_bytes, shard_bytes).expect("the shard lies inside the block");
     }
 };
 

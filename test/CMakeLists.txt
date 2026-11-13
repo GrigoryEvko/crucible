@@ -3318,7 +3318,7 @@ crucible_neg_compile_test(neg_fountain_decoder_mint_short_equations
   "required for the satisfaction of .CtxFitsFountainMint<Ctx, SourceSymbols, SymbolBytes, MaxEquations, Algorithm>. ")
 crucible_neg_compile_test(neg_fountain_raw_seed
   "cannot convert .long long unsigned int. to .crucible::cntp::FountainSeed."
-  "initializing argument 2 of .std::expected<void, crucible::cntp::FountainError> crucible::cntp::FountainEncoder<SourceSymbols, SymbolBytes, Algorithm>::start_encoding\\(std::span<const std::byte>, crucible::cntp::FountainSeed\\)")
+  "initializing argument 2 of .foundation::core::Result<foundation::core::Unit, crucible::cntp::FountainError> crucible::cntp::FountainEncoder<SourceSymbols, SymbolBytes, Algorithm>::start_encoding\\(foundation::core::View<const std::byte>, crucible::cntp::FountainSeed\\)")
 crucible_neg_compile_test(neg_fountain_encode_non_contiguous_owned
   "no matching function for call to .crucible::cntp::FountainEncoder<4, 16, crucible::cntp::LtFountain>::encode_owned\\("
   "required for the satisfaction of .ByteContiguousBuffer<Input>. .with Input = NotWireBytes.")

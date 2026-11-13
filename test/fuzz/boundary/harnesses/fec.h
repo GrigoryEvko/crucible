@@ -7,8 +7,8 @@
 #include "../harness.h"
 
 #include <crucible/cntp/Fec.h>
+#include <fixy/Core.h>
 
-#include <array>
 #include <vector>
 
 namespace crucible::fuzz::boundary {
@@ -24,6 +24,18 @@ namespace crucible::fuzz::boundary {
     return {seed};
 }
 
+// The bytes of a run of the input, in a heap array that a codec reads as a
+// View.
+[[nodiscard]] inline ::fixy::HeapArray<std::byte> heap_bytes(auto const& run) {
+    auto out = ::fixy::mint_heap_array(::foundation::effects::Alloc{}, run.size(), std::byte{0});
+    std::size_t position = 0;
+    for (std::byte& byte : out) {
+        byte = std::byte{run[position]};
+        ++position;
+    }
+    return out;
+}
+
 inline void run_fec(std::span<const std::uint8_t> bytes) {
     using Codec = ::crucible::cntp::ReedSolomon<4, 2>;
     constexpr Codec codec{};
@@ -32,33 +44,34 @@ inline void run_fec(std::span<const std::uint8_t> bytes) {
     // Any block, any mask, any output size.
     const auto mask_bits = cursor.take<std::uint8_t>();
     const auto output_size = cursor.take<std::uint16_t>();
-    const auto received = cursor.take_bytes(cursor.take<std::uint16_t>());
-    std::array<bool, Codec::total_shards> mask{};
+    const auto received = heap_bytes(cursor.take_bytes(cursor.take<std::uint16_t>()));
+    ::foundation::core::FixedArray<bool, Codec::total_shards> mask{};
     const auto bit_is_set = [mask_bits](std::size_t i) noexcept { return ((unsigned{mask_bits} >> i) & 1U) != 0; };
-    for (std::size_t i = 0; i < mask.size(); ++i)
-        mask[i] = bit_is_set(i);
-    std::vector<std::byte> output(output_size);
-    (void)codec.decode(as_bytes_view(received), std::span<const bool>{mask}, std::span<std::byte>{output});
+    for (auto shard : mask.indices())
+        mask.at(shard) = bit_is_set(shard.raw());
+    auto output = ::fixy::mint_heap_array(::foundation::effects::Alloc{}, output_size, std::byte{0});
+    (void)codec.decode(received.view(), mask.view(), output.view());
 
     // Encode the rest of the input, erase at most two shards, decode.
-    const auto input = cursor.rest();
-    if (input.empty()) return;
-    std::vector<std::byte> encoded(Codec::encoded_size_for(input.size()));
-    CRUCIBLE_FUZZ_CLAIM("fec", codec.encode(as_bytes_view(input), std::span<std::byte>{encoded}).has_value());
+    const auto input = heap_bytes(cursor.rest());
+    if (input.size() == 0) return;
+    auto encoded =
+        ::fixy::mint_heap_array(::foundation::effects::Alloc{}, Codec::encoded_size_for(input.size()), std::byte{0});
+    CRUCIBLE_FUZZ_CLAIM("fec", codec.encode(input.view(), encoded.view()).is_ok());
     const std::size_t shard = encoded.size() / Codec::total_shards;
-    std::array<bool, Codec::total_shards> erased{};
+    ::foundation::core::FixedArray<bool, Codec::total_shards> erased{};
     std::size_t erased_count = 0;
-    for (std::size_t i = 0; i < erased.size() && erased_count < Codec::parity_shards; ++i) {
-        if (!bit_is_set(i)) continue;
-        erased[i] = true;
+    for (auto index : erased.indices()) {
+        if (erased_count >= Codec::parity_shards) break;
+        if (!bit_is_set(index.raw())) continue;
+        erased.at(index) = true;
         ++erased_count;
-        for (std::size_t b = 0; b < shard; ++b)
-            encoded[i * shard + b] = std::byte{0xA5};
+        ::fixy::fill(encoded.view().window(index.raw() * shard, shard).expect("the shard lies inside the block"),
+                     std::byte{0xA5});
     }
-    std::vector<std::byte> decoded(input.size());
-    CRUCIBLE_FUZZ_CLAIM(
-        "fec", codec.decode(encoded, std::span<const bool>{erased}, std::span<std::byte>{decoded}).has_value());
-    CRUCIBLE_FUZZ_CLAIM("fec", std::ranges::equal(decoded, as_bytes_view(input)));
+    auto decoded = ::fixy::mint_heap_array(::foundation::effects::Alloc{}, input.size(), std::byte{0});
+    CRUCIBLE_FUZZ_CLAIM("fec", codec.decode(encoded.view(), erased.view(), decoded.view()).is_ok());
+    CRUCIBLE_FUZZ_CLAIM("fec", ::fixy::equal(decoded.view(), input.view()));
 }
 
 }  // namespace crucible::fuzz::boundary

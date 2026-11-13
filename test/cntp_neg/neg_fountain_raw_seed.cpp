@@ -9,13 +9,12 @@
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
 
-#include <array>
 #include <cstddef>
 
 int main() {
     ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
     auto encoder = crucible::cntp::mint_fountain_encoder<4, 16>(init);
-    std::array<std::byte, 16> payload{};
-    (void)encoder.start_encoding(payload, 42ULL);
+    ::foundation::core::FixedArray<std::byte, 16> payload{};
+    (void)encoder.start_encoding(payload.view(), 42ULL);
     return 0;
 }

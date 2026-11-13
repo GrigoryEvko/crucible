@@ -262,6 +262,65 @@ CRUCIBLE_INLINE void store_aligned(V value, typename V::value_type* ptr) noexcep
     std::memcpy(aligned, &raw, sizeof(raw));
 }
 
+// The store of a vector into the bytes of one register, the lowest lane
+// first.  The type of the View proves the count, so the copy has no check,
+// and the bytes need no alignment.
+template <typename V, typename Byte, std::size_t Bytes>
+    requires RegisterBytes<V, Byte, Bytes> && (!std::is_const_v<Byte>)
+CRUCIBLE_INLINE void store(V value, core::View<Byte, Bytes> bytes) noexcept {
+    const typename V::raw_type raw = value.raw();
+    __builtin_memcpy(first_of_(core::detail::ViewDoor::key(), bytes), &raw, sizeof(raw));
+}
+
+// The bits of one register as a vector of a different lane type, the view
+// of the register that a builtin of a SIMD arm takes.  No bit changes.
+template <typename To, typename From>
+    requires requires {
+        typename To::raw_type;
+        typename From::raw_type;
+    } && (sizeof(typename To::raw_type) == sizeof(typename From::raw_type))
+[[nodiscard]] constexpr To bit_cast(From value) noexcept {
+    return To{__builtin_bit_cast(typename To::raw_type, value.raw())};
+}
+
+// A body that takes the Views of one register run of each of two Views and
+// does not throw.
+template <typename Body, typename V, typename First, typename Second>
+concept RegisterRunBody = std::is_nothrow_invocable_v<Body&, core::View<First, sizeof(typename V::raw_type)>,
+                                                      core::View<Second, sizeof(typename V::raw_type)>>;
+
+// Calls body with the Views of each run of the bytes of one register of first
+// and of second, in lockstep, the lowest run first, and gives the two Views of
+// the bytes after the last whole run.  A SIMD kernel then reads its target and
+// its source with one loop and no check in it.  Two counts that differ end
+// the process before the loop, and the optimizer removes that compare for two
+// Views of one count.  Complexity: one call of body for each whole run.
+template <typename V, typename First, typename Second, typename Body>
+    requires RegisterBytes<V, First, sizeof(typename V::raw_type)>
+          && RegisterBytes<V, Second, sizeof(typename V::raw_type)> && RegisterRunBody<Body, V, First, Second>
+CRUCIBLE_INLINE core::Record<core::View<First>, core::View<Second>>
+for_each_register_run(core::View<First> first, core::View<Second> second, Body body) noexcept {
+    constexpr std::size_t width = sizeof(typename V::raw_type);
+    if (first.size() != second.size()) [[unlikely]] {
+        core::fatal("the register runs of two Views of {} and {} elements", first.size(), second.size());
+    }
+    First* const first_at = first_of_(core::detail::ViewDoor::key(), first);
+    Second* const second_at = first_of_(core::detail::ViewDoor::key(), second);
+    // The loop counts whole runs, so the optimizer and -Warray-bounds read
+    // each offset as below the count of the runs.
+    std::size_t const runs = first.size() / width;
+    for (std::size_t run = 0; run < runs; ++run) {
+        body(core::View<First, width>{core::detail::ViewDoor::key(), first_at + run * width},
+             core::View<Second, width>{core::detail::ViewDoor::key(), second_at + run * width});
+    }
+    // The rest is the count modulo the width, so the optimizer reads it as
+    // below one register.
+    std::size_t const whole = runs * width;
+    std::size_t const rest = first.size() % width;
+    return {core::View<First>{core::detail::ViewDoor::key(), first_at + whole, rest},
+            core::View<Second>{core::detail::ViewDoor::key(), second_at + whole, rest}};
+}
+
 // The mask has the same lane byte width as the value, so its bits cast
 // straight onto the value type and the blend is a pair of bitwise
 // operations with no branch.

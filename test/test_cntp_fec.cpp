@@ -1,45 +1,40 @@
 #include <crucible/cntp/Fec.h>
 
-#include <algorithm>
-#include <array>
 #include "test_assert.h"
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <type_traits>
 #include <utility>
 
 namespace {
 
+namespace ci = crucible::cntp;
+
 template <std::size_t N>
-[[nodiscard]] constexpr std::array<std::byte, N> payload_seed() noexcept {
-    std::array<std::byte, N> bytes{};
-    for (std::size_t i = 0; i < bytes.size(); ++i) {
-        bytes[i] = static_cast<std::byte>((i * 37U + (i >> 1U) + 0x5AU) & 0xFFU);
+using Bytes = ::foundation::core::FixedArray<std::byte, N>;
+
+template <std::size_t N>
+using Flags = ::foundation::core::FixedArray<bool, N>;
+
+template <std::size_t N>
+[[nodiscard]] constexpr Bytes<N> payload_seed() noexcept {
+    Bytes<N> bytes{};
+    for (auto index : bytes.indices()) {
+        auto const i = index.raw();
+        bytes.at(index) = static_cast<std::byte>((i * 37U + (i >> 1U) + 0x5AU) & 0xFFU);
     }
     return bytes;
 }
 
-template <std::size_t ShardBytes, std::size_t... Shards>
-constexpr void poison_shards(std::span<std::byte> encoded, std::index_sequence<Shards...>) noexcept {
-    ((std::fill_n(encoded.data() + Shards * ShardBytes, ShardBytes, static_cast<std::byte>(0xEE))), ...);
-}
-
-template <std::size_t N>
-[[nodiscard]] constexpr bool same_prefix(std::array<std::byte, N> const& lhs,
-                                         std::array<std::byte, N> const& rhs) noexcept {
-    for (std::size_t i = 0; i < N; ++i) {
-        if (lhs[i] != rhs[i]) {
-            return false;
-        }
-    }
-    return true;
+// Writes the byte fill over the shard at position shard of an encoded block.
+void poison_shard(::fixy::View<std::byte> encoded, std::size_t shard, std::size_t shard_bytes, std::byte fill) {
+    ::fixy::fill(encoded.window(shard * shard_bytes, shard_bytes).expect("the shard lies inside the block"), fill);
 }
 
 template <typename Codec, std::size_t InputBytes, std::size_t EncodedBytes>
-void verify_all_recoverable_erasures(Codec const& codec, std::array<std::byte, InputBytes> const& payload,
-                                     std::array<std::byte, EncodedBytes> const& encoded) {
+void verify_all_recoverable_erasures(Codec const& codec, Bytes<InputBytes> const& payload,
+                                     Bytes<EncodedBytes> const& encoded) {
     constexpr auto total = Codec::total_shards;
     static_assert(total < 64);
     const auto shard_bytes = Codec::shard_bytes_for(InputBytes);
@@ -47,26 +42,25 @@ void verify_all_recoverable_erasures(Codec const& codec, std::array<std::byte, I
 
     for (std::uint64_t bits = 0; bits < mask_limit; ++bits) {
         auto damaged = encoded;
-        std::array<bool, total> erasures{};
+        Flags<total> erasures{};
         std::size_t erased = 0;
 
-        for (std::size_t shard = 0; shard < total; ++shard) {
-            const auto bit = std::uint64_t{1} << shard;
+        for (auto shard : erasures.indices()) {
+            const auto bit = std::uint64_t{1} << shard.raw();
             if ((bits & bit) == 0) {
                 continue;
             }
-            erasures[shard] = true;
+            erasures.at(shard) = true;
             ++erased;
-            std::fill_n(damaged.data() + shard * shard_bytes, shard_bytes, static_cast<std::byte>(0xA5));
+            poison_shard(damaged.view(), shard.raw(), shard_bytes, std::byte{0xA5});
         }
         if (erased > Codec::parity_shards) {
             continue;
         }
 
-        std::array<std::byte, InputBytes> decoded{};
-        const auto decoded_ok = codec.decode(damaged, erasures, decoded);
-        assert(decoded_ok.has_value());
-        assert(same_prefix(payload, decoded));
+        Bytes<InputBytes> decoded{};
+        assert(codec.decode(damaged.view(), erasures.view(), decoded.view()).is_ok());
+        assert(payload == decoded);
     }
 }
 
@@ -79,24 +73,28 @@ void verify_mul_xor_against_scalar_product() {
     namespace detail = crucible::cntp::detail;
     constexpr std::size_t buffer_bytes = 112;
     constexpr auto source_seed = payload_seed<buffer_bytes>();
-    constexpr std::array<std::size_t, 2> offsets{0, 1};
-    constexpr std::array<std::size_t, 15> lengths{0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 95, 96, 97, 110};
+    ::foundation::core::FixedArray<std::size_t, 2> const offsets{0, 1};
+    ::foundation::core::FixedArray<std::size_t, 15> const lengths{0,  1,  15, 16, 17, 31, 32, 33,
+                                                                  63, 64, 65, 95, 96, 97, 110};
     for (const std::size_t offset : offsets) {
         for (const std::size_t len : lengths) {
             for (unsigned coeff = 0; coeff < 256U; ++coeff) {
                 const auto factor = static_cast<std::uint8_t>(coeff);
-                std::array<std::byte, buffer_bytes> target{};
-                std::array<std::byte, buffer_bytes> expected{};
-                for (std::size_t i = 0; i < buffer_bytes; ++i) {
-                    target[i] = static_cast<std::byte>((i * 11U + coeff) & 0xFFU);
-                    expected[i] = target[i];
+                Bytes<buffer_bytes> target{};
+                for (auto index : target.indices()) {
+                    target.at(index) = static_cast<std::byte>((index.raw() * 11U + coeff) & 0xFFU);
                 }
+                Bytes<buffer_bytes> expected = target;
                 for (std::size_t i = 0; i < len; ++i) {
-                    const auto source_byte = static_cast<std::uint8_t>(source_seed[offset + i]);
-                    expected[offset + i] ^= static_cast<std::byte>(detail::mul(source_byte, factor));
+                    auto const position =
+                        ::fixy::Index<buffer_bytes>::check(offset + i).expect("the byte lies inside the buffer");
+                    const auto source_byte = static_cast<std::uint8_t>(source_seed.at(position));
+                    expected.at(position) ^= static_cast<std::byte>(detail::mul(source_byte, factor));
                 }
-                detail::mul_xor(target.data() + offset, source_seed.data() + offset, factor, len);
-                assert(same_prefix(expected, target));
+                detail::mul_xor(target.view().window(offset, len).expect("the run lies inside the target"),
+                                source_seed.view().window(offset, len).expect("the run lies inside the source"),
+                                factor);
+                assert(expected == target);
             }
         }
     }
@@ -105,8 +103,6 @@ void verify_mul_xor_against_scalar_product() {
 }  // namespace
 
 int main() {
-    namespace ci = crucible::cntp;
-
     using Rs42 = ci::ReedSolomon<4, 2>;
     using Rs102 = ci::ReedSolomon<10, 2>;
 
@@ -122,24 +118,24 @@ int main() {
     static_assert(Rs42::shard_bytes_for(1) == 1);
     static_assert(Rs42::shard_bytes_for(17) == 5);
     static_assert(Rs42::encoded_size_for(17) == 30);
-    static_assert(sizeof(ci::LinearShardBuffer<std::array<std::byte, 8>>) == sizeof(std::array<std::byte, 8>));
+    static_assert(sizeof(ci::LinearShardBuffer<Bytes<8>>) == sizeof(Bytes<8>));
     static_assert(std::same_as<Rs42::concurrent_budget,
                                ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<1>>>);
+    static_assert(ci::ByteContiguousBuffer<Bytes<8>> && ci::ByteContiguousBuffer<::fixy::View<std::byte const>>);
+    static_assert(ci::MutableByteContiguousBuffer<Bytes<8>> && !ci::MutableByteContiguousBuffer<Bytes<8> const>);
 
     auto rs42 = ci::mint_reed_solomon<4, 2>(::foundation::effects::testing::init());
 
     {
         constexpr auto payload = payload_seed<17>();
-        std::array<std::byte, Rs42::encoded_size_for(payload.size())> encoded{};
-        auto ok = rs42.encode(std::span<const std::byte>{payload}, encoded);
-        assert(ok.has_value());
+        Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
+        assert(rs42.encode(payload.view(), encoded.view()).is_ok());
         verify_all_recoverable_erasures(rs42, payload, encoded);
 
-        std::array<bool, Rs42::total_shards> erasures{};
-        std::array<std::byte, payload.size()> decoded{};
-        auto decoded_ok = rs42.decode(encoded, erasures, decoded);
-        assert(decoded_ok.has_value());
-        assert(same_prefix(payload, decoded));
+        Flags<Rs42::total_shards> erasures{};
+        Bytes<payload.size()> decoded{};
+        assert(rs42.decode(encoded.view(), erasures.view(), decoded.view()).is_ok());
+        assert(payload == decoded);
     }
 
     verify_mul_xor_against_scalar_product();
@@ -148,117 +144,112 @@ int main() {
         // Each shard holds 104 bytes: three register steps of 32 bytes and a
         // tail of eight bytes.
         constexpr auto payload = payload_seed<413>();
-        std::array<std::byte, Rs42::encoded_size_for(payload.size())> encoded{};
-        assert(rs42.encode(payload, encoded).has_value());
+        Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
+        assert(rs42.encode(payload.view(), encoded.view()).is_ok());
         verify_all_recoverable_erasures(rs42, payload, encoded);
     }
 
     {
         constexpr auto payload = payload_seed<19>();
         constexpr auto shard_bytes = Rs42::shard_bytes_for(payload.size());
-        std::array<std::byte, Rs42::encoded_size_for(payload.size())> encoded{};
-        assert(rs42.encode(payload, encoded).has_value());
+        Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
+        assert(rs42.encode(payload.view(), encoded.view()).is_ok());
 
-        std::array<bool, Rs42::total_shards> erasures{};
-        erasures[0] = true;
-        erasures[2] = true;
-        poison_shards<shard_bytes>(encoded, std::index_sequence<0, 2>{});
+        Flags<Rs42::total_shards> erasures{};
+        erasures.at(::fixy::index<0>()) = true;
+        erasures.at(::fixy::index<2>()) = true;
+        poison_shard(encoded.view(), 0, shard_bytes, std::byte{0xEE});
+        poison_shard(encoded.view(), 2, shard_bytes, std::byte{0xEE});
 
-        std::array<std::byte, payload.size()> decoded{};
-        auto decoded_ok = rs42.decode(encoded, erasures, decoded);
-        assert(decoded_ok.has_value());
-        assert(same_prefix(payload, decoded));
+        Bytes<payload.size()> decoded{};
+        assert(rs42.decode(encoded.view(), erasures.view(), decoded.view()).is_ok());
+        assert(payload == decoded);
     }
 
     {
         constexpr auto payload = payload_seed<31>();
         constexpr auto shard_bytes = Rs42::shard_bytes_for(payload.size());
-        std::array<std::byte, Rs42::encoded_size_for(payload.size())> encoded{};
-        assert(rs42.encode(payload, encoded).has_value());
+        Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
+        assert(rs42.encode(payload.view(), encoded.view()).is_ok());
 
-        std::array<bool, Rs42::total_shards> erasures{};
-        erasures[1] = true;
-        erasures[5] = true;
-        poison_shards<shard_bytes>(encoded, std::index_sequence<1, 5>{});
+        Flags<Rs42::total_shards> erasures{};
+        erasures.at(::fixy::index<1>()) = true;
+        erasures.at(::fixy::index<5>()) = true;
+        poison_shard(encoded.view(), 1, shard_bytes, std::byte{0xEE});
+        poison_shard(encoded.view(), 5, shard_bytes, std::byte{0xEE});
 
-        std::array<std::byte, payload.size()> decoded{};
-        auto decoded_ok = rs42.decode(encoded, erasures, decoded);
-        assert(decoded_ok.has_value());
-        assert(same_prefix(payload, decoded));
+        Bytes<payload.size()> decoded{};
+        assert(rs42.decode(encoded.view(), erasures.view(), decoded.view()).is_ok());
+        assert(payload == decoded);
     }
 
     {
         constexpr auto payload = payload_seed<23>();
-        std::array<std::byte, Rs42::encoded_size_for(payload.size())> encoded{};
-        assert(rs42.encode(payload, encoded).has_value());
+        Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
+        assert(rs42.encode(payload.view(), encoded.view()).is_ok());
 
-        std::array<bool, Rs42::total_shards> too_many{};
-        too_many[0] = true;
-        too_many[1] = true;
-        too_many[4] = true;
+        Flags<Rs42::total_shards> too_many{};
+        too_many.at(::fixy::index<0>()) = true;
+        too_many.at(::fixy::index<1>()) = true;
+        too_many.at(::fixy::index<4>()) = true;
 
-        std::array<std::byte, payload.size()> decoded{};
-        auto rejected = rs42.decode(encoded, too_many, decoded);
-        assert(!rejected.has_value());
-        assert(rejected.error() == ci::FecError::TooManyErasures);
+        Bytes<payload.size()> decoded{};
+        auto rejected = rs42.decode(encoded.view(), too_many.view(), decoded.view());
+        assert(rejected.err().expect("three erasures are too many") == ci::FecError::TooManyErasures);
     }
 
     {
         constexpr auto payload = payload_seed<13>();
-        auto owned_payload = ::fixy::mint_linear<std::array<std::byte, payload.size()>>(payload);
-        std::array<std::byte, Rs42::encoded_size_for(payload.size())> encoded{};
-        assert(rs42.encode_owned(std::move(owned_payload), encoded).has_value());
+        auto owned_payload = ::fixy::mint_linear<Bytes<payload.size()>>(payload);
+        Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
+        assert(rs42.encode_owned(std::move(owned_payload), encoded).is_ok());
 
         auto owned_encoded = ::fixy::mint_linear<decltype(encoded)>(encoded);
-        std::array<bool, Rs42::total_shards> erasures{};
-        std::array<std::byte, payload.size()> decoded{};
-        assert(rs42.decode_owned(std::move(owned_encoded), erasures, decoded).has_value());
-        assert(same_prefix(payload, decoded));
+        Flags<Rs42::total_shards> erasures{};
+        Bytes<payload.size()> decoded{};
+        assert(rs42.decode_owned(std::move(owned_encoded), erasures.view(), decoded).is_ok());
+        assert(payload == decoded);
     }
 
     {
-        std::array<std::byte, 0> empty{};
-        std::array<std::byte, 0> output{};
-        auto rejected = rs42.encode(empty, output);
-        assert(!rejected.has_value());
-        assert(rejected.error() == ci::FecError::InvalidInputSize);
+        auto rejected = rs42.encode(::fixy::View<std::byte const>{}, ::fixy::View<std::byte>{});
+        assert(rejected.err().expect("an empty input is refused") == ci::FecError::InvalidInputSize);
     }
 
     {
         constexpr auto payload = payload_seed<9>();
-        std::array<std::byte, 1> too_small{};
-        auto rejected = rs42.encode(payload, too_small);
-        assert(!rejected.has_value());
-        assert(rejected.error() == ci::FecError::InvalidOutputSize);
+        Bytes<1> too_small{};
+        auto rejected = rs42.encode(payload.view(), too_small.view());
+        assert(rejected.err().expect("a short output is refused") == ci::FecError::InvalidOutputSize);
     }
 
     {
         auto rs102 = ci::mint_reed_solomon<10, 2>(::foundation::effects::testing::init());
         constexpr auto payload = payload_seed<103>();
         constexpr auto shard_bytes = Rs102::shard_bytes_for(payload.size());
-        std::array<std::byte, Rs102::encoded_size_for(payload.size())> encoded{};
-        assert(rs102.encode(payload, encoded).has_value());
+        Bytes<Rs102::encoded_size_for(payload.size())> encoded{};
+        assert(rs102.encode(payload.view(), encoded.view()).is_ok());
 
-        std::array<bool, Rs102::total_shards> erasures{};
-        erasures[3] = true;
-        erasures[10] = true;
-        poison_shards<shard_bytes>(encoded, std::index_sequence<3, 10>{});
+        Flags<Rs102::total_shards> erasures{};
+        erasures.at(::fixy::index<3>()) = true;
+        erasures.at(::fixy::index<10>()) = true;
+        poison_shard(encoded.view(), 3, shard_bytes, std::byte{0xEE});
+        poison_shard(encoded.view(), 10, shard_bytes, std::byte{0xEE});
 
-        std::array<std::byte, payload.size()> decoded{};
-        assert(rs102.decode(encoded, erasures, decoded).has_value());
-        assert(same_prefix(payload, decoded));
+        Bytes<payload.size()> decoded{};
+        assert(rs102.decode(encoded.view(), erasures.view(), decoded.view()).is_ok());
+        assert(payload == decoded);
     }
 
     {
         constexpr auto payload = payload_seed<17>();
-        std::array<std::byte, Rs42::encoded_size_for(payload.size())> encoded{};
-        assert(rs42.encode(payload, encoded).has_value());
+        Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
+        assert(rs42.encode(payload.view(), encoded.view()).is_ok());
 
-        std::array<bool, Rs42::total_shards - 1> short_mask{};
-        std::array<std::byte, payload.size()> decoded{};
-        auto rejected = rs42.decode(encoded, short_mask, decoded);
-        assert(!rejected.has_value());
-        assert(rejected.error() == ci::FecError::ErasureMaskSizeMismatch);
+        Flags<Rs42::total_shards - 1> short_mask{};
+        Bytes<payload.size()> decoded{};
+        auto rejected = rs42.decode(encoded.view(), short_mask.view(), decoded.view());
+        assert(rejected.err().expect("a short mask is refused") == ci::FecError::ErasureMaskSizeMismatch);
     }
 
     return 0;

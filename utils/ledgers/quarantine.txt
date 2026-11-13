@@ -129,13 +129,11 @@ include/crucible/cipher/ | c-library-call | 3 | - | -
 include/crucible/cipher/ | raw-pointer-object | 6 | - | -
 include/crucible/cipher/ | std-entity | 53 | - | -
 include/crucible/cipher/ | std-object | 42 | - | -
-include/crucible/cntp/ | c-library-call | 24 | - | -
+include/crucible/cntp/ | c-library-call | 9 | - | -
 include/crucible/cntp/ | compiler-builtin | 2 | - | -
-include/crucible/cntp/ | raw-pointer-object | 18 | - | -
-include/crucible/cntp/ | replace-pending:<limits> | 5 | - | -
-include/crucible/cntp/ | replace-pending:std::bit_cast | 12 | - | -
-include/crucible/cntp/ | std-entity | 225 | - | -
-include/crucible/cntp/ | std-object | 130 | - | -
+include/crucible/cntp/ | replace-pending:<limits> | 1 | - | -
+include/crucible/cntp/ | std-entity | 89 | - | -
+include/crucible/cntp/ | std-object | 64 | - | -
 include/crucible/cntp/_wip/ | raw-pointer-object | 1 | - | -
 include/crucible/cntp/_wip/ | replace-pending:std::bit_cast | 1 | - | -
 include/crucible/cntp/_wip/ | std-entity | 20 | - | -
@@ -413,8 +411,8 @@ test/ | raw-new-delete | 43 | - | -
 test/ | raw-pointer-object | 660 | - | -
 test/ | replace-pending:<limits> | 13 | - | -
 test/ | replace-pending:std::bit_cast | 103 | - | -
-test/ | std-entity | 3280 | - | -
-test/ | std-object | 1169 | - | -
+test/ | std-entity | 3143 | - | -
+test/ | std-object | 1082 | - | -
 test/canopy_neg/ | raw-pointer-object | 1 | - | -
 test/canopy_neg/ | std-entity | 10 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
@@ -424,7 +422,7 @@ test/cipher_neg/ | std-object | 16 | - | -
 test/cipher_neg/ | unchecked-use | 2 | - | the fixture reads the type of a private member of the Cipher with an unchecked walk, for the type of its probe
 test/cntp_neg/ | raw-pointer-object | 1 | - | -
 test/cntp_neg/ | std-entity | 22 | - | -
-test/cntp_neg/ | std-object | 24 | - | -
+test/cntp_neg/ | std-object | 22 | - | -
 test/cog_neg/ | std-entity | 3 | - | -
 test/cog_neg/ | std-object | 1 | - | -
 test/ct/ | c-array-object | 5 | - | -
@@ -633,8 +631,8 @@ test/fuzz/boundary/harnesses/ | c-library-call | 6 | - | -
 test/fuzz/boundary/harnesses/ | compiler-builtin | 1 | - | -
 test/fuzz/boundary/harnesses/ | raw-new-delete | 1 | - | -
 test/fuzz/boundary/harnesses/ | raw-pointer-object | 17 | - | -
-test/fuzz/boundary/harnesses/ | std-entity | 262 | - | -
-test/fuzz/boundary/harnesses/ | std-object | 120 | - | -
+test/fuzz/boundary/harnesses/ | std-entity | 237 | - | -
+test/fuzz/boundary/harnesses/ | std-object | 111 | - | -
 test/fuzz/property/ | c-array-object | 22 | - | -
 test/fuzz/property/ | c-library-call | 48 | - | -
 test/fuzz/property/ | compiler-builtin | 4 | - | -
@@ -659,7 +657,7 @@ test/layer/checks/crucible/canopy/ | std-entity | 6 | - | -
 test/layer/checks/crucible/canopy/ | std-object | 1 | - | -
 test/layer/checks/crucible/cipher/ | std-entity | 1 | - | -
 test/layer/checks/crucible/cntp/ | replace-pending:<limits> | 3 | - | -
-test/layer/checks/crucible/cntp/ | std-entity | 12 | - | -
+test/layer/checks/crucible/cntp/ | std-entity | 8 | - | -
 test/layer/checks/crucible/cog/ | std-object | 19 | - | -
 test/layer/checks/crucible/ledger/ | std-entity | 6 | - | -
 test/layer/checks/crucible/mimic/ | std-entity | 4 | - | -
