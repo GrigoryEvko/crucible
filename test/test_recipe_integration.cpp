@@ -8,6 +8,7 @@
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
@@ -25,6 +26,7 @@ using crucible::RecipePool;
 using crucible::RecipeRegistry;
 using crucible::SchemaHash;
 using crucible::TraceEntry;
+using fixy::BumpArena;
 
 namespace names = crucible::recipe_names;
 
@@ -51,8 +53,8 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     // as soon as a second process starts.  Pointer identity holds within a
     // pool, and identity across pools runs through the recipe hash.
     {
-        Arena arena_a{};
-        Arena arena_b{};
+        BumpArena arena_a{};
+        BumpArena arena_b{};
         RecipePool pool_a{::fixy::mint_borrowed_ref(arena_a), init_cap()};
         RecipePool pool_b{::fixy::mint_borrowed_ref(arena_b), init_cap()};
         RecipeRegistry reg_a{::fixy::mint_borrowed_ref(pool_a), alloc_cap()};
@@ -77,7 +79,8 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     // breaks replay determinism.
     {
         Arena arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
+        BumpArena recipe_arena{};
+        RecipePool pool{::fixy::mint_borrowed_ref(recipe_arena), init_cap()};
         RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         auto rec_tc = registry.by_name(names::kF16F32AccumTc);
@@ -110,7 +113,8 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     // interned pointer in the current process.
     {
         Arena arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
+        BumpArena recipe_arena{};
+        RecipePool pool{::fixy::mint_borrowed_ref(recipe_arena), init_cap()};
         RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         // Persistence time: the original process pins a recipe and takes
@@ -151,7 +155,8 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     {
         // The original process.
         Arena arena_a{};
-        RecipePool pool_a{::fixy::mint_borrowed_ref(arena_a), init_cap()};
+        BumpArena recipe_arena_a{};
+        RecipePool pool_a{::fixy::mint_borrowed_ref(recipe_arena_a), init_cap()};
         RecipeRegistry reg_a{::fixy::mint_borrowed_ref(pool_a), alloc_cap()};
         auto rec_a = reg_a.by_name(names::kFp8E4m3F32AccumMxOrd);
         assert(rec_a.has_value());
@@ -164,7 +169,8 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         // A second process, with its own pool, registry and arena, and so
         // with different addresses throughout.
         Arena arena_b{};
-        RecipePool pool_b{::fixy::mint_borrowed_ref(arena_b), init_cap()};
+        BumpArena recipe_arena_b{};
+        RecipePool pool_b{::fixy::mint_borrowed_ref(recipe_arena_b), init_cap()};
         RecipeRegistry reg_b{::fixy::mint_borrowed_ref(pool_b), alloc_cap()};
         auto rec_b = reg_b.by_name(names::kFp8E4m3F32AccumMxOrd);
         assert(rec_b.has_value());
@@ -189,7 +195,8 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     // key is too, and the two recipes cannot share a slot.
     {
         Arena arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
+        BumpArena recipe_arena{};
+        RecipePool pool{::fixy::mint_borrowed_ref(recipe_arena), init_cap()};
         RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         auto rec_tc = registry.by_name(names::kF16F32AccumTc);
@@ -252,7 +259,8 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     // the interned recipe must not be 0.
     {
         Arena arena{};
-        RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
+        BumpArena recipe_arena{};
+        RecipePool pool{::fixy::mint_borrowed_ref(recipe_arena), init_cap()};
         const NumericalRecipe zero_bytes{
             .accum_dtype = crucible::ScalarType::Byte,
             .out_dtype = crucible::ScalarType::Byte,

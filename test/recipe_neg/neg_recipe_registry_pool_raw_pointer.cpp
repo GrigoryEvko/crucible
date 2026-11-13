@@ -9,12 +9,13 @@
 
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
 int main() {
     auto test = ::foundation::effects::testing::test();
     auto init = ::foundation::effects::testing::init();
-    crucible::Arena arena{};
+    ::fixy::BumpArena arena{};
     crucible::RecipePool pool{::fixy::mint_borrowed_ref(arena), init};
     crucible::RecipeRegistry registry{&pool, test.alloc};
     return registry.entries().value().empty();

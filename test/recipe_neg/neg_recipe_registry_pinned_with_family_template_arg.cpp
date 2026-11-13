@@ -13,17 +13,17 @@
 // Expected diagnostic: the RecipeFamily enumerator cannot convert to the
 // Tolerance template parameter of by_name_pinned.
 
-#include <crucible/Arena.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Bands.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
 using namespace crucible;
 
 int main() {
-    Arena arena{};
+    ::fixy::BumpArena arena{};
     auto test_ctx = ::foundation::effects::testing::test();
     auto init_ctx = ::foundation::effects::testing::init();
     RecipePool pool{::fixy::mint_borrowed_ref(arena), init_ctx};

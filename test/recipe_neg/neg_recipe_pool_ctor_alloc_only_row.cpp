@@ -9,6 +9,7 @@
 
 #include <crucible/RecipePool.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
@@ -17,7 +18,7 @@
 namespace eff = ::foundation::effects;
 
 int main() {
-    crucible::Arena arena{};
+    ::fixy::BumpArena arena{};
     auto init = eff::testing::init();
     crucible::RecipePool pool{::fixy::mint_borrowed_ref(arena), init, 32u,
                               std::type_identity<eff::Row<eff::Effect::Alloc>>{}};

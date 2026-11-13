@@ -15,7 +15,6 @@
 // the categorisation assertion; a change to the starter set trips the
 // coverage assertions in main.
 
-#include <crucible/Arena.h>
 #include <crucible/CKernel.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
@@ -33,13 +32,13 @@
 
 namespace {
 
-using crucible::Arena;
 using crucible::CKernelId;
 using crucible::NumericalRecipe;
 using crucible::RecipePool;
 using crucible::RecipeRegistry;
 using crucible::ReductionDeterminism;
 using crucible::ScalarType;
+using fixy::BumpArena;
 namespace names = crucible::recipe_names;
 
 auto g_test = ::foundation::effects::testing::test();
@@ -403,7 +402,7 @@ int main() {
     }
 
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 

@@ -27,11 +27,11 @@
 #include "property_runner.h"
 #include "random_input.h"
 
-#include <crucible/Arena.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
 namespace names = crucible::recipe_names;
@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
             return random_recipe(rng);
         },
         [](const NumericalRecipe& extra) {
-            Arena arena{};
+            ::fixy::BumpArena arena{};
             // The test context comes from foundation::effects::testing.
             // RecipePool takes an Init context at construction.
             // RecipeRegistry takes an Alloc capability, because it

@@ -5,12 +5,12 @@
 // recipe family is a partial order with a bottom and a wildcard top. Most of
 // what follows probes the places where that difference shows.
 
-#include <crucible/Arena.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Bands.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
@@ -21,7 +21,6 @@
 
 namespace {
 
-using crucible::Arena;
 using crucible::NumericalRecipe;
 using crucible::RecipeError;
 using crucible::RecipeHash;
@@ -32,6 +31,7 @@ using crucible::ReductionDeterminism;
 using crucible::ScalarType;
 using crucible::recipe_family_of;
 using crucible::tolerance_of;
+using ::fixy::BumpArena;
 using ::fixy::RecipeFamily;
 using ::fixy::RecipeFamilyLattice;
 using ::fixy::RecipeSpec;
@@ -78,7 +78,7 @@ template <class T>
         static_assert(noexcept(recipe_family_of(std::declval<const NumericalRecipe&>())));
     }
 
-    Arena arena{};
+    BumpArena arena{};
     RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
     RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
@@ -403,7 +403,7 @@ template <class T>
             persisted[i] = entries_view(reg)[i].recipe->hash;
         }
 
-        Arena arena2{};
+        BumpArena arena2{};
         RecipePool pool2{::fixy::mint_borrowed_ref(arena2), init_cap()};
         RecipeRegistry reg2{::fixy::mint_borrowed_ref(pool2), alloc_cap()};
 

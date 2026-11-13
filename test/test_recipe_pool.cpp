@@ -1,11 +1,11 @@
 // Copyright (c) Grigory Evko
 // Licensed under the Apache License, Version 2.0
 
-#include <crucible/Arena.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <fixy/Bits.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <foundation/effects/Effect.h>
@@ -20,7 +20,6 @@
 
 namespace {
 
-using crucible::Arena;
 using crucible::NumericalRecipe;
 using crucible::RecipeHash;
 using crucible::RecipePool;
@@ -30,6 +29,7 @@ using crucible::RoundingMode;
 using crucible::ScalarType;
 using crucible::ScalePolicy;
 using crucible::SoftmaxRecurrence;
+using fixy::BumpArena;
 
 // Other fields stay at their defaults.  These three vary enough to
 // avoid hash collisions across the small matrices below.
@@ -54,7 +54,7 @@ inline eff::Alloc alloc_cap() noexcept { return g_test.alloc; }
 inline eff::Init init_cap() noexcept { return g_init; }
 
 // The borrow that the mint door gives, and the borrow that names no brand.
-using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<Arena&>()));
+using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpArena&>()));
 
 }  // namespace
 
@@ -69,12 +69,13 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<Arena&
                       "RecipePool capacity must carry the power-of-two invariant");
         static_assert(std::is_same_v<RecipePool::Size, ::fixy::Monotonic<uint32_t>>,
                       "RecipePool size must carry the monotonic-growth invariant");
-        static_assert(std::is_same_v<RecipePool::ArenaBorrow, ::fixy::BorrowedRef<Arena>>,
+        static_assert(std::is_same_v<RecipePool::ArenaBorrow, ::fixy::BorrowedRef<BumpArena>>,
                       "RecipePool arena dependency must be an explicit borrow");
         static_assert(sizeof(RecipePool::Capacity) == sizeof(uint32_t),
                       "PowerOfTwo capacity wrapper must stay zero-cost");
         static_assert(sizeof(RecipePool::Size) == sizeof(uint32_t), "Monotonic size wrapper must stay zero-cost");
-        static_assert(sizeof(RecipePool::ArenaBorrow) == sizeof(Arena*), "BorrowedRef<Arena> must stay pointer-sized");
+        static_assert(sizeof(RecipePool::ArenaBorrow) == sizeof(void*),
+                      "BorrowedRef<BumpArena> must stay pointer-sized");
         static_assert(std::is_constructible_v<RecipePool, MintedArenaBorrow, eff::Init>,
                       "RecipePool takes the borrow that mint_borrowed_ref gives");
         static_assert(!std::is_constructible_v<RecipePool, RecipePool::ArenaBorrow, eff::Init>,
@@ -88,14 +89,14 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<Arena&
     }
 
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
         assert(pool.size() == 0);
         assert(pool.capacity() == 32);
     }
 
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
 
         const NumericalRecipe fields = mk(ScalarType::Float, ScalarType::Half, ReductionDeterminism::BITEXACT_TC);
@@ -113,7 +114,7 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<Arena&
     }
 
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
 
         const auto* r_f32_strict =
@@ -130,7 +131,7 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<Arena&
     }
 
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
 
         NumericalRecipe poisoned = mk(ScalarType::Float, ScalarType::Half, ReductionDeterminism::ORDERED);
@@ -146,7 +147,7 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<Arena&
     // The probe comparison looks at the semantic fields only.  A refactor
     // that folded the stored hash into it would break this.
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
 
         NumericalRecipe fresh = mk(ScalarType::Float, ScalarType::Float, ReductionDeterminism::BITEXACT_STRICT);
@@ -164,7 +165,7 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<Arena&
     // stays valid after it.  Capacity 8 at 50% load grows after 4 entries,
     // so 10 insertions force two grows, to 16 and then 32.
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 8};
         assert(pool.capacity() == 8);
 
@@ -208,7 +209,7 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<Arena&
     // The 5 × 5 × 4 × 4 grid of dtype, dtype, determinism and scale gives
     // 400 distinct recipes.
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
 
         const ScalarType dtypes[] = {
@@ -254,8 +255,8 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<Arena&
     // Pointer equality is a per-pool invariant, not a global one: each
     // pool owns its own arena storage.
     {
-        Arena arena_a{};
-        Arena arena_b{};
+        BumpArena arena_a{};
+        BumpArena arena_b{};
         RecipePool pool_a{::fixy::mint_borrowed_ref(arena_a), init_cap(), 32};
         RecipePool pool_b{::fixy::mint_borrowed_ref(arena_b), init_cap(), 32};
 
@@ -270,7 +271,7 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<Arena&
     }
 
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
         const auto* r =
             pool.intern(alloc_cap(), mk(ScalarType::Float, ScalarType::Float, ReductionDeterminism::ORDERED));

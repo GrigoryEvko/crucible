@@ -22,10 +22,10 @@
 #include "property_runner.h"
 #include "random_input.h"
 
-#include <crucible/Arena.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
 #include <array>
@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
             return recipes;
         },
         [](const std::array<NumericalRecipe, 30>& recipes) {
-            Arena arena{};
+            ::fixy::BumpArena arena{};
             // The test context comes from foundation::effects::testing.
             // RecipePool takes an Init context, because it allocates its
             // slot table at construction.  Each intern() call takes an

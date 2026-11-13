@@ -3827,15 +3827,15 @@ crucible_neg_compile_test(neg_recipe_pool_size_assign_raw
   "no match for .operator=."
   "crucible::RecipePool::Size.*fixy::Monotonic<unsigned int")
 
-# The RecipePool constructor takes a minted BorrowedRef<Arena, Brand>.
-# A raw Arena* and a borrow of a different type must fail at the
-# constructor.
+# The RecipePool constructor takes a minted BorrowedRef<BumpArena, Brand>.
+# A raw pointer to the arena and a borrow of a different type must fail at
+# the constructor.
 crucible_neg_compile_test(neg_recipe_pool_arena_raw_pointer
   "no matching function for call to .crucible::RecipePool::RecipePool"
-  "mismatched types .fixy::BorrowedRef<crucible::Arena, Brand>. and .crucible::Arena\\*.")
+  "mismatched types .fixy::BorrowedRef<foundation::core::BumpArena, Brand>. and .foundation::core::BumpArena\\*.")
 crucible_neg_compile_test(neg_recipe_pool_arena_wrong_borrow
   "no matching function for call to .crucible::RecipePool::RecipePool"
-  "mismatched types .crucible::Arena. and .OtherArena.")
+  "mismatched types .foundation::core::BumpArena. and .OtherArena.")
 
 # A RecipePool is built in the initialization phase.  The constructor
 # defaults to Row<Init>, and a pure row, a row with only Alloc and a row
@@ -3858,7 +3858,7 @@ crucible_neg_compile_test(neg_recipe_registry_pool_raw_pointer
   "mismatched types .fixy::BorrowedRef<crucible::RecipePool, Brand>. and .crucible::RecipePool\\*.")
 crucible_neg_compile_test(neg_recipe_registry_pool_wrong_borrow
   "no matching function for call to .crucible::RecipeRegistry::RecipeRegistry"
-  "mismatched types .crucible::RecipePool. and .crucible::Arena.")
+  "mismatched types .crucible::RecipePool. and .foundation::core::BumpArena.")
 
 # forge/recipes/Network.h network-kernel recipe constraints.
 #   * neg_network_recipe_strict_sharp: BITEXACT_STRICT cannot enter SHARP.

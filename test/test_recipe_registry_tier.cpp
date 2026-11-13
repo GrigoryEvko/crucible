@@ -1,12 +1,12 @@
 // Copyright (c) Grigory Evko
 // Licensed under the Apache License, Version 2.0
 
-#include <crucible/Arena.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Bands.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
@@ -16,7 +16,6 @@
 
 namespace {
 
-using crucible::Arena;
 using crucible::NumericalRecipe;
 using crucible::RecipeError;
 using crucible::RecipeHash;
@@ -26,6 +25,7 @@ using crucible::ReductionDeterminism;
 using crucible::ScalarType;
 using crucible::tolerance_for_dtype;
 using crucible::tolerance_of;
+using ::fixy::BumpArena;
 using ::fixy::NumericalTier;
 using ::fixy::Tolerance;
 using ::fixy::ToleranceLattice;
@@ -87,7 +87,7 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
         assert(tolerance_of(r_unordered) == Tolerance::RELAXED);
     }
 
-    Arena arena{};
+    BumpArena arena{};
     RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
     RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 

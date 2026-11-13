@@ -11,11 +11,11 @@
 // already committed to it, so the fields of each starter recipe and the
 // hash it produces are both pinned below.
 
-#include <crucible/Arena.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/effects/Effect.h>
@@ -32,7 +32,6 @@
 
 namespace {
 
-using crucible::Arena;
 using crucible::NumericalRecipe;
 using crucible::RecipeError;
 using crucible::RecipePool;
@@ -43,6 +42,7 @@ using crucible::RoundingMode;
 using crucible::ScalarType;
 using crucible::ScalePolicy;
 using crucible::SoftmaxRecurrence;
+using fixy::BumpArena;
 
 namespace names = crucible::recipe_names;
 
@@ -90,7 +90,7 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
     }
 
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
@@ -114,7 +114,7 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
     }
 
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
@@ -153,7 +153,7 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
     // Lookup by name is exact and case-sensitive, so the near-misses
     // below have to miss just as firmly as the nonsense ones.
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
@@ -180,7 +180,7 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
     // behind an existing name changes what every consumer that pinned it
     // receives, without any of them changing a line.
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
@@ -250,7 +250,7 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
     // an error: the first match would win and the second recipe would
     // become unreachable without anything reporting it.
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
@@ -266,7 +266,7 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
     // up with identical fields would collapse into one pooled recipe and
     // the pool would simply hold fewer entries than there are names.
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
@@ -292,7 +292,7 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
     // The failure message below says what to do once such a change has
     // been audited and accepted.
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
@@ -335,7 +335,7 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
     // starter's fields by hand has to reach the pointer the registry
     // already holds, rather than adding a second copy beside it.
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
@@ -354,7 +354,7 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
     // Lookup by hash is how a persisted entry finds its recipe again, so
     // it has to reach the same pointer as lookup by name.
     {
-        Arena arena{};
+        BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
@@ -395,8 +395,8 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
     // over separate pools therefore hand out different pointers for the
     // same recipe, and those recipes still hash alike.
     {
-        Arena arena_a{};
-        Arena arena_b{};
+        BumpArena arena_a{};
+        BumpArena arena_b{};
         RecipePool pool_a{::fixy::mint_borrowed_ref(arena_a), init_cap()};
         RecipePool pool_b{::fixy::mint_borrowed_ref(arena_b), init_cap()};
         RecipeRegistry reg_a{::fixy::mint_borrowed_ref(pool_a), alloc_cap()};

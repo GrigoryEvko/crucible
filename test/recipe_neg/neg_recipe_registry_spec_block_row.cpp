@@ -7,17 +7,17 @@
 // Expected diagnostic: the Subrow<Row<Block>, Row<>> constraint of
 // by_name_spec is not satisfied.
 
-#include <crucible/Arena.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
 namespace eff = ::foundation::effects;
 
 int main() {
-    crucible::Arena arena{};
+    ::fixy::BumpArena arena{};
     auto init = eff::testing::init();
     auto test = eff::testing::test();
     crucible::RecipePool pool{::fixy::mint_borrowed_ref(arena), init};

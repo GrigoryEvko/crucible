@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// The RecipePool constructor takes a borrow of the Arena that owns the
+// The RecipePool constructor takes a borrow of the BumpArena that owns the
 // recipes.  A minted borrow of a different type must not take its place,
 // so the lifetime dependency stays attached to the real owner.
 //
