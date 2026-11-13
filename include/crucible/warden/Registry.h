@@ -11,19 +11,14 @@
 // Registration is safe from any thread, and belongs to construction
 // and teardown rather than to a hot path.
 
+#include <fixy/Core.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
-#include <array>
-#include <atomic>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <inplace_vector>
-#include <type_traits>
 
 namespace crucible::warden {
 
@@ -50,15 +45,33 @@ struct HotRegion {
     // buffer that is resized often, where collapsing it into huge
     // pages would stall the resize.
     bool huge_hint = false;
-    uint8_t pad[7]{};
-    // Borrowed, and usually a string literal. The caller keeps it
-    // alive for as long as the region stays registered.
-    const char* label = "";
+    ::foundation::core::FixedArray<std::uint8_t, 7> pad{};
 };
+
+namespace detail {
+
+// A slot of the registry.  The thread that registers a region writes it,
+// and each other thread reads it.  An Atomic refuses a type with no
+// lock-free operations, so no read of the table waits for a lock.  No
+// thread writes pad after the construction of the registry.  The class
+// is outside the registry, so its member initializers are complete when
+// the array of the registry asks for its default constructor.
+struct HotRegionSlot {
+    ::fixy::Atomic<void*> addr{nullptr};
+    ::fixy::Atomic<size_t> len{0};
+    ::fixy::Atomic<bool> huge_hint{false};
+    ::foundation::core::FixedArray<std::uint8_t, 7> pad{};
+};
+
+}  // namespace detail
 
 class HotRegionRegistry {
 public:
     static constexpr size_t max_regions = 256;
+
+    // The regions of a snapshot.  Each occupied slot gives one region, and
+    // the slot count is the capacity, so the list needs no heap.
+    using Snapshot = ::fixy::FixedList<HotRegion, max_regions>;
 
     // One registry for the process.  The two vessel libraries both reach it.
     CRUCIBLE_PROCESS_WIDE [[nodiscard]] static HotRegionRegistry& instance() noexcept {
@@ -68,47 +81,31 @@ public:
 
     // Registering one address twice replaces the first description
     // rather than adding a second entry, so a reader of the table sees
-    // exactly one entry per address.
-    void register_region(void* addr, size_t len, bool huge_hint, const char* label) noexcept {
+    // exactly one entry per address.  A registration when each slot
+    // holds a region ends the process.
+    void register_region(void* addr, size_t len, bool huge_hint) noexcept {
         if (addr == nullptr || len == 0) return;
-        for (;;) {
-            for (auto& slot : slots_) {
-                void* current = slot.addr.load(std::memory_order_acquire);
-                if (current != addr) continue;
-                if (slot.addr.compare_exchange_strong(current, claimed_addr(), std::memory_order_acq_rel,
-                                                      std::memory_order_acquire)) {
-                    slot.len.store(len, std::memory_order_relaxed);
-                    slot.huge_hint.store(huge_hint, std::memory_order_relaxed);
-                    slot.label.store(label, std::memory_order_relaxed);
-                    slot.addr.store(addr, std::memory_order_release);
-                    return;
-                }
+        for (Slot& slot : slots_) {
+            if (slot.addr.cas_acq_rel(addr, claim_marker_(slot)).is_ok()) {
+                publish_(slot, addr, len, huge_hint);
+                return;
             }
-
-            for (auto& slot : slots_) {
-                void* expected = nullptr;
-                if (slot.addr.compare_exchange_strong(expected, claimed_addr(), std::memory_order_acq_rel,
-                                                      std::memory_order_acquire)) {
-                    slot.len.store(len, std::memory_order_relaxed);
-                    slot.huge_hint.store(huge_hint, std::memory_order_relaxed);
-                    slot.label.store(label, std::memory_order_relaxed);
-                    slot.addr.store(addr, std::memory_order_release);
-                    return;
-                }
-            }
-
-            std::abort();
         }
+        for (Slot& slot : slots_) {
+            if (slot.addr.cas_acq_rel(nullptr, claim_marker_(slot)).is_ok()) {
+                publish_(slot, addr, len, huge_hint);
+                return;
+            }
+        }
+        ::fixy::fatal("HotRegionRegistry: each of the 256 slots holds a region, so the registration has no slot");
     }
 
     // An address that is not registered is ignored, because nothing
     // orders a component's destruction against a policy being undone.
     void unregister_region(void* addr) noexcept {
         if (addr == nullptr) return;
-        for (auto& slot : slots_) {
-            void* expected = addr;
-            if (slot.addr.compare_exchange_strong(expected, nullptr, std::memory_order_acq_rel,
-                                                  std::memory_order_acquire)) {
+        for (Slot& slot : slots_) {
+            if (slot.addr.cas_acq_rel(addr, nullptr).is_ok()) {
                 return;
             }
         }
@@ -118,29 +115,26 @@ public:
     // without holding the table while it issues system calls. A region
     // registered during that work is picked up the next time a policy
     // is applied.
-    //
-    // The result needs no heap: one entry is pushed per occupied slot,
-    // and the slot count is the capacity.
-    [[nodiscard]] std::inplace_vector<HotRegion, max_regions> snapshot() const noexcept {
-        std::inplace_vector<HotRegion, max_regions> out;
-        for (const auto& slot : slots_) {
-            void* addr = slot.addr.load(std::memory_order_acquire);
-            if (addr == nullptr || addr == claimed_addr()) continue;
-            out.push_back(HotRegion{
-                .addr = addr,
-                .len = slot.len.load(std::memory_order_relaxed),
-                .huge_hint = slot.huge_hint.load(std::memory_order_relaxed),
-                .label = slot.label.load(std::memory_order_relaxed),
-            });
+    [[nodiscard]] Snapshot snapshot() const noexcept {
+        Snapshot regions{};
+        for (Slot const& slot : slots_) {
+            void* const addr = slot.addr.load_acquire();
+            if (!is_published_(slot, addr)) continue;
+            static_cast<void>(regions
+                                  .push(HotRegion{
+                                      .addr = addr,
+                                      .len = slot.len.load_acquire(),
+                                      .huge_hint = slot.huge_hint.load_acquire(),
+                                  })
+                                  .expect("the snapshot holds one region for each slot"));
         }
-        return out;
+        return regions;
     }
 
     [[nodiscard]] size_t size() const noexcept {
         size_t count = 0;
-        for (const auto& slot : slots_) {
-            void* addr = slot.addr.load(std::memory_order_acquire);
-            if (addr != nullptr && addr != claimed_addr()) ++count;
+        for (Slot const& slot : slots_) {
+            if (is_published_(slot, slot.addr.load_acquire())) ++count;
         }
         return count;
     }
@@ -154,33 +148,30 @@ private:
     HotRegionRegistry() = default;
     ~HotRegionRegistry() = default;
 
-    // No thread writes pad after the construction of the registry.
-    struct Slot {
-        std::atomic<void*> addr{nullptr};
-        std::atomic<size_t> len{0};
-        std::atomic<bool> huge_hint{false};
-        uint8_t pad[7]{};
-        std::atomic<const char*> label{""};
-    };
+    using Slot = detail::HotRegionSlot;
 
-    // A slot is written by whoever registers a region and read by
-    // everyone else. On an architecture lacking the instruction, the
-    // library substitutes a mutex-backed atomic without a word, which
-    // would put a lock behind every read of this table. Refuse to
-    // build instead.
-    static_assert(std::atomic<void*>::is_always_lock_free, "std::atomic<void*> is not lock-free on this target.");
-    static_assert(std::atomic<size_t>::is_always_lock_free, "std::atomic<size_t> is not lock-free on this target.");
-    static_assert(std::atomic<bool>::is_always_lock_free, "std::atomic<bool> is not lock-free on this target.");
-    static_assert(std::atomic<const char*>::is_always_lock_free,
-                  "std::atomic<const char*> is not lock-free on this target.");
+    // A writer that holds a slot stores the address of that slot in it.
+    // No registered region is a slot of the registry, and the registry is
+    // one object for the process, so each library sees the same marker.
+    [[nodiscard]] static void* claim_marker_(Slot& slot) noexcept { return &slot; }
 
-    [[nodiscard]] static void* claimed_addr() noexcept { return std::bit_cast<void*>(uintptr_t{1}); }
+    [[nodiscard]] static bool is_published_(Slot const& slot, void const* addr) noexcept {
+        return addr != nullptr && addr != &slot;
+    }
 
-    std::array<Slot, max_regions> slots_{};
+    // Writes the description of a slot that the caller holds, and then
+    // publishes its address with release order.
+    static void publish_(Slot& slot, void* addr, size_t len, bool huge_hint) noexcept {
+        slot.len.store_release(len);
+        slot.huge_hint.store_release(huge_hint);
+        slot.addr.store_release(addr);
+    }
+
+    ::foundation::core::FixedArray<Slot, max_regions> slots_{};
 };
 
-inline void register_hot_region(void* addr, size_t len, bool huge_hint = false, const char* label = "") noexcept {
-    HotRegionRegistry::instance().register_region(addr, len, huge_hint, label);
+inline void register_hot_region(void* addr, size_t len, bool huge_hint = false) noexcept {
+    HotRegionRegistry::instance().register_region(addr, len, huge_hint);
 }
 
 inline void unregister_hot_region(void* addr) noexcept { HotRegionRegistry::instance().unregister_region(addr); }
@@ -210,13 +201,13 @@ class HotRegionRegistryHandle final : public ::foundation::Pinned<HotRegionRegis
     friend constexpr HotRegionRegistryHandle mint_hot_region_registry_handle(FriendCtx const&) noexcept;
 
 public:
-    void register_region(void* addr, size_t len, bool huge_hint = false, const char* label = "") const noexcept {
-        HotRegionRegistry::instance().register_region(addr, len, huge_hint, label);
+    void register_region(void* addr, size_t len, bool huge_hint = false) const noexcept {
+        HotRegionRegistry::instance().register_region(addr, len, huge_hint);
     }
 
     void unregister_region(void* addr) const noexcept { HotRegionRegistry::instance().unregister_region(addr); }
 
-    [[nodiscard]] std::inplace_vector<HotRegion, HotRegionRegistry::max_regions> snapshot() const noexcept {
+    [[nodiscard]] HotRegionRegistry::Snapshot snapshot() const noexcept {
         return HotRegionRegistry::instance().snapshot();
     }
 

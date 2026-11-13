@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <initializer_list>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -51,7 +52,7 @@ void test_topology_basic() {
     CHECK(n >= 1, "must see at least one online CPU");
 
     const auto allowed = allowed_cpus(kStartup);
-    CHECK(!allowed.empty(), "cpuset must grant at least one CPU");
+    CHECK(!allowed.is_empty(), "cpuset must grant at least one CPU");
     for (const int c : allowed) {
         CHECK(c >= 0 && c < n + 1024, "allowed CPU out of plausible range");
     }
@@ -69,11 +70,11 @@ void test_topology_basic() {
         (void)is_p_core(kStartup, c);
     }
 
-    if (!allowed.empty()) {
-        const int c = allowed.front();
+    if (!allowed.is_empty()) {
+        const int c = allowed.first().expect("the set is not empty");
         const auto sibs = smt_siblings(kStartup, c);
-        if (!sibs.empty()) {
-            CHECK(std::find(sibs.begin(), sibs.end(), c) != sibs.end(), "thread_siblings must include the core itself");
+        if (!sibs.is_empty()) {
+            CHECK(sibs.contains(c), "thread_siblings must include the core itself");
         }
     }
 }
@@ -91,9 +92,9 @@ void test_allowed_cpus_reads_the_calling_thread() {
 
     // The worker narrows its affinity through the gated door.  It ends
     // after the read, so it drops the prior affinity and does not restore.
-    const int chosen_cpu = allowed.back();
+    const int chosen_cpu = allowed.last().expect("the set holds two CPUs");
     bool is_narrowed = false;
-    std::vector<int> worker_allowed;
+    crucible::warden::CpuSet worker_allowed{};
     std::jthread worker{[&is_narrowed, &worker_allowed, chosen_cpu] {
         const auto prior = ::fixy::sched::apply_affinity_to_cpu(kStartup, chosen_cpu);
         is_narrowed = prior.has_value();
@@ -102,9 +103,18 @@ void test_allowed_cpus_reads_the_calling_thread() {
     worker.join();
 
     CHECK(is_narrowed, "the worker narrows its own affinity");
-    CHECK(worker_allowed == std::vector<int>({chosen_cpu}), "allowed_cpus gives the affinity of the calling thread");
+    CHECK(worker_allowed.size() == 1 && worker_allowed.contains(chosen_cpu),
+          "allowed_cpus gives the affinity of the calling thread");
     CHECK(allowed_cpus(kStartup) == allowed, "the worker leaves the affinity of the main thread as it was");
 #endif
+}
+
+// The set of the given CPU ids.
+constexpr crucible::warden::CpuSet cpus_of(std::initializer_list<std::size_t> ids) {
+    crucible::warden::CpuSet set{};
+    for (const std::size_t id : ids)
+        set.insert(id);
+    return set;
 }
 
 // The input strings are the shapes the kernel writes into the sysfs and
@@ -113,22 +123,20 @@ void test_allowed_cpus_reads_the_calling_thread() {
 void test_cpulist_parser() {
     using namespace crucible::warden::detail;
 
-    // The same parse in a constant evaluation, where find(char) folds
-    // through __builtin_memchr.  A compiler without toolchain patch 0002
-    // gives a wrong offset there and fails these asserts.
-    static_assert(parse_cpulist("0,1,2,3") == std::vector<int>({0, 1, 2, 3}));
+    // The same parse in a constant evaluation.
+    static_assert(parse_cpulist("0,1,2,3") == cpus_of({0, 1, 2, 3}));
     static_assert(parse_cpus_allowed_list("Name:\tx\nCpus_allowed_list:\t0,1,2,3\nMems:\t0\n")
-                  == std::vector<int>({0, 1, 2, 3}));
+                  == cpus_of({0, 1, 2, 3}));
 
     CHECK(parse_cpulist("0-3").size() == 4, "range 0-3 → 4 elements");
     CHECK(parse_cpulist("0,1,2,3").size() == 4, "explicit list 0-3");
     CHECK(parse_cpulist("0-3,8-11").size() == 8, "two ranges");
-    CHECK(parse_cpulist("").empty(), "empty input → empty");
-    CHECK(parse_cpulist("   ").empty(), "whitespace → empty");
+    CHECK(parse_cpulist("").is_empty(), "empty input → empty");
+    CHECK(parse_cpulist("   ").is_empty(), "whitespace → empty");
     const auto v = parse_cpulist("3,1,2,0,3,1");
-    CHECK(v == std::vector<int>({0, 1, 2, 3}), "dedupe + sort");
-    CHECK(parse_cpulist("\t0-1 , 3 ") == std::vector<int>({0, 1, 3}), "spaces and tabs around an entry");
-    CHECK(parse_cpus_allowed_list("Name:\tx\nCpus_allowed_list:\t0-2\nMems:\t0\n") == std::vector<int>({0, 1, 2}),
+    CHECK(v == cpus_of({0, 1, 2, 3}), "dedupe + sort");
+    CHECK(parse_cpulist("\t0-1 , 3 ") == cpus_of({0, 1, 3}), "spaces and tabs around an entry");
+    CHECK(parse_cpus_allowed_list("Name:\tx\nCpus_allowed_list:\t0-2\nMems:\t0\n") == cpus_of({0, 1, 2}),
           "the list is read from its line of /proc/thread-self/status");
 }
 
@@ -140,23 +148,26 @@ void test_cpulist_parser() {
 void test_cpulist_parser_refuses_malformed_text() {
     using namespace crucible::warden::detail;
 
-    CHECK(parse_cpulist("0-8191911").empty(), "a range past the ceiling");
-    CHECK(parse_cpulist("0-2147483647").empty(), "a range that wraps an int");
-    CHECK(parse_cpulist("99999999999999999999").empty(), "a number past the range of int");
-    const std::vector<char> no_terminator{'1', '2'};
-    CHECK(parse_cpulist(std::string_view{no_terminator.data(), no_terminator.size()}) == std::vector<int>({12}),
+    CHECK(parse_cpulist("0-8191911").is_empty(), "a range past the ceiling");
+    CHECK(parse_cpulist("0-2147483647").is_empty(), "a range that wraps an int");
+    CHECK(parse_cpulist("99999999999999999999").is_empty(), "a number past the range of int");
+    ::fixy::FixedText<2> no_terminator{};
+    CHECK(::fixy::format(no_terminator, "12").is_ok(), "the two digits fit the text");
+    CHECK(parse_cpulist(no_terminator.view()) == cpus_of({12}),
           "a list that ends in a digit, with no terminator after it");
-    CHECK(parse_cpulist("5-2").empty(), "a range whose end is below its start");
-    CHECK(parse_cpulist("0-3,x").empty(), "an entry that is not a number");
-    CHECK(parse_cpulist("-1").empty(), "a negative id");
-    CHECK(parse_cpulist("3-").empty(), "a range with no end");
-    CHECK(parse_cpulist("8192").empty(), "an id at the ceiling");
+    CHECK(parse_cpulist("5-2").is_empty(), "a range whose end is below its start");
+    CHECK(parse_cpulist("0-3,x").is_empty(), "an entry that is not a number");
+    CHECK(parse_cpulist("-1").is_empty(), "a negative id");
+    CHECK(parse_cpulist("3-").is_empty(), "a range with no end");
+    CHECK(parse_cpulist("8192").is_empty(), "an id at the ceiling");
     CHECK(parse_cpulist("8191").size() == 1, "the largest id below the ceiling");
+    // The parse of the Report family reads a 0x prefix, and the parser of a
+    // CPU list refuses it, as a kernel list never holds one.
+    CHECK(parse_cpulist("0x5").is_empty(), "a hexadecimal id");
+    CHECK(parse_cpulist("0-0x8").is_empty(), "a range with a hexadecimal end");
 
-    std::string repeated;
-    for (int i = 0; i < 4096; ++i)
-        repeated += "0-8191,";
-    CHECK(parse_cpulist(repeated).size() == kMaxCpuCount, "a repeated full range stays at the ceiling");
+    CHECK(parse_cpulist("0-8191,0-8191,0-8191,0-8191").size() == kMaxCpuCount,
+          "a repeated full range stays at the ceiling");
 }
 
 void test_core_selector() {
@@ -170,12 +181,13 @@ void test_core_selector() {
     const int pick = select_hot_cpu(kStartup, sel);
     const auto allowed = allowed_cpus(kStartup);
     CHECK(pick >= 0, "select_hot_cpu must return something on a normal system");
-    CHECK(std::find(allowed.begin(), allowed.end(), pick) != allowed.end(), "picked CPU must be in allowed set");
+    CHECK(allowed.contains(pick), "picked CPU must be in allowed set");
 
-    if (!allowed.empty()) {
+    if (!allowed.is_empty()) {
         CoreSelector sel_explicit;
-        sel_explicit.explicit_cpu = allowed.back();
-        CHECK(select_hot_cpu(kStartup, sel_explicit) == allowed.back(), "explicit_cpu must be honored when allowed");
+        sel_explicit.explicit_cpu = allowed.last().expect("the set is not empty");
+        CHECK(select_hot_cpu(kStartup, sel_explicit) == sel_explicit.explicit_cpu,
+              "explicit_cpu must be honored when allowed");
     }
 }
 
@@ -190,7 +202,7 @@ void test_core_selector_avoids_cpu0() {
     // The heuristic is only exercisable when cpu 0 is in the cpuset and
     // at least one other CPU exists to steer towards.  A runner inside a
     // cpu-constrained cgroup legitimately takes the skip.
-    const bool have0 = std::find(allowed.begin(), allowed.end(), 0) != allowed.end();
+    const bool have0 = allowed.contains(0);
     if (!have0 || allowed.size() < 2) return;
 
     CoreSelector sel;  // default: avoid_cpu0 = true
@@ -223,13 +235,31 @@ void test_core_selector_avoids_exclude() {
     sel.prefer_p_core = false;
     sel.avoid_smt_sibling = false;  // exclude is what we're testing
 
-    const int excluded = allowed.front();
-    const std::vector<int> exclude{excluded};
+    const int excluded = allowed.first().expect("the set holds two CPUs");
+    CpuSet exclude{};
+    exclude.insert(static_cast<std::size_t>(excluded));
     const int pick = select_hot_cpu(kStartup, sel, exclude);
 
     CHECK(pick >= 0, "select_hot_cpu must still return a CPU when one is excluded");
     CHECK(pick != excluded, "select_hot_cpu must not return a CPU that was in the exclude list");
-    CHECK(std::find(allowed.begin(), allowed.end(), pick) != allowed.end(), "pick is still drawn from the allowed set");
+    CHECK(allowed.contains(pick), "pick is still drawn from the allowed set");
+}
+
+// The companions are allowed CPUs other than the hot CPU, and their count is
+// the smaller of the count asked for and the count of the other CPUs.
+void test_warm_cpus_leave_out_the_hot_cpu() {
+    using namespace crucible::warden;
+
+    const CpuSet allowed = allowed_cpus(kStartup);
+    const int hot_cpu = allowed.first().value_or(-1);
+    const std::size_t others = hot_cpu >= 0 ? allowed.size() - 1 : allowed.size();
+
+    const CpuSet warm = select_warm_cpus(kStartup, hot_cpu, 2);
+    CHECK(!warm.contains(hot_cpu), "the hot CPU is not a companion");
+    CHECK(warm.intersection(allowed) == warm, "each companion is an allowed CPU");
+    CHECK(warm.size() == (others < 2 ? others : 2), "the count of the companions is the count asked for");
+
+    CHECK(select_warm_cpus(kStartup, hot_cpu, 0).is_empty(), "a count of zero gives no companion");
 }
 
 void test_policy_none_is_noop() {
@@ -355,10 +385,10 @@ void test_registry_basic() {
     const size_t baseline = reg.size();
 
     alignas(64) unsigned char buf[4096]{};
-    register_hot_region(buf, sizeof(buf), /*huge=*/false, "test_registry_basic");
+    register_hot_region(buf, sizeof(buf), /*huge=*/false);
     CHECK(reg.size() == baseline + 1, "one registration bumps size");
 
-    register_hot_region(buf, sizeof(buf), /*huge=*/true, "test_registry_basic_updated");
+    register_hot_region(buf, sizeof(buf), /*huge=*/true);
     CHECK(reg.size() == baseline + 1, "re-register same addr is an update, not a new slot");
 
     auto snap = reg.snapshot();
@@ -389,7 +419,7 @@ void test_registry_applies_on_mint_hardening() {
     alignas(64) unsigned char buf[4096]{};
     const size_t baseline = HotRegionRegistry::instance().size();
 
-    register_hot_region(buf, sizeof(buf), /*huge=*/false, "test_registry_applies");
+    register_hot_region(buf, sizeof(buf), /*huge=*/false);
     CHECK(HotRegionRegistry::instance().size() == baseline + 1, "buf registered");
 
     // This policy enables the region lock while staying on SCHED_OTHER,
@@ -427,6 +457,7 @@ int main() {
     test_core_selector();
     test_core_selector_avoids_cpu0();
     test_core_selector_avoids_exclude();
+    test_warm_cpus_leave_out_the_hot_cpu();
     test_policy_none_is_noop();
     test_policy_dev_quiet_pins_and_reverts();
     test_revert_clears_observers();

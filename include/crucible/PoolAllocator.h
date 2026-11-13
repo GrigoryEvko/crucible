@@ -120,8 +120,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
             std::memset(pool_, 0xCD, alloc_size);  // a read of unwritten pool memory stands out
 #endif
             const bool huge = (page_align == crucible::warden::kHugePageBytes);
-            crucible::warden::register_hot_region(pool_, alloc_size,
-                                                  /*huge=*/huge, "PoolAllocator.pool");
+            crucible::warden::register_hot_region(pool_, alloc_size, /*huge=*/huge);
         }
 
         if (num_slots_ > 0) {

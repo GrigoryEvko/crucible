@@ -1,16 +1,15 @@
 #pragma once
 
 // A CPU list from sysfs or from /proc/thread-self/status, such as "0-3,8,10-11".
-// The parsers must survive any text, and a parsed list stays small: a range
+// The parsers must survive any text, and a parsed set stays small: a range
 // such as "0-4294967295" that expands to billions of entries would take the
-// memory of the host.  The list is sorted, holds no duplicate, and names
-// only ids below the kernel ceiling.
+// memory of the host.  The set names only ids below the kernel ceiling, and
+// its loop gives each id one time, in ascending order.
 
 #include "../harness.h"
 
 #include <crucible/warden/CpuTopology.h>
-
-#include <algorithm>
+#include <foundation/os/PathText.h>
 
 namespace crucible::fuzz::boundary {
 
@@ -31,17 +30,25 @@ namespace crucible::fuzz::boundary {
 
 inline void run_cpu_list(std::span<const std::uint8_t> bytes) {
     constexpr std::size_t kMaxCpuCount = warden::detail::kMaxCpuCount;
-    const std::string_view text = as_text(bytes);
-    const auto claim_list = [](const std::vector<int>& cpus) {
+    // A TextView comes only from an owner of the base, so the bytes go into
+    // a path text.  A path text refuses a zero byte, so the harness drops
+    // each one, and a byte past the capacity ends the text.
+    ::foundation::os::PathText<4096> text{};
+    for (const std::uint8_t byte : bytes) {
+        if (byte == 0) continue;
+        if (text.append(static_cast<char>(byte)).is_err()) break;
+    }
+    const auto claim_set = [](const warden::CpuSet& cpus) {
         CRUCIBLE_FUZZ_CLAIM("cpu_list", cpus.size() <= kMaxCpuCount);
-        CRUCIBLE_FUZZ_CLAIM("cpu_list", std::ranges::is_sorted(cpus));
-        CRUCIBLE_FUZZ_CLAIM("cpu_list", std::ranges::adjacent_find(cpus) == cpus.end());
+        int previous = -1;
         for (const int cpu : cpus) {
+            CRUCIBLE_FUZZ_CLAIM("cpu_list", cpu > previous);
             CRUCIBLE_FUZZ_CLAIM("cpu_list", cpu >= 0 && static_cast<std::size_t>(cpu) < kMaxCpuCount);
+            previous = cpu;
         }
     };
-    claim_list(warden::detail::parse_cpulist(text));
-    claim_list(warden::detail::parse_cpus_allowed_list(text));
+    claim_set(warden::detail::parse_cpulist(text.c_text().view()));
+    claim_set(warden::detail::parse_cpus_allowed_list(text.c_text().view()));
 }
 
 }  // namespace crucible::fuzz::boundary

@@ -4,14 +4,14 @@
 
 namespace crucible::warden {
 
-// glibc has fixed this at 1024 ever since the fixed-size CPU set macros
-// shipped. A host with more CPUs than that needs the dynamic-set calls,
-// which nothing in CpuTopology.h uses. A smaller value on some other
-// library would make the fallback of allowed_cpus truncate in silence, so
-// it is caught here.
-#ifdef __linux__
-static_assert(CPU_SETSIZE >= 1024, "The allowed_cpus fallback iterates a fixed-size CPU set and assumes it "
-                                   "holds at least 1024 CPUs.");
-#endif
+// A set is a whole number of words of 64 bits.
+static_assert(CpuSet::capacity % 64 == 0);
+
+// The fallback of allowed_cpus puts each CPU of the affinity mask of the
+// kernel in a CpuSet.  A mask wider than the set would lose its high CPUs in
+// silence, so it is caught here.
+static_assert(::foundation::algebra::lattices::AffinityMask::kBits <= CpuSet::capacity,
+              "The allowed_cpus fallback puts each CPU of an affinity mask in a CpuSet, so the set holds at least "
+              "the width of the mask.");
 
 }  // namespace crucible::warden

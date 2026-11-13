@@ -5,6 +5,8 @@
 // The runtime hub stores and returns a verdict, and it names no member of
 // the watchdog, so the verdict has a header of its own.
 
+#include <fixy/Core.h>
+
 #include <cstdint>
 
 namespace crucible::warden {
@@ -17,7 +19,7 @@ enum class WatchdogVerdict : uint8_t {
     Downgrade = 2,  // the budget is exceeded; a weaker class is advised
 };
 
-[[nodiscard, gnu::const]] inline const char* watchdog_verdict_name(WatchdogVerdict v) noexcept {
+[[nodiscard, gnu::const]] constexpr ::fixy::TextView watchdog_verdict_name(WatchdogVerdict v) noexcept {
     switch (v) {
         case WatchdogVerdict::InsufficientData:
             return "InsufficientData";

@@ -1739,16 +1739,17 @@ private:
     // in the number of allowed CPUs, times the cost of one sysfs read.
     [[nodiscard]] static PinResult fan_out_(const ::fixy::InitLoadCtx& startup) noexcept {
 #ifdef __linux__
-        const std::vector<int> allowed = crucible::warden::allowed_cpus(startup);
-        const std::vector<int> isolated = crucible::warden::isolated_cpus(startup);
-        const auto is_free = [&isolated](int cpu) noexcept {
-            return cpu >= 0 && !std::binary_search(isolated.begin(), isolated.end(), cpu);
-        };
-        const auto free_count = static_cast<size_t>(std::count_if(allowed.begin(), allowed.end(), is_free));
+        const crucible::warden::CpuSet allowed = crucible::warden::allowed_cpus(startup);
+        const crucible::warden::CpuSet isolated = crucible::warden::isolated_cpus(startup);
+        const auto is_free = [&isolated](int cpu) noexcept { return cpu >= 0 && !isolated.contains(cpu); };
+        size_t free_count = 0;
+        for (const int cpu : allowed) {
+            if (is_free(cpu)) ++free_count;
+        }
         if (free_count == 0) return PinResult{};
 
         int start_cpu = sched_getcpu();
-        const bool is_current_allowed = std::binary_search(allowed.begin(), allowed.end(), start_cpu);
+        const bool is_current_allowed = allowed.contains(start_cpu);
         if (!is_current_allowed || !is_free(start_cpu)) {
             crucible::warden::CoreSelector selector{};
             selector.prefer_isolcpu = false;

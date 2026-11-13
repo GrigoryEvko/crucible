@@ -378,6 +378,7 @@ add_library(crucible STATIC
   src/topology/Pingmesh.cpp
   src/topology/Ptp.cpp
   src/topology/Telemetry.cpp
+  src/warden/CpuTopology.cpp
 )
 target_include_directories(crucible PUBLIC include/)
 target_link_libraries(crucible PUBLIC crucible_dialect)

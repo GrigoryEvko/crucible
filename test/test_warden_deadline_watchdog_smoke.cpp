@@ -14,7 +14,6 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
 #include <expected>
 #include <system_error>
 #include <type_traits>
@@ -68,19 +67,19 @@ static_assert(sizeof(DeadlineWatchdog) <= 64, "A watchdog must fit in one cache 
 int main() {
     int failures = 0;
 
-    if (std::strcmp(watchdog_verdict_name(WatchdogVerdict::InsufficientData), "InsufficientData") != 0) {
-        std::fprintf(stderr, "watchdog_verdict_name(InsufficientData) wrong: %s\n",
-                     watchdog_verdict_name(WatchdogVerdict::InsufficientData));
+    if (watchdog_verdict_name(WatchdogVerdict::InsufficientData) != ::fixy::TextView{"InsufficientData"}) {
+        ::fixy::report(::fixy::Sink::Err, "watchdog_verdict_name(InsufficientData) wrong: {}\n",
+                       watchdog_verdict_name(WatchdogVerdict::InsufficientData));
         ++failures;
     }
-    if (std::strcmp(watchdog_verdict_name(WatchdogVerdict::Healthy), "Healthy") != 0) {
-        std::fprintf(stderr, "watchdog_verdict_name(Healthy) wrong: %s\n",
-                     watchdog_verdict_name(WatchdogVerdict::Healthy));
+    if (watchdog_verdict_name(WatchdogVerdict::Healthy) != ::fixy::TextView{"Healthy"}) {
+        ::fixy::report(::fixy::Sink::Err, "watchdog_verdict_name(Healthy) wrong: {}\n",
+                       watchdog_verdict_name(WatchdogVerdict::Healthy));
         ++failures;
     }
-    if (std::strcmp(watchdog_verdict_name(WatchdogVerdict::Downgrade), "Downgrade") != 0) {
-        std::fprintf(stderr, "watchdog_verdict_name(Downgrade) wrong: %s\n",
-                     watchdog_verdict_name(WatchdogVerdict::Downgrade));
+    if (watchdog_verdict_name(WatchdogVerdict::Downgrade) != ::fixy::TextView{"Downgrade"}) {
+        ::fixy::report(::fixy::Sink::Err, "watchdog_verdict_name(Downgrade) wrong: {}\n",
+                       watchdog_verdict_name(WatchdogVerdict::Downgrade));
         ++failures;
     }
 
@@ -92,10 +91,10 @@ int main() {
         for (int i = 0; i < 5; ++i) {
             const auto v = watchdog.observe(runner);
             if (v != WatchdogVerdict::InsufficientData) {
-                std::fprintf(stderr,
-                             "nullptr-Senses Watchdog should return "
-                             "InsufficientData; got %s on iteration %d\n",
-                             watchdog_verdict_name(v), i);
+                ::fixy::report(::fixy::Sink::Err,
+                               "nullptr-Senses Watchdog should return "
+                               "InsufficientData; got {} on iteration {}\n",
+                               watchdog_verdict_name(v), i);
                 ++failures;
             }
         }
@@ -120,7 +119,7 @@ int main() {
         DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
         const auto v = watchdog.observe(runner);
         if (v != WatchdogVerdict::InsufficientData) {
-            std::fprintf(stderr, "budget=0 should disable watchdog; got %s\n", watchdog_verdict_name(v));
+            ::fixy::report(::fixy::Sink::Err, "budget=0 should disable watchdog; got {}\n", watchdog_verdict_name(v));
             ++failures;
         }
         if (watchdog.miss_budget() != 0u) {
@@ -140,10 +139,10 @@ int main() {
         for (int i = 0; i < 5; ++i) {
             const auto v = watchdog.observe(runner);
             if (v != WatchdogVerdict::InsufficientData) {
-                std::fprintf(stderr,
-                             "a zero window should disable the watchdog; "
-                             "got %s on iteration %d\n",
-                             watchdog_verdict_name(v), i);
+                ::fixy::report(::fixy::Sink::Err,
+                               "a zero window should disable the watchdog; "
+                               "got {} on iteration {}\n",
+                               watchdog_verdict_name(v), i);
                 ++failures;
             }
         }
@@ -270,7 +269,8 @@ int main() {
         DeadlineWatchdog watchdog_sink = std::move(watchdog_src);
         const auto v = watchdog_sink.observe(runner);
         if (v != WatchdogVerdict::InsufficientData) {
-            std::fprintf(stderr, "moved-into watchdog should still observe; got %s\n", watchdog_verdict_name(v));
+            ::fixy::report(::fixy::Sink::Err, "moved-into watchdog should still observe; got {}\n",
+                           watchdog_verdict_name(v));
             ++failures;
         }
     }

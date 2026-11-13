@@ -9,23 +9,21 @@
 #include "Registry.h"
 #include "CpuTopology.h"
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/atoms/Syscall.h>
 #include <fixy/os/Sched.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/os/Auxiliary.h>
 
 #include <bit>
 #include <cerrno>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
-#include <cstring>
-#include <optional>
 #include <tuple>
 #include <utility>
-#include <vector>
 
 #ifdef __linux__
 #include <sched.h>
@@ -89,20 +87,21 @@ struct sched_attr_t {
 
 namespace detail {
 
-[[nodiscard]] inline bool warden_quiet() noexcept {
-    const char* v = std::getenv("CRUCIBLE_WARDEN_QUIET");
-    return v != nullptr && v[0] == '1';
+// True when the environment variable name holds the text "1".
+[[nodiscard]] inline bool is_env_set_to_one(const char* name) noexcept {
+    const char* value = std::getenv(name);
+    return value != nullptr && value[0] == '1' && value[1] == '\0';
 }
 
 // Log scanners match on the "[warden] " prefix and the "unavailable"
 // infix, so the format is fixed:
-//   "[warden] <mechanism> unavailable[: <errno-string>]\n"
-[[gnu::cold]] inline void warn(const char* mechanism, int err) noexcept {
-    if (warden_quiet()) return;
+//   "[warden] <mechanism> unavailable[: error <number>]\n"
+[[gnu::cold]] inline void warn(::fixy::TextView mechanism, int err) noexcept {
+    if (is_env_set_to_one("CRUCIBLE_WARDEN_QUIET")) return;
     if (err != 0) {
-        std::fprintf(stderr, "[warden] %s unavailable: %s\n", mechanism, std::strerror(err));
+        ::fixy::report(::fixy::Sink::Err, "[warden] {} unavailable: error {}\n", mechanism, err);
     } else {
-        std::fprintf(stderr, "[warden] %s unavailable\n", mechanism);
+        ::fixy::report(::fixy::Sink::Err, "[warden] {} unavailable\n", mechanism);
     }
 }
 
@@ -111,19 +110,19 @@ namespace detail {
 class AppliedPolicy {
 public:
     struct LockedRegion {
-        void* addr;
-        size_t len;
+        void* addr = nullptr;
+        size_t len = 0;
     };
 
     AppliedPolicy() noexcept = default;
 
     AppliedPolicy(const AppliedPolicy&) = delete("AppliedPolicy owns prior-state memory; copying would revert twice");
     AppliedPolicy& operator=(const AppliedPolicy&) = delete("same reason");
-    AppliedPolicy(AppliedPolicy&& o) noexcept { swap_(o); }
+    AppliedPolicy(AppliedPolicy&& o) noexcept { take_(o); }
     AppliedPolicy& operator=(AppliedPolicy&& o) noexcept {
         if (this != &o) {
             revert();
-            swap_(o);
+            take_(o);
         }
         return *this;
     }
@@ -151,12 +150,11 @@ public:
             prior_sched_set_ = false;
         }
         // The restore goes through the affinity door, so a pin proof of the
-        // hot CPU stops being in force.
-        if (prior_affinity_) {
-            (void)std::move(*prior_affinity_).restore();
-            prior_affinity_.reset();
-        }
-        for (const auto& r : locked_) {
+        // hot CPU stops being in force.  The match leaves the Option empty.
+        std::move(prior_affinity_)
+            .match([](::fixy::sched::PriorAffinity prior) noexcept { (void)std::move(prior).restore(); },
+                   []() noexcept {});
+        for (const LockedRegion& r : locked_) {
             (void)::munlock(r.addr, r.len);
         }
         locked_.clear();
@@ -171,20 +169,37 @@ public:
     }
 
     [[nodiscard]] bool scheduler_applied() const noexcept { return prior_sched_set_; }
-    [[nodiscard]] bool affinity_applied() const noexcept { return prior_affinity_.has_value(); }
+    [[nodiscard]] bool affinity_applied() const noexcept { return prior_affinity_.is_some(); }
     [[nodiscard]] size_t regions_locked() const noexcept { return locked_.size(); }
     [[nodiscard]] int pinned_cpu() const noexcept { return pinned_cpu_; }
 
 private:
     friend class Hardening;
-    void swap_(AppliedPolicy& o) noexcept {
-        std::swap(reverted_, o.reverted_);
-        std::swap(prior_sched_, o.prior_sched_);
-        std::swap(prior_sched_set_, o.prior_sched_set_);
-        std::swap(prior_affinity_, o.prior_affinity_);
-        std::swap(thp_globally_disabled_, o.thp_globally_disabled_);
-        std::swap(pinned_cpu_, o.pinned_cpu_);
-        locked_.swap(o.locked_);
+
+    // Takes each change that source holds, and leaves source with no
+    // change to undo.
+    void take_(AppliedPolicy& source) noexcept {
+        reverted_ = source.reverted_;
+        prior_sched_ = source.prior_sched_;
+        prior_sched_set_ = source.prior_sched_set_;
+        // The match moves the mask out of source, and the assignment takes a
+        // new Option that is full.  A move assignment from source itself
+        // gives a false maybe-uninitialized error of GCC 16 at -O3 with ASan,
+        // because the compiler does not see that the slot of source is full.
+        std::move(source.prior_affinity_)
+            .match(
+                [this](::fixy::sched::PriorAffinity prior) noexcept {
+                    prior_affinity_ = ::fixy::Option<::fixy::sched::PriorAffinity>::some(std::move(prior));
+                },
+                [this]() noexcept { prior_affinity_ = ::fixy::none; });
+        thp_globally_disabled_ = source.thp_globally_disabled_;
+        pinned_cpu_ = source.pinned_cpu_;
+        locked_ = std::move(source.locked_);
+        source.prior_sched_set_ = false;
+        source.prior_affinity_ = ::fixy::none;
+        source.thp_globally_disabled_ = false;
+        source.pinned_cpu_ = -1;
+        source.locked_.clear();
     }
 
     bool reverted_ = false;
@@ -194,11 +209,12 @@ private:
     int prior_sched_ = 0;
 #endif
     // The mask that the pin of apply replaced, held while the pin stays.
-    std::optional<::fixy::sched::PriorAffinity> prior_affinity_{};
+    ::fixy::Option<::fixy::sched::PriorAffinity> prior_affinity_{};
     bool prior_sched_set_ = false;
     bool thp_globally_disabled_ = false;
     int pinned_cpu_ = -1;
-    std::vector<LockedRegion> locked_{};
+    // Apply locks at most one region for each region of the registry.
+    ::fixy::FixedList<LockedRegion, HotRegionRegistry::max_regions> locked_{};
 };
 
 // A policy changes process-wide state through privileged system calls,
@@ -232,7 +248,7 @@ public:
             if (cpu >= 0) {
                 auto prior = ::fixy::sched::apply_affinity_to_cpu(ctx, cpu);
                 if (prior) {
-                    g.prior_affinity_.emplace(std::move(*prior));
+                    g.prior_affinity_ = ::fixy::Option<::fixy::sched::PriorAffinity>::some(std::move(*prior));
                     g.pinned_cpu_ = cpu;
                 } else {
                     detail::warn("sched_getaffinity or sched_setaffinity", prior.error());
@@ -245,17 +261,13 @@ public:
         // isolated. Setting CRUCIBLE_WARDEN_FORCE to 1 overrides this.
         bool realtime_allowed = true;
         if (p.hot_sched != SchedClass::Other && g.pinned_cpu_ >= 0) {
-            const auto iso = isolated_cpus(ctx);
-            const bool on_isolcpu = std::find(iso.begin(), iso.end(), g.pinned_cpu_) != iso.end();
-            if (!on_isolcpu) {
-                const char* force = std::getenv("CRUCIBLE_WARDEN_FORCE");
-                if (!force || std::strcmp(force, "1") != 0) {
-                    std::fprintf(stderr,
-                                 "[warden] CPU %d not isolated — skipping RT class "
-                                 "(set CRUCIBLE_WARDEN_FORCE=1 or boot isolcpus=%d).\n",
-                                 g.pinned_cpu_, g.pinned_cpu_);
-                    realtime_allowed = false;
-                }
+            const bool on_isolcpu = isolated_cpus(ctx).contains(g.pinned_cpu_);
+            if (!on_isolcpu && !detail::is_env_set_to_one("CRUCIBLE_WARDEN_FORCE")) {
+                ::fixy::report(::fixy::Sink::Err,
+                               "[warden] CPU {} not isolated — skipping RT class "
+                               "(set CRUCIBLE_WARDEN_FORCE=1 or boot isolcpus={}).\n",
+                               g.pinned_cpu_, g.pinned_cpu_);
+                realtime_allowed = false;
             }
         }
 
@@ -305,10 +317,10 @@ public:
                     fifo.sched_policy = SCHED_FIFO;
                     fifo.sched_priority = static_cast<uint32_t>(p.hot_rt_priority);
                     if (sched_setattr_sys(0, &fifo, 0) == 0) {
-                        std::fprintf(stderr,
-                                     "[warden] SCHED_DEADLINE EPERM — fell back to "
-                                     "SCHED_FIFO prio=%d\n",
-                                     p.hot_rt_priority);
+                        ::fixy::report(::fixy::Sink::Err,
+                                       "[warden] SCHED_DEADLINE EPERM — fell back to "
+                                       "SCHED_FIFO prio={}\n",
+                                       p.hot_rt_priority);
                     } else {
                         g.prior_sched_set_ = false;
                         detail::warn("sched_setattr (FIFO fallback)", errno);
@@ -356,18 +368,18 @@ public:
         return g;
     }
 
+    // A policy holds at most one locked region for each slot of the
+    // registry, so a lock past that count is refused.
     [[nodiscard]] static bool lock_region(AppliedPolicy& g, void* addr, size_t len) noexcept {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return false;
+        if (g.locked_.size() == HotRegionRegistry::max_regions) return false;
         // MLOCK_ONFAULT locks each page as it faults in rather than
-        // faulting the whole region at once.
-        if (mlock2_sys(addr, len, MLOCK_ONFAULT) == 0) {
-            g.locked_.push_back({addr, len});
-            return true;
-        }
-        // A kernel without mlock2 takes the eager call instead.
-        if (::mlock(addr, len) == 0) {
-            g.locked_.push_back({addr, len});
+        // faulting the whole region at once.  A kernel without mlock2 takes
+        // the eager call instead.
+        if (mlock2_sys(addr, len, MLOCK_ONFAULT) == 0 || ::mlock(addr, len) == 0) {
+            static_cast<void>(g.locked_.push(AppliedPolicy::LockedRegion{.addr = addr, .len = len})
+                                  .expect("the test above found a free entry for the region"));
             return true;
         }
         detail::warn("mlock2/mlock", errno);
@@ -440,7 +452,9 @@ public:
     [[gnu::cold]] static void prefault(void* addr, size_t len) noexcept {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return;
-        const size_t page = static_cast<size_t>(::sysconf(_SC_PAGESIZE));
+        // A step of 4096 bytes touches each page also of a larger size.
+        const size_t page =
+            ::foundation::os::read_auxiliary(::foundation::os::AuxiliaryEntry::page_size).value_or(4096);
         volatile unsigned char* p = static_cast<unsigned char*>(addr);
         for (size_t off = 0; off < len; off += page)
             p[off] = p[off];

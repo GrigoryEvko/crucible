@@ -565,12 +565,12 @@ void test_run_pins_through_the_door_and_restores() {
 // until restore() gives the affinity back.
 void test_fan_out_keeps_the_worker_affinity() {
     constexpr ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
-    const std::vector<int> allowed = crucible::warden::allowed_cpus(startup);
-    const std::vector<int> isolated = crucible::warden::isolated_cpus(startup);
-    const auto is_free = [&isolated](int cpu) {
-        return cpu >= 0 && !std::binary_search(isolated.begin(), isolated.end(), cpu);
-    };
-    const auto free_cpus = static_cast<std::size_t>(std::count_if(allowed.begin(), allowed.end(), is_free));
+    const crucible::warden::CpuSet allowed = crucible::warden::allowed_cpus(startup);
+    const crucible::warden::CpuSet isolated = crucible::warden::isolated_cpus(startup);
+    std::size_t free_cpus = 0;
+    for (const int cpu : allowed) {
+        if (!isolated.contains(cpu)) ++free_cpus;
+    }
     const std::size_t unpinned_count = affinity_cpu_count();
 
     std::size_t fanned_worker_count = 0;

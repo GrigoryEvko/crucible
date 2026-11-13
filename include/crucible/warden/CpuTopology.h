@@ -4,12 +4,12 @@
 // general topology library would cover far more than the handful of
 // facts needed here, so the few files are parsed directly instead.
 //
-// A query that cannot read what it needs returns an empty list or a
+// A query that cannot read what it needs returns an empty set or a
 // sentinel rather than failing, so an older kernel, a chroot or an
 // unusual filesystem costs a degraded answer and nothing worse.
 //
 // Only the two parsers below carry gnu::pure. Their answer is a
-// function of the bytes behind the string_view they are handed, and
+// function of the characters of the TextView they are handed, and
 // that is memory the compiler models, so a reader can check the
 // justification by reading the body: no file is opened and no kernel
 // state is consulted.
@@ -18,38 +18,31 @@
 // attribute. gnu::pure promises the result depends only on the
 // arguments and on memory the compiler can see, and the contents of
 // /sys are neither. GCC 16 at -O2 acts on the promise: two source-level
-// reads of one path emit a single fopen when the reader is marked pure
+// reads of one path emit a single read when the reader is marked pure
 // and two when it is not. Folding is a wrong answer rather than a fast
 // one for a sampling query such as cpu_cur_freq_khz, whose value moves
 // every few milliseconds. Nothing here sits on a hot path, so the fold
 // bought nothing worth that.
 //
-// Each query that reads a file, or that asks the file system whether a
-// path exists, takes a context that owns IO and Block, because the open
-// and the read can wait on the kernel.  The gate is fixy::CtxFitsFileOpen.
-// Only the two parsers take no context.
+// Each query that reads a file, or that lists a directory, takes a
+// context that owns IO and Block, because the open and the read can wait
+// on the kernel.  The gate is fixy::CtxFitsFileOpen.  A query of the
+// affinity of the calling thread can also ask the kernel through the
+// affinity door, so its gate is CtxFitsAffinityQuery.  Only the two
+// parsers take no context.
+//
+// Each query of this header is a gate: it checks the context, and it calls
+// its body in src/warden/CpuTopology.cpp.  No query is hot, so an includer
+// compiles the gates and not the bodies.
 
+#include <fixy/Core.h>
 #include <fixy/os/OwnedFile.h>
-#include <foundation/contracts/Decide.h>
+#include <fixy/os/Sched.h>
 #include <foundation/contracts/Pre.h>
 
-#include <algorithm>
-#include <bitset>
-#include <charconv>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <limits>
-#include <system_error>
-#include <string>
-#include <string_view>
-#include <vector>
-
-#ifdef __linux__
-#include <sched.h>
-#include <unistd.h>
-#endif
+#include <utility>
 
 namespace crucible::warden {
 
@@ -58,219 +51,174 @@ namespace crucible::warden {
 
 namespace detail {
 
-template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline std::string read_small_file(Ctx const& ctx, const char* path) noexcept {
-    std::string out;
-    // The close is discharged by the handle on every exit path. Its
-    // result is ignored because a failure to close a sysfs read offers
-    // nothing to act on. A file that does not open reads as empty.
-    auto opened = ::fixy::mint_owned_file(ctx, path, "r");
-    if (!opened) return out;
-    const ::fixy::OwnedFile& f = *opened;
-    char buf[512];
-    while (std::fgets(buf, sizeof(buf), f.get()))
-        out.append(buf);
-    while (!out.empty() && (out.back() == '\n' || out.back() == '\r'))
-        out.pop_back();
-    return out;
-}
-
 // One past the largest CPU id that a list may name.  The kernel's own
 // ceiling, CONFIG_NR_CPUS, is at most 8192 on every distribution kernel.
 inline constexpr std::size_t kMaxCpuCount = 8192;
 
-// A kernel CPU list names single CPUs and inclusive ranges, separated
-// by commas, as in "0-3,5,7-9,15".  Spaces and tabs around an entry are
-// skipped.  Text that is not such a list gives an empty result: an entry
-// that is not a number or a range, an id at or past kMaxCpuCount, or a
-// range whose end is below its start.  Each caller treats an empty list
-// as an unknown answer, so malformed text costs a degraded answer.
-//
-// The ids are collected in a fixed set of kMaxCpuCount bits, so the result
-// is sorted, holds no duplicate, and has at most kMaxCpuCount entries
-// whatever the text repeats.
-//
-// Pure: the answer reads only the bytes behind s, and it opens no file.
-// Complexity: linear in the length of s, times kMaxCpuCount / 64 per range.
-[[nodiscard, gnu::pure]] constexpr std::vector<int> parse_cpulist(std::string_view s) noexcept {
-    const auto parse_cpu_id = [](std::string_view digits, std::size_t& cpu) noexcept {
-        const char* const end = digits.data() + digits.size();
-        const auto [stop, error] = std::from_chars(digits.data(), end, cpu);
-        return !digits.empty() && error == std::errc{} && stop == end && cpu < kMaxCpuCount;
-    };
-    const auto is_blank = [](char c) noexcept { return c == ' ' || c == '\t'; };
-
-    std::bitset<kMaxCpuCount> named;
-    const std::bitset<kMaxCpuCount> every_id = ~std::bitset<kMaxCpuCount>{};
-    while (!s.empty()) {
-        const std::size_t comma = s.find(',');
-        std::string_view entry = s.substr(0, comma);
-        s.remove_prefix(comma < s.size() ? comma + 1 : s.size());
-        while (!entry.empty() && is_blank(entry.front()))
-            entry.remove_prefix(1);
-        while (!entry.empty() && is_blank(entry.back()))
-            entry.remove_suffix(1);
-        if (entry.empty()) continue;
-
-        const std::size_t dash = entry.find('-');
-        std::size_t first_id = 0;
-        std::size_t last_id = 0;
-        if (!parse_cpu_id(entry.substr(0, dash), first_id)) return {};
-        last_id = first_id;
-        if (dash < entry.size() && !parse_cpu_id(entry.substr(dash + 1), last_id)) return {};
-        if (last_id < first_id) return {};
-        const std::size_t width = last_id - first_id + 1;
-        named |= (every_id >> (kMaxCpuCount - width)) << first_id;
-    }
-
-    std::vector<int> out;
-    for (std::size_t cpu = 0; cpu < kMaxCpuCount; ++cpu) {
-        if (named.test(cpu)) out.push_back(static_cast<int>(cpu));
-    }
-    return out;
-}
-
-// /proc/thread-self/status carries one line per field. The line of
-// interest reads "Cpus_allowed_list:" followed by a tab and a CPU list.
-//
-// Pure: the caller hands in the already-read text, so this reads only
-// the bytes behind status and opens no file.
-[[nodiscard, gnu::pure]] constexpr std::vector<int> parse_cpus_allowed_list(std::string_view status) noexcept {
-    constexpr std::string_view key = "Cpus_allowed_list:";
-    while (!status.empty()) {
-        const std::size_t line_end = status.find('\n');
-        const std::string_view line = status.substr(0, line_end);
-        status.remove_prefix(line_end < status.size() ? line_end + 1 : status.size());
-        if (line.starts_with(key)) return parse_cpulist(line.substr(key.size()));
-    }
-    return {};
-}
-
 }  // namespace detail
 
-// glibc answers _SC_NPROCESSORS_ONLN with a read of
-// /sys/devices/system/cpu/online, so this query also takes the context.
-// One on failure, which is the conservative answer.
-template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline int num_online_cpus(Ctx const&) noexcept {
-#ifdef __linux__
-    const long n = sysconf(_SC_NPROCESSORS_ONLN);
-    return (n > 0) ? static_cast<int>(n) : 1;
-#else
-    return 1;
-#endif
-}
+class CpuSetCursor;
 
-namespace detail {
+// A set of CPU ids, each below detail::kMaxCpuCount, as one bit for each
+// id.  So the set is sorted and holds no duplicate, whatever the text that
+// a parser read repeats.  The loop `for (int cpu : set)` gives each id in
+// ascending order.  A set has 1 KiB.
+class CpuSet {
+public:
+    static constexpr std::size_t capacity = detail::kMaxCpuCount;
 
-// Reached when procfs is unreadable or malformed. Ask the kernel
-// directly, and if even that fails assume every online CPU is
-// available.
-template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard, gnu::cold]] inline std::vector<int> allowed_cpus_fallback(Ctx const& ctx) noexcept {
-#ifdef __linux__
-    cpu_set_t set;
-    CPU_ZERO(&set);
-    if (::sched_getaffinity(0, sizeof(set), &set) == 0) {
-        std::vector<int> out;
-        for (int c = 0; c < CPU_SETSIZE; ++c)
-            if (CPU_ISSET(static_cast<size_t>(c), &set)) out.push_back(c);
-        return out;
+    // The empty set.
+    constexpr CpuSet() noexcept = default;
+
+    // Adds each id from first to last, both included.  Complexity: linear in
+    // the count of the words of the range.
+    constexpr void insert_range(std::size_t first, std::size_t last) noexcept {
+        CRUCIBLE_PRE(first <= last && last < capacity);
+        for (std::size_t word = first / 64; word <= last / 64; ++word) {
+            std::size_t const low = word * 64;
+            std::size_t const from = first > low ? first - low : 0;
+            std::size_t const to = last < low + 63 ? last - low : 63;
+            words_.at(word_of_(low)) |= ::fixy::low_mask<std::uint64_t>(static_cast<int>(to - from + 1)) << from;
+        }
     }
-#endif
-    std::vector<int> out;
-    const int n = num_online_cpus(ctx);
-    for (int c = 0; c < n; ++c)
-        out.push_back(c);
-    return out;
-}
 
-}  // namespace detail
-
-// The CPUs the calling thread may run on, as granted by whatever placed
-// it. Procfs is the authoritative source and is consulted first. The file
-// is the status of the calling thread. /proc/self/status gives the
-// affinity of the main thread of the process, and the fallback below
-// gives the affinity of the calling thread, so the two would not agree.
-template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline std::vector<int> allowed_cpus(Ctx const& ctx) noexcept {
-    const auto status = detail::read_small_file(ctx, "/proc/thread-self/status");
-    if (auto v = detail::parse_cpus_allowed_list(status); !v.empty()) return v;
-    return detail::allowed_cpus_fallback(ctx);
-}
-
-// The CPUs the kernel command line has withheld from the scheduler.
-// Empty when no such argument was given.
-template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline std::vector<int> isolated_cpus(Ctx const& ctx) noexcept {
-    return detail::parse_cpulist(detail::read_small_file(ctx, "/sys/devices/system/cpu/isolated"));
-}
-
-template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline std::vector<int> smt_siblings(Ctx const& ctx, int cpu) noexcept {
-    char path[128];
-    std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", cpu);
-    return detail::parse_cpulist(detail::read_small_file(ctx, path));
-}
-
-// On a hybrid part the core-type file reads "Core" for a performance
-// core and "Atom" for an efficiency core. A uniform part does not
-// publish the file at all, and its absence counts as a performance
-// core so that every CPU on such a host answers the same way.
-template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline bool is_p_core(Ctx const& ctx, int cpu) noexcept {
-    char path[128];
-    std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/topology/core_type", cpu);
-    const auto s = detail::read_small_file(ctx, path);
-    if (s.empty()) return true;
-    return s.find("Core") != std::string::npos;
-}
-
-// The NUMA node a CPU belongs to, or -1 when it cannot be determined.
-// The kernel publishes the membership as a symlink named after the
-// node, so the node number is recovered by testing which name exists.
-// Nodes past the search bound below read as -1.
-template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline int numa_node_of(Ctx const&, int cpu) noexcept {
-    for (int n = 0; n < 64; ++n) {
-        char path[128];
-        std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/node%d", cpu, n);
-        if (::access(path, F_OK) == 0) return n;
+    constexpr void insert(std::size_t cpu) noexcept {
+        CRUCIBLE_PRE(cpu < capacity);
+        words_.at(word_of_(cpu)) |= std::uint64_t{1} << (cpu % 64);
     }
-    return -1;
-}
 
-// The NUMA node nearest a device. The caller passes the sysfs path of
-// that device's numa_node file. -1 when it cannot be read.
-template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline int numa_node_of_device(Ctx const& ctx, const char* sysfs_numa_node_path) noexcept {
-    const auto s = detail::read_small_file(ctx, sysfs_numa_node_path);
-    if (s.empty()) return -1;
-    const int n = std::atoi(s.c_str());
-    return n < 0 ? -1 : n;
-}
+    // True when the set holds cpu.  A negative id and an id at or past the
+    // capacity are in no set.
+    [[nodiscard]] constexpr bool contains(int cpu) const noexcept {
+        if (cpu < 0 || static_cast<std::size_t>(cpu) >= capacity) {
+            return false;
+        }
+        std::size_t const id = static_cast<std::size_t>(cpu);
+        return ((words_.at(word_of_(id)) >> (id % 64)) & 1u) != 0;
+    }
 
-// Zero when the frequency driver publishes nothing for this CPU.
-template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline uint64_t cpu_cur_freq_khz(Ctx const& ctx, int cpu) noexcept {
-    char path[128];
-    std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq", cpu);
-    const auto s = detail::read_small_file(ctx, path);
-    if (s.empty()) return 0;
-    const long v = std::atol(s.c_str());
-    return v > 0 ? static_cast<uint64_t>(v) : 0;
-}
+    // Complexity: linear in the words of the set.
+    [[nodiscard]] constexpr bool is_empty() const noexcept {
+        for (std::uint64_t const word : words_) {
+            if (word != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
 
-// Zero when the frequency driver publishes nothing for this CPU.
-template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline uint64_t cpu_max_freq_khz(Ctx const& ctx, int cpu) noexcept {
-    char path[128];
-    std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", cpu);
-    const auto s = detail::read_small_file(ctx, path);
-    if (s.empty()) return 0;
-    const long v = std::atol(s.c_str());
-    return v > 0 ? static_cast<uint64_t>(v) : 0;
-}
+    // The count of the ids.  Complexity: linear in the words of the set.
+    [[nodiscard]] constexpr std::size_t size() const noexcept {
+        std::size_t count = 0;
+        for (std::uint64_t const word : words_) {
+            count += static_cast<std::size_t>(::fixy::popcount(word));
+        }
+        return count;
+    }
+
+    // The ids that the two sets both hold.
+    [[nodiscard]] constexpr CpuSet intersection(CpuSet const& other) const noexcept {
+        CpuSet both{};
+        for (WordIndex const index : words_.indices()) {
+            both.words_.at(index) = words_.at(index) & other.words_.at(index);
+        }
+        return both;
+    }
+
+    // The lowest id, or no value for the empty set.
+    [[nodiscard]] constexpr ::fixy::Option<int> first() const noexcept {
+        std::size_t const position = next_from_(0);
+        if (position == capacity) {
+            return ::fixy::none;
+        }
+        return ::fixy::some(static_cast<int>(position));
+    }
+
+    // The highest id, or no value for the empty set.  Complexity: linear in
+    // the words of the set.
+    [[nodiscard]] constexpr ::fixy::Option<int> last() const noexcept {
+        ::fixy::Option<int> highest = ::fixy::none;
+        for (WordIndex const index : words_.indices()) {
+            std::uint64_t const word = words_.at(index);
+            if (word != 0) {
+                std::size_t const top_bit = 63 - static_cast<std::size_t>(::fixy::countl_zero(word));
+                highest = ::fixy::some(static_cast<int>(index.raw() * 64 + top_bit));
+            }
+        }
+        return highest;
+    }
+
+    [[nodiscard]] constexpr CpuSetCursor begin() const& noexcept;
+    [[nodiscard]] constexpr CpuSetCursor end() const& noexcept;
+    void begin() const&& = delete("a cursor of a temporary CpuSet points into an object that the full expression ends");
+    void end() const&& = delete("a cursor of a temporary CpuSet points into an object that the full expression ends");
+
+    [[nodiscard]] friend constexpr bool operator==(CpuSet const& left, CpuSet const& right) noexcept {
+        return left.words_ == right.words_;
+    }
+
+private:
+    friend class CpuSetCursor;
+
+    static constexpr std::size_t kWords = capacity / 64;
+    using WordIndex = ::fixy::Index<kWords>;
+
+    // The word of an id below the capacity.
+    [[nodiscard]] static constexpr WordIndex word_of_(std::size_t id) noexcept {
+        return WordIndex::check(id / 64).expect("an id below the capacity of a CpuSet has a word of the set");
+    }
+
+    // The first id at or after position that the set holds, or the capacity
+    // when no id is there.  Complexity: linear in the words after position.
+    [[nodiscard]] constexpr std::size_t next_from_(std::size_t position) const noexcept {
+        while (position < capacity) {
+            std::uint64_t const word = words_.at(word_of_(position)) >> (position % 64);
+            if (word != 0) {
+                return position + static_cast<std::size_t>(::fixy::countr_zero(word));
+            }
+            position = (position / 64 + 1) * 64;
+        }
+        return capacity;
+    }
+
+    ::foundation::core::FixedArray<std::uint64_t, kWords> words_{};
+};
+
+// The position of a loop over a CpuSet: the next id of the set, or the
+// capacity of the set at the end.  It comes only from begin() and end() of
+// a CpuSet, and it borrows that set.
+class CpuSetCursor {
+public:
+    [[nodiscard]] constexpr int operator*() const noexcept { return static_cast<int>(position_); }
+
+    constexpr CpuSetCursor& operator++() noexcept {
+        position_ = (*set_).next_from_(position_ + 1);
+        return *this;
+    }
+
+    [[nodiscard]] friend constexpr bool operator==(CpuSetCursor const& left, CpuSetCursor const& right) noexcept {
+        return left.position_ == right.position_;
+    }
+
+private:
+    friend class CpuSet;
+
+    constexpr CpuSetCursor(::fixy::Ref<CpuSet const> set, std::size_t position) noexcept
+        : set_{set}, position_{position} {}
+
+    ::fixy::Ref<CpuSet const> set_;
+    std::size_t position_ = CpuSet::capacity;
+};
+
+constexpr CpuSetCursor CpuSet::begin() const& noexcept { return CpuSetCursor{::fixy::to(*this), next_from_(0)}; }
+
+constexpr CpuSetCursor CpuSet::end() const& noexcept { return CpuSetCursor{::fixy::to(*this), capacity}; }
+
+// A query of the affinity of the calling thread reads procfs, and when
+// procfs gives no answer, it asks the kernel through the affinity door of
+// fixy/os/Sched.h.  So its context can open a file and read the affinity.
+template <class Ctx>
+concept CtxFitsAffinityQuery = ::fixy::CtxFitsFileOpen<Ctx> && ::fixy::sched::CtxFitsRuntimeAffinity<Ctx>;
 
 struct CoreSelector {
     bool prefer_isolcpu = true;
@@ -292,122 +240,250 @@ struct CoreSelector {
     int numa_hint = -1;  // -1 expresses no preference
 };
 
-// Returns -1 only when this task is allowed no CPU at all, which is
-// unrecoverable and means the caller should refuse to start.
-template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline int select_hot_cpu(Ctx const& ctx, const CoreSelector& sel,
-                                        const std::vector<int>& exclude = {}) noexcept {
-    // The bonuses are multiplied by this before the CPU index is
-    // subtracted, so the index can only break ties between equal
-    // bonuses and never outweigh one. 1024 exceeds the size of the
-    // fixed CPU set this selector works with.
-    constexpr int kScoreScale = 1024;
+namespace detail {
 
-    const auto allowed = allowed_cpus(ctx);
-    if (allowed.empty()) return -1;
-
-    if (sel.explicit_cpu >= 0 && std::find(allowed.begin(), allowed.end(), sel.explicit_cpu) != allowed.end()) {
-        return sel.explicit_cpu;
-    }
-
-    const auto is_excluded = [&](int c) noexcept {
-        return std::find(exclude.begin(), exclude.end(), c) != exclude.end();
-    };
-
-    // Candidate pools, most preferred first.
-    std::vector<std::vector<int>> pools;
-
-    if (sel.prefer_isolcpu) {
-        std::vector<int> iso = isolated_cpus(ctx);
-        std::vector<int> inter;
-        std::set_intersection(allowed.begin(), allowed.end(), iso.begin(), iso.end(), std::back_inserter(inter));
-        if (!inter.empty()) pools.push_back(std::move(inter));
-    }
-    pools.push_back(allowed);
-
-    auto try_pool = [&](const std::vector<int>& pool) noexcept -> int {
-        // The starting score is the lowest representable one so that a
-        // candidate scoring below zero, which the first CPU does under
-        // its penalty, is still chosen when it is the only one here.
-        int best = -1;
-        int best_score = std::numeric_limits<int>::min();
-        for (const int c : pool) {
-            if (is_excluded(c)) continue;
-            if (sel.avoid_smt_sibling) {
-                const auto sibs = smt_siblings(ctx, c);
-                bool clash = false;
-                for (const int s : sibs)
-                    if (s != c && is_excluded(s)) {
-                        clash = true;
-                        break;
-                    }
-                if (clash) continue;
-            }
-            int score = 0;
-            if (sel.prefer_p_core && is_p_core(ctx, c)) score += 4;
-            if (sel.numa_hint >= 0 && numa_node_of(ctx, c) == sel.numa_hint) score += 2;
-            // The penalties are sized against the performance-core
-            // bonus above. The larger one outweighs it, so any other
-            // CPU beats the first one. The smaller one cancels it, so
-            // the sibling loses to an unrelated performance core but
-            // still beats an unrelated efficiency core.
-            if (sel.avoid_cpu0) {
-                if (c == 0) {
-                    score -= 8;
-                } else {
-                    const auto sibs = smt_siblings(ctx, c);
-                    if (std::find(sibs.begin(), sibs.end(), 0) != sibs.end()) score -= 4;
-                }
-            }
-            // Between equal scores the lowest index wins, which keeps
-            // the choice stable from run to run.
-            score = score * kScoreScale - c;
-            if (score > best_score) {
-                best_score = score;
-                best = c;
-            }
-        }
-        return best;
-    };
-
-    for (const auto& pool : pools) {
-        const int pick = try_pool(pool);
-        if (pick >= 0) return pick;
-    }
-    for (const int c : allowed)
-        if (!is_excluded(c)) return c;
-    return -1;
+// The first count characters of text, or the whole text when count is not
+// less than its size.
+[[nodiscard]] constexpr ::fixy::TextView text_prefix(::fixy::TextView text, std::size_t count) noexcept {
+    return text.window(0, count < text.size() ? count : text.size()).value_or(::fixy::TextView{});
 }
 
-// Companion CPUs for the supporting threads. Those on the same NUMA
-// node as the given CPU come first, and the given CPU itself is never
-// among them.
-template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline std::vector<int> select_warm_cpus(Ctx const& ctx, int hot_cpu, int count) noexcept {
-    CRUCIBLE_PRE(::foundation::decide::non_negative(count));
-    const auto allowed = allowed_cpus(ctx);
-    const int hot_numa = (hot_cpu >= 0) ? numa_node_of(ctx, hot_cpu) : -1;
+// The characters of text after its first count characters, or no character
+// when count is not less than its size.
+[[nodiscard]] constexpr ::fixy::TextView text_suffix(::fixy::TextView text, std::size_t count) noexcept {
+    if (count >= text.size()) {
+        return ::fixy::TextView{};
+    }
+    return text.window(count, text.size() - count).value_or(::fixy::TextView{});
+}
 
-    std::vector<int> same_numa;
-    std::vector<int> other;
-    for (const int c : allowed) {
-        if (c == hot_cpu) continue;
-        const int n = numa_node_of(ctx, c);
-        if (hot_numa >= 0 && n == hot_numa)
-            same_numa.push_back(c);
-        else
-            other.push_back(c);
+// The characters of text with no space or tab at either end.  Complexity:
+// linear in the size of text.
+[[nodiscard]] constexpr ::fixy::TextView trim_blanks(::fixy::TextView text) noexcept {
+    std::size_t first = text.size();
+    std::size_t end = 0;
+    std::size_t position = 0;
+    for (char const character : text) {
+        if (character != ' ' && character != '\t') {
+            if (first == text.size()) {
+                first = position;
+            }
+            end = position + 1;
+        }
+        ++position;
     }
-    std::vector<int> out;
-    for (const int c : same_numa) {
-        if (static_cast<int>(out.size()) >= count) break;
-        out.push_back(c);
+    if (first == text.size()) {
+        return ::fixy::TextView{};
     }
-    for (const int c : other) {
-        if (static_cast<int>(out.size()) >= count) break;
-        out.push_back(c);
+    return text.window(first, end - first).value_or(::fixy::TextView{});
+}
+
+// The id of a CPU in decimal digits, or no value for text that is not a
+// run of decimal digits, and for an id at or past kMaxCpuCount.  The parse
+// of the Report family also reads a 0x prefix, so the walk of the digits
+// refuses each character other than a digit first.
+[[nodiscard]] constexpr ::fixy::Option<std::size_t> parse_cpu_id(::fixy::TextView digits) noexcept {
+    if (digits.size() == 0) {
+        return ::fixy::none;
     }
-    return out;
+    for (char const character : digits) {
+        if (character < '0' || character > '9') {
+            return ::fixy::none;
+        }
+    }
+    return ::fixy::parse<std::size_t>(digits).match(
+        [](std::size_t cpu) noexcept -> ::fixy::Option<std::size_t> {
+            if (cpu >= kMaxCpuCount) {
+                return ::fixy::none;
+            }
+            return ::fixy::some(cpu);
+        },
+        [](::fixy::ParseError) noexcept -> ::fixy::Option<std::size_t> { return ::fixy::none; });
+}
+
+// A kernel CPU list names single CPUs and inclusive ranges, separated
+// by commas, as in "0-3,5,7-9,15".  Spaces and tabs around an entry are
+// skipped.  Text that is not such a list gives an empty set: an entry
+// that is not a number or a range, an id at or past kMaxCpuCount, or a
+// range whose end is below its start.  Each caller treats an empty set
+// as an unknown answer, so malformed text costs a degraded answer.
+//
+// Pure: the answer reads only the characters of text, and it opens no
+// file.  Complexity: linear in the size of text, plus the words of each
+// range.
+[[nodiscard, gnu::pure]] constexpr CpuSet parse_cpulist(::fixy::TextView text) noexcept {
+    CpuSet named{};
+    ::fixy::TextView rest = text;
+    while (rest.size() != 0) {
+        std::size_t const comma = ::fixy::find(rest, ',').value_or(rest.size());
+        ::fixy::TextView const entry = trim_blanks(text_prefix(rest, comma));
+        rest = text_suffix(rest, comma + 1);
+        if (entry.size() == 0) {
+            continue;
+        }
+
+        std::size_t const dash = ::fixy::find(entry, '-').value_or(entry.size());
+        ::fixy::Option<std::size_t> first_id = parse_cpu_id(text_prefix(entry, dash));
+        if (first_id.is_none()) {
+            return CpuSet{};
+        }
+        std::size_t const first = std::move(first_id).expect("the test above found an id");
+        std::size_t last = first;
+        if (dash < entry.size()) {
+            ::fixy::Option<std::size_t> last_id = parse_cpu_id(text_suffix(entry, dash + 1));
+            if (last_id.is_none()) {
+                return CpuSet{};
+            }
+            last = std::move(last_id).expect("the test above found an id");
+        }
+        if (last < first) {
+            return CpuSet{};
+        }
+        named.insert_range(first, last);
+    }
+    return named;
+}
+
+// /proc/thread-self/status carries one line per field. The line of
+// interest reads "Cpus_allowed_list:" followed by a tab and a CPU list.
+//
+// Pure: the caller hands in the already-read text, so this reads only
+// the characters of status and opens no file.
+[[nodiscard, gnu::pure]] constexpr CpuSet parse_cpus_allowed_list(::fixy::TextView status) noexcept {
+    constexpr ::fixy::TextView key = "Cpus_allowed_list:";
+    ::fixy::TextView rest = status;
+    while (rest.size() != 0) {
+        std::size_t const line_end = ::fixy::find(rest, '\n').value_or(rest.size());
+        ::fixy::TextView const line = text_prefix(rest, line_end);
+        rest = text_suffix(rest, line_end + 1);
+        if (::fixy::starts_with(line, key)) {
+            return parse_cpulist(text_suffix(line, key.size()));
+        }
+    }
+    return CpuSet{};
+}
+
+// The bodies of the queries below, in src/warden/CpuTopology.cpp.  Each
+// reads sysfs or procfs, so only a gate of this header calls one.  A read
+// that fails gives the answer that its query documents.
+[[nodiscard]] int read_online_cpu_count() noexcept;
+[[nodiscard]] CpuSet read_allowed_cpus_of_thread() noexcept;
+[[nodiscard]] CpuSet cpus_of_affinity(::fixy::Option<::foundation::algebra::lattices::AffinityMask> mask) noexcept;
+[[nodiscard]] CpuSet read_isolated_cpus() noexcept;
+[[nodiscard]] CpuSet read_smt_siblings(int cpu) noexcept;
+[[nodiscard]] bool read_is_p_core(int cpu) noexcept;
+[[nodiscard]] int read_numa_node_of(int cpu) noexcept;
+[[nodiscard]] int read_numa_node_of_device(::fixy::CText sysfs_numa_node_path) noexcept;
+[[nodiscard]] std::uint64_t read_cpu_cur_freq_khz(int cpu) noexcept;
+[[nodiscard]] std::uint64_t read_cpu_max_freq_khz(int cpu) noexcept;
+[[nodiscard]] int select_hot_cpu_of(CpuSet const& allowed, CoreSelector const& sel, CpuSet const& exclude) noexcept;
+[[nodiscard]] CpuSet select_warm_cpus_of(CpuSet const& allowed, int hot_cpu, int count) noexcept;
+
+}  // namespace detail
+
+// glibc answers _SC_NPROCESSORS_ONLN with a read of
+// /sys/devices/system/cpu/online, and this query reads the same file.
+// One on failure, which is the conservative answer.
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline int num_online_cpus(Ctx const&) noexcept {
+    return detail::read_online_cpu_count();
+}
+
+namespace detail {
+
+// Reached when procfs is unreadable or malformed. Ask the kernel
+// directly, and if even that fails assume every online CPU is
+// available.
+template <class Ctx>
+    requires CtxFitsAffinityQuery<Ctx>
+[[nodiscard, gnu::cold]] inline CpuSet allowed_cpus_fallback(Ctx const& ctx) noexcept {
+    return cpus_of_affinity(::fixy::sched::read_affinity(ctx).ok());
+}
+
+}  // namespace detail
+
+// The CPUs the calling thread may run on, as granted by whatever placed
+// it. Procfs is the authoritative source and is consulted first. The file
+// is the status of the calling thread. /proc/self/status gives the
+// affinity of the main thread of the process, and the fallback below
+// gives the affinity of the calling thread, so the two would not agree.
+template <class Ctx>
+    requires CtxFitsAffinityQuery<Ctx>
+[[nodiscard]] inline CpuSet allowed_cpus(Ctx const& ctx) noexcept {
+    CpuSet allowed = detail::read_allowed_cpus_of_thread();
+    if (!allowed.is_empty()) {
+        return allowed;
+    }
+    return detail::allowed_cpus_fallback(ctx);
+}
+
+// The CPUs the kernel command line has withheld from the scheduler.
+// Empty when no such argument was given.
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline CpuSet isolated_cpus(Ctx const&) noexcept {
+    return detail::read_isolated_cpus();
+}
+
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline CpuSet smt_siblings(Ctx const&, int cpu) noexcept {
+    return detail::read_smt_siblings(cpu);
+}
+
+// On a hybrid part the core-type file reads "Core" for a performance
+// core and "Atom" for an efficiency core. A uniform part does not
+// publish the file at all, and its absence counts as a performance
+// core so that every CPU on such a host answers the same way.
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline bool is_p_core(Ctx const&, int cpu) noexcept {
+    return detail::read_is_p_core(cpu);
+}
+
+// The NUMA node a CPU belongs to, or -1 when it cannot be determined.
+// The kernel publishes the membership as a symlink named after the
+// node, so the node number is the number of the entry of the CPU
+// directory whose name starts with "node".
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline int numa_node_of(Ctx const&, int cpu) noexcept {
+    return detail::read_numa_node_of(cpu);
+}
+
+// The NUMA node nearest a device. The caller passes the sysfs path of
+// that device's numa_node file. -1 when it cannot be read.
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline int numa_node_of_device(Ctx const&, ::fixy::CText sysfs_numa_node_path) noexcept {
+    return detail::read_numa_node_of_device(sysfs_numa_node_path);
+}
+
+// Zero when the frequency driver publishes nothing for this CPU.
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline std::uint64_t cpu_cur_freq_khz(Ctx const&, int cpu) noexcept {
+    return detail::read_cpu_cur_freq_khz(cpu);
+}
+
+// Zero when the frequency driver publishes nothing for this CPU.
+template <::fixy::CtxFitsFileOpen Ctx>
+[[nodiscard]] inline std::uint64_t cpu_max_freq_khz(Ctx const&, int cpu) noexcept {
+    return detail::read_cpu_max_freq_khz(cpu);
+}
+
+// Returns -1 only when this task is allowed no CPU at all, which is
+// unrecoverable and means the caller should refuse to start.
+template <class Ctx>
+    requires CtxFitsAffinityQuery<Ctx>
+[[nodiscard]] inline int select_hot_cpu(Ctx const& ctx, const CoreSelector& sel,
+                                        CpuSet const& exclude = CpuSet{}) noexcept {
+    return detail::select_hot_cpu_of(allowed_cpus(ctx), sel, exclude);
+}
+
+// At most count companion CPUs for the supporting threads, from the CPUs
+// that the calling thread may run on.  The CPUs on the same NUMA node as
+// the given CPU are chosen first, and the given CPU itself is never among
+// them.  Complexity: linear in the allowed CPUs, times the cost of one
+// sysfs read.
+template <class Ctx>
+    requires CtxFitsAffinityQuery<Ctx>
+[[nodiscard]] inline CpuSet select_warm_cpus(Ctx const& ctx, int hot_cpu, int count) noexcept {
+    return detail::select_warm_cpus_of(allowed_cpus(ctx), hot_cpu, count);
 }
 
 }  // namespace crucible::warden

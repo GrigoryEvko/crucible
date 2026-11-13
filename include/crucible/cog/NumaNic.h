@@ -15,7 +15,6 @@
 #include <foundation/diag/Tag.h>
 
 #include <cstdint>
-#include <string_view>
 
 namespace crucible::cog {
 
@@ -43,7 +42,7 @@ public:
 // The query reads a sysfs file, so it takes a context that owns IO and
 // Block.
 template <::fixy::CtxFitsFileOpen Ctx>
-[[nodiscard]] inline NumaNodeId query_numa_for_nic(Ctx const& ctx, const char* sysfs_numa_node_path) noexcept {
+[[nodiscard]] inline NumaNodeId query_numa_for_nic(Ctx const& ctx, ::fixy::CText sysfs_numa_node_path) noexcept {
     int const node = warden::numa_node_of_device(ctx, sysfs_numa_node_path);
     if (node < 0 || node > UINT16_MAX - 1) {
         return NumaNodeId::unknown();
@@ -67,12 +66,14 @@ enum class NumaNicIssue : std::uint32_t {
 };
 
 struct NumaNic_Misaligned : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "NumaNic_Misaligned";
-    static constexpr std::string_view description = "NIC queue, IRQ, RPS, XPS, or peer placement is not NUMA-local "
-                                                    "to the target runtime placement.";
-    static constexpr std::string_view remediation = "Use the operator-policy NicConfig path to steer IRQ, RPS, and "
-                                                    "XPS affinity to target-node-local cores; keep this verifier "
-                                                    "read-only.";
+    static constexpr ::foundation::diag::tag_text_literal name = "NumaNic_Misaligned";
+    static constexpr ::foundation::diag::tag_text_literal description =
+        "NIC queue, IRQ, RPS, XPS, or peer placement is not NUMA-local "
+        "to the target runtime placement.";
+    static constexpr ::foundation::diag::tag_text_literal remediation =
+        "Use the operator-policy NicConfig path to steer IRQ, RPS, and "
+        "XPS affinity to target-node-local cores; keep this verifier "
+        "read-only.";
 };
 
 struct NumaNicFacts {
