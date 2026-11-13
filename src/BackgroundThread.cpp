@@ -343,7 +343,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     memory.published = PublishedRegion{.region = &published.get(), .reset_point = reset_point};
 
     uncompiled_regions.push(published.get());
-    active_region.store(&published.get(), std::memory_order_release);
+    active_region.store_release(published);
     owner_marks_ = RegionMarks{};
     if (region_ready_cb) {
         region_ready_cb(bg, stage, memory.published);

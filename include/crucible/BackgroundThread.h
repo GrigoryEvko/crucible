@@ -66,8 +66,9 @@ struct BackgroundThread {
     // the region through its own slot, which carries the reset point.
     //
     // Own cache line, because a reader reads it while the background writes
-    // the fields that follow.
-    alignas(64) std::atomic<RegionNode*> active_region{nullptr};
+    // the fields that follow.  The reference is empty until the first
+    // publication.
+    alignas(64)::fixy::Atomic<::fixy::WeakRef<RegionNode>> active_region{};
 
     // A point of the recorded op stream, and the kind of the reset at it.
     // The point is the count of ops that the producer put into the trace ring
@@ -197,7 +198,7 @@ struct BackgroundThread {
     struct OwnerJob {
         void* ctx = nullptr;
         void (*fn)(void*, PublishStage) noexcept = nullptr;
-        std::atomic<bool> done{false};
+        ::fixy::Atomic<bool> done{};
     };
 
     // Runs job on the thread that owns the publish-stage state, and returns
@@ -214,31 +215,30 @@ struct BackgroundThread {
     template <typename Job>
         requires std::is_nothrow_invocable_v<Job&, PublishStage const&>
     void run_on_publish_stage(Job&& job) noexcept {
-        CRUCIBLE_ASSERT(stage_held_by_this_thread_ != this);
+        CRUCIBLE_ASSERT(stage_held_by_this_thread_ != ::fixy::WeakRef<const BackgroundThread>{*this});
         using JobType = std::remove_reference_t<Job>;
         OwnerJob request{};
         request.ctx = static_cast<void*>(std::addressof(job));
         request.fn = [](void* ctx, PublishStage stage) noexcept { (*static_cast<JobType*>(ctx))(stage); };
+        const ::fixy::WeakRef<OwnerJob> posted{request};
         while (true) {
-            OwnerJob* seen = owner_mailbox_.load(std::memory_order_acquire);
-            if (seen == nullptr) {
-                if (owner_mailbox_.compare_exchange_weak(seen, &request, std::memory_order_acq_rel,
-                                                         std::memory_order_acquire)) {
-                    while (!request.done.load(std::memory_order_acquire)) {
+            const ::fixy::WeakRef<OwnerJob> seen = owner_mailbox_.load_acquire();
+            if (!seen.has_value()) {
+                if (owner_mailbox_.cas_acq_rel(seen, posted).is_ok()) {
+                    while (!request.done.load_acquire()) {
                         CRUCIBLE_SPIN_PAUSE;
                     }
                     return;
                 }
                 continue;
             }
-            if (seen == &mailbox_closed_) {
-                if (owner_mailbox_.compare_exchange_weak(seen, &mailbox_inline_, std::memory_order_acq_rel,
-                                                         std::memory_order_acquire)) {
-                    const BackgroundThread* const held_before = stage_held_by_this_thread_;
-                    stage_held_by_this_thread_ = this;
+            if (seen == closed_mark_()) {
+                if (owner_mailbox_.cas_acq_rel(seen, inline_mark_()).is_ok()) {
+                    const ::fixy::WeakRef<const BackgroundThread> held_before = stage_held_by_this_thread_;
+                    stage_held_by_this_thread_ = ::fixy::WeakRef<const BackgroundThread>{*this};
                     request.fn(request.ctx, PublishStage{});
                     stage_held_by_this_thread_ = held_before;
-                    owner_mailbox_.store(&mailbox_closed_, std::memory_order_release);
+                    owner_mailbox_.store_release(closed_mark_());
                     return;
                 }
                 continue;
@@ -613,9 +613,9 @@ private:
 
 public:
     // The mailbox of the publish-stage state.  It holds one of four values:
-    //   &mailbox_closed_  no publish stage runs, so a caller may own the state
-    //   &mailbox_inline_  a caller runs a job while no publish stage runs
-    //   nullptr           the publish stage runs and no job waits
+    //   mailbox_closed_   no publish stage runs, so a caller may own the state
+    //   mailbox_inline_   a caller runs a job while no publish stage runs
+    //   empty             the publish stage runs and no job waits
     //   a job             the publish stage runs, and this job waits for it
     // The publish stage opens it as its first act and closes it as its last,
     // so a job posted while the stage runs runs on the stage, and any other
@@ -626,7 +626,16 @@ public:
     // until the enclosing class is complete.
     static OwnerJob mailbox_closed_;
     static OwnerJob mailbox_inline_;
-    alignas(64) std::atomic<OwnerJob*> owner_mailbox_{&mailbox_closed_};
+
+    // The references of the two sentinels.
+    [[nodiscard]] static ::fixy::WeakRef<OwnerJob> closed_mark_() noexcept {
+        return ::fixy::WeakRef<OwnerJob>{mailbox_closed_};
+    }
+    [[nodiscard]] static ::fixy::WeakRef<OwnerJob> inline_mark_() noexcept {
+        return ::fixy::WeakRef<OwnerJob>{mailbox_inline_};
+    }
+
+    alignas(64)::fixy::Atomic<::fixy::WeakRef<OwnerJob>> owner_mailbox_{closed_mark_()};
 
     // One acquire load when no job waits, which is the common case.  While
     // the stage runs, the mailbox holds no sentinel: the stage opened it,
@@ -634,43 +643,43 @@ public:
     // The parameter proves that the caller is the stage.  The job gets a
     // proof of its own.
     void serve_owner_mailbox_(PublishStage const&) noexcept {
-        OwnerJob* const job = owner_mailbox_.load(std::memory_order_acquire);
-        if (job == nullptr) return;
-        CRUCIBLE_ASSERT(job != &mailbox_closed_ && job != &mailbox_inline_);
+        const ::fixy::WeakRef<OwnerJob> job = owner_mailbox_.load_acquire();
+        if (!job.has_value()) return;
+        CRUCIBLE_ASSERT(job != closed_mark_() && job != inline_mark_());
         job->fn(job->ctx, PublishStage{});
-        owner_mailbox_.store(nullptr, std::memory_order_release);
+        owner_mailbox_.store_release(::fixy::WeakRef<OwnerJob>{});
         // The caller returns once it reads done, and its record dies with
         // its stack frame, so nothing reads the record after this store.
-        job->done.store(true, std::memory_order_release);
+        job->done.store_release(true);
     }
 
     void close_owner_mailbox_(PublishStage const&) noexcept {
-        OwnerJob* const last = owner_mailbox_.exchange(&mailbox_closed_, std::memory_order_acq_rel);
-        if (last == nullptr) return;
+        const ::fixy::WeakRef<OwnerJob> last = owner_mailbox_.exchange_acq_rel(closed_mark_());
+        if (!last.has_value()) return;
         last->fn(last->ctx, PublishStage{});
-        last->done.store(true, std::memory_order_release);
+        last->done.store_release(true);
     }
 
     void open_owner_mailbox_() noexcept {
         while (true) {
-            OwnerJob* seen = &mailbox_closed_;
-            if (owner_mailbox_.compare_exchange_weak(seen, nullptr, std::memory_order_acq_rel,
-                                                     std::memory_order_acquire)) {
-                return;
-            }
+            auto opened = owner_mailbox_.cas_acq_rel(closed_mark_(), ::fixy::WeakRef<OwnerJob>{});
+            if (opened.is_ok()) return;
             // The stage waits while a caller runs a job inline.  Any value
             // that is not a sentinel means a second stage runs, and the
             // state would then have two owners.
-            CRUCIBLE_ASSERT(seen == &mailbox_inline_ || seen == &mailbox_closed_);
+            const ::fixy::WeakRef<OwnerJob> seen =
+                std::move(opened).err().expect("a refused swap gives the value that it read").observed;
+            CRUCIBLE_ASSERT(seen == inline_mark_() || seen == closed_mark_());
             CRUCIBLE_SPIN_PAUSE;
         }
     }
 
-    // The background thread whose stage this thread holds, or null.  Read
-    // only by the contract in run_on_publish_stage, on the cold path.  It is
-    // one object for the process, so every shared library reads the same
-    // copy on a thread.
-    CRUCIBLE_PROCESS_WIDE static inline thread_local const BackgroundThread* stage_held_by_this_thread_ = nullptr;
+    // The background thread whose stage this thread holds, or an empty
+    // reference.  Read only by the contract in run_on_publish_stage, on the
+    // cold path.  It is one object for the process, so every shared library
+    // reads the same copy on a thread.
+    CRUCIBLE_PROCESS_WIDE static inline thread_local ::fixy::WeakRef<const BackgroundThread>
+        stage_held_by_this_thread_{};
 
     // The publish stage holds the mailbox open for as long as this scope
     // lives, so every way out of the stage closes it.  A mailbox left open
@@ -682,7 +691,7 @@ public:
         OwnerMailboxScope(BackgroundThread& owner, PublishStage const&) noexcept
             : owner_{owner}, held_before_{stage_held_by_this_thread_} {
             owner_.open_owner_mailbox_();
-            stage_held_by_this_thread_ = &owner_;
+            stage_held_by_this_thread_ = ::fixy::WeakRef<const BackgroundThread>{owner_};
         }
         ~OwnerMailboxScope() {
             stage_held_by_this_thread_ = held_before_;
@@ -693,7 +702,7 @@ public:
 
     private:
         BackgroundThread& owner_;
-        const BackgroundThread* held_before_;
+        ::fixy::WeakRef<const BackgroundThread> held_before_;
     };
 
     static constexpr uint32_t BATCH_SIZE = 4096;

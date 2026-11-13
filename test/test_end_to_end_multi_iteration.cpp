@@ -31,7 +31,7 @@ void test_pipeline_multi_iteration() {
     bt.start(ring, meta_log);
 
     wait_processed(bt, *ring);
-    auto* region1 = bt.active_region.load(std::memory_order_acquire);
+    auto* region1 = bt.active_region.load_acquire().try_get();
     assert(region1 != nullptr);
     assert(region1->num_ops == NUM_OPS);
 
@@ -57,7 +57,7 @@ void test_pipeline_multi_iteration() {
     feed_trigger(ring, meta_log, 4);
 
     wait_processed(bt, *ring);
-    auto* region2 = bt.active_region.load(std::memory_order_acquire);
+    auto* region2 = bt.active_region.load_acquire().try_get();
     assert(region2 != nullptr && region2 != region1 && "Second boundary did not fire");
     assert(region2->num_ops == NUM_OPS);
     assert(region2->plan != nullptr);

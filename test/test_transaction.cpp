@@ -89,6 +89,13 @@ static_assert(!std::is_trivially_copyable_v<crucible::Transaction>);
     return ::fixy::mint_tagged<::fixy::tags::source::Arena>(region);
 }
 
+// The nanoseconds of the reading of a transaction, or zero when it holds no
+// reading.
+[[nodiscard]] std::uint64_t stamp_nanos(crucible::Transaction const& tx) noexcept {
+    return tx.ts_ns.match([](crucible::Transaction::Timestamp const& stamp) noexcept { return stamp.peek(); },
+                          []() noexcept { return std::uint64_t{0}; });
+}
+
 // One region for each step, so that each transaction holds a region that no
 // other transaction holds.
 [[nodiscard]] crucible::RegionNode* region_of_step(::foundation::effects::Alloc alloc, crucible::Arena& arena,
@@ -324,8 +331,8 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
     const crucible::MerkleHash merkle1 = region1->merkle_hash;
     // The log stamped the transaction when it began it, and the stamp is a
     // reading of the monotonic clock.
-    assert(tx1->ts_ns.has_value());
-    const std::uint64_t begun_at = tx1->ts_ns->peek();
+    assert(tx1->ts_ns.is_some());
+    const std::uint64_t begun_at = stamp_nanos(*tx1);
 
     const bool committed = log.commit(owner, tx1, arena_region(region1), hash1, merkle1);
     assert(committed);
@@ -335,7 +342,7 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
     assert(tx1->region.value() == region1);
     // The reader clamps, so a later stamp through the same log never reads
     // earlier than a former one.
-    assert(tx1->ts_ns.has_value() && tx1->ts_ns->peek() >= begun_at);
+    assert(tx1->ts_ns.is_some() && stamp_nanos(*tx1) >= begun_at);
 
     const bool double_commit = log.commit(owner, tx1, arena_region(region1), hash1, merkle1);
     assert(!double_commit && "commit on COMMITTED tx must return false");
@@ -404,11 +411,11 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
         crucible::Transaction stamped{};
         const auto reader = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
         crucible::stamp_transaction(stamped, reader.read());
-        assert(stamped.ts_ns.has_value());
+        assert(stamped.ts_ns.is_some());
         const std::expected<crucible::Transaction::Timestamp, std::error_code> failed_read{
             std::unexpect, std::make_error_code(std::errc::io_error)};
         crucible::stamp_transaction(stamped, failed_read);
-        assert(!stamped.ts_ns.has_value() && "a failed clock read must leave the timestamp empty");
+        assert(stamped.ts_ns.is_none() && "a failed clock read must leave the timestamp empty");
     }
 
     crucible::test::pass("test_transaction: all tests passed\n");

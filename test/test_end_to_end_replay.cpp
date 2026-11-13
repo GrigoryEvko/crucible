@@ -33,7 +33,7 @@ void test_pipeline_basic() {
     bt.start(ring, meta_log);
 
     wait_processed(bt, *ring);
-    auto* region = bt.active_region.load(std::memory_order_acquire);
+    auto* region = bt.active_region.load_acquire().try_get();
     assert(region != nullptr && "BackgroundThread did not produce a region");
 
     assert(region->kind == TraceNodeKind::REGION);
@@ -112,7 +112,7 @@ void test_pipeline_divergence() {
     bt.start(ring, meta_log);
 
     wait_processed(bt, *ring);
-    auto* region = bt.active_region.load(std::memory_order_acquire);
+    auto* region = bt.active_region.load_acquire().try_get();
     assert(region != nullptr);
 
     CrucibleContext ctx;

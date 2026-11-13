@@ -31,7 +31,7 @@ void test_pipeline_data_flow() {
     bt.start(ring, meta_log);
 
     wait_processed(bt, *ring);
-    auto* region = bt.active_region.load(std::memory_order_acquire);
+    auto* region = bt.active_region.load_acquire().try_get();
     assert(region != nullptr);
 
     CrucibleContext ctx;
@@ -83,7 +83,7 @@ void test_pipeline_pool_bounds() {
     bt.start(ring, meta_log);
 
     wait_processed(bt, *ring);
-    auto* region = bt.active_region.load(std::memory_order_acquire);
+    auto* region = bt.active_region.load_acquire().try_get();
     assert(region != nullptr);
 
     CrucibleContext ctx;

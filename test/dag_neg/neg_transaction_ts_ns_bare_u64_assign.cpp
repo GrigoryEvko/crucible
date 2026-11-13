@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Transaction::ts_ns holds an optional MonotonicClockBytes<std::uint64_t>,
+// Transaction::ts_ns holds an Option of MonotonicClockBytes<std::uint64_t>,
 // and only a clock reader builds such a reading.  A bare integer carries no
 // source, so it does not become a reading: the constructor of ClockSource
 // from its value is private.  If this fixture compiles, a transaction can
@@ -15,6 +15,6 @@
 
 int main() {
     crucible::Transaction tx{};
-    tx.ts_ns = std::uint64_t{42};
+    tx.ts_ns = ::fixy::Option<crucible::Transaction::Timestamp>::some(std::uint64_t{42});
     return 0;
 }

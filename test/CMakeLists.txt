@@ -3569,17 +3569,18 @@ crucible_neg_compile_test(neg_background_thread_callback_type_identity_drift
   "static assertion failed: RegionReadyCallback::Fn carries noexcept, so it is not the plain function pointer type"
   ".void \\(\\*\\)\\(${BG_CALLBACK_CLASS_PARAMS}\\) noexcept. is not the same as .void \\(\\*\\)\\(${BG_CALLBACK_CLASS_PARAMS}\\).")
 
-# Transaction::ts_ns holds an optional reading of the monotonic clock.
+# Transaction::ts_ns holds an Option of a reading of the monotonic clock.
+# Option::some takes only a value that builds a reading.
 #   - neg_transaction_ts_ns_bare_u64_assign: a bare integer is no reading,
 #     because the constructor of ClockSource from its value is private.
 #   - neg_transaction_ts_ns_cross_source: a boot clock reading is a distinct
 #     type from a monotonic one.
 crucible_neg_compile_test(neg_transaction_ts_ns_bare_u64_assign
-  "neg_transaction_ts_ns_bare_u64_assign.cpp:18:32: error: no match for .operator=. \\(operand types are .std::optional<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >. and .uint64_t."
-  "error: .constexpr fixy::ClockSource<Source, T>::ClockSource\\(T\\) \\[with foundation::algebra::lattices::ClockSource Source = foundation::algebra::lattices::ClockSource::Monotonic; T = long unsigned int\\]. is private within this context")
+  "neg_transaction_ts_ns_bare_u64_assign.cpp:18:70: error: no matching function for call to .foundation::core::Option<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >::some\\(uint64_t\\)."
+  "required for the satisfaction of .constructible_from<T, U&&>. \\[with T = fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int>; U = long unsigned int\\]")
 crucible_neg_compile_test(neg_transaction_ts_ns_cross_source
-  "neg_transaction_ts_ns_cross_source.cpp:25:34: error: no match for .operator=. \\(operand types are .std::optional<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >. and .fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>."
-  "error: no matching function for call to .fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int>::ClockSource\\(fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>\\).")
+  "neg_transaction_ts_ns_cross_source.cpp:25:70: error: no matching function for call to .foundation::core::Option<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >::some\\(fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>\\)."
+  "required for the satisfaction of .constructible_from<T, U&&>. \\[with T = fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int>; U = fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>\\]")
 
 # Cipher::obj_path returns fixy::Tagged<std::string, tags::source::CipherPath>.
 # The two fixtures read that return type by reflection.

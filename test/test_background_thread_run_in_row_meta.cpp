@@ -288,7 +288,7 @@ void test_built_graph_owns_its_metadata() {
         bt.publish_region(bg, stage, std::move(parts), BackgroundThread::StreamPoint{});
         bt.release_meta_log(stage, OPS);
     });
-    const crucible::RegionNode* const region = bt.active_region.load(std::memory_order_acquire);
+    const crucible::RegionNode* const region = bt.active_region.load_acquire().try_get();
     assert(region != nullptr && region->ops == graph->ops);
     assert(metalog->tail.get() == OPS);
 

@@ -558,20 +558,16 @@ public:
     // thread.  Reads InsufficientData when no region transition has happened
     // yet, and when the watchdog is disabled.
     [[nodiscard]] ::crucible::warden::WatchdogVerdict last_watchdog_verdict() const noexcept {
-        return wd_last_verdict_.load(std::memory_order_acquire);
+        return wd_last_verdict_.load_acquire();
     }
 
     // While the watchdog is enabled, each region transition increments
     // exactly one of these three.  The acquire load pairs with the release
-    // increment on the background thread.
-    [[nodiscard]] uint32_t watchdog_healthy_count() const noexcept {
-        return wd_healthy_count_.load(std::memory_order_acquire);
-    }
-    [[nodiscard]] uint32_t watchdog_downgrade_count() const noexcept {
-        return wd_downgrade_count_.load(std::memory_order_acquire);
-    }
+    // half of the increment on the background thread.
+    [[nodiscard]] uint32_t watchdog_healthy_count() const noexcept { return wd_healthy_count_.load_acquire(); }
+    [[nodiscard]] uint32_t watchdog_downgrade_count() const noexcept { return wd_downgrade_count_.load_acquire(); }
     [[nodiscard]] uint32_t watchdog_insufficient_count() const noexcept {
-        return wd_insufficient_count_.load(std::memory_order_acquire);
+        return wd_insufficient_count_.load_acquire();
     }
 
     // The watchdog itself is deliberately not exposed by reference.  Its
@@ -1150,11 +1146,11 @@ private:
     // asks for the watchdog, and each is null otherwise.
     std::unique_ptr<::crucible::perf::Senses> senses_;
     std::unique_ptr<::crucible::warden::DeadlineWatchdog> wd_;
-    std::atomic<::crucible::warden::WatchdogVerdict> wd_last_verdict_{
+    ::fixy::Atomic<::crucible::warden::WatchdogVerdict> wd_last_verdict_{
         ::crucible::warden::WatchdogVerdict::InsufficientData};
-    std::atomic<uint32_t> wd_healthy_count_{0};
-    std::atomic<uint32_t> wd_downgrade_count_{0};
-    std::atomic<uint32_t> wd_insufficient_count_{0};
+    ::fixy::Atomic<uint32_t> wd_healthy_count_{};
+    ::fixy::Atomic<uint32_t> wd_downgrade_count_{};
+    ::fixy::Atomic<uint32_t> wd_insufficient_count_{};
 
     BackgroundThread bg_;  // Must stay last.
 };

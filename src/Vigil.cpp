@@ -145,16 +145,16 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // foreground.
     if (wd_) {
         const auto v = wd_->observe(::fixy::BgDrainCtx{bg});
-        wd_last_verdict_.store(v, std::memory_order_release);
+        wd_last_verdict_.store_release(v);
         switch (v) {
             case ::crucible::warden::WatchdogVerdict::Healthy:
-                wd_healthy_count_.fetch_add(1, std::memory_order_release);
+                (void)wd_healthy_count_.fetch_add_acq_rel(1);
                 break;
             case ::crucible::warden::WatchdogVerdict::Downgrade:
-                wd_downgrade_count_.fetch_add(1, std::memory_order_release);
+                (void)wd_downgrade_count_.fetch_add_acq_rel(1);
                 break;
             case ::crucible::warden::WatchdogVerdict::InsufficientData:
-                wd_insufficient_count_.fetch_add(1, std::memory_order_release);
+                (void)wd_insufficient_count_.fetch_add_acq_rel(1);
                 break;
             default:
                 // The verdict enum has exactly the three values above.  A

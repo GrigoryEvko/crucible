@@ -11,6 +11,7 @@
 
 #include <crucible/Types.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <fixy/CyclicBuffer.h>
 #include <fixy/Mutation.h>
 #include <fixy/Tagged.h>
@@ -27,7 +28,6 @@
 #include <cstdint>
 #include <expected>
 #include <new>
-#include <optional>
 #include <system_error>
 #include <type_traits>
 
@@ -77,23 +77,24 @@ struct Transaction {
     // whose clock read failed.  Only a clock reader builds a reading, so a
     // slot that the log never claimed holds none, and no default value can
     // claim a time that no clock returned.
-    std::optional<Timestamp> ts_ns;
+    ::fixy::Option<Timestamp> ts_ns{};
     TxStatus status = TxStatus::RECORDING;
-    uint8_t pad[7]{};
+    ::foundation::core::FixedArray<uint8_t, 7> pad{};
 };
 
 // Stores a clock reading in a transaction.  A failed read leaves the
 // transaction with no reading: no value stands for a failed read, and a
 // reading of an earlier event does not stay to claim the time of this
-// one.
+// one.  The reading comes from the clock reader of fixy, which gives a
+// std::expected.
 inline void stamp_transaction(Transaction& tx,
                               std::expected<Transaction::Timestamp, std::error_code> const& reading) noexcept {
     if (reading) {
-        tx.ts_ns = *reading;
+        tx.ts_ns = ::fixy::Option<Transaction::Timestamp>::some(*reading);
     } else {
-        tx.ts_ns.reset();
+        tx.ts_ns = ::fixy::none;
     }
-    CRUCIBLE_POST(true, tx.ts_ns.has_value() == reading.has_value());
+    CRUCIBLE_POST(true, tx.ts_ns.is_some() == reading.has_value());
 }
 
 // A proof that the caller is the one thread that owns some state. It is

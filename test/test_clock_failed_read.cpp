@@ -206,20 +206,27 @@ private:
     SoloOwner() noexcept {}
 };
 
+// The nanoseconds of the reading of a transaction, or zero when it holds no
+// reading.
+[[nodiscard]] std::uint64_t stamp_nanos(crucible::Transaction const& tx) noexcept {
+    return tx.ts_ns.match([](crucible::Transaction::Timestamp const& stamp) noexcept { return stamp.peek(); },
+                          []() noexcept { return std::uint64_t{0}; });
+}
+
 // Says whether a transaction holds the reading `expected_nanos`.
 [[nodiscard]] bool holds_reading(crucible::Transaction const* tx, std::uint64_t expected_nanos, char const* what) {
     if (tx == nullptr) {
         std::fprintf(stderr, "%s: the log gave no transaction\n", what);
         return false;
     }
-    if (!tx->ts_ns.has_value()) {
+    if (tx->ts_ns.is_none()) {
         std::fprintf(stderr, "%s: the transaction holds no reading, and it must hold %llu\n", what,
                      static_cast<unsigned long long>(expected_nanos));
         return false;
     }
-    if (tx->ts_ns->peek() != expected_nanos) {
+    if (stamp_nanos(*tx) != expected_nanos) {
         std::fprintf(stderr, "%s: the transaction holds %llu, and it must hold %llu\n", what,
-                     static_cast<unsigned long long>(tx->ts_ns->peek()),
+                     static_cast<unsigned long long>(stamp_nanos(*tx)),
                      static_cast<unsigned long long>(expected_nanos));
         return false;
     }
@@ -232,9 +239,9 @@ private:
         std::fprintf(stderr, "%s: the log gave no transaction\n", what);
         return false;
     }
-    if (tx->ts_ns.has_value()) {
+    if (tx->ts_ns.is_some()) {
         std::fprintf(stderr, "%s: the transaction holds the reading %llu after a failed read\n", what,
-                     static_cast<unsigned long long>(tx->ts_ns->peek()));
+                     static_cast<unsigned long long>(stamp_nanos(*tx)));
         return false;
     }
     return true;
