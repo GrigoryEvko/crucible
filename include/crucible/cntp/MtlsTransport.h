@@ -8,11 +8,8 @@
 #include <fixy/Secret.h>
 #include <fixy/Tagged.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -138,52 +135,54 @@ struct MtlsPrivateKeyBytes {
 };
 
 // The DNS name of a peer, with at most max_bytes characters.  from() checks
-// each character and is the one writer.  The two members are private, so
-// the size is at most max_bytes and view() never reads past the bytes.
+// each character and is the one writer, so each name holds only the
+// characters of a DNS name.
 class MtlsDnsName {
 public:
     static constexpr std::size_t max_bytes = 253;
 
     constexpr MtlsDnsName() noexcept = default;
 
-    [[nodiscard]] constexpr std::string_view view() const noexcept { return {bytes_.data(), size_}; }
-
-    [[nodiscard]] constexpr std::size_t size() const noexcept { return size_; }
-
-    [[nodiscard]] constexpr bool empty() const noexcept { return size_ == 0; }
+    // The characters of the name.  The view borrows this name, so a view of a
+    // temporary name is refused.
+    [[nodiscard]] constexpr ::fixy::TextView view() const& noexcept { return characters_.view(); }
+    ::fixy::TextView
+    view() const&& = delete("a view of a temporary MtlsDnsName points into an object that the full expression ends");
 
     // A Result<MtlsDnsName, MtlsError>.  The type of a Result needs a complete
     // name, so the definition stands after the class.
-    [[nodiscard]] static constexpr auto from(std::string_view name) noexcept;
+    [[nodiscard]] static constexpr auto from(::fixy::TextView name) noexcept;
 
 private:
-    std::array<char, max_bytes> bytes_{};
-    std::uint8_t size_ = 0;
+    ::fixy::FixedText<max_bytes> characters_{};
 };
 
-constexpr auto MtlsDnsName::from(std::string_view name) noexcept {
+// A name of more than max_bytes characters does not fit, and append()
+// refuses it with one compare.  Then each character takes one check.
+constexpr auto MtlsDnsName::from(::fixy::TextView name) noexcept {
     using Admitted = ::fixy::Result<MtlsDnsName, MtlsError>;
-    if (name.empty()) {
+    if (name.size() == 0) {
         return Admitted{::fixy::err(MtlsError::EmptyPeerName)};
     }
-    if (name.size() > max_bytes || name.front() == '.' || name.back() == '.' || name.front() == '-'
-        || name.back() == '-') {
+    MtlsDnsName out{};
+    if (out.characters_.append(name).is_err()) {
+        return Admitted{::fixy::err(MtlsError::InvalidPeerName)};
+    }
+    if (::fixy::starts_with(name, ".") || ::fixy::ends_with(name, ".") || ::fixy::starts_with(name, "-")
+        || ::fixy::ends_with(name, "-")) {
         return Admitted{::fixy::err(MtlsError::InvalidPeerName)};
     }
 
-    MtlsDnsName out{};
     bool previous_dot = false;
-    for (std::size_t i = 0; i < name.size(); ++i) {
-        const char c = name[i];
-        const bool dot = c == '.';
-        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || dot;
-        if (!ok || (dot && previous_dot)) {
+    for (char const character : name) {
+        bool const is_dot = character == '.';
+        bool const is_dns_character = (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z')
+                                   || (character >= '0' && character <= '9') || character == '-' || is_dot;
+        if (!is_dns_character || (is_dot && previous_dot)) {
             return Admitted{::fixy::err(MtlsError::InvalidPeerName)};
         }
-        out.bytes_[i] = c;
-        previous_dot = dot;
+        previous_dot = is_dot;
     }
-    out.size_ = static_cast<std::uint8_t>(name.size());
     return Admitted{out};
 }
 

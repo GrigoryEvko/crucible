@@ -4,11 +4,8 @@
 
 namespace crucible::cntp {
 
-static_assert(MtlsDnsName::max_bytes <= std::numeric_limits<std::uint8_t>::max(),
-              "MtlsDnsName::size_ must be able to name every byte it admits");
-
 static_assert(sizeof(MtlsPeerCount) == sizeof(std::uint8_t));
-static_assert(MtlsPolicy::max_peer_names <= std::numeric_limits<std::uint8_t>::max(),
+static_assert(MtlsPolicy::max_peer_names <= ::fixy::max_of<std::uint8_t>,
               "MtlsPeerCount must be able to name every allowlist slot");
 
 static_assert(sizeof(MtlsCertificate) == sizeof(MtlsCertificateBytes));

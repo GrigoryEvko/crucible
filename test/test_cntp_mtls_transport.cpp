@@ -76,6 +76,17 @@ void test_name_and_error_surfaces() {
 
     assert(cntp::MtlsDnsName::from("").err() == ::fixy::some(cntp::MtlsError::EmptyPeerName));
     assert(cntp::MtlsDnsName::from("../relay").err() == ::fixy::some(cntp::MtlsError::InvalidPeerName));
+    assert(cntp::MtlsDnsName::from("relay..example.org").err() == ::fixy::some(cntp::MtlsError::InvalidPeerName));
+    assert(cntp::MtlsDnsName::from("relay.example.org-").err() == ::fixy::some(cntp::MtlsError::InvalidPeerName));
+
+    // A name of max_bytes characters fits, and one more character does not.
+    ::fixy::FixedText<cntp::MtlsDnsName::max_bytes + 1> long_name{};
+    for (std::size_t count = 0; count < cntp::MtlsDnsName::max_bytes; ++count) {
+        assert(long_name.push('a').is_ok());
+    }
+    assert(cntp::MtlsDnsName::from(long_name.view()).is_ok());
+    assert(long_name.push('a').is_ok());
+    assert(cntp::MtlsDnsName::from(long_name.view()).err() == ::fixy::some(cntp::MtlsError::InvalidPeerName));
 
     crucible::test::pass("  test_name_and_error_surfaces: PASSED\n");
 }
