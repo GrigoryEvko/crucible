@@ -8,56 +8,59 @@
 #include <crucible/Serialize.h>
 #include <crucible/cipher/CipherTierPromotion.h>
 #include <crucible/cipher/FederationProtocol.h>
+#include <fixy/os/Fs.h>
+#include <foundation/os/PathText.h>
 
-#include <fcntl.h>
-#include <sys/types.h>
-#include <unistd.h>
-
-#include <cerrno>
-#include <charconv>
 #include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <initializer_list>
-#include <string_view>
+#include <span>
+#include <vector>
 
 namespace crucible {
 
 namespace {
 
-// One descriptor that a helper below opened relative to a directory
-// descriptor.  open_at_ is the one door: it builds an owner only from
-// the value that ::openat returned, and the destructor closes it.
-class AnchoredFd {
-    int fd_ = -1;
+// The path of an entry under the root of the store, with no leading slash,
+// because each file call reads it relative to the descriptor of the root.
+// The longest is the temporary file of a session-event batch:
+// "session_events/" (15), 16 digits, "/" (1), 16 digits, ".cfed" (5) and
+// ".tmp" (4), 57 characters.
+using EntryPath = ::foundation::os::PathText<64>;
 
-    constexpr explicit AnchoredFd(int fd) noexcept : fd_{fd} {}
-
-    friend AnchoredFd open_at_(int parent_dirfd, const char* relpath, int flags, ::mode_t perms) noexcept;
-
-public:
-    AnchoredFd(const AnchoredFd&) = delete("a descriptor is unique; a copy would close it twice");
-    AnchoredFd& operator=(const AnchoredFd&) = delete("a descriptor is unique; a copy would close it twice");
-    AnchoredFd(AnchoredFd&& other) noexcept : fd_{::fixy::exchange(other.fd_, -1)} {}
-    AnchoredFd& operator=(AnchoredFd&&) = delete("an owner is built once, by open_at_, and never reassigned");
-
-    ~AnchoredFd() {
-        if (fd_ >= 0) {
-            ::close(fd_);
-        }
-    }
-
-    [[nodiscard]] bool is_open() const noexcept { return fd_ >= 0; }
-    [[nodiscard]] int get() const noexcept { return fd_; }
-};
-
-[[nodiscard]] AnchoredFd open_at_(int parent_dirfd, const char* relpath, int flags, ::mode_t perms) noexcept {
-    return AnchoredFd{::openat(parent_dirfd, relpath, flags, perms)};
+// The entry of the object of hash: "objects/<2 digits>/<14 digits>", the
+// sixteen hexadecimal digits of the hash.
+[[nodiscard]] EntryPath object_entry_(std::uint64_t hash) noexcept {
+    EntryPath path{};
+    path.append(::fixy::TextView{"objects/"}).expect("the object entry fits its path");
+    path.append_hex<2>(hash >> 56U).expect("the object entry fits its path");
+    path.append('/').expect("the object entry fits its path");
+    path.append_hex<14>(hash).expect("the object entry fits its path");
+    return path;
 }
 
-// Re-opens `relpath` relative to `parent_dirfd` read-only and
-// fdatasyncs it.  Linux permits fdatasync to be interrupted by a
-// signal, so EINTR is retried.
+// The entry of the directory of the events of a session:
+// "session_events/<16 digits>".
+[[nodiscard]] EntryPath session_entry_(::fixy::session::SessionTagId session) noexcept {
+    EntryPath path{};
+    path.append(::fixy::TextView{"session_events/"}).expect("the session entry fits its path");
+    path.append_hex<16>(session.value).expect("the session entry fits its path");
+    return path;
+}
+
+// The sixteen hexadecimal digits of value, in lower case.
+[[nodiscard]] ::fixy::FixedText<16> hex_digits_(std::uint64_t value) noexcept {
+    ::fixy::FixedText<16> digits{};
+    ::foundation::core::append_hex<16>(digits, value).expect("sixteen digits fit sixteen characters");
+    return digits;
+}
+
+// Gives the result of call for the context of the caller.  The context is
+// one of three types, so the call compiles one time for each capability.
+template <class Call>
+[[nodiscard]] auto with_file_ctx_(Cipher::FileCtx const& file_ctx, Call const& call) {
+    return file_ctx.match(call, call, call);
+}
+
+// Opens path under dir read-only and flushes its data.
 //
 // Both the new-write path and the idempotent-skip path in store() flush
 // through here, because skipping the flush breaks cross-process
@@ -72,19 +75,19 @@ public:
 //
 // Routing the skip path through fdatasync either forces the flush or
 // fails, in which case B reports failure exactly as A did.
-[[nodiscard]] bool fdatasync_at_(int parent_dirfd, const std::string& relpath) noexcept {
-    const AnchoredFd guard = open_at_(parent_dirfd, relpath.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC, 0);
-    if (!guard.is_open()) return false;
-    int rc;
-    do {
-        rc = ::fdatasync(guard.get());
-    } while (rc < 0 && errno == EINTR);
-    return rc == 0;
+template <class Ctx>
+[[nodiscard]] bool flush_entry_at_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir, ::fixy::CText path) noexcept {
+    return ::fixy::fs::mint_file_at<::fixy::fs::read_only>(ctx, dir, path)
+        .match(
+            [&ctx](::fixy::Linear<::fixy::fs::OwnedFd> opened) {
+                const ::fixy::fs::OwnedFd file = std::move(opened).consume();
+                return ::fixy::fs::sync<::fixy::fs::sync_op::Fdatasync>(ctx, file).is_ok();
+            },
+            [](::foundation::os::Errno) { return false; });
 }
 
-// Atomic file-content replace: write `relpath + ".tmp"` relative to
-// `parent_dirfd`, fdatasync the bytes, rename onto `relpath`, then fsync
-// the parent dirfd.
+// Atomic file-content replace: write path + ".tmp" under dir, fdatasync
+// the bytes, rename onto path, then fsync dir.
 //
 // A plain truncate-and-write is the alternative and it loses.  The file
 // is observably empty between the truncate and the first write, and
@@ -104,60 +107,49 @@ public:
 // in between.  The rename would be lost, the old content would stand,
 // and the new bytes would be orphaned in the tmp file.
 //
-// EINTR is retried on write, fdatasync, renameat and fsync.  If any step
-// fails after the tmp file exists, it is unlinked so a later run does not
-// trip over a partial-write artifact.
-[[nodiscard]] bool atomic_write_at_(int parent_dirfd, const std::string& relpath,
-                                    std::span<const std::uint8_t> bytes) noexcept {
-    const std::string tmp_relpath = relpath + ".tmp";
-
-    // The nested scope closes the writer before the renameat below,
-    // which is what POSIX recommends for atomic-rename writes and keeps
-    // no extra descriptor open across the rename window.
-    {
-        const AnchoredFd write_guard =
-            open_at_(parent_dirfd, tmp_relpath.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0644);
-        if (!write_guard.is_open()) return false;
-
-        std::size_t off = 0;
-        while (off < bytes.size()) {
-            const ssize_t r = ::write(write_guard.get(), bytes.data() + off, bytes.size() - off);
-            if (r < 0) {
-                if (errno == EINTR) continue;
-                ::unlinkat(parent_dirfd, tmp_relpath.c_str(), 0);
-                return false;
-            }
-            off += static_cast<std::size_t>(r);
-        }
-
-        int frc;
-        do {
-            frc = ::fdatasync(write_guard.get());
-        } while (frc < 0 && errno == EINTR);
-        if (frc != 0) {
-            ::unlinkat(parent_dirfd, tmp_relpath.c_str(), 0);
-            return false;
-        }
-    }
-
-    // Anchoring both sides of the rename at the same dirfd makes the
-    // swap immune to a concurrent rename of the parent directory.
-    int rrc;
-    do {
-        rrc = ::renameat(parent_dirfd, tmp_relpath.c_str(), parent_dirfd, relpath.c_str());
-    } while (rrc < 0 && errno == EINTR);
-    if (rrc != 0) {
-        ::unlinkat(parent_dirfd, tmp_relpath.c_str(), 0);
-        return false;
-    }
-
-    // parent_dirfd is owned by the caller and outlives this call, so
-    // the fsync needs no re-open of the parent path.
-    int drc;
-    do {
-        drc = ::fsync(parent_dirfd);
-    } while (drc < 0 && errno == EINTR);
-    return drc == 0;
+// The doors retry EINTR on write, fdatasync, renameat and fsync.  If any
+// step fails after the tmp file exists, it is unlinked so a later run does
+// not trip over a partial-write artifact.  Bytes is a TextView or a span of
+// bytes, the two buffers that write_full takes.
+template <class Ctx, class Bytes>
+[[nodiscard]] bool replace_entry_at_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir, ::fixy::TextView path,
+                                     Bytes bytes) noexcept {
+    EntryPath target{};
+    EntryPath temporary{};
+    const bool is_named = target.append(path).is_ok() && temporary.append(path).is_ok()
+                       && temporary.append(::fixy::TextView{".tmp"}).is_ok();
+    if (!is_named) return false;
+    using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
+    const bool is_renamed =
+        ::fixy::fs::mint_file_at<WriteTruncate>(ctx, dir, temporary.c_text())
+            .match(
+                [&](::fixy::Linear<::fixy::fs::OwnedFd> opened) {
+                    // The nested scope closes the writer before the rename,
+                    // which is what POSIX recommends for atomic-rename writes
+                    // and keeps no extra descriptor open across the rename
+                    // window.
+                    bool is_durable = false;
+                    {
+                        const ::fixy::fs::OwnedFd file = std::move(opened).consume();
+                        is_durable = ::fixy::fs::write_full(ctx, file, bytes).is_ok()
+                                  && ::fixy::fs::sync<::fixy::fs::sync_op::Fdatasync>(ctx, file).is_ok();
+                    }
+                    // Anchoring both sides of the rename at the same dirfd
+                    // makes the swap immune to a concurrent rename of the
+                    // parent directory.
+                    is_durable = is_durable
+                              && ::fixy::fs::commit_atomic_at<::fixy::fs::atomicity::Rename>(
+                                     ctx, dir, temporary.c_text(), target.c_text())
+                                     .is_ok();
+                    if (!is_durable) {
+                        static_cast<void>(::fixy::fs::unlink_at(ctx, dir, temporary.c_text()).is_ok());
+                    }
+                    return is_durable;
+                },
+                [](::foundation::os::Errno) { return false; });
+    // dir is owned by the caller and outlives this call, so the fsync needs
+    // no re-open of the parent path.
+    return is_renamed && ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir).is_ok();
 }
 
 // Atomic append for the monotonically-growing files: the event log and
@@ -177,142 +169,158 @@ public:
 // happen, and HEAD did not move, because a commit writes HEAD only after
 // its log record is durable.
 //
-// EINTR is retried on write, fdatasync and fsync.  Failure needs no
+// The doors retry EINTR on write, fdatasync and fsync.  Failure needs no
 // cleanup, since the file is append-only by construction.  Returns true
 // only when both the record bytes and the directory entry are durable.
-[[nodiscard]] bool atomic_append_at_(int parent_dirfd, const std::string& relpath,
-                                     std::span<const std::uint8_t> bytes) noexcept {
-    {
-        const AnchoredFd guard =
-            open_at_(parent_dirfd, relpath.c_str(), O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0644);
-        if (!guard.is_open()) return false;
-
-        // With O_APPEND and a record smaller than a block, ::write
-        // either fails outright or writes every byte.  The loop covers
-        // a short write on signal, and each re-issue is a fresh
-        // kernel-atomic O_APPEND write.
-        std::size_t off = 0;
-        while (off < bytes.size()) {
-            const ssize_t r = ::write(guard.get(), bytes.data() + off, bytes.size() - off);
-            if (r < 0) {
-                if (errno == EINTR) continue;
-                return false;
-            }
-            off += static_cast<std::size_t>(r);
-        }
-
-        int frc;
-        do {
-            frc = ::fdatasync(guard.get());
-        } while (frc < 0 && errno == EINTR);
-        if (frc != 0) return false;
-    }
-
+template <class Ctx>
+[[nodiscard]] bool append_entry_at_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir, ::fixy::CText path,
+                                    ::fixy::TextView record) noexcept {
+    using WriteAppend = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteAppend>;
+    // With O_APPEND and a record smaller than a block, a write either fails
+    // outright or writes every byte.  The door writes again after a short
+    // write on a signal, and each write is a fresh kernel-atomic O_APPEND
+    // write.
+    const bool is_flushed = ::fixy::fs::mint_file_at<WriteAppend>(ctx, dir, path)
+                                .match(
+                                    [&](::fixy::Linear<::fixy::fs::OwnedFd> opened) {
+                                        const ::fixy::fs::OwnedFd file = std::move(opened).consume();
+                                        return ::fixy::fs::write_full(ctx, file, record).is_ok()
+                                            && ::fixy::fs::sync<::fixy::fs::sync_op::Fdatasync>(ctx, file).is_ok();
+                                    },
+                                    [](::foundation::os::Errno) { return false; });
     // Makes the file's existence durable for the first record.
-    int drc;
-    do {
-        drc = ::fsync(parent_dirfd);
-    } while (drc < 0 && errno == EINTR);
-    return drc == 0;
+    return is_flushed && ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir).is_ok();
 }
 
-// Returns a closed owner on failure.  O_DIRECTORY makes the open fail
-// with ENOTDIR if a regular file has been substituted for the
-// directory, and O_NOFOLLOW rejects a symlinked leaf.
-[[nodiscard]] AnchoredFd open_dir_at_(int parent_dirfd, const char* relpath) noexcept {
-    return open_at_(parent_dirfd, relpath, O_DIRECTORY | O_RDONLY | O_NOFOLLOW | O_CLOEXEC, 0);
-}
-
-void hex16_(uint64_t value, char (&out)[16]) noexcept {
-    static constexpr char kHex[] = "0123456789abcdef";
-    for (std::size_t i = 0; i < 16; ++i) {
-        out[15 - i] = kHex[value & 0x0FULL];
-        value >>= 4;
-    }
-}
-
-// Joins the pieces into one string of their total length.  The string
-// gets its full size at construction, so the join allocates at most
-// one time and never grows.  Complexity: linear in the total length.
-[[nodiscard]] std::string join_(std::initializer_list<std::string_view> pieces) {
-    std::size_t total = 0;
-    for (const std::string_view piece : pieces) {
-        total += piece.size();
-    }
-    std::string joined(total, '\0');
-    std::size_t offset = 0;
-    for (const std::string_view piece : pieces) {
-        if (piece.empty()) continue;  // an empty view can hold a null pointer, which memcpy refuses
-        std::memcpy(joined.data() + offset, piece.data(), piece.size());
-        offset += piece.size();
-    }
-    return joined;
-}
-
-// Returns "objects/<XX>/<14hex>".  No leading slash: openat resolves a
-// relative path under the parent dirfd's inode, not under "/".
-[[nodiscard]] auto obj_relpath_(std::uint64_t hash) -> ::fixy::Tagged<std::string, ::fixy::tags::source::CipherPath> {
-    char hex[16];
-    hex16_(hash, hex);
-    std::string path = join_({"objects/", std::string_view{hex, 2}, "/", std::string_view{hex + 2, 14}});
-    return ::fixy::mint_tagged<::fixy::tags::source::CipherPath>(std::move(path));
-}
-
-[[nodiscard]] std::string session_event_dir_relpath_(::fixy::session::SessionTagId session) {
-    char hex[16];
-    hex16_(session.value, hex);
-    return join_({"session_events/", std::string_view{hex, 16}});
-}
-
-[[nodiscard]] bool file_bytes_equal_(const std::string& path, std::span<const std::uint8_t> expected) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return false;
-    in.seekg(0, std::ios::end);
-    const auto raw = in.tellg();
-    if (raw < 0) return false;
-    const auto len = static_cast<std::size_t>(raw);
-    if (len != expected.size()) return false;
-    in.seekg(0, std::ios::beg);
-
-    std::array<std::uint8_t, 4096> actual{};
-    std::size_t offset = 0;
-    while (offset < expected.size()) {
-        const std::size_t remaining = expected.size() - offset;
-        const std::size_t n = remaining < actual.size() ? remaining : actual.size();
-        in.read(static_cast<char*>(static_cast<void*>(actual.data())), static_cast<std::streamsize>(n));
-        if (in.gcount() != static_cast<std::streamsize>(n)) return false;
-        if (std::memcmp(actual.data(), expected.data() + offset, n) != 0) {
-            return false;
+// Makes each directory of root that is missing, from the first component
+// on, as mkdir -p does.  here is the current directory, which anchors a
+// relative root, and an absolute root does not read it.  A directory that
+// is there gives eexist, and a directory that the make cannot make fails
+// the open of the root after it.  Complexity: one make for each component
+// of the root, and one copy of each character.
+template <class Ctx>
+void make_root_directories_(Ctx const& ctx, ::fixy::fs::Dirfd const& here, ::fixy::TextView root) noexcept {
+    Cipher::RootPath prefix{};
+    for (const char character : root) {
+        if (character == '/' && prefix.size() != 0) {
+            static_cast<void>(::fixy::fs::make_directory_at(ctx, here, prefix.c_text()).is_ok());
         }
-        offset += n;
+        static_cast<void>(prefix.append(character).is_ok());
     }
-    return true;
+    static_cast<void>(::fixy::fs::make_directory_at(ctx, here, prefix.c_text()).is_ok());
 }
 
-// std::from_chars, not std::stoull: stoull throws on malformed input.
-// Returns true only when the whole [begin, end) range parsed as a
-// number in the given base.
-[[nodiscard]] bool parse_u64(const char* begin, const char* end, int base, uint64_t& out) noexcept {
-    if (begin >= end) return false;
-    auto [p, ec] = std::from_chars(begin, end, out, base);
-    return ec == std::errc{} && p == end;
+// Reads each byte of path under dir into bytes, when the file holds more
+// than zero and at most maximum bytes.  bytes takes the size of the file.
+// Gives false for a file that does not open, has another size, or reads
+// short.
+template <class Ctx>
+[[nodiscard]] bool read_entry_at_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir, ::fixy::CText path, std::size_t maximum,
+                                  std::vector<std::uint8_t>& bytes) noexcept {
+    return ::fixy::fs::mint_file_at<::fixy::fs::read_only>(ctx, dir, path)
+        .match(
+            [&](::fixy::Linear<::fixy::fs::OwnedFd> opened) {
+                const ::fixy::fs::OwnedFd file = std::move(opened).consume();
+                const std::int64_t size = ::fixy::fs::file_size(ctx, file).value_or(0);
+                if (size <= 0 || static_cast<std::uint64_t>(size) > maximum) return false;
+                bytes.resize(static_cast<std::size_t>(size));
+                return ::fixy::fs::read_full(ctx, file, std::as_writable_bytes(std::span<std::uint8_t>{bytes}))
+                           .value_or(0)
+                    == bytes.size();
+            },
+            [](::foundation::os::Errno) { return false; });
 }
 
-[[nodiscard]] bool parse_session_index_line_(std::string_view line, uint64_t& first, uint64_t& last, uint64_t& count,
-                                             uint64_t& hash) noexcept {
-    const std::size_t p1 = line.find(',');
-    if (p1 == std::string_view::npos) return false;
-    const std::size_t p2 = line.find(',', p1 + 1);
-    if (p2 == std::string_view::npos) return false;
-    const std::size_t p3 = line.find(',', p2 + 1);
-    if (p3 == std::string_view::npos) return false;
-    const char* begin = line.data();
-    const char* end = begin + line.size();
-    if (!parse_u64(begin, begin + p1, 10, first)) return false;
-    if (!parse_u64(begin + p1 + 1, begin + p2, 10, last)) return false;
-    if (!parse_u64(begin + p2 + 1, begin + p3, 10, count)) return false;
-    if (!parse_u64(begin + p3 + 1, end, 16, hash)) return false;
-    return first <= last;
+// The first line of a text, without its newline, and the text after the
+// newline.  A text with no newline is one line.
+struct LineSplit {
+    ::fixy::TextView line{};
+    ::fixy::TextView rest{};
+};
+
+[[nodiscard]] LineSplit split_line_(::fixy::TextView text) noexcept {
+    const std::size_t length = ::fixy::find(text, '\n').value_or(text.size());
+    const std::size_t next = ::fixy::min(length + 1, text.size());
+    return LineSplit{
+        .line = text.window(0, length).value_or(::fixy::TextView{}),
+        .rest = text.window(next, text.size() - next).value_or(::fixy::TextView{}),
+    };
+}
+
+// The text before the first comma of a text, and the text after it, or
+// none when the text holds no comma.
+struct CommaSplit {
+    ::fixy::TextView head{};
+    ::fixy::TextView tail{};
+};
+
+[[nodiscard]] ::fixy::Option<CommaSplit> split_at_comma_(::fixy::TextView text) noexcept {
+    const std::size_t comma = ::fixy::find(text, ',').value_or(text.size());
+    if (comma == text.size()) return ::fixy::none;
+    return ::fixy::some(CommaSplit{
+        .head = text.window(0, comma).value_or(::fixy::TextView{}),
+        .tail = text.window(comma + 1, text.size() - comma - 1).value_or(::fixy::TextView{}),
+    });
+}
+
+// The value of a field of decimal digits.  The parse of the base reads a
+// "0x" prefix as hexadecimal digits, and a field of the store holds no
+// prefix, so a field with the prefix gives none.
+[[nodiscard]] ::fixy::Option<std::uint64_t> parse_decimal_(::fixy::TextView field) noexcept {
+    if (::fixy::starts_with(field, "0x")) return ::fixy::none;
+    return ::fixy::parse<std::uint64_t>(field).ok();
+}
+
+// The value of a field of bare hexadecimal digits.
+[[nodiscard]] ::fixy::Option<std::uint64_t> parse_hex_field_(::fixy::TextView field) noexcept {
+    return ::foundation::core::parse_hex<std::uint64_t>(field).ok();
+}
+
+// One line of the head log: "<step>,<16 hexadecimal digits>,<ts>".
+struct LogLine {
+    std::uint64_t step = 0;
+    std::uint64_t hash = 0;
+    std::uint64_t committed_at = 0;
+};
+
+[[nodiscard]] ::fixy::Option<LogLine> parse_log_line_(::fixy::TextView line) noexcept {
+    CRUCIBLE_TRY(first_split, split_at_comma_(line));
+    CRUCIBLE_TRY(hash_split, split_at_comma_(first_split.tail));
+    CRUCIBLE_TRY(step, parse_decimal_(first_split.head));
+    CRUCIBLE_TRY(hash, parse_hex_field_(hash_split.head));
+    CRUCIBLE_TRY(committed_at, parse_decimal_(hash_split.tail));
+    return ::fixy::some(LogLine{.step = step, .hash = hash, .committed_at = committed_at});
+}
+
+// One line of a session-event index:
+// "<first_step>,<last_step>,<count>,<16 hexadecimal digits>".
+struct IndexLine {
+    std::uint64_t first = 0;
+    std::uint64_t last = 0;
+    std::uint64_t count = 0;
+    std::uint64_t hash = 0;
+};
+
+[[nodiscard]] ::fixy::Option<IndexLine> parse_index_line_(::fixy::TextView line) noexcept {
+    CRUCIBLE_TRY(first_split, split_at_comma_(line));
+    CRUCIBLE_TRY(last_split, split_at_comma_(first_split.tail));
+    CRUCIBLE_TRY(count_split, split_at_comma_(last_split.tail));
+    CRUCIBLE_TRY(first, parse_decimal_(first_split.head));
+    CRUCIBLE_TRY(last, parse_decimal_(last_split.head));
+    CRUCIBLE_TRY(count, parse_decimal_(count_split.head));
+    CRUCIBLE_TRY(hash, parse_hex_field_(count_split.tail));
+    if (first > last) return ::fixy::none;
+    return ::fixy::some(IndexLine{.first = first, .last = last, .count = count, .hash = hash});
+}
+
+// The name of the batch file of hash in its session directory:
+// "<16 hexadecimal digits>.cfed".
+[[nodiscard]] EntryPath batch_entry_(std::uint64_t hash) noexcept {
+    const ::fixy::FixedText<16> digits = hex_digits_(hash);
+    EntryPath path{};
+    path.append(digits.view()).expect("the batch name fits its path");
+    path.append(::fixy::TextView{".cfed"}).expect("the batch name fits its path");
+    return path;
 }
 
 // Conservative upper bound on the serialized size of a RegionNode.
@@ -344,25 +352,24 @@ void hex16_(uint64_t value, char (&out)[16]) noexcept {
 
 }  // namespace
 
-ContentHash Cipher::store(OpenView const&, ContentAddressedRegionPayload payload) {
+ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddressedRegionPayload payload) {
     const RegionNode* region = payload.get();
     if (!region) return ContentHash{};
     const ContentHash hash = region->content_hash;
     if (!hash) return ContentHash{};
 
-    const auto path_tagged = obj_path(hash.raw());
-    const std::string& path = path_tagged.value();
+    const EntryPath object = object_entry_(hash.raw());
 
     // The skip path also fdatasyncs.  Another process may have written
     // these bytes and died before the kernel flushed them, and this
     // process is about to return the hash as durable.
-    const auto obj_rel_tagged = obj_relpath_(hash.raw());
-    const std::string& obj_rel = obj_rel_tagged.value();
-    if (std::filesystem::exists(path)) {
-        if (!fdatasync_at_(root_dirfd_.get(), obj_rel)) {
-            return ContentHash{};
-        }
-        return hash;
+    const bool is_present = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+        return ::fixy::fs::has_entry_at(ctx, root_dirfd_, object.c_text()).value_or(false);
+    });
+    if (is_present) {
+        const bool is_flushed = with_file_ctx_(
+            file_ctx, [&](auto const& ctx) { return flush_entry_at_(ctx, root_dirfd_, object.c_text()); });
+        return is_flushed ? hash : ContentHash{};
     }
 
     const size_t cap = estimate_serial_size(*region).value();
@@ -370,13 +377,23 @@ ContentHash Cipher::store(OpenView const&, ContentAddressedRegionPayload payload
     const size_t n = serialize_region(SerializedRegion{*region}, SerialBuffer{buf});
     if (n == 0) return ContentHash{};
 
-    std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+    // The directory of the object holds the objects of one first byte of
+    // the hash.  A directory that is there gives eexist, and a directory
+    // that the make cannot make fails the write below.
+    EntryPath directory{};
+    directory.append(::fixy::TextView{"objects/"}).expect("the object directory fits its path");
+    directory.append_hex<2>(hash.raw() >> 56U).expect("the object directory fits its path");
 
     // The replace writes a temporary file, flushes its bytes, and renames
     // it onto the object.  A reader then sees the whole object or no
     // object, and a hash that this function returns is loadable after a
     // crash.
-    if (!atomic_write_at_(root_dirfd_.get(), obj_rel, std::span<const uint8_t>{buf.data(), n})) {
+    const bool is_written = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+        static_cast<void>(::fixy::fs::make_directory_at(ctx, root_dirfd_, directory.c_text()).is_ok());
+        return replace_entry_at_(ctx, root_dirfd_, object.c_text().view(),
+                                 std::as_bytes(std::span<const uint8_t>{buf.data(), n}));
+    });
+    if (!is_written) {
         return ContentHash{};
     }
 
@@ -396,10 +413,10 @@ ContentHash Cipher::store(OpenView const&, ContentAddressedRegionPayload payload
         ::fixy::mint_band<::fixy::cipher_tier::Hot<ContentHash>>(ContentHash{}));
 }
 
-Cipher::LoadedContentAddressedRegionPayload Cipher::load_content_addressed(OpenView const&,
-                                                                           ::foundation::effects::Alloc a,
-                                                                           ContentHash content_hash,
-                                                                           ::fixy::BumpArena& arena) const {
+Cipher::LoadedContentAddressedRegionPayload Cipher::load_content_addressed_(FileCtx const& file_ctx, OpenView const&,
+                                                                            ::foundation::effects::Alloc a,
+                                                                            ContentHash content_hash,
+                                                                            ::fixy::BumpArena& arena) const {
     if (!content_hash) return nullptr;
 
     const std::span<const uint8_t> cached = cached_bytes(content_hash);
@@ -410,29 +427,18 @@ Cipher::LoadedContentAddressedRegionPayload Cipher::load_content_addressed(OpenV
         }
     }
 
-    const auto path_tagged = obj_path(content_hash.raw());
-    const std::string& path = path_tagged.value();
-    if (!std::filesystem::exists(path)) return nullptr;
-
-    // tellg gives -1 for a stream that did not open, so the test of raw
-    // also refuses a failed open.
-    std::ifstream f(path, std::ios::binary);
-    f.seekg(0, std::ios::end);
-    const auto raw = f.tellg();
-    if (raw < 0) return nullptr;
-    const auto len = static_cast<size_t>(raw);
-    // The early return and the mint check the same ceiling on purpose.
-    // If this function is later split and the early return is dropped,
-    // the mint's precondition still fires.
-    if (len == 0 || len > MAX_OBJECT_BYTES) return nullptr;
-    const ValidatedObjectSize validated_len = ::fixy::mint_refined<::fixy::bounded_above<MAX_OBJECT_BYTES>>(len);
-    f.seekg(0, std::ios::beg);
-
-    std::vector<uint8_t> buf(validated_len.value());
-    // A short read sets the fail bit, and tellg then gives -1.  A full
-    // read leaves the stream at the end, where tellg gives the length.
-    f.read(static_cast<char*>(static_cast<void*>(buf.data())), static_cast<std::streamsize>(validated_len.value()));
-    if (static_cast<size_t>(f.tellg()) != len) return nullptr;
+    // The read refuses a missing object, an empty object and an object
+    // past MAX_OBJECT_BYTES, and the mint states the same ceiling again.
+    // If the read is later changed and drops its bound, the mint's
+    // precondition still fires.
+    const EntryPath object = object_entry_(content_hash.raw());
+    std::vector<uint8_t> buf;
+    const bool is_read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+        return read_entry_at_(ctx, root_dirfd_, object.c_text(), MAX_OBJECT_BYTES, buf);
+    });
+    if (!is_read) return nullptr;
+    [[maybe_unused]] const ValidatedObjectSize validated_len =
+        ::fixy::mint_refined<::fixy::bounded_above<MAX_OBJECT_BYTES>>(buf.size());
 
     const std::optional<LoadedRegionNode> loaded_region = deserialize_region(a, std::span<const uint8_t>{buf}, arena);
     // The file name is the key, and anyone who writes the store can put
@@ -444,7 +450,8 @@ Cipher::LoadedContentAddressedRegionPayload Cipher::load_content_addressed(OpenV
     return LoadedContentAddressedRegionPayload{loaded_region->value(), false};
 }
 
-ContentHash Cipher::persist_session_events_(OpenView const&, std::span<const SessionEvent> events) {
+ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView const&,
+                                            std::span<const SessionEvent> events) {
     if (events.empty()) return ContentHash{};
 
     if (events.size() > MAX_SESSION_EVENT_BATCH_EVENTS) {
@@ -484,109 +491,100 @@ ContentHash Cipher::persist_session_events_(OpenView const&, std::span<const Ses
     if (written.is_err()) return ContentHash{};
     encoded.resize(std::move(written).expect("the entry fits the buffer of its size"));
 
-    const std::string dir = session_event_dir(session);
-    std::filesystem::create_directories(dir);
-    const std::string path = session_event_batch_path(session, hash);
-    if (std::filesystem::exists(path)) {
-        if (!file_bytes_equal_(path, std::span<const std::uint8_t>{encoded.data(), encoded.size()})) {
-            return ContentHash{};
-        }
-    } else {
-        std::ofstream out(path, std::ios::binary);
-        if (!out) return ContentHash{};
-        out.write(static_cast<const char*>(static_cast<const void*>(encoded.data())),
-                  static_cast<std::streamsize>(encoded.size()));
-        if (!out) return ContentHash{};
-    }
-
-    // Record layout: "<first_step>,<last_step>,<count>,<16-hex hash>\n".
-    // Longest form is 20 + 1 + 20 + 1 + 20 + 1 + 16 + 1 = 80 bytes, so 96
-    // bytes suffices, well under the 4096-byte window in which POSIX
-    // makes a single O_APPEND write to a regular file atomic.
+    // The index line: "<first_step>,<last_step>,<count>,<16-hex hash>\n".
+    // The longest form is 20 + 1 + 20 + 1 + 20 + 1 + 16 + 1 = 80 bytes,
+    // well under the 4096-byte window in which POSIX makes a single
+    // O_APPEND write to a regular file atomic.
     //
     // load_session_events tolerates a malformed trailing line, so a
     // crash mid-record drops one index entry.  The batch file itself is
     // already on disk, and the next persist_session_events call
     // re-appends the entry.
-    char idx_rec[96];
-    std::size_t off = 0;
-    auto [p1, ec1] = std::to_chars(idx_rec + off, idx_rec + sizeof(idx_rec), events.front().step_id().value);
-    if (ec1 != std::errc{}) return ContentHash{};
-    off = static_cast<std::size_t>(p1 - idx_rec);
-    idx_rec[off++] = ',';
-    auto [p2, ec2] = std::to_chars(idx_rec + off, idx_rec + sizeof(idx_rec), events.back().step_id().value);
-    if (ec2 != std::errc{}) return ContentHash{};
-    off = static_cast<std::size_t>(p2 - idx_rec);
-    idx_rec[off++] = ',';
-    auto [p3, ec3] = std::to_chars(idx_rec + off, idx_rec + sizeof(idx_rec), events.size());
-    if (ec3 != std::errc{}) return ContentHash{};
-    off = static_cast<std::size_t>(p3 - idx_rec);
-    idx_rec[off++] = ',';
-    char hex[16];
-    hex16_(hash.raw(), hex);
-    std::memcpy(idx_rec + off, hex, 16);
-    off += 16;
-    idx_rec[off++] = '\n';
+    const ::fixy::FixedText<16> hash_digits = hex_digits_(hash.raw());
+    ::fixy::FixedText<96> record{};
+    const ::fixy::TextView index_line = ::fixy::format(record, "{},{},{},{}\n", events.front().step_id().value,
+                                                       events.back().step_id().value, events.size(), hash_digits.view())
+                                            .expect("an index line fits 96 characters");
 
-    // Open the session subdirectory so the index append is anchored at
-    // two levels: root dirfd, then session dirfd, then the "index" leaf
-    // under O_NOFOLLOW.  Substituting the intermediate session_events
-    // directory needs write access to the Cipher root, which is outside
-    // the threat model.
-    const std::string sess_rel = session_event_dir_relpath_(session);
-    const AnchoredFd session_dirfd = open_dir_at_(root_dirfd_.get(), sess_rel.c_str());
-    if (!session_dirfd.is_open()) {
+    const EntryPath batch = batch_entry_(hash.raw());
+    const EntryPath session_directory = session_entry_(session);
+    std::vector<std::uint8_t> stored_batch;
+
+    // The session subdirectory anchors the batch and the index at two
+    // levels: root dirfd, then session dirfd, then the leaf under
+    // O_NOFOLLOW.  Substituting the intermediate session_events directory
+    // needs write access to the Cipher root, which is outside the threat
+    // model.  A directory that is there gives eexist.  A batch file of the
+    // hash must hold the same bytes, and the replace makes a new batch
+    // file durable before the index names it.
+    const bool is_indexed = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+        static_cast<void>(::fixy::fs::make_directory_at(ctx, root_dirfd_, "session_events").is_ok());
+        static_cast<void>(::fixy::fs::make_directory_at(ctx, root_dirfd_, session_directory.c_text()).is_ok());
+        return ::fixy::fs::open_dirfd_at(ctx, root_dirfd_, session_directory.c_text())
+            .match(
+                [&](::fixy::fs::Dirfd session_dir) {
+                    const bool is_batch_present =
+                        ::fixy::fs::has_entry_at(ctx, session_dir, batch.c_text()).value_or(false);
+                    const bool is_batch_stored =
+                        is_batch_present
+                            ? read_entry_at_(ctx, session_dir, batch.c_text(), encoded.size(), stored_batch)
+                                  && stored_batch == encoded
+                            : replace_entry_at_(ctx, session_dir, batch.c_text().view(),
+                                                std::as_bytes(std::span<const std::uint8_t>{encoded}));
+                    return is_batch_stored && append_entry_at_(ctx, session_dir, "index", index_line);
+                },
+                [](::foundation::os::Errno) { return false; });
+    });
+    if (!is_indexed) {
         return ContentHash{};
     }
-
-    if (!atomic_append_at_(
-            session_dirfd.get(), "index",
-            std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(static_cast<const void*>(idx_rec)), off})) {
-        return ContentHash{};
-    }
-
     return hash;
 }
 
-std::vector<Cipher::SessionEvent> Cipher::load_session_events(OpenView const&, ::fixy::session::SessionTagId session,
-                                                              ::fixy::session::StepId from_step) const {
+std::vector<Cipher::SessionEvent> Cipher::load_session_events_(FileCtx const& file_ctx, OpenView const&,
+                                                               ::foundation::effects::Alloc allocation,
+                                                               ::fixy::session::SessionTagId session,
+                                                               ::fixy::session::StepId from_step) const {
     std::vector<SessionEvent> out;
-    std::ifstream index(session_event_dir(session) + "/index");
-    if (!index) return out;
+    const EntryPath session_directory = session_entry_(session);
+    auto opened = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+        return ::fixy::fs::open_dirfd_at(ctx, root_dirfd_, session_directory.c_text());
+    });
+    if (opened.is_err()) return out;
+    const ::fixy::fs::Dirfd session_dir = std::move(opened).expect("the session directory opened");
 
-    std::string line;
+    // The index has no bound of its own, so the text takes the largest
+    // count of a view.  A failed read leaves the bytes that it read in the
+    // text, and the parse reads them: a torn last line fails its parse.
+    ::foundation::core::GrowText index_text = ::foundation::core::mint_grow_text(::fixy::max_of<std::size_t>);
+    static_cast<void>(with_file_ctx_(file_ctx, [&](auto const& ctx) {
+        return ::fixy::fs::read_whole_at(ctx, allocation, session_dir, "index", index_text).is_ok();
+    }));
+
     uint64_t highest_loaded = from_step.value;
     bool have_loaded = false;
-    while (std::getline(index, line)) {
-        uint64_t first = 0;
-        uint64_t last = 0;
-        uint64_t count = 0;
-        uint64_t raw_hash = 0;
-        if (!parse_session_index_line_(line, first, last, count, raw_hash)) {
-            continue;
-        }
+    for (::fixy::TextView rest = index_text.view(); rest.size() != 0;) {
+        const LineSplit split = split_line_(rest);
+        rest = split.rest;
+        ::fixy::Option<IndexLine> parsed = parse_index_line_(split.line);
+        if (parsed.is_none()) continue;
+        const IndexLine index_line = std::move(parsed).expect("the index line parsed");
+        const uint64_t first = index_line.first;
+        const uint64_t last = index_line.last;
+        const uint64_t count = index_line.count;
         if (last < from_step.value) continue;
         if (count == 0 || count > MAX_SESSION_EVENT_BATCH_EVENTS) continue;
         if ((last - first + 1u) != count) continue;
 
-        const ContentHash hash{raw_hash};
-        const std::string path = session_event_batch_path(session, hash);
-        std::ifstream batch(path, std::ios::binary);
-        if (!batch) continue;
-
-        batch.seekg(0, std::ios::end);
-        const auto raw_len = batch.tellg();
-        if (raw_len < 0) continue;
-        const auto len = static_cast<std::size_t>(raw_len);
-        if (len < cipher::federation::FEDERATION_HEADER_BYTES
-            || len > cipher::federation::FEDERATION_HEADER_BYTES + MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES) {
-            continue;
-        }
-        batch.seekg(0, std::ios::beg);
-
-        std::vector<std::uint8_t> bytes(len);
-        batch.read(static_cast<char*>(static_cast<void*>(bytes.data())), static_cast<std::streamsize>(bytes.size()));
-        if (!batch) continue;
+        const ContentHash hash{index_line.hash};
+        const EntryPath batch = batch_entry_(index_line.hash);
+        std::vector<std::uint8_t> bytes;
+        const bool is_read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+            return read_entry_at_(ctx, session_dir, batch.c_text(),
+                                  cipher::federation::FEDERATION_HEADER_BYTES + MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES,
+                                  bytes);
+        });
+        if (!is_read || bytes.size() < cipher::federation::FEDERATION_HEADER_BYTES) continue;
 
         auto entry = cipher::federation::deserialize_untrusted_federation_entry(
             std::span<const std::uint8_t>{bytes}, static_cast<std::uint16_t>(::foundation::effects::effect_count));
@@ -701,8 +699,8 @@ ContentHash Cipher::latest_committed_head() const noexcept {
     return ContentHash{};
 }
 
-Cipher::CommitResult Cipher::advance_head(OpenView const&, ContentHash content_hash, uint64_t step_id,
-                                          ::fixy::MonotonicClockBytes<std::uint64_t> committed_at) {
+Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView const&, ContentHash content_hash,
+                                          uint64_t step_id, ::fixy::MonotonicClockBytes<std::uint64_t> committed_at) {
     // Weakly increasing, not strictly: duplicate step ids are accepted
     // at this gate.  The strict consecutive-by-one check belongs to the
     // session-event batch invariant, not to the head log.
@@ -715,32 +713,20 @@ Cipher::CommitResult Cipher::advance_head(OpenView const&, ContentHash content_h
     // A failed append changes no state in memory, so this store and a
     // reopen agree.  A write that passed before a failed flush can leave
     // the record in the file, and a reopen then reads that commit.
-    {
-        // Record layout: "<step_id>,<16-hex content_hash>,<ts>\n".
-        // Longest form is 20 decimal digits + 1 + 16 + 1 + 20 decimal
-        // digits + 1 = 59 bytes, so 64 bytes suffices.  That is well
-        // under the 4096-byte window in which POSIX makes a single
-        // O_APPEND write to a regular file atomic.
-        char rec[64];
-        std::size_t off = 0;
-        auto [p1, ec1] = std::to_chars(rec + off, rec + sizeof(rec), step_id);
-        if (ec1 != std::errc{}) ::fixy::fatal("the step of a log record does not fit its buffer");
-        off = static_cast<std::size_t>(p1 - rec);
-        rec[off++] = ',';
-        char hex[16];
-        hex16_(content_hash.raw(), hex);
-        std::memcpy(rec + off, hex, 16);
-        off += 16;
-        rec[off++] = ',';
-        auto [p2, ec2] = std::to_chars(rec + off, rec + sizeof(rec), committed_at_ns);
-        if (ec2 != std::errc{}) ::fixy::fatal("the time of a log record does not fit its buffer");
-        off = static_cast<std::size_t>(p2 - rec);
-        rec[off++] = '\n';
-        if (!atomic_append_at_(
-                root_dirfd_.get(), "log",
-                std::span<const std::uint8_t>{static_cast<const std::uint8_t*>(static_cast<const void*>(rec)), off})) {
-            return ::fixy::err(CommitError::log_append);
-        }
+    //
+    // Record layout: "<step_id>,<16-hex content_hash>,<ts>\n".  The
+    // longest form is 20 decimal digits + 1 + 16 + 1 + 20 decimal digits
+    // + 1 = 59 bytes, so 64 bytes suffices.  That is well under the
+    // 4096-byte window in which POSIX makes a single O_APPEND write to a
+    // regular file atomic.
+    const ::fixy::FixedText<16> hash_digits = hex_digits_(content_hash.raw());
+    ::fixy::FixedText<64> record{};
+    const ::fixy::TextView log_line = ::fixy::format(record, "{},{},{}\n", step_id, hash_digits.view(), committed_at_ns)
+                                          .expect("a log record fits 64 characters");
+    const bool is_appended =
+        with_file_ctx_(file_ctx, [&](auto const& ctx) { return append_entry_at_(ctx, root_dirfd_, "log", log_line); });
+    if (!is_appended) {
+        return ::fixy::err(CommitError::log_append);
     }
     log_.append(SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted, ::fixy::session::StepId{step_id},
                                            ::fixy::session::StateHash{content_hash.raw()}, committed_at_ns));
@@ -748,13 +734,11 @@ Cipher::CommitResult Cipher::advance_head(OpenView const&, ContentHash content_h
 
     // HEAD is a copy of the last commit of the log.  A failed write leaves
     // HEAD at an earlier commit, and the open takes the head from the log.
-    char hex[16];
-    hex16_(content_hash.raw(), hex);
-    std::uint8_t buf[17];
-    std::memcpy(buf, hex, 16);
-    buf[16] = static_cast<std::uint8_t>('\n');
-    const bool is_head_written =
-        atomic_write_at_(root_dirfd_.get(), "HEAD", std::span<const std::uint8_t>{buf, sizeof(buf)});
+    ::fixy::FixedText<17> head_line{};
+    head_line.append(hash_digits.view()).expect("sixteen digits fit the HEAD line");
+    head_line.push('\n').expect("the newline fits the HEAD line");
+    const bool is_head_written = with_file_ctx_(
+        file_ctx, [&](auto const& ctx) { return replace_entry_at_(ctx, root_dirfd_, "HEAD", head_line.view()); });
 
     CRUCIBLE_POST(0, head_ == content_hash);
     CRUCIBLE_POST(0, !log_.empty());
@@ -773,32 +757,6 @@ Cipher::CommitResult Cipher::advance_head(OpenView const&, ContentHash content_h
     return ::foundation::core::parse_hex<std::uint64_t>(text.window(0, digit_count).value_or(::fixy::TextView{}))
         .match([](std::uint64_t raw) -> ::fixy::Option<ContentHash> { return ::fixy::some(ContentHash{raw}); },
                [](::fixy::ParseError) -> ::fixy::Option<ContentHash> { return ::fixy::none; });
-}
-
-auto Cipher::obj_path(uint64_t hash) const -> ::fixy::Tagged<std::string, ::fixy::tags::source::CipherPath> {
-    char hex[16];
-    hex16_(hash, hex);
-    const std::string& root = root_str();
-    if (root.size() > MAX_ROOT_PATH_BYTES) {
-        ::fixy::fatal("the root of the Cipher is longer than MAX_ROOT_PATH_BYTES");
-    }
-    std::string path = join_({root, "/objects/", std::string_view{hex, 2}, "/", std::string_view{hex + 2, 14}});
-    return ::fixy::mint_tagged<::fixy::tags::source::CipherPath>(std::move(path));
-}
-
-std::string Cipher::session_event_dir(::fixy::session::SessionTagId session) const {
-    char hex[16];
-    hex16_(session.value, hex);
-    return join_({root_str(), "/session_events/", std::string_view{hex, 16}});
-}
-
-std::string Cipher::session_event_batch_path(::fixy::session::SessionTagId session, ContentHash hash) const {
-    char session_hex[16];
-    hex16_(session.value, session_hex);
-    char hash_hex[16];
-    hex16_(hash.raw(), hash_hex);
-    return join_({root_str(), "/session_events/", std::string_view{session_hex, 16}, "/",
-                  std::string_view{hash_hex, 16}, ".cfed"});
 }
 
 // The two members of the resident cache are cold.  A store and a load wait
@@ -856,32 +814,61 @@ std::string Cipher::session_event_batch_path(::fixy::session::SessionTagId sessi
     }
 }
 
-void Cipher::load_log() {
-    std::ifstream f(root_str() + "/log");
-    if (!f) return;
-    std::string line;
-    while (std::getline(f, line)) {
-        if (line.empty()) continue;
-        const size_t p1 = line.find(',');
-        if (p1 == std::string::npos) continue;
-        const size_t p2 = line.find(',', p1 + 1);
-        if (p2 == std::string::npos) continue;
+void Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation, RootPath root,
+                        ::fixy::Path<::fixy::tags::source::Sanitized> sanitized_root, ::fixy::fs::Dirfd const& here) {
+    // The root opens with O_NOFOLLOW, so a symlinked root fails with
+    // ELOOP.  Abort rather than continue: the durable-on-return contract
+    // needs a root directory whose identity is stable for this instance's
+    // lifetime.
+    root_dirfd_ = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+                      make_root_directories_(ctx, here, root.c_text().view());
+                      return ::fixy::fs::open_dirfd(ctx, std::move(sanitized_root));
+                  }).expect("the root of the Cipher does not open as a directory");
+    [[maybe_unused]] const bool root_set =
+        root_.try_set(::fixy::mint_tagged<::fixy::tags::source::Durable>(std::move(root)));
+    [[assume(root_set)]];
+    static_cast<void>(with_file_ctx_(
+        file_ctx, [&](auto const& ctx) { return ::fixy::fs::make_directory_at(ctx, root_dirfd_, "objects").is_ok(); }));
 
-        const char* begin = line.data();
-        uint64_t step_id = 0;
-        uint64_t raw_hash = 0;
-        uint64_t ts_ns = 0;
-        if (!parse_u64(begin, begin + p1, 10, step_id)) continue;
-        if (!parse_u64(begin + p1 + 1, begin + p2, 16, raw_hash)) continue;
-        if (!parse_u64(begin + p2 + 1, begin + line.size(), 10, ts_ns)) continue;
+    load_log(file_ctx, allocation);
+
+    // The log is the record of the commits, so its last commit is the
+    // head.  HEAD can lag the log after a failed HEAD write, and it is read
+    // only when the log holds no commit.  A missing, long or corrupt HEAD
+    // gives no head.
+    head_ = latest_committed_head();
+    if (head_) {
+        return;
+    }
+    ::foundation::core::GrowText head_text = ::foundation::core::mint_grow_text(MAX_HEAD_BYTES);
+    const bool is_head_read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+        return ::fixy::fs::read_whole_at(ctx, allocation, root_dirfd_, "HEAD", head_text).is_ok();
+    });
+    head_ = is_head_read ? parse_head_(head_text.view()).value_or(ContentHash{}) : ContentHash{};
+}
+
+void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation) {
+    // The log has no bound of its own, so the text takes the largest count
+    // of a view.  A failed read leaves the bytes that it read in the text,
+    // and the parse reads them: a torn last line fails its parse.
+    ::foundation::core::GrowText text = ::foundation::core::mint_grow_text(::fixy::max_of<std::size_t>);
+    static_cast<void>(with_file_ctx_(file_ctx, [&](auto const& ctx) {
+        return ::fixy::fs::read_whole_at(ctx, allocation, root_dirfd_, "log", text).is_ok();
+    }));
+    for (::fixy::TextView rest = text.view(); rest.size() != 0;) {
+        const LineSplit split = split_line_(rest);
+        rest = split.rest;
+        ::fixy::Option<LogLine> parsed = parse_log_line_(split.line);
+        if (parsed.is_none()) continue;
+        const LogLine line = std::move(parsed).expect("the log line parsed");
         // The log only grows in step order, and its append checks that
         // order with a contract that aborts.  A line out of order is a
         // corrupt line, so it is skipped like the others.
-        if (!log_.empty() && step_id < log_.back().step_id().value) continue;
+        if (!log_.empty() && line.step < log_.back().step_id().value) continue;
 
         log_.append(SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted,
-                                               ::fixy::session::StepId{step_id}, ::fixy::session::StateHash{raw_hash},
-                                               ts_ns));
+                                               ::fixy::session::StepId{line.step},
+                                               ::fixy::session::StateHash{line.hash}, line.committed_at));
     }
 }
 

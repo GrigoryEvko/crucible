@@ -117,7 +117,7 @@ int main() {
         auto* warm_region = synth_region(warm_arena, warm_dag_arena, num_ops, 0xC0FFEE + num_ops);
         check_unset_ids(*warm_region);
         const auto warm_payload = Cipher::content_addressed(warm_region);
-        (void)cipher.store(open_view, warm_payload);  // prime the warm path
+        (void)cipher.store(ctx, open_view, warm_payload);  // prime the warm path
         const ContentHash warm_h = warm_region->content_hash;
 
         // Cold write: distinct content_hash per iteration, so every
@@ -142,31 +142,31 @@ int main() {
                 Arena region_arena{1 << 18};
                 ::fixy::BumpArena region_dag_arena{1 << 18};
                 auto* r = synth_region(region_arena, region_dag_arena, num_ops, ++salt);
-                auto h = cipher.store(open_view, Cipher::content_addressed(r));
+                auto h = cipher.store(ctx, open_view, Cipher::content_addressed(r));
                 bench::do_not_optimize(h);
             });
         }());
 
         reports.push_back(bench::run(label_warm, [&] {
-            auto h = cipher.store(open_view, warm_payload);
+            auto h = cipher.store(ctx, open_view, warm_payload);
             bench::do_not_optimize(h);
         }));
 
         reports.push_back(bench::run(label_ca_warm, [&] {
-            auto h = cipher.store(open_view, warm_payload);
+            auto h = cipher.store(ctx, open_view, warm_payload);
             bench::do_not_optimize(h);
         }));
 
         reports.push_back(bench::run(label_read, [&] {
             ::fixy::BumpArena read_arena{1 << 18};
-            auto r = cipher.load_content_addressed(open_view, A, warm_h, read_arena);
+            auto r = cipher.load_content_addressed(ctx, open_view, A, warm_h, read_arena);
             auto* region = r.get();
             bench::do_not_optimize(region);
         }));
 
         reports.push_back(bench::run(label_ca_read, [&] {
             ::fixy::BumpArena read_arena{1 << 18};
-            auto r = cipher.load_content_addressed(open_view, A, warm_h, read_arena);
+            auto r = cipher.load_content_addressed(ctx, open_view, A, warm_h, read_arena);
             bench::do_not_optimize(r.get());
             bench::do_not_optimize(r.cache_hit());
         }));

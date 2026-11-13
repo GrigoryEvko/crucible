@@ -15,6 +15,6 @@ int main() {
     const auto view = cipher.mint_open_view(store_ctx);
 
     const ::crucible::RegionNode* bare = nullptr;
-    auto result = cipher.commit_per_program(view, bare);
+    auto result = cipher.commit_per_program(store_ctx, view, bare);
     return static_cast<int>(static_cast<bool>(std::move(result).consume()));
 }

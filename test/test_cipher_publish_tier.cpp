@@ -95,8 +95,8 @@ static void test_publish_warm_bit_equality(const char* dir) {
     // The second write of the same region takes the already-exists
     // path, so publishing after storing must still report the hash the
     // raw store produced.
-    ContentHash raw = cipher.store(view, payload);
-    auto warm = cipher.publish_warm(view, payload);
+    ContentHash raw = cipher.store(store_ctx(), view, payload);
+    auto warm = cipher.publish_warm(store_ctx(), view, payload);
     ContentHash via_wrapper = std::move(warm).consume();
     assert(raw == via_wrapper);
     assert(static_cast<bool>(raw));
@@ -110,12 +110,12 @@ static void test_publish_warm_type_identity(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    using Got = decltype(cipher.publish_warm(view, payload));
+    using Got = decltype(cipher.publish_warm(store_ctx(), view, payload));
     using Want = CipherTier<CipherTierTag_v::Warm, ContentHash>;
     static_assert(std::is_same_v<Got, Want>, "publish_warm must return CipherTier<Warm, ContentHash>");
     static_assert(tier_v<Got> == CipherTierTag_v::Warm);
 
-    auto p = cipher.publish_warm(view, payload);
+    auto p = cipher.publish_warm(store_ctx(), view, payload);
     (void)std::move(p).consume();
 }
 
@@ -166,7 +166,7 @@ static void test_view_and_payload_route(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    using WarmGot = decltype(cipher.publish_warm(view, payload));
+    using WarmGot = decltype(cipher.publish_warm(store_ctx(), view, payload));
     static_assert(std::is_same_v<WarmGot, CipherTier<CipherTierTag_v::Warm, ContentHash>>);
 
     using HotGot = decltype(cipher.publish_hot(view, payload));
@@ -175,7 +175,7 @@ static void test_view_and_payload_route(const char* dir) {
     using ColdGot = decltype(cipher.publish_cold(view, payload));
     static_assert(std::is_same_v<ColdGot, CipherTier<CipherTierTag_v::Cold, ContentHash>>);
 
-    (void)std::move(cipher.publish_warm(view, payload)).consume();
+    (void)std::move(cipher.publish_warm(store_ctx(), view, payload)).consume();
     (void)std::move(cipher.publish_hot(view, payload)).consume();
     (void)std::move(cipher.publish_cold(view, payload)).consume();
 }
@@ -270,7 +270,7 @@ static void test_e2e_warm_fence_admits_hot_and_warm(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    auto warm_val = cipher.publish_warm(view, payload);
+    auto warm_val = cipher.publish_warm(store_ctx(), view, payload);
     ContentHash h_warm = warm_publish_consumer(std::move(warm_val));
     assert(static_cast<bool>(h_warm));
 
@@ -322,7 +322,7 @@ static void test_runtime_tier_reader_pattern(const char* dir) {
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
 
-    auto warm_v = cipher.publish_warm(view, payload);
+    auto warm_v = cipher.publish_warm(store_ctx(), view, payload);
     auto hot_v = cipher.publish_hot(view, payload);
     auto cold_v = cipher.publish_cold(view, payload);
 
@@ -355,7 +355,7 @@ static void test_replay_engine_admits_all_tiers(const char* dir) {
     auto cold = cipher.publish_cold(view, payload);
     (void)replay_consumer(std::move(cold));
 
-    auto warm = cipher.publish_warm(view, payload);
+    auto warm = cipher.publish_warm(store_ctx(), view, payload);
     ContentHash h = replay_consumer(std::move(warm));
     assert(static_cast<bool>(h));
 
@@ -380,7 +380,7 @@ static void test_sequential_three_tier_publish(const char* dir) {
     // that a peer can serve the region before the archive write
     // finishes.
     auto h_pub = cipher.publish_hot(view, payload);
-    auto w_pub = cipher.publish_warm(view, payload);
+    auto w_pub = cipher.publish_warm(store_ctx(), view, payload);
     auto c_pub = cipher.publish_cold(view, payload);
 
     static_assert(!std::is_same_v<decltype(h_pub), decltype(w_pub)>);
@@ -435,14 +435,14 @@ static void test_content_addressed_publish_overloads(const char* dir) {
     using Payload = decltype(payload);
     static_assert(::fixy::session::is_content_addressed_v<typename Payload::payload_type>);
 
-    using WarmGot = decltype(cipher.publish_warm(view, payload));
+    using WarmGot = decltype(cipher.publish_warm(store_ctx(), view, payload));
     using HotGot = decltype(cipher.publish_hot(view, payload));
     using ColdGot = decltype(cipher.publish_cold(view, payload));
     static_assert(std::is_same_v<WarmGot, CipherTier<CipherTierTag_v::Warm, ContentHash>>);
     static_assert(std::is_same_v<HotGot, CipherTier<CipherTierTag_v::Hot, ContentHash>>);
     static_assert(std::is_same_v<ColdGot, CipherTier<CipherTierTag_v::Cold, ContentHash>>);
 
-    ContentHash warm_hash = std::move(cipher.publish_warm(view, payload)).consume();
+    ContentHash warm_hash = std::move(cipher.publish_warm(store_ctx(), view, payload)).consume();
     assert(static_cast<bool>(warm_hash));
     (void)std::move(cipher.publish_hot(view, payload)).consume();
     (void)std::move(cipher.publish_cold(view, payload)).consume();

@@ -21,6 +21,6 @@ int main() {
 
     auto request_scoped =
         ::fixy::mint_band<::fixy::opaque_lifetime::PerRequest<const ::crucible::RegionNode*>>(nullptr);
-    auto result = cipher.commit_per_program(view, std::move(request_scoped));
+    auto result = cipher.commit_per_program(store_ctx, view, std::move(request_scoped));
     return static_cast<int>(static_cast<bool>(std::move(result).consume()));
 }

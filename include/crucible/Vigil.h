@@ -611,7 +611,7 @@ private:
     template <class Ctx, class Store>
     [[nodiscard]] bool persist_into_(Ctx const& ctx, Store& store, const RegionNode* region) {
         auto open_view = store.mint_open_view(ctx);
-        const ContentHash hash = store.store(open_view, Store::content_addressed(region));
+        const ContentHash hash = store.store(ctx, open_view, Store::content_addressed(region));
         if (!hash) return false;
         return store.record_event(ctx, open_view, hash, step_.get()).is_ok();
     }
@@ -620,7 +620,7 @@ private:
     [[nodiscard]] RegionNode* load_head_(Ctx const& ctx, ::foundation::effects::Alloc a, Store& store) {
         if (store.empty()) return nullptr;
         auto open_view = store.mint_open_view(ctx);
-        return store.load_content_addressed(open_view, a, store.head(), load_arena_).get();
+        return store.load_content_addressed(ctx, open_view, a, store.head(), load_arena_).get();
     }
 
     // Runs on the background thread when a new region is ready.  It must

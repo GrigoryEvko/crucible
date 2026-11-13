@@ -158,7 +158,13 @@ int main() {
     {
         auto cipher = open_cipher(dir);
         assert(cipher.empty() && "freshly opened Cipher must be empty");
-        assert(cipher.root() == dir);
+        // The store keeps each character of its root.
+        std::size_t root_index = 0;
+        for (const char character : cipher.root()) {
+            assert(character == dir[root_index]);
+            ++root_index;
+        }
+        assert(dir[root_index] == '\0');
         assert(std::filesystem::is_directory(std::string(dir) + "/objects"));
     }
 
@@ -169,7 +175,8 @@ int main() {
     {
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
-        const crucible::ContentHash stored_hash = cipher.store(ov, crucible::Cipher::content_addressed(region));
+        const crucible::ContentHash stored_hash =
+            cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(region));
         assert(stored_hash == expected_hash);
 
         const std::string expected_path = object_path(dir, expected_hash);
@@ -177,7 +184,8 @@ int main() {
 
         // The content decides the name, so storing the same region
         // again names the same object.
-        const crucible::ContentHash second_hash = cipher.store(ov, crucible::Cipher::content_addressed(region));
+        const crucible::ContentHash second_hash =
+            cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(region));
         assert(second_hash == expected_hash);
     }
 
@@ -187,7 +195,7 @@ int main() {
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
         ::fixy::BumpArena arena2{1 << 16};
-        auto loaded_ca = cipher.load_content_addressed(ov, g_test.alloc, expected_hash, arena2);
+        auto loaded_ca = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, expected_hash, arena2);
         assert(loaded_ca.get() != nullptr && "load() must succeed for a stored hash");
         assert(loaded_ca.get()->content_hash == expected_hash);
         assert(loaded_ca.get()->num_ops() == region->num_ops());
@@ -196,7 +204,7 @@ int main() {
     {
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
-        (void)cipher.store(ov, crucible::Cipher::content_addressed(region));
+        (void)cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(region));
 
         // The log line of the commit holds a reading of CLOCK_MONOTONIC,
         // so it lies between two readings taken around the commit.
@@ -249,9 +257,11 @@ int main() {
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
         ::fixy::BumpArena arena3{1 << 16};
-        assert(
-            cipher.load_content_addressed(ov, g_test.alloc, crucible::ContentHash{0xBADBADBADBADBAD0ULL}, arena3).get()
-            == nullptr);
+        assert(cipher
+                   .load_content_addressed(store_ctx(), ov, g_test.alloc, crucible::ContentHash{0xBADBADBADBADBAD0ULL},
+                                           arena3)
+                   .get()
+               == nullptr);
     }
 
     {
@@ -266,7 +276,7 @@ int main() {
 
         auto cipher = open_cipher(dir_ca);
         auto ov = cipher.mint_open_view(store_ctx());
-        const crucible::ContentHash hash = cipher.store(ov, ca_payload);
+        const crucible::ContentHash hash = cipher.store(store_ctx(), ov, ca_payload);
         assert(hash == ca_region->content_hash);
 
         const std::string path = object_path(dir_ca, hash);
@@ -281,7 +291,7 @@ int main() {
         }
         const auto corrupted_size = std::filesystem::file_size(path);
 
-        const crucible::ContentHash second = cipher.store(ov, ca_payload);
+        const crucible::ContentHash second = cipher.store(store_ctx(), ov, ca_payload);
         assert(second == hash);
         assert(std::filesystem::file_size(path) == corrupted_size
                && "duplicate ContentAddressed store must not rewrite bytes");
@@ -290,7 +300,7 @@ int main() {
         // so a successful read can only have come from memory.
         std::filesystem::remove(path);
         ::fixy::BumpArena read_arena{1 << 16};
-        auto loaded = cipher.load_content_addressed(ov, g_test.alloc, hash, read_arena);
+        auto loaded = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hash, read_arena);
         assert(loaded.cache_hit() && "resident ContentAddressed bytes must avoid disk fetch");
         assert(loaded.get() != nullptr);
         assert(loaded.get()->content_hash == hash);
@@ -318,13 +328,13 @@ int main() {
         auto receiver = open_cipher(receiver_dir);
         auto sender_ov = sender.mint_open_view(store_ctx());
         auto receiver_ov = receiver.mint_open_view(store_ctx());
-        const crucible::ContentHash sender_hash = sender.store(sender_ov, ca_payload);
-        const crucible::ContentHash receiver_hash = receiver.store(receiver_ov, ca_payload);
+        const crucible::ContentHash sender_hash = sender.store(store_ctx(), sender_ov, ca_payload);
+        const crucible::ContentHash receiver_hash = receiver.store(store_ctx(), receiver_ov, ca_payload);
         assert(sender_hash == receiver_hash);
 
         std::filesystem::remove(object_path(receiver_dir, receiver_hash));
         ::fixy::BumpArena read_arena{1 << 16};
-        auto loaded = receiver.load_content_addressed(receiver_ov, g_test.alloc, sender_hash, read_arena);
+        auto loaded = receiver.load_content_addressed(store_ctx(), receiver_ov, g_test.alloc, sender_hash, read_arena);
         assert(loaded.cache_hit());
         assert(loaded.get() != nullptr);
         assert(loaded.get()->content_hash == sender_hash);
@@ -348,7 +358,8 @@ int main() {
         // Minting the view is itself the check.  Every call below takes
         // it as proof and repeats no check of its own.
         auto ov = cipher.mint_open_view(store_ctx());
-        const auto hash = cipher.store(ov, crucible::Cipher::content_addressed(make_test_region(arena, dag_arena)));
+        const auto hash =
+            cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(make_test_region(arena, dag_arena)));
         assert(static_cast<bool>(hash));
         commit_head(cipher, ov, hash, 100);
         assert(cipher.head() == hash);
@@ -377,10 +388,10 @@ int main() {
         {
             std::ofstream lf(std::string(dir2) + "/log");
             lf << "10,deadbeef00000001,1000\n";  // valid
-            lf << "garbage,not,numbers\n";  // bad: non-numeric step_id
+            lf << "0x14,deadbeef00000002,2000\n";  // bad: step_id with a hex prefix
             lf << "20,GHI,2000\n";  // bad: invalid hex
             lf << "30,deadbeef00000003\n";  // bad: missing field
-            lf << "40,deadbeef00000004,4000\n";  // valid
+            lf << "40,deadbeef00000004,4000";  // valid, and the last line has no newline
         }
 
         auto cipher = open_cipher(dir2);
@@ -410,15 +421,17 @@ int main() {
         assert(static_cast<bool>(cipher.persist_session_events(store_ctx(), ov, second_batch)));
 
         const ::fixy::session::SessionTagId session = first_batch.front().session();
-        const auto from_middle = cipher.load_session_events(ov, session, ::fixy::session::StepId{15});
+        const auto from_middle =
+            cipher.load_session_events(store_ctx(), ov, g_test.alloc, session, ::fixy::session::StepId{15});
         assert(from_middle.size() == 10);
         for (std::size_t i = 0; i < from_middle.size(); ++i) {
             assert(from_middle[i].step_id().value == 15 + i);
         }
-        const auto every_event = cipher.load_session_events(ov, session);
+        const auto every_event = cipher.load_session_events(store_ctx(), ov, g_test.alloc, session);
         assert(every_event.size() == 15);
         assert(every_event.front().step_id().value == 10 && every_event.back().step_id().value == 24);
-        const auto second_only = cipher.load_session_events(ov, session, ::fixy::session::StepId{20});
+        const auto second_only =
+            cipher.load_session_events(store_ctx(), ov, g_test.alloc, session, ::fixy::session::StepId{20});
         assert(second_only.size() == 5 && second_only.front().step_id().value == 20);
 
         std::filesystem::remove_all(dir_events);
@@ -442,18 +455,19 @@ int main() {
         ::fixy::BumpArena read_arena{1 << 16};
         for (std::size_t i = 0; i < kStoreCount; ++i) {
             if (i + 1 == kStoreCount) {
-                assert(cipher.load_content_addressed(ov, g_test.alloc, hashes.front(), read_arena).cache_hit());
+                assert(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.front(), read_arena)
+                           .cache_hit());
             }
             const auto* distinct_region = make_test_region(cache_arena, cache_dag_arena, i + 1);
-            hashes[i] = cipher.store(ov, crucible::Cipher::content_addressed(distinct_region));
+            hashes[i] = cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(distinct_region));
             assert(static_cast<bool>(hashes[i]));
         }
         for (const crucible::ContentHash hash : hashes) {
             std::filesystem::remove(object_path(dir_cache, hash));
         }
-        assert(cipher.load_content_addressed(ov, g_test.alloc, hashes[1], read_arena).get() == nullptr);
-        assert(cipher.load_content_addressed(ov, g_test.alloc, hashes.front(), read_arena).cache_hit());
-        const auto newest = cipher.load_content_addressed(ov, g_test.alloc, hashes.back(), read_arena);
+        assert(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes[1], read_arena).get() == nullptr);
+        assert(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.front(), read_arena).cache_hit());
+        const auto newest = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.back(), read_arena);
         assert(newest.cache_hit() && newest.get() != nullptr);
 
         std::filesystem::remove_all(dir_cache);

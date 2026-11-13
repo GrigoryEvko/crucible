@@ -3529,19 +3529,6 @@ crucible_neg_compile_test(neg_transaction_ts_ns_cross_source
   "neg_transaction_ts_ns_cross_source.cpp:25:70: error: no matching function for call to .foundation::core::Option<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >::some\\(fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>\\)."
   "required for the satisfaction of .constructible_from<T, U&&>. \\[with T = fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int>; U = fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>\\]")
 
-# Cipher::obj_path returns fixy::Tagged<std::string, tags::source::CipherPath>.
-# The two fixtures read that return type by reflection.
-#   - neg_cipher_obj_path_bare_string_assign: a bare std::string does not
-#     convert, because the constructor from the value is explicit and private.
-#   - neg_cipher_obj_path_cross_source: a path under FromUserPath does not
-#     convert, because no retag edge reaches CipherPath.
-crucible_neg_compile_test(neg_cipher_obj_path_bare_string_assign
-  "neg_cipher_obj_path_bare_string_assign.cpp:41:45: error: no match for .operator=. \\(operand types are .CipherObjPath. \\{aka .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::CipherPath>.\\} and .std::string."
-  "no known conversion for argument 1 from .std::string. \\{aka .std::__cxx11::basic_string<char>.\\} to .const fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::CipherPath>&.")
-crucible_neg_compile_test(neg_cipher_obj_path_cross_source
-  "neg_cipher_obj_path_cross_source.cpp:45:19: error: no match for .operator=. \\(operand types are .CipherObjPath. \\{aka .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::CipherPath>.\\} and .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::FromUserPath>.\\)"
-  "no known conversion for argument 1 from .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::FromUserPath>. to .const fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::CipherPath>&.")
-
 # ─── hash_family_of HS14 negative-compile fixtures ────────────────
 #   - neg_types_hash_family_unspecialized  (incomplete primary template)
 #   - neg_types_hash_family_cross_lane     (Family-A hash ≠ IsFamilyB)
@@ -4449,7 +4436,7 @@ crucible_neg_compile_test(neg_vigil_producer_context_to_unbranded_gate
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
 crucible_neg_compile_test(neg_cipher_wrong_tag
-  "cannot convert .fixy::ScopedView<crucible::SchemaTable, crucible::schema_state::Sealed>. to .const crucible::Cipher::OpenView&."
+  "cannot convert .st_view. .type .fixy::ScopedView<crucible::SchemaTable, crucible::schema_state::Sealed>.. to type .const crucible::Cipher::OpenView&."
   "aka .const fixy::ScopedView<crucible::Cipher, crucible::cipher_state::Open>&.")
 
 # deserialize_federation_entry takes the peer token of the reading

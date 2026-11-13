@@ -45,6 +45,7 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
+#include <foundation/os/PathText.h>
 
 #include <array>
 #include <concepts>
@@ -142,6 +143,9 @@ class CRUCIBLE_OWNER Cipher {
 public:
     static constexpr std::size_t MAX_ROOT_PATH_BYTES = 4096;
 
+    // The path of the root, with a zero after its last character.
+    using RootPath = ::foundation::os::PathText<MAX_ROOT_PATH_BYTES>;
+
     // HEAD holds sixteen hexadecimal digits and a newline.  A longer HEAD is
     // corrupt, so the open reads at most this many bytes of it.
     static constexpr std::size_t MAX_HEAD_BYTES = 32;
@@ -167,9 +171,19 @@ public:
     // trust boundary, and the caller tags it External.
     using RootText = ::fixy::Tagged<::fixy::TextView, ::fixy::tags::source::External>;
 
-    // The open call creates the object directory and reads HEAD and the
-    // log.  Its context must admit IO and Block, and the read of the log
-    // takes the allocation capability.
+    // The context of the file calls of the store: the context of the
+    // caller, narrowed to the row of the calls.  A context that fits the
+    // store has the capability Bg, Init or Test, so the context is one of
+    // three types.  The members of src/Cipher.cpp take it, and each file
+    // call there reads the context that the caller gave.
+    using FileCtx =
+        ::fixy::OneOf<::foundation::effects::ExecCtx<::foundation::effects::Bg, persist_session_events_required_row>,
+                      ::foundation::effects::ExecCtx<::foundation::effects::Init, persist_session_events_required_row>,
+                      ::foundation::effects::ExecCtx<::foundation::effects::Test, persist_session_events_required_row>>;
+
+    // The open call creates the root and its object directory and reads
+    // HEAD and the log.  Its context must admit IO and Block, and the read
+    // of the log takes the allocation capability.
     //
     // The path check here is string-level only.  Symlink defense lives in
     // the O_NOFOLLOW-anchored openat helpers of src/Cipher.cpp.
@@ -194,41 +208,27 @@ public:
             return c;
         }
 
-        const std::string root = sanitized_e->value().string();
-
         // The sanitizer enforces a wider path cap than this one.  The
-        // narrower cap here is the bound the rest of the buffer math in
-        // this file depends on, so both checks stay.
-        if (root.empty() || root.size() > MAX_ROOT_PATH_BYTES) {
+        // narrower cap here is the bound of the path of the root, so both
+        // checks stay.
+        auto root_path = ::fixy::fs::path_text_of<MAX_ROOT_PATH_BYTES>(*sanitized_e);
+        if (root_path.is_err()) {
             return c;
         }
-        [[maybe_unused]] const bool root_set =
-            c.root_.try_set(::fixy::mint_tagged<::fixy::tags::source::Durable>(root));
-        [[assume(root_set)]];
-        std::filesystem::create_directories(root + "/objects");
 
-        // The root opens with O_NOFOLLOW, so a symlinked root fails with
-        // ELOOP.  Abort rather than continue: the durable-on-return
-        // contract needs a root directory whose identity is stable for
-        // this instance's lifetime.
-        c.root_dirfd_ = ::fixy::fs::open_dirfd(ctx, std::move(*sanitized_e))
-                            .expect("the root of the Cipher does not open as a directory");
-
-        c.load_log();
-
-        // The log is the record of the commits, so its last commit is the
-        // head.  HEAD can lag the log after a failed HEAD write, and it is
-        // read only when the log holds no commit.  A missing, long or
-        // corrupt HEAD gives no head.
-        c.head_ = c.latest_committed_head();
-        if (c.head_) {
-            return c;
+        // The current directory anchors the make of a relative root.  "."
+        // holds no "..", so the sanitizer passes it.  A current directory
+        // that does not open leaves the make of a relative root to fail.
+        auto current =
+            ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{"."}));
+        ::fixy::fs::Dirfd here{};
+        if (current) {
+            here = ::fixy::fs::open_dirfd(ctx, std::move(*current))
+                       .match([](::fixy::fs::Dirfd opened) { return opened; },
+                              [](::foundation::os::Errno) { return ::fixy::fs::Dirfd{}; });
         }
-        ::foundation::core::GrowText head_text = ::foundation::core::mint_grow_text(MAX_HEAD_BYTES);
-        c.head_ =
-            ::fixy::fs::read_whole_at(ctx, allocation, c.root_dirfd_, "HEAD", head_text)
-                .match([&head_text](std::size_t) { return parse_head_(head_text.view()).value_or(ContentHash{}); },
-                       [](::foundation::os::Errno) { return ContentHash{}; });
+        c.open_root_(file_ctx_(ctx), allocation, std::move(root_path).expect("the root fits its path"),
+                     std::move(*sanitized_e), here);
         return c;
     }
 
@@ -266,16 +266,24 @@ public:
 
     // Writes the region to its object file, flushes it, and returns its
     // content hash.  A failure gives the none hash.
-    [[nodiscard]] ContentHash store(OpenView const&, ContentAddressedRegionPayload payload);
-
-    [[nodiscard]] ::fixy::wait::Block<ContentHash> store_pinned(OpenView const& view,
-                                                                ContentAddressedRegionPayload payload) {
-        return ::fixy::mint_band<::fixy::wait::Block<ContentHash>>(store(view, payload));
+    template <typename Ctx>
+        requires ::crucible::CtxFitsCipherPersistence<Ctx>
+    [[nodiscard]] ContentHash store(Ctx const& ctx, OpenView const& view, ContentAddressedRegionPayload payload) {
+        return store_(file_ctx_(ctx), view, payload);
     }
 
-    [[nodiscard]] ::fixy::cipher_tier::Warm<ContentHash> publish_warm(OpenView const& view,
+    template <typename Ctx>
+        requires ::crucible::CtxFitsCipherPersistence<Ctx>
+    [[nodiscard]] ::fixy::wait::Block<ContentHash> store_pinned(Ctx const& ctx, OpenView const& view,
+                                                                ContentAddressedRegionPayload payload) {
+        return ::fixy::mint_band<::fixy::wait::Block<ContentHash>>(store(ctx, view, payload));
+    }
+
+    template <typename Ctx>
+        requires ::crucible::CtxFitsCipherPersistence<Ctx>
+    [[nodiscard]] ::fixy::cipher_tier::Warm<ContentHash> publish_warm(Ctx const& ctx, OpenView const& view,
                                                                       ContentAddressedRegionPayload payload) {
-        return ::fixy::mint_band<::fixy::cipher_tier::Warm<ContentHash>>(store(view, payload));
+        return ::fixy::mint_band<::fixy::cipher_tier::Warm<ContentHash>>(store(ctx, view, payload));
     }
 
     // The type declares Hot residency, but nothing is replicated.  The
@@ -304,12 +312,13 @@ public:
         return publish_hot(view, content_addressed(region));
     }
 
-    template <typename W>
-        requires cipher::LifetimePinnedRegion<W, ::fixy::Lifetime_v::PER_PROGRAM>
-    [[nodiscard]] ::fixy::cipher_tier::Warm<ContentHash> commit_per_program(OpenView const& view,
+    template <typename Ctx, typename W>
+        requires ::crucible::CtxFitsCipherPersistence<Ctx>
+              && cipher::LifetimePinnedRegion<W, ::fixy::Lifetime_v::PER_PROGRAM>
+    [[nodiscard]] ::fixy::cipher_tier::Warm<ContentHash> commit_per_program(Ctx const& ctx, OpenView const& view,
                                                                             W lifetime_pinned_region) {
         const RegionNode* region = std::move(lifetime_pinned_region).consume();
-        return publish_warm(view, content_addressed(region));
+        return publish_warm(ctx, view, content_addressed(region));
     }
 
     template <typename W>
@@ -331,10 +340,13 @@ public:
     // process-local acceleration for the content-addressed quotient, not
     // durable Cipher state.  A hit materializes from bytes already seen
     // under this hash and touches no filesystem.
-    [[nodiscard]] LoadedContentAddressedRegionPayload load_content_addressed(OpenView const&,
-                                                                             ::foundation::effects::Alloc a,
-                                                                             ContentHash content_hash,
-                                                                             ::fixy::BumpArena& arena) const;
+    template <typename Ctx>
+        requires ::crucible::CtxFitsCipherPersistence<Ctx>
+    [[nodiscard]] LoadedContentAddressedRegionPayload
+    load_content_addressed(Ctx const& ctx, OpenView const& view, ::foundation::effects::Alloc a,
+                           ContentHash content_hash, ::fixy::BumpArena& arena) const {
+        return load_content_addressed_(file_ctx_(ctx), view, a, content_hash, arena);
+    }
 
     // The context is what keeps a foreground caller out.  record_event
     // writes HEAD and appends to the log, so it needs IO and Block.  A
@@ -399,7 +411,7 @@ public:
             ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
         return clock.read().match(
             [&](::fixy::MonotonicClockBytes<std::uint64_t> committed_at) -> CommitResult {
-                return advance_head(view, content_hash, step_id, committed_at);
+                return advance_head(file_ctx_(ctx), view, content_hash, step_id, committed_at);
             },
             [](::foundation::os::Errno) -> CommitResult { return ::fixy::err(CommitError::clock_read); });
     }
@@ -409,13 +421,20 @@ public:
     // failed batch gives the none hash.
     template <typename Ctx>
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
-    [[nodiscard]] ContentHash persist_session_events(Ctx const&, OpenView const& view,
+    [[nodiscard]] ContentHash persist_session_events(Ctx const& ctx, OpenView const& view,
                                                      std::span<const SessionEvent> events) {
-        return persist_session_events_(view, events);
+        return persist_session_events_(file_ctx_(ctx), view, events);
     }
 
-    [[nodiscard]] std::vector<SessionEvent> load_session_events(OpenView const&, ::fixy::session::SessionTagId session,
-                                                                ::fixy::session::StepId from_step = {}) const;
+    // The events of one session from the step from_step on, in step order.
+    // The read of the index takes the allocation capability.
+    template <typename Ctx>
+        requires ::crucible::CtxFitsCipherPersistence<Ctx>
+    [[nodiscard]] auto load_session_events(Ctx const& ctx, OpenView const& view, ::foundation::effects::Alloc a,
+                                           ::fixy::session::SessionTagId session,
+                                           ::fixy::session::StepId from_step = {}) const {
+        return load_session_events_(file_ctx_(ctx), view, a, session, from_step);
+    }
 
     [[nodiscard]] ContentHash hash_at_step(OpenView const&, uint64_t step_id) const;
 
@@ -425,7 +444,9 @@ public:
     // The text of the root is a member of the store.  The deleted `const&&`
     // twin refuses a read of the root of a temporary store, because the
     // store releases that text at the end of the statement.
-    [[nodiscard]] const std::string& root() const& { return root_str(); }
+    // get_assuming_set checks that the root is set in a Debug build, and it
+    // gives that fact to the optimizer in a Release build.
+    [[nodiscard]] ::fixy::TextView root() const& { return root_.get_assuming_set().value().c_text().view(); }
     auto root() const&& = delete("a temporary store releases its root at the end of the statement. Read the root "
                                  "of a store that has a name");
 
@@ -451,8 +472,8 @@ private:
     static constexpr size_t MAX_SESSION_EVENT_BATCH_EVENTS =
         MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES / sizeof(SessionEvent);
 
-    ::fixy::WriteOnce<::fixy::Tagged<std::string, ::fixy::tags::source::Durable>> root_ =
-        ::fixy::mint_write_once<::fixy::Tagged<std::string, ::fixy::tags::source::Durable>>();
+    ::fixy::WriteOnce<::fixy::Tagged<RootPath, ::fixy::tags::source::Durable>> root_ =
+        ::fixy::mint_write_once<::fixy::Tagged<RootPath, ::fixy::tags::source::Durable>>();
     // Dirfd anchor for the Cipher root.  Every helper that touches the
     // on-disk tree opens relative to this fd with O_NOFOLLOW, which buys
     // three properties:
@@ -474,10 +495,6 @@ private:
     ::fixy::fs::Dirfd root_dirfd_{};
     ContentHash head_{};
 
-    // get_assuming_set checks that the root is set in a Debug build, and it
-    // gives that fact to the optimizer in a Release build.  An assumption
-    // here, before that check, would let the optimizer delete the check.
-    [[nodiscard]] const std::string& root_str() const noexcept { return root_.get_assuming_set().value(); }
     ::fixy::OrderedAppendOnly<LogEntry, ::fixy::session::StepIdKeyFn, ::fixy::session::StepIdLess> log_ =
         ::fixy::mint_ordered_append_only<LogEntry, ::fixy::session::StepIdKeyFn, ::fixy::session::StepIdLess>();
     // The entries in the order of use, least recent first.  The capacity is
@@ -496,33 +513,55 @@ private:
 
     [[nodiscard]] ContentHash latest_committed_head() const noexcept;
 
+    // The context of a caller as a FileCtx.  The gate of the caller admits
+    // IO and Block, so the narrow keeps the capability of the context.
+    template <typename Ctx>
+        requires ::crucible::CtxFitsCipherPersistence<Ctx>
+    [[nodiscard]] static FileCtx file_ctx_(Ctx const& ctx) noexcept {
+        return ctx.template in_row<persist_session_events_required_row>();
+    }
+
+    [[nodiscard]] ContentHash store_(FileCtx const& file_ctx, OpenView const&, ContentAddressedRegionPayload payload);
+
+    [[nodiscard]] LoadedContentAddressedRegionPayload load_content_addressed_(FileCtx const& file_ctx, OpenView const&,
+                                                                              ::foundation::effects::Alloc a,
+                                                                              ContentHash content_hash,
+                                                                              ::fixy::BumpArena& arena) const;
+
+    [[nodiscard]] std::vector<SessionEvent> load_session_events_(FileCtx const& file_ctx, OpenView const&,
+                                                                 ::foundation::effects::Alloc a,
+                                                                 ::fixy::session::SessionTagId session,
+                                                                 ::fixy::session::StepId from_step) const;
+
     // The commit that record_event starts.  The reading is the time of the
     // commit, and a clock reader is the only source of one.  The in-memory
     // event and the log line are the two wire forms, and each takes the
     // nanosecond count of the reading.
-    [[nodiscard]] CommitResult advance_head(OpenView const&, ContentHash content_hash, uint64_t step_id,
-                                            ::fixy::MonotonicClockBytes<std::uint64_t> committed_at);
+    [[nodiscard]] CommitResult advance_head(FileCtx const& file_ctx, OpenView const&, ContentHash content_hash,
+                                            uint64_t step_id, ::fixy::MonotonicClockBytes<std::uint64_t> committed_at);
 
-    [[nodiscard]] ContentHash persist_session_events_(OpenView const&, std::span<const SessionEvent> events);
+    [[nodiscard]] ContentHash persist_session_events_(FileCtx const& file_ctx, OpenView const&,
+                                                      std::span<const SessionEvent> events);
 
     // The head hash that the text of a HEAD file names, or none when the
     // text before its first newline is no hexadecimal number.
     [[nodiscard]] static ::fixy::Option<ContentHash> parse_head_(::fixy::TextView text) noexcept;
 
-    [[nodiscard]] auto obj_path(uint64_t hash) const -> ::fixy::Tagged<std::string, ::fixy::tags::source::CipherPath>;
-
-    [[nodiscard]] std::string session_event_dir(::fixy::session::SessionTagId session) const;
-
-    [[nodiscard]] std::string session_event_batch_path(::fixy::session::SessionTagId session, ContentHash hash) const;
-
     [[nodiscard]] std::span<const uint8_t> cached_bytes(ContentHash hash) const noexcept;
 
     void remember_cached_bytes(ContentHash hash, std::span<const uint8_t> bytes) const;
 
+    // Makes the root and its object directory, opens the root, and reads
+    // the log and HEAD.  here is the current directory, which anchors the
+    // make of a relative root.  A root that does not open as a directory
+    // ends the process.
+    void open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation, RootPath root,
+                    ::fixy::Path<::fixy::tags::source::Sanitized> sanitized_root, ::fixy::fs::Dirfd const& here);
+
     // Malformed lines are skipped rather than fatal.  A corrupt or
     // truncated log leaves the in-memory state as a proper prefix of what
     // was on disk instead of killing the process.
-    void load_log();
+    void load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation);
 };
 
 // Type-level witness that a caller validated a head hash at its source.

@@ -127,14 +127,15 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
 
     ::fixy::BumpArena arena{};
     if (object_hash != 0) {
-        auto loaded = cipher.load_content_addressed(view, test_alloc(), ContentHash{object_hash}, arena);
+        auto loaded = cipher.load_content_addressed(ctx, view, test_alloc(), ContentHash{object_hash}, arena);
         if (const RegionNode* region = loaded.get(); region != nullptr) {
             CRUCIBLE_FUZZ_CLAIM("cipher_store", region->content_hash == ContentHash{object_hash});
             claim_region_trusted("cipher_store", *region);
         }
     }
 
-    const auto loaded_events = cipher.load_session_events(view, ::fixy::session::SessionTagId{session_raw});
+    const auto loaded_events =
+        cipher.load_session_events(ctx, view, test_alloc(), ::fixy::session::SessionTagId{session_raw});
     for (const SessionEvent& event : loaded_events) {
         CRUCIBLE_FUZZ_CLAIM("cipher_store", names_enumerator(event.op()));
         CRUCIBLE_FUZZ_CLAIM("cipher_store", event.session().value == session_raw);
