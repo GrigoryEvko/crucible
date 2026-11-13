@@ -22,7 +22,7 @@ void transport_fabricates_messages_after_crash() {
     report_crash(cell_p, s::CrashCause::Abort);
     auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
     bool took_message = false;
-    std::move(q).branch([](Port&) noexcept -> std::optional<std::size_t> { return std::size_t{0}; },
+    std::move(q).branch([](Port&) noexcept { return ::fixy::some(std::size_t{0}); },
                         [&](auto branch) noexcept {
                             using Head = typename decltype(branch)::protocol;
                             if constexpr (s::is_crash_branch_v<Head>) {
@@ -31,7 +31,7 @@ void transport_fabricates_messages_after_crash() {
                                 (void)std::move(end).close();
                             } else {
                                 auto [value, end] =
-                                    std::move(branch).recv([](Port&) noexcept -> std::optional<int> { return 99; });
+                                    std::move(branch).recv([](Port&) noexcept { return ::fixy::some(99); });
                                 took_message = value == 99;
                                 (void)std::move(end).close();
                             }
@@ -53,8 +53,8 @@ void transport_fabricates_after_queued_messages() {
     auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
     int received = 0;
     bool detected = false;
-    const auto always_a_word = [](Port&) noexcept -> std::optional<std::size_t> { return std::size_t{0}; };
-    const auto always_a_value = [](Port&) noexcept -> std::optional<int> { return 5; };
+    const auto always_a_word = [](Port&) noexcept { return ::fixy::some(std::size_t{0}); };
+    const auto always_a_value = [](Port&) noexcept { return ::fixy::some(5); };
     run_loop_to_crash(
         std::move(q), always_a_word,
         [&](auto branch) noexcept {
@@ -88,7 +88,7 @@ void crash_branch_waits_for_an_owed_message() {
     int received = 0;
     bool detected = false;
     // The message arrives only after three polls find nothing.
-    const auto late_word = [&empty_polls, &in_flight, &to_q](Port& port) noexcept -> std::optional<std::size_t> {
+    const auto late_word = [&empty_polls, &in_flight, &to_q](Port& port) noexcept -> ::fixy::Option<std::size_t> {
         if (empty_polls < 3) {
             ++empty_polls;
             if (empty_polls == 3) {
@@ -96,7 +96,7 @@ void crash_branch_waits_for_an_owed_message() {
                     to_q.slots.push_back(slot);
                 in_flight.slots.clear();
             }
-            return std::nullopt;
+            return ::fixy::none;
         }
         return poll_label(port);
     };
@@ -142,14 +142,10 @@ void endpoint_reports_its_own_count() {
     bool detected = false;
     // The queue holds the three messages, and the transport invents more
     // after them.
-    const auto word_or_more = [](Port& port) noexcept -> std::optional<std::size_t> {
-        if (auto word = poll_label(port)) return word;
-        return std::size_t{0};
+    const auto word_or_more = [](Port& port) noexcept {
+        return ::fixy::some(poll_label(port).value_or(std::size_t{0}));
     };
-    const auto value_or_more = [](Port& port) noexcept -> std::optional<int> {
-        if (auto value = read_int(port)) return value;
-        return 99;
-    };
+    const auto value_or_more = [](Port& port) noexcept { return ::fixy::some(read_int(port).value_or(99)); };
     run_loop_to_crash(
         std::move(q), word_or_more,
         [&](auto branch) noexcept {
@@ -177,7 +173,7 @@ void bare_recv_refuses_a_fabricated_message() {
     report_crash(cell_p, s::CrashCause::Abort);
     auto q = s::mint_crash_session<ProtoQ, Q, P, s::ReliableSet<P>>(bg_ctx(), Port{&to_q, &to_p}, cell_p,
                                                                     s::mint_crash_writer(cell_q));
-    auto [value, end] = std::move(q).recv([](Port&) noexcept -> std::optional<int> { return 99; });
+    auto [value, end] = std::move(q).recv([](Port&) noexcept { return ::fixy::some(99); });
     (void)value;
     (void)std::move(end).close();
     finish(Outcome::Silent);

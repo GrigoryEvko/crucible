@@ -3,7 +3,7 @@
 // mint_substrate_session (fixy/channels/SubstrateSessionBridge.h) takes a
 // channel handle by move, so the session owns the handle for its whole
 // life, and a send or a receive goes through a transport: a trying write
-// (bool(handle&, Item&)) or a polling read (std::optional<Item>(handle&)).
+// (bool(handle&, Item&)) or a polling read (fixy::Option<Item>(handle&)).
 // A full or an empty channel makes the session wait through its watch and
 // try again.
 //
@@ -75,7 +75,11 @@ constexpr auto kForeground = ::foundation::effects::testing::foreground();
 
 // The transports of the typed arms: each tries once.
 constexpr auto try_push_item = [](auto& producer, Item& item) noexcept { return producer.try_push(item); };
-constexpr auto try_pop_item = [](auto& consumer) noexcept { return consumer.try_pop(); };
+constexpr auto try_pop_item = [](auto& consumer) noexcept -> ::fixy::Option<Item> {
+    auto const popped = consumer.try_pop();
+    if (!popped.has_value()) return ::fixy::none;
+    return ::fixy::some(*popped);
+};
 
 // A rejected push means the next pop finds an empty ring, so the arm does
 // not measure a round trip.  The arm stops at the first one.

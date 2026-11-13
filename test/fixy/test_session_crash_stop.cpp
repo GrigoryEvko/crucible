@@ -257,22 +257,22 @@ constexpr auto push_int = [](Port& port, int& value) noexcept {
 };
 // A crash-watched reception reads with no wait: the payload when one is
 // queued, and no value otherwise.
-constexpr auto read_int = [](Port& port) noexcept -> std::optional<int> {
-    if (port.in->slots.empty()) return std::nullopt;
+constexpr auto read_int = [](Port& port) noexcept -> ::fixy::Option<int> {
+    if (port.in->slots.empty()) return ::fixy::none;
     const std::uint64_t slot = port.in->slots.front();
     port.in->slots.pop_front();
-    return static_cast<int>(slot);
+    return ::fixy::some(static_cast<int>(slot));
 };
-constexpr auto read_text = [](Port& port) noexcept -> std::optional<Text> {
-    if (port.in->slots.empty()) return std::nullopt;
+constexpr auto read_text = [](Port& port) noexcept -> ::fixy::Option<Text> {
+    if (port.in->slots.empty()) return ::fixy::none;
     port.in->slots.pop_front();
-    return Text{"abc"};
+    return ::fixy::some(Text{"abc"});
 };
-constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t> {
-    if (port.in->slots.empty()) return std::nullopt;
+constexpr auto poll_label = [](Port& port) noexcept -> ::fixy::Option<std::size_t> {
+    if (port.in->slots.empty()) return ::fixy::none;
     const std::uint64_t slot = port.in->slots.front();
     port.in->slots.pop_front();
-    return static_cast<std::size_t>(slot);
+    return ::fixy::some(static_cast<std::size_t>(slot));
 };
 
 using CheckedP = decltype(s::mint_crash_session<ProtoP, P, Q>(
@@ -501,10 +501,10 @@ int run_stream_across_threads() {
                 StreamQHandle current = std::move(*q);
                 q.reset();
                 std::move(current).branch(
-                    [](WirePort& port) noexcept -> std::optional<std::size_t> {
+                    [](WirePort& port) noexcept -> ::fixy::Option<std::size_t> {
                         const auto word = port.in->pop();
-                        if (!word) return std::nullopt;
-                        return static_cast<std::size_t>(*word);
+                        if (!word) return ::fixy::none;
+                        return ::fixy::some(static_cast<std::size_t>(*word));
                     },
                     [&](auto branch) {
                         using Head = typename decltype(branch)::protocol;
@@ -515,10 +515,10 @@ int run_stream_across_threads() {
                             is_done = true;
                         } else {
                             auto [value, next] =
-                                std::move(branch).recv([](WirePort& port) noexcept -> std::optional<int> {
+                                std::move(branch).recv([](WirePort& port) noexcept -> ::fixy::Option<int> {
                                     const auto word = port.in->pop();
-                                    if (!word) return std::nullopt;
-                                    return static_cast<int>(*word);
+                                    if (!word) return ::fixy::none;
+                                    return ::fixy::some(static_cast<int>(*word));
                                 });
                             is_in_order = is_in_order && value == received;
                             ++received;

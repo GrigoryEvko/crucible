@@ -184,11 +184,11 @@ void test_single_append_drain() {
     CRUCIBLE_TEST_REQUIRE(producer.try_append_one(source));
 
     auto drained = consumer.try_drain_one();
-    CRUCIBLE_TEST_REQUIRE(drained.has_value());
-    CRUCIBLE_TEST_REQUIRE(same_meta(*drained, source));
+    CRUCIBLE_TEST_REQUIRE(drained.is_some());
+    CRUCIBLE_TEST_REQUIRE(same_meta(std::move(drained).expect("the log holds one record"), source));
 
     auto empty = consumer.try_drain_one();
-    CRUCIBLE_TEST_REQUIRE(!empty.has_value());
+    CRUCIBLE_TEST_REQUIRE(empty.is_none());
 
     // The release door gives each role and its token back, and each token
     // opens a new handle of its role with no second claim.
@@ -346,8 +346,8 @@ void test_session_gives_the_handle_back() {
 
     CRUCIBLE_TEST_REQUIRE(producer_back.try_append_one(make_meta(7)));
     auto drained = consumer_back.try_drain_one();
-    CRUCIBLE_TEST_REQUIRE(drained.has_value());
-    CRUCIBLE_TEST_REQUIRE(same_meta(*drained, make_meta(7)));
+    CRUCIBLE_TEST_REQUIRE(drained.is_some());
+    CRUCIBLE_TEST_REQUIRE(same_meta(std::move(drained).expect("the log holds one record"), make_meta(7)));
 }
 
 // A use of a moved-from handle ends the process.  The move gives the

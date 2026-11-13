@@ -36,7 +36,7 @@
 // go.  The position is a type, so crash() refuses the split at compile
 // time, and recv() knows which role sends the payload it waits for.
 //
-// Every read and every poll returns std::optional.  A transport that
+// Every read and every poll returns a fixy::Option.  A transport that
 // returns the value itself waits inside the transport, where no crash is
 // seen, so the exact return type refuses it.
 //
@@ -507,14 +507,18 @@ template <typename Position, typename Peer, typename Sender, typename Read, type
     std::optional<watch::wait_scope> wait;
     for (;;) {
         if constexpr (!std::is_same_v<Sender, Peer>) {
-            if (auto payload = std::invoke(read, resource)) return payload;
+            auto payload = std::invoke(read, resource);
+            if (payload.is_some()) return payload;
         } else if constexpr (is_new_message) {
             if (queue_is_drained(cell.witness(), received)) abort_on_reliable_peer_crash();
-            if (auto payload = std::invoke(read, resource)) return payload;
+            auto payload = std::invoke(read, resource);
+            if (payload.is_some()) return payload;
         } else {
-            if (auto payload = std::invoke(read, resource)) return payload;
+            auto payload = std::invoke(read, resource);
+            if (payload.is_some()) return payload;
             if (cell.has_crashed()) {
-                if (auto payload = std::invoke(read, resource)) return payload;
+                auto last_payload = std::invoke(read, resource);
+                if (last_payload.is_some()) return last_payload;
                 abort_on_split_message();
             }
         }
@@ -793,7 +797,7 @@ public:
 
     // ── recv ─────────────────────────────────────────────────────────
     //
-    // A read is a polling read, std::optional<T>(Resource&).  A read of
+    // A read is a polling read, fixy::Option<T>(Resource&).  A read of
     // another shape waits inside the transport, where no crash is seen, so
     // each reception refuses it.
     template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position,
@@ -806,16 +810,16 @@ public:
         using Resource = typename Handle::resource_type;
         static_assert(PollRead<Read, Resource, T>,
                       "fixy::session::diagnostic [Crash_Read_Must_Poll]: recv(): the read is not a polling read, "
-                      "std::optional<T>(Resource&).  A read of another shape waits inside the transport, where no "
+                      "fixy::Option<T>(Resource&).  A read of another shape waits inside the transport, where no "
                       "crash is seen, so a dead peer blocks it for ever.  Return the payload when one is queued, and "
                       "no value otherwise.");
         using Sender = typename detail::crash_transport::payload_sender<Position, Peer>::type;
-        std::optional<T> payload = detail::crash_transport::await_payload<Position, Peer, Sender>(
+        ::fixy::Option<T> payload = detail::crash_transport::await_payload<Position, Peer, Sender>(
             read, watched.inner_.resource(), *watched.peer_cell_, watched.counts_.received,
             watched.inner_.watch_endpoint());
         auto [value, next] =
             std::move(watched.inner_)
-                .recv([&payload](Resource&) noexcept(std::is_nothrow_move_constructible_v<T>) -> std::optional<T> {
+                .recv([&payload](Resource&) noexcept(std::is_nothrow_move_constructible_v<T>) -> ::fixy::Option<T> {
                     return std::move(payload);
                 });
         // A bare reception is a new message.  The payload of a label is part
@@ -838,15 +842,15 @@ public:
         using Resource = typename Handle::resource_type;
         static_assert(PollRead<Poll, Resource, std::size_t>,
                       "fixy::session::diagnostic [Crash_Read_Must_Poll]: recv(): the read of a keyed message is not "
-                      "a polling read, std::optional<std::size_t>(Resource&).  A read of another shape waits inside "
+                      "a polling read, fixy::Option<std::size_t>(Resource&).  A read of another shape waits inside "
                       "the transport, where no crash is seen, so a dead peer blocks it for ever.");
         // The word and the value come from the role that the message names.
         using Sender = detail::crash_transport::keyed_sender_t<P, Peer>;
-        const std::optional<std::size_t> word = detail::crash_transport::await_payload<Position, Peer, Sender>(
+        const ::fixy::Option<std::size_t> word = detail::crash_transport::await_payload<Position, Peer, Sender>(
             poll, watched.inner_.resource(), *watched.peer_cell_, watched.counts_.received,
             watched.inner_.watch_endpoint());
         auto next =
-            std::move(watched.inner_).recv([&word](Resource&) noexcept -> std::optional<std::size_t> { return word; });
+            std::move(watched.inner_).recv([&word](Resource&) noexcept -> ::fixy::Option<std::size_t> { return word; });
         const detail::crash_transport::message_counts counts =
             detail::crash_transport::one_more_received(watched.counts_);
         if constexpr (keyed_step_has_value_v<P>) {
@@ -866,8 +870,8 @@ public:
                       "fixy::session::diagnostic [Crash_Branch_Unwatched]: this crash branch names a role other "
                       "than the watched peer, so no detector can have triggered it.");
         const CrashCause cause = watched.peer_cell_->crash_cause().value_or(CrashCause::Unknown);
-        auto [record, next] = std::move(watched.inner_).recv([cause](Resource&) noexcept -> std::optional<Record> {
-            return Record{cause};
+        auto [record, next] = std::move(watched.inner_).recv([cause](Resource&) noexcept -> ::fixy::Option<Record> {
+            return ::fixy::some(Record{cause});
         });
         return std::pair{record, wrap_(watched, std::move(next), watched.counts_)};
     }
@@ -887,7 +891,7 @@ public:
         using P = typename Handle::protocol;
         static_assert(PollRead<Poll, typename Handle::resource_type, std::size_t>,
                       "fixy::session::diagnostic [Crash_Read_Must_Poll]: branch(): the read of the word is not a "
-                      "polling read, std::optional<std::size_t>(Resource&).  A read of another shape waits inside "
+                      "polling read, fixy::Option<std::size_t>(Resource&).  A read of another shape waits inside "
                       "the transport, where no crash is seen, so a dead peer blocks it for ever.  Return the word "
                       "when a message is queued, and no value otherwise.");
         using OfferSender =
@@ -911,7 +915,9 @@ public:
             // still wait for the rest of the message of the label.
             return std::move(watched.inner_)
                 .branch_indexed(
-                    [word](typename Handle::resource_type&) noexcept -> std::optional<std::size_t> { return word; },
+                    [word](typename Handle::resource_type&) noexcept -> ::fixy::Option<std::size_t> {
+                        return ::fixy::some(word);
+                    },
                     [&watched, &handler, counts]<std::size_t I>(std::integral_constant<std::size_t, I>,
                                                                 auto branch_handle) {
                         using Head = typename decltype(branch_handle)::protocol;
@@ -933,7 +939,7 @@ public:
                     });
         };
         auto& resource = watched.inner_.resource();
-        std::optional<std::size_t> word;
+        ::fixy::Option<std::size_t> word{};
         {
             // The wait ends before the handler runs, so the watch never shows
             // this thread waiting while the handler steps the branch.
@@ -946,13 +952,17 @@ public:
                 // sent.
                 const std::optional<CrashWitness> witness = watched.peer_cell_->witness();
                 if (detail::crash_transport::queue_is_drained(witness, watched.counts_.received)) break;
-                word = std::invoke(poll, resource);
-                if (word) break;
+                // A read of another shape already failed the assertion above.
+                // The read stays out of the body, so the build gives one error.
+                if constexpr (PollRead<Poll, typename Handle::resource_type, std::size_t>) {
+                    word = std::invoke(poll, resource);
+                }
+                if (word.is_some()) break;
                 if (!wait) wait.emplace(watched.inner_.watch_endpoint());
                 wait->poll();
             }
         }
-        if (word) return take_word(*word);
+        if (word.is_some()) return take_word(std::move(word).expect("the poll read a word"));
         if constexpr (is_watched) {
             // The crash branch is no label, so no word names it.  The handle
             // enters it through recover, with the context of the mint.
@@ -1087,7 +1097,7 @@ public:
 
     // ── recv ─────────────────────────────────────────────────────────
     //
-    // Read is a polling read, std::optional<T>(Resource&).  It returns the
+    // Read is a polling read, fixy::Option<T>(Resource&).  It returns the
     // payload when one from the sender is queued, and no value otherwise.
     // Between reads the decorator waits through the watch and checks the
     // peer, so a crash ends the wait.  A declared read would wait inside the
@@ -1124,7 +1134,7 @@ public:
 
     // ── branch ───────────────────────────────────────────────────────
     //
-    // Poll is a polling read of a word, std::optional<std::size_t>(Resource&).
+    // Poll is a polling read of a word, fixy::Option<std::size_t>(Resource&).
     // It returns a wire word when a message from the peer is queued, and no
     // value otherwise.  Between polls the decorator waits through the watch
     // and checks the peer.  A declared read would wait inside the transport,

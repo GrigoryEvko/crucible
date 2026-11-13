@@ -154,9 +154,9 @@ void test_hot_promote_delegate_protocol() {
             return true;
         });
     auto [received, acceptor_end] =
-        std::move(acceptor).recv([](CarrierRecipient& end) noexcept -> std::optional<CarriedHotEndpoint> {
-            if (!end.slot->held.has_value()) return std::nullopt;
-            std::optional<CarriedHotEndpoint> taken{std::move(*end.slot->held)};
+        std::move(acceptor).recv([](CarrierRecipient& end) noexcept -> ::fixy::Option<CarriedHotEndpoint> {
+            if (!end.slot->held.has_value()) return ::fixy::none;
+            ::fixy::Option<CarriedHotEndpoint> taken = ::fixy::some(std::move(*end.slot->held));
             end.slot->held.reset();
             return taken;
         });

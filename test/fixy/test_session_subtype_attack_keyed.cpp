@@ -9,7 +9,6 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -73,9 +72,9 @@ struct OffererEnd {
         end.wire->values[end.wire->written++] = value;
         return true;
     };
-    const auto pop_value = [](OffererEnd& end) noexcept -> std::optional<int> {
-        if (end.wire->read == end.wire->written) return std::nullopt;
-        return end.wire->values[end.wire->read++];
+    const auto pop_value = [](OffererEnd& end) noexcept -> ::fixy::Option<int> {
+        if (end.wire->read == end.wire->written) return ::fixy::none;
+        return ::fixy::some(end.wire->values[end.wire->read++]);
     };
     auto picker = s::mint_session_handle<Permuted>(PickerEnd{&wire});
     auto chosen = std::move(picker).template select<0>([](PickerEnd& end, std::size_t word) noexcept {
@@ -91,7 +90,7 @@ struct OffererEnd {
     // reads them, so each poll finds its value.
     int received = -1;
     auto offerer = s::mint_session_handle<s::dual_of_t<Projected>>(OffererEnd{&wire});
-    std::move(offerer).branch([](OffererEnd& end) noexcept -> std::optional<std::size_t> { return end.wire->word; },
+    std::move(offerer).branch([](OffererEnd& end) noexcept { return ::fixy::some(end.wire->word); },
                               [&received, &pop_value](auto handle) noexcept {
                                   using Head = typename decltype(handle)::protocol;
                                   if constexpr (std::is_same_v<Head, Recv<int, Recv<int, End>>>) {
@@ -151,15 +150,15 @@ struct WideEnd {
     int received = -1;
     {
         std::jthread offerer_thread{[&wire, &received] {
-            const auto pop_value = [](WideEnd& end) noexcept -> std::optional<int> {
-                if (end.read == end.wire->written.load(std::memory_order_acquire)) return std::nullopt;
-                return end.wire->values[end.read++].load(std::memory_order_relaxed);
+            const auto pop_value = [](WideEnd& end) noexcept -> ::fixy::Option<int> {
+                if (end.read == end.wire->written.load(std::memory_order_acquire)) return ::fixy::none;
+                return ::fixy::some(end.wire->values[end.read++].load(std::memory_order_relaxed));
             };
             auto offerer = s::mint_session_handle<s::dual_of_t<Projected>>(WideEnd{&wire});
             std::move(offerer).branch(
-                [](WideEnd& end) noexcept -> std::optional<std::size_t> {
-                    if (!end.wire->has_word.load(std::memory_order_acquire)) return std::nullopt;
-                    return end.wire->word.load(std::memory_order_relaxed);
+                [](WideEnd& end) noexcept -> ::fixy::Option<std::size_t> {
+                    if (!end.wire->has_word.load(std::memory_order_acquire)) return ::fixy::none;
+                    return ::fixy::Option<std::size_t>::some(end.wire->word.load(std::memory_order_relaxed));
                 },
                 [&received, &pop_value](auto handle) noexcept {
                     if constexpr (std::is_same_v<typename decltype(handle)::protocol, Recv<int, Recv<int, End>>>) {

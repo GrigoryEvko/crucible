@@ -3170,13 +3170,13 @@ fixy_neg_compile_test(neg_sess_send_write_waits_in_secret
   ": \\[Transport_Shape\\] a write either tries, as bool\\(Resource&, T&\\)"
   "use of deleted function .void fixy::session::SessionHandle<fixy::session::Send<T, R>, Resource, LoopCtx, Policy, PS>::send\\(T, Transport\\)")
 fixy_neg_compile_test(neg_sess_recv_read_waits_in_secret
-  ": \\[Transport_Shape\\] a read either polls, as std::optional<T>\\(Resource&\\)"
+  ": \\[Transport_Shape\\] a read either polls, as fixy::Option<T>\\(Resource&\\)"
   "use of deleted function .void fixy::session::SessionHandle<fixy::session::Recv<T, R>, Resource, LoopCtx, Policy, PS>::recv\\(Transport\\)")
 fixy_neg_compile_test(neg_sess_select_write_waits_in_secret
   ": \\[Transport_Shape\\] a write of a word either tries, as bool\\(Resource&, std::size_t\\)"
   "use of deleted function .void fixy::session::SessionHandle<fixy::session::Select<Branches ...>, Resource, LoopCtx, Policy, PS>::select\\(Transport\\)")
 fixy_neg_compile_test(neg_sess_branch_read_waits_in_secret
-  ": \\[Transport_Shape\\] a read of a word either polls, as std::optional<std::size_t>\\(Resource&\\)"
+  ": \\[Transport_Shape\\] a read of a word either polls, as fixy::Option<std::size_t>\\(Resource&\\)"
   "use of deleted function .void fixy::session::SessionHandle<fixy::session::Offer<Branches ...>, Resource, LoopCtx, Policy, PS>::branch\\(Transport, Handler\\)")
 #
 # Legal code that tries to defeat the crash transport, the checkpoint

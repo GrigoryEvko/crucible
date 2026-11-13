@@ -288,8 +288,9 @@ int check_handoff_recording() {
                   return true;
               })
         .close();
-    auto [received, at_end] = std::move(receiver).recv([](ParcelPort& port) noexcept {
-        std::optional<Parcel> taken{std::move(*port.held)};
+    auto [received, at_end] = std::move(receiver).recv([](ParcelPort& port) noexcept -> ::fixy::Option<Parcel> {
+        if (!port.held->has_value()) return ::fixy::none;
+        ::fixy::Option<Parcel> taken = ::fixy::some(std::move(**port.held));
         port.held->reset();
         return taken;
     });

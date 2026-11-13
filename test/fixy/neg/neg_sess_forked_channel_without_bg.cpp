@@ -48,7 +48,7 @@ int main() {
             return std::move(head).send(Msg{}, [](Wire&, Msg&) noexcept { return true; });
         },
         [](auto head, auto const& /*right_view*/, FgCtx const&) noexcept {
-            auto [msg, at_end] = std::move(head).recv([](Wire&) noexcept -> std::optional<Msg> { return Msg{}; });
+            auto [msg, at_end] = std::move(head).recv([](Wire&) noexcept { return ::fixy::some(Msg{}); });
             (void)msg;
             return std::move(at_end);
         });

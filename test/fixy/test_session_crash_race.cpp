@@ -81,15 +81,15 @@ constexpr auto push_int = [](Port& port, int& value) noexcept {
     return word;
 }
 
-constexpr auto poll_word = [](Port& port) noexcept -> std::optional<std::size_t> {
+constexpr auto poll_word = [](Port& port) noexcept -> ::fixy::Option<std::size_t> {
     const auto word = pop(port);
-    if (!word) return std::nullopt;
-    return static_cast<std::size_t>(*word);
+    if (!word) return ::fixy::none;
+    return ::fixy::some(static_cast<std::size_t>(*word));
 };
-constexpr auto read_int = [](Port& port) noexcept -> std::optional<int> {
+constexpr auto read_int = [](Port& port) noexcept -> ::fixy::Option<int> {
     const auto word = pop(port);
-    if (!word) return std::nullopt;
-    return static_cast<int>(*word);
+    if (!word) return ::fixy::none;
+    return ::fixy::some(static_cast<int>(*word));
 };
 
 // p sends one value to the peer and waits for a reply or for the crash.
@@ -282,7 +282,7 @@ int run_crash_inside_branch_poll() {
         int value = -1;
         std::optional<DrainHandle> after;
         std::move(draining).branch(
-            [&barrier](Port& port) noexcept -> std::optional<std::size_t> {
+            [&barrier](Port& port) noexcept -> ::fixy::Option<std::size_t> {
                 barrier.is_running.store(true, std::memory_order_release);
                 wait_for(barrier.is_released);
                 return poll_word(port);

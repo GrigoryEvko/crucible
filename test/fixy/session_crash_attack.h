@@ -113,23 +113,23 @@ inline constexpr auto push_token = [](Port& port, Token& token) noexcept {
 };
 // A crash-watched reception reads with no wait: the payload when one is
 // queued, and no value otherwise.
-inline constexpr auto read_int = [](Port& port) noexcept -> std::optional<int> {
-    if (port.in->slots.empty()) return std::nullopt;
+inline constexpr auto read_int = [](Port& port) noexcept -> ::fixy::Option<int> {
+    if (port.in->slots.empty()) return ::fixy::none;
     const std::uint64_t slot = port.in->slots.front();
     port.in->slots.pop_front();
-    return static_cast<int>(slot);
+    return ::fixy::some(static_cast<int>(slot));
 };
-inline constexpr auto read_token = [](Port& port) noexcept -> std::optional<Token> {
-    if (port.in->slots.empty()) return std::nullopt;
+inline constexpr auto read_token = [](Port& port) noexcept -> ::fixy::Option<Token> {
+    if (port.in->slots.empty()) return ::fixy::none;
     const std::uint64_t slot = port.in->slots.front();
     port.in->slots.pop_front();
-    return Token{static_cast<int>(slot), fp::mint_permission_root<X>()};
+    return ::fixy::some(Token{static_cast<int>(slot), fp::mint_permission_root<X>()});
 };
-inline constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t> {
-    if (port.in->slots.empty()) return std::nullopt;
+inline constexpr auto poll_label = [](Port& port) noexcept -> ::fixy::Option<std::size_t> {
+    if (port.in->slots.empty()) return ::fixy::none;
     const std::uint64_t slot = port.in->slots.front();
     port.in->slots.pop_front();
-    return static_cast<std::size_t>(slot);
+    return ::fixy::some(static_cast<std::size_t>(slot));
 };
 
 // Runs the endpoint of a loop of one message and one crash branch to its

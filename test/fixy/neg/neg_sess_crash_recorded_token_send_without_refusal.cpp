@@ -36,7 +36,7 @@ int main() {
         s::mint_crash_session<Relay, Alice, Bob, s::ReliableSet<Bob>>(ctx, Wire{}, cell, s::mint_crash_writer(own)),
         log, s::RoleTagId{1}, s::RoleTagId{2});
     auto [token, reply] = std::move(handle).recv(
-        [](Wire&) noexcept -> std::optional<Token> { return Token{1, fp::mint_permission_root<Region>()}; });
+        [](Wire&) noexcept { return ::fixy::some(Token{1, fp::mint_permission_root<Region>()}); });
     auto chosen = std::move(reply).template select<0>([](Wire&, std::size_t) noexcept { return true; });
     auto sent = std::move(chosen).send(std::move(token), [](Wire&, Token&&, s::watch::wait_scope&) noexcept {});
     (void)std::move(sent.next).close();

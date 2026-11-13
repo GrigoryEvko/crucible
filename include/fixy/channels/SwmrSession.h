@@ -309,7 +309,12 @@ inline constexpr auto publish_value = [](auto& writer, auto& value) noexcept -> 
 
 // The read of the reader session: the snapshot, or none while a write is
 // in flight.  The handle then waits through the watch and reads again.
-inline constexpr auto load_value = [](auto& reader) noexcept { return reader.try_load(); };
+inline constexpr auto load_value = [](auto& reader) noexcept {
+    auto const loaded = reader.try_load();
+    using Value = typename decltype(loaded)::value_type;
+    if (!loaded.has_value()) return ::fixy::Option<Value>{};
+    return ::fixy::Option<Value>::some(*loaded);
+};
 
 // The tags and the brands that only checks name.  The witness roster
 // (the witness rows of utils/rule-table.txt), the permission-row roster of

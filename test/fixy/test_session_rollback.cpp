@@ -24,7 +24,6 @@
 #include <cstdio>
 #include <deque>
 #include <meta>
-#include <optional>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -211,22 +210,30 @@ constexpr auto push_int = [](Port& port, int& value) noexcept {
     port.out->slots.push_back(static_cast<std::uint64_t>(value));
     return true;
 };
-constexpr auto pop_slot = [](Port& port) noexcept -> std::optional<std::uint64_t> {
-    if (port.in->slots.empty()) return std::nullopt;
+constexpr auto pop_slot = [](Port& port) noexcept -> ::fixy::Option<std::uint64_t> {
+    if (port.in->slots.empty()) return ::fixy::none;
     const std::uint64_t slot = port.in->slots.front();
     port.in->slots.pop_front();
-    return slot;
+    return ::fixy::some(slot);
 };
-constexpr auto pop_label = [](Port& port) noexcept -> std::optional<std::size_t> { return pop_slot(port); };
-constexpr auto pop_int = [](Port& port) noexcept {
-    return pop_slot(port).transform([](std::uint64_t slot) noexcept { return static_cast<int>(slot); });
+constexpr auto pop_label = [](Port& port) noexcept -> ::fixy::Option<std::size_t> {
+    return pop_slot(port).match(
+        [](std::uint64_t slot) noexcept { return ::fixy::some(static_cast<std::size_t>(slot)); },
+        []() noexcept { return ::fixy::Option<std::size_t>{}; });
 };
-constexpr auto pop_text = [](Port& port) noexcept {
-    return pop_slot(port).transform([](std::uint64_t first) noexcept {
-        if (first == 'm') return Text{"meta"};
-        if (first == 'c') return Text{"clip"};
-        return Text{"film"};
-    });
+constexpr auto pop_int = [](Port& port) noexcept -> ::fixy::Option<int> {
+    return pop_slot(port).match([](std::uint64_t slot) noexcept { return ::fixy::some(static_cast<int>(slot)); },
+                                []() noexcept { return ::fixy::Option<int>{}; });
+};
+// A Text holds a pointer, so the rvalue match does not give it.  The read
+// takes the slot out with expect after the test.
+constexpr auto pop_text = [](Port& port) noexcept -> ::fixy::Option<Text> {
+    ::fixy::Option<std::uint64_t> slot = pop_slot(port);
+    if (slot.is_none()) return ::fixy::none;
+    const std::uint64_t first = std::move(slot).expect("the test found a slot");
+    if (first == 'm') return ::fixy::some(Text{"meta"});
+    if (first == 'c') return ::fixy::some(Text{"clip"});
+    return ::fixy::some(Text{"film"});
 };
 
 // A trace of what happened, in order.

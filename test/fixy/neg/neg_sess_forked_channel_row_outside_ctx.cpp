@@ -58,8 +58,7 @@ int main() {
             return std::move(head).send(IoWork{7}, [](Wire&, IoWork&) noexcept { return true; });
         },
         [](auto head, auto const& /*right_view*/, BgCtx const&) noexcept {
-            auto [work, at_end] =
-                std::move(head).recv([](Wire&) noexcept -> std::optional<IoWork> { return IoWork{7}; });
+            auto [work, at_end] = std::move(head).recv([](Wire&) noexcept { return ::fixy::some(IoWork{7}); });
             (void)work;
             return std::move(at_end);
         });

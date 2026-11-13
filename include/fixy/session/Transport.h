@@ -8,6 +8,7 @@
 // these shapes.  The transport moves the bytes, and the handle decides if
 // the step is legal at its protocol position.
 
+#include <fixy/Core.h>
 #include <fixy/session/Protocol.h>
 #include <fixy/session/Registry.h>
 #include <fixy/session/Watch.h>
@@ -19,7 +20,6 @@
 #include <cstdint>
 #include <functional>
 #include <meta>
-#include <optional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -35,7 +35,7 @@ namespace fixy::session {
 //   a trying write     bool(Resource&, T&)     false while it has no room,
 //                                              and the value stays as it was
 //   a declared write   void(Resource&, T&&, watch::wait_scope&)
-//   a polling read     std::optional<T>(Resource&)   no value while nothing
+//   a polling read     fixy::Option<T>(Resource&)    no value while nothing
 //                                                    is there
 //   a declared read    T(Resource&, watch::wait_scope&)
 //
@@ -59,7 +59,7 @@ concept WriteTransport = TryWrite<F, Resource, T> || DeclaredWrite<F, Resource, 
 
 template <typename F, typename Resource, typename T>
 concept PollRead =
-    std::is_invocable_v<F&, Resource&> && std::same_as<std::invoke_result_t<F&, Resource&>, std::optional<T>>;
+    std::is_invocable_v<F&, Resource&> && std::same_as<std::invoke_result_t<F&, Resource&>, ::fixy::Option<T>>;
 
 template <typename F, typename Resource, typename T>
 concept DeclaredRead = !PollRead<F, Resource, T> && std::is_invocable_v<F&, Resource&, watch::wait_scope&>
@@ -100,7 +100,7 @@ wait_for_arrival(Transport& transport, Resource& resource,
     watch::wait_scope wait{endpoint};
     for (;;) {
         auto arrived = std::invoke(transport, resource);
-        if (arrived) return arrived;
+        if (arrived.is_some()) return arrived;
         wait.poll();
     }
 }
@@ -130,16 +130,17 @@ constexpr void write_through(Transport& transport, Resource& resource, T& value,
     }
 }
 
-// Reads a value through either read shape.
+// Reads a value through either read shape.  Each path of a polling read
+// takes the value out of one Option, one time.
 template <typename T, typename Transport, typename Resource>
 [[nodiscard]] constexpr T
 read_through(Transport& transport, Resource& resource,
              watch::endpoint_id endpoint) noexcept(read_is_nothrow<Transport, Resource, T>()) {
     if constexpr (PollRead<Transport, Resource, T>) {
-        std::optional<T> arrived = std::invoke(transport, resource);
-        if (!arrived) [[unlikely]]
-            arrived = wait_for_arrival(transport, resource, endpoint);
-        return std::move(*arrived);
+        ::fixy::Option<T> arrived = std::invoke(transport, resource);
+        if (arrived.is_none()) [[unlikely]]
+            return wait_for_arrival(transport, resource, endpoint).expect("wait_for_arrival returns only a value");
+        return std::move(arrived).expect("the first read gave a value");
     } else {
         watch::wait_scope wait{endpoint};
         return std::invoke(transport, resource, wait);
@@ -152,9 +153,10 @@ template <typename T, typename Resource, typename Read, typename Seen>
 [[nodiscard]] constexpr auto observed_read(Read& read, Seen seen) noexcept {
     if constexpr (PollRead<Read, Resource, T>) {
         return [&read,
-                seen](Resource& resource) mutable noexcept(read_is_nothrow<Read, Resource, T>()) -> std::optional<T> {
-            std::optional<T> got = std::invoke(read, resource);
-            if (got) seen(*got);
+                seen](Resource& resource) mutable noexcept(read_is_nothrow<Read, Resource, T>()) -> ::fixy::Option<T> {
+            ::fixy::Option<T> got = std::invoke(read, resource);
+            for (T const& value : got)
+                seen(value);
             return got;
         };
     } else {

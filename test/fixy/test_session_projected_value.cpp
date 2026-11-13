@@ -94,16 +94,17 @@ constexpr auto write_int = [](Port& port, int& value) noexcept {
     port.out->words.push_back(static_cast<std::uint64_t>(static_cast<std::uint32_t>(value)));
     return true;
 };
-constexpr auto read_word = [](Port& port) noexcept -> std::optional<std::size_t> {
+constexpr auto read_word = [](Port& port) noexcept -> ::fixy::Option<std::size_t> {
     const std::lock_guard guard{port.in->lock};
-    if (port.in->words.empty()) return std::nullopt;
+    if (port.in->words.empty()) return ::fixy::none;
     const std::uint64_t word = port.in->words.front();
     port.in->words.pop_front();
-    return static_cast<std::size_t>(word);
+    return ::fixy::some(static_cast<std::size_t>(word));
 };
-constexpr auto read_int = [](Port& port) noexcept -> std::optional<int> {
-    return read_word(port).transform(
-        [](std::size_t word) noexcept { return static_cast<int>(static_cast<std::uint32_t>(word)); });
+constexpr auto read_int = [](Port& port) noexcept -> ::fixy::Option<int> {
+    return read_word(port).match(
+        [](std::size_t word) noexcept { return ::fixy::some(static_cast<int>(static_cast<std::uint32_t>(word))); },
+        []() noexcept { return ::fixy::Option<int>{}; });
 };
 
 struct Outcome {

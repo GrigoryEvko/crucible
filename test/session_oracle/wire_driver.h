@@ -37,7 +37,6 @@
 #include <deque>
 #include <initializer_list>
 #include <mutex>
-#include <optional>
 #include <span>
 #include <string_view>
 #include <thread>
@@ -159,12 +158,14 @@ struct ValueWriter {
 
 struct WordReader {
     std::uint64_t word = 0;
-    std::optional<std::size_t> operator()(Wire&) const noexcept { return static_cast<std::size_t>(word); }
+    ::fixy::Option<std::size_t> operator()(Wire&) const noexcept {
+        return ::fixy::some(static_cast<std::size_t>(word));
+    }
 };
 
 template <typename T>
 struct ValueReader {
-    std::optional<T> operator()(Wire&) const noexcept { return T{}; }
+    ::fixy::Option<T> operator()(Wire&) const noexcept { return ::fixy::some(T{}); }
 };
 
 struct WalkOn {

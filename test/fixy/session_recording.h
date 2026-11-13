@@ -55,14 +55,15 @@ inline constexpr auto push_int = [](Port& port, int& value) noexcept {
     port.out->slots.push_back(static_cast<std::uint64_t>(value));
     return true;
 };
-inline constexpr auto pop_label = [](Port& port) noexcept -> std::optional<std::size_t> {
-    if (port.in->slots.empty()) return std::nullopt;
+inline constexpr auto pop_label = [](Port& port) noexcept -> ::fixy::Option<std::size_t> {
+    if (port.in->slots.empty()) return ::fixy::none;
     const std::uint64_t slot = port.in->slots.front();
     port.in->slots.pop_front();
-    return slot;
+    return ::fixy::some(static_cast<std::size_t>(slot));
 };
-inline constexpr auto pop_int = [](Port& port) noexcept {
-    return pop_label(port).transform([](std::size_t slot) noexcept { return static_cast<int>(slot); });
+inline constexpr auto pop_int = [](Port& port) noexcept -> ::fixy::Option<int> {
+    return pop_label(port).match([](std::size_t slot) noexcept { return ::fixy::some(static_cast<int>(slot)); },
+                                 []() noexcept { return ::fixy::Option<int>{}; });
 };
 
 // The roles and the labels of a keyed choice.

@@ -259,15 +259,15 @@ struct PollLeftBox {
     std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + kAttackDeadline;
 
     template <typename End>
-    [[nodiscard]] std::optional<Ping> operator()(End& end) const noexcept {
+    [[nodiscard]] ::fixy::Option<Ping> operator()(End& end) const noexcept {
         Mailbox& box = end.pipe->to_left;
         if (!box.full.load(std::memory_order_acquire)) {
             if (std::chrono::steady_clock::now() > deadline) deadlock_detected(where);
-            return std::nullopt;
+            return ::fixy::none;
         }
         const int value = box.value.load(std::memory_order_relaxed);
         box.full.store(false, std::memory_order_release);
-        return Ping{value};
+        return ::fixy::some(Ping{value});
     }
 };
 
@@ -724,9 +724,9 @@ struct LateRead {
     int calls = 0;
 
     template <typename Wire>
-    [[nodiscard]] std::optional<int> operator()(Wire& wire) noexcept {
-        if (calls++ == 0) return std::nullopt;
-        return wire.value;
+    [[nodiscard]] ::fixy::Option<int> operator()(Wire& wire) noexcept {
+        if (calls++ == 0) return ::fixy::none;
+        return ::fixy::some(wire.value);
     }
 };
 

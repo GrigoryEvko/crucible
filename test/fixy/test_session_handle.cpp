@@ -369,7 +369,7 @@ static_assert(!s::DetachReason<int>);
     static_assert(std::is_same_v<typename decltype(after_send)::protocol, s::Recv<Pong, s::End>>);
 
     auto [pong, at_end] =
-        std::move(after_send).recv([](ValueWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
+        std::move(after_send).recv([](ValueWire& w) noexcept { return ::fixy::some(Pong{w.last_sent}); });
     if (pong.value != 3) {
         std::fprintf(stderr, "the value the transport wrote did not travel with the resource\n");
         return 1;
@@ -447,12 +447,12 @@ static_assert(!s::DetachReason<int>);
 
     // The handler runs once, for the branch the peer's label names.
     const int taken = std::move(handle).branch(
-        [](ValueWire&) noexcept -> std::optional<std::size_t> { return 0; },
+        [](ValueWire&) noexcept { return ::fixy::some(std::size_t{0}); },
         [](auto branch_handle) {
             using B = typename decltype(branch_handle)::protocol;
             using Message = typename decltype(branch_handle)::message_type;
             auto [msg, at_end] =
-                std::move(branch_handle).recv([](ValueWire&) noexcept { return std::optional{Message{}}; });
+                std::move(branch_handle).recv([](ValueWire&) noexcept { return ::fixy::some(Message{}); });
             (void)msg;
             (void)std::move(at_end).close();
             return std::is_same_v<B, s::Recv<Ping, s::End>> ? 0 : 1;
@@ -528,13 +528,13 @@ constexpr auto push_int = [](WordQueue& queue, int& value) noexcept {
     queue.words[queue.tail++] = static_cast<std::uint64_t>(value);
     return true;
 };
-constexpr auto pop_word = [](WordQueue& queue) noexcept -> std::optional<std::size_t> {
-    if (queue.head == queue.tail) return std::nullopt;
-    return static_cast<std::size_t>(queue.words[queue.head++]);
+constexpr auto pop_word = [](WordQueue& queue) noexcept -> ::fixy::Option<std::size_t> {
+    if (queue.head == queue.tail) return ::fixy::none;
+    return ::fixy::some(static_cast<std::size_t>(queue.words[queue.head++]));
 };
-constexpr auto pop_int = [](WordQueue& queue) noexcept -> std::optional<int> {
-    if (queue.head == queue.tail) return std::nullopt;
-    return static_cast<int>(queue.words[queue.head++]);
+constexpr auto pop_int = [](WordQueue& queue) noexcept -> ::fixy::Option<int> {
+    if (queue.head == queue.tail) return ::fixy::none;
+    return ::fixy::some(static_cast<int>(queue.words[queue.head++]));
 };
 
 // The Select holds Hello first and the Offer holds it second.  The word
@@ -624,7 +624,7 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
             return true;
         });
         auto [pong, at_end] =
-            std::move(after).recv([](ValueWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
+            std::move(after).recv([](ValueWire& w) noexcept { return ::fixy::some(Pong{w.last_sent}); });
         (void)pong;
         return std::move(at_end);
     });
@@ -643,8 +643,7 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
     auto head = s::mint_session_handle<ReceivesForever>(ValueWire{7});
     int received = 0;
     for (int round = 0; round < 3; ++round) {
-        auto [pong, next] =
-            std::move(head).recv([](ValueWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
+        auto [pong, next] = std::move(head).recv([](ValueWire& w) noexcept { return ::fixy::some(Pong{w.last_sent}); });
         static_assert(std::is_same_v<decltype(next), decltype(head)>, "a Continue lands on the reception again");
         received += pong.value;
         head = std::move(next);
@@ -733,10 +732,10 @@ struct TokenWire {
     (void)std::move(sender_done).close();
 
     auto receiver = s::mint_session_handle<s::Recv<Token, s::End>>(TokenWire{&slot});
-    auto [token, receiver_done] = std::move(receiver).recv([](TokenWire& w) noexcept -> std::optional<Token> {
+    auto [token, receiver_done] = std::move(receiver).recv([](TokenWire& w) noexcept -> ::fixy::Option<Token> {
         std::optional<Token>& wire_slot = *w.slot;
-        if (!wire_slot) return std::nullopt;
-        std::optional<Token> taken{std::move(*wire_slot)};
+        if (!wire_slot) return ::fixy::none;
+        ::fixy::Option<Token> taken = ::fixy::some(std::move(*wire_slot));
         wire_slot.reset();
         return taken;
     });
@@ -786,19 +785,19 @@ struct PeerEnd {
 }
 
 // A polling read: no value while the slot is empty.
-[[nodiscard]] std::optional<int> try_take(Mailbox& box) noexcept {
-    if (!box.full.load(std::memory_order_acquire)) return std::nullopt;
+[[nodiscard]] ::fixy::Option<int> try_take(Mailbox& box) noexcept {
+    if (!box.full.load(std::memory_order_acquire)) return ::fixy::none;
     const int value = box.value.load(std::memory_order_relaxed);
     box.full.store(false, std::memory_order_release);
-    return value;
+    return ::fixy::some(value);
 }
 
 // A polling read of a message that carries one int.
 template <typename Message>
-[[nodiscard]] std::optional<Message> try_take_as(Mailbox& box) noexcept {
-    const std::optional<int> value = try_take(box);
-    if (!value) return std::nullopt;
-    return Message{*value};
+[[nodiscard]] ::fixy::Option<Message> try_take_as(Mailbox& box) noexcept {
+    ::fixy::Option<int> value = try_take(box);
+    if (value.is_none()) return ::fixy::none;
+    return ::fixy::some(Message{std::move(value).expect("the test found a value")});
 }
 
 // The row gate of a channel.  One context runs the two sides of a
@@ -1077,7 +1076,7 @@ template <typename Body>
             return true;
         });
         auto [pong, at_end] =
-            std::move(after).recv([](CancelWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
+            std::move(after).recv([](CancelWire& w) noexcept { return ::fixy::some(Pong{w.last_sent}); });
         (void)pong;
         (void)std::move(at_end).close();
         std::_Exit(g_cancellations.load(std::memory_order_relaxed) == 0 ? 0 : 3);
@@ -1113,7 +1112,7 @@ template <typename Body>
         return true;
     });
     if (!live_count_is(baseline + 1, "a step that does not end")) return 1;
-    auto [pong, at_end] = std::move(waits).recv([](ValueWire& w) noexcept { return std::optional{Pong{w.last_sent}}; });
+    auto [pong, at_end] = std::move(waits).recv([](ValueWire& w) noexcept { return ::fixy::some(Pong{w.last_sent}); });
     (void)pong;
     if (!live_count_is(baseline, "the step to End")) return 1;
     (void)std::move(at_end).close();
@@ -1149,12 +1148,12 @@ struct PollBox {
     Mailbox* (*box_of)(Pipe&) = nullptr;
 
     template <typename End>
-    [[nodiscard]] std::optional<int> operator()(End& end) const noexcept {
+    [[nodiscard]] ::fixy::Option<int> operator()(End& end) const noexcept {
         Mailbox& box = *box_of(*end.pipe);
-        if (!box.full.load(std::memory_order_acquire)) return std::nullopt;
+        if (!box.full.load(std::memory_order_acquire)) return ::fixy::none;
         const int value = box.value.load(std::memory_order_relaxed);
         box.full.store(false, std::memory_order_release);
-        return value;
+        return ::fixy::some(value);
     }
 };
 
@@ -1233,7 +1232,7 @@ struct SlowWire {
         std::move(second_write).send(first + 1, [](SlowWire& w, int&& v, s::watch::wait_scope&) noexcept {
             w.value = v;
         });
-    auto [second, done] = std::move(second_read).recv([](SlowWire& w) noexcept { return std::optional{w.value}; });
+    auto [second, done] = std::move(second_read).recv([](SlowWire& w) noexcept { return ::fixy::some(w.value); });
     (void)std::move(done).close();
     if (tries != 3 || first != 5 || second != 6) {
         std::fprintf(stderr, "the transport shapes gave tries=%d first=%d second=%d, not 3, 5 and 6\n", tries, first,
@@ -1259,9 +1258,9 @@ struct LateWire {
 struct LateRead {
     int calls = 0;
 
-    [[nodiscard]] std::optional<int> operator()(LateWire& wire) noexcept {
-        if (calls++ == 0) return std::nullopt;
-        return wire.value;
+    [[nodiscard]] ::fixy::Option<int> operator()(LateWire& wire) noexcept {
+        if (calls++ == 0) return ::fixy::none;
+        return ::fixy::some(wire.value);
     }
 };
 

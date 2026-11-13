@@ -192,9 +192,9 @@ static_assert(!s::PermissionFlowCloses<s::Recv<CarriesRegion, s::End>, fp::PermS
         return true;
     });
     auto [received, recipient_done] =
-        std::move(recipient).recv([](RecipientEnd& end) noexcept -> std::optional<Carried> {
-            if (!end.slot->held.has_value()) return std::nullopt;
-            std::optional<Carried> taken{std::move(*end.slot->held)};
+        std::move(recipient).recv([](RecipientEnd& end) noexcept -> ::fixy::Option<Carried> {
+            if (!end.slot->held.has_value()) return ::fixy::none;
+            ::fixy::Option<Carried> taken = ::fixy::some(std::move(*end.slot->held));
             end.slot->held.reset();
             return taken;
         });

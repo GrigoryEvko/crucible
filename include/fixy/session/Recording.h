@@ -483,7 +483,7 @@ public:
     template <typename Transport>
         requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>)
                   && (!ReadTransport<Transport, resource_type, typename protocol::message_type>)
-    void recv(Transport) && = delete("[Transport_Shape] a read either polls, as std::optional<T>(Resource&), and "
+    void recv(Transport) && = delete("[Transport_Shape] a read either polls, as fixy::Option<T>(Resource&), and "
                                      "returns no value while nothing is there, or declares its wait, as "
                                      "T(Resource&, fixy::session::watch::wait_scope&).  A read of another shape can "
                                      "wait where the watch of fixy/session/Watch.h does not see it.");
@@ -520,7 +520,7 @@ public:
         requires is_recv_v<protocol> && is_keyed_step_v<protocol>
                   && (!ReadTransport<Transport, resource_type, std::size_t>)
     void recv(Transport) && = delete("[Transport_Shape] a read of a word either polls, as "
-                                     "std::optional<std::size_t>(Resource&), or declares its wait, as "
+                                     "fixy::Option<std::size_t>(Resource&), or declares its wait, as "
                                      "std::size_t(Resource&, fixy::session::watch::wait_scope&).  A read of another "
                                      "shape can wait where the watch of fixy/session/Watch.h does not see it.");
 
@@ -559,7 +559,7 @@ public:
     template <typename Reader, typename Handler>
         requires is_offer_v<protocol> && (!ReadTransport<Reader, resource_type, std::size_t>)
     void branch(Reader, Handler) && = delete("[Transport_Shape] a read of a word either polls, as "
-                                             "std::optional<std::size_t>(Resource&), or declares its wait, as "
+                                             "fixy::Option<std::size_t>(Resource&), or declares its wait, as "
                                              "std::size_t(Resource&, fixy::session::watch::wait_scope&).  A read of "
                                              "another shape can wait where the watch of fixy/session/Watch.h does not "
                                              "see it.");

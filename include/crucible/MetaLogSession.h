@@ -27,6 +27,7 @@
 #include <crucible/MetaLog.h>
 #include <crucible/PermissionedMetaLog.h>
 
+#include <fixy/Core.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
 #include <foundation/effects/Ctx.h>
@@ -34,7 +35,6 @@
 
 #include <concepts>
 #include <cstdint>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -71,7 +71,7 @@ concept MetaLogSessionSurface =
         { log.consumer(std::move(cons_perm)) } -> std::same_as<typename Log::ConsumerHandle>;
         { producer.try_append(records, std::uint32_t{1}) } -> std::same_as<::crucible::MetaIndex>;
         { producer.try_append_one(record) } -> std::same_as<bool>;
-        { consumer.try_drain_one() } -> std::same_as<std::optional<MetaLogRecord>>;
+        { consumer.try_drain_one() } -> std::same_as<::fixy::Option<MetaLogRecord>>;
     };
 
 // The trying write of the producer: true when the log took the record.
@@ -81,7 +81,7 @@ inline constexpr auto append_one = [](auto& producer, MetaLogRecord& record) -> 
 
 // The polling read of the consumer: the next record, or none while the log
 // holds nothing.
-inline constexpr auto drain_one = [](auto& consumer) -> std::optional<MetaLogRecord> {
+inline constexpr auto drain_one = [](auto& consumer) -> ::fixy::Option<MetaLogRecord> {
     return consumer.try_drain_one();
 };
 

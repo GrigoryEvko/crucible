@@ -37,7 +37,11 @@ using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg,
 // The transports of the channel protocols try once.  A full channel or an
 // empty one makes the session wait and try again.
 constexpr auto push_int = [](auto& handle, int& value) noexcept -> bool { return handle.try_push(value); };
-constexpr auto pop_int = [](auto& handle) noexcept -> std::optional<int> { return handle.try_pop(); };
+constexpr auto pop_int = [](auto& handle) noexcept -> ::fixy::Option<int> {
+    auto const popped = handle.try_pop();
+    if (!popped.has_value()) return ::fixy::none;
+    return ::fixy::some(*popped);
+};
 
 // ── The bridge ───────────────────────────────────────────────────────
 

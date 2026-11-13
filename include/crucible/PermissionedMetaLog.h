@@ -28,6 +28,7 @@
 #include <crucible/MetaLog.h>
 
 #include <fixy/Aliases.h>
+#include <fixy/Core.h>
 #include <fixy/session/NetworkModel.h>
 #include <foundation/Brand.h>
 #include <foundation/ChannelBinding.h>
@@ -36,7 +37,6 @@
 #include <foundation/permissions/Permission.h>
 
 #include <cstdint>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -191,16 +191,16 @@ public:
             return std::move(perm_);
         }
 
-        [[nodiscard, gnu::hot]] std::optional<value_type> try_drain_one() {
+        [[nodiscard, gnu::hot]] ::fixy::Option<value_type> try_drain_one() {
             ::crucible::MetaLog& log = ch_->log_;
             const std::uint64_t t = log.tail.peek_relaxed();
             if (t == log.head.get()) [[unlikely]] {
-                return std::nullopt;
+                return ::fixy::none;
             }
 
             const value_type meta = log.copy_record(t);
             log.advance_tail(t + 1);
-            return meta;
+            return ::fixy::some(meta);
         }
 
         template <typename Body>

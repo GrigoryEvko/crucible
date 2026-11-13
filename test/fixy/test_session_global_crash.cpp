@@ -265,15 +265,16 @@ constexpr auto push_int = [](Port& port, int& value) noexcept {
 };
 // A crash-watched reception reads with no wait: the word when one is
 // queued, and no value otherwise.
-constexpr auto poll_label = [](Port& port) noexcept -> std::optional<std::size_t> {
-    if (port.in->slots.empty()) return std::nullopt;
+constexpr auto poll_label = [](Port& port) noexcept -> ::fixy::Option<std::size_t> {
+    if (port.in->slots.empty()) return ::fixy::none;
     const std::uint64_t slot = port.in->slots.front();
     port.in->slots.pop_front();
-    return static_cast<std::size_t>(slot);
+    return ::fixy::some(static_cast<std::size_t>(slot));
 };
-constexpr auto poll_int = [](Port& port) noexcept -> std::optional<int> {
-    return poll_label(port).transform(
-        [](std::size_t slot) noexcept { return static_cast<int>(static_cast<std::uint32_t>(slot)); });
+constexpr auto poll_int = [](Port& port) noexcept -> ::fixy::Option<int> {
+    return poll_label(port).match(
+        [](std::size_t slot) noexcept { return ::fixy::some(static_cast<int>(static_cast<std::uint32_t>(slot))); },
+        []() noexcept { return ::fixy::Option<int>{}; });
 };
 
 namespace {

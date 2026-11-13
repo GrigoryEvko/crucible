@@ -106,14 +106,14 @@ struct Deadline {
 }
 
 // Takes the value in `box` if the box is full.
-[[nodiscard]] std::optional<int> try_take(Mailbox& box, const Deadline& deadline) noexcept {
+[[nodiscard]] ::fixy::Option<int> try_take(Mailbox& box, const Deadline& deadline) noexcept {
     if (!box.full.load(std::memory_order_acquire)) {
         deadline.check();
-        return std::nullopt;
+        return ::fixy::none;
     }
     const int value = box.value.load(std::memory_order_relaxed);
     box.full.store(false, std::memory_order_release);
-    return value;
+    return ::fixy::some(value);
 }
 
 // The two ends state the capacity of the pipe: one message each way.
@@ -217,7 +217,9 @@ struct LeftBody {
         };
         auto waiting = std::move(head).send(Ping{11}, send_ping);
         auto [pong, done] = std::move(waiting).recv([deadline = Deadline{"the left receive"}](LeftEnd& e) noexcept {
-            return try_take(e.pipe->to_left, deadline).transform([](int value) noexcept { return Pong{value}; });
+            return try_take(e.pipe->to_left, deadline)
+                .match([](int value) noexcept { return ::fixy::some(Pong{value}); },
+                       []() noexcept { return ::fixy::Option<Pong>{}; });
         });
         g_left_received.store(pong.value, std::memory_order_relaxed);
         return std::move(done);
@@ -232,7 +234,9 @@ struct RightBody {
         };
         auto waiting = std::move(head).send(Pong{22}, send_pong);
         auto [ping, done] = std::move(waiting).recv([deadline = Deadline{"the right receive"}](RightEnd& e) noexcept {
-            return try_take(e.pipe->to_right, deadline).transform([](int value) noexcept { return Ping{value}; });
+            return try_take(e.pipe->to_right, deadline)
+                .match([](int value) noexcept { return ::fixy::some(Ping{value}); },
+                       []() noexcept { return ::fixy::Option<Ping>{}; });
         });
         g_right_received.store(ping.value, std::memory_order_relaxed);
         return std::move(done);
