@@ -76,7 +76,9 @@ THE STEPS
     with `each` runs each item of that kind.  The command `loop evidence run
     KIND` runs the items of the class of KIND in a time budget, and the
     command `loop fuzz` runs one campaign of each harness
-    (assay.loop.entry, THE WORK).
+    (assay.loop.entry, THE WORK).  A command that starts with ctest runs
+    that ctest in the build of the preset of its step, through the launcher
+    of assay.loop.caps (assay.loop.entry, THE PRIVILEGED TESTS).
 
 THE COMMANDS
     Each subcommand of utils/bin/loop has a class:
@@ -304,6 +306,14 @@ STEPS = (
         "configures the build again, builds it two times and examines the Ninja log",
         preset="default",
         rules=("reconfigure-noop",),
+    ),
+    Step(
+        "bpf",
+        tiers.Tier.NIGHTLY,
+        ("ctest", "--label-regex", "^bpf$"),
+        "runs each test with the label bpf in the build of its preset, with the capabilities of the launcher "
+        "crucible-caps",
+        preset="default",
     ),
     Step(
         "pgo",

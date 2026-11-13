@@ -20,7 +20,7 @@
 #      calls finish, the parent CMakeLists pulls that property and
 #      adds it to the crucible target's source list.
 #
-# Discovery (libbpf, BPF-capable clang, xxd, optional setcap) runs
+# Discovery (libbpf, BPF-capable clang, xxd) runs
 # at module load.  If any required tool is missing, CRUCIBLE_HAVE_BPF
 # is forced OFF and crucible_bpf_program() becomes a no-op.  A consumer
 # puts each call of a facade load, such as load_sense_hub(), in an arm of
@@ -58,15 +58,6 @@ if (CRUCIBLE_HAVE_BPF)
 
   find_program(XXD_EXECUTABLE NAMES xxd)
 
-  # setcap is consulted by bench/CMakeLists.txt for the bench-caps
-  # convenience target; we discover it here so both consumers (root
-  # CMakeLists and bench/) can reuse the path.
-  find_program(SETCAP_EXECUTABLE NAMES setcap PATHS /usr/sbin /sbin
-    NO_DEFAULT_PATH)
-  if (NOT SETCAP_EXECUTABLE)
-    find_program(SETCAP_EXECUTABLE NAMES setcap)
-  endif()
-
   if (LIBBPF_FOUND AND CLANG_BPF_COMPILER AND XXD_EXECUTABLE)
     set(_CRUCIBLE_BPF_AVAILABLE TRUE)
     if (LIBBPF_VERSION)
@@ -75,13 +66,6 @@ if (CRUCIBLE_HAVE_BPF)
     else()
       message(STATUS
         "crucible: eBPF substrate ENABLED (libbpf, ${CLANG_BPF_COMPILER})")
-    endif()
-    if (SETCAP_EXECUTABLE)
-      message(STATUS
-        "crucible: `cmake --build --preset bench --target bench-caps` to apply BPF caps (sudo)")
-    else()
-      message(STATUS
-        "crucible: setcap not found — benches/binaries will need sudo at invocation for BPF programs")
     endif()
   else()
     message(STATUS "crucible: eBPF substrate DISABLED — missing:"

@@ -1,24 +1,32 @@
-"""bench — build the benches, give them their capabilities and run each one on an isolated core (`loop bench`).
+"""bench — build the benches and run each one on an isolated core, with the capabilities of BPF (`loop bench`).
 
 THE STEPS FOR EACH BENCH
     1. The command builds the bench in the build directory of the bench preset,
        with the job count of assay.core.proc (DEFAULT_JOBS).  The build is
        incremental.  A bench that is current builds nothing.  --no-build
        omits the step.
-    2. After each build, it gives the binary the capabilities of the CMake
-       target bench-caps of bench/CMakeLists.txt again.  A link writes a new
-       file with no file capabilities.  With them, the eBPF lines of the bench
-       harness (SenseHub and SchedSwitch) attach.  A host with
-       perf_event_paranoid 2 and unprivileged_bpf_disabled 2 attaches them
-       only with the capabilities.  Without them, the harness omits those
-       lines, and the times and the percentiles do not change.
-         cap_bpf              bpf_prog_load of a tracepoint
-         cap_perfmon          perf_event_open on a tracepoint ID
-         cap_dac_read_search  a read of /sys/kernel/tracing/events/*/id and of the BTF, which only root can read
+    2. It runs the bench through the launcher of assay.loop.caps, when the
+       build loads BPF (the cache entry BPF_ENTRY) and the launcher is ready
+       (THE CAPABILITIES).
     3. It runs the bench with taskset on one core of the reserved CPUs of the
        host (THE RESERVED CPUS).  When the host reserves no CPU, it uses the
        core of CRUCIBLE_BENCH_CORE, or no pin when that variable is not set.
        It then warns that the results are noisy.
+
+THE CAPABILITIES
+    The launcher gives each bench three capabilities.  With them, the eBPF
+    lines of the bench harness (SenseHub and SchedSwitch) attach.  A host
+    with perf_event_paranoid 2 and unprivileged_bpf_disabled 2 attaches
+    them only with the capabilities.
+      cap_bpf              bpf_prog_load of a tracepoint
+      cap_perfmon          perf_event_open on a tracepoint ID
+      cap_dac_read_search  a read of /sys/kernel/tracing/events/*/id and of the BTF, which only root can read
+    The command looks at the build and at the launcher one time for each
+    run.  When the launcher is not ready, it prints the reason and the fix,
+    and it runs each bench with no capabilities.  The harness then omits
+    the eBPF lines, and the times and the percentiles do not change.  The
+    launcher comes after the words of the placement, because the sudo of a
+    partition clears the ambient set of the capabilities.
 
     The command does not change the clocks of a GPU or of a CPU.  The host
     sets the clocks, the reservation and the interrupt routing at boot, and the
@@ -67,15 +75,17 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from assay.core import configuration as build_config
 from assay.core import proc
 from assay.core.paths import REPO_ROOT
+from assay.loop import caps
 from assay.readers import cmake as cmake_reader
 from assay.setup import pins as cmake_pin
 
 DEFAULT_BUILD = "build-bench"
 DEFAULT_PRESET = "bench"
-# The capabilities of the target bench-caps of bench/CMakeLists.txt.
-CAPABILITIES = "cap_bpf,cap_perfmon,cap_dac_read_search=eip"
+# The cache entry that tells if the build loads BPF programs (THE CAPABILITIES).  cmake/CrucibleBpf.cmake writes it.
+BPF_ENTRY = "CRUCIBLE_HAVE_BPF"
 # The hot-path latency set.  bench_dispatch and bench_meta_log are not in it, because their builds drift.
 DEFAULT_TARGETS = ("bench_trace_ring", "bench_arena", "bench_swiss_table", "bench_philox", "bench_pool_allocator")
 # The CPU directory of sysfs and the root of the cgroup v2 hierarchy (THE RESERVED CPUS).
@@ -317,20 +327,30 @@ def placement(settings: Settings, cpu_root: Path = CPU_ROOT, cgroup_root: Path =
     return Placement(str(core), reserved, (*scope, *pin))
 
 
-def apply_capabilities(binary: Path) -> None:
-    """Give a bench binary the capabilities of bench-caps, unless it has them, with `sudo -n setcap`."""
-    current = proc.run(proc.Command(["getcap", str(binary)], timeout_s=proc.QUICK_S)).out
-    if CAPABILITIES in current:
-        return
-    if proc.run(proc.Command(["sudo", "-n", "setcap", CAPABILITIES, str(binary)], timeout_s=proc.QUICK_S)).exit == 0:
-        log(f"  caps: {CAPABILITIES} applied (eBPF sensory line enabled)")
-    else:
-        warn("  caps: could not setcap (no passwordless sudo?) — eBPF sensory line")
-        warn("        will be omitted; ns/percentiles are unaffected.")
+def uses_launcher(build_dir: Path, launcher: Path = caps.LAUNCHER) -> bool:
+    """Tell if each bench of a build runs through the launcher, and print the reason when it does not (THE CAPABILITIES).
+
+    The answer is yes when the build loads BPF and the launcher is ready.
+    """
+    try:
+        value = cmake_reader.cache_value(build_dir, BPF_ENTRY) or ""
+    except cmake_reader.CmakeError as error:
+        warn(f"caps: the cache of {build_dir} does not read ({error}): each bench runs with no capabilities")
+        return False
+    if build_config.normalized("BOOL", value) != "on":
+        log(f"caps: {build_dir} loads no BPF program ({BPF_ENTRY} is off): each bench runs with no capabilities")
+        return False
+    problem = caps.launcher_problem(launcher)
+    if problem:
+        warn(f"caps: {caps.fix_line(problem, launcher)}")
+        warn("caps: each bench runs with no capabilities: the harness omits the eBPF lines, and the times do not change")
+        return False
+    log(f"caps: each bench runs through {launcher}, so the harness attaches the eBPF lines")
+    return True
 
 
 def run(root: Path, request: Request, settings: Settings) -> int:
-    """Build, give the capabilities and run each bench of the request, or list the bench targets.
+    """Build and run each bench of the request, through the launcher when it can, or list the bench targets.
 
     Args:
         root: The source tree
@@ -376,6 +396,7 @@ def run(root: Path, request: Request, settings: Settings) -> int:
     elif not reserved.source:
         warn(f"the host reserves no cpu: each bench runs on cpu{where.core} of CRUCIBLE_BENCH_CORE, a shared cpu with "
              "a tick, and its results are NOISY")
+    is_launched = uses_launcher(build_dir)
     for target in request.targets:
         binary = build_dir / "bench" / target
         if request.should_build:
@@ -387,11 +408,11 @@ def run(root: Path, request: Request, settings: Settings) -> int:
                 raise BenchError(f"build failed: {target} (known-drifted bench? try another target)")
         if not os.access(binary, os.X_OK):
             raise BenchError(f"missing binary: {binary} (build it first, drop --no-build)")
-        apply_capabilities(binary)
         log(f"run  {target}   (cpu {where.core or 'not pinned'})")
-        status = proc.run(proc.Command(list(where.command((str(binary), *request.bench_args))),
-                                       timeout_s=proc.BUILD_S, stdout=proc.Output.INHERIT,
-                                       stderr=proc.Output.INHERIT)).exit
+        words = (str(binary), *request.bench_args)
+        launched = tuple(caps.wrapped(words)) if is_launched else words
+        status = proc.run(proc.Command(list(where.command(launched)), timeout_s=proc.BUILD_S,
+                                       stdout=proc.Output.INHERIT, stderr=proc.Output.INHERIT)).exit
         if status != 0:
             return status
         print()
@@ -430,7 +451,7 @@ def self_test() -> int:
         cmake_reader.Target("bench_arena", TARGET_TYPE, folder=BENCH_FOLDER),
         cmake_reader.Target("bench_unmarked", TARGET_TYPE),
         cmake_reader.Target("bench_harness", "STATIC_LIBRARY", folder=BENCH_FOLDER),
-        cmake_reader.Target("bench-caps", "UTILITY"),
+        cmake_reader.Target("bench_report", "UTILITY"),
         cmake_reader.Target("bench_philox", TARGET_TYPE, folder=BENCH_FOLDER)))
     expect("the code model gives each executable of the bench folder one time, and no library and no other target",
            bench_targets(model) == ("bench_arena", "bench_philox", "bench_trace_ring"))
@@ -466,6 +487,9 @@ def self_test() -> int:
         expect("a partition starts the bench in its slice, on the lowest CPU of a full SMT group",
                where.core == "224" and "--slice=reserved.slice" in where.prefix and where.prefix[-2:] == ("-c", "224")
                and where.command(("bench",))[-1] == "bench")
+        launched = where.command(tuple(caps.wrapped(("bench",))))
+        expect("the launcher comes after the sudo of a partition, which clears the ambient set",
+               launched.index(str(caps.LAUNCHER)) > launched.index("sudo") and launched[-1] == "bench")
         plant(cgroup_root / "reserved.slice" / "cpuset.cpus.exclusive.effective", "225-255\n")
         expect("a half SMT group is skipped, so the core has an idle sibling",
                core_of(read_reserved("", cpu_root, cgroup_root), cpu_root) == 226)
@@ -482,6 +506,7 @@ def self_test() -> int:
         where = placement(Settings("b", "p"), cpu_root, cgroup_root)
         expect("isolcpus comes first, and taskset alone puts the bench on its core",
                where.reserved.source == "isolated" and where.core == "220" and "sudo" not in where.prefix)
+        expect("a build with no reply of the cache runs each bench with no capabilities", not uses_launcher(Path(work)))
         try:
             run(Path(work), parse([]), Settings("absent", DEFAULT_PRESET))
             expect("a build directory that is not configured is refused", False)

@@ -26,8 +26,9 @@ THE WORK
       3. Each step of STEPS of assay.loop.plan in the scope, in its sequence.
          A command that ends with --build-dir gets the build directory of the
          preset of the step.  The step of `loop fuzz` runs one campaign of
-         each harness (THE CAMPAIGN).  A step of `loop evidence run` is part
-         of job 5
+         each harness (THE CAMPAIGN).  A step of ctest runs its tests through
+         the launcher of assay.loop.caps (THE PRIVILEGED TESTS).  A step of
+         `loop evidence run` is part of job 5
       4. Each configure preset of objects in the scope that uses the profile
          of `loop pgo` (assay.loop.tiers, PresetTier).  It comes after the
          step that collects the profile
@@ -68,6 +69,17 @@ THE CAMPAIGN
     job for each of these CPUs.  CPUS then keeps one CPU for each job that
     the memory gives the step (THE MEMORY of assay.loop.heavy).  SECONDS is
     an equal part of the remaining time for each remaining campaign.
+
+THE PRIVILEGED TESTS
+    A step whose command starts with CTEST_WORD runs `ctest --test-dir BUILD
+    WORDS -j N` in the build BUILD of its preset.  WORDS are the other words
+    of its command, and the step bpf gives the label bpf with them.  The
+    command runs through the launcher of assay.loop.caps, so each test gets
+    the capabilities of a BPF load.  The job holds the lock of a heavy step,
+    and N is the job count that the memory gives it.  A launcher that is not
+    ready blocks the job, and the summary of the job is one line with the
+    reason and the fix.  A blocked job does not make the run red.  The gate
+    of `loop land` runs the same tests with no capabilities.
 
 THE REPORT
     Each run writes the directory TIER-TIME in REPORTS of the build directory
@@ -112,7 +124,7 @@ from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
 from assay.guard.engines.buildsys.parse_builds import COUNTED_RULES
-from assay.loop import affected, bench, fuzz, heavy, plan, tiers
+from assay.loop import affected, bench, caps, fuzz, heavy, plan, tiers
 from assay.loop import history as loop_history
 from assay.loop.evidence import items as evidence_items
 from assay.loop.evidence import status as evidence_status
@@ -146,6 +158,8 @@ CAMPAIGN_CORES = 16
 # The first words of a step that adds evidence, and of a step of campaigns (THE WORK, 3 and 5).
 EVIDENCE_WORDS = ("loop", "evidence", "run")
 FUZZ_WORDS = ("loop", "fuzz")
+# The first word of a step that runs its tests through the launcher (THE PRIVILEGED TESTS).
+CTEST_WORD = "ctest"
 
 
 class State(enum.StrEnum):
@@ -363,7 +377,10 @@ class Runner:
     """The commands of the jobs of one run in a tree (THE WORK)."""
 
     def __init__(self, root: Path, tier: tiers.Tier, jobs: int, logs: Path, presets: tiers.Tiers) -> None:
-        """Keep the tree, the tier, the job count, the directory of the logs and the presets of the run."""
+        """Keep the tree, the tier, the job count, the directory of the logs and the presets of the run.
+
+        The launcher of the privileged tests is LAUNCHER of assay.loop.caps.  A test gives a different file to it.
+        """
         self.root = root
         self.tier = tier
         self.jobs = jobs
@@ -372,6 +389,7 @@ class Runner:
         self.rows: list[evidence_status.Row] | None = None
         self.evidence_left = 0
         self.campaigns_left = 0
+        self.launcher = caps.LAUNCHER
 
     def master(self, name: str) -> list[str]:
         """Return the words that run a master of the tree."""
@@ -410,6 +428,8 @@ class Runner:
             outcome = self.evidence(job, prefix, deadline)
         elif job.kind is JobKind.STEP and job.step is not None and job.step.command[:2] == FUZZ_WORDS and job.item:
             outcome = self.campaign(job, prefix, deadline)
+        elif job.kind is JobKind.STEP and job.step is not None and job.step.command[0] == CTEST_WORD:
+            outcome = self.privileged(job, prefix, deadline)
         elif job.kind is JobKind.STEP:
             with heavy.heavy_lock(self.root):
                 outcome = self.step(job, prefix, deadline)
@@ -556,6 +576,62 @@ class Runner:
         if status != 0:
             return self.ended(job, status, words, log)
         return Outcome(job, State.PASSED, f"a campaign of {seconds} s on {len(used)} CPUs")
+
+    def privileged(self, job: Job, prefix: Path, deadline: float) -> Outcome:
+        """Run the tests of a step of ctest through the launcher in a heavy step, or tell why they cannot run.
+
+        The job is blocked when the launcher is not ready, or when the build of the preset of the step is not
+        configured (THE PRIVILEGED TESTS).
+        """
+        problem = caps.launcher_problem(self.launcher)
+        if problem:
+            return Outcome(job, State.BLOCKED, caps.fix_line(problem, self.launcher))
+        preset = job.step.preset if job.step is not None else ""
+        build = self.builds.get(preset)
+        if build is None or not ninja_reader.graph_file(build).is_file():
+            return Outcome(job, State.BLOCKED, f"the build of the preset {preset!r} is not configured")
+        try:
+            ctest = cmake_pin.configured_program(build, "ctest")
+        except cmake_pin.PinError as error:
+            return Outcome(job, State.BLOCKED, f"the build {build} names no ctest: {error}")
+        with heavy.heavy_step(self.root, self.jobs) as step_jobs:
+            return self.privileged_tests(job, build, ctest, prefix, deadline, step_jobs)
+
+    def privileged_tests(self, job: Job, build: Path, ctest: str, prefix: Path, deadline: float, jobs: int) -> Outcome:
+        """Run the ctest of a build with the words of a step through the launcher, and judge its report.
+
+        The caller holds the lock of a heavy step, or a lease of the slot pool (THE PRIVILEGED TESTS).
+
+        Args:
+            job: The job of the step
+            build: The build directory of the preset of the step
+            ctest: The ctest of the build
+            prefix: The start of the paths of the log and of the JUnit report
+            deadline: The end of the budget
+            jobs: The job count of ctest
+        """
+        words_of_step = list(job.step.command[1:]) if job.step is not None else []
+        report = Path(f"{prefix}.junit.xml")
+        log = Path(f"{prefix}.log")
+        tested = [ctest, "--test-dir", str(build), *words_of_step, "--no-tests=error", "-j", str(jobs)]
+        words = caps.wrapped([*tested, "--output-on-failure", "--output-junit", str(report)], self.launcher)
+        status = self.logged(words, log, deadline)
+        if status is None:
+            return Outcome(job, State.STOPPED, f"the budget ended during the tests, see {log}")
+        try:
+            results = ctest_reader.results(report)
+        except ctest_reader.CtestError:
+            results = {}
+        ran = len(results)
+        names = sorted(test for test, result in results.items() if result is ctest_reader.TestStatus.FAIL)
+        if status == 0 and not names:
+            return Outcome(job, State.PASSED, f"{ran} tests ran through the launcher {self.launcher}", 0, ran)
+        if not names:
+            return Outcome(job, State.FAILED, f"ctest exits {status}, see {log}", 0, ran, 0, (" ".join(words),))
+        launched = [ctest, "--test-dir", str(build), "--output-on-failure", "-R"]
+        reruns = tuple(" ".join(caps.wrapped([*launched, f"'^{name}$'"], self.launcher)) for name in names)
+        text = f"{len(names)} tests failed through the launcher, see {log}"
+        return Outcome(job, State.FAILED, text, 0, ran, 0, reruns)
 
     def evidence_rows(self) -> list[evidence_status.Row]:
         """Return the rows of the evidence of the tree, and read them one time for the runners of a run."""

@@ -685,6 +685,16 @@ crucible_test(test_perf_workload_profiler_smoke)
 # behave correctly across a region transition.
 crucible_test(test_vigil_deadline_watchdog)
 target_include_directories(test_bench_harness PRIVATE ${CMAKE_SOURCE_DIR}/bench)
+# The tests of the label bpf load BPF programs.  The gate runs them with no
+# capabilities.  `loop nightly` runs them again through the launcher
+# /usr/local/bin/crucible-caps (utils/assay/loop/caps.py), which gives each
+# test CAP_BPF, CAP_PERFMON and CAP_DAC_READ_SEARCH.
+set_property(TEST
+    test_perf_sense_hub_smoke test_perf_sched_switch_smoke test_perf_pmu_sample_smoke
+    test_perf_lock_contention_smoke test_perf_syscall_latency_smoke test_perf_senses_smoke
+    test_perf_sched_tp_btf_smoke test_perf_syscall_tp_btf_smoke test_warden_deadline_watchdog_smoke
+    test_perf_workload_profiler_smoke
+  APPEND PROPERTY LABELS bpf)
 
 # MetaLogSession.h — the typed-session facade over the production MetaLog
 # TensorMeta side channel.  Covers the permissioned endpoints, a session
@@ -5009,6 +5019,7 @@ foreach(_assay_test core.test_rows core.test_registry core.test_ledger core.test
         loop.derive.test_header_costs
         loop.derive.test_mint_inventory loop.derive.test_row_hashes loop.test_inputs loop.test_syntax
         loop.test_land loop.test_heavy loop.test_gate loop.test_tiers loop.test_plan loop.test_readset loop.test_audit
+        loop.test_caps
         core.test_calls loop.test_evidence loop.evidence.test_store loop.evidence.test_status
         loop.evidence.test_measurement loop.evidence.test_coverage loop.test_entry)
   string(REPLACE "." "_" _assay_test_name "assay_${_assay_test}")

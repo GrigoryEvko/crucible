@@ -1903,7 +1903,7 @@ inline void print_system_info(FILE* out = stdout) {
     } else {
         std::fprintf(out, "  BPF senses: UNAVAILABLE — set CRUCIBLE_PERF_VERBOSE=1 for libbpf logs;\n"
                           "              typical fix: sudo sysctl kernel.unprivileged_bpf_disabled=0\n"
-                          "              or `cmake --build --preset bench --target bench-caps`\n");
+                          "              or run it through /usr/local/bin/crucible-caps (loop bench does)\n");
     }
 #else
     std::fprintf(out, "  BPF senses: disabled at build time\n");

@@ -3,16 +3,14 @@
 #   cmake --preset bench && cmake --build --preset bench
 #   ./build-bench/bench/bench_arena
 #
-# The `bench-caps` target (declared below) applies three Linux
-# capabilities to every bench binary so they can load the eBPF sense
-# hub as an unprivileged user:
+# A bench loads the eBPF sense hub only with three Linux capabilities:
 #
 #   cap_bpf               — bpf_prog_load (tracepoint)
 #   cap_perfmon           — perf_event_open on tracepoint IDs
 #   cap_dac_read_search   — read /sys/kernel/tracing/events/*/id
 #
-# Usage: `cmake --build --preset bench --target bench-caps`
-# See the target's own comment block for rationale + caveats.
+# `python3 utils/bin/loop bench` runs each bench through the launcher
+# /usr/local/bin/crucible-caps, which gives them (utils/assay/loop/caps.py).
 
 # eBPF sense hub: the substrate lives in include/crucible/perf/SenseHub.h
 # and src/perf/SenseHub.cpp, and is bundled into the production
@@ -26,10 +24,6 @@
 # so bench_harness.h's #if defined(CRUCIBLE_HAVE_BPF)... gate fires
 # correctly for every bench target without re-declaring the macro
 # below.
-#
-# `setcap` discovery (for the bench-caps target further down) is
-# also moved into the cmake module, which exposes SETCAP_EXECUTABLE
-# at the root scope.
 
 function(crucible_bench name)
   add_executable(${name} ${name}.cpp)
@@ -41,14 +35,9 @@ function(crucible_bench name)
   # are available, 0 otherwise) is set PUBLIC on the `crucible`
   # target by the root CMakeLists.txt and propagates here via the
   # link above.  Bench harness gates on it directly — no per-bench
-  # macro definition needed.  The bench-caps target only applies to
-  # binaries that actually load BPF programs, so registration still
-  # gates on CRUCIBLE_HAVE_BPF.
-  if (CRUCIBLE_HAVE_BPF)
-    # Register for the bench-caps target — applied after all benches
-    # are declared so we can batch them into one sudo invocation.
-    set_property(GLOBAL APPEND PROPERTY CRUCIBLE_BENCH_CAP_TARGETS ${name})
-  endif()
+  # macro definition needed.  `loop bench` reads the cache entry
+  # CRUCIBLE_HAVE_BPF, and it runs each bench of a build with BPF
+  # through the launcher.
   # The folder marks the target as a bench in the CMake file API.
   # `loop bench` and `loop pgo` read the bench list from there, through
   # bench_targets() of utils/assay/loop/bench.py.
@@ -168,51 +157,4 @@ if(_record_leaf_not_measured)
   string(JOIN ", and " _record_leaf_reasons ${_record_leaf_not_measured})
   message(STATUS "bench_record_leaf is disabled in this configuration, because ${_record_leaf_reasons}.")
   set_tests_properties(bench_record_leaf PROPERTIES DISABLED TRUE)
-endif()
-
-# ── bench-caps target ────────────────────────────────────────────────
-#
-# The bench binary needs three capabilities to load + attach the BPF
-# sense hub as an unprivileged user:
-#
-#   CAP_BPF             — bpf_prog_load (tracepoint type, since 5.8)
-#   CAP_PERFMON         — perf_event_open on tracepoint IDs
-#   CAP_DAC_READ_SEARCH — read /sys/kernel/tracing/events/*/id (640 root:root).
-#                         libbpf reads the tracepoint id file on every
-#                         bpf_program__attach() and silently fails to
-#                         attach without it; CAP_PERFMON alone does
-#                         not override DAC on tracefs.
-#
-# This target batches `sudo setcap` over every bench binary in one
-# command so you enter the password exactly once per rebuild:
-#
-#   cmake --build --preset bench --target bench-caps
-#
-# Caveat: the ELF xattr is destroyed on every re-link, so re-run this
-# target after any rebuild. It's intentionally NOT a POST_BUILD step
-# because that would demand sudo on every build.
-#
-# Security note: CAP_DAC_READ_SEARCH lets the binary read any file on
-# the system, including otherwise-protected ones like /etc/shadow.
-# Acceptable for dev binaries running your own bench code; don't
-# setcap binaries you don't trust to the same extent.
-# Fallback when setcap is absent (hardened containers, some CI images,
-# cross-distro build hosts): invoke benches under `sudo ./bench_foo` so
-# the eBPF loader runs as root and bypasses the capability check
-# entirely. The SenseHub setup path accepts either route — runtime
-# behaviour is identical either way.
-get_property(_crucible_bench_cap_targets GLOBAL PROPERTY CRUCIBLE_BENCH_CAP_TARGETS)
-if (CRUCIBLE_HAVE_BPF AND SETCAP_EXECUTABLE AND _crucible_bench_cap_targets)
-  set(_crucible_bench_caps_commands
-    COMMAND ${CMAKE_COMMAND} -E echo
-      "Applying CAP_BPF+CAP_PERFMON to ${_crucible_bench_cap_targets}")
-  foreach (_t IN LISTS _crucible_bench_cap_targets)
-    list(APPEND _crucible_bench_caps_commands
-      COMMAND sudo ${SETCAP_EXECUTABLE} cap_bpf,cap_perfmon,cap_dac_read_search=eip $<TARGET_FILE:${_t}>)
-  endforeach()
-  add_custom_target(bench-caps
-    ${_crucible_bench_caps_commands}
-    DEPENDS ${_crucible_bench_cap_targets}
-    COMMENT "Applying BPF caps (sudo password required once, re-run after any rebuild)"
-    VERBATIM)
 endif()

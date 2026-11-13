@@ -8,15 +8,13 @@ optional bootstrap CIs; optional Mann-Whitney U for A/B comparisons.
 
 ```
 cmake --preset bench
-cmake --build --preset bench -j$(nproc)
-cmake --build --preset bench --target bench-caps   # one-time sudo, after every relink
-./build-bench/bench/bench_arena
+python3 utils/bin/loop bench bench_arena
 ```
 
-The `bench-caps` target runs `sudo setcap cap_bpf,cap_perfmon,cap_dac_read_search=eip` on
-every bench binary so the eBPF sense hub can load unprivileged. Re-run after any rebuild
-(the xattr is destroyed on relink). Without caps, ns/cycle numbers are unchanged but the
-sensory grid is omitted — see **How to enable BPF** below.
+`loop bench` builds the bench and runs it on a reserved core. It runs the bench through the
+launcher `/usr/local/bin/crucible-caps`, which gives the bench the capabilities of the eBPF
+sense hub. Without the launcher, the ns/cycle numbers do not change, but the bench omits the
+sensory grid. Refer to **How to enable BPF** below.
 
 ## Output anatomy
 
@@ -135,15 +133,22 @@ Persist in `/etc/sysctl.d/99-perf.conf`:
 kernel.unprivileged_bpf_disabled = 0
 ```
 
-The preferred workflow is the `bench-caps` target, which batches `setcap` on every bench
-binary in one sudo invocation:
+The launcher `/usr/local/bin/crucible-caps` gives the three capabilities to a command. It is a
+copy of `setpriv` of util-linux with these file capabilities. The owner installs it one time,
+and no bench binary needs file capabilities of its own. A relink then removes nothing. The
+group of the file is the group of the user, and `utils/assay/loop/caps.py` prints the two
+install commands when the launcher is missing.
+
+`python3 utils/bin/loop bench` runs each bench through the launcher, when the build loads BPF
+and the launcher is ready. To run one bench by hand, put the launcher before it:
 
 ```
-cmake --build --preset bench --target bench-caps
+/usr/local/bin/crucible-caps --inh-caps +bpf,+perfmon,+dac_read_search \
+    --ambient-caps +bpf,+perfmon,+dac_read_search -- ./build-bench/bench/bench_arena
 ```
 
-The ELF xattr is destroyed on every relink, so re-run after rebuilds. If BPF still fails to
-load, set `CRUCIBLE_PERF_VERBOSE=1` to see libbpf diagnostics on stderr.
+The ambient set gives the capabilities to each child process too. If BPF still does not
+load, set `CRUCIBLE_PERF_VERBOSE=1` to see the libbpf diagnostics on stderr.
 
 ## Environment variables
 

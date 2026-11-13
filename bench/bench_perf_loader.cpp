@@ -27,9 +27,9 @@
 //   (D) The "real" hot read: `SenseHub::read()` over 96 counters = 768 B
 //       = 12 cache lines.  Target ~50 ns on warm L1; this is the cost a
 //       caller pays per snapshot.  Skipped (with a banner explaining how
-//       to fix it) if sense_hub didn't attach — typical when the binary
-//       lacks CAP_BPF + CAP_PERFMON (run `make bench-caps` to grant them
-//       once, see bench/CMakeLists.txt).
+//       to fix it) if sense_hub didn't attach — typical when the bench
+//       runs with no CAP_BPF + CAP_PERFMON (run it through the launcher
+//       /usr/local/bin/crucible-caps, as `loop bench` does).
 //
 //   (E) Snapshot diff: `Snapshot::operator-()` runs 96 sub_sat — exercised
 //       at every runtime observation sample (paired snapshot before/after a workload).
@@ -53,9 +53,12 @@
 //   • Per-facade .read_recent() / timeline-ring drain costs — those have
 //     their own bench targets where the BTF-typed event shape matters.
 //
-// To run with capabilities (recommended):
-//   cmake --build --preset bench --target bench-caps
-//   ./build-bench/bench/bench_perf_loader
+// To run with capabilities (recommended), through the launcher that the
+// owner installs one time (utils/assay/loop/caps.py):
+//   python3 utils/bin/loop bench bench_perf_loader
+// or by hand, as one command:
+//   /usr/local/bin/crucible-caps --inh-caps +bpf,+perfmon,+dac_read_search
+//       --ambient-caps +bpf,+perfmon,+dac_read_search -- ./build-bench/bench/bench_perf_loader
 //
 // To run as root (alternative):
 //   sudo ./build-bench/bench/bench_perf_loader
@@ -98,9 +101,9 @@ void print_coverage(const crucible::perf::CoverageReport& cov) {
     if (cov.attached_count() == 0) {
         // No attached facade is the most common surprise.  Tell the user how to
         // fix it instead of leaving them to grep.  Two recovery paths:
-        //   • make bench-caps  (one-time, sticky until rebuild)
+        //   • the launcher /usr/local/bin/crucible-caps  (as `loop bench` runs it)
         //   • sudo ./bench_perf_loader  (per-invocation)
-        std::printf(" — run `cmake --build --preset bench --target bench-caps`"
+        std::printf(" — run it through /usr/local/bin/crucible-caps, as `loop bench` does,"
                     " or invoke under sudo");
     }
     std::printf("\n  sense_hub=%d sched_switch=%d pmu_sample=%d "

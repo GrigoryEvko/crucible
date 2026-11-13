@@ -89,6 +89,8 @@ def jobs_cases(expect: testing.Expect) -> None:
     )
     campaigns = [job.item for job in nightly if job.step is not None and job.step.command[:2] == entry.FUZZ_WORDS]
     expect(f"a step with `each` gives one job of each item: {campaigns}", campaigns == ["region", "trace"])
+    privileged = [job.name for job in nightly if job.step is not None and job.step.command[0] == entry.CTEST_WORD]
+    expect(f"the nightly entry gives a job of the step bpf of ctest: {privileged}", privileged == ["bpf"])
     release_titles = [job.title for job in release]
     profiled = release_titles.index("tests profiled")
     steps = [index for index, job in enumerate(release) if job.kind is entry.JobKind.STEP]
@@ -180,6 +182,15 @@ def run_cases(expect: testing.Expect) -> None:
         expect(
             f"a campaign with no afl-fuzz is blocked with the reason: {campaign.summary}",
             campaign.state is entry.State.BLOCKED and campaign.summary.startswith(f"the host has no {directory}"),
+        )
+        bpf_step = next(item for item in plan.STEPS if item.command[0] == entry.CTEST_WORD)
+        runner.launcher = Path(directory) / "crucible-caps"
+        unready = runner.privileged(entry.Job(entry.JobKind.STEP, bpf_step.name, step=bpf_step), Path(directory), 1e18)
+        expect(
+            f"a step of ctest with no launcher is blocked with one line of the reason and the fix: {unready.summary}",
+            unready.state is entry.State.BLOCKED
+            and unready.summary.startswith(f"the launcher {runner.launcher} does not exist.  ")
+            and "\n" not in unready.summary,
         )
         report = Path(directory) / "junit.xml"
         report.write_text(

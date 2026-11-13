@@ -99,7 +99,7 @@ bench/ | raw-new-delete | 2 | - | -
 bench/ | raw-pointer-object | 211 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
-bench/ | std-entity | 880 | - | -
+bench/ | std-entity | 878 | - | -
 bench/ | std-object | 248 | - | -
 examples/fn/ | c-array-object | 9 | - | -
 examples/fn/ | c-library-call | 12 | - | -
@@ -108,10 +108,10 @@ examples/fn/ | replace-pending:std::bit_cast | 2 | - | -
 examples/fn/ | std-entity | 10 | - | -
 examples/fn/ | std-object | 3 | - | -
 include/crucible/ | c-array-object | 53 | - | -
-include/crucible/ | c-library-call | 53 | - | -
+include/crucible/ | c-library-call | 46 | - | -
 include/crucible/ | compiler-builtin | 4 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
-include/crucible/ | raw-new-delete | 6 | - | -
+include/crucible/ | raw-new-delete | 4 | - | -
 include/crucible/ | raw-pointer-object | 444 | - | -
 include/crucible/ | replace-pending:<limits> | 6 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 18 | - | -
@@ -376,7 +376,7 @@ test/ | raw-new-delete | 41 | - | -
 test/ | raw-pointer-object | 622 | - | -
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 103 | - | -
-test/ | std-entity | 2446 | - | -
+test/ | std-entity | 2442 | - | -
 test/ | std-object | 843 | - | -
 test/canopy_neg/ | raw-pointer-object | 1 | - | -
 test/canopy_neg/ | std-entity | 10 | - | -
