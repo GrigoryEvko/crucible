@@ -50,6 +50,7 @@
 // of the messages around one entry.
 
 #include <crucible/Types.h>
+#include <fixy/Core.h>
 #include <fixy/Federation.h>
 #include <fixy/Tagged.h>
 #include <fixy/session/ContentAddressed.h>
@@ -67,8 +68,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <expected>
-#include <limits>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -158,24 +157,24 @@ enum class FederationError : std::uint8_t {
 // too small, or a key it forgot to fill in, deserves an error it can
 // route, not a terminated process.
 
-[[nodiscard]] inline std::expected<std::size_t, FederationError>
+[[nodiscard]] inline ::fixy::Result<std::size_t, FederationError>
 serialize_federation_entry(std::span<std::uint8_t> out_buf, const KernelCacheKey& key,
                            std::span<const std::uint8_t> payload) noexcept {
     if (key.is_sentinel()) {
-        return std::unexpected(FederationError::SentinelKey);
+        return ::fixy::err(FederationError::SentinelKey);
     }
     if (key.is_zero()) {
-        return std::unexpected(FederationError::ZeroKey);
+        return ::fixy::err(FederationError::ZeroKey);
     }
 
-    if (payload.size() > std::numeric_limits<std::uint32_t>::max()) {
-        return std::unexpected(FederationError::OutputBufferTooSmall);
+    if (payload.size() > ::fixy::max_of<std::uint32_t>) {
+        return ::fixy::err(FederationError::OutputBufferTooSmall);
     }
     CRUCIBLE_PRE(federation_entry_blob_layout_disjoint(payload.size()));
 
     const std::size_t total_bytes = FEDERATION_HEADER_BYTES + payload.size();
     if (out_buf.size() < total_bytes) {
-        return std::unexpected(FederationError::OutputBufferTooSmall);
+        return ::fixy::err(FederationError::OutputBufferTooSmall);
     }
 
     FederationEntryHeader hdr{};
@@ -208,46 +207,46 @@ serialize_federation_entry(std::span<std::uint8_t> out_buf, const KernelCacheKey
 // The caller reads the payload itself and checks that it hashes to
 // the content hash in the returned header.
 
-[[nodiscard]] inline std::expected<FederationEntryHeader, FederationError>
+[[nodiscard]] inline ::fixy::Result<FederationEntryHeader, FederationError>
 deserialize_federation_header(std::span<const std::uint8_t> in_buf, std::uint16_t receiver_cardinality) noexcept {
     if (in_buf.size() < FEDERATION_HEADER_BYTES) {
-        return std::unexpected(FederationError::TruncatedHeader);
+        return ::fixy::err(FederationError::TruncatedHeader);
     }
 
     FederationEntryHeader hdr{};
     std::memcpy(&hdr, in_buf.data(), FEDERATION_HEADER_BYTES);
 
     if (hdr.magic != FEDERATION_MAGIC) {
-        return std::unexpected(FederationError::BadMagic);
+        return ::fixy::err(FederationError::BadMagic);
     }
 
     if (hdr.protocol_version != FEDERATION_PROTOCOL_V1) {
-        return std::unexpected(FederationError::UnsupportedVersion);
+        return ::fixy::err(FederationError::UnsupportedVersion);
     }
 
     if (hdr.reserved != 0u) {
-        return std::unexpected(FederationError::ReservedNonZero);
+        return ::fixy::err(FederationError::ReservedNonZero);
     }
 
     // A sender at or below this count used only atoms this receiver
     // already knows, which is the safe direction of the append-only
     // rule.
     if (hdr.universe_cardinality > receiver_cardinality) {
-        return std::unexpected(FederationError::UniverseCardinalityTooHigh);
+        return ::fixy::err(FederationError::UniverseCardinalityTooHigh);
     }
 
     const KernelCacheKey key{hdr.content_hash, hdr.row_hash};
     if (key.is_sentinel()) {
-        return std::unexpected(FederationError::SentinelKey);
+        return ::fixy::err(FederationError::SentinelKey);
     }
     if (key.is_zero()) {
-        return std::unexpected(FederationError::ZeroKey);
+        return ::fixy::err(FederationError::ZeroKey);
     }
 
     const std::size_t bytes_after_header = in_buf.size() - FEDERATION_HEADER_BYTES;
     CRUCIBLE_PRE(federation_entry_blob_layout_disjoint(hdr.payload_size));
     if (static_cast<std::size_t>(hdr.payload_size) > bytes_after_header) {
-        return std::unexpected(FederationError::TruncatedPayload);
+        return ::fixy::err(FederationError::TruncatedPayload);
     }
 
     return hdr;
@@ -261,18 +260,15 @@ struct FederationEntryView {
     std::span<const std::uint8_t> payload{};
 };
 
-[[nodiscard]] inline std::expected<FederationEntryView, FederationError>
+[[nodiscard]] inline ::fixy::Result<FederationEntryView, FederationError>
 deserialize_untrusted_federation_entry(std::span<const std::uint8_t> in_buf,
                                        std::uint16_t receiver_cardinality) noexcept {
-    auto hdr_or_err = deserialize_federation_header(in_buf, receiver_cardinality);
-    if (!hdr_or_err) {
-        return std::unexpected(hdr_or_err.error());
-    }
+    CRUCIBLE_TRY(header, deserialize_federation_header(in_buf, receiver_cardinality));
 
     const std::size_t payload_offset = FEDERATION_HEADER_BYTES;
-    const std::size_t payload_size = static_cast<std::size_t>(hdr_or_err->payload_size);
+    const std::size_t payload_size = static_cast<std::size_t>(header.payload_size);
     return FederationEntryView{
-        .header = *hdr_or_err,
+        .header = header,
         .payload = in_buf.subspan(payload_offset, payload_size),
     };
 }
@@ -283,18 +279,15 @@ deserialize_untrusted_federation_entry(std::span<const std::uint8_t> in_buf,
 // view came from and is no check: fixy::Tagged lets any caller mint a
 // value under this tag.
 template <typename Org, typename Brand>
-[[nodiscard]] inline std::expected<
+[[nodiscard]] inline ::fixy::Result<
     ::fixy::Tagged<FederationEntryView, ::foundation::permissions::tag::FederatedPeer<Org>>, FederationError>
 deserialize_federation_entry(const ::foundation::permissions::Permission<
                                  ::foundation::permissions::tag::FederatedPeer<Org>, Brand>& peer_permission,
                              std::span<const std::uint8_t> in_buf, std::uint16_t receiver_cardinality) noexcept {
     (void)peer_permission;
 
-    auto view = deserialize_untrusted_federation_entry(in_buf, receiver_cardinality);
-    if (!view) {
-        return std::unexpected(view.error());
-    }
-    return ::fixy::mint_tagged<::foundation::permissions::tag::FederatedPeer<Org>>(*view);
+    CRUCIBLE_TRY(view, deserialize_untrusted_federation_entry(in_buf, receiver_cardinality));
+    return ::fixy::mint_tagged<::foundation::permissions::tag::FederatedPeer<Org>>(view);
 }
 
 [[nodiscard]] inline constexpr bool federation_accepts_cardinality(std::uint16_t sender_cardinality,

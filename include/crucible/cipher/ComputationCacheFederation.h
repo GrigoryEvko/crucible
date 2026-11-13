@@ -35,8 +35,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <span>
+#include <utility>
 
 namespace crucible::cipher::federation {
 
@@ -143,7 +143,7 @@ using LocalCipherPermission = ::foundation::permissions::Permission<::fixy::fede
 
 template <auto FnPtr, typename Row, typename... Args, typename Brand>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row> && ArgsCanonicallyOrdered<Args...>
-[[nodiscard]] inline std::expected<std::size_t, FederationError> serialize_computation_cache_federation_entry(
+[[nodiscard]] inline ::fixy::Result<std::size_t, FederationError> serialize_computation_cache_federation_entry(
     const LocalCipherPermission<Brand>& local_permission, std::span<std::uint8_t> out_buf,
     ComputationCacheFederationContentAddressedPayload<FnPtr, Row, Args...> dispatcher_payload) noexcept {
     (void)local_permission;
@@ -153,7 +153,7 @@ template <auto FnPtr, typename Row, typename... Args, typename Brand>
 
 template <auto FnPtr, typename Row, typename... Args, typename Brand>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row> && ArgsCanonicallyOrdered<Args...>
-[[nodiscard]] inline std::expected<std::size_t, FederationError>
+[[nodiscard]] inline ::fixy::Result<std::size_t, FederationError>
 serialize_computation_cache_federation_entry(const LocalCipherPermission<Brand>& local_permission,
                                              std::span<std::uint8_t> out_buf,
                                              std::span<const std::uint8_t> dispatcher_payload) noexcept {
@@ -200,21 +200,21 @@ computation_cache_federation_smoke_test(const LocalCipherPermission<Brand>& loca
 
         auto written =
             serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(local_permission, buf, body);
-        ok = ok && written.has_value();
-        if (!written.has_value()) return false;
+        if (written.is_err()) return false;
+        const std::size_t written_bytes = std::move(written).expect("the entry fits its buffer");
 
-        auto view =
-            deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
+        auto decoded =
+            deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), written_bytes),
                                                    static_cast<std::uint16_t>(::foundation::effects::effect_count));
-        ok = ok && view.has_value();
-        if (!view.has_value()) return false;
+        if (decoded.is_err()) return false;
+        const FederationEntryView view = std::move(decoded).expect("the entry decodes");
 
         const auto expected_key = federation_key<&probe_unary, EmptyR, int>();
-        ok = ok && (view->header.content_hash == expected_key.content_hash);
-        ok = ok && (view->header.row_hash == expected_key.row_hash);
-        ok = ok && (view->payload.size() == body.size());
+        ok = ok && (view.header.content_hash == expected_key.content_hash);
+        ok = ok && (view.header.row_hash == expected_key.row_hash);
+        ok = ok && (view.payload.size() == body.size());
         for (std::size_t i = 0; i < body.size(); ++i) {
-            ok = ok && (view->payload[i] == body[i]);
+            ok = ok && (view.payload[i] == body[i]);
         }
     }
 
@@ -225,11 +225,12 @@ computation_cache_federation_smoke_test(const LocalCipherPermission<Brand>& loca
             local_permission, buf_empty, std::span<const std::uint8_t>{});
         auto wb = serialize_computation_cache_federation_entry<&probe_unary, BgR, int>(local_permission, buf_bg,
                                                                                        std::span<const std::uint8_t>{});
-        ok = ok && wa.has_value() && wb.has_value();
-        if (!wa.has_value() || !wb.has_value()) return false;
-        ok = ok && (*wa == *wb);
+        if (wa.is_err() || wb.is_err()) return false;
+        const std::size_t written_empty = std::move(wa).expect("the entry of the empty row fits");
+        const std::size_t written_bg = std::move(wb).expect("the entry of the Bg row fits");
+        ok = ok && (written_empty == written_bg);
         bool any_diff = false;
-        for (std::size_t i = 0; i < *wa; ++i) {
+        for (std::size_t i = 0; i < written_empty; ++i) {
             if (buf_empty[i] != buf_bg[i]) {
                 any_diff = true;
                 break;
@@ -243,9 +244,8 @@ computation_cache_federation_smoke_test(const LocalCipherPermission<Brand>& loca
         using Payload = ComputationCacheFederationContentAddressedPayload<&probe_unary, EmptyR, int>;
         auto written = serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(local_permission, buf,
                                                                                                Payload::hash_only());
-        ok = ok && written.has_value();
-        if (!written.has_value()) return false;
-        ok = ok && (*written == FEDERATION_HEADER_BYTES);
+        if (written.is_err()) return false;
+        ok = ok && (std::move(written).expect("the hash-only entry fits") == FEDERATION_HEADER_BYTES);
     }
 
     return ok;

@@ -96,10 +96,10 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
         // The batch file and its index line, as an attacker writes them.
         const ContentHash batch_hash = Cipher::session_event_batch_hash(records);
         std::vector<std::uint8_t> entry(cipher::federation::FEDERATION_HEADER_BYTES + records.size());
-        const auto written = cipher::federation::serialize_federation_entry(
+        auto written = cipher::federation::serialize_federation_entry(
             entry, KernelCacheKey{batch_hash, Cipher::SESSION_EVENT_FEDERATION_ROW_HASH}, records);
-        if (written) {
-            entry.resize(*written);
+        if (written.is_ok()) {
+            entry.resize(std::move(written).expect("the batch entry fits its buffer"));
             write_file(session_dir / (hex16(batch_hash.raw()) + ".cfed"), entry);
             const std::string line = std::to_string(first_step) + ","
                                    + std::to_string(std::uint64_t{first_step} + event_count - 1) + ","

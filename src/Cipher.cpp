@@ -20,7 +20,6 @@
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
-#include <limits>
 #include <string_view>
 
 namespace crucible {
@@ -460,8 +459,7 @@ ContentHash Cipher::persist_session_events_(OpenView const&, std::span<const Ses
             return ContentHash{};
         }
         const uint64_t prev_step = events[i - 1].step_id().value;
-        if (prev_step == std::numeric_limits<uint64_t>::max() || prev_step + 1 != events[i].step_id().value)
-            [[unlikely]] {
+        if (prev_step == ::fixy::max_of<uint64_t> || prev_step + 1 != events[i].step_id().value) [[unlikely]] {
             return ContentHash{};
         }
     }
@@ -483,10 +481,10 @@ ContentHash Cipher::persist_session_events_(OpenView const&, std::span<const Ses
     const KernelCacheKey key{hash, SESSION_EVENT_FEDERATION_ROW_HASH};
 
     std::vector<std::uint8_t> encoded(cipher::federation::FEDERATION_HEADER_BYTES + payload.size());
-    const auto written = cipher::federation::serialize_federation_entry(std::span<std::uint8_t>{encoded}, key,
-                                                                        std::span<const std::uint8_t>{payload});
-    if (!written) return ContentHash{};
-    encoded.resize(*written);
+    auto written = cipher::federation::serialize_federation_entry(std::span<std::uint8_t>{encoded}, key,
+                                                                  std::span<const std::uint8_t>{payload});
+    if (written.is_err()) return ContentHash{};
+    encoded.resize(std::move(written).expect("the entry fits the buffer of its size"));
 
     const std::string dir = session_event_dir(session);
     std::filesystem::create_directories(dir);
@@ -592,17 +590,18 @@ std::vector<Cipher::SessionEvent> Cipher::load_session_events(OpenView const&, :
         batch.read(static_cast<char*>(static_cast<void*>(bytes.data())), static_cast<std::streamsize>(bytes.size()));
         if (!batch) continue;
 
-        auto view = cipher::federation::deserialize_untrusted_federation_entry(
+        auto entry = cipher::federation::deserialize_untrusted_federation_entry(
             std::span<const std::uint8_t>{bytes}, static_cast<std::uint16_t>(::foundation::effects::effect_count));
-        if (!view) continue;
-        if (view->header.content_hash != hash) continue;
-        if (view->header.row_hash != SESSION_EVENT_FEDERATION_ROW_HASH) {
+        if (entry.is_err()) continue;
+        const cipher::federation::FederationEntryView view = std::move(entry).expect("the entry decoded");
+        if (view.header.content_hash != hash) continue;
+        if (view.header.row_hash != SESSION_EVENT_FEDERATION_ROW_HASH) {
             continue;
         }
-        if (session_event_batch_hash(view->payload) != hash) continue;
-        if ((view->payload.size() % sizeof(SessionEvent)) != 0u) continue;
+        if (session_event_batch_hash(view.payload) != hash) continue;
+        if ((view.payload.size() % sizeof(SessionEvent)) != 0u) continue;
 
-        const std::size_t n = view->payload.size() / sizeof(SessionEvent);
+        const std::size_t n = view.payload.size() / sizeof(SessionEvent);
         if (n != count) continue;
 
         // The hashes prove only that the batch is the one its writer
@@ -610,7 +609,7 @@ std::vector<Cipher::SessionEvent> Cipher::load_session_events(OpenView const&, :
         // each record goes through the event decoder, which is the one
         // route from bytes to an event and refuses a record with a byte
         // outside its field.
-        auto decoded = ::fixy::session::decode_session_log(std::as_bytes(view->payload));
+        auto decoded = ::fixy::session::decode_session_log(std::as_bytes(view.payload));
         if (!decoded) continue;
         if (decoded->front().step_id().value != first) continue;
         if (decoded->back().step_id().value != last) continue;
@@ -623,7 +622,7 @@ std::vector<Cipher::SessionEvent> Cipher::load_session_events(OpenView const&, :
             }
             if (i != 0) {
                 const uint64_t prev_step = (*decoded)[i - 1].step_id().value;
-                if (prev_step == std::numeric_limits<uint64_t>::max() || prev_step + 1u != event.step_id().value) {
+                if (prev_step == ::fixy::max_of<uint64_t> || prev_step + 1u != event.step_id().value) {
                     valid_batch = false;
                     break;
                 }
@@ -688,7 +687,7 @@ ContentHash Cipher::session_event_batch_hash(std::span<const std::uint8_t> bytes
     h *= 0xc4ceb9fe1a85ec53ULL;
     h ^= h >> 33;
     if (h == 0u) h = 0x53455353494f4e45ULL;
-    if (h == std::numeric_limits<uint64_t>::max()) --h;
+    if (h == ::fixy::max_of<uint64_t>) --h;
     return ContentHash{h};
 }
 
@@ -727,7 +726,7 @@ Cipher::CommitResult Cipher::advance_head(OpenView const&, ContentHash content_h
         char rec[64];
         std::size_t off = 0;
         auto [p1, ec1] = std::to_chars(rec + off, rec + sizeof(rec), step_id);
-        if (ec1 != std::errc{}) std::abort();
+        if (ec1 != std::errc{}) ::fixy::fatal("the step of a log record does not fit its buffer");
         off = static_cast<std::size_t>(p1 - rec);
         rec[off++] = ',';
         char hex[16];
@@ -736,7 +735,7 @@ Cipher::CommitResult Cipher::advance_head(OpenView const&, ContentHash content_h
         off += 16;
         rec[off++] = ',';
         auto [p2, ec2] = std::to_chars(rec + off, rec + sizeof(rec), committed_at_ns);
-        if (ec2 != std::errc{}) std::abort();
+        if (ec2 != std::errc{}) ::fixy::fatal("the time of a log record does not fit its buffer");
         off = static_cast<std::size_t>(p2 - rec);
         rec[off++] = '\n';
         if (!atomic_append_at_(
@@ -772,15 +771,15 @@ Cipher::CommitResult Cipher::advance_head(OpenView const&, ContentHash content_h
 // std::from_chars is exception-free, unlike std::stoull which throws on
 // malformed input, so a corrupt HEAD gives no hash and the caller falls
 // through to the log.
-std::optional<ContentHash> Cipher::parse_head_(std::span<const char> bytes) noexcept {
+::fixy::Option<ContentHash> Cipher::parse_head_(std::span<const char> bytes) noexcept {
     uint64_t raw = 0;
     const char* begin = bytes.data();
     const char* end = bytes.data() + bytes.size();
     auto [p, ec] = std::from_chars(begin, end, raw, /*base=*/16);
     if (ec == std::errc{} && p != begin) {
-        return ContentHash{raw};
+        return ::fixy::some(ContentHash{raw});
     }
-    return std::nullopt;
+    return ::fixy::none;
 }
 
 auto Cipher::obj_path(uint64_t hash) const -> ::fixy::Tagged<std::string, ::fixy::tags::source::CipherPath> {
@@ -788,7 +787,7 @@ auto Cipher::obj_path(uint64_t hash) const -> ::fixy::Tagged<std::string, ::fixy
     hex16_(hash, hex);
     const std::string& root = root_str();
     if (root.size() > MAX_ROOT_PATH_BYTES) {
-        std::abort();
+        ::fixy::fatal("the root of the Cipher is longer than MAX_ROOT_PATH_BYTES");
     }
     std::string path = join_({root, "/objects/", std::string_view{hex, 2}, "/", std::string_view{hex + 2, 14}});
     return ::fixy::mint_tagged<::fixy::tags::source::CipherPath>(std::move(path));

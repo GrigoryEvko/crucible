@@ -199,7 +199,7 @@ public:
         // this instance's lifetime.
         {
             auto dirfd = ::fixy::fs::open_dirfd(ctx, std::move(*sanitized_e));
-            if (!dirfd) std::abort();
+            if (!dirfd) ::fixy::fatal("the root of the Cipher does not open as a directory");
             c.root_dirfd_ = std::move(*dirfd);
         }
 
@@ -221,10 +221,7 @@ public:
             std::array<char, 32> buf{};
             const auto n = ::fixy::fs::read_full(ctx, head_fd, std::as_writable_bytes(std::span<char>{buf}));
             if (n && *n > 0) {
-                const std::optional<ContentHash> parsed_head = parse_head_(std::span<const char>{buf.data(), *n});
-                if (parsed_head) {
-                    c.head_ = *parsed_head;
-                }
+                c.head_ = parse_head_(std::span<const char>{buf.data(), *n}).value_or(ContentHash{});
             }
         }
 
@@ -506,7 +503,7 @@ private:
 
     // The head hash that a HEAD file names, or none when the bytes do not
     // start with a hexadecimal number.
-    [[nodiscard]] static std::optional<ContentHash> parse_head_(std::span<const char> bytes) noexcept;
+    [[nodiscard]] static ::fixy::Option<ContentHash> parse_head_(std::span<const char> bytes) noexcept;
 
     [[nodiscard]] auto obj_path(uint64_t hash) const -> ::fixy::Tagged<std::string, ::fixy::tags::source::CipherPath>;
 

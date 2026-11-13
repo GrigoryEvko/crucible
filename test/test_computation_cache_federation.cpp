@@ -25,6 +25,14 @@ namespace eff = ::foundation::effects;
 
 #define ASSERT_TRUE(...) assert((__VA_ARGS__))
 
+// The value of a result that holds one.  A result with an error ends the
+// test.
+template <class T, class E>
+[[nodiscard]] static T value_of(::fixy::Result<T, E> const& result) {
+    return result.match([](T const& value) { return value; },
+                        [](E const&) -> T { ::fixy::fatal("the result holds an error"); });
+}
+
 // These fixtures carry their own names rather than the ones the header's
 // self-test uses, so a translation unit that runs both has no collision.
 // They stand outside the unnamed namespace, because a key refuses a
@@ -154,19 +162,19 @@ static void test_t10_codec_round_trip() {
     std::array<std::uint8_t, 64> buf{};
     auto written =
         fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(local_cipher_permission(), buf, body);
-    ASSERT_TRUE(written.has_value());
+    ASSERT_TRUE(written.is_ok());
 
     auto view =
-        fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
+        fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), value_of(written)),
                                                     static_cast<std::uint16_t>(::foundation::effects::effect_count));
-    ASSERT_TRUE(view.has_value());
+    ASSERT_TRUE(view.is_ok());
 
     const auto expected_key = fed::federation_key<&t_unary, R0, int>();
-    assert(view->header.content_hash == expected_key.content_hash);
-    assert(view->header.row_hash == expected_key.row_hash);
-    assert(view->payload.size() == body.size());
+    assert(value_of(view).header.content_hash == expected_key.content_hash);
+    assert(value_of(view).header.row_hash == expected_key.row_hash);
+    assert(value_of(view).payload.size() == body.size());
     for (std::size_t i = 0; i < body.size(); ++i) {
-        assert(view->payload[i] == body[i]);
+        assert(value_of(view).payload[i] == body[i]);
     }
 
     crucible::test::pass("  T10 codec_round_trip:                        PASSED\n");
@@ -188,10 +196,10 @@ static void test_t11_cross_row_on_wire_distinct() {
                                                                                     std::span<const std::uint8_t>{});
     auto wbi = fed::serialize_computation_cache_federation_entry<&t_unary, RBgIO, int>(
         local_cipher_permission(), buf_rbgio, std::span<const std::uint8_t>{});
-    ASSERT_TRUE(w0.has_value());
-    ASSERT_TRUE(wb.has_value());
-    ASSERT_TRUE(wi.has_value());
-    ASSERT_TRUE(wbi.has_value());
+    ASSERT_TRUE(w0.is_ok());
+    ASSERT_TRUE(wb.is_ok());
+    ASSERT_TRUE(wi.is_ok());
+    ASSERT_TRUE(wbi.is_ok());
 
     auto bufs_differ = [](const std::array<std::uint8_t, 32>& a, const std::array<std::uint8_t, 32>& b) {
         for (std::size_t i = 0; i < 32; ++i) {
@@ -250,13 +258,13 @@ static void test_t15_payload_aliases_input() {
     std::array<std::uint8_t, 64> buf{};
     auto written =
         fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(local_cipher_permission(), buf, body);
-    ASSERT_TRUE(written.has_value());
+    ASSERT_TRUE(written.is_ok());
 
     auto view =
-        fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
+        fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), value_of(written)),
                                                     static_cast<std::uint16_t>(::foundation::effects::effect_count));
-    ASSERT_TRUE(view.has_value());
-    assert(view->payload.data() == buf.data() + fed::FEDERATION_HEADER_BYTES);
+    ASSERT_TRUE(view.is_ok());
+    assert(value_of(view).payload.data() == buf.data() + fed::FEDERATION_HEADER_BYTES);
 
     crucible::test::pass("  T15 payload_aliases_input:                   PASSED\n");
 }
@@ -276,22 +284,22 @@ static void test_t16_content_addressed_payload_elision() {
     std::array<std::uint8_t, 64> full_buf{};
     auto full_written = fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(local_cipher_permission(),
                                                                                              full_buf, Payload{body});
-    ASSERT_TRUE(full_written.has_value());
-    assert(*full_written == fed::FEDERATION_HEADER_BYTES + body.size());
+    ASSERT_TRUE(full_written.is_ok());
+    assert(value_of(full_written) == fed::FEDERATION_HEADER_BYTES + body.size());
 
     std::array<std::uint8_t, 64> hash_only_buf{};
     auto hash_only_written = fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
         local_cipher_permission(), hash_only_buf, Payload::hash_only());
-    ASSERT_TRUE(hash_only_written.has_value());
-    assert(*hash_only_written == fed::FEDERATION_HEADER_BYTES);
+    ASSERT_TRUE(hash_only_written.is_ok());
+    assert(value_of(hash_only_written) == fed::FEDERATION_HEADER_BYTES);
 
     auto view = fed::deserialize_untrusted_federation_entry(
-        std::span<const std::uint8_t>(hash_only_buf.data(), *hash_only_written),
+        std::span<const std::uint8_t>(hash_only_buf.data(), value_of(hash_only_written)),
         static_cast<std::uint16_t>(::foundation::effects::effect_count));
-    ASSERT_TRUE(view.has_value());
-    assert(view->payload.empty());
-    assert((view->header.content_hash == fed::federation_key<&t_unary, R0, int>().content_hash));
-    assert((view->header.row_hash == fed::federation_key<&t_unary, R0, int>().row_hash));
+    ASSERT_TRUE(view.is_ok());
+    assert(value_of(view).payload.empty());
+    assert((value_of(view).header.content_hash == fed::federation_key<&t_unary, R0, int>().content_hash));
+    assert((value_of(view).header.row_hash == fed::federation_key<&t_unary, R0, int>().row_hash));
 
     crucible::test::pass("  T16 content_addressed_payload_elision:       PASSED\n");
 }
@@ -337,8 +345,8 @@ static void test_wire_byte_offset_stability() {
     std::array<std::uint8_t, 64> buf{};
     auto written = fed::serialize_computation_cache_federation_entry<&t_unary, RBgIO, int>(
         local_cipher_permission(), buf, std::span<const std::uint8_t>{});
-    ASSERT_TRUE(written.has_value());
-    ASSERT_TRUE(*written == fed::FEDERATION_HEADER_BYTES);  // empty payload
+    ASSERT_TRUE(written.is_ok());
+    ASSERT_TRUE(value_of(written) == fed::FEDERATION_HEADER_BYTES);  // empty payload
 
     std::uint64_t observed_content = 0;
     for (std::size_t i = 0; i < 8; ++i) {
@@ -379,21 +387,23 @@ static void test_cross_universe_cardinality_rejection() {
 
     auto written =
         fed::serialize_computation_cache_federation_entry<&t_unary, RFull, int>(local_cipher_permission(), buf, body);
-    ASSERT_TRUE(written.has_value());
+    ASSERT_TRUE(written.is_ok());
 
     // A receiver at the writer's cardinality accepts.
     {
-        auto view = fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
-                                                                current_cardinality);
-        ASSERT_TRUE(view.has_value());
+        auto view = fed::deserialize_untrusted_federation_entry(
+            std::span<const std::uint8_t>(buf.data(), value_of(written)), current_cardinality);
+        ASSERT_TRUE(view.is_ok());
     }
 
     // One atom short of it refuses.
     {
-        auto view = fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
-                                                                static_cast<std::uint16_t>(current_cardinality - 1u));
-        ASSERT_TRUE(!view.has_value());
-        assert(view.error() == crucible::cipher::federation::FederationError::UniverseCardinalityTooHigh);
+        auto view =
+            fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), value_of(written)),
+                                                        static_cast<std::uint16_t>(current_cardinality - 1u));
+        ASSERT_TRUE(!view.is_ok());
+        assert(view.err().expect("the view holds an error")
+               == crucible::cipher::federation::FederationError::UniverseCardinalityTooHigh);
     }
 
     crucible::test::pass("  cross_universe_cardinality_rejection:        PASSED\n");
@@ -412,11 +422,11 @@ static void test_row_permutation_byte_invariance() {
                                                                                       buf_bgio, body);
     auto wb = fed::serialize_computation_cache_federation_entry<&t_unary, RIOBg, int>(local_cipher_permission(),
                                                                                       buf_iobg, body);
-    ASSERT_TRUE(wa.has_value());
-    ASSERT_TRUE(wb.has_value());
-    assert(*wa == *wb);
+    ASSERT_TRUE(wa.is_ok());
+    ASSERT_TRUE(wb.is_ok());
+    assert(value_of(wa) == value_of(wb));
 
-    for (std::size_t i = 0; i < *wa; ++i) {
+    for (std::size_t i = 0; i < value_of(wa); ++i) {
         assert(buf_bgio[i] == buf_iobg[i]);
     }
 
@@ -439,17 +449,17 @@ static void test_saturation_row_round_trip() {
     std::array<std::uint8_t, 64> buf{};
     auto written =
         fed::serialize_computation_cache_federation_entry<&t_unary, RFull, int>(local_cipher_permission(), buf, body);
-    ASSERT_TRUE(written.has_value());
+    ASSERT_TRUE(written.is_ok());
 
     auto view =
-        fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), *written),
+        fed::deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), value_of(written)),
                                                     static_cast<std::uint16_t>(::foundation::effects::effect_count));
-    ASSERT_TRUE(view.has_value());
-    assert(view->header.content_hash == k_full.content_hash);
-    assert(view->header.row_hash == k_full.row_hash);
-    assert(view->payload.size() == body.size());
+    ASSERT_TRUE(view.is_ok());
+    assert(value_of(view).header.content_hash == k_full.content_hash);
+    assert(value_of(view).header.row_hash == k_full.row_hash);
+    assert(value_of(view).payload.size() == body.size());
     for (std::size_t i = 0; i < body.size(); ++i) {
-        assert(view->payload[i] == body[i]);
+        assert(value_of(view).payload[i] == body[i]);
     }
 
     crucible::test::pass("  saturation_row_round_trip:                   PASSED\n");
