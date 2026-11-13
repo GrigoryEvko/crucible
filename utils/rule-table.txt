@@ -698,9 +698,12 @@ witness <foundation/core/Index.h> private | foundation::core::IndexCursor<4> | f
 witness <foundation/core/Region.h> private | foundation::core::detail::ReverseCursor<int> | foundation::core::detail::ReverseCursor<int>{forge::rvalue<int*>(), forge::rvalue<int*>()}
 witness <foundation/core/Region.h> private | foundation::core::detail::WindowCursor<int, 2> | foundation::core::detail::WindowCursor<int, 2>{forge::rvalue<int*>(), forge::rvalue<int*>()}
 witness <foundation/core/Region.h> private | foundation::core::detail::ChunkCursor<int, 2> | foundation::core::detail::ChunkCursor<int, 2>{forge::rvalue<int*>(), forge::rvalue<int*>()}
-# A HeapArray comes only from mint_heap_array, so no pointer that a caller
-# holds becomes an owner, and the destructor frees only storage of the door.
-witness <foundation/core/Array.h> private | foundation::core::HeapArray<int> | foundation::core::HeapArray<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
+# A HeapArray has no constructor from a pointer, so the destructor frees
+# only storage that a HeapArray allocated.  The constructor of a HeapArray
+# takes the key that only HeapArrayDoor builds, so each HeapArray comes
+# through mint_heap_array.
+witness <foundation/core/Array.h> no-match | foundation::core::HeapArray<int> | foundation::core::HeapArray<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
+witness <foundation/core/Array.h> private | foundation::core::detail::HeapArrayKey | foundation::core::detail::HeapArrayKey{}
 # A cursor of enumerate() or zip comes only from its range, so no position
 # that a caller holds becomes an index, and no pointer becomes a pair.
 witness <foundation/core/Array.h> private | foundation::core::detail::EnumerateCursor<int, 4, forge::brand> | foundation::core::detail::EnumerateCursor<int, 4, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}

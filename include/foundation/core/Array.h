@@ -470,6 +470,29 @@ template <class T, std::size_t Align>
     return padded & ~(Align - 1);
 }
 
+// The door of mint_heap_array, and the key of the constructor of a
+// HeapArray.  HeapArrayDoor is the one friend of the key, and only
+// mint_heap_array calls the door.  The door and the key hold no template,
+// so no explicit specialization of a template reaches the key.  The
+// constructor that takes the key allocates the storage and builds each
+// element itself.  So a use of namespace detail outside the base gets only a
+// HeapArray of new storage, with no allocation capability at its call site.
+struct HeapArrayDoor;
+
+class [[nodiscard]] HeapArrayKey final {
+    friend struct HeapArrayDoor;
+
+    constexpr HeapArrayKey() noexcept {}
+    constexpr HeapArrayKey(HeapArrayKey const&) noexcept {}
+
+public:
+    HeapArrayKey& operator=(HeapArrayKey const&) = delete("a key of a HeapArray lives for one construction");
+};
+
+struct HeapArrayDoor {
+    [[nodiscard]] static constexpr HeapArrayKey key() noexcept { return HeapArrayKey{}; }
+};
+
 }  // namespace detail
 
 // The arguments of mint_heap_array: an element that copies with no throw,
@@ -480,23 +503,9 @@ concept CanMintHeapArray = OwnedElement<T> && detail::HeapArrayAlignment<T, Alig
 
 template <class T, std::size_t Align = alignof(T)>
     requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
-class HeapArray;
-
-template <class T, std::size_t Align = alignof(T), class Marker>
-    requires CanMintHeapArray<T, Align, Marker>
-[[nodiscard]] HeapArray<T, Align> mint_heap_array(Marker allocation, std::size_t count, T const& fill) noexcept;
-
-template <class T, std::size_t Align>
-    requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
 class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]] HeapArray final {
     T* first_ = nullptr;
     std::size_t count_ = 0;
-
-    constexpr HeapArray(T* first, std::size_t count) noexcept : first_{first}, count_{count} {}
-
-    template <class U, std::size_t OtherAlign, class Marker>
-        requires CanMintHeapArray<U, OtherAlign, Marker>
-    friend HeapArray<U, OtherAlign> mint_heap_array(Marker allocation, std::size_t count, U const& fill) noexcept;
 
     // Ends each element from the last, and gives the storage back to the
     // allocation door with the bytes and the alignment of the mint.  An
@@ -520,6 +529,26 @@ public:
 
     // The empty array: no element and no storage.
     constexpr HeapArray() noexcept = default;
+
+    // count copies of fill in new storage at the alignment Align, with the
+    // key that only HeapArrayDoor builds.  A count of zero gives the empty
+    // array and allocates nothing.  The allocation door never gives a null
+    // pointer, and a count whose bytes do not fit ends the process before the
+    // allocation.  Complexity: one allocation and O(count) copies.
+    explicit HeapArray(detail::HeapArrayKey const& /*key*/, std::size_t count, T const& fill) noexcept
+        requires std::is_nothrow_copy_constructible_v<T>
+    {
+        if (count == 0) {
+            return;
+        }
+        std::size_t const bytes = detail::heap_array_bytes_<T, Align>(count);
+        T* const first = static_cast<T*>(detail::heap_allocate_(bytes, Align));
+        for (std::size_t position = 0; position != count; ++position) {
+            ::new(static_cast<void*>(first + position)) T(fill);
+        }
+        first_ = first;
+        count_ = count;
+    }
 
     constexpr HeapArray(HeapArray&& other) noexcept : first_{other.first_}, count_{other.count_} {
         other.first_ = nullptr;
@@ -634,23 +663,14 @@ public:
     }
 };
 
-// The storage holds count elements at the alignment Align, and each
-// element is a copy of fill.  A count of zero gives the empty array and
-// allocates nothing.  The door never gives a null pointer, and a count
-// whose bytes do not fit ends the process before the allocation.
-// Complexity: one allocation and O(count) copies.
-template <class T, std::size_t Align, class Marker>
+// The one door of a HeapArray: count copies of fill at the alignment Align,
+// in new storage of the allocation door.  The allocation capability comes
+// first, so each allocation shows at its call.  Complexity: one allocation
+// and O(count) copies.
+template <class T, std::size_t Align = alignof(T), class Marker>
     requires CanMintHeapArray<T, Align, Marker>
 [[nodiscard]] HeapArray<T, Align> mint_heap_array(Marker /*allocation*/, std::size_t count, T const& fill) noexcept {
-    if (count == 0) {
-        return HeapArray<T, Align>{};
-    }
-    std::size_t const bytes = detail::heap_array_bytes_<T, Align>(count);
-    T* const first = static_cast<T*>(detail::heap_allocate_(bytes, Align));
-    for (std::size_t position = 0; position != count; ++position) {
-        ::new(static_cast<void*>(first + position)) T(fill);
-    }
-    return HeapArray<T, Align>{first, count};
+    return HeapArray<T, Align>{detail::HeapArrayDoor::key(), count, fill};
 }
 
 }  // namespace foundation::core

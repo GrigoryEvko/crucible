@@ -207,6 +207,11 @@
       "constructor": "\\bEnumerateCursor\\("
     },
     {
+      "name": "neg_witness_core_detail_heaparraykey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bHeapArrayKey\\("
+    },
+    {
       "name": "neg_witness_core_detail_holekey_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bHoleKey\\("
@@ -233,7 +238,7 @@
     },
     {
       "name": "neg_witness_core_heaparray_direct_construction",
-      "reason": "is private within this context",
+      "reason": "no matching function for call",
       "constructor": "\\bHeapArray\\("
     },
     {
@@ -1082,6 +1087,10 @@
     },
     {
       "type": "foundation::core::HeapArray<int>",
+      "header": "foundation/core/Array.h"
+    },
+    {
+      "type": "foundation::core::detail::HeapArrayKey",
       "header": "foundation/core/Array.h"
     },
     {

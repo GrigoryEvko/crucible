@@ -2848,6 +2848,9 @@ foundation_neg_compile_test(neg_core_heap_array_copied
 foundation_neg_compile_test(neg_core_heap_array_view_of_temporary
   "use of deleted function .void foundation::core::HeapArray<T, Align>::view\\(\\) && \\[with T = int; long unsigned int Align = 4\\]."
   "a view of a temporary HeapArray points into storage that the full expression frees")
+foundation_neg_compile_test(neg_core_heap_array_mint_forged_body
+  "no matching function for call to .foundation::core::HeapArray<int>::HeapArray\\(<brace-enclosed initializer list>\\)."
+  "HeapArray\\(const foundation::core::detail::HeapArrayKey&, std::size_t, const T&\\) requires  is_nothrow_copy_constructible_v<T>")
 
 # enumerate() needs the proven indexes of indices(), so a View of a dynamic
 # extent has none.  zip of two Views of different fixed extents is refused

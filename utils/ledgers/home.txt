@@ -50,10 +50,8 @@ test/fixy/test_armed_roster.cpp | outside-home | 1 | fixy::concurrent::is_stage_
 test/fixy/test_armed_roster.cpp | outside-home | 68 | foundation::contracts::armed_cell | the roster test plants the cells and the instances of its own predicates, to prove that the walk of the roster finds each predicate
 test/fixy/test_armed_roster.cpp | outside-home | 15 | foundation::contracts::armed_instances | the roster test plants the cells and the instances of its own predicates, to prove that the walk of the roster finds each predicate
 test/fixy/test_cheat_probe.cpp | outside-home | 1 | foundation::algebra::is_graded_specialization | the cheat probe forges each property of a wrapper, to prove that the concept refuses the forgery
-test/fixy/test_machine.cpp | outside-home | 2 | fixy::machine::admitted_transitions | the test of the machine admits the edges of its own planted machine
 test/fixy/test_pipeline_dispatch.cpp | outside-home | 4 | fixy::concurrent::is_stage_inline_safe | the dispatch test claims inline dispatch for its planted stages
 test/foundation/test_diag.cpp | outside-home | 3 | foundation::diag::insight_provider | the test expands the insight macros for its planted diagnostic tags
-test/foundation/test_permissions_compile.cpp | outside-home | 3 | foundation::permissions::permission_rows | the compile test states the rows of its planted tags
 test/layer/checks/fixy/Bands.cpp | open-read | 1 | fixy::mint_band | -
 test/layer/checks/fixy/Bands.cpp | open-read | 1 | fixy::relax | -
 test/layer/checks/fixy/Budgeted.cpp | open-read | 1 | fixy::mint_budget_authority | -
