@@ -128,9 +128,9 @@ void test_static_contracts() {
     volatile auto vendor = mb::NetworkBackendVendor::Mellanox;
     volatile auto artifact = mb::NetworkArtifactKind::DpuOffload;
     volatile auto error = mb::NetworkBackendError::BackendUnavailable;
-    assert(mb::network_backend_vendor_name(vendor) == std::string_view{"mellanox"});
-    assert(mb::network_artifact_kind_name(artifact) == std::string_view{"dpu-offload"});
-    assert(mb::network_backend_error_name(error) == std::string_view{"BackendUnavailable"});
+    assert(mb::network_backend_vendor_name(vendor) == ::fixy::TextView{"mellanox"});
+    assert(mb::network_artifact_kind_name(artifact) == ::fixy::TextView{"dpu-offload"});
+    assert(mb::network_backend_error_name(error) == ::fixy::TextView{"BackendUnavailable"});
 
     crucible::test::pass("  test_static_contracts: PASSED\n");
 }
@@ -147,8 +147,8 @@ void test_cpu_stub_signals_unavailable() {
     auto planned = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(
         cpu, ir::admit_ir001_node(all_reduce(p.view(), net::NetworkCollectiveAlgorithm::Ring)), constraints);
 
-    assert(!planned.has_value());
-    assert(planned.error() == mb::NetworkBackendError::BackendUnavailable);
+    assert(planned.is_err());
+    assert(planned.err().value_or(mb::NetworkBackendError::None) == mb::NetworkBackendError::BackendUnavailable);
 
     // The trait that produced the rejection above is the same one the emit
     // path consults, so the two layers cannot disagree.
@@ -166,8 +166,8 @@ void test_gpu_stub_signals_unavailable() {
     auto planned =
         mb::plan_network_kernel<mb::NetworkBackendVendor::Nv>(gpu, ir::admit_ir001_node(send_node()), constraints);
 
-    assert(!planned.has_value());
-    assert(planned.error() == mb::NetworkBackendError::BackendUnavailable);
+    assert(planned.is_err());
+    assert(planned.err().value_or(mb::NetworkBackendError::None) == mb::NetworkBackendError::BackendUnavailable);
 
     static_assert(!mb::network_backend_has_emit_path_v<mb::NetworkBackendVendor::Nv>);
 
@@ -194,8 +194,8 @@ void test_empty_content_hash_rejected_with_distinct_error() {
 
     auto planned = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(cpu, declared, constraints);
 
-    assert(!planned.has_value());
-    assert(planned.error() == mb::NetworkBackendError::EmptyContentHash);
+    assert(planned.is_err());
+    assert(planned.err().value_or(mb::NetworkBackendError::None) == mb::NetworkBackendError::EmptyContentHash);
 
     crucible::test::pass("  test_empty_content_hash_rejected_with_distinct_error: "
                          "PASSED\n");
@@ -210,8 +210,8 @@ void test_recipe_rejection() {
     auto planned = mb::plan_network_kernel<mb::NetworkBackendVendor::Mellanox>(
         nic, ir::admit_ir001_node(all_reduce(p.view(), net::NetworkCollectiveAlgorithm::Sharp)), strict);
 
-    assert(!planned.has_value());
-    assert(planned.error() == mb::NetworkBackendError::RecipeForbidsAlgorithm);
+    assert(planned.is_err());
+    assert(planned.err().value_or(mb::NetworkBackendError::None) == mb::NetworkBackendError::RecipeForbidsAlgorithm);
 
     crucible::test::pass("  test_recipe_rejection: PASSED\n");
 }
@@ -228,15 +228,15 @@ void test_changed_identity_rejected() {
     cpu_identity.uuid = cog::Uuid{};
     auto zeroed = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(
         cpu, ir::admit_ir001_node(all_reduce(p.view(), net::NetworkCollectiveAlgorithm::Ring)), constraints);
-    assert(!zeroed.has_value());
-    assert(zeroed.error() == mb::NetworkBackendError::UnsupportedCogKind);
+    assert(zeroed.is_err());
+    assert(zeroed.err().value_or(mb::NetworkBackendError::None) == mb::NetworkBackendError::UnsupportedCogKind);
 
     cpu_identity.uuid = cog::Uuid{0xCAFEULL, 5};
     cpu_identity.kind = cog::CogKind::CpuCore;
     auto rekinded = mb::plan_network_kernel<mb::NetworkBackendVendor::Cpu>(
         cpu, ir::admit_ir001_node(all_reduce(p.view(), net::NetworkCollectiveAlgorithm::Ring)), constraints);
-    assert(!rekinded.has_value());
-    assert(rekinded.error() == mb::NetworkBackendError::UnsupportedCogKind);
+    assert(rekinded.is_err());
+    assert(rekinded.err().value_or(mb::NetworkBackendError::None) == mb::NetworkBackendError::UnsupportedCogKind);
 
     crucible::test::pass("  test_changed_identity_rejected: PASSED\n");
 }

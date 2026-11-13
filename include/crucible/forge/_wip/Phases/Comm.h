@@ -10,7 +10,6 @@
 #include <foundation/reflect/Hash.h>
 
 #include <cstdint>
-#include <expected>
 #include <type_traits>
 #include <utility>
 
@@ -172,14 +171,14 @@ concept CommFusionEligible =
 
 template <CommFusionPattern Pattern, cog::CogKind Cog, class ComputeNode, class CommNode>
     requires CommFusionEligible<ComputeNode, CommNode, Pattern, Cog>
-[[nodiscard]] constexpr std::expected<DeclaredFusedCommDecision, CommPhaseError>
+[[nodiscard]] constexpr ::fixy::Result<DeclaredFusedCommDecision, CommPhaseError>
 admit_comm_fusion(ir::DeclaredIr001Node<ComputeNode> producer, ir::DeclaredIr001Node<CommNode> comm,
                   net::DeclaredNetworkRecipeConstraints constraints, CommPhasePolicy policy = {}) noexcept {
     if (!pattern_enabled(policy, Pattern)) {
-        return std::unexpected(CommPhaseError::PatternDisabled);
+        return ::fixy::err(CommPhaseError::PatternDisabled);
     }
     if (!runtime_recipe_allows_pattern(constraints, Pattern)) {
-        return std::unexpected(CommPhaseError::RecipeForbidsPattern);
+        return ::fixy::err(CommPhaseError::RecipeForbidsPattern);
     }
 
     // A point-to-point node has one peer and no algorithm of its own.
@@ -204,7 +203,7 @@ admit_comm_fusion(ir::DeclaredIr001Node<ComputeNode> producer, ir::DeclaredIr001
                 },
                 [](net::NetworkRecipeError) noexcept { return false; });
     if (!is_admitted) {
-        return std::unexpected(CommPhaseError::RecipeForbidsAlgorithm);
+        return ::fixy::err(CommPhaseError::RecipeForbidsAlgorithm);
     }
 
     auto const producer_hash = producer.value().content_hash;

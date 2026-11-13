@@ -4,13 +4,11 @@
 #include <crucible/forge/Ir001/Comm.h>
 #include <crucible/forge/recipes/Network.h>
 #include <crucible/mimic/CogMimic.h>
+#include <fixy/Core.h>
 #include <fixy/Tagged.h>
-#include <foundation/reflect/EnumName.h>
 
 #include <concepts>
 #include <cstdint>
-#include <expected>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -59,18 +57,18 @@ enum class NetworkBackendError : std::uint8_t {
 // The vendor and artifact names are the enumerator identifiers in lower
 // case, with a hyphen between words, so SocketOracle reads socket-oracle.
 // A value that no enumerator holds names itself "<unknown ...>".
-[[nodiscard]] constexpr std::string_view network_backend_vendor_name(NetworkBackendVendor vendor) noexcept {
-    return ::foundation::reflect::enum_words<NetworkBackendVendor, '-'>(vendor);
+[[nodiscard]] constexpr ::fixy::TextView network_backend_vendor_name(NetworkBackendVendor vendor) noexcept {
+    return ::foundation::core::enum_words_text<NetworkBackendVendor, '-'>(vendor);
 }
 
-[[nodiscard]] constexpr std::string_view network_artifact_kind_name(NetworkArtifactKind kind) noexcept {
-    return ::foundation::reflect::enum_words<NetworkArtifactKind, '-'>(kind);
+[[nodiscard]] constexpr ::fixy::TextView network_artifact_kind_name(NetworkArtifactKind kind) noexcept {
+    return ::foundation::core::enum_words_text<NetworkArtifactKind, '-'>(kind);
 }
 
 // The enumerator identifier, or "<unknown NetworkBackendError>" for a
 // value that no enumerator holds.
-[[nodiscard]] constexpr std::string_view network_backend_error_name(NetworkBackendError error) noexcept {
-    return ::foundation::reflect::enum_name(error);
+[[nodiscard]] constexpr ::fixy::TextView network_backend_error_name(NetworkBackendError error) noexcept {
+    return ::foundation::core::enum_name_text(error);
 }
 
 template <NetworkBackendVendor Vendor>
@@ -181,18 +179,18 @@ concept NetworkBackendCanPlan = BackendAcceptsCog<Vendor, Kind> && NetworkKernel
 
 template <NetworkBackendVendor Vendor, cog::CogKind Kind, NetworkKernelNode Node>
     requires BackendAcceptsCog<Vendor, Kind>
-[[nodiscard]] constexpr std::expected<DeclaredNetworkKernel<Vendor>, NetworkBackendError>
+[[nodiscard]] constexpr ::fixy::Result<DeclaredNetworkKernel<Vendor>, NetworkBackendError>
 plan_network_kernel(CogMimic<Kind> const& mimic, ir::DeclaredIr001Node<Node> node,
                     net::DeclaredNetworkRecipeConstraints constraints) noexcept {
     auto const& raw_node = node.value();
     if (raw_node.content_hash.raw() == 0) {
-        return std::unexpected(NetworkBackendError::EmptyContentHash);
+        return ::fixy::err(NetworkBackendError::EmptyContentHash);
     }
     // The mint refused a zero uuid and a kind other than Kind, but the owner
     // of the identity can change it after the mint.
     cog::CogIdentity const& identity = mimic.identity();
     if (identity.uuid.is_zero() || identity.kind != Kind) {
-        return std::unexpected(NetworkBackendError::UnsupportedCogKind);
+        return ::fixy::err(NetworkBackendError::UnsupportedCogKind);
     }
 
     auto const participants = []<class N>(N const& n) constexpr {
@@ -217,7 +215,7 @@ plan_network_kernel(CogMimic<Kind> const& mimic, ir::DeclaredIr001Node<Node> nod
                 },
                 [](net::NetworkRecipeError) noexcept { return false; });
     if (!is_admitted) {
-        return std::unexpected(NetworkBackendError::RecipeForbidsAlgorithm);
+        return ::fixy::err(NetworkBackendError::RecipeForbidsAlgorithm);
     }
 
     auto artifact = ::fixy::mint_tagged<typename NetworkBackendTraits<Vendor>::source>(NetworkKernelArtifact{
@@ -245,23 +243,23 @@ plan_network_kernel(CogMimic<Kind> const& mimic, ir::DeclaredIr001Node<Node> nod
     // content_hash. Removing the earlier check then fails here instead of
     // propagating a zero hash.
     if (artifact.value().content_hash.raw() == 0) {
-        return std::unexpected(NetworkBackendError::BackendUnavailable);
+        return ::fixy::err(NetworkBackendError::BackendUnavailable);
     }
 
     // Planning succeeds only where emitting can. A planned artifact is
     // cached, so admitting one from a vendor with no emitter would fill the
     // cache with entries that produce no bytes.
     if constexpr (!network_backend_has_emit_path_v<Vendor>) {
-        return std::unexpected(NetworkBackendError::BackendUnavailable);
+        return ::fixy::err(NetworkBackendError::BackendUnavailable);
     }
 
     return artifact;
 }
 
 template <NetworkBackendVendor Vendor>
-[[nodiscard]] constexpr std::expected<void, NetworkBackendError>
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, NetworkBackendError>
 emit_network_kernel(DeclaredNetworkKernel<Vendor> const&) noexcept {
-    return std::unexpected(NetworkBackendError::BackendUnavailable);
+    return ::fixy::err(NetworkBackendError::BackendUnavailable);
 }
 
 }  // namespace crucible::mimic::_wip::network
