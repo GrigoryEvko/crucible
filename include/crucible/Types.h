@@ -166,7 +166,7 @@ enum class TrainingPhase : uint8_t {
         /* field would let a plain assignment bypass it and rewrite an */                      \
         /* identifier in place. */                                                             \
         Word v;                                                                                \
-        static constexpr Word none_word = std::numeric_limits<Word>::max();                    \
+        static constexpr Word none_word = ::fixy::max_of<Word>;                                \
                                                                                                \
     public:                                                                                    \
         constexpr Name() noexcept : v(none_word) {}                                            \

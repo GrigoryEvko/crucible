@@ -31,7 +31,7 @@ using GradFnHash = ::fixy::Tagged<uint64_t, ::crucible::hash_family::FamilyB>;
 // vector register without a copy. Only the write path goes through the
 // refined type.
 inline constexpr int64_t kTensorDimElementByteBudget = 16;
-inline constexpr int64_t kMaxTensorDimExtent = std::numeric_limits<int64_t>::max() / kTensorDimElementByteBudget;
+inline constexpr int64_t kMaxTensorDimExtent = ::fixy::max_of<int64_t> / kTensorDimElementByteBudget;
 
 using TensorDim = ::fixy::Refined<::fixy::bounded_above<kMaxTensorDimExtent>, int64_t>;
 

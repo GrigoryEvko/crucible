@@ -24,6 +24,7 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <fixy/Bands.h>
+#include <fixy/Core.h>
 #include <fixy/FixedArray.h>
 #include <fixy/Saturated.h>
 #include <foundation/Platform.h>
@@ -32,6 +33,19 @@
 #include <cstdint>
 
 namespace crucible::detail {
+
+// Writes the value of one checked step into out, or gives false when the
+// step overflowed.  The checked arithmetic of the base gives an Option, and
+// the two routines below stop at the first step that has no value.
+template <class T>
+[[nodiscard]] CRUCIBLE_INLINE constexpr bool take_checked_(::fixy::Option<T> checked, T& out) noexcept {
+    return static_cast<::fixy::Option<T>&&>(checked).match(
+        [&out](T value) noexcept {
+            out = value;
+            return true;
+        },
+        [] noexcept { return false; });
+}
 
 // This is the reference. A change to the algorithm has to land here and in
 // the vector routine in one step, or the two stop agreeing.
@@ -48,8 +62,8 @@ namespace crucible::detail {
 //
 // constexpr because the public entry point is, and a constexpr function that
 // forwards to a non-constexpr one is only constexpr until someone evaluates
-// it. Nothing here is outside the constant-evaluation subset: the overflow
-// builtins are all constexpr-usable.
+// it. Nothing here is outside the constant-evaluation subset: the checked
+// arithmetic of the base is constexpr.
 
 [[nodiscard, gnu::const]] CRUCIBLE_INLINE constexpr ::fixy::Saturated<uint64_t>
 compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
@@ -68,35 +82,38 @@ compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
         // modular, so it is defined for every size: INT64_MIN gives INT64_MAX.
         // The product can still overflow.
         const int64_t size_minus_one = static_cast<int64_t>(static_cast<uint64_t>(size) - uint64_t{1});
-        int64_t dim_extent_bytes;
-        if (__builtin_mul_overflow(size_minus_one, stride, &dim_extent_bytes)) [[unlikely]] {
+        int64_t dim_extent_bytes = 0;
+        if (!take_checked_(::foundation::core::checked_mul(size_minus_one, stride), dim_extent_bytes)) [[unlikely]] {
             return Sat{UINT64_MAX, true};
         }
         if (dim_extent_bytes > 0) {
-            if (__builtin_add_overflow(max_offset, dim_extent_bytes, &max_offset)) [[unlikely]] {
+            if (!take_checked_(::foundation::core::checked_add(max_offset, dim_extent_bytes), max_offset))
+                [[unlikely]] {
                 return Sat{UINT64_MAX, true};
             }
         } else {
-            if (__builtin_add_overflow(min_offset, dim_extent_bytes, &min_offset)) [[unlikely]] {
+            if (!take_checked_(::foundation::core::checked_add(min_offset, dim_extent_bytes), min_offset))
+                [[unlikely]] {
                 return Sat{UINT64_MAX, true};
             }
         }
     }
     // The difference can overflow when the two offsets sit at opposite ends
     // of the int64 range.
-    int64_t span_signed;
-    if (__builtin_sub_overflow(max_offset, min_offset, &span_signed)) [[unlikely]] {
+    int64_t span_signed = 0;
+    if (!take_checked_(::foundation::core::checked_sub(max_offset, min_offset), span_signed)) [[unlikely]] {
         return Sat{UINT64_MAX, true};
     }
-    if (__builtin_add_overflow(span_signed, int64_t{1}, &span_signed)) [[unlikely]] {
+    if (!take_checked_(::foundation::core::checked_add(span_signed, int64_t{1}), span_signed)) [[unlikely]] {
         return Sat{UINT64_MAX, true};
     }
     // The span is non-negative, because the running maximum never falls
     // below zero and the running minimum never rises above it. That is what
     // makes the unsigned conversion below safe.
-    uint64_t total_bytes;
-    if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed), static_cast<uint64_t>(element_size(raw.dtype).raw()),
-                               &total_bytes)) [[unlikely]] {
+    uint64_t total_bytes = 0;
+    if (!take_checked_(::foundation::core::checked_mul(static_cast<uint64_t>(span_signed),
+                                                       static_cast<uint64_t>(element_size(raw.dtype).raw())),
+                       total_bytes)) [[unlikely]] {
         return Sat{UINT64_MAX, true};
     }
     return Sat{total_bytes};
@@ -147,8 +164,7 @@ compute_storage_nbytes_scalar_det(ExternalTensorMeta meta) noexcept {
     const int64_t max_smo = ::foundation::simd::reduce_max(sizes_minus_one);
     const int64_t max_str = ::foundation::simd::reduce_max(strides_abs);
 
-    int64_t bound;
-    const bool bound_fits = !__builtin_mul_overflow(max_smo, max_str, &bound);
+    const bool bound_fits = ::foundation::core::checked_mul(max_smo, max_str).is_some();
     return every_size_positive & bound_fits;
 }
 
@@ -194,26 +210,27 @@ compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
     for (uint8_t d = 0; d < raw.ndim; ++d) {
         const int64_t e = extents_buf[d];
         if (e > 0) {
-            if (__builtin_add_overflow(max_offset, e, &max_offset)) [[unlikely]] {
+            if (!take_checked_(::foundation::core::checked_add(max_offset, e), max_offset)) [[unlikely]] {
                 return Sat{UINT64_MAX, true};
             }
         } else {
-            if (__builtin_add_overflow(min_offset, e, &min_offset)) [[unlikely]] {
+            if (!take_checked_(::foundation::core::checked_add(min_offset, e), min_offset)) [[unlikely]] {
                 return Sat{UINT64_MAX, true};
             }
         }
     }
 
-    int64_t span_signed;
-    if (__builtin_sub_overflow(max_offset, min_offset, &span_signed)) [[unlikely]] {
+    int64_t span_signed = 0;
+    if (!take_checked_(::foundation::core::checked_sub(max_offset, min_offset), span_signed)) [[unlikely]] {
         return Sat{UINT64_MAX, true};
     }
-    if (__builtin_add_overflow(span_signed, int64_t{1}, &span_signed)) [[unlikely]] {
+    if (!take_checked_(::foundation::core::checked_add(span_signed, int64_t{1}), span_signed)) [[unlikely]] {
         return Sat{UINT64_MAX, true};
     }
-    uint64_t total_bytes;
-    if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed), static_cast<uint64_t>(element_size(raw.dtype).raw()),
-                               &total_bytes)) [[unlikely]] {
+    uint64_t total_bytes = 0;
+    if (!take_checked_(::foundation::core::checked_mul(static_cast<uint64_t>(span_signed),
+                                                       static_cast<uint64_t>(element_size(raw.dtype).raw())),
+                       total_bytes)) [[unlikely]] {
         return Sat{UINT64_MAX, true};
     }
     return Sat{total_bytes};
