@@ -67,6 +67,14 @@ namespace {
 
 using BootU64 = fixy::BootClockBytes<std::uint64_t>;
 using MonoU64 = fixy::MonotonicClockBytes<std::uint64_t>;
+using foundation::os::Errno;
+
+// The value of a reading, or zero for a read that failed.
+template <typename Reading>
+[[nodiscard]] std::uint64_t peek_or_zero(Reading const& reading) noexcept {
+    return reading.match([](auto const& stamp) noexcept { return std::uint64_t{stamp.peek()}; },
+                         [](Errno const&) noexcept { return std::uint64_t{0}; });
+}
 
 template <typename A, typename B>
 concept compares_with = requires(A const& lhs, B const& rhs) { lhs == rhs; };
@@ -110,14 +118,14 @@ using BgWitness = fixy::BgDrainCtx;
     InitWitness init{eff::testing::init()};
     auto boot_reader = fixy::time::mint_clock_reader<fixy::ClockSource_v::Boot>(init);
 
-    const auto earlier_read = boot_reader.read();
-    const auto later_read = boot_reader.read();
-    if (!earlier_read || !later_read) {
+    auto earlier_read = boot_reader.read();
+    auto later_read = boot_reader.read();
+    if (earlier_read.is_err() || later_read.is_err()) {
         std::fprintf(stderr, "a read of the boot clock failed\n");
         return 1;
     }
-    const BootU64 earlier = *earlier_read;
-    const BootU64 later = *later_read;
+    const BootU64 earlier = std::move(earlier_read).expect("the boot clock gave a reading");
+    const BootU64 later = std::move(later_read).expect("the boot clock gave a reading");
     if (later.peek() < earlier.peek()) {
         std::fprintf(stderr, "two reads through one clamped boot reader went backwards\n");
         return 1;
@@ -160,8 +168,7 @@ using BgWitness = fixy::BgDrainCtx;
     // stays nameable for the gates that read it.  The PTP source has a
     // reader of its own, and a case below exercises it.
     auto realtime_reader = fixy::time::mint_clock_reader<fixy::ClockSource_v::Realtime>(init);
-    const auto realtime = realtime_reader.read();
-    if (!realtime || realtime->peek() == 0) {
+    if (peek_or_zero(realtime_reader.read()) == 0) {
         std::fprintf(stderr, "the realtime clock read zero, which a running system never does\n");
         return 1;
     }
@@ -174,15 +181,15 @@ using BgWitness = fixy::BgDrainCtx;
     BlockWitness blocking{eff::testing::test()};
 
     auto boot_reader = fixy::time::mint_clock_reader<fixy::ClockSource_v::Boot>(init);
-    const auto now = boot_reader.read();
-    if (!now || now->peek() == 0) {
+    if (peek_or_zero(boot_reader.read()) == 0) {
         std::fprintf(stderr, "the boot clock read zero, which a running system never does\n");
         return 1;
     }
 
     auto sleeper = fixy::time::mint_bounded_sleep<1000>(blocking);
-    if (const auto slept = sleeper.sleep_for(0); !slept) {
-        std::fprintf(stderr, "a sleep of zero failed: %s\n", slept.error().message().c_str());
+    if (const auto slept = sleeper.sleep_for(0); slept.is_err()) {
+        std::fprintf(stderr, "a sleep of zero failed with the error number %d\n",
+                     foundation::os::error_number_of(slept));
         return 1;
     }
     return 0;
@@ -222,17 +229,17 @@ using BgWitness = fixy::BgDrainCtx;
     is_sleep_done.store(true, std::memory_order_release);
     signaller.join();
 
-    if (!slept) {
-        std::fprintf(stderr, "an interrupted sleep gave an error: %s\n", slept.error().message().c_str());
+    if (slept.is_err()) {
+        std::fprintf(stderr, "an interrupted sleep gave the error number %d\n", foundation::os::error_number_of(slept));
         return 1;
     }
-    if (!before || !after) {
+    if (before.is_err() || after.is_err()) {
         std::fprintf(stderr, "a read of the monotonic clock failed around the sleep\n");
         return 1;
     }
-    if (after->peek() - before->peek() < sleep_nanos) {
-        std::fprintf(stderr, "a signal cut a 50 ms sleep to %llu ns\n",
-                     static_cast<unsigned long long>(after->peek() - before->peek()));
+    const std::uint64_t elapsed = peek_or_zero(after) - peek_or_zero(before);
+    if (elapsed < sleep_nanos) {
+        std::fprintf(stderr, "a signal cut a 50 ms sleep to %llu ns\n", static_cast<unsigned long long>(elapsed));
         return 1;
     }
     return 0;
@@ -262,17 +269,19 @@ using BgWitness = fixy::BgDrainCtx;
     }
 
     auto reader = fixy::time::mint_tsc_reader<fixy::time::TscMode::Raw>(init, std::move(*pin));
-    if (!reader) {
-        std::fprintf(stderr, "a pin in force on this thread was refused: %s\n", reader.error().message().c_str());
+    if (reader.is_err()) {
+        std::fprintf(stderr, "a pin in force on this thread was refused with the error number %d\n",
+                     foundation::os::error_number_of(reader));
         return 1;
     }
-    const auto first = reader->read();
-    const auto second = reader->read();
-    if (!first || !second) {
+    const auto tsc = std::move(reader).expect("the TSC mint gave a reader");
+    const auto first = tsc.read();
+    const auto second = tsc.read();
+    if (first.is_err() || second.is_err()) {
         std::fprintf(stderr, "a TSC read on the pinned thread gave an error\n");
         return 1;
     }
-    if (second->peek() < first->peek()) {
+    if (peek_or_zero(second) < peek_or_zero(first)) {
         std::fprintf(stderr, "the timestamp counter ran backwards on one pinned core\n");
         return 1;
     }
@@ -306,13 +315,13 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
     }
 
     const auto reader = fixy::time::mint_tsc_reader<fixy::time::TscMode::Raw>(init, std::move(*moved_in));
-    if (reader) {
+    if (reader.is_ok()) {
         std::fprintf(stderr, "a pin earned on another thread fed a TSC reader on this thread\n");
         return 1;
     }
-    if (reader.error() != std::errc::operation_not_permitted) {
-        std::fprintf(stderr, "the refusal of a foreign pin named the wrong error: %s\n",
-                     reader.error().message().c_str());
+    if (reader.err().value_or(Errno::eio) != Errno::eperm) {
+        std::fprintf(stderr, "the refusal of a foreign pin named the wrong error number: %d\n",
+                     foundation::os::error_number_of(reader));
         return 1;
     }
     return 0;
@@ -330,18 +339,19 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
         return 0;
     }
     auto reader = fixy::time::mint_tsc_reader<fixy::time::TscMode::Raw>(init, std::move(*pin));
-    if (!reader) {
+    if (reader.is_err()) {
         std::fprintf(stderr, "a pin in force on this thread was refused\n");
         return 1;
     }
 
-    bool was_read_on_other_thread = true;
-    std::jthread other([moved = std::move(*reader), &was_read_on_other_thread] {
-        was_read_on_other_thread = moved.read().has_value();
+    // The read on the other thread gives Errno::eperm and no reading.
+    bool is_refused_on_other_thread = false;
+    std::jthread other([moved = std::move(reader).expect("the TSC mint gave a reader"), &is_refused_on_other_thread] {
+        is_refused_on_other_thread = moved.read().err().value_or(Errno::eio) == Errno::eperm;
     });
     other.join();
-    if (was_read_on_other_thread) {
-        std::fprintf(stderr, "a TSC reader moved to another thread read the counter there\n");
+    if (!is_refused_on_other_thread) {
+        std::fprintf(stderr, "a TSC reader moved to another thread read the counter there, or gave no eperm\n");
         return 1;
     }
 
@@ -350,8 +360,9 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
         std::fprintf(stderr, "a second pin to CPU 0 failed where the first one succeeded\n");
         return 1;
     }
-    auto second_reader = fixy::time::mint_tsc_reader<fixy::time::TscMode::Raw>(init, std::move(*second_pin));
-    if (!second_reader || !second_reader->read()) {
+    const auto second_reader = fixy::time::mint_tsc_reader<fixy::time::TscMode::Raw>(init, std::move(*second_pin))
+                                   .expect("the TSC mint gives a reader over a pin in force");
+    if (second_reader.read().is_err()) {
         std::fprintf(stderr, "a reader over a pin in force did not read\n");
         return 1;
     }
@@ -359,8 +370,8 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
         std::fprintf(stderr, "a runtime pin to CPU 0 failed where a mint to CPU 0 succeeded\n");
         return 1;
     }
-    if (second_reader->read()) {
-        std::fprintf(stderr, "a TSC reader read after its thread pinned again\n");
+    if (second_reader.read().err().value_or(Errno::eio) != Errno::eperm) {
+        std::fprintf(stderr, "a TSC reader read after its thread pinned again, or gave no eperm\n");
         return 1;
     }
     return 0;
@@ -382,16 +393,15 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
 
     const auto first = monotonic.read();
     const auto second = monotonic.read();
-    if (!first || !second) {
+    if (first.is_err() || second.is_err()) {
         std::fprintf(stderr, "a read of the monotonic clock failed\n");
         return 1;
     }
-    if (second->peek() < first->peek()) {
+    if (peek_or_zero(second) < peek_or_zero(first)) {
         std::fprintf(stderr, "the monotonic reader returned a lower value on its second read\n");
         return 1;
     }
-    const auto wall = realtime.read();
-    if (!wall || wall->peek() == 0) {
+    if (peek_or_zero(realtime.read()) == 0) {
         std::fprintf(stderr, "the realtime clock read zero, which a running system never does\n");
         return 1;
     }
@@ -438,21 +448,22 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
 
     std::uint16_t absent_index = 254;
     const fixy::time::PtpDeviceIndex index = fixy::mint_refined<fixy::bounded_above<std::uint16_t{255}>>(absent_index);
-    auto reader = fixy::time::mint_ptp_clock_reader(bg, index);
-    if (reader) {
-        const auto reading = reader->read();
-        if (!reading && reading.error() == std::errc::result_out_of_range) {
+    auto minted = fixy::time::mint_ptp_clock_reader(bg, index);
+    if (minted.is_ok()) {
+        const auto reader = std::move(minted).expect("the PTP mint gave a reader");
+        if (reader.read().err().value_or(Errno::eio) == Errno::erange) {
             std::fprintf(stderr, "the PTP clock returned a negative or out-of-range timespec\n");
             return 1;
         }
-        const auto caps = reader->caps();
-        if (!caps && caps.error().value() == 0) {
+        const auto caps = reader.caps();
+        if (caps.is_err() && foundation::os::error_number_of(caps) == 0) {
             std::fprintf(stderr, "the PTP capability query failed with no errno\n");
             return 1;
         }
-    } else if (reader.error() != std::errc::no_such_file_or_directory
-               && reader.error() != std::errc::permission_denied) {
-        std::fprintf(stderr, "the PTP mint failed with an unexpected error: %s\n", reader.error().message().c_str());
+    } else if (const Errno refusal = minted.err().value_or(Errno::eio);
+               refusal != Errno::enoent && refusal != Errno::eacces) {
+        std::fprintf(stderr, "the PTP mint failed with the unexpected error number %d\n",
+                     foundation::os::error_number(refusal));
         return 1;
     }
 
@@ -468,7 +479,7 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
     long seconds = 2;
     long nanos = 5;
     const auto good = fixy::time::nanos_from_timespec(std::timespec{seconds, nanos});
-    if (!good || *good != 2000000005ULL) {
+    if (good != foundation::core::Result<std::uint64_t, Errno>{2000000005ULL}) {
         std::fprintf(stderr, "the conversion changed a valid reading\n");
         return 1;
     }
@@ -477,14 +488,14 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
     for (std::timespec refused :
          {std::timespec{-seconds, 0}, std::timespec{0, -nanos}, std::timespec{0, 1000000000L}}) {
         const auto result = fixy::time::nanos_from_timespec(refused);
-        if (result || result.error() != std::errc::result_out_of_range) {
+        if (result.err().value_or(Errno::eio) != Errno::erange) {
             std::fprintf(stderr, "the conversion accepted a negative or out-of-range timespec\n");
             return 1;
         }
     }
     const auto overflow =
         fixy::time::nanos_from_timespec(std::timespec{std::numeric_limits<std::time_t>::max(), 999999999L});
-    if (overflow || overflow.error() != std::errc::value_too_large) {
+    if (overflow.err().value_or(Errno::eio) != Errno::eoverflow) {
         std::fprintf(stderr, "the conversion did not refuse a count past 64 bits\n");
         return 1;
     }

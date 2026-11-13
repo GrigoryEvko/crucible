@@ -6,12 +6,10 @@ reason bench/ | the benches hold the endpoints of a channel in std::optional or 
 reason include/crucible/ | the doors of the runtime give a linear owner in std::expected, and the reducer of SHARP holds a token and cannot move
 reason include/fixy/ | the doors of fixy give a linear owner or a token in std::expected, std::optional, std::pair or std::tuple
 reason include/foundation/permissions/ | the split and loan mints give tokens in std::pair or std::tuple, and the share pool parks a token in std::optional and cannot move
-reason src/ | the doors of the transport give a linear owner in std::expected
 reason test/ | the tests hold tokens and handles in std::optional, std::pair and std::tuple, and the attack tests and the checks make a holder that cannot move
 bench/ | library-holder | 10 | - | -
 include/crucible/ | library-holder | 1 | - | -
 include/crucible/cipher/ | library-holder | 2 | - | -
-include/crucible/cntp/_wip/ | library-holder | 1 | - | -
 include/crucible/cntp/_wip/ | pinned-holder | 1 | - | -
 include/fixy/ | library-holder | 4 | - | -
 include/fixy/concurrent/ | library-holder | 3 | - | -
@@ -19,7 +17,6 @@ include/fixy/os/ | library-holder | 6 | - | -
 include/fixy/session/ | library-holder | 27 | - | -
 include/foundation/permissions/ | library-holder | 8 | - | -
 include/foundation/permissions/ | pinned-holder | 1 | - | -
-src/cntp/_wip/ | library-holder | 2 | - | -
 test/ | library-holder | 4 | - | -
 test/fixy/ | library-holder | 19 | - | -
 test/fixy/ | pinned-holder | 1 | - | -

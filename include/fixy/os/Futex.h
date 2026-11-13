@@ -80,7 +80,7 @@ enum class WaitEnd : std::uint8_t {
 template <typename Clock>
 concept MonotonicClockReader =
     std::same_as<typename Clock::result_type, MonotonicClockBytes<std::uint64_t>> && requires(Clock const& clock) {
-        { clock.read().error().value() } -> std::same_as<int>;
+        { clock.read() } -> std::same_as<core::Result<MonotonicClockBytes<std::uint64_t>, os::Errno>>;
     };
 
 // An absolute time of CLOCK_MONOTONIC, in nanoseconds (THE DEADLINE).
@@ -93,15 +93,15 @@ public:
     template <MonotonicClockReader Clock>
     [[nodiscard]] static auto after(Clock const& clock, std::uint64_t bound_nanos) noexcept {
         using Answer = core::Result<Deadline, os::Errno>;
-        auto const reading = clock.read();
-        if (!reading.has_value()) {
-            return Answer{core::err(static_cast<os::Errno>(reading.error().value()))};
-        }
-        std::uint64_t end = 0;
-        if (__builtin_add_overflow(reading->peek(), bound_nanos, &end)) {
-            end = kLastTime;
-        }
-        return Answer{Deadline{end}};
+        return clock.read().match(
+            [bound_nanos](MonotonicClockBytes<std::uint64_t> reading) noexcept -> Answer {
+                std::uint64_t end = 0;
+                if (__builtin_add_overflow(reading.peek(), bound_nanos, &end)) {
+                    end = kLastTime;
+                }
+                return Answer{Deadline{end}};
+            },
+            [](os::Errno error) noexcept -> Answer { return Answer{core::err(error)}; });
     }
 
     [[nodiscard]] constexpr std::uint64_t nanoseconds() const noexcept { return nanoseconds_; }

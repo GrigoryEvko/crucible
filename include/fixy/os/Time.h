@@ -21,7 +21,9 @@
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Choice.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/os/Errno.h>
 #include <foundation/os/OpenFlags.h>
 #include <foundation/reflect/Instance.h>
 
@@ -30,9 +32,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <ctime>
-#include <expected>
 #include <limits>
-#include <system_error>
 #include <type_traits>
 #include <utility>
 
@@ -141,25 +141,25 @@ inline constexpr unsigned int ptp_clockfd_tag = 3u;
 
 // The nanosecond count of one clock reading, or the reason there is none.
 // The function refuses a negative second or nanosecond field, and a
-// nanosecond field of a full second or more.  A Realtime reading before
-// 1970 has a negative second field, and it is refused.  The function
-// clamps no value into range, because a stamp must hold what the clock
-// returned.  It refuses a count that does not fit in 64 bits as an
-// overflow.  It is a pure function of the timespec, and a test can give
-// it the values that no working clock returns.  Each reader converts
-// each read with it, and so does a caller that reads a hardware timestamp
-// from a socket control message.
-[[nodiscard]] constexpr std::expected<std::uint64_t, std::error_code>
+// nanosecond field of a full second or more, with Errno::erange.  A
+// Realtime reading before 1970 has a negative second field, and it is
+// refused.  The function clamps no value into range, because a stamp must
+// hold what the clock returned.  It refuses a count that does not fit in
+// 64 bits with Errno::eoverflow.  It is a pure function of the timespec,
+// and a test can give it the values that no working clock returns.  Each
+// reader converts each read with it, and so does a caller that reads a
+// hardware timestamp from a socket control message.
+[[nodiscard]] constexpr ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno>
 nanos_from_timespec(std::timespec const& reading) noexcept {
     constexpr std::uint64_t nanos_per_second = 1000000000ULL;
     if (reading.tv_sec < 0 || reading.tv_nsec < 0 || reading.tv_nsec >= static_cast<long>(nanos_per_second)) {
-        return std::unexpected{std::make_error_code(std::errc::result_out_of_range)};
+        return ::foundation::core::err(::foundation::os::Errno::erange);
     }
     const auto seconds = static_cast<std::uint64_t>(reading.tv_sec);
     const auto nanos = static_cast<std::uint64_t>(reading.tv_nsec);
     constexpr auto limit = std::numeric_limits<std::uint64_t>::max();
     if (seconds > (limit - nanos) / nanos_per_second) {
-        return std::unexpected{std::make_error_code(std::errc::value_too_large)};
+        return ::foundation::core::err(::foundation::os::Errno::eoverflow);
     }
     return seconds * nanos_per_second + nanos;
 }
@@ -171,10 +171,11 @@ namespace detail {
 // gives the error of the conversion.  ClockReader::read and
 // PtpClockReader::read are its callers, and a mint gate keeps each reader
 // off the replay-bound foreground path.
-[[nodiscard]] inline std::expected<std::uint64_t, std::error_code> read_clock_nanos(::clockid_t clock) noexcept {
+[[nodiscard]] inline ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno>
+read_clock_nanos(::clockid_t clock) noexcept {
     std::timespec now{};
     if (::clock_gettime(clock, &now) != 0) [[unlikely]] {
-        return std::unexpected{std::error_code{errno, std::system_category()}};
+        return ::foundation::core::err(static_cast<::foundation::os::Errno>(errno));
     }
     return nanos_from_timespec(now);
 }
@@ -273,6 +274,8 @@ struct TscReader;
 
 struct PtpClockReader;
 
+class PtpDeviceDoor;
+
 // The one door that stamps a value with the clock it came from.  The
 // constructor of ClockSource is private and this struct is its sole
 // friend.  The stamp here is private too, and the only friends are the
@@ -311,14 +314,18 @@ struct ClockReader final {
     // A read that fails, or that returns a value the stamp cannot hold,
     // gives an error and no reading.  The floor of a clamped reader does
     // not move on a failed read.
-    [[nodiscard]] std::expected<result_type, std::error_code> read() const noexcept {
-        return detail::read_clock_nanos(clockid_for(Source)).transform([this](std::uint64_t raw) noexcept {
-            if constexpr (is_clamped) {
-                return detail::clock_stamp_access::stamp<Source>(clamp_non_decreasing(last_, raw));
-            } else {
-                return detail::clock_stamp_access::stamp<Source>(raw);
-            }
-        });
+    [[nodiscard]] ::foundation::core::Result<result_type, ::foundation::os::Errno> read() const noexcept {
+        using Reading = ::foundation::core::Result<result_type, ::foundation::os::Errno>;
+        return detail::read_clock_nanos(clockid_for(Source))
+            .match(
+                [this](std::uint64_t raw) noexcept -> Reading {
+                    if constexpr (is_clamped) {
+                        return detail::clock_stamp_access::stamp<Source>(clamp_non_decreasing(last_, raw));
+                    } else {
+                        return detail::clock_stamp_access::stamp<Source>(raw);
+                    }
+                },
+                [](::foundation::os::Errno error) noexcept -> Reading { return ::foundation::core::err(error); });
     }
 
     // The reader stays in the frame that minted it.  The gate of the mint
@@ -393,9 +400,9 @@ struct TscReader final {
     TscReader& operator=(TscReader&&) noexcept = default;
     ~TscReader() = default;
 
-    [[nodiscard]] std::expected<result_type, std::error_code> read() const noexcept {
+    [[nodiscard]] ::foundation::core::Result<result_type, ::foundation::os::Errno> read() const noexcept {
         if (!pin_.is_in_force()) [[unlikely]] {
-            return std::unexpected{std::make_error_code(std::errc::operation_not_permitted)};
+            return ::foundation::core::err(::foundation::os::Errno::eperm);
         }
         if constexpr (Mode == TscMode::SerializedPinned) {
             return detail::clock_stamp_access::stamp<result_type::source>(detail::read_raw_tsc_serialized());
@@ -415,7 +422,7 @@ private:
     template <TscMode FriendMode, eff::IsExecCtx FriendCtx, typename FriendPinT>
         requires CtxFitsTscReaderMint<FriendCtx, FriendMode, FriendPinT>
     friend auto mint_tsc_reader(FriendCtx const&, FriendPinT&&) noexcept
-        -> std::expected<TscReader<FriendMode, std::remove_cvref_t<FriendPinT>>, std::error_code>;
+        -> ::foundation::core::Result<TscReader<FriendMode, std::remove_cvref_t<FriendPinT>>, ::foundation::os::Errno>;
 
     PinT pin_;
 };
@@ -432,6 +439,24 @@ concept CtxFitsPtpClockReaderMint = CtxFitsMonotonicClock<Ctx> && ::fixy::fs::Ct
 // zero, and the bound keeps the device path in the fixed buffer that the
 // mint builds it in.
 using PtpDeviceIndex = sf::Capped<std::uint16_t{255}, std::uint16_t>;
+
+// The capabilities of a PTP hardware clock, as PTP_CLOCK_GETCAPS2 reports
+// them.  The reader reads the struct of the kernel and gives this one, so a
+// caller names no type of the kernel.  The six counts come first and the
+// three flags after them, and a named byte fills the last word, so the
+// struct has no padding.
+struct PtpClockCaps {
+    std::int32_t max_adjustment_ppb = 0;
+    std::int32_t alarms = 0;
+    std::int32_t external_timestamp_channels = 0;
+    std::int32_t periodic_outputs = 0;
+    std::int32_t pins = 0;
+    std::int32_t max_phase_adjustment_ns = 0;
+    bool pps = false;
+    bool cross_timestamping = false;
+    bool adjust_phase = false;
+    std::uint8_t pad = 0;
+};
 
 // The reader of one PTP hardware clock.  It owns the descriptor of the
 // device.  The clock id that it reads through then names a descriptor
@@ -455,52 +480,68 @@ struct PtpClockReader final {
     PtpClockReader& operator=(PtpClockReader&&) noexcept = default;
     ~PtpClockReader() = default;
 
-    [[nodiscard]] std::expected<result_type, std::error_code> read() const noexcept {
+    [[nodiscard]] ::foundation::core::Result<result_type, ::foundation::os::Errno> read() const noexcept {
+        using Reading = ::foundation::core::Result<result_type, ::foundation::os::Errno>;
         return detail::read_clock_nanos(detail::ptp_clockid_from_fd(fd_.get()))
-            .transform([](std::uint64_t nanos) noexcept {
-                return detail::clock_stamp_access::stamp<ClockSource_v::PtpHwClock>(nanos);
-            });
+            .match(
+                [](std::uint64_t nanos) noexcept -> Reading {
+                    return detail::clock_stamp_access::stamp<ClockSource_v::PtpHwClock>(nanos);
+                },
+                [](::foundation::os::Errno error) noexcept -> Reading { return ::foundation::core::err(error); });
     }
 
     // The capabilities of the clock, as PTP_CLOCK_GETCAPS2 reports them, or
-    // the errno of a failed query.  The reader owns the descriptor, so the
+    // the error of a failed query.  The reader owns the descriptor, so the
     // query names a device that is still open.
-    [[nodiscard]] std::expected<::ptp_clock_caps, std::error_code> caps() const noexcept {
+    [[nodiscard]] ::foundation::core::Result<PtpClockCaps, ::foundation::os::Errno> caps() const noexcept {
+        using Caps = ::foundation::core::Result<PtpClockCaps, ::foundation::os::Errno>;
         ::ptp_clock_caps kernel_caps{};
-        auto const queried = ::fixy::fs::detail::query_descriptor_(fd_.get(), PTP_CLOCK_GETCAPS2, &kernel_caps);
-        if (queried.is_err()) {
-            return std::unexpected{
-                std::error_code{::fixy::fs::detail::error_number_of_(queried), std::system_category()}};
-        }
-        return kernel_caps;
+        return ::fixy::fs::detail::query_descriptor_(fd_.get(), PTP_CLOCK_GETCAPS2, &kernel_caps)
+            .match(
+                [&kernel_caps](::foundation::core::Unit) noexcept -> Caps {
+                    return PtpClockCaps{
+                        .max_adjustment_ppb = kernel_caps.max_adj,
+                        .alarms = kernel_caps.n_alarm,
+                        .external_timestamp_channels = kernel_caps.n_ext_ts,
+                        .periodic_outputs = kernel_caps.n_per_out,
+                        .pins = kernel_caps.n_pins,
+                        .max_phase_adjustment_ns = kernel_caps.max_phase_adj,
+                        .pps = kernel_caps.pps != 0,
+                        .cross_timestamping = kernel_caps.cross_timestamping != 0,
+                        .adjust_phase = kernel_caps.adjust_phase != 0,
+                    };
+                },
+                [](::foundation::os::Errno error) noexcept -> Caps { return ::foundation::core::err(error); });
     }
 
 private:
-    // One door.  The mint opens the device and gives the descriptor to
-    // this constructor.  The mint is the only friend.
+    // One door.  PtpDeviceDoor opens the device and gives the descriptor to
+    // this constructor.  The door is the only friend.  A Result of a reader
+    // needs the complete class, so the door, which comes after the class,
+    // builds the reader.
     explicit PtpClockReader(::fixy::fs::OwnedFd fd) noexcept : fd_{std::move(fd)} {}
 
-    template <eff::IsExecCtx Ctx>
-        requires CtxFitsPtpClockReaderMint<Ctx>
-    friend std::expected<PtpClockReader, std::error_code> mint_ptp_clock_reader(Ctx const&, PtpDeviceIndex) noexcept;
+    friend class PtpDeviceDoor;
 
     ::fixy::fs::OwnedFd fd_;
 };
 
 // The door to the open of a /dev/ptpN node.  No object of it exists.  Its
 // member is private, and its one friend is mint_ptp_clock_reader.
-// fixy::fs::OwnedFd befriends this class, so a descriptor of a PTP device
-// comes only from that mint, after its gate.  The door builds the device
-// path from the index itself, so a caller cannot point it at a file that
-// is not a PTP device node.
+// fixy::fs::OwnedFd and PtpClockReader befriend this class, so a
+// descriptor of a PTP device and its reader come only from that mint,
+// after its gate.  The door builds the device path from the index itself,
+// so a caller cannot point it at a file that is not a PTP device node.
 class PtpDeviceDoor final : ::foundation::NoObject<PtpDeviceDoor> {
     template <eff::IsExecCtx Ctx>
         requires CtxFitsPtpClockReaderMint<Ctx>
-    friend std::expected<PtpClockReader, std::error_code> mint_ptp_clock_reader(Ctx const&, PtpDeviceIndex) noexcept;
+    friend ::foundation::core::Result<PtpClockReader, ::foundation::os::Errno>
+    mint_ptp_clock_reader(Ctx const&, PtpDeviceIndex) noexcept;
 
-    // Opens /dev/ptpN read-only and returns its descriptor, or the errno
-    // of a failed open.
-    [[nodiscard]] static std::expected<::fixy::fs::OwnedFd, int> open_(PtpDeviceIndex index) noexcept {
+    // Opens /dev/ptpN read-only and gives the reader that owns its
+    // descriptor, or the error of a failed open.
+    [[nodiscard]] static ::foundation::core::Result<PtpClockReader, ::foundation::os::Errno>
+    open_(PtpDeviceIndex index) noexcept {
         // "/dev/ptp", a maximum of three digits for an index of 255 or
         // less, and the null at the end: 12 bytes, in a buffer of 16.
         std::array<char, 16> path{'/', 'd', 'e', 'v', '/', 'p', 't', 'p'};
@@ -517,12 +558,11 @@ class PtpDeviceDoor final : ::foundation::NoObject<PtpDeviceDoor> {
         }
         path[length] = '\0';
 
-        auto opened = ::fixy::fs::detail::open_descriptor_(
-            path.data(), ::foundation::os::kOpenReadOnly | ::foundation::os::kOpenCloseOnExec, 0);
-        if (opened.is_err()) {
-            return std::unexpected{::fixy::fs::detail::error_number_of_(opened)};
-        }
-        return ::fixy::fs::OwnedFd{std::move(opened).expect("the descriptor door gave the descriptor of the open")};
+        using Opened = ::foundation::core::Result<PtpClockReader, ::foundation::os::Errno>;
+        return ::fixy::fs::detail::open_descriptor_(
+                   path.data(), ::foundation::os::kOpenReadOnly | ::foundation::os::kOpenCloseOnExec, 0)
+            .match([](int descriptor) noexcept -> Opened { return PtpClockReader{::fixy::fs::OwnedFd{descriptor}}; },
+                   [](::foundation::os::Errno error) noexcept -> Opened { return ::foundation::core::err(error); });
     }
 };
 
@@ -566,12 +606,13 @@ struct BoundedSleeper final {
     BoundedSleeper& operator=(BoundedSleeper&&) = delete("a sleeper is not assignable");
     ~BoundedSleeper() = default;
 
-    [[nodiscard]] std::expected<void, std::error_code> sleep_for(std::uint64_t nanos) const noexcept {
+    [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+    sleep_for(std::uint64_t nanos) const noexcept {
         CRUCIBLE_PRE(nanos <= MaxNanos);
         constexpr std::uint64_t nanos_per_second = 1000000000ULL;
         std::timespec deadline{};
         if (::clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) [[unlikely]] {
-            return std::unexpected{std::error_code{errno, std::system_category()}};
+            return ::foundation::core::err(static_cast<::foundation::os::Errno>(errno));
         }
         const std::uint64_t total_nanos = static_cast<std::uint64_t>(deadline.tv_nsec) + nanos;
         deadline.tv_sec += static_cast<std::time_t>(total_nanos / nanos_per_second);
@@ -581,9 +622,9 @@ struct BoundedSleeper final {
             failure = ::clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, nullptr);
         } while (failure == EINTR);
         if (failure != 0) [[unlikely]] {
-            return std::unexpected{std::error_code{failure, std::system_category()}};
+            return ::foundation::core::err(static_cast<::foundation::os::Errno>(failure));
         }
-        return {};
+        return ::foundation::core::Unit{};
     }
 
 private:
@@ -604,15 +645,15 @@ template <ClockSource_v Source, eff::IsExecCtx Ctx>
     return ClockReader<Source>{};
 }
 
-// Gives a reader that owns the pin, or operation_not_permitted when the
-// pin is not in force on the calling thread.  A pin that another thread
-// earned, and a pin whose thread pinned again, are refused.
+// Gives a reader that owns the pin, or Errno::eperm when the pin is not in
+// force on the calling thread.  A pin that another thread earned, and a
+// pin whose thread pinned again, are refused.
 template <TscMode Mode, eff::IsExecCtx Ctx, typename PinT>
     requires CtxFitsTscReaderMint<Ctx, Mode, PinT>
-[[nodiscard]] std::expected<TscReader<Mode, std::remove_cvref_t<PinT>>, std::error_code>
+[[nodiscard]] ::foundation::core::Result<TscReader<Mode, std::remove_cvref_t<PinT>>, ::foundation::os::Errno>
 mint_tsc_reader(Ctx const&, PinT&& pin) noexcept {
     if (!pin.is_in_force()) [[unlikely]] {
-        return std::unexpected{std::make_error_code(std::errc::operation_not_permitted)};
+        return ::foundation::core::err(::foundation::os::Errno::eperm);
     }
     return TscReader<Mode, std::remove_cvref_t<PinT>>{std::forward<PinT>(pin)};
 }
@@ -624,16 +665,12 @@ template <std::uint64_t MaxNanos, eff::IsExecCtx Ctx>
 }
 
 // Opens /dev/ptpN read-only through PtpDeviceDoor and returns its reader,
-// or the errno of a failed open.
+// or the error of a failed open.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsPtpClockReaderMint<Ctx>
-[[nodiscard]] std::expected<PtpClockReader, std::error_code> mint_ptp_clock_reader(Ctx const&,
-                                                                                   PtpDeviceIndex index) noexcept {
-    auto fd = PtpDeviceDoor::open_(index);
-    if (!fd) {
-        return std::unexpected{std::error_code{fd.error(), std::system_category()}};
-    }
-    return PtpClockReader{std::move(*fd)};
+[[nodiscard]] ::foundation::core::Result<PtpClockReader, ::foundation::os::Errno>
+mint_ptp_clock_reader(Ctx const&, PtpDeviceIndex index) noexcept {
+    return PtpDeviceDoor::open_(index);
 }
 
 }  // namespace fixy::time

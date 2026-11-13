@@ -7,7 +7,6 @@
 #include <cerrno>
 #include <cstring>
 #include <ctime>
-#include <system_error>
 
 #include <linux/net_tstamp.h>
 #include <linux/sockios.h>
@@ -21,18 +20,18 @@ namespace {
 
 [[nodiscard]] constexpr bool timespec_nonzero(timespec const& ts) noexcept { return ts.tv_sec != 0 || ts.tv_nsec != 0; }
 
-// The conversion refuses a count past 64 bits as value_too_large and every
-// other malformed timespec as result_out_of_range.
-[[nodiscard]] PtpError timestamp_error(std::error_code const& error) noexcept {
-    return error == std::errc::value_too_large ? PtpError::TimestampOverflow : PtpError::ClockReadFailed;
+// The conversion refuses a count past 64 bits with eoverflow and each other
+// malformed timespec with erange.  A failed read gives the error number of
+// the clock call.
+[[nodiscard]] PtpError timestamp_error(::foundation::os::Errno error) noexcept {
+    return error == ::foundation::os::Errno::eoverflow ? PtpError::TimestampOverflow : PtpError::ClockReadFailed;
 }
 
 [[nodiscard]] ::fixy::Result<PtpTimestampNs, PtpError> timestamp_from_timespec(timespec const& ts) noexcept {
-    auto const nanos = ::fixy::time::nanos_from_timespec(ts);
-    if (!nanos) {
-        return ::fixy::err(timestamp_error(nanos.error()));
-    }
-    return ::fixy::mint_tagged<::fixy::tags::source::Ptp>(*nanos);
+    using Stamped = ::fixy::Result<PtpTimestampNs, PtpError>;
+    return ::fixy::time::nanos_from_timespec(ts).match(
+        [](std::uint64_t nanos) noexcept -> Stamped { return ::fixy::mint_tagged<::fixy::tags::source::Ptp>(nanos); },
+        [](::foundation::os::Errno error) noexcept -> Stamped { return ::fixy::err(timestamp_error(error)); });
 }
 
 }  // namespace
@@ -51,32 +50,22 @@ namespace {
 }
 
 ::fixy::Result<PtpClockCaps, PtpError> query_ptp_clock_caps(PtpClockReader const& clock) noexcept {
-    auto const caps = clock.caps();
-    if (!caps) {
-        return ::fixy::err(PtpError::ClockCapsUnavailable);
-    }
-    return PtpClockCaps{
-        .max_adjustment_ppb = caps->max_adj,
-        .alarms = caps->n_alarm,
-        .external_timestamp_channels = caps->n_ext_ts,
-        .periodic_outputs = caps->n_per_out,
-        .pps = caps->pps != 0,
-        .pins = caps->n_pins,
-        .cross_timestamping = caps->cross_timestamping != 0,
-        .adjust_phase = caps->adjust_phase != 0,
-        .max_phase_adjustment_ns = caps->max_phase_adj,
-    };
+    using Queried = ::fixy::Result<PtpClockCaps, PtpError>;
+    return clock.caps().match(
+        [](PtpClockCaps caps) noexcept -> Queried { return caps; },
+        [](::foundation::os::Errno) noexcept -> Queried { return ::fixy::err(PtpError::ClockCapsUnavailable); });
 }
 
 // The reading is stamped as a PHC reading by the reader, which read it from
 // the clock of its own descriptor.  The value keeps that provenance under
 // the Ptp source tag.
 ::fixy::Result<PtpTimestampNs, PtpError> ptp_now(PtpClockReader const& clock) noexcept {
-    auto reading = clock.read();
-    if (!reading) {
-        return ::fixy::err(timestamp_error(reading.error()));
-    }
-    return ::fixy::mint_tagged<::fixy::tags::source::Ptp>(std::move(*reading).consume());
+    using Stamped = ::fixy::Result<PtpTimestampNs, PtpError>;
+    return clock.read().match(
+        [](::fixy::PtpHwClockBytes<std::uint64_t> reading) noexcept -> Stamped {
+            return ::fixy::mint_tagged<::fixy::tags::source::Ptp>(std::move(reading).consume());
+        },
+        [](::foundation::os::Errno error) noexcept -> Stamped { return ::fixy::err(timestamp_error(error)); });
 }
 
 ::fixy::Result<::fixy::Unit, PtpError> enable_socket_timestamping(cntp::SocketFd socket) noexcept {

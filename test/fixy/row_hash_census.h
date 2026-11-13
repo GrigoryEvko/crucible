@@ -1247,6 +1247,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::numa::NumaQueryError, kPayload},
     {^^::fixy::net::SocketDoor, kDescriptorDoor},
     {^^::fixy::time::PtpDeviceDoor, kDescriptorDoor},
+    {^^::fixy::time::PtpClockCaps, kPayload},
     {^^::fixy::fp::CanonicalizeRecipeSpec, kPayload},
     {^^::fixy::fp::ReduceResult, kPayload},
 

@@ -26,9 +26,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <new>
-#include <system_error>
 #include <type_traits>
 
 namespace crucible {
@@ -86,15 +84,15 @@ struct Transaction {
 // transaction with no reading: no value stands for a failed read, and a
 // reading of an earlier event does not stay to claim the time of this
 // one.  The reading comes from the clock reader of fixy, which gives a
-// std::expected.
+// Result with the error number of a failed read.
 inline void stamp_transaction(Transaction& tx,
-                              std::expected<Transaction::Timestamp, std::error_code> const& reading) noexcept {
-    if (reading) {
-        tx.ts_ns = ::fixy::Option<Transaction::Timestamp>::some(*reading);
-    } else {
-        tx.ts_ns = ::fixy::none;
-    }
-    CRUCIBLE_POST(true, tx.ts_ns.is_some() == reading.has_value());
+                              ::fixy::Result<Transaction::Timestamp, ::foundation::os::Errno> const& reading) noexcept {
+    tx.ts_ns = reading.match(
+        [](Transaction::Timestamp const& stamp) noexcept {
+            return ::fixy::Option<Transaction::Timestamp>::some(stamp);
+        },
+        [](::foundation::os::Errno const&) noexcept { return ::fixy::Option<Transaction::Timestamp>{::fixy::none}; });
+    CRUCIBLE_POST(true, tx.ts_ns.is_some() == reading.is_ok());
 }
 
 // A proof that the caller is the one thread that owns some state. It is
@@ -348,7 +346,7 @@ public:
 
 private:
     static_assert(std::is_same_v<decltype(std::declval<::fixy::time::MonotonicClock const&>().read()),
-                                 std::expected<Transaction::Timestamp, std::error_code>>,
+                                 ::fixy::Result<Transaction::Timestamp, ::foundation::os::Errno>>,
                   "the log's clock reader must return the reading a transaction stores, or the error of a failed read");
 
     // The live-slot pointer is not part of the ring: the ring's own cursor

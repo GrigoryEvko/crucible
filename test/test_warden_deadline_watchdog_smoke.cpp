@@ -221,8 +221,8 @@ int main() {
     // cannot be made to fail here.  A failed read has no value, so no zero
     // or other value stands for it.
     {
-        const std::expected<::fixy::BootClockBytes<uint64_t>, std::error_code> failed_read{
-            std::unexpect, std::make_error_code(std::errc::io_error)};
+        const ::fixy::Result<::fixy::BootClockBytes<uint64_t>, ::foundation::os::Errno> failed_read{
+            ::fixy::err(::foundation::os::Errno::eio)};
         Policy policy = Policy::production();
         DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
         if (watchdog.observe_at(runner, failed_read) != WatchdogVerdict::InsufficientData) {
@@ -242,14 +242,17 @@ int main() {
             DeadlineWatchdog sensing = mint_deadline_watchdog(startup, &senses, policy);
             const auto boot_clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Boot>(runner);
             const auto reading = boot_clock.read();
-            if (!reading) {
+            if (reading.is_err()) {
                 std::fprintf(stderr, "a read of the boot clock failed\n");
                 ++failures;
             } else {
                 (void)sensing.observe_at(runner, reading);
                 const uint64_t window_started = sensing.window_started_ns();
                 const uint64_t latest = sensing.latest_count();
-                if (window_started != reading->peek()) {
+                const uint64_t read_ns =
+                    reading.match([](::fixy::BootClockBytes<uint64_t> const& stamp) { return stamp.peek(); },
+                                  [](::foundation::os::Errno const&) { return uint64_t{0}; });
+                if (window_started != read_ns) {
                     std::fprintf(stderr, "a real reading did not open the window\n");
                     ++failures;
                 }

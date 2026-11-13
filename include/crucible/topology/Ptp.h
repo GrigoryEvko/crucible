@@ -23,7 +23,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -39,6 +38,7 @@ using PositivePtpPathDelayNs = ::fixy::Positive<std::uint64_t>;
 using PositivePtpOffsetBoundNs = ::fixy::Positive<std::uint64_t>;
 using PtpClockReader = ::fixy::time::PtpClockReader;
 using PtpDeviceIndex = ::fixy::time::PtpDeviceIndex;
+using PtpClockCaps = ::fixy::time::PtpClockCaps;
 
 // foundation::reflect::enum_name gives the log spelling of the three enums
 // below.
@@ -134,18 +134,6 @@ struct TimestampedPacket {
     std::size_t size = 0;
     PtpTimestampNs timestamp_ns{};
     bool hardware = false;
-};
-
-struct PtpClockCaps {
-    std::int32_t max_adjustment_ppb = 0;
-    std::int32_t alarms = 0;
-    std::int32_t external_timestamp_channels = 0;
-    std::int32_t periodic_outputs = 0;
-    bool pps = false;
-    std::int32_t pins = 0;
-    bool cross_timestamping = false;
-    bool adjust_phase = false;
-    std::int32_t max_phase_adjustment_ns = 0;
 };
 
 template <class Ctx>
@@ -350,11 +338,10 @@ template <::foundation::effects::IsExecCtx Ctx>
 template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::time::CtxFitsPtpClockReaderMint<Ctx>
 [[nodiscard]] ::fixy::Result<PtpClockReader, PtpError> open_ptp_clock(Ctx const& ctx, PtpDeviceIndex index) noexcept {
-    auto reader = ::fixy::time::mint_ptp_clock_reader(ctx, index);
-    if (!reader) {
-        return ::fixy::err(PtpError::OpenClockFailed);
-    }
-    return std::move(*reader);
+    using Opened = ::fixy::Result<PtpClockReader, PtpError>;
+    return ::fixy::time::mint_ptp_clock_reader(ctx, index)
+        .match([](PtpClockReader reader) noexcept -> Opened { return reader; },
+               [](::foundation::os::Errno) noexcept -> Opened { return ::fixy::err(PtpError::OpenClockFailed); });
 }
 
 [[nodiscard]] ::fixy::Result<TimestampedPacketView, PtpError>

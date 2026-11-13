@@ -391,11 +391,11 @@ public:
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         const ::fixy::time::MonotonicClock clock =
             ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
-        auto committed_at = clock.read();
-        if (!committed_at) [[unlikely]] {
-            return ::fixy::err(CommitError::clock_read);
-        }
-        return advance_head(view, content_hash, step_id, *committed_at);
+        return clock.read().match(
+            [&](::fixy::MonotonicClockBytes<std::uint64_t> committed_at) -> CommitResult {
+                return advance_head(view, content_hash, step_id, committed_at);
+            },
+            [](::foundation::os::Errno) -> CommitResult { return ::fixy::err(CommitError::clock_read); });
     }
 
     // Stores one batch of session events and indexes it.  The events must

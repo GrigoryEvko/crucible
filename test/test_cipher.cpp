@@ -89,9 +89,7 @@ static void commit_head(crucible::Cipher& cipher, crucible::Cipher::OpenView con
 // test context mints.
 static std::uint64_t monotonic_now_ns() {
     const auto clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(store_ctx());
-    const auto reading = clock.read();
-    assert(reading.has_value());
-    return reading->peek();
+    return clock.read().expect("the monotonic clock gives a reading").peek();
 }
 
 // The third field of the last line of the log, the time of the last

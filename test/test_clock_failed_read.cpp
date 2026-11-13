@@ -5,11 +5,11 @@
 // A working clock does not fail, so this executable has its own
 // clock_gettime.  The linker connects each call of clock_gettime in this
 // executable to that function, and not to the function in the C library.
-// The readers and the transaction log are inline in their headers, so their
-// reads are calls in this executable.  The function asks the kernel through
-// the raw system call, unless a case gives it a plan: fail with an errno, or
-// give a specified timespec.  Each case sets each value, so the test knows
-// each result.
+// The readers, the sleeper and the transaction log are inline in their
+// headers, so their reads are calls in this executable.  The function asks
+// the kernel through the raw system call, unless a case gives it a plan:
+// fail with an errno, or give a specified timespec.  Each case sets each
+// value, so the test knows each result.
 
 #include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
@@ -18,13 +18,13 @@
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/Time.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/os/Errno.h>
 
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <ctime>
 #include <limits>
-#include <system_error>
 
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -90,42 +90,47 @@ struct Tally {
     }
 };
 
-[[nodiscard]] std::error_code errno_code(int error_number) noexcept {
-    return std::error_code{error_number, std::system_category()};
-}
+using foundation::os::Errno;
 
 // Says whether a read gave the error `expected` and no reading.  It prints
 // the case when the read did not.
 template <typename Result>
-[[nodiscard]] bool is_refused_with(Result const& result, std::error_code const& expected, char const* what) {
-    if (result.has_value()) {
-        std::fprintf(stderr, "%s: the read gave the reading %llu, and it must give an error\n", what,
-                     static_cast<unsigned long long>(result->peek()));
-        return false;
-    }
-    if (result.error() != expected) {
-        std::fprintf(stderr, "%s: the read gave the error '%s', and it must give '%s'\n", what,
-                     result.error().message().c_str(), expected.message().c_str());
-        return false;
-    }
-    return true;
+[[nodiscard]] bool is_refused_with(Result const& result, Errno expected, char const* what) {
+    return result.match(
+        [what](auto const& reading) {
+            std::fprintf(stderr, "%s: the read gave the reading %llu, and it must give an error\n", what,
+                         static_cast<unsigned long long>(reading.peek()));
+            return false;
+        },
+        [what, expected](Errno const& error) {
+            if (error != expected) {
+                std::fprintf(stderr, "%s: the read gave the error number %d, and it must give %d\n", what,
+                             foundation::os::error_number(error), foundation::os::error_number(expected));
+                return false;
+            }
+            return true;
+        });
 }
 
 // Says whether a read gave the reading `expected_nanos`.  It prints the case
 // when the read did not.
 template <typename Result>
 [[nodiscard]] bool is_reading_of(Result const& result, std::uint64_t expected_nanos, char const* what) {
-    if (!result.has_value()) {
-        std::fprintf(stderr, "%s: the read gave the error '%s', and it must give the reading %llu\n", what,
-                     result.error().message().c_str(), static_cast<unsigned long long>(expected_nanos));
-        return false;
-    }
-    if (result->peek() != expected_nanos) {
-        std::fprintf(stderr, "%s: the read gave the reading %llu, and it must give %llu\n", what,
-                     static_cast<unsigned long long>(result->peek()), static_cast<unsigned long long>(expected_nanos));
-        return false;
-    }
-    return true;
+    return result.match(
+        [what, expected_nanos](auto const& reading) {
+            if (reading.peek() != expected_nanos) {
+                std::fprintf(stderr, "%s: the read gave the reading %llu, and it must give %llu\n", what,
+                             static_cast<unsigned long long>(reading.peek()),
+                             static_cast<unsigned long long>(expected_nanos));
+                return false;
+            }
+            return true;
+        },
+        [what, expected_nanos](Errno const& error) {
+            std::fprintf(stderr, "%s: the read gave the error number %d, and it must give the reading %llu\n", what,
+                         foundation::os::error_number(error), static_cast<unsigned long long>(expected_nanos));
+            return false;
+        });
 }
 
 // An unclamped reader.  A failed call gives its errno.  The reader refuses a
@@ -151,14 +156,12 @@ void realtime_reader_refuses_what_it_cannot_stamp(Tally& tally) {
     const auto past_64_bits = realtime.read();
     use_the_kernel_clock();
 
-    const auto out_of_range = std::make_error_code(std::errc::result_out_of_range);
     tally.expect(is_reading_of(fixed, 2000000005, "Realtime, a reading of 2 s and 5 ns"));
-    tally.expect(is_refused_with(failed, errno_code(EINVAL), "Realtime, a failed call"));
-    tally.expect(is_refused_with(before_epoch, out_of_range, "Realtime, a second field of -5"));
-    tally.expect(is_refused_with(negative_nanos, out_of_range, "Realtime, a nanosecond field of -1"));
-    tally.expect(is_refused_with(full_second, out_of_range, "Realtime, a nanosecond field of one second"));
-    tally.expect(is_refused_with(past_64_bits, std::make_error_code(std::errc::value_too_large),
-                                 "Realtime, a count past 64 bits"));
+    tally.expect(is_refused_with(failed, Errno::einval, "Realtime, a failed call"));
+    tally.expect(is_refused_with(before_epoch, Errno::erange, "Realtime, a second field of -5"));
+    tally.expect(is_refused_with(negative_nanos, Errno::erange, "Realtime, a nanosecond field of -1"));
+    tally.expect(is_refused_with(full_second, Errno::erange, "Realtime, a nanosecond field of one second"));
+    tally.expect(is_refused_with(past_64_bits, Errno::eoverflow, "Realtime, a count past 64 bits"));
 }
 
 // A clamped reader.  A failed call after a good read gives an error, and not
@@ -183,13 +186,30 @@ void monotonic_reader_gives_no_floor_for_a_failed_read(Tally& tally) {
     use_the_kernel_clock();
 
     tally.expect(is_reading_of(first, 100000000000, "Monotonic, a reading of 100 s"));
-    tally.expect(is_refused_with(failed, errno_code(EPERM), "Monotonic, a failed call after a reading of 100 s"));
+    tally.expect(is_refused_with(failed, Errno::eperm, "Monotonic, a failed call after a reading of 100 s"));
     tally.expect(is_reading_of(regressed, 100000000000, "Monotonic, a reading of 50 s below a floor of 100 s"));
-    tally.expect(is_refused_with(negative, std::make_error_code(std::errc::result_out_of_range),
-                                 "Monotonic, a second field of -5"));
-    tally.expect(is_refused_with(past_64_bits, std::make_error_code(std::errc::value_too_large),
-                                 "Monotonic, a count past 64 bits"));
+    tally.expect(is_refused_with(negative, Errno::erange, "Monotonic, a second field of -5"));
+    tally.expect(is_refused_with(past_64_bits, Errno::eoverflow, "Monotonic, a count past 64 bits"));
     tally.expect(is_reading_of(later, 150000000000, "Monotonic, a reading of 150 s after two refused values"));
+}
+
+// The sleeper reads the monotonic clock for its deadline.  A failed read
+// gives its errno.  A deadline with a negative second field makes the kernel
+// refuse clock_nanosleep with EINVAL, and the sleeper gives that error.
+void sleeper_gives_the_error_of_a_failed_call(Tally& tally) {
+    const fixy::TestRunnerCtx ctx{eff::testing::test()};
+    const auto sleeper = fixy::time::mint_bounded_sleep<1000>(ctx);
+
+    fail_each_read(EFAULT);
+    const auto failed_read = sleeper.sleep_for(0);
+    give_each_read(-5, 0);
+    const auto failed_sleep = sleeper.sleep_for(0);
+    use_the_kernel_clock();
+    const auto slept = sleeper.sleep_for(0);
+
+    tally.expect(failed_read.err().value_or(Errno::eio) == Errno::efault);
+    tally.expect(failed_sleep.err().value_or(Errno::eio) == Errno::einval);
+    tally.expect(slept.is_ok());
 }
 
 // The owner proof of a log that this one thread operates.
@@ -333,6 +353,7 @@ int main() {
     Tally tally;
     realtime_reader_refuses_what_it_cannot_stamp(tally);
     monotonic_reader_gives_no_floor_for_a_failed_read(tally);
+    sleeper_gives_the_error_of_a_failed_call(tally);
     transaction_keeps_no_reading_after_a_failed_read(tally);
     if (tally.failures != 0) {
         std::fprintf(stderr, "test_clock_failed_read: %d check(s) failed\n", tally.failures);

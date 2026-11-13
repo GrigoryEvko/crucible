@@ -21,7 +21,7 @@ include/fixy/concurrent/ | unconsumed | 2 | - | -
 include/fixy/session/ | assign-over-live | 1 | - | -
 include/fixy/session/ | unconsumed | 13 | - | -
 src/ | unconsumed | 5 | - | -
-test/ | unconsumed | 44 | - | -
+test/ | unconsumed | 39 | - | -
 test/fixy/ | assign-over-live | 4 | - | -
 test/fixy/ | discarded-temporary | 5 | - | -
 test/fixy/ | double-consume | 5 | - | -

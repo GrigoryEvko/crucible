@@ -35,6 +35,7 @@
 #include <crucible/perf/Senses.h>
 #include <crucible/warden/Policy.h>
 #include <crucible/warden/WatchdogVerdict.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/Time.h>
@@ -44,8 +45,6 @@
 #include <foundation/effects/Effect.h>
 
 #include <cstdint>
-#include <expected>
-#include <system_error>
 #include <type_traits>
 
 namespace crucible::warden {
@@ -120,7 +119,7 @@ public:
         requires CtxFitsDeadlineWatchdog<Ctx>
     [[nodiscard]] WatchdogVerdict
     observe_at(Ctx const& /*ctx*/,
-               std::expected<::fixy::BootClockBytes<uint64_t>, std::error_code> const& now) noexcept {
+               ::fixy::Result<::fixy::BootClockBytes<uint64_t>, ::foundation::os::Errno> const& now) noexcept {
         // A budget of zero is the opt-out. A window of zero is also
         // treated as off: every elapsed-time test would pass trivially
         // and the verdict would come from an observation covering
@@ -144,10 +143,12 @@ public:
         // A failed read gives no reading.  The boot clock never goes
         // back, so a reading before the start of the window is a reading
         // that the caller kept, and it counts as no signal as well.
-        if (!now) [[unlikely]] {
+        if (now.is_err()) [[unlikely]] {
             return WatchdogVerdict::InsufficientData;
         }
-        const uint64_t now_ns = now->peek();
+        const uint64_t now_ns =
+            now.match([](::fixy::BootClockBytes<uint64_t> const& reading) noexcept { return reading.peek(); },
+                      [](::foundation::os::Errno const&) noexcept { return uint64_t{0}; });
         if (now_ns < window_started_ns_) [[unlikely]] {
             return WatchdogVerdict::InsufficientData;
         }

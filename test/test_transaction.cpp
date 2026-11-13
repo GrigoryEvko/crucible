@@ -410,8 +410,8 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
         const auto reader = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
         crucible::stamp_transaction(stamped, reader.read());
         assert(stamped.ts_ns.is_some());
-        const std::expected<crucible::Transaction::Timestamp, std::error_code> failed_read{
-            std::unexpect, std::make_error_code(std::errc::io_error)};
+        const ::fixy::Result<crucible::Transaction::Timestamp, ::foundation::os::Errno> failed_read{
+            ::fixy::err(::foundation::os::Errno::eio)};
         crucible::stamp_transaction(stamped, failed_read);
         assert(stamped.ts_ns.is_none() && "a failed clock read must leave the timestamp empty");
     }
