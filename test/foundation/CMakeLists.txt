@@ -2905,6 +2905,15 @@ foundation_neg_compile_test(neg_core_foreign_text_byte_run
   "invalid conversion from .const unsigned char\\*. to .const char\\*."
   "initializing argument 1 of .foundation::core::TextView foundation::core::mint_foreign_text\\(const char\\*, std::size_t\\).")
 
+# The CText of a view that holds its zero is the one CText of that view, and
+# a bare address gives no count, so the mint takes a view and no address.
+foundation_neg_compile_test(neg_core_c_text_mint_result_dropped
+  "ignoring return value of .constexpr foundation::core::Option<foundation::core::CText> foundation::core::mint_c_text\\(TextView\\)."
+  "declared with attribute .nodiscard.")
+foundation_neg_compile_test(neg_core_c_text_mint_from_pointer
+  "could not convert .0. from .const char\\*. to .foundation::core::TextView."
+  "neg_core_c_text_mint_from_pointer.cpp:7")
+
 # The branded scope gives proven indexes of a View of a dynamic extent: each
 # index reads the element of the model, and a cursor never leaves its loop.
 foundation_test(test_core_branded)

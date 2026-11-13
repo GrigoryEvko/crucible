@@ -1,7 +1,8 @@
 // Tests of the growable owners of the Region family: append across many
 // growths, the refusal at the maximum, the Full of a linear element, the
 // moves of elements that are not bytewise, the end of each element, an
-// append of a view of the same text, and the foreign doors of Region.h.
+// append of a view of the same text, the foreign doors of Region.h, and the
+// CText of a text that keeps a zero after its characters.
 
 #include <foundation/core/Grow.h>
 
@@ -22,6 +23,7 @@
 
 namespace {
 
+using ::foundation::core::CText;
 using ::foundation::core::FixedArray;
 using ::foundation::core::GrowList;
 using ::foundation::core::GrowText;
@@ -282,6 +284,43 @@ void test_foreign_doors() {
         [] { static_cast<void>(::foundation::core::mint_foreign_text(static_cast<char const*>(nullptr), 1)); }));
 }
 
+// mint_c_text gives the CText of a view whose last character is its only
+// zero, and no value for each other view.  foreign_c_str gives the address
+// of the first character, and the zero follows the last character.
+void test_c_text_doors() {
+    ::foundation::effects::Alloc const alloc{};
+    GrowText name = mint_grow_text(64);
+    name.append(alloc, "aten::mm").expect("the text is below its maximum");
+    // A view with no zero at its end.
+    assert(::foundation::core::mint_c_text(name.view()).is_none());
+    name.append(alloc, '\0').expect("the text is below its maximum");
+    // A valid name: the zero is the last character of the view.
+    CText const c_text = ::foundation::core::mint_c_text(name.view()).expect("one zero ends the view");
+    assert(c_text.size() == 8 && c_text.view() == TextView{"aten::mm"});
+    assert(::foundation::core::foreign_c_str(c_text)[0] == 'a');
+    assert(::foundation::core::foreign_c_str(c_text)[7] == 'm');
+    assert(::foundation::core::foreign_c_str(c_text)[8] == '\0');
+    // The zero after a view is no part of it, so the view of the characters
+    // before the zero gives no value.
+    TextView const before_zero = name.view().window(0, 8).expect("8 characters fit");
+    assert(::foundation::core::mint_c_text(before_zero).is_none());
+    // An empty view.
+    assert(::foundation::core::mint_c_text(TextView{}).is_none());
+    // A view with a zero inside.
+    GrowText inner = mint_grow_text(64);
+    inner.append(alloc, "aten").expect("the text is below its maximum");
+    inner.append(alloc, '\0').expect("the text is below its maximum");
+    inner.append(alloc, "mm").expect("the text is below its maximum");
+    inner.append(alloc, '\0').expect("the text is below its maximum");
+    assert(::foundation::core::mint_c_text(inner.view()).is_none());
+    // A view of one zero gives the empty CText.
+    GrowText zero = mint_grow_text(4);
+    zero.append(alloc, '\0').expect("the text is below its maximum");
+    assert(::foundation::core::mint_c_text(zero.view()).expect("one zero ends the view").size() == 0);
+    // The CText of a literal.
+    assert(::foundation::core::foreign_c_str(CText{"ok"})[2] == '\0');
+}
+
 }  // namespace
 
 int main() {
@@ -294,5 +333,6 @@ int main() {
     test_text_appends_itself();
     test_agrees_with_a_model();
     test_foreign_doors();
+    test_c_text_doors();
     return 0;
 }

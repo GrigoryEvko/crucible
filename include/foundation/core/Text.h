@@ -14,7 +14,9 @@
 // zero at the end and refuses a zero before it, so a reader that stops at the
 // first zero reads each character of the text and no other byte.  A CText of
 // a path that a program builds at run time comes from
-// foundation::os::PathText, which keeps the same two facts.
+// foundation::os::PathText, which keeps the same two facts.  mint_c_text
+// gives the CText of a view whose last character is its only zero, such as
+// the view of an owner that keeps a zero after its characters.
 //
 // A TextView comes from a string literal or from an owner of the base, such
 // as FixedText::view().  The constructor from a literal is consteval, so
@@ -361,6 +363,24 @@ constexpr void put_hex_digits_(std::uint64_t value, std::size_t count, char* out
 }
 
 }  // namespace detail
+
+// The CText of the characters of text before its last one, when the last
+// character is a zero and no character before it is a zero.  The view holds
+// the zero itself, and the mint reads only the characters of the view: a
+// TextView does not own the byte after its last character.  An empty view, a
+// view whose last character is not a zero, and a view with a zero before its
+// last character give no value.  The CText borrows the owner of the view.
+// Complexity: O(n).
+[[nodiscard]] constexpr Option<CText> mint_c_text(TextView text) noexcept {
+    std::size_t const size = text.size();
+    if (size == 0) return none;
+    char const* const first = detail::text_first_(text);
+    if (first[size - 1] != '\0') return none;
+    for (std::size_t index = 0; index + 1 < size; ++index) {
+        if (first[index] == '\0') return none;
+    }
+    return Option<CText>::some(detail::c_text_over_(first, size - 1));
+}
 
 // Puts the low Digits hexadecimal digits of value after the last character
 // of text, the most significant first, in lower case and with the zeros

@@ -303,6 +303,7 @@ that the axis does not apply to the row.
 | `mint_box(T0_1, T0_2&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 15 |
 | `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 15 |
 | `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 5 |
+| `mint_c_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 2 |
 | `mint_foreign_text` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 2 |
 | `mint_foreign_view` | `include/foundation/core/Region.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_grow_list` | `include/foundation/core/Grow.h` | Y | Y | Y | Y | token | · | HS14: 2 |
@@ -353,4 +354,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 84 | 46 | 29 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 125 | 54 | 68 | 3 | 0 | 4 |
+| substrate (`include/foundation/`, `include/fixy/`) | 126 | 54 | 69 | 3 | 0 | 4 |

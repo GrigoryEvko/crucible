@@ -46,9 +46,11 @@
 //                       the element is a value
 //   mint_foreign_text(first, count)   the TextView of such a run of
 //                       characters
+//   foreign_c_str(text)   the address of the first character of a CText,
+//                       for a foreign reader that reads up to the zero
 // The two mints check the count, the null pointer and the alignment, and
-// they cannot prove that the run lives.  A call stands only at the edge of a
-// foreign ABI, in an opt-out region of the class ABI.
+// they cannot prove that the run lives.  A call of each door stands only at
+// the edge of a foreign ABI, in an opt-out region of the class ABI.
 //
 // get(position) gives an Option of a Ref, so this header includes the Ref
 // family and defines the body of get itself.  A unit that includes only
@@ -498,6 +500,15 @@ template <class T>
     }
     return detail::text_over_(first, count);
 }
+
+// The address of the first character of text, for a reader of a foreign ABI
+// that reads up to the zero, such as a C caller that takes a char const*.
+// The CText proves the zero after its last character and no zero before it,
+// so the reader reads each character and the zero, and no other byte.  The
+// address borrows the owner of the text, and the caller keeps the owner
+// alive while the foreign side reads.  A call stands only at the edge of a
+// foreign ABI, in an opt-out region of the class ABI.
+[[nodiscard]] inline char const* foreign_c_str(CText text) noexcept { return detail::c_text_first_(text); }
 
 namespace detail {
 
