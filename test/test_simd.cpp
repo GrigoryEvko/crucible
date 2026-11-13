@@ -115,6 +115,39 @@ static void test_store_bytes_and_bit_cast() {
     crucible::test::pass("  test_store_bytes_and_bit_cast: PASSED\n");
 }
 
+// The sign bit and the equal bit of each lane, at one width.  One lane at a
+// time differs from the others, so a lost or a moved lane fails.  Lanes 7
+// and 15 hold the top byte of a 64-bit word.  The Debug build has no AVX2
+// and no AVX-512, so there the 32 and the 64 lanes take the form with one
+// multiply for each 8 lanes.
+template <int Lanes>
+static void check_collect_bits() {
+    using Bytes = simd::vec<std::int8_t, Lanes>;
+    std::uint64_t const every_lane = Lanes == 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << Lanes) - 1;
+    Bytes const tags{std::int8_t{0x42}};
+    Bytes const empty{std::int8_t{-128}};
+    assert(simd::collect_sign_bits(tags) == 0);
+    assert(simd::collect_sign_bits(empty) == every_lane);
+    assert(simd::collect_equal_bits(tags, tags) == every_lane);
+    for (int lane = 0; lane < Lanes; ++lane) {
+        Bytes const one_empty([lane](auto index) noexcept {
+            return decltype(index)::value == lane ? std::int8_t{-128} : std::int8_t{0x42};
+        });
+        std::uint64_t const bit = std::uint64_t{1} << lane;
+        assert(simd::collect_sign_bits(one_empty) == bit);
+        assert(simd::collect_sign_bits(one_empty == empty) == bit);
+        assert(simd::collect_equal_bits(one_empty, empty) == bit);
+        assert(simd::collect_equal_bits(one_empty, tags) == (every_lane & ~bit));
+    }
+}
+
+static void test_collect_bits() {
+    check_collect_bits<16>();
+    check_collect_bits<32>();
+    check_collect_bits<64>();
+    crucible::test::pass("  test_collect_bits: PASSED\n");
+}
+
 // The register runs of two Views of one count: each whole run once, in
 // order, and the bytes after the last whole run as the rest.
 static void test_for_each_register_run() {
@@ -343,6 +376,7 @@ int main() {
     test_load();
     test_load_bytes();
     test_store_bytes_and_bit_cast();
+    test_collect_bits();
     test_for_each_register_run();
     test_reduce_xor_sum();
     test_reduce_or_and();

@@ -283,6 +283,89 @@ template <typename To, typename From>
     return To{__builtin_bit_cast(typename To::raw_type, value.raw())};
 }
 
+// A vec or a mask of one-byte lanes that fills one register of 16, 32 or 64
+// bytes.  Each lane gives one bit of a 64-bit word.
+template <typename V>
+concept ByteLaneRegister =
+    requires { typename V::raw_type; } && sizeof(std::declval<typename V::raw_type const&>()[0]) == 1
+    && (sizeof(typename V::raw_type) == 16 || sizeof(typename V::raw_type) == 32 || sizeof(typename V::raw_type) == 64);
+
+namespace detail {
+
+// Bit 7 of each byte of word, the byte at offset i at bit i of the result.
+// The and keeps bit 8i + 7 of each byte.  The multiplier has a bit at each
+// multiple of 7 from 0 to 49, so bit 8i + 7 times bit 49 - 7i lands at bit
+// 56 + i.  No two partial products share a bit, so no carry reaches the top
+// byte.
+[[nodiscard]] constexpr std::uint64_t collect_word_sign_bits(std::uint64_t word) noexcept {
+    return ((word & 0x8080808080808080u) * 0x0002040810204081u) >> 56;
+}
+
+// The sign bit of each lane with one multiply for each 8 lanes: the form of
+// a target that has no instruction for the width.
+template <int Lanes>
+[[nodiscard]] CRUCIBLE_INLINE std::uint64_t collect_sign_bits_by_word(raw_vector_t<char, Lanes> lanes) noexcept {
+    using Words = raw_vector_t<std::uint64_t, Lanes / 8>;
+    Words const words = __builtin_bit_cast(Words, lanes);
+    std::uint64_t bits = 0;
+    for (int word = 0; word < Lanes / 8; ++word)
+        bits |= collect_word_sign_bits(words[word]) << (8 * word);
+    return bits;
+}
+
+}  // namespace detail
+
+// The sign bit of each lane of value, lane i at bit i of the result, and
+// zero above the last lane.  A lane of a mask is all ones or zero, so its
+// bit is its truth.  On x86 it is one instruction: vpmovb2m for 64 lanes
+// with AVX-512BW, vpmovmskb for 32 lanes with AVX2, and pmovmskb for 16
+// lanes.  Each other target, and a width with no instruction, takes one
+// multiply for each 8 lanes.
+template <typename V>
+    requires ByteLaneRegister<V>
+[[nodiscard]] CRUCIBLE_INLINE std::uint64_t collect_sign_bits(V value) noexcept {
+    constexpr int lanes = static_cast<int>(sizeof(typename V::raw_type));
+    using Chars = detail::raw_vector_t<char, lanes>;
+    Chars const chars = __builtin_bit_cast(Chars, value.raw());
+#if defined(__AVX512BW__)
+    if constexpr (lanes == 64) {
+        return __builtin_ia32_cvtb2mask512(chars);
+    }
+#endif
+#if defined(__AVX2__)
+    // The movemask gives an int.  The conversion through uint32_t keeps a
+    // set bit 31 out of the upper half of the result.
+    if constexpr (lanes == 32) {
+        return static_cast<std::uint32_t>(__builtin_ia32_pmovmskb256(chars));
+    }
+#endif
+#if defined(__SSE2__)
+    if constexpr (lanes == 16) {
+        return static_cast<std::uint32_t>(__builtin_ia32_pmovmskb128(chars));
+    }
+#endif
+    return detail::collect_sign_bits_by_word<lanes>(chars);
+}
+
+// Bit i set when lane i of left and lane i of right are equal, and zero
+// above the last lane.  With AVX-512BW, 64 lanes compare into a mask
+// register with one instruction.  GCC does not fold a compare into a vector
+// and a sign gather into that instruction, so this arm calls it directly.
+// Each other width and target compares into a vector and takes its signs.
+template <typename ElementType, int Lanes>
+    requires ByteLaneRegister<vec<ElementType, Lanes>>
+[[nodiscard]] CRUCIBLE_INLINE std::uint64_t collect_equal_bits(vec<ElementType, Lanes> left,
+                                                               vec<ElementType, Lanes> right) noexcept {
+#if defined(__AVX512BW__)
+    if constexpr (Lanes == 64) {
+        using Chars = detail::raw_vector_t<char, 64>;
+        return __builtin_ia32_pcmpeqb512_mask(__builtin_bit_cast(Chars, left.raw()),
+                                              __builtin_bit_cast(Chars, right.raw()), ~0ULL);
+    }
+#endif
+    return collect_sign_bits(left == right);
+}
+
 // A body that takes the Views of one register run of each of two Views and
 // does not throw.
 template <typename Body, typename V, typename First, typename Second>

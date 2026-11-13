@@ -43,6 +43,20 @@ static_assert(RegisterBytes<u64x4, std::byte const, 32> && RegisterBytes<u8x16, 
 static_assert(!RegisterBytes<u64x4, std::byte const, 16>, "a load reads exactly the bytes of one register");
 static_assert(!RegisterBytes<u64x4, std::uint64_t const, 4>, "the View holds bytes, not lanes");
 
+// A sign gather reads a register of one-byte lanes, a vec or a mask.
+static_assert(ByteLaneRegister<vec<std::int8_t, 16>> && ByteLaneRegister<vec<char, 32>>
+              && ByteLaneRegister<u8x32::mask_type> && ByteLaneRegister<vec<std::uint8_t, 64>>);
+static_assert(!ByteLaneRegister<vec<std::int8_t, 8>>, "a register of 8 bytes is no register of a target");
+static_assert(!ByteLaneRegister<u64x4>, "a lane of 8 bytes gives no one bit");
+
+// Bit 7 of each byte reaches its own bit.  The top byte needs bit 0 of the
+// multiplier: a multiplier with no bit 0 drops it.
+static_assert(collect_word_sign_bits(0x0000000000000080u) == 0x01u);
+static_assert(collect_word_sign_bits(0x8000000000000000u) == 0x80u);
+static_assert(collect_word_sign_bits(0x8080808080808080u) == 0xFFu);
+static_assert(collect_word_sign_bits(0x7F7F7F7F7F7F7F7Fu) == 0x00u);
+static_assert(collect_word_sign_bits(0xFF00FF00FF00FF00u) == 0xAAu);
+
 }  // namespace detail::simd_self_test
 
 }  // namespace foundation::simd

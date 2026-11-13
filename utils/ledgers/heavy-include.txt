@@ -20,7 +20,6 @@ rule heavy-include
 include/crucible/BackgroundThread.h | heavy-include | 1 | <memory> | the class holds its stage pipeline in a std::unique_ptr, and run_on_publish_stage takes the address of the job with std::addressof
 include/crucible/Cipher.h | heavy-include | 1 | <filesystem> | the store makes its object directory with std::filesystem::create_directories, and it makes the path of HEAD with the operator / of std::filesystem::path
 include/crucible/Serialize.h | heavy-include | 1 | <memory> | the reader makes the variant counter of a node with std::construct_at, because the counter refuses a step to the value 0 that a file can hold
-include/crucible/SwissTable.h | heavy-include | 1 | <arm_neon.h> | -
 include/crucible/cntp/Fec.h | heavy-include | 1 | <arm_neon.h> | -
 include/crucible/ledger/HostFingerprint.h | heavy-include | 1 | <filesystem> | the reader gives fixy::sanitize_path a tagged std::filesystem::path, because that function takes no other path type
 include/crucible/ledger/LedgerStore.h | heavy-include | 1 | <chrono> | the store reads the wall clock with std::chrono::system_clock, because the time to live of an entry is an age across processes and reboots
