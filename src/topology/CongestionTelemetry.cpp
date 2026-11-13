@@ -1,22 +1,42 @@
 #include <crucible/topology/CongestionTelemetry.h>
 
-#include <crucible/observe/HdrHistogram.h>
-
-#include <cerrno>
 #include <cstddef>
-#include <cstring>
-
-#include <linux/inet_diag.h>
-#include <linux/tcp.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
+#include <cstdint>
 
 namespace crucible::topology {
 
 namespace {
 
-using RttHistogram = observe::HdrHistogram<2, 3600000000000ull>;
-using BandwidthHistogram = observe::HdrHistogram<2, 1000000000000ull>;
+namespace tcp_field = detail::tcp_info_field;
+namespace bbr_field = detail::bbr_info_field;
+namespace dctcp_field = detail::dctcp_info_field;
+
+using TcpInfoBytes = ::fixy::View<std::byte const, detail::tcp_info_bytes>;
+using BbrInfoBytes = ::fixy::View<std::byte const, detail::bbr_info_bytes>;
+using DctcpInfoBytes = ::fixy::View<std::byte const, detail::dctcp_info_bytes>;
+
+// The value of the field Field of a kernel struct, from the bytes of the
+// struct.  The constraint puts the field inside the bytes.  decode gives no
+// value for an enumeration whose byte names no enumerator.
+template <auto Field, std::size_t Extent>
+    requires(Field.offset + Field.size <= Extent)
+[[nodiscard]] ::fixy::Option<typename decltype(Field)::value_type>
+decode_field(::fixy::View<std::byte const, Extent> bytes) noexcept {
+    using Value = typename decltype(Field)::value_type;
+    ::foundation::core::FixedArray<std::byte, sizeof(Value)> word{};
+    ::fixy::copy(
+        word.view(),
+        bytes.template window<sizeof(Value)>(Field.offset).expect("the constraint puts the field inside the bytes"));
+    return ::fixy::decode<Value>(word);
+}
+
+// The value of an integer field.  Each bit pattern of an integer is a value,
+// so decode gives a value for each bytes.
+template <auto Field, std::size_t Extent>
+    requires(Field.offset + Field.size <= Extent) && ::fixy::UnsignedInteger<typename decltype(Field)::value_type>
+[[nodiscard]] typename decltype(Field)::value_type decode_word(::fixy::View<std::byte const, Extent> bytes) noexcept {
+    return decode_field<Field>(bytes).expect("each bit pattern of an integer is a value");
+}
 
 [[nodiscard]] constexpr std::uint64_t positive_or_one_u64(std::uint64_t v) noexcept {
     return v == 0 ? std::uint64_t{1} : v;
@@ -32,17 +52,17 @@ using BandwidthHistogram = observe::HdrHistogram<2, 1000000000000ull>;
                                                    : static_cast<std::uint32_t>(product);
 }
 
-[[nodiscard]] constexpr CongestionMode mode_from_ca_state(std::uint8_t state) noexcept {
+[[nodiscard]] constexpr CongestionMode mode_from_ca_state(detail::TcpCaState state) noexcept {
     switch (state) {
-        case TCP_CA_Open:
+        case detail::TcpCaState::Open:
             return CongestionMode::Open;
-        case TCP_CA_Disorder:
+        case detail::TcpCaState::Disorder:
             return CongestionMode::Disorder;
-        case TCP_CA_CWR:
+        case detail::TcpCaState::Cwr:
             return CongestionMode::Cwr;
-        case TCP_CA_Recovery:
+        case detail::TcpCaState::Recovery:
             return CongestionMode::Recovery;
-        case TCP_CA_Loss:
+        case detail::TcpCaState::Loss:
             return CongestionMode::Loss;
         default:
             return CongestionMode::Unknown;
@@ -93,41 +113,54 @@ using BandwidthHistogram = observe::HdrHistogram<2, 1000000000000ull>;
     return mode_severity(lhs) > mode_severity(rhs);
 }
 
+[[nodiscard]] constexpr bool is_bbr(cntp::CcAlgorithm algorithm) noexcept {
+    return algorithm == cntp::CcAlgorithm::Bbr1 || algorithm == cntp::CcAlgorithm::Bbr2
+        || algorithm == cntp::CcAlgorithm::Bbr3;
+}
+
 // The two decoders below mint each refined field from positive_or_one_*,
 // which maps zero to one, so the checked mint never fires.
-[[nodiscard]] constexpr BbrFields decode_bbr(tcp_bbr_info const& info) noexcept {
-    const std::uint64_t bw = (static_cast<std::uint64_t>(info.bbr_bw_hi) << 32u) | info.bbr_bw_lo;
+[[nodiscard]] BbrFields decode_bbr(BbrInfoBytes info) noexcept {
+    const std::uint64_t bw =
+        (static_cast<std::uint64_t>(decode_word<bbr_field::bw_hi>(info)) << 32u) | decode_word<bbr_field::bw_lo>(info);
     return BbrFields{
         .btl_bw_bps = ::fixy::mint_refined<::fixy::positive>(positive_or_one_u64(bw)),
-        .rt_prop_us = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{positive_or_one_u32(info.bbr_min_rtt)}),
-        .pacing_gain_q8 = info.bbr_pacing_gain,
-        .cwnd_gain_q8 = info.bbr_cwnd_gain,
+        .rt_prop_us = ::fixy::mint_refined<::fixy::positive>(
+            std::uint64_t{positive_or_one_u32(decode_word<bbr_field::min_rtt>(info))}),
+        .pacing_gain_q8 = decode_word<bbr_field::pacing_gain>(info),
+        .cwnd_gain_q8 = decode_word<bbr_field::cwnd_gain>(info),
     };
 }
 
-[[nodiscard]] constexpr DctcpFields decode_dctcp(tcp_dctcp_info const& info) noexcept {
+[[nodiscard]] DctcpFields decode_dctcp(DctcpInfoBytes info) noexcept {
+    std::uint32_t const ab_ecn = decode_word<dctcp_field::ab_ecn>(info);
+    std::uint32_t const ab_tot = decode_word<dctcp_field::ab_tot>(info);
     std::uint32_t ppm = 0;
-    if (info.dctcp_ab_tot != 0) {
-        const std::uint64_t scaled = (static_cast<std::uint64_t>(info.dctcp_ab_ecn) * 1000000ull) / info.dctcp_ab_tot;
+    if (ab_tot != 0) {
+        const std::uint64_t scaled = (static_cast<std::uint64_t>(ab_ecn) * 1000000ull) / ab_tot;
         ppm = static_cast<std::uint32_t>(::fixy::min(scaled, std::uint64_t{1000000}));
     }
     return DctcpFields{
-        .alpha_q10 = info.dctcp_alpha,
+        .alpha_q10 = decode_word<dctcp_field::alpha>(info),
         .ecn_mark_ppm = ppm,
-        .enabled = info.dctcp_enabled != 0,
+        .enabled = decode_word<dctcp_field::enabled>(info) != 0,
     };
 }
 
-[[nodiscard]] CongestionSample decode_tcp_info(tcp_info const& info, cntp::CcAlgorithm algorithm) noexcept {
-    const std::uint32_t mss = positive_or_one_u32(info.tcpi_snd_mss);
-    const std::uint32_t cwnd_bytes = sat_u32_mul(positive_or_one_u32(info.tcpi_snd_cwnd), mss);
-    const std::uint32_t ssthresh_packets = info.tcpi_snd_ssthresh == ::fixy::max_of<std::uint32_t>
-                                             ? info.tcpi_snd_cwnd
-                                             : positive_or_one_u32(info.tcpi_snd_ssthresh);
+// A congestion state that names no enumerator of the kernel gives the mode
+// Unknown.
+[[nodiscard]] CongestionSample decode_tcp_info(TcpInfoBytes info, cntp::CcAlgorithm algorithm) noexcept {
+    const std::uint32_t snd_cwnd = decode_word<tcp_field::snd_cwnd>(info);
+    const std::uint32_t snd_ssthresh = decode_word<tcp_field::snd_ssthresh>(info);
+    const std::uint32_t min_rtt = decode_word<tcp_field::min_rtt>(info);
+    const std::uint32_t mss = positive_or_one_u32(decode_word<tcp_field::snd_mss>(info));
+    const std::uint32_t cwnd_bytes = sat_u32_mul(positive_or_one_u32(snd_cwnd), mss);
+    const std::uint32_t ssthresh_packets =
+        snd_ssthresh == ::fixy::max_of<std::uint32_t> ? snd_cwnd : positive_or_one_u32(snd_ssthresh);
     const std::uint32_t ssthresh_bytes = sat_u32_mul(ssthresh_packets, mss);
-    const std::uint32_t in_flight = sat_u32_mul(info.tcpi_unacked, mss);
-    const std::uint64_t delivery_rate = positive_or_one_u64(info.tcpi_delivery_rate);
-    const std::uint64_t rtt = positive_or_one_u64(info.tcpi_min_rtt != 0 ? info.tcpi_min_rtt : info.tcpi_rtt);
+    const std::uint32_t in_flight = sat_u32_mul(decode_word<tcp_field::unacked>(info), mss);
+    const std::uint64_t delivery_rate = positive_or_one_u64(decode_word<tcp_field::delivery_rate>(info));
+    const std::uint64_t rtt = positive_or_one_u64(min_rtt != 0 ? min_rtt : decode_word<tcp_field::rtt>(info));
 
     CongestionSample state{
         .algorithm = algorithm,
@@ -135,14 +168,16 @@ using BandwidthHistogram = observe::HdrHistogram<2, 1000000000000ull>;
         .rt_prop_us = ::fixy::mint_refined<::fixy::positive>(rtt),
         .cwnd_bytes = ::fixy::mint_refined<::fixy::positive>(positive_or_one_u32(cwnd_bytes)),
         .ssthresh_bytes = ::fixy::mint_refined<::fixy::positive>(positive_or_one_u32(ssthresh_bytes)),
-        .retrans_count = info.tcpi_total_retrans,
-        .lost_count = info.tcpi_lost,
+        .retrans_count = decode_word<tcp_field::total_retrans>(info),
+        .lost_count = decode_word<tcp_field::lost>(info),
         .in_flight_bytes = in_flight,
-        .pacing_rate_bps = info.tcpi_pacing_rate,
-        .max_pacing_rate_bps = info.tcpi_max_pacing_rate,
-        .delivered = info.tcpi_delivered,
-        .delivered_ce = info.tcpi_delivered_ce,
-        .mode = mode_from_ca_state(info.tcpi_ca_state),
+        .pacing_rate_bps = decode_word<tcp_field::pacing_rate>(info),
+        .max_pacing_rate_bps = decode_word<tcp_field::max_pacing_rate>(info),
+        .delivered = decode_word<tcp_field::delivered>(info),
+        .delivered_ce = decode_word<tcp_field::delivered_ce>(info),
+        .mode = decode_field<tcp_field::ca_state>(info).match(
+            [](detail::TcpCaState ca_state) noexcept { return mode_from_ca_state(ca_state); },
+            []() noexcept { return CongestionMode::Unknown; }),
     };
 
     if (state.delivered != 0) {
@@ -152,114 +187,87 @@ using BandwidthHistogram = observe::HdrHistogram<2, 1000000000000ull>;
     return state;
 }
 
-void record_sample(CongestionAggregate& aggregate, RttHistogram& rtt_hist, BandwidthHistogram& bw_hist,
-                   TcpInfoSnapshot const& snapshot) noexcept {
-    auto const& state = snapshot.value();
-    ++aggregate.sample_count;
-    aggregate.total_in_flight_bytes += state.in_flight_bytes;
-    aggregate.retrans_count += state.retrans_count;
-    aggregate.lost_count += state.lost_count;
-    aggregate.mean_btl_bw_bps += state.btl_bw_bps.value();
-    aggregate.ecn_mark_ppm = ::fixy::max(aggregate.ecn_mark_ppm, state.dctcp.ecn_mark_ppm);
-    if (mode_worse(state.mode, aggregate.worst_mode)) {
-        aggregate.worst_mode = state.mode;
+// The sample with the fields of BBR or of DCTCP from the bytes of
+// TCP_CC_INFO.  When the kernel wrote too few bytes for the controller of
+// the sample, the sample stays as it is.
+[[nodiscard]] CongestionSample add_congestion_info(CongestionSample state,
+                                                   ::fixy::View<std::byte const> congestion_info) noexcept {
+    if (is_bbr(state.algorithm)) {
+        return congestion_info.window<detail::bbr_info_bytes>(0).match(
+            [state](BbrInfoBytes bytes) noexcept {
+                CongestionSample with_bbr = state;
+                with_bbr.bbr = decode_bbr(bytes);
+                with_bbr.btl_bw_bps = with_bbr.bbr.btl_bw_bps;
+                with_bbr.rt_prop_us = with_bbr.bbr.rt_prop_us;
+                with_bbr.mode = mode_from_bbr(with_bbr.bbr);
+                with_bbr.has_bbr = true;
+                return with_bbr;
+            },
+            [state]() noexcept { return state; });
     }
-    const std::uint64_t rtt_value = ::fixy::min(state.rt_prop_us.value(), RttHistogram::max_trackable_value);
-    const std::uint64_t bw_value = ::fixy::min(state.btl_bw_bps.value(), BandwidthHistogram::max_trackable_value);
-    rtt_hist.record(RttHistogram::checked_value(rtt_value));
-    bw_hist.record(BandwidthHistogram::checked_value(bw_value));
-}
-
-void finalize_aggregate(CongestionAggregate& aggregate, RttHistogram& rtt_hist, BandwidthHistogram& bw_hist) noexcept {
-    if (aggregate.sample_count == 0) {
-        return;
+    if (state.algorithm == cntp::CcAlgorithm::Dctcp) {
+        return congestion_info.window<detail::dctcp_info_bytes>(0).match(
+            [state](DctcpInfoBytes bytes) noexcept {
+                CongestionSample with_dctcp = state;
+                with_dctcp.dctcp = decode_dctcp(bytes);
+                with_dctcp.has_dctcp = true;
+                return with_dctcp;
+            },
+            [state]() noexcept { return state; });
     }
-    aggregate.mean_btl_bw_bps /= aggregate.sample_count;
-    aggregate.p50_rtt_us = rtt_hist.percentile(50.0);
-    aggregate.p95_rtt_us = rtt_hist.percentile(95.0);
-    aggregate.p95_btl_bw_bps = bw_hist.percentile(95.0);
+    return state;
 }
 
 }  // namespace
 
-::fixy::Result<TcpInfoSnapshot, TelemetryError> detail::harvest_socket_keyed(cntp::detail::SocketOptionKey const& key,
-                                                                             cntp::SocketFd fd) noexcept {
-    tcp_info info{};
-    socklen_t info_len = sizeof(info);
-    const int tcp_rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_INFO, &info, &info_len);
-    // An older kernel returns a tcp_info shorter than this build's struct.
-    // The tail then keeps the zero-fill from the stack initialiser and reads
-    // back as genuine congestion data.  The length gate must therefore cover
-    // every field decode_tcp_info depends on, of which tcpi_delivered_ce is
-    // the last.
-    constexpr socklen_t kRequiredInfoLen =
-        static_cast<socklen_t>(offsetof(tcp_info, tcpi_delivered_ce) + sizeof(info.tcpi_delivered_ce));
-    if (tcp_rc != 0 || info_len < kRequiredInfoLen) {
-        static_cast<void>(errno);
-        return ::fixy::err(TelemetryError::GetTcpInfoFailed);
+::fixy::Result<TcpInfoSnapshot, TelemetryError> detail::decode_tcp_sample(::fixy::View<std::byte const> info,
+                                                                          ::fixy::View<std::byte const> congestion_info,
+                                                                          cntp::CcAlgorithm algorithm) noexcept {
+    using Decoded = ::fixy::Result<TcpInfoSnapshot, TelemetryError>;
+    return info.window<tcp_info_bytes>(0).match(
+        [congestion_info, algorithm](TcpInfoBytes fields) noexcept -> Decoded {
+            CongestionSample const state = add_congestion_info(decode_tcp_info(fields, algorithm), congestion_info);
+            return ::fixy::mint_tagged<::fixy::tags::source::TcpInfo>(state);
+        },
+        []() noexcept -> Decoded { return ::fixy::err(TelemetryError::GetTcpInfoFailed); });
+}
+
+void detail::CongestionAccumulator::record(TcpInfoSnapshot const& snapshot) noexcept {
+    auto const& state = snapshot.value();
+    ++aggregate_.sample_count;
+    aggregate_.total_in_flight_bytes += state.in_flight_bytes;
+    aggregate_.retrans_count += state.retrans_count;
+    aggregate_.lost_count += state.lost_count;
+    aggregate_.mean_btl_bw_bps += state.btl_bw_bps.value();
+    aggregate_.ecn_mark_ppm = ::fixy::max(aggregate_.ecn_mark_ppm, state.dctcp.ecn_mark_ppm);
+    if (mode_worse(state.mode, aggregate_.worst_mode)) {
+        aggregate_.worst_mode = state.mode;
     }
+    const std::uint64_t rtt_value = ::fixy::min(state.rt_prop_us.value(), RttHistogram::max_trackable_value);
+    const std::uint64_t bw_value = ::fixy::min(state.btl_bw_bps.value(), BandwidthHistogram::max_trackable_value);
+    rtt_histogram_.record(RttHistogram::checked_value(rtt_value));
+    bandwidth_histogram_.record(BandwidthHistogram::checked_value(bw_value));
+}
 
-    cntp::CcAlgorithm const algorithm = cntp::detail::query_cc_selection_for_socket_keyed(key, fd).match(
-        [](cntp::CcSelection selected) noexcept { return selected.algorithm; },
-        [](cntp::CcError) noexcept { return cntp::CcAlgorithm::Custom; });
-    CongestionSample state = decode_tcp_info(info, algorithm);
-
-    tcp_cc_info cc_info{};
-    socklen_t cc_len = sizeof(cc_info);
-    const int cc_rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_CC_INFO, &cc_info, &cc_len);
-    if (cc_rc == 0) {
-        if (algorithm == cntp::CcAlgorithm::Bbr1 || algorithm == cntp::CcAlgorithm::Bbr2
-            || algorithm == cntp::CcAlgorithm::Bbr3) {
-            state.bbr = decode_bbr(cc_info.bbr);
-            state.btl_bw_bps = state.bbr.btl_bw_bps;
-            state.rt_prop_us = state.bbr.rt_prop_us;
-            state.mode = mode_from_bbr(state.bbr);
-            state.has_bbr = true;
-        } else if (algorithm == cntp::CcAlgorithm::Dctcp) {
-            state.dctcp = decode_dctcp(cc_info.dctcp);
-            state.has_dctcp = true;
-        }
+CongestionAggregate detail::CongestionAccumulator::finish() const noexcept {
+    CongestionAggregate aggregate = aggregate_;
+    if (aggregate.sample_count == 0) {
+        return aggregate;
     }
-
-    return ::fixy::mint_tagged<::fixy::tags::source::TcpInfo>(state);
+    aggregate.mean_btl_bw_bps /= aggregate.sample_count;
+    aggregate.p50_rtt_us = rtt_histogram_.percentile(50.0);
+    aggregate.p95_rtt_us = rtt_histogram_.percentile(95.0);
+    aggregate.p95_btl_bw_bps = bandwidth_histogram_.percentile(95.0);
+    return aggregate;
 }
 
 CongestionAggregate aggregate_congestion(cog::CogIdentity const& nic,
                                          ::fixy::View<TcpInfoSnapshot const> samples) noexcept {
-    CongestionAggregate aggregate{
-        .nic_uuid = nic.uuid,
-    };
-    RttHistogram rtt_hist{};
-    BandwidthHistogram bw_hist{};
-
+    detail::CongestionAccumulator accumulator{nic};
     for (TcpInfoSnapshot const& sample : samples) {
-        record_sample(aggregate, rtt_hist, bw_hist, sample);
+        accumulator.record(sample);
     }
-    finalize_aggregate(aggregate, rtt_hist, bw_hist);
-    return aggregate;
-}
-
-::fixy::Result<CongestionAggregate, TelemetryError>
-detail::harvest_per_link_keyed(cntp::detail::SocketOptionKey const& key, cog::CogIdentity const& nic,
-                               ::fixy::View<cntp::SocketFd const> active_fds) noexcept {
-    if (!is_nic_cog(nic)) {
-        return ::fixy::err(TelemetryError::InvalidNicCog);
-    }
-    if (active_fds.size() == 0) {
-        return ::fixy::err(TelemetryError::EmptySampleSet);
-    }
-
-    CongestionAggregate aggregate{
-        .nic_uuid = nic.uuid,
-    };
-    RttHistogram rtt_hist{};
-    BandwidthHistogram bw_hist{};
-    for (cntp::SocketFd const fd : active_fds) {
-        CRUCIBLE_TRY(sample, harvest_socket_keyed(key, fd));
-        record_sample(aggregate, rtt_hist, bw_hist, sample);
-    }
-    finalize_aggregate(aggregate, rtt_hist, bw_hist);
-    return aggregate;
+    return accumulator.finish();
 }
 
 }  // namespace crucible::topology
