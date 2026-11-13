@@ -13,7 +13,7 @@ struct HeadRole {};
 
 int main() {
     auto writer = ::foundation::core::mint_sole_writer<HeadRole>();
-    ::foundation::core::Atomic<std::uint64_t, decltype(writer)> head{0};
+    ::foundation::core::Atomic<std::uint64_t, decltype(writer)> head{writer, 0};
     head.store_release(1);
     ::foundation::linear::drop(std::move(writer));
     return 0;

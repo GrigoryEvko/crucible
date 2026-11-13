@@ -2488,7 +2488,7 @@ foundation_neg_compile_test(neg_core_sole_writer_bound_to_held_brand
   "neg_core_sole_writer_bound_to_held_brand\\.cpp:18:[0-9]+: error:")
 foundation_neg_compile_test(neg_core_sole_writer_forged_specialization
   "template-id .mint_sole_writer<\\{anonymous\\}::OtherRole>. for .constexpr foundation::core::SoleWriter<\\{anonymous\\}::OtherRole, foundation::core::<lambda\\(\\)> > foundation::core::mint_sole_writer\\(\\). does not match any template declaration"
-  "candidate is: .template<class Role, class ... Arguments, class Brand>  requires  SoleWriterMint<Role, Arguments ...> constexpr foundation::core::SoleWriter<Role, typename foundation::brand::undeducible_brand<Brand>::type> foundation::core::mint_sole_writer\\(\\).")
+  "candidate is: .template<class Role, class ... Arguments, class Brand>  requires  SoleWriterMint<Role, Arguments ...> foundation::core::SoleWriter<Role, typename foundation::brand::undeducible_brand<Brand>::type> foundation::core::mint_sole_writer\\(\\).")
 foundation_neg_compile_test(neg_core_sole_writer_copied
   "use of deleted function .foundation::core::SoleWriter<Role, Brand>::SoleWriter\\(const foundation::core::SoleWriter<Role, Brand>&\\)"
   "SoleWriter: a copy gives the cell a second writer")

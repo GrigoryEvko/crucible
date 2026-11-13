@@ -14,7 +14,7 @@ struct HeadRole {};
 
 int main() {
     auto writer = ::foundation::core::mint_sole_writer<HeadRole>();
-    ::foundation::core::Atomic<std::uint64_t, decltype(writer)> head{0};
+    ::foundation::core::Atomic<std::uint64_t, decltype(writer)> head{writer, 0};
     std::uint64_t const before = head.exchange_acq_rel(1);
     ::foundation::linear::drop(std::move(writer));
     return static_cast<int>(before);

@@ -453,8 +453,20 @@ PROBES: tuple[Probe, ...] = (
     Probe("tally_add", "Tally::add is the lock add of a relaxed std::atomic counter"),
     Probe("tally_read", "Tally::read is the load of a relaxed std::atomic counter"),
     Probe("cache_line_load", "the dereference of a CacheLine gives its cell, with no instruction"),
-    Probe("sole_load_owned", "load_owned is the relaxed load of std::atomic, and the proof of the writer has no code"),
-    Probe("sole_store", "store_release of a cell of one writer is the release store of std::atomic, with no lock"),
+    Probe(
+        "sole_load_owned",
+        "load_owned is the relaxed load of std::atomic, after one compare of the run-time id of the proof with the id "
+        f"that the cell keeps, and one branch to a call of the fatal exit.  {HARDENED_BUILDS}.  On the hot path, these "
+        "flags add a second compare of the ids, with a branch to a trap",
+        checks=("fatal",),
+    ),
+    Probe(
+        "sole_store",
+        "store_release of a cell of one writer is the release store of std::atomic, with no lock, after one compare "
+        "of the run-time id of the proof with the id that the cell keeps, and one branch to a call of the fatal exit.  "
+        f"{HARDENED_BUILDS}.  On the hot path, these flags add a second compare of the ids, with a branch to a trap",
+        checks=("fatal",),
+    ),
     Probe("sole_load", "load_acquire of a cell of one writer is the acquire load of std::atomic"),
     Probe(
         "word_option_load",

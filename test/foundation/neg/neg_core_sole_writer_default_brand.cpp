@@ -1,6 +1,8 @@
 // The brand of a sole writer is the identity of one writer.  DefaultBrand
 // would give each writer of a role one type, so the writer of one cell
-// could write each other cell of the role.
+// could write each other cell of the role.  No writer of DefaultBrand
+// exists, so the probe asks the size of the cell, and that instantiates the
+// class with its static_assert.
 
 #include <foundation/Brand.h>
 #include <foundation/core/Atomic.h>
@@ -12,8 +14,8 @@ struct HeadRole {};
 }  // namespace
 
 int main() {
-    ::foundation::core::Atomic<std::uint64_t,
-                               ::foundation::core::SoleWriter<HeadRole, ::foundation::brand::DefaultBrand>>
-        head{0};
-    return static_cast<int>(head.load_acquire());
+    using DefaultCell =
+        ::foundation::core::Atomic<std::uint64_t,
+                                   ::foundation::core::SoleWriter<HeadRole, ::foundation::brand::DefaultBrand>>;
+    return static_cast<int>(sizeof(DefaultCell));
 }

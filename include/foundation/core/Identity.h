@@ -16,13 +16,11 @@
 // the assignment user-provided, so std::bit_cast builds no Identity from an
 // integer.
 //
-// The counter is one object for the process (CRUCIBLE_PROCESS_WIDE), also
-// when two shared libraries include this header.  It starts at 1.  A counter
-// of 64 bits does not wrap: at one mint in each nanosecond, it gets to 2^64
-// after 584 years.
+// The counter is detail::next_identity_ of foundation/core/Atomic.h, one
+// object for the process.  mint_sole_writer() of the same header takes its
+// ids from that counter too, so no Identity is equal to the id of a writer.
 
 #include <foundation/ByteSeal.h>
-#include <foundation/Platform.h>
 #include <foundation/core/Atomic.h>
 
 #include <cstdint>
@@ -46,13 +44,6 @@ public:
         return left.value_ == right.value_;
     }
 };
-
-namespace detail {
-
-// The value that the next mint_identity() gives.
-CRUCIBLE_PROCESS_WIDE inline constinit Atomic<std::uint64_t> next_identity_{1};
-
-}  // namespace detail
 
 // A fresh identity, which is equal to no identity that a different call gave.
 // The cost is one atomic add.

@@ -73,12 +73,17 @@
 //   operation: the writer reads with load_owned and stores with
 //   store_release, with no locked instruction.
 //
-//   SoleWriter<Role, Brand> is the proof, a linear token with no bytes.
+//   SoleWriter<Role, Brand> is the proof, a linear token of 8 bytes.
 //   mint_sole_writer<Role>() is its one door, and each call site of the
-//   door gives a fresh brand.  The identity is the call site: a mint in a
-//   loop gives one type in each turn, and a token that leaves its turn can
-//   write the cell of a different turn.  The run-time id of a brand of the
-//   linear design (misc/12_10_2026_linear.md, phase B) closes that case.
+//   door gives a fresh brand.  A brand is a call site: a mint in a loop
+//   gives one type in each turn.  So each mint also takes a run-time id
+//   (misc/12_10_2026_linear.md, phase B), and the token holds it.  The cell
+//   takes its writer at construction and keeps the id of that writer.
+//   load_owned and store_release compare the id of the proof with it, and a
+//   proof of a different id ends the process.  So a token that leaves its
+//   turn cannot read or write the cell of a different turn.  The cost is one
+//   compare and one branch to a cold call at each read and each write of the
+//   writer.
 //
 // CacheLine<T> aligns a cell to 64 bytes and pads it to a multiple of 64
 // bytes, so the type states that no other data shares its cache line.
@@ -93,6 +98,7 @@
 #include <foundation/Linear.h>
 #include <foundation/OpenExtension.h>
 #include <foundation/Pinned.h>
+#include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Report.h>
 
@@ -351,10 +357,12 @@ class SoleWriter;
 // undeducible_brand_t, so no type sets the brand by deduction.  An address of
 // the mint with a target type that names a held brand then matches no
 // specialization, and the declared type of an explicit specialization sets
-// no brand, so no specialization becomes a friend of the key.
+// no brand, so no specialization becomes a friend of the key.  Each call
+// takes the next run-time id of the process, with one atomic add, so the
+// mint runs only at run time.
 template <class Role, class... Arguments, class Brand = CRUCIBLE_FRESH_BRAND>
     requires detail::SoleWriterMint<Role, Arguments...>
-[[nodiscard]] constexpr SoleWriter<Role, ::foundation::brand::undeducible_brand_t<Brand>> mint_sole_writer() noexcept;
+[[nodiscard]] SoleWriter<Role, ::foundation::brand::undeducible_brand_t<Brand>> mint_sole_writer() noexcept;
 
 // The key of the constructor of a sole writer.  Only mint_sole_writer makes
 // one, and no explicit specialization of the mint matches its declaration.
@@ -371,15 +379,16 @@ public:
 private:
     template <class Role, class... Arguments, class Brand>
         requires detail::SoleWriterMint<Role, Arguments...>
-    friend constexpr SoleWriter<Role, ::foundation::brand::undeducible_brand_t<Brand>> mint_sole_writer() noexcept;
+    friend SoleWriter<Role, ::foundation::brand::undeducible_brand_t<Brand>> mint_sole_writer() noexcept;
 };
 
 // The proof of the one thread that writes a cell (THE CELL OF ONE WRITER).
-// The token has no bytes.  Its move constructor and its destructor are
-// trivial, so the ABI passes it in a register.  Its move assignment is
-// user-provided, so it is not trivially copyable, and std::bit_cast builds
-// no token.  The annotation no_start_over_bytes refuses the checked lifetime
-// start of foundation/Lifetime.h.
+// The token holds the run-time id of its mint, 8 bytes, and only the cells of
+// this family read it.  Its move constructor and its destructor are trivial,
+// so the ABI passes it in a register.  Its move assignment is user-provided,
+// so it is not trivially copyable, and std::bit_cast builds no token.  The
+// annotation no_start_over_bytes refuses the checked lifetime start of
+// foundation/Lifetime.h.
 template <class Role, class Brand>
 class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::authority{}]]
                    [[= ::foundation::lifetime::no_start_over_bytes{}]] SoleWriter final {
@@ -390,17 +399,28 @@ class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear:
                   "writer of the role one type, so the writer of one cell could write a different cell.  Mint the "
                   "writer with mint_sole_writer<Role>().");
 
+    // The run-time id of the mint of this token.  The cell of the writer
+    // keeps the same id.
+    std::uint64_t identity_ = 0;
+
+    template <AtomicValue T, class Writer>
+    friend class Atomic;
+
 public:
     using brand_type = Brand;
 
-    explicit constexpr SoleWriter(sole_writer_key) noexcept {}
+    // A writer of the run-time id, with the key that only the mint makes.
+    constexpr SoleWriter(sole_writer_key const& /*key*/, std::uint64_t identity) noexcept : identity_{identity} {}
 
     SoleWriter(SoleWriter const&) = delete("SoleWriter: a copy gives the cell a second writer, and load_owned then "
                                            "reads a value that a different thread stores.  Move the writer.");
     SoleWriter& operator=(SoleWriter const&) = delete("SoleWriter: a copy gives the cell a second writer.");
 
     constexpr SoleWriter(SoleWriter&&) noexcept = default;
-    constexpr SoleWriter& operator=(SoleWriter&&) noexcept { return *this; }
+    constexpr SoleWriter& operator=(SoleWriter&& other) noexcept {
+        identity_ = other.identity_;
+        return *this;
+    }
     ~SoleWriter() = default;
 
 private:
@@ -413,12 +433,6 @@ private:
     static void operator delete(void*) = delete;
     static void operator delete[](void*) = delete;
 };
-
-template <class Role, class... Arguments, class Brand>
-    requires detail::SoleWriterMint<Role, Arguments...>
-[[nodiscard]] constexpr SoleWriter<Role, ::foundation::brand::undeducible_brand_t<Brand>> mint_sole_writer() noexcept {
-    return SoleWriter<Role, Brand>{sole_writer_key{}};
-}
 
 // The writer of a cell: void for a cell that each thread can write, or a
 // SoleWriter for a cell of one writer.
@@ -518,6 +532,25 @@ public:
     }
 };
 
+namespace detail {
+
+// The counter of the run-time ids of the process (misc/12_10_2026_linear.md,
+// phase B).  mint_sole_writer() and mint_identity() of
+// foundation/core/Identity.h take its next value, so no two mints give one
+// id.  It is one object for the process (CRUCIBLE_PROCESS_WIDE), also when two
+// shared libraries include this header, and it starts at 1.  A counter of 64
+// bits does not wrap: at one mint in each nanosecond, it gets to 2^64 after
+// 584 years.
+CRUCIBLE_PROCESS_WIDE inline constinit Atomic<std::uint64_t> next_identity_{1};
+
+}  // namespace detail
+
+template <class Role, class... Arguments, class Brand>
+    requires detail::SoleWriterMint<Role, Arguments...>
+[[nodiscard]] SoleWriter<Role, ::foundation::brand::undeducible_brand_t<Brand>> mint_sole_writer() noexcept {
+    return SoleWriter<Role, Brand>{sole_writer_key{}, detail::next_identity_.fetch_add_acq_rel(1)};
+}
+
 // The cell of one writer (THE CELL OF ONE WRITER).  The parameter of the
 // brand has the name Identity, so the rule erased-brand reads no brand of the
 // primary template here.
@@ -533,15 +566,29 @@ class Atomic<T, SoleWriter<Role, Identity>> : ::foundation::Pinned<Atomic<T, Sol
     using storage_type = typename detail::atomic_storage<T>::type;
 
     alignas(sizeof(storage_type)) storage_type value_{};
+    // The run-time id of the writer that the constructor took.
+    std::uint64_t writer_identity_ = 0;
+
+    // Each read and each write of the writer shows a proof of the id of the
+    // cell.  A proof of a different id comes from a different run of the mint
+    // site of the writer, such as a different turn of a loop.
+    void expect_writer_(SoleWriter<Role, Identity> const& writer) const noexcept {
+        if (writer.identity_ != writer_identity_) [[unlikely]] {
+            fatal("Atomic<T, SoleWriter<Role, Brand>>: a writer of a different run of the mint site used the cell.  "
+                  "Each run of one mint site gives one brand, and the cell keeps the run-time id of the writer that "
+                  "built it.");
+        }
+    }
 
 public:
     using value_type = T;
 
-    constexpr Atomic() noexcept
+    explicit constexpr Atomic(SoleWriter<Role, Identity> const& writer) noexcept
         requires std::is_nothrow_default_constructible_v<T>
-        : value_{codec_type::to_storage_(T{})} {}
+        : value_{codec_type::to_storage_(T{})}, writer_identity_{writer.identity_} {}
 
-    explicit constexpr Atomic(T initial) noexcept : value_{codec_type::to_storage_(initial)} {}
+    constexpr Atomic(SoleWriter<Role, Identity> const& writer, T initial) noexcept
+        : value_{codec_type::to_storage_(initial)}, writer_identity_{writer.identity_} {}
 
     // A read on each thread, with acquire order.  It pairs with each
     // store_release of the writer.
@@ -551,11 +598,13 @@ public:
 
     // The read of the writer.  Each value of the cell is a value that the
     // holder of the proof stored, so the read needs no order.
-    [[nodiscard]] T load_owned(SoleWriter<Role, Identity> const&) const noexcept {
+    [[nodiscard]] T load_owned(SoleWriter<Role, Identity> const& writer) const noexcept {
+        expect_writer_(writer);
         return codec_type::from_storage_(__atomic_load_n(&value_, __ATOMIC_RELAXED));
     }
 
-    void store_release(SoleWriter<Role, Identity> const&, T value) noexcept {
+    void store_release(SoleWriter<Role, Identity> const& writer, T value) noexcept {
+        expect_writer_(writer);
         __atomic_store_n(&value_, codec_type::to_storage_(value), __ATOMIC_RELEASE);
     }
 };

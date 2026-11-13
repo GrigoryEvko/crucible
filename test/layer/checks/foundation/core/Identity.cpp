@@ -33,9 +33,6 @@ static_assert(!std::totally_ordered<Identity>);
 static_assert(std::is_same_v<decltype(mint_identity()), Identity>);
 static_assert(noexcept(mint_identity()));
 
-// The counter is one atomic word.
-static_assert(std::is_same_v<decltype(detail::next_identity_), Atomic<std::uint64_t>>);
-
 // Identity is a type of the Ref family (plan section 11.10).  Its only public
 // members are language protocols.
 inline constexpr TextView identity_names{"Identity mint_identity"};

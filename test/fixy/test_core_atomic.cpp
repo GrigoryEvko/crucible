@@ -335,7 +335,7 @@ void test_niche_option_cell() {
     CRUCIBLE_FATAL_INVARIANT(holds_slot(cell.load_acquire(), 0));
 
     auto writer = mint_sole_writer<HeadRole>();
-    Atomic<SlotOption, decltype(writer)> owned{};
+    Atomic<SlotOption, decltype(writer)> owned{writer};
     CRUCIBLE_FATAL_INVARIANT(owned.load_owned(writer).is_none());
     owned.store_release(writer, SlotOption::some(SlotNumber{9}));
     CRUCIBLE_FATAL_INVARIANT(holds_slot(owned.load_owned(writer), 9) && holds_slot(owned.load_acquire(), 9));
@@ -370,7 +370,7 @@ void test_word_cell() {
     CRUCIBLE_FATAL_INVARIANT(cell.load_acquire().number() == 7);
 
     auto writer = mint_sole_writer<TailRole>();
-    Atomic<Seat, decltype(writer)> owned{Seat::of(2)};
+    Atomic<Seat, decltype(writer)> owned{writer, Seat::of(2)};
     owned.store_release(writer, Seat::of(owned.load_owned(writer).number() + 1));
     CRUCIBLE_FATAL_INVARIANT(owned.load_owned(writer).number() == 3 && owned.load_acquire().number() == 3);
     ::foundation::linear::drop(std::move(writer));
@@ -388,7 +388,7 @@ void test_word_option_cell() {
     CRUCIBLE_FATAL_INVARIANT(cell.load_acquire().is_none());
 
     auto writer = mint_sole_writer<TailRole>();
-    Atomic<SeatOption, decltype(writer)> owned{};
+    Atomic<SeatOption, decltype(writer)> owned{writer};
     CRUCIBLE_FATAL_INVARIANT(owned.load_owned(writer).is_none());
     owned.store_release(writer, option_of(2));
     CRUCIBLE_FATAL_INVARIANT(number_or_zero(owned.load_owned(writer)) == 2);
@@ -774,25 +774,66 @@ void test_sole_writer_single_thread() {
     auto writer = mint_sole_writer<HeadRole>();
     static_assert(!AddressTakesBrand<decltype(writer)::brand_type>,
                   "the address of the mint with a target type of the held brand gives no second writer of it");
-    Atomic<std::uint64_t, decltype(writer)> head{std::uint64_t{3}};
+    Atomic<std::uint64_t, decltype(writer)> head{writer, std::uint64_t{3}};
     CRUCIBLE_FATAL_INVARIANT(head.load_owned(writer) == 3 && head.load_acquire() == 3);
     head.store_release(writer, head.load_owned(writer) + 4);
     CRUCIBLE_FATAL_INVARIANT(head.load_owned(writer) == 7 && head.load_acquire() == 7);
 
     // One writer can own more than one cell, also a cell of a class value.
-    Atomic<Pair, decltype(writer)> pair_cell{};
+    Atomic<Pair, decltype(writer)> pair_cell{writer};
     CRUCIBLE_FATAL_INVARIANT(same_pair(pair_cell.load_owned(writer), Pair{0, 0}));
     pair_cell.store_release(writer, Pair{5, 6});
     CRUCIBLE_FATAL_INVARIANT(same_pair(pair_cell.load_owned(writer), Pair{5, 6}));
     CRUCIBLE_FATAL_INVARIANT(same_pair(pair_cell.load_acquire(), Pair{5, 6}));
 
     auto tail_writer = mint_sole_writer<TailRole>();
-    Atomic<Phase, decltype(tail_writer)> phase{Phase::idle};
+    Atomic<Phase, decltype(tail_writer)> phase{tail_writer, Phase::idle};
     phase.store_release(tail_writer, Phase::done);
     CRUCIBLE_FATAL_INVARIANT(phase.load_owned(tail_writer) == Phase::done);
 
     ::foundation::linear::drop(std::move(tail_writer));
     ::foundation::linear::drop(std::move(writer));
+}
+
+// Two runs of one mint site.  The mint call names no template parameter, so
+// GCC resolves it one time for the template, and each instantiation of
+// run_of_mint_site mints a writer of one type, as two turns of a loop do.  A
+// plain loop cannot keep the cell of its first turn for its second turn:
+// only a return type, a static object or a container could carry the brand
+// out of the turn, and the rule brand-escape refuses each of them.  A
+// template argument carries the cell of the first run into a later run.
+// The writer of a later run has the type of the writer of the cell and a
+// different run-time id, so its read and its write end the process.
+enum class LaterRun : std::uint8_t {
+    first,
+    writes,
+    reads
+};
+
+template <LaterRun Run, class FirstCell>
+void run_of_mint_site(FirstCell& first_cell) noexcept {
+    auto writer = mint_sole_writer<HeadRole>();
+    if constexpr (Run == LaterRun::first) {
+        Atomic<std::uint64_t, decltype(writer)> cell{writer, std::uint64_t{1}};
+        CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&cell] { run_of_mint_site<LaterRun::writes>(cell); }));
+        CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&cell] { run_of_mint_site<LaterRun::reads>(cell); }));
+        CRUCIBLE_FATAL_INVARIANT(cell.load_owned(writer) == 1 && cell.load_acquire() == 1);
+        static_cast<void>(first_cell);
+    } else {
+        static_assert(std::is_same_v<FirstCell, Atomic<std::uint64_t, decltype(writer)>>,
+                      "two runs of one mint site give one writer type");
+        if constexpr (Run == LaterRun::writes) {
+            first_cell.store_release(writer, std::uint64_t{2});
+        } else {
+            static_cast<void>(first_cell.load_owned(writer));
+        }
+    }
+    ::foundation::linear::drop(std::move(writer));
+}
+
+void test_sole_writer_of_a_different_run_aborts() {
+    int no_first_cell = 0;
+    run_of_mint_site<LaterRun::first>(no_first_cell);
 }
 
 // The property: a random sequence of the writes of the writer agrees with a
@@ -801,7 +842,7 @@ void test_sole_writer_single_thread() {
 void test_sole_writer_agrees_with_plain_model() {
     ::crucible::test::PhiloxStream stream{0x5EEDA703000000C5u};
     auto writer = mint_sole_writer<HeadRole>();
-    Atomic<std::uint64_t, decltype(writer)> cell{};
+    Atomic<std::uint64_t, decltype(writer)> cell{writer};
     std::uint64_t model = 0;
     for (int step = 0; step < 20000; ++step) {
         std::uint64_t const operand = stream.next_wide();
@@ -826,7 +867,7 @@ void test_sole_writer_under_contention() {
     auto writer = mint_sole_writer<HeadRole>();
     decltype(writer) const& shared_writer = writer;
     auto const lent_writer = to(shared_writer);
-    CacheLine<Atomic<std::uint64_t, decltype(writer)>> head{std::uint64_t{0}};
+    CacheLine<Atomic<std::uint64_t, decltype(writer)>> head{writer, std::uint64_t{0}};
     CacheLine<Atomic<std::uint64_t>> next_worker{std::uint64_t{0}};
     CacheLine<Tally> wrong_owned_reads{};
     CacheLine<Tally> backward_reads{};
@@ -859,7 +900,7 @@ void test_sole_writer_release_publishes_to_acquire() {
     auto writer = mint_sole_writer<HeadRole>();
     decltype(writer) const& shared_writer = writer;
     auto const lent_writer = to(shared_writer);
-    CacheLine<Atomic<std::uint64_t, decltype(writer)>> published{std::uint64_t{0}};
+    CacheLine<Atomic<std::uint64_t, decltype(writer)>> published{writer, std::uint64_t{0}};
     std::uint64_t payload = 0;
     CacheLine<Atomic<std::uint64_t>> next_worker{std::uint64_t{0}};
     CacheLine<Tally> complete_reads{};
@@ -885,7 +926,7 @@ void test_sole_writer_moves_through_a_join() {
     auto writer = mint_sole_writer<HeadRole>();
     decltype(writer) const& shared_writer = writer;
     auto const lent_writer = to(shared_writer);
-    CacheLine<Atomic<std::uint64_t, decltype(writer)>> head{std::uint64_t{0}};
+    CacheLine<Atomic<std::uint64_t, decltype(writer)>> head{writer, std::uint64_t{0}};
     CacheLine<Atomic<std::uint64_t>> next_worker{std::uint64_t{0}};
     run_on_four_threads([&, lent_writer] {
         if (next_worker->fetch_add_acq_rel(1) != 0) return;
@@ -930,6 +971,7 @@ int main() {
     test_niche_option_claim_under_contention();
     test_word_option_publishes_to_acquire();
     test_sole_writer_single_thread();
+    test_sole_writer_of_a_different_run_aborts();
     test_sole_writer_agrees_with_plain_model();
     test_sole_writer_under_contention();
     test_sole_writer_release_publishes_to_acquire();

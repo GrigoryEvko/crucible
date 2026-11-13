@@ -127,13 +127,14 @@ int main() {
               }));
 
     // The cell of one writer.  On x86-64 a relaxed load and an acquire load
-    // are the same mov, so load_owned and load_acquire cost the same here.
-    // The measured loops borrow the writer through a Ref to a const writer,
-    // so no loop can end it.
+    // are the same mov.  load_owned and store_release also compare the
+    // run-time id of the proof with the id that the cell keeps.  The measured
+    // loops borrow the writer through a Ref to a const writer, so no loop can
+    // end it.
     auto writer = fixy::mint_sole_writer<BenchHeadRole>();
     decltype(writer) const& shared_writer = writer;
     auto const lent_writer = fixy::to(shared_writer);
-    fixy::Atomic<std::uint64_t, decltype(writer)> owned_cell{1};
+    fixy::Atomic<std::uint64_t, decltype(writer)> owned_cell{writer, 1};
 
     print_row("Atomic<SoleWriter>::load_owned", bench::run("Atomic<SoleWriter>::load_owned", [&, lent_writer] {
                   std::uint64_t const value = owned_cell.load_owned(*lent_writer);

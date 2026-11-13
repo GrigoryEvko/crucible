@@ -238,20 +238,29 @@ concept Swaps = requires(Cell& cell) { cell.cas_acq_rel(typename Cell::value_typ
     static_assert(!std::is_same_v<decltype(mint_sole_writer<HeadRole>()), HeadWriter>);
     static_assert(::foundation::brand::IsBranded<HeadWriter>);
 
-    // A writer is a linear token with no bytes: it moves in a register, it
-    // does not copy, and no default constructor, bit copy or key that a
-    // caller makes builds one.
-    static_assert(sizeof(HeadWriter) == 1 && std::is_empty_v<HeadWriter>);
+    // A writer is a linear token of one word, its run-time id: it moves in a
+    // register, it does not copy, and no default constructor, bit copy or key
+    // that a caller makes builds one.
+    static_assert(sizeof(HeadWriter) == sizeof(std::uint64_t) && !std::is_empty_v<HeadWriter>);
     static_assert(::foundation::linear::is_linear_v<HeadWriter>);
     static_assert(!std::is_copy_constructible_v<HeadWriter> && !std::is_copy_assignable_v<HeadWriter>);
     static_assert(std::is_trivially_move_constructible_v<HeadWriter> && std::is_trivially_destructible_v<HeadWriter>);
     static_assert(!std::is_trivially_copyable_v<HeadWriter> && !std::is_default_constructible_v<HeadWriter>);
 
-    // The cell of one writer has the layout of its value, and it does not
-    // move.
-    static_assert(sizeof(HeadCell) == 8 && alignof(HeadCell) == 8);
+    // The cell of one writer holds its value and the run-time id of its
+    // writer, and it does not move.  Only its writer builds it, so no cell
+    // holds an id that no writer has.
+    static_assert(sizeof(HeadCell) == 16 && alignof(HeadCell) == 8);
     static_assert(!std::is_copy_constructible_v<HeadCell> && !std::is_move_constructible_v<HeadCell>);
     static_assert(!std::is_convertible_v<HeadCell&, std::uint64_t>);
+    static_assert(std::is_constructible_v<HeadCell, HeadWriter const&>
+                  && std::is_constructible_v<HeadCell, HeadWriter const&, std::uint64_t>);
+    static_assert(!std::is_default_constructible_v<HeadCell> && !std::is_constructible_v<HeadCell, std::uint64_t>);
+    static_assert(!std::is_constructible_v<HeadCell, TailWriter const&, std::uint64_t>);
+
+    // The writers and the identities of foundation/core/Identity.h take
+    // their run-time ids from one atomic counter.
+    static_assert(std::is_same_v<decltype(detail::next_identity_), Atomic<std::uint64_t>>);
 
     // The operations of the writer take its proof, and the cell has no
     // read-modify-write operation.
@@ -265,13 +274,6 @@ concept Swaps = requires(Cell& cell) { cell.cas_acq_rel(typename Cell::value_typ
     CRUCIBLE_CLOSED_SURFACE(atomic_names, HeadCell);
     CRUCIBLE_CLOSED_SURFACE(atomic_names, TailPairCell);
     CRUCIBLE_CLOSED_SURFACE(atomic_names, HeadWriter);
-
-    // A cell of one writer builds in a constant evaluation, so a constinit
-    // cell needs no dynamic initialization.
-    HeadCell const zero_cell{};
-    HeadCell const seven_cell{std::uint64_t{7}};
-    static_cast<void>(zero_cell);
-    static_cast<void>(seven_cell);
     return true;
 }
 static_assert(sole_writer_checks());

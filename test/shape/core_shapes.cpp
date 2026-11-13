@@ -150,9 +150,10 @@ struct NetError8 final {
     return line->load_acquire();
 }
 
-// The cell of one writer.  The proof is a token with no bytes, so its
-// reference is one more register argument that no instruction reads.  A
-// fresh brand stays in the scope that made it, so no alias names the writer.
+// The cell of one writer.  The proof is a token of one word, its run-time id,
+// and the read and the write of the writer compare it with the id that the
+// cell keeps.  A fresh brand stays in the scope that made it, so no alias
+// names the writer.
 // Each probe names its cell in its first parameter, and the second parameter
 // takes the writer of that cell.
 struct ShapeHeadRole final {};
