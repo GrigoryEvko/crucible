@@ -40,6 +40,7 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
 #include <fixy/Core.h>
+#include <fixy/FixedArray.h>
 #include <fixy/os/OwnedFile.h>
 #include <fixy/Refined.h>
 
@@ -73,7 +74,7 @@ struct TraceOpRecord {
     ShapeHash shape_hash;
     ScopeHash scope_hash;
     CallsiteHash callsite_hash;
-    int64_t scalar_values[5]{};
+    ::fixy::FixedArray<int64_t, 5> scalar_values{};
     uint16_t num_inputs = 0;
     uint16_t num_outputs = 0;
     uint16_t num_scalars = 0;
