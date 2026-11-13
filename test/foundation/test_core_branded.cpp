@@ -1,7 +1,7 @@
-// Tests of the branded scope of the Region family: index, at, indices and
-// enumerate of the BrandedView that mint_branded_scope gives its body.  The
-// property compares the scope with the reads of the same run through a
-// proven Index of the array.
+// Tests of the branded scope of the Region family: index, at, indices,
+// enumerate and parallel of the BrandedView that mint_branded_scope gives its
+// body.  The property compares the scope with the reads of the same run
+// through a proven Index of the array.
 
 #include <foundation/core/Branded.h>
 
@@ -57,6 +57,36 @@ void test_scope_of_an_empty_view() {
     assert(turns == 0);
 }
 
+// A parallel array of the same count takes the brand of the scope, so one
+// index reads each array.  A parallel array of a different count gives no
+// value, and two empty arrays have the same count.
+void test_parallel_view_shares_the_index() {
+    FixedArray<int, 4> keys{1, 2, 3, 4};
+    FixedArray<std::uint64_t, 4> values{10, 20, 30, 40};
+    FixedArray<std::uint64_t, 3> short_values{7, 8, 9};
+    std::uint64_t const total = mint_branded_scope(keys.view(), [&values, &short_values](auto view) noexcept {
+        if (view.parallel(short_values.view()).is_some()) {
+            return std::uint64_t{0};
+        }
+        auto const column = view.parallel(values.view()).expect("the two arrays have the same count");
+        std::uint64_t sum = 0;
+        for (auto const index : view.indices()) {
+            sum += static_cast<std::uint64_t>(view.at(index)) * column.at(index);
+            column.at(index) += 1;
+        }
+        return sum;
+    });
+    assert(total == 1 * 10 + 2 * 20 + 3 * 30 + 4 * 40);
+    assert(values == (FixedArray<std::uint64_t, 4>{11, 21, 31, 41}));
+
+    View<int const> const empty{};
+    bool const is_parallel = mint_branded_scope(empty, [](auto view) noexcept {
+        View<std::uint64_t const> const other_empty{};
+        return view.parallel(other_empty).is_some();
+    });
+    assert(is_parallel);
+}
+
 // The property: for random runs and random windows, each index of the scope
 // reads the element of the model at the same position.
 void test_scope_agrees_with_the_index_model() {
@@ -108,6 +138,7 @@ void test_cursors_at_the_end_abort() {
 int main() {
     test_scope_reads_each_element();
     test_scope_of_an_empty_view();
+    test_parallel_view_shares_the_index();
     test_scope_agrees_with_the_index_model();
     test_cursors_at_the_end_abort();
     crucible::test::pass("test_core_branded: all tests passed\n");

@@ -714,18 +714,17 @@ public:
     struct BgBuildWork {
         bool commit_only = false;
         uint32_t commit_count = 0;
-        uint32_t completed_len = 0;
         // The point of the last reset before the cut of this work.
         // Meaningless on a commit-only marker, which is never dropped.
         StreamPoint reset_point{};
         // On a commit-only marker, the oldest record that a later work can
         // hold (meta_floor_() when the detect stage made the marker).
         uint64_t meta_floor = 0;
-        // The ops of the iteration, completed_len of each, and each value
-        // initialized before the copy.  completed_len is at most
-        // IterationDetector::MAX_PERIOD, so the four buffers take at most
-        // 88 bytes for each op, 22 MiB together.  A commit-only marker holds
-        // none.
+        // The ops of the iteration, one element of each buffer for each op,
+        // and each value initialized before the copy.  An iteration has at
+        // most IterationDetector::MAX_PERIOD ops, so the four buffers take at
+        // most 88 bytes for each op, 22 MiB together.  A commit-only marker
+        // holds none.
         ::foundation::AlignedBuffer<TraceRing::Entry> trace;
         ::foundation::AlignedBuffer<MetaIndex> meta_starts;
         ::foundation::AlignedBuffer<ScopeHash> scope_hashes;
@@ -1068,20 +1067,33 @@ public:
     // build.
     using TraceBuild = ::fixy::Result<BuiltTrace, MetaLogOverflow>;
 
-    // Turns count ring entries and their tensor metadata into a CSR property
-    // graph in scratch, and the parts of its region.  The caller owns the
-    // arrays: count entries of trace_data, with meta_data, scope_data and
-    // callsite_data in parallel.  meta_data holds MetaIndex::none() for an op
-    // with no tensor arguments.  The build stage calls it on each work item.
-    // It reads the metadata log and never writes its tail.  The graph and
-    // its CSR arrays go into scratch.  The ops, their tensor metadata, their
-    // side arrays and their slots go into the parts of the region, which own
-    // their memory.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild
-    build_trace_from(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, uint32_t count,
-                     const TraceRing::Entry* trace_data, const MetaIndex* meta_data, const ScopeHash* scope_data,
-                     const CallsiteHash* callsite_data) CRUCIBLE_NO_THREAD_SAFETY;
+    // Turns the ring entries of trace and their tensor metadata into a CSR
+    // property graph in scratch, and the parts of its region.  The caller
+    // owns the four arrays, which hold one element for each op:
+    // meta_starts, scope_hashes and callsite_hashes are parallel to trace.
+    // meta_starts holds MetaIndex::none() for an op with no tensor
+    // arguments.  The build stage calls it on each work item.  It reads the
+    // metadata log and never writes its tail.  The graph and its CSR arrays
+    // go into scratch.  The ops, their tensor metadata, their side arrays
+    // and their slots go into the parts of the region, which own their
+    // memory.
+    [[nodiscard]] TraceBuild
+    build_trace_from(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch,
+                     ::fixy::View<const TraceRing::Entry> trace, ::fixy::View<const MetaIndex> meta_starts,
+                     ::fixy::View<const ScopeHash> scope_hashes, ::fixy::View<const CallsiteHash> callsite_hashes)
+        CRUCIBLE_NO_THREAD_SAFETY;
 
+private:
+    // The body of build_trace_from.  Each column is a fixy::BrandedView of
+    // one branded scope over the ops, so one index of an op reads each
+    // column with no check.  Only src/BackgroundThread.cpp instantiates it.
+    template <class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn>
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild
+    build_trace_columns_(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, TraceColumn trace_data,
+                         MetaColumn meta_data, ScopeColumn scope_data, CallsiteColumn callsite_data)
+        CRUCIBLE_NO_THREAD_SAFETY;
+
+public:
     // Orders birth and death events with an O(n + k) counting sort, then
     // assigns offsets with a sweep line.  The alignment is what the GPU
     // needs for coalesced access.  The birth_op of each internal slot is at

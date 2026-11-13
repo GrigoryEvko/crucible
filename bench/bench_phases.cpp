@@ -84,11 +84,10 @@ void print_phase_table(PhaseTiming* phases, uint32_t n, double total_ns, uint64_
 
 // build_trace gives an op with no metadata no arrays and zero tensor counts.
 // The copy of its loop in the P2a phase does the same.
-void check_ops_without_metas(::fixy::View<const TraceEntry> ops, const MetaIndex* meta_data) {
-    uint32_t i = 0;
-    for (const TraceEntry& op_record : ops) {
-        const bool has_metas = meta_data[i++].is_valid();
-        if (has_metas) continue;
+void check_ops_without_metas(::fixy::View<const TraceEntry> ops, ::fixy::View<const MetaIndex> meta_data) {
+    for (const auto [op, meta_start] : ::fixy::zip(ops, meta_data).expect("each op has a metadata start")) {
+        if (meta_start->is_valid()) continue;
+        const TraceEntry& op_record = *op;
         CRUCIBLE_BENCH_CHECK(op_record.input_metas().size() == 0 && op_record.output_metas().size() == 0);
         CRUCIBLE_BENCH_CHECK(op_record.scalar_args().size() == 0 && op_record.input_trace_indices().size() == 0);
         CRUCIBLE_BENCH_CHECK(op_record.input_slot_ids().size() == 0 && op_record.output_slot_ids().size() == 0);
@@ -100,8 +99,8 @@ void check_ops_without_metas(::fixy::View<const TraceEntry> ops, const MetaIndex
 // the arrays of the trace and does not write them.
 BackgroundThread::TraceBuild build_recorded(BackgroundThread& bg, ::fixy::BumpArena& scratch,
                                             const LoadedTrace& trace) {
-    return bg.build_trace_from(A, scratch, trace.num_ops, trace.entries.data(), trace.meta_starts.data(),
-                               trace.scope_hashes.data(), trace.callsite_hashes.data());
+    return bg.build_trace_from(A, scratch, trace.entries.view(), trace.meta_starts.view(), trace.scope_hashes.view(),
+                               trace.callsite_hashes.view());
 }
 
 // ── Top-level Report via bench::run ──────────────────────────────────
@@ -256,9 +255,9 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     ::fixy::BumpArena build_scratch{arena_bytes};
 
     uint32_t trace_total_inputs = 0, trace_total_outputs = 0;
-    for (uint32_t i = 0; i < count; i++) {
-        trace_total_inputs += trace.entries[i].num_inputs;
-        trace_total_outputs += trace.entries[i].num_outputs;
+    for (const TraceRing::Entry& entry : trace.entries) {
+        trace_total_inputs += entry.num_inputs;
+        trace_total_outputs += entry.num_outputs;
     }
     (void)trace_total_inputs;
     (void)trace_total_outputs;
@@ -273,28 +272,36 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     // ── P0: Pre-scan ──────────────────────────────────────────────
     double ns_p0 = 0;
     for (uint32_t iter = 0; iter < iters; iter++) {
-        const TraceRing::Entry* trace_data = trace.entries.data();
-        const MetaIndex* meta_data = trace.meta_starts.data();
-
         const uint64_t t0 = bench::rdtsc_start();
 
         uint64_t max_meta_end = 0;
         MetaIndex first_meta = MetaIndex::none();
         uint32_t total_inputs = 0, total_outputs = 0, total_scalars = 0;
-        for (uint32_t i = 0; i < count; i++) {
-            const MetaIndex ms = meta_data[i];
-            const auto& re = trace_data[i];
-            if (ms.is_valid()) {
-                if (!first_meta.is_valid()) first_meta = ms;
-                const uint64_t end = ms.raw() + re.num_inputs + re.num_outputs;
-                if (end > max_meta_end) max_meta_end = end;
+        // The reads of the scan of build_trace_from: one branded index of an
+        // op reads each array.
+        const uint32_t scanned = ::fixy::mint_branded_scope(trace.entries.view(), [&](auto trace_data) noexcept {
+            const auto meta_data =
+                trace_data.parallel(trace.meta_starts.view()).expect("the arrays of a trace are parallel");
+            uint32_t ops = 0;
+            for (const auto index : trace_data.indices()) {
+                const MetaIndex ms = meta_data.at(index);
+                const TraceRing::Entry& re = trace_data.at(index);
+                if (ms.is_valid()) {
+                    if (!first_meta.is_valid()) first_meta = ms;
+                    const uint64_t end = ms.raw() + re.num_inputs + re.num_outputs;
+                    if (end > max_meta_end) max_meta_end = end;
+                }
+                total_inputs += re.num_inputs;
+                total_outputs += re.num_outputs;
+                total_scalars += std::min(re.num_scalar_args, uint16_t(5));
+                ++ops;
             }
-            total_inputs += re.num_inputs;
-            total_outputs += re.num_outputs;
-            total_scalars += std::min(re.num_scalar_args, uint16_t(5));
-        }
+            return ops;
+        });
 
         const uint64_t t1 = bench::rdtsc_end();
+
+        bench::do_not_optimize(scanned);
 
         bench::do_not_optimize(max_meta_end);
         bench::do_not_optimize(total_inputs);
@@ -307,10 +314,10 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     double ns_p1 = 0;
     for (uint32_t iter = 0; iter < iters; iter++) {
         uint32_t total_inputs = 0, total_outputs = 0, total_scalars = 0;
-        for (uint32_t i = 0; i < count; i++) {
-            total_inputs += trace.entries[i].num_inputs;
-            total_outputs += trace.entries[i].num_outputs;
-            total_scalars += std::min(trace.entries[i].num_scalar_args, uint16_t(5));
+        for (const TraceRing::Entry& entry : trace.entries) {
+            total_inputs += entry.num_inputs;
+            total_outputs += entry.num_outputs;
+            total_scalars += std::min(entry.num_scalar_args, uint16_t(5));
         }
 
         const uint64_t t0 = bench::rdtsc_start();
@@ -343,11 +350,12 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bench::refill_meta_log(meta_log, trace);
         uint64_t max_meta_end = 0;
         MetaIndex first_meta = MetaIndex::none();
-        for (uint32_t i = 0; i < count; i++) {
-            const MetaIndex ms = trace.meta_starts[i];
+        for (const auto [entry, meta_start] :
+             ::fixy::zip(trace.entries.view(), trace.meta_starts.view()).expect("the arrays of a trace are parallel")) {
+            const MetaIndex ms = *meta_start;
             if (ms.is_valid()) {
                 if (!first_meta.is_valid()) first_meta = ms;
-                const uint64_t end = ms.raw() + trace.entries[i].num_inputs + trace.entries[i].num_outputs;
+                const uint64_t end = ms.raw() + entry->num_inputs + entry->num_outputs;
                 if (end > max_meta_end) max_meta_end = end;
             }
         }
@@ -370,17 +378,13 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     for (uint32_t iter = 0; iter < iters; iter++) {
         bench::refill_meta_log(meta_log, trace);
 
-        const TraceRing::Entry* trace_data = trace.entries.data();
-        const MetaIndex* meta_data = trace.meta_starts.data();
-        const ScopeHash* scope_data = trace.scope_hashes.data();
-        const CallsiteHash* callsite_data = trace.callsite_hashes.data();
-
         uint64_t max_meta_end = 0;
         MetaIndex first_meta = MetaIndex::none();
         uint32_t total_inputs = 0, total_outputs = 0, total_scalars = 0;
-        for (uint32_t i = 0; i < count; i++) {
-            const MetaIndex ms = meta_data[i];
-            const auto& re = trace_data[i];
+        for (const auto [entry, meta_start] :
+             ::fixy::zip(trace.entries.view(), trace.meta_starts.view()).expect("the arrays of a trace are parallel")) {
+            const MetaIndex ms = *meta_start;
+            const TraceRing::Entry& re = *entry;
             if (ms.is_valid()) {
                 if (!first_meta.is_valid()) first_meta = ms;
                 const uint64_t end = ms.raw() + re.num_inputs + re.num_outputs;
@@ -411,58 +415,73 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         const uint64_t t0 = bench::rdtsc_start();
 
-        uint32_t i = 0;
-        for (TraceEntry& te : ops) {
-            const auto& re = trace_data[i];
-            const MetaIndex ms = meta_data[i];
+        // The reads of the loop of build_trace_from: one branded index of an
+        // op reads each of the four arrays and the op buffer.
+        const uint32_t copied = ::fixy::mint_branded_scope(trace.entries.view(), [&](auto trace_data) noexcept {
+            const auto meta_data =
+                trace_data.parallel(trace.meta_starts.view()).expect("the arrays of a trace are parallel");
+            const auto scope_data =
+                trace_data.parallel(trace.scope_hashes.view()).expect("the arrays of a trace are parallel");
+            const auto callsite_data =
+                trace_data.parallel(trace.callsite_hashes.view()).expect("the arrays of a trace are parallel");
+            const auto op_data = trace_data.parallel(ops).expect("the op buffer holds one op for each entry");
+            uint32_t copied_ops = 0;
+            for (const auto index : trace_data.indices()) {
+                const TraceRing::Entry& re = trace_data.at(index);
+                const MetaIndex ms = meta_data.at(index);
+                TraceEntry& te = op_data.at(index);
+                ++copied_ops;
 
-            te.schema_hash = re.schema_hash;
-            te.shape_hash = re.shape_hash;
-            te.scope_hash = scope_data[i];
-            te.callsite_hash = callsite_data[i];
-            ++i;
-            te.set_num_inputs(re.num_inputs);
-            te.set_num_outputs(re.num_outputs);
-            te.grad_enabled = (re.op_flags & op_flag::GRAD_ENABLED) != 0;
+                te.schema_hash = re.schema_hash;
+                te.shape_hash = re.shape_hash;
+                te.scope_hash = scope_data.at(index);
+                te.callsite_hash = callsite_data.at(index);
+                te.set_num_inputs(re.num_inputs);
+                te.set_num_outputs(re.num_outputs);
+                te.grad_enabled = (re.op_flags & op_flag::GRAD_ENABLED) != 0;
 
-            const uint8_t flags = re.op_flags;
-            te.inference_mode = (flags & op_flag::INFERENCE_MODE) != 0;
-            te.is_mutable = (flags & op_flag::IS_MUTABLE) != 0;
-            te.training_phase = static_cast<TrainingPhase>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
-            te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
-            te.kernel_id = CKernelId::OPAQUE;
-            const uint16_t n_scalars = std::min(re.num_scalar_args, uint16_t(5));
-            te.set_num_scalar_args(n_scalars);
+                const uint8_t flags = re.op_flags;
+                te.inference_mode = (flags & op_flag::INFERENCE_MODE) != 0;
+                te.is_mutable = (flags & op_flag::IS_MUTABLE) != 0;
+                te.training_phase = static_cast<TrainingPhase>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
+                te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
+                te.kernel_id = CKernelId::OPAQUE;
+                const uint16_t n_scalars = std::min(re.num_scalar_args, uint16_t(5));
+                te.set_num_scalar_args(n_scalars);
 
-            if (!ms.is_valid()) {
-                te.set_num_inputs(0);
-                te.set_num_outputs(0);
-                continue;
+                if (!ms.is_valid()) {
+                    te.set_num_inputs(0);
+                    te.set_num_outputs(0);
+                    continue;
+                }
+                const uint16_t n_in = re.num_inputs;
+                const uint16_t n_out = re.num_outputs;
+                const uint64_t meta_offset = ms.raw() - first_meta.raw();
+                te.set_input_metas(meta_run.window(meta_offset, n_in).expect("the copied run holds each op"));
+                te.set_output_metas(meta_run.window(meta_offset + n_in, n_out).expect("the copied run holds each op"));
+                const ::fixy::View<int64_t> scalars =
+                    scalar_run.window(scalar_cursor, n_scalars).expect("the scan counted the scalars");
+                scalar_cursor += n_scalars;
+                ::fixy::copy(scalars,
+                             re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
+                    .expect("the two runs hold the scalars of the op");
+                te.set_scalar_args(scalars);
+                te.set_input_trace_indices(
+                    producer_run.window(producer_cursor, n_in).expect("the scan counted the inputs"));
+                producer_cursor += n_in;
+                te.set_input_slot_ids(slot_run.window(slot_cursor, n_in).expect("the scan counted the inputs"));
+                slot_cursor += n_in;
+                te.set_output_slot_ids(slot_run.window(slot_cursor, n_out).expect("the scan counted the outputs"));
+                slot_cursor += n_out;
             }
-            const uint16_t n_in = re.num_inputs;
-            const uint16_t n_out = re.num_outputs;
-            const uint64_t meta_offset = ms.raw() - first_meta.raw();
-            te.set_input_metas(meta_run.window(meta_offset, n_in).expect("the copied run holds each op"));
-            te.set_output_metas(meta_run.window(meta_offset + n_in, n_out).expect("the copied run holds each op"));
-            const ::fixy::View<int64_t> scalars =
-                scalar_run.window(scalar_cursor, n_scalars).expect("the scan counted the scalars");
-            scalar_cursor += n_scalars;
-            ::fixy::copy(scalars, re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
-                .expect("the two runs hold the scalars of the op");
-            te.set_scalar_args(scalars);
-            te.set_input_trace_indices(
-                producer_run.window(producer_cursor, n_in).expect("the scan counted the inputs"));
-            producer_cursor += n_in;
-            te.set_input_slot_ids(slot_run.window(slot_cursor, n_in).expect("the scan counted the inputs"));
-            slot_cursor += n_in;
-            te.set_output_slot_ids(slot_run.window(slot_cursor, n_out).expect("the scan counted the outputs"));
-            slot_cursor += n_out;
-        }
+            return copied_ops;
+        });
 
         const uint64_t t1 = bench::rdtsc_end();
         bench::do_not_optimize(op_buffer.data());
+        bench::do_not_optimize(copied);
         ns_p2a += static_cast<double>(t1 - t0) * nspc;
-        check_ops_without_metas(op_buffer.view(), meta_data);
+        check_ops_without_metas(op_buffer.view(), trace.meta_starts.view());
     }
 
     // ── P2b: Content hash only ────────────────────────────────────

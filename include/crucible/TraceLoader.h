@@ -29,7 +29,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
-#include <vector>
 
 #include <crucible/MerkleDag.h>
 #include <crucible/SchemaTable.h>
@@ -85,14 +84,14 @@ struct TraceOpRecord {
 
 struct LoadedTrace {
     // Parallel arrays, indexed by the same operation position.
-    std::vector<TraceRing::Entry> entries;
-    std::vector<MetaIndex> meta_starts;
-    std::vector<ScopeHash> scope_hashes;
-    std::vector<CallsiteHash> callsite_hashes;
+    ::fixy::HeapArray<TraceRing::Entry> entries;
+    ::fixy::HeapArray<MetaIndex> meta_starts;
+    ::fixy::HeapArray<ScopeHash> scope_hashes;
+    ::fixy::HeapArray<CallsiteHash> callsite_hashes;
 
     // Every operation's metadata concatenated. The array above holds each
     // operation's offset into this one.
-    std::vector<TensorMeta> metas;
+    ::fixy::HeapArray<TensorMeta> metas;
 
     uint32_t num_ops = 0;
     uint32_t num_metas = 0;
@@ -135,7 +134,7 @@ inline constexpr uint64_t TRACE_HEADER_BYTES = 16;
 inline constexpr uint32_t TRACE_FORMAT_VERSION = 2;
 
 // The length of each metadata record.  A count whose records would not fit
-// in the bytes that remain is refused before any vector is sized from it.
+// in the bytes that remain is refused before any array is sized from it.
 inline constexpr uint64_t TRACE_META_BYTES = sizeof(TensorMeta);
 
 // The magic at the start of each trace file.
@@ -143,10 +142,12 @@ inline constexpr ::foundation::core::FixedArray<std::byte, 4> TRACE_MAGIC{std::b
                                                                           std::byte{'T'}, std::byte{'R'}};
 
 // The gate of a load.  The load opens a file and reads it, and each of the
-// two can wait on the file system, so the context owns IO and Block.
+// two can wait on the file system, so the context owns IO and Block.  The
+// load puts the arrays of the trace on the heap, so the context owns Alloc.
 template <class Ctx>
 concept CtxFitsTraceLoad = ::foundation::effects::IsExecCtx<Ctx>
-                        && ::fixy::fs::CtxFitsFileMint<Ctx, ::fixy::fs::read_only> && ::fixy::fs::CtxAdmitsFs<Ctx>;
+                        && ::fixy::fs::CtxFitsFileMint<Ctx, ::fixy::fs::read_only> && ::fixy::fs::CtxAdmitsFs<Ctx>
+                        && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Alloc>;
 
 namespace detail {
 
@@ -248,7 +249,7 @@ read_records_(Ctx const& io, ::fixy::fs::OwnedFd const& file, uint32_t count, On
 [[nodiscard]] inline ::fixy::Result<::fixy::Unit, TraceLoadError>
 decode_trace_op_(::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record, uint32_t i, LoadedTrace& trace,
                  uint32_t& meta_cursor) noexcept {
-    auto& entry = trace.entries[i];
+    TraceRing::Entry& entry = *trace.entries.get(i).expect("an op index is below the op count");
     entry.schema_hash = SchemaHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, schema_hash)>(op_record)};
     entry.shape_hash = ShapeHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, shape_hash)>(op_record)};
     const auto num_inputs = read_record_field_<uint16_t, offsetof(TraceOpRecord, num_inputs)>(op_record);
@@ -294,14 +295,15 @@ decode_trace_op_(::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record,
                            i, total_tensors, meta_cursor, trace.num_metas);
             return ::fixy::err(TraceLoadError::MetaRunPastCount);
         }
-        trace.meta_starts[i] = MetaIndex{meta_cursor};
+        *trace.meta_starts.get(i).expect("an op index is below the op count") = MetaIndex{meta_cursor};
         meta_cursor += total_tensors;
     } else {
-        trace.meta_starts[i] = MetaIndex::none();
+        *trace.meta_starts.get(i).expect("an op index is below the op count") = MetaIndex::none();
     }
 
-    trace.scope_hashes[i] = ScopeHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, scope_hash)>(op_record)};
-    trace.callsite_hashes[i] =
+    *trace.scope_hashes.get(i).expect("an op index is below the op count") =
+        ScopeHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, scope_hash)>(op_record)};
+    *trace.callsite_hashes.get(i).expect("an op index is below the op count") =
         CallsiteHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, callsite_hash)>(op_record)};
     return ::fixy::Unit{};
 }
@@ -430,7 +432,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> path,
     const uint32_t num_metas = ::fixy::mint_refined<kTraceNumMetasBound>(raw_num_metas).value();
 
     // A count is refused when its records cannot fit in the bytes that
-    // remain.  The check comes before any vector is sized from a count, so a
+    // remain.  The check comes before any array is sized from a count, so a
     // small file that claims millions of records allocates nothing.  The
     // size check above keeps the subtraction from a wrap.
     const uint64_t after_header = file_bytes - TRACE_HEADER_BYTES;
@@ -446,11 +448,11 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> path,
     LoadedTrace trace{};
     trace.num_ops = num_ops;
     trace.num_metas = num_metas;
-    trace.entries.resize(num_ops);
-    trace.meta_starts.resize(num_ops);
-    trace.scope_hashes.resize(num_ops);
-    trace.callsite_hashes.resize(num_ops);
-    trace.metas.resize(num_metas);
+    trace.entries = ::fixy::mint_heap_array(io.cap().alloc, num_ops, TraceRing::Entry{});
+    trace.meta_starts = ::fixy::mint_heap_array(io.cap().alloc, num_ops, MetaIndex{});
+    trace.scope_hashes = ::fixy::mint_heap_array(io.cap().alloc, num_ops, ScopeHash{});
+    trace.callsite_hashes = ::fixy::mint_heap_array(io.cap().alloc, num_ops, CallsiteHash{});
+    trace.metas = ::fixy::mint_heap_array(io.cap().alloc, num_metas, TensorMeta{});
 
     using Step = ::fixy::Result<::fixy::Unit, TraceLoadError>;
     uint32_t meta_cursor = 0;
@@ -469,7 +471,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> path,
                         [&trace](uint32_t i, ::fixy::View<std::byte const, TRACE_META_BYTES> raw) noexcept -> Step {
                             return decode_trace_meta(raw).match(
                                 [&trace, i](TensorMeta meta) noexcept -> Step {
-                                    trace.metas[i] = meta;
+                                    *trace.metas.get(i).expect("a metadata index is below the metadata count") = meta;
                                     return ::fixy::Unit{};
                                 },
                                 [i]() noexcept -> Step {

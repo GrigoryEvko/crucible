@@ -21,6 +21,10 @@
 //   at(index)           the element at a BrandedIndex<Brand>, with no check
 //   enumerate()         each element with its BrandedIndex: a Record of the
 //                       index and a Ref with the brand of the scope
+//   parallel(other)     Option<BrandedView<U, Brand>>: the View other with the
+//                       brand of the scope when its count is the same, one
+//                       compare.  Each index of the scope then reads each
+//                       parallel array with no check
 //
 // The result of the body must not hold the brand: a BrandedIndex or a Ref of
 // the scope outside it would prove nothing about a later scope.  The mint
@@ -165,8 +169,11 @@ namespace detail {
 
 // The position of a loop over the indexes of a branded view: the next index
 // and the count.  A read or a step at the end ends the process in each
-// build, and the optimizer removes the two checks in a loop that compares
-// the cursor with the end first.
+// build.  The position starts at or before the count, and a step at the count
+// ends the process, so the position never passes the count.  Thus each check
+// is the compare at_ == end_, the same compare as the test of the loop, and
+// the optimizer removes the two checks in a loop that compares the cursor
+// with the end first.
 template <::foundation::brand::IsBrand Brand>
 class BrandedIndexCursor {
     std::size_t at_ = 0;
@@ -179,14 +186,14 @@ class BrandedIndexCursor {
 
 public:
     [[nodiscard]] constexpr BrandedIndex<Brand> operator*() const noexcept {
-        if (at_ >= end_) [[unlikely]] {
+        if (at_ == end_) [[unlikely]] {
             fatal("a read through the end cursor of a loop over the indexes of a branded view");
         }
         return BrandedIndexRange<Brand>::index_at_(at_);
     }
 
     constexpr BrandedIndexCursor& operator++() noexcept {
-        if (at_ >= end_) [[unlikely]] {
+        if (at_ == end_) [[unlikely]] {
             fatal("a step past the end cursor of a loop over the indexes of a branded view");
         }
         ++at_;
@@ -227,7 +234,9 @@ public:
 
 // The position of a loop over the elements of a branded view with their
 // indexes.  The position is a full word, so it is also the offset of the
-// element, and the index of each step comes from it after its compare.
+// element, and the index of each step comes from it after its compare.  As
+// for BrandedIndexCursor, the position never passes the count, so each check
+// is the compare at_ == end_.
 template <class Element, ::foundation::brand::IsBrand Brand>
 class BrandedEnumerateCursor {
     Element* first_ = nullptr;
@@ -242,14 +251,14 @@ class BrandedEnumerateCursor {
 
 public:
     [[nodiscard]] constexpr Record<BrandedIndex<Brand>, Ref<Element, Brand>> operator*() const noexcept {
-        if (at_ >= end_) [[unlikely]] {
+        if (at_ == end_) [[unlikely]] {
             fatal("a read through the end cursor of an enumerate loop over a branded view");
         }
         return {BrandedIndex<Brand>{static_cast<std::uint32_t>(at_)}, RefDoor::lend<Brand>(first_[at_])};
     }
 
     constexpr BrandedEnumerateCursor& operator++() noexcept {
-        if (at_ >= end_) [[unlikely]] {
+        if (at_ == end_) [[unlikely]] {
             fatal("a step past the end cursor of an enumerate loop over a branded view");
         }
         ++at_;
@@ -334,6 +343,20 @@ public:
     // with its index, and a Ref with the brand of the scope.
     [[nodiscard]] constexpr detail::BrandedEnumerateRange<T, Brand> enumerate() const noexcept {
         return detail::BrandedEnumerateRange<T, Brand>{first_, size()};
+    }
+
+    // The BrandedView of other with the brand of this scope, or no value when
+    // other has a different count: one compare.  The two counts are equal and
+    // never change, so each index of the scope is below the count of the
+    // result too, and at() of the result has no check.  The parallel arrays
+    // of one run, such as the columns of a table, then share one index.
+    template <class U, std::size_t Extent>
+    [[nodiscard]] constexpr Option<BrandedView<U, Brand>> parallel(View<U, Extent> other) const noexcept {
+        if (other.size() != size()) {
+            return Option<BrandedView<U, Brand>>{none};
+        }
+        U* const first = count_ == 0 ? nullptr : first_of_(detail::ViewDoor::key(), other);
+        return Option<BrandedView<U, Brand>>::some(detail::BrandedScopeDoor::open<Brand>(first, count_));
     }
 };
 

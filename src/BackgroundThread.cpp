@@ -20,7 +20,6 @@
 #include <foundation/ChannelBinding.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Saturate.h>
-#include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/permissions/Permission.h>
@@ -421,7 +420,6 @@ BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work() 
     BgBuildWork* work = nullptr;
     if (meta_log && completed_len > 0) {
         work = new BgBuildWork{};
-        work->completed_len = completed_len;
         work->reset_point = applied_reset_.peek_relaxed();
         work->trace = ::foundation::AlignedBuffer<TraceRing::Entry>::allocate_value_initialized(completed_len);
         work->meta_starts = ::foundation::AlignedBuffer<MetaIndex>::allocate_value_initialized(completed_len);
@@ -717,9 +715,9 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
         // and its CSR arrays die at its end.  The region does not point
         // into the scratch, so its parts go on alone.
         TraceBuild built = owner.build_scratch_.with_epoch([&]() noexcept {
-            return owner.build_trace_from(ctx.cap().alloc, owner.build_scratch_, work->completed_len,
-                                          work->trace.data(), work->meta_starts.data(), work->scope_hashes.data(),
-                                          work->callsite_hashes.data());
+            return owner.build_trace_from(ctx.cap().alloc, owner.build_scratch_, work->trace.view(),
+                                          work->meta_starts.view(), work->scope_hashes.view(),
+                                          work->callsite_hashes.view());
         });
 
         // A work that met the overflow sends no region.  The floor of a later
@@ -936,29 +934,50 @@ void BackgroundThread::ensure_scratch_buffers(uint32_t total_inputs, uint32_t to
 }
 
 BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::effects::Alloc a,
-                                                                ::fixy::BumpArena& scratch, uint32_t count,
-                                                                const TraceRing::Entry* trace_data,
-                                                                const MetaIndex* meta_data, const ScopeHash* scope_data,
-                                                                const CallsiteHash* callsite_data) {
-    CRUCIBLE_PRE(::foundation::decide::valid_span(count, trace_data));
-    CRUCIBLE_PRE(::foundation::decide::valid_span(count, meta_data));
-    CRUCIBLE_PRE(::foundation::decide::valid_span(count, scope_data));
-    CRUCIBLE_PRE(::foundation::decide::valid_span(count, callsite_data));
+                                                                ::fixy::BumpArena& scratch,
+                                                                ::fixy::View<const TraceRing::Entry> trace,
+                                                                ::fixy::View<const MetaIndex> meta_starts,
+                                                                ::fixy::View<const ScopeHash> scope_hashes,
+                                                                ::fixy::View<const CallsiteHash> callsite_hashes) {
+    CRUCIBLE_PRE(meta_starts.size() == trace.size());
+    CRUCIBLE_PRE(scope_hashes.size() == trace.size());
+    CRUCIBLE_PRE(callsite_hashes.size() == trace.size());
+
+    // The four arrays take the brand of one scope over the ops.  The scope
+    // ends the process for more than 0xFFFFFFFF ops.
+    return ::fixy::mint_branded_scope(trace, [&](auto trace_data) noexcept -> TraceBuild {
+        return build_trace_columns_(
+            a, scratch, trace_data,
+            trace_data.parallel(meta_starts).expect("the metadata starts are parallel to the ops"),
+            trace_data.parallel(scope_hashes).expect("the scope hashes are parallel to the ops"),
+            trace_data.parallel(callsite_hashes).expect("the callsite hashes are parallel to the ops"));
+    });
+}
+
+template <class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn>
+BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a,
+                                                                    ::fixy::BumpArena& scratch, TraceColumn trace_data,
+                                                                    MetaColumn meta_data, ScopeColumn scope_data,
+                                                                    CallsiteColumn callsite_data) {
+    // An op index has 32 bits, and a branded scope holds at most 0xFFFFFFFF
+    // ops.
+    const uint32_t count = ::fixy::narrow<uint32_t>(trace_data.size()).expect("a branded count fits in 32 bits");
 
     // Scan for totals and for metadata-log overflow.  A metadata index is a
     // count of records with 64 bits, and the arithmetic on it keeps 64 bits.
+    // The loop has one exit, so the optimizer removes the check of each read
+    // of the cursor.  An overflow is rare, so the full scan costs nothing.
     uint64_t max_meta_end = 0;
     MetaIndex first_meta = MetaIndex::none();
     uint32_t total_inputs = 0;
     uint32_t total_outputs = 0;
     uint32_t total_scalars = 0;
-    for (uint32_t i = 0; i < count; i++) {
-        MetaIndex ms = meta_data[i];
-        const auto& re = trace_data[i];
-        if (!ms.is_valid() && (re.num_inputs + re.num_outputs) > 0) {
-            // Overflow on an op that did have tensors.
-            return ::fixy::err(MetaLogOverflow{});
-        }
+    bool has_overflow = false;
+    for (const auto index : trace_data.indices()) {
+        MetaIndex ms = meta_data.at(index);
+        const TraceRing::Entry& re = trace_data.at(index);
+        // An overflow is an op that has tensors and no metadata index.
+        has_overflow |= !ms.is_valid() && (re.num_inputs + re.num_outputs) > 0;
         if (ms.is_valid()) {
             if (!first_meta.is_valid()) first_meta = ms;
             const uint64_t meta_end = ms.raw() + re.num_inputs + re.num_outputs;
@@ -967,6 +986,9 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
         total_inputs += re.num_inputs;
         total_outputs += re.num_outputs;
         total_scalars += ::fixy::min(re.num_scalar_args, uint16_t{5});
+    }
+    if (has_overflow) {
+        return ::fixy::err(MetaLogOverflow{});
     }
 
     ensure_scratch_buffers(total_inputs, total_outputs);
@@ -1076,15 +1098,16 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
     // and this construction takes it.
     ContentHashFold content_fold{ContentHashFold::NoRecipe{}};
 
-    for (uint32_t i = 0; i < count; i++) {
-        const auto& re = trace_data[i];
-        MetaIndex ms = meta_data[i];
+    for (const auto index : trace_data.indices()) {
+        const uint32_t i = ::fixy::narrow<uint32_t>(index.raw()).expect("a branded index fits in 32 bits");
+        const TraceRing::Entry& re = trace_data.at(index);
+        MetaIndex ms = meta_data.at(index);
         auto& te = ops[i];
 
         te.schema_hash = re.schema_hash;
         te.shape_hash = re.shape_hash;
-        te.scope_hash = scope_data[i];
-        te.callsite_hash = callsite_data[i];
+        te.scope_hash = scope_data.at(index);
+        te.callsite_hash = callsite_data.at(index);
         te.set_num_inputs(re.num_inputs);
         te.set_num_outputs(re.num_outputs);
         te.grad_enabled = (re.op_flags & op_flag::GRAD_ENABLED) != 0;
@@ -1154,23 +1177,26 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
         content_fold.fold(te);
 
         // Prefetch the map slots the next op will probe.  Processing the
-        // current op gives the lines time to arrive.
-        if (i + 1 < count) {
-            MetaIndex next_ms = meta_data[i + 1];
-            if (next_ms.is_valid()) {
-                const uint64_t next_off = next_ms.raw() - first_meta.raw();
-                const auto& next_re = trace_data[i + 1];
-                if (next_re.num_inputs > 0) {
-                    uint32_t bucket_idx = hash_ptr(raw_data_ptr(meta_base[next_off])) & local_mask;
-                    __builtin_prefetch(&local_map[bucket_idx], 0, 1);
-                }
-                if (next_re.num_outputs > 0) {
-                    const uint64_t out_off = next_off + next_re.num_inputs;
-                    uint32_t bucket_idx = hash_ptr(raw_data_ptr(meta_base[out_off])) & local_mask;
-                    __builtin_prefetch(&local_map[bucket_idx], 1, 1);
-                }
-            }
-        }
+        // current op gives the lines time to arrive.  The last op has no
+        // next op.
+        trace_data.index(index.raw() + 1)
+            .match(
+                [&](auto next) noexcept {
+                    MetaIndex next_ms = meta_data.at(next);
+                    if (!next_ms.is_valid()) return;
+                    const uint64_t next_off = next_ms.raw() - first_meta.raw();
+                    const TraceRing::Entry& next_re = trace_data.at(next);
+                    if (next_re.num_inputs > 0) {
+                        uint32_t bucket_idx = hash_ptr(raw_data_ptr(meta_base[next_off])) & local_mask;
+                        __builtin_prefetch(&local_map[bucket_idx], 0, 1);
+                    }
+                    if (next_re.num_outputs > 0) {
+                        const uint64_t out_off = next_off + next_re.num_inputs;
+                        uint32_t bucket_idx = hash_ptr(raw_data_ptr(meta_base[out_off])) & local_mask;
+                        __builtin_prefetch(&local_map[bucket_idx], 1, 1);
+                    }
+                },
+                [] noexcept {});
 
         for (uint16_t j = 0; j < te.num_inputs(); j++) {
             const TensorMeta& input_meta = *input_metas.get(j).expect("the window holds each input of the op");

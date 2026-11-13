@@ -54,14 +54,13 @@ inline void run_trace_file(std::span<const std::uint8_t> bytes) {
 
     CRUCIBLE_FUZZ_CLAIM("trace_file", trace.metas.size() == trace.num_metas);
     CRUCIBLE_FUZZ_CLAIM("trace_file", trace.entries.size() == trace.num_ops);
-    const std::size_t num_metas = trace.metas.size();
-    for (std::size_t meta_index = 0; meta_index < num_metas; ++meta_index)
-        claim_meta_in_range("trace_file", trace.metas[meta_index]);
-    for (std::uint32_t i = 0; i < trace.num_ops; ++i) {
-        const auto& entry = trace.entries[i];
-        const std::uint32_t tensors = std::uint32_t{entry.num_inputs} + std::uint32_t{entry.num_outputs};
+    for (const TensorMeta& meta : trace.metas)
+        claim_meta_in_range("trace_file", meta);
+    for (const auto [entry, meta_start] :
+         ::fixy::zip(trace.entries.view(), trace.meta_starts.view()).expect("the arrays of a trace are parallel")) {
+        const std::uint32_t tensors = std::uint32_t{entry->num_inputs} + std::uint32_t{entry->num_outputs};
         if (tensors == 0) continue;
-        const MetaIndex start = trace.meta_starts[i];
+        const MetaIndex start = *meta_start;
         CRUCIBLE_FUZZ_CLAIM("trace_file", start.is_valid());
         CRUCIBLE_FUZZ_CLAIM("trace_file", std::uint64_t{start.raw()} + tensors <= trace.num_metas);
     }

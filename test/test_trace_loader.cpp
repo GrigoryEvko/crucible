@@ -147,7 +147,7 @@ static void test_happy_path_zero_ops() {
     const LoadedTrace t = load_trace(kTestIo, sanitized(path)).expect("a header with zero counts loads");
     assert(t.num_ops == 0);
     assert(t.num_metas == 0);
-    assert(t.entries.empty());
+    assert(t.entries.size() == 0);
     std::remove(path.c_str());
     crucible::test::pass("  test_happy_path_empty:          PASSED\n");
 }
@@ -192,10 +192,10 @@ static void test_round_trip_single_op() {
     const LoadedTrace t = load_trace(kTestIo, sanitized(path)).expect("a trace of one op loads");
     std::remove(path.c_str());
     assert(t.num_ops == 1);
-    assert(t.entries[0].schema_hash.raw() == schema);
-    assert(t.entries[0].shape_hash.raw() == shape);
-    assert(t.scope_hashes[0].raw() == scope);
-    assert(t.callsite_hashes[0].raw() == callsite);
+    assert(t.entries.get(0).expect("the trace holds one op")->schema_hash.raw() == schema);
+    assert(t.entries.get(0).expect("the trace holds one op")->shape_hash.raw() == shape);
+    assert(t.scope_hashes.get(0).expect("the trace holds one op")->raw() == scope);
+    assert(t.callsite_hashes.get(0).expect("the trace holds one op")->raw() == callsite);
     crucible::test::pass("  test_round_trip_single_op:      PASSED\n");
 }
 
@@ -372,9 +372,9 @@ static void test_meta_exact_count_loads() {
     const LoadedTrace t = load_trace(kTestIo, sanitized(path)).expect("an op whose metadata fits the count loads");
     assert(t.num_ops == 1);
     assert(t.num_metas == 5);
-    assert(t.entries[0].num_inputs == 3);
-    assert(t.entries[0].num_outputs == 2);
-    assert(t.meta_starts[0].raw() == 0);  // sole op starts at metas[0]
+    assert(t.entries.get(0).expect("the trace holds one op")->num_inputs == 3);
+    assert(t.entries.get(0).expect("the trace holds one op")->num_outputs == 2);
+    assert(t.meta_starts.get(0).expect("the trace holds one op")->raw() == 0);  // sole op starts at metas[0]
     std::remove(path.c_str());
     crucible::test::pass("  test_meta_exact_count_loads:    PASSED\n");
 }

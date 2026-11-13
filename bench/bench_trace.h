@@ -18,11 +18,10 @@ namespace bench {
 inline void refill_meta_log(crucible::MetaLog& meta_log, const crucible::LoadedTrace& trace) noexcept {
     meta_log.reset();
     uint32_t cursor = 0;
-    for (uint32_t op_index = 0; op_index < trace.num_ops; op_index++) {
-        const uint16_t meta_count =
-            static_cast<uint16_t>(trace.entries[op_index].num_inputs + trace.entries[op_index].num_outputs);
+    for (const crucible::TraceRing::Entry& entry : trace.entries) {
+        const uint16_t meta_count = static_cast<uint16_t>(entry.num_inputs + entry.num_outputs);
         if (meta_count > 0 && cursor + meta_count <= trace.num_metas) {
-            (void)meta_log.try_append(&trace.metas[cursor], meta_count);
+            (void)meta_log.try_append(&*trace.metas.get(cursor).expect("the run of the op fits the metas"), meta_count);
             cursor += meta_count;
         }
     }

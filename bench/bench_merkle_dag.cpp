@@ -343,12 +343,22 @@ int main(int argc, char* argv[]) {
             }
         };
 
+        // The build reads the first n entries of each batch.
+        const ::fixy::View<const TraceRing::Entry> drained =
+            batch.view().window(0, n).expect("the drain fills at most the batch");
+        const ::fixy::View<const MetaIndex> drained_metas =
+            meta_batch.view().window(0, n).expect("the drain fills at most the batch");
+        const ::fixy::View<const ScopeHash> drained_scopes =
+            scope_batch.view().window(0, n).expect("the drain fills at most the batch");
+        const ::fixy::View<const CallsiteHash> drained_callsites =
+            callsite_batch.view().window(0, n).expect("the drain fills at most the batch");
+
         ::fixy::BumpArena scratch{1 << 20};
         return bench::run("build_trace (481 ops, full pipeline)", [&] {
             scratch.with_epoch([&]() noexcept {
                 repopulate_meta_log();
-                auto built = bg.build_trace_from(test.alloc, scratch, n, batch.data(), meta_batch.data(),
-                                                 scope_batch.data(), callsite_batch.data());
+                auto built =
+                    bg.build_trace_from(test.alloc, scratch, drained, drained_metas, drained_scopes, drained_callsites);
                 bench::do_not_optimize(built);
             });
         });
@@ -386,9 +396,9 @@ int main(int argc, char* argv[]) {
                 const LoadedTrace& loaded = trace;
                 scratch.with_epoch([&]() noexcept {
                     bench::refill_meta_log(meta_log, loaded);
-                    auto built = bg.build_trace_from(test.alloc, scratch, loaded.num_ops, loaded.entries.data(),
-                                                     loaded.meta_starts.data(), loaded.scope_hashes.data(),
-                                                     loaded.callsite_hashes.data());
+                    auto built =
+                        bg.build_trace_from(test.alloc, scratch, loaded.entries.view(), loaded.meta_starts.view(),
+                                            loaded.scope_hashes.view(), loaded.callsite_hashes.view());
                     bench::do_not_optimize(built);
                 });
             });

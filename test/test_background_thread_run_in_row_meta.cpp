@@ -52,10 +52,24 @@ namespace {
 struct Work {
     static constexpr uint32_t CAPACITY = 8;
     uint32_t count = 0;
-    TraceRing::Entry trace[CAPACITY]{};
-    MetaIndex meta_starts[CAPACITY]{};
-    crucible::ScopeHash scope_hashes[CAPACITY]{};
-    crucible::CallsiteHash callsite_hashes[CAPACITY]{};
+    ::fixy::FixedArray<TraceRing::Entry, CAPACITY> trace{};
+    ::fixy::FixedArray<MetaIndex, CAPACITY> meta_starts{};
+    ::fixy::FixedArray<crucible::ScopeHash, CAPACITY> scope_hashes{};
+    ::fixy::FixedArray<crucible::CallsiteHash, CAPACITY> callsite_hashes{};
+
+    // The graph of the count ops of the work.  The build reads the first
+    // count elements of each array.
+    [[nodiscard]] BackgroundThread::TraceBuild build(BackgroundThread& bt, ::foundation::effects::Alloc alloc,
+                                                     ::fixy::BumpArena& scratch) const {
+        return bt.build_trace_from(alloc, scratch, first_ops(trace), first_ops(meta_starts), first_ops(scope_hashes),
+                                   first_ops(callsite_hashes));
+    }
+
+    // The first count elements of one array of the work.
+    template <class T>
+    [[nodiscard]] ::fixy::View<const T> first_ops(::fixy::FixedArray<T, CAPACITY> const& column) const {
+        return column.view().window(0, count).expect("a work holds at most CAPACITY ops");
+    }
 
     // An op with one output tensor, whose metadata goes to the log.  Returns
     // the end of that metadata in the log.
@@ -113,9 +127,7 @@ void test_overflow_build_leaves_tail() {
     overflowing.push_op_without_meta(2);
 
     ::fixy::BumpArena scratch{size_t{1} << 16};
-    const BackgroundThread::TraceBuild built =
-        bt.build_trace_from(test.alloc, scratch, overflowing.count, overflowing.trace, overflowing.meta_starts,
-                            overflowing.scope_hashes, overflowing.callsite_hashes);
+    const BackgroundThread::TraceBuild built = overflowing.build(bt, test.alloc, scratch);
     assert(built.is_err());
     assert(metalog->tail.get() == 0u && "the build stage moved the tail of the metadata log");
 
@@ -123,9 +135,7 @@ void test_overflow_build_leaves_tail() {
     Work overflowing_at_start;
     overflowing_at_start.push_op_without_meta(3);
     (void)overflowing_at_start.push_op_with_meta(*metalog, 4);
-    const BackgroundThread::TraceBuild built_at_start = bt.build_trace_from(
-        test.alloc, scratch, overflowing_at_start.count, overflowing_at_start.trace, overflowing_at_start.meta_starts,
-        overflowing_at_start.scope_hashes, overflowing_at_start.callsite_hashes);
+    const BackgroundThread::TraceBuild built_at_start = overflowing_at_start.build(bt, test.alloc, scratch);
     assert(built_at_start.is_err());
     assert(metalog->tail.get() == 0u);
 
@@ -157,12 +167,9 @@ void test_publish_stage_releases_in_order() {
     overflowing.push_op_without_meta(5);
 
     ::fixy::BumpArena scratch{size_t{1} << 16};
-    BackgroundThread::TraceBuild built = bt.build_trace_from(
-        test.alloc, scratch, first.count, first.trace, first.meta_starts, first.scope_hashes, first.callsite_hashes);
+    BackgroundThread::TraceBuild built = first.build(bt, test.alloc, scratch);
     assert(built.is_ok());
-    const BackgroundThread::TraceBuild overflowed =
-        bt.build_trace_from(test.alloc, scratch, overflowing.count, overflowing.trace, overflowing.meta_starts,
-                            overflowing.scope_hashes, overflowing.callsite_hashes);
+    const BackgroundThread::TraceBuild overflowed = overflowing.build(bt, test.alloc, scratch);
     assert(overflowed.is_err());
     assert(metalog->tail.get() == 0u);
 
@@ -266,8 +273,7 @@ void test_built_graph_owns_its_metadata() {
         (void)work.push_op_with_meta(*metalog, op);
 
     ::fixy::BumpArena scratch{size_t{1} << 16};
-    BackgroundThread::TraceBuild built = bt.build_trace_from(test.alloc, scratch, work.count, work.trace,
-                                                             work.meta_starts, work.scope_hashes, work.callsite_hashes);
+    BackgroundThread::TraceBuild built = work.build(bt, test.alloc, scratch);
     auto [graph, parts] = std::move(built).expect("the work builds a graph");
 
     const std::less<const crucible::TensorMeta*> before{};
@@ -323,8 +329,7 @@ void test_build_and_release_pass_two_to_the_32() {
     assert(run_end == uint64_t{BELOW_WRAP} + OPS);
 
     ::fixy::BumpArena scratch{size_t{1} << 16};
-    BackgroundThread::TraceBuild built = bt.build_trace_from(test.alloc, scratch, work.count, work.trace,
-                                                             work.meta_starts, work.scope_hashes, work.callsite_hashes);
+    BackgroundThread::TraceBuild built = work.build(bt, test.alloc, scratch);
     auto [graph, parts] = std::move(built).expect("the work builds a graph");
     for (uint32_t op = 0; op < OPS; ++op) {
         const crucible::TensorMeta& first_meta = crucible::test::element_at(graph->ops[op].output_metas(), 0);

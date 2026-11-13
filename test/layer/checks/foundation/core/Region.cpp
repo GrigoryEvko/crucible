@@ -359,7 +359,7 @@ static_assert(read_reverse_after_steps(0) == 8 && read_reverse_after_steps(1) ==
 inline constexpr TextView region_names{
     "View Index StaticIndex IndexRange BrandedIndex TextView CText FixedText GrowText FixedArray FixedList HeapArray "
     "GrowList HeapRing RingView FixedTable HeapTable Full Held LengthMismatch dynamic_extent element_type extent "
-    "capacity window split_at indices index check raw rest take take_first take_last clear with_view freeze"};
+    "capacity window split_at indices index parallel check raw rest take take_first take_last clear with_view freeze"};
 
 // The brand that the check of a branded type names.  A program gets each
 // brand from mint_branded_scope.
