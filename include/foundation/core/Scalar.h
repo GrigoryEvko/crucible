@@ -11,6 +11,10 @@
 //                        its empty value
 //   bit_cast<To>(source) a To with the bits of source, with no check: each
 //                        bit pattern is a value of a BitValid To
+//   for_each_field(object, visit)
+//                        visit(field) for each non-static data member of a
+//                        class, the private members too, in the order of
+//                        the declarations
 //
 // A part that declares a niche (Choice.h) has an empty value that no valid
 // value holds, such as the reserved value of an id.  decode gives no value
@@ -196,6 +200,22 @@ template <class E>
 [[nodiscard]] consteval bool member_is_bit_field_at(std::meta::info type, std::size_t index) {
     return std::meta::is_bit_field(
         std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())[index]);
+}
+
+// Calls visit with the non-static data member at Index of object, the
+// private members too.  The member goes into the call directly, so a
+// bit-field binds to a temporary that lives for the call.
+template <std::size_t Index, class T, class Visit>
+constexpr void visit_field_at_(T const& object, Visit& visit) noexcept {
+    visit(object.[:std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())[Index]:]);
+}
+
+// The calls of for_each_field, one for each index, in order.  A class with
+// no member gives an empty pack, and no call reads the two parameters.
+template <class T, class Visit, std::size_t... Indexes>
+constexpr void visit_fields_([[maybe_unused]] T const& object, [[maybe_unused]] Visit& visit,
+                             std::index_sequence<Indexes...> /*indexes*/) noexcept {
+    (visit_field_at_<Indexes>(object, visit), ...);
 }
 
 // A class that nests deeper than this is refused, not walked.
@@ -431,6 +451,17 @@ template <class To, class From>
     requires BitValid<To> && DecodableFrom<To, From>
 [[nodiscard]] constexpr To bit_cast(From const& source) noexcept {
     return __builtin_bit_cast(To, source);
+}
+
+// Calls visit(field) for each non-static data member of object, the private
+// members too, in the order of the declarations.  visit gets each field as a
+// const lvalue.  A member of a base class is no member of object, so the
+// walk does not visit it.  A class with no member gives no call.
+// Complexity: one call of visit for each member.
+template <class T, class Visit>
+    requires std::is_class_v<T>
+constexpr void for_each_field(T const& object, Visit&& visit) noexcept {
+    detail::visit_fields_(object, visit, std::make_index_sequence<detail::member_count(^^T)>{});
 }
 
 }  // namespace foundation::core

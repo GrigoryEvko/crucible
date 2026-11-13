@@ -4,6 +4,7 @@
 
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Compare.h>
+#include <foundation/core/Convert.h>
 #include <foundation/core/Id.h>
 #include <foundation/core/Philox.h>
 #include <foundation/core/Quantity.h>
@@ -245,6 +246,44 @@ static_assert(bit_cast<std::uint32_t>(bit_cast<float>(std::uint32_t{0x7FC00001u}
 static_assert(bit_cast<Words>(Words{1, 2}).high == 2 && bit_cast<Strong>(std::uint8_t{200}) == Strong{200});
 static_assert(std::is_same_v<decltype(bit_cast<double>(std::uint64_t{0})), double>);
 
+// ── The field walk ────────────────────────────────────────────────────
+
+// Two private members, as the value of a strong id is private.
+class PrivatePair {
+public:
+    constexpr PrivatePair(std::uint32_t first, std::uint16_t second) noexcept : first_{first}, second_{second} {}
+
+private:
+    std::uint32_t first_ = 0;
+    std::uint16_t second_ = 0;
+};
+// One member of its own beside the two members of a base.
+struct WordsAndTail : Words {
+    std::uint8_t tail = 0;
+};
+
+// The fields in the order of the walk, as decimal digit groups of three.
+template <class T>
+[[nodiscard]] consteval std::uint64_t field_fold(T const& object) {
+    std::uint64_t fold = 0;
+    for_each_field(object, [&](auto const& field) noexcept { fold = fold * 1000 + widen<std::uint64_t>(field); });
+    return fold;
+}
+
+template <class T>
+[[nodiscard]] consteval std::size_t field_count(T const& object) {
+    std::size_t count = 0;
+    for_each_field(object, [&](auto const&) noexcept { ++count; });
+    return count;
+}
+
+// The walk reads the private members in the order of the declarations, each
+// member one time.  An empty class gives no call, and a member of a base is
+// no member of the class.
+static_assert(field_fold(PrivatePair{7, 9}) == 7009 && field_count(PrivatePair{7, 9}) == 2);
+static_assert(field_fold(Triple{1, 2, 3}) == 1002003 && field_count(Token{}) == 0);
+static_assert(field_fold(WordsAndTail{{1, 2}, 3}) == 3 && field_count(WordsAndTail{{1, 2}, 3}) == 1);
+
 // ── The closed surface ────────────────────────────────────────────────
 
 // The family list of plan section 11.7: each name of the API table and of
@@ -259,7 +298,7 @@ inline constexpr TextView scalar_names{
     "checked_neg checked_shl checked_shr wrapping_add wrapping_sub wrapping_mul wrapping_neg wrapping_shl "
     "wrapping_shr saturating_add saturating_sub saturating_mul gcd widening_mul WideProduct low high popcount "
     "countl_zero countr_zero countl_one countr_one bit_width has_single_bit bit_floor bit_ceil rotl rotr low_mask "
-    "byteswap bit_cast decode is_nan is_inf is_finite is_normal sign_bit abs copy_sign sqrt fma total_key exchange "
+    "byteswap bit_cast decode for_each_field is_nan is_inf is_finite is_normal sign_bit abs copy_sign sqrt fma total_key exchange "
     "swap Philox4x32 generate Counter Key multiplier0 multiplier1 weyl_step0 weyl_step1 Id raw Digest Quantity "
     "QuantityUnit convert dimension ratio Byte Element Nanosecond Microsecond Millisecond Second Cycle Memory Count "
     "Time Clock"};

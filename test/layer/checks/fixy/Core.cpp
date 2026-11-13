@@ -114,6 +114,16 @@ static_assert(std::is_same_v<decltype(::fixy::exchange(std::declval<int&>(), 1))
 static_assert(::fixy::bit_cast<std::uint32_t>(1.0f) == 0x3F800000u
               && ::fixy::BitValid<float> && !::fixy::BitValid<bool>);
 static_assert(::fixy::DecodableFrom<bool, std::uint8_t> && !::fixy::Enumerated<int>);
+struct CoreFields {
+    std::uint32_t first = 3;
+    std::uint32_t second = 4;
+};
+[[nodiscard]] consteval std::uint32_t core_field_sum() {
+    std::uint32_t sum = 0;
+    ::fixy::for_each_field(CoreFields{}, [&](std::uint32_t field) noexcept { sum += field; });
+    return sum;
+}
+static_assert(core_field_sum() == 7);
 struct CoreTag;
 static_assert(sizeof(::fixy::Option<::fixy::Id<CoreTag, std::uint32_t>>) == 4);
 static_assert(::fixy::Digest<CoreTag>{5}.raw() == 5u);

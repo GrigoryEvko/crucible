@@ -2,15 +2,19 @@
 // enumerator for each value of an enumerator and no value for each other
 // value, and decode refuses each source whose bytes hold a bool other than
 // 0 or 1, or an enumeration value that names no enumerator.  The loops go
-// over each value of the small types.
+// over each value of the small types.  for_each_field reads each member of
+// a class, the private members too, in the order of the declarations.
 
 #include <foundation/Quarantine.h>
+#include <foundation/core/Convert.h>
 #include <foundation/core/Scalar.h>
 
 #include "../test_assert.h"
 #include "philox_stream.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <type_traits>
 #include <utility>
 
 namespace {
@@ -18,6 +22,7 @@ namespace {
 using ::foundation::core::bit_cast;
 using ::foundation::core::decode;
 using ::foundation::core::enum_from;
+using ::foundation::core::for_each_field;
 
 enum class Contiguous : std::uint8_t {
     first = 3,
@@ -251,6 +256,89 @@ void test_bit_cast_keeps_each_bit() {
     }
 }
 
+// A class whose members are private, as the value of a strong id is.
+class PrivateTriple {
+public:
+    PrivateTriple(std::uint32_t first, std::uint16_t second, bool third) noexcept
+        : first_{first}, second_{second}, third_{third} {}
+
+private:
+    std::uint32_t first_ = 0;
+    std::uint16_t second_ = 0;
+    bool third_ = false;
+};
+struct Empty {};
+// One member of its own beside the two members of a base.
+struct WordsAndTail : Words {
+    std::uint8_t tail = 0;
+};
+struct HalvesOfAWord {
+    std::uint32_t low : 16 = 0;
+    std::uint32_t high : 16 = 0;
+};
+
+// A field as a word: a bool as 0 or 1, and an integer as its value.
+template <class F>
+[[nodiscard]] std::uint64_t word_of(F field) noexcept {
+    if constexpr (std::is_same_v<F, bool>) {
+        return field ? std::uint64_t{1} : std::uint64_t{0};
+    } else {
+        return ::foundation::core::widen<std::uint64_t>(field);
+    }
+}
+
+// The fields of object in the order of the walk, as decimal digit groups of
+// three, and the count of the calls.  Two orders of one set of values give
+// two different folds.
+template <class T>
+[[nodiscard]] std::uint64_t fold_fields(T const& object, std::size_t& calls) noexcept {
+    std::uint64_t fold = 0;
+    for_each_field(object, [&](auto const& field) noexcept {
+        static_assert(std::is_const_v<std::remove_reference_t<decltype(field)>>);
+        fold = fold * 1000 + word_of(field);
+        ++calls;
+    });
+    return fold;
+}
+
+// The walk reads each private member one time, in the order of the
+// declarations.
+void test_for_each_field_reads_private_members_in_order() {
+    std::size_t calls = 0;
+    PrivateTriple const first{opaque(std::uint32_t{7}), opaque(std::uint16_t{9}), opaque(true)};
+    assert(fold_fields(first, calls) == 7009001);
+    assert(calls == 3);
+    calls = 0;
+    PrivateTriple const second{opaque(std::uint32_t{9}), opaque(std::uint16_t{7}), opaque(false)};
+    assert(fold_fields(second, calls) == 9007000);
+    assert(calls == 3);
+}
+
+// A class with no member gives no call.
+void test_for_each_field_gives_no_call_for_an_empty_class() {
+    std::size_t calls = 0;
+    assert(fold_fields(Empty{}, calls) == 0);
+    assert(calls == 0);
+}
+
+// A member of a base is no member of the class.  A bit-field gives its
+// value through a temporary that lives for the call.
+void test_for_each_field_reads_own_members_and_bit_fields() {
+    std::size_t calls = 0;
+    WordsAndTail object{};
+    object.low = 1;
+    object.high = 2;
+    object.tail = opaque(std::uint8_t{3});
+    assert(fold_fields(object, calls) == 3);
+    assert(calls == 1);
+    calls = 0;
+    HalvesOfAWord halves{};
+    halves.low = opaque(std::uint16_t{5});
+    halves.high = opaque(std::uint16_t{6});
+    assert(fold_fields(halves, calls) == 5006);
+    assert(calls == 2);
+}
+
 }  // namespace
 
 int main() {
@@ -263,6 +351,9 @@ int main() {
     test_decode_keeps_each_bit_pattern_of_a_plain_type();
     test_decode_refuses_the_empty_value_of_a_niche();
     test_bit_cast_keeps_each_bit();
+    test_for_each_field_reads_private_members_in_order();
+    test_for_each_field_gives_no_call_for_an_empty_class();
+    test_for_each_field_reads_own_members_and_bit_fields();
     crucible::test::pass("test_core_scalar: all tests passed\n");
     return 0;
 }
