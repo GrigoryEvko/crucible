@@ -75,7 +75,10 @@ struct GraphPublishTag {};
 // less than a third of the CAPACITY of the ring.  But the scheduler can run
 // the drain stage later than its deadline when each core has work.  A burst
 // of more than CAPACITY ops then meets a full ring, and the ring refuses the
-// ops past it.
+// ops past it.  A refused op is the degrade path of the record.  The op leaves
+// no mark in the ring, so the stream that the detect stage reads has a gap.
+// The pipeline builds no region that holds the gap, and the whole iterations
+// after it give regions again (test_background_thread_refused_ops).
 inline constexpr uint32_t SPIN_ROUNDS = 2048;
 inline constexpr uint64_t MIN_SLEEP_NANOS = 50000;
 // The longest sleep of the drain stage, and of a producer that waits for a
