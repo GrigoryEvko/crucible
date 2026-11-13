@@ -36,7 +36,7 @@ template <typename W>
 int main() {
     namespace fixt = neg_philox_box_muller_polynomial_det_wrong_tier_consume;
 
-    // box_muller_polynomial_det returns DetSafe<PhiloxRng, pair<float, float>>.
+    // box_muller_polynomial_det returns DetSafe<PhiloxRng, Philox::NormalPair>.
     // PhiloxRng sits below Pure, so the requires-clause refuses this call.
     auto poly = Philox::box_muller_polynomial_det(0u, 0u);
     [[maybe_unused]] auto fail = fixt::pure_only_consumer(poly);

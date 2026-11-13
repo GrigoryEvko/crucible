@@ -20,6 +20,9 @@
 namespace crucible {
 
 struct Philox {
+    // Two independent samples of the standard normal distribution.
+    using NormalPair = ::fixy::Record<float, float>;
+
     // The multiplier is 2^-32, which carries the whole uint32 range onto
     // [0, 1). One IEEE 754 multiplication is bit-stable everywhere, so both
     // conversions keep the tier of the value they are given.
@@ -27,7 +30,10 @@ struct Philox {
 
     [[nodiscard]] static constexpr double to_uniform_d(uint32_t x) { return static_cast<double>(x) * kTwoToMinus32_; }
 
-    [[nodiscard]] static std::pair<float, float> box_muller(uint32_t u1_raw, uint32_t u2_raw) {
+    // The base has no door to the logarithm, sine and cosine of the platform
+    // math library, so this transform calls them directly.  Its tier says
+    // that the bits replay only on the machine that made them.
+    [[nodiscard]] static NormalPair box_muller(uint32_t u1_raw, uint32_t u2_raw) {
         // The bias to (0, 1] is what keeps a zero input out of log().
         float u1 = (static_cast<float>(u1_raw) + 1.0f) * kTwoToMinus32f_;
         float u2 = (static_cast<float>(u2_raw) + 1.0f) * kTwoToMinus32f_;
@@ -41,8 +47,8 @@ struct Philox {
     using DetSafePhiloxCounter = ::fixy::det_safe::PhiloxRng<::fixy::Philox4x32::Counter>;
     using DetSafePhiloxFloat = ::fixy::det_safe::PhiloxRng<float>;
     using DetSafePhiloxDouble = ::fixy::det_safe::PhiloxRng<double>;
-    using DetSafeMonoClockFloatPair = ::fixy::det_safe::MonoClock<std::pair<float, float>>;
-    using DetSafePhiloxFloatPair = ::fixy::det_safe::PhiloxRng<std::pair<float, float>>;
+    using DetSafeMonoClockFloatPair = ::fixy::det_safe::MonoClock<NormalPair>;
+    using DetSafePhiloxFloatPair = ::fixy::det_safe::PhiloxRng<NormalPair>;
     using DetSafePureKey = ::fixy::det_safe::Pure<uint64_t>;
 
     [[nodiscard]] static constexpr DetSafePhiloxCounter generate_det(::fixy::Philox4x32::Counter counter,

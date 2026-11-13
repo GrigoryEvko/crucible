@@ -36,7 +36,7 @@ template <typename W>
 int main() {
     namespace fixt = neg_philox_box_muller_det_cipher_fence;
 
-    // box_muller_det returns DetSafe<MonotonicClockRead, pair<float, float>>.
+    // box_muller_det returns DetSafe<MonotonicClockRead, Philox::NormalPair>.
     // MonotonicClockRead does not subsume PhiloxRng, so the requires-clause
     // refuses this call.
     auto bad = Philox::box_muller_det(0u, 0u);

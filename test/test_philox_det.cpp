@@ -96,10 +96,10 @@ static void test_box_muller_det_bit_equal() {
         {0x12345678u, 0x9ABCDEF0u},
     };
     for (auto [u1, u2] : pairs) {
-        const auto raw = Philox::box_muller(u1, u2);
-        const auto pinned_pair = Philox::box_muller_det(u1, u2).peek();
-        assert(std::bit_cast<uint32_t>(raw.first) == std::bit_cast<uint32_t>(pinned_pair.first));
-        assert(std::bit_cast<uint32_t>(raw.second) == std::bit_cast<uint32_t>(pinned_pair.second));
+        const auto [raw_first, raw_second] = Philox::box_muller(u1, u2);
+        const auto [pinned_first, pinned_second] = Philox::box_muller_det(u1, u2).peek();
+        assert(std::bit_cast<uint32_t>(raw_first) == std::bit_cast<uint32_t>(pinned_first));
+        assert(std::bit_cast<uint32_t>(raw_second) == std::bit_cast<uint32_t>(pinned_second));
     }
 }
 
@@ -212,7 +212,7 @@ static_assert(sizeof(DetSafe<DetSafeTier_v::PhiloxRng, Counter>) == sizeof(Count
 
 static_assert(sizeof(DetSafe<DetSafeTier_v::PhiloxRng, float>) == sizeof(float));
 static_assert(sizeof(DetSafe<DetSafeTier_v::PhiloxRng, double>) == sizeof(double));
-static_assert(sizeof(DetSafe<DetSafeTier_v::PhiloxRng, std::pair<float, float>>) == sizeof(std::pair<float, float>));
+static_assert(sizeof(DetSafe<DetSafeTier_v::PhiloxRng, Philox::NormalPair>) == sizeof(Philox::NormalPair));
 static_assert(sizeof(DetSafe<DetSafeTier_v::Pure, uint64_t>) == sizeof(uint64_t));
 
 static void test_chain_composition() {
@@ -273,17 +273,19 @@ static_assert(std::is_same_v<decltype(Philox::to_uniform_det(0u)), DetSafe<DetSa
 static_assert(std::is_same_v<decltype(Philox::to_uniform_d_det(0u)), DetSafe<DetSafeTier_v::PhiloxRng, double>>,
               "to_uniform_d_det MUST return EXACTLY DetSafe<PhiloxRng, double>.");
 
+static_assert(std::is_same_v<Philox::NormalPair, ::fixy::Record<float, float>>);
+
 static_assert(std::is_same_v<decltype(Philox::box_muller_det(0u, 0u)),
-                             DetSafe<DetSafeTier_v::MonotonicClockRead, std::pair<float, float>>>,
+                             DetSafe<DetSafeTier_v::MonotonicClockRead, Philox::NormalPair>>,
               "box_muller_det MUST return EXACTLY DetSafe<MonotonicClockRead, "
-              "std::pair<float, float>>.  Re-shaping the Box-Muller return (for "
-              "example to std::array<float, 2>) is an API break and has to be "
+              "Philox::NormalPair>.  Re-shaping the Box-Muller return (for "
+              "example to a FixedArray of two floats) is an API break and has to be "
               "propagated downstream.");
 
 static_assert(std::is_same_v<decltype(Philox::box_muller_polynomial_det(0u, 0u)),
-                             DetSafe<DetSafeTier_v::PhiloxRng, std::pair<float, float>>>,
+                             DetSafe<DetSafeTier_v::PhiloxRng, Philox::NormalPair>>,
               "box_muller_polynomial_det MUST return EXACTLY DetSafe<PhiloxRng, "
-              "std::pair<float, float>> — it is cross-platform bit-stable through "
+              "Philox::NormalPair> — it is cross-platform bit-stable through "
               "IEEE 754 polynomial sin/cos/log.");
 
 static_assert(
@@ -299,8 +301,7 @@ static_assert(
 static_assert(std::is_same_v<Philox::DetSafePhiloxCounter, DetSafe<DetSafeTier_v::PhiloxRng, Counter>>);
 static_assert(std::is_same_v<Philox::DetSafePhiloxFloat, DetSafe<DetSafeTier_v::PhiloxRng, float>>);
 static_assert(std::is_same_v<Philox::DetSafePhiloxDouble, DetSafe<DetSafeTier_v::PhiloxRng, double>>);
-static_assert(
-    std::is_same_v<Philox::DetSafePhiloxFloatPair, DetSafe<DetSafeTier_v::PhiloxRng, std::pair<float, float>>>);
+static_assert(std::is_same_v<Philox::DetSafePhiloxFloatPair, DetSafe<DetSafeTier_v::PhiloxRng, Philox::NormalPair>>);
 static_assert(std::is_same_v<Philox::DetSafePureKey, DetSafe<DetSafeTier_v::Pure, uint64_t>>);
 
 // A caller writes `decltype(rng)::value_type bytes = std::move(rng)
@@ -308,7 +309,7 @@ static_assert(std::is_same_v<Philox::DetSafePureKey, DetSafe<DetSafeTier_v::Pure
 static_assert(std::is_same_v<Philox::DetSafePhiloxCounter::value_type, Counter>);
 static_assert(std::is_same_v<Philox::DetSafePhiloxFloat::value_type, float>);
 static_assert(std::is_same_v<Philox::DetSafePhiloxDouble::value_type, double>);
-static_assert(std::is_same_v<Philox::DetSafePhiloxFloatPair::value_type, std::pair<float, float>>);
+static_assert(std::is_same_v<Philox::DetSafePhiloxFloatPair::value_type, Philox::NormalPair>);
 static_assert(std::is_same_v<Philox::DetSafePureKey::value_type, uint64_t>);
 
 // The positive assertions above prove a wrapper claims the tier it

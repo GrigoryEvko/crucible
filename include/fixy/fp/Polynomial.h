@@ -62,7 +62,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <utility>
 
 namespace fixy::fp {
 
@@ -256,8 +255,8 @@ struct ReduceResult {
     }
 }
 
-[[nodiscard]] constexpr std::pair<float, float> box_muller_polynomial(std::uint32_t u1_raw,
-                                                                      std::uint32_t u2_raw) noexcept {
+[[nodiscard]] constexpr ::fixy::Record<float, float> box_muller_polynomial(std::uint32_t u1_raw,
+                                                                           std::uint32_t u2_raw) noexcept {
     // The added one moves a raw word of zero off the bottom of the
     // range. The first uniform is then a positive normal float in
     // [2^-32, 1], which is the domain of log_poly.  The second uniform is

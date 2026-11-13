@@ -32,9 +32,9 @@ static_assert(::fixy::band_tier_v<decltype(Philox::box_muller_polynomial_det(0u,
               "box_muller_polynomial_det must stay at the generator tier, the "
               "polynomial path");
 
-constexpr std::uint64_t pair_bits(std::pair<float, float> p) noexcept {
-    const auto a = static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(p.first));
-    const auto b = static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(p.second));
+constexpr std::uint64_t pair_bits(Philox::NormalPair const& pair) noexcept {
+    const auto a = static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(pair.at(::fixy::index<0>())));
+    const auto b = static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(pair.at(::fixy::index<1>())));
     return (a << 32) | b;
 }
 

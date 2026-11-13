@@ -47,6 +47,16 @@ static_assert(block_of_full_counter() == Words{0xC6E55E9Au, 0x1B21B854u, 0xFD0D7
 static_assert(fixy::bit_cast<std::uint32_t>(crucible::Philox::to_uniform(0x80000000u)) == 0x3F000000u);
 static_assert(fixy::bit_cast<std::uint64_t>(crucible::Philox::to_uniform_d(0xFFFFFFFFu)) == 0x3FEFFFFFFFE00000u);
 
+// The key of one operation: FNV-1a over the eight bytes of the master
+// counter, of the op index and of the content hash, the lowest byte first.
+[[nodiscard]] constexpr std::uint64_t op_key_of(std::uint64_t master, std::uint32_t op_index,
+                                                std::uint64_t content_hash) noexcept {
+    return crucible::Philox::op_key_det(master, op_index, crucible::ContentHash{content_hash}).peek();
+}
+
+static_assert(op_key_of(0, 0, 0) == 0x81D23FD7003C2305u);
+static_assert(op_key_of(0xCAFEBABEDEADBEEFu, 42u, 0xDEADBEEFCAFEBABEu) == 0xB1C93DD27E77DB07u);
+
 void check_block(std::uint64_t offset, std::uint64_t key, Words expected) {
     CRUCIBLE_FATAL_INVARIANT(block_of(opaque(offset), opaque(key)) == expected);
 }
@@ -76,10 +86,21 @@ void test_golden_uniform_bits() {
                              == 0x3FEFFFFFFFE00000u);
 }
 
+// The zero inputs, a small case, a mixed case and each bit set.
+void test_golden_op_keys() {
+    CRUCIBLE_FATAL_INVARIANT(op_key_of(opaque(0u), opaque(0u), opaque(0u)) == 0x81D23FD7003C2305u);
+    CRUCIBLE_FATAL_INVARIANT(op_key_of(opaque(42u), opaque(7u), opaque(0x1234u)) == 0xC833063F36C15362u);
+    CRUCIBLE_FATAL_INVARIANT(op_key_of(opaque(0xCAFEBABEDEADBEEFu), opaque(42u), opaque(0xDEADBEEFCAFEBABEu))
+                             == 0xB1C93DD27E77DB07u);
+    CRUCIBLE_FATAL_INVARIANT(op_key_of(opaque(0xFFFFFFFFFFFFFFFFu), opaque(0xFFFFFFFFu), opaque(0xFFFFFFFFFFFFFFFFu))
+                             == 0xF61D6DD682C35091u);
+}
+
 }  // namespace
 
 int main() {
     test_golden_blocks();
     test_golden_uniform_bits();
+    test_golden_op_keys();
     return 0;
 }

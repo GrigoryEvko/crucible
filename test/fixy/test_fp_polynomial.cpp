@@ -177,11 +177,11 @@ inline constexpr std::uint64_t kLongSweepDigest = 0xEBA0C1BEB4DB4EC1ULL;
 
     volatile std::uint32_t u1 = 0xDEADBEEFu;
     volatile std::uint32_t u2 = 0xCAFEBABEu;
-    const auto pair = fp::box_muller_polynomial(u1, u2);
+    const auto [first_normal, second_normal] = fp::box_muller_polynomial(u1, u2);
 
     int failures = 0;
-    failures += report("box_muller .first", word(pair.first), kBoxMullerZ1);
-    failures += report("box_muller .second", word(pair.second), kBoxMullerZ2);
+    failures += report("box_muller first value", word(first_normal), kBoxMullerZ1);
+    failures += report("box_muller second value", word(second_normal), kBoxMullerZ2);
     return failures == 0 ? 0 : 1;
 }
 
@@ -243,8 +243,8 @@ inline constexpr double kLogTolerance = 8.4e-5;
         for (const std::uint32_t w2 : words) {
             volatile std::uint32_t a = w1;
             volatile std::uint32_t b = w2;
-            const auto pair = fp::box_muller_polynomial(a, b);
-            if (std::isnan(pair.first) || std::isnan(pair.second)) {
+            const auto [first_normal, second_normal] = fp::box_muller_polynomial(a, b);
+            if (std::isnan(first_normal) || std::isnan(second_normal)) {
                 std::fprintf(stderr, "box_muller(0x%08X, 0x%08X) produced NaN\n", w1, w2);
                 return 1;
             }

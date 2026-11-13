@@ -37,12 +37,14 @@ static_assert(bits_of(cos_poly(0x1.921FB6p+1f)) == bits_of(-1.0f), "cos_poly(pi)
 static_assert(bits_of(0x1.2056aep-3f) == kBoxMullerZ1, "the pinned word and the hex float it documents disagree.");
 static_assert(bits_of(-0x1.049aa2p-1f) == kBoxMullerZ2, "the pinned word and the hex float it documents disagree.");
 
-static_assert(bits_of(box_muller_polynomial(0xDEADBEEFu, 0xCAFEBABEu).first) == kBoxMullerZ1,
-              "box_muller_polynomial(0xDEADBEEF, 0xCAFEBABE).first moved. The pair is pinned because a "
-              "Philox-seeded normal sample reaches a content hash: if this changed on purpose, re-measure "
+inline constexpr ::fixy::Record<float, float> kPinnedPair = box_muller_polynomial(0xDEADBEEFu, 0xCAFEBABEu);
+
+static_assert(bits_of(kPinnedPair.at(::fixy::index<0>())) == kBoxMullerZ1,
+              "The first value of box_muller_polynomial(0xDEADBEEF, 0xCAFEBABE) moved. The pair is pinned because "
+              "a Philox-seeded normal sample reaches a content hash: if this changed on purpose, re-measure "
               "on the development host and say so in the commit.");
-static_assert(bits_of(box_muller_polynomial(0xDEADBEEFu, 0xCAFEBABEu).second) == kBoxMullerZ2,
-              "box_muller_polynomial(0xDEADBEEF, 0xCAFEBABE).second moved. Same rule as .first.");
+static_assert(bits_of(kPinnedPair.at(::fixy::index<1>())) == kBoxMullerZ2,
+              "The second value of box_muller_polynomial(0xDEADBEEF, 0xCAFEBABE) moved. Same rule as the first.");
 
 // The two outputs of one call are different samples, which is the whole
 // point of the transform.
@@ -82,10 +84,12 @@ static_assert(!is_within_one_turn(std::numeric_limits<float>::quiet_NaN()));
 // each call below would stop at a precondition otherwise.  The largest
 // word gives a uniform of exactly 1 and an angle of exactly one turn, so
 // the radius is -0 and the pair is two negative zeros.
-static_assert(std::isfinite(box_muller_polynomial(0u, 0u).first)
-              && std::isfinite(box_muller_polynomial(0u, 0u).second));
-static_assert(bits_of(box_muller_polynomial(0xFFFFFFFFu, 0xFFFFFFFFu).first) == bits_of(-0.0f));
-static_assert(bits_of(box_muller_polynomial(0xFFFFFFFFu, 0xFFFFFFFFu).second) == bits_of(-0.0f));
+inline constexpr ::fixy::Record<float, float> kLowestPair = box_muller_polynomial(0u, 0u);
+inline constexpr ::fixy::Record<float, float> kHighestPair = box_muller_polynomial(0xFFFFFFFFu, 0xFFFFFFFFu);
+
+static_assert(std::isfinite(kLowestPair.at(::fixy::index<0>())) && std::isfinite(kLowestPair.at(::fixy::index<1>())));
+static_assert(bits_of(kHighestPair.at(::fixy::index<0>())) == bits_of(-0.0f));
+static_assert(bits_of(kHighestPair.at(::fixy::index<1>())) == bits_of(-0.0f));
 
 static_assert(is_positive_normal(std::numeric_limits<float>::min()));
 static_assert(is_positive_normal(std::numeric_limits<float>::max()));
