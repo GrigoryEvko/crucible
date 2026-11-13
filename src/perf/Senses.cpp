@@ -1,22 +1,40 @@
 #include <crucible/perf/Senses.h>
 
+#include <optional>
 #include <utility>
 
 namespace crucible::perf {
 
-Senses::Senses(std::optional<State> s) noexcept : state_{std::move(s)} {}
+namespace {
 
-// These two are written out rather than defaulted.  A defaulted move leaves
-// the source engaged, because the move operations of std::optional move the
-// contained value but do not reset has_value().  The exchange resets the
-// source to nullopt, so the guards in the accessors and in coverage() report
-// a moved-from Senses as owning nothing.
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
+// Each facade load gives a std::optional.  The facade moves into the Option
+// that the State holds.
+template <class Facade>
+[[nodiscard]] ::fixy::Option<Facade> option_of(std::optional<Facade> loaded) noexcept {
+    if (!loaded.has_value()) return ::fixy::none;
+    return ::fixy::Option<Facade>::some(std::move(*loaded));
+}
 
-Senses::Senses(Senses&& other) noexcept : state_{std::exchange(other.state_, std::nullopt)} {}
+// The address of the facade that option holds, or null when it holds none.
+template <class Facade>
+[[nodiscard]] const Facade* address_in(::fixy::Option<Facade> const& option) noexcept {
+    for (Facade const& facade : option) {
+        return &facade;
+    }
+    return nullptr;
+}
+#endif
+
+}  // namespace
+
+Senses::Senses(::fixy::Option<State> state) noexcept : state_{std::move(state)} {}
+
+Senses::Senses(Senses&&) noexcept = default;
 
 Senses& Senses::operator=(Senses&& other) noexcept {
     if (this != &other) {
-        state_ = std::exchange(other.state_, std::nullopt);
+        state_ = std::move(other.state_);
     }
     return *this;
 }
@@ -31,105 +49,105 @@ Senses::~Senses() noexcept = default;
 
 Senses Senses::load_subset(::fixy::InitLoadCtx const& init, SensesMask which) noexcept {
     // State is stack-constructed.  A noexcept load path must not allocate: a
-    // nothrow new that fails under memory pressure would degrade silently
-    // into an all-false coverage report.
-    State s{};
+    // failed allocation under memory pressure would degrade silently into an
+    // all-false coverage report.
+    State state{};
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    if (which.sense_hub) s.sense_hub = SenseHub::load(init);
-    if (which.sched_switch) s.sched_switch = SchedSwitch::load(init);
-    if (which.pmu_sample) s.pmu_sample = PmuSample::load(init);
-    if (which.lock_contention) s.lock_contention = LockContention::load(init);
-    if (which.syscall_latency) s.syscall_latency = SyscallLatency::load(init);
-    if (which.sched_tp_btf) s.sched_tp_btf = SchedTpBtf::load(init);
-    if (which.syscall_tp_btf) s.syscall_tp_btf = SyscallTpBtf::load(init);
+    if (which.sense_hub) state.sense_hub = option_of(SenseHub::load(init));
+    if (which.sched_switch) state.sched_switch = option_of(SchedSwitch::load(init));
+    if (which.pmu_sample) state.pmu_sample = option_of(PmuSample::load(init));
+    if (which.lock_contention) state.lock_contention = option_of(LockContention::load(init));
+    if (which.syscall_latency) state.syscall_latency = option_of(SyscallLatency::load(init));
+    if (which.sched_tp_btf) state.sched_tp_btf = option_of(SchedTpBtf::load(init));
+    if (which.syscall_tp_btf) state.syscall_tp_btf = option_of(SyscallTpBtf::load(init));
 #else
     static_cast<void>(init);
     static_cast<void>(which);
 #endif
 
-    return Senses{std::optional<State>{std::move(s)}};
+    return Senses{::fixy::Option<State>::some(std::move(state))};
 }
 
 Senses Senses::load_all(::fixy::InitLoadCtx const& init) noexcept { return load_subset(init, SensesMask::all()); }
 
 const SenseHub* Senses::sense_hub() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    if (!state_ || !state_->sense_hub.has_value()) return nullptr;
-    return &(*state_->sense_hub);
-#else
-    return nullptr;
+    for (State const& state : state_) {
+        return address_in(state.sense_hub);
+    }
 #endif
+    return nullptr;
 }
 
 const SchedSwitch* Senses::sched_switch() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    if (!state_ || !state_->sched_switch.has_value()) return nullptr;
-    return &(*state_->sched_switch);
-#else
-    return nullptr;
+    for (State const& state : state_) {
+        return address_in(state.sched_switch);
+    }
 #endif
+    return nullptr;
 }
 
 const PmuSample* Senses::pmu_sample() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    if (!state_ || !state_->pmu_sample.has_value()) return nullptr;
-    return &(*state_->pmu_sample);
-#else
-    return nullptr;
+    for (State const& state : state_) {
+        return address_in(state.pmu_sample);
+    }
 #endif
+    return nullptr;
 }
 
 const LockContention* Senses::lock_contention() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    if (!state_ || !state_->lock_contention.has_value()) return nullptr;
-    return &(*state_->lock_contention);
-#else
-    return nullptr;
+    for (State const& state : state_) {
+        return address_in(state.lock_contention);
+    }
 #endif
+    return nullptr;
 }
 
 const SyscallLatency* Senses::syscall_latency() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    if (!state_ || !state_->syscall_latency.has_value()) return nullptr;
-    return &(*state_->syscall_latency);
-#else
-    return nullptr;
+    for (State const& state : state_) {
+        return address_in(state.syscall_latency);
+    }
 #endif
+    return nullptr;
 }
 
 const SchedTpBtf* Senses::sched_tp_btf() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    if (!state_ || !state_->sched_tp_btf.has_value()) return nullptr;
-    return &(*state_->sched_tp_btf);
-#else
-    return nullptr;
+    for (State const& state : state_) {
+        return address_in(state.sched_tp_btf);
+    }
 #endif
+    return nullptr;
 }
 
 const SyscallTpBtf* Senses::syscall_tp_btf() const noexcept {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    if (!state_ || !state_->syscall_tp_btf.has_value()) return nullptr;
-    return &(*state_->syscall_tp_btf);
-#else
-    return nullptr;
+    for (State const& state : state_) {
+        return address_in(state.syscall_tp_btf);
+    }
 #endif
+    return nullptr;
 }
 
 CoverageReport Senses::coverage() const noexcept {
-    CoverageReport r;
+    CoverageReport report{};
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    if (state_) {
-        r.sense_hub_attached = state_->sense_hub.has_value();
-        r.sched_switch_attached = state_->sched_switch.has_value();
-        r.pmu_sample_attached = state_->pmu_sample.has_value();
-        r.lock_contention_attached = state_->lock_contention.has_value();
-        r.syscall_latency_attached = state_->syscall_latency.has_value();
-        r.sched_tp_btf_attached = state_->sched_tp_btf.has_value();
-        r.syscall_tp_btf_attached = state_->syscall_tp_btf.has_value();
+    for (State const& state : state_) {
+        report.sense_hub_attached = state.sense_hub.is_some();
+        report.sched_switch_attached = state.sched_switch.is_some();
+        report.pmu_sample_attached = state.pmu_sample.is_some();
+        report.lock_contention_attached = state.lock_contention.is_some();
+        report.syscall_latency_attached = state.syscall_latency.is_some();
+        report.sched_tp_btf_attached = state.sched_tp_btf.is_some();
+        report.syscall_tp_btf_attached = state.syscall_tp_btf.is_some();
     }
 #endif
-    return r;
+    return report;
 }
 
 }  // namespace crucible::perf

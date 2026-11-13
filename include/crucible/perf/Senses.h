@@ -7,11 +7,10 @@
 #include <crucible/perf/SenseHub.h>
 #include <crucible/perf/SyscallLatency.h>
 #include <crucible/perf/SyscallTpBtf.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 
-#include <cstdint>
-#include <optional>
-#include <string_view>
+#include <cstddef>
 
 namespace crucible::perf {
 
@@ -99,18 +98,20 @@ private:
     // Senses that attaches nothing, as a host that refuses each load does.
     struct State {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        std::optional<SenseHub> sense_hub;
-        std::optional<SchedSwitch> sched_switch;
-        std::optional<PmuSample> pmu_sample;
-        std::optional<LockContention> lock_contention;
-        std::optional<SyscallLatency> syscall_latency;
-        std::optional<SchedTpBtf> sched_tp_btf;
-        std::optional<SyscallTpBtf> syscall_tp_btf;
+        ::fixy::Option<SenseHub> sense_hub{};
+        ::fixy::Option<SchedSwitch> sched_switch{};
+        ::fixy::Option<PmuSample> pmu_sample{};
+        ::fixy::Option<LockContention> lock_contention{};
+        ::fixy::Option<SyscallLatency> syscall_latency{};
+        ::fixy::Option<SchedTpBtf> sched_tp_btf{};
+        ::fixy::Option<SyscallTpBtf> syscall_tp_btf{};
 #endif
     };
-    std::optional<State> state_;
+    // A State that holds a facade only moves, so the move of its Option
+    // empties the source, and a moved-from Senses owns no facade.
+    ::fixy::Option<State> state_{};
 
-    explicit Senses(std::optional<State>) noexcept;
+    explicit Senses(::fixy::Option<State> state) noexcept;
 };
 
 }  // namespace crucible::perf
