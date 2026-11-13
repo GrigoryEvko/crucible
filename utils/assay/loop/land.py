@@ -125,8 +125,10 @@ THE LANES
 
     Two lanes race only at the compare-and-swap.  The lane that loses
     composes its requests again on the new commit of the branch, and its gate
-    runs again (THE COMPARE-AND-SWAP).  THE REDUCE and THE BUILT FILES of a
-    lane fold only into the commit of that lane.
+    runs again (THE COMPARE-AND-SWAP).  A batch that loses many times takes
+    the right of way, and the other lanes wait for it (THE RIGHT OF WAY).
+    THE REDUCE and THE BUILT FILES of a lane fold only into the commit of
+    that lane.
 
     The request file of this copy holds the field claims.  An earlier copy of
     this module claims no request.  The holder of a lane after the first one
@@ -334,6 +336,23 @@ THE COMPARE-AND-SWAP
     others compose again and go to the gate again.  The holder keeps the
     lock of the warm tree for all of the batch.
 
+THE RIGHT OF WAY
+    A long run of the gate, such as a run of --all-configurations, can lose
+    each swap: a short landing of a different lane moves the branch while it
+    runs.  Thus, after RIGHT_AFTER refused swaps, the batch takes the right
+    of way before its next composition.  It holds a lock of flock(2) on the
+    file NUMBER.right of the queue, with the number of its first request,
+    until the batch ends.  The kernel frees the lock of a holder that ends.
+
+    Before each swap, a batch waits while a different batch holds a right of
+    way.  A batch that holds a right of way waits only for a right of way
+    with a smaller number, so the oldest batch goes first and no two batches
+    wait for each other.  The wait looks again each POLL_S seconds, for at
+    most RIGHT_WAIT_S seconds.  After the wait, the swap of the waiting batch
+    usually fails, and that batch composes again on the new commit.  Its next
+    run tests only the inputs that changed, so the wait costs it one short
+    run.
+
 THE JOURNAL
     Before the swap, the holder writes the file NUMBER.journal of each
     accepted request.  The file holds the token, the branch, the commit of
@@ -463,6 +482,10 @@ from assay.loop.derive import witness_fixtures
 # refused swap tests only the inputs that changed, so it is short, and a long landing needs many tries before it wins.
 ATTEMPTS = 32
 PAUSE_RANGE_S = (0.1, 0.9)
+# The refused swaps before a batch takes the right of way, and the longest wait of a swap for a right of way of a
+# different batch (THE RIGHT OF WAY).  A run of --all-configurations takes approximately 12 minutes.
+RIGHT_AFTER = 2
+RIGHT_WAIT_S = 1800.0
 # The two kinds of an edit of a shared file (THE REQUEST).
 INSERT = "insert"
 REPLACE = "replace"
@@ -502,6 +525,7 @@ REQUEST_SUFFIX = ".request"
 VERDICT_SUFFIX = ".verdict"
 JOURNAL_SUFFIX = ".journal"
 CLAIM_SUFFIX = ".claim"
+RIGHT_SUFFIX = ".right"
 PATCH_MARK = ".patch-"
 REQUEST_FORMAT = 2
 # The bytes of the random token of a request (THE QUEUE).
@@ -1519,6 +1543,86 @@ class Journal:
         queue_file(self.queue, queued.number, JOURNAL_SUFFIX).unlink(missing_ok=True)
 
 
+class RightOfWay:
+    """The right of way of one batch in its queue, with the number of the first request of the batch (THE RIGHT OF WAY).
+
+    The object holds the descriptor of the lock while the batch holds the right of way, and -1 before.
+    """
+
+    __slots__ = ("descriptor", "number", "pause", "queue")
+
+    def __init__(self, queue: Path, number: int, pause: heavy.Pause) -> None:
+        """Keep the queue, the number of the batch and the pause of the wait."""
+        self.queue = queue
+        self.number = number
+        self.pause = pause
+        self.descriptor = -1
+
+    @property
+    def is_taken(self) -> bool:
+        """Tell if the batch holds its right of way."""
+        return self.descriptor >= 0
+
+    def take(self) -> None:
+        """Hold the right of way of the batch until free().  A second call changes nothing.
+
+        Raises:
+            OSError: If the file of the right of way cannot be opened or locked
+        """
+        if self.is_taken:
+            return
+        right = queue_file(self.queue, self.number, RIGHT_SUFFIX)
+        descriptor = os.open(right, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o644)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+        except OSError:
+            os.close(descriptor)
+            raise
+        self.descriptor = descriptor
+
+    def free(self) -> None:
+        """Remove the file of the right of way, then free the lock.  With no right of way, change nothing."""
+        if not self.is_taken:
+            return
+        queue_file(self.queue, self.number, RIGHT_SUFFIX).unlink(missing_ok=True)
+        os.close(self.descriptor)
+        self.descriptor = -1
+
+    def first(self) -> list[int]:
+        """Return the number of each right of way of a different batch that goes before the swap of this batch.
+
+        A batch with no right of way waits for each one.  A batch with a right of way waits only for a smaller number.
+        Complexity: linear in the files of the right of way in the queue.
+        """
+        found: list[int] = []
+        for path in paths.listing(self.queue, f"*{RIGHT_SUFFIX}"):
+            number = number_of(path)
+            if number is None or number == self.number or (self.is_taken and number > self.number):
+                continue
+            if heavy.is_held(path):
+                found.append(number)
+        return sorted(found)
+
+    def wait(self) -> None:
+        """Wait while a right of way of a different batch goes first, for at most RIGHT_WAIT_S seconds."""
+        waited = 0.0
+        shown = False
+        while waited < RIGHT_WAIT_S:
+            first = self.first()
+            if not first:
+                return
+            if not shown:
+                names = " ".join(f"{number:0{NUMBER_WIDTH}d}" for number in first)
+                check_report.write_line(f"loop land: the batch waits before its swap for the right of way of {names}")
+                shown = True
+            self.pause(POLL_S)
+            waited += POLL_S
+        check_report.write_line(
+            f"loop land: the batch waited {RIGHT_WAIT_S:.0f} seconds for a right of way, and it tries its swap",
+            is_error=True,
+        )
+
+
 class BatchLanding:
     """The landing of one batch of requests (THE BATCH, THE SEARCH, THE COMPARE-AND-SWAP).
 
@@ -1546,6 +1650,7 @@ class BatchLanding:
         "pause",
         "refused_by",
         "repository",
+        "right",
         "runs",
     )
 
@@ -1557,11 +1662,12 @@ class BatchLanding:
         pause: heavy.Pause,
         is_alive: IsAlive | None = None,
         journal: Journal | None = None,
+        right: RightOfWay | None = None,
     ) -> None:
-        """Keep the gate, the receiver of the verdicts, the pause, the check of the processes, and the journal.
+        """Keep the gate, the receiver of the verdicts, the pause, the check of the processes, the journal and the right.
 
         The first request gives the shared git directory and the branch (THE HOLDER).  With no check of the processes,
-        each request stays in the batch.
+        each request stays in the batch.  With no right of way, the batch neither takes one nor waits for one.
         """
         self.repository = repository_of(batch[0])
         self.branch = batch[0].branch or branch_of(batch[0].root)
@@ -1570,6 +1676,7 @@ class BatchLanding:
         self.pause = pause
         self.is_alive: IsAlive = is_alive if is_alive is not None else (lambda _queued: True)
         self.journal = journal
+        self.right = right
         self.is_check = batch[0].options.is_check
         self.is_cut = False
         self.base = ""
@@ -1909,9 +2016,27 @@ class BatchLanding:
             LandError: If the branch holds no commit
             OSError: If a journal or a verdict cannot be written
         """
-        pending = list(items)
+        try:
+            self.landed_pending(list(items))
+        finally:
+            if self.right is not None:
+                self.right.free()
+
+    def landed_pending(self, pending: list[Queued]) -> None:
+        """Run the rounds of land() until the swap, a refusal of each request, or ATTEMPTS refused swaps.
+
+        After RIGHT_AFTER refused swaps, the batch takes its right of way before its next round.  Before each swap, it
+        waits for each right of way that goes first (THE RIGHT OF WAY).  The caller frees the right of way.
+        """
         swaps_refused = 0
         while pending:
+            right = self.right
+            if right is not None and not self.is_check and swaps_refused >= RIGHT_AFTER and not right.is_taken:
+                right.take()
+                check_report.write_line(
+                    f"loop land: the branch moved {swaps_refused} times, and the batch takes the right of way: the "
+                    "other lanes wait before their swap until this batch ends"
+                )
             self.base = self.tip()
             self.base_run = -1
             accepted, run = self.search(pending)
@@ -1934,6 +2059,8 @@ class BatchLanding:
                 return
             final = verdict.final or accepted[-1].commit
             decisions = self.landed_decisions(accepted, verdict, final)
+            if self.right is not None:
+                self.right.wait()
             if self.journal is not None:
                 for queued, decision in decisions:
                     self.journal.write(queued, self.branch, final, decision)
@@ -2182,7 +2309,7 @@ def remove_request(queue: Path, number: int) -> None:
 
     A holder then takes no request of a process that left the queue, and it finds no file of a request with no lock.
     """
-    for suffix in (REQUEST_SUFFIX, VERDICT_SUFFIX, JOURNAL_SUFFIX, CLAIM_SUFFIX):
+    for suffix in (REQUEST_SUFFIX, VERDICT_SUFFIX, JOURNAL_SUFFIX, CLAIM_SUFFIX, RIGHT_SUFFIX):
         queue_file(queue, number, suffix).unlink(missing_ok=True)
     for path in paths.listing(queue, f"{number:0{NUMBER_WIDTH}d}{PATCH_MARK}*"):
         path.unlink(missing_ok=True)
@@ -2516,7 +2643,9 @@ def held_batch(
         shown = " ".join(item.name for item in batch)
         check_report.write_line(f"loop land: the holder of the tree of lane {lane + 1} lands the batch {shown}")
         with session:
-            landing = BatchLanding(batch, gated, decide, pause, functools.partial(is_alive, queue), Journal(queue))
+            right = RightOfWay(queue, batch[0].number, pause)
+            alive = functools.partial(is_alive, queue)
+            landing = BatchLanding(batch, gated, decide, pause, alive, Journal(queue), right)
             landing.land(batch)
     except Exception as problem:  # noqa: BLE001
         failure = stopped_batch(problem)

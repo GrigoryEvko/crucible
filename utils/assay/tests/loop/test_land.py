@@ -1337,6 +1337,115 @@ def drop_cases(expect: testing.Expect) -> None:
         )
 
 
+def other_right(queue: Path, number: int) -> int:
+    """Take the right of way of a different batch, as the holder of a different lane does, and return its descriptor."""
+    path = land.queue_file(queue, number, land.RIGHT_SUFFIX)
+    descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o644)
+    fcntl.flock(descriptor, fcntl.LOCK_EX)
+    return descriptor
+
+
+def short_landing(root: Path, text: str) -> None:
+    """Land one commit that changes only kept.txt, as the short landing of a different lane does."""
+    (root / "kept.txt").write_text(text, encoding="utf-8")
+    tip = git.head(root)
+    composed = land.compose(root, request_of(("Move",), own=("kept.txt",)), tip)
+    land.swap(root, land.branch_of(root), land.commit_tree(root, composed, "A short landing\n"), tip, "Move")
+
+
+def right_batch(
+    root: Path, queue: Path, number: int, check: land.Check, pause: heavy.Pause
+) -> tuple[dict[int, land.Decision], str]:
+    """Land one request with the number through a planted gate, with a right of way in the queue (THE RIGHT OF WAY).
+
+    The function returns each verdict and the printed text.
+    """
+    batch = [land.Queued(number, root, own_requests(root, (f"right {number}\n",))[0], options())]
+    decisions: dict[int, land.Decision] = {}
+
+    def decide(queued: land.Queued, decision: land.Decision) -> None:
+        decisions[queued.number] = decision
+
+    right = land.RightOfWay(queue, number, pause)
+    batched = land.BatchLanding(batch, check, decide, pause, right=right)
+    _, printed = testing.captured(lambda: batched.land(batch))
+    return decisions, printed
+
+
+def right_cases(expect: testing.Expect) -> None:
+    """Hold the right of way: a batch that loses swaps takes it, and the swap of a different batch waits for it."""
+    with tempfile.TemporaryDirectory(prefix="land-right-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        queue = work / "queue"
+        queue.mkdir()
+        planted_repository(root)
+        right_file = land.queue_file(queue, 1, land.RIGHT_SUFFIX)
+        held_on_run: list[bool] = []
+
+        def move_unless_right() -> None:
+            """Move the branch on each run, as the short landings of the other lanes do, unless they wait."""
+            is_right = heavy.is_held(right_file)
+            held_on_run.append(is_right)
+            if not is_right:
+                short_landing(root, f"moved {len(held_on_run)}\n")
+
+        decisions, printed = right_batch(root, queue, 1, passing([], move_unless_right), no_pause)
+        expect(
+            "a batch that loses RIGHT_AFTER swaps takes the right of way, the other lanes keep the branch while it "
+            "runs, it lands on the next run, and it frees the right of way",
+            decisions[1].status == 0
+            and held_on_run == [False] * land.RIGHT_AFTER + [True]
+            and git.commit_subject(root, "HEAD") == "Add r1"
+            and not right_file.exists()
+            and "takes the right of way" in printed,
+        )
+        first = other_right(queue, 1)
+        later = other_right(queue, 9)
+        land.queue_file(queue, 3, land.RIGHT_SUFFIX).write_text("", encoding="utf-8")
+        right = land.RightOfWay(queue, 5, no_pause)
+        waits_for = right.first()
+        right.take()
+        taken_waits_for = right.first()
+        right.free()
+        expect(
+            "a batch with no right of way waits for each held right of way, a batch with one waits only for a "
+            "smaller number, and a file with no lock holds no right of way",
+            waits_for == [1, 9]
+            and taken_waits_for == [1]
+            and not land.queue_file(queue, 5, land.RIGHT_SUFFIX).exists(),
+        )
+        pauses: list[float] = []
+        _, printed = testing.captured(lambda: land.RightOfWay(queue, 5, pauses.append).wait())
+        expect(
+            "a right of way that is never freed holds the swap for RIGHT_WAIT_S seconds only, with a line",
+            len(pauses) == int(land.RIGHT_WAIT_S / land.POLL_S)
+            and "for the right of way of 00000001 00000009" in printed
+            and "waited" in printed,
+        )
+        os.close(later)
+        moved: list[str] = []
+        seen: list[tuple[gate.Candidate, bool]] = []
+
+        def holder_lands(_seconds: float) -> None:
+            """Land the batch with the right of way and free it, on the first pause of the wait."""
+            if not moved:
+                short_landing(root, "the batch with the right of way landed\n")
+                moved.append(git.head(root))
+                os.close(first)
+
+        decisions, printed = right_batch(root, queue, 5, passing(seen), holder_lands)
+        expect(
+            "the swap of a batch waits while a different batch holds the right of way, then composes again on the "
+            "commit of that batch, and lands",
+            decisions[5].status == 0
+            and "waits before its swap" in printed
+            and len(seen) == 2
+            and seen[1][0].head == moved[0]
+            and git.parent(root, "HEAD") == moved[0],
+        )
+
+
 @contextlib.contextmanager
 def waiting(queue: Path, root: Path, request: land.Request) -> Iterator[land.Queued]:
     """Write a request into the queue as a waiting process does, and hold its lock for the block."""
@@ -2144,6 +2253,7 @@ def main(argv: list[str]) -> int:
             flaky_cases,
             confirmation_cases,
             drop_cases,
+            right_cases,
             queue_cases,
             error_cases,
             defect_cases,
