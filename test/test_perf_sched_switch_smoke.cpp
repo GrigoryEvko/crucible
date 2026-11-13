@@ -4,7 +4,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
-#include <optional>
 #include <type_traits>
 #include <utility>
 #include "test_assert.h"
@@ -69,16 +68,16 @@ static_assert(sizeof(crucible::perf::SchedSwitch) == sizeof(std::unique_ptr<Dumm
 int main() {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     setenv("CRUCIBLE_PERF_QUIET", "1", /*overwrite=*/0);
-    std::optional<crucible::perf::SchedSwitch> hub =
-        crucible::perf::SchedSwitch::load(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-    static_assert(std::is_same_v<decltype(hub), std::optional<crucible::perf::SchedSwitch>>);
+    ::fixy::Option<crucible::perf::SchedSwitch> loaded =
+        crucible::perf::load_sched_switch(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
+    static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SchedSwitch>>);
 
-    if (hub.has_value()) {
+    for (crucible::perf::SchedSwitch& hub : loaded) {
         // The kernel-side program carries exactly one tracepoint, so attached
         // plus failed is in [0, 1] in practice. The type-level bound of 8 is
         // the structural cap on the backing container.
-        const auto attached_refined = hub->attached_programs();
-        const auto failures_refined = hub->attach_failures();
+        const auto attached_refined = hub.attached_programs();
+        const auto failures_refined = hub.attach_failures();
         static_assert(
             std::is_same_v<decltype(attached_refined), const ::fixy::Refined<::fixy::bounded_above<8>, std::size_t>>);
         static_assert(
@@ -88,8 +87,8 @@ int main() {
         const std::size_t attached = attached_refined.value();
         const std::size_t failures = failures_refined.value();
         if (attached == 0 && failures == 0) {
-            std::fprintf(stderr, "perf::SchedSwitch::load() returned populated hub "
-                                 "with zero programs — should have been std::nullopt\n");
+            std::fprintf(stderr, "perf::load_sched_switch() returned populated hub "
+                                 "with zero programs — should have been none\n");
             return 1;
         }
         if (attached > 8 || failures > 8) {
@@ -103,12 +102,12 @@ int main() {
         // No specific count is asserted, because the kernel need not have
         // logged a switch yet. The check is that the call links and yields
         // a u64.
-        const uint64_t cs = hub->context_switches();
+        const uint64_t cs = hub.context_switches();
         static_assert(std::is_same_v<decltype(cs), const uint64_t>);
 
         // The view spans the whole ring, not just the written prefix.
         // Readers pick out valid slots from timeline_write_index() and ts_ns.
-        const auto timeline = hub->timeline_view();
+        const auto timeline = hub.timeline_view();
         static_assert(
             std::is_same_v<decltype(timeline), const ::fixy::Borrowed<const crucible::perf::TimelineSchedEvent,
                                                                       crucible::perf::SchedSwitch>>);
@@ -121,22 +120,22 @@ int main() {
         }
         if (timeline.empty()) {
             std::fprintf(stderr, "perf::SchedSwitch::timeline_view() — view should be "
-                                 "non-empty when hub.has_value()\n");
+                                 "non-empty when the load gave a hub\n");
             return 1;
         }
 
         // The index is whatever the kernel has accumulated, so only the
         // return type is pinned.
-        const uint64_t write_idx = hub->timeline_write_index();
+        const uint64_t write_idx = hub.timeline_write_index();
         static_assert(std::is_same_v<decltype(write_idx), const uint64_t>);
         (void)write_idx;
 
-        crucible::perf::SchedSwitch moved_into = std::move(*hub);
-        const uint64_t cs_after = hub->context_switches();
-        const uint64_t write_idx_after = hub->timeline_write_index();
-        const auto view_after = hub->timeline_view();
-        const auto attached_after = hub->attached_programs();
-        const auto failures_after = hub->attach_failures();
+        crucible::perf::SchedSwitch moved_into = std::move(hub);
+        const uint64_t cs_after = hub.context_switches();
+        const uint64_t write_idx_after = hub.timeline_write_index();
+        const auto view_after = hub.timeline_view();
+        const auto attached_after = hub.attached_programs();
+        const auto failures_after = hub.attach_failures();
 
         if (cs_after != 0u) {
             std::fprintf(stderr,

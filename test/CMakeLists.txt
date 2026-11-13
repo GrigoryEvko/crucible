@@ -1650,39 +1650,39 @@ crucible_neg_compile_test(neg_ptp_daemon_report_fg_ctx
 # a startup load context, and the parameter has no default.  The two
 # fixtures of each load pin these two refusals.
 crucible_neg_compile_test(neg_perf_sense_hub_load_wrong_cap
-    "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
-    "initializing argument 1 of .static std::optional<crucible::perf::SenseHub> crucible::perf::SenseHub::load\\(const fixy::InitLoadCtx&\\).")
+    "invalid initialization of reference of type .const fixy::InitLoadCtx&.*from expression of type .const fixy::BgLoadCtx."
+    "in passing argument 1 of .foundation::core::Option<crucible::perf::SenseHub> crucible::perf::load_sense_hub\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_test(neg_perf_sense_hub_load_no_cap
-    "no matching function for call to .crucible::perf::SenseHub::load\\(\\)."
-    "candidate expects 1 argument, 0 provided")
+    "too few arguments to function"
+    ".foundation::core::Option<crucible::perf::SenseHub> crucible::perf::load_sense_hub\\(const fixy::InitLoadCtx&\\).")
 
 crucible_neg_compile_test(neg_perf_sched_switch_load_wrong_cap
-    "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
-    "initializing argument 1 of .static std::optional<crucible::perf::SchedSwitch> crucible::perf::SchedSwitch::load\\(const fixy::InitLoadCtx&\\).")
+    "invalid initialization of reference of type .const fixy::InitLoadCtx&.*from expression of type .const fixy::BgLoadCtx."
+    "in passing argument 1 of .foundation::core::Option<crucible::perf::SchedSwitch> crucible::perf::load_sched_switch\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_test(neg_perf_sched_switch_load_no_cap
-    "no matching function for call to .crucible::perf::SchedSwitch::load\\(\\)."
-    "candidate expects 1 argument, 0 provided")
+    "too few arguments to function"
+    ".foundation::core::Option<crucible::perf::SchedSwitch> crucible::perf::load_sched_switch\\(const fixy::InitLoadCtx&\\).")
 
 crucible_neg_compile_test(neg_perf_pmu_sample_load_wrong_cap
-    "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
-    "initializing argument 1 of .static std::optional<crucible::perf::PmuSample> crucible::perf::PmuSample::load\\(const fixy::InitLoadCtx&\\).")
+    "invalid initialization of reference of type .const fixy::InitLoadCtx&.*from expression of type .const fixy::BgLoadCtx."
+    "in passing argument 1 of .foundation::core::Option<crucible::perf::PmuSample> crucible::perf::load_pmu_sample\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_test(neg_perf_pmu_sample_load_no_cap
-    "no matching function for call to .crucible::perf::PmuSample::load\\(\\)."
-    "candidate expects 1 argument, 0 provided")
+    "too few arguments to function"
+    ".foundation::core::Option<crucible::perf::PmuSample> crucible::perf::load_pmu_sample\\(const fixy::InitLoadCtx&\\).")
 
 crucible_neg_compile_test(neg_perf_lock_contention_load_wrong_cap
-    "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
-    "initializing argument 1 of .static std::optional<crucible::perf::LockContention> crucible::perf::LockContention::load\\(const fixy::InitLoadCtx&\\).")
+    "invalid initialization of reference of type .const fixy::InitLoadCtx&.*from expression of type .const fixy::BgLoadCtx."
+    "in passing argument 1 of .foundation::core::Option<crucible::perf::LockContention> crucible::perf::load_lock_contention\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_test(neg_perf_lock_contention_load_no_cap
-    "no matching function for call to .crucible::perf::LockContention::load\\(\\)."
-    "candidate expects 1 argument, 0 provided")
+    "too few arguments to function"
+    ".foundation::core::Option<crucible::perf::LockContention> crucible::perf::load_lock_contention\\(const fixy::InitLoadCtx&\\).")
 
 crucible_neg_compile_test(neg_perf_syscall_latency_load_wrong_cap
-    "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
-    "initializing argument 1 of .static std::optional<crucible::perf::SyscallLatency> crucible::perf::SyscallLatency::load\\(const fixy::InitLoadCtx&\\).")
+    "invalid initialization of reference of type .const fixy::InitLoadCtx&.*from expression of type .const fixy::BgLoadCtx."
+    "in passing argument 1 of .foundation::core::Option<crucible::perf::SyscallLatency> crucible::perf::load_syscall_latency\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_test(neg_perf_syscall_latency_load_no_cap
-    "no matching function for call to .crucible::perf::SyscallLatency::load\\(\\)."
-    "candidate expects 1 argument, 0 provided")
+    "too few arguments to function"
+    ".foundation::core::Option<crucible::perf::SyscallLatency> crucible::perf::load_syscall_latency\\(const fixy::InitLoadCtx&\\).")
 
 crucible_neg_compile_test(neg_perf_senses_load_wrong_cap
     "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
@@ -1691,17 +1691,17 @@ crucible_neg_compile_test(neg_perf_senses_load_no_cap
     "no matching function for call to .crucible::perf::Senses::load_all\\(\\)."
     "candidate expects 1 argument, 0 provided")
 crucible_neg_compile_test(neg_perf_sched_tp_btf_load_wrong_cap
-    "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
-    "initializing argument 1 of .static std::optional<crucible::perf::SchedTpBtf> crucible::perf::SchedTpBtf::load\\(const fixy::InitLoadCtx&\\).")
+    "invalid initialization of reference of type .const fixy::InitLoadCtx&.*from expression of type .const fixy::BgLoadCtx."
+    "in passing argument 1 of .foundation::core::Option<crucible::perf::SchedTpBtf> crucible::perf::load_sched_tp_btf\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_test(neg_perf_sched_tp_btf_load_no_cap
-    "no matching function for call to .crucible::perf::SchedTpBtf::load\\(\\)."
-    "candidate expects 1 argument, 0 provided")
+    "too few arguments to function"
+    ".foundation::core::Option<crucible::perf::SchedTpBtf> crucible::perf::load_sched_tp_btf\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_test(neg_perf_syscall_tp_btf_load_wrong_cap
-    "cannot convert .const fixy::BgLoadCtx. .aka .const foundation::effects::ExecCtx<foundation::effects::Bg,"
-    "initializing argument 1 of .static std::optional<crucible::perf::SyscallTpBtf> crucible::perf::SyscallTpBtf::load\\(const fixy::InitLoadCtx&\\).")
+    "invalid initialization of reference of type .const fixy::InitLoadCtx&.*from expression of type .const fixy::BgLoadCtx."
+    "in passing argument 1 of .foundation::core::Option<crucible::perf::SyscallTpBtf> crucible::perf::load_syscall_tp_btf\\(const fixy::InitLoadCtx&\\).")
 crucible_neg_compile_test(neg_perf_syscall_tp_btf_load_no_cap
-    "no matching function for call to .crucible::perf::SyscallTpBtf::load\\(\\)."
-    "candidate expects 1 argument, 0 provided")
+    "too few arguments to function"
+    ".foundation::core::Option<crucible::perf::SyscallTpBtf> crucible::perf::load_syscall_tp_btf\\(const fixy::InitLoadCtx&\\).")
 
 # The constructor of warden::DeadlineWatchdog is private, and
 # mint_deadline_watchdog is its one route.  One fixture builds a

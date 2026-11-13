@@ -73,7 +73,7 @@ static_assert(crucible::cntp::_wip::sharp::sharp_backend_implemented == false,
 static_assert(crucible::perf::sense_hub_v2_implemented == false,
               "sense_hub_v2_implemented flipped to true. Write the live-tier "
               "test for the v2 hub and remove the deprecation from "
-              "SenseHubV2::load and mint_sense_hub_v2 in lockstep.");
+              "load_sense_hub_v2 and mint_sense_hub_v2 in lockstep.");
 
 namespace {
 

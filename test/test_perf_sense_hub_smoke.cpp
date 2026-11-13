@@ -4,7 +4,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
-#include <optional>
 #include <type_traits>
 #include <utility>
 #include "test_assert.h"
@@ -119,17 +118,17 @@ int main() {
     // The loader takes the startup load context, and main is a startup
     // frame.  The call site is also the check that the gated signature
     // compiles from an ordinary startup frame.
-    std::optional<crucible::perf::SenseHub> hub =
-        crucible::perf::SenseHub::load(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-    static_assert(std::is_same_v<decltype(hub), std::optional<crucible::perf::SenseHub>>);
+    ::fixy::Option<crucible::perf::SenseHub> loaded =
+        crucible::perf::load_sense_hub(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
+    static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SenseHub>>);
     // Either outcome is valid.  A populated hub also carries counters
     // that must agree with each other.
-    if (hub.has_value()) {
+    for (crucible::perf::SenseHub& hub : loaded) {
         // Both counters come back refined against an upper bound that
         // the implementation enforces at construction.  Pinning the
         // wrapper type first catches a later relaxation of that bound.
-        const auto attached_refined = hub->attached_programs();
-        const auto failures_refined = hub->attach_failures();
+        const auto attached_refined = hub.attached_programs();
+        const auto failures_refined = hub.attach_failures();
         static_assert(
             std::is_same_v<decltype(attached_refined), const ::fixy::Refined<::fixy::bounded_above<64>, std::size_t>>);
         static_assert(
@@ -139,8 +138,8 @@ int main() {
         // A hub with no programs at all is rejected by the loader, so a
         // populated one cannot report zero of both.
         if (attached == 0 && failures == 0) {
-            std::fprintf(stderr, "perf::SenseHub::load() returned populated hub with "
-                                 "zero programs — should have been std::nullopt\n");
+            std::fprintf(stderr, "perf::load_sense_hub() returned populated hub with "
+                                 "zero programs — should have been none\n");
             return 1;
         }
         // The refinement enforces this at construction under enforced
@@ -155,7 +154,7 @@ int main() {
         }
         // A successful load leaves the mapping live, so the view
         // borrows the whole counter array.
-        const auto view = hub->counters_view();
+        const auto view = hub.counters_view();
         static_assert(std::is_same_v<decltype(view),
                                      const ::fixy::Borrowed<const volatile std::uint64_t, crucible::perf::SenseHub>>);
         // The view must span exactly the whole counter array.  A
@@ -170,22 +169,22 @@ int main() {
         }
         if (view.empty()) {
             std::fprintf(stderr, "perf::SenseHub::counters_view() — view should be "
-                                 "non-empty when hub.has_value()\n");
+                                 "non-empty when the load gave a hub\n");
             return 1;
         }
 
         // Every public accessor returns a documented empty value when
         // the state pointer is null, which makes a moved-from hub safe
         // to query.  That matters because client code can outlive the
-        // optional that held the hub.  This block drives the null branch
+        // Option that held the hub.  This block drives the null branch
         // of each accessor, so a move that breaks the guard fails here
         // rather than dereferencing null in production.
-        crucible::perf::SenseHub moved_into = std::move(*hub);
+        crucible::perf::SenseHub moved_into = std::move(hub);
         // The source now holds the moved-from state.
-        const auto zeroed_snapshot = hub->read();
-        const auto empty_view = hub->counters_view();
-        const auto attached_after = hub->attached_programs();
-        const auto failures_after = hub->attach_failures();
+        const auto zeroed_snapshot = hub.read();
+        const auto empty_view = hub.counters_view();
+        const auto attached_after = hub.attached_programs();
+        const auto failures_after = hub.attach_failures();
 
         for (uint32_t i = 0; i < crucible::perf::NUM_COUNTERS; ++i) {
             if (zeroed_snapshot.counters[i] != 0u) {

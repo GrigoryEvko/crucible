@@ -248,7 +248,26 @@ PROBE_FILES: dict[str, str] = {
         "holds"
     ),
     "test/test_metalog_session.cpp": "a use of a moved-from channel handle aborts",
+    "test/test_perf_lock_contention_smoke.cpp": (
+        "a moved-from LockContention reports zero for each accessor and an empty timeline"
+    ),
+    "test/test_perf_pmu_sample_smoke.cpp": (
+        "a moved-from PmuSample reports zero for each accessor and an empty timeline"
+    ),
+    "test/test_perf_sched_switch_smoke.cpp": (
+        "a moved-from SchedSwitch reports zero for each accessor and an empty timeline"
+    ),
+    "test/test_perf_sched_tp_btf_smoke.cpp": (
+        "a moved-from SchedTpBtf reports zero for each accessor and an empty timeline"
+    ),
+    "test/test_perf_sense_hub_smoke.cpp": "a moved-from SenseHub reads zero counters and reports no attachments",
     "test/test_perf_senses_smoke.cpp": "a moved-from Senses reports no attachments after a move and a move assignment",
+    "test/test_perf_syscall_latency_smoke.cpp": (
+        "a moved-from SyscallLatency reports zero for each accessor and an empty timeline"
+    ),
+    "test/test_perf_syscall_tp_btf_smoke.cpp": (
+        "a moved-from SyscallTpBtf reports zero for each accessor and an empty timeline"
+    ),
     "test/test_warden_policy.cpp": "a moved-from warden guard is disarmed and reports each observer as not applied",
 }
 # The plants of the rule, the prefix of the controls of its known misses, and the maximum number of known misses

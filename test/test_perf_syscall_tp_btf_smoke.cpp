@@ -4,7 +4,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
-#include <optional>
 #include <type_traits>
 #include <utility>
 #include "test_assert.h"
@@ -37,19 +36,19 @@ static_assert(sizeof(crucible::perf::SyscallTpBtf) == sizeof(std::unique_ptr<Dum
 int main() {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     setenv("CRUCIBLE_PERF_QUIET", "1", /*overwrite=*/0);
-    std::optional<crucible::perf::SyscallTpBtf> hub =
-        crucible::perf::SyscallTpBtf::load(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-    static_assert(std::is_same_v<decltype(hub), std::optional<crucible::perf::SyscallTpBtf>>);
+    ::fixy::Option<crucible::perf::SyscallTpBtf> loaded =
+        crucible::perf::load_syscall_tp_btf(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
+    static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SyscallTpBtf>>);
 
-    if (hub.has_value()) {
-        const auto attached = hub->attached_programs();
-        const auto failures = hub->attach_failures();
-        // The facade needs both sys_enter and sys_exit attached.  load()
-        // returns nullopt when fewer than two attach, so a populated hub
+    for (crucible::perf::SyscallTpBtf& hub : loaded) {
+        const auto attached = hub.attached_programs();
+        const auto failures = hub.attach_failures();
+        // The facade needs both sys_enter and sys_exit attached.  The load
+        // returns none when fewer than two attach, so a populated hub
         // holds at least two links.
         if (attached.value() < 2) {
             std::fprintf(stderr,
-                         "perf::SyscallTpBtf::load() returned populated hub with "
+                         "perf::load_syscall_tp_btf() returned populated hub with "
                          "%zu programs — should have been ≥ 2 (sys_enter + sys_exit)\n",
                          attached.value());
             return 1;
@@ -62,9 +61,9 @@ int main() {
             return 1;
         }
 
-        const uint64_t total = hub->total_syscalls();
-        const uint64_t write_idx = hub->timeline_write_index();
-        const auto timeline = hub->timeline_view();
+        const uint64_t total = hub.total_syscalls();
+        const uint64_t write_idx = hub.timeline_write_index();
+        const auto timeline = hub.timeline_view();
         (void)total;
         (void)write_idx;
         if (timeline.size() != crucible::perf::TIMELINE_CAPACITY) {
@@ -74,9 +73,9 @@ int main() {
         }
 
         // Reading a moved-from hub is defined here and must report zeros.
-        crucible::perf::SyscallTpBtf moved_into = std::move(*hub);
-        if (hub->total_syscalls() != 0u || hub->timeline_write_index() != 0u || !hub->timeline_view().empty()
-            || hub->attached_programs().value() != 0u || hub->attach_failures().value() != 0u) {
+        crucible::perf::SyscallTpBtf moved_into = std::move(hub);
+        if (hub.total_syscalls() != 0u || hub.timeline_write_index() != 0u || !hub.timeline_view().empty()
+            || hub.attached_programs().value() != 0u || hub.attach_failures().value() != 0u) {
             std::fprintf(stderr, "perf::SyscallTpBtf moved-from accessors — expected zeros\n");
             return 1;
         }

@@ -4,7 +4,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
-#include <optional>
 #include <type_traits>
 #include <utility>
 #include "test_assert.h"
@@ -75,13 +74,13 @@ static_assert(sizeof(crucible::perf::PmuSample) == sizeof(std::unique_ptr<DummyS
 int main() {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     setenv("CRUCIBLE_PERF_QUIET", "1", /*overwrite=*/0);
-    std::optional<crucible::perf::PmuSample> hub =
-        crucible::perf::PmuSample::load(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-    static_assert(std::is_same_v<decltype(hub), std::optional<crucible::perf::PmuSample>>);
+    ::fixy::Option<crucible::perf::PmuSample> loaded =
+        crucible::perf::load_pmu_sample(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
+    static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::PmuSample>>);
 
-    if (hub.has_value()) {
-        const auto attached_refined = hub->attached_programs();
-        const auto failures_refined = hub->attach_failures();
+    for (crucible::perf::PmuSample& hub : loaded) {
+        const auto attached_refined = hub.attached_programs();
+        const auto failures_refined = hub.attach_failures();
         static_assert(
             std::is_same_v<decltype(attached_refined), const ::fixy::Refined<::fixy::bounded_above<8>, std::size_t>>);
         static_assert(
@@ -99,13 +98,13 @@ int main() {
         }
         // A populated hub means at least one attachment succeeded.
         if (attached == 0) {
-            std::fprintf(stderr, "perf::PmuSample::load() returned populated hub with "
-                                 "zero programs — should have been std::nullopt\n");
+            std::fprintf(stderr, "perf::load_pmu_sample() returned populated hub with "
+                                 "zero programs — should have been none\n");
             return 1;
         }
 
         // The view spans the whole ring, not just the written prefix.
-        const auto view = hub->timeline_view();
+        const auto view = hub.timeline_view();
         static_assert(
             std::is_same_v<decltype(view),
                            const ::fixy::Borrowed<const crucible::perf::PmuSampleEvent, crucible::perf::PmuSample>>);
@@ -118,11 +117,11 @@ int main() {
         }
         if (view.empty()) {
             std::fprintf(stderr, "perf::PmuSample::timeline_view() — should be "
-                                 "non-empty when hub.has_value()\n");
+                                 "non-empty when the load gave a hub\n");
             return 1;
         }
 
-        const uint64_t write_idx = hub->timeline_write_index();
+        const uint64_t write_idx = hub.timeline_write_index();
         static_assert(std::is_same_v<decltype(write_idx), const uint64_t>);
         (void)write_idx;
 
@@ -131,15 +130,15 @@ int main() {
         // without reaching into the mapping, so only non-nullness is pinned.
         if (view.data() == nullptr) {
             std::fprintf(stderr, "perf::PmuSample::timeline_view() — data() is null "
-                                 "when hub.has_value()\n");
+                                 "when the load gave a hub\n");
             return 1;
         }
 
-        crucible::perf::PmuSample moved_into = std::move(*hub);
-        const uint64_t write_idx_after = hub->timeline_write_index();
-        const auto view_after = hub->timeline_view();
-        const auto attached_after = hub->attached_programs();
-        const auto failures_after = hub->attach_failures();
+        crucible::perf::PmuSample moved_into = std::move(hub);
+        const uint64_t write_idx_after = hub.timeline_write_index();
+        const auto view_after = hub.timeline_view();
+        const auto attached_after = hub.attached_programs();
+        const auto failures_after = hub.attach_failures();
 
         if (write_idx_after != 0u) {
             std::fprintf(stderr,

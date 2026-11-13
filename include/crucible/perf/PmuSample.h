@@ -2,6 +2,7 @@
 
 #include <fixy/Borrowed.h>
 #include <fixy/Checked.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <foundation/effects/Ctx.h>
@@ -10,9 +11,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 
 namespace crucible::perf {
+
+namespace detail {
+struct FacadeDoor;
+}  // namespace detail
 
 // These numeric values are wire protocol with the kernel-side BPF
 // program and must not be renumbered.  Values 0 and 1 are reserved
@@ -69,30 +73,6 @@ public:
 
     [[nodiscard]] Snapshot snapshot() const noexcept;
 
-    // An event type the machine does not support is skipped, so a
-    // partial attach still yields a usable facade.  Returns nullopt
-    // only when perf_event_open refuses every event type, when
-    // CAP_PERFMON is missing on a host with perf_event_paranoid above
-    // 2, or when the verifier rejects the program.
-    //
-    // Three environment variables override the per-event sample
-    // period.  They are read once during the load, so setting them
-    // afterwards has no effect.
-    //
-    //   CRUCIBLE_PERF_PMU_PERIOD_HW    cache, branch and TLB, default 10000
-    //   CRUCIBLE_PERF_PMU_PERIOD_IBS   the two AMD events, default 100000
-    //   CRUCIBLE_PERF_PMU_PERIOD_SW    the software events, default 1
-    //
-    // A smaller period samples more densely.  No floor is enforced,
-    // because a diagnostic run may legitimately want a very dense
-    // sample, but a hardware period below 1000 can drive a sustained
-    // NMI flood across every CPU on the machine.
-    //
-    // The load takes the startup load context.  Its row carries Block,
-    // because the load waits in the kernel while the verifier examines
-    // the program.
-    [[nodiscard]] static std::optional<PmuSample> load(::fixy::InitLoadCtx const&) noexcept;
-
     // The kernel samples the task whose TID equals the process TGID,
     // so only the main thread of this process appears here.
     //
@@ -123,10 +103,35 @@ public:
     ~PmuSample();
 
 private:
+    // The door builds the facade in each load.
+    friend struct detail::FacadeDoor;
     struct State;
     PmuSample() noexcept;
     std::unique_ptr<State> state_;
 };
+
+// An event type the machine does not support is skipped, so a partial
+// attach still yields a usable facade.  Returns none only when
+// perf_event_open refuses every event type, when CAP_PERFMON is missing on
+// a host with perf_event_paranoid above 2, or when the verifier rejects
+// the program.
+//
+// Three environment variables override the per-event sample period.  They
+// are read once during the load, so setting them afterwards has no effect.
+//
+//   CRUCIBLE_PERF_PMU_PERIOD_HW    cache, branch and TLB, default 10000
+//   CRUCIBLE_PERF_PMU_PERIOD_IBS   the two AMD events, default 100000
+//   CRUCIBLE_PERF_PMU_PERIOD_SW    the software events, default 1
+//
+// A smaller period samples more densely.  No floor is enforced, because a
+// diagnostic run may legitimately want a very dense sample, but a hardware
+// period below 1000 can drive a sustained NMI flood across every CPU on
+// the machine.
+//
+// The load takes the startup load context.  Its row carries Block,
+// because the load waits in the kernel while the verifier examines the
+// program.
+[[nodiscard]] ::fixy::Option<PmuSample> load_pmu_sample(::fixy::InitLoadCtx const&) noexcept;
 
 // The load opens per-CPU perf event descriptors, maps the sample ring,
 // and calls bpf(BPF_PROG_LOAD).  That last call enters the kernel and
@@ -150,8 +155,8 @@ concept CtxFitsPmuSampleMint = ::foundation::effects::IsExecCtx<Ctx>
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsPmuSampleMint<Ctx>
-[[nodiscard]] inline std::optional<PmuSample> mint_pmu_sample(Ctx const&, ::fixy::InitLoadCtx const& init) noexcept {
-    return PmuSample::load(init);
+[[nodiscard]] inline ::fixy::Option<PmuSample> mint_pmu_sample(Ctx const&, ::fixy::InitLoadCtx const& init) noexcept {
+    return load_pmu_sample(init);
 }
 
 }  // namespace crucible::perf

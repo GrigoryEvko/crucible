@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <span>
 
 extern "C" {
@@ -26,7 +25,7 @@ SyscallLatency::SyscallLatency(SyscallLatency&&) noexcept = default;
 SyscallLatency& SyscallLatency::operator=(SyscallLatency&&) noexcept = default;
 SyscallLatency::~SyscallLatency() = default;
 
-std::optional<SyscallLatency> SyscallLatency::load(::fixy::InitLoadCtx const& ctx) noexcept {
+::fixy::Option<SyscallLatency> load_syscall_latency(::fixy::InitLoadCtx const& ctx) noexcept {
     // The attach is all-or-nothing.  With the enter tracepoint attached but
     // the exit one missing, every recorded start entry stays unconsumed, and
     // the facade records useless half-events until the LRU hash map evicts
@@ -43,11 +42,7 @@ std::optional<SyscallLatency> SyscallLatency::load(::fixy::InitLoadCtx const& ct
         .counter_map = CRUCIBLE_PERF_FOREIGN_NAME("total_syscalls"),
         .counter_fallback = "total_syscalls() returns 0",
     };
-    auto state = detail::load_ring<State>(ctx, spec);
-    if (state == nullptr) return std::nullopt;
-    SyscallLatency hub;
-    hub.state_ = std::move(state);
-    return hub;
+    return detail::load_ring<SyscallLatency>(ctx, spec);
 }
 
 uint64_t SyscallLatency::total_syscalls() const noexcept { return state_ != nullptr ? state_->count() : 0; }

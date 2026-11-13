@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <span>
 
 extern "C" {
@@ -26,7 +25,7 @@ SchedTpBtf::SchedTpBtf(SchedTpBtf&&) noexcept = default;
 SchedTpBtf& SchedTpBtf::operator=(SchedTpBtf&&) noexcept = default;
 SchedTpBtf::~SchedTpBtf() = default;
 
-std::optional<SchedTpBtf> SchedTpBtf::load(::fixy::InitLoadCtx const& ctx) noexcept {
+::fixy::Option<SchedTpBtf> load_sched_tp_btf(::fixy::InitLoadCtx const& ctx) noexcept {
     const detail::RingSpec spec{
         .load = {.facade = CRUCIBLE_PERF_FOREIGN_NAME("sched_tp_btf"),
                  .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_sched_tp_btf"),
@@ -41,11 +40,7 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::fixy::InitLoadCtx const& ctx) noexc
         .counter_map = CRUCIBLE_PERF_FOREIGN_NAME("cs_count"),
         .counter_fallback = "context_switches() returns 0",
     };
-    auto state = detail::load_ring<State>(ctx, spec);
-    if (state == nullptr) return std::nullopt;
-    SchedTpBtf hub;
-    hub.state_ = std::move(state);
-    return hub;
+    return detail::load_ring<SchedTpBtf>(ctx, spec);
 }
 
 uint64_t SchedTpBtf::context_switches() const noexcept { return state_ != nullptr ? state_->count() : 0; }

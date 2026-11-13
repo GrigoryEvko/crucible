@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <span>
 
 extern "C" {
@@ -26,7 +25,7 @@ SchedSwitch::SchedSwitch(SchedSwitch&&) noexcept = default;
 SchedSwitch& SchedSwitch::operator=(SchedSwitch&&) noexcept = default;
 SchedSwitch::~SchedSwitch() = default;
 
-std::optional<SchedSwitch> SchedSwitch::load(::fixy::InitLoadCtx const& ctx) noexcept {
+::fixy::Option<SchedSwitch> load_sched_switch(::fixy::InitLoadCtx const& ctx) noexcept {
     const detail::RingSpec spec{
         .load = {.facade = CRUCIBLE_PERF_FOREIGN_NAME("sched_switch"),
                  .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_sched_switch"),
@@ -38,11 +37,7 @@ std::optional<SchedSwitch> SchedSwitch::load(::fixy::InitLoadCtx const& ctx) noe
         .counter_map = CRUCIBLE_PERF_FOREIGN_NAME("cs_count"),
         .counter_fallback = "context_switches() returns 0",
     };
-    auto state = detail::load_ring<State>(ctx, spec);
-    if (state == nullptr) return std::nullopt;
-    SchedSwitch hub;
-    hub.state_ = std::move(state);
-    return hub;
+    return detail::load_ring<SchedSwitch>(ctx, spec);
 }
 
 uint64_t SchedSwitch::context_switches() const noexcept { return state_ != nullptr ? state_->count() : 0; }

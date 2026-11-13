@@ -2,6 +2,7 @@
 
 #include <fixy/Borrowed.h>
 #include <fixy/Checked.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <foundation/effects/Ctx.h>
@@ -11,9 +12,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 
 namespace crucible::perf {
+
+namespace detail {
+struct FacadeDoor;
+}  // namespace detail
 
 // Counter indices must match the index enum of the kernel-side BPF
 // program that fills the map.  The gaps in the numbering are reserved
@@ -134,16 +138,6 @@ struct Snapshot {
 
 class SenseHub {
 public:
-    // Returns nullopt when the kernel refuses the load: no CAP_BPF, a
-    // tracepoint this kernel does not carry, or a verifier rejection.
-    // A diagnostic line goes to stderr unless CRUCIBLE_PERF_QUIET=1 is
-    // set in the environment.
-    //
-    // The load takes the startup load context.  Its row carries Block,
-    // because the load waits in the kernel while the verifier examines
-    // the program.
-    [[nodiscard]] static std::optional<SenseHub> load(::fixy::InitLoadCtx const&) noexcept;
-
     [[nodiscard]] Snapshot read() const noexcept;
 
     [[nodiscard]] ::fixy::Borrowed<const volatile uint64_t, SenseHub> counters_view() const noexcept;
@@ -164,11 +158,23 @@ public:
     ~SenseHub();
 
 private:
+    // The door builds the facade in each load.
+    friend struct detail::FacadeDoor;
     struct State;
     SenseHub() noexcept;
 
     std::unique_ptr<State> state_;
 };
+
+// Returns none when the kernel refuses the load: no CAP_BPF, a tracepoint
+// this kernel does not carry, or a verifier rejection.  A diagnostic line
+// goes to stderr unless CRUCIBLE_PERF_QUIET=1 is set in the environment.
+//
+// The load takes the startup load context.  Its row carries Block,
+// because the load waits in the kernel while the verifier examines the
+// program.  The load stands outside the class, because an Option of a
+// facade needs the complete facade.
+[[nodiscard]] ::fixy::Option<SenseHub> load_sense_hub(::fixy::InitLoadCtx const&) noexcept;
 
 // The load issues bpf() and perf_event_open() and maps the counter
 // array.  The bpf(BPF_PROG_LOAD) call enters the kernel and waits while
@@ -192,8 +198,8 @@ concept CtxFitsSenseHubMint = ::foundation::effects::IsExecCtx<Ctx>
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSenseHubMint<Ctx>
-[[nodiscard]] inline std::optional<SenseHub> mint_sense_hub(Ctx const&, ::fixy::InitLoadCtx const& init) noexcept {
-    return SenseHub::load(init);
+[[nodiscard]] inline ::fixy::Option<SenseHub> mint_sense_hub(Ctx const&, ::fixy::InitLoadCtx const& init) noexcept {
+    return load_sense_hub(init);
 }
 
 }  // namespace crucible::perf

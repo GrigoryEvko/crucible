@@ -17,7 +17,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
-#include <optional>
 #include <span>
 
 extern "C" {
@@ -210,7 +209,12 @@ PmuSample::PmuSample(PmuSample&&) noexcept = default;
 PmuSample& PmuSample::operator=(PmuSample&&) noexcept = default;
 PmuSample::~PmuSample() = default;
 
-std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const& ctx) noexcept {
+namespace {
+
+// Loads the object, opens one perf event for each spec, attaches the
+// program of each event, and maps the sample ring.  False means that the
+// facade is unavailable, and the reason is already reported.
+[[nodiscard]] bool fill_state(detail::FacadeDoor::State<PmuSample>& loaded, ::fixy::InitLoadCtx const& ctx) noexcept {
     constexpr detail::ForeignName facade = CRUCIBLE_PERF_FOREIGN_NAME("pmu_sample");
     // A perf_event program needs no tracepoint probe.  The verifier does
     // not care whether the PMU exists, and perf_event_open below reports an
@@ -224,9 +228,7 @@ std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const& ctx) noexcep
         .attach_advice = "no perf_event programs attached (apply CAP_PERFMON; kernel.perf_event_paranoid > 2 "
                          "blocks unprivileged use)",
     };
-    auto state = std::make_unique<State>();
-    State& loaded = *state;
-    if (!loaded.object.open_and_load(spec)) return std::nullopt;
+    if (!loaded.object.open_and_load(spec)) return false;
 
     // A failure below is per event type rather than fatal.  A machine without
     // the IBS driver has no dynamic type, and a restrictive
@@ -294,7 +296,10 @@ std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const& ctx) noexcep
         bpf_link* const link = bpf_program__attach_perf_event(prog, perf_fd.value());
         if (!loaded.object.settle(link)) {
             const long err = libbpf_get_error(link);
-            ::close(perf_fd.value());
+            // This owner closes the descriptor of the event at the end of
+            // the block.
+            PerfFds rejected{};
+            static_cast<void>(rejected.fds.push(perf_fd).expect("an empty owner has room for one descriptor"));
             if (verbose()) {
                 ::fixy::report(::fixy::Sink::Err, "[crucible::perf] pmu_sample {} attach failed (error {})\n",
                                event.friendly_name, err != 0 ? static_cast<int>(-err) : errno);
@@ -311,15 +316,19 @@ std::optional<PmuSample> PmuSample::load(::fixy::InitLoadCtx const& ctx) noexcep
         }
     }
 
-    if (!loaded.object.require_attached(spec)) return std::nullopt;
+    if (!loaded.object.require_attached(spec)) return false;
     loaded.timeline = detail::map_array<PmuSampleRingTag>(
         ctx, loaded.object, facade.text, CRUCIBLE_PERF_FOREIGN_NAME("pmu_sample_buf"), PmuSampleRing::bytes);
-    if (loaded.timeline.is_none()) return std::nullopt;
+    if (loaded.timeline.is_none()) return false;
     loaded.object.report_partial(facade.text);
+    return true;
+}
 
-    PmuSample hub;
-    hub.state_ = std::move(state);
-    return hub;
+}  // namespace
+
+::fixy::Option<PmuSample> load_pmu_sample(::fixy::InitLoadCtx const& ctx) noexcept {
+    return detail::FacadeDoor::load<PmuSample>(
+        [&ctx](detail::FacadeDoor::State<PmuSample>& state) noexcept { return fill_state(state, ctx); });
 }
 
 ::fixy::Borrowed<const PmuSampleEvent, PmuSample> PmuSample::timeline_view() const noexcept {

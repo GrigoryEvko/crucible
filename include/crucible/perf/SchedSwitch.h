@@ -2,6 +2,7 @@
 
 #include <fixy/Borrowed.h>
 #include <fixy/Checked.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <foundation/effects/Ctx.h>
@@ -10,9 +11,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 
 namespace crucible::perf {
+
+namespace detail {
+struct FacadeDoor;
+}  // namespace detail
 
 // The kernel-side program writes into the same byte offsets userspace
 // reads, and it writes ts_ns last.  A slot with ts_ns == 0 is still
@@ -60,18 +64,6 @@ public:
 
     [[nodiscard]] Snapshot snapshot() const noexcept;
 
-    // Returns nullopt when the kernel refuses the load: no CAP_BPF or
-    // CAP_PERFMON, a kernel without the tracepoint, or a verifier
-    // rejection.  A diagnostic line goes to stderr unless
-    // CRUCIBLE_PERF_QUIET=1 is set in the environment, and
-    // CRUCIBLE_PERF_VERBOSE=1 forwards the libbpf INFO and WARN
-    // messages as well.
-    //
-    // The load takes the startup load context.  Its row carries Block,
-    // because the load waits in the kernel while the verifier examines
-    // the program.
-    [[nodiscard]] static std::optional<SchedSwitch> load(::fixy::InitLoadCtx const&) noexcept;
-
     // Counts only this process, from the load onward.  Reading it
     // costs a map-lookup syscall: the counter lives in a one-element
     // array map, and the kernel-side program does not declare that
@@ -107,11 +99,25 @@ public:
     ~SchedSwitch();
 
 private:
+    // The door builds the facade in each load.
+    friend struct detail::FacadeDoor;
     struct State;
     SchedSwitch() noexcept;
 
     std::unique_ptr<State> state_;
 };
+
+// Returns none when the kernel refuses the load: no CAP_BPF or
+// CAP_PERFMON, a kernel without the tracepoint, or a verifier rejection.
+// A diagnostic line goes to stderr unless CRUCIBLE_PERF_QUIET=1 is set in
+// the environment, and CRUCIBLE_PERF_VERBOSE=1 forwards the libbpf INFO
+// and WARN messages as well.
+//
+// The load takes the startup load context.  Its row carries Block,
+// because the load waits in the kernel while the verifier examines the
+// program.  The load stands outside the class, because an Option of a
+// facade needs the complete facade.
+[[nodiscard]] ::fixy::Option<SchedSwitch> load_sched_switch(::fixy::InitLoadCtx const&) noexcept;
 
 // The load attaches to the sched_switch tracepoint, maps the timeline
 // ring, and calls bpf(BPF_PROG_LOAD).  That last call enters the kernel
@@ -135,9 +141,9 @@ concept CtxFitsSchedSwitchMint = ::foundation::effects::IsExecCtx<Ctx>
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSchedSwitchMint<Ctx>
-[[nodiscard]] inline std::optional<SchedSwitch> mint_sched_switch(Ctx const&,
-                                                                  ::fixy::InitLoadCtx const& init) noexcept {
-    return SchedSwitch::load(init);
+[[nodiscard]] inline ::fixy::Option<SchedSwitch> mint_sched_switch(Ctx const&,
+                                                                   ::fixy::InitLoadCtx const& init) noexcept {
+    return load_sched_switch(init);
 }
 
 }  // namespace crucible::perf

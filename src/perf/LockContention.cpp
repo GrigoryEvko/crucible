@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <span>
 
 extern "C" {
@@ -26,7 +25,7 @@ LockContention::LockContention(LockContention&&) noexcept = default;
 LockContention& LockContention::operator=(LockContention&&) noexcept = default;
 LockContention::~LockContention() = default;
 
-std::optional<LockContention> LockContention::load(::fixy::InitLoadCtx const& ctx) noexcept {
+::fixy::Option<LockContention> load_lock_contention(::fixy::InitLoadCtx const& ctx) noexcept {
     // The attach is all-or-nothing.  With the enter tracepoint attached but
     // the exit one missing, wait-start entries fill the map to its capacity,
     // and contention data is lost silently past that point.
@@ -42,11 +41,7 @@ std::optional<LockContention> LockContention::load(::fixy::InitLoadCtx const& ct
         .counter_map = CRUCIBLE_PERF_FOREIGN_NAME("lock_wait_count"),
         .counter_fallback = "wait_count() returns 0",
     };
-    auto state = detail::load_ring<State>(ctx, spec);
-    if (state == nullptr) return std::nullopt;
-    LockContention hub;
-    hub.state_ = std::move(state);
-    return hub;
+    return detail::load_ring<LockContention>(ctx, spec);
 }
 
 uint64_t LockContention::wait_count() const noexcept { return state_ != nullptr ? state_->count() : 0; }

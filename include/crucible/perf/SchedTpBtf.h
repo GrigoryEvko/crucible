@@ -4,6 +4,7 @@
 
 #include <fixy/Borrowed.h>
 #include <fixy/Checked.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <foundation/effects/Ctx.h>
@@ -12,7 +13,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 
 namespace crucible::perf {
 
@@ -34,17 +34,6 @@ public:
     };
 
     [[nodiscard]] Snapshot snapshot() const noexcept;
-
-    // The BTF-typed raw tracepoint needs a kernel built with
-    // CONFIG_DEBUG_INFO_BTF=y, which also puts the type information
-    // at /sys/kernel/btf/vmlinux.  Returns nullopt on a kernel that
-    // carries no such type information, and when CAP_BPF or
-    // CAP_PERFMON is missing or the verifier rejects the program.
-    //
-    // The load takes the startup load context.  Its row carries Block,
-    // because the load waits in the kernel while the verifier examines
-    // the program.
-    [[nodiscard]] static std::optional<SchedTpBtf> load(::fixy::InitLoadCtx const&) noexcept;
 
     // Counts only this process, from the load onward.  Reading it
     // costs a map-lookup syscall: the counter lives in a one-element
@@ -82,11 +71,24 @@ public:
     ~SchedTpBtf();
 
 private:
+    // The door builds the facade in each load.
+    friend struct detail::FacadeDoor;
     struct State;
     SchedTpBtf() noexcept;
 
     std::unique_ptr<State> state_;
 };
+
+// The BTF-typed raw tracepoint needs a kernel built with
+// CONFIG_DEBUG_INFO_BTF=y, which also puts the type information at
+// /sys/kernel/btf/vmlinux.  Returns none on a kernel that carries no such
+// type information, and when CAP_BPF or CAP_PERFMON is missing or the
+// verifier rejects the program.
+//
+// The load takes the startup load context.  Its row carries Block,
+// because the load waits in the kernel while the verifier examines the
+// program.
+[[nodiscard]] ::fixy::Option<SchedTpBtf> load_sched_tp_btf(::fixy::InitLoadCtx const&) noexcept;
 
 // The load attaches to the sched_switch raw tracepoint, maps the
 // timeline ring, and calls bpf(BPF_PROG_LOAD).  That last call enters
@@ -111,8 +113,9 @@ concept CtxFitsSchedTpBtfMint = ::foundation::effects::IsExecCtx<Ctx>
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSchedTpBtfMint<Ctx>
-[[nodiscard]] inline std::optional<SchedTpBtf> mint_sched_tp_btf(Ctx const&, ::fixy::InitLoadCtx const& init) noexcept {
-    return SchedTpBtf::load(init);
+[[nodiscard]] inline ::fixy::Option<SchedTpBtf> mint_sched_tp_btf(Ctx const&,
+                                                                  ::fixy::InitLoadCtx const& init) noexcept {
+    return load_sched_tp_btf(init);
 }
 
 }  // namespace crucible::perf

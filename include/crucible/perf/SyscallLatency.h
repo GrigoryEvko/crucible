@@ -2,6 +2,7 @@
 
 #include <fixy/Borrowed.h>
 #include <fixy/Checked.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <foundation/effects/Ctx.h>
@@ -10,7 +11,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 
 namespace crucible::perf {
 
@@ -58,22 +58,6 @@ public:
 
     [[nodiscard]] Snapshot snapshot() const noexcept;
 
-    // Both the syscall-enter and the syscall-exit tracepoint must
-    // attach.  A half attach records entry timestamps that no exit
-    // ever consumes, so the load fails instead.
-    //
-    // Returns nullopt when the kernel refuses: no CAP_BPF or
-    // CAP_PERFMON, a kernel without the raw syscall tracepoints, or a
-    // verifier rejection.  A diagnostic line goes to stderr unless
-    // CRUCIBLE_PERF_QUIET=1 is set in the environment, and
-    // CRUCIBLE_PERF_VERBOSE=1 forwards the libbpf INFO and WARN
-    // messages as well.
-    //
-    // The load takes the startup load context.  Its row carries Block,
-    // because the load waits in the kernel while the verifier examines
-    // the program.
-    [[nodiscard]] static std::optional<SyscallLatency> load(::fixy::InitLoadCtx const&) noexcept;
-
     // Reading the count costs a map-lookup syscall, and that syscall
     // is itself counted.  A tight loop over this accessor therefore
     // measures the loop rather than the workload.  Take one count
@@ -106,11 +90,28 @@ public:
     ~SyscallLatency();
 
 private:
+    // The door builds the facade in each load.
+    friend struct detail::FacadeDoor;
     struct State;
     SyscallLatency() noexcept;
 
     std::unique_ptr<State> state_;
 };
+
+// Both the syscall-enter and the syscall-exit tracepoint must attach.  A
+// half attach records entry timestamps that no exit ever consumes, so the
+// load fails instead.
+//
+// Returns none when the kernel refuses: no CAP_BPF or CAP_PERFMON, a
+// kernel without the raw syscall tracepoints, or a verifier rejection.  A
+// diagnostic line goes to stderr unless CRUCIBLE_PERF_QUIET=1 is set in
+// the environment, and CRUCIBLE_PERF_VERBOSE=1 forwards the libbpf INFO
+// and WARN messages as well.
+//
+// The load takes the startup load context.  Its row carries Block,
+// because the load waits in the kernel while the verifier examines the
+// program.
+[[nodiscard]] ::fixy::Option<SyscallLatency> load_syscall_latency(::fixy::InitLoadCtx const&) noexcept;
 
 // The load attaches to the raw syscall tracepoints, maps the timeline
 // ring, and calls bpf(BPF_PROG_LOAD).  That last call enters the kernel
@@ -134,9 +135,9 @@ concept CtxFitsSyscallLatencyMint = ::foundation::effects::IsExecCtx<Ctx>
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSyscallLatencyMint<Ctx>
-[[nodiscard]] inline std::optional<SyscallLatency> mint_syscall_latency(Ctx const&,
-                                                                        ::fixy::InitLoadCtx const& init) noexcept {
-    return SyscallLatency::load(init);
+[[nodiscard]] inline ::fixy::Option<SyscallLatency> mint_syscall_latency(Ctx const&,
+                                                                         ::fixy::InitLoadCtx const& init) noexcept {
+    return load_syscall_latency(init);
 }
 
 }  // namespace crucible::perf

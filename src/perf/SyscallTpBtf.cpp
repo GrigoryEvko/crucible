@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <span>
 
 extern "C" {
@@ -26,7 +25,7 @@ SyscallTpBtf::SyscallTpBtf(SyscallTpBtf&&) noexcept = default;
 SyscallTpBtf& SyscallTpBtf::operator=(SyscallTpBtf&&) noexcept = default;
 SyscallTpBtf::~SyscallTpBtf() = default;
 
-std::optional<SyscallTpBtf> SyscallTpBtf::load(::fixy::InitLoadCtx const& ctx) noexcept {
+::fixy::Option<SyscallTpBtf> load_syscall_tp_btf(::fixy::InitLoadCtx const& ctx) noexcept {
     // The attach is all-or-nothing.  With sys_enter attached but sys_exit
     // missing, every recorded start entry stays unconsumed until the LRU
     // hash map evicts it.
@@ -45,11 +44,7 @@ std::optional<SyscallTpBtf> SyscallTpBtf::load(::fixy::InitLoadCtx const& ctx) n
         .counter_map = CRUCIBLE_PERF_FOREIGN_NAME("total_syscalls"),
         .counter_fallback = "total_syscalls() returns 0",
     };
-    auto state = detail::load_ring<State>(ctx, spec);
-    if (state == nullptr) return std::nullopt;
-    SyscallTpBtf hub;
-    hub.state_ = std::move(state);
-    return hub;
+    return detail::load_ring<SyscallTpBtf>(ctx, spec);
 }
 
 uint64_t SyscallTpBtf::total_syscalls() const noexcept { return state_ != nullptr ? state_->count() : 0; }

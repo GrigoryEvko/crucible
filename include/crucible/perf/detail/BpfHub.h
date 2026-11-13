@@ -381,24 +381,44 @@ struct RingState : ::foundation::NonMovable<RingState<Tag, Event>> {
     }
 };
 
-// Loads a ring facade.  An empty pointer means that the facade is
-// unavailable, and the reason is already reported.
-template <class State, ::foundation::effects::IsExecCtx Ctx>
-    requires CtxFitsMapArray<Ctx>
-[[nodiscard]] std::unique_ptr<State> load_ring(Ctx const& ctx, const RingSpec& spec) noexcept {
-    auto state = std::make_unique<State>();
-    if (!state->object.load(spec.load)) return nullptr;
-    state->timeline = map_array<typename State::tag_type>(ctx, state->object, spec.load.facade.text, spec.timeline_map,
-                                                          State::layout::bytes);
-    if (state->timeline.is_none()) return nullptr;
-    if (bpf_map* const counter = state->object.find_map(spec.counter_map.abi); counter != nullptr) {
-        state->counter = map_fd(counter);
-    } else if (verbose()) {
-        ::fixy::report(::fixy::Sink::Err, "[crucible::perf] {} {} map missing: {}\n", spec.load.facade.text,
-                       spec.counter_map.text, spec.counter_fallback);
+// The door to the private state of a facade.  Each facade names this door
+// as its one friend, so each load of a facade builds the facade here.
+struct FacadeDoor {
+    template <class Facade>
+    using State = typename Facade::State;
+
+    // Builds a facade and its state, and gives the facade when
+    // fill(state) is true.  An empty result means that the facade is
+    // unavailable, and fill already reported the reason.
+    template <class Facade, class Fill>
+    [[nodiscard]] static ::fixy::Option<Facade> load(Fill fill) noexcept {
+        Facade facade{};
+        facade.state_ = std::make_unique<State<Facade>>();
+        if (!fill(*facade.state_)) return ::fixy::none;
+        return ::fixy::Option<Facade>::some(std::move(facade));
     }
-    state->object.report_partial(spec.load.facade.text);
-    return state;
+};
+
+// Loads a ring facade.  An empty result means that the facade is
+// unavailable, and the reason is already reported.
+template <class Facade, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsMapArray<Ctx>
+[[nodiscard]] ::fixy::Option<Facade> load_ring(Ctx const& ctx, const RingSpec& spec) noexcept {
+    using State = FacadeDoor::State<Facade>;
+    return FacadeDoor::load<Facade>([&ctx, &spec](State& state) noexcept {
+        if (!state.object.load(spec.load)) return false;
+        state.timeline = map_array<typename State::tag_type>(ctx, state.object, spec.load.facade.text,
+                                                             spec.timeline_map, State::layout::bytes);
+        if (state.timeline.is_none()) return false;
+        if (bpf_map* const counter = state.object.find_map(spec.counter_map.abi); counter != nullptr) {
+            state.counter = map_fd(counter);
+        } else if (verbose()) {
+            ::fixy::report(::fixy::Sink::Err, "[crucible::perf] {} {} map missing: {}\n", spec.load.facade.text,
+                           spec.counter_map.text, spec.counter_fallback);
+        }
+        state.object.report_partial(spec.load.facade.text);
+        return true;
+    });
 }
 
 // A facade with no state reports zero for both attach counts.

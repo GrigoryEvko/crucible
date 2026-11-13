@@ -4,6 +4,7 @@
 
 #include <fixy/Borrowed.h>
 #include <fixy/Checked.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <foundation/effects/Ctx.h>
@@ -12,7 +13,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 
 namespace crucible::perf {
 
@@ -36,21 +36,6 @@ public:
     };
 
     [[nodiscard]] Snapshot snapshot() const noexcept;
-
-    // Both the syscall-enter and the syscall-exit program must
-    // attach.  A half attach records entry timestamps that no exit
-    // ever consumes, so the load fails instead.
-    //
-    // The BTF-typed raw tracepoints need a kernel built with
-    // CONFIG_DEBUG_INFO_BTF=y, which also puts the type information
-    // at /sys/kernel/btf/vmlinux.  Returns nullopt on a kernel that
-    // carries no such type information, and when CAP_BPF or
-    // CAP_PERFMON is missing or the verifier rejects the program.
-    //
-    // The load takes the startup load context.  Its row carries Block,
-    // because the load waits in the kernel while the verifier examines
-    // the program.
-    [[nodiscard]] static std::optional<SyscallTpBtf> load(::fixy::InitLoadCtx const&) noexcept;
 
     // Reading the count costs a map-lookup syscall, and that syscall
     // is itself counted.  A tight loop over this accessor therefore
@@ -85,11 +70,28 @@ public:
     ~SyscallTpBtf();
 
 private:
+    // The door builds the facade in each load.
+    friend struct detail::FacadeDoor;
     struct State;
     SyscallTpBtf() noexcept;
 
     std::unique_ptr<State> state_;
 };
+
+// Both the syscall-enter and the syscall-exit program must attach.  A half
+// attach records entry timestamps that no exit ever consumes, so the load
+// fails instead.
+//
+// The BTF-typed raw tracepoints need a kernel built with
+// CONFIG_DEBUG_INFO_BTF=y, which also puts the type information at
+// /sys/kernel/btf/vmlinux.  Returns none on a kernel that carries no such
+// type information, and when CAP_BPF or CAP_PERFMON is missing or the
+// verifier rejects the program.
+//
+// The load takes the startup load context.  Its row carries Block,
+// because the load waits in the kernel while the verifier examines the
+// program.
+[[nodiscard]] ::fixy::Option<SyscallTpBtf> load_syscall_tp_btf(::fixy::InitLoadCtx const&) noexcept;
 
 // The load attaches to the raw syscall tracepoints, maps the timeline
 // ring, and calls bpf(BPF_PROG_LOAD).  That last call enters the kernel
@@ -113,9 +115,9 @@ concept CtxFitsSyscallTpBtfMint = ::foundation::effects::IsExecCtx<Ctx>
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSyscallTpBtfMint<Ctx>
-[[nodiscard]] inline std::optional<SyscallTpBtf> mint_syscall_tp_btf(Ctx const&,
-                                                                     ::fixy::InitLoadCtx const& init) noexcept {
-    return SyscallTpBtf::load(init);
+[[nodiscard]] inline ::fixy::Option<SyscallTpBtf> mint_syscall_tp_btf(Ctx const&,
+                                                                      ::fixy::InitLoadCtx const& init) noexcept {
+    return load_syscall_tp_btf(init);
 }
 
 }  // namespace crucible::perf

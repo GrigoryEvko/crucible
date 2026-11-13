@@ -4,7 +4,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
-#include <optional>
 #include <type_traits>
 #include <utility>
 #include "test_assert.h"
@@ -67,13 +66,13 @@ static_assert(sizeof(crucible::perf::SyscallLatency) == sizeof(std::unique_ptr<D
 int main() {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     setenv("CRUCIBLE_PERF_QUIET", "1", /*overwrite=*/0);
-    std::optional<crucible::perf::SyscallLatency> hub =
-        crucible::perf::SyscallLatency::load(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-    static_assert(std::is_same_v<decltype(hub), std::optional<crucible::perf::SyscallLatency>>);
+    ::fixy::Option<crucible::perf::SyscallLatency> loaded =
+        crucible::perf::load_syscall_latency(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
+    static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SyscallLatency>>);
 
-    if (hub.has_value()) {
-        const auto attached_refined = hub->attached_programs();
-        const auto failures_refined = hub->attach_failures();
+    for (crucible::perf::SyscallLatency& hub : loaded) {
+        const auto attached_refined = hub.attached_programs();
+        const auto failures_refined = hub.attach_failures();
         static_assert(
             std::is_same_v<decltype(attached_refined), const ::fixy::Refined<::fixy::bounded_above<8>, std::size_t>>);
         static_assert(
@@ -81,10 +80,10 @@ int main() {
         const std::size_t attached = attached_refined.value();
         const std::size_t failures = failures_refined.value();
         // A populated hub with fewer than both tracepoints attached
-        // contradicts what load() promises.
+        // contradicts what the load promises.
         if (attached < 2) {
             std::fprintf(stderr,
-                         "perf::SyscallLatency::load() returned populated hub "
+                         "perf::load_syscall_latency() returned populated hub "
                          "with attached=%zu (expected >= 2)\n",
                          attached);
             return 1;
@@ -100,11 +99,11 @@ int main() {
         // No specific count is asserted, because the kernel need not have
         // logged a syscall yet. The check is that the call links and yields
         // a u64.
-        const uint64_t syscalls = hub->total_syscalls();
+        const uint64_t syscalls = hub.total_syscalls();
         static_assert(std::is_same_v<decltype(syscalls), const uint64_t>);
 
         // The view spans the whole ring, not just the written prefix.
-        const auto timeline = hub->timeline_view();
+        const auto timeline = hub.timeline_view();
         static_assert(
             std::is_same_v<decltype(timeline), const ::fixy::Borrowed<const crucible::perf::TimelineSyscallEvent,
                                                                       crucible::perf::SyscallLatency>>);
@@ -117,20 +116,20 @@ int main() {
         }
         if (timeline.empty()) {
             std::fprintf(stderr, "perf::SyscallLatency::timeline_view() — view should "
-                                 "be non-empty when hub.has_value()\n");
+                                 "be non-empty when the load gave a hub\n");
             return 1;
         }
 
-        const uint64_t write_idx = hub->timeline_write_index();
+        const uint64_t write_idx = hub.timeline_write_index();
         static_assert(std::is_same_v<decltype(write_idx), const uint64_t>);
         (void)write_idx;
 
-        crucible::perf::SyscallLatency moved_into = std::move(*hub);
-        const uint64_t syscalls_after = hub->total_syscalls();
-        const uint64_t write_idx_after = hub->timeline_write_index();
-        const auto view_after = hub->timeline_view();
-        const auto attached_after = hub->attached_programs();
-        const auto failures_after = hub->attach_failures();
+        crucible::perf::SyscallLatency moved_into = std::move(hub);
+        const uint64_t syscalls_after = hub.total_syscalls();
+        const uint64_t write_idx_after = hub.timeline_write_index();
+        const auto view_after = hub.timeline_view();
+        const auto attached_after = hub.attached_programs();
+        const auto failures_after = hub.attach_failures();
 
         if (syscalls_after != 0u) {
             std::fprintf(stderr,

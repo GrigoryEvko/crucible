@@ -6,7 +6,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <span>
 
 extern "C" {
@@ -32,7 +31,7 @@ SenseHub::SenseHub(SenseHub&&) noexcept = default;
 SenseHub& SenseHub::operator=(SenseHub&&) noexcept = default;
 SenseHub::~SenseHub() = default;
 
-std::optional<SenseHub> SenseHub::load(::fixy::InitLoadCtx const& ctx) noexcept {
+::fixy::Option<SenseHub> load_sense_hub(::fixy::InitLoadCtx const& ctx) noexcept {
     constexpr detail::ForeignName facade = CRUCIBLE_PERF_FOREIGN_NAME("BPF sense hub");
     const detail::LoadSpec spec{
         .facade = facade,
@@ -41,16 +40,15 @@ std::optional<SenseHub> SenseHub::load(::fixy::InitLoadCtx const& ctx) noexcept 
         .attach_advice = "no programs attached (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; kernel missing "
                          "every tracepoint, or lacking CAP_PERFMON or CAP_DAC_READ_SEARCH)",
     };
-    auto state = std::make_unique<State>();
-    if (!state->object.load(spec)) return std::nullopt;
-    state->counters = detail::map_array<SenseHubCountersTag>(
-        ctx, state->object, facade.text, CRUCIBLE_PERF_FOREIGN_NAME("counters"), NUM_COUNTERS * sizeof(uint64_t));
-    if (state->counters.is_none()) return std::nullopt;
-    state->object.report_partial(facade.text);
-
-    SenseHub hub;
-    hub.state_ = std::move(state);
-    return hub;
+    using State = detail::FacadeDoor::State<SenseHub>;
+    return detail::FacadeDoor::load<SenseHub>([&ctx, &facade, &spec](State& state) noexcept {
+        if (!state.object.load(spec)) return false;
+        state.counters = detail::map_array<SenseHubCountersTag>(
+            ctx, state.object, facade.text, CRUCIBLE_PERF_FOREIGN_NAME("counters"), NUM_COUNTERS * sizeof(uint64_t));
+        if (state.counters.is_none()) return false;
+        state.object.report_partial(facade.text);
+        return true;
+    });
 }
 
 Snapshot SenseHub::read() const noexcept {

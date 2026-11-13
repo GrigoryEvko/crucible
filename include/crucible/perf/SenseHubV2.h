@@ -11,7 +11,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 
 namespace crucible::perf {
 
@@ -428,19 +427,13 @@ struct LoadReport {
 
 // The v2 hub is a stub.  Its load opens no BPF object and always returns
 // an empty result, so no caller can hold a hub, and the readers are not
-// reachable.  load and mint_sense_hub_v2 carry a CRUCIBLE_STUB
-// deprecation, so each call site sees the stub at compile time.
+// reachable.  load_sense_hub_v2 and mint_sense_hub_v2 carry a
+// CRUCIBLE_STUB deprecation, so each call site sees the stub at compile
+// time.
 inline constexpr bool sense_hub_v2_implemented = false;
 
 class SenseHubV2 {
 public:
-    // The load takes the startup load context.  Its row carries Block,
-    // because the load waits in the kernel while the verifier examines
-    // the program.
-    [[deprecated("CRUCIBLE_STUB: the v2 hub loads no BPF object, and load always returns an empty result")]]
-    [[nodiscard]] static std::optional<SenseHubV2>
-    load(::fixy::InitLoadCtx const&) noexcept;
-
     [[nodiscard]] v2::CounterSnapshot read_counters() const noexcept;
 
     // Reading the gauges also polls the files behind the
@@ -474,6 +467,13 @@ private:
     explicit SenseHubV2(std::unique_ptr<State>) noexcept;
 };
 
+// The load takes the startup load context.  Its row carries Block,
+// because the load waits in the kernel while the verifier examines the
+// program.
+[[deprecated("CRUCIBLE_STUB: the v2 hub loads no BPF object, and the load always returns an empty result")]]
+[[nodiscard]] ::fixy::Option<SenseHubV2>
+load_sense_hub_v2(::fixy::InitLoadCtx const&) noexcept;
+
 // The load attaches to the kernel tracepoints, maps the counter and
 // gauge arrays, and calls bpf(BPF_PROG_LOAD).  That last call enters the
 // kernel and waits while the verifier walks the program.  The wait is
@@ -498,13 +498,13 @@ concept CtxFitsSenseHubV2Mint = ::foundation::effects::IsExecCtx<Ctx>
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSenseHubV2Mint<Ctx>
 [[deprecated("CRUCIBLE_STUB: the v2 hub loads no BPF object, and the mint always returns an empty result")]]
-[[nodiscard]] inline std::optional<SenseHubV2>
+[[nodiscard]] inline ::fixy::Option<SenseHubV2>
 mint_sense_hub_v2(Ctx const&, ::fixy::InitLoadCtx const& init) noexcept {
     // The mint forwards to the stub load, so it takes the deprecation of
     // the load on itself.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-    return SenseHubV2::load(init);
+    return load_sense_hub_v2(init);
 #pragma GCC diagnostic pop
 }
 

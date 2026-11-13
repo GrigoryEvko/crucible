@@ -2,6 +2,7 @@
 
 #include <fixy/Borrowed.h>
 #include <fixy/Checked.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <foundation/effects/Ctx.h>
@@ -10,7 +11,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 
 namespace crucible::perf {
 
@@ -58,22 +58,6 @@ public:
 
     [[nodiscard]] Snapshot snapshot() const noexcept;
 
-    // Both the futex-enter and the futex-exit tracepoint must attach.
-    // A half attach records entry timestamps that no exit ever
-    // consumes, so the load fails instead.
-    //
-    // Returns nullopt when the kernel refuses: no CAP_BPF or
-    // CAP_PERFMON, a kernel without the syscall tracepoints, or a
-    // verifier rejection.  A diagnostic line goes to stderr unless
-    // CRUCIBLE_PERF_QUIET=1 is set in the environment, and
-    // CRUCIBLE_PERF_VERBOSE=1 forwards the libbpf INFO and WARN
-    // messages as well.
-    //
-    // The load takes the startup load context.  Its row carries Block,
-    // because the load waits in the kernel while the verifier examines
-    // the program.
-    [[nodiscard]] static std::optional<LockContention> load(::fixy::InitLoadCtx const&) noexcept;
-
     // One count is one return from a blocking futex wait, so an
     // uncontended lock that never leaves userspace is invisible here.
     // Reading the count costs a map-lookup syscall: it lives in a
@@ -107,11 +91,28 @@ public:
     ~LockContention();
 
 private:
+    // The door builds the facade in each load.
+    friend struct detail::FacadeDoor;
     struct State;
     LockContention() noexcept;
 
     std::unique_ptr<State> state_;
 };
+
+// Both the futex-enter and the futex-exit tracepoint must attach.  A half
+// attach records entry timestamps that no exit ever consumes, so the load
+// fails instead.
+//
+// Returns none when the kernel refuses: no CAP_BPF or CAP_PERFMON, a
+// kernel without the syscall tracepoints, or a verifier rejection.  A
+// diagnostic line goes to stderr unless CRUCIBLE_PERF_QUIET=1 is set in
+// the environment, and CRUCIBLE_PERF_VERBOSE=1 forwards the libbpf INFO
+// and WARN messages as well.
+//
+// The load takes the startup load context.  Its row carries Block,
+// because the load waits in the kernel while the verifier examines the
+// program.
+[[nodiscard]] ::fixy::Option<LockContention> load_lock_contention(::fixy::InitLoadCtx const&) noexcept;
 
 // The load attaches to the futex tracepoints, maps the timeline ring,
 // and calls bpf(BPF_PROG_LOAD).  That last call enters the kernel and
@@ -135,9 +136,9 @@ concept CtxFitsLockContentionMint = ::foundation::effects::IsExecCtx<Ctx>
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsLockContentionMint<Ctx>
-[[nodiscard]] inline std::optional<LockContention> mint_lock_contention(Ctx const&,
-                                                                        ::fixy::InitLoadCtx const& init) noexcept {
-    return LockContention::load(init);
+[[nodiscard]] inline ::fixy::Option<LockContention> mint_lock_contention(Ctx const&,
+                                                                         ::fixy::InitLoadCtx const& init) noexcept {
+    return load_lock_contention(init);
 }
 
 }  // namespace crucible::perf

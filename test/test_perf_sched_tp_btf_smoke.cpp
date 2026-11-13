@@ -4,7 +4,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
-#include <optional>
 #include <type_traits>
 #include <utility>
 #include "test_assert.h"
@@ -37,16 +36,16 @@ static_assert(sizeof(crucible::perf::SchedTpBtf) == sizeof(std::unique_ptr<Dummy
 int main() {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     setenv("CRUCIBLE_PERF_QUIET", "1", /*overwrite=*/0);
-    std::optional<crucible::perf::SchedTpBtf> hub =
-        crucible::perf::SchedTpBtf::load(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-    static_assert(std::is_same_v<decltype(hub), std::optional<crucible::perf::SchedTpBtf>>);
+    ::fixy::Option<crucible::perf::SchedTpBtf> loaded =
+        crucible::perf::load_sched_tp_btf(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
+    static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SchedTpBtf>>);
 
-    if (hub.has_value()) {
-        const auto attached = hub->attached_programs();
-        const auto failures = hub->attach_failures();
+    for (crucible::perf::SchedTpBtf& hub : loaded) {
+        const auto attached = hub.attached_programs();
+        const auto failures = hub.attach_failures();
         if (attached.value() == 0 && failures.value() == 0) {
-            std::fprintf(stderr, "perf::SchedTpBtf::load() returned populated hub with "
-                                 "zero programs — should have been std::nullopt\n");
+            std::fprintf(stderr, "perf::load_sched_tp_btf() returned populated hub with "
+                                 "zero programs — should have been none\n");
             return 1;
         }
         if (attached.value() > 8 || failures.value() > 8) {
@@ -57,9 +56,9 @@ int main() {
             return 1;
         }
 
-        const uint64_t cs = hub->context_switches();
-        const uint64_t write_idx = hub->timeline_write_index();
-        const auto timeline = hub->timeline_view();
+        const uint64_t cs = hub.context_switches();
+        const uint64_t write_idx = hub.timeline_write_index();
+        const auto timeline = hub.timeline_view();
         (void)cs;
         (void)write_idx;
         if (timeline.size() != crucible::perf::TIMELINE_CAPACITY) {
@@ -69,9 +68,9 @@ int main() {
         }
 
         // Reading a moved-from hub is defined here and must report zeros.
-        crucible::perf::SchedTpBtf moved_into = std::move(*hub);
-        if (hub->context_switches() != 0u || hub->timeline_write_index() != 0u || !hub->timeline_view().empty()
-            || hub->attached_programs().value() != 0u || hub->attach_failures().value() != 0u) {
+        crucible::perf::SchedTpBtf moved_into = std::move(hub);
+        if (hub.context_switches() != 0u || hub.timeline_write_index() != 0u || !hub.timeline_view().empty()
+            || hub.attached_programs().value() != 0u || hub.attach_failures().value() != 0u) {
             std::fprintf(stderr, "perf::SchedTpBtf moved-from accessors — expected zeros\n");
             return 1;
         }
