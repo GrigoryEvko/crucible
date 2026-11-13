@@ -1,0 +1,34 @@
+// The plants of the friend rows.  The plant compiles this quarantined file in
+// error mode with its table, one time with no plant and one time with each
+// PLANT_ macro.  With no plant, the file compiles clean: a < b on a defaulted
+// operator <=> calls the friend operator< of std::strong_ordering, and a
+// compare with std::strong_ordering::less calls its defaulted friend
+// operator==, and the exact row of each friend admits it.  The conversion of
+// the literal 0 to the zero parameter of the friend gives no finding.  Each
+// plant calls a friend that no exact row admits.  The row of its class does
+// not admit it, so the plant gives the finding std-entity std::operator>, the
+// name of the friend in the namespace of its class.
+
+#include <compare>
+
+struct PlantId {
+    unsigned int raw = 0;
+    auto operator<=>(PlantId const&) const = default;
+};
+
+struct PlantWeight {
+    double value = 0.0;
+    auto operator<=>(PlantWeight const&) const = default;
+};
+
+bool plant_less(PlantId left, PlantId right) { return left < right; }
+
+bool plant_ordered_less(PlantId left, PlantId right) { return (left <=> right) == std::strong_ordering::less; }
+
+#if defined(PLANT_FRIEND_OF_ADMITTED_CLASS)
+bool plant_greater(PlantId left, PlantId right) { return left > right; }
+#endif
+
+#if defined(PLANT_FRIEND_OF_CLASS_ROW)
+bool plant_lighter(PlantWeight left, PlantWeight right) { return left < right; }
+#endif

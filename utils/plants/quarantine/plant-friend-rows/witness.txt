@@ -1,0 +1,22 @@
+# The friend rows of the admitted list (utils/tools/quarantine/library.cpp,
+# THE FRIENDS OF A CLASS).  friends.cpp with no plant compiles in the mode
+# error: the exact rows admit the friend operator< and the defaulted friend
+# operator== of std::strong_ordering.  Each plant fails with the finding of a
+# friend that no exact row admits.
+
+compile clean friends.cpp mode=error
+exit clean pass
+
+# The rows of std::strong_ordering admit operator< and operator==, and not the
+# other friends of the class.
+compile friend-of-admitted-class friends.cpp mode=error out=no
+flag friend-of-admitted-class -DPLANT_FRIEND_OF_ADMITTED_CLASS
+exit friend-of-admitted-class fail
+error friend-of-admitted-class friends.cpp:29 | quarantine: std-entity std::operator>;
+
+# The row of the class std::partial_ordering admits the class and the names in
+# it, and not its friends.
+compile friend-of-class-row friends.cpp mode=error out=no
+flag friend-of-class-row -DPLANT_FRIEND_OF_CLASS_ROW
+exit friend-of-class-row fail
+error friend-of-class-row friends.cpp:33 | quarantine: std-entity std::operator<;

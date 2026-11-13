@@ -78,9 +78,14 @@
 #       A qualified name admits the entity and each name in it, such as
 #       std::tuple_size<T>::value for std::tuple_size.  It admits no other
 #       name that starts with the same text: std::tuple_size_v needs its own
-#       row.  A header admits each entity that the header itself declares:
-#       the file that an #include of that exact name enters, and not a header
-#       with the same last name in a different directory.
+#       row.  A friend function that a class defines, such as operator< of
+#       std::strong_ordering, is a function of the namespace of the class.
+#       Only a row that names the class and the friend exactly admits it,
+#       such as std::strong_ordering::operator<, and the row of the class
+#       does not admit its friends (utils/tools/quarantine/library.cpp, THE
+#       FRIENDS OF A CLASS).  A header admits each entity that the header
+#       itself declares: the file that an #include of that exact name enters,
+#       and not a header with the same last name in a different directory.
 #   quarantine PATH
 #       Each file under PATH is quarantined.
 #   host PATH... | REASON
@@ -377,6 +382,11 @@ admit std::initializer_list parameters | the type of a braced list, which outliv
 admit std::contracts::contract_violation in src/foundation/ContractHandler.cpp | the parameter of the contract violation handler
 admit std::strong_ordering | the result of the operator <=>
 admit std::partial_ordering | the result of the operator <=> on a floating type
+admit std::strong_ordering::operator== | a constexpr and noexcept compare of an ordering value with zero or with an ordering
+admit std::strong_ordering::operator< | a constexpr and noexcept compare of an ordering value, the rewritten form of a < b
+admit std::strong_ordering::operator> | a constexpr and noexcept compare of an ordering value, the rewritten form of a > b
+admit std::strong_ordering::operator>= | a constexpr and noexcept compare of an ordering value, the rewritten form of a >= b
+admit std::partial_ordering::operator== | a constexpr and noexcept compare of an ordering value with zero or with an ordering
 admit std::is_eq | a constexpr and noexcept test of an ordering value
 admit std::is_neq | a constexpr and noexcept test of an ordering value
 admit std::is_lt | a constexpr and noexcept test of an ordering value

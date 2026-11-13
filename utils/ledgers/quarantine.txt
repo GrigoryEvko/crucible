@@ -99,7 +99,7 @@ bench/ | raw-new-delete | 2 | - | -
 bench/ | raw-pointer-object | 319 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 9 | - | -
-bench/ | std-entity | 1153 | - | -
+bench/ | std-entity | 1148 | - | -
 bench/ | std-object | 285 | - | -
 examples/fn/ | c-array-object | 9 | - | -
 examples/fn/ | c-library-call | 12 | - | -
@@ -116,7 +116,7 @@ include/crucible/ | raw-new-delete | 14 | - | -
 include/crucible/ | raw-pointer-object | 582 | - | -
 include/crucible/ | replace-pending:<limits> | 10 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 35 | - | -
-include/crucible/ | std-entity | 520 | - | -
+include/crucible/ | std-entity | 518 | - | -
 include/crucible/ | std-object | 183 | - | -
 include/crucible/canopy/ | c-library-call | 1 | - | -
 include/crucible/canopy/ | c-library-object | 1 | - | -
@@ -401,7 +401,7 @@ src/foundation/ | base-std-entity | 20 | - | -
 src/foundation/ | base-std-object | 14 | - | -
 src/foundation/ | replace-pending:<atomic> | 1 | - | -
 src/foundation/ | replace-pending:<csignal> | 1 | - | -
-src/foundation/os/ | base-std-entity | 31 | - | -
+src/foundation/os/ | base-std-entity | 28 | - | -
 src/perf/ | c-array-object | 13 | - | -
 src/perf/ | c-library-call | 55 | - | -
 src/perf/ | c-library-object | 6 | - | -
@@ -432,7 +432,7 @@ test/ | raw-new-delete | 43 | - | -
 test/ | raw-pointer-object | 678 | - | -
 test/ | replace-pending:<limits> | 14 | - | -
 test/ | replace-pending:std::bit_cast | 104 | - | -
-test/ | std-entity | 5288 | - | -
+test/ | std-entity | 5262 | - | -
 test/ | std-object | 1823 | - | -
 test/canopy_neg/ | raw-pointer-object | 1 | - | -
 test/canopy_neg/ | std-entity | 10 | - | -
@@ -499,7 +499,7 @@ test/fixy/ | region | 1 | PROBE: the test forges the wire word of a keyed step a
 test/fixy/ | replace-pending:<limits> | 30 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 15 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 3333 | - | -
+test/fixy/ | std-entity | 3322 | - | -
 test/fixy/ | std-object | 1257 | - | -
 test/fixy/neg/ | c-array-object | 53 | - | -
 test/fixy/neg/ | c-library-call | 5 | - | -
@@ -586,7 +586,7 @@ test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a 
 test/foundation/ | replace-pending:<limits> | 57 | - | -
 test/foundation/ | replace-pending:std::bit_cast | 9 | - | -
 test/foundation/ | replace-pending:std::source_location | 8 | - | -
-test/foundation/ | std-entity | 608 | - | -
+test/foundation/ | std-entity | 605 | - | -
 test/foundation/ | std-object | 198 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
@@ -639,7 +639,7 @@ test/fuzz/property/ | compiler-builtin | 4 | - | -
 test/fuzz/property/ | raw-function-pointer | 2 | - | -
 test/fuzz/property/ | raw-pointer-object | 79 | - | -
 test/fuzz/property/ | replace-pending:<limits> | 44 | - | -
-test/fuzz/property/ | std-entity | 412 | - | -
+test/fuzz/property/ | std-entity | 401 | - | -
 test/fuzz/property/ | std-object | 131 | - | -
 test/graph_neg/ | raw-pointer-object | 6 | - | -
 test/kernel_neg/ | raw-pointer-object | 1 | - | -
@@ -653,7 +653,7 @@ test/layer/ | std-entity | 61 | - | -
 test/layer/checks/crucible/ | replace-pending:std::source_location | 1 | - | -
 test/layer/checks/crucible/ | std-entity | 29 | - | -
 test/layer/checks/crucible/ | std-object | 3 | - | -
-test/layer/checks/crucible/canopy/ | std-entity | 7 | - | -
+test/layer/checks/crucible/canopy/ | std-entity | 6 | - | -
 test/layer/checks/crucible/canopy/ | std-object | 1 | - | -
 test/layer/checks/crucible/cipher/ | std-entity | 2 | - | -
 test/layer/checks/crucible/cntp/ | replace-pending:<limits> | 3 | - | -
@@ -745,7 +745,7 @@ test/trace_neg/ | replace-pending:<limits> | 1 | - | -
 test/trace_neg/ | std-entity | 44 | - | -
 test/trace_neg/ | std-object | 14 | - | -
 test/tsan/ | c-library-call | 1 | - | -
-test/tsan/ | std-entity | 43 | - | -
+test/tsan/ | std-entity | 42 | - | -
 test/tsan/ | std-object | 15 | - | -
 test/types_neg/ | raw-function-pointer | 1 | - | -
 test/vessel_neg/ | c-array-object | 1 | - | -

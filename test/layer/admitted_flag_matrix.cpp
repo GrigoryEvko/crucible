@@ -59,6 +59,13 @@ enum class Narrow : std::uint16_t {
     high = 0xBEEF
 };
 
+// A type with a defaulted operator <=>.  The language rewrites a < b on it to
+// (a <=> b) < 0, which calls a friend of std::strong_ordering.
+struct Ordered {
+    int value = 0;
+    auto operator<=>(const Ordered&) const = default;
+};
+
 struct ThrowingMove {
     ThrowingMove() = default;
     ThrowingMove(const ThrowingMove&) = default;
@@ -284,6 +291,40 @@ static_assert(sizeof(std::partial_ordering) == 1);
 static_assert(std::is_same_v<decltype(1.0 <=> 2.0), std::partial_ordering>);
 static_assert((0.0 <=> std::numeric_limits<double>::quiet_NaN()) == std::partial_ordering::unordered);
 static_assert((-0.0 <=> 0.0) == std::partial_ordering::equivalent);
+
+// name: std::strong_ordering::operator==
+static_assert((2 <=> 2) == 0 && !((1 <=> 2) == 0));
+static_assert((1 <=> 2) == std::strong_ordering::less && !((2 <=> 1) == std::strong_ordering::less));
+static_assert(std::is_same_v<decltype((1 <=> 2) == 0), bool>);
+static_assert(noexcept((1 <=> 2) == 0) && noexcept((1 <=> 2) == std::strong_ordering::less));
+
+// name: std::strong_ordering::operator<
+static_assert((1 <=> 2) < 0 && !((2 <=> 2) < 0) && !((2 <=> 1) < 0));
+static_assert(0 < (2 <=> 1) && !(0 < (1 <=> 2)));
+static_assert(Ordered{1} < Ordered{2} && !(Ordered{2} < Ordered{2}));
+static_assert(std::is_same_v<decltype((1 <=> 2) < 0), bool>);
+static_assert(noexcept((1 <=> 2) < 0) && noexcept(0 < (1 <=> 2)));
+
+// name: std::strong_ordering::operator>
+static_assert((2 <=> 1) > 0 && !((2 <=> 2) > 0) && !((1 <=> 2) > 0));
+static_assert(0 > (1 <=> 2) && !(0 > (2 <=> 1)));
+static_assert(Ordered{2} > Ordered{1} && !(Ordered{2} > Ordered{2}));
+static_assert(std::is_same_v<decltype((1 <=> 2) > 0), bool>);
+static_assert(noexcept((1 <=> 2) > 0) && noexcept(0 > (1 <=> 2)));
+
+// name: std::strong_ordering::operator>=
+static_assert((2 <=> 1) >= 0 && (2 <=> 2) >= 0 && !((1 <=> 2) >= 0));
+static_assert(0 >= (1 <=> 2) && 0 >= (2 <=> 2) && !(0 >= (2 <=> 1)));
+static_assert(Ordered{2} >= Ordered{2} && !(Ordered{1} >= Ordered{2}));
+static_assert(std::is_same_v<decltype((1 <=> 2) >= 0), bool>);
+static_assert(noexcept((1 <=> 2) >= 0) && noexcept(0 >= (1 <=> 2)));
+
+// name: std::partial_ordering::operator==
+static_assert((2.0 <=> 2.0) == 0 && !((1.0 <=> 2.0) == 0));
+static_assert(std::partial_ordering::equivalent == 0 && !(std::partial_ordering::unordered == 0));
+static_assert((1.0 <=> 2.0) == std::partial_ordering::less && !((1.0 <=> 2.0) == std::partial_ordering::unordered));
+static_assert(std::is_same_v<decltype((1.0 <=> 2.0) == 0), bool>);
+static_assert(noexcept((1.0 <=> 2.0) == 0) && noexcept((1.0 <=> 2.0) == std::partial_ordering::less));
 
 // name: std::is_eq
 static_assert(std::is_eq(2 <=> 2));

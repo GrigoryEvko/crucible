@@ -146,6 +146,31 @@ bool row_admits(const AdmitRow& row, tree decl, bool is_exact, Use use, tree res
     return !row.is_concepts_only || concept_definition_p(decl);
 }
 
+// THE FRIENDS OF A CLASS
+//     A friend function that a class defines, such as operator< of
+//     std::strong_ordering, is a function of the namespace of the class, so
+//     its qualified name is std::operator<.  A row of that name admits the
+//     operator< of each class and each function template of the namespace.
+//     A row admits such a friend through the name of its class and its own
+//     name, std::strong_ordering::operator<, and only when the row names it
+//     exactly: the row of the class does not admit its friends, and neither
+//     does a row of an enclosing name.
+
+// The name of DECL as a friend of the class that defines it, such as
+// std::strong_ordering::operator<, or an empty text when DECL is no friend
+// function that a class defines (THE FRIENDS OF A CLASS).
+std::string friend_name(tree decl) {
+    tree function = TREE_CODE(decl) == TEMPLATE_DECL ? DECL_TEMPLATE_RESULT(decl) : decl;
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_LANG_SPECIFIC(function) == nullptr
+        || !DECL_NAMESPACE_SCOPE_P(function)) {
+        return {};
+    }
+    tree befriending = DECL_FRIEND_CONTEXT(function);
+    return befriending != NULL_TREE && CLASS_TYPE_P(befriending)
+             ? qualified_name(befriending) + "::" + simple_name(function)
+             : std::string{};
+}
+
 // In a file of the language, a row with `until` admits only with `in`: the
 // base does not use a name that one of its families replaces, except in the
 // files that the row names, such as the door of the family.
@@ -162,6 +187,13 @@ const AdmitRow* find_admitting_row(tree decl, Use use, tree result, const FileEn
         if (header != state.admitted_header_paths.end()
             && row_admits(*header->second, decl, false, use, result, language)) {
             found = header->second;
+        }
+    }
+    if (found == nullptr) {
+        std::string entry_of_friend = friend_name(decl);
+        auto exact = entry_of_friend.empty() ? state.admitted_names.end() : state.admitted_names.find(entry_of_friend);
+        if (exact != state.admitted_names.end() && row_admits(*exact->second, decl, true, use, result, language)) {
+            found = exact->second;
         }
     }
     bool is_replaced_name =
@@ -584,14 +616,16 @@ const AdmitRow* admitting_row_of_name(const std::string& name, const FileEntry* 
 // admits the entity that it names and each name nested in it, so
 // std::tuple_size admits std::tuple_size<T>::value.  It admits no other entity
 // whose name starts with the same text: std::tuple_size_v and
-// std::tuple_element_t need their own entries.  A header entry admits each
-// entity that the header itself declares: the file that an #include of that
-// exact name enters, and not a header of the same last name in a different
-// directory, such as experimental/type_traits.  A restriction of the row
-// narrows what it admits (row_admits).  RESULT is the result type that the
-// explicit template arguments of a call give, or null.  LANGUAGE names the
-// file of the language of the use, or is null.  The cache holds the answers of
-// a quarantined file only.
+// std::tuple_element_t need their own entries.  A name entry admits a friend
+// function that a class defines only when it names the class and the friend
+// exactly, such as std::strong_ordering::operator< (THE FRIENDS OF A CLASS).
+// A header entry admits each entity that the header itself declares: the
+// file that an #include of that exact name enters, and not a header of the
+// same last name in a different directory, such as experimental/type_traits.
+// A restriction of the row narrows what it admits (row_admits).  RESULT is the
+// result type that the explicit template arguments of a call give, or null.
+// LANGUAGE names the file of the language of the use, or is null.  The cache
+// holds the answers of a quarantined file only.
 const AdmitRow* admitting_row(tree decl, Use use, tree result, const FileEntry* language) {
     if (result != NULL_TREE || language != nullptr) {
         return find_admitting_row(decl, use, result, language);

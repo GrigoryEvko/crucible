@@ -1,0 +1,12 @@
+# The rule table of the plants of the friend rows.  The table admits the class
+# std::strong_ordering and two of its friends by their exact rows, and the
+# class std::partial_ordering with no friend.
+
+layer low 0 include/fixy/
+
+admit std::strong_ordering | the result of the operator <=>
+admit std::strong_ordering::operator< | the rewritten form of a < b
+admit std::strong_ordering::operator== | a compare of an ordering value with an ordering
+admit std::partial_ordering | the result of the operator <=> on a floating type
+
+quarantine friends.cpp
