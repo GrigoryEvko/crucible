@@ -32,7 +32,7 @@ struct Philox {
         float u1 = (static_cast<float>(u1_raw) + 1.0f) * kTwoToMinus32f_;
         float u2 = (static_cast<float>(u2_raw) + 1.0f) * kTwoToMinus32f_;
 
-        float r = std::sqrt(-2.0f * std::log(u1));
+        float r = ::fixy::fp::sqrt(-2.0f * std::log(u1));
         float theta = 6.2831853071795864f * u2;  // 2π
 
         return {r * std::cos(theta), r * std::sin(theta)};

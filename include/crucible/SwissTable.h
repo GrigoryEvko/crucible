@@ -2,6 +2,7 @@
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/atoms/Hw.h>
 #include <fixy/atoms/Simd.h>
@@ -13,7 +14,6 @@
 #include <bit>
 #include <cstdint>
 #include <cstring>
-#include <limits>
 #include <type_traits>
 #include <utility>
 
@@ -66,7 +66,7 @@ using InstructionTier = std::conditional_t<fas::is_trunk_pinned(ActiveSimdIsa::i
 }  // namespace swiss_hw
 
 [[nodiscard]] consteval uint64_t group_mask_ceiling(std::size_t width) noexcept {
-    return width == 64 ? std::numeric_limits<uint64_t>::max() : ((uint64_t{1} << width) - uint64_t{1});
+    return width == 64 ? ::fixy::max_of<uint64_t> : ((uint64_t{1} << width) - uint64_t{1});
 }
 
 static constexpr uint64_t kGroupMaskCeiling = group_mask_ceiling(group_width());
@@ -98,11 +98,11 @@ struct BitMask {
 
     [[nodiscard]] CRUCIBLE_INLINE explicit operator bool() const { return raw() != 0; }
 
-    // std::countr_zero returns 64 for a zero mask. That is outside every
-    // group's slot range, so a probe loop would read it as a real slot index.
+    // countr_zero returns 64 for a zero mask. That is outside every group's
+    // slot range, so a probe loop would read it as a real slot index.
     [[nodiscard]] CRUCIBLE_INLINE uint32_t lowest() const {
         CRUCIBLE_PRE(raw() != uint64_t{0});
-        return static_cast<uint32_t>(std::countr_zero(raw()));
+        return static_cast<uint32_t>(::fixy::countr_zero(raw()));
     }
 
     CRUCIBLE_INLINE void clear_lowest() {

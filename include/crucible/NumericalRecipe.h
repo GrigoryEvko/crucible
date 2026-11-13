@@ -6,11 +6,11 @@
 
 #include <crucible/Types.h>
 #include <fixy/Bits.h>
+#include <fixy/Core.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 
-#include <bit>
 #include <cstdint>
 #include <utility>
 
@@ -139,7 +139,7 @@ template <typename E>
 [[nodiscard, gnu::const]] constexpr uint8_t enum_byte(E e) noexcept {
     static_assert(sizeof(E) == 1, "enum_byte expects a one-byte scoped enum; a wider enum field needs a wider "
                                   "hash fold");
-    return std::bit_cast<uint8_t>(e);
+    return ::fixy::bit_cast<uint8_t>(e);
 }
 
 // The finalizer is a bijection, and it maps the zero word to zero.  The recipe

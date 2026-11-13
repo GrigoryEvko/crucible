@@ -3,6 +3,7 @@
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/OpcodeLatencyTable.h>
 #include <crucible/cog/TargetCaps.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
@@ -214,7 +215,7 @@ public:
 
 private:
     constexpr CogMimic(cog::CogIdentity const& identity, CalibratedCaps calibrated_caps, OpcodeTable opcodes) noexcept
-        : identity_{&identity},
+        : identity_{::fixy::to(identity)},
           calibrated_caps_{std::move(calibrated_caps)},
           opcode_latency_table_{std::move(opcodes)} {}
 
@@ -224,7 +225,7 @@ private:
                                                    cog::caps_for_t<Kind> calibrated_caps,
                                                    cog::OpcodeLatencyTable<Kind> opcodes) noexcept;
 
-    cog::CogIdentity const* identity_;
+    ::fixy::Ref<cog::CogIdentity const> identity_;
     CalibratedCaps calibrated_caps_;
     OpcodeTable opcode_latency_table_;
 };

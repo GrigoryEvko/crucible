@@ -11,7 +11,7 @@
 // One atomic word holds the phase, and each write runs inside a section that
 // the phase admits:
 //
-//   Open    --writer enters (CAS, acquire)-->   Writing
+//   Open    --writer enters (CAS, acq_rel)-->   Writing
 //   Writing --writer leaves (store, release)--> Open
 //   Open    --seal (CAS, acq_rel)-->            Sealed
 //
@@ -43,10 +43,10 @@
 // the writer in the section never gets the write lock, and the section
 // never closes.
 
+#include <fixy/Core.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
-#include <atomic>
 #include <cstdint>
 #include <type_traits>
 
@@ -70,7 +70,7 @@ public:
         if (!enter_writer_()) return false;
         struct Leave {
             RegistrationSeal& seal;
-            ~Leave() { seal.phase_.store(Phase::Open, std::memory_order_release); }
+            ~Leave() { seal.phase_.store_release(Phase::Open); }
         } const leave{*this};
         write();
         return true;
@@ -79,25 +79,21 @@ public:
     // Seals the table.  Waits for a writer that holds the section, and seals
     // one time: a second call finds Sealed and returns.
     void seal() noexcept {
-        Phase expected = Phase::Open;
-        std::uint32_t pause_count = 1;
-        while (!phase_.compare_exchange_weak(expected, Phase::Sealed, std::memory_order_acq_rel,
-                                             std::memory_order_acquire)) {
-            if (expected == Phase::Sealed) return;
-            expected = Phase::Open;
-            back_off_(pause_count);
+        for (std::uint32_t pause_count = 1;; back_off_(pause_count)) {
+            Phase const observed = swap_from_open_(Phase::Sealed);
+            if (observed == Phase::Open || observed == Phase::Sealed) return;
         }
     }
 
-    // Not constexpr: std::atomic::load is not constexpr, so no constant
+    // Not constexpr: Atomic::load_acquire is not constexpr, so no constant
     // evaluation can read the phase.
-    [[nodiscard]] bool is_sealed() const noexcept { return phase_.load(std::memory_order_acquire) == Phase::Sealed; }
+    [[nodiscard]] bool is_sealed() const noexcept { return phase_.load_acquire() == Phase::Sealed; }
 
     // Returns a sealed table to the open phase.  Only a test reuses one
     // table across cases, so this takes the test context, which code that
     // ships cannot mint.  The caller makes sure that no writer and no reader
     // uses the table at the same time.
-    void reopen(::foundation::effects::Test const&) noexcept { phase_.store(Phase::Open, std::memory_order_release); }
+    void reopen(::foundation::effects::Test const&) noexcept { phase_.store_release(Phase::Open); }
 
 private:
     enum class Phase : std::uint8_t {
@@ -117,21 +113,25 @@ private:
         if (pause_count < max_backoff_pauses_) pause_count *= 2;
     }
 
-    // Takes the section.  Returns false when the table is sealed.
-    [[nodiscard]] bool enter_writer_() noexcept {
-        Phase expected = Phase::Open;
-        std::uint32_t pause_count = 1;
-        while (!phase_.compare_exchange_weak(expected, Phase::Writing, std::memory_order_acquire,
-                                             std::memory_order_acquire)) {
-            if (expected == Phase::Sealed) return false;
-            expected = Phase::Open;
-            back_off_(pause_count);
-        }
-        return true;
+    // One compare-exchange from Open to next.  Gives the phase that the word
+    // held: Open when the exchange took place, and each other phase when it
+    // did not.
+    [[nodiscard]] Phase swap_from_open_(Phase next) noexcept {
+        return phase_.cas_acq_rel(Phase::Open, next)
+            .match([](::fixy::Unit) noexcept { return Phase::Open; },
+                   [](::fixy::CasRefusal<Phase> refusal) noexcept { return refusal.observed; });
     }
 
-    std::atomic<Phase> phase_{Phase::Open};
-    static_assert(std::atomic<Phase>::is_always_lock_free);
+    // Takes the section.  Returns false when the table is sealed.
+    [[nodiscard]] bool enter_writer_() noexcept {
+        for (std::uint32_t pause_count = 1;; back_off_(pause_count)) {
+            Phase const observed = swap_from_open_(Phase::Writing);
+            if (observed == Phase::Open) return true;
+            if (observed == Phase::Sealed) return false;
+        }
+    }
+
+    ::fixy::Atomic<Phase> phase_{Phase::Open};
 };
 
 }  // namespace crucible

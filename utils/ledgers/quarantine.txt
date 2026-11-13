@@ -114,10 +114,10 @@ include/crucible/ | compiler-builtin | 28 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
 include/crucible/ | raw-new-delete | 13 | - | -
 include/crucible/ | raw-pointer-object | 516 | - | -
-include/crucible/ | replace-pending:<limits> | 10 | - | -
-include/crucible/ | replace-pending:std::bit_cast | 35 | - | -
-include/crucible/ | std-entity | 403 | - | -
-include/crucible/ | std-object | 128 | - | -
+include/crucible/ | replace-pending:<limits> | 9 | - | -
+include/crucible/ | replace-pending:std::bit_cast | 34 | - | -
+include/crucible/ | std-entity | 396 | - | -
+include/crucible/ | std-object | 127 | - | -
 include/crucible/canopy/ | c-library-call | 1 | - | -
 include/crucible/canopy/ | c-library-object | 1 | - | -
 include/crucible/canopy/ | inline-asm | 2 | - | -
@@ -165,7 +165,7 @@ include/crucible/ledger/probes/ | raw-pointer-object | 30 | - | -
 include/crucible/ledger/probes/ | replace-pending:std::bit_cast | 3 | - | -
 include/crucible/ledger/probes/ | std-entity | 155 | - | -
 include/crucible/ledger/probes/ | std-object | 36 | - | -
-include/crucible/mimic/ | raw-pointer-object | 4 | - | -
+include/crucible/mimic/ | raw-pointer-object | 3 | - | -
 include/crucible/mimic/ | std-entity | 4 | - | -
 include/crucible/mimic/ | std-object | 5 | - | -
 include/crucible/mimic/_wip/network/ | std-entity | 6 | - | -
