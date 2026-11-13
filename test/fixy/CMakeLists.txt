@@ -921,11 +921,11 @@ fixy_neg_compile_test(neg_os_fs_mint_file_with_atom_widens_required_row
 fixy_neg_compile_test(neg_secret_transform_returns_reference
   "no matching function for call to .fixy::Secret<int>::transform\\("
   "required for the satisfaction of .TransformReturnsByValue<F, T>."
-  "the expression .!\\(is_reference_v<typename std::invoke_result<F, T&&>::type>\\) \\[with F = .*T = int\\]. evaluated to .false.")
+  "the expression .!\\(is_reference_v<typename std::invoke_result<[A-Za-z_][A-Za-z0-9_]*, [A-Za-z_][A-Za-z0-9_]*&&>::type>\\) \\[with F = .*T = int\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_secret_transform_returns_void
   "no matching function for call to .fixy::Secret<int>::transform\\("
   "required for the satisfaction of .TransformReturnsNonVoid<F, T>."
-  "the expression .!\\(is_void_v<typename std::invoke_result<F, T&&>::type>\\) \\[with F = .*T = int\\]. evaluated to .false.")
+  "the expression .!\\(is_void_v<typename std::invoke_result<[A-Za-z_][A-Za-z0-9_]*, [A-Za-z_][A-Za-z0-9_]*&&>::type>\\) \\[with F = .*T = int\\]. evaluated to .false.")
 
 # The combinatorial half, as one walk over the atom catalog.
 # Registered as a POSITIVE test: the claims are static_asserts, so the
@@ -1301,13 +1301,13 @@ fixy_neg_compile_test(neg_federation_admittance_names_brand
 # of the peer token, because the result type holds it in undeducible_brand.
 fixy_neg_compile_test(neg_federation_admittance_address_names_brand
   "no matches converting function .mint_federation_admittance. to type"
-  "typename foundation::brand::undeducible_brand<Brand>::type")
+  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type")
 
 # An admittance writes the replay window, so a const admission admits
 # nobody.
 fixy_neg_compile_test(neg_federation_admittance_const_admission
   "passing .const foundation::permissions::FederationAdmission<NegConstOrg>. as .this. argument discards qualifiers"
-  "in call to .constexpr std::pair<foundation::permissions::Permission<fixy::federation::LocalCipherTag, LocalBrand>, foundation::core::Result<foundation::permissions::Permission<foundation::permissions::tag::FederatedPeer<Org>, typename foundation::brand::undeducible_brand<Brand>::type>, fixy::federation::AdmittanceError> > foundation::permissions::FederationAdmission<Org>::mint_federation_admittance")
+  "in call to .constexpr std::pair<foundation::permissions::Permission<fixy::federation::LocalCipherTag, LocalBrand>, foundation::core::Result<foundation::permissions::Permission<foundation::permissions::tag::FederatedPeer<Org>, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type>, fixy::federation::AdmittanceError> > foundation::permissions::FederationAdmission<Org>::mint_federation_admittance")
 
 # Verified -> Unverified has no edge in admitted_retags; the member
 # retag fails its constraint and the note names RetagAllowed with the
@@ -1797,7 +1797,7 @@ fixy_neg_compile_test(neg_bands_peek_mut_rewrites_tier
   "the expression .\\(claim_subject_v<L>\\) == foundation::algebra::ClaimSubject::slot \\[with L = foundation::algebra::lattices::DetSafeLattice::At<foundation::algebra::lattices::DetSafeTier::Pure>\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_bands_mint_band_cv_band
   "required for the satisfaction of .ExactBand<B>. .with B = const foundation::algebra::Graded<"
-  "required for the satisfaction of .same_as<B, typename std::remove_cvref<_Tp>::type>. .with B = const foundation::algebra::Graded<")
+  "required for the satisfaction of .same_as<B, typename std::remove_cvref<[A-Za-z_][A-Za-z0-9_]*>::type>. .with B = const foundation::algebra::Graded<")
 fixy_neg_compile_test(neg_bands_mint_band_not_a_band
   "required for the satisfaction of .ExactBand<B>. .with B = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<"
   "required for the satisfaction of .IsBand<B>. .with B = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<")
@@ -2649,7 +2649,7 @@ fixy_neg_compile_test(neg_sess_test_channel_row_outside_ctx
 fixy_test(test_session_async_channel)
 fixy_neg_compile_test(neg_sess_async_channel_capacity_too_small
   "no matching function for call to .mint_forked_async_channel"
-  "SubtypeAsync<SelfProto, typename fixy::session::detail::dual_view<PeerProto>::type, ResourceSelf>")
+  "SubtypeAsync<SelfProto, typename fixy::session::detail::dual_view<[A-Za-z_][A-Za-z0-9_]*>::type, ResourceSelf>")
 fixy_neg_compile_test(neg_sess_async_channel_without_capacity
   "no matching function for call to .mint_forked_async_channel"
   "StatesOneChannelCapacity<ResourceSelf, ResourcePeer>. \\[with ResourceSelf = .unnamed.::SilentEnd")
@@ -2662,7 +2662,7 @@ fixy_neg_compile_test(neg_sess_async_channel_peer_drops_the_exit
   "SubtypeAsync<PeerProto, typename fixy::session::detail::dual_view<[A-Za-z0-9]+>::type, ResourcePeer>. \\[with PeerProto = fixy::session::Loop<fixy::session::Select<fixy::session::Send<.unnamed.::Job, fixy::session::Continue> > >")
 fixy_neg_compile_test(neg_sess_async_channel_self_drops_the_exit
   "no matching function for call to .mint_forked_async_channel"
-  "SubtypeAsync<SelfProto, typename fixy::session::detail::dual_view<PeerProto>::type, ResourceSelf>. \\[with SelfProto = fixy::session::Loop<fixy::session::Select<fixy::session::Send<.unnamed.::Job, fixy::session::Continue> > >")
+  "SubtypeAsync<SelfProto, typename fixy::session::detail::dual_view<[A-Za-z_][A-Za-z0-9_]*>::type, ResourceSelf>. \\[with SelfProto = fixy::session::Loop<fixy::session::Select<fixy::session::Send<.unnamed.::Job, fixy::session::Continue> > >")
 fixy_neg_compile_test(neg_sess_async_channel_row_outside_ctx
   "no matching function for call to .mint_forked_async_channel<async_row_fixture::LeftProto, async_row_fixture::RightProto, async_row_fixture::Left, async_row_fixture::Right>"
   "satisfaction of .CtxAdmitsChannelRow<Ctx, SelfProto, PeerProto>."
@@ -3090,7 +3090,7 @@ fixy_neg_compile_test(neg_sess_record_not_a_handle
 
 fixy_neg_compile_test(neg_sess_record_recorded_handle
   "no matching function for call to .mint_recorded_session"
-  "the required type .typename fixy::session::detail::recording::wire_protocol<H>::type. is invalid")
+  "the required type .typename fixy::session::detail::recording::wire_protocol<[A-Za-z_][A-Za-z0-9_]*>::type. is invalid")
 
 # The recording door builds each recorder and does each step.  Its
 # opening member states the whole gate of the mint, and the class is
@@ -4759,7 +4759,7 @@ fixy_neg_compile_test(neg_owned_mmap_view_of_temporary
   "a View of a temporary mapping dangles when the mapping unmaps")
 fixy_neg_compile_test(neg_owned_mmap_view_proof_element
   "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadWrite, fixy::mmap::share::Anonymous, \\{anonymous\\}::RegionBrand>::view<foundation::lifetime::detail::HoldsProof>\\(\\)."
-  "required for the satisfaction of .ImplicitLifetimeThroughout<typename std::remove_const<T>::type>. .with T = foundation::lifetime::detail::HoldsProof.")
+  "required for the satisfaction of .ImplicitLifetimeThroughout<typename std::remove_const<[A-Za-z_][A-Za-z0-9_]*>::type>. .with T = foundation::lifetime::detail::HoldsProof.")
 fixy_neg_compile_test(neg_owned_mmap_view_writes_a_read_only_mapping
   "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, \\{anonymous\\}::RegionBrand>::view<int>\\(\\)."
   "required for the satisfaction of .MappingViewElement<Prot, T>. \\[with Prot = fixy::mmap::prot::ReadOnly; T = int\\]")

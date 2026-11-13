@@ -2,11 +2,13 @@
 
 #include <foundation/core/OneOf.h>
 
+#include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
 #include <foundation/core/Verbs.h>
 
+#include <concepts>
 #include <cstdint>
 #include <type_traits>
 
@@ -180,6 +182,40 @@ concept MovedMatchTakesReference = requires(O value) {
 };
 static_assert(!MovedMatchTakesReference<OneOf<int, Code8, long>>);
 static_assert(BorrowedMatchGivesReference<OneOf<int, Code8, long>>);
+
+// get<T> lends the active alternative: a Ref of T from a OneOf that is not
+// const, a Ref of T const from a const OneOf, and no Ref from a temporary.
+// A linear alternative gives only a Ref of T const, so no move through the
+// Ref gives out the alternative that the OneOf keeps.  get names an
+// alternative, and the pack refuses an explicit brand.
+template <class O, class T, class Read>
+concept LendsAs = requires(O& value) {
+    { *value.template get<T>().expect("the alternative is active") } -> std::same_as<Read>;
+};
+template <class O, class T>
+concept LendsFromTemporary = requires(O value) { static_cast<O&&>(value).template get<T>(); };
+template <class O, class T>
+concept LendsWithBrand = requires(O& value) { value.template get<T, ::foundation::brand::DefaultBrand>(); };
+static_assert(LendsAs<OneOf<int, Code8>, int, int&> && LendsAs<OneOf<int, Code8> const, int, int const&>);
+static_assert(LendsAs<OneOf<Owner, int>, Owner, Owner&>);
+static_assert(LendsAs<OneOf<Token, Code8>, Token, Token const&>);
+static_assert(!LendsFromTemporary<OneOf<int, Code8>, int> && !LendsFromTemporary<OneOf<int, Code8> const, int>);
+static_assert(!LendsWithBrand<OneOf<int, Code8>, int>);
+template <class O, class T>
+concept Lends = requires(O& value) { value.template get<T>(); };
+static_assert(Lends<OneOf<int, Code8>, Code8> && !Lends<OneOf<int, Code8>, long>);
+
+// The Option of a Ref has the size of a pointer, and a write through the Ref
+// changes the alternative that the OneOf keeps.
+[[nodiscard]] consteval int lent_and_written() noexcept {
+    OneOf<int, Code8> held{5};
+    auto missed = held.get<Code8>();
+    static_assert(sizeof(missed) == sizeof(int*));
+    if (missed.is_some()) return -1;
+    *held.get<int>().expect("the int is active") = 8;
+    return static_cast<OneOf<int, Code8>&&>(held).expect<int>("the int is active");
+}
+static_assert(lent_and_written() == 8);
 
 // A OneOf holds a borrow when one of its alternatives holds one.
 static_assert(HoldsNoBorrow<OneOf<int, Code8, long>> && HoldsNoBorrow<Option<OneOf<int, Code8>>>);

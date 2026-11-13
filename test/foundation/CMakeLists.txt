@@ -2156,7 +2156,7 @@ foundation_neg_compile_test(neg_core_one_of_match_missing_arm
   "the expression .sizeof \\.\\.\\. \\(Arms \\.\\.\\.\\) == sizeof \\.\\.\\. \\(Ts \\.\\.\\.\\) \\[with Arms = \\{main::._anon_[0-9]+, main::._anon_[0-9]+\\}. Ts = \\{int, Code, long int\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_one_of_match_arm_types
   "no matching function for call to .foundation::core::OneOf<int, Code>::match\\(main\\(\\)::<lambda\\(int\\)>, main\\(\\)::<lambda\\(Code\\)>\\)."
-  "the expression .\\(same_as<typename std::invoke_result<Arms, Ts&&>::type, typename std::invoke_result<Arms \\.\\.\\.\\[0\\],")
+  "the expression .\\(same_as<typename std::invoke_result<[A-Za-z_][A-Za-z0-9_]*, [A-Za-z_][A-Za-z0-9_]*&&>::type, typename std::invoke_result<[A-Za-z_][A-Za-z0-9_]* \\.\\.\\.\\[0\\],")
 foundation_neg_compile_test(neg_core_one_of_match_returns_reference
   "use of deleted function .void foundation::core::OneOf<Ts>::match\\(Arms&& \\.\\.\\.\\) && \\[with Arms = \\{main\\(\\)::<lambda\\(int\\)>, main\\(\\)::<lambda\\(Code\\)>\\}; Ts = \\{int, Code\\}\\]."
   "the result of the rvalue match holds no borrow, because each alternative ends in its arm")
@@ -2172,6 +2172,12 @@ foundation_neg_compile_test(neg_core_one_of_is_non_member
 foundation_neg_compile_test(neg_core_one_of_expect_non_member
   "no matching function for call to .foundation::core::OneOf<int, long int>::expect<short int>\\(const char \\[8\\]\\)."
   "required for the satisfaction of .AlternativeOf<T, Ts \\.\\.\\.>. \\[with T = short int. Ts = \\{int, long int\\}\\]")
+foundation_neg_compile_test(neg_core_one_of_get_non_member
+  "no matching function for call to .foundation::core::OneOf<int, long int>::get<short int>\\(\\)."
+  "required for the satisfaction of .AlternativeOf<T, Ts \\.\\.\\.>. \\[with T = short int. Ts = \\{int, long int\\}\\]")
+foundation_neg_compile_test(neg_core_one_of_get_of_temporary
+  "use of deleted function .void foundation::core::OneOf<Ts>::get\\(\\) && \\[with T = int; Refused = \\{\\}; Ts = \\{int, Code\\}\\]."
+  "an alternative of a temporary OneOf dangles at the end of the full expression")
 foundation_neg_compile_test(neg_core_one_of_owning_copied
   "use of deleted function .foundation::core::OneOf<Owner, int>::OneOf\\(const foundation::core::OneOf<Owner, int>&\\)."
   "an owning sum is move-only: a copy would duplicate what an alternative owns")
@@ -2307,7 +2313,7 @@ foundation_neg_compile_test(neg_core_pack_concat_not_a_pack
   "template constraint failure for .template<class ... Ps>  requires \\(... && PackType<Ps>\\) using foundation::core::pack_concat_t"
   "the expression .\\(... && PackType<Ps>\\) \\[with Ps = \\{foundation::core::Pack<int>, long int\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_pack_at_out_of_range
-  "template constraint failure for .template<class ... Ts> template<long unsigned int I>  requires  I < sizeof ... \\(Ts ...\\) using foundation::core::detail::PackParts<foundation::core::Pack<Ts ...> >::at = typename foundation::core::detail::PackAt<I, Ts ...>::type."
+  "template constraint failure for .template<class ... Ts> template<long unsigned int I>  requires  I < sizeof ... \\(Ts ...\\) using foundation::core::detail::PackParts<foundation::core::Pack<Ts ...> >::at = typename foundation::core::detail::PackAt<[A-Za-z_][A-Za-z0-9_]*, [A-Za-z_][A-Za-z0-9_]* ...>::type."
   "the expression .I < sizeof ... \\(Ts ...\\) \\[with I = 2; Ts = \\{int, long int\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_pack_index_of_absent
   "no matching function for call to .foundation::core::detail::PackParts<foundation::core::Pack<int, long int> >::index_of<char>\\(\\)."
@@ -2433,10 +2439,10 @@ foundation_neg_compile_test(neg_core_address_of_forged_body
   "candidate expects 2 arguments, 1 provided")
 foundation_neg_compile_test(neg_core_box_view_brand_by_address
   "no matches converting function .view. to type .class foundation::core::Ref<int, HeldBrand> \\(class foundation::core::Box<int>::\\*\\)\\(\\) & noexcept."
-  "foundation::core::Ref<T, typename foundation::brand::undeducible_brand<Fresh>::type> foundation::core::Box<T>::view\\(\\) &")
+  "foundation::core::Ref<T, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> foundation::core::Box<T>::view\\(\\) &")
 foundation_neg_compile_test(neg_core_box_const_view_brand_by_address
   "no matches converting function .view. to type .class foundation::core::Ref<const int, HeldBrand> \\(class foundation::core::Box<int>::\\*\\)\\(\\) const & noexcept."
-  "foundation::core::Ref<const T, typename foundation::brand::undeducible_brand<Fresh>::type> foundation::core::Box<T>::view\\(\\) const &")
+  "foundation::core::Ref<const T, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> foundation::core::Box<T>::view\\(\\) const &")
 
 # ── The Atomic family ─────────────────────────────────────────────────
 #
@@ -2503,7 +2509,7 @@ foundation_neg_compile_test(neg_core_sole_writer_bound_to_held_brand
   "neg_core_sole_writer_bound_to_held_brand\\.cpp:18:[0-9]+: error:")
 foundation_neg_compile_test(neg_core_sole_writer_forged_specialization
   "template-id .mint_sole_writer<\\{anonymous\\}::OtherRole>. for .constexpr foundation::core::SoleWriter<\\{anonymous\\}::OtherRole, foundation::core::<lambda\\(\\)> > foundation::core::mint_sole_writer\\(\\). does not match any template declaration"
-  "candidate is: .template<class Role, class ... Arguments, class Brand>  requires  SoleWriterMint<Role, Arguments ...> foundation::core::SoleWriter<Role, typename foundation::brand::undeducible_brand<Brand>::type> foundation::core::mint_sole_writer\\(\\).")
+  "candidate is: .template<class Role, class ... Arguments, class Brand>  requires  SoleWriterMint<Role, Arguments ...> foundation::core::SoleWriter<Role, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> foundation::core::mint_sole_writer\\(\\).")
 foundation_neg_compile_test(neg_core_sole_writer_copied
   "use of deleted function .foundation::core::SoleWriter<Role, Brand>::SoleWriter\\(const foundation::core::SoleWriter<Role, Brand>&\\)"
   "SoleWriter: a copy gives the cell a second writer")
@@ -2807,7 +2813,7 @@ foundation_neg_compile_test(neg_core_find_if_throwing_predicate
   "the expression .is_nothrow_invocable_v<Predicate&, const T&> \\[with Predicate = has_large::._anon_[0-9]+; T = int\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_lower_bound_float_key
   "no matching function for call to .lower_bound_by_key\\(foundation::core::View<const float, 4>, bound_of\\(const foundation::core::FixedArray<float, 4>&\\)::<lambda\\(float\\)>, float\\)."
-  "required for the satisfaction of .KeyOf<Key, typename std::remove_const<_Tp>::type>. \\[with Key = bound_of::._anon_[0-9]+; T = const float\\]")
+  "required for the satisfaction of .KeyOf<Key, typename std::remove_const<[A-Za-z_][A-Za-z0-9_]*>::type>. \\[with Key = bound_of::._anon_[0-9]+; T = const float\\]")
 
 # get of a View and of an owner gives an Option of a Ref: Array.h defines
 # it, so Region.h alone cannot call it, and get of a temporary owner is
@@ -2893,25 +2899,25 @@ foundation_neg_compile_test(neg_core_heap_array_mint_forged_body
 # and a type that names a held brand matches no function.
 foundation_neg_compile_test(neg_core_fixed_array_get_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedArray<int, 4>::\\*\\)\\(std::size_t\\) & noexcept."
-  "typename foundation::brand::undeducible_brand<Fresh>::type> > foundation::core::FixedArray<T, N>::get\\(std::size_t\\) &")
+  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::FixedArray<T, N>::get\\(std::size_t\\) &")
 foundation_neg_compile_test(neg_core_fixed_array_get_const_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedArray<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
-  "typename foundation::brand::undeducible_brand<Fresh>::type> > foundation::core::FixedArray<T, N>::get\\(std::size_t\\) const &")
+  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::FixedArray<T, N>::get\\(std::size_t\\) const &")
 foundation_neg_compile_test(neg_core_heap_array_get_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<int, \\{anonymous\\}::Held> > \\(class foundation::core::HeapArray<int, 4>::\\*\\)\\(std::size_t\\) & noexcept."
-  "typename foundation::brand::undeducible_brand<Fresh>::type> > foundation::core::HeapArray<T, Align>::get\\(std::size_t\\) &")
+  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::HeapArray<T, Align>::get\\(std::size_t\\) &")
 foundation_neg_compile_test(neg_core_heap_array_get_const_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::HeapArray<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
-  "typename foundation::brand::undeducible_brand<Fresh>::type> > foundation::core::HeapArray<T, Align>::get\\(std::size_t\\) const &")
+  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::HeapArray<T, Align>::get\\(std::size_t\\) const &")
 foundation_neg_compile_test(neg_core_fixed_list_push_brand_from_target_type
   "no matches converting function .push. to type .using Pick = class foundation::core::Result<foundation::core::Ref<int, \\{anonymous\\}::Held>, foundation::core::Full<int> > \\(class foundation::core::FixedList<int, 4>::\\*\\)\\(int\\) & noexcept."
-  "typename foundation::brand::undeducible_brand<Fresh>::type>, foundation::core::Full<T> > foundation::core::FixedList<T, N>::push\\(T\\) &")
+  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type>, foundation::core::Full<T> > foundation::core::FixedList<T, N>::push\\(T\\) &")
 foundation_neg_compile_test(neg_core_fixed_list_get_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedList<int, 4>::\\*\\)\\(std::size_t\\) & noexcept."
-  "typename foundation::brand::undeducible_brand<Fresh>::type> > foundation::core::FixedList<T, N>::get\\(std::size_t\\) &")
+  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::FixedList<T, N>::get\\(std::size_t\\) &")
 foundation_neg_compile_test(neg_core_fixed_list_get_const_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedList<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
-  "typename foundation::brand::undeducible_brand<Fresh>::type> > foundation::core::FixedList<T, N>::get\\(std::size_t\\) const &")
+  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::FixedList<T, N>::get\\(std::size_t\\) const &")
 foundation_neg_compile_test(neg_core_zip_fixed_brand_from_target_type
   "invalid .static_cast. from type .<unresolved overloaded function type>. to type .Pick."
   "foundation::core::detail::ZipRange<int, int, \\{anonymous\\}::Held> \\(\\*\\)\\(foundation::core::View<int, 4>, foundation::core::View<int, 4>\\) noexcept")
@@ -2920,10 +2926,10 @@ foundation_neg_compile_test(neg_core_zip_dynamic_brand_from_target_type
   "foundation::core::Result<foundation::core::detail::ZipRange<int, int, \\{anonymous\\}::Held>, foundation::core::LengthMismatch> \\(\\*\\)\\(foundation::core::View<int>, foundation::core::View<int, 4>\\) noexcept")
 foundation_neg_compile_test(neg_core_zip_fixed_brand_from_specialization
   "template-id .zip<>. for .constexpr foundation::core::detail::ZipRange<int, int, \\{anonymous\\}::Held> foundation::core::zip\\(View<int, 4>, View<int, 4>\\). does not match any template declaration"
-  "foundation::core::detail::ZipRange<First, Second, typename foundation::brand::undeducible_brand<Fresh>::type> foundation::core::zip")
+  "foundation::core::detail::ZipRange<First, Second, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> foundation::core::zip")
 foundation_neg_compile_test(neg_core_zip_dynamic_brand_from_specialization
   "template-id .zip<>. for .constexpr foundation::core::Result<foundation::core::detail::ZipRange<int, int, \\{anonymous\\}::Held>, foundation::core::LengthMismatch> foundation::core::zip\\(View<int, 18446744073709551615>, View<int, 4>\\). does not match any template declaration"
-  "foundation::core::Result<foundation::core::detail::ZipRange<First, Second, typename foundation::brand::undeducible_brand<Fresh>::type>, foundation::core::LengthMismatch>")
+  "foundation::core::Result<foundation::core::detail::ZipRange<First, Second, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type>, foundation::core::LengthMismatch>")
 
 # enumerate() needs the proven indexes of indices(), so a View of a dynamic
 # extent has none.  zip of two Views of different fixed extents is refused

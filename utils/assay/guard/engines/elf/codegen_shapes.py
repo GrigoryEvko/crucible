@@ -702,6 +702,11 @@ PROBES: tuple[Probe, ...] = (
         branches=True,
     ),
     Probe(
+        "one_of_get",
+        "get<T>() of a OneOf compares the tag with the index of T one time, and the read through the Option of the "
+        "Ref is the read of the storage when the tag agrees, as the raw form of a tagged storage word does",
+    ),
+    Probe(
         "switch_unreachable",
         "a switch with fixy::unreachable() adds one bounds compare and one branch to a call of the fatal exit.  At "
         f"-O1, std::unreachable stops the process with a trap after the same compare.  {HARDENED_BUILDS}.  On the hot "

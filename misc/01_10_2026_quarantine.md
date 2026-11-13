@@ -1030,7 +1030,7 @@ A `Result` has no loop, because a loop over the value drops the error with no tr
 | `is<T>()` | `T` is one of `Ts` | one compare | - | main |
 | `expect<T>(why)` | `&&`. Another alternative ends the process | one branch to a cold call | `expect` | main |
 | `match(arms...)` | `&&` and `const&`. One arm for each alternative in the order of `Ts`. The last alternative takes the last branch, so `match` has no fatal path. The `&&` form takes each alternative by value and gives no reference and no address, as for `Option`, and a const temporary has no borrow match. The rule borrow-match refuses an arm of the borrow match that writes the OneOf | one compare for each alternative | `match` | main |
-| `get<T>()` | `Option<Ref<T>>`, after `Ref` of G3 | one compare | `get` | design |
+| `get<T>()` | `&` gives `Option<Ref<T>>`, and `const&` gives `Option<Ref<T const>>`, each with the fresh brand of the call. A linear `T` has only the `const&` form, so no move through the `Ref` gives out the alternative. A temporary has no `get` | one compare | `get` | main |
 | `which()` | `Index<sizeof...(Ts)>`, after `Index<N>` of G4 | a load | - | design |
 | The move assignment, `==` | As for `Option`. A value of an alternative binds to the deleted overload | as for `Option`, and one compare of each tag before the active alternative | compare | main |
 

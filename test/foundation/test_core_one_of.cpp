@@ -1,5 +1,5 @@
 // Tests of foundation/core/OneOf.h: the construction of each alternative,
-// is, expect, the two matches, an owning alternative and a linear
+// is, expect, the two matches, get, an owning alternative and a linear
 // alternative, and a property test against a model of a tag and a value.
 
 #include <foundation/core/OneOf.h>
@@ -109,6 +109,30 @@ void test_match() {
     CRUCIBLE_FATAL_INVARIANT(seen == 6 && held.is<std::uint16_t>());
 }
 
+// get<T> lends the active alternative, gives no value for each other one,
+// and a write through the Ref changes the alternative that the OneOf keeps.
+// A const OneOf and a linear alternative lend a const borrow.
+void test_get() {
+    Reading reading = read_word(7u);
+    CRUCIBLE_FATAL_INVARIANT(reading.get<std::uint32_t>().is_none() && reading.get<Refusal>().is_none());
+    *reading.get<std::uint16_t>().expect("the reading is narrow") = std::uint16_t{9};
+    CRUCIBLE_FATAL_INVARIANT(Reading{reading}.expect<std::uint16_t>("the reading stays narrow") == 9u);
+
+    Reading const wide = read_word(0x12345u);
+    CRUCIBLE_FATAL_INVARIANT(*wide.get<std::uint32_t>().expect("the reading is wide") == 0x12345u);
+    CRUCIBLE_FATAL_INVARIANT(wide.get<std::uint16_t>().is_none());
+
+    {
+        OneOf<CountedToken, Refusal> held{CountedToken{61}};
+        int const lent = held.get<CountedToken>().expect("the token is held")->handle();
+        CRUCIBLE_FATAL_INVARIANT(lent == 61 && held.get<Refusal>().is_none() && live_tokens == 1);
+        CountedToken taken =
+            static_cast<OneOf<CountedToken, Refusal>&&>(held).expect<CountedToken>("the token is held");
+        ::foundation::linear::drop(static_cast<CountedToken&&>(taken));
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
+}
+
 // The probe reads each owning OneOf after its move on purpose: the source
 // keeps its moved-from alternative.
 void test_owning_alternative() {
@@ -205,6 +229,7 @@ int main() {
     test_each_alternative();
     test_expect();
     test_match();
+    test_get();
     test_owning_alternative();
     test_linear_alternative();
     test_agrees_with_model();

@@ -11,8 +11,10 @@
 //
 // The roads to a value are the total match(), with one arm for each
 // alternative in the order of Ts, and expect<T>(), the fatal unwrap of one
-// alternative.  is<T>() tells the active alternative.  The type has no
-// operator*, no operator-> and no operator bool, and it is [[nodiscard]].
+// alternative.  get<T>() lends the active alternative as an Option of a Ref
+// of the Ref family, with no value for a different alternative.  is<T>()
+// tells the active alternative.  The type has no operator*, no operator->
+// and no operator bool, and it is [[nodiscard]].
 //
 // The storage is the sum of the family (Choice.h).  The sum of plain
 // alternatives holds the storage and a tag, and it is trivially copyable.
@@ -20,15 +22,18 @@
 // keeps the moved-from alternative in the source, which its destructor
 // ends, so a borrow of the source stays a borrow of a live object.  A
 // linear alternative takes the owning form, and only expect<T>() and the
-// rvalue match() give it out.
+// rvalue match() give it out.  get<T>() lends a linear alternative only as a
+// const borrow.
 //
 // which(), the index of the active alternative as an Index<N> of the Region
-// family, and get<T>(), a borrow that can miss, are planned.  The includers
-// of Choice.h do not read OneOf, so it has a header of its own.
+// family, is planned.  The includers of Choice.h do not read OneOf, so it has
+// a header of its own.
 
+#include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
 #include <foundation/core/Report.h>
 
 #include <concepts>
@@ -141,6 +146,44 @@ public:
         }
         return static_cast<T&&>(slot_.template alternative_<index>());
     }
+
+    // The active alternative when it is T, as an Option of a Ref with the
+    // fresh brand of the call, or no value for each other alternative: one
+    // compare.  The OneOf keeps the alternative.  A linear alternative has
+    // only the form of a const borrow, because a move through a Ref would
+    // give out the alternative that the OneOf still holds.  The pack refuses
+    // each explicit argument after T, so no caller names the brand, and the
+    // result type holds the brand in undeducible_brand_t.  The
+    // address of an alternative is not null, because a reference names an
+    // object.  The build keeps each test of an address for null
+    // (-fno-delete-null-pointer-checks), so the assumption states that fact,
+    // and a match of the Option tests only the tag.  The condition reads a
+    // local reference and no member, so a hardened build folds it too.
+    template <class T, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires detail::AlternativeOf<T, Ts...> && (sizeof...(Refused) == 0) && DroppablePayload<T>
+    [[nodiscard]] constexpr Option<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>> get() & noexcept {
+        constexpr std::size_t index = detail::index_in_v<T, Ts...>;
+        if (slot_.index_() != index) return Option<Ref<T, Fresh>>{none};
+        T& alternative = slot_.template alternative_<index>();
+        [[assume(__builtin_addressof(alternative) != nullptr)]];
+        return Option<Ref<T, Fresh>>::some(detail::RefDoor::lend<Fresh>(alternative));
+    }
+    template <class T, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires detail::AlternativeOf<T, Ts...> && (sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
+    get() const& noexcept {
+        constexpr std::size_t index = detail::index_in_v<T, Ts...>;
+        if (slot_.index_() != index) return Option<Ref<T const, Fresh>>{none};
+        T const& alternative = slot_.template alternative_<index>();
+        [[assume(__builtin_addressof(alternative) != nullptr)]];
+        return Option<Ref<T const, Fresh>>::some(detail::RefDoor::lend<Fresh>(alternative));
+    }
+    template <class T, class... Refused>
+        requires detail::AlternativeOf<T, Ts...>
+    void get() && = delete("an alternative of a temporary OneOf dangles at the end of the full expression");
+    template <class T, class... Refused>
+        requires detail::AlternativeOf<T, Ts...>
+    void get() const&& = delete("an alternative of a temporary OneOf dangles at the end of the full expression");
 
     // The total match: the arm at each position takes the alternative at
     // that position, the arm of the active alternative gets its value, and

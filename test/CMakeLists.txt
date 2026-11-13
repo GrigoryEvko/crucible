@@ -1185,7 +1185,7 @@ crucible_neg_compile_test(neg_quarantine_override_missing_permission
     "candidate expects 6 arguments, 5 provided")
 crucible_neg_compile_test(neg_quarantine_operator_authority_no_ctx
     "static assertion failed: mint_permission_root<Tag>\\(\\) without an ExecCtx is only valid for permission_row<Tag> == Row<>"
-    "In instantiation of .constexpr foundation::permissions::Permission<Tag, typename foundation::brand::undeducible_brand<Brand>::type> foundation::permissions::mint_permission_root\\(const Args& \\.\\.\\.\\) .with Tag = crucible::warden::quarantine_tag::OperatorOverride. Args = \\{\\}")
+    "In instantiation of .constexpr foundation::permissions::Permission<Tag, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> foundation::permissions::mint_permission_root\\(const Args& \\.\\.\\.\\) .with Tag = crucible::warden::quarantine_tag::OperatorOverride. Args = \\{\\}")
 crucible_neg_compile_test(neg_quarantine_operator_authority_bg_ctx
     "no matching function for call to .mint_permission_root<crucible::warden::quarantine_tag::OperatorOverride>\\(const fixy::BgDrainCtx&\\)."
     "required for the satisfaction of .PermissionRootArgs<Tag, Args \\.\\.\\.>. .with Tag = crucible::warden::quarantine_tag::OperatorOverride. Args = \\{foundation::effects::ExecCtx<foundation::effects::Bg, ")
@@ -3601,7 +3601,7 @@ crucible_neg_compile_test(neg_types_hash_family_unspecialized
   "using crucible::hash_family_of_t = typename crucible::hash_family_of::family .with HashT = int.")
 crucible_neg_compile_test(neg_types_hash_family_cross_lane
   "static assertion failed"
-  "the expression .is_same_v<typename crucible::hash_family_of<HashT>::family, crucible::hash_family::FamilyB> .with HashT = crucible::ContentHash.. evaluated to .false.")
+  "the expression .is_same_v<typename crucible::hash_family_of<[A-Za-z_][A-Za-z0-9_]*>::family, crucible::hash_family::FamilyB> .with HashT = crucible::ContentHash.. evaluated to .false.")
 
 # Expr::hash is fixy::Tagged<uint64_t, hash_family::FamilyB>.  The two
 # fixtures take that type from the field.
