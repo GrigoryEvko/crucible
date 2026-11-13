@@ -27,5 +27,5 @@ int main() {
             .wrong_kind = Refusal::WrongKind,
             .missing_feature = Refusal::MissingFeature,
         });
-    return checked.has_value() ? 0 : 1;
+    return checked.is_ok() ? 0 : 1;
 }

@@ -84,31 +84,28 @@ void test_admission_and_names() {
 void test_fabric_plan_minting() {
     ::fixy::ColdInitCtx init{fe::testing::init()};
     auto plan = shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(),
-                                            shp::admit_sharp_participant_count(8).expect("8 participants is positive"));
-    assert(plan.has_value());
-    static_assert(std::same_as<std::remove_cvref_t<decltype(*plan)>, shp::DeclaredSharpFabricPlan>);
-    assert(plan->value().participant_count.value() == 8);
+                                            shp::admit_sharp_participant_count(8).expect("8 participants is positive"))
+                    .expect("a SHARP switch makes a plan");
+    static_assert(std::same_as<decltype(plan), shp::DeclaredSharpFabricPlan>);
+    assert(plan.value().participant_count.value() == 8);
 
     auto no_cap = switch_caps();
     no_cap.features.unset(cog::SwitchFeature::Sharp);
     auto missing_cap = shp::mint_sharp_fabric_plan(
         init, switch_identity(), no_cap, shp::admit_sharp_participant_count(8).expect("8 participants is positive"));
-    assert(!missing_cap.has_value());
-    assert(missing_cap.error() == shp::SharpError::MissingSwitchSharpCapability);
+    assert(missing_cap.err() == ::fixy::some(shp::SharpError::MissingSwitchSharpCapability));
 
     auto wrong_kind = switch_identity();
     wrong_kind.kind = cog::CogKind::NicPort;
     auto non_switch = shp::mint_sharp_fabric_plan(
         init, wrong_kind, switch_caps(), shp::admit_sharp_participant_count(8).expect("8 participants is positive"));
-    assert(!non_switch.has_value());
-    assert(non_switch.error() == shp::SharpError::NonSwitchCog);
+    assert(non_switch.err() == ::fixy::some(shp::SharpError::NonSwitchCog));
 
     auto zero = switch_identity();
     zero.uuid = cog::Uuid{};
     auto zero_switch = shp::mint_sharp_fabric_plan(
         init, zero, switch_caps(), shp::admit_sharp_participant_count(8).expect("8 participants is positive"));
-    assert(!zero_switch.has_value());
-    assert(zero_switch.error() == shp::SharpError::ZeroSwitchCog);
+    assert(zero_switch.err() == ::fixy::some(shp::SharpError::ZeroSwitchCog));
 
     crucible::test::pass("  test_fabric_plan_minting: PASSED\n");
 }
@@ -116,27 +113,27 @@ void test_fabric_plan_minting() {
 void test_recipe_eligibility() {
     ::fixy::ColdInitCtx init{fe::testing::init()};
     auto plan = shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(),
-                                            shp::admit_sharp_participant_count(8).expect("8 participants is positive"));
-    assert(plan.has_value());
+                                            shp::admit_sharp_participant_count(8).expect("8 participants is positive"))
+                    .expect("a SHARP switch makes a plan");
 
     auto eligible = shp::eligibility_check(recipe(crucible::ReductionDeterminism::BITEXACT_TC),
-                                           shp::sharp_recipe_laws<GoodRecipe>(), *plan);
+                                           shp::sharp_recipe_laws<GoodRecipe>(), plan);
     assert(eligible.has_value());
     assert(eligible->value().fallback == shp::SharpFallback::None);
 
     auto strict = shp::eligibility_check(recipe(crucible::ReductionDeterminism::BITEXACT_STRICT),
-                                         shp::SharpRecipeLaws{.associative = true, .commutative = true}, *plan);
+                                         shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
     assert(!strict.has_value());
     assert(strict.error() == shp::SharpError::BitexactStrictForbidden);
 
     auto non_commutative =
-        shp::eligibility_check(recipe(), shp::SharpRecipeLaws{.associative = true, .commutative = false}, *plan);
+        shp::eligibility_check(recipe(), shp::SharpRecipeLaws{.associative = true, .commutative = false}, plan);
     assert(!non_commutative.has_value());
     assert(non_commutative.error() == shp::SharpError::RecipeNotCommutative);
 
     auto unsupported_dtype =
         shp::eligibility_check(recipe(crucible::ReductionDeterminism::ORDERED, crucible::ScalarType::Bool),
-                               shp::SharpRecipeLaws{.associative = true, .commutative = true}, *plan);
+                               shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
     assert(!unsupported_dtype.has_value());
     assert(unsupported_dtype.error() == shp::SharpError::UnsupportedScalarType);
 
@@ -147,70 +144,70 @@ void test_dispatch_boundary() {
     ::fixy::ColdInitCtx init{fe::testing::init()};
     ::fixy::BgDrainCtx bg{fe::testing::bg()};
     auto plan = shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(),
-                                            shp::admit_sharp_participant_count(8).expect("8 participants is positive"));
-    assert(plan.has_value());
+                                            shp::admit_sharp_participant_count(8).expect("8 participants is positive"))
+                    .expect("a SHARP switch makes a plan");
 
     std::array<float, 4> input{1.0f, 2.0f, 3.0f, 4.0f};
     std::array<float, 4> output{};
     auto unavailable =
-        shp::dispatch_sharp_allreduce(input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), *plan);
+        shp::dispatch_sharp_allreduce(input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), plan);
     assert(unavailable.has_value());
     assert(unavailable->value().fallback == shp::SharpFallback::RingOrTree);
     assert(unavailable->value().element_count == input.size());
 
     auto deferred_plan =
         shp::mint_sharp_fabric_plan(init, switch_identity(), switch_caps(),
-                                    shp::admit_sharp_participant_count(8).expect("8 participants is positive"), true);
-    assert(deferred_plan.has_value());
+                                    shp::admit_sharp_participant_count(8).expect("8 participants is positive"), true)
+            .expect("a loaded runtime makes a plan");
     auto deferred =
-        shp::dispatch_sharp_allreduce(input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), *deferred_plan);
+        shp::dispatch_sharp_allreduce(input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), deferred_plan);
     assert(deferred.has_value());
     assert(deferred->value().fallback == shp::SharpFallback::RingOrTree);
 
-    auto deferred_context = shp::mint_sharp_context(init, *deferred_plan);
+    auto deferred_context = shp::mint_sharp_context(init, deferred_plan);
     assert(!deferred_context.has_value());
     assert(deferred_context.error() == shp::SharpError::DispatchDeferred);
-    auto unloaded_context = shp::mint_sharp_context(init, *plan);
+    auto unloaded_context = shp::mint_sharp_context(init, plan);
     assert(!unloaded_context.has_value());
     assert(unloaded_context.error() == shp::SharpError::RuntimeUnavailable);
 
     auto backend_plan = shp::mint_sharp_fabric_plan(
-        init, switch_identity(), switch_caps(),
-        shp::admit_sharp_participant_count(8).expect("8 participants is positive"), true, true);
-    assert(backend_plan.has_value());
+                            init, switch_identity(), switch_caps(),
+                            shp::admit_sharp_participant_count(8).expect("8 participants is positive"), true, true)
+                            .expect("a plan that asks for the backend makes a plan");
     auto backend =
-        shp::dispatch_sharp_allreduce(input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), *backend_plan);
+        shp::dispatch_sharp_allreduce(input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), backend_plan);
     assert(backend.has_value());
     assert(backend->value().fallback == shp::SharpFallback::RingOrTree);
 
     auto strict_fallback =
         shp::dispatch_sharp_allreduce(input, output, recipe(crucible::ReductionDeterminism::BITEXACT_STRICT),
-                                      shp::SharpRecipeLaws{.associative = true, .commutative = true}, *backend_plan);
+                                      shp::SharpRecipeLaws{.associative = true, .commutative = true}, backend_plan);
     assert(strict_fallback.has_value());
     assert(strict_fallback->value().fallback == shp::SharpFallback::BitexactTree);
 
     std::array<float, 2> short_output{};
     auto shape = shp::dispatch_sharp_allreduce(input, short_output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(),
-                                               *backend_plan);
+                                               backend_plan);
     assert(!shape.has_value());
     assert(shape.error() == shp::SharpError::OutputShapeMismatch);
 
-    auto context = shp::mint_sharp_context(init, *backend_plan);
+    auto context = shp::mint_sharp_context(init, backend_plan);
     assert(context.has_value());
     assert(context->peek().switch_uuid() == switch_identity().uuid);
     assert(context->peek().participant_count().value() == 8);
     shp::SharpReducer reducer{std::move(*context)};
     auto reduced =
-        reducer.allreduce_via_sharp(bg, input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), *backend_plan);
+        reducer.allreduce_via_sharp(bg, input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), backend_plan);
     assert(!reduced.has_value());
     assert(reduced.error() == shp::SharpError::VendorBackendUnavailable);
 
     auto other_plan = shp::mint_sharp_fabric_plan(
-        init, switch_identity(), switch_caps(),
-        shp::admit_sharp_participant_count(4).expect("4 participants is positive"), true, true);
-    assert(other_plan.has_value());
+                          init, switch_identity(), switch_caps(),
+                          shp::admit_sharp_participant_count(4).expect("4 participants is positive"), true, true)
+                          .expect("a plan of four participants makes a plan");
     auto mismatch =
-        reducer.allreduce_via_sharp(bg, input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), *other_plan);
+        reducer.allreduce_via_sharp(bg, input, output, recipe(), shp::sharp_recipe_laws<GoodRecipe>(), other_plan);
     assert(!mismatch.has_value());
     assert(mismatch.error() == shp::SharpError::ParticipantCountMismatch);
 

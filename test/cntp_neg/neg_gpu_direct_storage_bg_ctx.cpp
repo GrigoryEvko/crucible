@@ -25,5 +25,5 @@ int main() {
         gd::mint_gpu_direct_storage_plan(bg, gpu, gpu_caps, nvme, gd::PeerPlacement{},
                                          gd::admit_gpu_virtual_address(0x1000u).expect("the address is not null"),
                                          gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"));
-    return result.has_value() ? 0 : 1;
+    return result.is_ok() ? 0 : 1;
 }

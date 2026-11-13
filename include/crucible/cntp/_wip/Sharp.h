@@ -195,7 +195,7 @@ inline constexpr cog::OffloadTargetRefusals<SharpError> sharp_target_refusals{
     .missing_feature = SharpError::MissingSwitchSharpCapability,
 };
 
-[[nodiscard]] constexpr std::expected<void, SharpError>
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, SharpError>
 validate_sharp_switch(cog::CogIdentity const& fabric_switch, cog::NvSwitchTargetCaps const& caps) noexcept {
     return cog::validate_offload_target<cog::SwitchFeature::Sharp, cog::CogKind::NvSwitch>(fabric_switch, caps,
                                                                                            sharp_target_refusals);
@@ -247,21 +247,18 @@ template <class Recipe>
 // The refined count already holds this bound.  The check reads it again,
 // so a count that entered through mint_refined_trusted is still refused
 // here.
-[[nodiscard]] constexpr std::expected<void, SharpError>
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, SharpError>
 validate_sharp_fabric_plan(SharpFabricPlan const& plan, cog::NvSwitchTargetCaps const& caps) noexcept {
-    auto switch_valid = validate_sharp_switch(plan.fabric_switch, caps);
-    if (!switch_valid.has_value()) {
-        return switch_valid;
-    }
+    CRUCIBLE_TRY(_, validate_sharp_switch(plan.fabric_switch, caps));
     if (plan.participant_count.value() == 0u) {
-        return std::unexpected(SharpError::EmptyParticipantSet);
+        return ::fixy::err(SharpError::EmptyParticipantSet);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
 template <class Ctx>
     requires CtxFitsSharpMint<Ctx>
-[[nodiscard]] constexpr std::expected<DeclaredSharpFabricPlan, SharpError>
+[[nodiscard]] constexpr ::fixy::Result<DeclaredSharpFabricPlan, SharpError>
 mint_sharp_fabric_plan(Ctx const&, cog::CogIdentity fabric_switch, cog::NvSwitchTargetCaps const& caps,
                        SharpParticipantCount participant_count, bool runtime_loaded = false,
                        bool allow_backend_dispatch = false) noexcept {
@@ -271,10 +268,7 @@ mint_sharp_fabric_plan(Ctx const&, cog::CogIdentity fabric_switch, cog::NvSwitch
         .runtime_loaded = runtime_loaded,
         .allow_backend_dispatch = allow_backend_dispatch,
     };
-    auto valid = validate_sharp_fabric_plan(plan, caps);
-    if (!valid.has_value()) {
-        return std::unexpected(valid.error());
-    }
+    CRUCIBLE_TRY(_, validate_sharp_fabric_plan(plan, caps));
     return ::fixy::mint_tagged<wip_source::Sharp>(plan);
 }
 

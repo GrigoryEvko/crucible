@@ -103,12 +103,12 @@ void test_rdma_plan_minting() {
     ::fixy::ColdInitCtx init{fe::testing::init()};
     auto plan = gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), same_root(),
                                             gd::admit_gpu_virtual_address(0x2000u).expect("the address is not null"),
-                                            gd::admit_gpu_direct_bytes(1u << 20u).expect("the byte count is positive"));
-    assert(plan.has_value());
-    static_assert(std::same_as<std::remove_cvref_t<decltype(*plan)>, gd::DeclaredGpuDirectMrPlan>);
-    assert(plan->value().gpu.uuid == gpu_identity().uuid);
-    assert(plan->value().nic.uuid == nic_identity().uuid);
-    assert(plan->value().bytes.value() == (1u << 20u));
+                                            gd::admit_gpu_direct_bytes(1u << 20u).expect("the byte count is positive"))
+                    .expect("a GPU and a NIC on one PCIe root make a plan");
+    static_assert(std::same_as<decltype(plan), gd::DeclaredGpuDirectMrPlan>);
+    assert(plan.value().gpu.uuid == gpu_identity().uuid);
+    assert(plan.value().nic.uuid == nic_identity().uuid);
+    assert(plan.value().bytes.value() == (1u << 20u));
 
     gd::PeerPlacement remote_root = same_root();
     remote_root.peer_pcie_root = pcie_root(8);
@@ -116,22 +116,20 @@ void test_rdma_plan_minting() {
         gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), remote_root,
                                     gd::admit_gpu_virtual_address(0x2000u).expect("the address is not null"),
                                     gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"));
-    assert(!mismatch.has_value());
-    assert(mismatch.error() == gd::GpuDirectError::PcieRootMismatch);
+    assert(mismatch.err() == ::fixy::some(gd::GpuDirectError::PcieRootMismatch));
 
     remote_root.peer_bridge_present = true;
     auto bridged =
         gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), remote_root,
                                     gd::admit_gpu_virtual_address(0x2000u).expect("the address is not null"),
                                     gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"));
-    assert(bridged.has_value());
+    assert(bridged.is_ok());
 
     auto unknown_root =
         gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), gd::PeerPlacement{},
                                     gd::admit_gpu_virtual_address(0x2000u).expect("the address is not null"),
                                     gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"));
-    assert(!unknown_root.has_value());
-    assert(unknown_root.error() == gd::GpuDirectError::PcieRootUnknown);
+    assert(unknown_root.err() == ::fixy::some(gd::GpuDirectError::PcieRootUnknown));
 
     auto no_gpu_cap = gpu_caps();
     no_gpu_cap.features.unset(cog::GpuFeature::GpuDirectRdma);
@@ -139,8 +137,7 @@ void test_rdma_plan_minting() {
         gd::mint_gpu_direct_mr_plan(init, gpu_identity(), no_gpu_cap, nic_identity(), nic_caps(), same_root(),
                                     gd::admit_gpu_virtual_address(0x2000u).expect("the address is not null"),
                                     gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"));
-    assert(!missing_gpu_cap.has_value());
-    assert(missing_gpu_cap.error() == gd::GpuDirectError::MissingGpuRdmaCapability);
+    assert(missing_gpu_cap.err() == ::fixy::some(gd::GpuDirectError::MissingGpuRdmaCapability));
 
     auto no_nic_cap = nic_caps();
     no_nic_cap.features.unset(cog::NicFeature::GpuDirectRdma);
@@ -148,22 +145,19 @@ void test_rdma_plan_minting() {
         gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), no_nic_cap, same_root(),
                                     gd::admit_gpu_virtual_address(0x2000u).expect("the address is not null"),
                                     gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"));
-    assert(!missing_nic_cap.has_value());
-    assert(missing_nic_cap.error() == gd::GpuDirectError::MissingNicRdmaCapability);
+    assert(missing_nic_cap.err() == ::fixy::some(gd::GpuDirectError::MissingNicRdmaCapability));
 
     auto not_a_nic =
         gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nvme_identity(), nic_caps(), same_root(),
                                     gd::admit_gpu_virtual_address(0x2000u).expect("the address is not null"),
                                     gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"));
-    assert(!not_a_nic.has_value());
-    assert(not_a_nic.error() == gd::GpuDirectError::NonNicCog);
+    assert(not_a_nic.err() == ::fixy::some(gd::GpuDirectError::NonNicCog));
 
     auto no_access = gd::mint_gpu_direct_mr_plan(
         init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), same_root(),
         gd::admit_gpu_virtual_address(0x2000u).expect("the address is not null"),
         gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"), gd::MrAccess{});
-    assert(!no_access.has_value());
-    assert(no_access.error() == gd::GpuDirectError::InvalidAccess);
+    assert(no_access.err() == ::fixy::some(gd::GpuDirectError::InvalidAccess));
 
     crucible::test::pass("  test_rdma_plan_minting: PASSED\n");
 }
@@ -172,28 +166,30 @@ void test_registration_boundary() {
     ::fixy::ColdInitCtx init{fe::testing::init()};
     auto plan = gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), same_root(),
                                             gd::admit_gpu_virtual_address(0x3000u).expect("the address is not null"),
-                                            gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"));
-    assert(plan.has_value());
+                                            gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"))
+                    .expect("a GPU and a NIC on one PCIe root make a plan");
 
-    auto missing_module = gd::register_gpu_memory(*plan);
+    auto missing_module = gd::register_gpu_memory(plan);
     assert(!missing_module.has_value());
     assert(missing_module.error() == gd::GpuDirectError::PeerModuleUnavailable);
 
-    auto deferred = gd::mint_gpu_direct_mr_plan(
-        init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), same_root(),
-        gd::admit_gpu_virtual_address(0x3000u).expect("the address is not null"),
-        gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"), gd::mrc_write_access(), true);
-    assert(deferred.has_value());
-    auto reg_deferred = gd::register_gpu_memory(*deferred);
+    auto deferred =
+        gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), same_root(),
+                                    gd::admit_gpu_virtual_address(0x3000u).expect("the address is not null"),
+                                    gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"),
+                                    gd::mrc_write_access(), true)
+            .expect("a plan with the peer module makes a plan");
+    auto reg_deferred = gd::register_gpu_memory(deferred);
     assert(!reg_deferred.has_value());
     assert(reg_deferred.error() == gd::GpuDirectError::RegistrationDeferred);
 
-    auto unavailable = gd::mint_gpu_direct_mr_plan(
-        init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), same_root(),
-        gd::admit_gpu_virtual_address(0x3000u).expect("the address is not null"),
-        gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"), gd::mrc_write_access(), true, true);
-    assert(unavailable.has_value());
-    auto reg_unavailable = gd::register_gpu_memory(*unavailable);
+    auto unavailable =
+        gd::mint_gpu_direct_mr_plan(init, gpu_identity(), gpu_caps(), nic_identity(), nic_caps(), same_root(),
+                                    gd::admit_gpu_virtual_address(0x3000u).expect("the address is not null"),
+                                    gd::admit_gpu_direct_bytes(4096).expect("the byte count is positive"),
+                                    gd::mrc_write_access(), true, true)
+            .expect("a plan that asks for the backend makes a plan");
+    auto reg_unavailable = gd::register_gpu_memory(unavailable);
     assert(!reg_unavailable.has_value());
     assert(reg_unavailable.error() == gd::GpuDirectError::VendorBackendUnavailable);
 
@@ -205,15 +201,15 @@ void test_storage_plan_boundary() {
     auto plan =
         gd::mint_gpu_direct_storage_plan(init, gpu_identity(), gpu_caps(), nvme_identity(), same_root(),
                                          gd::admit_gpu_virtual_address(0x4000u).expect("the address is not null"),
-                                         gd::admit_gpu_direct_bytes(8192).expect("the byte count is positive"), 128);
-    assert(plan.has_value());
-    static_assert(std::same_as<std::remove_cvref_t<decltype(*plan)>, gd::DeclaredGpuDirectStoragePlan>);
-    assert(plan->value().storage_offset_bytes == 128);
+                                         gd::admit_gpu_direct_bytes(8192).expect("the byte count is positive"), 128)
+            .expect("a GPU and an NVMe drive on one PCIe root make a plan");
+    static_assert(std::same_as<decltype(plan), gd::DeclaredGpuDirectStoragePlan>);
+    assert(plan.value().storage_offset_bytes == 128);
 
-    auto read = gd::read_from_nvme(*plan);
+    auto read = gd::read_from_nvme(plan);
     assert(!read.has_value());
     assert(read.error() == gd::GpuDirectError::StorageBackendUnavailable);
-    auto write = gd::write_to_nvme(*plan);
+    auto write = gd::write_to_nvme(plan);
     assert(!write.has_value());
     assert(write.error() == gd::GpuDirectError::StorageBackendUnavailable);
 
@@ -221,15 +217,13 @@ void test_storage_plan_boundary() {
         gd::mint_gpu_direct_storage_plan(init, gpu_identity(), gpu_caps(), nvme_identity(), gd::PeerPlacement{},
                                          gd::admit_gpu_virtual_address(0x4000u).expect("the address is not null"),
                                          gd::admit_gpu_direct_bytes(8192).expect("the byte count is positive"));
-    assert(!unknown_root.has_value());
-    assert(unknown_root.error() == gd::GpuDirectError::PcieRootUnknown);
+    assert(unknown_root.err() == ::fixy::some(gd::GpuDirectError::PcieRootUnknown));
 
     auto non_nvme =
         gd::mint_gpu_direct_storage_plan(init, gpu_identity(), gpu_caps(), nic_identity(), same_root(),
                                          gd::admit_gpu_virtual_address(0x4000u).expect("the address is not null"),
                                          gd::admit_gpu_direct_bytes(8192).expect("the byte count is positive"));
-    assert(!non_nvme.has_value());
-    assert(non_nvme.error() == gd::GpuDirectError::NonNvmeCog);
+    assert(non_nvme.err() == ::fixy::some(gd::GpuDirectError::NonNvmeCog));
 
     auto zero_peer = nvme_identity();
     zero_peer.uuid = cog::Uuid{};
@@ -237,8 +231,7 @@ void test_storage_plan_boundary() {
         gd::mint_gpu_direct_storage_plan(init, gpu_identity(), gpu_caps(), zero_peer, same_root(),
                                          gd::admit_gpu_virtual_address(0x4000u).expect("the address is not null"),
                                          gd::admit_gpu_direct_bytes(8192).expect("the byte count is positive"));
-    assert(!undiscovered_peer.has_value());
-    assert(undiscovered_peer.error() == gd::GpuDirectError::ZeroPeerCog);
+    assert(undiscovered_peer.err() == ::fixy::some(gd::GpuDirectError::ZeroPeerCog));
 
     auto no_storage = gpu_caps();
     no_storage.features.unset(cog::GpuFeature::GpuDirectStorage);
@@ -246,8 +239,7 @@ void test_storage_plan_boundary() {
         gd::mint_gpu_direct_storage_plan(init, gpu_identity(), no_storage, nvme_identity(), same_root(),
                                          gd::admit_gpu_virtual_address(0x4000u).expect("the address is not null"),
                                          gd::admit_gpu_direct_bytes(8192).expect("the byte count is positive"));
-    assert(!missing_storage.has_value());
-    assert(missing_storage.error() == gd::GpuDirectError::MissingGpuStorageCapability);
+    assert(missing_storage.err() == ::fixy::some(gd::GpuDirectError::MissingGpuStorageCapability));
 
     crucible::test::pass("  test_storage_plan_boundary: PASSED\n");
 }

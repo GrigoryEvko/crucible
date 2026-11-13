@@ -8,10 +8,10 @@
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
+#include <fixy/Core.h>
 
 #include <concepts>
 #include <cstdint>
-#include <expected>
 #include <type_traits>
 
 namespace crucible::cog {
@@ -47,34 +47,32 @@ concept AdvertisesFeatureOf = requires(Caps const& caps) {
 // sentinel for a Cog that discovery has not reached.  O(number of kinds).
 template <CogKind... Kinds, class Error>
     requires(sizeof...(Kinds) > 0)
-[[nodiscard]] constexpr std::expected<void, Error> validate_cog_target(CogIdentity const& target,
-                                                                       CogTargetRefusals<Error> refusals) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, Error>
+validate_cog_target(CogIdentity const& target, CogTargetRefusals<Error> refusals) noexcept {
     if (target.uuid.is_zero()) {
-        return std::unexpected(refusals.undiscovered);
+        return ::fixy::err(refusals.undiscovered);
     }
     if (!((target.kind == Kinds) || ...)) {
-        return std::unexpected(refusals.wrong_kind);
+        return ::fixy::err(refusals.wrong_kind);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
 // The identity check, then the feature.  The caller names the feature and
 // the kinds as template arguments, so each offload states its target once.
 template <auto Feature, CogKind... Kinds, class Caps, class Error>
     requires(sizeof...(Kinds) > 0) && AdvertisesFeatureOf<Caps, Feature>
-[[nodiscard]] constexpr std::expected<void, Error>
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, Error>
 validate_offload_target(CogIdentity const& target, Caps const& caps, OffloadTargetRefusals<Error> refusals) noexcept {
-    auto identity = validate_cog_target<Kinds...>(target, CogTargetRefusals<Error>{
-                                                              .undiscovered = refusals.undiscovered,
-                                                              .wrong_kind = refusals.wrong_kind,
-                                                          });
-    if (!identity.has_value()) {
-        return identity;
-    }
+    const CogTargetRefusals<Error> identity_refusals{
+        .undiscovered = refusals.undiscovered,
+        .wrong_kind = refusals.wrong_kind,
+    };
+    CRUCIBLE_TRY(_, validate_cog_target<Kinds...>(target, identity_refusals));
     if (!caps.features.test(Feature)) {
-        return std::unexpected(refusals.missing_feature);
+        return ::fixy::err(refusals.missing_feature);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
 }  // namespace crucible::cog
