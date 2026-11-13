@@ -523,7 +523,7 @@ residency, quarantine, and hardening policy.
 
 **Phase 1: Foundation (DONE — 9.5K lines and 24 tests at the end of the phase, built then with Clang 22 and GCC 15. The tree builds only with GCC 16 at this time, §I)**
 
-L4 Operations: TraceRing SPSC, MetaLog, recording pipeline. L6 Graphs: TraceGraph CSR. L7 Merkle DAG: RegionNode, BranchNode, content/merkle hashing. L3 Memory: MemoryPlan sweep-line, PoolAllocator. L4/L7 Compiled Tier 1: ReplayEngine, CrucibleContext, dispatch_op, divergence recovery. L2 Kernels: CKernel 146-op taxonomy. L14: Serialize/Deserialize, Cipher. L6 Graph IR: Graph.h, ExprPool, SymbolTable. L0 partial: Met(X) effect rows + cap tags (`foundation/effects/Effect.h`, which defines `Alloc / IO / Block` and `Bg / Init / Test`, `foundation/effects/Computation.h`, `foundation/effects/Row.h`), Reflect.h (reflect_hash, reflect_print). Vessel: PyTorch adapter.
+L4 Operations: TraceRing SPSC, MetaLog, recording pipeline. L6 Graphs: TraceGraph CSR. L7 Merkle DAG: RegionNode, BranchNode, content/merkle hashing. L3 Memory: MemoryPlan sweep-line, PoolAllocator. L4/L7 Compiled Tier 1: ReplayEngine, CrucibleContext, dispatch_op, divergence recovery. L2 Kernels: CKernel 146-op taxonomy. L14: Serialize/Deserialize, Cipher. L6 Graph IR: Graph.h, ExprPool, SymbolTable. L0 partial: Met(X) effect rows + cap tags (`foundation/effects/Effect.h`, which defines `Alloc / IO / Block` and `Bg / Init / Test`, `foundation/effects/Computation.h`, `foundation/effects/Row.h`), Reflect.h (reflect_hash). Vessel: PyTorch adapter.
 
 **Phase 2a: Safety Foundation (IN FLIGHT)**
 
