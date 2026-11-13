@@ -64,6 +64,8 @@ namespace test_vigil {
 void test_divergence_drops_the_unobserved_region();
 void test_divergence_drops_the_regions_of_the_backlog();
 void test_divergence_drops_a_half_finished_alignment();
+void test_rollback_drops_the_region_in_the_slot();
+void test_rollback_closes_an_open_alignment();
 void test_region_store_stays_bounded();
 
 // The producer role and its surface (test_vigil_producer.cpp).

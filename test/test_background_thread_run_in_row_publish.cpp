@@ -81,7 +81,7 @@ static void on_region_ready(void* ctx, eff::Bg const&, crucible::BackgroundThrea
 
     if (!gate->hold_next.load_acquire()) return;
     gate->hold_next.store_release(false);
-    gate->held_reset_point.store_release(published.reset_point.ops_before);
+    gate->held_reset_point.store_release(published.reset_point.ops_before());
     gate->in_callback.store_release(true);
     while (!gate->release.load_acquire()) {
         CRUCIBLE_SPIN_PAUSE;
@@ -152,8 +152,8 @@ void test_reset_drops_inflight_regions() {
 
     // The foreground's divergence handler does exactly this: each op in the
     // ring was recorded before the divergence.
-    const BackgroundThread::StreamPoint reset_point{.ops_before = ring->total_produced()};
-    bt.request_reset(reset_point);
+    const BackgroundThread::StreamPoint reset_point = BackgroundThread::StreamPoint::restart_at(ring->total_produced());
+    bt.request_restart(ring->total_produced());
     assert(bt.requested_reset() == reset_point);
 
     for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
@@ -229,15 +229,15 @@ void test_reset_applies_at_its_point() {
         CRUCIBLE_SPIN_PAUSE;
     }
 
-    const BackgroundThread::StreamPoint reset_point{.ops_before = ring->total_produced()};
-    bt.request_reset(reset_point);
+    const BackgroundThread::StreamPoint reset_point = BackgroundThread::StreamPoint::restart_at(ring->total_produced());
+    bt.request_restart(ring->total_produced());
     gate.reset_observed.store_release(true);
     assert(bt.applied_reset() != reset_point && "the detect stage waits inside the backlog");
 
     // The region that the callback holds passed the stale check of the
     // publish stage before the request.  Its point tells a consumer that it
     // is stale.
-    assert(gate.held_reset_point.load_acquire() != reset_point.ops_before);
+    assert(gate.held_reset_point.load_acquire() != reset_point.ops_before());
 
     for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
         push(*ring, Gate::FAMILY_B, op);
@@ -256,6 +256,63 @@ void test_reset_applies_at_its_point() {
 
     ::fixy::report(::fixy::Sink::Out, "  reset_applies_at_its_point:                PASSED (published={}, cut={})\n",
                    gate.published.load_acquire(), bt.iterations_completed.get());
+}
+
+// A mark that comes before the detect stage reaches an older restart is a
+// restart at the point of the mark.  A mark that replaced the restart would
+// leave the ops of the divergence in the detector.  A mark after an applied
+// reset stays a mark.  The held callback keeps the detect stage inside the
+// backlog, so it cannot apply the restart before the mark.
+void test_mark_keeps_an_unapplied_restart() {
+    using namespace publish_rig;
+    constexpr uint32_t BACKLOG_ITERS = 400;
+    using StreamPoint = BackgroundThread::StreamPoint;
+
+    const auto test = ::foundation::effects::testing::test();
+    BackgroundThread bt;
+    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(test.alloc);
+    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc);
+    Gate gate;
+
+    bt.set_region_ready_callback(&gate, &on_region_ready);
+    bt.start(&*ring, &*metalog);
+
+    for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
+        for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
+            push(*ring, Gate::FAMILY_A, op);
+    while (!gate.in_callback.load_acquire()) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
+
+    const uint64_t restart_ops = ring->total_produced();
+    bt.request_restart(restart_ops);
+    assert(bt.applied_reset() != StreamPoint::restart_at(restart_ops) && "the detect stage waits inside the backlog");
+    for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
+        push(*ring, Gate::FAMILY_B, op);
+    const uint64_t mark_ops = ring->total_produced();
+    bt.request_mark(mark_ops);
+    assert(bt.requested_reset() == StreamPoint::restart_at(mark_ops) && "a mark lost an unapplied restart");
+
+    gate.release.store_release(true);
+    uint64_t target = ring->total_produced();
+    while (bt.total_processed.load_acquire() < target) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
+    assert(bt.applied_reset() == StreamPoint::restart_at(mark_ops));
+
+    push(*ring, Gate::FAMILY_B, 0);
+    const uint64_t later_mark_ops = ring->total_produced();
+    bt.request_mark(later_mark_ops);
+    assert(bt.requested_reset() == StreamPoint::mark_at(later_mark_ops) && "a mark after an applied reset changed");
+    push(*ring, Gate::FAMILY_B, 0);
+    target = ring->total_produced();
+    while (bt.total_processed.load_acquire() < target) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
+    bt.stop();
+    assert(bt.applied_reset() == StreamPoint::mark_at(later_mark_ops) && "the detect stage did not apply the mark");
+
+    ::fixy::report(::fixy::Sink::Out, "  mark_keeps_an_unapplied_restart:           PASSED\n");
 }
 
 // Each region that the pipeline publishes carries the content hash of the

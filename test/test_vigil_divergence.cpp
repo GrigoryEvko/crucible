@@ -192,11 +192,11 @@ void test_divergence_drops_the_regions_of_the_backlog() {
 // The other half of the same defect: the alignment walk, rather than the
 // publication slot.
 //
-// A walk lives in two foreground members that no divergence used to clear.
-// rollback() activates a context without looking at them, so a walk that is
-// half done survives into compiled mode, and the divergence that follows
-// leaves it there.  The next dispatch then resumes a walk into a region the
-// divergence abandoned, and records nothing while it does.
+// A walk lives in foreground members that a divergence clears.  A walk that
+// stays open into compiled mode lets the next dispatch after a divergence
+// resume a walk into a region that the divergence abandoned, and record
+// nothing while it does.  The rollback closes the walk too, so the walk here
+// is closed twice.
 //
 // The walk is opened here by dispatching two ops of a published region and
 // stopping short of the K that would activate it.  rollback() then supplies
@@ -250,6 +250,107 @@ void test_divergence_drops_a_half_finished_alignment() {
               "divergence abandoned");
 
     crucible::test::pass("  test_divergence_drops_a_half_finished_alignment: PASSED\n");
+}
+
+namespace {
+
+// An op with no tensors.  A region of such ops has no memory plan, so the
+// context cannot replay it, and a rollback to it leaves the context
+// recording.
+crucible::TraceRing::Entry planless_entry(uint32_t op_idx) {
+    crucible::TraceRing::Entry entry{};
+    entry.schema_hash = crucible::SchemaHash{0x700 + op_idx};
+    entry.shape_hash = crucible::ShapeHash{0x800 + op_idx};
+    return entry;
+}
+
+// The input of feed_one_region, with the ops of planless_entry.
+void feed_planless_region(crucible::Vigil& vigil) {
+    for (uint32_t iter = 0; iter < 3; iter++) {
+        const uint32_t count = (iter < 2) ? divrig::NUM_OPS : divrig::K;
+        for (uint32_t i = 0; i < count; i++) {
+            const crucible::TraceRing::Entry entry = planless_entry(i);
+            (void)vigil.record_op(crucible::test::certify_synthetic_entry(entry), nullptr, 0);
+        }
+    }
+}
+
+// Two published regions: one with no memory plan, then one with tensors.  The
+// transaction of the second supersedes the first, so a rollback restores the
+// region with no plan.  The foreground dispatches nothing, so the slot holds
+// the second region.
+void publish_planless_then_planned(crucible::Vigil& vigil) {
+    feed_planless_region(vigil);
+    crucible::test::flush_and_wait_region_published(vigil);
+    const uint64_t step_after_planless = vigil.current_step();
+    divrig::feed_one_region(vigil, 0);
+    vigil.flush();
+    assert(vigil.current_step() > step_after_planless && "the region with tensors must be published");
+}
+
+}  // namespace
+
+// A rollback makes each region that the pipeline cut before it stale.
+//
+// The slot holds the region that the rollback rolls back.  The context
+// records after the rollback, so the next dispatch reads the slot.  It must
+// not align on that region: each op after the rollback reaches the ring.
+void test_rollback_drops_the_region_in_the_slot() {
+    using namespace divrig;
+    using crucible::DispatchResult;
+
+    crucible::Vigil vigil;
+    publish_planless_then_planned(vigil);
+    assert(vigil.has_pending_region());
+
+    assert(vigil.rollback() && "the second region left a superseded transaction");
+    assert(!vigil.context().is_compiled() && "a region with no memory plan cannot replay");
+
+    const uint64_t produced_before = vigil.ring_total_produced();
+    for (uint32_t i = 0; i < K; i++) {
+        auto recorded = op_at(3, i);
+        auto result = crucible::test::dispatch_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
+        assert(result.action == DispatchResult::Action::RECORD);
+    }
+    assert(!vigil.context().is_compiled() && "the foreground replays the region that the rollback rolled back");
+    assert(vigil.ring_total_produced() == produced_before + K
+           && "each op after a rollback must reach the ring, not an alignment on a region cut before it");
+
+    crucible::test::pass("  test_rollback_drops_the_region_in_the_slot: PASSED\n");
+}
+
+// A rollback closes an open alignment walk.
+//
+// The walk is two ops deep in the region that the rollback rolls back.  The
+// context records after the rollback, so a walk that stays open goes on with
+// the next ops and activates that region.
+void test_rollback_closes_an_open_alignment() {
+    using namespace divrig;
+    using crucible::DispatchResult;
+
+    crucible::Vigil vigil;
+    publish_planless_then_planned(vigil);
+    for (uint32_t i = 0; i < 2; i++) {
+        auto recorded = op_at(3, i);
+        auto result = crucible::test::dispatch_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
+        assert(result.action == DispatchResult::Action::RECORD);
+    }
+    assert(!vigil.has_pending_region() && "the first dispatch takes the region and opens the walk");
+
+    assert(vigil.rollback() && "the second region left a superseded transaction");
+    assert(!vigil.context().is_compiled() && "a region with no memory plan cannot replay");
+
+    const uint64_t produced_before = vigil.ring_total_produced();
+    for (uint32_t i = 2; i < K; i++) {
+        auto recorded = op_at(3, i);
+        auto result = crucible::test::dispatch_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
+        assert(result.action == DispatchResult::Action::RECORD);
+    }
+    assert(!vigil.context().is_compiled() && "the walk that the rollback abandoned activated its region");
+    assert(vigil.ring_total_produced() == produced_before + (K - 2)
+           && "each op after a rollback must reach the ring, not the walk that the rollback abandoned");
+
+    crucible::test::pass("  test_rollback_closes_an_open_alignment: PASSED\n");
 }
 
 namespace {

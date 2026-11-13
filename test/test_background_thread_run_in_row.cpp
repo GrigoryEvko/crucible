@@ -182,6 +182,7 @@ int main() {
     test_uncompiled_queue_is_bounded();
     test_reset_drops_inflight_regions();
     test_reset_applies_at_its_point();
+    test_mark_keeps_an_unapplied_restart();
     test_published_regions_keep_their_hashes();
     test_long_run_keeps_its_scratch();
     test_overflow_build_leaves_tail();
@@ -190,6 +191,6 @@ int main() {
     test_built_graph_owns_its_metadata();
     test_build_and_release_pass_two_to_the_32();
 
-    crucible::test::pass("test_background_thread_run_in_row: 17 groups, all passed\n");
+    crucible::test::pass("test_background_thread_run_in_row: 18 groups, all passed\n");
     return 0;
 }

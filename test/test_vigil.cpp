@@ -65,6 +65,8 @@ int main() {
     test_vigil::test_divergence_drops_the_unobserved_region();
     test_vigil::test_divergence_drops_the_regions_of_the_backlog();
     test_vigil::test_divergence_drops_a_half_finished_alignment();
+    test_vigil::test_rollback_drops_the_region_in_the_slot();
+    test_vigil::test_rollback_closes_an_open_alignment();
     test_vigil::test_region_store_stays_bounded();
     test_vigil::test_record_op_claims_the_producer_role();
     test_vigil::test_producer_surface_takes_the_claim_context();
@@ -146,6 +148,26 @@ int main() {
     assert(replayed && "replay() must return true for a linear region");
     assert(region_exec_count == 1 && "RegionExec must be called exactly once for a single-region DAG");
     assert(exec_region_ptr == vigil.active_region() && "replay() must execute the active region");
+
+    // The stored region has no memory plan: its tensors have no data.  A load
+    // of it while the context replays a different region stops that replay,
+    // because the loaded region is the active region and cannot replay.
+    const crucible::ContentHash stored_hash = active_region->content_hash;
+    assert(active_region->plan == nullptr && "the stored region must have no memory plan");
+    divrig::feed_one_region(vigil, 0);
+    crucible::test::flush_and_wait_region_published(vigil);
+    for (uint32_t i = 0; i < divrig::NUM_OPS; i++) {
+        auto aligned = divrig::op_at(3, i);
+        (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
+    }
+    assert(vigil.context().is_compiled() && "the foreground must align on the region with tensors");
+
+    assert(vigil.load(::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+                      ::foundation::effects::testing::test().alloc)
+           && "load() must find the stored head");
+    assert(vigil.active_region()->content_hash == stored_hash && "load() must make the stored region active");
+    assert(!vigil.context().is_compiled() && "the context replays a region that is not the active region");
+    assert(!vigil.is_compiled() && "the mode reports a replay of a region that is not the active region");
 
     std::filesystem::remove_all(dir);
 

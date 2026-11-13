@@ -85,10 +85,10 @@ public:
     // RECORDING after a divergence.  ModeCell keeps the atomic private and
     // exposes only the two transitions the runtime actually performs.
     //
-    // The cell is private, and only the foreground publishes a mode, at the
-    // same step that activates or deactivates the replay context.  A session
-    // over the cell would drive those transitions, so Vigil hands out no
-    // session handle.  An observer reads mode().
+    // The cell is private, and only the foreground publishes a mode, in the
+    // call that activates or deactivates the replay context (ReplayState).
+    // A session over the cell would drive those transitions, so Vigil hands
+    // out no session handle.  An observer reads mode().
     //
     // The pending region uses a latest-wins publication slot rather than a
     // publish-once cell for the same reason: divergence recovery publishes
@@ -262,9 +262,9 @@ public:
         // The branch itself proves the context is compiled.  Minting the
         // view once here is what makes the engine transition below reachable
         // only from inside this branch.
-        if (ctx_.is_compiled()) [[likely]] {
-            auto compiled_view = ctx_.mint_compiled_view(fg);
-            auto status = ctx_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
+        if (replay_.context().is_compiled()) [[likely]] {
+            auto compiled_view = replay_.context().mint_compiled_view(fg);
+            auto status = replay_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
             if (status == ReplayStatus::DIVERGED) [[unlikely]]
                 return handle_divergence_(fg, entry.schema_hash, entry.shape_hash);
             return {.action = DispatchResult::Action::COMPILED, .status = status, .pad = {}, .op_index = OpIndex{}};
@@ -334,12 +334,12 @@ public:
     // Not gnu::pure, despite reading nothing else: another thread can change
     // the value between two loads, so common-subexpression elimination would
     // be wrong.
-    [[nodiscard]] Mode mode() const noexcept { return mode_.load(); }
+    [[nodiscard]] Mode mode() const noexcept { return replay_.mode(); }
 
     // True while the foreground replays a region.  The mode follows the
-    // context: every path that activates or deactivates it publishes the
-    // matching mode on the same thread, so this and context().is_compiled()
-    // agree whenever the foreground reads them.
+    // context: each activation and deactivation of the context publishes
+    // the matching mode in the same call (ReplayState), so this and
+    // context().is_compiled() agree whenever the foreground reads them.
     [[nodiscard]] bool is_compiled() const noexcept { return mode() == Mode::COMPILED; }
 
     // True when the background thread published a region that the
@@ -398,8 +398,10 @@ public:
     // it for every region it publishes.  So the rollback runs there, as a job
     // between two publications, and never beside one.  The job copies out the
     // restored region, because a transaction pointer belongs to the owning
-    // thread and a later publication can recycle its slot.  The foreground
-    // part then acts on that copy alone, on the producer thread.  The body
+    // thread and a later publication can recycle its slot.  It also requests
+    // a mark at the point of the rollback, so no region cut before the
+    // rollback replaces the restored region.  The foreground part then acts
+    // on that copy alone, on the producer thread (adopt_region_).  The body
     // is in src/Vigil.cpp.
     [[nodiscard, gnu::cold]] bool rollback();
 
@@ -433,25 +435,21 @@ public:
     }
 
     // Loads the most recent stored region and makes it active, activating
-    // replay too when that region carries a memory plan.  The activation is
-    // foreground state, so this runs on the producer thread.  The row is the
-    // row that an open view of the store requires.
+    // replay too when that region carries a memory plan.  A region with no
+    // plan leaves the context recording, also when it replayed a region
+    // before the load.  The activation is foreground state, so this runs on
+    // the producer thread.  The row is the row that an open view of the
+    // store requires.
     template <class Ctx>
         requires ::foundation::effects::CtxAdmits<Ctx, ::crucible::CipherSessionEventPersistenceRow>
     [[nodiscard, gnu::cold]] bool load(Ctx const& ctx, ::foundation::effects::Alloc a) {
         if (!cipher_) return false;
+        const VigilFgCtx fg = assert_producer_thread_();
         RegionNode* region = load_head_(ctx, a, *cipher_);
         if (!region) return false;
-        const VigilFgCtx fg = assert_producer_thread_();
-        bg_.active_region.store(region, std::memory_order_release);
-        // COMPILED only when the context activates.  A region without a
-        // memory plan cannot replay, and the mode must not say it does.
-        if (ctx_.activate(region)) {
-            register_externals_from_region_(fg, region);
-            region_cache_.insert(region);
-            mode_.publish_compiled();
-        }
-        publish_held_regions_();
+        // Each region cut before the load holds ops that ran before it.
+        bg_.request_mark(ring_total_produced());
+        adopt_region_(fg, *region);
         return true;
     }
 
@@ -465,29 +463,29 @@ public:
     // members at the end of the statement.  A deleted twin refuses each call
     // on a temporary Vigil.
     [[nodiscard]] void* output_ptr(VigilFgCtx const& fg, uint16_t j) const& {
-        auto compiled_view = ctx_.mint_compiled_view(fg);
-        return ctx_.output_ptr(j, compiled_view);
+        auto compiled_view = replay_.context().mint_compiled_view(fg);
+        return replay_.context().output_ptr(j, compiled_view);
     }
 
     void* output_ptr(VigilFgCtx const&, uint16_t) const&& =
         delete("a temporary Vigil releases its pool at the end of the statement. Use a Vigil that has a name");
 
     [[nodiscard]] void* input_ptr(VigilFgCtx const& fg, uint16_t j) const& {
-        auto compiled_view = ctx_.mint_compiled_view(fg);
-        return ctx_.input_ptr(j, compiled_view);
+        auto compiled_view = replay_.context().mint_compiled_view(fg);
+        return replay_.context().input_ptr(j, compiled_view);
     }
 
     void* input_ptr(VigilFgCtx const&, uint16_t) const&& =
         delete("a temporary Vigil releases its pool at the end of the statement. Use a Vigil that has a name");
 
     void register_external(VigilFgCtx const& fg, SlotId sid, ::fixy::NonNull<void*> ptr) {
-        auto compiled_view = ctx_.mint_compiled_view(fg);
-        ctx_.register_external(sid, ptr, compiled_view);
+        auto compiled_view = replay_.context().mint_compiled_view(fg);
+        replay_.register_external(sid, ptr, compiled_view);
     }
 
-    [[nodiscard]] uint32_t compiled_iterations() const { return ctx_.compiled_iterations(); }
-    [[nodiscard]] uint32_t diverged_count() const { return ctx_.diverged_count(); }
-    [[nodiscard]] const CrucibleContext& context() const& { return ctx_; }
+    [[nodiscard]] uint32_t compiled_iterations() const { return replay_.context().compiled_iterations(); }
+    [[nodiscard]] uint32_t diverged_count() const { return replay_.context().diverged_count(); }
+    [[nodiscard]] const CrucibleContext& context() const& { return replay_.context(); }
     const CrucibleContext& context() const&& =
         delete("a temporary Vigil releases its context at the end of the statement. Use a Vigil that has a name");
     [[nodiscard]] const RegionCache& region_cache() const& { return region_cache_; }
@@ -617,6 +615,14 @@ private:
     [[gnu::cold]] void on_region_ready(::foundation::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,
                                        BackgroundThread::PublishedRegion const& published);
 
+    // Makes a region from outside the pipeline active: the region of a
+    // rollback or of a load.  The caller first requests a mark at the
+    // current point, so each region that the pipeline cut before it is
+    // stale.  The region in the slot goes to the cache, the alignment walk
+    // closes, and the context replays the region, or records when the region
+    // has no memory plan.  The body is in src/Vigil.cpp.
+    [[gnu::cold]] void adopt_region_(VigilFgCtx const& fg, RegionNode& region);
+
     // Writes the regions that the foreground holds into held_regions_: the
     // region of the alignment walk, the region of the replay context and the
     // regions of the cache.  After the call, the foreground reads no other
@@ -627,7 +633,7 @@ private:
         const uint64_t before = held_regions_.sequence.load_acquire();
         held_regions_.sequence.store_release(before + 1);
         held_regions_.cells[0].store_release(pending_activation_);
-        held_regions_.cells[1].store_release(ctx_.active_region());
+        held_regions_.cells[1].store_release(replay_.context().active_region());
         for (uint32_t age = 0; age < RegionCache::CAP; ++age) {
             held_regions_.cells[2 + age].store_release(region_cache_.region_at(age).try_get());
         }
@@ -670,7 +676,7 @@ private:
     [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult handle_divergence_(VigilFgCtx const& fg,
                                                                                  SchemaHash schema_hash,
                                                                                  ShapeHash shape_hash) {
-        const uint32_t div_pos = ctx_.engine().ops_matched();
+        const uint32_t div_pos = replay_.context().engine().ops_matched();
 
         // A region the background thread published while the context was
         // compiled is still in the slot, because the replay branch of
@@ -688,44 +694,42 @@ private:
         // The pipeline can still publish a region of ops recorded before
         // the reset request below.  The reset point of that region is not
         // the requested point, so consume_pending_region_ caches it too.
-        if (const auto* stale_pending = pending_region_.consume()) region_cache_.insert(stale_pending->region);
+        cache_pending_region_();
 
         // Alignment state is foreground-only, and it describes a partial walk
-        // into a region this reset abandons.  This is not dead code: both
-        // rollback() and load() activate a context without clearing a walk in
-        // progress, which is how a divergence becomes reachable with one
-        // still open.
+        // into a region this reset abandons.  No path compiles the context
+        // while a walk is open: an alignment closes its walk when it
+        // activates, and adopt_region_ closes it for a rollback or a load.
+        // The reset here keeps that rule local to this function.
         pending_activation_ = nullptr;
         alignment_pos_ = alignment_pos_at(0);
         alignment_ops_ = 0;
 
-        region_cache_.insert(ctx_.active_region());
+        region_cache_.insert(replay_.context().active_region());
 
         // Look for a cached region that matches at the divergence position,
         // excluding the current one.
-        auto* alt = region_cache_.find_alternate(div_pos, schema_hash, shape_hash, ctx_.active_region());
+        auto* alt = region_cache_.find_alternate(div_pos, schema_hash, shape_hash, replay_.context().active_region());
 
         if (alt && try_switch_region_(fg, alt, div_pos)) {
             // The switch leaves the context compiled, so advance past the
             // divergent op.
-            auto compiled_view = ctx_.mint_compiled_view(fg);
-            auto status = ctx_.advance(schema_hash, shape_hash, compiled_view);
+            auto compiled_view = replay_.context().mint_compiled_view(fg);
+            auto status = replay_.advance(schema_hash, shape_hash, compiled_view);
             if (status != ReplayStatus::DIVERGED) {
                 publish_held_regions_();
                 return {.action = DispatchResult::Action::COMPILED,
                         .status = status,
                         .pad = {},
-                        .op_index = OpIndex{ctx_.engine().ops_matched()}};
+                        .op_index = OpIndex{replay_.context().engine().ops_matched()}};
             }
             // Diverging twice in a row falls through to the reset below.
         }
 
-        if (ctx_.is_compiled()) ctx_.deactivate();
-
-        mode_.publish_recording_after_divergence();
+        replay_.deactivate();
         // The reset applies at the point of the divergence: each op in the
         // ring was recorded before it, and the next op comes after it.
-        bg_.request_reset(BackgroundThread::StreamPoint{.ops_before = ring_total_produced()});
+        bg_.request_restart(ring_total_produced());
         publish_held_regions_();
         // The divergent op is deliberately not recorded: it would poison the
         // background thread's iteration detector.
@@ -763,6 +767,12 @@ private:
 
         return {
             .action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {}, .op_index = OpIndex{}};
+    }
+
+    // Moves the region in the slot to the cache, for a caller that knows that
+    // each region the slot can hold is stale.
+    [[gnu::cold]] void cache_pending_region_() {
+        if (const auto* stale_pending = pending_region_.consume()) region_cache_.insert(stale_pending->region);
     }
 
     // Moves the published region into foreground-only alignment state.  It
@@ -824,7 +834,7 @@ private:
         const uint32_t threshold = (region->num_ops < ALIGNMENT_K) ? region->num_ops : ALIGNMENT_K;
 
         if (uint32_t{alignment_pos_.value()} >= threshold) {
-            if (!ctx_.activate(region)) {
+            if (!replay_.activate(*region)) {
                 // No memory plan means the region cannot be compiled.
                 pending_activation_ = nullptr;
                 return;
@@ -836,7 +846,7 @@ private:
             // The matched ops already executed eagerly, so the engine has
             // to skip them for the next op to check against the right entry.
             for (uint32_t i = 0; i < uint32_t{alignment_pos_.value()}; i++) {
-                auto status = ctx_.advance(region->ops[i].schema_hash, region->ops[i].shape_hash);
+                auto status = replay_.advance(region->ops[i].schema_hash, region->ops[i].shape_hash);
                 // Debug-only: the hashes fed in here are the region's own,
                 // and alignment already compared each one against the same
                 // entry, so a mismatch means the engine's cursor is out of
@@ -847,7 +857,6 @@ private:
                 (void)status;
             }
 
-            mode_.publish_compiled();
             pending_activation_ = nullptr;
             return;
         }
@@ -918,8 +927,8 @@ private:
             if (ptr != nullptr) {
                 // Every call site activates the context immediately before
                 // calling here, so it is compiled.
-                auto compiled_view = ctx_.mint_compiled_view(fg);
-                ctx_.register_external(target, ::fixy::mint_refined<::fixy::non_null>(ptr), compiled_view);
+                auto compiled_view = replay_.context().mint_compiled_view(fg);
+                replay_.register_external(target, ::fixy::mint_refined<::fixy::non_null>(ptr), compiled_view);
             }
         }
     }
@@ -934,7 +943,7 @@ private:
         // Every op before the divergence point must carry an identical
         // schema and shape in both regions.
         if (div_pos > 0) {
-            const auto* old_region = ctx_.active_region();
+            const auto* old_region = replay_.context().active_region();
             // Debug-only: a divergence position above zero can only come
             // from a compiled context, which by construction holds an active
             // region. The loop below reads old_region->ops, so a release
@@ -950,7 +959,7 @@ private:
             }
         }
 
-        if (!ctx_.switch_region(alt, div_pos)) return false;
+        if (!replay_.switch_region(*alt, div_pos)) return false;
         register_externals_from_region_(fg, alt);
         // These hold only on the success path; every failure returns above.
         // Pinning them here catches a refactor that skips the publication or
@@ -958,7 +967,7 @@ private:
         // against the stale one.  Under NDEBUG they become assumptions the
         // next dispatch can speculate on.
         CRUCIBLE_POST(0, alt != nullptr);
-        CRUCIBLE_POST(0, ctx_.active_region() == alt);
+        CRUCIBLE_POST(0, replay_.context().active_region() == alt);
         return true;
     }
 
@@ -982,7 +991,6 @@ private:
     // the match in every build mode, release included.  It is also the one
     // production route to a foreground context.
     ::foundation::effects::host::ProducerClaim<Vigil> producer_claim_;
-    ModeCell mode_;
     ::fixy::AtomicMonotonic<uint64_t> step_ = ::fixy::mint_atomic_monotonic<uint64_t>(0);
     Arena load_arena_{1 << 20};
 
@@ -998,7 +1006,63 @@ private:
     AlignmentPos alignment_pos_ = alignment_pos_at(0);
     // The ops that the alignment of pending_activation_ read (alignment_bound).
     uint32_t alignment_ops_ = 0;
-    CrucibleContext ctx_;
+
+    // The replay context and the mode that an observer reads.  The producer
+    // thread changes the context only through this class, and each change
+    // of the context publishes the matching mode in the same call.  So the
+    // mode and the context never disagree after a call.  A region with no
+    // memory plan cannot replay, so its activation leaves the context
+    // recording.
+    //
+    // The mode cell has its own cache line: an observer on another thread
+    // reads it while the foreground writes the counters of the context.
+    class ReplayState {
+    public:
+        [[nodiscard]] const CrucibleContext& context() const noexcept { return ctx_; }
+        [[nodiscard]] Mode mode() const noexcept { return mode_.load(); }
+
+        // Replays region from its first op, or records when the region has
+        // no memory plan.  Returns true when the context replays.
+        [[nodiscard]] bool activate(const RegionNode& region) {
+            if (!ctx_.activate(&region)) {
+                deactivate();
+                return false;
+            }
+            mode_.publish_compiled();
+            return true;
+        }
+
+        // Records from the next op.
+        void deactivate() {
+            if (!ctx_.is_compiled()) return;
+            ctx_.deactivate();
+            mode_.publish_recording_after_divergence();
+        }
+
+        // Moves the replay to alt at div_pos.  The context stays compiled,
+        // so the mode does not change.
+        [[nodiscard]] bool switch_region(const RegionNode& alt, uint32_t div_pos) {
+            return ctx_.switch_region(&alt, div_pos);
+        }
+
+        [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash,
+                                                                      CrucibleContext::CompiledView const& view) {
+            return ctx_.advance(schema_hash, shape_hash, view);
+        }
+
+        [[nodiscard]] ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash) {
+            return ctx_.advance(schema_hash, shape_hash);
+        }
+
+        void register_external(SlotId sid, ::fixy::NonNull<void*> ptr, CrucibleContext::CompiledView const& view) {
+            ctx_.register_external(sid, ptr, view);
+        }
+
+    private:
+        CrucibleContext ctx_;
+        alignas(64) ModeCell mode_;
+    };
+    ReplayState replay_;
     RegionCache region_cache_;
 
     // The regions that the foreground holds, for the sweep of the region

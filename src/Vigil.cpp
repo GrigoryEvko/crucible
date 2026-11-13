@@ -59,32 +59,45 @@ Vigil::~Vigil() = default;
 ContentHash Vigil::head_hash() const noexcept { return cipher_ ? cipher_->head() : ContentHash{}; }
 
 bool Vigil::rollback() {
+    const VigilFgCtx fg = assert_producer_thread_();
+    // No op reaches the ring while this thread rolls back, so this is the
+    // point of the rollback.
+    const uint64_t ops_before = ring_total_produced();
     bool restored_one = false;
     RegionNode* restored = nullptr;
     bg_.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
         restored_one = tx_log_.rollback(stage);
         if (!restored_one) return;
+        // The job runs between two publications, so each publication after
+        // it reads the mark, and none gives the foreground a region cut
+        // before the rollback.
+        bg_.request_mark(ops_before);
         if (const Transaction* tx = tx_log_.active(stage)) restored = tx->region.value();
         // The foreground gets the region outside the publication slot, so
         // the store keeps it until the foreground writes its holders again.
         bg_.keep_region(stage, ::fixy::WeakRef<const RegionNode>::from_raw(restored));
     });
     if (!restored_one) return false;
-    const VigilFgCtx fg = assert_producer_thread_();
-    // The deactivation abandons the replayed region the way a divergence
-    // does, so the mode takes the same transition.  A restored region
-    // with a memory plan takes it back to COMPILED below.
-    if (ctx_.is_compiled()) ctx_.deactivate();
-    mode_.publish_recording_after_divergence();
-    if (restored != nullptr) {
-        bg_.active_region.store(restored, std::memory_order_release);
-        if (ctx_.activate(restored)) {
-            register_externals_from_region_(fg, restored);
-            mode_.publish_compiled();
-        }
+    // The restored transaction was active before, and only a commit with a
+    // region makes a transaction active.
+    CRUCIBLE_FATAL_INVARIANT(restored != nullptr);
+    adopt_region_(fg, *restored);
+    return true;
+}
+
+void Vigil::adopt_region_(VigilFgCtx const& fg, RegionNode& region) {
+    // No op reached the ring after the mark, so the pipeline cut each region
+    // that the slot can hold before the mark.
+    cache_pending_region_();
+    pending_activation_ = nullptr;
+    alignment_pos_ = alignment_pos_at(0);
+    alignment_ops_ = 0;
+    bg_.active_region.store(&region, std::memory_order_release);
+    if (replay_.activate(region)) {
+        register_externals_from_region_(fg, &region);
+        region_cache_.insert(&region);
     }
     publish_held_regions_();
-    return true;
 }
 
 void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,

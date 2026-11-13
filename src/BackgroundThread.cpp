@@ -272,17 +272,21 @@ BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work() 
 }
 
 // The detect stage reads the request before the op at its point, because the
-// producer requests before it puts that op into the ring (request_reset).  So
-// an unapplied point is never behind the count of ops read.  A newer request
-// replaces an older one that the detect stage did not reach, and the reset at
-// the newer point also clears the ops between the two points.
+// producer requests before it puts that op into the ring (request_restart and
+// request_mark).  So an unapplied point is never behind the count of ops read.
+// A newer request replaces an older one that the detect stage did not reach,
+// and a restart at the newer point also clears the ops between the two
+// points.  A mark keeps the held ops: they belong to the same stream, and
+// only the regions cut before the mark are stale.
 void BackgroundThread::apply_due_reset_() noexcept {
     const StreamPoint requested = requested_reset_.get();
     if (requested == applied_reset_.peek_relaxed()) return;
-    CRUCIBLE_FATAL_INVARIANT(requested.ops_before >= stream_ops_);
-    if (requested.ops_before != stream_ops_) return;
-    detector.restart_after_divergence();
-    pending_ops_.clear();
+    CRUCIBLE_FATAL_INVARIANT(requested.ops_before() >= stream_ops_);
+    if (requested.ops_before() != stream_ops_) return;
+    if (requested.restarts_detector()) {
+        detector.restart_after_divergence();
+        pending_ops_.clear();
+    }
     applied_reset_.advance(requested);
 }
 

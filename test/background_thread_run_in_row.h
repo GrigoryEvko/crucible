@@ -27,6 +27,7 @@ void test_rearm_cycle();
 // (test_background_thread_run_in_row_publish.cpp).
 void test_reset_drops_inflight_regions();
 void test_reset_applies_at_its_point();
+void test_mark_keeps_an_unapplied_restart();
 void test_published_regions_keep_their_hashes();
 void test_long_run_keeps_its_scratch();
 

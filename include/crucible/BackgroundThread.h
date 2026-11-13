@@ -67,12 +67,40 @@ struct BackgroundThread {
     // writes the fields that follow.
     alignas(64) std::atomic<RegionNode*> active_region{nullptr};
 
-    // A point of the recorded op stream: the count of ops that the producer
-    // put into the trace ring before it.  A divergence reset applies at the
-    // point of the divergence, so each op belongs to one side of it.
-    struct StreamPoint {
-        uint64_t ops_before = 0;
+    // A point of the recorded op stream, and the kind of the reset at it.
+    // The point is the count of ops that the producer put into the trace ring
+    // before it.  A reset applies at its point, so each op belongs to one
+    // side of it.
+    //
+    // A restart follows a divergence: at the point, the detect stage drops
+    // the ops that it holds and restarts the iteration detector.  A mark
+    // follows a rollback or a load: each region cut before the point is
+    // stale, and the detector keeps its ops and its history.
+    //
+    // One word holds the two: twice the count, plus one for a restart.  So
+    // the points order by the count, and at one count a restart comes after
+    // a mark.  The count stays below 2^63, which a stream of one op in each
+    // nanosecond reaches after 292 years.
+    class StreamPoint {
+    public:
+        constexpr StreamPoint() noexcept = default;
+
+        [[nodiscard]] static constexpr StreamPoint restart_at(uint64_t ops_before) noexcept {
+            return StreamPoint{(ops_before << 1) | uint64_t{1}};
+        }
+        [[nodiscard]] static constexpr StreamPoint mark_at(uint64_t ops_before) noexcept {
+            return StreamPoint{ops_before << 1};
+        }
+
+        [[nodiscard]] constexpr uint64_t ops_before() const noexcept { return word_ >> 1; }
+        [[nodiscard]] constexpr bool restarts_detector() const noexcept { return (word_ & uint64_t{1}) != 0; }
+
         auto operator<=>(const StreamPoint&) const = default;
+
+    private:
+        explicit constexpr StreamPoint(uint64_t word) noexcept : word_{word} {}
+
+        uint64_t word_ = 0;
     };
 
     // A region that the publish stage gives to its owner, and the point of
@@ -513,30 +541,47 @@ public:
     using TotalProcessedCell = ::fixy::handle::PublishCommitCell<PublishStageTag, PublishStageAuth>;
     TotalProcessedCell total_processed;
 
-    // The divergence reset.  When compiled replay diverges, the producer
-    // requests a reset at the point of the divergence, before it puts the
-    // next op into the ring.  The detect stage applies the reset when its
-    // count of ops reaches that point, and not when it first reads the
-    // request.  The detect stage can still hold ops recorded before the
-    // divergence, and two periods of such ops make a region of the shape
-    // that diverged.  At the point, the detect stage clears its held ops and
-    // restarts the detector, which keeps the periods that broke.
+    // The reset.  When compiled replay diverges, the producer requests a
+    // restart at the point of the divergence, before it puts the next op
+    // into the ring.  The detect stage applies the reset when its count of
+    // ops reaches that point, and not when it first reads the request.  The
+    // detect stage can still hold ops recorded before the divergence, and
+    // two periods of such ops make a region of the shape that diverged.  At
+    // the point, the detect stage clears its held ops and restarts the
+    // detector, which keeps the periods that broke.  A rollback or a load
+    // requests a mark, which the detect stage applies at its point too.
     //
     // Each work item carries the point of the last reset that the detect
     // stage applied before its cut, and each region carries the point of
     // its work.  A region whose point is not the requested point holds ops
-    // recorded before the last divergence.  The publish stage discards it.
-    // A region that the publish stage gave out just before a request is
-    // stale too, so the producer also compares the point of each region
-    // that it takes.  Commit markers carry no region, and no reset drops
-    // them.
+    // recorded before the last reset.  The publish stage discards it.  A
+    // region that the publish stage gave out just before a request is stale
+    // too, so the producer also compares the point of each region that it
+    // takes.  Commit markers carry no region, and no reset drops them.
     //
-    // The producer requests with acquire and release order before it puts
-    // the op at the point, so the detect stage reads the request before it
-    // reads that op, and it never passes an unapplied point.  The points are
-    // counts of a monotonic counter, so a request never moves the point
-    // back.  Two divergences with no op between them request one point.
-    void request_reset(StreamPoint point) noexcept { (void)requested_reset_.try_advance(point); }
+    // The producer requests each reset, on its own thread or in a job on the
+    // publish stage that it waits for.  It requests with acquire and release
+    // order before it puts the op at the point, so the detect stage reads
+    // the request before it reads that op, and it never passes an unapplied
+    // point.  The points come from a monotonic counter, so a request never
+    // moves the point back.  A newer request replaces an older one that the
+    // detect stage did not reach.  Two divergences with no op between them
+    // request one point.
+    void request_restart(uint64_t ops_before) noexcept {
+        (void)requested_reset_.try_advance(StreamPoint::restart_at(ops_before));
+    }
+
+    // A mark that replaced an unapplied restart would lose the restart, so
+    // the request is then a restart at the point of the mark.  The restart
+    // also clears the ops between the two points.  A restart that the detect
+    // stage applies after this read only makes the second restart one that a
+    // mark would have done.
+    void request_mark(uint64_t ops_before) noexcept {
+        const StreamPoint last = requested_reset_.get();
+        const bool has_unapplied_restart = last.restarts_detector() && applied_reset_.get() != last;
+        (void)requested_reset_.try_advance(has_unapplied_restart ? StreamPoint::restart_at(ops_before)
+                                                                 : StreamPoint::mark_at(ops_before));
+    }
 
     [[nodiscard]] StreamPoint requested_reset() const noexcept { return requested_reset_.get(); }
 
