@@ -690,10 +690,12 @@ witness <foundation/core/Atomic.h> no-match | foundation::core::SoleWriter<forge
 # value that keeps an invariant, such as a Ref, from a word.
 witness <foundation/core/Atomic.h> private | foundation::core::atomic_word_key<int> | foundation::core::atomic_word_key<int>{}
 # An Index comes only from its check, from a constant index below its count,
-# from an index of a smaller count and from the loop of an IndexRange, so no
-# number that a caller holds becomes an index.  A cursor of the loop comes
-# only from its range.
+# from an index of a smaller count, from the loop of an IndexRange and from
+# the door of the base layer, so no number that a caller holds becomes an
+# index.  The door takes the key that only IndexDoor builds.  A cursor of the
+# loop comes only from its range.
 witness <foundation/core/Index.h> private | foundation::core::Index<4> | foundation::core::Index<4>{forge::rvalue<unsigned int>()}
+witness <foundation/core/Index.h> private | foundation::core::detail::IndexKey | foundation::core::detail::IndexKey{}
 witness <foundation/core/Index.h> private | foundation::core::IndexCursor<4> | foundation::core::IndexCursor<4>{forge::rvalue<unsigned int>()}
 # A cursor of an iteration verb comes only from its range, and a range comes
 # only from a View, so no pointer that a caller holds becomes a cursor.
@@ -708,8 +710,8 @@ witness <foundation/core/Array.h> no-match | foundation::core::HeapArray<int> | 
 witness <foundation/core/Array.h> private | foundation::core::detail::HeapArrayKey | foundation::core::detail::HeapArrayKey{}
 # A cursor of enumerate() or zip comes only from its range, so no position
 # that a caller holds becomes an index, and no pointer becomes a pair.
-witness <foundation/core/Array.h> private | foundation::core::detail::EnumerateCursor<int, 4, forge::brand> | foundation::core::detail::EnumerateCursor<int, 4, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
-witness <foundation/core/Array.h> private | foundation::core::detail::ZipCursor<int, int, forge::brand> | foundation::core::detail::ZipCursor<int, int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<int*>(), forge::rvalue<int*>()}
+witness <foundation/core/Region.h> private | foundation::core::detail::EnumerateCursor<int, 4, forge::brand> | foundation::core::detail::EnumerateCursor<int, 4, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
+witness <foundation/core/Region.h> private | foundation::core::detail::ZipCursor<int, int, forge::brand> | foundation::core::detail::ZipCursor<int, int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<int*>(), forge::rvalue<int*>()}
 # A branded view, its indexes, its ranges and its cursors come only from
 # mint_branded_scope, so no number becomes an index of a scope.
 witness <foundation/core/Branded.h> private | foundation::core::BrandedIndex<forge::brand> | foundation::core::BrandedIndex<forge::brand>{forge::rvalue<unsigned int>()}

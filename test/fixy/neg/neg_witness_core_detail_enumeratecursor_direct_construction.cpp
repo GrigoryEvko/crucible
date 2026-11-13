@@ -10,7 +10,7 @@
 // parentheses.  The source spells it with braces, so the text of the fixture
 // cannot match it.
 
-#include <foundation/core/Array.h>
+#include <foundation/core/Region.h>
 
 #include <cstddef>
 #include <cstdint>

@@ -217,6 +217,11 @@
       "constructor": "\\bHoleKey\\("
     },
     {
+      "name": "neg_witness_core_detail_indexkey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bIndexKey\\("
+    },
+    {
       "name": "neg_witness_core_detail_refkey_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bRefKey\\("
@@ -1079,6 +1084,10 @@
       "header": "foundation/core/Index.h"
     },
     {
+      "type": "foundation::core::detail::IndexKey",
+      "header": "foundation/core/Index.h"
+    },
+    {
       "type": "foundation::core::IndexCursor<4>",
       "header": "foundation/core/Index.h"
     },
@@ -1104,11 +1113,11 @@
     },
     {
       "type": "foundation::core::detail::EnumerateCursor<int, 4, forge::brand>",
-      "header": "foundation/core/Array.h"
+      "header": "foundation/core/Region.h"
     },
     {
       "type": "foundation::core::detail::ZipCursor<int, int, forge::brand>",
-      "header": "foundation/core/Array.h"
+      "header": "foundation/core/Region.h"
     },
     {
       "type": "foundation::core::BrandedIndex<forge::brand>",

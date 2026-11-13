@@ -14,10 +14,19 @@
 // does no check: the type proves the bound, and the check ran one time,
 // where the index was made.  The only roads to an Index are check(), the
 // conversion from a StaticIndex, the conversion from an Index of a smaller
-// N, the loop of an IndexRange, and the loop of enumerate() of a View of
-// the fixed extent N.  The constructor from a number is
-// private, and the seal refuses std::bit_cast and a lifetime start over
-// bytes, so no number becomes an Index without its check.
+// N, the loop of an IndexRange, and the door of the base layer.  The
+// constructor from a number is private, and the seal refuses std::bit_cast
+// and a lifetime start over bytes, so no number becomes an Index without its
+// check.
+//
+// THE DOOR OF THE BASE LAYER
+//   Index<N>{detail::IndexDoor::key(), word} makes the Index of a word that
+//   the caller proves below N, with no check: a word that a different
+//   invariant already bounds, such as the tag of a slot.  Only
+//   detail::IndexDoor builds the key, and the key and the door are no
+//   templates, so no explicit specialization reaches them.  This header
+//   names no friend that a different header defines.  The rule owners keeps
+//   each use of namespace detail outside the base out.
 //
 // An Index<N> holds a 32-bit word when N fits in one, else a 64-bit word.
 // The value N is no index, so an Option<Index<N>> has the size of the index.
@@ -72,12 +81,23 @@ namespace detail {
 template <std::size_t Count>
 using IndexWord = std::conditional_t<(Count <= 0xFFFFFFFFull), std::uint32_t, std::size_t>;
 
-// The cursor of an enumerate loop of foundation/core/Array.h.  It keeps the
-// position of the loop as a full word, so the position is also the offset
-// of the element, and it makes the Index of each step from the position
-// after its compare with the count.
-template <class Element, std::size_t Count, class Brand>
-class EnumerateCursor;
+// The key of the constructor of an Index from a word that the caller proves
+// below its count.  Only IndexDoor builds it.
+struct IndexDoor;
+
+class [[nodiscard]] IndexKey final {
+    friend struct IndexDoor;
+
+    constexpr IndexKey() noexcept {}
+    constexpr IndexKey(IndexKey const&) noexcept {}
+
+public:
+    IndexKey& operator=(IndexKey const&) = delete("a key of an Index lives for one construction");
+};
+
+struct IndexDoor {
+    [[nodiscard]] static constexpr IndexKey key() noexcept { return IndexKey{}; }
+};
 
 }  // namespace detail
 
@@ -94,12 +114,15 @@ class Index final {
     friend class Index;
     friend class IndexCursor<Count>;
     friend struct niche<Index>;
-    template <class Element, std::size_t OtherCount, class Brand>
-    friend class detail::EnumerateCursor;
 
     constexpr explicit Index(Word value) noexcept : value_{value} {}
 
 public:
+    // The Index of word, which the caller proves below Count: the door of
+    // the base layer, with no check.  A word at or past Count breaks the
+    // invariant that raw() states to the optimizer.
+    constexpr Index(detail::IndexKey const&, std::size_t word) noexcept : value_{static_cast<Word>(word)} {}
+
     // The index raw, or no value when raw is not below Count.  One compare.
     // The result is an Option<Index<Count>>.  The return type is deduced, so
     // the Option is named only where this class is complete.

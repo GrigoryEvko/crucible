@@ -2784,6 +2784,15 @@ foundation_neg_compile_test(neg_core_text_view_window_member_forged
 foundation_neg_compile_test(neg_core_text_view_cursor_member_forged
   "redefinition of .constexpr foundation::core::ViewCursor<const char> foundation::core::TextView::begin\\(\\) const."
   "foundation::core::TextView::begin\\(\\) const. previously defined here")
+foundation_neg_compile_test(neg_core_view_enumerate_range_forged
+  "redefinition of .class foundation::core::detail::EnumerateRange<Element, Count, Brand>."
+  "previous definition of .class foundation::core::detail::EnumerateRange<Element, Count, Brand>.")
+foundation_neg_compile_test(neg_core_view_zip_range_forged
+  "redefinition of .class foundation::core::detail::ZipRange<First, Second, Brand>."
+  "previous definition of .class foundation::core::detail::ZipRange<First, Second, Brand>.")
+foundation_neg_compile_test(neg_core_index_enumerate_cursor_forged
+  "constexpr foundation::core::Index<Count>::Index\\(Word\\) \\[with long unsigned int Count = 4; Word = unsigned int\\]. is private within this context"
+  "In instantiation of .static constexpr foundation::core::Index<Count> foundation::core::detail::EnumerateCursor<Element, Count, Brand>::past_the_end\\(\\)")
 foundation_neg_compile_test(neg_core_fixed_text_cursor_member_forged
   "redefinition of .constexpr foundation::core::ViewCursor<const char> foundation::core::FixedText<Capacity>::begin\\(\\) const &."
   "foundation::core::FixedText<Capacity>::begin\\(\\) const &. previously declared here")

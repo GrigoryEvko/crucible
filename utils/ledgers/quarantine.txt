@@ -506,7 +506,7 @@ test/fixy/ | std-object | 1257 | - | -
 test/fixy/neg/ | c-array-object | 53 | - | -
 test/fixy/neg/ | c-library-call | 5 | - | -
 test/fixy/neg/ | c-library-object | 2 | - | -
-test/fixy/neg/ | detail-use | 249 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
+test/fixy/neg/ | detail-use | 250 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -596,10 +596,11 @@ test/foundation/ | std-entity | 605 | - | -
 test/foundation/ | std-object | 198 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
-test/foundation/neg/ | detail-use | 97 | - | each fixture uses a private name of the base for its probe, such as a check, a context key, a test lattice or the range type of a target type
+test/foundation/neg/ | detail-use | 108 | - | each fixture uses a private name of the base for its probe, such as a check, a context key, a test lattice, the range type of a target type or a range or a cursor that the fixture forges
 test/foundation/neg/ | door-use | 2 | - | the fixture defines a door owner again, and its probe shows that the build refuses the second definition
 test/foundation/neg/ | lifetime-start | 11 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/ | opted-out | 1 | PROBE: a forged address_of shows that Address has no constructor from an integer | -
+test/foundation/neg/ | opted-out | 1 | PROBE: a forged enumerate cursor shows that Index names it as no friend | the forged class stands in a PROBE: region, so the fixture shows the refusal of the language and not the error of a rule
 test/foundation/neg/ | opted-out | 1 | PROBE: a forged mint of a Box shows that Box has no constructor from a pointer | -
 test/foundation/neg/ | opted-out | 1 | PROBE: a forged mint shows that HeapArray has no constructor from a pointer | the forged specialization stands in a PROBE: region, so the fixture shows the error of its body and not the error of a rule
 test/foundation/neg/ | opted-out | 1 | PROBE: the fixture forges ExecCtx with a row that its source does not permit | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -615,6 +616,7 @@ test/foundation/neg/ | opted-out | 1 | PROBE: the probe forges a niche of a Ref 
 test/foundation/neg/ | opted-out | 1 | PROBE: the probe specializes the Ref door to show that it cannot write the pointer | -
 test/foundation/neg/ | raw-pointer-object | 18 | - | -
 test/foundation/neg/ | region | 1 | PROBE: a forged address_of shows that Address has no constructor from an integer | the forged specialization stands in a PROBE: region, so the fixture shows the error of its body and not the error of a rule
+test/foundation/neg/ | region | 1 | PROBE: a forged enumerate cursor shows that Index names it as no friend | the forged class stands in a PROBE: region, so the fixture shows the refusal of the language and not the error of a rule
 test/foundation/neg/ | region | 1 | PROBE: a forged mint of a Box shows that Box has no constructor from a pointer | the forged specialization stands in a PROBE: region, so the fixture shows the error of its body and not the error of a rule
 test/foundation/neg/ | region | 1 | PROBE: a forged mint shows that HeapArray has no constructor from a pointer | the forged specialization stands in a PROBE: region, so the fixture shows the error of its body and not the error of a rule
 test/foundation/neg/ | region | 1 | PROBE: a forged zip of a dynamic extent shows that a declared type sets no brand | the forged specialization stands in a PROBE: region, so the fixture shows the error of its body and not the error of a rule
