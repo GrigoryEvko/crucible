@@ -2181,6 +2181,12 @@ foundation_neg_compile_test(neg_core_one_of_get_non_member
 foundation_neg_compile_test(neg_core_one_of_get_of_temporary
   "use of deleted function .void foundation::core::OneOf<Ts>::get\\(\\) && \\[with T = int; Refused = \\{\\}; Ts = \\{int, Code\\}\\]."
   "an alternative of a temporary OneOf dangles at the end of the full expression")
+foundation_neg_compile_test(neg_core_one_of_bit_cast_forged_tag
+  "this bit copy makes a .foundation::core::OneOf<[^>]*>., whose bytes hold the tag of a sum"
+  "a class that carries the annotation .foundation::core::closed_tag. holds the tag")
+foundation_neg_compile_test(neg_core_bit_cast_into_one_of
+  "no matching function for call to .bit_cast<Reading>\\(ForgedReading\\)."
+  "required for the satisfaction of .BitValid<To>. \\[with To = foundation::core::OneOf<")
 foundation_neg_compile_test(neg_core_text_niche_key_forged
   "error: redefinition of .class foundation::core::niche_key<T>."
   "Choice\\.h:[0-9]+:[0-9]+: note: previous definition of .class foundation::core::niche_key<T>.")

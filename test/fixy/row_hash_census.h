@@ -899,6 +899,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::Result,
      "the value or the error of a partial operation: the result of a call, never a value in a kernel signature"},
     {^^::foundation::core::Err, "the mark of an error: it converts to a Result and makes no claim about the error"},
+    {^^::foundation::core::closed_tag, "the annotation of a class that holds the tag of a sum: it holds nothing"},
     {^^::foundation::core::Unit, "the value of a Result that holds no value: it holds nothing"},
     {^^::foundation::core::OneOf,
      "one value of a closed set of types: the result of a call, never a value in a kernel signature"},

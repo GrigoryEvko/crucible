@@ -154,7 +154,14 @@
 //     base-std-object       the same, for a std-object
 //     base-c-library-object the same, for a c-library-object
 //     base-c-library-call   the same, for a c-library-call
-//     opted-out            a finding of each kind of each rule, inside a region
+//     forged-tag            a bit copy into a type that holds the tag of a sum:
+//                           a call of a function whose admit row has
+//                           plain-result, or a __builtin_bit_cast, whose
+//                           result holds a class with the annotation
+//                           foundation::core::closed_tag.  It is an error in
+//                           each file under the root and in each mode (THE
+//                           CLOSED TAGS of library.cpp)
+//     opted-out           a finding of each kind of each rule, inside a region
 //                           that CRUCIBLE_I_KNOW_WHAT_IM_DOING("CLASS: reason")
 //                           opens.  Its entity is the kind and the entity of the
 //                           finding inside the region
@@ -927,6 +934,7 @@ enum class Kind : std::uint8_t {
     base_std_object,
     base_c_library_object,
     base_c_library_call,
+    forged_tag,
     contract_specifier,
     binding_hook,
     borrow_match,
@@ -1185,6 +1193,8 @@ inline const char* kind_name(Kind kind) {
             return "base-c-library-object";
         case Kind::base_c_library_call:
             return "base-c-library-call";
+        case Kind::forged_tag:
+            return "forged-tag";
         case Kind::contract_specifier:
             return "contract-specifier";
         case Kind::binding_hook:
@@ -1586,11 +1596,13 @@ inline Rule rule_of(Kind kind) {
 
 // True for a kind whose finding is an error in each mode: the contract rule,
 // the rules binding-hook and borrow-match, the unit facts, the findings of the
-// rules specialization-home, base-namespace and fresh-brand, and the escapes
-// of a scope brand of the rule brand-escape (THE SCOPE BRANDS of linear.cpp).
-// No enforce mode changes such a finding, and an opt-out region covers it.
+// rules specialization-home, base-namespace and fresh-brand, the escapes of a
+// scope brand of the rule brand-escape (THE SCOPE BRANDS of linear.cpp), and a
+// bit copy into the tag of a sum (THE CLOSED TAGS of library.cpp).  No enforce
+// mode changes such a finding, and an opt-out region covers it.
 inline bool is_each_mode_kind(Kind kind) {
     switch (kind) {
+        case Kind::forged_tag:
         case Kind::contract_specifier:
         case Kind::binding_hook:
         case Kind::borrow_match:
@@ -1722,6 +1734,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"quarantine", "base-std-object"},
     {"quarantine", "base-c-library-object"},
     {"quarantine", "base-c-library-call"},
+    {"quarantine", "forged-tag"},
     {"quarantine", "opted-out"},
     {"quarantine", "region"},
     {"contract-specifier", "contract-specifier"},
@@ -2117,8 +2130,8 @@ struct State {
     // The answers in a file of the language, which has admit rows of its own.
     std::unordered_map<const FileEntry*, std::unordered_map<tree, LibraryClasses>> language_class_of[2];
     std::unordered_map<tree, const AdmitRow*> admitting_row_of[2];
-    // The answer of holds_bool_or_enumeration for each class and union.
-    std::unordered_map<tree, bool> holds_bool_of;
+    // The answer of unnamed_bit_parts (library.cpp) for each class and union.
+    std::unordered_map<tree, std::uint8_t> unnamed_bit_parts_of;
     // The locations of the local variables that a placeholder declares in
     // each function pattern (declaration.cpp, placeholder_locals_of).
     std::unordered_map<tree, std::unordered_set<location_t>> placeholder_locals;
@@ -2681,6 +2694,11 @@ bool is_standard_class(tree type);
 void record_pending_class(const LibraryClasses& classes, location_t location, const std::string& suffix = {});
 LibraryClasses library_classes_at(tree type, location_t location, Use use, const FileEntry*& language);
 void record_named_entities(tree type, location_t location, const FileEntry* language = nullptr);
+// THE CLOSED TAGS (library.cpp): register_closed_tags() reads each body for a
+// bit copy into a type that holds the tag of a sum, and report_forged_tag()
+// gives the error of one such finding that no region opts out.
+void register_closed_tags(const char* plugin_name);
+void report_forged_tag(const Finding& finding);
 
 // owner.cpp: the family owner, each named reference of the code.
 std::string identifier_spelled_at(location_t location);
@@ -2735,6 +2753,21 @@ void check_instantiation(tree function);
 void walk_declarations();
 void register_declarations(const char* plugin_name);
 std::string function_signature(tree function);
+
+// True when a rule of each body reads the code of FUNCTION in this unit: an
+// instance of a template of a base or a quarantined file in each unit that
+// makes it, and each other body of a walked file (is_walked_file).  FUNCTION
+// is null at namespace scope, where the place LOCATION decides.  The rule
+// binding-hook (binding.cpp) and the closed tags (library.cpp) read these
+// bodies.
+inline bool is_body_read_here(tree function, location_t location) {
+    if (function != NULL_TREE && is_in_instantiation(function)) {
+        Place place = place_of(DECL_SOURCE_LOCATION(function), Scope::quarantine);
+        return place.file_class == FileClass::base || place.file_class == FileClass::quarantined;
+    }
+    Place place = place_of(function != NULL_TREE ? DECL_SOURCE_LOCATION(function) : location, Scope::quarantine);
+    return place.file != nullptr && is_walked_file(place);
+}
 
 // expression.cpp: the family expression shape, the walk of a body, and the
 // rules proof-routes and refined-pre-subsumption, and the grants of the rule

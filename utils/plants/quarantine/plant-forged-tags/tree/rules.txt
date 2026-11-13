@@ -1,0 +1,16 @@
+# The rule table of the plant plant-forged-tags of the rule quarantine.  The
+# header include/fixy/Forge.h is a base file, and src/forge.cpp is
+# quarantined.  The headers of the repository are outside the root of the
+# plant, so the table admits the names of the base that the planted code uses,
+# and the layer can include the headers of the base that it names.
+
+layer low 0 include/fixy/
+
+allow low <bit>
+allow low <foundation/core/OneOf.h>
+
+admit foundation::core | the Choice family, whose sums the planted code copies
+admit foundation::linear | the vocabulary of the linear marker
+admit std::bit_cast until Scalar plain-result | a copy of the bits into a type that holds no bool, no enumeration and no tag of a sum
+
+quarantine src/forge.cpp

@@ -1,0 +1,36 @@
+#pragma once
+
+// A base header that copies bits into a OneOf.  Each bit copy into a type
+// that holds a class with the annotation foundation::core::closed_tag is the
+// error forged-tag: a __builtin_bit_cast, a std::bit_cast and an instance of
+// a template.  A copy of the bits of a OneOf into a plain type, and a copy
+// into a plain type through the template, are no finding.
+#include <foundation/core/OneOf.h>
+
+#include <bit>
+
+namespace fixy::forge {
+
+struct Bytes {
+    unsigned int storage = 0;
+    unsigned int tag_word = 200;
+};
+
+using Reading = ::foundation::core::OneOf<unsigned int, unsigned short>;
+
+inline Reading forge_with_builtin(Bytes const& bytes) noexcept { return __builtin_bit_cast(Reading, bytes); }
+
+inline Reading forge_with_std(Bytes const& bytes) noexcept { return std::bit_cast<Reading>(bytes); }
+
+template <class To>
+To copy_bits(Bytes const& bytes) noexcept {
+    return __builtin_bit_cast(To, bytes);
+}
+
+inline Reading forge_through_instance(Bytes const& bytes) noexcept { return copy_bits<Reading>(bytes); }
+
+inline Bytes read_bits(Reading const& reading) noexcept { return __builtin_bit_cast(Bytes, reading); }
+
+inline Bytes copy_plain(Bytes const& bytes) noexcept { return copy_bits<Bytes>(bytes); }
+
+}  // namespace fixy::forge

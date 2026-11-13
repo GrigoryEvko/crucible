@@ -29,8 +29,9 @@
 // plugin.h).  The ledger of the rule quarantine counts them.
 //
 // The plugin also applies the contract rule of the tree (contract.cpp), the
-// rule binding-hook (binding.cpp) and the rule borrow-match (borrow.cpp), in
-// each mode.  Each build of the tree loads this plugin
+// rule binding-hook (binding.cpp), the rule borrow-match (borrow.cpp) and the
+// refusal of a bit copy into the tag of a sum (THE CLOSED TAGS of
+// library.cpp), in each mode.  Each build of the tree loads this plugin
 // (utils/tools/quarantine/Quarantine.cmake).
 //
 // THE HOOKS OF THE UNIT
@@ -462,7 +463,7 @@ void on_collection(void*, void*) {
         state.language_class_of[use].clear();
         state.admitting_row_of[use].clear();
     }
-    state.holds_bool_of.clear();
+    state.unnamed_bit_parts_of.clear();
     state.placeholder_locals.clear();
     state.default_argument_of.clear();
     state.walked.clear();
@@ -616,6 +617,8 @@ void report(bool can_add_dependencies) {
             report_contract(finding);
         } else if (finding.kind == Kind::binding_hook && !is_out) {
             report_binding_hook(finding);
+        } else if (finding.kind == Kind::forged_tag && !is_out) {
+            report_forged_tag(finding);
         } else if (finding.kind == Kind::borrow_match && !is_out) {
             report_borrow_match(finding);
         } else if (rule_of_finding == Rule::specialization_home && !is_out) {
@@ -842,6 +845,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     register_regions(plugin_info->base_name);
     register_contract_rule(plugin_info->base_name);
     register_binding_hook(plugin_info->base_name);
+    register_closed_tags(plugin_info->base_name);
     register_borrow_match(plugin_info->base_name);
     register_unit_facts(plugin_info->base_name);
     register_expressions(plugin_info->base_name);

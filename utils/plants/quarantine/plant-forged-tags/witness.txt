@@ -1,0 +1,50 @@
+# A bit copy into a type that holds the tag of a sum is the error forged-tag
+# in each file and each mode.  In the quarantined unit with no sentinel: the
+# std::bit_cast into a OneOf (line 15) and into a OneOf with a bool
+# alternative (18), and the instance of the template of the base header
+# (Forge.h:27, from Forge.h:30).  The restriction plain-result refuses each of
+# the two uses of std::bit_cast too, and admits the copy into a plain type
+# (21).  The opt-out region turns the copy on line 26 into opted-out.  The
+# sentinel unit of the base header also reads the __builtin_bit_cast
+# (Forge.h:21) and the std::bit_cast (Forge.h:23) of the header.  A copy of
+# the bits of a OneOf into a plain type (Forge.h:32, and Forge.h:27 from
+# Forge.h:34) is no finding.
+
+compile plain src/forge.cpp
+flag plain -freflection
+exit plain fail
+finding plain quarantine std-entity src/forge.cpp:15:49 | std::bit_cast
+finding plain quarantine forged-tag src/forge.cpp:15:49 | foundation::core::OneOf<unsigned int, short unsigned int>
+finding plain quarantine std-entity src/forge.cpp:18:89 | std::bit_cast
+finding plain quarantine forged-tag src/forge.cpp:18:89 | foundation::core::OneOf<bool, unsigned int>
+finding plain quarantine replace-pending:std::bit_cast src/forge.cpp:21:47 | std::bit_cast
+finding plain quarantine forged-tag include/fixy/Forge.h:27:31 | foundation::core::OneOf<unsigned int, short unsigned int>
+finding plain quarantine region src/forge.cpp:25:1 | PROBE: the test forges the tag of a sum
+finding plain quarantine opted-out src/forge.cpp:26:75 | std-entity std::bit_cast
+finding plain quarantine opted-out src/forge.cpp:26:75 | forged-tag foundation::core::OneOf<unsigned int, short unsigned int>
+error plain src/forge.cpp:15 | this bit copy makes a 'foundation::core::OneOf
+error plain src/forge.cpp:18 | this bit copy makes a 'foundation::core::OneOf
+error plain include/fixy/Forge.h:27 | this bit copy makes a 'foundation::core::OneOf
+text plain | only a constructor of the sum writes it
+text plain | PROBE: reason
+
+compile sentinel src/forge.cpp sentinel=include/fixy/Forge.h
+flag sentinel -freflection
+exit sentinel fail
+finding sentinel quarantine forged-tag include/fixy/Forge.h:21:92 | fixy::forge::Reading
+finding sentinel quarantine base-std-entity include/fixy/Forge.h:23:91 | std::bit_cast
+finding sentinel quarantine forged-tag include/fixy/Forge.h:23:91 | foundation::core::OneOf<unsigned int, short unsigned int>
+finding sentinel quarantine forged-tag include/fixy/Forge.h:27:31 | foundation::core::OneOf<unsigned int, short unsigned int>
+finding sentinel quarantine std-entity src/forge.cpp:15:49 | std::bit_cast
+finding sentinel quarantine forged-tag src/forge.cpp:15:49 | foundation::core::OneOf<unsigned int, short unsigned int>
+finding sentinel quarantine std-entity src/forge.cpp:18:89 | std::bit_cast
+finding sentinel quarantine forged-tag src/forge.cpp:18:89 | foundation::core::OneOf<bool, unsigned int>
+finding sentinel quarantine replace-pending:std::bit_cast src/forge.cpp:21:47 | std::bit_cast
+finding sentinel quarantine region src/forge.cpp:25:1 | PROBE: the test forges the tag of a sum
+finding sentinel quarantine opted-out src/forge.cpp:26:75 | std-entity std::bit_cast
+finding sentinel quarantine opted-out src/forge.cpp:26:75 | forged-tag foundation::core::OneOf<unsigned int, short unsigned int>
+error sentinel include/fixy/Forge.h:21 | this bit copy makes a 'fixy::forge::Reading'
+error sentinel include/fixy/Forge.h:23 | this bit copy makes a 'foundation::core::OneOf
+error sentinel include/fixy/Forge.h:27 | this bit copy makes a 'foundation::core::OneOf
+error sentinel src/forge.cpp:15 | this bit copy makes a 'foundation::core::OneOf
+error sentinel src/forge.cpp:18 | this bit copy makes a 'foundation::core::OneOf

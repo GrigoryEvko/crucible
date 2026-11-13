@@ -58,9 +58,12 @@
 #         parameters    The entry admits its class only as the type of a
 #                       parameter.  The names in the class stay admitted
 #         plain-result  The entry admits only a function whose result type
-#                       holds no bool and no enumeration: not the type itself,
-#                       not an element of an array and not a member or a base
-#                       of a class.  A dependent result type is refused
+#                       holds no bool, no enumeration and no class with the
+#                       annotation foundation::core::closed_tag: not the type
+#                       itself, not an element of an array and not a member or
+#                       a base of a class.  A dependent result type is refused.
+#                       A call of such a function whose result holds the tag
+#                       of a sum is the error forged-tag in each file
 #         consteval-only
 #                       The entry admits only a consteval-only class and the
 #                       members of one: a class that holds a std::meta::info,
@@ -349,7 +352,7 @@ admit std::move arity 1 | a cast to an rvalue reference, and not the algorithm o
 admit std::forward | a cast that keeps the value category, and it makes no object
 admit std::as_const | a cast to a const reference, and it makes no object
 admit std::to_underlying | a cast of an enumerator to the integer of its enumeration
-admit std::bit_cast until Scalar plain-result | a copy of the bits into a type that holds no bool and no enumeration
+admit std::bit_cast until Scalar plain-result | a copy of the bits into a type that holds no bool, no enumeration and no tag of a sum
 admit std::declval | an unevaluated operand only
 admit std::integer_sequence | a pack of compile-time integers, with no data
 admit std::make_integer_sequence | an alias of std::integer_sequence

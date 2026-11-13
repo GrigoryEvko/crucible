@@ -190,23 +190,12 @@ tree walk_hook_calls(tree* node_pointer, int* walk_subtrees, void* data) {
     return NULL_TREE;
 }
 
-// True when the rule reads the code of FUNCTION in this unit (THE BODIES).
-// FUNCTION is null at namespace scope, where the place of the code decides.
-bool is_read_here(tree function, location_t location) {
-    if (function != NULL_TREE && is_in_instantiation(function)) {
-        Place place = place_of(DECL_SOURCE_LOCATION(function), Scope::quarantine);
-        return place.file_class == FileClass::base || place.file_class == FileClass::quarantined;
-    }
-    Place place = place_of(function != NULL_TREE ? DECL_SOURCE_LOCATION(function) : location, Scope::quarantine);
-    return place.file != nullptr && is_walked_file(place);
-}
-
 void on_pre_genericize(void* gcc_data, void*) {
     tree function = static_cast<tree>(gcc_data);
     // A clone of a constructor or a destructor gets a second event on a copy
     // of a body that cp_genericize lowered (linear.cpp, on_pre_genericize_linear).
     if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_SAVED_TREE(function) == NULL_TREE
-        || DECL_CLONED_FUNCTION_P(function) || !is_read_here(function, UNKNOWN_LOCATION)) {
+        || DECL_CLONED_FUNCTION_P(function) || !is_body_read_here(function, UNKNOWN_LOCATION)) {
         return;
     }
     HookWalk walk;
@@ -221,7 +210,7 @@ void on_pre_genericize(void* gcc_data, void*) {
 void on_folded_initializer(void* gcc_data, void*) {
     const auto* data = static_cast<const plugin_folded_initializer_data*>(gcc_data);
     if (data == nullptr || data->original == NULL_TREE || data->original == error_mark_node
-        || !is_read_here(current_function_decl, data->location)) {
+        || !is_body_read_here(current_function_decl, data->location)) {
         return;
     }
     HookWalk walk;

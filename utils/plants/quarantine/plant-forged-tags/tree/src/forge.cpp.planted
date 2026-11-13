@@ -1,0 +1,31 @@
+// A quarantined unit.  A std::bit_cast into a OneOf is the error forged-tag,
+// and the restriction plain-result refuses the use of std::bit_cast too.  A
+// OneOf with a bool alternative holds the mark as well.  A bit copy into a
+// plain type is admitted.  The opt-out region turns one copy into opted-out.
+#include <fixy/Forge.h>
+#include <foundation/Quarantine.h>
+
+#include <bit>
+
+namespace planted {
+
+using Flagged = ::foundation::core::OneOf<bool, unsigned int>;
+
+::fixy::forge::Reading quarantined_forge(::fixy::forge::Bytes const& bytes) {
+    return std::bit_cast<::fixy::forge::Reading>(bytes);
+}
+
+Flagged flagged_forge(::fixy::forge::Bytes const& bytes) { return std::bit_cast<Flagged>(bytes); }
+
+::fixy::forge::Bytes plain_copy(::fixy::forge::Bytes const& bytes) {
+    return std::bit_cast<::fixy::forge::Bytes>(bytes);
+}
+
+::fixy::forge::Reading opted(::fixy::forge::Bytes const& bytes) {
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test forges the tag of a sum")
+    ::fixy::forge::Reading reading = std::bit_cast<::fixy::forge::Reading>(bytes);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    return reading;
+}
+
+}  // namespace planted

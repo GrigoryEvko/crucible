@@ -209,7 +209,9 @@ inline constexpr int max_plain_depth = 64;
 // offset.  It refuses an empty class, whose value is its type alone, such
 // as a token or a key.  It refuses a class that carries the annotation
 // no_start_over_bytes (foundation/ByteSeal.h), whose values only its own
-// constructors make.  It refuses a class whose state the walk cannot read:
+// constructors make, and a class that carries the mark closed_tag
+// (Choice.h), whose bytes hold the tag of a sum.  It refuses a class whose
+// state the walk cannot read:
 // not empty, with no reflected base and no reflected member.  A lambda with
 // captures has that shape, because GCC 16 reflects no capture
 // (foundation/reflect/TypeComponents.h).  Linear in the number of subobject
@@ -222,7 +224,8 @@ inline constexpr int max_plain_depth = 64;
     if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type) || std::meta::is_empty_type(type)) {
         return false;
     }
-    if (!std::meta::annotations_of_with_type(type, ^^::foundation::lifetime::no_start_over_bytes).empty()) {
+    if (!std::meta::annotations_of_with_type(type, ^^::foundation::lifetime::no_start_over_bytes).empty()
+        || !std::meta::annotations_of_with_type(type, ^^::foundation::core::closed_tag).empty()) {
         return false;
     }
     std::size_t const bases = base_count(type);

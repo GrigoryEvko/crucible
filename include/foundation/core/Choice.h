@@ -549,6 +549,16 @@ public:
     return Err<decltype(error)>{static_cast<decltype(error)&&>(error)};
 }
 
+// The mark of a class whose bytes hold the tag of a sum: a word that names
+// one alternative of a closed set.  A bit copy can write a tag outside that
+// set, so no bit copy makes a value that holds a marked class.  The quarantine
+// plugin refuses std::bit_cast and __builtin_bit_cast into such a type
+// (utils/tools/quarantine/library.cpp, THE CLOSED TAGS), and the walk of the
+// Scalar family refuses it (Scalar.h).  Each class that holds the tag of a
+// sum slot carries the mark, so a sum on the slot of the family needs no mark
+// of its own.
+struct closed_tag final {};
+
 namespace detail {
 
 struct NoPayload final {};
@@ -652,9 +662,10 @@ public:
 // cells carries no byte that -ftrivial-auto-var-init made zero, and an
 // inlined function gives its sum back in registers with no store to the
 // stack.  The plain Option, and the sums whose alternatives are all plain,
-// use this rule.  Only the slot of a plain sum reads the two cells.
+// use this rule.  Only the slot of a plain sum reads the two cells.  The tag
+// names one alternative, so the cells carry the mark closed_tag.
 template <class Storage, class Tag>
-class TaggedCells {
+class[[= ::foundation::core::closed_tag{}]] TaggedCells {
     static_assert(std::is_unsigned_v<Tag> && alignof(Tag) == sizeof(Tag) && sizeof(Tag) <= alignof(Storage),
                   "the tag of the cells is one unsigned word, at most as wide as the alignment of the storage");
 
@@ -1165,9 +1176,10 @@ public:
 // alternative of the source, and the source keeps its moved-from
 // alternative, which its destructor ends.  A borrow of the source then
 // stays a borrow of a live object.  A move assignment drops the alternative
-// that the slot holds, so a sum with a linear alternative has none.
+// that the slot holds, so a sum with a linear alternative has none.  The tag
+// names one alternative, so the slot carries the mark closed_tag.
 template <class... Ts>
-class SumSlotOf<false, Ts...> {
+class[[= ::foundation::core::closed_tag{}]] SumSlotOf<false, Ts...> {
     Alternatives<Ts...> storage_;
     unsigned char tag_;
 

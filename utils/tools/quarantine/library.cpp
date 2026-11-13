@@ -50,51 +50,87 @@ int parameter_count(tree decl) {
     return DECL_IOBJ_MEMBER_FUNCTION_P(decl) ? count - 1 : count;
 }
 
-// True when TYPE holds a bool or an enumeration: the type itself, an element
-// of an array, a vector or a complex type, or a data member or a base of a
-// class or a union.  A pointer holds an address, so the walk does not follow
-// it, also when its target is dependent.  Each other dependent type and an
-// incomplete class count as types that hold them, so the restriction
-// plain-result fails closed.  The walk keeps the answer of each class, so a
-// class that holds the same class in many members costs one visit.
-// Complexity: O(distinct types in the type tree).
-bool holds_bool_or_enumeration(tree type, int depth) {
+// THE CLOSED TAGS
+//     A class that carries the annotation foundation::core::closed_tag of
+//     include/foundation/core/Choice.h holds the tag of a sum: a word that
+//     names one alternative of a closed set.  Each class that holds the tag
+//     of a sum slot carries it, so each sum of the Choice family holds one,
+//     and the rule names no sum.  A bit copy can write a tag that names no
+//     alternative.  So the restriction plain-result refuses a result type
+//     that holds such a class, as it refuses a bool and an enumeration.  And
+//     a bit copy into such a type is the finding forged-tag, an error in each
+//     file under the root and in each mode: a call of a function whose admit
+//     row has plain-result, such as std::bit_cast, and a __builtin_bit_cast.
+//     The rule reads the bodies that is_body_read_here of plugin.h gives, so
+//     a bit copy whose result a template parameter gives is judged in each
+//     instance.  The event PLUGIN_FOLDED_INITIALIZER gives an initializer
+//     before the front end folds it.  A copy of bytes through memcpy, a union
+//     member or a buffer of bytes is no bit copy of this rule, so which() of
+//     a OneOf compares its tag with the count at run time.
+
+// The bits of the answer of unnamed_bit_parts.
+inline constexpr std::uint8_t kBoolOrEnumeration = 1;
+inline constexpr std::uint8_t kClosedTag = 2;
+inline constexpr std::uint8_t kEachPart = kBoolOrEnumeration | kClosedTag;
+
+// True when the class TYPE carries the annotation closed_tag (THE CLOSED
+// TAGS).  Linear in the attributes of the class.
+bool carries_closed_tag(tree type) {
+    static tree const closed_tag = get_identifier("closed_tag");
+    static tree const core = get_identifier("core");
+    return carries_base_annotation(TYPE_ATTRIBUTES(type), closed_tag, core);
+}
+
+// The parts of TYPE whose bits can name no value: kBoolOrEnumeration for a
+// bool or an enumeration, and kClosedTag for a class that carries the
+// annotation closed_tag (THE CLOSED TAGS).  The walk reads the type itself,
+// an element of an array, a vector or a complex type, and each data member
+// and base of a class or a union.  A pointer holds an address, so the walk
+// does not follow it, also when its target is dependent.  Each other
+// dependent type and an incomplete class give each part, so each use fails
+// closed.  The walk keeps the answer of each class, so a class that holds the
+// same class in many members costs one visit.  Complexity: O(distinct types
+// in the type tree).
+std::uint8_t unnamed_bit_parts(tree type, int depth) {
     if (type == NULL_TREE || type == error_mark_node || depth > kTypeDepth) {
-        return true;
+        return kEachPart;
     }
     switch (TREE_CODE(type)) {
         case POINTER_TYPE:
         case OFFSET_TYPE:
-            return false;
+            return 0;
         case BOOLEAN_TYPE:
         case ENUMERAL_TYPE:
-            return true;
+            return kBoolOrEnumeration;
         case ARRAY_TYPE:
         case VECTOR_TYPE:
         case COMPLEX_TYPE:
-            return holds_bool_or_enumeration(TREE_TYPE(type), depth + 1);
+            return unnamed_bit_parts(TREE_TYPE(type), depth + 1);
         case RECORD_TYPE:
         case UNION_TYPE: {
             tree main_type = TYPE_MAIN_VARIANT(type);
             if (TYPE_PTRMEMFUNC_P(main_type)) {
-                return false;
+                return 0;
             }
             if (uses_template_parms(main_type) || !COMPLETE_TYPE_P(main_type)) {
-                return true;
+                return kEachPart;
             }
-            auto cached = state.holds_bool_of.find(main_type);
-            if (cached != state.holds_bool_of.end()) {
+            auto cached = state.unnamed_bit_parts_of.find(main_type);
+            if (cached != state.unnamed_bit_parts_of.end()) {
                 return cached->second;
             }
-            bool holds = false;
-            for (tree field = TYPE_FIELDS(main_type); field != NULL_TREE && !holds; field = DECL_CHAIN(field)) {
-                holds = TREE_CODE(field) == FIELD_DECL && holds_bool_or_enumeration(TREE_TYPE(field), depth + 1);
+            std::uint8_t parts = carries_closed_tag(main_type) ? kClosedTag : 0;
+            for (tree field = TYPE_FIELDS(main_type); field != NULL_TREE && parts != kEachPart;
+                 field = DECL_CHAIN(field)) {
+                if (TREE_CODE(field) == FIELD_DECL) {
+                    parts = static_cast<std::uint8_t>(parts | unnamed_bit_parts(TREE_TYPE(field), depth + 1));
+                }
             }
-            state.holds_bool_of.emplace(main_type, holds);
-            return holds;
+            state.unnamed_bit_parts_of.emplace(main_type, parts);
+            return parts;
         }
         default:
-            return uses_template_parms(type);
+            return uses_template_parms(type) ? kEachPart : 0;
     }
 }
 
@@ -139,7 +175,7 @@ bool row_admits(const AdmitRow& row, tree decl, bool is_exact, Use use, tree res
             return false;
         }
         tree type = result != NULL_TREE ? result : TREE_TYPE(TREE_TYPE(function));
-        if (holds_bool_or_enumeration(type, 0)) {
+        if (unnamed_bit_parts(type, 0) != 0) {
             return false;
         }
     }
@@ -862,6 +898,100 @@ void record_named_entities(tree type, location_t location, const FileEntry* lang
         record_standard_use(named, location, qualified_name(named), Use::other, NULL_TREE, language);
     }
     record_pending_class(classes, location);
+}
+
+namespace {
+
+// True when FUNCTION is a bit copy of THE CLOSED TAGS: a function whose admit
+// row has plain-result, such as std::bit_cast.
+bool is_bit_copy_function(tree function) {
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
+        return false;
+    }
+    bool is_exact = false;
+    const AdmitRow* row = admit_row_of_name(qualified_name(function), is_exact);
+    return row != nullptr && row->is_plain_result;
+}
+
+// The callback of cp_walk_tree: each bit copy whose result holds a closed tag
+// is the finding forged-tag (THE CLOSED TAGS).  DATA is the location of a node
+// with no location of its own.
+tree walk_bit_copies(tree* node_pointer, int* walk_subtrees, void* data) {
+    tree node = *node_pointer;
+    if (node == NULL_TREE) {
+        return NULL_TREE;
+    }
+    if (TYPE_P(node)) {
+        *walk_subtrees = 0;
+        return NULL_TREE;
+    }
+    tree result = NULL_TREE;
+    if (TREE_CODE(node) == BIT_CAST_EXPR) {
+        result = TREE_TYPE(node);
+    } else if (TREE_CODE(node) == CALL_EXPR || TREE_CODE(node) == AGGR_INIT_EXPR) {
+        tree callee = cp_get_callee_fndecl_nofold(node);
+        result = is_bit_copy_function(callee) ? TREE_TYPE(TREE_TYPE(callee)) : NULL_TREE;
+    }
+    if (result == NULL_TREE || (unnamed_bit_parts(result, 0) & kClosedTag) == 0) {
+        return NULL_TREE;
+    }
+    location_t location = EXPR_HAS_LOCATION(node) ? EXPR_LOCATION(node) : *static_cast<location_t*>(data);
+    Place place = place_of(location, Scope::quarantine);
+    if (place.file != nullptr) {
+        add_finding(Kind::forged_tag, nullptr, place, type_text(result));
+    }
+    return NULL_TREE;
+}
+
+// PLUGIN_PRE_GENERICIZE: the body of each function that is not a template,
+// and of each instance of a template.  A clone of a constructor or a
+// destructor gets a second event on a lowered copy of a body, so the walk
+// skips it.
+void on_pre_genericize_tags(void* gcc_data, void*) {
+    tree function = static_cast<tree>(gcc_data);
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_SAVED_TREE(function) == NULL_TREE
+        || DECL_CLONED_FUNCTION_P(function) || !is_body_read_here(function, UNKNOWN_LOCATION)) {
+        return;
+    }
+    location_t fallback = DECL_SOURCE_LOCATION(function);
+    tree body = DECL_SAVED_TREE(function);
+    cp_walk_tree_without_duplicates(&body, walk_bit_copies, &fallback);
+}
+
+// PLUGIN_FOLDED_INITIALIZER: an initializer before the front end folds it, in
+// the function current_function_decl or at namespace scope.
+void on_folded_initializer_tags(void* gcc_data, void*) {
+    const auto* data = static_cast<const plugin_folded_initializer_data*>(gcc_data);
+    if (data == nullptr || data->original == NULL_TREE || data->original == error_mark_node
+        || !is_body_read_here(current_function_decl, data->location)) {
+        return;
+    }
+    location_t fallback = data->location;
+    tree original = data->original;
+    cp_walk_tree_without_duplicates(&original, walk_bit_copies, &fallback);
+}
+
+}  // namespace
+
+void report_forged_tag(const Finding& finding) {
+    error_at(finding.spelling,
+             "this bit copy makes a %qs, whose bytes hold the tag of a sum, and a bit copy can write a tag that names "
+             "no alternative",
+             finding.entity.c_str());
+    inform(finding.spelling,
+           "a class that carries the annotation %<foundation::core::closed_tag%> holds the tag, and only a "
+           "constructor of the sum writes it");
+    inform(finding.spelling,
+           "build the sum from its value, or decode each part with %<foundation::core::decode%> and build the sum "
+           "from the parts");
+    inform(finding.spelling,
+           "a test of the copy itself puts it in a %<CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: reason\")%> region of "
+           "%<foundation/Quarantine.h%>");
+}
+
+void register_closed_tags(const char* plugin_name) {
+    register_callback(plugin_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize_tags, nullptr);
+    register_callback(plugin_name, PLUGIN_FOLDED_INITIALIZER, on_folded_initializer_tags, nullptr);
 }
 
 }  // namespace crucible_plugin
