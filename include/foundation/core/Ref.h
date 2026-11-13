@@ -505,10 +505,12 @@ public:
     }
 
     // Moves the object out, destroys the moved-from object, and frees the
-    // storage.  The Box then holds no object.
-    [[nodiscard]] T consume() && noexcept
-        requires std::is_nothrow_move_constructible_v<T>
-    {
+    // storage.  The Box then holds no object.  The constraint reads T only
+    // at a call, because consume is a template.  So an Option of a Box of a
+    // declared type can read the members of the Box with no error.
+    template <class Payload = T>
+        requires std::same_as<Payload, T> && std::is_nothrow_move_constructible_v<Payload>
+    [[nodiscard]] T consume() && noexcept {
         if (object_ == nullptr) [[unlikely]] {
             fatal("consume of a Box that holds no object: the Box was moved from or consumed");
         }

@@ -2425,10 +2425,10 @@ foundation_neg_compile_test(neg_core_box_borrow_of_temporary
   "a borrow of a temporary Box dangles at the end of the full expression")
 foundation_neg_compile_test(neg_core_box_consume_lvalue
   "passing .foundation::core::Box<int>. as .this. argument discards qualifiers"
-  "in call to .T foundation::core::Box<T>::consume\\(\\) && requires  is_nothrow_move_constructible_v<T> \\[with T = int\\].")
+  "in call to .T foundation::core::Box<T>::consume\\(\\) && \\[with Payload = int; T = int\\].")
 foundation_neg_compile_test(neg_core_box_consume_not_movable
   "no matching function for call to .foundation::core::Box<Fixed>::consume\\(\\)."
-  "the expression .is_nothrow_move_constructible_v<T> \\[with T = Fixed\\]. evaluated to .false.")
+  "the expression .is_nothrow_move_constructible_v<Payload> \\[with Payload = Fixed\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_box_mint_of_declared_type
   "no matching function for call to .mint_box<Engine>\\(foundation::core::Alloc\\)."
   "required for the satisfaction of .CompleteBoxPayload<T>. \\[with T = Engine\\]")

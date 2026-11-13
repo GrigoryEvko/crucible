@@ -2,6 +2,7 @@
 
 #include <foundation/core/Ref.h>
 
+#include <fixy/ScopedView.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
@@ -234,6 +235,10 @@ private:
     Box<Engine> engine_;
 };
 
+// A reflection walk of the owner reads each member of the Box.  The type of
+// the object of the Box is not complete at this point.
+static_assert(::fixy::no_scoped_view_field_check<EngineOwner>());
+
 struct Engine {
     explicit Engine(int value) noexcept : power{value} { ++live_objects; }
     Engine(Engine const&) = delete;
@@ -260,6 +265,71 @@ void test_box_of_a_declared_type() {
     CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
 }
 
+// An owner that holds an Option of a Box of a type that this point only
+// declares.  The Option reads the members of the Box here, where the type is
+// not complete.  The owner defines its special members below, where the type
+// is complete.
+struct Gear;
+
+class GearOwner {
+public:
+    GearOwner() noexcept;
+    GearOwner(GearOwner const&) = delete;
+    GearOwner& operator=(GearOwner const&) = delete;
+    ~GearOwner();
+
+    void fit(int teeth) noexcept;
+    [[nodiscard]] bool has_gear() const noexcept;
+    [[nodiscard]] int take_teeth() noexcept;
+
+private:
+    ::foundation::core::Option<Box<Gear>> gear_{};
+};
+
+struct Gear {
+    explicit Gear(int count) noexcept : teeth{count} { ++live_movables; }
+    Gear(Gear&& other) noexcept : teeth{other.teeth} { ++live_movables; }
+    Gear(Gear const&) = delete;
+    Gear& operator=(Gear const&) = delete;
+    Gear& operator=(Gear&&) = delete;
+    ~Gear() { --live_movables; }
+
+    int teeth = 0;
+};
+
+GearOwner::GearOwner() noexcept = default;
+
+GearOwner::~GearOwner() = default;
+
+void GearOwner::fit(int teeth) noexcept {
+    gear_ = ::foundation::core::some(mint_box<Gear>(::foundation::effects::Alloc{}, teeth));
+}
+
+bool GearOwner::has_gear() const noexcept { return gear_.is_some(); }
+
+int GearOwner::take_teeth() noexcept {
+    Gear const taken = std::move(gear_).expect("the owner holds a gear").consume();
+    return taken.teeth;
+}
+
+// The Option of the owner starts empty.  The owner fills it with a Box and
+// consumes the Box, then fills it again.  The destructor of the owner ends
+// the last object.
+void test_option_of_a_box_of_a_declared_type() {
+    CRUCIBLE_FATAL_INVARIANT(live_movables == 0);
+    {
+        GearOwner owner{};
+        CRUCIBLE_FATAL_INVARIANT(!owner.has_gear());
+        owner.fit(12);
+        CRUCIBLE_FATAL_INVARIANT(owner.has_gear() && live_movables == 1);
+        CRUCIBLE_FATAL_INVARIANT(owner.take_teeth() == 12);
+        CRUCIBLE_FATAL_INVARIANT(!owner.has_gear() && live_movables == 0);
+        owner.fit(5);
+        CRUCIBLE_FATAL_INVARIANT(owner.has_gear() && live_movables == 1);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_movables == 0);
+}
+
 }  // namespace
 
 int main() {
@@ -272,5 +342,6 @@ int main() {
     test_each_alignment();
     test_agrees_with_plain_model();
     test_box_of_a_declared_type();
+    test_option_of_a_box_of_a_declared_type();
     return 0;
 }
