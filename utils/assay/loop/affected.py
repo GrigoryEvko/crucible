@@ -494,6 +494,8 @@ SERIAL_PROPERTY = "RUN_SERIAL"
 # (THE SHARDS).
 SHARDS = 8
 SHARD_DIRECTORY = "shards"
+# The time of one poll of one ctest run, while other runs wait for a slot (THE SHARDS).
+SHARD_POLL_S = 0.05
 # The variable that gives `cmake --build` a job count when its command gives none (THE JOBSERVER).
 BUILD_PARALLEL_VARIABLE = "CMAKE_BUILD_PARALLEL_LEVEL"
 # The words in uppercase of a boolean property of ctest, such as WILL_FAIL, that give the value yes.
@@ -1550,25 +1552,40 @@ def shard_directory(build_dir: Path, state_dir: Path, number: int) -> Path:
     return directory
 
 
-def give_slots(client: jobserver.Client, slots: list[jobserver.Slot]) -> None:
-    """Give each slot of the shards back to the jobserver (THE SHARDS)."""
-    for slot in slots:
+def give_slots(client: jobserver.Client, slots: Mapping[int, jobserver.Slot]) -> None:
+    """Give each slot that a shard still holds back to the jobserver (THE SHARDS)."""
+    for slot in list(slots.values()):
         client.give(slot)
+
+
+def shard_exit(item: proc.Running) -> int | None:
+    """Poll one ctest run for SHARD_POLL_S, and return its exit code when it ended, else None (THE SHARDS).
+
+    A run that ends on its time limit gives the exit code of that end.
+    """
+    try:
+        completed = item.poll(SHARD_POLL_S)
+    except proc.TimedOut as problem:
+        check_report.write_line(f"loop test: {problem}", is_error=True)
+        return problem.completed.exit if problem.completed is not None else 2
+    return None if completed is None else completed.exit
 
 
 def run_shards(commands: list[list[str]], jobs: int) -> list[int]:
     """Run the ctest runs of one layer at the same time with one jobserver, and return the exit code of each (THE SHARDS).
 
-    Each run takes one slot of the jobserver that MAKEFLAGS names.  The first run takes the implicit slot of this
-    process, and each other run takes a token.  With no such jobserver, the script makes one of `jobs` jobs for the
-    runs.  A run that ends on its time limit gives the exit code of that end.  An exception in a wait stops each other
-    run.
+    A run holds one slot of the jobserver that MAKEFLAGS names, and it gives the slot back at its end.  The first
+    slot is the implicit slot of this process, and each other slot is a token.  A run starts when a slot is free.
+    Thus a run that waits for a slot starts when an earlier run ends, and the slots of the runs that ended go to
+    the runs that still go on.  With no such jobserver, the script makes one of `jobs` jobs for the runs.  An
+    exception in a wait stops each other run.
+    Complexity: each turn of the loop polls each run that goes on, and a layer has at most SHARDS runs.
 
     Raises:
         RunnerError: If a program cannot start, or the jobserver cannot be used
     """
-    running: list[proc.Running] = []
-    codes: list[int] = []
+    running: dict[int, proc.Running] = {}
+    codes: dict[int, int] = {}
     try:
         with contextlib.ExitStack() as stack:
             environment = proc.environment()
@@ -1578,29 +1595,33 @@ def run_shards(commands: list[list[str]], jobs: int) -> list[int]:
                 path = server.path
                 environment = {**environment, jobserver.VARIABLE: server.makeflags}
             client = stack.enter_context(jobserver.connected(path))
-            slots: list[jobserver.Slot] = []
+            slots: dict[int, jobserver.Slot] = {}
             stack.callback(give_slots, client, slots)
-            for command in commands:
-                slot = client.take()
-                if slot is not None:
-                    slots.append(slot)
-                running.append(proc.start(proc.Command(command, timeout_s=proc.BUILD_S, env=environment,
-                                                       stdout=proc.Output.INHERIT, stderr=proc.Output.INHERIT)))
-            for item in running:
-                try:
-                    codes.append(item.wait().exit)
-                except proc.TimedOut as problem:
-                    check_report.write_line(f"loop test: {problem}", is_error=True)
-                    codes.append(problem.completed.exit if problem.completed is not None else 2)
-            return codes
+            waiting = list(range(len(commands)))
+            while waiting or running:
+                if waiting:
+                    slot = client.try_take() if running else client.take()
+                    if slot is not None:
+                        index = waiting.pop(0)
+                        slots[index] = slot
+                        running[index] = proc.start(proc.Command(
+                            commands[index], timeout_s=proc.BUILD_S, env=environment, stdout=proc.Output.INHERIT,
+                            stderr=proc.Output.INHERIT))
+                        continue
+                for index, item in list(running.items()):
+                    code = shard_exit(item)
+                    if code is not None:
+                        codes[index] = code
+                        del running[index]
+                        client.give(slots.pop(index))
+            return [codes[index] for index in range(len(commands))]
     except jobserver.JobserverError as problem:
         raise RunnerError(str(problem)) from None
     except proc.CannotStart as problem:
         raise RunnerError(str(problem)) from None
     finally:
-        if len(codes) < len(running):
-            for item in running[len(codes):]:
-                item.stop()
+        for item in running.values():
+            item.stop()
 
 
 def run_tests(build_dir: Path, layers: list[list[str]], state_dir: Path, jobs: int, ctest_arguments: list[str],
@@ -2437,6 +2458,29 @@ def shard_cases(expect: Callable[[str, bool, str], None]) -> None:
            serial_last(planted, [["alpha"], ["beta"]]) == [["alpha"], ["beta"]], "")
 
 
+def run_shard_cases(expect: Callable[[str, bool, str], None]) -> None:
+    """Check run_shards() (THE SHARDS) with a jobserver of two slots and three runs.
+
+    The first run waits for a mark file that only the third run writes.  The third run can start only with the slot
+    of the second run.  Thus the case holds only if a run gives its slot back at its end, while the first run goes on.
+    A thread runs the case, so a run that never starts makes the case false after a time limit, and the test goes on.
+    """
+    wait_for_mark = ("import pathlib, sys, time\nmark = pathlib.Path(sys.argv[1])\nfor _ in range(2400):\n"
+                     "    if mark.exists():\n        sys.exit(0)\n    time.sleep(0.05)\nsys.exit(1)\n")
+    write_mark = "import pathlib, sys\npathlib.Path(sys.argv[1]).touch()\n"
+    found: list[list[int]] = []
+    with (tempfile.TemporaryDirectory(prefix="affected-shards-") as directory, jobserver.serving(2) as server,
+          testing.environment_variable(jobserver.VARIABLE, server.makeflags)):
+        mark = str(Path(directory) / "mark")
+        commands = [[sys.executable, "-c", wait_for_mark, mark], [sys.executable, "-c", "pass"],
+                    [sys.executable, "-c", write_mark, mark]]
+        worker = threading.Thread(target=lambda: found.append(run_shards(commands, 2)), daemon=True)
+        worker.start()
+        worker.join(180)
+    expect("a run that waits for a slot starts with the slot of a run that ended, while a long run goes on",
+           found == [[0, 0, 0]], str(found))
+
+
 def jobserver_cases(expect: Callable[[str, bool, str], None]) -> None:
     """Check _build_command() (THE JOBSERVER): the words and the environment of the build, with and with no jobserver."""
     fifo = f"{jobserver.AUTH_PREFIX}{jobserver.FIFO_PREFIX}/s/jobserver"
@@ -2525,6 +2569,7 @@ def unit_cases(expect: DetailedExpect) -> None:
            == [("neg_stale", False, REASON_UNSETTLED), ("neg_settled", True, REASON_UNNAMED)])
     layer_cases(expect)
     shard_cases(expect)
+    run_shard_cases(expect)
     jobserver_cases(expect)
 
 
