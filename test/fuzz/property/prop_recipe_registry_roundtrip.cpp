@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
 
             // Phase 1: every starter name → canonical pointer →
             // by_hash recovers the same pointer.
-            const std::string_view kNames[] = {
+            const ::fixy::TextView kNames[] = {
                 names::kF32Strict,
                 names::kF32Ordered,
                 names::kF16F32AccumTc,
@@ -71,39 +71,35 @@ int main(int argc, char** argv) {
                 names::kFp8E5m2F32AccumMxOrd,
             };
             for (auto n : kNames) {
-                auto via_name = registry.by_name(n);
-                if (!via_name.has_value()) return false;
-
-                auto via_hash = registry.by_hash((*via_name)->hash);
-                if (!via_hash.has_value()) return false;
-                if (*via_name != *via_hash) return false;
+                bool const is_round_trip = registry.by_name(n).match(
+                    [&](RecipeRegistry::RecipeRef via_name) noexcept {
+                        return registry.by_hash(via_name->hash)
+                            .match(
+                                [&](RecipeRegistry::RecipeRef via_hash) noexcept {
+                                    return ::fixy::same_object(via_name, via_hash);
+                                },
+                                [](RecipeError) noexcept { return false; });
+                    },
+                    [](RecipeError) noexcept { return false; });
+                if (!is_round_trip) return false;
             }
 
             // Phase 2: an extra random recipe interned via pool.
             // If its semantic fields happen to match a starter,
-            // by_hash should hit; otherwise it should miss with
-            // HashNotFound (NOT NameNotFound).
+            // by_hash should hit.  Else it should miss with
+            // HashNotFound, not NameNotFound.
             const auto* extra_ptr = pool.intern(init.alloc, extra);
             if (extra_ptr == nullptr) return false;
-            auto via_hash_extra = registry.by_hash(extra_ptr->hash);
-            if (via_hash_extra.has_value()) {
-                // Hit — must be one of the starter recipes.
-                bool found = false;
-                // entries() returns Tagged<span<const Entry>,
-                // source::JsonRegistry>; .value() unwraps to the span.
-                for (const auto& entry : registry.entries().value()) {
-                    if (entry.recipe == *via_hash_extra) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) return false;
-            } else {
-                // Miss — must be classified as HashNotFound, not
-                // NameNotFound (the by_hash error class is reserved
-                // for hash misses; name misses use NameNotFound).
-                if (via_hash_extra.error() != RecipeError::HashNotFound) return false;
-            }
-            return true;
+            return registry.by_hash(extra_ptr->hash)
+                .match(
+                    [&](RecipeRegistry::RecipeRef found) noexcept {
+                        // A hit must be one of the starter recipes.
+                        for (const auto& entry : registry.entries().value()) {
+                            if (::fixy::same_object(entry.recipe, found)) return true;
+                        }
+                        return false;
+                    },
+                    // The by_hash error class is reserved for hash misses.
+                    [](RecipeError error) noexcept { return error == RecipeError::HashNotFound; });
         });
 }

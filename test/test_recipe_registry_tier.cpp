@@ -39,6 +39,23 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
 
 [[nodiscard]] inline auto entries_view(const RecipeRegistry& reg) noexcept { return reg.entries().value(); }
 
+using RecipeRef = RecipeRegistry::RecipeRef;
+
+template <Tolerance T>
+using PinnedLookup = ::fixy::Result<NumericalTier<T, RecipeRef>, RecipeError>;
+
+// The value of a lookup that hits.  A miss ends the test.
+template <class Found>
+[[nodiscard]] auto hit(Found found) noexcept {
+    return std::move(found).expect("the lookup hits");
+}
+
+// The error of a lookup that misses.  A hit ends the test.
+template <class Found>
+[[nodiscard]] RecipeError miss(Found found) noexcept {
+    return std::move(found).err().expect("the lookup misses");
+}
+
 }  // namespace
 
 [[gnu::cold]] int main() {
@@ -93,74 +110,51 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
 
     {
         auto pinned = reg.by_name_pinned<Tolerance::BITEXACT>(names::kF32Strict);
-        assert(pinned.has_value());
-        static_assert(
-            std::is_same_v<decltype(pinned)::value_type, NumericalTier<Tolerance::BITEXACT, const NumericalRecipe*>>);
-        assert(pinned->peek() != nullptr);
-        assert(pinned->peek()->determinism == ReductionDeterminism::BITEXACT_STRICT);
+        static_assert(std::is_same_v<decltype(pinned), PinnedLookup<Tolerance::BITEXACT>>);
+        auto const tier = hit(std::move(pinned));
+        assert(tier.peek()->determinism == ReductionDeterminism::BITEXACT_STRICT);
     }
 
     // A recipe admits at any pin weaker than its own class.
     {
         auto pinned = reg.by_name_pinned<Tolerance::RELAXED>(names::kF32Strict);
-        assert(pinned.has_value());
-        static_assert(
-            std::is_same_v<decltype(pinned)::value_type, NumericalTier<Tolerance::RELAXED, const NumericalRecipe*>>);
+        assert(pinned.is_ok());
+        static_assert(std::is_same_v<decltype(pinned), PinnedLookup<Tolerance::RELAXED>>);
     }
 
     // The reverse direction is the bug this gate exists for: an ordered
     // recipe, several ULP wide, reaching a consumer that was written
     // against bit-exact results.
-    {
-        auto pinned = reg.by_name_pinned<Tolerance::BITEXACT>(names::kF32Ordered);
-        assert(!pinned.has_value());
-        assert(pinned.error() == RecipeError::ToleranceMismatch);
-    }
+    { assert(miss(reg.by_name_pinned<Tolerance::BITEXACT>(names::kF32Ordered)) == RecipeError::ToleranceMismatch); }
 
     // The name is the primary key and the tolerance is a second gate
     // behind it, so an unknown name reports as an unknown name at every
     // pin strength.  Pinning only adds a gate, it never changes what
     // the unpinned lookup would have reported.
     {
-        auto pinned = reg.by_name_pinned<Tolerance::RELAXED>("nonexistent_recipe");
-        assert(!pinned.has_value());
-        assert(pinned.error() == RecipeError::NameNotFound);
-
-        auto pinned_strict = reg.by_name_pinned<Tolerance::BITEXACT>("does_not_exist");
-        assert(!pinned_strict.has_value());
-        assert(pinned_strict.error() == RecipeError::NameNotFound);
+        assert(miss(reg.by_name_pinned<Tolerance::RELAXED>("nonexistent_recipe")) == RecipeError::NameNotFound);
+        assert(miss(reg.by_name_pinned<Tolerance::BITEXACT>("does_not_exist")) == RecipeError::NameNotFound);
     }
 
     {
-        auto base = reg.by_name(names::kF32Strict);
-        assert(base.has_value());
-        const RecipeHash hash = (*base)->hash;
-
-        auto pinned = reg.by_hash_pinned<Tolerance::BITEXACT>(hash);
-        assert(pinned.has_value());
-        assert(pinned->peek()->hash == hash);
+        const RecipeHash hash = hit(reg.by_name(names::kF32Strict))->hash;
+        auto const tier = hit(reg.by_hash_pinned<Tolerance::BITEXACT>(hash));
+        assert(tier.peek()->hash == hash);
     }
 
     // This recipe is ordered, so its class is the weakest one, not the
     // one its half-precision storage would suggest.  A half-precision
     // pin is therefore up the lattice and rejects.
     {
-        auto base = reg.by_name(names::kF16F32AccumOrdered);
-        assert(base.has_value());
-        const RecipeHash hash = (*base)->hash;
-
-        auto pinned = reg.by_hash_pinned<Tolerance::ULP_FP16>(hash);
-        assert(!pinned.has_value());
-        assert(pinned.error() == RecipeError::ToleranceMismatch);
+        const RecipeHash hash = hit(reg.by_name(names::kF16F32AccumOrdered))->hash;
+        assert(miss(reg.by_hash_pinned<Tolerance::ULP_FP16>(hash)) == RecipeError::ToleranceMismatch);
     }
 
     // A hash no recipe carries reports as a missing hash, never as a
     // tolerance mismatch: there is no recipe to compare a class against.
     {
         const RecipeHash bogus{0xDEADBEEFCAFEBABEULL};
-        auto pinned = reg.by_hash_pinned<Tolerance::RELAXED>(bogus);
-        assert(!pinned.has_value());
-        assert(pinned.error() == RecipeError::HashNotFound);
+        assert(miss(reg.by_hash_pinned<Tolerance::RELAXED>(bogus)) == RecipeError::HashNotFound);
     }
 
     {
@@ -168,13 +162,13 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
             // RELAXED is the bottom of the lattice, so every recipe
             // satisfies it.
             auto relaxed_pin = reg.by_name_pinned<Tolerance::RELAXED>(entry.name);
-            assert(relaxed_pin.has_value());
+            assert(relaxed_pin.is_ok());
 
             // BITEXACT is the top, so only a strictly bit-exact recipe
             // satisfies it.
             auto bitexact_pin = reg.by_name_pinned<Tolerance::BITEXACT>(entry.name);
             const bool is_strict = entry.recipe->determinism == ReductionDeterminism::BITEXACT_STRICT;
-            assert(bitexact_pin.has_value() == is_strict);
+            assert(bitexact_pin.is_ok() == is_strict);
         }
     }
 
@@ -182,7 +176,7 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
         int admits = 0;
         for (const auto& entry : entries_view(reg)) {
             auto pinned = reg.by_name_pinned<Tolerance::RELAXED>(entry.name);
-            if (pinned.has_value()) ++admits;
+            if (pinned.is_ok()) ++admits;
         }
         assert(admits == int{RecipeRegistry::STARTER_COUNT});
     }
@@ -193,39 +187,36 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
         int strict_admits = 0;
         for (const auto& entry : entries_view(reg)) {
             auto pinned = reg.by_name_pinned<Tolerance::BITEXACT>(entry.name);
-            if (pinned.has_value()) ++strict_admits;
+            if (pinned.is_ok()) ++strict_admits;
         }
         assert(strict_admits == 1);
     }
 
     {
-        using PinnedBitexact = NumericalTier<Tolerance::BITEXACT, const NumericalRecipe*>;
-        using PinnedRelaxed = NumericalTier<Tolerance::RELAXED, const NumericalRecipe*>;
-        using PinnedFp16 = NumericalTier<Tolerance::ULP_FP16, const NumericalRecipe*>;
-        static_assert(sizeof(PinnedBitexact) == sizeof(const NumericalRecipe*));
-        static_assert(sizeof(PinnedRelaxed) == sizeof(const NumericalRecipe*));
-        static_assert(sizeof(PinnedFp16) == sizeof(const NumericalRecipe*));
+        using PinnedBitexact = NumericalTier<Tolerance::BITEXACT, RecipeRef>;
+        using PinnedRelaxed = NumericalTier<Tolerance::RELAXED, RecipeRef>;
+        using PinnedFp16 = NumericalTier<Tolerance::ULP_FP16, RecipeRef>;
+        static_assert(sizeof(PinnedBitexact) == sizeof(RecipeRef));
+        static_assert(sizeof(PinnedRelaxed) == sizeof(RecipeRef));
+        static_assert(sizeof(PinnedFp16) == sizeof(RecipeRef));
     }
 
     {
-        auto base = reg.by_name(names::kF32Strict);
-        assert(base.has_value());
-        const NumericalRecipe* expected_ptr = *base;
+        RecipeRef const expected_ref = hit(reg.by_name(names::kF32Strict));
 
-        auto pinned = reg.by_name_pinned<Tolerance::BITEXACT>(names::kF32Strict);
-        assert(pinned.has_value());
-        assert(pinned->peek() == expected_ptr);
+        auto pinned = hit(reg.by_name_pinned<Tolerance::BITEXACT>(names::kF32Strict));
+        assert(::fixy::same_object(pinned.peek(), expected_ref));
 
-        const NumericalRecipe* moved = std::move(*pinned).consume();
-        assert(moved == expected_ptr);
+        RecipeRef const moved = std::move(pinned).consume();
+        assert(::fixy::same_object(moved, expected_ref));
     }
 
     // The runtime rejection above has a compile-time counterpart: a
     // consumer that demands the top class cannot be handed a wrapper
     // pinned at the bottom one.
     {
-        using PinnedBitexact = NumericalTier<Tolerance::BITEXACT, const NumericalRecipe*>;
-        using PinnedRelaxed = NumericalTier<Tolerance::RELAXED, const NumericalRecipe*>;
+        using PinnedBitexact = NumericalTier<Tolerance::BITEXACT, RecipeRef>;
+        using PinnedRelaxed = NumericalTier<Tolerance::RELAXED, RecipeRef>;
         static_assert(!std::is_same_v<PinnedBitexact, PinnedRelaxed>);
 
         static_assert(::fixy::satisfies_v<PinnedBitexact, Tolerance::RELAXED>);
@@ -264,9 +255,9 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
         using ::fixy::band_tier_v;
         using ::fixy::is_band_of_v;
 
-        using NT_BX = NumericalTier<Tolerance::BITEXACT, const NumericalRecipe*>;
-        using NT_RX = NumericalTier<Tolerance::RELAXED, const NumericalRecipe*>;
-        using NT_F16 = NumericalTier<Tolerance::ULP_FP16, const NumericalRecipe*>;
+        using NT_BX = NumericalTier<Tolerance::BITEXACT, RecipeRef>;
+        using NT_RX = NumericalTier<Tolerance::RELAXED, RecipeRef>;
+        using NT_F16 = NumericalTier<Tolerance::ULP_FP16, RecipeRef>;
 
         static_assert(band_tier_v<NT_BX> == NT_BX::lattice_type::pinned);
         static_assert(band_tier_v<NT_RX> == NT_RX::lattice_type::pinned);
@@ -277,7 +268,7 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
         static_assert(band_tier_v<NT_BX&&> == Tolerance::BITEXACT);
 
         static_assert(!is_band_of_v<ToleranceLattice, int>);
-        static_assert(!is_band_of_v<ToleranceLattice, const NumericalRecipe*>);
+        static_assert(!is_band_of_v<ToleranceLattice, RecipeRef>);
         static_assert(is_band_of_v<ToleranceLattice, NT_BX>);
     }
 
@@ -286,18 +277,16 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     // recipe.  Resolving one recipe both ways and comparing closes
     // that.
     {
-        auto base = reg.by_name(names::kF32Strict);
-        assert(base.has_value());
-        const RecipeHash hash = (*base)->hash;
+        RecipeRef const base = hit(reg.by_name(names::kF32Strict));
+        const RecipeHash hash = base->hash;
 
         auto by_name_pin = reg.by_name_pinned<Tolerance::BITEXACT>(names::kF32Strict);
         auto by_hash_pin = reg.by_hash_pinned<Tolerance::BITEXACT>(hash);
-        assert(by_name_pin.has_value());
-        assert(by_hash_pin.has_value());
-        assert(by_name_pin->peek() == by_hash_pin->peek());
-        assert(by_name_pin->peek() == *base);
-
-        static_assert(std::is_same_v<decltype(by_name_pin)::value_type, decltype(by_hash_pin)::value_type>);
+        static_assert(std::is_same_v<decltype(by_name_pin), decltype(by_hash_pin)>);
+        auto const name_tier = hit(std::move(by_name_pin));
+        auto const hash_tier = hit(std::move(by_hash_pin));
+        assert(::fixy::same_object(name_tier.peek(), hash_tier.peek()));
+        assert(::fixy::same_object(name_tier.peek(), base));
     }
 
     {
@@ -368,7 +357,7 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
         static_assert(satisfies_v<RX, T::RELAXED>);
     }
 
-    // The payload the registry pins is a plain pointer, so nothing else
+    // The payload the registry pins is a Ref, which copies, so nothing else
     // in this file exercises a move-only payload.  The wrapper has to
     // carry one for the sake of everything else that composes with it.
     {
@@ -397,23 +386,18 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
     // same address.  Two identical lookups that disagree would mean the
     // pinned path carries state of its own.
     {
-        auto pin1 = reg.by_name_pinned<Tolerance::BITEXACT>(names::kF32Strict);
-        auto pin2 = reg.by_name_pinned<Tolerance::BITEXACT>(names::kF32Strict);
-        assert(pin1.has_value() && pin2.has_value());
-        assert(pin1->peek() == pin2->peek());
+        auto const pin1 = hit(reg.by_name_pinned<Tolerance::BITEXACT>(names::kF32Strict));
+        auto const pin2 = hit(reg.by_name_pinned<Tolerance::BITEXACT>(names::kF32Strict));
+        assert(::fixy::same_object(pin1.peek(), pin2.peek()));
 
-        auto pin3 = reg.by_name_pinned<Tolerance::ULP_FP32>(names::kF32Strict);
-        assert(pin3.has_value());
-        assert(pin3->peek() == pin1->peek());
-        static_assert(!std::is_same_v<decltype(pin1)::value_type, decltype(pin3)::value_type>);
+        auto const pin3 = hit(reg.by_name_pinned<Tolerance::ULP_FP32>(names::kF32Strict));
+        assert(::fixy::same_object(pin3.peek(), pin1.peek()));
+        static_assert(!std::is_same_v<decltype(pin1), decltype(pin3)>);
 
         // The rejecting path is stateless too, so a repeat rejects again
         // rather than returning a wrapper left over from an earlier call.
-        auto bad1 = reg.by_name_pinned<Tolerance::BITEXACT>(names::kF32Ordered);
-        auto bad2 = reg.by_name_pinned<Tolerance::BITEXACT>(names::kF32Ordered);
-        assert(!bad1.has_value() && !bad2.has_value());
-        assert(bad1.error() == RecipeError::ToleranceMismatch);
-        assert(bad2.error() == RecipeError::ToleranceMismatch);
+        assert(miss(reg.by_name_pinned<Tolerance::BITEXACT>(names::kF32Ordered)) == RecipeError::ToleranceMismatch);
+        assert(miss(reg.by_name_pinned<Tolerance::BITEXACT>(names::kF32Ordered)) == RecipeError::ToleranceMismatch);
     }
 
     std::puts("ok");

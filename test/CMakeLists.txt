@@ -3703,14 +3703,14 @@ crucible_neg_compile_test(neg_recipe_registry_pinned_with_family_template_arg
   "could not convert .foundation::algebra::lattices::RecipeFamily::Kahan. from .foundation::algebra::lattices::RecipeFamily. to .foundation::algebra::lattices::Tolerance.")
 
 # The RecipeSpec of by_name_spec and the NumericalTier of by_name_pinned
-# are different types.  The expected of one does not convert to the
-# expected of the other, in each direction.
+# are different types.  The Result of one does not convert to the
+# Result of the other, in each direction.
 crucible_neg_compile_test(neg_recipe_registry_spec_assigned_to_pinned_expected
-  "conversion from .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::ToleranceLattice>, foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::RecipeFamilyLattice> >"
-  "to non-scalar type .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ToleranceLattice::At<foundation::algebra::lattices::Tolerance::BITEXACT>")
+  "conversion from .Result<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::ToleranceLattice>, foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::RecipeFamilyLattice> >"
+  "to non-scalar type .Result<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ToleranceLattice::At<foundation::algebra::lattices::Tolerance::BITEXACT>")
 crucible_neg_compile_test(neg_recipe_registry_pinned_assigned_to_spec_expected
-  "conversion from .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ToleranceLattice::At<foundation::algebra::lattices::Tolerance::BITEXACT>"
-  "to non-scalar type .expected<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::ToleranceLattice>, foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::RecipeFamilyLattice> >")
+  "conversion from .Result<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ToleranceLattice::At<foundation::algebra::lattices::Tolerance::BITEXACT>"
+  "to non-scalar type .Result<Graded<\\[\\.\\.\\.\\],foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::ToleranceLattice>, foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::RecipeFamilyLattice> >")
 
 # The lookups of the registry are pure projections.  by_name, by_hash,
 # entries, the pinned lookups and the spec lookups each refuse a caller
@@ -3732,11 +3732,11 @@ crucible_neg_compile_test(neg_recipe_registry_spec_block_row
   "no matching function for call to .crucible::RecipeRegistry::by_name_spec<foundation::effects::Row<foundation::effects::Effect::Block> >"
   "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Block>\\]")
 
-# entries() gives a span tagged source::JsonRegistry.  A raw span and a
-# span with a different tag must not reach a consumer of the entries.
+# entries() gives a View tagged source::JsonRegistry.  A raw View and a
+# View with a different tag must not reach a consumer of the entries.
 crucible_neg_compile_test(neg_recipe_registry_entries_raw_span
-  "could not convert .raw. from .std::span<const crucible::RecipeRegistry::Entry>. to .crucible::RecipeRegistry::Entries."
-  "fixy::Tagged<std::span<const crucible::RecipeRegistry::Entry>, fixy::tags::source::JsonRegistry>")
+  "could not convert .raw. from .const foundation::core::View<const crucible::RecipeRegistry::Entry, 8>. to .crucible::RecipeRegistry::Entries."
+  "fixy::Tagged<foundation::core::View<const crucible::RecipeRegistry::Entry, 8>, fixy::tags::source::JsonRegistry>")
 crucible_neg_compile_test(neg_recipe_registry_entries_cross_tag
   "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
   "to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::JsonRegistry>. requested")

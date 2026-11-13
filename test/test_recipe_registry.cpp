@@ -77,11 +77,11 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
                       "RecipeRegistry takes the borrow that mint_borrowed_ref gives");
         static_assert(!std::is_constructible_v<RecipeRegistry, RecipeRegistry::PoolBorrow, eff::Alloc>,
                       "RecipeRegistry refuses a borrow that names no brand");
+        using EntryView = ::fixy::View<RecipeRegistry::Entry const, RecipeRegistry::STARTER_COUNT>;
         static_assert(
-            std::is_same_v<RecipeRegistry::Entries,
-                           ::fixy::Tagged<std::span<const RecipeRegistry::Entry>, ::fixy::tags::source::JsonRegistry>>);
-        static_assert(sizeof(RecipeRegistry::Entries) == sizeof(std::span<const RecipeRegistry::Entry>));
-        static_assert(!std::is_convertible_v<std::span<const RecipeRegistry::Entry>, RecipeRegistry::Entries>);
+            std::is_same_v<RecipeRegistry::Entries, ::fixy::Tagged<EntryView, ::fixy::tags::source::JsonRegistry>>);
+        static_assert(sizeof(RecipeRegistry::Entries) == sizeof(EntryView));
+        static_assert(!std::is_convertible_v<EntryView, RecipeRegistry::Entries>);
         static_assert(eff::Subrow<RecipeRegistry::pure_projection_row, eff::Row<>>);
         static_assert(!eff::Subrow<eff::Row<eff::Effect::IO>, RecipeRegistry::pure_projection_row>);
         static_assert(!eff::Subrow<eff::Row<eff::Effect::Init>, RecipeRegistry::pure_projection_row>);
@@ -98,8 +98,7 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
         assert(pool.size() == RecipeRegistry::STARTER_COUNT);
 
         for (const auto& e : entries_view(reg)) {
-            assert(!e.name.empty());
-            assert(e.recipe != nullptr);
+            assert(e.name.size() != 0);
             // The stored hash must be the one its own fields produce, not a
             // value copied in from the specification.
             assert(e.recipe->hash == crucible::compute_recipe_hash(*e.recipe));
@@ -120,11 +119,11 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
 
         std::unordered_set<const NumericalRecipe*> entry_ptrs;
         for (const auto& e : entries_view(reg)) {
-            entry_ptrs.insert(e.recipe);
+            entry_ptrs.insert(&*e.recipe);
         }
         assert(entry_ptrs.size() == RecipeRegistry::STARTER_COUNT);
 
-        const std::string_view known_names[] = {
+        const ::fixy::TextView known_names[] = {
             names::kF32Strict,
             names::kF32Ordered,
             names::kF16F32AccumTc,
@@ -136,18 +135,15 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
         };
 
         for (auto n : known_names) {
-            auto r = reg.by_name(n);
-            assert(r.has_value() && "starter recipe lookup should hit");
-            assert(*r != nullptr);
+            RecipeRegistry::RecipeRef const r = reg.by_name(n).expect("a starter recipe lookup hits");
             // Lookup by name must land on a pointer the pool already owns,
             // not on a fresh copy of the same recipe.
-            assert(entry_ptrs.contains(*r));
+            assert(entry_ptrs.contains(&*r));
         }
 
-        auto first = reg.by_name(names::kF16F32AccumTc);
-        auto second = reg.by_name(names::kF16F32AccumTc);
-        assert(first.has_value() && second.has_value());
-        assert(*first == *second);
+        RecipeRegistry::RecipeRef const first = reg.by_name(names::kF16F32AccumTc).expect("the starter is present");
+        RecipeRegistry::RecipeRef const second = reg.by_name(names::kF16F32AccumTc).expect("the starter is present");
+        assert(::fixy::same_object(first, second));
     }
 
     // Lookup by name is exact and case-sensitive, so the near-misses
@@ -157,7 +153,7 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
-        const std::string_view missing[] = {
+        const ::fixy::TextView missing[] = {
             "F32_STRICT",  // wrong case
             "f32_Strict",  // mixed case
             "f32-strict",  // dash instead of underscore
@@ -171,8 +167,8 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
 
         for (auto n : missing) {
             auto r = reg.by_name(n);
-            assert(!r.has_value() && "missing recipe must not hit");
-            assert(r.error() == RecipeError::NameNotFound);
+            assert(r.is_err() && "missing recipe must not hit");
+            assert(std::move(r).err().expect("the lookup missed") == RecipeError::NameNotFound);
         }
     }
 
@@ -186,8 +182,8 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
 
         {
             auto r = reg.by_name(names::kF32Strict);
-            assert(r.has_value());
-            const auto& x = **r;
+            RecipeRegistry::RecipeRef const recipe = std::move(r).expect("the starter is present");
+            const auto& x = *recipe;
             assert(x.accum_dtype == ScalarType::Float);
             assert(x.out_dtype == ScalarType::Float);
             assert(x.determinism == ReductionDeterminism::BITEXACT_STRICT);
@@ -202,8 +198,8 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
         // different vendors, so the two tensor-core recipes are UNORDERED.
         {
             auto r = reg.by_name(names::kF16F32AccumTc);
-            assert(r.has_value());
-            const auto& x = **r;
+            RecipeRegistry::RecipeRef const recipe = std::move(r).expect("the starter is present");
+            const auto& x = *recipe;
             assert(x.accum_dtype == ScalarType::Float);
             assert(x.out_dtype == ScalarType::Half);
             assert(x.determinism == ReductionDeterminism::UNORDERED);
@@ -213,8 +209,8 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
 
         {
             auto r = reg.by_name(names::kBf16F32AccumTc);
-            assert(r.has_value());
-            const auto& x = **r;
+            RecipeRegistry::RecipeRef const recipe = std::move(r).expect("the starter is present");
+            const auto& x = *recipe;
             assert(x.accum_dtype == ScalarType::Float);
             assert(x.out_dtype == ScalarType::BFloat16);
             assert(x.determinism == ReductionDeterminism::UNORDERED);
@@ -223,8 +219,8 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
 
         {
             auto r = reg.by_name(names::kFp8E4m3F32AccumMxOrd);
-            assert(r.has_value());
-            const auto& x = **r;
+            RecipeRegistry::RecipeRef const recipe = std::move(r).expect("the starter is present");
+            const auto& x = *recipe;
             assert(x.accum_dtype == ScalarType::Float);
             assert(x.out_dtype == ScalarType::Float8_e4m3fn);
             assert(x.scale_policy == ScalePolicy::PER_BLOCK_MX);
@@ -238,8 +234,8 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
 
         {
             auto r = reg.by_name(names::kFp8E5m2F32AccumMxOrd);
-            assert(r.has_value());
-            const auto& x = **r;
+            RecipeRegistry::RecipeRef const recipe = std::move(r).expect("the starter is present");
+            const auto& x = *recipe;
             assert(x.out_dtype == ScalarType::Float8_e5m2);
             assert(x.scale_policy == ScalePolicy::PER_BLOCK_MX);
             assert(x.determinism == ReductionDeterminism::ORDERED);
@@ -254,12 +250,14 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap()};
         RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
-        std::unordered_set<std::string_view> seen;
+        // Each name matches exactly one entry: its own.  O(STARTER_COUNT^2).
         for (const auto& e : entries_view(reg)) {
-            const auto [it, inserted] = seen.insert(e.name);
-            assert(inserted && "starter recipe name collision");
+            std::size_t matches = 0;
+            for (const auto& other : entries_view(reg)) {
+                matches += other.name == e.name ? 1u : 0u;
+            }
+            assert(matches == 1 && "starter recipe name collision");
         }
-        assert(seen.size() == RecipeRegistry::STARTER_COUNT);
     }
 
     // Interning is by content, so two starter specifications that ended
@@ -274,7 +272,7 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
         std::unordered_set<uint64_t> hashes;
 
         for (const auto& e : entries_view(reg)) {
-            const auto [it_p, inserted_p] = ptrs.insert(e.recipe);
+            const auto [it_p, inserted_p] = ptrs.insert(&*e.recipe);
             assert(inserted_p && "two starter recipes intern to the same pointer");
             const auto [it_h, inserted_h] = hashes.insert(e.recipe->hash.raw());
             assert(inserted_h && "two starter recipes share a Family-A hash");
@@ -297,8 +295,8 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
         RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         struct Golden {
-            std::string_view name;
-            uint64_t expected;
+            ::fixy::TextView name{};
+            uint64_t expected = 0;
         };
         const Golden goldens[] = {
             {names::kF32Strict, 0xce0eb0cd5c376b79ULL},
@@ -313,13 +311,10 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
 
         bool any_drift = false;
         for (auto g : goldens) {
-            auto r = reg.by_name(g.name);
-            assert(r.has_value());
-            const uint64_t actual = (*r)->hash.raw();
+            const uint64_t actual = reg.by_name(g.name).expect("each golden names a starter")->hash.raw();
             if (actual != g.expected) {
-                std::fprintf(stderr,
-                             "recipe-hash golden DRIFT for %.*s: expected 0x%016" PRIx64 ", got 0x%016" PRIx64 "\n",
-                             int(g.name.size()), g.name.data(), g.expected, actual);
+                ::fixy::report(::fixy::Sink::Err, "recipe-hash golden DRIFT for {}: expected {}, got {}\n", g.name,
+                               g.expected, actual);
                 any_drift = true;
             }
         }
@@ -343,9 +338,8 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
             // Re-intern the starter spec's fields → must hit the canonical
             // pointer already stored by the registry.
             const auto* via_pool = pool.intern(alloc_cap(), spec.fields);
-            auto via_reg = reg.by_name(spec.name);
-            assert(via_reg.has_value());
-            assert(via_pool == *via_reg);
+            RecipeRegistry::RecipeRef const via_reg = reg.by_name(spec.name).expect("each starter is present");
+            assert(via_pool == &*via_reg);
         }
         // An unchanged pool size is what proves every intern was a hit.
         assert(pool.size() == RecipeRegistry::STARTER_COUNT);
@@ -359,13 +353,11 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
         RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         for (const auto& entry : entries_view(reg)) {
-            auto via_hash = reg.by_hash(entry.recipe->hash);
-            assert(via_hash.has_value());
-            assert(*via_hash == entry.recipe);
+            RecipeRegistry::RecipeRef const via_hash = reg.by_hash(entry.recipe->hash).expect("each hash resolves");
+            assert(::fixy::same_object(via_hash, entry.recipe));
 
-            auto via_name = reg.by_name(entry.name);
-            assert(via_name.has_value());
-            assert(*via_hash == *via_name);
+            RecipeRegistry::RecipeRef const via_name = reg.by_name(entry.name).expect("each name resolves");
+            assert(::fixy::same_object(via_hash, via_name));
         }
 
         // The two misses report different errors on purpose.  A name miss
@@ -379,16 +371,13 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
             crucible::RecipeHash{0xFFFFFFFFFFFFFFFEULL},
         };
         for (auto h : bogus_hashes) {
-            auto r = reg.by_hash(h);
-            assert(!r.has_value());
-            assert(r.error() == RecipeError::HashNotFound);
+            assert(reg.by_hash(h).err().expect("a bogus hash misses") == RecipeError::HashNotFound);
         }
 
         // The sentinel value marks the end of a region, so a real recipe
         // resolving to it would make a region terminate early.
-        auto sentinel_miss = reg.by_hash(crucible::RecipeHash::sentinel());
-        assert(!sentinel_miss.has_value());
-        assert(sentinel_miss.error() == RecipeError::HashNotFound);
+        assert(reg.by_hash(crucible::RecipeHash::sentinel()).err().expect("the sentinel misses")
+               == RecipeError::HashNotFound);
     }
 
     // Identity is per pool and equality is by content.  Two registries
@@ -402,12 +391,11 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
         RecipeRegistry reg_a{::fixy::mint_borrowed_ref(pool_a), alloc_cap()};
         RecipeRegistry reg_b{::fixy::mint_borrowed_ref(pool_b), alloc_cap()};
 
-        auto a = reg_a.by_name(names::kF16F32AccumTc);
-        auto b = reg_b.by_name(names::kF16F32AccumTc);
-        assert(a.has_value() && b.has_value());
-        assert(*a != *b);
-        assert((*a)->hash == (*b)->hash);
-        assert((*a)->out_dtype == (*b)->out_dtype);
+        RecipeRegistry::RecipeRef const a = reg_a.by_name(names::kF16F32AccumTc).expect("the starter is present");
+        RecipeRegistry::RecipeRef const b = reg_b.by_name(names::kF16F32AccumTc).expect("the starter is present");
+        assert(!::fixy::same_object(a, b));
+        assert(a->hash == b->hash);
+        assert(a->out_dtype == b->out_dtype);
     }
 
     crucible::test::pass("test_recipe_registry: all tests passed\n");

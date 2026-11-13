@@ -47,10 +47,23 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
 
 [[nodiscard]] inline auto entries_view(const RecipeRegistry& reg) noexcept { return reg.entries().value(); }
 
-// Two specs are the same when the pointer and both axes agree.
-template <class T>
-[[nodiscard]] constexpr bool same_spec(RecipeSpec<T> const& lhs, RecipeSpec<T> const& rhs) noexcept {
-    return lhs.peek() == rhs.peek() && lhs.grade() == rhs.grade();
+using RecipeRef = RecipeRegistry::RecipeRef;
+
+// Two specs are the same when the recipe and both axes agree.
+[[nodiscard]] bool same_spec(RecipeSpec<RecipeRef> const& lhs, RecipeSpec<RecipeRef> const& rhs) noexcept {
+    return ::fixy::same_object(lhs.peek(), rhs.peek()) && lhs.grade() == rhs.grade();
+}
+
+// The value of a lookup that hits.  A miss ends the test.
+template <class Found>
+[[nodiscard]] auto hit(Found found) noexcept {
+    return std::move(found).expect("the lookup hits");
+}
+
+// The error of a lookup that misses.  A hit ends the test.
+template <class Found>
+[[nodiscard]] RecipeError miss(Found found) noexcept {
+    return std::move(found).err().expect("the lookup misses");
 }
 
 }  // namespace
@@ -83,55 +96,44 @@ template <class T>
     RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
     {
-        auto spec = reg.by_name_spec(names::kF32Strict);
-        assert(spec.has_value());
-        static_assert(std::is_same_v<decltype(spec)::value_type, RecipeSpec<const NumericalRecipe*>>);
-        assert(spec->peek() != nullptr);
-        assert(spec->peek()->determinism == ReductionDeterminism::BITEXACT_STRICT);
-        assert(spec->peek()->reduction_algo == ReductionAlgo::PAIRWISE);
-        assert(::fixy::tolerance_of(*spec) == Tolerance::BITEXACT);
-        assert(::fixy::recipe_family_of(*spec) == RecipeFamily::Pairwise);
+        auto found = reg.by_name_spec(names::kF32Strict);
+        static_assert(std::is_same_v<decltype(found), ::fixy::Result<RecipeSpec<RecipeRef>, RecipeError>>);
+        auto const spec = hit(std::move(found));
+        assert(spec.peek()->determinism == ReductionDeterminism::BITEXACT_STRICT);
+        assert(spec.peek()->reduction_algo == ReductionAlgo::PAIRWISE);
+        assert(::fixy::tolerance_of(spec) == Tolerance::BITEXACT);
+        assert(::fixy::recipe_family_of(spec) == RecipeFamily::Pairwise);
     }
 
     // The lookup pairs the recipe with its two axes and transforms neither, so
     // both must equal what the recipe yields on its own.
     {
         for (const auto& entry : entries_view(reg)) {
-            auto spec = reg.by_name_spec(entry.name);
-            assert(spec.has_value());
-            assert(spec->peek() == entry.recipe);
-            assert(::fixy::tolerance_of(*spec) == tolerance_of(*entry.recipe));
-            assert(::fixy::recipe_family_of(*spec) == recipe_family_of(*entry.recipe));
+            auto const spec = hit(reg.by_name_spec(entry.name));
+            assert(::fixy::same_object(spec.peek(), entry.recipe));
+            assert(::fixy::tolerance_of(spec) == tolerance_of(*entry.recipe));
+            assert(::fixy::recipe_family_of(spec) == recipe_family_of(*entry.recipe));
         }
     }
 
     // The spec is an additive overlay on the plain lookup, so an unknown key
     // surfaces the lookup error before either axis is examined.
-    {
-        auto spec = reg.by_name_spec("nonexistent_recipe");
-        assert(!spec.has_value());
-        assert(spec.error() == RecipeError::NameNotFound);
-    }
+    { assert(miss(reg.by_name_spec("nonexistent_recipe")) == RecipeError::NameNotFound); }
 
     // FP16 tensor-core fragments give different bits on different vendors, so
     // this recipe is UNORDERED and lands at the bottom of the lattice.
     {
-        auto base = reg.by_name(names::kF16F32AccumTc);
-        assert(base.has_value());
-        const RecipeHash hash = (*base)->hash;
+        const RecipeHash hash = hit(reg.by_name(names::kF16F32AccumTc))->hash;
 
-        auto spec = reg.by_hash_spec(hash);
-        assert(spec.has_value());
-        assert(spec->peek()->hash == hash);
-        assert(::fixy::tolerance_of(*spec) == Tolerance::RELAXED);
-        assert(::fixy::recipe_family_of(*spec) == RecipeFamily::Pairwise);
+        auto const spec = hit(reg.by_hash_spec(hash));
+        assert(spec.peek()->hash == hash);
+        assert(::fixy::tolerance_of(spec) == Tolerance::RELAXED);
+        assert(::fixy::recipe_family_of(spec) == RecipeFamily::Pairwise);
     }
 
     {
         const RecipeHash bogus{0xFEEDFACEDEADBEEFULL};
-        auto spec = reg.by_hash_spec(bogus);
-        assert(!spec.has_value());
-        assert(spec.error() == RecipeError::HashNotFound);
+        assert(miss(reg.by_hash_spec(bogus)) == RecipeError::HashNotFound);
     }
 
     // A recovery path resolves by hash while a live registry resolves by name.
@@ -139,20 +141,18 @@ template <class T>
     // different set of requests.
     {
         for (const auto& entry : entries_view(reg)) {
-            auto by_n = reg.by_name_spec(entry.name);
-            auto by_h = reg.by_hash_spec(entry.recipe->hash);
-            assert(by_n.has_value());
-            assert(by_h.has_value());
-            assert(by_n->peek() == by_h->peek());
-            assert(::fixy::tolerance_of(*by_n) == ::fixy::tolerance_of(*by_h));
-            assert(::fixy::recipe_family_of(*by_n) == ::fixy::recipe_family_of(*by_h));
-            assert(same_spec(*by_n, *by_h));
+            auto const by_n = hit(reg.by_name_spec(entry.name));
+            auto const by_h = hit(reg.by_hash_spec(entry.recipe->hash));
+            assert(::fixy::same_object(by_n.peek(), by_h.peek()));
+            assert(::fixy::tolerance_of(by_n) == ::fixy::tolerance_of(by_h));
+            assert(::fixy::recipe_family_of(by_n) == ::fixy::recipe_family_of(by_h));
+            assert(same_spec(by_n, by_h));
         }
     }
 
     // A request is admitted when it sits at or below the spec on both axes.
     {
-        auto spec = reg.by_name_spec(names::kF32Strict).value();
+        auto spec = hit(reg.by_name_spec(names::kF32Strict));
 
         // Exact match on both axes.
         assert(::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::Pairwise));
@@ -168,7 +168,7 @@ template <class T>
     // The named families are siblings, incomparable in the partial order, so
     // agreeing on tolerance is not enough to be admitted.
     {
-        auto spec = reg.by_name_spec(names::kF32Strict).value();
+        auto spec = hit(reg.by_name_spec(names::kF32Strict));
         assert(::fixy::tolerance_of(spec) == Tolerance::BITEXACT);
         assert(::fixy::recipe_family_of(spec) == RecipeFamily::Pairwise);
 
@@ -180,7 +180,7 @@ template <class T>
     // The mirror case: a relaxed producer sits below a bit-exact request on the
     // tolerance chain, so agreeing on family is not enough either.
     {
-        auto spec = reg.by_name_spec(names::kF32Ordered).value();
+        auto spec = hit(reg.by_name_spec(names::kF32Ordered));
         assert(::fixy::tolerance_of(spec) == Tolerance::RELAXED);
         assert(::fixy::recipe_family_of(spec) == RecipeFamily::Pairwise);
 
@@ -208,8 +208,8 @@ template <class T>
 
     // The join is idempotent on both axes.
     {
-        auto a = reg.by_name_spec(names::kF32Strict).value();
-        auto b = reg.by_name_spec(names::kF32Strict).value();
+        auto a = hit(reg.by_name_spec(names::kF32Strict));
+        auto b = hit(reg.by_name_spec(names::kF32Strict));
         auto c = a.compose(b);
         assert(::fixy::tolerance_of(c) == Tolerance::BITEXACT);
         assert(::fixy::recipe_family_of(c) == RecipeFamily::Pairwise);
@@ -221,8 +221,8 @@ template <class T>
     // or the wildcard can claim more than either input.  Every starter recipe
     // is Pairwise, and the test synthesizes the second spec.
     {
-        auto a = reg.by_name_spec(names::kF32Strict).value();
-        RecipeSpec<const NumericalRecipe*> synth_kahan =
+        auto a = hit(reg.by_name_spec(names::kF32Strict));
+        RecipeSpec<RecipeRef> synth_kahan =
             ::fixy::mint_recipe_spec(a.peek(), Tolerance::ULP_FP16, RecipeFamily::Kahan);
 
         auto composed = a.compose(synth_kahan);
@@ -235,38 +235,36 @@ template <class T>
     // Both axes are runtime data, so neither can collapse away. One byte per
     // axis rides alongside the pointer.
     {
-        using SpecPtr = RecipeSpec<const NumericalRecipe*>;
-        static_assert(sizeof(SpecPtr) >= sizeof(const NumericalRecipe*) + 2);
+        using SpecPtr = RecipeSpec<RecipeRef>;
+        static_assert(sizeof(SpecPtr) >= sizeof(RecipeRef) + 2);
         static_assert(!std::is_same_v<SpecPtr, RecipeSpec<int>>);
     }
 
     // The spec is a passive overlay, so it carries the interned pointer itself
     // rather than a copy of the recipe.
     {
-        auto base = reg.by_name(names::kF32Strict);
-        assert(base.has_value());
-        const NumericalRecipe* expected_ptr = *base;
+        RecipeRef const expected_ref = hit(reg.by_name(names::kF32Strict));
 
-        auto spec = reg.by_name_spec(names::kF32Strict).value();
-        assert(spec.peek() == expected_ptr);
+        auto spec = hit(reg.by_name_spec(names::kF32Strict));
+        assert(::fixy::same_object(spec.peek(), expected_ref));
 
-        const NumericalRecipe* moved = std::move(spec).consume();
-        assert(moved == expected_ptr);
+        RecipeRef const moved = std::move(spec).consume();
+        assert(::fixy::same_object(moved, expected_ref));
     }
 
     // Two specs are the same when the pointer and both axes agree. Repeated
     // lookups that carried any hidden state would fail here, which replay
     // depends on.
     {
-        auto s1 = reg.by_name_spec(names::kBf16F32AccumTc).value();
-        auto s2 = reg.by_name_spec(names::kBf16F32AccumTc).value();
-        auto s3 = reg.by_hash_spec(s1.peek()->hash).value();
+        auto s1 = hit(reg.by_name_spec(names::kBf16F32AccumTc));
+        auto s2 = hit(reg.by_name_spec(names::kBf16F32AccumTc));
+        auto s3 = hit(reg.by_hash_spec(s1.peek()->hash));
         assert(same_spec(s1, s2));
         assert(same_spec(s1, s3));
 
         // A different recipe must compare unequal, or the comparison would be
         // vacuous.
-        auto s4 = reg.by_name_spec(names::kF32Strict).value();
+        auto s4 = hit(reg.by_name_spec(names::kF32Strict));
         assert(!same_spec(s1, s4));
     }
 
@@ -287,7 +285,7 @@ template <class T>
 
         int total_decisions = 0;
         for (const auto& entry : entries_view(reg)) {
-            auto spec = reg.by_name_spec(entry.name).value();
+            auto spec = hit(reg.by_name_spec(entry.name));
             const auto spec_tier = ::fixy::tolerance_of(spec);
             const auto spec_fam = ::fixy::recipe_family_of(spec);
             for (auto req_tier : kTiers) {
@@ -339,15 +337,13 @@ template <class T>
             RecipeFamily::BlockStable,
         };
 
-        auto base_recipe = reg.by_name_spec(names::kF32Strict).value().peek();
+        auto base_recipe = hit(reg.by_name_spec(names::kF32Strict)).peek();
 
         int join_count = 0;
         for (size_t i = 0; i < 4; ++i) {
             for (size_t j = i + 1; j < 4; ++j) {
-                RecipeSpec<const NumericalRecipe*> spec_i =
-                    ::fixy::mint_recipe_spec<const NumericalRecipe*>(base_recipe, Tolerance::ULP_FP16, kFamilies[i]);
-                RecipeSpec<const NumericalRecipe*> spec_j =
-                    ::fixy::mint_recipe_spec<const NumericalRecipe*>(base_recipe, Tolerance::ULP_FP16, kFamilies[j]);
+                RecipeSpec<RecipeRef> spec_i = ::fixy::mint_recipe_spec(base_recipe, Tolerance::ULP_FP16, kFamilies[i]);
+                RecipeSpec<RecipeRef> spec_j = ::fixy::mint_recipe_spec(base_recipe, Tolerance::ULP_FP16, kFamilies[j]);
                 auto composed = spec_i.compose(spec_j);
                 assert(::fixy::tolerance_of(composed) == Tolerance::ULP_FP16);
                 assert(::fixy::recipe_family_of(composed) == RecipeFamily::None);
@@ -398,18 +394,16 @@ template <class T>
             RecipeFamily::Any,
         };
 
-        std::array<RecipeHash, RecipeRegistry::STARTER_COUNT> persisted{};
-        for (std::size_t i = 0; i < RecipeRegistry::STARTER_COUNT; ++i) {
-            persisted[i] = entries_view(reg)[i].recipe->hash;
-        }
-
+        // The persisted hash of each entry, and the second registry that
+        // resolves it.
         BumpArena arena2{};
         RecipePool pool2{::fixy::mint_borrowed_ref(arena2), init_cap()};
         RecipeRegistry reg2{::fixy::mint_borrowed_ref(pool2), alloc_cap()};
 
-        for (std::size_t i = 0; i < RecipeRegistry::STARTER_COUNT; ++i) {
-            auto live_spec = reg.by_name_spec(entries_view(reg)[i].name).value();
-            auto recovered = reg2.by_hash_spec(persisted[i]).value();
+        for (const auto& entry : entries_view(reg)) {
+            const RecipeHash persisted = entry.recipe->hash;
+            auto const live_spec = hit(reg.by_name_spec(entry.name));
+            auto const recovered = hit(reg2.by_hash_spec(persisted));
 
             assert(::fixy::tolerance_of(live_spec) == ::fixy::tolerance_of(recovered));
             assert(::fixy::recipe_family_of(live_spec) == ::fixy::recipe_family_of(recovered));
@@ -422,7 +416,7 @@ template <class T>
         }
     }
 
-    // The registry only ever hands out a raw pointer, which copies freely. A
+    // The registry only ever hands out a Ref, which copies freely. A
     // move-only carrier is exercised here so the admission and join surface
     // stays honest for a payload that cannot be copied.
     {
@@ -459,7 +453,7 @@ template <class T>
     // pinning no family at all. An Any request sits at the top and is below
     // nothing but itself, so only a wildcard spec admits it.
     {
-        auto strict_spec = reg.by_name_spec(names::kF32Strict).value();
+        auto strict_spec = hit(reg.by_name_spec(names::kF32Strict));
         assert(::fixy::recipe_family_of(strict_spec) == RecipeFamily::Pairwise);
 
         assert(::fixy::admits(strict_spec, Tolerance::BITEXACT, RecipeFamily::None));
@@ -468,7 +462,7 @@ template <class T>
         int none_admits = 0;
         int any_rejects = 0;
         for (const auto& entry : entries_view(reg)) {
-            auto spec = reg.by_name_spec(entry.name).value();
+            auto spec = hit(reg.by_name_spec(entry.name));
             // The spec's own tier is the tightest one it admits, so probing at that
             // tier isolates the family axis.
             if (::fixy::admits(spec, ::fixy::tolerance_of(spec), RecipeFamily::None)) ++none_admits;

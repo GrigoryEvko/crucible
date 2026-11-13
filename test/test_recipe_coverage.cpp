@@ -325,7 +325,7 @@ struct CoverageCell {
     ScalarType out_dtype;
     ReductionDeterminism det;
     bool covered;
-    std::string_view starter_name;  // empty if !covered
+    ::fixy::TextView starter_name{};  // empty if !covered
     std::string_view gap_reason;  // empty if covered; rationale otherwise
 };
 
@@ -408,10 +408,10 @@ int main() {
 
         for (const auto& cell : kCoverageMatrix) {
             if (cell.covered) {
-                auto rec = registry.by_name(cell.starter_name);
-                assert(rec.has_value() && "claimed-covered starter is missing");
-                assert((*rec)->out_dtype == cell.out_dtype);
-                assert((*rec)->determinism == cell.det);
+                RecipeRegistry::RecipeRef const rec =
+                    registry.by_name(cell.starter_name).expect("a claimed-covered starter is in the registry");
+                assert(rec->out_dtype == cell.out_dtype);
+                assert(rec->determinism == cell.det);
             } else {
                 // A recipe added for a pair marked unserved should be caught here.
                 // The match below does nothing, because two starters differing only

@@ -5,6 +5,7 @@
 #include <crucible/Types.h>
 #include <fixy/Bands.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Brand.h>
@@ -12,12 +13,9 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
-#include <span>
-#include <string_view>
+#include <utility>
 
 namespace crucible {
 
@@ -117,16 +115,19 @@ public:
 
     static_assert(::fixy::IsBorrowedRef<PoolBorrow>);
 
+    static constexpr std::size_t STARTER_COUNT = 8;
+
+    // A recipe in the arena of the pool.  The pool outlives the registry.
+    using RecipeRef = ::fixy::Ref<NumericalRecipe const>;
+
     // The name points into read-only storage and the recipe into the pool's
     // arena, so neither is owned here and both outlive the registry.
     struct Entry {
-        std::string_view name;
-        const NumericalRecipe* recipe = nullptr;
+        ::fixy::TextView name{};
+        RecipeRef recipe;
     };
 
-    using Entries = ::fixy::Tagged<std::span<const Entry>, ::fixy::tags::source::JsonRegistry>;
-
-    static constexpr std::size_t STARTER_COUNT = 8;
+    using Entries = ::fixy::Tagged<::fixy::View<Entry const, STARTER_COUNT>, ::fixy::tags::source::JsonRegistry>;
 
     // The pool stays owned by the caller and must outlive the registry: after
     // construction the registry holds only non-owning pointers into it, and
@@ -152,8 +153,7 @@ public:
     // of cache lines, so a linear scan beats hashing the name.
     template <typename CallerRow = pure_projection_row>
         requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
-    [[nodiscard, gnu::pure]] std::expected<const NumericalRecipe*, RecipeError>
-    by_name(std::string_view name) const noexcept;
+    [[nodiscard, gnu::pure]] ::fixy::Result<RecipeRef, RecipeError> by_name(::fixy::TextView name) const noexcept;
 
     // Resolves a hash recovered from persisted state back to the recipe in
     // this process. Substituting a default on a miss is wrong: it silently
@@ -161,7 +161,7 @@ public:
     // and say which recipe could not be resolved.
     template <typename CallerRow = pure_projection_row>
         requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
-    [[nodiscard, gnu::pure]] std::expected<const NumericalRecipe*, RecipeError> by_hash(RecipeHash hash) const noexcept;
+    [[nodiscard, gnu::pure]] ::fixy::Result<RecipeRef, RecipeError> by_hash(RecipeHash hash) const noexcept;
 
     // Order matches the starter table's declaration order and is stable for
     // the lifetime of the registry.
@@ -172,8 +172,7 @@ public:
     template <typename CallerRow = pure_projection_row>
         requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
     [[nodiscard, gnu::pure]] Entries entries() const& noexcept {
-        return ::fixy::mint_tagged<::fixy::tags::source::JsonRegistry>(
-            std::span<const Entry>{entries_.data(), STARTER_COUNT});
+        return ::fixy::mint_tagged<::fixy::tags::source::JsonRegistry>(entries_.view());
     }
 
     template <typename CallerRow = pure_projection_row>
@@ -195,30 +194,18 @@ public:
 
     template <::fixy::Tolerance T, typename CallerRow = pure_projection_row>
         requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
-    [[nodiscard, gnu::pure]]
-    std::expected<::fixy::NumericalTier<T, const NumericalRecipe*>, RecipeError>
-    by_name_pinned(std::string_view name) const noexcept {
-        auto base = by_name<CallerRow>(name);
-        if (!base) return std::unexpected(base.error());
-        const NumericalRecipe* recipe = *base;
-        if (!::fixy::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
-            return std::unexpected(RecipeError::ToleranceMismatch);
-        }
-        return ::fixy::mint_band<::fixy::NumericalTier<T, const NumericalRecipe*>>(recipe);
+    [[nodiscard, gnu::pure]] ::fixy::Result<::fixy::NumericalTier<T, RecipeRef>, RecipeError>
+    by_name_pinned(::fixy::TextView name) const noexcept {
+        return found_or_<::fixy::Result<::fixy::NumericalTier<T, RecipeRef>, RecipeError>>(
+            find_name_(name), RecipeError::NameNotFound, [](RecipeRef recipe) noexcept { return pin_<T>(recipe); });
     }
 
     template <::fixy::Tolerance T, typename CallerRow = pure_projection_row>
         requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
-    [[nodiscard, gnu::pure]]
-    std::expected<::fixy::NumericalTier<T, const NumericalRecipe*>, RecipeError>
+    [[nodiscard, gnu::pure]] ::fixy::Result<::fixy::NumericalTier<T, RecipeRef>, RecipeError>
     by_hash_pinned(RecipeHash hash) const noexcept {
-        auto base = by_hash<CallerRow>(hash);
-        if (!base) return std::unexpected(base.error());
-        const NumericalRecipe* recipe = *base;
-        if (!::fixy::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
-            return std::unexpected(RecipeError::ToleranceMismatch);
-        }
-        return ::fixy::mint_band<::fixy::NumericalTier<T, const NumericalRecipe*>>(recipe);
+        return found_or_<::fixy::Result<::fixy::NumericalTier<T, RecipeRef>, RecipeError>>(
+            find_hash_(hash), RecipeError::HashNotFound, [](RecipeRef recipe) noexcept { return pin_<T>(recipe); });
     }
 
     // Lookups that carry both axes as runtime state instead of pinning one in
@@ -229,24 +216,18 @@ public:
 
     template <typename CallerRow = pure_projection_row>
         requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
-    [[nodiscard, gnu::pure]]
-    std::expected<::fixy::RecipeSpec<const NumericalRecipe*>, RecipeError>
-    by_name_spec(std::string_view name) const noexcept {
-        auto base = by_name<CallerRow>(name);
-        if (!base) return std::unexpected(base.error());
-        const NumericalRecipe* recipe = *base;
-        return ::fixy::mint_recipe_spec(recipe, tolerance_of(*recipe), recipe_family_of(*recipe));
+    [[nodiscard, gnu::pure]] ::fixy::Result<::fixy::RecipeSpec<RecipeRef>, RecipeError>
+    by_name_spec(::fixy::TextView name) const noexcept {
+        return found_or_<::fixy::Result<::fixy::RecipeSpec<RecipeRef>, RecipeError>>(
+            find_name_(name), RecipeError::NameNotFound, [](RecipeRef recipe) noexcept { return spec_(recipe); });
     }
 
     template <typename CallerRow = pure_projection_row>
         requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
-    [[nodiscard, gnu::pure]]
-    std::expected<::fixy::RecipeSpec<const NumericalRecipe*>, RecipeError>
+    [[nodiscard, gnu::pure]] ::fixy::Result<::fixy::RecipeSpec<RecipeRef>, RecipeError>
     by_hash_spec(RecipeHash hash) const noexcept {
-        auto base = by_hash<CallerRow>(hash);
-        if (!base) return std::unexpected(base.error());
-        const NumericalRecipe* recipe = *base;
-        return ::fixy::mint_recipe_spec(recipe, tolerance_of(*recipe), recipe_family_of(*recipe));
+        return found_or_<::fixy::Result<::fixy::RecipeSpec<RecipeRef>, RecipeError>>(
+            find_hash_(hash), RecipeError::HashNotFound, [](RecipeRef recipe) noexcept { return spec_(recipe); });
     }
 
 private:
@@ -256,7 +237,54 @@ private:
 
     [[gnu::cold]] RecipeRegistry(erased_door_, PoolBorrow pool, ::foundation::effects::Alloc a) noexcept;
 
-    std::array<Entry, STARTER_COUNT> entries_{};
+    // The entry of the starter recipe at position I: its name, and the
+    // recipe that the pool interns from its fields.
+    template <std::size_t I>
+    [[nodiscard]] static Entry intern_starter_(PoolBorrow pool, ::foundation::effects::Alloc a) noexcept;
+
+    using Position = ::fixy::Index<STARTER_COUNT>;
+
+    // The position of the entry with the name, or no value.  O(STARTER_COUNT).
+    [[nodiscard]] ::fixy::Option<Position> find_name_(::fixy::TextView name) const noexcept {
+        for (auto const [position, entry] : entries_.enumerate()) {
+            if (entry->name == name) return ::fixy::some(position);
+        }
+        return ::fixy::none;
+    }
+
+    // The position of the entry whose recipe has the hash, or no value.
+    // O(STARTER_COUNT).
+    [[nodiscard]] ::fixy::Option<Position> find_hash_(RecipeHash hash) const noexcept {
+        for (auto const [position, entry] : entries_.enumerate()) {
+            if (entry->recipe->hash == hash) return ::fixy::some(position);
+        }
+        return ::fixy::none;
+    }
+
+    // make(recipe) for the recipe at the found position, or the error miss.
+    template <class Found, class Make>
+    [[nodiscard]] Found found_or_(::fixy::Option<Position> found, RecipeError miss, Make make) const noexcept {
+        return found.match([&](Position position) noexcept -> Found { return make(entries_.at(position).recipe); },
+                           [miss]() noexcept -> Found { return ::fixy::err(miss); });
+    }
+
+    // The recipe at the tier T, or ToleranceMismatch when the recipe
+    // promises less than T.
+    template <::fixy::Tolerance T>
+    [[nodiscard]] static ::fixy::Result<::fixy::NumericalTier<T, RecipeRef>, RecipeError>
+    pin_(RecipeRef recipe) noexcept {
+        if (!::fixy::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
+            return ::fixy::err(RecipeError::ToleranceMismatch);
+        }
+        return ::fixy::mint_band<::fixy::NumericalTier<T, RecipeRef>>(recipe);
+    }
+
+    // The recipe with its tier and its family.
+    [[nodiscard]] static ::fixy::RecipeSpec<RecipeRef> spec_(RecipeRef recipe) noexcept {
+        return ::fixy::mint_recipe_spec(recipe, tolerance_of(*recipe), recipe_family_of(*recipe));
+    }
+
+    ::foundation::core::FixedArray<Entry, STARTER_COUNT> entries_;
 };
 
 // These strings are persisted by anything that pins a recipe by name, so
@@ -265,21 +293,21 @@ private:
 // suffix tc names the tensor-core path, whose tier is UNORDERED.
 
 namespace recipe_names {
-inline constexpr std::string_view kF32Strict = "f32_strict";
-inline constexpr std::string_view kF32Ordered = "f32_ordered";
-inline constexpr std::string_view kF16F32AccumTc = "f16_f32accum_tc";
-inline constexpr std::string_view kF16F32AccumOrdered = "f16_f32accum_ordered";
-inline constexpr std::string_view kBf16F32AccumTc = "bf16_f32accum_tc";
-inline constexpr std::string_view kBf16F32AccumOrdered = "bf16_f32accum_ordered";
-inline constexpr std::string_view kFp8E4m3F32AccumMxOrd = "fp8e4m3_f32accum_mx_ordered";
-inline constexpr std::string_view kFp8E5m2F32AccumMxOrd = "fp8e5m2_f32accum_mx_ordered";
+inline constexpr ::fixy::TextView kF32Strict = "f32_strict";
+inline constexpr ::fixy::TextView kF32Ordered = "f32_ordered";
+inline constexpr ::fixy::TextView kF16F32AccumTc = "f16_f32accum_tc";
+inline constexpr ::fixy::TextView kF16F32AccumOrdered = "f16_f32accum_ordered";
+inline constexpr ::fixy::TextView kBf16F32AccumTc = "bf16_f32accum_tc";
+inline constexpr ::fixy::TextView kBf16F32AccumOrdered = "bf16_f32accum_ordered";
+inline constexpr ::fixy::TextView kFp8E4m3F32AccumMxOrd = "fp8e4m3_f32accum_mx_ordered";
+inline constexpr ::fixy::TextView kFp8E5m2F32AccumMxOrd = "fp8e5m2_f32accum_mx_ordered";
 }  // namespace recipe_names
 
 namespace detail_recipe_registry {
 
 struct StarterSpec {
-    std::string_view name;
-    NumericalRecipe fields;
+    ::fixy::TextView name{};
+    NumericalRecipe fields{};
 };
 
 // A cross-section of the determinism tiers against the common storage dtypes.
@@ -289,7 +317,7 @@ struct StarterSpec {
 // truncates and rounds the fused sum in a different way.  So two chips give
 // different bits for the same inputs, with no bound in units in the last
 // place, and the tier of the two recipes is UNORDERED.
-inline constexpr std::array<StarterSpec, RecipeRegistry::STARTER_COUNT> kStarterRecipes = {{
+inline constexpr ::foundation::core::FixedArray<StarterSpec, RecipeRegistry::STARTER_COUNT> kStarterRecipes{
     {recipe_names::kF32Strict, hashed(NumericalRecipe{
                                    .accum_dtype = ScalarType::Float,
                                    .out_dtype = ScalarType::Float,
@@ -383,41 +411,38 @@ inline constexpr std::array<StarterSpec, RecipeRegistry::STARTER_COUNT> kStarter
                                               .flags = {},
                                               .hash = {},
                                           })},
-}};
+};
 
 }  // namespace detail_recipe_registry
 
-inline RecipeRegistry::RecipeRegistry(erased_door_, PoolBorrow pool, ::foundation::effects::Alloc a) noexcept {
-    for (std::size_t i = 0; i < STARTER_COUNT; ++i) {
-        const auto& spec = detail_recipe_registry::kStarterRecipes[i];
-        entries_[i].name = spec.name;
-        entries_[i].recipe = pool->intern(a, spec.fields);
-    }
+template <std::size_t I>
+inline RecipeRegistry::Entry RecipeRegistry::intern_starter_(PoolBorrow pool, ::foundation::effects::Alloc a) noexcept {
+    detail_recipe_registry::StarterSpec const& spec = detail_recipe_registry::kStarterRecipes.at(::fixy::index<I>());
+    return Entry{.name = spec.name, .recipe = ::fixy::to(*pool->intern(a, spec.fields))};
+}
+
+// A braced list runs its elements in order, so the pool interns the starter
+// recipes in the order of the table.
+inline RecipeRegistry::RecipeRegistry(erased_door_, PoolBorrow pool, ::foundation::effects::Alloc a) noexcept
+    : entries_{intern_starter_<0>(pool, a), intern_starter_<1>(pool, a), intern_starter_<2>(pool, a),
+               intern_starter_<3>(pool, a), intern_starter_<4>(pool, a), intern_starter_<5>(pool, a),
+               intern_starter_<6>(pool, a), intern_starter_<7>(pool, a)} {}
+
+template <typename CallerRow>
+    requires ::foundation::effects::Subrow<CallerRow, RecipeRegistry::pure_projection_row>
+inline ::fixy::Result<RecipeRegistry::RecipeRef, RecipeError>
+RecipeRegistry::by_name(::fixy::TextView name) const noexcept {
+    return found_or_<::fixy::Result<RecipeRef, RecipeError>>(find_name_(name), RecipeError::NameNotFound,
+                                                             [](RecipeRef recipe) noexcept { return recipe; });
 }
 
 template <typename CallerRow>
     requires ::foundation::effects::Subrow<CallerRow, RecipeRegistry::pure_projection_row>
-inline std::expected<const NumericalRecipe*, RecipeError>
-RecipeRegistry::by_name(std::string_view name) const noexcept {
-    for (const auto& e : entries_) {
-        if (e.name == name) {
-            return e.recipe;
-        }
-    }
-    return std::unexpected(RecipeError::NameNotFound);
-}
-
-template <typename CallerRow>
-    requires ::foundation::effects::Subrow<CallerRow, RecipeRegistry::pure_projection_row>
-inline std::expected<const NumericalRecipe*, RecipeError> RecipeRegistry::by_hash(RecipeHash hash) const noexcept {
+inline ::fixy::Result<RecipeRegistry::RecipeRef, RecipeError> RecipeRegistry::by_hash(RecipeHash hash) const noexcept {
     // Comparing the stored hash is the identity the caller means, because
     // interning is what wrote it and it is authoritative from then on.
-    for (const auto& e : entries_) {
-        if (e.recipe->hash == hash) {
-            return e.recipe;
-        }
-    }
-    return std::unexpected(RecipeError::HashNotFound);
+    return found_or_<::fixy::Result<RecipeRef, RecipeError>>(find_hash_(hash), RecipeError::HashNotFound,
+                                                             [](RecipeRef recipe) noexcept { return recipe; });
 }
 
 }  // namespace crucible

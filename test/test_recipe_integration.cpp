@@ -60,17 +60,16 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         RecipeRegistry reg_a{::fixy::mint_borrowed_ref(pool_a), alloc_cap()};
         RecipeRegistry reg_b{::fixy::mint_borrowed_ref(pool_b), alloc_cap()};
 
-        auto a = reg_a.by_name(names::kF16F32AccumTc);
-        auto b = reg_b.by_name(names::kF16F32AccumTc);
-        assert(a.has_value() && b.has_value());
+        RecipeRegistry::RecipeRef const a = reg_a.by_name(names::kF16F32AccumTc).expect("the starter is present");
+        RecipeRegistry::RecipeRef const b = reg_b.by_name(names::kF16F32AccumTc).expect("the starter is present");
 
         // Two pools, two addresses.
-        assert(*a != *b);
+        assert(!::fixy::same_object(a, b));
         // One name, one hash, whichever pool interned it.
-        assert((*a)->hash == (*b)->hash);
-        assert((*a)->accum_dtype == (*b)->accum_dtype);
-        assert((*a)->out_dtype == (*b)->out_dtype);
-        assert((*a)->determinism == (*b)->determinism);
+        assert(a->hash == b->hash);
+        assert(a->accum_dtype == b->accum_dtype);
+        assert(a->out_dtype == b->out_dtype);
+        assert(a->determinism == b->determinism);
     }
 
     // Two regions with byte-identical ops but different recipes must hash
@@ -83,15 +82,16 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         RecipePool pool{::fixy::mint_borrowed_ref(recipe_arena), init_cap()};
         RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
-        auto rec_tc = registry.by_name(names::kF16F32AccumTc);
-        auto rec_strict = registry.by_name(names::kF32Strict);
-        assert(rec_tc.has_value() && rec_strict.has_value());
+        RecipeRegistry::RecipeRef const rec_tc =
+            registry.by_name(names::kF16F32AccumTc).expect("the starter is present");
+        RecipeRegistry::RecipeRef const rec_strict =
+            registry.by_name(names::kF32Strict).expect("the starter is present");
 
         TraceEntry ops[kOpsCount]{};
         mk_ops(ops);
 
-        auto* region_tc = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, *rec_tc);
-        auto* region_strict = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, *rec_strict);
+        auto* region_tc = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, &*rec_tc);
+        auto* region_strict = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, &*rec_strict);
         auto* region_none = crucible::make_region(alloc_cap(), arena, ops, kOpsCount);  // no-recipe overload
 
         // Three recipe pins, counting the unpinned baseline, give three
@@ -119,9 +119,8 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
 
         // Persistence time: the original process pins a recipe and takes
         // the region's content hash.
-        auto pin = registry.by_name(names::kBf16F32AccumTc);
-        assert(pin.has_value());
-        const NumericalRecipe* recipe_orig = *pin;
+        const NumericalRecipe* recipe_orig =
+            &*registry.by_name(names::kBf16F32AccumTc).expect("the starter is present");
 
         TraceEntry ops[kOpsCount]{};
         mk_ops(ops);
@@ -135,15 +134,15 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
 
         // Recovery time.  This runs in the same process, but the call path
         // is the one a fresh recovery process takes.
-        auto recovered = registry.by_hash(persisted_recipe_hash);
-        assert(recovered.has_value());
+        RecipeRegistry::RecipeRef const recovered =
+            registry.by_hash(persisted_recipe_hash).expect("the persisted hash resolves");
         // Recovery inside one process lands on the canonical pointer.
-        assert(*recovered == recipe_orig);
-        assert((*recovered)->hash == persisted_recipe_hash);
+        assert(&*recovered == recipe_orig);
+        assert(recovered->hash == persisted_recipe_hash);
 
         // Rebuilding the region with the recovered recipe reproduces the
         // original content hash, which is the end-to-end claim.
-        auto* region_recovered = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, *recovered);
+        auto* region_recovered = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, &*recovered);
         assert(region_recovered->content_hash == persisted_content_hash);
     }
 
@@ -158,12 +157,12 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         BumpArena recipe_arena_a{};
         RecipePool pool_a{::fixy::mint_borrowed_ref(recipe_arena_a), init_cap()};
         RecipeRegistry reg_a{::fixy::mint_borrowed_ref(pool_a), alloc_cap()};
-        auto rec_a = reg_a.by_name(names::kFp8E4m3F32AccumMxOrd);
-        assert(rec_a.has_value());
+        RecipeRegistry::RecipeRef const rec_a =
+            reg_a.by_name(names::kFp8E4m3F32AccumMxOrd).expect("the starter is present");
 
         TraceEntry ops_a[kOpsCount]{};
         mk_ops(ops_a);
-        auto* region_a = crucible::make_region(alloc_cap(), arena_a, ops_a, kOpsCount, *rec_a);
+        auto* region_a = crucible::make_region(alloc_cap(), arena_a, ops_a, kOpsCount, &*rec_a);
         const ContentHash hash_in_proc_a = region_a->content_hash;
 
         // A second process, with its own pool, registry and arena, and so
@@ -172,16 +171,16 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         BumpArena recipe_arena_b{};
         RecipePool pool_b{::fixy::mint_borrowed_ref(recipe_arena_b), init_cap()};
         RecipeRegistry reg_b{::fixy::mint_borrowed_ref(pool_b), alloc_cap()};
-        auto rec_b = reg_b.by_name(names::kFp8E4m3F32AccumMxOrd);
-        assert(rec_b.has_value());
+        RecipeRegistry::RecipeRef const rec_b =
+            reg_b.by_name(names::kFp8E4m3F32AccumMxOrd).expect("the starter is present");
         // Different pointers, so the two pools really are independent.
-        assert(*rec_a != *rec_b);
+        assert(!::fixy::same_object(rec_a, rec_b));
         // One hash, which is the identity that crosses them.
-        assert((*rec_a)->hash == (*rec_b)->hash);
+        assert(rec_a->hash == rec_b->hash);
 
         TraceEntry ops_b[kOpsCount]{};
         mk_ops(ops_b);
-        auto* region_b = crucible::make_region(alloc_cap(), arena_b, ops_b, kOpsCount, *rec_b);
+        auto* region_b = crucible::make_region(alloc_cap(), arena_b, ops_b, kOpsCount, &*rec_b);
         const ContentHash hash_in_proc_b = region_b->content_hash;
 
         // The content hashes agree although no pointer is shared, which is
@@ -199,17 +198,19 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         RecipePool pool{::fixy::mint_borrowed_ref(recipe_arena), init_cap()};
         RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
-        auto rec_tc = registry.by_name(names::kF16F32AccumTc);
-        auto rec_ord = registry.by_name(names::kF16F32AccumOrdered);
-        auto rec_bf16_tc = registry.by_name(names::kBf16F32AccumTc);
-        assert(rec_tc.has_value() && rec_ord.has_value() && rec_bf16_tc.has_value());
+        RecipeRegistry::RecipeRef const rec_tc =
+            registry.by_name(names::kF16F32AccumTc).expect("the starter is present");
+        RecipeRegistry::RecipeRef const rec_ord =
+            registry.by_name(names::kF16F32AccumOrdered).expect("the starter is present");
+        RecipeRegistry::RecipeRef const rec_bf16_tc =
+            registry.by_name(names::kBf16F32AccumTc).expect("the starter is present");
 
         TraceEntry ops[kOpsCount]{};
         mk_ops(ops);
 
-        auto* region_tc = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, *rec_tc);
-        auto* region_ord = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, *rec_ord);
-        auto* region_bf16_tc = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, *rec_bf16_tc);
+        auto* region_tc = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, &*rec_tc);
+        auto* region_ord = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, &*rec_ord);
+        auto* region_bf16_tc = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, &*rec_bf16_tc);
 
         // Three hashes, so three cache slots.
         assert(region_tc->content_hash != region_ord->content_hash);

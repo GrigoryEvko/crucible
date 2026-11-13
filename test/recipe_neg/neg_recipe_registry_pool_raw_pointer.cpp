@@ -18,5 +18,5 @@ int main() {
     ::fixy::BumpArena arena{};
     crucible::RecipePool pool{::fixy::mint_borrowed_ref(arena), init};
     crucible::RecipeRegistry registry{&pool, test.alloc};
-    return registry.entries().value().empty();
+    return static_cast<int>(registry.entries().value().size());
 }
