@@ -14,7 +14,6 @@
 #include <foundation/diag/Tag.h>
 
 #include <cstdint>
-#include <string_view>
 
 namespace crucible::cog {
 
@@ -62,14 +61,16 @@ enum class NicAuditIssue : std::uint32_t {
 };
 
 struct NicOffload_Misconfigured : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "NicOffload_Misconfigured";
-    static constexpr std::string_view description = "A NIC startup audit found an offload, queue, RSS, IRQ, sysctl, "
-                                                    "qdisc, or busy-poll setting that cannot deliver the declared "
-                                                    "network throughput envelope.";
-    static constexpr std::string_view remediation = "Inspect the report issue bits, then apply the corresponding "
-                                                    "NicConfig/NumaNic remediation under operator policy. Keep the "
-                                                    "audit read-only unless CAP_NET_ADMIN remediation is explicitly "
-                                                    "enabled by a later configuration task.";
+    static constexpr ::foundation::diag::tag_text_literal name = "NicOffload_Misconfigured";
+    static constexpr ::foundation::diag::tag_text_literal description =
+        "A NIC startup audit found an offload, queue, RSS, IRQ, sysctl, "
+        "qdisc, or busy-poll setting that cannot deliver the declared "
+        "network throughput envelope.";
+    static constexpr ::foundation::diag::tag_text_literal remediation =
+        "Inspect the report issue bits, then apply the corresponding "
+        "NicConfig/NumaNic remediation under operator policy. Keep the "
+        "audit read-only unless CAP_NET_ADMIN remediation is explicitly "
+        "enabled by a later configuration task.";
 };
 
 struct NicOffloadAuditFacts {

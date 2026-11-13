@@ -6,7 +6,6 @@
 
 #include <fixy/Bits.h>
 
-#include <algorithm>
 #include <cstdint>
 #include <type_traits>
 
@@ -30,7 +29,7 @@ struct AuditFindings {
     // the report at Error.
     constexpr void raise(Issue issue, AuditSeverity at) noexcept {
         issues.set(issue);
-        severity = std::max(severity, at);
+        if (at > severity) severity = at;
     }
 
     [[nodiscard]] constexpr bool passes() const noexcept { return severity == AuditSeverity::Pass && issues.none(); }
