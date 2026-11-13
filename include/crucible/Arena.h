@@ -2,6 +2,9 @@
 
 // A bump allocator over a list of blocks, and the epoch that ends its bytes.
 //
+// New code takes fixy::BumpArena.  This arena stays only for the nodes of the
+// Merkle DAG with their codec and loaders, and for the symbolic-engine sketch.
+//
 // An allocation is a bump of an offset in the current block.  When the block
 // is full, the arena moves to the next block that holds the request.  Block k
 // holds at least block_size << k bytes (saturating), so 64 blocks hold more
