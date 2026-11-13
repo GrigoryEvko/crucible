@@ -26,10 +26,10 @@
 // targets of the tree.  The file names standard library entities only in
 // static_assert conditions, in helper types, in helper concepts and in one
 // helper function.  The front end evaluates a static_assert at namespace scope
-// outside a template and keeps no tree of it, so the quarantine plugin reads
-// no static_assert condition of this file.  The plugin reads the helper
-// concepts and the helper function, and the ledger of the ratchet holds each
-// name in them that the rule table does not admit.
+// outside a template and keeps no tree of it.  The quarantine plugin reads each
+// library name of such a condition from the event of the parser (THE FOLDED
+// NAMES of utils/tools/quarantine/owner.cpp).  The ledger of the ratchet holds
+// each name of the file that the rule table does not admit.
 
 #include <bit>
 #include <compare>

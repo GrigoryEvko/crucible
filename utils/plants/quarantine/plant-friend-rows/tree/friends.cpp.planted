@@ -6,8 +6,8 @@
 // operator==, and the exact row of each friend admits it.  The conversion of
 // the literal 0 to the zero parameter of the friend gives no finding.  Each
 // plant calls a friend that no exact row admits.  The row of its class does
-// not admit it, so the plant gives the finding std-entity std::operator>, the
-// name of the friend in the namespace of its class.
+// not admit it, so the plant gives a finding std-entity with the name of the
+// friend in the namespace of its class, such as std::operator>.
 
 #include <compare>
 
