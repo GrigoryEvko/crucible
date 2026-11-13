@@ -394,8 +394,8 @@ void test_registry_basic() {
     auto snap = reg.snapshot();
     bool found = false;
     for (const auto& r : snap) {
-        if (r.addr == buf) {
-            CHECK(r.len == sizeof(buf), "len preserved on update");
+        if (r.bytes.size() != 0 && static_cast<const void*>(&*r.bytes.begin()) == static_cast<const void*>(buf)) {
+            CHECK(r.bytes.size() == sizeof(buf), "len preserved on update");
             CHECK(r.huge_hint, "huge_hint updated to true");
             found = true;
             break;
@@ -447,6 +447,26 @@ void test_region_and_slot_have_no_padding_byte() {
     crucible::test::expect_no_padding_byte<std::meta::template_arguments_of(slot_list)[0]>();
 }
 
+// revert puts back the THP setting that the process had before apply.  A
+// process that refused THP before apply still refuses it after the revert,
+// and the revert does not allow THP for it.
+void test_revert_keeps_a_prior_thp_refusal() {
+    using namespace crucible::warden;
+    const ::fixy::pages::ThpSetting first =
+        ::fixy::pages::exchange_thp_setting(kStartup, ::fixy::pages::ThpSetting::refused)
+            .expect("the process refuses THP before the apply");
+    {
+        Policy policy = Policy::dev_quiet();
+        policy.disable_thp_global = true;
+        AppliedPolicy const applied = mint_hardening(kStartup, policy);
+        CHECK(applied.pinned_cpu() >= -1, "the apply returns a handle");
+    }
+    const ::fixy::pages::ThpSetting after_revert =
+        ::fixy::pages::exchange_thp_setting(kStartup, first).expect("the process puts back its first setting");
+    CHECK(after_revert == ::fixy::pages::ThpSetting::refused,
+          "the revert keeps the THP refusal that the process had before the apply");
+}
+
 }  // namespace
 
 int main() {
@@ -465,6 +485,7 @@ int main() {
     test_registry_basic();
     test_registry_applies_on_mint_hardening();
     test_region_and_slot_have_no_padding_byte();
+    test_revert_keeps_a_prior_thp_refusal();
 
     if (failures == 0) {
         crucible::test::pass("test_warden_policy: OK\n");

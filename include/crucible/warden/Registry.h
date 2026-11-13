@@ -39,8 +39,10 @@ inline constexpr size_t kHugePageBytes = 2 * 1024 * 1024;
 // test/test_warden_policy.cpp makes sure that the region and the slot have
 // no padding byte.
 struct HotRegion {
-    void* addr = nullptr;
-    size_t len = 0;
+    // The bytes of the region.  The View borrows the memory of the
+    // component that registered it, and the component keeps that memory
+    // alive until it withdraws the region.
+    ::fixy::View<std::byte const> bytes{};
     // True for a large mapping that rarely changes shape. False for a
     // buffer that is resized often, where collapsing it into huge
     // pages would stall the resize.
@@ -122,8 +124,8 @@ public:
             if (!is_published_(slot, addr)) continue;
             static_cast<void>(regions
                                   .push(HotRegion{
-                                      .addr = addr,
-                                      .len = slot.len.load_acquire(),
+                                      .bytes = ::fixy::mint_foreign_view(static_cast<std::byte const*>(addr),
+                                                                         slot.len.load_acquire()),
                                       .huge_hint = slot.huge_hint.load_acquire(),
                                   })
                                   .expect("the snapshot holds one region for each slot"));
