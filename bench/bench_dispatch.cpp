@@ -19,7 +19,6 @@
 #include "bench_harness.h"
 
 #include <foundation/effects/Effect.h>
-#include <crucible/Arena.h>
 #include <crucible/Vigil.h>
 
 #include <bit>
@@ -181,7 +180,7 @@ void check_cpu_slot(const TensorSlot& slot) {
 // plan is in arena.
 struct BenchRegion {
     ::foundation::effects::Test test = ::foundation::effects::testing::test();
-    Arena arena{1 << 16};
+    ::fixy::BumpArena arena{1 << 16};
     ::fixy::BumpArena dag_arena{1 << 16};
     RegionNode* region = nullptr;
     MemoryPlan* plan = nullptr;
@@ -224,7 +223,7 @@ struct BenchRegion {
             i++;
         }
 
-        plan = std::construct_at(arena.alloc_obj<MemoryPlan>(test.alloc));
+        plan = &*arena.make<MemoryPlan>(test.alloc);
         plan->slots = slots;
         plan->num_external = 0;
         plan->pool_bytes = n_ops * 4096;
@@ -291,7 +290,7 @@ int main() {
 
     reports.push_back([&] {
         auto test = ::foundation::effects::testing::test();
-        Arena arena{1 << 16};
+        ::fixy::BumpArena arena{1 << 16};
         ::fixy::BumpArena slot_arena{1 << 16};
         constexpr uint32_t NSLOTS = 16;
         const ::fixy::View<TensorSlot> slots = slot_arena.array<TensorSlot>(test.alloc, NSLOTS, TensorSlot{});
@@ -307,7 +306,7 @@ int main() {
             check_cpu_slot(slot);
             i++;
         }
-        auto* plan = std::construct_at(arena.alloc_obj<MemoryPlan>(test.alloc));
+        auto* plan = &*arena.make<MemoryPlan>(test.alloc);
         plan->slots = slots;
         plan->num_external = 0;
         plan->pool_bytes = NSLOTS * 256;

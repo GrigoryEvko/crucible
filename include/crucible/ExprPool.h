@@ -1,6 +1,5 @@
 #pragma once
 
-#include <crucible/Arena.h>
 #include <crucible/Expr.h>
 #include <crucible/Ops.h>
 #include <crucible/SwissTable.h>
@@ -459,9 +458,7 @@ public:
         if (id.raw() >= symbol_names_.size()) symbol_names_.resize(id.raw() + 1, nullptr);
         if (symbol_names_[id.raw()] == nullptr) {
             size_t name_len_with_null = std::strlen(name) + 1;
-            char* name_buf =
-                static_cast<char*>(arena_.alloc(a, ::fixy::mint_refined<::fixy::positive>(name_len_with_null),
-                                                ::fixy::mint_refined<::fixy::power_of_two>(size_t{1})));
+            char* name_buf = &*arena_.array(a, name_len_with_null, char{0}).begin();
             std::memcpy(name_buf, name, name_len_with_null);
             symbol_names_[id.raw()] = name_buf;
         }
@@ -1010,7 +1007,7 @@ public:
 
     [[nodiscard]] size_t intern_size() const { return intern_count_.get(); }
     [[nodiscard]] size_t intern_capacity() const { return capacity_.value(); }
-    [[nodiscard]] size_t arena_bytes() const { return arena_.total_allocated(); }
+    [[nodiscard]] size_t arena_bytes() const { return arena_.retained_bytes(); }
 
     // The arena of the pool holds the name.  A temporary pool releases its
     // arena at the end of the statement, and the deleted `const&&` twin
@@ -1629,15 +1626,14 @@ private:
                 // a null pointer.
                 const Expr** arena_owned_args = nullptr;
                 if (nargs > 0) {
-                    arena_owned_args = arena_.alloc_array<const Expr*>(a, nargs);
+                    arena_owned_args = &*arena_.array(a, nargs, static_cast<const Expr*>(nullptr)).begin();
                     std::memcpy(arena_owned_args, args, nargs * sizeof(const Expr*));
                 }
 
-                // Placement-new into arena storage, because the const fields
-                // of Expr can only be initialized in place.
-                void* arena_expr_storage = arena_.alloc_obj<Expr>(a);
-                Expr* interned_expr = ::new(arena_expr_storage)
-                    Expr(op, nargs, flags, symbol_id, expr_full_hash, payload, arena_owned_args);
+                // The arena builds the Expr in place, because the const
+                // fields of Expr take their values only in the constructor.
+                Expr* interned_expr =
+                    &*arena_.make<Expr>(a, op, nargs, flags, symbol_id, expr_full_hash, payload, arena_owned_args);
 
                 ctrl_[match_slot_index] = slot_match_tag;
                 slots_[match_slot_index] = interned_expr;
@@ -1743,7 +1739,7 @@ private:
         intern_count_.advance(reinserted);
     }
 
-    Arena arena_;
+    ::fixy::BumpArena arena_;
     ::foundation::SwissTableBuffer<const Expr*> backing_;
     int8_t* ctrl_ = nullptr;  // Points into backing_ at offset 0.
     const Expr** slots_ = nullptr;  // Points into backing_ at offset capacity_.

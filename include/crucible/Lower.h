@@ -11,7 +11,6 @@
 #include <foundation/effects/Row.h>
 
 #include <concepts>
-#include <cstring>
 
 namespace crucible {
 
@@ -54,13 +53,12 @@ lower_trace_to_graph(::foundation::effects::Alloc a, LowerTraceGraph<Source> tra
     const uint32_t num_slots = tg.num_slots.get_assuming_set();
     if (num_ops == 0) return ::fixy::mint_tagged<Source>(&graph);
 
-    Arena& arena = graph.arena();
+    ::fixy::BumpArena& arena = graph.arena();
 
     // An input with no producing op but a valid slot is external. One node
     // is created per distinct slot.
     const uint32_t map_size = (num_slots > 0) ? num_slots : 1;
-    auto** extern_map = arena.alloc_array<GraphNode*>(a, map_size);
-    std::memset(extern_map, 0, map_size * sizeof(GraphNode*));
+    auto** extern_map = detail::alloc_zeroed_array<GraphNode*>(a, arena, map_size);
 
     for (uint32_t i = 0; i < num_ops; i++) {
         const TraceEntry& te = tg.ops[i];
@@ -89,7 +87,7 @@ lower_trace_to_graph(::foundation::effects::Alloc a, LowerTraceGraph<Source> tra
         }
     }
 
-    auto** op_to_node = arena.alloc_array<GraphNode*>(a, num_ops);
+    auto** op_to_node = detail::alloc_zeroed_array<GraphNode*>(a, arena, num_ops);
 
     for (uint32_t i = 0; i < num_ops; i++) {
         const TraceEntry& te = tg.ops[i];
@@ -124,8 +122,8 @@ lower_trace_to_graph(::foundation::effects::Alloc a, LowerTraceGraph<Source> tra
         }
 
         const uint16_t alloc_n = (real_count > 0) ? real_count : 1;
-        auto** deps = arena.alloc_array<GraphNode*>(a, alloc_n);
-        auto* in_slots = arena.alloc_array<SlotId>(a, alloc_n);
+        auto** deps = detail::alloc_zeroed_array<GraphNode*>(a, arena, alloc_n);
+        auto* in_slots = detail::alloc_zeroed_array<SlotId>(a, arena, alloc_n);
         uint16_t k = 0;
 
         for (uint16_t j = 0; j < te.num_inputs(); j++) {
@@ -166,7 +164,7 @@ lower_trace_to_graph(::foundation::effects::Alloc a, LowerTraceGraph<Source> tra
     }
 
     // The graph's inputs are the input nodes, in slot order.
-    auto* input_ids = arena.alloc_array<NodeId>(a, map_size);
+    auto* input_ids = detail::alloc_zeroed_array<NodeId>(a, arena, map_size);
     uint32_t n_inputs = 0;
     for (uint32_t s = 0; s < num_slots; s++) {
         if (extern_map[s]) input_ids[n_inputs++] = extern_map[s]->id;
@@ -175,7 +173,7 @@ lower_trace_to_graph(::foundation::effects::Alloc a, LowerTraceGraph<Source> tra
 
     // The graph's outputs are the ops whose results nothing in this trace
     // consumes.
-    auto* output_ids = arena.alloc_array<NodeId>(a, num_ops);
+    auto* output_ids = detail::alloc_zeroed_array<NodeId>(a, arena, num_ops);
     uint32_t n_outputs = 0;
     for (uint32_t i = 0; i < num_ops; i++) {
         bool has_df_consumer = false;

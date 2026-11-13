@@ -5,7 +5,6 @@
 #include <foundation/effects/Row.h>
 #include "test_assert.h"
 #include <cstdio>
-#include <memory>
 
 namespace eff = ::foundation::effects;
 
@@ -26,7 +25,7 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1, int8_t dev = 0, vo
 
 [[gnu::cold]] int main() {
     auto test = eff::testing::test();
-    crucible::Arena arena(1 << 16);
+    ::fixy::BumpArena arena{1 << 16};
     ::fixy::BumpArena runs{1 << 16};
     crucible::ExprPool pool(test.alloc);
 
@@ -43,8 +42,7 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1, int8_t dev = 0, vo
     constexpr uint32_t NUM_OPS = 3;
     constexpr uint32_t NUM_SLOTS = 6;
 
-    auto* ops = arena.alloc_array<crucible::TraceEntry>(test.alloc, NUM_OPS);
-    std::uninitialized_value_construct_n(ops, NUM_OPS);
+    auto* ops = &*arena.array(test.alloc, NUM_OPS, crucible::TraceEntry{}).begin();
 
     {
         auto& te = ops[0];
@@ -106,8 +104,7 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1, int8_t dev = 0, vo
          .pad = 0},
     };
 
-    auto* slots = arena.alloc_array<crucible::TensorSlot>(test.alloc, NUM_SLOTS);
-    std::uninitialized_value_construct_n(slots, NUM_SLOTS);
+    auto* slots = &*arena.array(test.alloc, NUM_SLOTS, crucible::TensorSlot{}).begin();
     using crucible::SlotId;
     using crucible::OpIndex;
     using crucible::ScalarType;
@@ -285,9 +282,8 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1, int8_t dev = 0, vo
     assert(graph.node(4)->schedule_order < graph.node(5)->schedule_order);
 
     // One op with three inputs, the bias being absent.
-    crucible::Arena arena2(1 << 16);
-    auto* ops2 = arena2.alloc_array<crucible::TraceEntry>(test.alloc, 1);
-    std::uninitialized_value_construct_n(ops2, 1);
+    ::fixy::BumpArena arena2{1 << 16};
+    auto* ops2 = &*arena2.array(test.alloc, 1, crucible::TraceEntry{}).begin();
 
     ops2[0].schema_hash = crucible::SchemaHash{0xDD};
     ops2[0].kernel_id = crucible::CKernelId::GEMM_ADDMM;
@@ -305,8 +301,7 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1, int8_t dev = 0, vo
         crucible::test::run_of(test.alloc, runs, crucible::SlotId{}, crucible::SlotId{0}, crucible::SlotId{1}));
     ops2[0].set_output_slot_ids(crucible::test::run_of(test.alloc, runs, crucible::SlotId{2}));
 
-    auto* slots2 = arena2.alloc_array<crucible::TensorSlot>(test.alloc, 3);
-    std::uninitialized_value_construct_n(slots2, 3);
+    auto* slots2 = &*arena2.array(test.alloc, 3, crucible::TensorSlot{}).begin();
     slots2[0] = {.offset_bytes = 0,
                  .nbytes = 128,
                  .birth_op = OpIndex{0},

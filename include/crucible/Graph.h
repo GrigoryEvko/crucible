@@ -8,7 +8,6 @@
 // A kernel body is an explicit micro-op DAG rather than a closure, so it is
 // inspectable, serializable and directly emittable as device source.
 
-#include <crucible/Arena.h>
 #include <crucible/CKernel.h>
 #include <crucible/Expr.h>
 #include <fixy/Bits.h>
@@ -315,6 +314,20 @@ struct GraphNode {
     }
 };
 
+namespace detail {
+
+// The first of count zero elements in the arena, or a null pointer for a
+// count of zero.  Complexity: O(count).
+template <class T>
+[[nodiscard]] T* alloc_zeroed_array(::foundation::effects::Alloc a, ::fixy::BumpArena& arena, size_t count) noexcept {
+    for (T& first : arena.array(a, count, T{})) {
+        return &first;
+    }
+    return nullptr;
+}
+
+}  // namespace detail
+
 // Every allocation comes from the arena and dies with the Graph.  Nodes sit
 // in a flat array indexed by id, so nodes_[id] is that node.
 class CRUCIBLE_OWNER Graph {
@@ -377,7 +390,7 @@ public:
         n->reduce_op = reduce_op;
         n->reduce_hint = hint;
         const auto total = static_cast<uint8_t>(n->ndim + n->nred);
-        n->size = arena_.alloc_array<const Expr*>(a, total);
+        n->size = detail::alloc_zeroed_array<const Expr*>(a, arena_, total);
         // Both copies are guarded by size because memcpy with a null source
         // is undefined even at length zero, and both an empty span and a
         // zero-length arena allocation hand back null.
@@ -403,12 +416,12 @@ public:
         n->ndim = static_cast<uint8_t>(size.size());
         n->size = copy_exprs_(a, size);
 
-        auto* info = arena_.alloc_obj<ExternInfo>(a);
+        auto* info = &*arena_.make<ExternInfo>(a);
         info->python_kernel_name = copy_string_(a, py_name);
         info->cpp_kernel_name = copy_string_(a, cpp_name);
         info->num_constant_args = static_cast<uint16_t>(constant_args.size());
         if (!constant_args.empty()) {
-            info->constant_args = arena_.alloc_array<int64_t>(a, constant_args.size());
+            info->constant_args = detail::alloc_zeroed_array<int64_t>(a, arena_, constant_args.size());
             std::memcpy(info->constant_args, constant_args.data(), constant_args.size_bytes());
         } else {
             info->constant_args = nullptr;
@@ -419,8 +432,8 @@ public:
     }
 
     [[nodiscard]] ComputeBody* alloc_body(::foundation::effects::Alloc a, uint16_t num_ops) {
-        auto* b = arena_.alloc_obj<ComputeBody>(a);
-        b->ops = arena_.alloc_array<Inst>(a, num_ops);
+        auto* b = &*arena_.make<ComputeBody>(a);
+        b->ops = detail::alloc_zeroed_array<Inst>(a, arena_, num_ops);
         b->num_ops = num_ops;
         b->num_loads = 0;
         b->store_op = 0;
@@ -433,8 +446,7 @@ public:
     // and INDEX_EXPR use it.
     void alloc_body_aux(::foundation::effects::Alloc a, ComputeBody* body) {
         if (!body->aux) {
-            body->aux = arena_.alloc_array<int64_t>(a, body->num_ops);
-            std::memset(body->aux, 0, body->num_ops * sizeof(int64_t));
+            body->aux = detail::alloc_zeroed_array<int64_t>(a, arena_, body->num_ops);
         }
     }
 
@@ -444,7 +456,7 @@ public:
             input_ids_ = nullptr;
             return;
         }
-        input_ids_ = arena_.alloc_array<NodeId>(a, ids.size());
+        input_ids_ = detail::alloc_zeroed_array<NodeId>(a, arena_, ids.size());
         std::memcpy(input_ids_, ids.data(), ids.size_bytes());
     }
 
@@ -454,7 +466,7 @@ public:
             output_ids_ = nullptr;
             return;
         }
-        output_ids_ = arena_.alloc_array<NodeId>(a, ids.size());
+        output_ids_ = detail::alloc_zeroed_array<NodeId>(a, arena_, ids.size());
         std::memcpy(output_ids_, ids.data(), ids.size_bytes());
     }
 
@@ -473,7 +485,7 @@ public:
             input_slots_[node_id.raw()] = nullptr;
             return;
         }
-        input_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(a, slots.size());
+        input_slots_[node_id.raw()] = detail::alloc_zeroed_array<SlotId>(a, arena_, slots.size());
         std::memcpy(input_slots_[node_id.raw()], slots.data(), slots.size_bytes());
 
         // Reaching here means the span was non-empty, so the slot must hold
@@ -489,7 +501,7 @@ public:
             output_slots_[node_id.raw()] = nullptr;
             return;
         }
-        output_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(a, slots.size());
+        output_slots_[node_id.raw()] = detail::alloc_zeroed_array<SlotId>(a, arena_, slots.size());
         std::size_t position = 0;
         for (const SlotId slot : slots) {
             output_slots_[node_id.raw()][position++] = slot;
@@ -567,10 +579,8 @@ public:
     // input lists.  Sets schedule_order on every live node.
     void topological_sort(::foundation::effects::Alloc a) {
         const uint32_t n_nodes = num_nodes_.get();
-        auto* in_deg = arena_.alloc_array<uint32_t>(a, n_nodes);
-        auto* succ_cnt = arena_.alloc_array<uint32_t>(a, n_nodes);
-        std::memset(in_deg, 0, n_nodes * sizeof(uint32_t));
-        std::memset(succ_cnt, 0, n_nodes * sizeof(uint32_t));
+        auto* in_deg = detail::alloc_zeroed_array<uint32_t>(a, arena_, n_nodes);
+        auto* succ_cnt = detail::alloc_zeroed_array<uint32_t>(a, arena_, n_nodes);
 
         uint32_t total_edges = 0;
         for (uint32_t i = 0; i < n_nodes; ++i) {
@@ -587,12 +597,12 @@ public:
         }
 
         // Prefix-sum the successor counts into offsets, then scatter.
-        auto* offset = arena_.alloc_array<uint32_t>(a, n_nodes + 1);
+        auto* offset = detail::alloc_zeroed_array<uint32_t>(a, arena_, n_nodes + 1);
         offset[0] = 0;
         for (uint32_t i = 0; i < n_nodes; ++i)
             offset[i + 1] = offset[i] + succ_cnt[i];
 
-        auto* succs = arena_.alloc_array<uint32_t>(a, total_edges > 0 ? total_edges : 1);
+        auto* succs = detail::alloc_zeroed_array<uint32_t>(a, arena_, total_edges > 0 ? total_edges : 1);
         std::memset(succ_cnt, 0, n_nodes * sizeof(uint32_t));
         for (uint32_t i = 0; i < n_nodes; ++i) {
             GraphNode* current_node = nodes_[i];
@@ -603,7 +613,7 @@ public:
             }
         }
 
-        auto* queue = arena_.alloc_array<uint32_t>(a, n_nodes);
+        auto* queue = detail::alloc_zeroed_array<uint32_t>(a, arena_, n_nodes);
         uint32_t head = 0, tail = 0;
         for (uint32_t i = 0; i < n_nodes; ++i) {
             if (!(nodes_[i]->flags.test(NodeFlags::DEAD)) && in_deg[i] == 0) queue[tail++] = i;
@@ -633,7 +643,7 @@ public:
         const uint32_t n_nodes = num_nodes_.get();
 
         // Starts as the identity map and gains an entry per duplicate found.
-        auto* canonical_representative = arena_.alloc_array<GraphNode*>(a, n_nodes);
+        auto* canonical_representative = detail::alloc_zeroed_array<GraphNode*>(a, arena_, n_nodes);
         for (uint32_t i = 0; i < n_nodes; ++i)
             canonical_representative[i] = nodes_[i];
 
@@ -642,16 +652,16 @@ public:
         uint32_t num_live_nodes = 0;
         for (uint32_t i = 0; i < n_nodes; ++i)
             if (!(nodes_[i]->flags.test(NodeFlags::DEAD))) ++num_live_nodes;
-        auto* topological_order = arena_.alloc_array<GraphNode*>(a, num_live_nodes > 0 ? num_live_nodes : 1);
+        auto* topological_order =
+            detail::alloc_zeroed_array<GraphNode*>(a, arena_, num_live_nodes > 0 ? num_live_nodes : 1);
         for (uint32_t i = 0; i < n_nodes; ++i) {
             if (!(nodes_[i]->flags.test(NodeFlags::DEAD))) topological_order[nodes_[i]->schedule_order] = nodes_[i];
         }
 
         // Open addressing at roughly half load.
         uint32_t cse_table_capacity = std::bit_ceil(num_live_nodes * 2 + 1);
-        auto* cse_table_hashes = arena_.alloc_array<uint64_t>(a, cse_table_capacity);
-        auto* cse_table_nodes = arena_.alloc_array<GraphNode*>(a, cse_table_capacity);
-        std::memset(cse_table_nodes, 0, cse_table_capacity * sizeof(GraphNode*));
+        auto* cse_table_hashes = detail::alloc_zeroed_array<uint64_t>(a, arena_, cse_table_capacity);
+        auto* cse_table_nodes = detail::alloc_zeroed_array<GraphNode*>(a, arena_, cse_table_capacity);
 
         uint32_t eliminated_count = 0;
         uint32_t cse_table_index_mask = cse_table_capacity - 1;
@@ -712,7 +722,8 @@ public:
         uint32_t num_live_nodes = 0;
         for (uint32_t i = 0; i < n_nodes; ++i)
             if (!(nodes_[i]->flags.test(NodeFlags::DEAD))) ++num_live_nodes;
-        auto* topological_order = arena_.alloc_array<GraphNode*>(a, num_live_nodes > 0 ? num_live_nodes : 1);
+        auto* topological_order =
+            detail::alloc_zeroed_array<GraphNode*>(a, arena_, num_live_nodes > 0 ? num_live_nodes : 1);
         for (uint32_t i = 0; i < n_nodes; ++i) {
             if (!(nodes_[i]->flags.test(NodeFlags::DEAD))) topological_order[nodes_[i]->schedule_order] = nodes_[i];
         }
@@ -813,14 +824,14 @@ public:
     // they have no twin.
     [[nodiscard, gnu::pure]] ExprPool* pool() const noexcept { return pool_; }
     [[nodiscard, gnu::pure]] SymbolTable* tab() const noexcept { return tab_; }
-    [[nodiscard]] Arena& arena() & noexcept { return arena_; }
-    Arena& arena() && =
+    [[nodiscard]] ::fixy::BumpArena& arena() & noexcept { return arena_; }
+    ::fixy::BumpArena& arena() && =
         delete("a temporary graph releases its arena at the end of the statement. Use a graph that has a name");
 
 private:
     GraphNode* alloc_node_(::foundation::effects::Alloc a) {
         if (num_nodes_.get() >= capacity_) grow_(a, capacity_ * 2);
-        auto* n = ::new(arena_.alloc_obj<GraphNode>(a)) GraphNode{};
+        auto* n = &*arena_.make<GraphNode>(a);
         n->id = NodeId{num_nodes_.get()};
         nodes_[num_nodes_.get()] = n;
         num_nodes_.bump();
@@ -828,18 +839,17 @@ private:
     }
 
     void grow_(::foundation::effects::Alloc a, uint32_t new_cap) {
-        auto** buf = arena_.alloc_array<GraphNode*>(a, new_cap);
-        auto** is_buf = arena_.alloc_array<SlotId*>(a, new_cap);
-        auto** os_buf = arena_.alloc_array<SlotId*>(a, new_cap);
+        // The arena gives null in each new entry, so an unset slot reads as
+        // null.
+        auto** buf = detail::alloc_zeroed_array<GraphNode*>(a, arena_, new_cap);
+        auto** is_buf = detail::alloc_zeroed_array<SlotId*>(a, arena_, new_cap);
+        auto** os_buf = detail::alloc_zeroed_array<SlotId*>(a, arena_, new_cap);
         const uint32_t n_nodes = num_nodes_.get();
         if (nodes_) {
             std::memcpy(buf, nodes_, n_nodes * sizeof(GraphNode*));
             std::memcpy(is_buf, input_slots_, n_nodes * sizeof(SlotId*));
             std::memcpy(os_buf, output_slots_, n_nodes * sizeof(SlotId*));
         }
-        // Zero-fill the new entries so an unset slot reads as null.
-        std::memset(is_buf + n_nodes, 0, (new_cap - n_nodes) * sizeof(SlotId*));
-        std::memset(os_buf + n_nodes, 0, (new_cap - n_nodes) * sizeof(SlotId*));
         nodes_ = buf;
         input_slots_ = is_buf;
         output_slots_ = os_buf;
@@ -849,7 +859,7 @@ private:
     void set_inputs_(::foundation::effects::Alloc a, GraphNode* n, std::span<GraphNode* const> inputs) {
         n->num_inputs = static_cast<uint16_t>(inputs.size());
         if (!inputs.empty()) {
-            n->inputs = arena_.alloc_array<GraphNode*>(a, inputs.size());
+            n->inputs = detail::alloc_zeroed_array<GraphNode*>(a, arena_, inputs.size());
             std::memcpy(n->inputs, inputs.data(), inputs.size_bytes());
             for (auto* inp : inputs)
                 ++inp->num_uses;
@@ -858,7 +868,7 @@ private:
 
     const Expr** copy_exprs_(::foundation::effects::Alloc a, std::span<const Expr* const> src) {
         if (src.empty()) return nullptr;
-        auto** dst = arena_.alloc_array<const Expr*>(a, src.size());
+        auto** dst = detail::alloc_zeroed_array<const Expr*>(a, arena_, src.size());
         std::memcpy(dst, src.data(), src.size_bytes());
         return dst;
     }
@@ -866,8 +876,7 @@ private:
     const char* copy_string_(::foundation::effects::Alloc a, const char* src) {
         if (!src) return nullptr;
         size_t len = std::strlen(src) + 1;
-        auto* dst = static_cast<char*>(arena_.alloc(a, ::fixy::mint_refined<::fixy::positive>(len),
-                                                    ::fixy::mint_refined<::fixy::power_of_two>(size_t{1})));
+        auto* dst = detail::alloc_zeroed_array<char>(a, arena_, len);
         std::memcpy(dst, src, len);
         return dst;
     }
@@ -1031,7 +1040,7 @@ private:
         }
     }
 
-    Arena arena_;
+    ::fixy::BumpArena arena_;
     ExprPool* pool_;
     SymbolTable* tab_;
 

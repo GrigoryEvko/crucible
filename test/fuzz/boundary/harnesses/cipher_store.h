@@ -16,7 +16,6 @@
 #include "../harness.h"
 #include "region.h"
 
-#include <crucible/Arena.h>
 #include <crucible/Cipher.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/cipher/FederationProtocol.h>
@@ -150,7 +149,7 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
 [[nodiscard]] inline std::vector<std::uint8_t> cipher_store_seed(std::size_t patch_offset, std::uint8_t patch_byte,
                                                                  std::uint64_t object_name_xor = 0,
                                                                  std::string_view log_tail = {}) {
-    Arena arena;
+    ::fixy::BumpArena arena{};
     ::fixy::BumpArena dag_arena{};
     const RegionNode* region = build_seed_region(arena, dag_arena, true);
     const auto image = region_image(region);

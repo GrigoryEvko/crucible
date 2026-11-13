@@ -21,7 +21,6 @@
 #include <span>
 #include <vector>
 
-#include <crucible/Arena.h>
 #include <crucible/BackgroundThread.h>
 #include <foundation/effects/Effect.h>
 #include <crucible/MerkleDag.h>
@@ -205,10 +204,10 @@ int main(int argc, char* argv[]) {
     // ── build_csr (481 ops, 900 edges) ────────────────────────────────
     reports.push_back([] {
         auto test = ::foundation::effects::testing::test();
-        Arena arena{1 << 20};
+        ::fixy::BumpArena arena{1 << 20};
         constexpr uint32_t NUM_OPS = 481;
         constexpr uint32_t NUM_EDGES = 900;
-        auto* edges = arena.alloc_array<Edge>(test.alloc, NUM_EDGES);
+        auto* edges = &*arena.array(test.alloc, NUM_EDGES, Edge{}).begin();
         bench_rng_state = 0x5555666677778888ULL;
         for (uint32_t e = 0; e < NUM_EDGES; e++) {
             const uint32_t src = static_cast<uint32_t>(bench_rand() % NUM_OPS);

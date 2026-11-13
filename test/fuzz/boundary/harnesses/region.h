@@ -10,7 +10,6 @@
 #include "../harness.h"
 #include "tensor_meta_claims.h"
 
-#include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/PoolAllocator.h>
 #include <crucible/Serialize.h>
@@ -53,7 +52,8 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
 // and one output each, and with a plan of two slots when with_plan is set.
 // The ops, their arrays, the region and the slots of the plan are in
 // dag_arena.
-[[nodiscard]] inline RegionNode* build_seed_region(Arena& arena, ::fixy::BumpArena& dag_arena, bool with_plan) {
+[[nodiscard]] inline RegionNode* build_seed_region(::fixy::BumpArena& arena, ::fixy::BumpArena& dag_arena,
+                                                   bool with_plan) {
     const auto alloc = test_alloc();
     constexpr std::uint32_t kOps = 2;
     const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(alloc, kOps, TraceEntry{});
@@ -75,7 +75,7 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
     }
     RegionNode* region = make_region(alloc, dag_arena, ops);
     if (with_plan) {
-        auto* plan = arena.alloc_obj<MemoryPlan>(alloc);
+        auto* plan = &*arena.make<MemoryPlan>(alloc);
         plan->pool_bytes = 2 * PoolAllocator::ALIGNMENT;
         plan->num_external = 0;
         plan->device_type = DeviceType::CPU;
@@ -108,7 +108,7 @@ inline constexpr std::size_t kImageHasPlanOffset = 52;
 // Images that an earlier loader accepted although they break a claim of the
 // region type.  The loader must refuse each one.
 [[nodiscard]] inline Seeds region_regressions() {
-    Arena arena;
+    ::fixy::BumpArena arena{};
     ::fixy::BumpArena dag_arena{};
     Seeds seeds;
 
@@ -134,7 +134,7 @@ inline constexpr std::size_t kImageHasPlanOffset = 52;
 }
 
 [[nodiscard]] inline Seeds seeds_region() {
-    Arena arena;
+    ::fixy::BumpArena arena{};
     ::fixy::BumpArena dag_arena{};
     Seeds seeds{region_image(build_seed_region(arena, dag_arena, false)),
                 region_image(build_seed_region(arena, dag_arena, true))};
