@@ -34,6 +34,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 from assay.core import git, paths, proc, testing
 from assay.core import registry as rule_registry
@@ -99,17 +100,39 @@ COUNTED_REGISTRY = (
 )
 # The planted master loop: `syntax --changed` names no preset, and `test BUILD` writes the report of the mode of the
 # build directory.  The mode build gives a build that fails, and the mode late gives an error after a green run.  The
-# master writes MAKEFLAGS to makeflags.txt, and the times of its start and its end to times.txt.  The mode slow runs
-# for SLOW_S seconds, and the mode hang runs until a stop ends it.  The mode deep starts a child in a process group of
-# its own with assay.core.proc of this tree (UTILS_MARK).  It writes the pid of the child to deep.pid.  The mode
-# broken-after-deep waits for that file of the build of default, and then it is the mode broken.  `derive TARGET --write
-# --build-dir BUILD` writes inventory.txt of the build into the tree as the mint inventory, or exits 3 in the mode
-# unwritten.  With inventory.txt in the build, the test test_built is red when the tree holds a different inventory.
-# Each call writes its first words to calls.txt of its build.
+# master writes MAKEFLAGS to makeflags.txt, and the times of its start and its end to times.txt.  The mode hang runs
+# until a stop ends it.  `derive TARGET --write --build-dir BUILD` writes inventory.txt of the build into the tree as the
+# mint inventory, or exits 3 in the mode unwritten.  With inventory.txt in the build, the test test_built is red when
+# the tree holds a different inventory.  Each call writes its first words to calls.txt of its build.
+#
+# The modes that follow wait for a file of a different run, and not for a time.  Each wait stops after 30 s, as a bound
+# for a hang.  A wait that stops makes its case fail: seen.txt then gives fewer runs, tokens.txt gives the word late,
+# and deep.pid gives no pid.
+#   * meet: write met.txt, and wait until each build of the mode meet holds met.txt.  Then write the count of these
+#     builds that hold met.txt to seen.txt.  So each run of the mode meet sees the start of each other one before it
+#     ends.
+#   * deep: start a child in a process group of its own with assay.core.proc of this tree (UTILS_MARK), and wait for
+#     it.  The child writes more bytes to its output than a pipe holds, then its pid to deep.pid.  That write of the
+#     output ends only when the master reads it in its wait.  So the stop that deep.pid causes comes in the wait of the
+#     master (AN INTERRUPT of assay.core.proc).
+#   * broken-after-deep: wait for deep.pid of the build of default, and then be the mode broken.
+#   * count: write ready.txt, and wait for greedy.held of the build of default.  Then read each idle token of the
+#     jobserver of the lease, and write their count to tokens.txt.
+#   * greedy: wait for ready.txt of the release build.  Then read each token that the jobserver gives for 1.5 s, and
+#     write their count to tokens.txt.  Then write greedy.held, and hold the tokens until the release build writes
+#     tokens.txt.
 LOOP_MASTER = """import os
 import pathlib
 import sys
 import time
+
+
+def is_written(path):
+    deadline = time.monotonic() + 30.0
+    while not path.is_file() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    return path.is_file()
+
 
 words = sys.argv[1:]
 if words[:2] == ["syntax", "--changed"]:
@@ -125,49 +148,59 @@ if words[0] == "derive":
 build = pathlib.Path(words[1])
 with open(build / "calls.txt", "a") as handle:
     handle.write(words[0] + "\\n")
-began = time.time()
+began = time.monotonic()
 (build / "base.txt").write_text(os.environ.get("CRUCIBLE_CHANGE_BASE", "-"))
 (build / "makeflags.txt").write_text(os.environ.get("MAKEFLAGS", "-"))
 with open(build / "words.txt", "a") as handle:
     handle.write(" ".join(words[2:]) + "\\n")
 mode = (build / "mode.txt").read_text().strip()
-if mode == "slow":
-    time.sleep(@SLOW_S@)
+if mode == "meet":
+    (build / "met.txt").write_text("1")
+    peers = [path.parent for path in build.parent.glob("*/mode.txt") if path.read_text().strip() == "meet"]
+    deadline = time.monotonic() + 30.0
+    while not all((peer / "met.txt").is_file() for peer in peers) and time.monotonic() < deadline:
+        time.sleep(0.02)
+    (build / "seen.txt").write_text(str(sum((peer / "met.txt").is_file() for peer in peers)))
 if mode == "hang":
     time.sleep(600)
 if mode == "deep":
     sys.path.insert(0, "@UTILS@")
     from assay.core import proc
 
-    running = proc.start(proc.Command(["sleep", "600"], timeout_s=900.0))
-    (build / "deep.pid").write_text(str(running.pid))
+    filled = 'head -c 2097152 /dev/zero && echo $$ > "$1" && exec sleep 600'
+    running = proc.start(proc.Command(["sh", "-c", filled, "sh", str(build / "deep.pid")], timeout_s=900.0))
     running.wait()
 if mode == "broken-after-deep":
-    deadline = time.time() + 30.0
-    while not (build.parent / "build" / "deep.pid").is_file() and time.time() < deadline:
-        time.sleep(0.02)
+    is_written(build.parent / "build" / "deep.pid")
     mode = "broken"
 if mode in ("greedy", "count"):
     descriptor = os.open(os.environ["MAKEFLAGS"].split("fifo:", 1)[1], os.O_RDWR | os.O_NONBLOCK)
-    deadline = time.time() + 30.0
-    while mode == "count" and not (build.parent / "build" / "greedy.held").is_file() and time.time() < deadline:
-        time.sleep(0.02)
     held = b""
-    end = time.time() + 1.5
-    while time.time() < end:
+if mode == "count":
+    (build / "ready.txt").write_text("1")
+    is_after = is_written(build.parent / "build" / "greedy.held")
+    while True:
+        try:
+            held += os.read(descriptor, 64)
+        except BlockingIOError:
+            break
+    (build / "tokens.txt").write_text(str(len(held)) if is_after else "late")
+if mode == "greedy":
+    is_after = is_written(build.parent / "build-release" / "ready.txt")
+    end = time.monotonic() + 1.5
+    while time.monotonic() < end:
         try:
             held += os.read(descriptor, 64)
         except BlockingIOError:
             time.sleep(0.01)
-    (build / "tokens.txt").write_text(str(len(held)))
+    (build / "tokens.txt").write_text(str(len(held)) if is_after else "late")
     (build / "greedy.held").write_text("1")
-    deadline = time.time() + 30.0
-    while mode == "greedy" and not (build.parent / "build-release" / "tokens.txt").is_file() and time.time() < deadline:
-        time.sleep(0.02)
+    is_written(build.parent / "build-release" / "tokens.txt")
+if mode in ("greedy", "count"):
     os.write(descriptor, held)
     os.close(descriptor)
 with open(build / "times.txt", "a") as handle:
-    handle.write(f"{began} {time.time()}\\n")
+    handle.write(f"{began} {time.monotonic()}\\n")
 if mode == "build":
     print("the build gives an error")
     sys.exit(1)
@@ -196,8 +229,6 @@ sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 # reconfigure-noop gives findings.  `write` of door-unit lowers the count 2 of its ledger to 1, as the reduce of the
 # gate does.  Each write writes its rule and the count of its build directories to writes.txt of each of them.
 UTILS_MARK = "@UTILS@"
-SLOW_MARK = "@SLOW_S@"
-SLOW_S = 1.0
 GUARD_MASTER = """import os
 import pathlib
 import subprocess
@@ -275,6 +306,10 @@ SMALL_MEMORY_GB = 3.0
 SMALL_MEMORY_JOBS = 2
 # The slots of the planted pool of a case (THE JOBSERVER of assay.loop.gate).
 POOL_SLOTS = 64
+# The idle ticks of the pump in the case of the greedy configuration: more than a case can run.  The idle tokens of a
+# lease then stay in its jobserver until its job reads them.  The tokens that go back to the pool after IDLE_TICKS are a
+# rule of time, and the test of assay.loop.heavy holds it (THE POOL of assay.loop.heavy).
+NO_IDLE_RETURN_TICKS = 10**9
 
 
 def planted_repository(root: Path, files: Mapping[str, str] | None = None) -> str:
@@ -287,7 +322,7 @@ def planted_repository(root: Path, files: Mapping[str, str] | None = None) -> st
     for name, text in {**PLANTED, **(files or {})}.items():
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        marked = text.replace(SLOW_MARK, str(SLOW_S)).replace(UTILS_MARK, str(paths.REPO_ROOT / "utils"))
+        marked = text.replace(UTILS_MARK, str(paths.REPO_ROOT / "utils"))
         path.write_text(marked, encoding="utf-8")
     return git.commit_all(root, "Add the planted tree")
 
@@ -1055,8 +1090,19 @@ def times_of(build: Path) -> list[tuple[float, float]]:
     return [(float(first), float(last)) for first, last in (line.split() for line in path.read_text().splitlines())]
 
 
+def seen_of(tree: Path, builds: tuple[str, ...]) -> list[str]:
+    """Return seen.txt of each build of the tree: the count of the runs of the mode meet that its run saw, or "-"."""
+    return [
+        (tree / name / "seen.txt").read_text(encoding="utf-8") if (tree / name / "seen.txt").is_file() else "-"
+        for name in builds
+    ]
+
+
 def thread_cases(expect: testing.Expect) -> None:
-    """Hold THE JOBSERVER and THE THREADS: each configuration gets MAKEFLAGS, and the configurations overlap."""
+    """Hold THE JOBSERVER and THE THREADS: each configuration gets MAKEFLAGS, and the configurations overlap.
+
+    Each run of a planted master waits for a file of a different run, and not for a time (LOOP_MASTER).
+    """
     with tempfile.TemporaryDirectory(prefix="gate-threads-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -1065,12 +1111,13 @@ def thread_cases(expect: testing.Expect) -> None:
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, head)
         builds = ("build", "build-release", "build-tsan", "build-ubsan-strict", "build-bench-fuzz")
-        planted = planted_gate(work, root, tree, "slow", dict.fromkeys(builds[1:], "slow"))
+        planted = planted_gate(work, root, tree, "meet", dict.fromkeys(builds[1:], "meet"))
         wide = replace(planted, jobs=8)
         verdict, printed = testing.captured(lambda: wide.check(gate.Candidate(head, commit, ("test/a.cpp",)), False))
         flags = [(tree / name / "makeflags.txt").read_text(encoding="utf-8") for name in builds]
         fifos = [Path(text.split("fifo:", 1)[1]) for text in flags if "fifo:" in text]
         spans = [span for name in builds for span in times_of(tree / name)]
+        seen = seen_of(tree, builds)
         expect(
             f"each configuration gets MAKEFLAGS of the jobserver of a lease of its own with the slice of the gate, "
             f"and each FIFO goes at the end of the check: {flags[0]}",
@@ -1082,40 +1129,54 @@ def thread_cases(expect: testing.Expect) -> None:
         )
         expect(
             f"the configurations of the full suite and the other configurations run at the same time, each with a "
-            f"lease: {len(spans)} runs, {printed.count('memory: ')} reads of the memory",
+            f"lease: each of {len(spans)} runs sees the start of each run before it ends {seen}, and "
+            f"{printed.count('memory: ')} reads of the memory",
             len(spans) == len(builds)
-            and max(first for first, _ in spans) < min(last for _, last in spans)
+            and seen == [str(len(builds))] * len(builds)
             and printed.count("memory: ") == len(builds),
         )
-        greedy = replace(planted_gate(work, root, tree, "greedy", {"build-release": "count"}), jobs=8)
-        verdict, printed = testing.captured(lambda: greedy.check(gate.Candidate(head, commit, ("test/a.cpp",)), False))
+        modes = {"build-release": "count", **dict.fromkeys(builds[2:], "clean")}
+        with mock.patch.object(heavy, "IDLE_TICKS", NO_IDLE_RETURN_TICKS):
+            greedy = replace(planted_gate(work, root, tree, "greedy", modes), jobs=8)
+            verdict, printed = testing.captured(
+                lambda: greedy.check(gate.Candidate(head, commit, ("test/a.cpp",)), False)
+            )
         taken = [(tree / name / "tokens.txt").read_text(encoding="utf-8") for name in ("build", "build-release")]
-        holds = verdict.is_accepted and int(taken[0]) < POOL_SLOTS and int(taken[1]) >= heavy.START_SLOTS - 1
+        holds = (
+            verdict.is_accepted
+            and all(text.isdigit() for text in taken)
+            and int(taken[0]) < POOL_SLOTS
+            and int(taken[1]) >= heavy.START_SLOTS - 1
+        )
         label = (
             f"a configuration that takes each token that it can does not take the tokens of a different "
-            f"configuration: the greedy one holds {taken[0]}, and the other one gets {taken[1]}"
+            f"configuration: the greedy one holds {taken[0]}, and the other one then gets {taken[1]}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
         rule_commit = commit_change(root, BUILD_RULE_MODULE, "VALUE = 3\n", "Change the rule")
-        early = replace(planted_gate(work, root, tree, "slow", dict.fromkeys(builds[1:], "clean")), jobs=8)
+        modes = {**dict.fromkeys(builds[1:], "clean"), "build-bench-fuzz": "meet"}
+        early = replace(planted_gate(work, root, tree, "meet", modes), jobs=8)
         for name in builds:
-            (tree / name / "times.txt").unlink(missing_ok=True)
+            for mark in ("times.txt", "met.txt", "seen.txt"):
+                (tree / name / mark).unlink(missing_ok=True)
         verdict, printed = testing.captured(
             lambda: early.check(gate.Candidate(commit, rule_commit, (BUILD_RULE_MODULE,)), False)
         )
         always = times_of(tree / "build")
         bench = times_of(tree / "build-bench-fuzz")
+        seen = seen_of(tree, ("build", "build-bench-fuzz"))
         regenerated = (tree / "build" / "cmake.txt").read_text(encoding="utf-8").splitlines()
         holds = (
             verdict.is_accepted
             and regenerated[-1:] == ["--target build.ninja"]
             and len(always) == 1
             and len(bench) == 1
-            and bench[0][0] < always[0][1]
+            and seen == ["2", "2"]
         )
         label = (
             "the touched tests of the other configurations start when the build of ALWAYS holds its configure, before "
-            f"the run of ALWAYS ends: the targets {regenerated}, the run of default {always} and of bench-fuzz {bench}"
+            f"the run of ALWAYS ends: the targets {regenerated}, and the runs of default and of bench-fuzz each see the "
+            f"start of the other before they end {seen}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
