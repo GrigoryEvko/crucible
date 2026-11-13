@@ -360,14 +360,12 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             first_meta.is_valid() ? static_cast<uint32_t>(max_meta_end - first_meta.raw()) : uint32_t{0};
 
         for (uint32_t iter = 0; iter < iters; iter++) {
-            Arena region_memory{arena_bytes};
-
             const uint64_t t0 = bench::rdtsc_start();
-            TensorMeta* meta_base = region_memory.alloc_array<TensorMeta>(A, total_metas);
-            meta_log.copy_run(first_meta.raw(), total_metas, meta_base);
+            auto meta_buffer = ::foundation::AlignedBuffer<TensorMeta>::allocate_value_initialized(total_metas);
+            meta_log.copy_run(first_meta.raw(), meta_buffer.view());
             const uint64_t t1 = bench::rdtsc_end();
 
-            bench::do_not_optimize(meta_base);
+            bench::do_not_optimize(meta_buffer.data());
             ns_p1b += static_cast<double>(t1 - t0) * nspc;
         }
     }
@@ -402,8 +400,9 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         auto* ops = scratch.alloc_array<TraceEntry>(A, count);
         const uint32_t total_metas =
             first_meta.is_valid() ? static_cast<uint32_t>(max_meta_end - first_meta.raw()) : uint32_t{0};
-        TensorMeta* meta_base = scratch.alloc_array<TensorMeta>(A, total_metas);
-        meta_log.copy_run(first_meta.raw(), total_metas, meta_base);
+        auto meta_buffer = ::foundation::AlignedBuffer<TensorMeta>::allocate_value_initialized(total_metas);
+        meta_log.copy_run(first_meta.raw(), meta_buffer.view());
+        TensorMeta* meta_base = meta_buffer.data();
         const size_t aux_bytes =
             static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
             + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);

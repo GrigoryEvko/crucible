@@ -1,6 +1,8 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <fixy/Aliases.h>
+#include <fixy/FixedArray.h>
+#include <foundation/AlignedBuffer.h>
 #include <foundation/Platform.h>
 
 #include "test_abort_probe.h"
@@ -43,8 +45,7 @@ static void test_single_append_returns_index_zero() {
     assert(idx.is_valid());
     assert(idx.raw() == 0);
     assert(log.size().peek() == 1);
-    TensorMeta got{};
-    log.copy_run(0, 1, &got);
+    const TensorMeta got = log.copy_record(0);
     assert(raw_data_ptr(got) == raw_data_ptr(m));
     assert(::crucible::raw_tensor_dim(got.sizes[0]) == 128);
     assert(::crucible::raw_tensor_dim(got.sizes[1]) == 256);
@@ -65,10 +66,10 @@ static void test_batch_append_and_monotonic() {
     assert(log.size().peek() == 8);
 
     // The copy of the two appends is the eight records in their order.
-    TensorMeta copied[8]{};
-    log.copy_run(0, 8, copied);
-    for (int i = 0; i < 8; ++i) {
-        assert(raw_data_ptr(copied[i]) == raw_data_ptr(batch[static_cast<size_t>(i)]));
+    ::fixy::FixedArray<TensorMeta, 8> copied{};
+    log.copy_run(0, copied.view());
+    for (size_t i = 0; i < 8; ++i) {
+        assert(raw_data_ptr(copied[i]) == raw_data_ptr(batch[i]));
     }
     crucible::test::pass("  test_batch_monotonic:           PASSED\n");
 }
@@ -126,15 +127,15 @@ static void test_copy_run_across_the_end() {
 
     // The copy joins the three records at the end of the buffer and the two
     // at its start, in the order of the append.
-    TensorMeta copied[5]{};
-    log.copy_run(near_end, 5, copied);
+    ::fixy::FixedArray<TensorMeta, 5> copied{};
+    log.copy_run(near_end, copied.view());
     for (uint32_t i = 0; i < 5; ++i) {
         assert(raw_data_ptr(copied[i]) == raw_data_ptr(tail5[i]));
     }
 
     // A run that does not pass the end is one copy.
-    TensorMeta head2[2]{};
-    log.copy_run(near_end + 3, 2, head2);
+    ::fixy::FixedArray<TensorMeta, 2> head2{};
+    log.copy_run(near_end + 3, head2.view());
     assert(raw_data_ptr(head2[0]) == raw_data_ptr(tail5[3]));
     assert(raw_data_ptr(head2[1]) == raw_data_ptr(tail5[4]));
     crucible::test::pass("  test_copy_run_across_the_end:   PASSED\n");
@@ -166,15 +167,13 @@ static void test_counters_pass_two_to_the_32() {
 
     // The records keep their order across the boundary, in the copy of the
     // run and in the copy of one record at each index.
-    TensorMeta copied[32]{};
-    log.copy_run(first.raw(), 32, copied);
+    ::fixy::FixedArray<TensorMeta, 32> copied{};
+    log.copy_run(first.raw(), copied.view());
     for (uint32_t i = 0; i < 32; ++i) {
         assert(raw_data_ptr(copied[i]) == raw_data_ptr(run[i]));
     }
-    TensorMeta read_below{};
-    log.copy_run(last_below.raw(), 1, &read_below);
-    TensorMeta read_across{};
-    log.copy_run(across.raw(), 1, &read_across);
+    const TensorMeta read_below = log.copy_record(last_below.raw());
+    const TensorMeta read_across = log.copy_record(across.raw());
     assert(raw_data_ptr(read_below) == raw_data_ptr(run[15]));
     assert(raw_data_ptr(read_across) == raw_data_ptr(run[16]));
 
@@ -188,8 +187,10 @@ static void test_counters_pass_two_to_the_32() {
 // The copy refuses such a run before it reads a slot.
 static void test_copy_run_refuses_a_run_longer_than_the_buffer() {
     MetaLog log;
-    TensorMeta destination[1]{};
-    assert(crucible::test::aborts([&] { log.copy_run(0, MetaLog::CAPACITY + 1, destination); }));
+    // The probe leaves its body through longjmp, so the buffer lives outside
+    // the body, and its destructor runs.
+    auto destination = ::foundation::AlignedBuffer<TensorMeta>::allocate_value_initialized(MetaLog::CAPACITY + 1);
+    assert(crucible::test::aborts([&] { log.copy_run(0, destination.view()); }));
     crucible::test::pass("  test_copy_run_refuses_long_run: PASSED\n");
 }
 
@@ -239,8 +240,7 @@ static void test_spsc_concurrent_integrity() {
                 continue;
             }
             for (uint32_t k = 0; k < avail; ++k) {
-                TensorMeta m{};
-                log.copy_run(next + k, 1, &m);
+                const TensorMeta m = log.copy_record(next + k);
                 const uintptr_t expected = static_cast<uintptr_t>(next + k + 1) << 16;
                 assert(std::bit_cast<uintptr_t>(raw_data_ptr(m)) == expected);
                 // The remaining fields are identical in every record,
@@ -278,8 +278,7 @@ static void test_try_append_pure() {
         assert(idx.is_valid());
         assert(idx.raw() == 0);
         assert(log.size().peek() == 1);
-        TensorMeta got{};
-        log.copy_run(idx.raw(), 1, &got);
+        const TensorMeta got = log.copy_record(idx.raw());
         assert(raw_data_ptr(got) == raw_data_ptr(m));
     }
 
@@ -363,8 +362,7 @@ static void test_try_append_pure_concurrent() {
                 continue;
             }
             for (uint32_t k = 0; k < avail; ++k) {
-                TensorMeta m{};
-                log.copy_run(next + k, 1, &m);
+                const TensorMeta m = log.copy_record(next + k);
                 const uintptr_t expected = static_cast<uintptr_t>(next + k + 1) << 16;
                 assert(std::bit_cast<uintptr_t>(raw_data_ptr(m)) == expected);
                 assert(::crucible::raw_tensor_dim(m.sizes[0]) == 128);

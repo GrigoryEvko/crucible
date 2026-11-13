@@ -227,30 +227,34 @@ struct CRUCIBLE_OWNER MetaLog {
         return try_append(metas, n);
     }
 
-    // Copies the run of count records that starts at index start into dst.
-    // A run that passes the end of the buffer takes two copies.  The tail
-    // moves past a run when the consumer releases it.  The producer then
-    // writes new records over those slots.  A reader that keeps the records
-    // after the release keeps this copy, and no pointer into the buffer.  The
-    // consumer copies a run before it releases the run, and the producer
-    // writes no slot of that run while the copy operates.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE void copy_run(uint64_t start, uint32_t count, TensorMeta* dst) const
-        CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(count, std::uint32_t{0}, CAPACITY));
-        CRUCIBLE_PRE(::foundation::decide::valid_span(count, dst));
-        if (count == 0) return;
+    // Copies the run of records that starts at index start into dst, one
+    // record for each element of dst.  A run that passes the end of the
+    // buffer takes two copies.  The tail moves past a run when the consumer
+    // releases it.  The producer then writes new records over those slots.  A
+    // reader that keeps the records after the release keeps this copy, and no
+    // reference into the buffer.  The consumer copies a run before it
+    // releases the run, and the producer writes no slot of that run while the
+    // copy operates.
+    void copy_run(uint64_t start, ::fixy::View<TensorMeta> dst) const CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(dst.size() <= CAPACITY);
+        if (dst.size() == 0) return;
+        const uint32_t count = static_cast<uint32_t>(dst.size());
+        const ::fixy::View<TensorMeta const> ring = entries_buffer_.view();
         const uint32_t start_pos = static_cast<uint32_t>(start & MASK);
         const uint32_t first_chunk = (count <= CAPACITY - start_pos) ? count : CAPACITY - start_pos;
-        std::memcpy(dst, entries_buffer_.data() + start_pos, first_chunk * sizeof(TensorMeta));
-        if (count > first_chunk) {
-            std::memcpy(dst + first_chunk, entries_buffer_.data(), (count - first_chunk) * sizeof(TensorMeta));
-        }
+        copy_records_(dst, 0, ring, start_pos, first_chunk);
+        copy_records_(dst, first_chunk, ring, 0, count - first_chunk);
         // The first and the last record of the copy are the records at the
         // two ends of the run.  A start without the mask, or a split of the
         // run at the wrong slot, puts a different record at one end.
-        CRUCIBLE_POST(0, std::memcmp(&dst[0], entries_buffer_.data() + start_pos, sizeof(TensorMeta)) == 0);
-        const uint64_t last_pos = (start + count - 1) & MASK;
-        CRUCIBLE_POST(0, std::memcmp(&dst[count - 1], entries_buffer_.data() + last_pos, sizeof(TensorMeta)) == 0);
+        const uint32_t last_pos = static_cast<uint32_t>((start + count - 1) & MASK);
+        CRUCIBLE_POST(0, *dst.get(0).expect("the copy holds its first record") == entries_buffer_[start_pos]);
+        CRUCIBLE_POST(0, *dst.get(count - 1).expect("the copy holds its last record") == entries_buffer_[last_pos]);
+    }
+
+    // Copies the record at index, with the rule of copy_run.
+    [[nodiscard]] TensorMeta copy_record(uint64_t index) const CRUCIBLE_NO_THREAD_SAFETY {
+        return entries_buffer_[static_cast<uint32_t>(index & MASK)];
     }
 
     // The consumer is the one writer of tail, so its relaxed load reads its
@@ -283,6 +287,16 @@ struct CRUCIBLE_OWNER MetaLog {
         CRUCIBLE_POST(0, head.get() == 0);
         CRUCIBLE_POST(0, tail.get() == 0);
         CRUCIBLE_POST(0, cached_tail_.get() == 0);
+    }
+
+private:
+    // Copies the count records of src from src_at into dst from dst_at.  Each
+    // caller gives two windows that fit.
+    static void copy_records_(::fixy::View<TensorMeta> dst, uint32_t dst_at, ::fixy::View<TensorMeta const> src,
+                              uint32_t src_at, uint32_t count) noexcept {
+        ::fixy::copy(dst.window(dst_at, count).expect("the records fit in the destination of the copy"),
+                     src.window(src_at, count).expect("the records of the copy are slots of the buffer"))
+            .expect("the two windows of the copy hold the same count");
     }
 };
 

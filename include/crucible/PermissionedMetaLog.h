@@ -198,8 +198,7 @@ public:
                 return std::nullopt;
             }
 
-            value_type meta{};
-            log.copy_run(t, 1, &meta);
+            const value_type meta = log.copy_record(t);
             log.advance_tail(t + 1);
             return meta;
         }
@@ -215,9 +214,8 @@ public:
             // The body gets a copy of each record, and no reference into a
             // slot that the producer writes again after the release.
             for (std::uint32_t i = 0; i < count; ++i) {
-                value_type meta{};
-                log.copy_run(t + i, 1, &meta);
-                body(std::as_const(meta));
+                const value_type meta = log.copy_record(t + i);
+                body(meta);
             }
             if (count != 0) {
                 log.advance_tail(t + count);
@@ -232,9 +230,7 @@ public:
         [[nodiscard]] value_type copy_at(::crucible::MetaIndex index) const {
             CRUCIBLE_PRE(index.is_valid());
             CRUCIBLE_PRE(index.raw() >= ch_->log_.tail.peek_relaxed() && index.raw() < ch_->log_.head.get());
-            value_type meta{};
-            ch_->log_.copy_run(index.raw(), 1, &meta);
-            return meta;
+            return ch_->log_.copy_record(index.raw());
         }
 
         void advance_tail(std::uint64_t new_tail) { ch_->log_.advance_tail(new_tail); }

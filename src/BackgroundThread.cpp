@@ -1003,7 +1003,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
         ::foundation::AlignedBuffer<TensorMeta>::allocate_value_initialized(total_metas);
     TensorMeta* meta_base = meta_buffer.data();
     if (first_meta.is_valid()) {
-        meta_log.get()->copy_run(first_meta.raw(), total_metas, meta_base);
+        meta_log.get()->copy_run(first_meta.raw(), meta_buffer.view());
     }
 
     ::foundation::AlignedBuffer<std::byte, alignof(int64_t)> side_buffer =
