@@ -161,28 +161,25 @@ static void test_event_ring_wrap_chronological_order() {
 
     assert(policy.transition_event_count() == 4u);
 
-    auto const* oldest = policy.transition_event_at(0);
-    auto const* newest = policy.transition_event_at(3);
-    assert(oldest != nullptr);
-    assert(newest != nullptr);
+    auto const oldest = policy.transition_event_at(0).expect("the ring keeps four events");
+    auto const newest = policy.transition_event_at(3).expect("the ring keeps four events");
     // Slot zero holds event five, which overwrote it, so reading the
     // storage positionally answers with the wrong event.
-    assert(oldest->sequence == 3u);
-    assert(newest->sequence == 6u);
+    assert(oldest.sequence == 3u);
+    assert(newest.sequence == 6u);
     // Odd sequences quarantine and even ones return to healthy.
-    assert(oldest->to == warden::QuarantineState::Quarantined);
-    assert(newest->to == warden::QuarantineState::Healthy);
+    assert(oldest.to == warden::QuarantineState::Quarantined);
+    assert(newest.to == warden::QuarantineState::Healthy);
 
     std::uint64_t prev = 0;
     for (std::size_t k = 0; k < policy.transition_event_count(); ++k) {
-        auto const* e = policy.transition_event_at(k);
-        assert(e != nullptr);
-        assert(e->sequence > prev);
-        prev = e->sequence;
+        auto const event = policy.transition_event_at(k).expect("k is below the count of events");
+        assert(event.sequence > prev);
+        prev = event.sequence;
     }
     assert(prev == 6u);
 
-    assert(policy.transition_event_at(4) == nullptr);
+    assert(policy.transition_event_at(4).is_none());
 
     crucible::test::pass("  test_event_ring_wrap_chronological_order: PASSED\n");
 }

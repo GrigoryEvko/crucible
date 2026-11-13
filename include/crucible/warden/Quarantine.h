@@ -13,6 +13,7 @@
 #include <crucible/topology/AsymmetricFailure.h>
 #include <crucible/topology/Health.h>
 #include <fixy/Bits.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
@@ -22,11 +23,8 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <span>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -57,9 +55,10 @@ enum class QuarantineSignal : std::uint32_t {
 };
 
 struct QuarantineTransition : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "QuarantineTransition";
-    static constexpr std::string_view description = "A Cog changed quarantine/routing-admission state.";
-    static constexpr std::string_view remediation =
+    static constexpr ::foundation::diag::tag_text_literal name = "QuarantineTransition";
+    static constexpr ::foundation::diag::tag_text_literal description =
+        "A Cog changed quarantine/routing-admission state.";
+    static constexpr ::foundation::diag::tag_text_literal remediation =
         "Preserve the transition event, stop routing new work to Quarantined "
         "or Permanent Cogs, and require operator authority for Permanent.";
 };
@@ -158,7 +157,14 @@ namespace detail {
 
 }  // namespace detail
 
+// A policy holds at least one Cog slot, and at least one audit-event slot.
+// A policy with no Cog slot holds no state, and a policy with no event slot
+// loses each transition that it makes.
+template <std::size_t MaxCogs, std::size_t MaxEvents>
+concept QuarantineCapacity = (MaxCogs > 0) && (MaxEvents > 0);
+
 template <std::size_t MaxCogs, std::size_t MaxEvents = MaxCogs * 4>
+    requires QuarantineCapacity<MaxCogs, MaxEvents>
 class QuarantinePolicy;
 
 // The one door: the constructor of the policy is private, and this mint
@@ -169,10 +175,8 @@ template <std::size_t MaxCogs, std::size_t MaxEvents = MaxCogs * 4, ::foundation
 mint_quarantine_policy(Ctx const&, QuarantineConfig config = {}) noexcept;
 
 template <std::size_t MaxCogs, std::size_t MaxEvents>
+    requires QuarantineCapacity<MaxCogs, MaxEvents>
 class QuarantinePolicy : public ::foundation::Pinned<QuarantinePolicy<MaxCogs, MaxEvents>> {
-    static_assert(MaxCogs > 0, "QuarantinePolicy requires Cog slots");
-    static_assert(MaxEvents > 0, "QuarantinePolicy requires audit-event slots");
-
     struct Slot {
         bool occupied = false;
         cog::Uuid cog_uuid{};
@@ -184,9 +188,13 @@ class QuarantinePolicy : public ::foundation::Pinned<QuarantinePolicy<MaxCogs, M
         ::fixy::Monotonic<std::uint64_t> sequence = ::fixy::mint_monotonic<std::uint64_t>(0);
     };
 
-    std::array<Slot, MaxCogs> slots_{};
-    std::array<QuarantineEvent, MaxEvents> events_{};
-    std::size_t next_event_ = 0;
+    using SlotIndex = ::fixy::Index<MaxCogs>;
+    using EventIndex = ::fixy::Index<MaxEvents>;
+
+    ::foundation::core::FixedArray<Slot, MaxCogs> slots_{};
+    ::foundation::core::FixedArray<QuarantineEvent, MaxEvents> events_{};
+    // The slot that the next event overwrites.
+    EventIndex next_event_ = ::fixy::index<0>();
     std::size_t event_count_ = 0;
     QuarantineConfig config_{};
 
@@ -196,32 +204,54 @@ class QuarantinePolicy : public ::foundation::Pinned<QuarantinePolicy<MaxCogs, M
         requires CtxFitsQuarantineMint<Ctx>
     friend constexpr QuarantinePolicy<Cogs, Events> mint_quarantine_policy(Ctx const&, QuarantineConfig) noexcept;
 
-    [[nodiscard]] constexpr Slot* find_or_insert(cog::CogIdentity const& id) noexcept {
+    // The slot of the Cog, or a free slot that this call gives to it.  A Cog
+    // with no identifier, and a Cog that finds a full table, get no slot.
+    // Complexity: O(MaxCogs).
+    [[nodiscard]] constexpr ::fixy::Option<SlotIndex> find_or_insert(cog::CogIdentity const& id) noexcept {
         if (id.uuid.is_zero()) {
-            return nullptr;
+            return ::fixy::none;
         }
-        for (auto& slot : slots_) {
+        for (SlotIndex const index : slots_.indices()) {
+            Slot const& slot = slots_.at(index);
             if (slot.occupied && detail::same_uuid(slot.cog_uuid, id.uuid)) {
-                return &slot;
+                return ::fixy::some(index);
             }
         }
-        for (auto& slot : slots_) {
+        for (SlotIndex const index : slots_.indices()) {
+            Slot& slot = slots_.at(index);
             if (!slot.occupied) {
                 slot.occupied = true;
                 slot.cog_uuid = id.uuid;
-                return &slot;
+                return ::fixy::some(index);
             }
         }
-        return nullptr;
+        return ::fixy::none;
     }
 
-    [[nodiscard]] constexpr Slot const* find(cog::CogIdentity const& id) const noexcept {
-        for (auto const& slot : slots_) {
+    // Complexity: O(MaxCogs).
+    [[nodiscard]] constexpr ::fixy::Option<SlotIndex> find(cog::CogIdentity const& id) const noexcept {
+        for (SlotIndex const index : slots_.indices()) {
+            Slot const& slot = slots_.at(index);
             if (slot.occupied && detail::same_uuid(slot.cog_uuid, id.uuid)) {
-                return &slot;
+                return ::fixy::some(index);
             }
         }
-        return nullptr;
+        return ::fixy::none;
+    }
+
+    // The slot of the Cog, when the fact carries a sequence after the last
+    // sequence of the slot.  The slot then keeps the new sequence.  A fact
+    // with an older sequence gets no slot.
+    [[nodiscard]] constexpr ::fixy::Option<SlotIndex> admit_fact(cog::CogIdentity const& id,
+                                                                 std::uint64_t sequence) noexcept {
+        return find_or_insert(id).match(
+            [this, sequence](SlotIndex index) noexcept -> ::fixy::Option<SlotIndex> {
+                if (!slots_.at(index).sequence.try_advance(sequence)) {
+                    return ::fixy::none;
+                }
+                return ::fixy::some(index);
+            },
+            []() noexcept -> ::fixy::Option<SlotIndex> { return ::fixy::none; });
     }
 
     [[nodiscard]] constexpr QuarantineSnapshot snapshot(Slot const& slot) const noexcept {
@@ -238,7 +268,7 @@ class QuarantinePolicy : public ::foundation::Pinned<QuarantinePolicy<MaxCogs, M
     }
 
     constexpr void append_event(Slot const& slot, QuarantineState from, QuarantineState to) noexcept {
-        events_[next_event_] = QuarantineEvent{
+        events_.at(next_event_) = QuarantineEvent{
             .cog_uuid = slot.cog_uuid,
             .from = from,
             .to = to,
@@ -248,8 +278,9 @@ class QuarantinePolicy : public ::foundation::Pinned<QuarantinePolicy<MaxCogs, M
             .admitted_load_ppm = detail::load_for(to, config_),
             .sequence = slot.sequence.get(),
         };
-        next_event_ = (next_event_ + 1u) % events_.size();
-        if (event_count_ < events_.size()) {
+        next_event_ = EventIndex::check((next_event_.raw() + 1u) % MaxEvents)
+                          .expect("a remainder of MaxEvents is a slot of the ring");
+        if (event_count_ < MaxEvents) {
             ++event_count_;
         }
     }
@@ -304,15 +335,17 @@ public:
         requires CtxFitsQuarantineRecord<Ctx>
     [[nodiscard]] constexpr bool on_health_event(Ctx const&, cog::CogIdentity const& cog,
                                                  topology::HealthSnapshot health, std::uint64_t now_ns) noexcept {
-        Slot* slot = find_or_insert(cog);
-        if (slot == nullptr || !slot->sequence.try_advance(health.sequence)) {
-            return false;
-        }
-        slot->health_score = health.score;
-        slot->signals = {};
-        QuarantineState const next = state_from_health(*slot, health, slot->signals);
-        transition_to(*slot, next, now_ns);
-        return true;
+        return admit_fact(cog, health.sequence)
+            .match(
+                [this, &health, now_ns](SlotIndex index) noexcept {
+                    Slot& slot = slots_.at(index);
+                    slot.health_score = health.score;
+                    slot.signals = {};
+                    QuarantineState const next = state_from_health(slot, health, slot.signals);
+                    transition_to(slot, next, now_ns);
+                    return true;
+                },
+                []() noexcept { return false; });
     }
 
     template <::foundation::effects::IsExecCtx Ctx>
@@ -320,71 +353,77 @@ public:
     [[nodiscard]] constexpr bool on_asymmetric_failure(Ctx const&, cog::CogIdentity const& cog,
                                                        topology::FailureClass cls, std::uint64_t now_ns,
                                                        std::uint64_t sequence) noexcept {
-        Slot* slot = find_or_insert(cog);
-        if (slot == nullptr || !slot->sequence.try_advance(sequence)) {
-            return false;
-        }
-        slot->signals = {};
-        QuarantineState next = slot->state;
-        if (cls == topology::FailureClass::BidiFailed) {
-            slot->signals.set(QuarantineSignal::AsymmetricDead);
-            next = QuarantineState::Quarantined;
-        } else if (cls == topology::FailureClass::TxBroken || cls == topology::FailureClass::RxBroken) {
-            slot->signals.set(QuarantineSignal::AsymmetricSuspect);
-            if (slot->state == QuarantineState::Healthy || slot->state == QuarantineState::Recovered) {
-                next = QuarantineState::Suspect;
-            }
-        }
-        transition_to(*slot, next, now_ns);
-        return true;
+        return admit_fact(cog, sequence)
+            .match(
+                [this, cls, now_ns](SlotIndex index) noexcept {
+                    Slot& slot = slots_.at(index);
+                    slot.signals = {};
+                    QuarantineState next = slot.state;
+                    if (cls == topology::FailureClass::BidiFailed) {
+                        slot.signals.set(QuarantineSignal::AsymmetricDead);
+                        next = QuarantineState::Quarantined;
+                    } else if (cls == topology::FailureClass::TxBroken || cls == topology::FailureClass::RxBroken) {
+                        slot.signals.set(QuarantineSignal::AsymmetricSuspect);
+                        if (slot.state == QuarantineState::Healthy || slot.state == QuarantineState::Recovered) {
+                            next = QuarantineState::Suspect;
+                        }
+                    }
+                    transition_to(slot, next, now_ns);
+                    return true;
+                },
+                []() noexcept { return false; });
     }
 
     template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsQuarantineRecord<Ctx>
     [[nodiscard]] constexpr bool record_recovery_probe(Ctx const&, cog::CogIdentity const& cog,
                                                        observe::ProbeOutcome outcome, std::uint64_t now_ns) noexcept {
-        Slot* slot = find_or_insert(cog);
-        if (slot == nullptr || !slot->sequence.try_advance(outcome.sequence)) {
-            return false;
-        }
-        slot->signals = {};
-        if (slot->state != QuarantineState::Quarantined) {
-            return true;
-        }
-        if (outcome.ok()) {
-            slot->signals.set(QuarantineSignal::RecoveryProbePassed);
-            if (slot->consecutive_recovery_probes < config_.recovery_probe_count.value()) {
-                ++slot->consecutive_recovery_probes;
-            }
-            if (slot->consecutive_recovery_probes >= config_.recovery_probe_count.value()) {
-                slot->signals.set(QuarantineSignal::RecoveryThresholdMet);
-                transition_to(*slot, QuarantineState::Recovered, now_ns);
-            }
-        } else {
-            slot->signals.set(QuarantineSignal::RecoveryProbeFailed);
-            slot->consecutive_recovery_probes = 0;
-        }
-        return true;
+        return admit_fact(cog, outcome.sequence)
+            .match(
+                [this, &outcome, now_ns](SlotIndex index) noexcept {
+                    Slot& slot = slots_.at(index);
+                    slot.signals = {};
+                    if (slot.state != QuarantineState::Quarantined) {
+                        return true;
+                    }
+                    if (outcome.ok()) {
+                        slot.signals.set(QuarantineSignal::RecoveryProbePassed);
+                        if (slot.consecutive_recovery_probes < config_.recovery_probe_count.value()) {
+                            ++slot.consecutive_recovery_probes;
+                        }
+                        if (slot.consecutive_recovery_probes >= config_.recovery_probe_count.value()) {
+                            slot.signals.set(QuarantineSignal::RecoveryThresholdMet);
+                            transition_to(slot, QuarantineState::Recovered, now_ns);
+                        }
+                    } else {
+                        slot.signals.set(QuarantineSignal::RecoveryProbeFailed);
+                        slot.consecutive_recovery_probes = 0;
+                    }
+                    return true;
+                },
+                []() noexcept { return false; });
     }
 
     template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsQuarantineRecord<Ctx>
     [[nodiscard]] constexpr bool check_permanent_deadline(Ctx const&, cog::CogIdentity const& cog, std::uint64_t now_ns,
                                                           std::uint64_t sequence) noexcept {
-        Slot* slot = find_or_insert(cog);
-        if (slot == nullptr || !slot->sequence.try_advance(sequence)) {
-            return false;
-        }
-        slot->signals = {};
-        if (slot->state != QuarantineState::Quarantined || slot->quarantine_since_ns == 0
-            || now_ns < slot->quarantine_since_ns
-            || now_ns - slot->quarantine_since_ns < config_.permanent_after_ns.value()) {
-            return true;
-        }
-        slot->signals.set(QuarantineSignal::PermanentTimerElapsed);
-        slot->signals.set(QuarantineSignal::PermanentRequiresOperator);
-        append_event(*slot, slot->state, slot->state);
-        return true;
+        return admit_fact(cog, sequence)
+            .match(
+                [this, now_ns](SlotIndex index) noexcept {
+                    Slot& slot = slots_.at(index);
+                    slot.signals = {};
+                    if (slot.state != QuarantineState::Quarantined || slot.quarantine_since_ns == 0
+                        || now_ns < slot.quarantine_since_ns
+                        || now_ns - slot.quarantine_since_ns < config_.permanent_after_ns.value()) {
+                        return true;
+                    }
+                    slot.signals.set(QuarantineSignal::PermanentTimerElapsed);
+                    slot.signals.set(QuarantineSignal::PermanentRequiresOperator);
+                    append_event(slot, slot.state, slot.state);
+                    return true;
+                },
+                []() noexcept { return false; });
     }
 
     // The authority goes back to the caller with its own brand, so a
@@ -396,56 +435,49 @@ public:
                       ::foundation::permissions::Permission<quarantine_tag::OperatorOverride, Brand>&& authority,
                       cog::CogIdentity const& cog, QuarantineState forced, std::uint64_t now_ns,
                       std::uint64_t sequence) noexcept {
-        Slot* slot = find_or_insert(cog);
-        if (slot != nullptr && slot->sequence.try_advance(sequence)) {
-            slot->signals = {};
-            slot->signals.set(QuarantineSignal::OperatorOverride);
-            transition_to(*slot, forced, now_ns);
-        }
+        admit_fact(cog, sequence)
+            .match(
+                [this, forced, now_ns](SlotIndex index) noexcept {
+                    Slot& slot = slots_.at(index);
+                    slot.signals = {};
+                    slot.signals.set(QuarantineSignal::OperatorOverride);
+                    transition_to(slot, forced, now_ns);
+                },
+                []() noexcept {});
         return std::move(authority);
     }
 
     [[nodiscard]] constexpr QuarantineState state(cog::CogIdentity const& id) const noexcept {
-        Slot const* slot = find(id);
-        if (slot == nullptr) {
-            return QuarantineState::Healthy;
-        }
-        return slot->state;
+        return find(id).match([this](SlotIndex index) noexcept { return slots_.at(index).state; },
+                              []() noexcept { return QuarantineState::Healthy; });
     }
 
     [[nodiscard]] constexpr QuarantineSnapshot current(cog::CogIdentity const& id) const noexcept {
-        Slot const* slot = find(id);
-        if (slot == nullptr) {
-            QuarantineSnapshot missing{};
-            missing.cog_uuid = id.uuid;
-            return missing;
-        }
-        return snapshot(*slot);
-    }
-
-    // A view of the storage in physical order. Until the ring wraps
-    // that order is also chronological. After it wraps, slot zero
-    // holds a recently written event and the sequence breaks at the
-    // wrap point. A caller that needs events in order reads them
-    // through transition_event_at instead.
-    [[nodiscard]] constexpr std::span<const QuarantineEvent> transition_events() const noexcept {
-        return std::span<const QuarantineEvent>{events_.data(), event_count_};
+        return find(id).match([this](SlotIndex index) noexcept { return snapshot(slots_.at(index)); },
+                              [&id]() noexcept {
+                                  QuarantineSnapshot missing{};
+                                  missing.cog_uuid = id.uuid;
+                                  return missing;
+                              });
     }
 
     [[nodiscard]] constexpr std::size_t transition_event_count() const noexcept { return event_count_; }
 
-    [[nodiscard]] constexpr const QuarantineEvent* transition_event_at(std::size_t index) const noexcept {
+    // The event at index, counted from the oldest event that the ring
+    // keeps, or no value at or past the count.
+    [[nodiscard]] constexpr ::fixy::Option<QuarantineEvent> transition_event_at(std::size_t index) const noexcept {
         if (index >= event_count_) {
-            return nullptr;
+            return ::fixy::none;
         }
         // index counts from the oldest surviving event, which is not
         // slot zero once the ring has wrapped. Before the wrap the
         // write cursor equals the count, so the subtraction is zero
         // modulo the size and the base is slot zero. After the wrap
         // the write cursor is itself the oldest surviving slot.
-        const std::size_t size = events_.size();
-        const std::size_t base = (next_event_ + size - event_count_) % size;
-        return &events_[(base + index) % size];
+        const std::size_t base = (next_event_.raw() + MaxEvents - event_count_) % MaxEvents;
+        return EventIndex::check((base + index) % MaxEvents)
+            .match([this](EventIndex slot) noexcept { return ::fixy::some(events_.at(slot)); },
+                   []() noexcept -> ::fixy::Option<QuarantineEvent> { return ::fixy::none; });
     }
 };
 

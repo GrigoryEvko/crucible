@@ -1191,11 +1191,11 @@ crucible_neg_compile_test(neg_quarantine_operator_authority_bg_ctx
     "no matching function for call to .mint_permission_root<crucible::warden::quarantine_tag::OperatorOverride>\\(const fixy::BgDrainCtx&\\)."
     "required for the satisfaction of .PermissionRootArgs<Tag, Args \\.\\.\\.>. .with Tag = crucible::warden::quarantine_tag::OperatorOverride. Args = \\{foundation::effects::ExecCtx<foundation::effects::Bg, ")
 crucible_neg_compile_test(neg_quarantine_zero_slots
-    "In instantiation of .class crucible::warden::QuarantinePolicy<0, 4>."
-    "static assertion failed: QuarantinePolicy requires Cog slots")
+    "template constraint failure for .template<long unsigned int MaxCogs, long unsigned int MaxEvents>  requires  QuarantineCapacity<MaxCogs, MaxEvents> class crucible::warden::QuarantinePolicy."
+    "the expression .MaxCogs > 0 \\[with MaxCogs = 0\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_quarantine_zero_events
-    "In instantiation of .class crucible::warden::QuarantinePolicy<2, 0>."
-    "static assertion failed: QuarantinePolicy requires audit-event slots")
+    "template constraint failure for .template<long unsigned int MaxCogs, long unsigned int MaxEvents>  requires  QuarantineCapacity<MaxCogs, MaxEvents> class crucible::warden::QuarantinePolicy."
+    "the expression .MaxEvents > 0 \\[with MaxEvents = 0\\]. evaluated to .false.")
 
 # ─── §XXI Universal Mint Pattern for warden/ hubs ─────────────────
 # Three mints (mint_hardening / mint_hot_region_registry_handle /
