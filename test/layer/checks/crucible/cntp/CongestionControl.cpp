@@ -5,7 +5,8 @@
 namespace crucible::cntp {
 
 static_assert(sizeof(SocketFd) == sizeof(int));
-static_assert(std::is_trivially_copyable_v<KernelCcName>);
+static_assert(std::is_trivially_copy_constructible_v<KernelCcName>);
+static_assert(std::is_trivially_destructible_v<KernelCcName>);
 static_assert(!std::is_aggregate_v<KernelCcName>,
               "KernelCcName must not be an aggregate: from() is the only path that may set the length");
 

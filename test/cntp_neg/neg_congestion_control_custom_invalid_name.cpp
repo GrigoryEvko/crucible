@@ -3,10 +3,8 @@
 // "BBR" and the second clause of CustomCcModule is false.
 #include <crucible/cntp/CongestionControl.h>
 
-#include <string_view>
-
 struct UppercaseName {
-    static constexpr std::string_view congestion_control_name() noexcept { return "BBR"; }
+    static constexpr ::fixy::TextView congestion_control_name() noexcept { return "BBR"; }
 };
 
 int main() {

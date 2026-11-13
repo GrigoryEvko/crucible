@@ -32,21 +32,26 @@ namespace crucible::fuzz::boundary {
 inline void run_cntp_text(std::span<const std::uint8_t> bytes) {
     ByteCursor cursor{bytes};
     const auto which = cursor.take<std::uint8_t>();
-    const std::string_view text = as_text(cursor.rest());
     switch (which % 3) {
         case 0:
-            (void)cntp::parse_tc_qdisc_show(text);
+            (void)cntp::parse_tc_qdisc_show(as_text(cursor.rest()));
             break;
         case 1: {
+            const std::string_view text = as_text(cursor.rest());
             const std::size_t split = text.find('\x1f');
             const std::string_view rx = text.substr(0, split);
             const std::string_view tx = split == std::string_view::npos ? std::string_view{} : text.substr(split + 1);
             (void)cntp::parse_pfc_pause_counters(rx, tx);
             break;
         }
-        default:
-            (void)cntp::parse_available_congestion_control(text);
+        default: {
+            // The product reads at most available_cc_capacity characters of
+            // the list, so the harness gives the parser at most as many.
+            ::fixy::FixedText<cntp::detail::available_cc_capacity> listed{};
+            while (!cursor.is_empty() && listed.push(cursor.take<char>()).is_ok()) {}
+            (void)cntp::parse_available_congestion_control(listed.view());
             break;
+        }
     }
 }
 

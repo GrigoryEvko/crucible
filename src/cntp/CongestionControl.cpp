@@ -1,7 +1,5 @@
 #include <crucible/cntp/CongestionControl.h>
 
-#include <cstring>
-
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
@@ -12,19 +10,26 @@ namespace {
 
 [[nodiscard]] bool is_space(char c) noexcept { return c == ' ' || c == '\n' || c == '\t' || c == '\r'; }
 
-[[nodiscard]] std::size_t bounded_c_string_len(char const* data, std::size_t cap) noexcept {
-    std::size_t len = 0;
-    while (len < cap && data[len] != '\0') {
-        ++len;
-    }
-    return len;
-}
-
 void add_algorithm(CcAvailability& availability, CcAlgorithm algorithm) noexcept {
     // Each enum value reflects exactly one kernel-registered name.  A BBRv3
     // patch set replaces the in-tree "bbr" module rather than coexisting with
     // it, so no BBR variant implies any other.
     availability.algorithms.set(algorithm);
+}
+
+// Adds the algorithm of the characters of text from start to end.  An empty
+// token adds nothing, and a token that is no kernel name is an error.
+[[nodiscard]] ::fixy::Result<::fixy::Unit, CcError> add_token(CcAvailability& availability, ::fixy::TextView text,
+                                                              std::size_t start, std::size_t end) noexcept {
+    if (start == end) {
+        return ::fixy::Unit{};
+    }
+    ::fixy::TextView const token = text.window(start, end - start).expect("a token lies inside its text");
+    CRUCIBLE_TRY(algorithm, algorithm_from_kernel_name(token));
+    if (algorithm != CcAlgorithm::Custom) {
+        add_algorithm(availability, algorithm);
+    }
+    return ::fixy::Unit{};
 }
 
 }  // namespace
@@ -69,7 +74,7 @@ void add_algorithm(CcAvailability& availability, CcAlgorithm algorithm) noexcept
     }
 }
 
-::fixy::Result<CcAlgorithm, CcError> algorithm_from_kernel_name(std::string_view name) noexcept {
+::fixy::Result<CcAlgorithm, CcError> algorithm_from_kernel_name(::fixy::TextView name) noexcept {
     // Upstream Linux registers BBRv1 under the plain name "bbr".  BBRv2 and
     // BBRv3 are out-of-tree and register under their own distinct names
     // "bbr2" and "bbr3".  A kernel that exposes "bbr" is running BBRv1.
@@ -100,39 +105,37 @@ void add_algorithm(CcAvailability& availability, CcAlgorithm algorithm) noexcept
     return ::fixy::err(CcError::InvalidAlgorithmName);
 }
 
-::fixy::Result<CcAvailability, CcError> parse_available_congestion_control(std::string_view text) noexcept {
+// The tokens of the list stand between the spaces.  One pass over the
+// characters.
+::fixy::Result<CcAvailability, CcError> parse_available_congestion_control(::fixy::TextView text) noexcept {
     CcAvailability availability{};
 
-    std::size_t pos = 0;
-    while (pos < text.size()) {
-        while (pos < text.size() && is_space(text[pos])) {
-            ++pos;
+    std::size_t start = 0;
+    std::size_t position = 0;
+    for (char const character : text) {
+        if (is_space(character)) {
+            CRUCIBLE_TRY(_, add_token(availability, text, start, position));
+            start = position + 1;
         }
-        const std::size_t start = pos;
-        while (pos < text.size() && !is_space(text[pos])) {
-            ++pos;
-        }
-        if (start == pos) {
-            continue;
-        }
-
-        const auto token = text.substr(start, pos - start);
-        CRUCIBLE_TRY(_, KernelCcName::from(token));
-        CRUCIBLE_TRY(parsed, algorithm_from_kernel_name(token));
-        if (parsed != CcAlgorithm::Custom) {
-            add_algorithm(availability, parsed);
-        }
+        ++position;
     }
-
+    CRUCIBLE_TRY(_, add_token(availability, text, start, position));
     return availability;
 }
 
 ::fixy::Result<::fixy::Unit, CcError> detail::set_cc_for_socket_keyed(SocketOptionKey const&, SocketFd fd,
                                                                       DeclaredCcChoice choice) noexcept {
     auto const& selection = choice.value();
-    auto const name = selection.kernel_name.view();
+    ::fixy::TextView const name = selection.kernel_name.view();
+
+    // The name holds at most max_bytes - 1 characters, so each write is in
+    // the buffer, and the zero after the name stays.
     std::array<char, KernelCcName::max_bytes> optname{};
-    std::memcpy(optname.data(), name.data(), name.size());
+    std::size_t position = 0;
+    for (char const character : name) {
+        optname[position] = character;
+        ++position;
+    }
 
     const int rc =
         ::setsockopt(fd.value(), IPPROTO_TCP, TCP_CONGESTION, optname.data(), static_cast<socklen_t>(name.size() + 1u));
@@ -151,10 +154,19 @@ void add_algorithm(CcAvailability& availability, CcAlgorithm algorithm) noexcept
         return ::fixy::err(CcError::GetSockOptFailed);
     }
 
+    // The kernel writes the name and its zero, and len counts the bytes that
+    // it wrote.  The name is the characters before the first zero.
     const auto bounded_len =
         static_cast<std::size_t>(len) < optname.size() ? static_cast<std::size_t>(len) : optname.size();
-    const auto actual_len = bounded_c_string_len(optname.data(), bounded_len);
-    CRUCIBLE_TRY(admitted, KernelCcName::from(std::string_view{optname.data(), actual_len}));
+    ::fixy::FixedText<KernelCcName::max_bytes> received{};
+    for (std::size_t index = 0; index < bounded_len; ++index) {
+        char const character = optname[index];
+        if (character == '\0') {
+            break;
+        }
+        received.push(character).expect("the text holds as many characters as the buffer");
+    }
+    CRUCIBLE_TRY(admitted, KernelCcName::from(received.view()));
     CRUCIBLE_TRY(algorithm, algorithm_from_kernel_name(admitted.view()));
 
     return CcSelection{

@@ -6,7 +6,6 @@
 
 #include "test_assert.h"
 #include <cstdio>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -49,7 +48,7 @@ private:
 };
 
 struct UserCc {
-    static consteval std::string_view congestion_control_name() noexcept { return "user_cc"; }
+    static consteval ::fixy::TextView congestion_control_name() noexcept { return "user_cc"; }
 };
 
 // The value of a call that succeeds in this test.
@@ -70,6 +69,13 @@ void test_name_admission() {
     assert(cubic.view() == "cubic");
 
     assert(error_of(cntp::KernelCcName::from("cu bic")) == cntp::CcError::InvalidAlgorithmName);
+    assert(error_of(cntp::KernelCcName::from("Cubic")) == cntp::CcError::InvalidAlgorithmName);
+    assert(error_of(cntp::KernelCcName::from("")) == cntp::CcError::InvalidAlgorithmName);
+
+    // A name of max_bytes - 1 characters fits beside its zero, and one more
+    // character does not.
+    cntp::KernelCcName const longest = take(cntp::KernelCcName::from("0123456789abcde"));
+    assert(longest.view().size() == cntp::KernelCcName::max_bytes - 1);
     assert(error_of(cntp::KernelCcName::from("0123456789abcdef")) == cntp::CcError::InvalidAlgorithmName);
 
     auto fd = cntp::admit_socket_fd(-1);
@@ -112,6 +118,17 @@ void test_availability_parse_and_recommendation() {
     cntp::CcAvailability const legacy = take(cntp::parse_available_congestion_control("reno cubic\n"));
     cntp::DeclaredCcChoice const fallback = take(cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(legacy));
     assert(fallback.value().algorithm == cntp::CcAlgorithm::Cubic);
+
+    // Runs of spaces, a list with no final newline and a custom module parse.
+    // A name that is no kernel name refuses the list.
+    cntp::CcAvailability const spaced = take(cntp::parse_available_congestion_control("  reno\t\tuser_cc  vegas"));
+    assert(spaced.contains(cntp::CcAlgorithm::Reno));
+    assert(spaced.contains(cntp::CcAlgorithm::Vegas));
+    assert(!spaced.contains(cntp::CcAlgorithm::Custom));
+    assert(!take(cntp::parse_available_congestion_control("")).contains(cntp::CcAlgorithm::Cubic));
+    assert(error_of(cntp::parse_available_congestion_control("reno Cubic\n")) == cntp::CcError::InvalidAlgorithmName);
+    assert(error_of(cntp::algorithm_from_kernel_name("0123456789abcdef")) == cntp::CcError::InvalidAlgorithmName);
+    assert(take(cntp::algorithm_from_kernel_name("user_cc")) == cntp::CcAlgorithm::Custom);
 
     crucible::test::pass("  test_availability_parse_and_recommendation: PASSED\n");
 }
@@ -158,7 +175,7 @@ void test_live_socket_roundtrip_if_available() {
     assert(take(cntp::query_cc_for_socket(load, *fd)) == chosen.value().algorithm);
 
     cntp::CcSelection const selection = take(cntp::query_cc_selection_for_socket(load, *fd));
-    assert(!selection.kernel_name.view().empty());
+    assert(selection.kernel_name.view().size() != 0);
 
     crucible::test::pass("  test_live_socket_roundtrip_if_available: PASSED\n");
 }
@@ -225,8 +242,9 @@ int main() {
     static_assert(cntp::CcCompatible<cntp::CcAlgorithm::Dctcp, cntp::LinkClass::LosslessDatacenterFabric>);
     static_assert(!cntp::CcCompatible<cntp::CcAlgorithm::Dctcp, cntp::LinkClass::CrossDatacenter>);
     static_assert(cntp::CustomCcModule<UserCc>);
-    static_assert(std::is_trivially_copyable_v<cntp::KernelCcName>);
-    static_assert(std::is_trivially_copyable_v<cntp::CcSelection>);
+    static_assert(std::is_trivially_copy_constructible_v<cntp::KernelCcName>);
+    static_assert(std::is_trivially_copy_constructible_v<cntp::CcSelection>);
+    static_assert(std::is_trivially_destructible_v<cntp::CcSelection>);
     static_assert(std::same_as<cntp::DeclaredCcChoice::tag_type, ::fixy::tags::source::CcAlgorithm>);
 
     assert(cntp::cc_algorithm_name(cntp::CcAlgorithm::Bbr3) == "bbr3");

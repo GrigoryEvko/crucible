@@ -15,7 +15,6 @@
 #include <foundation/effects/Row.h>
 
 #include <array>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -62,51 +61,48 @@ enum class CcError : std::uint8_t {
 using SocketFd = ::fixy::NonNegative<int>;
 using CcAlgorithmMask = ::fixy::Bits<CcAlgorithm>;
 
-// The stored length is private and from() is its only writer, so every
-// KernelCcName satisfies view().size() < max_bytes by construction.
-// set_cc_for_socket relies on that: it copies view() into a
-// max_bytes-wide buffer and hands the kernel view().size() + 1 as the
-// socklen_t, so a length the validation never saw would both overflow
-// that buffer and send the kernel a length past the end of it.
-//
-// This mirrors cntp::NicInterfaceName, which carries the same shape for
-// the same reason.  Neither type is an aggregate: while the members were
-// public, `KernelCcName n{}; n.size = 200;` was well-formed.
+// The name of a congestion control module of the kernel.  from() checks each
+// character and is the one writer.  The name holds at most max_bytes - 1
+// characters, so a buffer of max_bytes for the kernel has room for the zero
+// after the name.  set_cc_for_socket copies the name into such a buffer.
 class KernelCcName {
 public:
+    // TCP_CA_NAME_MAX of the kernel: the characters of a name and its zero.
     static constexpr std::size_t max_bytes = 16;
 
     // A default-constructed name is empty, which reads as "no algorithm
-    // selected" and copies zero bytes.
+    // selected".
     constexpr KernelCcName() noexcept = default;
 
-    [[nodiscard]] constexpr std::string_view view() const noexcept { return {bytes_.data(), size_}; }
+    // The characters of the name.  The view borrows this name, so a view of a
+    // temporary name is refused.
+    [[nodiscard]] constexpr ::fixy::TextView view() const& noexcept { return characters_.view(); }
+    ::fixy::TextView
+    view() const&& = delete("a view of a temporary KernelCcName points into an object that the full expression ends");
 
     // A Result<KernelCcName, CcError>.  The type of a Result needs a complete
     // name, so the definition stands after the class.
-    [[nodiscard]] static constexpr auto from(std::string_view name) noexcept;
+    [[nodiscard]] static constexpr auto from(::fixy::TextView name) noexcept;
 
 private:
-    std::array<char, max_bytes> bytes_{};
-    std::uint8_t size_ = 0;
+    ::fixy::FixedText<max_bytes - 1> characters_{};
 };
 
-constexpr auto KernelCcName::from(std::string_view name) noexcept {
+// A name of max_bytes characters or more does not fit, and append() refuses
+// it with one compare.  Then each character takes one check.
+constexpr auto KernelCcName::from(::fixy::TextView name) noexcept {
     using Admitted = ::fixy::Result<KernelCcName, CcError>;
-    if (name.empty() || name.size() >= max_bytes) {
+    KernelCcName out{};
+    if (name.size() == 0 || out.characters_.append(name).is_err()) {
         return Admitted{::fixy::err(CcError::InvalidAlgorithmName)};
     }
-
-    KernelCcName out{};
-    for (std::size_t i = 0; i < name.size(); ++i) {
-        const char c = name[i];
-        const bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
-        if (!ok) {
+    for (char const character : name) {
+        bool const is_name_character = (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9')
+                                    || character == '_' || character == '-';
+        if (!is_name_character) {
             return Admitted{::fixy::err(CcError::InvalidAlgorithmName)};
         }
-        out.bytes_[i] = c;
     }
-    out.size_ = static_cast<std::uint8_t>(name.size());
     return Admitted{out};
 }
 
@@ -127,10 +123,10 @@ template <CcAlgorithm Algorithm, LinkClass Link>
 concept CcCompatible = Algorithm != CcAlgorithm::Custom
                     && (Algorithm != CcAlgorithm::Dctcp || Link == LinkClass::LosslessDatacenterFabric);
 
+// The module gives its name as a constant TextView, and from() admits it.
 template <class Module>
-concept CustomCcModule = requires {
-    { Module::congestion_control_name() } -> std::convertible_to<std::string_view>;
-} && requires { requires KernelCcName::from(Module::congestion_control_name()).is_ok(); };
+concept CustomCcModule = requires { Module::congestion_control_name(); }
+                      && requires { requires KernelCcName::from(Module::congestion_control_name()).is_ok(); };
 
 [[nodiscard]] constexpr std::expected<SocketFd, CcError> admit_socket_fd(int fd) noexcept {
     if (fd < 0) {
@@ -184,10 +180,10 @@ template <class Module, LinkClass Link>
     });
 }
 
-[[nodiscard]] ::fixy::Result<CcAlgorithm, CcError> algorithm_from_kernel_name(std::string_view name) noexcept;
+[[nodiscard]] ::fixy::Result<CcAlgorithm, CcError> algorithm_from_kernel_name(::fixy::TextView name) noexcept;
 
 [[nodiscard]] ::fixy::Result<CcAvailability, CcError>
-parse_available_congestion_control(std::string_view text) noexcept;
+parse_available_congestion_control(::fixy::TextView text) noexcept;
 
 // The kernel lists its algorithms in a file under /proc.  The fs door
 // opens it, and that door counts an open and a read as IO and Block, so
@@ -225,7 +221,11 @@ template <::foundation::effects::IsExecCtx Ctx>
     if (!bytes_read.has_value() || *bytes_read == 0) {
         return ::fixy::err(CcError::SysctlUnavailable);
     }
-    return parse_available_congestion_control(std::string_view{text.data(), *bytes_read});
+    ::fixy::FixedText<detail::available_cc_capacity> listed{};
+    for (std::size_t index = 0; index < *bytes_read; ++index) {
+        listed.push(text[index]).expect("read_full reads at most the size of the buffer");
+    }
+    return parse_available_congestion_control(listed.view());
 }
 
 template <::foundation::effects::IsExecCtx Ctx>
