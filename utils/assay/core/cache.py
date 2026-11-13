@@ -156,7 +156,7 @@ LIMITS: dict[str, int] = {
     # ENTRY_BYTES for each object and command.  An entry that the store drops while ccache keeps its object costs one
     # more compile (A HIT WITH NO COST of assay.loop.step).  So the limit holds an entry for each result that ccache
     # holds at its limit, also after an eviction to EVICT_TO (CCACHE_RESULTS).
-    "compile-cost": 4 << 30,
+    "compile-cost": 8 << 30,
     # The results of the runs of `loop test` with the status 0 (utils/assay/loop/affected.py, THE SHARED STORE).  Each
     # test and set of inputs has one file of one 4 KB block.  The limit holds 32,768 results: 64 sets of inputs of each
     # of the 506 tests with a key of the Debug build on 2026-10-14.
@@ -178,9 +178,10 @@ LIMITS: dict[str, int] = {
 # gives each file one block of 4 KB.
 ENTRY_BYTES = 4096
 # The results that ccache holds at its limit on the build host, for the row compile-cost of LIMITS.  On 2026-11-12,
-# ccache held 116,916 results in 21.0 GB, 179.6 KB for each result with its manifests, and its limit was 100 GB: about
-# 557,000 results.  The cost store then held 231,471 entries in 904 MB, a mean of 204 bytes in each block of 4 KB.
-CCACHE_RESULTS = 557_000
+# ccache held 116,916 results in 21.0 GB, 179.6 KB for each result with its manifests.  On 2026-11-13, its limit went
+# from 100 GB to 200 GB: about 1,114,000 results.  The cost store held 231,471 entries in 904 MB on 2026-11-12, a mean
+# of 204 bytes in each block of 4 KB.
+CCACHE_RESULTS = 1_114_000
 # The cache of the compiled modules of the package, which each master names in sys.pycache_prefix.
 COMPILED_CACHE = root_rule.COMPILED_CACHE
 # The suffix of a compiled module of the package.
