@@ -36,7 +36,6 @@ include/crucible/ledger/RefreshDaemon.h | heavy-include | 1 | <chrono> | the wai
 include/crucible/ledger/RefreshDaemon.h | heavy-include | 1 | <memory> | the daemon publishes its view in a std::shared_ptr, and mint_refresh_daemon gives the daemon in a std::unique_ptr
 include/crucible/ledger/RefreshDaemon.h | heavy-include | 1 | <thread> | the daemon does its loop on a std::jthread, and the loop stops at the std::stop_token of that thread
 include/crucible/ledger/probes/CacheTier.h | heavy-include | 1 | <thread> | the probe pins a std::thread to the CPU that it measures, and a second std::thread writes the remote region first, on the remote node
-include/crucible/observe/SdcDetect.h | heavy-include | 1 | <memory> | the compare and the slot lookup take each address with std::addressof, and an overloaded operator & of a result type cannot change it
 include/crucible/perf/LockContention.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
 include/crucible/perf/PmuSample.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only
 include/crucible/perf/SchedSwitch.h | heavy-include | 1 | <memory> | the class holds its BPF state in a std::unique_ptr, and the header declares the State class only

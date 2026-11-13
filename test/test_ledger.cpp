@@ -633,11 +633,11 @@ void test_store_round_trips_through_the_filesystem() {
         const std::size_t at = body.find("fingerprint\t7b92e6be37e8344e");
         assert(at != std::string::npos);
         body.replace(at, std::strlen("fingerprint\t7b92e6be37e8344e"), "fingerprint\t0000000000000001");
-        auto handle = ::fixy::fs::mint_durable_truncate_file(ctx, *path, 0644);
-        assert(handle.has_value());
-        const ::fixy::fs::OwnedFd file = std::move(*handle).consume();
-        assert(::fixy::fs::write_full(ctx, file, std::as_bytes(std::span<const char>{body.data(), body.size()}))
-                   .has_value());
+        const ::fixy::fs::OwnedFd file = ::fixy::fs::mint_durable_truncate_file(ctx, *path, 0644)
+                                             .expect("the ledger file of the test opens")
+                                             .consume();
+        assert(
+            ::fixy::fs::write_full(ctx, file, std::as_bytes(std::span<const char>{body.data(), body.size()})).is_ok());
     }
     auto mismatched = ledger::load_ledger(ctx, written.fingerprint);
     assert(!mismatched.has_value());

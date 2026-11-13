@@ -136,20 +136,25 @@ template <::foundation::effects::IsExecCtx Ctx>
     if (!sanitized.has_value()) {
         return {};
     }
-    auto opened = ::fixy::fs::mint_file<::fixy::fs::read_only>(ctx, std::move(*sanitized));
-    if (!opened.has_value()) {
+    const ::fixy::fs::OwnedFd file =
+        ::fixy::fs::mint_file<::fixy::fs::read_only>(ctx, std::move(*sanitized))
+            .match(
+                [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd {
+                    return std::move(opened).consume();
+                },
+                [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
+    if (!file.is_open()) {
         return {};
     }
-    const ::fixy::fs::OwnedFd file = std::move(*opened).consume();
     // as_writable_bytes rather than a pointer cast: reinterpret_cast is
     // banned tree-wide, and the span form carries the bound along with the
     // retyping instead of re-deriving it.
     auto filled =
         ::fixy::fs::read_full(ctx, file, std::as_writable_bytes(std::span<char>{into.data(), into.size() - 1u}));
-    if (!filled.has_value()) {
+    if (filled.is_err()) {
         return {};
     }
-    std::size_t length = *filled;
+    std::size_t length = std::move(filled).expect("the read holds its count after the check of its error");
     into[length] = '\0';
     while (length > 0u) {
         const char last = into[length - 1u];

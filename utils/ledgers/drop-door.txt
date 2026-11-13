@@ -9,7 +9,7 @@ reason include/foundation/permissions/ | the inline fork writes a child token ba
 reason test/ | the tests write a token back through a reference in a door body, and the shape probes compare a write of a token with its raw form
 include/fixy/concurrent/ | untracked-assignment | 1 | - | -
 include/fixy/session/ | untracked-assignment | 2 | - | -
-include/foundation/core/ | destroy | 4 | - | -
+include/foundation/core/ | destroy | 5 | - | -
 include/foundation/core/ | untracked-assignment | 1 | - | -
 include/foundation/permissions/ | untracked-assignment | 2 | - | -
 test/fixy/ | untracked-assignment | 1 | - | -

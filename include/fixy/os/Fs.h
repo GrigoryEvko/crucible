@@ -61,10 +61,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <meta>
 #include <span>
-#include <system_error>
 #include <type_traits>
 #include <utility>
 
@@ -172,13 +170,6 @@ write_full_(int descriptor, std::byte const* first, std::size_t count) noexcept;
 }  // namespace detail
 
 class FileDoor;
-class Dirfd;
-
-// Declared before Dirfd so the class can name it as the sole friend of
-// its only constructor; defined after it.
-template <eff::IsExecCtx Ctx>
-    requires ::fixy::fs::CtxAdmitsFs<Ctx>
-[[nodiscard]] std::expected<Dirfd, std::error_code> open_dirfd(Ctx const&, Path<tags::source::Sanitized> dir) noexcept;
 
 // A descriptor that is known to be a directory, opened O_DIRECTORY and
 // O_NOFOLLOW.  sync<FsyncParentDir> takes this rather than any OwnedFd,
@@ -186,21 +177,17 @@ template <eff::IsExecCtx Ctx>
 // on a file descriptor it is a different operation wearing the same
 // name.
 //
-// The constructor is private and open_dirfd is its sole friend: an
-// OwnedFd is evidence of a descriptor the caller owns, not of a
-// directory, so consuming one is not enough.
+// The constructor is private and FileDoor is its sole friend: an OwnedFd
+// is evidence of a descriptor the caller owns, not of a directory, so
+// consuming one is not enough.  The door opens the directory, and
+// open_dirfd is the gated caller of the door.  A Result of a Dirfd needs
+// the complete class, so the door, which comes after the class, gives it.
 class [[nodiscard]] Dirfd {
     OwnedFd fd_;
 
     explicit Dirfd(OwnedFd&& fd) noexcept : fd_{std::move(fd)} {}
 
-    // Trailing return type on purpose: the leading form ends in `>` and
-    // the parser takes `>::` as a nested-name-specifier.  Documented at
-    // fixy/os/CpuPinned.h.
-    template <eff::IsExecCtx FriendCtx>
-        requires ::fixy::fs::CtxAdmitsFs<FriendCtx>
-    friend auto open_dirfd(FriendCtx const&, Path<tags::source::Sanitized>) noexcept
-        -> std::expected<Dirfd, std::error_code>;
+    friend class FileDoor;
 
 public:
     Dirfd() noexcept = default;
@@ -341,13 +328,20 @@ concept CtxFitsCommitAtomic =
 // argument belongs to this declaration.
 template <typename... Atoms, eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, Atoms...>
-[[nodiscard]] inline std::expected<Linear<OwnedFd>, std::error_code>
+[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
 mint_file(Ctx const&, Path<tags::source::Sanitized> sanitized_path, ::mode_t perms = 0644) noexcept;
+
+// Declared here and defined below FileDoor for the same reason.
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
+open_dirfd(Ctx const&, Path<tags::source::Sanitized> dir) noexcept;
 
 // The door to the open of a path.  No object of it exists.  Its members
 // are private, and its two friends are the gated mints that open a path,
-// mint_file and open_dirfd.  OwnedFd befriends this class, so a handle
-// over a path comes only from one of those two mints, after their gates.
+// mint_file and open_dirfd.  OwnedFd and Dirfd befriend this class, so a
+// handle over a path comes only from one of those two mints, after their
+// gates.
 //
 // The trailing return types are necessary: fixy/os/CpuPinned.h gives the
 // parse reason.
@@ -355,12 +349,12 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
     template <typename... FriendAtoms, eff::IsExecCtx FriendCtx>
         requires CtxFitsFileMint<FriendCtx, FriendAtoms...>
     friend auto mint_file(FriendCtx const&, Path<tags::source::Sanitized>, ::mode_t) noexcept
-        -> std::expected<Linear<OwnedFd>, std::error_code>;
+        -> ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
 
     template <eff::IsExecCtx FriendCtx>
         requires ::fixy::fs::CtxAdmitsFs<FriendCtx>
     friend auto open_dirfd(FriendCtx const&, Path<tags::source::Sanitized>) noexcept
-        -> std::expected<Dirfd, std::error_code>;
+        -> ::foundation::core::Result<Dirfd, ::foundation::os::Errno>;
 
     // The handle of a descriptor that the open gave, or the error of the
     // open.
@@ -385,47 +379,47 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
     // O_DIRECTORY refuses anything else, O_NOFOLLOW refuses a symlink
     // that stands in for the directory, and the descriptor is what a later
     // fsync flushes the entry through.
-    [[nodiscard]] static ::foundation::core::Result<OwnedFd, ::foundation::os::Errno>
+    [[nodiscard]] static ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
     open_directory_(const char* dir_path) noexcept {
+        using Opened = ::foundation::core::Result<Dirfd, ::foundation::os::Errno>;
         return own_(detail::open_descriptor_(dir_path,
                                              ::foundation::os::kOpenDirectory | ::foundation::os::kOpenNoFollow
                                                  | ::foundation::os::kOpenCloseOnExec | ::foundation::os::kOpenReadOnly,
-                                             0));
+                                             0))
+            .match([](OwnedFd descriptor) -> Opened { return Dirfd{std::move(descriptor)}; },
+                   [](::foundation::os::Errno error) -> Opened { return ::foundation::core::err(error); });
     }
 };
 
 template <typename... Atoms, eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, Atoms...>
-[[nodiscard]] inline std::expected<Linear<OwnedFd>, std::error_code>
+[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
 mint_file(Ctx const&, Path<tags::source::Sanitized> sanitized_path, ::mode_t perms) noexcept {
+    using Minted = ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
     constexpr int flags = detail::fold_open_flags<Atoms...>();
-    auto fd = FileDoor::open_path_(sanitized_path.value().c_str(), flags, perms);
-    if (fd.is_err()) {
-        return std::unexpected{std::error_code{detail::error_number_of_(fd), std::system_category()}};
-    }
-    return mint_linear<OwnedFd>(std::move(fd).expect("the file door gave the descriptor of the open"));
+    return FileDoor::open_path_(sanitized_path.value().c_str(), flags, perms)
+        .match([](OwnedFd descriptor) -> Minted { return mint_linear<OwnedFd>(std::move(descriptor)); },
+               [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
 }
 
 // Not a mint: this acts on an existing handle and synthesizes nothing.
 template <typename SyncOp, eff::IsExecCtx Ctx>
     requires CtxFitsSync<Ctx, SyncOp>
-[[nodiscard]] inline std::expected<void, std::error_code> sync(Ctx const&, const OwnedFd& handle) noexcept {
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+sync(Ctx const&, const OwnedFd& handle) noexcept {
     // Fsync, and FsyncParentDir on a directory descriptor, which is the call
     // that flushes the directory entry.  The door gives EBADF for a closed
     // handle.
-    auto const synced =
-        std::is_same_v<SyncOp, sync_op::Fdatasync> ? detail::sync_data_(handle.get()) : detail::sync_all_(handle.get());
-    if (synced.is_err()) {
-        return std::unexpected{std::error_code{detail::error_number_of_(synced), std::system_category()}};
-    }
-    return {};
+    return std::is_same_v<SyncOp, sync_op::Fdatasync> ? detail::sync_data_(handle.get())
+                                                      : detail::sync_all_(handle.get());
 }
 
 // FsyncParentDir takes the directory handle by its own type, so a file
 // descriptor cannot be handed in where an entry flush was meant.
 template <typename SyncOp, eff::IsExecCtx Ctx>
     requires CtxFitsSync<Ctx, SyncOp> && std::is_same_v<SyncOp, sync_op::FsyncParentDir>
-[[nodiscard]] inline std::expected<void, std::error_code> sync(Ctx const& ctx, const Dirfd& dir) noexcept {
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+sync(Ctx const& ctx, const Dirfd& dir) noexcept {
     return sync<SyncOp>(ctx, dir.handle());
 }
 
@@ -440,25 +434,18 @@ template <typename SyncOp, eff::IsExecCtx Ctx>
 // Not a mint: this renames existing paths and synthesizes nothing.
 template <typename Atomicity, eff::IsExecCtx Ctx>
     requires CtxFitsCommitAtomic<Ctx, Atomicity>
-[[nodiscard]] inline std::expected<void, std::error_code> commit_atomic(Ctx const&, Path<tags::source::Sanitized> tmp,
-                                                                        Path<tags::source::Sanitized> target) noexcept {
-    auto const renamed = std::is_same_v<Atomicity, atomicity::Rename>
-                           ? detail::rename_replacing_(tmp.value().c_str(), target.value().c_str())
-                           : detail::rename_no_replace_(tmp.value().c_str(), target.value().c_str());
-    if (renamed.is_err()) {
-        return std::unexpected{std::error_code{detail::error_number_of_(renamed), std::system_category()}};
-    }
-    return {};
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+commit_atomic(Ctx const&, Path<tags::source::Sanitized> tmp, Path<tags::source::Sanitized> target) noexcept {
+    return std::is_same_v<Atomicity, atomicity::Rename>
+             ? detail::rename_replacing_(tmp.value().c_str(), target.value().c_str())
+             : detail::rename_no_replace_(tmp.value().c_str(), target.value().c_str());
 }
 
 template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
-[[nodiscard]] std::expected<Dirfd, std::error_code> open_dirfd(Ctx const&, Path<tags::source::Sanitized> dir) noexcept {
-    auto fd = FileDoor::open_directory_(dir.value().c_str());
-    if (fd.is_err()) {
-        return std::unexpected{std::error_code{detail::error_number_of_(fd), std::system_category()}};
-    }
-    return Dirfd{std::move(fd).expect("the file door gave the descriptor of the open")};
+[[nodiscard]] ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
+open_dirfd(Ctx const&, Path<tags::source::Sanitized> dir) noexcept {
+    return FileDoor::open_directory_(dir.value().c_str());
 }
 
 // The three calls below read and write through a handle that is open.
@@ -472,37 +459,26 @@ template <eff::IsExecCtx Ctx>
 // Not mints: these act on an existing handle and synthesize nothing.
 template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
-[[nodiscard]] inline std::expected<std::size_t, std::error_code> read_full(Ctx const&, const OwnedFd& handle,
-                                                                           std::span<std::byte> buffer) noexcept {
+[[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+read_full(Ctx const&, const OwnedFd& handle, std::span<std::byte> buffer) noexcept {
     // The door gives EBADF for a closed handle.
-    auto bytes_read = detail::read_full_(handle.get(), buffer.data(), buffer.size());
-    if (bytes_read.is_err()) {
-        return std::unexpected{std::error_code{detail::error_number_of_(bytes_read), std::system_category()}};
-    }
-    return std::move(bytes_read).expect("the read of the file door gave its count");
+    return detail::read_full_(handle.get(), buffer.data(), buffer.size());
 }
 
 template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
-[[nodiscard]] inline std::expected<void, std::error_code> write_full(Ctx const&, const OwnedFd& handle,
-                                                                     std::span<const std::byte> buffer) noexcept {
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+write_full(Ctx const&, const OwnedFd& handle, std::span<const std::byte> buffer) noexcept {
     // The door gives EBADF for a closed handle.
-    auto const written = detail::write_full_(handle.get(), buffer.data(), buffer.size());
-    if (written.is_err()) {
-        return std::unexpected{std::error_code{detail::error_number_of_(written), std::system_category()}};
-    }
-    return {};
+    return detail::write_full_(handle.get(), buffer.data(), buffer.size());
 }
 
 template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
-[[nodiscard]] inline std::expected<::off_t, std::error_code> file_size(Ctx const&, const OwnedFd& handle) noexcept {
+[[nodiscard]] inline ::foundation::core::Result<std::int64_t, ::foundation::os::Errno>
+file_size(Ctx const&, const OwnedFd& handle) noexcept {
     // The door gives EBADF for a closed handle.
-    auto measured = detail::file_size_(handle.get());
-    if (measured.is_err()) {
-        return std::unexpected{std::error_code{detail::error_number_of_(measured), std::system_category()}};
-    }
-    return std::move(measured).expect("the status read of the file door gave the size");
+    return detail::file_size_(handle.get());
 }
 
 // The read-only open, spelled once.
@@ -515,7 +491,7 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, ::fixy::atom::fs::mode<open_mode::WriteTruncate>,
                              ::fixy::atom::fs::durable<sync_op::Fsync>,
                              ::fixy::atom::fs::atomic_write<atomicity::Rename>>
-[[nodiscard]] inline std::expected<Linear<OwnedFd>, std::error_code>
+[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
 mint_durable_truncate_file(Ctx const& ctx, Path<tags::source::Sanitized> path, ::mode_t perms = 0644) noexcept {
     return mint_file<::fixy::atom::fs::mode<open_mode::WriteTruncate>, ::fixy::atom::fs::durable<sync_op::Fsync>,
                      ::fixy::atom::fs::atomic_write<atomicity::Rename>>(ctx, std::move(path), perms);
@@ -531,7 +507,7 @@ mint_durable_truncate_file(Ctx const& ctx, Path<tags::source::Sanitized> path, :
 template <eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, ::fixy::atom::fs::mode<open_mode::WriteAppend>,
                              ::fixy::atom::fs::durable<sync_op::Fdatasync>, ::fixy::atom::fs::with_flag<flag::DataSync>>
-[[nodiscard]] inline std::expected<Linear<OwnedFd>, std::error_code>
+[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
 mint_durable_append_file(Ctx const& ctx, Path<tags::source::Sanitized> path, ::mode_t perms = 0644) noexcept {
     return mint_file<::fixy::atom::fs::mode<open_mode::WriteAppend>, ::fixy::atom::fs::durable<sync_op::Fdatasync>,
                      ::fixy::atom::fs::with_flag<flag::DataSync>>(ctx, std::move(path), perms);

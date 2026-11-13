@@ -8,12 +8,10 @@ reason include/fixy/ | the doors of fixy give a linear owner or a token in std::
 reason include/foundation/permissions/ | the split and loan mints give tokens in std::pair or std::tuple, and the share pool parks a token in std::optional and cannot move
 reason test/ | the tests hold tokens and handles in std::optional, std::pair and std::tuple, and the attack tests and the checks make a holder that cannot move
 bench/ | library-holder | 10 | - | -
-include/crucible/ | library-holder | 1 | - | -
-include/crucible/cipher/ | library-holder | 2 | - | -
 include/crucible/cntp/_wip/ | pinned-holder | 1 | - | -
 include/fixy/ | library-holder | 4 | - | -
 include/fixy/concurrent/ | library-holder | 3 | - | -
-include/fixy/os/ | library-holder | 6 | - | -
+include/fixy/os/ | library-holder | 4 | - | -
 include/fixy/session/ | library-holder | 27 | - | -
 include/foundation/permissions/ | library-holder | 8 | - | -
 include/foundation/permissions/ | pinned-holder | 1 | - | -

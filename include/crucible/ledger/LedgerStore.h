@@ -619,19 +619,23 @@ template <::foundation::effects::IsExecCtx Ctx>
         return std::unexpected(path.error());
     }
 
-    auto opened = ::fixy::fs::mint_file<::fixy::fs::read_only>(ctx, std::move(*path));
-    if (!opened.has_value()) {
-        return std::unexpected(LedgerError::StoreReadFailed);
-    }
-
     // The descriptor closes when `file` leaves scope, which discharges the
     // linear handle the mint returned.
-    const ::fixy::fs::OwnedFd file = std::move(*opened).consume();
-    auto size = ::fixy::fs::file_size(ctx, file);
-    if (!size.has_value() || *size < 0) {
+    const ::fixy::fs::OwnedFd file =
+        ::fixy::fs::mint_file<::fixy::fs::read_only>(ctx, std::move(*path))
+            .match(
+                [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd {
+                    return std::move(opened).consume();
+                },
+                [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
+    if (!file.is_open()) {
         return std::unexpected(LedgerError::StoreReadFailed);
     }
-    const std::size_t byte_count = static_cast<std::size_t>(*size);
+    std::int64_t const size = ::fixy::fs::file_size(ctx, file).value_or(-1);
+    if (size < 0) {
+        return std::unexpected(LedgerError::StoreReadFailed);
+    }
+    const std::size_t byte_count = static_cast<std::size_t>(size);
     if (byte_count == 0u || byte_count > kMaxLedgerFileBytes) {
         return std::unexpected(LedgerError::MalformedRecord);
     }
@@ -639,10 +643,10 @@ template <::foundation::effects::IsExecCtx Ctx>
     std::string buffer(byte_count, '\0');
     auto filled =
         ::fixy::fs::read_full(ctx, file, std::as_writable_bytes(std::span<char>{buffer.data(), buffer.size()}));
-    if (!filled.has_value()) {
+    if (filled.is_err()) {
         return std::unexpected(LedgerError::StoreReadFailed);
     }
-    buffer.resize(*filled);
+    buffer.resize(std::move(filled).expect("the read holds its count after the check of its error"));
 
     auto parsed = deserialize_ledger(buffer);
     if (!parsed.has_value()) {
@@ -688,14 +692,19 @@ template <::foundation::effects::IsExecCtx Ctx>
     const std::string body = serialize_ledger(ledger);
 
     {
-        auto opened = ::fixy::fs::mint_durable_truncate_file(ctx, *temp_path, 0644);
-        if (!opened.has_value()) {
+        const ::fixy::fs::OwnedFd file =
+            ::fixy::fs::mint_durable_truncate_file(ctx, *temp_path, 0644)
+                .match(
+                    [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd {
+                        return std::move(opened).consume();
+                    },
+                    [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
+        if (!file.is_open()) {
             return std::unexpected(LedgerError::StoreWriteFailed);
         }
-        const ::fixy::fs::OwnedFd file = std::move(*opened).consume();
         auto written =
             ::fixy::fs::write_full(ctx, file, std::as_bytes(std::span<const char>{body.data(), body.size()}));
-        if (!written.has_value()) {
+        if (written.is_err()) {
             return std::unexpected(LedgerError::StoreWriteFailed);
         }
         // The sync happens while the descriptor is open, and the rename
@@ -703,7 +712,7 @@ template <::foundation::effects::IsExecCtx Ctx>
         // the target name over an inode whose data never reached disk,
         // which is strictly worse than the previous ledger that the whole
         // tmp-then-rename shape exists to keep.
-        if (!::fixy::fs::sync<::fixy::fs::sync_op::Fsync>(ctx, file).has_value()) {
+        if (::fixy::fs::sync<::fixy::fs::sync_op::Fsync>(ctx, file).is_err()) {
             return std::unexpected(LedgerError::StoreWriteFailed);
         }
     }
@@ -717,7 +726,7 @@ template <::foundation::effects::IsExecCtx Ctx>
     // fsync on every write to avoid that is the wrong trade for a mechanism
     // whose stated constraint is lightweight.
     auto renamed = ::fixy::fs::commit_atomic<::fixy::fs::atomicity::Rename>(ctx, *temp_path, *target_path);
-    if (!renamed.has_value()) {
+    if (renamed.is_err()) {
         // Leaving the temporary behind on a failed rename would accumulate
         // one file per failed commit, so it goes even though the commit did
         // not.

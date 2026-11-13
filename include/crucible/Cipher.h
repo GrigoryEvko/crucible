@@ -195,11 +195,8 @@ public:
         // ELOOP.  Abort rather than continue: the durable-on-return
         // contract needs a root directory whose identity is stable for
         // this instance's lifetime.
-        {
-            auto dirfd = ::fixy::fs::open_dirfd(ctx, std::move(*sanitized_e));
-            if (!dirfd) ::fixy::fatal("the root of the Cipher does not open as a directory");
-            c.root_dirfd_ = std::move(*dirfd);
-        }
+        c.root_dirfd_ = ::fixy::fs::open_dirfd(ctx, std::move(*sanitized_e))
+                            .expect("the root of the Cipher does not open as a directory");
 
         c.load_log();
 
@@ -211,15 +208,21 @@ public:
         if (c.head_) {
             return c;
         }
-        auto head_file = head_sanitized ? ::fixy::fs::mint_file<::fixy::fs::read_only>(ctx, std::move(*head_sanitized))
-                                        : std::expected<::fixy::Linear<::fixy::fs::OwnedFd>, std::error_code>{
-                                              std::unexpected{std::make_error_code(std::errc::invalid_argument)}};
-        if (head_file) {
-            const ::fixy::fs::OwnedFd head_fd = std::move(*head_file).consume();
+        ::fixy::fs::OwnedFd const head_fd =
+            head_sanitized
+                ? ::fixy::fs::mint_file<::fixy::fs::read_only>(ctx, std::move(*head_sanitized))
+                      .match(
+                          [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd {
+                              return std::move(opened).consume();
+                          },
+                          [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; })
+                : ::fixy::fs::OwnedFd{};
+        if (head_fd.is_open()) {
             std::array<char, 32> buf{};
-            const auto n = ::fixy::fs::read_full(ctx, head_fd, std::as_writable_bytes(std::span<char>{buf}));
-            if (n && *n > 0) {
-                c.head_ = parse_head_(std::span<const char>{buf.data(), *n}).value_or(ContentHash{});
+            std::size_t const n =
+                ::fixy::fs::read_full(ctx, head_fd, std::as_writable_bytes(std::span<char>{buf})).value_or(0);
+            if (n > 0) {
+                c.head_ = parse_head_(std::span<const char>{buf.data(), n}).value_or(ContentHash{});
             }
         }
 

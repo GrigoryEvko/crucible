@@ -211,18 +211,23 @@ template <::foundation::effects::IsExecCtx Ctx>
     if (!path.has_value()) {
         return ::fixy::err(CcError::SysctlUnavailable);
     }
-    auto opened = ::fixy::fs::mint_file<ProcFileReadMode>(ctx, std::move(*path));
-    if (!opened.has_value()) {
+    const ::fixy::fs::OwnedFd fd =
+        ::fixy::fs::mint_file<ProcFileReadMode>(ctx, std::move(*path))
+            .match(
+                [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd {
+                    return std::move(opened).consume();
+                },
+                [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
+    if (!fd.is_open()) {
         return ::fixy::err(CcError::SysctlUnavailable);
     }
-    const ::fixy::fs::OwnedFd fd = std::move(*opened).consume();
     std::array<char, detail::available_cc_capacity> text{};
-    auto bytes_read = ::fixy::fs::read_full(ctx, fd, std::as_writable_bytes(std::span{text}));
-    if (!bytes_read.has_value() || *bytes_read == 0) {
+    std::size_t const bytes_read = ::fixy::fs::read_full(ctx, fd, std::as_writable_bytes(std::span{text})).value_or(0);
+    if (bytes_read == 0) {
         return ::fixy::err(CcError::SysctlUnavailable);
     }
     ::fixy::FixedText<detail::available_cc_capacity> listed{};
-    for (std::size_t index = 0; index < *bytes_read; ++index) {
+    for (std::size_t index = 0; index < bytes_read; ++index) {
         listed.push(text[index]).expect("read_full reads at most the size of the buffer");
     }
     return parse_available_congestion_control(listed.view());

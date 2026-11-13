@@ -17,6 +17,7 @@
 // defect in this code, and a test that fails on them reports the
 // environment rather than the tree.
 
+#include <fixy/Core.h>
 #include <fixy/os/Path.h>
 #include <fixy/os/Fs.h>
 #include <fixy/os/Io.h>
@@ -80,16 +81,22 @@ struct TransferFiles final {
     fs::OwnedFd destination;
 };
 
+// The descriptor of a mint, or an empty handle when the open failed.
+[[nodiscard]] fs::OwnedFd descriptor_of(fixy::Result<fixy::Linear<fs::OwnedFd>, foundation::os::Errno> minted) {
+    return std::move(minted).match(
+        [](fixy::Linear<fs::OwnedFd> opened) -> fs::OwnedFd { return std::move(opened).consume(); },
+        [](foundation::os::Errno) -> fs::OwnedFd { return fs::OwnedFd{}; });
+}
+
 [[nodiscard]] TransferFiles make_transfer_files(IoBlockCtx const& ctx, ScratchDir const& scratch,
                                                 std::span<const std::uint8_t> pattern) {
     TransferFiles files{};
-    auto source = fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadWrite>>(ctx, sanitized(scratch.file("src")));
-    auto destination =
-        fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadWrite>>(ctx, sanitized(scratch.file("dst")));
-    if (!source || !destination) return files;
-    files.source = std::move(*source).consume();
-    files.destination = std::move(*destination).consume();
-    if (!fs::write_full(ctx, files.source, std::as_bytes(pattern))) {
+    files.source = descriptor_of(
+        fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadWrite>>(ctx, sanitized(scratch.file("src"))));
+    files.destination = descriptor_of(
+        fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadWrite>>(ctx, sanitized(scratch.file("dst"))));
+    if (!files.source.is_open() || !files.destination.is_open()) return TransferFiles{};
+    if (fs::write_full(ctx, files.source, std::as_bytes(pattern)).is_err()) {
         files.source = fs::OwnedFd{};
     }
     return files;

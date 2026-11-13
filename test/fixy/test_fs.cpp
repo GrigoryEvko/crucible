@@ -7,6 +7,7 @@
 // the test removes on the way out.  What the kernel can refuse — an
 // unwritable /tmp — is skipped rather than failed.
 
+#include <fixy/Core.h>
 #include <fixy/os/OwnedFile.h>
 #include <fixy/os/Path.h>
 #include <fixy/os/Fs.h>
@@ -52,6 +53,25 @@ using IoBlockCtx =
 
 using crucible::test::ScratchDir;
 
+// The descriptor of a mint, or an empty handle and the error number of the
+// open.  The match gives the linear handle to its consumer on each path.
+struct Opened final {
+    fs::OwnedFd file;
+    int error_number = 0;
+};
+
+[[nodiscard]] Opened opened_of(fixy::Result<fixy::Linear<fs::OwnedFd>, foundation::os::Errno> minted) {
+    return std::move(minted).match(
+        [](fixy::Linear<fs::OwnedFd> opened) -> Opened { return Opened{std::move(opened).consume(), 0}; },
+        [](foundation::os::Errno error) -> Opened { return Opened{fs::OwnedFd{}, std::to_underlying(error)}; });
+}
+
+// The error number of a result, or zero when it holds a value.
+template <typename T>
+[[nodiscard]] int errno_of(fixy::Result<T, foundation::os::Errno> const& result) {
+    return std::to_underlying(result.err().value_or(foundation::os::Errno{}));
+}
+
 inline constexpr std::size_t kPayloadBytes = 4096;
 
 void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
@@ -91,32 +111,30 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     const std::string tmp = scratch.file("plain.tmp");
     const std::string target = scratch.file("plain");
 
-    auto opened = fs::mint_file<fixy::atom::fs::mode<fs::open_mode::WriteCreate>>(ctx, sanitized(tmp));
-    if (!opened) {
-        std::fprintf(stderr, "mint_file WriteCreate failed (%s)\n", opened.error().message().c_str());
+    Opened opened = opened_of(fs::mint_file<fixy::atom::fs::mode<fs::open_mode::WriteCreate>>(ctx, sanitized(tmp)));
+    if (opened.error_number != 0) {
+        std::fprintf(stderr, "mint_file WriteCreate failed (errno %d)\n", opened.error_number);
         return 1;
     }
-    if (!opened->peek().is_open()) {
+    if (!opened.file.is_open()) {
         std::fprintf(stderr, "a successful mint handed back a closed descriptor\n");
         return 1;
     }
-    if (!write_all(opened->peek().get(), pattern)) {
+    if (!write_all(opened.file.get(), pattern)) {
         std::fprintf(stderr, "writing through the minted descriptor failed (errno %d)\n", errno);
         return 1;
     }
-    if (auto synced = fs::sync<fs::sync_op::Fdatasync>(ctx, opened->peek()); !synced) {
-        std::fprintf(stderr, "fdatasync failed (%s)\n", synced.error().message().c_str());
+    if (auto synced = fs::sync<fs::sync_op::Fdatasync>(ctx, opened.file); synced.is_err()) {
+        std::fprintf(stderr, "fdatasync failed (errno %d)\n", errno_of(synced));
         return 1;
     }
-    // Dropping the Linear closes the descriptor; the commit renames the
+    // The empty handle closes the descriptor, and the commit renames the
     // closed file into place.
-    {
-        auto closed = std::move(*opened).consume();
-        (void)closed;
-    }
+    opened.file = fs::OwnedFd{};
 
-    if (auto committed = fs::commit_atomic<fs::atomicity::Rename>(ctx, sanitized(tmp), sanitized(target)); !committed) {
-        std::fprintf(stderr, "commit_atomic<Rename> failed (%s)\n", committed.error().message().c_str());
+    if (auto committed = fs::commit_atomic<fs::atomicity::Rename>(ctx, sanitized(tmp), sanitized(target));
+        committed.is_err()) {
+        std::fprintf(stderr, "commit_atomic<Rename> failed (errno %d)\n", errno_of(committed));
         return 1;
     }
     if (!file_holds(target, pattern)) {
@@ -135,30 +153,30 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 [[nodiscard]] int dirfd_opens_and_flushes_the_entry(const ScratchDir& scratch) {
     IoBlockCtx ctx{eff::testing::test()};
 
-    auto dir = fs::open_dirfd(ctx, sanitized(scratch.path()));
-    if (!dir) {
-        std::fprintf(stderr, "open_dirfd on the scratch directory failed (%s)\n", dir.error().message().c_str());
+    auto opened_dir = fs::open_dirfd(ctx, sanitized(scratch.path()));
+    if (opened_dir.is_err()) {
+        std::fprintf(stderr, "open_dirfd on the scratch directory failed (errno %d)\n", errno_of(opened_dir));
         return 1;
     }
-    if (!dir->is_open()) {
+    fs::Dirfd const dir = std::move(opened_dir).expect("the scratch directory opened");
+    if (!dir.is_open()) {
         std::fprintf(stderr, "a successful open_dirfd handed back a closed handle\n");
         return 1;
     }
-    if (auto flushed = fs::sync<fs::sync_op::FsyncParentDir>(ctx, *dir); !flushed) {
-        std::fprintf(stderr, "fsync on the directory descriptor failed (%s)\n", flushed.error().message().c_str());
+    if (auto flushed = fs::sync<fs::sync_op::FsyncParentDir>(ctx, dir); flushed.is_err()) {
+        std::fprintf(stderr, "fsync on the directory descriptor failed (errno %d)\n", errno_of(flushed));
         return 1;
     }
 
     // A regular file is refused by O_DIRECTORY, so the door only opens
     // onto what the type claims.
     auto not_a_dir = fs::open_dirfd(ctx, sanitized(scratch.file("plain")));
-    if (not_a_dir) {
+    if (not_a_dir.is_ok()) {
         std::fprintf(stderr, "open_dirfd opened a regular file as a directory\n");
         return 1;
     }
-    if (not_a_dir.error().value() != ENOTDIR) {
-        std::fprintf(stderr, "open_dirfd on a file failed with %s rather than ENOTDIR\n",
-                     not_a_dir.error().message().c_str());
+    if (errno_of(not_a_dir) != ENOTDIR) {
+        std::fprintf(stderr, "open_dirfd on a file failed with errno %d rather than ENOTDIR\n", errno_of(not_a_dir));
         return 1;
     }
     return 0;
@@ -173,33 +191,28 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     fill_pattern(pattern, 4);
     const std::string path = scratch.file("full");
 
-    auto writer = fs::mint_file<fixy::atom::fs::mode<fs::open_mode::WriteTruncate>>(ctx, sanitized(path));
-    if (!writer) {
-        std::fprintf(stderr, "mint_file WriteTruncate failed (%s)\n", writer.error().message().c_str());
+    Opened writer = opened_of(fs::mint_file<fixy::atom::fs::mode<fs::open_mode::WriteTruncate>>(ctx, sanitized(path)));
+    if (writer.error_number != 0) {
+        std::fprintf(stderr, "mint_file WriteTruncate failed (errno %d)\n", writer.error_number);
         return 1;
     }
-    if (auto written = fs::write_full(ctx, writer->peek(), std::as_bytes(std::span{pattern})); !written) {
-        std::fprintf(stderr, "write_full failed (%s)\n", written.error().message().c_str());
+    if (auto written = fs::write_full(ctx, writer.file, std::as_bytes(std::span{pattern})); written.is_err()) {
+        std::fprintf(stderr, "write_full failed (errno %d)\n", errno_of(written));
         return 1;
     }
-    const auto size = fs::file_size(ctx, writer->peek());
-    if (!size || *size != static_cast<::off_t>(kPayloadBytes)) {
+    if (fs::file_size(ctx, writer.file).value_or(-1) != static_cast<std::int64_t>(kPayloadBytes)) {
         std::fprintf(stderr, "file_size did not report the bytes that write_full put\n");
         return 1;
     }
-    {
-        auto closed = std::move(*writer).consume();
-        (void)closed;
-    }
+    writer.file = fs::OwnedFd{};
 
-    auto reader = fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadOnly>>(ctx, sanitized(path));
-    if (!reader) {
-        std::fprintf(stderr, "mint_file ReadOnly failed (%s)\n", reader.error().message().c_str());
+    Opened const reader = opened_of(fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadOnly>>(ctx, sanitized(path)));
+    if (reader.error_number != 0) {
+        std::fprintf(stderr, "mint_file ReadOnly failed (errno %d)\n", reader.error_number);
         return 1;
     }
     std::byte readback[kPayloadBytes * 2]{};
-    const auto got = fs::read_full(ctx, reader->peek(), std::span{readback});
-    if (!got || *got != kPayloadBytes) {
+    if (fs::read_full(ctx, reader.file, std::span{readback}).value_or(0) != kPayloadBytes) {
         std::fprintf(stderr, "read_full did not stop at the end of the file\n");
         return 1;
     }
@@ -210,17 +223,17 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 
     const fs::OwnedFd empty{};
     const auto refused = fs::read_full(ctx, empty, std::span{readback});
-    if (refused || refused.error().value() != EBADF) {
+    if (refused.is_ok() || errno_of(refused) != EBADF) {
         std::fprintf(stderr, "read_full on an empty handle was not refused with EBADF\n");
         return 1;
     }
     const auto refused_write = fs::write_full(ctx, empty, std::as_bytes(std::span{pattern}));
-    if (refused_write || refused_write.error().value() != EBADF) {
+    if (refused_write.is_ok() || errno_of(refused_write) != EBADF) {
         std::fprintf(stderr, "write_full on an empty handle was not refused with EBADF\n");
         return 1;
     }
     const auto refused_size = fs::file_size(ctx, empty);
-    if (refused_size || refused_size.error().value() != EBADF) {
+    if (refused_size.is_ok() || errno_of(refused_size) != EBADF) {
         std::fprintf(stderr, "file_size on an empty handle was not refused with EBADF\n");
         return 1;
     }

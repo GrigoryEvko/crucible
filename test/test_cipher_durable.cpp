@@ -62,23 +62,34 @@ using Payload = ::fixy::FixedArray<std::uint8_t, kPayloadBytes>;
     return pattern;
 }
 
-// Takes the linear payload out of the result of a mint.  The transform
-// gives the payload to its consumer on the value path, so no local of a
-// leg holds a linear value on an early return.
-template <typename Minted>
-[[nodiscard]] auto opened(Minted&& minted) noexcept {
-    return std::forward<Minted>(minted).transform([](auto&& handle) noexcept { return std::move(handle).consume(); });
+// Takes the linear payload out of the result of a mint.  The match gives
+// the payload to its consumer on the value path, so no local of a leg holds
+// a linear value on an early return.
+template <typename Handle>
+[[nodiscard]] fixy::Result<Handle, foundation::os::Errno>
+opened(fixy::Result<fixy::Linear<Handle>, foundation::os::Errno> minted) noexcept {
+    using Opened = fixy::Result<Handle, foundation::os::Errno>;
+    return std::move(minted).match(
+        [](fixy::Linear<Handle> handle) noexcept -> Opened { return std::move(handle).consume(); },
+        [](foundation::os::Errno error) noexcept -> Opened { return fixy::err(error); });
+}
+
+// The error number of a result, or zero when it holds a value.
+template <typename T>
+[[nodiscard]] int errno_of(fixy::Result<T, foundation::os::Errno> const& result) noexcept {
+    return std::to_underlying(result.err().value_or(foundation::os::Errno{}));
 }
 
 // Reads a file back through the file door of fixy/os/Fs.h, and compares
 // each byte with the bytes that a writer put.
 [[nodiscard]] bool file_holds(const std::string& path, const Payload& expected) {
     IoBlockCtx ctx{eff::testing::test()};
-    const auto reader = opened(fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadOnly>>(ctx, sanitized(path)));
-    if (!reader) return false;
+    auto reader = opened(fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadOnly>>(ctx, sanitized(path)));
+    if (reader.is_err()) return false;
+    fs::OwnedFd const file = std::move(reader).expect("the reader opened");
     Payload readback{};
-    // A failed read compares unequal to each count, so it returns false too.
-    if (fs::read_full(ctx, *reader, std::as_writable_bytes(readback.as_span())) != kPayloadBytes) return false;
+    // A failed read gives the count zero, so it returns false too.
+    if (fs::read_full(ctx, file, std::as_writable_bytes(readback.as_span())).value_or(0) != kPayloadBytes) return false;
     for (std::size_t index = 0; index < kPayloadBytes; ++index) {
         if (readback[index] != expected[index]) return false;
     }
@@ -96,28 +107,27 @@ template <typename Minted>
     const std::string tmp = scratch.file("cold.tmp");
     const std::string target = scratch.file("cold");
 
-    const auto writer = opened(durable::mint_cold_writer<>(ctx, sanitized(tmp)));
-    if (!writer) {
-        ::fixy::report(::fixy::Sink::Err, "mint_cold_writer failed (errno {})\n", writer.error().value());
+    auto opened_writer = opened(durable::mint_cold_writer<>(ctx, sanitized(tmp)));
+    if (opened_writer.is_err()) {
+        ::fixy::report(::fixy::Sink::Err, "mint_cold_writer failed (errno {})\n", errno_of(opened_writer));
         return 1;
     }
-    if (auto written = fs::write_full(ctx, writer->handle(), std::as_bytes(pattern.as_span())); !written) {
-        ::fixy::report(::fixy::Sink::Err, "writing through the cold writer failed (errno {})\n",
-                       written.error().value());
+    auto const writer = std::move(opened_writer).expect("the cold writer opened");
+    if (auto written = fs::write_full(ctx, writer.handle(), std::as_bytes(pattern.as_span())); written.is_err()) {
+        ::fixy::report(::fixy::Sink::Err, "writing through the cold writer failed (errno {})\n", errno_of(written));
         return 1;
     }
-    if (auto synced = writer->sync(ctx); !synced) {
-        ::fixy::report(::fixy::Sink::Err, "the fsync of the cold writer failed (errno {})\n", synced.error().value());
+    if (auto synced = writer.sync(ctx); synced.is_err()) {
+        ::fixy::report(::fixy::Sink::Err, "the fsync of the cold writer failed (errno {})\n", errno_of(synced));
         return 1;
     }
-    const auto committed = writer->commit_atomic(ctx, sanitized(tmp), sanitized(target));
-    if (!committed) {
-        if (committed.error().value() == ENOSYS) {
+    const auto committed = writer.commit_atomic(ctx, sanitized(tmp), sanitized(target));
+    if (committed.is_err()) {
+        if (errno_of(committed) == ENOSYS) {
             ::fixy::report(::fixy::Sink::Err,
                            "the commit of the cold writer returned ENOSYS, so it did not reach a filesystem\n");
         } else {
-            ::fixy::report(::fixy::Sink::Err, "the commit of the cold writer failed (errno {})\n",
-                           committed.error().value());
+            ::fixy::report(::fixy::Sink::Err, "the commit of the cold writer failed (errno {})\n", errno_of(committed));
         }
         return 1;
     }
@@ -145,50 +155,49 @@ template <typename Minted>
     // The occupied target exists before the commit.  The descriptor closes
     // at the end of the block.
     {
-        const auto occupant =
+        auto const occupant =
             opened(fs::mint_file<fixy::atom::fs::mode<fs::open_mode::WriteCreate>>(ctx, sanitized(occupied)));
-        if (!occupant) {
+        if (occupant.is_err()) {
             ::fixy::report(::fixy::Sink::Err, "the occupied target could not be made\n");
             return 1;
         }
     }
 
-    const auto writer = opened(durable::mint_warm_writer<>(ctx, sanitized(tmp)));
-    if (!writer) {
-        ::fixy::report(::fixy::Sink::Err, "mint_warm_writer failed (errno {})\n", writer.error().value());
+    auto opened_writer = opened(durable::mint_warm_writer<>(ctx, sanitized(tmp)));
+    if (opened_writer.is_err()) {
+        ::fixy::report(::fixy::Sink::Err, "mint_warm_writer failed (errno {})\n", errno_of(opened_writer));
         return 1;
     }
-    if (auto written = fs::write_full(ctx, writer->handle(), std::as_bytes(pattern.as_span())); !written) {
-        ::fixy::report(::fixy::Sink::Err, "writing through the warm writer failed (errno {})\n",
-                       written.error().value());
+    auto const writer = std::move(opened_writer).expect("the warm writer opened");
+    if (auto written = fs::write_full(ctx, writer.handle(), std::as_bytes(pattern.as_span())); written.is_err()) {
+        ::fixy::report(::fixy::Sink::Err, "writing through the warm writer failed (errno {})\n", errno_of(written));
         return 1;
     }
-    if (auto synced = writer->sync(ctx); !synced) {
-        ::fixy::report(::fixy::Sink::Err, "the fdatasync of the warm writer failed (errno {})\n",
-                       synced.error().value());
+    if (auto synced = writer.sync(ctx); synced.is_err()) {
+        ::fixy::report(::fixy::Sink::Err, "the fdatasync of the warm writer failed (errno {})\n", errno_of(synced));
         return 1;
     }
 
-    const auto refused = writer->commit_atomic(ctx, sanitized(tmp), sanitized(occupied));
-    if (refused) {
+    const auto refused = writer.commit_atomic(ctx, sanitized(tmp), sanitized(occupied));
+    if (refused.is_ok()) {
         ::fixy::report(::fixy::Sink::Err, "a no-replace commit overwrote an existing target\n");
         return 1;
     }
-    if (refused.error().value() == EINVAL) {
+    if (errno_of(refused) == EINVAL) {
         crucible::test::pass(
             "[skipped] this filesystem has no RENAME_NOREPLACE; the errno is passed through as designed\n");
         return 0;
     }
-    if (refused.error().value() != EEXIST) {
+    if (errno_of(refused) != EEXIST) {
         ::fixy::report(::fixy::Sink::Err,
                        "a no-replace commit onto an existing target failed with errno {} and not with EEXIST\n",
-                       refused.error().value());
+                       errno_of(refused));
         return 1;
     }
 
-    if (auto committed = writer->commit_atomic(ctx, sanitized(tmp), sanitized(fresh)); !committed) {
+    if (auto committed = writer.commit_atomic(ctx, sanitized(tmp), sanitized(fresh)); committed.is_err()) {
         ::fixy::report(::fixy::Sink::Err, "a no-replace commit onto a fresh target failed (errno {})\n",
-                       committed.error().value());
+                       errno_of(committed));
         return 1;
     }
     if (!file_holds(fresh, pattern)) {

@@ -147,20 +147,25 @@ template <::foundation::effects::IsExecCtx Ctx>
     if (!path.has_value()) {
         return std::unexpected(RoceError::CounterUnavailable);
     }
-    auto opened = ::fixy::fs::mint_file<ProcFileReadMode>(ctx, std::move(*path));
-    if (!opened.has_value()) {
+    const ::fixy::fs::OwnedFd fd =
+        ::fixy::fs::mint_file<ProcFileReadMode>(ctx, std::move(*path))
+            .match(
+                [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd {
+                    return std::move(opened).consume();
+                },
+                [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
+    if (!fd.is_open()) {
         return std::unexpected(RoceError::CounterUnavailable);
     }
-    const ::fixy::fs::OwnedFd fd = std::move(*opened).consume();
     std::array<char, counter_read_bytes> text{};
-    auto nread = ::fixy::fs::read_full(ctx, fd, std::as_writable_bytes(std::span{text}));
-    if (!nread.has_value() || *nread == 0) {
+    std::size_t const nread = ::fixy::fs::read_full(ctx, fd, std::as_writable_bytes(std::span{text})).value_or(0);
+    if (nread == 0) {
         return std::unexpected(RoceError::CounterUnavailable);
     }
-    if (*nread == text.size()) {
+    if (nread == text.size()) {
         return std::unexpected(RoceError::CounterParseFailed);
     }
-    return parse_counter(std::string_view{text.data(), *nread});
+    return parse_counter(std::string_view{text.data(), nread});
 }
 
 }  // namespace detail::roce
