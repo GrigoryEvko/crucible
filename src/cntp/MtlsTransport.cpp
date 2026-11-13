@@ -87,17 +87,21 @@ std::string_view mtls_key_algorithm_name(MtlsKeyAlgorithm algorithm) noexcept {
     }
 }
 
-std::expected<MtlsCertificate, MtlsError> admit_x509_certificate_pem(std::span<const std::byte> pem) noexcept {
-    if (pem.empty()) {
-        return std::unexpected(MtlsError::EmptyCertificate);
+::fixy::Result<MtlsCertificate, MtlsError> admit_x509_certificate_pem(::fixy::View<std::byte const> pem) noexcept {
+    if (pem.size() == 0) {
+        return ::fixy::err(MtlsError::EmptyCertificate);
     }
     if (pem.size() > MtlsCertificateBytes::max_bytes) {
-        return std::unexpected(MtlsError::CertificateTooLarge);
+        return ::fixy::err(MtlsError::CertificateTooLarge);
     }
 
+    // A loop of bytes, and not a memmove: the library imports no memmove.
     MtlsCertificateBytes out{};
-    for (std::size_t i = 0; i < pem.size(); ++i) {
-        out.bytes[i] = pem[i];
+    ::fixy::View<std::byte> const target =
+        out.bytes.view().window(0, pem.size()).expect("the certificate is at most max_bytes");
+    for (auto [destination, source] :
+         ::fixy::zip(target, pem).expect("a window of the size of the certificate has that size")) {
+        *destination = *source;
     }
     out.size = static_cast<std::uint16_t>(pem.size());
     return ::fixy::mint_linear<MtlsCertificateBytes>(std::move(out));
@@ -105,83 +109,68 @@ std::expected<MtlsCertificate, MtlsError> admit_x509_certificate_pem(std::span<c
 
 namespace {
 
+// A fingerprint is a hash of a public certificate, so the compare needs no
+// constant time.
 [[nodiscard]] bool same_fingerprint(MtlsSha256Fingerprint const& lhs, MtlsSha256Fingerprint const& rhs) noexcept {
-    std::byte diff{0};
-    for (std::size_t i = 0; i < lhs.bytes.size(); ++i) {
-        diff |= lhs.bytes[i] ^ rhs.bytes[i];
-    }
-    return diff == std::byte{0};
+    return ::fixy::equal(lhs.bytes.view(), rhs.bytes.view());
 }
 
-[[nodiscard]] bool has_fingerprint(MtlsSha256Fingerprint const& fp) noexcept {
-    std::byte acc{0};
-    for (std::byte b : fp.bytes) {
-        acc |= b;
-    }
-    return acc != std::byte{0};
+[[nodiscard]] bool has_fingerprint(MtlsSha256Fingerprint const& fingerprint) noexcept {
+    return ::foundation::core::any_of(fingerprint.bytes.view(),
+                                      [](std::byte value) noexcept { return value != std::byte{0}; });
 }
 
 }  // namespace
 
-std::expected<AuthenticatedMtlsPeer, MtlsError>
+::fixy::Result<AuthenticatedMtlsPeer, MtlsError>
 admit_mtls_peer_from_handshake(DeclaredMtlsConfig const& config, MtlsDnsName peer_dns,
                                MtlsCertificateFingerprint peer_fingerprint, MtlsCipherSuite chosen_cipher) noexcept {
-    auto valid = validate_mtls_config(config);
-    if (!valid.has_value()) {
-        return std::unexpected(valid.error());
-    }
+    CRUCIBLE_TRY(_, validate_mtls_config(config));
 
-    auto const& policy = config.value().policy;
-    if (!mtls_policy_allows_peer_name(policy, peer_dns)) {
-        return std::unexpected(MtlsError::PeerNameNotAllowed);
-    }
+    MtlsPolicy const& policy = config.value().policy;
+    CRUCIBLE_TRY(slot, policy.find_peer(peer_dns).ok_or(MtlsError::PeerNameNotAllowed));
     if (!mtls_policy_allows_cipher(policy, chosen_cipher)) {
-        return std::unexpected(MtlsError::UnsupportedCipherSuite);
+        return ::fixy::err(MtlsError::UnsupportedCipherSuite);
     }
 
-    for (std::uint8_t i = 0; i < policy.allowed_peer_count; ++i) {
-        if (policy.allowed_peer_dns[i].view() == peer_dns.view()) {
-            if (has_fingerprint(policy.allowed_peer_pins[i])
-                && !same_fingerprint(policy.allowed_peer_pins[i], peer_fingerprint.value())) {
-                return std::unexpected(MtlsError::CertificatePinMismatch);
-            }
-            return ::fixy::mint_tagged<::fixy::tags::source::Mtls>(MtlsPeerIdentity{
-                .dns_name = peer_dns,
-                .certificate_sha256 = peer_fingerprint,
-                .cipher = chosen_cipher,
-            });
-        }
+    MtlsSha256Fingerprint const& pin = policy.allowed_peer_pins.at(slot);
+    if (has_fingerprint(pin) && !same_fingerprint(pin, peer_fingerprint.value())) {
+        return ::fixy::err(MtlsError::CertificatePinMismatch);
     }
-    return std::unexpected(MtlsError::PeerNameNotAllowed);
+    return ::fixy::mint_tagged<::fixy::tags::source::Mtls>(MtlsPeerIdentity{
+        .dns_name = peer_dns,
+        .certificate_sha256 = peer_fingerprint,
+        .cipher = chosen_cipher,
+    });
 }
 
-std::expected<MtlsConnection, MtlsError> connect_mtls(SocketFd socket, DeclaredMtlsConfig const& config,
-                                                      MtlsDnsName peer_dns,
-                                                      MtlsCertificateFingerprint peer_fingerprint) noexcept {
+::fixy::Result<MtlsConnection, MtlsError> connect_mtls(SocketFd socket, DeclaredMtlsConfig const& config,
+                                                       MtlsDnsName peer_dns,
+                                                       MtlsCertificateFingerprint peer_fingerprint) noexcept {
     static_cast<void>(socket);
-    auto peer = admit_mtls_peer_from_handshake(config, peer_dns, peer_fingerprint, MtlsCipherSuite::TlsAes256GcmSha384);
-    if (!peer.has_value()) {
-        return std::unexpected(peer.error());
-    }
-    return std::unexpected(MtlsError::BackendUnavailable);
+    CRUCIBLE_TRY(
+        _, admit_mtls_peer_from_handshake(config, peer_dns, peer_fingerprint, MtlsCipherSuite::TlsAes256GcmSha384));
+    return ::fixy::err(MtlsError::BackendUnavailable);
 }
 
-std::expected<std::size_t, MtlsError> mtls_send(MtlsConnection& connection, std::span<const std::byte> bytes) noexcept {
+::fixy::Result<std::size_t, MtlsError> mtls_send(MtlsConnection& connection,
+                                                 ::fixy::View<std::byte const> bytes) noexcept {
     static_cast<void>(connection);
     static_cast<void>(bytes);
-    return std::unexpected(MtlsError::BackendUnavailable);
+    return ::fixy::err(MtlsError::BackendUnavailable);
 }
 
-std::expected<std::size_t, MtlsError> mtls_recv(MtlsConnection& connection, std::span<std::byte> bytes) noexcept {
+::fixy::Result<std::size_t, MtlsError> mtls_recv(MtlsConnection& connection, ::fixy::View<std::byte> bytes) noexcept {
     static_cast<void>(connection);
     static_cast<void>(bytes);
-    return std::unexpected(MtlsError::BackendUnavailable);
+    return ::fixy::err(MtlsError::BackendUnavailable);
 }
 
-std::expected<void, MtlsError> enable_ktls_offload(MtlsConnection& connection, NicInterfaceName iface) noexcept {
+::fixy::Result<::fixy::Unit, MtlsError> enable_ktls_offload(MtlsConnection& connection,
+                                                            NicInterfaceName iface) noexcept {
     static_cast<void>(connection);
     static_cast<void>(iface);
-    return std::unexpected(MtlsError::KtlsOffloadDeferred);
+    return ::fixy::err(MtlsError::KtlsOffloadDeferred);
 }
 
 }  // namespace crucible::cntp

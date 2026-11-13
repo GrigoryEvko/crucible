@@ -17,7 +17,7 @@ int main() {
         .policy = {},
     };
     auto fd = admit_socket_fd(3).value();
-    auto dns = MtlsDnsName::from("peer.example.org").value();
+    auto dns = MtlsDnsName::from("peer.example.org").expect("the name is a DNS name");
     auto fp = ::fixy::mint_tagged<::fixy::tags::source::Mtls>(MtlsSha256Fingerprint{});
     auto result = connect_mtls(fd, raw, dns, fp);
     (void)result;

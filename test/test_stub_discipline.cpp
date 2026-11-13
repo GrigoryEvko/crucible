@@ -85,7 +85,7 @@ void test_mtls_stub_returns_backend_unavailable() {
     // A connection cannot be built here: the only path to one is itself a
     // stub.  Taking the address of the entry point is enough to show that
     // the deprecation does not break the overload set under suppression.
-    using ConnectFn = std::expected<cntp::MtlsConnection, cntp::MtlsError> (*)(
+    using ConnectFn = ::fixy::Result<cntp::MtlsConnection, cntp::MtlsError> (*)(
         cntp::SocketFd, cntp::DeclaredMtlsConfig const&, cntp::MtlsDnsName, cntp::MtlsCertificateFingerprint) noexcept;
     constexpr ConnectFn p = &cntp::connect_mtls;
     (void)p;

@@ -99,10 +99,9 @@ void check_mtls_private_key(Tally& tally) noexcept {
         pem[i] = static_cast<std::byte>(opaque(static_cast<unsigned>(i * 13u + 5u)));
     ct_taint::make_secret_bytes(pem.data(), pem.size());
     {
-        auto admitted =
-            ::crucible::cntp::admit_private_key_pem<MtlsKeyAlgorithm::Ed25519>(std::span<const std::byte>{pem});
-        tally.expect(admitted.has_value(), "mTLS private key admission");
-        auto key = std::move(admitted).value();
+        auto admitted = ::crucible::cntp::admit_private_key_pem<MtlsKeyAlgorithm::Ed25519>(::fixy::bytes(pem));
+        tally.expect(admitted.is_ok(), "mTLS private key admission");
+        auto key = std::move(admitted).expect("the key admission succeeds");
         auto moved = std::move(key);
         tally.expect(moved.declassify<::fixy::tags::secret_policy::LengthOnly>() == pem.size(),
                      "mTLS private key length");

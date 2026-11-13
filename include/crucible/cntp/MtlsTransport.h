@@ -3,6 +3,7 @@
 #include <crucible/cntp/CongestionControl.h>
 #include <crucible/cntp/Pacing.h>
 #include <fixy/Bits.h>
+#include <fixy/Core.h>
 #include <fixy/Qtt.h>
 #include <fixy/Secret.h>
 #include <fixy/Tagged.h>
@@ -10,9 +11,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <limits>
-#include <span>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -86,16 +85,20 @@ using MtlsCipherMask = ::fixy::Bits<MtlsCipherSuite>;
 struct MtlsCertificateBytes {
     static constexpr std::size_t max_bytes = 4096;
 
-    std::array<std::byte, max_bytes> bytes{};
+    ::foundation::core::FixedArray<std::byte, max_bytes> bytes{};
     std::uint16_t size = 0;
 
-    [[nodiscard]] constexpr std::span<const std::byte> view() const noexcept { return {bytes.data(), size}; }
+    // The first size bytes.  admit_x509_certificate_pem keeps the size at
+    // most max_bytes, and a larger size ends the process.
+    [[nodiscard]] constexpr ::fixy::View<std::byte const> view() const noexcept {
+        return bytes.view().window(0, size).expect("the size of a certificate is at most max_bytes");
+    }
 };
 
 struct MtlsPrivateKeyBytes {
     static constexpr std::size_t max_bytes = 4096;
 
-    std::array<std::byte, max_bytes> bytes{};
+    ::foundation::core::FixedArray<std::byte, max_bytes> bytes{};
     std::uint16_t nbytes = 0;
     MtlsKeyAlgorithm algorithm = MtlsKeyAlgorithm::Ed25519;
 
@@ -134,16 +137,9 @@ struct MtlsPrivateKeyBytes {
     }
 };
 
-// The length lived in a public std::uint8_t beside a 253-byte array,
-// so a caller-built aggregate could carry 255 and view() then handed
-// every reader a string_view two bytes past the end of the object.
-// from() already bounds the length and is the only writer, so the two
-// members are private and the over-long state is unrepresentable
-// rather than merely unchecked.  A runtime check was not an option
-// worth taking: the release build ships -DNDEBUG with no
-// _GLIBCXX_ASSERTIONS, and CRUCIBLE_PRE is compiled out there, so the
-// only enforcement that reaches production is the one the type
-// carries.
+// The DNS name of a peer, with at most max_bytes characters.  from() checks
+// each character and is the one writer.  The two members are private, so
+// the size is at most max_bytes and view() never reads past the bytes.
 class MtlsDnsName {
 public:
     static constexpr std::size_t max_bytes = 253;
@@ -156,41 +152,45 @@ public:
 
     [[nodiscard]] constexpr bool empty() const noexcept { return size_ == 0; }
 
-    [[nodiscard]] static constexpr std::expected<MtlsDnsName, MtlsError> from(std::string_view name) noexcept {
-        if (name.empty()) {
-            return std::unexpected(MtlsError::EmptyPeerName);
-        }
-        if (name.size() > max_bytes || name.front() == '.' || name.back() == '.' || name.front() == '-'
-            || name.back() == '-') {
-            return std::unexpected(MtlsError::InvalidPeerName);
-        }
-
-        MtlsDnsName out{};
-        bool previous_dot = false;
-        for (std::size_t i = 0; i < name.size(); ++i) {
-            const char c = name[i];
-            const bool dot = c == '.';
-            const bool ok =
-                (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || dot;
-            if (!ok || (dot && previous_dot)) {
-                return std::unexpected(MtlsError::InvalidPeerName);
-            }
-            out.bytes_[i] = c;
-            previous_dot = dot;
-        }
-        out.size_ = static_cast<std::uint8_t>(name.size());
-        return out;
-    }
+    // A Result<MtlsDnsName, MtlsError>.  The type of a Result needs a complete
+    // name, so the definition stands after the class.
+    [[nodiscard]] static constexpr auto from(std::string_view name) noexcept;
 
 private:
     std::array<char, max_bytes> bytes_{};
     std::uint8_t size_ = 0;
 };
 
+constexpr auto MtlsDnsName::from(std::string_view name) noexcept {
+    using Admitted = ::fixy::Result<MtlsDnsName, MtlsError>;
+    if (name.empty()) {
+        return Admitted{::fixy::err(MtlsError::EmptyPeerName)};
+    }
+    if (name.size() > max_bytes || name.front() == '.' || name.back() == '.' || name.front() == '-'
+        || name.back() == '-') {
+        return Admitted{::fixy::err(MtlsError::InvalidPeerName)};
+    }
+
+    MtlsDnsName out{};
+    bool previous_dot = false;
+    for (std::size_t i = 0; i < name.size(); ++i) {
+        const char c = name[i];
+        const bool dot = c == '.';
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || dot;
+        if (!ok || (dot && previous_dot)) {
+            return Admitted{::fixy::err(MtlsError::InvalidPeerName)};
+        }
+        out.bytes_[i] = c;
+        previous_dot = dot;
+    }
+    out.size_ = static_cast<std::uint8_t>(name.size());
+    return Admitted{out};
+}
+
 struct MtlsSha256Fingerprint {
     static constexpr std::size_t bytes_count = 32;
 
-    std::array<std::byte, bytes_count> bytes{};
+    ::foundation::core::FixedArray<std::byte, bytes_count> bytes{};
 };
 
 using MtlsCertificate = ::fixy::Linear<MtlsCertificateBytes>;
@@ -199,27 +199,12 @@ using MtlsCertificateFingerprint = ::fixy::Tagged<MtlsSha256Fingerprint, ::fixy:
 
 struct MtlsPolicy;
 
-// allowed_peer_count indexes two 8-element arrays and used to be a
-// bare public std::uint8_t on an aggregate, so any caller could store
-// 255 into it.  Every reader loops to the count and indexes both
-// arrays, which walked roughly 62 KB past allowed_peer_dns, and
-// validate_mtls_policy never looked at the count at all.
-//
-// This type keeps the member-access spelling the readers already use
-// while confining every write to MtlsPolicy::allow_peer_with_pin,
-// which refuses at the bound.  A value above max_peer_names is
-// therefore unrepresentable, and no reader — here or in
-// src/cntp/MtlsTransport.cpp — needs a bound check in any build.
+// The count of the allowed peers of a policy.  MtlsPolicy::allow_peer_with_pin
+// is its one writer, and it refuses a peer past max_peer_names.  So the
+// count is at most the extent of the two peer arrays.
 class MtlsPeerCount {
 public:
     constexpr MtlsPeerCount() noexcept = default;
-
-    // Implicit and lossless on purpose.  Readers spell
-    // `i < policy.allowed_peer_count` and `dns[policy.allowed_peer_count]`,
-    // and widening a bounded count to its own underlying type cannot
-    // lose information.  The conversion is one-way: nothing converts
-    // back in, so the bound cannot be re-entered from outside.
-    [[nodiscard]] constexpr operator std::uint8_t() const noexcept { return value_; }
 
     [[nodiscard]] constexpr std::uint8_t value() const noexcept { return value_; }
 
@@ -231,6 +216,7 @@ private:
 
 struct MtlsPolicy {
     static constexpr std::size_t max_peer_names = 8;
+    using PeerIndex = ::fixy::Index<max_peer_names>;
 
     bool verify_peer = true;
     bool require_peer_cert = true;
@@ -240,21 +226,34 @@ struct MtlsPolicy {
         MtlsCipherSuite::TlsAes256GcmSha384,
         MtlsCipherSuite::TlsChacha20Poly1305Sha256,
     };
-    std::array<MtlsDnsName, max_peer_names> allowed_peer_dns{};
-    std::array<MtlsSha256Fingerprint, max_peer_names> allowed_peer_pins{};
+    ::foundation::core::FixedArray<MtlsDnsName, max_peer_names> allowed_peer_dns{};
+    ::foundation::core::FixedArray<MtlsSha256Fingerprint, max_peer_names> allowed_peer_pins{};
     MtlsPeerCount allowed_peer_count{};
 
-    // The sole writer of allowed_peer_count, and the reason the bound
-    // holds structurally for every reader of it.
-    [[nodiscard]] constexpr std::expected<void, MtlsError>
+    // The one writer of allowed_peer_count.  It puts the peer in the next
+    // free slot, or refuses the peer when no slot is free.
+    [[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, MtlsError>
     allow_peer_with_pin(MtlsDnsName name, MtlsCertificateFingerprint fingerprint) noexcept {
-        if (allowed_peer_count.value() >= max_peer_names) {
-            return std::unexpected(MtlsError::TooManyPeerNames);
-        }
-        allowed_peer_dns[allowed_peer_count.value()] = name;
-        allowed_peer_pins[allowed_peer_count.value()] = fingerprint.value();
+        CRUCIBLE_TRY(slot, PeerIndex::check(allowed_peer_count.value()).ok_or(MtlsError::TooManyPeerNames));
+        allowed_peer_dns.at(slot) = name;
+        allowed_peer_pins.at(slot) = fingerprint.value();
         ++allowed_peer_count.value_;
-        return {};
+        return ::fixy::Unit{};
+    }
+
+    // The slot of the allowed peer with this name, or no value.  The loop
+    // reads only the slots that allow_peer_with_pin wrote.  Complexity:
+    // O(max_peer_names) name compares.
+    [[nodiscard]] constexpr ::fixy::Option<PeerIndex> find_peer(MtlsDnsName const& name) const noexcept {
+        for (PeerIndex index : allowed_peer_dns.indices()) {
+            if (index.raw() >= allowed_peer_count.value()) {
+                break;
+            }
+            if (allowed_peer_dns.at(index).view() == name.view()) {
+                return ::fixy::some(index);
+            }
+        }
+        return ::fixy::none;
     }
 };
 
@@ -276,6 +275,8 @@ struct MtlsPeerIdentity {
 
 using AuthenticatedMtlsPeer = ::fixy::Tagged<MtlsPeerIdentity, ::fixy::tags::source::Mtls>;
 
+class MtlsConnectionDoor;
+
 class MtlsConnection {
 public:
     MtlsConnection(MtlsConnection const&) = delete;
@@ -292,40 +293,56 @@ private:
 
     constexpr MtlsConnection(SocketFd socket, AuthenticatedMtlsPeer peer) noexcept : socket_{socket}, peer_{peer} {}
 
-    friend std::expected<MtlsConnection, MtlsError> connect_mtls(SocketFd, DeclaredMtlsConfig const&, MtlsDnsName,
-                                                                 MtlsCertificateFingerprint) noexcept;
+    friend class MtlsConnectionDoor;
 };
 
-[[nodiscard]] std::expected<MtlsCertificate, MtlsError>
-admit_x509_certificate_pem(std::span<const std::byte> pem) noexcept;
+// The constructor of a connection.  Its one member is private, and
+// connect_mtls is its one friend.  The friend names the Result of a
+// connection, so it stands after the connection is complete.
+class MtlsConnectionDoor {
+    [[nodiscard]] static constexpr MtlsConnection build(SocketFd socket, AuthenticatedMtlsPeer peer) noexcept {
+        return MtlsConnection{socket, peer};
+    }
+
+    friend ::fixy::Result<MtlsConnection, MtlsError> connect_mtls(SocketFd, DeclaredMtlsConfig const&, MtlsDnsName,
+                                                                  MtlsCertificateFingerprint) noexcept;
+};
+
+[[nodiscard]] ::fixy::Result<MtlsCertificate, MtlsError>
+admit_x509_certificate_pem(::fixy::View<std::byte const> pem) noexcept;
 
 template <MtlsKeyAlgorithm Algorithm>
     requires ApprovedMtlsKeyAlgorithm<Algorithm>
-[[nodiscard]] std::expected<MtlsPrivateKey, MtlsError> admit_private_key_pem(std::span<const std::byte> pem) noexcept {
-    if (pem.empty()) {
-        return std::unexpected(MtlsError::EmptyPrivateKey);
+[[nodiscard]] ::fixy::Result<MtlsPrivateKey, MtlsError>
+admit_private_key_pem(::fixy::View<std::byte const> pem) noexcept {
+    if (pem.size() == 0) {
+        return ::fixy::err(MtlsError::EmptyPrivateKey);
     }
     if (pem.size() > MtlsPrivateKeyBytes::max_bytes) {
-        return std::unexpected(MtlsError::PrivateKeyTooLarge);
+        return ::fixy::err(MtlsError::PrivateKeyTooLarge);
     }
 
+    // A loop of bytes, and not a memmove, as in admit_x509_certificate_pem.
     MtlsPrivateKeyBytes out{};
-    for (std::size_t i = 0; i < pem.size(); ++i) {
-        out.bytes[i] = pem[i];
+    ::fixy::View<std::byte> const target =
+        out.bytes.view().window(0, pem.size()).expect("the key is at most max_bytes");
+    for (auto [destination, source] :
+         ::fixy::zip(target, pem).expect("a window of the size of the key has that size")) {
+        *destination = *source;
     }
     out.nbytes = static_cast<std::uint16_t>(pem.size());
     out.algorithm = Algorithm;
     return ::fixy::mint_secret<MtlsPrivateKeyBytes>(std::move(out));
 }
 
-[[nodiscard]] constexpr std::expected<MtlsCertificateFingerprint, MtlsError>
+[[nodiscard]] constexpr ::fixy::Result<MtlsCertificateFingerprint, MtlsError>
 admit_certificate_fingerprint(MtlsSha256Fingerprint fingerprint) noexcept {
     bool any = false;
     for (std::byte b : fingerprint.bytes) {
         any = any || b != std::byte{0};
     }
     if (!any) {
-        return std::unexpected(MtlsError::EmptyFingerprint);
+        return ::fixy::err(MtlsError::EmptyFingerprint);
     }
     return ::fixy::mint_tagged<::fixy::tags::source::Mtls>(fingerprint);
 }
@@ -355,46 +372,41 @@ template <TlsVersion MinVersion = TlsVersion::V13, MtlsCipherSuite Primary = Mtl
     return mtls_cipher_is_approved(suite) && policy.allowed_ciphers.test(suite);
 }
 
-// No bound check on the loop: MtlsPeerCount cannot hold a value above
-// MtlsPolicy::max_peer_names, which is the extent of both arrays.
 [[nodiscard]] constexpr bool mtls_policy_allows_peer_name(MtlsPolicy const& policy, MtlsDnsName peer) noexcept {
-    for (std::uint8_t i = 0; i < policy.allowed_peer_count; ++i) {
-        if (policy.allowed_peer_dns[i].view() == peer.view()) {
-            return true;
-        }
-    }
-    return false;
+    return policy.find_peer(peer).is_some();
 }
 
-[[nodiscard]] constexpr std::expected<void, MtlsError> validate_mtls_policy(MtlsPolicy const& policy) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, MtlsError>
+validate_mtls_policy(MtlsPolicy const& policy) noexcept {
     if (!policy.verify_peer) {
-        return std::unexpected(MtlsError::PeerVerificationDisabled);
+        return ::fixy::err(MtlsError::PeerVerificationDisabled);
     }
     if (!policy.require_peer_cert) {
-        return std::unexpected(MtlsError::PeerCertificateNotRequired);
+        return ::fixy::err(MtlsError::PeerCertificateNotRequired);
     }
     if (policy.min_version != TlsVersion::V13 || policy.max_version != TlsVersion::V13) {
-        return std::unexpected(MtlsError::UnsupportedTlsVersion);
+        return ::fixy::err(MtlsError::UnsupportedTlsVersion);
     }
     if (!mtls_policy_allows_cipher(policy, MtlsCipherSuite::TlsAes256GcmSha384)
         && !mtls_policy_allows_cipher(policy, MtlsCipherSuite::TlsChacha20Poly1305Sha256)) {
-        return std::unexpected(MtlsError::UnsupportedCipherSuite);
+        return ::fixy::err(MtlsError::UnsupportedCipherSuite);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
-[[nodiscard]] constexpr std::expected<void, MtlsError> validate_mtls_config(DeclaredMtlsConfig const& config) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, MtlsError>
+validate_mtls_config(DeclaredMtlsConfig const& config) noexcept {
     auto const& raw = config.value();
     if (raw.ca_cert.peek().size == 0 || raw.client_cert.peek().size == 0) {
-        return std::unexpected(MtlsError::EmptyCertificate);
+        return ::fixy::err(MtlsError::EmptyCertificate);
     }
     if (raw.client_key.declassify<::fixy::tags::secret_policy::LengthOnly>() == 0) {
-        return std::unexpected(MtlsError::EmptyPrivateKey);
+        return ::fixy::err(MtlsError::EmptyPrivateKey);
     }
     return validate_mtls_policy(raw.policy);
 }
 
-[[nodiscard]] std::expected<AuthenticatedMtlsPeer, MtlsError>
+[[nodiscard]] ::fixy::Result<AuthenticatedMtlsPeer, MtlsError>
 admit_mtls_peer_from_handshake(DeclaredMtlsConfig const& config, MtlsDnsName peer_dns,
                                MtlsCertificateFingerprint peer_fingerprint, MtlsCipherSuite chosen_cipher) noexcept;
 
@@ -403,20 +415,22 @@ admit_mtls_peer_from_handshake(DeclaredMtlsConfig const& config, MtlsDnsName pee
 // be reached without notice at compile time.
 [[nodiscard, deprecated("CRUCIBLE_STUB: no TLS 1.3 handshake is performed; "
                         "returns MtlsError::BackendUnavailable")]]
-std::expected<MtlsConnection, MtlsError> connect_mtls(SocketFd socket, DeclaredMtlsConfig const& config,
-                                                      MtlsDnsName peer_dns,
-                                                      MtlsCertificateFingerprint peer_fingerprint) noexcept;
+::fixy::Result<MtlsConnection, MtlsError> connect_mtls(SocketFd socket, DeclaredMtlsConfig const& config,
+                                                       MtlsDnsName peer_dns,
+                                                       MtlsCertificateFingerprint peer_fingerprint) noexcept;
 
 [[nodiscard, deprecated("CRUCIBLE_STUB: there is no record layer to send on; "
                         "returns MtlsError::BackendUnavailable")]]
-std::expected<std::size_t, MtlsError> mtls_send(MtlsConnection& connection, std::span<const std::byte> bytes) noexcept;
+::fixy::Result<std::size_t, MtlsError> mtls_send(MtlsConnection& connection,
+                                                 ::fixy::View<std::byte const> bytes) noexcept;
 
 [[nodiscard, deprecated("CRUCIBLE_STUB: there is no record layer to receive on; "
                         "returns MtlsError::BackendUnavailable")]]
-std::expected<std::size_t, MtlsError> mtls_recv(MtlsConnection& connection, std::span<std::byte> bytes) noexcept;
+::fixy::Result<std::size_t, MtlsError> mtls_recv(MtlsConnection& connection, ::fixy::View<std::byte> bytes) noexcept;
 
 [[nodiscard, deprecated("CRUCIBLE_STUB: no TLS_TX/TLS_RX socket option is installed; "
                         "returns MtlsError::KtlsOffloadDeferred")]]
-std::expected<void, MtlsError> enable_ktls_offload(MtlsConnection& connection, NicInterfaceName iface) noexcept;
+::fixy::Result<::fixy::Unit, MtlsError> enable_ktls_offload(MtlsConnection& connection,
+                                                            NicInterfaceName iface) noexcept;
 
 }  // namespace crucible::cntp

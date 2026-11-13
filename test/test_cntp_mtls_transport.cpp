@@ -1,10 +1,9 @@
 #include <crucible/cntp/MtlsTransport.h>
+#include <fixy/Core.h>
 
-#include <array>
 #include "test_assert.h"
+
 #include <cstddef>
-#include <cstdio>
-#include <span>
 #include <string_view>
 #include <type_traits>
 
@@ -21,20 +20,49 @@ namespace cntp = crucible::cntp;
 
 namespace {
 
-[[nodiscard]] std::array<std::byte, 32> fingerprint_bytes(std::byte seed) {
-    std::array<std::byte, 32> out{};
-    for (std::size_t i = 0; i < out.size(); ++i) {
-        out[i] = static_cast<std::byte>(std::to_integer<unsigned>(seed) + static_cast<unsigned>(i + 1u));
+using FingerprintBytes = ::foundation::core::FixedArray<std::byte, cntp::MtlsSha256Fingerprint::bytes_count>;
+using MaterialBytes = ::foundation::core::FixedArray<std::byte, 96>;
+
+// The bytes of a fingerprint: seed + 1, seed + 2, and so on.
+[[nodiscard]] FingerprintBytes make_fingerprint_bytes(unsigned seed) {
+    FingerprintBytes out{};
+    for (auto index : out.indices()) {
+        out.at(index) = static_cast<std::byte>(seed + index.raw() + 1u);
     }
     return out;
 }
 
-[[nodiscard]] std::array<std::byte, 96> material(std::byte seed) {
-    std::array<std::byte, 96> out{};
-    for (std::size_t i = 0; i < out.size(); ++i) {
-        out[i] = static_cast<std::byte>(std::to_integer<unsigned>(seed) ^ static_cast<unsigned>(i * 13u));
+// The bytes of a certificate or a key that the test admits.
+[[nodiscard]] MaterialBytes make_material(unsigned seed) {
+    MaterialBytes out{};
+    for (auto index : out.indices()) {
+        out.at(index) = static_cast<std::byte>(seed ^ (index.raw() * 13u));
     }
     return out;
+}
+
+// The value of a call that succeeds in this test.
+template <class Value>
+Value take(::fixy::Result<Value, cntp::MtlsError> result) {
+    return std::move(result).expect("the call succeeds in this test");
+}
+
+// The error of a certificate admission.  A certificate is linear, so the
+// certificate of an admission that succeeds ends here, and the error then
+// holds no value.
+[[nodiscard]] ::fixy::Option<cntp::MtlsError>
+error_of(::fixy::Result<cntp::MtlsCertificate, cntp::MtlsError> admitted) {
+    return std::move(admitted).match(
+        [](cntp::MtlsCertificate cert) noexcept {
+            drop(std::move(cert));
+            return ::fixy::Option<cntp::MtlsError>{::fixy::none};
+        },
+        [](cntp::MtlsError error) noexcept { return ::fixy::some(error); });
+}
+
+// An admitted fingerprint of the bytes of make_fingerprint_bytes(seed).
+[[nodiscard]] cntp::MtlsCertificateFingerprint make_pin(unsigned seed) {
+    return take(cntp::admit_certificate_fingerprint(cntp::MtlsSha256Fingerprint{make_fingerprint_bytes(seed)}));
 }
 
 void test_name_and_error_surfaces() {
@@ -44,111 +72,121 @@ void test_name_and_error_surfaces() {
            == std::string_view{"TLS_AES_256_GCM_SHA384"});
     assert(cntp::mtls_key_algorithm_name(cntp::MtlsKeyAlgorithm::Ed25519) == std::string_view{"ED25519"});
 
-    auto dns = cntp::MtlsDnsName::from("relay-a.example.org");
-    assert(dns.has_value());
-    assert(dns->view() == "relay-a.example.org");
+    cntp::MtlsDnsName const dns = take(cntp::MtlsDnsName::from("relay-a.example.org"));
+    assert(dns.view() == "relay-a.example.org");
 
-    auto empty = cntp::MtlsDnsName::from("");
-    assert(!empty.has_value());
-    assert(empty.error() == cntp::MtlsError::EmptyPeerName);
-
-    auto bad = cntp::MtlsDnsName::from("../relay");
-    assert(!bad.has_value());
-    assert(bad.error() == cntp::MtlsError::InvalidPeerName);
+    assert(cntp::MtlsDnsName::from("").err() == ::fixy::some(cntp::MtlsError::EmptyPeerName));
+    assert(cntp::MtlsDnsName::from("../relay").err() == ::fixy::some(cntp::MtlsError::InvalidPeerName));
 
     crucible::test::pass("  test_name_and_error_surfaces: PASSED\n");
 }
 
 void test_material_admission() {
-    auto ca_bytes = material(std::byte{0x11});
-    auto cert = cntp::admit_x509_certificate_pem(ca_bytes);
-    assert(cert.has_value());
-    assert(cert->peek().size == ca_bytes.size());
-    assert(cert->peek().view()[0] == ca_bytes[0]);
+    MaterialBytes const ca_bytes = make_material(0x11);
+    cntp::MtlsCertificate cert = take(cntp::admit_x509_certificate_pem(ca_bytes.view()));
+    assert(cert.peek().size == ca_bytes.size());
+    assert(::fixy::equal(cert.peek().view(), ca_bytes.view()));
+    drop(std::move(cert));
 
-    std::array<std::byte, 0> empty{};
-    auto empty_cert = cntp::admit_x509_certificate_pem(empty);
-    assert(!empty_cert.has_value());
-    assert(empty_cert.error() == cntp::MtlsError::EmptyCertificate);
+    assert(error_of(cntp::admit_x509_certificate_pem(::fixy::View<std::byte const>{}))
+           == ::fixy::some(cntp::MtlsError::EmptyCertificate));
 
-    auto key_bytes = material(std::byte{0x44});
-    auto key = cntp::admit_private_key_pem<cntp::MtlsKeyAlgorithm::Ed25519>(key_bytes);
-    assert(key.has_value());
-    assert(key->declassify<::fixy::tags::secret_policy::LengthOnly>() == key_bytes.size());
+    // The certificate and the key refuse one byte past their bound.
+    ::foundation::core::FixedArray<std::byte, cntp::MtlsCertificateBytes::max_bytes + 1> const large{};
+    assert(error_of(cntp::admit_x509_certificate_pem(large.view()))
+           == ::fixy::some(cntp::MtlsError::CertificateTooLarge));
+    assert(cntp::admit_private_key_pem<cntp::MtlsKeyAlgorithm::Ed25519>(large.view()).err()
+           == ::fixy::some(cntp::MtlsError::PrivateKeyTooLarge));
 
-    cntp::MtlsSha256Fingerprint raw_fp{fingerprint_bytes(std::byte{0x70})};
-    auto fp = cntp::admit_certificate_fingerprint(raw_fp);
-    assert(fp.has_value());
+    MaterialBytes const key_bytes = make_material(0x44);
+    cntp::MtlsPrivateKey const key =
+        take(cntp::admit_private_key_pem<cntp::MtlsKeyAlgorithm::Ed25519>(key_bytes.view()));
+    assert(key.declassify<::fixy::tags::secret_policy::LengthOnly>() == key_bytes.size());
+    assert(cntp::admit_private_key_pem<cntp::MtlsKeyAlgorithm::Ed25519>(::fixy::View<std::byte const>{}).err()
+           == ::fixy::some(cntp::MtlsError::EmptyPrivateKey));
 
-    cntp::MtlsSha256Fingerprint zero_fp{};
-    auto zero = cntp::admit_certificate_fingerprint(zero_fp);
-    assert(!zero.has_value());
-    assert(zero.error() == cntp::MtlsError::EmptyFingerprint);
+    assert(cntp::admit_certificate_fingerprint(cntp::MtlsSha256Fingerprint{make_fingerprint_bytes(0x70)}).is_ok());
+    assert(cntp::admit_certificate_fingerprint(cntp::MtlsSha256Fingerprint{}).err()
+           == ::fixy::some(cntp::MtlsError::EmptyFingerprint));
 
     crucible::test::pass("  test_material_admission:       PASSED\n");
 }
 
 void test_policy_and_peer_admission() {
-    auto ca_bytes = material(std::byte{0x21});
-    auto cert_bytes = material(std::byte{0x22});
-    auto key_bytes = material(std::byte{0x23});
+    MaterialBytes const ca_bytes = make_material(0x21);
+    MaterialBytes const cert_bytes = make_material(0x22);
+    MaterialBytes const key_bytes = make_material(0x23);
 
-    auto ca = cntp::admit_x509_certificate_pem(ca_bytes);
-    auto cert = cntp::admit_x509_certificate_pem(cert_bytes);
-    auto key = cntp::admit_private_key_pem<cntp::MtlsKeyAlgorithm::EcdsaP256>(key_bytes);
-    assert(ca.has_value());
-    assert(cert.has_value());
-    assert(key.has_value());
+    cntp::MtlsCertificate ca = take(cntp::admit_x509_certificate_pem(ca_bytes.view()));
+    cntp::MtlsCertificate cert = take(cntp::admit_x509_certificate_pem(cert_bytes.view()));
+    cntp::MtlsPrivateKey key = take(cntp::admit_private_key_pem<cntp::MtlsKeyAlgorithm::EcdsaP256>(key_bytes.view()));
 
-    auto allowed = cntp::MtlsDnsName::from("federation-a.example.org");
-    auto denied = cntp::MtlsDnsName::from("federation-b.example.org");
-    assert(allowed.has_value());
-    assert(denied.has_value());
-
-    cntp::MtlsSha256Fingerprint raw_fp{fingerprint_bytes(std::byte{0x55})};
-    auto fp = cntp::admit_certificate_fingerprint(raw_fp);
-    assert(fp.has_value());
+    cntp::MtlsDnsName const allowed = take(cntp::MtlsDnsName::from("federation-a.example.org"));
+    cntp::MtlsDnsName const denied = take(cntp::MtlsDnsName::from("federation-b.example.org"));
+    cntp::MtlsCertificateFingerprint const pin = make_pin(0x55);
 
     cntp::MtlsPolicy policy{};
-    assert(policy.allow_peer_with_pin(*allowed, *fp).has_value());
+    assert(policy.allow_peer_with_pin(allowed, pin).is_ok());
 
-    auto config = cntp::mint_mtls_config(std::move(*ca), std::move(*cert), std::move(*key), policy);
+    auto config = cntp::mint_mtls_config(std::move(ca), std::move(cert), std::move(key), policy);
     static_assert(std::same_as<std::remove_cvref_t<decltype(config)>, cntp::DeclaredMtlsConfig>);
     static_assert(std::same_as<cntp::DeclaredMtlsConfig::tag_type, ::fixy::tags::source::Mtls>);
 
-    auto valid = cntp::validate_mtls_config(config);
-    assert(valid.has_value());
+    assert(cntp::validate_mtls_config(config).is_ok());
 
-    auto peer = cntp::admit_mtls_peer_from_handshake(config, *allowed, *fp, cntp::MtlsCipherSuite::TlsAes256GcmSha384);
-    assert(peer.has_value());
-    assert(peer->value().dns_name.view() == allowed->view());
-    assert(peer->value().cipher == cntp::MtlsCipherSuite::TlsAes256GcmSha384);
+    cntp::AuthenticatedMtlsPeer const peer =
+        take(cntp::admit_mtls_peer_from_handshake(config, allowed, pin, cntp::MtlsCipherSuite::TlsAes256GcmSha384));
+    assert(peer.value().dns_name.view() == allowed.view());
+    assert(peer.value().cipher == cntp::MtlsCipherSuite::TlsAes256GcmSha384);
 
-    auto wrong_name =
-        cntp::admit_mtls_peer_from_handshake(config, *denied, *fp, cntp::MtlsCipherSuite::TlsAes256GcmSha384);
-    assert(!wrong_name.has_value());
-    assert(wrong_name.error() == cntp::MtlsError::PeerNameNotAllowed);
-
-    auto wrong_cipher =
-        cntp::admit_mtls_peer_from_handshake(config, *allowed, *fp, cntp::MtlsCipherSuite::TlsAes128GcmSha256);
-    assert(!wrong_cipher.has_value());
-    assert(wrong_cipher.error() == cntp::MtlsError::UnsupportedCipherSuite);
-
-    cntp::MtlsSha256Fingerprint other_raw_fp{fingerprint_bytes(std::byte{0x60})};
-    auto other_fp = cntp::admit_certificate_fingerprint(other_raw_fp);
-    assert(other_fp.has_value());
-    auto wrong_pin =
-        cntp::admit_mtls_peer_from_handshake(config, *allowed, *other_fp, cntp::MtlsCipherSuite::TlsAes256GcmSha384);
-    assert(!wrong_pin.has_value());
-    assert(wrong_pin.error() == cntp::MtlsError::CertificatePinMismatch);
+    assert(cntp::admit_mtls_peer_from_handshake(config, denied, pin, cntp::MtlsCipherSuite::TlsAes256GcmSha384).err()
+           == ::fixy::some(cntp::MtlsError::PeerNameNotAllowed));
+    assert(cntp::admit_mtls_peer_from_handshake(config, allowed, pin, cntp::MtlsCipherSuite::TlsAes128GcmSha256).err()
+           == ::fixy::some(cntp::MtlsError::UnsupportedCipherSuite));
+    assert(
+        cntp::admit_mtls_peer_from_handshake(config, allowed, make_pin(0x60), cntp::MtlsCipherSuite::TlsAes256GcmSha384)
+            .err()
+        == ::fixy::some(cntp::MtlsError::CertificatePinMismatch));
 
     auto fd = cntp::admit_socket_fd(3);
     assert(fd.has_value());
-    auto connection = cntp::connect_mtls(*fd, config, *allowed, *fp);
-    assert(!connection.has_value());
-    assert(connection.error() == cntp::MtlsError::BackendUnavailable);
+    assert(cntp::connect_mtls(*fd, config, allowed, pin).err() == ::fixy::some(cntp::MtlsError::BackendUnavailable));
 
     crucible::test::pass("  test_policy_and_peer_admission: PASSED\n");
+}
+
+// The policy holds max_peer_names peers.  find_peer gives the slot of each
+// peer that the policy allows, and no slot to each other name.  The policy
+// refuses a peer past the bound.
+void test_peer_allowlist_bound() {
+    ::foundation::core::FixedArray<cntp::MtlsDnsName, cntp::MtlsPolicy::max_peer_names + 1> const names{
+        take(cntp::MtlsDnsName::from("peer-0.example.org")), take(cntp::MtlsDnsName::from("peer-1.example.org")),
+        take(cntp::MtlsDnsName::from("peer-2.example.org")), take(cntp::MtlsDnsName::from("peer-3.example.org")),
+        take(cntp::MtlsDnsName::from("peer-4.example.org")), take(cntp::MtlsDnsName::from("peer-5.example.org")),
+        take(cntp::MtlsDnsName::from("peer-6.example.org")), take(cntp::MtlsDnsName::from("peer-7.example.org")),
+        take(cntp::MtlsDnsName::from("peer-8.example.org")),
+    };
+    cntp::MtlsCertificateFingerprint const pin = make_pin(0x10);
+
+    cntp::MtlsPolicy policy{};
+    std::size_t allowed = 0;
+    for (cntp::MtlsDnsName const& name : names) {
+        assert(policy.find_peer(name).is_none());
+        auto admitted = policy.allow_peer_with_pin(name, pin);
+        if (allowed == cntp::MtlsPolicy::max_peer_names) {
+            assert(admitted.err() == ::fixy::some(cntp::MtlsError::TooManyPeerNames));
+            assert(policy.find_peer(name).is_none());
+            continue;
+        }
+        assert(admitted.is_ok());
+        assert(policy.find_peer(name).expect("the policy allows the peer").raw() == allowed);
+        ++allowed;
+    }
+    assert(policy.allowed_peer_count.value() == cntp::MtlsPolicy::max_peer_names);
+    assert(cntp::mtls_policy_allows_peer_name(policy, names.at(::fixy::index<0>())));
+    assert(!cntp::mtls_policy_allows_peer_name(policy, names.at(::fixy::index<cntp::MtlsPolicy::max_peer_names>())));
+
+    crucible::test::pass("  test_peer_allowlist_bound:      PASSED\n");
 }
 
 // This pins the exact contract every data-plane entry point offers
@@ -165,45 +203,33 @@ void test_data_plane_is_stub() {
     // Admission is real even though the data plane is not.  A
     // connection attempt passes validation and only then refuses, so
     // policy truth and wire truth stay separate.
-    auto ca_bytes = material(std::byte{0x91});
-    auto cert_bytes = material(std::byte{0x92});
-    auto key_bytes = material(std::byte{0x93});
+    MaterialBytes const ca_bytes = make_material(0x91);
+    MaterialBytes const cert_bytes = make_material(0x92);
+    MaterialBytes const key_bytes = make_material(0x93);
 
-    auto ca = cntp::admit_x509_certificate_pem(ca_bytes);
-    auto cert = cntp::admit_x509_certificate_pem(cert_bytes);
-    auto key = cntp::admit_private_key_pem<cntp::MtlsKeyAlgorithm::Ed25519>(key_bytes);
-    assert(ca.has_value());
-    assert(cert.has_value());
-    assert(key.has_value());
+    cntp::MtlsCertificate ca = take(cntp::admit_x509_certificate_pem(ca_bytes.view()));
+    cntp::MtlsCertificate cert = take(cntp::admit_x509_certificate_pem(cert_bytes.view()));
+    cntp::MtlsPrivateKey key = take(cntp::admit_private_key_pem<cntp::MtlsKeyAlgorithm::Ed25519>(key_bytes.view()));
 
-    auto peer_dns = cntp::MtlsDnsName::from("federation-stub.example.org");
-    assert(peer_dns.has_value());
-
-    cntp::MtlsSha256Fingerprint raw_fp{fingerprint_bytes(std::byte{0x99})};
-    auto fp = cntp::admit_certificate_fingerprint(raw_fp);
-    assert(fp.has_value());
+    cntp::MtlsDnsName const peer_dns = take(cntp::MtlsDnsName::from("federation-stub.example.org"));
+    cntp::MtlsCertificateFingerprint const pin = make_pin(0x99);
 
     cntp::MtlsPolicy policy{};
-    assert(policy.allow_peer_with_pin(*peer_dns, *fp).has_value());
+    assert(policy.allow_peer_with_pin(peer_dns, pin).is_ok());
 
-    auto config = cntp::mint_mtls_config(std::move(*ca), std::move(*cert), std::move(*key), policy);
-    assert(cntp::validate_mtls_config(config).has_value());
+    auto config = cntp::mint_mtls_config(std::move(ca), std::move(cert), std::move(key), policy);
+    assert(cntp::validate_mtls_config(config).is_ok());
 
     auto fd = cntp::admit_socket_fd(7);
     assert(fd.has_value());
-    auto connection = cntp::connect_mtls(*fd, config, *peer_dns, *fp);
-    assert(!connection.has_value());
-    assert(connection.error() == cntp::MtlsError::BackendUnavailable);
+    assert(cntp::connect_mtls(*fd, config, peer_dns, pin).err() == ::fixy::some(cntp::MtlsError::BackendUnavailable));
 
     // A peer that fails policy is refused for that reason, not for
     // the missing backend.  Were it the other way round, a genuine
     // policy rejection would hide behind the stub's refusal.
-    auto unauthorized_dns = cntp::MtlsDnsName::from("rogue-peer.example.org");
-    assert(unauthorized_dns.has_value());
-    auto rejected = cntp::connect_mtls(*fd, config, *unauthorized_dns, *fp);
-    assert(!rejected.has_value());
-    assert(rejected.error() == cntp::MtlsError::PeerNameNotAllowed);
-    assert(rejected.error() != cntp::MtlsError::BackendUnavailable);
+    cntp::MtlsDnsName const unauthorized_dns = take(cntp::MtlsDnsName::from("rogue-peer.example.org"));
+    assert(cntp::connect_mtls(*fd, config, unauthorized_dns, pin).err()
+           == ::fixy::some(cntp::MtlsError::PeerNameNotAllowed));
 
     crucible::test::pass("  test_data_plane_is_stub:        PASSED\n");
 }
@@ -211,33 +237,23 @@ void test_data_plane_is_stub() {
 void test_reject_insecure_policy() {
     cntp::MtlsPolicy policy{};
     policy.verify_peer = false;
-    auto no_verify = cntp::validate_mtls_policy(policy);
-    assert(!no_verify.has_value());
-    assert(no_verify.error() == cntp::MtlsError::PeerVerificationDisabled);
+    assert(cntp::validate_mtls_policy(policy).err() == ::fixy::some(cntp::MtlsError::PeerVerificationDisabled));
 
     policy.verify_peer = true;
     policy.require_peer_cert = false;
-    auto no_peer_cert = cntp::validate_mtls_policy(policy);
-    assert(!no_peer_cert.has_value());
-    assert(no_peer_cert.error() == cntp::MtlsError::PeerCertificateNotRequired);
+    assert(cntp::validate_mtls_policy(policy).err() == ::fixy::some(cntp::MtlsError::PeerCertificateNotRequired));
 
     policy.require_peer_cert = true;
     policy.min_version = cntp::TlsVersion::V12;
-    auto old_tls = cntp::validate_mtls_policy(policy);
-    assert(!old_tls.has_value());
-    assert(old_tls.error() == cntp::MtlsError::UnsupportedTlsVersion);
+    assert(cntp::validate_mtls_policy(policy).err() == ::fixy::some(cntp::MtlsError::UnsupportedTlsVersion));
 
-    auto ca_bytes = material(std::byte{0x31});
-    auto cert_bytes = material(std::byte{0x32});
-    auto ca = cntp::admit_x509_certificate_pem(ca_bytes);
-    auto cert = cntp::admit_x509_certificate_pem(cert_bytes);
-    assert(ca.has_value());
-    assert(cert.has_value());
+    MaterialBytes const ca_bytes = make_material(0x31);
+    MaterialBytes const cert_bytes = make_material(0x32);
+    cntp::MtlsCertificate ca = take(cntp::admit_x509_certificate_pem(ca_bytes.view()));
+    cntp::MtlsCertificate cert = take(cntp::admit_x509_certificate_pem(cert_bytes.view()));
     auto empty_key_config =
-        cntp::mint_mtls_config(std::move(*ca), std::move(*cert), ::fixy::mint_secret<cntp::MtlsPrivateKeyBytes>());
-    auto empty_key = cntp::validate_mtls_config(empty_key_config);
-    assert(!empty_key.has_value());
-    assert(empty_key.error() == cntp::MtlsError::EmptyPrivateKey);
+        cntp::mint_mtls_config(std::move(ca), std::move(cert), ::fixy::mint_secret<cntp::MtlsPrivateKeyBytes>());
+    assert(cntp::validate_mtls_config(empty_key_config).err() == ::fixy::some(cntp::MtlsError::EmptyPrivateKey));
 
     crucible::test::pass("  test_reject_insecure_policy:   PASSED\n");
 }
@@ -270,6 +286,7 @@ int main() {
     test_name_and_error_surfaces();
     test_material_admission();
     test_policy_and_peer_admission();
+    test_peer_allowlist_bound();
     test_data_plane_is_stub();
     test_reject_insecure_policy();
     crucible::test::pass("test_cntp_mtls_transport: all PASSED\n");
