@@ -409,13 +409,18 @@ using ValidatedEntryTag = crucible::TraceRing::ValidatedEntryPtr::tag_type;
 // eagerly and leaves the ring alone.  There is no failure value that
 // carries the second tag, which is what makes running the checks the
 // only way an adapter reaches a recording entry point.
+//
+// The records are the inputs and then the outputs of the entry, so a count
+// of records that is not their sum is refused here.  Vigil::record_op ends
+// the process on that count, and a foreign caller must not reach it.
 [[nodiscard]] CRUCIBLE_HOT constexpr std::optional<crucible::TraceRing::ValidatedEntryPtr>
 mint_validated_entry(crucible::TraceRing::FromPytorchEntryPtr raw, const crucible::TensorMeta* metas,
                      uint32_t n_metas) noexcept {
     const crucible::TraceRing::Entry* entry = raw.value();
     if (entry == nullptr) return std::nullopt;
     if (!entry_is_well_formed(*entry)) return std::nullopt;
-    if (!metas_are_well_formed(metas, n_metas)) return std::nullopt;
+    if (!metas_are_well_formed(metas, n_metas) || n_metas != uint32_t{entry->num_inputs} + entry->num_outputs)
+        return std::nullopt;
     return std::move(raw).retag<ValidatedEntryTag>();
 }
 

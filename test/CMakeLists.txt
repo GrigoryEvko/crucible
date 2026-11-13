@@ -237,6 +237,7 @@ crucible_test(test_schema_table)
 crucible_test(test_iteration_detector)
 crucible_test(test_iteration_detector_window)
 crucible_test(test_vigil_unrepeated_prefix)
+crucible_test(test_vigil_record_count)
 crucible_test(test_arena)
 crucible_test(test_arena_epoch)
 # The read after the end of an epoch ends the process only in a build with

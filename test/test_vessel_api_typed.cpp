@@ -1,8 +1,10 @@
 #include "../vessel/torch/vessel_api_typed.h"
 
 #include <crucible/TensorMeta.h>
+#include <crucible/TraceRing.h>
 #include <crucible/Types.h>
 #include <crucible/Vigil.h>
+#include <fixy/FixedArray.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 
@@ -306,6 +308,37 @@ void test_ladder_refuses_unnamed_enumerations() {
     EXPECT(!crucible::vessel::metas_are_well_formed(&jagged, 1), "the ordinal 7 names no crucible layout");
 }
 
+// True when the ladder certifies the entry with the count of records.
+template <class Validated>
+[[nodiscard]] bool is_certified(Validated const& validated) noexcept {
+    return validated.has_value();
+}
+
+// The records of an entry are its inputs and then its outputs.  The ladder
+// refuses a count of records that is not their sum, because the recording
+// path ends the process on it.
+void test_ladder_refuses_a_count_that_disagrees_with_the_entry() {
+    crucible::TraceRing::Entry entry{};
+    entry.schema_hash = crucible::SchemaHash{0x61};
+    entry.shape_hash = crucible::ShapeHash{0x62};
+    entry.num_inputs = 1;
+    entry.num_outputs = 1;
+    ::fixy::FixedArray<crucible::TensorMeta, 3> metas{};
+    for (crucible::TensorMeta& meta : metas) {
+        meta.ndim = 1;
+        meta.dtype = crucible::ScalarType::Float;
+    }
+    using crucible::vessel::mint_validated_entry;
+    EXPECT(is_certified(mint_validated_entry(crucible::mint_ffi_entry(entry), metas.data(), 2)),
+           "a count of records that is the sum of the inputs and the outputs is certified");
+    EXPECT(!is_certified(mint_validated_entry(crucible::mint_ffi_entry(entry), metas.data(), 3)),
+           "one record more than the inputs and the outputs is refused");
+    EXPECT(!is_certified(mint_validated_entry(crucible::mint_ffi_entry(entry), metas.data(), 1)),
+           "one record less than the inputs and the outputs is refused");
+    EXPECT(!is_certified(mint_validated_entry(crucible::mint_ffi_entry(entry), nullptr, 0)),
+           "no record for an entry with an input and an output is refused");
+}
+
 // Each decoder gives the crucible enumerator of the same name, and no value
 // for an ordinal that crucible does not name.  The layouts of c10 and of
 // crucible have different ordinals from SparseCsc on, so the layout decoder
@@ -356,6 +389,7 @@ int main() {
     test_abi_version_constant();
     test_handle_distinct_pointers();
     test_ladder_refuses_unnamed_enumerations();
+    test_ladder_refuses_a_count_that_disagrees_with_the_entry();
     test_c10_decoders_map_by_name();
 
     if (g_failures != 0) {

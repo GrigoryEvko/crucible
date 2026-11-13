@@ -200,6 +200,11 @@ public:
     // ring.  Returns false when either is full, in which case the op is
     // dropped and the next iteration re-records everything.
     //
+    // The records are the inputs and then the outputs of the entry, so
+    // n_metas must be their sum.  The build reads that many records for the
+    // op, and a count that disagrees makes it read the records of another
+    // op.  The check ends the process before the log or the ring changes.
+    //
     // This is a producer entry point in its own right, not a helper of
     // dispatch_op, so it carries the same thread gate.  Without one, a
     // caller that reaches the ring through here from a second thread gets
@@ -209,6 +214,7 @@ public:
                                                            uint32_t n_metas, ScopeHash scope_hash = {},
                                                            CallsiteHash callsite_hash = {}) {
         CRUCIBLE_PRE(ve.value() != nullptr);
+        CRUCIBLE_PRE(n_metas == uint32_t{ve.value()->num_inputs} + ve.value()->num_outputs);
         (void)assert_producer_thread_();
         MetaIndex meta_start;  // default = none()
         if (metas && n_metas > 0) {
