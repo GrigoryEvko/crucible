@@ -41,6 +41,7 @@
 // read buffers are std::array, because a Debug build checks each subscript
 // of a std::array.
 
+#include <fixy/Core.h>
 #include <fixy/Mutation.h>
 
 #include <foundation/Lifetime.h>
@@ -53,7 +54,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -161,12 +161,12 @@ public:
         }
     }
 
-    // Never blocks.  A write in flight and a torn read are both
-    // reported as nullopt, which suits best-effort instrumentation.
-    [[nodiscard]] std::optional<T> try_load() const noexcept {
+    // Never blocks.  A write in flight and a torn read both give no
+    // value, which suits best-effort instrumentation.
+    [[nodiscard]] ::fixy::Option<T> try_load() const noexcept {
         const std::uint64_t pre = seq_.get();
         if ((pre & 1u) != 0u) {
-            return std::nullopt;
+            return ::fixy::none;
         }
 
         alignas(T) std::array<std::byte, sizeof(T)> buf{};
@@ -175,9 +175,9 @@ public:
 
         const std::uint64_t post = seq_.get();
         if (pre != post) {
-            return std::nullopt;
+            return ::fixy::none;
         }
-        return ::foundation::lifetime::start_as_array<T>(buf.data(), 1).front();
+        return ::fixy::some(::foundation::lifetime::start_as_array<T>(buf.data(), 1).front());
     }
 
     // Counts completed publishes, and never wraps at this width.  A

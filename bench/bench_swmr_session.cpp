@@ -65,8 +65,8 @@ template <typename Body>
 // A reader of the channel, which has a free share by construction.
 [[nodiscard]] Swmr::ReaderHandle take_reader(Swmr& swmr) noexcept {
     auto reader = ses::mint_swmr_reader<Swmr>(swmr);
-    CRUCIBLE_BENCH_CHECK(reader.has_value());
-    return std::move(*reader);
+    CRUCIBLE_BENCH_CHECK(reader.is_some());
+    return std::move(reader).expect("the pool lends a share");
 }
 
 [[nodiscard]] bench::Report raw_publish() {
@@ -121,7 +121,7 @@ template <typename Body>
 [[nodiscard]] bench::Report raw_try_load() {
     const cc::AtomicSnapshot<Payload> snapshot{payload_at(123)};
     return measure("raw AtomicSnapshot.try_load", [&] {
-        const std::optional<Payload> observed = snapshot.try_load();
+        const ::fixy::Option<Payload> observed = snapshot.try_load();
         bench::do_not_optimize(observed);
     });
 }

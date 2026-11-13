@@ -32,7 +32,7 @@ int main() {
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Swmr swmr{reader_root(), 1};
     auto reader = ses::mint_swmr_reader<Swmr>(swmr);
-    auto session = ses::mint_writer_runtime_session<Swmr>(ctx, std::move(*reader));
+    auto session = ses::mint_writer_runtime_session<Swmr>(ctx, std::move(reader).expect("the pool lends a share"));
     (void)session;
     return 0;
 }

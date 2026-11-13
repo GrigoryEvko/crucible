@@ -81,13 +81,8 @@ public:
     operator=(RuntimeMetricsRoleReader&&) = delete("the share lifetime is fixed at construction");
 
     [[nodiscard]] RuntimeMetricsSample load() const noexcept { return handle_.load(); }
-    // The sample, or no value while the writer publishes.  The base channel
-    // gives the read as a std::optional.
-    [[nodiscard]] ::fixy::Option<RuntimeMetricsSample> try_load() const noexcept {
-        auto const loaded = handle_.try_load();
-        if (!loaded) return ::fixy::none;
-        return ::fixy::Option<RuntimeMetricsSample>::some(*loaded);
-    }
+    // The sample, or no value while the writer publishes.
+    [[nodiscard]] ::fixy::Option<RuntimeMetricsSample> try_load() const noexcept { return handle_.try_load(); }
     [[nodiscard]] std::uint64_t version() const noexcept { return handle_.version(); }
 
 private:
@@ -108,8 +103,8 @@ mint_keeper_metrics_reader(RuntimeMetricsChannel<ReaderBrand, WriterBrand>& chan
     using Reader = KeeperMetricsReader<ReaderBrand, WriterBrand>;
     auto handle =
         ::fixy::channels::swmr_session::mint_swmr_reader<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(channel);
-    if (!handle) return ::fixy::none;
-    return ::fixy::Option<Reader>::some(Reader{std::move(*handle)});
+    if (handle.is_none()) return ::fixy::none;
+    return ::fixy::Option<Reader>::some(Reader{std::move(handle).expect("the reader pool lent a share")});
 }
 
 template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
@@ -118,8 +113,8 @@ mint_canopy_metrics_reader(RuntimeMetricsChannel<ReaderBrand, WriterBrand>& chan
     using Reader = CanopyMetricsReader<ReaderBrand, WriterBrand>;
     auto handle =
         ::fixy::channels::swmr_session::mint_swmr_reader<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(channel);
-    if (!handle) return ::fixy::none;
-    return ::fixy::Option<Reader>::some(Reader{std::move(*handle)});
+    if (handle.is_none()) return ::fixy::none;
+    return ::fixy::Option<Reader>::some(Reader{std::move(handle).expect("the reader pool lent a share")});
 }
 
 }  // namespace crucible::observe

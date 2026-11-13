@@ -26,6 +26,7 @@
 // release(), which gives the writer role back to the session and the
 // token back to the caller.
 
+#include <fixy/Core.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
 #include <fixy/concurrent/HandleTraits.h>
 #include <fixy/session/Entry.h>
@@ -77,7 +78,7 @@ concept SwmrSessionSurface =
                 std::declval<
                     ::foundation::permissions::Permission<typename S::writer_tag, typename S::writer_brand>&&>())
         } -> std::same_as<typename S::WriterHandle>;
-        { std::declval<S&>().reader() } -> std::same_as<std::optional<typename S::ReaderHandle>>;
+        { std::declval<S&>().reader() } -> std::same_as<::fixy::Option<typename S::ReaderHandle>>;
     } && ::fixy::concurrent::IsSwmrWriter<typename S::WriterHandle>
     && ::fixy::concurrent::IsSwmrReader<typename S::ReaderHandle>
     && std::is_same_v<::fixy::concurrent::swmr_writer_value_t<typename S::WriterHandle>, typename S::value_type>
@@ -208,7 +209,7 @@ public:
 
         [[nodiscard]] T load() const noexcept { return session_->snapshot_.load(); }
 
-        [[nodiscard]] std::optional<T> try_load() const noexcept { return session_->snapshot_.try_load(); }
+        [[nodiscard]] ::fixy::Option<T> try_load() const noexcept { return session_->snapshot_.try_load(); }
 
         [[nodiscard]] std::uint64_t version() const noexcept { return session_->snapshot_.version(); }
 
@@ -226,10 +227,10 @@ public:
         return WriterHandle{*this, std::move(perm)};
     }
 
-    [[nodiscard]] std::optional<ReaderHandle> reader() noexcept {
+    [[nodiscard]] ::fixy::Option<ReaderHandle> reader() noexcept {
         auto guard = reader_pool_.lend();
-        if (!guard) return std::nullopt;
-        return ReaderHandle{*this, std::move(*guard)};
+        if (!guard) return ::fixy::none;
+        return ::fixy::some(ReaderHandle{*this, std::move(*guard)});
     }
 
     // Runs the body with every reader out, and returns false when readers
@@ -309,12 +310,7 @@ inline constexpr auto publish_value = [](auto& writer, auto& value) noexcept -> 
 
 // The read of the reader session: the snapshot, or none while a write is
 // in flight.  The handle then waits through the watch and reads again.
-inline constexpr auto load_value = [](auto& reader) noexcept {
-    auto const loaded = reader.try_load();
-    using Value = typename decltype(loaded)::value_type;
-    if (!loaded.has_value()) return ::fixy::Option<Value>{};
-    return ::fixy::Option<Value>::some(*loaded);
-};
+inline constexpr auto load_value = [](auto& reader) noexcept { return reader.try_load(); };
 
 // The tags and the brands that only checks name.  The witness roster
 // (the witness rows of utils/rule-table.txt), the permission-row roster of

@@ -106,10 +106,11 @@ void test_writer_publish_reader_loads_latest() {
 
     writer.publish(42);
 
-    auto reader = ses::mint_swmr_reader<Swmr>(swmr);
-    CRUCIBLE_REQUIRE(reader.has_value());
-    CRUCIBLE_REQUIRE(reader->load() == 42);
-    CRUCIBLE_REQUIRE(reader->version() == writer.version());
+    auto minted = ses::mint_swmr_reader<Swmr>(swmr);
+    CRUCIBLE_REQUIRE(minted.is_some());
+    const Swmr::ReaderHandle reader = std::move(minted).expect("the pool lends a share");
+    CRUCIBLE_REQUIRE(reader.load() == 42);
+    CRUCIBLE_REQUIRE(reader.version() == writer.version());
     CRUCIBLE_REQUIRE(swmr.version() == writer.version());
 }
 
@@ -119,15 +120,15 @@ void test_multiple_readers_track_pool_lifetime() {
     auto r1 = ses::mint_swmr_reader<Swmr>(swmr);
     auto r2 = ses::mint_swmr_reader<Swmr>(swmr);
 
-    CRUCIBLE_REQUIRE(r1.has_value());
-    CRUCIBLE_REQUIRE(r2.has_value());
+    CRUCIBLE_REQUIRE(r1.is_some());
+    CRUCIBLE_REQUIRE(r2.is_some());
     CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 2);
     CRUCIBLE_REQUIRE(!swmr.with_drained_access([] {}));
 
-    r1.reset();
+    r1 = ::fixy::none;
     CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 1);
 
-    r2.reset();
+    r2 = ::fixy::none;
     CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 0);
 
     bool ran = false;
@@ -139,16 +140,17 @@ void test_late_reader_observes_latest_publish() {
     Swmr swmr{reader_root(), 3};
     auto writer = ses::mint_swmr_writer<Swmr>(swmr, writer_root());
 
+    // The handle that expect gives ends at the end of the statement, and it
+    // gives its share back there.
     auto early = ses::mint_swmr_reader<Swmr>(swmr);
-    CRUCIBLE_REQUIRE(early.has_value());
-    CRUCIBLE_REQUIRE(early->load() == 3);
-    early.reset();
+    CRUCIBLE_REQUIRE(early.is_some());
+    CRUCIBLE_REQUIRE(std::move(early).expect("the pool lends a share").load() == 3);
 
     writer.publish(99);
 
     auto late = ses::mint_swmr_reader<Swmr>(swmr);
-    CRUCIBLE_REQUIRE(late.has_value());
-    CRUCIBLE_REQUIRE(late->load() == 99);
+    CRUCIBLE_REQUIRE(late.is_some());
+    CRUCIBLE_REQUIRE(std::move(late).expect("the pool lends a share").load() == 99);
 }
 
 // A moved-from handle keeps no binding, so the handle it moved to is the
@@ -160,8 +162,8 @@ void test_moved_handles_keep_their_channel() {
     moved_writer.publish(6);
 
     auto reader = ses::mint_swmr_reader<Swmr>(swmr);
-    CRUCIBLE_REQUIRE(reader.has_value());
-    Swmr::ReaderHandle moved_reader = std::move(*reader);
+    CRUCIBLE_REQUIRE(reader.is_some());
+    Swmr::ReaderHandle moved_reader = std::move(reader).expect("the pool lends a share");
     CRUCIBLE_REQUIRE(moved_reader.load() == 6);
     CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 1);
 
@@ -178,10 +180,11 @@ void test_session_send_recv() {
     Swmr swmr{reader_root(), 0};
     auto writer = ses::mint_swmr_writer<Swmr>(swmr, writer_root());
     auto reader = ses::mint_swmr_reader<Swmr>(swmr);
-    CRUCIBLE_REQUIRE(reader.has_value());
+    CRUCIBLE_REQUIRE(reader.is_some());
 
     auto writer_session = ses::mint_writer_runtime_session<Swmr>(ctx, std::move(writer));
-    auto reader_session = ses::mint_reader_runtime_session<Swmr>(ctx, std::move(*reader));
+    auto reader_session =
+        ses::mint_reader_runtime_session<Swmr>(ctx, std::move(reader).expect("the pool lends a share"));
 
     auto next_writer = std::move(writer_session).send(91, ses::publish_value);
     auto [value, next_reader] = std::move(reader_session).recv(ses::load_value);
@@ -202,8 +205,8 @@ void test_writer_publishes_1000_values_four_readers_observe_sequence() {
     std::array<std::optional<PayloadSwmr::ReaderHandle>, kReaders> readers{};
     for (auto& reader : readers) {
         auto minted = ses::mint_swmr_reader<PayloadSwmr>(swmr);
-        CRUCIBLE_REQUIRE(minted.has_value());
-        reader.emplace(std::move(*minted));
+        CRUCIBLE_REQUIRE(minted.is_some());
+        reader.emplace(std::move(minted).expect("the pool lends a share"));
     }
     CRUCIBLE_REQUIRE(swmr.outstanding_readers() == kReaders);
 
@@ -232,17 +235,18 @@ void test_async_interleaving_never_observes_torn_or_reversed_state() {
 
     for (std::size_t idx = 0; idx < kReaders; ++idx) {
         reader_threads[idx] = std::jthread{[&, idx] {
-            auto reader = ses::mint_swmr_reader<PayloadSwmr>(swmr);
-            if (!reader) {
+            auto minted = ses::mint_swmr_reader<PayloadSwmr>(swmr);
+            if (minted.is_none()) {
                 failed.store(true, std::memory_order_release);
                 return;
             }
+            const PayloadSwmr::ReaderHandle reader = std::move(minted).expect("the pool lends a share");
             while (!start.load(std::memory_order_acquire)) {
                 CRUCIBLE_SPIN_PAUSE;
             }
             std::uint64_t last = 0;
             while (!done.load(std::memory_order_acquire)) {
-                const SnapshotPayload observed = reader->load();
+                const SnapshotPayload observed = reader.load();
                 if (!observed.is_consistent() || observed.seq < last) {
                     failed.store(true, std::memory_order_release);
                     return;
@@ -250,7 +254,7 @@ void test_async_interleaving_never_observes_torn_or_reversed_state() {
                 last = observed.seq;
                 if ((idx & 1U) != 0U) CRUCIBLE_SPIN_PAUSE;
             }
-            const SnapshotPayload tail = reader->load();
+            const SnapshotPayload tail = reader.load();
             if (!tail.is_consistent() || tail.seq < last) {
                 failed.store(true, std::memory_order_release);
                 return;
@@ -279,18 +283,20 @@ void test_reader_exit_and_rejoin_updates_pool_and_observes_current() {
     PayloadSwmr swmr{payload_reader_root(), payload_at(0)};
     auto writer = ses::mint_swmr_writer<PayloadSwmr>(swmr, payload_writer_root());
 
-    auto reader = ses::mint_swmr_reader<PayloadSwmr>(swmr);
-    CRUCIBLE_REQUIRE(reader.has_value());
-    CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 1);
+    // The reader leaves at the end of the block and gives its share back.
+    {
+        auto minted = ses::mint_swmr_reader<PayloadSwmr>(swmr);
+        CRUCIBLE_REQUIRE(minted.is_some());
+        const PayloadSwmr::ReaderHandle reader = std::move(minted).expect("the pool lends a share");
+        CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 1);
 
-    for (std::uint64_t seq = 1; seq <= 100; ++seq) {
-        writer.publish(payload_at(seq));
-        const SnapshotPayload observed = reader->load();
-        CRUCIBLE_REQUIRE(observed.is_consistent());
-        CRUCIBLE_REQUIRE(observed.seq == seq);
+        for (std::uint64_t seq = 1; seq <= 100; ++seq) {
+            writer.publish(payload_at(seq));
+            const SnapshotPayload observed = reader.load();
+            CRUCIBLE_REQUIRE(observed.is_consistent());
+            CRUCIBLE_REQUIRE(observed.seq == seq);
+        }
     }
-
-    reader.reset();
     CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 0);
 
     for (std::uint64_t seq = 101; seq <= 150; ++seq) {
@@ -298,10 +304,10 @@ void test_reader_exit_and_rejoin_updates_pool_and_observes_current() {
     }
 
     auto rejoined = ses::mint_swmr_reader<PayloadSwmr>(swmr);
-    CRUCIBLE_REQUIRE(rejoined.has_value());
+    CRUCIBLE_REQUIRE(rejoined.is_some());
     CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 1);
 
-    const SnapshotPayload observed = rejoined->load();
+    const SnapshotPayload observed = std::move(rejoined).expect("the pool lends a share").load();
     CRUCIBLE_REQUIRE(observed.is_consistent());
     CRUCIBLE_REQUIRE(observed.seq == 150);
 }
@@ -320,17 +326,18 @@ void test_sixteen_readers_stress_latest_snapshot() {
 
     for (std::size_t idx = 0; idx < kReaders; ++idx) {
         readers[idx] = std::jthread([&, idx] {
-            auto reader = ses::mint_swmr_reader<PayloadSwmr>(swmr);
-            if (!reader) {
+            auto minted = ses::mint_swmr_reader<PayloadSwmr>(swmr);
+            if (minted.is_none()) {
                 failed.store(true, std::memory_order_release);
                 return;
             }
+            const PayloadSwmr::ReaderHandle reader = std::move(minted).expect("the pool lends a share");
             while (!start.load(std::memory_order_acquire)) {
                 CRUCIBLE_SPIN_PAUSE;
             }
             std::uint64_t last = 0;
             for (std::uint64_t iter = 0; iter < kPublishes; ++iter) {
-                const SnapshotPayload observed = reader->load();
+                const SnapshotPayload observed = reader.load();
                 if (!observed.is_consistent() || observed.seq < last) {
                     failed.store(true, std::memory_order_release);
                     return;

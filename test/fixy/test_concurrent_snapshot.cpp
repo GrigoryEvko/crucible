@@ -109,9 +109,9 @@ void test_default_construction() {
     CRUCIBLE_REQUIRE(v.value_again == 0);
     CRUCIBLE_REQUIRE(snap.version() == 0);
 
-    const auto opt = snap.try_load();
-    CRUCIBLE_REQUIRE(opt.has_value());
-    CRUCIBLE_REQUIRE(opt->value == 0);
+    auto loaded = snap.try_load();
+    CRUCIBLE_REQUIRE(loaded.is_some());
+    CRUCIBLE_REQUIRE(std::move(loaded).expect("no write is in flight").value == 0);
 }
 
 void test_initial_value_ctor() {
@@ -135,9 +135,9 @@ void test_roundtrip_single_thread() {
         CRUCIBLE_REQUIRE(v.value == i);
         CRUCIBLE_REQUIRE(snap.version() == i);
 
-        const auto opt = snap.try_load();
-        CRUCIBLE_REQUIRE(opt.has_value());
-        CRUCIBLE_REQUIRE(opt->value == i);
+        auto loaded = snap.try_load();
+        CRUCIBLE_REQUIRE(loaded.is_some());
+        CRUCIBLE_REQUIRE(std::move(loaded).expect("no write is in flight").value == i);
     }
 }
 
@@ -192,12 +192,15 @@ void test_stress_multithread() {
                     } else {
                         last_value = v.value;
                     }
-                } else if (const auto opt = snap.try_load(); opt.has_value()) {
-                    if (!opt->is_consistent()) torn_reads.fetch_add(1, std::memory_order_acq_rel);
-                    if (opt->value < last_value) {
-                        stale_reads.fetch_add(1, std::memory_order_acq_rel);
-                    } else {
-                        last_value = opt->value;
+                } else {
+                    const auto loaded = snap.try_load();
+                    for (TestPayload const& sample : loaded) {
+                        if (!sample.is_consistent()) torn_reads.fetch_add(1, std::memory_order_acq_rel);
+                        if (sample.value < last_value) {
+                            stale_reads.fetch_add(1, std::memory_order_acq_rel);
+                        } else {
+                            last_value = sample.value;
+                        }
                     }
                 }
             }
@@ -278,8 +281,10 @@ void test_try_load_rejects_in_progress() {
     std::jthread reader([&] {
         while (!stop.load(std::memory_order_acquire)) {
             total.fetch_add(1, std::memory_order_acq_rel);
-            const auto opt = snap.try_load();
-            if (opt.has_value() && !opt->is_consistent()) torn.fetch_add(1, std::memory_order_acq_rel);
+            const auto loaded = snap.try_load();
+            for (LargePayload const& sample : loaded) {
+                if (!sample.is_consistent()) torn.fetch_add(1, std::memory_order_acq_rel);
+            }
         }
     });
 

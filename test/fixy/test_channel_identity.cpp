@@ -203,8 +203,13 @@ constexpr Attack kAttacks[] = {
     { [[maybe_unused]] auto first_writer = ses::mint_swmr_writer<Swmr>(session, writer_root()); }
     auto later_writer = ses::mint_swmr_writer<Swmr>(session, writer_root());
     later_writer.publish(5);
+    // True when the reader exists and loads the expected value.
+    const auto loads = [](auto const& reader, int expected) noexcept {
+        return reader.match([expected](auto const& handle) noexcept { return handle.load() == expected; },
+                            []() noexcept { return false; });
+    };
     const auto reader = ses::mint_swmr_reader<Swmr>(session);
-    if (!reader || reader->load() != 5) return 1;
+    if (!loads(reader, 5)) return 1;
 
     // A move into a writer handle gives the claim of the target session
     // back and keeps the claim of the source session.
@@ -218,8 +223,8 @@ constexpr Attack kAttacks[] = {
     target.publish(7);
     const auto first_reader = ses::mint_swmr_reader<Swmr>(first_session);
     const auto second_reader = ses::mint_swmr_reader<Swmr>(second_session);
-    if (!first_reader || first_reader->load() != 6) return 1;
-    if (!second_reader || second_reader->load() != 7) return 1;
+    if (!loads(first_reader, 6)) return 1;
+    if (!loads(second_reader, 7)) return 1;
     return 0;
 }
 
