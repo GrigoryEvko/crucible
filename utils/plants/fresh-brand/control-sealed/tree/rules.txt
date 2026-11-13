@@ -1,0 +1,4 @@
+# The rule table of the control control-sealed of the rule fresh-brand.  The
+# unit is quarantined.
+
+quarantine src/

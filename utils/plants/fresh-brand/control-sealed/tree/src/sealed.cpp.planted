@@ -1,0 +1,49 @@
+// Each shape of a template with a fresh brand that leaves no route open: a
+// pack before the brand and the brand in no deduced context.  A brand that a
+// consumed token gives, and a constructor, need neither.
+
+namespace planted {
+
+template <class Brand>
+struct Token {};
+
+template <class Brand>
+struct identity {
+    using type = Brand;
+};
+
+template <class Brand>
+using sealed_t = typename identity<Brand>::type;
+
+template <class Tag, class... Refused, class Brand = decltype([] {})>
+    requires(sizeof...(Refused) == 0)
+Token<sealed_t<Brand>> sealed_door() noexcept {
+    return {};
+}
+
+template <class Brand>
+Token<Brand> moved_door(Token<Brand>&& token) noexcept {
+    return token;
+}
+
+struct Holder {
+    template <class... Refused, class Brand = decltype([] {})>
+        requires(sizeof...(Refused) == 0)
+    Token<sealed_t<Brand>> member_door() const noexcept {
+        return {};
+    }
+
+    template <class Brand = decltype([] {})>
+    explicit Holder(int) noexcept {}
+
+    Holder() noexcept = default;
+};
+
+struct Tag {};
+
+inline auto const first = sealed_door<Tag>();
+inline auto const second = moved_door(Token<int>{});
+inline auto const third = Holder{}.member_door();
+inline Holder const fourth{1};
+
+}  // namespace planted

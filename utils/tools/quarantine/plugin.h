@@ -37,6 +37,9 @@
 //                          and the shapes of the linear and the branded
 //                          types, for the six rules of THE SHAPES
 //         contract.cpp     the contract rule
+//         fresh_brand.cpp  the family fresh brand: the template parameters of a
+//                          mint whose default is a closure, for the rule
+//                          fresh-brand
 //         binding.cpp      the family binding hook: each call of the hook
 //                          of a structured binding, for the rule
 //                          binding-hook
@@ -403,6 +406,14 @@
 //     open-extension        no finding: one record of each template with the
 //                           open mark, at its home, for the module of the rule,
 //                           which refuses a record that no ledger row admits
+//     The rule fresh-brand of the family fresh brand (fresh_brand.cpp, THE
+//     KINDS).  Each finding of the rule is an error in each mode, and an
+//     opt-out region covers it (is_each_mode_kind):
+//     deduced-brand         a template parameter whose default is a closure, a
+//                           fresh brand, in a deduced context of the function
+//                           type of its template
+//     named-brand           such a parameter with no parameter pack before it,
+//                           so an explicit template argument reaches it
 //     The rule base-namespace of the family base namespace (namespace.cpp, THE
 //     KINDS).  Each finding of the rule is an error in each mode, and an
 //     opt-out region covers it (is_each_mode_kind):
@@ -772,6 +783,7 @@ enum class Rule : std::uint8_t {
     brand_reentry,
     specialization_home,
     base_namespace,
+    fresh_brand,
     // No rule of the registry: the tag of the records of the library code
     // (THE RULES AND THE KINDS).
     library_records,
@@ -1001,6 +1013,9 @@ enum class Kind : std::uint8_t {
     // The family base namespace (namespace.cpp).
     base_namespace_declaration,
     base_namespace_using_directive,
+    // The family fresh brand (fresh_brand.cpp).
+    fresh_deduced_brand,
+    fresh_named_brand,
     // The family library code (body.cpp).
     library_inlined,
     library_call,
@@ -1074,6 +1089,8 @@ inline const char* rule_name(Rule rule) {
             return "specialization-home";
         case Rule::base_namespace:
             return "base-namespace";
+        case Rule::fresh_brand:
+            return "fresh-brand";
         case Rule::library_records:
             return "library-records";
     }
@@ -1340,6 +1357,10 @@ inline const char* kind_name(Kind kind) {
             return "declaration";
         case Kind::base_namespace_using_directive:
             return "using-directive";
+        case Kind::fresh_deduced_brand:
+            return "deduced-brand";
+        case Kind::fresh_named_brand:
+            return "named-brand";
         case Kind::library_inlined:
             return "inlined";
         case Kind::library_call:
@@ -1491,6 +1512,9 @@ inline Rule rule_of(Kind kind) {
         case Kind::base_namespace_declaration:
         case Kind::base_namespace_using_directive:
             return Rule::base_namespace;
+        case Kind::fresh_deduced_brand:
+        case Kind::fresh_named_brand:
+            return Rule::fresh_brand;
         case Kind::library_inlined:
         case Kind::library_call:
         case Kind::library_reference:
@@ -1503,9 +1527,9 @@ inline Rule rule_of(Kind kind) {
 
 // True for a kind whose finding is an error in each mode: the contract rule,
 // the rules binding-hook and borrow-match, the unit facts, the findings of the
-// rules specialization-home and base-namespace, and the escapes of a scope
-// brand of the rule brand-escape (THE SCOPE BRANDS of linear.cpp).  No enforce
-// mode changes such a finding, and an opt-out region covers it.
+// rules specialization-home, base-namespace and fresh-brand, and the escapes
+// of a scope brand of the rule brand-escape (THE SCOPE BRANDS of linear.cpp).
+// No enforce mode changes such a finding, and an opt-out region covers it.
 inline bool is_each_mode_kind(Kind kind) {
     switch (kind) {
         case Kind::contract_specifier:
@@ -1520,6 +1544,8 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::specialization_forward_declaration:
         case Kind::base_namespace_declaration:
         case Kind::base_namespace_using_directive:
+        case Kind::fresh_deduced_brand:
+        case Kind::fresh_named_brand:
             return true;
         default:
             return false;
@@ -1735,6 +1761,8 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"specialization-home", "open-extension"},
     {"base-namespace", "declaration"},
     {"base-namespace", "using-directive"},
+    {"fresh-brand", "deduced-brand"},
+    {"fresh-brand", "named-brand"},
 };
 
 // True when the entity is part of the key of a finding: two findings of such
@@ -1766,6 +1794,8 @@ inline bool is_name_kind(Kind kind) {
         case Kind::base_namespace_using_directive:
         case Kind::brand_scope_static:
         case Kind::brand_scope_return:
+        case Kind::fresh_deduced_brand:
+        case Kind::fresh_named_brand:
             return true;
         default:
             return is_family_kind(kind);
@@ -2702,6 +2732,14 @@ bool read_template_home(tree template_decl);
 bool reads_template_sites(tree template_decl);
 void note_template_site(tree template_decl, tree arguments, location_t location);
 void report_specialization(const Finding& finding);
+
+// fresh_brand.cpp: the family fresh brand, the rule fresh-brand.
+// walk_fresh_brands() reads each template of the unit at its end, and
+// report_fresh_brand() gives the error of one finding of the rule that no
+// region opts out (THE ERRORS).
+void register_fresh_brand(const char* plugin_name);
+void walk_fresh_brands();
+void report_fresh_brand(const Finding& finding);
 
 // namespace.cpp: the family base namespace, the rule base-namespace.
 // finish_base_namespace() walks the namespaces of the base after the parse,

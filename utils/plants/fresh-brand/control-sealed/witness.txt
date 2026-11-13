@@ -1,0 +1,7 @@
+# A template whose fresh brand stands after a pack and in no deduced context
+# gives no line: a door at namespace scope and a member template, each with
+# an alias that keeps the brand out of each deduction.  A brand of a consumed
+# token and a constructor template give no line either.
+
+compile sealed src/sealed.cpp fresh-brand=on
+exit sealed pass

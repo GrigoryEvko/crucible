@@ -1,0 +1,21 @@
+# Each route that gives a fresh brand an argument that a caller holds: an
+# explicit template argument, the binding of a function reference with a
+# target type, an explicit specialization, a conversion template and an
+# explicit argument of the call operator of a generic lambda.  With no
+# argument fresh-brand=on, each route compiles.  With it, each template that
+# leaves a route open is an error in each mode.
+
+compile open src/routes.cpp
+exit open pass
+finding open proof-routes function-specialization src/routes.cpp:57:15 | function-specialization: planted::open_specialized
+
+compile closed src/routes.cpp fresh-brand=on errors=closed
+exit closed fail
+finding closed fresh-brand named-brand src/routes.cpp:21:39 | planted::open_spelled, the template parameter 1
+finding closed fresh-brand deduced-brand src/routes.cpp:28:14 | planted::open_deduced, the template parameter 2
+finding closed fresh-brand deduced-brand src/routes.cpp:35:14 | planted::open_specialized, the template parameter 2
+finding closed fresh-brand deduced-brand src/routes.cpp:42:5 | planted::Holder::operator (conversion), the template parameter 0
+finding closed proof-routes function-specialization src/routes.cpp:57:15 | function-specialization: planted::open_specialized
+finding closed fresh-brand named-brand src/routes.cpp:64:33 | planted::(lambda)::operator(), the template parameter 0
+text closed | put a pack 'class... Refused' before the brand and require that the pack is empty
+text closed | write the brand through 'foundation::brand::undeducible_brand_t' of 'foundation/Brand.h'

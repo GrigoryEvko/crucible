@@ -50,15 +50,16 @@ THE KEYS OF A COMPILE
                     of utils/registry.txt, as for each compile of the tree
       build=PATH, stamps=PATH, stamp=TEXT, sentinel=PATH, not-standalone=PATH,
       library-records=on, must-consume=on, linear-shapes=on, specialization-home=on,
-      base-namespace=on
+      base-namespace=on, fresh-brand=on
                     the plugin arguments, with no default.  A sentinel is
                     relative to the root, and each other PATH is a path of
                     the manifest.  Only a compile with library-records=on has
                     the records of the library code, only a compile with
                     linear-shapes=on has the lines of the rules of the shapes
                     of the family linear, and only a compile with
-                    must-consume=on, specialization-home=on or
-                    base-namespace=on has the lines of that rule
+                    must-consume=on, specialization-home=on,
+                    base-namespace=on or fresh-brand=on has the lines of
+                    that rule
     The value "-" gives no argument.
       out=no        no argument out.  By default the witness gives out=DIR, a
                     directory of its own, and reads the report file there
@@ -114,16 +115,17 @@ THE DERIVED DIAGNOSTICS
     are the finding rows of the compile OTHER.  In the mode report, only a
     finding of the rules of EACH_MODE_RULES, a finding of a kind of
     SPECIALIZATION_ERRORS of the rule specialization-home, a finding of a
-    kind of BASE_NAMESPACE_ERRORS of the rule base-namespace, and a finding
-    of a kind of SCOPE_ERRORS of the rule brand-escape give an error.
+    kind of BASE_NAMESPACE_ERRORS of the rule base-namespace, a finding of a
+    kind of SCOPE_ERRORS of the rule brand-escape, and a finding of a kind of
+    FRESH_ERRORS of the rule fresh-brand give an error.
     The message of the error of each other finding holds
     "quarantine: KIND ENTITY" with a semicolon after the entity.  A finding of the rule
     contract-specifier gives the error of the contract rule, a finding of the
     rules binding-hook and borrow-match gives the start of its error, and a
-    finding of the rules specialization-home and base-namespace or of a scope
-    kind of the rule brand-escape gives the text of its kind.  The record
-    open-extension of the rule specialization-home is no finding, so it gives
-    no error in each mode.  A
+    finding of the rules specialization-home, base-namespace and fresh-brand
+    or of a scope kind of the rule brand-escape gives the text of its kind.
+    The record open-extension of the rule specialization-home is no finding,
+    so it gives no error in each mode.  A
     finding at the line 0, a fact of all the unit, gives an error with no
     location.
     The key notes=OTHER says that each finding row of OTHER gives a note
@@ -247,6 +249,7 @@ PLUGIN_KEYS = (
     "linear-shapes",
     "specialization-home",
     "base-namespace",
+    "fresh-brand",
 )
 PATH_KEYS = frozenset({"root", "rules", "build", "stamps", "not-standalone"})
 DEFAULTS = {"root": ".", "rules": "rules.txt", "mode": "report"}
@@ -297,6 +300,15 @@ BRAND_ESCAPE_RULE = "brand-escape"
 SCOPE_ERRORS = {
     "scope-static": "an object of static or thread storage duration holds a value of a scope brand",
     "scope-return": "a scope mint gives a result that holds its own scope brand",
+}
+# The rule fresh-brand, and the start of the error of each of its kinds (THE ERRORS of
+# utils/tools/quarantine/fresh_brand.cpp).  Each finding of the rule is an error in each mode.
+FRESH_BRAND_RULE = "fresh-brand"
+FRESH_ERRORS = {
+    "deduced-brand": "a fresh brand stands in a deduced context of the function type, so a caller can deduce a brand "
+    "that it holds: {entity}",
+    "named-brand": "no parameter pack stands before a fresh brand, so an explicit template argument names a brand that "
+    "the caller holds: {entity}",
 }
 # The error of the plugin after a refused rule table.
 FAILED_PLUGIN = "failed to initialize plugin"
@@ -785,12 +797,14 @@ def diagnostic_difference(
 def is_each_mode(finding: plugin_sections.Finding) -> bool:
     """Return True for a finding that gives an error in each mode: a finding of a rule of EACH_MODE_RULES, a kind of
     SPECIALIZATION_ERRORS of the rule specialization-home, a kind of BASE_NAMESPACE_ERRORS of the rule
-    base-namespace, or a kind of SCOPE_ERRORS of the rule brand-escape (THE DERIVED DIAGNOSTICS)."""
+    base-namespace, a kind of SCOPE_ERRORS of the rule brand-escape, or a kind of FRESH_ERRORS of the rule fresh-brand
+    (THE DERIVED DIAGNOSTICS)."""
     return (
         finding.rule in EACH_MODE_RULES
         or (finding.rule == SPECIALIZATION_RULE and finding.kind in SPECIALIZATION_ERRORS)
         or (finding.rule == BASE_NAMESPACE_RULE and finding.kind in BASE_NAMESPACE_ERRORS)
         or (finding.rule == BRAND_ESCAPE_RULE and finding.kind in SCOPE_ERRORS)
+        or (finding.rule == FRESH_BRAND_RULE and finding.kind in FRESH_ERRORS)
     )
 
 
@@ -819,6 +833,8 @@ def derived_errors(findings: Iterable[plugin_sections.Finding], is_error_mode: b
             errors.append((place, BASE_NAMESPACE_ERRORS[finding.kind].format(entity=finding.entity)))
         elif finding.rule == BRAND_ESCAPE_RULE and finding.kind in SCOPE_ERRORS:
             errors.append((place, SCOPE_ERRORS[finding.kind]))
+        elif finding.rule == FRESH_BRAND_RULE and finding.kind in FRESH_ERRORS:
+            errors.append((place, FRESH_ERRORS[finding.kind].format(entity=finding.entity)))
         else:
             errors.append((place, f"{QUARANTINE_PREFIX}{finding.kind} {finding.entity};"))
     return errors

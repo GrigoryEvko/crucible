@@ -123,6 +123,12 @@
 //                    (namespace.cpp).  Quarantine.cmake gives it to each
 //                    compile of the tree, and a compile of a plant of a
 //                    different rule has no such argument
+//     fresh-brand=on
+//                    run the rule fresh-brand of the family fresh brand on
+//                    each function template (fresh_brand.cpp).
+//                    Quarantine.cmake gives it to each compile of the tree,
+//                    and a compile of a plant of a different rule has no such
+//                    argument
 //
 // THE DEPENDENCIES
 //     utils/assay/loop/stamps.py writes DIR/modes/PATH for each source file of
@@ -415,6 +421,7 @@ void walk_unit() {
     finish_linear_rules();
     finish_borrow_matches();
     finish_base_namespace();
+    walk_fresh_brands();
 }
 
 // The parse of the unit, and then the walks of its end.  When the parse
@@ -609,6 +616,8 @@ void report(bool can_add_dependencies) {
             report_base_namespace(finding);
         } else if (rule_of_finding == Rule::brand_escape && !is_out) {
             report_scope_escape(finding);
+        } else if (rule_of_finding == Rule::fresh_brand && !is_out) {
+            report_fresh_brand(finding);
         } else if (is_each_mode_kind(finding.kind) && !is_out) {
             report_unit_fact(finding);
         } else if (rule_of_finding != Rule::quarantine && is_error && !is_out) {
@@ -681,6 +690,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     bool checks_linear_shapes = false;
     bool checks_specialization_home = false;
     bool checks_base_namespace = false;
+    bool checks_fresh_brand = false;
     for (int index = 0; index < plugin_info->argc; ++index) {
         std::string key = plugin_info->argv[index].key;
         std::string value = plugin_info->argv[index].value != nullptr ? plugin_info->argv[index].value : "";
@@ -757,10 +767,18 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
                 return 1;
             }
             checks_base_namespace = true;
+        } else if (key == "fresh-brand") {
+            if (value != "on") {
+                error("quarantine: fresh-brand is %qs; give fresh-brand=on to run the rule fresh-brand, or no such "
+                      "argument",
+                      value.c_str());
+                return 1;
+            }
+            checks_fresh_brand = true;
         } else {
             error("quarantine: unknown argument %qs; the arguments are root, build, rules, mode, out, stamps, stamp, "
                   "kinds, sentinel, not-standalone, padded-list-limit, library-records, must-consume, "
-                  "linear-shapes, specialization-home and base-namespace",
+                  "linear-shapes, specialization-home, base-namespace and fresh-brand",
                   key.c_str());
             return 1;
         }
@@ -824,6 +842,9 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     }
     if (checks_base_namespace) {
         register_base_namespace(plugin_info->base_name);
+    }
+    if (checks_fresh_brand) {
+        register_fresh_brand(plugin_info->base_name);
     }
     front_end_parse_file = lang_hooks.parse_file;
     lang_hooks.parse_file = parse_and_walk;

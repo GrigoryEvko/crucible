@@ -1,0 +1,4 @@
+# The rule table of the plant plant-routes of the rule fresh-brand.  The unit
+# is quarantined.
+
+quarantine src/

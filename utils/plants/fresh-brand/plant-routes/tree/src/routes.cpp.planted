@@ -1,0 +1,67 @@
+// Each route that gives a fresh brand an argument that a caller holds, so a
+// second token of one identity exists.  Each template below leaves one route
+// open, and the code after it takes the route.
+
+namespace planted {
+
+template <class Brand>
+struct Token {};
+
+template <class Brand>
+Brand brand_of(Token<Brand>) noexcept;
+
+// The explicit argument: no pack stands before the brand, and the alias keeps
+// the brand out of each deduction.
+template <class Brand>
+struct identity {
+    using type = Brand;
+};
+
+template <class Tag, class Brand = decltype([] {})>
+Token<typename identity<Brand>::type> open_spelled() noexcept {
+    return {};
+}
+
+// The binding of a function reference: the brand stands in the return type.
+template <class Tag, class... Refused, class Brand = decltype([] {})>
+    requires(sizeof...(Refused) == 0)
+Token<Brand> open_deduced() noexcept {
+    return {};
+}
+
+// The explicit specialization: its declared type names the brand.
+template <class Tag, class... Refused, class Brand = decltype([] {})>
+    requires(sizeof...(Refused) == 0)
+Token<Brand> open_specialized() noexcept {
+    return {};
+}
+
+// A conversion template with the brand in its return type.
+struct Holder {
+    template <class Brand = decltype([] {})>
+    operator Token<Brand>() const noexcept {
+        return {};
+    }
+};
+
+struct Tag {};
+struct Chosen {};
+
+using HeldSpelled = decltype(brand_of(open_spelled<Tag>()));
+inline auto const second_spelled = open_spelled<Tag, HeldSpelled>();
+
+using HeldDeduced = decltype(open_deduced<Tag>());
+inline HeldDeduced (&taken)() noexcept = open_deduced<Tag>;
+
+template <>
+Token<Chosen> open_specialized<Tag>() noexcept {
+    return {};
+}
+
+inline Token<Chosen> const converted = Holder{};
+
+// A generic lambda whose brand an explicit template argument reaches.
+inline auto const lambda_mint = []<class Brand = decltype([] {})>() noexcept { return Token<Brand>{}; };
+inline auto const second_lambda = lambda_mint.operator()<Chosen>();
+
+}  // namespace planted
