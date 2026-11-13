@@ -52,7 +52,7 @@ int main() {
 
     const auto* region = vigil.active_region();
     assert(region && region->plan);
-    ::fixy::report(::fixy::Sink::Out, "  region: {} ops, pool {} B, {} slots ({} ext)\n", region->num_ops,
+    ::fixy::report(::fixy::Sink::Out, "  region: {} ops, pool {} B, {} slots ({} ext)\n", region->num_ops(),
                    static_cast<unsigned long long>(region->plan->pool_bytes), region->plan->num_slots(),
                    region->plan->num_external);
 

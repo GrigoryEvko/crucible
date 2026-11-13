@@ -27,11 +27,10 @@ using crucible::ShapeHash;
 // so they take that context from the test door.
 static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
 
-static void init_region(RegionNode* r, TraceEntry* ops, uint32_t n, MemoryPlan* plan) {
+static void init_region(RegionNode* r, ::fixy::View<TraceEntry> ops, MemoryPlan* plan) {
     ::new(r) RegionNode{};
     r->kind = TraceNodeKind::REGION;
     r->ops = ops;
-    r->num_ops = n;
     r->plan = plan;
 }
 
@@ -80,21 +79,21 @@ static void test_initial_state() {
 static void test_activate() {
     SlotId out[1] = {SlotId{0}};
 
-    TraceEntry ops[2]{};
-    ops[0].schema_hash = SchemaHash{100};
-    ops[0].shape_hash = ShapeHash{200};
-    ops[0].num_outputs = 1;
-    ops[0].output_slot_ids = out;
-    ops[1].schema_hash = SchemaHash{101};
-    ops[1].shape_hash = ShapeHash{201};
-    ops[1].num_outputs = 1;
-    ops[1].output_slot_ids = out;
+    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{100};
+    ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{200};
+    ops.at(::foundation::core::index<0>()).num_outputs = 1;
+    ops.at(::foundation::core::index<0>()).output_slot_ids = out;
+    ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{101};
+    ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{201};
+    ops.at(::foundation::core::index<1>()).num_outputs = 1;
+    ops.at(::foundation::core::index<1>()).output_slot_ids = out;
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());
 
     RegionNode region{};
-    init_region(&region, ops, 2, &plan);
+    init_region(&region, ops.view(), &plan);
 
     CrucibleContext ctx;
     assert(ctx.activate(region));
@@ -111,10 +110,10 @@ static void test_activate() {
 // A region with no memory plan cannot be activated, because the
 // replay has no pool to hand out pointers from.
 static void test_activate_no_plan() {
-    TraceEntry ops[1]{};
+    ::foundation::core::FixedArray<TraceEntry, 1> ops{};
 
     RegionNode region{};
-    init_region(&region, ops, 1, nullptr);
+    init_region(&region, ops.view(), nullptr);
 
     CrucibleContext ctx;
     assert(!ctx.activate(region));
@@ -127,24 +126,24 @@ static void test_full_replay() {
     SlotId out0[1] = {SlotId{0}};
     SlotId out1[1] = {SlotId{1}};
 
-    TraceEntry ops[2]{};
-    ops[0].schema_hash = SchemaHash{100};
-    ops[0].shape_hash = ShapeHash{200};
-    ops[0].num_outputs = 1;
-    ops[0].output_slot_ids = out0;
-    ops[0].num_inputs = 0;
+    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{100};
+    ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{200};
+    ops.at(::foundation::core::index<0>()).num_outputs = 1;
+    ops.at(::foundation::core::index<0>()).output_slot_ids = out0;
+    ops.at(::foundation::core::index<0>()).num_inputs = 0;
 
-    ops[1].schema_hash = SchemaHash{101};
-    ops[1].shape_hash = ShapeHash{201};
-    ops[1].num_outputs = 1;
-    ops[1].output_slot_ids = out1;
-    ops[1].num_inputs = 0;
+    ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{101};
+    ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{201};
+    ops.at(::foundation::core::index<1>()).num_outputs = 1;
+    ops.at(::foundation::core::index<1>()).output_slot_ids = out1;
+    ops.at(::foundation::core::index<1>()).num_inputs = 0;
 
     ::foundation::core::FixedArray<TensorSlot, 2> slots{};
     auto plan = make_simple_plan(slots.view());
 
     RegionNode region{};
-    init_region(&region, ops, 2, &plan);
+    init_region(&region, ops.view(), &plan);
 
     CrucibleContext ctx;
     assert(ctx.activate(region));
@@ -176,19 +175,20 @@ static void test_full_replay() {
 static void test_divergence() {
     SlotId out[1] = {SlotId{0}};
 
-    TraceEntry ops[3]{};
+    ::foundation::core::FixedArray<TraceEntry, 3> ops{};
     for (uint32_t i = 0; i < 3; i++) {
-        ops[i].schema_hash = SchemaHash{100 + i};
-        ops[i].shape_hash = ShapeHash{200 + i};
-        ops[i].num_outputs = 1;
-        ops[i].output_slot_ids = out;
+        TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
+        op.schema_hash = SchemaHash{100 + i};
+        op.shape_hash = ShapeHash{200 + i};
+        op.num_outputs = 1;
+        op.output_slot_ids = out;
     }
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());
 
     RegionNode region{};
-    init_region(&region, ops, 3, &plan);
+    init_region(&region, ops.view(), &plan);
 
     CrucibleContext ctx;
     assert(ctx.activate(region));
@@ -212,37 +212,37 @@ static void test_divergence() {
 static void test_reactivate() {
     SlotId out[1] = {SlotId{0}};
 
-    TraceEntry ops_a[1]{};
-    ops_a[0].schema_hash = SchemaHash{10};
-    ops_a[0].shape_hash = ShapeHash{20};
-    ops_a[0].num_outputs = 1;
-    ops_a[0].output_slot_ids = out;
+    ::foundation::core::FixedArray<TraceEntry, 1> ops_a{};
+    ops_a.at(::foundation::core::index<0>()).schema_hash = SchemaHash{10};
+    ops_a.at(::foundation::core::index<0>()).shape_hash = ShapeHash{20};
+    ops_a.at(::foundation::core::index<0>()).num_outputs = 1;
+    ops_a.at(::foundation::core::index<0>()).output_slot_ids = out;
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots_a{};
     auto plan_a = make_simple_plan(slots_a.view());
 
     RegionNode region_a{};
-    init_region(&region_a, ops_a, 1, &plan_a);
+    init_region(&region_a, ops_a.view(), &plan_a);
 
     // The second region shares no hash with the first, so a stale guard
     // would diverge rather than silently match.
     SlotId out_b[2] = {SlotId{0}, SlotId{1}};
 
-    TraceEntry ops_b[2]{};
-    ops_b[0].schema_hash = SchemaHash{30};
-    ops_b[0].shape_hash = ShapeHash{40};
-    ops_b[0].num_outputs = 1;
-    ops_b[0].output_slot_ids = &out_b[0];
-    ops_b[1].schema_hash = SchemaHash{31};
-    ops_b[1].shape_hash = ShapeHash{41};
-    ops_b[1].num_outputs = 1;
-    ops_b[1].output_slot_ids = &out_b[1];
+    ::foundation::core::FixedArray<TraceEntry, 2> ops_b{};
+    ops_b.at(::foundation::core::index<0>()).schema_hash = SchemaHash{30};
+    ops_b.at(::foundation::core::index<0>()).shape_hash = ShapeHash{40};
+    ops_b.at(::foundation::core::index<0>()).num_outputs = 1;
+    ops_b.at(::foundation::core::index<0>()).output_slot_ids = &out_b[0];
+    ops_b.at(::foundation::core::index<1>()).schema_hash = SchemaHash{31};
+    ops_b.at(::foundation::core::index<1>()).shape_hash = ShapeHash{41};
+    ops_b.at(::foundation::core::index<1>()).num_outputs = 1;
+    ops_b.at(::foundation::core::index<1>()).output_slot_ids = &out_b[1];
 
     ::foundation::core::FixedArray<TensorSlot, 2> slots_b{};
     auto plan_b = make_simple_plan(slots_b.view());
 
     RegionNode region_b{};
-    init_region(&region_b, ops_b, 2, &plan_b);
+    init_region(&region_b, ops_b.view(), &plan_b);
 
     CrucibleContext ctx;
 
@@ -272,13 +272,13 @@ static void test_external_slots() {
     SlotId out[1] = {SlotId{0}};
     SlotId in[1] = {SlotId{1}};
 
-    TraceEntry ops[1]{};
-    ops[0].schema_hash = SchemaHash{50};
-    ops[0].shape_hash = ShapeHash{60};
-    ops[0].num_outputs = 1;
-    ops[0].output_slot_ids = out;
-    ops[0].num_inputs = 1;
-    ops[0].input_slot_ids = in;
+    ::foundation::core::FixedArray<TraceEntry, 1> ops{};
+    ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{50};
+    ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{60};
+    ops.at(::foundation::core::index<0>()).num_outputs = 1;
+    ops.at(::foundation::core::index<0>()).output_slot_ids = out;
+    ops.at(::foundation::core::index<0>()).num_inputs = 1;
+    ops.at(::foundation::core::index<0>()).input_slot_ids = in;
 
     ::foundation::core::FixedArray<TensorSlot, 2> slots{};
     slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
@@ -314,7 +314,7 @@ static void test_external_slots() {
     plan.device_idx = 0;
 
     RegionNode region{};
-    init_region(&region, ops, 1, &plan);
+    init_region(&region, ops.view(), &plan);
 
     CrucibleContext ctx;
     assert(ctx.activate(region));
@@ -390,23 +390,23 @@ static void test_integration_sweep_line() {
     SlotId op1_out[1] = {SlotId{1}};
     SlotId op1_in[1] = {SlotId{0}};
 
-    TraceEntry ops[2]{};
-    ops[0].schema_hash = SchemaHash{0xAA};
-    ops[0].shape_hash = ShapeHash{0xBB};
-    ops[0].num_outputs = 1;
-    ops[0].output_slot_ids = op0_out;
-    ops[0].num_inputs = 1;
-    ops[0].input_slot_ids = op0_in;
+    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{0xAA};
+    ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{0xBB};
+    ops.at(::foundation::core::index<0>()).num_outputs = 1;
+    ops.at(::foundation::core::index<0>()).output_slot_ids = op0_out;
+    ops.at(::foundation::core::index<0>()).num_inputs = 1;
+    ops.at(::foundation::core::index<0>()).input_slot_ids = op0_in;
 
-    ops[1].schema_hash = SchemaHash{0xCC};
-    ops[1].shape_hash = ShapeHash{0xDD};
-    ops[1].num_outputs = 1;
-    ops[1].output_slot_ids = op1_out;
-    ops[1].num_inputs = 1;
-    ops[1].input_slot_ids = op1_in;
+    ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{0xCC};
+    ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{0xDD};
+    ops.at(::foundation::core::index<1>()).num_outputs = 1;
+    ops.at(::foundation::core::index<1>()).output_slot_ids = op1_out;
+    ops.at(::foundation::core::index<1>()).num_inputs = 1;
+    ops.at(::foundation::core::index<1>()).input_slot_ids = op1_in;
 
     RegionNode region{};
-    init_region(&region, ops, 2, plan);
+    init_region(&region, ops.view(), plan);
 
     CrucibleContext ctx;
     assert(ctx.activate(region));
@@ -451,21 +451,21 @@ static void test_integration_sweep_line() {
 static void test_divergence_counter() {
     SlotId out[1] = {SlotId{0}};
 
-    TraceEntry ops[2]{};
-    ops[0].schema_hash = SchemaHash{10};
-    ops[0].shape_hash = ShapeHash{20};
-    ops[0].num_outputs = 1;
-    ops[0].output_slot_ids = out;
-    ops[1].schema_hash = SchemaHash{11};
-    ops[1].shape_hash = ShapeHash{21};
-    ops[1].num_outputs = 1;
-    ops[1].output_slot_ids = out;
+    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{10};
+    ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{20};
+    ops.at(::foundation::core::index<0>()).num_outputs = 1;
+    ops.at(::foundation::core::index<0>()).output_slot_ids = out;
+    ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{11};
+    ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{21};
+    ops.at(::foundation::core::index<1>()).num_outputs = 1;
+    ops.at(::foundation::core::index<1>()).output_slot_ids = out;
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());
 
     RegionNode region{};
-    init_region(&region, ops, 2, &plan);
+    init_region(&region, ops.view(), &plan);
 
     CrucibleContext ctx;
 

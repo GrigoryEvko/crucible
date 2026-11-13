@@ -53,7 +53,7 @@ int main() {
     flush_and_wait_region_published(vigil);
 
     std::printf("\n   >>> Iteration boundary detected! <<<\n");
-    std::printf("   BackgroundThread built RegionNode with %u ops\n", vigil.active_region()->num_ops);
+    std::printf("   BackgroundThread built RegionNode with %u ops\n", vigil.active_region()->num_ops());
 
     const auto* region = vigil.active_region();
     assert(region && region->plan);

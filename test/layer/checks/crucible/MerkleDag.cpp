@@ -30,7 +30,9 @@ static_assert(sizeof(BranchNode) == 56, "BranchNode must be 56 bytes — the per
 static_assert(sizeof(FeedbackEdge) == 4, "FeedbackEdge must be 4 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(FeedbackEdge);
 
-static_assert(sizeof(LoopNode) == 64, "LoopNode must be 64 bytes (one cache line)");
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(LoopNode);
+// The View of the feedback edges takes 16 bytes, so the node takes 72 and not
+// one cache line.  An arena ends no node.
+static_assert(sizeof(LoopNode) == 72, "LoopNode must be 72 bytes");
+static_assert(std::is_trivially_destructible_v<LoopNode>, "an arena ends no LoopNode");
 
 }  // namespace crucible

@@ -1,4 +1,3 @@
-#include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Transaction.h>
 #include <fixy/Ctx.h>
@@ -97,12 +96,12 @@ static_assert(!std::is_trivially_copyable_v<crucible::Transaction>);
 }
 
 // One region for each step, so that each transaction holds a region that no
-// other transaction holds.
-[[nodiscard]] crucible::RegionNode* region_of_step(::foundation::effects::Alloc alloc, crucible::Arena& arena,
+// other transaction holds.  The region and a copy of its op are in the arena.
+[[nodiscard]] crucible::RegionNode* region_of_step(::foundation::effects::Alloc alloc, ::fixy::BumpArena& arena,
                                                    uint32_t step) {
     crucible::TraceEntry entry{};
     entry.schema_hash = crucible::SchemaHash{0x5000u + step};
-    auto* region = crucible::make_region(alloc, arena, &entry, 1);
+    auto* region = crucible::make_region(alloc, arena, arena.array<crucible::TraceEntry>(alloc, 1, entry));
     crucible::recompute_merkle(region);
     return region;
 }
@@ -148,7 +147,7 @@ void claim_passes_over_the_active_slot(::foundation::effects::Alloc alloc, const
                                        const SoloOwner& owner, RollbackOrder order) {
     constexpr uint32_t kSlots = 16;
     Log log{ctx};
-    crucible::Arena arena(1 << 14);
+    ::fixy::BumpArena arena(1 << 14);
     std::array<crucible::RegionNode*, kSlots + 2> regions{};
     for (uint32_t step = 1; step <= kSlots + 1; ++step)
         regions[step] = region_of_step(alloc, arena, step);
@@ -187,7 +186,7 @@ void previous_follows_the_order_of_displacements(::foundation::effects::Alloc al
                                                  const SoloOwner& owner) {
     constexpr uint32_t kSteps = 4;
     Log log{ctx};
-    crucible::Arena arena(1 << 12);
+    ::fixy::BumpArena arena(1 << 12);
     std::array<crucible::RegionNode*, kSteps + 1> regions{};
     std::array<crucible::Transaction*, kSteps + 1> txs{};
     for (uint32_t step = 1; step <= kSteps; ++step) {
@@ -232,7 +231,7 @@ void claim_keeps_the_target_of_out_of_order_activations(::foundation::effects::A
                                                         const ::fixy::TestRunnerCtx& ctx, const SoloOwner& owner) {
     constexpr uint32_t kSlots = 4;
     SmallestLog log{ctx};
-    crucible::Arena arena(1 << 12);
+    ::fixy::BumpArena arena(1 << 12);
     std::array<crucible::RegionNode*, kSlots + 1> regions{};
     std::array<crucible::Transaction*, kSlots + 1> txs{};
     for (uint32_t step = 1; step <= kSlots; ++step) {
@@ -269,7 +268,7 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
                                                                const SoloOwner& owner) {
     constexpr uint32_t kSlots = 4;
     SmallestLog log{ctx};
-    crucible::Arena arena(1 << 12);
+    ::fixy::BumpArena arena(1 << 12);
     std::array<crucible::RegionNode*, kSlots + 1> regions{};
     for (uint32_t step = 1; step <= kSlots; ++step) {
         regions[step] = region_of_step(alloc, arena, step);
@@ -298,11 +297,11 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     const SoloOwner owner = SoloOwner::claim();
     Log log{ctx};
-    crucible::Arena arena(1 << 12);
+    ::fixy::BumpArena arena(1 << 12);
 
-    crucible::TraceEntry ops[1]{};
-    ops[0].schema_hash = crucible::SchemaHash{0xFEED};
-    auto* region1 = crucible::make_region(test.alloc, arena, ops, 1);
+    ::foundation::core::FixedArray<crucible::TraceEntry, 1> ops{};
+    ops.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xFEED};
+    auto* region1 = crucible::make_region(test.alloc, arena, ops.view());
     assert(region1 != nullptr);
     // A commit requires a non-zero merkle root, so the hash is recomputed
     // first. The production path does the same thing in the same order.
@@ -310,9 +309,9 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
     crucible::recompute_merkle(region1);
     assert(region1->merkle_hash.raw() != 0);
 
-    crucible::TraceEntry ops2[1]{};
-    ops2[0].schema_hash = crucible::SchemaHash{0xBEEF};
-    auto* region2 = crucible::make_region(test.alloc, arena, ops2, 1);
+    ::foundation::core::FixedArray<crucible::TraceEntry, 1> ops2{};
+    ops2.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xBEEF};
+    auto* region2 = crucible::make_region(test.alloc, arena, ops2.view());
     assert(region2 != nullptr);
     crucible::recompute_merkle(region2);
     assert(region2->merkle_hash.raw() != 0);
@@ -384,7 +383,7 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
         auto& tx = log.begin_tx(owner, i);
         crucible::TraceEntry e{};
         e.schema_hash = crucible::SchemaHash{static_cast<uint64_t>(i)};
-        auto* r = crucible::make_region(test.alloc, arena, &e, 1);
+        auto* r = crucible::make_region(test.alloc, arena, arena.array<crucible::TraceEntry>(test.alloc, 1, e));
         // Recomputed before the commit, for the reason given above.
         crucible::recompute_merkle(r);
         assert(log.commit(owner, tx, arena_region(r), r->content_hash, r->merkle_hash));

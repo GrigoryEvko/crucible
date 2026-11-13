@@ -9,7 +9,6 @@
 // branch arm's target is written as the target's merkle hash and resolved
 // through a caller-supplied lookup at load time.
 
-#include <crucible/Arena.h>
 #include <crucible/CKernelId.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/PoolAllocator.h>
@@ -405,13 +404,13 @@ using SerialBuffer = ::fixy::Borrowed<uint8_t, SerialBufferOwner>;
 // Returns the byte count written, or zero if the buffer was too small.  Each
 // entry of the region carries its own tensor metadata, so the function reads
 // no metadata log.
-[[nodiscard]] inline size_t serialize_region(SerializedRegion region, SerialBuffer buf) {
+CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion region, SerialBuffer buf) {
     using namespace detail_ser;
     Writer w{.buf = buf.data(), .pos = 0, .max = buf.size()};
 
     write_header(w, TraceNodeKind::REGION, region->merkle_hash, region->content_hash);
 
-    w.w(region->num_ops);
+    w.w(region->num_ops());
     w.w(region->first_op_schema.raw());
     w.w(region->measured_ms);
     w.w(region->variant_id.get());
@@ -435,9 +434,7 @@ using SerialBuffer = ::fixy::Borrowed<uint8_t, SerialBufferOwner>;
         }
     }
 
-    for (uint32_t i = 0; i < region->num_ops; i++) {
-        const TraceEntry& te = region->ops[i];
-
+    for (const TraceEntry& te : region->ops) {
         w.w(te.schema_hash.raw());
         w.w(te.shape_hash.raw());
         w.w(te.scope_hash.raw());
@@ -487,7 +484,7 @@ using SerialBuffer = ::fixy::Borrowed<uint8_t, SerialBufferOwner>;
 // Returns no region on a parse error, a version mismatch or a content hash
 // that the operations do not fold to. Every structure it builds lives in the
 // arena.
-[[nodiscard]] inline std::optional<LoadedRegionNode>
+CRUCIBLE_COLD [[nodiscard]] inline std::optional<LoadedRegionNode>
 deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf, ::fixy::BumpArena& arena) {
     using namespace detail_ser;
     Reader r{.buf = buf.data(), .pos = 0, .len = buf.size()};
@@ -556,10 +553,9 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
     if (num_ops > 0 && r.remaining() < static_cast<size_t>(num_ops) * kTraceEntryMinWireBytes) {
         return std::nullopt;
     }
-    TraceEntry* ops = detail_ser::first_element_(arena.array<TraceEntry>(a, num_ops, TraceEntry{}));
+    const ::fixy::View<TraceEntry> ops = arena.array<TraceEntry>(a, num_ops, TraceEntry{});
 
-    for (uint32_t i = 0; i < num_ops; i++) {
-        TraceEntry& te = ops[i];
+    for (TraceEntry& te : ops) {
         te.schema_hash = SchemaHash{r.r<uint64_t>()};
         te.shape_hash = ShapeHash{r.r<uint64_t>()};
         te.scope_hash = ScopeHash{r.r<uint64_t>()};
@@ -653,13 +649,12 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
     // The fold is the one make_region uses with no recipe.  A region hashed
     // under a recipe is refused here, because the image does not carry the
     // recipe and the loader cannot fold it.
-    const std::span<const TraceEntry> loaded_ops{ops, num_ops};
-    if (compute_content_hash(loaded_ops) != hdr.content_hash) [[unlikely]] {
+    if (compute_content_hash(ops) != hdr.content_hash) [[unlikely]] {
         return std::nullopt;
     }
     // make_region sets the first schema from the operations, so the field is
     // not free to disagree with them.
-    if (first_op_schema != (num_ops > 0 ? ops[0].schema_hash : SchemaHash{})) [[unlikely]] {
+    if (first_op_schema != first_op_schema_of(ops)) [[unlikely]] {
         return std::nullopt;
     }
 
@@ -669,7 +664,6 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
     node.content_hash = hdr.content_hash;
     node.next = nullptr;
     node.ops = ops;
-    node.num_ops = num_ops;
     node.first_op_schema = first_op_schema;
     node.measured_ms = measured_ms;
     // The counter is reconstructed rather than advanced. The value on disk may
@@ -694,10 +688,10 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
 
     write_guard(w, branch->guard);
 
-    w.w(branch->num_arms);
-    for (uint32_t i = 0; i < branch->num_arms; i++) {
-        w.w(branch->arms[i].value);
-        const uint64_t target_hash = branch->arms[i].target ? branch->arms[i].target->merkle_hash.raw() : uint64_t{0};
+    w.w(branch->num_arms());
+    for (const BranchNode::Arm& arm : branch->arms) {
+        w.w(arm.value);
+        const uint64_t target_hash = arm.target ? arm.target->merkle_hash.raw() : uint64_t{0};
         w.w(target_hash);
     }
 
@@ -709,7 +703,8 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
 template <typename Resolve>
     requires std::is_invocable_r_v<TraceNode*, Resolve&, MerkleHash>
 [[nodiscard]] inline BranchNode* deserialize_branch(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
-                                                    Arena& arena CRUCIBLE_LIFETIMEBOUND, Resolve&& resolve) {
+                                                    ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND,
+                                                    Resolve&& resolve) {
     Resolve resolver = std::forward<Resolve>(resolve);
     using namespace detail_ser;
     Reader r{.buf = buf.data(), .pos = 0, .len = buf.size()};
@@ -734,24 +729,16 @@ template <typename Resolve>
         return nullptr;
     }
 
-    auto* node = arena.alloc_obj<BranchNode>(a);
-    ::new(node) BranchNode{};
+    BranchNode* node = &*arena.make<BranchNode>(a);
     node->kind = TraceNodeKind::BRANCH;
     node->merkle_hash = hdr.merkle_hash;
     node->next = nullptr;  // the caller resolves the continuation separately
     node->guard = guard;
-    node->num_arms = num_arms;
-    node->pad1 = 0;
-
-    if (num_arms > 0) {
-        node->arms = arena.alloc_array<BranchNode::Arm>(a, num_arms);
-        for (uint32_t i = 0; i < num_arms; i++) {
-            node->arms[i].value = r.r<int64_t>();
-            const MerkleHash target_h = MerkleHash{r.r<uint64_t>()};
-            node->arms[i].target = resolver(target_h);
-        }
-    } else {
-        node->arms = nullptr;
+    node->arms = arena.array<BranchNode::Arm>(a, num_arms, BranchNode::Arm{});
+    for (BranchNode::Arm& arm : node->arms) {
+        arm.value = r.r<int64_t>();
+        const MerkleHash target_h = MerkleHash{r.r<uint64_t>()};
+        arm.target = resolver(target_h);
     }
 
     // Replay finds an arm by binary search on the value, so an image with
@@ -761,7 +748,7 @@ template <typename Resolve>
 }
 
 [[nodiscard]] inline BranchNode* deserialize_branch(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
-                                                    Arena& arena CRUCIBLE_LIFETIMEBOUND, std::nullptr_t) {
+                                                    ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND, std::nullptr_t) {
     return deserialize_branch(a, buf, arena, [](MerkleHash) noexcept -> TraceNode* { return nullptr; });
 }
 
@@ -770,7 +757,7 @@ template <typename Resolve>
 // The deduced parameters hold the other arguments, and no parameter of the
 // twin has a type of the standard library.
 template <class Buffer, class... Rest>
-BranchNode* deserialize_branch(::foundation::effects::Alloc, Buffer&&, Arena&&, Rest&&...) =
+BranchNode* deserialize_branch(::foundation::effects::Alloc, Buffer&&, ::fixy::BumpArena&&, Rest&&...) =
     delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
 
 }  // namespace crucible

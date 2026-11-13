@@ -37,51 +37,49 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
             }
         }
     }
-    for (std::uint32_t i = 0; i < region.num_ops; ++i) {
-        const TraceEntry& op = region.ops[i];
+    for (const TraceEntry& op : region.ops) {
         for (std::uint16_t j = 0; j < op.num_inputs; ++j)
             claim_meta_in_range(harness, op.input_metas[j]);
         for (std::uint16_t j = 0; j < op.num_outputs; ++j)
             claim_meta_in_range(harness, op.output_metas[j]);
     }
-    CRUCIBLE_FUZZ_CLAIM(harness, region.content_hash
-                                     == compute_content_hash(std::span<const TraceEntry>{region.ops, region.num_ops}));
+    CRUCIBLE_FUZZ_CLAIM(harness, region.content_hash == compute_content_hash(region.ops));
 }
 
 // A region the way the recorder builds one: two operations with one input
 // and one output each, and with a plan of two slots when with_plan is set.
-// The slots of the plan are in slot_arena.
-[[nodiscard]] inline RegionNode* build_seed_region(Arena& arena, ::fixy::BumpArena& slot_arena, bool with_plan) {
+// The ops, the region and the slots of the plan are in dag_arena.
+[[nodiscard]] inline RegionNode* build_seed_region(Arena& arena, ::fixy::BumpArena& dag_arena, bool with_plan) {
     const auto alloc = test_alloc();
     constexpr std::uint32_t kOps = 2;
-    auto* ops = arena.alloc_array<TraceEntry>(alloc, kOps);
-    std::uninitialized_value_construct_n(ops, kOps);
+    const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(alloc, kOps, TraceEntry{});
     for (std::uint32_t i = 0; i < kOps; ++i) {
-        ops[i].schema_hash = SchemaHash{0xCAFE0000u + i};
-        ops[i].num_inputs = 1;
-        ops[i].num_outputs = 1;
-        ops[i].input_metas = arena.alloc_array<TensorMeta>(alloc, 1);
-        ops[i].input_metas[0] = {};
-        ops[i].input_metas[0].ndim = 1;
-        ops[i].input_metas[0].sizes[0] = tensor_dim(16);
-        ops[i].input_metas[0].strides[0] = tensor_dim(1);
-        ops[i].input_metas[0].dtype = ScalarType::Float;
-        ops[i].output_metas = arena.alloc_array<TensorMeta>(alloc, 1);
-        ops[i].output_metas[0] = ops[i].input_metas[0];
-        ops[i].input_trace_indices = arena.alloc_array<OpIndex>(alloc, 1);
-        ops[i].input_trace_indices[0] = OpIndex{};
-        ops[i].input_slot_ids = arena.alloc_array<SlotId>(alloc, 1);
-        ops[i].input_slot_ids[0] = with_plan ? SlotId{0} : SlotId{};
-        ops[i].output_slot_ids = arena.alloc_array<SlotId>(alloc, 1);
-        ops[i].output_slot_ids[0] = SlotId{i};
+        TraceEntry& op = *ops.get(i).expect("i is below kOps");
+        op.schema_hash = SchemaHash{0xCAFE0000u + i};
+        op.num_inputs = 1;
+        op.num_outputs = 1;
+        op.input_metas = arena.alloc_array<TensorMeta>(alloc, 1);
+        op.input_metas[0] = {};
+        op.input_metas[0].ndim = 1;
+        op.input_metas[0].sizes[0] = tensor_dim(16);
+        op.input_metas[0].strides[0] = tensor_dim(1);
+        op.input_metas[0].dtype = ScalarType::Float;
+        op.output_metas = arena.alloc_array<TensorMeta>(alloc, 1);
+        op.output_metas[0] = op.input_metas[0];
+        op.input_trace_indices = arena.alloc_array<OpIndex>(alloc, 1);
+        op.input_trace_indices[0] = OpIndex{};
+        op.input_slot_ids = arena.alloc_array<SlotId>(alloc, 1);
+        op.input_slot_ids[0] = with_plan ? SlotId{0} : SlotId{};
+        op.output_slot_ids = arena.alloc_array<SlotId>(alloc, 1);
+        op.output_slot_ids[0] = SlotId{i};
     }
-    RegionNode* region = make_region(alloc, arena, ops, kOps);
+    RegionNode* region = make_region(alloc, dag_arena, ops);
     if (with_plan) {
         auto* plan = arena.alloc_obj<MemoryPlan>(alloc);
         plan->pool_bytes = 2 * PoolAllocator::ALIGNMENT;
         plan->num_external = 0;
         plan->device_type = DeviceType::CPU;
-        plan->slots = slot_arena.array<TensorSlot>(alloc, 2, TensorSlot{});
+        plan->slots = dag_arena.array<TensorSlot>(alloc, 2, TensorSlot{});
         std::uint32_t slot_index = 0;
         for (TensorSlot& slot : plan->slots) {
             slot.offset_bytes = slot_index * PoolAllocator::ALIGNMENT;
@@ -111,25 +109,25 @@ inline constexpr std::size_t kImageHasPlanOffset = 52;
 // region type.  The loader must refuse each one.
 [[nodiscard]] inline Seeds region_regressions() {
     Arena arena;
-    ::fixy::BumpArena slot_arena{};
+    ::fixy::BumpArena dag_arena{};
     Seeds seeds;
 
     // The header states a content hash that is not the hash of the ops.
-    auto wrong_hash = region_image(build_seed_region(arena, slot_arena, false));
+    auto wrong_hash = region_image(build_seed_region(arena, dag_arena, false));
     wrong_hash[kImageContentHashOffset] ^= 0x01;
     seeds.push_back(std::move(wrong_hash));
 
     // The plan flag holds a byte that is no value of a bool.
-    auto bad_bool = region_image(build_seed_region(arena, slot_arena, false));
+    auto bad_bool = region_image(build_seed_region(arena, dag_arena, false));
     bad_bool[kImageHasPlanOffset] = 0x02;
     seeds.push_back(std::move(bad_bool));
 
     // A slot reaches past the pool, and a slot starts off the alignment.
     // The pool allocator aborts on either one.
-    RegionNode* past_pool = build_seed_region(arena, slot_arena, true);
+    RegionNode* past_pool = build_seed_region(arena, dag_arena, true);
     past_pool->plan->slots.get(1).expect("the seed plan holds two slots")->nbytes = std::uint64_t{1} << 40;
     seeds.push_back(region_image(past_pool));
-    RegionNode* misaligned = build_seed_region(arena, slot_arena, true);
+    RegionNode* misaligned = build_seed_region(arena, dag_arena, true);
     misaligned->plan->slots.get(1).expect("the seed plan holds two slots")->offset_bytes += 8;
     seeds.push_back(region_image(misaligned));
     return seeds;
@@ -137,9 +135,9 @@ inline constexpr std::size_t kImageHasPlanOffset = 52;
 
 [[nodiscard]] inline Seeds seeds_region() {
     Arena arena;
-    ::fixy::BumpArena slot_arena{};
-    Seeds seeds{region_image(build_seed_region(arena, slot_arena, false)),
-                region_image(build_seed_region(arena, slot_arena, true))};
+    ::fixy::BumpArena dag_arena{};
+    Seeds seeds{region_image(build_seed_region(arena, dag_arena, false)),
+                region_image(build_seed_region(arena, dag_arena, true))};
     for (auto& regression : region_regressions())
         seeds.push_back(std::move(regression));
     return seeds;
@@ -166,7 +164,7 @@ inline void run_region(std::span<const std::uint8_t> bytes) {
     const auto reloaded = deserialize_region(alloc, std::span<const std::uint8_t>{image.data(), written}, arena);
     CRUCIBLE_FUZZ_CLAIM("region", reloaded.has_value());
     RegionNode* again = reloaded->value();
-    CRUCIBLE_FUZZ_CLAIM("region", again->num_ops == region->num_ops);
+    CRUCIBLE_FUZZ_CLAIM("region", again->num_ops() == region->num_ops());
     CRUCIBLE_FUZZ_CLAIM("region", again->content_hash == region->content_hash);
     CRUCIBLE_FUZZ_CLAIM("region", again->merkle_hash == region->merkle_hash);
 }

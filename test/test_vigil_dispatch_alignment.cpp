@@ -149,9 +149,9 @@ void test_alignment_bound_returns_to_replay() {
 
     assert(vigil.active_region() != nullptr);
     const RegionNode& region = *vigil.active_region();
-    assert(region.num_ops == NUM_OPS && "the region holds one iteration of the new trace");
-    for (uint32_t i = 0; i < region.num_ops; i++) {
-        const uint64_t schema = region.ops[i].schema_hash.raw();
+    assert(region.num_ops() == NUM_OPS && "the region holds one iteration of the new trace");
+    for (const crucible::TraceEntry& op : region.ops) {
+        const uint64_t schema = op.schema_hash.raw();
         assert(schema >= 0xA00 && schema < 0xA00 + NUM_OPS && "each op of the region is an op of the new trace");
     }
 

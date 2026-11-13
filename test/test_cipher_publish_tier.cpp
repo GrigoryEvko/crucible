@@ -52,34 +52,36 @@ template <typename W>
 inline constexpr CipherTierTag_v tier_v = ::fixy::band_tier_v<W>;
 
 // The seed varies the schema hash, so every test gets a region with its
-// own content hash and writes its own file.
-static RegionNode* make_test_region(Arena& arena, uint32_t seed) {
+// own content hash and writes its own file.  The ops and the region are in
+// dag_arena, and the arrays of each op are in arena.
+static RegionNode* make_test_region(Arena& arena, ::fixy::BumpArena& dag_arena, uint32_t seed) {
     constexpr uint32_t NUM_OPS = 1;
-    auto* ops = arena.alloc_array<TraceEntry>(g_test.alloc, NUM_OPS);
-    std::uninitialized_value_construct_n(ops, NUM_OPS);
-    ops[0].schema_hash = SchemaHash{0xCAFEBABE00000000ULL + seed};
-    ops[0].num_inputs = 1;
-    ops[0].num_outputs = 1;
-    ops[0].input_metas = arena.alloc_array<TensorMeta>(g_test.alloc, 1);
-    ops[0].input_metas[0] = {};
-    ops[0].input_metas[0].ndim = 1;
-    ops[0].input_metas[0].sizes[0] = ::crucible::tensor_dim(16);
-    ops[0].input_metas[0].strides[0] = ::crucible::tensor_dim(1);
-    ops[0].input_metas[0].dtype = ScalarType::Float;
-    ops[0].output_metas = arena.alloc_array<TensorMeta>(g_test.alloc, 1);
-    ops[0].output_metas[0] = ops[0].input_metas[0];
-    ops[0].input_trace_indices = arena.alloc_array<OpIndex>(g_test.alloc, 1);
-    ops[0].input_trace_indices[0] = OpIndex{};
-    ops[0].input_slot_ids = arena.alloc_array<SlotId>(g_test.alloc, 1);
-    ops[0].input_slot_ids[0] = SlotId{};
-    ops[0].output_slot_ids = arena.alloc_array<SlotId>(g_test.alloc, 1);
-    ops[0].output_slot_ids[0] = SlotId{seed};
-    return crucible::make_region(g_test.alloc, arena, ops, NUM_OPS);
+    const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(g_test.alloc, NUM_OPS, TraceEntry{});
+    TraceEntry& op = *ops.get(0).expect("the region holds one op");
+    op.schema_hash = SchemaHash{0xCAFEBABE00000000ULL + seed};
+    op.num_inputs = 1;
+    op.num_outputs = 1;
+    op.input_metas = arena.alloc_array<TensorMeta>(g_test.alloc, 1);
+    op.input_metas[0] = {};
+    op.input_metas[0].ndim = 1;
+    op.input_metas[0].sizes[0] = ::crucible::tensor_dim(16);
+    op.input_metas[0].strides[0] = ::crucible::tensor_dim(1);
+    op.input_metas[0].dtype = ScalarType::Float;
+    op.output_metas = arena.alloc_array<TensorMeta>(g_test.alloc, 1);
+    op.output_metas[0] = op.input_metas[0];
+    op.input_trace_indices = arena.alloc_array<OpIndex>(g_test.alloc, 1);
+    op.input_trace_indices[0] = OpIndex{};
+    op.input_slot_ids = arena.alloc_array<SlotId>(g_test.alloc, 1);
+    op.input_slot_ids[0] = SlotId{};
+    op.output_slot_ids = arena.alloc_array<SlotId>(g_test.alloc, 1);
+    op.output_slot_ids[0] = SlotId{seed};
+    return crucible::make_region(g_test.alloc, dag_arena, ops);
 }
 
 static void test_publish_warm_bit_equality(const char* dir) {
     Arena arena(1 << 16);
-    auto* region = make_test_region(arena, 1);
+    ::fixy::BumpArena dag_arena{1 << 16};
+    auto* region = make_test_region(arena, dag_arena, 1);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -96,7 +98,8 @@ static void test_publish_warm_bit_equality(const char* dir) {
 
 static void test_publish_warm_type_identity(const char* dir) {
     Arena arena(1 << 16);
-    auto* region = make_test_region(arena, 2);
+    ::fixy::BumpArena dag_arena{1 << 16};
+    auto* region = make_test_region(arena, dag_arena, 2);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -112,7 +115,8 @@ static void test_publish_warm_type_identity(const char* dir) {
 
 static void test_publish_hot_type_identity(const char* dir) {
     Arena arena(1 << 16);
-    auto* region = make_test_region(arena, 3);
+    ::fixy::BumpArena dag_arena{1 << 16};
+    auto* region = make_test_region(arena, dag_arena, 3);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -130,7 +134,8 @@ static void test_publish_hot_type_identity(const char* dir) {
 
 static void test_publish_cold_type_identity(const char* dir) {
     Arena arena(1 << 16);
-    auto* region = make_test_region(arena, 4);
+    ::fixy::BumpArena dag_arena{1 << 16};
+    auto* region = make_test_region(arena, dag_arena, 4);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -148,7 +153,8 @@ static void test_publish_cold_type_identity(const char* dir) {
 
 static void test_view_and_payload_route(const char* dir) {
     Arena arena(1 << 16);
-    auto* region = make_test_region(arena, 5);
+    ::fixy::BumpArena dag_arena{1 << 16};
+    auto* region = make_test_region(arena, dag_arena, 5);
     auto cipher = open_cipher(dir);
 
     auto view = cipher.mint_open_view(store_ctx());
@@ -195,7 +201,8 @@ static void test_cold_rejected_at_higher_fences() {
 
 static void test_relax_to_weaker_tiers(const char* dir) {
     Arena arena(1 << 16);
-    auto* region = make_test_region(arena, 9);
+    ::fixy::BumpArena dag_arena{1 << 16};
+    auto* region = make_test_region(arena, dag_arena, 9);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -230,7 +237,8 @@ static ContentHash hot_reshard_consumer(W wrapped) noexcept {
 
 static void test_e2e_hot_fence_consumer(const char* dir) {
     Arena arena(1 << 16);
-    auto* region = make_test_region(arena, 11);
+    ::fixy::BumpArena dag_arena{1 << 16};
+    auto* region = make_test_region(arena, dag_arena, 11);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -250,7 +258,8 @@ static ContentHash warm_publish_consumer(W wrapped) noexcept {
 
 static void test_e2e_warm_fence_admits_hot_and_warm(const char* dir) {
     Arena arena(1 << 16);
-    auto* region = make_test_region(arena, 12);
+    ::fixy::BumpArena dag_arena{1 << 16};
+    auto* region = make_test_region(arena, dag_arena, 12);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -267,7 +276,8 @@ static void test_e2e_warm_fence_admits_hot_and_warm(const char* dir) {
 
 static void test_phase5_stub_semantics(const char* dir) {
     Arena arena(1 << 16);
-    auto* region = make_test_region(arena, 13);
+    ::fixy::BumpArena dag_arena{1 << 16};
+    auto* region = make_test_region(arena, dag_arena, 13);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -300,7 +310,8 @@ template <typename W>
 
 static void test_runtime_tier_reader_pattern(const char* dir) {
     Arena arena(1 << 16);
-    auto* region = make_test_region(arena, 14);
+    ::fixy::BumpArena dag_arena{1 << 16};
+    auto* region = make_test_region(arena, dag_arena, 14);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -329,7 +340,8 @@ static ContentHash replay_consumer(W wrapped) noexcept {
 
 static void test_replay_engine_admits_all_tiers(const char* dir) {
     Arena arena(1 << 16);
-    auto* region = make_test_region(arena, 15);
+    ::fixy::BumpArena dag_arena{1 << 16};
+    auto* region = make_test_region(arena, dag_arena, 15);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -351,7 +363,8 @@ static void test_replay_engine_admits_all_tiers(const char* dir) {
 // they describe the same region.
 static void test_sequential_three_tier_publish(const char* dir) {
     Arena arena(1 << 16);
-    auto* region = make_test_region(arena, 16);
+    ::fixy::BumpArena dag_arena{1 << 16};
+    auto* region = make_test_region(arena, dag_arena, 16);
     auto cipher = open_cipher(dir);
 
     auto view = cipher.mint_open_view(store_ctx());
@@ -407,7 +420,8 @@ static void test_cannot_tighten_to_stronger_tier() {
 
 static void test_content_addressed_publish_overloads(const char* dir) {
     Arena arena(1 << 16);
-    auto* region = make_test_region(arena, 18);
+    ::fixy::BumpArena dag_arena{1 << 16};
+    auto* region = make_test_region(arena, dag_arena, 18);
     const auto payload = Cipher::content_addressed(region);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());

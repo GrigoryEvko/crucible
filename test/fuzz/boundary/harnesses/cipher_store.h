@@ -145,8 +145,8 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
                                                                  std::uint64_t object_name_xor = 0,
                                                                  std::string_view log_tail = {}) {
     Arena arena;
-    ::fixy::BumpArena slot_arena{};
-    const RegionNode* region = build_seed_region(arena, slot_arena, true);
+    ::fixy::BumpArena dag_arena{};
+    const RegionNode* region = build_seed_region(arena, dag_arena, true);
     const auto image = region_image(region);
     const std::uint64_t hash = region->content_hash.raw();
 

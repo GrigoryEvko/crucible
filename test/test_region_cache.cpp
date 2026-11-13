@@ -110,8 +110,8 @@ void test_cache_dedup_and_cap() {
     assert(cache.size() == 0);
     assert(cache.empty());
 
-    Arena arena(4096);
-    auto* region = make_region(test.alloc, arena, nullptr, 0);
+    ::fixy::BumpArena arena(4096);
+    auto* region = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
     region->content_hash = ContentHash{0x1234};
 
     cache.insert(*region);
@@ -122,7 +122,7 @@ void test_cache_dedup_and_cap() {
     assert(cache.size() == 1);
 
     for (uint32_t i = 1; i < RegionCache::CAP; i++) {
-        auto* r = make_region(test.alloc, arena, nullptr, 0);
+        auto* r = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
         r->content_hash = ContentHash{0x1234 + i};
         cache.insert(*r);
     }
@@ -130,7 +130,7 @@ void test_cache_dedup_and_cap() {
 
     // Insertion past the capacity evicts the oldest entry instead of
     // growing.
-    auto* overflow = make_region(test.alloc, arena, nullptr, 0);
+    auto* overflow = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
     overflow->content_hash = ContentHash{0xFFFF};
     cache.insert(*overflow);
     assert(cache.size() == RegionCache::CAP);
@@ -161,15 +161,17 @@ void test_cache_dedup_and_cap() {
 void test_find_alternate_tracks_live_plan() {
     auto test = ::foundation::effects::testing::test();
     RegionCache cache;
-    Arena arena(1 << 14);
+    ::fixy::BumpArena arena(1 << 14);
 
-    TraceEntry ops[2]{};
-    ops[0].schema_hash = SchemaHash{0x900};
-    ops[0].shape_hash = ShapeHash{0x901};
-    ops[1].schema_hash = SchemaHash{0x902};
-    ops[1].shape_hash = ShapeHash{0x903};
+    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    TraceEntry& op0 = ops.at(::foundation::core::index<0>());
+    TraceEntry& op1 = ops.at(::foundation::core::index<1>());
+    op0.schema_hash = SchemaHash{0x900};
+    op0.shape_hash = ShapeHash{0x901};
+    op1.schema_hash = SchemaHash{0x902};
+    op1.shape_hash = ShapeHash{0x903};
 
-    auto* region = make_region(test.alloc, arena, ops, 2);
+    auto* region = make_region(test.alloc, arena, ops.view());
     assert(region->plan == nullptr);
 
     cache.insert(*region);
@@ -179,8 +181,8 @@ void test_find_alternate_tracks_live_plan() {
 
     // Not eligible to switch to: without a plan the context cannot enter
     // compiled mode, so offering it would strand the caller.
-    assert(!cache.find_alternate(0, ops[0].schema_hash, ops[0].shape_hash).has_value());
-    assert(!cache.find_alternate(1, ops[1].schema_hash, ops[1].shape_hash).has_value());
+    assert(!cache.find_alternate(0, op0.schema_hash, op0.shape_hash).has_value());
+    assert(!cache.find_alternate(1, op1.schema_hash, op1.shape_hash).has_value());
 
     // The plan arrives after the insert. No second call into the cache.
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
@@ -189,24 +191,23 @@ void test_find_alternate_tracks_live_plan() {
     slot.birth_op = OpIndex{0};
     slot.death_op = OpIndex{1};
     slot.slot_id = SlotId{0};
-    auto* plan = arena.alloc_obj<MemoryPlan>(test.alloc);
-    ::new(plan) MemoryPlan{};
+    MemoryPlan* plan = &*arena.make<MemoryPlan>(test.alloc);
     plan->slots = slots.view();
     plan->pool_bytes = 4096;
     region->plan = plan;
 
-    assert(cache.find_alternate(0, ops[0].schema_hash, ops[0].shape_hash).try_get() == region
+    assert(cache.find_alternate(0, op0.schema_hash, op0.shape_hash).try_get() == region
            && "a region cached before its plan existed stayed unfindable after the plan "
               "arrived: find_alternate is reading an insert-time snapshot again, and the "
               "repair path for it has no caller");
-    assert(cache.find_alternate(1, ops[1].schema_hash, ops[1].shape_hash).try_get() == region);
+    assert(cache.find_alternate(1, op1.schema_hash, op1.shape_hash).try_get() == region);
 
     // The position bound now means one thing: how many ops the region has.
-    assert(!cache.find_alternate(2, ops[1].schema_hash, ops[1].shape_hash).has_value());
+    assert(!cache.find_alternate(2, op1.schema_hash, op1.shape_hash).has_value());
     // A matching position with the wrong shape is still a miss.
-    assert(!cache.find_alternate(0, ops[0].schema_hash, ShapeHash{0xDEAD}).has_value());
+    assert(!cache.find_alternate(0, op0.schema_hash, ShapeHash{0xDEAD}).has_value());
     // And exclude still excludes.
-    assert(!cache.find_alternate(0, ops[0].schema_hash, ops[0].shape_hash, ::fixy::WeakRef<const RegionNode>{*region})
+    assert(!cache.find_alternate(0, op0.schema_hash, op0.shape_hash, ::fixy::WeakRef<const RegionNode>{*region})
                 .has_value());
 
     crucible::test::pass("  test_find_alternate_tracks_live_plan: PASSED\n");

@@ -22,11 +22,17 @@ namespace {
     return static_cast<crucible::CompiledKernel*>(p);
 }
 
+// The content hash of a region of one op, under no recipe.
+[[nodiscard]] crucible::ContentHash hash_one_op(const crucible::TraceEntry& op) noexcept {
+    const ::foundation::core::FixedArray<crucible::TraceEntry, 1> single{op};
+    return crucible::compute_content_hash(single.view());
+}
+
 }  // namespace
 
 [[gnu::cold]] int main() {
     auto test = ::foundation::effects::testing::test();
-    crucible::Arena arena(1 << 16);
+    ::fixy::BumpArena arena(1 << 16);
 
     crucible::TensorMeta m{};
     m.ndim = 2;
@@ -98,21 +104,21 @@ namespace {
         assert(agrees(m));
     }
 
-    crucible::TraceEntry ops[3]{};
-    ops[0].schema_hash = SchemaHash{0xAABB};
-    ops[1].schema_hash = SchemaHash{0xCCDD};
-    ops[2].schema_hash = SchemaHash{0xEEFF};
-    auto* region = crucible::make_region(test.alloc, arena, ops, 3);
+    ::foundation::core::FixedArray<crucible::TraceEntry, 3> ops{};
+    ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0xAABB};
+    ops.at(::fixy::index<1>()).schema_hash = SchemaHash{0xCCDD};
+    ops.at(::fixy::index<2>()).schema_hash = SchemaHash{0xEEFF};
+    auto* region = crucible::make_region(test.alloc, arena, ops.view());
     assert(region != nullptr);
     assert(region->kind == crucible::TraceNodeKind::REGION);
-    assert(region->num_ops == 3);
-    assert(region->ops[0].schema_hash == SchemaHash{0xAABB});
-    assert(region->ops[2].schema_hash == SchemaHash{0xEEFF});
+    assert(region->num_ops() == 3);
+    assert(region->op_at(0).schema_hash == SchemaHash{0xAABB});
+    assert(region->op_at(2).schema_hash == SchemaHash{0xEEFF});
     assert(region->first_op_schema == SchemaHash{0xAABB});
     assert(static_cast<bool>(region->content_hash));
 
     ContentHash h1 = region->content_hash;
-    auto* region2 = crucible::make_region(test.alloc, arena, ops, 3);
+    auto* region2 = crucible::make_region(test.alloc, arena, ops.view());
     assert(region2->content_hash == h1);
 
     auto* terminal = crucible::make_terminal(test.alloc, arena);
@@ -260,14 +266,14 @@ namespace {
     assert(crucible::element_size(crucible::ScalarType::Byte) == crucible::ElementBytes{1});
     assert(crucible::element_size(crucible::ScalarType::ComplexDouble) == crucible::ElementBytes{16});
 
-    crucible::TraceEntry body_ops1[2]{};
-    body_ops1[0].schema_hash = SchemaHash{0x1111};
-    body_ops1[1].schema_hash = SchemaHash{0x2222};
-    auto* body_r1 = crucible::make_region(test.alloc, arena, body_ops1, 2);
+    ::foundation::core::FixedArray<crucible::TraceEntry, 2> body_ops1{};
+    body_ops1.at(::fixy::index<0>()).schema_hash = SchemaHash{0x1111};
+    body_ops1.at(::fixy::index<1>()).schema_hash = SchemaHash{0x2222};
+    auto* body_r1 = crucible::make_region(test.alloc, arena, body_ops1.view());
 
-    crucible::TraceEntry body_ops2[1]{};
-    body_ops2[0].schema_hash = SchemaHash{0x3333};
-    auto* body_r2 = crucible::make_region(test.alloc, arena, body_ops2, 1);
+    ::foundation::core::FixedArray<crucible::TraceEntry, 1> body_ops2{};
+    body_ops2.at(::fixy::index<0>()).schema_hash = SchemaHash{0x3333};
+    auto* body_r2 = crucible::make_region(test.alloc, arena, body_ops2.view());
 
     auto* body_term = crucible::make_terminal(test.alloc, arena);
     body_r1->next = body_r2;
@@ -278,27 +284,27 @@ namespace {
 
     assert(crucible::compute_body_content_hash(body_r1) == body_ch);
 
-    crucible::FeedbackEdge fb_edges[1]{};
-    fb_edges[0].output_idx = 0;
-    fb_edges[0].input_idx = 0;
+    ::foundation::core::FixedArray<crucible::FeedbackEdge, 1> fb_edges{};
+    fb_edges.at(::fixy::index<0>()).output_idx = 0;
+    fb_edges.at(::fixy::index<0>()).input_idx = 0;
 
     auto* loop =
-        crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges, 1, crucible::LoopTermKind::REPEAT, 4);
+        crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges.view(), crucible::LoopTermKind::REPEAT, 4);
 
     assert(loop->kind == crucible::TraceNodeKind::LOOP);
     assert(loop->body == body_r1);
     assert(loop->body_content_hash == body_ch);
-    assert(loop->num_feedback == 1);
-    assert(loop->feedback_edges[0].output_idx == 0);
+    assert(loop->num_feedback() == 1);
+    assert(loop->feedback_edges.get(0).expect("the loop holds one feedback edge")->output_idx == 0);
     assert(loop->term_kind == crucible::LoopTermKind::REPEAT);
     assert(loop->repeat_count == 4);
     assert(std::bit_cast<uint32_t>(loop->epsilon) == 0);
-    static_assert(sizeof(crucible::LoopNode) == 64);
+    static_assert(sizeof(crucible::LoopNode) == 72);
     static_assert(sizeof(crucible::FeedbackEdge) == 4);
 
-    crucible::TraceEntry final_ops[1]{};
-    final_ops[0].schema_hash = SchemaHash{0x4444};
-    auto* final_region = crucible::make_region(test.alloc, arena, final_ops, 1);
+    ::foundation::core::FixedArray<crucible::TraceEntry, 1> final_ops{};
+    final_ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0x4444};
+    auto* final_region = crucible::make_region(test.alloc, arena, final_ops.view());
     auto* dag_term = crucible::make_terminal(test.alloc, arena);
     final_region->next = dag_term;
     loop->next = final_region;
@@ -309,29 +315,29 @@ namespace {
     assert(static_cast<bool>(loop_merkle));
 
     auto* loop2 =
-        crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges, 1, crucible::LoopTermKind::REPEAT, 8);
+        crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges.view(), crucible::LoopTermKind::REPEAT, 8);
     loop2->next = final_region;
     crucible::recompute_merkle(loop2);
     assert(loop2->merkle_hash != loop_merkle);
 
-    auto* loop3 =
-        crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges, 1, crucible::LoopTermKind::UNTIL, 4, 0.001f);
+    auto* loop3 = crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges.view(),
+                                      crucible::LoopTermKind::UNTIL, 4, 0.001f);
     loop3->next = final_region;
     crucible::recompute_merkle(loop3);
     assert(loop3->merkle_hash != loop_merkle);
     assert(loop3->merkle_hash != loop2->merkle_hash);
 
-    crucible::FeedbackEdge fb_edges2[2]{};
-    fb_edges2[0] = {.output_idx = 0, .input_idx = 0};
-    fb_edges2[1] = {.output_idx = 1, .input_idx = 1};
+    ::foundation::core::FixedArray<crucible::FeedbackEdge, 2> fb_edges2{};
+    fb_edges2.at(::fixy::index<0>()) = {.output_idx = 0, .input_idx = 0};
+    fb_edges2.at(::fixy::index<1>()) = {.output_idx = 1, .input_idx = 1};
     auto* loop4 =
-        crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges2, 2, crucible::LoopTermKind::REPEAT, 4);
+        crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges2.view(), crucible::LoopTermKind::REPEAT, 4);
     loop4->next = final_region;
     crucible::recompute_merkle(loop4);
     assert(loop4->merkle_hash != loop_merkle);
 
     assert(crucible::feedback_signature({}) == 0);
-    assert(crucible::feedback_signature(loop->feedback_span()) != 0);
+    assert(crucible::feedback_signature(loop->feedback_edges) != 0);
 
     crucible::RegionNode* collected[16]{};
     uint32_t n_collected = crucible::collect_regions(loop, std::span{collected, 16});
@@ -361,7 +367,7 @@ namespace {
     assert(replay_log[8] == final_region->content_hash);
 
     auto* loop_zero =
-        crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges, 1, crucible::LoopTermKind::REPEAT, 0);
+        crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges.view(), crucible::LoopTermKind::REPEAT, 0);
     loop_zero->next = final_region;
     uint32_t zero_count = 0;
     bool zero_ok = crucible::replay(
@@ -369,9 +375,9 @@ namespace {
     assert(zero_ok);
     assert(zero_count == 1);  // the continuation region alone
 
-    crucible::TraceEntry alt_body_ops[1]{};
-    alt_body_ops[0].schema_hash = SchemaHash{0x9999};
-    auto* alt_body = crucible::make_region(test.alloc, arena, alt_body_ops, 1);
+    ::foundation::core::FixedArray<crucible::TraceEntry, 1> alt_body_ops{};
+    alt_body_ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0x9999};
+    auto* alt_body = crucible::make_region(test.alloc, arena, alt_body_ops.view());
     auto* alt_body_term = crucible::make_terminal(test.alloc, arena);
     alt_body->next = alt_body_term;
     ContentHash alt_ch = crucible::compute_body_content_hash(alt_body);
@@ -412,10 +418,10 @@ namespace {
         assert(recipe_strict.hash.raw() != 0);
         assert(!recipe_strict.hash.is_sentinel());
 
-        crucible::TraceEntry recipe_ops[2]{};
-        recipe_ops[0].schema_hash = SchemaHash{0xDEAD};
-        recipe_ops[1].schema_hash = SchemaHash{0xBEEF};
-        const std::span<const crucible::TraceEntry> ops_span{recipe_ops, 2};
+        ::foundation::core::FixedArray<crucible::TraceEntry, 2> recipe_ops{};
+        recipe_ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0xDEAD};
+        recipe_ops.at(::fixy::index<1>()).schema_hash = SchemaHash{0xBEEF};
+        const ::fixy::View<const crucible::TraceEntry> ops_span = recipe_ops.view();
 
         const ContentHash h_default = crucible::compute_content_hash(ops_span);
         const ContentHash h_null = crucible::compute_content_hash(ops_span, nullptr);
@@ -432,31 +438,30 @@ namespace {
 
         // The recipe contribution is additive: ops still disambiguate
         // under a fixed recipe.
-        crucible::TraceEntry alt_recipe_ops[2]{};
-        alt_recipe_ops[0].schema_hash = SchemaHash{0xFACE};
-        alt_recipe_ops[1].schema_hash = SchemaHash{0xBEEF};
-        const std::span<const crucible::TraceEntry> alt_ops_span{alt_recipe_ops, 2};
+        ::foundation::core::FixedArray<crucible::TraceEntry, 2> alt_recipe_ops{};
+        alt_recipe_ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0xFACE};
+        alt_recipe_ops.at(::fixy::index<1>()).schema_hash = SchemaHash{0xBEEF};
+        const ::fixy::View<const crucible::TraceEntry> alt_ops_span = alt_recipe_ops.view();
         const ContentHash h_alt_tc = crucible::compute_content_hash(alt_ops_span, &recipe_tc);
         assert(h_alt_tc != h_tc);
 
-        crucible::TraceEntry rops_a[2]{};
-        rops_a[0].schema_hash = SchemaHash{0x0A0A};
-        rops_a[1].schema_hash = SchemaHash{0x0B0B};
-        crucible::TraceEntry rops_b[2]{};
-        rops_b[0].schema_hash = SchemaHash{0x0A0A};
-        rops_b[1].schema_hash = SchemaHash{0x0B0B};
+        ::foundation::core::FixedArray<crucible::TraceEntry, 2> rops_a{};
+        rops_a.at(::fixy::index<0>()).schema_hash = SchemaHash{0x0A0A};
+        rops_a.at(::fixy::index<1>()).schema_hash = SchemaHash{0x0B0B};
+        ::foundation::core::FixedArray<crucible::TraceEntry, 2> rops_b{};
+        rops_b.at(::fixy::index<0>()).schema_hash = SchemaHash{0x0A0A};
+        rops_b.at(::fixy::index<1>()).schema_hash = SchemaHash{0x0B0B};
 
-        auto* r_tc = crucible::make_region(test.alloc, arena, rops_a, 2, &recipe_tc);
-        auto* r_strict = crucible::make_region(test.alloc, arena, rops_b, 2, &recipe_strict);
-        auto* r_none = crucible::make_region(test.alloc, arena, rops_a, 2);
+        auto* r_tc = crucible::make_region(test.alloc, arena, rops_a.view(), &recipe_tc);
+        auto* r_strict = crucible::make_region(test.alloc, arena, rops_b.view(), &recipe_strict);
+        auto* r_none = crucible::make_region(test.alloc, arena, rops_a.view());
 
         assert(r_tc != nullptr && r_strict != nullptr && r_none != nullptr);
         assert(r_tc->content_hash != r_strict->content_hash);
         assert(r_tc->content_hash != r_none->content_hash);
         assert(r_strict->content_hash != r_none->content_hash);
 
-        const ContentHash direct_tc =
-            crucible::compute_content_hash(std::span<const crucible::TraceEntry>{rops_a, 2}, &recipe_tc);
+        const ContentHash direct_tc = crucible::compute_content_hash(rops_a.view(), &recipe_tc);
         assert(r_tc->content_hash == direct_tc);
 
         crucible::KernelCache rcache;
@@ -502,10 +507,10 @@ namespace {
         e_ten.scalar_args = s_ten;
         e_ten.num_scalar_args = 10;
 
-        auto h_five = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_five, 1});
-        auto h_six = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_six, 1});
-        auto h_six_diff = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_six_diff, 1});
-        auto h_ten = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_ten, 1});
+        auto h_five = hash_one_op(e_five);
+        auto h_six = hash_one_op(e_six);
+        auto h_six_diff = hash_one_op(e_six_diff);
+        auto h_ten = hash_one_op(e_ten);
 
         assert(h_five != h_six);
         assert(h_five != h_ten);
@@ -513,7 +518,7 @@ namespace {
 
         assert(h_six != h_six_diff);
 
-        auto h_six_again = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_six, 1});
+        auto h_six_again = hash_one_op(e_six);
         assert(h_six == h_six_again);
 
         ::fixy::report(::fixy::Sink::Out, "  scalar args: count and past-index-4 value axes both separate\n");
@@ -532,7 +537,7 @@ namespace {
     // A count == 0 op and an op with no tensors are the two shapes the
     // two folds drift apart on first, so both appear here.
     {
-        auto streaming_hash = [](std::span<const crucible::TraceEntry> region_ops) {
+        auto streaming_hash = [](::fixy::View<const crucible::TraceEntry> region_ops) {
             crucible::ContentHashFold fold{crucible::ContentHashFold::NoRecipe{}};
             for (const auto& op : region_ops)
                 fold.fold(op);
@@ -567,25 +572,24 @@ namespace {
         e_tensor.input_metas = &input_meta;
 
         for (const auto* op : {&e_empty, &e_count_only, &e_one, &e_five, &e_tensor}) {
-            std::span<const crucible::TraceEntry> sp{op, 1};
-            assert(streaming_hash(sp) == crucible::compute_content_hash(sp));
+            const ::foundation::core::FixedArray<crucible::TraceEntry, 1> single{*op};
+            assert(streaming_hash(single.view()) == crucible::compute_content_hash(single.view()));
         }
 
         // One region of mixed op shapes exercises the accumulator carry
         // from one op shape into the next.
-        crucible::TraceEntry mix[] = {e_empty, e_count_only, e_one, e_five, e_tensor};
-        std::span<const crucible::TraceEntry> mix_sp{mix, 5};
+        const ::foundation::core::FixedArray<crucible::TraceEntry, 5> mix{e_empty, e_count_only, e_one, e_five,
+                                                                          e_tensor};
+        const ::fixy::View<const crucible::TraceEntry> mix_sp = mix.view();
         assert(streaming_hash(mix_sp) == crucible::compute_content_hash(mix_sp));
 
         // An op that carries no scalars and no tensors still perturbs the
         // accumulator, so it is not equivalent to an absent op.
-        std::span<const crucible::TraceEntry> empty_sp{};
-        assert(crucible::compute_content_hash(empty_sp)
-               != crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_empty, 1}));
+        const ::fixy::View<const crucible::TraceEntry> empty_sp{};
+        assert(crucible::compute_content_hash(empty_sp) != hash_one_op(e_empty));
 
         // The scalar count is folded even when the value pointer is null.
-        assert(crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_empty, 1})
-               != crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&e_count_only, 1}));
+        assert(hash_one_op(e_empty) != hash_one_op(e_count_only));
 
         ::fixy::report(::fixy::Sink::Out, "  streaming fold matches the span fold "
                                           "(count==0 / no-tensor / scalar / tensor / multi-op)\n");
@@ -635,12 +639,11 @@ namespace {
         e_real_tensor.num_inputs = 1;
         e_real_tensor.input_metas = &real_meta;
 
-        crucible::TraceEntry real_mix[] = {e_empty, e_count_only, e_one, e_five, e_real_tensor};
-        const std::span<const crucible::TraceEntry> real_mix_sp{real_mix, 5};
+        const ::foundation::core::FixedArray<crucible::TraceEntry, 5> real_mix{e_empty, e_count_only, e_one, e_five,
+                                                                               e_real_tensor};
+        const ::fixy::View<const crucible::TraceEntry> real_mix_sp = real_mix.view();
 
-        auto one_op = [](const crucible::TraceEntry& op) {
-            return crucible::compute_content_hash(std::span<const crucible::TraceEntry>{&op, 1});
-        };
+        auto one_op = [](const crucible::TraceEntry& op) { return hash_one_op(op); };
 
         // Moved 2026-09-15 when the fold became a single fmix64 chain.  The
         // empty-region vector is unchanged: an empty region never enters
@@ -732,10 +735,12 @@ namespace {
         zero_packed_meta.device_idx = 0;
 
         for (auto* meta : {&undefined_meta, &zero_packed_meta}) {
-            crucible::TraceEntry region_a[2] = {no_tensor(0xAAAA), with_meta(0x5555, meta)};
-            crucible::TraceEntry region_b[2] = {no_tensor(0xBBBB), with_meta(0x5555, meta)};
-            const auto h_a = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{region_a, 2});
-            const auto h_b = crucible::compute_content_hash(std::span<const crucible::TraceEntry>{region_b, 2});
+            const ::foundation::core::FixedArray<crucible::TraceEntry, 2> region_a{no_tensor(0xAAAA),
+                                                                                   with_meta(0x5555, meta)};
+            const ::foundation::core::FixedArray<crucible::TraceEntry, 2> region_b{no_tensor(0xBBBB),
+                                                                                   with_meta(0x5555, meta)};
+            const auto h_a = crucible::compute_content_hash(region_a.view());
+            const auto h_b = crucible::compute_content_hash(region_b.view());
             assert(h_a != h_b
                    && "absorbing-element collapse is back: two regions differing only in the op "
                       "BEFORE the tensor now share a content hash, so the prefix stopped "
@@ -743,16 +748,14 @@ namespace {
         }
 
         // The zero-packed case used to produce the sentinel hash outright.
-        crucible::TraceEntry sentinel_region[1] = {with_meta(0x5555, &zero_packed_meta)};
-        assert(crucible::compute_content_hash(std::span<const crucible::TraceEntry>{sentinel_region, 1}).raw() != 0
+        assert(hash_one_op(with_meta(0x5555, &zero_packed_meta)).raw() != 0
                && "a uint8 tensor on CPU:0 hashes to the KernelCache empty-slot sentinel again");
 
         // A single mix is xor-symmetric, so a fold flattened into one xor
         // would stop telling op order apart.  The chain is what carries it.
-        crucible::TraceEntry forward[2] = {no_tensor(0x1111), no_tensor(0x2222)};
-        crucible::TraceEntry reversed[2] = {no_tensor(0x2222), no_tensor(0x1111)};
-        assert(crucible::compute_content_hash(std::span<const crucible::TraceEntry>{forward, 2})
-                   != crucible::compute_content_hash(std::span<const crucible::TraceEntry>{reversed, 2})
+        const ::foundation::core::FixedArray<crucible::TraceEntry, 2> forward{no_tensor(0x1111), no_tensor(0x2222)};
+        const ::foundation::core::FixedArray<crucible::TraceEntry, 2> reversed{no_tensor(0x2222), no_tensor(0x1111)};
+        assert(crucible::compute_content_hash(forward.view()) != crucible::compute_content_hash(reversed.view())
                && "the fold lost op-order sensitivity: it was flattened into a single xor");
 
         ::fixy::report(::fixy::Sink::Out, "  absorbing-element collapse repaired and pinned "
@@ -776,10 +779,10 @@ namespace {
     // ContentHashFold's deleted default constructor, which is what stops a
     // producer from reaching the first case by saying nothing at all.
     {
-        crucible::TraceEntry numerics_ops[2]{};
-        numerics_ops[0].schema_hash = SchemaHash{0xAC01};
-        numerics_ops[1].schema_hash = SchemaHash{0xAC02};
-        const std::span<const crucible::TraceEntry> numerics_sp{numerics_ops, 2};
+        ::foundation::core::FixedArray<crucible::TraceEntry, 2> numerics_ops{};
+        numerics_ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0xAC01};
+        numerics_ops.at(::fixy::index<1>()).schema_hash = SchemaHash{0xAC02};
+        const ::fixy::View<const crucible::TraceEntry> numerics_sp = numerics_ops.view();
 
         constexpr auto unordered = crucible::hashed(crucible::NumericalRecipe{
             .accum_dtype = crucible::ScalarType::Float,
@@ -841,18 +844,19 @@ namespace {
     // that dropped epsilon from the hash would let two loops with different
     // thresholds share a compiled kernel.
     {
-        crucible::TraceEntry loop_body_ops[1]{};
-        loop_body_ops[0].schema_hash = SchemaHash{0x5EED};
+        ::foundation::core::FixedArray<crucible::TraceEntry, 1> loop_body_ops{};
+        loop_body_ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0x5EED};
 
         // Two loops that agree on everything but the threshold.  Each gets
         // its own body chain: recompute_merkle writes into the nodes it
         // walks, so a shared body would have one loop's pass overwrite the
         // other's.
         auto build_until_loop = [&](float epsilon) {
-            auto* body = crucible::make_region(test.alloc, arena, loop_body_ops, 1);
+            auto* body = crucible::make_region(test.alloc, arena, loop_body_ops.view());
             body->next = crucible::make_terminal(test.alloc, arena);
-            auto* node = crucible::make_loop(test.alloc, arena, body, crucible::compute_body_content_hash(body),
-                                             nullptr, 0, crucible::LoopTermKind::UNTIL, 3, epsilon);
+            auto* node =
+                crucible::make_loop(test.alloc, arena, body, crucible::compute_body_content_hash(body),
+                                    ::fixy::View<crucible::FeedbackEdge>{}, crucible::LoopTermKind::UNTIL, 3, epsilon);
             node->next = crucible::make_terminal(test.alloc, arena);
             crucible::recompute_merkle(node);
             return node;
@@ -915,19 +919,19 @@ namespace {
             return WIFSIGNALED(status) != 0;
         };
 
-        crucible::TraceEntry guard_body_ops[1]{};
-        guard_body_ops[0].schema_hash = SchemaHash{0x6AA6};
+        ::foundation::core::FixedArray<crucible::TraceEntry, 1> guard_body_ops{};
+        guard_body_ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0x6AA6};
 
         // Each child builds its own arena: the parent's arena must not carry
         // a bump from a child that was about to abort.
         auto make = [&](crucible::LoopTermKind kind, uint32_t count, float epsilon) {
             return [&, kind, count, epsilon] {
-                crucible::Arena child_arena(1 << 12);
-                auto* body = crucible::make_region(test.alloc, child_arena, guard_body_ops, 1);
+                ::fixy::BumpArena child_arena(1 << 12);
+                auto* body = crucible::make_region(test.alloc, child_arena, guard_body_ops.view());
                 body->next = crucible::make_terminal(test.alloc, child_arena);
                 auto* node =
                     crucible::make_loop(test.alloc, child_arena, body, crucible::compute_body_content_hash(body),
-                                        nullptr, 0, kind, count, epsilon);
+                                        ::fixy::View<crucible::FeedbackEdge>{}, kind, count, epsilon);
                 // Keeps the optimizer from deciding the call had no effect
                 // and eliding the clause along with it.
                 asm volatile("" ::"r"(node) : "memory");

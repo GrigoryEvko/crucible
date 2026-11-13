@@ -11,6 +11,7 @@
 // Exit zero means every malformed byte was rejected and the untouched
 // bytes still round-trip.
 
+#include <crucible/Arena.h>
 #include <crucible/Serialize.h>
 #include <foundation/effects/Effect.h>
 
@@ -24,20 +25,23 @@
 namespace {
 
 // Returns the number of bytes written, or zero if the region could not be
-// built.
+// built.  The op and the region are in an arena of the call, and the arrays
+// of the op are in arena.
 [[nodiscard]] size_t build_and_serialize(::foundation::effects::Test bg, crucible::Arena& arena,
                                          std::span<uint8_t> out_buf) {
-    auto* ops = arena.alloc_array<crucible::TraceEntry>(bg.alloc, 1);
-    std::uninitialized_value_construct_n(ops, 1);
+    ::fixy::BumpArena dag_arena{1 << 16};
+    const ::fixy::View<crucible::TraceEntry> ops =
+        dag_arena.array<crucible::TraceEntry>(bg.alloc, 1, crucible::TraceEntry{});
+    crucible::TraceEntry& op = *ops.get(0).expect("the region holds one op");
 
-    ops[0].schema_hash = crucible::SchemaHash{0xAA};
-    ops[0].shape_hash = crucible::ShapeHash{0x100};
-    ops[0].scope_hash = crucible::ScopeHash{0x200};
-    ops[0].callsite_hash = crucible::CallsiteHash{0x300};
-    ops[0].num_inputs = 1;
-    ops[0].num_outputs = 0;
-    ops[0].num_scalar_args = 0;
-    ops[0].grad_enabled = true;
+    op.schema_hash = crucible::SchemaHash{0xAA};
+    op.shape_hash = crucible::ShapeHash{0x100};
+    op.scope_hash = crucible::ScopeHash{0x200};
+    op.callsite_hash = crucible::CallsiteHash{0x300};
+    op.num_inputs = 1;
+    op.num_outputs = 0;
+    op.num_scalar_args = 0;
+    op.grad_enabled = true;
 
     auto* in_metas = arena.alloc_array<crucible::TensorMeta>(bg.alloc, 1);
     std::uninitialized_value_construct_n(in_metas, 1);
@@ -48,14 +52,14 @@ namespace {
     in_metas[0].device_type = crucible::DeviceType::CPU;
     in_metas[0].device_idx = -1;
     in_metas[0].layout = crucible::Layout::Strided;
-    ops[0].input_metas = in_metas;
+    op.input_metas = in_metas;
 
-    ops[0].input_trace_indices = arena.alloc_array<crucible::OpIndex>(bg.alloc, 1);
-    ops[0].input_trace_indices[0] = crucible::OpIndex{0};
-    ops[0].input_slot_ids = arena.alloc_array<crucible::SlotId>(bg.alloc, 1);
-    ops[0].input_slot_ids[0] = crucible::SlotId{};
+    op.input_trace_indices = arena.alloc_array<crucible::OpIndex>(bg.alloc, 1);
+    op.input_trace_indices[0] = crucible::OpIndex{0};
+    op.input_slot_ids = arena.alloc_array<crucible::SlotId>(bg.alloc, 1);
+    op.input_slot_ids[0] = crucible::SlotId{};
 
-    auto* region = crucible::make_region(bg.alloc, arena, ops, 1);
+    auto* region = crucible::make_region(bg.alloc, dag_arena, ops);
     if (region == nullptr) return 0;
     return crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{out_buf});
 }

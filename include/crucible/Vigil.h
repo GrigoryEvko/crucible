@@ -824,7 +824,7 @@ private:
             return;
         }
         taken_region_.store_release(published.region);
-        if (published.region->num_ops == 0) return;
+        if (published.region->num_ops() == 0) return;
 
         // A newer region that holds the ops of an open walk takes the walk
         // over, and the walk keeps its position.  The background publishes
@@ -844,10 +844,10 @@ private:
     // K = ALIGNMENT_K.
     [[nodiscard, gnu::cold]] static bool holds_walk_(const RegionNode& walked, const RegionNode& newer,
                                                      uint8_t pos) noexcept {
-        if (walked.content_hash != newer.content_hash || walked.num_ops != newer.num_ops) return false;
+        if (walked.content_hash != newer.content_hash || walked.num_ops() != newer.num_ops()) return false;
         for (uint32_t i = 0; i < pos; ++i) {
-            if (walked.ops[i].schema_hash != newer.ops[i].schema_hash
-                || walked.ops[i].shape_hash != newer.ops[i].shape_hash)
+            if (walked.op_at(i).schema_hash != newer.op_at(i).schema_hash
+                || walked.op_at(i).shape_hash != newer.op_at(i).shape_hash)
                 return false;
         }
         return true;
@@ -868,7 +868,7 @@ private:
         ++alignment_ops_;
 
         const uint8_t pos = alignment_pos_.value();
-        if (schema == region.ops[pos].schema_hash && shape == region.ops[pos].shape_hash) {
+        if (schema == region.op_at(pos).schema_hash && shape == region.op_at(pos).shape_hash) {
             // The increment cannot exceed the bound: once the previous call
             // reached the threshold it cleared pending_activation_, so this
             // function is not called again past that point.
@@ -878,7 +878,7 @@ private:
         }
 
         // A region shorter than K is matched in full instead.
-        const uint32_t threshold = (region.num_ops < ALIGNMENT_K) ? region.num_ops : ALIGNMENT_K;
+        const uint32_t threshold = (region.num_ops() < ALIGNMENT_K) ? region.num_ops() : ALIGNMENT_K;
 
         if (uint32_t{alignment_pos_.value()} >= threshold) {
             if (!replay_.activate(region)) {
@@ -893,7 +893,7 @@ private:
             // The matched ops already executed eagerly, so the engine has
             // to skip them for the next op to check against the right entry.
             for (uint32_t i = 0; i < uint32_t{alignment_pos_.value()}; i++) {
-                auto status = replay_.advance(region.ops[i].schema_hash, region.ops[i].shape_hash);
+                auto status = replay_.advance(region.op_at(i).schema_hash, region.op_at(i).shape_hash);
                 // Debug-only: the hashes fed in here are the region's own,
                 // and alignment already compared each one against the same
                 // entry, so a mismatch means the engine's cursor is out of
@@ -919,7 +919,7 @@ private:
         // periods of recorded ops are equal, and a region holds the last of
         // the two.  So the ops that the alignment did not record cannot put
         // into a region a sequence that the stream does not hold.
-        if (alignment_ops_ >= alignment_bound(region.num_ops)) {
+        if (alignment_ops_ >= alignment_bound(region.num_ops())) {
             region_cache_.insert(region);
             pending_activation_.reset();
             alignment_pos_ = alignment_pos_at(0);
@@ -939,11 +939,11 @@ private:
         for (uint32_t border = pos; border-- > 0;) {
             bool is_border = true;
             for (uint32_t i = 0; i < border && is_border; ++i) {
-                const auto& early = region.ops[i];
-                const auto& late = region.ops[uint32_t{pos} - border + i];
+                const auto& early = region.op_at(i);
+                const auto& late = region.op_at(uint32_t{pos} - border + i);
                 is_border = early.schema_hash == late.schema_hash && early.shape_hash == late.shape_hash;
             }
-            if (is_border && schema == region.ops[border].schema_hash && shape == region.ops[border].shape_hash)
+            if (is_border && schema == region.op_at(border).schema_hash && shape == region.op_at(border).shape_hash)
                 return static_cast<uint8_t>(border + 1);
         }
         return 0;
@@ -960,8 +960,8 @@ private:
             SlotId target = slot.slot_id;
             void* ptr = nullptr;
 
-            for (uint32_t i = 0; i < region.num_ops && !ptr; i++) {
-                const auto& te = region.ops[i];
+            for (uint32_t i = 0; i < region.num_ops() && !ptr; i++) {
+                const auto& te = region.op_at(i);
                 if (!te.input_slot_ids) continue;
                 for (uint16_t j = 0; j < te.num_inputs; j++) {
                     if (te.input_slot_ids[j] == target) {
@@ -993,11 +993,11 @@ private:
             // context, which holds an active region.  get() checks it.
             const RegionNode& old_region = replay_.context().active_region().get();
 
-            if (div_pos > alt.num_ops) return false;
+            if (div_pos > alt.num_ops()) return false;
 
             for (uint32_t i = 0; i < div_pos; i++) {
-                if (old_region.ops[i].schema_hash != alt.ops[i].schema_hash
-                    || old_region.ops[i].shape_hash != alt.ops[i].shape_hash)
+                if (old_region.op_at(i).schema_hash != alt.op_at(i).schema_hash
+                    || old_region.op_at(i).shape_hash != alt.op_at(i).shape_hash)
                     return false;
             }
         }

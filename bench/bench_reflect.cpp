@@ -58,12 +58,12 @@ uint64_t manual_hash_small(const Small& s) noexcept {
 
 // ── Pre-REFL-2 implementation of feedback_signature ──────────────
 //
-// Preserved here verbatim so the bench can A/B the manual packed
+// Preserved here with the same steps so the bench can A/B the manual packed
 // pattern against the reflection-driven version that ships in
 // MerkleDag.h.  Real callers see only the new version; this baseline
 // exists only inside this TU.
-uint64_t feedback_signature_packed(std::span<const crucible::FeedbackEdge> edges) noexcept {
-    if (edges.empty()) return 0;
+uint64_t feedback_signature_packed(::fixy::View<const crucible::FeedbackEdge> edges) noexcept {
+    if (edges.size() == 0) return 0;
     constexpr uint64_t kSeed = 0x6665656462616B73ULL;
     uint64_t h = kSeed;
     for (const auto& e : edges) {
@@ -197,20 +197,21 @@ int main() {
     // Reflection version walks edges and applies reflect_hash(e) +
     // outer fmix64 fold; packed version applies one shift+OR per edge
     // + outer fmix64 fold.
-    crucible::FeedbackEdge edges_buf[8] = {{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}, {5, 6}, {6, 7}, {7, 0}};
+    ::foundation::core::FixedArray<crucible::FeedbackEdge, 8> edges_buf{{0, 1}, {1, 2}, {2, 3}, {3, 4},
+                                                                        {4, 5}, {5, 6}, {6, 7}, {7, 0}};
     volatile uint16_t bump = 0;  // prevents constant-fold
 
     bench::Report refactor_reports[] = {
         bench::run("feedback_signature  (reflection, 8 edges)",
                    [&] {
-                       edges_buf[0].output_idx = bump;  // perturb each iter
-                       auto h = crucible::feedback_signature(std::span<const crucible::FeedbackEdge>{edges_buf, 8});
+                       edges_buf.at(::fixy::index<0>()).output_idx = bump;  // perturb each iter
+                       auto h = crucible::feedback_signature(edges_buf.view());
                        bench::do_not_optimize(h);
                    }),
         bench::run("feedback_signature  (packed,     8 edges)",
                    [&] {
-                       edges_buf[0].output_idx = bump;
-                       auto h = feedback_signature_packed(std::span<const crucible::FeedbackEdge>{edges_buf, 8});
+                       edges_buf.at(::fixy::index<0>()).output_idx = bump;
+                       auto h = feedback_signature_packed(edges_buf.view());
                        bench::do_not_optimize(h);
                    }),
 

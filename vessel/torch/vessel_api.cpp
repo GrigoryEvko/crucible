@@ -317,7 +317,8 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     vigil->flush();
 
     const auto* region = vigil->active_region();
-    if (!region || region->num_ops == 0) return 0;
+    if (!region || region->num_ops() == 0) return 0;
+    const uint32_t num_ops = region->num_ops();
 
     std::FILE* f = std::fopen(path, "wb");
     if (!f) return 0;
@@ -331,19 +332,18 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
 
     // Count total tensor metas across all ops.
     uint32_t total_metas = 0;
-    for (uint32_t i = 0; i < region->num_ops; i++) {
-        total_metas += static_cast<uint32_t>(region->ops[i].num_inputs + region->ops[i].num_outputs);
+    for (const crucible::TraceEntry& te : region->ops) {
+        total_metas += static_cast<uint32_t>(te.num_inputs + te.num_outputs);
     }
 
     // Header: "CRTR" + version + num_ops + num_metas = 16B.
     w("CRTR", 1, 4);
     w(&crucible::TRACE_FORMAT_VERSION, 4, 1);
-    w(&region->num_ops, 4, 1);
+    w(&num_ops, 4, 1);
     w(&total_metas, 4, 1);
 
     // Op records: 80B each (TraceOpRecord layout).
-    for (uint32_t i = 0; i < region->num_ops; i++) {
-        const auto& te = region->ops[i];
+    for (const crucible::TraceEntry& te : region->ops) {
         crucible::TraceOpRecord rec{};
         rec.schema_hash = te.schema_hash;
         rec.shape_hash = te.shape_hash;
@@ -367,8 +367,7 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     }
 
     // Meta records: TRACE_META_BYTES each (TensorMeta layout).
-    for (uint32_t i = 0; i < region->num_ops; i++) {
-        const auto& te = region->ops[i];
+    for (const crucible::TraceEntry& te : region->ops) {
         for (const auto& m : te.input_span())
             w(&m, sizeof(crucible::TensorMeta), 1);
         for (const auto& m : te.output_span())
@@ -413,7 +412,7 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
 uint32_t crucible_active_num_ops(CrucibleHandle h) noexcept {
     auto vigil_typed = crucible::vessel::as_vigil_typed(h);
     const auto* region = vigil_typed.value()->active_region();
-    return region ? region->num_ops : 0;
+    return region ? region->num_ops() : 0;
 }
 
 }  // extern "C"

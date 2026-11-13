@@ -33,7 +33,7 @@ constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foregrou
 // op[i] writes to slot i, reads from slot (i-1) mod N. Plan gives each
 // slot 256 B of a dummy pool.
 struct BenchRegion {
-    TraceEntry* ops = nullptr;
+    ::fixy::HeapArray<TraceEntry> ops{};
     SlotId* out_slots = nullptr;
     SlotId* in_slots = nullptr;
     ::fixy::HeapArray<TensorSlot> slots{};
@@ -42,22 +42,23 @@ struct BenchRegion {
     uint32_t num_ops = 0;
 
     explicit BenchRegion(uint32_t n) : num_ops{n} {
-        ops = static_cast<TraceEntry*>(std::calloc(n, sizeof(TraceEntry)));
+        ops = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, TraceEntry{});
         out_slots = static_cast<SlotId*>(std::calloc(n, sizeof(SlotId)));
         in_slots = static_cast<SlotId*>(std::calloc(n, sizeof(SlotId)));
         slots = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, TensorSlot{});
-        CRUCIBLE_BENCH_CHECK(ops != nullptr && out_slots != nullptr && in_slots != nullptr);
+        CRUCIBLE_BENCH_CHECK(out_slots != nullptr && in_slots != nullptr);
 
         for (uint32_t i = 0; i < n; i++) {
             out_slots[i] = SlotId{i};
             in_slots[i] = SlotId{(i > 0) ? (i - 1) : (n - 1)};
 
-            ops[i].schema_hash = SchemaHash{1000 + i};
-            ops[i].shape_hash = ShapeHash{2000 + i};
-            ops[i].num_outputs = 1;
-            ops[i].output_slot_ids = &out_slots[i];
-            ops[i].num_inputs = 1;
-            ops[i].input_slot_ids = &in_slots[i];
+            TraceEntry& op = *ops.get(i).expect("i is below n");
+            op.schema_hash = SchemaHash{1000 + i};
+            op.shape_hash = ShapeHash{2000 + i};
+            op.num_outputs = 1;
+            op.output_slot_ids = &out_slots[i];
+            op.num_inputs = 1;
+            op.input_slot_ids = &in_slots[i];
         }
 
         uint32_t i = 0;
@@ -84,13 +85,11 @@ struct BenchRegion {
         plan.device_idx = 0;
 
         region.kind = TraceNodeKind::REGION;
-        region.ops = ops;
-        region.num_ops = n;
+        region.ops = ops.view();
         region.plan = &plan;
     }
 
     ~BenchRegion() {
-        std::free(ops);
         std::free(out_slots);
         std::free(in_slots);
     }
@@ -102,33 +101,33 @@ struct BenchRegion {
 // Walks — each calls engine.reset() at top so repeated invocation
 // through auto-batch is stateless.  Each helper mints its own
 // ActiveView; engine is already initialized before being passed in.
-ReplayStatus walk_advance_only(ReplayEngine& engine, const TraceEntry* ops, uint32_t n) {
+ReplayStatus walk_advance_only(ReplayEngine& engine, ::fixy::View<const TraceEntry> ops) {
     auto av = engine.mint_active_view(kVigilForeground);
     engine.reset(av);
     ReplayStatus last = ReplayStatus::MATCH;
-    for (uint32_t i = 0; i < n; i++) {
-        last = engine.advance(ops[i].schema_hash, ops[i].shape_hash, av);
+    for (const TraceEntry& op : ops) {
+        last = engine.advance(op.schema_hash, op.shape_hash, av);
     }
     return last;
 }
 
-void* walk_advance_output(ReplayEngine& engine, const TraceEntry* ops, uint32_t n) {
+void* walk_advance_output(ReplayEngine& engine, ::fixy::View<const TraceEntry> ops) {
     auto av = engine.mint_active_view(kVigilForeground);
     engine.reset(av);
     void* last_ptr = nullptr;
-    for (uint32_t i = 0; i < n; i++) {
-        (void)engine.advance(ops[i].schema_hash, ops[i].shape_hash, av);
+    for (const TraceEntry& op : ops) {
+        (void)engine.advance(op.schema_hash, op.shape_hash, av);
         last_ptr = engine.output_ptr(0, av);
     }
     return last_ptr;
 }
 
-void* walk_advance_both(ReplayEngine& engine, const TraceEntry* ops, uint32_t n) {
+void* walk_advance_both(ReplayEngine& engine, ::fixy::View<const TraceEntry> ops) {
     auto av = engine.mint_active_view(kVigilForeground);
     engine.reset(av);
     void* last_ptr = nullptr;
-    for (uint32_t i = 0; i < n; i++) {
-        (void)engine.advance(ops[i].schema_hash, ops[i].shape_hash, av);
+    for (const TraceEntry& op : ops) {
+        (void)engine.advance(op.schema_hash, op.shape_hash, av);
         last_ptr = engine.output_ptr(0, av);
         bench::do_not_optimize(engine.input_ptr(0, av));
     }
@@ -136,11 +135,11 @@ void* walk_advance_both(ReplayEngine& engine, const TraceEntry* ops, uint32_t n)
 }
 
 // CrucibleContext drives its internal ReplayEngine; no external reset.
-void* walk_context(CrucibleContext& ctx, const TraceEntry* ops, uint32_t n) {
+void* walk_context(CrucibleContext& ctx, ::fixy::View<const TraceEntry> ops) {
     auto cv = ctx.mint_compiled_view(kVigilForeground);
     void* last_ptr = nullptr;
-    for (uint32_t i = 0; i < n; i++) {
-        auto s = ctx.advance(ops[i].schema_hash, ops[i].shape_hash, cv);
+    for (const TraceEntry& op : ops) {
+        auto s = ctx.advance(op.schema_hash, op.shape_hash, cv);
         last_ptr = ctx.output_ptr(0, cv);
         bench::do_not_optimize(s);
     }
@@ -183,19 +182,19 @@ int main() {
         std::snprintf(label4, sizeof(label4), "CrucibleContext        [%4u ops]", n);
 
         reports.push_back(bench::run(label1, [&] {
-            auto s = walk_advance_only(engine, br.ops, n);
+            auto s = walk_advance_only(engine, br.region.ops);
             bench::do_not_optimize(s);
         }));
         reports.push_back(bench::run(label2, [&] {
-            auto p = walk_advance_output(engine, br.ops, n);
+            auto p = walk_advance_output(engine, br.region.ops);
             bench::do_not_optimize(p);
         }));
         reports.push_back(bench::run(label3, [&] {
-            auto p = walk_advance_both(engine, br.ops, n);
+            auto p = walk_advance_both(engine, br.region.ops);
             bench::do_not_optimize(p);
         }));
         reports.push_back(bench::run(label4, [&] {
-            auto p = walk_context(ctx, br.ops, n);
+            auto p = walk_context(ctx, br.region.ops);
             bench::do_not_optimize(p);
         }));
 

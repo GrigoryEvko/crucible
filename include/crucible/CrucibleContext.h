@@ -166,7 +166,7 @@ struct CrucibleContext {
         // where the old one diverged.
         auto av = engine_.active_view_();
         for (uint32_t i = 0; i < div_pos; i++) {
-            auto s = engine_.advance(alt.ops[i].schema_hash, alt.ops[i].shape_hash, av);
+            auto s = engine_.advance(alt.op_at(i).schema_hash, alt.op_at(i).shape_hash, av);
             // Debug-only: the engine was just pointed at alt, and these are
             // alt's own hashes read back in order, so anything but a match
             // means the engine's cursor is out of step rather than that the
@@ -297,8 +297,8 @@ private:
         ::foundation::core::FixedArray<uint64_t, VISITED_WORDS> visited{};
 
         for (uint32_t i = 0; i < div_pos; i++) {
-            const auto& old_te = old_region.ops[i];
-            const auto& new_te = alt.ops[i];
+            const auto& old_te = old_region.op_at(i);
+            const auto& new_te = alt.op_at(i);
 
             if (!old_te.output_slot_ids || !new_te.output_slot_ids) continue;
 

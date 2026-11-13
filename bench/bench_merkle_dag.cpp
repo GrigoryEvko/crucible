@@ -134,12 +134,12 @@ int main(int argc, char* argv[]) {
         auto test = ::foundation::effects::testing::test();
         Arena arena{1 << 16};
         constexpr uint32_t N = 8;
-        TraceEntry ops[N]{};
+        ::foundation::core::FixedArray<TraceEntry, N> ops{};
         bench_rng_state = 0xDEADBEEFCAFEBABEULL;
         for (uint32_t i = 0; i < N; i++)
-            ops[i] = make_synthetic_entry(test.alloc, arena, 2, 1, 2, 4);
+            *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, arena, 2, 1, 2, 4);
         return bench::run("content_hash (8 ops, 2in/1out, 4d)", [&] {
-            auto h = compute_content_hash(std::span{ops, N});
+            auto h = compute_content_hash(ops.view());
             bench::do_not_optimize(h);
         });
     }());
@@ -147,16 +147,17 @@ int main(int argc, char* argv[]) {
     reports.push_back([] {
         auto test = ::foundation::effects::testing::test();
         Arena arena{1 << 20};
+        ::fixy::BumpArena ops_arena{1 << 20};
         constexpr uint32_t N = 481;
-        auto* ops = arena.alloc_array<TraceEntry>(test.alloc, N);
+        const ::fixy::View<TraceEntry> ops = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
         bench_rng_state = 0x12345678ABCDEF01ULL;
         for (uint32_t i = 0; i < N; i++) {
             const uint16_t n_in = static_cast<uint16_t>(1 + (bench_rand() % 3));
             const uint16_t n_out = static_cast<uint16_t>(1 + (bench_rand() % 2));
-            std::construct_at(&ops[i], make_synthetic_entry(test.alloc, arena, n_in, n_out, 1, 4));
+            *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, arena, n_in, n_out, 1, 4);
         }
         return bench::run("content_hash (481 ops, ResNet-like)", [&] {
-            auto h = compute_content_hash(std::span{ops, N});
+            auto h = compute_content_hash(ops);
             bench::do_not_optimize(h);
         });
     }());
@@ -164,16 +165,17 @@ int main(int argc, char* argv[]) {
     reports.push_back([] {
         auto test = ::foundation::effects::testing::test();
         Arena arena{1 << 20};
+        ::fixy::BumpArena ops_arena{1 << 20};
         constexpr uint32_t N = 1110;
-        auto* ops = arena.alloc_array<TraceEntry>(test.alloc, N);
+        const ::fixy::View<TraceEntry> ops = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
         bench_rng_state = 0xABCDEF0123456789ULL;
         for (uint32_t i = 0; i < N; i++) {
             const uint16_t n_in = static_cast<uint16_t>(1 + (bench_rand() % 4));
             const uint16_t n_out = static_cast<uint16_t>(1 + (bench_rand() % 2));
-            std::construct_at(&ops[i], make_synthetic_entry(test.alloc, arena, n_in, n_out, 2, 4));
+            *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, arena, n_in, n_out, 2, 4);
         }
         return bench::run("content_hash (1110 ops, GPT-like)", [&] {
-            auto h = compute_content_hash(std::span{ops, N});
+            auto h = compute_content_hash(ops);
             bench::do_not_optimize(h);
         });
     }());
@@ -182,14 +184,15 @@ int main(int argc, char* argv[]) {
     reports.push_back([] {
         auto test = ::foundation::effects::testing::test();
         Arena data_arena{1 << 20};
+        ::fixy::BumpArena ops_arena{1 << 20};
         constexpr uint32_t N = 481;
-        auto* ops = data_arena.alloc_array<TraceEntry>(test.alloc, N);
+        const ::fixy::View<TraceEntry> ops = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
         bench_rng_state = 0x12345678ABCDEF01ULL;
         for (uint32_t i = 0; i < N; i++)
-            std::construct_at(&ops[i], make_synthetic_entry(test.alloc, data_arena, 2, 1, 1, 4));
+            *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, data_arena, 2, 1, 1, 4);
         return bench::run("make_region (481 ops)", [&] {
-            Arena region_arena{1 << 20};
-            auto* r = make_region(test.alloc, region_arena, ops, N);
+            ::fixy::BumpArena region_arena{1 << 20};
+            auto* r = make_region(test.alloc, region_arena, ops);
             bench::do_not_optimize(r);
         });
     }());
@@ -198,12 +201,13 @@ int main(int argc, char* argv[]) {
     reports.push_back([] {
         auto test = ::foundation::effects::testing::test();
         Arena arena{1 << 20};
+        ::fixy::BumpArena dag_arena{1 << 20};
         constexpr uint32_t N = 481;
-        auto* ops = arena.alloc_array<TraceEntry>(test.alloc, N);
+        const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
         bench_rng_state = 0xAAAABBBBCCCCDDDDULL;
         for (uint32_t i = 0; i < N; i++)
-            std::construct_at(&ops[i], make_synthetic_entry(test.alloc, arena, 2, 1, 1, 4));
-        auto* region = make_region(test.alloc, arena, ops, N);
+            *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, arena, 2, 1, 1, 4);
+        auto* region = make_region(test.alloc, dag_arena, ops);
         return bench::run("compute_merkle_hash (RegionNode)", [&] {
             auto h = compute_merkle_hash(region);
             bench::do_not_optimize(h);

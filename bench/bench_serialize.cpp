@@ -25,13 +25,13 @@ static constexpr auto A = BG.alloc;
 
 // Avoids collision with crucible::make_region — this one builds a region
 // populated with realistic (schema/shape/scope/callsite, 2-input GEMM)
-// op rows.
-static RegionNode* synth_region(Arena& arena, uint32_t num_ops) {
-    auto* ops = arena.alloc_array<TraceEntry>(A, num_ops);
-    std::uninitialized_value_construct_n(ops, num_ops);
+// op rows.  The ops and the region are in dag_arena, and the arrays of each
+// op are in arena.
+static RegionNode* synth_region(Arena& arena, ::fixy::BumpArena& dag_arena, uint32_t num_ops) {
+    const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(A, num_ops, TraceEntry{});
 
     for (uint32_t i = 0; i < num_ops; i++) {
-        auto& te = ops[i];
+        auto& te = *ops.get(i).expect("i is below num_ops");
         te.schema_hash = SchemaHash{0xAAAA000000000000ULL + i};
         te.shape_hash = ShapeHash{0xBBBB000000000000ULL + i};
         te.scope_hash = ScopeHash{0xCCCC000000000000ULL + i};
@@ -70,7 +70,7 @@ static RegionNode* synth_region(Arena& arena, uint32_t num_ops) {
         te.output_slot_ids[0] = SlotId{200 + i};
     }
 
-    return make_region(A, arena, ops, num_ops);
+    return make_region(A, dag_arena, ops);
 }
 
 int main() {
@@ -88,7 +88,8 @@ int main() {
         // generously for the worst-case row shape. Lives across both
         // (ser, deser) Runs.
         Arena arena{1 << 20};
-        RegionNode* region = synth_region(arena, num_ops);
+        ::fixy::BumpArena dag_arena{1 << 20};
+        RegionNode* region = synth_region(arena, dag_arena, num_ops);
 
         const size_t wire_cap =
             64 + num_ops * (40 + 2 * sizeof(TensorMeta) + sizeof(TensorMeta) + 3 * 3 * sizeof(uint32_t));

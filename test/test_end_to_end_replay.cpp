@@ -37,24 +37,24 @@ void test_pipeline_basic() {
     assert(region != nullptr && "BackgroundThread did not produce a region");
 
     assert(region->kind == TraceNodeKind::REGION);
-    assert(region->num_ops == NUM_OPS);
+    assert(region->num_ops() == NUM_OPS);
     assert(region->plan != nullptr);
     assert(region->plan->pool_bytes > 0);
     assert(region->plan->num_slots() > 0);
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
-        assert(region->ops[i].schema_hash == SCHEMA[i]);
-        assert(region->ops[i].shape_hash == SHAPE[i]);
-        assert(region->ops[i].output_slot_ids != nullptr);
-        assert(region->ops[i].output_slot_ids[0].is_valid());
+        assert(region->op_at(i).schema_hash == SCHEMA[i]);
+        assert(region->op_at(i).shape_hash == SHAPE[i]);
+        assert(region->op_at(i).output_slot_ids != nullptr);
+        assert(region->op_at(i).output_slot_ids[0].is_valid());
     }
 
     // The feed never states an edge.  Matching slots here mean the
     // planner recovered the producer-consumer edge from the shared data
     // pointer alone.
     for (uint32_t i = 1; i < NUM_OPS; i++) {
-        assert(region->ops[i].input_slot_ids != nullptr);
-        assert(region->ops[i].input_slot_ids[0] == region->ops[i - 1].output_slot_ids[0]);
+        assert(region->op_at(i).input_slot_ids != nullptr);
+        assert(region->op_at(i).input_slot_ids[0] == region->op_at(i - 1).output_slot_ids[0]);
     }
 
     CrucibleContext ctx;

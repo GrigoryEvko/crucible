@@ -33,7 +33,7 @@ void test_pipeline_multi_iteration() {
     wait_processed(bt, *ring);
     auto* region1 = bt.active_region.load_acquire().try_get();
     assert(region1 != nullptr);
-    assert(region1->num_ops == NUM_OPS);
+    assert(region1->num_ops() == NUM_OPS);
 
     // The loop starts at K because the background thread already holds
     // the first K ops of this iteration from the trigger feed above.
@@ -59,7 +59,7 @@ void test_pipeline_multi_iteration() {
     wait_processed(bt, *ring);
     auto* region2 = bt.active_region.load_acquire().try_get();
     assert(region2 != nullptr && region2 != region1 && "Second boundary did not fire");
-    assert(region2->num_ops == NUM_OPS);
+    assert(region2->num_ops() == NUM_OPS);
     assert(region2->plan != nullptr);
 
     CrucibleContext ctx;

@@ -109,13 +109,13 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
     crucible::test::flush_and_wait_region_published(vigil);
 
     const crucible::RegionNode* const region = vigil.active_region();
-    assert(region != nullptr && region->num_ops == NUM_OPS);
+    assert(region != nullptr && region->num_ops() == NUM_OPS);
 
     // What the foreground recorded, read before it writes over the log.
     crucible::TensorMeta recorded[NUM_OPS][2]{};
     for (uint32_t op = 0; op < NUM_OPS; ++op) {
-        std::memcpy(&recorded[op][0], region->ops[op].input_metas, sizeof(crucible::TensorMeta));
-        std::memcpy(&recorded[op][1], region->ops[op].output_metas, sizeof(crucible::TensorMeta));
+        std::memcpy(&recorded[op][0], region->op_at(op).input_metas, sizeof(crucible::TensorMeta));
+        std::memcpy(&recorded[op][1], region->op_at(op).output_metas, sizeof(crucible::TensorMeta));
     }
     assert(crucible::raw_data_ptr(recorded[0][0]) == parameter_ptr());
     std::vector<uint8_t> serialized_before(std::size_t{1} << 16);
@@ -126,9 +126,9 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
     fill_released_slots(vigil.meta_log(fg));
 
     for (uint32_t op = 0; op < NUM_OPS; ++op) {
-        assert(std::memcmp(region->ops[op].input_metas, &recorded[op][0], sizeof(crucible::TensorMeta)) == 0
+        assert(std::memcmp(region->op_at(op).input_metas, &recorded[op][0], sizeof(crucible::TensorMeta)) == 0
                && "the region reads an input record that the foreground wrote after the release");
-        assert(std::memcmp(region->ops[op].output_metas, &recorded[op][1], sizeof(crucible::TensorMeta)) == 0
+        assert(std::memcmp(region->op_at(op).output_metas, &recorded[op][1], sizeof(crucible::TensorMeta)) == 0
                && "the region reads an output record that the foreground wrote after the release");
     }
 

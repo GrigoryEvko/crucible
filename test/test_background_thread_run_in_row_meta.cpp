@@ -289,7 +289,7 @@ void test_built_graph_owns_its_metadata() {
         bt.release_meta_log(stage, OPS);
     });
     const crucible::RegionNode* const region = bt.active_region.load_acquire().try_get();
-    assert(region != nullptr && region->ops == graph->ops);
+    assert(region != nullptr && &region->op_at(0) == graph->ops);
     assert(metalog->tail.get() == OPS);
 
     crucible::test::pass("  built_graph_owns_its_metadata:             PASSED\n");

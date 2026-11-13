@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
         [](Rng& rng) {
             constexpr unsigned MAX = 8;
             struct Triple {
-                std::array<TraceEntry, MAX> ops;
+                ::foundation::core::FixedArray<TraceEntry, MAX> ops;
                 uint8_t count;
                 NumericalRecipe recipe_a;
                 NumericalRecipe recipe_b;
@@ -52,8 +52,9 @@ int main(int argc, char** argv) {
             Triple t{};
             t.count = static_cast<uint8_t>(rng.next_below(MAX) + 1);
             for (uint8_t i = 0; i < t.count; ++i) {
-                t.ops[i] = TraceEntry{};
-                t.ops[i].schema_hash = SchemaHash{rng.next64()};
+                TraceEntry& op = *t.ops.get(i).expect("the count is at most MAX");
+                op = TraceEntry{};
+                op.schema_hash = SchemaHash{rng.next64()};
             }
             t.recipe_a = hashed(random_recipe(rng));
             // Generate recipe_b until it semantically differs from
@@ -65,7 +66,8 @@ int main(int argc, char** argv) {
             return t;
         },
         [](const auto& t) {
-            const std::span<const TraceEntry> ops_span{t.ops.data(), t.count};
+            const ::fixy::View<const TraceEntry> ops_span =
+                t.ops.view().window(0, t.count).expect("the count is at most MAX");
 
             const auto h_none = compute_content_hash(ops_span);
             const auto h_a = compute_content_hash(ops_span, &t.recipe_a);

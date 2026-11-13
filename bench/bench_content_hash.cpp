@@ -19,10 +19,10 @@ using namespace crucible;
 
 static constexpr auto A = ::foundation::effects::testing::bg().alloc;
 
-static std::vector<TraceEntry> make_ops(Arena& arena, uint32_t count, uint8_t ndim, uint16_t num_inputs) {
-    std::vector<TraceEntry> ops(count);
+static ::fixy::HeapArray<TraceEntry> make_ops(Arena& arena, uint32_t count, uint8_t ndim, uint16_t num_inputs) {
+    ::fixy::HeapArray<TraceEntry> ops = ::fixy::mint_heap_array(A, count, TraceEntry{});
     for (uint32_t i = 0; i < count; i++) {
-        auto& te = ops[i];
+        auto& te = *ops.get(i).expect("i is below count");
         te.schema_hash = SchemaHash{0xAAAA000000000000ULL ^ i};
         te.num_inputs = num_inputs;
         te.num_outputs = 1;
@@ -71,7 +71,7 @@ int main() {
     for (const auto& c : cfgs) {
         Arena arena{1 << 20};
         auto ops = make_ops(arena, c.n, c.ndim, c.ins);
-        const std::span<const TraceEntry> span{ops.data(), ops.size()};
+        const ::fixy::View<const TraceEntry> span = ops.view();
 
         reports.push_back(bench::run(c.label, [&] {
             auto h = compute_content_hash(span);

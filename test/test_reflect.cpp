@@ -231,19 +231,17 @@ int main() {
     // any change to the bit pattern.
     {
         assert(crucible::feedback_signature({}) == 0);
-        const crucible::FeedbackEdge one[1] = {{0, 1}};
-        assert(crucible::feedback_signature(std::span<const crucible::FeedbackEdge>{one, 1}) != 0);
+        const ::foundation::core::FixedArray<crucible::FeedbackEdge, 1> one{crucible::FeedbackEdge{0, 1}};
+        assert(crucible::feedback_signature(one.view()) != 0);
         // The edge count is folded in, so repeating one edge signs
         // differently from having it once.
-        const crucible::FeedbackEdge two_same[2] = {{0, 1}, {0, 1}};
-        assert(crucible::feedback_signature(std::span<const crucible::FeedbackEdge>{one, 1})
-               != crucible::feedback_signature(std::span<const crucible::FeedbackEdge>{two_same, 2}));
+        const ::foundation::core::FixedArray<crucible::FeedbackEdge, 2> two_same{{0, 1}, {0, 1}};
+        assert(crucible::feedback_signature(one.view()) != crucible::feedback_signature(two_same.view()));
         // The fold is not commutative, so reordering the edges
         // changes the signature.
-        const crucible::FeedbackEdge ab[2] = {{1, 2}, {3, 4}};
-        const crucible::FeedbackEdge ba[2] = {{3, 4}, {1, 2}};
-        assert(crucible::feedback_signature(std::span<const crucible::FeedbackEdge>{ab, 2})
-               != crucible::feedback_signature(std::span<const crucible::FeedbackEdge>{ba, 2}));
+        const ::foundation::core::FixedArray<crucible::FeedbackEdge, 2> ab{{1, 2}, {3, 4}};
+        const ::foundation::core::FixedArray<crucible::FeedbackEdge, 2> ba{{3, 4}, {1, 2}};
+        assert(crucible::feedback_signature(ab.view()) != crucible::feedback_signature(ba.view()));
     }
 
     // Each of the three termination fields must move the hash on its

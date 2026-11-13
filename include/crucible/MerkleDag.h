@@ -1,6 +1,5 @@
 #pragma once
 
-#include <crucible/Arena.h>
 #include <crucible/CKernelId.h>
 #include <crucible/DimHash.h>
 #include <crucible/Expr.h>
@@ -26,8 +25,6 @@
 #include <bit>
 #include <cstdlib>
 #include <cstdint>
-#include <cstring>
-#include <new>
 #include <span>
 #include <utility>
 
@@ -303,8 +300,8 @@ struct RegionNode : TraceNode {
     // so the 80-byte layout below holds.
     ::fixy::handle::PublishOnce<CompiledKernel> compiled;
 
-    TraceEntry* ops = nullptr;
-    uint32_t num_ops = 0;
+    // The ops are in the memory of the region, and the node only borrows them.
+    ::fixy::View<TraceEntry> ops{};
 
     SchemaHash first_op_schema;
 
@@ -333,6 +330,20 @@ struct RegionNode : TraceNode {
 
     [[nodiscard, gnu::pure]] bool has_variant() const noexcept { return variant_id.get() != 0u; }
 
+    // The count of ops.  The loader takes at most CDAG_MAX_OPS ops, and a
+    // region of the pipeline counts its ops in 32 bits.
+    [[nodiscard]] uint32_t num_ops() const noexcept {
+        const size_t count = ops.size();
+        CRUCIBLE_PRE(count <= ::fixy::max_of<uint32_t>);
+        return static_cast<uint32_t>(count);
+    }
+
+    // The op at index, which is below num_ops().  An index at or past the
+    // count ends the process.
+    [[nodiscard]] const TraceEntry& op_at(uint32_t index) const noexcept {
+        return *ops.get(index).expect("an op index of a region is below its count of ops");
+    }
+
     // The field itself stays bare because the layout is locked.  A region
     // built from zero ops hashes to zero by design, and this accessor
     // refuses that case: those callers read content_hash directly.
@@ -360,10 +371,17 @@ struct BranchNode : TraceNode {
         TraceNode* target = nullptr;
     };
 
-    Arm* arms = nullptr;
-    uint32_t num_arms = 0;
-    uint32_t pad1 = 0;
+    uint32_t pad1 = 0;  // the bytes between the guard and the arms
+    // The arms are in the arena, and the node only borrows them.
+    ::fixy::View<Arm> arms{};
     // The inherited next points at the merge node where all arms reconverge.
+
+    // The count of arms.  The loader takes at most CDAG_MAX_BRANCH_ARMS arms.
+    [[nodiscard]] uint32_t num_arms() const noexcept {
+        const size_t count = arms.size();
+        CRUCIBLE_PRE(count <= ::fixy::max_of<uint32_t>);
+        return static_cast<uint32_t>(count);
+    }
 
     // Sortedness is load-bearing: replay narrows with `arms[mid].value < val`,
     // so unsorted arms route to the wrong target, and that only surfaces much
@@ -371,8 +389,8 @@ struct BranchNode : TraceNode {
     // Adjacent-pair comparison admits duplicate values, because two guards
     // that compare equal are not structurally forbidden.
     [[nodiscard, gnu::cold]] bool are_arms_sorted_by_value() const noexcept {
-        for (uint32_t i = 1; i < num_arms; ++i)
-            if (arms[i].value < arms[i - 1].value) return false;
+        for (const ::fixy::View<Arm, 2> pair : arms.windows<2>())
+            if (pair.at(::fixy::index<1>()).value < pair.at(::fixy::index<0>()).value) return false;
         return true;
     }
 };
@@ -382,6 +400,8 @@ struct BranchNode : TraceNode {
 struct FeedbackEdge {
     uint16_t output_idx = 0;
     uint16_t input_idx = 0;
+
+    [[nodiscard]] friend constexpr bool operator==(FeedbackEdge, FeedbackEdge) noexcept = default;
 };
 
 // Cyclic computation held inside the acyclic DAG: an acyclic body sub-DAG
@@ -395,17 +415,20 @@ enum class LoopTermKind : uint8_t {
 struct LoopNode : TraceNode {
     ContentHash body_content_hash;
     TraceNode* body = nullptr;  // self-contained chain ending in TERMINAL
-    FeedbackEdge* feedback_edges = nullptr;
-    uint16_t num_feedback = 0;
+    // The edges are in the arena, and the node only borrows them.
+    ::fixy::View<FeedbackEdge> feedback_edges{};
     LoopTermKind term_kind = LoopTermKind::REPEAT;
     uint8_t pad_l0 = 0;
+    uint16_t pad_l1 = 0;
     uint32_t repeat_count = 0;  // REPEAT: the fixed count.  UNTIL: iterations observed
     float epsilon = 0.0f;  // convergence threshold, UNTIL only
     float measured_body_ms = 0.0f;
 
-    // The edges are in the arena, and not in the node.
-    [[nodiscard]] std::span<const FeedbackEdge> feedback_span() const {
-        return feedback_edges ? std::span{feedback_edges, num_feedback} : std::span<const FeedbackEdge>{};
+    // The count of edges.  make_loop takes a count of 16 bits.
+    [[nodiscard]] uint16_t num_feedback() const noexcept {
+        const size_t count = feedback_edges.size();
+        CRUCIBLE_PRE(count <= ::fixy::max_of<uint16_t>);
+        return static_cast<uint16_t>(count);
     }
 
     // Unlike an empty region, a zero body hash is never legal here: the only
@@ -421,8 +444,8 @@ struct LoopNode : TraceNode {
 // non-zero seed is what makes the first claim hold: fmix64 is a permutation,
 // so only one accumulator state maps to 0, and the seed is not it.  The edge
 // count folds in as well, so {A} and {A, A} differ.
-CRUCIBLE_PURE inline uint64_t feedback_signature(std::span<const FeedbackEdge> edges) noexcept {
-    if (edges.empty()) return 0;
+CRUCIBLE_PURE inline uint64_t feedback_signature(::fixy::View<const FeedbackEdge> edges) noexcept {
+    if (edges.size() == 0) return 0;
     constexpr uint64_t kSeed = 0x6665656462616B73ULL;  // "feedbaks"
     uint64_t signature_state = kSeed;
     for (const auto& edge : edges) {
@@ -585,16 +608,25 @@ private:
     uint64_t state_ = kSeed;
 };
 
-[[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(std::span<const TraceEntry> ops,
+[[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(::fixy::View<const TraceEntry> ops,
                                                                  const NumericalRecipe* recipe = nullptr) noexcept {
     CRUCIBLE_PRE(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash));
     CRUCIBLE_PRE(recipe == nullptr || !recipe->hash.is_sentinel());
     ContentHashFold fold =
         (recipe == nullptr) ? ContentHashFold{ContentHashFold::NoRecipe{}} : ContentHashFold{*recipe};
-    for (const auto& op_record : ops) {
+    for (const TraceEntry& op_record : ops) {
         fold.fold(op_record);
     }
     return fold.finish();
+}
+
+// The schema of the first op, or the zero schema for no ops.  A region keeps
+// it as first_op_schema.
+[[nodiscard, gnu::pure]] inline SchemaHash first_op_schema_of(::fixy::View<const TraceEntry> ops) noexcept {
+    for (const TraceEntry& first : ops) {
+        return first.schema_hash;
+    }
+    return SchemaHash{};
 }
 
 [[nodiscard, gnu::pure]] inline MerkleHash compute_merkle_hash(TraceNode* node) noexcept {
@@ -608,8 +640,8 @@ private:
         case TraceNodeKind::BRANCH: {
             auto* branch = static_cast<BranchNode*>(node);
             merkle_hash_state = detail::fmix64(branch->guard.hash());
-            for (uint32_t i = 0; i < branch->num_arms; i++) {
-                merkle_hash_state ^= detail::fmix64(branch->arms[i].target->merkle_hash.raw());
+            for (const BranchNode::Arm& arm : branch->arms) {
+                merkle_hash_state ^= detail::fmix64(arm.target->merkle_hash.raw());
                 merkle_hash_state *= 0x9E3779B97F4A7C15ULL;
             }
             break;
@@ -623,7 +655,7 @@ private:
             constexpr uint64_t kLoopSalt = 0x4C4F4F504E4F4445ULL;  // "LOOPNODE"
             constexpr uint64_t kFbSalt = 0x6665656462616B00ULL;  // "feedbak\0"
             merkle_hash_state = detail::fmix64(loop->body_content_hash.raw() ^ kLoopSalt);
-            merkle_hash_state ^= detail::fmix64(feedback_signature(loop->feedback_span()) ^ kFbSalt);
+            merkle_hash_state ^= detail::fmix64(feedback_signature(loop->feedback_edges) ^ kFbSalt);
             merkle_hash_state ^= loopterm_hash(*loop);
             break;
         }
@@ -642,9 +674,9 @@ private:
 // sound: the guard and the arms' content hashes are fixed at construction.
 [[nodiscard, gnu::pure]] inline ContentHash branched_content_hash(BranchNode* branch) noexcept {
     uint64_t branched_hash_state = detail::fmix64(branch->guard.hash());
-    for (uint32_t i = 0; i < branch->num_arms; i++) {
-        if (branch->arms[i].target->kind == TraceNodeKind::REGION) {
-            branched_hash_state ^= detail::fmix64(static_cast<RegionNode*>(branch->arms[i].target)->content_hash.raw());
+    for (const BranchNode::Arm& arm : branch->arms) {
+        if (arm.target->kind == TraceNodeKind::REGION) {
+            branched_hash_state ^= detail::fmix64(static_cast<RegionNode*>(arm.target)->content_hash.raw());
             branched_hash_state *= 0x9E3779B97F4A7C15ULL;
         }
     }
@@ -660,42 +692,32 @@ private:
 // out: a region hashed under the wrong numerics shares a kernel-cache slot
 // with one hashed under the right ones, and the runtime would serve either
 // kernel to either caller.
-[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND,
-                                             TraceEntry* ops, uint32_t num_ops) noexcept {
-    CRUCIBLE_PRE(::foundation::decide::valid_span(num_ops, ops));
-    auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
+[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a,
+                                             ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND,
+                                             ::fixy::View<TraceEntry> ops) noexcept {
+    RegionNode* node = &*arena.make<RegionNode>(a);
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
-    node->num_ops = num_ops;
-    // The node was just default-constructed, so a non-zero hash here means a
-    // second construction over a live node.
-    contract_assert(node->content_hash.raw() == 0);
-    node->content_hash = compute_content_hash(std::span{ops, num_ops});
-    node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
-    CRUCIBLE_POST(node, node != nullptr);
+    node->content_hash = compute_content_hash(ops);
+    node->first_op_schema = first_op_schema_of(ops);
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
-    CRUCIBLE_POST(node, node->ops == ops);
-    CRUCIBLE_POST(node, node->num_ops == num_ops);
-    CRUCIBLE_POST(node, ::foundation::decide::implies(num_ops > 0u, node->content_hash.raw() != 0));
+    CRUCIBLE_POST(node, node->ops.size() == ops.size());
+    CRUCIBLE_POST(node, ::foundation::decide::implies(ops.size() > 0u, node->content_hash.raw() != 0));
     return node;
 }
 
 // For a caller that has already folded the hash while streaming the ops, and
 // that owns the storage of the node.  The node must be default-constructed.
-inline void init_region_node(RegionNode& node, TraceEntry* ops, uint32_t num_ops,
-                             ContentHash precomputed_hash) noexcept {
-    CRUCIBLE_PRE(::foundation::decide::valid_span(num_ops, ops));
-    CRUCIBLE_PRE(::foundation::decide::is_non_zero(precomputed_hash) || num_ops == 0);
+inline void init_region_node(RegionNode& node, ::fixy::View<TraceEntry> ops, ContentHash precomputed_hash) noexcept {
+    CRUCIBLE_PRE(::foundation::decide::is_non_zero(precomputed_hash) || ops.size() == 0);
     // A non-zero hash here means a second construction over a live node.
     contract_assert(node.content_hash.raw() == 0);
     node.kind = TraceNodeKind::REGION;
     node.ops = ops;
-    node.num_ops = num_ops;
     node.content_hash = precomputed_hash;
-    node.first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
+    node.first_op_schema = first_op_schema_of(ops);
     CRUCIBLE_POST(0, node.kind == TraceNodeKind::REGION);
-    CRUCIBLE_POST(0, node.ops == ops);
-    CRUCIBLE_POST(0, node.num_ops == num_ops);
+    CRUCIBLE_POST(0, node.ops.size() == ops.size());
     CRUCIBLE_POST(0, node.content_hash == precomputed_hash);
 }
 
@@ -703,38 +725,33 @@ inline void init_region_node(RegionNode& node, TraceEntry* ops, uint32_t num_ops
 // the content hash and is then dropped, so a caller that needs to recover the
 // recipe later must track it separately.  A null recipe is rejected rather
 // than accepted, because the overload above already covers that case.
-[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND,
-                                             TraceEntry* ops, uint32_t num_ops,
-                                             const NumericalRecipe* recipe) noexcept {
-    CRUCIBLE_PRE(::foundation::decide::valid_span(num_ops, ops));
+[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a,
+                                             ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND,
+                                             ::fixy::View<TraceEntry> ops, const NumericalRecipe* recipe) noexcept {
     CRUCIBLE_PRE(recipe != nullptr);
     CRUCIBLE_PRE(::foundation::decide::is_non_zero(recipe->hash));
     CRUCIBLE_PRE(!recipe->hash.is_sentinel());
-    auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
+    RegionNode* node = &*arena.make<RegionNode>(a);
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
-    node->num_ops = num_ops;
-    contract_assert(node->content_hash.raw() == 0);
-    node->content_hash = compute_content_hash(std::span{ops, num_ops}, recipe);
-    node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
-    CRUCIBLE_POST(node, node != nullptr);
+    node->content_hash = compute_content_hash(ops, recipe);
+    node->first_op_schema = first_op_schema_of(ops);
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
-    CRUCIBLE_POST(node, node->ops == ops);
-    CRUCIBLE_POST(node, node->num_ops == num_ops);
-    CRUCIBLE_POST(node, ::foundation::decide::implies(num_ops > 0u, node->content_hash.raw() != 0));
+    CRUCIBLE_POST(node, node->ops.size() == ops.size());
+    CRUCIBLE_POST(node, ::foundation::decide::implies(ops.size() > 0u, node->content_hash.raw() != 0));
     return node;
 }
 
-// The twin of the three make_region overloads above.  The node is in the
+// The twin of the two make_region overloads above.  The node is in the
 // arena, and a temporary arena releases it at the end of the statement.  The
 // pack holds the other arguments, and the twin declares no raw pointer
 // parameter.
 template <class... Rest>
-RegionNode* make_region(::foundation::effects::Alloc, Arena&&, Rest&&...) =
+RegionNode* make_region(::foundation::effects::Alloc, ::fixy::BumpArena&&, Rest&&...) =
     delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
 
-[[nodiscard]] inline TraceNode* make_terminal(::foundation::effects::Alloc a, Arena& arena) noexcept {
-    auto* node = new(arena.alloc_obj<TraceNode>(a)) TraceNode{};
+[[nodiscard]] inline TraceNode* make_terminal(::foundation::effects::Alloc a, ::fixy::BumpArena& arena) noexcept {
+    TraceNode* node = &*arena.make<TraceNode>(a);
     node->kind = TraceNodeKind::TERMINAL;
     CRUCIBLE_POST(node, node != nullptr);
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::TERMINAL);
@@ -743,12 +760,12 @@ RegionNode* make_region(::foundation::effects::Alloc, Arena&&, Rest&&...) =
 
 // The body must be a complete sub-DAG ending in TERMINAL, and
 // body_content_hash must already be folded from that body's region chain.
-[[nodiscard]] inline LoopNode* make_loop(::foundation::effects::Alloc a, Arena& arena CRUCIBLE_LIFETIMEBOUND,
-                                         TraceNode* body, ContentHash body_content_hash, FeedbackEdge* feedback,
-                                         uint16_t num_feedback, LoopTermKind term_kind, uint32_t repeat_count,
-                                         float epsilon = 0.0f) noexcept {
+[[nodiscard]] inline LoopNode* make_loop(::foundation::effects::Alloc a,
+                                         ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND, TraceNode* body,
+                                         ContentHash body_content_hash, ::fixy::View<FeedbackEdge> feedback,
+                                         LoopTermKind term_kind, uint32_t repeat_count, float epsilon = 0.0f) noexcept {
     CRUCIBLE_PRE(body != nullptr);
-    CRUCIBLE_PRE(::foundation::decide::valid_span(num_feedback, feedback));
+    CRUCIBLE_PRE(feedback.size() <= ::fixy::max_of<uint16_t>);
     // A convergence distance is a finite number that cannot be negative, and
     // every bit of epsilon reaches the termination hash through a bit_cast,
     // so two loops that behave identically would otherwise hash differently.
@@ -785,20 +802,17 @@ RegionNode* make_region(::foundation::effects::Alloc, Arena&&, Rest&&...) =
     // REPEAT keeps zero, where it means what it says: run the body no times
     // and continue.
     CRUCIBLE_PRE(term_kind != LoopTermKind::UNTIL || repeat_count > 0u);
-    auto* node = new(arena.alloc_obj<LoopNode>(a)) LoopNode{};
+    LoopNode* node = &*arena.make<LoopNode>(a);
     node->kind = TraceNodeKind::LOOP;
     node->body = body;
     node->body_content_hash = body_content_hash;
     node->feedback_edges = feedback;
-    node->num_feedback = num_feedback;
     node->term_kind = term_kind;
     node->repeat_count = repeat_count;
     node->epsilon = epsilon;
-    CRUCIBLE_POST(node, node != nullptr);
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::LOOP);
     CRUCIBLE_POST(node, node->body == body);
-    CRUCIBLE_POST(node, node->feedback_edges == feedback);
-    CRUCIBLE_POST(node, node->num_feedback == num_feedback);
+    CRUCIBLE_POST(node, node->feedback_edges.size() == feedback.size());
     CRUCIBLE_POST(node, node->term_kind == term_kind);
     CRUCIBLE_POST(node, node->repeat_count == repeat_count);
     return node;
@@ -808,7 +822,7 @@ RegionNode* make_region(::foundation::effects::Alloc, Arena&&, Rest&&...) =
 // arena releases it at the end of the statement.  The pack holds the other
 // arguments, and the twin declares no raw pointer parameter.
 template <class... Rest>
-LoopNode* make_loop(::foundation::effects::Alloc, Arena&&, Rest&&...) =
+LoopNode* make_loop(::foundation::effects::Alloc, ::fixy::BumpArena&&, Rest&&...) =
     delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
 
 // Children are recomputed first, because a node's hash folds in the hashes of
@@ -817,8 +831,8 @@ inline void recompute_merkle(TraceNode* node) {
     if (!node) return;
     if (node->kind == TraceNodeKind::BRANCH) {
         auto* branch = static_cast<BranchNode*>(node);
-        for (uint32_t i = 0; i < branch->num_arms; i++)
-            recompute_merkle(branch->arms[i].target);
+        for (const BranchNode::Arm& arm : branch->arms)
+            recompute_merkle(arm.target);
     } else if (node->kind == TraceNodeKind::LOOP) {
         recompute_merkle(static_cast<LoopNode*>(node)->body);
     }
@@ -835,8 +849,8 @@ inline void recompute_merkle(TraceNode* node) {
                 break;
             case TraceNodeKind::BRANCH: {
                 auto* branch = static_cast<BranchNode*>(node);
-                for (uint32_t i = 0; i < branch->num_arms; i++)
-                    count = collect_regions(branch->arms[i].target, out, count);
+                for (const BranchNode::Arm& arm : branch->arms)
+                    count = collect_regions(arm.target, out, count);
                 break;
             }
             case TraceNodeKind::LOOP:
@@ -862,8 +876,8 @@ inline void recompute_merkle(TraceNode* node) {
 // would let a caller that has a recipe omit it and get a silent stream of
 // missed merges, every suffix looking distinct because the two sides folded
 // different things.
-[[nodiscard]] inline TraceNode* find_merge_point(std::span<TraceEntry> new_ops, TraceNode* existing_continuation,
-                                                 const NumericalRecipe* recipe) {
+[[nodiscard]] inline TraceNode* find_merge_point(::fixy::View<const TraceEntry> new_ops,
+                                                 TraceNode* existing_continuation, const NumericalRecipe* recipe) {
     CRUCIBLE_PRE(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash));
     CRUCIBLE_PRE(recipe == nullptr || !recipe->hash.is_sentinel());
     constexpr uint32_t MAX_REGIONS = 1024;
@@ -885,14 +899,16 @@ inline void recompute_merkle(TraceNode* node) {
     while (ex_idx > 0 && new_pos > 0) {
         ex_idx--;
         RegionNode* region = existing_regions[ex_idx];
-        if (new_pos < region->num_ops) break;
+        const uint32_t region_ops = region->num_ops();
+        if (new_pos < region_ops) break;
 
-        ContentHash new_hash =
-            compute_content_hash(new_ops.subspan(new_pos - region->num_ops, region->num_ops), recipe);
+        ContentHash new_hash = compute_content_hash(
+            new_ops.window(new_pos - region_ops, region_ops).expect("the tail of the new ops holds the region"),
+            recipe);
 
         if (new_hash == region->content_hash) {
             merge = region;
-            new_pos -= region->num_ops;
+            new_pos -= region_ops;
         } else {
             break;
         }
@@ -921,18 +937,18 @@ template <typename GuardEval, typename RegionExec>
 
                 TraceNode* arm = nullptr;
                 {
-                    uint32_t lo = 0, hi = branch->num_arms;
+                    const ::fixy::View<const BranchNode::Arm> arms = branch->arms;
+                    uint32_t lo = 0, hi = branch->num_arms();
                     while (lo < hi) {
                         uint32_t mid = lo + (hi - lo) / 2;
-                        // mid is in [lo, hi) and hi is at most num_arms.
-                        [[assume(mid < branch->num_arms)]];
-                        int64_t mid_val = branch->arms[mid].value;
-                        if (mid_val < val)
+                        // mid is in [lo, hi) and hi is the count of arms.
+                        const BranchNode::Arm& mid_arm = *arms.get(mid).expect("mid is below the count of arms");
+                        if (mid_arm.value < val)
                             lo = mid + 1;
-                        else if (mid_val > val)
+                        else if (mid_arm.value > val)
                             hi = mid;
                         else {
-                            arm = branch->arms[mid].target;
+                            arm = mid_arm.target;
                             break;
                         }
                     }
@@ -1032,11 +1048,12 @@ struct DagDiff {
         if (a->kind == TraceNodeKind::BRANCH) {
             auto* ba = static_cast<BranchNode*>(a);
             auto* bb = static_cast<BranchNode*>(b);
-            if (ba->guard.hash() != bb->guard.hash() || ba->num_arms != bb->num_arms)
+            if (ba->guard.hash() != bb->guard.hash() || ba->arms.size() != bb->arms.size())
                 return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
-            for (uint32_t i = 0; i < ba->num_arms; i++) {
-                if (ba->arms[i].value != bb->arms[i].value) return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
-                DagDiff arm_diff = dag_diff(ba->arms[i].target, bb->arms[i].target, depth + 1);
+            for (auto [arm_a, arm_b] :
+                 ::fixy::zip(ba->arms, bb->arms).expect("the two branches hold one count of arms")) {
+                if (arm_a->value != arm_b->value) return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
+                DagDiff arm_diff = dag_diff(arm_a->target, arm_b->target, depth + 1);
                 if (arm_diff.kind != DagDiff::Kind::IDENTICAL) return arm_diff;
             }
             a = a->next;
@@ -1048,12 +1065,11 @@ struct DagDiff {
         if (a->kind == TraceNodeKind::LOOP) {
             auto* la = static_cast<LoopNode*>(a);
             auto* lb = static_cast<LoopNode*>(b);
-            if (la->body_content_hash != lb->body_content_hash || la->num_feedback != lb->num_feedback
-                || la->term_kind != lb->term_kind || la->repeat_count != lb->repeat_count
+            if (la->body_content_hash != lb->body_content_hash || la->term_kind != lb->term_kind
+                || la->repeat_count != lb->repeat_count
                 || std::bit_cast<uint32_t>(la->epsilon) != std::bit_cast<uint32_t>(lb->epsilon))
                 return {a, b, depth, DagDiff::Kind::LOOP_MISMATCH};
-            if (la->num_feedback > 0
-                && std::memcmp(la->feedback_edges, lb->feedback_edges, la->num_feedback * sizeof(FeedbackEdge)) != 0)
+            if (!::fixy::equal(la->feedback_edges, lb->feedback_edges))
                 return {a, b, depth, DagDiff::Kind::LOOP_MISMATCH};
             // The bodies agree on content, so compare their structure.
             DagDiff body_diff = dag_diff(la->body, lb->body, depth + 1);
@@ -1079,8 +1095,8 @@ struct DagDiff {
         switch (node->kind) {
             case TraceNodeKind::BRANCH: {
                 auto* b = static_cast<BranchNode*>(node);
-                for (uint32_t i = 0; i < b->num_arms; i++)
-                    count += dag_node_count(b->arms[i].target);
+                for (const BranchNode::Arm& arm : b->arms)
+                    count += dag_node_count(arm.target);
                 break;
             }
             case TraceNodeKind::LOOP:

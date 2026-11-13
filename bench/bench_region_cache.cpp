@@ -13,7 +13,6 @@
 #include <cstdio>
 #include <memory>
 
-#include <crucible/Arena.h>
 #include <crucible/RegionCache.h>
 #include <foundation/effects/Effect.h>
 
@@ -34,24 +33,24 @@ constexpr uint32_t NUM_REGIONS = 10;
 
 struct TestFixture {
     ::foundation::effects::Test test = ::foundation::effects::testing::test();
-    Arena arena{1 << 20};
+    ::fixy::BumpArena arena{1 << 20};
     RegionNode* regions[NUM_REGIONS]{};
     MemoryPlan* plans[NUM_REGIONS]{};
 
     TestFixture() {
         for (uint32_t r = 0; r < NUM_REGIONS; r++) {
-            // The arena returns storage only, so each object starts its
-            // lifetime here with its member initializers.
-            auto* ops = arena.alloc_array_nonzero<TraceEntry>(test.alloc, NUM_OPS);
-            std::uninitialized_value_construct_n(ops, NUM_OPS);
+            // The arena builds each op and each plan with its member
+            // initializers.
+            const ::fixy::View<TraceEntry> ops = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
             for (uint32_t i = 0; i < NUM_OPS; i++) {
-                ops[i].schema_hash = SchemaHash{0x1000 + r * 0x100 + i};
-                ops[i].shape_hash = ShapeHash{0x2000 + r * 0x100 + i};
+                TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
+                op.schema_hash = SchemaHash{0x1000 + r * 0x100 + i};
+                op.shape_hash = ShapeHash{0x2000 + r * 0x100 + i};
             }
 
-            plans[r] = std::construct_at(arena.alloc_obj<MemoryPlan>(test.alloc));
+            plans[r] = &*arena.make<MemoryPlan>(test.alloc);
 
-            regions[r] = make_region(test.alloc, arena, ops, NUM_OPS);
+            regions[r] = make_region(test.alloc, arena, ops);
             regions[r]->plan = plans[r];
         }
     }
@@ -112,8 +111,8 @@ int main() {
             for (uint32_t i = 0; i < RegionCache::CAP; i++)
                 cache.insert(*fix.regions[i]);
             const uint32_t pos = 5;
-            const auto schema = fix.regions[7]->ops[pos].schema_hash;
-            const auto shape = fix.regions[7]->ops[pos].shape_hash;
+            const auto schema = fix.regions[7]->op_at(pos).schema_hash;
+            const auto shape = fix.regions[7]->op_at(pos).shape_hash;
             const RegionNode* excl = fix.regions[6];
             return bench::run("find_alternate: hit MRU (i=0)", [&] {
                 auto r = cache.find_alternate(pos, schema, shape, ::fixy::WeakRef<const RegionNode>::from_raw(excl));
@@ -127,8 +126,8 @@ int main() {
             for (uint32_t i = 0; i < RegionCache::CAP; i++)
                 cache.insert(*fix.regions[i]);
             const uint32_t pos = 5;
-            const auto schema = fix.regions[0]->ops[pos].schema_hash;
-            const auto shape = fix.regions[0]->ops[pos].shape_hash;
+            const auto schema = fix.regions[0]->op_at(pos).schema_hash;
+            const auto shape = fix.regions[0]->op_at(pos).shape_hash;
             const RegionNode* excl = fix.regions[7];
             return bench::run("find_alternate: hit LRU (i=7)", [&] {
                 auto r = cache.find_alternate(pos, schema, shape, ::fixy::WeakRef<const RegionNode>::from_raw(excl));
@@ -165,8 +164,8 @@ int main() {
             cache.insert(*fix.regions[0]);
             cache.insert(*fix.regions[1]);
             const uint32_t pos = 5;
-            const auto schema = fix.regions[0]->ops[pos].schema_hash;
-            const auto shape = fix.regions[0]->ops[pos].shape_hash;
+            const auto schema = fix.regions[0]->op_at(pos).schema_hash;
+            const auto shape = fix.regions[0]->op_at(pos).shape_hash;
             const RegionNode* excl = fix.regions[1];
             return bench::run("find_alternate: hit (2 entries, excl MRU)", [&] {
                 auto r = cache.find_alternate(pos, schema, shape, ::fixy::WeakRef<const RegionNode>::from_raw(excl));

@@ -11,7 +11,6 @@
 // fail with an errno, or give a specified timespec.  Each case sets each
 // value, so the test knows each result.
 
-#include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Transaction.h>
 #include <fixy/Ctx.h>
@@ -267,11 +266,11 @@ private:
     return true;
 }
 
-// Makes a region of one operation and calculates its merkle root.  It gives
-// null when the arena has no space.
-[[nodiscard]] crucible::RegionNode* committed_region(eff::Test const& test, crucible::Arena& arena,
+// Makes a region of a copy of one operation and calculates its merkle root.
+// The copy and the region are in the arena.
+[[nodiscard]] crucible::RegionNode* committed_region(eff::Test const& test, ::fixy::BumpArena& arena,
                                                      crucible::TraceEntry& op) {
-    auto* region = crucible::make_region(test.alloc, arena, &op, 1);
+    auto* region = crucible::make_region(test.alloc, arena, arena.array<crucible::TraceEntry>(test.alloc, 1, op));
     if (region != nullptr) crucible::recompute_merkle(region);
     return region;
 }
@@ -286,7 +285,7 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
     const fixy::TestRunnerCtx ctx{eff::testing::test()};
     const SoloOwner owner = SoloOwner::claim();
     crucible::TransactionLog<16, SoloOwner> log{ctx};
-    crucible::Arena arena(1 << 12);
+    ::fixy::BumpArena arena(1 << 12);
 
     crucible::TraceEntry ops[3]{};
     ops[0].schema_hash = crucible::SchemaHash{0xFEED};

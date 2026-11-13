@@ -188,40 +188,39 @@ int main() {
     SlotId op3_in[1] = {SlotId{SL_MM2}};
     SlotId op3_out[1] = {SlotId{SL_SM}};
 
-    TraceEntry ops[N_OPS]{};
+    ::foundation::core::FixedArray<TraceEntry, N_OPS> ops{};
 
-    ops[0].schema_hash = H_MM1;
-    ops[0].shape_hash = S_MM1;
-    ops[0].num_inputs = 2;
-    ops[0].num_outputs = 1;
-    ops[0].input_slot_ids = op0_in;
-    ops[0].output_slot_ids = op0_out;
+    ops.at(::fixy::index<0>()).schema_hash = H_MM1;
+    ops.at(::fixy::index<0>()).shape_hash = S_MM1;
+    ops.at(::fixy::index<0>()).num_inputs = 2;
+    ops.at(::fixy::index<0>()).num_outputs = 1;
+    ops.at(::fixy::index<0>()).input_slot_ids = op0_in;
+    ops.at(::fixy::index<0>()).output_slot_ids = op0_out;
 
-    ops[1].schema_hash = H_RELU;
-    ops[1].shape_hash = S_RELU;
-    ops[1].num_inputs = 1;
-    ops[1].num_outputs = 1;
-    ops[1].input_slot_ids = op1_in;
-    ops[1].output_slot_ids = op1_out;
+    ops.at(::fixy::index<1>()).schema_hash = H_RELU;
+    ops.at(::fixy::index<1>()).shape_hash = S_RELU;
+    ops.at(::fixy::index<1>()).num_inputs = 1;
+    ops.at(::fixy::index<1>()).num_outputs = 1;
+    ops.at(::fixy::index<1>()).input_slot_ids = op1_in;
+    ops.at(::fixy::index<1>()).output_slot_ids = op1_out;
 
-    ops[2].schema_hash = H_MM2;
-    ops[2].shape_hash = S_MM2;
-    ops[2].num_inputs = 2;
-    ops[2].num_outputs = 1;
-    ops[2].input_slot_ids = op2_in;
-    ops[2].output_slot_ids = op2_out;
+    ops.at(::fixy::index<2>()).schema_hash = H_MM2;
+    ops.at(::fixy::index<2>()).shape_hash = S_MM2;
+    ops.at(::fixy::index<2>()).num_inputs = 2;
+    ops.at(::fixy::index<2>()).num_outputs = 1;
+    ops.at(::fixy::index<2>()).input_slot_ids = op2_in;
+    ops.at(::fixy::index<2>()).output_slot_ids = op2_out;
 
-    ops[3].schema_hash = H_SOFTMAX;
-    ops[3].shape_hash = S_SOFTMAX;
-    ops[3].num_inputs = 1;
-    ops[3].num_outputs = 1;
-    ops[3].input_slot_ids = op3_in;
-    ops[3].output_slot_ids = op3_out;
+    ops.at(::fixy::index<3>()).schema_hash = H_SOFTMAX;
+    ops.at(::fixy::index<3>()).shape_hash = S_SOFTMAX;
+    ops.at(::fixy::index<3>()).num_inputs = 1;
+    ops.at(::fixy::index<3>()).num_outputs = 1;
+    ops.at(::fixy::index<3>()).input_slot_ids = op3_in;
+    ops.at(::fixy::index<3>()).output_slot_ids = op3_out;
 
     RegionNode region{};
     region.kind = TraceNodeKind::REGION;
-    region.ops = ops;
-    region.num_ops = N_OPS;
+    region.ops = ops.view();
     region.plan = plan;
 
     CrucibleContext ctx;

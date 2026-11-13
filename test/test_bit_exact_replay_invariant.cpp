@@ -105,9 +105,10 @@ constexpr uint32_t kNumSlots = 12;
 // `data_ptr_base` is the only thing that differs between the two builds.
 // It stands for the run-to-run variation the allocator produces, and the
 // hashes must not see it.
-void build_ops(::foundation::effects::Test ctx, Arena& arena, TraceEntry* ops, uint64_t data_ptr_base) noexcept {
+void build_ops(::foundation::effects::Test ctx, Arena& arena, ::fixy::View<TraceEntry> ops,
+               uint64_t data_ptr_base) noexcept {
     for (uint32_t op_index = 0; op_index < kNumOps; op_index++) {
-        TraceEntry& entry = ops[op_index];
+        TraceEntry& entry = *ops.get(op_index).expect("op_index is below kNumOps");
         entry = TraceEntry{};
         const uint64_t seed = mix(op_index);
 
@@ -189,14 +190,16 @@ struct Built {
 // cannot silently decay back into one pin.
 [[nodiscard]] Built build_once(::foundation::effects::Test ctx, uint64_t data_ptr_base) noexcept {
     Arena arena(1 << 20);
+    ::fixy::BumpArena dag_arena{1 << 20};
     crucible::BackgroundThread bt;
 
-    auto* ops = arena.alloc_array<TraceEntry>(ctx.alloc, kNumOps);
+    const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(ctx.alloc, kNumOps, TraceEntry{});
     build_ops(ctx, arena, ops, data_ptr_base);
 
     constexpr uint32_t kSplit = kNumOps / 2;
-    auto* head = crucible::make_region(ctx.alloc, arena, ops, kSplit);
-    auto* tail = crucible::make_region(ctx.alloc, arena, ops + kSplit, kNumOps - kSplit);
+    auto* head = crucible::make_region(ctx.alloc, dag_arena, ops.window(0, kSplit).expect("the head is in the ops"));
+    auto* tail = crucible::make_region(ctx.alloc, dag_arena,
+                                       ops.window(kSplit, kNumOps - kSplit).expect("the tail is in the ops"));
     head->next = tail;
 
     ::foundation::core::FixedArray<TensorSlot, kNumSlots> slots{};

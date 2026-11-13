@@ -19,6 +19,7 @@
 #include "bench_harness.h"
 
 #include <foundation/effects/Effect.h>
+#include <crucible/Arena.h>
 #include <crucible/Vigil.h>
 
 #include <bit>
@@ -175,46 +176,49 @@ void check_cpu_slot(const TensorSlot& slot) {
 // MemoryPlan. compute_content_hash reads input_metas/output_metas, so
 // we allocate those too — even though the pointers we write through
 // fake_ptr don't point at real storage.
+//
+// The ops, the region and the slots are in dag_arena.  The arrays of each
+// op and the plan are in arena.
 struct BenchRegion {
     ::foundation::effects::Test test = ::foundation::effects::testing::test();
     Arena arena{1 << 16};
-    ::fixy::BumpArena slot_arena{1 << 16};
+    ::fixy::BumpArena dag_arena{1 << 16};
     RegionNode* region = nullptr;
     MemoryPlan* plan = nullptr;
 
     void build(uint32_t n_ops, const SchemaHash* schemas, const ShapeHash* shapes) {
-        auto* ops = arena.alloc_array<TraceEntry>(test.alloc, n_ops);
+        const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(test.alloc, n_ops, TraceEntry{});
         for (uint32_t i = 0; i < n_ops; i++) {
-            std::construct_at(&ops[i]);
-            ops[i].schema_hash = schemas[i];
-            ops[i].shape_hash = shapes[i];
-            ops[i].num_inputs = (i == 0) ? 0 : 1;
-            ops[i].num_outputs = 1;
+            TraceEntry& op = *ops.get(i).expect("i is below n_ops");
+            op.schema_hash = schemas[i];
+            op.shape_hash = shapes[i];
+            op.num_inputs = (i == 0) ? 0 : 1;
+            op.num_outputs = 1;
 
             if (i > 0) {
-                ops[i].input_metas = std::construct_at(arena.alloc_obj<TensorMeta>(test.alloc));
-                ops[i].input_metas[0].ndim = 1;
-                ops[i].input_metas[0].sizes[0] = tensor_dim(1024);
-                ops[i].input_metas[0].strides[0] = tensor_dim(1);
-                ops[i].input_metas[0].dtype = ScalarType::Float;
+                op.input_metas = std::construct_at(arena.alloc_obj<TensorMeta>(test.alloc));
+                op.input_metas[0].ndim = 1;
+                op.input_metas[0].sizes[0] = tensor_dim(1024);
+                op.input_metas[0].strides[0] = tensor_dim(1);
+                op.input_metas[0].dtype = ScalarType::Float;
             }
-            ops[i].output_metas = std::construct_at(arena.alloc_obj<TensorMeta>(test.alloc));
-            ops[i].output_metas[0].ndim = 1;
-            ops[i].output_metas[0].sizes[0] = tensor_dim(1024);
-            ops[i].output_metas[0].strides[0] = tensor_dim(1);
-            ops[i].output_metas[0].dtype = ScalarType::Float;
+            op.output_metas = std::construct_at(arena.alloc_obj<TensorMeta>(test.alloc));
+            op.output_metas[0].ndim = 1;
+            op.output_metas[0].sizes[0] = tensor_dim(1024);
+            op.output_metas[0].strides[0] = tensor_dim(1);
+            op.output_metas[0].dtype = ScalarType::Float;
 
-            ops[i].output_slot_ids = arena.alloc_array<SlotId>(test.alloc, 1);
-            ops[i].output_slot_ids[0] = SlotId{i};
+            op.output_slot_ids = arena.alloc_array<SlotId>(test.alloc, 1);
+            op.output_slot_ids[0] = SlotId{i};
             if (i > 0) {
-                ops[i].input_slot_ids = arena.alloc_array<SlotId>(test.alloc, 1);
-                ops[i].input_slot_ids[0] = SlotId{i - 1};
+                op.input_slot_ids = arena.alloc_array<SlotId>(test.alloc, 1);
+                op.input_slot_ids[0] = SlotId{i - 1};
             }
         }
 
-        region = make_region(test.alloc, arena, ops, n_ops);
+        region = make_region(test.alloc, dag_arena, ops);
 
-        const ::fixy::View<TensorSlot> slots = slot_arena.array<TensorSlot>(test.alloc, n_ops, TensorSlot{});
+        const ::fixy::View<TensorSlot> slots = dag_arena.array<TensorSlot>(test.alloc, n_ops, TensorSlot{});
         uint32_t i = 0;
         for (TensorSlot& slot : slots) {
             slot.offset_bytes = i * 4096;
@@ -563,18 +567,18 @@ int main() {
 
     reports.push_back([&] {
         auto test = ::foundation::effects::testing::test();
-        Arena arena{1 << 16};
+        ::fixy::BumpArena arena{1 << 16};
         constexpr uint32_t NR = 4;
         const RegionNode* regions[NR];
         for (uint32_t r = 0; r < NR; r++) {
-            auto* ops = arena.alloc_array<TraceEntry>(test.alloc, NUM_OPS);
+            const ::fixy::View<TraceEntry> ops = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
             for (uint32_t i = 0; i < NUM_OPS; i++) {
-                std::construct_at(&ops[i]);
-                ops[i].schema_hash = SCHEMA[i];
-                ops[i].shape_hash = ShapeHash{SHAPE[i].raw() + r * 0x100};
+                TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
+                op.schema_hash = SCHEMA[i];
+                op.shape_hash = ShapeHash{SHAPE[i].raw() + r * 0x100};
             }
-            auto* region = make_region(test.alloc, arena, ops, NUM_OPS);
-            auto* plan = std::construct_at(arena.alloc_obj<MemoryPlan>(test.alloc));
+            auto* region = make_region(test.alloc, arena, ops);
+            MemoryPlan* plan = &*arena.make<MemoryPlan>(test.alloc);
             plan->slots = ::fixy::View<TensorSlot>{};
             plan->pool_bytes = 0;
             check_single_cpu_plan(*plan);

@@ -32,11 +32,10 @@ using crucible::ShapeHash;
 // Of the entry fields a caller fills in, only schema_hash, shape_hash,
 // num_outputs, output_slot_ids, num_inputs and input_slot_ids reach the
 // replay engine.  The rest are left at their defaults on purpose.
-static void init_region(RegionNode* r, TraceEntry* ops, uint32_t n) {
+static void init_region(RegionNode* r, ::fixy::View<TraceEntry> ops) {
     ::new(r) RegionNode{};
     r->kind = TraceNodeKind::REGION;
     r->ops = ops;
-    r->num_ops = n;
 }
 
 // Every slot is internal and 256 bytes wide, so slot i sits at offset
@@ -71,18 +70,19 @@ static MemoryPlan make_simple_plan(::fixy::View<TensorSlot> slots) {
 static void test_linear_match() {
     SlotId out_slots[3][1] = {{SlotId{0}}, {SlotId{1}}, {SlotId{2}}};
 
-    TraceEntry ops[3]{};
+    ::foundation::core::FixedArray<TraceEntry, 3> ops{};
     for (uint32_t i = 0; i < 3; i++) {
-        ops[i].schema_hash = SchemaHash{100 + i};
-        ops[i].shape_hash = ShapeHash{200 + i};
-        ops[i].num_outputs = 1;
-        ops[i].output_slot_ids = out_slots[i];
-        ops[i].num_inputs = 0;
-        ops[i].input_slot_ids = nullptr;
+        TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
+        op.schema_hash = SchemaHash{100 + i};
+        op.shape_hash = ShapeHash{200 + i};
+        op.num_outputs = 1;
+        op.output_slot_ids = out_slots[i];
+        op.num_inputs = 0;
+        op.input_slot_ids = nullptr;
     }
 
     RegionNode region{};
-    init_region(&region, ops, 3);
+    init_region(&region, ops.view());
 
     ::foundation::core::FixedArray<TensorSlot, 3> slots{};
     auto plan = make_simple_plan(slots.view());
@@ -127,16 +127,17 @@ static void test_linear_match() {
 static void test_schema_divergence() {
     SlotId out_slot[1] = {SlotId{0}};
 
-    TraceEntry ops[3]{};
+    ::foundation::core::FixedArray<TraceEntry, 3> ops{};
     for (uint32_t i = 0; i < 3; i++) {
-        ops[i].schema_hash = SchemaHash{100 + i};
-        ops[i].shape_hash = ShapeHash{200};
-        ops[i].num_outputs = 1;
-        ops[i].output_slot_ids = out_slot;
+        TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
+        op.schema_hash = SchemaHash{100 + i};
+        op.shape_hash = ShapeHash{200};
+        op.num_outputs = 1;
+        op.output_slot_ids = out_slot;
     }
 
     RegionNode region{};
-    init_region(&region, ops, 3);
+    init_region(&region, ops.view());
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());
@@ -163,18 +164,18 @@ static void test_schema_divergence() {
 static void test_shape_divergence() {
     SlotId out_slot[1] = {SlotId{0}};
 
-    TraceEntry ops[2]{};
-    ops[0].schema_hash = SchemaHash{100};
-    ops[0].shape_hash = ShapeHash{200};
-    ops[0].num_outputs = 1;
-    ops[0].output_slot_ids = out_slot;
-    ops[1].schema_hash = SchemaHash{101};
-    ops[1].shape_hash = ShapeHash{201};
-    ops[1].num_outputs = 1;
-    ops[1].output_slot_ids = out_slot;
+    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{100};
+    ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{200};
+    ops.at(::foundation::core::index<0>()).num_outputs = 1;
+    ops.at(::foundation::core::index<0>()).output_slot_ids = out_slot;
+    ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{101};
+    ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{201};
+    ops.at(::foundation::core::index<1>()).num_outputs = 1;
+    ops.at(::foundation::core::index<1>()).output_slot_ids = out_slot;
 
     RegionNode region{};
-    init_region(&region, ops, 2);
+    init_region(&region, ops.view());
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());
@@ -197,18 +198,18 @@ static void test_shape_divergence() {
 static void test_reset() {
     SlotId out_slot[1] = {SlotId{0}};
 
-    TraceEntry ops[2]{};
-    ops[0].schema_hash = SchemaHash{10};
-    ops[0].shape_hash = ShapeHash{20};
-    ops[0].num_outputs = 1;
-    ops[0].output_slot_ids = out_slot;
-    ops[1].schema_hash = SchemaHash{11};
-    ops[1].shape_hash = ShapeHash{21};
-    ops[1].num_outputs = 1;
-    ops[1].output_slot_ids = out_slot;
+    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{10};
+    ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{20};
+    ops.at(::foundation::core::index<0>()).num_outputs = 1;
+    ops.at(::foundation::core::index<0>()).output_slot_ids = out_slot;
+    ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{11};
+    ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{21};
+    ops.at(::foundation::core::index<1>()).num_outputs = 1;
+    ops.at(::foundation::core::index<1>()).output_slot_ids = out_slot;
 
     RegionNode region{};
-    init_region(&region, ops, 2);
+    init_region(&region, ops.view());
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());
@@ -240,23 +241,23 @@ static void test_input_ptr() {
     SlotId out1[1] = {SlotId{1}};
     SlotId in1[1] = {SlotId{0}};
 
-    TraceEntry ops[2]{};
-    ops[0].schema_hash = SchemaHash{50};
-    ops[0].shape_hash = ShapeHash{60};
-    ops[0].num_outputs = 1;
-    ops[0].output_slot_ids = out0;
-    ops[0].num_inputs = 0;
-    ops[0].input_slot_ids = nullptr;
+    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{50};
+    ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{60};
+    ops.at(::foundation::core::index<0>()).num_outputs = 1;
+    ops.at(::foundation::core::index<0>()).output_slot_ids = out0;
+    ops.at(::foundation::core::index<0>()).num_inputs = 0;
+    ops.at(::foundation::core::index<0>()).input_slot_ids = nullptr;
 
-    ops[1].schema_hash = SchemaHash{51};
-    ops[1].shape_hash = ShapeHash{61};
-    ops[1].num_outputs = 1;
-    ops[1].output_slot_ids = out1;
-    ops[1].num_inputs = 1;
-    ops[1].input_slot_ids = in1;
+    ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{51};
+    ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{61};
+    ops.at(::foundation::core::index<1>()).num_outputs = 1;
+    ops.at(::foundation::core::index<1>()).output_slot_ids = out1;
+    ops.at(::foundation::core::index<1>()).num_inputs = 1;
+    ops.at(::foundation::core::index<1>()).input_slot_ids = in1;
 
     RegionNode region{};
-    init_region(&region, ops, 2);
+    init_region(&region, ops.view());
 
     ::foundation::core::FixedArray<TensorSlot, 2> slots{};
     auto plan = make_simple_plan(slots.view());
@@ -281,14 +282,14 @@ static void test_input_ptr() {
 static void test_invalid_slot() {
     SlotId out[2] = {SlotId{0}, SlotId::none()};
 
-    TraceEntry ops[1]{};
-    ops[0].schema_hash = SchemaHash{77};
-    ops[0].shape_hash = ShapeHash{88};
-    ops[0].num_outputs = 2;
-    ops[0].output_slot_ids = out;
+    ::foundation::core::FixedArray<TraceEntry, 1> ops{};
+    ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{77};
+    ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{88};
+    ops.at(::foundation::core::index<0>()).num_outputs = 2;
+    ops.at(::foundation::core::index<0>()).output_slot_ids = out;
 
     RegionNode region{};
-    init_region(&region, ops, 1);
+    init_region(&region, ops.view());
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());
@@ -309,16 +310,17 @@ static void test_invalid_slot() {
 static void test_current_entry() {
     SlotId out[1] = {SlotId{0}};
 
-    TraceEntry ops[3]{};
+    ::foundation::core::FixedArray<TraceEntry, 3> ops{};
     for (uint32_t i = 0; i < 3; i++) {
-        ops[i].schema_hash = SchemaHash{300 + i};
-        ops[i].shape_hash = ShapeHash{400 + i};
-        ops[i].num_outputs = 1;
-        ops[i].output_slot_ids = out;
+        TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
+        op.schema_hash = SchemaHash{300 + i};
+        op.shape_hash = ShapeHash{400 + i};
+        op.num_outputs = 1;
+        op.output_slot_ids = out;
     }
 
     RegionNode region{};
-    init_region(&region, ops, 3);
+    init_region(&region, ops.view());
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());
@@ -404,23 +406,23 @@ static void test_integration_with_pool() {
     SlotId op1_out[1] = {SlotId{1}};
     SlotId op1_in[1] = {SlotId{0}};
 
-    TraceEntry ops[2]{};
-    ops[0].schema_hash = SchemaHash{0xAAAA};
-    ops[0].shape_hash = ShapeHash{0xBBBB};
-    ops[0].num_outputs = 1;
-    ops[0].output_slot_ids = op0_out;
-    ops[0].num_inputs = 1;
-    ops[0].input_slot_ids = op0_in;
+    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{0xAAAA};
+    ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{0xBBBB};
+    ops.at(::foundation::core::index<0>()).num_outputs = 1;
+    ops.at(::foundation::core::index<0>()).output_slot_ids = op0_out;
+    ops.at(::foundation::core::index<0>()).num_inputs = 1;
+    ops.at(::foundation::core::index<0>()).input_slot_ids = op0_in;
 
-    ops[1].schema_hash = SchemaHash{0xCCCC};
-    ops[1].shape_hash = ShapeHash{0xDDDD};
-    ops[1].num_outputs = 1;
-    ops[1].output_slot_ids = op1_out;
-    ops[1].num_inputs = 1;
-    ops[1].input_slot_ids = op1_in;
+    ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{0xCCCC};
+    ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{0xDDDD};
+    ops.at(::foundation::core::index<1>()).num_outputs = 1;
+    ops.at(::foundation::core::index<1>()).output_slot_ids = op1_out;
+    ops.at(::foundation::core::index<1>()).num_inputs = 1;
+    ops.at(::foundation::core::index<1>()).input_slot_ids = op1_in;
 
     RegionNode region{};
-    init_region(&region, ops, 2);
+    init_region(&region, ops.view());
 
     ReplayEngine engine;
     engine.init(region, ReplayEngine::PoolBorrow{pool});

@@ -488,8 +488,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
                           .published = {},
                           .left_generation = NOT_LEFT};
     RegionNode& region = memory.node[0];
-    init_region_node(region, memory.parts.ops.data(), static_cast<uint32_t>(memory.parts.ops.size()),
-                     memory.parts.content_hash);
+    init_region_node(region, memory.parts.ops.view(), memory.parts.content_hash);
     const uint32_t num_slots = static_cast<uint32_t>(memory.parts.slots.size());
     if (num_slots > 0) {
         memory.plan = ::foundation::AlignedBuffer<MemoryPlan>::allocate_value_initialized(1);

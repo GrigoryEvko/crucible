@@ -1,3 +1,4 @@
+#include <crucible/Arena.h>
 #include <crucible/Serialize.h>
 #include <foundation/effects/Effect.h>
 #include "test_assert.h"
@@ -47,54 +48,56 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
 [[gnu::cold]] int main() {
     auto test = ::foundation::effects::testing::test();
     crucible::Arena arena(1 << 16);
+    ::fixy::BumpArena dag_arena{1 << 16};
 
     constexpr uint32_t NUM_OPS = 3;
     // A storage of more than 4 GiB, which a size of 32 bits cannot hold.
     constexpr uint64_t kLargeStorageBytes = 98000000000ULL;
-    auto* ops = arena.alloc_array<crucible::TraceEntry>(test.alloc, NUM_OPS);
-    std::uninitialized_value_construct_n(ops, NUM_OPS);
+    const ::fixy::View<crucible::TraceEntry> ops =
+        dag_arena.array<crucible::TraceEntry>(test.alloc, NUM_OPS, crucible::TraceEntry{});
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
-        ops[i].schema_hash = crucible::SchemaHash{0xAA + i * 0x11};
-        ops[i].shape_hash = crucible::ShapeHash{0x100 + i};
-        ops[i].scope_hash = crucible::ScopeHash{0x200 + i};
-        ops[i].callsite_hash = crucible::CallsiteHash{0x300 + i};
-        ops[i].num_inputs = 2;
-        ops[i].num_outputs = 1;
-        ops[i].num_scalar_args = 1;
-        ops[i].grad_enabled = (i % 2 == 0);
+        crucible::TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
+        op.schema_hash = crucible::SchemaHash{0xAA + i * 0x11};
+        op.shape_hash = crucible::ShapeHash{0x100 + i};
+        op.scope_hash = crucible::ScopeHash{0x200 + i};
+        op.callsite_hash = crucible::CallsiteHash{0x300 + i};
+        op.num_inputs = 2;
+        op.num_outputs = 1;
+        op.num_scalar_args = 1;
+        op.grad_enabled = (i % 2 == 0);
         // Vary op_flags across ops to exercise bit-packing round-trip.
-        ops[i].inference_mode = (i == 0);
-        ops[i].is_mutable = (i == 1);
-        ops[i].training_phase = static_cast<crucible::TrainingPhase>(i % 4);
-        ops[i].torch_function = (i == 2);
+        op.inference_mode = (i == 0);
+        op.is_mutable = (i == 1);
+        op.training_phase = static_cast<crucible::TrainingPhase>(i % 4);
+        op.torch_function = (i == 2);
 
-        ops[i].input_metas = arena.alloc_array<crucible::TensorMeta>(test.alloc, 2);
-        ops[i].input_metas[0] = make_meta(4, 8);
-        ops[i].input_metas[1] = make_meta(4, 8);
-        ops[i].input_metas[0].storage_nbytes = kLargeStorageBytes;
+        op.input_metas = arena.alloc_array<crucible::TensorMeta>(test.alloc, 2);
+        op.input_metas[0] = make_meta(4, 8);
+        op.input_metas[1] = make_meta(4, 8);
+        op.input_metas[0].storage_nbytes = kLargeStorageBytes;
 
-        ops[i].output_metas = arena.alloc_array<crucible::TensorMeta>(test.alloc, 1);
-        ops[i].output_metas[0] = make_meta(4, 8);
+        op.output_metas = arena.alloc_array<crucible::TensorMeta>(test.alloc, 1);
+        op.output_metas[0] = make_meta(4, 8);
 
-        ops[i].scalar_args = arena.alloc_array<int64_t>(test.alloc, 1);
-        ops[i].scalar_args[0] = static_cast<int64_t>(i * 42);
+        op.scalar_args = arena.alloc_array<int64_t>(test.alloc, 1);
+        op.scalar_args[0] = static_cast<int64_t>(i * 42);
 
-        ops[i].input_trace_indices = arena.alloc_array<crucible::OpIndex>(test.alloc, 2);
-        ops[i].input_trace_indices[0] = (i > 0) ? crucible::OpIndex{i - 1} : crucible::OpIndex{};
-        ops[i].input_trace_indices[1] = crucible::OpIndex{};
+        op.input_trace_indices = arena.alloc_array<crucible::OpIndex>(test.alloc, 2);
+        op.input_trace_indices[0] = (i > 0) ? crucible::OpIndex{i - 1} : crucible::OpIndex{};
+        op.input_trace_indices[1] = crucible::OpIndex{};
 
-        ops[i].input_slot_ids = arena.alloc_array<crucible::SlotId>(test.alloc, 2);
-        ops[i].input_slot_ids[0] = (i > 0) ? crucible::SlotId{(i - 1) * 10} : crucible::SlotId{};
-        ops[i].input_slot_ids[1] = crucible::SlotId{};
+        op.input_slot_ids = arena.alloc_array<crucible::SlotId>(test.alloc, 2);
+        op.input_slot_ids[0] = (i > 0) ? crucible::SlotId{(i - 1) * 10} : crucible::SlotId{};
+        op.input_slot_ids[1] = crucible::SlotId{};
 
-        ops[i].output_slot_ids = arena.alloc_array<crucible::SlotId>(test.alloc, 1);
-        ops[i].output_slot_ids[0] = crucible::SlotId{i * 10};
+        op.output_slot_ids = arena.alloc_array<crucible::SlotId>(test.alloc, 1);
+        op.output_slot_ids[0] = crucible::SlotId{i * 10};
     }
 
-    auto* region = crucible::make_region(test.alloc, arena, ops, NUM_OPS);
+    auto* region = crucible::make_region(test.alloc, dag_arena, ops);
     assert(region != nullptr);
-    assert(region->num_ops == NUM_OPS);
+    assert(region->num_ops() == NUM_OPS);
 
     const crucible::ContentHash original_content_hash = region->content_hash;
     const crucible::MerkleHash original_merkle_hash = region->merkle_hash;
@@ -111,60 +114,62 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
 
     assert(loaded->content_hash == original_content_hash);
     assert(loaded->merkle_hash == original_merkle_hash);
-    assert(loaded->num_ops == NUM_OPS);
+    assert(loaded->num_ops() == NUM_OPS);
     assert(loaded->kind == crucible::TraceNodeKind::REGION);
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
-        assert(loaded->ops[i].schema_hash == ops[i].schema_hash);
-        assert(loaded->ops[i].shape_hash == ops[i].shape_hash);
-        assert(loaded->ops[i].scope_hash == ops[i].scope_hash);
-        assert(loaded->ops[i].num_inputs == ops[i].num_inputs);
-        assert(loaded->ops[i].num_outputs == ops[i].num_outputs);
-        assert(loaded->ops[i].num_scalar_args == ops[i].num_scalar_args);
+        const crucible::TraceEntry& loaded_op = loaded->op_at(i);
+        const crucible::TraceEntry& source_op = *ops.get(i).expect("i is below NUM_OPS");
+        assert(loaded_op.schema_hash == source_op.schema_hash);
+        assert(loaded_op.shape_hash == source_op.shape_hash);
+        assert(loaded_op.scope_hash == source_op.scope_hash);
+        assert(loaded_op.num_inputs == source_op.num_inputs);
+        assert(loaded_op.num_outputs == source_op.num_outputs);
+        assert(loaded_op.num_scalar_args == source_op.num_scalar_args);
 
         // These five fields share one packed byte on the wire.
-        assert(loaded->ops[i].grad_enabled == ops[i].grad_enabled);
-        assert(loaded->ops[i].inference_mode == ops[i].inference_mode);
-        assert(loaded->ops[i].is_mutable == ops[i].is_mutable);
-        assert(loaded->ops[i].training_phase == ops[i].training_phase);
-        assert(loaded->ops[i].torch_function == ops[i].torch_function);
+        assert(loaded_op.grad_enabled == source_op.grad_enabled);
+        assert(loaded_op.inference_mode == source_op.inference_mode);
+        assert(loaded_op.is_mutable == source_op.is_mutable);
+        assert(loaded_op.training_phase == source_op.training_phase);
+        assert(loaded_op.torch_function == source_op.torch_function);
 
-        for (uint16_t j = 0; j < ops[i].num_inputs; j++) {
-            assert(crucible::raw_data_ptr(loaded->ops[i].input_metas[j]) == nullptr
+        for (uint16_t j = 0; j < source_op.num_inputs; j++) {
+            assert(crucible::raw_data_ptr(loaded_op.input_metas[j]) == nullptr
                    && "data_ptr must be null after deserialization");
-            assert(crucible::raw_grad_fn_hash(ops[i].input_metas[j]) != 0
+            assert(crucible::raw_grad_fn_hash(source_op.input_metas[j]) != 0
                    && "test fixture must exercise non-zero Family-B input");
-            assert(crucible::raw_grad_fn_hash(loaded->ops[i].input_metas[j]) == 0
+            assert(crucible::raw_grad_fn_hash(loaded_op.input_metas[j]) == 0
                    && "grad_fn_hash must be zero after deserialization");
-            assert(loaded->ops[i].input_metas[j].ndim == ops[i].input_metas[j].ndim);
-            assert(loaded->ops[i].input_metas[j].dtype == ops[i].input_metas[j].dtype);
-            assert(crucible::raw_tensor_dim(loaded->ops[i].input_metas[j].sizes[0])
-                   == crucible::raw_tensor_dim(ops[i].input_metas[j].sizes[0]));
-            assert(crucible::raw_tensor_dim(loaded->ops[i].input_metas[j].sizes[1])
-                   == crucible::raw_tensor_dim(ops[i].input_metas[j].sizes[1]));
-            assert(crucible::raw_tensor_dim(loaded->ops[i].input_metas[j].strides[0])
-                   == crucible::raw_tensor_dim(ops[i].input_metas[j].strides[0]));
-            assert(crucible::raw_tensor_dim(loaded->ops[i].input_metas[j].strides[1])
-                   == crucible::raw_tensor_dim(ops[i].input_metas[j].strides[1]));
+            assert(loaded_op.input_metas[j].ndim == source_op.input_metas[j].ndim);
+            assert(loaded_op.input_metas[j].dtype == source_op.input_metas[j].dtype);
+            assert(crucible::raw_tensor_dim(loaded_op.input_metas[j].sizes[0])
+                   == crucible::raw_tensor_dim(source_op.input_metas[j].sizes[0]));
+            assert(crucible::raw_tensor_dim(loaded_op.input_metas[j].sizes[1])
+                   == crucible::raw_tensor_dim(source_op.input_metas[j].sizes[1]));
+            assert(crucible::raw_tensor_dim(loaded_op.input_metas[j].strides[0])
+                   == crucible::raw_tensor_dim(source_op.input_metas[j].strides[0]));
+            assert(crucible::raw_tensor_dim(loaded_op.input_metas[j].strides[1])
+                   == crucible::raw_tensor_dim(source_op.input_metas[j].strides[1]));
         }
-        for (uint16_t j = 0; j < ops[i].num_outputs; j++) {
-            assert(crucible::raw_data_ptr(loaded->ops[i].output_metas[j]) == nullptr);
-            assert(crucible::raw_grad_fn_hash(ops[i].output_metas[j]) != 0);
-            assert(crucible::raw_grad_fn_hash(loaded->ops[i].output_metas[j]) == 0);
+        for (uint16_t j = 0; j < source_op.num_outputs; j++) {
+            assert(crucible::raw_data_ptr(loaded_op.output_metas[j]) == nullptr);
+            assert(crucible::raw_grad_fn_hash(source_op.output_metas[j]) != 0);
+            assert(crucible::raw_grad_fn_hash(loaded_op.output_metas[j]) == 0);
         }
 
-        assert(loaded->ops[i].input_metas[0].storage_nbytes == kLargeStorageBytes
+        assert(loaded_op.input_metas[0].storage_nbytes == kLargeStorageBytes
                && "a storage size above 4 GiB must keep each of its 64 bits");
 
-        assert(loaded->ops[i].scalar_args[0] == ops[i].scalar_args[0]);
+        assert(loaded_op.scalar_args[0] == source_op.scalar_args[0]);
 
-        assert(loaded->ops[i].input_trace_indices[0] == ops[i].input_trace_indices[0]);
-        assert(loaded->ops[i].input_slot_ids[0] == ops[i].input_slot_ids[0]);
-        assert(loaded->ops[i].input_slot_ids[1] == ops[i].input_slot_ids[1]);
-        assert(loaded->ops[i].output_slot_ids[0] == ops[i].output_slot_ids[0]);
+        assert(loaded_op.input_trace_indices[0] == source_op.input_trace_indices[0]);
+        assert(loaded_op.input_slot_ids[0] == source_op.input_slot_ids[0]);
+        assert(loaded_op.input_slot_ids[1] == source_op.input_slot_ids[1]);
+        assert(loaded_op.output_slot_ids[0] == source_op.output_slot_ids[0]);
     }
 
-    const crucible::ContentHash recomputed = crucible::compute_content_hash(std::span{loaded->ops, loaded->num_ops});
+    const crucible::ContentHash recomputed = crucible::compute_content_hash(loaded->ops);
     assert(recomputed == original_content_hash);
 
     // Catches an uninitialised byte reaching the wire, which the

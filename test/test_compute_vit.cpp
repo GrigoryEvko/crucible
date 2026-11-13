@@ -190,20 +190,20 @@ int main() {
         {.schema = H_SOFTMAX, .shape = S_SOFTMAX, .in = op14_in, .n_in = 1, .out = op14_out, .n_out = 1},
     };
 
-    TraceEntry ops[N_OPS]{};
+    ::foundation::core::FixedArray<TraceEntry, N_OPS> ops{};
     for (uint32_t i = 0; i < N_OPS; i++) {
-        ops[i].schema_hash = defs[i].schema;
-        ops[i].shape_hash = defs[i].shape;
-        ops[i].num_inputs = defs[i].n_in;
-        ops[i].num_outputs = defs[i].n_out;
-        ops[i].input_slot_ids = defs[i].in;
-        ops[i].output_slot_ids = defs[i].out;
+        TraceEntry& op = *ops.get(i).expect("i is below N_OPS");
+        op.schema_hash = defs[i].schema;
+        op.shape_hash = defs[i].shape;
+        op.num_inputs = defs[i].n_in;
+        op.num_outputs = defs[i].n_out;
+        op.input_slot_ids = defs[i].in;
+        op.output_slot_ids = defs[i].out;
     }
 
     RegionNode region{};
     region.kind = TraceNodeKind::REGION;
-    region.ops = ops;
-    region.num_ops = N_OPS;
+    region.ops = ops.view();
     region.plan = plan;
 
     CrucibleContext ctx;

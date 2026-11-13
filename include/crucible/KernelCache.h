@@ -541,18 +541,18 @@ private:
 // So this is the one parameter on this signature that cannot be defaulted.
 // It has no caller today -- this whole function does not -- and a default
 // would hand the first one a wrong-kernel path it never had to think about.
-[[nodiscard]] inline BranchNode* add_branch(::foundation::effects::Alloc a, Arena& arena, KernelCache& kernel_cache,
-                                            TraceNode* divergence_point, TraceEntry* new_ops, uint32_t new_n,
-                                            int64_t old_guard_value, int64_t new_guard_value, Guard guard,
-                                            TraceNode* existing_suffix, const NumericalRecipe* recipe) {
+[[nodiscard]] inline BranchNode* add_branch(::foundation::effects::Alloc a, ::fixy::BumpArena& arena,
+                                            KernelCache& kernel_cache, TraceNode* divergence_point,
+                                            ::fixy::View<TraceEntry> new_ops, int64_t old_guard_value,
+                                            int64_t new_guard_value, Guard guard, TraceNode* existing_suffix,
+                                            const NumericalRecipe* recipe) {
     CRUCIBLE_PRE(divergence_point != nullptr);
     CRUCIBLE_PRE(old_guard_value != new_guard_value);
     CRUCIBLE_PRE(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash));
     CRUCIBLE_PRE(recipe == nullptr || !recipe->hash.is_sentinel());
-    auto* new_region =
-        (recipe == nullptr) ? make_region(a, arena, new_ops, new_n) : make_region(a, arena, new_ops, new_n, recipe);
+    auto* new_region = (recipe == nullptr) ? make_region(a, arena, new_ops) : make_region(a, arena, new_ops, recipe);
 
-    TraceNode* merge = find_merge_point(std::span{new_ops, new_n}, existing_suffix, recipe);
+    TraceNode* merge = find_merge_point(new_ops, existing_suffix, recipe);
 
     new_region->next = merge;
 
@@ -568,28 +568,25 @@ private:
         new_region->compiled.publish(cached_kernel);
     }
 
-    auto* branch = arena.alloc_obj<BranchNode>(a);
-    ::new(branch) BranchNode{};
+    BranchNode* branch = &*arena.make<BranchNode>(a);
     branch->kind = TraceNodeKind::BRANCH;
     branch->guard = guard;
-    branch->num_arms = 2;
-    branch->arms = arena.alloc_array<BranchNode::Arm>(a, 2);
     // Arms go in sorted by value: replay binary-searches them.
-    if (old_guard_value <= new_guard_value) {
-        branch->arms[0] = {.value = old_guard_value, .target = divergence_point};
-        branch->arms[1] = {.value = new_guard_value, .target = new_region};
-    } else {
-        branch->arms[0] = {.value = new_guard_value, .target = new_region};
-        branch->arms[1] = {.value = old_guard_value, .target = divergence_point};
-    }
+    const BranchNode::Arm old_arm{.value = old_guard_value, .target = divergence_point};
+    const BranchNode::Arm new_arm{.value = new_guard_value, .target = new_region};
+    const bool is_old_first = old_guard_value <= new_guard_value;
+    branch->arms = arena.array<BranchNode::Arm>(a, 2, old_arm);
+    BranchNode::Arm& first_arm = *branch->arms.get(0).expect("a branch of two arms holds arm 0");
+    BranchNode::Arm& second_arm = *branch->arms.get(1).expect("a branch of two arms holds arm 1");
+    first_arm = is_old_first ? old_arm : new_arm;
+    second_arm = is_old_first ? new_arm : old_arm;
     branch->next = merge;
 
     recompute_merkle(branch);
 
     CRUCIBLE_POST(branch, branch != nullptr);
     CRUCIBLE_POST(branch, branch->kind == TraceNodeKind::BRANCH);
-    CRUCIBLE_POST(branch, branch->num_arms == 2u);
-    CRUCIBLE_POST(branch, branch->arms != nullptr);
+    CRUCIBLE_POST(branch, branch->num_arms() == 2u);
     return branch;
 }
 

@@ -328,8 +328,7 @@ void hex16_(uint64_t value, char (&out)[16]) noexcept {
     if (region.plan) {
         sz += 64 + region.plan->num_slots() * sizeof(TensorSlot);
     }
-    for (uint32_t i = 0; i < region.num_ops; i++) {
-        const TraceEntry& te = region.ops[i];
+    for (const TraceEntry& te : region.ops) {
         const size_t n_in = te.num_inputs;
         const size_t n_out = te.num_outputs;
         const size_t n_sca = te.num_scalar_args;

@@ -7,7 +7,6 @@
 
 #include "../harness.h"
 
-#include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
 
@@ -18,16 +17,15 @@ namespace crucible::fuzz::boundary {
 
 // The image of a branch whose arms hold the given values, in that order.
 [[nodiscard]] inline std::vector<std::uint8_t> branch_image(std::span<const std::int64_t> values) {
-    Arena arena;
+    ::fixy::BumpArena arena{};
     const auto alloc = test_alloc();
     const auto arms = static_cast<std::uint32_t>(values.size());
-    auto* branch = ::new(arena.alloc_obj<BranchNode>(alloc)) BranchNode{};
+    BranchNode* branch = &*arena.make<BranchNode>(alloc);
     branch->kind = TraceNodeKind::BRANCH;
     branch->merkle_hash = MerkleHash{0x5eed0000u + arms};
-    branch->num_arms = arms;
-    branch->arms = arms == 0 ? nullptr : arena.alloc_array<BranchNode::Arm>(alloc, arms);
+    branch->arms = arena.array<BranchNode::Arm>(alloc, arms, BranchNode::Arm{});
     for (std::uint32_t i = 0; i < arms; ++i)
-        branch->arms[i] = BranchNode::Arm{.value = values[i]};
+        *branch->arms.get(i).expect("i is below the count of arms") = BranchNode::Arm{.value = values[i]};
     std::vector<std::uint8_t> image(4096);
     image.resize(serialize_branch(branch, std::span<std::uint8_t>{image}));
     return image;
@@ -56,12 +54,11 @@ inline void run_branch(std::span<const std::uint8_t> bytes) {
     constexpr std::size_t kMaxInputBytes = std::size_t{1} << 20;
     if (bytes.size() > kMaxInputBytes) bytes = bytes.first(kMaxInputBytes);
 
-    Arena arena;
+    ::fixy::BumpArena arena{};
     const auto alloc = test_alloc();
     BranchNode* branch = deserialize_branch(alloc, bytes, arena, nullptr);
     if (branch == nullptr) return;
-    CRUCIBLE_FUZZ_CLAIM("branch", branch->num_arms <= CDAG_MAX_BRANCH_ARMS);
-    CRUCIBLE_FUZZ_CLAIM("branch", branch->num_arms == 0 || branch->arms != nullptr);
+    CRUCIBLE_FUZZ_CLAIM("branch", branch->num_arms() <= CDAG_MAX_BRANCH_ARMS);
     CRUCIBLE_FUZZ_CLAIM("branch", branch->are_arms_sorted_by_value());
 
     std::vector<std::uint8_t> image(bytes.size() + 256);
@@ -69,10 +66,12 @@ inline void run_branch(std::span<const std::uint8_t> bytes) {
     CRUCIBLE_FUZZ_CLAIM("branch", written > 0);
     BranchNode* again = deserialize_branch(alloc, std::span<const std::uint8_t>{image.data(), written}, arena, nullptr);
     CRUCIBLE_FUZZ_CLAIM("branch", again != nullptr);
-    CRUCIBLE_FUZZ_CLAIM("branch", again->num_arms == branch->num_arms);
+    CRUCIBLE_FUZZ_CLAIM("branch", again->num_arms() == branch->num_arms());
     CRUCIBLE_FUZZ_CLAIM("branch", again->merkle_hash == branch->merkle_hash);
-    for (std::uint32_t i = 0; i < branch->num_arms; ++i) {
-        CRUCIBLE_FUZZ_CLAIM("branch", again->arms[i].value == branch->arms[i].value);
+    for (std::uint32_t i = 0; i < branch->num_arms(); ++i) {
+        const BranchNode::Arm& arm = *branch->arms.get(i).expect("i is below the count of arms");
+        const BranchNode::Arm& again_arm = *again->arms.get(i).expect("the two branches hold one count of arms");
+        CRUCIBLE_FUZZ_CLAIM("branch", again_arm.value == arm.value);
     }
 }
 

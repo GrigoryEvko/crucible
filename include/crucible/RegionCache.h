@@ -74,8 +74,9 @@ struct RegionCache {
             const ::fixy::WeakRef<const RegionNode> candidate = regions_[head_.index_back(i)];
             if (!candidate.has_value() || candidate == exclude) continue;
             if (candidate->plan == nullptr) continue;
-            if (pos >= candidate->num_ops) continue;
-            if (candidate->ops[pos].schema_hash == schema && candidate->ops[pos].shape_hash == shape) return candidate;
+            if (pos >= candidate->num_ops()) continue;
+            if (candidate->op_at(pos).schema_hash == schema && candidate->op_at(pos).shape_hash == shape)
+                return candidate;
         }
         return {};
     }

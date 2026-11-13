@@ -66,12 +66,11 @@ static void on_region_ready(void* ctx, eff::Bg const&, crucible::BackgroundThrea
     // equal the hash the canonical span fold produces over the same ops.
     // This is the assertion that binds the production producer to the
     // canonical one on a region that really came off the pipeline.
-    const crucible::ContentHash canonical =
-        crucible::compute_content_hash(std::span<const crucible::TraceEntry>{region->ops, region->num_ops});
+    const crucible::ContentHash canonical = crucible::compute_content_hash(region->ops);
     if (canonical != region->content_hash) (void)gate->hash_mismatches.fetch_add_acq_rel(1u);
 
     const bool after_reset = gate->reset_observed.load_acquire();
-    const uint64_t family = region->ops[0].schema_hash.raw() & Gate::FAMILY_MASK;
+    const uint64_t family = region->op_at(0).schema_hash.raw() & Gate::FAMILY_MASK;
 
     (void)gate->published.fetch_add_acq_rel(1u);
     if (after_reset) {

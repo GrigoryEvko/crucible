@@ -1,7 +1,6 @@
 // Copyright (c) Grigory Evko
 // Licensed under the Apache License, Version 2.0
 
-#include <crucible/Arena.h>
 #include <crucible/KernelCache.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/NumericalRecipe.h>
@@ -16,7 +15,6 @@
 
 namespace {
 
-using crucible::Arena;
 using crucible::CompiledKernel;
 using crucible::ContentHash;
 using crucible::KernelCache;
@@ -40,10 +38,10 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
 // The schema hashes are fixed so a comparison across pools or processes
 // stays stable.
 constexpr uint32_t kOpsCount = 3;
-inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
-    buf[0].schema_hash = SchemaHash{0xAA01};
-    buf[1].schema_hash = SchemaHash{0xBB02};
-    buf[2].schema_hash = SchemaHash{0xCC03};
+inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) noexcept {
+    buf.at(::fixy::index<0>()).schema_hash = SchemaHash{0xAA01};
+    buf.at(::fixy::index<1>()).schema_hash = SchemaHash{0xBB02};
+    buf.at(::fixy::index<2>()).schema_hash = SchemaHash{0xCC03};
 }
 
 }  // namespace
@@ -77,7 +75,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     // on a lookup pinned to the other, which produces wrong bits and
     // breaks replay determinism.
     {
-        Arena arena{};
+        BumpArena arena{};
         BumpArena recipe_arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(recipe_arena), init_cap()};
         RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
@@ -87,12 +85,12 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         RecipeRegistry::RecipeRef const rec_strict =
             registry.by_name(names::kF32Strict).expect("the starter is present");
 
-        TraceEntry ops[kOpsCount]{};
+        ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops{};
         mk_ops(ops);
 
-        auto* region_tc = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, &*rec_tc);
-        auto* region_strict = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, &*rec_strict);
-        auto* region_none = crucible::make_region(alloc_cap(), arena, ops, kOpsCount);  // no-recipe overload
+        auto* region_tc = crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_tc);
+        auto* region_strict = crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_strict);
+        auto* region_none = crucible::make_region(alloc_cap(), arena, ops.view());  // no-recipe overload
 
         // Three recipe pins, counting the unpinned baseline, give three
         // hashes.
@@ -112,7 +110,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     // assumed.  Recovery runs by hash, which returns the canonical
     // interned pointer in the current process.
     {
-        Arena arena{};
+        BumpArena arena{};
         BumpArena recipe_arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(recipe_arena), init_cap()};
         RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
@@ -122,9 +120,9 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         const NumericalRecipe* recipe_orig =
             &*registry.by_name(names::kBf16F32AccumTc).expect("the starter is present");
 
-        TraceEntry ops[kOpsCount]{};
+        ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops{};
         mk_ops(ops);
-        auto* region_orig = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, recipe_orig);
+        auto* region_orig = crucible::make_region(alloc_cap(), arena, ops.view(), recipe_orig);
         const ContentHash persisted_content_hash = region_orig->content_hash;
 
         // What is persisted per region is the pair of the region's content
@@ -142,7 +140,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
 
         // Rebuilding the region with the recovered recipe reproduces the
         // original content hash, which is the end-to-end claim.
-        auto* region_recovered = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, &*recovered);
+        auto* region_recovered = crucible::make_region(alloc_cap(), arena, ops.view(), &*recovered);
         assert(region_recovered->content_hash == persisted_content_hash);
     }
 
@@ -153,21 +151,21 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     // both rest on that.
     {
         // The original process.
-        Arena arena_a{};
+        BumpArena arena_a{};
         BumpArena recipe_arena_a{};
         RecipePool pool_a{::fixy::mint_borrowed_ref(recipe_arena_a), init_cap()};
         RecipeRegistry reg_a{::fixy::mint_borrowed_ref(pool_a), alloc_cap()};
         RecipeRegistry::RecipeRef const rec_a =
             reg_a.by_name(names::kFp8E4m3F32AccumMxOrd).expect("the starter is present");
 
-        TraceEntry ops_a[kOpsCount]{};
+        ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops_a{};
         mk_ops(ops_a);
-        auto* region_a = crucible::make_region(alloc_cap(), arena_a, ops_a, kOpsCount, &*rec_a);
+        auto* region_a = crucible::make_region(alloc_cap(), arena_a, ops_a.view(), &*rec_a);
         const ContentHash hash_in_proc_a = region_a->content_hash;
 
         // A second process, with its own pool, registry and arena, and so
         // with different addresses throughout.
-        Arena arena_b{};
+        BumpArena arena_b{};
         BumpArena recipe_arena_b{};
         RecipePool pool_b{::fixy::mint_borrowed_ref(recipe_arena_b), init_cap()};
         RecipeRegistry reg_b{::fixy::mint_borrowed_ref(pool_b), alloc_cap()};
@@ -178,9 +176,9 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         // One hash, which is the identity that crosses them.
         assert(rec_a->hash == rec_b->hash);
 
-        TraceEntry ops_b[kOpsCount]{};
+        ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops_b{};
         mk_ops(ops_b);
-        auto* region_b = crucible::make_region(alloc_cap(), arena_b, ops_b, kOpsCount, &*rec_b);
+        auto* region_b = crucible::make_region(alloc_cap(), arena_b, ops_b.view(), &*rec_b);
         const ContentHash hash_in_proc_b = region_b->content_hash;
 
         // The content hashes agree although no pointer is shared, which is
@@ -193,7 +191,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     // and no diagnostic.  The content hash is recipe-aware, so the cache
     // key is too, and the two recipes cannot share a slot.
     {
-        Arena arena{};
+        BumpArena arena{};
         BumpArena recipe_arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(recipe_arena), init_cap()};
         RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
@@ -205,12 +203,12 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         RecipeRegistry::RecipeRef const rec_bf16_tc =
             registry.by_name(names::kBf16F32AccumTc).expect("the starter is present");
 
-        TraceEntry ops[kOpsCount]{};
+        ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops{};
         mk_ops(ops);
 
-        auto* region_tc = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, &*rec_tc);
-        auto* region_ord = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, &*rec_ord);
-        auto* region_bf16_tc = crucible::make_region(alloc_cap(), arena, ops, kOpsCount, &*rec_bf16_tc);
+        auto* region_tc = crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_tc);
+        auto* region_ord = crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_ord);
+        auto* region_bf16_tc = crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_bf16_tc);
 
         // Three hashes, so three cache slots.
         assert(region_tc->content_hash != region_ord->content_hash);
@@ -259,7 +257,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
     // under it.  The content hash refuses a recipe hash of 0, so the hash of
     // the interned recipe must not be 0.
     {
-        Arena arena{};
+        BumpArena arena{};
         BumpArena recipe_arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(recipe_arena), init_cap()};
         const NumericalRecipe zero_bytes{
@@ -273,12 +271,12 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
             .flags = {},
             .hash = {},
         };
-        TraceEntry entry{};
-        entry.schema_hash = SchemaHash{0xAA01};
+        ::foundation::core::FixedArray<TraceEntry, 1> entry{};
+        entry.at(::fixy::index<0>()).schema_hash = SchemaHash{0xAA01};
 
         const ContentHash with_recipe =
-            crucible::make_region(alloc_cap(), arena, &entry, 1, pool.intern(alloc_cap(), zero_bytes))->content_hash;
-        const ContentHash with_no_recipe = crucible::make_region(alloc_cap(), arena, &entry, 1)->content_hash;
+            crucible::make_region(alloc_cap(), arena, entry.view(), pool.intern(alloc_cap(), zero_bytes))->content_hash;
+        const ContentHash with_no_recipe = crucible::make_region(alloc_cap(), arena, entry.view())->content_hash;
         assert(with_recipe != with_no_recipe);
         assert(with_recipe.raw() != 0);
     }

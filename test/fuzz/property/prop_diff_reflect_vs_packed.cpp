@@ -35,9 +35,10 @@
 
 namespace {
 
-// The packed feedback_signature that the reflected version replaced, kept verbatim.
-uint64_t feedback_signature_packed(std::span<const crucible::FeedbackEdge> edges) noexcept {
-    if (edges.empty()) return 0;
+// The packed feedback_signature that the reflected version replaced, with the
+// same steps.
+uint64_t feedback_signature_packed(::fixy::View<const crucible::FeedbackEdge> edges) noexcept {
+    if (edges.size() == 0) return 0;
     constexpr uint64_t kSeed = 0x6665656462616B73ULL;
     uint64_t h = kSeed;
     for (const auto& e : edges) {
@@ -61,8 +62,8 @@ int main(int argc, char** argv) {
             // Generate two random edge spans (1..16 edges each).
             // Distinctness is the metric we cross-check.
             struct Pair {
-                std::array<FeedbackEdge, 16> a_edges;
-                std::array<FeedbackEdge, 16> b_edges;
+                ::foundation::core::FixedArray<FeedbackEdge, 16> a_edges;
+                ::foundation::core::FixedArray<FeedbackEdge, 16> b_edges;
                 uint8_t a_count;
                 uint8_t b_count;
             };
@@ -70,14 +71,16 @@ int main(int argc, char** argv) {
             p.a_count = static_cast<uint8_t>(rng.next_below(16) + 1);
             p.b_count = static_cast<uint8_t>(rng.next_below(16) + 1);
             for (uint8_t i = 0; i < p.a_count; ++i)
-                p.a_edges[i] = random_feedback_edge(rng);
+                *p.a_edges.get(i).expect("the count is at most 16") = random_feedback_edge(rng);
             for (uint8_t i = 0; i < p.b_count; ++i)
-                p.b_edges[i] = random_feedback_edge(rng);
+                *p.b_edges.get(i).expect("the count is at most 16") = random_feedback_edge(rng);
             return p;
         },
         [](const auto& p) {
-            const std::span<const FeedbackEdge> a{p.a_edges.data(), p.a_count};
-            const std::span<const FeedbackEdge> b{p.b_edges.data(), p.b_count};
+            const ::fixy::View<const FeedbackEdge> a =
+                p.a_edges.view().window(0, p.a_count).expect("the count is at most 16");
+            const ::fixy::View<const FeedbackEdge> b =
+                p.b_edges.view().window(0, p.b_count).expect("the count is at most 16");
 
             const uint64_t a_refl = feedback_signature(a);
             const uint64_t a_packed = feedback_signature_packed(a);

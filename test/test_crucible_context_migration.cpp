@@ -78,20 +78,20 @@ MemoryPlan make_plan(::fixy::View<TensorSlot> slots) {
 
 // Two operations with the same hashes in each region, so the first one is
 // the shared prefix of a switch at position 1.
-void make_ops(TraceEntry* ops, SlotId* outputs) {
+void make_ops(::fixy::View<TraceEntry> ops, SlotId* outputs) {
     for (std::uint32_t index = 0; index < 2; index++) {
-        ops[index].schema_hash = SchemaHash{100 + index};
-        ops[index].shape_hash = ShapeHash{200 + index};
-        ops[index].num_outputs = 1;
-        ops[index].output_slot_ids = &outputs[index];
+        TraceEntry& op = *ops.get(index).expect("a test region holds two ops");
+        op.schema_hash = SchemaHash{100 + index};
+        op.shape_hash = ShapeHash{200 + index};
+        op.num_outputs = 1;
+        op.output_slot_ids = &outputs[index];
     }
 }
 
-void init_region(RegionNode* region, TraceEntry* ops, MemoryPlan* plan) {
+void init_region(RegionNode* region, ::fixy::View<TraceEntry> ops, MemoryPlan* plan) {
     ::new(region) RegionNode{};
     region->kind = TraceNodeKind::REGION;
     region->ops = ops;
-    region->num_ops = 2;
     region->plan = plan;
 }
 
@@ -105,19 +105,19 @@ void init_region(RegionNode* region, TraceEntry* ops, MemoryPlan* plan) {
 // writes slot new_slot.  Returns the result of the switch.
 bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
     SlotId old_outputs[2] = {SlotId{0}, SlotId{1}};
-    TraceEntry old_ops[2]{};
-    make_ops(old_ops, old_outputs);
+    ::foundation::core::FixedArray<TraceEntry, 2> old_ops{};
+    make_ops(old_ops.view(), old_outputs);
     MemoryPlan old_plan = make_plan(old_slots.view());
     RegionNode old_region{};
-    init_region(&old_region, old_ops, &old_plan);
+    init_region(&old_region, old_ops.view(), &old_plan);
 
     SlotId new_outputs[2] = {SlotId{new_slot}, SlotId{0}};
-    TraceEntry new_ops[2]{};
-    make_ops(new_ops, new_outputs);
+    ::foundation::core::FixedArray<TraceEntry, 2> new_ops{};
+    make_ops(new_ops.view(), new_outputs);
     MemoryPlan new_plan =
         make_plan(new_slots.view().window(0, new_count).expect("a test plan holds at most kWideSlots slots"));
     RegionNode new_region{};
-    init_region(&new_region, new_ops, &new_plan);
+    init_region(&new_region, new_ops.view(), &new_plan);
 
     CrucibleContext context;
     assert(context.activate(old_region));

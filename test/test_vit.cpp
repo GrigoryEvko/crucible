@@ -43,7 +43,7 @@ int main() {
     const auto* plan = region->plan;
 
     std::printf("── Region ──\n");
-    std::printf("   %u ops | pool %llu bytes\n", region->num_ops, static_cast<unsigned long long>(plan->pool_bytes));
+    std::printf("   %u ops | pool %llu bytes\n", region->num_ops(), static_cast<unsigned long long>(plan->pool_bytes));
     std::printf("   %u slots: %u external + %u internal\n", plan->num_slots(), plan->num_external,
                 plan->num_slots() - plan->num_external);
 
