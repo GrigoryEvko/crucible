@@ -139,7 +139,8 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     const double nspc = bench::Timer::ns_per_cycle();
     ::fixy::BumpArena scratch{arena_bytes};
-    Arena plan_scratch{arena_bytes};
+    // The planner takes the slots as a raw array, so their copy is here.
+    Arena slot_scratch{arena_bytes};
 
     // Warmup: 5 full pipeline runs to hit the cache.
     for (uint32_t w = 0; w < 5; w++) {
@@ -224,18 +225,21 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         // compute_memory_plan
         for (uint32_t iter = 0; iter < iters; iter++) {
-            ArenaEpoch plan_epoch = plan_scratch.open_epoch();
-            auto* s = plan_scratch.alloc_array<TensorSlot>(A, num_slots);
+            ArenaEpoch slot_epoch = slot_scratch.open_epoch();
+            auto* s = slot_scratch.alloc_array<TensorSlot>(A, num_slots);
             std::memcpy(s, saved_slots.data(), num_slots * sizeof(TensorSlot));
 
             MemoryPlan plan_storage{};
-            const uint64_t t0 = bench::rdtsc_start();
-            auto* plan = bg.compute_memory_plan(A, plan_storage, plan_scratch, s, num_slots);
-            const uint64_t t1 = bench::rdtsc_end();
+            const double ns = scratch.with_epoch([&]() noexcept {
+                const uint64_t t0 = bench::rdtsc_start();
+                auto* plan = bg.compute_memory_plan(A, plan_storage, scratch, s, num_slots);
+                const uint64_t t1 = bench::rdtsc_end();
 
-            bench::do_not_optimize(plan);
-            std::move(plan_epoch).end();
-            ns_memplan += static_cast<double>(t1 - t0) * nspc;
+                bench::do_not_optimize(plan);
+                return static_cast<double>(t1 - t0) * nspc;
+            });
+            std::move(slot_epoch).end();
+            ns_memplan += ns;
         }
 
         const double ns_other = total_ns - ns_csr - ns_memplan;

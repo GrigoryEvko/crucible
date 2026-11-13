@@ -17,7 +17,6 @@
 #include <type_traits>
 #include <vector>
 
-#include <crucible/Arena.h>
 #include <crucible/IterationDetector.h>
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
@@ -448,7 +447,7 @@ private:
 
     // The arena of the sweep of each memory plan.  Only the publish stage
     // uses it, and an epoch covers one publish.
-    Arena publish_scratch_{size_t{1} << 20};
+    ::fixy::BumpArena publish_scratch_{size_t{1} << 20};
 
     // The memory of each live region, in the slots of a fixed table.  Only
     // the publish stage reads and writes it.  The sweep after each publish
@@ -1101,10 +1100,9 @@ public:
     // sweep would index past its arrays.  The plan goes into plan_storage,
     // the arrays of the sweep go into scratch, and the result is the address
     // of plan_storage.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] MemoryPlan* compute_memory_plan(::foundation::effects::Alloc a,
-                                                                               MemoryPlan& plan_storage, Arena& scratch,
-                                                                               TensorSlot* slots, uint32_t num_slots)
-        CRUCIBLE_NO_THREAD_SAFETY;
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] MemoryPlan*
+    compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage, ::fixy::BumpArena& scratch,
+                        TensorSlot* slots, uint32_t num_slots) CRUCIBLE_NO_THREAD_SAFETY;
 };
 
 // The two sentinels of the owner mailbox.  Only their addresses matter, so

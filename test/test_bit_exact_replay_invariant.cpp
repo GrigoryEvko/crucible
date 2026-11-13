@@ -200,7 +200,8 @@ struct Built {
     TensorSlot slots[kNumSlots]{};
     build_slots(slots);
     crucible::MemoryPlan plan_storage{};
-    head->plan = bt.compute_memory_plan(ctx.alloc, plan_storage, arena, slots, kNumSlots);
+    ::fixy::BumpArena sweep_arena{size_t{1} << 16};
+    head->plan = bt.compute_memory_plan(ctx.alloc, plan_storage, sweep_arena, slots, kNumSlots);
     crucible::recompute_merkle(head);
 
     Built out;

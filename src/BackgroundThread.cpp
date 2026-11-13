@@ -330,10 +330,10 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     const uint32_t num_slots = static_cast<uint32_t>(memory.parts.slots.size());
     if (num_slots > 0) {
         memory.plan = ::foundation::AlignedBuffer<MemoryPlan>::allocate_value_initialized(1);
-        ArenaEpoch sweep = publish_scratch_.open_epoch();
-        region.plan =
-            compute_memory_plan(bg.alloc, memory.plan[0], publish_scratch_, memory.parts.slots.data(), num_slots);
-        std::move(sweep).end();
+        region.plan = publish_scratch_.with_epoch([&]() noexcept {
+            return compute_memory_plan(bg.alloc, memory.plan[0], publish_scratch_, memory.parts.slots.data(),
+                                       num_slots);
+        });
     }
 
     recompute_merkle(&region);
@@ -1106,7 +1106,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
 }
 
 MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage,
-                                                  Arena& scratch, TensorSlot* slots, uint32_t num_slots) {
+                                                  ::fixy::BumpArena& scratch, TensorSlot* slots, uint32_t num_slots) {
     static constexpr uint32_t ALIGNMENT = 256;
 
     auto* plan = &plan_storage;
@@ -1154,40 +1154,41 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
     // is [0, max_op].  The checks above keep max_op in [1, UINT32_MAX - 2],
     // so num_ops and num_ops + 1 are positive and do not wrap.
     uint32_t num_ops = max_op + 1;
-    auto* birth_count = scratch.alloc_array_nonzero<uint32_t>(a, num_ops);
-    auto* death_count = scratch.alloc_array_nonzero<uint32_t>(a, num_ops);
-    std::memset(birth_count, 0, num_ops * sizeof(uint32_t));
-    std::memset(death_count, 0, num_ops * sizeof(uint32_t));
+    const ::fixy::View<uint32_t> birth_count = scratch.array<uint32_t>(a, num_ops, 0);
+    const ::fixy::View<uint32_t> death_count = scratch.array<uint32_t>(a, num_ops, 0);
 
     for (uint32_t s = 0; s < num_slots; s++) {
         if (slots[s].is_external) continue;
-        birth_count[slots[s].birth_op.raw()]++;
+        ++detail::csr_element_(birth_count, slots[s].birth_op.raw());
         uint32_t free_at = slots[s].death_op.raw() + 1;
-        if (free_at < num_ops) death_count[free_at]++;
+        if (free_at < num_ops) ++detail::csr_element_(death_count, free_at);
     }
 
-    auto* birth_off = scratch.alloc_array_nonzero<uint32_t>(a, num_ops + 1);
-    auto* death_off = scratch.alloc_array_nonzero<uint32_t>(a, num_ops + 1);
-    birth_off[0] = 0;
-    death_off[0] = 0;
+    // The first offset of each array is the zero of the fill.
+    const ::fixy::View<uint32_t> birth_off = scratch.array<uint32_t>(a, num_ops + 1, 0);
+    const ::fixy::View<uint32_t> death_off = scratch.array<uint32_t>(a, num_ops + 1, 0);
     for (uint32_t o = 0; o < num_ops; o++) {
-        birth_off[o + 1] = birth_off[o] + birth_count[o];
-        death_off[o + 1] = death_off[o] + death_count[o];
+        detail::csr_element_(birth_off, o + 1) =
+            detail::csr_element_(birth_off, o) + detail::csr_element_(birth_count, o);
+        detail::csr_element_(death_off, o + 1) =
+            detail::csr_element_(death_off, o) + detail::csr_element_(death_count, o);
     }
 
-    auto* born_slots = scratch.alloc_array_nonzero<uint32_t>(a, num_internal);
-    auto* dead_slots = scratch.alloc_array_nonzero<uint32_t>(a, num_internal);
+    const ::fixy::View<uint32_t> born_slots = scratch.array<uint32_t>(a, num_internal, 0);
+    const ::fixy::View<uint32_t> dead_slots = scratch.array<uint32_t>(a, num_internal, 0);
     // Cursors start as copies of the offsets and advance during scatter.
-    auto* birth_cur = scratch.alloc_array_nonzero<uint32_t>(a, num_ops);
-    auto* death_cur = scratch.alloc_array_nonzero<uint32_t>(a, num_ops);
-    std::memcpy(birth_cur, birth_off, num_ops * sizeof(uint32_t));
-    std::memcpy(death_cur, death_off, num_ops * sizeof(uint32_t));
+    const ::fixy::View<uint32_t> birth_cur = scratch.array<uint32_t>(a, num_ops, 0);
+    const ::fixy::View<uint32_t> death_cur = scratch.array<uint32_t>(a, num_ops, 0);
+    ::fixy::copy(birth_cur, birth_off.window(0, num_ops).expect("the offsets hold one entry for each op"))
+        .expect("the cursors hold one entry for each op");
+    ::fixy::copy(death_cur, death_off.window(0, num_ops).expect("the offsets hold one entry for each op"))
+        .expect("the cursors hold one entry for each op");
 
     for (uint32_t s = 0; s < num_slots; s++) {
         if (slots[s].is_external) continue;
-        born_slots[birth_cur[slots[s].birth_op.raw()]++] = s;
+        detail::csr_element_(born_slots, detail::csr_element_(birth_cur, slots[s].birth_op.raw())++) = s;
         uint32_t free_at = slots[s].death_op.raw() + 1;
-        if (free_at < num_ops) dead_slots[death_cur[free_at]++] = s;
+        if (free_at < num_ops) detail::csr_element_(dead_slots, detail::csr_element_(death_cur, free_at)++) = s;
     }
 
     // The free list keeps sizes and offsets in separate arrays so the
@@ -1237,8 +1238,10 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
     constexpr uint32_t MAX_PER_OP = 64;
 
     for (uint32_t op = 0; op < num_ops; op++) {
-        uint32_t dying_begin = death_off[op], dying_end = death_off[op + 1];
-        uint32_t born_begin = birth_off[op], born_end = birth_off[op + 1];
+        uint32_t dying_begin = detail::csr_element_(death_off, op);
+        uint32_t dying_end = detail::csr_element_(death_off, op + 1);
+        uint32_t born_begin = detail::csr_element_(birth_off, op);
+        uint32_t born_end = detail::csr_element_(birth_off, op + 1);
         uint32_t num_dying = dying_end - dying_begin;
         uint32_t num_born = born_end - born_begin;
 
@@ -1252,14 +1255,14 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
         if (dying_count_capped > 0 && born_count_capped > 0) {
             ::fixy::FixedArray<DyingInfo, MAX_PER_OP> dying_slot_info{};
             for (uint32_t i = 0; i < dying_count_capped; i++) {
-                uint32_t dying_slot_id = dead_slots[dying_begin + i];
+                uint32_t dying_slot_id = detail::csr_element_(dead_slots, dying_begin + i);
                 dying_slot_info[i] = {.aligned_size =
                                           (slots[dying_slot_id].nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1),
                                       .offset = slots[dying_slot_id].offset_bytes};
             }
 
             for (uint32_t born_idx = 0; born_idx < born_count_capped; born_idx++) {
-                uint32_t born_slot_id = born_slots[born_begin + born_idx];
+                uint32_t born_slot_id = detail::csr_element_(born_slots, born_begin + born_idx);
                 uint64_t born_aligned_size = (slots[born_slot_id].nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1);
 
                 uint32_t best_dying_match_idx = UINT32_MAX;
@@ -1285,14 +1288,14 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
 
         for (uint32_t i = 0; i < num_dying; i++) {
             if (i < dying_count_capped && dying_consumed[i]) continue;
-            uint32_t dying_slot_id = dead_slots[dying_begin + i];
+            uint32_t dying_slot_id = detail::csr_element_(dead_slots, dying_begin + i);
             free_block(slots[dying_slot_id].offset_bytes,
                        (slots[dying_slot_id].nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1));
         }
 
         for (uint32_t i = 0; i < num_born; i++) {
             if (i < born_count_capped && born_assigned[i]) continue;
-            uint32_t born_slot_id = born_slots[born_begin + i];
+            uint32_t born_slot_id = detail::csr_element_(born_slots, born_begin + i);
             alloc_slot(born_slot_id, (slots[born_slot_id].nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1));
         }
     }

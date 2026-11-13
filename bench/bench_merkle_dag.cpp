@@ -259,14 +259,19 @@ int main(int argc, char* argv[]) {
             CRUCIBLE_BENCH_CHECK(slots[s].offset_bytes == 0);
         }
         BackgroundThread bg;
+        // The planner takes the slots as a raw array, so their copy is in
+        // scratch.  The arrays of the sweep are in sweep_scratch.
         Arena scratch{1 << 20};
+        ::fixy::BumpArena sweep_scratch{1 << 20};
         return bench::run("compute_memory_plan (300 slots)", [&] {
             ArenaEpoch epoch = scratch.open_epoch();
             auto* s = scratch.alloc_array<TensorSlot>(test.alloc, NUM_SLOTS);
             std::memcpy(s, slots, NUM_SLOTS * sizeof(TensorSlot));
             MemoryPlan plan_storage{};
-            auto* plan = bg.compute_memory_plan(test.alloc, plan_storage, scratch, s, NUM_SLOTS);
-            bench::do_not_optimize(plan);
+            sweep_scratch.with_epoch([&]() noexcept {
+                auto* plan = bg.compute_memory_plan(test.alloc, plan_storage, sweep_scratch, s, NUM_SLOTS);
+                bench::do_not_optimize(plan);
+            });
             std::move(epoch).end();
         });
     }());
