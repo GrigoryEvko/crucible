@@ -65,9 +65,9 @@ observe::RuntimeMetrics make_metrics(double base) noexcept {
     m.ntk_alpha = base + 6.0;
     m.ntk_alpha_drift = base + 7.0;
     m.delta_g_count = 3;
-    m.delta_g[0] = base + 8.0;
-    m.delta_g[1] = base + 9.0;
-    m.delta_g[2] = base + 10.0;
+    m.delta_g.at(::fixy::index<0>()) = base + 8.0;
+    m.delta_g.at(::fixy::index<1>()) = base + 9.0;
+    m.delta_g.at(::fixy::index<2>()) = base + 10.0;
     return m;
 }
 
@@ -90,21 +90,20 @@ void test_writer_publish_keeper_and_canopy_readers() {
 
     auto writer = observe::mint_metrics_writer(channel, metrics_writer_root());
 
-    auto keeper = observe::mint_keeper_metrics_reader(channel);
-    auto canopy = observe::mint_canopy_metrics_reader(channel);
-    CRUCIBLE_REQUIRE(keeper.has_value());
-    CRUCIBLE_REQUIRE(canopy.has_value());
+    auto keeper = observe::mint_keeper_metrics_reader(channel).expect("a fresh channel has a free reader share");
+    auto canopy = observe::mint_canopy_metrics_reader(channel).expect("a fresh channel has a free reader share");
 
     auto sample = observe::metrics_sample_at(make_metrics(100.0), 7);
     writer.publish(sample);
 
-    auto keeper_sample = keeper->load();
-    auto canopy_sample = canopy->load();
+    auto keeper_sample = keeper.load();
+    auto canopy_sample = canopy.load();
+    CRUCIBLE_REQUIRE(keeper.try_load().is_some());
 
     CRUCIBLE_REQUIRE(near(keeper_sample.peek().meb_lambda_max, 101.0));
     CRUCIBLE_REQUIRE(near(canopy_sample.peek().ntk_alpha_drift, 107.0));
     CRUCIBLE_REQUIRE(keeper_sample.peek().delta_g_count == 3);
-    CRUCIBLE_REQUIRE(near(canopy_sample.peek().delta_g[2], 110.0));
+    CRUCIBLE_REQUIRE(near(canopy_sample.peek().delta_g.at(::fixy::index<2>()), 110.0));
     CRUCIBLE_REQUIRE(keeper_sample.staleness() == sample.staleness());
     CRUCIBLE_REQUIRE(channel.outstanding_readers() == 2);
 }
@@ -112,14 +111,15 @@ void test_writer_publish_keeper_and_canopy_readers() {
 void test_exclusive_drain_waits_for_readers() {
     Channel channel{metrics_reader_root(), observe::fresh_metrics_sample(make_metrics(0.0))};
 
-    auto reader = observe::mint_keeper_metrics_reader(channel);
-    CRUCIBLE_REQUIRE(reader.has_value());
-
     bool drained = false;
-    CRUCIBLE_REQUIRE(!channel.with_drained_access([&] { drained = true; }));
-    CRUCIBLE_REQUIRE(!drained);
+    {
+        auto reader = observe::mint_keeper_metrics_reader(channel);
+        CRUCIBLE_REQUIRE(reader.is_some());
+        CRUCIBLE_REQUIRE(!channel.with_drained_access([&] { drained = true; }));
+        CRUCIBLE_REQUIRE(!drained);
+    }
 
-    reader.reset();
+    // The end of the scope gives the share of the reader back.
     CRUCIBLE_REQUIRE(channel.with_drained_access([&] { drained = true; }));
     CRUCIBLE_REQUIRE(drained);
 }

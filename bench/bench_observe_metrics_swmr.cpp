@@ -25,15 +25,16 @@ using Channel = observe::RuntimeMetricsChannel<::foundation::brand::brand_of_t<d
 int main() {
     observe::RuntimeMetrics metrics{};
     metrics.delta_g_count = 1;
-    metrics.delta_g[0] = 1.0;
+    metrics.delta_g.at(::fixy::index<0>()) = 1.0;
 
     Channel channel{metrics_reader_root(), observe::fresh_metrics_sample(metrics)};
     auto writer = observe::mint_metrics_writer(channel, metrics_writer_root());
-    auto reader = observe::mint_keeper_metrics_reader(channel);
-    if (!reader) {
+    auto minted = observe::mint_keeper_metrics_reader(channel);
+    if (minted.is_none()) {
         std::fprintf(stderr, "failed to mint runtime metrics reader\n");
         return EXIT_FAILURE;
     }
+    auto reader = std::move(minted).expect("the reader share is present");
 
     auto sample = observe::fresh_metrics_sample(metrics);
     std::uint64_t seq = 0;
@@ -45,7 +46,7 @@ int main() {
             bench::do_not_optimize(seq);
         });
 
-    auto observed = reader->load();
+    auto observed = reader.load();
 
     bench::emit_reports_text(std::span{&report, 1});
     std::printf("\nbench_observe_metrics_swmr:\n");

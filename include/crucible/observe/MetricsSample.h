@@ -9,8 +9,8 @@
 // ownership or leave the reader holding a borrow.
 
 #include <fixy/Stale.h>
+#include <foundation/core/Array.h>
 
-#include <array>
 #include <cstdint>
 
 namespace crucible::observe {
@@ -25,7 +25,7 @@ struct RuntimeMetrics {
     double ntk_alpha_drift = 0.0;
     std::uint32_t delta_g_count = 0;
     std::uint32_t reserved = 0;
-    std::array<double, 16> delta_g{};
+    ::foundation::core::FixedArray<double, 16> delta_g{};
 };
 
 using RuntimeMetricsSample = ::fixy::Stale<RuntimeMetrics>;
