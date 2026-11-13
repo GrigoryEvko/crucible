@@ -200,10 +200,9 @@ std::expected<TcpInfoSnapshot, TelemetryError> detail::harvest_socket_keyed(cntp
         return std::unexpected(TelemetryError::GetTcpInfoFailed);
     }
 
-    cntp::CcAlgorithm algorithm = cntp::CcAlgorithm::Custom;
-    if (auto selected = cntp::detail::query_cc_selection_for_socket_keyed(key, fd); selected.has_value()) {
-        algorithm = selected->algorithm;
-    }
+    cntp::CcAlgorithm const algorithm = cntp::detail::query_cc_selection_for_socket_keyed(key, fd).match(
+        [](cntp::CcSelection selected) noexcept { return selected.algorithm; },
+        [](cntp::CcError) noexcept { return cntp::CcAlgorithm::Custom; });
     CongestionSample state = decode_tcp_info(info, algorithm);
 
     tcp_cc_info cc_info{};

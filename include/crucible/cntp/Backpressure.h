@@ -1,12 +1,12 @@
 #pragma once
 
 #include <crucible/cntp/CongestionControl.h>
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <foundation/effects/Resources.h>
 
 #include <cstdint>
-#include <expected>
 #include <string_view>
 #include <type_traits>
 
@@ -81,9 +81,7 @@ private:
     constexpr ResourcePressure(::foundation::effects::ResourceKind kind, ResourcePressurePpm used_ppm) noexcept
         : kind_{kind}, used_ppm_{used_ppm} {}
 
-    template <::foundation::effects::ResourceKind Kind>
-        requires ::foundation::effects::IsResourceKind<Kind>
-    friend constexpr std::expected<ResourcePressure, BackpressureError> mint_resource_pressure(std::uint32_t) noexcept;
+    friend class ResourceDoor;
 
     ::foundation::effects::ResourceKind kind_ = ::foundation::effects::ResourceKind::NicQ;
     ResourcePressurePpm used_ppm_ = ::fixy::mint_refined<resource_pressure_ppm>(std::uint32_t{0});
@@ -101,12 +99,44 @@ private:
     constexpr ResourceLimit(::foundation::effects::ResourceKind kind, ResourceLimitPpm reject_at_or_above_ppm) noexcept
         : kind_{kind}, reject_at_or_above_ppm_{reject_at_or_above_ppm} {}
 
-    template <::foundation::effects::ResourceKind Kind>
-        requires ::foundation::effects::IsResourceKind<Kind>
-    friend constexpr std::expected<ResourceLimit, BackpressureError> mint_resource_limit(std::uint32_t) noexcept;
+    friend class ResourceDoor;
 
     ::foundation::effects::ResourceKind kind_ = ::foundation::effects::ResourceKind::NicQ;
     ResourceLimitPpm reject_at_or_above_ppm_ = ::fixy::mint_refined<resource_limit_ppm>(std::uint32_t{950000});
+};
+
+template <::foundation::effects::ResourceKind Kind>
+    requires ::foundation::effects::IsResourceKind<Kind>
+[[nodiscard]] constexpr ::fixy::Result<ResourcePressure, BackpressureError>
+mint_resource_pressure(std::uint32_t used_ppm) noexcept;
+
+template <::foundation::effects::ResourceKind Kind>
+    requires ::foundation::effects::IsResourceKind<Kind>
+[[nodiscard]] constexpr ::fixy::Result<ResourceLimit, BackpressureError>
+mint_resource_limit(std::uint32_t reject_at_or_above_ppm) noexcept;
+
+// The constructor of a pressure and of a limit.  Its members are private,
+// and the two mints are its friends.  The friends name the Result of a
+// pressure or a limit, so the door stands after the two classes are
+// complete.
+class ResourceDoor {
+    [[nodiscard]] static constexpr ResourcePressure pressure(::foundation::effects::ResourceKind kind,
+                                                             ResourcePressurePpm used_ppm) noexcept {
+        return ResourcePressure{kind, used_ppm};
+    }
+
+    [[nodiscard]] static constexpr ResourceLimit limit(::foundation::effects::ResourceKind kind,
+                                                       ResourceLimitPpm reject_at_or_above_ppm) noexcept {
+        return ResourceLimit{kind, reject_at_or_above_ppm};
+    }
+
+    template <::foundation::effects::ResourceKind Kind>
+        requires ::foundation::effects::IsResourceKind<Kind>
+    friend constexpr ::fixy::Result<ResourcePressure, BackpressureError> mint_resource_pressure(std::uint32_t) noexcept;
+
+    template <::foundation::effects::ResourceKind Kind>
+        requires ::foundation::effects::IsResourceKind<Kind>
+    friend constexpr ::fixy::Result<ResourceLimit, BackpressureError> mint_resource_limit(std::uint32_t) noexcept;
 };
 
 struct AdmissionDecision {
@@ -126,56 +156,54 @@ namespace detail::backpressure {
 // The one admission shape: refuse a value the predicate rejects with the
 // error the caller names, and mint the refined value for one it admits.
 template <auto Pred, typename T>
-[[nodiscard]] constexpr std::expected<::fixy::Refined<Pred, T>, BackpressureError>
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Refined<Pred, T>, BackpressureError>
 admit(T value, BackpressureError refusal) noexcept {
     if (!Pred(value)) {
-        return std::unexpected(refusal);
+        return ::fixy::err(refusal);
     }
     return ::fixy::mint_refined<Pred>(value);
 }
 
 }  // namespace detail::backpressure
 
-[[nodiscard]] constexpr std::expected<PositiveBackpressureBytes, BackpressureError>
+[[nodiscard]] constexpr ::fixy::Result<PositiveBackpressureBytes, BackpressureError>
 admit_backpressure_credit(std::uint32_t bytes) noexcept {
     return detail::backpressure::admit<::fixy::positive>(bytes, BackpressureError::InvalidCreditBytes);
 }
 
-[[nodiscard]] constexpr std::expected<PositiveConnectionLimit, BackpressureError>
+[[nodiscard]] constexpr ::fixy::Result<PositiveConnectionLimit, BackpressureError>
 admit_connection_limit(std::uint16_t limit) noexcept {
     return detail::backpressure::admit<::fixy::positive>(limit, BackpressureError::InvalidConnectionLimit);
 }
 
-[[nodiscard]] constexpr std::expected<ResourcePressurePpm, BackpressureError>
+[[nodiscard]] constexpr ::fixy::Result<ResourcePressurePpm, BackpressureError>
 admit_resource_pressure_ppm(std::uint32_t ppm) noexcept {
     return detail::backpressure::admit<resource_pressure_ppm>(ppm, BackpressureError::InvalidResourcePressure);
 }
 
-[[nodiscard]] constexpr std::expected<ResourceLimitPpm, BackpressureError>
+[[nodiscard]] constexpr ::fixy::Result<ResourceLimitPpm, BackpressureError>
 admit_resource_limit_ppm(std::uint32_t ppm) noexcept {
     return detail::backpressure::admit<resource_limit_ppm>(ppm, BackpressureError::InvalidResourceLimit);
 }
 
 template <::foundation::effects::ResourceKind Kind>
     requires ::foundation::effects::IsResourceKind<Kind>
-[[nodiscard]] constexpr std::expected<ResourcePressure, BackpressureError>
+[[nodiscard]] constexpr ::fixy::Result<ResourcePressure, BackpressureError>
 mint_resource_pressure(std::uint32_t used_ppm) noexcept {
-    auto admitted = admit_resource_pressure_ppm(used_ppm);
-    if (!admitted.has_value()) {
-        return std::unexpected(admitted.error());
+    if (!resource_pressure_ppm(used_ppm)) {
+        return ::fixy::err(BackpressureError::InvalidResourcePressure);
     }
-    return ResourcePressure{Kind, *admitted};
+    return ResourceDoor::pressure(Kind, ::fixy::mint_refined<resource_pressure_ppm>(used_ppm));
 }
 
 template <::foundation::effects::ResourceKind Kind>
     requires ::foundation::effects::IsResourceKind<Kind>
-[[nodiscard]] constexpr std::expected<ResourceLimit, BackpressureError>
+[[nodiscard]] constexpr ::fixy::Result<ResourceLimit, BackpressureError>
 mint_resource_limit(std::uint32_t reject_at_or_above_ppm) noexcept {
-    auto admitted = admit_resource_limit_ppm(reject_at_or_above_ppm);
-    if (!admitted.has_value()) {
-        return std::unexpected(admitted.error());
+    if (!resource_limit_ppm(reject_at_or_above_ppm)) {
+        return ::fixy::err(BackpressureError::InvalidResourceLimit);
     }
-    return ResourceLimit{Kind, *admitted};
+    return ResourceDoor::limit(Kind, ::fixy::mint_refined<resource_limit_ppm>(reject_at_or_above_ppm));
 }
 
 // The one door from a raw decision to one that may cross a runtime

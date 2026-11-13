@@ -10,7 +10,7 @@ int main() {
     ::fixy::InitLoadCtx load{::foundation::effects::testing::init()};
     auto controller = crucible::cntp::mint_incast_controller<1>(load);
     auto config = crucible::cntp::mint_incast_config(crucible::cntp::IncastConfig{});
-    auto result = controller.configure_socket(load, 3, *config);
+    auto result = controller.configure_socket(load, 3, std::move(config).expect("a default config is valid"));
     (void)result;
     return 0;
 }

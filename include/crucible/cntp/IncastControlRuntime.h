@@ -1,6 +1,7 @@
 #pragma once
 
 #include <crucible/cntp/IncastControl.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <fixy/os/Fs.h>
@@ -8,11 +9,8 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
-#include <limits>
 #include <type_traits>
 
 namespace crucible::cntp {
@@ -41,42 +39,38 @@ class IncastController : public ::foundation::Pinned<IncastController<MaxFlows>>
         std::uint64_t sequence = 0;
     };
 
-    std::array<FlowSlot, MaxFlows> flows_{};
+    using FlowIndex = ::fixy::Index<MaxFlows>;
 
-    [[nodiscard]] constexpr FlowSlot* find(cntp::SocketFd fd) noexcept {
-        for (auto& flow : flows_) {
+    ::foundation::core::FixedArray<FlowSlot, MaxFlows> flows_{};
+
+    // The slot of the flow of fd, or no value when no flow of fd started.
+    [[nodiscard]] constexpr ::fixy::Option<FlowIndex> find(cntp::SocketFd fd) const noexcept {
+        for (FlowIndex index : flows_.indices()) {
+            FlowSlot const& flow = flows_.at(index);
             if (flow.occupied && flow.fd.value() == fd.value()) {
-                return &flow;
+                return ::fixy::some(index);
             }
         }
-        return nullptr;
+        return ::fixy::none;
     }
 
-    [[nodiscard]] constexpr FlowSlot const* find(cntp::SocketFd fd) const noexcept {
-        for (auto const& flow : flows_) {
-            if (flow.occupied && flow.fd.value() == fd.value()) {
-                return &flow;
-            }
-        }
-        return nullptr;
-    }
-
-    [[nodiscard]] constexpr std::expected<FlowSlot*, cntp::IncastError>
+    [[nodiscard]] constexpr ::fixy::Result<FlowIndex, cntp::IncastError>
     find_or_insert(cntp::SocketFd fd, cntp::PositiveCreditBytes initial_credit) noexcept {
-        if (FlowSlot* existing = find(fd); existing != nullptr) {
-            existing->credit_bytes = initial_credit.value();
-            return existing;
+        for (FlowIndex index : find(fd)) {
+            flows_.at(index).credit_bytes = initial_credit.value();
+            return index;
         }
-        for (auto& flow : flows_) {
+        for (FlowIndex index : flows_.indices()) {
+            FlowSlot& flow = flows_.at(index);
             if (!flow.occupied) {
                 flow.occupied = true;
                 flow.fd = fd;
                 flow.credit_bytes = initial_credit.value();
                 flow.sequence = 0;
-                return &flow;
+                return index;
             }
         }
-        return std::unexpected(cntp::IncastError::TooManyFlows);
+        return ::fixy::err(cntp::IncastError::TooManyFlows);
     }
 
 public:
@@ -86,46 +80,35 @@ public:
     // must carry what apply_incast_config demands as well.
     template <class Ctx>
         requires CtxFitsIncastConfigure<Ctx> && ::fixy::fs::CtxFitsFileMint<Ctx, cntp::ProcFileReadMode>
-    [[nodiscard]] std::expected<void, cntp::IncastError> configure_socket(Ctx const& ctx, cntp::SocketFd fd,
-                                                                          cntp::DeclaredIncastConfig config) noexcept {
-        auto applied = cntp::apply_incast_config(ctx, fd, config);
-        if (!applied.has_value()) {
-            return std::unexpected(applied.error());
-        }
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, cntp::IncastError>
+    configure_socket(Ctx const& ctx, cntp::SocketFd fd, cntp::DeclaredIncastConfig config) noexcept {
+        CRUCIBLE_TRY(_, cntp::apply_incast_config(ctx, fd, config));
         if (config.value().enable_credit_pacing) {
-            auto flow = find_or_insert(fd, config.value().initial_credit_bytes);
-            if (!flow.has_value()) {
-                return std::unexpected(flow.error());
-            }
+            CRUCIBLE_TRY(_, find_or_insert(fd, config.value().initial_credit_bytes));
         }
-        return {};
+        return ::fixy::Unit{};
     }
 
     template <class Ctx>
         requires CtxFitsIncastConfigure<Ctx>
-    [[nodiscard]] constexpr std::expected<void, cntp::IncastError>
+    [[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, cntp::IncastError>
     start_credit_flow(Ctx const&, cntp::SocketFd fd, cntp::PositiveCreditBytes initial_credit) noexcept {
-        auto flow = find_or_insert(fd, initial_credit);
-        if (!flow.has_value()) {
-            return std::unexpected(flow.error());
-        }
-        return {};
+        CRUCIBLE_TRY(_, find_or_insert(fd, initial_credit));
+        return ::fixy::Unit{};
     }
 
     template <class Ctx>
         requires CtxFitsIncastCredit<Ctx>
-    [[nodiscard]] constexpr std::expected<IncastCreditGrant, cntp::IncastError>
+    [[nodiscard]] constexpr ::fixy::Result<IncastCreditGrant, cntp::IncastError>
     issue_credit(Ctx const&, cntp::SocketFd fd, cntp::PositiveCreditBytes bytes, std::uint64_t sequence) noexcept {
-        FlowSlot* flow = find(fd);
-        if (flow == nullptr) {
-            return std::unexpected(cntp::IncastError::FlowNotStarted);
-        }
-        const std::uint32_t room = std::numeric_limits<std::uint32_t>::max() - flow->credit_bytes;
+        CRUCIBLE_TRY(index, find(fd).ok_or(cntp::IncastError::FlowNotStarted));
+        FlowSlot& flow = flows_.at(index);
+        const std::uint32_t room = ::fixy::max_of<std::uint32_t> - flow.credit_bytes;
         if (bytes.value() > room) {
-            return std::unexpected(cntp::IncastError::CreditOverflow);
+            return ::fixy::err(cntp::IncastError::CreditOverflow);
         }
-        flow->credit_bytes += bytes.value();
-        flow->sequence = sequence;
+        flow.credit_bytes += bytes.value();
+        flow.sequence = sequence;
         return IncastCreditGrant{
             .fd = fd,
             .bytes = bytes,
@@ -139,30 +122,25 @@ public:
     // blocks on a channel wrapped around this accessor, never in here.
     template <class Ctx>
         requires CtxFitsIncastCredit<Ctx>
-    [[nodiscard]] constexpr std::expected<cntp::PositiveCreditBytes, cntp::IncastError>
+    [[nodiscard]] constexpr ::fixy::Result<cntp::PositiveCreditBytes, cntp::IncastError>
     try_consume_credit(Ctx const&, cntp::SocketFd fd) noexcept {
-        FlowSlot* flow = find(fd);
-        if (flow == nullptr) {
-            return std::unexpected(cntp::IncastError::FlowNotStarted);
+        CRUCIBLE_TRY(index, find(fd).ok_or(cntp::IncastError::FlowNotStarted));
+        FlowSlot& flow = flows_.at(index);
+        if (flow.credit_bytes == 0) {
+            return ::fixy::err(cntp::IncastError::CreditUnavailable);
         }
-        if (flow->credit_bytes == 0) {
-            return std::unexpected(cntp::IncastError::CreditUnavailable);
-        }
-        const std::uint32_t granted = flow->credit_bytes;
-        flow->credit_bytes = 0;
+        const std::uint32_t granted = ::fixy::exchange(flow.credit_bytes, 0);
         return ::fixy::mint_refined<::fixy::positive>(granted);
     }
 
-    [[nodiscard]] constexpr std::expected<cntp::PositiveCreditBytes, cntp::IncastError>
+    [[nodiscard]] constexpr ::fixy::Result<cntp::PositiveCreditBytes, cntp::IncastError>
     outstanding_credit(cntp::SocketFd fd) const noexcept {
-        FlowSlot const* flow = find(fd);
-        if (flow == nullptr) {
-            return std::unexpected(cntp::IncastError::FlowNotStarted);
+        CRUCIBLE_TRY(index, find(fd).ok_or(cntp::IncastError::FlowNotStarted));
+        FlowSlot const& flow = flows_.at(index);
+        if (flow.credit_bytes == 0) {
+            return ::fixy::err(cntp::IncastError::CreditUnavailable);
         }
-        if (flow->credit_bytes == 0) {
-            return std::unexpected(cntp::IncastError::CreditUnavailable);
-        }
-        return ::fixy::mint_refined<::fixy::positive>(flow->credit_bytes);
+        return ::fixy::mint_refined<::fixy::positive>(flow.credit_bytes);
     }
 };
 

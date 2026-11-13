@@ -14,7 +14,7 @@ int main() {
 
     ::fixy::BgDrainCtx drain{::foundation::effects::testing::bg()};
     auto fd = cntp::admit_socket_fd(0).value();
-    auto rate = cntp::admit_pacing_rate(1000000).value();
+    auto rate = cntp::admit_pacing_rate(1000000).expect("a positive rate");
     auto result = cntp::set_socket_pacing_rate(drain, fd, rate);
     (void)result;
     return 0;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fixy/Bits.h>
+#include <fixy/Core.h>
 #include <fixy/os/Path.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
@@ -81,28 +82,33 @@ public:
 
     [[nodiscard]] constexpr std::string_view view() const noexcept { return {bytes_.data(), size_}; }
 
-    [[nodiscard]] static constexpr std::expected<KernelCcName, CcError> from(std::string_view name) noexcept {
-        if (name.empty() || name.size() >= max_bytes) {
-            return std::unexpected(CcError::InvalidAlgorithmName);
-        }
-
-        KernelCcName out{};
-        for (std::size_t i = 0; i < name.size(); ++i) {
-            const char c = name[i];
-            const bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
-            if (!ok) {
-                return std::unexpected(CcError::InvalidAlgorithmName);
-            }
-            out.bytes_[i] = c;
-        }
-        out.size_ = static_cast<std::uint8_t>(name.size());
-        return out;
-    }
+    // A Result<KernelCcName, CcError>.  The type of a Result needs a complete
+    // name, so the definition stands after the class.
+    [[nodiscard]] static constexpr auto from(std::string_view name) noexcept;
 
 private:
     std::array<char, max_bytes> bytes_{};
     std::uint8_t size_ = 0;
 };
+
+constexpr auto KernelCcName::from(std::string_view name) noexcept {
+    using Admitted = ::fixy::Result<KernelCcName, CcError>;
+    if (name.empty() || name.size() >= max_bytes) {
+        return Admitted{::fixy::err(CcError::InvalidAlgorithmName)};
+    }
+
+    KernelCcName out{};
+    for (std::size_t i = 0; i < name.size(); ++i) {
+        const char c = name[i];
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+        if (!ok) {
+            return Admitted{::fixy::err(CcError::InvalidAlgorithmName)};
+        }
+        out.bytes_[i] = c;
+    }
+    out.size_ = static_cast<std::uint8_t>(name.size());
+    return Admitted{out};
+}
 
 struct CcSelection {
     CcAlgorithm algorithm = CcAlgorithm::Cubic;
@@ -124,7 +130,7 @@ concept CcCompatible = Algorithm != CcAlgorithm::Custom
 template <class Module>
 concept CustomCcModule = requires {
     { Module::congestion_control_name() } -> std::convertible_to<std::string_view>;
-} && requires { requires KernelCcName::from(Module::congestion_control_name()).has_value(); };
+} && requires { requires KernelCcName::from(Module::congestion_control_name()).is_ok(); };
 
 [[nodiscard]] constexpr std::expected<SocketFd, CcError> admit_socket_fd(int fd) noexcept {
     if (fd < 0) {
@@ -133,7 +139,7 @@ concept CustomCcModule = requires {
     return ::fixy::mint_refined<::fixy::non_negative>(fd);
 }
 
-[[nodiscard]] constexpr std::expected<KernelCcName, CcError> kernel_name_for(CcAlgorithm algorithm) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<KernelCcName, CcError> kernel_name_for(CcAlgorithm algorithm) noexcept {
     // The in-tree "bbr" module is BBRv1, so Bbr1 owns that literal name.
     // BBRv3 registers as "bbr3" and comes from an out-of-tree patchset.
     switch (algorithm) {
@@ -152,19 +158,18 @@ concept CustomCcModule = requires {
         case CcAlgorithm::Bbr1:
             return KernelCcName::from("bbr");
         case CcAlgorithm::Custom:
-            return std::unexpected(CcError::InvalidAlgorithmName);
+            return ::fixy::err(CcError::InvalidAlgorithmName);
         default:
-            return std::unexpected(CcError::UnknownAlgorithm);
+            return ::fixy::err(CcError::UnknownAlgorithm);
     }
 }
 
 template <CcAlgorithm Algorithm, LinkClass Link>
     requires CcCompatible<Algorithm, Link>
 [[nodiscard]] constexpr DeclaredCcChoice mint_cc_choice() noexcept {
-    auto name = kernel_name_for(Algorithm);
     return ::fixy::mint_tagged<::fixy::tags::source::CcAlgorithm>(CcSelection{
         .algorithm = Algorithm,
-        .kernel_name = name.value(),
+        .kernel_name = kernel_name_for(Algorithm).expect("each algorithm other than Custom has a kernel name"),
     });
 }
 
@@ -172,16 +177,17 @@ template <class Module, LinkClass Link>
     requires CustomCcModule<Module>
 [[nodiscard]] constexpr DeclaredCcChoice mint_custom_cc_choice() noexcept {
     static_cast<void>(Link);
-    auto name = KernelCcName::from(Module::congestion_control_name());
     return ::fixy::mint_tagged<::fixy::tags::source::CcAlgorithm>(CcSelection{
         .algorithm = CcAlgorithm::Custom,
-        .kernel_name = name.value(),
+        .kernel_name = KernelCcName::from(Module::congestion_control_name())
+                           .expect("the constraint CustomCcModule admits the name"),
     });
 }
 
-[[nodiscard]] std::expected<CcAlgorithm, CcError> algorithm_from_kernel_name(std::string_view name) noexcept;
+[[nodiscard]] ::fixy::Result<CcAlgorithm, CcError> algorithm_from_kernel_name(std::string_view name) noexcept;
 
-[[nodiscard]] std::expected<CcAvailability, CcError> parse_available_congestion_control(std::string_view text) noexcept;
+[[nodiscard]] ::fixy::Result<CcAvailability, CcError>
+parse_available_congestion_control(std::string_view text) noexcept;
 
 // The kernel lists its algorithms in a file under /proc.  The fs door
 // opens it, and that door counts an open and a read as IO and Block, so
@@ -203,21 +209,21 @@ inline constexpr std::size_t available_cc_capacity = 512;
 // through the same door, under the same context.
 template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::fs::CtxFitsFileMint<Ctx, ProcFileReadMode>
-[[nodiscard]] std::expected<CcAvailability, CcError> read_available_congestion_control(Ctx const& ctx) noexcept {
+[[nodiscard]] ::fixy::Result<CcAvailability, CcError> read_available_congestion_control(Ctx const& ctx) noexcept {
     auto path = ::fixy::sanitize_path(
         ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{detail::available_cc_path}));
     if (!path.has_value()) {
-        return std::unexpected(CcError::SysctlUnavailable);
+        return ::fixy::err(CcError::SysctlUnavailable);
     }
     auto opened = ::fixy::fs::mint_file<ProcFileReadMode>(ctx, std::move(*path));
     if (!opened.has_value()) {
-        return std::unexpected(CcError::SysctlUnavailable);
+        return ::fixy::err(CcError::SysctlUnavailable);
     }
     const ::fixy::fs::OwnedFd fd = std::move(*opened).consume();
     std::array<char, detail::available_cc_capacity> text{};
     auto bytes_read = ::fixy::fs::read_full(ctx, fd, std::as_writable_bytes(std::span{text}));
     if (!bytes_read.has_value() || *bytes_read == 0) {
-        return std::unexpected(CcError::SysctlUnavailable);
+        return ::fixy::err(CcError::SysctlUnavailable);
     }
     return parse_available_congestion_control(std::string_view{text.data(), *bytes_read});
 }
@@ -225,12 +231,13 @@ template <::foundation::effects::IsExecCtx Ctx>
 template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::fs::CtxFitsFileMint<Ctx, ProcFileReadMode>
 [[nodiscard]] bool kernel_supports(Ctx const& ctx, CcAlgorithm algorithm) noexcept {
-    auto availability = read_available_congestion_control(ctx);
-    return availability.has_value() && availability->contains(algorithm);
+    return read_available_congestion_control(ctx).match(
+        [algorithm](CcAvailability availability) noexcept { return availability.contains(algorithm); },
+        [](CcError) noexcept { return false; });
 }
 
 template <LinkClass Link>
-[[nodiscard]] constexpr std::expected<DeclaredCcChoice, CcError> recommend_cc(CcAvailability availability) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<DeclaredCcChoice, CcError> recommend_cc(CcAvailability availability) noexcept {
     if constexpr (Link == LinkClass::LosslessDatacenterFabric) {
         if (availability.contains(CcAlgorithm::Dctcp)) {
             return mint_cc_choice<CcAlgorithm::Dctcp, Link>();
@@ -255,7 +262,7 @@ template <LinkClass Link>
     if (availability.contains(CcAlgorithm::Reno)) {
         return mint_cc_choice<CcAlgorithm::Reno, Link>();
     }
-    return std::unexpected(CcError::AlgorithmUnavailable);
+    return ::fixy::err(CcError::AlgorithmUnavailable);
 }
 
 // A socket option call enters the kernel in the network family of the
@@ -310,35 +317,32 @@ template <::foundation::effects::IsExecCtx Ctx>
 
 // The two TCP_CONGESTION bodies.  Each takes the key, so only a gated
 // form below reaches setsockopt or getsockopt.
-[[nodiscard]] std::expected<void, CcError> set_cc_for_socket_keyed(SocketOptionKey const&, SocketFd fd,
-                                                                   DeclaredCcChoice choice) noexcept;
+[[nodiscard]] ::fixy::Result<::fixy::Unit, CcError> set_cc_for_socket_keyed(SocketOptionKey const&, SocketFd fd,
+                                                                            DeclaredCcChoice choice) noexcept;
 
-[[nodiscard]] std::expected<CcSelection, CcError> query_cc_selection_for_socket_keyed(SocketOptionKey const&,
-                                                                                      SocketFd fd) noexcept;
+[[nodiscard]] ::fixy::Result<CcSelection, CcError> query_cc_selection_for_socket_keyed(SocketOptionKey const&,
+                                                                                       SocketFd fd) noexcept;
 
 }  // namespace detail
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSocketOption<Ctx>
-[[nodiscard]] std::expected<void, CcError> set_cc_for_socket(Ctx const& ctx, SocketFd fd,
-                                                             DeclaredCcChoice choice) noexcept {
+[[nodiscard]] ::fixy::Result<::fixy::Unit, CcError> set_cc_for_socket(Ctx const& ctx, SocketFd fd,
+                                                                      DeclaredCcChoice choice) noexcept {
     return detail::set_cc_for_socket_keyed(detail::socket_option_key_(ctx), fd, choice);
 }
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSocketOption<Ctx>
-[[nodiscard]] std::expected<CcSelection, CcError> query_cc_selection_for_socket(Ctx const& ctx, SocketFd fd) noexcept {
+[[nodiscard]] ::fixy::Result<CcSelection, CcError> query_cc_selection_for_socket(Ctx const& ctx, SocketFd fd) noexcept {
     return detail::query_cc_selection_for_socket_keyed(detail::socket_option_key_(ctx), fd);
 }
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSocketOption<Ctx>
-[[nodiscard]] std::expected<CcAlgorithm, CcError> query_cc_for_socket(Ctx const& ctx, SocketFd fd) noexcept {
-    auto selection = query_cc_selection_for_socket(ctx, fd);
-    if (!selection.has_value()) {
-        return std::unexpected(selection.error());
-    }
-    return selection->algorithm;
+[[nodiscard]] ::fixy::Result<CcAlgorithm, CcError> query_cc_for_socket(Ctx const& ctx, SocketFd fd) noexcept {
+    CRUCIBLE_TRY(selection, query_cc_selection_for_socket(ctx, fd));
+    return selection.algorithm;
 }
 
 // The contexts that the check files of this header and of IncastControl.h

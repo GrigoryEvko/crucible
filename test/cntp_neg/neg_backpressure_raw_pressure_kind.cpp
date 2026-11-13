@@ -7,7 +7,7 @@
 int main() {
     namespace cntp = crucible::cntp;
     constexpr auto bogus = static_cast<::foundation::effects::ResourceKind>(static_cast<unsigned char>(0xff));
-    auto ppm = cntp::admit_resource_pressure_ppm(1).value();
+    auto ppm = cntp::admit_resource_pressure_ppm(1).expect("1 ppm is a pressure");
     cntp::ResourcePressure const pressure{bogus, ppm};
     return static_cast<int>(pressure.used_ppm().value());
 }

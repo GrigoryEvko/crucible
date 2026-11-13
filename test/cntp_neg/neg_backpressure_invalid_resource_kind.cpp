@@ -8,5 +8,5 @@ int main() {
     namespace cntp = crucible::cntp;
     constexpr auto bogus = static_cast<::foundation::effects::ResourceKind>(static_cast<unsigned char>(0xff));
     auto pressure = cntp::mint_resource_pressure<bogus>(1);
-    return pressure.has_value() ? 0 : 1;
+    return pressure.is_ok() ? 0 : 1;
 }

@@ -9,6 +9,7 @@
 // comes back, and the fq parameters are declared values that nothing applies.
 
 #include <crucible/cntp/CongestionControl.h>
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/os/Fd.h>
@@ -117,10 +118,10 @@ using DeclaredQdiscConfig = ::fixy::Tagged<QdiscConfig, ::fixy::tags::source::Qd
 template <Qdisc Q>
 concept BbrCompatibleQdisc = Q == Qdisc::Fq || Q == Qdisc::FqCodel;
 
-[[nodiscard]] constexpr std::expected<PositivePacingRate, PacingError>
+[[nodiscard]] constexpr ::fixy::Result<PositivePacingRate, PacingError>
 admit_pacing_rate(std::uint64_t bytes_per_second) noexcept {
     if (bytes_per_second == 0) {
-        return std::unexpected(PacingError::InvalidPacingRate);
+        return ::fixy::err(PacingError::InvalidPacingRate);
     }
     return ::fixy::mint_refined<::fixy::positive>(bytes_per_second);
 }
@@ -137,16 +138,16 @@ template <Qdisc Required>
     });
 }
 
-[[nodiscard]] std::expected<Qdisc, PacingError> qdisc_from_kernel_name(std::string_view name) noexcept;
+[[nodiscard]] ::fixy::Result<Qdisc, PacingError> qdisc_from_kernel_name(std::string_view name) noexcept;
 
-[[nodiscard]] std::expected<Qdisc, PacingError> parse_tc_qdisc_show(std::string_view text) noexcept;
+[[nodiscard]] ::fixy::Result<Qdisc, PacingError> parse_tc_qdisc_show(std::string_view text) noexcept;
 
 namespace detail {
 
 // Runs the qdisc dump over a netlink socket that the socket door opened.
 // The descriptor is borrowed; the caller's handle closes it.
-[[nodiscard]] std::expected<Qdisc, PacingError> query_active_qdisc_over(::fixy::fs::OwnedFd const& nl,
-                                                                        NicInterfaceName iface) noexcept;
+[[nodiscard]] ::fixy::Result<Qdisc, PacingError> query_active_qdisc_over(::fixy::fs::OwnedFd const& nl,
+                                                                         NicInterfaceName iface) noexcept;
 
 }  // namespace detail
 
@@ -155,10 +156,10 @@ namespace detail {
 // may ask which qdisc is live.
 template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::net::CtxFitsSocketMint<Ctx, ::fixy::net::socket_kind::NetlinkRoute>
-[[nodiscard]] std::expected<Qdisc, PacingError> query_active_qdisc(Ctx const& ctx, NicInterfaceName iface) noexcept {
+[[nodiscard]] ::fixy::Result<Qdisc, PacingError> query_active_qdisc(Ctx const& ctx, NicInterfaceName iface) noexcept {
     auto opened = ::fixy::net::mint_socket<::fixy::net::socket_kind::NetlinkRoute>(ctx);
     if (!opened.has_value()) {
-        return std::unexpected(PacingError::NetlinkOpenFailed);
+        return ::fixy::err(PacingError::NetlinkOpenFailed);
     }
     const ::fixy::fs::OwnedFd nl = std::move(*opened).consume();
     return detail::query_active_qdisc_over(nl, iface);
@@ -166,26 +167,24 @@ template <::foundation::effects::IsExecCtx Ctx>
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::net::CtxFitsSocketMint<Ctx, ::fixy::net::socket_kind::NetlinkRoute>
-[[nodiscard]] std::expected<void, PacingError> ensure_fq_active(Ctx const& ctx, DeclaredQdiscConfig config) noexcept {
+[[nodiscard]] ::fixy::Result<::fixy::Unit, PacingError> ensure_fq_active(Ctx const& ctx,
+                                                                         DeclaredQdiscConfig config) noexcept {
     auto const& raw = config.value();
-    auto active = query_active_qdisc(ctx, raw.interface);
-    if (!active.has_value()) {
-        return std::unexpected(active.error());
-    }
-    if (*active == Qdisc::Fq || *active == Qdisc::FqCodel) {
-        return {};
+    CRUCIBLE_TRY(active, query_active_qdisc(ctx, raw.interface));
+    if (active == Qdisc::Fq || active == Qdisc::FqCodel) {
+        return ::fixy::Unit{};
     }
     if (raw.allow_auto_config) {
-        return std::unexpected(PacingError::AutoConfigDeferred);
+        return ::fixy::err(PacingError::AutoConfigDeferred);
     }
-    return std::unexpected(PacingError::FqRequired);
+    return ::fixy::err(PacingError::FqRequired);
 }
 
 namespace detail {
 
 // The SO_MAX_PACING_RATE body.  It takes the key, so only the gated form
 // below reaches setsockopt.
-[[nodiscard]] std::expected<void, PacingError>
+[[nodiscard]] ::fixy::Result<::fixy::Unit, PacingError>
 set_socket_pacing_rate_keyed(SocketOptionKey const&, SocketFd fd, PositivePacingRate bytes_per_second) noexcept;
 
 }  // namespace detail
@@ -194,8 +193,8 @@ set_socket_pacing_rate_keyed(SocketOptionKey const&, SocketFd fd, PositivePacing
 // the socket option row.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSocketOption<Ctx>
-[[nodiscard]] std::expected<void, PacingError> set_socket_pacing_rate(Ctx const& ctx, SocketFd fd,
-                                                                      PositivePacingRate bytes_per_second) noexcept {
+[[nodiscard]] ::fixy::Result<::fixy::Unit, PacingError>
+set_socket_pacing_rate(Ctx const& ctx, SocketFd fd, PositivePacingRate bytes_per_second) noexcept {
     return detail::set_socket_pacing_rate_keyed(detail::socket_option_key_(ctx), fd, bytes_per_second);
 }
 

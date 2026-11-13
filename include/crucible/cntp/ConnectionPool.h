@@ -13,7 +13,6 @@
 #include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
-#include <expected>
 #include <string_view>
 #include <type_traits>
 
@@ -88,7 +87,7 @@ using LinearConnection = ::fixy::Linear<Connection<T>>;
 
 template <TransportClass T>
     requires PoolTransportClass<T>
-[[nodiscard]] constexpr std::expected<LinearConnection<T>, PoolError>
+[[nodiscard]] constexpr ::fixy::Result<LinearConnection<T>, PoolError>
 mint_connection(SocketFd socket, cog::CogIdentity const& remote, PositiveConnectionId connection_id) noexcept;
 
 // The identity of one established connection: its socket, the Cog at the far
@@ -114,16 +113,16 @@ private:
 
     template <TransportClass U>
         requires PoolTransportClass<U>
-    friend constexpr std::expected<LinearConnection<U>, PoolError>
+    friend constexpr ::fixy::Result<LinearConnection<U>, PoolError>
     mint_connection(SocketFd socket, cog::CogIdentity const& remote, PositiveConnectionId connection_id) noexcept;
 };
 
 template <TransportClass T>
     requires PoolTransportClass<T>
-[[nodiscard]] constexpr std::expected<LinearConnection<T>, PoolError>
+[[nodiscard]] constexpr ::fixy::Result<LinearConnection<T>, PoolError>
 mint_connection(SocketFd socket, cog::CogIdentity const& remote, PositiveConnectionId connection_id) noexcept {
     if (!is_valid_remote(remote)) {
-        return std::unexpected(PoolError::InvalidRemoteCog);
+        return ::fixy::err(PoolError::InvalidRemoteCog);
     }
     return ::fixy::mint_linear<Connection<T>>(Connection<T>{socket, remote.uuid, connection_id});
 }

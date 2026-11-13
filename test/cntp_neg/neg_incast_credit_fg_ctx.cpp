@@ -12,10 +12,10 @@ namespace {
     ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
     auto controller = crucible::cntp::mint_incast_controller<1>(init);
     auto fd = crucible::cntp::admit_socket_fd(3);
-    auto credit = crucible::cntp::admit_credit_bytes(4096);
-    auto started = controller.start_credit_flow(init, *fd, *credit);
+    auto credit = crucible::cntp::admit_credit_bytes(4096).expect("4096 is positive");
+    auto started = controller.start_credit_flow(init, *fd, credit);
     (void)started;
-    auto result = controller.issue_credit(fg, *fd, *credit, 1);
+    auto result = controller.issue_credit(fg, *fd, credit, 1);
     (void)result;
 }
 

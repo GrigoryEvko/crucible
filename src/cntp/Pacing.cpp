@@ -3,7 +3,6 @@
 #include <foundation/Lifetime.h>
 
 #include <array>
-#include <cerrno>
 #include <cstring>
 #include <memory>
 
@@ -28,14 +27,14 @@ struct QdiscDumpRequest {
 
 [[nodiscard]] bool token_eq(std::string_view lhs, std::string_view rhs) noexcept { return lhs == rhs; }
 
-[[nodiscard]] std::expected<Qdisc, PacingError> qdisc_from_attrs(tcmsg const* msg, std::size_t payload_len) noexcept {
+[[nodiscard]] ::fixy::Result<Qdisc, PacingError> qdisc_from_attrs(tcmsg const* msg, std::size_t payload_len) noexcept {
     auto const* cursor = static_cast<std::byte const*>(static_cast<void const*>(msg + 1));
     std::size_t remaining = payload_len;
 
     while (remaining >= sizeof(rtattr)) {
         auto const* attr = ::foundation::lifetime::start_as_array<rtattr>(cursor, 1).data();
         if (attr->rta_len < sizeof(rtattr) || attr->rta_len > remaining) {
-            return std::unexpected(PacingError::QdiscKindMissing);
+            return ::fixy::err(PacingError::QdiscKindMissing);
         }
         if (attr->rta_type == TCA_KIND) {
             auto const* data = static_cast<char const*>(static_cast<void const*>(cursor + sizeof(rtattr)));
@@ -49,12 +48,12 @@ struct QdiscDumpRequest {
 
         const std::size_t step = align4(attr->rta_len);
         if (step > remaining) {
-            return std::unexpected(PacingError::QdiscKindMissing);
+            return ::fixy::err(PacingError::QdiscKindMissing);
         }
         cursor += step;
         remaining -= step;
     }
-    return std::unexpected(PacingError::QdiscKindMissing);
+    return ::fixy::err(PacingError::QdiscKindMissing);
 }
 
 }  // namespace
@@ -78,7 +77,7 @@ std::string_view qdisc_name(Qdisc qdisc) noexcept {
     }
 }
 
-std::expected<Qdisc, PacingError> qdisc_from_kernel_name(std::string_view name) noexcept {
+::fixy::Result<Qdisc, PacingError> qdisc_from_kernel_name(std::string_view name) noexcept {
     if (token_eq(name, "fq")) {
         return Qdisc::Fq;
     }
@@ -95,16 +94,16 @@ std::expected<Qdisc, PacingError> qdisc_from_kernel_name(std::string_view name) 
         return Qdisc::Noqueue;
     }
     if (name.empty()) {
-        return std::unexpected(PacingError::QdiscKindMissing);
+        return ::fixy::err(PacingError::QdiscKindMissing);
     }
     return Qdisc::Other;
 }
 
-std::expected<Qdisc, PacingError> parse_tc_qdisc_show(std::string_view text) noexcept {
+::fixy::Result<Qdisc, PacingError> parse_tc_qdisc_show(std::string_view text) noexcept {
     constexpr std::string_view prefix = "qdisc ";
     const std::size_t start = text.find(prefix);
     if (start == std::string_view::npos) {
-        return std::unexpected(PacingError::QdiscKindMissing);
+        return ::fixy::err(PacingError::QdiscKindMissing);
     }
     std::size_t pos = start + prefix.size();
     while (pos < text.size() && text[pos] == ' ') {
@@ -117,16 +116,16 @@ std::expected<Qdisc, PacingError> parse_tc_qdisc_show(std::string_view text) noe
     return qdisc_from_kernel_name(text.substr(kind_start, pos - kind_start));
 }
 
-std::expected<Qdisc, PacingError> detail::query_active_qdisc_over(::fixy::fs::OwnedFd const& nl,
-                                                                  NicInterfaceName iface) noexcept {
+::fixy::Result<Qdisc, PacingError> detail::query_active_qdisc_over(::fixy::fs::OwnedFd const& nl,
+                                                                   NicInterfaceName iface) noexcept {
     std::array<char, NicInterfaceName::max_bytes> ifname{};
     std::memcpy(ifname.data(), iface.view().data(), iface.view().size());
     const unsigned ifindex = ::if_nametoindex(ifname.data());
     if (ifindex == 0) {
-        return std::unexpected(PacingError::InterfaceNotFound);
+        return ::fixy::err(PacingError::InterfaceNotFound);
     }
     if (!nl.is_open()) {
-        return std::unexpected(PacingError::NetlinkOpenFailed);
+        return ::fixy::err(PacingError::NetlinkOpenFailed);
     }
 
     // An explicit bind with nl_pid = 0 asks the kernel to assign a unique
@@ -140,8 +139,7 @@ std::expected<Qdisc, PacingError> detail::query_active_qdisc_over(::fixy::fs::Ow
     if (::bind(nl.get(), static_cast<sockaddr const*>(static_cast<void const*>(&bind_addr)),
                static_cast<socklen_t>(sizeof(bind_addr)))
         != 0) {
-        static_cast<void>(errno);
-        return std::unexpected(PacingError::NetlinkOpenFailed);
+        return ::fixy::err(PacingError::NetlinkOpenFailed);
     }
 
     // A kernel that never emits NLMSG_DONE, because the interface is broken
@@ -152,8 +150,7 @@ std::expected<Qdisc, PacingError> detail::query_active_qdisc_over(::fixy::fs::Ow
     rcv_timeout.tv_usec = 0;
     if (::setsockopt(nl.get(), SOL_SOCKET, SO_RCVTIMEO, &rcv_timeout, static_cast<socklen_t>(sizeof(rcv_timeout)))
         != 0) {
-        static_cast<void>(errno);
-        return std::unexpected(PacingError::NetlinkOpenFailed);
+        return ::fixy::err(PacingError::NetlinkOpenFailed);
     }
 
     constexpr std::uint32_t kRequestSeq = 1;
@@ -166,16 +163,14 @@ std::expected<Qdisc, PacingError> detail::query_active_qdisc_over(::fixy::fs::Ow
 
     const auto sent = ::send(nl.get(), &request, sizeof(request), 0);
     if (sent != static_cast<ssize_t>(sizeof(request))) {
-        static_cast<void>(errno);
-        return std::unexpected(PacingError::NetlinkSendFailed);
+        return ::fixy::err(PacingError::NetlinkSendFailed);
     }
 
     std::array<char, 16 * 1024> buffer{};
     for (;;) {
         const auto received = ::recv(nl.get(), buffer.data(), buffer.size(), 0);
         if (received <= 0) {
-            static_cast<void>(errno);
-            return std::unexpected(PacingError::NetlinkReceiveFailed);
+            return ::fixy::err(PacingError::NetlinkReceiveFailed);
         }
 
         auto const* cursor = static_cast<std::byte const*>(static_cast<void const*>(buffer.data()));
@@ -183,7 +178,7 @@ std::expected<Qdisc, PacingError> detail::query_active_qdisc_over(::fixy::fs::Ow
         while (remaining >= sizeof(nlmsghdr)) {
             auto const* header = ::foundation::lifetime::start_as_array<nlmsghdr>(cursor, 1).data();
             if (header->nlmsg_len < sizeof(nlmsghdr) || header->nlmsg_len > remaining) {
-                return std::unexpected(PacingError::NetlinkReceiveFailed);
+                return ::fixy::err(PacingError::NetlinkReceiveFailed);
             }
 
             // Replies belonging to another request can reach this socket, so
@@ -193,21 +188,21 @@ std::expected<Qdisc, PacingError> detail::query_active_qdisc_over(::fixy::fs::Ow
             if (header->nlmsg_seq != kRequestSeq) {
                 const std::size_t step = align4(header->nlmsg_len);
                 if (step > remaining) {
-                    return std::unexpected(PacingError::NetlinkReceiveFailed);
+                    return ::fixy::err(PacingError::NetlinkReceiveFailed);
                 }
                 cursor += step;
                 remaining -= step;
                 continue;
             }
             if (header->nlmsg_type == NLMSG_DONE) {
-                return std::unexpected(PacingError::QdiscKindMissing);
+                return ::fixy::err(PacingError::QdiscKindMissing);
             }
             if (header->nlmsg_type == NLMSG_ERROR) {
-                return std::unexpected(PacingError::NetlinkReceiveFailed);
+                return ::fixy::err(PacingError::NetlinkReceiveFailed);
             }
             if (header->nlmsg_type == RTM_NEWQDISC) {
                 if (header->nlmsg_len < NLMSG_LENGTH(sizeof(tcmsg))) {
-                    return std::unexpected(PacingError::NetlinkReceiveFailed);
+                    return ::fixy::err(PacingError::NetlinkReceiveFailed);
                 }
 
                 auto const* msg = ::foundation::lifetime::start_as_array<tcmsg>(cursor + NLMSG_HDRLEN, 1).data();
@@ -219,7 +214,7 @@ std::expected<Qdisc, PacingError> detail::query_active_qdisc_over(::fixy::fs::Ow
 
             const std::size_t step = align4(header->nlmsg_len);
             if (step > remaining) {
-                return std::unexpected(PacingError::NetlinkReceiveFailed);
+                return ::fixy::err(PacingError::NetlinkReceiveFailed);
             }
             cursor += step;
             remaining -= step;
@@ -227,16 +222,16 @@ std::expected<Qdisc, PacingError> detail::query_active_qdisc_over(::fixy::fs::Ow
     }
 }
 
-std::expected<void, PacingError> detail::set_socket_pacing_rate_keyed(SocketOptionKey const&, SocketFd fd,
-                                                                      PositivePacingRate bytes_per_second) noexcept {
+::fixy::Result<::fixy::Unit, PacingError>
+detail::set_socket_pacing_rate_keyed(SocketOptionKey const&, SocketFd fd,
+                                     PositivePacingRate bytes_per_second) noexcept {
     const std::uint64_t value = bytes_per_second.value();
     const int rc =
         ::setsockopt(fd.value(), SOL_SOCKET, SO_MAX_PACING_RATE, &value, static_cast<socklen_t>(sizeof(value)));
     if (rc != 0) {
-        static_cast<void>(errno);
-        return std::unexpected(PacingError::SetSockOptFailed);
+        return ::fixy::err(PacingError::SetSockOptFailed);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
 }  // namespace crucible::cntp

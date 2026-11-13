@@ -1,6 +1,5 @@
 #include <crucible/cntp/CongestionControl.h>
 
-#include <cerrno>
 #include <cstring>
 
 #include <netinet/in.h>
@@ -70,7 +69,7 @@ std::string_view link_class_name(LinkClass link) noexcept {
     }
 }
 
-std::expected<CcAlgorithm, CcError> algorithm_from_kernel_name(std::string_view name) noexcept {
+::fixy::Result<CcAlgorithm, CcError> algorithm_from_kernel_name(std::string_view name) noexcept {
     // Upstream Linux registers BBRv1 under the plain name "bbr".  BBRv2 and
     // BBRv3 are out-of-tree and register under their own distinct names
     // "bbr2" and "bbr3".  A kernel that exposes "bbr" is running BBRv1.
@@ -95,13 +94,13 @@ std::expected<CcAlgorithm, CcError> algorithm_from_kernel_name(std::string_view 
     if (name == "vegas") {
         return CcAlgorithm::Vegas;
     }
-    if (KernelCcName::from(name).has_value()) {
+    if (KernelCcName::from(name).is_ok()) {
         return CcAlgorithm::Custom;
     }
-    return std::unexpected(CcError::InvalidAlgorithmName);
+    return ::fixy::err(CcError::InvalidAlgorithmName);
 }
 
-std::expected<CcAvailability, CcError> parse_available_congestion_control(std::string_view text) noexcept {
+::fixy::Result<CcAvailability, CcError> parse_available_congestion_control(std::string_view text) noexcept {
     CcAvailability availability{};
 
     std::size_t pos = 0;
@@ -118,25 +117,18 @@ std::expected<CcAvailability, CcError> parse_available_congestion_control(std::s
         }
 
         const auto token = text.substr(start, pos - start);
-        auto admitted_name = KernelCcName::from(token);
-        if (!admitted_name.has_value()) {
-            return std::unexpected(admitted_name.error());
-        }
-
-        auto parsed = algorithm_from_kernel_name(token);
-        if (!parsed.has_value()) {
-            return std::unexpected(parsed.error());
-        }
-        if (*parsed != CcAlgorithm::Custom) {
-            add_algorithm(availability, *parsed);
+        CRUCIBLE_TRY(_, KernelCcName::from(token));
+        CRUCIBLE_TRY(parsed, algorithm_from_kernel_name(token));
+        if (parsed != CcAlgorithm::Custom) {
+            add_algorithm(availability, parsed);
         }
     }
 
     return availability;
 }
 
-std::expected<void, CcError> detail::set_cc_for_socket_keyed(SocketOptionKey const&, SocketFd fd,
-                                                             DeclaredCcChoice choice) noexcept {
+::fixy::Result<::fixy::Unit, CcError> detail::set_cc_for_socket_keyed(SocketOptionKey const&, SocketFd fd,
+                                                                      DeclaredCcChoice choice) noexcept {
     auto const& selection = choice.value();
     auto const name = selection.kernel_name.view();
     std::array<char, KernelCcName::max_bytes> optname{};
@@ -145,38 +137,29 @@ std::expected<void, CcError> detail::set_cc_for_socket_keyed(SocketOptionKey con
     const int rc =
         ::setsockopt(fd.value(), IPPROTO_TCP, TCP_CONGESTION, optname.data(), static_cast<socklen_t>(name.size() + 1u));
     if (rc != 0) {
-        static_cast<void>(errno);
-        return std::unexpected(CcError::SetSockOptFailed);
+        return ::fixy::err(CcError::SetSockOptFailed);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
-std::expected<CcSelection, CcError> detail::query_cc_selection_for_socket_keyed(SocketOptionKey const&,
-                                                                                SocketFd fd) noexcept {
+::fixy::Result<CcSelection, CcError> detail::query_cc_selection_for_socket_keyed(SocketOptionKey const&,
+                                                                                 SocketFd fd) noexcept {
     std::array<char, KernelCcName::max_bytes> optname{};
     socklen_t len = static_cast<socklen_t>(optname.size());
     const int rc = ::getsockopt(fd.value(), IPPROTO_TCP, TCP_CONGESTION, optname.data(), &len);
     if (rc != 0) {
-        static_cast<void>(errno);
-        return std::unexpected(CcError::GetSockOptFailed);
+        return ::fixy::err(CcError::GetSockOptFailed);
     }
 
     const auto bounded_len =
         static_cast<std::size_t>(len) < optname.size() ? static_cast<std::size_t>(len) : optname.size();
     const auto actual_len = bounded_c_string_len(optname.data(), bounded_len);
-    auto admitted = KernelCcName::from(std::string_view{optname.data(), actual_len});
-    if (!admitted.has_value()) {
-        return std::unexpected(admitted.error());
-    }
-
-    auto algorithm = algorithm_from_kernel_name(admitted->view());
-    if (!algorithm.has_value()) {
-        return std::unexpected(algorithm.error());
-    }
+    CRUCIBLE_TRY(admitted, KernelCcName::from(std::string_view{optname.data(), actual_len}));
+    CRUCIBLE_TRY(algorithm, algorithm_from_kernel_name(admitted.view()));
 
     return CcSelection{
-        .algorithm = *algorithm,
-        .kernel_name = *admitted,
+        .algorithm = algorithm,
+        .kernel_name = admitted,
     };
 }
 

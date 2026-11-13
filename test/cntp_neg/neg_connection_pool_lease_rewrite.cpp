@@ -20,13 +20,13 @@ int main() {
     second.uuid = cog::Uuid{2, 2};
     auto socket = cntp::admit_socket_fd(3).value();
     auto id = cntp::admit_connection_id(4).expect("4 is positive");
-    auto held = cntp::mint_connection<cntp::TransportClass::Tcp>(socket, first, id).value();
-    auto other = cntp::mint_connection<cntp::TransportClass::Tcp>(socket, second, id).value();
+    auto held = cntp::mint_connection<cntp::TransportClass::Tcp>(socket, first, id).expect("the remote is valid");
+    auto other = cntp::mint_connection<cntp::TransportClass::Tcp>(socket, second, id).expect("the remote is valid");
     auto added = pool.add_connection(bg, std::move(held));
     (void)added;
 
-    auto lease = pool.lease(bg, first);
-    **lease = other.peek();
+    auto lease = pool.lease(bg, first).expect("the pool holds a connection of the remote");
+    *lease = other.peek();
     drop(std::move(other));
     return 0;
 }

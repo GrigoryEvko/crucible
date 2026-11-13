@@ -189,7 +189,7 @@ struct SysctlConfig {
     SysctlPackets netdev_budget = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{600});
     BusyPollUs busy_poll_us = ::fixy::mint_refined<busy_poll_us_bound>(std::uint32_t{0});
     BusyPollUs busy_read_us = ::fixy::mint_refined<busy_poll_us_bound>(std::uint32_t{0});
-    cntp::KernelCcName tcp_congestion{cntp::KernelCcName::from("bbr").value()};
+    cntp::KernelCcName tcp_congestion{cntp::KernelCcName::from("bbr").expect("bbr is a valid kernel name")};
     TcpRtoMinUs tcp_rto_min_us = ::fixy::mint_refined<tcp_rto_min_us_bound>(std::uint32_t{10000});
     TcpMemoryTriple tcp_rmem{};
     TcpMemoryTriple tcp_wmem{};

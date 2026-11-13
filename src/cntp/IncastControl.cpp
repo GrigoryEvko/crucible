@@ -1,7 +1,5 @@
 #include <crucible/cntp/IncastControl.h>
 
-#include <cerrno>
-
 #include <linux/tcp.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -39,20 +37,19 @@ std::string_view incast_error_name(IncastError error) noexcept {
     }
 }
 
-std::expected<void, IncastError> detail::set_socket_rto_min_usec_keyed(SocketOptionKey const&, SocketFd fd,
-                                                                       PositiveRtoMinUsec rto_min) noexcept {
+::fixy::Result<::fixy::Unit, IncastError> detail::set_socket_rto_min_usec_keyed(SocketOptionKey const&, SocketFd fd,
+                                                                                PositiveRtoMinUsec rto_min) noexcept {
 #ifdef TCP_RTO_MIN_US
     const std::uint32_t value = rto_min.value();
     const int rc = ::setsockopt(fd.value(), IPPROTO_TCP, TCP_RTO_MIN_US, &value, static_cast<socklen_t>(sizeof(value)));
     if (rc != 0) {
-        static_cast<void>(errno);
-        return std::unexpected(IncastError::SetRtoMinFailed);
+        return ::fixy::err(IncastError::SetRtoMinFailed);
     }
-    return {};
+    return ::fixy::Unit{};
 #else
     static_cast<void>(fd);
     static_cast<void>(rto_min);
-    return std::unexpected(IncastError::UnsupportedRtoMinSockOpt);
+    return ::fixy::err(IncastError::UnsupportedRtoMinSockOpt);
 #endif
 }
 

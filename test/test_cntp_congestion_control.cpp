@@ -52,18 +52,25 @@ struct UserCc {
     static consteval std::string_view congestion_control_name() noexcept { return "user_cc"; }
 };
 
+// The value of a call that succeeds in this test.
+template <class Value>
+Value take(::fixy::Result<Value, cntp::CcError> result) {
+    return std::move(result).expect("the call succeeds in this test");
+}
+
+// The error of a call that fails in this test.  A call that succeeds ends
+// the process.
+template <class Value>
+cntp::CcError error_of(::fixy::Result<Value, cntp::CcError> result) {
+    return std::move(result).err().expect("the call fails in this test");
+}
+
 void test_name_admission() {
-    auto cubic = cntp::KernelCcName::from("cubic");
-    assert(cubic.has_value());
-    assert(cubic->view() == "cubic");
+    cntp::KernelCcName const cubic = take(cntp::KernelCcName::from("cubic"));
+    assert(cubic.view() == "cubic");
 
-    auto bad_space = cntp::KernelCcName::from("cu bic");
-    assert(!bad_space.has_value());
-    assert(bad_space.error() == cntp::CcError::InvalidAlgorithmName);
-
-    auto bad_long = cntp::KernelCcName::from("0123456789abcdef");
-    assert(!bad_long.has_value());
-    assert(bad_long.error() == cntp::CcError::InvalidAlgorithmName);
+    assert(error_of(cntp::KernelCcName::from("cu bic")) == cntp::CcError::InvalidAlgorithmName);
+    assert(error_of(cntp::KernelCcName::from("0123456789abcdef")) == cntp::CcError::InvalidAlgorithmName);
 
     auto fd = cntp::admit_socket_fd(-1);
     assert(!fd.has_value());
@@ -76,44 +83,35 @@ void test_availability_parse_and_recommendation() {
     // The kernel calls the first BBR version "bbr" outright, and
     // "bbr3" is a separate out-of-tree name.  Parsing keeps the two
     // apart rather than treating one as a prefix of the other.
-    auto parsed = cntp::parse_available_congestion_control("reno cubic bbr dctcp vegas\n");
-    assert(parsed.has_value());
-    assert(parsed->contains(cntp::CcAlgorithm::Reno));
-    assert(parsed->contains(cntp::CcAlgorithm::Cubic));
-    assert(parsed->contains(cntp::CcAlgorithm::Bbr1));
-    assert(!parsed->contains(cntp::CcAlgorithm::Bbr3));
-    assert(!parsed->contains(cntp::CcAlgorithm::Bbr2));
-    assert(parsed->contains(cntp::CcAlgorithm::Dctcp));
+    cntp::CcAvailability const parsed = take(cntp::parse_available_congestion_control("reno cubic bbr dctcp vegas\n"));
+    assert(parsed.contains(cntp::CcAlgorithm::Reno));
+    assert(parsed.contains(cntp::CcAlgorithm::Cubic));
+    assert(parsed.contains(cntp::CcAlgorithm::Bbr1));
+    assert(!parsed.contains(cntp::CcAlgorithm::Bbr3));
+    assert(!parsed.contains(cntp::CcAlgorithm::Bbr2));
+    assert(parsed.contains(cntp::CcAlgorithm::Dctcp));
 
-    auto cross = cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*parsed);
-    assert(cross.has_value());
-    assert(cross->value().algorithm == cntp::CcAlgorithm::Bbr1);
-    assert(cross->value().kernel_name.view() == "bbr");
+    cntp::DeclaredCcChoice const cross = take(cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(parsed));
+    assert(cross.value().algorithm == cntp::CcAlgorithm::Bbr1);
+    assert(cross.value().kernel_name.view() == "bbr");
 
-    auto fabric = cntp::recommend_cc<cntp::LinkClass::LosslessDatacenterFabric>(*parsed);
-    assert(fabric.has_value());
-    assert(fabric->value().algorithm == cntp::CcAlgorithm::Dctcp);
+    cntp::DeclaredCcChoice const fabric = take(cntp::recommend_cc<cntp::LinkClass::LosslessDatacenterFabric>(parsed));
+    assert(fabric.value().algorithm == cntp::CcAlgorithm::Dctcp);
 
-    auto bbr3_only = cntp::parse_available_congestion_control("reno cubic bbr3\n");
-    assert(bbr3_only.has_value());
-    assert(bbr3_only->contains(cntp::CcAlgorithm::Bbr3));
-    assert(!bbr3_only->contains(cntp::CcAlgorithm::Bbr1));
-    auto bbr3_cross = cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*bbr3_only);
-    assert(bbr3_cross.has_value());
-    assert(bbr3_cross->value().algorithm == cntp::CcAlgorithm::Bbr3);
-    assert(bbr3_cross->value().kernel_name.view() == "bbr3");
+    cntp::CcAvailability const bbr3_only = take(cntp::parse_available_congestion_control("reno cubic bbr3\n"));
+    assert(bbr3_only.contains(cntp::CcAlgorithm::Bbr3));
+    assert(!bbr3_only.contains(cntp::CcAlgorithm::Bbr1));
+    cntp::DeclaredCcChoice const bbr3_cross = take(cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(bbr3_only));
+    assert(bbr3_cross.value().algorithm == cntp::CcAlgorithm::Bbr3);
+    assert(bbr3_cross.value().kernel_name.view() == "bbr3");
 
-    auto bbr2_only = cntp::parse_available_congestion_control("reno cubic bbr2\n");
-    assert(bbr2_only.has_value());
-    auto bbr2_cross = cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*bbr2_only);
-    assert(bbr2_cross.has_value());
-    assert(bbr2_cross->value().algorithm == cntp::CcAlgorithm::Bbr2);
+    cntp::CcAvailability const bbr2_only = take(cntp::parse_available_congestion_control("reno cubic bbr2\n"));
+    cntp::DeclaredCcChoice const bbr2_cross = take(cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(bbr2_only));
+    assert(bbr2_cross.value().algorithm == cntp::CcAlgorithm::Bbr2);
 
-    auto legacy = cntp::parse_available_congestion_control("reno cubic\n");
-    assert(legacy.has_value());
-    auto fallback = cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*legacy);
-    assert(fallback.has_value());
-    assert(fallback->value().algorithm == cntp::CcAlgorithm::Cubic);
+    cntp::CcAvailability const legacy = take(cntp::parse_available_congestion_control("reno cubic\n"));
+    cntp::DeclaredCcChoice const fallback = take(cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(legacy));
+    assert(fallback.value().algorithm == cntp::CcAlgorithm::Cubic);
 
     crucible::test::pass("  test_availability_parse_and_recommendation: PASSED\n");
 }
@@ -140,30 +138,27 @@ void test_live_socket_roundtrip_if_available() {
 
     ::fixy::InitLoadCtx load{fe::testing::init()};
     auto availability = cntp::read_available_congestion_control(load);
-    if (!availability.has_value()) {
+    if (availability.is_err()) {
         ::fixy::report(::fixy::Sink::Out, "  test_live_socket_roundtrip_if_available: SKIPPED\n");
         return;
     }
 
-    auto choice = cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(*availability);
-    if (!choice.has_value()) {
+    auto choice = cntp::recommend_cc<cntp::LinkClass::CrossDatacenter>(take(std::move(availability)));
+    if (choice.is_err()) {
         ::fixy::report(::fixy::Sink::Out, "  test_live_socket_roundtrip_if_available: SKIPPED\n");
         return;
     }
+    cntp::DeclaredCcChoice const chosen = take(std::move(choice));
 
-    auto set = cntp::set_cc_for_socket(load, *fd, *choice);
-    assert(set.has_value());
+    assert(cntp::set_cc_for_socket(load, *fd, chosen).is_ok());
 
-    auto queried = cntp::query_cc_for_socket(load, *fd);
-    assert(queried.has_value());
     // The kernel echoes back the name it was given, and the reverse
     // mapping is one-to-one per BBR version, so the query returns the
     // algorithm that was set and not a neighbouring one.
-    assert(*queried == choice->value().algorithm);
+    assert(take(cntp::query_cc_for_socket(load, *fd)) == chosen.value().algorithm);
 
-    auto selection = cntp::query_cc_selection_for_socket(load, *fd);
-    assert(selection.has_value());
-    assert(!selection->kernel_name.view().empty());
+    cntp::CcSelection const selection = take(cntp::query_cc_selection_for_socket(load, *fd));
+    assert(!selection.kernel_name.view().empty());
 
     crucible::test::pass("  test_live_socket_roundtrip_if_available: PASSED\n");
 }
@@ -182,17 +177,9 @@ void test_gated_forms_report_kernel_refusal() {
     // gate refuses.
     ::fixy::InitLoadCtx load{fe::testing::init()};
 
-    auto set = cntp::set_cc_for_socket(load, *fd, choice);
-    assert(!set.has_value());
-    assert(set.error() == cntp::CcError::SetSockOptFailed);
-
-    auto queried = cntp::query_cc_for_socket(load, *fd);
-    assert(!queried.has_value());
-    assert(queried.error() == cntp::CcError::GetSockOptFailed);
-
-    auto selection = cntp::query_cc_selection_for_socket(load, *fd);
-    assert(!selection.has_value());
-    assert(selection.error() == cntp::CcError::GetSockOptFailed);
+    assert(error_of(cntp::set_cc_for_socket(load, *fd, choice)) == cntp::CcError::SetSockOptFailed);
+    assert(error_of(cntp::query_cc_for_socket(load, *fd)) == cntp::CcError::GetSockOptFailed);
+    assert(error_of(cntp::query_cc_selection_for_socket(load, *fd)) == cntp::CcError::GetSockOptFailed);
 
     // The list changes nothing and depends only on the running kernel, so
     // kernel_supports must answer from the same list for every algorithm.
@@ -200,7 +187,10 @@ void test_gated_forms_report_kernel_refusal() {
     for (auto algo :
          {cntp::CcAlgorithm::Cubic, cntp::CcAlgorithm::Reno, cntp::CcAlgorithm::Bbr1, cntp::CcAlgorithm::Bbr2,
           cntp::CcAlgorithm::Bbr3, cntp::CcAlgorithm::Dctcp, cntp::CcAlgorithm::Vegas}) {
-        assert(cntp::kernel_supports(load, algo) == (listed.has_value() && listed->contains(algo)));
+        bool const is_listed =
+            listed.match([algo](cntp::CcAvailability const& availability) { return availability.contains(algo); },
+                         [](cntp::CcError) { return false; });
+        assert(cntp::kernel_supports(load, algo) == is_listed);
     }
 
     crucible::test::pass("  test_gated_forms_report_kernel_refusal: PASSED\n");

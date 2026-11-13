@@ -84,47 +84,35 @@ void test_interface_name_admission() {
     crucible::test::pass("  test_interface_name_admission: PASSED\n");
 }
 
+// The value of a call that succeeds in this test.
+template <class Value>
+Value take(::fixy::Result<Value, cntp::PacingError> result) {
+    return std::move(result).expect("the call succeeds in this test");
+}
+
+// The error of a call that fails in this test.  A call that succeeds ends
+// the process.
+template <class Value>
+cntp::PacingError error_of(::fixy::Result<Value, cntp::PacingError> result) {
+    return std::move(result).err().expect("the call fails in this test");
+}
+
 void test_qdisc_parse() {
-    auto fq = cntp::qdisc_from_kernel_name("fq");
-    assert(fq.has_value());
-    assert(*fq == cntp::Qdisc::Fq);
-    assert(cntp::qdisc_name(*fq) == std::string_view{"fq"});
+    cntp::Qdisc const fq = take(cntp::qdisc_from_kernel_name("fq"));
+    assert(fq == cntp::Qdisc::Fq);
+    assert(cntp::qdisc_name(fq) == std::string_view{"fq"});
 
-    auto fq_codel = cntp::qdisc_from_kernel_name("fq_codel");
-    assert(fq_codel.has_value());
-    assert(*fq_codel == cntp::Qdisc::FqCodel);
+    assert(take(cntp::qdisc_from_kernel_name("fq_codel")) == cntp::Qdisc::FqCodel);
+    assert(take(cntp::qdisc_from_kernel_name("pfifo_fast")) == cntp::Qdisc::Pfifo);
+    assert(take(cntp::qdisc_from_kernel_name("mq")) == cntp::Qdisc::Mq);
+    assert(take(cntp::qdisc_from_kernel_name("noqueue")) == cntp::Qdisc::Noqueue);
+    assert(take(cntp::qdisc_from_kernel_name("cake")) == cntp::Qdisc::Other);
+    assert(error_of(cntp::qdisc_from_kernel_name("")) == cntp::PacingError::QdiscKindMissing);
 
-    auto pfifo = cntp::qdisc_from_kernel_name("pfifo_fast");
-    assert(pfifo.has_value());
-    assert(*pfifo == cntp::Qdisc::Pfifo);
-
-    auto mq = cntp::qdisc_from_kernel_name("mq");
-    assert(mq.has_value());
-    assert(*mq == cntp::Qdisc::Mq);
-
-    auto noqueue = cntp::qdisc_from_kernel_name("noqueue");
-    assert(noqueue.has_value());
-    assert(*noqueue == cntp::Qdisc::Noqueue);
-
-    auto other = cntp::qdisc_from_kernel_name("cake");
-    assert(other.has_value());
-    assert(*other == cntp::Qdisc::Other);
-
-    auto empty = cntp::qdisc_from_kernel_name("");
-    assert(!empty.has_value());
-    assert(empty.error() == cntp::PacingError::QdiscKindMissing);
-
-    auto tc_fq = cntp::parse_tc_qdisc_show("qdisc fq 8001: root refcnt 2 limit 10000p flow_limit 100p\n");
-    assert(tc_fq.has_value());
-    assert(*tc_fq == cntp::Qdisc::Fq);
-
-    auto tc_codel = cntp::parse_tc_qdisc_show("qdisc fq_codel 0: root\n");
-    assert(tc_codel.has_value());
-    assert(*tc_codel == cntp::Qdisc::FqCodel);
-
-    auto missing = cntp::parse_tc_qdisc_show("class htb 1:1 root");
-    assert(!missing.has_value());
-    assert(missing.error() == cntp::PacingError::QdiscKindMissing);
+    assert(take(cntp::parse_tc_qdisc_show("qdisc fq 8001: root refcnt 2 limit 10000p flow_limit 100p\n"))
+           == cntp::Qdisc::Fq);
+    assert(take(cntp::parse_tc_qdisc_show("qdisc fq_codel 0: root\n")) == cntp::Qdisc::FqCodel);
+    assert(error_of(cntp::parse_tc_qdisc_show("class htb 1:1 root")) == cntp::PacingError::QdiscKindMissing);
 
     crucible::test::pass("  test_qdisc_parse:              PASSED\n");
 }
@@ -139,13 +127,8 @@ void test_mint_and_rate_surfaces() {
     assert(config.value().required == cntp::Qdisc::FqCodel);
     assert(!config.value().allow_auto_config);
 
-    auto rate = cntp::admit_pacing_rate(1000000);
-    assert(rate.has_value());
-    assert(rate->value() == 1000000);
-
-    auto zero = cntp::admit_pacing_rate(0);
-    assert(!zero.has_value());
-    assert(zero.error() == cntp::PacingError::InvalidPacingRate);
+    assert(take(cntp::admit_pacing_rate(1000000)).value() == 1000000);
+    assert(error_of(cntp::admit_pacing_rate(0)) == cntp::PacingError::InvalidPacingRate);
 
     crucible::test::pass("  test_mint_and_rate_surfaces:   PASSED\n");
 }
@@ -157,14 +140,12 @@ void test_live_socket_pacing_if_available() {
     auto fd = cntp::admit_socket_fd(socket.raw());
     assert(fd.has_value());
 
-    auto rate = cntp::admit_pacing_rate(1000000);
-    assert(rate.has_value());
+    cntp::PositivePacingRate const rate = take(cntp::admit_pacing_rate(1000000));
 
     // The rate is a socket option, and the test runner context carries the
     // IO and Block that the socket option gate asks for.
     ::fixy::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
-    auto set = cntp::set_socket_pacing_rate(test_ctx, *fd, *rate);
-    assert(set.has_value());
+    assert(cntp::set_socket_pacing_rate(test_ctx, *fd, rate).is_ok());
 
     crucible::test::pass("  test_live_socket_pacing_if_available: PASSED\n");
 }
@@ -181,17 +162,18 @@ void test_live_loopback_qdisc_query_if_available() {
     // carries both.
     ::fixy::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
     auto queried = cntp::query_active_qdisc(test_ctx, *lo);
-    if (!queried.has_value()) {
-        assert(queried.error() == cntp::PacingError::QdiscKindMissing
-               || queried.error() == cntp::PacingError::NetlinkOpenFailed
-               || queried.error() == cntp::PacingError::NetlinkSendFailed
-               || queried.error() == cntp::PacingError::NetlinkReceiveFailed);
+    if (queried.is_err()) {
+        cntp::PacingError const refusal = error_of(std::move(queried));
+        assert(refusal == cntp::PacingError::QdiscKindMissing || refusal == cntp::PacingError::NetlinkOpenFailed
+               || refusal == cntp::PacingError::NetlinkSendFailed
+               || refusal == cntp::PacingError::NetlinkReceiveFailed);
         ::fixy::report(::fixy::Sink::Out, "  test_live_loopback_qdisc_query_if_available: SKIPPED\n");
         return;
     }
 
-    assert(*queried == cntp::Qdisc::Fq || *queried == cntp::Qdisc::FqCodel || *queried == cntp::Qdisc::Pfifo
-           || *queried == cntp::Qdisc::Mq || *queried == cntp::Qdisc::Noqueue || *queried == cntp::Qdisc::Other);
+    cntp::Qdisc const active = take(std::move(queried));
+    assert(active == cntp::Qdisc::Fq || active == cntp::Qdisc::FqCodel || active == cntp::Qdisc::Pfifo
+           || active == cntp::Qdisc::Mq || active == cntp::Qdisc::Noqueue || active == cntp::Qdisc::Other);
     crucible::test::pass("  test_live_loopback_qdisc_query_if_available: PASSED\n");
 }
 

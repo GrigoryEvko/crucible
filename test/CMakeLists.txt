@@ -2784,7 +2784,7 @@ crucible_neg_compile_test(neg_congestion_control_custom_missing_name
   "the required expression .Module::congestion_control_name\\(\\). is invalid")
 crucible_neg_compile_test(neg_congestion_control_custom_invalid_name
   "no matching function for call to .mint_custom_cc_choice<UppercaseName, crucible::cntp::LinkClass::PublicInternet>\\(\\)."
-  "nested requirement .crucible::cntp::KernelCcName::from\\(Module::congestion_control_name\\(\\)\\).has_value\\(\\). is not satisfied")
+  "nested requirement .crucible::cntp::KernelCcName::from\\(Module::congestion_control_name\\(\\)\\).is_ok\\(\\). is not satisfied")
 
 # The socket option gate of cntp/CongestionControl.h.  A socket option
 # call takes the socket lock, so the gate asks for IO and Block.

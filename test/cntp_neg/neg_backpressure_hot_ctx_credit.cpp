@@ -9,7 +9,7 @@ int main() {
     ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
     auto controller = cntp::mint_credit_flow_control<1>(init);
     auto fd = cntp::admit_socket_fd(9).value();
-    auto credit = cntp::admit_backpressure_credit(64).value();
+    auto credit = cntp::admit_backpressure_credit(64).expect("64 is positive");
     auto started = controller.start_flow(::foundation::effects::testing::foreground(), fd, credit);
-    return started.has_value() ? 0 : 1;
+    return started.is_ok() ? 0 : 1;
 }
