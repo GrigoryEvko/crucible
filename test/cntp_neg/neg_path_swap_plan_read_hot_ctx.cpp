@@ -12,5 +12,5 @@ int main() {
     ::fixy::HotFgCtx fg{fe::testing::foreground()};
     auto swapper = cntp::mint_path_swapper(init);
     auto plan = swapper.plan(fg);
-    return plan.has_value() ? 1 : 0;
+    return plan.is_some() ? 1 : 0;
 }

@@ -43,9 +43,7 @@ cntp::DeclaredPathSwapPlan make_plan_for(std::uint64_t flow_id, std::uint64_t ol
     auto old_path = cntp::admit_path_id(old_path_id).expect("the old path id is positive");
     auto new_path = cntp::admit_path_id(new_path_id).expect("the new path id is positive");
     auto timeout = cntp::admit_swap_timeout_ns(1000).expect("1000 ns is positive");
-    auto plan = cntp::mint_path_swap_plan(flow, old_path, new_path, timeout);
-    assert(plan.has_value());
-    return *plan;
+    return cntp::mint_path_swap_plan(flow, old_path, new_path, timeout).expect("the two paths differ");
 }
 
 cntp::DeclaredPathSwapPlan make_plan() { return make_plan_for(10, 20, 30); }
@@ -75,9 +73,7 @@ void test_admission() {
 
     auto id = cntp::admit_path_id(1).expect("1 is positive");
     auto timeout = cntp::admit_swap_timeout_ns(10).expect("10 ns is positive");
-    auto same = cntp::mint_path_swap_plan(id, id, id, timeout);
-    assert(!same.has_value());
-    assert(same.error() == cntp::SwapError::SamePath);
+    assert(cntp::mint_path_swap_plan(id, id, id, timeout).err() == ::fixy::some(cntp::SwapError::SamePath));
 
     auto plan = make_plan();
     assert(plan.value().flow_id().value() == 10);
@@ -95,35 +91,32 @@ void test_state_machine_and_session_resource_transition() {
     auto swapper = cntp::mint_path_swapper<8>(init);
     static_assert(std::is_same_v<decltype(swapper), cntp::PathSwapper<8>>);
     assert(swapper.state() == cntp::SwapState::Stable);
-    assert(!swapper.plan(bg).has_value());
+    assert(swapper.plan(bg).is_none());
 
     auto plan = make_plan();
-    auto begin = swapper.begin_swap(bg, plan, 100);
-    assert(begin.has_value());
+    assert(swapper.begin_swap(bg, plan, 100).is_ok());
     assert(swapper.state() == cntp::SwapState::Draining);
     assert(swapper.deadline_ns(bg) == 1100);
-    assert(swapper.plan(bg).has_value());
-    assert(swapper.plan(bg)->old_path().value() == 20);
+    assert(swapper.plan(bg).is_some());
+    assert(swapper.plan(bg).expect("the swap has a plan").old_path().value() == 20);
 
-    auto bidir = swapper.receiver_accepts_bidir(bg, 200);
-    assert(bidir.has_value());
+    assert(swapper.receiver_accepts_bidir(bg, 200).is_ok());
     assert(swapper.state() == cntp::SwapState::BidirReceive);
 
-    auto ack = swapper.sender_observed_drain_ack(bg, 300);
-    assert(ack.has_value());
+    assert(swapper.sender_observed_drain_ack(bg, 300).is_ok());
     assert(swapper.state() == cntp::SwapState::NewPathFlushing);
 
     auto old_handle = sess::mint_session_handle<Proto>(Wire{.id = 1});
-    auto swapped = swapper.commit_sender(bg, std::move(old_handle), Wire{.id = 2}, 400);
-    assert(swapped.has_value());
+    auto swapped =
+        swapper.commit_sender(bg, std::move(old_handle), Wire{.id = 2}, 400).expect("the swap is at NewPathFlushing");
     assert(swapper.state() == cntp::SwapState::Complete);
     assert(swapper.event_count(bg) == 4);
     assert(swapper.sequence(bg) == 4);
     assert(swapper.event_at(bg, 3).to == cntp::SwapState::Complete);
     assert(swapper.event_at(bg, 0).flow_id == 10);
-    assert(swapped->resource().id == 2);
+    assert(swapped.resource().id == 2);
 
-    auto end = std::move(*swapped).send(42, send_int);
+    auto end = std::move(swapped).send(42, send_int);
     auto final_wire = std::move(end).close();
     assert(final_wire.id == 2);
     assert(final_wire.last == 42);
@@ -169,10 +162,10 @@ void test_concurrent_observer_sees_only_valid_states() {
     auto plan = make_plan();
     for (std::uint32_t cycle = 0; cycle < 2000; ++cycle) {
         const std::uint64_t base = static_cast<std::uint64_t>(cycle) * 100;
-        assert(swapper.begin_swap(bg, plan, base + 1).has_value());
-        assert(swapper.receiver_accepts_bidir(bg, base + 2).has_value());
-        assert(swapper.sender_observed_drain_ack(bg, base + 3).has_value());
-        assert(swapper.complete_receiver(bg, base + 4).has_value());
+        assert(swapper.begin_swap(bg, plan, base + 1).is_ok());
+        assert(swapper.receiver_accepts_bidir(bg, base + 2).is_ok());
+        assert(swapper.sender_observed_drain_ack(bg, base + 3).is_ok());
+        assert(swapper.complete_receiver(bg, base + 4).is_ok());
     }
 
     writer_done.store(true, std::memory_order_release);
@@ -196,29 +189,29 @@ void test_commit_sender_loses_in_flight_bytes() {
 
     auto swapper = cntp::mint_path_swapper<8>(init);
     auto plan = make_plan();
-    assert(swapper.begin_swap(bg, plan, 100).has_value());
-    assert(swapper.receiver_accepts_bidir(bg, 200).has_value());
-    assert(swapper.sender_observed_drain_ack(bg, 300).has_value());
+    assert(swapper.begin_swap(bg, plan, 100).is_ok());
+    assert(swapper.receiver_accepts_bidir(bg, 200).is_ok());
+    assert(swapper.sender_observed_drain_ack(bg, 300).is_ok());
 
     Wire old_wire{.id = 7, .last = 0xBEEF};  // stands in for buffered data
     auto old_handle = sess::mint_session_handle<Proto>(std::move(old_wire));
 
     Wire new_wire{.id = 9, .last = 0};
-    auto swapped = swapper.commit_sender(bg, std::move(old_handle), std::move(new_wire), 400);
-    assert(swapped.has_value());
+    auto swapped = swapper.commit_sender(bg, std::move(old_handle), std::move(new_wire), 400)
+                       .expect("the swap is at NewPathFlushing");
     assert(swapper.state() == cntp::SwapState::Complete);
 
     // A migration-capable backend would flip the marker and carry the
     // sentinel across, at which point these two lines become a positive
     // check instead of a negative one.
-    assert(swapped->resource().id == 9);
-    assert(swapped->resource().last == 0);
-    assert(swapped->resource().last != 0xBEEF);
+    assert(swapped.resource().id == 9);
+    assert(swapped.resource().last == 0);
+    assert(swapped.resource().last != 0xBEEF);
 
     // A session handle must be run to its end.  Dropping one aborts, so
     // the send and close here are the lifetime contract and not extra
     // coverage.
-    auto end = std::move(*swapped).send(7, send_int);
+    auto end = std::move(swapped).send(7, send_int);
     auto final_wire = std::move(end).close();
     assert(final_wire.id == 9);
     assert(final_wire.last == 7);
@@ -243,9 +236,9 @@ void test_concurrent_complete_receiver_exactly_one_wins() {
     // The three setup transitions run on this thread alone, so the
     // event count is known exactly before the race begins and the one
     // event the race is allowed to add can be counted afterwards.
-    assert(swapper.begin_swap(bg, plan, 100).has_value());
-    assert(swapper.receiver_accepts_bidir(bg, 200).has_value());
-    assert(swapper.sender_observed_drain_ack(bg, 300).has_value());
+    assert(swapper.begin_swap(bg, plan, 100).is_ok());
+    assert(swapper.receiver_accepts_bidir(bg, 200).is_ok());
+    assert(swapper.sender_observed_drain_ack(bg, 300).is_ok());
     assert(swapper.event_count(bg) == 3);
 
     std::atomic<int> winners{0};
@@ -266,10 +259,10 @@ void test_concurrent_complete_receiver_exactly_one_wins() {
             }
             const std::uint64_t now_ns = 400 + static_cast<std::uint64_t>(idx);
             auto result = swapper.complete_receiver(bg, now_ns);
-            if (result.has_value()) {
+            if (result.is_ok()) {
                 winners.fetch_add(1, std::memory_order_relaxed);
             } else {
-                assert(result.error() == cntp::SwapError::InvalidTransition);
+                assert(result.err() == ::fixy::some(cntp::SwapError::InvalidTransition));
                 losers.fetch_add(1, std::memory_order_relaxed);
             }
         }};
@@ -308,9 +301,10 @@ void test_plan_reader_races_the_writer() {
     std::atomic<std::uint32_t> mixed_reads{0};
     std::jthread reader{[&]() noexcept {
         do {
-            if (const auto seen = swapper.plan(bg); seen.has_value()) {
-                if (!names_one_declared_plan(seen->flow_id().value(), seen->old_path().value(),
-                                             seen->new_path().value())) {
+            auto const seen = swapper.plan(bg);
+            for (cntp::PathSwapPlan const& plan : seen) {
+                if (!names_one_declared_plan(plan.flow_id().value(), plan.old_path().value(),
+                                             plan.new_path().value())) {
                     mixed_reads.fetch_add(1, std::memory_order_relaxed);
                 }
             }
@@ -329,10 +323,10 @@ void test_plan_reader_races_the_writer() {
     for (std::uint32_t cycle = 0; cycle < 2000; ++cycle) {
         const std::uint64_t base = static_cast<std::uint64_t>(cycle) * 100;
         const auto& plan = (cycle % 2u == 0u) ? first : second;
-        assert(swapper.begin_swap(bg, plan, base + 1).has_value());
-        assert(swapper.receiver_accepts_bidir(bg, base + 2).has_value());
-        assert(swapper.sender_observed_drain_ack(bg, base + 3).has_value());
-        assert(swapper.complete_receiver(bg, base + 4).has_value());
+        assert(swapper.begin_swap(bg, plan, base + 1).is_ok());
+        assert(swapper.receiver_accepts_bidir(bg, base + 2).is_ok());
+        assert(swapper.sender_observed_drain_ack(bg, base + 3).is_ok());
+        assert(swapper.complete_receiver(bg, base + 4).is_ok());
     }
 
     writer_done.store(true, std::memory_order_release);
@@ -362,7 +356,7 @@ void test_concurrent_begin_swap_keeps_the_winning_plan() {
             while (!start.load(std::memory_order_acquire)) {
                 std::this_thread::yield();
             }
-            if (swapper.begin_swap(bg, plan, 100).has_value()) {
+            if (swapper.begin_swap(bg, plan, 100).is_ok()) {
                 winners.fetch_add(1, std::memory_order_relaxed);
             }
         };
@@ -372,13 +366,12 @@ void test_concurrent_begin_swap_keeps_the_winning_plan() {
             start.store(true, std::memory_order_release);
         }
         assert(winners.load(std::memory_order_acquire) == 1);
-        const auto held = swapper.plan(bg);
-        assert(held.has_value());
+        cntp::PathSwapPlan const held = swapper.plan(bg).expect("one racer won the swap");
         assert(swapper.event_count(bg) == 1);
         const auto event = swapper.event_at(bg, 0);
-        assert(event.flow_id == held->flow_id().value());
-        assert(event.old_path == held->old_path().value());
-        assert(event.new_path == held->new_path().value());
+        assert(event.flow_id == held.flow_id().value());
+        assert(event.old_path == held.old_path().value());
+        assert(event.new_path == held.new_path().value());
     }
 
     crucible::test::pass("  test_concurrent_begin_swap_keeps_the_winning_plan: PASSED\n");
@@ -389,21 +382,14 @@ void test_invalid_transition_and_timeout() {
     ::fixy::BgLoadCtx bg{fe::testing::bg()};
 
     auto swapper = cntp::mint_path_swapper<4>(init);
-    auto bad_ack = swapper.sender_observed_drain_ack(bg, 1);
-    assert(!bad_ack.has_value());
-    assert(bad_ack.error() == cntp::SwapError::InvalidTransition);
+    assert(swapper.sender_observed_drain_ack(bg, 1).err() == ::fixy::some(cntp::SwapError::InvalidTransition));
     assert(swapper.event_count(bg) == 0);
 
     auto plan = make_plan();
-    auto begin = swapper.begin_swap(bg, plan, 10);
-    assert(begin.has_value());
-    auto again = swapper.begin_swap(bg, plan, 11);
-    assert(!again.has_value());
-    assert(again.error() == cntp::SwapError::InvalidTransition);
+    assert(swapper.begin_swap(bg, plan, 10).is_ok());
+    assert(swapper.begin_swap(bg, plan, 11).err() == ::fixy::some(cntp::SwapError::InvalidTransition));
 
-    auto timeout = swapper.receiver_accepts_bidir(bg, 2000);
-    assert(!timeout.has_value());
-    assert(timeout.error() == cntp::SwapError::Timeout);
+    assert(swapper.receiver_accepts_bidir(bg, 2000).err() == ::fixy::some(cntp::SwapError::Timeout));
     assert(swapper.state() == cntp::SwapState::Failed);
 
     crucible::test::pass("  test_invalid_transition_and_timeout: PASSED\n");
@@ -416,10 +402,9 @@ void test_deadline_overflow() {
     auto swapper = cntp::mint_path_swapper<4>(init);
     auto plan = make_plan();
     auto overflow = swapper.begin_swap(bg, plan, std::numeric_limits<std::uint64_t>::max() - 10);
-    assert(!overflow.has_value());
-    assert(overflow.error() == cntp::SwapError::DeadlineOverflow);
+    assert(overflow.err() == ::fixy::some(cntp::SwapError::DeadlineOverflow));
     assert(swapper.state() == cntp::SwapState::Stable);
-    assert(!swapper.plan(bg).has_value());
+    assert(swapper.plan(bg).is_none());
 
     crucible::test::pass("  test_deadline_overflow: PASSED\n");
 }
