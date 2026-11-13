@@ -78,8 +78,10 @@ THE LOCK
     A child of a holder does not share the lock of its parent.  The child
     opens the file again, and flock(2) sees a different open file.  A child
     that asks for the lock then waits for its parent, and the parent waits
-    for the child.  For this reason, a holder gives its command MAKEFLAGS of
-    a jobserver (THE COMMAND OF A STEP), and `loop test` with such a
+    for the child.  For this reason, a holder whose command can ask for a
+    lease gives that command MAKEFLAGS of a jobserver.  `loop heavy` does
+    this for each command (THE COMMAND OF A STEP), and the tests job of
+    `loop nightly` does it for `loop test`.  `loop test` with such a
     jobserver takes no lease (assay.loop.affected, THE JOBSERVER).
 
 THE PRIORITY OF THE GATE
