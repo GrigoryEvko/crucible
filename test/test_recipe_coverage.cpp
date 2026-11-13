@@ -339,15 +339,19 @@ constexpr CoverageCell kCoverageMatrix[] = {
      "BITEXACT_STRICT; BITEXACT_TC degenerate for FP32"},
 
     // Half-precision storage with single-precision accumulation.
-    {ScalarType::Half, ReductionDeterminism::BITEXACT_TC, true, names::kF16F32AccumTc, ""},
+    // FP16 and BF16 tensor-core fragments give different bits on different
+    // vendors, so the tensor-core recipe of each type is UNORDERED.
+    {ScalarType::Half, ReductionDeterminism::BITEXACT_TC, false, "",
+     "STRUCTURAL: FP16 tensor-core fragments are not bit-identical across vendors"},
     {ScalarType::Half, ReductionDeterminism::ORDERED, true, names::kF16F32AccumOrdered, ""},
-    {ScalarType::Half, ReductionDeterminism::UNORDERED, false, "", "GAP: no f16_unordered (inference-fast path)"},
+    {ScalarType::Half, ReductionDeterminism::UNORDERED, true, names::kF16F32AccumTc, ""},
     {ScalarType::Half, ReductionDeterminism::BITEXACT_STRICT, false, "",
      "GAP: no f16 strict (20-50× slowdown to emulate via scalar FMA)"},
 
-    {ScalarType::BFloat16, ReductionDeterminism::BITEXACT_TC, true, names::kBf16F32AccumTc, ""},
+    {ScalarType::BFloat16, ReductionDeterminism::BITEXACT_TC, false, "",
+     "STRUCTURAL: BF16 tensor-core fragments are not bit-identical across vendors"},
     {ScalarType::BFloat16, ReductionDeterminism::ORDERED, true, names::kBf16F32AccumOrdered, ""},
-    {ScalarType::BFloat16, ReductionDeterminism::UNORDERED, false, "", "GAP: no bf16_unordered"},
+    {ScalarType::BFloat16, ReductionDeterminism::UNORDERED, true, names::kBf16F32AccumTc, ""},
     {ScalarType::BFloat16, ReductionDeterminism::BITEXACT_STRICT, false, "", "GAP: no bf16 strict (20-50× slowdown)"},
 
     // Eight-bit storage with block scales. The ordered tier is the strongest

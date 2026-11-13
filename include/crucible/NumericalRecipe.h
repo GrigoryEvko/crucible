@@ -60,7 +60,12 @@ enum class SoftmaxRecurrence : uint8_t {
 //   ORDERED          reduction topology pinned to a canonical index order,
 //                    tile shapes free, and a few units in the last place
 //   BITEXACT_TC      short tensor-core fragments with a pinned outer scalar
-//                    reduction, and at most one unit in the last place
+//                    reduction, and at most one unit in the last place.  The
+//                    bound holds only for exact fragments: integer MMA, FP64
+//                    or FP32 MMA, or inputs split so that each product is
+//                    exact.  FP16 and BF16 fragments give different bits on
+//                    different vendors and generations, so a recipe of such
+//                    fragments is UNORDERED
 //   BITEXACT_STRICT  a scalar fused-multiply-add chain throughout, with no
 //                    tensor cores, and byte-identical across architectures
 enum class ReductionDeterminism : uint8_t {

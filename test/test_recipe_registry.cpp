@@ -104,6 +104,12 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
             // value copied in from the specification.
             assert(e.recipe->hash == crucible::compute_recipe_hash(*e.recipe));
             assert(e.recipe->accum_dtype == ScalarType::Float);
+            // FP16 and BF16 tensor-core fragments are not bit-identical
+            // across vendors, so no such recipe claims a bit-exact tier.
+            bool const is_half_output =
+                e.recipe->out_dtype == ScalarType::Half || e.recipe->out_dtype == ScalarType::BFloat16;
+            assert(!is_half_output || !crucible::permits_tensor_cores(e.recipe->determinism)
+                   || !crucible::is_bitexact(e.recipe->determinism));
         }
     }
 
@@ -192,14 +198,16 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
             assert(!crucible::permits_tensor_cores(x.determinism));
         }
 
+        // FP16 and BF16 tensor-core fragments give different bits on
+        // different vendors, so the two tensor-core recipes are UNORDERED.
         {
             auto r = reg.by_name(names::kF16F32AccumTc);
             assert(r.has_value());
             const auto& x = **r;
             assert(x.accum_dtype == ScalarType::Float);
             assert(x.out_dtype == ScalarType::Half);
-            assert(x.determinism == ReductionDeterminism::BITEXACT_TC);
-            assert(crucible::is_bitexact(x.determinism));
+            assert(x.determinism == ReductionDeterminism::UNORDERED);
+            assert(!crucible::is_bitexact(x.determinism));
             assert(crucible::permits_tensor_cores(x.determinism));
         }
 
@@ -209,7 +217,8 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
             const auto& x = **r;
             assert(x.accum_dtype == ScalarType::Float);
             assert(x.out_dtype == ScalarType::BFloat16);
-            assert(x.determinism == ReductionDeterminism::BITEXACT_TC);
+            assert(x.determinism == ReductionDeterminism::UNORDERED);
+            assert(!crucible::is_bitexact(x.determinism));
         }
 
         {
@@ -294,9 +303,9 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
         const Golden goldens[] = {
             {names::kF32Strict, 0xce0eb0cd5c376b79ULL},
             {names::kF32Ordered, 0x493a001a4ad235a7ULL},
-            {names::kF16F32AccumTc, 0xc737d38ea930d024ULL},
+            {names::kF16F32AccumTc, 0x8f46706bfc750adbULL},
             {names::kF16F32AccumOrdered, 0xcc51530cf248c3e3ULL},
-            {names::kBf16F32AccumTc, 0x0acf66d27c444494ULL},
+            {names::kBf16F32AccumTc, 0x96517ac8a65db41fULL},
             {names::kBf16F32AccumOrdered, 0xc674007dc8716618ULL},
             {names::kFp8E4m3F32AccumMxOrd, 0x5ba4c6b1bdefc89dULL},
             {names::kFp8E5m2F32AccumMxOrd, 0xb8e80f767e9cfb21ULL},

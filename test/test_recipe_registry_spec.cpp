@@ -113,8 +113,8 @@ template <class T>
         assert(spec.error() == RecipeError::NameNotFound);
     }
 
-    // The tolerance class follows the storage type, so this recipe lands in the
-    // one-ULP class for FP16 rather than in the bit-exact class.
+    // FP16 tensor-core fragments give different bits on different vendors, so
+    // this recipe is UNORDERED and lands at the bottom of the lattice.
     {
         auto base = reg.by_name(names::kF16F32AccumTc);
         assert(base.has_value());
@@ -123,7 +123,7 @@ template <class T>
         auto spec = reg.by_hash_spec(hash);
         assert(spec.has_value());
         assert(spec->peek()->hash == hash);
-        assert(::fixy::tolerance_of(*spec) == Tolerance::ULP_FP16);
+        assert(::fixy::tolerance_of(*spec) == Tolerance::RELAXED);
         assert(::fixy::recipe_family_of(*spec) == RecipeFamily::Pairwise);
     }
 
@@ -152,17 +152,17 @@ template <class T>
 
     // A request is admitted when it sits at or below the spec on both axes.
     {
-        auto spec = reg.by_name_spec(names::kF16F32AccumTc).value();
+        auto spec = reg.by_name_spec(names::kF32Strict).value();
 
         // Exact match on both axes.
-        assert(::fixy::admits(spec, Tolerance::ULP_FP16, RecipeFamily::Pairwise));
+        assert(::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::Pairwise));
 
-        // A weaker tolerance request: ULP_FP8 sits below ULP_FP16 on the chain.
+        // A weaker tolerance request: ULP_FP8 sits below BITEXACT on the chain.
         assert(::fixy::admits(spec, Tolerance::ULP_FP8, RecipeFamily::Pairwise));
 
         // None is the family bottom, so a consumer that pins no family is
         // admitted by any producer.
-        assert(::fixy::admits(spec, Tolerance::ULP_FP16, RecipeFamily::None));
+        assert(::fixy::admits(spec, Tolerance::BITEXACT, RecipeFamily::None));
     }
 
     // The named families are siblings, incomparable in the partial order, so
@@ -208,10 +208,10 @@ template <class T>
 
     // The join is idempotent on both axes.
     {
-        auto a = reg.by_name_spec(names::kF16F32AccumTc).value();
-        auto b = reg.by_name_spec(names::kF16F32AccumTc).value();
+        auto a = reg.by_name_spec(names::kF32Strict).value();
+        auto b = reg.by_name_spec(names::kF32Strict).value();
         auto c = a.compose(b);
-        assert(::fixy::tolerance_of(c) == Tolerance::ULP_FP16);
+        assert(::fixy::tolerance_of(c) == Tolerance::BITEXACT);
         assert(::fixy::recipe_family_of(c) == RecipeFamily::Pairwise);
     }
 

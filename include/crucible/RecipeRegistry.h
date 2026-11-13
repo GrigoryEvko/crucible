@@ -261,7 +261,8 @@ private:
 
 // These strings are persisted by anything that pins a recipe by name, so
 // renaming one breaks every stored reference to it. The spelling is
-// storage-dtype, then accumulator qualifier, then determinism tier.
+// storage-dtype, then accumulator qualifier, then determinism tier.  The
+// suffix tc names the tensor-core path, whose tier is UNORDERED.
 
 namespace recipe_names {
 inline constexpr std::string_view kF32Strict = "f32_strict";
@@ -282,6 +283,12 @@ struct StarterSpec {
 };
 
 // A cross-section of the determinism tiers against the common storage dtypes.
+//
+// The two tc recipes run FP16 or BF16 fragments on tensor cores.  Each
+// vendor and each generation fuses a different number of products, and
+// truncates and rounds the fused sum in a different way.  So two chips give
+// different bits for the same inputs, with no bound in units in the last
+// place, and the tier of the two recipes is UNORDERED.
 inline constexpr std::array<StarterSpec, RecipeRegistry::STARTER_COUNT> kStarterRecipes = {{
     {recipe_names::kF32Strict, hashed(NumericalRecipe{
                                    .accum_dtype = ScalarType::Float,
@@ -312,7 +319,7 @@ inline constexpr std::array<StarterSpec, RecipeRegistry::STARTER_COUNT> kStarter
                                        .rounding = RoundingMode::RN,
                                        .scale_policy = ScalePolicy::NONE,
                                        .softmax = SoftmaxRecurrence::ONLINE_LSE,
-                                       .determinism = ReductionDeterminism::BITEXACT_TC,
+                                       .determinism = ReductionDeterminism::UNORDERED,
                                        .flags = {},
                                        .hash = {},
                                    })},
@@ -334,7 +341,7 @@ inline constexpr std::array<StarterSpec, RecipeRegistry::STARTER_COUNT> kStarter
                                         .rounding = RoundingMode::RN,
                                         .scale_policy = ScalePolicy::NONE,
                                         .softmax = SoftmaxRecurrence::ONLINE_LSE,
-                                        .determinism = ReductionDeterminism::BITEXACT_TC,
+                                        .determinism = ReductionDeterminism::UNORDERED,
                                         .flags = {},
                                         .hash = {},
                                     })},

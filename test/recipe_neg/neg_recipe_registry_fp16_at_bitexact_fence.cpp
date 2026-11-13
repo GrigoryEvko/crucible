@@ -1,10 +1,9 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
 // A value at ULP_FP16 must not reach a consumer that requires BITEXACT.
-// ULP_FP16 is three tiers below BITEXACT.  Two starter recipes,
-// f16_f32accum_tc and bf16_f32accum_tc, are BITEXACT_TC with FP16 or BF16
-// output, and tolerance_of maps them to ULP_FP16.  A configuration error
-// that selects one of them for a BITEXACT consumer must fail here.
+// ULP_FP16 is three tiers below BITEXACT.  tolerance_of maps a BITEXACT_TC
+// recipe with FP16 or BF16 output to ULP_FP16.  A configuration error that
+// selects such a recipe for a BITEXACT consumer must fail here.
 //
 // Expected diagnostic: the satisfies_v<W, BITEXACT> constraint of the
 // consumer is not satisfied for a band at ULP_FP16.
