@@ -1,404 +1,377 @@
 #include <crucible/perf/ProcGauges.h>
 #include <crucible/perf/SenseHubV2.h>
 
-#include <fcntl.h>
-#include <unistd.h>
-#include <dirent.h>
+#include <foundation/os/Directory.h>
+#include <foundation/os/File.h>
 
-#include <array>
-#include <cerrno>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <new>
 #include <utility>
 
 namespace crucible::perf {
 
-ScopedFd::~ScopedFd() noexcept { close_(); }
-
-void ScopedFd::close_() noexcept {
-    if (fd_ >= 0) {
-        // POSIX permits close to be interrupted.  Linux reclaims the fd
-        // either way, but the loop covers a system that does not.
-        int r;
-        do {
-            r = ::close(fd_);
-        } while (r == -1 && errno == EINTR);
-        fd_ = -1;
-    }
-}
-
 namespace {
 
-[[nodiscard]] int open_ro(const char* path) noexcept {
-    int fd;
-    do {
-        fd = ::open(path, O_RDONLY | O_CLOEXEC);
-    } while (fd == -1 && errno == EINTR);
-    return fd;
+constexpr ::fixy::CText kSlabinfoPath{"/proc/slabinfo"};
+constexpr ::fixy::CText kInterruptsPath{"/proc/interrupts"};
+constexpr ::fixy::CText kSoftnetStatPath{"/proc/net/softnet_stat"};
+constexpr ::fixy::CText kSnmpPath{"/proc/net/snmp"};
+constexpr ::fixy::CText kProcNetTcpPath{"/proc/net/tcp"};
+constexpr ::fixy::CText kSysBlockPath{"/sys/block"};
+
+#ifdef CRUCIBLE_SENSE_HUB_EXTENDED
+constexpr ::fixy::CText kVmstatPath{"/proc/vmstat"};
+constexpr ::fixy::CText kLoadavgPath{"/proc/loadavg"};
+constexpr ::fixy::CText kPressureCpuPath{"/proc/pressure/cpu"};
+constexpr ::fixy::CText kPressureMemoryPath{"/proc/pressure/memory"};
+constexpr ::fixy::CText kPressureIoPath{"/proc/pressure/io"};
+#endif
+
+// A block statistics file and a pressure file hold one or two short lines.
+using SmallText = ::fixy::FixedText<512>;
+
+[[nodiscard]] constexpr bool is_blank(char character) noexcept { return character == ' ' || character == '\t'; }
+
+[[nodiscard]] constexpr bool is_not_blank(char character) noexcept { return !is_blank(character); }
+
+[[nodiscard]] constexpr bool is_decimal_digit(char character) noexcept { return character >= '0' && character <= '9'; }
+
+[[nodiscard]] constexpr uint64_t decimal_value(char character) noexcept {
+    return static_cast<uint64_t>(character - '0');
 }
 
-[[nodiscard]] ssize_t pread_full(int fd, char* buf, size_t n) noexcept {
-    if (fd < 0 || n == 0) return -1;
-    ssize_t r;
-    do {
-        r = ::pread(fd, buf, n - 1, 0);
-    } while (r == -1 && errno == EINTR);
-    if (r >= 0) buf[r] = '\0';
-    return r;
+[[nodiscard]] constexpr bool is_hex_digit(char character) noexcept {
+    return is_decimal_digit(character) || (character >= 'a' && character <= 'f')
+        || (character >= 'A' && character <= 'F');
 }
 
-[[nodiscard]] const char* skip_ws(const char* p, const char* end) noexcept {
-    while (p < end && (*p == ' ' || *p == '\t'))
-        ++p;
-    return p;
+[[nodiscard]] constexpr uint64_t hex_value(char character) noexcept {
+    if (is_decimal_digit(character)) return decimal_value(character);
+    if (character >= 'a' && character <= 'f') return static_cast<uint64_t>(character - 'a' + 10);
+    return static_cast<uint64_t>(character - 'A' + 10);
 }
 
-[[nodiscard]] bool is_decimal_digit(char c) noexcept { return c >= '0' && c <= '9'; }
+// The first count characters of text.  The caller keeps count at most the
+// size of the text.
+[[nodiscard]] ::fixy::TextView prefix(::fixy::TextView text, std::size_t count) noexcept {
+    return text.window(0, count).value_or(::fixy::TextView{});
+}
 
-[[nodiscard]] uint64_t decimal_value(char c) noexcept { return static_cast<uint64_t>(c - '0'); }
+// The characters of text after its first count characters, or no character
+// when the text holds fewer.
+[[nodiscard]] ::fixy::TextView suffix(::fixy::TextView text, std::size_t count) noexcept {
+    std::size_t const start = ::fixy::min(count, text.size());
+    return text.window(start, text.size() - start).value_or(::fixy::TextView{});
+}
 
-[[nodiscard]] uint64_t parse_u64(const char** pp, const char* end) noexcept {
-    const char* p = skip_ws(*pp, end);
-    uint64_t v = 0;
-    bool any = false;
-    while (p < end && is_decimal_digit(*p)) {
-        v = v * 10 + decimal_value(*p);
-        ++p;
-        any = true;
+// The count of the leading characters of text that satisfy predicate.
+// Complexity: linear in that count.
+template <class Predicate>
+[[nodiscard]] std::size_t leading_count(::fixy::TextView text, Predicate predicate) noexcept {
+    std::size_t count = 0;
+    for (char const character : text) {
+        if (!predicate(character)) break;
+        ++count;
     }
-    *pp = p;
-    return any ? v : 0;
+    return count;
 }
 
-// Reads the hex digits at *pp, the form in which /proc/net/softnet_stat and
-// /proc/net/tcp write their counters, and leaves *pp after the last digit.
-[[nodiscard]] uint64_t parse_hex_u64(const char** pp, const char* end) noexcept {
-    const char* p = *pp;
-    uint64_t v = 0;
-    for (; p < end; ++p) {
-        uint64_t digit = 0;
-        if (is_decimal_digit(*p)) {
-            digit = decimal_value(*p);
-        } else if (*p >= 'a' && *p <= 'f') {
-            digit = static_cast<uint64_t>(*p - 'a' + 10);
-        } else if (*p >= 'A' && *p <= 'F') {
-            digit = static_cast<uint64_t>(*p - 'A' + 10);
-        } else {
-            break;
-        }
-        v = (v << 4) | digit;
+// The position of the first character in text, or the size of the text when
+// it holds none.
+[[nodiscard]] std::size_t position_of(::fixy::TextView text, char character) noexcept {
+    return ::fixy::find(text, character).value_or(text.size());
+}
+
+// The position of the first needle in text, or the size of the text when it
+// holds none.  The needle is not empty.
+[[nodiscard]] std::size_t position_of(::fixy::TextView text, ::fixy::TextView needle) noexcept {
+    return ::fixy::find(text, needle).value_or(text.size());
+}
+
+// Drops the first count lines of text, with their newlines.  A text with
+// fewer lines becomes empty.
+[[nodiscard]] ::fixy::TextView after_lines(::fixy::TextView text, std::size_t count) noexcept {
+    for (std::size_t line = 0; line < count; ++line) {
+        text = suffix(text, position_of(text, '\n') + 1);
     }
-    *pp = p;
-    return v;
+    return text;
 }
 
-// The first newline in [p, end), or null when the range holds none.
-[[nodiscard]] const char* find_newline(const char* p, const char* end) noexcept {
-    return static_cast<const char*>(std::memchr(p, '\n', static_cast<size_t>(end - p)));
-}
-
-[[nodiscard]] const char* find_str(const char* p, const char* end, const char* needle) noexcept {
-    const size_t nlen = std::strlen(needle);
-    if (nlen == 0 || static_cast<size_t>(end - p) < nlen) return end;
-    for (const char* q = p; q + nlen <= end; ++q) {
-        if (std::memcmp(q, needle, nlen) == 0) return q;
+// Calls visit with each line of text that a newline ends, in order, without
+// its newline.  A last line with no newline is not visited.
+template <class Visit>
+void for_each_line(::fixy::TextView text, Visit visit) noexcept {
+    for (std::size_t newline = position_of(text, '\n'); newline < text.size(); newline = position_of(text, '\n')) {
+        visit(prefix(text, newline));
+        text = suffix(text, newline + 1);
     }
-    return end;
+}
+
+// The line of text from its start up to the first newline, or the whole text
+// when it holds no newline.
+[[nodiscard]] ::fixy::TextView line_of(::fixy::TextView text) noexcept { return prefix(text, position_of(text, '\n')); }
+
+void skip_blanks(::fixy::TextView& text) noexcept { text = suffix(text, leading_count(text, is_blank)); }
+
+// Moves past the run of characters before the next blank.
+void skip_word(::fixy::TextView& text) noexcept { text = suffix(text, leading_count(text, is_not_blank)); }
+
+// Moves past the first stop, or to the end when the text holds none.
+void skip_past(::fixy::TextView& text, char stop) noexcept { text = suffix(text, position_of(text, stop) + 1); }
+
+// The decimal number after the blanks at the start of text, or zero when no
+// digit follows them.  The text then starts after the last digit.
+[[nodiscard]] uint64_t take_decimal(::fixy::TextView& text) noexcept {
+    skip_blanks(text);
+    std::size_t const count = leading_count(text, is_decimal_digit);
+    uint64_t value = 0;
+    for (char const character : prefix(text, count)) {
+        value = value * 10 + decimal_value(character);
+    }
+    text = suffix(text, count);
+    return value;
+}
+
+// The hex digits at the start of text, the form in which
+// /proc/net/softnet_stat and /proc/net/tcp write their counters.  The text
+// then starts after the last digit.
+[[nodiscard]] uint64_t take_hex(::fixy::TextView& text) noexcept {
+    std::size_t const count = leading_count(text, is_hex_digit);
+    uint64_t value = 0;
+    for (char const character : prefix(text, count)) {
+        value = (value << 4) | hex_value(character);
+    }
+    text = suffix(text, count);
+    return value;
 }
 
 #ifdef CRUCIBLE_SENSE_HUB_EXTENDED
 // Reads a decimal with up to two fractional digits, such as a load average
 // or a pressure figure, as hundredths.
-[[nodiscard]] uint64_t parse_fixed_x100(const char** pp, const char* end) noexcept {
-    const char* p = skip_ws(*pp, end);
-    uint64_t whole = 0;
-    while (p < end && is_decimal_digit(*p)) {
-        whole = whole * 10 + decimal_value(*p);
-        ++p;
-    }
-    uint64_t frac = 0;
-    if (p < end && *p == '.') {
-        ++p;
-        int digits = 0;
-        while (p < end && is_decimal_digit(*p) && digits < 2) {
-            frac = frac * 10 + decimal_value(*p);
-            ++p;
-            ++digits;
+[[nodiscard]] uint64_t take_fixed_x100(::fixy::TextView& text) noexcept {
+    uint64_t const whole = take_decimal(text);
+    uint64_t fraction = 0;
+    if (::fixy::starts_with(text, ".")) {
+        text = suffix(text, 1);
+        std::size_t const digits = ::fixy::min(leading_count(text, is_decimal_digit), std::size_t{2});
+        for (char const character : prefix(text, digits)) {
+            fraction = fraction * 10 + decimal_value(character);
         }
         // A single fractional digit counts tenths, so scale it to hundredths.
-        if (digits == 1) frac *= 10;
-        while (p < end && is_decimal_digit(*p))
-            ++p;
+        if (digits == 1) fraction *= 10;
+        text = suffix(text, leading_count(text, is_decimal_digit));
     }
-    *pp = p;
-    return whole * 100 + frac;
+    return whole * 100 + fraction;
 }
 
-// The number that follows `key` on its line, or zero when the text holds no
+// The number that follows key on its line, or zero when the text holds no
 // such key.
-[[nodiscard]] uint64_t value_after_key(const char* p, const char* end, const char* key) noexcept {
-    const char* hit = find_str(p, end, key);
-    if (hit == end) return 0;
-    const char* tok = hit + std::strlen(key);
-    const char* nl = find_newline(tok, end);
-    return parse_u64(&tok, nl != nullptr ? nl : end);
+[[nodiscard]] uint64_t value_after_key(::fixy::TextView text, ::fixy::TextView key) noexcept {
+    std::size_t const hit = position_of(text, key);
+    if (hit == text.size()) return 0;
+    ::fixy::TextView value = line_of(suffix(text, hit + key.size()));
+    return take_decimal(value);
 }
 #endif
+
+// True when the file at path can be read now.
+[[nodiscard]] bool is_readable(::fixy::CText path) noexcept {
+    SmallText probe{};
+    return ::foundation::os::read_file(path, probe).is_ok();
+}
 
 }  // anonymous namespace
 
-std::optional<ProcGauges> ProcGauges::init(::fixy::InitLoadCtx const&) noexcept {
-    ProcGauges p{};
+ProcGauges::ProcGauges(::fixy::Box<ScratchText> scratch) noexcept : scratch_{std::move(scratch)} {}
 
-    // The scratch buffer lives on the heap so that no poll puts a buffer of
-    // this size on the stack.  A failed allocation fails init, and the caller
-    // decides whether to proceed without these gauges.
-    p.scratch_ = std::unique_ptr<char[]>(new(std::nothrow) char[SCRATCH_BYTES]);
-    if (!p.scratch_) return std::nullopt;
+ProcGauges ProcGauges::init(::fixy::InitLoadCtx const& init) noexcept {
+    ProcGauges gauges{::fixy::mint_box<ScratchText>(init.cap().alloc)};
 
-    p.fd_slabinfo_ = ScopedFd{open_ro("/proc/slabinfo")};
-    p.fd_interrupts_ = ScopedFd{open_ro("/proc/interrupts")};
-    p.fd_softnet_stat_ = ScopedFd{open_ro("/proc/net/softnet_stat")};
-    p.fd_snmp_ = ScopedFd{open_ro("/proc/net/snmp")};
-    p.fd_proc_net_tcp_ = ScopedFd{open_ro("/proc/net/tcp")};
+    gauges.is_slabinfo_readable_ = is_readable(kSlabinfoPath);
+    gauges.is_interrupts_readable_ = is_readable(kInterruptsPath);
+    gauges.is_softnet_stat_readable_ = is_readable(kSoftnetStatPath);
+    gauges.is_snmp_readable_ = is_readable(kSnmpPath);
+    gauges.is_proc_net_tcp_readable_ = is_readable(kProcNetTcpPath);
 
-    // Every block device present now gets one fd.  A device hot-plugged
-    // afterwards is picked up only by a fresh init.
-    DIR* sysblock = ::opendir("/sys/block");
-    if (sysblock) {
-        dirent* de = nullptr;
-        // The buffer holds the longest name that d_name can carry, so no
-        // path is ever cut short.
-        std::array<char, sizeof("/sys/block/") + sizeof(de->d_name) + sizeof("/stat")> path{};
-        while ((de = ::readdir(sysblock)) != nullptr && p.num_block_devs_ < MAX_BLOCK_DEVS) {
-            if (de->d_name[0] == '.' && (de->d_name[1] == '\0' || (de->d_name[1] == '.' && de->d_name[2] == '\0'))) {
-                continue;
+    // Every block device present now gets one path.  A device hot-plugged
+    // afterwards is picked up only by a fresh init.  A host with no
+    // /sys/block has no block device gauge.
+    static_cast<void>(::foundation::os::for_each_entry(
+        kSysBlockPath, [&gauges](::fixy::CText name) noexcept -> ::foundation::os::Visit {
+            if (gauges.block_stat_paths_.size() == MAX_BLOCK_DEVS) return ::foundation::os::Visit::stop;
+            BlockStatPath path{};
+            if (path.append(kSysBlockPath).is_err() || path.append('/').is_err() || path.append(name).is_err()
+                || path.append(::fixy::TextView{"/stat"}).is_err()) {
+                return ::foundation::os::Visit::proceed;
             }
-            const int n = std::snprintf(path.data(), path.size(), "/sys/block/%s/stat", de->d_name);
-            if (n <= 0 || static_cast<size_t>(n) >= path.size()) continue;
-            int fd = open_ro(path.data());
-            if (fd >= 0) {
-                p.fd_block_stats_[p.num_block_devs_++] = ScopedFd{fd};
-            }
-        }
-        ::closedir(sysblock);
-    }
+            if (!is_readable(path.c_text())) return ::foundation::os::Visit::proceed;
+            static_cast<void>(gauges.block_stat_paths_.push(path).expect("the list has room for one more path"));
+            return ::foundation::os::Visit::proceed;
+        }));
 
 #ifdef CRUCIBLE_SENSE_HUB_EXTENDED
-    p.fd_vmstat_ = ScopedFd{open_ro("/proc/vmstat")};
-    p.fd_loadavg_ = ScopedFd{open_ro("/proc/loadavg")};
-    p.fd_pressure_cpu_ = ScopedFd{open_ro("/proc/pressure/cpu")};
-    p.fd_pressure_memory_ = ScopedFd{open_ro("/proc/pressure/memory")};
-    p.fd_pressure_io_ = ScopedFd{open_ro("/proc/pressure/io")};
+    gauges.is_vmstat_readable_ = is_readable(kVmstatPath);
+    gauges.is_loadavg_readable_ = is_readable(kLoadavgPath);
+    gauges.is_pressure_cpu_readable_ = is_readable(kPressureCpuPath);
+    gauges.is_pressure_memory_readable_ = is_readable(kPressureMemoryPath);
+    gauges.is_pressure_io_readable_ = is_readable(kPressureIoPath);
 #endif
 
-    return p;
+    return gauges;
 }
 
-std::size_t ProcGauges::open_count() const noexcept {
-    std::size_t n = 0;
-    if (fd_slabinfo_.valid()) ++n;
-    if (fd_interrupts_.valid()) ++n;
-    if (fd_softnet_stat_.valid()) ++n;
-    if (fd_snmp_.valid()) ++n;
-    if (fd_proc_net_tcp_.valid()) ++n;
-    n += num_block_devs_;
+std::size_t ProcGauges::readable_count() const noexcept {
+    std::size_t count = 0;
+    if (is_slabinfo_readable_) ++count;
+    if (is_interrupts_readable_) ++count;
+    if (is_softnet_stat_readable_) ++count;
+    if (is_snmp_readable_) ++count;
+    if (is_proc_net_tcp_readable_) ++count;
+    count += block_stat_paths_.size();
 #ifdef CRUCIBLE_SENSE_HUB_EXTENDED
-    if (fd_vmstat_.valid()) ++n;
-    if (fd_loadavg_.valid()) ++n;
-    if (fd_pressure_cpu_.valid()) ++n;
-    if (fd_pressure_memory_.valid()) ++n;
-    if (fd_pressure_io_.valid()) ++n;
+    if (is_vmstat_readable_) ++count;
+    if (is_loadavg_readable_) ++count;
+    if (is_pressure_cpu_readable_) ++count;
+    if (is_pressure_memory_readable_) ++count;
+    if (is_pressure_io_readable_) ++count;
 #endif
-    return n;
+    return count;
 }
 
-uint64_t ProcGauges::read_slab_total_bytes_() const noexcept {
-    if (!fd_slabinfo_.valid()) return UNAVAILABLE;
-    ssize_t n = pread_full(fd_slabinfo_.raw(), scratch_.get(), SCRATCH_BYTES);
-    if (n <= 0) return UNAVAILABLE;
+::fixy::TextView ProcGauges::read_scratch_(::fixy::CText path) noexcept {
+    ScratchText& text = *scratch_;
+    if (::foundation::os::read_file(path, text).is_err() || text.size() == SCRATCH_BYTES) return ::fixy::TextView{};
+    return text.view();
+}
+
+uint64_t ProcGauges::read_slab_total_bytes_() noexcept {
+    if (!is_slabinfo_readable_) return UNAVAILABLE;
+    ::fixy::TextView const text = read_scratch_(kSlabinfoPath);
+    if (text.size() == 0) return UNAVAILABLE;
     // The file opens with a version line and a column-name comment line, then
     // carries one line per cache:
     //   "<name> <active_objs> <num_objs> <objsize> ..."
-    const char* p = scratch_.get();
-    const char* end = scratch_.get() + n;
-    int header_skip = 2;
     uint64_t total = 0;
-    while (p < end) {
-        const char* nl = find_newline(p, end);
-        if (!nl) break;
-        if (header_skip > 0) {
-            --header_skip;
-            p = nl + 1;
-            continue;
-        }
-        // name
-        const char* tok = skip_ws(p, nl);
-        while (tok < nl && *tok != ' ' && *tok != '\t')
-            ++tok;
-        // active_objs
-        (void)parse_u64(&tok, nl);
-        uint64_t num_objs = parse_u64(&tok, nl);
-        uint64_t objsize = parse_u64(&tok, nl);
+    for_each_line(after_lines(text, 2), [&total](::fixy::TextView line) noexcept {
+        skip_blanks(line);
+        skip_word(line);
+        static_cast<void>(take_decimal(line));
+        uint64_t const num_objs = take_decimal(line);
+        uint64_t const objsize = take_decimal(line);
         total += num_objs * objsize;
-        p = nl + 1;
-    }
+    });
     return total;
 }
 
-uint64_t ProcGauges::read_hardirq_total_count_() const noexcept {
-    if (!fd_interrupts_.valid()) return UNAVAILABLE;
-    ssize_t n = pread_full(fd_interrupts_.raw(), scratch_.get(), SCRATCH_BYTES);
-    if (n <= 0) return UNAVAILABLE;
+uint64_t ProcGauges::read_hardirq_total_count_() noexcept {
+    if (!is_interrupts_readable_) return UNAVAILABLE;
+    ::fixy::TextView const text = read_scratch_(kInterruptsPath);
+    if (text.size() == 0) return UNAVAILABLE;
     // A header line of CPU names comes first, then one line per interrupt:
     //   "  <N>:  <count_cpu0>  <count_cpu1>  ...  <handler_name>"
-    const char* p = scratch_.get();
-    const char* end = scratch_.get() + n;
-    const char* nl = find_newline(p, end);
-    if (!nl) return 0;
-    p = nl + 1;
     uint64_t total = 0;
-    while (p < end) {
-        nl = find_newline(p, end);
-        if (!nl) break;
-        const char* tok = skip_ws(p, nl);
-        while (tok < nl && *tok != ':')
-            ++tok;
-        if (tok < nl && *tok == ':') ++tok;
+    for_each_line(after_lines(text, 1), [&total](::fixy::TextView line) noexcept {
+        skip_blanks(line);
+        skip_past(line, ':');
         // The handler name follows the last count, so the first non-digit
         // ends the per-CPU columns.
         for (;;) {
-            tok = skip_ws(tok, nl);
-            if (tok >= nl || *tok < '0' || *tok > '9') break;
-            total += parse_u64(&tok, nl);
+            skip_blanks(line);
+            if (leading_count(line, is_decimal_digit) == 0) break;
+            total += take_decimal(line);
         }
-        p = nl + 1;
-    }
+    });
     return total;
 }
 
-uint64_t ProcGauges::read_napi_poll_total_() const noexcept {
-    if (!fd_softnet_stat_.valid()) return UNAVAILABLE;
-    ssize_t n = pread_full(fd_softnet_stat_.raw(), scratch_.get(), SCRATCH_BYTES);
-    if (n <= 0) return UNAVAILABLE;
-    // One hex-formatted line per CPU.  Column 0 is packets_processed.
-    const char* p = scratch_.get();
-    const char* end = scratch_.get() + n;
+uint64_t ProcGauges::read_napi_poll_total_() noexcept {
+    if (!is_softnet_stat_readable_) return UNAVAILABLE;
+    ::fixy::TextView rest = read_scratch_(kSoftnetStatPath);
+    if (rest.size() == 0) return UNAVAILABLE;
+    // One hex-formatted line per CPU.  Column 0 is packets_processed.  The
+    // last line counts also when no newline ends it.
     uint64_t total = 0;
-    while (p < end) {
-        const char* nl = find_newline(p, end);
-        if (!nl) nl = end;
-        const char* tok = skip_ws(p, nl);
-        total += parse_hex_u64(&tok, nl);
-        if (nl == end) break;
-        p = nl + 1;
+    while (rest.size() > 0) {
+        std::size_t const newline = position_of(rest, '\n');
+        ::fixy::TextView line = prefix(rest, newline);
+        skip_blanks(line);
+        total += take_hex(line);
+        rest = suffix(rest, newline + 1);
     }
     return total;
 }
 
-uint64_t ProcGauges::read_skb_drop_reason_total_() const noexcept {
-    if (!fd_snmp_.valid()) return UNAVAILABLE;
-    ssize_t n = pread_full(fd_snmp_.raw(), scratch_.get(), SCRATCH_BYTES);
-    if (n <= 0) return UNAVAILABLE;
+uint64_t ProcGauges::read_skb_drop_reason_total_() noexcept {
+    if (!is_snmp_readable_) return UNAVAILABLE;
+    ::fixy::TextView const text = read_scratch_(kSnmpPath);
+    if (text.size() == 0) return UNAVAILABLE;
     // The file pairs a header line of column names with a value line, per
     // protocol, and both lines open with the same protocol prefix.  The
     // second "Ip: " is therefore the value line.
-    const char* p = scratch_.get();
-    const char* end = scratch_.get() + n;
-    const char* ip_line = find_str(p, end, "Ip: ");
-    if (ip_line == end) return 0;
-    const char* nl = find_newline(ip_line, end);
-    if (!nl) return 0;
-    const char* ip_values = find_str(nl + 1, end, "Ip: ");
-    if (ip_values == end) return 0;
+    std::size_t const header = position_of(text, ::fixy::TextView{"Ip: "});
+    if (header == text.size()) return 0;
+    ::fixy::TextView const after_header = suffix(text, header);
+    std::size_t const header_end = position_of(after_header, '\n');
+    if (header_end == after_header.size()) return 0;
+    ::fixy::TextView const rest = suffix(after_header, header_end + 1);
+    std::size_t const values = position_of(rest, ::fixy::TextView{"Ip: "});
+    if (values == rest.size()) return 0;
     // The Ip columns run: <fwd> <default_ttl> <inreceives> <inhdr_errors>
     // <inaddr_errors> <forwdatagrams> <inunknown_protos> <indiscards>
     // <indelivers> <outrequests> <outdiscards> <outnoroutes> ...
-    // The two discard counters are columns 7 and 10.
-    const char* tok = ip_values + 4;  // past "Ip: "
-    uint64_t cols[16] = {};
-    int idx = 0;
-    const char* line_end = find_newline(tok, end);
-    if (!line_end) line_end = end;
-    while (tok < line_end && idx < 16) {
-        cols[idx++] = parse_u64(&tok, line_end);
+    // The two discard counters are columns 7 and 10.  The walk reads at
+    // most 16 columns.
+    ::fixy::TextView line = line_of(suffix(rest, values + 4));
+    uint64_t in_discards = 0;
+    uint64_t out_discards = 0;
+    for (std::size_t column = 0; line.size() > 0 && column < 16; ++column) {
+        uint64_t const value = take_decimal(line);
+        if (column == 7) in_discards = value;
+        if (column == 10) out_discards = value;
     }
-    return (idx > 7 ? cols[7] : 0) + (idx > 10 ? cols[10] : 0);
+    return in_discards + out_discards;
 }
 
-uint64_t ProcGauges::read_tcp_recv_buffer_max_() const noexcept {
-    if (!fd_proc_net_tcp_.valid()) return UNAVAILABLE;
-    ssize_t n = pread_full(fd_proc_net_tcp_.raw(), scratch_.get(), SCRATCH_BYTES);
-    if (n <= 0) return UNAVAILABLE;
+uint64_t ProcGauges::read_tcp_recv_buffer_max_() noexcept {
+    if (!is_proc_net_tcp_readable_) return UNAVAILABLE;
+    ::fixy::TextView const text = read_scratch_(kProcNetTcpPath);
+    if (text.size() == 0) return UNAVAILABLE;
     // A header line comes first, then one line per socket:
     //   "  sl  local_address rem_address st tx_queue rx_queue tr ..."
     // The queue pair is one hex field of the form "XXXXXXXX:XXXXXXXX".
-    const char* p = scratch_.get();
-    const char* end = scratch_.get() + n;
-    const char* nl = find_newline(p, end);
-    if (!nl) return 0;
-    p = nl + 1;
     uint64_t max_rx = 0;
-    while (p < end) {
-        nl = find_newline(p, end);
-        if (!nl) break;
-        // sl
-        const char* tok = skip_ws(p, nl);
-        while (tok < nl && *tok != ' ' && *tok != '\t')
-            ++tok;
-        // local_address, rem_address
-        for (int i = 0; i < 2; ++i) {
-            tok = skip_ws(tok, nl);
-            while (tok < nl && *tok != ' ' && *tok != '\t')
-                ++tok;
+    for_each_line(after_lines(text, 1), [&max_rx](::fixy::TextView line) noexcept {
+        // sl, local_address, rem_address and st
+        for (int field = 0; field < 4; ++field) {
+            skip_blanks(line);
+            skip_word(line);
         }
-        // st
-        tok = skip_ws(tok, nl);
-        while (tok < nl && *tok != ' ' && *tok != '\t')
-            ++tok;
         // tx_queue, up to the colon
-        tok = skip_ws(tok, nl);
-        while (tok < nl && *tok != ':')
-            ++tok;
-        if (tok < nl && *tok == ':') ++tok;
+        skip_blanks(line);
+        skip_past(line, ':');
         // rx_queue
-        const uint64_t rx = parse_hex_u64(&tok, nl);
-        if (rx > max_rx) max_rx = rx;
-        p = nl + 1;
-    }
+        max_rx = ::fixy::max(max_rx, take_hex(line));
+    });
     return max_rx;
 }
 
 uint64_t ProcGauges::read_block_queue_depth_max_() const noexcept {
-    if (num_block_devs_ == 0) return UNAVAILABLE;
+    if (block_stat_paths_.size() == 0) return UNAVAILABLE;
     uint64_t max_depth = 0;
-    bool any_ok = false;
-    for (std::size_t i = 0; i < num_block_devs_; ++i) {
-        int fd = fd_block_stats_[i].raw();
-        if (fd < 0) continue;
-        char buf[512];
-        ssize_t n;
-        do {
-            n = ::pread(fd, buf, sizeof(buf) - 1, 0);
-        } while (n == -1 && errno == EINTR);
-        if (n <= 0) continue;
-        buf[n] = '\0';
+    bool is_any_read = false;
+    for (BlockStatPath const& path : block_stat_paths_) {
+        SmallText stat{};
+        if (::foundation::os::read_file(path.c_text(), stat).is_err() || stat.size() == 0) continue;
         // The columns run: <read_ios> <read_merges> <read_sectors>
         // <read_ticks> <write_ios> <write_merges> <write_sectors>
         // <write_ticks> <in_flight> <io_ticks> <time_in_queue> ...
         // in_flight is column 8, counting from zero.
-        const char* p = buf;
-        const char* end = buf + n;
-        for (int col = 0; col < 8; ++col) {
-            (void)parse_u64(&p, end);
+        ::fixy::TextView columns = stat.view();
+        for (int column = 0; column < 8; ++column) {
+            static_cast<void>(take_decimal(columns));
         }
-        uint64_t in_flight = parse_u64(&p, end);
-        if (in_flight > max_depth) max_depth = in_flight;
-        any_ok = true;
+        max_depth = ::fixy::max(max_depth, take_decimal(columns));
+        is_any_read = true;
     }
-    return any_ok ? max_depth : UNAVAILABLE;
+    return is_any_read ? max_depth : UNAVAILABLE;
 }
 
 uint64_t ProcGauges::read_printk_ring_bytes_free_() const noexcept {
@@ -407,114 +380,95 @@ uint64_t ProcGauges::read_printk_ring_bytes_free_() const noexcept {
     return UNAVAILABLE;
 }
 
-uint64_t ProcGauges::read_thp_split_total_() const noexcept {
+uint64_t ProcGauges::read_thp_split_total_() noexcept {
 #ifdef CRUCIBLE_SENSE_HUB_EXTENDED
-    if (!fd_vmstat_.valid()) return UNAVAILABLE;
-    ssize_t n = pread_full(fd_vmstat_.raw(), scratch_.get(), SCRATCH_BYTES);
-    if (n <= 0) return UNAVAILABLE;
+    if (!is_vmstat_readable_) return UNAVAILABLE;
+    ::fixy::TextView const text = read_scratch_(kVmstatPath);
+    if (text.size() == 0) return UNAVAILABLE;
     // Every line of the file has the form "<name> <value>".
-    const char* p = scratch_.get();
-    const char* end = scratch_.get() + n;
-    uint64_t total = 0;
-    static constexpr const char* k_keys[] = {"thp_split_page ", "thp_split_pmd ", "thp_split_pud "};
-    for (const char* key : k_keys) {
-        total += value_after_key(p, end, key);
-    }
-    return total;
+    return value_after_key(text, ::fixy::TextView{"thp_split_page "})
+         + value_after_key(text, ::fixy::TextView{"thp_split_pmd "})
+         + value_after_key(text, ::fixy::TextView{"thp_split_pud "});
 #else
-    // The vmstat fd is opened only in the extended build.
+    // The vmstat file is read only in the extended build.
     return UNAVAILABLE;
 #endif
 }
 
 #ifdef CRUCIBLE_SENSE_HUB_EXTENDED
 
-uint64_t ProcGauges::read_numa_hit_ratio_x100_() const noexcept {
-    if (!fd_vmstat_.valid()) return UNAVAILABLE;
-    ssize_t n = pread_full(fd_vmstat_.raw(), scratch_.get(), SCRATCH_BYTES);
-    if (n <= 0) return UNAVAILABLE;
-    const char* p = scratch_.get();
-    const char* end = scratch_.get() + n;
-    const uint64_t hit = value_after_key(p, end, "numa_hit ");
-    const uint64_t miss = value_after_key(p, end, "numa_miss ");
-    const uint64_t denom = hit + miss;
+uint64_t ProcGauges::read_numa_hit_ratio_x100_() noexcept {
+    if (!is_vmstat_readable_) return UNAVAILABLE;
+    ::fixy::TextView const text = read_scratch_(kVmstatPath);
+    if (text.size() == 0) return UNAVAILABLE;
+    uint64_t const hit = value_after_key(text, ::fixy::TextView{"numa_hit "});
+    uint64_t const miss = value_after_key(text, ::fixy::TextView{"numa_miss "});
+    uint64_t const denom = hit + miss;
     return denom == 0 ? 0 : (hit * 10000) / denom;
 }
 
-uint64_t ProcGauges::read_tcp_established_current_() const noexcept {
-    if (!fd_snmp_.valid()) return UNAVAILABLE;
-    ssize_t n = pread_full(fd_snmp_.raw(), scratch_.get(), SCRATCH_BYTES);
-    if (n <= 0) return UNAVAILABLE;
+uint64_t ProcGauges::read_tcp_established_current_() noexcept {
+    if (!is_snmp_readable_) return UNAVAILABLE;
+    ::fixy::TextView const text = read_scratch_(kSnmpPath);
+    if (text.size() == 0) return UNAVAILABLE;
     // The second "Tcp: " line carries the values.  CurrEstab is column 8,
     // counting from zero.
-    const char* p = scratch_.get();
-    const char* end = scratch_.get() + n;
-    const char* tcp_hdr = find_str(p, end, "Tcp: ");
-    if (tcp_hdr == end) return 0;
-    const char* nl = find_newline(tcp_hdr, end);
-    if (!nl) return 0;
-    const char* tcp_val = find_str(nl + 1, end, "Tcp: ");
-    if (tcp_val == end) return 0;
-    const char* tok = tcp_val + 5;
-    const char* line_end = find_newline(tok, end);
-    if (!line_end) line_end = end;
-    uint64_t v = 0;
-    for (int i = 0; i <= 8; ++i) {
-        v = parse_u64(&tok, line_end);
+    std::size_t const header = position_of(text, ::fixy::TextView{"Tcp: "});
+    if (header == text.size()) return 0;
+    ::fixy::TextView const after_header = suffix(text, header);
+    std::size_t const header_end = position_of(after_header, '\n');
+    if (header_end == after_header.size()) return 0;
+    ::fixy::TextView const rest = suffix(after_header, header_end + 1);
+    std::size_t const values = position_of(rest, ::fixy::TextView{"Tcp: "});
+    if (values == rest.size()) return 0;
+    ::fixy::TextView line = line_of(suffix(rest, values + 5));
+    uint64_t value = 0;
+    for (int column = 0; column <= 8; ++column) {
+        value = take_decimal(line);
     }
-    return v;
+    return value;
 }
 
-void ProcGauges::read_loadavg_x100_(uint64_t& out_1m, uint64_t& out_5m, uint64_t& out_15m) const noexcept {
-    out_1m = out_5m = out_15m = UNAVAILABLE;
-    if (!fd_loadavg_.valid()) return;
-    char buf[256];
-    ssize_t n;
-    do {
-        n = ::pread(fd_loadavg_.raw(), buf, sizeof(buf) - 1, 0);
-    } while (n == -1 && errno == EINTR);
-    if (n <= 0) return;
-    buf[n] = '\0';
-    const char* p = buf;
-    const char* end = buf + n;
-    out_1m = parse_fixed_x100(&p, end);
-    out_5m = parse_fixed_x100(&p, end);
-    out_15m = parse_fixed_x100(&p, end);
+ProcGauges::LoadAverages ProcGauges::read_loadavg_x100_() const noexcept {
+    if (!is_loadavg_readable_) return LoadAverages{};
+    ::fixy::FixedText<256> text{};
+    if (::foundation::os::read_file(kLoadavgPath, text).is_err() || text.size() == 0) return LoadAverages{};
+    ::fixy::TextView rest = text.view();
+    LoadAverages averages{};
+    averages.one_minute_x100 = take_fixed_x100(rest);
+    averages.five_minutes_x100 = take_fixed_x100(rest);
+    averages.fifteen_minutes_x100 = take_fixed_x100(rest);
+    return averages;
 }
 
-uint64_t ProcGauges::read_pressure_avg10_x100_(int fd, const char* kind) const noexcept {
-    if (fd < 0 || kind == nullptr) return UNAVAILABLE;
-    char buf[512];
-    ssize_t n;
-    do {
-        n = ::pread(fd, buf, sizeof(buf) - 1, 0);
-    } while (n == -1 && errno == EINTR);
-    if (n <= 0) return UNAVAILABLE;
-    buf[n] = '\0';
+uint64_t ProcGauges::read_pressure_avg10_x100_(bool is_source_readable, ::fixy::CText path,
+                                               ::fixy::TextView kind) const noexcept {
+    if (!is_source_readable) return UNAVAILABLE;
+    SmallText text{};
+    if (::foundation::os::read_file(path, text).is_err() || text.size() == 0) return UNAVAILABLE;
     // A pressure file carries two lines:
     //   "some avg10=<f> avg60=<f> avg300=<f> total=<u64>"
     //   "full avg10=<f> avg60=<f> avg300=<f> total=<u64>"
     // The "some" line covers any task blocked, where "full" covers only the
     // case of every task blocked.
-    const char* p = buf;
-    const char* end = buf + n;
-    const char* hit = find_str(p, end, kind);
-    if (hit == end) return UNAVAILABLE;
-    const char* tag = find_str(hit, end, "avg10=");
-    if (tag == end) return UNAVAILABLE;
-    const char* tok = tag + 6;
-    return parse_fixed_x100(&tok, end);
+    ::fixy::TextView const view = text.view();
+    std::size_t const hit = position_of(view, kind);
+    if (hit == view.size()) return UNAVAILABLE;
+    ::fixy::TextView const from_kind = suffix(view, hit);
+    std::size_t const tag = position_of(from_kind, ::fixy::TextView{"avg10="});
+    if (tag == from_kind.size()) return UNAVAILABLE;
+    ::fixy::TextView value = suffix(from_kind, tag + 6);
+    return take_fixed_x100(value);
 }
 
 #endif  // CRUCIBLE_SENSE_HUB_EXTENDED
 
-void ProcGauges::populate(uint64_t* gauge_array, std::size_t gauge_count) const noexcept {
-    if (!gauge_array || gauge_count == 0) return;
-
+void ProcGauges::populate(::fixy::View<uint64_t> gauges) noexcept {
     using v2::Gauge;
-    auto write = [&](Gauge g, uint64_t v) noexcept {
-        const auto idx = static_cast<std::size_t>(g);
-        if (idx < gauge_count) gauge_array[idx] = v;
+    auto const write = [&gauges](Gauge gauge, uint64_t value) noexcept {
+        for (auto const& slot : gauges.get(static_cast<std::size_t>(gauge))) {
+            *slot = value;
+        }
     };
 
     write(Gauge::SLAB_TOTAL_BYTES, read_slab_total_bytes_());
@@ -530,15 +484,17 @@ void ProcGauges::populate(uint64_t* gauge_array, std::size_t gauge_count) const 
     write(Gauge::NUMA_HIT_RATIO_X100, read_numa_hit_ratio_x100_());
     write(Gauge::TCP_ESTABLISHED_CURRENT, read_tcp_established_current_());
 
-    uint64_t l1, l5, l15;
-    read_loadavg_x100_(l1, l5, l15);
-    write(Gauge::LOAD_AVG_1M_X100, l1);
-    write(Gauge::LOAD_AVG_5M_X100, l5);
-    write(Gauge::LOAD_AVG_15M_X100, l15);
+    LoadAverages const averages = read_loadavg_x100_();
+    write(Gauge::LOAD_AVG_1M_X100, averages.one_minute_x100);
+    write(Gauge::LOAD_AVG_5M_X100, averages.five_minutes_x100);
+    write(Gauge::LOAD_AVG_15M_X100, averages.fifteen_minutes_x100);
 
-    write(Gauge::PSI_CPU_SOME_AVG10_X100, read_pressure_avg10_x100_(fd_pressure_cpu_.raw(), "some"));
-    write(Gauge::PSI_MEM_SOME_AVG10_X100, read_pressure_avg10_x100_(fd_pressure_memory_.raw(), "some"));
-    write(Gauge::PSI_IO_SOME_AVG10_X100, read_pressure_avg10_x100_(fd_pressure_io_.raw(), "some"));
+    write(Gauge::PSI_CPU_SOME_AVG10_X100,
+          read_pressure_avg10_x100_(is_pressure_cpu_readable_, kPressureCpuPath, ::fixy::TextView{"some"}));
+    write(Gauge::PSI_MEM_SOME_AVG10_X100,
+          read_pressure_avg10_x100_(is_pressure_memory_readable_, kPressureMemoryPath, ::fixy::TextView{"some"}));
+    write(Gauge::PSI_IO_SOME_AVG10_X100,
+          read_pressure_avg10_x100_(is_pressure_io_readable_, kPressureIoPath, ::fixy::TextView{"some"}));
 #endif
 }
 
