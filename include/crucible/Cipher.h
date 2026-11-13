@@ -52,7 +52,6 @@
 #include <cstdlib>
 #include <expected>
 #include <filesystem>
-#include <inplace_vector>
 #include <optional>
 #include <span>
 #include <string>
@@ -479,7 +478,7 @@ private:
     // The entries in the order of use, least recent first.  The capacity is
     // the entry limit, so the cache holds its slots in the Cipher and a
     // push never grows a buffer.
-    mutable std::inplace_vector<CachedObjectBytes, MAX_RESIDENT_CACHE_ENTRIES> resident_cache_;
+    mutable ::fixy::FixedList<CachedObjectBytes, MAX_RESIDENT_CACHE_ENTRIES> resident_cache_{};
     mutable size_t resident_cache_bytes_ = 0;
 
     [[nodiscard]] static constexpr bool commits_head_(const LogEntry& entry) noexcept {

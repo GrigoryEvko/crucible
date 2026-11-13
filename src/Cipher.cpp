@@ -39,7 +39,7 @@ class AnchoredFd {
 public:
     AnchoredFd(const AnchoredFd&) = delete("a descriptor is unique; a copy would close it twice");
     AnchoredFd& operator=(const AnchoredFd&) = delete("a descriptor is unique; a copy would close it twice");
-    AnchoredFd(AnchoredFd&& other) noexcept : fd_{std::exchange(other.fd_, -1)} {}
+    AnchoredFd(AnchoredFd&& other) noexcept : fd_{::fixy::exchange(other.fd_, -1)} {}
     AnchoredFd& operator=(AnchoredFd&&) = delete("an owner is built once, by open_at_, and never reassigned");
 
     ~AnchoredFd() {
@@ -323,14 +323,14 @@ void hex16_(uint64_t value, char (&out)[16]) noexcept {
 // refactor that drops the headroom or makes a header conditional trips
 // the mint's precondition here, instead of silently handing the caller
 // a zero-length buffer to serialize into.
-::fixy::Positive<std::size_t> estimate_serial_size(const RegionNode* region) {
+::fixy::Positive<std::size_t> estimate_serial_size(RegionNode const& region) {
     size_t sz = 64;  // header
     sz += 32;  // region fixed fields
-    if (region->plan) {
-        sz += 64 + region->plan->num_slots * sizeof(TensorSlot);
+    if (region.plan) {
+        sz += 64 + region.plan->num_slots * sizeof(TensorSlot);
     }
-    for (uint32_t i = 0; i < region->num_ops; i++) {
-        const TraceEntry& te = region->ops[i];
+    for (uint32_t i = 0; i < region.num_ops; i++) {
+        const TraceEntry& te = region.ops[i];
         const size_t n_in = te.num_inputs;
         const size_t n_out = te.num_outputs;
         const size_t n_sca = te.num_scalar_args;
@@ -367,7 +367,7 @@ ContentHash Cipher::store(OpenView const&, ContentAddressedRegionPayload payload
         return hash;
     }
 
-    const size_t cap = estimate_serial_size(region).value();
+    const size_t cap = estimate_serial_size(*region).value();
     std::vector<uint8_t> buf(cap);
     const size_t n = serialize_region(SerializedRegion{*region}, SerialBuffer{buf});
     if (n == 0) return ContentHash{};
@@ -808,22 +808,28 @@ std::string Cipher::session_event_batch_path(::fixy::session::SessionTagId sessi
                   std::string_view{hash_hex, 16}, ".cfed"});
 }
 
-std::span<const uint8_t> Cipher::cached_bytes(ContentHash hash) const noexcept {
-    for (std::size_t i = 0; i < resident_cache_.size(); ++i) {
-        const CachedObjectBytes& entry = resident_cache_[i];
-        if (entry.hash == hash) {
-            if (i + 1 != resident_cache_.size()) {
-                CachedObjectBytes hit = std::move(resident_cache_[i]);
-                resident_cache_.erase(resident_cache_.begin() + static_cast<std::ptrdiff_t>(i));
-                resident_cache_.push_back(std::move(hit));
-            }
-            return std::span<const uint8_t>{resident_cache_.back().bytes};
-        }
+// The two members of the resident cache are cold.  A store and a load wait
+// on the disk, so the code of the cache needs no speed.  A cold body also
+// takes no part of the inline budget of this unit.
+[[gnu::cold]] std::span<const uint8_t> Cipher::cached_bytes(ContentHash hash) const noexcept {
+    // The walk swaps the hit with each entry after it, so the hit becomes
+    // the last entry and the other entries keep their order of use.  No two
+    // entries share a hash.  Complexity: linear in the count of entries.
+    bool is_hit_found = false;
+    for (::fixy::View<CachedObjectBytes, 2> pair : resident_cache_.view().windows<2>()) {
+        is_hit_found = is_hit_found || pair.at(::fixy::index<0>()).hash == hash;
+        if (is_hit_found) ::fixy::swap(pair.at(::fixy::index<0>()), pair.at(::fixy::index<1>()));
+    }
+    // The first entry of the reverse walk is the last entry.  It is the hit,
+    // or the cache holds no entry of the hash.
+    for (const CachedObjectBytes& entry : resident_cache_.view().reverse()) {
+        if (entry.hash != hash) break;
+        return entry.bytes;
     }
     return {};
 }
 
-void Cipher::remember_cached_bytes(ContentHash hash, std::span<const uint8_t> bytes) const {
+[[gnu::cold]] void Cipher::remember_cached_bytes(ContentHash hash, std::span<const uint8_t> bytes) const {
     if (!hash || bytes.empty() || bytes.size() > MAX_RESIDENT_CACHE_BYTES) {
         return;
     }
@@ -832,19 +838,29 @@ void Cipher::remember_cached_bytes(ContentHash hash, std::span<const uint8_t> by
     }
 
     // The loop leaves at most MAX_RESIDENT_CACHE_ENTRIES - 1 entries, so
-    // the push below stays in the capacity of the cache.
-    while (!resident_cache_.empty()
+    // the push below stays in the capacity of the cache.  Each pass swaps
+    // the least recent entry to the back, one entry at a time, and takes
+    // it.  Complexity: linear in the count of entries for each pass.
+    while (resident_cache_.size() != 0
            && (resident_cache_.size() >= MAX_RESIDENT_CACHE_ENTRIES
                || resident_cache_bytes_ + bytes.size() > MAX_RESIDENT_CACHE_BYTES)) {
-        resident_cache_bytes_ -= resident_cache_.front().bytes.size();
-        resident_cache_.erase(resident_cache_.begin());
+        for (::fixy::View<CachedObjectBytes, 2> pair : resident_cache_.view().windows<2>()) {
+            ::fixy::swap(pair.at(::fixy::index<0>()), pair.at(::fixy::index<1>()));
+        }
+        const CachedObjectBytes evicted = resident_cache_.take_last().expect("the loop runs on a cache with an entry");
+        resident_cache_bytes_ -= evicted.bytes.size();
     }
 
     resident_cache_bytes_ += bytes.size();
-    resident_cache_.push_back(CachedObjectBytes{
-        .hash = hash,
-        .bytes = std::vector<uint8_t>(bytes.begin(), bytes.end()),
-    });
+    const bool is_full = resident_cache_
+                             .push(CachedObjectBytes{
+                                 .hash = hash,
+                                 .bytes = std::vector<uint8_t>(bytes.begin(), bytes.end()),
+                             })
+                             .is_err();
+    if (is_full) [[unlikely]] {
+        ::fixy::fatal("the resident cache has no room after its eviction");
+    }
 }
 
 void Cipher::load_log() {

@@ -418,9 +418,10 @@ int main() {
     }
 
     // The cache of object bytes holds at most 64 entries, and it removes the
-    // entry used least recently.  After 65 distinct stores the first object
-    // has left the cache, and the last one is still in it.  The files are
-    // deleted first, so a load finds a region only in the cache.
+    // entry used least recently.  A load of the first object before the last
+    // store makes the first object the most recent entry.  So the 65th store
+    // removes the second object, and the first and the last stay.  The files
+    // are deleted first, so a load finds a region only in the cache.
     {
         char tmpl_cache[] = "/tmp/crucible_cipher_cache_XXXXXX";
         char* dir_cache = mkdtemp(tmpl_cache);
@@ -430,7 +431,11 @@ int main() {
         auto ov = cipher.mint_open_view(store_ctx());
         constexpr std::size_t kStoreCount = 65;
         ::fixy::FixedArray<crucible::ContentHash, kStoreCount> hashes{};
+        crucible::Arena read_arena(1 << 16);
         for (std::size_t i = 0; i < kStoreCount; ++i) {
+            if (i + 1 == kStoreCount) {
+                assert(cipher.load_content_addressed(ov, g_test.alloc, hashes.front(), read_arena).cache_hit());
+            }
             const auto* distinct_region = make_test_region(cache_arena, i + 1);
             hashes[i] = cipher.store(ov, crucible::Cipher::content_addressed(distinct_region));
             assert(static_cast<bool>(hashes[i]));
@@ -438,8 +443,8 @@ int main() {
         for (const crucible::ContentHash hash : hashes) {
             std::filesystem::remove(object_path(dir_cache, hash));
         }
-        crucible::Arena read_arena(1 << 16);
-        assert(cipher.load_content_addressed(ov, g_test.alloc, hashes.front(), read_arena).get() == nullptr);
+        assert(cipher.load_content_addressed(ov, g_test.alloc, hashes[1], read_arena).get() == nullptr);
+        assert(cipher.load_content_addressed(ov, g_test.alloc, hashes.front(), read_arena).cache_hit());
         const auto newest = cipher.load_content_addressed(ov, g_test.alloc, hashes.back(), read_arena);
         assert(newest.cache_hit() && newest.get() != nullptr);
 
