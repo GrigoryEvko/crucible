@@ -61,7 +61,8 @@ inline constexpr std::size_t index_in_v = index_in_<T, Ts...>();
 
 template <class... Ts>
     requires OneOfAlternatives<Ts...>
-class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] OneOf {
+class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<Ts...>>]]
+                   [[= ::foundation::lifetime::no_start_over_bytes{}]] OneOf {
     detail::SumSlot<Ts...> slot_;
 
     // The arm at Index takes the alternative at Index.  The last alternative

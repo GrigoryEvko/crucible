@@ -195,7 +195,7 @@ that the axis does not apply to the row.
 | `mint_budget_authority` | `include/fixy/Budgeted.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_fn` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_fn_for` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
-| `mint_linear` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | HS14: 13 |
+| `mint_linear` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | HS14: 15 |
 | `mint_linear_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_machine` | `include/fixy/Machine.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
 | `mint_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |

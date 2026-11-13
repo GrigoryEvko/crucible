@@ -5315,6 +5315,12 @@ fixy_neg_compile_test(neg_core_result_linear_error_copied
 fixy_neg_compile_test(neg_core_option_ok_or_linear_error
   "no matching function for call to .foundation::core::Option<int>::ok_or\\(fixy::Linear<int>\\)."
   "required for the satisfaction of .DroppablePayload<E>. \\[with E = fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>\\]")
+fixy_neg_compile_test(neg_core_result_ok_drops_linear_error
+  "no matching function for call to .foundation::core::Result<int, fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int> >::ok\\(\\)."
+  "required for the satisfaction of .DroppablePayload<E>. \\[with E = fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>\\]")
+fixy_neg_compile_test(neg_core_result_err_drops_linear_value
+  "no matching function for call to .foundation::core::Result<fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>, fixy::Qtt<foundation::algebra::lattices::QttGrade::One, long int> >::err\\(\\)."
+  "required for the satisfaction of .DroppablePayload<T>. \\[with T = fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>\\]")
 
 # A Record with a linear part is linear: it does not copy, and a binding by
 # value of an lvalue Record copies the Record, so it does not compile.

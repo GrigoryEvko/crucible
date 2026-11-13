@@ -43,12 +43,14 @@
 //
 // A linear payload (foundation/Linear.h) takes the owning form, also when
 // its bytes are trivially copyable, so a move never leaves a second copy
-// of the value.  An Option or a Result gives a linear payload only through
-// a consumer that takes the Option or the Result as an rvalue: expect(),
-// ok(), err() and the rvalue match().  A read through a const reference
-// consumes nothing.  value_or() and the cursor of a mutable loop do not
-// exist for a linear payload: the first drops its fallback, and a move
-// through the second empties the payload in place.
+// of the value.  A sum with a linear alternative carries the linear marker
+// itself, so the rule must-consume holds the sum to one consume.  An Option
+// or a Result gives a linear payload only through a consumer that takes the
+// Option or the Result as an rvalue: expect(), ok(), err() and the rvalue
+// match().  A read through a const reference consumes nothing.  A consumer
+// that drops a linear part does not exist: value_or() drops its fallback,
+// ok() drops the error, the rvalue err() drops the value, and a move through
+// the cursor of a mutable loop empties the payload in place.
 //
 // The families of foundation/core use only the language, the compiler
 // builtins and the headers of the base allowance.  fixy/Core.h puts their
@@ -323,6 +325,14 @@ concept ChoicePayload = std::is_object_v<T> && !std::is_array_v<T> && !std::is_c
 template <class T>
 concept DroppablePayload = std::is_copy_constructible_v<T> || !::foundation::linear::is_linear_type(^^T);
 
+// A sum with an alternative that is not droppable, so the sum must give it out
+// exactly one time.  Option, Result and OneOf then carry the linear marker,
+// because the union of their storage cannot move, and the trait reads no
+// member of a class that cannot move.  The concept reads DroppablePayload, so
+// it walks no payload that copies, such as a payload with a niche.
+template <class... Ts>
+concept HoldsLinearAlternative = (!DroppablePayload<Ts> || ...);
+
 // A payload whose bytes an Option or a Result can copy: trivially copyable,
 // trivially destructible and droppable.  The conjunction stops at its
 // first false part, so the walk of DroppablePayload does not run for a
@@ -575,7 +585,7 @@ public:
 };
 
 template <ChoicePayload T>
-class [[nodiscard]] Option {
+class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<T>>]] Option {
     detail::OptionSlot<T> slot_;
 
     template <class U>
@@ -1090,9 +1100,12 @@ public:
 // An owning Option holds the alternatives of the empty marker and the
 // payload, and a flag.  A move builds the payload in the new slot, and the
 // source becomes empty.  A move assignment drops the payload that the slot
-// holds, so a linear payload has none.
+// holds, so a linear payload has none.  The destructor is not trivial, so no
+// lifetime start over bytes builds the slot.  The annotation states that
+// fact to the rule linear-forge, which reads an annotation and not a
+// destructor.
 template <class T>
-class OptionSlot<T, OptionForm::owning> {
+class[[= ::foundation::lifetime::no_start_over_bytes{}]] OptionSlot<T, OptionForm::owning> {
     Alternatives<NoPayload, T> storage_{AlternativeAt<0>{}, NoPayload{}};
     bool is_engaged_ = false;
 
@@ -1196,7 +1209,8 @@ public:
 // conversion.  Zero bytes are a value or an error that no constructor made,
 // so the annotation no_start_over_bytes refuses a lifetime start over bytes.
 template <ChoicePayload T, ErrorValue E>
-class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] Result {
+class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<T, E>>]]
+                   [[= ::foundation::lifetime::no_start_over_bytes{}]] Result {
     detail::ResultSlot<T, E> slot_;
 
     // The return is a copy-initialization, so only an implicit conversion
@@ -1228,8 +1242,11 @@ public:
     [[nodiscard]] constexpr bool is_ok() const noexcept { return slot_.holds_(); }
     [[nodiscard]] constexpr bool is_err() const noexcept { return !slot_.holds_(); }
 
-    // The value as an Option, which is empty for an error.
-    [[nodiscard]] constexpr Option<T> ok() && noexcept {
+    // The value as an Option, which is empty for an error.  The call drops
+    // the error, so a linear error has no ok().
+    [[nodiscard]] constexpr Option<T> ok() && noexcept
+        requires DroppablePayload<E>
+    {
         if (!slot_.holds_()) return Option<T>{none};
         return Option<T>::some(static_cast<T&&>(slot_.value_()));
     }
@@ -1244,9 +1261,10 @@ public:
     }
 
     // A linear error moves into the Option, so the caller gets the
-    // resource back once.
+    // resource back once.  The call drops a value, so a linear value has
+    // no err() of a linear error: match takes both.
     [[nodiscard]] constexpr Option<E> err() && noexcept
-        requires(!DroppablePayload<E>)
+        requires(!DroppablePayload<E> && DroppablePayload<T>)
     {
         if (slot_.holds_()) return Option<E>{none};
         return Option<E>::some(static_cast<E&&>(slot_.error_()));
@@ -1384,18 +1402,40 @@ template <class Hold>
     }
 }
 
+// The Err of the error of a failed Result.  A droppable value goes through
+// err(), which drops the value that the Result does not hold.  A linear value
+// has no such err(), so the rvalue match gives the error.  The arm of the
+// value ends the process, because the operand holds an error.
+template <class T, class E>
+[[nodiscard]] constexpr Err<E> try_error_(Result<T, E>&& failed) noexcept {
+    if constexpr (DroppablePayload<T>) {
+        return ::foundation::core::err(
+            static_cast<Result<T, E>&&>(failed).err().expect("CRUCIBLE_TRY tested the error"));
+    } else {
+        return static_cast<Result<T, E>&&>(failed).match(
+            [](T) noexcept -> Err<E> { unreachable(); },
+            [](E error) noexcept -> Err<E> { return Err<E>{static_cast<E&&>(error)}; });
+    }
+}
+
 // The return of a failed operand: none for an Option, and the Err of the
-// error for a Result.  The return statement of the macro converts it.
+// error for a Result.  The return statement of the macro converts it.  A
+// failed Option holds no value, and a linear Option ends at the drop door,
+// because the rule must-consume does not read the test of try_failed_.
 template <class Hold>
 [[nodiscard]] constexpr auto try_propagate_(Hold&& hold) noexcept {
     using Choice = std::remove_cvref_t<Hold>;
     if constexpr (!TryOperand<Hold&&>) {
         return TryRefused{};
     } else if constexpr (IsOption<Choice>) {
-        static_cast<void>(hold);
+        if constexpr (::foundation::linear::is_linear_type(^^Choice)) {
+            ::foundation::linear::drop(static_cast<Choice&&>(hold));
+        } else {
+            static_cast<void>(hold);
+        }
         return none;
     } else {
-        return err(static_cast<Choice&&>(hold).err().expect("CRUCIBLE_TRY tested the error"));
+        return detail::try_error_(static_cast<Choice&&>(hold));
     }
 }
 

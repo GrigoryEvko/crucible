@@ -644,6 +644,26 @@ template <class R>
 concept ResultGivesValueOr = requires(R result) { static_cast<R&&>(result).value_or(0); };
 static_assert(!ResultGivesValueOr<Result<int, Token>> && ResultGivesValueOr<Result<int, Code>>);
 
+// ok() drops the error, and the rvalue err() drops the value.  So a Result
+// with a linear error has no ok(), and a Result of a linear value has no
+// err() that gives a linear error.
+template <class R>
+concept GivesItsValue = requires(R result) { static_cast<R&&>(result).ok(); };
+static_assert(!GivesItsValue<Result<int, Token>> && GivesItsValue<Result<Token, Code>>);
+static_assert(!GivesItsError<Result<HoldsToken, Token>> && !CopiesItsError<Result<HoldsToken, Token>>);
+
+// The union of the storage cannot move, so the trait reads no member of it.
+// Each sum with a linear alternative carries the linear marker, so the trait
+// and the rules of the family linear read the sum as linear.
+static_assert(!std::is_move_constructible_v<Alternatives<NoPayload, Token>>);
+static_assert(::foundation::linear::is_linear_v<Option<Token>>
+              && ::foundation::linear::is_linear_v<Option<HoldsToken>>);
+static_assert(::foundation::linear::is_linear_v<Result<Token, Code>>);
+static_assert(::foundation::linear::is_linear_v<Result<int, Token>>);
+static_assert(!::foundation::linear::is_linear_v<Option<Owner>> && !::foundation::linear::is_linear_v<Option<int>>);
+static_assert(!::foundation::linear::is_linear_v<Option<SlotNumber>>);
+static_assert(!::foundation::linear::is_linear_v<Result<Owner, Code>>);
+
 // The roads of a linear error in a constant evaluation: the rvalue err()
 // and the rvalue match give the error once, and the const match reads it.
 [[nodiscard]] consteval Result<int, Token> refused_with(int handle) noexcept { return err(Token{handle}); }
@@ -652,9 +672,12 @@ static_assert(refused_with(6).match([](int&&) noexcept { return 0; },
                                     [](Token&& token) noexcept { return Token{static_cast<Token&&>(token)}.handle; })
               == 6);
 [[nodiscard]] consteval int read_refusal() noexcept {
-    Result<int, Token> const refused = refused_with(7);
-    return refused.match([](int const&) noexcept { return 0; },
-                         [](Token const& token) noexcept { return token.handle; });
+    Result<int, Token> refused = refused_with(7);
+    Result<int, Token> const& reader = refused;
+    int const handle =
+        reader.match([](int const&) noexcept { return 0; }, [](Token const& token) noexcept { return token.handle; });
+    ::foundation::linear::drop(static_cast<Result<int, Token>&&>(refused));
+    return handle;
 }
 static_assert(read_refusal() == 7);
 

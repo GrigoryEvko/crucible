@@ -490,9 +490,10 @@ void test_result_owning_assignment() {
 
 void test_result_linear_error() {
     {
-        Result<int, CountedToken> const refused = refuse_with(61);
-        int const read_handle = refused.match([](int const&) noexcept { return 0; },
-                                              [](CountedToken const& token) noexcept { return token.handle(); });
+        Result<int, CountedToken> refused = refuse_with(61);
+        Result<int, CountedToken> const& reader = refused;
+        int const read_handle = reader.match([](int const&) noexcept { return 0; },
+                                             [](CountedToken const& token) noexcept { return token.handle(); });
         CRUCIBLE_FATAL_INVARIANT(read_handle == 61 && live_tokens == 1);
         CountedToken const given_back = refuse_with(62).err().expect("the operation was refused");
         CRUCIBLE_FATAL_INVARIANT(given_back.handle() == 62 && live_tokens == 2);
@@ -502,6 +503,9 @@ void test_result_linear_error() {
                                                            return kept.handle();
                                                        });
         CRUCIBLE_FATAL_INVARIANT(moved_handle == 63 && live_tokens == 2);
+        // The Result of a linear error is linear, so the const match leaves it
+        // to a consumer.  The drop door ends it.
+        ::foundation::linear::drop(static_cast<Result<int, CountedToken>&&>(refused));
     }
     CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
 }

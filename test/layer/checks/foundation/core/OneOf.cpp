@@ -75,6 +75,14 @@ static_assert(std::is_nothrow_move_constructible_v<OneOf<Owner, int>>);
 static_assert(!std::is_copy_constructible_v<OneOf<Owner, int>>);
 static_assert(!std::is_copy_constructible_v<OneOf<Token, int>>);
 
+// A linear alternative makes the OneOf linear, so the trait and the rules of
+// the family linear read it as linear.  The union of the storage cannot move,
+// so the OneOf carries the linear marker.
+static_assert(::foundation::linear::is_linear_v<OneOf<Token, int>>);
+static_assert(::foundation::linear::is_linear_v<OneOf<int, Code8, Token>>);
+static_assert(!::foundation::linear::is_linear_v<OneOf<Owner, int>>);
+static_assert(!::foundation::linear::is_linear_v<OneOf<std::uint32_t, Code32>>);
+
 // Zero bytes are an alternative that no constructor made, so the checked
 // lifetime start refuses each OneOf.
 static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<OneOf<std::uint32_t, Code32>>);
