@@ -16,9 +16,8 @@
 //     uint16 input count, uint16 output count, uint16 scalar count,
 //     uint8  gradient flag, uint8 packed operation flags
 //
-//   Metadata records, 168 bytes each, at the offsets of the tensor metadata
-//   struct.  Two shorter historical record sizes are also accepted, 144 and
-//   160.  Each field is read through the checked doors of that struct.
+//   Metadata records, 176 bytes each, at the offsets of the tensor metadata
+//   struct.  Each field is read through the checked doors of that struct.
 //
 //   A schema-name table follows if the file has trailing data:
 //     uint32   name count
@@ -105,15 +104,17 @@ struct LoadedTrace {
 // that read correct.
 
 // A metadata record is read field by field from its bytes, at the offsets
-// of TensorMeta.  The shortest historical record carries every field up to
-// the output index, and the fields past its end keep their zero value.
+// of TensorMeta.
 
 inline constexpr uint64_t TRACE_HEADER_BYTES = 16;
 
-// Every metadata record is at least this long.  A count whose records
-// would not fit in the bytes that remain is refused before any vector is
-// sized from it.
-inline constexpr uint64_t MIN_TRACE_META_BYTES = 144;
+// The version of the format.  Version 2 has metadata records of 176 bytes,
+// with a storage size of 64 bits.  The loader refuses each other version.
+inline constexpr uint32_t TRACE_FORMAT_VERSION = 2;
+
+// The length of each metadata record.  A count whose records would not fit
+// in the bytes that remain is refused before any vector is sized from it.
+inline constexpr uint64_t TRACE_META_BYTES = sizeof(TensorMeta);
 
 namespace detail {
 
@@ -181,7 +182,7 @@ template <class Field>
     meta.output_nr = trace_meta_field_<uint8_t>(raw, offsetof(TensorMeta, output_nr));
     meta.storage_offset = trace_meta_field_<int64_t>(raw, offsetof(TensorMeta, storage_offset));
     meta.version = trace_meta_field_<uint32_t>(raw, offsetof(TensorMeta, version));
-    meta.storage_nbytes = trace_meta_field_<uint32_t>(raw, offsetof(TensorMeta, storage_nbytes));
+    meta.storage_nbytes = trace_meta_field_<uint64_t>(raw, offsetof(TensorMeta, storage_nbytes));
     meta.grad_fn_hash = grad_fn_hash(trace_meta_field_<uint64_t>(raw, offsetof(TensorMeta, grad_fn_hash)));
     return ::fixy::Option<TensorMeta>::some(meta);
 }
@@ -227,9 +228,9 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
         ::fixy::report(::fixy::Sink::Err, "load_trace: the trace file does not start with the magic CRTR\n");
         return nullptr;
     }
-    if (version != 1) {
-        ::fixy::report(::fixy::Sink::Err, "load_trace: the trace file has the version {}, and the loader reads 1\n",
-                       version);
+    if (version != TRACE_FORMAT_VERSION) {
+        ::fixy::report(::fixy::Sink::Err, "load_trace: the trace file has the version {}, and the loader reads {}\n",
+                       version, TRACE_FORMAT_VERSION);
         return nullptr;
     }
 
@@ -251,7 +252,7 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
     // header read succeeded, so the file holds at least the header.
     const uint64_t after_header = file_size - TRACE_HEADER_BYTES;
     const uint64_t op_bytes = uint64_t{num_ops} * sizeof(TraceOpRecord);
-    if (op_bytes > after_header || uint64_t{num_metas} * MIN_TRACE_META_BYTES > after_header - op_bytes) {
+    if (op_bytes > after_header || uint64_t{num_metas} * TRACE_META_BYTES > after_header - op_bytes) {
         ::fixy::report(::fixy::Sink::Err,
                        "load_trace: the header counts do not fit in the file "
                        "(num_ops={} num_metas={}, {} bytes after the header)\n",
@@ -265,26 +266,12 @@ load_trace_(Ctx const& io, const char* path, std::optional<SchemaTable::MutableV
         return nullptr;
     }
 
-    // Which of the three record sizes this file uses is inferred from how many
-    // bytes remain after the op records.
-    const uint64_t remaining = after_header - op_bytes;
-    uint32_t meta_record_size = 168;
-    if (num_metas > 0) {
-        if (remaining >= uint64_t{num_metas} * 168)
-            meta_record_size = 168;
-        else if (remaining >= uint64_t{num_metas} * 160)
-            meta_record_size = 160;
-        else
-            meta_record_size = 144;
-    }
-
-    // Each record is read into a zeroed buffer at its own size and decoded
-    // from there, so no byte of the file reaches a TensorMeta unchecked.
+    // Each record is read into a buffer of its full length and decoded from
+    // there, so no byte of the file reaches a TensorMeta unchecked.
     std::vector<TensorMeta> metas(num_metas);
     std::array<std::byte, sizeof(TensorMeta)> raw_record{};
     for (uint32_t i = 0; i < num_metas; i++) {
-        raw_record.fill(std::byte{0});
-        if (std::fread(raw_record.data(), meta_record_size, 1, trace_file.get()) != 1) {
+        if (std::fread(raw_record.data(), TRACE_META_BYTES, 1, trace_file.get()) != 1) {
             ::fixy::report(::fixy::Sink::Err, "load_trace: the metadata records are truncated\n");
             return nullptr;
         }

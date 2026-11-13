@@ -112,7 +112,7 @@ static_assert(std::is_trivially_copy_constructible_v<TypedMeta>);
 // shovelling garbage to the recording pipeline.  Pinned at the typed
 // helper because this header is the single home for the layout cast.
 static_assert(sizeof(CrucibleMeta) == sizeof(crucible::TensorMeta), "CrucibleMeta size must match TensorMeta");
-static_assert(sizeof(CrucibleMeta) == 168);
+static_assert(sizeof(CrucibleMeta) == 176);
 static_assert(offsetof(CrucibleMeta, sizes) == 0);
 static_assert(offsetof(CrucibleMeta, strides) == 64);
 static_assert(offsetof(CrucibleMeta, data_ptr) == 128);
@@ -126,8 +126,9 @@ static_assert(offsetof(CrucibleMeta, flags) == 142);
 static_assert(offsetof(CrucibleMeta, output_nr) == 143);
 static_assert(offsetof(CrucibleMeta, storage_offset) == 144);
 static_assert(offsetof(CrucibleMeta, version) == 152);
-static_assert(offsetof(CrucibleMeta, storage_nbytes) == 156);
-static_assert(offsetof(CrucibleMeta, grad_fn_hash) == 160);
+static_assert(offsetof(CrucibleMeta, pad0) == 156);
+static_assert(offsetof(CrucibleMeta, storage_nbytes) == 160);
+static_assert(offsetof(CrucibleMeta, grad_fn_hash) == 168);
 
 namespace detail {
 

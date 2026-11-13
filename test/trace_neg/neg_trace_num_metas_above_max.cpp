@@ -3,7 +3,7 @@
 // Fixture 1 of 2 for kTraceNumMetasBound, the typed gate of the
 // .crtrace header metadata-record count.  The gate is
 // bounded_above<MAX_METAS>, and MAX_METAS is 1 << 24.  A count above it
-// would size a vector of 168-byte records past 2.7 GB before the loader
+// would size a vector of 176-byte records past 2.9 GB before the loader
 // finds the file truncated.
 //
 // Distinct mismatch class from neg_trace_num_metas_uint32_max.cpp:

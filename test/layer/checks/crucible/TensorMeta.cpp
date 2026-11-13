@@ -24,7 +24,10 @@ static_assert(sizeof(TensorDimArray) == sizeof(int64_t) * kMaxTensorNDim,
 static_assert(std::is_trivially_copyable_v<TensorDimArray>);
 static_assert(std::is_standard_layout_v<TensorDimArray>);
 
-static_assert(sizeof(TensorMeta) == 168, "TensorMeta layout check");
+static_assert(sizeof(TensorMeta) == 176, "TensorMeta layout check");
+static_assert(offsetof(TensorMeta, pad0) == 156);
+static_assert(offsetof(TensorMeta, storage_nbytes) == 160);
+static_assert(offsetof(TensorMeta, grad_fn_hash) == 168);
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorMeta);
 
 }  // namespace crucible

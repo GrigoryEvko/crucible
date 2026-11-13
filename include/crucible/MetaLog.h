@@ -86,8 +86,8 @@ struct CRUCIBLE_OWNER MetaLog {
         // The allocation faults the whole buffer in here rather than one page
         // at a time under the recording thread.
         //
-        // TensorMeta is 168 bytes and CAPACITY is 1<<20, so this is
-        // 176,160,768 bytes, or 43,008 pages of 4 KiB. Left untouched, every
+        // TensorMeta is 176 bytes and CAPACITY is 1<<20, so this is
+        // 184,549,376 bytes, or 45,056 pages of 4 KiB. Left untouched, every
         // one of them is a first-touch fault taken by whichever append
         // reaches it. Measured on this buffer: an append on the first lap
         // costs 25-31 ns against 5.1-5.6 ns once the page is resident, the
@@ -100,7 +100,7 @@ struct CRUCIBLE_OWNER MetaLog {
         // the detector is deciding whether to compile and the phase timings
         // are being taken. Paying it here costs 28.6-30.6 ms in a
         // constructor that is already cold and already asks the allocator
-        // for 168 MiB, and it makes the first recorded op cost the same as
+        // for 176 MiB, and it makes the first recorded op cost the same as
         // the millionth.
         //
         // Measured end to end: constructing a Vigil, which builds one of

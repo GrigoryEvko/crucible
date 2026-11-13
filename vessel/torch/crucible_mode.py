@@ -56,7 +56,8 @@ class _VesselLib:
             ("output_nr", ctypes.c_uint8),
             ("storage_offset", ctypes.c_int64),
             ("version", ctypes.c_uint32),
-            ("storage_nbytes", ctypes.c_uint32),
+            ("pad0", ctypes.c_uint32),
+            ("storage_nbytes", ctypes.c_uint64),
             ("grad_fn_hash", ctypes.c_uint64),
         ]
 
@@ -309,7 +310,7 @@ class CrucibleMode(TorchDispatchMode):
         File format (all little-endian):
           Header (16B):
             char[4]  magic    = "CRTR"
-            uint32   version  = 1
+            uint32   version  = 2
             uint32   num_ops
             uint32   num_metas (total across all ops)
 
@@ -331,7 +332,7 @@ class CrucibleMode(TorchDispatchMode):
             uint8    grad_enabled
             uint8    inference_mode
 
-          Meta records (num_metas × 168B each):
+          Meta records (num_metas × 176B each):
             Raw TensorMeta structs, same layout as CrucibleMeta.
         """
         meta_size = ctypes.sizeof(_VesselLib.Meta)
@@ -343,7 +344,7 @@ class CrucibleMode(TorchDispatchMode):
         with open(path, "wb") as f:
             # Header
             f.write(b"CRTR")
-            f.write(struct.pack("<III", 1, num_ops, num_metas))
+            f.write(struct.pack("<III", 2, num_ops, num_metas))
 
             # Op records (80B each)
             for entry in self._trace_ops:
@@ -591,7 +592,7 @@ class CrucibleMode(TorchDispatchMode):
 
         # Actual storage size in bytes (may differ from view size)
         try:
-            meta.storage_nbytes = tensor.untyped_storage().nbytes() & 0xFFFFFFFF
+            meta.storage_nbytes = tensor.untyped_storage().nbytes()
         except Exception:
             meta.storage_nbytes = 0
 

@@ -120,7 +120,7 @@ struct MetaCount {
 // =====================================================================
 // Tensor metadata
 //
-// Fills all 168 bytes of crucible::TensorMeta from an at::Tensor. Shared with
+// Fills all 176 bytes of crucible::TensorMeta from an at::Tensor. Shared with
 // the boxed fallback: a trace whose entries were filled by two spellings of
 // this would have a content hash that depends on which path recorded it.
 //
@@ -301,7 +301,7 @@ struct MetaCount {
         if (storage_base != nullptr && tensor.data_ptr() != static_cast<char*>(storage_base)) {
             flags |= crucible::meta_flags::IS_VIEW;
         }
-        meta.storage_nbytes = static_cast<uint32_t>(impl->storage().nbytes() & 0xFFFFFFFF);
+        meta.storage_nbytes = impl->storage().nbytes();
     }
     if (strided && tensor.storage_offset() != 0) {
         flags |= crucible::meta_flags::IS_VIEW;

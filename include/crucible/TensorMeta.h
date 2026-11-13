@@ -124,7 +124,11 @@ struct TensorMeta {
 
     int64_t storage_offset = 0;
     uint32_t version = 0;  // bumped on in-place mutation
-    uint32_t storage_nbytes = 0;  // size of the storage, which a view does not span
+    uint32_t pad0 = 0;  // zero, so the storage size starts at a multiple of eight
+    // The size of the storage in bytes, which a view does not span.  A
+    // storage of 4 GiB or more is usual for a large model, so the field has
+    // 64 bits.
+    uint64_t storage_nbytes = 0;
     GradFnHash grad_fn_hash{};  // 0 means no grad_fn
 };
 

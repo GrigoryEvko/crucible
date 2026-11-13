@@ -77,7 +77,7 @@ _MASK64     = (1 << 64) - 1
 # ".py was redeployed but libcrucible_vessel.so is stale" failure
 # before any dispatch runs.
 
-EXPECTED_ABI_VERSION = 1
+EXPECTED_ABI_VERSION = 2
 
 
 class CrucibleAbiMismatchError(RuntimeError):

@@ -4,7 +4,7 @@
 // TorchDispatchMode (Python) calls these functions to feed real ATen ops
 // into Crucible's recording and dispatch pipeline.
 //
-// CrucibleMeta is binary-compatible with crucible::TensorMeta (168 bytes).
+// CrucibleMeta is binary-compatible with crucible::TensorMeta (176 bytes).
 // All enum types use the same int8_t ordinals as c10::ScalarType etc.
 //
 // ── Typed-boundary discipline ────────────────────────────────────────
@@ -70,7 +70,7 @@ extern "C" {
 // Opaque handle to a crucible::Vigil instance.
 typedef void* CrucibleHandle;
 
-// Binary-compatible with crucible::TensorMeta (168 bytes).
+// Binary-compatible with crucible::TensorMeta (176 bytes).
 // Field order and types must match exactly — verified via static_assert
 // in the implementation.
 typedef struct {
@@ -87,7 +87,8 @@ typedef struct {
     uint8_t output_nr;  // autograd output number (which output of multi-output op)
     int64_t storage_offset;  // offset into underlying storage
     uint32_t version;  // tensor data version counter
-    uint32_t storage_nbytes;  // actual storage size
+    uint32_t pad0;  // zero
+    uint64_t storage_nbytes;  // the size of the storage in bytes
     uint64_t grad_fn_hash;  // FNV-1a hash of grad_fn class name
 } CrucibleMeta;
 
@@ -110,7 +111,7 @@ typedef struct {
 // Python ctypes consumers cross-check via crucible_abi_version() at
 // load.  The constant is also exposed as a #define so C consumers can
 // bake it into their own startup checks.
-#define CRUCIBLE_VESSEL_ABI_VERSION 1ULL
+#define CRUCIBLE_VESSEL_ABI_VERSION 2ULL
 
 // Returns CRUCIBLE_VESSEL_ABI_VERSION as compiled into the loaded .so.
 // Never aborts — pure constant return.  Used by crucible_native.py
@@ -213,7 +214,7 @@ CRUCIBLE_VESSEL_API void* crucible_input_ptr(CrucibleHandle h, uint16_t j) CRUCI
 
 // Export the active compiled region as .crtrace binary.
 // Flushes the ring first, then serializes the RegionNode's TraceEntry
-// data to disk.  Format: 16B header + 80B/op + 168B/meta + schema table.
+// data to disk.  Format: 16B header + 80B/op + 176B/meta + schema table.
 // Returns 1 on success, 0 on failure (no active region, file I/O error).
 CRUCIBLE_VESSEL_API int crucible_export_crtrace(CrucibleHandle h, const char* path) CRUCIBLE_VESSEL_NOEXCEPT;
 

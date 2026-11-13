@@ -2177,7 +2177,7 @@ crucible_neg_compile_test(neg_trace_graph_num_edges_implicit_raw
 # ─── ValidMetaAppendCount negative-compile fixtures ──────────────────
 #
 # The count that MetaLog::try_append takes has a Refined bound at
-# MetaLog::CAPACITY (1 << 20 = 1,048,576 records, 168 MB).
+# MetaLog::CAPACITY (1 << 20 = 1,048,576 records, 176 MiB).
 # An append of more than CAPACITY records can never succeed, because one
 # batch larger than the whole ring has no place to go.  The alias
 # ValidMetaAppendCount holds the bound in its type.  mint_refined is its

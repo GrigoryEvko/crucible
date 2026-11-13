@@ -13,6 +13,8 @@ region, exports the region as a .crtrace file, and reads the file back:
                     entry whose scalar slots differ when only the last step
                     size differs, or when only the shape of the last tensor
                     differs.  The content hash of a region folds these slots
+    large storage   a tensor of the meta device with a storage of 98 GiB
+                    keeps its storage size, which 32 bits cannot hold
 
 Usage:
     python test_record_coverage.py
@@ -56,6 +58,11 @@ OP_RECORD = struct.Struct("<QQQQ5qHHHBB")
 META_SIZE = ctypes.sizeof(crucible_mode._VesselLib.Meta)
 META_NDIM_OFFSET = crucible_mode._VesselLib.Meta.ndim.offset
 META_DTYPE_OFFSET = crucible_mode._VesselLib.Meta.dtype.offset
+META_STORAGE_NBYTES_OFFSET = crucible_mode._VesselLib.Meta.storage_nbytes.offset
+
+# A storage of 98 GiB.  A tensor of the meta device has a storage size and
+# no memory, so the test allocates nothing.
+LARGE_STORAGE_BYTES = 98 * 2**30
 
 # The crucible ordinals of the element types that the checks read.
 DOUBLE = 7
@@ -149,6 +156,16 @@ def update_step(last_step_size: float, last_extent: int):
     return step
 
 
+def large_storage_step():
+    """Return one iteration of an operation on a meta tensor of LARGE_STORAGE_BYTES bytes."""
+    large = torch.empty(LARGE_STORAGE_BYTES, dtype=torch.uint8, device="meta")
+
+    def step() -> None:
+        large.add(1)
+
+    return step
+
+
 def check_narrow_dtypes(ops: list[TraceOp]) -> list[str]:
     """Return one line for each narrow element type that no recorded operation has."""
     seen = {dtype for op in ops for dtype in op.dtypes()}
@@ -173,6 +190,14 @@ def check_scalar_result(ops: list[TraceOp]) -> list[str]:
     dtype = struct.unpack_from("<b", output, META_DTYPE_OFFSET)[0]
     if ndim != 0 or dtype != DOUBLE:
         return [f"the output meta of aten::_local_scalar_dense has rank {ndim} and element type {dtype}"]
+    return []
+
+
+def check_large_storage(ops: list[TraceOp]) -> list[str]:
+    """Return one line when no recorded tensor has the storage size LARGE_STORAGE_BYTES."""
+    sizes = {struct.unpack_from("<Q", meta, META_STORAGE_NBYTES_OFFSET)[0] for op in ops for meta in op.metas}
+    if LARGE_STORAGE_BYTES not in sizes:
+        return [f"no recorded tensor has the storage size {LARGE_STORAGE_BYTES}, only {sorted(sizes)}"]
     return []
 
 
@@ -207,6 +232,7 @@ def main() -> int:
         directory = Path(scratch)
         narrow_ops = record(narrow_step, directory, "narrow")
         problems = check_narrow_dtypes(narrow_ops) + check_scalar_result(narrow_ops) + check_overflow(directory)
+        problems += check_large_storage(record(large_storage_step(), directory, "large"))
     for line in problems:
         print(f"  FAIL: {line}")
     if problems:

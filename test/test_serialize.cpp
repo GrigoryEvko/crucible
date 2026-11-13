@@ -49,6 +49,8 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     crucible::Arena arena(1 << 16);
 
     constexpr uint32_t NUM_OPS = 3;
+    // A storage of more than 4 GiB, which a size of 32 bits cannot hold.
+    constexpr uint64_t kLargeStorageBytes = 98000000000ULL;
     auto* ops = arena.alloc_array<crucible::TraceEntry>(test.alloc, NUM_OPS);
     std::uninitialized_value_construct_n(ops, NUM_OPS);
 
@@ -70,6 +72,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         ops[i].input_metas = arena.alloc_array<crucible::TensorMeta>(test.alloc, 2);
         ops[i].input_metas[0] = make_meta(4, 8);
         ops[i].input_metas[1] = make_meta(4, 8);
+        ops[i].input_metas[0].storage_nbytes = kLargeStorageBytes;
 
         ops[i].output_metas = arena.alloc_array<crucible::TensorMeta>(test.alloc, 1);
         ops[i].output_metas[0] = make_meta(4, 8);
@@ -150,6 +153,9 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
             assert(crucible::raw_grad_fn_hash(loaded->ops[i].output_metas[j]) == 0);
         }
 
+        assert(loaded->ops[i].input_metas[0].storage_nbytes == kLargeStorageBytes
+               && "a storage size above 4 GiB must keep each of its 64 bits");
+
         assert(loaded->ops[i].scalar_args[0] == ops[i].scalar_args[0]);
 
         assert(loaded->ops[i].input_trace_indices[0] == ops[i].input_trace_indices[0]);
@@ -188,19 +194,17 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     // The byte length catches size drift, the hash catches content
     // drift at a stable size.
     {
-        static constexpr uint32_t EXPECTED_CDAG_VERSION = 10;
+        static constexpr uint32_t EXPECTED_CDAG_VERSION = 11;
         static_assert(crucible::CDAG_VERSION.value() == EXPECTED_CDAG_VERSION,
                       "CDAG_VERSION bump detected — update wire-byte golden below "
                       "after confirming the new bytes hash to the expected value.");
 
         const uint64_t wire_hash = fnv1a_bytes(std::span<const uint8_t>{buf, n});
 
-        constexpr size_t EXPECTED_WIRE_BYTES = 1772;
-        // Moved 2026-09-15 with CDAG_VERSION 9 -> 10.  The byte COUNT is
-        // unchanged, which is the evidence that no field moved: what changed
-        // is the content-hash values embedded in those bytes, plus the
-        // version word itself.
-        constexpr uint64_t EXPECTED_WIRE_HASH = 0xa277ab9687c7e38fULL;
+        // CDAG_VERSION 11 writes the storage size of each meta in 8 bytes,
+        // not 4.  The image holds 9 metas, so it is 36 bytes longer.
+        constexpr size_t EXPECTED_WIRE_BYTES = 1808;
+        constexpr uint64_t EXPECTED_WIRE_HASH = 0x848a85ba074a6246ULL;
 
         if (n != EXPECTED_WIRE_BYTES || wire_hash != EXPECTED_WIRE_HASH) {
             std::fprintf(stderr,

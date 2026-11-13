@@ -335,10 +335,9 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         total_metas += static_cast<uint32_t>(region->ops[i].num_inputs + region->ops[i].num_outputs);
     }
 
-    // Header: "CRTR" + version(1) + num_ops + num_metas = 16B.
+    // Header: "CRTR" + version + num_ops + num_metas = 16B.
     w("CRTR", 1, 4);
-    uint32_t version = 1;
-    w(&version, 4, 1);
+    w(&crucible::TRACE_FORMAT_VERSION, 4, 1);
     w(&region->num_ops, 4, 1);
     w(&total_metas, 4, 1);
 
@@ -367,7 +366,7 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         w(&rec, sizeof(rec), 1);
     }
 
-    // Meta records: 168B each (TensorMeta layout).
+    // Meta records: TRACE_META_BYTES each (TensorMeta layout).
     for (uint32_t i = 0; i < region->num_ops; i++) {
         const auto& te = region->ops[i];
         for (const auto& m : te.input_span())

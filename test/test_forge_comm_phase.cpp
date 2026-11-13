@@ -153,9 +153,9 @@ void test_send_from_epilogue_decision() {
     assert(decision->value().comm_hash.raw() != 0);
     assert(decision->value().fused_hash.raw() != 0);
     assert(decision->value().participants == 1);
-    // The fused key, recorded from the phase hash body that combine_ids
-    // replaced.
-    assert(decision->value().fused_hash.raw() == 0x87e9317e957fbb79ULL);
+    // The fused key.  It folds the content keys of the two nodes, so the
+    // layout of TensorMeta is part of it.
+    assert(decision->value().fused_hash.raw() == 0x00e077f646606207ULL);
 
     phase::CommPhasePolicy disabled{};
     disabled.send_from_epilogue = false;

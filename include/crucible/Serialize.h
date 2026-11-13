@@ -53,8 +53,10 @@ using LoadedRegionNode = ::fixy::Tagged<RegionNode*, ::fixy::tags::source::Loade
 // version-9 file would deserialize into regions whose hashes disagree with
 // their own contents and whose KernelCache entries key on nothing.  The
 // bump makes cdag_version_matches reject those files outright.
+// 11 (2026-11-13): the storage size of a tensor has 64 bits on the wire, so
+// a storage of 4 GiB or more keeps its size.
 static constexpr CdagFormatVersion CDAG_VERSION =
-    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{10});
+    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{11});
 
 [[nodiscard]] constexpr bool cdag_version_matches(ExternalCdagVersion disk_version) noexcept {
     return disk_version.value() == CDAG_VERSION.value();
@@ -279,7 +281,7 @@ inline TensorMeta read_meta(Reader& r) {
     m.output_nr = r.r<uint8_t>();
     m.storage_offset = r.r<int64_t>();
     m.version = r.r<uint32_t>();
-    m.storage_nbytes = r.r<uint32_t>();
+    m.storage_nbytes = r.r<uint64_t>();
     (void)r.r<uint64_t>();  // the persisted gradient-function hash, dropped
     m.grad_fn_hash = grad_fn_hash(0);
     return m;

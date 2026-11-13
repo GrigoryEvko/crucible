@@ -68,7 +68,7 @@ static void test_bad_magic() {
         uint32_t version;
         uint32_t n_ops;
         uint32_t n_metas;
-    } hdr{.magic = {'X', 'X', 'X', 'X'}, .version = 1, .n_ops = 0, .n_metas = 0};
+    } hdr{.magic = {'X', 'X', 'X', 'X'}, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 0, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
     auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
@@ -108,7 +108,7 @@ static void test_truncated_op_records() {
         uint32_t version;
         uint32_t n_ops;
         uint32_t n_metas;
-    } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = 1, .n_ops = 5, .n_metas = 0};
+    } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 5, .n_metas = 0};
     char buf[16 + 40] = {};
     std::memcpy(buf, &hdr, sizeof(hdr));
     std::string path = write_tmp(buf, sizeof(buf));
@@ -126,7 +126,7 @@ static void test_happy_path_zero_ops() {
         uint32_t version;
         uint32_t n_ops;
         uint32_t n_metas;
-    } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = 1, .n_ops = 0, .n_metas = 0};
+    } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 0, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
     auto t = load_trace(kTestIo, path.c_str());
     assert(t);
@@ -145,7 +145,7 @@ static void test_adversarial_num_ops_rejected() {
         uint32_t version;
         uint32_t n_ops;
         uint32_t n_metas;
-    } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = 1, .n_ops = 0xFFFFFFFFu, .n_metas = 0};
+    } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 0xFFFFFFFFu, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
     auto t = load_trace(kTestIo, path.c_str());
     assert(!t);
@@ -157,7 +157,7 @@ static void test_round_trip_single_op() {
     // Header, one eighty-byte op record, no metas.
     char buf[16 + 80] = {};
     const char magic[4] = {'C', 'R', 'T', 'R'};
-    const uint32_t version = 1, n_ops = 1, n_metas = 0;
+    const uint32_t version = crucible::TRACE_FORMAT_VERSION, n_ops = 1, n_metas = 0;
     std::memcpy(buf + 0, magic, 4);
     std::memcpy(buf + 4, &version, 4);
     std::memcpy(buf + 8, &n_ops, 4);
@@ -212,7 +212,7 @@ static std::vector<unsigned char> make_zero_op_header() {
     const char magic[4] = {'C', 'R', 'T', 'R'};
     buf.insert(buf.end(), reinterpret_cast<const unsigned char*>(magic),
                reinterpret_cast<const unsigned char*>(magic) + 4);
-    append_le<uint32_t>(buf, 1);  // version
+    append_le<uint32_t>(buf, crucible::TRACE_FORMAT_VERSION);  // version
     append_le<uint32_t>(buf, 0);  // n_ops
     append_le<uint32_t>(buf, 0);  // n_metas
     return buf;
@@ -337,9 +337,9 @@ static void test_schema_name_table_corrupt_oversize_len() {
 // Build a 1-op .crtrace with the given num_metas and op tensor counts.
 // The metas region is zero-filled (ndim=0, valid).  Returns the temp path.
 static std::string write_one_op_trace(uint32_t n_metas, uint16_t num_inputs, uint16_t num_outputs) {
-    std::vector<uint8_t> buf(16 + 80 + static_cast<size_t>(n_metas) * 168, 0);
+    std::vector<uint8_t> buf(16 + 80 + static_cast<size_t>(n_metas) * TRACE_META_BYTES, 0);
     const char magic[4] = {'C', 'R', 'T', 'R'};
-    const uint32_t version = 1, n_ops = 1;
+    const uint32_t version = crucible::TRACE_FORMAT_VERSION, n_ops = 1;
     std::memcpy(buf.data() + 0, magic, 4);
     std::memcpy(buf.data() + 4, &version, 4);
     std::memcpy(buf.data() + 8, &n_ops, 4);
@@ -427,7 +427,7 @@ static void set_meta_field(MetaRecord& record, std::size_t field_offset, Field v
 static bool loads_with_meta(const MetaRecord& record) {
     std::vector<uint8_t> buf(16 + 80 + sizeof(TensorMeta), 0);
     const char magic[4] = {'C', 'R', 'T', 'R'};
-    const uint32_t version = 1, n_ops = 1, n_metas = 1;
+    const uint32_t version = crucible::TRACE_FORMAT_VERSION, n_ops = 1, n_metas = 1;
     const uint16_t num_inputs = 1;
     std::memcpy(buf.data() + 0, magic, 4);
     std::memcpy(buf.data() + 4, &version, 4);

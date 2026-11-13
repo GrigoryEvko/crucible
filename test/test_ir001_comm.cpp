@@ -118,9 +118,10 @@ void test_collective_node_admission() {
     assert(header.flags == 1);
     assert(header.attr_words > 0);
     assert(header.content_hash != 0);
-    // The content key of this node, recorded from the forge hash body that
-    // combine_ids replaced.  A change here changes every key in a cache.
-    assert(header.content_hash == 0x90ad04a2a08f4d98ULL);
+    // The content key of this node.  A change here changes every key in a
+    // cache.  The key folds the size of the attributes, so the layout of
+    // TensorMeta is part of it.
+    assert(header.content_hash == 0xf8a30e64c1670f65ULL);
 
     bool visited = false;
     ir::visit_ir001_node(declared, [&](ir::AllReduceOp const& node) {
@@ -192,9 +193,9 @@ void test_other_attr_shapes() {
     auto telemetry_header = ir::serialize_ir001_header(declared_telemetry);
     assert(telemetry_header.kind == std::to_underlying(ir::Ir001OpKind::IntTelemetryEmit));
     assert(telemetry_header.content_hash != send_header.content_hash);
-    // The content keys of these nodes, recorded from the forge hash body that
-    // combine_ids replaced.
-    assert(send_header.content_hash == 0xb71c22794a3b58b0ULL);
+    // The content keys of these nodes.  The key of the send node folds the
+    // size of its attributes, so the layout of TensorMeta is part of it.
+    assert(send_header.content_hash == 0x646647f67a17b535ULL);
     assert(telemetry_header.content_hash == 0xbe2e6fabe114c6cfULL);
 
     crucible::test::pass("  test_other_attr_shapes: PASSED\n");
