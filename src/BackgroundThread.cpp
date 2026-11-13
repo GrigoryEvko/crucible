@@ -494,7 +494,7 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
 
 void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename GraphPublishChannel::ProducerHandle&& out) {
     const ::fixy::BgLoadCtx ctx{::foundation::effects::host::BackgroundOwner::mint_background_context()};
-    BackgroundThread* const owner = &in.owner();
+    BackgroundThread& owner = in.owner();
 
     while (true) {
         auto maybe_work = in.try_pop();
@@ -533,16 +533,16 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
         // come while the build stage is mid-graph.  The commit markers carry
         // the floor of the metadata log, so a skipped work releases nothing
         // of its own.
-        if (work->reset_point != owner->requested_reset()) continue;
-        (void)owner->works_built_.bump();
+        if (work->reset_point != owner.requested_reset()) continue;
+        (void)owner.works_built_.bump();
 
         // One epoch of the build scratch covers this work item.  The graph
         // and its CSR arrays die at its end.  The region does not point
         // into the scratch, so its parts go on alone.
-        TraceBuild built = owner->build_scratch_.with_epoch([&]() noexcept {
-            return owner->build_trace_from(ctx.cap().alloc, owner->build_scratch_, work->completed_len,
-                                           work->trace.data(), work->meta_starts.data(), work->scope_hashes.data(),
-                                           work->callsite_hashes.data());
+        TraceBuild built = owner.build_scratch_.with_epoch([&]() noexcept {
+            return owner.build_trace_from(ctx.cap().alloc, owner.build_scratch_, work->completed_len,
+                                          work->trace.data(), work->meta_starts.data(), work->scope_hashes.data(),
+                                          work->callsite_hashes.data());
         });
 
         // A work that met the overflow sends no region.  The floor of a later
@@ -637,7 +637,7 @@ void BackgroundThread::start(TraceRing* ring_ptr, MetaLog* meta_log_ptr, int32_t
         // keeps the ops that the last pipeline did not read.
         meta_cursor_ = meta_log.get()->tail.get();
     }
-    pipeline_->thread = std::jthread([this](std::stop_token) noexcept {
+    pipeline_->thread = std::jthread([this]() noexcept {
         run_in_row(::fixy::BgLoadCtx{::foundation::effects::host::BackgroundOwner::mint_background_context()});
     });
 }
