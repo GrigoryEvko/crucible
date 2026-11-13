@@ -15,6 +15,7 @@
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <fixy/os/Socket.h>
 #include <fixy/os/Time.h>
 #include <foundation/Pinned.h>
 #include <foundation/contracts/Pre.h>
@@ -23,7 +24,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -130,7 +130,7 @@ struct TimestampedPacketView {
 // The payload borrows the receive buffer of recv_with_hw_timestamp, which
 // gives the buffer to the kernel.
 struct TimestampedPacket {
-    std::span<std::byte> payload{};
+    ::fixy::View<std::byte> payload{};
     std::size_t size = 0;
     PtpTimestampNs timestamp_ns{};
     bool hardware = false;
@@ -351,14 +351,59 @@ timestamp_packet_view(::fixy::View<std::byte const> payload, PtpTimestampNs time
 
 [[nodiscard]] ::fixy::Result<PtpTimestampNs, PtpError> ptp_now(PtpClockReader const& clock) noexcept;
 
-[[nodiscard]] ::fixy::Result<::fixy::Unit, PtpError> enable_socket_timestamping(cntp::SocketFd socket) noexcept;
+namespace detail {
 
+// The packet of one receive of recv_with_hw_timestamp.  The raw hardware
+// stamp wins over the software stamp, and a stamp of zero is no stamp.  A
+// receive of no bytes gives RecvFailed.  The payload borrows buffer.
+[[nodiscard]] ::fixy::Result<TimestampedPacket, PtpError>
+packet_of_receive(::fixy::View<std::byte> buffer, ::fixy::net::TimestampedReceive const& received) noexcept;
+
+}  // namespace detail
+
+// Turns on the receive stamps of a socket: the software stamp of the
+// kernel, and the raw stamp of the hardware clock of the NIC.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::fixy::net::CtxFitsSocketCall<Ctx>
+[[nodiscard]] ::fixy::Result<::fixy::Unit, PtpError> enable_socket_timestamping(Ctx const& ctx,
+                                                                                cntp::SocketFd socket) noexcept {
+    using Enabled = ::fixy::Result<::fixy::Unit, PtpError>;
+    return ::fixy::net::set_socket_timestamping(ctx, socket)
+        .match([](::fixy::Unit) -> Enabled { return ::fixy::Unit{}; },
+               [](::foundation::os::Errno) -> Enabled { return ::fixy::err(PtpError::SocketTimestampingFailed); });
+}
+
+// Turns on the hardware stamps of the NIC of iface, for each sent and each
+// received packet.  The kernel needs CAP_NET_ADMIN for the call, and a NIC
+// with no hardware clock refuses it.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::fixy::net::CtxFitsSocketCall<Ctx>
 [[nodiscard]] ::fixy::Result<::fixy::Unit, PtpError>
-configure_hardware_timestamping(cntp::SocketFd control_socket, cntp::NicInterfaceName iface) noexcept;
+configure_hardware_timestamping(Ctx const& ctx, cntp::SocketFd control_socket, cntp::NicInterfaceName iface) noexcept {
+    using Configured = ::fixy::Result<::fixy::Unit, PtpError>;
+    return ::fixy::net::set_hardware_timestamping(ctx, control_socket, iface.view())
+        .match([](::fixy::Unit) -> Configured { return ::fixy::Unit{}; },
+               [](::foundation::os::Errno) -> Configured { return ::fixy::err(PtpError::HardwareTimestampingFailed); });
+}
 
-// The buffer is a std::span, because the call gives its address to the
-// kernel and a View gives no address.
-[[nodiscard]] ::fixy::Result<TimestampedPacket, PtpError> recv_with_hw_timestamp(cntp::SocketFd socket,
-                                                                                 std::span<std::byte> buffer) noexcept;
+// Receives one datagram into buffer, with its stamp.  It does not wait: a
+// socket with no datagram gives RecvFailed.  The payload of the packet
+// borrows buffer.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::fixy::net::CtxFitsSocketCall<Ctx>
+[[nodiscard]] ::fixy::Result<TimestampedPacket, PtpError>
+recv_with_hw_timestamp(Ctx const& ctx, cntp::SocketFd socket, ::fixy::View<std::byte> buffer) noexcept {
+    using Received = ::fixy::Result<TimestampedPacket, PtpError>;
+    if (buffer.size() == 0) {
+        return ::fixy::err(PtpError::InvalidReceiveBuffer);
+    }
+    // The packet borrows buffer, so the match reads a named Result.
+    auto const received = ::fixy::net::receive_with_timestamps(ctx, socket, buffer);
+    return received.match(
+        [buffer](::fixy::net::TimestampedReceive const& receive) -> Received {
+            return detail::packet_of_receive(buffer, receive);
+        },
+        [](::foundation::os::Errno) -> Received { return ::fixy::err(PtpError::RecvFailed); });
+}
 
 }  // namespace crucible::topology

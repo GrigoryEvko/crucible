@@ -1637,8 +1637,8 @@ crucible_neg_compile_test(neg_ptp_open_ctx_lacks_block
     "no matching function for call to .open_ptp_clock\\(fixy::BgDrainCtx&,"
     "required for the satisfaction of .CtxFitsPtpClockReaderMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
 crucible_neg_compile_test(neg_ptp_enable_raw_socket
-    "could not convert .3. from .int. to .crucible::cntp::SocketFd."
-    "fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>")
+    "no matching function for call to .enable_socket_timestamping\\(const IoBlockCtx&, int\\)"
+    "cannot convert .3. \\(type .int.\\) to type .crucible::cntp::SocketFd.")
 crucible_neg_compile_test(neg_ptp_raw_daemon_report_status
     "invalid initialization of reference of type .const crucible::topology::DeclaredPtpDaemonReport&. .aka .const fixy::Tagged<crucible::topology::PtpDaemonReport, fixy::tags::source::Ptp>&.. from expression of type .crucible::topology::PtpDaemonReport."
     "in passing argument 1 of .constexpr crucible::topology::DeclaredPtpStatus crucible::topology::ptp_status_from_daemon_report")

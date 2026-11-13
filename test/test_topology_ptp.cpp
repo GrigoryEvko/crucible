@@ -1,17 +1,15 @@
 #include <crucible/topology/Ptp.h>
+#include <foundation/core/Array.h>
 #include <foundation/reflect/EnumName.h>
 
 #include "test_assert.h"
 
-#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <string_view>
-#include <sys/socket.h>
 #include <thread>
-#include <unistd.h>
 
 namespace cog = crucible::cog;
 namespace eff = ::fixy;
@@ -31,40 +29,6 @@ static topology::PositivePtpPathDelayNs path_delay(std::uint64_t ns) {
 static topology::PositivePtpSkewBoundNs skew_bound(std::uint64_t ns) {
     return ::fixy::mint_refined<::fixy::positive>(ns);
 }
-
-namespace {
-
-class TestSocket {
-public:
-    explicit TestSocket(int fd) noexcept : fd_{fd} {}
-    TestSocket(TestSocket const&) = delete;
-    TestSocket& operator=(TestSocket const&) = delete;
-    TestSocket(TestSocket&& other) noexcept : fd_{other.fd_} { other.fd_ = -1; }
-    TestSocket& operator=(TestSocket&& other) noexcept {
-        if (this != &other) {
-            close();
-            fd_ = other.fd_;
-            other.fd_ = -1;
-        }
-        return *this;
-    }
-    ~TestSocket() noexcept { close(); }
-
-    [[nodiscard]] int raw() const noexcept { return fd_; }
-    [[nodiscard]] bool valid() const noexcept { return fd_ >= 0; }
-
-private:
-    int fd_ = -1;
-
-    void close() noexcept {
-        if (fd_ >= 0) {
-            ::close(fd_);
-            fd_ = -1;
-        }
-    }
-};
-
-}  // namespace
 
 // The error of a result that the test knows to hold one.
 template <class T>
@@ -304,27 +268,101 @@ static void test_linux_boundaries_if_available() {
         assert(error_of(clock) == topology::PtpError::OpenClockFailed);
     }
 
-    TestSocket socket{::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0)};
-    assert(socket.valid());
+    crucible::test::pass("  test_linux_boundaries_if_available: PASSED\n");
+}
+
+// The socket calls on an idle TCP socket of the socket door.  The loopback
+// interface has no hardware clock, so the kernel refuses its hardware
+// stamps.  A socket with no data gives RecvFailed, and the receive does not
+// wait.
+static void test_socket_calls() {
+    BgFsCtx const bg_fs{::foundation::effects::testing::bg()};
+    ::fixy::fs::OwnedFd const tcp = ::fixy::net::mint_socket<::fixy::net::socket_kind::TcpStream>(bg_fs).match(
+        [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd { return std::move(opened).consume(); },
+        [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
+    assert(tcp.is_open());
     crucible::cntp::SocketFd const sock_fd =
-        crucible::cntp::admit_socket_fd(socket.raw()).expect("an open socket has a descriptor");
-    auto enabled = topology::enable_socket_timestamping(sock_fd);
-    assert(enabled.is_ok() || error_of(enabled) == topology::PtpError::SocketTimestampingFailed);
+        crucible::cntp::admit_socket_fd(tcp.get()).expect("an open socket has a descriptor");
+    assert(topology::enable_socket_timestamping(bg_fs, sock_fd).is_ok());
 
     crucible::cntp::NicInterfaceName const lo =
         crucible::cntp::NicInterfaceName::from("lo").expect("lo is an interface name");
-    auto configured = topology::configure_hardware_timestamping(sock_fd, lo);
-    assert(configured.is_ok() || error_of(configured) == topology::PtpError::HardwareTimestampingFailed);
+    auto const configured = topology::configure_hardware_timestamping(bg_fs, sock_fd, lo);
+    assert(error_of(configured) == topology::PtpError::HardwareTimestampingFailed);
 
-    std::array<std::byte, 8> payload{};
-    auto empty = topology::recv_with_hw_timestamp(sock_fd, std::span<std::byte>{});
-    assert(empty.is_err());
+    auto const empty = topology::recv_with_hw_timestamp(bg_fs, sock_fd, ::fixy::View<std::byte>{});
     assert(error_of(empty) == topology::PtpError::InvalidReceiveBuffer);
 
-    auto recv = topology::recv_with_hw_timestamp(sock_fd, std::span<std::byte>{payload});
-    assert(recv.is_ok() || error_of(recv) == topology::PtpError::RecvFailed
-           || error_of(recv) == topology::PtpError::NoTimestamp);
-    crucible::test::pass("  test_linux_boundaries_if_available: PASSED\n");
+    ::foundation::core::FixedArray<std::byte, 16> buffer{};
+    auto const idle = topology::recv_with_hw_timestamp(bg_fs, sock_fd, buffer.view());
+    assert(error_of(idle) == topology::PtpError::RecvFailed);
+    crucible::test::pass("  test_socket_calls:          PASSED\n");
+}
+
+// A receive of count bytes with the two stamps.
+static ::fixy::net::TimestampedReceive stamped_receive(std::size_t count, ::foundation::os::KernelTimespec software,
+                                                       ::foundation::os::KernelTimespec raw_hardware) {
+    return ::fixy::net::TimestampedReceive{
+        .count = count,
+        .control = ::fixy::net::ReceiveStamps{.software = software, .raw_hardware = raw_hardware},
+    };
+}
+
+// The packet of a receive: the raw hardware stamp wins over the software
+// stamp, a stamp of zero is no stamp, and a stamp past 64 bits of
+// nanoseconds stays apart from a malformed stamp.  The cases need no socket,
+// because the loopback interface gives no hardware stamp and no overflow.
+static void test_packet_of_receive() {
+    using ::foundation::os::KernelTimespec;
+    using topology::PtpError;
+    ::foundation::core::FixedArray<std::byte, 16> buffer{};
+    KernelTimespec const zero{};
+    KernelTimespec const software{.seconds = 3, .nanoseconds = 4};
+    KernelTimespec const hardware{.seconds = 5, .nanoseconds = 6};
+
+    auto const both = topology::detail::packet_of_receive(buffer.view(), stamped_receive(8, software, hardware))
+                          .expect("two stamps give a packet");
+    assert(both.hardware);
+    assert(both.timestamp_ns.value() == 5000000006ULL);
+    assert(both.size == 8 && both.payload.size() == 8);
+
+    auto const soft = topology::detail::packet_of_receive(buffer.view(), stamped_receive(16, software, zero))
+                          .expect("a software stamp gives a packet");
+    assert(!soft.hardware);
+    assert(soft.timestamp_ns.value() == 3000000004ULL);
+    assert(soft.size == 16 && soft.payload.size() == 16);
+
+    auto const none = topology::detail::packet_of_receive(buffer.view(), stamped_receive(8, zero, zero));
+    assert(error_of(none) == PtpError::NoTimestamp);
+
+    auto const no_message = topology::detail::packet_of_receive(
+        buffer.view(), ::fixy::net::TimestampedReceive{.count = 8, .control = ::fixy::net::NoTimestampMessage{}});
+    assert(error_of(no_message) == PtpError::NoTimestamp);
+    auto const short_message = topology::detail::packet_of_receive(
+        buffer.view(), ::fixy::net::TimestampedReceive{.count = 8, .control = ::fixy::net::ShortTimestampMessage{}});
+    assert(error_of(short_message) == PtpError::MalformedTimestampControl);
+
+    auto const no_bytes = topology::detail::packet_of_receive(buffer.view(), stamped_receive(0, software, hardware));
+    assert(error_of(no_bytes) == PtpError::RecvFailed);
+
+    KernelTimespec const past_64_bits{.seconds = ::fixy::max_of<std::int64_t>, .nanoseconds = 0};
+    auto const overflow = topology::detail::packet_of_receive(buffer.view(), stamped_receive(8, zero, past_64_bits));
+    assert(error_of(overflow) == PtpError::TimestampOverflow);
+
+    KernelTimespec const negative{.seconds = -1, .nanoseconds = 0};
+    KernelTimespec const full_second{.seconds = 0, .nanoseconds = 1000000000};
+    auto const below_zero = topology::detail::packet_of_receive(buffer.view(), stamped_receive(8, negative, zero));
+    assert(error_of(below_zero) == PtpError::ClockReadFailed);
+    auto const too_many_nanoseconds =
+        topology::detail::packet_of_receive(buffer.view(), stamped_receive(8, zero, full_second));
+    assert(error_of(too_many_nanoseconds) == PtpError::ClockReadFailed);
+
+    // A malformed hardware stamp is an error, also beside a good software
+    // stamp, because the hardware stamp wins.
+    auto const bad_hardware =
+        topology::detail::packet_of_receive(buffer.view(), stamped_receive(8, software, negative));
+    assert(error_of(bad_hardware) == PtpError::ClockReadFailed);
+    crucible::test::pass("  test_packet_of_receive:     PASSED\n");
 }
 
 int main() {
@@ -336,7 +374,7 @@ int main() {
     static_assert(!::fixy::time::CtxFitsPtpClockReaderMint<eff::BgDrainCtx>,
                   "opening /dev/ptpN blocks on the file system, so a context without Block is refused");
 
-    ::fixy::report(::fixy::Sink::Out, "test_topology_ptp: 7 groups\n");
+    ::fixy::report(::fixy::Sink::Out, "test_topology_ptp: 9 groups\n");
     test_name_accessors();
     test_fd_and_nic_admission();
     test_handle_status_and_timestamp();
@@ -344,6 +382,8 @@ int main() {
     test_daemon_report_boundary();
     test_timestamped_packet_view();
     test_linux_boundaries_if_available();
+    test_socket_calls();
+    test_packet_of_receive();
     crucible::test::pass("test_topology_ptp: all passed\n");
     return 0;
 }

@@ -24,6 +24,7 @@
 #include <foundation/core/Choice.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/Errno.h>
+#include <foundation/os/FutexWords.h>
 #include <foundation/os/OpenFlags.h>
 #include <foundation/reflect/Instance.h>
 
@@ -145,18 +146,19 @@ inline constexpr unsigned int ptp_clockfd_tag = 3u;
 // Realtime reading before 1970 has a negative second field, and it is
 // refused.  The function clamps no value into range, because a stamp must
 // hold what the clock returned.  It refuses a count that does not fit in
-// 64 bits with Errno::eoverflow.  It is a pure function of the timespec,
+// 64 bits with Errno::eoverflow.  It is a pure function of the reading,
 // and a test can give it the values that no working clock returns.  Each
 // reader converts each read with it, and so does a caller that reads a
-// hardware timestamp from a socket control message.
+// stamp of a socket receive (fixy::net::ReceiveStamps).
 [[nodiscard]] constexpr ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno>
-nanos_from_timespec(std::timespec const& reading) noexcept {
+nanos_from_timespec(::foundation::os::KernelTimespec const& reading) noexcept {
     constexpr std::uint64_t nanos_per_second = 1000000000ULL;
-    if (reading.tv_sec < 0 || reading.tv_nsec < 0 || reading.tv_nsec >= static_cast<long>(nanos_per_second)) {
+    if (reading.seconds < 0 || reading.nanoseconds < 0
+        || reading.nanoseconds >= static_cast<std::int64_t>(nanos_per_second)) {
         return ::foundation::core::err(::foundation::os::Errno::erange);
     }
-    const auto seconds = static_cast<std::uint64_t>(reading.tv_sec);
-    const auto nanos = static_cast<std::uint64_t>(reading.tv_nsec);
+    const auto seconds = static_cast<std::uint64_t>(reading.seconds);
+    const auto nanos = static_cast<std::uint64_t>(reading.nanoseconds);
     constexpr auto limit = std::numeric_limits<std::uint64_t>::max();
     if (seconds > (limit - nanos) / nanos_per_second) {
         return ::foundation::core::err(::foundation::os::Errno::eoverflow);
@@ -177,7 +179,7 @@ read_clock_nanos(::clockid_t clock) noexcept {
     if (::clock_gettime(clock, &now) != 0) [[unlikely]] {
         return ::foundation::core::err(static_cast<::foundation::os::Errno>(errno));
     }
-    return nanos_from_timespec(now);
+    return nanos_from_timespec(::foundation::os::KernelTimespec{.seconds = now.tv_sec, .nanoseconds = now.tv_nsec});
 }
 
 }  // namespace detail

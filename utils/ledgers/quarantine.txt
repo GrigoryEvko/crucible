@@ -168,7 +168,6 @@ include/crucible/perf/detail/ | raw-pointer-object | 35 | - | -
 include/crucible/perf/detail/ | replace-pending:std::bit_cast | 4 | - | -
 include/crucible/perf/detail/ | std-entity | 20 | - | -
 include/crucible/perf/detail/ | std-object | 6 | - | -
-include/crucible/topology/ | std-object | 2 | - | -
 include/crucible/warden/ | c-library-call | 18 | - | -
 include/crucible/warden/ | door-header | 1 | - | -
 include/crucible/warden/ | raw-pointer-object | 27 | - | -
@@ -242,7 +241,7 @@ include/fixy/handle/ | replace-pending:<atomic> | 4 | - | -
 include/fixy/handle/ | replace-pending:<cstdio> | 1 | - | -
 include/fixy/handle/ | replace-pending:<cstdlib> | 1 | - | -
 include/fixy/os/ | base-c-library-call | 15 | - | -
-include/fixy/os/ | base-c-library-object | 11 | - | -
+include/fixy/os/ | base-c-library-object | 10 | - | -
 include/fixy/os/ | base-std-entity | 176 | - | -
 include/fixy/os/ | base-std-object | 87 | - | -
 include/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
@@ -365,17 +364,11 @@ src/perf/ | foreign-symbol | 14 | - | -
 src/perf/ | raw-pointer-object | 7 | - | -
 src/perf/ | replace-pending:std::bit_cast | 2 | - | -
 src/perf/ | std-entity | 8 | - | -
-src/topology/ | c-library-call | 7 | - | -
-src/topology/ | c-library-object | 7 | - | -
-src/topology/ | door-header | 1 | - | -
-src/topology/ | raw-pointer-object | 1 | - | -
-src/topology/ | std-entity | 10 | - | -
-src/topology/ | std-object | 3 | - | -
 test/ | c-array-object | 239 | - | -
-test/ | c-library-call | 941 | - | -
+test/ | c-library-call | 939 | - | -
 test/ | c-library-object | 16 | - | -
 test/ | compiler-builtin | 1 | - | -
-test/ | door-header | 24 | - | -
+test/ | door-header | 22 | - | -
 test/ | foreign-symbol | 13 | - | -
 test/ | inline-asm | 1 | - | -
 test/ | raw-function-pointer | 23 | - | -
@@ -383,8 +376,8 @@ test/ | raw-new-delete | 41 | - | -
 test/ | raw-pointer-object | 622 | - | -
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 103 | - | -
-test/ | std-entity | 2448 | - | -
-test/ | std-object | 844 | - | -
+test/ | std-entity | 2446 | - | -
+test/ | std-object | 843 | - | -
 test/canopy_neg/ | raw-pointer-object | 1 | - | -
 test/canopy_neg/ | std-entity | 10 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
@@ -407,7 +400,7 @@ test/dag_neg/ | std-entity | 1 | - | -
 test/dag_neg/ | std-object | 3 | - | -
 test/fixy/ | c-array-object | 100 | - | -
 test/fixy/ | c-library-call | 1476 | - | -
-test/fixy/ | c-library-object | 10 | - | -
+test/fixy/ | c-library-object | 9 | - | -
 test/fixy/ | door-header | 22 | - | -
 test/fixy/ | opted-out | 16 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | opted-out | 7 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper | -

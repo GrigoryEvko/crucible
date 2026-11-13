@@ -476,17 +476,18 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
         }
     }
 
-    long seconds = 2;
-    long nanos = 5;
-    const auto good = fixy::time::nanos_from_timespec(std::timespec{seconds, nanos});
+    using foundation::os::KernelTimespec;
+    std::int64_t seconds = 2;
+    std::int64_t nanos = 5;
+    const auto good = fixy::time::nanos_from_timespec(KernelTimespec{seconds, nanos});
     if (good != foundation::core::Result<std::uint64_t, Errno>{2000000005ULL}) {
         std::fprintf(stderr, "the conversion changed a valid reading\n");
         return 1;
     }
     // A negative second field is also the form of a Realtime reading
     // before 1970, which the readers refuse rather than wrap.
-    for (std::timespec refused :
-         {std::timespec{-seconds, 0}, std::timespec{0, -nanos}, std::timespec{0, 1000000000L}}) {
+    for (KernelTimespec refused :
+         {KernelTimespec{-seconds, 0}, KernelTimespec{0, -nanos}, KernelTimespec{0, 1000000000}}) {
         const auto result = fixy::time::nanos_from_timespec(refused);
         if (result.err().value_or(Errno::eio) != Errno::erange) {
             std::fprintf(stderr, "the conversion accepted a negative or out-of-range timespec\n");
@@ -494,7 +495,7 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
         }
     }
     const auto overflow =
-        fixy::time::nanos_from_timespec(std::timespec{std::numeric_limits<std::time_t>::max(), 999999999L});
+        fixy::time::nanos_from_timespec(KernelTimespec{std::numeric_limits<std::int64_t>::max(), 999999999});
     if (overflow.err().value_or(Errno::eio) != Errno::eoverflow) {
         std::fprintf(stderr, "the conversion did not refuse a count past 64 bits\n");
         return 1;
