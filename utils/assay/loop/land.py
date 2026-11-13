@@ -459,8 +459,9 @@ from assay.loop import inputs as guard_inputs
 from assay.loop.derive import witness_fixtures
 
 # The refusals of the compare-and-swap before the batch stops, and the range of the random pause after one (THE
-# COMPARE-AND-SWAP).
-ATTEMPTS = 8
+# COMPARE-AND-SWAP).  With many lanes, a short landing moves the branch in each long run of the gate.  A run after a
+# refused swap tests only the inputs that changed, so it is short, and a long landing needs many tries before it wins.
+ATTEMPTS = 32
 PAUSE_RANGE_S = (0.1, 0.9)
 # The two kinds of an edit of a shared file (THE REQUEST).
 INSERT = "insert"
