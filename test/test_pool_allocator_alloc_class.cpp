@@ -33,10 +33,9 @@ using ::fixy::satisfies_v;
 // context from the test door.
 static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
 
-static MemoryPlan make_plan(TensorSlot* slots, uint32_t n, uint64_t pool_bytes, uint32_t num_ext) {
+static MemoryPlan make_plan(::fixy::View<TensorSlot> slots, uint64_t pool_bytes, uint32_t num_ext) {
     MemoryPlan plan{};
     plan.slots = slots;
-    plan.num_slots = n;
     plan.num_external = num_ext;
     plan.pool_bytes = pool_bytes;
     plan.device_type = DeviceType::CPU;
@@ -60,10 +59,8 @@ static TensorSlot make_slot(uint64_t off, uint64_t nbytes, uint32_t id, bool ext
 }
 
 static void test_slot_ptr_pinned_bit_equality() {
-    TensorSlot slots[2]{};
-    slots[0] = make_slot(0, 1024, 0);
-    slots[1] = make_slot(1024, 1024, 1);
-    MemoryPlan plan = make_plan(slots, 2, 2048, 0);
+    ::foundation::core::FixedArray<TensorSlot, 2> slots{make_slot(0, 1024, 0), make_slot(1024, 1024, 1)};
+    MemoryPlan plan = make_plan(slots.view(), 2048, 0);
 
     PoolAllocator pool;
     pool.init(&plan);
@@ -83,9 +80,8 @@ static void test_slot_ptr_pinned_bit_equality() {
 }
 
 static void test_slot_ptr_pinned_type_identity() {
-    TensorSlot slots[1]{};
-    slots[0] = make_slot(0, 256, 0);
-    MemoryPlan plan = make_plan(slots, 1, 256, 0);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{make_slot(0, 256, 0)};
+    MemoryPlan plan = make_plan(slots.view(), 256, 0);
 
     PoolAllocator pool;
     pool.init(&plan);
@@ -157,9 +153,8 @@ static void test_layout_invariant() {
 }
 
 static void test_pool_base_pinned_small_pool() {
-    TensorSlot slots[1]{};
-    slots[0] = make_slot(0, 1024, 0);
-    MemoryPlan plan = make_plan(slots, 1, 1024, 0);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{make_slot(0, 1024, 0)};
+    MemoryPlan plan = make_plan(slots.view(), 1024, 0);
 
     PoolAllocator pool;
     pool.init(&plan);
@@ -182,9 +177,8 @@ static void test_pool_base_huge_pinned() {
     // A pool of exactly one huge page is the smallest that qualifies
     // for huge-page alignment.
     constexpr uint64_t HP = crucible::warden::kHugePageBytes;
-    TensorSlot slots[1]{};
-    slots[0] = make_slot(0, HP / 2, 0);  // one slot, half the pool
-    MemoryPlan plan = make_plan(slots, 1, HP, 0);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{make_slot(0, HP / 2, 0)};  // one slot, half the pool
+    MemoryPlan plan = make_plan(slots.view(), HP, 0);
 
     PoolAllocator pool;
     pool.init(&plan);
@@ -204,9 +198,8 @@ static void test_pool_base_huge_pinned() {
 }
 
 static void test_pool_relax_to_weaker() {
-    TensorSlot slots[1]{};
-    slots[0] = make_slot(0, 256, 0);
-    MemoryPlan plan = make_plan(slots, 1, 256, 0);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{make_slot(0, 256, 0)};
+    MemoryPlan plan = make_plan(slots.view(), 256, 0);
 
     PoolAllocator pool;
     pool.init(&plan);
@@ -247,9 +240,8 @@ static uintptr_t pool_consumer(Slot slot) {
 }
 
 static void test_e2e_fence_checked_consumer() {
-    TensorSlot slots[1]{};
-    slots[0] = make_slot(0, 1024, 0);
-    MemoryPlan plan = make_plan(slots, 1, 1024, 0);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{make_slot(0, 1024, 0)};
+    MemoryPlan plan = make_plan(slots.view(), 1024, 0);
 
     PoolAllocator pool;
     pool.init(&plan);
@@ -268,9 +260,8 @@ static void test_e2e_fence_checked_consumer() {
 // size.
 static void test_pool_base_pinned_with_huge_alignment() {
     constexpr uint64_t HP = crucible::warden::kHugePageBytes;
-    TensorSlot slots[1]{};
-    slots[0] = make_slot(0, HP / 2, 0);
-    MemoryPlan plan = make_plan(slots, 1, HP, 0);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{make_slot(0, HP / 2, 0)};
+    MemoryPlan plan = make_plan(slots.view(), HP, 0);
 
     PoolAllocator pool;
     pool.init(&plan);

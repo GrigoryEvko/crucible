@@ -63,11 +63,11 @@ struct TensorSlot {
 };
 
 // External slots keep the allocations they already have: they are counted in
-// num_external and are not placed in the pool.
+// num_external and are not placed in the pool.  The slots are in the memory of
+// the region, and the plan only borrows them.
 struct MemoryPlan {
-    TensorSlot* slots = nullptr;
+    ::fixy::View<TensorSlot> slots{};
     uint64_t pool_bytes = 0;
-    uint32_t num_slots = 0;
     uint32_t num_external = 0;
 
     DeviceType device_type = DeviceType::CPU;
@@ -77,6 +77,14 @@ struct MemoryPlan {
 
     int32_t rank = -1;  // -1 when not distributed
     int32_t world_size = 0;  // 0 when not distributed
+
+    // The count of slots.  The pool allocator takes at most kMaxNumSlots
+    // slots, so a count that does not fit 32 bits ends the process.
+    [[nodiscard]] uint32_t num_slots() const noexcept {
+        const size_t count = slots.size();
+        CRUCIBLE_PRE(count <= ::fixy::max_of<uint32_t>);
+        return static_cast<uint32_t>(count);
+    }
 };
 
 // True when the byte ranges of the slots live at op `op` are pairwise

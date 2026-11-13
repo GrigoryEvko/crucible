@@ -111,7 +111,7 @@ int main() {
         }
 
         reports.push_back(bench::run(label_des, [&, serial_len] {
-            Arena read_arena{1 << 20};
+            ::fixy::BumpArena read_arena{1 << 20};
             const auto loaded_region =
                 deserialize_region(A, std::span<const uint8_t>{buf.data(), serial_len}, read_arena);
             RegionNode* r = loaded_region ? loaded_region->value() : nullptr;

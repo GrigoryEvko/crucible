@@ -284,8 +284,8 @@ private:
         CRUCIBLE_PRE(alt.plan != nullptr);
         const MemoryPlan& old_plan = *old_region.plan;
         const MemoryPlan& new_plan = *alt.plan;
-        const uint32_t old_num_slots = old_plan.num_slots;
-        const uint32_t new_num_slots = new_plan.num_slots;
+        const uint32_t old_num_slots = old_plan.num_slots();
+        const uint32_t new_num_slots = new_plan.num_slots();
         // The bound of the bitset below.  The check runs in each build and
         // before any slot is copied, so a plan that the bitset cannot track
         // is refused and not half-migrated.  It is not a CRUCIBLE_PRE: under
@@ -325,7 +325,11 @@ private:
                 CRUCIBLE_FATAL_INVARIANT(old_sid.raw() < old_num_slots);
                 CRUCIBLE_FATAL_INVARIANT(new_sid.raw() < new_num_slots);
 
-                if (old_plan.slots[old_sid.raw()].is_external || new_plan.slots[new_sid.raw()].is_external) continue;
+                const TensorSlot& old_slot =
+                    *old_plan.slots.get(old_sid.raw()).expect("the check above keeps the old slot id below its count");
+                const TensorSlot& new_slot =
+                    *new_plan.slots.get(new_sid.raw()).expect("the check above keeps the new slot id below its count");
+                if (old_slot.is_external || new_slot.is_external) continue;
 
                 const uint32_t ns = new_sid.raw();
                 const VisitedWord word = VisitedWord::check(ns / 64).expect(
@@ -334,9 +338,9 @@ private:
                 if ((visited.at(word) & bit) != 0) continue;
                 visited.at(word) |= bit;
 
-                const uint64_t old_offset = old_plan.slots[old_sid.raw()].offset_bytes;
-                const uint64_t new_offset = new_plan.slots[ns].offset_bytes;
-                const uint64_t nbytes = old_plan.slots[old_sid.raw()].nbytes;
+                const uint64_t old_offset = old_slot.offset_bytes;
+                const uint64_t new_offset = new_slot.offset_bytes;
+                const uint64_t nbytes = old_slot.nbytes;
 
                 if (nbytes > 0 && old_pool_base) {
                     std::memcpy(static_cast<char*>(pool_.pool_base()) + new_offset,

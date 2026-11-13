@@ -1082,10 +1082,10 @@ public:
     // function stops the process when a slot breaks this rule, because the
     // sweep would index past its arrays.  The plan goes into plan_storage,
     // the arrays of the sweep go into scratch, and the result is the address
-    // of plan_storage.
+    // of plan_storage.  The plan borrows the slots.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] MemoryPlan*
     compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage, ::fixy::BumpArena& scratch,
-                        TensorSlot* slots, uint32_t num_slots) CRUCIBLE_NO_THREAD_SAFETY;
+                        ::fixy::View<TensorSlot> slots) CRUCIBLE_NO_THREAD_SAFETY;
 };
 
 // The two sentinels of the owner mailbox.  Only their addresses matter, so

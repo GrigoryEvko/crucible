@@ -151,14 +151,14 @@ int main() {
         }));
 
         reports.push_back(bench::run(label_read, [&] {
-            Arena read_arena{1 << 18};
+            ::fixy::BumpArena read_arena{1 << 18};
             auto r = cipher.load_content_addressed(open_view, A, warm_h, read_arena);
             auto* region = r.get();
             bench::do_not_optimize(region);
         }));
 
         reports.push_back(bench::run(label_ca_read, [&] {
-            Arena read_arena{1 << 18};
+            ::fixy::BumpArena read_arena{1 << 18};
             auto r = cipher.load_content_addressed(open_view, A, warm_h, read_arena);
             bench::do_not_optimize(r.get());
             bench::do_not_optimize(r.cache_hit());

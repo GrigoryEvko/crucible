@@ -41,24 +41,26 @@ static void init_region(RegionNode* r, TraceEntry* ops, uint32_t n) {
 
 // Every slot is internal and 256 bytes wide, so slot i sits at offset
 // i * 256 and no two slots overlap.
-static MemoryPlan make_simple_plan(TensorSlot* slots, uint32_t n) {
-    for (uint32_t i = 0; i < n; i++) {
-        slots[i] = {.offset_bytes = i * 256,
-                    .nbytes = 256,
-                    .birth_op = OpIndex{0},
-                    .death_op = OpIndex{n},
-                    .dtype = ScalarType::Float,
-                    .device_type = DeviceType::CPU,
-                    .device_idx = 0,
-                    .layout = Layout::Strided,
-                    .is_external = false,
-                    .pad = {},
-                    .slot_id = SlotId{i},
-                    .pad2 = {}};
+static MemoryPlan make_simple_plan(::fixy::View<TensorSlot> slots) {
+    const uint32_t n = static_cast<uint32_t>(slots.size());
+    uint32_t i = 0;
+    for (TensorSlot& slot : slots) {
+        slot = {.offset_bytes = i * 256,
+                .nbytes = 256,
+                .birth_op = OpIndex{0},
+                .death_op = OpIndex{n},
+                .dtype = ScalarType::Float,
+                .device_type = DeviceType::CPU,
+                .device_idx = 0,
+                .layout = Layout::Strided,
+                .is_external = false,
+                .pad = {},
+                .slot_id = SlotId{i},
+                .pad2 = {}};
+        ++i;
     }
     MemoryPlan plan{};
     plan.slots = slots;
-    plan.num_slots = n;
     plan.num_external = 0;
     plan.pool_bytes = n * 256;
     plan.device_type = DeviceType::CPU;
@@ -82,8 +84,8 @@ static void test_linear_match() {
     RegionNode region{};
     init_region(&region, ops, 3);
 
-    TensorSlot slots[3];
-    auto plan = make_simple_plan(slots, 3);
+    ::foundation::core::FixedArray<TensorSlot, 3> slots{};
+    auto plan = make_simple_plan(slots.view());
     PoolAllocator pool;
     pool.init(&plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -136,8 +138,8 @@ static void test_schema_divergence() {
     RegionNode region{};
     init_region(&region, ops, 3);
 
-    TensorSlot slots[1];
-    auto plan = make_simple_plan(slots, 1);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+    auto plan = make_simple_plan(slots.view());
     PoolAllocator pool;
     pool.init(&plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -174,8 +176,8 @@ static void test_shape_divergence() {
     RegionNode region{};
     init_region(&region, ops, 2);
 
-    TensorSlot slots[1];
-    auto plan = make_simple_plan(slots, 1);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+    auto plan = make_simple_plan(slots.view());
     PoolAllocator pool;
     pool.init(&plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -208,8 +210,8 @@ static void test_reset() {
     RegionNode region{};
     init_region(&region, ops, 2);
 
-    TensorSlot slots[1];
-    auto plan = make_simple_plan(slots, 1);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+    auto plan = make_simple_plan(slots.view());
     PoolAllocator pool;
     pool.init(&plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -256,8 +258,8 @@ static void test_input_ptr() {
     RegionNode region{};
     init_region(&region, ops, 2);
 
-    TensorSlot slots[2];
-    auto plan = make_simple_plan(slots, 2);
+    ::foundation::core::FixedArray<TensorSlot, 2> slots{};
+    auto plan = make_simple_plan(slots.view());
     PoolAllocator pool;
     pool.init(&plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -288,8 +290,8 @@ static void test_invalid_slot() {
     RegionNode region{};
     init_region(&region, ops, 1);
 
-    TensorSlot slots[1];
-    auto plan = make_simple_plan(slots, 1);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+    auto plan = make_simple_plan(slots.view());
     PoolAllocator pool;
     pool.init(&plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -318,8 +320,8 @@ static void test_current_entry() {
     RegionNode region{};
     init_region(&region, ops, 3);
 
-    TensorSlot slots[1];
-    auto plan = make_simple_plan(slots, 1);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+    auto plan = make_simple_plan(slots.view());
     PoolAllocator pool;
     pool.init(&plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -347,47 +349,47 @@ static void test_integration_with_pool() {
     // Slot 2 is external: it stands for a parameter whose storage the
     // pool does not own and must not place.
     constexpr uint32_t NSLOTS = 3;
-    TensorSlot slots[NSLOTS]{};
-    slots[0] = {.offset_bytes = 0,
-                .nbytes = 512,
-                .birth_op = OpIndex{0},
-                .death_op = OpIndex{2},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = false,
-                .pad = {},
-                .slot_id = SlotId{0},
-                .pad2 = {}};
-    slots[1] = {.offset_bytes = 0,
-                .nbytes = 256,
-                .birth_op = OpIndex{1},
-                .death_op = OpIndex{2},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = false,
-                .pad = {},
-                .slot_id = SlotId{1},
-                .pad2 = {}};
-    slots[2] = {.offset_bytes = 0,
-                .nbytes = 128,
-                .birth_op = OpIndex{0},
-                .death_op = OpIndex{2},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = true,
-                .pad = {},
-                .slot_id = SlotId{2},
-                .pad2 = {}};
+    ::foundation::core::FixedArray<TensorSlot, NSLOTS> slots{};
+    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
+                                                .nbytes = 512,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{2},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{0},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
+                                                .nbytes = 256,
+                                                .birth_op = OpIndex{1},
+                                                .death_op = OpIndex{2},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{1},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<2>()) = {.offset_bytes = 0,
+                                                .nbytes = 128,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{2},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = true,
+                                                .pad = {},
+                                                .slot_id = SlotId{2},
+                                                .pad2 = {}};
 
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots, NSLOTS);
+    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
     assert(plan != nullptr);
 
     PoolAllocator pool;

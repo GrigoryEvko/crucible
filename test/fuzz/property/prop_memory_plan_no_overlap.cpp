@@ -92,7 +92,7 @@ struct SlotSet {
 
 // Materialize a SlotSet into a fresh TensorSlot array and return the
 // maximum death_op (the upper bound of the no-overlap sweep).
-[[nodiscard]] uint32_t materialize(const SlotSet& set, crucible::TensorSlot* out) noexcept {
+[[nodiscard]] uint32_t materialize(const SlotSet& set, ::fixy::View<crucible::TensorSlot> out) noexcept {
     using crucible::TensorSlot;
     using crucible::OpIndex;
     using crucible::SlotId;
@@ -103,18 +103,19 @@ struct SlotSet {
     uint32_t max_death = 0;
     for (uint32_t i = 0; i < set.count; ++i) {
         const SlotSpec& spec = set.specs[i];
-        out[i] = TensorSlot{.offset_bytes = 0,
-                            .nbytes = spec.nbytes,
-                            .birth_op = OpIndex{spec.birth},
-                            .death_op = OpIndex{spec.death},
-                            .dtype = ScalarType::Float,
-                            .device_type = DeviceType::CPU,
-                            .device_idx = 0,
-                            .layout = Layout::Strided,
-                            .is_external = spec.is_external,
-                            .pad = {},
-                            .slot_id = SlotId{i},
-                            .pad2 = {}};
+        TensorSlot& slot = *out.get(i).expect("the slot array holds each slot of the set");
+        slot = TensorSlot{.offset_bytes = 0,
+                          .nbytes = spec.nbytes,
+                          .birth_op = OpIndex{spec.birth},
+                          .death_op = OpIndex{spec.death},
+                          .dtype = ScalarType::Float,
+                          .device_type = DeviceType::CPU,
+                          .device_idx = 0,
+                          .layout = Layout::Strided,
+                          .is_external = spec.is_external,
+                          .pad = {},
+                          .slot_id = SlotId{i},
+                          .pad2 = {}};
         if (spec.death > max_death) max_death = spec.death;
     }
     return max_death;
@@ -152,18 +153,20 @@ int main(int argc, char** argv) {
         [](const SlotSet& set) noexcept -> bool {
             const uint32_t num_slots = set.count;
 
-            TensorSlot slots1[kMaxSlots]{};
-            const uint32_t max_death = materialize(set, slots1);
+            ::foundation::core::FixedArray<TensorSlot, kMaxSlots> slots1{};
+            const uint32_t max_death = materialize(set, slots1.view());
+            const ::fixy::View<TensorSlot> set_slots1 =
+                slots1.view().window(0, num_slots).expect("a set holds at most kMaxSlots slots");
 
             auto test = ::foundation::effects::testing::test();
             BackgroundThread bt1;
             crucible::MemoryPlan plan_storage1{};
             ::fixy::BumpArena sweep_arena1{size_t{1} << 16};
-            auto* plan1 = bt1.compute_memory_plan(test.alloc, plan_storage1, sweep_arena1, slots1, num_slots);
+            auto* plan1 = bt1.compute_memory_plan(test.alloc, plan_storage1, sweep_arena1, set_slots1);
 
             // (A) Structural fidelity.
             if (plan1 == nullptr) return false;
-            if (plan1->num_slots != num_slots) return false;
+            if (plan1->num_slots() != num_slots) return false;
 
             uint32_t want_external = 0;
             for (uint32_t i = 0; i < num_slots; ++i)
@@ -175,7 +178,7 @@ int main(int argc, char** argv) {
             // (B) No-overlap at every op boundary, via the canonical
             //     production oracle (MaxLive=kMaxSlots caps the live set,
             //     which can never exceed num_slots <= kMaxSlots).
-            const std::span<const TensorSlot> span1{slots1, num_slots};
+            const std::span<const TensorSlot> span1{&slots1.at(::foundation::core::index<0>()), num_slots};
             for (uint32_t t = 0; t <= max_death; ++t) {
                 if (!live_intervals_disjoint_at<kMaxSlots>(span1, OpIndex{t})) return false;
             }
@@ -183,28 +186,31 @@ int main(int argc, char** argv) {
             // (C) Containment: internal slots fit the pool; external
             //     slots are not placed (offset stays 0).
             // (E) Alignment: internal slot offsets are 256-aligned.
-            for (uint32_t i = 0; i < num_slots; ++i) {
-                if (slots1[i].is_external) {
-                    if (slots1[i].offset_bytes != 0) return false;
+            for (const TensorSlot& slot : set_slots1) {
+                if (slot.is_external) {
+                    if (slot.offset_bytes != 0) return false;
                 } else {
                     // offset + nbytes can't wrap: both < 2^20 by gen bounds.
-                    if (slots1[i].offset_bytes + slots1[i].nbytes > plan1->pool_bytes) return false;
-                    if (slots1[i].offset_bytes % kPlanAlignment != 0) return false;
+                    if (slot.offset_bytes + slot.nbytes > plan1->pool_bytes) return false;
+                    if (slot.offset_bytes % kPlanAlignment != 0) return false;
                 }
             }
 
             // (D) Determinism: replan the same set on a fresh arena;
             //     offsets and pool_bytes must be byte-identical.
-            TensorSlot slots2[kMaxSlots]{};
-            (void)materialize(set, slots2);
+            ::foundation::core::FixedArray<TensorSlot, kMaxSlots> slots2{};
+            (void)materialize(set, slots2.view());
+            const ::fixy::View<TensorSlot> set_slots2 =
+                slots2.view().window(0, num_slots).expect("a set holds at most kMaxSlots slots");
             BackgroundThread bt2;
             crucible::MemoryPlan plan_storage2{};
             ::fixy::BumpArena sweep_arena2{size_t{1} << 16};
-            auto* plan2 = bt2.compute_memory_plan(test.alloc, plan_storage2, sweep_arena2, slots2, num_slots);
+            auto* plan2 = bt2.compute_memory_plan(test.alloc, plan_storage2, sweep_arena2, set_slots2);
             if (plan2 == nullptr) return false;
             if (plan2->pool_bytes != plan1->pool_bytes) return false;
             for (uint32_t i = 0; i < num_slots; ++i) {
-                if (slots2[i].offset_bytes != slots1[i].offset_bytes) return false;
+                const uint64_t first_offset = set_slots1.get(i).expect("the set holds this slot")->offset_bytes;
+                if (set_slots2.get(i).expect("the set holds this slot")->offset_bytes != first_offset) return false;
             }
 
             return true;

@@ -156,8 +156,9 @@ void wait_region_published(Vigil& vigil) {
 
 // The benches below measure a plan for one CPU device with no distribution,
 // which is what MemoryPlan and TensorSlot give by default.  The arena gives
-// raw storage, so a plan or a slot that the setup does not construct holds
-// the bytes that the arena held before.
+// raw storage, so a plan that the setup does not construct holds the bytes
+// that the arena held before.  Each slot is a copy of the fill value of its
+// array.
 void check_single_cpu_plan(const MemoryPlan& plan) {
     CRUCIBLE_BENCH_CHECK(plan.device_type == DeviceType::CPU && plan.device_idx == -1);
     CRUCIBLE_BENCH_CHECK(plan.rank == -1 && plan.world_size == 0 && plan.device_capability == 0);
@@ -177,6 +178,7 @@ void check_cpu_slot(const TensorSlot& slot) {
 struct BenchRegion {
     ::foundation::effects::Test test = ::foundation::effects::testing::test();
     Arena arena{1 << 16};
+    ::fixy::BumpArena slot_arena{1 << 16};
     RegionNode* region = nullptr;
     MemoryPlan* plan = nullptr;
 
@@ -212,22 +214,22 @@ struct BenchRegion {
 
         region = make_region(test.alloc, arena, ops, n_ops);
 
-        auto* slots = arena.alloc_array<TensorSlot>(test.alloc, n_ops);
-        for (uint32_t i = 0; i < n_ops; i++) {
-            std::construct_at(&slots[i]);
-            slots[i].offset_bytes = i * 4096;
-            slots[i].nbytes = 4096;
-            slots[i].slot_id = SlotId{i};
-            slots[i].birth_op = OpIndex{i};
-            slots[i].death_op = OpIndex{i < n_ops - 1 ? i + 1 : i};
-            slots[i].dtype = ScalarType::Float;
-            slots[i].is_external = false;
-            check_cpu_slot(slots[i]);
+        const ::fixy::View<TensorSlot> slots = slot_arena.array<TensorSlot>(test.alloc, n_ops, TensorSlot{});
+        uint32_t i = 0;
+        for (TensorSlot& slot : slots) {
+            slot.offset_bytes = i * 4096;
+            slot.nbytes = 4096;
+            slot.slot_id = SlotId{i};
+            slot.birth_op = OpIndex{i};
+            slot.death_op = OpIndex{i < n_ops - 1 ? i + 1 : i};
+            slot.dtype = ScalarType::Float;
+            slot.is_external = false;
+            check_cpu_slot(slot);
+            i++;
         }
 
         plan = std::construct_at(arena.alloc_obj<MemoryPlan>(test.alloc));
         plan->slots = slots;
-        plan->num_slots = n_ops;
         plan->num_external = 0;
         plan->pool_bytes = n_ops * 4096;
         check_single_cpu_plan(*plan);
@@ -294,22 +296,23 @@ int main() {
     reports.push_back([&] {
         auto test = ::foundation::effects::testing::test();
         Arena arena{1 << 16};
+        ::fixy::BumpArena slot_arena{1 << 16};
         constexpr uint32_t NSLOTS = 16;
-        auto* slots = arena.alloc_array<TensorSlot>(test.alloc, NSLOTS);
-        for (uint32_t i = 0; i < NSLOTS; i++) {
-            std::construct_at(&slots[i]);
-            slots[i].offset_bytes = i * 256;
-            slots[i].nbytes = 256;
-            slots[i].slot_id = SlotId{i};
-            slots[i].birth_op = OpIndex{0};
-            slots[i].death_op = OpIndex{0};
-            slots[i].dtype = ScalarType::Float;
-            slots[i].is_external = false;
-            check_cpu_slot(slots[i]);
+        const ::fixy::View<TensorSlot> slots = slot_arena.array<TensorSlot>(test.alloc, NSLOTS, TensorSlot{});
+        uint32_t i = 0;
+        for (TensorSlot& slot : slots) {
+            slot.offset_bytes = i * 256;
+            slot.nbytes = 256;
+            slot.slot_id = SlotId{i};
+            slot.birth_op = OpIndex{0};
+            slot.death_op = OpIndex{0};
+            slot.dtype = ScalarType::Float;
+            slot.is_external = false;
+            check_cpu_slot(slot);
+            i++;
         }
         auto* plan = std::construct_at(arena.alloc_obj<MemoryPlan>(test.alloc));
         plan->slots = slots;
-        plan->num_slots = NSLOTS;
         plan->num_external = 0;
         plan->pool_bytes = NSLOTS * 256;
         check_single_cpu_plan(*plan);
@@ -572,8 +575,7 @@ int main() {
             }
             auto* region = make_region(test.alloc, arena, ops, NUM_OPS);
             auto* plan = std::construct_at(arena.alloc_obj<MemoryPlan>(test.alloc));
-            plan->slots = nullptr;
-            plan->num_slots = 0;
+            plan->slots = ::fixy::View<TensorSlot>{};
             plan->pool_bytes = 0;
             check_single_cpu_plan(*plan);
             region->plan = plan;

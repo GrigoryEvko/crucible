@@ -37,24 +37,26 @@ static void init_region(RegionNode* r, TraceEntry* ops, uint32_t n, MemoryPlan* 
 
 // Every slot is internal and 256 bytes wide, so slot i sits at offset
 // i * 256 and no two slots overlap.
-static MemoryPlan make_simple_plan(TensorSlot* slots, uint32_t n) {
-    for (uint32_t i = 0; i < n; i++) {
-        slots[i] = {.offset_bytes = i * 256,
-                    .nbytes = 256,
-                    .birth_op = OpIndex{0},
-                    .death_op = OpIndex{n},
-                    .dtype = ScalarType::Float,
-                    .device_type = DeviceType::CPU,
-                    .device_idx = 0,
-                    .layout = Layout::Strided,
-                    .is_external = false,
-                    .pad = {},
-                    .slot_id = SlotId{i},
-                    .pad2 = {}};
+static MemoryPlan make_simple_plan(::fixy::View<TensorSlot> slots) {
+    const uint32_t n = static_cast<uint32_t>(slots.size());
+    uint32_t i = 0;
+    for (TensorSlot& slot : slots) {
+        slot = {.offset_bytes = i * 256,
+                .nbytes = 256,
+                .birth_op = OpIndex{0},
+                .death_op = OpIndex{n},
+                .dtype = ScalarType::Float,
+                .device_type = DeviceType::CPU,
+                .device_idx = 0,
+                .layout = Layout::Strided,
+                .is_external = false,
+                .pad = {},
+                .slot_id = SlotId{i},
+                .pad2 = {}};
+        ++i;
     }
     MemoryPlan plan{};
     plan.slots = slots;
-    plan.num_slots = n;
     plan.num_external = 0;
     plan.pool_bytes = n * 256;
     plan.device_type = DeviceType::CPU;
@@ -88,8 +90,8 @@ static void test_activate() {
     ops[1].num_outputs = 1;
     ops[1].output_slot_ids = out;
 
-    TensorSlot slots[1];
-    auto plan = make_simple_plan(slots, 1);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+    auto plan = make_simple_plan(slots.view());
 
     RegionNode region{};
     init_region(&region, ops, 2, &plan);
@@ -138,8 +140,8 @@ static void test_full_replay() {
     ops[1].output_slot_ids = out1;
     ops[1].num_inputs = 0;
 
-    TensorSlot slots[2];
-    auto plan = make_simple_plan(slots, 2);
+    ::foundation::core::FixedArray<TensorSlot, 2> slots{};
+    auto plan = make_simple_plan(slots.view());
 
     RegionNode region{};
     init_region(&region, ops, 2, &plan);
@@ -182,8 +184,8 @@ static void test_divergence() {
         ops[i].output_slot_ids = out;
     }
 
-    TensorSlot slots[1];
-    auto plan = make_simple_plan(slots, 1);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+    auto plan = make_simple_plan(slots.view());
 
     RegionNode region{};
     init_region(&region, ops, 3, &plan);
@@ -216,8 +218,8 @@ static void test_reactivate() {
     ops_a[0].num_outputs = 1;
     ops_a[0].output_slot_ids = out;
 
-    TensorSlot slots_a[1];
-    auto plan_a = make_simple_plan(slots_a, 1);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots_a{};
+    auto plan_a = make_simple_plan(slots_a.view());
 
     RegionNode region_a{};
     init_region(&region_a, ops_a, 1, &plan_a);
@@ -236,8 +238,8 @@ static void test_reactivate() {
     ops_b[1].num_outputs = 1;
     ops_b[1].output_slot_ids = &out_b[1];
 
-    TensorSlot slots_b[2];
-    auto plan_b = make_simple_plan(slots_b, 2);
+    ::foundation::core::FixedArray<TensorSlot, 2> slots_b{};
+    auto plan_b = make_simple_plan(slots_b.view());
 
     RegionNode region_b{};
     init_region(&region_b, ops_b, 2, &plan_b);
@@ -278,35 +280,34 @@ static void test_external_slots() {
     ops[0].num_inputs = 1;
     ops[0].input_slot_ids = in;
 
-    TensorSlot slots[2]{};
-    slots[0] = {.offset_bytes = 0,
-                .nbytes = 256,
-                .birth_op = OpIndex{0},
-                .death_op = OpIndex{1},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = false,
-                .pad = {},
-                .slot_id = SlotId{0},
-                .pad2 = {}};
-    slots[1] = {.offset_bytes = 0,
-                .nbytes = 128,
-                .birth_op = OpIndex{0},
-                .death_op = OpIndex{1},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = true,
-                .pad = {},
-                .slot_id = SlotId{1},
-                .pad2 = {}};
+    ::foundation::core::FixedArray<TensorSlot, 2> slots{};
+    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
+                                                .nbytes = 256,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{1},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{0},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
+                                                .nbytes = 128,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{1},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = true,
+                                                .pad = {},
+                                                .slot_id = SlotId{1},
+                                                .pad2 = {}};
 
     MemoryPlan plan{};
-    plan.slots = slots;
-    plan.num_slots = 2;
+    plan.slots = slots.view();
     plan.num_external = 1;
     plan.pool_bytes = 256;
     plan.device_type = DeviceType::CPU;
@@ -341,47 +342,47 @@ static void test_integration_sweep_line() {
     // Slot 2 is external: it stands for a parameter whose storage the
     // pool does not own and must not place.
     constexpr uint32_t NSLOTS = 3;
-    TensorSlot slots[NSLOTS]{};
-    slots[0] = {.offset_bytes = 0,
-                .nbytes = 512,
-                .birth_op = OpIndex{0},
-                .death_op = OpIndex{2},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = false,
-                .pad = {},
-                .slot_id = SlotId{0},
-                .pad2 = {}};
-    slots[1] = {.offset_bytes = 0,
-                .nbytes = 256,
-                .birth_op = OpIndex{1},
-                .death_op = OpIndex{2},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = false,
-                .pad = {},
-                .slot_id = SlotId{1},
-                .pad2 = {}};
-    slots[2] = {.offset_bytes = 0,
-                .nbytes = 128,
-                .birth_op = OpIndex{0},
-                .death_op = OpIndex{2},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = true,
-                .pad = {},
-                .slot_id = SlotId{2},
-                .pad2 = {}};
+    ::foundation::core::FixedArray<TensorSlot, NSLOTS> slots{};
+    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
+                                                .nbytes = 512,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{2},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{0},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
+                                                .nbytes = 256,
+                                                .birth_op = OpIndex{1},
+                                                .death_op = OpIndex{2},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{1},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<2>()) = {.offset_bytes = 0,
+                                                .nbytes = 128,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{2},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = true,
+                                                .pad = {},
+                                                .slot_id = SlotId{2},
+                                                .pad2 = {}};
 
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots, NSLOTS);
+    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
     assert(plan != nullptr);
 
     SlotId op0_out[1] = {SlotId{0}};
@@ -460,8 +461,8 @@ static void test_divergence_counter() {
     ops[1].num_outputs = 1;
     ops[1].output_slot_ids = out;
 
-    TensorSlot slots[1];
-    auto plan = make_simple_plan(slots, 1);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+    auto plan = make_simple_plan(slots.view());
 
     RegionNode region{};
     init_region(&region, ops, 2, &plan);

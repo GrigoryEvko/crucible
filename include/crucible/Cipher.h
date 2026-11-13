@@ -62,7 +62,6 @@
 
 namespace crucible {
 
-class Arena;
 struct RegionNode;
 class Cipher;
 
@@ -329,7 +328,7 @@ public:
     [[nodiscard]] LoadedContentAddressedRegionPayload load_content_addressed(OpenView const&,
                                                                              ::foundation::effects::Alloc a,
                                                                              ContentHash content_hash,
-                                                                             Arena& arena) const;
+                                                                             ::fixy::BumpArena& arena) const;
 
     // The context is what keeps a foreground caller out.  record_event
     // writes HEAD and appends to the log, so it needs IO and Block.  A

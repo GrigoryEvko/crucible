@@ -2,13 +2,18 @@
 
 #include <crucible/MerkleDag.h>
 
+#include <type_traits>
+
 namespace crucible {
 
 static_assert(sizeof(TensorSlot) == 40, "TensorSlot must be 40 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorSlot);
 
 static_assert(sizeof(MemoryPlan) == 48, "MemoryPlan must be 48 bytes — the on-disk format matches this layout");
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(MemoryPlan);
+// A plan holds a View of its slots, and a View refuses a byte copy, so a plan
+// is not trivially copyable.  A plan lives in an arena, which ends no object.
+static_assert(std::is_trivially_destructible_v<MemoryPlan>, "an arena ends no MemoryPlan");
+static_assert(std::is_standard_layout_v<MemoryPlan>, "MemoryPlan must be standard-layout");
 
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TraceEntry);
 

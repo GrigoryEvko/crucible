@@ -120,7 +120,7 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
         index.write(as_text(extra_index_lines).data(), static_cast<std::streamsize>(extra_index_lines.size()));
     }
 
-    Arena arena;
+    ::fixy::BumpArena arena{};
     if (object_hash != 0) {
         auto loaded = cipher.load_content_addressed(view, test_alloc(), ContentHash{object_hash}, arena);
         if (const RegionNode* region = loaded.get(); region != nullptr) {
@@ -145,7 +145,8 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
                                                                  std::uint64_t object_name_xor = 0,
                                                                  std::string_view log_tail = {}) {
     Arena arena;
-    const RegionNode* region = build_seed_region(arena, true);
+    ::fixy::BumpArena slot_arena{};
+    const RegionNode* region = build_seed_region(arena, slot_arena, true);
     const auto image = region_image(region);
     const std::uint64_t hash = region->content_hash.raw();
 

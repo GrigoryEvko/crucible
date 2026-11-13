@@ -950,10 +950,10 @@ private:
     [[gnu::cold]] void register_externals_from_region_(VigilFgCtx const& fg, const RegionNode& region) {
         if (!region.plan) return;
 
-        for (uint32_t slot_idx = 0; slot_idx < region.plan->num_slots; slot_idx++) {
-            if (!region.plan->slots[slot_idx].is_external) continue;
+        for (const TensorSlot& slot : region.plan->slots) {
+            if (!slot.is_external) continue;
 
-            SlotId target = region.plan->slots[slot_idx].slot_id;
+            SlotId target = slot.slot_id;
             void* ptr = nullptr;
 
             for (uint32_t i = 0; i < region.num_ops && !ptr; i++) {
@@ -1035,7 +1035,7 @@ private:
     // production route to a foreground context.
     ::foundation::effects::host::ProducerClaim<Vigil> producer_claim_;
     ::fixy::AtomicMonotonic<uint64_t> step_ = ::fixy::mint_atomic_monotonic<uint64_t>(0);
-    Arena load_arena_{1 << 20};
+    ::fixy::BumpArena load_arena_{};
 
     // The publication slot: the region that the publish stage gave to the
     // foreground and that the foreground did not take yet.  The store is

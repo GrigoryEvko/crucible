@@ -183,15 +183,15 @@ void test_find_alternate_tracks_live_plan() {
     assert(!cache.find_alternate(1, ops[1].schema_hash, ops[1].shape_hash).has_value());
 
     // The plan arrives after the insert. No second call into the cache.
-    TensorSlot slots[1]{};
-    slots[0].nbytes = 4096;
-    slots[0].birth_op = OpIndex{0};
-    slots[0].death_op = OpIndex{1};
-    slots[0].slot_id = SlotId{0};
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+    TensorSlot& slot = slots.at(::foundation::core::index<0>());
+    slot.nbytes = 4096;
+    slot.birth_op = OpIndex{0};
+    slot.death_op = OpIndex{1};
+    slot.slot_id = SlotId{0};
     auto* plan = arena.alloc_obj<MemoryPlan>(test.alloc);
     ::new(plan) MemoryPlan{};
-    plan->slots = slots;
-    plan->num_slots = 1;
+    plan->slots = slots.view();
     plan->pool_bytes = 4096;
     region->plan = plan;
 

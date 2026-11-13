@@ -149,22 +149,24 @@ void build_ops(::foundation::effects::Test ctx, Arena& arena, TraceEntry* ops, u
     }
 }
 
-void build_slots(TensorSlot* slots) noexcept {
-    for (uint32_t slot_index = 0; slot_index < kNumSlots; slot_index++) {
+void build_slots(::fixy::View<TensorSlot> slots) noexcept {
+    uint32_t slot_index = 0;
+    for (TensorSlot& slot : slots) {
         const uint64_t seed = mix(0x5107ULL ^ slot_index);
         const uint32_t birth = static_cast<uint32_t>(seed % 32);
-        slots[slot_index] = TensorSlot{.offset_bytes = 0,
-                                       .nbytes = 256 + (seed % 8) * 512,
-                                       .birth_op = OpIndex{birth},
-                                       .death_op = OpIndex{birth + 1 + static_cast<uint32_t>((seed >> 8) % 24)},
-                                       .dtype = ScalarType::Float,
-                                       .device_type = DeviceType::CPU,
-                                       .device_idx = 0,
-                                       .layout = Layout::Strided,
-                                       .is_external = ((seed & 0x10000) != 0),
-                                       .pad = {},
-                                       .slot_id = SlotId{slot_index},
-                                       .pad2 = {}};
+        slot = TensorSlot{.offset_bytes = 0,
+                          .nbytes = 256 + (seed % 8) * 512,
+                          .birth_op = OpIndex{birth},
+                          .death_op = OpIndex{birth + 1 + static_cast<uint32_t>((seed >> 8) % 24)},
+                          .dtype = ScalarType::Float,
+                          .device_type = DeviceType::CPU,
+                          .device_idx = 0,
+                          .layout = Layout::Strided,
+                          .is_external = ((seed & 0x10000) != 0),
+                          .pad = {},
+                          .slot_id = SlotId{slot_index},
+                          .pad2 = {}};
+        slot_index++;
     }
 }
 
@@ -197,11 +199,11 @@ struct Built {
     auto* tail = crucible::make_region(ctx.alloc, arena, ops + kSplit, kNumOps - kSplit);
     head->next = tail;
 
-    TensorSlot slots[kNumSlots]{};
-    build_slots(slots);
+    ::foundation::core::FixedArray<TensorSlot, kNumSlots> slots{};
+    build_slots(slots.view());
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    head->plan = bt.compute_memory_plan(ctx.alloc, plan_storage, sweep_arena, slots, kNumSlots);
+    head->plan = bt.compute_memory_plan(ctx.alloc, plan_storage, sweep_arena, slots.view());
     crucible::recompute_merkle(head);
 
     Built out;
@@ -210,10 +212,11 @@ struct Built {
     out.merkle_hash = head->merkle_hash.raw();
     if (head->plan != nullptr) {
         out.pool_bytes = head->plan->pool_bytes;
-        out.num_slots = head->plan->num_slots;
+        out.num_slots = head->plan->num_slots();
         out.num_external = head->plan->num_external;
         for (uint32_t slot_index = 0; slot_index < out.num_slots && slot_index < kNumSlots; slot_index++) {
-            out.offsets[slot_index] = head->plan->slots[slot_index].offset_bytes;
+            out.offsets[slot_index] =
+                head->plan->slots.get(slot_index).expect("the plan holds this slot")->offset_bytes;
         }
     }
     return out;

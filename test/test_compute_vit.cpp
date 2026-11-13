@@ -47,7 +47,7 @@ int main() {
     Weights weights;
     fill_weights(weights);
 
-    TensorSlot slots[N_SLOTS]{};
+    ::foundation::core::FixedArray<TensorSlot, N_SLOTS> slots{};
 
     auto make_ext = [](uint32_t id, uint64_t sz) -> TensorSlot {
         return {.offset_bytes = 0,
@@ -78,46 +78,46 @@ int main() {
                 .pad2 = {}};
     };
 
-    slots[SL_X] = make_ext(SL_X, SZ_BSD);
-    slots[SL_G1] = make_ext(SL_G1, SZ_D);
-    slots[SL_B1] = make_ext(SL_B1, SZ_D);
-    slots[SL_WQ] = make_ext(SL_WQ, SZ_DD);
-    slots[SL_WK] = make_ext(SL_WK, SZ_DD);
-    slots[SL_WV] = make_ext(SL_WV, SZ_DD);
-    slots[SL_WOUT] = make_ext(SL_WOUT, SZ_DD);
-    slots[SL_G2] = make_ext(SL_G2, SZ_D);
-    slots[SL_B2] = make_ext(SL_B2, SZ_D);
-    slots[SL_WFF1] = make_ext(SL_WFF1, SZ_DFF);
-    slots[SL_WFF2] = make_ext(SL_WFF2, SZ_FFD);
-    slots[SL_WHEAD] = make_ext(SL_WHEAD, SZ_DNCLS);
+    slots.at(::foundation::core::index<SL_X>()) = make_ext(SL_X, SZ_BSD);
+    slots.at(::foundation::core::index<SL_G1>()) = make_ext(SL_G1, SZ_D);
+    slots.at(::foundation::core::index<SL_B1>()) = make_ext(SL_B1, SZ_D);
+    slots.at(::foundation::core::index<SL_WQ>()) = make_ext(SL_WQ, SZ_DD);
+    slots.at(::foundation::core::index<SL_WK>()) = make_ext(SL_WK, SZ_DD);
+    slots.at(::foundation::core::index<SL_WV>()) = make_ext(SL_WV, SZ_DD);
+    slots.at(::foundation::core::index<SL_WOUT>()) = make_ext(SL_WOUT, SZ_DD);
+    slots.at(::foundation::core::index<SL_G2>()) = make_ext(SL_G2, SZ_D);
+    slots.at(::foundation::core::index<SL_B2>()) = make_ext(SL_B2, SZ_D);
+    slots.at(::foundation::core::index<SL_WFF1>()) = make_ext(SL_WFF1, SZ_DFF);
+    slots.at(::foundation::core::index<SL_WFF2>()) = make_ext(SL_WFF2, SZ_FFD);
+    slots.at(::foundation::core::index<SL_WHEAD>()) = make_ext(SL_WHEAD, SZ_DNCLS);
 
-    slots[SL_NORM1] = make_int(SL_NORM1, SZ_BSD, 0, 3);
-    slots[SL_Q] = make_int(SL_Q, SZ_BSD, 1, 4);
-    slots[SL_K] = make_int(SL_K, SZ_BSD, 2, 4);
-    slots[SL_V] = make_int(SL_V, SZ_BSD, 3, 4);
-    slots[SL_ATTN] = make_int(SL_ATTN, SZ_BSD, 4, 5);
-    slots[SL_PROJ] = make_int(SL_PROJ, SZ_BSD, 5, 6);
-    slots[SL_RES1] = make_int(SL_RES1, SZ_BSD, 6, 11);
-    slots[SL_NORM2] = make_int(SL_NORM2, SZ_BSD, 7, 8);
-    slots[SL_FF1] = make_int(SL_FF1, SZ_BSDFF, 8, 9);
-    slots[SL_RELU] = make_int(SL_RELU, SZ_BSDFF, 9, 10);
-    slots[SL_FF2] = make_int(SL_FF2, SZ_BSD, 10, 11);
+    slots.at(::foundation::core::index<SL_NORM1>()) = make_int(SL_NORM1, SZ_BSD, 0, 3);
+    slots.at(::foundation::core::index<SL_Q>()) = make_int(SL_Q, SZ_BSD, 1, 4);
+    slots.at(::foundation::core::index<SL_K>()) = make_int(SL_K, SZ_BSD, 2, 4);
+    slots.at(::foundation::core::index<SL_V>()) = make_int(SL_V, SZ_BSD, 3, 4);
+    slots.at(::foundation::core::index<SL_ATTN>()) = make_int(SL_ATTN, SZ_BSD, 4, 5);
+    slots.at(::foundation::core::index<SL_PROJ>()) = make_int(SL_PROJ, SZ_BSD, 5, 6);
+    slots.at(::foundation::core::index<SL_RES1>()) = make_int(SL_RES1, SZ_BSD, 6, 11);
+    slots.at(::foundation::core::index<SL_NORM2>()) = make_int(SL_NORM2, SZ_BSD, 7, 8);
+    slots.at(::foundation::core::index<SL_FF1>()) = make_int(SL_FF1, SZ_BSDFF, 8, 9);
+    slots.at(::foundation::core::index<SL_RELU>()) = make_int(SL_RELU, SZ_BSDFF, 9, 10);
+    slots.at(::foundation::core::index<SL_FF2>()) = make_int(SL_FF2, SZ_BSD, 10, 11);
     // The last real consumer of RES2 is op 12, but the check after the loop
     // reads it too. Declaring death at the final op stops the sweep line
     // from handing its storage to a later activation.
-    slots[SL_RES2] = make_int(SL_RES2, SZ_BSD, 11, 14);
-    slots[SL_CLS] = make_int(SL_CLS, SZ_BD, 12, 13);
-    slots[SL_LOGITS] = make_int(SL_LOGITS, SZ_BNCLS, 13, 14);
-    slots[SL_PROBS] = make_int(SL_PROBS, SZ_BNCLS, 14, 14);
+    slots.at(::foundation::core::index<SL_RES2>()) = make_int(SL_RES2, SZ_BSD, 11, 14);
+    slots.at(::foundation::core::index<SL_CLS>()) = make_int(SL_CLS, SZ_BD, 12, 13);
+    slots.at(::foundation::core::index<SL_LOGITS>()) = make_int(SL_LOGITS, SZ_BNCLS, 13, 14);
+    slots.at(::foundation::core::index<SL_PROBS>()) = make_int(SL_PROBS, SZ_BNCLS, 14, 14);
 
     BackgroundThread bt;
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots, N_SLOTS);
+    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
     assert(plan != nullptr);
 
     std::printf("  plan: pool=%lu bytes, %u slots (%u external)\n", static_cast<unsigned long>(plan->pool_bytes),
-                plan->num_slots, plan->num_external);
+                plan->num_slots(), plan->num_external);
 
     SlotId op0_in[] = {SlotId{SL_X}, SlotId{SL_G1}, SlotId{SL_B1}};
     SlotId op0_out[] = {SlotId{SL_NORM1}};

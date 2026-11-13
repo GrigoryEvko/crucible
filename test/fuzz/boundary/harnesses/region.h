@@ -24,9 +24,8 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
     if (region.plan != nullptr) {
         const MemoryPlan& plan = *region.plan;
         CRUCIBLE_FUZZ_CLAIM(harness, plan.pool_bytes <= PoolAllocator::kMaxPoolBytes);
-        CRUCIBLE_FUZZ_CLAIM(harness, plan.num_external <= plan.num_slots);
-        for (std::uint32_t s = 0; s < plan.num_slots; ++s) {
-            const TensorSlot& slot = plan.slots[s];
+        CRUCIBLE_FUZZ_CLAIM(harness, plan.num_external <= plan.num_slots());
+        for (const TensorSlot& slot : plan.slots) {
             CRUCIBLE_FUZZ_CLAIM(harness, valid_scalar_type(static_cast<std::int8_t>(slot.dtype)));
             CRUCIBLE_FUZZ_CLAIM(harness, valid_device_type(static_cast<std::int8_t>(slot.device_type)));
             CRUCIBLE_FUZZ_CLAIM(harness, valid_layout(static_cast<std::int8_t>(slot.layout)));
@@ -51,7 +50,8 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
 
 // A region the way the recorder builds one: two operations with one input
 // and one output each, and with a plan of two slots when with_plan is set.
-[[nodiscard]] inline RegionNode* build_seed_region(Arena& arena, bool with_plan) {
+// The slots of the plan are in slot_arena.
+[[nodiscard]] inline RegionNode* build_seed_region(Arena& arena, ::fixy::BumpArena& slot_arena, bool with_plan) {
     const auto alloc = test_alloc();
     constexpr std::uint32_t kOps = 2;
     auto* ops = arena.alloc_array<TraceEntry>(alloc, kOps);
@@ -79,16 +79,16 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
     if (with_plan) {
         auto* plan = arena.alloc_obj<MemoryPlan>(alloc);
         plan->pool_bytes = 2 * PoolAllocator::ALIGNMENT;
-        plan->num_slots = 2;
         plan->num_external = 0;
         plan->device_type = DeviceType::CPU;
-        plan->slots = arena.alloc_array<TensorSlot>(alloc, 2);
-        for (std::uint32_t s = 0; s < 2; ++s) {
-            plan->slots[s] = TensorSlot{};
-            plan->slots[s].offset_bytes = s * PoolAllocator::ALIGNMENT;
-            plan->slots[s].nbytes = 64;
-            plan->slots[s].dtype = ScalarType::Float;
-            plan->slots[s].slot_id = SlotId{s};
+        plan->slots = slot_arena.array<TensorSlot>(alloc, 2, TensorSlot{});
+        std::uint32_t slot_index = 0;
+        for (TensorSlot& slot : plan->slots) {
+            slot.offset_bytes = slot_index * PoolAllocator::ALIGNMENT;
+            slot.nbytes = 64;
+            slot.dtype = ScalarType::Float;
+            slot.slot_id = SlotId{slot_index};
+            ++slot_index;
         }
         region->plan = plan;
     }
@@ -111,32 +111,35 @@ inline constexpr std::size_t kImageHasPlanOffset = 52;
 // region type.  The loader must refuse each one.
 [[nodiscard]] inline Seeds region_regressions() {
     Arena arena;
+    ::fixy::BumpArena slot_arena{};
     Seeds seeds;
 
     // The header states a content hash that is not the hash of the ops.
-    auto wrong_hash = region_image(build_seed_region(arena, false));
+    auto wrong_hash = region_image(build_seed_region(arena, slot_arena, false));
     wrong_hash[kImageContentHashOffset] ^= 0x01;
     seeds.push_back(std::move(wrong_hash));
 
     // The plan flag holds a byte that is no value of a bool.
-    auto bad_bool = region_image(build_seed_region(arena, false));
+    auto bad_bool = region_image(build_seed_region(arena, slot_arena, false));
     bad_bool[kImageHasPlanOffset] = 0x02;
     seeds.push_back(std::move(bad_bool));
 
     // A slot reaches past the pool, and a slot starts off the alignment.
     // The pool allocator aborts on either one.
-    RegionNode* past_pool = build_seed_region(arena, true);
-    past_pool->plan->slots[1].nbytes = std::uint64_t{1} << 40;
+    RegionNode* past_pool = build_seed_region(arena, slot_arena, true);
+    past_pool->plan->slots.get(1).expect("the seed plan holds two slots")->nbytes = std::uint64_t{1} << 40;
     seeds.push_back(region_image(past_pool));
-    RegionNode* misaligned = build_seed_region(arena, true);
-    misaligned->plan->slots[1].offset_bytes += 8;
+    RegionNode* misaligned = build_seed_region(arena, slot_arena, true);
+    misaligned->plan->slots.get(1).expect("the seed plan holds two slots")->offset_bytes += 8;
     seeds.push_back(region_image(misaligned));
     return seeds;
 }
 
 [[nodiscard]] inline Seeds seeds_region() {
     Arena arena;
-    Seeds seeds{region_image(build_seed_region(arena, false)), region_image(build_seed_region(arena, true))};
+    ::fixy::BumpArena slot_arena{};
+    Seeds seeds{region_image(build_seed_region(arena, slot_arena, false)),
+                region_image(build_seed_region(arena, slot_arena, true))};
     for (auto& regression : region_regressions())
         seeds.push_back(std::move(regression));
     return seeds;
@@ -148,7 +151,7 @@ inline void run_region(std::span<const std::uint8_t> bytes) {
     constexpr std::size_t kMaxInputBytes = std::size_t{1} << 20;
     if (bytes.size() > kMaxInputBytes) bytes = bytes.first(kMaxInputBytes);
 
-    Arena arena;
+    ::fixy::BumpArena arena{};
     const auto alloc = test_alloc();
     const auto loaded = deserialize_region(alloc, bytes, arena);
     if (!loaded) return;

@@ -331,8 +331,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     if (num_slots > 0) {
         memory.plan = ::foundation::AlignedBuffer<MemoryPlan>::allocate_value_initialized(1);
         region.plan = publish_scratch_.with_epoch([&]() noexcept {
-            return compute_memory_plan(bg.alloc, memory.plan[0], publish_scratch_, memory.parts.slots.data(),
-                                       num_slots);
+            return compute_memory_plan(bg.alloc, memory.plan[0], publish_scratch_, memory.parts.slots.view());
         });
     }
 
@@ -1104,12 +1103,12 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
 }
 
 MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage,
-                                                  ::fixy::BumpArena& scratch, TensorSlot* slots, uint32_t num_slots) {
+                                                  ::fixy::BumpArena& scratch, ::fixy::View<TensorSlot> slots) {
     static constexpr uint32_t ALIGNMENT = 256;
 
     auto* plan = &plan_storage;
     plan->slots = slots;
-    plan->num_slots = num_slots;
+    const uint32_t num_slots = plan->num_slots();
     plan->num_external = 0;
     plan->pool_bytes = 0;
 
@@ -1122,6 +1121,12 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
 
     if (num_slots == 0) return plan;
 
+    // The slot at an index of the sweep.  Each index of the sweep is a
+    // position in the slots, so it is below their count.
+    const auto slot_at = [slots](uint32_t index) noexcept -> TensorSlot& {
+        return *slots.get(index).expect("an index of the sweep is below the count of the slots");
+    };
+
     // The caller gives the slots, so the lifetime of each internal slot is
     // checked here, where the slots enter the sweep.  The sweep indexes its
     // arrays by birth_op and by death_op + 1, and it sizes them from the
@@ -1131,17 +1136,17 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
     // allocation, and the sweep does not read its lifetime.
     static constexpr uint32_t MAX_DEATH_OP = UINT32_MAX - 3;
     uint32_t max_op = 0;
-    for (uint32_t s = 0; s < num_slots; s++) {
-        if (slots[s].is_external) {
+    for (const TensorSlot& slot : slots) {
+        if (slot.is_external) {
             plan->num_external++;
         } else {
-            CRUCIBLE_FATAL_INVARIANT(slots[s].birth_op.raw() <= slots[s].death_op.raw());
-            CRUCIBLE_FATAL_INVARIANT(slots[s].death_op.raw() <= MAX_DEATH_OP);
-            if (plan->device_type == DeviceType::CPU && slots[s].device_type != DeviceType::CPU) {
-                plan->device_type = slots[s].device_type;
-                plan->device_idx = slots[s].device_idx;
+            CRUCIBLE_FATAL_INVARIANT(slot.birth_op.raw() <= slot.death_op.raw());
+            CRUCIBLE_FATAL_INVARIANT(slot.death_op.raw() <= MAX_DEATH_OP);
+            if (plan->device_type == DeviceType::CPU && slot.device_type != DeviceType::CPU) {
+                plan->device_type = slot.device_type;
+                plan->device_idx = slot.device_idx;
             }
-            if (slots[s].death_op.raw() + 1 > max_op) max_op = slots[s].death_op.raw() + 1;
+            if (slot.death_op.raw() + 1 > max_op) max_op = slot.death_op.raw() + 1;
         }
     }
 
@@ -1155,10 +1160,10 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
     const ::fixy::View<uint32_t> birth_count = scratch.array<uint32_t>(a, num_ops, 0);
     const ::fixy::View<uint32_t> death_count = scratch.array<uint32_t>(a, num_ops, 0);
 
-    for (uint32_t s = 0; s < num_slots; s++) {
-        if (slots[s].is_external) continue;
-        ++detail::csr_element_(birth_count, slots[s].birth_op.raw());
-        uint32_t free_at = slots[s].death_op.raw() + 1;
+    for (const TensorSlot& slot : slots) {
+        if (slot.is_external) continue;
+        ++detail::csr_element_(birth_count, slot.birth_op.raw());
+        uint32_t free_at = slot.death_op.raw() + 1;
         if (free_at < num_ops) ++detail::csr_element_(death_count, free_at);
     }
 
@@ -1183,9 +1188,10 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
         .expect("the cursors hold one entry for each op");
 
     for (uint32_t s = 0; s < num_slots; s++) {
-        if (slots[s].is_external) continue;
-        detail::csr_element_(born_slots, detail::csr_element_(birth_cur, slots[s].birth_op.raw())++) = s;
-        uint32_t free_at = slots[s].death_op.raw() + 1;
+        const TensorSlot& slot = slot_at(s);
+        if (slot.is_external) continue;
+        detail::csr_element_(born_slots, detail::csr_element_(birth_cur, slot.birth_op.raw())++) = s;
+        uint32_t free_at = slot.death_op.raw() + 1;
         if (free_at < num_ops) detail::csr_element_(dead_slots, detail::csr_element_(death_cur, free_at)++) = s;
     }
 
@@ -1214,7 +1220,7 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
     auto alloc_slot = [&](uint32_t s, uint64_t aligned_size) {
         for (uint32_t f = 0; f < free_list_count; f++) {
             if (free_list_sizes[f] >= aligned_size) {
-                slots[s].offset_bytes = free_list_offsets[f];
+                slot_at(s).offset_bytes = free_list_offsets[f];
                 if (free_list_sizes[f] == aligned_size) {
                     free_list_sizes[f] = free_list_sizes[--free_list_count];
                     free_list_offsets[f] = free_list_offsets[free_list_count];
@@ -1225,7 +1231,7 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
                 return;
             }
         }
-        slots[s].offset_bytes = pool_end;
+        slot_at(s).offset_bytes = pool_end;
         pool_end += aligned_size;
     };
 
@@ -1253,15 +1259,14 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
         if (dying_count_capped > 0 && born_count_capped > 0) {
             ::fixy::FixedArray<DyingInfo, MAX_PER_OP> dying_slot_info{};
             for (uint32_t i = 0; i < dying_count_capped; i++) {
-                uint32_t dying_slot_id = detail::csr_element_(dead_slots, dying_begin + i);
-                dying_slot_info[i] = {.aligned_size =
-                                          (slots[dying_slot_id].nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1),
-                                      .offset = slots[dying_slot_id].offset_bytes};
+                const TensorSlot& dying_slot = slot_at(detail::csr_element_(dead_slots, dying_begin + i));
+                dying_slot_info[i] = {.aligned_size = (dying_slot.nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1),
+                                      .offset = dying_slot.offset_bytes};
             }
 
             for (uint32_t born_idx = 0; born_idx < born_count_capped; born_idx++) {
-                uint32_t born_slot_id = detail::csr_element_(born_slots, born_begin + born_idx);
-                uint64_t born_aligned_size = (slots[born_slot_id].nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1);
+                TensorSlot& born_slot = slot_at(detail::csr_element_(born_slots, born_begin + born_idx));
+                uint64_t born_aligned_size = (born_slot.nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1);
 
                 uint32_t best_dying_match_idx = UINT32_MAX;
                 uint64_t best_waste_bytes = UINT64_MAX;
@@ -1275,7 +1280,7 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
                     }
                 }
                 if (best_dying_match_idx != UINT32_MAX) {
-                    slots[born_slot_id].offset_bytes = dying_slot_info[best_dying_match_idx].offset;
+                    born_slot.offset_bytes = dying_slot_info[best_dying_match_idx].offset;
                     dying_consumed[best_dying_match_idx] = true;
                     born_assigned[born_idx] = true;
                     if (best_waste_bytes > 0)
@@ -1286,15 +1291,14 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
 
         for (uint32_t i = 0; i < num_dying; i++) {
             if (i < dying_count_capped && dying_consumed[i]) continue;
-            uint32_t dying_slot_id = detail::csr_element_(dead_slots, dying_begin + i);
-            free_block(slots[dying_slot_id].offset_bytes,
-                       (slots[dying_slot_id].nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1));
+            const TensorSlot& dying_slot = slot_at(detail::csr_element_(dead_slots, dying_begin + i));
+            free_block(dying_slot.offset_bytes, (dying_slot.nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1));
         }
 
         for (uint32_t i = 0; i < num_born; i++) {
             if (i < born_count_capped && born_assigned[i]) continue;
             uint32_t born_slot_id = detail::csr_element_(born_slots, born_begin + i);
-            alloc_slot(born_slot_id, (slots[born_slot_id].nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1));
+            alloc_slot(born_slot_id, (slot_at(born_slot_id).nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1));
         }
     }
 

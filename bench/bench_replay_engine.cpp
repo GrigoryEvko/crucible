@@ -36,7 +36,7 @@ struct BenchRegion {
     TraceEntry* ops = nullptr;
     SlotId* out_slots = nullptr;
     SlotId* in_slots = nullptr;
-    TensorSlot* slots = nullptr;
+    ::fixy::HeapArray<TensorSlot> slots{};
     MemoryPlan plan{};
     RegionNode region{};
     uint32_t num_ops = 0;
@@ -45,8 +45,8 @@ struct BenchRegion {
         ops = static_cast<TraceEntry*>(std::calloc(n, sizeof(TraceEntry)));
         out_slots = static_cast<SlotId*>(std::calloc(n, sizeof(SlotId)));
         in_slots = static_cast<SlotId*>(std::calloc(n, sizeof(SlotId)));
-        slots = static_cast<TensorSlot*>(std::calloc(n, sizeof(TensorSlot)));
-        CRUCIBLE_BENCH_CHECK(ops != nullptr && out_slots != nullptr && in_slots != nullptr && slots != nullptr);
+        slots = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, TensorSlot{});
+        CRUCIBLE_BENCH_CHECK(ops != nullptr && out_slots != nullptr && in_slots != nullptr);
 
         for (uint32_t i = 0; i < n; i++) {
             out_slots[i] = SlotId{i};
@@ -60,23 +60,24 @@ struct BenchRegion {
             ops[i].input_slot_ids = &in_slots[i];
         }
 
-        for (uint32_t i = 0; i < n; i++) {
-            slots[i] = TensorSlot{.offset_bytes = i * 256ULL,
-                                  .nbytes = 256,
-                                  .birth_op = OpIndex{0},
-                                  .death_op = OpIndex{n},
-                                  .dtype = ScalarType::Float,
-                                  .device_type = DeviceType::CPU,
-                                  .device_idx = 0,
-                                  .layout = Layout::Strided,
-                                  .is_external = false,
-                                  .pad = {},
-                                  .slot_id = SlotId{i},
-                                  .pad2 = {}};
+        uint32_t i = 0;
+        for (TensorSlot& slot : slots) {
+            slot = TensorSlot{.offset_bytes = i * 256ULL,
+                              .nbytes = 256,
+                              .birth_op = OpIndex{0},
+                              .death_op = OpIndex{n},
+                              .dtype = ScalarType::Float,
+                              .device_type = DeviceType::CPU,
+                              .device_idx = 0,
+                              .layout = Layout::Strided,
+                              .is_external = false,
+                              .pad = {},
+                              .slot_id = SlotId{i},
+                              .pad2 = {}};
+            i++;
         }
 
-        plan.slots = slots;
-        plan.num_slots = n;
+        plan.slots = slots.view();
         plan.num_external = 0;
         plan.pool_bytes = static_cast<uint64_t>(n) * 256;
         plan.device_type = DeviceType::CPU;
@@ -92,7 +93,6 @@ struct BenchRegion {
         std::free(ops);
         std::free(out_slots);
         std::free(in_slots);
-        std::free(slots);
     }
 
     BenchRegion(const BenchRegion&) = delete;

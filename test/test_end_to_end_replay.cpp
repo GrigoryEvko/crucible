@@ -40,7 +40,7 @@ void test_pipeline_basic() {
     assert(region->num_ops == NUM_OPS);
     assert(region->plan != nullptr);
     assert(region->plan->pool_bytes > 0);
-    assert(region->plan->num_slots > 0);
+    assert(region->plan->num_slots() > 0);
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         assert(region->ops[i].schema_hash == SCHEMA[i]);

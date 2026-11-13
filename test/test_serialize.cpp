@@ -104,7 +104,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     const size_t n = crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{buf});
     assert(n > 0 && "serialize_region returned 0 — buffer too small or bad region");
 
-    crucible::Arena arena2(1 << 16);
+    ::fixy::BumpArena arena2{1 << 16};
     auto loaded_region = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{buf, n}, arena2);
     assert(loaded_region.has_value() && "deserialize_region returned no region");
     crucible::RegionNode* loaded = loaded_region->value();
@@ -224,7 +224,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{tiny_buf});
     assert(n_tiny == 0 && "serialize_region must return 0 on buffer overflow");
 
-    crucible::Arena arena3(1 << 16);
+    ::fixy::BumpArena arena3{1 << 16};
     auto bad_region = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{buf, 10}, arena3);
     assert(!bad_region.has_value() && "deserialize_region must refuse a truncated input");
 
@@ -244,7 +244,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         const uint32_t bogus_num_ops = 0xFFFFFFFFu;
         std::memcpy(adv.data() + 32, &bogus_num_ops, 4);
 
-        crucible::Arena arena4(1 << 16);
+        ::fixy::BumpArena arena4{1 << 16};
         auto adversarial_region =
             crucible::deserialize_region(test.alloc, std::span<const uint8_t>{adv.data(), adv.size()}, arena4);
         assert(!adversarial_region.has_value() && "deserialize_region must reject num_ops > CDAG_MAX_OPS");
@@ -257,29 +257,26 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     // them and num_slots 3 rejects two.  A plan-less region has no pool
     // to bound against and is exempt.
     {
+        ::fixy::BumpArena slot_arena{1 << 16};
         crucible::MemoryPlan ok_plan{};
-        ok_plan.num_slots = 21;
-        ok_plan.slots = arena.alloc_array<crucible::TensorSlot>(test.alloc, 21);
-        std::uninitialized_value_construct_n(ok_plan.slots, 21);
+        ok_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
         region->plan = &ok_plan;
 
         uint8_t pbuf[65536];
         const size_t pn = crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{pbuf});
         assert(pn > 0 && "plan-bearing serialize failed");
-        crucible::Arena parena(1 << 16);
+        ::fixy::BumpArena parena{1 << 16};
         auto ok_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{pbuf, pn}, parena);
         assert(ok_loaded.has_value() && "plan-bearing region with in-range slot_ids must load");
 
         crucible::MemoryPlan bad_plan{};
-        bad_plan.num_slots = 3;
-        bad_plan.slots = arena.alloc_array<crucible::TensorSlot>(test.alloc, 3);
-        std::uninitialized_value_construct_n(bad_plan.slots, 3);
+        bad_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 3, crucible::TensorSlot{});
         region->plan = &bad_plan;
 
         uint8_t nbuf[65536];
         const size_t nn = crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{nbuf});
         assert(nn > 0 && "plan-bearing (oob) serialize failed");
-        crucible::Arena narena(1 << 16);
+        ::fixy::BumpArena narena{1 << 16};
         auto bad_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{nbuf, nn}, narena);
         assert(!bad_loaded.has_value() && "deserialize_region must reject slot_id >= plan->num_slots");
 
@@ -292,31 +289,28 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     // slot-id gate cannot fire, leaving pool_bytes the only rejector.
     // The bound is inclusive.
     {
+        ::fixy::BumpArena slot_arena{1 << 16};
         crucible::MemoryPlan over_plan{};
-        over_plan.num_slots = 21;
-        over_plan.slots = arena.alloc_array<crucible::TensorSlot>(test.alloc, 21);
-        std::uninitialized_value_construct_n(over_plan.slots, 21);
+        over_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
         over_plan.pool_bytes = crucible::PoolAllocator::kMaxPoolBytes + 1;
         region->plan = &over_plan;
 
         uint8_t obuf[65536];
         const size_t on = crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{obuf});
         assert(on > 0 && "over-pool_bytes serialize failed");
-        crucible::Arena oarena(1 << 16);
+        ::fixy::BumpArena oarena{1 << 16};
         auto over_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{obuf, on}, oarena);
         assert(!over_loaded.has_value() && "deserialize_region must reject pool_bytes > kMaxPoolBytes");
 
         crucible::MemoryPlan at_plan{};
-        at_plan.num_slots = 21;
-        at_plan.slots = arena.alloc_array<crucible::TensorSlot>(test.alloc, 21);
-        std::uninitialized_value_construct_n(at_plan.slots, 21);
+        at_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
         at_plan.pool_bytes = crucible::PoolAllocator::kMaxPoolBytes;
         region->plan = &at_plan;
 
         uint8_t abuf[65536];
         const size_t an = crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{abuf});
         assert(an > 0 && "at-cap pool_bytes serialize failed");
-        crucible::Arena aarena(1 << 16);
+        ::fixy::BumpArena aarena{1 << 16};
         auto at_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{abuf, an}, aarena);
         assert(at_loaded.has_value() && "pool_bytes == kMaxPoolBytes must be accepted (inclusive)");
 
@@ -329,11 +323,10 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     // pad ends at the slot id, and the 4-byte pad2 starts after it.
     {
         constexpr uint32_t kMarkerSlotId = 0x5A5A5A5Au;
+        ::fixy::BumpArena slot_arena{1 << 16};
         crucible::MemoryPlan pad_plan{};
-        pad_plan.num_slots = 21;
-        pad_plan.slots = arena.alloc_array<crucible::TensorSlot>(test.alloc, 21);
-        std::uninitialized_value_construct_n(pad_plan.slots, 21);
-        pad_plan.slots[20].slot_id = crucible::SlotId{kMarkerSlotId};
+        pad_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
+        pad_plan.slots.get(20).expect("the pad plan holds 21 slots")->slot_id = crucible::SlotId{kMarkerSlotId};
         region->plan = &pad_plan;
 
         std::vector<uint8_t> image(65536);
@@ -356,14 +349,14 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         const size_t pad_at = marker_at - 3;
         const size_t pad2_at = marker_at + sizeof(marker);
 
-        crucible::Arena clean_arena(1 << 16);
+        ::fixy::BumpArena clean_arena{1 << 16};
         auto clean = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{image}, clean_arena);
         assert(clean.has_value() && "the unmodified pad-probe image must load");
 
         const auto refuses_with_byte_set_at = [&](size_t at) {
             std::vector<uint8_t> corrupt = image;
             corrupt[at] = 1;
-            crucible::Arena corrupt_arena(1 << 16);
+            ::fixy::BumpArena corrupt_arena{1 << 16};
             return !crucible::deserialize_region(test.alloc, std::span<const uint8_t>{corrupt}, corrupt_arena)
                         .has_value();
         };

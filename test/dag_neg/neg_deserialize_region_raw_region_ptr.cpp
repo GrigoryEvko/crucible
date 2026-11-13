@@ -14,7 +14,7 @@
 #include <crucible/Serialize.h>
 
 int main() {
-    crucible::Arena arena{1024};
+    ::fixy::BumpArena arena{1024};
     std::span<const std::uint8_t> bytes{};
 
     // MUST fail: deserialize_region returns std::optional<LoadedRegionNode>.

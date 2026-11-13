@@ -24,10 +24,9 @@ using crucible::Layout;
 // context from the test door.
 static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
 
-static MemoryPlan make_manual_plan(TensorSlot* slots, uint32_t n, uint64_t pool_bytes, uint32_t num_ext) {
+static MemoryPlan make_manual_plan(::fixy::View<TensorSlot> slots, uint64_t pool_bytes, uint32_t num_ext) {
     MemoryPlan plan{};
     plan.slots = slots;
-    plan.num_slots = n;
     plan.num_external = num_ext;
     plan.pool_bytes = pool_bytes;
     plan.device_type = DeviceType::CPU;
@@ -36,45 +35,45 @@ static MemoryPlan make_manual_plan(TensorSlot* slots, uint32_t n, uint64_t pool_
 }
 
 static void test_basic_init() {
-    TensorSlot slots[3]{};
-    slots[0] = {.offset_bytes = 0,
-                .nbytes = 1024,
-                .birth_op = OpIndex{0},
-                .death_op = OpIndex{5},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = false,
-                .pad = {},
-                .slot_id = SlotId{0},
-                .pad2 = {}};
-    slots[1] = {.offset_bytes = 1024,
-                .nbytes = 2048,
-                .birth_op = OpIndex{1},
-                .death_op = OpIndex{4},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = false,
-                .pad = {},
-                .slot_id = SlotId{1},
-                .pad2 = {}};
-    slots[2] = {.offset_bytes = 0,
-                .nbytes = 512,
-                .birth_op = OpIndex{0},
-                .death_op = OpIndex{7},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = true,
-                .pad = {},
-                .slot_id = SlotId{2},
-                .pad2 = {}};
+    ::foundation::core::FixedArray<TensorSlot, 3> slots{};
+    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
+                                                .nbytes = 1024,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{5},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{0},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 1024,
+                                                .nbytes = 2048,
+                                                .birth_op = OpIndex{1},
+                                                .death_op = OpIndex{4},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{1},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<2>()) = {.offset_bytes = 0,
+                                                .nbytes = 512,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{7},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = true,
+                                                .pad = {},
+                                                .slot_id = SlotId{2},
+                                                .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots, 3, 3072, 1);
+    MemoryPlan plan = make_manual_plan(slots.view(), 3072, 1);
 
     PoolAllocator pool;
     pool.init(&plan);
@@ -106,33 +105,33 @@ static void test_basic_init() {
 }
 
 static void test_external_registration() {
-    TensorSlot slots[2]{};
-    slots[0] = {.offset_bytes = 0,
-                .nbytes = 1024,
-                .birth_op = OpIndex{0},
-                .death_op = OpIndex{3},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = false,
-                .pad = {},
-                .slot_id = SlotId{0},
-                .pad2 = {}};
-    slots[1] = {.offset_bytes = 0,
-                .nbytes = 512,
-                .birth_op = OpIndex{0},
-                .death_op = OpIndex{3},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = true,
-                .pad = {},
-                .slot_id = SlotId{1},
-                .pad2 = {}};
+    ::foundation::core::FixedArray<TensorSlot, 2> slots{};
+    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
+                                                .nbytes = 1024,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{3},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{0},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
+                                                .nbytes = 512,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{3},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = true,
+                                                .pad = {},
+                                                .slot_id = SlotId{1},
+                                                .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots, 2, 1024, 1);
+    MemoryPlan plan = make_manual_plan(slots.view(), 1024, 1);
 
     PoolAllocator pool;
     pool.init(&plan);
@@ -152,45 +151,45 @@ static void test_external_registration() {
 // The three offsets are laid out end to end with no overlap, which is
 // the precondition the isolation check below rests on.
 static void test_write_read_isolation() {
-    TensorSlot slots[3]{};
-    slots[0] = {.offset_bytes = 0,
-                .nbytes = 256,
-                .birth_op = OpIndex{0},
-                .death_op = OpIndex{3},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = false,
-                .pad = {},
-                .slot_id = SlotId{0},
-                .pad2 = {}};
-    slots[1] = {.offset_bytes = 256,
-                .nbytes = 512,
-                .birth_op = OpIndex{1},
-                .death_op = OpIndex{4},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = false,
-                .pad = {},
-                .slot_id = SlotId{1},
-                .pad2 = {}};
-    slots[2] = {.offset_bytes = 768,
-                .nbytes = 256,
-                .birth_op = OpIndex{2},
-                .death_op = OpIndex{5},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = false,
-                .pad = {},
-                .slot_id = SlotId{2},
-                .pad2 = {}};
+    ::foundation::core::FixedArray<TensorSlot, 3> slots{};
+    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
+                                                .nbytes = 256,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{3},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{0},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 256,
+                                                .nbytes = 512,
+                                                .birth_op = OpIndex{1},
+                                                .death_op = OpIndex{4},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{1},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<2>()) = {.offset_bytes = 768,
+                                                .nbytes = 256,
+                                                .birth_op = OpIndex{2},
+                                                .death_op = OpIndex{5},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{2},
+                                                .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots, 3, 1024, 0);
+    MemoryPlan plan = make_manual_plan(slots.view(), 1024, 0);
 
     PoolAllocator pool;
     pool.init(&plan);
@@ -217,33 +216,33 @@ static void test_write_read_isolation() {
 // A plan whose slots are all external asks for no pool at all, so the
 // allocator must report itself initialized while holding no memory.
 static void test_all_external() {
-    TensorSlot slots[2]{};
-    slots[0] = {.offset_bytes = 0,
-                .nbytes = 1024,
-                .birth_op = OpIndex{0},
-                .death_op = OpIndex{3},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = true,
-                .pad = {},
-                .slot_id = SlotId{0},
-                .pad2 = {}};
-    slots[1] = {.offset_bytes = 0,
-                .nbytes = 2048,
-                .birth_op = OpIndex{0},
-                .death_op = OpIndex{5},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = true,
-                .pad = {},
-                .slot_id = SlotId{1},
-                .pad2 = {}};
+    ::foundation::core::FixedArray<TensorSlot, 2> slots{};
+    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
+                                                .nbytes = 1024,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{3},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = true,
+                                                .pad = {},
+                                                .slot_id = SlotId{0},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
+                                                .nbytes = 2048,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{5},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = true,
+                                                .pad = {},
+                                                .slot_id = SlotId{1},
+                                                .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots, 2, 0, 2);
+    MemoryPlan plan = make_manual_plan(slots.view(), 0, 2);
 
     PoolAllocator pool;
     pool.init(&plan);
@@ -268,21 +267,21 @@ static void test_all_external() {
 }
 
 static void test_reinit() {
-    TensorSlot slots_a[1]{};
-    slots_a[0] = {.offset_bytes = 0,
-                  .nbytes = 512,
-                  .birth_op = OpIndex{0},
-                  .death_op = OpIndex{3},
-                  .dtype = ScalarType::Float,
-                  .device_type = DeviceType::CPU,
-                  .device_idx = 0,
-                  .layout = Layout::Strided,
-                  .is_external = false,
-                  .pad = {},
-                  .slot_id = SlotId{0},
-                  .pad2 = {}};
+    ::foundation::core::FixedArray<TensorSlot, 1> slots_a{};
+    slots_a.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
+                                                  .nbytes = 512,
+                                                  .birth_op = OpIndex{0},
+                                                  .death_op = OpIndex{3},
+                                                  .dtype = ScalarType::Float,
+                                                  .device_type = DeviceType::CPU,
+                                                  .device_idx = 0,
+                                                  .layout = Layout::Strided,
+                                                  .is_external = false,
+                                                  .pad = {},
+                                                  .slot_id = SlotId{0},
+                                                  .pad2 = {}};
 
-    MemoryPlan plan_a = make_manual_plan(slots_a, 1, 512, 0);
+    MemoryPlan plan_a = make_manual_plan(slots_a.view(), 512, 0);
 
     PoolAllocator pool;
     pool.init(&plan_a);
@@ -292,33 +291,33 @@ static void test_reinit() {
     pool.destroy();
     assert(!pool.is_initialized());
 
-    TensorSlot slots_b[2]{};
-    slots_b[0] = {.offset_bytes = 0,
-                  .nbytes = 1024,
-                  .birth_op = OpIndex{0},
-                  .death_op = OpIndex{5},
-                  .dtype = ScalarType::Float,
-                  .device_type = DeviceType::CPU,
-                  .device_idx = 0,
-                  .layout = Layout::Strided,
-                  .is_external = false,
-                  .pad = {},
-                  .slot_id = SlotId{0},
-                  .pad2 = {}};
-    slots_b[1] = {.offset_bytes = 1024,
-                  .nbytes = 2048,
-                  .birth_op = OpIndex{1},
-                  .death_op = OpIndex{4},
-                  .dtype = ScalarType::Float,
-                  .device_type = DeviceType::CPU,
-                  .device_idx = 0,
-                  .layout = Layout::Strided,
-                  .is_external = false,
-                  .pad = {},
-                  .slot_id = SlotId{1},
-                  .pad2 = {}};
+    ::foundation::core::FixedArray<TensorSlot, 2> slots_b{};
+    slots_b.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
+                                                  .nbytes = 1024,
+                                                  .birth_op = OpIndex{0},
+                                                  .death_op = OpIndex{5},
+                                                  .dtype = ScalarType::Float,
+                                                  .device_type = DeviceType::CPU,
+                                                  .device_idx = 0,
+                                                  .layout = Layout::Strided,
+                                                  .is_external = false,
+                                                  .pad = {},
+                                                  .slot_id = SlotId{0},
+                                                  .pad2 = {}};
+    slots_b.at(::foundation::core::index<1>()) = {.offset_bytes = 1024,
+                                                  .nbytes = 2048,
+                                                  .birth_op = OpIndex{1},
+                                                  .death_op = OpIndex{4},
+                                                  .dtype = ScalarType::Float,
+                                                  .device_type = DeviceType::CPU,
+                                                  .device_idx = 0,
+                                                  .layout = Layout::Strided,
+                                                  .is_external = false,
+                                                  .pad = {},
+                                                  .slot_id = SlotId{1},
+                                                  .pad2 = {}};
 
-    MemoryPlan plan_b = make_manual_plan(slots_b, 2, 3072, 0);
+    MemoryPlan plan_b = make_manual_plan(slots_b.view(), 3072, 0);
     pool.init(&plan_b);
     auto pv_b = pool.mint_initialized_view(kVigilForeground);
 
@@ -345,59 +344,59 @@ static void test_integration_with_sweep_line() {
     crucible::BackgroundThread bt;
 
     constexpr uint32_t N = 4;
-    TensorSlot slots[N]{};
-    slots[0] = {.offset_bytes = 0,
-                .nbytes = 1024,
-                .birth_op = OpIndex{0},
-                .death_op = OpIndex{5},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = false,
-                .pad = {},
-                .slot_id = SlotId{0},
-                .pad2 = {}};
-    slots[1] = {.offset_bytes = 0,
-                .nbytes = 2048,
-                .birth_op = OpIndex{1},
-                .death_op = OpIndex{3},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = false,
-                .pad = {},
-                .slot_id = SlotId{1},
-                .pad2 = {}};
-    slots[2] = {.offset_bytes = 0,
-                .nbytes = 1024,
-                .birth_op = OpIndex{4},
-                .death_op = OpIndex{7},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = false,
-                .pad = {},
-                .slot_id = SlotId{2},
-                .pad2 = {}};
-    slots[3] = {.offset_bytes = 0,
-                .nbytes = 512,
-                .birth_op = OpIndex{0},
-                .death_op = OpIndex{7},
-                .dtype = ScalarType::Float,
-                .device_type = DeviceType::CPU,
-                .device_idx = 0,
-                .layout = Layout::Strided,
-                .is_external = true,
-                .pad = {},
-                .slot_id = SlotId{3},
-                .pad2 = {}};
+    ::foundation::core::FixedArray<TensorSlot, N> slots{};
+    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
+                                                .nbytes = 1024,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{5},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{0},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
+                                                .nbytes = 2048,
+                                                .birth_op = OpIndex{1},
+                                                .death_op = OpIndex{3},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{1},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<2>()) = {.offset_bytes = 0,
+                                                .nbytes = 1024,
+                                                .birth_op = OpIndex{4},
+                                                .death_op = OpIndex{7},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{2},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<3>()) = {.offset_bytes = 0,
+                                                .nbytes = 512,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{7},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = true,
+                                                .pad = {},
+                                                .slot_id = SlotId{3},
+                                                .pad2 = {}};
 
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots, N);
+    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
     assert(plan != nullptr);
     assert(plan->pool_bytes > 0);
 
@@ -455,8 +454,8 @@ static void test_integration_with_sweep_line() {
 // an allocator declared inside would never free the pool init had already
 // taken. Declared here, its destructor runs when this function returns.
 static void expect_abort_on_init(const TensorSlot& slot, uint64_t pool_bytes, const char* what) {
-    TensorSlot slots[1]{slot};
-    MemoryPlan plan = make_manual_plan(slots, 1, pool_bytes, 0);
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{slot};
+    MemoryPlan plan = make_manual_plan(slots.view(), pool_bytes, 0);
     PoolAllocator pool;
     if (!crucible::test::aborts([&pool, &plan] { pool.init(&plan); })) {
         std::fprintf(stderr, "  %s: the guard did not fire\n", what);

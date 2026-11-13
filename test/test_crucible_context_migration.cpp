@@ -49,24 +49,26 @@ constexpr std::uint64_t kSlotBytes = 256;
 
 // Every slot is internal and kSlotBytes wide, so slot i sits at offset
 // i * kSlotBytes and no two slots overlap.
-MemoryPlan make_plan(TensorSlot* slots, std::uint32_t count) {
-    for (std::uint32_t index = 0; index < count; index++) {
-        slots[index] = {.offset_bytes = index * kSlotBytes,
-                        .nbytes = kSlotBytes,
-                        .birth_op = OpIndex{0},
-                        .death_op = OpIndex{2},
-                        .dtype = ScalarType::Float,
-                        .device_type = DeviceType::CPU,
-                        .device_idx = 0,
-                        .layout = Layout::Strided,
-                        .is_external = false,
-                        .pad = {},
-                        .slot_id = SlotId{index},
-                        .pad2 = {}};
+MemoryPlan make_plan(::fixy::View<TensorSlot> slots) {
+    const auto count = static_cast<std::uint32_t>(slots.size());
+    std::uint32_t index = 0;
+    for (TensorSlot& slot : slots) {
+        slot = {.offset_bytes = index * kSlotBytes,
+                .nbytes = kSlotBytes,
+                .birth_op = OpIndex{0},
+                .death_op = OpIndex{2},
+                .dtype = ScalarType::Float,
+                .device_type = DeviceType::CPU,
+                .device_idx = 0,
+                .layout = Layout::Strided,
+                .is_external = false,
+                .pad = {},
+                .slot_id = SlotId{index},
+                .pad2 = {}};
+        ++index;
     }
     MemoryPlan plan{};
     plan.slots = slots;
-    plan.num_slots = count;
     plan.num_external = 0;
     plan.pool_bytes = count * kSlotBytes;
     plan.device_type = DeviceType::CPU;
@@ -95,8 +97,8 @@ void init_region(RegionNode* region, TraceEntry* ops, MemoryPlan* plan) {
 
 // The slots of the plans live in static storage: the wide plan has 2048
 // slots of 48 bytes, too many for the stack of a test.
-TensorSlot old_slots[2];
-TensorSlot new_slots[kWideSlots];
+::foundation::core::FixedArray<TensorSlot, 2> old_slots{};
+::foundation::core::FixedArray<TensorSlot, kWideSlots> new_slots{};
 
 // Activates a region of two slots, then switches at position 1 to a region
 // whose plan has new_count slots.  The first operation of the new region
@@ -105,14 +107,15 @@ bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
     SlotId old_outputs[2] = {SlotId{0}, SlotId{1}};
     TraceEntry old_ops[2]{};
     make_ops(old_ops, old_outputs);
-    MemoryPlan old_plan = make_plan(old_slots, 2);
+    MemoryPlan old_plan = make_plan(old_slots.view());
     RegionNode old_region{};
     init_region(&old_region, old_ops, &old_plan);
 
     SlotId new_outputs[2] = {SlotId{new_slot}, SlotId{0}};
     TraceEntry new_ops[2]{};
     make_ops(new_ops, new_outputs);
-    MemoryPlan new_plan = make_plan(new_slots, new_count);
+    MemoryPlan new_plan =
+        make_plan(new_slots.view().window(0, new_count).expect("a test plan holds at most kWideSlots slots"));
     RegionNode new_region{};
     init_region(&new_region, new_ops, &new_plan);
 

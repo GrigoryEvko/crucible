@@ -179,7 +179,7 @@ int main() {
         // can be a pointer back into the arena that produced it.
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
-        crucible::Arena arena2(1 << 16);
+        ::fixy::BumpArena arena2{1 << 16};
         auto loaded_ca = cipher.load_content_addressed(ov, g_test.alloc, expected_hash, arena2);
         auto* loaded = loaded_ca.get();
         assert(loaded != nullptr && "load() must succeed for a stored hash");
@@ -242,7 +242,7 @@ int main() {
     {
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
-        crucible::Arena arena3(1 << 16);
+        ::fixy::BumpArena arena3{1 << 16};
         assert(
             cipher.load_content_addressed(ov, g_test.alloc, crucible::ContentHash{0xBADBADBADBADBAD0ULL}, arena3).get()
             == nullptr);
@@ -282,7 +282,7 @@ int main() {
         // Deleting the object leaves the load no disk to fall back on,
         // so a successful read can only have come from memory.
         std::filesystem::remove(path);
-        crucible::Arena read_arena(1 << 16);
+        ::fixy::BumpArena read_arena{1 << 16};
         auto loaded = cipher.load_content_addressed(ov, g_test.alloc, hash, read_arena);
         assert(loaded.cache_hit() && "resident ContentAddressed bytes must avoid disk fetch");
         assert(loaded.get() != nullptr);
@@ -315,7 +315,7 @@ int main() {
         assert(sender_hash == receiver_hash);
 
         std::filesystem::remove(object_path(receiver_dir, receiver_hash));
-        crucible::Arena read_arena(1 << 16);
+        ::fixy::BumpArena read_arena{1 << 16};
         auto loaded = receiver.load_content_addressed(receiver_ov, g_test.alloc, sender_hash, read_arena);
         assert(loaded.cache_hit());
         assert(loaded.get() != nullptr);
@@ -431,7 +431,7 @@ int main() {
         auto ov = cipher.mint_open_view(store_ctx());
         constexpr std::size_t kStoreCount = 65;
         ::fixy::FixedArray<crucible::ContentHash, kStoreCount> hashes{};
-        crucible::Arena read_arena(1 << 16);
+        ::fixy::BumpArena read_arena{1 << 16};
         for (std::size_t i = 0; i < kStoreCount; ++i) {
             if (i + 1 == kStoreCount) {
                 assert(cipher.load_content_addressed(ov, g_test.alloc, hashes.front(), read_arena).cache_hit());

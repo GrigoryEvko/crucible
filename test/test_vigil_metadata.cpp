@@ -12,7 +12,6 @@
 
 #include "vigil_rig.h"
 
-#include <crucible/Arena.h>
 #include <crucible/MetaLog.h>
 #include <crucible/Serialize.h>
 #include <crucible/Vigil.h>
@@ -140,7 +139,7 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
         crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{serialized_after});
     assert(bytes_after == bytes_before);
     assert(std::memcmp(serialized_after.data(), serialized_before.data(), bytes_before) == 0);
-    crucible::Arena load_arena{std::size_t{1} << 16};
+    ::fixy::BumpArena load_arena{std::size_t{1} << 16};
     const auto loaded =
         crucible::deserialize_region(::foundation::effects::testing::test().alloc,
                                      std::span<const uint8_t>{serialized_after.data(), bytes_after}, load_arena);

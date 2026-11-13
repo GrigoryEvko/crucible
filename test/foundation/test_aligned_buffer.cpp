@@ -1,7 +1,8 @@
 // Sentinel TU for foundation/AlignedBuffer.h.  The buffer honours its
 // alignment, a huge-page buffer is one at huge_page_bytes, value
 // initialization gives each element its declared defaults, a move hands the
-// storage on, and an index past the end or a byte count that wraps aborts.
+// storage on, the View reaches the elements, and an index past the end or a
+// byte count that wraps aborts.
 
 #include <foundation/AlignedBuffer.h>
 
@@ -110,7 +111,28 @@ template <typename T, std::size_t Alignment>
 [[nodiscard]] int zero_count_is_empty() {
     auto buffer = fnd::AlignedBuffer<int>::allocate(0);
     if (buffer || !buffer.empty() || buffer.data() != nullptr || !buffer.span().empty()) return 1;
+    if (buffer.view().size() != 0) return 2;
     return 0;
+}
+
+// The View has the count of the buffer and reaches its elements: a write
+// through the View reads back through the index, and the read-only View of a
+// const buffer reads the same values.
+[[nodiscard]] int view_reaches_the_elements() {
+    auto buffer = fnd::AlignedBuffer<std::uint32_t, 64>::allocate_value_initialized(4);
+    const ::foundation::core::View<std::uint32_t> elements = buffer.view();
+    if (elements.size() != 4) return 1;
+    std::uint32_t next = 3;
+    for (std::uint32_t& element : elements) {
+        element = next;
+        next += 2;
+    }
+    if (buffer[0] != 3 || buffer[3] != 9) return 2;
+    const fnd::AlignedBuffer<std::uint32_t, 64>& read_only = buffer;
+    std::uint32_t total = 0;
+    for (const std::uint32_t value : read_only.view())
+        total += value;
+    return total == 24 ? 0 : 3;
 }
 
 }  // namespace
@@ -124,6 +146,7 @@ int main() {
     if (const int failed = elements_hold_values(); failed != 0) return 40 + failed;
     if (const int failed = move_hands_the_storage_on(); failed != 0) return 50 + failed;
     if (const int failed = zero_count_is_empty(); failed != 0) return 60 + failed;
+    if (const int failed = view_reaches_the_elements(); failed != 0) return 80 + failed;
 
     // An index at the size is past the end, and the precondition aborts.
     auto guarded = fnd::AlignedBuffer<int>::allocate(2);

@@ -4,7 +4,6 @@
 
 #include <crucible/Cipher.h>
 
-#include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
 #include <crucible/cipher/CipherTierPromotion.h>
@@ -327,7 +326,7 @@ void hex16_(uint64_t value, char (&out)[16]) noexcept {
     size_t sz = 64;  // header
     sz += 32;  // region fixed fields
     if (region.plan) {
-        sz += 64 + region.plan->num_slots * sizeof(TensorSlot);
+        sz += 64 + region.plan->num_slots() * sizeof(TensorSlot);
     }
     for (uint32_t i = 0; i < region.num_ops; i++) {
         const TraceEntry& te = region.ops[i];
@@ -401,7 +400,7 @@ ContentHash Cipher::store(OpenView const&, ContentAddressedRegionPayload payload
 Cipher::LoadedContentAddressedRegionPayload Cipher::load_content_addressed(OpenView const&,
                                                                            ::foundation::effects::Alloc a,
                                                                            ContentHash content_hash,
-                                                                           Arena& arena) const {
+                                                                           ::fixy::BumpArena& arena) const {
     if (!content_hash) return nullptr;
 
     const std::span<const uint8_t> cached = cached_bytes(content_hash);

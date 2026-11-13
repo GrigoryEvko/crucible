@@ -27,6 +27,7 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Heap.h>
+#include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
 
 #include <bit>
@@ -169,6 +170,20 @@ public:
 
     [[nodiscard]] std::span<T> span() noexcept { return std::span<T>{data_, size_}; }
     [[nodiscard]] std::span<const T> span() const noexcept { return std::span<const T>{data_, size_}; }
+
+    // The View of the elements.  It borrows this buffer.  The storage is not
+    // null for each count above zero, and the allocation door gives no block
+    // of more than __PTRDIFF_MAX__ bytes, so the count is at most the largest
+    // count of a View.  The View then comes through the door of the base
+    // layer, with no check.  The return type is deduced, so a unit that
+    // only names the class, such as a concept of a gate, does not read View.
+    [[nodiscard]] auto view() & noexcept { return core::View<T>{core::detail::ViewDoor::key(), data_, size_}; }
+    [[nodiscard]] auto view() const& noexcept {
+        return core::View<T const>{core::detail::ViewDoor::key(), data_, size_};
+    }
+    void view() && = delete("a view of a temporary AlignedBuffer points into storage that the full expression frees");
+    void
+    view() const&& = delete("a view of a temporary AlignedBuffer points into storage that the full expression frees");
 
     [[nodiscard]] T& operator[](size_type i) noexcept {
         CRUCIBLE_PRE(i < size_);

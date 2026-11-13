@@ -95,10 +95,12 @@ struct CRUCIBLE_OWNER PoolAllocator {
         CRUCIBLE_PRE(plan != nullptr);
         CRUCIBLE_PRE(ptr_table_ == nullptr);
         CRUCIBLE_PRE(pool_ == nullptr);
-        CRUCIBLE_PRE(::foundation::decide::in_range<uint32_t>(plan->num_slots, 0u, kMaxNumSlots));
+        const size_t plan_slots = plan->slots.size();
+        CRUCIBLE_PRE(::foundation::decide::in_range<size_t>(plan_slots, 0u, kMaxNumSlots));
         CRUCIBLE_PRE(::foundation::decide::in_range<uint64_t>(plan->pool_bytes, 0u, kMaxPoolBytes));
-        CRUCIBLE_PRE(plan->num_external <= plan->num_slots);
-        num_slots_ = plan->num_slots;
+        CRUCIBLE_PRE(plan->num_external <= plan_slots);
+        // The precondition above bounds the count by kMaxNumSlots.
+        num_slots_ = static_cast<uint32_t>(plan_slots);
         num_external_ = plan->num_external;
         pool_bytes_ = plan->pool_bytes;
 
@@ -138,8 +140,8 @@ struct CRUCIBLE_OWNER PoolAllocator {
             // from shapes supplied by a foreign runtime, so this stays a
             // runtime check with a diagnostic rather than a precondition.
             auto* base = static_cast<char*>(pool_);
-            for (uint32_t s = 0; s < num_slots_; ++s) {
-                const auto& slot = plan->slots[s];
+            uint32_t s = 0;
+            for (const TensorSlot& slot : plan->slots) {
                 // The check stays armed in a release build.  The next
                 // statement publishes a pointer that later becomes a memcpy
                 // destination, so a slot reaching past the pool would corrupt
@@ -156,12 +158,13 @@ struct CRUCIBLE_OWNER PoolAllocator {
                     report_unservable_slot_(s, slot, pool_bytes_);
                 }
                 if (!slot.is_external) ptr_table_[s] = base + slot.offset_bytes;
+                ++s;
             }
         }
         // A contract predicate that reads a member through `this` is skipped
         // when the compiler folds the body at compile time, so every such
         // check in this file runs from the body rather than a clause.
-        CRUCIBLE_POST(0, num_slots_ == plan->num_slots);
+        CRUCIBLE_POST(0, num_slots_ == plan_slots);
         CRUCIBLE_POST(0, pool_bytes_ == plan->pool_bytes);
         CRUCIBLE_POST(0, ::foundation::decide::implies(pool_bytes_ > 0u, pool_ != nullptr));
         CRUCIBLE_POST(0, ::foundation::decide::implies(num_slots_ > 0u, ptr_table_ != nullptr));

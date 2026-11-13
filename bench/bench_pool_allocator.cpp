@@ -16,7 +16,6 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
 #include <random>
 #include <vector>
 
@@ -42,23 +41,24 @@ namespace {
 constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
 
 // N internal slots, each 256-byte aligned, offsets = i * slot_size.
-MemoryPlan make_uniform_plan(TensorSlot* slots, uint32_t n, uint64_t slot_size) {
-    for (uint32_t i = 0; i < n; i++) {
-        slots[i].offset_bytes = static_cast<uint64_t>(i) * slot_size;
-        slots[i].nbytes = slot_size;
-        slots[i].slot_id = SlotId{i};
-        slots[i].birth_op = OpIndex{0};
-        slots[i].death_op = OpIndex{n};
-        slots[i].dtype = ScalarType::Float;
-        slots[i].device_type = DeviceType::CPU;
-        slots[i].device_idx = 0;
-        slots[i].layout = Layout::Strided;
-        slots[i].is_external = false;
-        std::memset(slots[i].pad, 0, sizeof(slots[i].pad));
+MemoryPlan make_uniform_plan(::fixy::View<TensorSlot> slots, uint64_t slot_size) {
+    const uint32_t n = static_cast<uint32_t>(slots.size());
+    uint32_t i = 0;
+    for (TensorSlot& slot : slots) {
+        slot.offset_bytes = static_cast<uint64_t>(i) * slot_size;
+        slot.nbytes = slot_size;
+        slot.slot_id = SlotId{i};
+        slot.birth_op = OpIndex{0};
+        slot.death_op = OpIndex{n};
+        slot.dtype = ScalarType::Float;
+        slot.device_type = DeviceType::CPU;
+        slot.device_idx = 0;
+        slot.layout = Layout::Strided;
+        slot.is_external = false;
+        i++;
     }
     MemoryPlan plan{};
     plan.slots = slots;
-    plan.num_slots = n;
     plan.num_external = 0;
     plan.pool_bytes = static_cast<uint64_t>(n) * slot_size;
     plan.device_type = DeviceType::CPU;
@@ -66,25 +66,26 @@ MemoryPlan make_uniform_plan(TensorSlot* slots, uint32_t n, uint64_t slot_size) 
     return plan;
 }
 
-MemoryPlan make_mixed_plan(TensorSlot* slots, uint32_t n_internal, uint32_t n_external, uint64_t slot_size) {
+MemoryPlan make_mixed_plan(::fixy::View<TensorSlot> slots, uint32_t n_internal, uint32_t n_external,
+                           uint64_t slot_size) {
     const uint32_t total = n_internal + n_external;
-    for (uint32_t i = 0; i < total; i++) {
+    uint32_t i = 0;
+    for (TensorSlot& slot : slots) {
         const bool ext = (i >= n_internal);
-        slots[i].offset_bytes = ext ? 0 : (static_cast<uint64_t>(i) * slot_size);
-        slots[i].nbytes = slot_size;
-        slots[i].slot_id = SlotId{i};
-        slots[i].birth_op = OpIndex{0};
-        slots[i].death_op = OpIndex{total};
-        slots[i].dtype = ScalarType::Float;
-        slots[i].device_type = DeviceType::CPU;
-        slots[i].device_idx = 0;
-        slots[i].layout = Layout::Strided;
-        slots[i].is_external = ext;
-        std::memset(slots[i].pad, 0, sizeof(slots[i].pad));
+        slot.offset_bytes = ext ? 0 : (static_cast<uint64_t>(i) * slot_size);
+        slot.nbytes = slot_size;
+        slot.slot_id = SlotId{i};
+        slot.birth_op = OpIndex{0};
+        slot.death_op = OpIndex{total};
+        slot.dtype = ScalarType::Float;
+        slot.device_type = DeviceType::CPU;
+        slot.device_idx = 0;
+        slot.layout = Layout::Strided;
+        slot.is_external = ext;
+        i++;
     }
     MemoryPlan plan{};
     plan.slots = slots;
-    plan.num_slots = total;
     plan.num_external = n_external;
     plan.pool_bytes = static_cast<uint64_t>(n_internal) * slot_size;
     plan.device_type = DeviceType::CPU;
@@ -106,6 +107,7 @@ int main() {
     bench::elevate_priority();
 
     const bool json = bench::env_json();
+    auto test = ::foundation::effects::testing::test();
 
     std::printf("=== pool_allocator ===\n");
     std::printf("  sizeof(PoolAllocator)               = %zu\n", sizeof(PoolAllocator));
@@ -118,8 +120,8 @@ int main() {
 
     // ── slot_ptr sequential access ────────────────────────────────────
     reports.push_back([&] {
-        TensorSlot slots[1]{};
-        MemoryPlan plan = make_uniform_plan(slots, 1, 256);
+        ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+        MemoryPlan plan = make_uniform_plan(slots.view(), 256);
         PoolAllocator pool;
         pool.init(&plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -131,8 +133,8 @@ int main() {
 
     for (uint32_t N : {10u, 100u, 1000u}) {
         reports.push_back([&, N] {
-            std::vector<TensorSlot> slots(N);
-            MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
+            ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
+            MemoryPlan plan = make_uniform_plan(slots.view(), 256);
             PoolAllocator pool;
             pool.init(&plan);
             auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -153,8 +155,8 @@ int main() {
 
     for (uint32_t N : {10u, 100u, 1000u}) {
         reports.push_back([&, N] {
-            std::vector<TensorSlot> slots(N);
-            MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
+            ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
+            MemoryPlan plan = make_uniform_plan(slots.view(), 256);
             PoolAllocator pool;
             pool.init(&plan);
             auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -181,8 +183,8 @@ int main() {
     // own IIFE scope so the measurements don't interact.
     reports.push_back([&] {
         constexpr uint32_t N = 100;
-        std::vector<TensorSlot> slots(N);
-        MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
+        ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
+        MemoryPlan plan = make_uniform_plan(slots.view(), 256);
         PoolAllocator pool;
         pool.init(&plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -196,8 +198,8 @@ int main() {
 
     reports.push_back([&] {
         constexpr uint32_t N = 100;
-        std::vector<TensorSlot> slots(N);
-        MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
+        ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
+        MemoryPlan plan = make_uniform_plan(slots.view(), 256);
         PoolAllocator pool;
         pool.init(&plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -213,8 +215,8 @@ int main() {
 
     reports.push_back([&] {
         constexpr uint32_t N = 100;
-        std::vector<TensorSlot> slots(N);
-        MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
+        ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
+        MemoryPlan plan = make_uniform_plan(slots.view(), 256);
         PoolAllocator pool;
         pool.init(&plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -231,8 +233,8 @@ int main() {
     // ── init cold path ────────────────────────────────────────────────
     for (uint32_t N : {10u, 100u, 1000u}) {
         reports.push_back([&, N] {
-            std::vector<TensorSlot> slots(N);
-            MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
+            ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
+            MemoryPlan plan = make_uniform_plan(slots.view(), 256);
             char label[64];
             std::snprintf(label, sizeof(label), "init(%u slots)", N);
             return bench::run(label, [&] {
@@ -253,8 +255,8 @@ int main() {
 
     reports.push_back([&] {
         constexpr uint32_t N = 100;
-        std::vector<TensorSlot> slots(N);
-        MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
+        ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
+        MemoryPlan plan = make_uniform_plan(slots.view(), 256);
         return bench::run("init+destroy (100 slots, pair)", [&] {
             PoolAllocator pool;
             pool.init(&plan);
@@ -266,10 +268,10 @@ int main() {
     // ── detach+reinit (region switch) ─────────────────────────────────
     reports.push_back([&] {
         constexpr uint32_t N = 100;
-        std::vector<TensorSlot> slots_a(N);
-        std::vector<TensorSlot> slots_b(N);
-        MemoryPlan plan_a = make_uniform_plan(slots_a.data(), N, 256);
-        MemoryPlan plan_b = make_uniform_plan(slots_b.data(), N, 512);
+        ::fixy::HeapArray<TensorSlot> slots_a = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
+        ::fixy::HeapArray<TensorSlot> slots_b = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
+        MemoryPlan plan_a = make_uniform_plan(slots_a.view(), 256);
+        MemoryPlan plan_b = make_uniform_plan(slots_b.view(), 512);
         return bench::run("detach+init(100 slots)", [&] {
             PoolAllocator pool;
             pool.init(&plan_a);
@@ -290,8 +292,8 @@ int main() {
         constexpr uint32_t N_INT = 80;
         constexpr uint32_t N_EXT = 20;
         constexpr uint32_t TOTAL = N_INT + N_EXT;
-        std::vector<TensorSlot> slots(TOTAL);
-        MemoryPlan plan = make_mixed_plan(slots.data(), N_INT, N_EXT, 256);
+        ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, TOTAL, TensorSlot{});
+        MemoryPlan plan = make_mixed_plan(slots.view(), N_INT, N_EXT, 256);
 
         PoolAllocator pool;
         pool.init(&plan);
@@ -313,8 +315,8 @@ int main() {
     reports.push_back([&] {
         constexpr uint32_t NUM_OPS = 200;
         constexpr uint32_t NUM_SLOTS = 100;
-        std::vector<TensorSlot> slots(NUM_SLOTS);
-        MemoryPlan plan = make_uniform_plan(slots.data(), NUM_SLOTS, 256);
+        ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, NUM_SLOTS, TensorSlot{});
+        MemoryPlan plan = make_uniform_plan(slots.view(), 256);
 
         PoolAllocator pool;
         pool.init(&plan);

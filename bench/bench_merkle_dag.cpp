@@ -240,39 +240,40 @@ int main(int argc, char* argv[]) {
     // ── compute_memory_plan (300 slots) ──────────────────────────────
     reports.push_back([] {
         auto test = ::foundation::effects::testing::test();
-        Arena arena{1 << 20};
         constexpr uint32_t NUM_SLOTS = 300;
-        auto* slots = arena.alloc_array<TensorSlot>(test.alloc, NUM_SLOTS);
+        ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, NUM_SLOTS, TensorSlot{});
         bench_rng_state = 0x9999AAAABBBBCCCCULL;
-        for (uint32_t s = 0; s < NUM_SLOTS; s++) {
-            std::construct_at(&slots[s]);
-            slots[s].slot_id = SlotId{s};
-            slots[s].birth_op = OpIndex{static_cast<uint32_t>(bench_rand() % 400)};
-            slots[s].death_op = OpIndex{slots[s].birth_op.raw() + static_cast<uint32_t>(1 + bench_rand() % 80)};
-            slots[s].nbytes = 256 * (1 + bench_rand() % 64);
-            slots[s].dtype = ScalarType::Float;
-            slots[s].device_type = DeviceType::CUDA;
-            slots[s].device_idx = 0;
-            slots[s].is_external = (s < 20);  // first 20 are params
+        uint32_t slot_index = 0;
+        for (TensorSlot& slot : slots) {
+            slot.slot_id = SlotId{slot_index};
+            slot.birth_op = OpIndex{static_cast<uint32_t>(bench_rand() % 400)};
+            slot.death_op = OpIndex{slot.birth_op.raw() + static_cast<uint32_t>(1 + bench_rand() % 80)};
+            slot.nbytes = 256 * (1 + bench_rand() % 64);
+            slot.dtype = ScalarType::Float;
+            slot.device_type = DeviceType::CUDA;
+            slot.device_idx = 0;
+            slot.is_external = (slot_index < 20);  // first 20 are params
             // The planner writes the offset of each internal slot only, so
             // each external slot keeps the zero of its member initializer.
-            CRUCIBLE_BENCH_CHECK(slots[s].offset_bytes == 0);
+            CRUCIBLE_BENCH_CHECK(slot.offset_bytes == 0);
+            ++slot_index;
         }
         BackgroundThread bg;
-        // The planner takes the slots as a raw array, so their copy is in
-        // scratch.  The arrays of the sweep are in sweep_scratch.
-        Arena scratch{1 << 20};
+        // The planner writes the offsets into the slots, so each run plans a
+        // copy of them in scratch.  The arrays of the sweep are in
+        // sweep_scratch.
+        ::fixy::BumpArena scratch{1 << 20};
         ::fixy::BumpArena sweep_scratch{1 << 20};
         return bench::run("compute_memory_plan (300 slots)", [&] {
-            ArenaEpoch epoch = scratch.open_epoch();
-            auto* s = scratch.alloc_array<TensorSlot>(test.alloc, NUM_SLOTS);
-            std::memcpy(s, slots, NUM_SLOTS * sizeof(TensorSlot));
-            MemoryPlan plan_storage{};
-            sweep_scratch.with_epoch([&]() noexcept {
-                auto* plan = bg.compute_memory_plan(test.alloc, plan_storage, sweep_scratch, s, NUM_SLOTS);
-                bench::do_not_optimize(plan);
+            scratch.with_epoch([&]() noexcept {
+                const ::fixy::View<TensorSlot> copy = scratch.array<TensorSlot>(test.alloc, NUM_SLOTS, TensorSlot{});
+                ::fixy::copy(copy, slots.view()).expect("the copy holds one entry for each slot");
+                MemoryPlan plan_storage{};
+                sweep_scratch.with_epoch([&]() noexcept {
+                    auto* plan = bg.compute_memory_plan(test.alloc, plan_storage, sweep_scratch, copy);
+                    bench::do_not_optimize(plan);
+                });
             });
-            std::move(epoch).end();
         });
     }());
 

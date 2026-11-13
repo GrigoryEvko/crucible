@@ -61,17 +61,18 @@ int main() {
 
     std::printf("\n── Memory Plan ──\n");
     std::printf("   Pool size: %llu bytes\n", static_cast<unsigned long long>(plan->pool_bytes));
-    std::printf("   Total slots: %u\n", plan->num_slots);
+    std::printf("   Total slots: %u\n", plan->num_slots());
     std::printf("   External slots: %u (parameters)\n", plan->num_external);
-    std::printf("   Internal slots: %u (activations — pre-allocated)\n", plan->num_slots - plan->num_external);
+    std::printf("   Internal slots: %u (activations — pre-allocated)\n", plan->num_slots() - plan->num_external);
 
     std::printf("\n   Slot details:\n");
-    for (uint32_t s = 0; s < plan->num_slots; s++) {
-        const auto& slot = plan->slots[s];
+    uint32_t s = 0;
+    for (const TensorSlot& slot : plan->slots) {
         std::printf("     [%2u] %s  %6llu bytes  birth=op%u  death=op%u", s, slot.is_external ? "EXTERN" : "INTERN",
                     static_cast<unsigned long long>(slot.nbytes), slot.birth_op.raw(), slot.death_op.raw());
         if (!slot.is_external) std::printf("  offset=%llu", static_cast<unsigned long long>(slot.offset_bytes));
         std::printf("\n");
+        s++;
     }
 
     activate_compiled_mode(vigil);
@@ -82,7 +83,7 @@ int main() {
     std::printf("Total compiled iterations: %u\n", vigil.compiled_iterations());
     std::printf("Divergences: %u\n", vigil.diverged_count());
     std::printf("Pool bytes: %llu (vs eager: ~%llu per iteration)\n", static_cast<unsigned long long>(plan->pool_bytes),
-                static_cast<unsigned long long>(plan->num_slots - plan->num_external) * BATCH * HIDDEN * 4);
+                static_cast<unsigned long long>(plan->num_slots() - plan->num_external) * BATCH * HIDDEN * 4);
     std::printf("Mode: %s\n", vigil.context().is_compiled() ? "COMPILED" : "RECORDING");
     std::printf("\ntest_mlp_trace: PASSED\n");
     return 0;

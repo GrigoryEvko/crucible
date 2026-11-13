@@ -221,7 +221,7 @@ static void test_round_trip_via_program_commit() {
     ContentHash written = std::move(result).consume();
     assert(written == original_hash);
 
-    Arena loader_arena;
+    ::fixy::BumpArena loader_arena{};
     auto loaded_payload = c.load_content_addressed(view, g_test.alloc, written, loader_arena);
     auto* loaded = loaded_payload.get();
     assert(loaded != nullptr);

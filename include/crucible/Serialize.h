@@ -15,6 +15,7 @@
 #include <crucible/PoolAllocator.h>
 #include <crucible/TraceRing.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
@@ -381,6 +382,17 @@ inline Header read_header(Reader& r) {
     return h;
 }
 
+// The first element of a run that the loader takes from the arena, for a
+// field of a region that holds a pointer and not a View.  A run of no
+// elements gives the null pointer, which such a field holds for no elements.
+template <class T>
+[[nodiscard]] T* first_element_(::fixy::View<T> elements) noexcept {
+    for (T& first : elements) {
+        return &first;
+    }
+    return nullptr;
+}
+
 }  // namespace detail_ser
 
 // The region that serialize_region reads.  A borrow is never null.
@@ -409,7 +421,7 @@ using SerialBuffer = ::fixy::Borrowed<uint8_t, SerialBufferOwner>;
     if (has_plan) {
         const MemoryPlan* plan = region->plan;
         w.w(plan->pool_bytes);
-        w.w(plan->num_slots);
+        w.w(plan->num_slots());
         w.w(plan->num_external);
         w.w(plan->device_type);
         w.w(plan->device_idx);
@@ -418,8 +430,8 @@ using SerialBuffer = ::fixy::Borrowed<uint8_t, SerialBufferOwner>;
         w.w(plan->device_capability);
         w.w(plan->rank);
         w.w(plan->world_size);
-        for (uint32_t s = 0; s < plan->num_slots; s++) {
-            write_slot(w, plan->slots[s]);
+        for (const TensorSlot& slot : plan->slots) {
+            write_slot(w, slot);
         }
     }
 
@@ -475,8 +487,8 @@ using SerialBuffer = ::fixy::Borrowed<uint8_t, SerialBufferOwner>;
 // Returns no region on a parse error, a version mismatch or a content hash
 // that the operations do not fold to. Every structure it builds lives in the
 // arena.
-[[nodiscard]] inline std::optional<LoadedRegionNode> deserialize_region(::foundation::effects::Alloc a,
-                                                                        std::span<const uint8_t> buf, Arena& arena) {
+[[nodiscard]] inline std::optional<LoadedRegionNode>
+deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf, ::fixy::BumpArena& arena) {
     using namespace detail_ser;
     Reader r{.buf = buf.data(), .pos = 0, .len = buf.size()};
 
@@ -497,7 +509,7 @@ using SerialBuffer = ::fixy::Borrowed<uint8_t, SerialBufferOwner>;
     MemoryPlan* plan = nullptr;
     const bool has_plan = r.read_bool();
     if (has_plan) {
-        plan = arena.alloc_obj<MemoryPlan>(a);
+        plan = &*arena.make<MemoryPlan>(a);
         plan->pool_bytes = r.r<uint64_t>();
         // The next three checks all guard the same thing: a loaded plan goes
         // on to initialise the replay pool, whose own preconditions are only
@@ -509,12 +521,12 @@ using SerialBuffer = ::fixy::Borrowed<uint8_t, SerialBufferOwner>;
         if (plan->pool_bytes > ::crucible::PoolAllocator::kMaxPoolBytes) [[unlikely]] {
             return std::nullopt;
         }
-        plan->num_slots = r.r<uint32_t>();
-        if (plan->num_slots > CDAG_MAX_SLOTS) return std::nullopt;
+        const uint32_t num_slots = r.r<uint32_t>();
+        if (num_slots > CDAG_MAX_SLOTS) return std::nullopt;
         plan->num_external = r.r<uint32_t>();
         // The external slots are a subset of the slots, so their count cannot
         // exceed the total.
-        if (plan->num_external > plan->num_slots) return std::nullopt;
+        if (plan->num_external > num_slots) return std::nullopt;
         // An unrecognised device type would reach pool selection unchecked.
         plan->device_type =
             make_device_type(::fixy::mint_refined<valid_device_type>(r.read_gated<int8_t>(valid_device_type)));
@@ -523,21 +535,17 @@ using SerialBuffer = ::fixy::Borrowed<uint8_t, SerialBufferOwner>;
         plan->device_capability = r.r<uint64_t>();
         plan->rank = r.r<int32_t>();
         plan->world_size = r.r<int32_t>();
-        if (plan->num_slots > 0) {
-            if (!r.has_remaining<std::array<uint8_t, kTensorSlotWireBytes>>(plan->num_slots)) {
+        if (!r.has_remaining<std::array<uint8_t, kTensorSlotWireBytes>>(num_slots)) {
+            return std::nullopt;
+        }
+        plan->slots = arena.array<TensorSlot>(a, num_slots, TensorSlot{});
+        for (TensorSlot& slot : plan->slots) {
+            slot = read_slot(r);
+            // The pool allocator aborts on a slot it cannot serve, so a
+            // loaded plan holds only slots that it can serve.
+            if (!::crucible::PoolAllocator::can_serve_slot(slot, plan->pool_bytes)) [[unlikely]] {
                 return std::nullopt;
             }
-            plan->slots = arena.alloc_array<TensorSlot>(a, plan->num_slots);
-            for (uint32_t s = 0; s < plan->num_slots; s++) {
-                plan->slots[s] = read_slot(r);
-                // The pool allocator aborts on a slot it cannot serve, so a
-                // loaded plan holds only slots that it can serve.
-                if (!::crucible::PoolAllocator::can_serve_slot(plan->slots[s], plan->pool_bytes)) [[unlikely]] {
-                    return std::nullopt;
-                }
-            }
-        } else {
-            plan->slots = nullptr;
         }
     }
 
@@ -548,7 +556,7 @@ using SerialBuffer = ::fixy::Borrowed<uint8_t, SerialBufferOwner>;
     if (num_ops > 0 && r.remaining() < static_cast<size_t>(num_ops) * kTraceEntryMinWireBytes) {
         return std::nullopt;
     }
-    TraceEntry* ops = (num_ops > 0) ? arena.alloc_array<TraceEntry>(a, num_ops) : nullptr;
+    TraceEntry* ops = detail_ser::first_element_(arena.array<TraceEntry>(a, num_ops, TraceEntry{}));
 
     for (uint32_t i = 0; i < num_ops; i++) {
         TraceEntry& te = ops[i];
@@ -586,27 +594,27 @@ using SerialBuffer = ::fixy::Borrowed<uint8_t, SerialBufferOwner>;
             te.kernel_id = make_ckernel_id(::fixy::mint_refined<kValidCKernelIdBound>(raw_kernel_id));
         }
 
-        te.input_metas = (te.num_inputs > 0) ? arena.alloc_array<TensorMeta>(a, te.num_inputs) : nullptr;
+        te.input_metas = detail_ser::first_element_(arena.array<TensorMeta>(a, te.num_inputs, TensorMeta{}));
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             te.input_metas[j] = read_meta(r);
         }
 
-        te.output_metas = (te.num_outputs > 0) ? arena.alloc_array<TensorMeta>(a, te.num_outputs) : nullptr;
+        te.output_metas = detail_ser::first_element_(arena.array<TensorMeta>(a, te.num_outputs, TensorMeta{}));
         for (uint16_t j = 0; j < te.num_outputs; j++) {
             te.output_metas[j] = read_meta(r);
         }
 
-        te.scalar_args = (te.num_scalar_args > 0) ? arena.alloc_array<int64_t>(a, te.num_scalar_args) : nullptr;
+        te.scalar_args = detail_ser::first_element_(arena.array<int64_t>(a, te.num_scalar_args, int64_t{0}));
         for (uint16_t j = 0; j < te.num_scalar_args; j++) {
             te.scalar_args[j] = r.r<int64_t>();
         }
 
-        te.input_trace_indices = (te.num_inputs > 0) ? arena.alloc_array<OpIndex>(a, te.num_inputs) : nullptr;
+        te.input_trace_indices = detail_ser::first_element_(arena.array<OpIndex>(a, te.num_inputs, OpIndex{}));
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             te.input_trace_indices[j] = OpIndex{r.r<uint32_t>()};
         }
 
-        te.input_slot_ids = (te.num_inputs > 0) ? arena.alloc_array<SlotId>(a, te.num_inputs) : nullptr;
+        te.input_slot_ids = detail_ser::first_element_(arena.array<SlotId>(a, te.num_inputs, SlotId{}));
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // A slot id indexes the replay slot table, and replay checks only
@@ -617,17 +625,17 @@ using SerialBuffer = ::fixy::Borrowed<uint8_t, SerialBufferOwner>;
             // bound is known here and enforced here. A region without a plan
             // binds to no table and cannot execute until one is supplied
             // elsewhere, so there is no bound to enforce for it.
-            if (plan != nullptr && sid.is_valid() && sid.raw() >= plan->num_slots) [[unlikely]] {
+            if (plan != nullptr && sid.is_valid() && sid.raw() >= plan->num_slots()) [[unlikely]] {
                 return std::nullopt;
             }
             te.input_slot_ids[j] = sid;
         }
 
-        te.output_slot_ids = (te.num_outputs > 0) ? arena.alloc_array<SlotId>(a, te.num_outputs) : nullptr;
+        te.output_slot_ids = detail_ser::first_element_(arena.array<SlotId>(a, te.num_outputs, SlotId{}));
         for (uint16_t j = 0; j < te.num_outputs; j++) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // The same bound as for the input slot ids above.
-            if (plan != nullptr && sid.is_valid() && sid.raw() >= plan->num_slots) [[unlikely]] {
+            if (plan != nullptr && sid.is_valid() && sid.raw() >= plan->num_slots()) [[unlikely]] {
                 return std::nullopt;
             }
             te.output_slot_ids[j] = sid;
@@ -655,24 +663,23 @@ using SerialBuffer = ::fixy::Borrowed<uint8_t, SerialBufferOwner>;
         return std::nullopt;
     }
 
-    // Placement new rather than a plain cast: the node holds an atomic field.
-    auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
-    node->kind = TraceNodeKind::REGION;
-    node->merkle_hash = hdr.merkle_hash;
-    node->content_hash = hdr.content_hash;
-    node->next = nullptr;
-    node->ops = ops;
-    node->num_ops = num_ops;
-    node->first_op_schema = first_op_schema;
-    node->measured_ms = measured_ms;
+    RegionNode& node = *arena.make<RegionNode>(a);
+    node.kind = TraceNodeKind::REGION;
+    node.merkle_hash = hdr.merkle_hash;
+    node.content_hash = hdr.content_hash;
+    node.next = nullptr;
+    node.ops = ops;
+    node.num_ops = num_ops;
+    node.first_op_schema = first_op_schema;
+    node.measured_ms = measured_ms;
     // The counter is reconstructed rather than advanced. The value on disk may
     // be zero, meaning no variant had been selected when the region was
     // written, and advancing to zero is exactly what the counter forbids.
-    std::construct_at(&node->variant_id, ::fixy::mint_monotonic<uint32_t>(variant_id));
-    node->plan = plan;
+    std::construct_at(&node.variant_id, ::fixy::mint_monotonic<uint32_t>(variant_id));
+    node.plan = plan;
     // The node is rebuilt from Cipher bytes, and the fold above matched the
     // content hash that the image records, so it crosses the edge to Loaded.
-    return ::fixy::mint_tagged<::fixy::tags::source::Replayed>(node).retag<::fixy::tags::source::Loaded>();
+    return ::fixy::mint_tagged<::fixy::tags::source::Replayed>(&node).retag<::fixy::tags::source::Loaded>();
 }
 
 // Returns the byte count written, or zero if the buffer was too small.

@@ -44,17 +44,18 @@ int main() {
 
     std::printf("── Region ──\n");
     std::printf("   %u ops | pool %llu bytes\n", region->num_ops, static_cast<unsigned long long>(plan->pool_bytes));
-    std::printf("   %u slots: %u external + %u internal\n", plan->num_slots, plan->num_external,
-                plan->num_slots - plan->num_external);
+    std::printf("   %u slots: %u external + %u internal\n", plan->num_slots(), plan->num_external,
+                plan->num_slots() - plan->num_external);
 
     std::printf("\n   Key lifetimes (saved for backward):\n");
-    for (uint32_t s = 0; s < plan->num_slots; s++) {
-        const auto& sl = plan->slots[s];
+    uint32_t s = 0;
+    for (const TensorSlot& sl : plan->slots) {
         // A span of more than ten ops separates an activation held for
         // the backward pass from an ordinary short-lived intermediate.
         if (!sl.is_external && sl.death_op.raw() - sl.birth_op.raw() > 10)
             std::printf("     slot %u: birth=op%u death=op%u (%llu bytes)\n", s, sl.birth_op.raw(), sl.death_op.raw(),
                         static_cast<unsigned long long>(sl.nbytes));
+        s++;
     }
 
     align_and_complete_iteration(vigil);

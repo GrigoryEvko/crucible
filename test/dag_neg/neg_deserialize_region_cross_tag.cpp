@@ -16,7 +16,7 @@
 #include <fixy/Tagged.h>
 
 int main() {
-    crucible::Arena arena{1024};
+    ::fixy::BumpArena arena{1024};
     std::span<const std::uint8_t> bytes{};
 
     using ExternalRegion = ::fixy::Tagged<crucible::RegionNode*, ::fixy::tags::source::External>;
