@@ -2,17 +2,15 @@
 
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/cog/TargetCaps.h>
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/Stale.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/reflect/EnumPins.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
-#include <span>
 #include <type_traits>
 
 namespace crucible::cog {
@@ -244,8 +242,8 @@ struct OpcodeLatencyEntry {
 // variation, firmware revision and thermal headroom make two parts of
 // the same model diverge measurably on identical work.
 //
-// The span borrows arena-owned storage, which must outlive the table.
-// An empty span means the table was never filled in, and a consumer
+// The View borrows arena-owned storage, which must outlive the table.
+// An empty View means the table was never filled in, and a consumer
 // reading one falls back to vendor-specification defaults.
 //
 // calibration_age_seconds carries wall-clock seconds since the
@@ -255,7 +253,7 @@ struct OpcodeLatencyEntry {
 // the drift detector that a table it has never seen is fresh, and no
 // first measurement would ever be requested.
 //
-// A lookup is a linear scan over the span. A hash index would cost
+// A lookup is a linear scan over the View. A hash index would cost
 // more in cache lines touched than the scan costs, because a table
 // holds a few hundred rows at most and a lookup happens about once per
 // iteration.
@@ -265,35 +263,32 @@ struct OpcodeLatencyTable {
     using Entry = OpcodeLatencyEntry<K>;
     using OpcodeId = opcodes_for_t<K>;
 
-    CalibratedValue<std::span<const Entry>> entries{};
+    CalibratedValue<::fixy::View<Entry const>> entries{};
 
     ::fixy::Stale<double> calibration_age_seconds = ::fixy::Stale<double>::at_infinity(0.0);
 
-    [[nodiscard]] constexpr std::optional<Entry> lookup_by_opcode(OpcodeId target) const noexcept {
-        const auto& span_view = entries.value();
-        for (const Entry& e : span_view) {
-            if (e.opcode == target) return e;
+    [[nodiscard]] constexpr ::fixy::Option<Entry> lookup_by_opcode(OpcodeId target) const noexcept {
+        for (const Entry& e : entries.value()) {
+            if (e.opcode == target) return ::fixy::Option<Entry>::some(e);
         }
-        return std::nullopt;
+        return ::fixy::none;
     }
 
-    [[nodiscard]] constexpr std::optional<Entry>
+    [[nodiscard]] constexpr ::fixy::Option<Entry>
     latency_for_size_bucket(OpcodeId target_opcode, SizeBucket target_size, DtypeBucket target_dtype,
                             TransposeMode target_transpose = TransposeMode::Nn,
                             MessageSizeBucket target_msgsz = MessageSizeBucket::None) const noexcept {
-        const auto& span_view = entries.value();
-        for (const Entry& e : span_view) {
+        for (const Entry& e : entries.value()) {
             if (e.opcode == target_opcode && e.size_bucket == target_size && e.dtype_bucket == target_dtype
                 && e.transpose_mode == target_transpose && e.message_size_bucket == target_msgsz)
-                return e;
+                return ::fixy::Option<Entry>::some(e);
         }
-        return std::nullopt;
+        return ::fixy::none;
     }
 
     [[nodiscard]] constexpr double throughput_envelope(OpcodeId target_opcode) const noexcept {
-        const auto& span_view = entries.value();
         double sum = 0.0;
-        for (const Entry& e : span_view) {
+        for (const Entry& e : entries.value()) {
             if (e.opcode == target_opcode) sum += e.throughput_per_sec;
         }
         return sum;
@@ -301,7 +296,7 @@ struct OpcodeLatencyTable {
 
     [[nodiscard]] constexpr std::size_t size() const noexcept { return entries.value().size(); }
 
-    [[nodiscard]] constexpr bool empty() const noexcept { return entries.value().empty(); }
+    [[nodiscard]] constexpr bool empty() const noexcept { return entries.value().size() == 0; }
 };
 
 }  // namespace crucible::cog

@@ -2,6 +2,8 @@
 
 #include <crucible/cog/OpcodeLatencyTable.h>
 
+#include <array>
+
 namespace crucible::cog {
 
 static_assert(sizeof(LatencyQuantiles) == 3 * sizeof(std::uint32_t),
@@ -17,7 +19,7 @@ static_assert(sizeof(OrderedLatencyQuantiles) == sizeof(LatencyQuantiles),
 namespace detail::opcode_latency_self_test {
 
 static_assert(sizeof(CalibratedValue<std::uint16_t>) == sizeof(std::uint16_t));
-static_assert(sizeof(CalibratedValue<std::span<const int>>) == sizeof(std::span<const int>));
+static_assert(sizeof(CalibratedValue<::fixy::View<int const>>) == sizeof(::fixy::View<int const>));
 
 static_assert(sizeof(::fixy::Stale<double>) <= 16);
 

@@ -21,9 +21,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <expected>
-#include <limits>
-#include <span>
 #include <type_traits>
 
 namespace crucible::cog {
@@ -220,14 +217,15 @@ admit_drift_basis_points(std::uint16_t basis_points) noexcept {
 
 template <CogKind K>
     requires CalibratableCogKind<K>
-[[nodiscard]] constexpr std::expected<void, CalibrationError> validate_identity_for(CogIdentity identity) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, CalibrationError>
+validate_identity_for(CogIdentity identity) noexcept {
     if (identity.uuid.is_zero()) {
-        return std::unexpected(CalibrationError::ZeroCog);
+        return ::fixy::err(CalibrationError::ZeroCog);
     }
     if (identity.kind != K) {
-        return std::unexpected(CalibrationError::KindMismatch);
+        return ::fixy::err(CalibrationError::KindMismatch);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
 // The table stores only the ordering half of the calibration predicate,
@@ -250,43 +248,37 @@ template <CogKind K>
 
 template <CogKind K>
     requires CalibratableCogKind<K>
-[[nodiscard]] constexpr std::expected<void, CalibrationError>
+[[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, CalibrationError>
 validate_latency_entry(OpcodeLatencyEntry<K> const& entry) noexcept {
     if (entry.latency_cycles == 0u) {
-        return std::unexpected(CalibrationError::InvalidLatencyCycles);
+        return ::fixy::err(CalibrationError::InvalidLatencyCycles);
     }
     if (!calibration_quantiles_valid(entry.latency.value())) {
-        return std::unexpected(CalibrationError::InvalidLatencyQuantiles);
+        return ::fixy::err(CalibrationError::InvalidLatencyQuantiles);
     }
     if (!finite_positive_throughput(entry.throughput_per_sec)) {
-        return std::unexpected(CalibrationError::InvalidThroughput);
+        return ::fixy::err(CalibrationError::InvalidThroughput);
     }
     if (!measured_sample_count(entry.sample_count.value())) {
-        return std::unexpected(CalibrationError::InvalidSampleCount);
+        return ::fixy::err(CalibrationError::InvalidSampleCount);
     }
-    return {};
+    return ::fixy::Unit{};
 }
 
 template <CogKind K>
     requires CalibratableCogKind<K>
-[[nodiscard]] constexpr std::expected<CalibrationResult<K>, CalibrationError>
-build_calibration_result(CogIdentity identity, caps_for_t<K> caps, std::span<const OpcodeLatencyEntry<K>> entries,
+[[nodiscard]] constexpr ::fixy::Result<CalibrationResult<K>, CalibrationError>
+build_calibration_result(CogIdentity identity, caps_for_t<K> caps, ::fixy::View<OpcodeLatencyEntry<K> const> entries,
                          CalibrationPlan plan = {}) noexcept {
-    auto valid_identity = validate_identity_for<K>(identity);
-    if (!valid_identity.has_value()) {
-        return std::unexpected(valid_identity.error());
+    CRUCIBLE_TRY(_, validate_identity_for<K>(identity));
+    if (entries.size() == 0) {
+        return ::fixy::err(CalibrationError::EmptyEntrySet);
     }
-    if (entries.empty()) {
-        return std::unexpected(CalibrationError::EmptyEntrySet);
-    }
-    if (entries.size() > std::numeric_limits<std::uint16_t>::max()) {
-        return std::unexpected(CalibrationError::InvalidSampleCount);
+    if (entries.size() > ::fixy::max_of<std::uint16_t>) {
+        return ::fixy::err(CalibrationError::InvalidSampleCount);
     }
     for (const OpcodeLatencyEntry<K>& entry : entries) {
-        auto valid_entry = validate_latency_entry<K>(entry);
-        if (!valid_entry.has_value()) {
-            return std::unexpected(valid_entry.error());
-        }
+        CRUCIBLE_TRY(_, validate_latency_entry<K>(entry));
     }
     return CalibrationResult<K>{
         .identity = identity,
@@ -304,36 +296,30 @@ build_calibration_result(CogIdentity identity, caps_for_t<K> caps, std::span<con
 
 template <CogKind K, class Ctx>
     requires CalibratableCogKind<K> && CtxFitsCalibration<Ctx>
-[[nodiscard]] constexpr std::expected<CalibrationResult<K>, CalibrationError>
+[[nodiscard]] constexpr ::fixy::Result<CalibrationResult<K>, CalibrationError>
 calibrate_cog(Ctx const&, CogIdentity identity, CalibrationPlan = {}) noexcept {
-    auto valid_identity = validate_identity_for<K>(identity);
-    if (!valid_identity.has_value()) {
-        return std::unexpected(valid_identity.error());
-    }
-    return std::unexpected(CalibrationError::BackendUnavailable);
+    CRUCIBLE_TRY(_, validate_identity_for<K>(identity));
+    return ::fixy::err(CalibrationError::BackendUnavailable);
 }
 
 template <CogKind K, class Ctx>
     requires CalibratableCogKind<K> && CtxFitsCalibration<Ctx>
-[[nodiscard]] constexpr std::expected<CalibrationResult<K>, CalibrationError>
-calibrate_specific_opcodes(Ctx const&, CogIdentity identity, std::span<const opcodes_for_t<K>> opcodes,
+[[nodiscard]] constexpr ::fixy::Result<CalibrationResult<K>, CalibrationError>
+calibrate_specific_opcodes(Ctx const&, CogIdentity identity, ::fixy::View<opcodes_for_t<K> const> opcodes,
                            CalibrationPlan = {}) noexcept {
-    auto valid_identity = validate_identity_for<K>(identity);
-    if (!valid_identity.has_value()) {
-        return std::unexpected(valid_identity.error());
+    CRUCIBLE_TRY(_, validate_identity_for<K>(identity));
+    if (opcodes.size() == 0) {
+        return ::fixy::err(CalibrationError::EmptyOpcodeSet);
     }
-    if (opcodes.empty()) {
-        return std::unexpected(CalibrationError::EmptyOpcodeSet);
-    }
-    return std::unexpected(CalibrationError::BackendUnavailable);
+    return ::fixy::err(CalibrationError::BackendUnavailable);
 }
 
 template <CogKind K, class Ctx>
     requires CalibratableCogKind<K> && CtxFitsCalibration<Ctx>
-[[nodiscard]] constexpr std::expected<CalibrationResult<K>, CalibrationError>
+[[nodiscard]] constexpr ::fixy::Result<CalibrationResult<K>, CalibrationError>
 recalibrate_drifted(Ctx const& ctx, CogIdentity identity, DriftSignal drift, CalibrationPlan plan = {}) noexcept {
     if (!should_recalibrate(drift)) {
-        return std::unexpected(CalibrationError::DriftBelowThreshold);
+        return ::fixy::err(CalibrationError::DriftBelowThreshold);
     }
     plan.trigger = CalibrationTrigger::Drift;
     return calibrate_cog<K>(ctx, identity, plan);

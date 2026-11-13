@@ -90,8 +90,8 @@ static void test_latency_quantiles_ordered_construction() {
 static void test_gpu_opcode_table_construction() {
     using Entry = cog::OpcodeLatencyEntry<cog::CogKind::Gpu>;
 
-    // The table's span borrows these rows, so they must outlive it.
-    static constexpr std::array<Entry, 3> rows = {
+    // The table's View borrows these rows, so they must outlive it.
+    static constexpr ::foundation::core::FixedArray<Entry, 3> rows{
         Entry{
             .opcode = cog::GpuOpcode::GemmPlain,
             .size_bucket = cog::SizeBucket::S4096,
@@ -128,7 +128,7 @@ static void test_gpu_opcode_table_construction() {
     };
 
     cog::OpcodeLatencyTable<cog::CogKind::Gpu> table{
-        .entries = calibrated<std::span<const Entry>>(std::span<const Entry>{rows}),
+        .entries = calibrated<::fixy::View<Entry const>>(rows.view()),
         .calibration_age_seconds = ::fixy::Stale<double>::at(12.5, 0),
     };
 
@@ -137,17 +137,16 @@ static void test_gpu_opcode_table_construction() {
     volatile bool empty = table.empty();
     assert(!empty);
 
-    auto found = table.lookup_by_opcode(cog::GpuOpcode::AllReduceRing);
-    assert(found.has_value());
-    assert(found->message_size_bucket == cog::MessageSizeBucket::M4M);
+    auto found = table.lookup_by_opcode(cog::GpuOpcode::AllReduceRing).expect("the table holds an AllReduceRing row");
+    assert(found.message_size_bucket == cog::MessageSizeBucket::M4M);
 
     auto missing = table.lookup_by_opcode(cog::GpuOpcode::Conv2D);
-    assert(!missing.has_value());
+    assert(missing.is_none());
 
     auto fullkey =
-        table.latency_for_size_bucket(cog::GpuOpcode::GemmPlain, cog::SizeBucket::S4096, cog::DtypeBucket::Fp16);
-    assert(fullkey.has_value());
-    assert(fullkey->dtype_bucket == cog::DtypeBucket::Fp16);
+        table.latency_for_size_bucket(cog::GpuOpcode::GemmPlain, cog::SizeBucket::S4096, cog::DtypeBucket::Fp16)
+            .expect("the table holds the Fp16 GEMM row");
+    assert(fullkey.dtype_bucket == cog::DtypeBucket::Fp16);
 
     // Throughput envelope sums both GEMM rows.
     volatile double envelope = table.throughput_envelope(cog::GpuOpcode::GemmPlain);
@@ -157,7 +156,7 @@ static void test_gpu_opcode_table_construction() {
     cog::OpcodeLatencyTable<cog::CogKind::Gpu> empty_table{};
     assert(empty_table.empty());
     assert(empty_table.size() == 0);
-    assert(!empty_table.lookup_by_opcode(cog::GpuOpcode::GemmPlain).has_value());
+    assert(empty_table.lookup_by_opcode(cog::GpuOpcode::GemmPlain).is_none());
 
     // A never-calibrated table must report infinite staleness, not
     // zero.  A zero reading looks fresh to a drift detector, which
@@ -179,7 +178,7 @@ static void test_gpu_opcode_table_construction() {
 static void test_nic_opcode_table_construction() {
     using Entry = cog::OpcodeLatencyEntry<cog::CogKind::NicPort>;
 
-    static constexpr std::array<Entry, 2> rows = {
+    static constexpr ::foundation::core::FixedArray<Entry, 2> rows{
         Entry{
             .opcode = cog::NicOpcode::RdmaWrite,
             .size_bucket = cog::SizeBucket::None,
@@ -205,20 +204,22 @@ static void test_nic_opcode_table_construction() {
     };
 
     cog::OpcodeLatencyTable<cog::CogKind::NicPort> table{
-        .entries = calibrated<std::span<const Entry>>(std::span<const Entry>{rows}),
+        .entries = calibrated<::fixy::View<Entry const>>(rows.view()),
         .calibration_age_seconds = ::fixy::Stale<double>::fresh(0.0),
     };
 
-    auto small = table.latency_for_size_bucket(cog::NicOpcode::RdmaWrite, cog::SizeBucket::None, cog::DtypeBucket::None,
-                                               cog::TransposeMode::Nn, cog::MessageSizeBucket::M64B);
-    assert(small.has_value());
-    volatile auto small_p99 = small->latency.value().p99_ns;
+    auto small = table
+                     .latency_for_size_bucket(cog::NicOpcode::RdmaWrite, cog::SizeBucket::None, cog::DtypeBucket::None,
+                                              cog::TransposeMode::Nn, cog::MessageSizeBucket::M64B)
+                     .expect("the table holds the row of the 64-byte bucket");
+    volatile auto small_p99 = small.latency.value().p99_ns;
     assert(small_p99 == 2500u);
 
-    auto big = table.latency_for_size_bucket(cog::NicOpcode::RdmaWrite, cog::SizeBucket::None, cog::DtypeBucket::None,
-                                             cog::TransposeMode::Nn, cog::MessageSizeBucket::M4M);
-    assert(big.has_value());
-    volatile auto big_p99 = big->latency.value().p99_ns;
+    auto big = table
+                   .latency_for_size_bucket(cog::NicOpcode::RdmaWrite, cog::SizeBucket::None, cog::DtypeBucket::None,
+                                            cog::TransposeMode::Nn, cog::MessageSizeBucket::M4M)
+                   .expect("the table holds the row of the 4 MiB bucket");
+    volatile auto big_p99 = big.latency.value().p99_ns;
     assert(big_p99 == 450000u);
 
     assert(table.calibration_age_seconds.is_fresh());

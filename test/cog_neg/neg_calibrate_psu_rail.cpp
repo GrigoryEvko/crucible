@@ -17,5 +17,5 @@ int main() {
     id.kind = cog::CogKind::PsuRail;
     auto result =
         cog::calibrate_cog<cog::CogKind::PsuRail>(::fixy::ColdInitCtx{::foundation::effects::testing::init()}, id);
-    return result.has_value() ? 0 : 1;
+    return result.is_ok() ? 0 : 1;
 }

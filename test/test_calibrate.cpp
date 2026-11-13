@@ -123,26 +123,23 @@ void test_latency_entry_and_result() {
     assert(entry.sample_count.value() == 1024u);
 
     auto valid_entry = cog::validate_latency_entry(entry);
-    assert(valid_entry.has_value());
+    assert(valid_entry.is_ok());
 
     cog::GpuTargetCaps caps{};
     caps.tflops_fp16 = ::fixy::mint_tagged<::fixy::tags::source::Calibrated, float>(989.0f);
     caps.features.set(cog::GpuFeature::Fp8);
 
-    std::array<cog::OpcodeLatencyEntry<cog::CogKind::Gpu>, 1> rows{entry};
-    auto result =
-        cog::build_calibration_result<cog::CogKind::Gpu>(gpu_identity(), caps, std::span<const decltype(entry)>{rows});
-    assert(result.has_value());
-    assert(result->identity.kind == cog::CogKind::Gpu);
-    assert(result->entry_count.value() == 1u);
-    assert(result->opcode_table.size() == 1u);
-    assert(result->opcode_table.lookup_by_opcode(cog::GpuOpcode::GemmPlain).has_value());
-    assert(result->opcode_table.calibration_age_seconds.is_fresh());
+    ::foundation::core::FixedArray<cog::OpcodeLatencyEntry<cog::CogKind::Gpu>, 1> rows{entry};
+    auto result = cog::build_calibration_result<cog::CogKind::Gpu>(gpu_identity(), caps, rows.view())
+                      .expect("a Gpu identity and one valid row make a result");
+    assert(result.identity.kind == cog::CogKind::Gpu);
+    assert(result.entry_count.value() == 1u);
+    assert(result.opcode_table.size() == 1u);
+    assert(result.opcode_table.lookup_by_opcode(cog::GpuOpcode::GemmPlain).is_some());
+    assert(result.opcode_table.calibration_age_seconds.is_fresh());
 
-    auto mismatched =
-        cog::build_calibration_result<cog::CogKind::Gpu>(nic_identity(), caps, std::span<const decltype(entry)>{rows});
-    assert(!mismatched.has_value());
-    assert(mismatched.error() == cog::CalibrationError::KindMismatch);
+    auto mismatched = cog::build_calibration_result<cog::CogKind::Gpu>(nic_identity(), caps, rows.view());
+    assert(mismatched.err() == ::fixy::some(cog::CalibrationError::KindMismatch));
 
     crucible::test::pass("  test_latency_entry_and_result: PASSED\n");
 }
@@ -164,21 +161,20 @@ void test_nic_result() {
         .sample_count = std::move(samples).expect("4096 samples fit"),
     };
     auto entry = cog::make_latency_entry(sample);
-    std::array<cog::OpcodeLatencyEntry<cog::CogKind::NicPort>, 1> rows{entry};
+    ::foundation::core::FixedArray<cog::OpcodeLatencyEntry<cog::CogKind::NicPort>, 1> rows{entry};
 
     cog::NicPortTargetCaps caps{};
     caps.effective_bandwidth_bytes_per_sec =
         ::fixy::mint_tagged<::fixy::tags::source::Calibrated, std::uint64_t>(6250000000ull);
     caps.features.set(cog::NicFeature::Roce);
 
-    auto result = cog::build_calibration_result<cog::CogKind::NicPort>(nic_identity(), caps,
-                                                                       std::span<const decltype(entry)>{rows});
-    assert(result.has_value());
-    auto found = result->opcode_table.latency_for_size_bucket(cog::NicOpcode::RdmaWrite, cog::SizeBucket::None,
-                                                              cog::DtypeBucket::None, cog::TransposeMode::Nn,
-                                                              cog::MessageSizeBucket::M64B);
-    assert(found.has_value());
-    assert(found->latency.value().p99_ns == 2500u);
+    auto result = cog::build_calibration_result<cog::CogKind::NicPort>(nic_identity(), caps, rows.view())
+                      .expect("a NicPort identity and one valid row make a result");
+    auto found = result.opcode_table
+                     .latency_for_size_bucket(cog::NicOpcode::RdmaWrite, cog::SizeBucket::None, cog::DtypeBucket::None,
+                                              cog::TransposeMode::Nn, cog::MessageSizeBucket::M64B)
+                     .expect("the table holds the row of the 64-byte bucket");
+    assert(found.latency.value().p99_ns == 2500u);
 
     crucible::test::pass("  test_nic_result: PASSED\n");
 }
@@ -188,27 +184,21 @@ eff::BgDrainCtx bg_ctx() { return eff::BgDrainCtx{testing::bg()}; }
 
 void test_backend_boundaries() {
     auto init = cog::calibrate_cog<cog::CogKind::Gpu>(init_ctx(), gpu_identity());
-    assert(!init.has_value());
-    assert(init.error() == cog::CalibrationError::BackendUnavailable);
+    assert(init.err() == ::fixy::some(cog::CalibrationError::BackendUnavailable));
 
     auto bg = cog::calibrate_cog<cog::CogKind::Gpu>(bg_ctx(), gpu_identity());
-    assert(!bg.has_value());
-    assert(bg.error() == cog::CalibrationError::BackendUnavailable);
+    assert(bg.err() == ::fixy::some(cog::CalibrationError::BackendUnavailable));
 
     auto wrong_kind = cog::calibrate_cog<cog::CogKind::Gpu>(init_ctx(), nic_identity());
-    assert(!wrong_kind.has_value());
-    assert(wrong_kind.error() == cog::CalibrationError::KindMismatch);
+    assert(wrong_kind.err() == ::fixy::some(cog::CalibrationError::KindMismatch));
 
-    std::array<cog::GpuOpcode, 1> opcodes{cog::GpuOpcode::GemmPlain};
-    auto specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(init_ctx(), gpu_identity(),
-                                                                       std::span<const cog::GpuOpcode>{opcodes});
-    assert(!specific.has_value());
-    assert(specific.error() == cog::CalibrationError::BackendUnavailable);
+    ::foundation::core::FixedArray<cog::GpuOpcode, 1> opcodes{cog::GpuOpcode::GemmPlain};
+    auto specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(init_ctx(), gpu_identity(), opcodes.view());
+    assert(specific.err() == ::fixy::some(cog::CalibrationError::BackendUnavailable));
 
     auto empty_specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(init_ctx(), gpu_identity(),
-                                                                             std::span<const cog::GpuOpcode>{});
-    assert(!empty_specific.has_value());
-    assert(empty_specific.error() == cog::CalibrationError::EmptyOpcodeSet);
+                                                                             ::fixy::View<cog::GpuOpcode const>{});
+    assert(empty_specific.err() == ::fixy::some(cog::CalibrationError::EmptyOpcodeSet));
 
     crucible::test::pass("  test_backend_boundaries: PASSED\n");
 }
@@ -220,8 +210,7 @@ void test_drift_gate() {
     };
     assert(!cog::should_recalibrate(below));
     auto below_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(bg_ctx(), gpu_identity(), below);
-    assert(!below_result.has_value());
-    assert(below_result.error() == cog::CalibrationError::DriftBelowThreshold);
+    assert(below_result.err() == ::fixy::some(cog::CalibrationError::DriftBelowThreshold));
 
     cog::DriftSignal above{
         .observed_drift_bps = cog::admit_drift_basis_points(1200).expect("1200 basis points fit"),
@@ -229,8 +218,7 @@ void test_drift_gate() {
     };
     assert(cog::should_recalibrate(above));
     auto above_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(bg_ctx(), gpu_identity(), above);
-    assert(!above_result.has_value());
-    assert(above_result.error() == cog::CalibrationError::BackendUnavailable);
+    assert(above_result.err() == ::fixy::some(cog::CalibrationError::BackendUnavailable));
 
     crucible::test::pass("  test_drift_gate: PASSED\n");
 }
