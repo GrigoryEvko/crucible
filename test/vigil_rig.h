@@ -67,6 +67,8 @@ void test_divergence_drops_a_half_finished_alignment();
 void test_rollback_drops_the_region_in_the_slot();
 void test_rollback_closes_an_open_alignment();
 void test_region_store_stays_bounded();
+void test_divergence_leaves_no_stale_active_region();
+void test_same_region_keeps_the_alignment();
 
 // The producer role and its surface (test_vigil_producer.cpp).
 void test_record_op_claims_the_producer_role();

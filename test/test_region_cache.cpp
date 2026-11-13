@@ -114,17 +114,17 @@ void test_cache_dedup_and_cap() {
     auto* region = make_region(test.alloc, arena, nullptr, 0);
     region->content_hash = ContentHash{0x1234};
 
-    cache.insert(region);
+    cache.insert(*region);
     assert(cache.size() == 1);
 
     // One content hash occupies one slot however often it is inserted.
-    cache.insert(region);
+    cache.insert(*region);
     assert(cache.size() == 1);
 
     for (uint32_t i = 1; i < RegionCache::CAP; i++) {
         auto* r = make_region(test.alloc, arena, nullptr, 0);
         r->content_hash = ContentHash{0x1234 + i};
-        cache.insert(r);
+        cache.insert(*r);
     }
     assert(cache.size() == RegionCache::CAP);
 
@@ -132,13 +132,13 @@ void test_cache_dedup_and_cap() {
     // growing.
     auto* overflow = make_region(test.alloc, arena, nullptr, 0);
     overflow->content_hash = ContentHash{0xFFFF};
-    cache.insert(overflow);
+    cache.insert(*overflow);
     assert(cache.size() == RegionCache::CAP);
 
-    assert(cache.find(ContentHash{0xFFFF}) != nullptr);
+    assert(cache.find(ContentHash{0xFFFF}).has_value());
 
     // 0x1234 went in first, so it is the one that leaves.
-    assert(cache.find(ContentHash{0x1234}) == nullptr);
+    assert(!cache.find(ContentHash{0x1234}).has_value());
 
     crucible::test::pass("  test_cache_dedup_and_cap: PASSED\n");
 }
@@ -172,15 +172,15 @@ void test_find_alternate_tracks_live_plan() {
     auto* region = make_region(test.alloc, arena, ops, 2);
     assert(region->plan == nullptr);
 
-    cache.insert(region);
+    cache.insert(*region);
     assert(cache.size() == 1);
-    assert(cache.find(region->content_hash) == region
+    assert(cache.find(region->content_hash).try_get() == region
            && "a planless region is still cached and still findable by hash");
 
     // Not eligible to switch to: without a plan the context cannot enter
     // compiled mode, so offering it would strand the caller.
-    assert(cache.find_alternate(0, ops[0].schema_hash, ops[0].shape_hash) == nullptr);
-    assert(cache.find_alternate(1, ops[1].schema_hash, ops[1].shape_hash) == nullptr);
+    assert(!cache.find_alternate(0, ops[0].schema_hash, ops[0].shape_hash).has_value());
+    assert(!cache.find_alternate(1, ops[1].schema_hash, ops[1].shape_hash).has_value());
 
     // The plan arrives after the insert. No second call into the cache.
     TensorSlot slots[1]{};
@@ -195,18 +195,19 @@ void test_find_alternate_tracks_live_plan() {
     plan->pool_bytes = 4096;
     region->plan = plan;
 
-    assert(cache.find_alternate(0, ops[0].schema_hash, ops[0].shape_hash) == region
+    assert(cache.find_alternate(0, ops[0].schema_hash, ops[0].shape_hash).try_get() == region
            && "a region cached before its plan existed stayed unfindable after the plan "
               "arrived: find_alternate is reading an insert-time snapshot again, and the "
               "repair path for it has no caller");
-    assert(cache.find_alternate(1, ops[1].schema_hash, ops[1].shape_hash) == region);
+    assert(cache.find_alternate(1, ops[1].schema_hash, ops[1].shape_hash).try_get() == region);
 
     // The position bound now means one thing: how many ops the region has.
-    assert(cache.find_alternate(2, ops[1].schema_hash, ops[1].shape_hash) == nullptr);
+    assert(!cache.find_alternate(2, ops[1].schema_hash, ops[1].shape_hash).has_value());
     // A matching position with the wrong shape is still a miss.
-    assert(cache.find_alternate(0, ops[0].schema_hash, ShapeHash{0xDEAD}) == nullptr);
+    assert(!cache.find_alternate(0, ops[0].schema_hash, ShapeHash{0xDEAD}).has_value());
     // And exclude still excludes.
-    assert(cache.find_alternate(0, ops[0].schema_hash, ops[0].shape_hash, region) == nullptr);
+    assert(!cache.find_alternate(0, ops[0].schema_hash, ops[0].shape_hash, ::fixy::WeakRef<const RegionNode>{*region})
+                .has_value());
 
     crucible::test::pass("  test_find_alternate_tracks_live_plan: PASSED\n");
 }

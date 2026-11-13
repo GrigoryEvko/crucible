@@ -58,13 +58,15 @@ struct BackgroundThread {
     using DeviceCapability = ::fixy::Tagged<uint64_t, ::fixy::tags::source::Meridian>;
     DeviceCapability device_capability{};
 
-    // Written by the background thread, read by the foreground.  The
-    // store(release) publishes the region data written before it, and the
-    // foreground's load(acquire) must see that data.  Relaxed would let the
-    // foreground dereference a pointer to a region with garbage fields.
+    // The last published region.  The publish stage writes it, and a reader
+    // on another thread loads it.  The store(release) publishes the region
+    // data written before it, and the reader's load(acquire) must see that
+    // data.  Relaxed would let the reader dereference a pointer to a region
+    // with garbage fields.  The owner of the pipeline gives its foreground
+    // the region through its own slot, which carries the reset point.
     //
-    // Own cache line, because the foreground reads it while the background
-    // writes the fields that follow.
+    // Own cache line, because a reader reads it while the background writes
+    // the fields that follow.
     alignas(64) std::atomic<RegionNode*> active_region{nullptr};
 
     // A point of the recorded op stream, and the kind of the reset at it.
@@ -351,6 +353,15 @@ public:
     // while the detect stage writes it, so the counter is atomic.
     alignas(64)::fixy::AtomicMonotonic<uint32_t> iterations_completed = ::fixy::mint_atomic_monotonic<uint32_t>(0);
 
+    // The count of work items that the build stage built.  It skips each
+    // work cut before the requested reset.  The foreground reads the count
+    // for diagnostics.
+    [[nodiscard]] uint64_t works_built() const noexcept { return works_built_.get(); }
+
+private:
+    // The build stage is the one writer.
+    ::fixy::AtomicMonotonic<uint64_t> works_built_ = ::fixy::mint_atomic_monotonic<uint64_t>(0);
+
 public:
     // The parts of one built region, each in a buffer of the exact count.
     // The build stage makes them, a message moves them to the publish stage,
@@ -442,7 +453,7 @@ private:
     // The memory of each live region, in the slots of a fixed table.  Only
     // the publish stage reads and writes it.  The sweep after each publish
     // releases each region that no holder names.  The holders name at most
-    // 64 + 16 + 10 + 2 regions, so the table keeps a margin.  A foreground
+    // 64 + 16 + 11 + 2 regions, so the table keeps a margin.  A foreground
     // that never gets a region writes no holders, and its regions stay.  A
     // publish into a full table then discards its region and counts it.
     static constexpr uint32_t REGION_STORE_CAP = 128;

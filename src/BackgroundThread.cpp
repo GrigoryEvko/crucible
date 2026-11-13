@@ -524,12 +524,15 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
             continue;
         }
 
-        // A stale work item is still built here.  The publish stage drops
-        // its region, and that one check also catches a reset requested
-        // while the build stage is mid-graph.  The cost is one wasted build
-        // per in-flight region per divergence, on a path that only runs when
-        // replay has already failed.
-        //
+        // A work cut before the requested reset holds ops recorded before
+        // it, so its region would be stale, and the build stage skips it.
+        // The publish stage checks the region again, because a request can
+        // come while the build stage is mid-graph.  The commit markers carry
+        // the floor of the metadata log, so a skipped work releases nothing
+        // of its own.
+        if (work->reset_point != owner->requested_reset()) continue;
+        (void)owner->works_built_.bump();
+
         // One epoch of the build scratch covers this work item.  The graph
         // and its CSR arrays die at its end.  The region does not point
         // into the scratch, so its parts go on alone.
@@ -709,16 +712,20 @@ void BackgroundThread::ensure_scratch_buffers(uint32_t total_inputs, uint32_t to
     // Power-of-two capacity at a load factor below one half.  The unique
     // pointer count is the output count plus a small external fraction.
     uint32_t raw_map_size =
-        std::max(MIN_PTR_MAP_CAP,
-                 ::foundation::sat::mul_sat(::foundation::sat::add_sat(total_outputs, uint32_t{256}), uint32_t{2}));
-    uint32_t needed_map = (raw_map_size >= MAX_PTR_MAP_CAP) ? MAX_PTR_MAP_CAP : std::bit_ceil(raw_map_size);
+        ::fixy::max(MIN_PTR_MAP_CAP,
+                    ::foundation::sat::mul_sat(::foundation::sat::add_sat(total_outputs, uint32_t{256}), uint32_t{2}));
+    uint32_t needed_map =
+        (raw_map_size >= MAX_PTR_MAP_CAP)
+            ? MAX_PTR_MAP_CAP
+            : ::fixy::bit_ceil(raw_map_size).expect("a size below MAX_PTR_MAP_CAP has a power of two in 32 bits");
 
     // Unique storages are bounded by the outputs plus external headroom.
-    uint32_t needed_slots = std::max(MIN_SCRATCH_SLOT_CAP, ::foundation::sat::add_sat(total_outputs, uint32_t{1024}));
+    uint32_t needed_slots =
+        ::fixy::max(MIN_SCRATCH_SLOT_CAP, ::foundation::sat::add_sat(total_outputs, uint32_t{1024}));
 
     // Data-flow edges are bounded by the inputs, alias edges by the
     // outputs.
-    uint32_t needed_edges = std::max(MIN_SCRATCH_EDGE_CAP, ::foundation::sat::add_sat(total_inputs, total_outputs));
+    uint32_t needed_edges = ::fixy::max(MIN_SCRATCH_EDGE_CAP, ::foundation::sat::add_sat(total_inputs, total_outputs));
 
     if (needed_map > map_cap_.get()) {
         map_cap_.advance(needed_map);
@@ -769,7 +776,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
         }
         total_inputs += re.num_inputs;
         total_outputs += re.num_outputs;
-        total_scalars += std::min(re.num_scalar_args, uint16_t(5));
+        total_scalars += ::fixy::min(re.num_scalar_args, uint16_t{5});
     }
 
     ensure_scratch_buffers(total_inputs, total_outputs);
@@ -826,7 +833,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
     }
 
     // Value-initialize only the portion this call uses.
-    uint32_t slot_cap = std::min(slot_cap_max_.get(), std::max(uint32_t{256}, total_inputs + total_outputs));
+    uint32_t slot_cap = ::fixy::min(slot_cap_max_.get(), ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
     std::fill_n(scratch_slots_.data(), slot_cap, SlotInfo{});
     uint32_t next_slot_raw = 0;
 
@@ -901,7 +908,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
         // and the clamp on the next line stands in where contracts
         // compile out.
         contract_assert(re.num_scalar_args <= 5);
-        uint16_t n_scalars = std::min(re.num_scalar_args, uint16_t(5));
+        uint16_t n_scalars = ::fixy::min(re.num_scalar_args, uint16_t{5});
         te.num_scalar_args = n_scalars;
 
         if (ms.is_valid()) {
@@ -1028,7 +1035,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
                     slot_info.death_op = std::max(slot_info.death_op, OpIndex{i});
                     const uint64_t output_nbytes =
                         compute_storage_nbytes_det(external_tensor_meta(te.output_metas[j])).peek().value();
-                    slot_info.nbytes = std::max(slot_info.nbytes, output_nbytes);
+                    slot_info.nbytes = ::fixy::max(slot_info.nbytes, output_nbytes);
                 }
                 if (result.old_op.is_valid()) {
                     // Same bound as the data-flow edge above, and armed
@@ -1061,7 +1068,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::ef
         }
     }
 
-    uint32_t num_slots = std::min(next_slot_raw, slot_cap);
+    uint32_t num_slots = ::fixy::min(next_slot_raw, slot_cap);
     ::foundation::AlignedBuffer<TensorSlot> slots =
         ::foundation::AlignedBuffer<TensorSlot>::allocate_value_initialized(num_slots);
     if (num_slots > 0) {

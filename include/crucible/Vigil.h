@@ -48,7 +48,6 @@
 #include <fixy/Stale.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
-#include <fixy/handle/PublishOnce.h>
 #include <fixy/session/VigilModeCell.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
@@ -276,13 +275,12 @@ public:
             return {.action = DispatchResult::Action::COMPILED, .status = status, .pad = {}, .op_index = OpIndex{}};
         }
 
-        // The acquire observe pairs with the release publish on the
-        // background thread, so every byte of the region it wrote before
-        // that store is visible here.  A relaxed load could miss the store
-        // for one op and record it instead of aligning, which costs an extra
-        // op before alignment completes.
-        auto* pending = pending_region_.observe();
-        if (pending || pending_activation_) [[unlikely]]
+        // The acquire load pairs with the release store on the background
+        // thread, so every byte of the region it wrote before that store is
+        // visible here.  A relaxed load could miss the store for one op and
+        // record it instead of aligning, which costs an extra op before
+        // alignment completes.
+        if (pending_region_.load_acquire().is_some() || pending_activation_) [[unlikely]]
             return dispatch_transition_(fg, ve, metas, n_metas, scope_hash, callsite_hash);
 
         (void)record_op(ve, metas, n_metas, scope_hash, callsite_hash);
@@ -353,22 +351,28 @@ public:
     // dispatch and aligns to it before replay can start, so this is true
     // earlier than is_compiled.  The acquire load pairs with the release
     // publish, and flush() orders that publish before it returns.
-    [[nodiscard]] bool has_pending_region() const noexcept { return pending_region_.has_pending(); }
+    [[nodiscard]] bool has_pending_region() const noexcept { return pending_region_.load_acquire().is_some(); }
 
-    // A caller can read the region while it is the last published region.
-    // After that, the caller can read it until the producer thread next gets
-    // a region, diverges, does a rollback or loads.  Each of those writes the
-    // regions that the foreground holds, and the publish stage can then
-    // release the region.
-    [[nodiscard]] const RegionNode* active_region() const noexcept {
-        return bg_.active_region.load(std::memory_order_acquire);
-    }
+    // The newest region of the Vigil: the region in the publication slot when
+    // its reset point is the requested point, or else the region that the
+    // producer thread took last.  The producer takes the region of the slot
+    // at a dispatch, and the region of a rollback or a load.  A region in the
+    // slot is newer than the region that the producer took: a take empties
+    // the slot, and the mark of a rollback or a load makes the region in the
+    // slot stale.  So the result names no region that a reset made stale.
+    //
+    // A caller can read the region while the slot holds it or the producer
+    // has it.  After that, the caller can read it until the producer thread
+    // next gets a region, diverges, does a rollback or loads.  Each of those
+    // writes the regions that the foreground holds, and the publish stage can
+    // then release the region.
+    [[nodiscard]] const RegionNode* active_region() const noexcept { return newest_region_(); }
 
-    // The background thread published a writable region.  replay needs that
-    // writable view, because the caller's execution lambda mutates the
-    // region as it writes outputs.  The const accessor above serves
-    // introspection, and its rule for a read of the region applies here too.
-    [[nodiscard]] RegionNode* active_region_mut() noexcept { return bg_.active_region.load(std::memory_order_acquire); }
+    // replay needs a writable view, because the caller's execution lambda
+    // mutates the region as it writes outputs.  The const accessor above
+    // serves introspection, and its rule for a read of the region applies
+    // here too.
+    [[nodiscard]] RegionNode* active_region_mut() noexcept { return newest_region_(); }
 
     // Advanced only by the background thread, once per region transition.
     [[nodiscard]] uint64_t current_step() const noexcept { return step_.get(); }
@@ -587,6 +591,16 @@ private:
         return producer_claim_.mint_producer_context();
     }
 
+    // The body of active_region.  The producer thread is the one writer of
+    // the requested reset, so on that thread the comparison cannot race it.
+    [[nodiscard]] RegionNode* newest_region_() const noexcept {
+        const PendingRegion pending = pending_region_.load_acquire();
+        for (const auto& published : pending) {
+            if (published->reset_point == bg_.requested_reset()) return published->region;
+        }
+        return taken_region_.load_acquire();
+    }
+
     // The store parts of persist and load.  The store is a template
     // parameter, so each member of the store resolves where a caller
     // instantiates persist or load, and this header needs only the
@@ -630,18 +644,19 @@ private:
     [[gnu::cold]] void adopt_region_(VigilFgCtx const& fg, RegionNode& region);
 
     // Writes the regions that the foreground holds into held_regions_: the
-    // region of the alignment walk, the region of the replay context and the
-    // regions of the cache.  After the call, the foreground reads no other
-    // region than these and the last published region.  Runs on the
-    // producer thread at the end of each cold path that can change one of
-    // these holders.
+    // region of the alignment walk, the region of the replay context, the
+    // region that the producer took last and the regions of the cache.
+    // After the call, the foreground reads no other region than these and
+    // the last published region.  Runs on the producer thread at the end of
+    // each cold path that can change one of these holders.
     [[gnu::cold]] void publish_held_regions_() noexcept {
         const uint64_t before = held_regions_.sequence.load_acquire();
         held_regions_.sequence.store_release(before + 1);
         held_regions_.cells[0].store_release(pending_activation_);
         held_regions_.cells[1].store_release(replay_.context().active_region());
+        held_regions_.cells[2].store_release(taken_region_.load_acquire());
         for (uint32_t age = 0; age < RegionCache::CAP; ++age) {
-            held_regions_.cells[2 + age].store_release(region_cache_.region_at(age).try_get());
+            held_regions_.cells[3 + age].store_release(region_cache_.region_at(age).try_get());
         }
         held_regions_.sequence.store_release(before + 2);
     }
@@ -711,13 +726,16 @@ private:
         alignment_pos_ = alignment_pos_at(0);
         alignment_ops_ = 0;
 
-        region_cache_.insert(replay_.context().active_region());
+        // The context is compiled, so it replays a region.
+        const auto diverged = ::fixy::WeakRef<const RegionNode>::from_raw(replay_.context().active_region());
+        region_cache_.insert(diverged.get());
 
         // Look for a cached region that matches at the divergence position,
         // excluding the current one.
-        auto* alt = region_cache_.find_alternate(div_pos, schema_hash, shape_hash, replay_.context().active_region());
+        const ::fixy::WeakRef<const RegionNode> alt =
+            region_cache_.find_alternate(div_pos, schema_hash, shape_hash, diverged);
 
-        if (alt && try_switch_region_(fg, alt, div_pos)) {
+        if (alt.has_value() && try_switch_region_(fg, alt.get(), div_pos)) {
             // The switch leaves the context compiled, so advance past the
             // divergent op.
             auto compiled_view = replay_.context().mint_compiled_view(fg);
@@ -755,11 +773,11 @@ private:
                          uint32_t n_metas, ScopeHash scope_hash, CallsiteHash callsite_hash) {
         CRUCIBLE_PRE(ve.value() != nullptr);
         const TraceRing::Entry& entry = *ve.value();
-        // A newer region arriving mid-alignment replaces the pending one and
-        // restarts the alignment from zero.  That is correct: the newer
-        // region can carry different ops, for instance after a divergence
-        // recovery cycle, so the old partial match means nothing.
-        if (pending_region_.observe()) consume_pending_region_();
+        // A newer region arriving mid-alignment replaces the pending one.  A
+        // region with other ops restarts the alignment from zero, because
+        // the old partial match means nothing for it.  A region with the same
+        // ops keeps the walk (take_published_region_).
+        if (pending_region_.load_acquire().is_some()) consume_pending_region_();
 
         if (pending_activation_) {
             // Nothing is recorded during alignment, because it would create
@@ -778,7 +796,9 @@ private:
     // Moves the region in the slot to the cache, for a caller that knows that
     // each region the slot can hold is stale.
     [[gnu::cold]] void cache_pending_region_() {
-        if (const auto* stale_pending = pending_region_.consume()) region_cache_.insert(stale_pending->region);
+        const PendingRegion stale = pending_region_.exchange_acq_rel(::fixy::none);
+        for (const auto& published : stale)
+            region_cache_.insert(*published->region);
     }
 
     // Moves the published region into foreground-only alignment state.  It
@@ -789,20 +809,47 @@ private:
     // out just before the request, so the check runs here too.  The region
     // goes to the cache, as in handle_divergence_, and an open alignment
     // keeps its state.  The foreground is the one writer of the request, so
-    // this read cannot race it.
+    // this read cannot race it.  A region that is not stale is the region
+    // that the producer took last (active_region).
     [[gnu::cold]] void consume_pending_region_() {
-        const auto* published = pending_region_.consume();
-        if (!published) return;
-        RegionNode* const region = published->region;
-        if (published->reset_point != bg_.requested_reset()) {
-            region_cache_.insert(region);
+        const PendingRegion consumed = pending_region_.exchange_acq_rel(::fixy::none);
+        for (const auto& published : consumed)
+            take_published_region_(*published);
+    }
+
+    [[gnu::cold]] void take_published_region_(BackgroundThread::PublishedRegion const& published) {
+        if (published.reset_point != bg_.requested_reset()) {
+            region_cache_.insert(*published.region);
             return;
         }
-        if (region->num_ops == 0) return;
+        taken_region_.store_release(published.region);
+        if (published.region->num_ops == 0) return;
 
-        pending_activation_ = region;
+        // A newer region that holds the ops of an open walk takes the walk
+        // over, and the walk keeps its position.  The background publishes
+        // a region at each iteration boundary of a backlog, and each one has
+        // the same ops, so a restart at each one would lose the matched ops.
+        const bool continues_walk = pending_activation_ != nullptr
+                                 && holds_walk_(*pending_activation_, *published.region, alignment_pos_.value());
+        pending_activation_ = published.region;
+        if (continues_walk) return;
         alignment_pos_ = alignment_pos_at(0);
         alignment_ops_ = 0;
+    }
+
+    // True when newer holds the ops that a walk of pos ops into walked
+    // matched, so the walk can go on in newer: the two regions have the same
+    // content and op count, and their first pos ops are equal.  O(K) for
+    // K = ALIGNMENT_K.
+    [[nodiscard, gnu::cold]] static bool holds_walk_(const RegionNode& walked, const RegionNode& newer,
+                                                     uint8_t pos) noexcept {
+        if (walked.content_hash != newer.content_hash || walked.num_ops != newer.num_ops) return false;
+        for (uint32_t i = 0; i < pos; ++i) {
+            if (walked.ops[i].schema_hash != newer.ops[i].schema_hash
+                || walked.ops[i].shape_hash != newer.ops[i].shape_hash)
+                return false;
+        }
+        return true;
     }
 
     // A sliding-window match against the region's first K ops.
@@ -846,8 +893,8 @@ private:
                 return;
             }
 
-            register_externals_from_region_(fg, region);
-            region_cache_.insert(region);
+            register_externals_from_region_(fg, *region);
+            region_cache_.insert(*region);
 
             // The matched ops already executed eagerly, so the engine has
             // to skip them for the next op to check against the right entry.
@@ -879,7 +926,7 @@ private:
         // the two.  So the ops that the alignment did not record cannot put
         // into a region a sequence that the stream does not hold.
         if (alignment_ops_ >= alignment_bound(region->num_ops)) {
-            region_cache_.insert(region);
+            region_cache_.insert(*region);
             pending_activation_ = nullptr;
             alignment_pos_ = alignment_pos_at(0);
         }
@@ -910,17 +957,17 @@ private:
 
     // Walks the region's ops to recover each external slot's data pointer
     // from the recorded tensor metadata.  Runs once per activation.
-    [[gnu::cold]] void register_externals_from_region_(VigilFgCtx const& fg, const RegionNode* region) {
-        if (!region->plan) return;
+    [[gnu::cold]] void register_externals_from_region_(VigilFgCtx const& fg, const RegionNode& region) {
+        if (!region.plan) return;
 
-        for (uint32_t slot_idx = 0; slot_idx < region->plan->num_slots; slot_idx++) {
-            if (!region->plan->slots[slot_idx].is_external) continue;
+        for (uint32_t slot_idx = 0; slot_idx < region.plan->num_slots; slot_idx++) {
+            if (!region.plan->slots[slot_idx].is_external) continue;
 
-            SlotId target = region->plan->slots[slot_idx].slot_id;
+            SlotId target = region.plan->slots[slot_idx].slot_id;
             void* ptr = nullptr;
 
-            for (uint32_t i = 0; i < region->num_ops && !ptr; i++) {
-                const auto& te = region->ops[i];
+            for (uint32_t i = 0; i < region.num_ops && !ptr; i++) {
+                const auto& te = region.ops[i];
                 if (!te.input_slot_ids) continue;
                 for (uint16_t j = 0; j < te.num_inputs; j++) {
                     if (te.input_slot_ids[j] == target) {
@@ -942,38 +989,33 @@ private:
     // Verifies the prefix match, then delegates the pool detach, the slot
     // migration and the engine advance.  Returns true when the switch
     // succeeded and the engine sits at div_pos.
-    [[nodiscard, gnu::cold]] bool try_switch_region_(VigilFgCtx const& fg, const RegionNode* alt, uint32_t div_pos) {
-        CRUCIBLE_PRE(alt != nullptr);
-        if (!alt->plan) return false;
+    [[nodiscard, gnu::cold]] bool try_switch_region_(VigilFgCtx const& fg, const RegionNode& alt, uint32_t div_pos) {
+        if (!alt.plan) return false;
 
         // Every op before the divergence point must carry an identical
         // schema and shape in both regions.
         if (div_pos > 0) {
-            const auto* old_region = replay_.context().active_region();
-            // Debug-only: a divergence position above zero can only come
-            // from a compiled context, which by construction holds an active
-            // region. The loop below reads old_region->ops, so a release
-            // build faults on the null rather than continuing past it.
-            CRUCIBLE_DEBUG_ASSERT(old_region != nullptr);
+            // A divergence position above zero comes from a compiled
+            // context, which holds an active region.  get() checks it.
+            const RegionNode& old_region =
+                ::fixy::WeakRef<const RegionNode>::from_raw(replay_.context().active_region()).get();
 
-            if (div_pos > alt->num_ops) return false;
+            if (div_pos > alt.num_ops) return false;
 
             for (uint32_t i = 0; i < div_pos; i++) {
-                if (old_region->ops[i].schema_hash != alt->ops[i].schema_hash
-                    || old_region->ops[i].shape_hash != alt->ops[i].shape_hash)
+                if (old_region.ops[i].schema_hash != alt.ops[i].schema_hash
+                    || old_region.ops[i].shape_hash != alt.ops[i].shape_hash)
                     return false;
             }
         }
 
-        if (!replay_.switch_region(*alt, div_pos)) return false;
+        if (!replay_.switch_region(alt, div_pos)) return false;
         register_externals_from_region_(fg, alt);
-        // These hold only on the success path; every failure returns above.
-        // Pinning them here catches a refactor that skips the publication or
+        // This holds only on the success path; every failure returns above.
+        // Pinning it here catches a refactor that skips the publication or
         // publishes the wrong region, which would otherwise keep dispatching
-        // against the stale one.  Under NDEBUG they become assumptions the
-        // next dispatch can speculate on.
-        CRUCIBLE_POST(0, alt != nullptr);
-        CRUCIBLE_POST(0, replay_.context().active_region() == alt);
+        // against the stale one.
+        CRUCIBLE_POST(0, replay_.context().active_region() == &alt);
         return true;
     }
 
@@ -1000,13 +1042,21 @@ private:
     ::fixy::AtomicMonotonic<uint64_t> step_ = ::fixy::mint_atomic_monotonic<uint64_t>(0);
     Arena load_arena_{1 << 20};
 
-    // The publication is release on the background side and acquire on the
-    // foreground side, so the region data written before the publish is
-    // visible after the observe.  It is a reusable latest-wins slot rather
-    // than a publish-once cell because divergence recovery publishes
-    // several regions over one process lifetime.  The slot holds the record
-    // of the region in the region store, which carries its reset point.
-    ::fixy::handle::PublishSlot<const BackgroundThread::PublishedRegion> pending_region_;
+    // The publication slot: the region that the publish stage gave to the
+    // foreground and that the foreground did not take yet.  The store is
+    // release on the background side and the load is acquire on the
+    // foreground side, so the region data written before the store is
+    // visible after the load.  It is a reusable latest-wins slot rather than
+    // a publish-once cell because divergence recovery publishes several
+    // regions over one process lifetime.  The slot holds the record of the
+    // region in the region store, which carries its reset point.  It has its
+    // own cache line, because the publish stage writes it while the
+    // foreground reads its neighbours.
+    using PendingRegion = ::fixy::Option<::fixy::Ref<const BackgroundThread::PublishedRegion>>;
+    alignas(64)::fixy::Atomic<PendingRegion> pending_region_{};
+    // The region that the producer thread took last (active_region).  Only
+    // the producer thread writes it, and a reader on another thread loads it.
+    ::fixy::Atomic<RegionNode*> taken_region_{};
     // The five below are foreground-only.
     RegionNode* pending_activation_{nullptr};
     AlignmentPos alignment_pos_ = alignment_pos_at(0);
@@ -1048,7 +1098,7 @@ private:
         // Moves the replay to alt at div_pos.  The context stays compiled,
         // so the mode does not change.
         [[nodiscard]] bool switch_region(const RegionNode& alt, uint32_t div_pos) {
-            return ctx_.switch_region(&alt, div_pos);
+            return ctx_.switch_region(alt, div_pos);
         }
 
         [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash,
@@ -1078,7 +1128,7 @@ private:
     // write adds two.  The publish stage reads the cells between two equal
     // even values of the sequence.
     struct HeldRegions {
-        static constexpr uint32_t CAP = 2 + RegionCache::CAP;
+        static constexpr uint32_t CAP = 3 + RegionCache::CAP;
         ::fixy::Atomic<uint64_t> sequence{};
         ::fixy::FixedArray<::fixy::Atomic<const RegionNode*>, CAP> cells{};
     };

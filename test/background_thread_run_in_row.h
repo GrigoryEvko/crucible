@@ -28,6 +28,7 @@ void test_rearm_cycle();
 void test_reset_drops_inflight_regions();
 void test_reset_applies_at_its_point();
 void test_mark_keeps_an_unapplied_restart();
+void test_reset_skips_the_stale_backlog();
 void test_published_regions_keep_their_hashes();
 void test_long_run_keeps_its_scratch();
 

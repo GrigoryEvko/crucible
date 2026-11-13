@@ -76,7 +76,7 @@ int main() {
         bench::run("insert: cold (empty cache)",
                    [&] {
                        RegionCache cache;
-                       cache.insert(fix.regions[0]);
+                       cache.insert(*fix.regions[0]);
                        bench::do_not_optimize(cache);
                    }),
 
@@ -84,9 +84,9 @@ int main() {
         // short-circuits the scan.
         [&] {
             RegionCache cache;
-            cache.insert(fix.regions[0]);
+            cache.insert(*fix.regions[0]);
             return bench::run("insert: dedup (same region)", [&] {
-                cache.insert(fix.regions[0]);
+                cache.insert(*fix.regions[0]);
                 bench::do_not_optimize(cache);
             });
         }(),
@@ -97,11 +97,11 @@ int main() {
         [&] {
             RegionCache cache;
             for (uint32_t i = 0; i < RegionCache::CAP; i++)
-                cache.insert(fix.regions[i]);
+                cache.insert(*fix.regions[i]);
             return bench::run("insert: steady (8 entries, new)", [&] {
-                cache.insert(fix.regions[8]);
+                cache.insert(*fix.regions[8]);
                 bench::do_not_optimize(cache);
-                cache.insert(fix.regions[0]);
+                cache.insert(*fix.regions[0]);
             });
         }(),
 
@@ -110,13 +110,13 @@ int main() {
         [&] {
             RegionCache cache;
             for (uint32_t i = 0; i < RegionCache::CAP; i++)
-                cache.insert(fix.regions[i]);
+                cache.insert(*fix.regions[i]);
             const uint32_t pos = 5;
             const auto schema = fix.regions[7]->ops[pos].schema_hash;
             const auto shape = fix.regions[7]->ops[pos].shape_hash;
             const RegionNode* excl = fix.regions[6];
             return bench::run("find_alternate: hit MRU (i=0)", [&] {
-                auto* r = cache.find_alternate(pos, schema, shape, excl);
+                auto r = cache.find_alternate(pos, schema, shape, ::fixy::WeakRef<const RegionNode>::from_raw(excl));
                 bench::do_not_optimize(r);
             });
         }(),
@@ -125,13 +125,13 @@ int main() {
         [&] {
             RegionCache cache;
             for (uint32_t i = 0; i < RegionCache::CAP; i++)
-                cache.insert(fix.regions[i]);
+                cache.insert(*fix.regions[i]);
             const uint32_t pos = 5;
             const auto schema = fix.regions[0]->ops[pos].schema_hash;
             const auto shape = fix.regions[0]->ops[pos].shape_hash;
             const RegionNode* excl = fix.regions[7];
             return bench::run("find_alternate: hit LRU (i=7)", [&] {
-                auto* r = cache.find_alternate(pos, schema, shape, excl);
+                auto r = cache.find_alternate(pos, schema, shape, ::fixy::WeakRef<const RegionNode>::from_raw(excl));
                 bench::do_not_optimize(r);
             });
         }(),
@@ -140,9 +140,9 @@ int main() {
         [&] {
             RegionCache cache;
             for (uint32_t i = 0; i < RegionCache::CAP; i++)
-                cache.insert(fix.regions[i]);
+                cache.insert(*fix.regions[i]);
             return bench::run("find_alternate: miss (all 8 checked)", [&] {
-                auto* r = cache.find_alternate(5, SchemaHash{0xDEADBEEF}, ShapeHash{0xCAFEBABE}, nullptr);
+                auto r = cache.find_alternate(5, SchemaHash{0xDEADBEEF}, ShapeHash{0xCAFEBABE});
                 bench::do_not_optimize(r);
             });
         }(),
@@ -151,10 +151,10 @@ int main() {
         // only a few regions are warm.
         [&] {
             RegionCache cache;
-            cache.insert(fix.regions[0]);
-            cache.insert(fix.regions[1]);
+            cache.insert(*fix.regions[0]);
+            cache.insert(*fix.regions[1]);
             return bench::run("find_alternate: miss (2 entries)", [&] {
-                auto* r = cache.find_alternate(5, SchemaHash{0xDEADBEEF}, ShapeHash{0xCAFEBABE}, nullptr);
+                auto r = cache.find_alternate(5, SchemaHash{0xDEADBEEF}, ShapeHash{0xCAFEBABE});
                 bench::do_not_optimize(r);
             });
         }(),
@@ -162,14 +162,14 @@ int main() {
         // 2-entry hit with exclude (skip MRU → match LRU).
         [&] {
             RegionCache cache;
-            cache.insert(fix.regions[0]);
-            cache.insert(fix.regions[1]);
+            cache.insert(*fix.regions[0]);
+            cache.insert(*fix.regions[1]);
             const uint32_t pos = 5;
             const auto schema = fix.regions[0]->ops[pos].schema_hash;
             const auto shape = fix.regions[0]->ops[pos].shape_hash;
             const RegionNode* excl = fix.regions[1];
             return bench::run("find_alternate: hit (2 entries, excl MRU)", [&] {
-                auto* r = cache.find_alternate(pos, schema, shape, excl);
+                auto r = cache.find_alternate(pos, schema, shape, ::fixy::WeakRef<const RegionNode>::from_raw(excl));
                 bench::do_not_optimize(r);
             });
         }(),
@@ -178,10 +178,10 @@ int main() {
         [&] {
             RegionCache cache;
             for (uint32_t i = 0; i < RegionCache::CAP; i++)
-                cache.insert(fix.regions[i]);
+                cache.insert(*fix.regions[i]);
             const auto hash = fix.regions[7]->content_hash;
             return bench::run("find: hit MRU", [&] {
-                auto* r = cache.find(hash);
+                auto r = cache.find(hash);
                 bench::do_not_optimize(r);
             });
         }(),
@@ -189,9 +189,9 @@ int main() {
         [&] {
             RegionCache cache;
             for (uint32_t i = 0; i < RegionCache::CAP; i++)
-                cache.insert(fix.regions[i]);
+                cache.insert(*fix.regions[i]);
             return bench::run("find: miss (all 8 checked)", [&] {
-                auto* r = cache.find(ContentHash{0xDEADDEAD});
+                auto r = cache.find(ContentHash{0xDEADDEAD});
                 bench::do_not_optimize(r);
             });
         }(),

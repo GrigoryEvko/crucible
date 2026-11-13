@@ -394,7 +394,7 @@ void test_region_store_stays_bounded() {
     constexpr uint32_t CYCLES = 120;
     // The uncompiled queue, the transaction log, the cells of the foreground,
     // and the last published region with the handed region.
-    constexpr uint32_t MAX_HELD = crucible::BackgroundThread::UncompiledRegionQueue::CAP + 16 + 10 + 2;
+    constexpr uint32_t MAX_HELD = crucible::BackgroundThread::UncompiledRegionQueue::CAP + 16 + 11 + 2;
 
     crucible::Vigil vigil;
     uint32_t base = 0;
@@ -426,6 +426,85 @@ void test_region_store_stays_bounded() {
 
     crucible::test::pass("  test_region_store_stays_bounded: PASSED (published={}, stored={})\n",
                          static_cast<unsigned long long>(vigil.current_step()), stored);
+}
+
+// The active region names no region that a reset made stale.
+//
+// The foreground replays a region of the first cycle.  The ops of a second
+// cycle reach the ring while it replays, so the background publishes their
+// region into the slot, and that region is the active region.  A divergence
+// makes it stale, because its ops came before the divergence.  The active
+// region is then the region that the foreground took last.
+void test_divergence_leaves_no_stale_active_region() {
+    using namespace divrig;
+
+    crucible::Vigil vigil;
+    feed_cycle_region(vigil, 0, 0);
+    crucible::test::flush_and_wait_region_published(vigil);
+    for (uint32_t i = 0; i < NUM_OPS; i++) {
+        OpData aligned = cycle_op(0, 3, i);
+        (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
+    }
+    assert(vigil.context().is_compiled() && "the foreground aligns on the region of the first cycle");
+    const crucible::ContentHash replayed_hash = vigil.context().active_region()->content_hash;
+    assert(vigil.active_region()->content_hash == replayed_hash);
+
+    const uint64_t step_before = vigil.current_step();
+    feed_cycle_region(vigil, 1, 4);
+    vigil.flush();
+    assert(vigil.current_step() > step_before && "the region of the second cycle must be published");
+    assert(vigil.active_region()->content_hash != replayed_hash && "the slot holds the newest region");
+
+    OpData foreign_op = op_at(7, 0);
+    foreign_op.entry.schema_hash = FOREIGN_SCHEMA;
+    auto diverged = crucible::test::dispatch_synthetic(vigil, foreign_op.entry, foreign_op.metas, foreign_op.n_metas);
+    assert(diverged.status == crucible::ReplayStatus::DIVERGED);
+    assert(vigil.active_region()->content_hash == replayed_hash
+           && "the active region names the region of ops recorded before the divergence");
+
+    crucible::test::pass("  test_divergence_leaves_no_stale_active_region: PASSED\n");
+}
+
+// A newer region with the same ops keeps an open alignment walk.
+//
+// The walk is two ops deep in the first region.  The ops that reach the ring
+// through record_op then complete one more iteration, so the background
+// publishes a second region with the same content.  The walk goes on in the
+// second region, and the K-th op activates it.
+void test_same_region_keeps_the_alignment() {
+    using namespace divrig;
+
+    crucible::Vigil vigil;
+    feed_one_region(vigil, 0);
+    crucible::test::flush_and_wait_region_published(vigil);
+    for (uint32_t i = 0; i < 2; i++) {
+        OpData aligned = op_at(3, i);
+        (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
+    }
+    assert(!vigil.context().is_compiled() && "two ops are short of the K that activates");
+
+    const uint64_t step_before = vigil.current_step();
+    for (uint32_t i = K; i < NUM_OPS; i++) {
+        OpData recorded = op_at(2, i);
+        (void)vigil.record_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas,
+                              recorded.n_metas);
+    }
+    for (uint32_t i = 0; i < K; i++) {
+        OpData recorded = op_at(3, i);
+        (void)vigil.record_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas,
+                              recorded.n_metas);
+    }
+    vigil.flush();
+    assert(vigil.current_step() > step_before && "the second region must be published");
+    assert(vigil.has_pending_region());
+
+    for (uint32_t i = 2; i < K; i++) {
+        OpData aligned = op_at(3, i);
+        (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
+    }
+    assert(vigil.context().is_compiled() && "a region with the same ops restarted the walk from zero");
+
+    crucible::test::pass("  test_same_region_keeps_the_alignment: PASSED\n");
 }
 
 }  // namespace test_vigil

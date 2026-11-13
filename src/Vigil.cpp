@@ -92,10 +92,10 @@ void Vigil::adopt_region_(VigilFgCtx const& fg, RegionNode& region) {
     pending_activation_ = nullptr;
     alignment_pos_ = alignment_pos_at(0);
     alignment_ops_ = 0;
-    bg_.active_region.store(&region, std::memory_order_release);
+    taken_region_.store_release(&region);
     if (replay_.activate(region)) {
-        register_externals_from_region_(fg, &region);
-        region_cache_.insert(&region);
+        register_externals_from_region_(fg, region);
+        region_cache_.insert(region);
     }
     publish_held_regions_();
 }
@@ -125,7 +125,7 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // never reports a replay that has not started.  An observer that
     // waits for this publication reads has_pending_region.  The slot holds
     // the record, so the foreground can compare the reset point.
-    pending_region_.publish(&published);
+    pending_region_.store_release(PendingRegion::some(::fixy::to(published)));
 
     // The sweep of the region store after this callback releases each region
     // that no holder names.  The transaction log holds each region that a
@@ -134,8 +134,9 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // foreground.
     BackgroundThread::RegionMarks marks{};
     tx_log_.for_each_region(stage, [&marks](::fixy::WeakRef<const RegionNode> held) noexcept { marks.hold(held); });
-    const BackgroundThread::PublishedRegion* const handed = pending_region_.observe();
-    marks.handed = ::fixy::WeakRef<const RegionNode>::from_raw(handed != nullptr ? handed->region : nullptr);
+    const PendingRegion handed = pending_region_.load_acquire();
+    for (const auto& record : handed)
+        marks.handed = ::fixy::WeakRef<const RegionNode>::from_raw(record->region);
     mark_held_regions_(marks);
     bg_.set_region_marks(stage, marks);
 

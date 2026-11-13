@@ -315,6 +315,47 @@ void test_mark_keeps_an_unapplied_restart() {
     ::fixy::report(::fixy::Sink::Out, "  mark_keeps_an_unapplied_restart:           PASSED\n");
 }
 
+// The build stage builds no work of a backlog that a reset made stale.
+//
+// The held callback stops the publish stage, so the build stage builds at
+// most the works that the channel to the publish stage holds and the one in
+// its hand.  The reset then comes at the point after the backlog.  Each
+// later work of the backlog was cut before that point.
+void test_reset_skips_the_stale_backlog() {
+    using namespace publish_rig;
+    constexpr uint32_t BACKLOG_ITERS = 400;
+
+    const auto test = ::foundation::effects::testing::test();
+    BackgroundThread bt;
+    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(test.alloc);
+    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc);
+    Gate gate;
+
+    bt.set_region_ready_callback(&gate, &on_region_ready);
+    bt.start(&*ring, &*metalog);
+
+    for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
+        for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
+            push(*ring, Gate::FAMILY_A, op);
+    while (!gate.in_callback.load_acquire()) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
+    bt.request_restart(ring->total_produced());
+    gate.release.store_release(true);
+
+    const uint64_t target = ring->total_produced();
+    while (bt.total_processed.load_acquire() < target) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
+    bt.stop();
+
+    assert(bt.iterations_completed.get() > BACKLOG_ITERS / 2 && "the detect stage cut each work of the backlog");
+    assert(bt.works_built() < BACKLOG_ITERS / 2 && "the build stage built the works of a stale backlog");
+
+    ::fixy::report(::fixy::Sink::Out, "  reset_skips_the_stale_backlog:             PASSED (cut={}, built={})\n",
+                   bt.iterations_completed.get(), bt.works_built());
+}
+
 // Each region that the pipeline publishes carries the content hash of the
 // canonical span fold, and the uncompiled queue keeps at most its bound.
 void test_published_regions_keep_their_hashes() {

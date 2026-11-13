@@ -43,7 +43,7 @@ struct DispatchResult {
 
     Action action = Action::RECORD;
     ReplayStatus status = ReplayStatus::MATCH;
-    uint8_t pad[2]{};
+    ::foundation::core::FixedArray<uint8_t, 2> pad{};
     OpIndex op_index;
 
     [[nodiscard, gnu::pure]] constexpr bool is_record() const noexcept { return action == Action::RECORD; }
@@ -137,38 +137,37 @@ struct CrucibleContext {
         delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
     // Safe to call part-way through an iteration.
-    [[nodiscard]] bool switch_region(const RegionNode* alt, uint32_t div_pos) CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(alt != nullptr);
+    [[nodiscard]] bool switch_region(const RegionNode& alt, uint32_t div_pos) CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
-        if (!alt->plan) [[unlikely]]
+        if (!alt.plan) [[unlikely]]
             return false;
 
-        if (div_pos == 0) return activate(alt);
+        if (div_pos == 0) return activate(&alt);
 
-        const RegionNode* const old_region = active_region_.value();
         // Armed in a release build, unlike the two beliefs further down this
         // file. A null plan here does not fault: migrate_prefix_slots_ reads
-        // old_plan->slots[sid] at whatever address a null base plus a slot
+        // old_plan.slots[sid] at whatever address a null base plus a slot
         // index lands on, and feeds the offsets it finds to a memcpy. That
         // writes outside the pool with no diagnostic. The path runs once per
         // shape change, so an always-on check costs nothing worth counting.
-        CRUCIBLE_FATAL_INVARIANT(old_region != nullptr && old_region->plan != nullptr);
+        CRUCIBLE_FATAL_INVARIANT(active_region_.value() != nullptr && active_region_.value()->plan != nullptr);
+        const RegionNode& old_region = *active_region_.value();
 
         // Detaching empties the pool, which makes the view stale, but it goes
         // out of scope before anything touches the pool again.
         auto pv = pool_.initialized_view_();
         auto old_pool = pool_.detach(pv);
-        pool_.init(alt->plan);
+        pool_.init(alt.plan);
         migrate_prefix_slots_(old_region, alt, old_pool.base, div_pos);
 
-        engine_.init(alt, ReplayEngine::PoolBorrow{pool_});
-        active_region_ = ::fixy::mint_tagged<::fixy::tags::source::Vigil>(alt);
+        engine_.init(&alt, ReplayEngine::PoolBorrow{pool_});
+        active_region_ = ::fixy::mint_tagged<::fixy::tags::source::Vigil>(&alt);
 
         // Replay the prefix the two regions share, so the new region resumes
         // where the old one diverged.
         auto av = engine_.active_view_();
         for (uint32_t i = 0; i < div_pos; i++) {
-            auto s = engine_.advance(alt->ops[i].schema_hash, alt->ops[i].shape_hash, av);
+            auto s = engine_.advance(alt.ops[i].schema_hash, alt.ops[i].shape_hash, av);
             // Debug-only: the engine was just pointed at alt, and these are
             // alt's own hashes read back in order, so anything but a match
             // means the engine's cursor is out of step rather than that the
@@ -181,7 +180,7 @@ struct CrucibleContext {
         // Leaving the region pointer on the old region while the engine has
         // moved to the new one is the torn pair the activation contract
         // guards against. The early exit above reaches it through activate.
-        CRUCIBLE_POST(0, active_region_.value() == alt);
+        CRUCIBLE_POST(0, active_region_.value() == &alt);
         CRUCIBLE_POST(0, mode_ == ContextMode::COMPILED);
         return true;
     }
@@ -254,6 +253,7 @@ private:
     // twice. It is far tighter than the allocator's own slot ceiling, which is
     // why the migration checks it separately.
     static constexpr uint32_t MIGRATION_MAX_SLOTS = 1024;
+    static constexpr uint32_t VISITED_WORDS = (MIGRATION_MAX_SLOTS + 63) / 64;
 
     // The one body of both advance overloads.  A switch rather than a chain
     // of tests, so that a status added later has to be given a meaning here
@@ -276,16 +276,14 @@ private:
         }
     }
 
-    void migrate_prefix_slots_(const RegionNode* old_region, const RegionNode* alt, const void* old_pool_base,
+    void migrate_prefix_slots_(const RegionNode& old_region, const RegionNode& alt, const void* old_pool_base,
                                uint32_t div_pos) CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(old_region != nullptr);
-        CRUCIBLE_PRE(alt != nullptr);
-        CRUCIBLE_PRE(old_region->plan != nullptr);
-        CRUCIBLE_PRE(alt->plan != nullptr);
-        const auto* old_plan = old_region->plan;
-        const auto* new_plan = alt->plan;
-        const uint32_t old_num_slots = old_plan->num_slots;
-        const uint32_t new_num_slots = new_plan->num_slots;
+        CRUCIBLE_PRE(old_region.plan != nullptr);
+        CRUCIBLE_PRE(alt.plan != nullptr);
+        const MemoryPlan& old_plan = *old_region.plan;
+        const MemoryPlan& new_plan = *alt.plan;
+        const uint32_t old_num_slots = old_plan.num_slots;
+        const uint32_t new_num_slots = new_plan.num_slots;
         // The bound of the bitset below.  The check runs in each build and
         // before any slot is copied, so a plan that the bitset cannot track
         // is refused and not half-migrated.  It is not a CRUCIBLE_PRE: under
@@ -293,11 +291,12 @@ private:
         // optimizer as an assumption, and no check of that condition after
         // the assumption is certain to stay.
         CRUCIBLE_FATAL_INVARIANT(new_num_slots <= MIGRATION_MAX_SLOTS);
-        uint64_t visited[(MIGRATION_MAX_SLOTS + 63) / 64]{};
+        using VisitedWord = ::foundation::core::Index<VISITED_WORDS>;
+        ::foundation::core::FixedArray<uint64_t, VISITED_WORDS> visited{};
 
         for (uint32_t i = 0; i < div_pos; i++) {
-            const auto& old_te = old_region->ops[i];
-            const auto& new_te = alt->ops[i];
+            const auto& old_te = old_region.ops[i];
+            const auto& new_te = alt.ops[i];
 
             if (!old_te.output_slot_ids || !new_te.output_slot_ids) continue;
 
@@ -305,7 +304,7 @@ private:
             // output count and indexes new_te's array with the same j, so a
             // new entry with fewer outputs is read past its end. The slot id
             // that comes back is arbitrary, it selects an arbitrary entry of
-            // new_plan->slots, and the offset there becomes the destination
+            // new_plan.slots, and the offset there becomes the destination
             // of the memcpy at the bottom of this function. The prefix ops
             // carry identical schema and shape hashes, which is exactly why
             // unequal output counts mean the region pair is corrupt.
@@ -324,15 +323,18 @@ private:
                 CRUCIBLE_FATAL_INVARIANT(old_sid.raw() < old_num_slots);
                 CRUCIBLE_FATAL_INVARIANT(new_sid.raw() < new_num_slots);
 
-                if (old_plan->slots[old_sid.raw()].is_external || new_plan->slots[new_sid.raw()].is_external) continue;
+                if (old_plan.slots[old_sid.raw()].is_external || new_plan.slots[new_sid.raw()].is_external) continue;
 
                 const uint32_t ns = new_sid.raw();
-                if (visited[ns / 64] & (uint64_t{1} << (ns % 64))) continue;
-                visited[ns / 64] |= uint64_t{1} << (ns % 64);
+                const VisitedWord word = VisitedWord::check(ns / 64).expect(
+                    "the bound of the plan keeps a slot id of the migration below MIGRATION_MAX_SLOTS");
+                const uint64_t bit = uint64_t{1} << (ns % 64);
+                if ((visited.at(word) & bit) != 0) continue;
+                visited.at(word) |= bit;
 
-                const uint64_t old_offset = old_plan->slots[old_sid.raw()].offset_bytes;
-                const uint64_t new_offset = new_plan->slots[ns].offset_bytes;
-                const uint64_t nbytes = old_plan->slots[old_sid.raw()].nbytes;
+                const uint64_t old_offset = old_plan.slots[old_sid.raw()].offset_bytes;
+                const uint64_t new_offset = new_plan.slots[ns].offset_bytes;
+                const uint64_t nbytes = old_plan.slots[old_sid.raw()].nbytes;
 
                 if (nbytes > 0 && old_pool_base) {
                     std::memcpy(static_cast<char*>(pool_.pool_base()) + new_offset,
@@ -347,13 +349,13 @@ private:
     // and the pool follows. The size assertion below pins the whole layout.
     ReplayEngine engine_;  // 64 bytes, offset 0
     ContextMode mode_ = ContextMode::RECORD;  // offset 64
-    [[maybe_unused]] uint8_t pad_[3]{};
+    [[maybe_unused]] ::foundation::core::FixedArray<uint8_t, 3> pad_{};
     // Both counters only ever go up: one counts completed iterations, the
     // other divergences, and neither is reset. The type enforces that, and
     // catches the one way it could be broken, which is overflow.
     ::fixy::Monotonic<uint32_t> compiled_iterations_ = ::fixy::mint_monotonic<uint32_t>(0u);  // offset 68
     ::fixy::Monotonic<uint32_t> diverged_count_ = ::fixy::mint_monotonic<uint32_t>(0u);  // offset 72
-    [[maybe_unused]] uint8_t pad2_[4]{};
+    [[maybe_unused]] ::foundation::core::FixedArray<uint8_t, 4> pad2_{};
     // The tag records that this pointer was published by the owning
     // foreground's background worker. A region allocated somewhere else has a
     // different lifetime regime, and without the tag the two would be

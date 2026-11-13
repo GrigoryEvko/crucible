@@ -581,12 +581,13 @@ int main() {
         }
         RegionCache cache;
         for (uint32_t r = 0; r < NR; r++)
-            cache.insert(regions[r]);
+            cache.insert(*regions[r]);
 
         SchemaHash tgt_schema = SCHEMA[3];
         ShapeHash tgt_shape{SHAPE[3].raw() + 2 * 0x100};
         return bench::run("RegionCache::find_alternate (4 entries)", [&] {
-            auto* found = cache.find_alternate(3, tgt_schema, tgt_shape, regions[0]);
+            auto found =
+                cache.find_alternate(3, tgt_schema, tgt_shape, ::fixy::WeakRef<const RegionNode>::from_raw(regions[0]));
             bench::do_not_optimize(found);
         });
     }());
