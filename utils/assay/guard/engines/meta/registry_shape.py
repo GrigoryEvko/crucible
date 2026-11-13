@@ -20,11 +20,9 @@ THE PART
     No ledger row admits a finding of the three kinds (KINDS).
 
 THE GUIDE
-    The guide is the file that the context names: CLAUDE.md at the root of the
-    tree.  Only the root of the repository holds a file with the name
-    CLAUDE.md (the part layout).  A plant holds its guide in the file guide.md
-    for that reason, and plant_context() gives the context of a plant that
-    path.
+    The guide is the file that the context names: misc/GUIDE.md of the tree.
+    A plant holds its guide in the file guide.md, and plant_context() gives
+    the context of a plant that path.
 
 Complexity: linear in the length of the registry and of the guide.
 """

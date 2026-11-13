@@ -1,4 +1,4 @@
-"""guard explain — print one rule: its row, its section of CLAUDE.md, its action, its policy, its plants and its inputs.
+"""guard explain — print one rule: its row, its section of misc/GUIDE.md, its action, its policy, its plants and its inputs.
 
 usage: guard explain RULE
 
@@ -17,7 +17,7 @@ from assay.core.paths import REPO_ROOT
 from assay.guard import check
 from assay.guard.listing import holder
 
-GUIDE = REPO_ROOT / "CLAUDE.md"
+GUIDE = REPO_ROOT / "misc" / "GUIDE.md"
 
 
 def main(argv: list[str]) -> int:
@@ -64,6 +64,6 @@ def main(argv: list[str]) -> int:
             lines = [f"the facts of the tree are not available: {reason}"]
         check_report.write_line("\n".join(["  derived:", *(f"    {line}" for line in lines)]))
     text = rule_registry.doc_section(GUIDE.read_text(encoding="utf-8"), rule.doc) if GUIDE.is_file() else None
-    print(f"  CLAUDE.md {rule.doc}:")
+    print(f"  misc/GUIDE.md {rule.doc}:")
     print("\n".join(f"    {line}" for line in (text or "(no such section)").splitlines()))
     return 0

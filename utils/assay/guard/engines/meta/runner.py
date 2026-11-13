@@ -120,9 +120,9 @@ PLANTED_SUFFIX = ".planted"
 APPEND_SUFFIX = ".append"
 PREPEND_SUFFIX = ".prepend"
 SKIPPED = 77
-# The guide of the tree.  Only the root of the repository holds a file with this name (the part layout of the rule
-# registry).
-GUIDE = "CLAUDE.md"
+# The guide of the tree: the full text that the doc field of a rule names.  CLAUDE.md at the root is the short guide,
+# and it holds no rule section.
+GUIDE = "misc/GUIDE.md"
 # The directory of the modules of the engines, relative to the root, and the table of a family module (THE FAMILIES).
 ENGINES = "utils/assay/guard/engines"
 FAMILY_TABLE = "RULES"
@@ -183,7 +183,7 @@ class MetaContext:
     """The tree that a meta rule reads: its root, its build directory, its guide and its registry.
 
     The guide is the path of the guide of the tree relative to its root:
-    CLAUDE.md, or a planted guide of a plant.  The context reads the registry
+    misc/GUIDE.md, or a planted guide of a plant.  The context reads the registry
     and the tracked files one time, on the first use.  A meta rule reads each
     of its files (THE PARTS).
     """

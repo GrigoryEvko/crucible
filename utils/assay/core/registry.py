@@ -26,7 +26,7 @@ THE ROWS
                    jobs or threads
       inputs       the paths that the rule reads and that its module does not
                    show
-      doc          the section of CLAUDE.md that states the rule, such as XV,
+      doc          the section of misc/GUIDE.md that states the rule, such as XV,
                    XV.4, XXII.R11 or L0
       legacy       the module under assay that holds the rule at this time,
                    when no module of assay/guard/engines/ holds it
@@ -276,7 +276,7 @@ def is_module_name(text: str) -> bool:
 
 
 def is_doc_reference(text: str) -> bool:
-    """Whether a text has the form of a section of CLAUDE.md: a section, and a rule or an item after a point."""
+    """Whether a text has the form of a section of misc/GUIDE.md: a section, and a rule or an item after a point."""
     section, point, item = text.partition(".")
     is_roman = bool(section) and all(character in "IVXL" for character in section)
     is_layer = section.startswith("L") and section[1:].isdigit()
@@ -336,7 +336,7 @@ def parse_rule(row: rows_grammar.Row) -> Rule:
         threshold = Threshold(limits, values["unit"])
     if not is_doc_reference(values["doc"]):
         raise row.error(
-            f"the doc {values['doc']!r} of {rule_id} is not a section of CLAUDE.md, such as XV, XV.4, XXII.R11 or L0"
+            f"the doc {values['doc']!r} of {rule_id} is not a section of misc/GUIDE.md, such as XV, XV.4, XXII.R11 or L0"
         )
     legacy = None
     if "legacy" in values:
@@ -487,7 +487,7 @@ def load(path: Path = REGISTRY, shown: str = REGISTRY_PATH) -> Registry:
 
 
 def doc_section(guide: str, reference: str) -> str | None:
-    """Return the text of CLAUDE.md that a doc field names, or None when the guide has no such text.
+    """Return the text of misc/GUIDE.md that a doc field names, or None when the guide has no such text.
 
     A reference is a section, such as XV or L0: the lines from its heading
     "## XV." or "## L0 " to the next heading of that level.  XV.4 is item 4 of
