@@ -60,7 +60,7 @@ template <class T, class... Ts>
 }
 
 template <class T, class... Ts>
-inline constexpr std::size_t index_in_v = index_in_<T, Ts...>();
+inline constexpr std::size_t index_in_v = detail::index_in_<T, Ts...>();
 
 }  // namespace detail
 
@@ -70,6 +70,18 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
                    [[= ::foundation::lifetime::no_start_over_bytes{}]] OneOf {
     detail::SumSlot<Ts...> slot_;
 
+    // The tag and the alternative at Index, through the door of the readers
+    // of a sum slot (Choice.h).
+    [[nodiscard]] constexpr std::size_t index_() const noexcept { return slot_.index_(detail::SumDoor::key()); }
+    template <std::size_t Index>
+    [[nodiscard]] constexpr auto& alternative_() noexcept {
+        return slot_.template alternative_<Index>(detail::SumDoor::key());
+    }
+    template <std::size_t Index>
+    [[nodiscard]] constexpr auto const& alternative_() const noexcept {
+        return slot_.template alternative_<Index>(detail::SumDoor::key());
+    }
+
     // The arm at Index takes the alternative at Index.  The last alternative
     // takes the last branch, so a match has no fatal path and no test of a
     // tag outside the alternatives.  Complexity: at most one compare for each
@@ -77,12 +89,11 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
     template <std::size_t Index, class Result, class... Arms>
     constexpr Result moved_from_(Arms&&... arms) && {
         if constexpr (Index + 1 == sizeof...(Ts)) {
-            return static_cast<Arms...[Index]&&>(arms...[Index])(
-                static_cast<Ts...[Index]&&>(slot_.template alternative_<Index>()));
+            return static_cast<Arms...[Index]&&>(arms...[Index])(static_cast<Ts...[Index]&&>(alternative_<Index>()));
         } else {
-            if (slot_.index_() == Index) {
+            if (index_() == Index) {
                 return static_cast<Arms...[Index]&&>(arms...[Index])(
-                    static_cast<Ts...[Index]&&>(slot_.template alternative_<Index>()));
+                    static_cast<Ts...[Index]&&>(alternative_<Index>()));
             }
             return static_cast<OneOf&&>(*this).template moved_from_<Index + 1, Result>(static_cast<Arms&&>(arms)...);
         }
@@ -95,10 +106,10 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
     template <std::size_t Index>
     [[nodiscard]] constexpr bool equal_from_(OneOf const& other) const noexcept {
         if constexpr (Index + 1 == sizeof...(Ts)) {
-            return slot_.template alternative_<Index>() == other.slot_.template alternative_<Index>();
+            return alternative_<Index>() == other.template alternative_<Index>();
         } else {
-            if (slot_.index_() == Index) {
-                return slot_.template alternative_<Index>() == other.slot_.template alternative_<Index>();
+            if (index_() == Index) {
+                return alternative_<Index>() == other.template alternative_<Index>();
             }
             return this->template equal_from_<Index + 1>(other);
         }
@@ -107,10 +118,10 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
     template <std::size_t Index, class Result, class... Arms>
     constexpr Result borrowed_from_(Arms&&... arms) const {
         if constexpr (Index + 1 == sizeof...(Ts)) {
-            return static_cast<Arms...[Index]&&>(arms...[Index])(slot_.template alternative_<Index>());
+            return static_cast<Arms...[Index]&&>(arms...[Index])(alternative_<Index>());
         } else {
-            if (slot_.index_() == Index) {
-                return static_cast<Arms...[Index]&&>(arms...[Index])(slot_.template alternative_<Index>());
+            if (index_() == Index) {
+                return static_cast<Arms...[Index]&&>(arms...[Index])(alternative_<Index>());
             }
             return this->template borrowed_from_<Index + 1, Result>(static_cast<Arms&&>(arms)...);
         }
@@ -130,7 +141,7 @@ public:
     template <class T>
         requires detail::AlternativeOf<T, Ts...>
     [[nodiscard]] constexpr bool is() const noexcept {
-        return slot_.index_() == detail::index_in_v<T, Ts...>;
+        return index_() == detail::index_in_v<T, Ts...>;
     }
 
     // The fatal unwrap at a boundary.  The reason tells why the active
@@ -141,10 +152,10 @@ public:
         requires detail::AlternativeOf<T, Ts...>
     [[nodiscard]] constexpr T expect(Fmt<> why) && noexcept {
         constexpr std::size_t index = detail::index_in_v<T, Ts...>;
-        if (slot_.index_() != index) [[unlikely]] {
+        if (index_() != index) [[unlikely]] {
             fatal(why);
         }
-        return static_cast<T&&>(slot_.template alternative_<index>());
+        return static_cast<T&&>(alternative_<index>());
     }
 
     // The active alternative when it is T, as an Option of a Ref with the
@@ -163,8 +174,8 @@ public:
         requires detail::AlternativeOf<T, Ts...> && (sizeof...(Refused) == 0) && DroppablePayload<T>
     [[nodiscard]] constexpr Option<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>> get() & noexcept {
         constexpr std::size_t index = detail::index_in_v<T, Ts...>;
-        if (slot_.index_() != index) return Option<Ref<T, Fresh>>{none};
-        T& alternative = slot_.template alternative_<index>();
+        if (index_() != index) return Option<Ref<T, Fresh>>{none};
+        T& alternative = alternative_<index>();
         [[assume(__builtin_addressof(alternative) != nullptr)]];
         return Option<Ref<T, Fresh>>::some(detail::RefDoor::lend<Fresh>(alternative));
     }
@@ -173,8 +184,8 @@ public:
     [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
     get() const& noexcept {
         constexpr std::size_t index = detail::index_in_v<T, Ts...>;
-        if (slot_.index_() != index) return Option<Ref<T const, Fresh>>{none};
-        T const& alternative = slot_.template alternative_<index>();
+        if (index_() != index) return Option<Ref<T const, Fresh>>{none};
+        T const& alternative = alternative_<index>();
         [[assume(__builtin_addressof(alternative) != nullptr)]];
         return Option<Ref<T const, Fresh>>::some(detail::RefDoor::lend<Fresh>(alternative));
     }
@@ -259,7 +270,7 @@ public:
     [[nodiscard]] friend constexpr bool operator==(OneOf const& left, OneOf const& right) noexcept
         requires(ComparablePart<Ts> && ...)
     {
-        return left.slot_.index_() == right.slot_.index_() && left.template equal_from_<0>(right);
+        return left.index_() == right.index_() && left.template equal_from_<0>(right);
     }
 
     // Each other operand, such as a value of an alternative or a OneOf of

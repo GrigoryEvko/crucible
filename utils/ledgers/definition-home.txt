@@ -5,7 +5,7 @@ rule definition-home
 reason include/fixy/ | Collision.h declares the spawn tags detach_with, syscall_only and subprocess, and concurrent/Spawn.h defines them.  Move the three definitions into Collision.h.  Borrowed.h befriends mint_borrowed and declares OwnedRegion, and OwnedRegion.h defines them and befriends SharedRegion of SharedRegion.h.  Put each mint and each class that befriends it into one header
 reason include/fixy/os/ | Fd.h, ClockSource.h and SchedClass.h declare or befriend the door classes of Fs.h, Socket.h, Time.h and Sched.h, and CpuPinned.h befriends the mint template mint_affinity of Sched.h.  Move each door class into the header of the class that befriends it, or give it the form of an out-of-line function of src/fixy/os/, which the rule admits.  Move mint_affinity into CpuPinned.h
 reason include/fixy/session/ | Classification.h and Protocol.h declare the payload markers and the protocol combinators that Flow.h, Crash.h, Projection.h and Delegate.h define.  Move each definition into the header that declares it, or include the header of the definition in place of the declaration
-reason include/foundation/core/ | Record.h declares StaticIndex of Index.h, and Choice.h befriends OneOf of OneOf.h.  The landings of the Region family and of the Choice family move the declaration and the friend into the header of each class
+reason include/foundation/core/ | Record.h declares StaticIndex of Index.h.  The landing of the Region family moves the declaration into the header of the class
 reason include/foundation/effects/ | Effect.h declares Row, Computation, ExecCtx and Capability for the row-hash fold of each carrier.  Move the fold of each carrier into the header of the carrier, beside its definition, and remove the four declarations
 reason include/foundation/permissions/ | Fwd.h declares Permission and SharedPermission for the headers that name a token and do not include Permission.h.  Include the header of the definition in each user of Fwd.h, and remove Fwd.h
 include/fixy/ | elsewhere | 5 | - | -
@@ -14,6 +14,5 @@ include/fixy/os/ | elsewhere | 5 | - | -
 include/fixy/os/ | friend | 1 | - | -
 include/fixy/session/ | elsewhere | 9 | - | -
 include/foundation/core/ | elsewhere | 1 | - | -
-include/foundation/core/ | friend | 2 | - | -
 include/foundation/effects/ | elsewhere | 4 | - | -
 include/foundation/permissions/ | elsewhere | 2 | - | -

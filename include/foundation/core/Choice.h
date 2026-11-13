@@ -404,11 +404,10 @@ class Option;
 template <ChoicePayload T, ErrorValue E>
 class Result;
 
-template <class... Ts>
-    requires OneOfAlternatives<Ts...>
-class OneOf;
-
 namespace detail {
+
+template <bool IsPlain, class... Ts>
+class SumSlotOf;
 
 // The function type of the address of a call: the function of a pointer to a
 // member function, and the function of a pointer to a static call operator.
@@ -484,22 +483,25 @@ template <class Arm, class Payload>
 // True when a value of the type holds a borrow: a reference, a pointer, a
 // pointer to a member, or a class whose state reflection cannot read, such as
 // a closure with captures.  The walk reads each element of an array, and each
-// base and each non-static data member of a class or a union.  An Option, a
-// Result and a OneOf hold only their payloads and a tag, so the walk reads
-// their arguments and not their slots.  Complexity: linear in the parts of the
-// type.
+// base and each non-static data member of a class or a union.  An Option and
+// a Result hold only their payloads and a tag, so the walk reads their
+// arguments and not their slots.  A OneOf holds one sum slot, and the walk
+// reads the alternatives of the slot, after its first argument, the form of
+// the slot.  OneOf.h defines OneOf, so this header names no OneOf.
+// Complexity: linear in the parts of the type.
 [[nodiscard]] consteval bool holds_borrow_(std::meta::info type) {
     if (std::meta::is_reference_type(type)) return true;
     type = std::meta::dealias(std::meta::remove_cv(std::meta::dealias(type)));
     if (std::meta::is_pointer_type(type) || std::meta::is_member_pointer_type(type)) return true;
-    if (std::meta::is_array_type(type)) return holds_borrow_(std::meta::remove_all_extents(type));
+    if (std::meta::is_array_type(type)) return detail::holds_borrow_(std::meta::remove_all_extents(type));
     if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return false;
     if (std::meta::has_template_arguments(type)) {
         std::meta::info const family = std::meta::template_of(type);
-        if (family == ^^Option || family == ^^Result || family == ^^OneOf) {
+        bool const is_slot = family == ^^SumSlotOf;
+        if (is_slot || family == ^^Option || family == ^^Result) {
             auto const payloads = std::meta::template_arguments_of(type);
-            for (std::size_t index = 0; index < payloads.size(); ++index) {
-                if (holds_borrow_(payloads[index])) return true;
+            for (std::size_t index = is_slot ? 1 : 0; index < payloads.size(); ++index) {
+                if (detail::holds_borrow_(payloads[index])) return true;
             }
             return false;
         }
@@ -507,7 +509,7 @@ template <class Arm, class Payload>
     ::foundation::reflect::TypeNode const node{type, true};
     if (::foundation::reflect::holds_unreadable_state(node)) return true;
     for (::foundation::reflect::TypeNode const& part : ::foundation::reflect::member_components_of(node)) {
-        if (!part.is_held_by_value || holds_borrow_(part.type)) return true;
+        if (!part.is_held_by_value || detail::holds_borrow_(part.type)) return true;
     }
     return false;
 }
@@ -638,9 +640,6 @@ public:
         }
     }
 };
-
-template <bool IsPlain, class... Ts>
-class SumSlotOf;
 
 // The one layout rule of the plain forms of the family: the storage, and
 // then the tag, as in std::expected and std::variant.  The x86-64 System V
@@ -1092,6 +1091,28 @@ public:
 template <class T, class E>
 class ResultSlot;
 
+// The door of each reader of a sum slot, and the key of the reads of the
+// slot: the tag and an alternative.  SumDoor is the one friend of the key,
+// and the storage of Option, Result and OneOf calls the door.  OneOf.h
+// defines OneOf, so no friend of the slot names it, and a unit that defines
+// a different OneOf gets no read of a slot.  The door and the key hold no
+// template, so no explicit specialization of a template reaches the key.
+struct SumDoor;
+
+class [[nodiscard]] SumKey final {
+    friend struct SumDoor;
+
+    constexpr SumKey() noexcept {}
+    constexpr SumKey(SumKey const&) noexcept {}
+
+public:
+    SumKey& operator=(SumKey const&) = delete("a key of a sum slot lives for one read");
+};
+
+struct SumDoor {
+    [[nodiscard]] static constexpr SumKey key() noexcept { return SumKey{}; }
+};
+
 // The slot of a plain sum: the storage and the tag of TaggedCells.  The
 // special members are implicit, and each one is trivial, because each
 // alternative is trivially copyable.  The tag is the index of the active
@@ -1119,26 +1140,20 @@ class SumSlotOf<true, Ts...> {
 
     TaggedCells<Storage, TagWord> cells_;
 
-    template <class T, OptionForm Form>
-    friend class OptionSlot;
-    template <class T, class E>
-    friend class ResultSlot;
-    template <class... Us>
-        requires OneOfAlternatives<Us...>
-    friend class ::foundation::core::OneOf;
-
-    [[nodiscard]] constexpr std::size_t index_() const noexcept { return cells_.tag_; }
-
-    template <std::size_t Index>
-    [[nodiscard]] constexpr auto& alternative_() noexcept {
-        return detail::alternative_of_<Index>(cells_.storage_).value_;
-    }
-    template <std::size_t Index>
-    [[nodiscard]] constexpr auto const& alternative_() const noexcept {
-        return detail::alternative_of_<Index>(cells_.storage_).value_;
-    }
-
 public:
+    // The tag and the alternative at Index, with the key that only SumDoor
+    // builds.  The key is empty and comes by value, so a read keeps no key on
+    // the stack.
+    [[nodiscard]] constexpr std::size_t index_(SumKey /*key*/) const noexcept { return cells_.tag_; }
+    template <std::size_t Index>
+    [[nodiscard]] constexpr auto& alternative_(SumKey /*key*/) noexcept {
+        return detail::alternative_of_<Index>(cells_.storage_).value_;
+    }
+    template <std::size_t Index>
+    [[nodiscard]] constexpr auto const& alternative_(SumKey /*key*/) const noexcept {
+        return detail::alternative_of_<Index>(cells_.storage_).value_;
+    }
+
     template <std::size_t Index, class U>
     constexpr SumSlotOf(AlternativeAt<Index> at,
                         U&& value) noexcept(std::is_nothrow_constructible_v<Storage, AlternativeAt<Index>, U&&>)
@@ -1156,26 +1171,20 @@ class SumSlotOf<false, Ts...> {
     Alternatives<Ts...> storage_;
     unsigned char tag_;
 
-    template <class T, OptionForm Form>
-    friend class OptionSlot;
-    template <class T, class E>
-    friend class ResultSlot;
-    template <class... Us>
-        requires OneOfAlternatives<Us...>
-    friend class ::foundation::core::OneOf;
-
-    [[nodiscard]] constexpr std::size_t index_() const noexcept { return tag_; }
-
-    template <std::size_t Index>
-    [[nodiscard]] constexpr auto& alternative_() noexcept {
-        return detail::alternative_of_<Index>(storage_);
-    }
-    template <std::size_t Index>
-    [[nodiscard]] constexpr auto const& alternative_() const noexcept {
-        return detail::alternative_of_<Index>(storage_);
-    }
-
 public:
+    // The tag and the alternative at Index, with the key that only SumDoor
+    // builds.  The key is empty and comes by value, so a read keeps no key on
+    // the stack.
+    [[nodiscard]] constexpr std::size_t index_(SumKey /*key*/) const noexcept { return tag_; }
+    template <std::size_t Index>
+    [[nodiscard]] constexpr auto& alternative_(SumKey /*key*/) noexcept {
+        return detail::alternative_of_<Index>(storage_);
+    }
+    template <std::size_t Index>
+    [[nodiscard]] constexpr auto const& alternative_(SumKey /*key*/) const noexcept {
+        return detail::alternative_of_<Index>(storage_);
+    }
+
     template <std::size_t Index, class U>
     constexpr SumSlotOf(AlternativeAt<Index> at, U&& value) noexcept(
         std::is_nothrow_constructible_v<Alternatives<Ts...>, AlternativeAt<Index>, U&&>)
@@ -1224,14 +1233,14 @@ class OptionSlot<T, OptionForm::plain> {
     template <ChoicePayload U>
     friend class ::foundation::core::Option;
 
-    [[nodiscard]] constexpr bool holds_() const noexcept { return sum_.index_() != 0; }
+    [[nodiscard]] constexpr bool holds_() const noexcept { return sum_.index_(SumDoor::key()) != 0; }
     // The tag is the state, so one compare of the two tags tests the two
     // states, and no bool of a state is built for the compare.
     [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept {
-        return sum_.index_() == other.sum_.index_();
+        return sum_.index_(SumDoor::key()) == other.sum_.index_(SumDoor::key());
     }
-    [[nodiscard]] constexpr T& payload_() noexcept { return sum_.template alternative_<1>(); }
-    [[nodiscard]] constexpr T const& payload_() const noexcept { return sum_.template alternative_<1>(); }
+    [[nodiscard]] constexpr T& payload_() noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
+    [[nodiscard]] constexpr T const& payload_() const noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
     constexpr void clear_() noexcept { sum_ = SumSlot<NoPayload, T>{AlternativeAt<0>{}, NoPayload{}}; }
 
 public:
@@ -1327,14 +1336,14 @@ class ResultSlot {
     template <ChoicePayload U, ErrorValue F>
     friend class ::foundation::core::Result;
 
-    [[nodiscard]] constexpr bool holds_() const noexcept { return sum_.index_() != 0; }
+    [[nodiscard]] constexpr bool holds_() const noexcept { return sum_.index_(SumDoor::key()) != 0; }
     [[nodiscard]] constexpr bool same_state_(ResultSlot const& other) const noexcept {
-        return sum_.index_() == other.sum_.index_();
+        return sum_.index_(SumDoor::key()) == other.sum_.index_(SumDoor::key());
     }
-    [[nodiscard]] constexpr T& value_() noexcept { return sum_.template alternative_<1>(); }
-    [[nodiscard]] constexpr T const& value_() const noexcept { return sum_.template alternative_<1>(); }
-    [[nodiscard]] constexpr E& error_() noexcept { return sum_.template alternative_<0>(); }
-    [[nodiscard]] constexpr E const& error_() const noexcept { return sum_.template alternative_<0>(); }
+    [[nodiscard]] constexpr T& value_() noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
+    [[nodiscard]] constexpr T const& value_() const noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
+    [[nodiscard]] constexpr E& error_() noexcept { return sum_.template alternative_<0>(SumDoor::key()); }
+    [[nodiscard]] constexpr E const& error_() const noexcept { return sum_.template alternative_<0>(SumDoor::key()); }
 
 public:
     template <std::size_t Index, class U>

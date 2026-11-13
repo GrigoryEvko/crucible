@@ -217,9 +217,11 @@ static_assert(Lends<OneOf<int, Code8>, Code8> && !Lends<OneOf<int, Code8>, long>
 }
 static_assert(lent_and_written() == 8);
 
-// A OneOf holds a borrow when one of its alternatives holds one.
+// A OneOf holds a borrow when one of its alternatives holds one, in the plain
+// slot and in the owning slot.
 static_assert(HoldsNoBorrow<OneOf<int, Code8, long>> && HoldsNoBorrow<Option<OneOf<int, Code8>>>);
 static_assert(!HoldsNoBorrow<OneOf<int, TextView>> && !HoldsNoBorrow<Result<OneOf<int*, Code8>, Code8>>);
+static_assert(HoldsNoBorrow<OneOf<Owner, Code8>> && !HoldsNoBorrow<OneOf<Owner, int*>>);
 
 // A OneOf of plain alternatives keeps its trivial assignment.  An owning
 // OneOf has a move assignment, which drops the active alternative, so a

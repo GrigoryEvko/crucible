@@ -647,6 +647,10 @@ witness <foundation/core/Choice.h> private | foundation::core::OptionCursor<int>
 # A niche key comes only from the reader of the niche, so only the storage
 # of an Option reads an empty value, such as a null Ref.
 witness <foundation/core/Choice.h> private | foundation::core::niche_key<int> | foundation::core::niche_key<int>{}
+# Each read of the tag or of an alternative of a sum slot takes the key that
+# only SumDoor builds, so no class that a different header defines reads a
+# slot of an Option, a Result or a OneOf.
+witness <foundation/core/Choice.h> private | foundation::core::detail::SumKey | foundation::core::detail::SumKey{}
 # A Box has no constructor from a pointer, so the destructor frees only
 # storage that a Box allocated.  The constructor of a Box takes the key that
 # only BoxDoor builds, so each Box comes through mint_box.

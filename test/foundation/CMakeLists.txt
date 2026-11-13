@@ -2181,6 +2181,12 @@ foundation_neg_compile_test(neg_core_one_of_get_non_member
 foundation_neg_compile_test(neg_core_one_of_get_of_temporary
   "use of deleted function .void foundation::core::OneOf<Ts>::get\\(\\) && \\[with T = int; Refused = \\{\\}; Ts = \\{int, Code\\}\\]."
   "an alternative of a temporary OneOf dangles at the end of the full expression")
+foundation_neg_compile_test(neg_core_text_niche_key_forged
+  "error: redefinition of .class foundation::core::niche_key<T>."
+  "Choice\\.h:[0-9]+:[0-9]+: note: previous definition of .class foundation::core::niche_key<T>.")
+foundation_neg_compile_test(neg_core_sum_slot_forged_one_of
+  "error: .unsigned char foundation::core::detail::SumSlotOf<false, Owner, int>::tag_. is private within this context"
+  "Choice\\.h:[0-9]+:[0-9]+: note: declared private here")
 foundation_neg_compile_test(neg_core_one_of_owning_copied
   "use of deleted function .foundation::core::OneOf<Owner, int>::OneOf\\(const foundation::core::OneOf<Owner, int>&\\)."
   "an owning sum is move-only: a copy would duplicate what an alternative owns")
