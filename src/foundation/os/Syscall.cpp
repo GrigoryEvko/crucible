@@ -45,6 +45,8 @@ namespace foundation::os {
 // The argument words of foundation/os/OpenFlags.h are the words of the kernel
 // header.
 static_assert(kAtCurrentDirectory == AT_FDCWD, "kAtCurrentDirectory is not AT_FDCWD of <linux/fcntl.h>");
+static_assert(kAtSymlinkNoFollow == AT_SYMLINK_NOFOLLOW,
+              "kAtSymlinkNoFollow is not AT_SYMLINK_NOFOLLOW of <linux/fcntl.h>");
 static_assert(kOpenReadOnly == O_RDONLY, "kOpenReadOnly is not O_RDONLY of <linux/fcntl.h>");
 static_assert(kOpenWriteOnly == O_WRONLY, "kOpenWriteOnly is not O_WRONLY of <linux/fcntl.h>");
 static_assert(kOpenReadWrite == O_RDWR, "kOpenReadWrite is not O_RDWR of <linux/fcntl.h>");
@@ -176,6 +178,12 @@ constexpr long kNoCall = -1;
             return __NR_renameat;
         case Syscall::renameat2:
             return __NR_renameat2;
+        case Syscall::unlinkat:
+            return __NR_unlinkat;
+        case Syscall::mkdirat:
+            return __NR_mkdirat;
+        case Syscall::newfstatat:
+            return __NR_newfstatat;
         case Syscall::madvise:
             return __NR_madvise;
         case Syscall::sendfile:
@@ -200,6 +208,16 @@ constexpr long kNoCall = -1;
             return __NR_move_pages;
         case Syscall::getpid:
             return __NR_getpid;
+        case Syscall::setsockopt:
+            return __NR_setsockopt;
+        case Syscall::getsockopt:
+            return __NR_getsockopt;
+        case Syscall::bind:
+            return __NR_bind;
+        case Syscall::sendto:
+            return __NR_sendto;
+        case Syscall::recvfrom:
+            return __NR_recvfrom;
         default:
             return kNoCall;
     }
@@ -320,8 +338,9 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 
 // The release in which a call came to the architecture of the build, with the
 // operations that the doors give it: the later of the first release of the
-// architecture and the release that added the call.  openat and renameat
-// came in 2.6.16.  mbind came in 2.6.7, and the memory policy door uses
+// architecture and the release that added the call.  openat, renameat,
+// unlinkat, mkdirat and newfstatat came in 2.6.16.  mbind came in 2.6.7, and
+// the memory policy door uses
 // MPOL_MF_MOVE, which came in 2.6.16.  move_pages came in 2.6.18.  futex came
 // in 2.6.0, and the futex door uses FUTEX_WAIT_BITSET, which came in 2.6.25.
 // sched_setattr came in 3.14, renameat2 in 3.15, copy_file_range in 4.5 and
@@ -331,6 +350,9 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
     switch (call) {
         case Syscall::openat:
         case Syscall::renameat:
+        case Syscall::unlinkat:
+        case Syscall::mkdirat:
+        case Syscall::newfstatat:
         case Syscall::mbind:
             added = KernelVersion{2, 6, 16};
             break;
@@ -371,6 +393,11 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::sched_setscheduler:
         case Syscall::setpriority:
         case Syscall::getpid:
+        case Syscall::setsockopt:
+        case Syscall::getsockopt:
+        case Syscall::bind:
+        case Syscall::sendto:
+        case Syscall::recvfrom:
         default:
             break;
     }

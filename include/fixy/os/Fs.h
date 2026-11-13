@@ -54,10 +54,15 @@
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Grow.h>
+#include <foundation/core/Heap.h>
+#include <foundation/core/Region.h>
+#include <foundation/core/Text.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/OpenFlags.h>
+#include <foundation/os/PathText.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -131,9 +136,11 @@ namespace detail {
 
 // The file calls of the door file src/fixy/os/Fs.cpp.  Each call takes a
 // descriptor or a path that a zero ends, and it gives the error of the
-// kernel in its Result.  A read or a write that a signal interrupts starts
-// again, and each other error returns.  A descriptor below zero, the
-// descriptor of a closed handle, gives EBADF and makes no system call.
+// kernel in its Result.  A call that a signal interrupts starts again, and
+// each other error returns.  A descriptor below zero, the descriptor of a
+// closed handle, gives EBADF and makes no system call.  DIRECTORY is the
+// descriptor of a directory, and a call reads PATH relative to it, or
+// relative to the current directory for kAtCurrentDirectory.
 
 // Flushes the data of DESCRIPTOR, with the metadata that a read of the data
 // needs (fdatasync).
@@ -145,24 +152,52 @@ sync_data_(int descriptor) noexcept;
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 sync_all_(int descriptor) noexcept;
 
-// Renames FROM to TO, and replaces a file at TO (renameat).
+// Renames FROM to TO under DIRECTORY, and replaces a file at TO (renameat).
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-rename_replacing_(char const* from, char const* to) noexcept;
+rename_replacing_at_(int directory, char const* from, char const* to) noexcept;
 
-// Renames FROM to TO, and gives eexist when a file is at TO (renameat2 with
-// RENAME_NOREPLACE).  A file system with no such rename gives einval, and a
-// kernel older than renameat2 gives enosys.
+// Renames FROM to TO under DIRECTORY, and gives eexist when a file is at TO
+// (renameat2 with RENAME_NOREPLACE).  A file system with no such rename gives
+// einval, and a kernel older than renameat2 gives enosys.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-rename_no_replace_(char const* from, char const* to) noexcept;
+rename_no_replace_at_(int directory, char const* from, char const* to) noexcept;
+
+// Opens PATH under DIRECTORY with the open flags FLAGS of
+// foundation/os/OpenFlags.h, and gives the descriptor (openat).  The kernel
+// reads MODE only when FLAGS holds kOpenCreate.  A door class of OwnedFd is
+// the one caller that keeps the descriptor.
+[[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno> open_at_(int directory, char const* path,
+                                                                                int flags, std::uint32_t mode) noexcept;
+
+// Removes the entry PATH under DIRECTORY, which is no directory (unlinkat).
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+unlink_at_(int directory, char const* path) noexcept;
+
+// Makes the directory PATH under DIRECTORY with the permission bits MODE
+// (mkdirat).  An entry at PATH gives eexist.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+make_directory_at_(int directory, char const* path, std::uint32_t mode) noexcept;
+
+// True when PATH names an entry under DIRECTORY, and false when no entry has
+// the name (newfstatat with kAtSymlinkNoFollow).  A symbolic link is an
+// entry, and the call does not follow it.
+[[nodiscard]] ::foundation::core::Result<bool, ::foundation::os::Errno> has_entry_at_(int directory,
+                                                                                      char const* path) noexcept;
+
+// Reads each byte of DESCRIPTOR from its offset to the end of the file, and
+// puts the bytes after the characters of TEXT.  It gives the count of the
+// bytes, or efbig when they do not fit below the maximum of TEXT.
+[[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+read_all_into_(int descriptor, ::foundation::core::Alloc allocation, ::foundation::core::GrowText& text) noexcept;
 
 // Reads into the COUNT bytes at FIRST until they are full or the file ends,
 // and gives the count of the bytes that it read.
-[[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
-read_full_(int descriptor, std::byte* first, std::size_t count) noexcept;
+[[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno> read_full_(int descriptor, void* first,
+                                                                                          std::size_t count) noexcept;
 
 // Writes the COUNT bytes at FIRST.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-write_full_(int descriptor, std::byte const* first, std::size_t count) noexcept;
+write_full_(int descriptor, void const* first, std::size_t count) noexcept;
 
 // The size in bytes of the file of DESCRIPTOR (fstat).
 [[nodiscard]] ::foundation::core::Result<std::int64_t, ::foundation::os::Errno> file_size_(int descriptor) noexcept;
@@ -320,6 +355,17 @@ template <typename Ctx, typename Atomicity>
 concept CtxFitsCommitAtomic =
     CtxAdmitsFs<Ctx> && KnownAtomicity<Atomicity> && !std::is_same_v<Atomicity, atomicity::None>;
 
+namespace detail {
+
+// The characters of a sanitized path, with a zero after them.  The
+// sanitizer refused each zero byte before the end, so a reader of the
+// kernel reads each character and no other byte.
+[[nodiscard]] inline char const* path_chars_(Path<tags::source::Sanitized> const& path) noexcept {
+    return path.value().c_str();
+}
+
+}  // namespace detail
+
 // The Atoms pack precedes Ctx because every explicit template argument
 // fills the pack and Ctx deduces from the first function argument.
 //
@@ -337,11 +383,23 @@ template <eff::IsExecCtx Ctx>
 [[nodiscard]] ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
 open_dirfd(Ctx const&, Path<tags::source::Sanitized> dir) noexcept;
 
+// The opens of a path under a directory (THE CALLS UNDER A DIRECTORY below),
+// declared here and defined below FileDoor for the same reason.
+template <typename... Atoms, eff::IsExecCtx Ctx>
+    requires CtxFitsFileMint<Ctx, Atoms...>
+[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
+mint_file_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path, std::uint32_t perms = 0644) noexcept;
+
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
+open_dirfd_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noexcept;
+
 // The door to the open of a path.  No object of it exists.  Its members
-// are private, and its two friends are the gated mints that open a path,
-// mint_file and open_dirfd.  OwnedFd and Dirfd befriend this class, so a
-// handle over a path comes only from one of those two mints, after their
-// gates.
+// are private, and its friends are the gated mints that open a path:
+// mint_file, open_dirfd, mint_file_at and open_dirfd_at.  OwnedFd and Dirfd
+// befriend this class, so a handle over a path comes only from one of
+// those mints, after their gates.
 //
 // The trailing return types are necessary: fixy/os/CpuPinned.h gives the
 // parse reason.
@@ -355,6 +413,21 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
         requires ::fixy::fs::CtxAdmitsFs<FriendCtx>
     friend auto open_dirfd(FriendCtx const&, Path<tags::source::Sanitized>) noexcept
         -> ::foundation::core::Result<Dirfd, ::foundation::os::Errno>;
+
+    template <typename... FriendAtoms, eff::IsExecCtx FriendCtx>
+        requires CtxFitsFileMint<FriendCtx, FriendAtoms...>
+    friend auto mint_file_at(FriendCtx const&, Dirfd const&, ::foundation::core::CText, std::uint32_t) noexcept
+        -> ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
+
+    template <eff::IsExecCtx FriendCtx>
+        requires ::fixy::fs::CtxAdmitsFs<FriendCtx>
+    friend auto open_dirfd_at(FriendCtx const&, Dirfd const&, ::foundation::core::CText) noexcept
+        -> ::foundation::core::Result<Dirfd, ::foundation::os::Errno>;
+
+    // The open flags of a directory: O_DIRECTORY refuses anything else,
+    // O_NOFOLLOW refuses a symlink that stands in for the directory.
+    static constexpr int directory_flags_ = ::foundation::os::kOpenDirectory | ::foundation::os::kOpenNoFollow
+                                          | ::foundation::os::kOpenCloseOnExec | ::foundation::os::kOpenReadOnly;
 
     // The handle of a descriptor that the open gave, or the error of the
     // open.
@@ -376,18 +449,31 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
         return own_(detail::open_descriptor_(path, flags, perms));
     }
 
-    // O_DIRECTORY refuses anything else, O_NOFOLLOW refuses a symlink
-    // that stands in for the directory, and the descriptor is what a later
-    // fsync flushes the entry through.
+    // The handle of a directory that the open gave, or the error of the
+    // open.
     [[nodiscard]] static ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
-    open_directory_(const char* dir_path) noexcept {
+    own_directory_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
         using Opened = ::foundation::core::Result<Dirfd, ::foundation::os::Errno>;
-        return own_(detail::open_descriptor_(dir_path,
-                                             ::foundation::os::kOpenDirectory | ::foundation::os::kOpenNoFollow
-                                                 | ::foundation::os::kOpenCloseOnExec | ::foundation::os::kOpenReadOnly,
-                                             0))
+        return own_(std::move(opened))
             .match([](OwnedFd descriptor) -> Opened { return Dirfd{std::move(descriptor)}; },
                    [](::foundation::os::Errno error) -> Opened { return ::foundation::core::err(error); });
+    }
+
+    // The descriptor is what a later fsync flushes the entry through.
+    [[nodiscard]] static ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
+    open_directory_(const char* dir_path) noexcept {
+        return own_directory_(detail::open_descriptor_(dir_path, directory_flags_, 0));
+    }
+
+    // The opens of a path under the directory of the descriptor directory.
+    [[nodiscard]] static ::foundation::core::Result<OwnedFd, ::foundation::os::Errno>
+    open_path_at_(int directory, const char* path, int flags, std::uint32_t perms) noexcept {
+        return own_(detail::open_at_(directory, path, flags, perms));
+    }
+
+    [[nodiscard]] static ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
+    open_directory_at_(int directory, const char* path) noexcept {
+        return own_directory_(detail::open_at_(directory, path, directory_flags_, 0));
     }
 };
 
@@ -397,7 +483,7 @@ template <typename... Atoms, eff::IsExecCtx Ctx>
 mint_file(Ctx const&, Path<tags::source::Sanitized> sanitized_path, ::mode_t perms) noexcept {
     using Minted = ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
     constexpr int flags = detail::fold_open_flags<Atoms...>();
-    return FileDoor::open_path_(sanitized_path.value().c_str(), flags, perms)
+    return FileDoor::open_path_(detail::path_chars_(sanitized_path), flags, perms)
         .match([](OwnedFd descriptor) -> Minted { return mint_linear<OwnedFd>(std::move(descriptor)); },
                [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
 }
@@ -436,16 +522,86 @@ template <typename Atomicity, eff::IsExecCtx Ctx>
     requires CtxFitsCommitAtomic<Ctx, Atomicity>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 commit_atomic(Ctx const&, Path<tags::source::Sanitized> tmp, Path<tags::source::Sanitized> target) noexcept {
+    constexpr int here = ::foundation::os::kAtCurrentDirectory;
     return std::is_same_v<Atomicity, atomicity::Rename>
-             ? detail::rename_replacing_(tmp.value().c_str(), target.value().c_str())
-             : detail::rename_no_replace_(tmp.value().c_str(), target.value().c_str());
+             ? detail::rename_replacing_at_(here, detail::path_chars_(tmp), detail::path_chars_(target))
+             : detail::rename_no_replace_at_(here, detail::path_chars_(tmp), detail::path_chars_(target));
 }
 
 template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
 [[nodiscard]] ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
 open_dirfd(Ctx const&, Path<tags::source::Sanitized> dir) noexcept {
-    return FileDoor::open_directory_(dir.value().c_str());
+    return FileDoor::open_directory_(detail::path_chars_(dir));
+}
+
+// THE CALLS UNDER A DIRECTORY
+//   Each call below takes a Dirfd and the path of an entry under it, as a
+//   CText: a literal, or the c_text() of a foundation::os::PathText.  The
+//   kernel reads the path relative to the directory.  Each open folds in
+//   O_NOFOLLOW and O_CLOEXEC, so a symbolic link at the last part of the
+//   path gives eloop.  A call that a signal interrupts runs again, and each
+//   other error returns in the Result.  Each call takes the context that the
+//   other calls of this header take, because each can park the caller on
+//   the disk.
+
+// Opens path under dir with the mode and the flags of Atoms, as mint_file
+// does.  The kernel reads perms only for a mode that creates the file.
+template <typename... Atoms, eff::IsExecCtx Ctx>
+    requires CtxFitsFileMint<Ctx, Atoms...>
+[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
+mint_file_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path, std::uint32_t perms) noexcept {
+    using Minted = ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
+    constexpr int flags = detail::fold_open_flags<Atoms...>() | ::foundation::os::kOpenNoFollow;
+    return FileDoor::open_path_at_(dir.get(), ::foundation::core::detail::c_text_first_(path), flags, perms)
+        .match([](OwnedFd descriptor) -> Minted { return mint_linear<OwnedFd>(std::move(descriptor)); },
+               [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
+}
+
+// Opens the directory at path under dir.
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
+open_dirfd_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noexcept {
+    return FileDoor::open_directory_at_(dir.get(), ::foundation::core::detail::c_text_first_(path));
+}
+
+// Renames from to to, the two under dir, with the atomicity of
+// commit_atomic.  Not a mint.
+template <typename Atomicity, eff::IsExecCtx Ctx>
+    requires CtxFitsCommitAtomic<Ctx, Atomicity>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+commit_atomic_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText from, ::foundation::core::CText to) noexcept {
+    char const* const source = ::foundation::core::detail::c_text_first_(from);
+    char const* const target = ::foundation::core::detail::c_text_first_(to);
+    return std::is_same_v<Atomicity, atomicity::Rename> ? detail::rename_replacing_at_(dir.get(), source, target)
+                                                        : detail::rename_no_replace_at_(dir.get(), source, target);
+}
+
+// Removes the file at path under dir.  A directory at path gives eisdir.
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+unlink_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noexcept {
+    return detail::unlink_at_(dir.get(), ::foundation::core::detail::c_text_first_(path));
+}
+
+// Makes the directory at path under dir, with the permission bits perms.
+// An entry at path gives eexist.
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+make_directory_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path, std::uint32_t perms = 0755) noexcept {
+    return detail::make_directory_at_(dir.get(), ::foundation::core::detail::c_text_first_(path), perms);
+}
+
+// True when an entry is at path under dir, and false when no entry is
+// there.  A symbolic link is an entry, and the call does not follow it.
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<bool, ::foundation::os::Errno>
+has_entry_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noexcept {
+    return detail::has_entry_at_(dir.get(), ::foundation::core::detail::c_text_first_(path));
 }
 
 // The three calls below read and write through a handle that is open.
@@ -481,8 +637,74 @@ file_size(Ctx const&, const OwnedFd& handle) noexcept {
     return detail::file_size_(handle.get());
 }
 
+// The read and the writes of the base buffers: a View of bytes, and the
+// characters of a TextView.  The std::span forms above serve the callers
+// that still hold a buffer of the standard library.
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+read_full(Ctx const&, const OwnedFd& handle, ::foundation::core::View<std::byte> buffer) noexcept {
+    return detail::read_full_(handle.get(), first_of_(::foundation::core::detail::ViewDoor::key(), buffer),
+                              buffer.size());
+}
+
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+write_full(Ctx const&, const OwnedFd& handle, ::foundation::core::View<std::byte const> buffer) noexcept {
+    return detail::write_full_(handle.get(), first_of_(::foundation::core::detail::ViewDoor::key(), buffer),
+                               buffer.size());
+}
+
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+write_full(Ctx const&, const OwnedFd& handle, ::foundation::core::TextView text) noexcept {
+    return detail::write_full_(handle.get(), ::foundation::core::detail::text_first_(text), text.size());
+}
+
 // The read-only open, spelled once.
 using read_only = ::fixy::atom::fs::mode<open_mode::ReadOnly>;
+
+// Reads the whole file at path under dir, and puts its bytes after the
+// characters of text.  It gives the count of the bytes, or efbig when they
+// do not fit below the maximum of text.  The allocation capability shows
+// the growth of text at the call.  A failed read leaves the bytes that it
+// put before the failure in text.  Complexity: linear in the size of the
+// file.
+template <class Marker, eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx> && ::foundation::core::AllocationCapability<Marker>
+[[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+read_whole_at(Ctx const& ctx, Marker allocation, Dirfd const& dir, ::foundation::core::CText path,
+              ::foundation::core::GrowText& text) noexcept {
+    using Read = ::foundation::core::Result<std::size_t, ::foundation::os::Errno>;
+    return mint_file_at<read_only>(ctx, dir, path)
+        .match(
+            [allocation, &text](Linear<OwnedFd> opened) -> Read {
+                OwnedFd const file = std::move(opened).consume();
+                return detail::read_all_into_(file.get(), allocation, text);
+            },
+            [](::foundation::os::Errno error) -> Read { return ::foundation::core::err(error); });
+}
+
+// The path of a sanitized path as a PathText of at most Capacity
+// characters, with a zero after the last one.  A longer path gives
+// enametoolong.  The sanitizer refused each zero byte, so the append gives
+// no einval.  Complexity: linear in the length of the path.
+template <std::size_t Capacity>
+    requires(Capacity > 0 && Capacity < static_cast<std::size_t>(__PTRDIFF_MAX__))
+[[nodiscard]] ::foundation::core::Result<::foundation::os::PathText<Capacity>, ::foundation::os::Errno>
+path_text_of(Path<tags::source::Sanitized> const& path) noexcept {
+    using Built = ::foundation::core::Result<::foundation::os::PathText<Capacity>, ::foundation::os::Errno>;
+    char const* const first = detail::path_chars_(path);
+    std::size_t size = 0;
+    while (first[size] != '\0')
+        ++size;
+    ::foundation::os::PathText<Capacity> text{};
+    return text.append(::foundation::core::detail::text_over_(first, size))
+        .match([&text](::foundation::core::Unit) -> Built { return text; },
+               [](::foundation::os::Errno error) -> Built { return ::foundation::core::err(error); });
+}
 
 // The durable and atomic_write atoms only declare intent.  The mint
 // opens the file.  The caller still calls sync<Fsync> after writing and

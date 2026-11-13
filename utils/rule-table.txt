@@ -335,6 +335,7 @@ door <linux/auxvec.h> src/foundation/os/Auxiliary.cpp
 door <asm/stat.h> src/fixy/os/Fs.cpp
 door <linux/fs.h> src/fixy/os/Fs.cpp
 door <linux/io_uring.h> src/fixy/os/Io.cpp
+door <linux/tcp.h> src/fixy/os/Socket.cpp
 door <linux/netlink.h> include/fixy/os/Socket.h
 door <sys/socket.h> include/fixy/os/Socket.h
 door <linux/ptp_clock.h> include/fixy/os/Time.h

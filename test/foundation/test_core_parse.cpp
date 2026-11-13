@@ -25,11 +25,13 @@
 
 namespace {
 
+using ::foundation::core::append_hex;
 using ::foundation::core::FixedText;
 using ::foundation::core::format;
 using ::foundation::core::max_of;
 using ::foundation::core::min_of;
 using ::foundation::core::parse;
+using ::foundation::core::parse_hex;
 using ::foundation::core::ParseError;
 using ::foundation::core::ParseErrorKind;
 using ::foundation::core::Result;
@@ -595,6 +597,23 @@ void test_parse_reads_a_formatted_text() {
     ::fixy::report(::fixy::Sink::Out, "test_core_parse: \"{}\" reads back\n", written);
 }
 
+// Bare hex digits read back as the value that append_hex wrote.  A prefix,
+// a sign, an empty text and a value past the range of T are errors.
+void test_parse_hex_reads_bare_digits() {
+    std::uint64_t volatile hash = 0xfedcba9876543210ULL;
+    FixedText<16> text;
+    assert(append_hex<16>(text, hash).is_ok());
+    assert(parse_hex<std::uint64_t>(text.view()).value_or(0) == hash);
+    assert(parse_hex<std::uint64_t>("00FF").value_or(0) == 0xFFU);
+    assert(parse_hex<std::uint8_t>("ff").value_or(0) == 0xFFU);
+    assert((parse_hex<std::uint64_t>("0x1F").err().value_or(ParseError{})
+            == ParseError{ParseErrorKind::unexpected_character, 1}));
+    assert((parse_hex<std::uint64_t>("-1").err().value_or(ParseError{})
+            == ParseError{ParseErrorKind::unexpected_character, 0}));
+    assert((parse_hex<std::uint64_t>("").err().value_or(ParseError{}) == ParseError{ParseErrorKind::no_digit, 0}));
+    assert((parse_hex<std::uint8_t>("100").err().value_or(ParseError{}) == ParseError{ParseErrorKind::overflow, 2}));
+}
+
 static_assert(alphabet_character(21) == 'F' && alphabet_character(22) == 'x');
 static_assert(alphabet_character(alphabet_size - 1U) == '\xFF');
 
@@ -602,6 +621,7 @@ static_assert(alphabet_character(alphabet_size - 1U) == '\xFF');
 
 int main() {
     test_parse_reads_a_formatted_text();
+    test_parse_hex_reads_bare_digits();
     test_each_short_value_reads_back();
     test_random_values_read_back();
     test_random_texts_agree_with_the_reference_and_the_oracle();

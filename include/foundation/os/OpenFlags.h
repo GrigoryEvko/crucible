@@ -19,6 +19,10 @@ namespace foundation::os {
 // directory of the process (AT_FDCWD).
 inline constexpr int kAtCurrentDirectory = -100;
 
+// A status read of the *at family reads a symbolic link itself, and does not
+// follow it (AT_SYMLINK_NOFOLLOW).
+inline constexpr int kAtSymlinkNoFollow = 0x100;
+
 // An open for reading only (O_RDONLY).
 inline constexpr int kOpenReadOnly = 0;
 

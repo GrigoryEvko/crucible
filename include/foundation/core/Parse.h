@@ -5,6 +5,9 @@
 //   parse<T>(text)   the value of the integer of text as a T, or the
 //                    ParseError of the first character that the grammar
 //                    refuses
+//   parse_hex<T>(text)
+//                    the value of bare hexadecimal digits as an unsigned T,
+//                    with no "0x", and the errors of parse()
 //
 // THE GRAMMAR
 //   An optional '-' for a signed T.  Then "0x" and at least one hexadecimal
@@ -163,6 +166,15 @@ template <Integer T>
         return detail::parse_digits_<T, 16U>(detail::text_after_(magnitude, 2), sign + 2, is_negative);
     }
     return detail::parse_digits_<T, 10U>(magnitude, sign, is_negative);
+}
+
+// The value of bare hexadecimal digits as an unsigned T: at least one digit
+// of 0 to 9, a to f and A to F, with no sign, no prefix and no other
+// character.  The errors are those of parse().  Complexity: linear in the
+// count of the digits.
+template <UnsignedInteger T>
+[[nodiscard]] constexpr Result<T, ParseError> parse_hex(TextView text) noexcept {
+    return detail::parse_digits_<T, 16U>(text, 0, false);
 }
 
 }  // namespace foundation::core

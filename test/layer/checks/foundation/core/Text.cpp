@@ -134,6 +134,18 @@ static_assert(builds_a_name_in_a_result());
 }
 static_assert(fills_and_refuses());
 
+// append_hex writes the low digits with the zeros that lead, and refuses
+// digits past the capacity with no change.
+[[nodiscard]] consteval bool appends_hex_digits() noexcept {
+    FixedText<6> text{"h:"};
+    bool const is_written = append_hex<4>(text, 0x12abU).is_ok();
+    bool const is_refused = append_hex<1>(text, 1).is_err();
+    FixedText<3> padded{};
+    bool const is_padded = append_hex<3>(padded, 0xfU).is_ok() && padded.view() == TextView{"00f"};
+    return is_written && is_refused && text.view() == TextView{"h:12ab"} && is_padded;
+}
+static_assert(appends_hex_digits());
+
 // The name of an enumerator is a TextView of its identifier, or of the
 // sentinel when no enumerator holds the value.  A zero follows each text.
 // The read of that zero is a constant expression only when the storage

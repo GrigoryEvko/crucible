@@ -157,11 +157,12 @@ namespace detail {
 template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::net::CtxFitsSocketMint<Ctx, ::fixy::net::socket_kind::NetlinkRoute>
 [[nodiscard]] ::fixy::Result<Qdisc, PacingError> query_active_qdisc(Ctx const& ctx, NicInterfaceName iface) noexcept {
-    auto opened = ::fixy::net::mint_socket<::fixy::net::socket_kind::NetlinkRoute>(ctx);
-    if (!opened.has_value()) {
+    const ::fixy::fs::OwnedFd nl = ::fixy::net::mint_socket<::fixy::net::socket_kind::NetlinkRoute>(ctx).match(
+        [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd { return std::move(opened).consume(); },
+        [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
+    if (!nl.is_open()) {
         return ::fixy::err(PacingError::NetlinkOpenFailed);
     }
-    const ::fixy::fs::OwnedFd nl = std::move(*opened).consume();
     return detail::query_active_qdisc_over(nl, iface);
 }
 

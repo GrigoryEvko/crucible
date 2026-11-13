@@ -14,6 +14,8 @@
 
 #include <foundation/Platform.h>
 
+#include <cstdint>
+
 namespace {
 
 namespace core = ::foundation::core;
@@ -96,6 +98,23 @@ void test_refuses_an_append_that_does_not_fit() {
     CRUCIBLE_FATAL_INVARIANT(path.append('d').is_ok());
     CRUCIBLE_FATAL_INVARIANT(path.append('e').is_err());
     CRUCIBLE_FATAL_INVARIANT(path.c_text().view() == core::TextView{"abcd"});
+}
+
+// The hex append writes a fixed count of lower-case digits, with the zeros
+// that lead, so a hash splits into the two parts of an object path.  A count
+// that does not fit gives enametoolong, and the path keeps its characters.
+void test_appends_hex_digits() {
+    std::uint64_t volatile hash = 0x0a1b2c3d4e5f6071ULL;
+    os::PathText<25> path;
+    CRUCIBLE_FATAL_INVARIANT(path.append(core::CText{"objects/"}).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(path.append_hex<2>(hash >> 56U).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(path.append('/').is_ok());
+    CRUCIBLE_FATAL_INVARIANT(path.append_hex<14>(hash).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(path.c_text().view() == core::TextView{"objects/0a/1b2c3d4e5f6071"});
+    bool const is_too_long = path.append_hex<16>(hash).match(
+        [](core::Unit) { return false; }, [](os::Errno error) { return error == os::Errno::enametoolong; });
+    CRUCIBLE_FATAL_INVARIANT(is_too_long);
+    CRUCIBLE_FATAL_INVARIANT(path.c_text().view() == core::TextView{"objects/0a/1b2c3d4e5f6071"});
 }
 
 // The listing of /proc/self gives the name of each entry, such as status,
@@ -185,6 +204,7 @@ int main() {
     test_closes_each_descriptor();
     test_builds_a_path();
     test_refuses_an_append_that_does_not_fit();
+    test_appends_hex_digits();
     test_lists_a_directory();
     test_stops_a_listing();
     test_gives_the_error_of_a_listing();

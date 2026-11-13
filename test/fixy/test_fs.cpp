@@ -8,6 +8,7 @@
 // unwritable /tmp — is skipped rather than failed.
 
 #include <fixy/Core.h>
+#include <foundation/core/Array.h>
 #include <fixy/os/OwnedFile.h>
 #include <fixy/os/Path.h>
 #include <fixy/os/Fs.h>
@@ -240,6 +241,129 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     return 0;
 }
 
+// The calls under a directory: a new directory, its open, a file under it
+// that a View and a TextView fill, a commit by a rename in the same
+// directory, a whole read, a check of an entry and a remove.  The report of
+// a failure goes through the Report family.
+[[nodiscard]] int calls_under_a_directory(const ScratchDir& scratch) {
+    namespace core = foundation::core;
+    IoBlockCtx ctx{eff::testing::test()};
+    eff::Alloc const alloc{};
+
+    auto opened_root = fs::open_dirfd(ctx, sanitized(scratch.path()));
+    if (opened_root.is_err()) {
+        fixy::report(fixy::Sink::Err, "open_dirfd on the scratch directory failed (errno {})\n", errno_of(opened_root));
+        return 1;
+    }
+    fs::Dirfd const root = std::move(opened_root).expect("the scratch directory opened");
+    if (auto made = fs::make_directory_at(ctx, root, "objects"); made.is_err()) {
+        fixy::report(fixy::Sink::Err, "make_directory_at failed (errno {})\n", errno_of(made));
+        return 1;
+    }
+    if (auto again = fs::make_directory_at(ctx, root, "objects"); errno_of(again) != EEXIST) {
+        fixy::report(fixy::Sink::Err, "a second make_directory_at did not give EEXIST\n");
+        return 1;
+    }
+    auto opened_objects = fs::open_dirfd_at(ctx, root, "objects");
+    if (opened_objects.is_err()) {
+        fixy::report(fixy::Sink::Err, "open_dirfd_at failed (errno {})\n", errno_of(opened_objects));
+        return 1;
+    }
+    fs::Dirfd const objects = std::move(opened_objects).expect("the objects directory opened");
+
+    Opened writer =
+        opened_of(fs::mint_file_at<fixy::atom::fs::mode<fs::open_mode::WriteTruncate>>(ctx, objects, "ab.tmp"));
+    if (writer.error_number != 0) {
+        fixy::report(fixy::Sink::Err, "mint_file_at WriteTruncate failed (errno {})\n", writer.error_number);
+        return 1;
+    }
+    core::FixedArray<std::byte, 3> bytes{};
+    core::fill(bytes.view(), std::byte{'x'});
+    if (fs::write_full(ctx, writer.file, bytes.view()).is_err()
+        || fs::write_full(ctx, writer.file, core::TextView{"yz"}).is_err()) {
+        fixy::report(fixy::Sink::Err, "a write_full of a View or of a TextView failed\n");
+        return 1;
+    }
+    if (fs::sync<fs::sync_op::Fdatasync>(ctx, writer.file).is_err()) {
+        fixy::report(fixy::Sink::Err, "the fdatasync of the file under the directory failed\n");
+        return 1;
+    }
+    writer.file = fs::OwnedFd{};
+    if (auto committed = fs::commit_atomic_at<fs::atomicity::Rename>(ctx, objects, "ab.tmp", "ab");
+        committed.is_err()) {
+        fixy::report(fixy::Sink::Err, "commit_atomic_at<Rename> failed (errno {})\n", errno_of(committed));
+        return 1;
+    }
+    if (fs::sync<fs::sync_op::FsyncParentDir>(ctx, objects).is_err()) {
+        fixy::report(fixy::Sink::Err, "the fsync of the directory failed\n");
+        return 1;
+    }
+    if (fs::has_entry_at(ctx, objects, "ab.tmp").value_or(true)
+        || !fs::has_entry_at(ctx, objects, "ab").value_or(false)) {
+        fixy::report(fixy::Sink::Err, "has_entry_at did not see the rename\n");
+        return 1;
+    }
+
+    core::GrowText text = core::mint_grow_text(64);
+    if (fs::read_whole_at(ctx, alloc, objects, "ab", text).value_or(0) != 5
+        || !(text.view() == core::TextView{"xxxyz"})) {
+        fixy::report(fixy::Sink::Err, "read_whole_at did not give the five bytes of the file\n");
+        return 1;
+    }
+    core::GrowText small = core::mint_grow_text(4);
+    if (errno_of(fs::read_whole_at(ctx, alloc, objects, "ab", small)) != EFBIG) {
+        fixy::report(fixy::Sink::Err, "read_whole_at into a text that is too small did not give EFBIG\n");
+        return 1;
+    }
+    if (fs::unlink_at(ctx, objects, "ab").is_err() || fs::has_entry_at(ctx, objects, "ab").value_or(true)) {
+        fixy::report(fixy::Sink::Err, "unlink_at did not remove the file\n");
+        return 1;
+    }
+    return 0;
+}
+
+// /proc/self is a symbolic link on each Linux host.  An open under a
+// directory does not follow a symbolic link at the last part of its path,
+// and gives ELOOP.  The link is an entry of its directory.
+[[nodiscard]] int open_under_a_directory_refuses_a_symbolic_link() {
+    IoBlockCtx ctx{eff::testing::test()};
+    auto opened_proc = fs::open_dirfd(ctx, sanitized("/proc"));
+    if (opened_proc.is_err()) {
+        fixy::report(fixy::Sink::Err, "open_dirfd on /proc failed (errno {})\n", errno_of(opened_proc));
+        return 1;
+    }
+    fs::Dirfd const proc = std::move(opened_proc).expect("/proc opened");
+    if (opened_of(fs::mint_file_at<fs::read_only>(ctx, proc, "self")).error_number != ELOOP) {
+        fixy::report(fixy::Sink::Err, "mint_file_at followed the symbolic link /proc/self\n");
+        return 1;
+    }
+    if (!fs::has_entry_at(ctx, proc, "self").value_or(false)) {
+        fixy::report(fixy::Sink::Err, "has_entry_at did not see the symbolic link /proc/self\n");
+        return 1;
+    }
+    return 0;
+}
+
+// The PathText of a sanitized path holds its characters, and a path longer
+// than the capacity gives ENAMETOOLONG.
+[[nodiscard]] int path_text_of_a_sanitized_path() {
+    auto built = fs::path_text_of<64>(sanitized("/tmp/cipher/objects"));
+    if (built.is_err()) {
+        fixy::report(fixy::Sink::Err, "path_text_of failed (errno {})\n", errno_of(built));
+        return 1;
+    }
+    auto const path = std::move(built).expect("the path fits");
+    if (!(path.c_text().view() == foundation::core::TextView{"/tmp/cipher/objects"})) {
+        fixy::report(fixy::Sink::Err, "path_text_of did not keep the characters of the path\n");
+        return 1;
+    }
+    if (errno_of(fs::path_text_of<4>(sanitized("/tmp/cipher"))) != ENAMETOOLONG) {
+        fixy::report(fixy::Sink::Err, "path_text_of of a long path did not give ENAMETOOLONG\n");
+        return 1;
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -251,5 +375,8 @@ int main() {
     if (const int rc = mint_file_writes_syncs_and_commits(scratch); rc != 0) return rc;
     if (const int rc = dirfd_opens_and_flushes_the_entry(scratch); rc != 0) return rc;
     if (const int rc = full_reads_and_writes_round_trip(scratch); rc != 0) return rc;
+    if (const int rc = calls_under_a_directory(scratch); rc != 0) return rc;
+    if (const int rc = open_under_a_directory_refuses_a_symbolic_link(); rc != 0) return rc;
+    if (const int rc = path_text_of_a_sanitized_path(); rc != 0) return rc;
     return 0;
 }

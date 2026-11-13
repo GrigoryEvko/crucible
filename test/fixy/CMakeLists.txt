@@ -4903,6 +4903,15 @@ fixy_neg_compile_test(neg_os_fs_mint_file_empty_atoms
   "no matching function for call"
   "mint_file<>\\(\\{anonymous\\}::IoBlockCtx&")
 
+# The open under a directory takes the gate of mint_file: a context without
+# Block, and a pack with no mode atom, are refused.
+fixy_neg_compile_test(neg_os_fs_mint_file_at_ctx_lacks_block
+  "no matching function for call"
+  "mint_file_at<.*>\\(\\{anonymous\\}::IoOnlyCtx&")
+fixy_neg_compile_test(neg_os_fs_mint_file_at_empty_atoms
+  "no matching function for call"
+  "mint_file_at<>\\(\\{anonymous\\}::IoBlockCtx&")
+
 fixy_neg_compile_test(neg_os_fs_mint_file_external_path
   "no matching function for call"
   "Tagged<std::filesystem::__cxx11::path, fixy::tags::source::External>\\)")

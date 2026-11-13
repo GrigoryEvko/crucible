@@ -23,7 +23,8 @@
 // so no pointer that a caller holds and no bytes become a TextView.
 //
 // A FixedText starts empty, or holds the characters of a literal that fits
-// it.  push() and append() put characters after the last one, and format()
+// it.  push(), append() and the free append_hex<Digits>() put characters
+// after the last one, and format()
 // of foundation/core/Format.h writes a text into it from its start.  A write
 // that does not fit gives Truncated.  A FixedText never holds more than N
 // characters, and no operation reads past its count.
@@ -59,6 +60,7 @@
 #include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
+#include <cstdint>
 
 namespace foundation::core {
 
@@ -349,7 +351,32 @@ constexpr void text_resize_(FixedText<Capacity>& text, std::size_t count) noexce
     text.size_ = count <= Capacity ? count : Capacity;
 }
 
+// Writes the low count hexadecimal digits of value at out, the most
+// significant first, in lower case.  count is 1 to 16.
+constexpr void put_hex_digits_(std::uint64_t value, std::size_t count, char* out) noexcept {
+    for (std::size_t index = count; index != 0; --index) {
+        out[index - 1] = "0123456789abcdef"[value & 0xFU];
+        value >>= 4U;
+    }
+}
+
 }  // namespace detail
+
+// Puts the low Digits hexadecimal digits of value after the last character
+// of text, the most significant first, in lower case and with the zeros
+// that lead.  When they do not fit, it gives Truncated, and text keeps the
+// characters that it held.  One compare and Digits stores.
+template <std::size_t Digits, std::size_t Capacity>
+    requires(Digits >= 1 && Digits <= 16)
+[[nodiscard]] constexpr Result<Unit, Truncated> append_hex(FixedText<Capacity>& text, std::uint64_t value) noexcept {
+    std::size_t const size = text.size();
+    if (Digits > Capacity - size) [[unlikely]] {
+        return err(Truncated{});
+    }
+    detail::put_hex_digits_(value, Digits, detail::text_bytes_(text) + size);
+    detail::text_resize_(text, size + Digits);
+    return Unit{};
+}
 
 // The identifier of the enumerator that holds value, or "<unknown E>" when
 // no enumerator holds it.  When two enumerators share a value, the first in

@@ -72,8 +72,8 @@ rule artifact-symbols
 @build/libcrucible_cipher.a | door-ratchet | 1 | __errno_location | src/Cipher.cpp reads errno after its raw calls of the C library.  The unit cipher of wave 5B moves Cipher.cpp to the doors of fixy/os, which give the error Errno
 @build/libcrucible_cipher.a | door-ratchet | 1 | write | src/Cipher.cpp calls the write of the C library.  The unit cipher of wave 5B moves the write to the file door of fixy/os
 @build/libcrucible_cipher.a | helper-throw | 2 | _ZSt16__throw_bad_castv | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
-@build/libcrucible_cipher.a | helper-throw | 5 | _ZSt19__throw_logic_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
-@build/libcrucible_cipher.a | helper-throw | 17 | _ZSt20__throw_length_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
+@build/libcrucible_cipher.a | helper-throw | 4 | _ZSt19__throw_logic_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
+@build/libcrucible_cipher.a | helper-throw | 16 | _ZSt20__throw_length_errorPKc | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libcrucible_cipher.a | libc-allow | 1 | _Unwind_Resume | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libcrucible_cipher.a | libc-allow | 1 | __stack_chk_fail | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libcrucible_cipher.a | libc-allow | 1 | memcmp | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import

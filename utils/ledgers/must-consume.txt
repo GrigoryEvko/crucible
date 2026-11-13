@@ -11,7 +11,7 @@ reason src/ | each stage of the background pipeline drops its endpoint of a chan
 reason test/ | the tests drop tokens and handles at the end of a test, consume a value two times to show the abort, and discard linear temporaries.  Some tests consume a token behind a test of its option
 bench/ | discarded-temporary | 2 | - | -
 bench/ | unconsumed | 8 | - | -
-include/crucible/cntp/ | unconsumed | 26 | - | -
+include/crucible/cntp/ | unconsumed | 25 | - | -
 include/crucible/ledger/ | unconsumed | 1 | - | -
 include/crucible/perf/detail/ | unconsumed | 1 | - | -
 include/fixy/ | unconsumed | 3 | - | -
@@ -24,7 +24,7 @@ test/ | unconsumed | 38 | - | -
 test/fixy/ | assign-over-live | 4 | - | -
 test/fixy/ | discarded-temporary | 5 | - | -
 test/fixy/ | double-consume | 5 | - | -
-test/fixy/ | unconsumed | 203 | - | -
+test/fixy/ | unconsumed | 202 | - | -
 test/fixy/ | unconsumed-on-path | 1 | - | -
 test/foundation/ | discarded-temporary | 2 | - | -
 test/foundation/ | unconsumed | 13 | - | -

@@ -452,6 +452,7 @@ add_library(fixy STATIC
   src/fixy/os/NumaPlacement.cpp
   src/fixy/os/Sched.cpp
   src/fixy/os/Signal.cpp
+  src/fixy/os/Socket.cpp
   src/fixy/os/ThreadTasks.cpp
   src/fixy/os/Topology.cpp
   src/fixy/session/Watch.cpp

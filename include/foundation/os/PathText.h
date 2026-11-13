@@ -11,7 +11,8 @@
 //
 // An append that does not fit gives the error enametoolong, and an append of
 // a zero byte gives the error einval.  On an error the path keeps the
-// characters that it held before the append.
+// characters that it held before the append.  append_decimal and
+// append_hex<Digits> append the digits of a number.
 //
 // The buffer is a FixedText of Capacity + 1 characters.  Its count is the
 // count of the path, and the character after the count is the zero.
@@ -98,6 +99,18 @@ public:
             digits[index] = reversed[count - 1 - index];
         }
         put_(digits, count);
+        return core::Unit{};
+    }
+
+    // Appends the low Digits hexadecimal digits of value, the most
+    // significant first, in lower case and with the zeros that lead.
+    template <std::size_t Digits>
+        requires(Digits >= 1 && Digits <= 16)
+    [[nodiscard]] constexpr core::Result<core::Unit, Errno> append_hex(std::uint64_t value) noexcept {
+        if (Digits > Capacity - size()) return core::err(Errno::enametoolong);
+        char digits[Digits]{};
+        core::detail::put_hex_digits_(value, Digits, digits);
+        put_(digits, Digits);
         return core::Unit{};
     }
 

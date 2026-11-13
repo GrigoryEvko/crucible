@@ -257,6 +257,7 @@ that the axis does not apply to the row.
 | `mint_durable_append_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_durable_truncate_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
+| `mint_file_at` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_io_uring_ring` | `include/fixy/os/Io.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_mmap` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_mmap_anon` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
@@ -352,4 +353,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 84 | 46 | 29 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 124 | 53 | 68 | 3 | 0 | 4 |
+| substrate (`include/foundation/`, `include/fixy/`) | 125 | 54 | 68 | 3 | 0 | 4 |

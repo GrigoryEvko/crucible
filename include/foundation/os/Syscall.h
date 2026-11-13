@@ -74,6 +74,9 @@ enum class Syscall : std::uint8_t {
     fstat,
     renameat,
     renameat2,
+    unlinkat,
+    mkdirat,
+    newfstatat,
     madvise,
     sendfile,
     copy_file_range,
@@ -86,6 +89,11 @@ enum class Syscall : std::uint8_t {
     mbind,
     move_pages,
     getpid,
+    setsockopt,
+    getsockopt,
+    bind,
+    sendto,
+    recvfrom,
 };
 
 // True when the call can wait with no bound for another thread or process,
@@ -93,7 +101,8 @@ enum class Syscall : std::uint8_t {
 // wait.  In a build with ThreadSanitizer, the primitive tells the sanitizer
 // of such a call (THE SANITIZERS).  An ioctl waits only for a request that
 // waits, and the door of fixy/os/Fd.h sends only a request that the kernel
-// answers at once.
+// answers at once.  The socket door of fixy/os/Socket.h passes MSG_DONTWAIT
+// to each sendto and recvfrom, so neither waits.
 [[nodiscard]] constexpr bool can_block(Syscall call) noexcept {
     return call == Syscall::read || call == Syscall::write || call == Syscall::futex;
 }
