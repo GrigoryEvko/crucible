@@ -123,26 +123,13 @@ void add_algorithm(CcAvailability& availability, CcAlgorithm algorithm) noexcept
     return availability;
 }
 
-::fixy::Result<::fixy::Unit, CcError> detail::set_cc_for_socket_keyed(SocketOptionKey const&, SocketFd fd,
-                                                                      DeclaredCcChoice choice) noexcept {
-    auto const& selection = choice.value();
-    ::fixy::TextView const name = selection.kernel_name.view();
-
-    // The name holds at most max_bytes - 1 characters, so each write is in
-    // the buffer, and the zero after the name stays.
-    std::array<char, KernelCcName::max_bytes> optname{};
-    std::size_t position = 0;
-    for (char const character : name) {
-        optname[position] = character;
-        ++position;
-    }
-
-    const int rc =
-        ::setsockopt(fd.value(), IPPROTO_TCP, TCP_CONGESTION, optname.data(), static_cast<socklen_t>(name.size() + 1u));
-    if (rc != 0) {
-        return ::fixy::err(CcError::SetSockOptFailed);
-    }
-    return ::fixy::Unit{};
+::fixy::Result<CcSelection, CcError> detail::selection_of_kernel_name(::fixy::TextView name) noexcept {
+    CRUCIBLE_TRY(admitted, KernelCcName::from(name));
+    CRUCIBLE_TRY(algorithm, algorithm_from_kernel_name(admitted.view()));
+    return CcSelection{
+        .algorithm = algorithm,
+        .kernel_name = admitted,
+    };
 }
 
 ::fixy::Result<CcSelection, CcError> detail::query_cc_selection_for_socket_keyed(SocketOptionKey const&,
@@ -166,13 +153,7 @@ void add_algorithm(CcAvailability& availability, CcAlgorithm algorithm) noexcept
         }
         received.push(character).expect("the text holds as many characters as the buffer");
     }
-    CRUCIBLE_TRY(admitted, KernelCcName::from(received.view()));
-    CRUCIBLE_TRY(algorithm, algorithm_from_kernel_name(admitted.view()));
-
-    return CcSelection{
-        .algorithm = algorithm,
-        .kernel_name = admitted,
-    };
+    return selection_of_kernel_name(received.view());
 }
 
 }  // namespace crucible::cntp

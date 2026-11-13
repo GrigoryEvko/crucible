@@ -9,7 +9,9 @@
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/os/Fs.h>
+#include <fixy/os/Socket.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/os/Errno.h>
 
 #include <cstdint>
 #include <type_traits>
@@ -95,22 +97,21 @@ template <LinkClass Link>
     });
 }
 
-namespace detail {
-
-// The TCP_RTO_MIN_US body.  It takes the key, so only the gated form below
-// reaches setsockopt.
-[[nodiscard]] ::fixy::Result<::fixy::Unit, IncastError>
-set_socket_rto_min_usec_keyed(SocketOptionKey const&, SocketFd fd, PositiveRtoMinUsec rto_min) noexcept;
-
-}  // namespace detail
-
-// The minimum retransmit timeout is a socket option, so the call takes a
-// context that admits the socket option row.
+// The minimum retransmit timeout is a socket option (TCP_RTO_MIN_US), so the
+// call takes a context that admits the socket option row.  A kernel with no
+// such option gives UnsupportedRtoMinSockOpt.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSocketOption<Ctx>
 [[nodiscard]] ::fixy::Result<::fixy::Unit, IncastError> set_socket_rto_min_usec(Ctx const& ctx, SocketFd fd,
                                                                                 PositiveRtoMinUsec rto_min) noexcept {
-    return detail::set_socket_rto_min_usec_keyed(detail::socket_option_key_(ctx), fd, rto_min);
+    using Set = ::fixy::Result<::fixy::Unit, IncastError>;
+    return ::fixy::net::set_tcp_rto_min(ctx, fd, rto_min.value())
+        .match([](::fixy::Unit) -> Set { return ::fixy::Unit{}; },
+               [](::foundation::os::Errno error) -> Set {
+                   bool const is_unsupported = error == ::foundation::os::Errno::enoprotoopt;
+                   return ::fixy::err(is_unsupported ? IncastError::UnsupportedRtoMinSockOpt
+                                                     : IncastError::SetRtoMinFailed);
+               });
 }
 
 // A config that enables DCTCP first asks the kernel whether it has DCTCP.

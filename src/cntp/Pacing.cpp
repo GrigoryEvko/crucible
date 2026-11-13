@@ -6,7 +6,6 @@
 #include <cstring>
 #include <memory>
 
-#include <asm-generic/socket.h>
 #include <linux/pkt_sched.h>
 #include <linux/rtnetlink.h>
 #include <net/if.h>
@@ -220,18 +219,6 @@ struct QdiscDumpRequest {
             remaining -= step;
         }
     }
-}
-
-::fixy::Result<::fixy::Unit, PacingError>
-detail::set_socket_pacing_rate_keyed(SocketOptionKey const&, SocketFd fd,
-                                     PositivePacingRate bytes_per_second) noexcept {
-    const std::uint64_t value = bytes_per_second.value();
-    const int rc =
-        ::setsockopt(fd.value(), SOL_SOCKET, SO_MAX_PACING_RATE, &value, static_cast<socklen_t>(sizeof(value)));
-    if (rc != 0) {
-        return ::fixy::err(PacingError::SetSockOptFailed);
-    }
-    return ::fixy::Unit{};
 }
 
 }  // namespace crucible::cntp

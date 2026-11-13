@@ -181,22 +181,16 @@ template <::foundation::effects::IsExecCtx Ctx>
     return ::fixy::err(PacingError::FqRequired);
 }
 
-namespace detail {
-
-// The SO_MAX_PACING_RATE body.  It takes the key, so only the gated form
-// below reaches setsockopt.
-[[nodiscard]] ::fixy::Result<::fixy::Unit, PacingError>
-set_socket_pacing_rate_keyed(SocketOptionKey const&, SocketFd fd, PositivePacingRate bytes_per_second) noexcept;
-
-}  // namespace detail
-
-// The rate is a socket option, so the call takes a context that admits
-// the socket option row.
+// The rate is a socket option (SO_MAX_PACING_RATE), so the call takes a
+// context that admits the socket option row.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSocketOption<Ctx>
 [[nodiscard]] ::fixy::Result<::fixy::Unit, PacingError>
 set_socket_pacing_rate(Ctx const& ctx, SocketFd fd, PositivePacingRate bytes_per_second) noexcept {
-    return detail::set_socket_pacing_rate_keyed(detail::socket_option_key_(ctx), fd, bytes_per_second);
+    using Set = ::fixy::Result<::fixy::Unit, PacingError>;
+    return ::fixy::net::set_max_pacing_rate(ctx, fd, bytes_per_second.value())
+        .match([](::fixy::Unit) -> Set { return ::fixy::Unit{}; },
+               [](::foundation::os::Errno) -> Set { return ::fixy::err(PacingError::SetSockOptFailed); });
 }
 
 }  // namespace crucible::cntp

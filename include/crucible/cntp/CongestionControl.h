@@ -8,6 +8,7 @@
 #include <fixy/atoms/Os.h>
 #include <fixy/atoms/Syscall.h>
 #include <fixy/os/Fs.h>
+#include <fixy/os/Socket.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -294,7 +295,7 @@ template <::foundation::effects::IsExecCtx Ctx>
 // The proof that a context admitted the socket option row.  The
 // constructor is private and socket_option_key_ is its one friend.  The
 // copy and the move are deleted, so a key stays in the scope that made it,
-// and the out-of-line socket option bodies below take it by reference.
+// and an out-of-line socket option body takes it by reference.
 class SocketOptionKey {
     constexpr SocketOptionKey() noexcept = default;
 
@@ -320,27 +321,39 @@ template <::foundation::effects::IsExecCtx Ctx>
     return SocketOptionKey{};
 }
 
-// The two TCP_CONGESTION bodies.  Each takes the key, so only a gated
-// form below reaches setsockopt or getsockopt.
-[[nodiscard]] ::fixy::Result<::fixy::Unit, CcError> set_cc_for_socket_keyed(SocketOptionKey const&, SocketFd fd,
-                                                                            DeclaredCcChoice choice) noexcept;
+// The selection of a name that the kernel gave for a socket.  A name that
+// KernelCcName::from() refuses, or that names no algorithm, is an error.
+[[nodiscard]] ::fixy::Result<CcSelection, CcError> selection_of_kernel_name(::fixy::TextView name) noexcept;
 
+// The read of TCP_CONGESTION for a body that holds a key and no context.
+// It calls getsockopt, because each call of the socket door takes a context.
 [[nodiscard]] ::fixy::Result<CcSelection, CcError> query_cc_selection_for_socket_keyed(SocketOptionKey const&,
                                                                                        SocketFd fd) noexcept;
 
 }  // namespace detail
 
+// The socket door sets TCP_CONGESTION.  The name of the choice holds at most
+// 15 characters, so the door does not refuse its length.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSocketOption<Ctx>
 [[nodiscard]] ::fixy::Result<::fixy::Unit, CcError> set_cc_for_socket(Ctx const& ctx, SocketFd fd,
                                                                       DeclaredCcChoice choice) noexcept {
-    return detail::set_cc_for_socket_keyed(detail::socket_option_key_(ctx), fd, choice);
+    using Set = ::fixy::Result<::fixy::Unit, CcError>;
+    return ::fixy::net::set_tcp_congestion(ctx, fd, choice.value().kernel_name.view())
+        .match([](::fixy::Unit) -> Set { return ::fixy::Unit{}; },
+               [](::foundation::os::Errno) -> Set { return ::fixy::err(CcError::SetSockOptFailed); });
 }
 
+// The socket door reads TCP_CONGESTION.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSocketOption<Ctx>
 [[nodiscard]] ::fixy::Result<CcSelection, CcError> query_cc_selection_for_socket(Ctx const& ctx, SocketFd fd) noexcept {
-    return detail::query_cc_selection_for_socket_keyed(detail::socket_option_key_(ctx), fd);
+    using Queried = ::fixy::Result<CcSelection, CcError>;
+    return ::fixy::net::read_tcp_congestion(ctx, fd).match(
+        [](::fixy::FixedText<::fixy::net::congestion_name_bytes> name) -> Queried {
+            return detail::selection_of_kernel_name(name.view());
+        },
+        [](::foundation::os::Errno) -> Queried { return ::fixy::err(CcError::GetSockOptFailed); });
 }
 
 template <::foundation::effects::IsExecCtx Ctx>
