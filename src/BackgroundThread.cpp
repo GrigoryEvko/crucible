@@ -340,7 +340,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     const ::fixy::WeakRef<RegionNode> published{region};
     last_published_ = ::fixy::WeakRef<const RegionNode>{region};
 
-    memory.published = PublishedRegion{.region = &published.get(), .reset_point = reset_point};
+    memory.published = PublishedRegion{.region = published, .reset_point = reset_point};
 
     uncompiled_regions.push(published.get());
     active_region.store_release(published);

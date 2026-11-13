@@ -65,10 +65,10 @@ int main(int argc, char** argv) {
                 // this fuzzer keys purely on content_hash, so it pins a
                 // single row slot of the row-keyed KernelCache for every
                 // insert.  insert() returns
-                // std::expected<void, InsertError>; table-full is the
-                // only non-value outcome.
+                // KernelCache::InsertResult, and table-full is the only
+                // error.
                 auto ins = cache.insert(b.hashes[i], RowHash{}, fake);
-                if (!ins.has_value()) return false;
+                if (ins.is_err()) return false;
             }
 
             // Lookup each — must return the SAME pointer.

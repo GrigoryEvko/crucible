@@ -111,7 +111,7 @@ struct BackgroundThread {
     // the region.  The region store holds the record with its region, so
     // the address of the record lives as long as the region.
     struct PublishedRegion {
-        RegionNode* region = nullptr;
+        ::fixy::WeakRef<RegionNode> region{};
         StreamPoint reset_point{};
     };
 

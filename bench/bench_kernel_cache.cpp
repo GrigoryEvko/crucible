@@ -79,8 +79,9 @@ public:
         return nullptr;
     }
 
-    [[nodiscard]] std::expected<void, InsertError> insert(ContentHash content_hash, RowHash row_hash,
-                                                          CompiledKernel* kernel) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, InsertError> insert(ContentHash content_hash, RowHash row_hash,
+                                                                   CompiledKernel* kernel) noexcept
+        CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(content_hash.raw() != 0);
         CRUCIBLE_PRE(kernel != nullptr);
         const std::uint64_t lookup_hash = content_hash.raw();
@@ -94,7 +95,7 @@ public:
             if (entry.content_hash.compare_exchange_strong(expected, lookup_hash, std::memory_order_acq_rel)) {
                 entry.row_hash.store(lookup_row, std::memory_order_release);
                 entry.kernel.store(kernel, std::memory_order_release);
-                return {};
+                return ::fixy::Unit{};
             }
 
             if (expected == lookup_hash) {
@@ -107,13 +108,13 @@ public:
                     const std::uint64_t existing_row = entry.row_hash.load(std::memory_order_acquire);
                     if (existing_row == lookup_row) {
                         entry.kernel.store(kernel, std::memory_order_release);
-                        return {};
+                        return ::fixy::Unit{};
                     }
                 }
             }
         }
 
-        return std::unexpected(InsertError::TableFull);
+        return ::fixy::err(InsertError::TableFull);
     }
 
 private:
@@ -147,7 +148,7 @@ void seed_cache(Cache& cache, std::span<FakeKernel> kernels) {
         kernels[i].id = i + 1;
         auto inserted =
             cache.insert(ContentHash{0x1000 + static_cast<std::uint64_t>(i)}, RowHash{0}, fk_ptr(kernels[i]));
-        CRUCIBLE_BENCH_CHECK(inserted.has_value());
+        CRUCIBLE_BENCH_CHECK(inserted.is_ok());
     }
 }
 
@@ -163,7 +164,7 @@ void seed_row_siblings(Cache& cache, std::span<FakeKernel> kernels) {
             kernels[cursor].id = 0xA000 + cursor;
             auto inserted = cache.insert(ContentHash{content}, RowHash{0x200 + (cluster * kRowsPerCluster) + row},
                                          fk_ptr(kernels[cursor]));
-            CRUCIBLE_BENCH_CHECK(inserted.has_value());
+            CRUCIBLE_BENCH_CHECK(inserted.is_ok());
             ++cursor;
         }
     }

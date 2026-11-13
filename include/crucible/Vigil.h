@@ -592,9 +592,9 @@ private:
     [[nodiscard]] RegionNode* newest_region_() const noexcept {
         const PendingRegion pending = pending_region_.load_acquire();
         for (const auto& published : pending) {
-            if (published->reset_point == bg_.requested_reset()) return published->region;
+            if (published->reset_point == bg_.requested_reset()) return published->region.try_get();
         }
-        return taken_region_.load_acquire();
+        return taken_region_.load_acquire().try_get();
     }
 
     // The store parts of persist and load.  The store is a template
@@ -649,10 +649,12 @@ private:
         const uint64_t before = held_regions_.sequence.load_acquire();
         held_regions_.sequence.store_release(before + 1);
         held_regions_.cells[0].store_release(pending_activation_);
-        held_regions_.cells[1].store_release(replay_.context().active_region());
-        held_regions_.cells[2].store_release(taken_region_.load_acquire());
+        held_regions_.cells[1].store_release(
+            ::fixy::WeakRef<const RegionNode>::from_raw(replay_.context().active_region()));
+        held_regions_.cells[2].store_release(
+            ::fixy::WeakRef<const RegionNode>::from_raw(taken_region_.load_acquire().try_get()));
         for (uint32_t age = 0; age < RegionCache::CAP; ++age) {
-            held_regions_.cells[3 + age].store_release(region_cache_.region_at(age).try_get());
+            held_regions_.cells[3 + age].store_release(region_cache_.region_at(age));
         }
         held_regions_.sequence.store_release(before + 2);
     }
@@ -666,7 +668,7 @@ private:
             if ((before & 1u) == 0) {
                 BackgroundThread::RegionMarks read = marks;
                 for (uint32_t index = 0; index < HeldRegions::CAP; ++index) {
-                    read.hold(::fixy::WeakRef<const RegionNode>::from_raw(held_regions_.cells[index].load_acquire()));
+                    read.hold(held_regions_.cells[index].load_acquire());
                 }
                 if (held_regions_.sequence.load_acquire() == before) {
                     read.has_foreground = true;
@@ -718,7 +720,7 @@ private:
         // while a walk is open: an alignment closes its walk when it
         // activates, and adopt_region_ closes it for a rollback or a load.
         // The reset here keeps that rule local to this function.
-        pending_activation_ = nullptr;
+        pending_activation_.reset();
         alignment_pos_ = alignment_pos_at(0);
         alignment_ops_ = 0;
 
@@ -825,9 +827,9 @@ private:
         // over, and the walk keeps its position.  The background publishes
         // a region at each iteration boundary of a backlog, and each one has
         // the same ops, so a restart at each one would lose the matched ops.
-        const bool continues_walk = pending_activation_ != nullptr
+        const bool continues_walk = pending_activation_.has_value()
                                  && holds_walk_(*pending_activation_, *published.region, alignment_pos_.value());
-        pending_activation_ = published.region;
+        pending_activation_ = ::fixy::WeakRef<const RegionNode>{*published.region};
         if (continues_walk) return;
         alignment_pos_ = alignment_pos_at(0);
         alignment_ops_ = 0;
@@ -856,46 +858,39 @@ private:
     // skips forward over the ops already matched.  One op could match by
     // coincidence; K in a row will not.
     [[gnu::cold]] void try_align_(VigilFgCtx const& fg, SchemaHash schema, ShapeHash shape) {
-        // Debug-only: the single caller reaches this helper from inside a
-        // branch that has already tested pending_activation_, so a null here
-        // means that branch was rewritten, not that a caller misused the
-        // class. The region read below faults on its own in a release build,
-        // so the failure stays loud without a check.
-        //
-        // The member is read into the local first because a contract
-        // predicate that reaches a member through `this` is rejected as
-        // non-constant when the compiler folds this body.
-        const auto* region = pending_activation_;
-        CRUCIBLE_DEBUG_ASSERT(region != nullptr);
+        // The single caller reaches this helper from inside a branch that
+        // tested pending_activation_.  get() checks it again in each build,
+        // with one branch on this cold path.
+        const RegionNode& region = pending_activation_.get();
         ++alignment_ops_;
 
         const uint8_t pos = alignment_pos_.value();
-        if (schema == region->ops[pos].schema_hash && shape == region->ops[pos].shape_hash) {
+        if (schema == region.ops[pos].schema_hash && shape == region.ops[pos].shape_hash) {
             // The increment cannot exceed the bound: once the previous call
             // reached the threshold it cleared pending_activation_, so this
             // function is not called again past that point.
             alignment_pos_ = alignment_pos_at(static_cast<uint8_t>(pos + uint8_t{1}));
         } else {
-            alignment_pos_ = alignment_pos_at(restart_after_mismatch_(*region, pos, schema, shape));
+            alignment_pos_ = alignment_pos_at(restart_after_mismatch_(region, pos, schema, shape));
         }
 
         // A region shorter than K is matched in full instead.
-        const uint32_t threshold = (region->num_ops < ALIGNMENT_K) ? region->num_ops : ALIGNMENT_K;
+        const uint32_t threshold = (region.num_ops < ALIGNMENT_K) ? region.num_ops : ALIGNMENT_K;
 
         if (uint32_t{alignment_pos_.value()} >= threshold) {
-            if (!replay_.activate(*region)) {
+            if (!replay_.activate(region)) {
                 // No memory plan means the region cannot be compiled.
-                pending_activation_ = nullptr;
+                pending_activation_.reset();
                 return;
             }
 
-            register_externals_from_region_(fg, *region);
-            region_cache_.insert(*region);
+            register_externals_from_region_(fg, region);
+            region_cache_.insert(region);
 
             // The matched ops already executed eagerly, so the engine has
             // to skip them for the next op to check against the right entry.
             for (uint32_t i = 0; i < uint32_t{alignment_pos_.value()}; i++) {
-                auto status = replay_.advance(region->ops[i].schema_hash, region->ops[i].shape_hash);
+                auto status = replay_.advance(region.ops[i].schema_hash, region.ops[i].shape_hash);
                 // Debug-only: the hashes fed in here are the region's own,
                 // and alignment already compared each one against the same
                 // entry, so a mismatch means the engine's cursor is out of
@@ -906,7 +901,7 @@ private:
                 (void)status;
             }
 
-            pending_activation_ = nullptr;
+            pending_activation_.reset();
             return;
         }
 
@@ -921,9 +916,9 @@ private:
         // periods of recorded ops are equal, and a region holds the last of
         // the two.  So the ops that the alignment did not record cannot put
         // into a region a sequence that the stream does not hold.
-        if (alignment_ops_ >= alignment_bound(region->num_ops)) {
-            region_cache_.insert(*region);
-            pending_activation_ = nullptr;
+        if (alignment_ops_ >= alignment_bound(region.num_ops)) {
+            region_cache_.insert(region);
+            pending_activation_.reset();
             alignment_pos_ = alignment_pos_at(0);
         }
     }
@@ -1052,9 +1047,9 @@ private:
     alignas(64)::fixy::Atomic<PendingRegion> pending_region_{};
     // The region that the producer thread took last (active_region).  Only
     // the producer thread writes it, and a reader on another thread loads it.
-    ::fixy::Atomic<RegionNode*> taken_region_{};
+    ::fixy::Atomic<::fixy::WeakRef<RegionNode>> taken_region_{};
     // The five below are foreground-only.
-    RegionNode* pending_activation_{nullptr};
+    ::fixy::WeakRef<const RegionNode> pending_activation_{};
     AlignmentPos alignment_pos_ = alignment_pos_at(0);
     // The ops that the alignment of pending_activation_ read (alignment_bound).
     uint32_t alignment_ops_ = 0;
@@ -1126,7 +1121,7 @@ private:
     struct HeldRegions {
         static constexpr uint32_t CAP = 3 + RegionCache::CAP;
         ::fixy::Atomic<uint64_t> sequence{};
-        ::fixy::FixedArray<::fixy::Atomic<const RegionNode*>, CAP> cells{};
+        ::fixy::FixedArray<::fixy::Atomic<::fixy::WeakRef<const RegionNode>>, CAP> cells{};
     };
     HeldRegions held_regions_;
 

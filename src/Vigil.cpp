@@ -64,7 +64,7 @@ bool Vigil::rollback() {
     // point of the rollback.
     const uint64_t ops_before = ring_total_produced();
     bool restored_one = false;
-    RegionNode* restored = nullptr;
+    ::fixy::WeakRef<RegionNode> restored{};
     bg_.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
         restored_one = tx_log_.rollback(stage);
         if (!restored_one) return;
@@ -72,16 +72,19 @@ bool Vigil::rollback() {
         // it reads the mark, and none gives the foreground a region cut
         // before the rollback.
         bg_.request_mark(ops_before);
-        if (const Transaction* tx = tx_log_.active(stage)) restored = tx->region.value();
-        // The foreground gets the region outside the publication slot, so
-        // the store keeps it until the foreground writes its holders again.
-        bg_.keep_region(stage, ::fixy::WeakRef<const RegionNode>::from_raw(restored));
+        if (const Transaction* tx = tx_log_.active(stage)) {
+            restored = ::fixy::WeakRef<RegionNode>::from_raw(tx->region.value());
+            // The foreground gets the region outside the publication slot,
+            // so the store keeps it until the foreground writes its holders
+            // again.
+            bg_.keep_region(stage, ::fixy::WeakRef<const RegionNode>::from_raw(tx->region.value()));
+        }
     });
     if (!restored_one) return false;
     // The restored transaction was active before, and only a commit with a
     // region makes a transaction active.
-    CRUCIBLE_FATAL_INVARIANT(restored != nullptr);
-    adopt_region_(fg, *restored);
+    CRUCIBLE_FATAL_INVARIANT(restored.has_value());
+    adopt_region_(fg, restored.get());
     return true;
 }
 
@@ -89,10 +92,10 @@ void Vigil::adopt_region_(VigilFgCtx const& fg, RegionNode& region) {
     // No op reached the ring after the mark, so the pipeline cut each region
     // that the slot can hold before the mark.
     cache_pending_region_();
-    pending_activation_ = nullptr;
+    pending_activation_.reset();
     alignment_pos_ = alignment_pos_at(0);
     alignment_ops_ = 0;
-    taken_region_.store_release(&region);
+    taken_region_.store_release(::fixy::WeakRef<RegionNode>{region});
     if (replay_.activate(region)) {
         register_externals_from_region_(fg, region);
         region_cache_.insert(region);
@@ -102,7 +105,7 @@ void Vigil::adopt_region_(VigilFgCtx const& fg, RegionNode& region) {
 
 void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,
                             BackgroundThread::PublishedRegion const& published) {
-    RegionNode* const region = published.region;
+    RegionNode& region = published.region.get();
     // bump returns the previous value, which is the index this call
     // reserved.  The background thread is the sole writer.
     const uint64_t step = step_.bump();
@@ -114,8 +117,8 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // The merkle root goes through the checked accessor so the non-zero
     // invariant is witnessed at this call site: its precondition fires
     // here if the hash was never recomputed.
-    (void)tx_log_.commit(stage, tx, ::fixy::mint_tagged<::fixy::tags::source::Arena>(region), region->content_hash,
-                         ::crucible::make_merkle_root(region->computed_merkle_hash()));
+    (void)tx_log_.commit(stage, tx, ::fixy::mint_tagged<::fixy::tags::source::Arena>(&region), region.content_hash,
+                         ::crucible::make_merkle_root(region.computed_merkle_hash()));
     (void)tx_log_.activate(stage, tx);
 
     // Publishing the region signals the foreground, which picks it up
@@ -136,7 +139,7 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     tx_log_.for_each_region(stage, [&marks](::fixy::WeakRef<const RegionNode> held) noexcept { marks.hold(held); });
     const PendingRegion handed = pending_region_.load_acquire();
     for (const auto& record : handed)
-        marks.handed = ::fixy::WeakRef<const RegionNode>::from_raw(record->region);
+        marks.handed = ::fixy::WeakRef<const RegionNode>{*record->region};
     mark_held_regions_(marks);
     bg_.set_region_marks(stage, marks);
 

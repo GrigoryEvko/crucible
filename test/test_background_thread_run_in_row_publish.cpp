@@ -60,7 +60,7 @@ struct Gate {
 static void on_region_ready(void* ctx, eff::Bg const&, crucible::BackgroundThread::PublishStage,
                             crucible::BackgroundThread::PublishedRegion const& published) noexcept {
     auto* gate = static_cast<Gate*>(ctx);
-    const crucible::RegionNode* const region = published.region;
+    const crucible::RegionNode* const region = published.region.try_get();
 
     // The hash the background thread folded while streaming the ops must
     // equal the hash the canonical span fold produces over the same ops.

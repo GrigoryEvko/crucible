@@ -21,11 +21,18 @@ using crucible::RowHash;
 using L1 = KernelCache::VendorNeutralLevel;
 using L2 = KernelCache::VendorFamilyLevel;
 using L3 = KernelCache::ChipLevel;
-using PublishResult = std::expected<void, KernelCache::InsertError>;
+using PublishResult = KernelCache::InsertResult;
 
 struct FakeKernel {
     int x;
 };
+
+// True when the publish was refused because its level has no store.
+[[nodiscard]] static bool is_not_yet_implemented(PublishResult result) noexcept {
+    return std::move(result).err().match(
+        [](KernelCache::InsertError error) noexcept { return error == KernelCache::InsertError::NotYetImplemented; },
+        []() noexcept { return false; });
+}
 
 // The cache never dereferences the kernel pointer, so an unrelated allocation
 // supplies the stable identity the test compares against.
@@ -35,7 +42,7 @@ static void test_lookup_l1_round_trip() {
     KernelCache cache;
     FakeKernel fk{42};
     auto pub = cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, fk_ptr(&fk));
-    assert(std::move(pub).into().has_value());
+    assert(std::move(pub).into().is_ok());
 
     auto raw = cache.lookup(ContentHash{0xAAAA}, RowHash{0});
     auto tagged = cache.lookup_l1(ContentHash{0xAAAA}, RowHash{0});
@@ -113,8 +120,8 @@ static void test_unbacked_levels() {
     // on.
     auto r2 = cache.publish_l2(ContentHash{0xFFFF}, RowHash{0}, fk_ptr(&fk)).into();
     auto r3 = cache.publish_l3(ContentHash{0xFFFF}, RowHash{0}, fk_ptr(&fk)).into();
-    assert(!r2.has_value() && r2.error() == KernelCache::InsertError::NotYetImplemented);
-    assert(!r3.has_value() && r3.error() == KernelCache::InsertError::NotYetImplemented);
+    assert(is_not_yet_implemented(std::move(r2)));
+    assert(is_not_yet_implemented(std::move(r3)));
 
     // A publish into L2 stays invisible to L1 at the same key.
     assert(cache.lookup_l1(ContentHash{0xFFFF}, RowHash{0}).into() == nullptr);
@@ -127,9 +134,9 @@ static void test_three_level_publish() {
     auto r1 = cache.publish_l1(ContentHash{0x1111}, RowHash{0xAAAA}, fk_ptr(&fk)).into();
     auto r2 = cache.publish_l2(ContentHash{0x1111}, RowHash{0xAAAA}, fk_ptr(&fk)).into();
     auto r3 = cache.publish_l3(ContentHash{0x1111}, RowHash{0xAAAA}, fk_ptr(&fk)).into();
-    assert(r1.has_value());
-    assert(!r2.has_value());
-    assert(!r3.has_value());
+    assert(r1.is_ok());
+    assert(r2.is_err());
+    assert(r3.is_err());
     assert(cache.lookup_l1(ContentHash{0x1111}, RowHash{0xAAAA}).into() == fk_ptr(&fk));
 }
 
@@ -140,7 +147,7 @@ static void test_lookup_l1_miss() {
     // A publish under a different key must not make the original key hit
     // through probe pollution.
     FakeKernel fk{1};
-    assert(cache.publish_l1(ContentHash{0x1234}, RowHash{0}, fk_ptr(&fk)).into().has_value());
+    assert(cache.publish_l1(ContentHash{0x1234}, RowHash{0}, fk_ptr(&fk)).into().is_ok());
     assert(cache.lookup_l1(ContentHash{0xDEAD}, RowHash{0xBEEF}).into() == nullptr);
 }
 
@@ -151,8 +158,8 @@ static void test_publish_l1_variant_update() {
     KernelCache cache;
     FakeKernel fk_v1{1};
     FakeKernel fk_v2{2};
-    assert(cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, fk_ptr(&fk_v1)).into().has_value());
-    assert(cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, fk_ptr(&fk_v2)).into().has_value());
+    assert(cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, fk_ptr(&fk_v1)).into().is_ok());
+    assert(cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, fk_ptr(&fk_v2)).into().is_ok());
     assert(cache.lookup_l1(ContentHash{0xAAAA}, RowHash{0}).into() == fk_ptr(&fk_v2));
 }
 
@@ -162,8 +169,8 @@ static void test_publish_l1_row_discrimination() {
     KernelCache cache;
     FakeKernel fk_row_a{1};
     FakeKernel fk_row_b{2};
-    assert(cache.publish_l1(ContentHash{0x1234}, RowHash{0xAAAA}, fk_ptr(&fk_row_a)).into().has_value());
-    assert(cache.publish_l1(ContentHash{0x1234}, RowHash{0xBBBB}, fk_ptr(&fk_row_b)).into().has_value());
+    assert(cache.publish_l1(ContentHash{0x1234}, RowHash{0xAAAA}, fk_ptr(&fk_row_a)).into().is_ok());
+    assert(cache.publish_l1(ContentHash{0x1234}, RowHash{0xBBBB}, fk_ptr(&fk_row_b)).into().is_ok());
     assert(cache.lookup_l1(ContentHash{0x1234}, RowHash{0xAAAA}).into() == fk_ptr(&fk_row_a));
     assert(cache.lookup_l1(ContentHash{0x1234}, RowHash{0xBBBB}).into() == fk_ptr(&fk_row_b));
     assert(cache.lookup_l1(ContentHash{0x1234}, RowHash{0xCCCC}).into() == nullptr);

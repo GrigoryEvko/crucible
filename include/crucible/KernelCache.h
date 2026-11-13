@@ -8,6 +8,8 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Types.h>
+#include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
@@ -113,12 +115,12 @@ public:
         // The writer handle is linear (foundation/Linear.h).  Its door is
         // release(), which gives the token back to the caller.
         class[[= ::foundation::linear::linear{}]] WriterHandle {
-            KernelCacheSlot* slot_ = nullptr;
+            ::fixy::Ref<KernelCacheSlot> slot_;
             [[no_unique_address]] ::foundation::permissions::Permission<writer_tag> perm_;
 
             constexpr WriterHandle(KernelCacheSlot& slot,
                                    ::foundation::permissions::Permission<writer_tag>&& perm) noexcept
-                : slot_{&slot}, perm_{std::move(perm)} {}
+                : slot_{::fixy::to(slot)}, perm_{std::move(perm)} {}
 
             friend class KernelCacheSlot;
 
@@ -134,9 +136,8 @@ public:
             constexpr WriterHandle& operator=(WriterHandle&&) noexcept = default;
 
             // The release door.  The handle gives the token back to the
-            // caller, and it names no slot after the call.
+            // caller, and the call spends the handle.
             [[nodiscard]] constexpr ::foundation::permissions::Permission<writer_tag> release() && noexcept {
-                slot_ = nullptr;
                 return std::move(perm_);
             }
 
@@ -146,21 +147,21 @@ public:
                 // The content hash is already claimed by CAS before this
                 // endpoint exists.  The two stores must stay in this order:
                 // the kernel store is what makes the row visible to readers.
-                contract_assert(slot_->content_hash_.load(std::memory_order_acquire) == snapshot.content_hash);
-                slot_->row_hash_.store(snapshot.row_hash, std::memory_order_release);
-                slot_->kernel_.store(snapshot.kernel, std::memory_order_release);
+                contract_assert(slot_->content_hash_.load_acquire() == snapshot.content_hash);
+                slot_->row_hash_.store_release(snapshot.row_hash);
+                slot_->kernel_.store_release(::fixy::WeakRef<CompiledKernel>::from_raw(snapshot.kernel));
             }
 
             void publish_kernel_variant(CompiledKernel* kernel) noexcept {
                 CRUCIBLE_PRE(kernel != nullptr);
-                slot_->kernel_.store(kernel, std::memory_order_release);
+                slot_->kernel_.store_release(::fixy::WeakRef<CompiledKernel>::from_raw(kernel));
             }
         };
 
         class ReaderHandle {
-            KernelCacheSlot const* slot_ = nullptr;
+            ::fixy::Ref<const KernelCacheSlot> slot_;
 
-            constexpr explicit ReaderHandle(KernelCacheSlot const& slot) noexcept : slot_{&slot} {}
+            constexpr explicit ReaderHandle(KernelCacheSlot const& slot) noexcept : slot_{::fixy::to(slot)} {}
 
             friend class KernelCacheSlot;
 
@@ -169,28 +170,26 @@ public:
             using tag_type = reader_tag;
 
             [[nodiscard]] snapshot_type load() const noexcept {
-                CompiledKernel* kernel = slot_->kernel_.load(std::memory_order_acquire);
+                const ::fixy::WeakRef<CompiledKernel> kernel = slot_->kernel_.load_acquire();
                 uint64_t row = 0;
-                if (kernel != nullptr) {
-                    row = slot_->row_hash_.load(std::memory_order_acquire);
+                if (kernel.has_value()) {
+                    row = slot_->row_hash_.load_acquire();
                 }
                 return snapshot_type{
-                    .content_hash = slot_->content_hash_.load(std::memory_order_acquire),
+                    .content_hash = slot_->content_hash_.load_acquire(),
                     .row_hash = row,
-                    .kernel = kernel,
+                    .kernel = kernel.try_get(),
                 };
             }
 
             [[nodiscard]] CRUCIBLE_INLINE uint64_t content_hash() const noexcept {
-                return slot_->content_hash_.load(std::memory_order_acquire);
+                return slot_->content_hash_.load_acquire();
             }
 
-            [[nodiscard]] CRUCIBLE_INLINE uint64_t row_hash() const noexcept {
-                return slot_->row_hash_.load(std::memory_order_acquire);
-            }
+            [[nodiscard]] CRUCIBLE_INLINE uint64_t row_hash() const noexcept { return slot_->row_hash_.load_acquire(); }
 
             [[nodiscard]] CRUCIBLE_INLINE CompiledKernel* kernel() const noexcept {
-                return slot_->kernel_.load(std::memory_order_acquire);
+                return slot_->kernel_.load_acquire().try_get();
             }
         };
 
@@ -200,21 +199,22 @@ public:
 
         [[nodiscard]] ReaderHandle reader() const noexcept { return ReaderHandle{*this}; }
 
-        [[nodiscard]] CRUCIBLE_INLINE uint64_t content_hash() const noexcept {
-            return content_hash_.load(std::memory_order_acquire);
-        }
+        [[nodiscard]] CRUCIBLE_INLINE uint64_t content_hash() const noexcept { return content_hash_.load_acquire(); }
 
-        [[nodiscard]] CRUCIBLE_INLINE uint64_t row_hash() const noexcept {
-            return row_hash_.load(std::memory_order_acquire);
-        }
+        [[nodiscard]] CRUCIBLE_INLINE uint64_t row_hash() const noexcept { return row_hash_.load_acquire(); }
 
         [[nodiscard]] CRUCIBLE_INLINE CompiledKernel* kernel() const noexcept {
-            return kernel_.load(std::memory_order_acquire);
+            return kernel_.load_acquire().try_get();
         }
 
+        // A failed claim writes the content hash that the slot holds into
+        // expected.
         [[nodiscard]] CRUCIBLE_INLINE bool try_claim_content_hash(uint64_t& expected, uint64_t desired) noexcept {
             CRUCIBLE_PRE(::foundation::decide::is_non_zero(desired));
-            return content_hash_.compare_exchange_strong(expected, desired, std::memory_order_acq_rel);
+            auto claimed = content_hash_.cas_acq_rel(expected, desired);
+            if (claimed.is_ok()) return true;
+            expected = std::move(claimed).err().expect("a refused swap gives the value that it read").observed;
+            return false;
         }
 
     private:
@@ -224,9 +224,9 @@ public:
         //
         // An EMPTY slot also leaves row_hash at 0, which is harmless because
         // EMPTY is decided from content_hash == 0 before the row is read.
-        std::atomic<uint64_t> content_hash_{0};
-        std::atomic<uint64_t> row_hash_{0};
-        std::atomic<CompiledKernel*> kernel_{nullptr};
+        ::fixy::Atomic<uint64_t> content_hash_{};
+        ::fixy::Atomic<uint64_t> row_hash_{};
+        ::fixy::Atomic<::fixy::WeakRef<CompiledKernel>> kernel_{};
     };
 
     static_assert(sizeof(KernelCacheSlot) == 24, "KernelCacheSlot must stay exactly 8B content + 8B row + "
@@ -272,13 +272,10 @@ public:
         CRUCIBLE_FATAL_INVARIANT(capacity != 0 && (capacity & (capacity - 1)) == 0);
         table_ = allocate_table_(capacity_);
         if (!table_) [[unlikely]]
-            std::abort();  // OOM is unrecoverable
-        // No other thread holds a reference yet, so the relaxed load below
-        // reads this thread's own store.
-        size_.store(0, std::memory_order_relaxed);
+            ::fixy::fatal("the kernel cache cannot allocate its table: lower the capacity or free memory");
         CRUCIBLE_POST(0, capacity_ == capacity);
         CRUCIBLE_POST(0, table_ != nullptr);
-        CRUCIBLE_POST(0, size_.load(std::memory_order_relaxed) == 0);
+        CRUCIBLE_POST(0, size_.load_acquire() == 0);
     }
 
     ~KernelCache() { destroy_table_(table_, capacity_); }
@@ -305,24 +302,24 @@ public:
         const uint32_t slot_index = static_cast<uint32_t>(lookup_hash) & mask;
         for (uint32_t probe = 0; probe < capacity_; probe++) {
             auto& entry = table_[(slot_index + probe) & mask];
-            uint64_t key = entry.content_hash_.load(std::memory_order_acquire);
+            uint64_t key = entry.content_hash_.load_acquire();
             if (key == 0) return nullptr;
             if (key != lookup_hash) continue;
             // The kernel must be loaded before the row: the release-acquire
             // pair on the kernel is what makes the published row visible.
-            CompiledKernel* kernel_ptr = entry.kernel_.load(std::memory_order_acquire);
-            if (kernel_ptr == nullptr) [[unlikely]] {
-                kernel_ptr = await_claimed_(entry);
-                if (kernel_ptr == nullptr) [[unlikely]] {
+            ::fixy::WeakRef<CompiledKernel> kernel = entry.kernel_.load_acquire();
+            if (!kernel.has_value()) [[unlikely]] {
+                kernel = await_claimed_(entry);
+                if (!kernel.has_value()) [[unlikely]] {
                     // One content hash can occupy several slots, one per row,
                     // so a stalled claim here must not hide a matching slot
                     // further along the chain.
                     continue;
                 }
             }
-            uint64_t entry_row = entry.row_hash_.load(std::memory_order_acquire);
+            uint64_t entry_row = entry.row_hash_.load_acquire();
             if (entry_row == lookup_row) [[likely]]
-                return kernel_ptr;
+                return kernel.try_get();
         }
         return nullptr;
     }
@@ -332,11 +329,14 @@ public:
         NotYetImplemented,
     };
 
+    // A publish into a level: no value, or the error that refused it.
+    using InsertResult = ::fixy::Result<::fixy::Unit, InsertError>;
+
     // Zero collides with the EMPTY marker, and UINT64_MAX is reserved as the
     // end-of-region marker, so neither can be a key.  The row again needs no
     // guard: RowHash{0} is a real key.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] std::expected<void, InsertError>
-    insert(ContentHash content_hash, RowHash row_hash, CompiledKernel* kernel) CRUCIBLE_NO_THREAD_SAFETY {
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] InsertResult insert(ContentHash content_hash, RowHash row_hash,
+                                                                   CompiledKernel* kernel) CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
         CRUCIBLE_PRE(kernel != nullptr);
@@ -356,21 +356,21 @@ public:
                     .kernel = kernel,
                 });
                 ::foundation::linear::drop(std::move(writer).release());
-                // Relaxed: nothing branches on the exact count.  The content
-                // hash CAS carries the real synchronization.
-                size_.fetch_add(1, std::memory_order_relaxed);
-                return {};
+                // Nothing branches on the exact count.  The content hash CAS
+                // carries the real synchronization.
+                (void)size_.fetch_add_acq_rel(1);
+                return ::fixy::Unit{};
             }
             if (expected == lookup_hash) {
                 // The content matches, so the row decides.  Spin on the
                 // kernel, never on the row: a CLAIMED slot reads row 0, which
                 // is indistinguishable from a published row of 0.
-                CompiledKernel* existing_kernel = entry.kernel();
-                for (uint32_t spin = 0; spin < kClaimedSpinBudget && existing_kernel == nullptr; ++spin) {
+                bool is_published = entry.kernel_.load_acquire().has_value();
+                for (uint32_t spin = 0; spin < kClaimedSpinBudget && !is_published; ++spin) {
                     CRUCIBLE_SPIN_PAUSE;
-                    existing_kernel = entry.kernel();
+                    is_published = entry.kernel_.load_acquire().has_value();
                 }
-                if (existing_kernel != nullptr) {
+                if (is_published) {
                     // A published kernel makes the row visible too.
                     uint64_t existing_row = entry.row_hash();
                     if (existing_row == lookup_row) {
@@ -380,12 +380,12 @@ public:
                         auto writer = entry.writer(fresh_writer_permission_());
                         writer.publish_kernel_variant(kernel);
                         ::foundation::linear::drop(std::move(writer).release());
-                        return {};
+                        return ::fixy::Unit{};
                     }
                 }
             }
         }
-        return std::unexpected(InsertError::TableFull);
+        return ::fixy::err(InsertError::TableFull);
     }
 
     // The cache has three levels, ordered by portability: L1 holds the
@@ -432,9 +432,8 @@ public:
     // Both hash guards are needed here and on the two levels below: UINT64_MAX
     // is non-zero, and zero is not the reserved sentinel.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]]
-    AtLevel<VendorNeutralLevel, std::expected<void, InsertError>> publish_l1(ContentHash content_hash, RowHash row_hash,
-                                                                             CompiledKernel* kernel)
-        CRUCIBLE_NO_THREAD_SAFETY {
+    AtLevel<VendorNeutralLevel, InsertResult> publish_l1(ContentHash content_hash, RowHash row_hash,
+                                                         CompiledKernel* kernel) CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
         CRUCIBLE_PRE(kernel != nullptr);
@@ -442,27 +441,25 @@ public:
     }
 
     [[nodiscard]]
-    AtLevel<VendorFamilyLevel, std::expected<void, InsertError>>
-    publish_l2(ContentHash content_hash, RowHash /*row_hash*/, CompiledKernel* kernel) noexcept {
+    AtLevel<VendorFamilyLevel, InsertResult> publish_l2(ContentHash content_hash, RowHash /*row_hash*/,
+                                                        CompiledKernel* kernel) noexcept {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
         CRUCIBLE_PRE(kernel != nullptr);
-        return ::fixy::mint_tagged<VendorFamilyLevel>(
-            std::expected<void, InsertError>{std::unexpected(InsertError::NotYetImplemented)});
+        return ::fixy::mint_tagged<VendorFamilyLevel>(InsertResult{::fixy::err(InsertError::NotYetImplemented)});
     }
 
     [[nodiscard]]
-    AtLevel<ChipLevel, std::expected<void, InsertError>> publish_l3(ContentHash content_hash, RowHash /*row_hash*/,
-                                                                    CompiledKernel* kernel) noexcept {
+    AtLevel<ChipLevel, InsertResult> publish_l3(ContentHash content_hash, RowHash /*row_hash*/,
+                                                CompiledKernel* kernel) noexcept {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
         CRUCIBLE_PRE(kernel != nullptr);
-        return ::fixy::mint_tagged<ChipLevel>(
-            std::expected<void, InsertError>{std::unexpected(InsertError::NotYetImplemented)});
+        return ::fixy::mint_tagged<ChipLevel>(InsertResult{::fixy::err(InsertError::NotYetImplemented)});
     }
 
-    // Relaxed: an informational counter that nothing orders against.
-    [[nodiscard]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY { return size_.load(std::memory_order_relaxed); }
+    // An informational counter that nothing orders against.
+    [[nodiscard]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY { return size_.load_acquire(); }
     [[nodiscard]] uint32_t capacity() const { return capacity_; }
 
     // The capacity guard is what keeps `capacity_ - 1u` below from wrapping
@@ -471,15 +468,13 @@ public:
         CRUCIBLE_PRE(capacity_ > 0u);
         CRUCIBLE_PRE(::foundation::decide::in_range<uint32_t>(slot_index, 0u, capacity_ - 1u));
         const KernelCacheSlot& entry = table_[slot_index];
-        return classify_(entry.content_hash_.load(std::memory_order_acquire),
-                         entry.kernel_.load(std::memory_order_acquire));
+        return classify_(entry.content_hash_.load_acquire(), entry.kernel_.load_acquire().has_value());
     }
 
 private:
-    [[nodiscard, gnu::const]] static constexpr SlotState classify_(uint64_t hash_bits,
-                                                                   const CompiledKernel* k) noexcept {
+    [[nodiscard, gnu::const]] static constexpr SlotState classify_(uint64_t hash_bits, bool is_published) noexcept {
         if (hash_bits == 0) return SlotState::Empty;
-        if (k == nullptr) return SlotState::Claimed;
+        if (!is_published) return SlotState::Claimed;
         return SlotState::Published;
     }
 
@@ -506,14 +501,16 @@ private:
     }
 
     // Outlined so that the hot lookup body stays compact.
+    // The kernel of a claimed slot, or an empty reference when the spin
+    // budget runs out first.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[gnu::cold, gnu::noinline]]
-    static CompiledKernel* await_claimed_(const KernelCacheSlot& entry) noexcept {
+    static ::fixy::WeakRef<CompiledKernel> await_claimed_(const KernelCacheSlot& entry) noexcept {
         for (uint32_t spin = 0; spin < kClaimedSpinBudget; ++spin) {
             CRUCIBLE_SPIN_PAUSE;
-            CompiledKernel* kernel_ptr = entry.kernel_.load(std::memory_order_acquire);
-            if (kernel_ptr != nullptr) return kernel_ptr;
+            const ::fixy::WeakRef<CompiledKernel> kernel = entry.kernel_.load_acquire();
+            if (kernel.has_value()) return kernel;
         }
-        return nullptr;
+        return ::fixy::WeakRef<CompiledKernel>{};
     }
 
     // A writer token for one slot write.  The handle names its token type
@@ -528,7 +525,7 @@ private:
 
     KernelCacheSlot* table_;
     uint32_t capacity_;
-    std::atomic<uint32_t> size_;
+    ::fixy::Atomic<uint32_t> size_{};
 };
 
 // Splits a straight-line trace at a divergence point into a two-arm branch

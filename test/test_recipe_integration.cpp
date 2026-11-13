@@ -228,7 +228,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         };
         FakeKernel kernel_tc{"f16_tc-compiled"};
         auto ins = cache.insert(region_tc->content_hash, RowHash{0}, kernel_ptr(&kernel_tc));
-        assert(ins.has_value());
+        assert(ins.is_ok());
         assert(cache.lookup(region_tc->content_hash, RowHash{0}) == kernel_ptr(&kernel_tc));
 
         // A lookup under the second recipe must miss.  Were the two sharing
@@ -246,7 +246,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
         // through its own key.
         FakeKernel kernel_ord{"f16_ordered-compiled"};
         auto ins2 = cache.insert(region_ord->content_hash, RowHash{0}, kernel_ptr(&kernel_ord));
-        assert(ins2.has_value());
+        assert(ins2.is_ok());
         assert(cache.lookup(region_tc->content_hash, RowHash{0}) == kernel_ptr(&kernel_tc));
         assert(cache.lookup(region_ord->content_hash, RowHash{0}) == kernel_ptr(&kernel_ord));
         assert(cache.lookup(region_bf16_tc->content_hash, RowHash{0}) == nullptr);
