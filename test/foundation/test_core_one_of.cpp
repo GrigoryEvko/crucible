@@ -1,5 +1,5 @@
 // Tests of foundation/core/OneOf.h: the construction of each alternative,
-// is, expect, the two matches, get, an owning alternative and a linear
+// is, which, expect, the two matches, get, an owning alternative and a linear
 // alternative, and a property test against a model of a tag and a value.
 
 #include <foundation/core/OneOf.h>
@@ -81,6 +81,7 @@ void test_each_alternative() {
     CRUCIBLE_FATAL_INVARIANT(wide.is<std::uint32_t>() && !wide.is<Refusal>() && !wide.is<std::uint16_t>());
     CRUCIBLE_FATAL_INVARIANT(narrow.is<std::uint16_t>() && !narrow.is<std::uint32_t>());
     CRUCIBLE_FATAL_INVARIANT(refused.is<Refusal>());
+    CRUCIBLE_FATAL_INVARIANT(wide.which().raw() == 0 && refused.which().raw() == 1 && narrow.which().raw() == 2);
 }
 
 void test_expect() {

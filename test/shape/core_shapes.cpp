@@ -550,6 +550,11 @@ result_try_convert(fixy::Result<std::uint32_t, Code8> result) noexcept {
                                     [](std::uint16_t half) noexcept { return std::uint32_t{half} + 5u; });
 }
 
+// which() of a OneOf is the load of its tag.
+[[gnu::used]] std::size_t one_of_which(fixy::OneOf<std::uint32_t, Code32, std::uint16_t> const& reading) noexcept {
+    return reading.which().raw();
+}
+
 // get<T>() of a OneOf compares the tag with the index of T one time.  The
 // Option of the Ref is the address of the storage or null, and the read
 // through it is the read of the storage when the tag agrees.
@@ -1134,6 +1139,8 @@ struct RawReading final {
     if (reading.tag == 1) return reading.storage;
     return std::uint32_t{static_cast<std::uint16_t>(reading.storage)} + 5u;
 }
+
+[[gnu::used]] std::size_t one_of_which_raw(RawReading const& reading) noexcept { return reading.tag; }
 
 [[gnu::used]] std::uint32_t one_of_get_raw(RawReading const& reading) noexcept {
     return reading.tag == 0 ? reading.storage : 0u;

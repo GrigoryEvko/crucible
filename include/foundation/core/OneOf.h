@@ -13,8 +13,9 @@
 // alternative in the order of Ts, and expect<T>(), the fatal unwrap of one
 // alternative.  get<T>() lends the active alternative as an Option of a Ref
 // of the Ref family, with no value for a different alternative.  is<T>()
-// tells the active alternative.  The type has no operator*, no operator->
-// and no operator bool, and it is [[nodiscard]].
+// tells the active alternative, and which() gives its index as an Index<N>
+// of the Region family.  The type has no operator*, no operator-> and no
+// operator bool, and it is [[nodiscard]].
 //
 // The storage is the sum of the family (Choice.h).  The sum of plain
 // alternatives holds the storage and a tag, and it is trivially copyable.
@@ -25,14 +26,13 @@
 // rvalue match() give it out.  get<T>() lends a linear alternative only as a
 // const borrow.
 //
-// which(), the index of the active alternative as an Index<N> of the Region
-// family, is planned.  The includers of Choice.h do not read OneOf, so it has
-// a header of its own.
+// The includers of Choice.h do not read OneOf, so it has a header of its own.
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Index.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Report.h>
 
@@ -136,6 +136,14 @@ public:
               && std::constructible_from<std::remove_cvref_t<U>, U&&>
     constexpr OneOf(U&& value) noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<U>, U&&>)
         : slot_{detail::AlternativeAt<detail::index_in_v<std::remove_cvref_t<U>, Ts...>>{}, static_cast<U&&>(value)} {}
+
+    // The index of the active alternative, as an Index of the Region family:
+    // one load.  Each constructor of the slot writes the index of the
+    // alternative that it builds, so the tag is below sizeof...(Ts) in each
+    // state, and the door of Index needs no check.
+    [[nodiscard]] constexpr Index<sizeof...(Ts)> which() const noexcept {
+        return Index<sizeof...(Ts)>{detail::IndexDoor::key(), index_()};
+    }
 
     // True when the active alternative is T.  The cost is one compare.
     template <class T>

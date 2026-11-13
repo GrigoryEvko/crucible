@@ -718,6 +718,11 @@ PROBES: tuple[Probe, ...] = (
         branches=True,
     ),
     Probe(
+        "one_of_which",
+        "which() of a OneOf is the load of its tag, as the raw form of a tagged storage word is, because the index "
+        "door of the Region family does no check",
+    ),
+    Probe(
         "one_of_get",
         "get<T>() of a OneOf compares the tag with the index of T one time, and the read through the Option of the "
         "Ref is the read of the storage when the tag agrees, as the raw form of a tagged storage word does",

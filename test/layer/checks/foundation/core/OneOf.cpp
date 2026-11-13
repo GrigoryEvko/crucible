@@ -107,6 +107,12 @@ static_assert(!std::is_constructible_v<OneOf<int, long>, short>);
 static_assert(OneOf<int, long>{7}.is<int>() && !OneOf<int, long>{7}.is<long>());
 static_assert(OneOf<int, long>{7L}.is<long>());
 
+// which gives the index of the active alternative as an Index of the count of
+// the alternatives.
+static_assert(std::is_same_v<decltype(OneOf<int, Code8, long>{7L}.which()), Index<3>>);
+static_assert(OneOf<int, Code8, long>{7L}.which().raw() == 2 && OneOf<int, Code8>{5}.which().raw() == 0);
+static_assert(OneOf<Owner, int>{Owner{3}}.which().raw() == 0);
+
 // is and expect name an alternative.
 template <class O, class T>
 concept AsksFor = requires(O const& value) { value.template is<T>(); };
