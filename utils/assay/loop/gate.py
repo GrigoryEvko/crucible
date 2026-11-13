@@ -357,8 +357,12 @@ THE LOCK OF THE TREE
     and gives the gate.
 
 THE LANES
-    Up to MAX_LANES landings run at the same time, each in a warm tree of
-    its own: TREE, TREE-2 and TREE-3, each with its own build directories.
+    Up to LANES landings run at the same time, each in a warm tree of its
+    own: TREE, TREE-2, TREE-3 and so on, each with its own build
+    directories.  LANES is the size of the slot pool of the host divided by
+    SLICE, with one as the minimum (7 for 224 slots).  The pool caps the
+    slots of all the lanes together, so a lane past the slots of the busy
+    lanes only fills idle slots.
     free_lane() holds the lock of the first free lane.  A holder of the
     first lane also holds the lock of PRIMARY.  A lane after the first one is
     free only while that lock is held, so only while a holder of this copy
@@ -398,10 +402,10 @@ from assay.setup import pins as cmake_pin
 TREE = "tree"
 LOCK = "tree.lock"
 LOGS = "logs"
-# The most lanes, and the lock that a holder of the first lane holds (THE LANES).  On 2026-11-13, a warm tree held 22 GB
-# and the disk of the work root had 257 GB free, so three warm trees fit with room.
-MAX_LANES = 3
+# The lock that a holder of the first lane holds, and the count of the lanes (THE LANES).  The pool caps the slots of
+# all the lanes together, so each lane past the slots of the busy lanes fills only idle slots.
 PRIMARY = "primary.lock"
+LANES = max(1, heavy.host_pool().size // heavy.SLICE)
 # The name of the directory of the logs of one run, before its number, and the directories of the runs that stay (THE
 # LOGS).
 RUN_MARK = "run-"
@@ -1633,13 +1637,13 @@ def tree_lock(work: Path, wait: bool = True, lane: int = 0) -> Iterator[bool]:
 
 
 @contextlib.contextmanager
-def free_lane(work: Path) -> Iterator[int | None]:
-    """Hold the lock of the first free lane for the block, and give its number, or None when no lane is free.
+def free_lane(work: Path, lanes: int = LANES) -> Iterator[int | None]:
+    """Hold the lock of the first free lane of `lanes` for the block, and give its number, or None when none is free.
 
     A lane after the first one is free only while a holder of this copy of the module holds the first lane (THE
     LANES).  Complexity: one try of the lock of each lane.
     """
-    for lane in range(MAX_LANES):
+    for lane in range(lanes):
         if lane > 0 and not heavy.is_held(work / PRIMARY):
             break
         with tree_lock(work, wait=False, lane=lane) as is_held:

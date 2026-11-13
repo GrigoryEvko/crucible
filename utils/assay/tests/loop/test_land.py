@@ -1987,7 +1987,7 @@ def only_first_lane(work: Path, lanes: contextlib.ExitStack) -> None:
 
     THE LANES gives the lanes.  A case of one lane then holds the batch of one holder.
     """
-    for lane in range(1, gate.MAX_LANES):
+    for lane in range(1, gate.LANES):
         lanes.enter_context(gate.tree_lock(work, wait=False, lane=lane))
 
 

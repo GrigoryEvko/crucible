@@ -294,7 +294,7 @@ THE JOBSERVER
     run of ctest keeps its -j.
 
     A run with no FIFO in MAKEFLAGS and no --plan takes a lease of the slot
-    pool of the host, with -j and SLICE as the most (THE POOL of
+    pool of the host, with a slice of -j and SLICE as the most (THE POOL of
     assay.loop.heavy).  The run then gets MAKEFLAGS of the jobserver of the
     lease, and its build and its tests obey it.
 

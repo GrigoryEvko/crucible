@@ -483,6 +483,31 @@ def priority_cases(expect: testing.Expect) -> None:
         )
 
 
+def start_cases(expect: testing.Expect) -> None:
+    """Hold the start of a lease beside a waiting lease of the gate: it starts with one free slot (THE POOL)."""
+    with tempfile.TemporaryDirectory(prefix="heavy-start-") as work_text:
+        root = Path(work_text)
+        pool = heavy.Pool(root / "slots", 8)
+        waiting = heavy.Lease(pool, 8, True)
+        waiting.register()
+        stop = threading.Event()
+        timer = threading.Timer(3.0, stop.set)
+        timer.start()
+
+        def run() -> int:
+            """Wait for a lease that is not of the gate, and give its slots, or 0 when the stop came first."""
+            with heavy.leased(root, 8, pool, reader([MUCH_MEMORY_GB]), stop) as share:
+                return 0 if share is None else share.lease.held
+
+        held, _ = testing.captured(run)
+        timer.cancel()
+        waiting.close()
+        expect(
+            f"a lease that is not of the gate starts with one free slot while a lease of the gate waits: {held} slots",
+            held == 1,
+        )
+
+
 def cycled(client: jobserver.Client, stop: threading.Event) -> None:
     """Use one slot of a jobserver after the other for a short job, until the stop event."""
     while not stop.is_set():
@@ -507,5 +532,6 @@ def main(argv: list[str]) -> int:
             kill_cases,
             fair_cases,
             priority_cases,
+            start_cases,
         ),
     )

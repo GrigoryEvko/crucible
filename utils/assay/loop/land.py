@@ -7,7 +7,7 @@ THE REQUEST
       --patch FILE              A unified diff that git made against HEAD
       --replace FILE OLD NEW    In the shared FILE, the text of the file NEW replaces the text of the file OLD
       --block FILE AFTER BLOCK  In the shared FILE, the text of the file BLOCK goes after the text of the file AFTER
-      --jobs N                 The most jobs of the lease of one configuration of the gate, with SLICE as the most
+      --jobs N                 The slice of the lease of one configuration of the gate, with SLICE as the most
       --all-configurations      The gate runs each configuration (assay.loop.gate, THE SELECTION)
       --check                   Run the gate on the commit, and do not land it
       --here                    With --check: run this copy of the module (THE DRIVER)
@@ -115,7 +115,7 @@ THE WAIT
     gets the lock (THE LANES of assay.loop.gate).
 
 THE LANES
-    Up to MAX_LANES holders run at the same time, each in the warm tree of
+    Up to LANES holders run at the same time, each in the warm tree of
     its lane (THE LANES of assay.loop.gate).  A holder claims each request of
     its batch with an exclusive lock of flock(2) on the file NUMBER.claim of
     the queue, with no wait (claimed()).  A different holder takes no request

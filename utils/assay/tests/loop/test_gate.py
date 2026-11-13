@@ -1366,21 +1366,22 @@ def lock_cases(expect: testing.Expect) -> None:
         with gate.tree_lock(work / "land", wait=False) as is_held:
             expect("with no wait, a free lock is held for the block", is_held)
         lanes: list[int | None] = []
-        with gate.free_lane(work / "land") as first_lane:
+        with gate.free_lane(work / "land", 3) as first_lane:
             lanes.append(first_lane)
-            with gate.free_lane(work / "land") as second_lane:
+            with gate.free_lane(work / "land", 3) as second_lane:
                 lanes.append(second_lane)
-                with gate.free_lane(work / "land") as third_lane, gate.free_lane(work / "land") as no_lane:
+                with gate.free_lane(work / "land", 3) as third_lane, gate.free_lane(work / "land", 3) as no_lane:
                     lanes += [third_lane, no_lane]
         with open(work / "land" / gate.LOCK, "a", encoding="ascii") as earlier:
             fcntl.flock(earlier, fcntl.LOCK_EX)
-            with gate.free_lane(work / "land") as beside_earlier:
+            with gate.free_lane(work / "land", 3) as beside_earlier:
                 lanes.append(beside_earlier)
         expect(
-            f"each landing takes the first free lane, the lanes end at MAX_LANES, and a holder of the first lane with "
+            f"each landing takes the first free lane, the lanes end at their count, and a holder of the first lane with "
             f"no lock of PRIMARY, such as an earlier copy, leaves no lane free: {lanes}",
             lanes == [0, 1, 2, None, None]
-            and gate.Gate(work, work / "land", 1, False, lane=2).tree == work / "land" / "tree-3",
+            and gate.Gate(work, work / "land", 1, False, lane=2).tree == work / "land" / "tree-3"
+            and gate.LANES == max(1, heavy.host_pool().size // heavy.SLICE),
         )
         names = [gate.next_run(work / "land") for _ in range(gate.RUNS_KEPT + 2)]
         kept = [path.name for path in sorted((work / "land" / gate.LOGS).iterdir())]

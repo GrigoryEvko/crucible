@@ -43,10 +43,13 @@ THE POOL
     marker with no lock is the marker of a process that ended, and a reader
     removes it.
 
-    The leases of a run of the gate (leased() with is_gate) go first.  While
-    a lease of the gate waits, a different lease takes no slot when it
-    starts, does not grow, and gives each idle token above one at once.  The
-    leases of the gate share the pool fairly among themselves.
+    The leases of a run of the gate (leased() with is_gate) go first.  A
+    lease of the gate waits when it is hungry and holds less than its cap
+    and less than the fair share of the leases of the gate.  While a lease
+    of the gate waits, a different lease starts with one free slot, does not
+    grow, and gives each idle token above one at once.  So it always runs,
+    with one job as the least.  The leases of the gate share the pool fairly
+    among themselves.
 
     A token that a child holds when SIGKILL ends it does not come back to
     the FIFO.  The job then runs one job less, and the lease keeps the
@@ -494,11 +497,14 @@ class Lease:
     def demand(self) -> Demand:
         """Read the markers of the pool, remove each one with no lock, and give the demand (THE POOL).
 
-        A marker that does not read as four numbers counts as a lease of the class of the reader that does not wait.
-        Complexity: linear in the markers.
+        A marker that does not read as four numbers counts as a lease of the class of the reader that does not wait.  A
+        lease of the gate waits only below the smaller of its cap and the fair share of the gate leases, so a busy gate
+        lease at its share does not stop the other leases.  Complexity: linear in the markers.
         """
         active = 1
-        waiting_gate = waiting_other = 0
+        gates = int(self.is_gate)
+        gate_rows: list[tuple[int, int]] = []
+        waiting_other = 0
         peers: list[int] = []
         for path in sorted((self.pool.directory / LEASES_NAME).glob(f"*{MARKER_SUFFIX}")):
             if path == self._marker_path:
@@ -518,13 +524,16 @@ class Lease:
                 active += 1
                 continue
             held, cap, hungry, gate = (int(word) for word in words)
-            is_waiting = hungry == 1 and held < cap
-            waiting_gate += int(is_waiting and gate == 1)
-            waiting_other += int(is_waiting and gate == 0)
+            gates += gate
+            if gate == 1 and hungry == 1:
+                gate_rows.append((held, cap))
+            waiting_other += int(gate == 0 and hungry == 1 and held < cap)
             if gate == int(self.is_gate):
                 active += 1
                 if hungry == 1:
                     peers.append(held)
+        gate_fair = max(1, self.pool.size // max(1, gates))
+        waiting_gate = sum(1 for held, cap in gate_rows if held < min(cap, gate_fair))
         fair = max(1, self.pool.size // active)
         return Demand(active, waiting_gate, waiting_other, sum(1 for held in peers if held < fair))
 
@@ -709,7 +718,7 @@ def leased(
             lease.register()
             while True:
                 is_yielding = not lease.is_gate and lease.demand().waiting_gate > 0
-                if not is_yielding and lease.take(min(START_SLOTS, cap)):
+                if lease.take(1 if is_yielding else min(START_SLOTS, cap)):
                     break
                 if stop is not None and stop.is_set():
                     yield None
