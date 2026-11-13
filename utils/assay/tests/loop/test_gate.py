@@ -34,9 +34,9 @@ from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
-from assay.core import git, jobserver, paths, testing
+from assay.core import git, paths, testing
 from assay.core import registry as rule_registry
-from assay.loop import gate, syntax
+from assay.loop import gate, heavy, syntax
 from assay.loop import inputs as guard_inputs
 from assay.readers import cmake as cmake_reader
 from assay.readers import ninja as ninja_reader
@@ -146,6 +146,25 @@ if mode == "broken-after-deep":
     while not (build.parent / "build" / "deep.pid").is_file() and time.time() < deadline:
         time.sleep(0.02)
     mode = "broken"
+if mode in ("greedy", "count"):
+    descriptor = os.open(os.environ["MAKEFLAGS"].split("fifo:", 1)[1], os.O_RDWR | os.O_NONBLOCK)
+    deadline = time.time() + 30.0
+    while mode == "count" and not (build.parent / "build" / "greedy.held").is_file() and time.time() < deadline:
+        time.sleep(0.02)
+    held = b""
+    end = time.time() + 1.5
+    while time.time() < end:
+        try:
+            held += os.read(descriptor, 64)
+        except BlockingIOError:
+            time.sleep(0.01)
+    (build / "tokens.txt").write_text(str(len(held)))
+    (build / "greedy.held").write_text("1")
+    deadline = time.time() + 30.0
+    while mode == "greedy" and not (build.parent / "build-release" / "tokens.txt").is_file() and time.time() < deadline:
+        time.sleep(0.02)
+    os.write(descriptor, held)
+    os.close(descriptor)
 with open(build / "times.txt", "a") as handle:
     handle.write(f"{began} {time.time()}\\n")
 if mode == "build":
@@ -253,6 +272,8 @@ PLANTED = {
 MUCH_MEMORY_GB = 1e6
 SMALL_MEMORY_GB = 3.0
 SMALL_MEMORY_JOBS = 2
+# The slots of the planted pool of a case (THE JOBSERVER of assay.loop.gate).
+POOL_SLOTS = 64
 
 
 def planted_repository(root: Path, files: Mapping[str, str] | None = None) -> str:
@@ -519,7 +540,12 @@ def planted_gate(work: Path, root: Path, tree: Path, mode: str, others: Mapping[
     """
     for name, build_mode in {"build": mode, **(others or {})}.items():
         plant_build(work, tree, name, build_mode)
-    return gate.Gate(root, work / "land", 1, False, read=lambda: MUCH_MEMORY_GB)
+    return gate.Gate(root, work / "land", 1, False, read=lambda: MUCH_MEMORY_GB, pool=planted_pool(work))
+
+
+def planted_pool(work: Path) -> heavy.Pool:
+    """Return the planted slot pool of a case, with POOL_SLOTS slots, so no case takes the slots of the host."""
+    return heavy.Pool(work / "slots", POOL_SLOTS)
 
 
 def every_gate(work: Path, root: Path, tree: Path, modes: Mapping[str, str] | None = None) -> gate.Gate:
@@ -1002,19 +1028,19 @@ def touched_cases(expect: testing.Expect) -> None:
             last = lines[-1] if lines else ""
             if last.startswith("-j 1 --only ") and only.is_file():
                 last = f"--only {only.read_text(encoding='utf-8').strip()}"
-            steps = printed.count("memory: ")
+            leases = printed.count("memory: ")
             reconfigured = ["reconfigure-noop -"] if lines else []
             holds = (
                 verdict.is_accepted
                 and verdict.configurations == expected
                 and last == shown
-                and steps == 1
+                and leases == len(expected)
                 and checks == reconfigured
             )
             label_text = (
                 f"a change of {label} runs in {expected} with the words {shown!r} in the bench and fuzz build, and the "
-                f"rule reconfigure-noop after each run in that build, in one heavy step.  The gate gives "
-                f"{verdict.configurations}, {last!r} and the checks {checks} in {steps} heavy steps"
+                f"rule reconfigure-noop after each run in that build, each configuration with a lease.  The gate gives "
+                f"{verdict.configurations}, {last!r} and the checks {checks} with {leases} leases"
             )
             expect(label_text if holds else f"{label_text}.  The output of the gate:\n{printed}", holds)
             previous = commit
@@ -1045,20 +1071,30 @@ def thread_cases(expect: testing.Expect) -> None:
         fifos = [Path(text.split("fifo:", 1)[1]) for text in flags if "fifo:" in text]
         spans = [span for name in builds for span in times_of(tree / name)]
         expect(
-            f"each configuration gets MAKEFLAGS of one jobserver with the jobs of the gate, and its FIFO goes at the "
-            f"end of the check: {flags[0]}",
+            f"each configuration gets MAKEFLAGS of the jobserver of a lease of its own with the slice of the gate, "
+            f"and each FIFO goes at the end of the check: {flags[0]}",
             verdict.is_accepted
             and all(text.startswith("-j8 --jobserver-auth=fifo:") for text in flags)
-            and len(set(fifos)) == 1
-            and not fifos[0].exists(),
+            and len(set(fifos)) == len(builds)
+            and not any(fifo.exists() for fifo in fifos)
+            and len(verdict.wait_seconds) == len(verdict.slot_seconds) == len(builds),
         )
         expect(
-            f"the configurations of the full suite and the other configurations run at the same time, in one heavy "
-            f"step: {len(spans)} runs, {printed.count('memory: ')} reads of the memory",
+            f"the configurations of the full suite and the other configurations run at the same time, each with a "
+            f"lease: {len(spans)} runs, {printed.count('memory: ')} reads of the memory",
             len(spans) == len(builds)
             and max(first for first, _ in spans) < min(last for _, last in spans)
-            and printed.count("memory: ") == 1,
+            and printed.count("memory: ") == len(builds),
         )
+        greedy = replace(planted_gate(work, root, tree, "greedy", {"build-release": "count"}), jobs=8)
+        verdict, printed = testing.captured(lambda: greedy.check(gate.Candidate(head, commit, ("test/a.cpp",)), False))
+        taken = [(tree / name / "tokens.txt").read_text(encoding="utf-8") for name in ("build", "build-release")]
+        holds = verdict.is_accepted and int(taken[0]) <= 7 and int(taken[1]) >= heavy.START_SLOTS - 1
+        label = (
+            f"a configuration that takes each token that it can does not take the tokens of a different "
+            f"configuration: the greedy one holds {taken[0]} of at most 7, and the other one gets {taken[1]}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
         rule_commit = commit_change(root, BUILD_RULE_MODULE, "VALUE = 3\n", "Change the rule")
         early = replace(planted_gate(work, root, tree, "slow", dict.fromkeys(builds[1:], "clean")), jobs=8)
         for name in builds:
@@ -1084,7 +1120,7 @@ def thread_cases(expect: testing.Expect) -> None:
 
 
 def memory_cases(expect: testing.Expect) -> None:
-    """Hold THE JOBSERVER with a small memory: the jobserver and each -j get the job count of the heavy step."""
+    """Hold THE JOBSERVER with a small memory: the jobserver and each -j get the cap of the lease."""
     with tempfile.TemporaryDirectory(prefix="gate-memory-") as work_text:
         work = Path(work_text)
         root = work / "repo"
@@ -1149,44 +1185,64 @@ def stop_cases(expect: testing.Expect) -> None:
 
 
 def masked_error_cases(expect: testing.Expect) -> None:
-    """Hold THE STOP: a thread that an error stopped does not hide the error, and a stop with no problem is an error."""
-    with tempfile.TemporaryDirectory(prefix="gate-masked-") as work_text, jobserver.serving(2) as server:
+    """Hold THE STOP: a thread that an error stopped does not hide the error, and a stop with no problem is an error.
+
+    A stop also ends the wait of a configuration for its first slot (THE JOBSERVER).
+    """
+    with tempfile.TemporaryDirectory(prefix="gate-masked-") as work_text:
         work = Path(work_text)
-        planted = gate.Gate(work, work / "land", 2, False)
-        with jobserver.connected(server.path) as client:
-            step = gate.Step(planted, gate.Candidate("a" * 40, "b" * 40, ()), {}, client, 2)
+        pool = heavy.Pool(work / "slots", 1)
+        planted = gate.Gate(work, work / "land", 2, False, pool=pool)
+        step = gate.Step(planted, gate.Candidate("a" * 40, "b" * 40, ()), {})
 
-            def work_of(index: int) -> int:
-                """Wait for the stop in the first item and give Stopped, and give an error in the second item."""
-                if index == 0:
-                    while not step.stop.is_set():
-                        time.sleep(0.01)
-                    raise gate.Stopped
-                raise gate.GateError("a planted error of a step")
+        def work_of(index: int) -> int:
+            """Wait for the stop in the first item and give Stopped, and give an error in the second item."""
+            if index == 0:
+                while not step.stop.is_set():
+                    time.sleep(0.01)
+                raise gate.Stopped
+            raise gate.GateError("a planted error of a step")
 
-            try:
-                step.concurrently([0, 1], work_of)
-                raised = ""
-            except gate.Stopped:
-                raised = "Stopped"
-            except gate.GateError as problem:
-                raised = str(problem)
-            expect(
-                f"the error of a thread goes to the caller, also when an earlier item gives Stopped: {raised!r}",
-                raised == "a planted error of a step" and step.stop.is_set(),
-            )
-            try:
-                step.require_problem([gate.Outcome("default", (), (), 1.0, True)])
-                refused = ""
-            except gate.GateError as problem:
-                refused = str(problem)
-            expect(
-                f"a heavy step that the stop ended with no problem of a configuration is an error: {refused!r}",
-                "stopped with no problem" in refused,
-            )
-            outcomes = [gate.Outcome("default", ("default: a problem",), (), 1.0, False)]
-            step.require_problem(outcomes)
-            expect("a stop with a problem of a configuration is no error", True)
+        try:
+            step.concurrently([0, 1], work_of)
+            raised = ""
+        except gate.Stopped:
+            raised = "Stopped"
+        except gate.GateError as problem:
+            raised = str(problem)
+        expect(
+            f"the error of a thread goes to the caller, also when an earlier item gives Stopped: {raised!r}",
+            raised == "a planted error of a step" and step.stop.is_set(),
+        )
+        try:
+            step.require_problem([gate.Outcome("default", (), (), 1.0, True)])
+            refused = ""
+        except gate.GateError as problem:
+            refused = str(problem)
+        expect(
+            f"a check that the stop ended with no problem of a configuration is an error: {refused!r}",
+            "stopped with no problem" in refused,
+        )
+        outcomes = [gate.Outcome("default", ("default: a problem",), (), 1.0, False)]
+        step.require_problem(outcomes)
+        expect("a stop with a problem of a configuration is no error", True)
+
+        def stopped_wait() -> str:
+            """Hold the one slot of the pool, and wait for a lease of the step with its stop event set."""
+            with heavy.leased(work, 1, pool, lambda: MUCH_MEMORY_GB) as busy:
+                if busy is None:
+                    return "no slot for the holder"
+                try:
+                    with step.leased():
+                        return "a slot"
+                except gate.Stopped:
+                    return "Stopped"
+
+        waited, _ = testing.captured(stopped_wait)
+        expect(
+            f"with each slot of the pool held, a set stop event ends the wait for the first slot: {waited}",
+            waited == "Stopped",
+        )
 
 
 def base_run_cases(expect: testing.Expect) -> None:
@@ -1223,7 +1279,7 @@ def base_run_cases(expect: testing.Expect) -> None:
             and base_verdict.problems == batch_verdict.problems
             and base_verdict.final == head
             and not base_verdict.ledgers
-            and printed.count("memory: ") == 1
+            and printed.count("memory: ") == len(base_verdict.configurations)
         )
         label = (
             f"the run of the base runs the red tests of the focus with --only, a configuration with no red test in the "

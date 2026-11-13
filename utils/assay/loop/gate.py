@@ -136,13 +136,9 @@ THE RUN OF A CONFIGURATION
     CHANGE).  The suite does not get the variable CRUCIBLE_CHANGE_BASE,
     because a self-test plants repositories of its own, and the variable
     names no commit of them.  `loop syntax --changed` gets the variable, with
-    the commit that the composition started from.  Each check of the gate runs in
-    one heavy step (assay.loop.heavy), with the lock of the repository of
-    the landing.  The step reads the memory one time, and the memory gives
-    the jobs of the step (THE JOBSERVER).  The landing holds the session of
-    the gate (THE PRIORITY OF THE GATE of assay.loop.heavy).  The step of
-    the gate then does not wait for it.  In the heavy step, each
-    configuration runs in a thread of its own (THE THREADS):
+    the commit that the composition started from.  Each configuration of a
+    check runs in a thread of its own, with a lease of the slot pool of the
+    host (THE JOBSERVER, THE THREADS):
       1. A build directory with no graph of Ninja gets its configure:
          `cmake --preset PRESET -B BUILD`.
       2. A parse configuration: `loop syntax BUILD`, then `guard check
@@ -157,7 +153,7 @@ THE RUN OF A CONFIGURATION
          build.  The file of --only is in the directory of the logs.
          Then each test that is red runs one more time apart from the
          suite.  The red tests run at the same time, in one run of ctest
-         with the jobs of the step, and each one keeps its own verdict.  A
+         with the cap of the lease, and each one keeps its own verdict.  A
          test that is red in that run too ("red alone too") rejects the
          commit.  A test that is green in that run ("green alone") is a
          flaky test, and no retry hides it: the
@@ -184,21 +180,27 @@ THE RUN OF A CONFIGURATION
     configuration with a problem stops the others (THE STOP).
 
 THE JOBSERVER
-    The heavy step gives the jobs of the gate, or a smaller count when the
-    available memory is small (THE MEMORY of assay.loop.heavy).  It makes
-    one jobserver of these jobs (assay.core.jobserver).  Each command of the
-    step gets the variable
-    MAKEFLAGS of that jobserver.  The gate holds one slot of the jobserver
-    for each command that it runs: its implicit slot, or one token.  The
-    command then runs its first job on that slot.  ninja, ctest and `loop
-    syntax` take one token for each other job.  `loop test` gives its build
-    no -j with the jobserver, because ninja obeys the jobserver only with no
-    -j (assay.loop.affected).  ctest and the pool of `loop syntax` get -j
-    with the jobs of the step too.  The jobs of all the configurations
-    together are then at most the jobs of the step, and the memory stays
-    that of one build.
-    Each check makes a new jobserver.  A token that a stopped command did
-    not give back then does not make the next check smaller.
+    Each configuration of a check holds a lease of the slot pool of the host
+    while it runs (THE POOL of assay.loop.heavy).  The writes of THE BUILT
+    FILES and of THE REDUCE hold a lease too.  The cap of a lease is the
+    slice of the gate: --jobs with SLICE of assay.loop.heavy as the most, or
+    less when the available memory is small (THE MEMORY of
+    assay.loop.heavy).  Each lease has a jobserver of its own
+    (assay.core.jobserver), and each command of the configuration gets the
+    variable MAKEFLAGS of that jobserver.  The pump of the lease adds slots
+    while the configuration uses each one, and it gives idle slots back to
+    the pool.  A configuration in its test phase then cannot take the jobs of
+    a different configuration, and the slots of the host go to each heavy
+    job of the host.  The wait for the first slot watches the stop event.
+    The gate holds one slot of the jobserver for each command that it runs:
+    its implicit slot, or one token.  The command then runs its first job
+    on that slot.  ninja, ctest and `loop syntax` take one token for each
+    other job.  `loop test` gives its build no -j with the jobserver,
+    because ninja obeys the jobserver only with no -j (assay.loop.affected).
+    ctest and the pool of `loop syntax` get -j with the cap of the lease.
+    The verdict gives the wait of each configuration for its first slot, and
+    the sum of its slots over its time (Verdict.wait_seconds and
+    Verdict.slot_seconds).  Its time in step_seconds starts after that wait.
 
 THE THREADS
     Each configuration of the plan runs in a thread of its own, at the same
@@ -227,7 +229,7 @@ THE STOP
     does not give a configuration that the stop ended.  An error of a step
     of the gate stops the others too, and the check raises it after each
     thread ended.  A thread that the error stopped does not hide the error.
-    A heavy step that the stop ended with no problem of a configuration is
+    A check that the stop ended with no problem of a configuration is
     an error of the gate (require_problem()).  The landing then refuses the
     commit with that error, and it does not accept it.
 
@@ -273,7 +275,7 @@ THE REDUCE
     last commit.
 
     The warm tree moves to the new commit.  Each configuration of the run
-    then runs again, at the same time, in the same heavy step.  A parse
+    then runs again, at the same time, each with a lease.  A parse
     configuration runs `guard check --build-dir BUILD` of each rule of
     COUNTED_RULES again, on the reports that it keeps, with no write.  A
     ledger that the gate folded can make such a check red, and the gate then
@@ -295,7 +297,7 @@ THE BUILT FILES
     composition keeps its own copy.  The candidate then names the file
     (Candidate.built).
 
-    In the heavy step, before each configuration runs, the gate writes each
+    Before each configuration runs, the gate writes each
     such file (Step.write_built()).  It configures the build of ALWAYS when
     that build has no graph of Ninja.  It builds the target all with no -j
     (THE JOBSERVER), and it runs `loop derive TARGET --write --build-dir
@@ -465,7 +467,7 @@ class GateError(Exception):
 
 
 class Stopped(Exception):
-    """A step of a run ends, because a different run of the heavy step gave a problem (THE STOP)."""
+    """A step of a run ends, because a different run of the check gave a problem (THE STOP)."""
 
 
 class Mode(enum.Enum):
@@ -523,8 +525,9 @@ class Candidate:
 class Verdict:
     """The result of the gate: the configurations that ran, each problem, and the wall times in seconds.
 
-    `seconds` holds the wait for the lock.  `step_seconds` gives the time of each configuration in its heavy step after
-    the wait, in the sequence of `configurations`.  `final` is the commit that the gate judged
+    `seconds` holds each wait.  `step_seconds` gives the time of each configuration after its wait for its first slot,
+    in the sequence of `configurations`.  `wait_seconds` gives that wait, and `slot_seconds` the sum of the slots of
+    the configuration over its time (THE JOBSERVER).  `final` is the commit that the gate judged
     last, and `ledgers` holds each ledger that THE REDUCE folded into it.  `final` is "" for a verdict of no commit.
     `logs` is the directory of the logs of the run (THE LOGS).  `focus` gives each configuration with a problem (THE
     VERDICT).  `flaky` gives each test that was red in the suite and green alone, as CONFIGURATION: TEST.  `built`
@@ -541,6 +544,8 @@ class Verdict:
     focus: tuple[Focus, ...] = ()
     flaky: tuple[str, ...] = ()
     built: tuple[str, ...] = ()
+    wait_seconds: tuple[float, ...] = ()
+    slot_seconds: tuple[float, ...] = ()
 
     @property
     def is_accepted(self) -> bool:
@@ -550,10 +555,12 @@ class Verdict:
 
 @dataclass(frozen=True, slots=True)
 class Outcome:
-    """The end of the run of one configuration in a heavy step (THE THREADS, THE STOP).
+    """The end of the run of one configuration in a check (THE THREADS, THE STOP).
 
     `red` holds the tests that were red alone too, and `flaky` the tests that were red in the suite and green alone.
-    `is_stopped` tells that the stop ended the run, which then has no problem of its own.
+    `is_stopped` tells that the stop ended the run, which then has no problem of its own.  `seconds` starts after the
+    wait for the first slot of the lease, and `wait_s` is that wait.  `slot_seconds` is the sum of the slots of the
+    lease over its time (THE JOBSERVER).
     """
 
     name: str
@@ -562,6 +569,8 @@ class Outcome:
     seconds: float
     is_stopped: bool
     flaky: tuple[str, ...] = ()
+    wait_s: float = 0.0
+    slot_seconds: float = 0.0
 
 
 # ── The selection ──────────────────────────────────────────────────────────
@@ -828,9 +837,10 @@ def built_commit(root: Path, commit: str, files: Mapping[str, bytes | None]) -> 
 class Gate:
     """The gate of one session: the repository, the work directory, the jobs, --all-configurations, and the memory.
 
-    `jobs` is the most jobs of a heavy step.  `read` is the reader of the available memory, which gives the jobs of the
-    heavy step (THE MEMORY of assay.loop.heavy).  `run` names the directory of the logs of one run in LOGS, or it is ""
-    for LOGS itself (THE LOGS).
+    `jobs` is the most jobs of the lease of one configuration, with SLICE of assay.loop.heavy as the most (slice).
+    `read` is the reader of the available memory, which gives the cap of a lease (THE MEMORY of assay.loop.heavy).
+    `run` names the directory of the logs of one run in LOGS, or it is "" for LOGS itself (THE LOGS).  `pool` is the
+    slot pool of the leases, or None for the pool of the host (THE JOBSERVER).
     """
 
     root: Path
@@ -839,6 +849,12 @@ class Gate:
     is_every: bool
     read: heavy.Reader = heavy.available_gb
     run: str = ""
+    pool: heavy.Pool | None = None
+
+    @property
+    def slice(self) -> int:
+        """The most jobs of the lease of one configuration: `jobs`, with SLICE of assay.loop.heavy as the most."""
+        return max(1, min(self.jobs, heavy.SLICE))
 
     @property
     def tree(self) -> Path:
@@ -936,7 +952,7 @@ class Gate:
         )
 
     def check(self, candidate: Candidate, is_retry: bool) -> Verdict:
-        """Give the warm tree the commit, select the configurations, and run them in one heavy step (THE THREADS).
+        """Give the warm tree the commit, select the configurations, and run them at the same time (THE THREADS).
 
         A candidate with a focus runs only its focus (THE RUN OF THE BASE).  A candidate with a built file gets its write
         before each configuration (THE BUILT FILES).
@@ -1005,59 +1021,53 @@ class Gate:
                 f"{self.logs}"
             )
         try:
-            with (
-                heavy.heavy_step(self.root, self.jobs, read=self.read, is_gate_step=True) as jobs,
-                jobserver.serving(jobs) as server,
-                jobserver.connected(server.path) as client,
-            ):
-                flags = {jobserver.VARIABLE: server.makeflags}
-                step = Step(self, candidate, {**environment, **flags}, client, jobs)
-                if is_each:
-                    step.always_ready.set()
+            step = Step(self, candidate, environment)
+            if is_each:
+                step.always_ready.set()
 
-                def first_plan() -> tuple[Run, ...]:
-                    """Return the runs of the other configurations of the first round."""
-                    return self.other_plan(candidate, others, (), is_each)
+            def first_plan() -> tuple[Run, ...]:
+                """Return the runs of the other configurations of the first round."""
+                return self.other_plan(candidate, others, (), is_each)
 
-                outcomes, built = step.write_built() if candidate.built else ([], ())
-                if not outcomes:
-                    outcomes = step.run_all(plan, first_plan if others else None, False, is_retry)
-                    step.require_problem(outcomes)
-                final: str = step.candidate.commit
-                ledgers: tuple[str, ...] = ()
-                if not candidate.focus and not any(item.problems for item in outcomes):
-                    if is_each_built(outcomes):
-                        step.reduce(counted)
-                    else:
-                        check_report.write_line(
-                            "loop land: the landing builds only some configurations of the gate, so the gate lowers "
-                            "no row of a counted ledger"
-                        )
-                    final, ledgers = step.fold()
-                if ledgers:
+            outcomes, built = step.write_built() if candidate.built else ([], ())
+            if not outcomes:
+                outcomes = step.run_all(plan, first_plan if others else None, False, is_retry)
+                step.require_problem(outcomes)
+            final: str = step.candidate.commit
+            ledgers: tuple[str, ...] = ()
+            if not candidate.focus and not any(item.problems for item in outcomes):
+                if is_each_built(outcomes):
+                    step.reduce(counted)
+                else:
                     check_report.write_line(
-                        f"loop land: the writes of the gate changed {' '.join(ledgers)}, folded into the commit "
-                        f"{final[:9]}, and each configuration of the run runs again"
+                        "loop land: the landing builds only some configurations of the gate, so the gate lowers no "
+                        "row of a counted ledger"
                     )
-                    is_each_again = (
-                        careful(
-                            lambda: self.changes_each(candidate, ledgers),
-                            True,
-                            "the inputs of the meters of the tests",
-                            "the tests of the changed inputs in each other configuration",
-                        )
-                        if others
-                        else True
+                final, ledgers = step.fold()
+            if ledgers:
+                check_report.write_line(
+                    f"loop land: the writes of the gate changed {' '.join(ledgers)}, folded into the commit "
+                    f"{final[:9]}, and each configuration of the run runs again"
+                )
+                is_each_again = (
+                    careful(
+                        lambda: self.changes_each(candidate, ledgers),
+                        True,
+                        "the inputs of the meters of the tests",
+                        "the tests of the changed inputs in each other configuration",
                     )
+                    if others
+                    else True
+                )
 
-                    def again_plan() -> tuple[Run, ...]:
-                        """Return the runs of the other configurations of the round after the fold."""
-                        return self.other_plan(candidate, others, ledgers, is_each_again)
+                def again_plan() -> tuple[Run, ...]:
+                    """Return the runs of the other configurations of the round after the fold."""
+                    return self.other_plan(candidate, others, ledgers, is_each_again)
 
-                    outcomes += step.run_all(plan, again_plan if others else None, True, is_retry)
-                    step.require_problem(outcomes)
-        except jobserver.JobserverError as problem:
-            raise GateError(str(problem)) from None
+                outcomes += step.run_all(plan, again_plan if others else None, True, is_retry)
+                step.require_problem(outcomes)
+        except (jobserver.JobserverError, OSError) as problem:
+            raise GateError(f"the slot pool or a jobserver of the gate fails: {problem}") from None
         ended = [item for item in outcomes if not item.is_stopped]
         return Verdict(
             tuple(item.name for item in ended),
@@ -1070,45 +1080,36 @@ class Gate:
             tuple(Focus(item.name, item.red) for item in outcomes if item.problems),
             tuple(dict.fromkeys(f"{item.name}: {name}" for item in outcomes for name in item.flaky)),
             built,
+            tuple(item.wait_s for item in ended),
+            tuple(round(item.slot_seconds, 1) for item in ended),
         )
 
 
-# ── The heavy step ─────────────────────────────────────────────────────────
+# ── The step of a check ────────────────────────────────────────────────────
 
 
 class Step:
-    """The work of one heavy step of a check: its commands, its threads and its stop event.
+    """The work of one check: its commands, its threads, its leases and its stop event.
 
-    `environment` is the environment of each command, with MAKEFLAGS of the jobserver (THE JOBSERVER).  `jobs` is the
-    job count of the heavy step and of its jobserver.  `always_ready` tells that the build of ALWAYS holds the configure
-    of the change (THE THREADS).
+    `environment` is the environment of each command, without MAKEFLAGS.  Each command gets MAKEFLAGS of the lease of
+    its configuration (THE JOBSERVER).  `always_ready` tells that the build of ALWAYS holds the configure of the change
+    (THE THREADS).
     """
 
     __slots__ = (
         "_said",
         "always_ready",
         "candidate",
-        "client",
         "environment",
         "gate",
-        "jobs",
         "stop",
     )
 
-    def __init__(
-        self,
-        gate: Gate,
-        candidate: Candidate,
-        environment: Mapping[str, str],
-        client: jobserver.Client,
-        jobs: int,
-    ) -> None:
-        """Keep the gate, the candidate, the environment, the jobserver client and the jobs."""
+    def __init__(self, gate: Gate, candidate: Candidate, environment: Mapping[str, str]) -> None:
+        """Keep the gate, the candidate and the environment."""
         self.gate = gate
         self.candidate = candidate
-        self.environment = dict(environment)
-        self.client = client
-        self.jobs = jobs
+        self.environment = {name: value for name, value in environment.items() if name != jobserver.VARIABLE}
         self.stop = threading.Event()
         self.always_ready = threading.Event()
         self._said = threading.Lock()
@@ -1117,6 +1118,18 @@ class Step:
         """Write one line of the gate, with no line of a different thread in it."""
         with self._said:
             check_report.write_line(text)
+
+    @contextlib.contextmanager
+    def leased(self) -> Iterator[heavy.Share]:
+        """Hold a lease of the slot pool with the slice of the gate for the block (THE JOBSERVER).
+
+        Raises:
+            Stopped: If the stop event is set before the lease holds a slot
+        """
+        with heavy.leased(self.gate.root, self.gate.slice, self.gate.pool, self.gate.read, self.stop) as share:
+            if share is None:
+                raise Stopped
+            yield share
 
     def concurrently[Item, Result](self, items: Sequence[Item], work: Callable[[Item], Result]) -> list[Result]:
         """Run the work of each item in a thread of its own, and return the results in the sequence of the items.
@@ -1154,11 +1167,11 @@ class Step:
             raise errors[0]
         return [future.result() for future in futures]
 
-    def run_logged(self, command: list[str], log: str, environment: Mapping[str, str], timeout_s: float) -> int:
-        """Run one command in the warm tree with its two outputs in a log, in one slot of the jobserver, and give its exit.
+    def run_logged(self, command: list[str], log: str, share: heavy.Share, timeout_s: float) -> int:
+        """Run one command in the warm tree with its two outputs in a log, in one slot of a lease, and give its exit.
 
-        A command that runs longer than its limit gives the exit of its end.  The command looks at the stop event each
-        STOP_POLL_S seconds (THE STOP).
+        The command gets MAKEFLAGS of the jobserver of the lease (THE JOBSERVER).  A command that runs longer than its
+        limit gives the exit of its end.  The command looks at the stop event each STOP_POLL_S seconds (THE STOP).
 
         Raises:
             Stopped: If the stop event is set before the command starts, or while it runs
@@ -1170,13 +1183,13 @@ class Step:
             command,
             timeout_s=timeout_s,
             cwd=self.gate.tree,
-            env=dict(environment),
+            env={**self.environment, **share.environment},
             stdout=logs / log,
             stderr=proc.Output.MERGE,
             grace_s=STOP_GRACE_S,
             stop=proc.Stop.INTERRUPT,
         )
-        with self.client.held(self.stop) as is_held:
+        with share.client.held(self.stop) as is_held:
             if not is_held:
                 raise Stopped
             try:
@@ -1194,17 +1207,17 @@ class Step:
                 return problem.completed.exit if problem.completed is not None else ExitCode.TOOL_FAILED
             return completed.exit
 
-    def configure(self, configuration: Configuration, is_again: bool = False) -> str | None:
+    def configure(self, configuration: Configuration, share: heavy.Share, is_again: bool = False) -> str | None:
         """Configure the build directory of a configuration when it has no graph of Ninja, and give a problem."""
         build = build_directory(self.gate.tree, configuration)
         if ninja_reader.graph_file(build).is_file():
             return None
         log = log_name(configuration, "configure.log", is_again)
-        if self.run_logged(configure_words(self.gate.tree, configuration), log, self.environment, CONFIGURE_S) != 0:
+        if self.run_logged(configure_words(self.gate.tree, configuration), log, share, CONFIGURE_S) != 0:
             return f"{configuration.name}: the configure gives an error, see {self.gate.logs / log}"
         return None
 
-    def regenerate(self, configuration: Configuration) -> str | None:
+    def regenerate(self, configuration: Configuration, share: heavy.Share) -> str | None:
         """Build the target build.ninja of the build of a configuration, and give a problem (THE THREADS).
 
         The build configures the build directory again when the change touches its configure.  It gets no -j, because
@@ -1216,7 +1229,7 @@ class Step:
         build = build_directory(self.gate.tree, configuration)
         log = log_name(configuration, "regenerate.log")
         command = [configured_program(build, "cmake"), "--build", str(build), "--target", ninja_reader.GRAPH_NAME]
-        if self.run_logged(command, log, self.environment, CONFIGURE_S) != 0:
+        if self.run_logged(command, log, share, CONFIGURE_S) != 0:
             return f"{configuration.name}: the configure gives an error, see {self.gate.logs / log}"
         return None
 
@@ -1233,13 +1246,14 @@ class Step:
         configuration = BY_NAME[ALWAYS]
         self.say(f"loop land: {ALWAYS}: build and write {' '.join(self.candidate.built)}")
         began = time.monotonic()
-        problems = self.built_problems(configuration)
+        with self.leased() as share:
+            problems = self.built_problems(configuration, share)
         seconds = round(time.monotonic() - began, 1)
         if problems:
             return [Outcome(ALWAYS, tuple(problems), (), seconds, False)], ()
         return [], self.fold_built(seconds)
 
-    def built_problems(self, configuration: Configuration) -> list[str]:
+    def built_problems(self, configuration: Configuration, share: heavy.Share) -> list[str]:
         """Build the target all of a configuration and run the write of each built file of the candidate in its build.
 
         The build gets no -j, because ninja obeys the jobserver only with no -j (THE JOBSERVER).  The result holds a
@@ -1248,20 +1262,20 @@ class Step:
         Raises:
             GateError: If the CMake cache of the build names no cmake
         """
-        problem = self.configure(configuration)
+        problem = self.configure(configuration, share)
         if problem is not None:
             return [problem]
         build = build_directory(self.gate.tree, configuration)
         log = log_name(configuration, "built-build.log")
         command = [configured_program(build, "cmake"), "--build", str(build)]
-        if self.run_logged(command, log, self.environment, proc.BUILD_S) != 0:
+        if self.run_logged(command, log, share, proc.BUILD_S) != 0:
             return [f"{configuration.name}: the build of the built files gives an error, see {self.gate.logs / log}"]
         problems: list[str] = []
         for path in self.candidate.built:
             target = BUILT_FILES[path]
             log = log_name(configuration, f"write-{target}.log")
             command = [*self.gate.master("loop"), "derive", target, "--write", "--build-dir", str(build)]
-            if self.run_logged(command, log, self.environment, proc.TOOL_S) != 0:
+            if self.run_logged(command, log, share, proc.TOOL_S) != 0:
                 problems.append(
                     f"{configuration.name}: the gate cannot write {path} from the build, see {self.gate.logs / log}"
                 )
@@ -1296,7 +1310,7 @@ class Step:
         return written
 
     def checked(
-        self, configuration: Configuration, rules: Sequence[str], environment: Mapping[str, str], is_again: bool = False
+        self, configuration: Configuration, rules: Sequence[str], share: heavy.Share, is_again: bool = False
     ) -> list[str]:
         """Run `guard check --build-dir` of each rule on a build at the same time, and give a problem for each exit other
         than 0 or 77."""
@@ -1306,7 +1320,7 @@ class Step:
             """Run the check of one rule, and give its problem or None."""
             log = log_name(configuration, f"check-{rule}.log", is_again)
             command = [*self.gate.master("guard"), "check", "--rule", rule, "--build-dir", str(build)]
-            status = self.run_logged(command, log, environment, proc.TOOL_S)
+            status = self.run_logged(command, log, share, proc.TOOL_S)
             if status in (ExitCode.OK, ExitCode.SKIPPED):
                 return None
             return f"{configuration.name}: the rule {rule} gives findings, see {self.gate.logs / log}"
@@ -1316,18 +1330,21 @@ class Step:
     def reduce(self, counted: Sequence[str]) -> None:
         """Run the reduce of each counted rule over the builds of the configurations, at the same time (THE REDUCE).
 
-        Each rule has one write.  A write that refuses a count exits 1, and it writes no ledger.  Complexity: one write
-        of each counted rule.
+        Each rule has one write.  A write that refuses a count exits 1, and it writes no ledger.  The writes share one
+        lease (THE JOBSERVER).  Complexity: one write of each counted rule.
         """
+        if not counted:
+            return
+        with self.leased() as share:
 
-        def write_one(rule: str) -> None:
-            """Write the ledger of one rule over the build of each configuration that checks it."""
-            log = f"reduce-{rule}.log"
-            command = [*self.gate.master("guard"), *reduce_words(self.gate.tree, rule)]
-            status = self.run_logged(command, log, self.environment, proc.TOOL_S)
-            self.say(f"loop land: the reduce of {rule} exits {status}")
+            def write_one(rule: str) -> None:
+                """Write the ledger of one rule over the build of each configuration that checks it."""
+                log = f"reduce-{rule}.log"
+                command = [*self.gate.master("guard"), *reduce_words(self.gate.tree, rule)]
+                status = self.run_logged(command, log, share, proc.TOOL_S)
+                self.say(f"loop land: the reduce of {rule} exits {status}")
 
-        self.concurrently(list(counted), write_one)
+            self.concurrently(list(counted), write_one)
 
     def fold(self) -> tuple[str, tuple[str, ...]]:
         """Fold each ledger that THE REDUCE changed in the warm tree into the commit, and give the commit and the ledgers.
@@ -1347,10 +1364,12 @@ class Step:
         move_tree(self.gate.root, tree, final)
         return final, ledgers
 
-    def red_alone(self, configuration: Configuration, names: Sequence[str], is_again: bool = False) -> list[str]:
+    def red_alone(
+        self, configuration: Configuration, names: Sequence[str], share: heavy.Share, is_again: bool = False
+    ) -> list[str]:
         """Run each red test one more time apart from the suite, and return the names of the tests that are red again.
 
-        The tests run at the same time, in one run of ctest with the jobs of the step (THE RUN OF A CONFIGURATION).
+        The tests run at the same time, in one run of ctest with the cap of the lease (THE RUN OF A CONFIGURATION).
         The report of that run gives the status of each test.  A test with no status in the report is red.  The limit
         of the run is ALONE_S for each test, the time of the tests one after the other.  The files of the run have the
         name of its round (log_name()).
@@ -1368,29 +1387,29 @@ class Step:
         logs.mkdir(parents=True, exist_ok=True)
         selection.write_text("".join(f"{name}\n" for name in names), encoding="utf-8")
         report.unlink(missing_ok=True)
-        command = [ctest, "--test-dir", str(build), "--tests-from-file", str(selection), "-j", str(self.jobs)]
+        command = [ctest, "--test-dir", str(build), "--tests-from-file", str(selection), "-j", str(share.jobs)]
         command += ["--timeout", str(int(ALONE_S)), "--output-on-failure", "--output-junit", str(report)]
-        self.run_logged(command, log_name(configuration, "alone.log", is_again), self.environment, ALONE_S * len(names))
+        self.run_logged(command, log_name(configuration, "alone.log", is_again), share, ALONE_S * len(names))
         try:
             statuses = ctest_reader.results(report)
         except ctest_reader.CtestError:
             statuses = {}
         return [name for name in names if statuses.get(name, ctest_reader.TestStatus.NOTRUN) in RED]
 
-    def run_parse(self, configuration: Configuration) -> list[str]:
+    def run_parse(self, configuration: Configuration, share: heavy.Share) -> list[str]:
         """Do steps 1 and 2 of THE RUN OF A CONFIGURATION for a parse configuration, and give each problem."""
-        problem = self.configure(configuration)
+        problem = self.configure(configuration, share)
         if problem is not None:
             return [problem]
         build = build_directory(self.gate.tree, configuration)
         log = log_name(configuration, "syntax.log")
-        command = [*self.gate.master("loop"), "syntax", str(build), "-j", str(self.jobs)]
-        if self.run_logged(command, log, self.environment, TEST_RUN_S) != 0:
+        command = [*self.gate.master("loop"), "syntax", str(build), "-j", str(share.jobs)]
+        if self.run_logged(command, log, share, TEST_RUN_S) != 0:
             return [f"{configuration.name}: a unit does not parse, see {self.gate.logs / log}"]
-        return self.checked(configuration, COUNTED_RULES, self.environment)
+        return self.checked(configuration, COUNTED_RULES, share)
 
     def run_objects(
-        self, configuration: Configuration, words: Sequence[str], is_again: bool
+        self, configuration: Configuration, words: Sequence[str], share: heavy.Share, is_again: bool
     ) -> tuple[list[str], tuple[str, ...], tuple[str, ...]]:
         """Do steps 1 and 3 of THE RUN OF A CONFIGURATION for a configuration of objects, and give each problem.
 
@@ -1399,11 +1418,11 @@ class Step:
         wait for it (THE THREADS).  The second result holds the tests that are red alone too, and the third result the
         flaky tests: red in the suite and green alone.
         """
-        problem = self.configure(configuration, is_again)
+        problem = self.configure(configuration, share, is_again)
         if problem is not None:
             return [problem], (), ()
         if configuration.name == ALWAYS and not self.always_ready.is_set():
-            problem = self.regenerate(configuration)
+            problem = self.regenerate(configuration, share)
             self.always_ready.set()
             if problem is not None:
                 return [problem], (), ()
@@ -1412,8 +1431,8 @@ class Step:
         report.unlink(missing_ok=True)
         logs = self.gate.logs
         log = log_name(configuration, "test.log", is_again)
-        command = [*self.gate.master("loop"), "test", str(build), "-j", str(self.jobs), *words]
-        status = self.run_logged(command, log, self.environment, TEST_RUN_S)
+        command = [*self.gate.master("loop"), "test", str(build), "-j", str(share.jobs), *words]
+        status = self.run_logged(command, log, share, TEST_RUN_S)
         statuses: dict[str, ctest_reader.TestStatus] = {}
         if report.is_file():
             try:
@@ -1430,7 +1449,7 @@ class Step:
             self.say(f"loop land: {configuration.name}: {len(skipped)} skipped: {' '.join(skipped)}")
         if red:
             self.say(f"loop land: {configuration.name}: {len(red)} red, they run again together apart from the suite")
-        still = self.red_alone(configuration, red, is_again)
+        still = self.red_alone(configuration, red, share, is_again)
         flaky = tuple(name for name in red if name not in still)
         if flaky:
             self.say(f"loop land: {configuration.name}: FLAKY, red in the suite and green alone: {' '.join(flaky)}")
@@ -1438,38 +1457,46 @@ class Step:
             return [f"{configuration.name}: red alone too: {' '.join(still)}, see {logs / log}"], tuple(still), flaky
         warnings_log = log_name(configuration, "warnings.log", is_again)
         warnings = [*self.gate.master("guard"), "warnings", str(build)]
-        if self.run_logged(warnings, warnings_log, self.environment, proc.TOOL_S):
+        if self.run_logged(warnings, warnings_log, share, proc.TOOL_S):
             return [f"{configuration.name}: `guard warnings` gives an error, see {logs / warnings_log}"], (), flaky
         if is_again:
             return [], (), flaky
-        return self.checked(configuration, (RECONFIGURE_RULE,), self.environment), (), flaky
+        return self.checked(configuration, (RECONFIGURE_RULE,), share), (), flaky
 
-    def run_of(self, run: Run, is_again: bool, is_retry: bool) -> tuple[list[str], tuple[str, ...], tuple[str, ...]]:
+    def run_of(
+        self, run: Run, share: heavy.Share, is_again: bool, is_retry: bool
+    ) -> tuple[list[str], tuple[str, ...], tuple[str, ...]]:
         """Run one configuration, or its tests again after THE REDUCE, and give each problem, the tests red alone too,
         and the flaky tests."""
         configuration = run.configuration
         if configuration.is_parse and is_again:
-            return self.checked(configuration, COUNTED_RULES, self.environment, is_again), (), ()
+            return self.checked(configuration, COUNTED_RULES, share, is_again), (), ()
         if configuration.is_parse:
-            return self.run_parse(configuration), (), ()
+            return self.run_parse(configuration, share), (), ()
         words = self.gate.loop_words(run, is_retry or is_again, is_again)
-        return self.run_objects(configuration, words, is_again)
+        return self.run_objects(configuration, words, share, is_again)
 
     def outcome_of(self, run: Run, is_again: bool, is_retry: bool) -> Outcome:
-        """Run one configuration in the thread of the caller, and give its outcome (THE THREADS, THE STOP).
+        """Run one configuration in the thread of the caller, with a lease of its own, and give its outcome.
 
-        A problem sets the stop event, other than in a run of the base (THE RUN OF THE BASE).  An error of the run sets
-        it too, and goes to the caller.
+        THE THREADS, THE STOP and THE JOBSERVER give the rules.  The time of the outcome starts after the wait for the
+        first slot of the lease.  A problem sets the stop event, other than in a run of the base (THE RUN OF THE
+        BASE).  An error of the run sets it too, and goes to the caller.
         """
         name = run.configuration.name
         self.say(f"loop land: {name}: {'test again' if is_again else run.mode.value}")
         began = time.monotonic()
+        wait_s = 0.0
+        lease: heavy.Lease | None = None
         try:
-            problems, red, flaky = self.run_of(run, is_again, is_retry)
+            with self.leased() as share:
+                wait_s, lease = round(share.wait_s, 1), share.lease
+                began += share.wait_s
+                problems, red, flaky = self.run_of(run, share, is_again, is_retry)
         except Stopped:
             seconds = round(time.monotonic() - began, 1)
             self.say(f"loop land: {name}: the stop ends the run after {seconds:.0f} s")
-            return Outcome(name, (), (), seconds, True)
+            return Outcome(name, (), (), seconds, True, wait_s=wait_s)
         except BaseException:
             self.stop.set()
             raise
@@ -1477,13 +1504,14 @@ class Step:
             if name == ALWAYS:
                 self.always_ready.set()
         seconds = round(time.monotonic() - began, 1)
-        self.say(f"loop land: {name}: {seconds:.0f} s in the heavy step")
+        slot_seconds = lease.slot_seconds if lease is not None else 0.0
+        self.say(f"loop land: {name}: {seconds:.0f} s after a wait of {wait_s:.0f} s for its first slot")
         if problems and not self.candidate.focus:
             self.stop.set()
-        return Outcome(name, tuple(problems), red, seconds, False, flaky)
+        return Outcome(name, tuple(problems), red, seconds, False, flaky, wait_s, slot_seconds)
 
     def require_problem(self, outcomes: Sequence[Outcome]) -> None:
-        """Refuse a heavy step that the stop ended with no problem of a configuration (THE STOP).
+        """Refuse a check that the stop ended with no problem of a configuration (THE STOP).
 
         Only a problem or an error sets the stop event, and an error goes to the caller.  A set event with no problem
         then tells of an error that did not get to the caller.  The landing then refuses the commit, and it does not
@@ -1493,7 +1521,7 @@ class Step:
             GateError: If the stop event is set and no outcome has a problem
         """
         if self.stop.is_set() and not any(item.problems for item in outcomes):
-            raise GateError("the heavy step of the gate stopped with no problem of a configuration")
+            raise GateError("the check of the gate stopped with no problem of a configuration")
 
     def run_all(
         self, runs: Sequence[Run], others: Callable[[], Sequence[Run]] | None, is_again: bool, is_retry: bool

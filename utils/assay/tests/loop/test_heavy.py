@@ -10,20 +10,41 @@ the main work tree.  They also make sure that the lock is exclusive while a
 step holds it.  A session of the gate must let a step of the gate go first.
 A different step must wait for the session, also when it gets the lock after
 the session starts.
+
+The cases of the pool use a planted pool.  A lease must keep its cap, take
+only free slots, grow while its job uses each slot, and give idle slots
+back.  SIGKILL of a holder must free each of its slots.  A lease that holds
+each slot must give its idle slots above its fair share to a hungry lease.
 """
 
+import contextlib
 import fcntl
+import os
+import signal
+import sys
 import tempfile
 import threading
+import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import IO
 
-from assay.core import git, proc, testing
+from assay.core import git, jobserver, paths, proc, testing
 from assay.loop import heavy
 
 # The table of the locks of the kernel (has_waiter()).
 LOCKS_FILE = Path("/proc/locks")
+# The available memory of a lease of a case, which holds each job.
+MUCH_MEMORY_GB = 1e6
+# A process that holds a lease of 4 jobs of a planted pool, writes the count of its slots to a file, and waits.
+HOLDER = """import pathlib, sys, time
+sys.path.insert(0, sys.argv[1])
+from assay.loop import heavy
+pool = heavy.Pool(pathlib.Path(sys.argv[2]), int(sys.argv[3]))
+with heavy.leased(pathlib.Path(sys.argv[4]), 4, pool, lambda: 1e6) as share:
+    pathlib.Path(sys.argv[5]).write_text(str(share.lease.held))
+    time.sleep(60)
+"""
 
 
 def reader(values: list[float | None]) -> heavy.Reader:
@@ -245,8 +266,167 @@ def exit_cases(expect: testing.Expect) -> None:
         expect(f"the command line with {name} is a usage error", status == 2)
 
 
+def locked_slots(pool: heavy.Pool) -> int:
+    """Return the count of the slot files of a pool that a lock of flock(2) holds at this time."""
+    return sum(heavy.is_held(pool.directory / f"{index:0{heavy.SLOT_WIDTH}d}") for index in range(pool.size))
+
+
+def captured_lease(root: Path, want: int, pool: heavy.Pool, body: Callable[[heavy.Share], object]) -> object:
+    """Run the body in a lease with much memory, with the line of the memory captured, and give its result."""
+
+    def run() -> object:
+        """Hold the lease for the body."""
+        with heavy.leased(root, want, pool, reader([MUCH_MEMORY_GB])) as share:
+            return None if share is None else body(share)
+
+    result, _ = testing.captured(run)
+    return result
+
+
+def lease_cases(expect: testing.Expect) -> None:
+    """Hold a lease: its cap, its slots in the pool, its growth while its job uses each slot, and its idle return."""
+    with tempfile.TemporaryDirectory(prefix="heavy-lease-") as work_text:
+        root = Path(work_text)
+        pool = heavy.Pool(root / "slots", 6)
+
+        def first(share: heavy.Share) -> tuple[str, int, int, int]:
+            """Hold a second lease in the first one, and give the cap, the slots and the locked files."""
+            inner = captured_lease(root, 6, pool, lambda other: other.lease.held)
+            return share.server.makeflags, share.lease.held, int(str(inner)), locked_slots(pool)
+
+        first_result = captured_lease(root, 10, pool, first)
+        flags, held, inner, locked = first_result if isinstance(first_result, tuple) else ("", 0, 0, -1)
+        expect(
+            f"a lease of 10 jobs in a pool of 6 slots has the cap 6, starts with at most START_SLOTS slots, and a "
+            f"second lease gets only the free slots: {first_result}",
+            flags.startswith("-j6 --jobserver-auth=fifo:")
+            and 1 <= held <= heavy.START_SLOTS
+            and 1 <= inner <= pool.size - held
+            and locked == held,
+        )
+        expect("the slots of a lease are free after its block", locked_slots(pool) == 0)
+
+        def grown(share: heavy.Share) -> tuple[int, int, int]:
+            """Take each token that the lease gives, then give each one back, and give the slots at each point."""
+            taken: list[jobserver.Slot] = []
+            deadline = time.monotonic() + 10.0
+            while len(taken) < share.jobs and time.monotonic() < deadline:
+                slot = share.client.try_take()
+                if slot is None:
+                    time.sleep(0.01)
+                    continue
+                taken.append(slot)
+            full = share.lease.held
+            for slot in taken:
+                share.client.give(slot)
+            testing.wait_until(lambda: share.lease.held == 1, limit_s=10.0)
+            return len(taken), full, share.lease.held
+
+        grown_result = captured_lease(root, 6, pool, grown)
+        expect(
+            f"a job that uses each slot makes its lease grow to the cap, and the idle tokens go back to the pool "
+            f"after IDLE_TICKS ticks, with one slot as the minimum: (jobs taken, slots full, slots idle) "
+            f"{grown_result}",
+            grown_result == (6, 6, 1),
+        )
+
+
+def kill_cases(expect: testing.Expect) -> None:
+    """Hold the end of a holder on SIGKILL: the kernel frees each slot of its lease (THE POOL)."""
+    with tempfile.TemporaryDirectory(prefix="heavy-kill-") as work_text:
+        root = Path(work_text)
+        pool = heavy.Pool(root / "slots", 6)
+        marker = root / "held.txt"
+        words = [str(paths.REPO_ROOT / "utils"), str(pool.directory), str(pool.size), str(root), str(marker)]
+        command = proc.Command([sys.executable, "-S", "-B", "-c", HOLDER, *words], timeout_s=proc.QUICK_S)
+        running = proc.start(command)
+        is_ready = testing.wait_until(marker.is_file, limit_s=20.0)
+        held = int(marker.read_text(encoding="ascii")) if is_ready else -1
+        locked = locked_slots(pool)
+        os.kill(running.pid, signal.SIGKILL)
+        with contextlib.suppress(proc.ToolFailed):
+            running.wait()
+        expect(
+            f"a process with a lease holds its slots, and SIGKILL frees each of them: {held} held, {locked} locked "
+            f"before, {locked_slots(pool)} after",
+            held >= 1 and locked == held and locked_slots(pool) == 0,
+        )
+
+
+def fair_cases(expect: testing.Expect) -> None:
+    """Hold the fair share of the pool: a lease gives its idle tokens above its share to a hungry lease (THE POOL).
+
+    Job A starts alone and takes each slot of a pool of 8.  Job B then waits for its first slot.  Job A has a serial
+    phase, and then both jobs use each slot that they hold.  No job then stays at one slot while the other holds idle
+    tokens, and each one holds approximately its fair share.
+    """
+    with tempfile.TemporaryDirectory(prefix="heavy-fair-") as work_text:
+        root = Path(work_text)
+        pool = heavy.Pool(root / "slots", 8)
+        shares: dict[str, heavy.Share] = {}
+        started = {name: threading.Event() for name in ("a", "b")}
+        samples: list[tuple[int, int]] = []
+
+        def job(name: str, phases: tuple[tuple[int, float], ...]) -> None:
+            """Hold a lease of 8 jobs, and run each phase: its workers use the slots of the lease for its time."""
+            with heavy.leased(root, 8, pool, reader([MUCH_MEMORY_GB])) as share:
+                if share is None:
+                    return
+                shares[name] = share
+                started[name].set()
+                for workers, seconds in phases:
+                    stop = threading.Event()
+                    threads = [threading.Thread(target=cycled, args=(share.client, stop)) for _ in range(workers)]
+                    for thread in threads:
+                        thread.start()
+                    time.sleep(seconds)
+                    stop.set()
+                    for thread in threads:
+                        thread.join()
+
+        def run() -> None:
+            """Start job A, wait until it holds each slot, start job B, and sample the slots of the two jobs."""
+            first = threading.Thread(target=job, args=("a", ((8, 1.5), (1, 1.0), (8, 2.5))))
+            first.start()
+            started["a"].wait(10.0)
+            testing.wait_until(lambda: shares["a"].lease.held == pool.size, limit_s=10.0)
+            second = threading.Thread(target=job, args=("b", ((8, 4.0),)))
+            second.start()
+            while first.is_alive():
+                held_b = shares["b"].lease.held if "b" in shares else 0
+                samples.append((shares["a"].lease.held, held_b))
+                time.sleep(0.05)
+            second.join()
+
+        testing.captured(run)
+        last = samples[-10:]
+        holds = (
+            bool(last)
+            and max(a for a, _ in samples) == pool.size
+            and all(a + b <= pool.size for a, b in samples)
+            and min(b for _, b in last) >= pool.size // 2 - 1
+            and max(a for a, _ in last) <= pool.size // 2 + 1
+        )
+        expect(
+            f"a lease that took each slot gives its idle tokens above its fair share to a hungry lease, and the two "
+            f"jobs then hold approximately half of the pool each: the last samples (a, b) {last}",
+            holds,
+        )
+
+
+def cycled(client: jobserver.Client, stop: threading.Event) -> None:
+    """Use one slot of a jobserver after the other for a short job, until the stop event."""
+    while not stop.is_set():
+        with client.held(stop) as is_held:
+            if not is_held:
+                return
+            time.sleep(0.02)
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and return 0 when each case holds."""
     return testing.run(
-        __name__.removeprefix("assay."), argv, (memory_cases, step_cases, lock_cases, gate_cases, exit_cases)
+        __name__.removeprefix("assay."),
+        argv,
+        (memory_cases, step_cases, lock_cases, gate_cases, exit_cases, lease_cases, kill_cases, fair_cases),
     )

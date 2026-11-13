@@ -8,7 +8,8 @@ the FIFO and the implicit slot.  Threads with more jobs than the tokens must
 run at most the jobs of the server at one time.  A wait with a stop event
 must end when the event is set.  The FIFO must go at the end of the block,
 also after an exception.  A child process must take a token through
-MAKEFLAGS and give it back.
+MAKEFLAGS and give it back.  The valve of a server with fewer tokens than
+its jobs must count, add and pull only the idle tokens.
 """
 
 import select
@@ -218,10 +219,41 @@ def child_cases(expect: testing.Expect) -> None:
         )
 
 
+def valve_cases(expect: testing.Expect) -> None:
+    """Hold THE VALVE: a server with fewer tokens, the idle count, a put, and a pull of only the idle tokens."""
+    with jobserver.serving(8, 2) as server, jobserver.valve(server.path) as opened:
+        expect(
+            f"a server of 8 jobs with 2 tokens gives -j8 and holds 2 idle tokens: {server.makeflags}",
+            server.makeflags.startswith("-j8 ") and opened.idle() == 2,
+        )
+        opened.put(3)
+        with jobserver.connected(server.path) as client:
+            held = [client.try_take() for _ in range(3)]
+            idle_after_take = opened.idle()
+            pulled = opened.pull(10)
+            expect(
+                f"a put adds tokens, and a pull reads only the idle tokens: {idle_after_take} idle after a take of "
+                f"the implicit slot and two tokens, {pulled} pulled of 10",
+                idle_after_take == 3 and pulled == 3 and opened.idle() == 0 and opened.pull(1) == 0,
+            )
+            for slot in held:
+                if slot is not None:
+                    client.give(slot)
+            expect("each token that a child gives back is idle again", opened.idle() == 2)
+    for jobs, tokens in ((4, 4), (4, -1)):
+        try:
+            with jobserver.serving(jobs, tokens):
+                pass
+            refused = False
+        except ValueError:
+            refused = True
+        expect(f"a server of {jobs} jobs with {tokens} tokens is refused", refused)
+
+
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (protocol_cases, try_take_cases, bound_cases, removal_cases, environment_cases, child_cases),
+        (protocol_cases, try_take_cases, bound_cases, removal_cases, environment_cases, child_cases, valve_cases),
     )

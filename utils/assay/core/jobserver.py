@@ -22,6 +22,18 @@ THE SERVER
     server closes its descriptor, and it removes the FIFO and its directory.
     A child with an open descriptor of the FIFO keeps that descriptor.
 
+    serving(jobs, tokens) writes only `tokens` bytes, with jobs - 1 as the
+    most.  MAKEFLAGS still gives -jJOBS.  The owner of the server can then
+    add bytes and remove idle bytes while its children run (THE VALVE).
+
+THE VALVE
+    valve(path) gives the valve of a FIFO for the block.  Valve.idle() gives
+    the bytes in the FIFO at the time of the call, from the ioctl FIONREAD.
+    These bytes are the idle tokens: no child holds them.  Valve.put(count)
+    writes `count` bytes.  Valve.pull(count) reads at most `count` bytes with
+    no wait, and it gives the count that it read.  The valve reads only
+    bytes that the FIFO holds.  It never takes a token that a child holds.
+
 THE CLIENT
     client_of(environment) gives the client of the jobserver that MAKEFLAGS
     names, or None when MAKEFLAGS names no FIFO.  connected(path) gives the
@@ -44,9 +56,12 @@ THE CLIENT
 """
 
 import contextlib
+import fcntl
 import os
 import select
+import struct
 import tempfile
+import termios
 import threading
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
@@ -185,16 +200,75 @@ class Client:
             self._descriptor = -1
 
 
+class Valve:
+    """The valve of the FIFO of a server: its own descriptor of the FIFO (THE VALVE)."""
+
+    __slots__ = ("_descriptor", "path")
+
+    def __init__(self, path: Path, descriptor: int) -> None:
+        """Keep the path of the FIFO and an open descriptor of it.  The valve owns the descriptor."""
+        self.path = path
+        self._descriptor = descriptor
+
+    def idle(self) -> int:
+        """Return the bytes that the FIFO holds at this time: the idle tokens."""
+        answer = fcntl.ioctl(self._descriptor, termios.FIONREAD, struct.pack("i", 0))
+        return int(struct.unpack("i", answer)[0])
+
+    def put(self, count: int) -> None:
+        """Write `count` tokens into the FIFO."""
+        if count > 0:
+            os.write(self._descriptor, TOKEN * count)
+
+    def pull(self, count: int) -> int:
+        """Read at most `count` idle tokens with no wait, and return the count that the read gave."""
+        if count <= 0:
+            return 0
+        try:
+            return len(os.read(self._descriptor, count))
+        except BlockingIOError:
+            return 0
+
+    def close(self) -> None:
+        """Close the descriptor of the FIFO."""
+        if self._descriptor >= 0:
+            os.close(self._descriptor)
+            self._descriptor = -1
+
+
 @contextlib.contextmanager
-def serving(jobs: int) -> Iterator[Server]:
-    """Make a jobserver of `jobs` jobs for the block, and remove its FIFO at the end, also on an exception (THE SERVER).
+def valve(path: Path) -> Iterator[Valve]:
+    """Give the valve of a FIFO for the block, and close its descriptor at the end (THE VALVE).
 
     Raises:
-        ValueError: If jobs is not in the range 1 to MAX_JOBS
+        JobserverError: If the FIFO cannot be opened
+    """
+    try:
+        descriptor = os.open(path, os.O_RDWR | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError as problem:
+        raise JobserverError(f"the jobserver FIFO {path} cannot be opened: {problem}") from None
+    opened = Valve(path, descriptor)
+    try:
+        yield opened
+    finally:
+        opened.close()
+
+
+@contextlib.contextmanager
+def serving(jobs: int, tokens: int | None = None) -> Iterator[Server]:
+    """Make a jobserver of `jobs` jobs for the block, and remove its FIFO at the end, also on an exception (THE SERVER).
+
+    `tokens` is the count of bytes that the server writes, else jobs - 1.
+
+    Raises:
+        ValueError: If jobs is not in the range 1 to MAX_JOBS, or tokens is not in the range 0 to jobs - 1
         JobserverError: If the FIFO cannot be made or written
     """
     if not 1 <= jobs <= MAX_JOBS:
         raise ValueError(f"a jobserver takes 1 to {MAX_JOBS} jobs, not {jobs}")
+    written = jobs - 1 if tokens is None else tokens
+    if not 0 <= written <= jobs - 1:
+        raise ValueError(f"a jobserver of {jobs} jobs takes 0 to {jobs - 1} tokens, not {written}")
     directory = Path(tempfile.mkdtemp(prefix=DIRECTORY_PREFIX))
     path = directory / FIFO_NAME
     descriptor = -1
@@ -202,7 +276,7 @@ def serving(jobs: int) -> Iterator[Server]:
         try:
             os.mkfifo(path, 0o600)
             descriptor = os.open(path, os.O_RDWR | os.O_NONBLOCK | os.O_CLOEXEC)
-            os.write(descriptor, TOKEN * (jobs - 1))
+            os.write(descriptor, TOKEN * written)
         except OSError as problem:
             raise JobserverError(f"the jobserver FIFO {path} cannot be made: {problem}") from None
         yield Server(path, jobs)

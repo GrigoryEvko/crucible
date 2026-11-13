@@ -293,6 +293,11 @@ THE JOBSERVER
     that variable.  ctest 4.4.2 obeys the jobserver also with -j, and each
     run of ctest keeps its -j.
 
+    A run with no FIFO in MAKEFLAGS and no --plan takes a lease of the slot
+    pool of the host, with -j and SLICE as the most (THE POOL of
+    assay.loop.heavy).  The run then gets MAKEFLAGS of the jobserver of the
+    lease, and its build and its tests obey it.
+
 THE WARM START
     The inputs of the tests of the master guard come from the source tree
     only: the parse of each module of the package, the import closures and
@@ -442,9 +447,9 @@ from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.core.paths import LOOP
+from assay.loop import heavy, readset
 from assay.loop import history as loop_history
 from assay.loop import inputs as guard_inputs
-from assay.loop import readset
 from assay.loop import teststep as test_launcher
 from assay.readers import cmake
 from assay.readers import ctest as ctest_reader
@@ -822,9 +827,10 @@ def scan_elf(path: str, trees: Trees) -> Scan:
 def environment_text(is_launched: bool) -> str:
     """Return the text of the environment that a test gets, for its fingerprint (THE ENVIRONMENT).
 
-    Complexity: O(n log n) for n variables.
+    The text holds no MAKEFLAGS: the jobserver of a run names a new FIFO each time, and it does not change the result
+    of a test.  Complexity: O(n log n) for n variables.
     """
-    environment = proc.environment()
+    environment = {name: value for name, value in proc.environment().items() if name != jobserver.VARIABLE}
     shown = test_launcher.canonical_environment(environment) if is_launched else tuple(sorted(environment.items()))
     return f"{ENVIRONMENT_TEXT} {json.dumps(shown)}"
 
@@ -2663,9 +2669,10 @@ def call_cases(ctest: str, expect: DetailedExpect) -> None:
         expect("with a jobserver in MAKEFLAGS, the build gets no -j and no CMAKE_BUILD_PARALLEL_LEVEL",
                status == 0 and fake.build_words() == (["--build", str(fake.build_dir)], "unset"), output)
         status, output = fake.call("--only", str(selects_none), variables=(level,), should_build=True)
-        expect("with no jobserver, the build gets -j, and keeps CMAKE_BUILD_PARALLEL_LEVEL",
-               status == 0 and fake.build_words() == (["--build", str(fake.build_dir), f"-j{proc.DEFAULT_JOBS}"], "3"),
-               output)
+        expect("with no jobserver, the run takes a lease of the slot pool, and the build obeys its jobserver: no -j and "
+               "no CMAKE_BUILD_PARALLEL_LEVEL",
+               status == 0 and fake.build_words() == (["--build", str(fake.build_dir)], "unset")
+               and "memory: " in output, output)
 
         cmake.plant(fake.build_dir, cache={"CMAKE_HOME_DIRECTORY": str(fake.source_dir)})
         status, output = fake.call()
@@ -2765,9 +2772,20 @@ def main(argv: list[str]) -> int:
     except OSError as error:
         check_report.write_line(f"loop test: the file of --only cannot be read: {error}")
         return 2
-    try:
-        return run(options.build_dir.resolve(), options.jobs, not options.no_build, options.all, options.plan,
-                   ctest_arguments, only, options.build_only)
-    except RunnerError as error:
-        print(f"loop test: {error}")
-        return 2
+    build_dir = options.build_dir.resolve()
+    with contextlib.ExitStack() as stack:
+        if not options.plan and jobserver.client_path(os.environ) is None:
+            try:
+                share = stack.enter_context(heavy.leased(build_dir, min(options.jobs, heavy.SLICE)))
+            except (jobserver.JobserverError, OSError) as error:
+                print(f"loop test: the lease of the slot pool of the host fails: {error}")
+                return 2
+            if share is not None:
+                os.environ[jobserver.VARIABLE] = share.server.makeflags
+                stack.callback(os.environ.pop, jobserver.VARIABLE, None)
+        try:
+            return run(build_dir, options.jobs, not options.no_build, options.all, options.plan, ctest_arguments,
+                       only, options.build_only)
+        except RunnerError as error:
+            print(f"loop test: {error}")
+            return 2

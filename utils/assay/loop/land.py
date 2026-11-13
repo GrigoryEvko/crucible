@@ -7,7 +7,7 @@ THE REQUEST
       --patch FILE              A unified diff that git made against HEAD
       --replace FILE OLD NEW    In the shared FILE, the text of the file NEW replaces the text of the file OLD
       --block FILE AFTER BLOCK  In the shared FILE, the text of the file BLOCK goes after the text of the file AFTER
-      --jobs N                 The jobs of each build and each test run of the gate, else DEFAULT_JOBS
+      --jobs N                 The most jobs of the lease of one configuration of the gate, with SLICE as the most
       --all-configurations      The gate runs each configuration (assay.loop.gate, THE SELECTION)
       --check                   Run the gate on the commit, and do not land it
       --here                    With --check: run this copy of the module (THE DRIVER)
@@ -371,9 +371,10 @@ THE INDEX AND THE WORKING TREE
     gets no update.
 
 THE LOCK OF A HEAVY STEP
-    The gate takes the lock of the heavy steps for each of its steps
-    (assay.loop.heavy).  A landing in a heavy step then waits for its own
-    lock.  The command refuses to run when its environment has the variable
+    The gate takes a lease of the slot pool for each configuration, and a
+    lease holds the lock of the heavy steps in the shared mode
+    (assay.loop.heavy).  A landing in an exclusive heavy step then waits for
+    its own lock.  The command refuses to run when its environment has the variable
     STEP_VARIABLE of assay.loop.heavy.  It also refuses to run when it has an
     open descriptor of the lock file, as flock(1) gives its command.
 
