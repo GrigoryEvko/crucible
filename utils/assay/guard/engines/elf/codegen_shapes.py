@@ -624,6 +624,11 @@ PROBES: tuple[Probe, ...] = (
         branches=True,
     ),
     Probe(
+        "option_ref_some",
+        "a full Option of a Ref is the address in one register, as the raw address is.  The niche of Ref states that "
+        "no door builds the null pointer, so the niche slot has no test of the empty value",
+    ),
+    Probe(
         "option_try",
         "CRUCIBLE_TRY of an Option is one test of the tag.  The value takes a second test of the tag in expect, which "
         "the optimizer removes, because no code writes the operand between the two tests",

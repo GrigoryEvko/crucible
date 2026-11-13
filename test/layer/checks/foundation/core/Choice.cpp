@@ -33,7 +33,45 @@ struct Owner {
     constexpr ~Owner() {}
 };
 
+// A slot number whose niche states that no door builds the empty value.
+// The aggregate can still build it, so the checks below show that a
+// constant evaluation refuses a false statement.
+struct TrustedSlot {
+    std::uint32_t raw = 0;
+};
+
+// A niche whose statement is not a bool.
+struct MisstatedSlot {
+    std::uint32_t raw = 0;
+};
+
 }  // namespace detail::choice_checks
+
+template <>
+struct niche<detail::choice_checks::TrustedSlot> {
+    static constexpr bool is_empty_never_built = true;
+    [[nodiscard]] static constexpr detail::choice_checks::TrustedSlot
+    empty(niche_key<detail::choice_checks::TrustedSlot> const&) noexcept {
+        return detail::choice_checks::TrustedSlot{0xFFFFFFFFu};
+    }
+    [[nodiscard]] static constexpr bool is_empty(niche_key<detail::choice_checks::TrustedSlot> const&,
+                                                 detail::choice_checks::TrustedSlot const& slot) noexcept {
+        return slot.raw == 0xFFFFFFFFu;
+    }
+};
+
+template <>
+struct niche<detail::choice_checks::MisstatedSlot> {
+    static constexpr int is_empty_never_built = 1;
+    [[nodiscard]] static constexpr detail::choice_checks::MisstatedSlot
+    empty(niche_key<detail::choice_checks::MisstatedSlot> const&) noexcept {
+        return detail::choice_checks::MisstatedSlot{0xFFFFFFFFu};
+    }
+    [[nodiscard]] static constexpr bool is_empty(niche_key<detail::choice_checks::MisstatedSlot> const&,
+                                                 detail::choice_checks::MisstatedSlot const& slot) noexcept {
+        return slot.raw == 0xFFFFFFFFu;
+    }
+};
 
 template <>
 struct niche<detail::choice_checks::SlotNumber> {
@@ -715,6 +753,24 @@ static_assert(Option<Ticket>::some(Ticket{2}) == Option<Ticket>::some(Ticket{2})
 static_assert(Option<Ticket>::some(Ticket{2}) != Option<Ticket>::some(Ticket{3}));
 static_assert(Option<Ticket>{} == Option<Ticket>{} && Option<Ticket>::some(Ticket{2}) != Option<Ticket>{});
 
+// ── The statement that no door builds the empty value ─────────────────
+
+// A niche that states it has no run-time test of the empty value.  The
+// statement is a constant of type bool, and the payload gate refuses a
+// statement of a different type.
+static_assert(NicheRead<TrustedSlot>::is_empty_never_built());
+static_assert(!NicheRead<SlotNumber>::is_empty_never_built() && !NicheRead<Ticket>::is_empty_never_built());
+static_assert(ChoicePayload<TrustedSlot> && !ChoicePayload<MisstatedSlot>);
+static_assert(sizeof(Option<TrustedSlot>) == sizeof(TrustedSlot));
+static_assert(Option<TrustedSlot>::some(TrustedSlot{3}).is_some() && Option<TrustedSlot>{}.is_none());
+
+// A constant evaluation still tests the payload, so a false statement fails
+// a constant test.  At run time, the author of the type answers for it.
+template <std::uint32_t Raw>
+constexpr bool builds_trusted =
+    requires { typename std::bool_constant<Option<TrustedSlot>::some(TrustedSlot{Raw}).is_some()>; };
+static_assert(builds_trusted<3> && !builds_trusted<0xFFFFFFFFu>);
+
 // A sum compares only with a sum of its own type.  The implicit
 // constructors make no compare with none, a payload, an Err or a sum of a
 // different type, and a floating-point payload has no compare.
@@ -727,13 +783,59 @@ static_assert(!Compares<Result<int, Code>, int> && !Compares<Result<int, Code>, 
 static_assert(!Compares<Result<int, Code>, Result<long, Code>>);
 static_assert(!Compares<Option<double>, Option<double>> && !Compares<Option<Owner>, Option<Owner>>);
 
+// ── A lookup that a payload type cannot steer ─────────────────────────
+
+// A payload type and an overload of alternative_of_ beside it.  The
+// overload is more constrained than the reader of a sum, so an unqualified
+// call would reach it through argument-dependent lookup, and its body
+// would stop the compile.  Each call of the family names
+// detail::alternative_of_, so the overload stays out.
+namespace lookup_probe {
+
+struct Plain {
+    int value = 0;
+};
+
+struct Owned {
+    int handle = 0;
+    constexpr explicit Owned(int start) noexcept : handle{start} {}
+    constexpr Owned(Owned&& other) noexcept : handle{other.handle} { other.handle = 0; }
+    Owned(Owned const&) = delete;
+    Owned& operator=(Owned const&) = delete;
+    Owned& operator=(Owned&&) = delete;
+    constexpr ~Owned() {}
+};
+
+template <std::size_t Index, class Storage>
+    requires(Index < 256)
+constexpr auto& alternative_of_(Storage& storage) noexcept {
+    static_assert(false, "argument-dependent lookup reached an overload beside a payload type");
+    return storage;
+}
+
+}  // namespace lookup_probe
+
+static_assert(Option<lookup_probe::Plain>::some(lookup_probe::Plain{7}).value_or(lookup_probe::Plain{}).value == 7);
+static_assert(Result<lookup_probe::Plain, Code>{lookup_probe::Plain{8}}.expect("a constant value").value == 8);
+[[nodiscard]] consteval int owned_handles() noexcept {
+    Option<lookup_probe::Owned> const held = Option<lookup_probe::Owned>::some(lookup_probe::Owned{5});
+    Result<lookup_probe::Owned, Code> const result{lookup_probe::Owned{6}};
+    int const option_handle =
+        held.match([](lookup_probe::Owned const& owned) noexcept { return owned.handle; }, [] noexcept { return 0; });
+    int const result_handle = result.match([](lookup_probe::Owned const& owned) noexcept { return owned.handle; },
+                                           [](Code) noexcept { return 0; });
+    return option_handle * 10 + result_handle;
+}
+static_assert(owned_handles() == 56);
+
 // ── The closed surface ────────────────────────────────────────────────
 
-// The family list of plan section 11.2, and the two members of the niche
+// The family list of plan section 11.2, and the three members of the niche
 // protocol that the section designs.  CRUCIBLE_TRY is a macro, and no type
 // has a member of its name.
 inline constexpr TextView choice_names{
-    "none NoValue Unit Err err some is_some is_none value_or ok_or is_ok is_err ok is which niche empty is_empty"};
+    "none NoValue Unit Err err some is_some is_none value_or ok_or is_ok is_err ok is which niche empty is_empty "
+    "is_empty_never_built"};
 
 // Each form of an Option, and each Result, gives only the shared verbs, the
 // language protocols and the names of the list.
@@ -750,6 +852,7 @@ CRUCIBLE_CLOSED_SURFACE(choice_names, Unit);
 CRUCIBLE_CLOSED_SURFACE(choice_names, NoValue);
 CRUCIBLE_CLOSED_SURFACE(choice_names, niche<int>);
 CRUCIBLE_CLOSED_SURFACE(choice_names, niche<MemberSlot>);
+CRUCIBLE_CLOSED_SURFACE(choice_names, niche<TrustedSlot>);
 CRUCIBLE_CLOSED_SURFACE(choice_names, niche_key<MemberSlot>);
 
 // The cursor of a loop over an Option takes the cursor protocol, and no

@@ -150,7 +150,15 @@ public:
 // type that holds a byte seal is.
 //
 // niche carries the open mark: only the file that defines a type can
-// specialize niche for it (the rule specialization-home).
+// specialize niche for it (the rule specialization-home).  So the author of
+// T writes niche<T>, and the author also writes each door that builds a T.
+// A specialization can then state that no door of T builds the empty value:
+//
+//   static constexpr bool is_empty_never_built = true;
+//
+// The storage of a full Option then trusts its payload and has no test of
+// the empty value.  Without the statement, the storage tests each payload,
+// and a payload equal to the empty value ends the process.
 template <class T>
 struct[[= detail::UndeclaredNiche{}]]
       [[= ::foundation::open_extension{"a payload type states its empty value beside its own definition"}]] niche {};
@@ -248,6 +256,26 @@ public:
     // True when is_empty gives true for the empty value.
     [[nodiscard]] static consteval bool holds_its_empty() noexcept { return is_empty_(empty_()); }
 
+    // True when niche<T> states that no door of T builds the empty value.
+    // The payload gate holds the type of the statement.
+    [[nodiscard]] static consteval bool is_empty_never_built() noexcept {
+        if constexpr (requires { niche<T>::is_empty_never_built; }) {
+            return niche<T>::is_empty_never_built;
+        } else {
+            return false;
+        }
+    }
+
+    // True when niche<T> has no such statement, or when the statement is a
+    // constant of type bool.
+    [[nodiscard]] static consteval bool is_statement_well_formed() noexcept {
+        if constexpr (requires { niche<T>::is_empty_never_built; }) {
+            return std::same_as<decltype(niche<T>::is_empty_never_built), bool const>;
+        } else {
+            return true;
+        }
+    }
+
     // True when each byte of the empty value is zero, and false when a
     // constant evaluation cannot read the bytes, such as the bytes of a
     // pointer.  So the answer fails closed.
@@ -266,7 +294,8 @@ public:
 // a niche when niche<T> is a specialization.  A well formed niche has the
 // trivial copy, move and destructor of the protocol, and its two members
 // take the key, have the types of the protocol and do not throw.  Its empty
-// value is a constant, and is_empty gives true for it.  A malformed niche
+// value is a constant, and is_empty gives true for it.  A statement that no
+// door builds the empty value is a constant of type bool.  A malformed niche
 // would give the plain or the owning form with no message, so the payload
 // gate refuses it.  This gate is the one gate that reads niche<T>.
 template <class T>
@@ -275,7 +304,7 @@ concept WellFormedNiche =
         { niche<T>::empty(key) } noexcept -> std::same_as<T>;
         { niche<T>::is_empty(key, value) } noexcept -> std::same_as<bool>;
         typename std::bool_constant<detail::NicheRead<T>::holds_its_empty()>;
-    } && detail::NicheRead<T>::holds_its_empty());
+    } && detail::NicheRead<T>::holds_its_empty() && detail::NicheRead<T>::is_statement_well_formed());
 
 // The payload of an Option: an object type that is not an array, not
 // cv-qualified, not the empty marker itself and not the mark of an error.
@@ -458,11 +487,20 @@ public:
     template <class U>
     constexpr OptionSlot(SomeTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
         : value_(static_cast<U&&>(value)) {
-        // A payload equal to the empty value would read as no value.  A
-        // payload that cannot hold the empty value, such as a View that its
-        // door bounds, gives the optimizer what it needs to remove the check.
-        if (NicheRead<T>::is_empty_(value_)) [[unlikely]] {
-            fatal("Option::some got the empty value of the niche of its payload");
+        // A payload equal to the empty value would read as no value.  A niche
+        // that states that no door of T builds the empty value needs no test
+        // at run time.  A constant evaluation still tests the payload, so a
+        // false statement fails in a constant test, with no run-time cost.
+        if constexpr (!NicheRead<T>::is_empty_never_built()) {
+            if (NicheRead<T>::is_empty_(value_)) [[unlikely]] {
+                fatal("Option::some got the empty value of the niche of its payload");
+            }
+        } else {
+            if consteval {
+                if (NicheRead<T>::is_empty_(value_)) {
+                    fatal("a niche that states that no door builds the empty value got the empty value");
+                }
+            }
         }
     }
 };
@@ -809,7 +847,7 @@ template <std::size_t Index, class Storage>
     if constexpr (Index == 0) {
         return storage.head_;
     } else {
-        return alternative_of_<Index - 1>(storage.tail_);
+        return detail::alternative_of_<Index - 1>(storage.tail_);
     }
 }
 
@@ -938,11 +976,11 @@ class SumSlotOf<true, Ts...> {
 
     template <std::size_t Index>
     [[nodiscard]] constexpr auto& alternative_() noexcept {
-        return alternative_of_<Index>(cells_.storage_).value_;
+        return detail::alternative_of_<Index>(cells_.storage_).value_;
     }
     template <std::size_t Index>
     [[nodiscard]] constexpr auto const& alternative_() const noexcept {
-        return alternative_of_<Index>(cells_.storage_).value_;
+        return detail::alternative_of_<Index>(cells_.storage_).value_;
     }
 
 public:
@@ -975,11 +1013,11 @@ class SumSlotOf<false, Ts...> {
 
     template <std::size_t Index>
     [[nodiscard]] constexpr auto& alternative_() noexcept {
-        return alternative_of_<Index>(storage_);
+        return detail::alternative_of_<Index>(storage_);
     }
     template <std::size_t Index>
     [[nodiscard]] constexpr auto const& alternative_() const noexcept {
-        return alternative_of_<Index>(storage_);
+        return detail::alternative_of_<Index>(storage_);
     }
 
 public:
@@ -1065,8 +1103,8 @@ class OptionSlot<T, OptionForm::owning> {
     [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept {
         return is_engaged_ == other.is_engaged_;
     }
-    [[nodiscard]] constexpr T& payload_() noexcept { return alternative_of_<1>(storage_); }
-    [[nodiscard]] constexpr T const& payload_() const noexcept { return alternative_of_<1>(storage_); }
+    [[nodiscard]] constexpr T& payload_() noexcept { return detail::alternative_of_<1>(storage_); }
+    [[nodiscard]] constexpr T const& payload_() const noexcept { return detail::alternative_of_<1>(storage_); }
     constexpr void clear_() noexcept {
         if (is_engaged_) {
             storage_.destroy_(1);

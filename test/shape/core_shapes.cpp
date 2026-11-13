@@ -447,6 +447,12 @@ namespace {
     return left == right;
 }
 
+// A full Option of a Ref is the address in one register, with no test of
+// the null pointer.
+[[gnu::used]] fixy::Option<fixy::Ref<std::uint32_t>> option_ref_some(std::uint32_t& slot) noexcept {
+    return fixy::some(fixy::Ref<std::uint32_t>{fixy::to(slot)});
+}
+
 // ok_or gives the payload of an Option as a Result, in the same register.
 [[gnu::used]] fixy::Result<std::uint32_t, Code32> option_ok_or(fixy::Option<std::uint32_t> option) noexcept {
     return std::move(option).ok_or(Code32::gone);
@@ -987,6 +993,8 @@ struct RawWord final {
                                          std::optional<std::uint64_t> right) noexcept {
     return left == right;
 }
+
+[[gnu::used]] std::uint32_t* option_ref_some_raw(std::uint32_t& slot) noexcept { return &slot; }
 
 [[gnu::used]] std::expected<std::uint32_t, Code32> option_ok_or_raw(std::optional<std::uint32_t> option) noexcept {
     if (option) return *option;

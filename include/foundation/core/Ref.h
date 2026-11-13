@@ -260,8 +260,15 @@ template <RefTarget T, ::foundation::brand::IsBrand Brand>
 // The empty value of an Option of a Ref: the null pointer, which no Ref
 // holds.  Option<Ref<T, Brand>> then has the size of one pointer.  The
 // niche gives the key of its call to the hidden friends of Ref.
+//
+// No door of Ref builds the null pointer.  RefDoor builds a Ref from a
+// reference, the widening constructor copies the address of a Ref, the seal
+// refuses std::bit_cast and the checked lifetime start, and only the storage
+// of an Option builds the key of niche_null_.  So the storage of a full
+// Option trusts each Ref and has no test of the null pointer.
 template <RefTarget T, ::foundation::brand::IsBrand Brand>
 struct niche<Ref<T, Brand>> {
+    static constexpr bool is_empty_never_built = true;
     [[nodiscard]] static constexpr Ref<T, Brand> empty(niche_key<Ref<T, Brand>> const& key) noexcept {
         return niche_null_(key);
     }
