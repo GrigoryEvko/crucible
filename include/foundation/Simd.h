@@ -449,14 +449,20 @@ template <typename V>
     return acc;
 }
 
+// The sum wraps modulo two to the width of the lane.  The fold adds in the
+// unsigned type of the lane, so a signed lane at its limit has no overflow,
+// and the conversion back is modular.  A wrapping sum is associative and commutative, so the width
+// that the build lowers the vector to does not change it.  A saturating sum
+// is neither, so the sum does not saturate.
 template <typename V>
     requires DetSafeSimd<V>
 [[nodiscard]] CRUCIBLE_INLINE typename V::value_type reduce_add(V value) noexcept {
+    using Unsigned = std::make_unsigned_t<typename V::value_type>;
     const typename V::raw_type lanes = value.raw();
-    typename V::value_type acc = lanes[0];
+    Unsigned acc = static_cast<Unsigned>(lanes[0]);
     for (int lane = 1; lane < static_cast<int>(V::size()); ++lane)
-        acc = static_cast<typename V::value_type>(acc + lanes[lane]);
-    return acc;
+        acc = static_cast<Unsigned>(acc + static_cast<Unsigned>(lanes[lane]));
+    return static_cast<typename V::value_type>(acc);
 }
 
 template <typename V>

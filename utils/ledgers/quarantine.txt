@@ -235,7 +235,7 @@ include/foundation/ | replace-pending:<string_view> | 2 | - | -
 include/foundation/algebra/ | base-std-entity | 16 | - | -
 include/foundation/algebra/ | base-std-object | 11 | - | -
 include/foundation/algebra/ | replace-pending:<string_view> | 4 | - | -
-include/foundation/algebra/lattices/ | base-std-entity | 63 | - | -
+include/foundation/algebra/lattices/ | base-std-entity | 62 | - | -
 include/foundation/algebra/lattices/ | base-std-object | 75 | - | -
 include/foundation/algebra/lattices/ | replace-pending:<array> | 4 | - | -
 include/foundation/algebra/lattices/ | replace-pending:<expected> | 2 | - | -

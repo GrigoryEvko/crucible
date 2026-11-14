@@ -51,6 +51,9 @@ foundation_test(test_json_emitter_frame)
 target_compile_options(test_json_emitter_frame PRIVATE -Werror=frame-larger-than=8192)
 foundation_test(test_pinned)
 foundation_test(test_brand)
+# Each reduction of foundation/Simd.h at the limits of each lane type.  In
+# the preset ubsan-strict, a signed overflow ends the test.
+foundation_test(test_simd_reduction_limits)
 
 # Negative-compile fixtures for the foundation layer.
 #
