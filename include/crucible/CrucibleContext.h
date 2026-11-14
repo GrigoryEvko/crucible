@@ -42,7 +42,7 @@ struct DispatchResult {
 
     Action action = Action::RECORD;
     ReplayStatus status = ReplayStatus::MATCH;
-    ::foundation::core::FixedArray<uint8_t, 2> pad{};
+    ::fixy::FixedArray<uint8_t, 2> pad{};
     OpIndex op_index;
 
     [[nodiscard, gnu::pure]] constexpr bool is_record() const noexcept { return action == Action::RECORD; }
@@ -293,7 +293,7 @@ private:
         // the assumption is certain to stay.
         CRUCIBLE_FATAL_INVARIANT(new_num_slots <= MIGRATION_MAX_SLOTS);
         using VisitedWord = ::fixy::Index<VISITED_WORDS>;
-        ::foundation::core::FixedArray<uint64_t, VISITED_WORDS> visited{};
+        ::fixy::FixedArray<uint64_t, VISITED_WORDS> visited{};
 
         for (uint32_t i = 0; i < div_pos; i++) {
             const auto& old_te = old_region.op_at(i);
@@ -358,13 +358,13 @@ private:
     // and the pool follows. The size assertion below pins the whole layout.
     ReplayEngine engine_;  // 64 bytes, offset 0
     ContextMode mode_ = ContextMode::RECORD;  // offset 64
-    [[maybe_unused]] ::foundation::core::FixedArray<uint8_t, 3> pad_{};
+    [[maybe_unused]] ::fixy::FixedArray<uint8_t, 3> pad_{};
     // Both counters only ever go up: one counts completed iterations, the
     // other divergences, and neither is reset. The type enforces that, and
     // catches the one way it could be broken, which is overflow.
     ::fixy::Monotonic<uint32_t> compiled_iterations_ = ::fixy::mint_monotonic<uint32_t>(0u);  // offset 68
     ::fixy::Monotonic<uint32_t> diverged_count_ = ::fixy::mint_monotonic<uint32_t>(0u);  // offset 72
-    [[maybe_unused]] ::foundation::core::FixedArray<uint8_t, 4> pad2_{};
+    [[maybe_unused]] ::fixy::FixedArray<uint8_t, 4> pad2_{};
     // The tag records that this pointer was published by the owning
     // foreground's background worker. A region allocated somewhere else has a
     // different lifetime regime, and without the tag the two would be

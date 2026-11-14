@@ -180,7 +180,7 @@ deserialize_federation_header(::fixy::View<std::byte const> in_buf, std::uint16_
 
     // Each bit pattern of the header is a value, so the copy of its bytes
     // cannot fail.  The checks below read the fields.
-    ::foundation::core::FixedArray<std::byte, FEDERATION_HEADER_BYTES> image{};
+    ::fixy::FixedArray<std::byte, FEDERATION_HEADER_BYTES> image{};
     ::fixy::copy(image.view(), header_bytes);
     const FederationEntryHeader hdr = ::fixy::bit_cast<FederationEntryHeader>(image);
 

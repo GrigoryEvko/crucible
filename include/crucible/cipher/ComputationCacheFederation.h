@@ -191,9 +191,8 @@ computation_cache_federation_smoke_test(const LocalCipherPermission<Brand>& loca
     using detail::probe_unary;
 
     {
-        ::foundation::core::FixedArray<std::byte, 64> buf{};
-        const ::foundation::core::FixedArray<std::byte, 4> body{std::byte{0x01}, std::byte{0x02}, std::byte{0x03},
-                                                                std::byte{0x04}};
+        ::fixy::FixedArray<std::byte, 64> buf{};
+        const ::fixy::FixedArray<std::byte, 4> body{std::byte{0x01}, std::byte{0x02}, std::byte{0x03}, std::byte{0x04}};
 
         auto written = serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(local_permission,
                                                                                                buf.view(), body.view());
@@ -213,8 +212,8 @@ computation_cache_federation_smoke_test(const LocalCipherPermission<Brand>& loca
     }
 
     {
-        ::foundation::core::FixedArray<std::byte, 32> buf_empty{};
-        ::foundation::core::FixedArray<std::byte, 32> buf_bg{};
+        ::fixy::FixedArray<std::byte, 32> buf_empty{};
+        ::fixy::FixedArray<std::byte, 32> buf_bg{};
         auto wa = serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
             local_permission, buf_empty.view(), ::fixy::View<std::byte const>{});
         auto wb = serialize_computation_cache_federation_entry<&probe_unary, BgR, int>(local_permission, buf_bg.view(),
@@ -229,7 +228,7 @@ computation_cache_federation_smoke_test(const LocalCipherPermission<Brand>& loca
     }
 
     {
-        ::foundation::core::FixedArray<std::byte, 32> buf{};
+        ::fixy::FixedArray<std::byte, 32> buf{};
         using Payload = ComputationCacheFederationContentAddressedPayload<&probe_unary, EmptyR, int>;
         auto written = serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
             local_permission, buf.view(), Payload::hash_only());

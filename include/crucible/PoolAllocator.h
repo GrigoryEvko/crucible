@@ -330,7 +330,7 @@ private:
     // did not register yet.
     ::fixy::HeapArray<void*> table_{};
     uint32_t num_external_ = 0;
-    [[maybe_unused]] ::foundation::core::FixedArray<uint8_t, 4> pad_{};
+    [[maybe_unused]] ::fixy::FixedArray<uint8_t, 4> pad_{};
 };
 
 }  // namespace crucible
