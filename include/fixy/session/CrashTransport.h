@@ -88,6 +88,14 @@
 // its crash branch: the label and the payload that the transport reports
 // are past the count.
 //
+// The cell counts the messages of this endpoint to its channel peer, the
+// role that reads the cell.  A keyed message names its receiver, and a
+// message to a reliable third role counts nowhere, as the peer counts only
+// the messages that it receives from this endpoint.  This is a limit: no
+// type ties the cell to the channel peer.  A third role that takes this
+// cell as the cell of its own peer reads a count of the messages to
+// another role.
+//
 // ── One class for every head ────────────────────────────────────────
 //
 // One class handles every head, and the crash branch is what runs on a
@@ -389,17 +397,21 @@ struct LocalCrashStop : tag_base {};
 
 namespace detail::crash_transport {
 
-// The role that sends a keyed reception: the role that its payload names,
-// or the channel peer.  The mint admits the named role only when it is
-// the peer or reliable.
-[[nodiscard]] consteval std::meta::info sender_of_step(std::meta::info step, std::meta::info peer) {
+// The role that a keyed step names: the sender of a keyed reception, and
+// the receiver of a keyed send.  A step that names no role is a step with
+// the channel peer.  The mint admits the named role only when it is the
+// peer or reliable.
+[[nodiscard]] consteval std::meta::info role_of_step(std::meta::info step, std::meta::info peer) {
     const std::meta::info role =
         crash::named_role(crash::tr::decompose(protocol_registry, crash::tr::strip_wrappers(protocol_registry, step)));
     return role == std::meta::info{} ? peer : role;
 }
 
 template <typename P, typename Peer>
-using keyed_sender_t = typename[:sender_of_step(^^P, ^^Peer):];
+using keyed_sender_t = typename[:role_of_step(^^P, ^^Peer):];
+
+template <typename P, typename Peer>
+using keyed_receiver_t = typename[:role_of_step(^^P, ^^Peer):];
 
 // The number of message branches of an Offer.  Rule 6 puts the crash
 // branches last, so this is also the index of the first crash branch.
@@ -449,8 +461,27 @@ struct between_messages {};
 
 // This endpoint picked a label whose branch opens with a send, or it sent
 // the label word of a keyed message with a value.  The payload still has
-// to go.
-struct payload_to_send {};
+// to go, to Receiver.
+template <typename Receiver>
+struct payload_to_send {
+    using receiver = Receiver;
+};
+
+template <typename Position>
+inline constexpr bool is_payload_to_send_v = false;
+template <typename Receiver>
+inline constexpr bool is_payload_to_send_v<payload_to_send<Receiver>> = true;
+
+// The role that receives the payload a send moves: the receiver of the
+// label for a payload, and the channel peer for a bare send.
+template <typename Position, typename Peer>
+struct payload_receiver {
+    using type = Peer;
+};
+template <typename Receiver, typename Peer>
+struct payload_receiver<payload_to_send<Receiver>, Peer> {
+    using type = Receiver;
+};
 
 // This endpoint took a label whose branch opens with a reception, or it
 // read the label word of a keyed message with a value.  The payload still
@@ -746,9 +777,13 @@ public:
                         });
         // A message counts once it is whole: a bare message at its write, and
         // the message of a label at the write of its payload.  A payload that
-        // did not go is no message.
+        // did not go is no message.  The cell counts only the messages to the
+        // peer that reads it, so the payload of a keyed message to a reliable
+        // third role counts nowhere.
+        using Receiver = typename detail::crash_transport::payload_receiver<Position, Peer>::type;
+        constexpr bool is_to_peer = std::is_same_v<Receiver, Peer>;
         const detail::crash_transport::message_counts counts =
-            undelivered.has_value() ? watched.counts_ : one_more_sent_(watched);
+            (undelivered.has_value() || !is_to_peer) ? watched.counts_ : one_more_sent_(watched);
         auto wrapped = wrap_(watched, std::move(next), counts);
         return CrashSend<decltype(wrapped), T>{std::move(wrapped), std::move(undelivered)};
     }
@@ -771,12 +806,15 @@ public:
                             *watched.peer_cell_, transport, is_written));
         // A word with a value is half of its message, and the send of the
         // value counts the message.  A word with no value is the whole
-        // message.
+        // message.  The cell counts only the messages to the peer that reads
+        // it, so a message to a reliable third role counts nowhere.
+        using Receiver = detail::crash_transport::keyed_receiver_t<P, Peer>;
+        constexpr bool is_to_peer = std::is_same_v<Receiver, Peer>;
         const detail::crash_transport::message_counts counts =
-            (is_written && !keyed_step_has_value_v<P>) ? one_more_sent_(watched) : watched.counts_;
+            (is_written && !keyed_step_has_value_v<P> && is_to_peer) ? one_more_sent_(watched) : watched.counts_;
         auto wrapped = [&] {
             if constexpr (keyed_step_has_value_v<P>) {
-                return wrap_<detail::crash_transport::payload_to_send>(watched, std::move(next), counts);
+                return wrap_<detail::crash_transport::payload_to_send<Receiver>>(watched, std::move(next), counts);
             } else {
                 return wrap_(watched, std::move(next), counts);
             }
@@ -799,20 +837,32 @@ public:
                         .template select<I>(detail::crash_transport::watched_word_write<typename Handle::resource_type>(
                             *watched.peer_cell_, transport, is_written));
         using Next = decltype(next);
+        using Branch = std::tuple_element_t<I, typename P::branches_tuple>;
         constexpr bool is_inside_message = [] {
             if constexpr (is_keyed_choice_v<P>) {
-                return keyed_step_has_value_v<std::tuple_element_t<I, typename P::branches_tuple>>;
+                return keyed_step_has_value_v<Branch>;
             } else {
                 return is_send_v<typename Next::protocol>;
             }
         }();
+        // The label of a keyed branch goes to the role that the branch names,
+        // and a positional label goes to the channel peer.
+        using Receiver = typename decltype([] {
+            if constexpr (is_keyed_choice_v<P>) {
+                return std::type_identity<detail::crash_transport::keyed_receiver_t<Branch, Peer>>{};
+            } else {
+                return std::type_identity<Peer>{};
+            }
+        }())::type;
+        constexpr bool is_to_peer = std::is_same_v<Receiver, Peer>;
         // A label with a payload to go is half of its message, and the send
         // of the payload counts the message.  A label alone is the whole
-        // message.
+        // message.  The cell counts only the messages to the peer that reads
+        // it, so a label to a reliable third role counts nowhere.
         const detail::crash_transport::message_counts counts =
-            (is_written && !is_inside_message) ? one_more_sent_(watched) : watched.counts_;
+            (is_written && !is_inside_message && is_to_peer) ? one_more_sent_(watched) : watched.counts_;
         if constexpr (is_inside_message) {
-            return wrap_<detail::crash_transport::payload_to_send>(watched, std::move(next), counts);
+            return wrap_<detail::crash_transport::payload_to_send<Receiver>>(watched, std::move(next), counts);
         } else {
             return wrap_(watched, std::move(next), counts);
         }
@@ -1220,7 +1270,7 @@ public:
                       "fixy::session::diagnostic [Crash_Of_Reliable_Role]: crash(): the local role is in the "
                       "reliable set.  Rule r-↯ lets only a role outside the reliable set crash.  Remove the "
                       "role from the reliable set, or do not crash it.");
-        static_assert(!std::is_same_v<Position, detail::crash_transport::payload_to_send>,
+        static_assert(!detail::crash_transport::is_payload_to_send_v<Position>,
                       "fixy::session::diagnostic [Crash_Splits_A_Message]: crash(): this endpoint sent a label, "
                       "and the payload of that label has not gone: the payload that opens its branch, or the "
                       "value of a keyed message.  The label and the payload are one message, so a crash here "

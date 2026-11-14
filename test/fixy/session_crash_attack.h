@@ -188,6 +188,7 @@ void run_loop_to_crash(Loop handle, const Poll& poll, const OnMessage& on_messag
 [[noreturn]] void reported_sender_stops_at_the_payload();
 [[noreturn]] void reported_sender_stops_at_the_keyed_value();
 [[noreturn]] void keyed_word_to_crashed_peer_comes_back();
+[[noreturn]] void keyed_messages_to_a_third_role_count_nowhere();
 [[noreturn]] void peer_reads_label_before_the_report();
 
 // test_session_crash_attack.cpp: the event log.
@@ -225,6 +226,7 @@ inline constexpr attack_case kAttacks[] = {
     {"reported_sender_stops_at_the_payload", Outcome::Caught, reported_sender_stops_at_the_payload},
     {"reported_sender_stops_at_the_keyed_value", Outcome::Caught, reported_sender_stops_at_the_keyed_value},
     {"keyed_word_to_crashed_peer_comes_back", Outcome::Correct, keyed_word_to_crashed_peer_comes_back},
+    {"keyed_messages_to_a_third_role_count_nowhere", Outcome::Correct, keyed_messages_to_a_third_role_count_nowhere},
     {"peer_reads_label_before_the_report", Outcome::Caught, peer_reads_label_before_the_report},
     {"recorder_sees_the_crash", Outcome::Correct, recorder_sees_the_crash},
     {"corrupt_event_bytes", Outcome::Correct, corrupt_event_bytes},

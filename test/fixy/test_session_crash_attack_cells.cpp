@@ -260,6 +260,64 @@ void keyed_word_to_crashed_peer_comes_back() {
     finish(is_word_back && poll_label(queue_of_q).is_none() ? Outcome::Correct : Outcome::Silent);
 }
 
+// A third role that p counts reliable, and the labels of the messages that
+// p sends it.  Each has a declared name in a named namespace, so each
+// label has a label word.
+struct Third {};
+struct Ready {};
+struct Accepted {};
+struct Refused {};
+
+// p sends three keyed messages to the third role: a label with no value, a
+// label with a value, and a keyed choice.  Then p closes, and the detector
+// reports it.  No message went to q.
+using SendsToThird =
+    s::Send<s::PeerMsg<Third, Ready, void>,
+            s::Send<s::PeerMsg<Third, Hello, int>, s::Select<s::Send<s::PeerMsg<Third, Accepted, void>, s::End>,
+                                                             s::Send<s::PeerMsg<Third, Refused, void>, s::End>>>>;
+using FromPOrCrashOfP = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>, s::End>>;
+
+// The cell of p counts the messages of p to q, which reads the cell.  The
+// three messages went to the third role, so the report of p counts none,
+// and q takes its crash branch.  A count of the messages to the third role
+// makes q wait for a message that p never sent to it.
+void keyed_messages_to_a_third_role_count_nowhere() {
+    Mailbox to_p;
+    Mailbox to_q;
+    Mailbox to_third;
+    s::PeerCrashCell cell_p;
+    s::PeerCrashCell cell_q;
+    // The port of the third role: its queue takes each message of p to it.
+    Port third_port{&to_third, &to_third};
+    const auto push_to_third = [&third_port](Port&, std::size_t word) noexcept { return push_label(third_port, word); };
+    const auto push_int_to_third = [&third_port](Port&, int& value) noexcept { return push_int(third_port, value); };
+    auto p = s::mint_crash_session<SendsToThird, P, Q, s::ReliableSet<Third>>(bg_ctx(), Port{&to_p, &to_q}, cell_q,
+                                                                              s::mint_crash_writer(cell_p));
+    auto ready = std::move(p).send(push_to_third);
+    auto hello = std::move(ready.next).send(push_to_third);
+    auto valued = std::move(hello.next).send(5, push_int_to_third);
+    auto chosen = std::move(valued.next).select<0>(push_to_third);
+    static_cast<void>(std::move(chosen).close());
+    report_crash(cell_p, s::CrashCause::Abort);
+    int messages_to_third = 0;
+    while (poll_label(third_port).is_some())
+        ++messages_to_third;
+    Port queue_of_q{&to_q, &to_p};
+    if (messages_to_third != 4 || poll_label(queue_of_q).is_some()) finish(Outcome::Silent);
+    auto q = s::mint_crash_session<FromPOrCrashOfP, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p,
+                                                          s::mint_crash_writer(cell_q));
+    std::move(q).branch(poll_label, [](auto branch) noexcept {
+        using Head = typename decltype(branch)::protocol;
+        if constexpr (s::is_crash_branch_v<Head>) {
+            static_cast<void>(std::move(std::move(branch).recv().second).close());
+            finish(Outcome::Correct);
+        } else {
+            static_cast<void>(std::move(std::move(branch).recv(read_int).second).close());
+        }
+    });
+    finish(Outcome::Silent);
+}
+
 // A transport that shows a label to the peer before its payload breaks
 // the trust of the crash transport.  q reads the label, then p dies before
 // the payload.  The branch of the label has no crash branch, so the wait
