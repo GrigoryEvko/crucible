@@ -645,7 +645,7 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
                                     owner.take_record_start_(ops.entries[i], ops.meta_starts[i]), ops.scope_hashes[i],
                                     ops.callsite_hashes[i]);
 
-            if (owner.detector.check(ops.entries[i].schema_hash, ops.entries[i].shape_hash)) {
+            if (owner.detector.check(in.ctx().cap().alloc, ops.entries[i].schema_hash, ops.entries[i].shape_hash)) {
                 if (auto work = std::unique_ptr<BgBuildWork>(owner.prepare_iteration_build_work())) {
                     push_pipeline(in.ctx(), parks.build_work, out, work.get());
                     work.release();

@@ -21,6 +21,9 @@ namespace {
 
 constexpr uint32_t K = IterationDetector::K;
 
+// The allocation capability of each detector of the test.
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
+
 SchemaHash H(uint64_t v) { return SchemaHash{v}; }
 
 struct Op {
@@ -42,7 +45,7 @@ std::vector<Boundary> feed(IterationDetector& detector, const std::vector<Op>& b
     const uint64_t total = uint64_t{iterations} * body.size();
     for (uint64_t n = 0; n < total; ++n, ++op_index) {
         const Op& op = body[(first_offset + n) % body.size()];
-        if (detector.check(SchemaHash{op.schema}, ShapeHash{op.shape}))
+        if (detector.check(kAlloc, SchemaHash{op.schema}, ShapeHash{op.shape}))
             boundaries.push_back({op_index, detector.last_completed_len});
     }
     return boundaries;
@@ -145,12 +148,12 @@ std::vector<Op> inference_mlp_body() {
 
 void test_signature_build_requires_K_ops() {
     IterationDetector d;
-    assert(!d.check(H(1)));
-    assert(!d.check(H(2)));
-    assert(!d.check(H(3)));
-    assert(!d.check(H(4)));
+    assert(!d.check(kAlloc, H(1)));
+    assert(!d.check(kAlloc, H(2)));
+    assert(!d.check(kAlloc, H(3)));
+    assert(!d.check(kAlloc, H(4)));
     assert(d.signature_len.get() == 4);
-    assert(!d.check(H(5)));
+    assert(!d.check(kAlloc, H(5)));
     assert(d.signature_len.get() == 5);
     crucible::test::pass("  test_signature_build:            PASSED\n");
 }
@@ -159,18 +162,18 @@ void test_boundary_needs_two_equal_iterations() {
     IterationDetector d;
     const SchemaHash sig[5] = {H(100), H(200), H(300), H(400), H(500)};
     for (auto h : sig)
-        assert(!d.check(h));
+        assert(!d.check(kAlloc, h));
     // One repeat is one iteration and nothing to compare it with.
     for (auto h : sig)
-        assert(!d.check(h));
+        assert(!d.check(kAlloc, h));
     assert(!d.confirmed);
     assert(d.boundaries_detected.get() == 0);
     // The third copy completes the square. The boundary fires on its last op.
-    assert(!d.check(sig[0]));
-    assert(!d.check(sig[1]));
-    assert(!d.check(sig[2]));
-    assert(!d.check(sig[3]));
-    assert(d.check(sig[4]));
+    assert(!d.check(kAlloc, sig[0]));
+    assert(!d.check(kAlloc, sig[1]));
+    assert(!d.check(kAlloc, sig[2]));
+    assert(!d.check(kAlloc, sig[3]));
+    assert(d.check(kAlloc, sig[4]));
     assert(d.confirmed);
     assert(d.last_completed_len == 5);
     assert(d.boundaries_detected.get() == 1);
@@ -184,13 +187,13 @@ void test_unequal_iterations_do_not_fire() {
     IterationDetector d;
     const SchemaHash sig[5] = {H(1), H(2), H(3), H(4), H(5)};
     for (auto h : sig)
-        assert(!d.check(h));
+        assert(!d.check(kAlloc, h));
     for (auto h : sig)
-        assert(!d.check(h));
+        assert(!d.check(kAlloc, h));
     for (uint64_t i = 0; i < 10; i++)
-        assert(!d.check(H(1000 + i)));
+        assert(!d.check(kAlloc, H(1000 + i)));
     for (auto h : sig)
-        assert(!d.check(h));
+        assert(!d.check(kAlloc, h));
     assert(d.boundaries_detected.get() == 0);
     assert(!d.confirmed);
     crucible::test::pass("  test_unequal_iterations:         PASSED\n");
@@ -204,11 +207,11 @@ void test_broken_period_is_refuted() {
     assert(d.confirmed);
 
     // The next iteration breaks after three ops.
-    assert(!d.check(H(1)));
-    assert(!d.check(H(2)));
-    assert(!d.check(H(3)));
-    assert(!d.check(H(999)));
-    assert(!d.check(H(1)));
+    assert(!d.check(kAlloc, H(1)));
+    assert(!d.check(kAlloc, H(2)));
+    assert(!d.check(kAlloc, H(3)));
+    assert(!d.check(kAlloc, H(999)));
+    assert(!d.check(kAlloc, H(1)));
     assert(!d.confirmed);
     assert(d.refuted_count_ == 1);
     crucible::test::pass("  test_broken_period:              PASSED\n");
@@ -280,7 +283,7 @@ void test_refuted_period_survives_divergence_restart() {
     bool accepted_layer = false;
     for (; op_index < 46 * 4; ++op_index) {
         const Op& op = body[op_index % 46];
-        if (d.check(SchemaHash{op.schema}, ShapeHash{op.shape}) && d.last_completed_len == 12) {
+        if (d.check(kAlloc, SchemaHash{op.schema}, ShapeHash{op.shape}) && d.last_completed_len == 12) {
             accepted_layer = true;
             break;
         }
@@ -312,7 +315,7 @@ void test_divergence_after_a_second_period_refutes_nothing() {
         uint64_t op_index = 0;
         for (; op_index < 46 * 6; ++op_index) {
             const Op& op = body[op_index % 46];
-            const bool fired = d.check(SchemaHash{op.schema}, ShapeHash{op.shape});
+            const bool fired = d.check(kAlloc, SchemaHash{op.schema}, ShapeHash{op.shape});
             if (d.period_ == 46 && (!true_period_reported || fired)) break;
         }
         assert(d.period_ == 46);
@@ -418,7 +421,7 @@ void test_reset_clears_everything() {
     assert(d.last_completed_len == 0);
     assert(d.refuted_count_ == 0);
     for (uint32_t i = 0; i < 4; i++)
-        assert(!d.check(H(100 + i)));
+        assert(!d.check(kAlloc, H(100 + i)));
     assert(d.signature_len.get() == 4);
     crucible::test::pass("  test_reset:                      PASSED\n");
 }
@@ -441,7 +444,7 @@ void test_typestate_witness_minting() {
 
     const SchemaHash sig[5] = {H(11), H(22), H(33), H(44), H(55)};
     for (auto h : sig)
-        (void)d.check(h);
+        (void)d.check(kAlloc, h);
     assert(d.signature_len.get() == K);
     {
         auto steady_view = mint_view<Steady>(d);

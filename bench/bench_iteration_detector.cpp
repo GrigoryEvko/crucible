@@ -38,6 +38,9 @@ uint64_t splitmix64() noexcept {
 // Pre-generated pool of random hashes. Reading from an array (vs
 // splitmix64() inline) keeps PRNG cost out of the measurement.
 constexpr uint32_t NUM_HASHES = 1u << 16;  // 65536
+
+// The allocation capability of each detector of the bench.
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 SchemaHash random_hashes[NUM_HASHES];
 
 void init_random_hashes() noexcept {
@@ -73,7 +76,7 @@ void warmup_detector(IterationDetector& d) {
     }
     for (uint32_t turn = 0; turn < WARMUP_MAX_TURNS; turn++) {
         for (SchemaHash const hash : iteration) {
-            if (d.check(hash)) return;
+            if (d.check(kAlloc, hash)) return;
         }
     }
     std::fprintf(stderr, "ERROR: warmup did not produce a boundary\n");
@@ -101,7 +104,7 @@ int main() {
             warmup_detector(d);
             uint32_t hash_idx = 0;
             return bench::run("check() steady state (no match)", [&] {
-                bool b = d.check(random_hashes[hash_idx & (NUM_HASHES - 1)]);
+                bool b = d.check(kAlloc, random_hashes[hash_idx & (NUM_HASHES - 1)]);
                 bench::do_not_optimize(b);
                 hash_idx++;
             });
@@ -122,7 +125,7 @@ int main() {
             }
             uint32_t pat_idx = 0;
             return bench::run("check() boundaries / 100 ops", [&] {
-                bool b = d.check(pattern[pat_idx]);
+                bool b = d.check(kAlloc, pattern[pat_idx]);
                 bench::do_not_optimize(b);
                 if (++pat_idx >= ITER_LEN) pat_idx = 0;
             });
@@ -135,7 +138,7 @@ int main() {
             return bench::run("check() signature build (K=5)", [&] {
                 d.reset();
                 for (uint32_t i = 0; i < IterationDetector::K; i++) {
-                    bool b = d.check(SIG[i]);
+                    bool b = d.check(kAlloc, SIG[i]);
                     bench::do_not_optimize(b);
                 }
             });
@@ -149,11 +152,11 @@ int main() {
             warmup_detector(d);
             return bench::run("check() match advance (K=5 + 10 rand)", [&] {
                 for (uint32_t i = 0; i < IterationDetector::K; i++) {
-                    bool b = d.check(SIG[i]);
+                    bool b = d.check(kAlloc, SIG[i]);
                     bench::do_not_optimize(b);
                 }
                 for (uint32_t i = 0; i < 10; i++) {
-                    (void)d.check(SchemaHash{splitmix64()});
+                    (void)d.check(kAlloc, SchemaHash{splitmix64()});
                 }
             });
         }(),
@@ -180,7 +183,7 @@ int main() {
             uint32_t hash_idx = 0;
             return bench::run("check() × 1000 (sustained)", [&] {
                 for (uint32_t i = 0; i < BATCH; i++) {
-                    bool b = d.check(random_hashes[hash_idx & (NUM_HASHES - 1)]);
+                    bool b = d.check(kAlloc, random_hashes[hash_idx & (NUM_HASHES - 1)]);
                     bench::do_not_optimize(b);
                     hash_idx++;
                 }

@@ -67,7 +67,7 @@ struct StreamSpec {
 void feed(const StreamSpec& spec, std::array<bool, kMaxLen>& out) noexcept {
     crucible::IterationDetector det{};
     for (uint32_t i = 0; i < spec.len; ++i) {
-        out[i] = det.check(crucible::SchemaHash{spec.hashes[i]});
+        out[i] = det.check(::foundation::effects::testing::test().alloc, crucible::SchemaHash{spec.hashes[i]});
     }
 }
 
@@ -138,10 +138,11 @@ int main(int argc, char** argv) {
                 crucible::IterationDetector det{};
                 // Dirty the detector with a prefix, then reset.
                 for (uint32_t i = 0; i < spec.len; ++i)
-                    (void)det.check(crucible::SchemaHash{spec.hashes[i]});
+                    (void)det.check(::foundation::effects::testing::test().alloc, crucible::SchemaHash{spec.hashes[i]});
                 det.reset();
                 for (uint32_t i = 0; i < spec.len; ++i) {
-                    const bool got = det.check(crucible::SchemaHash{spec.hashes[i]});
+                    const bool got =
+                        det.check(::foundation::effects::testing::test().alloc, crucible::SchemaHash{spec.hashes[i]});
                     if (got != r1[i]) return false;
                 }
             }

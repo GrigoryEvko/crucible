@@ -9,9 +9,9 @@
 #include <fixy/FixedArray.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
-#include <foundation/AlignedBuffer.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
+#include <foundation/effects/Effect.h>
 
 namespace crucible {
 
@@ -163,11 +163,13 @@ struct IterationDetector {
     // earlier windows, and each test costs O(1) unless the fingerprints of a
     // square agree.  While a period holds, the detector does not update the
     // table, and a break builds it again in O(history).  An accepted period
-    // costs O(P) one time.
-    [[nodiscard]] bool check(SchemaHash schema_hash, ShapeHash shape_hash = ShapeHash{}) {
+    // costs O(P) one time.  The ring and the table grow through the
+    // allocation capability.
+    [[nodiscard]] bool check(::foundation::effects::Alloc alloc, SchemaHash schema_hash,
+                             ShapeHash shape_hash = ShapeHash{}) {
         ops_since_boundary.bump();
         const uint64_t key = key_of_(schema_hash, shape_hash);
-        append_(key);
+        append_(alloc, key);
         const uint64_t op_index = pos_;
         ++pos_;
 
@@ -177,7 +179,7 @@ struct IterationDetector {
         if (signature_len.get() < K) return false;
 
         if (period_ != 0) {
-            if (op_index + 1 == next_boundary_ + K) return verify_boundary_();
+            if (op_index + 1 == next_boundary_ + K) return verify_boundary_(alloc);
             return false;
         }
         const uint64_t start = op_index + 1 - K;
@@ -248,7 +250,7 @@ struct IterationDetector {
     }
 
     // The slots of the ring of the history, zero before the first check().
-    [[nodiscard]] uint64_t history_capacity() const noexcept { return history_mask_ == 0 ? 0 : history_mask_ + 1; }
+    [[nodiscard]] uint64_t history_capacity() const noexcept { return keys_.size(); }
 
 private:
     static constexpr uint64_t POLY_BASE = 0x9E3779B97F4A7C15ULL;
@@ -277,15 +279,15 @@ private:
     // Makes room in the ring for the op at pos_.  The ring grows while it is
     // below its largest capacity.  At the largest capacity, the oldest ops
     // leave the history.
-    void make_room_() {
-        if (history_mask_ == 0) {
-            grow_history_(HISTORY_MIN_CAPACITY);
+    void make_room_(::foundation::effects::Alloc alloc) {
+        const uint64_t capacity = keys_.size();
+        if (capacity == 0) {
+            grow_history_(alloc, HISTORY_MIN_CAPACITY);
             return;
         }
-        const uint64_t capacity = history_mask_ + 1;
         if (pos_ + 1 - held_from_() <= capacity) return;
         if (capacity < HISTORY_MAX_CAPACITY) {
-            grow_history_(capacity * 2);
+            grow_history_(alloc, capacity * 2);
             return;
         }
         // The ring also holds the op before base_, so the first eviction
@@ -307,49 +309,47 @@ private:
     }
 
     // Moves the held ops into a ring of new_capacity slots, and builds the
-    // window table again for it.  Complexity: O(new_capacity).
-    void grow_history_(uint64_t new_capacity) {
-        auto keys = ::foundation::AlignedBuffer<uint64_t>::allocate_value_initialized(new_capacity);
-        auto prefix_polys = ::foundation::AlignedBuffer<uint64_t>::allocate_value_initialized(new_capacity);
-        auto prefix_sums = ::foundation::AlignedBuffer<uint64_t>::allocate_value_initialized(new_capacity);
-        auto earlier_links = ::foundation::AlignedBuffer<uint64_t>::allocate_value_initialized(new_capacity);
-        const uint64_t new_mask = new_capacity - 1;
+    // window table again for it.  Complexity: O(new_capacity).  The body is
+    // out of line, so the path of each op holds no array of this growth.
+    CRUCIBLE_COLD void grow_history_(::foundation::effects::Alloc alloc, uint64_t new_capacity) {
+        auto keys = ::fixy::mint_masked_array<uint64_t>(alloc, new_capacity);
+        auto prefix_polys = ::fixy::mint_masked_array<uint64_t>(alloc, new_capacity);
+        auto prefix_sums = ::fixy::mint_masked_array<uint64_t>(alloc, new_capacity);
+        auto earlier_links = ::fixy::mint_masked_array<uint64_t>(alloc, new_capacity);
         for (uint64_t position = held_from_(); position < pos_; ++position) {
-            keys[position & new_mask] = keys_[position & history_mask_];
-            prefix_polys[position & new_mask] = prefix_polys_[position & history_mask_];
-            prefix_sums[position & new_mask] = prefix_sums_[position & history_mask_];
-            earlier_links[position & new_mask] = earlier_links_[position & history_mask_];
+            keys.at_masked(position) = keys_.at_masked(position);
+            prefix_polys.at_masked(position) = prefix_polys_.at_masked(position);
+            prefix_sums.at_masked(position) = prefix_sums_.at_masked(position);
+            earlier_links.at_masked(position) = earlier_links_.at_masked(position);
         }
         keys_ = std::move(keys);
         prefix_polys_ = std::move(prefix_polys);
         prefix_sums_ = std::move(prefix_sums);
         earlier_links_ = std::move(earlier_links);
-        history_mask_ = new_mask;
         // The windows that start before the window of the op at pos_ are
         // complete.  While a period holds, the detector does not update the
         // table, and a break builds it for the ring of that time.
-        if (period_ == 0) rebuild_table_(new_capacity * 2, pos_ + 1 > K ? pos_ + 1 - K : 0);
+        if (period_ == 0) rebuild_table_(alloc, new_capacity * 2, pos_ + 1 > K ? pos_ + 1 - K : 0);
     }
 
-    void append_(uint64_t key) {
-        make_room_();
-        const uint64_t slot = pos_ & history_mask_;
+    void append_(::foundation::effects::Alloc alloc, uint64_t key) {
+        make_room_(alloc);
         const uint64_t poly_before = prefix_poly_before_(pos_);
         const uint64_t sum_before = prefix_sum_before_(pos_);
-        keys_[slot] = key;
-        prefix_polys_[slot] = poly_before * POLY_BASE + key;
-        prefix_sums_[slot] = sum_before + detail::fmix64(key ^ SUM_SALT);
-        earlier_links_[slot] = 0;
+        keys_.at_masked(pos_) = key;
+        prefix_polys_.at_masked(pos_) = poly_before * POLY_BASE + key;
+        prefix_sums_.at_masked(pos_) = sum_before + detail::fmix64(key ^ SUM_SALT);
+        earlier_links_.at_masked(pos_) = 0;
     }
 
     // The fingerprint of the keys before index, for an index from base_ up
     // to pos_.
     [[nodiscard]] uint64_t prefix_poly_before_(uint64_t index) const noexcept {
-        return index == 0 ? 0 : prefix_polys_[(index - 1) & history_mask_];
+        return index == 0 ? 0 : prefix_polys_.at_masked(index - 1);
     }
 
     [[nodiscard]] uint64_t prefix_sum_before_(uint64_t index) const noexcept {
-        return index == 0 ? 0 : prefix_sums_[(index - 1) & history_mask_];
+        return index == 0 ? 0 : prefix_sums_.at_masked(index - 1);
     }
 
     [[nodiscard]] uint64_t window_fingerprint_(uint64_t start) const noexcept {
@@ -366,7 +366,7 @@ private:
     // none.
     [[nodiscard]] uint64_t link_window_(uint64_t start) {
         const uint64_t earlier_link = table_exchange_(window_fingerprint_(start), start);
-        earlier_links_[start & history_mask_] = earlier_link;
+        earlier_links_.at_masked(start) = earlier_link;
         return earlier_link;
     }
 
@@ -375,25 +375,29 @@ private:
     // empty slot, and the fingerprint.  The windows of the history are at
     // most the slots of the ring, and the table has two slots for each slot
     // of the ring, so its load stays at most one half.  Linear probing.
+    [[nodiscard]] uint64_t table_mask_() const noexcept { return table_.size() - 1; }
+
     [[nodiscard]] uint64_t home_slot_(uint64_t fingerprint) const noexcept {
-        return detail::fmix64(fingerprint) & table_mask_;
+        return detail::fmix64(fingerprint) & table_mask_();
     }
 
     // Records start as the newest window of its fingerprint, and returns the
     // slot value that it replaces: the earlier start plus one, or zero.
     [[nodiscard]] uint64_t table_exchange_(uint64_t fingerprint, uint64_t start) {
-        uint64_t index = home_slot_(fingerprint);
-        while (table_[index].start_plus_one != 0) {
-            if (table_[index].fingerprint == fingerprint) {
-                const uint64_t earlier = table_[index].start_plus_one;
-                table_[index].start_plus_one = start + 1;
+        // The load stays at most one half, so the probe meets an empty slot.
+        for (uint64_t index = home_slot_(fingerprint);; ++index) {
+            TableSlot& slot = table_.at_masked(index);
+            if (slot.start_plus_one == 0) {
+                slot = TableSlot{.start_plus_one = start + 1, .fingerprint = fingerprint};
+                ++table_used_;
+                return 0;
+            }
+            if (slot.fingerprint == fingerprint) {
+                const uint64_t earlier = slot.start_plus_one;
+                slot.start_plus_one = start + 1;
                 return earlier;
             }
-            index = (index + 1) & table_mask_;
         }
-        table_[index] = TableSlot{.start_plus_one = start + 1, .fingerprint = fingerprint};
-        ++table_used_;
-        return 0;
     }
 
     // Removes the slot of the fingerprint when start is its newest window.
@@ -401,35 +405,36 @@ private:
     // unbroken (Knuth, The Art of Computer Programming, volume 3, 6.4,
     // Algorithm R).
     void table_remove_newest_(uint64_t fingerprint, uint64_t start) {
+        const uint64_t mask = table_mask_();
         uint64_t hole = home_slot_(fingerprint);
-        while (table_[hole].start_plus_one != 0 && table_[hole].fingerprint != fingerprint)
-            hole = (hole + 1) & table_mask_;
-        if (table_[hole].start_plus_one != start + 1) return;
+        while (table_.at_masked(hole).start_plus_one != 0 && table_.at_masked(hole).fingerprint != fingerprint)
+            hole = (hole + 1) & mask;
+        if (table_.at_masked(hole).start_plus_one != start + 1) return;
         uint64_t next = hole;
         while (true) {
-            next = (next + 1) & table_mask_;
-            if (table_[next].start_plus_one == 0) break;
+            next = (next + 1) & mask;
+            if (table_.at_masked(next).start_plus_one == 0) break;
             // The slot at next can move to the hole when its home is not
             // in the cyclic range (hole, next].
-            const uint64_t home = home_slot_(table_[next].fingerprint);
-            const bool home_after_hole = ((home - hole - 1) & table_mask_) < ((next - hole) & table_mask_);
+            const uint64_t home = home_slot_(table_.at_masked(next).fingerprint);
+            const bool home_after_hole = ((home - hole - 1) & mask) < ((next - hole) & mask);
             if (home_after_hole) continue;
-            table_[hole] = table_[next];
+            table_.at_masked(hole) = table_.at_masked(next);
             hole = next;
         }
-        table_[hole] = TableSlot{};
+        table_.at_masked(hole) = TableSlot{};
         --table_used_;
     }
 
     // Builds a table of size slots from the windows that start in
     // [base_, end_start), in order, and links each window to the newest
-    // earlier window of its fingerprint.  Complexity: O(size).
-    void rebuild_table_(uint64_t size, uint64_t end_start) {
-        table_ = ::foundation::AlignedBuffer<TableSlot, sizeof(TableSlot)>::allocate_value_initialized(size);
-        table_mask_ = size - 1;
+    // earlier window of its fingerprint.  Complexity: O(size).  The body is
+    // out of line, so the path of each op holds no array of this rebuild.
+    CRUCIBLE_COLD void rebuild_table_(::foundation::effects::Alloc alloc, uint64_t size, uint64_t end_start) {
+        table_ = ::fixy::mint_masked_array<TableSlot, sizeof(TableSlot)>(alloc, size);
         table_used_ = 0;
         for (uint64_t start = base_; start < end_start; ++start)
-            earlier_links_[start & history_mask_] = table_exchange_(window_fingerprint_(start), start);
+            earlier_links_.at_masked(start) = table_exchange_(window_fingerprint_(start), start);
     }
 
     void restart_() {
@@ -450,8 +455,10 @@ private:
         next_boundary_ = 0;
         base_ = 0;
         // The ring keeps its slots, and the empty history makes each one
-        // dead.  The table keeps its size, and each slot becomes empty.
-        if (table_mask_ != 0) rebuild_table_(table_mask_ + 1, 0);
+        // dead.  The table keeps its slots, and each slot becomes empty.
+        for (TableSlot& slot : table_.view())
+            slot = TableSlot{};
+        table_used_ = 0;
         CRUCIBLE_POST(0, signature_len.get() == 0u);
         CRUCIBLE_POST(0, ops_since_boundary.get() == 0u);
         CRUCIBLE_POST(0, boundaries_detected.get() == 0u);
@@ -487,7 +494,7 @@ private:
         const uint64_t right_poly = prefix_poly_before_(right + length) - prefix_poly_before_(right) * power;
         if (left_poly != right_poly) return false;
         for (uint64_t offset = 0; offset < length; ++offset) {
-            if (keys_[(left + offset) & history_mask_] != keys_[(right + offset) & history_mask_]) return false;
+            if (keys_.at_masked(left + offset) != keys_.at_masked(right + offset)) return false;
         }
         return true;
     }
@@ -512,7 +519,7 @@ private:
                 if (!is_refuted(length, body_sum))
                     return accept_(start, ::fixy::mint_refined<kPeriodBound>(length), body_sum);
             }
-            link = earlier_links_[earlier & history_mask_];
+            link = earlier_links_.at_masked(earlier);
         }
         return false;
     }
@@ -541,12 +548,12 @@ private:
         uint64_t best_count = ~uint64_t{0};
         for (uint32_t phase = 0; phase < length; ++phase) {
             const uint64_t window_start = body_begin + phase;
-            uint64_t link = earlier_links_[window_start & history_mask_];
+            uint64_t link = earlier_links_.at_masked(window_start);
             if (link != 0 && link - 1 >= body_begin) continue;
             uint64_t copies = 1;
             while (link != 0 && link - 1 + length > window_start) {
                 ++copies;
-                link = earlier_links_[(link - 1) & history_mask_];
+                link = earlier_links_.at_masked(link - 1);
             }
             if (copies < best_count) {
                 best_count = copies;
@@ -565,7 +572,7 @@ private:
     }
 
     // Runs when the op at next_boundary_ + K - 1 arrives.
-    [[nodiscard]] bool verify_boundary_() {
+    [[nodiscard]] bool verify_boundary_(::foundation::effects::Alloc alloc) {
         const uint64_t boundary = next_boundary_;
         const bool holds = is_square_(boundary, period_) && windows_equal_(boundary - period_, boundary, K);
         if (holds) return fire_();
@@ -577,7 +584,7 @@ private:
         // The search starts again, and the detector did not update the table
         // while the period held.  Each complete window of the history goes
         // into it again.
-        rebuild_table_((history_mask_ + 1) * 2, pos_ + 1 - K);
+        rebuild_table_(alloc, keys_.size() * 2, pos_ + 1 - K);
         return false;
     }
 
@@ -617,12 +624,12 @@ private:
 
     // The ring of the history: the key of the op at index p, the prefix
     // fingerprints that end with it, and the link of the window that starts
-    // at it, each in slot p & history_mask_.
-    ::foundation::AlignedBuffer<uint64_t> keys_;
-    ::foundation::AlignedBuffer<uint64_t> prefix_polys_;
-    ::foundation::AlignedBuffer<uint64_t> prefix_sums_;
-    ::foundation::AlignedBuffer<uint64_t> earlier_links_;
-    uint64_t history_mask_ = 0;
+    // at it, each in the slot of p modulo the capacity.  The four rings have
+    // one capacity, and each is empty before the first check().
+    ::fixy::MaskedArray<uint64_t> keys_;
+    ::fixy::MaskedArray<uint64_t> prefix_polys_;
+    ::fixy::MaskedArray<uint64_t> prefix_sums_;
+    ::fixy::MaskedArray<uint64_t> earlier_links_;
 
     // The window table: open addressing over window fingerprints, at a load
     // of at most one half.  The two words of a slot share one cache line, so
@@ -631,8 +638,7 @@ private:
         uint64_t start_plus_one = 0;
         uint64_t fingerprint = 0;
     };
-    ::foundation::AlignedBuffer<TableSlot, sizeof(TableSlot)> table_;
-    uint64_t table_mask_ = 0;
+    ::fixy::MaskedArray<TableSlot, sizeof(TableSlot)> table_;
     uint64_t table_used_ = 0;
 };
 

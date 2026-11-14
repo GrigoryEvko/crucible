@@ -14,6 +14,9 @@ namespace {
 
 constexpr uint64_t K = IterationDetector::K;
 
+// The allocation capability of each detector of the test.
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
+
 // The schema of op k of the periodic body that the tests record.  The body
 // has eight ops, and each op occurs once in it.
 SchemaHash periodic_op(uint64_t k) { return SchemaHash{0x100 + k % 8}; }
@@ -24,11 +27,11 @@ SchemaHash periodic_op(uint64_t k) { return SchemaHash{0x100 + k % 8}; }
 // eight ops after the boundary before it.
 uint32_t feed_prefix_then_body(IterationDetector& detector, uint64_t prefix_ops, uint32_t iterations) {
     for (uint64_t i = 0; i < prefix_ops; ++i)
-        (void)detector.check(SchemaHash{0x1000000 + i}, ShapeHash{0x2000000 + i});
+        (void)detector.check(kAlloc, SchemaHash{0x1000000 + i}, ShapeHash{0x2000000 + i});
     uint32_t boundaries = 0;
     uint64_t last_boundary = 0;
     for (uint64_t n = 0; n < uint64_t{iterations} * 8; ++n) {
-        if (!detector.check(periodic_op(n))) continue;
+        if (!detector.check(kAlloc, periodic_op(n))) continue;
         ++boundaries;
         if (boundaries > 3) {
             assert(detector.last_completed_len == 8);
@@ -62,7 +65,7 @@ void test_history_is_bounded() {
     constexpr uint64_t kHistoryBound = uint64_t{1} << 19;
     IterationDetector d;
     for (uint64_t i = 0; i < 3 * kHistoryBound; ++i) {
-        assert(!d.check(SchemaHash{0x7000000 + i}));
+        assert(!d.check(kAlloc, SchemaHash{0x7000000 + i}));
         assert(d.pos_ - d.base_ <= kHistoryBound);
     }
     assert(kHistoryBound == IterationDetector::HISTORY_MAX_CAPACITY);
@@ -75,7 +78,7 @@ uint32_t boundaries_of_long_body(uint32_t length) {
     IterationDetector d;
     uint32_t boundaries = 0;
     for (uint64_t n = 0; n < uint64_t{length} * 3; ++n)
-        boundaries += d.check(SchemaHash{0x9000000 + n % length}) ? 1u : 0u;
+        boundaries += d.check(kAlloc, SchemaHash{0x9000000 + n % length}) ? 1u : 0u;
     assert(d.pos_ - d.base_ <= IterationDetector::HISTORY_MAX_CAPACITY);
     return boundaries;
 }
@@ -100,7 +103,7 @@ void test_oldest_claimable_holds_each_iteration() {
         const uint64_t floor_now = d.oldest_claimable();
         assert(floor_now >= floor_before);
         floor_before = floor_now;
-        if (!d.check(schema)) return;
+        if (!d.check(kAlloc, schema)) return;
         ++boundaries;
         const uint64_t iteration_start = d.pos_ - K - d.last_completed_len;
         assert(iteration_start >= floor_now);
