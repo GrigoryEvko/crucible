@@ -1354,7 +1354,7 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
     plan->device_capability = device_capability.value();
     plan->device_type = DeviceType::CPU;
     plan->device_idx = -1;
-    std::memset(plan->pad0, 0, sizeof(plan->pad0));
+    ::fixy::fill(plan->pad0.view(), uint8_t{0});
 
     if (num_slots == 0) return plan;
 

@@ -65,7 +65,7 @@ struct MemoryPlan {
 
     DeviceType device_type = DeviceType::CPU;
     int8_t device_idx = -1;
-    uint8_t pad0[2]{};
+    ::foundation::core::FixedArray<uint8_t, 2> pad0{};
     uint64_t device_capability = 0;
 
     int32_t rank = -1;  // -1 when not distributed
@@ -288,7 +288,7 @@ using ValidTraceNodeKindRaw = ::fixy::Refined<kValidTraceNodeKindBound, uint8_t>
 // Nodes are arena-allocated and are never freed individually.
 struct TraceNode {
     TraceNodeKind kind{};
-    uint8_t pad[7]{};
+    ::foundation::core::FixedArray<uint8_t, 7> pad{};
     // Identity of this node and every descendant.  The field stays a bare
     // MerkleHash because wrapping it would change the layout.
     MerkleHash merkle_hash;
@@ -357,7 +357,7 @@ struct RegionNode : TraceNode {
 
     void set_measured_ms(float ms) noexcept {
         CRUCIBLE_PRE(ms >= 0.0f);  // >= also rejects NaN
-        CRUCIBLE_PRE(!__builtin_isinf(ms));
+        CRUCIBLE_PRE(!::fixy::fp::is_inf(ms));
         measured_ms = ms;
     }
 
@@ -814,7 +814,7 @@ RegionNode* make_region(::foundation::effects::Alloc, ::fixy::BumpArena&&, Rest&
     // The finite test rejects the infinities on the same grounds: a threshold
     // of +Inf converges on the first iteration whatever the distance, which
     // is not a threshold, and a threshold of -Inf never converges.  The test
-    // is the builtin, so this header does not include <cmath> for it.
+    // is fixy::fp::is_finite of the base.
     //
     // This is the third layer of CLAUDE.md §XII — an anonymous expression —
     // because neither layer above it reaches a float.  There is no Refined
@@ -823,7 +823,7 @@ RegionNode* make_region(::foundation::effects::Alloc, ::fixy::BumpArena&&, Rest&
     // predicate has no NaN case to get wrong, which is the whole content of
     // this guard.  Lifting it is a one-name change once a second float
     // boundary wants the same test.
-    CRUCIBLE_PRE(__builtin_isfinite(epsilon));
+    CRUCIBLE_PRE(::fixy::fp::is_finite(epsilon));
     CRUCIBLE_PRE(epsilon >= 0.0f);
     // An UNTIL loop counts the iterations that were observed, and observing
     // convergence means running the body and measuring its output, so the
@@ -1103,7 +1103,7 @@ struct DagDiff {
             auto* lb = static_cast<LoopNode*>(b);
             if (la->body_content_hash != lb->body_content_hash || la->term_kind != lb->term_kind
                 || la->repeat_count != lb->repeat_count
-                || std::bit_cast<uint32_t>(la->epsilon) != std::bit_cast<uint32_t>(lb->epsilon))
+                || ::fixy::bit_cast<uint32_t>(la->epsilon) != ::fixy::bit_cast<uint32_t>(lb->epsilon))
                 return {a, b, depth, DagDiff::Kind::LOOP_MISMATCH};
             if (!::fixy::equal(la->feedback_edges, lb->feedback_edges))
                 return {a, b, depth, DagDiff::Kind::LOOP_MISMATCH};
