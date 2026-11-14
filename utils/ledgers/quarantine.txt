@@ -96,7 +96,7 @@ bench/ | door-header | 2 | - | -
 bench/ | inline-asm | 3 | - | -
 bench/ | raw-function-pointer | 1 | - | -
 bench/ | raw-new-delete | 2 | - | -
-bench/ | raw-pointer-object | 114 | - | -
+bench/ | raw-pointer-object | 111 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
 bench/ | std-entity | 760 | - | -
@@ -110,7 +110,7 @@ examples/fn/ | std-object | 3 | - | -
 include/crucible/ | c-array-object | 1 | - | -
 include/crucible/ | compiler-builtin | 1 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
-include/crucible/ | raw-pointer-object | 58 | - | -
+include/crucible/ | raw-pointer-object | 53 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 1 | - | -
 include/crucible/ | std-entity | 1 | - | -
 include/crucible/cntp/ | c-library-call | 9 | - | -
@@ -189,7 +189,7 @@ include/fixy/handle/ | replace-pending:<cstdio> | 1 | - | -
 include/fixy/handle/ | replace-pending:<cstdlib> | 1 | - | -
 include/fixy/os/ | base-c-library-call | 13 | - | -
 include/fixy/os/ | base-c-library-object | 10 | - | -
-include/fixy/os/ | base-std-entity | 134 | - | -
+include/fixy/os/ | base-std-entity | 128 | - | -
 include/fixy/os/ | base-std-object | 59 | - | -
 include/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
 include/fixy/os/ | replace-pending:<array> | 1 | - | -
@@ -206,7 +206,7 @@ include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<system_error> | 4 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 56 | - | -
-include/fixy/session/ | base-std-entity | 466 | - | -
+include/fixy/session/ | base-std-entity | 467 | - | -
 include/fixy/session/ | base-std-object | 197 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
@@ -283,7 +283,7 @@ include/foundation/reflect/ | replace-pending:<string_view> | 5 | - | -
 include/foundation/reflect/ | replace-pending:<tuple> | 1 | - | -
 include/foundation/reflect/ | replace-pending:<vector> | 4 | - | -
 src/ | raw-new-delete | 3 | - | -
-src/ | raw-pointer-object | 9 | - | -
+src/ | raw-pointer-object | 8 | - | -
 src/ | std-entity | 69 | - | -
 src/ | std-object | 15 | - | -
 src/fixy/os/ | base-std-entity | 153 | - | -
@@ -315,13 +315,13 @@ test/ | opted-out | 13 | PROBE: the current directory of the process is a direct
 test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | raw-function-pointer | 21 | - | -
 test/ | raw-new-delete | 41 | - | -
-test/ | raw-pointer-object | 390 | - | -
+test/ | raw-pointer-object | 351 | - | -
 test/ | region | 1 | PROBE: the current directory of the process is a directory that it cannot read | the test of the root of the Cipher makes its current directory unreadable through the C library, because the base has no door that changes the current directory or the mode of a directory, and an absolute root must open when the current directory does not open
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 84 | - | -
-test/ | std-entity | 1501 | - | -
-test/ | std-object | 540 | - | -
+test/ | std-entity | 1500 | - | -
+test/ | std-object | 539 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
 test/cipher_neg/ | raw-pointer-object | 2 | - | -
 test/cipher_neg/ | std-entity | 6 | - | -
@@ -390,7 +390,7 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2949 | - | -
+test/fixy/ | std-entity | 2950 | - | -
 test/fixy/ | std-object | 1077 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 5 | - | -

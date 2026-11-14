@@ -64,6 +64,11 @@ void crash_endpoint(s::PeerCrashCell& cell, Mailbox& inbox, s::CrashCause cause)
     inbox.is_closed = true;
 }
 
+bool report_counts(const s::PeerCrashCell& cell, std::uint64_t count) {
+    const std::optional<s::CrashWitness> witness = cell.witness();
+    return witness && std::to_underlying(witness->messages_sent) == count;
+}
+
 void p_sends(s::PeerCrashCell& cell_p, const s::PeerCrashCell& cell_q, Mailbox& in, Mailbox& out, int first,
              int count) {
     using Stream = s::Loop<s::Select<s::Send<int, s::Continue>>>;

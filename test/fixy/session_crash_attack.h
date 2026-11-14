@@ -84,6 +84,10 @@ void report_crash(s::PeerCrashCell& cell, s::CrashCause cause);
 // reports it, and the queue closes.
 void crash_endpoint(s::PeerCrashCell& cell, Mailbox& inbox, s::CrashCause cause);
 
+// True when the cell holds a report, and the report counts `count`
+// messages of the endpoint that the cell watches.
+[[nodiscard]] bool report_counts(const s::PeerCrashCell& cell, std::uint64_t count);
+
 // p as a real crash session: it sends `count` messages, each the label 0
 // and the value first, first + 1, and so on, into `out`, and its cell
 // counts each one.  The session then stops with no crash of its own, so a
@@ -182,6 +186,8 @@ void run_loop_to_crash(Loop handle, const Poll& poll, const OnMessage& on_messag
 [[noreturn]] void peer_dies_between_label_and_payload();
 [[noreturn]] void false_report_between_label_and_payload();
 [[noreturn]] void reported_sender_stops_at_the_payload();
+[[noreturn]] void reported_sender_stops_at_the_keyed_value();
+[[noreturn]] void keyed_word_to_crashed_peer_comes_back();
 [[noreturn]] void peer_reads_label_before_the_report();
 
 // test_session_crash_attack.cpp: the event log.
@@ -217,6 +223,8 @@ inline constexpr attack_case kAttacks[] = {
     {"peer_dies_between_label_and_payload", Outcome::Correct, peer_dies_between_label_and_payload},
     {"false_report_between_label_and_payload", Outcome::Correct, false_report_between_label_and_payload},
     {"reported_sender_stops_at_the_payload", Outcome::Caught, reported_sender_stops_at_the_payload},
+    {"reported_sender_stops_at_the_keyed_value", Outcome::Caught, reported_sender_stops_at_the_keyed_value},
+    {"keyed_word_to_crashed_peer_comes_back", Outcome::Correct, keyed_word_to_crashed_peer_comes_back},
     {"peer_reads_label_before_the_report", Outcome::Caught, peer_reads_label_before_the_report},
     {"recorder_sees_the_crash", Outcome::Correct, recorder_sees_the_crash},
     {"corrupt_event_bytes", Outcome::Correct, corrupt_event_bytes},

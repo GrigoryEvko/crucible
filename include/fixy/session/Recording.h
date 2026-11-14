@@ -124,7 +124,10 @@ template <typename Choice, std::size_t I>
 template <typename R>
 struct is_crash_send_shape : std::false_type {};
 template <typename Next, typename T>
-struct is_crash_send_shape<CrashSend<Next, T>> : std::true_type {};
+struct is_crash_send_shape<CrashSend<Next, T>> : std::true_type {
+    // The type of the payload that a send gives back when it did not go.
+    using payload = T;
+};
 
 // The payload families a recorder knows.  A delegated session is a
 // hand-off.  Every other payload that Classification.h accepts is a
@@ -326,8 +329,11 @@ public:
                                                                      is_delivered ? DeliveryFate::Delivered
                                                                                   : DeliveryFate::LostToCrashedPeer));
         if constexpr (detail::recording::is_crash_send_shape<decltype(result)>::value) {
+            // The crash decorator gives back the label word, not the message.
             using Wrapped = decltype(wrap_(recorder, std::move(result.next)));
-            return CrashSend<Wrapped, Message>{wrap_(recorder, std::move(result.next)), std::move(result.undelivered)};
+            using Undelivered = typename detail::recording::is_crash_send_shape<decltype(result)>::payload;
+            return CrashSend<Wrapped, Undelivered>{wrap_(recorder, std::move(result.next)),
+                                                   std::move(result.undelivered)};
         } else {
             return wrap_(recorder, std::move(result));
         }

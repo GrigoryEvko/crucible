@@ -614,7 +614,8 @@ class CrashWatched;
 
 // The result of a send.  `undelivered` holds the payload when the peer
 // had crashed before the send, or when the transport refused it at the
-// write.  It is empty when the transport took the payload.
+// write.  It is empty when the transport took the payload.  For the label
+// step of a keyed message, the payload is the label word.
 template <typename Next, typename T>
 struct [[nodiscard]] CrashSend {
     Next next;
@@ -754,7 +755,9 @@ public:
 
     // A keyed Send writes its label word.  The successor then stands at the
     // value step, inside the message.  The word to a crashed peer is lost,
-    // and `undelivered` then holds the empty message.
+    // and `undelivered` then holds the word.  The message type of the step
+    // is a tag that names the label, such as PeerMsg, and a unit can name
+    // it with no definition, so the result does not hold it.
     template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position,
               typename Transport>
         requires is_send_v<typename Handle::protocol> && is_keyed_step_v<typename Handle::protocol>
@@ -762,7 +765,6 @@ public:
     [[nodiscard]] static constexpr auto send(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched,
                                              Transport transport) {
         using P = typename Handle::protocol;
-        using T = typename P::message_type;
         bool is_written = false;
         auto next = std::move(watched.inner_)
                         .send(detail::crash_transport::watched_word_write<typename Handle::resource_type>(
@@ -779,9 +781,9 @@ public:
                 return wrap_(watched, std::move(next), counts);
             }
         }();
-        std::optional<T> undelivered;
-        if (!is_written) undelivered.emplace();
-        return CrashSend<decltype(wrapped), T>{std::move(wrapped), std::move(undelivered)};
+        std::optional<std::size_t> undelivered;
+        if (!is_written) undelivered.emplace(step_wire_word_v<P>);
+        return CrashSend<decltype(wrapped), std::size_t>{std::move(wrapped), std::move(undelivered)};
     }
 
     // ── select ───────────────────────────────────────────────────────
@@ -1093,7 +1095,7 @@ public:
     // and the transport is a trying write of the word.  The successor then
     // stands at the value step, inside the message, and its send moves the
     // value.  The word to a crashed peer is lost, and `undelivered` then
-    // holds the empty message.
+    // holds the word.
     template <typename Transport, typename P = protocol>
         requires is_send_v<P> && is_keyed_step_v<P> && TryWrite<Transport, resource_type, std::size_t>
     [[nodiscard]] constexpr auto send(Transport transport) && {

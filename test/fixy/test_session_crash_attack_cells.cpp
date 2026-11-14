@@ -62,8 +62,7 @@ void false_suspicion_fences_the_sender() {
     auto [next, undelivered] = std::move(chosen).send(1, push_int);
     (void)undelivered;
     report_crash(cell_p, s::CrashCause::Unknown);
-    const std::optional<s::CrashWitness> witness = cell_p.witness();
-    if (!witness || std::to_underlying(witness->messages_sent) != 1) finish(Outcome::Silent);
+    if (!report_counts(cell_p, 1)) finish(Outcome::Silent);
     auto after = std::move(next).select<0>(push_label);
     auto later = std::move(after).send(2, push_int);
     std::move(later.next).detach(s::detach_reason::TestInstrumentation{});
@@ -211,6 +210,54 @@ void reported_sender_stops_at_the_payload() {
     auto sent = std::move(half_sent).send(5, push_int);
     static_cast<void>(std::move(sent.next).close());
     finish(Outcome::Silent);
+}
+
+// A keyed message with a value: its label word, then its value.  This unit
+// does not include fixy/session/Projection.h, so PeerMsg has no definition
+// here, as in a unit that names a local type by hand.  A crash-watched
+// keyed send compiles all the same, as a plain keyed send does.  The label
+// has a declared name in a named namespace, so it has a label word (rule 7
+// of fixy/session/Fold.h).
+struct Hello {};
+using SendsHello = s::Send<s::PeerMsg<Q, Hello, int>, s::End>;
+
+// The label word of a keyed message with a value is half of its message,
+// as a positional label is.  The report after the word does not count the
+// message, and p stops at the value with Crash_Endpoint_Reported.
+void reported_sender_stops_at_the_keyed_value() {
+    Mailbox to_p;
+    Mailbox to_q;
+    s::PeerCrashCell cell_p;
+    s::PeerCrashCell cell_q;
+    auto p =
+        s::mint_crash_session<SendsHello, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
+    auto half_sent = std::move(p).send(push_label);
+    // The word went to the queue of q.
+    Port queue_of_q{&to_q, &to_p};
+    if (poll_label(queue_of_q).is_none()) finish(Outcome::Silent);
+    report_crash(cell_p, s::CrashCause::Unknown);
+    if (!report_counts(cell_p, 0)) finish(Outcome::Silent);
+    auto sent = std::move(half_sent.next).send(5, push_int);
+    static_cast<void>(std::move(sent.next).close());
+    finish(Outcome::Silent);
+}
+
+// The peer crashed before the label word of a keyed message.  The word is
+// lost, so it comes back to the caller, and the queue of the peer stays
+// empty.
+void keyed_word_to_crashed_peer_comes_back() {
+    Mailbox to_p;
+    Mailbox to_q;
+    s::PeerCrashCell cell_p;
+    s::PeerCrashCell cell_q;
+    report_crash(cell_q, s::CrashCause::Abort);
+    auto p =
+        s::mint_crash_session<SendsHello, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
+    auto half_sent = std::move(p).send(push_label);
+    const bool is_word_back = half_sent.undelivered == s::step_wire_word_v<SendsHello>;
+    std::move(half_sent.next).detach(s::detach_reason::TestInstrumentation{});
+    Port queue_of_q{&to_q, &to_p};
+    finish(is_word_back && poll_label(queue_of_q).is_none() ? Outcome::Correct : Outcome::Silent);
 }
 
 // A transport that shows a label to the peer before its payload breaks
