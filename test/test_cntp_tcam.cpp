@@ -79,7 +79,7 @@ tcam::TcamFlowRule flow_rule(tcam::FlowAction action = tcam::FlowAction::Drop, s
                 .redirect_ifindex = redirect_ifindex,
                 .dscp = tcam::admit_tcam_dscp(46).expect("46 is a DSCP value"),
             },
-        .priority = *tcam::admit_tcam_priority(10),
+        .priority = tcam::admit_tcam_priority(10).expect("each 16-bit value is a priority"),
         .audit_to_cipher = true,
     };
 }
@@ -125,7 +125,7 @@ void test_admission_and_names() {
     assert(tcam::admit_tcam_dscp(63).is_ok());
     assert(tcam::admit_tcam_dscp(64).is_err());
     assert(tcam::admit_tcam_dscp(64).err() == ::fixy::some(tcam::TcamError::InvalidActionParameter));
-    assert(tcam::admit_tcam_priority(std::numeric_limits<std::uint16_t>::max()).has_value());
+    assert(tcam::admit_tcam_priority(std::numeric_limits<std::uint16_t>::max()).is_ok());
 
     auto bad_redirect = tcam::declare_tcam_rule(flow_rule(tcam::FlowAction::Redirect));
     assert(error_of(std::move(bad_redirect)) == tcam::TcamError::InvalidActionParameter);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fixy/Core.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/lattices/BarrierStrengthLattice.h>
 #include <foundation/algebra/lattices/MemoryScopeLattice.h>
@@ -202,7 +203,23 @@ template <BarrierStrength Strength, MemoryScope Scope, FenceArch Arch>
     return fence_spec_for(Strength, Scope, Arch);
 }
 
-[[nodiscard]] constexpr const char* fence_mnemonic(FenceSpec spec) noexcept {
+// The ARM barrier of an order: the load form for an acquire, the store form
+// for a release, and the full form for each other order.
+[[nodiscard]] constexpr ::fixy::TextView dmb_of_order_(FenceOrder order, ::fixy::TextView load, ::fixy::TextView store,
+                                                       ::fixy::TextView full) noexcept {
+    if (order == FenceOrder::Acquire) return load;
+    if (order == FenceOrder::Release) return store;
+    return full;
+}
+
+// The PTX fence of an order: the sequentially consistent form for SeqCst,
+// and the acquire-release form for each other order.
+[[nodiscard]] constexpr ::fixy::TextView ptx_fence_of_order_(FenceOrder order, ::fixy::TextView seq_cst,
+                                                             ::fixy::TextView acq_rel) noexcept {
+    return order == FenceOrder::SeqCst ? seq_cst : acq_rel;
+}
+
+[[nodiscard]] constexpr ::fixy::TextView fence_mnemonic(FenceSpec spec) noexcept {
     switch (spec.kind) {
         case FenceKind::NoOp:
             return "";
@@ -213,30 +230,24 @@ template <BarrierStrength Strength, MemoryScope Scope, FenceArch Arch>
         case FenceKind::ArmDmb:
             switch (spec.domain) {
                 case FenceDomain::ArmIsh:
-                    return spec.order == FenceOrder::Acquire ? "dmb ishld"
-                         : spec.order == FenceOrder::Release ? "dmb ishst"
-                                                             : "dmb ish";
+                    return dmb_of_order_(spec.order, "dmb ishld", "dmb ishst", "dmb ish");
                 case FenceDomain::ArmOsh:
-                    return spec.order == FenceOrder::Acquire ? "dmb oshld"
-                         : spec.order == FenceOrder::Release ? "dmb oshst"
-                                                             : "dmb osh";
+                    return dmb_of_order_(spec.order, "dmb oshld", "dmb oshst", "dmb osh");
                 case FenceDomain::ArmSy:
-                    return spec.order == FenceOrder::Acquire ? "dmb ld"
-                         : spec.order == FenceOrder::Release ? "dmb st"
-                                                             : "dmb sy";
+                    return dmb_of_order_(spec.order, "dmb ld", "dmb st", "dmb sy");
                 default:
                     return "dmb sy";
             }
         case FenceKind::GpuFence:
             switch (spec.domain) {
                 case FenceDomain::GpuCta:
-                    return spec.order == FenceOrder::SeqCst ? "fence.sc.cta" : "fence.acq_rel.cta";
+                    return ptx_fence_of_order_(spec.order, "fence.sc.cta", "fence.acq_rel.cta");
                 case FenceDomain::GpuCluster:
-                    return spec.order == FenceOrder::SeqCst ? "fence.sc.cluster" : "fence.acq_rel.cluster";
+                    return ptx_fence_of_order_(spec.order, "fence.sc.cluster", "fence.acq_rel.cluster");
                 case FenceDomain::GpuGpu:
-                    return spec.order == FenceOrder::SeqCst ? "fence.sc.gpu" : "fence.acq_rel.gpu";
+                    return ptx_fence_of_order_(spec.order, "fence.sc.gpu", "fence.acq_rel.gpu");
                 case FenceDomain::GpuSys:
-                    return spec.order == FenceOrder::SeqCst ? "fence.sc.sys" : "fence.acq_rel.sys";
+                    return ptx_fence_of_order_(spec.order, "fence.sc.sys", "fence.acq_rel.sys");
                 default:
                     return "fence.acq_rel.sys";
             }
@@ -263,12 +274,13 @@ inline void runtime_smoke_test() noexcept {
     // They check in every build mode instead.
     CRUCIBLE_FATAL_INVARIANT(spec.kind == FenceKind::GpuFence);
     CRUCIBLE_FATAL_INVARIANT(spec.domain == FenceDomain::GpuCta);
-    const char* m = fence_mnemonic(spec);
-    // Every return in fence_mnemonic is a string literal, so this one the
-    // compiler can prove on its own. It is kept as a real check rather than a
-    // hint because nothing downstream consumes m, which leaves a hint with no
-    // optimization to inform and this function with one assertion fewer.
-    CRUCIBLE_FATAL_INVARIANT(m != nullptr);
+    const ::fixy::TextView m = fence_mnemonic(spec);
+    // The order of an AcqRel barrier is not SeqCst, so the mnemonic is the
+    // acquire-release fence of the CTA.  It is kept as a real check rather
+    // than a hint because nothing downstream consumes m, which leaves a hint
+    // with no optimization to inform and this function with one assertion
+    // fewer.
+    CRUCIBLE_FATAL_INVARIANT(m == ::fixy::TextView{"fence.acq_rel.cta"});
 }
 
 }  // namespace crucible::mimic

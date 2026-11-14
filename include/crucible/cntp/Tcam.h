@@ -17,7 +17,6 @@
 
 #include <concepts>
 #include <cstdint>
-#include <expected>
 #include <type_traits>
 #include <utility>
 
@@ -256,7 +255,7 @@ using OwnedTcamRule = ::fixy::Linear<TcamRuleHandle>;
 }
 
 // Every 16-bit value is a priority, so this admission cannot fail.
-[[nodiscard]] constexpr std::expected<TcamPriority, TcamError> admit_tcam_priority(std::uint16_t priority) noexcept {
+[[nodiscard]] constexpr ::fixy::Result<TcamPriority, TcamError> admit_tcam_priority(std::uint16_t priority) noexcept {
     return ::fixy::mint_refined<tcam_priority_range>(priority);
 }
 

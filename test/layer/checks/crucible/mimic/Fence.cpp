@@ -35,10 +35,11 @@ static_assert(lower_fence<BS::SeqCst, MS::Gpu, FA::Gpu>()
 static_assert(lower_fence<BS::AcqRel, MS::Cluster, FA::Gpu>().domain == FenceDomain::GpuCluster);
 static_assert(lower_fence<BS::AcqRel, MS::Warp, FA::Gpu>().kind == FenceKind::CompilerBarrier);
 
-static_assert(fence_mnemonic(lower_fence<BS::SeqCst, MS::System, FA::X86>())[0] == 'm');
-static_assert(fence_mnemonic(lower_fence<BS::AcqRel, MS::Inner, FA::Arm>())[4] == 'i');
-static_assert(fence_mnemonic(lower_fence<BS::SeqCst, MS::Gpu, FA::Gpu>())[6] == 's');
-static_assert(fence_mnemonic(FenceSpec{})[0] == '\0');
+static_assert(fence_mnemonic(lower_fence<BS::SeqCst, MS::System, FA::X86>()) == ::fixy::TextView{"mfence"});
+static_assert(fence_mnemonic(lower_fence<BS::AcqRel, MS::Inner, FA::Arm>()) == ::fixy::TextView{"dmb ish"});
+static_assert(fence_mnemonic(lower_fence<BS::AcquireLoad, MS::Inner, FA::Arm>()) == ::fixy::TextView{"dmb ishld"});
+static_assert(fence_mnemonic(lower_fence<BS::SeqCst, MS::Gpu, FA::Gpu>()) == ::fixy::TextView{"fence.sc.gpu"});
+static_assert(fence_mnemonic(FenceSpec{}).size() == 0);
 
 static_assert(fence_arch_scope_consistent(FA::Gpu, MS::Cta));
 static_assert(!fence_arch_scope_consistent(FA::X86, MS::Cta));

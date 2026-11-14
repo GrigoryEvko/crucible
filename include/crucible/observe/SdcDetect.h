@@ -16,7 +16,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
 #include <type_traits>
 
 namespace crucible::observe {
@@ -40,10 +39,11 @@ enum class SdcEventKind : std::uint8_t {
 };
 
 struct SdcMismatch : ::foundation::diag::tag_base {
-    static constexpr std::string_view name = "SdcMismatch";
-    static constexpr std::string_view description = "Redundant execution produced non-equivalent results.";
-    static constexpr std::string_view remediation = "Retry the operation and route repeated mismatches into Warden "
-                                                    "quarantine policy for the implicated Cogs.";
+    static constexpr ::foundation::diag::tag_text_literal name = "SdcMismatch";
+    static constexpr ::foundation::diag::tag_text_literal description =
+        "Redundant execution produced non-equivalent results.";
+    static constexpr ::foundation::diag::tag_text_literal remediation =
+        "Retry the operation and route repeated mismatches into Warden quarantine policy for the implicated Cogs.";
 };
 
 struct SdcConfig {

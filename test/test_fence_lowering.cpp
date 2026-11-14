@@ -29,10 +29,9 @@ static_assert(mf::lower_fence<BS::AcqRel, MS::Cta, FA::Gpu>().domain == mf::Fenc
 static_assert(mf::lower_fence<BS::SeqCst, MS::Gpu, FA::Gpu>().order == mf::FenceOrder::SeqCst);
 static_assert(mf::lower_fence<BS::AcqRel, MS::Warp, FA::Gpu>().kind == mf::FenceKind::CompilerBarrier);
 
-// The mnemonic is checked by first character only: m for mfence, f for the PTX
-// fence.
-static_assert(mf::fence_mnemonic(mf::lower_fence<BS::SeqCst, MS::System, FA::X86>())[0] == 'm');
-static_assert(mf::fence_mnemonic(mf::lower_fence<BS::SeqCst, MS::Gpu, FA::Gpu>())[0] == 'f');
+// The mnemonic of the x86 full fence and of the PTX fence of the device.
+static_assert(mf::fence_mnemonic(mf::lower_fence<BS::SeqCst, MS::System, FA::X86>()) == ::fixy::TextView{"mfence"});
+static_assert(mf::fence_mnemonic(mf::lower_fence<BS::SeqCst, MS::Gpu, FA::Gpu>()) == ::fixy::TextView{"fence.sc.gpu"});
 
 static_assert(mf::fence_arch_scope_consistent(FA::Gpu, MS::Cta));
 static_assert(!mf::fence_arch_scope_consistent(FA::X86, MS::Cta));
@@ -49,6 +48,6 @@ int main() {
         std::fprintf(stderr, "fence: x86 system seqcst must lower to mfence\n");
         return 1;
     }
-    std::printf("fence lowering OK (%s)\n", mf::fence_mnemonic(spec));
+    ::fixy::report(::fixy::Sink::Out, "fence lowering OK ({})\n", mf::fence_mnemonic(spec));
     return 0;
 }
