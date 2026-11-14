@@ -305,6 +305,25 @@ public:
                              [](::foundation::os::Errno) noexcept { return false; });
     }
 
+    // Faults in each page that holds a byte of the region, as a write does,
+    // so the hot path takes no first-touch fault there.  The populate door
+    // of fixy/os/Pages.h gives the work to the kernel, which writes no byte.
+    // So a thread that writes the region at the same time loses no write, and
+    // the memory of a region that its owner withdrew causes no fault in this
+    // process.  There is nothing to revert.  A kernel older than 5.14 refuses
+    // the advice, and the knob is then skipped with a warning.
+    template <class Ctx>
+        requires CtxFitsHardeningMint<Ctx>
+    [[nodiscard]] static bool prefault(Ctx const& ctx, ::fixy::View<std::byte const> bytes) noexcept {
+        ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> const populated =
+            ::fixy::pages::populate_pages(ctx, bytes);
+        for (::foundation::os::Errno const error : populated.err()) {
+            detail::warn("madvise(MADV_POPULATE_WRITE)", error);
+            return false;
+        }
+        return true;
+    }
+
     // Linux 6.1 and later. The collapse happens before the call
     // returns, and the kernel emits a tracepoint an observer can count.
     template <class Ctx>

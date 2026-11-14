@@ -5,6 +5,7 @@
 // accept either outcome.
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <initializer_list>
@@ -23,7 +24,13 @@
 #include <crucible/warden/Registry.h>
 #include <crucible/warden/CpuTopology.h>
 #include <fixy/Ctx.h>
+#include <fixy/os/NumaPlacement.h>
+#include <fixy/os/Pages.h>
 #include <fixy/os/Sched.h>
+#include <foundation/AlignedBuffer.h>
+#include <foundation/core/Algorithms.h>
+#include <foundation/core/Region.h>
+#include <foundation/os/Auxiliary.h>
 
 #include "padding_bytes.h"
 #include "test_assert.h"
@@ -36,6 +43,61 @@ int failures = 0;
 // work, so the suite holds the startup load context, which owns Init,
 // IO and Block.
 constexpr ::fixy::InitLoadCtx kStartup{::foundation::effects::testing::init()};
+
+// The size of a page of this host.
+[[nodiscard]] std::uint64_t page_size() noexcept {
+    return ::foundation::os::read_auxiliary(::foundation::os::AuxiliaryEntry::page_size)
+        .expect("the auxiliary vector gives the size of a page");
+}
+
+// A block of bytes that no code wrote.  The block is larger than the largest
+// threshold of the allocator of the C library for a map of its own (32 MiB),
+// so the allocator of each build maps it new, and no page of it has a frame.
+// AddressSanitizer writes the first 4 KiB of a block, so a case uses the
+// pages after the first page only.
+constexpr std::size_t kFreshBlockBytes = std::size_t{33} << 20;
+
+[[nodiscard]] ::foundation::AlignedBytes allocate_fresh_block() noexcept {
+    return ::foundation::mint_aligned_bytes(::foundation::effects::Alloc{}, kFreshBlockBytes, page_size());
+}
+
+// The count bytes from the byte at offset of a block.
+[[nodiscard]] ::fixy::View<std::byte const> window_of(::foundation::AlignedBytes const& block, std::size_t offset,
+                                                      std::size_t count) noexcept {
+    ::fixy::View<std::byte const> const bytes = ::foundation::core::byte_view(block.view());
+    return bytes.window(offset, count).expect("the window fits in the block");
+}
+
+// The count of the pages of bytes that have no frame.  A page that nothing
+// wrote has no frame, and a page that a read only touched maps the shared
+// zero page, which has no node either.
+[[nodiscard]] std::size_t pages_with_no_frame(::fixy::View<std::byte const> bytes) noexcept {
+    return ::fixy::numa::census_page_nodes(kStartup, bytes)
+        .expect("the kernel gives the node of each page")
+        .pages_without_node();
+}
+
+// True when the kernel takes the populate advice, which needs Linux 5.14.
+// The probe is the second page of a block that no code wrote.
+[[nodiscard]] bool kernel_populates_pages() noexcept {
+    ::foundation::AlignedBytes const block = allocate_fresh_block();
+    return ::fixy::pages::populate_pages(kStartup, window_of(block, page_size(), page_size())).is_ok();
+}
+
+// Words that the program only reads.  The linker puts a constant with no
+// relocation in a segment with no write access, so a write fault there is
+// refused.
+[[nodiscard]] consteval ::fixy::FixedArray<std::uint64_t, 4096> make_read_only_words() noexcept {
+    ::fixy::FixedArray<std::uint64_t, 4096> words{};
+    std::uint64_t value = 1;
+    for (std::uint64_t& word : words) {
+        word = value;
+        ++value;
+    }
+    return words;
+}
+
+constexpr ::fixy::FixedArray<std::uint64_t, 4096> kReadOnlyWords = make_read_only_words();
 
 #define CHECK(cond, msg)                                                                     \
     do {                                                                                     \
@@ -447,6 +509,38 @@ void test_region_and_slot_have_no_padding_byte() {
     crucible::test::expect_no_padding_byte<std::meta::template_arguments_of(slot_list)[0]>();
 }
 
+// prefault faults in each page that holds a byte of its range.  The window
+// below holds the last byte of the first page and the first byte of the
+// second, and a loop that steps one page from the first byte of the window
+// reaches only the first page.  The third page stays with no frame.  A
+// range that the process cannot write gives false, and the process goes on:
+// a loop that writes a byte of each page ends the process there.
+void test_prefault_faults_in_each_page_of_the_range() {
+    using namespace crucible::warden;
+    if (!kernel_populates_pages()) {
+        ::fixy::report(::fixy::Sink::Err,
+                       "test_prefault_faults_in_each_page_of_the_range: SKIPPED (Linux before 5.14)\n");
+        return;
+    }
+    // A huge page would give a frame to the pages around the range, so the
+    // process refuses huge pages in this case.
+    ::fixy::pages::ThpSetting const first_thp =
+        ::fixy::pages::exchange_thp_setting(kStartup, ::fixy::pages::ThpSetting::refused)
+            .expect("the process refuses THP");
+    std::size_t const page = page_size();
+    ::foundation::AlignedBytes const block = allocate_fresh_block();
+    CHECK(pages_with_no_frame(window_of(block, page, 3 * page)) == 3, "no page of a new block has a frame");
+
+    CHECK(Hardening::prefault(kStartup, window_of(block, (2 * page) - 1, 2)), "the prefault of a writable range works");
+    CHECK(pages_with_no_frame(window_of(block, page, 2 * page)) == 0,
+          "each page that holds a byte of the range has a frame");
+    CHECK(pages_with_no_frame(window_of(block, 3 * page, page)) == 1, "the page after the range has no frame");
+
+    CHECK(!Hardening::prefault(kStartup, ::foundation::core::bytes(kReadOnlyWords)),
+          "the prefault of a read-only range gives false");
+    static_cast<void>(::fixy::pages::exchange_thp_setting(kStartup, first_thp).expect("the process puts back THP"));
+}
+
 // revert puts back the THP setting that the process had before apply.  A
 // process that refused THP before apply still refuses it after the revert,
 // and the revert does not allow THP for it.
@@ -485,6 +579,7 @@ int main() {
     test_registry_basic();
     test_registry_applies_on_mint_hardening();
     test_region_and_slot_have_no_padding_byte();
+    test_prefault_faults_in_each_page_of_the_range();
     test_revert_keeps_a_prior_thp_refusal();
 
     if (failures == 0) {

@@ -1,8 +1,9 @@
 #pragma once
 
 // THE PAGE DOORS
-//   The lock, the unlock and the huge page advice of the pages of a range of
-//   memory, and the setting of transparent huge pages (THP) of the process.
+//   The lock, the unlock, the fault in and the huge page advice of the pages
+//   of a range of memory, and the setting of transparent huge pages (THP) of
+//   the process.
 //   Each call takes its range as a View of bytes.  The door file
 //   src/fixy/os/Pages.cpp issues each call with the raw primitive of
 //   foundation/os/Syscall.h, and gives the error of the kernel in a Result.
@@ -84,6 +85,13 @@ munlock_sys(void const* first, std::size_t bytes) noexcept;
 [[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 madvise_sys(void const* first, std::size_t bytes, int advice) noexcept;
 
+// Faults in for a write each page that holds a byte of the BYTES bytes at
+// FIRST (MADV_POPULATE_WRITE).  The range is rounded outward to whole pages,
+// with the size of a page from the auxiliary vector.  A count of zero makes
+// no system call.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+populate_sys(void const* first, std::size_t bytes) noexcept;
+
 // Reads the THP setting of the process, then sets it to NEXT, and gives the
 // setting of the read.  A refused set gives its error and changes nothing.
 [[nodiscard]] ::foundation::core::Result<ThpSetting, ::foundation::os::Errno> prctl_sys(ThpSetting next) noexcept;
@@ -117,6 +125,20 @@ template <eff::IsExecCtx Ctx>
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 unlock_pages(Ctx const&, ::foundation::core::View<std::byte const> bytes) noexcept {
     return detail::munlock_sys(first_of_(::foundation::core::detail::ViewDoor::key(), bytes), bytes.size());
+}
+
+// Faults in each page that holds a byte of bytes, as a write does, and
+// writes no byte (MADV_POPULATE_WRITE).  Each page then has its own frame and
+// a page table entry that permits a write, so the first write of the owner
+// takes no fault.  A thread that writes the range at the same time loses no
+// write, because the kernel changes no byte.  A range that the process cannot
+// write gives einval or efault, by the release of the kernel.  An older kernel
+// than 5.14 gives einval.
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsPageCall<Ctx>
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+populate_pages(Ctx const&, ::foundation::core::View<std::byte const> bytes) noexcept {
+    return detail::populate_sys(first_of_(::foundation::core::detail::ViewDoor::key(), bytes), bytes.size());
 }
 
 // Asks the kernel for huge pages in each whole huge page of bytes

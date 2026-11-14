@@ -1,11 +1,13 @@
-// The page door of fixy (fixy/os/Pages.h): the lock, the unlock and the huge
-// page advice of a range, and the THP setting of the process.  It issues the
-// raw primitive of foundation/os/Syscall.h, and foundation/os/MapWords.h gives
-// the words of the memory calls, so this file includes no system header.
+// The page door of fixy (fixy/os/Pages.h): the lock, the unlock, the fault in
+// and the huge page advice of a range, and the THP setting of the process.  It
+// issues the raw primitive of foundation/os/Syscall.h, and
+// foundation/os/MapWords.h gives the words of the memory calls, so this file
+// includes no system header.
 
 #include <fixy/os/Pages.h>
 
 #include <foundation/core/Choice.h>
+#include <foundation/os/Auxiliary.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/Syscall.h>
 
@@ -71,6 +73,26 @@ core::Result<std::size_t, os::Errno> madvise_sys(void const* first, std::size_t 
     return os::result_of(os::raw_syscall(os::Syscall::madvise, aligned, whole, advice))
         .match([whole](std::uint64_t) -> Advised { return whole; },
                [](os::Errno error) -> Advised { return core::err(error); });
+}
+
+// The kernel refuses a start that is not aligned to a page, so the start goes
+// down to the first byte of its page.  The kernel rounds the length up to a
+// whole page, so the length runs to the end of the range and no further.  The
+// size of a page comes from the auxiliary vector, because an aarch64 kernel
+// can use pages of 16 KiB or 64 KiB.  A vector that the door cannot read
+// gives einval, as the census of fixy/os/NumaPlacement.h does.
+UnitResult populate_sys(void const* first, std::size_t bytes) noexcept {
+    if (bytes == 0) {
+        return core::Unit{};
+    }
+    std::uint64_t const page_size = os::read_auxiliary(os::AuxiliaryEntry::page_size).value_or(0);
+    if (page_size == 0) {
+        return core::err(os::Errno::einval);
+    }
+    std::uintptr_t const start = __builtin_bit_cast(std::uintptr_t, first);
+    std::uintptr_t const page_start = start - (start % static_cast<std::uintptr_t>(page_size));
+    std::size_t const length = (start - page_start) + bytes;
+    return os::unit_of(os::raw_syscall(os::Syscall::madvise, page_start, length, os::kAdvisePopulateWrite));
 }
 
 // The kernel takes the refusal as the second argument and its flags as the

@@ -5,17 +5,23 @@
 // needs a privilege that the host can lack, such as a lock past the limit
 // RLIMIT_MEMLOCK, accepts the error of an unprivileged process.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/os/NumaPlacement.h>
 #include <fixy/os/Pages.h>
 
+#include <foundation/AlignedBuffer.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Algorithms.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Region.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/os/Auxiliary.h>
 #include <foundation/os/Errno.h>
 
 #include <cstddef>
+#include <cstdint>
 
 namespace {
 
@@ -24,6 +30,45 @@ namespace os = ::foundation::os;
 namespace pages = ::fixy::pages;
 
 constexpr ::fixy::InitLoadCtx kStartup{::foundation::effects::testing::init()};
+
+// The size of a page of this host.
+[[nodiscard]] std::uint64_t page_size() noexcept {
+    return os::read_auxiliary(os::AuxiliaryEntry::page_size).expect("the auxiliary vector gives the size of a page");
+}
+
+// A block of bytes that no code wrote.  The block is larger than the largest
+// threshold of the allocator of the C library for a map of its own (32 MiB),
+// so the allocator of each build maps it new, and no page of it has a frame.
+// AddressSanitizer writes the first 4 KiB of a block, so a case uses the
+// pages after the first page only.
+constexpr std::size_t kFreshBlockBytes = std::size_t{33} << 20;
+
+[[nodiscard]] ::foundation::AlignedBytes allocate_fresh_block() noexcept {
+    return ::foundation::mint_aligned_bytes(::foundation::effects::Alloc{}, kFreshBlockBytes, page_size());
+}
+
+// Words that the program only reads.  The linker puts a constant with no
+// relocation in a segment with no write access.
+[[nodiscard]] consteval core::FixedArray<std::uint64_t, 4096> make_read_only_words() noexcept {
+    core::FixedArray<std::uint64_t, 4096> words{};
+    std::uint64_t value = 1;
+    for (std::uint64_t& word : words) {
+        word = value;
+        ++value;
+    }
+    return words;
+}
+
+constexpr core::FixedArray<std::uint64_t, 4096> kReadOnlyWords = make_read_only_words();
+
+// The count of the pages of bytes that have no frame.  A page that nothing
+// wrote has no frame, and a page that a read only touched maps the shared
+// zero page, which has no node either.
+[[nodiscard]] std::size_t pages_with_no_frame(core::View<std::byte const> bytes) noexcept {
+    return ::fixy::numa::census_page_nodes(kStartup, bytes)
+        .expect("the kernel gives the node of each page")
+        .pages_without_node();
+}
 
 constexpr std::size_t kPageBytes = 4096;
 
@@ -102,6 +147,65 @@ void huge_page_advice_covers_the_whole_huge_pages() {
     CRUCIBLE_FATAL_INVARIANT(collapsed_bytes == 2 * pages::huge_page_bytes);
 }
 
+// The populate door faults in each page that holds a byte of its range, and
+// no other page.  A range of two bytes across the end of the first page
+// reaches two pages, where a loop that steps one page from the first byte of
+// the range reaches only the first.  An empty range makes no call, and the
+// door writes no byte.  The advice needs Linux 5.14.  A whole page at a page
+// boundary is the probe of the advice, so an einval after the probe works is
+// the error of the door and not of an older kernel.
+void populate_faults_in_each_page_of_the_range() {
+    // A huge page would give a frame to the pages around a range, so the
+    // process refuses huge pages in this case.
+    pages::ThpSetting const first_thp =
+        pages::exchange_thp_setting(kStartup, pages::ThpSetting::refused).expect("the process refuses THP");
+    std::size_t const page = page_size();
+    ::foundation::AlignedBytes block = allocate_fresh_block();
+    core::View<std::byte> const bytes = core::byte_view(block.view());
+    core::View<std::byte const> const four_pages = bytes.window(page, 4 * page).expect("the pages fit in the block");
+    auto const window = [&four_pages](std::size_t offset, std::size_t count) {
+        return four_pages.window(offset, count).expect("the window fits in the four pages");
+    };
+    CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(four_pages) == 4);
+
+    pages::populate_pages(kStartup, core::View<std::byte const>{}).expect("an empty range makes no call");
+    CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(four_pages) == 4);
+
+    core::Result<core::Unit, os::Errno> const probe = pages::populate_pages(kStartup, window(3 * page, page));
+    bool const is_older_kernel = probe.match([](core::Unit) noexcept { return false; },
+                                             [](os::Errno error) noexcept { return error == os::Errno::einval; });
+    if (is_older_kernel) {
+        ::fixy::report(::fixy::Sink::Err, "populate_faults_in_each_page_of_the_range: SKIPPED (Linux before 5.14)\n");
+        static_cast<void>(pages::exchange_thp_setting(kStartup, first_thp).expect("the process puts back THP"));
+        return;
+    }
+    CRUCIBLE_FATAL_INVARIANT(probe.is_ok());
+    CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(window(3 * page, page)) == 0);
+    CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(window(0, 3 * page)) == 3);
+
+    pages::populate_pages(kStartup, window(page - 1, 2)).expect("the kernel faults in the two pages of the window");
+    CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(window(0, 2 * page)) == 0);
+    CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(window(2 * page, page)) == 1);
+
+    std::size_t const mark_offset = (3 * page) + 7;
+    *bytes.get(mark_offset).expect("the mark is inside the block") = std::byte{0x5a};
+    pages::populate_pages(kStartup, four_pages).expect("the kernel faults in each page of the four pages");
+    CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(four_pages) == 0);
+    std::size_t position = page;
+    for (std::byte const value : four_pages) {
+        CRUCIBLE_FATAL_INVARIANT(value == (position == mark_offset ? std::byte{0x5a} : std::byte{0}));
+        ++position;
+    }
+    static_cast<void>(pages::exchange_thp_setting(kStartup, first_thp).expect("the process puts back THP"));
+}
+
+// A page that the process cannot write takes no write fault, so the door
+// gives an error.  A loop that writes a byte of each page ends the process
+// on such a page with a fault of the protection.
+void populate_refuses_a_range_with_no_write_access() {
+    CRUCIBLE_FATAL_INVARIANT(pages::populate_pages(kStartup, core::bytes(kReadOnlyWords)).is_err());
+}
+
 // The exchange gives the setting before the call.  A second exchange with
 // the same setting gives that setting back, so the set and the read reach
 // the right options of prctl.  The last exchange puts the first setting back.
@@ -127,6 +231,8 @@ void thp_exchange_reads_and_sets_the_setting() {
 int main() {
     lock_and_unlock_reach_the_kernel();
     huge_page_advice_covers_the_whole_huge_pages();
+    populate_faults_in_each_page_of_the_range();
+    populate_refuses_a_range_with_no_write_access();
     thp_exchange_reads_and_sets_the_setting();
     return 0;
 }

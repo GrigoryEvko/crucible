@@ -64,6 +64,7 @@ inline constexpr int kAdviseHugePage = 14;
 inline constexpr int kAdviseNoHugePage = 15;
 inline constexpr int kAdviseDontDump = 16;
 inline constexpr int kAdviseWipeOnFork = 18;
+inline constexpr int kAdvisePopulateWrite = 23;
 inline constexpr int kAdviseCollapse = 25;
 
 // The flag of mlock2 that locks each page of a range when it faults in, and
