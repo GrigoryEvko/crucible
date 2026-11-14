@@ -214,6 +214,7 @@ test/foundation/test_permissions_compile.cpp | detail-use | 1 | (anonymous names
 test/foundation/test_platform.cpp | detail-use | 2 | main(): foundation::detail | asks the layer whether a debugger is attached
 test/foundation/test_row_hash.cpp | detail-use | 16 | namespace-scope: foundation::diag::detail | tests the sort helper of the row hash
 test/foundation/test_row_mismatch.cpp | detail-use | 3 | (anonymous namespace)::test_message_builder_format_shape(): foundation::diag::detail | reads the text of a row mismatch diagnostic
+test/layer/checks/fixy/Machine.cpp | unchecked-use | 1 | namespace-scope: std::meta::access_context::unchecked | reads each data member of a machine, the private ones too, to check that each member has an initializer
 test/layer/checks/fixy/Predicates.cpp | unchecked-use | admit | fixy::detail::refined_edge_walk::narrowing_edge_count(): std::meta::access_context::unchecked | walks the admitted implications to count the narrowing edges of the relation
 test/layer/checks/fixy/Secret.cpp | unchecked-use | admit | fixy::detail::secret_policy_relation::every_edge_is_a_policy_exit(): std::meta::access_context::unchecked | walks the admitted declassification policies to check that each edge is a policy exit
 test/layer/checks/foundation/permissions/Permission.cpp | unchecked-use | admit | foundation::permissions::detail::seplog_roster::every_canonical_tag_is_sound(): std::meta::access_context::unchecked | walks the permission tag namespace to check that each canonical tag is a sound token

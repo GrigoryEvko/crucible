@@ -74,7 +74,10 @@ class [[nodiscard]] Machine {
     static_assert(std::meta::is_namespace(Edges), "Machine<State, Edges>: Edges must be the reflection of the "
                                                   "namespace that declares the machine's edges, written ^^name.");
 
-    State state_;
+    // Each constructor builds the state.  A class template instantiates the
+    // initializer only for a constructor that does not build the member, so
+    // a state with no default constructor still fits.
+    State state_{};
     // False after a move or a transition took the state.
     bool is_live_ = true;
 

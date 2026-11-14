@@ -115,6 +115,24 @@ static_assert(!std::is_trivially_copyable_v<Machine<int>>);
 static_assert(std::is_nothrow_move_constructible_v<Machine<int>>);
 static_assert(std::is_nothrow_move_assignable_v<Machine<int>>);
 
+// Each data member of the machine has an initializer, also over a state
+// with no default constructor.  The members of the class, the private ones
+// too, come as a constant array, so the loop reads no container.
+template <std::meta::info Type>
+inline constexpr std::meta::info data_members_of_ = std::meta::reflect_constant_array(
+    std::meta::nonstatic_data_members_of(Type, std::meta::access_context::unchecked()));
+
+template <std::meta::info Type>
+[[nodiscard]] consteval bool each_member_has_initializer() {
+    for (std::meta::info const member : [:data_members_of_<Type>:]) {
+        if (!std::meta::has_default_member_initializer(member)) return false;
+    }
+    return true;
+}
+static_assert(each_member_has_initializer<^^Machine<int>>());
+static_assert(each_member_has_initializer<^^Machine<Connecting, ^^connection_edges>>());
+static_assert(!std::is_default_constructible_v<Connecting>);
+
 }  // namespace detail::machine_self_test
 
 }  // namespace fixy
