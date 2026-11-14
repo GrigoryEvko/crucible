@@ -64,6 +64,15 @@ concept CtxFitsBpfLoad =
 
 [[nodiscard]] inline Fd map_fd(bpf_map* m) noexcept { return ::fixy::mint_tagged<source::BpfMap>(bpf_map__fd(m)); }
 
+// The 64-bit value at key zero of a map of one element, or no value when the
+// lookup fails.  Each read costs one bpf system call.
+[[nodiscard]] inline ::fixy::Option<uint64_t> read_first_counter(Fd map) noexcept {
+    const uint32_t key = 0;
+    uint64_t value = 0;
+    if (bpf_map_lookup_elem(map.value(), &key, &value) != 0) return ::fixy::none;
+    return ::fixy::Option<uint64_t>::some(value);
+}
+
 // The characters of a name that libbpf gives, up to its zero.  A null name
 // is empty.  The characters live as long as the libbpf object that holds
 // the name.  Complexity: one pass over the characters.

@@ -163,6 +163,14 @@ public:
         return bpf_object__find_map_by_name(obj_, name);
     }
 
+    // The descriptor of the map of the name, or no value when the object
+    // holds no map of that name.
+    [[nodiscard]] ::fixy::Option<Fd> find_map_fd(const char* name) const noexcept {
+        bpf_map* const map = find_map(name);
+        if (map == nullptr) return ::fixy::none;
+        return ::fixy::Option<Fd>::some(map_fd(map));
+    }
+
     [[nodiscard]] bpf_program* find_program(const char* name) const noexcept {
         return bpf_object__find_program_by_name(obj_, name);
     }
@@ -278,11 +286,12 @@ template <class Tag, int MaxLinks, ::foundation::effects::IsExecCtx Ctx>
 [[nodiscard]] ::fixy::Option<ReadOnlyMapping<Tag>> map_array(Ctx const& ctx, const BpfObject<MaxLinks>& object,
                                                              ::fixy::TextView facade, ForeignName map_name,
                                                              std::size_t bytes) noexcept {
-    bpf_map* const map = object.find_map(map_name.abi);
-    if (map == nullptr) {
+    ::fixy::Option<Fd> map = object.find_map_fd(map_name.abi);
+    if (map.is_none()) {
         report_unavailable(facade, map_name.text, "map not found in object (bytecode and header out of sync; rebuild)");
         return ::fixy::none;
     }
+    const Fd map_descriptor = std::move(map).expect("the test above found the map");
     // The rounding below needs a positive power of two.  The auxiliary
     // vector gives no entry, or the value zero, inside some sandboxes.
     std::size_t const page =
@@ -300,7 +309,7 @@ template <class Tag, int MaxLinks, ::foundation::effects::IsExecCtx Ctx>
     const ::foundation::permissions::Permission<bpf_map_region<Tag>> owner =
         ::foundation::permissions::permission_erase_brand(
             ::foundation::permissions::mint_permission_root<bpf_map_region<Tag>>());
-    auto mapped = ReadOnlyMapping<Tag>::mint_region(ctx, owner, map_fd(map).value(), length, 0);
+    auto mapped = ReadOnlyMapping<Tag>::mint_region(ctx, owner, map_descriptor.value(), length, 0);
     if (!mapped) {
         report_unavailable(facade, map_name.text,
                            "mmap failed (apply CAP_BPF; BPF_F_MMAPABLE needs CAP_BPF or kernel 5.5 or later)",
@@ -388,9 +397,7 @@ struct RingState : ::foundation::NonMovable<RingState<Tag, Event>> {
 
     [[nodiscard]] uint64_t count() const noexcept {
         if (counter.value() < 0) return 0;
-        const uint32_t key = 0;
-        uint64_t value = 0;
-        return bpf_map_lookup_elem(counter.value(), &key, &value) == 0 ? value : 0;
+        return read_first_counter(counter).value_or(uint64_t{0});
     }
 };
 
@@ -435,9 +442,11 @@ template <class Facade, ::foundation::effects::IsExecCtx Ctx>
         state.timeline = map_array<typename State::tag_type>(ctx, state.object, spec.load.facade.text,
                                                              spec.timeline_map, State::layout::bytes);
         if (state.timeline.is_none()) return false;
-        if (bpf_map* const counter = state.object.find_map(spec.counter_map.abi); counter != nullptr) {
-            state.counter = map_fd(counter);
-        } else if (verbose()) {
+        const ::fixy::Option<Fd> counter = state.object.find_map_fd(spec.counter_map.abi);
+        for (const Fd counter_fd : counter) {
+            state.counter = counter_fd;
+        }
+        if (counter.is_none() && verbose()) {
             ::fixy::report(::fixy::Sink::Err, "[crucible::perf] {} {} map missing: {}\n", spec.load.facade.text,
                            spec.counter_map.text, spec.counter_fallback);
         }
