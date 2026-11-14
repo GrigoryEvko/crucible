@@ -131,13 +131,25 @@ public:
 
     [[nodiscard]] bool empty_approx() const noexcept { return head_.get() == tail_.get(); }
 
+    // The count of items between a head and a tail that a reader loaded in
+    // that order.  A reader on a third thread can load a tail that is newer
+    // than its head, because the consumer can pop past that head between
+    // the two loads.  The unsigned difference then wraps to a value near
+    // 2^64, so the count is zero when the tail passed the head.  The clamp
+    // to Capacity keeps the bound of each other order of the two loads.
+    // size_t and uint64_t are the same type on every supported platform, so
+    // the return converts exactly, and an explicit cast would trip
+    // -Werror=useless-cast.
+    [[nodiscard]] static constexpr std::size_t count_between(std::uint64_t head, std::uint64_t tail) noexcept {
+        if (tail >= head) return 0;
+        const std::uint64_t count = head - tail;
+        return count > Capacity ? Capacity : count;
+    }
+
     [[nodiscard]] std::size_t size_approx() const noexcept {
-        // size_t and uint64_t are the same type on every supported
-        // platform, so the return converts exactly.  An explicit cast
-        // would trip -Werror=useless-cast.
         const std::uint64_t h = head_.get();
         const std::uint64_t t = tail_.get();
-        return h - t;
+        return count_between(h, t);
     }
 
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }

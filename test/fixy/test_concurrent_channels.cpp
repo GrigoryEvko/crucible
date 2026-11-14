@@ -10,6 +10,7 @@
 // its membership is dynamic.  The refcount is the half that has runtime
 // behaviour, so it is the half with the most runtime checks here.
 
+#include <fixy/Core.h>
 #include <fixy/concurrent/PermissionedMpscChannel.h>
 #include <fixy/concurrent/PermissionedSpscChannel.h>
 
@@ -118,6 +119,40 @@ static_assert(c::saturating_ws_add(c::unknown_per_call_working_set - 1, 2) == c:
 
 // ── Runtime: the SPSC split ──────────────────────────────────────────
 
+// The channel reads its head and then its tail.  A reader on a third
+// thread can see the producer push and the consumer pop past that head
+// between the two loads, so the tail that it loads can be newer than its
+// head.  The size clamps, so the reader never sees more than the capacity.
+template <class Channel, class Producer, class Consumer>
+[[nodiscard]] int size_on_a_third_thread(Channel const& channel, Producer&& producer, Consumer&& consumer) {
+    constexpr int kReads = 1 << 20;
+    fixy::Atomic<int> is_done{0};
+    std::size_t largest = 0;
+
+    {
+        std::jthread pushes([handle = std::forward<Producer>(producer), &is_done]() mutable {
+            while (is_done.load_acquire() == 0)
+                static_cast<void>(handle.try_push(1));
+        });
+        std::jthread pops([handle = std::forward<Consumer>(consumer), &is_done]() mutable {
+            while (is_done.load_acquire() == 0)
+                static_cast<void>(handle.try_pop());
+        });
+        for (int read = 0; read < kReads; ++read) {
+            const std::size_t size = channel.size_approx();
+            largest = size > largest ? size : largest;
+        }
+        is_done.store_release(1);
+    }
+
+    if (largest > Channel::capacity()) {
+        fixy::report(fixy::Sink::Err, "a third thread read the size {} of a channel of {} cells\n", largest,
+                     Channel::capacity());
+        return 1;
+    }
+    return 0;
+}
+
 [[nodiscard]] int spsc_split_and_run() {
     Spsc channel{};
 
@@ -172,7 +207,7 @@ static_assert(c::saturating_ws_add(c::unknown_per_call_working_set - 1, 2) == c:
     // pool-backed ones.  Surrendering the recombined whole permission
     // is what proves no endpoint handle is alive here.
     static_assert(!Spsc::is_exclusive_active());
-    return 0;
+    return size_on_a_third_thread(channel, std::move(producer), std::move(consumer));
 }
 
 // ── Runtime: the MPSC pool ───────────────────────────────────────────
@@ -279,8 +314,8 @@ static_assert(c::saturating_ws_add(c::unknown_per_call_working_set - 1, 2) == c:
     BulkChannel channel{std::move(producer_root)};
     auto consumer = channel.consumer(std::move(consumer_perm));
 
-    std::atomic<int> failures{0};
-    std::atomic<int> finished{0};
+    fixy::Atomic<int> failures{0};
+    fixy::Atomic<int> finished{0};
     int received = 0;
     long long sum = 0;
 
@@ -290,14 +325,14 @@ static_assert(c::saturating_ws_add(c::unknown_per_call_working_set - 1, 2) == c:
             producers.emplace_back([&channel, &failures, &finished] {
                 auto handle = channel.producer();
                 if (!handle) {
-                    failures.fetch_add(1, std::memory_order_release);
-                    finished.fetch_add(1, std::memory_order_release);
+                    static_cast<void>(failures.fetch_add_acq_rel(1));
+                    static_cast<void>(finished.fetch_add_acq_rel(1));
                     return;
                 }
                 for (int i = 0; i < kPerProducer;) {
                     if (handle->try_push(1)) ++i;
                 }
-                finished.fetch_add(1, std::memory_order_release);
+                static_cast<void>(finished.fetch_add_acq_rel(1));
             });
         }
 
@@ -306,13 +341,13 @@ static_assert(c::saturating_ws_add(c::unknown_per_call_working_set - 1, 2) == c:
             if (item.is_some()) {
                 sum += std::move(item).expect("the test above found an item");
                 ++received;
-            } else if (finished.load(std::memory_order_acquire) == kProducers && consumer.empty_approx()) {
+            } else if (finished.load_acquire() == kProducers && consumer.empty_approx()) {
                 break;
             }
         }
     }
 
-    if (failures.load(std::memory_order_acquire) != 0) {
+    if (failures.load_acquire() != 0) {
         std::fprintf(stderr, "the pool refused a producer thread a share\n");
         return 1;
     }

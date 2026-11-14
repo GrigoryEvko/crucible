@@ -100,6 +100,15 @@ static_assert(Mpsc::has_room_for(5, 7, 1), "a stale head that trails the tail is
 static_assert(Mpsc::has_room_for(3, 10, 4), "a stale head is not a full ring for a batch either");
 static_assert(!Mpsc::has_room_for(7, 2, 4), "a batch of four does not fit beside five items");
 
+// The SPSC count of a head and a tail that a reader loaded in that order.
+// A reader on a third thread can load a tail that passed the head, and the
+// unsigned difference then wraps to a value near 2^64.
+static_assert(Spsc::count_between(9, 2) == 7, "seven items");
+static_assert(Spsc::count_between(10, 2) == 8, "a full ring of eight");
+static_assert(Spsc::count_between(7, 7) == 0, "an empty ring");
+static_assert(Spsc::count_between(5, 7) == 0, "a tail that passed the head is an empty ring");
+static_assert(Spsc::count_between(20, 2) == 8, "the count never passes the capacity");
+
 // A ring whose capacity is below one bitmap word still gets one word,
 // and one that spans several gets several.  Both are exercised below.
 using MpscSmall = c::MpscRing<int, 4>;
