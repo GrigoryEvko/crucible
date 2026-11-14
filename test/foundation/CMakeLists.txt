@@ -2790,6 +2790,15 @@ foundation_neg_compile_test(neg_core_copy_result_discarded
 foundation_neg_compile_test(neg_core_fill_const
   "no matching function for call to .fill\\(foundation::core::View<const int>&, int\\)."
   "required for the satisfaction of .RegionCopyElement<T>. .with T = const int.")
+# The bytes of a run of unsigned chars as std::byte: a run of another
+# element has no bytes view, and the const of the run stays.
+foundation_test(test_byte_view)
+foundation_neg_compile_test(neg_byte_view_of_int
+  "no matching function for call to .byte_view\\(foundation::core::View<int, 4>\\)."
+  "required for the satisfaction of .same_as<typename std::remove_const<_Tp>::type, unsigned char>. \\[with T = int\\]")
+foundation_neg_compile_test(neg_byte_view_drops_const
+  "conversion from .View<const std::byte,\\[\\.\\.\\.\\]>. to non-scalar type .View<std::byte,\\[\\.\\.\\.\\]>. requested"
+  "In function .void \\{anonymous\\}::write_through\\(foundation::core::View<const unsigned char>\\).")
 
 # An Index<N> proves a number below N: only its check, a constant index
 # below N and an index of a smaller count make one.  A FixedArray fills each

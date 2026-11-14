@@ -25,6 +25,8 @@
 //                     counts differ
 //   fill(dst, value)  value into each element of dst.  An element of one
 //                     byte takes one memset, the code of the raw form
+//   byte_view(run)    the bytes of a run of unsigned chars as std::byte, of
+//                     the same count and extent and the same const
 //
 // A View<T> converts to a View<T const>, and a View<T, N> converts to a
 // View<T>.  No conversion adds a const or removes it the other way, and no
@@ -1045,6 +1047,27 @@ constexpr void fill(View<T, Extent> dst, std::type_identity_t<T> const& value) n
     }
     for (T& element : dst) {
         element = value;
+    }
+}
+
+// The bytes of a run of unsigned chars, as a View of std::byte of the same
+// count and extent.  A source of unsigned chars, such as the input of a fuzz
+// entry or the storage of a tensor, then reaches a reader or a door of
+// std::byte.  A std::byte may read and write each object, so the View reads
+// and writes the bytes of the run.  A run of unsigned char const gives bytes
+// of std::byte const, so the const stays.  The cast of the address is no
+// constant expression, so the operation is not constexpr.  Complexity: O(1).
+template <class T, std::size_t Extent>
+    requires std::same_as<std::remove_const_t<T>, unsigned char>
+[[nodiscard]] View<std::conditional_t<std::is_const_v<T>, std::byte const, std::byte>, Extent>
+byte_view(View<T, Extent> run) noexcept {
+    using Byte = std::conditional_t<std::is_const_v<T>, std::byte const, std::byte>;
+    using Untyped = std::conditional_t<std::is_const_v<T>, void const*, void*>;
+    Byte* const first = static_cast<Byte*>(static_cast<Untyped>(first_of_(detail::ViewDoor::key(), run)));
+    if constexpr (Extent == dynamic_extent) {
+        return View<Byte>{detail::ViewDoor::key(), first, run.size()};
+    } else {
+        return View<Byte, Extent>{detail::ViewDoor::key(), first};
     }
 }
 
