@@ -149,7 +149,7 @@ struct MetaCount {
             return crucible::vessel::metas_are_well_formed(&ceiling, 1);
         }(),
         "fill_meta clamps the rank to a value the trust ladder rejects, and the unboxed path relies on the clamp");
-    const auto ndim = static_cast<uint8_t>(std::min(tensor.dim(), static_cast<int64_t>(kNDimCeiling)));
+    const auto ndim = static_cast<uint8_t>(::fixy::min(tensor.dim(), static_cast<int64_t>(kNDimCeiling)));
     meta.ndim = ndim;
 
     const auto sizes = tensor.sizes();
@@ -446,7 +446,7 @@ inline constexpr c10::DispatchKeySet kAfterCrucibleKeyset =
         const std::string_view overload{row.overload};
         size_t length = std::string_view{row.name}.size();
         if (!overload.empty()) length += 1 + overload.size();
-        longest = std::max(longest, length);
+        longest = ::fixy::max(longest, length);
     }
     return longest;
 }
@@ -789,7 +789,7 @@ template <class T>
 inline constexpr uint32_t result_meta_bound_v<c10::ArrayRef<T>> = MAX_INLINE_METAS;
 template <class... Ts>
 inline constexpr uint32_t result_meta_bound_v<std::tuple<Ts...>> =
-    std::min(MAX_INLINE_METAS, (uint32_t{0} + ... + result_meta_bound_v<std::remove_cvref_t<Ts>>));
+    ::fixy::min(MAX_INLINE_METAS, (uint32_t{0} + ... + result_meta_bound_v<std::remove_cvref_t<Ts>>));
 
 // =====================================================================
 // Recording one operation
@@ -881,10 +881,10 @@ void record_argument(Recording<Capacity, MayOverflow>& recording, const T& value
     } else if constexpr (kind == ArgumentKind::Enumerator) {
         recording.scalars.push(static_cast<int64_t>(std::to_underlying(value)));
     } else if constexpr (kind == ArgumentKind::Double) {
-        recording.scalars.push(std::bit_cast<int64_t>(value));
+        recording.scalars.push(::fixy::bit_cast<int64_t>(value));
     } else if constexpr (kind == ArgumentKind::Scalar) {
         if (value.isFloatingPoint()) {
-            recording.scalars.push(std::bit_cast<int64_t>(value.toDouble()));
+            recording.scalars.push(::fixy::bit_cast<int64_t>(value.toDouble()));
         } else if (value.isBoolean()) {
             recording.scalars.push(value.toBool() ? 1 : 0);
         } else if (value.isIntegral(/*includeBool=*/false)) {
@@ -897,7 +897,7 @@ void record_argument(Recording<Capacity, MayOverflow>& recording, const T& value
             recording.scalars.push(element);
     } else if constexpr (kind == ArgumentKind::DoubleList) {
         for (const double element : value)
-            recording.scalars.push(std::bit_cast<int64_t>(element));
+            recording.scalars.push(::fixy::bit_cast<int64_t>(element));
     } else if constexpr (kind == ArgumentKind::SymIntList) {
         for (const c10::SymInt& element : value)
             record_argument(recording, element);
@@ -1185,11 +1185,11 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // Exact when no argument is a tensor list: one slot per tensor argument.
     static constexpr uint32_t kInputBound =
         aten_op_table[TableIndex].tensor_list_mask == 0u
-            ? static_cast<uint32_t>(std::popcount(aten_op_table[TableIndex].tensor_arg_mask))
+            ? static_cast<uint32_t>(::fixy::popcount(aten_op_table[TableIndex].tensor_arg_mask))
             : MAX_INLINE_METAS;
 
     static constexpr uint32_t kCapacity =
-        std::min(MAX_INLINE_METAS, kInputBound + result_meta_bound_v<std::remove_cvref_t<Ret>>);
+        ::fixy::min(MAX_INLINE_METAS, kInputBound + result_meta_bound_v<std::remove_cvref_t<Ret>>);
 
     // True when the operator can carry more scalars than the inline slots,
     // or more input tensors than kCapacity: a list argument has no length

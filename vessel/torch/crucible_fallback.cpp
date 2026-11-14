@@ -278,7 +278,7 @@ struct SchemaInfo {
 [[nodiscard]] static int64_t scalar_to_int64(const c10::IValue& iv) {
     if (iv.isInt()) return iv.toInt();
     if (iv.isBool()) return iv.toBool() ? 1 : 0;
-    if (iv.isDouble()) return std::bit_cast<int64_t>(iv.toDouble());
+    if (iv.isDouble()) return ::fixy::bit_cast<int64_t>(iv.toDouble());
     return 0;
 }
 
@@ -349,7 +349,7 @@ struct ExtractionResult {
             }
         } else if (iv.isDoubleList()) {
             for (double elem : iv.toDoubleList()) {
-                r.scalars.push(std::bit_cast<int64_t>(elem));
+                r.scalars.push(::fixy::bit_cast<int64_t>(elem));
             }
         } else if (iv.isList() && iv.toList().elementType()->kind() == c10::NumberType::Kind) {
             // A Scalar[] argument boxes into a list of numbers.  Each element
