@@ -100,10 +100,12 @@ static_assert(sizeof(StaleU64) == sizeof(std::uint64_t) + sizeof(fl::StalenessSe
 static_assert(sizeof(SharedU64) == sizeof(std::uint64_t) + sizeof(fl::Rational));
 
 // The two semirings are also lattices, and the two orders are distinct
-// structures on one carrier.
+// structures on one carrier.  The shares of FractionalLattice are no
+// semiring: their add is partial, and the check file of the header states
+// the laws of the partial monoid.
 static_assert(fa::Semiring<fl::QttSemiring> && fa::BoundedLattice<fl::QttSemiring>);
 static_assert(fa::Semiring<fl::StalenessSemiring> && fa::BoundedLattice<fl::StalenessSemiring>);
-static_assert(fa::Semiring<fl::FractionalLattice> && fa::BoundedLattice<fl::FractionalLattice>);
+static_assert(fa::SemiringShape<fl::FractionalLattice> && fa::BoundedLattice<fl::FractionalLattice>);
 
 int failed_checks = 0;
 
@@ -338,6 +340,12 @@ void fractional_lattice_runs_at_run_time() {
     expect(is_exactly(FractionalLattice::add(b, b), 1, 1));
     expect(is_exactly(FractionalLattice::mul(a, b), 1, 8));
     expect(is_exactly(simplify(Rational{opaque(std::int64_t{2}), opaque(std::int64_t{6})}), 1, 3));
+
+    // The carrier is the unit interval, so a share above one is not well
+    // formed.
+    expect(!Rational{opaque(std::int64_t{3}), opaque(std::int64_t{2})}.is_well_formed());
+    expect(Rational{opaque(std::int64_t{2}), opaque(std::int64_t{2})}.is_well_formed());
+    expect(FractionalLattice::is_sum_at_most_one(a, b) && !FractionalLattice::is_sum_at_most_one(b, Rational{3, 4}));
 
     // Only the comparison is exercised at the bound.  Adding or multiplying two
     // shares this large produces an unreduced denominator past the bound even

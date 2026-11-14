@@ -6,9 +6,13 @@ namespace foundation::algebra::lattices {
 
 namespace detail::fractional_lattice_self_test {
 
+// add is partial on the unit interval, so the shares are no semiring.  The
+// concept Semiring evaluates add(one, one), which the precondition of add
+// refuses, so this file does not name it.  The laws of the partial
+// commutative monoid are below.
 static_assert(Lattice<FractionalLattice>);
 static_assert(BoundedLattice<FractionalLattice>);
-static_assert(Semiring<FractionalLattice>);
+static_assert(SemiringShape<FractionalLattice>);
 
 static_assert(!std::is_empty_v<Rational>);
 static_assert(sizeof(Rational) == 16);
@@ -31,6 +35,12 @@ static_assert(Rational{Rational::MAX_SAFE_MAGNITUDE, Rational::MAX_SAFE_MAGNITUD
 static_assert(!Rational{1, -2}.is_well_formed());
 static_assert(!Rational{-1, 2}.is_well_formed());
 static_assert(!Rational{1, 0}.is_well_formed());
+
+// A share above one is outside the unit interval.
+static_assert(!Rational{3, 2}.is_well_formed());
+static_assert(!Rational{2, 1}.is_well_formed());
+static_assert(!Rational{Rational::MAX_SAFE_MAGNITUDE, 1}.is_well_formed());
+static_assert(!Rational{Rational::MAX_SAFE_MAGNITUDE, Rational::MAX_SAFE_MAGNITUDE - 1}.is_well_formed());
 
 static_assert(!Rational{Rational::MAX_SAFE_MAGNITUDE + 1, 1}.is_well_formed());
 static_assert(!Rational{1, Rational::MAX_SAFE_MAGNITUDE + 1}.is_well_formed());
@@ -60,11 +70,46 @@ static_assert(verify_bounded_lattice_axioms_at<FractionalLattice>(r1, r1, r1));
 static_assert(verify_bounded_lattice_axioms_at<FractionalLattice>(r34, r12, r14));
 static_assert(verify_bounded_lattice_axioms_at<FractionalLattice>(r0, r14, r1));
 
-static_assert(verify_semiring_axioms_at<FractionalLattice>(r0, r0, r0));
-static_assert(verify_semiring_axioms_at<FractionalLattice>(r14, r14, r14));
-static_assert(verify_semiring_axioms_at<FractionalLattice>(r0, r12, r1));
-static_assert(verify_semiring_axioms_at<FractionalLattice>(r14, r12, r34));
-static_assert(verify_semiring_axioms_at<FractionalLattice>(r1, r1, r1));
+// The laws of the partial commutative monoid of shares, at each pair and
+// each triple of the witnesses below whose sums stay at most one: 0 is the
+// unit of add, add is commutative, associative and cancellative, 1 is the
+// unit of mul, 0 annihilates under mul, mul is commutative and associative,
+// and mul distributes over add.  A sum above one has no value, so a law
+// that names one does not apply.  The denominators are small, so no product
+// passes the bound.
+[[nodiscard]] consteval bool partial_monoid_laws_hold_at(Rational a, Rational b, Rational c) {
+    using FL = FractionalLattice;
+    const bool are_units = FL::add(a, FL::zero()) == a && FL::add(FL::zero(), a) == a && FL::mul(a, FL::one()) == a
+                        && FL::mul(FL::one(), a) == a && FL::mul(a, FL::zero()) == FL::zero()
+                        && FL::mul(FL::zero(), a) == FL::zero();
+    const bool is_mul_lawful = FL::mul(a, b) == FL::mul(b, a) && FL::mul(FL::mul(a, b), c) == FL::mul(a, FL::mul(b, c));
+    if (!are_units || !is_mul_lawful) return false;
+    if (!FL::is_sum_at_most_one(a, b)) return true;
+    const bool is_add_lawful =
+        FL::add(a, b) == FL::add(b, a) && FL::mul(c, FL::add(a, b)) == FL::add(FL::mul(c, a), FL::mul(c, b));
+    const bool is_cancellative = !FL::is_sum_at_most_one(a, c) || !(FL::add(a, b) == FL::add(a, c)) || b == c;
+    const bool is_associative =
+        !FL::is_sum_at_most_one(FL::add(a, b), c) || FL::add(FL::add(a, b), c) == FL::add(a, FL::add(b, c));
+    return is_add_lawful && is_cancellative && is_associative;
+}
+
+template <typename... Shares>
+[[nodiscard]] consteval bool partial_monoid_laws_hold_for_pair(Rational a, Rational b, Shares... shares) {
+    return (partial_monoid_laws_hold_at(a, b, shares) && ...);
+}
+
+template <typename... Shares>
+[[nodiscard]] consteval bool partial_monoid_laws_hold_for_first(Rational a, Shares... shares) {
+    return (partial_monoid_laws_hold_for_pair(a, shares, shares...) && ...);
+}
+
+// Each triple of the shares.  Complexity: cubic in the shares.
+template <typename... Shares>
+[[nodiscard]] consteval bool partial_monoid_laws_hold(Shares... shares) {
+    return (partial_monoid_laws_hold_for_first(shares, shares...) && ...);
+}
+
+static_assert(partial_monoid_laws_hold(r0, r14, Rational{1, 3}, r12, Rational{2, 3}, r34, r1));
 
 static_assert(FractionalLattice::add(r12, r12) == r1,
               "Two halves combine to a full share (split readers → write upgrade).");
@@ -77,22 +122,28 @@ static_assert(!FractionalLattice::leq(r12, r14), "1/2 ⋢ 1/4 (more share is gre
 static_assert(FractionalLattice::join(r14, r12) == r12, "Join is max — joining readers picks the biggest share.");
 static_assert(FractionalLattice::meet(r14, r12) == r14, "Meet is min — meeting picks the smallest share.");
 
-// The two assertions below sit exactly at the top of the bound, where the
-// unreduced numerator reaches the value that a narrowing cast would wrap.  They
-// are compile-time, so a reduction ordered the other way would not merely give
-// a wrong answer here, it would fail to compile.
-static_assert(FractionalLattice::add(Rational{Rational::MAX_SAFE_MAGNITUDE, Rational::MAX_SAFE_MAGNITUDE},
-                                     Rational{Rational::MAX_SAFE_MAGNITUDE, Rational::MAX_SAFE_MAGNITUDE})
-                  == Rational{2, 1},
-              "Adding two full shares written at the top of the bound must reduce to "
-              "two over one, without overflow.");
-static_assert(FractionalLattice::add(Rational{Rational::MAX_SAFE_MAGNITUDE, 1},
-                                     Rational{Rational::MAX_SAFE_MAGNITUDE, 1})
-                  == Rational{std::int64_t{2} * Rational::MAX_SAFE_MAGNITUDE, 1},
-              "Adding two shares at the bound over one must double the numerator, "
-              "which still fits.");
-// The same sum written in the small form must agree with the bounded form.
-static_assert(FractionalLattice::add(FractionalLattice::top(), FractionalLattice::top()) == Rational{2, 1});
+// The assertions below sit at the top of the bound, where the unreduced
+// numerator and denominator reach two to the sixty-second.  They are
+// compile-time, so a reduction ordered the other way would fail to compile.
+constexpr std::int64_t kHalfBound = Rational::MAX_SAFE_MAGNITUDE / 2;
+static_assert(FractionalLattice::add(Rational{kHalfBound, Rational::MAX_SAFE_MAGNITUDE},
+                                     Rational{kHalfBound, Rational::MAX_SAFE_MAGNITUDE})
+                  == FractionalLattice::top(),
+              "Two halves written at the top of the bound must reduce to one over one.");
+static_assert(FractionalLattice::add(Rational{1, Rational::MAX_SAFE_MAGNITUDE},
+                                     Rational{Rational::MAX_SAFE_MAGNITUDE - 1, Rational::MAX_SAFE_MAGNITUDE})
+                  == FractionalLattice::top(),
+              "The two parts of a full share split at the bound must reduce to one over one.");
+static_assert(FractionalLattice::mul(Rational{Rational::MAX_SAFE_MAGNITUDE, Rational::MAX_SAFE_MAGNITUDE},
+                                     Rational{1, Rational::MAX_SAFE_MAGNITUDE})
+                  == Rational{1, Rational::MAX_SAFE_MAGNITUDE},
+              "A full share written at the bound must be the unit of mul.");
+
+// The domain of add is a sum of at most one.
+static_assert(FractionalLattice::is_sum_at_most_one(r12, r12));
+static_assert(FractionalLattice::is_sum_at_most_one(r0, r1));
+static_assert(!FractionalLattice::is_sum_at_most_one(r12, r34));
+static_assert(!FractionalLattice::is_sum_at_most_one(r1, Rational{1, Rational::MAX_SAFE_MAGNITUDE}));
 
 static_assert(FractionalLattice::name() == "FractionalLattice");
 

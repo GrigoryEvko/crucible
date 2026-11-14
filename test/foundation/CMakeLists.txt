@@ -29,6 +29,9 @@ foundation_test(test_platform)
 foundation_test(test_signature)
 foundation_test(test_algebra_core)
 foundation_test(test_lattices_core)
+# Each operation of each lattice keeps its carrier or refuses.  The test
+# runs add and mul under the abort probe.
+foundation_test(test_lattice_closure)
 foundation_test(test_lattices_bands)
 foundation_test(test_lattices_counters)
 foundation_test(test_counter_clock_attacks)
