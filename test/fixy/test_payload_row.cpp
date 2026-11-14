@@ -46,10 +46,10 @@ static_assert(std::size(c::detail::row_carrying_payload_families) == 2,
               "Two families carry a row of their own: a Computation carries the row it was produced under, "
               "and a Capability conveys the effect it authorizes.  A third means a new kind of payload "
               "whose rule has to be written beside its roster entry.");
-static_assert(sizeof(c::detail::transparent_payload_families) == 15 * sizeof(std::meta::info),
-              "Fifteen families hide a payload and add nothing.  The Graded entry covers every band spelling. "
-              "The six containers (WriteOnce, FixedArray, HeapArray, AlignedBuffer, RunSet, std::vector) hide "
-              "their elements.  A new wrapper that unwraps is one line here.");
+static_assert(sizeof(c::detail::transparent_payload_families) == 14 * sizeof(std::meta::info),
+              "Fourteen families hide a payload and add nothing.  The Graded entry covers every band spelling. "
+              "The five containers (WriteOnce, FixedArray, HeapArray, RunSet, std::vector) hide their "
+              "elements.  A new wrapper that unwraps is one line here.");
 static_assert(std::size(c::detail::leaf_payload_families) == 1,
               "One family is admitted as a leaf.  Every entry is a claim that the template hides no effect "
               "row, which is why a leaf needs a line rather than falling through to a default.");
@@ -111,7 +111,6 @@ void a_container_reports_its_element() {
     EXPECT((std::is_same_v<c::payload_row_t<::fixy::WriteOnce<BgComp>>, eff::Row<eff::Effect::Bg>>));
     EXPECT((std::is_same_v<c::payload_row_t<::fixy::FixedArray<BgComp, 5>>, eff::Row<eff::Effect::Bg>>));
     EXPECT((std::is_same_v<c::payload_row_t<std::vector<BgComp>>, eff::Row<eff::Effect::Bg>>));
-    EXPECT((std::is_same_v<c::payload_row_t<::foundation::AlignedBuffer<BgComp>>, eff::Row<eff::Effect::Bg>>));
     EXPECT((std::is_same_v<c::payload_row_t<::fixy::HeapArray<BgComp>>, eff::Row<eff::Effect::Bg>>));
     // A RunSet hides the element of each run, so a row of one run reaches
     // the set.
@@ -127,7 +126,6 @@ void a_container_reports_its_element() {
     // bytes carries nothing, and an array of computations carries their row.
     EXPECT((std::is_same_v<c::payload_row_t<PaddedSlot>, eff::Row<>>));
     EXPECT((std::is_same_v<c::payload_row_t<HeldComputations>, eff::Row<eff::Effect::Bg>>));
-    EXPECT((std::is_same_v<c::payload_row_t<::foundation::AlignedBuffer<unsigned long, 64>>, eff::Row<>>));
     EXPECT((std::is_same_v<c::payload_row_t<::fixy::HeapArray<unsigned long, 64>>, eff::Row<>>));
     EXPECT((std::is_same_v<c::payload_row_t<std::vector<std::uint32_t>>, eff::Row<>>));
 }

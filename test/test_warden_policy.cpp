@@ -27,7 +27,7 @@
 #include <fixy/os/NumaPlacement.h>
 #include <fixy/os/Pages.h>
 #include <fixy/os/Sched.h>
-#include <foundation/AlignedBuffer.h>
+#include <foundation/AlignedBytes.h>
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Region.h>
 #include <foundation/os/Auxiliary.h>

@@ -360,6 +360,29 @@ static_assert(!std::is_copy_constructible_v<WriteLease<int>> && !std::is_move_co
 static_assert(!std::is_copy_assignable_v<WriteLease<int>> && !std::is_move_assignable_v<WriteLease<int>>);
 static_assert(sizeof(WriteLease<int>) == 3 * sizeof(std::size_t));
 
+// A count that refuses a start over bytes, the shape of a provenance tag.
+// Only its own constructor builds it, so the mints that copy a value or
+// build in place take it, and the two mints whose elements start with
+// the bytes of the allocation do not.
+struct[[= ::foundation::lifetime::no_start_over_bytes{}]] MarkedCount final {
+    std::uint64_t count = 0;
+};
+struct BuildsMarkedCount final {
+    MarkedCount operator()(std::size_t) const noexcept { return MarkedCount{}; }
+};
+struct WritesMarkedCount final {
+    void operator()(WriteLease<MarkedCount>& lease) const noexcept { static_cast<void>(lease.remaining()); }
+};
+static_assert(CanMintHeapArray<MarkedCount, alignof(MarkedCount), Alloc>);
+static_assert(CanMintHeapArrayWith<MarkedCount, alignof(MarkedCount), Alloc, BuildsMarkedCount>);
+static_assert(!CanMintHeapArrayZeroed<MarkedCount, alignof(MarkedCount), Alloc>);
+static_assert(!CanMintHeapArrayWritten<MarkedCount, alignof(MarkedCount), Alloc, WritesMarkedCount>);
+
+// An element is an object type: no reference.
+template <class T>
+concept HasHeapArray = requires { typename HeapArray<T>; };
+static_assert(HasHeapArray<int> && !HasHeapArray<int&> && !HasHeapArray<int const>);
+
 // The empty array holds no storage, in a constant evaluation too.
 [[nodiscard]] consteval std::size_t empty_reads() noexcept {
     HeapArray<int> const empty{};

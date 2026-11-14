@@ -104,7 +104,6 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <fixy/Throws.h>
-#include <foundation/AlignedBuffer.h>
 #include <foundation/AlignedBytes.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/GradedTrait.h>
@@ -856,8 +855,6 @@ inline constexpr StatedZero kZeros[] = {
      "the claim of one role of a channel: a member of a channel, never a kernel signature argument"},
     {^^::foundation::simd::vec, kPayload},
     {^^::foundation::simd::mask, kPayload},
-    {^^::foundation::AlignedBuffer,
-     "an owned allocation of elements: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::AlignedBytes,
      "an owned block of bytes at an alignment of the run: it holds storage and makes no claim about the bytes"},
     {^^::foundation::SwissTableBuffer,

@@ -1,8 +1,7 @@
 #pragma once
 
 // The core of each owner of heap storage in the base: Box, Hole, HeapArray,
-// MaskedArray, GrowList, GrowText, AlignedBuffer, AlignedBytes and
-// SwissTableBuffer.
+// MaskedArray, GrowList, GrowText, AlignedBytes and SwissTableBuffer.
 //
 // An owner keeps its fields in a state: a plain record, such as the first
 // element and the count.  The state type gives two functions:

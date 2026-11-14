@@ -107,6 +107,30 @@ void test_each_alignment() {
     test_alignment<16>();
     test_alignment<64>();
     test_alignment<4096>();
+    // The alignment of a huge page: each element takes a whole aligned huge
+    // page of storage.
+    test_alignment<std::size_t{2} << 20>();
+}
+
+// A value that refuses a start over bytes, the shape of a provenance tag:
+// only its own constructor builds it.  The fill mint and the mint that
+// builds in place give it, and each element reads the value of its
+// constructor.
+struct[[= ::foundation::lifetime::no_start_over_bytes{}]] Stamped {
+    std::uint64_t origin = 7;
+};
+
+void test_sealed_element() {
+    ::foundation::effects::Alloc const alloc{};
+    HeapArray<Stamped, 64> const filled = mint_heap_array<Stamped, 64>(alloc, 3, Stamped{});
+    HeapArray<Stamped> const built =
+        mint_heap_array_with<Stamped>(alloc, 3, [](std::size_t) noexcept { return Stamped{}; });
+    for (Stamped const& element : filled) {
+        CRUCIBLE_FATAL_INVARIANT(element.origin == 7);
+    }
+    for (Stamped const& element : built) {
+        CRUCIBLE_FATAL_INVARIANT(element.origin == 7);
+    }
 }
 
 void test_destruction_counts() {
@@ -388,6 +412,7 @@ int main() {
     test_empty_array();
     test_fill_and_reads();
     test_each_alignment();
+    test_sealed_element();
     test_destruction_counts();
     test_equality();
     test_too_long_aborts();

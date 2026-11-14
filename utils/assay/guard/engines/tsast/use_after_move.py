@@ -224,9 +224,6 @@ PROBE_FILES: dict[str, str] = {
         "a moved-from versioned or budgeted value drops its claim to genesis or to unbounded, and a budget stamp "
         "moved into a second value claims nothing"
     ),
-    "test/foundation/test_aligned_buffer.cpp": (
-        "a moved-from buffer is empty and owns no storage, and a move assignment hands the storage on"
-    ),
     "test/foundation/test_aligned_bytes.cpp": (
         "a moved-from block is empty and owns no bytes, and a move assignment hands the block on"
     ),

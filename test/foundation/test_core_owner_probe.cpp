@@ -45,7 +45,6 @@
 // never names the core has no state in detail::owner, so the roster cannot
 // see it at all.  The check finds such an owner only when a probe names it.
 
-#include <foundation/AlignedBuffer.h>
 #include <foundation/AlignedBytes.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
@@ -62,7 +61,6 @@
 
 namespace {
 
-using ::foundation::AlignedBuffer;
 using ::foundation::AlignedBytes;
 using ::foundation::SwissTableBuffer;
 using ::foundation::core::Box;
@@ -499,47 +497,6 @@ struct GrowTextProbe {
     }
 };
 
-struct AlignedBufferProbe {
-    using Owner = AlignedBuffer<int, 64>;
-
-    static void self_move() {
-        Owner held = Owner::allocate_value_initialized(4);
-        Owner& alias = held;
-        held = static_cast<Owner&&>(alias);
-        CRUCIBLE_FATAL_INVARIANT(held.size() == 4);
-    }
-
-    static void child_move() {}
-
-    // MOVED-FROM: a new value in the source leaves the elements of the target
-    // in place, and the ASan run finds a read of freed storage if the source
-    // kept them.
-    static void moved_from() {
-        Owner target = Owner::allocate_value_initialized(2);
-        Owner source = Owner::allocate_value_initialized(4);
-        source[0] = 7;
-        target = static_cast<Owner&&>(source);
-        source = Owner::allocate_value_initialized(1);
-        CRUCIBLE_FATAL_INVARIANT(target[0] == 7);
-        Owner taken{static_cast<Owner&&>(target)};
-        target = Owner::allocate_value_initialized(1);
-        CRUCIBLE_FATAL_INVARIANT(taken[0] == 7);
-        CRUCIBLE_FATAL_INVARIANT(taken.size() == 4);
-    }
-
-    static void linear() {}
-
-    // EMPTY: a moved-from AlignedBuffer gives an empty View, and an element of
-    // it ends through the precondition of the index.
-    static void empty() {
-        Owner source = Owner::allocate_value_initialized(2);
-        Owner const target{static_cast<Owner&&>(through(source))};
-        CRUCIBLE_FATAL_INVARIANT(target.size() == 2);
-        CRUCIBLE_FATAL_INVARIANT(through(source).view().size() == 0);
-        CRUCIBLE_FATAL_INVARIANT(aborts([&] { static_cast<void>(through(source)[0]); }));
-    }
-};
-
 struct AlignedBytesProbe {
     using Owner = AlignedBytes;
 
@@ -640,7 +597,7 @@ struct ProbeList {
 };
 
 using AllProbes = ProbeList<BoxProbe, HoleProbe, HeapArrayProbe, MaskedArrayProbe, GrowListProbe, GrowTextProbe,
-                            AlignedBufferProbe, AlignedBytesProbe, SwissTableBufferProbe>;
+                            AlignedBytesProbe, SwissTableBufferProbe>;
 
 static_assert(AllProbes::gaps == 0,
               "an owner state of the core has no probe in this file, or a probe names an owner off the core, an owner "

@@ -108,8 +108,6 @@ test/fixy/test_session_ownership_attacks.cpp | erased-brand | 1 | foundation::pe
 test/fixy/test_session_ownership_attacks.cpp | erased-brand | 1 | foundation::permissions::SharedPermissionGuard | -
 test/fixy/test_shared_region.cpp | erased-brand | 1 | fixy::OwnedRegion | -
 test/fixy/test_shared_region.cpp | erased-brand | 1 | fixy::SharedRegion | -
-test/foundation/neg/neg_aligned_buffer_proof_element.cpp | erased-brand | 1 | foundation::permissions::Permission | -
-test/foundation/neg/neg_aligned_buffer_value_initialized_proof.cpp | erased-brand | 1 | foundation::permissions::Permission | -
 test/foundation/neg/neg_brand_erased_token_does_not_rebrand.cpp | erased-brand | 1 | foundation::permissions::Permission | -
 test/foundation/neg/neg_brand_read_loan_does_not_erase.cpp | erased-brand | 1 | foundation::permissions::ReadLoan | -
 test/foundation/neg/neg_brand_read_view_body_asks_the_erased_view.cpp | erased-brand | 1 | foundation::permissions::ReadView | -

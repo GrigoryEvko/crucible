@@ -76,7 +76,7 @@ SAMPLE: tuple[tuple[str, bool], ...] = (
     ("test/fixy/test_owned_region_every_total_0.cpp", False),
     ("test/fixy/test_session_global_attack_two_roles_1.cpp", False),
     ("test/fixy/neg/neg_atom_cv_qualified_rejected.cpp", True),
-    ("test/foundation/neg/neg_aligned_buffer_copied.cpp", True),
+    ("test/foundation/neg/neg_core_heap_array_copied.cpp", True),
     ("test/foundation/neg/neg_permission_brand_not_empty.cpp", True),
     ("test/fixy/neg/neg_rule_l003_borrow_raw_clone.cpp", True),
     ("test/vigil_neg/neg_vigil_ring_other_brand.cpp", True),

@@ -61,15 +61,17 @@ struct SharedPermissionPoolSaturated : tag_base {
 
 struct HugePageAllocationFailed : tag_base {
     static constexpr tag_text_literal name = "HugePageAllocationFailed";
-    static constexpr tag_text_literal description = "foundation::AlignedBuffer<T, huge_page_bytes>::allocate(count) "
-                                                    "received a null pointer from std::aligned_alloc(huge_page_bytes, "
-                                                    "bytes), where bytes is count * sizeof(T) rounded up to the "
-                                                    "huge-page size.  The heap could not supply an extent of that "
-                                                    "size at 2 MiB alignment.  The usual causes are an address space "
-                                                    "too fragmented to hold such an extent, and a memory limit "
-                                                    "(RLIMIT_AS or the memory.max of the cgroup) that the request "
-                                                    "is more than.  The metadata log of the recording path lives in "
-                                                    "this buffer, so the runtime cannot start without it.";
+    static constexpr tag_text_literal description = "The allocation door of foundation/core/Heap.h received a null "
+                                                    "pointer from std::aligned_alloc(huge_page_bytes, bytes), for a "
+                                                    "HeapArray<T, huge_page_bytes> or an AlignedBytes at the "
+                                                    "alignment of a huge page.  bytes is count * sizeof(T) rounded "
+                                                    "up to the huge-page size.  The heap could not supply an extent "
+                                                    "of that size at 2 MiB alignment.  The usual causes are an "
+                                                    "address space too fragmented to hold such an extent, and a "
+                                                    "memory limit (RLIMIT_AS or the memory.max of the cgroup) that "
+                                                    "the request is more than.  The metadata log of the recording "
+                                                    "path lives in such a HeapArray, so the runtime cannot start "
+                                                    "without it.";
     static constexpr tag_text_literal remediation = "Examine the memory limits of the process: ulimit -v, and the "
                                                     "memory.max of its cgroup.  Increase the limit that the request "
                                                     "is more than, or decrease the capacity of the buffer.  The "
@@ -91,7 +93,8 @@ struct HugePageAllocationFailed : tag_base {
     static constexpr tag_text_literal correct_example =
         "// Increase memory.max of the container, or decrease the capacity of the log";
     static constexpr tag_text_literal violating_example =
-        "auto log = AlignedBuffer<TensorMeta, huge_page_bytes>::allocate(1u << 20);  // memory.max is 128M";
+        "auto log = mint_heap_array<TensorMeta, huge_page_bytes>(alloc, 1u << 20, TensorMeta{});  // memory.max is "
+        "128M";
 };
 
 struct PublishOnceDoublePublish : tag_base {
@@ -255,7 +258,7 @@ struct AllocationSizeOverflow : tag_base {
                                                     "size is the element count times the element size, plus the "
                                                     "slack that rounds it up to the alignment.  One of these steps "
                                                     "wrapped, or the result is more than the bound of the buffer.  "
-                                                    "foundation::AlignedBuffer and foundation::SwissTableBuffer "
+                                                    "foundation::AlignedBytes and foundation::SwissTableBuffer "
                                                     "calculate their sizes this way, and each stops the process "
                                                     "before it asks the heap for storage.";
     static constexpr tag_text_literal remediation = "Find the caller that supplied the count, and make sure that "
@@ -280,7 +283,7 @@ struct AllocationSizeOverflow : tag_base {
     static constexpr tag_text_literal correct_example =
         "if (count > kMaxSlots) return std::unexpected(Error::TooLarge);  // bounded first";
     static constexpr tag_text_literal violating_example =
-        "auto buf = AlignedBuffer<Slot>::allocate(header.count);  // count read from the file";
+        "auto block = mint_aligned_bytes(alloc, header.bytes, 4096);  // bytes read from the file";
 };
 
 }  // namespace foundation::diag
