@@ -125,13 +125,10 @@ static_assert(every_effect_observability_classified_(),
 }  // namespace detail
 
 static_assert(std::is_empty_v<cap::Alloc>,
-              "cap::Alloc must remain a stateless empty struct.  Bg, Init and Test expose public fields of "
-              "this type, and a caller can copy one out.  Either privatize those fields behind a friended "
-              "accessor, or carry the state on the linear capability token instead.");
-static_assert(std::is_empty_v<cap::IO>, "cap::IO must remain stateless.  Bg, Init and Test expose a public "
-                                        "field of this type.");
-static_assert(std::is_empty_v<cap::Block>, "cap::Block must remain stateless.  Bg, Init and Test expose a "
-                                           "public field of this type.");
+              "cap::Alloc must remain an empty class.  Bg, Init and Test hold it as a field with no storage, "
+              "and a caller copies it out.  Carry state on the capability token instead.");
+static_assert(std::is_empty_v<cap::IO>, "cap::IO must remain empty.  Bg, Init and Test hold it as a field.");
+static_assert(std::is_empty_v<cap::Block>, "cap::Block must remain empty.  Bg, Init and Test hold it as a field.");
 
 namespace detail {
 
@@ -229,25 +226,35 @@ static_assert(effect_name(Effect::IO) != effect_name(Effect::Block));
 static_assert(effect_name(Effect::Bg) != effect_name(Effect::Init));
 static_assert(effect_name(Effect::Init) != effect_name(Effect::Test));
 
-static_assert(std::is_default_constructible_v<cap::Alloc>);
-static_assert(std::is_default_constructible_v<cap::IO>);
-static_assert(std::is_default_constructible_v<cap::Block>);
-static_assert(std::is_trivially_copyable_v<cap::Alloc>);
-static_assert(std::is_trivially_copyable_v<cap::IO>);
-static_assert(std::is_trivially_copyable_v<cap::Block>);
+// An atom is an authority, so no code outside its owner builds one.  No
+// route builds one with no constructor either: an atom is not trivially
+// copyable, so std::bit_cast refuses it, and it is not an implicit-lifetime
+// type, so std::start_lifetime_as refuses it.  The copy stays public.
+static_assert(!std::is_default_constructible_v<cap::Alloc>);
+static_assert(!std::is_default_constructible_v<cap::IO>);
+static_assert(!std::is_default_constructible_v<cap::Block>);
+static_assert(!std::is_trivially_copyable_v<cap::Alloc> && !std::is_implicit_lifetime_v<cap::Alloc>);
+static_assert(!std::is_trivially_copyable_v<cap::IO> && !std::is_implicit_lifetime_v<cap::IO>);
+static_assert(!std::is_trivially_copyable_v<cap::Block> && !std::is_implicit_lifetime_v<cap::Block>);
 static_assert(std::is_trivially_destructible_v<cap::Alloc>);
 static_assert(std::is_trivially_destructible_v<cap::IO>);
 static_assert(std::is_trivially_destructible_v<cap::Block>);
+static_assert(std::is_nothrow_copy_constructible_v<cap::Alloc> && std::is_nothrow_copy_assignable_v<cap::Alloc>);
+static_assert(std::is_nothrow_copy_constructible_v<cap::IO> && std::is_nothrow_copy_assignable_v<cap::IO>);
+static_assert(std::is_nothrow_copy_constructible_v<cap::Block> && std::is_nothrow_copy_assignable_v<cap::Block>);
 
-// A throwing default constructor on an atom would also break the
-// contexts that hold it and the factories that mint them.  Pinning it
-// here names the atom that caused it.
-static_assert(noexcept(cap::Alloc{}));
-static_assert(noexcept(cap::IO{}));
-static_assert(noexcept(cap::Block{}));
-static_assert(std::is_nothrow_default_constructible_v<cap::Alloc>);
-static_assert(std::is_nothrow_default_constructible_v<cap::IO>);
-static_assert(std::is_nothrow_default_constructible_v<cap::Block>);
+// The owner of the atoms has no public constructor and no public copy, so
+// only its friends hold one.
+static_assert(!std::is_default_constructible_v<host::AtomOwner>);
+static_assert(!std::is_copy_constructible_v<host::AtomOwner>);
+static_assert(!std::is_trivially_copyable_v<host::AtomOwner> && !std::is_implicit_lifetime_v<host::AtomOwner>);
+
+// A throwing atom would also break the contexts that hold it and the
+// factories that mint them.  The mint of a context pins its own noexcept,
+// and this pin names the context that holds the atoms.
+static_assert(noexcept(testing::test()));
+static_assert(noexcept(testing::bg()));
+static_assert(noexcept(testing::init()));
 
 static_assert(std::is_same_v<Alloc, cap::Alloc>);
 static_assert(std::is_same_v<IO, cap::IO>);

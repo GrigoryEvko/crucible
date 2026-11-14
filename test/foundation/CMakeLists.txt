@@ -1368,6 +1368,20 @@ foundation_neg_compile_test(neg_cap_mint_key_forged_by_bit_cast
 foundation_neg_compile_test(neg_cap_mint_key_forged_by_start_lifetime_as
   "static assertion failed"
   ".foundation::effects::cap_mint_key.* is not an implicit-lifetime type")
+# A bare value atom is an authority.  No spelling builds one from nothing.
+# The witness rows of the rule table hold the fixtures of the plain
+# constructor of each atom, and the check files pin that no atom is
+# trivially copyable, so std::bit_cast builds none.  The owner of the atoms
+# builds the three atoms and no other type.
+foundation_neg_compile_test(neg_alloc_tag_forged_through_effects_alias
+  ".constexpr foundation::core::Alloc::Alloc\\(\\). is private within this context"
+  "neg_alloc_tag_forged_through_effects_alias\\.cpp:[0-9]+:[0-9]+: error:")
+foundation_neg_compile_test(neg_atom_owner_mints_a_number
+  "no matching function for call to .foundation::effects::host::AtomOwner::mint_atom<int>\\(\\) const."
+  "no operand of the disjunction is satisfied")
+foundation_neg_compile_test(neg_atom_owner_mints_a_context
+  "no matching function for call to .foundation::effects::host::AtomOwner::mint_atom<foundation::effects::Bg>\\(\\) const."
+  "no operand of the disjunction is satisfied")
 foundation_neg_compile_test(neg_capability_forged_by_bit_cast
   "no matching function for call to .bit_cast<foundation::effects::Capability<foundation::effects::Effect::Block, foundation::effects::Bg"
   "is_trivially_copyable_v<_To> .with _To = foundation::effects::Capability<foundation::effects::Effect::Block, foundation::effects::Bg")
@@ -3137,7 +3151,7 @@ foundation_neg_compile_test(neg_core_heap_array_written_proof_element
   "no matching function for call to .mint_heap_array_written<.anonymous.::HoldsToken>\\(foundation::core::Alloc, int, .anonymous.::WritesNothing\\)."
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = <unnamed>::HoldsToken\\]")
 foundation_neg_compile_test(neg_core_heap_array_written_read_before_write
-  "neg_core_heap_array_written_read_before_write\\.cpp:13:[0-9]+: error: .class foundation::core::WriteLease<unsigned int>. has no member named .get."
+  "neg_core_heap_array_written_read_before_write\\.cpp:14:[0-9]+: error: .class foundation::core::WriteLease<unsigned int>. has no member named .get."
   "has no member named .get.")
 foundation_neg_compile_test(neg_core_masked_array_copied
   "use of deleted function .foundation::core::MaskedArray<T, Align>::MaskedArray\\(const foundation::core::MaskedArray<T, Align>&\\) \\[with T = int; long unsigned int Align = 4\\]."

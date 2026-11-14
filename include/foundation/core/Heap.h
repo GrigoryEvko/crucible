@@ -23,21 +23,42 @@
 #include <concepts>
 #include <cstddef>
 
+// The owner of the bare value atoms.  foundation/effects/Effect.h defines it,
+// and the rule home admits its definition only in that header.
+namespace foundation::effects::host {
+struct AtomOwner;
+}  // namespace foundation::effects::host
+
 namespace foundation::core {
 
 // The allocation capability: the tag that shows an allocation at a call
 // site.  foundation/effects gives it the name cap::Alloc with an alias, and
 // the contexts Bg, Init and Test hold it, so ::foundation::effects::Alloc
 // and bg.alloc name this one type.  The tag is empty and costs nothing.
-// The explicit noexcept on each special member turns a future throwing body
-// into a compile error.
-struct Alloc {
-    constexpr Alloc() noexcept = default;
-    constexpr Alloc(Alloc const&) noexcept = default;
-    constexpr Alloc(Alloc&&) noexcept = default;
-    constexpr Alloc& operator=(Alloc const&) noexcept = default;
-    constexpr Alloc& operator=(Alloc&&) noexcept = default;
+//
+// The tag is an authority, so no code makes one from nothing.  The default
+// constructor is private, and its one friend is the owner of the bare value
+// atoms in foundation/effects/Effect.h.  That owner builds the tag into a
+// context and into the trade of a spent Capability for its bare tag.  So a
+// holder of a tag got it from a context, or from a capability that a context
+// minted.  The copy stays public, so a holder can pass the tag along.
+//
+// Each constructor is user-provided, and not defaulted.  A tag with a
+// trivial copy is trivially copyable, and std::bit_cast then builds one from
+// any byte.  A tag with a trivial constructor is an implicit-lifetime type,
+// and std::start_lifetime_as then builds one over a buffer.  Neither route
+// meets the access check.  The explicit noexcept on each special member
+// turns a future throwing body into a compile error.
+class Alloc {
+public:
+    constexpr Alloc(Alloc const&) noexcept {}
+    constexpr Alloc& operator=(Alloc const&) noexcept { return *this; }
     ~Alloc() = default;
+
+private:
+    constexpr Alloc() noexcept {}
+
+    friend struct ::foundation::effects::host::AtomOwner;
 };
 
 // The gate of each allocation door of the base: the tag is Alloc and no

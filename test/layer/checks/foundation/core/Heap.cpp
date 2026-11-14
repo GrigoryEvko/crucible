@@ -17,10 +17,15 @@ struct HomemadeMarker {
 
 struct NoMarker {};
 
-// The allocation tag is empty and costs nothing.
+// The allocation tag is empty and costs nothing.  It is an authority, so no
+// code outside its owner builds one: the default constructor is private.
+// No route builds one with no constructor either: the tag is not trivially
+// copyable, so std::bit_cast refuses it, and it is not an implicit-lifetime
+// type, so std::start_lifetime_as refuses it.  A holder copies it.
 static_assert(std::is_empty_v<Alloc>);
-static_assert(std::is_trivially_copyable_v<Alloc>);
-static_assert(std::is_nothrow_default_constructible_v<Alloc>);
+static_assert(!std::is_default_constructible_v<Alloc>);
+static_assert(!std::is_trivially_copyable_v<Alloc> && !std::is_implicit_lifetime_v<Alloc>);
+static_assert(std::is_nothrow_copy_constructible_v<Alloc> && std::is_trivially_destructible_v<Alloc>);
 
 // The gate takes the tag and no other type.
 static_assert(AllocationCapability<Alloc>);

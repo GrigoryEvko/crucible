@@ -41,6 +41,7 @@
 
 #include <foundation/core/Heap.h>
 #include <foundation/diag/RowHash.h>
+#include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Hash.h>
 
@@ -49,6 +50,8 @@
 #include <cstdint>
 #include <meta>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace foundation::effects {
 
@@ -135,54 +138,173 @@ template <Effect E>
     return detail::is_observable_effect_atom_<E>();
 }
 
+// The owner of the bare value atoms, defined below.  foundation/core/Heap.h
+// declares it too, because the allocation tag of that layer befriends it.
+namespace host {
+struct AtomOwner;
+}  // namespace host
+
 // The Effect enum is the atom catalog for the row algebra.  These
 // types are the value-level markers that route the same distinction
 // through function parameters, as in
 //
 //   void* alloc(cap::Alloc, size_t n);
 //
-// The explicit noexcept on each special member turns a future throwing
-// body into a compile error rather than a silent change of contract.
+// A marker is an authority, so no code makes one from nothing.  The
+// default constructor of each marker is private, and its one friend is the
+// owner of the bare value atoms below.  Each constructor is user-provided,
+// for the reason foundation/core/Heap.h gives for the allocation tag: a
+// trivial constructor lets std::bit_cast or std::start_lifetime_as build a
+// marker with no access check.  The explicit noexcept on each special
+// member turns a future throwing body into a compile error rather than a
+// silent change of contract.
 namespace cap {
 
 // The allocation doors of foundation/core take the tag of that layer and no
 // other type, so this name is an alias of it and not a type of its own.  The
-// alias is a member of this namespace, so the bare tag of Effect::Alloc in
-// foundation/effects/Capability.h finds it by its identifier.  A
-// using-declaration is no member, and that search would not find it.
+// alias is a member of this namespace, so the bare tag of Effect::Alloc
+// below finds it by its identifier.  A using-declaration is no member, and
+// that search would not find it.
 using Alloc = ::foundation::core::Alloc;
 
-struct IO {
-    constexpr IO() noexcept = default;
-    constexpr IO(const IO&) noexcept = default;
-    constexpr IO(IO&&) noexcept = default;
-    constexpr IO& operator=(const IO&) noexcept = default;
-    constexpr IO& operator=(IO&&) noexcept = default;
+class IO {
+public:
+    constexpr IO(const IO&) noexcept {}
+    constexpr IO& operator=(const IO&) noexcept { return *this; }
     ~IO() = default;
+
+private:
+    constexpr IO() noexcept {}
+
+    friend struct ::foundation::effects::host::AtomOwner;
 };
 
-struct Block {
-    constexpr Block() noexcept = default;
-    constexpr Block(const Block&) noexcept = default;
-    constexpr Block(Block&&) noexcept = default;
-    constexpr Block& operator=(const Block&) noexcept = default;
-    constexpr Block& operator=(Block&&) noexcept = default;
+class Block {
+public:
+    constexpr Block(const Block&) noexcept {}
+    constexpr Block& operator=(const Block&) noexcept { return *this; }
     ~Block() = default;
+
+private:
+    constexpr Block() noexcept {}
+
+    friend struct ::foundation::effects::host::AtomOwner;
 };
 
 }  // namespace cap
 
 // Bg, Init and Test hold these atoms as public fields, so a caller can
 // write `arena.alloc(bg.alloc, ...)` instead of minting a tag at each
-// call.  That is sound only while the atoms are stateless: a copy out
-// of `bg.alloc` is then indistinguishable from `cap::Alloc{}`, which
-// anyone can already write, so the public field grants nothing.  Give
-// an atom state and the copy becomes an escape from the context's
-// intended scope.
+// call.  A copy out of `bg.alloc` is the authority of the context, and its
+// holder can pass it on.  An execution context of a narrower row does not
+// lend its context (foundation/effects/Ctx.h), so no field gives an atom
+// that the row of such a context does not claim.
 
 using Alloc = cap::Alloc;
 using IO = cap::IO;
 using Block = cap::Block;
+
+// The bare tag of an atom is the type in namespace cap whose identifier
+// is the enumerator's own, which is how Alloc, IO and Block each reach
+// theirs without an arm written here.  The identifier is load-bearing:
+// a new value atom gets a bare tag by declaring a type of the same name
+// in cap, and a type in cap whose name matches no atom is reached by
+// nothing.  The three thread atoms declare no such type, and the
+// reflection is then not a type.
+namespace detail {
+
+template <Effect E>
+[[nodiscard]] consteval std::meta::info bare_tag_info_() noexcept {
+    static constexpr auto members = std::define_static_array(
+        static_cast<::foundation::reflect::anchored_t<std::meta::reflect_constant(E), std::vector<std::meta::info>>>(
+            std::meta::members_of(^^cap, std::meta::access_context::current())));
+// An expansion statement unrolls into successive scopes that each
+// declare the same induction variable, so -Wshadow fires once per
+// iteration.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto member : members) {
+        if constexpr (std::meta::is_type(member)) {
+            if (std::meta::identifier_of(member) == ::foundation::reflect::enum_name(E)) return member;
+        }
+    }
+#pragma GCC diagnostic pop
+    return std::meta::info{};
+}
+
+}  // namespace detail
+
+template <Effect E>
+concept HasBareTag = std::meta::is_type(detail::bare_tag_info_<E>());
+
+template <Effect E>
+    requires HasBareTag<E>
+using bare_tag_t = [:detail::bare_tag_info_<E>():];
+
+class Bg;
+class Init;
+class Test;
+
+template <Effect Cap, class Source>
+class Capability;
+
+// The bridge for a function that takes a bare tag by value: the caller
+// mints a Capability, and trades it for the tag.  The owner below names
+// this function as a friend, so it is declared here and defined below the
+// owner.  The return type trails, so that the friend declaration can name
+// the function by its qualified name.
+template <Effect E, class Source>
+    requires HasBareTag<E>
+[[nodiscard]] constexpr auto extract_bare(Capability<E, Source>&& capability) noexcept -> bare_tag_t<E>;
+
+namespace host {
+
+// The one owner of the bare value atoms Alloc, IO and Block.  The default
+// constructor of each atom is private, and this owner is its one friend.
+// An owner builds atoms, and only its friends build an owner: the three
+// contexts, which hold their atoms as fields, and extract_bare, which
+// trades a spent Capability for its bare tag.  So a holder of an atom got
+// it from a context, or from a capability that a context minted.
+//
+// The copy is private too, so a context hands an owner to its fields only
+// by reference, and no field keeps one.  Each constructor is user-provided,
+// for the reason Effect.h gives for the keys of the contexts.  The rule home
+// admits the definition of this owner only in this header.
+struct AtomOwner final {
+    // One atom of the catalog.
+    template <class Atom>
+        requires std::same_as<Atom, cap::Alloc> || std::same_as<Atom, cap::IO> || std::same_as<Atom, cap::Block>
+    [[nodiscard]] constexpr Atom mint_atom() const noexcept {
+        return Atom{};
+    }
+
+private:
+    constexpr AtomOwner() noexcept {}
+    constexpr AtomOwner(AtomOwner const&) noexcept {}
+
+    friend class ::foundation::effects::Bg;
+    friend class ::foundation::effects::Init;
+    friend class ::foundation::effects::Test;
+
+    template <Effect E, class Source>
+        requires HasBareTag<E>
+    friend constexpr auto ::foundation::effects::extract_bare(Capability<E, Source>&& capability) noexcept
+        -> bare_tag_t<E>;
+};
+
+}  // namespace host
+
+// The consume spends the token, so a spent token gives no tag.  A thread
+// atom leaves HasBareTag unsatisfied, so this drops out of the overload set
+// by substitution failure rather than by a hard error in the body.  The
+// Capability is complete where a caller holds one, which is where this
+// body is instantiated.
+template <Effect E, class Source>
+    requires HasBareTag<E>
+[[nodiscard]] constexpr auto extract_bare(Capability<E, Source>&& capability) noexcept -> bare_tag_t<E> {
+    std::move(capability).consume();
+    return host::AtomOwner{}.mint_atom<bare_tag_t<E>>();
+}
 
 namespace testing {
 struct TestWitness;
@@ -293,7 +415,8 @@ namespace detail {
 // The value atom a context holds, under the field name a caller spells:
 // `bg.alloc`, `bg.io`, `bg.block`.  Only the three value atoms have a
 // field, so a context that lists a thread atom as a holding fails to
-// compile on an incomplete base.
+// compile on an incomplete base.  A field takes its atom from the owner
+// of the atoms, which only a context builds.
 template <Effect E>
 struct AtomField;
 
@@ -301,17 +424,24 @@ struct AtomField;
 // diagnostic about a copy of it names the class that the doors take.
 template <>
 struct AtomField<Effect::Alloc> {
-    [[no_unique_address]] ::foundation::core::Alloc alloc{};
+    constexpr explicit AtomField(host::AtomOwner const& owner) noexcept
+        : alloc{owner.mint_atom<::foundation::core::Alloc>()} {}
+
+    [[no_unique_address]] ::foundation::core::Alloc alloc;
 };
 
 template <>
 struct AtomField<Effect::IO> {
-    [[no_unique_address]] cap::IO io{};
+    constexpr explicit AtomField(host::AtomOwner const& owner) noexcept : io{owner.mint_atom<cap::IO>()} {}
+
+    [[no_unique_address]] cap::IO io;
 };
 
 template <>
 struct AtomField<Effect::Block> {
-    [[no_unique_address]] cap::Block block{};
+    constexpr explicit AtomField(host::AtomOwner const& owner) noexcept : block{owner.mint_atom<cap::Block>()} {}
+
+    [[no_unique_address]] cap::Block block;
 };
 
 // What the three contexts share.  A context is its own atom, the value
@@ -327,14 +457,18 @@ struct AtomField<Effect::Block> {
 // than a context holds one, and no downcast from a base reaches a
 // context that does not exist.
 //
-// The default constructor and the copy constructor are user-provided,
-// and not defaulted, so no constructor of a context is trivial.  A
-// context with a trivial copy is trivially copyable, and std::bit_cast
-// builds one from a byte.  A context with a trivial constructor is an
-// implicit-lifetime type, and std::start_lifetime_as builds one over a
-// buffer.  Each route skips the private door, and every ctx-bound gate
-// then admits the forged scope.  An empty class copies with no
-// instruction either way, and the destructor stays trivial.
+// The constructors are user-provided, and not defaulted, so no
+// constructor of a context is trivial.  A context with a trivial copy is
+// trivially copyable, and std::bit_cast builds one from a byte.  A
+// context with a trivial constructor is an implicit-lifetime type, and
+// std::start_lifetime_as builds one over a buffer.  Each route skips the
+// private door, and every ctx-bound gate then admits the forged scope.
+// An empty class copies with no instruction either way, and the
+// destructor stays trivial.
+//
+// The context builds the owner of the atoms, and the base hands it to
+// each field.  The owner names the three contexts as friends, and not
+// this template, so no specialization of the base builds an owner.
 template <class Self, class Key, Effect Own, Effect... Holds>
 class ContextBase : public AtomField<Holds>... {
 public:
@@ -345,7 +479,7 @@ public:
     using permitted_as = R<Own, Holds...>;
 
 private:
-    constexpr ContextBase() noexcept {}
+    constexpr explicit ContextBase(host::AtomOwner const& owner) noexcept : AtomField<Holds>(owner)... {}
     constexpr ContextBase(const ContextBase& other) noexcept : AtomField<Holds>(other)... {}
     constexpr ContextBase& operator=(const ContextBase&) noexcept = default;
 
@@ -377,7 +511,7 @@ private:
 
 class Bg final
     : public detail::ContextBase<Bg, detail::ctx_mint::bg_key, Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block> {
-    constexpr Bg() noexcept = default;
+    constexpr Bg() noexcept : ContextBase(host::AtomOwner{}) {}
 
     template <class Ctx, class Key>
         requires CanMintContext<Ctx, Key>
@@ -386,7 +520,7 @@ class Bg final
 
 class Init final : public detail::ContextBase<Init, detail::ctx_mint::init_key, Effect::Init, Effect::Alloc, Effect::IO,
                                               Effect::Block> {
-    constexpr Init() noexcept = default;
+    constexpr Init() noexcept : ContextBase(host::AtomOwner{}) {}
 
     template <class Ctx, class Key>
         requires CanMintContext<Ctx, Key>
@@ -395,7 +529,7 @@ class Init final : public detail::ContextBase<Init, detail::ctx_mint::init_key, 
 
 class Test final : public detail::ContextBase<Test, detail::ctx_mint::test_key, Effect::Test, Effect::Alloc, Effect::IO,
                                               Effect::Block> {
-    constexpr Test() noexcept = default;
+    constexpr Test() noexcept : ContextBase(host::AtomOwner{}) {}
 
     template <class Ctx, class Key>
         requires CanMintContext<Ctx, Key>
@@ -467,15 +601,14 @@ struct TestWitness {
 }  // namespace testing
 
 // The carriers of the effect layer.  Each one has its definition in its
-// own header, and that header includes this one.
+// own header, and that header includes this one.  Capability is declared
+// above, before the owner of the atoms.
 template <Effect... Es>
 struct Row;
 template <typename R, typename T>
 class Computation;
 template <class Cap, class R>
 class ExecCtx;
-template <Effect Cap, class Source>
-class Capability;
 
 }  // namespace foundation::effects
 

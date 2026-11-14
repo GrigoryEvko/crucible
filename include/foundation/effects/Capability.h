@@ -19,8 +19,6 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
-#include <foundation/reflect/Anchor.h>
-#include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Instance.h>
 
 #include <cstddef>
@@ -28,8 +26,6 @@
 #include <meta>
 #include <string_view>
 #include <type_traits>
-#include <utility>
-#include <vector>
 
 namespace foundation::effects {
 
@@ -211,52 +207,8 @@ template <Effect E, IsExecCtx Ctx>
 template <class Cap, class Ctx>
 concept CapMatchesCtx = IsCapability<Cap> && IsExecCtx<Ctx> && row_contains(^^row_type_of_t<Ctx>, cap_of(^^Cap));
 
-// The bare tag of an atom is the type in namespace cap whose identifier
-// is the enumerator's own, which is how Alloc, IO and Block each reach
-// theirs without an arm written here.  The identifier is load-bearing:
-// a new value atom gets a bare tag by declaring a type of the same name
-// in cap, and a type in cap whose name matches no atom is reached by
-// nothing.  The three thread atoms declare no such type, and the
-// reflection is then not a type.
-namespace detail {
-
-template <Effect E>
-[[nodiscard]] consteval std::meta::info bare_tag_info_() noexcept {
-    static constexpr auto members = std::define_static_array(
-        static_cast<::foundation::reflect::anchored_t<std::meta::reflect_constant(E), std::vector<std::meta::info>>>(
-            std::meta::members_of(^^cap, std::meta::access_context::current())));
-// An expansion statement unrolls into successive scopes that each
-// declare the same induction variable, so -Wshadow fires once per
-// iteration.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto member : members) {
-        if constexpr (std::meta::is_type(member)) {
-            if (std::meta::identifier_of(member) == ::foundation::reflect::enum_name(E)) return member;
-        }
-    }
-#pragma GCC diagnostic pop
-    return std::meta::info{};
-}
-
-}  // namespace detail
-
-template <Effect E>
-concept HasBareTag = std::meta::is_type(detail::bare_tag_info_<E>());
-
-template <Effect E>
-    requires HasBareTag<E>
-using bare_tag_t = [:detail::bare_tag_info_<E>():];
-
-// The bridge for a function that takes a bare tag by value: the caller
-// mints a Capability, and trades it here for the tag.  A thread atom
-// leaves HasBareTag unsatisfied, so this drops out of the overload set
-// by substitution failure rather than by a hard error in the body.
-template <Effect E, class S>
-    requires HasBareTag<E>
-[[nodiscard]] constexpr bare_tag_t<E> extract_bare(Capability<E, S>&& c) noexcept {
-    std::move(c).consume();
-    return bare_tag_t<E>{};
-}
+// The bridge from a Capability to the bare tag of its atom, extract_bare,
+// and HasBareTag and bare_tag_t are in foundation/effects/Effect.h, beside
+// the owner of the atoms that builds the tag.
 
 }  // namespace foundation::effects

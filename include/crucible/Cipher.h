@@ -202,8 +202,7 @@ public:
     template <typename Ctx>
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
     [[gnu::cold]] static Cipher open(Ctx const& ctx, ::foundation::effects::Alloc allocation, RootText root_text) {
-        Cipher c;
-        c.allocation_ = allocation;
+        Cipher c{allocation};
         // The sanitizer refuses an empty root, a root longer than
         // MAX_ROOT_PATH_BYTES, a zero byte and a ".." part.  A refused root
         // gives a Cipher that is not open.
@@ -217,7 +216,10 @@ public:
         return c;
     }
 
-    Cipher() = default;
+    // A closed store that holds the allocation capability of its caller.
+    // open builds one and then opens its root.  A refused root leaves it
+    // closed.
+    explicit Cipher(::foundation::effects::Alloc allocation) noexcept : allocation_{allocation} {}
     Cipher(const Cipher&) = delete("Cipher holds mutable log state; move instead");
     Cipher& operator=(const Cipher&) = delete("Cipher holds mutable log state; move instead");
     Cipher(Cipher&&) = default;
@@ -496,9 +498,11 @@ private:
     // push never grows a buffer.
     mutable ::fixy::FixedList<CachedObjectBytes, MAX_RESIDENT_CACHE_ENTRIES> resident_cache_{};
     mutable size_t resident_cache_bytes_ = 0;
-    // The allocation capability that open received.  The image of a store
-    // and the copies of the resident cache allocate only through it.
-    [[no_unique_address]] ::foundation::effects::Alloc allocation_{};
+    // The allocation capability that the constructor received.  The image of
+    // a store and the copies of the resident cache allocate only through it.
+    // It has no initializer, because an allocation tag has no public default
+    // constructor, and the one constructor sets it.
+    [[no_unique_address]] ::foundation::effects::Alloc allocation_;
 
     [[nodiscard]] static constexpr bool commits_head_(const LogEntry& entry) noexcept {
         return ::fixy::session::session_op_commits_cipher_head(entry.op());

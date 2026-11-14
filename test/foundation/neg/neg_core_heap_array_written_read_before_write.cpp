@@ -9,7 +9,8 @@
 
 int main() {
     auto written = ::foundation::core::mint_heap_array_written<std::uint32_t>(
-        ::foundation::effects::Alloc{}, 2, [](::foundation::core::WriteLease<std::uint32_t>& lease) noexcept {
+        ::foundation::effects::testing::test().alloc, 2,
+        [](::foundation::core::WriteLease<std::uint32_t>& lease) noexcept {
             std::uint32_t const first = *lease.get(0).expect("the lease holds two elements");
             lease.put(first);
             lease.put(first);

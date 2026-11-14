@@ -8,7 +8,7 @@
 #include <fixy/Ctx.h>
 
 int main() {
-    const ::crucible::Cipher cipher;
+    const ::crucible::Cipher cipher{::foundation::effects::testing::test().alloc};
     auto view = cipher.mint_open_view(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
     (void)view;
     return 0;

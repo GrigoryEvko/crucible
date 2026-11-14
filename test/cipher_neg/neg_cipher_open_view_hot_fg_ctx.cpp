@@ -9,7 +9,7 @@
 #include <fixy/Ctx.h>
 
 int main() {
-    const ::crucible::Cipher cipher;
+    const ::crucible::Cipher cipher{::foundation::effects::testing::test().alloc};
     auto view = cipher.mint_open_view(::foundation::effects::testing::foreground());
     (void)view;
     return 0;

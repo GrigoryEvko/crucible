@@ -417,8 +417,8 @@ int main() {
     }
 
     {
-        crucible::Cipher closed;
-        assert(!closed.is_open() && "default Cipher must be Closed");
+        crucible::Cipher closed{::foundation::effects::testing::test().alloc};
+        assert(!closed.is_open() && "a constructed Cipher must be Closed");
         // These two queries are answerable without a root, so they stay
         // callable in the closed state rather than becoming errors.
         assert(closed.empty());
