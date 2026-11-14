@@ -10,7 +10,6 @@
 
 #include "test_assert.h"
 
-#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <thread>
@@ -24,7 +23,7 @@ namespace {
 // wait for a larger value fails.
 template <VendorBackend Backend>
 void signal_then_wait() {
-    std::atomic<std::uint64_t> counter{0};
+    mimic::SemaphoreCounter counter{0};
     const auto semaphore = mimic::mint_device_semaphore<Backend>(counter, 41);
     static_assert(decltype(semaphore)::backend == Backend);
     assert(semaphore.native_handle() == 41);
@@ -33,7 +32,7 @@ void signal_then_wait() {
     assert(semaphore.try_wait(5));
     assert(semaphore.try_wait(4));
     assert(!semaphore.try_wait(6));
-    assert(counter.load(std::memory_order_acquire) == 5);
+    assert(counter.load_acquire() == 5);
 }
 
 void test_signal_then_wait() {
@@ -49,8 +48,8 @@ void test_signal_then_wait() {
 // A copy and an assignment keep the counter and the handle of their source,
 // so two holders operate one counter.
 void test_copy_and_assignment() {
-    std::atomic<std::uint64_t> first_counter{0};
-    std::atomic<std::uint64_t> second_counter{0};
+    mimic::SemaphoreCounter first_counter{0};
+    mimic::SemaphoreCounter second_counter{0};
     const auto first = mimic::mint_device_semaphore<VendorBackend::CPU>(first_counter, 1);
     auto second = mimic::mint_device_semaphore<VendorBackend::CPU>(second_counter, 2);
     const auto copied = first;
@@ -59,14 +58,14 @@ void test_copy_and_assignment() {
     second = first;
     assert(second.native_handle() == 1);
     assert(second.try_wait(3));
-    assert(second_counter.load(std::memory_order_acquire) == 0);
+    assert(second_counter.load_acquire() == 0);
     crucible::test::pass("  test_copy_and_assignment:     PASSED\n");
 }
 
 // A waiter on another thread that sees the signal also sees the write that
 // the signaler made before the signal.
 void test_signal_publishes_prior_writes() {
-    std::atomic<std::uint64_t> counter{0};
+    mimic::SemaphoreCounter counter{0};
     const auto semaphore = mimic::mint_device_semaphore<VendorBackend::CPU>(counter, 7);
     std::uint64_t payload = 0;
     std::uint64_t observed = 0;

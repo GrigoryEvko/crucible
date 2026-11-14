@@ -5,11 +5,8 @@
 
 #include <crucible/mimic/Semaphore.h>
 
-#include <atomic>
-#include <cstdint>
-
 int main() {
-    std::atomic<std::uint64_t> counter{0};
+    crucible::mimic::SemaphoreCounter counter{0};
     const crucible::mimic::DeviceSemaphore<crucible::mimic::VendorBackend::CPU> semaphore{counter, 1};
     semaphore.signal(1);
     return 0;

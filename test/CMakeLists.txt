@@ -3481,16 +3481,16 @@ crucible_neg_compile_test(neg_mimic_network_backend_wrong_cog
 #   * neg_mimic_semaphore_forged, _default_construct: no constructor of the
 #     descriptor goes around the mint.
 crucible_neg_compile_test(neg_mimic_semaphore_backend_none
-  "no matching function for call to .mint_device_semaphore<foundation::algebra::lattices::VendorBackend::None>\\(std::atomic<long unsigned int>&, int\\)."
+  "no matching function for call to .mint_device_semaphore<foundation::algebra::lattices::VendorBackend::None>\\(crucible::mimic::SemaphoreCounter&, int\\)."
   "the expression .Backend != foundation::algebra::lattices::VendorLattice::bottom\\(\\)\\(\\) \\[with Backend = foundation::algebra::lattices::VendorBackend::None\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_mimic_semaphore_backend_portable
   "template constraint failure for .template<foundation::algebra::lattices::VendorBackend Backend>  requires  SemaphoreBackend<Backend> class crucible::mimic::DeviceSemaphore."
   "the expression .Backend != foundation::algebra::lattices::VendorLattice::top\\(\\)\\(\\) \\[with Backend = foundation::algebra::lattices::VendorBackend::Portable\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_mimic_semaphore_temporary_counter
-  "use of deleted function .constexpr crucible::mimic::DeviceSemaphore<Backend> crucible::mimic::mint_device_semaphore\\(std::atomic<long unsigned int>&&, uint64_t\\) \\[with foundation::algebra::lattices::VendorBackend Backend = foundation::algebra::lattices::VendorBackend::CPU. uint64_t = long unsigned int\\]."
+  "use of deleted function .constexpr crucible::mimic::DeviceSemaphore<Backend> crucible::mimic::mint_device_semaphore\\(SemaphoreCounter&&, uint64_t\\) \\[with foundation::algebra::lattices::VendorBackend Backend = foundation::algebra::lattices::VendorBackend::CPU. SemaphoreCounter = foundation::core::Atomic<long unsigned int>. uint64_t = long unsigned int\\]."
   ".: The DeviceSemaphore borrows its counter, so a temporary counter dangles at the end of the full expression. Bind the counter to a name first.")
 crucible_neg_compile_test(neg_mimic_semaphore_forged
-  ".constexpr crucible::mimic::DeviceSemaphore<Backend>::DeviceSemaphore\\(std::atomic<long unsigned int>&, uint64_t\\) \\[with foundation::algebra::lattices::VendorBackend Backend = foundation::algebra::lattices::VendorBackend::CPU. uint64_t = long unsigned int\\]. is private within this context"
+  ".constexpr crucible::mimic::DeviceSemaphore<Backend>::DeviceSemaphore\\(crucible::mimic::SemaphoreCounter&, uint64_t\\) \\[with foundation::algebra::lattices::VendorBackend Backend = foundation::algebra::lattices::VendorBackend::CPU. crucible::mimic::SemaphoreCounter = foundation::core::Atomic<long unsigned int>. uint64_t = long unsigned int\\]. is private within this context"
   "mimic/Semaphore.h:[0-9]+:[0-9]+: note: declared private here")
 crucible_neg_compile_test(neg_mimic_semaphore_default_construct
   "use of deleted function .crucible::mimic::DeviceSemaphore<Backend>::DeviceSemaphore\\(\\) \\[with foundation::algebra::lattices::VendorBackend Backend = foundation::algebra::lattices::VendorBackend::CPU\\]."

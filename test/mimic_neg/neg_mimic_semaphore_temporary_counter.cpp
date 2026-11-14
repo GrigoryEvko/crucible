@@ -5,12 +5,9 @@
 
 #include <crucible/mimic/Semaphore.h>
 
-#include <atomic>
-#include <cstdint>
-
 int main() {
-    const auto semaphore =
-        crucible::mimic::mint_device_semaphore<crucible::mimic::VendorBackend::CPU>(std::atomic<std::uint64_t>{0}, 1);
+    const auto semaphore = crucible::mimic::mint_device_semaphore<crucible::mimic::VendorBackend::CPU>(
+        crucible::mimic::SemaphoreCounter{0}, 1);
     semaphore.signal(1);
     return 0;
 }

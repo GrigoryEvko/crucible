@@ -8,28 +8,41 @@
 // that compares the counter with the expected value.  When a vendor backend
 // exists, it replaces the oracle for its own Backend.
 
+#include <fixy/Core.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/lattices/VendorLattice.h>
-#include <foundation/reflect/EnumName.h>
 
-#include <atomic>
-#include <cstddef>
 #include <cstdint>
-#include <meta>
-#include <type_traits>
 
 namespace crucible::mimic {
 
 using ::foundation::algebra::lattices::VendorBackend;
 using ::foundation::algebra::lattices::VendorLattice;
 
+// The counter of a semaphore: an atomic cell that each thread can write.
+using SemaphoreCounter = ::fixy::Atomic<std::uint64_t>;
+
+namespace detail {
+
+// True when an enumerator of VendorBackend holds the backend.  The function
+// names each enumerator, so it refuses a new enumerator until the enumerator
+// is named here.  The function is not a template, so no unit can specialize
+// what the concept below reads.
+[[nodiscard]] consteval bool is_vendor_backend(VendorBackend backend) noexcept {
+    return backend == VendorBackend::None || backend == VendorBackend::CPU || backend == VendorBackend::NV
+        || backend == VendorBackend::AMD || backend == VendorBackend::TPU || backend == VendorBackend::TRN
+        || backend == VendorBackend::CER || backend == VendorBackend::Portable;
+}
+
+}  // namespace detail
+
 // A backend that names one device family.  None names no kernel, and Portable
 // names no one device, so a semaphore on either has no device to signal.  The
 // concept also refuses a value that no enumerator holds.
 template <VendorBackend Backend>
-concept SemaphoreBackend = !::foundation::reflect::enumerator_name(Backend).empty()
-                        && Backend != VendorLattice::bottom() && Backend != VendorLattice::top();
+concept SemaphoreBackend =
+    detail::is_vendor_backend(Backend) && Backend != VendorLattice::bottom() && Backend != VendorLattice::top();
 
 template <VendorBackend Backend>
     requires SemaphoreBackend<Backend>
@@ -40,21 +53,21 @@ class DeviceSemaphore;
 // class.
 template <VendorBackend Backend>
     requires SemaphoreBackend<Backend>
-[[nodiscard]] constexpr DeviceSemaphore<Backend>
-mint_device_semaphore(std::atomic<std::uint64_t>& counter CRUCIBLE_LIFETIMEBOUND, std::uint64_t native_handle) noexcept;
+[[nodiscard]] constexpr DeviceSemaphore<Backend> mint_device_semaphore(SemaphoreCounter& counter CRUCIBLE_LIFETIMEBOUND,
+                                                                       std::uint64_t native_handle) noexcept;
 
 // The descriptor borrows its counter, so a temporary counter dangles at the
 // end of the full expression.  This form is the better match for a
 // temporary, and it is deleted.
 template <VendorBackend Backend>
     requires SemaphoreBackend<Backend>
-constexpr DeviceSemaphore<Backend> mint_device_semaphore(std::atomic<std::uint64_t>&& counter,
+constexpr DeviceSemaphore<Backend> mint_device_semaphore(SemaphoreCounter&& counter,
                                                          std::uint64_t native_handle) noexcept =
     delete("The DeviceSemaphore borrows its counter, so a temporary counter dangles at the end of the full "
            "expression. Bind the counter to a name first.");
 
 // The constructor is private, and mint_device_semaphore is its one friend.
-// There is no default constructor, so each descriptor points to a counter.
+// There is no default constructor, so each descriptor refers to a counter.
 //
 // The two assignments are user-provided, so the class is not trivially
 // copyable, and std::bit_cast cannot build one from bytes.  The annotation
@@ -85,31 +98,29 @@ public:
 
     // A waiter that reads the value with an acquire load sees each write that
     // the signaler made before the signal.
-    void signal(std::uint64_t value) const noexcept { counter_->store(value, std::memory_order_release); }
+    void signal(std::uint64_t value) const noexcept { counter_->store_release(value); }
 
     // One acquire load.  It never spins, yields or blocks, so the caller
     // selects the retry policy.  A true result says that the counter had
     // the expected value, or a larger one, at the time of the load.
-    [[nodiscard]] bool try_wait(std::uint64_t expected) const noexcept {
-        return counter_->load(std::memory_order_acquire) >= expected;
-    }
+    [[nodiscard]] bool try_wait(std::uint64_t expected) const noexcept { return counter_->load_acquire() >= expected; }
 
 private:
-    constexpr DeviceSemaphore(std::atomic<std::uint64_t>& counter, std::uint64_t native_handle) noexcept
-        : counter_{&counter}, native_handle_{native_handle} {}
+    constexpr DeviceSemaphore(SemaphoreCounter& counter, std::uint64_t native_handle) noexcept
+        : counter_{::fixy::to(counter)}, native_handle_{native_handle} {}
 
     template <VendorBackend B>
         requires SemaphoreBackend<B>
-    friend constexpr DeviceSemaphore<B> mint_device_semaphore(std::atomic<std::uint64_t>& counter,
+    friend constexpr DeviceSemaphore<B> mint_device_semaphore(SemaphoreCounter& counter,
                                                               std::uint64_t native_handle) noexcept;
 
-    std::atomic<std::uint64_t>* counter_ = nullptr;
+    ::fixy::Ref<SemaphoreCounter> counter_;
     std::uint64_t native_handle_ = 0;
 };
 
 template <VendorBackend Backend>
     requires SemaphoreBackend<Backend>
-[[nodiscard]] constexpr DeviceSemaphore<Backend> mint_device_semaphore(std::atomic<std::uint64_t>& counter,
+[[nodiscard]] constexpr DeviceSemaphore<Backend> mint_device_semaphore(SemaphoreCounter& counter,
                                                                        std::uint64_t native_handle) noexcept {
     return DeviceSemaphore<Backend>{counter, native_handle};
 }

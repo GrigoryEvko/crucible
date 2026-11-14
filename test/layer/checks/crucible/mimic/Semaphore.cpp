@@ -4,8 +4,9 @@
 
 namespace crucible::mimic {
 
-static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
-              "A signal and a wait are each one atomic operation on the counter, so the counter must be lock-free.");
+static_assert(::fixy::AtomicValue<std::uint64_t> && sizeof(SemaphoreCounter) == sizeof(std::uint64_t),
+              "A signal and a wait are each one atomic operation on the counter, so the counter must be one "
+              "lock-free word.");
 
 namespace detail::device_semaphore_self_test {
 
@@ -17,7 +18,7 @@ template <VendorBackend Backend>
 inline constexpr bool descriptor_is_closed_v =
     DeviceSemaphore<Backend>::backend == Backend
     && !std::is_default_constructible_v<DeviceSemaphore<Backend>> && !std::is_aggregate_v<DeviceSemaphore<Backend>>
-    && !std::is_constructible_v<DeviceSemaphore<Backend>, std::atomic<std::uint64_t>&, std::uint64_t>
+    && !std::is_constructible_v<DeviceSemaphore<Backend>, SemaphoreCounter&, std::uint64_t>
     && !std::is_trivially_copyable_v<DeviceSemaphore<Backend>>
     && !::foundation::lifetime::ImplicitLifetimeThroughout<DeviceSemaphore<Backend>>
     && std::is_nothrow_copy_constructible_v<DeviceSemaphore<Backend>>
