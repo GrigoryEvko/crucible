@@ -4160,7 +4160,8 @@ crucible_neg_compile_test(neg_schema_name_typed_wrong_tag
     "neg_schema_name_typed_wrong_tag.cpp:24")
 
 # These fixtures pin crucible::live_intervals_disjoint_at<MaxLive>,
-# the check of the MemoryPlan invariant: at every op boundary `t`, the simultaneously-
+# which checks the MemoryPlan invariant with decide::intervals_pairwise_disjoint:
+# at every op boundary `t`, the simultaneously-
 # live TensorSlots must have non-overlapping byte ranges.  Two distinct
 # mismatch classes:
 #

@@ -36,6 +36,68 @@ constexpr bool is_power_of_two_le(T x, T bound) noexcept {
     return (x & (x - T{1})) == T{0};
 }
 
+// A half-open range [lo, hi): lo inclusive, hi exclusive. The empty range
+// [k, k) is well formed. An inverted range lo > hi is malformed.
+template <std::integral T>
+struct Interval {
+    T lo{};
+    T hi{};
+};
+
+template <std::integral T>
+[[nodiscard]]
+constexpr bool operator==(Interval<T> const& a, Interval<T> const& b) noexcept {
+    return a.lo == b.lo && a.hi == b.hi;
+}
+
+// A View of Interval<T> elements, of a fixed or a dynamic extent, as
+// foundation/core/Region.h defines it. This header is in a lower layer than
+// Region.h, so the concept names the View by its element type and its loop.
+template <typename Run>
+concept IntervalView =
+    requires(Run const& run) {
+        typename Run::element_type;
+        { run.begin() == run.end() } -> std::convertible_to<bool>;
+    }
+    && std::same_as<std::remove_const_t<typename Run::element_type>,
+                    Interval<decltype(std::remove_const_t<typename Run::element_type>::lo)>>;
+
+// True iff every interval is well formed and no two intervals overlap. Gaps
+// between intervals are permitted. An empty View is vacuously true. An empty
+// interval is disjoint from every other interval. A memory plan and a check
+// of buffer aliasing ask this question of their byte ranges. Complexity:
+// quadratic in the number of intervals.
+template <IntervalView Run>
+[[nodiscard, gnu::pure]]
+constexpr bool intervals_pairwise_disjoint(Run const& intervals) noexcept {
+    for (auto const& interval : intervals) {
+        if (interval.lo > interval.hi) {
+            return false;
+        }
+    }
+    auto const end = intervals.end();
+    for (auto first = intervals.begin(); first != end; ++first) {
+        auto second = first;
+        for (++second; second != end; ++second) {
+            auto const& left = *first;
+            auto const& right = *second;
+            // Skip each pair that holds an empty interval. The test of the
+            // two ends alone reports an empty interval strictly inside a
+            // second interval as an overlap: for [5, 5) inside [0, 10),
+            // neither 5 <= 0 nor 10 <= 5 is true.
+            if (left.lo == left.hi || right.lo == right.hi) {
+                continue;
+            }
+            bool const is_left_below = left.hi <= right.lo;
+            bool const is_right_below = right.hi <= left.lo;
+            if (!is_left_below && !is_right_below) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 // True iff a candidate of tier `candidate` may stand in for a slot demanding
 // tier `required`. Every chain-tier enum in the project orders its enumerators
 // so that a stronger guarantee takes a higher ordinal, which makes the

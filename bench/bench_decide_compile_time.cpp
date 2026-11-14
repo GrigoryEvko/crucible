@@ -25,7 +25,8 @@
 // `bench::do_not_optimize(result)` (the `[[gnu::noipa]]` shim) to
 // mark the bool return as observed.  Each procedure
 // covers the canonical instantiation it ships in production: integer
-// types for the overflow / range family.  We do NOT iterate every primitive type — the body's
+// types for the overflow / range family, and a View of Interval<uint64_t>
+// for the interval predicate.  We do NOT iterate every primitive type — the body's
 // asymptotic shape is independent of T width, and each extra
 // instantiation adds template-noise to the bench list without
 // signal.
@@ -44,6 +45,7 @@
 #include <cstdio>
 
 #include <foundation/contracts/Decide.h>
+#include <foundation/core/Array.h>
 
 #include "bench_harness.h"
 
@@ -97,6 +99,16 @@ int main() {
     for (std::size_t i = 0; i < kSeqLen; ++i)
         inc_seq[i] = static_cast<std::int32_t>(i * 7);
 
+    // The input of intervals_pairwise_disjoint: 8 disjoint intervals that
+    // tile [0, 800).  The pass of well-formedness and the quadratic pass of
+    // the pairs both run.
+    ::foundation::core::FixedArray<dc::Interval<std::uint64_t>, 8> intervals_disjoint{};
+    std::uint64_t next_lo = 0;
+    for (dc::Interval<std::uint64_t>& interval : intervals_disjoint) {
+        interval = dc::Interval<std::uint64_t>{.lo = next_lo, .hi = next_lo + 100};
+        next_lo += 100;
+    }
+
     std::printf("=== decide ===\n\n");
 
     // Each `bench::run(name, body)` is one Report.  Auto-batching
@@ -145,6 +157,13 @@ int main() {
         bench::run("decide::is_power_of_two_le<u64>",
                    [&] {
                        bool r = dc::is_power_of_two_le<std::uint64_t>(v_pow2, v_pow2_bound);
+                       bench::do_not_optimize(r);
+                   }),
+
+        // ── Intervals (quadratic pass of the pairs, 8 intervals) ──
+        bench::run("decide::intervals_pairwise_disjoint<u64, 8>",
+                   [&] {
+                       bool r = dc::intervals_pairwise_disjoint(intervals_disjoint.view());
                        bench::do_not_optimize(r);
                    }),
 

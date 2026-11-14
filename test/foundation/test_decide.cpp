@@ -14,6 +14,8 @@
 #include <foundation/algebra/lattices/HotPathLattice.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Region.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -118,6 +120,118 @@ static_assert(all_valid_widths(std::make_index_sequence<3>{}));
 static_assert(safe_table_capacity(16) == 16);
 static_assert(safe_table_capacity(32) == 32);
 static_assert(safe_table_capacity(64) == 64);
+
+// The cases of intervals_pairwise_disjoint, each over the View of a
+// FixedArray.
+using ByteInterval = dc::Interval<std::uint64_t>;
+using ByteIntervalView = ::foundation::core::View<ByteInterval const>;
+
+template <std::size_t N>
+using ByteIntervals = ::foundation::core::FixedArray<ByteInterval, N>;
+
+static_assert(ByteInterval{0, 64} == ByteInterval{0, 64});
+static_assert(!(ByteInterval{0, 64} == ByteInterval{0, 65}));
+static_assert(!(ByteInterval{0, 64} == ByteInterval{1, 64}));
+
+// The concept takes a View of intervals of each extent and each constness,
+// and refuses a View of other elements.
+static_assert(dc::IntervalView<ByteIntervalView>);
+static_assert(dc::IntervalView<::foundation::core::View<ByteInterval>>);
+static_assert(dc::IntervalView<::foundation::core::View<ByteInterval const, 2>>);
+static_assert(!dc::IntervalView<::foundation::core::View<std::uint64_t const>>);
+static_assert(!dc::IntervalView<ByteInterval>);
+static_assert(!dc::IntervalView<int>);
+
+// An empty View has no pair.
+static_assert(dc::intervals_pairwise_disjoint(ByteIntervalView{}));
+
+constexpr ByteIntervals<1> one_interval{ByteInterval{0, 100}};
+static_assert(dc::intervals_pairwise_disjoint(one_interval.view()));
+
+constexpr ByteIntervals<1> one_empty{ByteInterval{50, 50}};
+static_assert(dc::intervals_pairwise_disjoint(one_empty.view()));
+
+// Two intervals that touch at a shared end do not overlap.
+constexpr ByteIntervals<2> touching{ByteInterval{0, 64}, ByteInterval{64, 128}};
+static_assert(dc::intervals_pairwise_disjoint(touching.view()));
+
+constexpr ByteIntervals<2> gap{ByteInterval{0, 64}, ByteInterval{128, 256}};
+static_assert(dc::intervals_pairwise_disjoint(gap.view()));
+
+// The order of the intervals does not change the result.
+constexpr ByteIntervals<2> reversed{ByteInterval{128, 256}, ByteInterval{0, 64}};
+static_assert(dc::intervals_pairwise_disjoint(reversed.view()));
+
+constexpr ByteIntervals<5> packed{ByteInterval{0, 64}, ByteInterval{64, 192}, ByteInterval{192, 256},
+                                  ByteInterval{256, 320}, ByteInterval{320, 1024}};
+static_assert(dc::intervals_pairwise_disjoint(packed.view()));
+
+constexpr ByteIntervals<4> with_empty{ByteInterval{0, 64}, ByteInterval{64, 64}, ByteInterval{64, 128},
+                                      ByteInterval{128, 128}};
+static_assert(dc::intervals_pairwise_disjoint(with_empty.view()));
+
+// An empty interval strictly inside a second interval, in the two orders of
+// the pair.  A slot of zero bytes puts an empty interval there.
+constexpr ByteIntervals<2> empty_inside{ByteInterval{0, 10}, ByteInterval{5, 5}};
+static_assert(dc::intervals_pairwise_disjoint(empty_inside.view()));
+
+constexpr ByteIntervals<2> empty_inside_first{ByteInterval{5, 5}, ByteInterval{0, 10}};
+static_assert(dc::intervals_pairwise_disjoint(empty_inside_first.view()));
+
+constexpr ByteIntervals<3> zero_byte_slot_inside_live{ByteInterval{0, 256}, ByteInterval{128, 128},
+                                                      ByteInterval{256, 512}};
+static_assert(dc::intervals_pairwise_disjoint(zero_byte_slot_inside_live.view()));
+
+// An offset that does not move past the last interval.
+constexpr ByteIntervals<2> adjacent_overlap{ByteInterval{0, 100}, ByteInterval{50, 150}};
+static_assert(!dc::intervals_pairwise_disjoint(adjacent_overlap.view()));
+
+// A check of the adjacent pairs alone does not find this overlap.
+constexpr ByteIntervals<4> distant_overlap{ByteInterval{0, 200}, ByteInterval{300, 400}, ByteInterval{500, 700},
+                                           ByteInterval{150, 250}};
+static_assert(!dc::intervals_pairwise_disjoint(distant_overlap.view()));
+
+constexpr ByteIntervals<2> contained{ByteInterval{0, 1024}, ByteInterval{200, 800}};
+static_assert(!dc::intervals_pairwise_disjoint(contained.view()));
+
+constexpr ByteIntervals<2> duplicate{ByteInterval{100, 200}, ByteInterval{100, 200}};
+static_assert(!dc::intervals_pairwise_disjoint(duplicate.view()));
+
+constexpr ByteIntervals<1> inverted{ByteInterval{50, 30}};
+static_assert(!dc::intervals_pairwise_disjoint(inverted.view()));
+
+// A malformed interval refuses the set, also when each pair is disjoint.
+constexpr ByteIntervals<3> mixed_inverted{ByteInterval{0, 100}, ByteInterval{200, 300}, ByteInterval{500, 400}};
+static_assert(!dc::intervals_pairwise_disjoint(mixed_inverted.view()));
+
+// A signed bound reaches intervals below zero.
+using LiveInterval = dc::Interval<std::int32_t>;
+using LiveIntervals = ::foundation::core::FixedArray<LiveInterval, 2>;
+
+constexpr LiveIntervals live_ranges_ok{LiveInterval{-10, 5}, LiveInterval{5, 20}};
+static_assert(dc::intervals_pairwise_disjoint(live_ranges_ok.view()));
+
+constexpr LiveIntervals live_ranges_overlap{LiveInterval{-10, 8}, LiveInterval{5, 20}};
+static_assert(!dc::intervals_pairwise_disjoint(live_ranges_overlap.view()));
+
+// A precondition cites the predicate over a View of a dynamic extent, and a
+// View of a fixed extent converts to it.
+[[nodiscard]] constexpr bool valid_memory_plan(ByteIntervalView byte_intervals) noexcept {
+    CRUCIBLE_PRE(dc::intervals_pairwise_disjoint(byte_intervals));
+    return true;
+}
+
+constexpr ByteIntervals<3> valid_plan{ByteInterval{0, 1024}, ByteInterval{1024, 2048}, ByteInterval{2048, 4096}};
+static_assert(valid_memory_plan(valid_plan.view()));
+
+[[nodiscard]] constexpr bool
+slots_have_disjoint_lifetimes(::foundation::core::View<LiveInterval const> live_ranges) noexcept {
+    CRUCIBLE_PRE(dc::intervals_pairwise_disjoint(live_ranges));
+    return true;
+}
+
+constexpr LiveIntervals two_slots_disjoint_life{LiveInterval{0, 5}, LiveInterval{6, 10}};
+static_assert(slots_have_disjoint_lifetimes(two_slots_disjoint_life.view()));
 
 namespace cl = foundation::algebra::lattices;
 
@@ -516,6 +630,31 @@ int main() {
     if (dc::is_power_of_two_le<int32_t>(std::numeric_limits<int32_t>::min(), 64)) {
         std::fprintf(stderr, "test_decide: INT_MIN WRONGLY accepted (UB-on-x-1 risk)\n");
         return 1;
+    }
+
+    // intervals_pairwise_disjoint, on ends that the compiler cannot fold.
+    {
+        std::uint64_t volatile shared_end = 64;
+        std::uint64_t volatile inverted_lo = 50;
+
+        ByteIntervals<3> const runtime_plan{ByteInterval{0, shared_end}, ByteInterval{shared_end, 192},
+                                            ByteInterval{192, 256}};
+        if (!dc::intervals_pairwise_disjoint(runtime_plan.view())) {
+            ::foundation::core::fatal("test_decide: the predicate refuses the disjoint runtime_plan");
+        }
+
+        ByteIntervals<2> const overlap{ByteInterval{0, 100}, ByteInterval{shared_end, 150}};
+        if (dc::intervals_pairwise_disjoint(overlap.view())) {
+            ::foundation::core::fatal("test_decide: the predicate accepts an adjacent overlap");
+        }
+
+        ByteIntervals<1> const bad{ByteInterval{inverted_lo, 30}};
+        if (dc::intervals_pairwise_disjoint(bad.view())) {
+            ::foundation::core::fatal("test_decide: the predicate accepts an inverted interval");
+        }
+
+        sink += static_cast<int>(dc::intervals_pairwise_disjoint(runtime_plan.view()))
+              - static_cast<int>(dc::intervals_pairwise_disjoint(overlap.view()));
     }
 
     // tier_replaces
