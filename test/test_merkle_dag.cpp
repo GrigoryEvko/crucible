@@ -18,8 +18,21 @@ using crucible::MerkleHash;
 
 namespace {
 
-[[nodiscard]] crucible::CompiledKernel* kernel_ptr(void* p) noexcept {
-    return static_cast<crucible::CompiledKernel*>(p);
+// The cache never reads a kernel, so the address of a fake object stands
+// for one.
+template <class Fake>
+[[nodiscard]] crucible::KernelCache::KernelRef kernel_ref(Fake& fake) noexcept {
+    return ::fixy::to(*static_cast<crucible::CompiledKernel*>(static_cast<void*>(&fake)));
+}
+
+// True when the lookup found the kernel that the fake object stands for.
+template <class Fake>
+[[nodiscard]] bool is_found(crucible::KernelCache::FoundKernel const& found, Fake& fake) noexcept {
+    return found.match(
+        [&fake](crucible::KernelCache::KernelRef const& kernel) noexcept {
+            return ::fixy::same_object(kernel, kernel_ref(fake));
+        },
+        []() noexcept { return false; });
 }
 
 // The content hash of a region of one op, under no recipe.
@@ -145,46 +158,46 @@ namespace {
     static_assert(std::is_same_v<::fixy::concurrent::swmr_writer_value_t<KernelSlot::WriterHandle>, SlotSnapshot>);
     static_assert(std::is_same_v<::fixy::concurrent::swmr_reader_value_t<KernelSlot::ReaderHandle>, SlotSnapshot>);
 
-    assert(cache.lookup(ContentHash{0x1234}, RowHash{0}) == nullptr);
+    assert(cache.lookup(ContentHash{0x1234}, RowHash{0}).is_none());
     struct FakeKernel {
         int x;
     };
     FakeKernel fk{42};
-    assert(cache.insert(ContentHash{0x1234}, RowHash{0}, kernel_ptr(&fk)).is_ok());
-    assert(cache.lookup(ContentHash{0x1234}, RowHash{0}) == kernel_ptr(&fk));
+    assert(cache.insert(ContentHash{0x1234}, RowHash{0}, kernel_ref(fk)).is_ok());
+    assert(is_found(cache.lookup(ContentHash{0x1234}, RowHash{0}), fk));
     FakeKernel fk2{99};
-    assert(cache.insert(ContentHash{0x1234}, RowHash{0}, kernel_ptr(&fk2)).is_ok());
-    assert(cache.lookup(ContentHash{0x1234}, RowHash{0}) == kernel_ptr(&fk2));
+    assert(cache.insert(ContentHash{0x1234}, RowHash{0}, kernel_ref(fk2)).is_ok());
+    assert(is_found(cache.lookup(ContentHash{0x1234}, RowHash{0}), fk2));
 
     FakeKernel fk_row{777};
-    assert(cache.lookup(ContentHash{0x1234}, RowHash{0xAA}) == nullptr);
-    assert(cache.insert(ContentHash{0x1234}, RowHash{0xAA}, kernel_ptr(&fk_row)).is_ok());
-    assert(cache.lookup(ContentHash{0x1234}, RowHash{0xAA}) == kernel_ptr(&fk_row));
-    assert(cache.lookup(ContentHash{0x1234}, RowHash{0}) == kernel_ptr(&fk2));
-    assert(cache.lookup(ContentHash{0x1234}, RowHash{0xBB}) == nullptr);
+    assert(cache.lookup(ContentHash{0x1234}, RowHash{0xAA}).is_none());
+    assert(cache.insert(ContentHash{0x1234}, RowHash{0xAA}, kernel_ref(fk_row)).is_ok());
+    assert(is_found(cache.lookup(ContentHash{0x1234}, RowHash{0xAA}), fk_row));
+    assert(is_found(cache.lookup(ContentHash{0x1234}, RowHash{0}), fk2));
+    assert(cache.lookup(ContentHash{0x1234}, RowHash{0xBB}).is_none());
 
     // The probe distinguishes a variant update from a sibling row: an
     // insert under an occupied (content, row) replaces that slot alone.
     FakeKernel fk_row_v2{888};
-    assert(cache.insert(ContentHash{0x1234}, RowHash{0xAA}, kernel_ptr(&fk_row_v2)).is_ok());
-    assert(cache.lookup(ContentHash{0x1234}, RowHash{0xAA}) == kernel_ptr(&fk_row_v2));
-    assert(cache.lookup(ContentHash{0x1234}, RowHash{0}) == kernel_ptr(&fk2));
+    assert(cache.insert(ContentHash{0x1234}, RowHash{0xAA}, kernel_ref(fk_row_v2)).is_ok());
+    assert(is_found(cache.lookup(ContentHash{0x1234}, RowHash{0xAA}), fk_row_v2));
+    assert(is_found(cache.lookup(ContentHash{0x1234}, RowHash{0}), fk2));
 
     // Row discrimination is not bound to one content_hash slot index.
     FakeKernel fk_other{555};
-    assert(cache.insert(ContentHash{0x9999}, RowHash{0xAA}, kernel_ptr(&fk_other)).is_ok());
-    assert(cache.lookup(ContentHash{0x9999}, RowHash{0xAA}) == kernel_ptr(&fk_other));
-    assert(cache.lookup(ContentHash{0x9999}, RowHash{0}) == nullptr);
-    assert(cache.lookup(ContentHash{0x1234}, RowHash{0xCC}) == nullptr);
+    assert(cache.insert(ContentHash{0x9999}, RowHash{0xAA}, kernel_ref(fk_other)).is_ok());
+    assert(is_found(cache.lookup(ContentHash{0x9999}, RowHash{0xAA}), fk_other));
+    assert(cache.lookup(ContentHash{0x9999}, RowHash{0}).is_none());
+    assert(cache.lookup(ContentHash{0x1234}, RowHash{0xCC}).is_none());
 
     // The sentinel row is reserved for end-of-region markers elsewhere.
     // The cache must treat it as an ordinary 64-bit row identity.
     FakeKernel fk_sentinel{0xFEED};
-    assert(cache.lookup(ContentHash{0x1234}, RowHash::sentinel()) == nullptr);
-    assert(cache.insert(ContentHash{0x1234}, RowHash::sentinel(), kernel_ptr(&fk_sentinel)).is_ok());
-    assert(cache.lookup(ContentHash{0x1234}, RowHash::sentinel()) == kernel_ptr(&fk_sentinel));
-    assert(cache.lookup(ContentHash{0x1234}, RowHash{0}) == kernel_ptr(&fk2));
-    assert(cache.lookup(ContentHash{0x1234}, RowHash{0xAA}) == kernel_ptr(&fk_row_v2));
+    assert(cache.lookup(ContentHash{0x1234}, RowHash::sentinel()).is_none());
+    assert(cache.insert(ContentHash{0x1234}, RowHash::sentinel(), kernel_ref(fk_sentinel)).is_ok());
+    assert(is_found(cache.lookup(ContentHash{0x1234}, RowHash::sentinel()), fk_sentinel));
+    assert(is_found(cache.lookup(ContentHash{0x1234}, RowHash{0}), fk2));
+    assert(is_found(cache.lookup(ContentHash{0x1234}, RowHash{0xAA}), fk_row_v2));
 
     // Many rows under one content_hash drive the probe chain around
     // the table.
@@ -197,16 +210,15 @@ namespace {
             assert(row_pressure_cache
                        .insert(ContentHash{0xABCDEF},  // one shared content
                                RowHash{0x100 + i},  // distinct rows
-                               kernel_ptr(&row_kernels[i]))
+                               kernel_ref(row_kernels[i]))
                        .is_ok());
         }
         for (uint32_t i = 0; i < N; ++i) {
-            auto* k = row_pressure_cache.lookup(ContentHash{0xABCDEF}, RowHash{0x100 + i});
-            assert(k == kernel_ptr(&row_kernels[i]));
+            assert(is_found(row_pressure_cache.lookup(ContentHash{0xABCDEF}, RowHash{0x100 + i}), row_kernels[i]));
         }
         // The probe terminates on an absent row instead of matching a
         // foreign-row sibling that shares the content hash.
-        assert(row_pressure_cache.lookup(ContentHash{0xABCDEF}, RowHash{0xDEAD}) == nullptr);
+        assert(row_pressure_cache.lookup(ContentHash{0xABCDEF}, RowHash{0xDEAD}).is_none());
     }
 
     {
@@ -214,13 +226,13 @@ namespace {
         FakeKernel small_kernels[5];
         for (uint32_t i = 0; i < 4; ++i) {
             small_kernels[i] = FakeKernel{static_cast<int>(i)};
-            assert(tiny_cache.insert(ContentHash{0x42}, RowHash{0xA00 + i}, kernel_ptr(&small_kernels[i])).is_ok());
+            assert(tiny_cache.insert(ContentHash{0x42}, RowHash{0xA00 + i}, kernel_ref(small_kernels[i])).is_ok());
         }
         // The fifth insert finds no empty slot: all four hold the same
         // content under a different row, so none is a variant update.
         small_kernels[4] = FakeKernel{4};
         auto fifth = tiny_cache.insert(ContentHash{0x42}, RowHash{0xA04},  // novel row
-                                       kernel_ptr(&small_kernels[4]));
+                                       kernel_ref(small_kernels[4]));
         assert(std::move(fifth).err().match(
             [](crucible::KernelCache::InsertError error) noexcept {
                 return error == crucible::KernelCache::InsertError::TableFull;
@@ -230,9 +242,9 @@ namespace {
         // returned only when no (content, row) match exists.
         FakeKernel variant_replacement{0xC};
         auto variant = tiny_cache.insert(ContentHash{0x42}, RowHash{0xA00},  // existing row
-                                         kernel_ptr(&variant_replacement));
+                                         kernel_ref(variant_replacement));
         assert(variant.is_ok());
-        assert(tiny_cache.lookup(ContentHash{0x42}, RowHash{0xA00}) == kernel_ptr(&variant_replacement));
+        assert(is_found(tiny_cache.lookup(ContentHash{0x42}, RowHash{0xA00}), variant_replacement));
     }
 
     // RowHash{0} is a lookup target like any other row.  This sequence
@@ -247,17 +259,17 @@ namespace {
         FakeKernel k_rowR_v1{2};
         FakeKernel k_row0_v2{3};
 
-        assert(audit2_cache.insert(ContentHash{0x55AA}, RowHash{0}, kernel_ptr(&k_row0_v1)).is_ok());
+        assert(audit2_cache.insert(ContentHash{0x55AA}, RowHash{0}, kernel_ref(k_row0_v1)).is_ok());
 
-        assert(audit2_cache.insert(ContentHash{0x55AA}, RowHash{0xBEEF}, kernel_ptr(&k_rowR_v1)).is_ok());
+        assert(audit2_cache.insert(ContentHash{0x55AA}, RowHash{0xBEEF}, kernel_ref(k_rowR_v1)).is_ok());
 
-        assert(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0}) == kernel_ptr(&k_row0_v1));
-        assert(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0xBEEF}) == kernel_ptr(&k_rowR_v1));
+        assert(is_found(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0}), k_row0_v1));
+        assert(is_found(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0xBEEF}), k_rowR_v1));
 
-        assert(audit2_cache.insert(ContentHash{0x55AA}, RowHash{0}, kernel_ptr(&k_row0_v2)).is_ok());
+        assert(audit2_cache.insert(ContentHash{0x55AA}, RowHash{0}, kernel_ref(k_row0_v2)).is_ok());
 
-        assert(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0}) == kernel_ptr(&k_row0_v2));
-        assert(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0xBEEF}) == kernel_ptr(&k_rowR_v1));
+        assert(is_found(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0}), k_row0_v2));
+        assert(is_found(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0xBEEF}), k_rowR_v1));
     }
 
     assert(crucible::element_size(crucible::ScalarType::Float) == crucible::ElementBytes{4});
@@ -470,10 +482,10 @@ namespace {
         };
         FakeRecipeKernel tc_kernel{1};
         using crucible::RowHash;
-        assert(rcache.insert(r_tc->content_hash, RowHash{0}, kernel_ptr(&tc_kernel)).is_ok());
-        assert(rcache.lookup(r_tc->content_hash, RowHash{0}) == kernel_ptr(&tc_kernel));
-        assert(rcache.lookup(r_strict->content_hash, RowHash{0}) == nullptr);
-        assert(rcache.lookup(r_none->content_hash, RowHash{0}) == nullptr);
+        assert(rcache.insert(r_tc->content_hash, RowHash{0}, kernel_ref(tc_kernel)).is_ok());
+        assert(is_found(rcache.lookup(r_tc->content_hash, RowHash{0}), tc_kernel));
+        assert(rcache.lookup(r_strict->content_hash, RowHash{0}).is_none());
+        assert(rcache.lookup(r_none->content_hash, RowHash{0}).is_none());
     }
 
     // A fold that stops at five scalar arguments, or that ignores the

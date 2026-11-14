@@ -22,6 +22,7 @@ using L1 = KernelCache::VendorNeutralLevel;
 using L2 = KernelCache::VendorFamilyLevel;
 using L3 = KernelCache::ChipLevel;
 using PublishResult = KernelCache::InsertResult;
+using Found = KernelCache::FoundKernel;
 
 struct FakeKernel {
     int x;
@@ -34,65 +35,77 @@ struct FakeKernel {
         []() noexcept { return false; });
 }
 
-// The cache never dereferences the kernel pointer, so an unrelated allocation
-// supplies the stable identity the test compares against.
-static CompiledKernel* fk_ptr(FakeKernel* fk) noexcept { return static_cast<CompiledKernel*>(static_cast<void*>(fk)); }
+// The cache never reads a kernel, so the address of an unrelated object
+// supplies the stable identity that the test compares against.
+static KernelCache::KernelRef kernel_ref(FakeKernel& fake) noexcept {
+    return ::fixy::to(*static_cast<CompiledKernel*>(static_cast<void*>(&fake)));
+}
+
+// True when the lookup found the kernel that the fake object stands for.
+[[nodiscard]] static bool is_found(Found const& found, FakeKernel& fake) noexcept {
+    return found.match(
+        [&fake](KernelCache::KernelRef const& kernel) noexcept {
+            return ::fixy::same_object(kernel, kernel_ref(fake));
+        },
+        []() noexcept { return false; });
+}
 
 static void test_lookup_l1_round_trip() {
     KernelCache cache;
     FakeKernel fk{42};
-    auto pub = cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, fk_ptr(&fk));
+    auto pub = cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, kernel_ref(fk));
     assert(std::move(pub).into().is_ok());
 
-    auto raw = cache.lookup(ContentHash{0xAAAA}, RowHash{0});
+    const Found raw = cache.lookup(ContentHash{0xAAAA}, RowHash{0});
     auto tagged = cache.lookup_l1(ContentHash{0xAAAA}, RowHash{0});
-    CompiledKernel* via_level = std::move(tagged).into();
-    assert(raw == via_level);
-    assert(via_level == fk_ptr(&fk));
+    const Found via_level = std::move(tagged).into();
+    assert(is_found(raw, fk));
+    assert(is_found(via_level, fk));
 }
 
 static void test_each_level_names_its_level() {
     KernelCache cache;
     FakeKernel fk{1};
-    static_assert(
-        std::is_same_v<decltype(cache.lookup_l1(ContentHash{1}, RowHash{0})), ::fixy::Tagged<CompiledKernel*, L1>>);
-    static_assert(
-        std::is_same_v<decltype(cache.lookup_l2(ContentHash{1}, RowHash{0})), ::fixy::Tagged<CompiledKernel*, L2>>);
-    static_assert(
-        std::is_same_v<decltype(cache.lookup_l3(ContentHash{1}, RowHash{0})), ::fixy::Tagged<CompiledKernel*, L3>>);
-    static_assert(std::is_same_v<decltype(cache.publish_l1(ContentHash{1}, RowHash{0}, fk_ptr(&fk))),
+    static_assert(std::is_same_v<decltype(cache.lookup_l1(ContentHash{1}, RowHash{0})), ::fixy::Tagged<Found, L1>>);
+    static_assert(std::is_same_v<decltype(cache.lookup_l2(ContentHash{1}, RowHash{0})), ::fixy::Tagged<Found, L2>>);
+    static_assert(std::is_same_v<decltype(cache.lookup_l3(ContentHash{1}, RowHash{0})), ::fixy::Tagged<Found, L3>>);
+    static_assert(std::is_same_v<decltype(cache.publish_l1(ContentHash{1}, RowHash{0}, kernel_ref(fk))),
                                  ::fixy::Tagged<PublishResult, L1>>);
-    static_assert(std::is_same_v<decltype(cache.publish_l2(ContentHash{1}, RowHash{0}, fk_ptr(&fk))),
+    static_assert(std::is_same_v<decltype(cache.publish_l2(ContentHash{1}, RowHash{0}, kernel_ref(fk))),
                                  ::fixy::Tagged<PublishResult, L2>>);
-    static_assert(std::is_same_v<decltype(cache.publish_l3(ContentHash{1}, RowHash{0}, fk_ptr(&fk))),
+    static_assert(std::is_same_v<decltype(cache.publish_l3(ContentHash{1}, RowHash{0}, kernel_ref(fk))),
                                  ::fixy::Tagged<PublishResult, L3>>);
 }
 
 // The levels are provenance, not a residency order: no level stands in for
 // another, in either direction.
 static void test_no_level_converts_to_another() {
-    using AtL1 = ::fixy::Tagged<CompiledKernel*, L1>;
-    using AtL2 = ::fixy::Tagged<CompiledKernel*, L2>;
-    using AtL3 = ::fixy::Tagged<CompiledKernel*, L3>;
+    using AtL1 = ::fixy::Tagged<Found, L1>;
+    using AtL2 = ::fixy::Tagged<Found, L2>;
+    using AtL3 = ::fixy::Tagged<Found, L3>;
     static_assert(!std::is_convertible_v<AtL1, AtL2> && !std::is_convertible_v<AtL2, AtL1>);
     static_assert(!std::is_convertible_v<AtL2, AtL3> && !std::is_convertible_v<AtL3, AtL2>);
     static_assert(!std::is_convertible_v<AtL1, AtL3> && !std::is_convertible_v<AtL3, AtL1>);
     static_assert(!std::is_constructible_v<AtL1, AtL3>);
     static_assert(!std::is_constructible_v<AtL3, AtL1>);
-    // A bare pointer does not become a level either.
-    static_assert(!std::is_constructible_v<AtL1, CompiledKernel*>);
+    // A bare lookup result does not become a level either.
+    static_assert(!std::is_constructible_v<AtL1, Found>);
 }
 
+// A lookup result is one word, and a level adds no byte to it, so the result
+// passes in a register.
 static void test_layout_invariant() {
-    static_assert(sizeof(::fixy::Tagged<CompiledKernel*, L1>) == sizeof(CompiledKernel*));
-    static_assert(sizeof(::fixy::Tagged<CompiledKernel*, L2>) == sizeof(CompiledKernel*));
-    static_assert(sizeof(::fixy::Tagged<CompiledKernel*, L3>) == sizeof(CompiledKernel*));
+    static_assert(sizeof(Found) == 8);
+    static_assert(std::is_trivially_copy_constructible_v<Found> && std::is_trivially_destructible_v<Found>);
+    static_assert(sizeof(::fixy::Tagged<Found, L1>) == sizeof(Found));
+    static_assert(sizeof(::fixy::Tagged<Found, L2>) == sizeof(Found));
+    static_assert(sizeof(::fixy::Tagged<Found, L3>) == sizeof(Found));
 }
 
 // A consumer that requires the chip level refuses the other two at compile
 // time.
 template <typename W>
-concept takes_chip_level = std::is_same_v<W, ::fixy::Tagged<CompiledKernel*, L3>>;
+concept takes_chip_level = std::is_same_v<W, ::fixy::Tagged<Found, L3>>;
 
 static void test_level_gate_at_a_consumer() {
     KernelCache cache;
@@ -107,48 +120,48 @@ static void test_unbacked_levels() {
 
     static_assert(noexcept(cache.lookup_l2(ContentHash{1}, RowHash{0})));
     static_assert(noexcept(cache.lookup_l3(ContentHash{1}, RowHash{0})));
-    static_assert(noexcept(cache.publish_l2(ContentHash{1}, RowHash{0}, fk_ptr(&fk))));
-    static_assert(noexcept(cache.publish_l3(ContentHash{1}, RowHash{0}, fk_ptr(&fk))));
+    static_assert(noexcept(cache.publish_l2(ContentHash{1}, RowHash{0}, kernel_ref(fk))));
+    static_assert(noexcept(cache.publish_l3(ContentHash{1}, RowHash{0}, kernel_ref(fk))));
 
     // Neither level has a store, so the lookups miss for every key.
-    assert(cache.lookup_l2(ContentHash{0xEEEE}, RowHash{0}).into() == nullptr);
-    assert(cache.lookup_l3(ContentHash{0xEEEE}, RowHash{0}).into() == nullptr);
+    assert(cache.lookup_l2(ContentHash{0xEEEE}, RowHash{0}).into().is_none());
+    assert(cache.lookup_l3(ContentHash{0xEEEE}, RowHash{0}).into().is_none());
 
     // The publishes report an error rather than a success marker. A vacuous
     // success would let a caller mistake a missing store for a completed
     // write, so the gap travels on the error channel where it can be branched
     // on.
-    auto r2 = cache.publish_l2(ContentHash{0xFFFF}, RowHash{0}, fk_ptr(&fk)).into();
-    auto r3 = cache.publish_l3(ContentHash{0xFFFF}, RowHash{0}, fk_ptr(&fk)).into();
+    auto r2 = cache.publish_l2(ContentHash{0xFFFF}, RowHash{0}, kernel_ref(fk)).into();
+    auto r3 = cache.publish_l3(ContentHash{0xFFFF}, RowHash{0}, kernel_ref(fk)).into();
     assert(is_not_yet_implemented(std::move(r2)));
     assert(is_not_yet_implemented(std::move(r3)));
 
     // A publish into L2 stays invisible to L1 at the same key.
-    assert(cache.lookup_l1(ContentHash{0xFFFF}, RowHash{0}).into() == nullptr);
+    assert(cache.lookup_l1(ContentHash{0xFFFF}, RowHash{0}).into().is_none());
 }
 
 static void test_three_level_publish() {
     KernelCache cache;
     FakeKernel fk{0x42};
 
-    auto r1 = cache.publish_l1(ContentHash{0x1111}, RowHash{0xAAAA}, fk_ptr(&fk)).into();
-    auto r2 = cache.publish_l2(ContentHash{0x1111}, RowHash{0xAAAA}, fk_ptr(&fk)).into();
-    auto r3 = cache.publish_l3(ContentHash{0x1111}, RowHash{0xAAAA}, fk_ptr(&fk)).into();
+    auto r1 = cache.publish_l1(ContentHash{0x1111}, RowHash{0xAAAA}, kernel_ref(fk)).into();
+    auto r2 = cache.publish_l2(ContentHash{0x1111}, RowHash{0xAAAA}, kernel_ref(fk)).into();
+    auto r3 = cache.publish_l3(ContentHash{0x1111}, RowHash{0xAAAA}, kernel_ref(fk)).into();
     assert(r1.is_ok());
     assert(r2.is_err());
     assert(r3.is_err());
-    assert(cache.lookup_l1(ContentHash{0x1111}, RowHash{0xAAAA}).into() == fk_ptr(&fk));
+    assert(is_found(cache.lookup_l1(ContentHash{0x1111}, RowHash{0xAAAA}).into(), fk));
 }
 
 static void test_lookup_l1_miss() {
     KernelCache cache;
-    assert(cache.lookup_l1(ContentHash{0xDEAD}, RowHash{0xBEEF}).into() == nullptr);
+    assert(cache.lookup_l1(ContentHash{0xDEAD}, RowHash{0xBEEF}).into().is_none());
 
     // A publish under a different key must not make the original key hit
     // through probe pollution.
     FakeKernel fk{1};
-    assert(cache.publish_l1(ContentHash{0x1234}, RowHash{0}, fk_ptr(&fk)).into().is_ok());
-    assert(cache.lookup_l1(ContentHash{0xDEAD}, RowHash{0xBEEF}).into() == nullptr);
+    assert(cache.publish_l1(ContentHash{0x1234}, RowHash{0}, kernel_ref(fk)).into().is_ok());
+    assert(cache.lookup_l1(ContentHash{0xDEAD}, RowHash{0xBEEF}).into().is_none());
 }
 
 // Re-publishing at the same key overwrites the slot. Kernel-variant rotation
@@ -158,9 +171,9 @@ static void test_publish_l1_variant_update() {
     KernelCache cache;
     FakeKernel fk_v1{1};
     FakeKernel fk_v2{2};
-    assert(cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, fk_ptr(&fk_v1)).into().is_ok());
-    assert(cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, fk_ptr(&fk_v2)).into().is_ok());
-    assert(cache.lookup_l1(ContentHash{0xAAAA}, RowHash{0}).into() == fk_ptr(&fk_v2));
+    assert(cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, kernel_ref(fk_v1)).into().is_ok());
+    assert(cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, kernel_ref(fk_v2)).into().is_ok());
+    assert(is_found(cache.lookup_l1(ContentHash{0xAAAA}, RowHash{0}).into(), fk_v2));
 }
 
 // One content hash with two row hashes occupies two slots. A wrapper
@@ -169,11 +182,11 @@ static void test_publish_l1_row_discrimination() {
     KernelCache cache;
     FakeKernel fk_row_a{1};
     FakeKernel fk_row_b{2};
-    assert(cache.publish_l1(ContentHash{0x1234}, RowHash{0xAAAA}, fk_ptr(&fk_row_a)).into().is_ok());
-    assert(cache.publish_l1(ContentHash{0x1234}, RowHash{0xBBBB}, fk_ptr(&fk_row_b)).into().is_ok());
-    assert(cache.lookup_l1(ContentHash{0x1234}, RowHash{0xAAAA}).into() == fk_ptr(&fk_row_a));
-    assert(cache.lookup_l1(ContentHash{0x1234}, RowHash{0xBBBB}).into() == fk_ptr(&fk_row_b));
-    assert(cache.lookup_l1(ContentHash{0x1234}, RowHash{0xCCCC}).into() == nullptr);
+    assert(cache.publish_l1(ContentHash{0x1234}, RowHash{0xAAAA}, kernel_ref(fk_row_a)).into().is_ok());
+    assert(cache.publish_l1(ContentHash{0x1234}, RowHash{0xBBBB}, kernel_ref(fk_row_b)).into().is_ok());
+    assert(is_found(cache.lookup_l1(ContentHash{0x1234}, RowHash{0xAAAA}).into(), fk_row_a));
+    assert(is_found(cache.lookup_l1(ContentHash{0x1234}, RowHash{0xBBBB}).into(), fk_row_b));
+    assert(cache.lookup_l1(ContentHash{0x1234}, RowHash{0xCCCC}).into().is_none());
 }
 
 int main() {

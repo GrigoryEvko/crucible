@@ -2,14 +2,14 @@
 // prop_kernel_cache_roundtrip — KernelCache insert + lookup invariant.
 //
 // KernelCache is the lock-free open-addressing Swiss-table that maps
-// content_hash → CompiledKernel*.  The load-bearing invariant:
+// content_hash → CompiledKernel.  The load-bearing invariant:
 //
 //   For every (h, k) pair inserted, lookup(h) returns k (or fails
 //   on table-full, but never returns a different kernel).
 //
-// Strategy: per iteration, generate N distinct (content_hash, fake
-// kernel*) pairs.  Insert all N; lookup each; verify the original
-// kernel comes back.  Random hash distribution exercises probe
+// Strategy: per iteration, generate N random content hashes, and pair
+// each with one of N fake kernels.  Insert all N; lookup each; verify the
+// original kernel comes back.  Random hash distribution exercises probe
 // chains.  Run with N up to KERNEL_CACHE_CAP/2 (50% load).
 //
 // Catches:
@@ -34,13 +34,12 @@ int main(int argc, char** argv) {
     return run(
         "KernelCache insert + lookup round-trip", cfg,
         [](Rng& rng) {
-            // 64 distinct (hash, fake_kernel*) pairs per iteration.
+            // 64 random content hashes per iteration.
             // KERNEL_CACHE_CAP is typically 1024+; 64 is well under
             // the 50% load threshold so insert won't OOM the table.
             constexpr unsigned N = 64;
             struct Batch {
                 std::array<ContentHash, N> hashes;
-                std::array<uintptr_t, N> tags;
             };
             Batch b{};
             for (unsigned i = 0; i < N; ++i) {
@@ -48,7 +47,6 @@ int main(int argc, char** argv) {
                 // as a slot-empty sentinel).  Add 1 to guarantee
                 // non-zero.
                 b.hashes[i] = ContentHash{rng.next64() | 1ULL};
-                b.tags[i] = rng.next64();
             }
             return b;
         },
@@ -56,37 +54,43 @@ int main(int argc, char** argv) {
             KernelCache cache;
             constexpr unsigned N = 64;
 
-            // Insert all N — synthesize a "fake" CompiledKernel*
-            // by reinterpreting the random tag as a pointer.  We
-            // never DEREFERENCE this pointer, only compare it.
-            for (unsigned i = 0; i < N; ++i) {
-                auto* fake = reinterpret_cast<CompiledKernel*>(b.tags[i]);
+            // The cache never reads a kernel, so the address of a fake
+            // object stands for one.  The N fakes have N addresses.
+            struct FakeKernel {
+                unsigned tag = 0;
+            };
+            ::foundation::core::FixedArray<FakeKernel, N> fakes{};
+            const auto kernel_of = [&fakes](::fixy::Index<N> index) noexcept -> KernelCache::KernelRef {
+                return ::fixy::to(*static_cast<CompiledKernel*>(static_cast<void*>(&fakes.at(index))));
+            };
+
+            for (const ::fixy::Index<N> index : fakes.indices()) {
                 // RowHash{} is the bare-type / no-row baseline (raw 0):
                 // this fuzzer keys purely on content_hash, so it pins a
                 // single row slot of the row-keyed KernelCache for every
                 // insert.  insert() returns
                 // KernelCache::InsertResult, and table-full is the only
                 // error.
-                auto ins = cache.insert(b.hashes[i], RowHash{}, fake);
+                auto ins = cache.insert(b.hashes[index.raw()], RowHash{}, kernel_of(index));
                 if (ins.is_err()) return false;
             }
 
-            // Lookup each — must return the SAME pointer.
-            for (unsigned i = 0; i < N; ++i) {
-                auto* expected = reinterpret_cast<CompiledKernel*>(b.tags[i]);
-                auto* actual = cache.lookup(b.hashes[i], RowHash{});
-                // Two paths the lookup can return a "wrong" pointer:
+            // Lookup each — must return the SAME kernel.
+            for (const ::fixy::Index<N> index : fakes.indices()) {
+                const std::size_t i = index.raw();
+                const KernelCache::FoundKernel actual = cache.lookup(b.hashes[i], RowHash{});
+                // Two paths the lookup can return a "wrong" kernel:
                 //   1. Returned someone else's kernel (probe bug)
-                //   2. Returned nullptr (table-full or lost insert)
+                //   2. Returned no kernel (table-full or lost insert)
                 // Either fails the round-trip.
                 //
                 // Note: if two of our random hashes collide (after
                 // the |1 mask, probability still ~2^-64 per pair),
                 // the second insert overwrites and the first lookup
-                // legitimately returns the SECOND tag.  Skip the
+                // legitimately returns the SECOND kernel.  Skip the
                 // check in that rare case.
                 bool collision_with_later = false;
-                for (unsigned j = i + 1; j < N; ++j) {
+                for (std::size_t j = i + 1; j < N; ++j) {
                     if (b.hashes[j] == b.hashes[i]) {
                         collision_with_later = true;
                         break;
@@ -94,7 +98,12 @@ int main(int argc, char** argv) {
                 }
                 if (collision_with_later) continue;
 
-                if (actual != expected) return false;
+                const bool is_expected = actual.match(
+                    [&](KernelCache::KernelRef const& kernel) noexcept {
+                        return ::fixy::same_object(kernel, kernel_of(index));
+                    },
+                    []() noexcept { return false; });
+                if (!is_expected) return false;
             }
             return true;
         });

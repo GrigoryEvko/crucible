@@ -28,8 +28,10 @@ struct FakeKernel {
     std::uint64_t id = 0;
 };
 
-[[nodiscard]] CompiledKernel* fk_ptr(FakeKernel& kernel) noexcept {
-    return static_cast<CompiledKernel*>(static_cast<void*>(&kernel));
+// The cache never reads a kernel, so the address of a fake object stands
+// for one.
+[[nodiscard]] KernelCache::KernelRef kernel_ref(FakeKernel& kernel) noexcept {
+    return ::fixy::to(*static_cast<CompiledKernel*>(static_cast<void*>(&kernel)));
 }
 
 class RawKernelCache {
@@ -79,11 +81,13 @@ public:
         return nullptr;
     }
 
+    // The typed cache takes the same kernel reference, so one seed serves the
+    // two caches.  The raw table keeps the address of the kernel.
     [[nodiscard]] ::fixy::Result<::fixy::Unit, InsertError> insert(ContentHash content_hash, RowHash row_hash,
-                                                                   CompiledKernel* kernel) noexcept
+                                                                   KernelCache::KernelRef kernel_ref) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(content_hash.raw() != 0);
-        CRUCIBLE_PRE(kernel != nullptr);
+        CompiledKernel* const kernel = &*kernel_ref;
         const std::uint64_t lookup_hash = content_hash.raw();
         const std::uint64_t lookup_row = row_hash.raw();
         const std::uint32_t mask = capacity_ - 1;
@@ -147,7 +151,7 @@ void seed_cache(Cache& cache, std::span<FakeKernel> kernels) {
     for (std::size_t i = 0; i < kernels.size(); ++i) {
         kernels[i].id = i + 1;
         auto inserted =
-            cache.insert(ContentHash{0x1000 + static_cast<std::uint64_t>(i)}, RowHash{0}, fk_ptr(kernels[i]));
+            cache.insert(ContentHash{0x1000 + static_cast<std::uint64_t>(i)}, RowHash{0}, kernel_ref(kernels[i]));
         CRUCIBLE_BENCH_CHECK(inserted.is_ok());
     }
 }
@@ -163,7 +167,7 @@ void seed_row_siblings(Cache& cache, std::span<FakeKernel> kernels) {
         for (std::uint64_t row = 0; row < kRowsPerCluster; ++row) {
             kernels[cursor].id = 0xA000 + cursor;
             auto inserted = cache.insert(ContentHash{content}, RowHash{0x200 + (cluster * kRowsPerCluster) + row},
-                                         fk_ptr(kernels[cursor]));
+                                         kernel_ref(kernels[cursor]));
             CRUCIBLE_BENCH_CHECK(inserted.is_ok());
             ++cursor;
         }
@@ -175,7 +179,7 @@ template <typename Cache>
     std::uint64_t i = 0;
     return bench::Run{name}.samples(100000).warmup(10000).max_wall_ms(3000).measure([&] {
         const std::uint64_t idx = (i++ & 1023U);
-        CompiledKernel* hit = cache.lookup(ContentHash{0x1000 + idx}, RowHash{0});
+        auto hit = cache.lookup(ContentHash{0x1000 + idx}, RowHash{0});
         bench::do_not_optimize(hit);
     });
 }
@@ -187,8 +191,8 @@ template <typename Cache>
         const std::uint64_t idx = i++ & 1023U;
         const std::uint64_t cluster = idx / kRowsPerCluster;
         const std::uint64_t row = idx % kRowsPerCluster;
-        CompiledKernel* hit = cache.lookup(ContentHash{0xABC00000ULL | kRowClusterSlotBases[cluster]},
-                                           RowHash{0x200 + (cluster * kRowsPerCluster) + row});
+        auto hit = cache.lookup(ContentHash{0xABC00000ULL | kRowClusterSlotBases[cluster]},
+                                RowHash{0x200 + (cluster * kRowsPerCluster) + row});
         bench::do_not_optimize(hit);
     });
 }
@@ -197,7 +201,7 @@ template <typename Cache>
 [[nodiscard]] bench::Report bench_clean_miss(char const* name, Cache& cache) {
     std::uint64_t i = 0;
     return bench::Run{name}.samples(100000).warmup(10000).max_wall_ms(3000).measure([&] {
-        CompiledKernel* miss = cache.lookup(ContentHash{0x90000000ULL + 1024 + (i++ & 255U)}, RowHash{0xFF});
+        auto miss = cache.lookup(ContentHash{0x90000000ULL + 1024 + (i++ & 255U)}, RowHash{0xFF});
         bench::do_not_optimize(miss);
     });
 }

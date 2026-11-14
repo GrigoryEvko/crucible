@@ -8,7 +8,6 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Types.h>
-#include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <foundation/Linear.h>
@@ -82,10 +81,16 @@ public:
     template <typename Level, typename T>
     using AtLevel = ::fixy::Tagged<T, Level>;
 
+    // A compiled kernel in a slot.  The cache does not own the kernel, and
+    // a reference is never null.
+    using KernelRef = ::fixy::Ref<CompiledKernel>;
+    // The kernel of a key, or no value when no slot holds the key.
+    using FoundKernel = ::fixy::Option<KernelRef>;
+
     struct KernelCacheSlotSnapshot {
         uint64_t content_hash = 0;
         uint64_t row_hash = 0;
-        CompiledKernel* kernel = nullptr;
+        FoundKernel kernel{};
     };
 
     static_assert(sizeof(KernelCacheSlotSnapshot) == 24, "KernelCacheSlotSnapshot must stay the 24-byte wire triple: "
@@ -143,18 +148,17 @@ public:
 
             void publish(snapshot_type const& snapshot) noexcept {
                 CRUCIBLE_PRE(::foundation::decide::is_non_zero(snapshot.content_hash));
-                CRUCIBLE_PRE(snapshot.kernel != nullptr);
+                CRUCIBLE_PRE(snapshot.kernel.is_some());
                 // The content hash is already claimed by CAS before this
                 // endpoint exists.  The two stores must stay in this order:
                 // the kernel store is what makes the row visible to readers.
                 contract_assert(slot_->content_hash_.load_acquire() == snapshot.content_hash);
                 slot_->row_hash_.store_release(snapshot.row_hash);
-                slot_->kernel_.store_release(::fixy::WeakRef<CompiledKernel>::from_raw(snapshot.kernel));
+                slot_->kernel_.store_release(snapshot.kernel);
             }
 
-            void publish_kernel_variant(CompiledKernel* kernel) noexcept {
-                CRUCIBLE_PRE(kernel != nullptr);
-                slot_->kernel_.store_release(::fixy::WeakRef<CompiledKernel>::from_raw(kernel));
+            void publish_kernel_variant(KernelRef kernel) noexcept {
+                slot_->kernel_.store_release(::fixy::some(kernel));
             }
         };
 
@@ -170,15 +174,15 @@ public:
             using tag_type = reader_tag;
 
             [[nodiscard]] snapshot_type load() const noexcept {
-                const ::fixy::WeakRef<CompiledKernel> kernel = slot_->kernel_.load_acquire();
+                const FoundKernel kernel = slot_->kernel_.load_acquire();
                 uint64_t row = 0;
-                if (kernel.has_value()) {
+                if (kernel.is_some()) {
                     row = slot_->row_hash_.load_acquire();
                 }
                 return snapshot_type{
                     .content_hash = slot_->content_hash_.load_acquire(),
                     .row_hash = row,
-                    .kernel = kernel.try_get(),
+                    .kernel = kernel,
                 };
             }
 
@@ -188,9 +192,7 @@ public:
 
             [[nodiscard]] CRUCIBLE_INLINE uint64_t row_hash() const noexcept { return slot_->row_hash_.load_acquire(); }
 
-            [[nodiscard]] CRUCIBLE_INLINE CompiledKernel* kernel() const noexcept {
-                return slot_->kernel_.load_acquire().try_get();
-            }
+            [[nodiscard]] CRUCIBLE_INLINE FoundKernel kernel() const noexcept { return slot_->kernel_.load_acquire(); }
         };
 
         [[nodiscard]] WriterHandle writer(::foundation::permissions::Permission<writer_tag>&& perm) noexcept {
@@ -203,9 +205,7 @@ public:
 
         [[nodiscard]] CRUCIBLE_INLINE uint64_t row_hash() const noexcept { return row_hash_.load_acquire(); }
 
-        [[nodiscard]] CRUCIBLE_INLINE CompiledKernel* kernel() const noexcept {
-            return kernel_.load_acquire().try_get();
-        }
+        [[nodiscard]] CRUCIBLE_INLINE FoundKernel kernel() const noexcept { return kernel_.load_acquire(); }
 
         // A failed claim writes the content hash that the slot holds into
         // expected.
@@ -226,7 +226,7 @@ public:
         // EMPTY is decided from content_hash == 0 before the row is read.
         ::fixy::Atomic<uint64_t> content_hash_{};
         ::fixy::Atomic<uint64_t> row_hash_{};
-        ::fixy::Atomic<::fixy::WeakRef<CompiledKernel>> kernel_{};
+        ::fixy::Atomic<FoundKernel> kernel_{};
     };
 
     static_assert(sizeof(KernelCacheSlot) == 24, "KernelCacheSlot must stay exactly 8B content + 8B row + "
@@ -292,8 +292,8 @@ public:
     // A lookup of the zero hash would walk the entire table: it matches no
     // slot and terminates on no empty one.  The row needs no such guard,
     // because RowHash{0} is a real key that can coexist with any other.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] CompiledKernel* lookup(ContentHash content_hash,
-                                                                                RowHash row_hash) const noexcept
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] FoundKernel lookup(ContentHash content_hash,
+                                                                            RowHash row_hash) const noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         const uint64_t lookup_hash = content_hash.raw();
@@ -303,14 +303,14 @@ public:
         for (uint32_t probe = 0; probe < capacity_; probe++) {
             auto& entry = table_[(slot_index + probe) & mask];
             uint64_t key = entry.content_hash_.load_acquire();
-            if (key == 0) return nullptr;
+            if (key == 0) return ::fixy::none;
             if (key != lookup_hash) continue;
             // The kernel must be loaded before the row: the release-acquire
             // pair on the kernel is what makes the published row visible.
-            ::fixy::WeakRef<CompiledKernel> kernel = entry.kernel_.load_acquire();
-            if (!kernel.has_value()) [[unlikely]] {
+            FoundKernel kernel = entry.kernel_.load_acquire();
+            if (kernel.is_none()) [[unlikely]] {
                 kernel = await_claimed_(entry);
-                if (!kernel.has_value()) [[unlikely]] {
+                if (kernel.is_none()) [[unlikely]] {
                     // One content hash can occupy several slots, one per row,
                     // so a stalled claim here must not hide a matching slot
                     // further along the chain.
@@ -319,9 +319,9 @@ public:
             }
             uint64_t entry_row = entry.row_hash_.load_acquire();
             if (entry_row == lookup_row) [[likely]]
-                return kernel.try_get();
+                return kernel;
         }
-        return nullptr;
+        return ::fixy::none;
     }
 
     enum class InsertError : uint8_t {
@@ -336,10 +336,9 @@ public:
     // end-of-region marker, so neither can be a key.  The row again needs no
     // guard: RowHash{0} is a real key.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] InsertResult insert(ContentHash content_hash, RowHash row_hash,
-                                                                   CompiledKernel* kernel) CRUCIBLE_NO_THREAD_SAFETY {
+                                                                   KernelRef kernel) CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
-        CRUCIBLE_PRE(kernel != nullptr);
         const uint64_t lookup_hash = content_hash.raw();
         const uint64_t lookup_row = row_hash.raw();
         const uint32_t mask = capacity_ - 1;
@@ -353,7 +352,7 @@ public:
                 writer.publish(KernelCacheSlotSnapshot{
                     .content_hash = lookup_hash,
                     .row_hash = lookup_row,
-                    .kernel = kernel,
+                    .kernel = ::fixy::some(kernel),
                 });
                 ::foundation::linear::drop(std::move(writer).release());
                 // Nothing branches on the exact count.  The content hash CAS
@@ -365,10 +364,10 @@ public:
                 // The content matches, so the row decides.  Spin on the
                 // kernel, never on the row: a CLAIMED slot reads row 0, which
                 // is indistinguishable from a published row of 0.
-                bool is_published = entry.kernel_.load_acquire().has_value();
+                bool is_published = entry.kernel_.load_acquire().is_some();
                 for (uint32_t spin = 0; spin < kClaimedSpinBudget && !is_published; ++spin) {
                     CRUCIBLE_SPIN_PAUSE;
-                    is_published = entry.kernel_.load_acquire().has_value();
+                    is_published = entry.kernel_.load_acquire().is_some();
                 }
                 if (is_published) {
                     // A published kernel makes the row visible too.
@@ -401,7 +400,7 @@ public:
     // handed to a path that requires another.  The level is where the value
     // came from, not how near it is to the core, so it is a provenance tag
     // and not a residency class.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] AtLevel<VendorNeutralLevel, CompiledKernel*>
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] AtLevel<VendorNeutralLevel, FoundKernel>
     lookup_l1(ContentHash content_hash, RowHash row_hash) const noexcept CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         return ::fixy::mint_tagged<VendorNeutralLevel>(lookup(content_hash, row_hash));
@@ -411,18 +410,18 @@ public:
     // bodies ignore their arguments: a backing store added later inherits the
     // contract, whereas relaxing it later would have to be renegotiated at
     // every call site.
-    [[nodiscard]] AtLevel<VendorFamilyLevel, CompiledKernel*> lookup_l2(ContentHash content_hash,
-                                                                        RowHash /*row_hash*/) const noexcept
+    [[nodiscard]] AtLevel<VendorFamilyLevel, FoundKernel> lookup_l2(ContentHash content_hash,
+                                                                    RowHash /*row_hash*/) const noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
-        return ::fixy::mint_tagged<VendorFamilyLevel>(static_cast<CompiledKernel*>(nullptr));
+        return ::fixy::mint_tagged<VendorFamilyLevel>(FoundKernel{});
     }
 
-    [[nodiscard]] AtLevel<ChipLevel, CompiledKernel*> lookup_l3(ContentHash content_hash,
-                                                                RowHash /*row_hash*/) const noexcept
+    [[nodiscard]] AtLevel<ChipLevel, FoundKernel> lookup_l3(ContentHash content_hash,
+                                                            RowHash /*row_hash*/) const noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
-        return ::fixy::mint_tagged<ChipLevel>(static_cast<CompiledKernel*>(nullptr));
+        return ::fixy::mint_tagged<ChipLevel>(FoundKernel{});
     }
 
     // A caller derives row_hash by projecting a typed effect row, so that the
@@ -432,29 +431,26 @@ public:
     // Both hash guards are needed here and on the two levels below: UINT64_MAX
     // is non-zero, and zero is not the reserved sentinel.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]]
-    AtLevel<VendorNeutralLevel, InsertResult> publish_l1(ContentHash content_hash, RowHash row_hash,
-                                                         CompiledKernel* kernel) CRUCIBLE_NO_THREAD_SAFETY {
+    AtLevel<VendorNeutralLevel, InsertResult> publish_l1(ContentHash content_hash, RowHash row_hash, KernelRef kernel)
+        CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
-        CRUCIBLE_PRE(kernel != nullptr);
         return ::fixy::mint_tagged<VendorNeutralLevel>(insert(content_hash, row_hash, kernel));
     }
 
     [[nodiscard]]
     AtLevel<VendorFamilyLevel, InsertResult> publish_l2(ContentHash content_hash, RowHash /*row_hash*/,
-                                                        CompiledKernel* kernel) noexcept {
+                                                        KernelRef /*kernel*/) noexcept {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
-        CRUCIBLE_PRE(kernel != nullptr);
         return ::fixy::mint_tagged<VendorFamilyLevel>(InsertResult{::fixy::err(InsertError::NotYetImplemented)});
     }
 
     [[nodiscard]]
     AtLevel<ChipLevel, InsertResult> publish_l3(ContentHash content_hash, RowHash /*row_hash*/,
-                                                CompiledKernel* kernel) noexcept {
+                                                KernelRef /*kernel*/) noexcept {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
-        CRUCIBLE_PRE(kernel != nullptr);
         return ::fixy::mint_tagged<ChipLevel>(InsertResult{::fixy::err(InsertError::NotYetImplemented)});
     }
 
@@ -468,7 +464,7 @@ public:
         CRUCIBLE_PRE(capacity_ > 0u);
         CRUCIBLE_PRE(::foundation::decide::in_range<uint32_t>(slot_index, 0u, capacity_ - 1u));
         const KernelCacheSlot& entry = table_[slot_index];
-        return classify_(entry.content_hash_.load_acquire(), entry.kernel_.load_acquire().has_value());
+        return classify_(entry.content_hash_.load_acquire(), entry.kernel_.load_acquire().is_some());
     }
 
 private:
@@ -501,16 +497,16 @@ private:
     }
 
     // Outlined so that the hot lookup body stays compact.
-    // The kernel of a claimed slot, or an empty reference when the spin
-    // budget runs out first.
+    // The kernel of a claimed slot, or no value when the spin budget runs
+    // out first.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[gnu::cold, gnu::noinline]]
-    static ::fixy::WeakRef<CompiledKernel> await_claimed_(const KernelCacheSlot& entry) noexcept {
+    static FoundKernel await_claimed_(const KernelCacheSlot& entry) noexcept {
         for (uint32_t spin = 0; spin < kClaimedSpinBudget; ++spin) {
             CRUCIBLE_SPIN_PAUSE;
-            const ::fixy::WeakRef<CompiledKernel> kernel = entry.kernel_.load_acquire();
-            if (kernel.has_value()) return kernel;
+            const FoundKernel kernel = entry.kernel_.load_acquire();
+            if (kernel.is_some()) return kernel;
         }
-        return ::fixy::WeakRef<CompiledKernel>{};
+        return ::fixy::none;
     }
 
     // A writer token for one slot write.  The handle names its token type
@@ -564,9 +560,9 @@ private:
     //
     // The content hash half of the key carries the recipe, because the region
     // above was built under it.
-    if (auto* cached_kernel = kernel_cache.lookup(new_region->content_hash, RowHash{0})) {
-        new_region->compiled.publish(cached_kernel);
-    }
+    kernel_cache.lookup(new_region->content_hash, RowHash{0})
+        .match([new_region](KernelCache::KernelRef kernel) noexcept { new_region->compiled.publish(&*kernel); },
+               []() noexcept {});
 
     BranchNode* branch = &*arena.make<BranchNode>(a);
     branch->kind = TraceNodeKind::BRANCH;

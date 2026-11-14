@@ -33,7 +33,22 @@ auto g_init = ::foundation::effects::testing::init();
 inline ::foundation::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
 
-[[nodiscard]] CompiledKernel* kernel_ptr(void* p) noexcept { return static_cast<CompiledKernel*>(p); }
+// The cache never reads a kernel, so the address of a fake object stands
+// for one.
+template <class Fake>
+[[nodiscard]] KernelCache::KernelRef kernel_ref(Fake& fake) noexcept {
+    return ::fixy::to(*static_cast<CompiledKernel*>(static_cast<void*>(&fake)));
+}
+
+// True when the lookup found the kernel that the fake object stands for.
+template <class Fake>
+[[nodiscard]] bool is_found(KernelCache::FoundKernel const& found, Fake& fake) noexcept {
+    return found.match(
+        [&fake](KernelCache::KernelRef const& kernel) noexcept {
+            return ::fixy::same_object(kernel, kernel_ref(fake));
+        },
+        []() noexcept { return false; });
+}
 
 // The schema hashes are fixed so a comparison across pools or processes
 // stays stable.
@@ -226,29 +241,29 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
             const char* tag;
         };
         FakeKernel kernel_tc{"f16_tc-compiled"};
-        auto ins = cache.insert(region_tc->content_hash, RowHash{0}, kernel_ptr(&kernel_tc));
+        auto ins = cache.insert(region_tc->content_hash, RowHash{0}, kernel_ref(kernel_tc));
         assert(ins.is_ok());
-        assert(cache.lookup(region_tc->content_hash, RowHash{0}) == kernel_ptr(&kernel_tc));
+        assert(is_found(cache.lookup(region_tc->content_hash, RowHash{0}), kernel_tc));
 
         // A lookup under the second recipe must miss.  Were the two sharing
         // a slot, the first recipe's kernel would serve the second recipe's
         // work.
-        assert(cache.lookup(region_ord->content_hash, RowHash{0}) == nullptr);
+        assert(cache.lookup(region_ord->content_hash, RowHash{0}).is_none());
 
         // The third recipe is isolated the same way.
-        assert(cache.lookup(region_bf16_tc->content_hash, RowHash{0}) == nullptr);
+        assert(cache.lookup(region_bf16_tc->content_hash, RowHash{0}).is_none());
 
         // The first recipe still finds its own kernel.
-        assert(cache.lookup(region_tc->content_hash, RowHash{0}) == kernel_ptr(&kernel_tc));
+        assert(is_found(cache.lookup(region_tc->content_hash, RowHash{0}), kernel_tc));
 
         // Two kernels under two recipes coexist, each reachable only
         // through its own key.
         FakeKernel kernel_ord{"f16_ordered-compiled"};
-        auto ins2 = cache.insert(region_ord->content_hash, RowHash{0}, kernel_ptr(&kernel_ord));
+        auto ins2 = cache.insert(region_ord->content_hash, RowHash{0}, kernel_ref(kernel_ord));
         assert(ins2.is_ok());
-        assert(cache.lookup(region_tc->content_hash, RowHash{0}) == kernel_ptr(&kernel_tc));
-        assert(cache.lookup(region_ord->content_hash, RowHash{0}) == kernel_ptr(&kernel_ord));
-        assert(cache.lookup(region_bf16_tc->content_hash, RowHash{0}) == nullptr);
+        assert(is_found(cache.lookup(region_tc->content_hash, RowHash{0}), kernel_tc));
+        assert(is_found(cache.lookup(region_ord->content_hash, RowHash{0}), kernel_ord));
+        assert(cache.lookup(region_bf16_tc->content_hash, RowHash{0}).is_none());
     }
 
     // The search run of prop_content_hash_recipe_disambiguates with the seed
