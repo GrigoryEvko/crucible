@@ -69,6 +69,7 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Index.h>
+#include <foundation/core/Owner.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
@@ -300,6 +301,59 @@ template <class T, std::size_t Align>
     return padded & ~(Align - 1);
 }
 
+// Ends each of the count elements at first, from the last, and gives their
+// storage back to the allocation door with the bytes and the alignment of
+// the mint.  Null storage holds no element.  Complexity: O(count).
+template <class T, std::size_t Align>
+constexpr void release_heap_elements_(T* first, std::size_t count) noexcept {
+    if (first == nullptr) {
+        return;
+    }
+    if constexpr (!std::is_trivially_destructible_v<T>) {
+        for (std::size_t position = count; position != 0; --position) {
+            first[position - 1].~T();
+        }
+    }
+    heap_release_(static_cast<void*>(first), heap_array_bytes_<T, Align>(count), Align);
+}
+
+namespace owner {
+
+// The fields of a HeapArray: the first element and the count, or null and
+// zero when it holds no storage.
+template <class T, std::size_t Align>
+struct HeapArrayState {
+    T* first = nullptr;
+    std::size_t count = 0;
+
+    [[nodiscard]] static constexpr HeapArrayState emptied(HeapArrayState const& /*state*/) noexcept {
+        return HeapArrayState{};
+    }
+
+    static constexpr void release(HeapArrayState const& state) noexcept {
+        release_heap_elements_<T, Align>(state.first, state.count);
+    }
+};
+
+// The fields of a MaskedArray: the first element, the count and the mask, or
+// null and zeros when it holds no storage.
+template <class T, std::size_t Align>
+struct MaskedArrayState {
+    T* first = nullptr;
+    std::size_t count = 0;
+    std::size_t mask = 0;
+
+    [[nodiscard]] static constexpr MaskedArrayState emptied(MaskedArrayState const& /*state*/) noexcept {
+        return MaskedArrayState{};
+    }
+
+    static constexpr void release(MaskedArrayState const& state) noexcept {
+        release_heap_elements_<T, Align>(state.first, state.count);
+    }
+};
+
+}  // namespace owner
+
 // The door of mint_heap_array and mint_masked_array, and the key of the
 // constructors of a HeapArray and a MaskedArray.  HeapArrayDoor is the one
 // friend of the key, and only the two mints call the door.  The door and the
@@ -334,26 +388,9 @@ concept CanMintHeapArray = OwnedElement<T> && detail::HeapArrayAlignment<T, Alig
 
 template <class T, std::size_t Align = alignof(T)>
     requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
-class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]] HeapArray final {
-    T* first_ = nullptr;
-    std::size_t count_ = 0;
-
-    // Ends each element from the last, and gives the storage back to the
-    // allocation door with the bytes and the alignment of the mint.  An
-    // empty array holds no storage.  Complexity: O(count).
-    constexpr void release_() noexcept {
-        if (first_ == nullptr) {
-            return;
-        }
-        if constexpr (!std::is_trivially_destructible_v<T>) {
-            for (std::size_t position = count_; position != 0; --position) {
-                first_[position - 1].~T();
-            }
-        }
-        detail::heap_release_(static_cast<void*>(first_), detail::heap_array_bytes_<T, Align>(count_), Align);
-        first_ = nullptr;
-        count_ = 0;
-    }
+class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]] HeapArray final
+    : public detail::OwnerCore<detail::owner::HeapArrayState<T, Align>> {
+    using State = detail::owner::HeapArrayState<T, Align>;
 
 public:
     using element_type = T;
@@ -377,44 +414,39 @@ public:
         for (std::size_t position = 0; position != count; ++position) {
             ::new(static_cast<void*>(first + position)) T(fill);
         }
-        first_ = first;
-        count_ = count;
+        this->state_ = State{first, count};
     }
 
-    constexpr HeapArray(HeapArray&& other) noexcept : first_{other.first_}, count_{other.count_} {
-        other.first_ = nullptr;
-        other.count_ = 0;
-    }
-
-    // Ends each element that this array holds, and takes the storage of
-    // other.
-    constexpr HeapArray& operator=(HeapArray&& other) noexcept {
-        if (this != &other) {
-            release_();
-            first_ = other.first_;
-            count_ = other.count_;
-            other.first_ = nullptr;
-            other.count_ = 0;
-        }
-        return *this;
-    }
+    // The core of foundation/core/Owner.h gives the moves and the end of an
+    // array.  The assignment ends each element that this array holds after
+    // it takes other, so other can live in one of those elements.  The
+    // assignment drops the elements, so an array of a linear element has
+    // none.
+    constexpr HeapArray(HeapArray&&) noexcept = default;
+    constexpr HeapArray& operator=(HeapArray&&) noexcept
+        requires DroppablePayload<T>
+    = default;
+    HeapArray& operator=(HeapArray&&)
+        requires(!DroppablePayload<T>)
+    = delete("an assignment drops the elements that the HeapArray holds, and a linear element must not be dropped: "
+             "build a new HeapArray instead");
 
     HeapArray(HeapArray const&) = delete("a HeapArray owns its storage alone: a copy would free the storage two times");
     HeapArray&
     operator=(HeapArray const&) = delete("a HeapArray owns its storage alone: a copy would free the storage two times");
 
-    constexpr ~HeapArray() { release_(); }
-
-    [[nodiscard]] constexpr std::size_t size() const noexcept { return count_; }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return this->state_.count; }
 
     // The View of the elements.  It borrows this array.  The mint bounds
     // the count and gives storage for each count above zero, so the View
     // comes through the door of the base layer, with no check.  An assume of
     // these two facts on the members gave the loop of the probe
     // heap_array_sum two checks of view_over_ and a spill to the stack.
-    [[nodiscard]] constexpr View<T> view() & noexcept { return View<T>{detail::ViewDoor::key(), first_, count_}; }
+    [[nodiscard]] constexpr View<T> view() & noexcept {
+        return View<T>{detail::ViewDoor::key(), this->state_.first, this->state_.count};
+    }
     [[nodiscard]] constexpr View<T const> view() const& noexcept {
-        return View<T const>{detail::ViewDoor::key(), first_, count_};
+        return View<T const>{detail::ViewDoor::key(), this->state_.first, this->state_.count};
     }
     void view() && = delete("a view of a temporary HeapArray points into storage that the full expression frees");
     void view() const&& = delete("a view of a temporary HeapArray points into storage that the full expression frees");
@@ -438,13 +470,13 @@ public:
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>>
     get(std::size_t position) & noexcept {
-        return detail::element_at_<Fresh>(first_, count_, position);
+        return detail::element_at_<Fresh>(this->state_.first, this->state_.count, position);
     }
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
     get(std::size_t position) const& noexcept {
-        return detail::element_at_<Fresh>(static_cast<T const*>(first_), count_, position);
+        return detail::element_at_<Fresh>(static_cast<T const*>(this->state_.first), this->state_.count, position);
     }
     void get(std::size_t) && = delete("an element of a temporary HeapArray dangles at the end of the full expression");
     void
@@ -538,29 +570,9 @@ concept CanMintMaskedArray = OwnedElement<T> && detail::HeapArrayAlignment<T, Al
 // The rule use-after-move refuses a read of a local after its move.
 template <class T, std::size_t Align = alignof(T)>
     requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
-class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
-    MaskedArray final {
-    T* first_ = nullptr;
-    std::size_t count_ = 0;
-    std::size_t mask_ = 0;
-
-    // Ends each element from the last, and gives the storage back to the
-    // allocation door with the bytes and the alignment of the mint.  An
-    // empty array holds no storage.  Complexity: O(count).
-    constexpr void release_() noexcept {
-        if (first_ == nullptr) {
-            return;
-        }
-        if constexpr (!std::is_trivially_destructible_v<T>) {
-            for (std::size_t position = count_; position != 0; --position) {
-                first_[position - 1].~T();
-            }
-        }
-        detail::heap_release_(static_cast<void*>(first_), detail::heap_array_bytes_<T, Align>(count_), Align);
-        first_ = nullptr;
-        count_ = 0;
-        mask_ = 0;
-    }
+class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]] MaskedArray final
+    : public detail::OwnerCore<detail::owner::MaskedArrayState<T, Align>> {
+    using State = detail::owner::MaskedArrayState<T, Align>;
 
 public:
     using element_type = T;
@@ -585,48 +597,38 @@ public:
         for (std::size_t position = 0; position != count; ++position) {
             ::new(static_cast<void*>(first + position)) T();
         }
-        first_ = first;
-        count_ = count;
-        mask_ = count - 1;
+        this->state_ = State{first, count, count - 1};
     }
 
-    constexpr MaskedArray(MaskedArray&& other) noexcept
-        : first_{other.first_}, count_{other.count_}, mask_{other.mask_} {
-        other.first_ = nullptr;
-        other.count_ = 0;
-        other.mask_ = 0;
-    }
-
-    // Ends each element that this array holds, and takes the storage of
-    // other.
-    constexpr MaskedArray& operator=(MaskedArray&& other) noexcept {
-        if (this != &other) {
-            release_();
-            first_ = other.first_;
-            count_ = other.count_;
-            mask_ = other.mask_;
-            other.first_ = nullptr;
-            other.count_ = 0;
-            other.mask_ = 0;
-        }
-        return *this;
-    }
+    // The core of foundation/core/Owner.h gives the moves and the end of an
+    // array.  The assignment ends each element that this array holds after
+    // it takes other, so other can live in one of those elements.  The
+    // assignment drops the elements, so an array of a linear element has
+    // none.
+    constexpr MaskedArray(MaskedArray&&) noexcept = default;
+    constexpr MaskedArray& operator=(MaskedArray&&) noexcept
+        requires DroppablePayload<T>
+    = default;
+    MaskedArray& operator=(MaskedArray&&)
+        requires(!DroppablePayload<T>)
+    = delete("an assignment drops the elements that the MaskedArray holds, and a linear element must not be dropped: "
+             "build a new MaskedArray instead");
 
     MaskedArray(MaskedArray const&) =
         delete("a MaskedArray owns its storage alone: a copy would free the storage two times");
     MaskedArray& operator=(MaskedArray const&) =
         delete("a MaskedArray owns its storage alone: a copy would free the storage two times");
 
-    constexpr ~MaskedArray() { release_(); }
-
-    [[nodiscard]] constexpr std::size_t size() const noexcept { return count_; }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return this->state_.count; }
 
     // The View of the elements.  It borrows this array.  The mint bounds the
     // count and gives storage for each count, so the View comes through the
     // door of the base layer, with no check.
-    [[nodiscard]] constexpr View<T> view() & noexcept { return View<T>{detail::ViewDoor::key(), first_, count_}; }
+    [[nodiscard]] constexpr View<T> view() & noexcept {
+        return View<T>{detail::ViewDoor::key(), this->state_.first, this->state_.count};
+    }
     [[nodiscard]] constexpr View<T const> view() const& noexcept {
-        return View<T const>{detail::ViewDoor::key(), first_, count_};
+        return View<T const>{detail::ViewDoor::key(), this->state_.first, this->state_.count};
     }
     void view() && = delete("a view of a temporary MaskedArray points into storage that the full expression frees");
     void
@@ -634,8 +636,12 @@ public:
 
     // The element at key & (count - 1), with no check.  The count is a power
     // of two, so each masked key is below it.  Complexity: O(1).
-    [[nodiscard]] constexpr T& at_masked(std::uint64_t key) & noexcept { return first_[key & mask_]; }
-    [[nodiscard]] constexpr T const& at_masked(std::uint64_t key) const& noexcept { return first_[key & mask_]; }
+    [[nodiscard]] constexpr T& at_masked(std::uint64_t key) & noexcept {
+        return this->state_.first[key & this->state_.mask];
+    }
+    [[nodiscard]] constexpr T const& at_masked(std::uint64_t key) const& noexcept {
+        return this->state_.first[key & this->state_.mask];
+    }
     void at_masked(std::uint64_t) && = delete("an element of a temporary MaskedArray dangles at the end of the full "
                                               "expression");
     void at_masked(std::uint64_t) const&& = delete("an element of a temporary MaskedArray dangles at the end of the "

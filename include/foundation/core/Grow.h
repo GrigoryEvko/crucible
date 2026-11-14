@@ -62,6 +62,7 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/List.h>
+#include <foundation/core/Owner.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Text.h>
@@ -80,6 +81,70 @@ namespace detail {
 // one.  needed is at most maximum.  Complexity: O(1).
 [[nodiscard]] std::size_t next_capacity_(std::size_t capacity, std::size_t needed, std::size_t maximum,
                                          std::size_t element_bytes) noexcept;
+
+namespace owner {
+
+// The fields of a GrowList.  The storage holds capacity elements, or it is
+// null when the capacity is zero, and the first count slots hold the
+// elements.  The storage names no type of an element, so an assignment of it
+// drops no element: each element ends through end_slot_.  A moved-from list
+// keeps its maximum.
+template <class T>
+struct GrowListState {
+    void* storage = nullptr;
+    std::size_t count = 0;
+    std::size_t capacity = 0;
+    std::size_t maximum = 0;
+
+    [[nodiscard]] static constexpr GrowListState emptied(GrowListState const& state) noexcept {
+        return GrowListState{nullptr, 0, 0, state.maximum};
+    }
+
+    // The door that ends the element in one slot: a growth ends each element
+    // that it moved out, and clear() and the end of the list end each
+    // element that the list holds.
+    [[= ::foundation::linear::drop_door{}]] static constexpr void end_slot_(T& element) noexcept { element.~T(); }
+
+    // Ends each element from the last.  Complexity: O(count).
+    static constexpr void end_each_(GrowListState const& state) noexcept {
+        if constexpr (!std::is_trivially_destructible_v<T>) {
+            T* const first = static_cast<T*>(state.storage);
+            for (std::size_t position = state.count; position != 0; --position) {
+                end_slot_(first[position - 1]);
+            }
+        }
+    }
+
+    // Ends each element, and gives the storage back to the allocation door
+    // with the bytes and the alignment of its allocation.
+    static constexpr void release(GrowListState const& state) noexcept {
+        end_each_(state);
+        if (state.storage != nullptr) {
+            heap_release_(state.storage, state.capacity * sizeof(T), alignof(T));
+        }
+    }
+};
+
+// The fields of a GrowText: the characters, or null when the capacity is
+// zero.  A moved-from text keeps its maximum.
+struct GrowTextState {
+    char* first = nullptr;
+    std::size_t size = 0;
+    std::size_t capacity = 0;
+    std::size_t maximum = 0;
+
+    [[nodiscard]] static constexpr GrowTextState emptied(GrowTextState const& state) noexcept {
+        return GrowTextState{nullptr, 0, 0, state.maximum};
+    }
+
+    static constexpr void release(GrowTextState const& state) noexcept {
+        if (state.first != nullptr) {
+            heap_release_(static_cast<void*>(state.first), state.capacity, 1);
+        }
+    }
+};
+
+}  // namespace owner
 
 }  // namespace detail
 
@@ -106,43 +171,17 @@ template <class T>
 template <class T>
     requires GrowListElement<T>
 class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
-                   [[= ::foundation::lifetime::no_start_over_bytes{}]] GrowList final {
-    // The storage of capacity_ elements, or null when the capacity is zero.
-    // The first count_ slots hold the elements.  The member holds no type of
-    // an element, so an assignment of the storage drops no element: each
-    // element ends through end_slot_.
-    void* storage_ = nullptr;
-    std::size_t count_ = 0;
-    std::size_t capacity_ = 0;
-    std::size_t maximum_ = 0;
+                   [[= ::foundation::lifetime::no_start_over_bytes{}]] GrowList final
+    : public detail::OwnerCore<detail::owner::GrowListState<T>> {
+    using State = detail::owner::GrowListState<T>;
+    using Core = detail::OwnerCore<State>;
 
-    [[nodiscard]] constexpr T* first_() const noexcept { return static_cast<T*>(storage_); }
-
-    // The door that ends the element in one slot: a growth ends each element
-    // that it moved out, and clear() and the end of the list end each
-    // element that the list holds.
-    [[= ::foundation::linear::drop_door{}]] static constexpr void end_slot_(T& element) noexcept { element.~T(); }
+    [[nodiscard]] constexpr T* first_() const noexcept { return static_cast<T*>(this->state_.storage); }
 
     // Ends each element from the last.  Complexity: O(size()).
     constexpr void end_each_() noexcept {
-        if constexpr (!std::is_trivially_destructible_v<T>) {
-            T* const first = first_();
-            for (std::size_t position = count_; position != 0; --position) {
-                end_slot_(first[position - 1]);
-            }
-        }
-        count_ = 0;
-    }
-
-    // Ends each element, and gives the storage back to the allocation door
-    // with the bytes and the alignment of its allocation.
-    constexpr void release_() noexcept {
-        end_each_();
-        if (storage_ != nullptr) {
-            detail::heap_release_(storage_, capacity_ * sizeof(T), alignof(T));
-            storage_ = nullptr;
-            capacity_ = 0;
-        }
+        State::end_each_(this->state_);
+        this->state_.count = 0;
     }
 
     // Moves each element into new storage of the next capacity, ends each
@@ -151,12 +190,13 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
     // the bytes fit in size_t.  Complexity: one allocation and O(size())
     // moves.
     [[gnu::cold, gnu::noinline]] void grow_() noexcept {
-        std::size_t const count = count_;
-        std::size_t const next = detail::next_capacity_(capacity_, count + 1, maximum_, sizeof(T));
+        State& state = this->state_;
+        std::size_t const count = state.count;
+        std::size_t const next = detail::next_capacity_(state.capacity, count + 1, state.maximum, sizeof(T));
         void* const target = detail::heap_allocate_(next * sizeof(T), alignof(T));
         if constexpr (detail::BytewiseListElement<T>) {
             if (count != 0) {
-                __builtin_memcpy(target, storage_, count * sizeof(T));
+                __builtin_memcpy(target, state.storage, count * sizeof(T));
             }
         } else {
             T* const moved = static_cast<T*>(target);
@@ -165,17 +205,17 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
             }
             end_each_();
         }
-        if (storage_ != nullptr) {
-            detail::heap_release_(storage_, capacity_ * sizeof(T), alignof(T));
+        if (state.storage != nullptr) {
+            detail::heap_release_(state.storage, state.capacity * sizeof(T), alignof(T));
         }
-        storage_ = target;
-        count_ = count;
-        capacity_ = next;
+        state.storage = target;
+        state.count = count;
+        state.capacity = next;
     }
 
     // The empty list of at most maximum elements.  Only mint_grow_list calls
     // it.
-    constexpr explicit GrowList(std::size_t maximum) noexcept : maximum_{maximum} {}
+    constexpr explicit GrowList(std::size_t maximum) noexcept : Core{State{nullptr, 0, 0, maximum}} {}
 
     template <class U>
         requires GrowListElement<U>
@@ -184,36 +224,25 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
 public:
     using element_type = T;
 
-    constexpr GrowList(GrowList&& other) noexcept
-        : storage_{other.storage_}, count_{other.count_}, capacity_{other.capacity_}, maximum_{other.maximum_} {
-        other.storage_ = nullptr;
-        other.count_ = 0;
-        other.capacity_ = 0;
-    }
-
-    // Ends each element that this list holds, and takes the storage and the
-    // maximum of other.
-    constexpr GrowList& operator=(GrowList&& other) noexcept {
-        if (this != &other) {
-            release_();
-            storage_ = other.storage_;
-            count_ = other.count_;
-            capacity_ = other.capacity_;
-            maximum_ = other.maximum_;
-            other.storage_ = nullptr;
-            other.count_ = 0;
-            other.capacity_ = 0;
-        }
-        return *this;
-    }
+    // The core of foundation/core/Owner.h gives the moves and the end of a
+    // list.  The assignment ends each element that this list holds after it
+    // takes the storage and the maximum of other, so other can live in one
+    // of those elements.  The assignment drops the elements, so a list of a
+    // linear element has none.
+    constexpr GrowList(GrowList&&) noexcept = default;
+    constexpr GrowList& operator=(GrowList&&) noexcept
+        requires DroppablePayload<T>
+    = default;
+    GrowList& operator=(GrowList&&)
+        requires(!DroppablePayload<T>)
+    = delete("an assignment drops the elements that the GrowList holds, and a linear element must not be dropped: "
+             "build a new GrowList instead");
 
     GrowList(GrowList const&) = delete("a copy of a GrowList allocates, and no allocation capability shows at a copy");
     GrowList&
     operator=(GrowList const&) = delete("a copy of a GrowList allocates, and no allocation capability shows at a copy");
 
-    constexpr ~GrowList() { release_(); }
-
-    [[nodiscard]] constexpr std::size_t size() const noexcept { return count_; }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return this->state_.count; }
 
     // Puts value after the last element, or gives Full<T> when the list
     // holds maximum elements.  Two compares, and a growth when the storage is
@@ -222,18 +251,18 @@ public:
     template <class Marker>
         requires AllocationCapability<Marker>
     [[nodiscard]] Result<Unit, Full<T>> append(Marker /*allocation*/, T value) & noexcept {
-        if (count_ == maximum_) [[unlikely]] {
+        if (this->state_.count == this->state_.maximum) [[unlikely]] {
             if constexpr (::foundation::linear::is_linear_type(^^T)) {
                 return err(Full<T>{static_cast<T&&>(value)});
             } else {
                 return err(Full<T>{});
             }
         }
-        if (count_ == capacity_) [[unlikely]] {
+        if (this->state_.count == this->state_.capacity) [[unlikely]] {
             grow_();
         }
-        ::new(static_cast<void*>(first_() + count_)) T(static_cast<T&&>(value));
-        ++count_;
+        ::new(static_cast<void*>(first_() + this->state_.count)) T(static_cast<T&&>(value));
+        ++this->state_.count;
         return Unit{};
     }
 
@@ -250,9 +279,11 @@ public:
     // can end what it borrows.  The mint bounds the count, and the list holds
     // storage for each count above zero, so the View comes through the door
     // of the base layer, with no check.
-    [[nodiscard]] constexpr View<T> view() & noexcept { return View<T>{detail::ViewDoor::key(), first_(), count_}; }
+    [[nodiscard]] constexpr View<T> view() & noexcept {
+        return View<T>{detail::ViewDoor::key(), first_(), this->state_.count};
+    }
     [[nodiscard]] constexpr View<T const> view() const& noexcept {
-        return View<T const>{detail::ViewDoor::key(), first_(), count_};
+        return View<T const>{detail::ViewDoor::key(), first_(), this->state_.count};
     }
     void view() && = delete("a view of a temporary GrowList points into storage that the full expression frees");
     void view() const&& = delete("a view of a temporary GrowList points into storage that the full expression frees");
@@ -276,13 +307,13 @@ public:
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>>
     get(std::size_t position) & noexcept {
-        return detail::element_at_<Fresh>(first_(), count_, position);
+        return detail::element_at_<Fresh>(first_(), this->state_.count, position);
     }
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
     get(std::size_t position) const& noexcept {
-        return detail::element_at_<Fresh>(static_cast<T const*>(first_()), count_, position);
+        return detail::element_at_<Fresh>(static_cast<T const*>(first_()), this->state_.count, position);
     }
     void get(std::size_t) && = delete("an element of a temporary GrowList dangles at the end of the full expression");
     void
@@ -298,11 +329,10 @@ template <class T>
     return GrowList<T>{maximum < largest ? maximum : largest};
 }
 
-class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] GrowText final {
-    char* first_ = nullptr;
-    std::size_t size_ = 0;
-    std::size_t capacity_ = 0;
-    std::size_t maximum_ = 0;
+class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] GrowText final
+    : public detail::OwnerCore<detail::owner::GrowTextState> {
+    using State = detail::owner::GrowTextState;
+    using Core = detail::OwnerCore<State>;
 
     // Moves the characters into new storage of the next capacity, puts the
     // count characters at characters after them, and gives the old storage
@@ -317,63 +347,38 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] GrowText 
     // one copy.  The characters can lie in the storage of this text, below
     // its count or past it after a clear(), so the copy is a move of bytes.
     [[nodiscard]] Result<Unit, Full<char>> put_(char const* characters, std::size_t count) noexcept {
-        if (count > maximum_ - size_) [[unlikely]] {
+        if (count > state_.maximum - state_.size) [[unlikely]] {
             return err(Full<char>{});
         }
-        if (count > capacity_ - size_) [[unlikely]] {
+        if (count > state_.capacity - state_.size) [[unlikely]] {
             grow_and_put_(characters, count);
             return Unit{};
         }
         if (count != 0) {
-            __builtin_memmove(first_ + size_, characters, count);
+            __builtin_memmove(state_.first + state_.size, characters, count);
         }
-        size_ += count;
+        state_.size += count;
         return Unit{};
     }
 
     // The empty text of at most maximum characters.  Only mint_grow_text
     // calls it.
-    constexpr explicit GrowText(std::size_t maximum) noexcept : maximum_{maximum} {}
+    constexpr explicit GrowText(std::size_t maximum) noexcept : Core{State{nullptr, 0, 0, maximum}} {}
 
     friend constexpr GrowText mint_grow_text(std::size_t maximum) noexcept;
 
 public:
-    constexpr GrowText(GrowText&& other) noexcept
-        : first_{other.first_}, size_{other.size_}, capacity_{other.capacity_}, maximum_{other.maximum_} {
-        other.first_ = nullptr;
-        other.size_ = 0;
-        other.capacity_ = 0;
-    }
-
-    // Gives the storage of this text back, and takes the storage and the
-    // maximum of other.
-    constexpr GrowText& operator=(GrowText&& other) noexcept {
-        if (this != &other) {
-            if (first_ != nullptr) {
-                detail::heap_release_(static_cast<void*>(first_), capacity_, 1);
-            }
-            first_ = other.first_;
-            size_ = other.size_;
-            capacity_ = other.capacity_;
-            maximum_ = other.maximum_;
-            other.first_ = nullptr;
-            other.size_ = 0;
-            other.capacity_ = 0;
-        }
-        return *this;
-    }
+    // The core of foundation/core/Owner.h gives the moves and the end of a
+    // text.  The assignment gives the storage of this text back after it
+    // takes the storage and the maximum of other.
+    constexpr GrowText(GrowText&&) noexcept = default;
+    constexpr GrowText& operator=(GrowText&&) noexcept = default;
 
     GrowText(GrowText const&) = delete("a copy of a GrowText allocates, and no allocation capability shows at a copy");
     GrowText&
     operator=(GrowText const&) = delete("a copy of a GrowText allocates, and no allocation capability shows at a copy");
 
-    constexpr ~GrowText() {
-        if (first_ != nullptr) {
-            detail::heap_release_(static_cast<void*>(first_), capacity_, 1);
-        }
-    }
-
-    [[nodiscard]] constexpr std::size_t size() const noexcept { return size_; }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return state_.size; }
 
     // Puts one character, the characters of a text, or the characters of a
     // View after the last one, or gives Full<char> when they do not fit
@@ -396,13 +401,13 @@ public:
     }
 
     // The text then holds no character, and it keeps its storage.
-    constexpr void clear() & noexcept { size_ = 0; }
+    constexpr void clear() & noexcept { state_.size = 0; }
 
     // The characters of the text.  The TextView borrows this text, and the
     // next append can end what it borrows.  The mint bounds the count at
     // __PTRDIFF_MAX__, so the TextView comes through the door of the base
     // layer, with no check.
-    [[nodiscard]] constexpr TextView view() const& noexcept { return detail::text_over_(first_, size_); }
+    [[nodiscard]] constexpr TextView view() const& noexcept { return detail::text_over_(state_.first, state_.size); }
     TextView
     view() const&& = delete("a view of a temporary GrowText points into storage that the full expression frees");
 

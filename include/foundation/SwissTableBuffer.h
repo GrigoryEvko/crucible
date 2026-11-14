@@ -13,6 +13,7 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Heap.h>
+#include <foundation/core/Owner.h>
 
 #include <bit>
 #include <cstddef>
@@ -40,8 +41,44 @@ concept SwissTableSlot = alignof(SlotPtr) <= swiss_table_group_width && lifetime
     return std::has_single_bit(capacity) && capacity >= swiss_table_group_width && capacity <= swiss_table_max_capacity;
 }
 
+namespace core::detail::owner {
+
+// The fields of a SwissTableBuffer: the allocation, the control bytes and the
+// slots in it, the capacity and the bytes, or nulls and zeros when it holds
+// no allocation.
+template <typename SlotPtr>
+struct SwissTableBufferState {
+    // The alignment of the allocation: one cache line for the first group of
+    // control bytes.
+    static constexpr std::size_t alignment = 64;
+
+    void* backing = nullptr;
+    std::int8_t* ctrl = nullptr;
+    SlotPtr* slots = nullptr;
+    std::size_t capacity = 0;
+    std::size_t alloc_bytes = 0;
+
+    [[nodiscard]] static constexpr SwissTableBufferState emptied(SwissTableBufferState const& /*state*/) noexcept {
+        return SwissTableBufferState{};
+    }
+
+    static constexpr void release(SwissTableBufferState const& state) noexcept {
+        if (state.backing != nullptr) {
+            heap_release_(state.backing, state.alloc_bytes, alignment);
+        }
+    }
+};
+
+}  // namespace core::detail::owner
+
+// The core of foundation/core/Owner.h gives the moves and the end of a
+// buffer.
 template <SwissTableSlot SlotPtr>
-class [[nodiscard]] SwissTableBuffer {
+class [[nodiscard]] SwissTableBuffer final
+    : public core::detail::OwnerCore<core::detail::owner::SwissTableBufferState<SlotPtr>> {
+    using State = core::detail::owner::SwissTableBufferState<SlotPtr>;
+    using Core = core::detail::OwnerCore<State>;
+
 public:
     using ctrl_type = std::int8_t;
     using slot_type = SlotPtr;
@@ -75,75 +112,35 @@ public:
     SwissTableBuffer(const SwissTableBuffer&) = delete("SwissTableBuffer is move-only");
     SwissTableBuffer& operator=(const SwissTableBuffer&) = delete("SwissTableBuffer is move-only");
 
-    SwissTableBuffer(SwissTableBuffer&& other) noexcept
-        : backing_{other.backing_},
-          ctrl_{other.ctrl_},
-          slots_{other.slots_},
-          capacity_{other.capacity_},
-          alloc_bytes_{other.alloc_bytes_} {
-        other.backing_ = nullptr;
-        other.ctrl_ = nullptr;
-        other.slots_ = nullptr;
-        other.capacity_ = 0;
-        other.alloc_bytes_ = 0;
-    }
+    SwissTableBuffer(SwissTableBuffer&&) noexcept = default;
+    SwissTableBuffer& operator=(SwissTableBuffer&&) noexcept = default;
 
-    SwissTableBuffer& operator=(SwissTableBuffer&& other) noexcept {
-        if (this != &other) {
-            reset();
-            backing_ = other.backing_;
-            ctrl_ = other.ctrl_;
-            slots_ = other.slots_;
-            capacity_ = other.capacity_;
-            alloc_bytes_ = other.alloc_bytes_;
-            other.backing_ = nullptr;
-            other.ctrl_ = nullptr;
-            other.slots_ = nullptr;
-            other.capacity_ = 0;
-            other.alloc_bytes_ = 0;
-        }
-        return *this;
-    }
-
-    ~SwissTableBuffer() noexcept { reset(); }
-
-    void reset() noexcept {
-        if (backing_ != nullptr) {
-            core::detail::heap_release_(backing_, alloc_bytes_, kAlignment);
-            backing_ = nullptr;
-            ctrl_ = nullptr;
-            slots_ = nullptr;
-            capacity_ = 0;
-            alloc_bytes_ = 0;
-        }
-    }
+    // Gives the allocation back.  The buffer is empty before the release
+    // starts.
+    void reset() noexcept { this->reset_(); }
 
     // Each array is handed out as a span of `capacity` elements, so a reader
     // holds its bound with its address.
-    [[nodiscard]] std::span<ctrl_type> ctrl() noexcept { return {ctrl_, capacity_}; }
-    [[nodiscard]] std::span<const ctrl_type> ctrl() const noexcept { return {ctrl_, capacity_}; }
-    [[nodiscard]] std::span<slot_type> slots() noexcept { return {slots_, capacity_}; }
-    [[nodiscard]] std::span<const slot_type> slots() const noexcept { return {slots_, capacity_}; }
+    [[nodiscard]] std::span<ctrl_type> ctrl() noexcept { return {this->state_.ctrl, this->state_.capacity}; }
+    [[nodiscard]] std::span<const ctrl_type> ctrl() const noexcept {
+        return {this->state_.ctrl, this->state_.capacity};
+    }
+    [[nodiscard]] std::span<slot_type> slots() noexcept { return {this->state_.slots, this->state_.capacity}; }
+    [[nodiscard]] std::span<const slot_type> slots() const noexcept {
+        return {this->state_.slots, this->state_.capacity};
+    }
 
-    [[nodiscard]] size_type capacity() const noexcept { return capacity_; }
-    [[nodiscard]] size_type alloc_bytes() const noexcept { return alloc_bytes_; }
-    [[nodiscard]] bool empty() const noexcept { return capacity_ == 0; }
-    [[nodiscard]] explicit operator bool() const noexcept { return backing_ != nullptr; }
+    [[nodiscard]] size_type capacity() const noexcept { return this->state_.capacity; }
+    [[nodiscard]] size_type alloc_bytes() const noexcept { return this->state_.alloc_bytes; }
+    [[nodiscard]] bool empty() const noexcept { return this->state_.capacity == 0; }
+    [[nodiscard]] explicit operator bool() const noexcept { return this->state_.backing != nullptr; }
 
 private:
-    // The alignment of the allocation: one cache line for the first group
-    // of control bytes.
-    static constexpr size_type kAlignment = 64;
+    static constexpr size_type kAlignment = State::alignment;
 
     explicit SwissTableBuffer(void* backing, ctrl_type* ctrl, slot_type* slots, size_type capacity,
                               size_type alloc_bytes) noexcept
-        : backing_{backing}, ctrl_{ctrl}, slots_{slots}, capacity_{capacity}, alloc_bytes_{alloc_bytes} {}
-
-    void* backing_ = nullptr;
-    ctrl_type* ctrl_ = nullptr;
-    slot_type* slots_ = nullptr;
-    size_type capacity_ = 0;
-    size_type alloc_bytes_ = 0;
+        : Core{State{backing, ctrl, slots, capacity, alloc_bytes}} {}
 };
 
 }  // namespace foundation

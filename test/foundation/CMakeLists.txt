@@ -2884,6 +2884,11 @@ foundation_test(test_core_heap_array)
 # count ends the process.
 foundation_test(test_core_masked_array)
 
+# Each owner of heap storage of the base meets the hazards of a move: a
+# self-move, a move from a child that the old value owns, a moved-from
+# source, and a linear element.
+foundation_test(test_core_owner_probe)
+
 # A FixedList holds at most N elements, and a push into a full list gives
 # Full, which holds the value of a linear element.  Each element ends one
 # time, and the model of a FixedArray and a count agrees with each step.

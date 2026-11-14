@@ -35,19 +35,19 @@ std::size_t next_capacity_(std::size_t capacity, std::size_t needed, std::size_t
 }  // namespace detail
 
 void GrowText::grow_and_put_(char const* characters, std::size_t count) noexcept {
-    std::size_t const needed = size_ + count;
-    std::size_t const next = detail::next_capacity_(capacity_, needed, maximum_, 1);
+    std::size_t const needed = state_.size + count;
+    std::size_t const next = detail::next_capacity_(state_.capacity, needed, state_.maximum, 1);
     char* const target = static_cast<char*>(detail::heap_allocate_(next, 1));
-    if (size_ != 0) {
-        __builtin_memcpy(target, first_, size_);
+    if (state_.size != 0) {
+        __builtin_memcpy(target, state_.first, state_.size);
     }
-    __builtin_memcpy(target + size_, characters, count);
-    if (first_ != nullptr) {
-        detail::heap_release_(static_cast<void*>(first_), capacity_, 1);
+    __builtin_memcpy(target + state_.size, characters, count);
+    if (state_.first != nullptr) {
+        detail::heap_release_(static_cast<void*>(state_.first), state_.capacity, 1);
     }
-    first_ = target;
-    size_ = needed;
-    capacity_ = next;
+    state_.first = target;
+    state_.size = needed;
+    state_.capacity = next;
 }
 
 }  // namespace foundation::core

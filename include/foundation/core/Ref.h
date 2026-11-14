@@ -79,6 +79,7 @@
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
+#include <foundation/core/Owner.h>
 #include <foundation/core/Report.h>
 
 #include <concepts>
@@ -423,36 +424,63 @@ struct BoxDoor {
     [[nodiscard]] static constexpr BoxKey key() noexcept { return BoxKey{}; }
 };
 
-}  // namespace detail
+namespace owner {
 
+// The field of a Box: its object, or null when it holds none.
 template <BoxPayload T>
-class [[nodiscard]] Box {
-    T* object_ = nullptr;
+struct BoxState {
+    T* object = nullptr;
+
+    [[nodiscard]] static constexpr BoxState emptied(BoxState const& /*state*/) noexcept { return BoxState{}; }
 
     // Ends the object and gives its storage back.  A unit where T is only
     // declared gets one error here, and no error of the size or the
     // destructor of T.
-    void destroy_() noexcept {
+    static void release(BoxState const& state) noexcept {
         if constexpr (CompleteBoxPayload<T>) {
-            if (object_ != nullptr) {
-                object_->~T();
-                detail::heap_release_(static_cast<void*>(object_), sizeof(T), alignof(T));
-                object_ = nullptr;
+            if (state.object != nullptr) {
+                state.object->~T();
+                heap_release_(static_cast<void*>(state.object), sizeof(T), alignof(T));
             }
         } else {
             static_assert(false, "a Box ends its object only where the type of the object is complete: define the "
                                  "destructor of the owner where the type is defined");
         }
     }
+};
+
+// The field of a Hole: its storage, or null when it holds none.
+template <std::size_t Size, std::size_t Align>
+struct HoleState {
+    void* storage = nullptr;
+
+    [[nodiscard]] static constexpr HoleState emptied(HoleState const& /*state*/) noexcept { return HoleState{}; }
+
+    static void release(HoleState const& state) noexcept {
+        if (state.storage != nullptr) {
+            heap_release_(state.storage, Size, Align);
+        }
+    }
+};
+
+}  // namespace owner
+
+}  // namespace detail
+
+// The core of foundation/core/Owner.h gives the moves and the end of a Box.
+template <BoxPayload T>
+class [[nodiscard]] Box final : public detail::OwnerCore<detail::owner::BoxState<T>> {
+    using State = detail::owner::BoxState<T>;
+    using Core = detail::OwnerCore<State>;
 
     // A moved-from or consumed Box holds no object.  The use-after-move
     // guard refuses a use of it that it can see, and each build tests it
     // here.
     [[nodiscard]] T* held_() const noexcept {
-        if (object_ == nullptr) [[unlikely]] {
+        if (this->state_.object == nullptr) [[unlikely]] {
             fatal("a borrow of a Box that holds no object: the Box was moved from or consumed");
         }
-        return object_;
+        return this->state_.object;
     }
 
     // The mint of a Hole from a Box calls vacate_ through the constructor of
@@ -467,7 +495,7 @@ class [[nodiscard]] Box {
     [[nodiscard]] void* vacate_() noexcept {
         T* const object = held_();
         object->~T();
-        object_ = nullptr;
+        this->state_.object = nullptr;
         return static_cast<void*>(object);
     }
 
@@ -480,7 +508,7 @@ public:
     template <class... Args>
         requires CompleteBoxPayload<T> && std::constructible_from<T, Args&&...>
     explicit Box(detail::BoxKey const& /*key*/, Args&&... args) noexcept
-        : object_{::new(detail::heap_allocate_(sizeof(T), alignof(T))) T(static_cast<Args&&>(args)...)} {}
+        : Core{State{::new(detail::heap_allocate_(sizeof(T), alignof(T))) T(static_cast<Args&&>(args)...)}} {}
 
     // Builds the object from the arguments in the storage of a Hole of the
     // size and the alignment of T, with no call of the allocation door.  The
@@ -492,23 +520,15 @@ public:
         requires CompleteBoxPayload<T> && (Size == sizeof(T)) && (Align == alignof(T))
               && std::constructible_from<T, Args&&...>
     explicit Box(detail::BoxKey const& /*key*/, Hole<Size, Align>&& hole, Args&&... args) noexcept
-        : object_{::new(std::move(hole).detach_()) T(static_cast<Args&&>(args)...)} {}
+        : Core{State{::new(std::move(hole).detach_()) T(static_cast<Args&&>(args)...)}} {}
 
-    Box(Box&& other) noexcept : object_{other.object_} { other.object_ = nullptr; }
-
-    Box& operator=(Box&& other) noexcept {
-        if (this != &other) {
-            destroy_();
-            object_ = other.object_;
-            other.object_ = nullptr;
-        }
-        return *this;
-    }
+    // The assignment ends the object that this Box holds after it takes
+    // other, so other can live inside that object.
+    Box(Box&&) noexcept = default;
+    Box& operator=(Box&&) noexcept = default;
 
     Box(Box const&) = delete("a Box owns its object alone: a copy would free the object two times");
     Box& operator=(Box const&) = delete("a Box owns its object alone: a copy would free the object two times");
-
-    ~Box() { destroy_(); }
 
     [[nodiscard]] T& operator*() & noexcept { return *held_(); }
     [[nodiscard]] T const& operator*() const& noexcept { return *held_(); }
@@ -540,11 +560,11 @@ public:
     template <class Payload = T>
         requires std::same_as<Payload, T> && std::is_nothrow_move_constructible_v<Payload>
     [[nodiscard]] T consume() && noexcept {
-        if (object_ == nullptr) [[unlikely]] {
+        if (this->state_.object == nullptr) [[unlikely]] {
             fatal("consume of a Box that holds no object: the Box was moved from or consumed");
         }
-        T taken(static_cast<T&&>(*object_));
-        destroy_();
+        T taken(static_cast<T&&>(*this->state_.object));
+        this->reset_();
         return taken;
     }
 
@@ -571,8 +591,10 @@ template <class T, class Marker, class... Args>
 // start, so no bytes become a Hole that frees storage that it does not own.
 template <std::size_t Size, std::size_t Align>
     requires HoleShape<Size, Align>
-class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] Hole {
-    void* storage_ = nullptr;
+class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] Hole final
+    : public detail::OwnerCore<detail::owner::HoleState<Size, Align>> {
+    using State = detail::owner::HoleState<Size, Align>;
+    using Core = detail::OwnerCore<State>;
 
     template <BoxPayload T>
     friend class Box;
@@ -580,58 +602,44 @@ class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::lifetim
     // The storage of a Hole that a path spends.  A moved-from or spent Hole
     // holds none, and each build tests it here.
     [[nodiscard]] void* held_() const noexcept {
-        if (storage_ == nullptr) [[unlikely]] {
+        if (this->state_.storage == nullptr) [[unlikely]] {
             fatal("a spend of a Hole that holds no storage: the Hole was moved from or spent");
         }
-        return storage_;
+        return this->state_.storage;
     }
 
     // Gives the storage to a Box, which builds its object in it.  The Hole
     // is then empty.
     [[nodiscard]][[= ::foundation::linear::detach_door{}]] void* detach_() && noexcept {
         void* const storage = held_();
-        storage_ = nullptr;
+        this->state_.storage = nullptr;
         return storage;
     }
 
 public:
     // Takes Size bytes at the alignment Align from the allocation door.
     // Only mint_hole holds the key.
-    explicit Hole(detail::HoleKey const& /*key*/) noexcept : storage_{detail::heap_allocate_(Size, Align)} {}
+    explicit Hole(detail::HoleKey const& /*key*/) noexcept : Core{State{detail::heap_allocate_(Size, Align)}} {}
 
     // Ends the object of a Box of the exact size and alignment, and takes
     // its storage.  The Box is then empty.  Only mint_hole holds the key.
     template <BoxPayload T>
         requires(sizeof(T) == Size && alignof(T) == Align)
-    explicit Hole(detail::HoleKey const& /*key*/, Box<T>&& box) noexcept : storage_{box.vacate_()} {}
+    explicit Hole(detail::HoleKey const& /*key*/, Box<T>&& box) noexcept : Core{State{box.vacate_()}} {}
 
-    Hole(Hole&& other) noexcept : storage_{other.storage_} { other.storage_ = nullptr; }
-
-    Hole& operator=(Hole&& other) noexcept {
-        if (this != &other) {
-            if (storage_ != nullptr) {
-                detail::heap_release_(storage_, Size, Align);
-            }
-            storage_ = other.storage_;
-            other.storage_ = nullptr;
-        }
-        return *this;
-    }
+    // The core of foundation/core/Owner.h gives the moves and the end of a
+    // Hole.
+    Hole(Hole&&) noexcept = default;
+    Hole& operator=(Hole&&) noexcept = default;
 
     Hole(Hole const&) = delete("a Hole owns its storage alone: a copy would free the storage two times");
     Hole& operator=(Hole const&) = delete("a Hole owns its storage alone: a copy would free the storage two times");
 
-    ~Hole() {
-        if (storage_ != nullptr) {
-            detail::heap_release_(storage_, Size, Align);
-        }
-    }
-
     // Gives the storage back to the allocation door.  The Hole is then
     // empty.
     [[= ::foundation::linear::drop_door{}]] void consume() && noexcept {
-        detail::heap_release_(held_(), Size, Align);
-        storage_ = nullptr;
+        static_cast<void>(held_());
+        this->reset_();
     }
 };
 
