@@ -50,9 +50,9 @@ struct TensorSlot {
     int8_t device_idx = -1;
     Layout layout = Layout::Strided;
     bool is_external = false;
-    uint8_t pad[3]{};
+    ::foundation::core::FixedArray<uint8_t, 3> pad{};
     SlotId slot_id;
-    uint8_t pad2[4]{};
+    ::foundation::core::FixedArray<uint8_t, 4> pad2{};
 };
 
 // External slots keep the allocations they already have: they are counted in
