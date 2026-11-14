@@ -5688,6 +5688,9 @@ fixy_neg_compile_test(neg_shared_read_on_the_erased_brand
 
 # A branded region does not erase, so no region of one instance becomes a
 # region of the erased identity.
+fixy_neg_compile_test(neg_owned_region_assigned_over_live
+  "use of deleted function .fixy::OwnedRegion<T, Tag, Brand>& fixy::OwnedRegion<T, Tag, Brand>::operator=\\(fixy::OwnedRegion<T, Tag, Brand>&&\\)"
+  "OwnedRegion holds a linear Permission, and an assignment would drop the token of the target")
 fixy_neg_compile_test(neg_owned_region_does_not_erase_its_brand
   "conversion from .OwnedRegion<\\[\\.\\.\\.\\],\\[\\.\\.\\.\\],foundation::permissions::<lambda\\(\\)>>."
   "to non-scalar type .OwnedRegion<\\[\\.\\.\\.\\],\\[\\.\\.\\.\\],foundation::brand::DefaultBrand>. requested")

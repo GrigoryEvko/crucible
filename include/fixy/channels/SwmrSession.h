@@ -153,17 +153,12 @@ public:
         WriterHandle&
         operator=(WriterHandle const&) = delete("SwmrSession::WriterHandle owns the linear writer permission");
         constexpr WriterHandle(WriterHandle&&) noexcept = default;
-        // The target gives the claim of its own session back before it
-        // takes the binding of the source, so no claim stays taken with
-        // no live holder.
-        WriterHandle& operator=(WriterHandle&& other) noexcept {
-            if (this != &other) {
-                release_claim_();
-                session_ = std::move(other.session_);
-                perm_ = std::move(other.perm_);
-            }
-            return *this;
-        }
+        // An assignment would write over the writer token of the target, and
+        // the move assignment of a Permission does nothing, so the token of
+        // the target would leave through no door.
+        WriterHandle& operator=(WriterHandle&&) = delete(
+            "SwmrSession::WriterHandle owns the linear writer permission, and an assignment would drop the "
+            "token of the target: bind the handle to a new name");
         ~WriterHandle() { release_claim_(); }
 
         // The release door.  The handle gives the writer role back to the

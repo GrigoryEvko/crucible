@@ -30,6 +30,8 @@ static_assert(
 // constructor builds a channel with an empty pool.
 static_assert(!std::is_default_constructible_v<Witness>);
 static_assert(sizeof(Witness::ConsumerHandle) == sizeof(void*));
+// An assignment would drop the token of the target handle.
+static_assert(!std::is_move_assignable_v<Witness::ConsumerHandle>);
 
 }  // namespace detail::mpsc_channel_self_test
 

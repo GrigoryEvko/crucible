@@ -279,9 +279,10 @@ auto branded_at_one_site(std::uint64_t* storage, std::size_t count) {
     return ::fixy::mint_owned_region(storage, count, mint_permission_root<DataA>());
 }
 
-// Each door that consumes a region leaves it empty: the move, the move
-// assignment, the split, the recombine and the release.  No consumed
-// region keeps the bytes that its successor owns.
+// Each door that consumes a region leaves it empty: the move, the split,
+// the recombine and the release.  No consumed region keeps the bytes that
+// its successor owns.  A region has no move assignment, because the
+// assignment would drop the token of the target.
 void test_every_consuming_door_empties_the_region() {
     static std::uint64_t storage[4] = {1, 2, 3, 4};
     auto source = branded_at_one_site(storage, 4);
@@ -291,13 +292,8 @@ void test_every_consuming_door_empties_the_region() {
     CRUCIBLE_TEST_REQUIRE(source.empty() && source.data() == nullptr);
     CRUCIBLE_TEST_REQUIRE(moved_into.data() == storage && moved_into.size() == 4);
 
-    Branded assigned = branded_at_one_site(storage, 0);
-    assigned = std::move(moved_into);
+    auto parts = ::fixy::mint_split<2>(std::move(moved_into));
     CRUCIBLE_TEST_REQUIRE(moved_into.empty() && moved_into.data() == nullptr);
-    CRUCIBLE_TEST_REQUIRE(assigned.data() == storage && assigned.size() == 4);
-
-    auto parts = ::fixy::mint_split<2>(std::move(assigned));
-    CRUCIBLE_TEST_REQUIRE(assigned.empty() && assigned.data() == nullptr);
 
     auto whole = Branded::recombine(std::move(parts.witness), std::move(parts.shards));
     CRUCIBLE_TEST_REQUIRE(std::get<0>(parts.shards).empty() && std::get<0>(parts.shards).data() == nullptr);

@@ -111,14 +111,13 @@ void second_swmr_writer() {
 }
 
 // The target of a move takes the claim of the source session, so the claim
-// refuses a second writer of that session.
+// refuses a second writer of that session.  A writer handle has no move
+// assignment, because the assignment would drop the token of the target.
 void writer_move_keeps_the_source_claim() {
-    Swmr first_session{reader_root(), 0};
-    Swmr second_session{reader_root(), 0};
-    auto target = ses::mint_swmr_writer<Swmr>(first_session, writer_root());
-    auto source = ses::mint_swmr_writer<Swmr>(second_session, writer_root());
-    target = std::move(source);
-    [[maybe_unused]] auto second = ses::mint_swmr_writer<Swmr>(second_session, writer_root());
+    Swmr session{reader_root(), 0};
+    auto source = ses::mint_swmr_writer<Swmr>(session, writer_root());
+    [[maybe_unused]] auto target = std::move(source);
+    [[maybe_unused]] auto second = ses::mint_swmr_writer<Swmr>(session, writer_root());
 }
 
 // A stage body that drains one link into the next.  The body does nothing,
@@ -210,20 +209,14 @@ constexpr Attack kAttacks[] = {
     const auto reader = ses::mint_swmr_reader<Swmr>(session);
     if (!loads(reader, 5)) return 1;
 
-    // A move into a writer handle gives the claim of the target session
-    // back and keeps the claim of the source session.
-    Swmr first_session{reader_root(), 0};
-    Swmr second_session{reader_root(), 0};
-    auto target = ses::mint_swmr_writer<Swmr>(first_session, writer_root());
-    auto source = ses::mint_swmr_writer<Swmr>(second_session, writer_root());
-    target = std::move(source);
-    auto after = ses::mint_swmr_writer<Swmr>(first_session, writer_root());
-    after.publish(6);
+    // A move of a writer handle keeps the claim of its session in the
+    // target, and the target writes the session.
+    Swmr moved_session{reader_root(), 0};
+    auto source = ses::mint_swmr_writer<Swmr>(moved_session, writer_root());
+    auto target = std::move(source);
     target.publish(7);
-    const auto first_reader = ses::mint_swmr_reader<Swmr>(first_session);
-    const auto second_reader = ses::mint_swmr_reader<Swmr>(second_session);
-    if (!loads(first_reader, 6)) return 1;
-    if (!loads(second_reader, 7)) return 1;
+    const auto moved_reader = ses::mint_swmr_reader<Swmr>(moved_session);
+    if (!loads(moved_reader, 7)) return 1;
     return 0;
 }
 

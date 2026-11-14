@@ -111,8 +111,12 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Transferable {
     Transferable(const Transferable&) = delete("Transferable carries a linear token. A copy is a second owner");
     Transferable&
     operator=(const Transferable&) = delete("Transferable carries a linear token. A copy is a second owner");
-    constexpr Transferable(Transferable&&) noexcept = default;
-    constexpr Transferable& operator=(Transferable&&) noexcept = default;
+    // The move is user-provided, so the marker is not trivially copyable
+    // and keeps the shape of a linear class with no assignment.
+    constexpr Transferable(Transferable&& other) noexcept
+        : value_{static_cast<T&&>(other.value_)}, perm_{static_cast<decltype(other.perm_)&&>(other.perm_)} {}
+    Transferable& operator=(Transferable&&) =
+        delete("Transferable carries a linear token, and an assignment would drop the token of the target");
     ~Transferable() = default;
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
@@ -138,8 +142,12 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Returned {
 
     Returned(const Returned&) = delete("Returned carries a linear token. A copy is a second owner");
     Returned& operator=(const Returned&) = delete("Returned carries a linear token. A copy is a second owner");
-    constexpr Returned(Returned&&) noexcept = default;
-    constexpr Returned& operator=(Returned&&) noexcept = default;
+    // The move is user-provided, so the marker is not trivially copyable
+    // and keeps the shape of a linear class with no assignment.
+    constexpr Returned(Returned&& other) noexcept
+        : value_{static_cast<T&&>(other.value_)}, perm_{static_cast<decltype(other.perm_)&&>(other.perm_)} {}
+    Returned& operator=(Returned&&) =
+        delete("Returned carries a linear token, and an assignment would drop the token of the target");
     ~Returned() = default;
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }

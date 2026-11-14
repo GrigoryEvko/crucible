@@ -132,8 +132,14 @@ public:
                 delete("KernelCacheSlot::WriterHandle owns the linear writer permission");
             WriterHandle&
             operator=(WriterHandle const&) = delete("KernelCacheSlot::WriterHandle owns the linear writer permission");
-            constexpr WriterHandle(WriterHandle&&) noexcept = default;
-            constexpr WriterHandle& operator=(WriterHandle&&) noexcept = default;
+            // The move is user-provided, so the handle is not trivially
+            // copyable and keeps the shape of a linear class with no
+            // assignment.  An assignment would drop the token of the target.
+            constexpr WriterHandle(WriterHandle&& other) noexcept
+                : slot_{other.slot_}, perm_{static_cast<decltype(other.perm_)&&>(other.perm_)} {}
+            WriterHandle& operator=(WriterHandle&&) = delete(
+                "KernelCacheSlot::WriterHandle owns the linear writer permission, and an assignment would drop "
+                "the token of the target");
 
             // The release door.  The handle gives the token back to the
             // caller, and the call spends the handle.

@@ -31,6 +31,9 @@ struct OtherBrand {};
 using OtherWitness = PermissionedSpscChannel<int, 8, WitnessTag, OtherBrand>;
 static_assert(!std::is_same_v<Witness, OtherWitness>);
 static_assert(!std::is_same_v<Witness::ProducerHandle::channel_type, OtherWitness::ConsumerHandle::channel_type>);
+// An assignment would drop the token of the target handle.
+static_assert(!std::is_move_assignable_v<Witness::ProducerHandle>
+              && !std::is_move_assignable_v<Witness::ConsumerHandle>);
 
 // The binding and the claim keep the handles one pointer wide.
 static_assert(sizeof(Witness::ProducerHandle) == sizeof(void*));

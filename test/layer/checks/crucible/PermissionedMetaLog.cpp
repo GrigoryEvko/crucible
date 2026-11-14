@@ -27,6 +27,10 @@ static_assert(
     std::is_same_v<permissioned_metalog_t<::foundation::permissions::Permission<Witness::whole_tag, WitnessBrand>>,
                    Witness>);
 
+// An assignment would drop the token of the target endpoint.
+static_assert(!std::is_move_assignable_v<Witness::ProducerHandle>
+              && !std::is_move_assignable_v<Witness::ConsumerHandle>);
+
 // True when a public member function of Owner returns a reference or a
 // pointer to a TensorMeta.  After the consumer releases a record, the
 // producer writes a new record into its slot.  So each reader of the log

@@ -19,10 +19,10 @@ include/fixy/concurrent/ | unconsumed | 2 | - | -
 include/fixy/session/ | unconsumed | 13 | - | -
 src/ | unconsumed | 5 | - | -
 test/ | unconsumed | 38 | - | -
-test/fixy/ | assign-over-live | 4 | - | -
+test/fixy/ | assign-over-live | 1 | - | -
 test/fixy/ | discarded-temporary | 5 | - | -
 test/fixy/ | double-consume | 5 | - | -
-test/fixy/ | unconsumed | 202 | - | -
+test/fixy/ | unconsumed | 199 | - | -
 test/fixy/ | unconsumed-on-path | 1 | - | -
 test/foundation/ | discarded-temporary | 2 | - | -
 test/foundation/ | unconsumed | 13 | - | -

@@ -325,12 +325,13 @@ public:
         : base_{std::exchange(other.base_, nullptr)},
           count_{std::exchange(other.count_, 0)},
           perm_{std::move(other.perm_)} {}
-    constexpr OwnedRegion& operator=(OwnedRegion&& other) noexcept {
-        base_ = std::exchange(other.base_, nullptr);
-        count_ = std::exchange(other.count_, 0);
-        perm_ = std::move(other.perm_);
-        return *this;
-    }
+    // An assignment would write over the Permission of the target, and the
+    // move assignment of a Permission does nothing, so the token of the old
+    // region would leave through no door.  A Permission records no state, so
+    // no test tells a live target from an empty one.
+    OwnedRegion& operator=(OwnedRegion&&) = delete(
+        "OwnedRegion holds a linear Permission, and an assignment would drop the token of the target: bind the new "
+        "region to a new name, and give the token of the old region back through release()");
     ~OwnedRegion() = default;
 
     // No conversion drops the brand of a region.  A region of one instance

@@ -121,10 +121,10 @@ include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps
 include/crucible/perf/detail/ | replace-pending:std::bit_cast | 4 | - | -
 include/crucible/perf/detail/ | std-entity | 4 | - | -
 include/crucible/perf/detail/ | std-object | 1 | - | -
-include/crucible/warden/ | raw-pointer-object | 13 | - | -
+include/crucible/warden/ | raw-pointer-object | 10 | - | -
 include/crucible/warden/ | std-entity | 1 | - | -
 include/crucible/warden/ | std-object | 1 | - | -
-include/fixy/ | base-std-entity | 357 | - | -
+include/fixy/ | base-std-entity | 355 | - | -
 include/fixy/ | base-std-object | 202 | - | -
 include/fixy/ | replace-pending:<array> | 6 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
@@ -339,7 +339,7 @@ test/ct/ | std-entity | 20 | - | -
 test/ct/ | std-object | 13 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
 test/fixy/ | c-array-object | 100 | - | -
-test/fixy/ | c-library-call | 1465 | - | -
+test/fixy/ | c-library-call | 1461 | - | -
 test/fixy/ | c-library-object | 9 | - | -
 test/fixy/ | door-header | 22 | - | -
 test/fixy/ | opted-out | 16 | ORACLE: the C library reports the attributes of the calling thread | -

@@ -45,6 +45,8 @@ static_assert(!std::is_copy_constructible_v<WriterHandle>);
 static_assert(!std::is_copy_constructible_v<ReaderHandle>);
 static_assert(std::is_move_constructible_v<WriterHandle>);
 static_assert(std::is_move_constructible_v<ReaderHandle>);
+// An assignment would drop the writer token of the target.
+static_assert(!std::is_move_assignable_v<WriterHandle> && !std::is_move_assignable_v<ReaderHandle>);
 static_assert(SwmrWriterHandleOf<SmallSession, WriterHandle>);
 static_assert(!SwmrWriterHandleOf<SmallSession, WriterHandle&>, "a reference to a writer handle is not a handle");
 static_assert(!SwmrWriterHandleOf<SmallSession, ReaderHandle>, "a reader handle is not a writer handle");

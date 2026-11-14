@@ -46,6 +46,11 @@ using OR_double_a = OwnedRegion<double, test_tag_a>;
 using OR_int_b = OwnedRegion<int, test_tag_b>;
 using OR_int_a_branded = OwnedRegion<int, test_tag_a, brand_a>;
 
+// A region moves, and no assignment writes over the Permission of a live
+// region.  A Permission records no state, so the refusal covers each target.
+static_assert(std::is_nothrow_move_constructible_v<OR_int_a> && !std::is_move_assignable_v<OR_int_a>);
+static_assert(!std::is_move_assignable_v<OR_int_a_branded> && !std::is_copy_assignable_v<OR_int_a_branded>);
+
 // The partition of a split tiles its region.  Over each total from 0 to
 // 64 and each shard count from 1 to 16: shard 0 starts at 0, the last
 // shard ends at the total, and the length of each shard is total / N or
