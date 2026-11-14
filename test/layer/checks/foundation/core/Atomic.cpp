@@ -238,13 +238,15 @@ concept Swaps = requires(Cell& cell) { cell.cas_acq_rel(typename Cell::value_typ
     static_assert(!std::is_same_v<decltype(mint_sole_writer<HeadRole>()), HeadWriter>);
     static_assert(::foundation::brand::IsBranded<HeadWriter>);
 
-    // A writer is a linear token of one word, its run-time id: it moves in a
-    // register, it does not copy, and no default constructor, bit copy or key
-    // that a caller makes builds one.
+    // A writer is a linear token of one word, its run-time id: it does not
+    // copy, and no default constructor, bit copy or key that a caller makes
+    // builds one.  A move clears the id of the source, so the move is not
+    // trivial, and the end is.
     static_assert(sizeof(HeadWriter) == sizeof(std::uint64_t) && !std::is_empty_v<HeadWriter>);
     static_assert(::foundation::linear::is_linear_v<HeadWriter>);
     static_assert(!std::is_copy_constructible_v<HeadWriter> && !std::is_copy_assignable_v<HeadWriter>);
-    static_assert(std::is_trivially_move_constructible_v<HeadWriter> && std::is_trivially_destructible_v<HeadWriter>);
+    static_assert(std::is_nothrow_move_constructible_v<HeadWriter> && std::is_nothrow_move_assignable_v<HeadWriter>);
+    static_assert(!std::is_trivially_move_constructible_v<HeadWriter> && std::is_trivially_destructible_v<HeadWriter>);
     static_assert(!std::is_trivially_copyable_v<HeadWriter> && !std::is_default_constructible_v<HeadWriter>);
 
     // The cell of one writer holds its value and the run-time id of its

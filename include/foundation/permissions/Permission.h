@@ -864,6 +864,14 @@ public:
     // type.  The rule owners refuses std::start_lifetime_as in the
     // tree, and the annotation no_start_over_bytes refuses the checked
     // lifetime start of foundation/Lifetime.h.
+    //
+    // A moved-from token keeps no record of the move, so it can still pass
+    // to a door.  The token is an empty class: a record would need a byte in
+    // each token and in each handle that holds one, and a move constructor
+    // that is not trivial, so the ABI would pass each token in memory.  The
+    // static rule use-after-move refuses a use of a moved-from local token,
+    // and that rule is the one check of this case.  A Capability and a
+    // SoleWriter record the move and end the process at a later use.
     constexpr Permission(Permission&&) noexcept = default;
     constexpr Permission& operator=(Permission&&) noexcept { return *this; }
     ~Permission() = default;

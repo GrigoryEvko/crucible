@@ -9,12 +9,21 @@
 // The static rule use-after-move refuses a use of a moved-from local.  It
 // does not see a token that a member, a pointer or a reference holds, so
 // each case reaches the spent token through a reference.
+//
+// A Capability records the spend in a byte of state, and a SoleWriter gives
+// its run-time id to the target and keeps 0.  A Permission is an empty
+// class, so it records no spend.  foundation/permissions/Permission.h states
+// that trade-off, and the static rule use-after-move is its one check.
 
+#include <foundation/Linear.h>
+#include <foundation/core/Atomic.h>
+#include <foundation/core/Ref.h>
 #include <foundation/effects/Capability.h>
 #include <foundation/effects/Effect.h>
 
 #include "abort_probe.h"
 
+#include <cstdint>
 #include <utility>
 
 namespace {
@@ -26,7 +35,10 @@ using AllocToken = fe::Capability<Effect::Alloc, fe::Test>;
 
 // The token that a call gives back by reference.  The rule use-after-move
 // does not read through it.
-[[nodiscard]] AllocToken& held(AllocToken& token) noexcept { return token; }
+template <class Token>
+[[nodiscard]] Token& held(Token& token) noexcept {
+    return token;
+}
 
 // A live token consumes one time.
 [[nodiscard]] bool live_token_consumes() noexcept {
@@ -77,6 +89,54 @@ using AllocToken = fe::Capability<Effect::Alloc, fe::Test>;
     return crucible::test::aborts([&] { target = std::move(held(source)); });
 }
 
+// The role of the cell of the writer cases.
+struct RingHead {};
+
+// A moved-from writer authorizes no store, no load of the writer and no
+// build of a cell.  The target of the move authorizes each of them.  A
+// writer is linear, so each probe body takes a Ref of a writer by value, no
+// closure captures a writer, and each writer ends at the drop door.
+[[nodiscard]] bool moved_from_writer_aborts() noexcept {
+    auto source = ::foundation::core::mint_sole_writer<RingHead>();
+    using Writer = decltype(source);
+    using Cell = ::foundation::core::Atomic<std::uint64_t, Writer>;
+    Cell cell{source, 5};
+    Writer target{std::move(held(source))};
+    cell.store_release(target, 6);
+    auto const live = ::foundation::core::to(target);
+    auto const spent = ::foundation::core::to(source);
+    bool const target_writes = !crucible::test::aborts([&cell, live] { cell.store_release(*live, 7); });
+    bool const store_aborts = crucible::test::aborts([&cell, spent] { cell.store_release(*spent, 8); });
+    bool const load_aborts = crucible::test::aborts([&cell, spent] { static_cast<void>(cell.load_owned(*spent)); });
+    bool const build_aborts = crucible::test::aborts([spent] {
+        Cell const second{*spent, 1};
+        static_cast<void>(second.load_acquire());
+    });
+    bool const target_holds = cell.load_owned(target) == 7;
+    ::foundation::linear::drop(std::move(source));
+    ::foundation::linear::drop(std::move(target));
+    return target_writes && store_aborts && load_aborts && build_aborts && target_holds;
+}
+
+// A move assignment spends its source too.  The target ends at the drop door
+// first, so the assignment drops no live writer.
+[[nodiscard]] bool assigned_from_writer_aborts() noexcept {
+    auto source = ::foundation::core::mint_sole_writer<RingHead>();
+    using Writer = decltype(source);
+    ::foundation::core::Atomic<std::uint64_t, Writer> cell{source, 5};
+    Writer target{std::move(held(source))};
+    Writer moved{std::move(held(target))};
+    ::foundation::linear::drop(std::move(target));
+    target = std::move(held(moved));
+    auto const spent = ::foundation::core::to(moved);
+    bool const moved_aborts = crucible::test::aborts([&cell, spent] { cell.store_release(*spent, 9); });
+    bool const target_holds = cell.load_owned(target) == 5;
+    ::foundation::linear::drop(std::move(source));
+    ::foundation::linear::drop(std::move(target));
+    ::foundation::linear::drop(std::move(moved));
+    return moved_aborts && target_holds;
+}
+
 }  // namespace
 
 int main() {
@@ -86,5 +146,7 @@ int main() {
     if (!moved_from_extract_aborts()) return 4;
     if (!moved_from_move_aborts()) return 5;
     if (!moved_from_assignment_aborts()) return 6;
+    if (!moved_from_writer_aborts()) return 7;
+    if (!assigned_from_writer_aborts()) return 8;
     return 0;
 }

@@ -384,9 +384,12 @@ private:
 
 // The proof of the one thread that writes a cell (THE CELL OF ONE WRITER).
 // The token holds the run-time id of its mint, 8 bytes, and only the cells of
-// this family read it.  Its move constructor and its destructor are trivial,
-// so the ABI passes it in a register.  Its move assignment is user-provided,
-// so it is not trivially copyable, and std::bit_cast builds no token.  The
+// this family read it.  A move gives the id to the target and leaves the id 0
+// in the source.  No mint gives 0, and no cell takes a writer of 0, so a
+// moved-from token authorizes no operation.  The move constructor is then
+// user-provided, so the ABI passes a token by value in memory.  Each cell
+// takes its writer by const reference, so the code of a cell does not change.
+// The token is not trivially copyable, so std::bit_cast builds no token.  The
 // annotation no_start_over_bytes refuses the checked lifetime start of
 // foundation/Lifetime.h.
 template <class Role, class Brand>
@@ -416,9 +419,14 @@ public:
                                            "reads a value that a different thread stores.  Move the writer.");
     SoleWriter& operator=(SoleWriter const&) = delete("SoleWriter: a copy gives the cell a second writer.");
 
-    constexpr SoleWriter(SoleWriter&&) noexcept = default;
+    constexpr SoleWriter(SoleWriter&& other) noexcept : identity_{other.identity_} { other.identity_ = 0; }
+
+    // The source gives its id up before the target takes it, so a self move
+    // keeps the id.
     constexpr SoleWriter& operator=(SoleWriter&& other) noexcept {
-        identity_ = other.identity_;
+        std::uint64_t const taken = other.identity_;
+        other.identity_ = 0;
+        identity_ = taken;
         return *this;
     }
     ~SoleWriter() = default;
@@ -569,9 +577,21 @@ class Atomic<T, SoleWriter<Role, Identity>> : ::foundation::Pinned<Atomic<T, Sol
     // The run-time id of the writer that the constructor took.
     std::uint64_t writer_identity_ = 0;
 
+    // The id of the writer that builds the cell.  A moved-from writer holds 0,
+    // and a cell of 0 would take each moved-from writer, so the build ends the
+    // process.
+    [[nodiscard]] static constexpr std::uint64_t builder_identity_(SoleWriter<Role, Identity> const& writer) noexcept {
+        if (writer.identity_ == 0) [[unlikely]] {
+            fatal("Atomic<T, SoleWriter<Role, Brand>>: a moved-from writer built the cell.  A move gives the id of the "
+                  "writer to its target, so build the cell with the target.");
+        }
+        return writer.identity_;
+    }
+
     // Each read and each write of the writer shows a proof of the id of the
     // cell.  A proof of a different id comes from a different run of the mint
-    // site of the writer, such as a different turn of a loop.
+    // site of the writer, such as a different turn of a loop.  A moved-from
+    // writer holds 0, which no cell holds.
     void expect_writer_(SoleWriter<Role, Identity> const& writer) const noexcept {
         if (writer.identity_ != writer_identity_) [[unlikely]] {
             fatal("Atomic<T, SoleWriter<Role, Brand>>: a writer of a different run of the mint site used the cell.  "
@@ -585,10 +605,10 @@ public:
 
     explicit constexpr Atomic(SoleWriter<Role, Identity> const& writer) noexcept
         requires std::is_nothrow_default_constructible_v<T>
-        : value_{codec_type::to_storage_(T{})}, writer_identity_{writer.identity_} {}
+        : value_{codec_type::to_storage_(T{})}, writer_identity_{builder_identity_(writer)} {}
 
     constexpr Atomic(SoleWriter<Role, Identity> const& writer, T initial) noexcept
-        : value_{codec_type::to_storage_(initial)}, writer_identity_{writer.identity_} {}
+        : value_{codec_type::to_storage_(initial)}, writer_identity_{builder_identity_(writer)} {}
 
     // A read on each thread, with acquire order.  It pairs with each
     // store_release of the writer.
