@@ -42,20 +42,6 @@
 //   access below the stack.  A thread that has an alternate stack of at
 //   least that size keeps it, and the door maps no stack for it.
 //
-// THE PIPE SIGNAL
-//   A write to a pipe or a socket whose reader has gone raises SIGPIPE in
-//   the thread of the write, and the default action ends the process.  A
-//   send takes MSG_NOSIGNAL, but write(2) has no such flag.  So the write
-//   door of fixy/os/Fs.h blocks SIGPIPE in its thread for the write
-//   (block_pipe_signal_).  After a write that gave epipe, it takes the
-//   SIGPIPE that the write raised, and then it puts the mask back
-//   (release_pipe_signal_).  The write gives epipe, and the action of
-//   SIGPIPE in the process does not change.  A thread that blocked SIGPIPE
-//   before the write keeps its mask, and the signal of the write stays
-//   pending for it.  A SIGPIPE that a different process sends while the
-//   write runs merges with the signal of the write, so the door takes it
-//   too.
-//
 // This header is in the layer X3_os of utils/rule-table.txt.  The door file
 // is src/fixy/os/Signal.cpp, the one includer of <signal.h>.
 
@@ -94,16 +80,6 @@ install_alternate_stack_(PreviousStack& previous) noexcept;
 
 // Puts PREVIOUS back as the alternate stack of the calling thread.
 void restore_alternate_stack_(PreviousStack const& previous) noexcept;
-
-// Blocks SIGPIPE in the calling thread (THE PIPE SIGNAL).  It gives true when
-// the thread blocked SIGPIPE before the call.
-[[nodiscard]] bool block_pipe_signal_() noexcept;
-
-// Ends the block of block_pipe_signal_, which gave WAS_BLOCKED (THE PIPE
-// SIGNAL).  When the thread did not block SIGPIPE before, the call takes a
-// pending SIGPIPE after a write that gave epipe (HAS_BROKEN_PIPE), and then
-// it unblocks SIGPIPE.  Otherwise it changes nothing.
-void release_pipe_signal_(bool was_blocked, bool has_broken_pipe) noexcept;
 
 }  // namespace detail
 

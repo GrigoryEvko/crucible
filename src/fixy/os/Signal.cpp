@@ -1,8 +1,9 @@
 // The signal door of fixy (fixy/os/Signal.h).  It is the one includer of
-// <signal.h>, and it keeps the calls of sigaction, sigaltstack, raise,
-// pthread_sigmask and sigtimedwait in the C library (decision D12 of
+// <signal.h>, and it keeps the calls of sigaction, sigaltstack, sigemptyset
+// and raise in the C library (decision D12 of
 // misc/01_10_2026_quarantine.md).  The C library keeps the dispositions and
-// the masks of its threads, so the base takes signals only through it.
+// the masks of its threads, so the base takes signals only through it.  The
+// one exception is the block of SIGPIPE of foundation/os/PipeSignal.h.
 
 #include <fixy/os/Signal.h>
 
@@ -94,42 +95,6 @@ void on_fatal_signal(int signal_number, ::siginfo_t* info, void* /*context*/) no
     previous.flags = current.ss_flags & SS_DISABLE;
     return ::foundation::core::Option<::foundation::os::GuardedRegion>::some(
         static_cast<::foundation::os::GuardedRegion&&>(region));
-}
-
-namespace {
-
-// The set of the one signal SIGPIPE.
-[[nodiscard]] ::sigset_t pipe_signal_set() noexcept {
-    ::sigset_t set{};
-    static_cast<void>(::sigemptyset(&set));
-    static_cast<void>(::sigaddset(&set, SIGPIPE));
-    return set;
-}
-
-}  // namespace
-
-bool block_pipe_signal_() noexcept {
-    ::sigset_t const pipe = pipe_signal_set();
-    ::sigset_t previous{};
-    if (::pthread_sigmask(SIG_BLOCK, &pipe, &previous) != 0) {
-        ::foundation::core::fatal("the signal door: pthread_sigmask did not block SIGPIPE in the thread of a write");
-    }
-    return ::sigismember(&previous, SIGPIPE) == 1;
-}
-
-void release_pipe_signal_(bool was_blocked, bool has_broken_pipe) noexcept {
-    if (was_blocked) return;
-    ::sigset_t const pipe = pipe_signal_set();
-    if (has_broken_pipe) {
-        // A wait of zero takes the pending signal, or gives EAGAIN when no
-        // signal is pending.  The kernel does not sleep for a wait of zero,
-        // so no other signal interrupts it with EINTR.
-        ::timespec const no_wait{};
-        static_cast<void>(::sigtimedwait(&pipe, nullptr, &no_wait));
-    }
-    if (::pthread_sigmask(SIG_UNBLOCK, &pipe, nullptr) != 0) {
-        ::foundation::core::fatal("the signal door: pthread_sigmask did not unblock SIGPIPE after a write");
-    }
 }
 
 void restore_alternate_stack_(PreviousStack const& previous) noexcept {

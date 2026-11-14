@@ -110,7 +110,7 @@ examples/fn/ | std-object | 3 | - | -
 include/crucible/ | c-array-object | 1 | - | -
 include/crucible/ | compiler-builtin | 1 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
-include/crucible/ | raw-pointer-object | 53 | - | -
+include/crucible/ | raw-pointer-object | 52 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 1 | - | -
 include/crucible/ | std-entity | 1 | - | -
 include/crucible/cntp/ | c-library-call | 9 | - | -
@@ -121,7 +121,6 @@ include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps
 include/crucible/perf/detail/ | replace-pending:std::bit_cast | 4 | - | -
 include/crucible/perf/detail/ | std-entity | 4 | - | -
 include/crucible/perf/detail/ | std-object | 1 | - | -
-include/crucible/warden/ | raw-pointer-object | 10 | - | -
 include/crucible/warden/ | std-entity | 1 | - | -
 include/crucible/warden/ | std-object | 1 | - | -
 include/fixy/ | base-std-entity | 355 | - | -
@@ -304,7 +303,7 @@ src/perf/ | compiler-builtin | 1 | - | -
 src/perf/ | foreign-symbol | 14 | - | -
 src/perf/ | raw-pointer-object | 3 | - | -
 src/perf/ | replace-pending:std::bit_cast | 2 | - | -
-test/ | c-array-object | 160 | - | -
+test/ | c-array-object | 158 | - | -
 test/ | c-library-call | 853 | - | -
 test/ | c-library-object | 14 | - | -
 test/ | compiler-builtin | 1 | - | -
@@ -315,7 +314,7 @@ test/ | opted-out | 13 | PROBE: the current directory of the process is a direct
 test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | raw-function-pointer | 21 | - | -
 test/ | raw-new-delete | 41 | - | -
-test/ | raw-pointer-object | 351 | - | -
+test/ | raw-pointer-object | 350 | - | -
 test/ | region | 1 | PROBE: the current directory of the process is a directory that it cannot read | the test of the root of the Cipher makes its current directory unreadable through the C library, because the base has no door that changes the current directory or the mode of a directory, and an absolute root must open when the current directory does not open
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | replace-pending:<limits> | 12 | - | -

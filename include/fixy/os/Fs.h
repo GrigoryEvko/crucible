@@ -319,7 +319,7 @@ read_all_into_(int descriptor, ::foundation::core::Alloc allocation, ::foundatio
 
 // Writes the COUNT bytes at FIRST (write_full_steps_).  A write to a pipe or
 // a socket with no reader gives epipe, and the thread gets no SIGPIPE (THE
-// PIPE SIGNAL of fixy/os/Signal.h).
+// PIPE SIGNAL of foundation/os/PipeSignal.h).
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 write_full_(int descriptor, void const* first, std::size_t count) noexcept;
 

@@ -162,14 +162,10 @@ rule artifact-symbols
 @build/libfixy.a | libc-allow | 1 | pthread_join | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libfixy.a | libc-allow | 1 | pthread_self | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libfixy.a | libc-allow | 1 | pthread_setname_np | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
-@build/libfixy.a | libc-allow | 1 | pthread_sigmask | -
 @build/libfixy.a | libc-allow | 1 | raise | -
 @build/libfixy.a | libc-allow | 1 | sigaction | -
-@build/libfixy.a | libc-allow | 1 | sigaddset | -
 @build/libfixy.a | libc-allow | 1 | sigaltstack | -
 @build/libfixy.a | libc-allow | 1 | sigemptyset | -
-@build/libfixy.a | libc-allow | 1 | sigismember | -
-@build/libfixy.a | libc-allow | 1 | sigtimedwait | -
 @build/libfixy.a | libc-ratchet | 1 | getenv | the environment read of the perf layer moves into a base source file: the environment door of fixy/os/Environment.h calls getenv in src/fixy/os/ExitHooks.cpp, the one includer of <stdlib.h>.  The getenv row of libcrucible_perf.a falls when the perf callers use the door
 @build/libfixy.a | libc-ratchet | 1 | memchr | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libfixy.a | ratchet | 1 | _ZNSt20bad_array_new_lengthD1Ev | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import

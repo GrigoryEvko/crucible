@@ -10,11 +10,11 @@
 // function of the C library (THE SANITIZERS of foundation/os/Syscall.h).
 
 #include <fixy/os/Fs.h>
-#include <fixy/os/Signal.h>
 
 #include <foundation/core/Choice.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/OpenFlags.h>
+#include <foundation/os/PipeSignal.h>
 #include <foundation/os/Syscall.h>
 
 #include <asm/stat.h>
@@ -290,12 +290,14 @@ UnitResult write_full_(int descriptor, void const* first, std::size_t count) noe
     char const* const bytes = static_cast<char const*>(first);
     // A write to a pipe or a socket with no reader raises SIGPIPE, and
     // write(2) has no MSG_NOSIGNAL.  The block of the signal holds for the
-    // whole loop (THE PIPE SIGNAL of fixy/os/Signal.h).
-    bool const was_blocked = ::fixy::signal::detail::block_pipe_signal_();
+    // whole loop (THE PIPE SIGNAL of foundation/os/PipeSignal.h).
+    os::PipeSignalBlock block = os::PipeSignalBlock::block_calling_thread();
     UnitResult written = write_full_steps_(count, [descriptor, bytes](std::size_t offset, std::size_t remaining) {
         return os::result_of(os::raw_syscall(os::Syscall::write, descriptor, bytes + offset, remaining));
     });
-    ::fixy::signal::detail::release_pipe_signal_(was_blocked, written.err().value_or(os::Errno{}) == os::Errno::epipe);
+    if (written.err().value_or(os::Errno{}) == os::Errno::epipe) {
+        block.mark_broken_pipe();
+    }
     return written;
 }
 

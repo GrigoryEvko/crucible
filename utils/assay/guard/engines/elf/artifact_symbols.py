@@ -428,8 +428,7 @@ TSAN_WORD = "tsan"
 #   * The thread door of fixy/os/ThreadTasks.h starts each thread with the attributes of the call, names it, joins
 #     it, and registers the fork hook of a caller.  The C library starts the thread and holds its TLS.
 #   * The signal door of fixy/os/Signal.h installs the handlers of the signals that end a process, and it sets the
-#     signal stack of a thread.  It also blocks SIGPIPE in the thread of a full write of the file door, and it takes
-#     the SIGPIPE of the write.  The C library keeps the signal actions of the process and the signal sets of its
+#     signal stack of a thread.  The C library keeps the signal actions of the process and the signal sets of its
 #     threads.
 #   * The exit hook door of fixy/os/ExitHooks.h registers a hook for std::exit and std::quick_exit.  The C library
 #     keeps the list of the exit hooks.
@@ -462,10 +461,6 @@ DOOR_CALLS = (
             "sigaltstack",
             "sigemptyset",
             "raise",
-            "sigaddset",
-            "sigismember",
-            "pthread_sigmask",
-            "sigtimedwait",
         )
     ),
     DoorCall("atexit", FIXY, "ExitHooks.cpp.o"),
