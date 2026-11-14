@@ -69,6 +69,12 @@ int check_move_transfers_ownership() {
     if (!dst.is_open()) return 21;
     if (dst.get() != raw) return 22;
 
+    // Each accessor of the handle that the move emptied gives the empty
+    // value.  Its close_explicit closes no stream and reports zero, by the
+    // contract of the empty state below.
+    if (static_cast<bool>(src) || src.get() != nullptr) return 25;
+    if (src.close_explicit() != 0 || !dst.is_open()) return 26;
+
     // Move-assigning over a live handle closes the one being replaced.
     auto second = ::fixy::mint_temporary_file(kTestIo);
     if (!second) return 0;

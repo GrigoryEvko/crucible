@@ -182,6 +182,19 @@ read_clock_nanos(::clockid_t clock) noexcept {
     return nanos_from_timespec(::foundation::os::KernelTimespec{.seconds = now.tv_sec, .nanoseconds = now.tv_nsec});
 }
 
+// Reads the PTP hardware clock behind the /dev/ptpN descriptor DESCRIPTOR,
+// as read_clock_nanos does.  A descriptor below zero, the descriptor of a
+// reader that a move emptied, gives ebadf and reads no clock.  Its clock id
+// names no PTP clock: the id of descriptor -1 is CLOCK_THREAD_CPUTIME_ID.
+// PtpClockReader::read is its caller.
+[[nodiscard]] inline ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno>
+read_ptp_clock_nanos(int descriptor) noexcept {
+    if (descriptor < 0) [[unlikely]] {
+        return ::foundation::core::err(::foundation::os::Errno::ebadf);
+    }
+    return read_clock_nanos(ptp_clockid_from_fd(descriptor));
+}
+
 }  // namespace detail
 
 // A multi-core mask still lets the thread migrate, and the counter is
@@ -462,7 +475,8 @@ struct PtpClockCaps {
 
 // The reader of one PTP hardware clock.  It owns the descriptor of the
 // device.  The clock id that it reads through then names a descriptor
-// that is still open.
+// that is still open.  A move takes the descriptor, and each call of the
+// reader that the move emptied gives ebadf.
 //
 // The reader clamps no read.  The servo that disciplines a PHC can step
 // it.  For that reason is_non_decreasing(PtpHwClock) is false, and a floor
@@ -484,19 +498,22 @@ struct PtpClockReader final {
 
     [[nodiscard]] ::foundation::core::Result<result_type, ::foundation::os::Errno> read() const noexcept {
         using Reading = ::foundation::core::Result<result_type, ::foundation::os::Errno>;
-        return detail::read_clock_nanos(detail::ptp_clockid_from_fd(fd_.get()))
-            .match(
-                [](std::uint64_t nanos) noexcept -> Reading {
-                    return detail::clock_stamp_access::stamp<ClockSource_v::PtpHwClock>(nanos);
-                },
-                [](::foundation::os::Errno error) noexcept -> Reading { return ::foundation::core::err(error); });
+        return detail::read_ptp_clock_nanos(fd_.get()).match(
+            [](std::uint64_t nanos) noexcept -> Reading {
+                return detail::clock_stamp_access::stamp<ClockSource_v::PtpHwClock>(nanos);
+            },
+            [](::foundation::os::Errno error) noexcept -> Reading { return ::foundation::core::err(error); });
     }
 
     // The capabilities of the clock, as PTP_CLOCK_GETCAPS2 reports them, or
     // the error of a failed query.  The reader owns the descriptor, so the
-    // query names a device that is still open.
+    // query names a device that is still open.  A reader that a move emptied
+    // gives ebadf and makes no query.
     [[nodiscard]] ::foundation::core::Result<PtpClockCaps, ::foundation::os::Errno> caps() const noexcept {
         using Caps = ::foundation::core::Result<PtpClockCaps, ::foundation::os::Errno>;
+        if (!fd_.is_open()) [[unlikely]] {
+            return ::foundation::core::err(::foundation::os::Errno::ebadf);
+        }
         ::ptp_clock_caps kernel_caps{};
         return ::fixy::fs::detail::query_descriptor_(fd_.get(), PTP_CLOCK_GETCAPS2, &kernel_caps)
             .match(

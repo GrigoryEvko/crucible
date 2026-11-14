@@ -4888,6 +4888,11 @@ fixy_neg_compile_test(neg_owned_file_temporary_without_io
 # what the mints do: it runs the whole sequence in an mkdtemp directory.
 fixy_test(test_fs)
 
+# Each owner of a descriptor that a move emptied refuses each operation: the
+# descriptor, the directory and the PTP reader.  The tests of the ring, the
+# mapping and the stream hold the same check on an owner that they mint.
+fixy_test(test_os_moved_from_owner)
+
 # The fixtures, each named for what it refuses.  Every second
 # regex is a string the compiler emits and the fixture source does not:
 # the anonymous-namespace prefix on the context type, the libstdc++

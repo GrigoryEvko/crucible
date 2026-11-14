@@ -181,6 +181,18 @@ struct TransferFiles final {
         std::fprintf(stderr, "the ring lost its descriptor on the way out of the Linear\n");
         return 1;
     }
+
+    // A move takes the descriptor and the three mappings, and each accessor
+    // of the ring that the move emptied gives the empty value.
+    fixy::io::IoUringRing const moved = std::move(owned);
+    bool const is_emptied = !owned.is_valid() && owned.ring_fd() < 0 && owned.sq_ring() == nullptr
+                         && owned.cq_ring() == nullptr && owned.sqes() == nullptr && owned.sq_ring_size() == 0
+                         && owned.cq_ring_size() == 0 && owned.sqes_size() == 0 && owned.sq_entries() == 0
+                         && owned.cq_entries() == 0;
+    if (!is_emptied || !moved.is_valid()) {
+        fixy::report(fixy::Sink::Err, "a moved-from ring answered an accessor with a part of the ring\n");
+        return 1;
+    }
     return 0;
 }
 

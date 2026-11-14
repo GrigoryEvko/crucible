@@ -608,6 +608,11 @@ open_dirfd(Ctx const&, Path<tags::source::Sanitized> const& dir) noexcept {
 //   other error returns in the Result.  Each call takes the context that the
 //   other calls of this header take, because each can park the caller on
 //   the disk.
+//
+//   A Dirfd that holds no descriptor, such as a Dirfd that a move emptied,
+//   gives ebadf, and the call makes no system call.  The kernel reads an
+//   absolute path with no regard to the descriptor, so the descriptor of an
+//   empty Dirfd must not reach it.
 
 // Opens path under dir with the mode and the flags of Atoms, as mint_file
 // does.  The kernel reads perms only for a mode that creates the file.
@@ -616,6 +621,9 @@ template <typename... Atoms, eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
 mint_file_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path, std::uint32_t perms) noexcept {
     using Minted = ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
+    if (!dir.is_open()) {
+        return ::foundation::core::err(::foundation::os::Errno::ebadf);
+    }
     constexpr int flags = detail::fold_open_flags<Atoms...>() | ::foundation::os::kOpenNoFollow;
     return FileDoor::open_path_at_(dir.get(), ::foundation::core::detail::c_text_first_(path), flags, perms)
         .match([](OwnedFd descriptor) -> Minted { return mint_linear<OwnedFd>(std::move(descriptor)); },
@@ -627,6 +635,9 @@ template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
 [[nodiscard]] ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
 open_dirfd_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noexcept {
+    if (!dir.is_open()) {
+        return ::foundation::core::err(::foundation::os::Errno::ebadf);
+    }
     return FileDoor::open_directory_at_(dir.get(), ::foundation::core::detail::c_text_first_(path));
 }
 
@@ -636,6 +647,9 @@ template <typename Atomicity, eff::IsExecCtx Ctx>
     requires CtxFitsCommitAtomic<Ctx, Atomicity>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 commit_atomic_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText from, ::foundation::core::CText to) noexcept {
+    if (!dir.is_open()) {
+        return ::foundation::core::err(::foundation::os::Errno::ebadf);
+    }
     char const* const source = ::foundation::core::detail::c_text_first_(from);
     char const* const target = ::foundation::core::detail::c_text_first_(to);
     return std::is_same_v<Atomicity, atomicity::Rename> ? detail::rename_replacing_at_(dir.get(), source, target)
@@ -647,6 +661,9 @@ template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 unlink_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noexcept {
+    if (!dir.is_open()) {
+        return ::foundation::core::err(::foundation::os::Errno::ebadf);
+    }
     return detail::unlink_at_(dir.get(), ::foundation::core::detail::c_text_first_(path));
 }
 
@@ -656,6 +673,9 @@ template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 make_directory_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path, std::uint32_t perms = 0755) noexcept {
+    if (!dir.is_open()) {
+        return ::foundation::core::err(::foundation::os::Errno::ebadf);
+    }
     return detail::make_directory_at_(dir.get(), ::foundation::core::detail::c_text_first_(path), perms);
 }
 
@@ -665,6 +685,9 @@ template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
 [[nodiscard]] inline ::foundation::core::Result<bool, ::foundation::os::Errno>
 has_entry_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noexcept {
+    if (!dir.is_open()) {
+        return ::foundation::core::err(::foundation::os::Errno::ebadf);
+    }
     return detail::has_entry_at_(dir.get(), ::foundation::core::detail::c_text_first_(path));
 }
 

@@ -186,7 +186,12 @@ PROBE_FILES: dict[str, str] = {
     "test/fixy/test_concurrent_channels.cpp": (
         "the release door of a linear holder leaves the holder with no channel and no bytes"
     ),
+    "test/fixy/test_os_io.cpp": "a moved-from io_uring ring holds no descriptor, no mapping and no count of entries",
     "test/fixy/test_os_mmap.cpp": "a moved-from or released mapping is unmapped, so the pages are unmapped one time",
+    "test/fixy/test_os_moved_from_owner.cpp": (
+        "a moved-from descriptor, directory or PTP clock reader refuses each operation with ebadf, and reads no "
+        "resource of another owner"
+    ),
     "test/fixy/test_owned_file.cpp": (
         "a moved-from or released file handle is closed, so the descriptor has one owner and closes one time"
     ),

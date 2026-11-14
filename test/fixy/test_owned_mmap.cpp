@@ -131,6 +131,11 @@ int check_live_mapping() {
     if (!moved.is_mapped()) return 14;
     if (moved.data() != addr) return 15;
 
+    // Each accessor of the region that the move emptied gives the empty
+    // value, and its view holds no element.
+    if (r.data() != nullptr || r.size() != 0) return 16;
+    if (r.view<std::byte>().value_or(::foundation::core::View<std::byte>{}).size() != 0) return 17;
+
     return 0;
 }
 
