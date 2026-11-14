@@ -1113,9 +1113,10 @@ public:
     // most its death_op, and the death_op is at most UINT32_MAX - 3.  The
     // function stops the process when a slot breaks this rule, because the
     // sweep would index past its arrays.  The plan goes into plan_storage,
-    // the arrays of the sweep go into scratch, and the result is the address
-    // of plan_storage.  The plan borrows the slots.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] MemoryPlan*
+    // the arrays of the sweep go into scratch, and the result is a Ref of
+    // plan_storage.  Each call gives a plan, so the result is never empty.
+    // The plan borrows the slots.
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] ::fixy::Ref<MemoryPlan>
     compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage, ::fixy::BumpArena& scratch,
                         ::fixy::View<TensorSlot> slots) CRUCIBLE_NO_THREAD_SAFETY;
 };

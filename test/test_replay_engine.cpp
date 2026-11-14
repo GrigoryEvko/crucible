@@ -391,11 +391,10 @@ static void test_integration_with_pool() {
 
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
-    assert(plan != nullptr);
+    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
 
     PoolAllocator pool;
-    pool.init(*plan);
+    pool.init(plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     alignas(256) char fake_param[128];

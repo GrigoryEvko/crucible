@@ -114,11 +114,10 @@ int main() {
     BackgroundThread bt;
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
-    assert(plan != nullptr);
+    crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
 
-    std::printf("  plan: pool=%lu bytes, %u slots (%u external)\n", static_cast<unsigned long>(plan->pool_bytes),
-                plan->num_slots(), plan->num_external);
+    std::printf("  plan: pool=%lu bytes, %u slots (%u external)\n", static_cast<unsigned long>(plan.pool_bytes),
+                plan.num_slots(), plan.num_external);
 
     // The slot ids of each op are arrays of this arena.
     ::fixy::BumpArena runs{size_t{1} << 16};
@@ -161,7 +160,7 @@ int main() {
     RegionNode region{};
     region.kind = TraceNodeKind::REGION;
     region.ops = ops.view();
-    region.plan = make_plan_link(*plan);
+    region.plan = make_plan_link(plan);
 
     CrucibleContext ctx;
     assert(ctx.activate(region));

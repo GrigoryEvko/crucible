@@ -72,9 +72,9 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     second_slot.slot_id = crucible::SlotId{1};
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
+    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
     ::fixy::report(::fixy::Sink::Out, "  the planner returned a plan of {} bytes\n",
-                   static_cast<unsigned long long>(plan->pool_bytes));
+                   static_cast<unsigned long long>(plan.pool_bytes));
 }
 
 // The sizes of the sweep come from the largest death_op + 2.  A death_op of
@@ -184,17 +184,19 @@ int main() {
 
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
-    assert(plan != nullptr);
-    assert(plan->num_slots() == N);
-    assert(plan->num_external == 1);
-    assert(plan->pool_bytes > 0);
+    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
+    // The planner writes the plan into the storage of the caller, and the
+    // result reaches that storage.
+    assert(::fixy::same_object(::fixy::to(plan), ::fixy::to(plan_storage)));
+    assert(plan.num_slots() == N);
+    assert(plan.num_external == 1);
+    assert(plan.pool_bytes > 0);
 
     assert(slots.at(::foundation::core::index<2>()).offset_bytes
            <= slots.at(::foundation::core::index<1>()).offset_bytes + 2048);
 
     uint64_t total_internal = 1024 + 2048 + 1024;
-    assert(plan->pool_bytes < total_internal);
+    assert(plan.pool_bytes < total_internal);
 
     // At every op boundary the simultaneously-live slots must hold pairwise
     // disjoint byte intervals.  The loop runs to 7 because that is the largest
@@ -207,7 +209,7 @@ int main() {
     }
 
     crucible::test::pass("test_memory_plan: all tests passed\n");
-    ::fixy::report(::fixy::Sink::Out, "  pool_bytes: {}\n", static_cast<unsigned long>(plan->pool_bytes));
+    ::fixy::report(::fixy::Sink::Out, "  pool_bytes: {}\n", static_cast<unsigned long>(plan.pool_bytes));
     ::fixy::report(::fixy::Sink::Out, "  slot offsets: [{}, {}, {}, {}]\n",
                    static_cast<unsigned long>(slots.at(::foundation::core::index<0>()).offset_bytes),
                    static_cast<unsigned long>(slots.at(::foundation::core::index<1>()).offset_bytes),

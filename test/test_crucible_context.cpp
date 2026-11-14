@@ -385,8 +385,7 @@ static void test_integration_sweep_line() {
 
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
-    assert(plan != nullptr);
+    crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
 
     ::foundation::core::FixedArray<SlotId, 1> op0_out{SlotId{0}};
     ::foundation::core::FixedArray<SlotId, 1> op0_in{SlotId{2}};
@@ -405,7 +404,7 @@ static void test_integration_sweep_line() {
     set_input_slots(ops.at(::foundation::core::index<1>()), op1_in.view());
 
     RegionNode region{};
-    init_region(&region, ops.view(), crucible::make_plan_link(*plan));
+    init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
     CrucibleContext ctx;
     assert(ctx.activate(region));

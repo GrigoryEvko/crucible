@@ -257,7 +257,8 @@ int main(int argc, char* argv[]) {
                 ::fixy::copy(copy, slots.view()).expect("the copy holds one entry for each slot");
                 MemoryPlan plan_storage{};
                 sweep_scratch.with_epoch([&]() noexcept {
-                    auto* plan = bg.compute_memory_plan(test.alloc, plan_storage, sweep_scratch, copy);
+                    const ::fixy::Ref<MemoryPlan> plan =
+                        bg.compute_memory_plan(test.alloc, plan_storage, sweep_scratch, copy);
                     bench::do_not_optimize(plan);
                 });
             });

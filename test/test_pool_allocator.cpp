@@ -396,16 +396,15 @@ static void test_integration_with_sweep_line() {
 
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    auto* plan = bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
-    assert(plan != nullptr);
-    assert(plan->pool_bytes > 0);
+    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
+    assert(plan.pool_bytes > 0);
 
     PoolAllocator pool;
-    pool.init(*plan);
+    pool.init(plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     assert(pool.is_initialized());
-    assert(pool.pool_bytes() == plan->pool_bytes);
+    assert(pool.pool_bytes() == plan.pool_bytes);
 
     assert(pool.slot_ptr(SlotId{3}, pv) == nullptr);
 

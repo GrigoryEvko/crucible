@@ -504,10 +504,10 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
         MemoryPlan& plan_storage = *memory.plan.get(0).expect("the region memory holds one plan");
         // The plan lives in the memory of the region, outside the epoch, so
         // the body writes its link and the result of the epoch holds none.
-        // The sweep gives the address of the storage of the plan.
+        // The sweep gives a Ref of the storage of the plan.
         publish_scratch_.with_epoch([&]() noexcept {
-            region.plan = make_plan_link(
-                *compute_memory_plan(bg.alloc, plan_storage, publish_scratch_, memory.parts.slots.view()));
+            region.plan = PlanLink::some(
+                compute_memory_plan(bg.alloc, plan_storage, publish_scratch_, memory.parts.slots.view()));
         });
     }
 
@@ -1358,24 +1358,25 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
                                             .content_hash = graph->content_hash}};
 }
 
-MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage,
-                                                  ::fixy::BumpArena& scratch, ::fixy::View<TensorSlot> slots) {
+::fixy::Ref<MemoryPlan> BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage,
+                                                              ::fixy::BumpArena& scratch,
+                                                              ::fixy::View<TensorSlot> slots) {
     static constexpr uint32_t ALIGNMENT = 256;
 
-    auto* plan = &plan_storage;
-    plan->slots = slots;
-    const uint32_t num_slots = plan->num_slots();
-    plan->num_external = 0;
-    plan->pool_bytes = 0;
+    MemoryPlan& plan = plan_storage;
+    plan.slots = slots;
+    const uint32_t num_slots = plan.num_slots();
+    plan.num_external = 0;
+    plan.pool_bytes = 0;
 
-    plan->rank = rank;
-    plan->world_size = world_size;
-    plan->device_capability = device_capability.value();
-    plan->device_type = DeviceType::CPU;
-    plan->device_idx = -1;
-    ::fixy::fill(plan->pad0.view(), uint8_t{0});
+    plan.rank = rank;
+    plan.world_size = world_size;
+    plan.device_capability = device_capability.value();
+    plan.device_type = DeviceType::CPU;
+    plan.device_idx = -1;
+    ::fixy::fill(plan.pad0.view(), uint8_t{0});
 
-    if (num_slots == 0) return plan;
+    if (num_slots == 0) return ::fixy::to(plan);
 
     // The slot at an index of the sweep.  Each index of the sweep is a
     // position in the slots, so it is below their count.
@@ -1394,20 +1395,20 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
     uint32_t max_op = 0;
     for (const TensorSlot& slot : slots) {
         if (slot.is_external) {
-            plan->num_external++;
+            plan.num_external++;
         } else {
             CRUCIBLE_FATAL_INVARIANT(slot.birth_op.raw() <= slot.death_op.raw());
             CRUCIBLE_FATAL_INVARIANT(slot.death_op.raw() <= MAX_DEATH_OP);
-            if (plan->device_type == DeviceType::CPU && slot.device_type != DeviceType::CPU) {
-                plan->device_type = slot.device_type;
-                plan->device_idx = slot.device_idx;
+            if (plan.device_type == DeviceType::CPU && slot.device_type != DeviceType::CPU) {
+                plan.device_type = slot.device_type;
+                plan.device_idx = slot.device_idx;
             }
             if (slot.death_op.raw() + 1 > max_op) max_op = slot.death_op.raw() + 1;
         }
     }
 
-    uint32_t num_internal = num_slots - plan->num_external;
-    if (num_internal == 0) return plan;
+    uint32_t num_internal = num_slots - plan.num_external;
+    if (num_internal == 0) return ::fixy::to(plan);
 
     // Bucket the slots by birth_op and by death_op + 1.  The sweep range
     // is [0, max_op].  The checks above keep max_op in [1, UINT32_MAX - 2],
@@ -1575,8 +1576,8 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
         }
     }
 
-    plan->pool_bytes = pool_end;
-    return plan;
+    plan.pool_bytes = pool_end;
+    return ::fixy::to(plan);
 }
 
 }  // namespace crucible

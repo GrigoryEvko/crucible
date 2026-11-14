@@ -161,18 +161,18 @@ int main(int argc, char** argv) {
             BackgroundThread bt1;
             crucible::MemoryPlan plan_storage1{};
             ::fixy::BumpArena sweep_arena1{size_t{1} << 16};
-            auto* plan1 = bt1.compute_memory_plan(test.alloc, plan_storage1, sweep_arena1, set_slots1);
+            const crucible::MemoryPlan& plan1 =
+                *bt1.compute_memory_plan(test.alloc, plan_storage1, sweep_arena1, set_slots1);
 
             // (A) Structural fidelity.
-            if (plan1 == nullptr) return false;
-            if (plan1->num_slots() != num_slots) return false;
+            if (plan1.num_slots() != num_slots) return false;
 
             uint32_t want_external = 0;
             for (uint32_t i = 0; i < num_slots; ++i)
                 if (set.specs[i].is_external) ++want_external;
-            if (plan1->num_external != want_external) return false;
+            if (plan1.num_external != want_external) return false;
 
-            if (plan1->pool_bytes > PoolAllocator::kMaxPoolBytes) return false;
+            if (plan1.pool_bytes > PoolAllocator::kMaxPoolBytes) return false;
 
             // (B) No-overlap at every op boundary, via the canonical
             //     production oracle (MaxLive=kMaxSlots caps the live set,
@@ -189,7 +189,7 @@ int main(int argc, char** argv) {
                     if (slot.offset_bytes != 0) return false;
                 } else {
                     // offset + nbytes can't wrap: both < 2^20 by gen bounds.
-                    if (slot.offset_bytes + slot.nbytes > plan1->pool_bytes) return false;
+                    if (slot.offset_bytes + slot.nbytes > plan1.pool_bytes) return false;
                     if (slot.offset_bytes % kPlanAlignment != 0) return false;
                 }
             }
@@ -203,9 +203,9 @@ int main(int argc, char** argv) {
             BackgroundThread bt2;
             crucible::MemoryPlan plan_storage2{};
             ::fixy::BumpArena sweep_arena2{size_t{1} << 16};
-            auto* plan2 = bt2.compute_memory_plan(test.alloc, plan_storage2, sweep_arena2, set_slots2);
-            if (plan2 == nullptr) return false;
-            if (plan2->pool_bytes != plan1->pool_bytes) return false;
+            const crucible::MemoryPlan& plan2 =
+                *bt2.compute_memory_plan(test.alloc, plan_storage2, sweep_arena2, set_slots2);
+            if (plan2.pool_bytes != plan1.pool_bytes) return false;
             for (uint32_t i = 0; i < num_slots; ++i) {
                 const uint64_t first_offset = set_slots1.get(i).expect("the set holds this slot")->offset_bytes;
                 if (set_slots2.get(i).expect("the set holds this slot")->offset_bytes != first_offset) return false;
