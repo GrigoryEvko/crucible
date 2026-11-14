@@ -7,7 +7,7 @@
 #include <crucible/perf/WorkloadProfiler.h>
 
 int main() {
-    crucible::perf::WorkloadProfiler profiler{/*senses=*/nullptr, crucible::perf::WorkloadProfilerConfig{}};
+    crucible::perf::WorkloadProfiler profiler{/*senses=*/::fixy::none, crucible::perf::WorkloadProfilerConfig{}};
     (void)profiler;
     return 0;
 }

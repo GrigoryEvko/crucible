@@ -10,7 +10,7 @@
 
 int main() {
     auto profiler = crucible::perf::mint_workload_profiler(::fixy::BgDrainCtx{::foundation::effects::testing::bg()},
-                                                           /*senses=*/nullptr);
+                                                           /*senses=*/::fixy::none);
     (void)profiler;
     return 0;
 }

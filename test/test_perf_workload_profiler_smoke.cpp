@@ -22,8 +22,13 @@ using fixy::concurrent::WorkBudget;
 
 // Every profiler in this test comes from the mint, under a cold init
 // context.
-[[nodiscard]] WorkloadProfiler make_profiler(const crucible::perf::Senses* senses) noexcept {
+[[nodiscard]] WorkloadProfiler make_profiler(crucible::perf::ProfiledSenses senses) noexcept {
     return crucible::perf::mint_workload_profiler(::fixy::ColdInitCtx{::foundation::effects::testing::init()}, senses);
+}
+
+// A profiler that borrows senses.
+[[nodiscard]] WorkloadProfiler make_profiler(const crucible::perf::Senses& senses) noexcept {
+    return make_profiler(crucible::perf::ProfiledSenses::some(::fixy::to(senses)));
 }
 
 // The header asserts that the proof of origin carries no storage.
@@ -53,7 +58,7 @@ int main() {
     int failures = 0;
 
     {
-        WorkloadProfiler profiler = make_profiler(/*senses=*/nullptr);
+        WorkloadProfiler profiler = make_profiler(::fixy::none);
 
         // This budget is L3-resident, so the structural rule recommends
         // parallel.  A profiler with no telemetry must forward that
@@ -86,7 +91,7 @@ int main() {
     {
         auto senses = crucible::perf::Senses::load_subset(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
                                                           crucible::perf::SensesMask{.sense_hub = true});
-        WorkloadProfiler profiler = make_profiler(&senses);
+        WorkloadProfiler profiler = make_profiler(senses);
 
         const WorkBudget tiny_budget{
             .read_bytes = 1024,  // ~L1d-resident on every modern CPU
@@ -118,7 +123,7 @@ int main() {
     {
         auto senses = crucible::perf::Senses::load_subset(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
                                                           crucible::perf::SensesMask{.sense_hub = true});
-        WorkloadProfiler profiler = make_profiler(&senses);
+        WorkloadProfiler profiler = make_profiler(senses);
 
         const WorkBudget l3_budget{
             .read_bytes = 8 * 1024 * 1024,
@@ -171,7 +176,7 @@ int main() {
     }
 
     {
-        WorkloadProfiler profiler = make_profiler(/*senses=*/nullptr);
+        WorkloadProfiler profiler = make_profiler(::fixy::none);
         if (profiler.last_was_demoted() || profiler.last_futex_wait_delta() != 0
             || profiler.last_ctx_vol_delta() != 0) {
             std::fprintf(stderr, "fresh profiler diagnostics not at zero\n");
@@ -185,7 +190,7 @@ int main() {
     }
 
     {
-        WorkloadProfiler profiler = make_profiler(/*senses=*/nullptr);
+        WorkloadProfiler profiler = make_profiler(::fixy::none);
         const WorkBudget budget{
             .read_bytes = 8 * 1024 * 1024,
             .write_bytes = 8 * 1024 * 1024,
@@ -202,7 +207,7 @@ int main() {
     }
 
     {
-        WorkloadProfiler profiler_src = make_profiler(/*senses=*/nullptr);
+        WorkloadProfiler profiler_src = make_profiler(::fixy::none);
         WorkloadProfiler profiler_sink = std::move(profiler_src);
         const WorkBudget budget{
             .read_bytes = 1024,
@@ -223,7 +228,7 @@ int main() {
     // origin carries no storage, so every field of the decision must
     // come through it unchanged.
     {
-        WorkloadProfiler profiler = make_profiler(/*senses=*/nullptr);
+        WorkloadProfiler profiler = make_profiler(::fixy::none);
 
         const WorkBudget tiny_budget{
             .read_bytes = 1024,

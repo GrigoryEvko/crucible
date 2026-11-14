@@ -16,7 +16,7 @@
 
 int main() {
     auto profiler = crucible::perf::mint_workload_profiler(::fixy::ColdInitCtx{::foundation::effects::testing::init()},
-                                                           /*senses=*/nullptr);
+                                                           /*senses=*/::fixy::none);
     const ::fixy::concurrent::WorkBudget budget{.read_bytes = 1024, .write_bytes = 1024, .item_count = 256};
     const auto decision = profiler.recommend(budget);
 

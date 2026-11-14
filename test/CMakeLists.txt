@@ -1201,7 +1201,7 @@ crucible_neg_compile_test(neg_workload_profiler_mint_hot_fg_ctx
 # not trivially copyable either, so std::bit_cast cannot forge one.
 crucible_neg_compile_test(neg_workload_profiler_constructor_private
     "is private within this context"
-    ".constexpr crucible::perf::WorkloadProfiler::WorkloadProfiler\\(const crucible::perf::Senses\\*, crucible::perf::WorkloadProfilerConfig\\). is private")
+    ".constexpr crucible::perf::WorkloadProfiler::WorkloadProfiler\\(crucible::perf::ProfiledSenses, crucible::perf::WorkloadProfilerConfig\\). is private")
 crucible_neg_compile_test(neg_workload_profiler_decision_constructor_private
     "is private within this context"
     ".constexpr crucible::perf::ProfiledDecision::ProfiledDecision\\(fixy::concurrent::ParallelismDecision\\). is private")

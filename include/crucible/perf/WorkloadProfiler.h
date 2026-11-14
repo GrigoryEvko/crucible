@@ -2,6 +2,7 @@
 
 #include <crucible/perf/SenseHub.h>
 #include <crucible/perf/Senses.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/ParallelismRule.h>
 #include <foundation/Lifetime.h>
@@ -78,9 +79,12 @@ using workload_profiler_required_row = ::foundation::effects::Row<::foundation::
 template <class Ctx>
 concept CtxFitsWorkloadProfilerMint = ::foundation::effects::CtxAdmits<Ctx, workload_profiler_required_row>;
 
+// The Senses that a profiler borrows, or no Senses.
+using ProfiledSenses = ::fixy::Option<::fixy::Ref<const Senses>>;
+
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsWorkloadProfilerMint<Ctx>
-[[nodiscard]] constexpr WorkloadProfiler mint_workload_profiler(Ctx const&, const Senses* senses,
+[[nodiscard]] constexpr WorkloadProfiler mint_workload_profiler(Ctx const&, ProfiledSenses senses,
                                                                 WorkloadProfilerConfig cfg = {}) noexcept;
 
 // The structural rule reasons about the working set alone and cannot
@@ -90,16 +94,15 @@ template <::foundation::effects::IsExecCtx Ctx>
 // calls and demotes a parallel recommendation to sequential when they
 // say the machine is under stress.  It never promotes.
 class WorkloadProfiler {
-    // The constructor is private, and the mint is its one friend.
-    // `senses` may be null.  The profiler then passes the structural
-    // decision through and demotes nothing, which is the shape on a host
-    // without CAP_BPF.
-    constexpr explicit WorkloadProfiler(const Senses* senses, WorkloadProfilerConfig cfg) noexcept
+    // The constructor is private, and the mint is its one friend.  A
+    // profiler with no Senses passes the structural decision through and
+    // demotes nothing, which is the shape on a host without CAP_BPF.
+    constexpr explicit WorkloadProfiler(ProfiledSenses senses, WorkloadProfilerConfig cfg) noexcept
         : senses_{senses}, cfg_{cfg} {}
 
     template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsWorkloadProfilerMint<Ctx>
-    friend constexpr WorkloadProfiler mint_workload_profiler(Ctx const&, const Senses* senses,
+    friend constexpr WorkloadProfiler mint_workload_profiler(Ctx const&, ProfiledSenses senses,
                                                              WorkloadProfilerConfig cfg) noexcept;
 
 public:
@@ -116,11 +119,12 @@ public:
     [[nodiscard]] ::fixy::concurrent::ParallelismDecision
     recommend_bare(::fixy::concurrent::WorkBudget budget) noexcept {
         const auto decision = ::fixy::concurrent::ParallelismRule::recommend(budget);
-        if (!decision.is_parallel() || senses_ == nullptr) return pass_through_(decision);
+        if (!decision.is_parallel() || senses_.is_none()) return pass_through_(decision);
+        const ::fixy::Ref<const Senses> senses = ProfiledSenses{senses_}.expect("the test above found the Senses");
 
         // A load that attached only some of its facades still yields a
         // Senses, so the hub can be absent even here.
-        auto hub = senses_->sense_hub();
+        auto hub = senses->sense_hub();
         if (hub.is_none()) return pass_through_(decision);
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
@@ -176,7 +180,7 @@ public:
         clear_diagnostics_();
     }
 
-    WorkloadProfiler(const WorkloadProfiler&) = delete("WorkloadProfiler holds a borrowed Senses*; copying would "
+    WorkloadProfiler(const WorkloadProfiler&) = delete("WorkloadProfiler borrows a Senses; copying would "
                                                        "produce two profilers with diverging last_ snapshots that "
                                                        "race on the same underlying SenseHub state");
     WorkloadProfiler& operator=(const WorkloadProfiler&) = delete("see copy ctor rationale");
@@ -199,7 +203,7 @@ private:
         return decision;
     }
 
-    const Senses* senses_ = nullptr;
+    ProfiledSenses senses_{};
     WorkloadProfilerConfig cfg_{};
     Snapshot last_{};
     bool first_call_ = true;
@@ -210,7 +214,7 @@ private:
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsWorkloadProfilerMint<Ctx>
-[[nodiscard]] constexpr WorkloadProfiler mint_workload_profiler(Ctx const&, const Senses* senses,
+[[nodiscard]] constexpr WorkloadProfiler mint_workload_profiler(Ctx const&, ProfiledSenses senses,
                                                                 WorkloadProfilerConfig cfg) noexcept {
     return WorkloadProfiler{senses, cfg};
 }

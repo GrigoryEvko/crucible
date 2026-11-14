@@ -10,7 +10,7 @@
 
 int main() {
     auto profiler = crucible::perf::mint_workload_profiler(::foundation::effects::testing::ForegroundWitness::fg(),
-                                                           /*senses=*/nullptr);
+                                                           /*senses=*/::fixy::none);
     (void)profiler;
     return 0;
 }
