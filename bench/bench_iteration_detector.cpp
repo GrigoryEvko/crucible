@@ -52,26 +52,32 @@ constexpr SchemaHash SIG[IterationDetector::K] = {
     SchemaHash{0xAAAABBBBCCCC0004ULL}, SchemaHash{0xAAAABBBBCCCC0005ULL},
 };
 
-// Warm the detector past signature-build + candidate phases → confirmed
-// steady state.  Two full iterations (signature + body × 2) followed by
-// a 3rd K-match so the final boundary has just fired.
+// The iteration of the warmup: the K ops of SIG, then 100 ops that the
+// warmup fixes once.
+constexpr uint32_t WARMUP_LEN = IterationDetector::K + 100;
+
+// The detector accepts a period after it sees an iteration twice, so this
+// many turns give a boundary with room to spare.
+constexpr uint32_t WARMUP_MAX_TURNS = 8;
+
+// Warm the detector into a confirmed steady state.  The warmup feeds one
+// fixed iteration again and again, and it stops at the first boundary, so
+// the boundary has just fired.  The detector accepts a period only when the
+// ops of one iteration repeat, so random ops between two copies of SIG give
+// no boundary.
 void warmup_detector(IterationDetector& d) {
     d.reset();
-    for (uint32_t i = 0; i < IterationDetector::K; i++)
-        (void)d.check(SIG[i]);
-    for (uint32_t i = 0; i < 100; i++)
-        (void)d.check(SchemaHash{splitmix64()});
-    for (uint32_t i = 0; i < IterationDetector::K; i++)
-        (void)d.check(SIG[i]);
-    for (uint32_t i = 0; i < 100; i++)
-        (void)d.check(SchemaHash{splitmix64()});
-    for (uint32_t i = 0; i < IterationDetector::K; i++) {
-        bool boundary = d.check(SIG[i]);
-        if (i == IterationDetector::K - 1 && !boundary) {
-            std::fprintf(stderr, "ERROR: warmup did not produce a boundary\n");
-            std::abort();
+    ::foundation::core::FixedArray<SchemaHash, WARMUP_LEN> iteration{};
+    for (::foundation::core::Index<WARMUP_LEN> const index : iteration.indices()) {
+        iteration.at(index) = index.raw() < IterationDetector::K ? SIG[index.raw()] : SchemaHash{splitmix64()};
+    }
+    for (uint32_t turn = 0; turn < WARMUP_MAX_TURNS; turn++) {
+        for (SchemaHash const hash : iteration) {
+            if (d.check(hash)) return;
         }
     }
+    std::fprintf(stderr, "ERROR: warmup did not produce a boundary\n");
+    std::abort();
 }
 
 }  // namespace
