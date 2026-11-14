@@ -125,8 +125,10 @@
 //   - The table has a fixed capacity.  A session minted when it is full
 //     is not tracked, and a thread with no free slot is not either.
 //
-// Every field is an atomic of the Atomic family, so a reader on another
-// thread never races a writer.  Every "none" is zero, so the tables are in
+// Every field of the endpoint table and the thread table is an atomic of the
+// Atomic family, so a reader on another thread never races a writer.  The
+// suspect of a thread (detail::suspect_cycle) is plain, because only that
+// thread reads or writes it.  Every "none" is zero, so the tables are in
 // .bss and cost no page until a session touches them.
 
 #include <foundation/Platform.h>
@@ -395,10 +397,18 @@ struct chain_link {
 
 // links is a C array, because the base has no fixed array, and the report of a
 // deadlock in src/fixy/session/Watch.cpp reads each link of a cycle.
+//
+// pad_byte, pad_half and pad_word hold the seven bytes after is_cycle, so a
+// chain has no padding byte.  g_suspects below is a large list of chains,
+// and the rule padded-list refuses such a list when its element has a
+// padding bit.
 struct wait_chain {
     chain_link links[max_chain]{};
     std::size_t count = 0;
     bool is_cycle = false;
+    std::uint8_t pad_byte = 0;
+    std::uint16_t pad_half = 0;
+    std::uint32_t pad_word = 0;
 
     /// Two chains are the same when they are cycles over the same links.
     [[nodiscard]] bool same_cycle_as(const wait_chain& other) const noexcept {
@@ -472,11 +482,10 @@ struct wait_chain {
 }
 
 /// The digest of a cycle of waits, or zero for a chain that is no cycle.
-/// A wait scope keeps the digest of its last trace in place of the chain,
-/// so a scope holds a word and not a chain of 2 KB.  Two traces of one
-/// cycle give one digest.  Two different cycles give one digest with a
-/// chance near 2^-64, and the scope then reports a cycle that the second
-/// trace did not repeat.  Complexity: linear in the links of the chain.
+/// Two traces of one cycle give one digest.  Two different cycles can also
+/// give one digest, so a digest only filters: repeats_suspect compares two
+/// chains of one digest link for link.  Complexity: linear in the links of
+/// the chain.
 [[nodiscard]] inline std::uint64_t cycle_digest(const wait_chain& chain) noexcept {
     if (!chain.is_cycle) return 0;
     std::uint64_t digest = mix_digest(0, chain.count);
@@ -488,6 +497,54 @@ struct wait_chain {
         digest = mix_digest(digest, link.holder_epoch);
     }
     return digest | 1;
+}
+
+// The cycle that the last trace of a wait found, kept in the slot of the
+// thread of the wait.  A wait scope holds no chain, so that a scope of no
+// endpoint costs a few stores.  Only the thread of the slot reads or writes
+// its suspect, inside a trace of one of its waits.  A thread that claims a
+// released slot reads no suspect of the thread before it, because each of
+// its waits has a new epoch.
+struct suspect_cycle {
+    // The epoch of the wait that traced the chain (thread_record::wait_epoch
+    // after the wait opened), or zero for no suspect.
+    std::uint64_t wait_epoch = 0;
+    // The digest of the chain (cycle_digest).
+    std::uint64_t digest = 0;
+    wait_chain chain{};
+};
+
+// One suspect for each thread slot.  Every "none" is zero, so the list is in
+// .bss, and a page of it costs memory only after a trace finds a cycle there.
+// The list is a C array, as the links of a chain are: the fixed array of the
+// base would bring foundation/core/Array.h into each unit of a session.
+CRUCIBLE_PROCESS_WIDE inline constinit suspect_cycle g_suspects[thread_capacity]{};
+
+// The suspect of the one-based slot, as thread_at_ gives its record.  A
+// tracked wait scope has a slot in [1, thread_capacity].
+[[nodiscard]] inline suspect_cycle& suspect_at_(std::uint32_t one_based) noexcept { return g_suspects[one_based - 1]; }
+
+/// True when `chain` repeats, link for link, the cycle that the last trace of
+/// the wait `wait_epoch` found.  Otherwise `chain` becomes the suspect of the
+/// next trace of that wait, and a chain that is no cycle clears the suspect.
+/// The digest only filters: chains of two digests differ, and chains of one
+/// digest are compared link for link.  Complexity: linear in the links of
+/// the chain.
+[[nodiscard]] inline bool repeats_suspect(suspect_cycle& suspect, std::uint64_t wait_epoch,
+                                          const wait_chain& chain) noexcept {
+    const std::uint64_t digest = cycle_digest(chain);
+    const bool is_own_suspect = suspect.wait_epoch == wait_epoch;
+    if (digest == 0) {
+        // Only a write touches a page of the list, so a wait that finds no
+        // cycle writes nothing.
+        if (is_own_suspect) suspect.wait_epoch = 0;
+        return false;
+    }
+    if (is_own_suspect && suspect.digest == digest && suspect.chain.same_cycle_as(chain)) return true;
+    suspect.wait_epoch = wait_epoch;
+    suspect.digest = digest;
+    suspect.chain = chain;
+    return false;
 }
 
 // ── The priority order ───────────────────────────────────────────────
@@ -741,9 +798,10 @@ template <::foundation::effects::IsExecCtx Ctx>
 //
 // A scope of no endpoint, as under check::Off, does no work: the
 // constructor stores five zero words and returns, and poll() only pauses.
-// A tracked scope reads the clock first at its first trace point.  It
-// keeps the digest of the cycle of its last trace (detail::cycle_digest),
-// not the chain, so no scope carries a chain to clear.
+// A tracked scope reads the clock first at its first trace point.  The
+// chain of its last trace lives in the suspect of its thread
+// (detail::g_suspects), not in the scope, so no scope carries a chain to
+// clear.
 class wait_scope {
     std::uint32_t endpoint_ = 0;
     std::uint32_t spins_ = 0;
@@ -751,12 +809,14 @@ class wait_scope {
     // Zero until the first trace point reads the clock.
     std::uint64_t start_ns_ = 0;
     std::uint64_t last_trace_ns_ = 0;
-    // The digest of the cycle of the last trace, or zero.
-    std::uint64_t suspect_digest_ = 0;
+    // The epoch of this wait on its thread, which names the suspect that
+    // its traces write.  Zero for a scope of no endpoint.
+    std::uint64_t wait_epoch_ = 0;
 
     // Reads the clock at a trace point.  After suspect_after_ns, it traces
     // the wait-for chain at most once for each confirm_after_ns.  The same
-    // cycle at two traces is a deadlock: it prints the cycle and aborts.
+    // cycle at two traces of this wait, link for link, is a deadlock: it
+    // prints the cycle and aborts.
     [[gnu::cold, gnu::noinline]] void trace_when_due_() noexcept {
         const std::uint64_t now_ns = detail::monotonic_ns();
         if (now_ns == 0) return;
@@ -769,10 +829,8 @@ class wait_scope {
         if (now_ns < start_ns_ + suspect_after_ns || now_ns < last_trace_ns_ + confirm_after_ns) return;
         last_trace_ns_ = now_ns;
         const detail::wait_chain chain = detail::trace_chain(self_, endpoint_);
-        const std::uint64_t digest = detail::cycle_digest(chain);
-        if (digest != 0 && digest == suspect_digest_) [[unlikely]]
+        if (detail::repeats_suspect(detail::suspect_at_(detail::index_of(self_)), wait_epoch_, chain)) [[unlikely]]
             detail::report_deadlock(chain, self_);
-        suspect_digest_ = digest;
     }
 
 public:
@@ -786,7 +844,7 @@ public:
         self_ = self;
         detail::check_wait_order(self, endpoint_);
         detail::thread_record& me = detail::thread_at_(detail::index_of(self));
-        static_cast<void>(me.wait_epoch.fetch_add_acq_rel(1));
+        wait_epoch_ = me.wait_epoch.fetch_add_acq_rel(1) + 1;
         me.blocked_on.store_release(endpoint_);
     }
 
@@ -803,8 +861,8 @@ public:
 
     /// Pauses once.  Each 1024th pause of a tracked scope is a trace point.
     /// After suspect_after_ns, it traces the wait-for chain at most once for
-    /// each confirm_after_ns.  The same cycle at two traces is a deadlock:
-    /// it prints the cycle and aborts.
+    /// each confirm_after_ns.  The same cycle at two traces of this wait is a
+    /// deadlock: it prints the cycle and aborts.
     void poll() noexcept {
         CRUCIBLE_SPIN_PAUSE;
         if (endpoint_ == 0 || (++spins_ & 1023u) != 0) return;

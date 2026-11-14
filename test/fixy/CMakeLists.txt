@@ -1988,6 +1988,11 @@ fixy_test(test_session_handle)
 # no clock, and a tracked scope reads it first at its first trace point.
 fixy_test(test_session_watch_cost)
 
+# The deadlock detector compares two traces of one wait link for link.  Two
+# different cycles of one digest are no deadlock, and one cycle at two
+# traces of one wait is.
+fixy_test(test_session_watch_cycle)
+
 # Entry.h holds the context-bound entry points with the empty permission
 # set: mint_session, and with_session, which lends the Resource by move.
 fixy_test(test_session_entry)
