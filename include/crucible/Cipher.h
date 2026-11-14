@@ -70,30 +70,33 @@ template <typename T>
 class ContentAddressedPayload;
 
 template <typename T>
-[[nodiscard]] constexpr ContentAddressedPayload<T> content_addressed_payload(const T* value) noexcept;
+[[nodiscard]] constexpr ContentAddressedPayload<T>
+content_addressed_payload(::fixy::Option<::fixy::Ref<const T>> value) noexcept;
 
-// A pointer to a value that the store names by its content.  The one
-// door is content_addressed_payload, so every site that claims a value
+// A Ref of a value that the store names by its content, or no value.  The
+// one door is content_addressed_payload, so every site that claims a value
 // is content-addressed is a call of that name.
 template <typename T>
 class [[nodiscard]] ContentAddressedPayload {
 public:
     using value_type = T;
     using payload_type = ::fixy::session::ContentAddressed<T>;
+    using Value = ::fixy::Option<::fixy::Ref<const T>>;
 
-    [[nodiscard]] constexpr const T* get() const noexcept { return value_; }
-    [[nodiscard]] constexpr explicit operator bool() const noexcept { return value_ != nullptr; }
+    [[nodiscard]] constexpr Value get() const noexcept { return value_; }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept { return value_.is_some(); }
 
 private:
-    constexpr explicit ContentAddressedPayload(const T* value) noexcept : value_(value) {}
+    constexpr explicit ContentAddressedPayload(Value value) noexcept : value_(value) {}
 
     template <typename U>
-    friend constexpr ContentAddressedPayload<U> content_addressed_payload(const U* value) noexcept;
+    friend constexpr ContentAddressedPayload<U>
+    content_addressed_payload(::fixy::Option<::fixy::Ref<const U>> value) noexcept;
 
-    const T* value_ = nullptr;
+    Value value_{};
 };
 
-// The result of a load.  An empty result is a null pointer.  Only the
+// The result of a load: a Ref of the loaded value, or no value.  Only the
 // store builds a result that holds a value, because the cache flag is a
 // claim about where the bytes came from.
 template <typename T>
@@ -101,25 +104,28 @@ class [[nodiscard]] LoadedContentAddressedPayload {
 public:
     using value_type = T;
     using payload_type = ::fixy::session::ContentAddressed<T>;
+    using Value = ::fixy::Option<::fixy::Ref<T>>;
 
-    constexpr LoadedContentAddressedPayload(std::nullptr_t) noexcept {}
+    // The empty result.
+    constexpr LoadedContentAddressedPayload(::fixy::NoValue) noexcept {}
 
-    [[nodiscard]] constexpr T* get() const noexcept { return value_; }
+    [[nodiscard]] constexpr Value get() const noexcept { return value_; }
     [[nodiscard]] constexpr bool cache_hit() const noexcept { return cache_hit_; }
-    [[nodiscard]] constexpr explicit operator bool() const noexcept { return value_ != nullptr; }
-    [[nodiscard]] constexpr operator T*() const noexcept { return value_; }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept { return value_.is_some(); }
 
 private:
-    constexpr LoadedContentAddressedPayload(T* value, bool cache_hit) noexcept : value_(value), cache_hit_(cache_hit) {}
+    constexpr LoadedContentAddressedPayload(::fixy::Ref<T> value, bool cache_hit) noexcept
+        : value_(Value::some(value)), cache_hit_(cache_hit) {}
 
     friend class ::crucible::Cipher;
 
-    T* value_ = nullptr;
+    Value value_{};
     bool cache_hit_ = false;
 };
 
 template <typename T>
-[[nodiscard]] constexpr ContentAddressedPayload<T> content_addressed_payload(const T* value) noexcept {
+[[nodiscard]] constexpr ContentAddressedPayload<T>
+content_addressed_payload(::fixy::Option<::fixy::Ref<const T>> value) noexcept {
     return ContentAddressedPayload<T>{value};
 }
 
@@ -162,9 +168,9 @@ public:
     static_assert(sizeof(SessionEvent) == ::fixy::session::session_event_size && sizeof(SessionEvent) == 72,
                   "Cipher session-event persistence is pinned to the SessionEvent cold-tier wire size.");
 
-    [[nodiscard]] static constexpr ContentAddressedRegionPayload content_addressed(const RegionNode* region) noexcept {
-        return cipher::content_addressed_payload(region);
-    }
+    // The payload of a region, or the empty payload for a null region.  The
+    // body is in src/Cipher.cpp, where RegionNode is complete.
+    [[nodiscard]] static ContentAddressedRegionPayload content_addressed(const RegionNode* region) noexcept;
 
     // The text of a root.  The root comes from an operator, so it crosses a
     // trust boundary, and the caller tags it External.

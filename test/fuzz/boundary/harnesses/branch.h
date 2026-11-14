@@ -68,23 +68,27 @@ inline void run_branch(std::span<const std::uint8_t> bytes) {
     const ::fixy::View<const std::byte> input =
         ::foundation::core::byte_view(::fixy::mint_foreign_view(bytes.data(), bytes.size()));
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    BranchNode* branch = deserialize_branch(alloc, input, arena);
-    if (branch == nullptr) return;
-    CRUCIBLE_FUZZ_CLAIM("branch", branch->num_arms() <= CDAG_MAX_BRANCH_ARMS);
-    CRUCIBLE_FUZZ_CLAIM("branch", branch->are_arms_sorted_by_value());
+    const ::fixy::Option<::fixy::Ref<BranchNode>> loaded = deserialize_branch(alloc, input, arena);
+    for (const ::fixy::Ref<BranchNode> branch : loaded) {
+        CRUCIBLE_FUZZ_CLAIM("branch", branch->num_arms() <= CDAG_MAX_BRANCH_ARMS);
+        CRUCIBLE_FUZZ_CLAIM("branch", branch->are_arms_sorted_by_value());
 
-    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(alloc, input.size() + 256, std::byte{0});
-    const size_t written = serialize_branch(SerializedBranch{*branch}, image.view());
-    CRUCIBLE_FUZZ_CLAIM("branch", written > 0);
-    BranchNode* again =
-        deserialize_branch(alloc, image.view().window(0, written).expect("the writer writes inside its image"), arena);
-    CRUCIBLE_FUZZ_CLAIM("branch", again != nullptr);
-    CRUCIBLE_FUZZ_CLAIM("branch", again->num_arms() == branch->num_arms());
-    CRUCIBLE_FUZZ_CLAIM("branch", again->merkle_hash == branch->merkle_hash);
-    for (std::uint32_t i = 0; i < branch->num_arms(); ++i) {
-        const BranchNode::Arm& arm = *branch->arms.get(i).expect("i is below the count of arms");
-        const BranchNode::Arm& again_arm = *again->arms.get(i).expect("the two branches hold one count of arms");
-        CRUCIBLE_FUZZ_CLAIM("branch", again_arm.value == arm.value);
+        ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(alloc, input.size() + 256, std::byte{0});
+        const size_t written = serialize_branch(SerializedBranch{*branch}, image.view());
+        CRUCIBLE_FUZZ_CLAIM("branch", written > 0);
+        const ::fixy::Option<::fixy::Ref<BranchNode>> reloaded = deserialize_branch(
+            alloc, image.view().window(0, written).expect("the writer writes inside its image"), arena);
+        CRUCIBLE_FUZZ_CLAIM("branch", reloaded.is_some());
+        for (const ::fixy::Ref<BranchNode> again : reloaded) {
+            CRUCIBLE_FUZZ_CLAIM("branch", again->num_arms() == branch->num_arms());
+            CRUCIBLE_FUZZ_CLAIM("branch", again->merkle_hash == branch->merkle_hash);
+            for (std::uint32_t i = 0; i < branch->num_arms(); ++i) {
+                const BranchNode::Arm& arm = *branch->arms.get(i).expect("i is below the count of arms");
+                const BranchNode::Arm& again_arm =
+                    *again->arms.get(i).expect("the two branches hold one count of arms");
+                CRUCIBLE_FUZZ_CLAIM("branch", again_arm.value == arm.value);
+            }
+        }
     }
 }
 

@@ -77,7 +77,7 @@ constexpr size_t kMetaLayout = kMetaDevice + 1 + 1;  // +device_idx, layout byte
 // Rejection is no region coming back out of the boundary.
 [[nodiscard]] bool is_rejected(::foundation::effects::Test bg, ::fixy::View<const std::byte> bytes) {
     ::fixy::BumpArena arena{1 << 16};
-    return !crucible::deserialize_region(bg.alloc, bytes, arena).has_value();
+    return crucible::deserialize_region(bg.alloc, bytes, arena).is_none();
 }
 
 }  // namespace

@@ -393,10 +393,17 @@ struct IndexLine {
 
 }  // namespace
 
+Cipher::ContentAddressedRegionPayload Cipher::content_addressed(const RegionNode* region) noexcept {
+    if (region == nullptr) return cipher::content_addressed_payload<RegionNode>(::fixy::none);
+    return cipher::content_addressed_payload<RegionNode>(
+        ContentAddressedRegionPayload::Value::some(::fixy::to(*region)));
+}
+
 ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddressedRegionPayload payload) {
-    const RegionNode* region = payload.get();
-    if (!region) return ContentHash{};
-    const ContentHash hash = region->content_hash;
+    ContentAddressedRegionPayload::Value value = payload.get();
+    if (value.is_none()) return ContentHash{};
+    const RegionNode& region = *std::move(value).expect("the payload holds a region");
+    const ContentHash hash = region.content_hash;
     if (!hash) return ContentHash{};
 
     const EntryPath object = object_entry_(hash.raw());
@@ -413,9 +420,9 @@ ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddr
         return is_flushed ? hash : ContentHash{};
     }
 
-    const size_t cap = estimate_serial_size(*region).value();
+    const size_t cap = estimate_serial_size(region).value();
     ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(allocation_, cap, std::byte{0});
-    const size_t n = serialize_region(SerializedRegion{*region}, image.view());
+    const size_t n = serialize_region(SerializedRegion{region}, image.view());
     if (n == 0) return ContentHash{};
     const ::fixy::View<const std::byte> written =
         image.view().window(0, n).expect("the writer writes inside its image");
@@ -459,13 +466,15 @@ Cipher::LoadedContentAddressedRegionPayload Cipher::load_content_addressed_(File
                                                                             ::foundation::effects::Alloc a,
                                                                             ContentHash content_hash,
                                                                             ::fixy::BumpArena& arena) const {
-    if (!content_hash) return nullptr;
+    if (!content_hash) return ::fixy::none;
 
     const ::fixy::View<const std::byte> cached = cached_bytes(content_hash);
     if (cached.size() != 0) {
-        const std::optional<LoadedRegionNode> loaded_region = deserialize_region(a, cached, arena);
-        if (loaded_region && loaded_region->value()->content_hash == content_hash) {
-            return LoadedContentAddressedRegionPayload{loaded_region->value(), true};
+        const ::fixy::Option<LoadedRegionNode> loaded = deserialize_region(a, cached, arena);
+        for (const LoadedRegionNode& loaded_region : loaded) {
+            if (loaded_region.value()->content_hash == content_hash) {
+                return LoadedContentAddressedRegionPayload{::fixy::to(*loaded_region.value()), true};
+            }
         }
     }
 
@@ -477,19 +486,23 @@ Cipher::LoadedContentAddressedRegionPayload Cipher::load_content_addressed_(File
     ::fixy::Option<::fixy::HeapArray<std::byte>> read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
         return read_batch_at_(ctx, a, root_dirfd_, object.c_text(), MAX_OBJECT_BYTES);
     });
-    if (read.is_none()) return nullptr;
+    if (read.is_none()) return ::fixy::none;
     const ::fixy::HeapArray<std::byte> image = std::move(read).expect("the object file read");
     [[maybe_unused]] const ValidatedObjectSize validated_len =
         ::fixy::mint_refined<::fixy::bounded_above<MAX_OBJECT_BYTES>>(image.size());
 
-    const std::optional<LoadedRegionNode> loaded_region = deserialize_region(a, image.view(), arena);
+    const ::fixy::Option<LoadedRegionNode> loaded = deserialize_region(a, image.view(), arena);
     // The file name is the key, and anyone who writes the store can put
     // any region under any name.  A region whose own hash is not the key
     // is refused, the same as on the cache path above, so a lookup never
     // returns another region.
-    if (!loaded_region || loaded_region->value()->content_hash != content_hash) return nullptr;
-    remember_cached_bytes(content_hash, image.view());
-    return LoadedContentAddressedRegionPayload{loaded_region->value(), false};
+    for (const LoadedRegionNode& loaded_region : loaded) {
+        if (loaded_region.value()->content_hash == content_hash) {
+            remember_cached_bytes(content_hash, image.view());
+            return LoadedContentAddressedRegionPayload{::fixy::to(*loaded_region.value()), false};
+        }
+    }
+    return ::fixy::none;
 }
 
 ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView const&,

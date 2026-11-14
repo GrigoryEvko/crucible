@@ -119,11 +119,13 @@ namespace {
     ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0});
     const size_t written = crucible::serialize_branch(crucible::SerializedBranch{branch}, image.view());
     assert(written > 0);
-    crucible::BranchNode& loaded = *crucible::deserialize_branch(
-        test.alloc, image.view().window(0, written).expect("the writer writes inside its image"), arena,
-        [&region_a](crucible::MerkleHash hash) noexcept {
-            return hash == region_a.merkle_hash ? crucible::make_link(region_a) : crucible::TraceLink{};
-        });
+    crucible::BranchNode& loaded =
+        *crucible::deserialize_branch(
+             test.alloc, image.view().window(0, written).expect("the writer writes inside its image"), arena,
+             [&region_a](crucible::MerkleHash hash) noexcept {
+                 return hash == region_a.merkle_hash ? crucible::make_link(region_a) : crucible::TraceLink{};
+             })
+             .expect("the image of a branch loads");
     const crucible::BranchNode::Arm& loaded_first = *loaded.arms.get(0).expect("the image holds two arms");
     const crucible::BranchNode::Arm& loaded_second = *loaded.arms.get(1).expect("the image holds two arms");
     assert(crucible::is_link_to(loaded_first.target, region_a));
@@ -138,8 +140,10 @@ namespace {
     }
 
     // The loader with no resolver gives each arm no target.
-    crucible::BranchNode& unresolved = *crucible::deserialize_branch(
-        test.alloc, image.view().window(0, written).expect("the writer writes inside its image"), arena);
+    crucible::BranchNode& unresolved =
+        *crucible::deserialize_branch(
+             test.alloc, image.view().window(0, written).expect("the writer writes inside its image"), arena)
+             .expect("the image of a branch loads");
     for (const crucible::BranchNode::Arm& arm : unresolved.arms) {
         assert(arm.target.is_none());
     }

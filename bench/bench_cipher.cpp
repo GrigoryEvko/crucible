@@ -150,14 +150,14 @@ int main() {
         reports.push_back(bench::run(label_read, [&] {
             ::fixy::BumpArena read_arena{1 << 18};
             auto r = cipher.load_content_addressed(ctx, open_view, A, warm_h, read_arena);
-            auto* region = r.get();
-            bench::do_not_optimize(region);
+            const bool is_loaded = static_cast<bool>(r);
+            bench::do_not_optimize(is_loaded);
         }));
 
         reports.push_back(bench::run(label_ca_read, [&] {
             ::fixy::BumpArena read_arena{1 << 18};
             auto r = cipher.load_content_addressed(ctx, open_view, A, warm_h, read_arena);
-            bench::do_not_optimize(r.get());
+            bench::do_not_optimize(static_cast<bool>(r));
             bench::do_not_optimize(r.cache_hit());
         }));
 

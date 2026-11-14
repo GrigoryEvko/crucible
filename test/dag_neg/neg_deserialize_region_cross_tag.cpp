@@ -22,6 +22,7 @@ int main() {
     using ExternalRegion = ::fixy::Tagged<crucible::RegionNode*, ::fixy::tags::source::External>;
 
     // MUST fail: source::Loaded is not source::External.
-    ExternalRegion wrong = *crucible::deserialize_region(::foundation::effects::testing::test().alloc, bytes, arena);
+    ExternalRegion wrong = crucible::deserialize_region(::foundation::effects::testing::test().alloc, bytes, arena)
+                               .expect("the fixture names the type of a loaded region");
     return wrong.value() == nullptr ? 0 : 1;
 }

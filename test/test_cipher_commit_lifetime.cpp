@@ -230,8 +230,7 @@ static void test_round_trip_via_program_commit() {
 
     ::fixy::BumpArena loader_arena{};
     auto loaded_payload = c.load_content_addressed(store_ctx(), view, g_test.alloc, written, loader_arena);
-    auto* loaded = loaded_payload.get();
-    assert(loaded != nullptr);
+    const ::fixy::Ref<RegionNode> loaded = loaded_payload.get().expect("the store loads the region it wrote");
     assert(loaded->content_hash == original_hash);
     std::filesystem::remove_all(tmp);
 }

@@ -145,7 +145,8 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
     ::fixy::BumpArena arena{};
     if (object_hash != 0) {
         auto loaded = cipher.load_content_addressed(ctx, view, test_alloc(), ContentHash{object_hash}, arena);
-        if (const RegionNode* region = loaded.get(); region != nullptr) {
+        const ::fixy::Option<::fixy::Ref<RegionNode>> loaded_region = loaded.get();
+        for (const ::fixy::Ref<RegionNode> region : loaded_region) {
             CRUCIBLE_FUZZ_CLAIM("cipher_store", region->content_hash == ContentHash{object_hash});
             claim_region_trusted("cipher_store", *region);
         }

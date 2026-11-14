@@ -159,23 +159,26 @@ inline void run_region(std::span<const std::uint8_t> bytes) {
     const ::fixy::View<const std::byte> input =
         ::foundation::core::byte_view(::fixy::mint_foreign_view(bytes.data(), bytes.size()));
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    const auto loaded = deserialize_region(alloc, input, arena);
-    if (!loaded) return;
-    RegionNode* region = loaded->value();
-    claim_region_trusted("region", *region);
+    const ::fixy::Option<LoadedRegionNode> loaded = deserialize_region(alloc, input, arena);
+    for (const LoadedRegionNode& loaded_region : loaded) {
+        const RegionNode& region = *loaded_region.value();
+        claim_region_trusted("region", region);
 
-    // The loaded region writes back to an image that loads to the same
-    // region: the loader keeps every field the writer reads.
-    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(alloc, input.size() + 4096, std::byte{0});
-    const size_t written = serialize_region(SerializedRegion{*region}, image.view());
-    CRUCIBLE_FUZZ_CLAIM("region", written > 0);
-    const auto reloaded =
-        deserialize_region(alloc, image.view().window(0, written).expect("the writer writes inside its image"), arena);
-    CRUCIBLE_FUZZ_CLAIM("region", reloaded.has_value());
-    RegionNode* again = reloaded->value();
-    CRUCIBLE_FUZZ_CLAIM("region", again->num_ops() == region->num_ops());
-    CRUCIBLE_FUZZ_CLAIM("region", again->content_hash == region->content_hash);
-    CRUCIBLE_FUZZ_CLAIM("region", again->merkle_hash == region->merkle_hash);
+        // The loaded region writes back to an image that loads to the same
+        // region: the loader keeps every field the writer reads.
+        ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(alloc, input.size() + 4096, std::byte{0});
+        const size_t written = serialize_region(SerializedRegion{region}, image.view());
+        CRUCIBLE_FUZZ_CLAIM("region", written > 0);
+        const ::fixy::Option<LoadedRegionNode> reloaded = deserialize_region(
+            alloc, image.view().window(0, written).expect("the writer writes inside its image"), arena);
+        CRUCIBLE_FUZZ_CLAIM("region", reloaded.is_some());
+        for (const LoadedRegionNode& reloaded_region : reloaded) {
+            const RegionNode& again = *reloaded_region.value();
+            CRUCIBLE_FUZZ_CLAIM("region", again.num_ops() == region.num_ops());
+            CRUCIBLE_FUZZ_CLAIM("region", again.content_hash == region.content_hash);
+            CRUCIBLE_FUZZ_CLAIM("region", again.merkle_hash == region.merkle_hash);
+        }
+    }
 }
 
 }  // namespace crucible::fuzz::boundary

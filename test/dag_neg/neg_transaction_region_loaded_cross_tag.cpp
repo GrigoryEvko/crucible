@@ -28,8 +28,9 @@ int main() {
     crucible::TransactionLog<16, Owner> log{::fixy::TestRunnerCtx{::foundation::effects::testing::test()}};
     auto& tx = log.begin_tx(owner, 1);
     ::fixy::BumpArena arena{1024};
-    const std::optional<crucible::LoadedRegionNode> loaded = crucible::deserialize_region(
-        ::foundation::effects::testing::test().alloc, ::fixy::View<const std::byte>{}, arena);
-    (void)log.commit(owner, tx, *loaded, crucible::ContentHash{}, crucible::MerkleHash{1});
+    const crucible::LoadedRegionNode loaded = crucible::deserialize_region(::foundation::effects::testing::test().alloc,
+                                                                           ::fixy::View<const std::byte>{}, arena)
+                                                  .expect("the fixture names the type of a loaded region");
+    (void)log.commit(owner, tx, loaded, crucible::ContentHash{}, crucible::MerkleHash{1});
     return 0;
 }

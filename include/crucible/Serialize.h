@@ -22,7 +22,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -492,7 +491,7 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
 // Returns no region on a parse error, a version mismatch or a content hash
 // that the operations do not fold to. Every structure it builds lives in the
 // arena.
-CRUCIBLE_COLD [[nodiscard]] inline std::optional<LoadedRegionNode>
+CRUCIBLE_COLD [[nodiscard]] inline ::fixy::Option<LoadedRegionNode>
 deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image, ::fixy::BumpArena& arena) {
     using namespace detail_ser;
     Reader r{.image = image};
@@ -500,11 +499,11 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     const Header hdr = read_header(r);
     if (!r.is_intact || hdr.magic != CDAG_MAGIC || !cdag_version_matches(hdr.version)
         || hdr.kind != TraceNodeKind::REGION) {
-        return std::nullopt;
+        return ::fixy::none;
     }
 
     const uint32_t num_ops = r.r<uint32_t>();
-    if (num_ops > CDAG_MAX_OPS) return std::nullopt;
+    if (num_ops > CDAG_MAX_OPS) return ::fixy::none;
     const SchemaHash first_op_schema = SchemaHash{r.r<uint64_t>()};
     // RegionNode::set_measured_ms keeps the time finite and not negative.
     // The comparison also refuses a NaN.
@@ -512,11 +511,15 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         r.read_gated<float>([](float ms) noexcept { return ms >= 0.0f && ms <= ::fixy::max_of<float>; }, 0.0f);
     const uint32_t variant_id = r.r<uint32_t>();
 
-    MemoryPlan* plan = nullptr;
+    // The plan of the region, and the count of its slots.  A region with no
+    // plan binds to no slot table, and its count stays zero.
+    ::fixy::Option<::fixy::Ref<MemoryPlan>> plan{};
+    uint32_t num_slots = 0;
     const bool has_plan = r.read_bool();
     if (has_plan) {
-        plan = &*arena.make<MemoryPlan>(a);
-        plan->pool_bytes = r.r<uint64_t>();
+        const ::fixy::Ref<MemoryPlan> loaded_plan = arena.make<MemoryPlan>(a);
+        plan = ::fixy::Option<::fixy::Ref<MemoryPlan>>::some(loaded_plan);
+        loaded_plan->pool_bytes = r.r<uint64_t>();
         // The next three checks all guard the same thing: a loaded plan goes
         // on to initialise the replay pool, whose own preconditions are only
         // assumptions in a release build. Each bound is taken from the
@@ -524,33 +527,33 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         // allocator assumes, so a value that survives here is one the
         // allocator can serve. The pool size bound is inclusive, so only a
         // strictly larger value is refused.
-        if (plan->pool_bytes > ::crucible::PoolAllocator::kMaxPoolBytes) [[unlikely]] {
-            return std::nullopt;
+        if (loaded_plan->pool_bytes > ::crucible::PoolAllocator::kMaxPoolBytes) [[unlikely]] {
+            return ::fixy::none;
         }
-        const uint32_t num_slots = r.r<uint32_t>();
-        if (num_slots > CDAG_MAX_SLOTS) return std::nullopt;
-        plan->num_external = r.r<uint32_t>();
+        num_slots = r.r<uint32_t>();
+        if (num_slots > CDAG_MAX_SLOTS) return ::fixy::none;
+        loaded_plan->num_external = r.r<uint32_t>();
         // The external slots are a subset of the slots, so their count cannot
         // exceed the total.
-        if (plan->num_external > num_slots) return std::nullopt;
+        if (loaded_plan->num_external > num_slots) return ::fixy::none;
         // An unrecognised device type would reach pool selection unchecked.
-        plan->device_type =
+        loaded_plan->device_type =
             make_device_type(::fixy::mint_refined<valid_device_type>(r.read_gated<int8_t>(valid_device_type)));
-        plan->device_idx = r.r<int8_t>();
-        r.read_zero_pad<sizeof(plan->pad0)>();
-        plan->device_capability = r.r<uint64_t>();
-        plan->rank = r.r<int32_t>();
-        plan->world_size = r.r<int32_t>();
+        loaded_plan->device_idx = r.r<int8_t>();
+        r.read_zero_pad<sizeof(loaded_plan->pad0)>();
+        loaded_plan->device_capability = r.r<uint64_t>();
+        loaded_plan->rank = r.r<int32_t>();
+        loaded_plan->world_size = r.r<int32_t>();
         if (!r.has_remaining(num_slots, kTensorSlotWireBytes)) {
-            return std::nullopt;
+            return ::fixy::none;
         }
-        plan->slots = arena.array<TensorSlot>(a, num_slots, TensorSlot{});
-        for (TensorSlot& slot : plan->slots) {
+        loaded_plan->slots = arena.array<TensorSlot>(a, num_slots, TensorSlot{});
+        for (TensorSlot& slot : loaded_plan->slots) {
             slot = read_slot(r);
             // The pool allocator aborts on a slot it cannot serve, so a
             // loaded plan holds only slots that it can serve.
-            if (!::crucible::PoolAllocator::can_serve_slot(slot, plan->pool_bytes)) [[unlikely]] {
-                return std::nullopt;
+            if (!::crucible::PoolAllocator::can_serve_slot(slot, loaded_plan->pool_bytes)) [[unlikely]] {
+                return ::fixy::none;
             }
         }
     }
@@ -560,7 +563,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     // count that the remaining bytes cannot possibly hold.
     constexpr size_t kTraceEntryMinWireBytes = 40;
     if (!r.has_remaining(num_ops, kTraceEntryMinWireBytes)) {
-        return std::nullopt;
+        return ::fixy::none;
     }
     const ::fixy::View<TraceEntry> ops = arena.array<TraceEntry>(a, num_ops, TraceEntry{});
 
@@ -572,9 +575,9 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         const uint16_t num_inputs = r.r<uint16_t>();
         const uint16_t num_outputs = r.r<uint16_t>();
         const uint16_t num_scalar_args = r.r<uint16_t>();
-        if (num_inputs > CDAG_MAX_INPUTS) return std::nullopt;
-        if (num_outputs > CDAG_MAX_OUTPUTS) return std::nullopt;
-        if (num_scalar_args > CDAG_MAX_SCALAR_ARGS) return std::nullopt;
+        if (num_inputs > CDAG_MAX_INPUTS) return ::fixy::none;
+        if (num_outputs > CDAG_MAX_OUTPUTS) return ::fixy::none;
+        if (num_scalar_args > CDAG_MAX_SCALAR_ARGS) return ::fixy::none;
         te.grad_enabled = r.read_bool();
         {
             // The writer sets only these bits, so a byte with another bit
@@ -594,7 +597,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         {
             const uint8_t raw_kernel_id = r.r<uint8_t>();
             if (raw_kernel_id >= static_cast<uint8_t>(CKernelId::NUM_KERNELS)) [[unlikely]] {
-                return std::nullopt;
+                return ::fixy::none;
             }
             te.kernel_id = make_ckernel_id(::fixy::mint_refined<kValidCKernelIdBound>(raw_kernel_id));
         }
@@ -631,8 +634,8 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
             // bound is known here and enforced here. A region without a plan
             // binds to no table and cannot execute until one is supplied
             // elsewhere, so there is no bound to enforce for it.
-            if (plan != nullptr && sid.is_valid() && sid.raw() >= plan->num_slots()) [[unlikely]] {
-                return std::nullopt;
+            if (has_plan && sid.is_valid() && sid.raw() >= num_slots) [[unlikely]] {
+                return ::fixy::none;
             }
             slot_id = sid;
         }
@@ -642,15 +645,15 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         for (SlotId& slot_id : output_slot_ids) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // The same bound as for the input slot ids above.
-            if (plan != nullptr && sid.is_valid() && sid.raw() >= plan->num_slots()) [[unlikely]] {
-                return std::nullopt;
+            if (has_plan && sid.is_valid() && sid.raw() >= num_slots) [[unlikely]] {
+                return ::fixy::none;
             }
             slot_id = sid;
         }
         te.set_outputs(output_metas, output_slot_ids);
     }
 
-    if (!r.is_intact) return std::nullopt;
+    if (!r.is_intact) return ::fixy::none;
 
     // The content hash is the region's identity and the key of its kernels
     // in the cache.  The header states it, and the header comes from outside,
@@ -662,12 +665,12 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     // under a recipe is refused here, because the image does not carry the
     // recipe and the loader cannot fold it.
     if (compute_content_hash(ops) != hdr.content_hash) [[unlikely]] {
-        return std::nullopt;
+        return ::fixy::none;
     }
     // make_region sets the first schema from the operations, so the field is
     // not free to disagree with them.
     if (first_op_schema != first_op_schema_of(ops)) [[unlikely]] {
-        return std::nullopt;
+        return ::fixy::none;
     }
 
     RegionNode& node = *arena.make<RegionNode>(a);
@@ -682,10 +685,15 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     // least zero, so the advance does not go back.  A value of zero means
     // that no variant was selected when the region was written.
     node.variant_id.advance(variant_id);
-    node.plan = plan;
+    // The node holds no plan from its construction, and a loaded plan
+    // replaces that.
+    for (const ::fixy::Ref<MemoryPlan> loaded_plan : plan) {
+        node.plan = &*loaded_plan;
+    }
     // The node is rebuilt from Cipher bytes, and the fold above matched the
     // content hash that the image records, so it crosses the edge to Loaded.
-    return ::fixy::mint_tagged<::fixy::tags::source::Replayed>(&node).retag<::fixy::tags::source::Loaded>();
+    return ::fixy::Option<LoadedRegionNode>::some(
+        ::fixy::mint_tagged<::fixy::tags::source::Replayed>(&node).retag<::fixy::tags::source::Loaded>());
 }
 
 // Writes the image of the branch into the first bytes of image.  Returns the
@@ -717,12 +725,12 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
 }
 
 // The resolver turns each persisted merkle hash back into a link to a node,
-// or into an empty link.  Returns null on a parse error.
+// or into an empty link.  Returns no branch on a parse error.
 template <typename Resolve>
     requires std::is_invocable_r_v<TraceLink, Resolve&, MerkleHash>
-[[nodiscard]] inline BranchNode* deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
-                                                    ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND,
-                                                    Resolve&& resolve) {
+[[nodiscard]] inline ::fixy::Option<::fixy::Ref<BranchNode>>
+deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
+                   ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND, Resolve&& resolve) {
     Resolve resolver = std::forward<Resolve>(resolve);
     using namespace detail_ser;
     Reader r{.image = image};
@@ -730,14 +738,14 @@ template <typename Resolve>
     const Header hdr = read_header(r);
     if (!r.is_intact || hdr.magic != CDAG_MAGIC || !cdag_version_matches(hdr.version)
         || hdr.kind != TraceNodeKind::BRANCH) {
-        return nullptr;
+        return ::fixy::none;
     }
     // The header's content-hash field holds the continuation's merkle hash.
 
     const Guard guard = read_guard(r);
 
     const uint32_t num_arms = r.r<uint32_t>();
-    if (num_arms > CDAG_MAX_BRANCH_ARMS) return nullptr;
+    if (num_arms > CDAG_MAX_BRANCH_ARMS) return ::fixy::none;
 
     // Reject a truncated body before growing the arena for the arms. The wire
     // cost is spelled out rather than taken from the in-memory arm: the two
@@ -745,10 +753,10 @@ template <typename Resolve>
     // where the wire holds a hash, so only one of them is the file's business.
     constexpr size_t kArmWireBytes = sizeof(int64_t) + sizeof(uint64_t);
     if (!r.has_remaining(num_arms, kArmWireBytes)) {
-        return nullptr;
+        return ::fixy::none;
     }
 
-    BranchNode* node = &*arena.make<BranchNode>(a);
+    const ::fixy::Ref<BranchNode> node = arena.make<BranchNode>(a);
     node->kind = TraceNodeKind::BRANCH;
     node->merkle_hash = hdr.merkle_hash;
     node->next = ::fixy::none;  // the caller resolves the continuation separately
@@ -762,14 +770,16 @@ template <typename Resolve>
 
     // Replay finds an arm by binary search on the value, so an image with
     // unsorted arms would route a guard outcome to the wrong target.
-    if (!r.is_intact || !node->are_arms_sorted_by_value()) return nullptr;
-    return node;
+    if (!r.is_intact || !node->are_arms_sorted_by_value()) return ::fixy::none;
+    return ::fixy::Option<::fixy::Ref<BranchNode>>::some(node);
 }
 
 // The branch with no resolver: the target of each arm stays empty, and the
 // caller resolves the targets later.
-[[nodiscard]] inline BranchNode* deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
-                                                    ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND) {
+[[nodiscard]] inline ::fixy::Option<::fixy::Ref<BranchNode>> deserialize_branch(::foundation::effects::Alloc a,
+                                                                                ::fixy::View<const std::byte> image,
+                                                                                ::fixy::BumpArena& arena
+                                                                                CRUCIBLE_LIFETIMEBOUND) {
     return deserialize_branch(a, image, arena, [](MerkleHash) noexcept { return TraceLink{}; });
 }
 
@@ -778,7 +788,7 @@ template <typename Resolve>
 // The deduced parameters hold the other arguments, and no parameter of the
 // twin has a type of the standard library.
 template <class Buffer, class... Rest>
-BranchNode* deserialize_branch(::foundation::effects::Alloc, Buffer&&, ::fixy::BumpArena&&, Rest&&...) =
+void deserialize_branch(::foundation::effects::Alloc, Buffer&&, ::fixy::BumpArena&&, Rest&&...) =
     delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
 
 }  // namespace crucible

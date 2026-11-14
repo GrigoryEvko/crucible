@@ -97,9 +97,9 @@ int main() {
 
         reports.push_back(bench::run(label_des, [&, image] {
             ::fixy::BumpArena read_arena{1 << 20};
-            const auto loaded_region = deserialize_region(A, image, read_arena);
-            RegionNode* r = loaded_region ? loaded_region->value() : nullptr;
-            bench::do_not_optimize(r);
+            const ::fixy::Option<LoadedRegionNode> loaded_region = deserialize_region(A, image, read_arena);
+            const bool is_loaded = loaded_region.is_some();
+            bench::do_not_optimize(is_loaded);
         }));
 
         std::printf("  [%u ops] wire = %zu bytes (%.1f B/op)\n", num_ops, serial_len,

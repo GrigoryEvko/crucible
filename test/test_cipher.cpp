@@ -127,6 +127,11 @@ static ::fixy::HeapArray<crucible::Cipher::SessionEvent> session_batch(std::uint
     return events.view().get(position).expect("the position is inside the list")->step_id().value;
 }
 
+// The region of a load result that holds one.
+static const crucible::RegionNode& region_of(crucible::Cipher::LoadedContentAddressedRegionPayload const& loaded) {
+    return *loaded.get().expect("the load gives a region");
+}
+
 static_assert(
     ::fixy::session::is_content_addressed_v<typename crucible::Cipher::ContentAddressedRegionPayload::payload_type>);
 static_assert(::fixy::session::is_content_addressed_v<
@@ -138,11 +143,17 @@ static_assert(sizeof(crucible::Cipher::ContentAddressedRegionPayload) == sizeof(
 // A load result that holds a region comes only from the store, because its
 // cache flag is a claim about where the bytes came from.  A payload comes
 // only from content_addressed_payload.
-static_assert(
-    !std::is_constructible_v<crucible::Cipher::LoadedContentAddressedRegionPayload, crucible::RegionNode*, bool>);
-static_assert(std::is_constructible_v<crucible::Cipher::LoadedContentAddressedRegionPayload, std::nullptr_t>);
+static_assert(!std::is_constructible_v<crucible::Cipher::LoadedContentAddressedRegionPayload,
+                                       ::fixy::Ref<crucible::RegionNode>, bool>);
+static_assert(std::is_constructible_v<crucible::Cipher::LoadedContentAddressedRegionPayload, ::fixy::NoValue>);
+static_assert(!std::is_constructible_v<crucible::Cipher::LoadedContentAddressedRegionPayload, std::nullptr_t>,
+              "an empty load result is fixy::none, and no pointer converts to one");
+static_assert(!std::is_constructible_v<crucible::Cipher::ContentAddressedRegionPayload,
+                                       crucible::Cipher::ContentAddressedRegionPayload::Value>);
 static_assert(!std::is_constructible_v<crucible::Cipher::ContentAddressedRegionPayload, const crucible::RegionNode*>);
 static_assert(!std::is_default_constructible_v<crucible::Cipher::ContentAddressedRegionPayload>);
+static_assert(sizeof(crucible::Cipher::LoadedContentAddressedRegionPayload::Value) == sizeof(crucible::RegionNode*),
+              "an Option of a Ref holds one pointer, and no Ref holds the null one");
 
 int main() {
     char tmpdir[] = "/tmp/crucible_cipher_XXXXXX";
@@ -192,9 +203,9 @@ int main() {
         auto ov = cipher.mint_open_view(store_ctx());
         ::fixy::BumpArena arena2{1 << 16};
         auto loaded_ca = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, expected_hash, arena2);
-        assert(loaded_ca.get() != nullptr && "load() must succeed for a stored hash");
-        assert(loaded_ca.get()->content_hash == expected_hash);
-        assert(loaded_ca.get()->num_ops() == region->num_ops());
+        assert(static_cast<bool>(loaded_ca) && "load() must succeed for a stored hash");
+        assert(region_of(loaded_ca).content_hash == expected_hash);
+        assert(region_of(loaded_ca).num_ops() == region->num_ops());
     }
 
     {
@@ -257,7 +268,7 @@ int main() {
                    .load_content_addressed(store_ctx(), ov, g_test.alloc, crucible::ContentHash{0xBADBADBADBADBAD0ULL},
                                            arena3)
                    .get()
-               == nullptr);
+                   .is_none());
     }
 
     {
@@ -297,8 +308,8 @@ int main() {
         ::fixy::BumpArena read_arena{1 << 16};
         auto loaded = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hash, read_arena);
         assert(loaded.cache_hit() && "resident ContentAddressed bytes must avoid disk fetch");
-        assert(loaded.get() != nullptr);
-        assert(loaded.get()->content_hash == hash);
+        assert(static_cast<bool>(loaded));
+        assert(region_of(loaded).content_hash == hash);
 
         std::filesystem::remove_all(dir_ca);
     }
@@ -330,8 +341,8 @@ int main() {
         ::fixy::BumpArena read_arena{1 << 16};
         auto loaded = receiver.load_content_addressed(store_ctx(), receiver_ov, g_test.alloc, sender_hash, read_arena);
         assert(loaded.cache_hit());
-        assert(loaded.get() != nullptr);
-        assert(loaded.get()->content_hash == sender_hash);
+        assert(static_cast<bool>(loaded));
+        assert(region_of(loaded).content_hash == sender_hash);
 
         std::filesystem::remove_all(sender_dir);
         std::filesystem::remove_all(receiver_dir);
@@ -489,12 +500,12 @@ int main() {
         }
         assert(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.at(::fixy::index<1>()), read_arena)
                    .get()
-               == nullptr);
+                   .is_none());
         assert(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.at(::fixy::index<0>()), read_arena)
                    .cache_hit());
         const auto newest = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc,
                                                           hashes.at(::fixy::index<kStoreCount - 1>()), read_arena);
-        assert(newest.cache_hit() && newest.get() != nullptr);
+        assert(newest.cache_hit() && static_cast<bool>(newest));
 
         std::filesystem::remove_all(dir_cache);
     }

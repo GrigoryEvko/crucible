@@ -462,12 +462,14 @@ public:
     [[nodiscard, gnu::cold]] bool load(Ctx const& ctx, ::foundation::effects::Alloc a) {
         for (::fixy::Box<Cipher>& cipher : cipher_) {
             const VigilFgCtx fg = assert_producer_thread_();
-            RegionNode* region = load_head_(ctx, a, *cipher);
-            if (!region) return false;
-            // Each region cut before the load holds ops that ran before it.
-            bg_.request_mark(ring_total_produced());
-            adopt_region_(fg, *region);
-            return true;
+            const ::fixy::Option<::fixy::Ref<RegionNode>> loaded = load_head_(ctx, a, *cipher);
+            for (const ::fixy::Ref<RegionNode> region : loaded) {
+                // Each region cut before the load holds ops that ran before it.
+                bg_.request_mark(ring_total_produced());
+                adopt_region_(fg, *region);
+                return true;
+            }
+            return false;
         }
         return false;
     }
@@ -622,8 +624,9 @@ private:
     }
 
     template <class Ctx, class Store>
-    [[nodiscard]] RegionNode* load_head_(Ctx const& ctx, ::foundation::effects::Alloc a, Store& store) {
-        if (store.empty()) return nullptr;
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<RegionNode>> load_head_(Ctx const& ctx, ::foundation::effects::Alloc a,
+                                                                     Store& store) {
+        if (store.empty()) return ::fixy::none;
         auto open_view = store.mint_open_view(ctx);
         return store.load_content_addressed(ctx, open_view, a, store.head(), load_arena_).get();
     }
