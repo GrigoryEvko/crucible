@@ -16,6 +16,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/warden/Registry.h>
 #include <fixy/Bands.h>
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/ScopedView.h>
 #include <foundation/Platform.h>
@@ -25,7 +26,6 @@
 #include <foundation/contracts/Pre.h>
 
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <type_traits>
@@ -82,9 +82,11 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // that fails this, and a loader of a plan refuses one with it.
     [[nodiscard]] static constexpr bool can_serve_slot(const TensorSlot& slot, uint64_t pool_bytes) noexcept {
         if (slot.is_external) return true;
-        uint64_t end_offset = 0;
-        if (__builtin_add_overflow(slot.offset_bytes, slot.nbytes, &end_offset)) return false;
-        return end_offset <= pool_bytes && slot.offset_bytes % ALIGNMENT == 0;
+        const bool is_inside =
+            ::foundation::core::checked_add(slot.offset_bytes, slot.nbytes)
+                .match([pool_bytes](uint64_t end_offset) noexcept { return end_offset <= pool_bytes; },
+                       [] noexcept { return false; });
+        return is_inside && slot.offset_bytes % ALIGNMENT == 0;
     }
 
     // Failure to allocate aborts. A runtime that preallocates everything up
@@ -155,7 +157,9 @@ struct CRUCIBLE_OWNER PoolAllocator {
                 // contract evaluation semantic, which differs across targets
                 // in this tree.  Once per plan on a cold path.
                 if (!can_serve_slot(slot, pool_bytes_)) [[unlikely]] {
-                    report_unservable_slot_(s, slot, pool_bytes_);
+                    ::fixy::fatal("PoolAllocator: slot {} does not fit the pool: offset={} nbytes={} pool_bytes={} "
+                                  "alignment={}",
+                                  s, slot.offset_bytes, slot.nbytes, pool_bytes_, ALIGNMENT);
                 }
                 if (!slot.is_external) ptr_table_[s] = base + slot.offset_bytes;
                 ++s;
@@ -331,17 +335,6 @@ private:
     [[nodiscard]] CRUCIBLE_INLINE constexpr InitializedView initialized_view_() const noexcept {
         CRUCIBLE_PRE(is_initialized());
         return ::fixy::mint_view<pool_state::Initialized>(*this);
-    }
-
-    [[noreturn, gnu::cold, gnu::noinline]] static void
-    report_unservable_slot_(uint32_t slot_index, const TensorSlot& slot, uint64_t pool_bytes) noexcept {
-        std::fprintf(stderr,
-                     "PoolAllocator: slot %u does not fit the pool: offset=%llu nbytes=%llu pool_bytes=%llu "
-                     "alignment=%u\n",
-                     slot_index, static_cast<unsigned long long>(slot.offset_bytes),
-                     static_cast<unsigned long long>(slot.nbytes), static_cast<unsigned long long>(pool_bytes),
-                     ALIGNMENT);
-        std::abort();
     }
 
     void* pool_ = nullptr;
