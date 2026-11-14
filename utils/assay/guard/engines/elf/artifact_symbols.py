@@ -424,7 +424,9 @@ TSAN_WORD = "tsan"
 #   * The allocation door of foundation/core/Heap.h calls malloc, aligned_alloc and free.  The allocator of the C
 #     library owns the state of the heap, and the deny row of brk keeps its program break.
 #   * In a build with ThreadSanitizer, the door src/foundation/os/Intercepted.cpp of rule R18 calls read and write,
-#     and it reads errno through __errno_location.
+#     and it reads errno through __errno_location.  It also calls mmap and munmap (the owner decision of
+#     2026-11-14): only the interceptors of the two functions reset the shadow of a range, and the system call
+#     hooks of the two calls are empty.
 #   * The thread door of fixy/os/ThreadTasks.h starts each thread with the attributes of the call, names it, joins
 #     it, and registers the fork hook of a caller.  The C library starts the thread and holds its TLS.
 #   * The signal door of fixy/os/Signal.h installs the handlers of the signals that end a process, and it sets the
@@ -438,6 +440,8 @@ DOOR_CALLS = (
     *(DoorCall(symbol, FOUNDATION, "Heap.cpp.o") for symbol in ("malloc", "aligned_alloc", "free")),
     DoorCall("read", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
     DoorCall("write", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
+    DoorCall("mmap", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
+    DoorCall("munmap", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
     DoorCall("__errno_location", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
     *(
         DoorCall(symbol, FIXY, "ThreadTasks.cpp.o")

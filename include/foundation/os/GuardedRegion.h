@@ -17,12 +17,15 @@
 // byte of a page, and the door reads no page size.  The door rounds the
 // usable part up to a multiple of kGuardBytes too.
 //
-// The door issues the raw primitive of foundation/os/Syscall.h, so a
-// sanitizer does not see the map.  The shadow memory of a sanitizer can then
-// hold the state of an earlier map at the same addresses.  Use the door only
-// for memory that instrumented code does not read or write in a run that
-// continues, such as an alternate signal stack: only the handler of a fatal
-// signal writes to that stack, and the process ends after the handler.
+// The door issues the raw primitive of foundation/os/Syscall.h.  In a build
+// with ThreadSanitizer the primitive gives the map and the unmap to the C
+// library, so that sanitizer resets its shadow of the range (THE SANITIZERS
+// of foundation/os/Syscall.h).  AddressSanitizer does not see the map, so its
+// shadow memory can hold the state of an earlier map at the same addresses.
+// Use the door only for memory that instrumented code does not read or write
+// in a run that continues, such as an alternate signal stack: only the
+// handler of a fatal signal writes to that stack, and the process ends after
+// the handler.
 //
 // This header is in the layer F0_doors of utils/rule-table.txt.  The door file
 // is src/foundation/os/GuardedRegion.cpp, which issues raw_syscall.

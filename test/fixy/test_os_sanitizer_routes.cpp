@@ -1,5 +1,5 @@
 // The routes of the raw primitive in a build with ThreadSanitizer for a
-// close (THE SANITIZERS of foundation/os/Syscall.h).
+// close and for a map (THE SANITIZERS of foundation/os/Syscall.h).
 //
 // THE CLOSE
 //   The sanitizer keeps a state for each descriptor number.  A read or a
@@ -16,11 +16,25 @@
 //   descriptor with close(2) of the C library, as a different library of the
 //   process does.
 //
+// THE MAP
+//   The sanitizer keeps a shadow of each address that a thread reads or
+//   writes.  A raw unmap that it does not see leaves the shadow of the range,
+//   and a raw map that gives the same range again starts with the accesses
+//   of the old map.  A write of a different thread to the new map then
+//   reports a race with a write to the old map, which no thread shares.
+//
+//   The first thread maps a guarded region through the door, writes its
+//   first byte, and unmaps it.  The second thread then maps guarded regions
+//   of the same size until one starts at the same address, and writes its
+//   first byte.  The kernel gives each new map the highest free range that
+//   fits, so the regions that the second thread keeps take each range above
+//   the old one first.
+//
 // In each case a relaxed atomic word orders the two threads.  The sanitizer
 // takes no happens-before edge from it, as it takes none from the kernel when
-// the kernel gives a number again.  The tsan preset runs the test with
-// halt_on_error=1, so a report of a race fails it.  Each other preset runs the
-// same steps with no sanitizer.
+// the kernel gives a number or a range again.  The tsan preset runs the test
+// with halt_on_error=1, so a report of a race fails it.  Each other preset
+// runs the same steps with no sanitizer.
 
 #include <fixy/Core.h>
 #include <fixy/os/Fs.h>
@@ -29,6 +43,7 @@
 #include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
 #include <foundation/core/Array.h>
+#include <foundation/os/GuardedRegion.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -38,6 +53,14 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two threads with no happens-before edge, a
 #include <unistd.h>
 
 namespace {
+
+// The address of the first usable byte of a region.
+[[nodiscard]] std::uint64_t address_of(::foundation::os::GuardedRegion& region) noexcept {
+    return __builtin_bit_cast(std::uint64_t, region.data_mut());
+}
+
+// Writes VALUE to the first usable byte of a region.
+void write_first_byte(::foundation::os::GuardedRegion& region, char value) noexcept { region.data_mut()[0] = value; }
 
 // A word that the first thread of a case sets to a value other than zero
 // when it ends its part.  The two threads read and write it with relaxed
@@ -65,6 +88,7 @@ namespace {
 
 namespace eff = ::foundation::effects;
 namespace fs = ::fixy::fs;
+namespace os = ::foundation::os;
 namespace src = ::fixy::tags::source;
 using ::fixy::thread::ThreadOptions;
 
@@ -133,10 +157,77 @@ constexpr std::size_t kOpenTries = 64;
     return 0;
 }
 
+// The usable bytes of each region of the map case: more than an alternate
+// signal stack of a thread.
+constexpr std::size_t kRegionBytes = std::size_t{1} << 20U;
+
+// The count of the regions that the second thread of a round of the map case
+// keeps before it gives up.
+constexpr std::size_t kMapTries = 16;
+
+// Maps regions of kRegionBytes until one starts at FIRST_ADDRESS, and keeps
+// each other region mapped while it tries, so the kernel gives the next try
+// a lower range.  It writes the first byte of the region at FIRST_ADDRESS, and
+// gives true when it found it.
+[[nodiscard]] bool map_again_and_write(std::uint64_t first_address, std::size_t tries_left) noexcept {
+    if (tries_left == 0) return false;
+    os::GuardedRegion region = os::map_guarded_region(kRegionBytes).expect("a guarded region maps");
+    if (address_of(region) == first_address) {
+        write_first_byte(region, 2);
+        return true;
+    }
+    return map_again_and_write(first_address, tries_left - 1);
+}
+
+// The count of the rounds of the map case.  The runtime of a sanitizer can map
+// memory of its own into the free range between the unmap and the map of a
+// round.  The second thread then finds no region at the old address, and
+// the case runs a new round with two new threads.
+constexpr int kMapRounds = 16;
+
+// One round of the map case.  It gives true when the second thread wrote to
+// a new map at the old address.
+[[nodiscard]] bool reuse_range_once(BgCtx const& ctx) {
+    RelaxedWord unmapped{};
+    RelaxedWord second_done{};
+    bool has_found_range = false;
+    // The first thread waits for the second one before it ends, so the
+    // unmap of its alternate signal stack cannot come before the maps of the
+    // second thread.
+    auto first = [&]() noexcept {
+        std::uint64_t first_address = 0;
+        {
+            os::GuardedRegion region = os::map_guarded_region(kRegionBytes).expect("a guarded region maps");
+            first_address = address_of(region);
+            write_first_byte(region, 1);
+        }
+        publish_relaxed(unmapped, first_address);
+        wait_for(second_done);
+    };
+    auto second = [&]() noexcept {
+        wait_for(unmapped);
+        has_found_range = map_again_and_write(read_relaxed(unmapped), kMapTries);
+        publish_relaxed(second_done, 1);
+    };
+    if (::fixy::thread::run_joined(ctx, ThreadOptions{}, first, second).is_err()) return false;
+    return has_found_range;
+}
+
+// THE MAP: a write to a new map of a range that a raw unmap gave back reports
+// no race with a write to the old map.
+[[nodiscard]] int check_reused_range_keeps_no_shadow() {
+    BgCtx const ctx{eff::testing::bg()};
+    for (int round = 0; round < kMapRounds; ++round) {
+        if (reuse_range_once(ctx)) return 0;
+    }
+    return 11;
+}
+
 }  // namespace
 
 int main() {
-    int const failed = check_reused_number_keeps_no_state();
+    int failed = check_reused_number_keeps_no_state();
+    if (failed == 0) failed = check_reused_range_keeps_no_shadow();
     if (failed != 0) {
         fixy::report(fixy::Sink::Err, "test_os_sanitizer_routes: check {} failed\n", failed);
         return failed;

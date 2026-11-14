@@ -5189,8 +5189,10 @@ fixy_test(test_os_futex)
 
 # test_os_sanitizer_routes closes a descriptor through the door in one
 # thread, and closes the next descriptor with the same number through the C
-# library in a second thread.  Under the tsan preset the close route of the
-# primitive clears the state of the number, so the sanitizer reports no race.
+# library in a second thread.  It also unmaps a region through the door in
+# one thread, and writes to a new map of the same range in a second thread.
+# Under the tsan preset the routes of the primitive clear the state of the
+# number and the shadow of the range, so the sanitizer reports no race.
 fixy_test(test_os_sanitizer_routes)
 fixy_neg_compile_test(neg_futex_wait_from_the_foreground
   "no matching function for call to .wait"

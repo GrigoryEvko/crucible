@@ -331,6 +331,7 @@ door <linux/sched/types.h> src/foundation/os/Syscall.cpp
 door <linux/time_types.h> src/foundation/os/Syscall.cpp
 door <errno.h> src/foundation/os/Intercepted.cpp
 door <unistd.h> src/foundation/os/Intercepted.cpp
+door <sys/mman.h> src/foundation/os/Intercepted.cpp
 door <linux/auxvec.h> src/foundation/os/Auxiliary.cpp
 door <asm/stat.h> src/fixy/os/Fs.cpp
 door <linux/fs.h> src/fixy/os/Fs.cpp

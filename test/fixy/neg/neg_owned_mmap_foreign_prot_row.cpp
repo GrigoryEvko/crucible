@@ -12,14 +12,15 @@
 
 #include <fixy/os/Mmap.h>
 
-#include <sys/mman.h>
+#include <foundation/os/MapWords.h>
 
 namespace {
 struct WriteExec final {};
 }  // namespace
 
 template <>
-inline constexpr int fixy::mmap::prot_bits_v<WriteExec> = PROT_READ | PROT_WRITE | PROT_EXEC;
+inline constexpr int fixy::mmap::prot_bits_v<WriteExec> =
+    ::foundation::os::kProtectRead | ::foundation::os::kProtectWrite | ::foundation::os::kProtectExecute;
 
 static_assert(!::fixy::mmap::MappedProt<WriteExec>);
 

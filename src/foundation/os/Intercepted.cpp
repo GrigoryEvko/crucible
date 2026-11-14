@@ -7,6 +7,11 @@
 // intercepts.  The C library has no function for futex, so a futex call stays
 // raw, and this file tells the sanitizer of it through its hooks.
 //
+// The sanitizer keeps a shadow of each address that a thread reads or
+// writes, and only its interceptors of mmap(2) and munmap(2) reset the shadow
+// of a range.  So a map and an unmap go through the two functions of the C
+// library (the owner decision of 2026-11-14).
+//
 // The sanitizer also keeps a state for each descriptor number.  Its hook of
 // close checks the close against the uses of the descriptor in other threads,
 // and then it clears that state, as its interceptor of close(2) does.  So a
@@ -24,6 +29,7 @@
 #if defined(__SANITIZE_THREAD__)
 
 #include <errno.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 // The system call hooks of ThreadSanitizer for futex(2), which libtsan
@@ -99,6 +105,19 @@ namespace {
 [[gnu::no_sanitize_thread]] long write_intercepted(std::uint64_t descriptor, std::uint64_t address,
                                                    std::uint64_t count) {
     return kernel_word(::write(static_cast<int>(descriptor), __builtin_bit_cast(void const*, address), count));
+}
+
+long map_intercepted(std::uint64_t address, std::uint64_t length, std::uint64_t protection, std::uint64_t flags,
+                     std::uint64_t descriptor, std::uint64_t offset) noexcept {
+    void* const mapped = ::mmap(__builtin_bit_cast(void*, address), length, static_cast<int>(protection),
+                                static_cast<int>(flags), static_cast<int>(descriptor), static_cast<::off_t>(offset));
+    // MAP_FAILED is the address of the word -1.
+    long const word = __builtin_bit_cast(long, mapped);
+    return word == -1 ? -static_cast<long>(errno) : word;
+}
+
+long unmap_intercepted(std::uint64_t address, std::uint64_t length) noexcept {
+    return ::munmap(__builtin_bit_cast(void*, address), length) == 0 ? 0 : -static_cast<long>(errno);
 }
 
 void enter_futex(FutexCall const& call) noexcept {

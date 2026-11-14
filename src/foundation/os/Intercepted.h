@@ -22,6 +22,19 @@ namespace foundation::os::detail {
 [[nodiscard, gnu::nothrow]] long read_intercepted(std::uint64_t descriptor, std::uint64_t address, std::uint64_t count);
 [[nodiscard, gnu::nothrow]] long write_intercepted(std::uint64_t descriptor, std::uint64_t address,
                                                    std::uint64_t count);
+
+// Issues a map or an unmap through the function of the C library that
+// ThreadSanitizer intercepts, with the words of the raw call.  The result is
+// the word of the kernel: the address of the map or zero, or -E for the
+// error number E.  Only the interceptors of mmap and munmap reset the shadow
+// of the range and free its sync objects.  The system call hooks of the two
+// calls are empty, and the sanitizer has no interface for a map (the owner
+// decision of 2026-11-14).  The two functions of the C library are not
+// cancellation points, so the two routes are noexcept.
+[[nodiscard]] long map_intercepted(std::uint64_t address, std::uint64_t length, std::uint64_t protection,
+                                   std::uint64_t flags, std::uint64_t descriptor, std::uint64_t offset) noexcept;
+[[nodiscard]] long unmap_intercepted(std::uint64_t address, std::uint64_t length) noexcept;
+
 // What a futex call does for the sanitizer: a wake publishes the writes of
 // the thread on the word, and a wait can see the writes of a wake.
 enum class FutexRole : std::uint8_t {

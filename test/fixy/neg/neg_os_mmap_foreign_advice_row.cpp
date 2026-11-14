@@ -12,14 +12,14 @@
 
 #include <fixy/os/Mmap.h>
 
-#include <sys/mman.h>
+#include <foundation/os/MapWords.h>
 
 namespace {
 struct Discard final {};
 }  // namespace
 
 template <>
-inline constexpr int fixy::mmap::advice_value_v<Discard> = MADV_DONTNEED;
+inline constexpr int fixy::mmap::advice_value_v<Discard> = ::foundation::os::kAdviseDontNeed;
 
 static_assert(!::fixy::mmap::KnownAdvice<Discard>);
 

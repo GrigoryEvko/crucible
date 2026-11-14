@@ -43,6 +43,13 @@
 //       mark the thread as in a blocking call, so a handler runs at once.
 //       The route also tells the sanitizer that a wake publishes the writes
 //       of the thread, and that a wait that ended with no error sees them.
+//   The sanitizer keeps a shadow of each address that a thread reads or
+//   writes, and a raw unmap that it does not see leaves the shadow of the
+//   range for the next map of the same range.  Only its interceptors of mmap
+//   and munmap reset the shadow, and the system call hooks of the two calls
+//   are empty.  So mmap and munmap go to the functions of the C library in
+//   src/foundation/os/Intercepted.cpp (the owner decision of 2026-11-14).
+//   mprotect and madvise change no state of the sanitizer, and they stay raw.
 //   The sanitizer also keeps a state for each descriptor number, and a raw
 //   close that it does not see leaves that state for the next descriptor
 //   with the same number.  So close, openat and openat2 stay raw, between

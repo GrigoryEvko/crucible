@@ -9,9 +9,9 @@
 // <linux/time_types.h> and <linux/utsname.h>.  It includes no header of the
 // C library, because some declarations of the two kinds of header conflict.
 // In a build with ThreadSanitizer, the primitive gives a read or a write that
-// can block to src/foundation/os/Intercepted.cpp, which is the one door of the
-// floor that calls the C library.  It issues a futex call, a close, an openat
-// and an openat2 raw, between the hooks of that file.
+// can block, a map and an unmap to src/foundation/os/Intercepted.cpp, which is
+// the one door of the floor that calls the C library.  It issues a futex
+// call, a close, an openat and an openat2 raw, between the hooks of that file.
 
 #include <foundation/os/FutexWords.h>
 #include <foundation/os/KernelFloor.h>
@@ -691,6 +691,13 @@ long raw_syscall(Syscall call, Word first, Word second, Word third, Word fourth,
     }
     if (call == Syscall::write) {
         return detail::write_intercepted(first.bits(), second.bits(), third.bits());
+    }
+    if (call == Syscall::mmap) {
+        return detail::map_intercepted(first.bits(), second.bits(), third.bits(), fourth.bits(), fifth.bits(),
+                                       sixth.bits());
+    }
+    if (call == Syscall::munmap) {
+        return detail::unmap_intercepted(first.bits(), second.bits());
     }
     if (call == Syscall::close) {
         return issue_watched_close(first.bits());
