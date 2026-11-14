@@ -60,9 +60,6 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         op.shape_hash = crucible::ShapeHash{0x100 + i};
         op.scope_hash = crucible::ScopeHash{0x200 + i};
         op.callsite_hash = crucible::CallsiteHash{0x300 + i};
-        op.set_num_inputs(2);
-        op.set_num_outputs(1);
-        op.set_num_scalar_args(1);
         op.grad_enabled = (i % 2 == 0);
         // Vary op_flags across ops to exercise bit-packing round-trip.
         op.inference_mode = (i == 0);
@@ -72,14 +69,15 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
 
         crucible::TensorMeta large_input = make_meta(4, 8);
         large_input.storage_nbytes = kLargeStorageBytes;
-        op.set_input_metas(crucible::test::run_of(test.alloc, dag_arena, large_input, make_meta(4, 8)));
-        op.set_output_metas(crucible::test::run_of(test.alloc, dag_arena, make_meta(4, 8)));
+        op.set_inputs(
+            crucible::test::run_of(test.alloc, dag_arena, large_input, make_meta(4, 8)),
+            crucible::test::run_of(test.alloc, dag_arena, (i > 0) ? crucible::OpIndex{i - 1} : crucible::OpIndex{},
+                                   crucible::OpIndex{}),
+            crucible::test::run_of(test.alloc, dag_arena, (i > 0) ? crucible::SlotId{(i - 1) * 10} : crucible::SlotId{},
+                                   crucible::SlotId{}));
+        op.set_outputs(crucible::test::run_of(test.alloc, dag_arena, make_meta(4, 8)),
+                       crucible::test::run_of(test.alloc, dag_arena, crucible::SlotId{i * 10}));
         op.set_scalar_args(crucible::test::run_of(test.alloc, dag_arena, static_cast<int64_t>(i * 42)));
-        op.set_input_trace_indices(crucible::test::run_of(
-            test.alloc, dag_arena, (i > 0) ? crucible::OpIndex{i - 1} : crucible::OpIndex{}, crucible::OpIndex{}));
-        op.set_input_slot_ids(crucible::test::run_of(
-            test.alloc, dag_arena, (i > 0) ? crucible::SlotId{(i - 1) * 10} : crucible::SlotId{}, crucible::SlotId{}));
-        op.set_output_slot_ids(crucible::test::run_of(test.alloc, dag_arena, crucible::SlotId{i * 10}));
     }
 
     auto* region = crucible::make_region(test.alloc, dag_arena, ops);

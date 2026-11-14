@@ -48,19 +48,17 @@ static crucible::RegionNode* make_test_region(::fixy::BumpArena& dag_arena, std:
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         crucible::TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
         op.schema_hash = crucible::SchemaHash{0xCAFE0000 + i + (salt << 8)};
-        op.set_num_inputs(1);
-        op.set_num_outputs(1);
 
         crucible::TensorMeta meta{};
         meta.ndim = 1;
         meta.sizes[0] = ::crucible::tensor_dim(16);
         meta.strides[0] = ::crucible::tensor_dim(1);
         meta.dtype = crucible::ScalarType::Float;
-        op.set_input_metas(crucible::test::run_of(g_test.alloc, dag_arena, meta));
-        op.set_output_metas(crucible::test::run_of(g_test.alloc, dag_arena, meta));
-        op.set_input_trace_indices(crucible::test::run_of(g_test.alloc, dag_arena, crucible::OpIndex{}));
-        op.set_input_slot_ids(crucible::test::run_of(g_test.alloc, dag_arena, crucible::SlotId{}));
-        op.set_output_slot_ids(crucible::test::run_of(g_test.alloc, dag_arena, crucible::SlotId{i}));
+        op.set_inputs(crucible::test::run_of(g_test.alloc, dag_arena, meta),
+                      crucible::test::run_of(g_test.alloc, dag_arena, crucible::OpIndex{}),
+                      crucible::test::run_of(g_test.alloc, dag_arena, crucible::SlotId{}));
+        op.set_outputs(crucible::test::run_of(g_test.alloc, dag_arena, meta),
+                       crucible::test::run_of(g_test.alloc, dag_arena, crucible::SlotId{i}));
     }
 
     auto* region = crucible::make_region(g_test.alloc, dag_arena, ops);

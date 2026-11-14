@@ -48,13 +48,8 @@ static RegionNode* synth_region(::fixy::BumpArena& dag_arena, uint32_t num_ops, 
         auto& te = *ops.get(i).expect("i is below num_ops");
         te.schema_hash = SchemaHash{salt ^ (0xAAAAULL + i)};
         te.shape_hash = ShapeHash{salt ^ (0xBBBBULL + i)};
-        te.set_num_inputs(1);
-        te.set_num_outputs(1);
-        te.set_input_metas(dag_arena.array(A, 1, meta));
-        te.set_output_metas(dag_arena.array(A, 1, meta));
-        te.set_input_trace_indices(dag_arena.array(A, 1, OpIndex{}));
-        te.set_input_slot_ids(dag_arena.array(A, 1, SlotId{}));
-        te.set_output_slot_ids(dag_arena.array(A, 1, SlotId{}));
+        te.set_inputs(dag_arena.array(A, 1, meta), dag_arena.array(A, 1, OpIndex{}), dag_arena.array(A, 1, SlotId{}));
+        te.set_outputs(dag_arena.array(A, 1, meta), dag_arena.array(A, 1, SlotId{}));
     }
     return make_region(A, dag_arena, ops);
 }

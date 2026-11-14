@@ -83,20 +83,17 @@ TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, ::fixy::BumpAren
     te.shape_hash = ShapeHash{bench_rand()};
     te.scope_hash = ScopeHash{bench_rand()};
     te.callsite_hash = CallsiteHash{bench_rand()};
-    te.set_num_inputs(n_in);
-    te.set_num_outputs(n_out);
-    te.set_num_scalar_args(n_scalar);
     te.grad_enabled = true;
     te.kernel_id = CKernelId::OPAQUE;
 
     const ::fixy::View<TensorMeta> input_metas = arena.array(a, n_in, TensorMeta{});
     for (TensorMeta& m : input_metas)
         m = make_synthetic_meta(ndim);
-    te.set_input_metas(input_metas);
+    te.set_inputs(input_metas, arena.array(a, n_in, OpIndex{}), arena.array(a, n_in, SlotId{}));
     const ::fixy::View<TensorMeta> output_metas = arena.array(a, n_out, TensorMeta{});
     for (TensorMeta& m : output_metas)
         m = make_synthetic_meta(ndim);
-    te.set_output_metas(output_metas);
+    te.set_outputs(output_metas, arena.array(a, n_out, SlotId{}));
     const ::fixy::View<int64_t> scalars = arena.array(a, n_scalar, int64_t{0});
     for (int64_t& value : scalars)
         value = static_cast<int64_t>(bench_rand());

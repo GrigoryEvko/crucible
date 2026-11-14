@@ -14,6 +14,7 @@
 #include <crucible/CrucibleContext.h>
 #include <foundation/effects/Effect.h>
 
+#include "entry_arrays.h"
 #include "test_assert.h"
 #include <cmath>
 #include <cstdio>
@@ -189,34 +190,28 @@ int main() {
     ::foundation::core::FixedArray<SlotId, 1> op3_out{SlotId{SL_SM}};
 
     ::foundation::core::FixedArray<TraceEntry, N_OPS> ops{};
+    // The zero metadata and the producers of the ops are arrays of this arena.
+    ::fixy::BumpArena runs{size_t{1} << 16};
 
     ops.at(::fixy::index<0>()).schema_hash = H_MM1;
     ops.at(::fixy::index<0>()).shape_hash = S_MM1;
-    ops.at(::fixy::index<0>()).set_num_inputs(2);
-    ops.at(::fixy::index<0>()).set_num_outputs(1);
-    ops.at(::fixy::index<0>()).set_input_slot_ids(op0_in.view());
-    ops.at(::fixy::index<0>()).set_output_slot_ids(op0_out.view());
+    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<0>()), op0_in.view());
+    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<0>()), op0_out.view());
 
     ops.at(::fixy::index<1>()).schema_hash = H_RELU;
     ops.at(::fixy::index<1>()).shape_hash = S_RELU;
-    ops.at(::fixy::index<1>()).set_num_inputs(1);
-    ops.at(::fixy::index<1>()).set_num_outputs(1);
-    ops.at(::fixy::index<1>()).set_input_slot_ids(op1_in.view());
-    ops.at(::fixy::index<1>()).set_output_slot_ids(op1_out.view());
+    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<1>()), op1_in.view());
+    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<1>()), op1_out.view());
 
     ops.at(::fixy::index<2>()).schema_hash = H_MM2;
     ops.at(::fixy::index<2>()).shape_hash = S_MM2;
-    ops.at(::fixy::index<2>()).set_num_inputs(2);
-    ops.at(::fixy::index<2>()).set_num_outputs(1);
-    ops.at(::fixy::index<2>()).set_input_slot_ids(op2_in.view());
-    ops.at(::fixy::index<2>()).set_output_slot_ids(op2_out.view());
+    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<2>()), op2_in.view());
+    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<2>()), op2_out.view());
 
     ops.at(::fixy::index<3>()).schema_hash = H_SOFTMAX;
     ops.at(::fixy::index<3>()).shape_hash = S_SOFTMAX;
-    ops.at(::fixy::index<3>()).set_num_inputs(1);
-    ops.at(::fixy::index<3>()).set_num_outputs(1);
-    ops.at(::fixy::index<3>()).set_input_slot_ids(op3_in.view());
-    ops.at(::fixy::index<3>()).set_output_slot_ids(op3_out.view());
+    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<3>()), op3_in.view());
+    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<3>()), op3_out.view());
 
     RegionNode region{};
     region.kind = TraceNodeKind::REGION;

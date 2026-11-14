@@ -436,8 +436,6 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 te.shape_hash = re.shape_hash;
                 te.scope_hash = scope_data.at(index);
                 te.callsite_hash = callsite_data.at(index);
-                te.set_num_inputs(re.num_inputs);
-                te.set_num_outputs(re.num_outputs);
                 te.grad_enabled = (re.op_flags & op_flag::GRAD_ENABLED) != 0;
 
                 const uint8_t flags = re.op_flags;
@@ -446,19 +444,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 te.training_phase = static_cast<TrainingPhase>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
                 te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
                 te.kernel_id = CKernelId::OPAQUE;
-                const uint16_t n_scalars = std::min(re.num_scalar_args, uint16_t(5));
-                te.set_num_scalar_args(n_scalars);
-
-                if (!ms.is_valid()) {
-                    te.set_num_inputs(0);
-                    te.set_num_outputs(0);
-                    continue;
-                }
-                const uint16_t n_in = re.num_inputs;
-                const uint16_t n_out = re.num_outputs;
-                const uint64_t meta_offset = ms.raw() - first_meta.raw();
-                te.set_input_metas(meta_run.window(meta_offset, n_in).expect("the copied run holds each op"));
-                te.set_output_metas(meta_run.window(meta_offset + n_in, n_out).expect("the copied run holds each op"));
+                const uint16_t n_scalars = ::fixy::min(re.num_scalar_args, uint16_t{5});
                 const ::fixy::View<int64_t> scalars =
                     scalar_run.window(scalar_cursor, n_scalars).expect("the scan counted the scalars");
                 scalar_cursor += n_scalars;
@@ -466,12 +452,19 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                              re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
                     .expect("the two runs hold the scalars of the op");
                 te.set_scalar_args(scalars);
-                te.set_input_trace_indices(
-                    producer_run.window(producer_cursor, n_in).expect("the scan counted the inputs"));
+
+                // An op with no metadata index has no tensors.
+                if (!ms.is_valid()) continue;
+                const uint16_t n_in = re.num_inputs;
+                const uint16_t n_out = re.num_outputs;
+                const uint64_t meta_offset = ms.raw() - first_meta.raw();
+                te.set_inputs(meta_run.window(meta_offset, n_in).expect("the copied run holds each op"),
+                              producer_run.window(producer_cursor, n_in).expect("the scan counted the inputs"),
+                              slot_run.window(slot_cursor, n_in).expect("the scan counted the inputs"));
                 producer_cursor += n_in;
-                te.set_input_slot_ids(slot_run.window(slot_cursor, n_in).expect("the scan counted the inputs"));
                 slot_cursor += n_in;
-                te.set_output_slot_ids(slot_run.window(slot_cursor, n_out).expect("the scan counted the outputs"));
+                te.set_outputs(meta_run.window(meta_offset + n_in, n_out).expect("the copied run holds each op"),
+                               slot_run.window(slot_cursor, n_out).expect("the scan counted the outputs"));
                 slot_cursor += n_out;
             }
             return copied_ops;

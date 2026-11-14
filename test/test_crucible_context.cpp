@@ -1,6 +1,7 @@
 #include <crucible/CrucibleContext.h>
 #include <crucible/BackgroundThread.h>
 #include <foundation/effects/Effect.h>
+#include "entry_arrays.h"
 #include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
@@ -32,6 +33,19 @@ static void init_region(RegionNode* r, ::fixy::View<TraceEntry> ops, MemoryPlan*
     r->kind = TraceNodeKind::REGION;
     r->ops = ops;
     r->plan = plan;
+}
+
+// The zero metadata and the producers of the test ops are arrays of this
+// arena.  The context reads only the slot ids.
+static auto g_test = ::foundation::effects::testing::test();
+static ::fixy::BumpArena g_runs{size_t{1} << 16};
+
+static void set_input_slots(TraceEntry& op, ::fixy::View<SlotId> slot_ids) {
+    crucible::test::set_input_slots(g_test.alloc, g_runs, op, slot_ids);
+}
+
+static void set_output_slots(TraceEntry& op, ::fixy::View<SlotId> slot_ids) {
+    crucible::test::set_output_slots(g_test.alloc, g_runs, op, slot_ids);
 }
 
 // Every slot is internal and 256 bytes wide, so slot i sits at offset
@@ -82,12 +96,10 @@ static void test_activate() {
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{100};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{200};
-    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out.view());
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{101};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{201};
-    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<1>()).set_output_slot_ids(out.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), out.view());
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());
@@ -129,15 +141,11 @@ static void test_full_replay() {
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{100};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{200};
-    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out0.view());
-    ops.at(::foundation::core::index<0>()).set_num_inputs(0);
+    set_output_slots(ops.at(::foundation::core::index<0>()), out0.view());
 
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{101};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{201};
-    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<1>()).set_output_slot_ids(out1.view());
-    ops.at(::foundation::core::index<1>()).set_num_inputs(0);
+    set_output_slots(ops.at(::foundation::core::index<1>()), out1.view());
 
     ::foundation::core::FixedArray<TensorSlot, 2> slots{};
     auto plan = make_simple_plan(slots.view());
@@ -180,8 +188,7 @@ static void test_divergence() {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{100 + i};
         op.shape_hash = ShapeHash{200 + i};
-        op.set_num_outputs(1);
-        op.set_output_slot_ids(out.view());
+        set_output_slots(op, out.view());
     }
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
@@ -215,8 +222,7 @@ static void test_reactivate() {
     ::foundation::core::FixedArray<TraceEntry, 1> ops_a{};
     ops_a.at(::foundation::core::index<0>()).schema_hash = SchemaHash{10};
     ops_a.at(::foundation::core::index<0>()).shape_hash = ShapeHash{20};
-    ops_a.at(::foundation::core::index<0>()).set_num_outputs(1);
-    ops_a.at(::foundation::core::index<0>()).set_output_slot_ids(out.view());
+    set_output_slots(ops_a.at(::foundation::core::index<0>()), out.view());
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots_a{};
     auto plan_a = make_simple_plan(slots_a.view());
@@ -232,12 +238,10 @@ static void test_reactivate() {
     ::foundation::core::FixedArray<TraceEntry, 2> ops_b{};
     ops_b.at(::foundation::core::index<0>()).schema_hash = SchemaHash{30};
     ops_b.at(::foundation::core::index<0>()).shape_hash = ShapeHash{40};
-    ops_b.at(::foundation::core::index<0>()).set_num_outputs(1);
-    ops_b.at(::foundation::core::index<0>()).set_output_slot_ids(out_b0.view());
+    set_output_slots(ops_b.at(::foundation::core::index<0>()), out_b0.view());
     ops_b.at(::foundation::core::index<1>()).schema_hash = SchemaHash{31};
     ops_b.at(::foundation::core::index<1>()).shape_hash = ShapeHash{41};
-    ops_b.at(::foundation::core::index<1>()).set_num_outputs(1);
-    ops_b.at(::foundation::core::index<1>()).set_output_slot_ids(out_b1.view());
+    set_output_slots(ops_b.at(::foundation::core::index<1>()), out_b1.view());
 
     ::foundation::core::FixedArray<TensorSlot, 2> slots_b{};
     auto plan_b = make_simple_plan(slots_b.view());
@@ -276,10 +280,8 @@ static void test_external_slots() {
     ::foundation::core::FixedArray<TraceEntry, 1> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{50};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{60};
-    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out.view());
-    ops.at(::foundation::core::index<0>()).set_num_inputs(1);
-    ops.at(::foundation::core::index<0>()).set_input_slot_ids(in.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out.view());
+    set_input_slots(ops.at(::foundation::core::index<0>()), in.view());
 
     ::foundation::core::FixedArray<TensorSlot, 2> slots{};
     slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
@@ -394,17 +396,13 @@ static void test_integration_sweep_line() {
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{0xAA};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{0xBB};
-    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<0>()).set_output_slot_ids(op0_out.view());
-    ops.at(::foundation::core::index<0>()).set_num_inputs(1);
-    ops.at(::foundation::core::index<0>()).set_input_slot_ids(op0_in.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), op0_out.view());
+    set_input_slots(ops.at(::foundation::core::index<0>()), op0_in.view());
 
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{0xCC};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{0xDD};
-    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<1>()).set_output_slot_ids(op1_out.view());
-    ops.at(::foundation::core::index<1>()).set_num_inputs(1);
-    ops.at(::foundation::core::index<1>()).set_input_slot_ids(op1_in.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), op1_out.view());
+    set_input_slots(ops.at(::foundation::core::index<1>()), op1_in.view());
 
     RegionNode region{};
     init_region(&region, ops.view(), plan);
@@ -455,12 +453,10 @@ static void test_divergence_counter() {
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{10};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{20};
-    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out.view());
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{11};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{21};
-    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<1>()).set_output_slot_ids(out.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), out.view());
 
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());

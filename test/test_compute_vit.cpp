@@ -27,6 +27,7 @@
 #include <crucible/CrucibleContext.h>
 #include <foundation/effects/Effect.h>
 
+#include "entry_arrays.h"
 #include "test_assert.h"
 #include <algorithm>
 #include <cmath>
@@ -153,10 +154,8 @@ int main() {
     for (auto [op, def] : ::fixy::zip(ops.view(), defs.view())) {
         op->schema_hash = def->schema;
         op->shape_hash = def->shape;
-        op->set_num_inputs(static_cast<uint16_t>(def->in.size()));
-        op->set_num_outputs(static_cast<uint16_t>(def->out.size()));
-        op->set_input_slot_ids(def->in);
-        op->set_output_slot_ids(def->out);
+        crucible::test::set_input_slots(test.alloc, runs, *op, def->in);
+        crucible::test::set_output_slots(test.alloc, runs, *op, def->out);
     }
 
     RegionNode region{};

@@ -63,18 +63,16 @@ static RegionNode* make_test_region(::fixy::BumpArena& dag_arena, uint32_t seed)
     const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(g_test.alloc, NUM_OPS, TraceEntry{});
     TraceEntry& op = *ops.get(0).expect("the region holds one op");
     op.schema_hash = SchemaHash{0xCAFEBABE00000000ULL + seed};
-    op.set_num_inputs(1);
-    op.set_num_outputs(1);
     TensorMeta meta{};
     meta.ndim = 1;
     meta.sizes[0] = ::crucible::tensor_dim(16);
     meta.strides[0] = ::crucible::tensor_dim(1);
     meta.dtype = ScalarType::Float;
-    op.set_input_metas(crucible::test::run_of(g_test.alloc, dag_arena, meta));
-    op.set_output_metas(crucible::test::run_of(g_test.alloc, dag_arena, meta));
-    op.set_input_trace_indices(crucible::test::run_of(g_test.alloc, dag_arena, OpIndex{}));
-    op.set_input_slot_ids(crucible::test::run_of(g_test.alloc, dag_arena, SlotId{}));
-    op.set_output_slot_ids(crucible::test::run_of(g_test.alloc, dag_arena, SlotId{seed}));
+    op.set_inputs(crucible::test::run_of(g_test.alloc, dag_arena, meta),
+                  crucible::test::run_of(g_test.alloc, dag_arena, OpIndex{}),
+                  crucible::test::run_of(g_test.alloc, dag_arena, SlotId{}));
+    op.set_outputs(crucible::test::run_of(g_test.alloc, dag_arena, meta),
+                   crucible::test::run_of(g_test.alloc, dag_arena, SlotId{seed}));
     return crucible::make_region(g_test.alloc, dag_arena, ops);
 }
 

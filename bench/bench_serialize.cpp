@@ -43,21 +43,14 @@ static RegionNode* synth_region(::fixy::BumpArena& dag_arena, uint32_t num_ops) 
         te.shape_hash = ShapeHash{0xBBBB000000000000ULL + i};
         te.scope_hash = ScopeHash{0xCCCC000000000000ULL + i};
         te.callsite_hash = CallsiteHash{0xDDDD000000000000ULL + i};
-        te.set_num_inputs(2);
-        te.set_num_outputs(1);
-        te.set_num_scalar_args(0);
         te.kernel_id = CKernelId::GEMM_MM;
-
-        te.set_input_metas(dag_arena.array(A, 2, meta));
-        te.set_output_metas(dag_arena.array(A, 1, meta));
 
         const ::fixy::View<OpIndex> producers = dag_arena.array(A, 2, OpIndex::none());
         if (i >= 1) *producers.get(0).expect("the op has two inputs") = OpIndex{i - 1};
-        te.set_input_trace_indices(producers);
         const ::fixy::View<SlotId> input_slots = dag_arena.array(A, 2, SlotId{i});
         *input_slots.get(1).expect("the op has two inputs") = SlotId{100 + i};
-        te.set_input_slot_ids(input_slots);
-        te.set_output_slot_ids(dag_arena.array(A, 1, SlotId{200 + i}));
+        te.set_inputs(dag_arena.array(A, 2, meta), producers, input_slots);
+        te.set_outputs(dag_arena.array(A, 1, meta), dag_arena.array(A, 1, SlotId{200 + i}));
     }
 
     return make_region(A, dag_arena, ops);

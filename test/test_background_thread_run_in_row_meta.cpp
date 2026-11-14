@@ -86,6 +86,19 @@ struct Work {
         return index.raw() + 1;
     }
 
+    // An op with no tensor and two scalar arguments.  The foreground gives
+    // such an op no metadata index.
+    void push_op_with_scalars(uint32_t op, int64_t first, int64_t second) {
+        assert(count < CAPACITY);
+        trace[count].schema_hash = crucible::SchemaHash{0x7000ULL + op};
+        trace[count].shape_hash = crucible::ShapeHash{0x8000ULL + op};
+        trace[count].num_scalar_args = 2;
+        trace[count].scalar_values.at<0>() = first;
+        trace[count].scalar_values.at<1>() = second;
+        meta_starts[count] = MetaIndex::none();
+        ++count;
+    }
+
     // An op with one output tensor and no metadata index, as the foreground
     // records it when the log is full.
     void push_op_without_meta(uint32_t op) {
@@ -343,6 +356,37 @@ void test_build_and_release_pass_two_to_the_32() {
     assert(metalog->tail.get() == run_end && "the release did not move the tail past 2^32");
 
     crucible::test::pass("  build_and_release_pass_two_to_the_32:      PASSED\n");
+}
+
+// An op with no tensors has no metadata index.  Its scalar arguments still go
+// into its entry, so they fold into the content hash.  Two such ops that
+// differ only in a scalar then give two content hashes.  Before, the entry
+// kept the count and no scalar, and the two hashes were one.
+void test_scalars_of_an_op_with_no_tensors() {
+    using namespace meta_rig;
+    seal_global_tables();
+
+    // The ops have no metadata index, so the build reads no metadata log.
+    BackgroundThread bt;
+    const auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena scratch{size_t{1} << 16};
+
+    Work five_six;
+    five_six.push_op_with_scalars(0, 5, 6);
+    auto [graph_a, region_a] = five_six.build(bt, test.alloc, scratch).expect("the work builds a graph");
+    Work five_seven;
+    five_seven.push_op_with_scalars(0, 5, 7);
+    auto [graph_b, region_b] = five_seven.build(bt, test.alloc, scratch).expect("the work builds a graph");
+
+    const crucible::TraceEntry& op = region_a.ops[0];
+    assert(op.num_inputs() == 0 && op.num_outputs() == 0);
+    assert(op.num_scalar_args() == 2 && op.scalar_args().size() == 2);
+    assert(crucible::test::element_at(op.scalar_args(), 0) == 5);
+    assert(crucible::test::element_at(op.scalar_args(), 1) == 6);
+    assert(region_a.content_hash != region_b.content_hash
+           && "two ops that differ only in a scalar must give two content hashes");
+
+    crucible::test::pass("  scalars_of_an_op_with_no_tensors:          PASSED\n");
 }
 
 }  // namespace test_background_thread_run_in_row

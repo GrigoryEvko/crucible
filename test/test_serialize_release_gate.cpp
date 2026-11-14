@@ -35,9 +35,6 @@ namespace {
     op.shape_hash = crucible::ShapeHash{0x100};
     op.scope_hash = crucible::ScopeHash{0x200};
     op.callsite_hash = crucible::CallsiteHash{0x300};
-    op.set_num_inputs(1);
-    op.set_num_outputs(0);
-    op.set_num_scalar_args(0);
     op.grad_enabled = true;
 
     crucible::TensorMeta in_meta{};
@@ -48,10 +45,9 @@ namespace {
     in_meta.device_type = crucible::DeviceType::CPU;
     in_meta.device_idx = -1;
     in_meta.layout = crucible::Layout::Strided;
-    op.set_input_metas(crucible::test::run_of(bg.alloc, dag_arena, in_meta));
-
-    op.set_input_trace_indices(crucible::test::run_of(bg.alloc, dag_arena, crucible::OpIndex{0}));
-    op.set_input_slot_ids(crucible::test::run_of(bg.alloc, dag_arena, crucible::SlotId{}));
+    op.set_inputs(crucible::test::run_of(bg.alloc, dag_arena, in_meta),
+                  crucible::test::run_of(bg.alloc, dag_arena, crucible::OpIndex{0}),
+                  crucible::test::run_of(bg.alloc, dag_arena, crucible::SlotId{}));
 
     auto* region = crucible::make_region(bg.alloc, dag_arena, ops);
     if (region == nullptr) return 0;

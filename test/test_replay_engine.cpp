@@ -1,6 +1,7 @@
 #include <crucible/ReplayEngine.h>
 #include <crucible/BackgroundThread.h>
 #include <foundation/effects/Effect.h>
+#include "entry_arrays.h"
 #include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
@@ -36,6 +37,19 @@ static void init_region(RegionNode* r, ::fixy::View<TraceEntry> ops) {
     ::new(r) RegionNode{};
     r->kind = TraceNodeKind::REGION;
     r->ops = ops;
+}
+
+// The zero metadata and the producers of the test ops are arrays of this
+// arena.  The replay engine reads only the slot ids.
+static auto g_test = ::foundation::effects::testing::test();
+static ::fixy::BumpArena g_runs{size_t{1} << 16};
+
+static void set_input_slots(TraceEntry& op, ::fixy::View<SlotId> slot_ids) {
+    crucible::test::set_input_slots(g_test.alloc, g_runs, op, slot_ids);
+}
+
+static void set_output_slots(TraceEntry& op, ::fixy::View<SlotId> slot_ids) {
+    crucible::test::set_output_slots(g_test.alloc, g_runs, op, slot_ids);
 }
 
 // Every slot is internal and 256 bytes wide, so slot i sits at offset
@@ -76,9 +90,7 @@ static void test_linear_match() {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{100 + i};
         op.shape_hash = ShapeHash{200 + i};
-        op.set_num_outputs(1);
-        op.set_output_slot_ids(crucible::test::run_of(test.alloc, arena, SlotId{i}));
-        op.set_num_inputs(0);
+        set_output_slots(op, crucible::test::run_of(test.alloc, arena, SlotId{i}));
     }
 
     RegionNode region{};
@@ -132,8 +144,7 @@ static void test_schema_divergence() {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{100 + i};
         op.shape_hash = ShapeHash{200};
-        op.set_num_outputs(1);
-        op.set_output_slot_ids(out_slot.view());
+        set_output_slots(op, out_slot.view());
     }
 
     RegionNode region{};
@@ -167,12 +178,10 @@ static void test_shape_divergence() {
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{100};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{200};
-    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out_slot.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out_slot.view());
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{101};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{201};
-    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<1>()).set_output_slot_ids(out_slot.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), out_slot.view());
 
     RegionNode region{};
     init_region(&region, ops.view());
@@ -201,12 +210,10 @@ static void test_reset() {
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{10};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{20};
-    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out_slot.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out_slot.view());
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{11};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{21};
-    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<1>()).set_output_slot_ids(out_slot.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), out_slot.view());
 
     RegionNode region{};
     init_region(&region, ops.view());
@@ -244,16 +251,12 @@ static void test_input_ptr() {
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{50};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{60};
-    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out0.view());
-    ops.at(::foundation::core::index<0>()).set_num_inputs(0);
+    set_output_slots(ops.at(::foundation::core::index<0>()), out0.view());
 
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{51};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{61};
-    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<1>()).set_output_slot_ids(out1.view());
-    ops.at(::foundation::core::index<1>()).set_num_inputs(1);
-    ops.at(::foundation::core::index<1>()).set_input_slot_ids(in1.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), out1.view());
+    set_input_slots(ops.at(::foundation::core::index<1>()), in1.view());
 
     RegionNode region{};
     init_region(&region, ops.view());
@@ -284,8 +287,7 @@ static void test_invalid_slot() {
     ::foundation::core::FixedArray<TraceEntry, 1> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{77};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{88};
-    ops.at(::foundation::core::index<0>()).set_num_outputs(2);
-    ops.at(::foundation::core::index<0>()).set_output_slot_ids(out.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), out.view());
 
     RegionNode region{};
     init_region(&region, ops.view());
@@ -314,8 +316,7 @@ static void test_current_entry() {
         TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
         op.schema_hash = SchemaHash{300 + i};
         op.shape_hash = ShapeHash{400 + i};
-        op.set_num_outputs(1);
-        op.set_output_slot_ids(out.view());
+        set_output_slots(op, out.view());
     }
 
     RegionNode region{};
@@ -408,17 +409,13 @@ static void test_integration_with_pool() {
     ::foundation::core::FixedArray<TraceEntry, 2> ops{};
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{0xAAAA};
     ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{0xBBBB};
-    ops.at(::foundation::core::index<0>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<0>()).set_output_slot_ids(op0_out.view());
-    ops.at(::foundation::core::index<0>()).set_num_inputs(1);
-    ops.at(::foundation::core::index<0>()).set_input_slot_ids(op0_in.view());
+    set_output_slots(ops.at(::foundation::core::index<0>()), op0_out.view());
+    set_input_slots(ops.at(::foundation::core::index<0>()), op0_in.view());
 
     ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{0xCCCC};
     ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{0xDDDD};
-    ops.at(::foundation::core::index<1>()).set_num_outputs(1);
-    ops.at(::foundation::core::index<1>()).set_output_slot_ids(op1_out.view());
-    ops.at(::foundation::core::index<1>()).set_num_inputs(1);
-    ops.at(::foundation::core::index<1>()).set_input_slot_ids(op1_in.view());
+    set_output_slots(ops.at(::foundation::core::index<1>()), op1_out.view());
+    set_input_slots(ops.at(::foundation::core::index<1>()), op1_in.view());
 
     RegionNode region{};
     init_region(&region, ops.view());

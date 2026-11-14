@@ -192,6 +192,7 @@ int main() {
     test_pipeline_releases_after_overflow();
     test_built_graph_owns_its_metadata();
     test_build_and_release_pass_two_to_the_32();
+    test_scalars_of_an_op_with_no_tensors();
 
     crucible::test::pass("test_background_thread_run_in_row: 19 groups, all passed\n");
     return 0;

@@ -116,13 +116,12 @@ void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena& arena, ::fixy
         entry.shape_hash = ShapeHash{mix(seed)};
         entry.scope_hash = ScopeHash{mix(seed ^ 0x11)};
         entry.callsite_hash = CallsiteHash{mix(seed ^ 0x22)};
-        entry.set_num_inputs(static_cast<uint16_t>(1 + (seed % 3)));
-        entry.set_num_outputs(1);
-        entry.set_num_scalar_args(static_cast<uint16_t>(seed % 3));
+        const uint16_t num_inputs = static_cast<uint16_t>(1 + (seed % 3));
+        const uint16_t num_scalars = static_cast<uint16_t>(seed % 3);
         entry.grad_enabled = ((seed & 0x100) != 0);
 
-        const ::fixy::View<TensorMeta> metas = arena.array<TensorMeta>(ctx.alloc, entry.num_inputs(), TensorMeta{});
-        for (uint16_t input_index = 0; input_index < entry.num_inputs(); input_index++) {
+        const ::fixy::View<TensorMeta> metas = arena.array<TensorMeta>(ctx.alloc, num_inputs, TensorMeta{});
+        for (uint16_t input_index = 0; input_index < num_inputs; input_index++) {
             TensorMeta& meta = crucible::test::element_at(metas, input_index);
             meta = TensorMeta{};
             meta.ndim = 4;
@@ -138,16 +137,17 @@ void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena& arena, ::fixy
             const std::uintptr_t address = data_ptr_base + (uint64_t{op_index} * 64 + input_index) * 4096;
             meta.data_ptr = crucible::external_data_ptr(std::bit_cast<void*>(address));
         }
-        entry.set_input_metas(metas);
+        entry.set_inputs(metas, arena.array<OpIndex>(ctx.alloc, num_inputs, OpIndex{}),
+                         arena.array<SlotId>(ctx.alloc, num_inputs, SlotId{}));
+        entry.set_outputs(arena.array<TensorMeta>(ctx.alloc, 1, TensorMeta{}),
+                          arena.array<SlotId>(ctx.alloc, 1, SlotId{}));
 
-        if (entry.num_scalar_args() > 0) {
-            const ::fixy::View<int64_t> scalars = arena.array<int64_t>(ctx.alloc, entry.num_scalar_args(), int64_t{0});
-            for (uint16_t scalar_index = 0; scalar_index < entry.num_scalar_args(); scalar_index++) {
-                crucible::test::element_at(scalars, scalar_index) =
-                    static_cast<int64_t>(mix(seed ^ (uint64_t{scalar_index} << 32)) % 4096);
-            }
-            entry.set_scalar_args(scalars);
+        const ::fixy::View<int64_t> scalars = arena.array<int64_t>(ctx.alloc, num_scalars, int64_t{0});
+        for (uint16_t scalar_index = 0; scalar_index < num_scalars; scalar_index++) {
+            crucible::test::element_at(scalars, scalar_index) =
+                static_cast<int64_t>(mix(seed ^ (uint64_t{scalar_index} << 32)) % 4096);
         }
+        entry.set_scalar_args(scalars);
     }
 }
 

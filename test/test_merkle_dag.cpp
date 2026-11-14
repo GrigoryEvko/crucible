@@ -510,13 +510,9 @@ template <class Fake>
         ::foundation::core::FixedArray<int64_t, 6> s_six_diff{1, 2, 3, 4, 5, 7};
         ::foundation::core::FixedArray<int64_t, 10> s_ten{1, 2, 3, 4, 5, 99, 100, 101, 102, 103};
 
-        e_five.set_num_scalar_args(5);
         e_five.set_scalar_args(s_five.view());
-        e_six.set_num_scalar_args(6);
         e_six.set_scalar_args(s_six.view());
-        e_six_diff.set_num_scalar_args(6);
         e_six_diff.set_scalar_args(s_six_diff.view());
-        e_ten.set_num_scalar_args(10);
         e_ten.set_scalar_args(s_ten.view());
 
         auto h_five = hash_one_op(e_five);
@@ -557,41 +553,41 @@ template <class Fake>
         };
 
         ::foundation::core::FixedArray<crucible::TensorMeta, 1> input_meta{};
+        // The fold reads no producer and no slot id of an input.
+        ::foundation::core::FixedArray<crucible::OpIndex, 1> no_producer{};
+        ::foundation::core::FixedArray<crucible::SlotId, 1> no_slot{};
 
         crucible::TraceEntry e_empty{};
         e_empty.schema_hash = SchemaHash{0x11};
 
-        crucible::TraceEntry e_count_only{};
-        e_count_only.schema_hash = SchemaHash{0x22};
-        e_count_only.set_num_scalar_args(3);  // the array of scalars stays absent
+        ::foundation::core::FixedArray<int64_t, 3> s_three{7, 8, 9};
+        crucible::TraceEntry e_three{};
+        e_three.schema_hash = SchemaHash{0x22};
+        e_three.set_scalar_args(s_three.view());
 
         ::foundation::core::FixedArray<int64_t, 1> s_one{42};
         crucible::TraceEntry e_one{};
         e_one.schema_hash = SchemaHash{0x33};
-        e_one.set_num_scalar_args(1);
         e_one.set_scalar_args(s_one.view());
 
         // Five values is the boundary a clamped fold stops at.
         ::foundation::core::FixedArray<int64_t, 5> s_five{9, 8, 7, 6, 5};
         crucible::TraceEntry e_five{};
         e_five.schema_hash = SchemaHash{0x44};
-        e_five.set_num_scalar_args(5);
         e_five.set_scalar_args(s_five.view());
 
         crucible::TraceEntry e_tensor{};
         e_tensor.schema_hash = SchemaHash{0x55};
-        e_tensor.set_num_inputs(1);
-        e_tensor.set_input_metas(input_meta.view());
+        e_tensor.set_inputs(input_meta.view(), no_producer.view(), no_slot.view());
 
-        for (const auto* op : {&e_empty, &e_count_only, &e_one, &e_five, &e_tensor}) {
+        for (const auto* op : {&e_empty, &e_three, &e_one, &e_five, &e_tensor}) {
             const ::foundation::core::FixedArray<crucible::TraceEntry, 1> single{*op};
             assert(streaming_hash(single.view()) == crucible::compute_content_hash(single.view()));
         }
 
         // One region of mixed op shapes exercises the accumulator carry
         // from one op shape into the next.
-        const ::foundation::core::FixedArray<crucible::TraceEntry, 5> mix{e_empty, e_count_only, e_one, e_five,
-                                                                          e_tensor};
+        const ::foundation::core::FixedArray<crucible::TraceEntry, 5> mix{e_empty, e_three, e_one, e_five, e_tensor};
         const ::fixy::View<const crucible::TraceEntry> mix_sp = mix.view();
         assert(streaming_hash(mix_sp) == crucible::compute_content_hash(mix_sp));
 
@@ -599,9 +595,6 @@ template <class Fake>
         // accumulator, so it is not equivalent to an absent op.
         const ::fixy::View<const crucible::TraceEntry> empty_sp{};
         assert(crucible::compute_content_hash(empty_sp) != hash_one_op(e_empty));
-
-        // The scalar count is folded even when the value pointer is null.
-        assert(hash_one_op(e_empty) != hash_one_op(e_count_only));
 
         ::fixy::report(::fixy::Sink::Out, "  streaming fold matches the span fold "
                                           "(count==0 / no-tensor / scalar / tensor / multi-op)\n");
@@ -649,10 +642,9 @@ template <class Fake>
 
         crucible::TraceEntry e_real_tensor{};
         e_real_tensor.schema_hash = SchemaHash{0x66};
-        e_real_tensor.set_num_inputs(1);
-        e_real_tensor.set_input_metas(real_meta.view());
+        e_real_tensor.set_inputs(real_meta.view(), no_producer.view(), no_slot.view());
 
-        const ::foundation::core::FixedArray<crucible::TraceEntry, 5> real_mix{e_empty, e_count_only, e_one, e_five,
+        const ::foundation::core::FixedArray<crucible::TraceEntry, 5> real_mix{e_empty, e_three, e_one, e_five,
                                                                                e_real_tensor};
         const ::fixy::View<const crucible::TraceEntry> real_mix_sp = real_mix.view();
 
@@ -663,11 +655,12 @@ template <class Fake>
         // fold_entry_, so it is the seed through the finalizer and nothing else.
         golden("empty region", crucible::compute_content_hash(empty_sp), 0x9CA066F1A4AB2EEAULL);
         golden("no-tensor op", one_op(e_empty), 0x5C214273922EBA6BULL);
-        golden("scalar count only", one_op(e_count_only), 0x01F4DD25623E733AULL);
         golden("one scalar", one_op(e_one), 0x138EA0820281091CULL);
         golden("five scalars", one_op(e_five), 0xE52B0F5FD799E587ULL);
         golden("one tensor", one_op(e_real_tensor), 0xF2F8630067F88C92ULL);
-        golden("mixed five-op region", crucible::compute_content_hash(real_mix_sp), 0xFE8CCEF1DDFB4397ULL);
+        // The region holds three present scalars as its second op.  An entry
+        // holds each of its arrays, so the fold has no count-only op.
+        golden("mixed five-op region", crucible::compute_content_hash(real_mix_sp), 0x765C1805603F1528ULL);
 
         // The recipe fold is part of the same format, so it is frozen too.
         constexpr crucible::NumericalRecipe golden_recipe = crucible::hashed(crucible::NumericalRecipe{
@@ -682,7 +675,7 @@ template <class Fake>
             .hash = {},
         });
         golden("mixed five-op region under a recipe", crucible::compute_content_hash(real_mix_sp, &golden_recipe),
-               0xAF91A1980641E49DULL);
+               0x49BFFF74C7DD564CULL);
 
         assert(moved_vectors == 0
                && "the region content-hash format changed: every persisted content hash and "
@@ -728,11 +721,13 @@ template <class Fake>
     // special any more.  These assertions are the other side of the ones that
     // used to pin the defect: same two metas, opposite expectation.
     {
-        auto with_meta = [](uint64_t schema, ::fixy::View<crucible::TensorMeta> meta) {
+        // The fold reads no producer and no slot id of an input.
+        ::foundation::core::FixedArray<crucible::OpIndex, 1> no_producer{};
+        ::foundation::core::FixedArray<crucible::SlotId, 1> no_slot{};
+        auto with_meta = [&no_producer, &no_slot](uint64_t schema, ::fixy::View<crucible::TensorMeta> meta) {
             crucible::TraceEntry e{};
             e.schema_hash = SchemaHash{schema};
-            e.set_num_inputs(1);
-            e.set_input_metas(meta);
+            e.set_inputs(meta, no_producer.view(), no_slot.view());
             return e;
         };
         auto no_tensor = [](uint64_t schema) {
@@ -977,6 +972,34 @@ template <class Fake>
 
         ::fixy::report(::fixy::Sink::Out,
                        "  make_loop rejects NaN, infinite and negative epsilon, and an UNTIL count of zero\n");
+
+        // The door of the inputs and of the outputs takes each array of the
+        // count together, so an array of a different count ends the process.
+        // No door sets a count with no array, so no array is absent at a
+        // count above zero.
+        ::foundation::core::FixedArray<crucible::TensorMeta, 2> two_metas{};
+        ::foundation::core::FixedArray<crucible::OpIndex, 2> two_producers{};
+        ::foundation::core::FixedArray<crucible::SlotId, 2> two_slots{};
+        ::foundation::core::FixedArray<crucible::SlotId, 1> one_slot{};
+        // The refusal is a call of fixy::fatal, which the optimizer keeps.
+        auto set_inputs = [&](::fixy::View<crucible::SlotId> slot_ids) {
+            return [&, slot_ids] {
+                crucible::TraceEntry entry{};
+                entry.set_inputs(two_metas.view(), two_producers.view(), slot_ids);
+            };
+        };
+        auto set_outputs = [&](::fixy::View<crucible::SlotId> slot_ids) {
+            return [&, slot_ids] {
+                crucible::TraceEntry entry{};
+                entry.set_outputs(two_metas.view(), slot_ids);
+            };
+        };
+        assert(!dies(set_inputs(two_slots.view())) && "inputs of one count were refused");
+        assert(!dies(set_outputs(two_slots.view())) && "outputs of one count were refused");
+        assert(dies(set_inputs(one_slot.view())) && "the inputs took slot ids of a different count");
+        assert(dies(set_outputs(one_slot.view())) && "the outputs took slot ids of a different count");
+
+        ::fixy::report(::fixy::Sink::Out, "  an entry refuses arrays of two counts for one kind\n");
     }
 
     crucible::test::pass("test_merkle_dag: all tests passed\n");

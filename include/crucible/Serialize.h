@@ -381,22 +381,6 @@ inline Header read_header(Reader& r) {
     return h;
 }
 
-// Writes each element of an array of an entry, or count copies of absent
-// when the entry holds no such array.  An array of an entry holds its count
-// or no element.  Complexity: O(count).
-template <class T, class Write>
-void write_run_(::fixy::View<const T> run, uint16_t count, T const& absent, Write&& write) {
-    if (run.size() != count) {
-        for (uint16_t position = 0; position < count; position++) {
-            write(absent);
-        }
-        return;
-    }
-    for (T const& element : run) {
-        write(element);
-    }
-}
-
 }  // namespace detail_ser
 
 // The region that serialize_region reads.  A borrow is never null.
@@ -458,17 +442,25 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
         }
         w.w(std::to_underlying(te.kernel_id));
 
-        // An absent array writes the zero metadata, the zero scalar and the
-        // none id for each element of its count.
-        const auto write_one_meta = [&w](TensorMeta const& meta) { write_meta(w, meta); };
-        write_run_(te.input_metas(), te.num_inputs(), TensorMeta{}, write_one_meta);
-        write_run_(te.output_metas(), te.num_outputs(), TensorMeta{}, write_one_meta);
-        write_run_(te.scalar_args(), te.num_scalar_args(), int64_t{0}, [&w](int64_t value) { w.w(value); });
-        write_run_(te.input_trace_indices(), te.num_inputs(), OpIndex{},
-                   [&w](OpIndex producer) { w.w(producer.raw()); });
-        const auto write_one_slot = [&w](SlotId slot_id) { w.w(slot_id.raw()); };
-        write_run_(te.input_slot_ids(), te.num_inputs(), SlotId{}, write_one_slot);
-        write_run_(te.output_slot_ids(), te.num_outputs(), SlotId{}, write_one_slot);
+        // Each array of the entry holds its count.
+        for (const TensorMeta& meta : te.input_metas()) {
+            write_meta(w, meta);
+        }
+        for (const TensorMeta& meta : te.output_metas()) {
+            write_meta(w, meta);
+        }
+        for (const int64_t value : te.scalar_args()) {
+            w.w(value);
+        }
+        for (const OpIndex producer : te.input_trace_indices()) {
+            w.w(producer.raw());
+        }
+        for (const SlotId slot_id : te.input_slot_ids()) {
+            w.w(slot_id.raw());
+        }
+        for (const SlotId slot_id : te.output_slot_ids()) {
+            w.w(slot_id.raw());
+        }
     }
 
     return w.ok ? w.pos : 0;
@@ -560,9 +552,6 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
         if (num_inputs > CDAG_MAX_INPUTS) return std::nullopt;
         if (num_outputs > CDAG_MAX_OUTPUTS) return std::nullopt;
         if (num_scalar_args > CDAG_MAX_SCALAR_ARGS) return std::nullopt;
-        te.set_num_inputs(num_inputs);
-        te.set_num_outputs(num_outputs);
-        te.set_num_scalar_args(num_scalar_args);
         te.grad_enabled = r.read_bool();
         {
             // The writer sets only these bits, so a byte with another bit
@@ -591,13 +580,11 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
         for (TensorMeta& meta : input_metas) {
             meta = read_meta(r);
         }
-        te.set_input_metas(input_metas);
 
         const ::fixy::View<TensorMeta> output_metas = arena.array<TensorMeta>(a, num_outputs, TensorMeta{});
         for (TensorMeta& meta : output_metas) {
             meta = read_meta(r);
         }
-        te.set_output_metas(output_metas);
 
         const ::fixy::View<int64_t> scalar_args = arena.array<int64_t>(a, num_scalar_args, int64_t{0});
         for (int64_t& value : scalar_args) {
@@ -609,7 +596,6 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
         for (OpIndex& producer : producers) {
             producer = OpIndex{r.r<uint32_t>()};
         }
-        te.set_input_trace_indices(producers);
 
         const ::fixy::View<SlotId> input_slot_ids = arena.array<SlotId>(a, num_inputs, SlotId{});
         for (SlotId& slot_id : input_slot_ids) {
@@ -627,7 +613,7 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
             }
             slot_id = sid;
         }
-        te.set_input_slot_ids(input_slot_ids);
+        te.set_inputs(input_metas, producers, input_slot_ids);
 
         const ::fixy::View<SlotId> output_slot_ids = arena.array<SlotId>(a, num_outputs, SlotId{});
         for (SlotId& slot_id : output_slot_ids) {
@@ -638,7 +624,7 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
             }
             slot_id = sid;
         }
-        te.set_output_slot_ids(output_slot_ids);
+        te.set_outputs(output_metas, output_slot_ids);
     }
 
     if (!r.is_intact) return std::nullopt;

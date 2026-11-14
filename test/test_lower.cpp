@@ -48,45 +48,39 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1, int8_t dev = 0, vo
         auto& te = ops[0];
         te.schema_hash = crucible::SchemaHash{0xAA};
         te.kernel_id = crucible::CKernelId::EWISE_ADD;
-        te.set_num_inputs(2);
-        te.set_num_outputs(1);
 
-        te.set_input_metas(crucible::test::run_of(test.alloc, runs, make_meta(4, 8), make_meta(4, 8)));
-        te.set_output_metas(crucible::test::run_of(test.alloc, runs, make_meta(4, 8)));
         // Both inputs are external.
-        te.set_input_trace_indices(crucible::test::run_of(test.alloc, runs, crucible::OpIndex{}, crucible::OpIndex{}));
-        te.set_input_slot_ids(crucible::test::run_of(test.alloc, runs, crucible::SlotId{0}, crucible::SlotId{1}));
-        te.set_output_slot_ids(crucible::test::run_of(test.alloc, runs, crucible::SlotId{2}));
+        te.set_inputs(crucible::test::run_of(test.alloc, runs, make_meta(4, 8), make_meta(4, 8)),
+                      crucible::test::run_of(test.alloc, runs, crucible::OpIndex{}, crucible::OpIndex{}),
+                      crucible::test::run_of(test.alloc, runs, crucible::SlotId{0}, crucible::SlotId{1}));
+        te.set_outputs(crucible::test::run_of(test.alloc, runs, make_meta(4, 8)),
+                       crucible::test::run_of(test.alloc, runs, crucible::SlotId{2}));
     }
 
     {
         auto& te = ops[1];
         te.schema_hash = crucible::SchemaHash{0xBB};
         te.kernel_id = crucible::CKernelId::ACT_RELU;
-        te.set_num_inputs(1);
-        te.set_num_outputs(1);
 
-        te.set_input_metas(crucible::test::run_of(test.alloc, runs, make_meta(4, 8)));
-        te.set_output_metas(crucible::test::run_of(test.alloc, runs, make_meta(4, 8)));
         // The input comes from op 0.
-        te.set_input_trace_indices(crucible::test::run_of(test.alloc, runs, crucible::OpIndex{0}));
-        te.set_input_slot_ids(crucible::test::run_of(test.alloc, runs, crucible::SlotId{2}));
-        te.set_output_slot_ids(crucible::test::run_of(test.alloc, runs, crucible::SlotId{3}));
+        te.set_inputs(crucible::test::run_of(test.alloc, runs, make_meta(4, 8)),
+                      crucible::test::run_of(test.alloc, runs, crucible::OpIndex{0}),
+                      crucible::test::run_of(test.alloc, runs, crucible::SlotId{2}));
+        te.set_outputs(crucible::test::run_of(test.alloc, runs, make_meta(4, 8)),
+                       crucible::test::run_of(test.alloc, runs, crucible::SlotId{3}));
     }
 
     {
         auto& te = ops[2];
         te.schema_hash = crucible::SchemaHash{0xCC};
         te.kernel_id = crucible::CKernelId::GEMM_MM;
-        te.set_num_inputs(2);
-        te.set_num_outputs(1);
 
-        te.set_input_metas(crucible::test::run_of(test.alloc, runs, make_meta(4, 8), make_meta(8, 16)));
-        te.set_output_metas(crucible::test::run_of(test.alloc, runs, make_meta(4, 16)));
         // The first input comes from op 1, and the second is external.
-        te.set_input_trace_indices(crucible::test::run_of(test.alloc, runs, crucible::OpIndex{1}, crucible::OpIndex{}));
-        te.set_input_slot_ids(crucible::test::run_of(test.alloc, runs, crucible::SlotId{3}, crucible::SlotId{4}));
-        te.set_output_slot_ids(crucible::test::run_of(test.alloc, runs, crucible::SlotId{5}));
+        te.set_inputs(crucible::test::run_of(test.alloc, runs, make_meta(4, 8), make_meta(8, 16)),
+                      crucible::test::run_of(test.alloc, runs, crucible::OpIndex{1}, crucible::OpIndex{}),
+                      crucible::test::run_of(test.alloc, runs, crucible::SlotId{3}, crucible::SlotId{4}));
+        te.set_outputs(crucible::test::run_of(test.alloc, runs, make_meta(4, 16)),
+                       crucible::test::run_of(test.alloc, runs, crucible::SlotId{5}));
     }
 
     crucible::Edge edges[2] = {
@@ -287,19 +281,15 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1, int8_t dev = 0, vo
 
     ops2[0].schema_hash = crucible::SchemaHash{0xDD};
     ops2[0].kernel_id = crucible::CKernelId::GEMM_ADDMM;
-    ops2[0].set_num_inputs(3);
-    ops2[0].set_num_outputs(1);
 
     // The inputs are the bias, x and the weight.  The bias is absent, so it
     // has no producer and no slot, and x and the weight are external.
-    ops2[0].set_input_metas(
-        crucible::test::run_of(test.alloc, runs, make_meta(4, 8), make_meta(4, 8), make_meta(8, 8)));
-    ops2[0].set_output_metas(crucible::test::run_of(test.alloc, runs, make_meta(4, 8)));
-    ops2[0].set_input_trace_indices(
-        crucible::test::run_of(test.alloc, runs, crucible::OpIndex{}, crucible::OpIndex{}, crucible::OpIndex{}));
-    ops2[0].set_input_slot_ids(
+    ops2[0].set_inputs(
+        crucible::test::run_of(test.alloc, runs, make_meta(4, 8), make_meta(4, 8), make_meta(8, 8)),
+        crucible::test::run_of(test.alloc, runs, crucible::OpIndex{}, crucible::OpIndex{}, crucible::OpIndex{}),
         crucible::test::run_of(test.alloc, runs, crucible::SlotId{}, crucible::SlotId{0}, crucible::SlotId{1}));
-    ops2[0].set_output_slot_ids(crucible::test::run_of(test.alloc, runs, crucible::SlotId{2}));
+    ops2[0].set_outputs(crucible::test::run_of(test.alloc, runs, make_meta(4, 8)),
+                        crucible::test::run_of(test.alloc, runs, crucible::SlotId{2}));
 
     auto* slots2 = &*arena2.array(test.alloc, 3, crucible::TensorSlot{}).begin();
     slots2[0] = {.offset_bytes = 0,

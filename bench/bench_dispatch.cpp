@@ -191,20 +191,16 @@ struct BenchRegion {
             TraceEntry& op = *ops.get(i).expect("i is below n_ops");
             op.schema_hash = schemas[i];
             op.shape_hash = shapes[i];
-            op.set_num_inputs((i == 0) ? 0 : 1);
-            op.set_num_outputs(1);
-
             TensorMeta meta{};
             meta.ndim = 1;
             meta.sizes[0] = tensor_dim(1024);
             meta.strides[0] = tensor_dim(1);
             meta.dtype = ScalarType::Float;
             if (i > 0) {
-                op.set_input_metas(dag_arena.array(test.alloc, 1, meta));
-                op.set_input_slot_ids(dag_arena.array(test.alloc, 1, SlotId{i - 1}));
+                op.set_inputs(dag_arena.array(test.alloc, 1, meta), dag_arena.array(test.alloc, 1, OpIndex{}),
+                              dag_arena.array(test.alloc, 1, SlotId{i - 1}));
             }
-            op.set_output_metas(dag_arena.array(test.alloc, 1, meta));
-            op.set_output_slot_ids(dag_arena.array(test.alloc, 1, SlotId{i}));
+            op.set_outputs(dag_arena.array(test.alloc, 1, meta), dag_arena.array(test.alloc, 1, SlotId{i}));
         }
 
         region = make_region(test.alloc, dag_arena, ops);

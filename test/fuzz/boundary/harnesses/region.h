@@ -60,18 +60,14 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
     for (std::uint32_t i = 0; i < kOps; ++i) {
         TraceEntry& op = *ops.get(i).expect("i is below kOps");
         op.schema_hash = SchemaHash{0xCAFE0000u + i};
-        op.set_num_inputs(1);
-        op.set_num_outputs(1);
         TensorMeta meta{};
         meta.ndim = 1;
         meta.sizes[0] = tensor_dim(16);
         meta.strides[0] = tensor_dim(1);
         meta.dtype = ScalarType::Float;
-        op.set_input_metas(dag_arena.array(alloc, 1, meta));
-        op.set_output_metas(dag_arena.array(alloc, 1, meta));
-        op.set_input_trace_indices(dag_arena.array(alloc, 1, OpIndex{}));
-        op.set_input_slot_ids(dag_arena.array(alloc, 1, with_plan ? SlotId{0} : SlotId{}));
-        op.set_output_slot_ids(dag_arena.array(alloc, 1, SlotId{i}));
+        op.set_inputs(dag_arena.array(alloc, 1, meta), dag_arena.array(alloc, 1, OpIndex{}),
+                      dag_arena.array(alloc, 1, with_plan ? SlotId{0} : SlotId{}));
+        op.set_outputs(dag_arena.array(alloc, 1, meta), dag_arena.array(alloc, 1, SlotId{i}));
     }
     RegionNode* region = make_region(alloc, dag_arena, ops);
     if (with_plan) {

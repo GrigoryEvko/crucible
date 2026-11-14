@@ -36,6 +36,11 @@ struct BenchRegion {
     ::fixy::HeapArray<TraceEntry> ops{};
     ::fixy::HeapArray<SlotId> out_slots{};
     ::fixy::HeapArray<SlotId> in_slots{};
+    // The zero metadata of each output and input, and no producer for each
+    // input.  The replay reads only the slot ids.
+    ::fixy::HeapArray<TensorMeta> out_metas{};
+    ::fixy::HeapArray<TensorMeta> in_metas{};
+    ::fixy::HeapArray<OpIndex> in_producers{};
     ::fixy::HeapArray<TensorSlot> slots{};
     MemoryPlan plan{};
     RegionNode region{};
@@ -45,6 +50,9 @@ struct BenchRegion {
         ops = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, TraceEntry{});
         out_slots = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, SlotId{});
         in_slots = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, SlotId{});
+        out_metas = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, TensorMeta{});
+        in_metas = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, TensorMeta{});
+        in_producers = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, OpIndex{});
         slots = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, n, TensorSlot{});
 
         for (uint32_t i = 0; i < n; i++) {
@@ -56,10 +64,9 @@ struct BenchRegion {
             TraceEntry& op = *ops.get(i).expect("i is below n");
             op.schema_hash = SchemaHash{1000 + i};
             op.shape_hash = ShapeHash{2000 + i};
-            op.set_num_outputs(1);
-            op.set_output_slot_ids(out_slot);
-            op.set_num_inputs(1);
-            op.set_input_slot_ids(in_slot);
+            op.set_outputs(out_metas.view().window(i, 1).expect("i is below n"), out_slot);
+            op.set_inputs(in_metas.view().window(i, 1).expect("i is below n"),
+                          in_producers.view().window(i, 1).expect("i is below n"), in_slot);
         }
 
         uint32_t i = 0;

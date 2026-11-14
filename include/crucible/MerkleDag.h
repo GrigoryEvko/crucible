@@ -171,10 +171,9 @@ compute_storage_nbytes_det(ExternalTensorMeta meta) {
 
 // The record of one op.  Its arrays are in the memory of the region or of
 // the trace, and the entry only borrows them.  Three counts give their
-// lengths: the inputs, the outputs and the scalar arguments.  An array can
-// be absent at a count above zero, such as the scalar arguments of an op
-// with no tensors.  Its View is then empty, and the count stays.  So a
-// reader that writes one value for each input reads the count.
+// lengths: the inputs, the outputs and the scalar arguments.  One door sets
+// each count together with each array of that count, so each array holds
+// its count, and no array is absent at a count above zero.
 struct TraceEntry {
     SchemaHash schema_hash;
     ShapeHash shape_hash;
@@ -211,15 +210,12 @@ public:
     TrainingPhase training_phase = TrainingPhase::FORWARD;
     bool torch_function = false;
 
-    // The counts.  A new count drops each array of that count.
+    // The counts.
     [[nodiscard]] uint16_t num_inputs() const noexcept { return arrays_.count<kInputCount>(); }
     [[nodiscard]] uint16_t num_outputs() const noexcept { return arrays_.count<kOutputCount>(); }
     [[nodiscard]] uint16_t num_scalar_args() const noexcept { return arrays_.count<kScalarCount>(); }
-    void set_num_inputs(uint16_t count) noexcept { arrays_.set_count<kInputCount>(count); }
-    void set_num_outputs(uint16_t count) noexcept { arrays_.set_count<kOutputCount>(count); }
-    void set_num_scalar_args(uint16_t count) noexcept { arrays_.set_count<kScalarCount>(count); }
 
-    // The arrays.  An absent array gives the empty View.
+    // The arrays.  Each array holds the count of its kind.
     [[nodiscard]] ::fixy::View<const TensorMeta> input_metas() const noexcept { return arrays_.view<kInputMetas>(); }
     [[nodiscard]] ::fixy::View<const TensorMeta> output_metas() const noexcept { return arrays_.view<kOutputMetas>(); }
     [[nodiscard]] ::fixy::View<const int64_t> scalar_args() const noexcept { return arrays_.view<kScalarArgs>(); }
@@ -230,16 +226,37 @@ public:
     [[nodiscard]] ::fixy::View<const SlotId> input_slot_ids() const noexcept { return arrays_.view<kInputSlotIds>(); }
     [[nodiscard]] ::fixy::View<const SlotId> output_slot_ids() const noexcept { return arrays_.view<kOutputSlotIds>(); }
 
-    // The elements of an array.  The View holds the count of the array, or
-    // the process ends.
-    void set_input_metas(::fixy::View<TensorMeta> metas) noexcept { arrays_.set<kInputMetas>(metas); }
-    void set_output_metas(::fixy::View<TensorMeta> metas) noexcept { arrays_.set<kOutputMetas>(metas); }
-    void set_scalar_args(::fixy::View<int64_t> scalars) noexcept { arrays_.set<kScalarArgs>(scalars); }
-    void set_input_trace_indices(::fixy::View<OpIndex> producers) noexcept {
+    // The inputs: the metadata, the producer op and the slot of each input.
+    // The three Views hold one count, or the process ends.  An op with no
+    // inputs passes three empty Views.
+    void set_inputs(::fixy::View<TensorMeta> metas, ::fixy::View<OpIndex> producers,
+                    ::fixy::View<SlotId> slot_ids) noexcept {
+        arrays_.set_count<kInputCount>(count_of_(metas.size()));
+        arrays_.set<kInputMetas>(metas);
         arrays_.set<kInputTraceIndices>(producers);
+        arrays_.set<kInputSlotIds>(slot_ids);
     }
-    void set_input_slot_ids(::fixy::View<SlotId> slot_ids) noexcept { arrays_.set<kInputSlotIds>(slot_ids); }
-    void set_output_slot_ids(::fixy::View<SlotId> slot_ids) noexcept { arrays_.set<kOutputSlotIds>(slot_ids); }
+
+    // The outputs: the metadata and the slot of each output.  The two Views
+    // hold one count, or the process ends.
+    void set_outputs(::fixy::View<TensorMeta> metas, ::fixy::View<SlotId> slot_ids) noexcept {
+        arrays_.set_count<kOutputCount>(count_of_(metas.size()));
+        arrays_.set<kOutputMetas>(metas);
+        arrays_.set<kOutputSlotIds>(slot_ids);
+    }
+
+    // The scalar arguments.
+    void set_scalar_args(::fixy::View<int64_t> scalars) noexcept {
+        arrays_.set_count<kScalarCount>(count_of_(scalars.size()));
+        arrays_.set<kScalarArgs>(scalars);
+    }
+
+private:
+    // An entry keeps each count in 16 bits, and a larger count ends the
+    // process.
+    [[nodiscard]] static uint16_t count_of_(size_t count) noexcept {
+        return ::fixy::narrow<uint16_t>(count).expect("an op holds at most 65535 elements of one kind");
+    }
 };
 
 // The condition a BranchNode checks to select an arm.
@@ -611,9 +628,8 @@ private:
     // separate steps for that reason; they are disjoint in meaning, and a
     // permutation cannot lose either one.
     //
-    // An array of the entry holds its count or no element, so each loop
-    // reads the View alone.  An absent array of scalars contributes the count
-    // only.
+    // Each array of the entry holds its count, so each loop reads the View
+    // alone.
     [[gnu::always_inline]] static void fold_entry_(uint64_t& content_hash_state, const TraceEntry& op_record) noexcept {
         content_hash_state = detail::combine_ids(content_hash_state, op_record.schema_hash.raw());
 

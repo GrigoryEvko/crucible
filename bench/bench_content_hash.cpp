@@ -33,10 +33,9 @@ static ::fixy::HeapArray<TraceEntry> make_ops(::fixy::BumpArena& arena, uint32_t
     for (uint32_t i = 0; i < count; i++) {
         auto& te = *ops.get(i).expect("i is below count");
         te.schema_hash = SchemaHash{0xAAAA000000000000ULL ^ i};
-        te.set_num_inputs(num_inputs);
-        te.set_num_outputs(1);
-        te.set_input_metas(arena.array(A, num_inputs, meta));
-        te.set_output_metas(arena.array(A, 1, meta));
+        te.set_inputs(arena.array(A, num_inputs, meta), arena.array(A, num_inputs, OpIndex{}),
+                      arena.array(A, num_inputs, SlotId{}));
+        te.set_outputs(arena.array(A, 1, meta), arena.array(A, 1, SlotId{}));
     }
     return ops;
 }

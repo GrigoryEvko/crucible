@@ -1108,8 +1108,6 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
         te.shape_hash = re.shape_hash;
         te.scope_hash = scope_data.at(index);
         te.callsite_hash = callsite_data.at(index);
-        te.set_num_inputs(re.num_inputs);
-        te.set_num_outputs(re.num_outputs);
         te.grad_enabled = (re.op_flags & op_flag::GRAD_ENABLED) != 0;
         te.kernel_id = classify_kernel(re.schema_hash);
 
@@ -1128,10 +1126,20 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
         // compile out.
         contract_assert(re.num_scalar_args <= 5);
         uint16_t n_scalars = ::fixy::min(re.num_scalar_args, uint16_t{5});
-        te.set_num_scalar_args(n_scalars);
 
-        // The windows of this op.  An op with no metadata keeps the empty
-        // Views, and its loops below run no step.
+        // The scalars of each op go into its entry, also for an op with no
+        // tensors, so they fold into the content hash.
+        const ::fixy::View<int64_t> scalars =
+            scalar_run.window(scalar_cursor, n_scalars).expect("the scan counted the scalars of each op");
+        scalar_cursor += n_scalars;
+        ::fixy::copy(scalars, re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
+            .expect("the two runs hold the scalars of the op");
+        te.set_scalar_args(scalars);
+
+        // The windows of this op.  An op with no metadata has no tensors,
+        // because the scan refused an op with tensors and no metadata index.
+        // It keeps the empty Views and the counts of zero, and its loops
+        // below run no step.
         ::fixy::View<TensorMeta> input_metas{};
         ::fixy::View<TensorMeta> output_metas{};
         ::fixy::View<OpIndex> producers{};
@@ -1146,11 +1154,6 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
             output_metas =
                 meta_run.window(meta_offset + n_in, n_out).expect("the copied run holds the metadata of each op");
 
-            const ::fixy::View<int64_t> scalars =
-                scalar_run.window(scalar_cursor, n_scalars).expect("the scan counted the scalars of each op");
-            scalar_cursor += n_scalars;
-            ::fixy::copy(scalars, re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
-                .expect("the two runs hold the scalars of the op");
             producers = producer_run.window(producer_cursor, n_in).expect("the scan counted the inputs of each op");
             producer_cursor += n_in;
             input_slot_ids = slot_run.window(slot_cursor, n_in).expect("the scan counted the inputs of each op");
@@ -1158,18 +1161,11 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
             output_slot_ids = slot_run.window(slot_cursor, n_out).expect("the scan counted the outputs of each op");
             slot_cursor += n_out;
 
-            te.set_input_metas(input_metas);
-            te.set_output_metas(output_metas);
-            te.set_scalar_args(scalars);
-            te.set_input_trace_indices(producers);
-            te.set_input_slot_ids(input_slot_ids);
-            te.set_output_slot_ids(output_slot_ids);
-        } else {
-            te.set_num_inputs(0);
-            te.set_num_outputs(0);
+            te.set_inputs(input_metas, producers, input_slot_ids);
+            te.set_outputs(output_metas, output_slot_ids);
         }
 
-        // Both branches above fully populate `te`, so one fold covers
+        // The entry holds each of its arrays now, so one fold covers
         // the tensor and no-tensor cases alike.  This is the same object
         // the canonical whole-region hash drives, so the streaming
         // result is bit-identical to that pass by construction and needs

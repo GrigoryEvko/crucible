@@ -37,6 +37,7 @@ using crucible::ScalarType;
 using crucible::SchemaHash;
 using crucible::ShapeHash;
 using crucible::SlotId;
+using crucible::TensorMeta;
 using crucible::TensorSlot;
 using crucible::TraceEntry;
 using crucible::TraceNodeKind;
@@ -76,6 +77,10 @@ MemoryPlan make_plan(::fixy::View<TensorSlot> slots) {
     return plan;
 }
 
+// The zero metadata of the outputs of the test ops.  The switch reads no
+// metadata, so the ops of each region share it.
+::foundation::core::FixedArray<TensorMeta, 2> output_metas{};
+
 // Two operations with the same hashes in each region, so the first one is
 // the shared prefix of a switch at position 1.
 void make_ops(::fixy::View<TraceEntry> ops, ::fixy::View<SlotId> outputs) {
@@ -83,8 +88,8 @@ void make_ops(::fixy::View<TraceEntry> ops, ::fixy::View<SlotId> outputs) {
         TraceEntry& op = *ops.get(index).expect("a test region holds two ops");
         op.schema_hash = SchemaHash{100 + index};
         op.shape_hash = ShapeHash{200 + index};
-        op.set_num_outputs(1);
-        op.set_output_slot_ids(outputs.window(index, 1).expect("a test region has one output for each op"));
+        op.set_outputs(output_metas.view().window(index, 1).expect("a test region has one output for each op"),
+                       outputs.window(index, 1).expect("a test region has one output for each op"));
     }
 }
 
