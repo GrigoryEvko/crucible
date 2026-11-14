@@ -130,14 +130,12 @@ static_assert(::crucible::cipher::computation_cache_key_in_row<&p_void, ::founda
 
 // fixy::Atomic admits only a value with lock-free atomic operations, so the
 // slot compiles only where a lookup takes no lock.
-static_assert(::fixy::AtomicValue<::crucible::cipher::CompiledBody*>,
-              "ComputationCache slot must be lock-free; a library that fell "
-              "back to a lock for this pointer width would put a lock on "
-              "every lookup.");
+static_assert(::fixy::AtomicValue<::fixy::Option<::fixy::Ref<::crucible::cipher::CompiledBody>>>,
+              "The slot of the computation cache must hold a value of one word, so that a lookup takes no lock.");
 
-static_assert(sizeof(::fixy::Atomic<::crucible::cipher::CompiledBody*>) == sizeof(::crucible::cipher::CompiledBody*),
-              "ComputationCache slot must be exactly pointer-sized; a wider "
-              "atomic inflates the per-instantiation cost in silence.");
+static_assert(sizeof(::fixy::Atomic<::fixy::Option<::fixy::Ref<::crucible::cipher::CompiledBody>>>) == 8,
+              "The slot of the computation cache must have the size of one pointer of the 64-bit platform.  A wider "
+              "cell increases the cost of each instantiation.");
 
 }  // namespace detail::computation_cache_self_test
 

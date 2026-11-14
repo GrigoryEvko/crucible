@@ -10,7 +10,6 @@
 
 #include <array>
 #include <atomic>
-#include <bit>
 #include <cstdio>
 #include <cstdint>
 #include <cstdlib>
@@ -50,6 +49,13 @@ void run_test(const char* name, F&& body) {
 namespace cipher = ::crucible::cipher;
 
 }  // namespace
+
+// The header only declares the body, and a consumer defines it.  The cache
+// never reads a body, so an empty body serves: each object has an address
+// of its own.
+namespace crucible::cipher {
+struct CompiledBody {};
+}  // namespace crucible::cipher
 
 // None of the functions below is ever called.  Their addresses serve
 // as template arguments, and each function paired with an argument
@@ -108,10 +114,39 @@ namespace {
 
 using namespace test_computation_cache_functions;
 
-// The cache stores these pointers and never dereferences them, so a
-// bit pattern that points nowhere is a valid stand-in for a body.
+using Slot = ::fixy::Option<::fixy::Ref<cipher::CompiledBody>>;
+using Bodies = ::foundation::core::FixedArray<cipher::CompiledBody, 4>;
 
-cipher::CompiledBody* make_stub(std::uintptr_t v) noexcept { return std::bit_cast<cipher::CompiledBody*>(v); }
+// The bodies that the tests insert.  Each object lives as long as the
+// process, as the slots do.
+cipher::CompiledBody smoke_body_a{};
+cipher::CompiledBody smoke_body_b{};
+cipher::CompiledBody smoke_body_c{};
+cipher::CompiledBody smoke_body_d{};
+cipher::CompiledBody round_trip_body{};
+cipher::CompiledBody overwrite_body{};
+cipher::CompiledBody isolated_body{};
+cipher::CompiledBody empty_row_body{};
+cipher::CompiledBody blind_pair_body{};
+cipher::CompiledBody bg_io_body{};
+Bodies disjoint_bodies{};
+Bodies contended_bodies{};
+Bodies disjoint_row_bodies{};
+Bodies contended_row_bodies{};
+
+// True when the slot holds body.
+[[nodiscard]] bool holds(Slot slot, cipher::CompiledBody const& body) noexcept {
+    return std::move(slot).match(
+        [&body](::fixy::Ref<cipher::CompiledBody> found) noexcept {
+            return ::fixy::same_object(found, ::fixy::to(body));
+        },
+        []() noexcept { return false; });
+}
+
+// The body at position of bodies.
+[[nodiscard]] cipher::CompiledBody& body_at(Bodies& bodies, std::size_t position) noexcept {
+    return *bodies.view().get(position).expect("each position of the test is below four");
+}
 
 // This runs once per process and refuses to run twice. The slots it
 // reads are program-lifetime globals, so the checks that a lookup
@@ -124,42 +159,37 @@ bool computation_cache_smoke_test() noexcept {
         return false;
     }
 
-    auto* body_a = make_stub(0x1);
-    auto* body_b = make_stub(0x2);
-
     bool ok = true;
 
-    ok = ok && (cipher::lookup_computation_cache<&p_unary, int>() == nullptr);
-    ok = ok && (cipher::lookup_computation_cache<&p_unary, float>() == nullptr);
-    ok = ok && (cipher::lookup_computation_cache<&p_binary, int, double>() == nullptr);
+    ok = ok && cipher::lookup_computation_cache<&p_unary, int>().is_none();
+    ok = ok && cipher::lookup_computation_cache<&p_unary, float>().is_none();
+    ok = ok && cipher::lookup_computation_cache<&p_binary, int, double>().is_none();
 
-    cipher::insert_computation_cache<&p_unary, int>(body_a);
-    ok = ok && (cipher::lookup_computation_cache<&p_unary, int>() == body_a);
+    cipher::insert_computation_cache<&p_unary, int>(::fixy::to(smoke_body_a));
+    ok = ok && holds(cipher::lookup_computation_cache<&p_unary, int>(), smoke_body_a);
 
-    cipher::insert_computation_cache<&p_unary, int>(body_b);
-    ok = ok && (cipher::lookup_computation_cache<&p_unary, int>() == body_a);
+    cipher::insert_computation_cache<&p_unary, int>(::fixy::to(smoke_body_b));
+    ok = ok && holds(cipher::lookup_computation_cache<&p_unary, int>(), smoke_body_a);
 
-    ok = ok && (cipher::lookup_computation_cache<&p_unary, float>() == nullptr);
-    ok = ok && (cipher::lookup_computation_cache<&p_binary, int, double>() == nullptr);
+    ok = ok && cipher::lookup_computation_cache<&p_unary, float>().is_none();
+    ok = ok && cipher::lookup_computation_cache<&p_binary, int, double>().is_none();
 
     // An empty argument pack must still reach a slot of its own, and
     // must still instantiate as a template rather than collapse onto
     // a plain function.
-    auto* body_c = make_stub(0x3);
-    ok = ok && (cipher::lookup_computation_cache<&p_void>() == nullptr);
-    cipher::insert_computation_cache<&p_void>(body_c);
-    ok = ok && (cipher::lookup_computation_cache<&p_void>() == body_c);
-    ok = ok && (cipher::lookup_computation_cache<&p_unary, int>() == body_a);
+    ok = ok && cipher::lookup_computation_cache<&p_void>().is_none();
+    cipher::insert_computation_cache<&p_void>(::fixy::to(smoke_body_c));
+    ok = ok && holds(cipher::lookup_computation_cache<&p_void>(), smoke_body_c);
+    ok = ok && holds(cipher::lookup_computation_cache<&p_unary, int>(), smoke_body_a);
 
     // Only the throwing slot is filled. The noexcept one must still
     // miss, because the two function-pointer types are distinct and
     // must not be folded onto one symbol.
-    auto* body_d = make_stub(0x4);
-    ok = ok && (cipher::lookup_computation_cache<&p_throwing, int>() == nullptr);
-    ok = ok && (cipher::lookup_computation_cache<&p_noexcept, int>() == nullptr);
-    cipher::insert_computation_cache<&p_throwing, int>(body_d);
-    ok = ok && (cipher::lookup_computation_cache<&p_throwing, int>() == body_d);
-    ok = ok && (cipher::lookup_computation_cache<&p_noexcept, int>() == nullptr);
+    ok = ok && cipher::lookup_computation_cache<&p_throwing, int>().is_none();
+    ok = ok && cipher::lookup_computation_cache<&p_noexcept, int>().is_none();
+    cipher::insert_computation_cache<&p_throwing, int>(::fixy::to(smoke_body_d));
+    ok = ok && holds(cipher::lookup_computation_cache<&p_throwing, int>(), smoke_body_d);
+    ok = ok && cipher::lookup_computation_cache<&p_noexcept, int>().is_none();
 
     return ok;
 }
@@ -179,49 +209,42 @@ int main() {
         EXPECT_TRUE(computation_cache_smoke_test() == false);
     });
 
-    run_test("lookup_before_insert_returns_nullptr", [] {
-        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_a, int>() == nullptr);
-        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_b, int, double>() == nullptr);
-        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_d>()
-                    == nullptr);  // an empty argument pack is a valid slot
+    run_test("lookup_before_insert_misses", [] {
+        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_a, int>().is_none());
+        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_b, int, double>().is_none());
+        // An empty argument pack is a valid slot.
+        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_d>().is_none());
     });
 
     run_test("insert_then_lookup_roundtrips", [] {
-        auto* body = make_stub(0xCAFEBABE);
-        cipher::insert_computation_cache<&test_fn_a, int>(body);
-        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_a, int>() == body);
+        cipher::insert_computation_cache<&test_fn_a, int>(::fixy::to(round_trip_body));
+        EXPECT_TRUE(holds(cipher::lookup_computation_cache<&test_fn_a, int>(), round_trip_body));
     });
 
     run_test("second_insert_is_idempotent", [] {
         // The round-trip test above filled this slot, and a second
         // insert must not displace what it put there.
-        auto* original = cipher::lookup_computation_cache<&test_fn_a, int>();
-        EXPECT_TRUE(original != nullptr);
+        EXPECT_TRUE(holds(cipher::lookup_computation_cache<&test_fn_a, int>(), round_trip_body));
 
-        auto* attempted_overwrite = make_stub(0xDEADBEEF);
-        EXPECT_TRUE(original != attempted_overwrite);
+        cipher::insert_computation_cache<&test_fn_a, int>(::fixy::to(overwrite_body));
 
-        cipher::insert_computation_cache<&test_fn_a, int>(attempted_overwrite);
-
-        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_a, int>() == original);
+        EXPECT_TRUE(holds(cipher::lookup_computation_cache<&test_fn_a, int>(), round_trip_body));
+        EXPECT_TRUE(!holds(cipher::lookup_computation_cache<&test_fn_a, int>(), overwrite_body));
     });
 
     run_test("distinct_instantiations_are_isolated", [] {
         // Changing either the function or the argument pack names a
         // different slot, so each of these still misses.
-        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_a, float>() == nullptr);
+        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_a, float>().is_none());
 
-        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_b, int, double>() == nullptr);
+        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_b, int, double>().is_none());
 
-        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_c, int>() == nullptr);
+        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_c, int>().is_none());
 
-        auto* body_b = make_stub(0xB0DECAFE);
-        cipher::insert_computation_cache<&test_fn_b, int, double>(body_b);
-        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_b, int, double>() == body_b);
+        cipher::insert_computation_cache<&test_fn_b, int, double>(::fixy::to(isolated_body));
+        EXPECT_TRUE(holds(cipher::lookup_computation_cache<&test_fn_b, int, double>(), isolated_body));
 
-        auto* original_a = cipher::lookup_computation_cache<&test_fn_a, int>();
-        EXPECT_TRUE(original_a != body_b);
-        EXPECT_TRUE(original_a != nullptr);
+        EXPECT_TRUE(holds(cipher::lookup_computation_cache<&test_fn_a, int>(), round_trip_body));
     });
 
     run_test("cache_key_order_sensitive", [] {
@@ -273,11 +296,10 @@ int main() {
     // hold distinct atomics, so there is nothing for them to race on,
     // and every slot must end up holding its own thread's body.
     run_test("concurrent_inserts_disjoint_slots", [] {
-        constexpr std::uintptr_t base = 0x10000;
         std::atomic<int> ready{0};
         std::atomic<bool> go{false};
 
-        auto worker = [&](auto* body, auto inserter) {
+        auto worker = [&](::fixy::Ref<cipher::CompiledBody> body, auto inserter) {
             ready.fetch_add(1, std::memory_order_release);
             while (!go.load(std::memory_order_acquire)) { /* spin */
             }
@@ -288,20 +310,24 @@ int main() {
         // worker reaches a different slot.
         std::array<std::jthread, 4> workers = {
             std::jthread{[&] {
-                worker(make_stub(base + 0),
-                       [](cipher::CompiledBody* b) { cipher::insert_computation_cache<&ct_fn_t0, int>(b); });
+                worker(::fixy::to(body_at(disjoint_bodies, 0)), [](::fixy::Ref<cipher::CompiledBody> body) {
+                    cipher::insert_computation_cache<&ct_fn_t0, int>(body);
+                });
             }},
             std::jthread{[&] {
-                worker(make_stub(base + 1),
-                       [](cipher::CompiledBody* b) { cipher::insert_computation_cache<&ct_fn_t1, int>(b); });
+                worker(::fixy::to(body_at(disjoint_bodies, 1)), [](::fixy::Ref<cipher::CompiledBody> body) {
+                    cipher::insert_computation_cache<&ct_fn_t1, int>(body);
+                });
             }},
             std::jthread{[&] {
-                worker(make_stub(base + 2),
-                       [](cipher::CompiledBody* b) { cipher::insert_computation_cache<&ct_fn_t2, int>(b); });
+                worker(::fixy::to(body_at(disjoint_bodies, 2)), [](::fixy::Ref<cipher::CompiledBody> body) {
+                    cipher::insert_computation_cache<&ct_fn_t2, int>(body);
+                });
             }},
             std::jthread{[&] {
-                worker(make_stub(base + 3),
-                       [](cipher::CompiledBody* b) { cipher::insert_computation_cache<&ct_fn_t3, int>(b); });
+                worker(::fixy::to(body_at(disjoint_bodies, 3)), [](::fixy::Ref<cipher::CompiledBody> body) {
+                    cipher::insert_computation_cache<&ct_fn_t3, int>(body);
+                });
             }},
         };
 
@@ -315,10 +341,10 @@ int main() {
             t.join();
         }
 
-        EXPECT_TRUE(cipher::lookup_computation_cache<&ct_fn_t0, int>() == make_stub(base + 0));
-        EXPECT_TRUE(cipher::lookup_computation_cache<&ct_fn_t1, int>() == make_stub(base + 1));
-        EXPECT_TRUE(cipher::lookup_computation_cache<&ct_fn_t2, int>() == make_stub(base + 2));
-        EXPECT_TRUE(cipher::lookup_computation_cache<&ct_fn_t3, int>() == make_stub(base + 3));
+        EXPECT_TRUE(holds(cipher::lookup_computation_cache<&ct_fn_t0, int>(), body_at(disjoint_bodies, 0)));
+        EXPECT_TRUE(holds(cipher::lookup_computation_cache<&ct_fn_t1, int>(), body_at(disjoint_bodies, 1)));
+        EXPECT_TRUE(holds(cipher::lookup_computation_cache<&ct_fn_t2, int>(), body_at(disjoint_bodies, 2)));
+        EXPECT_TRUE(holds(cipher::lookup_computation_cache<&ct_fn_t3, int>(), body_at(disjoint_bodies, 3)));
     });
 
     // Four threads, one slot, four different bodies.  One of them
@@ -326,15 +352,8 @@ int main() {
     // the slot ends up holding one of the four and no hybrid of them.
     // The isolation test above left this slot empty.
     run_test("concurrent_inserts_same_slot_first_wins", [] {
-        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_c, int>() == nullptr);
+        EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_c, int>().is_none());
 
-        constexpr std::uintptr_t base = 0x20000;
-        std::array<cipher::CompiledBody*, 4> candidates = {
-            make_stub(base + 0),
-            make_stub(base + 1),
-            make_stub(base + 2),
-            make_stub(base + 3),
-        };
         std::atomic<int> ready{0};
         std::atomic<bool> go{false};
 
@@ -344,7 +363,7 @@ int main() {
                 ready.fetch_add(1, std::memory_order_release);
                 while (!go.load(std::memory_order_acquire)) { /* spin */
                 }
-                cipher::insert_computation_cache<&test_fn_c, int>(candidates[i]);
+                cipher::insert_computation_cache<&test_fn_c, int>(::fixy::to(body_at(contended_bodies, i)));
             }};
         }
         while (ready.load(std::memory_order_acquire) < 4) { /* spin */
@@ -354,11 +373,11 @@ int main() {
             t.join();
         }
 
-        auto* winner = cipher::lookup_computation_cache<&test_fn_c, int>();
-        EXPECT_TRUE(winner != nullptr);
+        const Slot winner = cipher::lookup_computation_cache<&test_fn_c, int>();
+        EXPECT_TRUE(winner.is_some());
         bool is_one_of = false;
-        for (auto* c : candidates) {
-            if (winner == c) {
+        for (cipher::CompiledBody const& candidate : contended_bodies) {
+            if (holds(winner, candidate)) {
                 is_one_of = true;
                 break;
             }
@@ -376,16 +395,15 @@ int main() {
     using BgIOR = eff::Row<eff::Effect::Bg, eff::Effect::IO>;
 
     run_test("row_aware_slots_are_isolated_by_row", [] {
-        auto* body_empty = make_stub(0xE0);
-        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_a, EmptyR, int>() == nullptr);
-        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_a, BgR, int>() == nullptr);
-        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_a, IOR, int>() == nullptr);
+        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_a, EmptyR, int>().is_none());
+        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_a, BgR, int>().is_none());
+        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_a, IOR, int>().is_none());
 
-        cipher::insert_computation_cache_in_row<&test_fn_a, EmptyR, int>(body_empty);
+        cipher::insert_computation_cache_in_row<&test_fn_a, EmptyR, int>(::fixy::to(empty_row_body));
 
-        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_a, EmptyR, int>() == body_empty);
-        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_a, BgR, int>() == nullptr);
-        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_a, IOR, int>() == nullptr);
+        EXPECT_TRUE(holds(cipher::lookup_computation_cache_in_row<&test_fn_a, EmptyR, int>(), empty_row_body));
+        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_a, BgR, int>().is_none());
+        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_a, IOR, int>().is_none());
     });
 
     // An empty row is still a row: the row-aware slot for a function
@@ -393,12 +411,11 @@ int main() {
     // The row-blind side is already populated by an earlier test, so
     // only the row-aware side can still witness a miss here.
     run_test("row_blind_and_row_aware_slots_disjoint", [] {
-        auto* body_blind = make_stub(0xB1);
-        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_b, EmptyR, int, double>() == nullptr);
+        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_b, EmptyR, int, double>().is_none());
 
-        cipher::insert_computation_cache_in_row<&test_fn_b, EmptyR, int, double>(body_blind);
+        cipher::insert_computation_cache_in_row<&test_fn_b, EmptyR, int, double>(::fixy::to(blind_pair_body));
 
-        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_b, EmptyR, int, double>() == body_blind);
+        EXPECT_TRUE(holds(cipher::lookup_computation_cache_in_row<&test_fn_b, EmptyR, int, double>(), blind_pair_body));
     });
 
     // Two orderings of the same row are one row as far as the key is
@@ -407,17 +424,17 @@ int main() {
     // each type instantiates its own atomic.  Both hold at once: slot
     // identity is type-driven and the key that travels is hash-driven.
     run_test("row_aware_slot_id_is_type_driven_not_hash_driven", [] {
-        auto* body_bgio = make_stub(0xC0);
-        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_a, BgIOR, int>() == nullptr);
+        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_a, BgIOR, int>().is_none());
         // The two orderings agree on the key.
         EXPECT_TRUE(
             cipher::computation_cache_key_in_row<&test_fn_a, BgIOR, int>
             == cipher::computation_cache_key_in_row<&test_fn_a, eff::Row<eff::Effect::IO, eff::Effect::Bg>, int>);
-        cipher::insert_computation_cache_in_row<&test_fn_a, BgIOR, int>(body_bgio);
-        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&test_fn_a, BgIOR, int>() == body_bgio);
+        cipher::insert_computation_cache_in_row<&test_fn_a, BgIOR, int>(::fixy::to(bg_io_body));
+        EXPECT_TRUE(holds(cipher::lookup_computation_cache_in_row<&test_fn_a, BgIOR, int>(), bg_io_body));
+        // A distinct type is a distinct slot.
         EXPECT_TRUE(
             cipher::lookup_computation_cache_in_row<&test_fn_a, eff::Row<eff::Effect::IO, eff::Effect::Bg>, int>()
-            == nullptr);  // a distinct type is a distinct slot
+                .is_none());
     });
 
     // The disjoint-slot race again, on the row-aware slots.  Both
@@ -425,11 +442,10 @@ int main() {
     // argument, but it does catch a refactor that weakens the memory
     // ordering on one family and not the other.
     run_test("concurrent_inserts_disjoint_slots_in_row", [] {
-        constexpr std::uintptr_t base = 0x30000;
         std::atomic<int> ready{0};
         std::atomic<bool> go{false};
 
-        auto worker = [&](auto* body, auto inserter) {
+        auto worker = [&](::fixy::Ref<cipher::CompiledBody> body, auto inserter) {
             ready.fetch_add(1, std::memory_order_release);
             while (!go.load(std::memory_order_acquire)) { /* spin */
             }
@@ -438,23 +454,23 @@ int main() {
 
         std::array<std::jthread, 4> workers = {
             std::jthread{[&] {
-                worker(make_stub(base + 0), [](cipher::CompiledBody* b) {
-                    cipher::insert_computation_cache_in_row<&cr_fn_t0, EmptyR, int>(b);
+                worker(::fixy::to(body_at(disjoint_row_bodies, 0)), [](::fixy::Ref<cipher::CompiledBody> body) {
+                    cipher::insert_computation_cache_in_row<&cr_fn_t0, EmptyR, int>(body);
                 });
             }},
             std::jthread{[&] {
-                worker(make_stub(base + 1), [](cipher::CompiledBody* b) {
-                    cipher::insert_computation_cache_in_row<&cr_fn_t1, EmptyR, int>(b);
+                worker(::fixy::to(body_at(disjoint_row_bodies, 1)), [](::fixy::Ref<cipher::CompiledBody> body) {
+                    cipher::insert_computation_cache_in_row<&cr_fn_t1, EmptyR, int>(body);
                 });
             }},
             std::jthread{[&] {
-                worker(make_stub(base + 2), [](cipher::CompiledBody* b) {
-                    cipher::insert_computation_cache_in_row<&cr_fn_t2, EmptyR, int>(b);
+                worker(::fixy::to(body_at(disjoint_row_bodies, 2)), [](::fixy::Ref<cipher::CompiledBody> body) {
+                    cipher::insert_computation_cache_in_row<&cr_fn_t2, EmptyR, int>(body);
                 });
             }},
             std::jthread{[&] {
-                worker(make_stub(base + 3), [](cipher::CompiledBody* b) {
-                    cipher::insert_computation_cache_in_row<&cr_fn_t3, EmptyR, int>(b);
+                worker(::fixy::to(body_at(disjoint_row_bodies, 3)), [](::fixy::Ref<cipher::CompiledBody> body) {
+                    cipher::insert_computation_cache_in_row<&cr_fn_t3, EmptyR, int>(body);
                 });
             }},
         };
@@ -466,24 +482,21 @@ int main() {
             t.join();
         }
 
-        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&cr_fn_t0, EmptyR, int>() == make_stub(base + 0));
-        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&cr_fn_t1, EmptyR, int>() == make_stub(base + 1));
-        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&cr_fn_t2, EmptyR, int>() == make_stub(base + 2));
-        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&cr_fn_t3, EmptyR, int>() == make_stub(base + 3));
+        EXPECT_TRUE(
+            holds(cipher::lookup_computation_cache_in_row<&cr_fn_t0, EmptyR, int>(), body_at(disjoint_row_bodies, 0)));
+        EXPECT_TRUE(
+            holds(cipher::lookup_computation_cache_in_row<&cr_fn_t1, EmptyR, int>(), body_at(disjoint_row_bodies, 1)));
+        EXPECT_TRUE(
+            holds(cipher::lookup_computation_cache_in_row<&cr_fn_t2, EmptyR, int>(), body_at(disjoint_row_bodies, 2)));
+        EXPECT_TRUE(
+            holds(cipher::lookup_computation_cache_in_row<&cr_fn_t3, EmptyR, int>(), body_at(disjoint_row_bodies, 3)));
     });
 
     // The same-slot race again, on the row-aware slots, for the same
     // reason.
     run_test("concurrent_inserts_same_slot_first_wins_in_row", [] {
-        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&cr_contention_fn, EmptyR, int>() == nullptr);
+        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<&cr_contention_fn, EmptyR, int>().is_none());
 
-        constexpr std::uintptr_t base = 0x40000;
-        std::array<cipher::CompiledBody*, 4> candidates = {
-            make_stub(base + 0),
-            make_stub(base + 1),
-            make_stub(base + 2),
-            make_stub(base + 3),
-        };
         std::atomic<int> ready{0};
         std::atomic<bool> go{false};
 
@@ -493,7 +506,8 @@ int main() {
                 ready.fetch_add(1, std::memory_order_release);
                 while (!go.load(std::memory_order_acquire)) { /* spin */
                 }
-                cipher::insert_computation_cache_in_row<&cr_contention_fn, EmptyR, int>(candidates[i]);
+                cipher::insert_computation_cache_in_row<&cr_contention_fn, EmptyR, int>(
+                    ::fixy::to(body_at(contended_row_bodies, i)));
             }};
         }
         while (ready.load(std::memory_order_acquire) < 4) { /* spin */
@@ -503,11 +517,11 @@ int main() {
             t.join();
         }
 
-        auto* winner = cipher::lookup_computation_cache_in_row<&cr_contention_fn, EmptyR, int>();
-        EXPECT_TRUE(winner != nullptr);
+        const Slot winner = cipher::lookup_computation_cache_in_row<&cr_contention_fn, EmptyR, int>();
+        EXPECT_TRUE(winner.is_some());
         bool is_one_of = false;
-        for (auto* c : candidates) {
-            if (winner == c) {
+        for (cipher::CompiledBody const& candidate : contended_row_bodies) {
+            if (holds(winner, candidate)) {
                 is_one_of = true;
                 break;
             }

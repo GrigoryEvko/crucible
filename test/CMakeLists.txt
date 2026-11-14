@@ -3525,7 +3525,7 @@ crucible_neg_compile_test(neg_computation_cache_integral_nttp
   "no matching function for call to .lookup_computation_cache<42, int>\\(\\)."
   "the expression .is_pointer_v<decltype\\(FnPtr\\)> .with FnPtr = 42.. evaluated to .false.")
 crucible_neg_compile_test(neg_computation_cache_data_ptr_nttp
-  "no matching function for call to .insert_computation_cache<\\(& data_global\\)>\\(crucible::cipher::CompiledBody\\*\\)."
+  "no matching function for call to .insert_computation_cache<\\(& data_global\\)>\\(foundation::core::Ref<crucible::cipher::CompiledBody, "
   "the expression .is_function_v<typename std::remove_pointer<decltype\\([A-Za-z]+\\)>::type> .with FnPtr = &data_global.. evaluated to .false.")
 crucible_neg_compile_test(neg_computation_cache_member_fn_nttp
   "no matching function for call to .lookup_computation_cache<&Receiver::member_fn, int>\\(\\)."

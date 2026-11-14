@@ -15,15 +15,18 @@
 
 #include <crucible/cipher/ComputationCache.h>
 
-#include <bit>
-#include <cstdint>
+// The fixture defines the body that the header only declares, so the
+// insert gets a real body and fails on its function argument alone.
+namespace crucible::cipher {
+struct CompiledBody {};
+}  // namespace crucible::cipher
 
 inline int data_global = 42;  // Plain data, not a function.
 
 int main() {
     // &data_global is `int*` — IsCacheableFunction must reject:
     // is_function_v<int> is false.
-    crucible::cipher::insert_computation_cache<&data_global>(
-        std::bit_cast<crucible::cipher::CompiledBody*>(static_cast<std::uintptr_t>(0x1)));
+    crucible::cipher::CompiledBody body{};
+    crucible::cipher::insert_computation_cache<&data_global>(::fixy::to(body));
     return 0;
 }

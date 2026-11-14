@@ -13,9 +13,15 @@
 #include "test_assert.h"
 
 #include <array>
-#include <bit>
 #include <cstdint>
 #include <cstdio>
+
+// The header only declares the body, and a consumer defines it.  The cache
+// never reads a body, so an empty body serves: each object has an address
+// of its own.
+namespace crucible::cipher {
+struct CompiledBody {};
+}  // namespace crucible::cipher
 
 namespace {
 
@@ -67,8 +73,35 @@ namespace {
 
 using namespace test_computation_cache_integration_functions;
 
-// The cache never dereferences a body, so a bare bit pattern serves.
-inline cipher::CompiledBody* mk_body(std::uintptr_t v) noexcept { return std::bit_cast<cipher::CompiledBody*>(v); }
+using Slot = ::fixy::Option<::fixy::Ref<cipher::CompiledBody>>;
+using Bodies = ::foundation::core::FixedArray<cipher::CompiledBody, 8>;
+
+// The bodies that the scenarios insert.  Each object lives as long as the
+// process, as the slots do.
+cipher::CompiledBody fast_path_body{};
+cipher::CompiledBody aware_body{};
+cipher::CompiledBody blind_body{};
+cipher::CompiledBody empty_row_body{};
+cipher::CompiledBody bg_row_body{};
+cipher::CompiledBody io_row_body{};
+Bodies blind_population{};
+Bodies aware_population{};
+cipher::CompiledBody lifetime_body{};
+cipher::CompiledBody hot_body{};
+
+// True when the slot holds body.
+[[nodiscard]] bool holds(Slot slot, cipher::CompiledBody const& body) noexcept {
+    return std::move(slot).match(
+        [&body](::fixy::Ref<cipher::CompiledBody> found) noexcept {
+            return ::fixy::same_object(found, ::fixy::to(body));
+        },
+        []() noexcept { return false; });
+}
+
+// The body at position of bodies.
+[[nodiscard]] cipher::CompiledBody& body_at(Bodies& bodies, std::size_t position) noexcept {
+    return *bodies.view().get(position).expect("each position of the test is below eight");
+}
 
 // Variadic, so that a comma inside a template argument list is not
 // taken for a macro argument separator.  The single-argument assertion
@@ -93,17 +126,14 @@ int main() {
     {
         std::fprintf(stderr, "  scenario 1 (compile_then_cache_fast_path): ");
 
-        auto* cold = cipher::lookup_computation_cache<&ic_unary, int>();
-        ASSERT_TRUE(cold == nullptr);
+        ASSERT_TRUE(cipher::lookup_computation_cache<&ic_unary, int>().is_none());
 
-        auto* body = mk_body(0x100001);
-        cipher::insert_computation_cache<&ic_unary, int>(body);
+        cipher::insert_computation_cache<&ic_unary, int>(::fixy::to(fast_path_body));
 
         // Looking up repeatedly, because a slot that reset itself would
         // pass a single probe.
         for (int i = 0; i < 100; ++i) {
-            auto* probe = cipher::lookup_computation_cache<&ic_unary, int>();
-            ASSERT_TRUE(probe == body);
+            ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_unary, int>(), fast_path_body));
         }
 
         std::fprintf(stderr, "PASSED\n");
@@ -116,25 +146,18 @@ int main() {
     {
         std::fprintf(stderr, "  scenario 2 (row_blind_aware_disjoint): ");
 
-        auto* body_aware = mk_body(0x200001);
-        cipher::insert_computation_cache_in_row<&ic_binary, EmptyR, int, double>(body_aware);
+        cipher::insert_computation_cache_in_row<&ic_binary, EmptyR, int, double>(::fixy::to(aware_body));
 
-        auto* blind_probe = cipher::lookup_computation_cache<&ic_binary, int, double>();
-        ASSERT_TRUE(blind_probe == nullptr);
-
-        auto* aware_probe = cipher::lookup_computation_cache_in_row<&ic_binary, EmptyR, int, double>();
-        ASSERT_TRUE(aware_probe == body_aware);
+        ASSERT_TRUE(cipher::lookup_computation_cache<&ic_binary, int, double>().is_none());
+        ASSERT_TRUE(holds(cipher::lookup_computation_cache_in_row<&ic_binary, EmptyR, int, double>(), aware_body));
 
         // With both slots occupied by different bodies, each lookup
         // still finds its own.
-        auto* body_blind = mk_body(0x200002);
-        cipher::insert_computation_cache<&ic_binary, int, double>(body_blind);
+        cipher::insert_computation_cache<&ic_binary, int, double>(::fixy::to(blind_body));
 
-        auto* blind_after = cipher::lookup_computation_cache<&ic_binary, int, double>();
-        ASSERT_TRUE(blind_after == body_blind);
-        auto* aware_after = cipher::lookup_computation_cache_in_row<&ic_binary, EmptyR, int, double>();
-        ASSERT_TRUE(aware_after == body_aware);
-        ASSERT_TRUE(body_blind != body_aware);
+        ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_binary, int, double>(), blind_body));
+        ASSERT_TRUE(holds(cipher::lookup_computation_cache_in_row<&ic_binary, EmptyR, int, double>(), aware_body));
+        ASSERT_TRUE(!::fixy::same_object(::fixy::to(blind_body), ::fixy::to(aware_body)));
 
         std::fprintf(stderr, "PASSED\n");
     }
@@ -146,20 +169,13 @@ int main() {
     {
         std::fprintf(stderr, "  scenario 3 (cross_row_body_isolation): ");
 
-        auto* body_empty = mk_body(0x300001);
-        auto* body_bg = mk_body(0x300002);
-        auto* body_io = mk_body(0x300003);
+        cipher::insert_computation_cache_in_row<&ic_void, EmptyR>(::fixy::to(empty_row_body));
+        cipher::insert_computation_cache_in_row<&ic_void, BgR>(::fixy::to(bg_row_body));
+        cipher::insert_computation_cache_in_row<&ic_void, IOR>(::fixy::to(io_row_body));
 
-        cipher::insert_computation_cache_in_row<&ic_void, EmptyR>(body_empty);
-        cipher::insert_computation_cache_in_row<&ic_void, BgR>(body_bg);
-        cipher::insert_computation_cache_in_row<&ic_void, IOR>(body_io);
-
-        auto* empty_probe = cipher::lookup_computation_cache_in_row<&ic_void, EmptyR>();
-        auto* bg_probe = cipher::lookup_computation_cache_in_row<&ic_void, BgR>();
-        auto* io_probe = cipher::lookup_computation_cache_in_row<&ic_void, IOR>();
-        ASSERT_TRUE(empty_probe == body_empty);
-        ASSERT_TRUE(bg_probe == body_bg);
-        ASSERT_TRUE(io_probe == body_io);
+        ASSERT_TRUE(holds(cipher::lookup_computation_cache_in_row<&ic_void, EmptyR>(), empty_row_body));
+        ASSERT_TRUE(holds(cipher::lookup_computation_cache_in_row<&ic_void, BgR>(), bg_row_body));
+        ASSERT_TRUE(holds(cipher::lookup_computation_cache_in_row<&ic_void, IOR>(), io_row_body));
 
         // The keys differ too, which is what the slots turn into once
         // they leave this process.
@@ -180,45 +196,51 @@ int main() {
     {
         std::fprintf(stderr, "  scenario 4 (population_disjointness): ");
 
-        constexpr std::uintptr_t base_blind = 0x400000;
-        cipher::insert_computation_cache<&ic_pop1, int>(mk_body(base_blind + 1));
-        cipher::insert_computation_cache<&ic_pop2, int>(mk_body(base_blind + 2));
-        cipher::insert_computation_cache<&ic_pop3, int>(mk_body(base_blind + 3));
-        cipher::insert_computation_cache<&ic_pop4, int>(mk_body(base_blind + 4));
-        cipher::insert_computation_cache<&ic_pop5, int>(mk_body(base_blind + 5));
-        cipher::insert_computation_cache<&ic_pop6, int>(mk_body(base_blind + 6));
-        cipher::insert_computation_cache<&ic_pop7, int>(mk_body(base_blind + 7));
-        cipher::insert_computation_cache<&ic_pop8, int>(mk_body(base_blind + 8));
+        cipher::insert_computation_cache<&ic_pop1, int>(::fixy::to(body_at(blind_population, 0)));
+        cipher::insert_computation_cache<&ic_pop2, int>(::fixy::to(body_at(blind_population, 1)));
+        cipher::insert_computation_cache<&ic_pop3, int>(::fixy::to(body_at(blind_population, 2)));
+        cipher::insert_computation_cache<&ic_pop4, int>(::fixy::to(body_at(blind_population, 3)));
+        cipher::insert_computation_cache<&ic_pop5, int>(::fixy::to(body_at(blind_population, 4)));
+        cipher::insert_computation_cache<&ic_pop6, int>(::fixy::to(body_at(blind_population, 5)));
+        cipher::insert_computation_cache<&ic_pop7, int>(::fixy::to(body_at(blind_population, 6)));
+        cipher::insert_computation_cache<&ic_pop8, int>(::fixy::to(body_at(blind_population, 7)));
 
         // The same functions and arguments again, on the row-aware
         // side.
-        constexpr std::uintptr_t base_aware = 0x480000;
-        cipher::insert_computation_cache_in_row<&ic_pop1, EmptyR, int>(mk_body(base_aware + 1));
-        cipher::insert_computation_cache_in_row<&ic_pop2, EmptyR, int>(mk_body(base_aware + 2));
-        cipher::insert_computation_cache_in_row<&ic_pop3, EmptyR, int>(mk_body(base_aware + 3));
-        cipher::insert_computation_cache_in_row<&ic_pop4, EmptyR, int>(mk_body(base_aware + 4));
-        cipher::insert_computation_cache_in_row<&ic_pop5, EmptyR, int>(mk_body(base_aware + 5));
-        cipher::insert_computation_cache_in_row<&ic_pop6, EmptyR, int>(mk_body(base_aware + 6));
-        cipher::insert_computation_cache_in_row<&ic_pop7, EmptyR, int>(mk_body(base_aware + 7));
-        cipher::insert_computation_cache_in_row<&ic_pop8, EmptyR, int>(mk_body(base_aware + 8));
+        cipher::insert_computation_cache_in_row<&ic_pop1, EmptyR, int>(::fixy::to(body_at(aware_population, 0)));
+        cipher::insert_computation_cache_in_row<&ic_pop2, EmptyR, int>(::fixy::to(body_at(aware_population, 1)));
+        cipher::insert_computation_cache_in_row<&ic_pop3, EmptyR, int>(::fixy::to(body_at(aware_population, 2)));
+        cipher::insert_computation_cache_in_row<&ic_pop4, EmptyR, int>(::fixy::to(body_at(aware_population, 3)));
+        cipher::insert_computation_cache_in_row<&ic_pop5, EmptyR, int>(::fixy::to(body_at(aware_population, 4)));
+        cipher::insert_computation_cache_in_row<&ic_pop6, EmptyR, int>(::fixy::to(body_at(aware_population, 5)));
+        cipher::insert_computation_cache_in_row<&ic_pop7, EmptyR, int>(::fixy::to(body_at(aware_population, 6)));
+        cipher::insert_computation_cache_in_row<&ic_pop8, EmptyR, int>(::fixy::to(body_at(aware_population, 7)));
 
-        ASSERT_TRUE(cipher::lookup_computation_cache<&ic_pop1, int>() == mk_body(base_blind + 1));
-        ASSERT_TRUE(cipher::lookup_computation_cache<&ic_pop2, int>() == mk_body(base_blind + 2));
-        ASSERT_TRUE(cipher::lookup_computation_cache<&ic_pop3, int>() == mk_body(base_blind + 3));
-        ASSERT_TRUE(cipher::lookup_computation_cache<&ic_pop4, int>() == mk_body(base_blind + 4));
-        ASSERT_TRUE(cipher::lookup_computation_cache<&ic_pop5, int>() == mk_body(base_blind + 5));
-        ASSERT_TRUE(cipher::lookup_computation_cache<&ic_pop6, int>() == mk_body(base_blind + 6));
-        ASSERT_TRUE(cipher::lookup_computation_cache<&ic_pop7, int>() == mk_body(base_blind + 7));
-        ASSERT_TRUE(cipher::lookup_computation_cache<&ic_pop8, int>() == mk_body(base_blind + 8));
+        ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_pop1, int>(), body_at(blind_population, 0)));
+        ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_pop2, int>(), body_at(blind_population, 1)));
+        ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_pop3, int>(), body_at(blind_population, 2)));
+        ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_pop4, int>(), body_at(blind_population, 3)));
+        ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_pop5, int>(), body_at(blind_population, 4)));
+        ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_pop6, int>(), body_at(blind_population, 5)));
+        ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_pop7, int>(), body_at(blind_population, 6)));
+        ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_pop8, int>(), body_at(blind_population, 7)));
 
-        ASSERT_TRUE(cipher::lookup_computation_cache_in_row<&ic_pop1, EmptyR, int>() == mk_body(base_aware + 1));
-        ASSERT_TRUE(cipher::lookup_computation_cache_in_row<&ic_pop2, EmptyR, int>() == mk_body(base_aware + 2));
-        ASSERT_TRUE(cipher::lookup_computation_cache_in_row<&ic_pop3, EmptyR, int>() == mk_body(base_aware + 3));
-        ASSERT_TRUE(cipher::lookup_computation_cache_in_row<&ic_pop4, EmptyR, int>() == mk_body(base_aware + 4));
-        ASSERT_TRUE(cipher::lookup_computation_cache_in_row<&ic_pop5, EmptyR, int>() == mk_body(base_aware + 5));
-        ASSERT_TRUE(cipher::lookup_computation_cache_in_row<&ic_pop6, EmptyR, int>() == mk_body(base_aware + 6));
-        ASSERT_TRUE(cipher::lookup_computation_cache_in_row<&ic_pop7, EmptyR, int>() == mk_body(base_aware + 7));
-        ASSERT_TRUE(cipher::lookup_computation_cache_in_row<&ic_pop8, EmptyR, int>() == mk_body(base_aware + 8));
+        ASSERT_TRUE(
+            holds(cipher::lookup_computation_cache_in_row<&ic_pop1, EmptyR, int>(), body_at(aware_population, 0)));
+        ASSERT_TRUE(
+            holds(cipher::lookup_computation_cache_in_row<&ic_pop2, EmptyR, int>(), body_at(aware_population, 1)));
+        ASSERT_TRUE(
+            holds(cipher::lookup_computation_cache_in_row<&ic_pop3, EmptyR, int>(), body_at(aware_population, 2)));
+        ASSERT_TRUE(
+            holds(cipher::lookup_computation_cache_in_row<&ic_pop4, EmptyR, int>(), body_at(aware_population, 3)));
+        ASSERT_TRUE(
+            holds(cipher::lookup_computation_cache_in_row<&ic_pop5, EmptyR, int>(), body_at(aware_population, 4)));
+        ASSERT_TRUE(
+            holds(cipher::lookup_computation_cache_in_row<&ic_pop6, EmptyR, int>(), body_at(aware_population, 5)));
+        ASSERT_TRUE(
+            holds(cipher::lookup_computation_cache_in_row<&ic_pop7, EmptyR, int>(), body_at(aware_population, 6)));
+        ASSERT_TRUE(
+            holds(cipher::lookup_computation_cache_in_row<&ic_pop8, EmptyR, int>(), body_at(aware_population, 7)));
 
         // Distinct bodies are not enough.  Two slots that held
         // distinct pointers but shared a key would owe that only to
@@ -255,21 +277,19 @@ int main() {
     // the process.  A refactor to thread-local storage, or to a
     // function-local static that re-initialises on each call, would
     // break the promise that an insert in one scope is visible in the
-    // next.  The two blocks below share no variable but the body
-    // pointer, which the second block only compares against.
-    cipher::CompiledBody* lifetime_body_ptr = mk_body(0x500001);
+    // next.  The two blocks below share no variable but the body, which
+    // the second block only compares against.
     {
         std::fprintf(stderr, "  scenario 5a (lifetime_persist_insert): ");
-        cipher::insert_computation_cache<&ic_lifetime, int>(lifetime_body_ptr);
-        auto* probe = cipher::lookup_computation_cache<&ic_lifetime, int>();
-        ASSERT_TRUE(probe == lifetime_body_ptr);
+        cipher::insert_computation_cache<&ic_lifetime, int>(::fixy::to(lifetime_body));
+        ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_lifetime, int>(), lifetime_body));
         std::fprintf(stderr, "PASSED\n");
     }
     {
         std::fprintf(stderr, "  scenario 5b (lifetime_persist_lookup): ");
-        auto* recovered = cipher::lookup_computation_cache<&ic_lifetime, int>();
-        ASSERT_TRUE(recovered != nullptr);
-        ASSERT_TRUE(recovered == lifetime_body_ptr);
+        const Slot recovered = cipher::lookup_computation_cache<&ic_lifetime, int>();
+        ASSERT_TRUE(recovered.is_some());
+        ASSERT_TRUE(holds(recovered, lifetime_body));
         std::fprintf(stderr, "PASSED\n");
     }
 
@@ -334,12 +354,10 @@ int main() {
     {
         std::fprintf(stderr, "  scenario 7 (hot_loop_hit_rate): ");
 
-        auto* hot_body = mk_body(0x700001);
-        cipher::insert_computation_cache<&ic_hotloop, int>(hot_body);
+        cipher::insert_computation_cache<&ic_hotloop, int>(::fixy::to(hot_body));
 
         for (int i = 0; i < 1024; ++i) {
-            auto* probe = cipher::lookup_computation_cache<&ic_hotloop, int>();
-            ASSERT_TRUE(probe == hot_body);
+            ASSERT_TRUE(holds(cipher::lookup_computation_cache<&ic_hotloop, int>(), hot_body));
         }
 
         std::fprintf(stderr, "PASSED\n");

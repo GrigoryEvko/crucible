@@ -29,9 +29,9 @@
 
 namespace crucible::cipher {
 
-// This type is never defined here and never dereferenced. A consumer
-// defines it in its own translation unit and casts the stored pointer
-// back at lookup.
+// This type is never defined here and never read. A consumer defines it
+// in its own translation unit and reads the body through the Ref that a
+// lookup gives.
 
 struct CompiledBody;
 
@@ -130,19 +130,22 @@ template <auto FnPtr, typename RowOrBlind, typename... Args>
     }
 }
 
+// An empty slot holds no body.  The cell holds the address of the body as
+// one word, and the empty word is the empty Option.
 template <auto FnPtr, typename RowOrBlind, typename... Args>
-inline ::fixy::Atomic<CompiledBody*> compiled_body_slot{nullptr};
+inline ::fixy::Atomic<::fixy::Option<::fixy::Ref<CompiledBody>>> compiled_body_slot{};
 
 template <auto FnPtr, typename RowOrBlind, typename... Args>
-[[nodiscard]] CompiledBody* load_slot() noexcept {
+[[nodiscard]] ::fixy::Option<::fixy::Ref<CompiledBody>> load_slot() noexcept {
     return compiled_body_slot<FnPtr, RowOrBlind, Args...>.load_acquire();
 }
 
 // The first writer wins.  A refused swap means that a body is in the slot,
 // so a later writer drops the refusal in silence.
 template <auto FnPtr, typename RowOrBlind, typename... Args>
-void publish_slot(CompiledBody* body) noexcept {
-    static_cast<void>(compiled_body_slot<FnPtr, RowOrBlind, Args...>.cas_acq_rel(nullptr, body));
+void publish_slot(::fixy::Ref<CompiledBody> body) noexcept {
+    static_cast<void>(compiled_body_slot<FnPtr, RowOrBlind, Args...>.cas_acq_rel(
+        ::fixy::none, ::fixy::Option<::fixy::Ref<CompiledBody>>::some(body)));
 }
 
 }  // namespace detail
@@ -155,33 +158,33 @@ template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
 inline constexpr std::uint64_t computation_cache_key_in_row = detail::cache_key_fold<FnPtr, Row, Args...>();
 
+// A miss gives the empty Option.
+
 template <auto FnPtr, typename... Args>
     requires IsCacheableFunction<FnPtr>
-[[nodiscard]] CompiledBody* lookup_computation_cache() noexcept {
+[[nodiscard]] ::fixy::Option<::fixy::Ref<CompiledBody>> lookup_computation_cache() noexcept {
     return detail::load_slot<FnPtr, detail::RowBlind, Args...>();
 }
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
-[[nodiscard]] CompiledBody* lookup_computation_cache_in_row() noexcept {
+[[nodiscard]] ::fixy::Option<::fixy::Ref<CompiledBody>> lookup_computation_cache_in_row() noexcept {
     return detail::load_slot<FnPtr, Row, Args...>();
 }
 
-// A null body would be indistinguishable from a miss, so it is
-// refused. A caller that needs to know what is actually cached looks
-// it up again after its insert.
+// A Ref is never null, so no insert can store a body that reads as a
+// miss. A caller that needs to know what is actually cached looks it up
+// again after its insert.
 
 template <auto FnPtr, typename... Args>
     requires IsCacheableFunction<FnPtr>
-void insert_computation_cache(CompiledBody* body) noexcept {
-    CRUCIBLE_PRE(body != nullptr);
+void insert_computation_cache(::fixy::Ref<CompiledBody> body) noexcept {
     detail::publish_slot<FnPtr, detail::RowBlind, Args...>(body);
 }
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
-void insert_computation_cache_in_row(CompiledBody* body) noexcept {
-    CRUCIBLE_PRE(body != nullptr);
+void insert_computation_cache_in_row(::fixy::Ref<CompiledBody> body) noexcept {
     detail::publish_slot<FnPtr, Row, Args...>(body);
 }
 
