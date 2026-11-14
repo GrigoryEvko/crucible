@@ -198,7 +198,7 @@ public:
             ::fixy::sanitize_path(root_text);
         root.match(
             [&](::fixy::Path<::fixy::tags::source::Sanitized> const& sanitized_root) {
-                c.open_root_(file_ctx_(ctx), allocation, sanitized_root, open_current_directory_(ctx));
+                c.open_root_(file_ctx_(ctx), allocation, sanitized_root);
             },
             [](::fixy::PathTraversalError const&) {});
         return c;
@@ -530,25 +530,13 @@ private:
 
     void remember_cached_bytes(ContentHash hash, ::fixy::View<const std::byte> bytes) const;
 
-    // The current directory, which anchors the make of a relative root.  A
-    // current directory that does not open gives a closed Dirfd, and the
-    // make of a relative root then fails.
-    template <typename Ctx>
-    [[nodiscard]] static ::fixy::fs::Dirfd open_current_directory_(Ctx const& ctx) {
-        const ::fixy::Path<::fixy::tags::source::Sanitized> current =
-            ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::TextView{"."}))
-                .expect("the sanitizer passes the current directory");
-        return ::fixy::fs::open_dirfd(ctx, current)
-            .match([](::fixy::fs::Dirfd opened) { return opened; },
-                   [](::foundation::os::Errno) { return ::fixy::fs::Dirfd{}; });
-    }
-
     // Makes the root and its object directory, opens the root, and reads
-    // the log and HEAD.  here is the current directory, which anchors the
-    // make of a relative root.  A root that does not open as a directory
-    // ends the process.
+    // the log and HEAD.  The make starts at "/" for an absolute root, and
+    // at the current directory for a relative root, and it makes one name
+    // at a time.  So an absolute root does not read the current directory.
+    // A root that does not open as a directory ends the process.
     void open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation,
-                    ::fixy::Path<::fixy::tags::source::Sanitized> const& root, ::fixy::fs::Dirfd const& here);
+                    ::fixy::Path<::fixy::tags::source::Sanitized> const& root);
 
     // Malformed lines are skipped rather than fatal.  A corrupt or
     // truncated log leaves the in-memory state as a proper prefix of what
