@@ -57,6 +57,32 @@ void test_empty_array() {
     CRUCIBLE_FATAL_INVARIANT(empty.view().size() == 0);
 }
 
+// The array that a call gives back by reference.  The rule use-after-move
+// does not read through it.
+template <class Array>
+[[nodiscard]] Array& through(Array& array) noexcept {
+    return array;
+}
+
+// An element of an empty array ends the process through fatal(), for the
+// default array and for a moved-from one.  No read goes through the null
+// address, which would end the process with a fault and no abort.  The
+// arrays live outside the probe, because the jump of the abort skips the
+// destructors of the body.
+void test_element_of_an_empty_array_aborts() {
+    MaskedArray<std::uint64_t> empty{};
+    MaskedArray<std::uint64_t> const fixed_empty{};
+    MaskedArray<std::uint64_t> source = mint_masked_array<std::uint64_t>(::foundation::effects::Alloc{}, 4);
+    MaskedArray<std::uint64_t> const target{std::move(through(source))};
+    CRUCIBLE_FATAL_INVARIANT(target.size() == 4);
+    bool const default_aborts = ::crucible::test::aborts([&] { static_cast<void>(empty.at_masked(0)); });
+    bool const const_default_aborts = ::crucible::test::aborts([&] { static_cast<void>(fixed_empty.at_masked(5)); });
+    bool const moved_from_aborts = ::crucible::test::aborts([&] { static_cast<void>(through(source).at_masked(1)); });
+    CRUCIBLE_FATAL_INVARIANT(default_aborts);
+    CRUCIBLE_FATAL_INVARIANT(const_default_aborts);
+    CRUCIBLE_FATAL_INVARIANT(moved_from_aborts);
+}
+
 // Each count gives that count of zeros, and a key at or past the count reads
 // the element of the key modulo the count.
 void test_counts_and_wrapping_keys() {
@@ -192,6 +218,7 @@ void test_agrees_with_plain_model() {
 
 int main() {
     test_empty_array();
+    test_element_of_an_empty_array_aborts();
     test_counts_and_wrapping_keys();
     test_each_alignment();
     test_pinned_slots();

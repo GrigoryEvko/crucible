@@ -565,14 +565,24 @@ concept CanMintMaskedArray = OwnedElement<T> && detail::HeapArrayAlignment<T, Al
 //
 // The array owns its storage alone.  A move gives the storage to the target
 // and leaves the source empty, and the destructor ends each element and gives
-// the storage back.  An empty array, also the default one, holds no storage
-// and has the mask 0, so at_masked of it reads the null address and faults.
-// The rule use-after-move refuses a read of a local after its move.
+// the storage back.  An empty array, the default one and a moved-from one,
+// holds no storage.  at_masked of an empty array ends the process through
+// fatal(), so no read goes through the null address.
 template <class T, std::size_t Align = alignof(T)>
     requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
 class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]] MaskedArray final
     : public detail::OwnerCore<detail::owner::MaskedArrayState<T, Align>> {
     using State = detail::owner::MaskedArrayState<T, Align>;
+
+    // The first element.  A default or moved-from array holds no storage.
+    // The use-after-move guard refuses a use of a moved-from local that it
+    // can see, and each build tests the storage here.
+    [[nodiscard]] constexpr T* held_() const noexcept {
+        if (this->state_.first == nullptr) [[unlikely]] {
+            fatal("an element of a MaskedArray that holds no storage: the array is default or moved from");
+        }
+        return this->state_.first;
+    }
 
 public:
     using element_type = T;
@@ -634,13 +644,13 @@ public:
     void
     view() const&& = delete("a view of a temporary MaskedArray points into storage that the full expression frees");
 
-    // The element at key & (count - 1), with no check.  The count is a power
-    // of two, so each masked key is below it.  Complexity: O(1).
-    [[nodiscard]] constexpr T& at_masked(std::uint64_t key) & noexcept {
-        return this->state_.first[key & this->state_.mask];
-    }
+    // The element at key & (count - 1), with no check of the key.  The count
+    // is a power of two, so each masked key is below it.  An empty array
+    // holds no storage, and each build tests that case here: one test and one
+    // branch to a cold call.  Complexity: O(1).
+    [[nodiscard]] constexpr T& at_masked(std::uint64_t key) & noexcept { return held_()[key & this->state_.mask]; }
     [[nodiscard]] constexpr T const& at_masked(std::uint64_t key) const& noexcept {
-        return this->state_.first[key & this->state_.mask];
+        return held_()[key & this->state_.mask];
     }
     void at_masked(std::uint64_t) && = delete("an element of a temporary MaskedArray dangles at the end of the full "
                                               "expression");

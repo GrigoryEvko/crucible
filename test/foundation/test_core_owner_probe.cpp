@@ -16,6 +16,11 @@
 //                 such a read
 //   linear        an owner of a linear element has no move assignment,
 //                 because the assignment drops the elements of the target
+//   empty         a door of a moved-from owner gives an empty answer, or it
+//                 ends the process through fatal().  No door reads through
+//                 the null address of the empty state.  The probe reaches the
+//                 moved-from owner through a reference, which the rule
+//                 use-after-move does not read
 //
 // An owner with no element has no child move and no linear hazard.  A Hole
 // has no self-move, because the rule must-consume refuses an assignment over
@@ -52,6 +57,8 @@
 #include <foundation/core/Ref.h>
 #include <foundation/effects/Effect.h>
 
+#include "abort_probe.h"
+
 namespace {
 
 using ::foundation::AlignedBuffer;
@@ -73,6 +80,17 @@ int live_nodes = 0;
 // True when a move assignment of Owner compiles.
 template <class Owner>
 concept MoveAssignable = requires(Owner& target, Owner&& source) { target = static_cast<Owner&&>(source); };
+
+// The owner that a call gives back by reference.  The rule use-after-move
+// does not read through it, so the hazard EMPTY reaches a moved-from owner.
+// The owners of the hazard live outside the body of the abort probe, because
+// the jump of an abort skips the destructors of the body.
+template <class Owner>
+[[nodiscard]] Owner& through(Owner& owner) noexcept {
+    return owner;
+}
+
+using ::crucible::test::aborts;
 
 // ── The chain of Boxes ──────────────────────────────────────────────────
 
@@ -152,6 +170,18 @@ struct BoxProbe {
     }
 
     static void linear() {}
+
+    // EMPTY: a read and a borrow of a moved-from Box end through fatal().
+    static void empty() {
+        {
+            Box<BoxNode> source = make_chain(1, 1);
+            Box<BoxNode> const target{static_cast<Box<BoxNode>&&>(through(source))};
+            CRUCIBLE_FATAL_INVARIANT(target->label == 1);
+            CRUCIBLE_FATAL_INVARIANT(aborts([&] { static_cast<void>(through(source)->label); }));
+            CRUCIBLE_FATAL_INVARIANT(aborts([&] { static_cast<void>(through(source).view()); }));
+        }
+        CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
+    }
 };
 
 // ── The containers of elements ─────────────────────────────────────────
@@ -299,6 +329,19 @@ struct HeapArrayProbe : ElementArms<HeapArrayProbe> {
     }
 
     static void linear() { CRUCIBLE_FATAL_INVARIANT(!MoveAssignable<HeapArray<LinearElement>>); }
+
+    // EMPTY: a moved-from HeapArray gives no element and an empty View.
+    static void empty() {
+        {
+            Owner source = make(2);
+            Owner const target{static_cast<Owner&&>(through(source))};
+            CRUCIBLE_FATAL_INVARIANT(target.size() == 2);
+            CRUCIBLE_FATAL_INVARIANT(through(source).size() == 0);
+            CRUCIBLE_FATAL_INVARIANT(through(source).view().size() == 0);
+            CRUCIBLE_FATAL_INVARIANT(through(source).get(0).is_none());
+        }
+        CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
+    }
 };
 
 struct MaskedArrayProbe : ElementArms<MaskedArrayProbe> {
@@ -310,6 +353,21 @@ struct MaskedArrayProbe : ElementArms<MaskedArrayProbe> {
     static Elem<Tag>& first_of(Owner& owner) { return owner.at_masked(0); }
 
     static void linear() { CRUCIBLE_FATAL_INVARIANT(!MoveAssignable<MaskedArray<LinearElement>>); }
+
+    // EMPTY: an element of a moved-from MaskedArray or of a default one ends
+    // through fatal(), and its View is empty.
+    static void empty() {
+        {
+            Owner source = make(2);
+            Owner const target{static_cast<Owner&&>(through(source))};
+            Owner const fresh{};
+            CRUCIBLE_FATAL_INVARIANT(target.size() == 2);
+            CRUCIBLE_FATAL_INVARIANT(through(source).view().size() == 0);
+            CRUCIBLE_FATAL_INVARIANT(aborts([&] { static_cast<void>(through(source).at_masked(1)); }));
+            CRUCIBLE_FATAL_INVARIANT(aborts([&] { static_cast<void>(fresh.at_masked(0)); }));
+        }
+        CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
+    }
 };
 
 struct GrowListProbe : ElementArms<GrowListProbe> {
@@ -332,6 +390,21 @@ struct GrowListProbe : ElementArms<GrowListProbe> {
     }
 
     static void linear() { CRUCIBLE_FATAL_INVARIANT(!MoveAssignable<GrowList<LinearElement>>); }
+
+    // EMPTY: a moved-from GrowList gives no element, and an append takes new
+    // storage below the maximum that the list keeps.
+    static void empty() {
+        {
+            Owner source = make(2);
+            Owner const target{static_cast<Owner&&>(through(source))};
+            CRUCIBLE_FATAL_INVARIANT(target.size() == 2);
+            CRUCIBLE_FATAL_INVARIANT(through(source).view().size() == 0);
+            CRUCIBLE_FATAL_INVARIANT(through(source).get(0).is_none());
+            through(source).append(kAlloc, Elem<Tag>{}).expect("a moved-from list keeps its maximum");
+            CRUCIBLE_FATAL_INVARIANT(through(source).size() == 1);
+        }
+        CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
+    }
 };
 
 // ── The owners with no element ──────────────────────────────────────────
@@ -358,6 +431,17 @@ struct HoleProbe {
     }
 
     static void linear() {}
+
+    // EMPTY: a consume of a moved-from Hole ends through fatal().  The probe
+    // body takes a Ref of the spent Hole by value, so no closure captures
+    // the linear Hole.
+    static void empty() {
+        Owner source = ::foundation::core::mint_hole<16, 8>(kAlloc);
+        auto const spent = ::foundation::core::to(source);
+        Owner target{static_cast<Owner&&>(source)};
+        CRUCIBLE_FATAL_INVARIANT(aborts([spent] { static_cast<Owner&&>(*spent).consume(); }));
+        static_cast<Owner&&>(target).consume();
+    }
 };
 
 struct GrowTextProbe {
@@ -401,6 +485,17 @@ struct GrowTextProbe {
     }
 
     static void linear() {}
+
+    // EMPTY: a moved-from GrowText gives an empty view, and an append takes
+    // new storage below the maximum that the text keeps.
+    static void empty() {
+        Owner source = make('a');
+        Owner const target{static_cast<Owner&&>(through(source))};
+        CRUCIBLE_FATAL_INVARIANT(target.size() == 1);
+        CRUCIBLE_FATAL_INVARIANT(through(source).view().size() == 0);
+        through(source).append(kAlloc, 'e').expect("a moved-from text keeps its maximum");
+        CRUCIBLE_FATAL_INVARIANT(first_of(through(source)) == 'e');
+    }
 };
 
 struct AlignedBufferProbe {
@@ -432,6 +527,16 @@ struct AlignedBufferProbe {
     }
 
     static void linear() {}
+
+    // EMPTY: a moved-from AlignedBuffer gives an empty View, and an element of
+    // it ends through the precondition of the index.
+    static void empty() {
+        Owner source = Owner::allocate_value_initialized(2);
+        Owner const target{static_cast<Owner&&>(through(source))};
+        CRUCIBLE_FATAL_INVARIANT(target.size() == 2);
+        CRUCIBLE_FATAL_INVARIANT(through(source).view().size() == 0);
+        CRUCIBLE_FATAL_INVARIANT(aborts([&] { static_cast<void>(through(source)[0]); }));
+    }
 };
 
 struct AlignedBytesProbe {
@@ -462,6 +567,15 @@ struct AlignedBytesProbe {
     }
 
     static void linear() {}
+
+    // EMPTY: a moved-from AlignedBytes gives an empty View.
+    static void empty() {
+        Owner source = ::foundation::mint_aligned_bytes(kAlloc, 64, 64);
+        Owner const target{static_cast<Owner&&>(through(source))};
+        CRUCIBLE_FATAL_INVARIANT(target.size() == 64);
+        CRUCIBLE_FATAL_INVARIANT(through(source).size() == 0);
+        CRUCIBLE_FATAL_INVARIANT(through(source).view().size() == 0);
+    }
 };
 
 struct SwissTableBufferProbe {
@@ -490,6 +604,15 @@ struct SwissTableBufferProbe {
     }
 
     static void linear() {}
+
+    // EMPTY: a moved-from SwissTableBuffer has no slot and no storage.
+    static void empty() {
+        Owner source = Owner::allocate(16);
+        Owner const target{static_cast<Owner&&>(through(source))};
+        CRUCIBLE_FATAL_INVARIANT(target.capacity() == 16);
+        CRUCIBLE_FATAL_INVARIANT(through(source).capacity() == 0 && through(source).empty());
+        CRUCIBLE_FATAL_INVARIANT(!static_cast<bool>(through(source)));
+    }
 };
 
 // Runs each hazard of one probe.  Each hazard ends with no live node.
@@ -499,6 +622,7 @@ void run_probe() {
     Probe::moved_from();
     Probe::child_move();
     Probe::linear();
+    Probe::empty();
     CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
 }
 

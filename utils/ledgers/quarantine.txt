@@ -99,7 +99,7 @@ bench/ | raw-new-delete | 2 | - | -
 bench/ | raw-pointer-object | 135 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
-bench/ | std-entity | 774 | - | -
+bench/ | std-entity | 772 | - | -
 bench/ | std-object | 233 | - | -
 examples/fn/ | c-array-object | 9 | - | -
 examples/fn/ | c-library-call | 12 | - | -
@@ -217,8 +217,8 @@ include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<system_error> | 4 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 56 | - | -
-include/fixy/session/ | base-std-entity | 469 | - | -
-include/fixy/session/ | base-std-object | 199 | - | -
+include/fixy/session/ | base-std-entity | 467 | - | -
+include/fixy/session/ | base-std-object | 197 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
 include/fixy/session/ | replace-pending:<atomic> | 2 | - | -
