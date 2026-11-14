@@ -52,9 +52,9 @@ struct OpEntry {
     uint32_t tensor_arg_mask = 0;
     // Bit i is set when argument i is a list of tensors.
     uint32_t tensor_list_mask = 0;
-    // OPAQUE when the taxonomy does not name this operation. Never a guess:
-    // Graph.h reads contiguous CKernelId ranges, so a wrong identifier
-    // changes an operation's NodeKind rather than merely mislabelling it.
+    // OPAQUE when the taxonomy does not name this operation. Never a guess.
+    // The trace entry records the identifier, and the Cipher keeps it, so a
+    // wrong identifier names a wrong kernel for each later reader.
     CKernelId kernel_id = CKernelId::OPAQUE;
     // True when an argument writes through an alias, which is the value
     // `c10::FunctionSchema::is_mutable()` returns for this operator. The

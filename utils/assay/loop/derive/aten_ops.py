@@ -133,10 +133,9 @@ for (_witness_name, _witness_overload), _expected in _HASH_WITNESSES.items():
 # own sentinel: CKernel.h says "OPAQUE is 0 so a zero-initialised
 # classification field already holds the safe fallback", and
 # CKernelTable::classify returns it on a miss. A guess would be worse than
-# OPAQUE, because Graph.h:classify_node_kind reads contiguous id ranges —
-# POINTWISE is [25,56], REDUCTION [57,64], NOP [73,88] — so a wrong id
-# does not mislabel an operation, it changes its NodeKind and with it what
-# the graph believes the operation does.
+# OPAQUE. Each trace entry records the identifier, and Serialize writes it
+# into the Cipher. So a wrong id names a wrong kernel for each later reader
+# of the region.
 
 CKERNEL_MAP: dict[str, str] = {
     # GEMM family
@@ -559,9 +558,9 @@ struct OpEntry {{
     uint32_t tensor_arg_mask = 0;
     // Bit i is set when argument i is a list of tensors.
     uint32_t tensor_list_mask = 0;
-    // OPAQUE when the taxonomy does not name this operation. Never a guess:
-    // Graph.h reads contiguous CKernelId ranges, so a wrong identifier
-    // changes an operation's NodeKind rather than merely mislabelling it.
+    // OPAQUE when the taxonomy does not name this operation. Never a guess.
+    // The trace entry records the identifier, and the Cipher keeps it, so a
+    // wrong identifier names a wrong kernel for each later reader.
     CKernelId kernel_id = CKernelId::OPAQUE;
     // True when an argument writes through an alias, which is the value
     // `c10::FunctionSchema::is_mutable()` returns for this operator. The
