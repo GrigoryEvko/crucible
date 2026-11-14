@@ -76,7 +76,16 @@ constexpr size_t kMetaLayout = kMetaDevice + 1 + 1;  // +device_idx, layout byte
 // Rejection is no region coming back out of the boundary.
 [[nodiscard]] bool is_rejected(::foundation::effects::Test bg, ::fixy::View<const std::byte> bytes) {
     ::fixy::BumpArena arena{1 << 16};
-    return crucible::deserialize_region(bg.alloc, bytes, arena).is_none();
+    return crucible::deserialize_region(bg.alloc, bytes, arena).is_err();
+}
+
+// A rejection of a byte outside the values of its field names that reason.
+[[nodiscard]] bool is_rejected_as_field_out_of_range(::foundation::effects::Test bg,
+                                                     ::fixy::View<const std::byte> bytes) {
+    ::fixy::BumpArena arena{1 << 16};
+    return crucible::deserialize_region(bg.alloc, bytes, arena)
+        .match([](crucible::LoadedRegionNode) noexcept { return false; },
+               [](crucible::LoadError reason) noexcept { return reason == crucible::LoadError::field_out_of_range; });
 }
 
 }  // namespace
@@ -141,6 +150,13 @@ constexpr size_t kMetaLayout = kMetaDevice + 1 + 1;  // +device_idx, layout byte
                          "(release-stripped contract let it through)\n",
                          c.name, c.bad, c.off);
             return 5;
+        }
+        if (!is_rejected_as_field_out_of_range(bg, corrupt.view())) {
+            ::fixy::report(::fixy::Sink::Err,
+                           "a malformed byte {} at offset {} is rejected with a reason other than "
+                           "field_out_of_range\n",
+                           c.bad, c.off);
+            return 6;
         }
     }
 

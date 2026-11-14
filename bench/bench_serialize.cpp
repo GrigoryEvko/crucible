@@ -97,8 +97,8 @@ int main() {
 
         reports.push_back(bench::run(label_des, [&, image] {
             ::fixy::BumpArena read_arena{1 << 20};
-            const ::fixy::Option<LoadedRegionNode> loaded_region = deserialize_region(A, image, read_arena);
-            const bool is_loaded = loaded_region.is_some();
+            const ::fixy::Result<LoadedRegionNode, LoadError> loaded_region = deserialize_region(A, image, read_arena);
+            const bool is_loaded = loaded_region.is_ok();
             bench::do_not_optimize(is_loaded);
         }));
 

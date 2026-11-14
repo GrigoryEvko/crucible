@@ -235,32 +235,40 @@ void make_root_directories_(Ctx const& ctx, ::fixy::TextView root) noexcept {
 }
 
 // The bytes of path under dir, when the file holds more than zero and at
-// most maximum bytes.  No value for a file that does not open, has another
-// size, or reads short.  Complexity: one read of the file.
+// most maximum bytes.  A file that does not open gives file_open_failed, and a
+// file of another size or a short read gives file_size.  Complexity: one
+// read of the file.
 template <class Ctx>
-[[nodiscard]] ::fixy::Option<::fixy::HeapArray<std::byte>>
+[[nodiscard]] ::fixy::Result<::fixy::HeapArray<std::byte>, LoadError>
 read_batch_at_(Ctx const& ctx, ::foundation::effects::Alloc allocation, ::fixy::fs::Dirfd const& dir,
                ::fixy::CText path, std::size_t maximum) noexcept {
     // The rvalue match refuses a result that holds an address, and a
-    // HeapArray holds one.  So the arms give a bool, and the bytes leave
-    // through the Option.
+    // HeapArray holds one.  So the arms give the reason or no reason, and
+    // the bytes leave through the Option.
     ::fixy::Option<::fixy::HeapArray<std::byte>> read{};
-    static_cast<void>(::fixy::fs::mint_file_at<::fixy::fs::read_only>(ctx, dir, path)
-                          .match(
-                              [&](::fixy::Linear<::fixy::fs::OwnedFd> opened) {
-                                  const ::fixy::fs::OwnedFd file = std::move(opened).consume();
-                                  const std::int64_t size = ::fixy::fs::file_size(ctx, file).value_or(0);
-                                  if (size <= 0 || static_cast<std::uint64_t>(size) > maximum) return false;
-                                  ::fixy::HeapArray<std::byte> bytes =
-                                      ::fixy::mint_heap_array(allocation, static_cast<std::size_t>(size), std::byte{0});
-                                  if (::fixy::fs::read_full(ctx, file, bytes.view()).value_or(0) != bytes.size()) {
-                                      return false;
-                                  }
-                                  read = ::fixy::Option<::fixy::HeapArray<std::byte>>::some(std::move(bytes));
-                                  return true;
-                              },
-                              [](::foundation::os::Errno) { return false; }));
-    return read;
+    const ::fixy::Option<LoadError> refusal =
+        ::fixy::fs::mint_file_at<::fixy::fs::read_only>(ctx, dir, path)
+            .match(
+                [&](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::Option<LoadError> {
+                    const ::fixy::fs::OwnedFd file = std::move(opened).consume();
+                    const std::int64_t size = ::fixy::fs::file_size(ctx, file).value_or(0);
+                    if (size <= 0 || static_cast<std::uint64_t>(size) > maximum) {
+                        return ::fixy::some(LoadError::file_size);
+                    }
+                    ::fixy::HeapArray<std::byte> bytes =
+                        ::fixy::mint_heap_array(allocation, static_cast<std::size_t>(size), std::byte{0});
+                    if (::fixy::fs::read_full(ctx, file, bytes.view()).value_or(0) != bytes.size()) {
+                        return ::fixy::some(LoadError::file_size);
+                    }
+                    read = ::fixy::Option<::fixy::HeapArray<std::byte>>::some(std::move(bytes));
+                    return ::fixy::none;
+                },
+                [](::foundation::os::Errno) -> ::fixy::Option<LoadError> {
+                    return ::fixy::some(LoadError::file_open_failed);
+                });
+    for (const LoadError reason : refusal)
+        return ::fixy::err(reason);
+    return std::move(read).expect("a file with no refusal gave its bytes");
 }
 
 // An owned copy of bytes in new storage of allocation.  Complexity: one
@@ -456,16 +464,16 @@ ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddr
         ::fixy::mint_band<::fixy::cipher_tier::Hot<ContentHash>>(ContentHash{}));
 }
 
-Cipher::LoadedContentAddressedRegionPayload Cipher::load_content_addressed_(FileCtx const& file_ctx, OpenView const&,
-                                                                            ::foundation::effects::Alloc a,
-                                                                            ContentHash content_hash,
-                                                                            ::fixy::BumpArena& arena) const {
-    if (!content_hash) return ::fixy::none;
+Cipher::LoadResult Cipher::load_content_addressed_(FileCtx const& file_ctx, OpenView const&,
+                                                   ::foundation::effects::Alloc a, ContentHash content_hash,
+                                                   ::fixy::BumpArena& arena) const {
+    if (!content_hash) return ::fixy::err(LoadError::none_hash);
 
+    // A cached image that gives no region of the hash falls through to the
+    // file, and the file gives the reason of a refusal.
     const ::fixy::View<const std::byte> cached = cached_bytes(content_hash);
     if (cached.size() != 0) {
-        const ::fixy::Option<LoadedRegionNode> loaded = deserialize_region(a, cached, arena);
-        for (const LoadedRegionNode& loaded_region : loaded) {
+        for (const LoadedRegionNode& loaded_region : deserialize_region(a, cached, arena).ok()) {
             if (loaded_region.value()->content_hash == content_hash) {
                 return LoadedContentAddressedRegionPayload{::fixy::to(*loaded_region.value()), true};
             }
@@ -477,26 +485,21 @@ Cipher::LoadedContentAddressedRegionPayload Cipher::load_content_addressed_(File
     // If the read is later changed and drops its bound, the mint's
     // precondition still fires.
     const EntryPath object = object_entry_(content_hash.raw());
-    ::fixy::Option<::fixy::HeapArray<std::byte>> read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+    ::fixy::Result<::fixy::HeapArray<std::byte>, LoadError> read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
         return read_batch_at_(ctx, a, root_dirfd_, object.c_text(), MAX_OBJECT_BYTES);
     });
-    if (read.is_none()) return ::fixy::none;
-    const ::fixy::HeapArray<std::byte> image = std::move(read).expect("the object file read");
+    CRUCIBLE_TRY(image, std::move(read));
     [[maybe_unused]] const ValidatedObjectSize validated_len =
         ::fixy::mint_refined<::fixy::bounded_above<MAX_OBJECT_BYTES>>(image.size());
 
-    const ::fixy::Option<LoadedRegionNode> loaded = deserialize_region(a, image.view(), arena);
+    CRUCIBLE_TRY(loaded_region, deserialize_region(a, image.view(), arena));
     // The file name is the key, and anyone who writes the store can put
     // any region under any name.  A region whose own hash is not the key
     // is refused, the same as on the cache path above, so a lookup never
     // returns another region.
-    for (const LoadedRegionNode& loaded_region : loaded) {
-        if (loaded_region.value()->content_hash == content_hash) {
-            remember_cached_bytes(content_hash, image.view());
-            return LoadedContentAddressedRegionPayload{::fixy::to(*loaded_region.value()), false};
-        }
-    }
-    return ::fixy::none;
+    if (loaded_region.value()->content_hash != content_hash) return ::fixy::err(LoadError::object_hash_mismatch);
+    remember_cached_bytes(content_hash, image.view());
+    return LoadedContentAddressedRegionPayload{::fixy::to(*loaded_region.value()), false};
 }
 
 ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView const&,
@@ -592,7 +595,7 @@ ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView co
                                                    [&encoded](::fixy::HeapArray<std::byte> stored) {
                                                        return ::fixy::equal(stored.view(), encoded.view());
                                                    },
-                                                   [] { return false; })
+                                                   [](LoadError) { return false; })
                                          : replace_entry_at_(ctx, session_dir, batch.c_text().view(),
                                                              ::fixy::View<std::byte const>{encoded.view()});
                     return is_batch_stored && append_entry_at_(ctx, session_dir, "index", index_line);
@@ -644,11 +647,12 @@ Cipher::load_session_events_(FileCtx const& file_ctx, OpenView const&, ::foundat
 
         const ContentHash hash{index_line.hash};
         const EntryPath batch = batch_entry_(index_line.hash);
-        ::fixy::Option<::fixy::HeapArray<std::byte>> read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+        // A batch that does not read is skipped, whatever the reason.
+        ::fixy::Result<::fixy::HeapArray<std::byte>, LoadError> read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
             return read_batch_at_(ctx, allocation, session_dir, batch.c_text(),
                                   cipher::federation::FEDERATION_HEADER_BYTES + MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES);
         });
-        if (read.is_none()) continue;
+        if (read.is_err()) continue;
         const ::fixy::HeapArray<std::byte> bytes = std::move(read).expect("the batch file read");
 
         auto entry = cipher::federation::deserialize_untrusted_federation_entry(

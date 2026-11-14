@@ -153,7 +153,7 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
     ::fixy::BumpArena load_arena{std::size_t{1} << 16};
     const auto loaded =
         crucible::deserialize_region(::foundation::effects::testing::test().alloc, image_after, load_arena);
-    assert(loaded.is_some());
+    assert(loaded.is_ok());
 
     // The activation registers the data pointer of the parameter, which it
     // reads from the input record of op 0.

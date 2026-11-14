@@ -652,7 +652,14 @@ private:
                                                                      Store& store) {
         if (store.empty()) return ::fixy::none;
         auto open_view = store.mint_open_view(ctx);
-        return store.load_content_addressed(ctx, open_view, a, store.head(), load_arena_).get();
+        // A load needs the region or no region, so the reason of a refusal
+        // goes.
+        const auto loaded = store.load_content_addressed(ctx, open_view, a, store.head(), load_arena_);
+        return loaded.match(
+            [](auto const& payload) -> ::fixy::Option<::fixy::Ref<RegionNode>> {
+                return ::fixy::Option<::fixy::Ref<RegionNode>>::some(payload.get());
+            },
+            [](auto const&) -> ::fixy::Option<::fixy::Ref<RegionNode>> { return ::fixy::none; });
     }
 
     // Runs on the background thread when a new region is ready.  It must

@@ -42,6 +42,22 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     return m;
 }
 
+// The reason of a load that refuses its image.  A load that gives a node
+// ends the test.
+template <class Loaded>
+[[nodiscard]] static crucible::LoadError reason_of(Loaded const& loaded) {
+    return loaded.err().expect("the loader refuses the image");
+}
+
+// A copy of image in new storage, with the byte at at set to value.
+[[nodiscard]] static ::fixy::HeapArray<std::byte>
+with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> image, size_t at, std::byte value) {
+    ::fixy::HeapArray<std::byte> copy = ::fixy::mint_heap_array(alloc, image.size(), std::byte{0});
+    ::fixy::copy(copy.view(), image).expect("the copy has the count of the image");
+    *copy.get(at).expect("the byte is inside the image") = value;
+    return copy;
+}
+
 [[gnu::cold]] int main() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena dag_arena{1 << 16};
@@ -211,7 +227,69 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     ::fixy::BumpArena arena3{1 << 16};
     auto bad_region =
         crucible::deserialize_region(test.alloc, wire.window(0, 10).expect("the image holds ten bytes"), arena3);
-    assert(bad_region.is_none() && "deserialize_region must refuse a truncated input");
+    assert(reason_of(bad_region) == crucible::LoadError::truncated && "a cut header must refuse as truncated");
+
+    // Each fault of an image gives its own reason, and an image with two
+    // faults gives the reason of the first.  The offsets: 0..3 the magic,
+    // 4..7 the version, 8 the kind, 9..15 the pad, 24..31 the content hash,
+    // 32..35 the count of ops, 36..43 the schema of the first op.
+    {
+        ::fixy::BumpArena reason_arena{1 << 16};
+        // The byte at at with its low bit changed, so it differs from the
+        // byte of the image.
+        const auto flipped_at = [&wire](size_t at) {
+            const uint8_t value = static_cast<uint8_t>(*wire.get(at).expect("the byte is inside the image"));
+            return std::byte{static_cast<uint8_t>(value ^ 1u)};
+        };
+        const auto reason_with_byte = [&](size_t at, std::byte value) {
+            const ::fixy::HeapArray<std::byte> damaged = with_byte(test.alloc, wire, at, value);
+            return reason_of(crucible::deserialize_region(test.alloc, damaged.view(), reason_arena));
+        };
+        using crucible::LoadError;
+        const ::fixy::View<const std::byte> cut = wire.window(0, n - 1).expect("the image holds its last byte");
+        assert(reason_of(crucible::deserialize_region(test.alloc, cut, reason_arena)) == LoadError::truncated);
+        assert(reason_with_byte(0, flipped_at(0)) == LoadError::bad_magic);
+        assert(reason_with_byte(4, flipped_at(4)) == LoadError::version_mismatch);
+        assert(reason_with_byte(8, std::byte{static_cast<uint8_t>(crucible::TraceNodeKind::BRANCH)})
+               == LoadError::wrong_kind);
+        assert(reason_with_byte(8, std::byte{0xFF}) == LoadError::field_out_of_range);
+        assert(reason_with_byte(9, std::byte{1}) == LoadError::field_out_of_range);
+        assert(reason_with_byte(24, flipped_at(24)) == LoadError::content_hash_mismatch);
+        assert(reason_with_byte(36, flipped_at(36)) == LoadError::first_schema_mismatch);
+
+        // A bad magic number and a bad kind byte: the magic comes first.
+        const ::fixy::HeapArray<std::byte> bad_kind = with_byte(test.alloc, wire, 8, std::byte{0xFF});
+        const ::fixy::HeapArray<std::byte> two_faults = with_byte(test.alloc, bad_kind.view(), 0, std::byte{0});
+        assert(reason_of(crucible::deserialize_region(test.alloc, two_faults.view(), reason_arena))
+               == LoadError::bad_magic);
+
+        // The loader of a branch refuses the image of a region by its kind.
+        assert(reason_of(crucible::deserialize_branch(test.alloc, wire, reason_arena)) == LoadError::wrong_kind);
+    }
+
+    // The image of a branch whose arms are out of the order of their values,
+    // and the same image with a count of arms above its ceiling.  The count
+    // is at 44..47, after the header and the 12 bytes of the guard.
+    {
+        ::fixy::BumpArena branch_arena{1 << 12};
+        crucible::BranchNode& branch = *branch_arena.make<crucible::BranchNode>(test.alloc);
+        branch.kind = crucible::TraceNodeKind::BRANCH;
+        branch.arms = branch_arena.array<crucible::BranchNode::Arm>(test.alloc, 2, crucible::BranchNode::Arm{});
+        branch.arms.get(0).expect("the branch holds two arms")->value = 2;
+        branch.arms.get(1).expect("the branch holds two arms")->value = 1;
+        ::fixy::HeapArray<std::byte> branch_buf = ::fixy::mint_heap_array(test.alloc, 256, std::byte{0});
+        const size_t branch_bytes = crucible::serialize_branch(crucible::SerializedBranch{branch}, branch_buf.view());
+        assert(branch_bytes > 0);
+        const ::fixy::View<const std::byte> branch_image =
+            branch_buf.view().window(0, branch_bytes).expect("the writer writes inside its image");
+        assert(reason_of(crucible::deserialize_branch(test.alloc, branch_image, branch_arena))
+               == crucible::LoadError::arms_unsorted);
+        const ::fixy::HeapArray<std::byte> many_arms = with_byte(test.alloc, branch_image, 47, std::byte{0xFF});
+        assert(reason_of(crucible::deserialize_branch(test.alloc, many_arms.view(), branch_arena))
+               == crucible::LoadError::count_above_limit);
+        assert(reason_of(crucible::deserialize_region(test.alloc, branch_image, branch_arena))
+               == crucible::LoadError::wrong_kind);
+    }
 
     // A header claiming 0xFFFFFFFF ops would otherwise drive an
     // allocation of four billion entries before anything failed.
@@ -229,7 +307,8 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
 
         ::fixy::BumpArena arena4{1 << 16};
         auto adversarial_region = crucible::deserialize_region(test.alloc, adv.view(), arena4);
-        assert(adversarial_region.is_none() && "deserialize_region must reject num_ops > CDAG_MAX_OPS");
+        assert(reason_of(adversarial_region) == crucible::LoadError::count_above_limit
+               && "deserialize_region must reject num_ops > CDAG_MAX_OPS");
     }
 
     // A loaded slot_id indexes a slot table sized to the plan's
@@ -250,7 +329,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         ::fixy::BumpArena parena{1 << 16};
         auto ok_loaded = crucible::deserialize_region(
             test.alloc, pbuf.view().window(0, pn).expect("the writer writes inside its image"), parena);
-        assert(ok_loaded.is_some() && "plan-bearing region with in-range slot_ids must load");
+        assert(ok_loaded.is_ok() && "plan-bearing region with in-range slot_ids must load");
 
         crucible::MemoryPlan bad_plan{};
         bad_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 3, crucible::TensorSlot{});
@@ -262,7 +341,8 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         ::fixy::BumpArena narena{1 << 16};
         auto bad_loaded = crucible::deserialize_region(
             test.alloc, nbuf.view().window(0, nn).expect("the writer writes inside its image"), narena);
-        assert(bad_loaded.is_none() && "deserialize_region must reject slot_id >= plan->num_slots");
+        assert(reason_of(bad_loaded) == crucible::LoadError::slot_out_of_range
+               && "deserialize_region must reject slot_id >= plan->num_slots");
 
         region->plan = ::fixy::none;  // nothing later depends on this.
     }
@@ -285,7 +365,8 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         ::fixy::BumpArena oarena{1 << 16};
         auto over_loaded = crucible::deserialize_region(
             test.alloc, obuf.view().window(0, on).expect("the writer writes inside its image"), oarena);
-        assert(over_loaded.is_none() && "deserialize_region must reject pool_bytes > kMaxPoolBytes");
+        assert(reason_of(over_loaded) == crucible::LoadError::plan_unservable
+               && "deserialize_region must reject pool_bytes > kMaxPoolBytes");
 
         crucible::MemoryPlan at_plan{};
         at_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
@@ -298,7 +379,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         ::fixy::BumpArena aarena{1 << 16};
         auto at_loaded = crucible::deserialize_region(
             test.alloc, abuf.view().window(0, an).expect("the writer writes inside its image"), aarena);
-        assert(at_loaded.is_some() && "pool_bytes == kMaxPoolBytes must be accepted (inclusive)");
+        assert(at_loaded.is_ok() && "pool_bytes == kMaxPoolBytes must be accepted (inclusive)");
 
         region->plan = ::fixy::none;  // restore.
     }
@@ -348,14 +429,15 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
 
         ::fixy::BumpArena clean_arena{1 << 16};
         auto clean = crucible::deserialize_region(test.alloc, image, clean_arena);
-        assert(clean.is_some() && "the unmodified pad-probe image must load");
+        assert(clean.is_ok() && "the unmodified pad-probe image must load");
 
         const auto refuses_with_byte_set_at = [&](size_t at) {
             ::fixy::HeapArray<std::byte> corrupt = ::fixy::mint_heap_array(test.alloc, image_bytes, std::byte{0});
             ::fixy::copy(corrupt.view(), image).expect("the copy has the count of the image");
             *corrupt.get(at).expect("the pad is inside the image") = std::byte{1};
             ::fixy::BumpArena corrupt_arena{1 << 16};
-            return crucible::deserialize_region(test.alloc, corrupt.view(), corrupt_arena).is_none();
+            return reason_of(crucible::deserialize_region(test.alloc, corrupt.view(), corrupt_arena))
+                == crucible::LoadError::field_out_of_range;
         };
         for (size_t byte = 0; byte < 4; ++byte) {
             assert(refuses_with_byte_set_at(pad2_at + byte) && "a non-zero byte in pad2 must refuse the image");

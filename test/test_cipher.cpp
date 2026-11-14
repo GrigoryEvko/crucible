@@ -1,5 +1,6 @@
 #include <crucible/Cipher.h>
 #include <crucible/MerkleDag.h>
+#include <crucible/Serialize.h>
 
 #include <memory>
 #include <fixy/Core.h>
@@ -125,9 +126,51 @@ static ::fixy::HeapArray<crucible::Cipher::SessionEvent> session_batch(std::uint
     return events.view().get(position).expect("the position is inside the list")->step_id().value;
 }
 
-// The region of a load result that holds one.
-static const crucible::RegionNode& region_of(crucible::Cipher::LoadedContentAddressedRegionPayload const& loaded) {
-    return *loaded.get().expect("the load gives a region");
+// The region of a load that gives one.
+static const crucible::RegionNode& region_of(crucible::Cipher::LoadResult const& loaded) {
+    return *crucible::Cipher::LoadResult{loaded}.expect("the load gives a region").get();
+}
+
+// True when the load gives a region from the resident cache.
+static bool is_cache_hit(crucible::Cipher::LoadResult const& loaded) {
+    return loaded.match(
+        [](crucible::Cipher::LoadedContentAddressedRegionPayload const& payload) noexcept {
+            return payload.cache_hit();
+        },
+        [](crucible::LoadError) noexcept { return false; });
+}
+
+// The reason of a load that refuses.  A load that gives a region ends the
+// test.
+static crucible::LoadError reason_of(crucible::Cipher::LoadResult const& loaded) {
+    return loaded.err().expect("the load refuses");
+}
+
+// Writes bytes to the file of the object of hash under the root of the
+// store, as a writer of the store can, and makes the directory of the object
+// when it is missing.  The test gives a hash that no store of the test
+// stored, so the cache holds no bytes of it, and a load reads this file.
+static void write_object_file(::fixy::TextView root, crucible::ContentHash hash, ::fixy::View<const std::byte> bytes) {
+    const ::fixy::TestRunnerCtx ctx = store_ctx();
+    const ::fixy::fs::Dirfd root_dir =
+        ::fixy::fs::open_dirfd(ctx, ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(root))
+                                        .expect("the root of a store is a sanitized path"))
+            .expect("the root of the store opens");
+    ::foundation::os::PathText<64> object{};
+    object.append(::fixy::TextView{"objects/"}).expect("the object path fits its text");
+    object.append_hex<2>(hash.raw() >> 56U).expect("the object path fits its text");
+    static_cast<void>(::fixy::fs::make_directory_at(ctx, root_dir, object.c_text()).is_ok());
+    object.append('/').expect("the object path fits its text");
+    object.append_hex<14>(hash.raw()).expect("the object path fits its text");
+    using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
+    const bool is_written = ::fixy::fs::mint_file_at<WriteTruncate>(ctx, root_dir, object.c_text())
+                                .match(
+                                    [&](::fixy::Linear<::fixy::fs::OwnedFd> opened) {
+                                        const ::fixy::fs::OwnedFd file = std::move(opened).consume();
+                                        return bytes.size() == 0 || ::fixy::fs::write_full(ctx, file, bytes).is_ok();
+                                    },
+                                    [](::foundation::os::Errno) { return false; });
+    assert(is_written && "the test writes the file of the object");
 }
 
 static_assert(
@@ -143,15 +186,16 @@ static_assert(sizeof(crucible::Cipher::ContentAddressedRegionPayload) == sizeof(
 // only from content_addressed_payload.
 static_assert(!std::is_constructible_v<crucible::Cipher::LoadedContentAddressedRegionPayload,
                                        ::fixy::Ref<crucible::RegionNode>, bool>);
-static_assert(std::is_constructible_v<crucible::Cipher::LoadedContentAddressedRegionPayload, ::fixy::NoValue>);
+static_assert(!std::is_constructible_v<crucible::Cipher::LoadedContentAddressedRegionPayload, ::fixy::NoValue>,
+              "a loaded value holds a region: a refused load gives the LoadError of its Result");
 static_assert(!std::is_constructible_v<crucible::Cipher::LoadedContentAddressedRegionPayload, std::nullptr_t>,
-              "an empty load result is fixy::none, and no pointer converts to one");
+              "no pointer converts to a loaded value");
 static_assert(!std::is_constructible_v<crucible::Cipher::ContentAddressedRegionPayload,
                                        crucible::Cipher::ContentAddressedRegionPayload::Value>);
 static_assert(!std::is_constructible_v<crucible::Cipher::ContentAddressedRegionPayload, const crucible::RegionNode*>);
 static_assert(!std::is_default_constructible_v<crucible::Cipher::ContentAddressedRegionPayload>);
 static_assert(sizeof(crucible::Cipher::LoadedContentAddressedRegionPayload::Value) == sizeof(crucible::RegionNode*),
-              "an Option of a Ref holds one pointer, and no Ref holds the null one");
+              "the value of a load is a Ref, which holds one pointer");
 
 int main() {
     char tmpdir[] = "/tmp/crucible_cipher_XXXXXX";
@@ -201,7 +245,7 @@ int main() {
         auto ov = cipher.mint_open_view(store_ctx());
         ::fixy::BumpArena arena2{1 << 16};
         auto loaded_ca = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, expected_hash, arena2);
-        assert(static_cast<bool>(loaded_ca) && "load() must succeed for a stored hash");
+        assert(loaded_ca.is_ok() && "load() must succeed for a stored hash");
         assert(region_of(loaded_ca).content_hash == expected_hash);
         assert(region_of(loaded_ca).num_ops() == region.num_ops());
     }
@@ -258,15 +302,42 @@ int main() {
         assert(cipher.hash_at_step(ov, 999) == hash2);
     }
 
+    // Each refusal of a load names its reason.  The files below have hashes
+    // that no store of the test stored, so the cache holds no bytes of
+    // them, and each load reads its file.
     {
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
         ::fixy::BumpArena arena3{1 << 16};
-        assert(cipher
-                   .load_content_addressed(store_ctx(), ov, g_test.alloc, crucible::ContentHash{0xBADBADBADBADBAD0ULL},
-                                           arena3)
-                   .get()
-                   .is_none());
+        ::fixy::BumpArena reason_dag_arena{1 << 16};
+        const auto load = [&](std::uint64_t hash) {
+            return cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, crucible::ContentHash{hash}, arena3);
+        };
+        using crucible::LoadError;
+        assert(reason_of(load(0)) == LoadError::none_hash);
+        assert(reason_of(load(0xBADBADBADBADBAD0ULL)) == LoadError::file_open_failed);
+
+        const crucible::RegionNode& other_region = *make_test_region(reason_dag_arena, 0x5E);
+        ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(g_test.alloc, 4096, std::byte{0});
+        const std::size_t image_bytes =
+            crucible::serialize_region(crucible::SerializedRegion{other_region}, image.view());
+        assert(image_bytes > 0);
+        const ::fixy::View<std::byte> sound = image.view().window(0, image_bytes).expect("the image holds its bytes");
+
+        write_object_file(cipher.root(), crucible::ContentHash{0x1111111111111111ULL}, ::fixy::View<const std::byte>{});
+        assert(reason_of(load(0x1111111111111111ULL)) == LoadError::file_size);
+
+        // A sound region under the name of another hash.
+        write_object_file(cipher.root(), crucible::ContentHash{0x2222222222222222ULL}, sound);
+        assert(reason_of(load(0x2222222222222222ULL)) == LoadError::object_hash_mismatch);
+
+        // A damaged image gives the reason of its first fault.
+        write_object_file(cipher.root(), crucible::ContentHash{0x3333333333333333ULL},
+                          sound.window(0, 16).expect("the image holds sixteen bytes"));
+        assert(reason_of(load(0x3333333333333333ULL)) == LoadError::truncated);
+        *sound.get(0).expect("the image holds its magic") = std::byte{0};
+        write_object_file(cipher.root(), crucible::ContentHash{0x4444444444444444ULL}, sound);
+        assert(reason_of(load(0x4444444444444444ULL)) == LoadError::bad_magic);
     }
 
     {
@@ -305,8 +376,8 @@ int main() {
         std::filesystem::remove(path);
         ::fixy::BumpArena read_arena{1 << 16};
         auto loaded = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hash, read_arena);
-        assert(loaded.cache_hit() && "resident ContentAddressed bytes must avoid disk fetch");
-        assert(static_cast<bool>(loaded));
+        assert(is_cache_hit(loaded) && "resident ContentAddressed bytes must avoid disk fetch");
+        assert(loaded.is_ok());
         assert(region_of(loaded).content_hash == hash);
 
         std::filesystem::remove_all(dir_ca);
@@ -337,8 +408,8 @@ int main() {
         std::filesystem::remove(object_path(receiver_dir, receiver_hash));
         ::fixy::BumpArena read_arena{1 << 16};
         auto loaded = receiver.load_content_addressed(store_ctx(), receiver_ov, g_test.alloc, sender_hash, read_arena);
-        assert(loaded.cache_hit());
-        assert(static_cast<bool>(loaded));
+        assert(is_cache_hit(loaded));
+        assert(loaded.is_ok());
         assert(region_of(loaded).content_hash == sender_hash);
 
         std::filesystem::remove_all(sender_dir);
@@ -492,10 +563,8 @@ int main() {
         ::fixy::BumpArena read_arena{1 << 16};
         for (std::size_t i = 0; i < kStoreCount; ++i) {
             if (i + 1 == kStoreCount) {
-                assert(cipher
-                           .load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.at(::fixy::index<0>()),
-                                                   read_arena)
-                           .cache_hit());
+                assert(is_cache_hit(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc,
+                                                                  hashes.at(::fixy::index<0>()), read_arena)));
             }
             crucible::ContentHash& stored = crucible::test::element_at(hashes, i);
             stored = cipher.store(store_ctx(), ov,
@@ -505,14 +574,15 @@ int main() {
         for (const crucible::ContentHash hash : hashes) {
             std::filesystem::remove(object_path(dir_cache, hash));
         }
-        assert(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.at(::fixy::index<1>()), read_arena)
-                   .get()
-                   .is_none());
-        assert(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.at(::fixy::index<0>()), read_arena)
-                   .cache_hit());
+        // The cache removed the second object, and its file is gone.
+        assert(reason_of(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.at(::fixy::index<1>()),
+                                                       read_arena))
+               == crucible::LoadError::file_open_failed);
+        assert(is_cache_hit(
+            cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.at(::fixy::index<0>()), read_arena)));
         const auto newest = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc,
                                                           hashes.at(::fixy::index<kStoreCount - 1>()), read_arena);
-        assert(newest.cache_hit() && static_cast<bool>(newest));
+        assert(is_cache_hit(newest) && newest.is_ok());
 
         std::filesystem::remove_all(dir_cache);
     }

@@ -1947,7 +1947,7 @@ crucible_neg_compile_test(neg_cdag_version_external_cross_tag
   "conversion from .Tagged<\\[...\\],fixy::tags::source::FormatVersion>. to non-scalar type .Tagged<\\[...\\],fixy::tags::source::External>. requested"
   "neg_cdag_version_external_cross_tag.cpp:24")
 
-# deserialize_region returns std::optional<LoadedRegionNode>, a region
+# deserialize_region returns a Result of a LoadedRegionNode, a region
 # under the earned source::Loaded tag, reached on the Replayed to
 # Loaded edge after the fold of the operations matches the recorded
 # content hash.  The two fixtures pin the two escape directions.

@@ -150,15 +150,17 @@ int main() {
         reports.push_back(bench::run(label_read, [&] {
             ::fixy::BumpArena read_arena{1 << 18};
             auto r = cipher.load_content_addressed(ctx, open_view, A, warm_h, read_arena);
-            const bool is_loaded = static_cast<bool>(r);
+            const bool is_loaded = r.is_ok();
             bench::do_not_optimize(is_loaded);
         }));
 
         reports.push_back(bench::run(label_ca_read, [&] {
             ::fixy::BumpArena read_arena{1 << 18};
             auto r = cipher.load_content_addressed(ctx, open_view, A, warm_h, read_arena);
-            bench::do_not_optimize(static_cast<bool>(r));
-            bench::do_not_optimize(r.cache_hit());
+            const bool is_cache_hit = r.match([](auto const& loaded) noexcept { return loaded.cache_hit(); },
+                                              [](LoadError) noexcept { return false; });
+            bench::do_not_optimize(r.is_ok());
+            bench::do_not_optimize(is_cache_hit);
         }));
 
         reports.push_back(bench::run(label_record_event, [&] {

@@ -21,6 +21,7 @@
 // region or a session-event batch, are in src/Cipher.cpp.  This header
 // keeps the members that a context parameterizes, and the small members.
 
+#include <crucible/LoadError.h>
 #include <crucible/Types.h>
 #include <crucible/cipher/SessionPersistenceSurface.h>
 #include <fixy/Bands.h>
@@ -96,30 +97,29 @@ private:
     Value value_{};
 };
 
-// The result of a load: a Ref of the loaded value, or no value.  Only the
-// store builds a result that holds a value, because the cache flag is a
-// claim about where the bytes came from.
+// A loaded value: a Ref of the value, and where its bytes came from.  Only
+// the store builds one, because the cache flag is a claim about where the
+// bytes came from.  A load that refuses its bytes gives a LoadError in place
+// of this value.
 template <typename T>
 class [[nodiscard]] LoadedContentAddressedPayload {
 public:
     using value_type = T;
     using payload_type = ::fixy::session::ContentAddressed<T>;
-    using Value = ::fixy::Option<::fixy::Ref<T>>;
-
-    // The empty result.
-    constexpr LoadedContentAddressedPayload(::fixy::NoValue) noexcept {}
+    using Value = ::fixy::Ref<T>;
 
     [[nodiscard]] constexpr Value get() const noexcept { return value_; }
     [[nodiscard]] constexpr bool cache_hit() const noexcept { return cache_hit_; }
-    [[nodiscard]] constexpr explicit operator bool() const noexcept { return value_.is_some(); }
 
 private:
-    constexpr LoadedContentAddressedPayload(::fixy::Ref<T> value, bool cache_hit) noexcept
-        : value_(Value::some(value)), cache_hit_(cache_hit) {}
+    constexpr LoadedContentAddressedPayload(Value value, bool cache_hit) noexcept
+        : value_(value), cache_hit_(cache_hit) {}
 
     friend class ::crucible::Cipher;
 
-    Value value_{};
+    // No initializer: a Ref has no default value, and the one constructor
+    // sets it.
+    Value value_;
     bool cache_hit_ = false;
 };
 
@@ -318,15 +318,22 @@ public:
 
     using ValidatedObjectSize = ::fixy::Refined<::fixy::bounded_above<MAX_OBJECT_BYTES>, size_t>;
 
+    // The result of a load: the loaded region, or the reason that the store
+    // gives no region of the hash.
+    using LoadResult = ::fixy::Result<LoadedContentAddressedRegionPayload, LoadError>;
+
     // const even though it writes the resident cache: the cache is
     // process-local acceleration for the content-addressed quotient, not
     // durable Cipher state.  A hit materializes from bytes already seen
-    // under this hash and touches no filesystem.
+    // under this hash and touches no filesystem.  A refusal names its
+    // reason: the none hash, an object file that does not open or has a
+    // size that the load refuses, the first fault of the image, or a region
+    // whose content hash is not the hash of its object.
     template <typename Ctx>
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
-    [[nodiscard]] LoadedContentAddressedRegionPayload
-    load_content_addressed(Ctx const& ctx, OpenView const& view, ::foundation::effects::Alloc a,
-                           ContentHash content_hash, ::fixy::BumpArena& arena) const {
+    [[nodiscard]] LoadResult load_content_addressed(Ctx const& ctx, OpenView const& view,
+                                                    ::foundation::effects::Alloc a, ContentHash content_hash,
+                                                    ::fixy::BumpArena& arena) const {
         return load_content_addressed_(file_ctx_(ctx), view, a, content_hash, arena);
     }
 
@@ -513,10 +520,9 @@ private:
 
     [[nodiscard]] ContentHash store_(FileCtx const& file_ctx, OpenView const&, ContentAddressedRegionPayload payload);
 
-    [[nodiscard]] LoadedContentAddressedRegionPayload load_content_addressed_(FileCtx const& file_ctx, OpenView const&,
-                                                                              ::foundation::effects::Alloc a,
-                                                                              ContentHash content_hash,
-                                                                              ::fixy::BumpArena& arena) const;
+    [[nodiscard]] LoadResult load_content_addressed_(FileCtx const& file_ctx, OpenView const&,
+                                                     ::foundation::effects::Alloc a, ContentHash content_hash,
+                                                     ::fixy::BumpArena& arena) const;
 
     [[nodiscard]] ::foundation::core::GrowList<SessionEvent>
     load_session_events_(FileCtx const& file_ctx, OpenView const&, ::foundation::effects::Alloc a,
