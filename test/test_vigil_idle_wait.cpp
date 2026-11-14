@@ -2,28 +2,56 @@
 // still takes each op.
 //
 // A stage with no work spins for a short time, and then it parks.  So an
-// idle Vigil uses little CPU time.  The drain stage polls the trace ring
+// idle pipeline uses little CPU.  The drain stage polls the trace ring
 // after each sleep, each later stage wakes at a push into its channel, and
 // the publish stage serves a job of its owner after each timed park.
 //
-// The first test reads the CPU time of the process across an idle interval
-// of the wall clock.  Its bound is loose: half of one core.  Four stages
-// that spin use four cores.
+// The first test counts the user instructions of the publish stage while the
+// test thread does a fixed number of sleeps.  It reads no clock.  A stage
+// that spins runs many more instructions in that interval than a stage that
+// parks.  The counter of the kernel follows one thread, and the test reaches
+// only the publish stage, through a job.  So the sleep of the drain stage
+// and the untimed park of the detect and build stages get no count.  If the
+// host refuses the counter, the test prints the reason and skips.
 
+#include <crucible/BackgroundThread.h>
+#include <crucible/MetaLog.h>
+#include <crucible/TraceRing.h>
 #include <crucible/Vigil.h>
 #include <fixy/Ctx.h>
 #include <fixy/FixedArray.h>
+#include <fixy/os/PerfEvent.h>
+#include <fixy/os/Process.h>
 #include <fixy/os/Time.h>
 
 #include "test_assert.h"
 #include "test_harness.h"
 #include <cstdint>
 
+using crucible::BackgroundThread;
+using crucible::MetaIndex;
+using crucible::MetaLog;
+using crucible::TraceRing;
 using crucible::Vigil;
 
 namespace {
 
 constexpr uint64_t kMillisecond = 1000000;
+// The ops of one iteration of the loop of the first test, and its count of
+// iterations.
+constexpr uint64_t kPeriod = 8;
+constexpr uint64_t kIterations = 8;
+// The sleeps before the count.  The publish stage then parks for its
+// longest bound.
+constexpr uint64_t kSettleSleeps = 10;
+// The sleeps of 1 ms in the count.
+constexpr uint64_t kCountedSleeps = 300;
+// The most user instructions of the publish stage for each counted sleep.
+// The stage parks for at most 1 ms, so it wakes about one time in each
+// sleep.  A parked stage ran 205 for each sleep in release, 2585 in the
+// default build and 8213 under tsan.  A stage that spins ran 745000 in
+// release, so the bound is far from the two.
+constexpr uint64_t kInstructionsPerSleep = 50000;
 
 // The tensor of each op.  The detector and the region read the schemas and
 // the shapes, so the tensor needs no data address.
@@ -63,20 +91,89 @@ void idle_for(uint64_t milliseconds) {
         (void)pause.sleep_for(kMillisecond);
 }
 
-void test_idle_vigil_uses_little_cpu_time() {
+TraceRing& test_ring() {
+    static TraceRing ring{};
+    return ring;
+}
+
+MetaLog& test_log() {
+    static MetaLog log{};
+    return log;
+}
+
+// Records the op at position index of the loop, with no tensor.
+[[nodiscard]] bool record(TraceRing& ring, uint64_t index) {
+    TraceRing::Entry entry{};
+    entry.schema_hash = crucible::SchemaHash{0x100 + index % kPeriod};
+    entry.shape_hash = crucible::ShapeHash{0x200 + index % kPeriod};
+    return ring.try_append(entry, MetaIndex::none());
+}
+
+// Waits until the pipeline processed each op of the ring.
+void wait_for_pipeline(BackgroundThread& bt, TraceRing& ring) {
     const fixy::TestRunnerCtx runner{foundation::effects::testing::test()};
-    const auto cpu = fixy::time::mint_clock_reader<fixy::ClockSource_v::ProcessCpu>(runner);
-    const auto wall = fixy::time::mint_clock_reader<fixy::ClockSource_v::Monotonic>(runner);
-    Vigil vigil;
-    for (uint64_t iteration = 0; iteration < 4; ++iteration)
-        record_iteration(vigil);
-    vigil.flush();
-    const uint64_t cpu_before = cpu.read().expect("the CPU clock of the process gives a reading").peek();
-    const uint64_t wall_before = wall.read().expect("the monotonic clock gives a reading").peek();
-    idle_for(300);
-    const uint64_t cpu_nanos = cpu.read().expect("the CPU clock of the process gives a reading").peek() - cpu_before;
-    const uint64_t wall_nanos = wall.read().expect("the monotonic clock gives a reading").peek() - wall_before;
-    assert(cpu_nanos < wall_nanos / 2 && "the stages of an idle pipeline used more than half of one core");
+    const auto pause = fixy::time::mint_bounded_sleep<kMillisecond>(runner);
+    while (bt.total_processed.load_acquire() < ring.total_produced())
+        (void)pause.sleep_for(kMillisecond);
+}
+
+// True for an error that a host gives when its settings, its kernel or its
+// PMU refuse a counter of an unprivileged process.
+[[nodiscard]] bool is_refusal(foundation::os::Errno error) noexcept {
+    using foundation::os::Errno;
+    return error == Errno::eacces || error == Errno::eperm || error == Errno::enoent || error == Errno::enosys
+        || error == Errno::eopnotsupp;
+}
+
+// Counts the instructions of the stage of counter in a fixed number of
+// sleeps of the test thread.
+void check_idle_count(fixy::TestRunnerCtx const& runner, fixy::fs::OwnedFd const& counter) {
+    idle_for(kSettleSleeps);
+    const uint64_t before = fixy::perf::read_count(runner, counter).expect("the counter of the stage gives a count");
+    idle_for(kCountedSleeps);
+    const uint64_t after = fixy::perf::read_count(runner, counter).expect("the counter of the stage gives a count");
+    const uint64_t count = after - before;
+    if (count == 0) {
+        ::fixy::report(::fixy::Sink::Out, "[skipped] the counter gave no instruction of the publish stage\n");
+        return;
+    }
+    ::fixy::report(::fixy::Sink::Out, "  the idle publish stage ran {} user instructions in {} sleeps of 1 ms\n", count,
+                   kCountedSleeps);
+    assert(count < kCountedSleeps * kInstructionsPerSleep && "the idle publish stage ran too many instructions");
+}
+
+void test_idle_publish_stage_runs_few_instructions() {
+    const fixy::TestRunnerCtx runner{foundation::effects::testing::test()};
+    TraceRing& ring = test_ring();
+    BackgroundThread bt;
+    bt.start(&ring, &test_log());
+    for (uint64_t index = 0; index < kPeriod * kIterations; ++index)
+        assert(record(ring, index));
+    wait_for_pipeline(bt, ring);
+
+    // A job runs on the test thread while no publish stage runs.  The
+    // pipeline processed the ops, so its publish stage runs the job.
+    const fixy::process::ThreadId test_thread = fixy::process::current_thread(runner);
+    fixy::process::ThreadId stage_thread = test_thread;
+    bt.run_on_publish_stage([&stage_thread](BackgroundThread::PublishStage const&) noexcept {
+        const fixy::TestRunnerCtx stage_runner{foundation::effects::testing::test()};
+        stage_thread = fixy::process::current_thread(stage_runner);
+    });
+    assert(stage_thread != test_thread && "the job ran on the test thread, so no publish stage ran");
+
+    const fixy::perf::Event instructions = fixy::perf::hardware_event(fixy::perf::HardwareEvent::instructions);
+    fixy::perf::mint_perf_event(runner, instructions, 0, fixy::perf::Task{stage_thread})
+        .match(
+            [&runner](fixy::Linear<fixy::fs::OwnedFd> opened) noexcept {
+                const fixy::fs::OwnedFd counter = std::move(opened).consume();
+                check_idle_count(runner, counter);
+            },
+            [](foundation::os::Errno error) noexcept {
+                assert(is_refusal(error) && "the kernel refused the counter for a cause that is not a host setting");
+                ::fixy::report(::fixy::Sink::Out, "[skipped] the host refused the instruction counter (errno {})\n",
+                               foundation::os::error_number(error));
+            });
+    bt.stop();
 }
 
 void test_parked_pipeline_publishes_a_region() {
@@ -101,7 +198,7 @@ void test_parked_pipeline_publishes_a_region() {
 }  // namespace
 
 int main() {
-    test_idle_vigil_uses_little_cpu_time();
+    test_idle_publish_stage_runs_few_instructions();
     test_parked_pipeline_publishes_a_region();
     return 0;
 }

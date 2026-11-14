@@ -96,7 +96,7 @@ bench/ | door-header | 2 | - | -
 bench/ | inline-asm | 3 | - | -
 bench/ | raw-function-pointer | 1 | - | -
 bench/ | raw-new-delete | 2 | - | -
-bench/ | raw-pointer-object | 196 | - | -
+bench/ | raw-pointer-object | 192 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
 bench/ | std-entity | 851 | - | -
@@ -112,7 +112,7 @@ include/crucible/ | c-library-call | 42 | - | -
 include/crucible/ | compiler-builtin | 4 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
 include/crucible/ | raw-new-delete | 4 | - | -
-include/crucible/ | raw-pointer-object | 420 | - | -
+include/crucible/ | raw-pointer-object | 410 | - | -
 include/crucible/ | replace-pending:<limits> | 6 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 16 | - | -
 include/crucible/ | std-entity | 253 | - | -
@@ -138,8 +138,7 @@ include/crucible/perf/detail/ | raw-pointer-object | 29 | - | -
 include/crucible/perf/detail/ | replace-pending:std::bit_cast | 4 | - | -
 include/crucible/perf/detail/ | std-entity | 12 | - | -
 include/crucible/perf/detail/ | std-object | 4 | - | -
-include/crucible/warden/ | c-library-call | 1 | - | -
-include/crucible/warden/ | raw-pointer-object | 15 | - | -
+include/crucible/warden/ | raw-pointer-object | 13 | - | -
 include/crucible/warden/ | std-entity | 1 | - | -
 include/crucible/warden/ | std-object | 1 | - | -
 include/fixy/ | base-c-library-call | 5 | - | -
@@ -338,7 +337,7 @@ test/ | foreign-symbol | 13 | - | -
 test/ | inline-asm | 1 | - | -
 test/ | raw-function-pointer | 23 | - | -
 test/ | raw-new-delete | 41 | - | -
-test/ | raw-pointer-object | 544 | - | -
+test/ | raw-pointer-object | 535 | - | -
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 93 | - | -
 test/ | std-entity | 1803 | - | -
@@ -567,10 +566,10 @@ test/fuzz/property/ | c-array-object | 20 | - | -
 test/fuzz/property/ | c-library-call | 48 | - | -
 test/fuzz/property/ | compiler-builtin | 4 | - | -
 test/fuzz/property/ | raw-function-pointer | 2 | - | -
-test/fuzz/property/ | raw-pointer-object | 62 | - | -
+test/fuzz/property/ | raw-pointer-object | 59 | - | -
 test/fuzz/property/ | replace-pending:<limits> | 36 | - | -
-test/fuzz/property/ | std-entity | 197 | - | -
-test/fuzz/property/ | std-object | 54 | - | -
+test/fuzz/property/ | std-entity | 196 | - | -
+test/fuzz/property/ | std-object | 53 | - | -
 test/graph_neg/ | raw-pointer-object | 6 | - | -
 test/kernel_neg/ | raw-pointer-object | 1 | - | -
 test/kernel_neg/ | replace-pending:<limits> | 1 | - | -
