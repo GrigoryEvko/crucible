@@ -1,5 +1,5 @@
-// *_sat_into mutates its destination counter.  A const counter must use
-// *_sat_from instead, preserving the read-only/mutating split.
+// *_sat_into mutates its destination counter.  A const counter takes the
+// checked form of fixy/Saturated.h, which writes nothing back.
 
 #include <fixy/Saturate.h>
 

@@ -1,8 +1,9 @@
 // The wrapped saturating helpers, exercised under a sequence of calls.
 //
-// These groups exercise the nine helpers that return a fixy wrapper —
-// the det, from and into families — which live in fixy/Saturate.h.  The
-// plain saturating forms are the Scalar family, and
+// These groups exercise the six helpers that return a fixy wrapper —
+// the det and into families — which live in fixy/Saturate.h, and the
+// read of a counter with no write-back, which is the checked form of
+// fixy/Saturated.h.  The plain saturating forms are the Scalar family, and
 // test/foundation/test_core_scalar_arith.cpp holds their tests.
 // Each check is an EXPECT, so one run reports every failure it has.  The
 // band checks use the free `relax<Tier>(band)` of fixy/Bands.h and the
@@ -18,14 +19,14 @@
 #include <type_traits>
 #include "../test_assert.h"
 
+using fixy::add_sat_checked;
+using fixy::mul_sat_checked;
+using fixy::sub_sat_checked;
 using fixy::sat::add_sat_det;
-using fixy::sat::add_sat_from;
 using fixy::sat::add_sat_into;
 using fixy::sat::mul_sat_det;
-using fixy::sat::mul_sat_from;
 using fixy::sat::mul_sat_into;
 using fixy::sat::sub_sat_det;
-using fixy::sat::sub_sat_from;
 using fixy::sat::sub_sat_into;
 
 namespace {
@@ -52,11 +53,11 @@ static_assert(!sub_sat_det<uint32_t>(5, 3).peek().was_clamped());
 static_assert(mul_sat_det<int32_t>(MIN<int32_t>, -1).peek().value() == MAX<int32_t>);
 static_assert(fixy::satisfies_v<decltype(mul_sat_det<int32_t>(MIN<int32_t>, -1)), fixy::DetSafeTier_v::Pure>);
 constexpr uint32_t counter = 40;
-static_assert(add_sat_from(counter, 2u).value() == 42u);
-static_assert(!add_sat_from(counter, 2u).was_clamped());
-static_assert(sub_sat_from(counter, 50u).value() == 0u);
-static_assert(sub_sat_from(counter, 50u).was_clamped());
-static_assert(mul_sat_from(counter, 2u).value() == 80u);
+static_assert(add_sat_checked(counter, 2u).value() == 42u);
+static_assert(!add_sat_checked(counter, 2u).was_clamped());
+static_assert(sub_sat_checked(counter, 50u).value() == 0u);
+static_assert(sub_sat_checked(counter, 50u).was_clamped());
+static_assert(mul_sat_checked(counter, 2u).value() == 80u);
 
 void test_det_wrappers() {
     auto add = add_sat_det<uint32_t>(MAX<uint32_t>, 1u);
@@ -95,7 +96,7 @@ void test_memory_counter_wrappers() {
     EXPECT(mul.was_clamped());
 
     uint32_t read_only = 9u;
-    auto projected = mul_sat_from(read_only, 9u);
+    auto projected = mul_sat_checked(read_only, 9u);
     EXPECT(read_only == 9u);
     EXPECT(projected.value() == 81u);
     EXPECT(!projected.was_clamped());

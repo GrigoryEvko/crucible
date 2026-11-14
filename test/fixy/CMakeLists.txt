@@ -1874,7 +1874,7 @@ fixy_test(test_saturate)
 fixy_neg_compile_test(neg_sat_into_const_dest
   "no matching function for call to .add_sat_into\\(const unsigned int&, unsigned int\\)."
   "add_sat_into\\(const unsigned int&, unsigned int\\)")
-fixy_neg_compile_test(neg_sat_from_raw_escape
+fixy_neg_compile_test(neg_sat_checked_raw_escape
   "cannot convert .fixy::Saturated<unsigned int>. to .unsigned int. in initialization"
   "fixy::Saturated<unsigned int>")
 fixy_neg_compile_test(neg_sat_det_raw_result_escape

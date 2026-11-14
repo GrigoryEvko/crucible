@@ -3,8 +3,8 @@
 // saturating_add, saturating_sub and saturating_mul come from
 // foundation/core/Arithmetic.h through fixy/Core.h. Each one gives the
 // exact result when no overflow occurs, and the nearest limit of the type
-// on overflow. The *_sat_from forms give the result in a Saturated<T>, and
-// the *_sat_into forms also write it back.
+// on overflow. The *_sat_checked forms of fixy/Saturated.h give the result
+// in a Saturated<T>, and the *_sat_into forms also write it back.
 
 #include <cstdint>
 #include <cstdio>
@@ -14,14 +14,14 @@
 
 #include "bench_harness.h"
 
+using fixy::add_sat_checked;
+using fixy::mul_sat_checked;
 using fixy::saturating_add;
 using fixy::saturating_mul;
 using fixy::saturating_sub;
-using fixy::sat::add_sat_from;
+using fixy::sub_sat_checked;
 using fixy::sat::add_sat_into;
-using fixy::sat::mul_sat_from;
 using fixy::sat::mul_sat_into;
-using fixy::sat::sub_sat_from;
 using fixy::sat::sub_sat_into;
 
 int main() {
@@ -123,19 +123,19 @@ int main() {
                        bench::do_not_optimize(r);
                    }),
 
-        bench::run("add_sat_from<u32> counter",
+        bench::run("add_sat_checked<u32> counter",
                    [&] {
-                       auto r = add_sat_from(counter_add, uint32_t{u_b});
+                       auto r = add_sat_checked(counter_add, uint32_t{u_b});
                        bench::do_not_optimize(r);
                    }),
-        bench::run("sub_sat_from<u32> counter",
+        bench::run("sub_sat_checked<u32> counter",
                    [&] {
-                       auto r = sub_sat_from(counter_sub, uint32_t{u_b});
+                       auto r = sub_sat_checked(counter_sub, uint32_t{u_b});
                        bench::do_not_optimize(r);
                    }),
-        bench::run("mul_sat_from<u32> counter",
+        bench::run("mul_sat_checked<u32> counter",
                    [&] {
-                       auto r = mul_sat_from(counter_mul, uint32_t{3});
+                       auto r = mul_sat_checked(counter_mul, uint32_t{3});
                        bench::do_not_optimize(r);
                    }),
 

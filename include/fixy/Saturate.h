@@ -4,21 +4,21 @@
 //
 // The plain forms that return a T are saturating_add, saturating_sub and
 // saturating_mul of the Scalar family (foundation/core/Arithmetic.h).
-// The nine below return a fixy wrapper, Saturated<T> or the DetSafe band
-// over it, and the layer line keeps a fixy type out of foundation.  So
-// the nine live here.
+// The checked forms that return a Saturated<T> are add_sat_checked,
+// sub_sat_checked and mul_sat_checked of fixy/Saturated.h.  The six below
+// return a fixy wrapper too, and the layer line keeps a fixy type out of
+// foundation.  So the six live here.
 //
 //   *_sat_det   the checked result inside DetSafe<Pure, ...>: the value
 //               is a function of its operands alone, and the pin says so
-//   *_sat_from  the checked result of a counter and a step, the counter
-//               untouched
-//   *_sat_into  the same, written back into the counter
+//   *_sat_into  the checked result of a counter and a step, written back
+//               into the counter
 //
 // Each *_sat_det wraps the checked operation of Saturated.h in the band.
-// Each *_sat_from is that checked operation read through a reference.
-// Each *_sat_into is *_sat_from followed by the write-back.  The band is
-// built at its door, mint_band in fixy/Bands.h, which names the Pure
-// tier at each site.
+// Each *_sat_into is that checked operation followed by the write-back.
+// A read of a counter with no write-back is the checked operation itself.
+// The band is built at its door, mint_band in fixy/Bands.h, which names
+// the Pure tier at each site.
 
 #include <fixy/Bands.h>
 #include <fixy/Saturated.h>
@@ -46,37 +46,22 @@ CRUCIBLE_CONST constexpr DetSatPure<T> mul_sat_det(T a, T b) noexcept {
 }
 
 template <::foundation::core::Integer T>
-CRUCIBLE_PURE constexpr Saturated<T> add_sat_from(T const& counter, T value) noexcept {
-    return add_sat_checked(counter, value);
-}
-
-template <::foundation::core::Integer T>
-CRUCIBLE_PURE constexpr Saturated<T> sub_sat_from(T const& counter, T value) noexcept {
-    return sub_sat_checked(counter, value);
-}
-
-template <::foundation::core::Integer T>
-CRUCIBLE_PURE constexpr Saturated<T> mul_sat_from(T const& counter, T value) noexcept {
-    return mul_sat_checked(counter, value);
-}
-
-template <::foundation::core::Integer T>
 [[nodiscard]] constexpr Saturated<T> add_sat_into(T& dest, T value) noexcept {
-    auto result = add_sat_from(dest, value);
+    auto result = add_sat_checked(dest, value);
     dest = result.value();
     return result;
 }
 
 template <::foundation::core::Integer T>
 [[nodiscard]] constexpr Saturated<T> sub_sat_into(T& dest, T value) noexcept {
-    auto result = sub_sat_from(dest, value);
+    auto result = sub_sat_checked(dest, value);
     dest = result.value();
     return result;
 }
 
 template <::foundation::core::Integer T>
 [[nodiscard]] constexpr Saturated<T> mul_sat_into(T& dest, T value) noexcept {
-    auto result = mul_sat_from(dest, value);
+    auto result = mul_sat_checked(dest, value);
     dest = result.value();
     return result;
 }
