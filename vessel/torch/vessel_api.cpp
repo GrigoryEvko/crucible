@@ -167,21 +167,24 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
     // (action=RECORD, status=DIVERGED by default-init of uint8_t) tells
     // the Python side the operation was not recorded.
     //
-    // dispatch_op_pure takes the context of the Vigil's producer claim.  The
+    // The thunk first takes the context of the Vigil's producer claim.  The
     // mint claims the calling thread, or ends the process when another
     // thread holds the claim, which is the same gate that dispatch_op has.
     // This entry asks no is_producer_thread question, so that gate is its
-    // only guard.
+    // only guard.  It runs before the decode, because the decode writes the
+    // record slots that the producer thread owns.
     //
-    // The op borrows its records, so the thunk first decodes the records of
-    // the caller into a list that it owns.  A record that the decode refuses
-    // records nothing.
-    crucible::vessel::OpRecords records{};
-    if (!crucible::vessel::decode_ffi_records(metas_typed, n_metas, records)) return CrucibleDispatchResult{};
-    const auto validated = crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records.view());
-    for (const crucible::ValidatedOp& op : validated) {
-        const auto vigil = ::fixy::to(*vigil_typed.value());
-        return encode_dispatch_result(vigil->dispatch_op_pure(vigil->mint_producer_context(), op));
+    // The op borrows its records, so the thunk decodes the records of the
+    // caller into the record slots of the Vigil.  A record that the decode
+    // refuses records nothing.
+    const auto vigil = ::fixy::to(*vigil_typed.value());
+    const crucible::VigilFgCtx fg = vigil->mint_producer_context();
+    const auto decoded = crucible::vessel::decode_ffi_records(metas_typed, n_metas, vigil->op_record_slots(fg));
+    for (const ::fixy::View<const crucible::TensorMeta> records : decoded) {
+        for (const crucible::ValidatedOp& op :
+             crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
+            return encode_dispatch_result(vigil->dispatch_op_pure(fg, op));
+        }
     }
     return CrucibleDispatchResult{};
 }
@@ -232,13 +235,16 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
     auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
 
     // The trust ladder; see the sister site in crucible_dispatch_op.  The
-    // producer claim gates this entry as it gates crucible_dispatch_op.
-    crucible::vessel::OpRecords records{};
-    if (!crucible::vessel::decode_ffi_records(metas_typed, n_metas, records)) return CrucibleDispatchResult{};
-    const auto validated = crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records.view());
-    for (const crucible::ValidatedOp& op : validated) {
-        const auto vigil = ::fixy::to(*vigil_typed.value());
-        return encode_dispatch_result(vigil->dispatch_op_pure(vigil->mint_producer_context(), op));
+    // producer claim gates this entry and its decode as it gates
+    // crucible_dispatch_op.
+    const auto vigil = ::fixy::to(*vigil_typed.value());
+    const crucible::VigilFgCtx fg = vigil->mint_producer_context();
+    const auto decoded = crucible::vessel::decode_ffi_records(metas_typed, n_metas, vigil->op_record_slots(fg));
+    for (const ::fixy::View<const crucible::TensorMeta> records : decoded) {
+        for (const crucible::ValidatedOp& op :
+             crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
+            return encode_dispatch_result(vigil->dispatch_op_pure(fg, op));
+        }
     }
     return CrucibleDispatchResult{};
 }

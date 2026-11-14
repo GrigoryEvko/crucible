@@ -22,6 +22,19 @@
 
 namespace crucible {
 
+// The most inputs and the most outputs of one op.  The trust ladder of the
+// vessel refuses an entry with more of either (entry_is_well_formed), so the
+// records of each op that the ladder admits fit kMaxOpRecords slots.
+inline constexpr uint16_t kMaxOpInputs = 64;
+inline constexpr uint16_t kMaxOpOutputs = 64;
+inline constexpr uint32_t kMaxOpRecords = uint32_t{kMaxOpInputs} + uint32_t{kMaxOpOutputs};
+
+// The slots into which an adapter decodes the records of one op before it
+// builds the op.  Each slot holds a TensorMeta from the construction of the
+// slots on.  A decode writes the slots from the first one and gives a View of
+// the slots that it wrote, so a reader never reaches a slot of an earlier op.
+using OpRecordSlots = ::fixy::FixedArray<TensorMeta, kMaxOpRecords>;
+
 namespace detail {
 class ValidatedOpDoor;
 }  // namespace detail

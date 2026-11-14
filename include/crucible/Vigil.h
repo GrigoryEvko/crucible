@@ -555,6 +555,20 @@ public:
     MetaLog& meta_log(VigilFgCtx const&) && =
         delete("a temporary Vigil releases its log at the end of the statement. Use a Vigil that has a name");
 
+    // The slots into which an adapter decodes the records of one op before
+    // it builds the op.  The thread that holds the producer claim owns them,
+    // as it owns the producer surfaces of the ring and of the metadata log.
+    // The slots are a member, so the decode of an op fills no list on the
+    // stack of each call.  A decode writes the slots from the first one, and
+    // the View that it gives reaches only the slots that it wrote.
+    //
+    // An op path calls this door, so the door does not read the thread
+    // identity.  dispatch_op checks the thread again before the ring head
+    // can advance.
+    [[nodiscard]] OpRecordSlots& op_record_slots(VigilFgCtx const&) & noexcept { return op_record_slots_; }
+    OpRecordSlots& op_record_slots(VigilFgCtx const&) && =
+        delete("a temporary Vigil releases its slots at the end of the statement. Use a Vigil that has a name");
+
     // Counters that any thread can read with no context.  Each value is a
     // snapshot, and it can be stale by the time the caller reads it.
     [[nodiscard]] ::fixy::Stale<uint32_t> ring_size() const noexcept { return ring_->size(); }
@@ -1171,6 +1185,11 @@ private:
     };
     ReplayState replay_;
     RegionCache region_cache_;
+
+    // The slots of op_record_slots.  Only the producer thread reads or
+    // writes them, and each slot holds a TensorMeta from the construction of
+    // the Vigil on.
+    OpRecordSlots op_record_slots_{};
 
     // The regions that the foreground holds, for the sweep of the region
     // store on the publish stage.  The foreground writes the cells at the end

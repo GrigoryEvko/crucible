@@ -236,9 +236,29 @@ void test_data_ptr_typed() {
     EXPECT(typed_bytes == raw_bytes, "ExternalDataPtr layout must be byte-identical to void*");
 }
 
-// The C thunks decode the records of the caller into a list that they own,
-// and the View of the op borrows the list.  A count past the room of the list
-// decodes nothing, and the thunk then records nothing.
+// The ranks of the records that a decode gives, in order, or no rank when the
+// decode refuses the op.
+[[nodiscard]] ::fixy::FixedList<uint8_t, crucible::kMaxOpRecords>
+collect_ranks(::fixy::Option<::fixy::View<const crucible::TensorMeta>> const& decoded) noexcept {
+    ::fixy::FixedList<uint8_t, crucible::kMaxOpRecords> ranks{};
+    for (const ::fixy::View<const crucible::TensorMeta> records : decoded) {
+        for (const crucible::TensorMeta& record : records) {
+            EXPECT(ranks.push(record.ndim).is_ok(), "a View of the slots holds at most kMaxOpRecords records");
+        }
+    }
+    return ranks;
+}
+
+// True when the ranks are the expected ranks, in order.
+template <std::size_t Count>
+[[nodiscard]] bool has_ranks(::fixy::FixedList<uint8_t, crucible::kMaxOpRecords> const& ranks,
+                             ::fixy::FixedArray<uint8_t, Count> const& expected) noexcept {
+    return ::fixy::equal(ranks.view(), ::fixy::View<const uint8_t>{expected.view()});
+}
+
+// The C thunks decode the records of the caller into the record slots of the
+// Vigil, and the View of the op borrows the slots.  A count past the room of
+// the slots decodes nothing, and the thunk then records nothing.
 void test_ffi_records_copy() {
     // Each record has a different rank, which names it.
     ::fixy::FixedArray<CrucibleMeta, 3> sources{};
@@ -247,19 +267,13 @@ void test_ffi_records_copy() {
     sources.at(::fixy::index<2>()).ndim = 3;
     const TypedMeta typed = crucible::vessel::as_meta_typed(&sources.at(::fixy::index<0>()), 3);
 
-    crucible::vessel::OpRecords records{};
-    EXPECT(crucible::vessel::decode_ffi_records(typed, 3, records), "three records fit the list");
-    EXPECT(records.size() == 3, "the list holds each record of the caller");
-    const ::fixy::View<const crucible::TensorMeta> copied = records.view();
-    EXPECT(copied.get(0).expect("the copy holds a first record")->ndim == 1,
-           "the first record of the copy is the first record of the caller");
-    EXPECT(copied.get(2).expect("the copy holds a last record")->ndim == 3,
-           "the last record of the copy is the last record of the caller");
+    crucible::OpRecordSlots slots{};
+    const auto ranks = collect_ranks(crucible::vessel::decode_ffi_records(typed, 3, slots));
+    EXPECT(has_ranks(ranks, ::fixy::FixedArray<uint8_t, 3>{1, 2, 3}),
+           "the View holds each record of the caller, in order");
 
-    crucible::vessel::OpRecords refused{};
-    EXPECT(!crucible::vessel::decode_ffi_records(typed, crucible::vessel::kMaxOpRecords + 1, refused),
-           "a count past the room of the list is refused");
-    EXPECT(refused.size() == 0, "a refused count decodes no record");
+    EXPECT(crucible::vessel::decode_ffi_records(typed, crucible::kMaxOpRecords + 1, slots).is_none(),
+           "a count past the room of the slots is refused");
 }
 
 // A C caller writes each record through CrucibleMeta, its own type, and the
@@ -279,12 +293,13 @@ void test_ffi_records_read_the_c_records() {
     callers.at(::fixy::index<0>()) = written;
     callers.at(::fixy::index<1>()) = written;
 
-    crucible::vessel::OpRecords records{};
-    EXPECT(crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2), 2,
-                                                records),
-           "two records fit the list");
-    EXPECT(records.size() == 2, "the list holds each record of the caller");
-    for (const crucible::TensorMeta& read : records.view()) {
+    crucible::OpRecordSlots slots{};
+    const ::fixy::View<const crucible::TensorMeta> records =
+        crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2), 2,
+                                             slots)
+            .value_or(::fixy::View<const crucible::TensorMeta>{});
+    EXPECT(records.size() == 2, "the View holds each record of the caller");
+    for (const crucible::TensorMeta& read : records) {
         EXPECT(read.ndim == 1, "a record holds the rank that the caller wrote");
         EXPECT(crucible::raw_tensor_dim(read.sizes[0]) == 12, "a record holds the size that the caller wrote");
         EXPECT(read.dtype == crucible::ScalarType::Float, "a record holds the element type that the caller wrote");
@@ -363,10 +378,60 @@ void test_ffi_decode_refuses_each_broken_claim() {
     EXPECT(!is_decoded(reserved_flag), "a reserved bit of the flags is refused");
 
     ::fixy::FixedArray<CrucibleMeta, 2> callers{held, wide_grad};
-    crucible::vessel::OpRecords records{};
-    EXPECT(!crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2), 2,
-                                                 records),
+    crucible::OpRecordSlots slots{};
+    EXPECT(crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2), 2,
+                                                slots)
+               .is_none(),
            "an op with a refused record is refused");
+}
+
+// The record slots of a Vigil hold the records of one op at a time, and each
+// thunk decodes into the same slots.  A decode writes the slots from the
+// first one, and its View reaches only the slots that it wrote.  So a call
+// with fewer records than the call before reads no record of the call before.
+//
+// The test makes a Vigil, and the start of its background thread seals the
+// schema table.  So it runs after test_schema_name_typed.
+void test_ffi_records_reuse_the_slots_of_the_producer() {
+    // Each record has a different rank, which names it.  The record at
+    // position 5 breaks a claim of TensorMeta.
+    ::fixy::FixedArray<CrucibleMeta, 6> sources{};
+    uint8_t rank = 1;
+    for (CrucibleMeta& source : sources) {
+        source.ndim = rank;
+        ++rank;
+    }
+    sources.at(::fixy::index<5>()).requires_grad = 2;
+    const CrucibleMeta& first = sources.at(::fixy::index<0>());
+    const CrucibleMeta& fourth = sources.at(::fixy::index<3>());
+
+    crucible::Vigil vigil;
+    const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+
+    const auto three = collect_ranks(
+        crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&first, 3), 3, vigil.op_record_slots(fg)));
+    EXPECT(has_ranks(three, ::fixy::FixedArray<uint8_t, 3>{1, 2, 3}), "the first call reads its three records");
+
+    const auto one = collect_ranks(crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&fourth, 1), 1,
+                                                                        vigil.op_record_slots(fg)));
+    EXPECT(has_ranks(one, ::fixy::FixedArray<uint8_t, 1>{4}),
+           "a call with one record reads no record of the call before");
+
+    // Positions 3, 4 and 5: the decode writes two slots and refuses the
+    // third record, so the op records nothing.
+    EXPECT(
+        crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&fourth, 3), 3, vigil.op_record_slots(fg))
+            .is_none(),
+        "a call with a refused record gives no View");
+    const auto after_refusal = collect_ranks(
+        crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&first, 1), 1, vigil.op_record_slots(fg)));
+    EXPECT(has_ranks(after_refusal, ::fixy::FixedArray<uint8_t, 1>{1}),
+           "a call after a refused call reads no record of the refused call");
+
+    const auto none_read =
+        crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(nullptr, 0), 0, vigil.op_record_slots(fg));
+    EXPECT(none_read.is_some(), "an op with no tensor decodes");
+    EXPECT(collect_ranks(none_read).size() == 0, "a call with no record reads no record of the call before");
 }
 
 void test_schema_name_typed() {
@@ -563,6 +628,7 @@ int main() {
     test_ladder_refuses_unnamed_enumerations();
     test_ladder_refuses_a_count_that_disagrees_with_the_entry();
     test_c10_decoders_map_by_name();
+    test_ffi_records_reuse_the_slots_of_the_producer();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "test_vessel_api_typed: FAIL (%d)\n", g_failures);

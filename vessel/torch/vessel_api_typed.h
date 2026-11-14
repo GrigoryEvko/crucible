@@ -220,12 +220,10 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
 // life of a TensorMeta over foreign bytes: the checked lifetime start and
 // mint_foreign_view refuse a type with a Tagged pointer, a bool and
 // enumerations, and decode refuses a pointer.  So a thunk decodes each
-// record into a list that it owns, and the View borrows the list.  The list
-// holds the most records that the trust ladder admits: 64 inputs and 64
-// outputs (entry_is_well_formed).
-
-inline constexpr uint32_t kMaxOpRecords = 128;
-using OpRecords = ::fixy::FixedList<TensorMeta, kMaxOpRecords>;
+// record into the OpRecordSlots of the Vigil (Vigil::op_record_slots), and
+// the View borrows the slots.  The slots hold the most records that the trust
+// ladder admits: kMaxOpInputs inputs and kMaxOpOutputs outputs
+// (entry_is_well_formed).
 
 // The TensorMeta of one record of a C caller, or no value.  The function reads
 // each field through CrucibleMeta, the type that the caller wrote, and gives
@@ -254,18 +252,27 @@ using OpRecords = ::fixy::FixedList<TensorMeta, kMaxOpRecords>;
     return decode_tensor_meta(fields, external_data_ptr(record.data_ptr));
 }
 
-// Decodes the n_metas records at typed into records.  Returns false when the
-// count passes the room of the list or when decode_ffi_meta refuses a record.
-// The caller then records nothing.  Linear in n_metas.
-[[nodiscard]] inline bool decode_ffi_records(TypedMeta typed, uint32_t n_metas, OpRecords& records) noexcept {
-    if (n_metas > kMaxOpRecords) return false;
-    for (uint32_t i = 0; i < n_metas; ++i) {
-        const bool is_decoded = decode_ffi_meta(typed.value()[i])
-                                    .match([&records](TensorMeta meta) noexcept { return records.push(meta).is_ok(); },
-                                           [] noexcept { return false; });
-        if (!is_decoded) return false;
+// Decodes the n_metas records at typed into the slots 0 to n_metas - 1, and
+// gives the View of those slots.  A slot at or past n_metas can hold a record
+// of an earlier op, and the View does not reach it.  No value when the count
+// passes the room of the slots or when decode_ffi_meta refuses a record.  The
+// caller then records nothing.  Linear in n_metas.
+[[nodiscard]] inline ::fixy::Option<::fixy::View<TensorMeta const>>
+decode_ffi_records(TypedMeta typed, uint32_t n_metas, OpRecordSlots& slots) noexcept {
+    if (n_metas > kMaxOpRecords) return ::fixy::none;
+    for (const ::fixy::Index<kMaxOpRecords> slot : OpRecordSlots::indices()) {
+        if (slot.raw() == n_metas) break;
+        const bool is_decoded = decode_ffi_meta(typed.value()[slot.raw()])
+                                    .match(
+                                        [&slots, slot](TensorMeta meta) noexcept {
+                                            slots.at(slot) = meta;
+                                            return true;
+                                        },
+                                        [] noexcept { return false; });
+        if (!is_decoded) return ::fixy::none;
     }
-    return true;
+    const OpRecordSlots& written = slots;
+    return written.view().window(0, n_metas);
 }
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -318,16 +325,16 @@ schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
 //
 //   - schema_hash != 0, because 0 is the invalid sentinel and the
 //     content hash and the region cache both key on this field
-//   - num_inputs and num_outputs each at most 64, the TensorMeta
-//     array cap the MetaLog appends against
+//   - num_inputs at most kMaxOpInputs and num_outputs at most
+//     kMaxOpOutputs, so the records of the op fit the OpRecordSlots
 //   - num_scalar_args at most 5, the width of Entry::scalar_values.
 //     BackgroundThread asserts the same bound when it drains the ring,
 //     so a larger count reaches a contract violation rather than the
 //     pipeline; the adapter rejects the operation here instead.
 [[nodiscard]] CRUCIBLE_HOT constexpr bool entry_is_well_formed(const crucible::TraceRing::Entry& entry) noexcept {
     if (entry.schema_hash.raw() == 0) return false;
-    if (entry.num_inputs > 64) return false;
-    if (entry.num_outputs > 64) return false;
+    if (entry.num_inputs > crucible::kMaxOpInputs) return false;
+    if (entry.num_outputs > crucible::kMaxOpOutputs) return false;
     if (entry.num_scalar_args > decltype(crucible::TraceRing::Entry::scalar_values)::size()) return false;
     return true;
 }

@@ -3955,6 +3955,14 @@ crucible_neg_compile_test(neg_vigil_meta_log_unbranded_ctx
 crucible_neg_compile_test(neg_vigil_meta_log_other_brand
   "no known conversion for argument 1 from .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_vigil_meta_log_other_brand.cpp:15")
+# op_record_slots() hands out the slots into which the producer thread
+# decodes the records of an op, so it asks for the same context.
+crucible_neg_compile_test(neg_vigil_op_record_slots_unbranded_ctx
+  "no known conversion for argument 1 from .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_vigil_op_record_slots_unbranded_ctx.cpp:12")
+crucible_neg_compile_test(neg_vigil_op_record_slots_other_brand
+  "no known conversion for argument 1 from .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
+  "neg_vigil_op_record_slots_other_brand.cpp:16")
 crucible_neg_compile_test(neg_vigil_mint_producer_context_const
   "passing .const crucible::Vigil. as .this. argument discards qualifiers"
   "neg_vigil_mint_producer_context_const.cpp:10")
