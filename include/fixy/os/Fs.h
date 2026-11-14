@@ -191,13 +191,82 @@ make_directory_at_(int directory, char const* path, std::uint32_t mode) noexcept
 read_all_into_(int descriptor, ::foundation::core::Alloc allocation, ::foundation::core::GrowText& text) noexcept;
 
 // Reads into the COUNT bytes at FIRST until they are full or the file ends,
-// and gives the count of the bytes that it read.
+// and gives the count of the bytes that it read (read_full_steps_).
 [[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno> read_full_(int descriptor, void* first,
                                                                                           std::size_t count) noexcept;
 
-// Writes the COUNT bytes at FIRST.
+// Writes the COUNT bytes at FIRST (write_full_steps_).
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 write_full_(int descriptor, void const* first, std::size_t count) noexcept;
+
+// THE FULL TRANSFERS
+//   The loops of read_full_ and write_full_.  STEP moves at most REMAINING
+//   bytes at OFFSET, and gives the count that the kernel moved or the error of
+//   the kernel: STEP(OFFSET, REMAINING).  The door file gives a step that
+//   issues read or write, and a test gives a step of its own.  A step that a
+//   signal interrupts runs again, and each other error ends the loop.
+
+// Reads with STEP until COUNT bytes are in, or until a step gives zero at the
+// end of the file.  It gives the count of the bytes.  Complexity: one step
+// for each part that the kernel fills, and one more step at the end of the
+// file.
+template <class Step>
+[[nodiscard]] constexpr ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+read_full_steps_(std::size_t count, Step step) noexcept {
+    std::size_t total = 0;
+    bool is_at_end = false;
+    bool has_failed = false;
+    ::foundation::os::Errno failure = ::foundation::os::Errno::eio;
+    while (!is_at_end && !has_failed && total < count) {
+        step(total, count - total)
+            .match(
+                [&](std::uint64_t taken) {
+                    is_at_end = taken == 0;
+                    total += static_cast<std::size_t>(taken);
+                },
+                [&](::foundation::os::Errno error) {
+                    if (error != ::foundation::os::Errno::eintr) {
+                        failure = error;
+                        has_failed = true;
+                    }
+                });
+    }
+    if (has_failed) {
+        return ::foundation::core::err(failure);
+    }
+    return total;
+}
+
+// Writes with STEP until COUNT bytes are out.  A step that takes no byte of a
+// part that is not empty gives eio, as write_all of Rust gives WriteZero.  The
+// kernel gave no error, so the next step can also take no byte, and a loop
+// that asks again does not end.  Complexity: one step for each part that the
+// kernel takes.
+template <class Step>
+[[nodiscard]] constexpr ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+write_full_steps_(std::size_t count, Step step) noexcept {
+    std::size_t total = 0;
+    bool has_failed = false;
+    ::foundation::os::Errno failure = ::foundation::os::Errno::eio;
+    while (!has_failed && total < count) {
+        step(total, count - total)
+            .match(
+                [&](std::uint64_t taken) {
+                    has_failed = taken == 0;
+                    total += static_cast<std::size_t>(taken);
+                },
+                [&](::foundation::os::Errno error) {
+                    if (error != ::foundation::os::Errno::eintr) {
+                        failure = error;
+                        has_failed = true;
+                    }
+                });
+    }
+    if (has_failed) {
+        return ::foundation::core::err(failure);
+    }
+    return ::foundation::core::Unit{};
+}
 
 // The size in bytes of the file of DESCRIPTOR (fstat).
 [[nodiscard]] ::foundation::core::Result<std::int64_t, ::foundation::os::Errno> file_size_(int descriptor) noexcept;

@@ -236,6 +236,68 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     return 0;
 }
 
+// The loops of the full transfers end when a step moves zero bytes.  Each
+// step below moves the count of its plan for its call, and gives enospc after
+// kStepLimit calls.  So a loop that does not stop on a zero ends with enospc
+// and not with the result of the case.  A full write that the kernel takes
+// none of ends with eio, and a full read that gets zero bytes ends at the end
+// of the file.
+[[nodiscard]] int full_transfers_end_on_a_zero_step() {
+    namespace core = foundation::core;
+    using foundation::os::Errno;
+    using Step = core::Result<std::uint64_t, Errno>;
+    constexpr std::size_t kStepLimit = 64;
+    constexpr std::size_t kBytes = 5;
+
+    // The step of a plan: first_count on the first call, later_count on each
+    // other call, eintr on the call that interrupted_call names, and enospc
+    // after the limit.  calls counts the calls.
+    std::size_t calls = 0;
+    auto const planned_step = [&calls](std::uint64_t first_count, std::uint64_t later_count,
+                                       std::size_t interrupted_call) {
+        return [&calls, first_count, later_count, interrupted_call](std::size_t, std::size_t) -> Step {
+            calls += 1;
+            if (calls > kStepLimit) return core::err(Errno::enospc);
+            if (calls == interrupted_call) return core::err(Errno::eintr);
+            return calls == 1 ? first_count : later_count;
+        };
+    };
+
+    auto const none_taken = fs::detail::write_full_steps_(kBytes, planned_step(0, 0, 0));
+    if (none_taken.err().value_or(Errno{}) != Errno::eio || calls != 1) {
+        fixy::report(fixy::Sink::Err, "a full write that the kernel took none of ended with errno {} after {} steps\n",
+                     errno_of(none_taken), calls);
+        return 1;
+    }
+    calls = 0;
+    auto const part_taken = fs::detail::write_full_steps_(kBytes, planned_step(3, 0, 0));
+    if (part_taken.err().value_or(Errno{}) != Errno::eio || calls != 2) {
+        fixy::report(fixy::Sink::Err, "a full write with a short first take ended with errno {} after {} steps\n",
+                     errno_of(part_taken), calls);
+        return 1;
+    }
+    calls = 0;
+    auto const interrupted = fs::detail::write_full_steps_(kBytes, planned_step(0, kBytes, 1));
+    if (interrupted.is_err() || calls != 2) {
+        fixy::report(fixy::Sink::Err, "a full write after a signal ended with errno {} after {} steps\n",
+                     errno_of(interrupted), calls);
+        return 1;
+    }
+    calls = 0;
+    auto empty_file = fs::detail::read_full_steps_(kBytes, planned_step(0, 0, 0));
+    if (std::move(empty_file).value_or(kBytes) != 0 || calls != 1) {
+        fixy::report(fixy::Sink::Err, "a full read of an empty file did not end at its first step\n");
+        return 1;
+    }
+    calls = 0;
+    auto short_file = fs::detail::read_full_steps_(kBytes, planned_step(3, 0, 0));
+    if (std::move(short_file).value_or(0) != 3 || calls != 2) {
+        fixy::report(fixy::Sink::Err, "a full read of a file of three bytes did not end at its end\n");
+        return 1;
+    }
+    return 0;
+}
+
 // The calls under a directory: a new directory, its open, a file under it
 // that a View and a TextView fill, a commit by a rename in the same
 // directory, a whole read, a check of an entry and a remove.  The report of
@@ -371,6 +433,7 @@ int main() {
     if (const int rc = mint_file_writes_syncs_and_commits(scratch); rc != 0) return rc;
     if (const int rc = dirfd_opens_and_flushes_the_entry(scratch); rc != 0) return rc;
     if (const int rc = full_reads_and_writes_round_trip(scratch); rc != 0) return rc;
+    if (const int rc = full_transfers_end_on_a_zero_step(); rc != 0) return rc;
     if (const int rc = calls_under_a_directory(scratch); rc != 0) return rc;
     if (const int rc = open_under_a_directory_refuses_a_symbolic_link(); rc != 0) return rc;
     if (const int rc = has_entry_reads_a_full_path(); rc != 0) return rc;

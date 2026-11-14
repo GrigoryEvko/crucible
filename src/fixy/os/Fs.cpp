@@ -160,60 +160,24 @@ core::Result<std::size_t, os::Errno> read_all_into_(int descriptor, core::Alloc 
     return total;
 }
 
-// Complexity: one read for each part of the buffer that the kernel fills,
-// and one more read at the end of the file.
 core::Result<std::size_t, os::Errno> read_full_(int descriptor, void* first, std::size_t count) noexcept {
     if (is_closed(descriptor)) {
         return core::err(os::Errno::ebadf);
     }
     char* const bytes = static_cast<char*>(first);
-    std::size_t total = 0;
-    bool is_at_end = false;
-    bool has_failed = false;
-    os::Errno failure = os::Errno::eio;
-    while (!is_at_end && !has_failed && total < count) {
-        os::result_of(os::raw_syscall(os::Syscall::read, descriptor, bytes + total, count - total))
-            .match(
-                [&](std::uint64_t taken) {
-                    is_at_end = taken == 0;
-                    total += static_cast<std::size_t>(taken);
-                },
-                [&](os::Errno error) {
-                    if (error != os::Errno::eintr) {
-                        failure = error;
-                        has_failed = true;
-                    }
-                });
-    }
-    if (has_failed) {
-        return core::err(failure);
-    }
-    return total;
+    return read_full_steps_(count, [descriptor, bytes](std::size_t offset, std::size_t remaining) {
+        return os::result_of(os::raw_syscall(os::Syscall::read, descriptor, bytes + offset, remaining));
+    });
 }
 
-// Complexity: one write for each part of the buffer that the kernel takes.
 UnitResult write_full_(int descriptor, void const* first, std::size_t count) noexcept {
     if (is_closed(descriptor)) {
         return core::err(os::Errno::ebadf);
     }
     char const* const bytes = static_cast<char const*>(first);
-    std::size_t total = 0;
-    bool has_failed = false;
-    os::Errno failure = os::Errno::eio;
-    while (!has_failed && total < count) {
-        os::result_of(os::raw_syscall(os::Syscall::write, descriptor, bytes + total, count - total))
-            .match([&](std::uint64_t taken) { total += static_cast<std::size_t>(taken); },
-                   [&](os::Errno error) {
-                       if (error != os::Errno::eintr) {
-                           failure = error;
-                           has_failed = true;
-                       }
-                   });
-    }
-    if (has_failed) {
-        return core::err(failure);
-    }
-    return core::Unit{};
+    return write_full_steps_(count, [descriptor, bytes](std::size_t offset, std::size_t remaining) {
+        return os::result_of(os::raw_syscall(os::Syscall::write, descriptor, bytes + offset, remaining));
+    });
 }
 
 core::Result<std::int64_t, os::Errno> file_size_(int descriptor) noexcept {
