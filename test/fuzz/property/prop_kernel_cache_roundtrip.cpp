@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
             return b;
         },
         [](const auto& b) {
-            KernelCache cache;
+            KernelCache cache{::foundation::effects::testing::test().alloc};
             constexpr unsigned N = 64;
 
             // The cache never reads a kernel, so the address of a fake

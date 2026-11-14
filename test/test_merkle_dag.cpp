@@ -144,7 +144,7 @@ template <class Fake>
 
     // RowHash{0} is the row identity of a bare, unwrapped type, so it is
     // the row every untyped call site keys on.
-    crucible::KernelCache cache;
+    crucible::KernelCache cache{test.alloc};
     using crucible::RowHash;
     using KernelSlot = crucible::KernelCache::KernelCacheSlot;
     using SlotSnapshot = crucible::KernelCache::KernelCacheSlotSnapshot;
@@ -202,7 +202,7 @@ template <class Fake>
     // Many rows under one content_hash drive the probe chain around
     // the table.
     {
-        crucible::KernelCache row_pressure_cache(/*capacity=*/16);
+        crucible::KernelCache row_pressure_cache(test.alloc, /*capacity=*/16);
         constexpr uint32_t N = 8;  // half the table — leaves room for probes
         FakeKernel row_kernels[N];
         for (uint32_t i = 0; i < N; ++i) {
@@ -222,7 +222,7 @@ template <class Fake>
     }
 
     {
-        crucible::KernelCache tiny_cache(/*capacity=*/4);
+        crucible::KernelCache tiny_cache(test.alloc, /*capacity=*/4);
         FakeKernel small_kernels[5];
         for (uint32_t i = 0; i < 4; ++i) {
             small_kernels[i] = FakeKernel{static_cast<int>(i)};
@@ -254,7 +254,7 @@ template <class Fake>
     // pending kernel.  Inserting under row 0, then a second row, then
     // row 0 again reproduces the same slot observation the race makes.
     {
-        crucible::KernelCache audit2_cache(/*capacity=*/16);
+        crucible::KernelCache audit2_cache(test.alloc, /*capacity=*/16);
         FakeKernel k_row0_v1{1};
         FakeKernel k_rowR_v1{2};
         FakeKernel k_row0_v2{3};
@@ -476,7 +476,7 @@ template <class Fake>
         const ContentHash direct_tc = crucible::compute_content_hash(rops_a.view(), &recipe_tc);
         assert(r_tc->content_hash == direct_tc);
 
-        crucible::KernelCache rcache;
+        crucible::KernelCache rcache{test.alloc};
         struct FakeRecipeKernel {
             int tag;
         };

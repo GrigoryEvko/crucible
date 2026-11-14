@@ -19,19 +19,14 @@
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <expected>
-#include <new>
-#include <span>
 #include <utility>
 
 namespace crucible {
 
 // Open-addressing map from (ContentHash, RowHash) to a compiled kernel.
-// Capacity is a power of two so that `(slot + probe) & mask` wraps.
+// The capacity is a power of two, so the mask of the table wraps each probe.
 //
 // The effect row is half the key, not a payload.  Two regions with identical
 // ops but different rows must occupy different slots, because only some rows
@@ -242,43 +237,15 @@ public:
         Published = 2,
     };
 
-    explicit KernelCache(uint32_t capacity = 4096) : capacity_(capacity) {
-        // A power of two makes `(slot + probe) & mask` the wrap-around, and
-        // the 2^31 ceiling keeps `slot_index + probe` inside uint32_t.
-        //
-        // The precondition is armed in a release build as well as a debug
-        // one: the release preset evaluates contracts under the `observe`
-        // semantic, and the project's violation handler is noreturn and ends
-        // in std::abort, so a violation stops the process either way.  It is
-        // a contract_assert and not a CRUCIBLE_PRE: under the `ignore`
-        // semantic, CRUCIBLE_PRE tells the optimizer to assume its predicate,
-        // and that assumption would let the optimizer delete the repeat
-        // below.  A contract_assert under `ignore` gives the optimizer no
-        // assumption.  The constructor is not constexpr, so no constant
-        // evaluation reaches the check.
-        contract_assert(::foundation::decide::is_power_of_two_le<std::uint32_t>(capacity, std::uint32_t{1u << 31}));
-
-        // The repeat that follows is not redundant. A translation unit can
-        // take the `ignore` semantic through CRUCIBLE_CONTRACT_IGNORE_OPTIONS,
-        // and then no contract in the headers it includes checks anything. In
-        // a Release build with CRUCIBLE_BENCH, bench/bench_pool_allocator.cpp
-        // is one such unit, and it includes this header. This check does not
-        // depend on the semantic, and the whole probe sequence rests on the
-        // property it states:
-        // `(slot + probe) & mask` only wraps back into the table when the
-        // capacity is a power of two, so a capacity that is not one makes
-        // every probe past the first read and write outside the allocation.
-        // One construction per cache, so the repeat costs nothing.
-        CRUCIBLE_FATAL_INVARIANT(capacity != 0 && (capacity & (capacity - 1)) == 0);
-        table_ = allocate_table_(capacity_);
-        if (!table_) [[unlikely]]
-            ::fixy::fatal("the kernel cache cannot allocate its table: lower the capacity or free memory");
-        CRUCIBLE_POST(0, capacity_ == capacity);
-        CRUCIBLE_POST(0, table_ != nullptr);
+    // The table holds capacity slots on a cache line boundary.  The mint ends
+    // the process unless the capacity is a power of two from 1 to 2^31, in
+    // each build and under each contract semantic.  Complexity: one
+    // allocation and O(capacity) slot constructions.
+    explicit KernelCache(::foundation::effects::Alloc alloc, uint32_t capacity = 4096) noexcept
+        : table_{::fixy::mint_masked_array<KernelCacheSlot, 64>(alloc, capacity)} {
+        CRUCIBLE_POST(0, table_.size() == capacity);
         CRUCIBLE_POST(0, size_.load_acquire() == 0);
     }
-
-    ~KernelCache() { destroy_table_(table_, capacity_); }
 
     KernelCache(const KernelCache&) = delete("lock-free hash map with atomic state cannot be copied");
     KernelCache& operator=(const KernelCache&) = delete("lock-free hash map with atomic state cannot be copied");
@@ -292,16 +259,14 @@ public:
     // A lookup of the zero hash would walk the entire table: it matches no
     // slot and terminates on no empty one.  The row needs no such guard,
     // because RowHash{0} is a real key that can coexist with any other.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] FoundKernel lookup(ContentHash content_hash,
-                                                                            RowHash row_hash) const noexcept
+    [[nodiscard, gnu::hot]] FoundKernel lookup(ContentHash content_hash, RowHash row_hash) const noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         const uint64_t lookup_hash = content_hash.raw();
         const uint64_t lookup_row = row_hash.raw();
-        const uint32_t mask = capacity_ - 1;
-        const uint32_t slot_index = static_cast<uint32_t>(lookup_hash) & mask;
-        for (uint32_t probe = 0; probe < capacity_; probe++) {
-            auto& entry = table_[(slot_index + probe) & mask];
+        const std::size_t slots = table_.size();
+        for (std::size_t probe = 0; probe < slots; probe++) {
+            const KernelCacheSlot& entry = table_.at_masked(lookup_hash + probe);
             uint64_t key = entry.content_hash_.load_acquire();
             if (key == 0) return ::fixy::none;
             if (key != lookup_hash) continue;
@@ -335,16 +300,15 @@ public:
     // Zero collides with the EMPTY marker, and UINT64_MAX is reserved as the
     // end-of-region marker, so neither can be a key.  The row again needs no
     // guard: RowHash{0} is a real key.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] InsertResult insert(ContentHash content_hash, RowHash row_hash,
-                                                                   KernelRef kernel) CRUCIBLE_NO_THREAD_SAFETY {
+    [[nodiscard]] InsertResult insert(ContentHash content_hash, RowHash row_hash, KernelRef kernel)
+        CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
         const uint64_t lookup_hash = content_hash.raw();
         const uint64_t lookup_row = row_hash.raw();
-        const uint32_t mask = capacity_ - 1;
-        const uint32_t slot_index = static_cast<uint32_t>(lookup_hash) & mask;
-        for (uint32_t probe = 0; probe < capacity_; probe++) {
-            auto& entry = table_[(slot_index + probe) & mask];
+        const std::size_t slots = table_.size();
+        for (std::size_t probe = 0; probe < slots; probe++) {
+            KernelCacheSlot& entry = table_.at_masked(lookup_hash + probe);
             uint64_t expected = 0;
             // A successful CAS claims the slot for this thread.
             if (entry.try_claim_content_hash(expected, lookup_hash)) {
@@ -400,8 +364,9 @@ public:
     // handed to a path that requires another.  The level is where the value
     // came from, not how near it is to the core, so it is a provenance tag
     // and not a residency class.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] AtLevel<VendorNeutralLevel, FoundKernel>
-    lookup_l1(ContentHash content_hash, RowHash row_hash) const noexcept CRUCIBLE_NO_THREAD_SAFETY {
+    [[nodiscard, gnu::hot]] AtLevel<VendorNeutralLevel, FoundKernel> lookup_l1(ContentHash content_hash,
+                                                                               RowHash row_hash) const noexcept
+        CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         return ::fixy::mint_tagged<VendorNeutralLevel>(lookup(content_hash, row_hash));
     }
@@ -430,7 +395,7 @@ public:
     //
     // Both hash guards are needed here and on the two levels below: UINT64_MAX
     // is non-zero, and zero is not the reserved sentinel.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]]
+    [[nodiscard]]
     AtLevel<VendorNeutralLevel, InsertResult> publish_l1(ContentHash content_hash, RowHash row_hash, KernelRef kernel)
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
@@ -456,14 +421,11 @@ public:
 
     // An informational counter that nothing orders against.
     [[nodiscard]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY { return size_.load_acquire(); }
-    [[nodiscard]] uint32_t capacity() const { return capacity_; }
+    [[nodiscard]] std::size_t capacity() const noexcept { return table_.size(); }
 
-    // The capacity guard is what keeps `capacity_ - 1u` below from wrapping
-    // to UINT32_MAX on an unconstructed cache.
-    [[nodiscard]] SlotState diag_slot_state(uint32_t slot_index) const noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(capacity_ > 0u);
-        CRUCIBLE_PRE(::foundation::decide::in_range<uint32_t>(slot_index, 0u, capacity_ - 1u));
-        const KernelCacheSlot& entry = table_[slot_index];
+    [[nodiscard]] SlotState diag_slot_state(std::size_t slot_index) const noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(slot_index < table_.size());
+        const KernelCacheSlot& entry = table_.at_masked(slot_index);
         return classify_(entry.content_hash_.load_acquire(), entry.kernel_.load_acquire().is_some());
     }
 
@@ -474,32 +436,10 @@ private:
         return SlotState::Published;
     }
 
-    static constexpr std::size_t kTableAlignment = 64;
-    static_assert(kTableAlignment % alignof(KernelCacheSlot) == 0);
-
-    [[nodiscard]] static KernelCacheSlot* allocate_table_(uint32_t capacity) noexcept {
-        const auto bytes = static_cast<std::size_t>(capacity) * sizeof(KernelCacheSlot);
-        void* raw = ::operator new(bytes, std::align_val_t{kTableAlignment}, std::nothrow);
-        if (raw == nullptr) return nullptr;
-        auto* slots = static_cast<KernelCacheSlot*>(raw);
-        for (uint32_t i = 0; i < capacity; ++i) {
-            ::new(static_cast<void*>(&slots[i])) KernelCacheSlot();
-        }
-        return slots;
-    }
-
-    static void destroy_table_(KernelCacheSlot* table, uint32_t capacity) noexcept {
-        if (table == nullptr) return;
-        for (uint32_t i = 0; i < capacity; ++i) {
-            table[i].~KernelCacheSlot();
-        }
-        ::operator delete(static_cast<void*>(table), std::align_val_t{kTableAlignment});
-    }
-
     // Outlined so that the hot lookup body stays compact.
     // The kernel of a claimed slot, or no value when the spin budget runs
     // out first.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[gnu::cold, gnu::noinline]]
+    [[gnu::cold, gnu::noinline]]
     static FoundKernel await_claimed_(const KernelCacheSlot& entry) noexcept {
         for (uint32_t spin = 0; spin < kClaimedSpinBudget; ++spin) {
             CRUCIBLE_SPIN_PAUSE;
@@ -519,8 +459,7 @@ private:
             ::foundation::permissions::mint_permission_root<KernelCompileTag>());
     }
 
-    KernelCacheSlot* table_;
-    uint32_t capacity_;
+    ::fixy::MaskedArray<KernelCacheSlot, 64> table_;
     ::fixy::Atomic<uint32_t> size_{};
 };
 

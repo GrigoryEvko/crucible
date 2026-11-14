@@ -230,7 +230,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         assert(region_tc->content_hash != region_bf16_tc->content_hash);
         assert(region_ord->content_hash != region_bf16_tc->content_hash);
 
-        KernelCache cache;
+        KernelCache cache{alloc_cap()};
         using crucible::RowHash;
         // A cache key pairs a content hash with a row hash.  These cases
         // vary only the content hash, so every call passes the bare-type

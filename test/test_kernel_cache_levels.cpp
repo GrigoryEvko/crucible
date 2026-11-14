@@ -24,6 +24,9 @@ using L3 = KernelCache::ChipLevel;
 using PublishResult = KernelCache::InsertResult;
 using Found = KernelCache::FoundKernel;
 
+// The allocation capability of each cache of the test.
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
+
 struct FakeKernel {
     int x;
 };
@@ -51,7 +54,7 @@ static KernelCache::KernelRef kernel_ref(FakeKernel& fake) noexcept {
 }
 
 static void test_lookup_l1_round_trip() {
-    KernelCache cache;
+    KernelCache cache{kAlloc};
     FakeKernel fk{42};
     auto pub = cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, kernel_ref(fk));
     assert(std::move(pub).into().is_ok());
@@ -64,7 +67,7 @@ static void test_lookup_l1_round_trip() {
 }
 
 static void test_each_level_names_its_level() {
-    KernelCache cache;
+    KernelCache cache{kAlloc};
     FakeKernel fk{1};
     static_assert(std::is_same_v<decltype(cache.lookup_l1(ContentHash{1}, RowHash{0})), ::fixy::Tagged<Found, L1>>);
     static_assert(std::is_same_v<decltype(cache.lookup_l2(ContentHash{1}, RowHash{0})), ::fixy::Tagged<Found, L2>>);
@@ -108,14 +111,14 @@ template <typename W>
 concept takes_chip_level = std::is_same_v<W, ::fixy::Tagged<Found, L3>>;
 
 static void test_level_gate_at_a_consumer() {
-    KernelCache cache;
+    KernelCache cache{kAlloc};
     static_assert(takes_chip_level<decltype(cache.lookup_l3(ContentHash{1}, RowHash{0}))>);
     static_assert(!takes_chip_level<decltype(cache.lookup_l1(ContentHash{1}, RowHash{0}))>);
     static_assert(!takes_chip_level<decltype(cache.lookup_l2(ContentHash{1}, RowHash{0}))>);
 }
 
 static void test_unbacked_levels() {
-    KernelCache cache;
+    KernelCache cache{kAlloc};
     FakeKernel fk{1};
 
     static_assert(noexcept(cache.lookup_l2(ContentHash{1}, RowHash{0})));
@@ -141,7 +144,7 @@ static void test_unbacked_levels() {
 }
 
 static void test_three_level_publish() {
-    KernelCache cache;
+    KernelCache cache{kAlloc};
     FakeKernel fk{0x42};
 
     auto r1 = cache.publish_l1(ContentHash{0x1111}, RowHash{0xAAAA}, kernel_ref(fk)).into();
@@ -154,7 +157,7 @@ static void test_three_level_publish() {
 }
 
 static void test_lookup_l1_miss() {
-    KernelCache cache;
+    KernelCache cache{kAlloc};
     assert(cache.lookup_l1(ContentHash{0xDEAD}, RowHash{0xBEEF}).into().is_none());
 
     // A publish under a different key must not make the original key hit
@@ -168,7 +171,7 @@ static void test_lookup_l1_miss() {
 // replaces an older compiled variant in place, so a wrapper that rejected
 // re-publication would break it.
 static void test_publish_l1_variant_update() {
-    KernelCache cache;
+    KernelCache cache{kAlloc};
     FakeKernel fk_v1{1};
     FakeKernel fk_v2{2};
     assert(cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, kernel_ref(fk_v1)).into().is_ok());
@@ -179,7 +182,7 @@ static void test_publish_l1_variant_update() {
 // One content hash with two row hashes occupies two slots. A wrapper
 // simplified to ignore the row hash would collapse them into one.
 static void test_publish_l1_row_discrimination() {
-    KernelCache cache;
+    KernelCache cache{kAlloc};
     FakeKernel fk_row_a{1};
     FakeKernel fk_row_b{2};
     assert(cache.publish_l1(ContentHash{0x1234}, RowHash{0xAAAA}, kernel_ref(fk_row_a)).into().is_ok());

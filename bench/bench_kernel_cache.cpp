@@ -216,7 +216,7 @@ int main() {
     static_assert(alignof(KernelCache::KernelCacheSlot) == 8);
 
     RawKernelCache raw{4096};
-    KernelCache typed{4096};
+    KernelCache typed{::foundation::effects::testing::test().alloc, 4096};
 
     std::array<FakeKernel, 1024> raw_hot{};
     std::array<FakeKernel, 1024> typed_hot{};
