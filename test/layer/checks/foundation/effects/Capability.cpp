@@ -7,7 +7,7 @@ namespace foundation::effects {
 namespace detail::capability_self_test {
 
 static_assert(sizeof(Capability<Effect::Alloc, Bg>) == 1,
-              "A Capability must be 1 byte.  It is an empty class and its source is a phantom type.");
+              "A Capability must be 1 byte.  It holds only its state, and its source is a phantom type.");
 static_assert(sizeof(Capability<Effect::IO, Init>) == 1);
 static_assert(sizeof(Capability<Effect::Block, Test>) == 1);
 
@@ -87,7 +87,18 @@ static_assert(std::is_trivially_destructible_v<Capability<Effect::Alloc, Bg>>,
               "The destructor of a Capability must stay trivial, so that its end costs nothing.");
 static_assert(sizeof(Capability<Effect::Alloc, Bg>) == 1,
               "The passkey constructor must preserve the 1-byte size.  The key is empty and the "
-              "Capability holds no members.");
+              "Capability holds one byte of state.");
+
+// A move spends its source, and a consume or a move of a spent token stops
+// a constant evaluation.  So a second use of one token is not a constant
+// expression.
+[[nodiscard]] consteval bool spends_once_() noexcept {
+    Capability<Effect::Alloc, Bg> first{mint_cap<Effect::Alloc>(testing::bg())};
+    Capability<Effect::Alloc, Bg> second{std::move(first)};
+    std::move(second).consume();
+    return true;
+}
+static_assert(spends_once_());
 
 static_assert(CanMintCap<Effect::Alloc, Bg>);
 static_assert(CanMintCap<Effect::IO, Bg>);

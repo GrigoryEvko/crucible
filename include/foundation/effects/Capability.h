@@ -11,10 +11,11 @@
 // Ownership is a separate axis.  A permission says which thread may
 // touch a resource; a capability says which kind of operation the
 // caller may perform.  A function may take both.  There is no reason
-// to nest a Capability inside a general single-consume wrapper: it is
-// already linear.
+// to nest a Capability inside a general single-consume wrapper: it
+// gives its authority one time and no more.
 
 #include <foundation/Platform.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -23,6 +24,7 @@
 #include <foundation/reflect/Instance.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <meta>
 #include <string_view>
 #include <type_traits>
@@ -72,6 +74,14 @@ public:
     constexpr cap_mint_key(const cap_mint_key&) noexcept {}
 };
 
+// A token gives its authority one time.  A move hands the authority to
+// the target and spends the source, and a consume spends the token
+// itself.  A spent token is still an object, because C++ leaves a
+// moved-from object valid, so the token records that it is spent.  A
+// move or a consume of a spent token ends the process, and in a constant
+// evaluation it stops the build.  A token can end with no consume: the
+// operation that it authorized does not occur, and nothing claims that
+// it did.
 template <Effect Cap, class Source>
 class [[nodiscard]] Capability {
 public:
@@ -80,32 +90,51 @@ public:
     // Capability itself befriends nobody.
     explicit constexpr Capability(cap_mint_key) noexcept {}
 
-    Capability(Capability const&) = delete;
-    Capability& operator=(Capability const&) = delete;
+    Capability(Capability const&) = delete("a copy of a capability gives its authority two times");
+    Capability& operator=(Capability const&) = delete("a copy of a capability gives its authority two times");
+
     // User-provided, and not defaulted.  A defaulted move is trivial, so
     // the token was trivially copyable and an implicit-lifetime type:
     // std::bit_cast built a capability from a byte, and
     // std::start_lifetime_as built one over a buffer, each with no key.
     // With this move no constructor is trivial.  The destructor stays
     // trivial.
-    constexpr Capability(Capability&&) noexcept {}
-    Capability& operator=(Capability&&) noexcept = default;
+    constexpr Capability(Capability&& other) noexcept : state_{other.spend_()} {}
+
+    // The target can be live.  It then ends with no consume, as a token
+    // that goes out of scope does.
+    constexpr Capability& operator=(Capability&& other) noexcept {
+        state_ = other.spend_();
+        return *this;
+    }
+
     ~Capability() = default;
 
     static constexpr Effect cap_v = Cap;
     using source_type = Source;
 
-    // The move is the consumption.  This body is empty on purpose: the
-    // rvalue qualifier forces the call site to write std::move(c) first,
-    // which puts the consumption point in the source where a reader and
-    // a grep can both find it.
-    //
-    // A second call on the moved-from object still compiles, because
-    // C++ move semantics leave it a valid object.  Catching that is a
-    // job for use-after-move analysis, not for the type system.
-    constexpr void consume() && noexcept {}
+    // The rvalue qualifier forces the call site to write std::move(c)
+    // first, which puts the consumption point in the source where a
+    // reader and a grep can both find it.
+    constexpr void consume() && noexcept { static_cast<void>(spend_()); }
 
     [[nodiscard]] static consteval std::string_view kind_name() noexcept { return "Capability"; }
+
+private:
+    enum class State : std::uint8_t {
+        spent = 0,
+        live = 1,
+    };
+
+    // Spends a live token and gives the state that it had.  The check is in
+    // the body, so it fires in a constant evaluation too.
+    [[nodiscard]] constexpr State spend_() noexcept {
+        CRUCIBLE_PRE(state_ == State::live);
+        state_ = State::spent;
+        return State::live;
+    }
+
+    State state_{State::live};
 };
 
 template <Effect E, class Source>

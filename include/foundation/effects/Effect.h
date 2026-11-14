@@ -537,7 +537,7 @@ struct row_hash_contribution<::foundation::effects::ExecCtx<Cap, R>> {
     static constexpr std::uint64_t value = discipline_row_hash_v<row_discipline::exec_ctx<Cap>, R>;
 };
 
-// A capability is a linear token for one effect, minted from a source.
+// A capability is a token for one use of one effect, minted from a source.
 // The effect folds as the row of one atom that it grants, so a capability
 // and a context that permit the same atom agree on that half.
 template <::foundation::effects::Effect E, class Source>

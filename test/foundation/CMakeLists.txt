@@ -39,6 +39,7 @@ foundation_test(test_effects_core)
 foundation_test(test_effects_resources)
 foundation_test(test_ctx)
 foundation_test(test_capability)
+foundation_test(test_moved_from_token)
 foundation_test(test_computation)
 foundation_test(test_diag)
 # The JSON emitter keeps a small stack frame.  A frame larger than 8 KiB in
@@ -1325,6 +1326,12 @@ foundation_neg_compile_test(neg_cap_mint_key_forged_by_start_lifetime_as
 foundation_neg_compile_test(neg_capability_forged_by_bit_cast
   "no matching function for call to .bit_cast<foundation::effects::Capability<foundation::effects::Effect::Block, foundation::effects::Bg"
   "is_trivially_copyable_v<_To> .with _To = foundation::effects::Capability<foundation::effects::Effect::Block, foundation::effects::Bg")
+# A move spends a capability, and a second consume of the spent token fails
+# the check in its body, so the constant evaluation stops.
+foundation_neg_compile_test(neg_capability_consumed_twice
+  "non-constant condition for static assertion"
+  "foundation/contracts/Pre\\.h:[0-9]+:[0-9]+: error: .__builtin_trap\\(\\). is not a constant expression"
+  "in expansion of macro .CRUCIBLE_PRE.")
 foundation_neg_compile_test(neg_capability_forged_by_start_lifetime_as
   "static assertion failed"
   ".foundation::effects::Capability<foundation::effects::Effect::Block, foundation::effects::Bg.* is not an implicit-lifetime type")
