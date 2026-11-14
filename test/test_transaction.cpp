@@ -84,9 +84,14 @@ static_assert(!std::is_default_constructible_v<Log>);
 static_assert(!std::is_constructible_v<crucible::Transaction::Timestamp, std::uint64_t>);
 static_assert(!std::is_trivially_copyable_v<crucible::Transaction>);
 
-[[nodiscard]] crucible::Transaction::ArenaRegion arena_region(crucible::RegionNode* region) {
-    return ::fixy::mint_tagged<::fixy::tags::source::Arena>(region);
+[[nodiscard]] crucible::Transaction::ArenaRegion arena_region(crucible::RegionNode& region) {
+    return ::fixy::mint_tagged<::fixy::tags::source::Arena>(::fixy::Ref<crucible::RegionNode>{::fixy::to(region)});
 }
+
+// A commit takes a Ref, so it cannot take a null region.  A slot that no
+// commit wrote holds no region, and the link of no region takes one pointer.
+static_assert(!std::is_constructible_v<crucible::Transaction::ArenaRegion, std::nullptr_t>);
+static_assert(sizeof(crucible::Transaction::ArenaRegionLink) == sizeof(void*));
 
 // The nanoseconds of the reading of a transaction, or zero when it holds no
 // reading.
@@ -112,7 +117,7 @@ static_assert(!std::is_trivially_copyable_v<crucible::Transaction>);
 // activation displaced.
 crucible::Transaction* publish(auto& log, const SoloOwner& owner, uint32_t step, crucible::RegionNode* region) {
     auto& tx = log.begin_tx(owner, step);
-    assert(log.commit(owner, tx, arena_region(region), region->content_hash, region->merkle_hash));
+    assert(log.commit(owner, tx, arena_region(*region), region->content_hash, region->merkle_hash));
     return log.activate(owner, tx).try_get();
 }
 
@@ -122,7 +127,7 @@ void expect_active(auto& log, const SoloOwner& owner, uint32_t step, crucible::R
     assert(active != nullptr);
     assert(active->status == crucible::TxStatus::ACTIVE);
     assert(active->step_id.get() == step);
-    assert(active->region.value() == region);
+    assert(crucible::holds_region(*active, ::fixy::to(*region)));
 }
 
 // The two orders of publications and rollbacks that make the oldest
@@ -172,7 +177,7 @@ void claim_passes_over_the_active_slot(::foundation::effects::Alloc alloc, const
     assert(displaced != nullptr);
     assert(displaced->status == crucible::TxStatus::SUPERSEDED);
     assert(displaced->step_id.get() == 1);
-    assert(displaced->region.value() == regions[1]);
+    assert(crucible::holds_region(*displaced, ::fixy::to(*regions[1])));
     expect_active(log, owner, kSlots + 1, regions[kSlots + 1]);
     assert(log.previous(owner).try_get() == displaced);
 
@@ -193,7 +198,7 @@ void previous_follows_the_order_of_displacements(::foundation::effects::Alloc al
     for (uint32_t step = 1; step <= kSteps; ++step) {
         regions[step] = region_of_step(alloc, arena, step);
         txs[step] = &log.begin_tx(owner, step);
-        assert(log.commit(owner, *txs[step], arena_region(regions[step]), regions[step]->content_hash,
+        assert(log.commit(owner, *txs[step], arena_region(*regions[step]), regions[step]->content_hash,
                           regions[step]->merkle_hash));
     }
 
@@ -238,7 +243,7 @@ void claim_keeps_the_target_of_out_of_order_activations(::foundation::effects::A
     for (uint32_t step = 1; step <= kSlots; ++step) {
         regions[step] = region_of_step(alloc, arena, step);
         txs[step] = &log.begin_tx(owner, step);
-        assert(log.commit(owner, *txs[step], arena_region(regions[step]), regions[step]->content_hash,
+        assert(log.commit(owner, *txs[step], arena_region(*regions[step]), regions[step]->content_hash,
                           regions[step]->merkle_hash));
     }
     assert(log.activate(owner, *txs[2]).try_get() == nullptr);
@@ -331,17 +336,22 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
     assert(tx1->ts_ns.is_some());
     const std::uint64_t begun_at = stamp_nanos(*tx1);
 
-    const bool committed = log.commit(owner, *tx1, arena_region(&*region1), hash1, merkle1);
+    // A transaction that the log began and did not commit holds no region.
+    assert(tx1->region.value().is_none());
+    assert(!crucible::holds_region(*tx1, region1));
+
+    const bool committed = log.commit(owner, *tx1, arena_region(*region1), hash1, merkle1);
     assert(committed);
     assert(tx1->status == crucible::TxStatus::COMMITTED);
     assert(tx1->content_hash == hash1);
     assert(tx1->merkle_root == merkle1);
-    assert(tx1->region.value() == &*region1);
+    assert(crucible::holds_region(*tx1, region1));
+    assert(!crucible::holds_region(*tx1, region2));
     // The reader clamps, so a later stamp through the same log never reads
     // earlier than a former one.
     assert(tx1->ts_ns.is_some() && stamp_nanos(*tx1) >= begun_at);
 
-    const bool double_commit = log.commit(owner, *tx1, arena_region(&*region1), hash1, merkle1);
+    const bool double_commit = log.commit(owner, *tx1, arena_region(*region1), hash1, merkle1);
     assert(!double_commit && "commit on COMMITTED tx must return false");
 
     auto* prev = log.activate(owner, *tx1).try_get();
@@ -357,7 +367,7 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
 
     const crucible::ContentHash hash2 = region2->content_hash;
     const crucible::MerkleHash merkle2 = region2->merkle_hash;
-    assert(log.commit(owner, *tx2, arena_region(&*region2), hash2, merkle2));
+    assert(log.commit(owner, *tx2, arena_region(*region2), hash2, merkle2));
     assert(tx2->status == crucible::TxStatus::COMMITTED);
 
     auto* superseded = log.activate(owner, *tx2).try_get();
@@ -386,7 +396,7 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
             crucible::make_region(test.alloc, arena, arena.array<crucible::TraceEntry>(test.alloc, 1, e));
         // Recomputed before the commit, for the reason given above.
         crucible::recompute_merkle(*r);
-        assert(log.commit(owner, tx, arena_region(&*r), r->content_hash, r->merkle_hash));
+        assert(log.commit(owner, tx, arena_region(*r), r->content_hash, r->merkle_hash));
         (void)log.activate(owner, tx);
     }
     // The loop ends at 32, so the last transaction is the active one.

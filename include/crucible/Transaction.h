@@ -30,8 +30,8 @@
 
 namespace crucible {
 
-// A transaction holds its region by pointer only, so this header does not
-// need the definition from MerkleDag.h.
+// A transaction holds its region by Ref only, so this header does not need
+// the definition from MerkleDag.h.
 struct RegionNode;
 
 enum class TxStatus : uint8_t {
@@ -44,14 +44,19 @@ enum class TxStatus : uint8_t {
 };
 
 struct Transaction {
-    using ArenaRegion = ::fixy::Tagged<RegionNode*, ::fixy::tags::source::Arena>;
+    // The region of a commit: a Ref of a region in the arena, which is
+    // never null.
+    using ArenaRegion = ::fixy::Tagged<::fixy::Ref<RegionNode>, ::fixy::tags::source::Arena>;
+    // The region of a transaction, or no region before its commit.
+    using ArenaRegionLink = ::fixy::Tagged<::fixy::Option<::fixy::Ref<RegionNode>>, ::fixy::tags::source::Arena>;
 
     // The type pins which clock this reading came from. A wall clock jumps
     // when the system time is corrected, and a boot clock counts time spent
     // suspended. Either would make the ordering of these stamps meaningless.
     using Timestamp = ::fixy::MonotonicClockBytes<std::uint64_t>;
 
-    static_assert(sizeof(ArenaRegion) == sizeof(RegionNode*));
+    static_assert(sizeof(ArenaRegionLink) == sizeof(::fixy::Option<::fixy::Ref<RegionNode>>),
+                  "the tag adds no byte to the link, and the empty link is the null pointer");
     static_assert(sizeof(Timestamp) == sizeof(std::uint64_t),
                   "a clock-source-tagged timestamp must be the size of the value it wraps");
 
@@ -69,7 +74,7 @@ struct Transaction {
     ::fixy::Monotonic<uint64_t> displacement_order = ::fixy::mint_monotonic<uint64_t>(0);
     ContentHash content_hash;  // zero until the transaction commits
     MerkleHash merkle_root;  // zero until the transaction commits
-    ArenaRegion region = ::fixy::mint_tagged<::fixy::tags::source::Arena, RegionNode*>(nullptr);
+    ArenaRegionLink region{};  // no region until the transaction commits
     // Empty until the log stamps the transaction, and empty after a stamp
     // whose clock read failed.  Only a clock reader builds a reading, so a
     // slot that the log never claimed holds none, and no default value can
@@ -92,6 +97,15 @@ inline void stamp_transaction(Transaction& tx,
         },
         [](::foundation::os::Errno const&) noexcept { return ::fixy::Option<Transaction::Timestamp>{::fixy::none}; });
     CRUCIBLE_POST(true, tx.ts_ns.is_some() == reading.is_ok());
+}
+
+// True when the transaction holds the region.  The test compares the
+// addresses of the two regions, so a copy of the region is not the region.
+// A transaction with no region holds no region.
+[[nodiscard]] inline bool holds_region(Transaction const& tx, ::fixy::Ref<const RegionNode> region) noexcept {
+    return tx.region.value().match(
+        [region](::fixy::Ref<RegionNode> const& held) noexcept { return ::fixy::same_object(held, region); },
+        []() noexcept { return false; });
 }
 
 // A proof that the caller is the one thread that owns some state. It is
@@ -204,13 +218,14 @@ public:
     // catches the case where the commit runs before the hash was recomputed.
     [[nodiscard]] bool commit(Owner const&, Transaction& tx, Transaction::ArenaRegion region, ContentHash content_hash,
                               MerkleHash merkle_root) noexcept {
-        CRUCIBLE_PRE(region.value() != nullptr);
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(merkle_root));
         if (tx.status != TxStatus::RECORDING && tx.status != TxStatus::CLOSED) {
             CRUCIBLE_POST(0, !false || tx.status == TxStatus::COMMITTED);
             return false;
         }
-        tx.region = region;
+        // The region came in under the Arena tag, so the link keeps it.
+        tx.region = ::fixy::mint_tagged<::fixy::tags::source::Arena>(
+            ::fixy::Option<::fixy::Ref<RegionNode>>::some(region.value()));
         tx.content_hash = content_hash;
         tx.merkle_root = merkle_root;
         tx.status = TxStatus::COMMITTED;
@@ -218,7 +233,7 @@ public:
         // Dropping any one of these assignments leaves the field at the value
         // the slot was reset to, which reads as an uncommitted transaction.
         CRUCIBLE_POST(true, tx.status == TxStatus::COMMITTED);
-        CRUCIBLE_POST(true, tx.region.value() == region.value());
+        CRUCIBLE_POST(true, holds_region(tx, region.value()));
         CRUCIBLE_POST(true, tx.content_hash == content_hash);
         CRUCIBLE_POST(true, tx.merkle_root == merkle_root);
         return true;
@@ -327,8 +342,8 @@ public:
     void for_each_region(Owner const&, Visit&& visit) const {
         for (typename Ring::size_type i = 0; i < ring_.size(); i++) {
             const Transaction& entry = ring_.recent(i);
-            if (entry.region.value() == nullptr) continue;
-            visit(::fixy::WeakRef<const RegionNode>::from_raw(entry.region.value()));
+            for (const ::fixy::Ref<RegionNode>& region : entry.region.value())
+                visit(::fixy::WeakRef<const RegionNode>{*region});
         }
     }
 

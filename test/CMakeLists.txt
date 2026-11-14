@@ -1851,14 +1851,14 @@ crucible_neg_compile_test(neg_transaction_log_capacity_two
   "the comparison reduces to .\\(2 >= 4\\).")
 
 # TransactionLog::commit takes the region as
-# fixy::Tagged<RegionNode*, source::Arena>.  A raw RegionNode* and a region
-# under the Loaded tag, which deserialize_region returns, both fail at the
-# commit boundary.
+# fixy::Tagged<Ref<RegionNode>, source::Arena>.  A raw RegionNode* and a Ref
+# under the Loaded tag, the tag of a loaded region, both fail at the commit
+# boundary.
 crucible_neg_compile_test(neg_transaction_region_raw_pointer
   "neg_transaction_region_raw_pointer.cpp:31:33: error: cannot convert .crucible::RegionNode\\*. to .crucible::Transaction::ArenaRegion."
-  "\\{aka .fixy::Tagged<crucible::RegionNode\\*, fixy::tags::source::Arena>.\\}")
+  "\\{aka .fixy::Tagged<foundation::core::Ref<crucible::RegionNode>, fixy::tags::source::Arena>.\\}")
 crucible_neg_compile_test(neg_transaction_region_loaded_cross_tag
-  "neg_transaction_region_loaded_cross_tag.cpp:34:33: error: cannot convert"
+  "neg_transaction_region_loaded_cross_tag.cpp:36:33: error: cannot convert"
   ".Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Loaded>. to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>.")
 
 # Transaction::step_id is fixy::Monotonic<uint64_t>.

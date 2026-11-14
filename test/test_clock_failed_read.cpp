@@ -302,8 +302,10 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
         }
     }
     const auto commit = [&log, &owner](crucible::Transaction* tx, crucible::RegionNode* region) {
-        return log.commit(owner, *tx, ::fixy::mint_tagged<::fixy::tags::source::Arena>(region), region->content_hash,
-                          region->merkle_hash);
+        return log.commit(
+            owner, *tx,
+            ::fixy::mint_tagged<::fixy::tags::source::Arena>(::fixy::Ref<crucible::RegionNode>{::fixy::to(*region)}),
+            region->content_hash, region->merkle_hash);
     };
 
     give_each_read(7, 0);

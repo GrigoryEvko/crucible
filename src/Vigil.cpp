@@ -88,12 +88,13 @@ bool Vigil::rollback() {
         // before the rollback.
         bg_.request_mark(ops_before);
         const ::fixy::WeakRef<Transaction> active = tx_log_.active(stage);
-        if (active.has_value()) {
-            restored = ::fixy::WeakRef<RegionNode>::from_raw(active->region.value());
+        if (!active.has_value()) return;
+        for (const ::fixy::Ref<RegionNode>& region : active->region.value()) {
+            restored = ::fixy::WeakRef<RegionNode>{*region};
             // The foreground gets the region outside the publication slot,
             // so the store keeps it until the foreground writes its holders
             // again.
-            bg_.keep_region(stage, ::fixy::WeakRef<const RegionNode>::from_raw(active->region.value()));
+            bg_.keep_region(stage, ::fixy::WeakRef<const RegionNode>{*region});
         }
     });
     if (!restored_one) return false;
@@ -133,8 +134,9 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // The merkle root goes through the checked accessor so the non-zero
     // invariant is witnessed at this call site: its precondition fires
     // here if the hash was never recomputed.
-    (void)tx_log_.commit(stage, tx, ::fixy::mint_tagged<::fixy::tags::source::Arena>(&region), region.content_hash,
-                         ::crucible::make_merkle_root(region.computed_merkle_hash()));
+    (void)tx_log_.commit(stage, tx,
+                         ::fixy::mint_tagged<::fixy::tags::source::Arena>(::fixy::Ref<RegionNode>{::fixy::to(region)}),
+                         region.content_hash, ::crucible::make_merkle_root(region.computed_merkle_hash()));
     (void)tx_log_.activate(stage, tx);
 
     // Publishing the region signals the foreground, which picks it up
