@@ -294,7 +294,7 @@ void publish_static_ckernel_table(const StaticCKernelTable&&) = delete(
     return global_ckernel_table().value()->classify(schema_hash);
 }
 
-[[nodiscard]] constexpr const char* ckernel_name(CKernelId id) {
+[[nodiscard]] constexpr ::fixy::TextView ckernel_name(CKernelId id) {
     switch (id) {
         case CKernelId::OPAQUE:
             return "OPAQUE";

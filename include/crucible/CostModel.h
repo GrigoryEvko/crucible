@@ -7,12 +7,11 @@
 // every size is bytes.
 
 #include <crucible/Types.h>
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
-#include <algorithm>
-#include <cmath>
 #include <cstdint>
 
 namespace crucible {
@@ -353,7 +352,7 @@ template <class Ctx>
         smem_limited = blocks * tpb;
     }
 
-    uint32_t actual = std::min({reg_limited, smem_limited, max_threads});
+    uint32_t actual = ::fixy::min(::fixy::min(reg_limited, smem_limited), max_threads);
     // The third operand of the minimum bounds the numerator by the
     // denominator, so the quotient is in range and the wrapper's check cannot
     // fire. It catches a later regression, such as dropping the warp-
@@ -395,9 +394,9 @@ template <class Ctx>
     }
 
     // Compute and memory overlap, so the slower of the two sets the pace.
-    cb.total_ns = std::max(cb.compute_ns, cb.memory_ns) + cb.launch_ns;
+    cb.total_ns = ::fixy::max(cb.compute_ns, cb.memory_ns) + cb.launch_ns;
 
-    if (cb.launch_ns > std::max(cb.compute_ns, cb.memory_ns) * 2.0)
+    if (cb.launch_ns > ::fixy::max(cb.compute_ns, cb.memory_ns) * 2.0)
         cb.bottleneck = CostBreakdown::Bottleneck::LAUNCH;
     else if (cb.wave_efficiency.value() < 0.1f)
         cb.bottleneck = CostBreakdown::Bottleneck::UNDERUTIL;

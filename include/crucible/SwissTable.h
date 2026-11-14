@@ -119,10 +119,13 @@ struct CtrlGroup {
 
     Bytes ctrl{};
 
-    // The group_width() control bytes from pos.  The bytes need no alignment.
-    // The tests and the bench hold their control bytes as a raw int8_t pointer.
-    [[nodiscard]] CRUCIBLE_INLINE static CtrlGroup load(const int8_t* pos) {
-        return {::foundation::simd::load<Bytes>(pos)};
+    // The group_width() control bytes of one group.  The type of the View
+    // proves the count, so the load has no check, and the bytes need no
+    // alignment.
+    using GroupBytes = ::fixy::View<const int8_t, group_width()>;
+
+    [[nodiscard]] CRUCIBLE_INLINE static CtrlGroup load(GroupBytes group) {
+        return {::foundation::simd::load<Bytes>(group)};
     }
 
     [[nodiscard]] CRUCIBLE_INLINE BitMask match(int8_t h2) const {

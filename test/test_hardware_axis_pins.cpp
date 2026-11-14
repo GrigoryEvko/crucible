@@ -79,12 +79,13 @@ int main() {
     if (bytes != 16 && bytes != 32 && bytes != 64) return 1;
 
     // Sized for the widest group any arm uses.  A narrower arm reads a prefix.
-    alignas(64) std::array<std::int8_t, 64> ctrl{};
-    for (std::size_t i = 0; i < ctrl.size(); ++i)
-        ctrl[i] = static_cast<std::int8_t>(i & 0x7F);  // H2 tags 0x00..0x7F
-    ctrl[3] = ::crucible::detail::kEmpty;  // the sole empty slot
+    alignas(64)::fixy::FixedArray<std::int8_t, 64> ctrl{};
+    for (const auto index : ctrl.indices())
+        ctrl.at(index) = static_cast<std::int8_t>(index.raw() & 0x7F);  // H2 tags 0x00..0x7F
+    ctrl.at(::fixy::index<3>()) = ::crucible::detail::kEmpty;  // the sole empty slot
 
-    const auto group = ::crucible::detail::CtrlGroup::load(ctrl.data());
+    const auto group = ::crucible::detail::CtrlGroup::load(
+        ctrl.view().template window<::crucible::detail::group_width()>(0).expect("the first group of the bytes"));
     const auto empties = group.match_empty();
     const auto fives = group.match(static_cast<std::int8_t>(5));
 

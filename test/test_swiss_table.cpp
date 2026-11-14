@@ -64,10 +64,9 @@ static void test_bitmask_iteration() {
 }
 
 static void test_group_match_empty() {
-    alignas(64) int8_t ctrl[kGroupWidth];
-    for (size_t i = 0; i < kGroupWidth; ++i)
-        ctrl[i] = kEmpty;
-    auto g = CtrlGroup::load(ctrl);
+    alignas(64)::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
+    ::fixy::fill(ctrl.view(), kEmpty);
+    auto g = CtrlGroup::load(ctrl.view());
     auto empty = g.match_empty();
     assert(static_cast<bool>(empty));
     uint32_t n = 0;
@@ -78,20 +77,20 @@ static void test_group_match_empty() {
     assert(n == kGroupWidth);
 
     // No empty slot: every byte is set to a non-empty tag.
-    for (size_t i = 0; i < kGroupWidth; ++i)
-        ctrl[i] = static_cast<int8_t>(i & 0x7F);
-    g = CtrlGroup::load(ctrl);
+    for (const auto index : ctrl.indices())
+        ctrl.at(index) = static_cast<int8_t>(index.raw() & 0x7F);
+    g = CtrlGroup::load(ctrl.view());
     assert(!static_cast<bool>(g.match_empty()));
     crucible::test::pass("  test_match_empty:               PASSED\n");
 }
 
 static void test_group_match_tag() {
-    alignas(64) int8_t ctrl[kGroupWidth];
+    alignas(64)::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
     // Sparse pattern: set tag 0x42 at every 3rd position, empty elsewhere.
-    for (size_t i = 0; i < kGroupWidth; ++i) {
-        ctrl[i] = (i % 3 == 0) ? int8_t{0x42} : kEmpty;
+    for (const auto index : ctrl.indices()) {
+        ctrl.at(index) = (index.raw() % 3 == 0) ? int8_t{0x42} : kEmpty;
     }
-    auto g = CtrlGroup::load(ctrl);
+    auto g = CtrlGroup::load(ctrl.view());
     auto hits = g.match(0x42);
     uint32_t count = 0;
     while (hits) {
@@ -113,10 +112,10 @@ static void test_match_single_position() {
     // Every position across the group width, one at a time, so that the
     // reduction from vector lanes to a bitmask is checked at each index.
     for (size_t pos = 0; pos < kGroupWidth; ++pos) {
-        alignas(64) int8_t ctrl[kGroupWidth];
-        for (size_t i = 0; i < kGroupWidth; ++i)
-            ctrl[i] = (i == pos) ? int8_t{0x3A} : kEmpty;
-        auto g = CtrlGroup::load(ctrl);
+        alignas(64)::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
+        for (const auto index : ctrl.indices())
+            ctrl.at(index) = (index.raw() == pos) ? int8_t{0x3A} : kEmpty;
+        auto g = CtrlGroup::load(ctrl.view());
         auto hits = g.match(0x3A);
         assert(static_cast<bool>(hits));
         assert(hits.lowest() == pos);

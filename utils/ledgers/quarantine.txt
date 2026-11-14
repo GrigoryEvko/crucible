@@ -88,19 +88,19 @@ reason vessel/ | The unit vessel of section 14.1 of the plan misc/01_10_2026_qua
 @build/ | c-array-object | 7 | - | -
 @build/test/fixy/armed_roster/ | c-array-object | 1 | - | -
 @build/test/fuzz/generated/ | std-object | 14 | - | -
-bench/ | c-array-object | 112 | - | -
-bench/ | c-library-call | 672 | - | -
+bench/ | c-array-object | 102 | - | -
+bench/ | c-library-call | 665 | - | -
 bench/ | c-library-object | 17 | - | -
 bench/ | compiler-builtin | 12 | - | -
 bench/ | door-header | 2 | - | -
 bench/ | inline-asm | 3 | - | -
 bench/ | raw-function-pointer | 1 | - | -
 bench/ | raw-new-delete | 2 | - | -
-bench/ | raw-pointer-object | 139 | - | -
+bench/ | raw-pointer-object | 135 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
-bench/ | std-entity | 779 | - | -
-bench/ | std-object | 234 | - | -
+bench/ | std-entity | 774 | - | -
+bench/ | std-object | 233 | - | -
 examples/fn/ | c-array-object | 9 | - | -
 examples/fn/ | c-library-call | 12 | - | -
 examples/fn/ | raw-pointer-object | 7 | - | -
@@ -112,9 +112,9 @@ include/crucible/ | c-library-call | 3 | - | -
 include/crucible/ | compiler-builtin | 1 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
 include/crucible/ | raw-new-delete | 1 | - | -
-include/crucible/ | raw-pointer-object | 146 | - | -
+include/crucible/ | raw-pointer-object | 144 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 1 | - | -
-include/crucible/ | std-entity | 24 | - | -
+include/crucible/ | std-entity | 21 | - | -
 include/crucible/ | std-object | 9 | - | -
 include/crucible/cntp/ | c-library-call | 9 | - | -
 include/crucible/cntp/ | compiler-builtin | 2 | - | -
@@ -317,8 +317,8 @@ src/perf/ | compiler-builtin | 1 | - | -
 src/perf/ | foreign-symbol | 14 | - | -
 src/perf/ | raw-pointer-object | 3 | - | -
 src/perf/ | replace-pending:std::bit_cast | 2 | - | -
-test/ | c-array-object | 182 | - | -
-test/ | c-library-call | 860 | - | -
+test/ | c-array-object | 179 | - | -
+test/ | c-library-call | 854 | - | -
 test/ | c-library-object | 14 | - | -
 test/ | compiler-builtin | 1 | - | -
 test/ | door-header | 19 | - | -
@@ -327,12 +327,12 @@ test/ | inline-asm | 1 | - | -
 test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | raw-function-pointer | 21 | - | -
 test/ | raw-new-delete | 41 | - | -
-test/ | raw-pointer-object | 475 | - | -
+test/ | raw-pointer-object | 474 | - | -
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 87 | - | -
-test/ | std-entity | 1568 | - | -
-test/ | std-object | 562 | - | -
+test/ | std-entity | 1564 | - | -
+test/ | std-object | 561 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
 test/cipher_neg/ | raw-pointer-object | 2 | - | -
 test/cipher_neg/ | std-entity | 6 | - | -

@@ -13,12 +13,12 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <vector>
 
 #include <crucible/Expr.h>
 #include <crucible/SwissTable.h>
+#include <fixy/Core.h>
+#include <foundation/effects/Effect.h>
 
 #include "bench_harness.h"
 
@@ -33,31 +33,36 @@ static constexpr size_t kGroupWidth = crucible::detail::group_width();
 namespace {
 
 // Fill ctrl bytes: `occupied_pct` gets random H2 tags, rest get kEmpty.
-void fill_ctrl(int8_t* ctrl, size_t capacity, double occupied_pct, uint64_t seed) {
+void fill_ctrl(::fixy::View<int8_t> ctrl, double occupied_pct, uint64_t seed) {
     uint64_t state = seed;
-    for (size_t i = 0; i < capacity; ++i) {
-        state = fmix64(state + i);
+    uint64_t position = 0;
+    for (int8_t& byte : ctrl) {
+        state = fmix64(state + position);
+        ++position;
         const double r = static_cast<double>(state & 0xFFFFFFFF) / 4294967296.0;
-        ctrl[i] = (r < occupied_pct) ? static_cast<int8_t>(state & 0x7F) : kEmpty;
+        byte = (r < occupied_pct) ? static_cast<int8_t>(state & 0x7F) : kEmpty;
     }
 }
 
+// The group of control bytes from offset.  Each caller gives an offset of a
+// whole group inside the run.
+CtrlGroup load_group(::fixy::View<const int8_t> ctrl, size_t offset) {
+    return CtrlGroup::load(ctrl.template window<kGroupWidth>(offset).expect("a group lies inside the control bytes"));
+}
+
 // Minimal Swiss-table simulator for full-probe benches. Triangular probing.
+// The capacity is a power of two, so each slot index reads its element
+// through the mask with no check.
 struct MiniSwissTable {
-    int8_t* ctrl = nullptr;
-    uint64_t* hashes = nullptr;
+    ::fixy::MaskedArray<int8_t> ctrl{};
+    ::fixy::MaskedArray<uint64_t> hashes{};
     size_t capacity = 0;
     size_t count = 0;
 
-    explicit MiniSwissTable(size_t cap) : capacity{cap} {
-        ctrl = static_cast<int8_t*>(std::malloc(cap));
-        hashes = static_cast<uint64_t*>(std::calloc(cap, sizeof(uint64_t)));
-        CRUCIBLE_BENCH_CHECK(ctrl != nullptr && hashes != nullptr);
-        std::memset(ctrl, 0x80, cap);  // all empty
-    }
-    ~MiniSwissTable() {
-        std::free(ctrl);
-        std::free(hashes);
+    MiniSwissTable(::foundation::effects::Alloc alloc, size_t cap) : capacity{cap} {
+        ctrl = ::fixy::mint_masked_array<int8_t>(alloc, cap);
+        hashes = ::fixy::mint_masked_array<uint64_t>(alloc, cap);
+        ::fixy::fill(ctrl.view(), kEmpty);
     }
     MiniSwissTable(const MiniSwissTable&) = delete;
     MiniSwissTable& operator=(const MiniSwissTable&) = delete;
@@ -72,11 +77,11 @@ struct MiniSwissTable {
         size_t probe = 0;
         while (true) {
             const size_t base = g * kGroupWidth;
-            auto group = CtrlGroup::load(&ctrl[base]);
+            auto group = load_group(ctrl.view(), base);
             if (auto empties = group.match_empty(); empties) {
                 const size_t idx = base + empties.lowest();
-                ctrl[idx] = tag;
-                hashes[idx] = h;
+                ctrl.at_masked(idx) = tag;
+                hashes.at_masked(idx) = h;
                 ++count;
                 return idx;
             }
@@ -93,11 +98,11 @@ struct MiniSwissTable {
         size_t probe = 0;
         while (true) {
             const size_t base = g * kGroupWidth;
-            auto group = CtrlGroup::load(&ctrl[base]);
+            auto group = load_group(ctrl.view(), base);
             auto matches = group.match(tag);
             while (matches) {
                 const size_t idx = base + matches.lowest();
-                if (hashes[idx] == h) return true;
+                if (hashes.at_masked(idx) == h) return true;
                 matches.clear_lowest();
             }
             if (auto empties = group.match_empty(); empties) return false;
@@ -142,17 +147,18 @@ int main() {
 
     // ── load() aligned vs unaligned ──────────────────────────────────
     reports.push_back([&] {
-        alignas(64) int8_t ctrl[kGroupWidth * 4];
-        fill_ctrl(ctrl, kGroupWidth * 4, 0.5, 99);
+        alignas(64)::fixy::FixedArray<int8_t, kGroupWidth * 4> ctrl{};
+        fill_ctrl(ctrl.view(), 0.5, 99);
+        const CtrlGroup::GroupBytes aligned = ctrl.view().template window<kGroupWidth>(0).expect("the first group");
         return bench::run("load() aligned", [&] {
-            auto g = CtrlGroup::load(ctrl);
+            auto g = CtrlGroup::load(aligned);
             bench::do_not_optimize(g);
         });
     }());
     reports.push_back([&] {
-        alignas(64) int8_t ctrl[kGroupWidth * 4];
-        fill_ctrl(ctrl, kGroupWidth * 4, 0.5, 99);
-        const int8_t* unaligned = ctrl + 3;
+        alignas(64)::fixy::FixedArray<int8_t, kGroupWidth * 4> ctrl{};
+        fill_ctrl(ctrl.view(), 0.5, 99);
+        const CtrlGroup::GroupBytes unaligned = ctrl.view().template window<kGroupWidth>(3).expect("a group from 3");
         return bench::run("load() unaligned (+3)", [&] {
             auto g = CtrlGroup::load(unaligned);
             bench::do_not_optimize(g);
@@ -161,11 +167,11 @@ int main() {
 
     // ── match(h2) ─────────────────────────────────────────────────────
     reports.push_back([&] {
-        alignas(64) int8_t ctrl[kGroupWidth];
-        fill_ctrl(ctrl, kGroupWidth, 0.75, 42);
+        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
+        fill_ctrl(ctrl.view(), 0.75, 42);
         const int8_t target = 0x37;
-        ctrl[5] = target;
-        auto group = CtrlGroup::load(ctrl);
+        ctrl.at(::fixy::index<5>()) = target;
+        auto group = CtrlGroup::load(ctrl.view());
         return bench::run("match(h2) — 1 match", [&] {
             auto m = group.match(target);
             bench::do_not_optimize(m);
@@ -173,12 +179,12 @@ int main() {
     }());
 
     reports.push_back([&] {
-        alignas(64) int8_t ctrl[kGroupWidth];
-        fill_ctrl(ctrl, kGroupWidth, 0.75, 42);
+        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
+        fill_ctrl(ctrl.view(), 0.75, 42);
         const int8_t miss = 0x7F;
-        for (size_t i = 0; i < kGroupWidth; ++i)
-            if (ctrl[i] == miss) ctrl[i] = 0x01;
-        auto group = CtrlGroup::load(ctrl);
+        for (int8_t& byte : ctrl)
+            if (byte == miss) byte = 0x01;
+        auto group = CtrlGroup::load(ctrl.view());
         return bench::run("match(h2) — 0 matches (miss)", [&] {
             auto m = group.match(miss);
             bench::do_not_optimize(m);
@@ -186,12 +192,12 @@ int main() {
     }());
 
     reports.push_back([&] {
-        alignas(64) int8_t ctrl[kGroupWidth];
-        fill_ctrl(ctrl, kGroupWidth, 0.75, 42);
+        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
+        fill_ctrl(ctrl.view(), 0.75, 42);
         const int8_t target = 0x37;
-        for (size_t i = 0; i < kGroupWidth; i += 4)
-            ctrl[i] = target;
-        auto group = CtrlGroup::load(ctrl);
+        for (::fixy::View<int8_t, 4> run : ctrl.template chunks<4>())
+            run.at(::fixy::index<0>()) = target;
+        auto group = CtrlGroup::load(ctrl.view());
         return bench::run("match(h2) — multiple matches", [&] {
             auto m = group.match(target);
             bench::do_not_optimize(m);
@@ -200,27 +206,27 @@ int main() {
 
     // ── match_empty() ─────────────────────────────────────────────────
     reports.push_back([&] {
-        alignas(64) int8_t ctrl[kGroupWidth];
-        fill_ctrl(ctrl, kGroupWidth, 0.75, 123);
-        auto group = CtrlGroup::load(ctrl);
+        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
+        fill_ctrl(ctrl.view(), 0.75, 123);
+        auto group = CtrlGroup::load(ctrl.view());
         return bench::run("match_empty() — 75% load", [&] {
             auto m = group.match_empty();
             bench::do_not_optimize(m);
         });
     }());
     reports.push_back([&] {
-        alignas(64) int8_t ctrl[kGroupWidth];
-        std::memset(ctrl, 0x42, kGroupWidth);  // all occupied
-        auto group = CtrlGroup::load(ctrl);
+        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
+        ::fixy::fill(ctrl.view(), int8_t{0x42});  // all occupied
+        auto group = CtrlGroup::load(ctrl.view());
         return bench::run("match_empty() — 100% full", [&] {
             auto m = group.match_empty();
             bench::do_not_optimize(m);
         });
     }());
     reports.push_back([&] {
-        alignas(64) int8_t ctrl[kGroupWidth];
-        std::memset(ctrl, 0x80, kGroupWidth);  // all empty
-        auto group = CtrlGroup::load(ctrl);
+        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
+        ::fixy::fill(ctrl.view(), kEmpty);  // all empty
+        auto group = CtrlGroup::load(ctrl.view());
         return bench::run("match_empty() — 0% load (all empty)", [&] {
             auto m = group.match_empty();
             bench::do_not_optimize(m);
@@ -252,11 +258,11 @@ int main() {
 
     // ── Combined probe step (match + empty check) ────────────────────
     reports.push_back([&] {
-        alignas(64) int8_t ctrl[kGroupWidth];
-        fill_ctrl(ctrl, kGroupWidth, 0.75, 42);
+        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
+        fill_ctrl(ctrl.view(), 0.75, 42);
         const int8_t target = 0x37;
-        ctrl[5] = target;
-        auto group = CtrlGroup::load(ctrl);
+        ctrl.at(::fixy::index<5>()) = target;
+        auto group = CtrlGroup::load(ctrl.view());
         return bench::run("probe step (match+empty, hit)", [&] {
             auto matches = group.match(target);
             uint32_t found_idx = 0;
@@ -271,12 +277,12 @@ int main() {
     }());
 
     reports.push_back([&] {
-        alignas(64) int8_t ctrl[kGroupWidth];
-        fill_ctrl(ctrl, kGroupWidth, 0.75, 42);
+        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
+        fill_ctrl(ctrl.view(), 0.75, 42);
         const int8_t miss = 0x7E;
-        for (size_t i = 0; i < kGroupWidth; ++i)
-            if (ctrl[i] == miss) ctrl[i] = 0x01;
-        auto group = CtrlGroup::load(ctrl);
+        for (int8_t& byte : ctrl)
+            if (byte == miss) byte = 0x01;
+        auto group = CtrlGroup::load(ctrl.view());
         return bench::run("probe step (match+empty, miss→stop)", [&] {
             auto matches = group.match(miss);
             bool found = static_cast<bool>(matches);
@@ -296,7 +302,8 @@ int main() {
         const size_t target_count = static_cast<size_t>(TABLE_CAP * load_factor);
 
         // Fixture — lives for both Runs in this load factor.
-        auto table = std::make_unique<MiniSwissTable>(TABLE_CAP);
+        const ::foundation::effects::Alloc alloc = ::foundation::effects::testing::test().alloc;
+        ::fixy::Box<MiniSwissTable> table = ::fixy::mint_box<MiniSwissTable>(alloc, alloc, TABLE_CAP);
 
         std::vector<uint64_t> inserted_hashes;
         uint64_t seed = 0xDEADBEEF;
@@ -318,13 +325,13 @@ int main() {
         std::snprintf(name_miss, sizeof(name_miss), "probe MISS — %s", label);
 
         uint32_t hit_idx = 0;
-        reports.push_back(bench::run(name_hit, [&, t = table.get()] {
+        reports.push_back(bench::run(name_hit, [&, t = table.view()] {
             bool found = t->find(inserted_hashes[hit_idx & 1023]);
             bench::do_not_optimize(found);
             ++hit_idx;
         }));
         uint32_t miss_idx = 0;
-        reports.push_back(bench::run(name_miss, [&, t = table.get()] {
+        reports.push_back(bench::run(name_miss, [&, t = table.view()] {
             bool found = t->find(absent_hashes[miss_idx & 1023]);
             bench::do_not_optimize(found);
             ++miss_idx;

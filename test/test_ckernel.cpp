@@ -7,7 +7,6 @@
 #include "test_abort_probe.h"
 #include "test_assert.h"
 #include <cstdio>
-#include <cstring>
 #include <type_traits>
 
 // Real schema hashes come from the adapter's hash function.  These are
@@ -37,7 +36,7 @@ static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::
 // each build.
 static void expect_name_of_the_count_ends_the_process() {
     bool const ends_the_process = ::crucible::test::aborts(
-        [] { CRUCIBLE_FATAL_INVARIANT(crucible::ckernel_name(crucible::CKernelId::NUM_KERNELS) != nullptr); });
+        [] { CRUCIBLE_FATAL_INVARIANT(crucible::ckernel_name(crucible::CKernelId::NUM_KERNELS).size() != 0); });
     CRUCIBLE_FATAL_INVARIANT(ends_the_process);
 }
 
@@ -78,12 +77,13 @@ int main() {
     register_or_fail(external_hash(HASH_LINEAR), CKernelId::GEMM_LINEAR);
     assert(classify_kernel(HASH_LINEAR) == CKernelId::GEMM_LINEAR);
 
-    assert(std::strcmp(ckernel_name(CKernelId::OPAQUE), "OPAQUE") == 0);
-    assert(std::strcmp(ckernel_name(CKernelId::GEMM_LINEAR), "GEMM_LINEAR") == 0);
-    assert(std::strcmp(ckernel_name(CKernelId::CONV2D), "CONV2D") == 0);
-    assert(std::strcmp(ckernel_name(CKernelId::SDPA), "SDPA") == 0);
-    assert(std::strcmp(ckernel_name(CKernelId::ACT_RELU), "ACT_RELU") == 0);
-    assert(std::strcmp(ckernel_name(CKernelId::EWISE_ADD), "EWISE_ADD") == 0);
+    assert(ckernel_name(CKernelId::OPAQUE) == ::fixy::TextView{"OPAQUE"});
+    assert(ckernel_name(CKernelId::GEMM_LINEAR) == ::fixy::TextView{"GEMM_LINEAR"});
+    assert(ckernel_name(CKernelId::CONV2D) == ::fixy::TextView{"CONV2D"});
+    assert(ckernel_name(CKernelId::SDPA) == ::fixy::TextView{"SDPA"});
+    assert(ckernel_name(CKernelId::ACT_RELU) == ::fixy::TextView{"ACT_RELU"});
+    assert(ckernel_name(CKernelId::EWISE_ADD) == ::fixy::TextView{"EWISE_ADD"});
+    static_assert(ckernel_name(CKernelId::COMM_BARRIER) == ::fixy::TextView{"COMM_BARRIER"});
 
     // Trace building fills this field in.  Until then it defaults to
     // OPAQUE rather than to an arbitrary kernel.
@@ -98,8 +98,11 @@ int main() {
     // The fallback name for an unnamed id opens with an angle bracket,
     // which is what the second half of the assertion below catches.
     for (uint8_t i = 1; i < static_cast<uint8_t>(CKernelId::NUM_KERNELS); i++) {
-        const char* name = ckernel_name(static_cast<CKernelId>(i));
-        assert(name != nullptr && name[0] != '<' && "all known ids must have proper names");
+        const ::fixy::TextView name = ckernel_name(static_cast<CKernelId>(i));
+        const bool opens_with_an_angle_bracket =
+            name.window(0, 1).match([](::fixy::TextView first) noexcept { return first == ::fixy::TextView{"<"}; },
+                                    [] noexcept { return false; });
+        assert(name.size() != 0 && !opens_with_an_angle_bracket && "all known ids must have proper names");
     }
 
     // Rejection of an out-of-range byte is pinned by negative-compile
