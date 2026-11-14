@@ -101,6 +101,52 @@ THE SELECTION
     nothing.  A parse build then keeps the report of each unit (THE KEPT
     REPORTS of assay.loop.syntax).
 
+    The vessel runs too, for a change that can change it (THE VESSEL).
+
+THE VESSEL
+    The preset VESSEL builds the vessel against the patched PyTorch.  Its
+    tier is nightly, and `loop nightly` builds and tests each target of its
+    build.  No configuration of the gate compiles crucible_fallback.cpp and
+    the shards of register.cpp of vessel/torch, because they need PyTorch.
+    Thus the gate also runs the vessel (Mode.VESSEL), in a thread of its own
+    with a lease of its own (THE THREADS).  The vessel is not a
+    configuration of CONFIGURATIONS.
+
+    The vessel runs for each change that can change each build
+    (changes_each_build()), and for each change of a path of VESSEL_PREFIX
+    (reaches_vessel()).  Ninja then compiles only the vessel units that the
+    change reaches.  The selection reads no include graph of a build of a
+    lane, because a lane can skip a commit that changed that graph.  A
+    change that reaches no vessel unit costs a build with no compile and the
+    run of the vessel tests.
+
+    The run of the vessel has these steps:
+      1. link_torch() gives the warm tree the link TORCH_VENV to the
+         directory TORCH_VENV of the main work tree of the repository.
+         TORCH_DIR of the preset names a directory in TORCH_VENV of the
+         source tree, and git does not hold it.  When the main work tree has
+         no such directory, the vessel gets a problem that names it.  The
+         gate then refuses the commit, because it cannot build the vessel.
+         The preset sets CRUCIBLE_REQUIRE_VESSEL, so a TORCH_DIR with no
+         PyTorch stops the configure with the reason
+      2. The configure of the build directory, when it has no graph of Ninja
+      3. `cmake --build BUILD --target` of each target of VESSEL_TARGETS,
+         with no -j (THE JOBSERVER)
+      4. `ctest --label-regex` of VESSEL_LABEL, with the jobs of the lease.
+         Each red test runs one more time apart from the suite, as in step 3
+         of THE RUN OF A CONFIGURATION.  A disabled test, and a run in which
+         no test runs, are problems too.  The fixtures with the label
+         vessel_neg need no PyTorch, and each configuration of the gate runs
+         them.
+    The round after THE REDUCE runs these steps again.  The vessel runs no
+    counted rule, no rule reconfigure-noop and no `guard warnings`, and THE
+    REDUCE reads no build of it.  The ledgers then hold the counts of the
+    configurations of the gate only.  The run of the base runs the red tests
+    of the vessel, or each vessel test after a problem of a different kind.
+    The lease of the vessel counts VESSEL_GB_PER_JOB for each job, because a
+    shard compile uses more than three times GB_PER_JOB (THE MEMORY of
+    assay.loop.heavy).
+
 THE CAREFUL SELECTION
     The selection reads files of the commit with the code of the gate, which
     is the code of main (THE DRIVER of assay.loop.land).  A commit can change
@@ -324,8 +370,9 @@ THE RUN OF THE BASE
     too in it (Focus).  The gate runs only that focus, each configuration
     in a thread of its own (focused_runs()).  It runs the red tests with
     `loop test BUILD --only FILE`, a parse configuration in its mode, and
-    each other configuration in the mode of the changed inputs.  The run of
-    the base writes no ledger and folds no ledger.  Its problems then have the
+    each other configuration in the mode of the changed inputs.  The vessel
+    runs in its mode (THE VESSEL).  The run of the base writes no ledger and
+    folds no ledger.  Its problems then have the
     words of the problems of the batch.  A problem of a run of the base does
     not stop the other configurations of the focus (THE STOP).  The run of
     the base gives the result of each of them, because the landing compares
@@ -448,15 +495,28 @@ BUILT_NOTE = "The gate wrote {paths} from the build of the composed tree."
 # The configuration that runs the full suite for each change.  Its build gives the tests that read a build (THE
 # SELECTION).
 ALWAYS = "default"
+# The preset of the vessel, the targets that the gate builds in its build, the label of the vessel tests, and the
+# prefix of the paths of the vessel (THE VESSEL).  TORCH_DIR of the preset names a directory in TORCH_VENV of the
+# source tree, which holds the patched PyTorch.
+VESSEL = "vessel"
+VESSEL_TARGETS = ("crucible_vessel", "crucible_dispatch")
+VESSEL_LABEL = "vessel"
+VESSEL_PREFIX = "vessel/"
+TORCH_VENV = ".venv-torch"
+# The memory of one job of the lease of the vessel, in GB (THE VESSEL).  On 2026-11-14, a compile of one shard of
+# register.cpp had a peak of 1.65 GB, and GB_PER_JOB of assay.loop.heavy is 0.5 GB.
+VESSEL_GB_PER_JOB = 1.7
 # The rule that configures the build of a configuration of objects again after its first build (THE RUN OF A
 # CONFIGURATION).
 RECONFIGURE_RULE = "reconfigure-noop"
 # The engines and the policies of a counted rule (THE COUNTED RULES).
 COUNTED_ENGINES = frozenset({rule_registry.Engine.PLUGIN, rule_registry.Engine.ELF})
 COUNTED_POLICIES = frozenset({rule_registry.Policy.COUNT, rule_registry.Policy.ADMIT})
-# The statuses of a test that count as red, and the status of a skip.
+# The statuses of a test that count as red, the status of a skip, of a test that ran and passed, and of a disabled test.
 RED = frozenset({ctest_reader.TestStatus.FAIL, ctest_reader.TestStatus.NOTRUN})
 SKIPPED = ctest_reader.TestStatus.SKIPPED
+RAN = ctest_reader.TestStatus.RUN
+DISABLED = ctest_reader.TestStatus.DISABLED
 # The limit of one call of `loop test`, of one configure, and of one test in the run of the red tests, in seconds.
 TEST_RUN_S = 2 * proc.BUILD_S
 CONFIGURE_S = proc.TOOL_S
@@ -506,6 +566,25 @@ def configurations(root: Path) -> tuple[Configuration, ...]:
     return tuple(sorted(found, key=lambda item: not item.is_parse))
 
 
+def vessel_configuration(root: Path) -> Configuration | None:
+    """Return the configuration of the preset VESSEL of a tree, or None when the presets file gives no such preset.
+
+    THE VESSEL gives the rules.  Complexity: one read of the presets file, and linear in the presets.
+
+    Raises:
+        GateError: If the preset has a problem, or its build directory is not in the tree
+    """
+    preset = next((item for item in tiers.read(root).configure if item.name == VESSEL), None)
+    if preset is None:
+        return None
+    if preset.problem or preset.build is None:
+        reason = preset.problem or "it has no build directory"
+        raise GateError(f"the gate refuses the preset {VESSEL} of {root}: {reason}")
+    if not preset.build.is_relative_to(root):
+        raise GateError(f"the build directory {preset.build} of the preset {VESSEL} is not in the tree {root}")
+    return Configuration(VESSEL, preset.build.relative_to(root).as_posix(), preset.configuration, False)
+
+
 class GateError(Exception):
     """The warm tree cannot hold the commit, or a step of the gate cannot start."""
 
@@ -521,6 +600,7 @@ class Mode(enum.Enum):
     FULL = "build and test"
     CHANGED = "build and test the changed inputs"
     TOUCHED = "build and run the touched tests"
+    VESSEL = "build the vessel and run the vessel tests"
 
 
 @dataclass(frozen=True, slots=True)
@@ -621,6 +701,7 @@ class Outcome:
 
 CONFIGURATIONS = configurations(paths.REPO_ROOT)
 BY_NAME = {configuration.name: configuration for configuration in CONFIGURATIONS}
+VESSEL_CONFIGURATION = vessel_configuration(paths.REPO_ROOT)
 # The errors of a read of the selection that give its widest result (THE CAREFUL SELECTION).
 READ_ERRORS = (GateError, git.GitError, proc.ToolFailed, OSError, ValueError)
 
@@ -694,6 +775,43 @@ def changes_each_build(tree: Path, change: guard_inputs.Change, changed: Sequenc
     return any(meter.is_touched(change) for meter in affected.meter_inputs(tree))
 
 
+def reaches_vessel(changed: Sequence[str], is_each: bool) -> bool:
+    """Tell if the vessel runs for a change: it can change each build, or it changes a path of VESSEL_PREFIX.
+
+    THE VESSEL gives the rule.  `is_each` tells that the change can change each build (changes_each_build()).
+    Complexity: linear in the paths.
+    """
+    return is_each or any(path.startswith(VESSEL_PREFIX) for path in changed)
+
+
+def link_torch(root: Path, tree: Path) -> str | None:
+    """Give the warm tree the link TORCH_VENV to the patched PyTorch of the main work tree, or give a problem (THE VESSEL).
+
+    The main work tree is the parent of the git directory that the work trees of the repository of root share.  A
+    directory TORCH_VENV of the warm tree that is no link stays as it is.  A link to a different directory gets the
+    directory of the main work tree.  A link that cannot be made is a problem too.
+
+    Raises:
+        git.GitError: If root is not in a git work tree
+    """
+    source = git.common_dir(root).parent / TORCH_VENV
+    if not source.is_dir():
+        return (
+            f"{VESSEL}: the main work tree {source.parent} has no directory {TORCH_VENV}, which holds the patched "
+            f"PyTorch that TORCH_DIR of the preset {VESSEL} names.  The gate cannot build the vessel, so it refuses "
+            f"the commit.  Make the virtual environment {source} with the wheel of the patched PyTorch"
+        )
+    link = tree / TORCH_VENV
+    try:
+        if link.is_symlink() and link.readlink() != source:
+            link.unlink()
+        if not link.is_symlink() and not link.exists():
+            link.symlink_to(source, target_is_directory=True)
+    except OSError as problem:
+        return f"{VESSEL}: the gate cannot make the link {link} to {source}: {problem}"
+    return None
+
+
 def touches_parse_rules(tree: Path, change: guard_inputs.Change) -> bool:
     """Tell if a change touches the inputs of a rule that a parse configuration checks (COUNTED_RULES, THE SELECTION).
 
@@ -722,17 +840,21 @@ def other_runs(others: Sequence[Configuration], is_each: bool, names: Sequence[s
     return tuple(Run(item, Mode.TOUCHED, tuple(names)) for item in others) if names else ()
 
 
-def focused_runs(focus: Sequence[Focus]) -> tuple[Run, ...]:
+def focused_runs(focus: Sequence[Focus], vessel: Configuration | None = VESSEL_CONFIGURATION) -> tuple[Run, ...]:
     """Return the runs of a run of the base, one for each configuration of its focus (THE RUN OF THE BASE).
 
     A parse configuration runs in its mode.  A configuration with red tests runs them in the mode TOUCHED, and each
-    other configuration runs in the mode CHANGED.
+    other configuration runs in the mode CHANGED.  The vessel runs in its mode, with its red tests only when the focus
+    names them (THE VESSEL).
 
     Raises:
         GateError: If the focus names a configuration that the gate does not have
     """
     runs: list[Run] = []
     for item in focus:
+        if vessel is not None and item.configuration == vessel.name:
+            runs.append(Run(vessel, Mode.VESSEL, item.names))
+            continue
         configuration = BY_NAME.get(item.configuration)
         if configuration is None:
             raise GateError(
@@ -885,7 +1007,7 @@ class Gate:
     `read` is the reader of the available memory, which gives the cap of a lease (THE MEMORY of assay.loop.heavy).
     `run` names the directory of the logs of one run in LOGS, or it is "" for LOGS itself (THE LOGS).  `pool` is the
     slot pool of the leases, or None for the pool of the host (THE JOBSERVER).  `lane` names the warm tree (THE
-    LANES).
+    LANES).  `vessel` is the configuration of the vessel, or None for a gate with no vessel (THE VESSEL).
     """
 
     root: Path
@@ -896,6 +1018,7 @@ class Gate:
     run: str = ""
     pool: heavy.Pool | None = None
     lane: int = 0
+    vessel: Configuration | None = VESSEL_CONFIGURATION
 
     @property
     def slice(self) -> int:
@@ -1022,7 +1145,7 @@ class Gate:
         counted: tuple[str, ...] = ()
         is_each = True
         if candidate.focus:
-            plan = focused_runs(candidate.focus)
+            plan = focused_runs(candidate.focus, self.vessel)
             shown = " ".join(run.configuration.name + "".join(f" {name}" for name in run.names) for run in plan)
             check_report.write_line(
                 f"loop land: the run of the base at {candidate.commit[:9]} runs {shown}, logs in {self.logs}"
@@ -1060,7 +1183,9 @@ class Gate:
                 if others
                 else True
             )
-            shown = " ".join(item.name for item in selected)
+            if self.vessel is not None and reaches_vessel(candidate.changed, is_each):
+                plan = (*plan, Run(self.vessel, Mode.VESSEL))
+            shown = " ".join(run.configuration.name for run in plan)
             rest = f", and the tests of the change in {' '.join(item.name for item in others)}" if others else ""
             check_report.write_line(
                 f"loop land: the commit {candidate.commit[:9]} runs in {shown}{rest} at the same time, logs in "
@@ -1177,14 +1302,22 @@ class Step:
             check_report.write_line(text)
 
     @contextlib.contextmanager
-    def leased(self) -> Iterator[heavy.Share]:
+    def leased(self, gb_per_job: float = heavy.GB_PER_JOB) -> Iterator[heavy.Share]:
         """Hold a lease of the slot pool with the slice of the gate for the block (THE JOBSERVER).
+
+        `gb_per_job` is the memory of one job of the lease (THE MEMORY of assay.loop.heavy).
 
         Raises:
             Stopped: If the stop event is set before the lease holds a slot
         """
         with heavy.leased(
-            self.gate.root, self.gate.slice, self.gate.pool, self.gate.read, self.stop, is_gate=True
+            self.gate.root,
+            self.gate.slice,
+            self.gate.pool,
+            self.gate.read,
+            self.stop,
+            is_gate=True,
+            gb_per_job=gb_per_job,
         ) as share:
             if share is None:
                 raise Stopped
@@ -1500,11 +1633,45 @@ class Step:
                 return [f"{configuration.name}: the test report does not read: {problem_text}"], (), ()
         elif status != 0:
             return [f"{configuration.name}: the build or the test run gives an error, see {logs / log}"], (), ()
+        problems, still, flaky = self.judge(
+            configuration, report, statuses, status, log, "`loop test`", share, is_again
+        )
+        if problems:
+            return problems, still, flaky
+        warnings_log = log_name(configuration, "warnings.log", is_again)
+        warnings = [*self.gate.master("guard"), "warnings", str(build)]
+        if self.run_logged(warnings, warnings_log, share, proc.TOOL_S):
+            return [f"{configuration.name}: `guard warnings` gives an error, see {logs / warnings_log}"], (), flaky
+        if is_again:
+            return [], (), flaky
+        return self.checked(configuration, (RECONFIGURE_RULE,), share), (), flaky
+
+    def judge(
+        self,
+        configuration: Configuration,
+        report: Path,
+        statuses: Mapping[str, ctest_reader.TestStatus],
+        status: int,
+        log: str,
+        program: str,
+        share: heavy.Share,
+        is_again: bool,
+    ) -> tuple[list[str], tuple[str, ...], tuple[str, ...]]:
+        """Judge the statuses of a run of tests, and give each problem, the tests red alone too, and the flaky tests.
+
+        Each red test runs one more time apart from the suite (THE RUN OF A CONFIGURATION).  `report` is the JUnit
+        report of the run, `status` its exit, `log` the name of its log, and `program` the words of its command in a
+        problem.  Complexity: linear in the statuses, and one run of ctest for the red tests.
+
+        Raises:
+            GateError: If the CMake cache of the build names no ctest
+        """
+        logs = self.gate.logs
         red = sorted(name for name, test_status in statuses.items() if test_status in RED)
         if red:
             shutil.copyfile(report, logs / log_name(configuration, SUITE_REPORT, is_again))
         if status != 0 and not red:
-            return [f"{configuration.name}: `loop test` exits {status} with no red test, see {logs / log}"], (), ()
+            return [f"{configuration.name}: {program} exits {status} with no red test, see {logs / log}"], (), ()
         skipped = sorted(name for name, test_status in statuses.items() if test_status is SKIPPED)
         if skipped:
             self.say(f"loop land: {configuration.name}: {len(skipped)} skipped: {' '.join(skipped)}")
@@ -1519,13 +1686,58 @@ class Step:
             )
         if still:
             return [f"{configuration.name}: red alone too: {' '.join(still)}, see {logs / log}"], tuple(still), flaky
-        warnings_log = log_name(configuration, "warnings.log", is_again)
-        warnings = [*self.gate.master("guard"), "warnings", str(build)]
-        if self.run_logged(warnings, warnings_log, share, proc.TOOL_S):
-            return [f"{configuration.name}: `guard warnings` gives an error, see {logs / warnings_log}"], (), flaky
-        if is_again:
-            return [], (), flaky
-        return self.checked(configuration, (RECONFIGURE_RULE,), share), (), flaky
+        return [], (), flaky
+
+    def run_vessel(
+        self, run: Run, share: heavy.Share, is_again: bool
+    ) -> tuple[list[str], tuple[str, ...], tuple[str, ...]]:
+        """Build the vessel targets and run the vessel tests, and give each problem, the tests red alone too, and the
+        flaky tests (THE VESSEL).
+
+        A run with names runs only the tests that it names, as a run of the base does.  A run in which no test runs,
+        and a disabled test, give a problem, so the gate does not pass a vessel that it did not test.
+
+        Raises:
+            GateError: If the CMake cache of the build names no cmake or no ctest
+            git.GitError: If the main work tree of the repository cannot be found
+        """
+        configuration = run.configuration
+        problem = link_torch(self.gate.root, self.gate.tree)
+        if problem is None:
+            problem = self.configure(configuration, share, is_again)
+        if problem is not None:
+            return [problem], (), ()
+        build = build_directory(self.gate.tree, configuration)
+        logs = self.gate.logs
+        log = log_name(configuration, "build.log", is_again)
+        command = [configured_program(build, "cmake"), "--build", str(build), "--target", *VESSEL_TARGETS]
+        if self.run_logged(command, log, share, TEST_RUN_S) != 0:
+            targets = " and ".join(VESSEL_TARGETS)
+            return [f"{configuration.name}: the build of {targets} gives an error, see {logs / log}"], (), ()
+        report = logs / log_name(configuration, "test.junit.xml", is_again)
+        report.unlink(missing_ok=True)
+        words = ["--label-regex", f"^{VESSEL_LABEL}$"]
+        if run.names:
+            selection = logs / log_name(configuration, "only.txt", is_again)
+            selection.write_text("".join(f"{name}\n" for name in run.names), encoding="utf-8")
+            words = ["--tests-from-file", str(selection)]
+        log = log_name(configuration, "test.log", is_again)
+        command = [configured_program(build, "ctest"), "--test-dir", str(build), *words, "-j", str(share.jobs)]
+        command += ["--output-on-failure", "--output-junit", str(report)]
+        status = self.run_logged(command, log, share, TEST_RUN_S)
+        if not report.is_file():
+            return [f"{configuration.name}: ctest exits {status} and writes no report, see {logs / log}"], (), ()
+        try:
+            statuses = ctest_reader.results(report)
+        except ctest_reader.CtestError as problem_text:
+            return [f"{configuration.name}: the test report does not read: {problem_text}"], (), ()
+        disabled = sorted(name for name, test_status in statuses.items() if test_status is DISABLED)
+        if disabled:
+            shown = " ".join(disabled)
+            return [f"{configuration.name}: the build disables the tests {shown}, see {logs / log}"], (), ()
+        if not any(test_status is RAN or test_status in RED for test_status in statuses.values()):
+            return [f"{configuration.name}: no test with the label {VESSEL_LABEL} runs, see {logs / log}"], (), ()
+        return self.judge(configuration, report, statuses, status, log, "ctest", share, is_again)
 
     def run_of(
         self, run: Run, share: heavy.Share, is_again: bool, is_retry: bool
@@ -1533,6 +1745,8 @@ class Step:
         """Run one configuration, or its tests again after THE REDUCE, and give each problem, the tests red alone too,
         and the flaky tests."""
         configuration = run.configuration
+        if run.mode is Mode.VESSEL:
+            return self.run_vessel(run, share, is_again)
         if configuration.is_parse and is_again:
             return self.checked(configuration, COUNTED_RULES, share, is_again), (), ()
         if configuration.is_parse:
@@ -1552,8 +1766,9 @@ class Step:
         began = time.monotonic()
         wait_s = 0.0
         lease: heavy.Lease | None = None
+        gb_per_job = VESSEL_GB_PER_JOB if run.mode is Mode.VESSEL else heavy.GB_PER_JOB
         try:
-            with self.leased() as share:
+            with self.leased(gb_per_job) as share:
                 wait_s, lease = round(share.wait_s, 1), share.lease
                 began += share.wait_s
                 problems, red, flaky = self.run_of(run, share, is_again, is_retry)

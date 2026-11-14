@@ -38,8 +38,10 @@ __pycache__/
 *.pdf
 !papers/**/*.pdf
 
-# Local venv holding the Crucible-patched PyTorch (vessel/torch tracing)
-.venv-torch/
+# The local virtual environment of the patched PyTorch (vessel/torch).  The
+# pattern has no slash, so it also matches the link that the gate puts in a
+# warm tree (THE VESSEL of utils/assay/loop/gate.py).
+.venv-torch
 
 # Recorded traces. The record scripts in vessel/torch/examples write .crtrace
 # files here. A trace is data from one run on one machine, not source.

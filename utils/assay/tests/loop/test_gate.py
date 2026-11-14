@@ -22,7 +22,9 @@ reconfigure-noop, and a failure of that rule must reject the commit.  A
 registry that the code of the gate cannot read must give the widest
 selection and no reduce.  A candidate that names a built file must get the
 write of that file from the build of default before the suite, and the fold
-of the write into its commit.
+of the write into its commit.  A change of a header that renames a function
+that the planted vessel calls must fail the build of the vessel, and the gate
+must reject it.  The planted cmake compiles that vessel.
 """
 
 import fcntl
@@ -31,7 +33,7 @@ import os
 import sys
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from unittest import mock
@@ -257,7 +259,12 @@ if words[0] == "write":
     sys.exit(0)
 sys.exit(0 if words[0] == "warnings" else 77)
 """
+# The calls of the planted vessel, and the header that declares the functions of the calls.
+VESSEL_CALLS = "vessel/torch/calls.txt"
+VESSEL_HEADER = "include/record.h"
 # The planted cmake: `cmake --build BUILD --target TARGET` writes its target to cmake.txt of the build, and exits 0.
+# A build of the target crucible_dispatch compiles the planted vessel: each name of VESSEL_CALLS of the tree must be a
+# function of VESSEL_HEADER, else the build gives an error and exits 1.
 CMAKE = """import pathlib
 import sys
 
@@ -265,24 +272,41 @@ words = sys.argv[1:]
 build = pathlib.Path(words[words.index("--build") + 1])
 with open(build / "cmake.txt", "a", encoding="utf-8") as handle:
     handle.write(" ".join(words[words.index("--build") + 2 :]) + "\\n")
-"""
+calls, header = pathlib.Path("@CALLS@"), pathlib.Path("@HEADER@")
+if "crucible_dispatch" in words and calls.is_file():
+    declared = header.read_text() if header.is_file() else ""
+    for name in calls.read_text().split():
+        if f"{name}(" not in declared:
+            print(f"{calls}: error: '{name}' was not declared in this scope")
+            sys.exit(1)
+""".replace("@CALLS@", VESSEL_CALLS).replace("@HEADER@", VESSEL_HEADER)
 # The planted ctest: the listing of a build is the file tests.json of the build.  A test that runs alone is green,
 # unless it is test_broken, test_ledger before the write of its ledger, or test_built before the write of the inventory.  A fall of door-unit makes no test red,
 # because a ledger fails only on a growth (THE POLICIES of assay.core.ledger).  Each run of red tests adds one line to
-# alone-runs.txt of the build: the value of -j and the names of the tests.
-CTEST = """import pathlib
+# alone-runs.txt of the build: the value of -j and the names of the tests.  A run of --label-regex runs each test of
+# the listing with that label.  Each name in red.txt of the build is red too.
+CTEST = """import json
+import pathlib
 import sys
 
 words = sys.argv[1:]
+tests = pathlib.Path(words[words.index("--test-dir") + 1])
 if "--show-only=json-v1" in words:
-    print(pathlib.Path(words[words.index("--test-dir") + 1], "tests.json").read_text())
+    print((tests / "tests.json").read_text())
     sys.exit(0)
-names = pathlib.Path(words[words.index("--tests-from-file") + 1]).read_text().split()
-jobs = words[words.index("-j") + 1] if "-j" in words else "-"
-with open(pathlib.Path(words[words.index("--test-dir") + 1], "alone-runs.txt"), "a") as handle:
-    handle.write(" ".join([jobs, *names]) + "\\n")
+if "--label-regex" in words:
+    label = words[words.index("--label-regex") + 1].strip("^$")
+    listed = json.loads((tests / "tests.json").read_text())["tests"]
+    labelled = [test for test in listed if {"name": "LABELS", "value": [label]} in test["properties"]]
+    names = [test["name"] for test in labelled]
+else:
+    names = pathlib.Path(words[words.index("--tests-from-file") + 1]).read_text().split()
+    jobs = words[words.index("-j") + 1] if "-j" in words else "-"
+    with open(tests / "alone-runs.txt", "a") as handle:
+        handle.write(" ".join([jobs, *names]) + "\\n")
 report = pathlib.Path(words[words.index("--output-junit") + 1])
 red = {"test_broken"}
+red |= set((tests / "red.txt").read_text().split()) if (tests / "red.txt").is_file() else set()
 reads = pathlib.Path("utils/ledgers/home.txt")
 red |= {"test_ledger"} if reads.is_file() and "include/old.h" in reads.read_text() else set()
 inventory = pathlib.Path(words[words.index("--test-dir") + 1], "inventory.txt")
@@ -572,11 +596,12 @@ def plant_build(work: Path, tree: Path, name: str, mode: str) -> None:
 def planted_gate(work: Path, root: Path, tree: Path, mode: str, others: Mapping[str, str] | None = None) -> gate.Gate:
     """Plant the default build of the warm tree with a mode, and each other build with its mode, and return a gate.
 
-    `others` maps the name of a build directory, such as build-bench-fuzz, to its mode.
+    `others` maps the name of a build directory, such as build-bench-fuzz, to its mode.  The gate has no vessel, and
+    vessel_cases() gives one to its gates (THE VESSEL).
     """
     for name, build_mode in {"build": mode, **(others or {})}.items():
         plant_build(work, tree, name, build_mode)
-    return gate.Gate(root, work / "land", 1, False, read=lambda: MUCH_MEMORY_GB, pool=planted_pool(work))
+    return gate.Gate(root, work / "land", 1, False, read=lambda: MUCH_MEMORY_GB, pool=planted_pool(work), vessel=None)
 
 
 def planted_pool(work: Path) -> heavy.Pool:
@@ -1382,6 +1407,161 @@ def base_run_cases(expect: testing.Expect) -> None:
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
+def vessel_select_cases(expect: testing.Expect) -> None:
+    """Hold the selection of the vessel, its configuration in this tree, and the focus of its run of the base."""
+    expect(
+        "the vessel runs for a change that can change each build and for a change under vessel/, and not for a "
+        "different change",
+        gate.reaches_vessel(["include/record.h"], True)
+        and gate.reaches_vessel(["vessel/torch/crucible_mode.py"], False)
+        and not gate.reaches_vessel(["notes.txt", "utils/assay/loop/land.py"], False),
+    )
+    vessel = gate.VESSEL_CONFIGURATION
+    expect(
+        f"the vessel of this tree is the preset vessel in build-vessel, and no configuration of the gate: {vessel}",
+        vessel is not None
+        and vessel.name == gate.VESSEL
+        and vessel.build == "build-vessel"
+        and not vessel.is_parse
+        and gate.VESSEL not in gate.BY_NAME,
+    )
+    libraries = (paths.REPO_ROOT / "vessel/torch/CMakeLists.txt").read_text(encoding="utf-8")
+    tests = (paths.REPO_ROOT / "test/CMakeLists.txt").read_text(encoding="utf-8")
+    expect(
+        "each target of VESSEL_TARGETS is a library of vessel/torch/CMakeLists.txt, and test/CMakeLists.txt gives the "
+        "vessel tests the label VESSEL_LABEL",
+        all(f"add_library({target} " in libraries for target in gate.VESSEL_TARGETS)
+        and f"LABELS {gate.VESSEL_LABEL} " in tests,
+    )
+    if vessel is not None:
+        focus = (gate.Focus(gate.VESSEL, ("vessel_test_mlp",)), gate.Focus(gate.VESSEL))
+        expect(
+            "the run of the base runs the vessel in its mode, with the red tests of its focus",
+            gate.focused_runs(focus, vessel)
+            == (gate.Run(vessel, gate.Mode.VESSEL, ("vessel_test_mlp",)), gate.Run(vessel, gate.Mode.VESSEL)),
+        )
+
+
+def vessel_listing(labelled: Sequence[str]) -> str:
+    """Return the ctest listing of the planted build of the vessel: each name with the vessel label, and one other test."""
+    label = [{"name": "LABELS", "value": [gate.VESSEL_LABEL]}]
+    tests = [{"name": name, "command": ["true"], "properties": label} for name in labelled]
+    tests.append({"name": "test_unlabelled", "command": ["true"], "properties": []})
+    return json.dumps({"tests": tests})
+
+
+def vessel_run_cases(expect: testing.Expect) -> None:
+    """Hold the run of the vessel (THE VESSEL).
+
+    A change of a header that renames a function that the vessel calls fails the build of the vessel, and the gate
+    rejects it.  A gate with no vessel accepts the same commit.  A red vessel test, a build with no vessel test, and a
+    main work tree with no patched PyTorch reject a commit too.
+    """
+    vessel = gate.VESSEL_CONFIGURATION
+    if vessel is None:
+        expect("this tree gives the preset vessel", False)
+        return
+    with tempfile.TemporaryDirectory(prefix="gate-vessel-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root, {VESSEL_HEADER: "int lanes();\n", VESSEL_CALLS: "lanes\n"})
+        torch = root / gate.TORCH_VENV
+        torch.mkdir()
+        notes = commit_change(root, "notes.txt", "a change of the notes\n")
+        script = "vessel/torch/crucible_mode.py"
+        moded = commit_change(root, script, "MODE = 1\n", "Change a script of the vessel")
+        renamed = commit_change(root, VESSEL_HEADER, "int lanes_of();\n", "Rename a function that the vessel calls")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        build = tree / vessel.build
+        listing_of = [vessel_listing(("vessel_test_mlp", "vessel_test_red"))]
+
+        def checked(candidate: gate.Candidate, has_vessel: bool = True) -> tuple[gate.Verdict, str]:
+            """Plant each build, the build of the vessel with its listing, and check a candidate."""
+            planted = planted_gate(work, root, tree, "clean", OTHER_BUILDS)
+            plant_build(work, tree, vessel.build, "clean")
+            (build / "tests.json").write_text(listing_of[0], encoding="utf-8")
+            chosen = replace(planted, vessel=vessel) if has_vessel else planted
+            return testing.captured(lambda: chosen.check(candidate, False))
+
+        rename = gate.Candidate(moded, renamed, (VESSEL_HEADER,))
+        verdict, printed = checked(rename)
+        holds = (
+            not verdict.is_accepted
+            and any(
+                problem.startswith(f"vessel: the build of {' and '.join(gate.VESSEL_TARGETS)} gives an error")
+                for problem in verdict.problems
+            )
+            and gate.Focus(gate.VESSEL) in verdict.focus
+            and (tree / gate.TORCH_VENV).is_symlink()
+            and (tree / gate.TORCH_VENV).resolve() == torch.resolve()
+        )
+        label = (
+            f"a change of a header that renames a function that the vessel calls fails the build of the vessel, and "
+            f"the gate rejects the commit with the focus of the vessel: {verdict.problems}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        blind, _ = checked(rename, has_vessel=False)
+        expect(
+            "a gate with no vessel accepts the same commit, because no configuration of the gate builds the vessel",
+            blind.is_accepted and gate.VESSEL not in blind.configurations,
+        )
+        (build / "cmake.txt").unlink(missing_ok=True)
+        text_verdict, _ = checked(gate.Candidate(head, notes, ("notes.txt",)))
+        expect(
+            "a change of a text file runs no vessel",
+            text_verdict.is_accepted
+            and text_verdict.configurations == (gate.ALWAYS,)
+            and not (build / "cmake.txt").is_file(),
+        )
+        script_verdict, printed = checked(gate.Candidate(notes, moded, (script,)))
+        built = (build / "cmake.txt").read_text(encoding="utf-8") if (build / "cmake.txt").is_file() else ""
+        holds = (
+            script_verdict.is_accepted
+            and script_verdict.configurations == (gate.ALWAYS, gate.VESSEL)
+            and built == f"--target {' '.join(gate.VESSEL_TARGETS)}\n"
+        )
+        label = f"a change of a script of the vessel builds the vessel targets and runs the vessel tests: {built!r}"
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        (build / "red.txt").write_text("vessel_test_red\n", encoding="utf-8")
+        red_verdict, _ = checked(gate.Candidate(notes, moded, (script,)))
+        base_verdict, _ = testing.captured(
+            lambda: replace(planted_gate(work, root, tree, "clean"), vessel=vessel).check(
+                gate.Candidate(notes, notes, (script,), red_verdict.focus), True
+            )
+        )
+        alone = (build / "alone-runs.txt").read_text(encoding="utf-8").splitlines()
+        expect(
+            f"a vessel test that is red alone too rejects the commit with its name, and the run of the base runs only "
+            f"that test: {red_verdict.problems}, {alone}",
+            not red_verdict.is_accepted
+            and red_verdict.problems[0].startswith("vessel: red alone too: vessel_test_red, see ")
+            and red_verdict.focus == (gate.Focus(gate.VESSEL, ("vessel_test_red",)),)
+            and base_verdict.configurations == (gate.VESSEL,)
+            and base_verdict.problems == red_verdict.problems
+            and alone[-1] == f"{POOL_SLOTS} vessel_test_red",
+        )
+        (build / "red.txt").unlink()
+        listing_of[0] = vessel_listing(())
+        empty_verdict, _ = checked(gate.Candidate(notes, moded, (script,)))
+        expect(
+            f"a build with no vessel test rejects the commit: {empty_verdict.problems}",
+            not empty_verdict.is_accepted
+            and empty_verdict.problems[0].startswith(f"vessel: no test with the label {gate.VESSEL_LABEL} runs"),
+        )
+        listing_of[0] = vessel_listing(("vessel_test_mlp",))
+        torch.rmdir()
+        bare_verdict, _ = checked(gate.Candidate(notes, moded, (script,)))
+        expect(
+            f"a main work tree with no patched PyTorch rejects the commit, and the problem names the directory: "
+            f"{bare_verdict.problems}",
+            not bare_verdict.is_accepted
+            and bare_verdict.problems[0].startswith("vessel: the main work tree ")
+            and f"has no directory {gate.TORCH_VENV}" in bare_verdict.problems[0]
+            and "refuses the commit" in bare_verdict.problems[0],
+        )
+
+
 def careful_cases(expect: testing.Expect) -> None:
     """Hold THE CAREFUL SELECTION: a file that the code of the gate cannot read gives the widest result of its read."""
     with tempfile.TemporaryDirectory(prefix="gate-careful-") as work_text:
@@ -1569,6 +1749,8 @@ def main(argv: list[str]) -> int:
             stop_cases,
             masked_error_cases,
             base_run_cases,
+            vessel_select_cases,
+            vessel_run_cases,
             careful_cases,
             lock_cases,
             live_run_cases,

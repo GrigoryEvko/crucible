@@ -86,6 +86,40 @@ def memory_cases(expect: testing.Expect) -> None:
         f"no value gives the count of the caller, and memory below the reserve gives one job: {counts}",
         counts == [24, 224, 8, 224, 1],
     )
+    large = [
+        heavy.jobs_for_memory(224, reader([14.0]), 1.7),
+        heavy.room_for(reader([14.0]), 1.7),
+        heavy.room_for(reader([14.0])),
+        heavy.room_for(reader([None]), 1.7),
+    ]
+    expect(
+        f"a larger memory of each job gives fewer jobs and less room for a growth: {large}",
+        large == [7, 7, 24, None],
+    )
+
+
+def large_job_cases(expect: testing.Expect) -> None:
+    """Hold a lease that gives the memory of one of its jobs: its cap, its most jobs and its line of the memory."""
+    with tempfile.TemporaryDirectory(prefix="heavy-large-") as work_text:
+        root = Path(work_text)
+        pool = heavy.Pool(root / "slots", 64)
+        shares: list[tuple[int, int]] = []
+
+        def run(gb_per_job: float) -> None:
+            """Hold a lease of 32 jobs with 20 GB of memory, and keep its cap and its jobs."""
+            with heavy.leased(root, 32, pool, reader([20.0]), gb_per_job=gb_per_job) as share:
+                if share is not None:
+                    shares.append((share.lease.cap, share.jobs))
+
+        _, plain = testing.captured(lambda: run(heavy.GB_PER_JOB))
+        _, large = testing.captured(lambda: run(1.7))
+        expect(
+            f"a lease with jobs of 1.7 GB in 20 GB of memory has the cap and the most jobs of that memory, and its line "
+            f"gives the memory of one job, but a plain lease keeps its line: {shares}, {large.strip()!r}",
+            shares == [(32, 36), (10, 10)]
+            and "memory: available 20.0 GB, 10 of 32 jobs, 10 at most, 1.70 GB for each job" in large
+            and "for each job" not in plain,
+        )
 
 
 def step_cases(expect: testing.Expect) -> None:
@@ -524,6 +558,7 @@ def main(argv: list[str]) -> int:
         argv,
         (
             memory_cases,
+            large_job_cases,
             step_cases,
             lock_cases,
             gate_cases,

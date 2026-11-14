@@ -4363,7 +4363,9 @@ endforeach()
 # that did not run.  A build that must operate the tests sets
 # CRUCIBLE_REQUIRE_VESSEL, and the configure step then stops with the reason.
 # The preset vessel sets it, and the entries `loop nightly` and `loop release`
-# build and test that preset.
+# build and test that preset.  The gate of `loop land` builds the vessel
+# libraries of that preset and runs the tests with the label vessel, for each
+# change that can change them (THE VESSEL of utils/assay/loop/gate.py).
 # CRUCIBLE_VESSEL_PYTHON is the interpreter of the PyTorch that TORCH_DIR
 # names.  The default is the interpreter of the virtual environment that
 # holds TORCH_DIR, when one exists.

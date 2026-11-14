@@ -147,6 +147,12 @@ THE MEMORY
     adds at most the jobs that the remaining memory holds less RESERVE_GB,
     because the jobs that run already use their memory.
 
+    A lease can give the memory of one of its jobs, when its jobs are larger
+    than GB_PER_JOB (the parameter gb_per_job of leased()).  Its cap and each
+    growth then count that memory.  An example is the vessel of the gate,
+    whose shard compiles use more than 1.6 GB each (THE VESSEL of
+    assay.loop.gate).
+
 Usage
     loop heavy [-C DIR] [-j N] -- COMMAND [ARGUMENT]...
 
@@ -321,21 +327,22 @@ def wait_for_gate(handle: IO[str]) -> None:
         fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def jobs_for_memory(requested: int, read: Reader = available_gb) -> int:
+def jobs_for_memory(requested: int, read: Reader = available_gb, gb_per_job: float = GB_PER_JOB) -> int:
     """Return the job count that the available memory holds, with a minimum of 1 (THE MEMORY).
 
     Args:
         requested: The job count of the caller, which is the maximum
         read: The reader of the available memory, which gives None when it cannot read it
+        gb_per_job: The memory of one job of the caller, in GB
 
     Returns:
-        The count of the caller when the reader gives None.  Else the smaller of that count and the count of GB_PER_JOB
-        in the available memory less RESERVE_GB, with a minimum of 1
+        The count of the caller when the reader gives None.  Else the smaller of that count and the count of
+        `gb_per_job` in the available memory less RESERVE_GB, with a minimum of 1
     """
     value = read()
     if value is None:
         return requested
-    return max(1, min(requested, math.floor((value - RESERVE_GB) / GB_PER_JOB)))
+    return max(1, min(requested, math.floor((value - RESERVE_GB) / gb_per_job)))
 
 
 @contextlib.contextmanager
@@ -445,10 +452,11 @@ def private_pool() -> Iterator[Path]:
                 os.environ[POOL_VARIABLE] = saved
 
 
-def room_for(read: Reader) -> int | None:
-    """Return the count of new jobs that the available memory holds less RESERVE_GB, or None when it cannot be read."""
+def room_for(read: Reader, gb_per_job: float = GB_PER_JOB) -> int | None:
+    """Return the count of new jobs of `gb_per_job` GB that the available memory holds less RESERVE_GB, or None when
+    it cannot be read."""
     value = read()
-    return None if value is None else max(0, math.floor((value - RESERVE_GB) / GB_PER_JOB))
+    return None if value is None else max(0, math.floor((value - RESERVE_GB) / gb_per_job))
 
 
 @dataclass(frozen=True, slots=True)
@@ -639,12 +647,19 @@ def grown_count(lease: Lease, demand: Demand, burst: int) -> int:
     return max(0, min(lease.held, limit - lease.held))
 
 
-def pumped(lease: Lease, opened: jobserver.Valve, burst: int, read: Reader, stop: threading.Event) -> None:
+def pumped(
+    lease: Lease,
+    opened: jobserver.Valve,
+    burst: int,
+    read: Reader,
+    stop: threading.Event,
+    gb_per_job: float = GB_PER_JOB,
+) -> None:
     """Change the slots of a lease to the use of its job, each TICK_S seconds, until the stop event (THE POOL).
 
     The lease holds one slot more than the tokens of its jobserver.  The function puts one token for each new slot,
     and it frees one slot for each token that it pulls.  `burst` is the most slots of the lease, the jobs of its
-    jobserver.
+    jobserver.  A growth adds at most the jobs of `gb_per_job` GB that the available memory holds (THE MEMORY).
     """
     idle_ticks = 0
     hold_until = 0.0
@@ -674,7 +689,7 @@ def pumped(lease: Lease, opened: jobserver.Valve, burst: int, read: Reader, stop
             idle_ticks = 0
             lease.hungry = lease.held < burst
             count = grown_count(lease, demand, burst) if lease.hungry and now >= hold_until else 0
-            room = room_for(read) if count > 0 else None
+            room = room_for(read, gb_per_job) if count > 0 else None
             opened.put(lease.take(count if room is None else min(count, room)))
         lease.mark()
         is_yielding = not lease.is_gate and demand.waiting_gate > 0 and lease.held > 1
@@ -735,13 +750,15 @@ def leased(
     stop: threading.Event | None = None,
     pause: Pause = time.sleep,
     is_gate: bool = False,
+    gb_per_job: float = GB_PER_JOB,
 ) -> Iterator[Share | None]:
     """Hold a lease with the cap `want` of the pool for the block, and give its share (THE POOL).
 
     The block gets None when the stop event is set before the lease holds a slot.  The lease also holds LOCK_FILE of
     the repository of root in the shared mode (THE LOCK, THE TURNSTILE).  A lease of the gate goes before each other
     lease (THE PRIORITY OF THE GATE).  The jobs of the share are the most slots of the lease: the size of the pool, or
-    the jobs of the memory.
+    the jobs of the memory.  `gb_per_job` is the memory of one job of the lease, for its cap and for each growth (THE
+    MEMORY).
 
     Raises:
         jobserver.JobserverError: If the jobserver of the lease cannot be made
@@ -753,12 +770,13 @@ def leased(
     lock.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     value = read()
-    cap = jobs_for_memory(max(1, min(want, chosen.size)), lambda: value)
-    burst = max(cap, jobs_for_memory(chosen.size, lambda: value))
+    cap = jobs_for_memory(max(1, min(want, chosen.size)), lambda: value, gb_per_job)
+    burst = max(cap, jobs_for_memory(chosen.size, lambda: value, gb_per_job))
+    each = f", {gb_per_job:.2f} GB for each job" if gb_per_job != GB_PER_JOB else ""
     if value is None:
         check_report.write_line(f"memory: {MEMORY_FILE} gives no {MEMORY_FIELD}, so the lease keeps {cap} jobs")
     else:
-        check_report.write_line(f"memory: available {value:.1f} GB, {cap} of {want} jobs, {burst} at most")
+        check_report.write_line(f"memory: available {value:.1f} GB, {cap} of {want} jobs, {burst} at most{each}")
     lease = Lease(chosen, cap, is_gate)
     with open(lock, "a", encoding="ascii") as handle, open(turn_path(root), "a", encoding="ascii") as turn:
         try:
@@ -783,7 +801,7 @@ def leased(
                 jobserver.valve(server.path) as opened,
                 jobserver.connected(server.path) as client,
             ):
-                pump = threading.Thread(target=pumped, args=(lease, opened, burst, read, halt), daemon=True)
+                pump = threading.Thread(target=pumped, args=(lease, opened, burst, read, halt, gb_per_job), daemon=True)
                 pump.start()
                 try:
                     yield Share(server, client, burst, wait_s, lease)
