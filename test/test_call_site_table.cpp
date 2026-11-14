@@ -1,13 +1,14 @@
 #include <crucible/CallSiteTable.h>
 
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
-#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -17,6 +18,7 @@ namespace source = ::fixy::tags::source;
 
 static CallsiteHash H(uint64_t v) { return CallsiteHash{v}; }
 static CallSiteTable::NonZeroHash NZ(uint64_t v) { return ::fixy::mint_refined<::fixy::non_zero>(H(v)); }
+static ::foundation::effects::Alloc alloc_cap() { return ::foundation::effects::testing::test().alloc; }
 
 // A stored name claims Interned.  It claims neither tag of its caller, and it
 // never claims Sanitized, because the table runs no sanitizer.  No retag
@@ -29,6 +31,9 @@ static_assert(!::fixy::RetagAllowed<source::Interned, source::External>);
 static_assert(!::fixy::RetagAllowed<source::Interned, source::FromInternal>);
 static_assert(!std::is_constructible_v<CallSiteTable::NonZeroHash, CallsiteHash>);
 
+// The name of an entry as a TextView.
+static ::fixy::TextView name_of(CallSiteTable::InternedName const& name) { return name.value().view(); }
+
 static void test_empty_table_has_nothing() {
     CallSiteTable t;
     assert(t.size() == 0);
@@ -39,25 +44,25 @@ static void test_empty_table_has_nothing() {
 
 static void test_single_insert_then_has() {
     CallSiteTable t;
-    t.insert(NZ(42), "foo.py", "main", 10);
+    assert(t.insert(alloc_cap(), NZ(42), "foo.py", "main", 10));
     assert(t.has(H(42)));
     assert(t.size() == 1);
     assert(t.entries[0].lineno.value() == 10);
     // The filename and funcname fields are tagged wrappers, so the comparison
     // reads through value().
-    assert(t.entries[0].filename.value() == "foo.py");
-    assert(t.entries[0].funcname.value() == "main");
+    assert(name_of(t.entries[0].filename) == ::fixy::TextView{"foo.py"});
+    assert(name_of(t.entries[0].funcname) == ::fixy::TextView{"main"});
     crucible::test::pass("  test_single_insert:             PASSED\n");
 }
 
 static void test_duplicate_insert_is_noop() {
     CallSiteTable t;
-    t.insert(NZ(42), "foo.py", "main", 10);
-    t.insert(NZ(42), "foo.py", "main", 10);
-    t.insert(NZ(42), "different.py", "other", 99);
+    assert(t.insert(alloc_cap(), NZ(42), "foo.py", "main", 10));
+    assert(t.insert(alloc_cap(), NZ(42), "foo.py", "main", 10));
+    assert(t.insert(alloc_cap(), NZ(42), "different.py", "other", 99));
     assert(t.size() == 1);
     assert(t.entries[0].lineno.value() == 10);
-    assert(t.entries[0].filename.value() == "foo.py");
+    assert(name_of(t.entries[0].filename) == ::fixy::TextView{"foo.py"});
     crucible::test::pass("  test_duplicate_noop:            PASSED\n");
 }
 
@@ -65,7 +70,7 @@ static void test_many_distinct_inserts() {
     CallSiteTable t;
     constexpr uint32_t N = 200;
     for (uint32_t i = 1; i <= N; ++i) {
-        t.insert(NZ(i), "file.py", "func", static_cast<int32_t>(i));
+        assert(t.insert(alloc_cap(), NZ(i), "file.py", "func", static_cast<int32_t>(i)));
     }
     assert(t.size() == N);
     for (uint32_t i = 1; i <= N; ++i)
@@ -82,8 +87,8 @@ static void test_probe_does_not_confuse_hash_collision() {
     const auto h_a = H(100);
     const auto h_b = H(100 + CallSiteTable::SET_CAP);
     assert((h_a.raw() & CallSiteTable::SET_MASK) == (h_b.raw() & CallSiteTable::SET_MASK));
-    t.insert(::fixy::mint_refined<::fixy::non_zero>(h_a), "a.py", "fa", 1);
-    t.insert(::fixy::mint_refined<::fixy::non_zero>(h_b), "b.py", "fb", 2);
+    assert(t.insert(alloc_cap(), ::fixy::mint_refined<::fixy::non_zero>(h_a), "a.py", "fa", 1));
+    assert(t.insert(alloc_cap(), ::fixy::mint_refined<::fixy::non_zero>(h_b), "b.py", "fb", 2));
     assert(t.has(h_a));
     assert(t.has(h_b));
     assert(t.size() == 2);
@@ -96,7 +101,7 @@ static void test_sentinel_zero_is_not_a_callsite() {
     // surface.
     CallSiteTable t;
     assert(!t.has(H(0)));
-    t.insert(NZ(5), "five.py", "f5", 5);
+    assert(t.insert(alloc_cap(), NZ(5), "five.py", "f5", 5));
     assert(t.has(H(5)));
     crucible::test::pass("  test_sentinel_zero:             PASSED\n");
 }
@@ -105,18 +110,36 @@ static void test_tagged_overloads_store_interned() {
     // Each tagged overload strips its tag, and the entry stores the bytes
     // under Interned.  The first write for a hash wins over the other tag.
     CallSiteTable t;
-    t.insert(NZ(7), ::fixy::mint_tagged<source::External>(std::string{"ext.py"}),
-             ::fixy::mint_tagged<source::External>(std::string{"ext_fn"}), 70);
-    t.insert(NZ(8), ::fixy::mint_tagged<source::FromInternal>(std::string{"int.py"}),
-             ::fixy::mint_tagged<source::FromInternal>(std::string{"int_fn"}), 80);
-    t.insert(NZ(7), ::fixy::mint_tagged<source::FromInternal>(std::string{"later.py"}),
-             ::fixy::mint_tagged<source::FromInternal>(std::string{"later_fn"}), 71);
+    assert(t.insert(alloc_cap(), NZ(7), ::fixy::mint_tagged<source::External>(::fixy::TextView{"ext.py"}),
+                    ::fixy::mint_tagged<source::External>(::fixy::TextView{"ext_fn"}), 70));
+    assert(t.insert(alloc_cap(), NZ(8), ::fixy::mint_tagged<source::FromInternal>(::fixy::TextView{"int.py"}),
+                    ::fixy::mint_tagged<source::FromInternal>(::fixy::TextView{"int_fn"}), 80));
+    assert(t.insert(alloc_cap(), NZ(7), ::fixy::mint_tagged<source::FromInternal>(::fixy::TextView{"later.py"}),
+                    ::fixy::mint_tagged<source::FromInternal>(::fixy::TextView{"later_fn"}), 71));
     assert(t.size() == 2);
-    assert(t.entries[0].filename.value() == "ext.py" && t.entries[0].funcname.value() == "ext_fn");
+    assert(name_of(t.entries[0].filename) == ::fixy::TextView{"ext.py"}
+           && name_of(t.entries[0].funcname) == ::fixy::TextView{"ext_fn"});
     assert(t.entries[0].lineno.value() == 70);
-    assert(t.entries[1].filename.value() == "int.py" && t.entries[1].funcname.value() == "int_fn");
+    assert(name_of(t.entries[1].filename) == ::fixy::TextView{"int.py"}
+           && name_of(t.entries[1].funcname) == ::fixy::TextView{"int_fn"});
     assert(t.entries[1].lineno.value() == 80);
     crucible::test::pass("  test_tagged_overloads:          PASSED\n");
+}
+
+static void test_name_past_the_bound_is_refused() {
+    // A name of MAX_NAME_CHARS characters fits, and one character more does
+    // not.  A refused insert keeps neither the hash nor an entry.
+    CallSiteTable t;
+    ::fixy::GrowText longest = ::fixy::mint_grow_text(CallSiteTable::MAX_NAME_CHARS + 1);
+    for (std::size_t index = 0; index < CallSiteTable::MAX_NAME_CHARS; ++index) {
+        assert(longest.append(alloc_cap(), 'a').is_ok());
+    }
+    assert(t.insert(alloc_cap(), NZ(11), longest.view(), "f", 1));
+    assert(longest.append(alloc_cap(), 'a').is_ok());
+    assert(!t.insert(alloc_cap(), NZ(12), longest.view(), "f", 2));
+    assert(!t.insert(alloc_cap(), NZ(13), "f.py", longest.view(), 3));
+    assert(t.size() == 1 && t.has(H(11)) && !t.has(H(12)) && !t.has(H(13)));
+    crucible::test::pass("  test_name_bound:                PASSED\n");
 }
 
 int main() {
@@ -127,6 +150,7 @@ int main() {
     test_probe_does_not_confuse_hash_collision();
     test_sentinel_zero_is_not_a_callsite();
     test_tagged_overloads_store_interned();
-    crucible::test::pass("test_call_site_table: 7 groups, all passed\n");
+    test_name_past_the_bound_is_refused();
+    crucible::test::pass("test_call_site_table: 8 groups, all passed\n");
     return 0;
 }

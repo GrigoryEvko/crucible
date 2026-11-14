@@ -4,24 +4,19 @@
 // copy for each hash and runs no sanitizer.  Sanitized is an earned tag:
 // only a retag along a discharge edge of fixy/Tagged.h reaches it, and no
 // edge leaves Interned.  So a stored name, which may hold External bytes,
-// cannot come out as a Sanitized name.  This fixture tries that retag.
+// cannot come out as a Sanitized name.  This fixture tries that retag on a
+// name of the type that the table stores.
 
 #include <crucible/CallSiteTable.h>
-
-#include <fixy/Refined.h>
+#include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 
-#include <cstdint>
-#include <string>
 #include <utility>
 
 int main() {
-    crucible::CallSiteTable t;
-    t.insert(::fixy::mint_refined<::fixy::non_zero>(crucible::CallsiteHash{uint64_t{0xC0FFEE}}),
-             ::fixy::mint_tagged<::fixy::tags::source::External>(std::string{"file.py"}),
-             ::fixy::mint_tagged<::fixy::tags::source::External>(std::string{"f"}), int32_t{42});
-    crucible::CallSiteTable::InternedName stored = t.entries[0].filename;
+    crucible::CallSiteTable::InternedName stored =
+        ::fixy::mint_tagged<::fixy::tags::source::Interned>(::fixy::mint_grow_text(16));
     auto laundered = std::move(stored).retag<::fixy::tags::source::Sanitized>();
     (void)laundered;
     return 0;

@@ -1672,23 +1672,23 @@ crucible_neg_compile_test(neg_call_site_lineno_int_min
   "mint_refined<IsNonNegative\\(\\), int>\\(std::numeric_limits<int>::min\\(\\)\\)")
 
 # CallSiteTable::Entry stores its filename and funcname as InternedName,
-# a fixy::Tagged<std::string, source::Interned>.  The table keeps one copy
+# a fixy::Tagged<fixy::GrowText, source::Interned>.  The table keeps one copy
 # for each hash and runs no sanitizer, so a stored name claims neither the
 # tag of its caller nor Sanitized.  Three fixtures:
-#   * _filename_raw_string: an Entry cannot hold a raw std::string, since
-#     the constructor of Tagged is private and mint_tagged is its door.
+#   * _filename_raw_string: an Entry cannot hold a raw text, since the
+#     constructor of Tagged is private and mint_tagged is its door.
 #   * _filename_external_passback: a stored name does not convert to an
 #     External name.
 #   * _interned_name_to_sanitized: no retag edge leaves Interned, so a
 #     stored name, which can hold External bytes, never becomes Sanitized.
 crucible_neg_compile_test(neg_call_site_filename_raw_string
-  "could not convert .* to .crucible::CallSiteTable::InternedName. \\{aka .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::Interned>.\\}"
+  "could not convert .* from .foundation::core::GrowText. to .crucible::CallSiteTable::InternedName. \\{aka .fixy::Tagged<foundation::core::GrowText, fixy::tags::source::Interned>.\\}"
   "fixy/Tagged.h:[0-9]+:[0-9]+: note: explicit conversion function was not considered")
 crucible_neg_compile_test(neg_call_site_filename_external_passback
   "invalid initialization of reference of type .const ExternalName&. .*from expression of type .const crucible::CallSiteTable::InternedName."
   "in passing argument 1 of .void wants_external_only\\(const ExternalName&\\).")
 crucible_neg_compile_test(neg_call_site_interned_name_to_sanitized
-  "no matching function for call to .fixy::Tagged<std::__cxx11::basic_string<char>, fixy::tags::source::Interned>::retag<fixy::tags::source::Sanitized>\\(\\)."
+  "no matching function for call to .fixy::Tagged<foundation::core::GrowText, fixy::tags::source::Interned>::retag<fixy::tags::source::Sanitized>\\(\\)."
   "required for the satisfaction of .RetagAllowed<Tag, NewTag>. \\[with Tag = fixy::tags::source::Interned. NewTag = fixy::tags::source::Sanitized\\]")
 
 # IterationDetector::SignatureLen is the fixy BoundedMonotonic<uint32_t,

@@ -37,7 +37,7 @@
 //      table must never "remember" it.
 //
 //   7. Tagged-string discipline — inserts go through ExternalName, the
-//      source::External Tagged<std::string> overload, which is the path
+//      source::External Tagged<TextView> overload, which is the path
 //      for frame metadata that arrives untrusted from Python.  It compiles
 //      only if overload resolution picks the tagged form.  The entry keeps
 //      the bytes under source::Interned, never under Sanitized, because
@@ -83,13 +83,14 @@
 
 #include <crucible/CallSiteTable.h>
 #include <crucible/Types.h>
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <cstdint>
-#include <string>
 
 namespace {
 
@@ -99,11 +100,16 @@ namespace {
 constexpr char kAlphabet[] = "abcdefghijklmnopqrstuvwxyz0123456789";
 constexpr uint32_t kAlphabetLen = sizeof(kAlphabet) - 1;  // exclude NUL
 
-[[nodiscard]] std::string random_ident(crucible::fuzz::prop::Rng& rng, uint32_t min_len, uint32_t max_len) noexcept {
+// The longest name that the generator writes.
+constexpr uint32_t kMaxIdentChars = 24;
+
+using Ident = ::fixy::FixedText<kMaxIdentChars>;
+
+[[nodiscard]] Ident random_ident(crucible::fuzz::prop::Rng& rng, uint32_t min_len, uint32_t max_len) noexcept {
     const uint32_t len = min_len + rng.next_below(max_len - min_len + 1);
-    std::string s(len, '\0');
+    Ident s{};
     for (uint32_t i = 0; i < len; ++i) {
-        s[i] = kAlphabet[rng.next_below(kAlphabetLen)];
+        s.push(kAlphabet[rng.next_below(kAlphabetLen)]).expect("a name holds at most kMaxIdentChars characters");
     }
     return s;
 }
@@ -127,8 +133,8 @@ int main(int argc, char** argv) {
             constexpr unsigned N = 48;
             struct Record {
                 uint64_t hash_raw;
-                std::string filename;
-                std::string funcname;
+                Ident filename;
+                Ident funcname;
                 int32_t lineno;
             };
             struct Batch {
@@ -168,6 +174,7 @@ int main(int argc, char** argv) {
             return b;
         },
         [](const auto& b) {
+            const ::foundation::effects::Alloc alloc = ::foundation::effects::testing::test().alloc;
             CallSiteTable t;
 
             // Property (absence-before-insert): has() on every batch
@@ -190,10 +197,10 @@ int main(int argc, char** argv) {
                 const CallsiteHash h{b.recs[i].hash_raw};
                 CallSiteTable::NonZeroHash nz = ::fixy::mint_refined<::fixy::non_zero>(h);
                 CallSiteTable::ExternalName fn =
-                    ::fixy::mint_tagged<::fixy::tags::source::External>(b.recs[i].filename);
+                    ::fixy::mint_tagged<::fixy::tags::source::External>(b.recs[i].filename.view());
                 CallSiteTable::ExternalName gn =
-                    ::fixy::mint_tagged<::fixy::tags::source::External>(b.recs[i].funcname);
-                t.insert(std::move(nz), std::move(fn), std::move(gn), b.recs[i].lineno);
+                    ::fixy::mint_tagged<::fixy::tags::source::External>(b.recs[i].funcname.view());
+                if (!t.insert(alloc, std::move(nz), std::move(fn), std::move(gn), b.recs[i].lineno)) return false;
             }
 
             // Property (size == distinct count): the generator
@@ -210,8 +217,8 @@ int main(int argc, char** argv) {
 
                 const auto& e = t.entries[i];
                 if (e.hash != h) return false;
-                if (e.filename.value() != b.recs[i].filename) return false;
-                if (e.funcname.value() != b.recs[i].funcname) return false;
+                if (e.filename.value().view() != b.recs[i].filename.view()) return false;
+                if (e.funcname.value().view() != b.recs[i].funcname.view()) return false;
                 if (e.lineno.value() != b.recs[i].lineno) return false;
             }
 
@@ -224,16 +231,16 @@ int main(int argc, char** argv) {
                 const CallsiteHash h{b.recs[i].hash_raw};
                 CallSiteTable::NonZeroHash nz = ::fixy::mint_refined<::fixy::non_zero>(h);
                 CallSiteTable::ExternalName fn =
-                    ::fixy::mint_tagged<::fixy::tags::source::External>(std::string{"OVERWRITTEN"});
+                    ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::TextView{"OVERWRITTEN"});
                 CallSiteTable::ExternalName gn =
-                    ::fixy::mint_tagged<::fixy::tags::source::External>(std::string{"ATTEMPT"});
-                t.insert(std::move(nz), std::move(fn), std::move(gn), b.recs[i].lineno + 777);
+                    ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::TextView{"ATTEMPT"});
+                if (!t.insert(alloc, std::move(nz), std::move(fn), std::move(gn), b.recs[i].lineno + 777)) return false;
             }
             if (t.size() != b.count) return false;
             for (unsigned i = 0; i < b.count; ++i) {
                 const auto& e = t.entries[i];
-                if (e.filename.value() != b.recs[i].filename) return false;
-                if (e.funcname.value() != b.recs[i].funcname) return false;
+                if (e.filename.value().view() != b.recs[i].filename.view()) return false;
+                if (e.funcname.value().view() != b.recs[i].funcname.view()) return false;
                 if (e.lineno.value() != b.recs[i].lineno) return false;
             }
 
