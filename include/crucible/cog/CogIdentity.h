@@ -11,17 +11,19 @@
 
 #include <array>
 #include <cstdint>
-#include <span>
 #include <string_view>
 #include <type_traits>
 #include <utility>
 
-namespace crucible::cog {
-
-// The definition lives elsewhere. A caller that dereferences a
-// neighbour span needs it. A caller that only passes the span along or
-// asks whether it is empty does not.
+// The edge of the topology graph.  crucible/topology/TopologyGraph.h
+// defines it, and that header includes this one.  A caller that reads a
+// neighbor view, or asks for its size, needs the definition.  A caller that
+// only passes the view along does not.
+namespace crucible::topology {
 struct TopologyEdge;
+}  // namespace crucible::topology
+
+namespace crucible::cog {
 
 // A 128-bit hardware identifier, stable across firmware updates. The
 // value is derived from whatever fixed vendor identifier the Cog kind
@@ -249,19 +251,19 @@ struct CogIdentity {
     VendorClaim<std::uint64_t> firmware_revision{};
     VendorClaim<std::uint64_t> bios_revision{};
 
-    // A null parent means this Cog is a root. The topology arena that
+    // No parent means this Cog is a root. The topology arena that
     // owns both the parent and the children guarantees that the graph
     // has no cycles, that a parent lists exactly the children which
     // point back at it, and that the storage outlives every identity
     // referring to it.
-    const CogIdentity* parent = nullptr;
-    std::span<const CogIdentity> children{};
+    ::fixy::Option<::fixy::Ref<const CogIdentity>> parent{};
+    ::fixy::View<const CogIdentity> children{};
 
     // Peers one hardware hop away, such as two GPUs on one switch, and
     // peers one network hop away, such as two NICs behind one
     // top-of-rack switch.
-    std::span<const TopologyEdge> neighbors_l2{};
-    std::span<const TopologyEdge> neighbors_l3{};
+    ::fixy::View<const topology::TopologyEdge> neighbors_l2{};
+    ::fixy::View<const topology::TopologyEdge> neighbors_l3{};
 };
 
 // The key a compiled-kernel cache looks up. The same physical Cog on

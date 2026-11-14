@@ -6,6 +6,7 @@
 // are not answered entirely by constant folding.
 
 #include <crucible/cog/CogIdentity.h>
+#include <crucible/topology/TopologyGraph.h>
 #include <foundation/reflect/EnumName.h>
 
 #include "test_assert.h"
@@ -136,13 +137,13 @@ static void test_cog_identity_topology_links() {
     gpu1.level = cog::CogLevel::L0_Atomic;
     gpu1.kind = cog::CogKind::Gpu;
 
-    const cog::CogIdentity gpu_children[2] = {gpu0, gpu1};
+    const ::foundation::core::FixedArray<cog::CogIdentity, 2> gpu_children{gpu0, gpu1};
 
     cog::CogIdentity package{};
     package.uuid = cog::Uuid{0, 1};
     package.level = cog::CogLevel::L1_Component;
     package.kind = cog::CogKind::GpuPackage;
-    package.children = std::span<const cog::CogIdentity>(gpu_children, 2);
+    package.children = gpu_children.view();
 
     // The volatile barrier stops the walk below from being folded out.
     volatile std::size_t observed_children = package.children.size();
@@ -157,10 +158,25 @@ static void test_cog_identity_topology_links() {
     }
     assert(walked == 2);
 
-    assert(package.parent == nullptr);
+    assert(package.parent.is_none());
 
-    assert(package.neighbors_l2.empty());
-    assert(package.neighbors_l3.empty());
+    assert(package.neighbors_l2.size() == 0);
+    assert(package.neighbors_l3.size() == 0);
+
+    // A child names its package as its parent.
+    cog::CogIdentity child = gpu0;
+    child.parent = ::fixy::some(::fixy::Ref<const cog::CogIdentity>{::fixy::to(package)});
+    assert(child.parent.match(
+        [&package](::fixy::Ref<const cog::CogIdentity> const& parent) noexcept {
+            return ::fixy::same_object(parent, ::fixy::to(package));
+        },
+        []() noexcept { return false; }));
+
+    // The neighbor views hold the edges of the topology graph.
+    const ::foundation::core::FixedArray<crucible::topology::TopologyEdge, 2> edges{};
+    package.neighbors_l2 = edges.view();
+    assert(package.neighbors_l2.size() == 2);
+    assert(package.neighbors_l3.size() == 0);
 
     crucible::test::pass("  test_cog_identity_topology_links:    PASSED\n");
 }
