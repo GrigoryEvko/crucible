@@ -58,7 +58,6 @@
 
 #include <fixy/Bands.h>
 #include <fixy/Borrowed.h>
-#include <fixy/FixedArray.h>
 #include <fixy/Mutation.h>
 #include <fixy/Qtt.h>
 #include <fixy/Refined.h>
@@ -123,7 +122,6 @@ inline constexpr std::meta::info transparent_payload_families[] = {
     ^^::fixy::Monotonic,
     ^^::fixy::AppendOnly,
     ^^::fixy::WriteOnce,
-    ^^::fixy::FixedArray,
     ^^::foundation::core::FixedArray,  // the elements; the count holds no row
     ^^::foundation::AlignedBuffer,  // the elements; the alignment holds no row
     ^^::foundation::core::RunSet,  // the element of each run; the counts hold no row

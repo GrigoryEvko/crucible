@@ -45,7 +45,6 @@
 // allocation counters of a node, which show when the kernel fell back.
 
 #include <fixy/Core.h>
-#include <fixy/FixedArray.h>
 #include <fixy/os/OwnedMmap.h>
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Os.h>
@@ -288,7 +287,10 @@ public:
 
     // The count of the pages on the node.  0 for None and Any.
     [[nodiscard]] constexpr std::size_t pages_on(NumaNodeId node) const noexcept {
-        return is_concrete_numa_node(node) ? on_node_[std::to_underlying(node)] : 0;
+        for (NodeSlot const slot : NodeSlot::check(std::to_underlying(node))) {
+            return on_node_.at(slot);
+        }
+        return 0;
     }
 
     // The count of the pages on a node other than the node.
@@ -312,14 +314,20 @@ private:
     // of the page, or a negative errno when the page has no node.
     constexpr void count_page_(int status) noexcept {
         ++pages_;
-        if (status >= 0 && status < static_cast<int>(concrete_node_count_)) {
-            ++on_node_[static_cast<std::size_t>(status)];
-        } else {
-            ++without_node_;
+        if (status >= 0) {
+            for (NodeSlot const slot : NodeSlot::check(static_cast<std::size_t>(status))) {
+                ++on_node_.at(slot);
+                return;
+            }
         }
+        ++without_node_;
     }
 
     static constexpr std::size_t concrete_node_count_ = std::to_underlying(NumaNodeId::None);
+
+    // The slot of a concrete node: an index below the count of the
+    // concrete nodes.
+    using NodeSlot = Index<concrete_node_count_>;
 
     FixedArray<std::size_t, concrete_node_count_> on_node_{};
     std::size_t without_node_ = 0;

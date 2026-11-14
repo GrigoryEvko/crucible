@@ -25,7 +25,6 @@
 #include <crucible/TraceRing.h>
 #include <fixy/Checked.h>
 #include <fixy/Core.h>
-#include <fixy/FixedArray.h>
 #include <foundation/reflect/Hash.h>
 
 #include <cstdint>
@@ -39,7 +38,10 @@ inline constexpr uint32_t MAX_INLINE_METAS = 32;
 
 // The inline scalar slots of a trace entry.
 inline constexpr uint16_t kInlineScalars =
-    static_cast<uint16_t>(decltype(crucible::TraceRing::Entry::scalar_values)::capacity);
+    static_cast<uint16_t>(decltype(crucible::TraceRing::Entry::scalar_values)::size());
+
+// The index of an inline scalar slot.
+using ScalarSlot = ::fixy::Index<kInlineScalars>;
 
 // The seed of each overflow fold: "overflow" in ASCII.
 inline constexpr uint64_t kOverflowSeed = 0x6f766572666c6f77ULL;
@@ -49,13 +51,16 @@ struct ScalarArgs;
 
 // The first kInlineScalars scalars of an operation, as the entry slots take
 // them.  `stored` counts the values, and the slots past it hold zero.  The
-// copy into an entry is then one memcpy of `stored` values.
+// copy into an entry is then one copy of the kInlineScalars slots.
 struct StoredScalars {
     ::fixy::FixedArray<int64_t, kInlineScalars> values{};
     uint16_t stored = 0;
 
     void push(int64_t value) noexcept {
-        if (stored < kInlineScalars) values[stored++] = value;
+        if (stored < kInlineScalars) {
+            values.at(ScalarSlot::check(stored).expect("the test above keeps the count below the slots")) = value;
+            ++stored;
+        }
     }
 };
 
@@ -141,12 +146,13 @@ struct input_overflow_of<false> {
     return meta;
 }
 
-// Copies the stored scalars into the first slots of an entry.  The loop of a
-// counted index over two arrays compiles to one memcpy.  O(kInlineScalars).
+// Copies the stored scalars into the slots of an entry.  The slots past the
+// count hold zero in scalars, so the entry holds zero there too.  The two
+// Views have one fixed extent, so the copy of the kInlineScalars slots has no
+// check and no count.  O(kInlineScalars).
 inline void copy_stored_scalars(crucible::TraceRing::Entry& entry, StoredScalars const& scalars) noexcept {
     entry.num_scalar_args = scalars.stored;
-    for (uint16_t i = 0; i < scalars.stored; i++)
-        entry.scalar_values[i] = scalars.values[i];
+    ::fixy::copy(entry.scalar_values.view(), scalars.values.view());
 }
 
 // Writes the scalar slots of an entry for an operation that cannot
@@ -169,7 +175,8 @@ inline void write_scalar_slots(crucible::TraceRing::Entry& entry, ScalarArgs<tru
         uint64_t digest = ::foundation::reflect::combine_ids(scalars.digest, scalars.count);
         digest = ::foundation::reflect::combine_ids(digest, inputs.digest);
         digest = ::foundation::reflect::combine_ids(digest, inputs.count);
-        entry.scalar_values[digest_slot] = static_cast<int64_t>(digest);
+        entry.scalar_values.at(ScalarSlot::check(digest_slot).expect("the digest slot is the last slot or before it")) =
+            static_cast<int64_t>(digest);
         entry.num_scalar_args = static_cast<uint16_t>(digest_slot + 1);
     }
 }

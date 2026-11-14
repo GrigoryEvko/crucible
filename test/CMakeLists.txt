@@ -3219,16 +3219,16 @@ crucible_neg_compile_test(neg_recipe_registry_entries_cross_tag
 
 # Entry::scalar_values of TraceRing is fixy::FixedArray<int64_t, 5>.  Two
 # fixtures hold its two gates:
-#   * neg_tracering_scalar_values_at_oob: at<I>() refuses an index that is
-#     not less than N.
-#   * neg_tracering_scalar_values_in_place_wrong_arity: the in-place
-#     constructor refuses std::in_place with six values for five slots.
+#   * neg_tracering_scalar_values_at_oob: at() refuses the constant index 5,
+#     which converts to no Index<5>.
+#   * neg_tracering_scalar_values_list_wrong_arity: the list constructor
+#     refuses six values for five slots.
 crucible_neg_compile_test(neg_tracering_scalar_values_at_oob
-  "no matching function for call to .fixy::FixedArray<long int, 5>::at<5>\\(\\)."
-  "the expression .I < N .with I = 5. N = 5.. evaluated to .false.")
-crucible_neg_compile_test(neg_tracering_scalar_values_in_place_wrong_arity
-  "no matching function for call to .fixy::FixedArray<long int, 5>::FixedArray\\(<brace-enclosed initializer list>\\)."
-  "the expression .sizeof ... \\(Args ...\\) == N .with Args = .long int, long int, long int, long int, long int, long int.. N = 5.. evaluated to .false.")
+  "no matching function for call to .foundation::core::FixedArray<long int, 5>::at\\(foundation::core::StaticIndex<5>\\)."
+  "no known conversion for argument 1 from .foundation::core::StaticIndex<5>. to .foundation::core::Index<5>.")
+crucible_neg_compile_test(neg_tracering_scalar_values_list_wrong_arity
+  "no matching function for call to .foundation::core::FixedArray<long int, 5>::FixedArray\\(<brace-enclosed initializer list>\\)."
+  "candidate expects 5 arguments, 6 provided")
 
 # BitMask stores a refined mask.  The numeric ceiling
 # ((1 << kGroupWidth) - 1) bounds the mask, not kGroupWidth itself: a

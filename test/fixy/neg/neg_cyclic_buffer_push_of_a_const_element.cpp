@@ -1,5 +1,7 @@
-// A push into a ring of const elements.  A push assigns into the slot it
-// claimed, and a const element cannot be assigned, so push is refused.
+// A ring of const elements.  A push assigns into the slot it claimed, and a
+// const element cannot be assigned.  The storage of the ring is a
+// FixedArray, which refuses a const element, so the ring itself does not
+// compile and no push reaches a const slot.
 
 #include <fixy/CyclicBuffer.h>
 

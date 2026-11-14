@@ -8,8 +8,8 @@
 // once it laps, `raw < N` becomes true again and a derived size would
 // under-report a full ring.
 
+#include <fixy/Core.h>
 #include <fixy/Cyclic.h>
-#include <fixy/FixedArray.h>
 #include <fixy/Mutation.h>
 #include <foundation/Platform.h>
 
@@ -35,6 +35,12 @@ public:
     static constexpr std::string_view wrapper_kind() noexcept { return "structural::CyclicBuffer"; }
 
 private:
+    // The slot of a masked cursor.  The mask of the cursor keeps it below N,
+    // so the optimizer removes the check.
+    [[nodiscard]] static constexpr Index<N> prove_slot_(size_type masked) noexcept {
+        return Index<N>::check(masked).expect("a masked cursor of a CyclicBuffer is below its capacity");
+    }
+
     FixedArray<T, N> storage_{};
     Cyclic<std::size_t, N> cursor_{};
     BoundedMonotonic<std::size_t, N> count_ = mint_bounded_monotonic<std::size_t, N>(std::size_t{0});
@@ -63,7 +69,7 @@ public:
     // saturate: its precondition is that the count is below the bound, and
     // a full ring would break it.
     [[nodiscard]] constexpr reference claim() noexcept {
-        reference slot = storage_[cursor_.index()];
+        reference slot = storage_.at(prove_slot_(cursor_.index()));
         cursor_.advance();
         if (count_.get() < N) count_.bump();
         return slot;
@@ -89,9 +95,11 @@ public:
     // only for i < size(): looking back further returns a stale or default
     // slot.  The cursor mask keeps every index inside the storage, so the
     // bound on i is a logic bound and not a safety bound.
-    [[nodiscard]] constexpr reference recent(size_type i) noexcept { return storage_[cursor_.index_back(i)]; }
+    [[nodiscard]] constexpr reference recent(size_type i) noexcept {
+        return storage_.at(prove_slot_(cursor_.index_back(i)));
+    }
     [[nodiscard]] constexpr const_reference recent(size_type i) const noexcept {
-        return storage_[cursor_.index_back(i)];
+        return storage_.at(prove_slot_(cursor_.index_back(i)));
     }
 
     // A copy, so no reference into the ring leaves it.  The cursor is one

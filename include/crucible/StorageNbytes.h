@@ -25,11 +25,11 @@
 #include <crucible/Types.h>
 #include <fixy/Bands.h>
 #include <fixy/Core.h>
-#include <fixy/FixedArray.h>
 #include <fixy/Saturated.h>
 #include <foundation/Platform.h>
 #include <foundation/Simd.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace crucible::detail {
@@ -201,14 +201,15 @@ compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
     auto sizes_minus_one = ::foundation::simd::select(valid_mask, sizes, one) - one;
     auto extents = sizes_minus_one * ::foundation::simd::select(valid_mask, strides, i64x8(0));
 
-    // The store below is the aligned form, hence the explicit alignment.
-    alignas(64)::fixy::FixedArray<int64_t, 8> extents_buf{};
-    ::foundation::simd::store_aligned(extents, extents_buf.data());
+    // The lanes reach the array through the bytes of the register.
+    ::fixy::FixedArray<std::byte, sizeof(i64x8)> extent_bytes{};
+    ::foundation::simd::store(extents, extent_bytes.view());
+    const auto extents_buf = ::fixy::bit_cast<::fixy::FixedArray<int64_t, 8>>(extent_bytes);
 
     int64_t max_offset = 0;
     int64_t min_offset = 0;
     for (uint8_t d = 0; d < raw.ndim; ++d) {
-        const int64_t e = extents_buf[d];
+        const int64_t e = extents_buf.at(::fixy::Index<8>::check(d).expect("a TensorMeta holds at most 8 dimensions"));
         if (e > 0) {
             if (!take_checked_(::foundation::core::checked_add(max_offset, e), max_offset)) [[unlikely]] {
                 return Sat{UINT64_MAX, true};

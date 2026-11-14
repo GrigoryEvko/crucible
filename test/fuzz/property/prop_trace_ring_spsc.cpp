@@ -196,11 +196,12 @@ int main(int argc, char** argv) {
             if (got == 0) std::abort();  // ring has CAP entries, must deliver
             for (uint32_t k = 0; k < got; ++k) {
                 const uint32_t i = delivered + k;
-                if (out_e[k].schema_hash != SchemaHash{uint64_t{i} + 1}) std::abort();
-                if (out_e[k].shape_hash != ShapeHash{~uint64_t{i} + 1}) std::abort();
-                if (out_m[k] != MetaIndex{i}) std::abort();
-                if (out_s[k] != ScopeHash{0xA0000000ULL | i}) std::abort();
-                if (out_c[k] != CallsiteHash{0xB0000000ULL | i}) std::abort();
+                const ::fixy::Index<CHUNK> slot = ::fixy::Index<CHUNK>::check(k).expect("a drain gives at most CHUNK");
+                if (out_e.at(slot).schema_hash != SchemaHash{uint64_t{i} + 1}) std::abort();
+                if (out_e.at(slot).shape_hash != ShapeHash{~uint64_t{i} + 1}) std::abort();
+                if (out_m.at(slot) != MetaIndex{i}) std::abort();
+                if (out_s.at(slot) != ScopeHash{0xA0000000ULL | i}) std::abort();
+                if (out_c.at(slot) != CallsiteHash{0xB0000000ULL | i}) std::abort();
             }
             delivered += got;
         }
@@ -299,10 +300,12 @@ int main(int argc, char** argv) {
                     // (A) round-trip FIFO equality, field-by-field.
                     for (uint32_t k = 0; k < got; ++k) {
                         const auto& want_slot = mirror[(mirror_tail + k) & (MIRROR_CAPACITY - 1u)];
-                        if (!entry_equal(out_e[k], want_slot.entry)) return false;
-                        if (out_m[k] != want_slot.meta_start) return false;
-                        if (out_s[k] != want_slot.scope_hash) return false;
-                        if (out_c[k] != want_slot.callsite_hash) return false;
+                        const ::fixy::Index<MAX_OPS_PER_PHASE> slot =
+                            ::fixy::Index<MAX_OPS_PER_PHASE>::check(k).expect("a drain gives at most one phase");
+                        if (!entry_equal(out_e.at(slot), want_slot.entry)) return false;
+                        if (out_m.at(slot) != want_slot.meta_start) return false;
+                        if (out_s.at(slot) != want_slot.scope_hash) return false;
+                        if (out_c.at(slot) != want_slot.callsite_hash) return false;
                     }
                     mirror_tail += got;
                     total_drained += got;

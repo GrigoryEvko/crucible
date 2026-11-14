@@ -291,7 +291,7 @@ schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
     if (entry.schema_hash.raw() == 0) return false;
     if (entry.num_inputs > 64) return false;
     if (entry.num_outputs > 64) return false;
-    if (entry.num_scalar_args > decltype(crucible::TraceRing::Entry::scalar_values)::capacity) return false;
+    if (entry.num_scalar_args > decltype(crucible::TraceRing::Entry::scalar_values)::size()) return false;
     return true;
 }
 

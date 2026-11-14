@@ -132,6 +132,7 @@ using ::foundation::core::equal;
 using ::foundation::core::fill;
 using ::foundation::core::find;
 using ::foundation::core::find_if;
+using ::foundation::core::FixedArray;
 using ::foundation::core::FixedList;
 using ::foundation::core::ForeignElement;
 using ::foundation::core::Full;
@@ -153,8 +154,6 @@ using ::foundation::core::starts_with;
 using ::foundation::core::StaticIndex;
 using ::foundation::core::View;
 using ::foundation::core::zip;
-// FixedArray of the Region family stays in foundation::core until the merge of
-// fixy/FixedArray.h, which declares a fixy::FixedArray of its own.
 
 using ::foundation::core::bit_cast;
 using ::foundation::core::BitValid;
@@ -235,7 +234,7 @@ using ::foundation::core::QuantityUnit;
 namespace unit = ::foundation::core::unit;
 
 // The object swap stays in an inline namespace, because classes of namespace
-// fixy, such as fixy::FixedArray, declare a hidden friend named swap.
+// fixy, such as fixy::Qtt, declare a hidden friend named swap.
 inline namespace values {
 using ::foundation::core::swap;
 }  // namespace values

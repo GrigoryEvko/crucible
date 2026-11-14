@@ -24,7 +24,6 @@
 #include <fixy/Borrowed.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
-#include <fixy/FixedArray.h>
 #include <fixy/Mutation.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
@@ -404,10 +403,8 @@ public:
         // nothing.
         void hold(::fixy::WeakRef<const RegionNode> region) noexcept {
             if (!region.has_value()) return;
-            if (count == CAP) [[unlikely]] {
-                ::fixy::fatal("the region marks of the pipeline are full: raise BackgroundThread::RegionMarks::CAP");
-            }
-            held[count] = region;
+            held.at(::fixy::Index<CAP>::check(count).expect(
+                "the region marks of the pipeline are full: raise BackgroundThread::RegionMarks::CAP")) = region;
             ++count;
         }
     };
@@ -448,6 +445,7 @@ private:
     // that never gets a region writes no holders, and its regions stay.  A
     // publish into a full table then discards its region and counts it.
     static constexpr uint32_t REGION_STORE_CAP = 128;
+    using RegionStoreSlot = ::fixy::Index<REGION_STORE_CAP>;
     ::fixy::FixedArray<RegionMemory, REGION_STORE_CAP> region_store_{};
     ::fixy::WeakRef<const RegionNode> last_published_{};
     RegionMarks owner_marks_{};
@@ -485,7 +483,7 @@ public:
         static constexpr uint32_t CAP = 64;
 
         void push(RegionNode& region) noexcept {
-            slots_[static_cast<uint32_t>(total_.peek_relaxed() % CAP)] = ::fixy::WeakRef<RegionNode>{region};
+            slots_.at(prove_slot_(total_.peek_relaxed() % CAP)) = ::fixy::WeakRef<RegionNode>{region};
             (void)total_.bump();
         }
 
@@ -506,10 +504,15 @@ public:
         [[nodiscard]] ::fixy::WeakRef<RegionNode> at(uint32_t age) const noexcept {
             CRUCIBLE_PRE(age < size());
             const uint64_t seen = total_.get();
-            return slots_[static_cast<uint32_t>((seen + CAP - 1u - age) % CAP)];
+            return slots_.at(prove_slot_((seen + CAP - 1u - age) % CAP));
         }
 
     private:
+        // The slot of a count modulo CAP, which the modulo keeps below CAP.
+        [[nodiscard]] static ::fixy::Index<CAP> prove_slot_(uint64_t modulo) noexcept {
+            return ::fixy::Index<CAP>::check(modulo).expect("a count modulo CAP is below CAP");
+        }
+
         ::fixy::FixedArray<::fixy::WeakRef<RegionNode>, CAP> slots_{};
         ::fixy::AtomicMonotonic<uint64_t> total_ = ::fixy::mint_atomic_monotonic<uint64_t>(0);
     };
@@ -698,6 +701,7 @@ public:
     };
 
     static constexpr uint32_t BATCH_SIZE = 4096;
+    using BatchSlot = ::fixy::Index<BATCH_SIZE>;
 
     // The payloads below are plain data.  A stage reaches the thread it
     // serves through its input end (StageInput), so no payload points back

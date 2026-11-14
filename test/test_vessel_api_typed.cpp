@@ -4,7 +4,7 @@
 #include <crucible/TraceRing.h>
 #include <crucible/Types.h>
 #include <crucible/Vigil.h>
-#include <fixy/FixedArray.h>
+#include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 
@@ -330,11 +330,12 @@ void test_ladder_refuses_a_count_that_disagrees_with_the_entry() {
         meta.dtype = crucible::ScalarType::Float;
     }
     using crucible::vessel::mint_validated_entry;
-    EXPECT(is_certified(mint_validated_entry(crucible::mint_ffi_entry(entry), metas.data(), 2)),
+    // The validation reads the records from the address of the first one.
+    EXPECT(is_certified(mint_validated_entry(crucible::mint_ffi_entry(entry), &metas.at(::fixy::index<0>()), 2)),
            "a count of records that is the sum of the inputs and the outputs is certified");
-    EXPECT(!is_certified(mint_validated_entry(crucible::mint_ffi_entry(entry), metas.data(), 3)),
+    EXPECT(!is_certified(mint_validated_entry(crucible::mint_ffi_entry(entry), &metas.at(::fixy::index<0>()), 3)),
            "one record more than the inputs and the outputs is refused");
-    EXPECT(!is_certified(mint_validated_entry(crucible::mint_ffi_entry(entry), metas.data(), 1)),
+    EXPECT(!is_certified(mint_validated_entry(crucible::mint_ffi_entry(entry), &metas.at(::fixy::index<0>()), 1)),
            "one record less than the inputs and the outputs is refused");
     EXPECT(!is_certified(mint_validated_entry(crucible::mint_ffi_entry(entry), nullptr, 0)),
            "no record for an entry with an input and an output is refused");

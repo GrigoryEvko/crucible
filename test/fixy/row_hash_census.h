@@ -58,7 +58,6 @@
 #include <fixy/Cyclic.h>
 #include <fixy/CyclicBuffer.h>
 #include <fixy/EpochVersioned.h>
-#include <fixy/FixedArray.h>
 #include <fixy/Fn.h>
 #include <fixy/fp/Canonicalize.h>
 #include <fixy/fp/Polynomial.h>
@@ -1032,7 +1031,6 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::retag_policy, kMetafunction},
     {^^::fixy::Cyclic, kPayload},
     {^^::fixy::CyclicBuffer, kPayload},
-    {^^::fixy::FixedArray, kPayload},
     {^^::fixy::duplicate_atom_on, kMetafunction},
     {^^::fixy::malformed_atom, kMetafunction},
     {^^::fixy::unholdable_payload, kMetafunction},

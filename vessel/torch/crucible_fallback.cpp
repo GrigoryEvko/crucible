@@ -17,7 +17,6 @@
 #include "record_kernel.h"
 
 #include <fixy/Core.h>
-#include <fixy/FixedArray.h>
 #include <fixy/Tagged.h>
 #include <foundation/Quarantine.h>
 
@@ -179,20 +178,31 @@ static constexpr uint32_t SCHEMA_CACHE_PROBES = 8;
 // constinit: the table has no dynamic initializer, so no access waits for one.
 static constinit ::fixy::FixedArray<SchemaHashSlot, SCHEMA_CACHE_CAP> schema_cache{};
 
+// The slot of a probe.  The mask keeps it below SCHEMA_CACHE_CAP, so the
+// optimizer removes the check.
+[[nodiscard]] static SchemaHashSlot& get_schema_slot(uint64_t probe) noexcept {
+    return schema_cache.at(::fixy::Index<SCHEMA_CACHE_CAP>::check(probe & SCHEMA_CACHE_MASK)
+                               .expect("a masked probe is below SCHEMA_CACHE_CAP"));
+}
+
 struct SchemaInfo {
     crucible::SchemaHash hash;
     bool is_mutable = false;
     bool is_foreach = false;
 };
 
-[[nodiscard]] static SchemaInfo get_schema_info(crucible::Vigil& vigil, const c10::OperatorHandle& op,
-                                                const c10::FunctionSchema& schema) {
+// The lookup stays a call.  Its slow path registers the schema name, and
+// GCC can inline the whole body into crucibleFallback, which adds about 1000
+// instructions there.  A cold helper for the slow path with the probe inline
+// gave the fallback 156 instructions more than this call.
+[[nodiscard, gnu::noinline]] static SchemaInfo get_schema_info(crucible::Vigil& vigil, const c10::OperatorHandle& op,
+                                                               const c10::FunctionSchema& schema) {
     // The handle's address is the cache key. bit_cast reproduces it as an
     // integer for the index arithmetic; the pointer itself is compared
     // below, so the integer never turns back into one.
     const auto idx = (std::bit_cast<std::uintptr_t>(&op) >> 4) & SCHEMA_CACHE_MASK;
     for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
-        SchemaHashSlot& slot = schema_cache[(idx + probe) & SCHEMA_CACHE_MASK];
+        SchemaHashSlot& slot = get_schema_slot(idx + probe);
         const uint64_t state = slot.state.load_acquire();
         if (state == SLOT_READY && slot.key.value() == &op) [[likely]]
             return {slot.hash, (slot.flags & FLAG_MUTABLE) != 0, (slot.flags & FLAG_FOREACH) != 0};
@@ -257,7 +267,7 @@ struct SchemaInfo {
     // constructor, so the mint is the one door; the wrapper is
     // move-assigned into the slot at zero runtime cost.
     for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
-        SchemaHashSlot& slot = schema_cache[(idx + probe) & SCHEMA_CACHE_MASK];
+        SchemaHashSlot& slot = get_schema_slot(idx + probe);
         if (slot.state.cas_acq_rel(SLOT_EMPTY, SLOT_CLAIMED).is_ok()) {
             slot.key = mint_external_op_key(&op);
             slot.hash = schema_hash;

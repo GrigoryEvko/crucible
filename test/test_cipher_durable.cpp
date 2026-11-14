@@ -12,7 +12,6 @@
 #include <crucible/cipher/CipherDurable.h>
 
 #include <fixy/Core.h>
-#include <fixy/FixedArray.h>
 #include <fixy/os/Fs.h>
 #include <fixy/os/Path.h>
 
@@ -48,12 +47,12 @@ using crucible::test::ScratchDir;
 
 inline constexpr std::size_t kPayloadBytes = 4096;
 
-using Payload = ::fixy::FixedArray<std::uint8_t, kPayloadBytes>;
+using Payload = ::fixy::FixedArray<std::byte, kPayloadBytes>;
 
 [[nodiscard]] Payload pattern_of(std::uint8_t salt) {
     Payload pattern{};
-    for (std::size_t index = 0; index < kPayloadBytes; ++index) {
-        pattern[index] = static_cast<std::uint8_t>((index * 7u + salt) & 0xFFu);
+    for (auto [index, element] : pattern.enumerate()) {
+        *element = std::byte{static_cast<std::uint8_t>((index.raw() * 7u + salt) & 0xFFu)};
     }
     return pattern;
 }
@@ -85,11 +84,8 @@ template <typename T>
     fs::OwnedFd const file = std::move(reader).expect("the reader opened");
     Payload readback{};
     // A failed read gives the count zero, so it returns false too.
-    if (fs::read_full(ctx, file, std::as_writable_bytes(readback.as_span())).value_or(0) != kPayloadBytes) return false;
-    for (std::size_t index = 0; index < kPayloadBytes; ++index) {
-        if (readback[index] != expected[index]) return false;
-    }
-    return true;
+    if (fs::read_full(ctx, file, readback.view()).value_or(0) != kPayloadBytes) return false;
+    return readback == expected;
 }
 
 // The cold writer, end to end.  cold_writer_stance pins Rename, and this
@@ -109,7 +105,7 @@ template <typename T>
         return 1;
     }
     auto const writer = std::move(opened_writer).expect("the cold writer opened");
-    if (auto written = fs::write_full(ctx, writer.handle(), std::as_bytes(pattern.as_span())); written.is_err()) {
+    if (auto written = fs::write_full(ctx, writer.handle(), pattern.view()); written.is_err()) {
         ::fixy::report(::fixy::Sink::Err, "writing through the cold writer failed (errno {})\n", errno_of(written));
         return 1;
     }
@@ -165,7 +161,7 @@ template <typename T>
         return 1;
     }
     auto const writer = std::move(opened_writer).expect("the warm writer opened");
-    if (auto written = fs::write_full(ctx, writer.handle(), std::as_bytes(pattern.as_span())); written.is_err()) {
+    if (auto written = fs::write_full(ctx, writer.handle(), pattern.view()); written.is_err()) {
         ::fixy::report(::fixy::Sink::Err, "writing through the warm writer failed (errno {})\n", errno_of(written));
         return 1;
     }

@@ -44,7 +44,6 @@
 #include <fixy/Aliases.h>
 #include <fixy/Bands.h>
 #include <fixy/Core.h>
-#include <fixy/FixedArray.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <fixy/Stale.h>
@@ -196,6 +195,13 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     ::fixy::FixedArray<ScopeHash, CAPACITY> scope_hashes{};
     ::fixy::FixedArray<CallsiteHash, CAPACITY> callsite_hashes{};
 
+    // The slot of a counter of the ring: its low bits.  The mask keeps the
+    // slot below CAPACITY, so the optimizer removes the check.
+    using RingSlot = ::fixy::Index<CAPACITY>;
+    [[nodiscard]] CRUCIBLE_INLINE static RingSlot mask_slot_(uint64_t counter) noexcept {
+        return RingSlot::check(counter & MASK).expect("a masked counter of the ring is below CAPACITY");
+    }
+
     TraceRing() noexcept { crucible::warden::register_hot_region(this, sizeof(*this), /*huge=*/true); }
     ~TraceRing() { crucible::warden::unregister_hot_region(this); }
     TraceRing(const TraceRing&) = delete("SPSC ring is pinned to a producer/consumer thread pair");
@@ -206,7 +212,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // The thread-safety analysis is suppressed throughout: this thread is the
     // sole writer of head and of the slot it is about to fill, which the
     // analysis cannot express.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool
     try_append(const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
                CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         const uint64_t h = head.peek_relaxed();
@@ -219,22 +225,21 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
                 return false;
         }
 
-        const uint32_t slot = static_cast<uint32_t>(h) & MASK;
-        [[assume(slot < CAPACITY)]];
-        entries[slot] = e;
-        meta_starts[slot] = meta_start;
-        scope_hashes[slot] = scope_hash;
-        callsite_hashes[slot] = callsite_hash;
+        const RingSlot slot = mask_slot_(h);
+        entries.at(slot) = e;
+        meta_starts.at(slot) = meta_start;
+        scope_hashes.at(slot) = scope_hash;
+        callsite_hashes.at(slot) = callsite_hash;
 
         // Warm the destination of the following append while the caller is
         // still busy with its own post-append work.
         {
-            const uint32_t next_slot = (slot + 1u) & MASK;
+            const RingSlot next_slot = mask_slot_(h + 1);
             constexpr ::fixy::PrefetchAccess write_access = ::fixy::PrefetchAccess::write;
-            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(entries[next_slot]);
-            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(meta_starts[next_slot]);
-            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(scope_hashes[next_slot]);
-            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(callsite_hashes[next_slot]);
+            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(entries.at(next_slot));
+            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(meta_starts.at(next_slot));
+            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(scope_hashes.at(next_slot));
+            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(callsite_hashes.at(next_slot));
         }
 
         // This release publishes all four slot writes above to the consumer.
@@ -246,8 +251,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // demands a hot-tier producer can be checked at compile time. A change to
     // try_append that made it unfit for the hot path would have to weaken the
     // tier here, and every fenced consumer would then reject the call.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot, gnu::flatten]]
-    CRUCIBLE_INLINE ::fixy::HotPath<::fixy::HotPathTier_v::Hot, bool>
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE ::fixy::HotPath<::fixy::HotPathTier_v::Hot, bool>
     try_append_pinned(const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
                       CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Hot, bool>>(
@@ -261,7 +265,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // name their row.
     template <typename CallerRow = ::foundation::effects::Row<>>
         requires ::fixy::IsPure<CallerRow>
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool
     try_append_pure(const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
                     CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         return try_append(e, meta_start, scope_hash, callsite_hash);

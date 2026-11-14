@@ -209,11 +209,12 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
     // corruption, so the copy takes the smaller of the two and the
     // ladder below rejects the operation outright when the claim does
     // not fit.
-    constexpr uint16_t inline_scalars = decltype(entry.scalar_values)::capacity;
+    constexpr uint16_t inline_scalars = decltype(entry.scalar_values)::size();
     const uint16_t stored_scalars = num_scalars < inline_scalars ? num_scalars : inline_scalars;
     if (scalar_values) {
         for (uint16_t i = 0; i < stored_scalars; i++)
-            entry.scalar_values[i] = scalar_values[i];
+            entry.scalar_values.at(::fixy::Index<inline_scalars>::check(i).expect("the copy takes at most the room")) =
+                scalar_values[i];
     }
 
     // A count with no array behind it is a corrupt caller, and it is
@@ -399,7 +400,9 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         uint16_t stored = 0;
         for (const int64_t value : te.scalar_args()) {
             if (stored == 5) break;
-            rec.scalar_values[stored++] = value;
+            rec.scalar_values.at(::fixy::Index<5>::check(stored).expect("the test above keeps the lane below 5")) =
+                value;
+            ++stored;
         }
         w(&rec, sizeof(rec), 1);
     }

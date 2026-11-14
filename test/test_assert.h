@@ -29,9 +29,9 @@
 // is written before the call returns, so a pass line before a later
 // failure stays in the log.
 //
-// element_at(view, position) gives one element of a View, and run_of gives
-// a new array of the arena that holds some values.  A test builds and reads
-// the arrays of a traced op with them.
+// element_at(view, position) gives one element of a View or of a FixedArray,
+// and run_of gives a new array of the arena that holds some values.  A test
+// builds and reads the arrays of a traced op with them.
 
 #include <fixy/Core.h>
 
@@ -60,6 +60,16 @@ template <class First, class... Rest>
 template <class T>
 [[nodiscard]] T& element_at(::fixy::View<T> view, std::size_t position) noexcept {
     return *view.get(position).expect("a test reads an element at or past the count of its View");
+}
+
+// The element at position of a FixedArray, with the same rule.
+template <class T, std::size_t N>
+[[nodiscard]] T& element_at(::fixy::FixedArray<T, N>& array, std::size_t position) noexcept {
+    return *array.get(position).expect("a test reads an element at or past the count of its array");
+}
+template <class T, std::size_t N>
+[[nodiscard]] T const& element_at(::fixy::FixedArray<T, N> const& array, std::size_t position) noexcept {
+    return *array.get(position).expect("a test reads an element at or past the count of its array");
 }
 
 // The values in a new array of the arena, in order.  The alloc argument is

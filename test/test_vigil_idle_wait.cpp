@@ -18,8 +18,8 @@
 #include <crucible/MetaLog.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Vigil.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
-#include <fixy/FixedArray.h>
 #include <fixy/os/PerfEvent.h>
 #include <fixy/os/Process.h>
 #include <fixy/os/Time.h>
@@ -80,10 +80,9 @@ void record_iteration(Vigil& vigil) {
         entry.shape_hash = crucible::ShapeHash{0x200 + op};
         entry.num_inputs = 1;
         entry.num_outputs = 1;
-        ::fixy::FixedArray<crucible::TensorMeta, 2> metas{};
-        metas[0] = make_meta();
-        metas[1] = make_meta();
-        (void)vigil.record_op(crucible::test::certify_synthetic_entry(entry), metas.data(), 2);
+        // record_op reads the records from the address of the first one.
+        const ::fixy::FixedArray<crucible::TensorMeta, 2> metas{make_meta(), make_meta()};
+        (void)vigil.record_op(crucible::test::certify_synthetic_entry(entry), &metas.at(::fixy::index<0>()), 2);
     }
 }
 

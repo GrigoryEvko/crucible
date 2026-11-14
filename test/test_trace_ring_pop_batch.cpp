@@ -21,6 +21,7 @@ using crucible::ScopeHash;
 using crucible::CallsiteHash;
 using crucible::MetaIndex;
 using crucible::TraceRing;
+using crucible::test::element_at;
 
 // Every field of an entry is derived from the sequence number, so a
 // drained entry identifies its own position in the push order.
@@ -98,12 +99,12 @@ static void test_single_thread_fifo() {
     assert(ring->size().peek() == 0);
 
     for (uint32_t i = 0; i < N; ++i) {
-        assert(out_entries[i].schema_hash == SchemaHash{i});
-        assert(out_entries[i].shape_hash == ShapeHash{uint64_t(i) ^ 0xDEADBEEFCAFEBABEULL});
-        assert(out_entries[i].num_inputs == (i & 0xFF));
-        assert(out_metas[i] == make_meta(i));
-        assert(out_scopes[i] == make_scope(i));
-        assert(out_calls[i] == make_callsite(i));
+        assert(element_at(out_entries, i).schema_hash == SchemaHash{i});
+        assert(element_at(out_entries, i).shape_hash == ShapeHash{uint64_t(i) ^ 0xDEADBEEFCAFEBABEULL});
+        assert(element_at(out_entries, i).num_inputs == (i & 0xFF));
+        assert(element_at(out_metas, i) == make_meta(i));
+        assert(element_at(out_scopes, i) == make_scope(i));
+        assert(element_at(out_calls, i) == make_callsite(i));
     }
 
     crucible::test::pass("  test_single_thread_fifo: PASSED\n");
@@ -139,8 +140,8 @@ static void test_multi_batch_drain() {
 
     assert(total == N);
     for (uint32_t i = 0; i < N; ++i) {
-        assert(out_entries[i].schema_hash == SchemaHash{i});
-        assert(out_metas[i] == make_meta(i));
+        assert(element_at(out_entries, i).schema_hash == SchemaHash{i});
+        assert(element_at(out_metas, i) == make_meta(i));
     }
 
     crucible::test::pass("  test_multi_batch_drain: PASSED\n");
@@ -184,7 +185,7 @@ static void test_wrap_around() {
     assert(n == WRAP_N);
 
     for (uint32_t i = 0; i < WRAP_N; ++i) {
-        assert(e[i].schema_hash == SchemaHash{0x10000ULL + i});
+        assert(element_at(e, i).schema_hash == SchemaHash{0x10000ULL + i});
     }
 
     crucible::test::pass("  test_wrap_around: PASSED\n");
@@ -239,13 +240,13 @@ static void test_equivalence_with_single_pop() {
     }
 
     for (uint32_t i = 0; i < N; ++i) {
-        assert(a_entries[i].schema_hash == b_entries[i].schema_hash);
-        assert(a_entries[i].shape_hash == b_entries[i].shape_hash);
-        assert(a_entries[i].num_inputs == b_entries[i].num_inputs);
-        assert(a_entries[i].num_outputs == b_entries[i].num_outputs);
-        assert(a_metas[i] == b_metas[i]);
-        assert(a_scopes[i] == b_scopes[i]);
-        assert(a_calls[i] == b_calls[i]);
+        assert(element_at(a_entries, i).schema_hash == element_at(b_entries, i).schema_hash);
+        assert(element_at(a_entries, i).shape_hash == element_at(b_entries, i).shape_hash);
+        assert(element_at(a_entries, i).num_inputs == element_at(b_entries, i).num_inputs);
+        assert(element_at(a_entries, i).num_outputs == element_at(b_entries, i).num_outputs);
+        assert(element_at(a_metas, i) == element_at(b_metas, i));
+        assert(element_at(a_scopes, i) == element_at(b_scopes, i));
+        assert(element_at(a_calls, i) == element_at(b_calls, i));
     }
 
     crucible::test::pass("  test_equivalence_with_single_pop: PASSED ({} entries)\n", N);
@@ -315,7 +316,7 @@ static void test_spsc_stress() {
 
             if (got > 0) {
                 for (uint32_t i = 0; i < got; ++i) {
-                    mirror.push_back(out_entries[i].schema_hash.raw());
+                    mirror.push_back(element_at(out_entries, i).schema_hash.raw());
                 }
                 received.fetch_add(got, std::memory_order_release);
             } else if (producer_done.load(std::memory_order_acquire) && ring->size().peek() == 0) {

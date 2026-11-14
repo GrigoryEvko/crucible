@@ -78,10 +78,11 @@ struct Work {
         const crucible::TensorMeta meta = output_meta(op);
         const MetaIndex index = log.try_append(&meta, 1);
         assert(index.is_valid());
-        trace[count].schema_hash = crucible::SchemaHash{0x7000ULL + op};
-        trace[count].shape_hash = crucible::ShapeHash{0x8000ULL + op};
-        trace[count].num_outputs = 1;
-        meta_starts[count] = index;
+        TraceRing::Entry& entry = crucible::test::element_at(trace, count);
+        entry.schema_hash = crucible::SchemaHash{0x7000ULL + op};
+        entry.shape_hash = crucible::ShapeHash{0x8000ULL + op};
+        entry.num_outputs = 1;
+        crucible::test::element_at(meta_starts, count) = index;
         ++count;
         return index.raw() + 1;
     }
@@ -90,12 +91,13 @@ struct Work {
     // such an op no metadata index.
     void push_op_with_scalars(uint32_t op, int64_t first, int64_t second) {
         assert(count < CAPACITY);
-        trace[count].schema_hash = crucible::SchemaHash{0x7000ULL + op};
-        trace[count].shape_hash = crucible::ShapeHash{0x8000ULL + op};
-        trace[count].num_scalar_args = 2;
-        trace[count].scalar_values.at<0>() = first;
-        trace[count].scalar_values.at<1>() = second;
-        meta_starts[count] = MetaIndex::none();
+        TraceRing::Entry& entry = crucible::test::element_at(trace, count);
+        entry.schema_hash = crucible::SchemaHash{0x7000ULL + op};
+        entry.shape_hash = crucible::ShapeHash{0x8000ULL + op};
+        entry.num_scalar_args = 2;
+        entry.scalar_values.at(::fixy::index<0>()) = first;
+        entry.scalar_values.at(::fixy::index<1>()) = second;
+        crucible::test::element_at(meta_starts, count) = MetaIndex::none();
         ++count;
     }
 
@@ -103,10 +105,11 @@ struct Work {
     // records it when the log is full.
     void push_op_without_meta(uint32_t op) {
         assert(count < CAPACITY);
-        trace[count].schema_hash = crucible::SchemaHash{0x7000ULL + op};
-        trace[count].shape_hash = crucible::ShapeHash{0x8000ULL + op};
-        trace[count].num_outputs = 1;
-        meta_starts[count] = MetaIndex::none();
+        TraceRing::Entry& entry = crucible::test::element_at(trace, count);
+        entry.schema_hash = crucible::SchemaHash{0x7000ULL + op};
+        entry.shape_hash = crucible::ShapeHash{0x8000ULL + op};
+        entry.num_outputs = 1;
+        crucible::test::element_at(meta_starts, count) = MetaIndex::none();
         ++count;
     }
 };

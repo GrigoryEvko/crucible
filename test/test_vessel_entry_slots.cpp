@@ -38,10 +38,7 @@ using crucible::vessel::write_scalar_slots;
 
 [[nodiscard]] bool same_slots(TraceRing::Entry const& left, TraceRing::Entry const& right) {
     if (left.num_scalar_args != right.num_scalar_args) return false;
-    for (uint16_t slot = 0; slot < kInlineScalars; slot++) {
-        if (left.scalar_values[slot] != right.scalar_values[slot]) return false;
-    }
-    return true;
+    return left.scalar_values == right.scalar_values;
 }
 
 // The input tensor of rank one with the given extent.
@@ -65,7 +62,7 @@ void test_fitting_operation_keeps_its_scalars() {
     TraceRing::Entry const digested = entry_of(kInlineScalars, kInlineScalars, InputOverflow{});
     assert(same_slots(plain, digested));
     assert(digested.num_scalar_args == kInlineScalars);
-    assert(digested.scalar_values[kInlineScalars - 1] == kInlineScalars);
+    assert(digested.scalar_values.at(::fixy::index<kInlineScalars - 1>()) == kInlineScalars);
 }
 
 void test_scalar_past_the_slots_reaches_the_digest() {
@@ -77,7 +74,7 @@ void test_scalar_past_the_slots_reaches_the_digest() {
     assert(!same_slots(first, second));
     assert(same_slots(first, again));
     for (uint16_t slot = 0; slot + 1 < kInlineScalars; slot++)
-        assert(first.scalar_values[slot] == static_cast<int64_t>(slot) + 1);
+        assert(crucible::test::element_at(first.scalar_values, slot) == static_cast<int64_t>(slot) + 1);
 }
 
 void test_scalar_count_reaches_the_digest() {
@@ -95,7 +92,7 @@ void test_input_past_the_limit_reaches_the_digest() {
     TraceRing::Entry const first = entry_of(2, 2, narrow);
     TraceRing::Entry const second = entry_of(2, 2, wide);
     assert(first.num_scalar_args == 3);
-    assert(first.scalar_values[0] == 1 && first.scalar_values[1] == 2);
+    assert(first.scalar_values.at(::fixy::index<0>()) == 1 && first.scalar_values.at(::fixy::index<1>()) == 2);
     assert(!same_slots(first, second));
 
     TraceRing::Entry const no_scalars = entry_of(0, 0, narrow);

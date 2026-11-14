@@ -11,8 +11,8 @@
 
 #include <crucible/MerkleDag.h>
 #include <fixy/Borrowed.h>
+#include <fixy/Core.h>
 #include <fixy/Cyclic.h>
-#include <fixy/FixedArray.h>
 #include <fixy/Mutation.h>
 #include <foundation/Platform.h>
 
@@ -41,12 +41,12 @@ struct RegionCache {
         const ContentHash hash = region.content_hash;
 
         for (uint32_t i = 0; i < count_.get(); i++) {
-            if (content_hashes_[head_.index_back(i)] == hash) return;
+            if (content_hashes_.at(prove_slot_(head_.index_back(i))) == hash) return;
         }
 
-        const uint32_t slot = head_.index();
-        regions_[slot] = ::fixy::WeakRef<const RegionNode>{region};
-        content_hashes_[slot] = hash;
+        const Slot slot = prove_slot_(head_.index());
+        regions_.at(slot) = ::fixy::WeakRef<const RegionNode>{region};
+        content_hashes_.at(slot) = hash;
         head_.advance();
         // The counter does not saturate on its own. Its increment carries a
         // precondition that the value is below the bound, so this guard is
@@ -71,7 +71,7 @@ struct RegionCache {
                                                                    ::fixy::WeakRef<const RegionNode> exclude = {}) const
         CRUCIBLE_NO_THREAD_SAFETY {
         for (uint32_t i = 0; i < count_.get(); i++) {
-            const ::fixy::WeakRef<const RegionNode> candidate = regions_[head_.index_back(i)];
+            const ::fixy::WeakRef<const RegionNode> candidate = regions_.at(prove_slot_(head_.index_back(i)));
             if (!candidate.has_value() || candidate == exclude) continue;
             if (candidate->plan == nullptr) continue;
             if (pos >= candidate->num_ops()) continue;
@@ -83,8 +83,8 @@ struct RegionCache {
 
     [[nodiscard]] ::fixy::WeakRef<const RegionNode> find(ContentHash hash) const CRUCIBLE_NO_THREAD_SAFETY {
         for (uint32_t i = 0; i < count_.get(); i++) {
-            const uint32_t idx = head_.index_back(i);
-            if (content_hashes_[idx] == hash) return regions_[idx];
+            const Slot slot = prove_slot_(head_.index_back(i));
+            if (content_hashes_.at(slot) == hash) return regions_.at(slot);
         }
         return {};
     }
@@ -98,10 +98,17 @@ struct RegionCache {
     // region that the cache holds.
     [[nodiscard]] ::fixy::WeakRef<const RegionNode> region_at(uint32_t age) const CRUCIBLE_NO_THREAD_SAFETY {
         if (age >= count_.get()) return {};
-        return regions_[head_.index_back(age)];
+        return regions_.at(prove_slot_(head_.index_back(age)));
     }
 
 private:
+    // The slot of a masked cursor.  The mask of the cursor keeps it below
+    // CAP, so the optimizer removes the check.
+    using Slot = ::fixy::Index<CAP>;
+    [[nodiscard]] static Slot prove_slot_(uint32_t masked) noexcept {
+        return Slot::check(masked).expect("a masked cursor of the region cache is below CAP");
+    }
+
     // One array per field rather than one array of records, so that the
     // dedup scan of an insert and the scan of find read only the hashes.
     //

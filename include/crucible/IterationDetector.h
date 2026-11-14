@@ -6,7 +6,6 @@
 #include <crucible/Expr.h>
 #include <crucible/Types.h>
 #include <fixy/Core.h>
-#include <fixy/FixedArray.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <foundation/Platform.h>
@@ -234,17 +233,16 @@ struct IterationDetector {
     void restart_after_divergence() {
         const bool diverged_at_this_period = period_ != 0 && current_period_reported_ && periods_reported_ == 1;
         if (diverged_at_this_period && phase_is_unique) break_(period_, period_body_sum_, BREAKS_TO_REFUTE);
-        for (uint32_t i = 0; i < refuted_count_; ++i) {
-            if (refuted_[i].broke_since_restart) refuted_[i].breaks = BREAKS_TO_REFUTE;
-            refuted_[i].broke_since_restart = false;
+        for (RefutedPeriod& refuted : view_refuted_()) {
+            if (refuted.broke_since_restart) refuted.breaks = BREAKS_TO_REFUTE;
+            refuted.broke_since_restart = false;
         }
         restart_();
     }
 
     [[nodiscard]] bool is_refuted(uint32_t period, uint64_t body_sum) const noexcept {
-        for (uint32_t i = 0; i < refuted_count_; ++i) {
-            if (refuted_[i].period == period && refuted_[i].body_sum == body_sum)
-                return refuted_[i].breaks >= BREAKS_TO_REFUTE;
+        for (const RefutedPeriod& refuted : view_refuted_()) {
+            if (refuted.period == period && refuted.body_sum == body_sum) return refuted.breaks >= BREAKS_TO_REFUTE;
         }
         return false;
     }
@@ -253,6 +251,14 @@ struct IterationDetector {
     [[nodiscard]] uint64_t history_capacity() const noexcept { return keys_.size(); }
 
 private:
+    // The refuted periods: the first refuted_count_ slots of the ring.
+    [[nodiscard]] ::fixy::View<RefutedPeriod> view_refuted_() noexcept {
+        return refuted_.view().window(0, refuted_count_).expect("at most REFUTED_CAPACITY periods are refuted");
+    }
+    [[nodiscard]] ::fixy::View<const RefutedPeriod> view_refuted_() const noexcept {
+        return refuted_.view().window(0, refuted_count_).expect("at most REFUTED_CAPACITY periods are refuted");
+    }
+
     static constexpr uint64_t POLY_BASE = 0x9E3779B97F4A7C15ULL;
     static constexpr uint64_t SUM_SALT = 0xD6E8FEB86659FD93ULL;
 
@@ -470,16 +476,18 @@ private:
     // Records breaks against a period. The ring evicts its oldest entry when
     // it is full.
     void break_(uint32_t period, uint64_t body_sum, uint32_t breaks) {
-        for (uint32_t i = 0; i < refuted_count_; ++i) {
-            if (refuted_[i].period == period && refuted_[i].body_sum == body_sum) {
-                refuted_[i].breaks = ::fixy::min(BREAKS_TO_REFUTE, refuted_[i].breaks + breaks);
+        for (RefutedPeriod& refuted : view_refuted_()) {
+            if (refuted.period == period && refuted.body_sum == body_sum) {
+                refuted.breaks = ::fixy::min(BREAKS_TO_REFUTE, refuted.breaks + breaks);
                 return;
             }
         }
-        refuted_[refuted_next_] = RefutedPeriod{.period = period,
-                                                .body_sum = body_sum,
-                                                .breaks = ::fixy::min(BREAKS_TO_REFUTE, breaks),
-                                                .broke_since_restart = false};
+        refuted_.at(::fixy::Index<REFUTED_CAPACITY>::check(refuted_next_)
+                        .expect("the next refuted slot is below REFUTED_CAPACITY")) =
+            RefutedPeriod{.period = period,
+                          .body_sum = body_sum,
+                          .breaks = ::fixy::min(BREAKS_TO_REFUTE, breaks),
+                          .broke_since_restart = false};
         refuted_next_ = (refuted_next_ + 1) % REFUTED_CAPACITY;
         if (refuted_count_ < REFUTED_CAPACITY) ++refuted_count_;
     }
@@ -589,9 +597,8 @@ private:
     }
 
     void mark_broke_since_restart_(uint32_t period, uint64_t body_sum) {
-        for (uint32_t i = 0; i < refuted_count_; ++i) {
-            if (refuted_[i].period == period && refuted_[i].body_sum == body_sum)
-                refuted_[i].broke_since_restart = true;
+        for (RefutedPeriod& refuted : view_refuted_()) {
+            if (refuted.period == period && refuted.body_sum == body_sum) refuted.broke_since_restart = true;
         }
     }
 

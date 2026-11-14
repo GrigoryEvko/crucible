@@ -476,15 +476,18 @@ void BackgroundThread::release_meta_log(PublishStage const&, uint64_t meta_floor
 // no free slot discards the region, as a reset discards a stale region.
 void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
                                       StreamPoint reset_point) {
-    uint32_t free_index = REGION_STORE_CAP;
-    for (uint32_t index = 0; index < REGION_STORE_CAP && free_index == REGION_STORE_CAP; ++index) {
-        if (region_store_[index].node.empty()) free_index = index;
+    ::fixy::Option<RegionStoreSlot> free_slot{};
+    for (const RegionStoreSlot slot : region_store_.indices()) {
+        if (region_store_.at(slot).node.empty()) {
+            free_slot = ::fixy::Option<RegionStoreSlot>::some(slot);
+            break;
+        }
     }
-    if (free_index == REGION_STORE_CAP) [[unlikely]] {
+    if (free_slot.is_none()) [[unlikely]] {
         ++regions_dropped_full_;
         return;
     }
-    RegionMemory& memory = region_store_[free_index];
+    RegionMemory& memory = region_store_.at(std::move(free_slot).expect("the test above found a free slot"));
     memory = RegionMemory{.parts = std::move(parts),
                           .node = ::foundation::AlignedBuffer<RegionNode>::allocate_value_initialized(1),
                           .plan = {},
@@ -524,8 +527,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
 // releases a region with no holder at once.  Complexity: O(S * H) for S slots
 // and H held regions.
 void BackgroundThread::sweep_regions_(PublishStage const&) noexcept {
-    for (uint32_t index = 0; index < REGION_STORE_CAP; ++index) {
-        RegionMemory& memory = region_store_[index];
+    for (RegionMemory& memory : region_store_) {
         if (memory.node.empty()) continue;
         const ::fixy::WeakRef<const RegionNode> region{memory.node[0]};
         if (region == last_published_ || region == owner_marks_.handed) {
@@ -543,8 +545,9 @@ void BackgroundThread::sweep_regions_(PublishStage const&) noexcept {
 }
 
 bool BackgroundThread::is_held_(::fixy::WeakRef<const RegionNode> region) const noexcept {
-    for (uint32_t index = 0; index < owner_marks_.count; ++index) {
-        if (owner_marks_.held[index] == region) return true;
+    for (const ::fixy::WeakRef<const RegionNode> held :
+         owner_marks_.held.view().window(0, owner_marks_.count).expect("the marks hold at most CAP regions")) {
+        if (held == region) return true;
     }
     const uint32_t queued = uncompiled_regions.size();
     for (uint32_t age = 0; age < queued; ++age) {
@@ -554,8 +557,7 @@ bool BackgroundThread::is_held_(::fixy::WeakRef<const RegionNode> region) const 
 }
 
 void BackgroundThread::keep_region(PublishStage const&, ::fixy::WeakRef<const RegionNode> region) noexcept {
-    for (uint32_t index = 0; index < REGION_STORE_CAP; ++index) {
-        RegionMemory& memory = region_store_[index];
+    for (RegionMemory& memory : region_store_) {
         if (memory.node.empty()) continue;
         if (::fixy::WeakRef<const RegionNode>{memory.node[0]} == region) {
             memory.left_generation = NOT_LEFT;
@@ -566,8 +568,8 @@ void BackgroundThread::keep_region(PublishStage const&, ::fixy::WeakRef<const Re
 
 uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {
     uint32_t count = 0;
-    for (uint32_t index = 0; index < REGION_STORE_CAP; ++index) {
-        if (!region_store_[index].node.empty()) ++count;
+    for (const RegionMemory& memory : region_store_) {
+        if (!memory.node.empty()) ++count;
     }
     return count;
 }
@@ -637,15 +639,23 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
         // the ops through this reference.
         BgTraceBatch const& ops = *batch;
 
-        for (uint32_t i = 0; i < ops.count; ++i) {
+        // The drain stage fills at most BATCH_SIZE ops.  The one test of the
+        // count proves the slot of each op, so the loop checks no slot.
+        const uint32_t op_count = ops.count;
+        if (op_count > BATCH_SIZE) [[unlikely]] {
+            ::fixy::fatal("a trace batch holds {} ops, more than BATCH_SIZE", op_count);
+        }
+        for (uint32_t i = 0; i < op_count; ++i) {
+            const BatchSlot slot = BatchSlot::check(i).expect("the test of the count bounds each slot");
+            const TraceRing::Entry& entry = ops.entries.at(slot);
             owner.apply_due_reset_();
             ++owner.stream_ops_;
 
-            owner.pending_ops_.push(ops.entries[i], ops.meta_starts[i],
-                                    owner.take_record_start_(ops.entries[i], ops.meta_starts[i]), ops.scope_hashes[i],
-                                    ops.callsite_hashes[i]);
+            owner.pending_ops_.push(entry, ops.meta_starts.at(slot),
+                                    owner.take_record_start_(entry, ops.meta_starts.at(slot)),
+                                    ops.scope_hashes.at(slot), ops.callsite_hashes.at(slot));
 
-            if (owner.detector.check(in.ctx().cap().alloc, ops.entries[i].schema_hash, ops.entries[i].shape_hash)) {
+            if (owner.detector.check(in.ctx().cap().alloc, entry.schema_hash, entry.shape_hash)) {
                 if (auto work = std::unique_ptr<BgBuildWork>(owner.prepare_iteration_build_work())) {
                     push_pipeline(in.ctx(), parks.build_work, out, work.get());
                     work.release();
@@ -1435,34 +1445,42 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
     // operation, while the direct reuse matching below already captures
     // most same-size matches and keeps the list short.
     //
-    // free_list_count bounds every read.
+    // free_list_count bounds every read.  A free list of MAX_FREE blocks
+    // drops each further block.
     constexpr uint32_t MAX_FREE = 4096;
+    using FreeSlot = ::fixy::Index<MAX_FREE>;
     ::fixy::FixedArray<uint64_t, MAX_FREE> free_list_sizes{};
     ::fixy::FixedArray<uint64_t, MAX_FREE> free_list_offsets{};
     uint32_t free_list_count = 0;
     uint64_t pool_end = 0;
 
     auto free_block = [&](uint64_t offset, uint64_t size) {
-        if (free_list_count < MAX_FREE) [[likely]] {
-            free_list_offsets[free_list_count] = offset;
-            free_list_sizes[free_list_count] = size;
+        for (const FreeSlot next : FreeSlot::check(free_list_count)) {
+            free_list_offsets.at(next) = offset;
+            free_list_sizes.at(next) = size;
             ++free_list_count;
         }
     };
 
+    // The first fit of the scan of the sizes, then a swap with the last
+    // block or a cut of the fit.  Complexity: O(free_list_count).
     auto alloc_slot = [&](uint32_t s, uint64_t aligned_size) {
-        for (uint32_t f = 0; f < free_list_count; f++) {
-            if (free_list_sizes[f] >= aligned_size) {
-                slot_at(s).offset_bytes = free_list_offsets[f];
-                if (free_list_sizes[f] == aligned_size) {
-                    free_list_sizes[f] = free_list_sizes[--free_list_count];
-                    free_list_offsets[f] = free_list_offsets[free_list_count];
-                } else {
-                    free_list_offsets[f] += aligned_size;
-                    free_list_sizes[f] -= aligned_size;
-                }
-                return;
+        const ::fixy::Option<std::size_t> fit = ::fixy::find_if(
+            free_list_sizes.view().window(0, free_list_count).expect("the free list holds at most MAX_FREE blocks"),
+            [aligned_size](uint64_t size) noexcept { return size >= aligned_size; });
+        for (const std::size_t position : fit) {
+            const FreeSlot block = FreeSlot::check(position).expect("a position of the free list is below MAX_FREE");
+            slot_at(s).offset_bytes = free_list_offsets.at(block);
+            if (free_list_sizes.at(block) == aligned_size) {
+                --free_list_count;
+                const FreeSlot last = FreeSlot::check(free_list_count).expect("the last block is below MAX_FREE");
+                free_list_sizes.at(block) = free_list_sizes.at(last);
+                free_list_offsets.at(block) = free_list_offsets.at(last);
+            } else {
+                free_list_offsets.at(block) += aligned_size;
+                free_list_sizes.at(block) -= aligned_size;
             }
+            return;
         }
         slot_at(s).offset_bytes = pool_end;
         pool_end += aligned_size;
@@ -1473,6 +1491,12 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
         uint64_t offset = 0;
     };
     constexpr uint32_t MAX_PER_OP = 64;
+    using PerOpSlot = ::fixy::Index<MAX_PER_OP>;
+    // The slot of a position below a capped count.  The cap keeps it below
+    // MAX_PER_OP, so the optimizer removes the check.
+    auto prove_per_op = [](uint32_t position) noexcept {
+        return PerOpSlot::check(position).expect("a capped count is at most MAX_PER_OP");
+    };
 
     for (uint32_t op = 0; op < num_ops; op++) {
         uint32_t dying_begin = detail::csr_element_(death_off, op);
@@ -1493,8 +1517,9 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
             ::fixy::FixedArray<DyingInfo, MAX_PER_OP> dying_slot_info{};
             for (uint32_t i = 0; i < dying_count_capped; i++) {
                 const TensorSlot& dying_slot = slot_at(detail::csr_element_(dead_slots, dying_begin + i));
-                dying_slot_info[i] = {.aligned_size = (dying_slot.nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1),
-                                      .offset = dying_slot.offset_bytes};
+                dying_slot_info.at(prove_per_op(i)) = {.aligned_size = (dying_slot.nbytes + ALIGNMENT - 1)
+                                                                     & ~uint64_t(ALIGNMENT - 1),
+                                                       .offset = dying_slot.offset_bytes};
             }
 
             for (uint32_t born_idx = 0; born_idx < born_count_capped; born_idx++) {
@@ -1504,8 +1529,9 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
                 uint32_t best_dying_match_idx = UINT32_MAX;
                 uint64_t best_waste_bytes = UINT64_MAX;
                 for (uint32_t dying_idx = 0; dying_idx < dying_count_capped; dying_idx++) {
-                    if (!dying_consumed[dying_idx] && dying_slot_info[dying_idx].aligned_size >= born_aligned_size) {
-                        uint64_t waste_bytes = dying_slot_info[dying_idx].aligned_size - born_aligned_size;
+                    const DyingInfo& dying_info = dying_slot_info.at(prove_per_op(dying_idx));
+                    if (!dying_consumed.at(prove_per_op(dying_idx)) && dying_info.aligned_size >= born_aligned_size) {
+                        uint64_t waste_bytes = dying_info.aligned_size - born_aligned_size;
                         if (waste_bytes < best_waste_bytes) {
                             best_dying_match_idx = dying_idx;
                             best_waste_bytes = waste_bytes;
@@ -1513,23 +1539,24 @@ MemoryPlan* BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a
                     }
                 }
                 if (best_dying_match_idx != UINT32_MAX) {
-                    born_slot.offset_bytes = dying_slot_info[best_dying_match_idx].offset;
-                    dying_consumed[best_dying_match_idx] = true;
-                    born_assigned[born_idx] = true;
+                    const PerOpSlot best_match = prove_per_op(best_dying_match_idx);
+                    born_slot.offset_bytes = dying_slot_info.at(best_match).offset;
+                    dying_consumed.at(best_match) = true;
+                    born_assigned.at(prove_per_op(born_idx)) = true;
                     if (best_waste_bytes > 0)
-                        free_block(dying_slot_info[best_dying_match_idx].offset + born_aligned_size, best_waste_bytes);
+                        free_block(dying_slot_info.at(best_match).offset + born_aligned_size, best_waste_bytes);
                 }
             }
         }
 
         for (uint32_t i = 0; i < num_dying; i++) {
-            if (i < dying_count_capped && dying_consumed[i]) continue;
+            if (i < dying_count_capped && dying_consumed.at(prove_per_op(i))) continue;
             const TensorSlot& dying_slot = slot_at(detail::csr_element_(dead_slots, dying_begin + i));
             free_block(dying_slot.offset_bytes, (dying_slot.nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1));
         }
 
         for (uint32_t i = 0; i < num_born; i++) {
-            if (i < born_count_capped && born_assigned[i]) continue;
+            if (i < born_count_capped && born_assigned.at(prove_per_op(i))) continue;
             uint32_t born_slot_id = detail::csr_element_(born_slots, born_begin + i);
             alloc_slot(born_slot_id, (slot_at(born_slot_id).nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1));
         }

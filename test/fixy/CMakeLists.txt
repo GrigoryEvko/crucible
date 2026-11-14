@@ -1504,10 +1504,10 @@ fixy_neg_compile_test(neg_borrowed_ref_names_held_brand
   "no matching function for call to .mint_borrowed_ref<int, HeldBrand>\\(int&\\)."
   "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int, ")
 fixy_neg_compile_test(neg_borrowed_names_held_brand
-  "no matching function for call to .mint_borrowed<.anonymous.::Owner, fixy::FixedArray<int, 2>&, HeldBrand>"
-  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{fixy::FixedArray<int, 2>&, ")
+  "no matching function for call to .mint_borrowed<.anonymous.::Owner, int \\(&\\)\\[2\\], HeldBrand>"
+  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int \\(&\\)\\[2\\], ")
 fixy_neg_compile_test(neg_borrowed_address_names_held_brand
-  "invalid initialization of non-const reference of type .HeldBorrow \\(&\\)\\(fixy::FixedArray<int, 2>&\\) noexcept."
+  "invalid initialization of non-const reference of type .HeldBorrow \\(&\\)\\(int \\(&\\)\\[2\\]\\) noexcept."
   "from an rvalue of type .<unresolved overloaded function type>.")
 fixy_neg_compile_test(neg_borrowed_span_names_held_brand
   "no matching function for call to .mint_borrowed<.anonymous.::Owner, std::span<int, [0-9]+>, HeldBrand>"
@@ -1852,8 +1852,8 @@ fixy_neg_compile_test(neg_cyclic_buffer_capacity_not_a_power_of_two
   "template constraint failure for .template<class T, long unsigned int N> +requires +N > 0"
   "== 0 class fixy::CyclicBuffer.")
 fixy_neg_compile_test(neg_cyclic_buffer_push_of_a_const_element
-  "no matching function for call to .fixy::CyclicBuffer<const "
-  "is_move_assignable_v<T> .with T = const ")
+  "template constraint failure for .template<class T, long unsigned int N>  requires \\(OwnedElement<T>\\)"
+  "required for the satisfaction of .OwnedElement<T>. \\[with T = const test_cyclic_buffer_const_element::Reading\\]")
 fixy_test(test_saturated)
 
 # test/foundation/test_saturate.cpp has the same file name, and a CMake
@@ -1901,7 +1901,6 @@ fixy_neg_compile_test(neg_bytes_fit_exceeded
   "static assertion failed: \\[Byte_Budget_Exceeded\\] ensure_bytes_fit<Budget, Used>\\(\\): the computed byte usage exceeds the declared budget"
   "fixy::bytes_fit_v<64, 72>. evaluates to false")
 fixy_test(test_bits)
-fixy_test(test_fixed_array)
 
 # The leak witness is one reflection query over the atom catalog, so no
 # translation unit can mint an authorization out of a type of its own.
@@ -1915,12 +1914,6 @@ fixy_neg_compile_test(neg_owned_mmap_release_without_leak_atom
 fixy_neg_compile_test(neg_leak_atom_specialized_trait
   "expected initializer before .<. token"
   "neg_leak_atom_specialized_trait\\.cpp:17:49: error:")
-
-# The compile-time accessor carries its bound in a requires clause.
-fixy_neg_compile_test(neg_fixed_array_at_out_of_range_index
-  "no matching function for call to .fixy::FixedArray<int, 4>::at<4>\\(\\)."
-  "constraints not satisfied"
-  "the expression .I < N \\[with I = 4; N = 4\\]. evaluated to .false.")
 
 # The bit operators are hidden friends, so two Bits over different enums
 # share none of them.

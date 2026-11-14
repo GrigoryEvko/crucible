@@ -1,20 +1,19 @@
-// A borrow of one range must not carry the brand of a borrow of a different
-// range.  mint_borrowed takes its brand from its call site, and an explicit
+// A second borrow must not carry the brand of a borrow that the caller
+// holds.  mint_borrowed takes its brand from its call site, and an explicit
 // template argument after the owner lands in a pack that must be empty, so
-// no caller spells a brand that it holds.
+// no caller spells a brand that it holds.  The refusal is at the level of
+// the type, so the two borrows can name one range.
 
 #include <fixy/Borrowed.h>
-#include <fixy/FixedArray.h>
 
 namespace {
 struct Owner {};
+int range[2] = {1, 2};
 }  // namespace
 
 int main() {
-    ::fixy::FixedArray<int, 2> first_range{};
-    ::fixy::FixedArray<int, 2> second_range{};
-    auto first = ::fixy::mint_borrowed<Owner>(first_range);
+    auto first = ::fixy::mint_borrowed<Owner>(range);
     using HeldBrand = decltype(first)::brand_type;
-    auto second = ::fixy::mint_borrowed<Owner, ::fixy::FixedArray<int, 2>&, HeldBrand>(second_range);
+    auto second = ::fixy::mint_borrowed<Owner, int (&)[2], HeldBrand>(range);
     return first.front() + second.front();
 }

@@ -325,7 +325,9 @@ int main(int argc, char* argv[]) {
             meta_log.reset();
             bench_rng_state = 0x1111222233334444ULL;
             for (uint32_t i = 0; i < n; i++) {
-                const uint16_t total_metas = static_cast<uint16_t>(batch[i].num_inputs + batch[i].num_outputs);
+                const TraceRing::Entry& entry =
+                    batch.at(::fixy::Index<4096>::check(i).expect("the drain fills at most the batch"));
+                const uint16_t total_metas = static_cast<uint16_t>(entry.num_inputs + entry.num_outputs);
                 TensorMeta metas[8]{};
                 for (uint16_t j = 0; j < total_metas && j < 8; j++) {
                     metas[j].ndim = 4;

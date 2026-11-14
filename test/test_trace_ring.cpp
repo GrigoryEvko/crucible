@@ -12,6 +12,8 @@ using crucible::ShapeHash;
 using crucible::ScopeHash;
 using crucible::CallsiteHash;
 using crucible::MetaIndex;
+using crucible::test::element_at;
+using ::fixy::index;
 namespace eff = ::fixy;
 
 namespace {
@@ -36,12 +38,12 @@ void single_thread_cases() {
     ::fixy::FixedArray<CallsiteHash, 1> callsite{};
     uint32_t n = ring->drain(out.view(), meta.view(), scope.view(), callsite.view());
     assert(n == 1);
-    assert(out[0].schema_hash == SchemaHash{0xDEADBEEF});
-    assert(out[0].num_inputs == 2);
-    assert(out[0].num_outputs == 1);
-    assert(meta[0] == MetaIndex{42});
-    assert(scope[0] == ScopeHash{0x1234});
-    assert(callsite[0] == CallsiteHash{0x5678});
+    assert(out.at(index<0>()).schema_hash == SchemaHash{0xDEADBEEF});
+    assert(out.at(index<0>()).num_inputs == 2);
+    assert(out.at(index<0>()).num_outputs == 1);
+    assert(meta.at(index<0>()) == MetaIndex{42});
+    assert(scope.at(index<0>()) == ScopeHash{0x1234});
+    assert(callsite.at(index<0>()) == CallsiteHash{0x5678});
     assert(ring->size().peek() == 0);
 
     for (uint32_t i = 0; i < 1000; i++) {
@@ -55,7 +57,7 @@ void single_thread_cases() {
     n = ring->drain(batch.view());
     assert(n == 1000);
     for (uint32_t i = 0; i < 1000; i++)
-        assert(batch[i].schema_hash == SchemaHash{i});
+        assert(element_at(batch, i).schema_hash == SchemaHash{i});
 
     ring->reset();
     assert(ring->size().peek() == 0);
@@ -89,7 +91,7 @@ void single_thread_cases() {
         uint32_t n_wrap = ring->drain(big.view());
         assert(n_wrap == 200);
         for (uint32_t i = 0; i < 200; i++)
-            assert(big[i].schema_hash == SchemaHash{100000 + i});
+            assert(element_at(big, i).schema_hash == SchemaHash{100000 + i});
     }
 
     uint64_t hi0 = ring->total_produced();
@@ -148,11 +150,11 @@ void concurrent_raw_case() {
                 }
                 for (uint32_t k = 0; k < got; ++k) {
                     const uint32_t seq = next + k;
-                    assert(batch_out[k].schema_hash == SchemaHash{seq + 1});
-                    assert(batch_out[k].shape_hash == ShapeHash{~uint64_t{seq} + 1});
-                    assert(batch_meta[k] == MetaIndex{seq});
-                    assert(batch_scope[k] == ScopeHash{0xA0000000ull | seq});
-                    assert(batch_csite[k] == CallsiteHash{0xB0000000ull | seq});
+                    assert(element_at(batch_out, k).schema_hash == SchemaHash{seq + 1});
+                    assert(element_at(batch_out, k).shape_hash == ShapeHash{~uint64_t{seq} + 1});
+                    assert(element_at(batch_meta, k) == MetaIndex{seq});
+                    assert(element_at(batch_scope, k) == ScopeHash{0xA0000000ull | seq});
+                    assert(element_at(batch_csite, k) == CallsiteHash{0xB0000000ull | seq});
                 }
                 next += got;
             }
@@ -198,13 +200,14 @@ void pure_facade_cases() {
             ::fixy::FixedArray<CallsiteHash, 4> batch_csite{};
             uint32_t got = r->drain_pure(batch_out.view(), batch_meta.view(), batch_scope.view(), batch_csite.view());
             assert(got == 4);
-            assert(batch_out[0].schema_hash == SchemaHash{0xCAFE0001});
-            assert(batch_out[1].schema_hash == SchemaHash{0xCAFE0002});
-            assert(batch_out[2].schema_hash == SchemaHash{0xCAFE0003});
-            assert(batch_out[3].schema_hash == SchemaHash{0xCAFE0004});
-            assert(batch_meta[0] == MetaIndex{1} && batch_meta[3] == MetaIndex{4});
-            assert(batch_scope[0] == ScopeHash{0xC1} && batch_scope[3] == ScopeHash{0xC4});
-            assert(batch_csite[0] == CallsiteHash{0xD1} && batch_csite[3] == CallsiteHash{0xD4});
+            assert(batch_out.at(index<0>()).schema_hash == SchemaHash{0xCAFE0001});
+            assert(batch_out.at(index<1>()).schema_hash == SchemaHash{0xCAFE0002});
+            assert(batch_out.at(index<2>()).schema_hash == SchemaHash{0xCAFE0003});
+            assert(batch_out.at(index<3>()).schema_hash == SchemaHash{0xCAFE0004});
+            assert(batch_meta.at(index<0>()) == MetaIndex{1} && batch_meta.at(index<3>()) == MetaIndex{4});
+            assert(batch_scope.at(index<0>()) == ScopeHash{0xC1} && batch_scope.at(index<3>()) == ScopeHash{0xC4});
+            assert(batch_csite.at(index<0>()) == CallsiteHash{0xD1}
+                   && batch_csite.at(index<3>()) == CallsiteHash{0xD4});
             assert(r->size().peek() == 0);
         }
 
@@ -225,11 +228,11 @@ void pure_facade_cases() {
             ::fixy::FixedArray<crucible::TraceRing::Entry, 1> one{};
             uint32_t g1 = r->drain_pure<eff::PureRow>(one.view());
             assert(g1 == 1);
-            assert(one[0].schema_hash == SchemaHash{0xCAFE0005});
+            assert(one.at(index<0>()).schema_hash == SchemaHash{0xCAFE0005});
 
             uint32_t g2 = r->drain(one.view());
             assert(g2 == 1);
-            assert(one[0].schema_hash == SchemaHash{0xCAFE0006});
+            assert(one.at(index<0>()).schema_hash == SchemaHash{0xCAFE0006});
         }
 
         static_assert(eff::IsPure<eff::Row<>>);
@@ -295,11 +298,11 @@ void concurrent_pure_case() {
                 }
                 for (uint32_t k = 0; k < got; ++k) {
                     const uint32_t seq = next + k;
-                    assert(pure_out[k].schema_hash == SchemaHash{seq + 7});
-                    assert(pure_out[k].shape_hash == ShapeHash{~uint64_t{seq} + 7});
-                    assert(pure_meta[k] == MetaIndex{seq + 1});
-                    assert(pure_scope[k] == ScopeHash{0xE0000000ull | seq});
-                    assert(pure_csite[k] == CallsiteHash{0xF0000000ull | seq});
+                    assert(element_at(pure_out, k).schema_hash == SchemaHash{seq + 7});
+                    assert(element_at(pure_out, k).shape_hash == ShapeHash{~uint64_t{seq} + 7});
+                    assert(element_at(pure_meta, k) == MetaIndex{seq + 1});
+                    assert(element_at(pure_scope, k) == ScopeHash{0xE0000000ull | seq});
+                    assert(element_at(pure_csite, k) == CallsiteHash{0xF0000000ull | seq});
                 }
                 next += got;
             }
@@ -330,7 +333,7 @@ void pure_edge_cases() {
             ::fixy::FixedArray<crucible::TraceRing::Entry, 1> one_a{};
             uint32_t got_a = r->drain_pure(one_a.view());
             assert(got_a == 1);
-            assert(one_a[0].schema_hash == SchemaHash{0xA0AA});
+            assert(one_a.at(index<0>()).schema_hash == SchemaHash{0xA0AA});
             assert(r->size().peek() == 0);
         }
 
@@ -357,7 +360,7 @@ void pure_edge_cases() {
             uint32_t got_b = r->drain_pure(full_drain.view());
             assert(got_b == CAP);
             for (uint32_t i = 0; i < CAP; ++i) {
-                assert(full_drain[i].schema_hash == SchemaHash{0xB0000000u | i});
+                assert(element_at(full_drain, i).schema_hash == SchemaHash{0xB0000000u | i});
             }
             assert(r->size().peek() == 0);
         }
@@ -388,10 +391,10 @@ void pure_edge_cases() {
                 r->drain_pure(wrap_drain.view(), wrap_meta.view(), wrap_scope.view(), wrap_csite.view());
             assert(got_wrap == 200);
             for (uint32_t i = 0; i < 200; ++i) {
-                assert(wrap_drain[i].schema_hash == SchemaHash{0xCAFE0000u | i});
-                assert(wrap_meta[i] == MetaIndex::none());
-                assert(wrap_scope[i] == ScopeHash{});
-                assert(wrap_csite[i] == CallsiteHash{});
+                assert(element_at(wrap_drain, i).schema_hash == SchemaHash{0xCAFE0000u | i});
+                assert(element_at(wrap_meta, i) == MetaIndex::none());
+                assert(element_at(wrap_scope, i) == ScopeHash{});
+                assert(element_at(wrap_csite, i) == CallsiteHash{});
             }
         }
 
@@ -407,9 +410,9 @@ void pure_edge_cases() {
             uint32_t got_mix = r->drain_pure(mix_out.view(), mix_meta.view(),
                                              /*out_scope_hashes=*/::fixy::View<ScopeHash>{}, mix_csite.view());
             assert(got_mix == 1);
-            assert(mix_out[0].schema_hash == SchemaHash{0xD0D0});
-            assert(mix_meta[0] == MetaIndex{42});
-            assert(mix_csite[0] == CallsiteHash{0xBEEF});
+            assert(mix_out.at(index<0>()).schema_hash == SchemaHash{0xD0D0});
+            assert(mix_meta.at(index<0>()) == MetaIndex{42});
+            assert(mix_csite.at(index<0>()) == CallsiteHash{0xBEEF});
 
             crucible::TraceRing::Entry mix_e2{};
             mix_e2.schema_hash = SchemaHash{0xD2D2};
@@ -421,8 +424,8 @@ void pure_edge_cases() {
                                               /*out_meta_starts=*/::fixy::View<MetaIndex>{}, mix_scope2.view(),
                                               /*out_callsite_hashes=*/::fixy::View<CallsiteHash>{});
             assert(got_mix2 == 1);
-            assert(mix_out2[0].schema_hash == SchemaHash{0xD2D2});
-            assert(mix_scope2[0] == ScopeHash{0xCAFE});
+            assert(mix_out2.at(index<0>()).schema_hash == SchemaHash{0xD2D2});
+            assert(mix_scope2.at(index<0>()) == ScopeHash{0xCAFE});
             assert(r->size().peek() == 0);
         }
 

@@ -35,7 +35,6 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
 #include <fixy/Core.h>
-#include <fixy/FixedArray.h>
 #include <fixy/os/Fs.h>
 #include <fixy/os/Path.h>
 #include <fixy/Refined.h>
@@ -159,8 +158,7 @@ inline constexpr uint32_t kTraceRecordsPerRead = 64;
 inline constexpr std::size_t kTraceDimBlockBytes = sizeof(int64_t) * kMaxTensorNDim;
 
 // The bytes of the inline scalar values of an op record.
-inline constexpr std::size_t kTraceScalarBlockBytes =
-    sizeof(int64_t) * decltype(TraceOpRecord::scalar_values)::capacity;
+inline constexpr std::size_t kTraceScalarBlockBytes = sizeof(int64_t) * decltype(TraceOpRecord::scalar_values)::size();
 
 // The Bytes bytes at the offset Offset of a record.  The bound of the
 // template proves that they lie inside the record.
@@ -268,9 +266,11 @@ decode_trace_op_(::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record,
     }
     uint16_t lane = 0;
     const auto scalar_block = record_block_<offsetof(TraceOpRecord, scalar_values), kTraceScalarBlockBytes>(op_record);
+    using ScalarLane = ::fixy::Index<decltype(entry.scalar_values)::size()>;
     for (::fixy::View<std::byte const, sizeof(int64_t)> scalar : scalar_block.chunks<sizeof(int64_t)>()) {
         if (lane == num_scalars) break;
-        entry.scalar_values[lane] = read_record_field_<int64_t, 0>(scalar);
+        entry.scalar_values.at(ScalarLane::check(lane).expect("the scalar block holds one chunk for each lane")) =
+            read_record_field_<int64_t, 0>(scalar);
         ++lane;
     }
 

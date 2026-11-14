@@ -3,8 +3,8 @@
 
 #include <crucible/TraceLoader.h>
 #include <crucible/SchemaTable.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
-#include <fixy/FixedArray.h>
 
 #include "test_assert.h"
 #include <cstddef>
@@ -421,7 +421,8 @@ using MetaRecord = ::fixy::FixedArray<uint8_t, sizeof(TensorMeta)>;
 
 template <class Field>
 static void set_meta_field(MetaRecord& record, std::size_t field_offset, Field value) {
-    std::memcpy(record.data() + field_offset, &value, sizeof(Field));
+    std::memcpy(&record.at(::fixy::Index<sizeof(TensorMeta)>::check(field_offset).expect("the field is in the record")),
+                &value, sizeof(Field));
 }
 
 // Loads a trace of one op with one tensor, whose metadata is the record.
@@ -435,7 +436,7 @@ static bool loads_with_meta(const MetaRecord& record) {
     std::memcpy(buf.data() + 8, &n_ops, 4);
     std::memcpy(buf.data() + 12, &n_metas, 4);
     std::memcpy(buf.data() + 16 + 72, &num_inputs, 2);
-    std::memcpy(buf.data() + 16 + 80, record.data(), record.size());
+    std::memcpy(buf.data() + 16 + 80, &record.at(::fixy::index<0>()), record.size());
     std::string path = write_tmp(buf.data(), buf.size());
     const auto loaded = load_trace(kTestIo, sanitized(path));
     std::remove(path.c_str());

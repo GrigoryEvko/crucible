@@ -1,7 +1,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <fixy/Aliases.h>
-#include <fixy/FixedArray.h>
+#include <fixy/Core.h>
 #include <foundation/AlignedBuffer.h>
 #include <foundation/Platform.h>
 
@@ -69,7 +69,7 @@ static void test_batch_append_and_monotonic() {
     ::fixy::FixedArray<TensorMeta, 8> copied{};
     log.copy_run(0, copied.view());
     for (size_t i = 0; i < 8; ++i) {
-        assert(raw_data_ptr(copied[i]) == raw_data_ptr(batch[i]));
+        assert(raw_data_ptr(crucible::test::element_at(copied, i)) == raw_data_ptr(batch[i]));
     }
     crucible::test::pass("  test_batch_monotonic:           PASSED\n");
 }
@@ -130,14 +130,14 @@ static void test_copy_run_across_the_end() {
     ::fixy::FixedArray<TensorMeta, 5> copied{};
     log.copy_run(near_end, copied.view());
     for (uint32_t i = 0; i < 5; ++i) {
-        assert(raw_data_ptr(copied[i]) == raw_data_ptr(tail5[i]));
+        assert(raw_data_ptr(crucible::test::element_at(copied, i)) == raw_data_ptr(tail5[i]));
     }
 
     // A run that does not pass the end is one copy.
     ::fixy::FixedArray<TensorMeta, 2> head2{};
     log.copy_run(near_end + 3, head2.view());
-    assert(raw_data_ptr(head2[0]) == raw_data_ptr(tail5[3]));
-    assert(raw_data_ptr(head2[1]) == raw_data_ptr(tail5[4]));
+    assert(raw_data_ptr(head2.at(::fixy::index<0>())) == raw_data_ptr(tail5[3]));
+    assert(raw_data_ptr(head2.at(::fixy::index<1>())) == raw_data_ptr(tail5[4]));
     crucible::test::pass("  test_copy_run_across_the_end:   PASSED\n");
 }
 
@@ -170,7 +170,7 @@ static void test_counters_pass_two_to_the_32() {
     ::fixy::FixedArray<TensorMeta, 32> copied{};
     log.copy_run(first.raw(), copied.view());
     for (uint32_t i = 0; i < 32; ++i) {
-        assert(raw_data_ptr(copied[i]) == raw_data_ptr(run[i]));
+        assert(raw_data_ptr(crucible::test::element_at(copied, i)) == raw_data_ptr(run[i]));
     }
     const TensorMeta read_below = log.copy_record(last_below.raw());
     const TensorMeta read_across = log.copy_record(across.raw());

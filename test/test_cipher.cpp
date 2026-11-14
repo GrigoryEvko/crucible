@@ -2,8 +2,8 @@
 #include <crucible/MerkleDag.h>
 
 #include <memory>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
-#include <fixy/FixedArray.h>
 #include <fixy/os/Time.h>
 #include <fixy/session/Subtype.h>
 #include "test_assert.h"
@@ -474,19 +474,26 @@ int main() {
         ::fixy::BumpArena read_arena{1 << 16};
         for (std::size_t i = 0; i < kStoreCount; ++i) {
             if (i + 1 == kStoreCount) {
-                assert(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.front(), read_arena)
+                assert(cipher
+                           .load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.at(::fixy::index<0>()),
+                                                   read_arena)
                            .cache_hit());
             }
             const auto* distinct_region = make_test_region(cache_dag_arena, i + 1);
-            hashes[i] = cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(distinct_region));
-            assert(static_cast<bool>(hashes[i]));
+            crucible::ContentHash& stored = crucible::test::element_at(hashes, i);
+            stored = cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(distinct_region));
+            assert(static_cast<bool>(stored));
         }
         for (const crucible::ContentHash hash : hashes) {
             std::filesystem::remove(object_path(dir_cache, hash));
         }
-        assert(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes[1], read_arena).get() == nullptr);
-        assert(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.front(), read_arena).cache_hit());
-        const auto newest = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.back(), read_arena);
+        assert(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.at(::fixy::index<1>()), read_arena)
+                   .get()
+               == nullptr);
+        assert(cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, hashes.at(::fixy::index<0>()), read_arena)
+                   .cache_hit());
+        const auto newest = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc,
+                                                          hashes.at(::fixy::index<kStoreCount - 1>()), read_arena);
         assert(newest.cache_hit() && newest.get() != nullptr);
 
         std::filesystem::remove_all(dir_cache);

@@ -32,9 +32,8 @@
 #include "record_kernel.h"
 
 #include <ATen/Operators.h>
-#include <fixy/FixedArray.h>
+#include <fixy/Core.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -79,16 +78,50 @@ static_assert(kShard < kShardCount, "the index of the shard of register.cpp is n
 }
 
 // Sorted by schema hash, which is what crucible::classify_static bisects.
+// The first pass takes the hash and the kernel of each classified row in the
+// order of the table.  Then each row goes to the slot of its rank: the count
+// of the rows with a lower hash, or with the same hash at an earlier place.
+// So the result is sorted, and two rows of one hash keep the order of the
+// table.  The rank loop compares the raw hashes, so the constant evaluation
+// stays below its operation limit.  Complexity: O(Count^2) compares, at
+// compile time.
 template <uint32_t Count>
 [[nodiscard]] consteval ::fixy::FixedArray<crucible::CKernelEntry, Count> classified_rows() {
-    ::fixy::FixedArray<crucible::CKernelEntry, Count> entries{};
+    using Slot = ::fixy::Index<Count>;
+    ::fixy::FixedArray<uint64_t, Count> hashes{};
+    ::fixy::FixedArray<crucible::CKernelId, Count> kernels{};
     uint32_t next = 0;
-    for (const OpEntry& row : aten_op_table)
-        if (row.kernel_id != crucible::CKernelId::OPAQUE)
-            entries[next++] =
-                crucible::CKernelEntry{.schema_hash = crucible::SchemaHash{row.schema_hash}, .id = row.kernel_id};
-    std::ranges::sort(entries, {}, &crucible::CKernelEntry::schema_hash);
-    return entries;
+    for (const OpEntry& row : aten_op_table) {
+        if (row.kernel_id == crucible::CKernelId::OPAQUE) continue;
+        const Slot slot = Slot::check(next).expect("the count pass counted each classified row");
+        hashes.at(slot) = row.schema_hash;
+        kernels.at(slot) = row.kernel_id;
+        ++next;
+    }
+    ::fixy::FixedArray<crucible::CKernelEntry, Count> sorted{};
+    uint32_t place = 0;
+    for (const uint64_t hash : hashes) {
+        uint32_t rank = 0;
+        uint32_t other_place = 0;
+        for (const uint64_t other : hashes) {
+            if (other < hash || (other == hash && other_place < place)) ++rank;
+            ++other_place;
+        }
+        sorted.at(Slot::check(rank).expect("a rank is below the count of the rows")) = crucible::CKernelEntry{
+            .schema_hash = crucible::SchemaHash{hash},
+            .id = kernels.at(Slot::check(place).expect("a place is below the count of the rows"))};
+        ++place;
+    }
+    return sorted;
+}
+
+// True when each row has a schema hash no lower than the hash of the row
+// before it.  Complexity: O(n).
+[[nodiscard]] consteval bool is_sorted_by_schema_hash(::fixy::View<const crucible::CKernelEntry> rows) {
+    for (const ::fixy::View<const crucible::CKernelEntry, 2> pair : rows.windows<2>()) {
+        if (pair.at(::fixy::index<1>()).schema_hash < pair.at(::fixy::index<0>()).schema_hash) return false;
+    }
+    return true;
 }
 
 inline constexpr auto kClassifiedRows = classified_rows<classified_row_count()>();
@@ -103,15 +136,15 @@ static_assert(kClassifiedRows.size() > crucible::CKERNEL_TABLE_CAP,
 
 // The sort is what classify_static relies on, so it is checked rather than
 // assumed.
-static_assert(std::ranges::is_sorted(kClassifiedRows, {}, &crucible::CKernelEntry::schema_hash));
+static_assert(is_sorted_by_schema_hash(kClassifiedRows.view()));
 
 // A hash the generator's own witnesses pin, so a re-generation that changed the
 // hash function reddens here rather than at replay.
-static_assert(std::ranges::find_if(kClassifiedRows,
-                                   [](const crucible::CKernelEntry& row) {
-                                       return row.schema_hash == crucible::SchemaHash{0x983b9200d566222dULL};
-                                   })
-                  != kClassifiedRows.end(),
+static_assert(::fixy::find_if(kClassifiedRows.view(),
+                              [](const crucible::CKernelEntry& row) noexcept {
+                                  return row.schema_hash == crucible::SchemaHash{0x983b9200d566222dULL};
+                              })
+                  .is_some(),
               "aten::mm's schema hash is absent from the classified set");
 
 // =====================================================================

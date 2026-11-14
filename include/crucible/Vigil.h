@@ -41,7 +41,6 @@
 #include <fixy/Checked.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
-#include <fixy/FixedArray.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <fixy/ScopedView.h>
@@ -658,12 +657,14 @@ private:
     [[gnu::cold]] void publish_held_regions_() noexcept {
         const uint64_t before = held_regions_.sequence.load_acquire();
         held_regions_.sequence.store_release(before + 1);
-        held_regions_.cells[0].store_release(pending_activation_);
-        held_regions_.cells[1].store_release(replay_.context().active_region());
-        held_regions_.cells[2].store_release(
-            ::fixy::WeakRef<const RegionNode>::from_raw(taken_region_.load_acquire().try_get()));
+        held_regions_.cells.at(::fixy::index<0>()).store_release(pending_activation_);
+        held_regions_.cells.at(::fixy::index<1>()).store_release(replay_.context().active_region());
+        held_regions_.cells.at(::fixy::index<2>())
+            .store_release(::fixy::WeakRef<const RegionNode>::from_raw(taken_region_.load_acquire().try_get()));
         for (uint32_t age = 0; age < RegionCache::CAP; ++age) {
-            held_regions_.cells[3 + age].store_release(region_cache_.region_at(age));
+            held_regions_.cells
+                .at(::fixy::Index<HeldRegions::CAP>::check(3 + age).expect("the cells hold each age of the cache"))
+                .store_release(region_cache_.region_at(age));
         }
         held_regions_.sequence.store_release(before + 2);
     }
@@ -676,8 +677,8 @@ private:
             const uint64_t before = held_regions_.sequence.load_acquire();
             if ((before & 1u) == 0) {
                 BackgroundThread::RegionMarks read = marks;
-                for (uint32_t index = 0; index < HeldRegions::CAP; ++index) {
-                    read.hold(held_regions_.cells[index].load_acquire());
+                for (const ::fixy::Atomic<::fixy::WeakRef<const RegionNode>>& cell : held_regions_.cells) {
+                    read.hold(cell.load_acquire());
                 }
                 if (held_regions_.sequence.load_acquire() == before) {
                     read.has_foreground = true;
