@@ -62,6 +62,9 @@ private:
     // so is always below Capacity.
     static constexpr std::size_t WORDS = (Capacity + 63) / 64;
     static constexpr std::uint64_t kAllSet = ~std::uint64_t{0};
+    // The bits of one word that name a cell.  Capacity is a power of two,
+    // so each word of a ring of 64 cells or more names 64 cells.
+    static constexpr std::uint64_t kCellBits = Capacity >= 64 ? kAllSet : (std::uint64_t{1} << (Capacity % 64)) - 1;
 
 public:
     MpscRing() noexcept = default;
@@ -238,9 +241,12 @@ public:
 
 private:
     void publish_range_(std::size_t bit_start, std::size_t bit_end, std::size_t N) noexcept {
+        // A full batch sets the bits of each cell and no other bit.  The
+        // prefix scan of try_pop_batch reads a set bit past Capacity as one
+        // more ready cell.
         if (N >= Capacity) [[unlikely]] {
             for (auto& word : ready_) {
-                word.fetch_or(kAllSet, std::memory_order_release);
+                word.fetch_or(kCellBits, std::memory_order_release);
             }
             return;
         }

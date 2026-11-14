@@ -7,6 +7,7 @@
 // the wrap, the batch clamps.  The threaded half is what checks the
 // ordering claim, and it is the half that means anything under TSan.
 
+#include <fixy/Core.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/SpscRing.h>
 
@@ -44,6 +45,25 @@ struct OwnsSomething {
 static_assert(c::RingValue<int>);
 static_assert(c::RingValue<Plain>);
 static_assert(!c::RingValue<OwnsSomething>);
+
+// The cells that a batch call of a ring reads or writes.  The batch calls
+// take a std::span, so this class is the one place of the batch tests that
+// names a type of the standard library.
+template <class T, std::size_t N>
+class Run final {
+    std::array<T, N> cells_{};
+
+public:
+    [[nodiscard]] T& at(std::size_t position) noexcept { return cells_[position]; }
+
+    // The first count cells, for a push.
+    [[nodiscard]] std::span<T const> first(std::size_t count) const noexcept {
+        return std::span<T const>{cells_}.first(count);
+    }
+
+    // Each cell, for a pop.
+    [[nodiscard]] std::span<T> each() noexcept { return std::span<T>{cells_}; }
+};
 
 // ── Shape ────────────────────────────────────────────────────────────
 
@@ -125,23 +145,25 @@ using MpscWide = c::MpscRing<int, 128>;
 
     // A batch that does not fit fills what it can, unlike the MPSC
     // batch, which is all or nothing.
-    const std::array<Plain, 6> six{Plain{100, 0}, Plain{101, 0}, Plain{102, 0},
-                                   Plain{103, 0}, Plain{104, 0}, Plain{105, 0}};
-    if (ring.try_push_batch(std::span<const Plain>{six}) != 6) {
+    Run<Plain, 6> six{};
+    for (std::size_t i = 0; i < 6; ++i)
+        six.at(i) = Plain{100 + static_cast<int>(i), 0};
+    if (ring.try_push_batch(six.first(6)) != 6) {
         std::fprintf(stderr, "SPSC batch push did not take all six\n");
         return 1;
     }
-    if (ring.try_push_batch(std::span<const Plain>{six}) != 2) {
+    if (ring.try_push_batch(six.first(6)) != 2) {
         std::fprintf(stderr, "SPSC batch push did not fill the remaining two\n");
         return 1;
     }
 
-    std::array<Plain, 8> drained{};
-    if (ring.try_pop_batch(std::span<Plain>{drained}) != 8) {
+    Run<Plain, 8> drained{};
+    if (ring.try_pop_batch(drained.each()) != 8) {
         std::fprintf(stderr, "SPSC batch pop did not drain the ring\n");
         return 1;
     }
-    if (drained[0].value != 100 || drained[5].value != 105 || drained[6].value != 100 || drained[7].value != 101) {
+    if (drained.at(0).value != 100 || drained.at(5).value != 105 || drained.at(6).value != 100
+        || drained.at(7).value != 101) {
         std::fprintf(stderr, "SPSC batch pop returned the wrong sequence across the wrap\n");
         return 1;
     }
@@ -179,13 +201,14 @@ using MpscWide = c::MpscRing<int, 128>;
     }
 
     // All or nothing: a batch larger than the free space pushes nothing.
-    const std::array<Plain, 6> six{Plain{200, 0}, Plain{201, 0}, Plain{202, 0},
-                                   Plain{203, 0}, Plain{204, 0}, Plain{205, 0}};
-    if (ring.try_push_batch(std::span<const Plain>{six}) != 6) {
+    Run<Plain, 6> six{};
+    for (std::size_t i = 0; i < 6; ++i)
+        six.at(i) = Plain{200 + static_cast<int>(i), 0};
+    if (ring.try_push_batch(six.first(6)) != 6) {
         std::fprintf(stderr, "MPSC batch push did not take all six\n");
         return 1;
     }
-    if (ring.try_push_batch(std::span<const Plain>{six}) != 0) {
+    if (ring.try_push_batch(six.first(6)) != 0) {
         std::fprintf(stderr, "MPSC batch push partially filled where it must refuse\n");
         return 1;
     }
@@ -194,13 +217,13 @@ using MpscWide = c::MpscRing<int, 128>;
     // prefix scan wraps past the buffer end, counts cells it already
     // took, and leaves tail ahead of head — after which the producer's
     // unsigned gate underflows and the ring reads as full forever.
-    std::array<Plain, 64> oversized{};
-    const std::size_t taken = ring.try_pop_batch(std::span<Plain>{oversized});
+    Run<Plain, 64> oversized{};
+    const std::size_t taken = ring.try_pop_batch(oversized.each());
     if (taken != 6) {
         std::fprintf(stderr, "MPSC oversized batch pop returned %zu, not the six available\n", taken);
         return 1;
     }
-    if (oversized[0].value != 200 || oversized[5].value != 205) {
+    if (oversized.at(0).value != 200 || oversized.at(5).value != 205) {
         std::fprintf(stderr, "MPSC batch pop returned the wrong sequence\n");
         return 1;
     }
@@ -247,6 +270,86 @@ using MpscWide = c::MpscRing<int, 128>;
         }
     }
     return 0;
+}
+
+// ── Each batch path at each capacity ─────────────────────────────────
+
+// One case of the walk below.  The ring starts with both positions at
+// offset.  A batch of count items goes in, the first singles items come
+// out one at a time, and one batch pop drains the rest.  Then a full batch
+// fills the ring again.  A tail past the head admits one more push, and a
+// stale ready bit gives one more item to a batch pop.
+template <std::size_t Capacity>
+[[nodiscard]] int mpsc_batch_case(std::size_t offset, std::size_t count, std::size_t singles) {
+    c::MpscRing<int, Capacity> ring{};
+    Run<int, Capacity> items{};
+    Run<int, 2 * Capacity> drained{};
+    const auto fail = [&](fixy::TextView what) {
+        fixy::report(fixy::Sink::Err, "MPSC ring of {}: {} (offset {}, batch {}, single pops {})\n", Capacity, what,
+                     offset, count, singles);
+        return 1;
+    };
+
+    if (offset > 0) {
+        if (ring.try_push_batch(items.first(offset)) != offset) return fail(fixy::TextView{"offset push"});
+        if (ring.try_pop_batch(drained.each()) != offset) return fail(fixy::TextView{"offset pop"});
+    }
+
+    for (std::size_t i = 0; i < Capacity; ++i)
+        items.at(i) = static_cast<int>(i);
+    if (ring.try_push_batch(items.first(count)) != count) return fail(fixy::TextView{"batch push"});
+    for (std::size_t i = 0; i < singles; ++i) {
+        if (ring.try_pop().value_or(-1) != static_cast<int>(i)) return fail(fixy::TextView{"single pop"});
+    }
+    const std::size_t rest = ring.try_pop_batch(drained.each());
+    if (rest != count - singles) return fail(fixy::TextView{"the batch pop count"});
+    for (std::size_t i = 0; i < rest; ++i) {
+        if (drained.at(i) != static_cast<int>(singles + i)) return fail(fixy::TextView{"the batch pop order"});
+    }
+    if (ring.try_pop().is_some() || ring.size_approx() != 0 || !ring.empty_approx()) {
+        return fail(fixy::TextView{"the drained ring"});
+    }
+
+    for (std::size_t i = 0; i < Capacity; ++i)
+        items.at(i) = static_cast<int>(Capacity + i);
+    if (ring.try_push_batch(items.first(Capacity)) != Capacity) return fail(fixy::TextView{"the refill"});
+    if (ring.try_push(-1)) return fail(fixy::TextView{"a push past capacity"});
+    if (ring.try_pop_batch(drained.each()) != Capacity) return fail(fixy::TextView{"the refill drain count"});
+    for (std::size_t i = 0; i < Capacity; ++i) {
+        if (drained.at(i) != static_cast<int>(Capacity + i)) return fail(fixy::TextView{"the refill drain order"});
+    }
+    return 0;
+}
+
+// A full batch sets the ready bits of the whole ring.  A ring below 64
+// cells has one bitmap word, and only its low Capacity bits belong to
+// cells.  The prefix scan of try_pop_batch reads a set bit past them as
+// one more ready cell.  The walk starts a batch at each offset and pushes
+// each batch size, so each batch path meets each wrap and each word edge.
+// Each batch then loses no item, one item, or each item but one to single
+// pops before the batch pop.
+template <std::size_t Capacity>
+[[nodiscard]] int mpsc_batch_paths_at() {
+    for (std::size_t offset = 0; offset < Capacity; ++offset) {
+        for (std::size_t count = 1; count <= Capacity; ++count) {
+            for (std::size_t form = 0; form < 3; ++form) {
+                const std::size_t singles = form == 0 ? 0 : form == 1 ? 1 : count - 1;
+                if (const int rc = mpsc_batch_case<Capacity>(offset, count, singles); rc != 0) return rc;
+            }
+        }
+    }
+    return 0;
+}
+
+[[nodiscard]] int mpsc_batch_paths_each_capacity() {
+    if (const int rc = mpsc_batch_paths_at<1>(); rc != 0) return rc;
+    if (const int rc = mpsc_batch_paths_at<2>(); rc != 0) return rc;
+    if (const int rc = mpsc_batch_paths_at<4>(); rc != 0) return rc;
+    if (const int rc = mpsc_batch_paths_at<8>(); rc != 0) return rc;
+    if (const int rc = mpsc_batch_paths_at<16>(); rc != 0) return rc;
+    if (const int rc = mpsc_batch_paths_at<32>(); rc != 0) return rc;
+    if (const int rc = mpsc_batch_paths_at<64>(); rc != 0) return rc;
+    return mpsc_batch_paths_at<128>();
 }
 
 // ── Threaded: the ordering claim ─────────────────────────────────────
@@ -353,6 +456,88 @@ using MpscWide = c::MpscRing<int, 128>;
     return 0;
 }
 
+// Many producers push full batches and partial batches into a ring of
+// eight cells, and the consumer takes one item and then a batch, in turn.
+// So a batch pop often follows a full batch and one single pop.  Each item
+// carries its producer and its place in the order of that producer.  A
+// stale ready bit makes the batch pop give a cell a second time, and a
+// later producer then writes that cell while the bit is still set.
+[[nodiscard]] int mpsc_full_batches_many_producers() {
+    constexpr std::size_t kCapacity = 8;
+    constexpr std::size_t kPartial = 3;
+    constexpr std::uint32_t kProducers = 8;
+    constexpr int kRounds = 400;
+    constexpr int kPerProducer = kRounds * static_cast<int>(kCapacity + kPartial);
+    constexpr int kTotal = static_cast<int>(kProducers) * kPerProducer;
+
+    c::MpscRing<Plain, kCapacity> ring{};
+    fixy::Atomic<std::uint32_t> finished{0};
+    Run<int, kProducers> last_seen{};
+    for (std::size_t p = 0; p < kProducers; ++p)
+        last_seen.at(p) = -1;
+    int received = 0;
+    Run<Plain, kCapacity> drained{};
+
+    const auto take = [&](const Plain item) {
+        if (item.producer >= kProducers || item.value != last_seen.at(item.producer) + 1) {
+            fixy::report(fixy::Sink::Err, "MPSC gave item {} of producer {} after item {}\n", item.value, item.producer,
+                         item.producer < kProducers ? last_seen.at(item.producer) : -1);
+            return false;
+        }
+        last_seen.at(item.producer) = item.value;
+        ++received;
+        return true;
+    };
+
+    {
+        std::vector<std::jthread> producers;
+        for (std::uint32_t p = 0; p < kProducers; ++p) {
+            producers.emplace_back([&ring, &finished, p] {
+                Run<Plain, kCapacity> batch{};
+                int next = 0;
+                for (int round = 0; round < kRounds; ++round) {
+                    for (std::size_t form = 0; form < 2; ++form) {
+                        const std::size_t size = form == 0 ? kCapacity : kPartial;
+                        for (std::size_t i = 0; i < size; ++i)
+                            batch.at(i) = Plain{next + static_cast<int>(i), p};
+                        while (ring.try_push_batch(batch.first(size)) != size) {}
+                        next += static_cast<int>(size);
+                    }
+                }
+                static_cast<void>(finished.fetch_add_acq_rel(1));
+            });
+        }
+
+        bool is_ordered = true;
+        while (is_ordered && received < kTotal) {
+            auto single = ring.try_pop();
+            const bool has_single = single.is_some();
+            if (has_single) {
+                is_ordered = take(std::move(single).expect("the test above found an item"));
+            }
+            const std::size_t got = ring.try_pop_batch(drained.each());
+            for (std::size_t i = 0; is_ordered && i < got; ++i)
+                is_ordered = take(drained.at(i));
+            if (got == 0 && !has_single && finished.load_acquire() == kProducers && ring.empty_approx()) {
+                break;
+            }
+        }
+        if (!is_ordered) {
+            // The producers wait for room, so the drain goes on until they end.
+            while (finished.load_acquire() != kProducers) {
+                static_cast<void>(ring.try_pop_batch(drained.each()));
+            }
+            return 1;
+        }
+    }
+
+    if (received != kTotal) {
+        fixy::report(fixy::Sink::Err, "MPSC delivered {} of the {} items of the full batches\n", received, kTotal);
+        return 1;
+    }
+    return 0;
+}
+
 // A producer reads the head and then the tail.  Between the two loads,
 // other producers can push and the consumer can pop past the head that
 // was read, so the head is stale and trails the tail.  The ring below
@@ -447,8 +632,10 @@ int main() {
     if (const int rc = spsc_single_threaded(); rc != 0) return rc;
     if (const int rc = mpsc_single_threaded(); rc != 0) return rc;
     if (const int rc = mpsc_bitmap_widths(); rc != 0) return rc;
+    if (const int rc = mpsc_batch_paths_each_capacity(); rc != 0) return rc;
     if (const int rc = spsc_two_threads(); rc != 0) return rc;
     if (const int rc = mpsc_many_producers(); rc != 0) return rc;
+    if (const int rc = mpsc_full_batches_many_producers(); rc != 0) return rc;
     if (const int rc = mpsc_never_full_ring_refuses_nothing(); rc != 0) return rc;
     return 0;
 }
