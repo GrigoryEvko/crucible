@@ -475,6 +475,11 @@ public:
     // its watch::wait_scope on this endpoint, so the watch sees the wait.
     [[nodiscard]] constexpr watch::endpoint_id watch_endpoint() const noexcept { return tracker_.session().endpoint; }
 
+    // The count of the steps that led to this handle in its session.  Two
+    // handles of one session at two times have two counts.  Under
+    // check::Off the policy keeps no count, and the answer is zero.
+    [[nodiscard]] constexpr std::uint64_t step_count() const noexcept { return tracker_.session().steps; }
+
     // Marks the handle consumed without advancing the protocol.  The
     // destructor check still fires for every handle that does not
     // detach, so accidental abandonment stays caught.

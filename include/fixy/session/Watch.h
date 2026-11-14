@@ -628,11 +628,15 @@ enum class thread_slot : std::uint16_t {
     return static_cast<thread_slot>(detail::tls_holder_stamp);
 }
 
-// What a handle keeps of the watch: the session's record and the thread
-// that the watch names as its holder.
+// What a handle keeps of the watch: the session's record, the thread
+// that the watch names as its holder, and the count of the steps that led
+// to the handle.  A step builds the next handle with a count one higher, so
+// two handles of one session at two times have two counts, also when a
+// loop gives them one type.
 struct session_ref {
     endpoint_id endpoint = endpoint_id::none;
     thread_slot holder = thread_slot::none;
+    std::uint64_t steps = 0;
 };
 
 /// Records that the calling thread holds the handle of `endpoint` now,
@@ -652,6 +656,14 @@ struct session_ref {
 [[nodiscard]] inline bool is_live(endpoint_id endpoint) noexcept {
     return endpoint != endpoint_id::none
         && detail::record_at_(static_cast<std::uint32_t>(endpoint)).is_live.load_acquire() != 0;
+}
+
+/// The generation of the record of `endpoint`, or zero for none.  A claim
+/// of a record gives it a new generation, so a record that a second
+/// session took after the first released it has a different generation.
+[[nodiscard]] inline std::uint32_t record_generation(endpoint_id endpoint) noexcept {
+    if (endpoint == endpoint_id::none) return 0;
+    return detail::record_at_(static_cast<std::uint32_t>(endpoint)).generation.load_acquire();
 }
 
 /// The number of records live now, for tests.  Complexity: linear in the

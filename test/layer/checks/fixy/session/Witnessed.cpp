@@ -46,25 +46,41 @@ static_assert(!Discharges<witness::UnderRow<spilled_tag>, FgCtx>, "a foreground 
 static_assert(Discharges<witness::UnderRow<spilled_tag>, IoCtx>, "and a context that carries IO does");
 static_assert(!Discharges<witness::UnderRow<pure_tag>, int>, "a context is a context, not any type");
 
-// TEMPORAL, as a type question.  A handle still at the position the
-// borrow was minted at discharges the witness, and the same handle
-// spelling at any other position does not.  Naming the two handle types
-// is the whole test: the protocol is in the type, so the compiler can
-// answer without a handle ever being built.
+// TEMPORAL, as a type question.  The witness names the full type of the
+// handle that it was minted at.  A handle of that type passes the gate,
+// and the carrier then checks the time at the read.  A handle at another
+// position, over another Resource, under another policy or with another
+// permission set does not pass the gate.  Naming the handle types is the
+// whole test, so the compiler answers without a handle ever being built.
 struct probe_payload {
     int value = 0;
 };
 struct probe_wire {
     int last_sent = 0;
 };
+struct other_wire {
+    int last_sent = 0;
+};
+struct probe_region {
+    using permission_row = ::foundation::effects::Row<>;
+};
 
-using AtSend = ::fixy::session::SessionHandle<::fixy::session::Send<probe_payload, ::fixy::session::End>, probe_wire>;
+using Sending = ::fixy::session::Send<probe_payload, ::fixy::session::End>;
+using AtSend = ::fixy::session::SessionHandle<Sending, probe_wire>;
 using AtEnd = ::fixy::session::SessionHandle<::fixy::session::End, probe_wire>;
-using SendWitness = witness::AtProtocol<::fixy::session::Send<probe_payload, ::fixy::session::End>>;
+using AtSendOtherWire = ::fixy::session::SessionHandle<Sending, other_wire>;
+using AtSendUnchecked = ::fixy::session::SessionHandle<Sending, probe_wire, void, ::fixy::session::check::Off>;
+using AtSendHolding = ::fixy::session::SessionHandle<Sending, probe_wire, void, ::fixy::session::check::Enforced,
+                                                     ::foundation::permissions::PermSet<probe_region>>;
+using SendWitness = witness::AtProtocol<AtSend>;
 
-static_assert(Discharges<SendWitness, AtSend>, "a handle still at the position the borrow was minted at reads it");
+static_assert(Discharges<SendWitness, AtSend>, "a handle of the type of the mint passes the gate");
 static_assert(!Discharges<SendWitness, AtEnd>, "and the same session one step on does not");
-static_assert(!Discharges<witness::AtProtocol<::fixy::session::End>, AtSend>, "nor one step short");
+static_assert(!Discharges<witness::AtProtocol<AtEnd>, AtSend>, "nor one step short");
+static_assert(!Discharges<SendWitness, AtSendOtherWire>, "a session over another Resource is another session");
+static_assert(!Discharges<SendWitness, AtSendUnchecked>, "a session under another policy is another session");
+static_assert(!Discharges<SendWitness, AtSendHolding>, "a session with another permission set is another session");
+static_assert(!Discharges<witness::AtProtocol<Sending>, AtSend>, "a protocol alone names no handle");
 
 // The handle is linear, which is what makes the refusal mean something:
 // advancing the session consumes the handle at the old position, so
@@ -97,6 +113,14 @@ template <typename B>
 concept CanMintUnder = requires(B b) { mint_witnessed_under(b); };
 static_assert(CanMintUnder<PureBorrow>);
 static_assert(!CanMintUnder<UnrowedBorrow>, "a tag that declares no row states no obligation");
+
+// A protocol witness checks the time of the handle at the read, from the
+// record of the session.  A handle under check::Off keeps no record, so
+// the gate of the mint refuses its policy.
+static_assert(WitnessableAt<PureBorrow, check::Enforced>);
+static_assert(WitnessableAt<PureBorrow, check::Cancel>);
+static_assert(!WitnessableAt<PureBorrow, check::Off>, "a handle under check::Off keeps no record to check");
+static_assert(!WitnessableAt<int, check::Enforced>, "the witnessed value is a borrow");
 
 // The carrier is the borrow and the obligation is a type, so it costs
 // what the borrow costs.

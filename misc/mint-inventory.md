@@ -274,7 +274,7 @@ that the axis does not apply to the row.
 | `mint_test_channel` | `include/fixy/session/Mint.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_vigil_mode_bridge` | `include/fixy/session/VigilMode.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_watch_hooks` | `include/fixy/session/Watch.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
-| `mint_witnessed_at` | `include/fixy/session/Witnessed.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_witnessed_at` | `include/fixy/session/Witnessed.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_witnessed_under` | `include/fixy/session/Witnessed.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 
 ## include/foundation/

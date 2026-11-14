@@ -29,12 +29,18 @@
 // Two kinds ship, and the two that do not are named rather than
 // implied:
 //
-//   AtProtocol<Proto> — TEMPORAL.  A borrow minted while a session
-//     handle sits at protocol position Proto is read only against a
-//     handle still at Proto.  The handle is linear: its consumer
-//     methods are rvalue-qualified and its copy is deleted, so
-//     advancing the session leaves no handle at Proto to present.
-//     Validity is protocol position, not lexical scope.
+//   AtProtocol<Handle> — TEMPORAL.  A borrow minted at one session
+//     handle is read only against that handle, still where it stood.
+//     The witness names the full type of the handle: its protocol
+//     position, Resource, loop context, policy and permission set.  So
+//     a handle of another type does not compile at the read.  Two
+//     handles of one type are two sessions of the same shape, or one
+//     session at two times, after a loop iteration gave the handle its
+//     type again.  The carrier keeps the record of the session in the
+//     watch, the generation of the record and the count of steps, and
+//     the read ends the process when the presented handle differs in
+//     one of them.  Validity is one handle at one time, not lexical
+//     scope.
 //
 //   UnderRow<Tag> — EFFECT.  A borrow of a region carries the region's
 //     owner tag, and permission_row<Tag> says what touching that region
@@ -58,23 +64,28 @@
 //   - deref hands the borrow back by value, and the gate is at the
 //     deref and nowhere after it.  A caller who stores the result and
 //     reads it later is outside what this type can see.
-//   - A session handle that has been consumed is still an lvalue whose
-//     protocol_type is unchanged, so presenting a moved-from handle
-//     discharges AtProtocol.  The handle already carries a consumed
-//     tracker in SessionHandleBase; routing deref through it would
-//     close this at run time, and it is a run-time answer rather than
-//     the compile-time one the rest of this header gives.
-//   - A witness is a type and carries no value, so two regions under
+//   - A session handle that has been consumed is still an lvalue of the
+//     same type.  A move or a step lets go of the record, so the read
+//     against a consumed handle ends the process.  That answer is at
+//     run time, as the answer for two handles of one type is.
+//   - The run-time check needs the record of a checking policy.  A
+//     handle under check::Off keeps none, so mint_witnessed_at refuses
+//     it.  A handle at End, and a handle of a constant evaluation, have
+//     no record either, and a read against them ends the process.
+//   - An UnderRow witness is a type and carries no value, so two regions under
 //     one tag share one UnderRow witness.  The brand on the borrow is
 //     what separates those, and it is a separate axis.
 
 #include <fixy/Borrowed.h>
 #include <fixy/session/Handle.h>
+#include <fixy/session/Watch.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Fatal.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/reflect/Instance.h>
 
+#include <cstdint>
 #include <meta>
 #include <type_traits>
 #include <utility>
@@ -96,10 +107,11 @@ namespace fixy::session {
 // parameter of the kind, and a caller reads it only through Discharges.
 namespace witness {
 
-// TEMPORAL.  The obligation is a protocol position.
-template <typename Proto>
+// TEMPORAL.  The obligation is one session handle at one time.  The type
+// names the handle, and the carrier keeps the time.
+template <typename Handle>
 struct AtProtocol {
-    using protocol_type = Proto;
+    using handle_type = Handle;
 };
 
 // EFFECT.  The obligation is the row the region's tag carries.
@@ -121,9 +133,10 @@ concept IsWitnessKind = ::foundation::reflect::IsInstanceOfAny<W, ^^witness::AtP
 // ── The one gate ─────────────────────────────────────────────────────
 //
 // True when the presented type discharges the witness.  An AtProtocol
-// witness takes a handle at its position, and nothing else: the presented
-// type is an instance of the one handle template, and its protocol is the
-// parameter of the witness.  An UnderRow witness takes an execution
+// witness takes a handle of its type, and nothing else: the presented type
+// is an instance of the one handle template, and it is the parameter of
+// the witness, with each of its arguments.  The carrier then checks the
+// time at the read (detail::require_same_time).  An UnderRow witness takes an execution
 // context whose row admits the row of its tag, the same test a lend from
 // the permission pool applies.  A tag with no row declared is refused,
 // because has_permission_row answers false for it.
@@ -137,7 +150,7 @@ concept IsWitnessKind = ::foundation::reflect::IsInstanceOfAny<W, ^^witness::AtP
     if (std::meta::template_of(kind) == ^^witness::AtProtocol) {
         return std::meta::has_template_arguments(value)
             && std::meta::template_of(value) == (^^::fixy::session::SessionHandle)
-            && std::meta::dealias(std::meta::template_arguments_of(value)[0]) == std::meta::dealias(obligation);
+            && value == std::meta::dealias(obligation);
     }
     if (std::meta::template_of(kind) == ^^witness::UnderRow) {
         return std::meta::extract<bool>(
@@ -157,7 +170,74 @@ namespace detail {
 // cannot be assembled beside the mint that weighed the witness.
 struct witnessed_mint_t {};
 
+// The time of one handle: the record of its session in the watch, the
+// generation of that record, and the count of steps that led to the
+// handle.  A record that a later session claimed has a new generation,
+// and a handle after a loop iteration has a higher count.
+struct handle_stamp {
+    watch::endpoint_id endpoint = watch::endpoint_id::none;
+    std::uint32_t generation = 0;
+    std::uint64_t steps = 0;
+};
+
+// What an UnderRow witness keeps: nothing, because its obligation is a
+// type only.
+struct no_stamp {};
+
+template <typename Witness>
+struct stamp_of {
+    using type = no_stamp;
+};
+template <typename Handle>
+struct stamp_of<witness::AtProtocol<Handle>> {
+    using type = handle_stamp;
+};
+
+template <typename Witness>
+inline constexpr bool is_protocol_witness_v = std::is_same_v<typename stamp_of<Witness>::type, handle_stamp>;
+
+// The stamp of a handle now.  A constant evaluation has no watch, so the
+// stamp then holds no record.
+template <typename Handle>
+[[nodiscard]] constexpr handle_stamp stamp_handle(Handle const& handle) noexcept {
+    const watch::endpoint_id endpoint = handle.watch_endpoint();
+    std::uint32_t generation = 0;
+    if !consteval {
+        generation = watch::record_generation(endpoint);
+    }
+    return handle_stamp{endpoint, generation, handle.step_count()};
+}
+
+[[noreturn, gnu::cold, gnu::noinline]] inline void report_stale_witness() noexcept {
+    ::foundation::core::fatal(
+        "fixy::session: diagnostic [Witness_Stale]: a borrow witnessed at a session handle was read against a "
+        "handle of the same type that is not that handle at that time.  It is another session of the same shape, "
+        "the same session after a step or a loop iteration, a handle that a move or a step consumed, or a handle "
+        "with no record in the watch.  Read the borrow against the handle that it was minted at, before the next "
+        "step of that handle.");
+}
+
+// Ends the process unless the presented handle stands where the handle of
+// the mint stood: one record, one generation of it, and one count of
+// steps.  A stamp with no record is refused, so a handle with no record
+// never discharges a witness.
+template <typename Handle>
+constexpr void require_same_time(handle_stamp const& minted, Handle const& presented) noexcept {
+    const handle_stamp now = stamp_handle(presented);
+    const bool is_same_time = minted.endpoint != watch::endpoint_id::none && now.endpoint == minted.endpoint
+                           && now.generation == minted.generation && now.steps == minted.steps;
+    if (!is_same_time) [[unlikely]]
+        report_stale_witness();
+}
+
 }  // namespace detail
+
+// The gate of mint_witnessed_at: a borrow, and a handle under a policy
+// that keeps the record of its session in the watch.  Under check::Off the
+// handle keeps no record and no count of steps, so the read could not
+// check the time.
+template <typename UBorrow, typename Policy>
+concept WitnessableAt = IsBorrowed<UBorrow> && AbandonmentPolicy<Policy> && bool{Policy::checks_abandonment};
 
 // ── The carrier ──────────────────────────────────────────────────────
 //
@@ -178,15 +258,22 @@ public:
     using row_payload = Borrow;
 
 private:
-    Borrow borrow_{};
+    using stamp_type = typename detail::stamp_of<Witness>::type;
 
-    constexpr Witnessed(detail::witnessed_mint_t, Borrow borrow) noexcept : borrow_{borrow} {}
+    Borrow borrow_{};
+    // The time of the handle of the mint, for an AtProtocol witness.  An
+    // UnderRow witness keeps an empty stamp, which takes no storage.
+    [[no_unique_address]] stamp_type stamp_{};
+
+    constexpr Witnessed(detail::witnessed_mint_t, Borrow borrow, stamp_type stamp = {}) noexcept
+        : borrow_{borrow}, stamp_{stamp} {}
 
     template <typename UBorrow, typename Proto, typename Resource, typename LoopCtx,
-              ::fixy::session::AbandonmentPolicy Policy>
-        requires IsBorrowed<UBorrow>
-    friend constexpr Witnessed<UBorrow, witness::AtProtocol<Proto>>
-    mint_witnessed_at(::fixy::session::SessionHandle<Proto, Resource, LoopCtx, Policy> const& handle,
+              ::fixy::session::AbandonmentPolicy Policy, typename PS>
+        requires WitnessableAt<UBorrow, Policy>
+    friend constexpr Witnessed<
+        UBorrow, witness::AtProtocol<::fixy::session::SessionHandle<Proto, Resource, LoopCtx, Policy, PS>>>
+    mint_witnessed_at(::fixy::session::SessionHandle<Proto, Resource, LoopCtx, Policy, PS> const& handle,
                       UBorrow borrow) noexcept;
 
     template <typename UBorrow>
@@ -214,9 +301,13 @@ public:
     // The one way in.  It is a friend rather than a member so that the
     // call reads as one act with two arguments, which is what it is,
     // and so that the witness sits beside the borrow at the call site.
+    // An AtProtocol witness also checks the time of the presented handle.
     template <typename Presented>
         requires Discharges<Witness, Presented>
-    [[nodiscard]] friend constexpr Borrow deref(Witnessed const& witnessed, Presented const&) noexcept {
+    [[nodiscard]] friend constexpr Borrow deref(Witnessed const& witnessed, Presented const& presented) noexcept {
+        if constexpr (detail::is_protocol_witness_v<Witness>) {
+            detail::require_same_time(witnessed.stamp_, presented);
+        }
         return witnessed.borrow_;
     }
 };
@@ -225,24 +316,28 @@ public:
 
 // TEMPORAL.  The handle is taken by const reference: reading its
 // position is not advancing it, and a mint that consumed the handle
-// would leave nothing to present.
+// would leave nothing to present.  The witness names the full type of the
+// handle, and the carrier keeps its time.
 template <typename UBorrow, typename Proto, typename Resource, typename LoopCtx,
-          ::fixy::session::AbandonmentPolicy Policy>
-    requires IsBorrowed<UBorrow>
-[[nodiscard]] constexpr Witnessed<UBorrow, witness::AtProtocol<Proto>>
-mint_witnessed_at(::fixy::session::SessionHandle<Proto, Resource, LoopCtx, Policy> const& handle CRUCIBLE_LIFETIMEBOUND,
+          ::fixy::session::AbandonmentPolicy Policy, typename PS>
+    requires WitnessableAt<UBorrow, Policy>
+[[nodiscard]] constexpr Witnessed<
+    UBorrow, witness::AtProtocol<::fixy::session::SessionHandle<Proto, Resource, LoopCtx, Policy, PS>>>
+mint_witnessed_at(::fixy::session::SessionHandle<Proto, Resource, LoopCtx, Policy, PS> const& handle
+                  CRUCIBLE_LIFETIMEBOUND,
                   UBorrow borrow) noexcept {
-    (void)handle;
-    return Witnessed<UBorrow, witness::AtProtocol<Proto>>{detail::witnessed_mint_t{}, borrow};
+    using Handle = ::fixy::session::SessionHandle<Proto, Resource, LoopCtx, Policy, PS>;
+    return Witnessed<UBorrow, witness::AtProtocol<Handle>>{detail::witnessed_mint_t{}, borrow,
+                                                           detail::stamp_handle(handle)};
 }
 
 // The handle names a position that outlives nothing: a temporary handle
 // is consumed at the end of the full expression, so a borrow witnessed
 // against one is witnessed against a position already gone.
 template <typename UBorrow, typename Proto, typename Resource, typename LoopCtx,
-          ::fixy::session::AbandonmentPolicy Policy>
+          ::fixy::session::AbandonmentPolicy Policy, typename PS>
     requires IsBorrowed<UBorrow>
-constexpr auto mint_witnessed_at(::fixy::session::SessionHandle<Proto, Resource, LoopCtx, Policy> const&&,
+constexpr auto mint_witnessed_at(::fixy::session::SessionHandle<Proto, Resource, LoopCtx, Policy, PS> const&&,
                                  UBorrow) = delete("the handle is released at the end of the full expression, so the "
                                                    "protocol position the borrow would name is already gone; give the "
                                                    "handle a name that outlives the borrow");

@@ -38,7 +38,9 @@
 // claim and release of a record in fixy/session/Watch.h at mint and at
 // End, one atomic read-modify-write each.  At each move and each step,
 // it compares the thread-local slot of the calling thread with the slot
-// that the handle keeps.  It reads no shared state there.
+// that the handle keeps.  It reads no shared state there.  At each step
+// it adds one to the count of steps that the handle keeps, so a witness
+// of fixy/session/Witnessed.h can tell two handles of one type apart.
 //
 // The policy is in the type.  A Debug object and a Release object that
 // use different policies name different types, so a layout disagreement
@@ -96,6 +98,11 @@ class tracked_policy {
     // The handle's construction site.  It is an unknown source for a
     // handle minted without an explicit location.
     std::source_location loc_{};
+    // The count of the steps that led to this handle.  A step builds the
+    // next handle with a count one higher, so the count tells two handles
+    // of one session apart, also when a loop gives them one type.  A move
+    // is not a step, and it keeps the count.
+    std::uint64_t steps_ = 0;
 
     // Tells the watch when the handle is on a thread other than the one
     // it last saw.  A handle that stays on its thread reads one
@@ -132,7 +139,7 @@ public:
     // the holder that the reference names when it reached the handle
     // through a pointer.
     constexpr tracked_policy(std::source_location loc, watch::session_ref session) noexcept
-        : holder_{session.holder}, endpoint_{session.endpoint}, loc_{loc} {
+        : holder_{session.holder}, endpoint_{session.endpoint}, loc_{loc}, steps_{session.steps + 1} {
         track_holder_();
     }
 
@@ -144,7 +151,7 @@ public:
     }
     [[nodiscard]] constexpr bool was_marked() const noexcept { return flag_; }
     [[nodiscard]] constexpr std::source_location construction_loc() const noexcept { return loc_; }
-    [[nodiscard]] constexpr watch::session_ref session() const noexcept { return {endpoint_, holder_}; }
+    [[nodiscard]] constexpr watch::session_ref session() const noexcept { return {endpoint_, holder_, steps_}; }
 
     // A self-move must not change the tracker.  Without the guard,
     // `h = std::move(h)` copies flag_ onto itself and then sets it, and
@@ -159,6 +166,7 @@ public:
         holder_ = other.holder_;
         endpoint_ = other.endpoint_;
         loc_ = other.loc_;
+        steps_ = other.steps_;
         other.flag_ = true;
         other.endpoint_ = watch::endpoint_id::none;
         track_holder_();

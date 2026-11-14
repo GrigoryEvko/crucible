@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <type_traits>
 #include <utility>
+#include "../test_abort_probe.h"
 #include "../test_assert.h"
 
 namespace eff = ::foundation::effects;
@@ -78,8 +79,20 @@ struct Ping {
 struct Wire {
     int last_sent = 0;
 };
+struct OtherWire {
+    int last_sent = 0;
+};
 
 using Sending = s::Send<Ping, s::End>;
+using Looping = s::Loop<s::Send<Ping, s::Continue>>;
+
+constexpr auto send_ping = [](Wire& wire, Ping& ping) noexcept {
+    wire.last_sent = ping.value;
+    return true;
+};
+
+// The bytes that each protocol cell borrows.
+std::uint64_t protocol_storage[3] = {5, 6, 7};
 
 // A named brand for the type-level cells.  A borrow that names no brand
 // is DefaultBrand, which the rule erased-brand counts and
@@ -143,22 +156,22 @@ void test_a_context_that_refuses_the_row_refuses_the_read() {
 // ── TEMPORAL ─────────────────────────────────────────────────────────
 
 void test_a_protocol_witnessed_borrow_reads_while_the_session_is_there() {
-    static std::uint64_t storage[3] = {5, 6, 7};
-
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto handle = s::mint_session<Sending>(ctx, Wire{});
-    auto borrow = ::fixy::mint_borrowed<Cache>(storage);
+    auto borrow = ::fixy::mint_borrowed<Cache>(protocol_storage);
     auto witnessed = ::fixy::session::mint_witnessed_at(handle, borrow);
 
-    static_assert(std::is_same_v<decltype(witnessed)::witness_type, ::fixy::session::witness::AtProtocol<Sending>>);
+    static_assert(
+        std::is_same_v<decltype(witnessed)::witness_type, ::fixy::session::witness::AtProtocol<decltype(handle)>>,
+        "the witness names the full type of the handle");
 
     auto read = deref(witnessed, handle);
     CRUCIBLE_TEST_REQUIRE(read.size() == 3);
     CRUCIBLE_TEST_REQUIRE(read[1] == 6);
 
     // Advancing the session consumes the handle and hands back one at
-    // the next position.  The borrow's witness names the old position,
-    // so the new handle does not discharge it.
+    // the next position.  The borrow's witness names the old handle, so
+    // the new handle does not discharge it.
     auto at_end = std::move(handle).send(Ping{11}, [](Wire& wire, Ping& ping) noexcept {
         wire.last_sent = ping.value;
         return true;
@@ -173,11 +186,13 @@ void test_a_protocol_witnessed_borrow_reads_while_the_session_is_there() {
 void test_the_position_is_the_witness_and_not_the_spelling() {
     using AtSend = s::SessionHandle<Sending, Wire>;
     using AtEnd = s::SessionHandle<s::End, Wire>;
+    using AtSendOtherWire = s::SessionHandle<Sending, OtherWire>;
     using SendBorrow = ::fixy::Borrowed<std::uint64_t, Cache, probe_brand>;
-    using Witnessed = ::fixy::session::Witnessed<SendBorrow, ::fixy::session::witness::AtProtocol<Sending>>;
+    using Witnessed = ::fixy::session::Witnessed<SendBorrow, ::fixy::session::witness::AtProtocol<AtSend>>;
 
     static_assert(CanDeref<Witnessed, AtSend>);
     static_assert(!CanDeref<Witnessed, AtEnd>, "the same handle spelling at another position is another witness");
+    static_assert(!CanDeref<Witnessed, AtSendOtherWire>, "a session over another Resource is another session");
 
     // The handle being linear is what makes that refusal worth
     // something: a copy would leave a witness behind at every step the
@@ -188,13 +203,79 @@ void test_the_position_is_the_witness_and_not_the_spelling() {
     CRUCIBLE_TEST_REQUIRE(true);
 }
 
+// ── TEMPORAL at run time ─────────────────────────────────────────────
+//
+// Two handles of one type pass the gate of the type: two sessions of one
+// shape, or one session before and after a loop iteration.  The carrier
+// keeps the time of the handle of the mint, and a read against a handle
+// of another time ends the process with Witness_Stale.  The abort probe
+// catches that end.
+
+void test_a_witness_refuses_another_session_of_the_same_type() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto first = s::mint_session<Sending>(ctx, Wire{});
+    auto second = s::mint_session<Sending>(ctx, Wire{});
+    static_assert(std::is_same_v<decltype(first), decltype(second)>);
+    auto witnessed = ::fixy::session::mint_witnessed_at(first, ::fixy::mint_borrowed<Cache>(protocol_storage));
+
+    CRUCIBLE_TEST_REQUIRE(deref(witnessed, first).size() == 3);
+    CRUCIBLE_TEST_REQUIRE(crucible::test::aborts([&] { static_cast<void>(deref(witnessed, second)); }));
+
+    static_cast<void>(std::move(first).send(Ping{1}, send_ping).close());
+    static_cast<void>(std::move(second).send(Ping{2}, send_ping).close());
+}
+
+void test_a_witness_refuses_the_same_session_after_a_loop_iteration() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto head = s::mint_session<Looping>(ctx, Wire{});
+    auto witnessed = ::fixy::session::mint_witnessed_at(head, ::fixy::mint_borrowed<Cache>(protocol_storage));
+    CRUCIBLE_TEST_REQUIRE(deref(witnessed, head).size() == 3);
+
+    head = std::move(head).send(Ping{3}, send_ping);
+    static_assert(CanDeref<decltype(witnessed), decltype(head)>, "a loop iteration gives the handle its type again");
+    CRUCIBLE_TEST_REQUIRE(crucible::test::aborts([&] { static_cast<void>(deref(witnessed, head)); }));
+
+    std::move(head).detach(s::detach_reason::InfiniteLoopProtocol{});
+}
+
+// A move is not a step, so the witness reads against the handle that the
+// move filled.
+void test_a_witness_follows_a_move_of_the_handle() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto head = s::mint_session<Sending>(ctx, Wire{});
+    auto witnessed = ::fixy::session::mint_witnessed_at(head, ::fixy::mint_borrowed<Cache>(protocol_storage));
+    auto moved = std::move(head);
+
+    CRUCIBLE_TEST_REQUIRE(deref(witnessed, moved).size() == 3);
+
+    static_cast<void>(std::move(moved).send(Ping{4}, send_ping).close());
+}
+
+// A session that ends releases its record, and the next session of the
+// same type can claim the same record.  The claim gives the record a new
+// generation, so the witness of the first session refuses the second.
+void test_a_witness_refuses_a_later_session_on_the_same_record() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto first = s::mint_session<Sending>(ctx, Wire{});
+    const s::watch::endpoint_id record = first.watch_endpoint();
+    auto witnessed = ::fixy::session::mint_witnessed_at(first, ::fixy::mint_borrowed<Cache>(protocol_storage));
+    static_cast<void>(std::move(first).send(Ping{5}, send_ping).close());
+
+    auto second = s::mint_session<Sending>(ctx, Wire{});
+    CRUCIBLE_TEST_REQUIRE(second.watch_endpoint() == record);
+    CRUCIBLE_TEST_REQUIRE(second.step_count() == 1);
+    CRUCIBLE_TEST_REQUIRE(crucible::test::aborts([&] { static_cast<void>(deref(witnessed, second)); }));
+
+    static_cast<void>(std::move(second).send(Ping{6}, send_ping).close());
+}
+
 // ── One gate, two kinds ──────────────────────────────────────────────
 
 void test_a_witness_of_one_kind_is_not_the_other() {
     using CacheBorrow = ::fixy::Borrowed<std::uint64_t, Cache, probe_brand>;
     using RowWitnessed = ::fixy::session::Witnessed<CacheBorrow, ::fixy::session::witness::UnderRow<Cache>>;
-    using PositionWitnessed = ::fixy::session::Witnessed<CacheBorrow, ::fixy::session::witness::AtProtocol<Sending>>;
     using AtSend = s::SessionHandle<Sending, Wire>;
+    using PositionWitnessed = ::fixy::session::Witnessed<CacheBorrow, ::fixy::session::witness::AtProtocol<AtSend>>;
 
     static_assert(CanDeref<RowWitnessed, FgCtx>);
     static_assert(!CanDeref<RowWitnessed, AtSend>, "a handle does not stand in for a row");
@@ -221,6 +302,13 @@ int main() {
              test_a_protocol_witnessed_borrow_reads_while_the_session_is_there);
     run_test("test_the_position_is_the_witness_and_not_the_spelling",
              test_the_position_is_the_witness_and_not_the_spelling);
+    run_test("test_a_witness_refuses_another_session_of_the_same_type",
+             test_a_witness_refuses_another_session_of_the_same_type);
+    run_test("test_a_witness_refuses_the_same_session_after_a_loop_iteration",
+             test_a_witness_refuses_the_same_session_after_a_loop_iteration);
+    run_test("test_a_witness_follows_a_move_of_the_handle", test_a_witness_follows_a_move_of_the_handle);
+    run_test("test_a_witness_refuses_a_later_session_on_the_same_record",
+             test_a_witness_refuses_a_later_session_on_the_same_record);
     run_test("test_a_witness_of_one_kind_is_not_the_other", test_a_witness_of_one_kind_is_not_the_other);
     crucible::test::pass("test_witnessed: {} passed, {} failed\n", total_passed, total_failed);
     return total_failed == 0 ? 0 : 1;

@@ -169,8 +169,9 @@ static_assert(sizeof(OffHandle) == sizeof(ValueWire));
 static_assert(sizeof(EnforcedHandle) > sizeof(ValueWire));
 
 // The record of fixy/session/Watch.h sits in the padding of the policy,
-// so a checked handle over a small resource stays at three words.
-static_assert(sizeof(EnforcedHandle) == 3 * sizeof(void*));
+// and the count of steps is one more word, so a checked handle over a
+// small resource is four words.
+static_assert(sizeof(EnforcedHandle) == 4 * sizeof(void*));
 
 // A handle refuses a new-expression, as Permission and ReadView do.  A
 // container builds it in place, so an optional of a handle stays legal.

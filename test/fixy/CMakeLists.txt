@@ -5716,7 +5716,7 @@ fixy_neg_compile_test(neg_witnessed_deref_at_a_later_protocol_position
 # TEMPORAL, presented the wrong kind of thing entirely.
 fixy_neg_compile_test(neg_witnessed_deref_without_a_handle
   "no matching function for call to .deref\\("
-  "Witness = fixy::session::witness::AtProtocol<fixy::session::Send<"
+  "Witness = fixy::session::witness::AtProtocol<fixy::session::SessionHandle<fixy::session::Send<"
   "Presented = foundation::effects::ExecCtx<")
 
 # EFFECT: the region's tag says the read costs IO, and the context's row
@@ -5750,8 +5750,21 @@ fixy_neg_compile_test(neg_witnessed_under_a_tag_with_no_row
 # The position a borrow names has to outlive the borrow.
 fixy_neg_compile_test(neg_witnessed_at_from_a_temporary_handle
   "use of deleted function"
-  "mint_witnessed_at\\(const SessionHandle<Proto, Resource, LoopCtx, Policy>&&"
+  "mint_witnessed_at\\(const SessionHandle<Proto, Resource, LoopCtx, Policy, PS>&&"
   "the protocol position the borrow would name is already gone")
+
+# TEMPORAL, a witness that a different state satisfies.  The witness names
+# the full type of the handle of the mint, so a handle of another session
+# type at the same position does not pass the gate.  The read of two
+# handles of one type checks the time at run time, so the mint refuses a
+# handle under check::Off, which keeps no record and no count of steps.
+fixy_neg_compile_test(neg_witnessed_deref_with_a_session_of_another_resource
+  "no matching function for call to .deref\\("
+  "required for the satisfaction of .Discharges<Witness, Presented>."
+  "Presented = fixy::session::SessionHandle<fixy::session::Send<.*Ping, fixy::session::End>, .*OtherWire")
+fixy_neg_compile_test(neg_witnessed_at_an_unchecked_handle
+  "no matching function for call to .mint_witnessed_at\\("
+  "required for the satisfaction of .WitnessableAt<UBorrow, Policy>.")
 
 # ── The component walk, read by four gates ────────────────────────────
 #
