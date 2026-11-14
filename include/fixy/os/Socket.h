@@ -152,8 +152,10 @@ mint_socket(Ctx const&) noexcept {
 //   send_bytes, receive_bytes and receive_with_timestamps pass MSG_DONTWAIT
 //   and never wait: a netlink request of the kernel queues its reply before
 //   the send returns, and the receive of a dump makes its next part.  A
-//   receive with no bytes gives eagain.  Each call takes a context that
-//   admits the row of the network family of the syscall catalog.
+//   receive with no bytes gives eagain.  The door adds MSG_NOSIGNAL to each
+//   send, so a send to a socket with no connection gives epipe and raises no
+//   SIGPIPE.  Each call takes a context that admits the row of the network
+//   family of the syscall catalog.
 
 using socket_call_row_t =
     eff::lift_row_t<::fixy::atom::syscall::family<::fixy::atom::syscall::SyscallFamily::NetworkIo>>;
@@ -264,7 +266,8 @@ bind_netlink(Ctx const&, ::fixy::fs::OwnedFd const& socket) noexcept {
     return detail::bind_address_(socket.get(), &address, sizeof(address));
 }
 
-// Sends the bytes of buffer, and gives the count that the kernel took.
+// Sends the bytes of buffer, and gives the count that the kernel took.  A
+// socket with no connection gives epipe, and the process gets no SIGPIPE.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsSocketCall<Ctx>
 [[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>

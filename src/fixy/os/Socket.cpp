@@ -119,7 +119,7 @@ CountResult send_with_flags_(int socket, void const* first, std::size_t count, i
     }
     long word = 0;
     do {
-        word = os::raw_syscall(os::Syscall::sendto, socket, first, count, flags, 0, 0);
+        word = os::raw_syscall(os::Syscall::sendto, socket, first, count, flags | send_no_signal_flag, 0, 0);
     } while (word == kInterrupted);
     return count_of(word);
 }

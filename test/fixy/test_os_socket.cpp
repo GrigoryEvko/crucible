@@ -5,11 +5,13 @@
 // the mint returns is a socket of the kind the tag names, that it does not
 // survive execve, that a netlink request gets its reply through the door,
 // that each TCP option of the door reaches the TCP option of the kernel,
-// and that the timestamp calls reach the kernel.  The check file of the
+// that the timestamp calls reach the kernel, and that a send to a socket
+// with no connection gives an error and no signal.  The check file of the
 // header holds the walk of the control data of each kind of message.
 
 #include <fixy/Core.h>
 #include <fixy/os/Socket.h>
+#include <foundation/Quarantine.h>
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Array.h>
 
@@ -21,6 +23,37 @@
 #include <cstdio>
 #include <utility>
 #include "../test_assert.h"
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a send that raises SIGPIPE reaches a handler that marks its arrival")
+#include <signal.h>
+
+namespace {
+
+// One when a SIGPIPE reached mark_pipe_signal.
+volatile sig_atomic_t pipe_signal_arrived = 0;
+
+// The action of SIGPIPE that install_pipe_marker replaced.
+struct ::sigaction replaced_pipe_action{};
+
+void mark_pipe_signal(int) noexcept { pipe_signal_arrived = 1; }
+
+// Puts mark_pipe_signal on SIGPIPE.  The handler also replaces a SIG_IGN that
+// the process got from its parent, which hides the signal.
+[[nodiscard]] bool install_pipe_marker() noexcept {
+    pipe_signal_arrived = 0;
+    struct ::sigaction marker{};
+    marker.sa_handler = &mark_pipe_signal;
+    static_cast<void>(::sigemptyset(&marker.sa_mask));
+    return ::sigaction(SIGPIPE, &marker, &replaced_pipe_action) == 0;
+}
+
+// Puts back the action that install_pipe_marker replaced.
+[[nodiscard]] bool restore_pipe_action() noexcept { return ::sigaction(SIGPIPE, &replaced_pipe_action, nullptr) == 0; }
+
+[[nodiscard]] bool has_pipe_signal_arrived() noexcept { return pipe_signal_arrived != 0; }
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace eff = foundation::effects;
 
@@ -173,6 +206,26 @@ struct LinkDumpRequest final {
     return 0;
 }
 
+// A send to a TCP socket with no connection gives epipe, and the kernel
+// raises no SIGPIPE.  The case puts a handler on SIGPIPE that marks the
+// arrival of the signal, so a send that raises it fails the case and does not
+// end the process.  The process can get SIG_IGN for SIGPIPE from the runner of
+// the tests, and the handler replaces it.  send_bytes is the one send door of
+// the header.
+[[nodiscard]] int check_send_raises_no_signal() noexcept {
+    IoBlockCtx ctx{eff::testing::test()};
+    fixy::fs::OwnedFd const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
+    if (!tcp.is_open()) return 61;
+    if (!install_pipe_marker()) return 62;
+    LinkDumpRequest const request{};
+    auto const sent = fixy::net::send_bytes(ctx, tcp, foundation::core::bytes(request));
+    bool const is_restored = restore_pipe_action();
+    if (sent.err().value_or(foundation::os::Errno::eio) != foundation::os::Errno::epipe) return 63;
+    if (has_pipe_signal_arrived()) return 64;
+    if (!is_restored) return 65;
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -182,6 +235,7 @@ int main() {
     if (failed == 0) failed = check_socket_timestamping();
     if (failed == 0) failed = check_hardware_timestamping();
     if (failed == 0) failed = check_receive_with_timestamps();
+    if (failed == 0) failed = check_send_raises_no_signal();
     if (failed != 0) {
         std::fprintf(stderr, "test_os_socket: check %d failed\n", failed);
         return failed;

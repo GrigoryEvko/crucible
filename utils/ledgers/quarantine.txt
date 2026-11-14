@@ -354,6 +354,7 @@ test/fixy/ | c-library-object | 9 | - | -
 test/fixy/ | door-header | 22 | - | -
 test/fixy/ | opted-out | 16 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | opted-out | 3 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
+test/fixy/ | opted-out | 6 | PROBE: a send that raises SIGPIPE reaches a handler that marks its arrival | the test of the send door installs a handler of SIGPIPE through the C library, because the base has no door that sets the action of a signal outside an Init context, and the handler replaces a SIG_IGN from the runner of the tests
 test/fixy/ | opted-out | 7 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper | -
 test/fixy/ | opted-out | 20 | PROBE: a signal reaches a thread that waits in the futex door | -
 test/fixy/ | opted-out | 1 | PROBE: cheat 19 forges is_graded_wrapper_v, and GradedWrapper must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -376,6 +377,7 @@ test/fixy/ | raw-new-delete | 9 | - | -
 test/fixy/ | raw-pointer-object | 159 | - | -
 test/fixy/ | region | 1 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | region | 1 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
+test/fixy/ | region | 1 | PROBE: a send that raises SIGPIPE reaches a handler that marks its arrival | the test of the send door installs a handler of SIGPIPE through the C library, because the base has no door that sets the action of a signal outside an Init context, and the handler replaces a SIG_IGN from the runner of the tests
 test/fixy/ | region | 1 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper | -
 test/fixy/ | region | 1 | PROBE: a signal reaches a thread that waits in the futex door | -
 test/fixy/ | region | 1 | PROBE: cheat 19 forges is_graded_wrapper_v, and GradedWrapper must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error

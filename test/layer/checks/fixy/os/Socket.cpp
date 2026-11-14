@@ -40,6 +40,7 @@ static_assert(!std::is_default_constructible_v<SocketDoor> && !std::is_copy_cons
 // THE KERNEL WORDS of fixy/os/SocketCalls.h are the words of the system
 // headers.
 static_assert(socket_level == SOL_SOCKET);
+static_assert(send_no_signal_flag == MSG_NOSIGNAL);
 static_assert(timestamping_option == SO_TIMESTAMPING && timestamping_option == SCM_TIMESTAMPING);
 static_assert(receive_timestamping_flags
               == (SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_SOFTWARE

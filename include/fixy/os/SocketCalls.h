@@ -76,6 +76,11 @@ namespace fixy::net::detail {
 // SOL_SOCKET: the level of the options of each socket.
 inline constexpr int socket_level = 1;
 
+// MSG_NOSIGNAL: a send to a socket with no connection, or to a peer that
+// closed, gives EPIPE and raises no SIGPIPE.  The send door adds it to the
+// flags of each send, because the default action of SIGPIPE ends the process.
+inline constexpr int send_no_signal_flag = 0x4000;
+
 // SO_TIMESTAMPING of a 64-bit build.  The kernel gives the stamps in a
 // control message of the same type (SCM_TIMESTAMPING).
 inline constexpr int timestamping_option = 37;
@@ -223,8 +228,8 @@ set_option_(int socket, int level, int name, void const* value, std::uint32_t si
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 bind_address_(int socket, void const* address, std::uint32_t size) noexcept;
 
-// Sends the COUNT bytes at FIRST with the flags FLAGS, and gives the count
-// that the kernel took (sendto with no address).
+// Sends the COUNT bytes at FIRST with the flags FLAGS and send_no_signal_flag,
+// and gives the count that the kernel took (sendto with no address).
 [[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 send_with_flags_(int socket, void const* first, std::size_t count, int flags) noexcept;
 
