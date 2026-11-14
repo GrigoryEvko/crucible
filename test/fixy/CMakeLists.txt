@@ -1840,7 +1840,7 @@ fixy_neg_compile_test(neg_recipe_spec_weaken_to_a_tighter_tier
   "expansion of .foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::ToleranceLattice>, .*::weaken<")
 
 # ── The eight value wrappers ──────────────────────────────────────────
-fixy_test(test_owned_file)
+fixy_test(test_os_temporary_file)
 fixy_test(test_owned_mmap)
 fixy_test(test_constant_time)
 
@@ -4892,57 +4892,18 @@ fixy_neg_compile_test(neg_os_ptp_device_door_is_private
   "is private within this context"
   "fixy::time::PtpDeviceDoor::open_\\(fixy::time::PtpDeviceIndex\\)")
 
-# ── OwnedFile has two doors, and both are the ones that open ─────────
+# ── The temporary file door ──────────────────────────────────────────
 #
-# The same defect as OwnedMmap, over a FILE*: the constructor was public
-# and the destructor fcloses whatever it holds, so `OwnedFile{stdin}`
-# closed standard input on scope exit.  The constructor is private now,
-# and OwnedFileDoor performs the open for mint_owned_file and
-# mint_temporary_file.
-#
-# Two routes, for the reason given above the mmap pair: the generic
-# mint_linear forwarder sits between any mint and the object, so the
-# forwarded route fails on the absence of a constructor to forward to.
-# The second regex of each is the token GCC prints, taken from its
-# output: the typedef name FILE, and an lvalue reference because stdin
-# is an lvalue.
-fixy_neg_compile_test(neg_owned_file_forged_stream
-  "is private within this context"
-  "OwnedFile\\(FILE\\*\\)")
+# mint_temporary_file_at makes a file with no name under a directory, and
+# the open can wait on the file system, so the mint asks for a context that
+# owns IO and Block.  One fixture for each missing atom.
+fixy_neg_compile_test(neg_temporary_file_without_block
+  "no matching function for call to .mint_temporary_file_at\\(const .anonymous.::IoOnlyCtx&, const fixy::fs::Dirfd&\\)"
+  "required for the satisfaction of .CtxAdmitsFs<Ctx>.")
 
-fixy_neg_compile_test(neg_owned_file_forged_through_mint_linear
-  "no matching function for call"
-  "mint_linear<fixy::OwnedFile>\\(FILE\\*&\\)")
-
-# OwnedFile::release has the two gates of OwnedMmap::release: a leak atom
-# as the witness, and an rvalue handle.
-fixy_neg_compile_test(neg_owned_file_release_without_leak_atom
-  "no matching function for call to .fixy::OwnedFile::release\\("
-  "required for the satisfaction of .IsLeakAtom<LeakAtom>."
-  "required for the satisfaction of .IsInstanceOf<G, \\^\\^fixy::atom::leak::resource>. \\[with G = <unnamed>::NotALeakAtom\\]")
-
-fixy_neg_compile_test(neg_owned_file_release_from_an_lvalue
-  "passing .fixy::OwnedFile. as .this. argument discards qualifiers"
-  "in call to .FILE\\* fixy::OwnedFile::release\\(LeakAtom\\) &&")
-
-# Each open enters the kernel and can wait on the file system, so the two
-# mints ask for a context that owns IO and Block.  One fixture for each
-# missing atom, for each mint.
-fixy_neg_compile_test(neg_owned_file_mint_without_block
-  "no matching function for call to .mint_owned_file\\(const foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO> >&"
-  "required for the satisfaction of .CtxFitsFileOpen<Ctx>.")
-
-fixy_neg_compile_test(neg_owned_file_mint_without_io
-  "no matching function for call to .mint_owned_file\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >&"
-  "required for the satisfaction of .CtxFitsFileOpen<Ctx>.")
-
-fixy_neg_compile_test(neg_owned_file_temporary_without_block
-  "no matching function for call to .mint_temporary_file\\(const foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO> >&\\)"
-  "required for the satisfaction of .CtxFitsFileOpen<Ctx>.")
-
-fixy_neg_compile_test(neg_owned_file_temporary_without_io
-  "no matching function for call to .mint_temporary_file\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >&\\)"
-  "required for the satisfaction of .CtxFitsFileOpen<Ctx>.")
+fixy_neg_compile_test(neg_temporary_file_without_io
+  "no matching function for call to .mint_temporary_file_at\\(const .anonymous.::ForegroundCtx&, const fixy::fs::Dirfd&\\)"
+  "required for the satisfaction of .CtxAdmitsFs<Ctx>.")
 
 # ── The file surface ──────────────────────────────────────────────────
 #

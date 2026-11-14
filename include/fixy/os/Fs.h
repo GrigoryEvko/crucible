@@ -592,11 +592,18 @@ template <eff::IsExecCtx Ctx>
 [[nodiscard]] ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
 open_dirfd_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noexcept;
 
+// The open of a file with no name under a directory (THE TEMPORARY FILE
+// below), declared here and defined below FileDoor for the same reason.
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
+mint_temporary_file_at(Ctx const&, Dirfd const& dir, std::uint32_t perms = 0600) noexcept;
+
 // The door to the open of a path.  No object of it exists.  Its members
 // are private, and its friends are the gated mints that open a path:
-// mint_file, open_dirfd, mint_file_at and open_dirfd_at.  OwnedFd and Dirfd
-// befriend this class, so a handle over a path comes only from one of
-// those mints, after their gates.
+// mint_file, open_dirfd, mint_file_at, open_dirfd_at and
+// mint_temporary_file_at.  OwnedFd and Dirfd befriend this class, so a
+// handle over a path comes only from one of those mints, after their gates.
 //
 // The trailing return types are necessary: fixy/os/CpuPinned.h gives the
 // parse reason.
@@ -620,6 +627,16 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
         requires ::fixy::fs::CtxAdmitsFs<FriendCtx>
     friend auto open_dirfd_at(FriendCtx const&, Dirfd const&, ::foundation::core::CText) noexcept
         -> ::foundation::core::Result<Dirfd, ::foundation::os::Errno>;
+
+    template <eff::IsExecCtx FriendCtx>
+        requires ::fixy::fs::CtxAdmitsFs<FriendCtx>
+    friend auto mint_temporary_file_at(FriendCtx const&, Dirfd const&, std::uint32_t) noexcept
+        -> ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
+
+    // The open flags of a file with no name: it reads and writes, and it
+    // closes when a thread starts a program.
+    static constexpr int temporary_flags_ =
+        ::foundation::os::kOpenTemporary | ::foundation::os::kOpenReadWrite | ::foundation::os::kOpenCloseOnExec;
 
     // The open flags of a directory: O_DIRECTORY refuses anything else,
     // O_NOFOLLOW refuses a symlink that stands in for the directory.
@@ -671,6 +688,12 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
     [[nodiscard]] static ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
     open_directory_at_(int directory, const char* path) noexcept {
         return own_directory_(detail::open_beneath_(directory, path, directory_flags_, 0));
+    }
+
+    // The open of a file with no name in the directory of the descriptor.
+    [[nodiscard]] static ::foundation::core::Result<OwnedFd, ::foundation::os::Errno>
+    open_temporary_at_(int directory, std::uint32_t perms) noexcept {
+        return own_(detail::open_beneath_(directory, ".", temporary_flags_, perms));
     }
 };
 
@@ -786,6 +809,27 @@ open_dirfd_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noex
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
     return FileDoor::open_directory_at_(dir.get(), ::foundation::core::detail::c_text_first_(path));
+}
+
+// THE TEMPORARY FILE
+//   mint_temporary_file_at opens a regular file with no name in the
+//   directory of dir (O_TMPFILE), for reading and writing, with the
+//   permission bits perms.  No other process can open the file by a path,
+//   and the kernel frees it at the last close of its descriptor, also when
+//   the process ends with no close.  The file system of the directory must
+//   give O_TMPFILE: a file system that does not gives eopnotsupp.  An empty
+//   Dirfd gives ebadf, and the call makes no system call.
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
+mint_temporary_file_at(Ctx const&, Dirfd const& dir, std::uint32_t perms) noexcept {
+    using Minted = ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
+    if (!dir.is_open()) {
+        return ::foundation::core::err(::foundation::os::Errno::ebadf);
+    }
+    return FileDoor::open_temporary_at_(dir.get(), perms)
+        .match([](OwnedFd descriptor) -> Minted { return mint_linear<OwnedFd>(std::move(descriptor)); },
+               [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
 }
 
 // Renames from to to, the two under dir, with the atomicity of

@@ -182,7 +182,7 @@ private:
 template <class Ctx>
 concept CtxFitsHardeningMint = ::foundation::effects::IsExecCtx<Ctx>
                             && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
-                            && ::fixy::CtxFitsFileOpen<Ctx>;
+                            && ::fixy::fs::CtxAdmitsFs<Ctx>;
 
 class Hardening {
 public:

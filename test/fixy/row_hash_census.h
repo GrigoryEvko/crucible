@@ -80,7 +80,6 @@
 #include <fixy/os/SpinLock.h>
 #include <fixy/os/ThreadName.h>
 #include <fixy/os/Time.h>
-#include <fixy/os/OwnedFile.h>
 #include <fixy/os/OwnedMmap.h>
 #include <fixy/OwnedRegion.h>
 #include <fixy/os/Path.h>
@@ -1041,9 +1040,6 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::SplitParts, "a return bundle of a Disjoint witness and its shards, destructured at the call "
                            "site; each member folds on its own"},
     {^^::fixy::split_parts_for_, kMetafunction},
-    {^^::fixy::OwnedFile, kDescriptor},
-    {^^::fixy::OwnedFileDoor, "the door of the two file mints: it has static members only, no object of it exists, "
-                              "and it is never a value"},
     {^^::fixy::VersionSource, "the owner of the versions of one kind of value: only a context that owns Init mints "
                               "it, it stays beside the values it stamps, and it is never a template argument of a "
                               "kernel signature"},

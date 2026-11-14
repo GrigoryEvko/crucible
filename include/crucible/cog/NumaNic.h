@@ -41,7 +41,7 @@ public:
 
 // The query reads a sysfs file, so it takes a context that owns IO and
 // Block.
-template <::fixy::CtxFitsFileOpen Ctx>
+template <::fixy::fs::CtxAdmitsFs Ctx>
 [[nodiscard]] inline NumaNodeId query_numa_for_nic(Ctx const& ctx, ::fixy::CText sysfs_numa_node_path) noexcept {
     int const node = warden::numa_node_of_device(ctx, sysfs_numa_node_path);
     if (node < 0 || node > UINT16_MAX - 1) {

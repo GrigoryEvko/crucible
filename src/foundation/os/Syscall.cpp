@@ -62,6 +62,7 @@ static_assert(kOpenPath == O_PATH, "kOpenPath is not O_PATH of <linux/fcntl.h>")
 static_assert(kOpenDirectory == O_DIRECTORY, "kOpenDirectory is not O_DIRECTORY of <linux/fcntl.h>");
 static_assert(kOpenNoFollow == O_NOFOLLOW, "kOpenNoFollow is not O_NOFOLLOW of <linux/fcntl.h>");
 static_assert(kOpenDirect == O_DIRECT, "kOpenDirect is not O_DIRECT of <linux/fcntl.h>");
+static_assert(kOpenTemporary == O_TMPFILE, "kOpenTemporary is not O_TMPFILE of <linux/fcntl.h>");
 
 // The argument and the resolve flags of openat2 are the words of
 // <linux/openat2.h>, which <linux/fcntl.h> includes.

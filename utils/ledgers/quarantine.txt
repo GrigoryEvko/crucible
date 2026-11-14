@@ -186,17 +186,16 @@ include/fixy/handle/ | replace-pending:<array> | 1 | - | -
 include/fixy/handle/ | replace-pending:<atomic> | 4 | - | -
 include/fixy/handle/ | replace-pending:<cstdio> | 1 | - | -
 include/fixy/handle/ | replace-pending:<cstdlib> | 1 | - | -
-include/fixy/os/ | base-c-library-call | 13 | - | -
-include/fixy/os/ | base-c-library-object | 10 | - | -
-include/fixy/os/ | base-std-entity | 128 | - | -
-include/fixy/os/ | base-std-object | 59 | - | -
+include/fixy/os/ | base-c-library-call | 5 | - | -
+include/fixy/os/ | base-c-library-object | 3 | - | -
+include/fixy/os/ | base-std-entity | 120 | - | -
+include/fixy/os/ | base-std-object | 55 | - | -
 include/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
 include/fixy/os/ | replace-pending:<array> | 1 | - | -
-include/fixy/os/ | replace-pending:<cerrno> | 2 | - | -
+include/fixy/os/ | replace-pending:<cerrno> | 1 | - | -
 include/fixy/os/ | replace-pending:<climits> | 1 | - | -
-include/fixy/os/ | replace-pending:<cstdio> | 1 | - | -
 include/fixy/os/ | replace-pending:<ctime> | 1 | - | -
-include/fixy/os/ | replace-pending:<expected> | 7 | - | -
+include/fixy/os/ | replace-pending:<expected> | 6 | - | -
 include/fixy/os/ | replace-pending:<limits> | 1 | - | -
 include/fixy/os/ | replace-pending:<optional> | 1 | - | -
 include/fixy/os/ | replace-pending:<span> | 2 | - | -
@@ -338,8 +337,8 @@ test/ct/ | std-entity | 20 | - | -
 test/ct/ | std-object | 13 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
 test/fixy/ | c-array-object | 100 | - | -
-test/fixy/ | c-library-call | 1455 | - | -
-test/fixy/ | c-library-object | 9 | - | -
+test/fixy/ | c-library-call | 1453 | - | -
+test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 22 | - | -
 test/fixy/ | opted-out | 16 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | opted-out | 3 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
@@ -364,7 +363,7 @@ test/fixy/ | opted-out | 1 | PROBE: the test plants an atom in a shipped family,
 test/fixy/ | opted-out | 4 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | raw-function-pointer | 41 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
-test/fixy/ | raw-pointer-object | 159 | - | -
+test/fixy/ | raw-pointer-object | 156 | - | -
 test/fixy/ | region | 1 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | region | 1 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
 test/fixy/ | region | 1 | PROBE: a send or a write that raises SIGPIPE reaches a handler that marks its arrival | the test of the send door and of the full write of the file door installs a handler of SIGPIPE and unblocks SIGPIPE in its thread through the C library, because the base has no door that sets the action or the mask of a signal outside an Init context, and the runner of the tests can give the process SIG_IGN and a mask that hide the signal
@@ -389,11 +388,10 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2949 | - | -
-test/fixy/ | std-object | 1077 | - | -
+test/fixy/ | std-entity | 2943 | - | -
+test/fixy/ | std-object | 1070 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
-test/fixy/neg/ | c-library-call | 5 | - | -
-test/fixy/neg/ | c-library-object | 2 | - | -
+test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 253 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -419,7 +417,7 @@ test/fixy/neg/ | opted-out | 4 | PROBE: the fixture takes the address of a membe
 test/fixy/neg/ | opted-out | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | raw-function-pointer | 2 | - | -
 test/fixy/neg/ | raw-new-delete | 1 | - | -
-test/fixy/neg/ | raw-pointer-object | 19 | - | -
+test/fixy/neg/ | raw-pointer-object | 17 | - | -
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges a CheckpointHandle that builds a handle around a plain one | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error

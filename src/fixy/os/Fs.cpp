@@ -191,10 +191,12 @@ UnitResult rename_no_replace_beneath_(int directory, core::CText from, core::CTe
 }
 
 core::Result<int, os::Errno> open_beneath_(int directory, char const* path, int flags, std::uint32_t mode) noexcept {
-    // The flags are not negative, so the cast to a word keeps each bit.
+    // The flags are not negative, so the cast to a word keeps each bit.  The
+    // kernel reads the mode only for an open that makes a file.
+    bool const makes_file = (flags & os::kOpenCreate) != 0 || (flags & os::kOpenTemporary) == os::kOpenTemporary;
     os::OpenHow const how{
         .flags = static_cast<std::uint32_t>(flags),
-        .mode = (flags & os::kOpenCreate) != 0 ? mode : 0U,
+        .mode = makes_file ? mode : 0U,
         .resolve = os::kResolveBeneath | os::kResolveNoMagicLinks,
     };
     return open_beneath_steps_([directory, path, &how] {

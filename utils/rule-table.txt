@@ -311,7 +311,7 @@ allow X1_wrappers <variant> until Choice | std::variant, one value of a closed s
 allow X3_os <algorithm> until Region | std::sort, std::lower_bound and the other operations on a sequence
 allow X3_os <cerrno> until Os | errno and the error numbers
 allow X3_os <climits> until Scalar | CHAR_BIT
-allow X3_os <cstdio> until Report | std::fprintf to stderr in most uses.  The Os family replaces the file streams of fixy/os/OwnedFile.h
+allow X3_os <cstdio> until Report | std::fprintf to stderr in most uses
 allow X3_os <ctime> until Os | the clock calls and the time structures of the C library
 allow X3_os <filesystem> until Os | std::filesystem::path
 allow X3_os <system_error> until Os | std::error_code, std::system_category and std::errc of the doors of fixy/os
@@ -845,13 +845,6 @@ witness <fixy/os/Sched.h> deleted | fixy::sched::SchedProofDoor | fixy::sched::S
 # friend.
 witness <fixy/os/Sched.h> private | fixy::sched::PriorAffinity | fixy::sched::PriorAffinity{}
 witness <fixy/os/OwnedMmap.h> private | fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private> | fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private>{static_cast<void*>(nullptr), std::size_t{0}}
-# OwnedFile fcloses what it holds, so a public FILE* constructor let
-# `OwnedFile{stdin}` close standard input.  The constructor is private.
-# OwnedFileDoor does the fopen and the tmpfile for the two mints, so a
-# handle exists only over a stream libc returned.  No object of the door
-# exists.
-witness <fixy/os/OwnedFile.h> private | fixy::OwnedFile | fixy::OwnedFile{stdout}
-witness <fixy/os/OwnedFile.h> deleted | fixy::OwnedFileDoor | fixy::OwnedFileDoor{}
 witness <fixy/os/Io.h> private | fixy::io::IoUringRing | fixy::io::IoUringRing{{3, nullptr, 0, nullptr, 0, nullptr, 0, 0, 0}}
 witness <fixy/os/Fd.h> private | fixy::fs::OwnedFd | fixy::fs::OwnedFd{3}
 # The four doors of OwnedFd.  No object of a door exists, its members

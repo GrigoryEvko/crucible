@@ -11,8 +11,8 @@
 //
 // This test holds the owners of a descriptor: OwnedFd, Dirfd and
 // PtpClockReader.  The tests of the other owners of fixy/os hold the same
-// check, on an owner that they mint: test_os_io for IoUringRing,
-// test_owned_mmap for OwnedMmap and test_owned_file for OwnedFile.
+// check, on an owner that they mint: test_os_io for IoUringRing and
+// test_owned_mmap for OwnedMmap.
 //
 // The files of the cases are entries of /proc, which each Linux host has.
 // The cases read them, and each call that would make, rename or remove an

@@ -192,8 +192,8 @@ PROBE_FILES: dict[str, str] = {
         "a moved-from descriptor, directory or PTP clock reader refuses each operation with ebadf, and reads no "
         "resource of another owner"
     ),
-    "test/fixy/test_owned_file.cpp": (
-        "a moved-from or released file handle is closed, so the descriptor has one owner and closes one time"
+    "test/fixy/test_os_temporary_file.cpp": (
+        "a Dirfd that a move emptied gives ebadf to the temporary file door, which makes no system call for it"
     ),
     "test/fixy/test_owned_mmap.cpp": "a moved-from or released mapping is unmapped, so the pages are unmapped one time",
     "test/fixy/test_owned_region.cpp": (

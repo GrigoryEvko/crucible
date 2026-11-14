@@ -176,7 +176,7 @@ that the axis does not apply to the row.
 | `mint_budget_authority` | `include/fixy/Budgeted.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_fn` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_fn_for` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
-| `mint_linear` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | HS14: 15 |
+| `mint_linear` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | HS14: 14 |
 | `mint_linear_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_machine` | `include/fixy/Machine.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
@@ -243,13 +243,12 @@ that the axis does not apply to the row.
 | `mint_mmap` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_mmap_anon` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_numa_placement` | `include/fixy/os/NumaPlacement.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
-| `mint_owned_file` | `include/fixy/os/OwnedFile.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_perf_event` | `include/fixy/os/PerfEvent.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_priority` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_ptp_clock_reader` | `include/fixy/os/Time.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_scheduler_policy` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_socket` | `include/fixy/os/Socket.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
-| `mint_temporary_file` | `include/fixy/os/OwnedFile.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
+| `mint_temporary_file_at` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_thread_name` | `include/fixy/os/ThreadName.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_tsc_reader` | `include/fixy/os/Time.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
 
@@ -346,4 +345,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 75 | 43 | 23 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 132 | 55 | 74 | 3 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 131 | 54 | 74 | 3 | 0 | 3 |

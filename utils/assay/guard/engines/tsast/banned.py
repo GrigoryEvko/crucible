@@ -11,7 +11,7 @@ THE FIVE KINDS
                     include/, src/ and bench/.
     file-stream     A runtime directory of `RUNTIME_DIRECTORIES` opens a file
                     only through `fixy::fs::mint_file` or
-                    `fixy::mint_owned_file`.  The kind reads each name of a
+                    `fixy::fs::mint_file_at`.  The kind reads each name of a
                     C++ file stream or file buffer (`FILE_STREAMS`), with or
                     without a namespace before it.  It also reads each
                     `#include <fstream>`.  A member name does not count.
@@ -273,7 +273,7 @@ START_MESSAGE = (
 )
 STREAM_MESSAGE = (
     "`{entity}` uses a C++ file stream in a runtime directory, which opens a file only through a fixy "
-    "door.  Use fixy::fs::mint_file or fixy::mint_owned_file"
+    "door.  Use fixy::fs::mint_file or fixy::fs::mint_file_at"
 )
 CAST_MESSAGE = (
     "`{entity}` spells the keyword reinterpret_cast, which CLAUDE.md section III bans.  Use std::bit_cast with "

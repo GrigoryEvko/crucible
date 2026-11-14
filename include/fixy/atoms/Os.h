@@ -252,7 +252,7 @@ struct resource final : detail::leak_atom_of {};
 // Names the types that may authorize a deliberate leak.  Only the leak
 // atom satisfies it, so a resource that takes an IsLeakAtom witness
 // cannot be talked out of its release by any other type.  fixy::OwnedMmap
-// and fixy::OwnedFile read the concept by name.
+// reads the concept by name.
 //
 // One reflection query answers it, and the query is written inside the
 // concept.  A concept cannot be specialized, so no translation unit can

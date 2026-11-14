@@ -9,7 +9,6 @@
 
 #include <fixy/Core.h>
 #include <foundation/core/Array.h>
-#include <fixy/os/OwnedFile.h>
 #include <fixy/os/Path.h>
 #include <fixy/os/Fs.h>
 
@@ -86,16 +85,16 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     return true;
 }
 
-// Reads a file back through OwnedFile, the stdio handle, so the two
-// handle families meet at the byte level.  The handle comes through
-// mint_owned_file, the mint that does the fopen under a context that owns
-// IO and Block.  A value means the stream is open.
+// Reads a file back through a second descriptor of the file door, opened
+// for a read, so the write and the read meet at the byte level.
 [[nodiscard]] bool file_holds(const std::string& path, const std::uint8_t* expected) {
     IoBlockCtx const ctx{eff::testing::test()};
-    auto in = fixy::mint_owned_file(ctx, path.c_str(), "rb");
-    if (!in) return false;
+    Opened in = opened_of(fs::mint_file<fs::read_only>(ctx, sanitized(path)));
+    if (in.error_number != 0) return false;
     std::uint8_t readback[kPayloadBytes];
-    if (std::fread(readback, 1, kPayloadBytes, in->get()) != kPayloadBytes) return false;
+    if (fs::read_full(ctx, in.file, std::as_writable_bytes(std::span{readback})).value_or(0) != kPayloadBytes) {
+        return false;
+    }
     return std::memcmp(readback, expected, kPayloadBytes) == 0;
 }
 

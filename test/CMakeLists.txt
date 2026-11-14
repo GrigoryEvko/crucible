@@ -1109,7 +1109,7 @@ crucible_neg_compile_test(neg_hardening_mint_hot_fg_ctx
 # The cold init context owns Init but no Block, and the choice of the hot
 # CPU reads sysfs.
 crucible_neg_compile_test(neg_hardening_mint_cold_init_ctx
-    "required for the satisfaction of .CtxFitsFileOpen<Ctx>."
+    "required for the satisfaction of .CtxAdmitsFs<Ctx>."
     "required for the satisfaction of .CtxFitsHardeningMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Init,")
 crucible_neg_compile_test(neg_hot_region_registry_mint_bg_ctx
     "constraint|constraints.*not satisfied"

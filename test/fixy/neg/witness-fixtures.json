@@ -497,16 +497,6 @@
       "constructor": "\\bGuardedRegion\\("
     },
     {
-      "name": "neg_witness_ownedfile_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bOwnedFile\\("
-    },
-    {
-      "name": "neg_witness_ownedfiledoor_direct_construction",
-      "reason": "use of deleted function",
-      "constructor": "\\bOwnedFileDoor\\("
-    },
-    {
       "name": "neg_witness_ownedmmap_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bOwnedMmap\\("
@@ -1344,14 +1334,6 @@
     {
       "type": "fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private>",
       "header": "fixy/os/OwnedMmap.h"
-    },
-    {
-      "type": "fixy::OwnedFile",
-      "header": "fixy/os/OwnedFile.h"
-    },
-    {
-      "type": "fixy::OwnedFileDoor",
-      "header": "fixy/os/OwnedFile.h"
     },
     {
       "type": "fixy::io::IoUringRing",

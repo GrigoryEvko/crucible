@@ -80,6 +80,13 @@ inline constexpr int kOpenDirect = 0200000;
 #error "foundation/os/OpenFlags.h gives the flags of x86_64 and aarch64 only.  Add the values of the new architecture."
 #endif
 
+// The open makes a regular file with no name in the directory of the path
+// (O_TMPFILE).  The word holds the bit of the anonymous file and the bit of
+// O_DIRECTORY, so a kernel with no O_TMPFILE refuses the open of a
+// directory.  The kernel reads the permission bits of the new file from the
+// mode word, and the file goes away at its last close.
+inline constexpr int kOpenTemporary = 020000000 | kOpenDirectory;
+
 // The resolve flags of openat2.  An open with kResolveBeneath fails with
 // EXDEV when a part of the path names an entry outside the directory of the
 // descriptor: an absolute path, a ".." part that climbs above the directory,
@@ -91,8 +98,8 @@ inline constexpr std::uint64_t kResolveBeneath = 0x08;
 
 // The argument of openat2 (struct open_how of <linux/openat2.h>): the open
 // flags, the permission bits of a new file, and the resolve flags.  The
-// kernel refuses permission bits with EINVAL when the flags hold no
-// kOpenCreate.
+// kernel refuses permission bits with EINVAL when the flags hold neither
+// kOpenCreate nor kOpenTemporary.
 struct OpenHow {
     std::uint64_t flags = 0;
     std::uint64_t mode = 0;

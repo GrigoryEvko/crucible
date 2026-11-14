@@ -26,7 +26,7 @@
 //
 // Each query that reads a file, or that lists a directory, takes a
 // context that owns IO and Block, because the open and the read can wait
-// on the kernel.  The gate is fixy::CtxFitsFileOpen.  A query of the
+// on the kernel.  The gate is fixy::fs::CtxAdmitsFs.  A query of the
 // affinity of the calling thread can also ask the kernel through the
 // affinity door, so its gate is CtxFitsAffinityQuery.  Only the two
 // parsers take no context.
@@ -36,7 +36,7 @@
 // compiles the gates and not the bodies.
 
 #include <fixy/Core.h>
-#include <fixy/os/OwnedFile.h>
+#include <fixy/os/Fd.h>
 #include <fixy/os/Sched.h>
 #include <foundation/contracts/Pre.h>
 
@@ -218,7 +218,7 @@ constexpr CpuSetCursor CpuSet::end() const& noexcept { return CpuSetCursor{::fix
 // procfs gives no answer, it asks the kernel through the affinity door of
 // fixy/os/Sched.h.  So its context can open a file and read the affinity.
 template <class Ctx>
-concept CtxFitsAffinityQuery = ::fixy::CtxFitsFileOpen<Ctx> && ::fixy::sched::CtxFitsRuntimeAffinity<Ctx>;
+concept CtxFitsAffinityQuery = ::fixy::fs::CtxAdmitsFs<Ctx> && ::fixy::sched::CtxFitsRuntimeAffinity<Ctx>;
 
 struct CoreSelector {
     bool prefer_isolcpu = true;
@@ -384,7 +384,7 @@ namespace detail {
 // glibc answers _SC_NPROCESSORS_ONLN with a read of
 // /sys/devices/system/cpu/online, and this query reads the same file.
 // One on failure, which is the conservative answer.
-template <::fixy::CtxFitsFileOpen Ctx>
+template <::fixy::fs::CtxAdmitsFs Ctx>
 [[nodiscard]] inline int num_online_cpus(Ctx const&) noexcept {
     return detail::read_online_cpu_count();
 }
@@ -419,12 +419,12 @@ template <class Ctx>
 
 // The CPUs the kernel command line has withheld from the scheduler.
 // Empty when no such argument was given.
-template <::fixy::CtxFitsFileOpen Ctx>
+template <::fixy::fs::CtxAdmitsFs Ctx>
 [[nodiscard]] inline CpuSet isolated_cpus(Ctx const&) noexcept {
     return detail::read_isolated_cpus();
 }
 
-template <::fixy::CtxFitsFileOpen Ctx>
+template <::fixy::fs::CtxAdmitsFs Ctx>
 [[nodiscard]] inline CpuSet smt_siblings(Ctx const&, int cpu) noexcept {
     return detail::read_smt_siblings(cpu);
 }
@@ -433,7 +433,7 @@ template <::fixy::CtxFitsFileOpen Ctx>
 // core and "Atom" for an efficiency core. A uniform part does not
 // publish the file at all, and its absence counts as a performance
 // core so that every CPU on such a host answers the same way.
-template <::fixy::CtxFitsFileOpen Ctx>
+template <::fixy::fs::CtxAdmitsFs Ctx>
 [[nodiscard]] inline bool is_p_core(Ctx const&, int cpu) noexcept {
     return detail::read_is_p_core(cpu);
 }
@@ -442,26 +442,26 @@ template <::fixy::CtxFitsFileOpen Ctx>
 // The kernel publishes the membership as a symlink named after the
 // node, so the node number is the number of the entry of the CPU
 // directory whose name starts with "node".
-template <::fixy::CtxFitsFileOpen Ctx>
+template <::fixy::fs::CtxAdmitsFs Ctx>
 [[nodiscard]] inline int numa_node_of(Ctx const&, int cpu) noexcept {
     return detail::read_numa_node_of(cpu);
 }
 
 // The NUMA node nearest a device. The caller passes the sysfs path of
 // that device's numa_node file. -1 when it cannot be read.
-template <::fixy::CtxFitsFileOpen Ctx>
+template <::fixy::fs::CtxAdmitsFs Ctx>
 [[nodiscard]] inline int numa_node_of_device(Ctx const&, ::fixy::CText sysfs_numa_node_path) noexcept {
     return detail::read_numa_node_of_device(sysfs_numa_node_path);
 }
 
 // Zero when the frequency driver publishes nothing for this CPU.
-template <::fixy::CtxFitsFileOpen Ctx>
+template <::fixy::fs::CtxAdmitsFs Ctx>
 [[nodiscard]] inline std::uint64_t cpu_cur_freq_khz(Ctx const&, int cpu) noexcept {
     return detail::read_cpu_cur_freq_khz(cpu);
 }
 
 // Zero when the frequency driver publishes nothing for this CPU.
-template <::fixy::CtxFitsFileOpen Ctx>
+template <::fixy::fs::CtxAdmitsFs Ctx>
 [[nodiscard]] inline std::uint64_t cpu_max_freq_khz(Ctx const&, int cpu) noexcept {
     return detail::read_cpu_max_freq_khz(cpu);
 }
