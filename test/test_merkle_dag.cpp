@@ -816,6 +816,52 @@ template <class Fake>
 
         ::fixy::report(::fixy::Sink::Out, "  the hash of a branch with an unresolved arm ends the process\n");
 
+        // The door of a walk that knows the kind gives the node of its kind,
+        // and it ends the process on a node of a different kind.  The child
+        // prints a field of the node only when the door returns.
+        enum class Door : uint8_t {
+            REGION,
+            BRANCH,
+            LOOP
+        };
+        auto open_door = [&](crucible::TraceNodeKind node_kind, Door door) {
+            return [&, node_kind, door] {
+                ::fixy::BumpArena child_arena(1 << 12);
+                crucible::RegionNode& body = *crucible::make_region(test.alloc, child_arena, guard_body_ops.view());
+                body.next = crucible::make_link(*crucible::make_terminal(test.alloc, child_arena));
+                crucible::TraceNode& loop_node =
+                    *crucible::make_loop(test.alloc, child_arena, body, crucible::compute_body_content_hash(body),
+                                         ::fixy::View<crucible::FeedbackEdge>{}, crucible::LoopTermKind::REPEAT, 1);
+                crucible::TraceNode& node = node_kind == crucible::TraceNodeKind::LOOP ? loop_node : body;
+                uint32_t field = 0;
+                switch (door) {
+                    case Door::REGION:
+                        field = node.expect_region()->num_ops();
+                        break;
+                    case Door::BRANCH:
+                        field = node.expect_branch()->num_arms();
+                        break;
+                    case Door::LOOP:
+                        field = node.expect_loop()->repeat_count;
+                        break;
+                    default:
+                        ::fixy::unreachable();
+                }
+                ::fixy::report(::fixy::Sink::Out, "  the door gave a node with the field {}\n", field);
+            };
+        };
+        assert(!dies(open_door(crucible::TraceNodeKind::REGION, Door::REGION))
+               && "the door of a region refused a region");
+        assert(!dies(open_door(crucible::TraceNodeKind::LOOP, Door::LOOP)) && "the door of a loop refused a loop");
+        assert(dies(open_door(crucible::TraceNodeKind::REGION, Door::BRANCH))
+               && "the door of a branch gave a region as a branch");
+        assert(dies(open_door(crucible::TraceNodeKind::REGION, Door::LOOP))
+               && "the door of a loop gave a region as a loop");
+        assert(dies(open_door(crucible::TraceNodeKind::LOOP, Door::REGION))
+               && "the door of a region gave a loop as a region");
+
+        ::fixy::report(::fixy::Sink::Out, "  the door of a known kind refuses a node of a different kind\n");
+
         // The door of the inputs and of the outputs takes each array of the
         // count together, so an array of a different count ends the process.
         // No door sets a count with no array, so no array is absent at a

@@ -93,6 +93,12 @@ namespace {
     assert(loop.as_region().is_none());
     assert(terminal.as_branch().is_none());
 
+    // The doors of a walk that knows the kind give the node itself.
+    // test_merkle_dag holds the refusal of a node of a different kind.
+    assert(::fixy::same_object(region_a.expect_region(), ::fixy::to(region_a)));
+    assert(::fixy::same_object(branch.expect_branch(), ::fixy::to(branch)));
+    assert(::fixy::same_object(loop.expect_loop(), ::fixy::to(loop)));
+
     // The arms keep their targets, and resolved_target gives the node.
     const crucible::BranchNode::Arm& first_arm = *branch.arms.get(0).expect("the branch holds two arms");
     const crucible::BranchNode::Arm& second_arm = *branch.arms.get(1).expect("the branch holds two arms");
