@@ -230,7 +230,7 @@ struct SchemaInfo {
     // claim, which the caller checked.  The global table is sealed by now,
     // so the name goes to the late table, which the vessel library reads.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: PyTorch gives the operator name in a std::string")
-    const ::fixy::TextView full_name_text = ::foundation::core::mint_foreign_text(full_name.data(), full_name.size());
+    const ::fixy::TextView full_name_text = ::fixy::mint_foreign_text(full_name.data(), full_name.size());
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     crucible::register_schema_name(vigil.mint_producer_context(), schema_hash,
                                    ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(full_name_text));

@@ -52,7 +52,6 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
-#include <foundation/core/Grow.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -106,7 +105,7 @@ public:
         int32_t world_size = 0;
         uint64_t device_capability = 0;
         // The root directory of the store.  An empty path gives no store.
-        ::foundation::core::GrowText cipher_path = ::foundation::core::mint_grow_text(CIPHER_PATH_MAX);
+        ::fixy::GrowText cipher_path = ::fixy::mint_grow_text(CIPHER_PATH_MAX);
 
         // Enabling this loads the scheduler-switch tracing subprogram and
         // observes the dispatcher's preempt count once per region

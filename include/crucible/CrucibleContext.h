@@ -293,7 +293,7 @@ private:
         // optimizer as an assumption, and no check of that condition after
         // the assumption is certain to stay.
         CRUCIBLE_FATAL_INVARIANT(new_num_slots <= MIGRATION_MAX_SLOTS);
-        using VisitedWord = ::foundation::core::Index<VISITED_WORDS>;
+        using VisitedWord = ::fixy::Index<VISITED_WORDS>;
         ::foundation::core::FixedArray<uint64_t, VISITED_WORDS> visited{};
 
         for (uint32_t i = 0; i < div_pos; i++) {

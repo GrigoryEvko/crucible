@@ -292,7 +292,7 @@ void crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const
     // that they ran.  The name is never dropped: a sealed global table sends
     // it to the late table.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the C caller gives the name as a pointer, and strnlen gave its length")
-    const ::fixy::TextView name_text = ::foundation::core::mint_foreign_text(name, len);
+    const ::fixy::TextView name_text = ::fixy::mint_foreign_text(name, len);
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     const auto name_tag =
         ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name_text).retag<::fixy::tags::source::Sanitized>();

@@ -472,7 +472,7 @@ public:
 
     // The name as a C text.  The constructor puts one zero after the name.
     [[nodiscard]] ::fixy::CText c_text() const noexcept {
-        return ::foundation::core::mint_c_text(text_.view()).expect("the constructor puts one zero after the name");
+        return ::fixy::mint_c_text(text_.view()).expect("the constructor puts one zero after the name");
     }
 
     [[nodiscard]] const char* c_str() const noexcept {

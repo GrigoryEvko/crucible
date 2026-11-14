@@ -26,6 +26,7 @@
 #include <foundation/core/Convert.h>
 #include <foundation/core/Float.h>
 #include <foundation/core/Format.h>
+#include <foundation/core/Grow.h>
 #include <foundation/core/Id.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/List.h>
@@ -58,9 +59,14 @@ using ::foundation::core::Site;
 using ::foundation::core::Truncated;
 using ::foundation::core::unreachable;
 
+// The door foreign_c_str of a CText stays in foundation::core.  A call stands
+// only in an ABI region, and the full name shows the reader the escape.
 using ::foundation::core::CText;
 using ::foundation::core::FixedText;
+using ::foundation::core::GrowText;
+using ::foundation::core::mint_c_text;
 using ::foundation::core::mint_foreign_text;
+using ::foundation::core::mint_grow_text;
 using ::foundation::core::TextView;
 
 using ::foundation::core::niche_key;

@@ -556,7 +556,7 @@ std::vector<Cipher::SessionEvent> Cipher::load_session_events_(FileCtx const& fi
     // The index has no bound of its own, so the text takes the largest
     // count of a view.  A failed read leaves the bytes that it read in the
     // text, and the parse reads them: a torn last line fails its parse.
-    ::foundation::core::GrowText index_text = ::foundation::core::mint_grow_text(::fixy::max_of<std::size_t>);
+    ::fixy::GrowText index_text = ::fixy::mint_grow_text(::fixy::max_of<std::size_t>);
     static_cast<void>(with_file_ctx_(file_ctx, [&](auto const& ctx) {
         return ::fixy::fs::read_whole_at(ctx, allocation, session_dir, "index", index_text).is_ok();
     }));
@@ -840,7 +840,7 @@ void Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc al
     if (head_) {
         return;
     }
-    ::foundation::core::GrowText head_text = ::foundation::core::mint_grow_text(MAX_HEAD_BYTES);
+    ::fixy::GrowText head_text = ::fixy::mint_grow_text(MAX_HEAD_BYTES);
     const bool is_head_read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
         return ::fixy::fs::read_whole_at(ctx, allocation, root_dirfd_, "HEAD", head_text).is_ok();
     });
@@ -851,7 +851,7 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
     // The log has no bound of its own, so the text takes the largest count
     // of a view.  A failed read leaves the bytes that it read in the text,
     // and the parse reads them: a torn last line fails its parse.
-    ::foundation::core::GrowText text = ::foundation::core::mint_grow_text(::fixy::max_of<std::size_t>);
+    ::fixy::GrowText text = ::fixy::mint_grow_text(::fixy::max_of<std::size_t>);
     static_cast<void>(with_file_ctx_(file_ctx, [&](auto const& ctx) {
         return ::fixy::fs::read_whole_at(ctx, allocation, root_dirfd_, "log", text).is_ok();
     }));

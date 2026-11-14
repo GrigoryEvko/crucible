@@ -10,7 +10,6 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
-#include <foundation/core/Grow.h>
 #include <foundation/effects/Effect.h>
 
 #include <concepts>
@@ -31,7 +30,7 @@ inline constexpr std::size_t SCHEMA_NAME_MAX = 4096;
 // wrote holds no storage.
 struct SchemaEntry {
     SchemaHash hash;
-    ::foundation::core::GrowText name = ::foundation::core::mint_grow_text(SCHEMA_NAME_MAX + 1);
+    ::fixy::GrowText name = ::fixy::mint_grow_text(SCHEMA_NAME_MAX + 1);
 };
 
 namespace schema_state {
@@ -159,7 +158,7 @@ public:
             const ::fixy::TextView rest = stored.window(kAtenPrefix.size(), stored.size() - kAtenPrefix.size())
                                               .expect("the prefix is a part of the name");
             return ::fixy::some(::fixy::mint_tagged<::fixy::tags::source::Interned>(
-                ::foundation::core::mint_c_text(rest).expect("the table keeps one zero after each name")));
+                ::fixy::mint_c_text(rest).expect("the table keeps one zero after each name")));
         }
         return ::fixy::none;
     }
@@ -169,7 +168,7 @@ public:
     // the length of the name.
     [[nodiscard]] static LookupName name_of(SchemaEntry const& entry) noexcept {
         return ::fixy::mint_tagged<::fixy::tags::source::Interned>(
-            ::foundation::core::mint_c_text(entry.name.view()).expect("the table keeps one zero after each name"));
+            ::fixy::mint_c_text(entry.name.view()).expect("the table keeps one zero after each name"));
     }
 
     [[nodiscard]] uint32_t count() const noexcept { return static_cast<uint32_t>(entries_.size()); }
@@ -222,7 +221,7 @@ private:
     // A registration is cold, and its context holds no allocation capability,
     // so the copy takes the bare allocation tag.  Complexity: the length of
     // the name.
-    [[nodiscard]] static ::foundation::core::GrowText copy_name_(::fixy::TextView name) {
+    [[nodiscard]] static ::fixy::GrowText copy_name_(::fixy::TextView name) {
         const ::fixy::Option<std::size_t> zero = ::fixy::find(name, '\0');
         const ::fixy::TextView characters = zero.match(
             [name](std::size_t position) noexcept {
@@ -234,7 +233,7 @@ private:
                           "in crucible/SchemaTable.h");
         }
         const ::foundation::effects::Alloc alloc{};
-        ::foundation::core::GrowText copy = ::foundation::core::mint_grow_text(SCHEMA_NAME_MAX + 1);
+        ::fixy::GrowText copy = ::fixy::mint_grow_text(SCHEMA_NAME_MAX + 1);
         copy.append(alloc, characters).expect("the name fits below the maximum of its text");
         copy.append(alloc, '\0').expect("the zero fits below the maximum of its text");
         return copy;
