@@ -244,10 +244,11 @@ public:
             g.prior_thp_ = std::move(prior).ok();
         }
 
-        // The three steps run in this order for each region. The huge
-        // page hint has to be in place before the first fault, and a
-        // collapse only succeeds once the pages are present.
-        if (p.mlock_hot_regions || p.thp_hint_pools || p.thp_collapse_now) {
+        // The four steps run in this order for each region.  The huge page
+        // hint has to be in place before the first fault.  The lock on fault
+        // comes before the prefault, so it locks each page that the prefault
+        // brings in.  A collapse only succeeds once the pages are present.
+        if (p.mlock_hot_regions || p.thp_hint_pools || p.prefault_hot_regions || p.thp_collapse_now) {
             const auto regions = HotRegionRegistry::instance().snapshot();
             for (const auto& r : regions) {
                 if (p.thp_hint_pools && r.huge_hint) {
@@ -255,6 +256,9 @@ public:
                 }
                 if (p.mlock_hot_regions) {
                     (void)lock_region(ctx, g, r.bytes);
+                }
+                if (p.prefault_hot_regions) {
+                    (void)prefault(ctx, r.bytes);
                 }
                 if (p.thp_collapse_now && r.huge_hint) {
                     (void)collapse_hugepage(ctx, r.bytes);

@@ -541,6 +541,49 @@ void test_prefault_faults_in_each_page_of_the_range() {
     static_cast<void>(::fixy::pages::exchange_thp_setting(kStartup, first_thp).expect("the process puts back THP"));
 }
 
+// apply with prefault_hot_regions faults in each page of each registered
+// region.  The region holds the last byte of one page and the first byte of
+// the next, and the page after it keeps no frame.  The lock and the huge page
+// knobs are off, so no other step faults in a page.  A policy with the knob
+// off leaves each page of the region with no frame.
+void test_apply_prefaults_each_registered_region() {
+    using namespace crucible::warden;
+    if (!kernel_populates_pages()) {
+        ::fixy::report(::fixy::Sink::Err, "test_apply_prefaults_each_registered_region: SKIPPED (Linux before 5.14)\n");
+        return;
+    }
+    ::fixy::pages::ThpSetting const first_thp =
+        ::fixy::pages::exchange_thp_setting(kStartup, ::fixy::pages::ThpSetting::refused)
+            .expect("the process refuses THP");
+    std::size_t const page = page_size();
+    ::foundation::AlignedBytes block = allocate_fresh_block();
+    ::fixy::View<std::byte> const bytes = ::foundation::core::byte_view(block.view());
+    register_hot_region(&*bytes.get((2 * page) - 1).expect("the byte is inside the block"), 2, /*huge=*/false);
+
+    Policy policy = Policy::dev_quiet();
+    policy.mlock_hot_regions = false;
+    policy.thp_hint_pools = false;
+    policy.thp_collapse_now = false;
+    policy.prefault_hot_regions = false;
+    {
+        AppliedPolicy const applied = mint_hardening(kStartup, policy);
+        CHECK(applied.regions_locked() == 0, "the policy locks no region");
+    }
+    CHECK(pages_with_no_frame(window_of(block, page, 3 * page)) == 3,
+          "a policy with the knob off gives no frame to a page of the region");
+
+    policy.prefault_hot_regions = true;
+    {
+        AppliedPolicy const applied = mint_hardening(kStartup, policy);
+        CHECK(applied.regions_locked() == 0, "the policy locks no region");
+    }
+    CHECK(pages_with_no_frame(window_of(block, page, 2 * page)) == 0, "each page of the region has a frame");
+    CHECK(pages_with_no_frame(window_of(block, 3 * page, page)) == 1, "the page after the region has no frame");
+
+    unregister_hot_region(&*bytes.get((2 * page) - 1).expect("the byte is inside the block"));
+    static_cast<void>(::fixy::pages::exchange_thp_setting(kStartup, first_thp).expect("the process puts back THP"));
+}
+
 // revert puts back the THP setting that the process had before apply.  A
 // process that refused THP before apply still refuses it after the revert,
 // and the revert does not allow THP for it.
@@ -580,6 +623,7 @@ int main() {
     test_registry_applies_on_mint_hardening();
     test_region_and_slot_have_no_padding_byte();
     test_prefault_faults_in_each_page_of_the_range();
+    test_apply_prefaults_each_registered_region();
     test_revert_keeps_a_prior_thp_refusal();
 
     if (failures == 0) {

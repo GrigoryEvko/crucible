@@ -67,9 +67,10 @@ struct Policy {
     // Linux 6.1 and later. Older kernels ignore it.
     bool thp_collapse_now = false;
 
-    // Whether the page tables of the hot regions were populated before
-    // measurement began. The walk itself happens where each region is
-    // initialized, so this records that the phase ran.
+    // Fault in each page of the registered hot regions, as a write does, so
+    // the hot path takes no first-touch fault there.  This gives memory to
+    // each page of each region, also to a pool that its owner did not write
+    // yet.
     bool prefault_hot_regions = true;
 
     // Pin the hot core to one frequency by writing its minimum and
