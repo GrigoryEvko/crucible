@@ -160,6 +160,8 @@ void run_loop_to_crash(Loop handle, const Poll& poll, const OnMessage& on_messag
 [[noreturn]] void crash_detected_twice();
 [[noreturn]] void queue_drains_before_detection();
 [[noreturn]] void peer_sends_the_crash_label();
+[[noreturn]] void reliable_message_does_not_drain_the_peer();
+[[noreturn]] void reliable_offer_while_the_peer_is_crashed();
 
 // test_session_crash_attack_fabrication.cpp: a transport that reports
 // messages that the crashed peer never sent.
@@ -199,6 +201,8 @@ inline constexpr attack_case kAttacks[] = {
     {"crash_detected_twice", Outcome::Correct, crash_detected_twice},
     {"queue_drains_before_detection", Outcome::Correct, queue_drains_before_detection},
     {"peer_sends_the_crash_label", Outcome::Caught, peer_sends_the_crash_label},
+    {"reliable_message_does_not_drain_the_peer", Outcome::Correct, reliable_message_does_not_drain_the_peer},
+    {"reliable_offer_while_the_peer_is_crashed", Outcome::Correct, reliable_offer_while_the_peer_is_crashed},
     {"transport_fabricates_messages_after_crash", Outcome::Correct, transport_fabricates_messages_after_crash},
     {"transport_fabricates_after_queued_messages", Outcome::Correct, transport_fabricates_after_queued_messages},
     {"crash_branch_waits_for_an_owed_message", Outcome::Correct, crash_branch_waits_for_an_owed_message},

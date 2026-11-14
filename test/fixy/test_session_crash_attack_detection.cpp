@@ -158,4 +158,91 @@ void peer_sends_the_crash_label() {
     finish(Outcome::Silent);
 }
 
+namespace {
+
+// A third role that q counts reliable.  It sends to q on the same queue
+// as the watched peer p.
+struct R {};
+
+// An Offer of r, with no crash branch because r is reliable.
+template <typename Next>
+using FromR = s::Offer<s::Sender<R>, s::Recv<int, Next>>;
+using FromPOrCrash = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>, s::End>>;
+
+// r puts the label of its Offer and the payload 7 into the queue of q.
+void r_sends_seven(Mailbox& to_q) noexcept {
+    Mailbox to_r;
+    Port r_port{&to_r, &to_q};
+    static_cast<void>(push_label(r_port, 0));
+    int seven = 7;
+    static_cast<void>(push_int(r_port, seven));
+}
+
+// A polling read of an int that also writes the value into a slot of the
+// attack, so a step needs no pair of the value and the next handle.
+[[nodiscard]] auto read_int_into(int& slot) noexcept {
+    return [&slot](Port& port) noexcept -> ::fixy::Option<int> {
+        ::fixy::Option<int> got = read_int(port);
+        for (int const value : got)
+            slot = value;
+        return got;
+    };
+}
+
+}  // namespace
+
+// p sends one message and crashes, and its report counts one.  A message
+// of r reaches q first.  The report counts the messages of p only, so q
+// waits for the message of p and receives it, and does not take its crash
+// branch at the count of r.
+void reliable_message_does_not_drain_the_peer() {
+    using ProtoP = s::Select<s::Send<int, s::End>>;
+    Mailbox to_p;
+    Mailbox to_q;
+    s::PeerCrashCell cell_p;
+    s::PeerCrashCell cell_q;
+    r_sends_seven(to_q);
+    auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
+    auto chosen = std::move(p).select<0>(push_label);
+    auto sent = std::move(chosen).send(5, push_int);
+    static_cast<void>(std::move(sent.next).close());
+    report_crash(cell_p, s::CrashCause::Abort);
+    auto q = s::mint_crash_session<FromR<FromPOrCrash>, Q, P, s::ReliableSet<R>>(bg_ctx(), Port{&to_q, &to_p}, cell_p,
+                                                                                 s::mint_crash_writer(cell_q));
+    int from_r = 0;
+    int from_p = 0;
+    std::move(q).branch(poll_label, [&from_r, &from_p](auto message_of_r) noexcept {
+        auto waits_for_p = std::move(std::move(message_of_r).recv(read_int_into(from_r)).second);
+        if (from_r != 7) finish(Outcome::Silent);
+        std::move(waits_for_p).branch(poll_label, [&from_p](auto branch) noexcept {
+            using Head = typename decltype(branch)::protocol;
+            if constexpr (s::is_crash_branch_v<Head>) {
+                finish(Outcome::Silent);
+            } else {
+                static_cast<void>(std::move(std::move(branch).recv(read_int_into(from_p)).second).close());
+            }
+        });
+    });
+    finish(from_p == 5 ? Outcome::Correct : Outcome::Silent);
+}
+
+// p crashes and sends nothing.  r stays alive, and its message waits in
+// the queue of q.  An Offer of r does not read the report of p, so q takes
+// the message of r.
+void reliable_offer_while_the_peer_is_crashed() {
+    Mailbox to_p;
+    Mailbox to_q;
+    s::PeerCrashCell cell_p;
+    s::PeerCrashCell cell_q;
+    report_crash(cell_p, s::CrashCause::Abort);
+    r_sends_seven(to_q);
+    auto q = s::mint_crash_session<FromR<s::End>, Q, P, s::ReliableSet<R>>(bg_ctx(), Port{&to_q, &to_p}, cell_p,
+                                                                           s::mint_crash_writer(cell_q));
+    int from_r = 0;
+    std::move(q).branch(poll_label, [&from_r](auto branch) noexcept {
+        static_cast<void>(std::move(std::move(branch).recv(read_int_into(from_r)).second).close());
+    });
+    finish(from_r == 7 ? Outcome::Correct : Outcome::Silent);
+}
+
 }  // namespace test_session_crash_attack

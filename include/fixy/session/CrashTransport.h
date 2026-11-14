@@ -872,8 +872,11 @@ public:
             watched.inner_.watch_endpoint());
         auto next =
             std::move(watched.inner_).recv([&word](Resource&) noexcept -> ::fixy::Option<std::size_t> { return word; });
+        // The count holds the messages of the watched peer only, because the
+        // report of the peer counts only those.
         const detail::crash_transport::message_counts counts =
-            detail::crash_transport::one_more_received(watched.counts_);
+            std::is_same_v<Sender, Peer> ? detail::crash_transport::one_more_received(watched.counts_)
+                                         : watched.counts_;
         if constexpr (keyed_step_has_value_v<P>) {
             return wrap_<detail::crash_transport::payload_to_receive<Sender>>(watched, std::move(next), counts);
         } else {
@@ -922,14 +925,19 @@ public:
         static_assert(!is_watched || std::is_same_v<OfferSender, Peer>,
                       "fixy::session::diagnostic [Crash_Sender_Unwatched]: this Offer has an unreliable sender "
                       "that is not the watched peer.");
+        // The report of the peer counts the messages of the peer only.  So
+        // only an Offer of the peer counts its word, and only such an Offer
+        // reads the report.  A reliable third role sends with no regard to
+        // the crash of the peer.
+        constexpr bool is_from_peer = std::is_same_v<OfferSender, Peer>;
 
-        // A word is one more message received.  The crash branch receives
-        // none: it runs because the count of the report was reached.
+        // A word of the peer is one more message received.  The crash branch
+        // receives none: it runs because the count of the report was reached.
         const auto take_word = [&watched, &handler](std::size_t word) {
             if (!detail::crash_transport::names_message_branch<P>(word)) [[unlikely]]
                 detail::crash_transport::abort_on_crash_label(word, message_branches);
             const detail::crash_transport::message_counts counts =
-                detail::crash_transport::one_more_received(watched.counts_);
+                is_from_peer ? detail::crash_transport::one_more_received(watched.counts_) : watched.counts_;
             // The inner handle takes the word that the poll read, and enters
             // the label branch that it names.  A positional branch that opens
             // with a reception, and a keyed branch whose payload is not void,
@@ -971,8 +979,10 @@ public:
                 // crash, and it wins.  Once the count is reached, the queue is
                 // empty, and a word that the transport still reports was never
                 // sent.
-                const std::optional<CrashWitness> witness = watched.peer_cell_->witness();
-                if (detail::crash_transport::queue_is_drained(witness, watched.counts_.received)) break;
+                if constexpr (is_from_peer) {
+                    const std::optional<CrashWitness> witness = watched.peer_cell_->witness();
+                    if (detail::crash_transport::queue_is_drained(witness, watched.counts_.received)) break;
+                }
                 // A read of another shape already failed the assertion above.
                 // The read stays out of the body, so the build gives one error.
                 if constexpr (PollRead<Poll, typename Handle::resource_type, std::size_t>) {
