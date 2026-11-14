@@ -8,8 +8,9 @@
 // The protocol is well-formed and moves no permission, so only the
 // SessionResource clause can refuse this call.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 namespace s = ::fixy::session;
 
@@ -27,7 +28,8 @@ using Once = s::Send<resource_copy_fixture::Ping, s::End>;
 
 int main() {
     resource_copy_fixture::Queue queue{};
-    auto handle = s::mint_session_handle<Once>(resource_copy_fixture::SharedWire{&queue});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<Once>(ctx, resource_copy_fixture::SharedWire{&queue});
     (void)handle;
     return 0;
 }

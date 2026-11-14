@@ -1,4 +1,4 @@
-// mint_session_handle refuses a protocol whose Continue has no
+// mint_session refuses a protocol whose Continue has no
 // enclosing Loop.  Nothing at runtime could bind that Continue to a
 // body, so the handle it would return has no next position.
 //
@@ -6,8 +6,9 @@
 // static_assert: a body assert is invisible to SFINAE, and a caller
 // asking "can this be minted" needs an answer rather than a hard error.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 
@@ -21,7 +22,8 @@ struct Wire {};
 using Orphan = s::Send<Ping, s::Continue>;
 
 int main() {
-    auto handle = s::mint_session_handle<Orphan, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<Orphan>(ctx, Wire{});
     (void)handle;
     return 0;
 }

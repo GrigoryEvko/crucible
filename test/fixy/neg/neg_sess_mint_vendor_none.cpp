@@ -2,8 +2,9 @@
 // against nothing.  The value filter of the VendorPinned registration
 // refuses it at the gate.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 
@@ -15,7 +16,8 @@ struct Wire {};
 using Nowhere = s::VendorPinned<s::VendorBackend::None, s::Send<Ping, s::End>>;
 
 int main() {
-    auto handle = s::mint_session_handle<Nowhere, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<Nowhere>(ctx, Wire{});
     (void)handle;
     return 0;
 }

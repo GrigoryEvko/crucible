@@ -2,8 +2,9 @@
 // void can wait inside its own call, where the watch does not see it, so
 // select refuses it.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 #include <cstddef>
 #include <utility>
@@ -20,7 +21,8 @@ using Choice = s::Select<s::End, s::End>;
 using namespace neg_sess_select_write_waits_in_secret_types;
 
 int main() {
-    auto head = s::mint_session_handle<Choice>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto head = s::mint_session<Choice>(ctx, Wire{});
     auto at_end = std::move(head).template select<0>([](Wire& wire, std::size_t word) noexcept { wire.word = word; });
     static_cast<void>(std::move(at_end).close());
     return 0;

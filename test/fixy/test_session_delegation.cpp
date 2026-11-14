@@ -11,6 +11,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <fixy/session/Delegate.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
 #include <foundation/effects/Computation.h>
@@ -143,7 +144,7 @@ static_assert(!s::is_subtype_sync_v<s::Delegate<SendsPositive, s::End>, s::Deleg
 static_assert(!s::is_subtype_sync_v<s::Delegate<SendsAny, s::End>, s::Delegate<SendsPositive, s::End>>);
 // No handle has a step for a head, so no mint admits one.
 template <typename P>
-concept MintsOverWire = requires { s::mint_session_handle<P, Wire>(Wire{}); };
+concept MintsOverWire = requires(::fixy::TestRunnerCtx const& ctx) { s::mint_session<P>(ctx, Wire{}); };
 static_assert(!s::PermissionFlowCloses<Hands, fp::EmptyPermSet> && !s::PermissionFlowCloses<Takes, fp::EmptyPermSet>);
 static_assert(MintsOverWire<Inner> && !MintsOverWire<Hands> && !MintsOverWire<s::Send<int, Takes>>);
 // The crash-stop theory has no delegation.
@@ -153,7 +154,8 @@ static_assert(!s::is_crash_well_formed_v<Hands> && !s::is_crash_well_formed_v<Ta
 static_assert(!std::is_copy_constructible_v<Carried> && std::is_move_constructible_v<Carried>);
 static_assert(!std::is_copy_assignable_v<Carried>);
 static_assert(!std::is_trivially_copyable_v<Carried> && !std::is_implicit_lifetime_v<Carried>);
-static_assert(s::DelegatableHandle<decltype(s::mint_session_handle<Inner, Wire>(Wire{}))>);
+static_assert(
+    s::DelegatableHandle<decltype(s::mint_session<Inner>(std::declval<::fixy::TestRunnerCtx const&>(), Wire{}))>);
 static_assert(!s::DelegatableHandle<int>);
 static_assert(s::payload_conveys_delegation_v<Carried>);
 
@@ -182,7 +184,7 @@ static_assert(!s::PermissionFlowCloses<s::Recv<CarriesRegion, s::End>, fp::PermS
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto [sender, recipient] = s::mint_test_channel<Outer>(ctx, SenderEnd{&slot}, RecipientEnd{&slot});
 
-    auto inner = s::mint_session_handle<Inner, Wire>(Wire{});
+    auto inner = s::mint_session<Inner>(ctx, Wire{});
     Carried carried = s::mint_delegated_session(std::move(inner));
     if (!carried.holds_endpoint()) return fail("the payload does not hold the endpoint");
 
@@ -220,8 +222,9 @@ static_assert(!s::PermissionFlowCloses<s::Recv<CarriesRegion, s::End>, fp::PermS
 static_assert(std::is_nothrow_move_constructible_v<Carried> && std::is_nothrow_move_assignable_v<Carried>);
 
 [[nodiscard]] static int move_and_assign_take_the_endpoint() {
-    Carried first = s::mint_delegated_session(s::mint_session_handle<Inner, Wire>(Wire{1}));
-    Carried second = s::mint_delegated_session(s::mint_session_handle<Inner, Wire>(Wire{2}));
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    Carried first = s::mint_delegated_session(s::mint_session<Inner>(ctx, Wire{1}));
+    Carried second = s::mint_delegated_session(s::mint_session<Inner>(ctx, Wire{2}));
     Carried drained = std::move(first);
     if (first.holds_endpoint() || !drained.holds_endpoint()) return fail("a move did not take the endpoint");
     first = std::move(second);

@@ -7,8 +7,9 @@
 // the constructor of another.
 //
 // Expected diagnostic: the constructor is private in this context.
+#include <fixy/Ctx.h>
 #include <fixy/session/Checkpoint.h>
-#include <fixy/session/Mint.h>
+#include <fixy/session/Entry.h>
 #include <foundation/Quarantine.h>
 
 namespace neg_sess_checkpoint_handle_friend_specialized_types {
@@ -37,7 +38,8 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 int main() {
     namespace s = ::fixy::session;
     using namespace neg_sess_checkpoint_handle_friend_specialized_types;
-    auto plain = s::mint_session_handle<s::Send<int, s::End>>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto plain = s::mint_session<s::Send<int, s::End>>(ctx, Wire{});
     auto forged = s::CheckpointHandle<Tag, Tag, Tag, Tag>::forge(std::move(plain));
     std::move(forged).detach(s::detach_reason::TestInstrumentation{});
     return 0;

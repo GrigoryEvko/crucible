@@ -22,6 +22,7 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/ScopedView.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
 #include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
@@ -323,12 +324,14 @@ using Looping = s::Loop<s::Send<Ping, s::Continue>>;
 // Minting a Loop unrolls one iteration: the handle sits at the body's
 // head and carries the Loop as its context, which is what binds the
 // Continue inside it.
-using LoopHead = decltype(s::mint_session_handle<Looping, ValueWire>(std::declval<ValueWire>()));
+using LoopHead =
+    decltype(s::mint_session<Looping>(std::declval<::fixy::TestRunnerCtx const&>(), std::declval<ValueWire>()));
 static_assert(std::is_same_v<typename LoopHead::protocol, s::Send<Ping, s::Continue>>);
 static_assert(std::is_same_v<typename LoopHead::loop_ctx, Looping>);
 
 // A non-Loop head passes through with a void context.
-using OnceHead = decltype(s::mint_session_handle<Once, ValueWire>(std::declval<ValueWire>()));
+using OnceHead =
+    decltype(s::mint_session<Once>(std::declval<::fixy::TestRunnerCtx const&>(), std::declval<ValueWire>()));
 static_assert(std::is_same_v<typename OnceHead::protocol, Once>);
 static_assert(std::is_same_v<typename OnceHead::loop_ctx, void>);
 
@@ -360,7 +363,8 @@ static_assert(!s::DetachReason<int>);
 // ── Runtime: walking a protocol ──────────────────────────────────────
 
 [[nodiscard]] int walk_once() {
-    auto handle = s::mint_session_handle<Once, ValueWire>(ValueWire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<Once>(ctx, ValueWire{});
 
     auto after_send = std::move(handle).send(Ping{3}, [](ValueWire& w, Ping& p) noexcept {
         w.last_sent = p.value;
@@ -394,10 +398,13 @@ static_assert(!s::DetachReason<int>);
 // Wire&.  The factory forwards instead of moving, and that is what makes
 // this function compile.
 [[nodiscard]] int walk_pinned_reference() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     PinnedWire wire{};
     const PinnedWire* const address_before = &wire;
 
-    auto handle = s::mint_session_handle<s::Send<Ping, s::End>, PinnedWire&>(wire);
+    auto handle =
+        s::mint_session<s::Send<Ping, s::End>, s::DefaultAbandonmentPolicy, ::fixy::TestRunnerCtx, PinnedWire&>(ctx,
+                                                                                                                wire);
     auto at_end = std::move(handle).send(Ping{11}, [](PinnedWire& w, Ping& p) noexcept {
         w.last_sent = p.value;
         return true;
@@ -420,7 +427,8 @@ static_assert(!s::DetachReason<int>);
 
 [[nodiscard]] int walk_choice() {
     using Choice = s::Select<s::Send<Ping, s::End>, s::Send<Stop, s::End>>;
-    auto handle = s::mint_session_handle<Choice, ValueWire>(ValueWire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<Choice>(ctx, ValueWire{});
 
     // select<I> tells the peer which branch was taken; select_local<I>
     // deliberately does not, and the two names are what keep that
@@ -443,7 +451,8 @@ static_assert(!s::DetachReason<int>);
 
 [[nodiscard]] int walk_offer() {
     using Served = s::Offer<s::Recv<Ping, s::End>, s::Recv<Stop, s::End>>;
-    auto handle = s::mint_session_handle<Served, ValueWire>(ValueWire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<Served>(ctx, ValueWire{});
 
     // The handler runs once, for the branch the peer's label names.
     const int taken = std::move(handle).branch(
@@ -540,9 +549,12 @@ constexpr auto pop_int = [](WordQueue& queue) noexcept -> ::fixy::Option<int> {
 // The Select holds Hello first and the Offer holds it second.  The word
 // of Hello reaches the Hello branch, and the value of Hello follows it.
 [[nodiscard]] int walk_keyed_choice_in_another_order() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     WordQueue wire{};
-    auto sender = s::mint_session_handle<KeyedSelect, WordQueue&>(wire);
-    auto receiver = s::mint_session_handle<KeyedOfferSwapped, WordQueue&>(wire);
+    auto sender =
+        s::mint_session<KeyedSelect, s::DefaultAbandonmentPolicy, ::fixy::TestRunnerCtx, WordQueue&>(ctx, wire);
+    auto receiver =
+        s::mint_session<KeyedOfferSwapped, s::DefaultAbandonmentPolicy, ::fixy::TestRunnerCtx, WordQueue&>(ctx, wire);
 
     // The select sends the label word of Hello, and the sender then stands
     // at the value step of Hello.
@@ -594,7 +606,8 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtOffer, s::position::AtSelect>)
 static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the family names no position");
 
 [[nodiscard]] int view_a_position() {
-    auto handle = s::mint_session_handle<s::Send<Ping, s::End>, ValueWire>(ValueWire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<s::Send<Ping, s::End>>(ctx, ValueWire{});
     {
         const auto view = ::fixy::mint_view<s::position::AtSend>(handle);
         if (view.carrier().protocol_name() != AtSend::protocol_name()) {
@@ -616,7 +629,8 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
 // Every handle of the session carries the body's brand, which is how the
 // entry point knows that the End handle is the one it gave out.
 [[nodiscard]] int walk_with_session() {
-    const ValueWire back = s::with_session<Once>(ValueWire{}, [](auto head) noexcept {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    const ValueWire back = s::with_session<Once>(ctx, ValueWire{}, [](auto head) noexcept {
         static_assert(!s::detail::carries_brand<typename decltype(head)::loop_ctx, void>,
                       "a handle of an owned session carries the brand of its body");
         auto after = std::move(head).send(Ping{5}, [](ValueWire& w, Ping& p) noexcept {
@@ -640,7 +654,8 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
 // A handle of Loop<Recv<Pong, Continue>> receives, and after its Continue
 // it stands at the same reception again.
 [[nodiscard]] int walk_receiving_loop() {
-    auto head = s::mint_session_handle<ReceivesForever>(ValueWire{7});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto head = s::mint_session<ReceivesForever>(ctx, ValueWire{7});
     int received = 0;
     for (int round = 0; round < 3; ++round) {
         auto [pong, next] = std::move(head).recv([](ValueWire& w) noexcept { return ::fixy::some(Pong{w.last_sent}); });
@@ -691,7 +706,8 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
 // ── Runtime: a vendor-pinned session ─────────────────────────────────
 
 [[nodiscard]] int walk_vendor_pinned_session() {
-    auto head = s::mint_session_handle<PinnedSend>(ValueWire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto head = s::mint_session<PinnedSend>(ctx, ValueWire{});
     auto at_end = std::move(head).send(Ping{7}, [](ValueWire& w, Ping& p) noexcept {
         w.last_sent = p.value;
         return true;
@@ -731,7 +747,7 @@ struct TokenWire {
     static_cast<void>(std::move(spent).into_permissions());
     (void)std::move(sender_done).close();
 
-    auto receiver = s::mint_session_handle<s::Recv<Token, s::End>>(TokenWire{&slot});
+    auto receiver = s::mint_session<s::Recv<Token, s::End>>(ctx, TokenWire{&slot});
     auto [token, receiver_done] = std::move(receiver).recv([](TokenWire& w) noexcept -> ::fixy::Option<Token> {
         std::optional<Token>& wire_slot = *w.slot;
         if (!wire_slot) return ::fixy::none;
@@ -891,8 +907,9 @@ static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
 
 template <typename Policy>
 [[noreturn]] void abandon_a_handle() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     {
-        auto handle = s::mint_session_handle<Once, ValueWire, Policy>(ValueWire{});
+        auto handle = s::mint_session<Once, Policy>(ctx, ValueWire{});
         (void)handle;
     }
     // Reached only when the policy does not check.
@@ -946,7 +963,8 @@ template <typename Body>
     // Detaching with a reason tag retires the handle without advancing
     // it, and the check must then stay quiet under the checking policy.
     const bool detach_aborted = child_aborted([] {
-        auto handle = s::mint_session_handle<Once, ValueWire, s::check::Enforced>(ValueWire{});
+        const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+        auto handle = s::mint_session<Once, s::check::Enforced>(ctx, ValueWire{});
         std::move(handle).detach(s::detach_reason::TestInstrumentation{});
     });
     if (detach_aborted) {
@@ -958,7 +976,8 @@ template <typename Body>
     // through a protocol would leave a moved-from handle behind whose
     // destructor reports an abandonment that did not happen.
     const bool move_aborted = child_aborted([] {
-        auto handle = s::mint_session_handle<Once, ValueWire, s::check::Enforced>(ValueWire{});
+        const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+        auto handle = s::mint_session<Once, s::check::Enforced>(ctx, ValueWire{});
         auto moved = std::move(handle);
         std::move(moved).detach(s::detach_reason::TestInstrumentation{});
     });
@@ -1015,7 +1034,8 @@ template <typename Body>
     // the default policy, so a moved-from handle cannot step the protocol
     // a second time.
     const bool use_after_move_aborted = child_aborted([] {
-        auto handle = s::mint_session_handle<Once, ValueWire>(ValueWire{});
+        const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+        auto handle = s::mint_session<Once>(ctx, ValueWire{});
         auto moved = std::move(handle);
         std::move(moved).detach(s::detach_reason::TestInstrumentation{});
         auto stepped = std::move(handle).send(Ping{1}, [](ValueWire&, Ping&) noexcept { return true; });
@@ -1029,8 +1049,9 @@ template <typename Body>
     // An assignment over a live handle drops the protocol that the target
     // held, and the target's policy acts on the drop.
     const bool assign_over_live_aborted = child_aborted([] {
-        auto target = s::mint_session_handle<Once, ValueWire>(ValueWire{});
-        auto source = s::mint_session_handle<Once, ValueWire>(ValueWire{});
+        const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+        auto target = s::mint_session<Once>(ctx, ValueWire{});
+        auto source = s::mint_session<Once>(ctx, ValueWire{});
         target = std::move(source);
         std::move(target).detach(s::detach_reason::TestInstrumentation{});
     });
@@ -1042,8 +1063,9 @@ template <typename Body>
     // Under check::Cancel a dropped handle sends the cancellation and the
     // program continues.
     const int cancel_on_drop = child_exit_code([] {
+        const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
         {
-            auto handle = s::mint_session_handle<Once, CancelWire, s::check::Cancel>(CancelWire{});
+            auto handle = s::mint_session<Once, s::check::Cancel>(ctx, CancelWire{});
             (void)handle;
         }
         std::_Exit(g_cancellations.load(std::memory_order_relaxed) == 1 ? 0 : 3);
@@ -1057,8 +1079,9 @@ template <typename Body>
     // An explicit cancel() sends it once, and the destructor then finds a
     // consumed handle and sends nothing more.
     const int explicit_cancel = child_exit_code([] {
+        const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
         {
-            auto handle = s::mint_session_handle<Once, CancelWire, s::check::Cancel>(CancelWire{});
+            auto handle = s::mint_session<Once, s::check::Cancel>(ctx, CancelWire{});
             std::move(handle).cancel();
         }
         std::_Exit(g_cancellations.load(std::memory_order_relaxed) == 1 ? 0 : 3);
@@ -1070,7 +1093,8 @@ template <typename Body>
 
     // A handle that finishes its protocol sends no cancellation.
     const int finished = child_exit_code([] {
-        auto handle = s::mint_session_handle<Once, CancelWire, s::check::Cancel>(CancelWire{});
+        const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+        auto handle = s::mint_session<Once, s::check::Cancel>(ctx, CancelWire{});
         auto after = std::move(handle).send(Ping{2}, [](CancelWire& w, Ping& p) noexcept {
             w.last_sent = p.value;
             return true;
@@ -1103,9 +1127,10 @@ template <typename Body>
 }
 
 [[nodiscard]] int watch_counts_sessions() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     const std::uint32_t baseline = s::watch::live_count();
 
-    auto handle = s::mint_session_handle<Once, ValueWire>(ValueWire{});
+    auto handle = s::mint_session<Once>(ctx, ValueWire{});
     if (!live_count_is(baseline + 1, "a mint")) return 1;
     auto waits = std::move(handle).send(Ping{1}, [](ValueWire& w, Ping& p) noexcept {
         w.last_sent = p.value;
@@ -1117,23 +1142,23 @@ template <typename Body>
     if (!live_count_is(baseline, "the step to End")) return 1;
     (void)std::move(at_end).close();
 
-    auto detached = s::mint_session_handle<Once, ValueWire>(ValueWire{});
+    auto detached = s::mint_session<Once>(ctx, ValueWire{});
     std::move(detached).detach(s::detach_reason::TestInstrumentation{});
     if (!live_count_is(baseline, "a detach")) return 1;
 
-    auto cancelled = s::mint_session_handle<Once, CancelWire, s::check::Cancel>(CancelWire{});
+    auto cancelled = s::mint_session<Once, s::check::Cancel>(ctx, CancelWire{});
     std::move(cancelled).cancel();
     if (!live_count_is(baseline, "a cancel")) return 1;
     g_cancellations.store(0, std::memory_order_relaxed);
 
     {
-        auto unchecked = s::mint_session_handle<Once, ValueWire, s::check::Off>(ValueWire{});
+        auto unchecked = s::mint_session<Once, s::check::Off>(ctx, ValueWire{});
         (void)unchecked;
         if (!live_count_is(baseline, "a mint under check::Off")) return 1;
     }
 
     // A moved handle keeps its record, and the move does not claim one.
-    auto first = s::mint_session_handle<Once, ValueWire>(ValueWire{});
+    auto first = s::mint_session<Once>(ctx, ValueWire{});
     auto second = std::move(first);
     if (!live_count_is(baseline + 1, "a move")) return 1;
     std::move(second).detach(s::detach_reason::TestInstrumentation{});
@@ -1213,7 +1238,8 @@ struct SlowWire {
 
 [[nodiscard]] int each_transport_shape_waits_through_the_watch() {
     using Twice = s::Send<int, s::Recv<int, s::Send<int, s::Recv<int, s::End>>>>;
-    auto head = s::mint_session_handle<Twice, SlowWire>(SlowWire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto head = s::mint_session<Twice>(ctx, SlowWire{});
     int tries = 0;
     auto first_read = std::move(head).send(5, [&tries](SlowWire& w, int& v) noexcept {
         ++tries;
@@ -1281,7 +1307,8 @@ struct LateRead {
     }
 
     // This thread waits on its own session while the two records live.
-    auto other = s::mint_session_handle<s::Recv<int, s::End>, LateWire>(LateWire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto other = s::mint_session<s::Recv<int, s::End>>(ctx, LateWire{});
     auto [value, done] = std::move(other).recv(LateRead{});
     (void)std::move(done).close();
     if (value != 5) {

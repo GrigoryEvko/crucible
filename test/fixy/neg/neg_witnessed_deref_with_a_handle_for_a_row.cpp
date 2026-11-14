@@ -6,8 +6,9 @@
 #include <fixy/session/Witnessed.h>
 
 #include <fixy/Borrowed.h>
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>
@@ -39,7 +40,8 @@ std::uint64_t storage[3] = {1, 2, 3};
 int main() {
     auto borrow = ::fixy::mint_borrowed<Cache>(storage);
     auto witnessed = s::mint_witnessed_under(borrow);
-    auto at_send = s::mint_session_handle<Sending, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto at_send = s::mint_session<Sending>(ctx, Wire{});
     [[maybe_unused]] auto read = deref(witnessed, at_send);
     (void)std::move(at_send)
         .send(Ping{1},

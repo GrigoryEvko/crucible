@@ -1,6 +1,6 @@
 #include <crucible/cntp/PathSwap.h>
 #include <fixy/Ctx.h>
-#include <fixy/session/Mint.h>
+#include <fixy/session/Entry.h>
 
 // The new resource must be a SessionResource, as for any session mint.  An
 // lvalue reference to a type that is not Pinned is refused: a later move of
@@ -21,8 +21,9 @@ int main() {
 
     ::fixy::ColdInitCtx init{fe::testing::init()};
     ::fixy::BgLoadCtx bg{fe::testing::bg()};
+    const ::fixy::TestRunnerCtx ctx{fe::testing::test()};
     auto swapper = cntp::mint_path_swapper(init);
-    auto handle = sess::mint_session_handle<sess::Send<int, sess::End>>(Wire{.id = 1});
+    auto handle = sess::mint_session<sess::Send<int, sess::End>>(ctx, Wire{.id = 1});
     Wire next{.id = 2};
     auto result = swapper.commit_sender(bg, std::move(handle), next, 0);
     (void)result;

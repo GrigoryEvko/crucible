@@ -24,7 +24,7 @@
 
 #include "session_recording.h"
 
-#include <fixy/session/Mint.h>
+#include <fixy/session/Entry.h>
 #include <foundation/core/Array.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/reflect/EnumName.h>
@@ -231,7 +231,8 @@ int check_plain_recording() {
     Mailbox to_self;
     Mailbox to_peer;
     s::SessionEventLog log;
-    auto handle = s::mint_recorded_session(s::mint_session_handle<Proto>(Port{&to_self, &to_peer}), log, kSelf, kPeer);
+    auto handle =
+        s::mint_recorded_session(s::mint_session<Proto>(bg_ctx(), Port{&to_self, &to_peer}), log, kSelf, kPeer);
     auto waiting = std::move(handle).send(5, push_int);
     to_self.slots.push_back(0);
     to_self.slots.push_back(9);
@@ -287,12 +288,12 @@ int check_handoff_recording() {
     Mailbox to_peer;
     std::optional<Parcel> held;
     s::SessionEventLog log;
-    auto sender =
-        s::mint_recorded_session(s::mint_session_handle<s::Send<Parcel, s::End>>(ParcelPort{&held}), log, kSelf, kPeer);
-    auto receiver =
-        s::mint_recorded_session(s::mint_session_handle<s::Recv<Parcel, s::End>>(ParcelPort{&held}), log, kPeer, kSelf);
+    auto sender = s::mint_recorded_session(s::mint_session<s::Send<Parcel, s::End>>(bg_ctx(), ParcelPort{&held}), log,
+                                           kSelf, kPeer);
+    auto receiver = s::mint_recorded_session(s::mint_session<s::Recv<Parcel, s::End>>(bg_ctx(), ParcelPort{&held}), log,
+                                             kPeer, kSelf);
 
-    auto parcel = s::mint_delegated_session(s::mint_session_handle<Carried>(Port{&to_self, &to_peer}));
+    auto parcel = s::mint_delegated_session(s::mint_session<Carried>(bg_ctx(), Port{&to_self, &to_peer}));
     (void)std::move(sender)
         .send(std::move(parcel),
               [](ParcelPort& port, Parcel& value) noexcept {
@@ -342,10 +343,10 @@ int check_keyed_recording() {
     Mailbox to_right;
     s::SessionEventLog log_left;
     s::SessionEventLog log_right;
-    auto left =
-        s::mint_recorded_session(s::mint_session_handle<KeyedAsk>(Port{&to_left, &to_right}), log_left, kSelf, kPeer);
-    auto right =
-        s::mint_recorded_session(s::mint_session_handle<KeyedHear>(Port{&to_right, &to_left}), log_right, kPeer, kSelf);
+    auto left = s::mint_recorded_session(s::mint_session<KeyedAsk>(bg_ctx(), Port{&to_left, &to_right}), log_left,
+                                         kSelf, kPeer);
+    auto right = s::mint_recorded_session(s::mint_session<KeyedHear>(bg_ctx(), Port{&to_right, &to_left}), log_right,
+                                          kPeer, kSelf);
     // A keyed message is its label word and then its value, so each side
     // stands at the value step of its branch.
     auto left_value = std::move(left).select<1>(push_label);
@@ -389,7 +390,7 @@ int check_keyed_recording() {
     s::SessionEventLog log_step;
     using SayNo = s::Send<s::PeerMsg<Carol, No, int>, s::End>;
     auto stepper =
-        s::mint_recorded_session(s::mint_session_handle<SayNo>(Port{&step_in, &step_out}), log_step, kSelf, kPeer);
+        s::mint_recorded_session(s::mint_session<SayNo>(bg_ctx(), Port{&step_in, &step_out}), log_step, kSelf, kPeer);
     (void)std::move(stepper).send(push_label).send(9, push_int).close();
     if (step_out.slots.size() != 2 || step_out.slots.front() != s::step_wire_word_v<SayNo>
         || step_out.slots.front() != s::branch_wire_word_v<KeyedAsk, 1> || step_out.slots.back() != 9)

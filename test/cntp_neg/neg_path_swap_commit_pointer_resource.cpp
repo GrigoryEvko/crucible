@@ -1,6 +1,6 @@
 #include <crucible/cntp/PathSwap.h>
 #include <fixy/Ctx.h>
-#include <fixy/session/Mint.h>
+#include <fixy/session/Entry.h>
 
 // A value resource that can be copied must be self-contained.  A resource
 // that holds a raw pointer reaches outside itself, so a copy of it is a
@@ -25,8 +25,9 @@ int main() {
 
     ::fixy::ColdInitCtx init{fe::testing::init()};
     ::fixy::BgLoadCtx bg{fe::testing::bg()};
+    const ::fixy::TestRunnerCtx ctx{fe::testing::test()};
     auto swapper = cntp::mint_path_swapper(init);
-    auto handle = sess::mint_session_handle<sess::Send<int, sess::End>>(Wire{.id = 1});
+    auto handle = sess::mint_session<sess::Send<int, sess::End>>(ctx, Wire{.id = 1});
     int peer_state = 0;
     auto result = swapper.commit_sender(bg, std::move(handle), PointerWire{.peer = &peer_state}, 0);
     (void)result;

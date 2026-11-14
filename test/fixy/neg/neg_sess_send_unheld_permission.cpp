@@ -4,8 +4,9 @@
 // fixy/session/Flow.h computes what the payload takes, and the mint
 // walks the whole protocol with it.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
@@ -23,7 +24,8 @@ using Proto = s::Send<perm::Permission<Region>, s::End>;
 }  // namespace
 
 int main() {
-    auto head = s::mint_session_handle<Proto>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto head = s::mint_session<Proto>(ctx, Wire{});
     auto at_end =
         std::move(head).send(perm::mint_permission_root<Region>(), [](Wire&, perm::Permission<Region>& token) noexcept {
             ::foundation::linear::drop(std::move(token));

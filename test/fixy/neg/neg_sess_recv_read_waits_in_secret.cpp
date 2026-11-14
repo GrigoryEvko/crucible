@@ -4,8 +4,9 @@
 // and returns no value while nothing is there, or it takes the wait_scope
 // that the handle opened for it.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 #include <utility>
 
@@ -20,7 +21,8 @@ struct Wire {
 using namespace neg_sess_recv_read_waits_in_secret_types;
 
 int main() {
-    auto head = s::mint_session_handle<s::Recv<int, s::End>>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto head = s::mint_session<s::Recv<int, s::End>>(ctx, Wire{});
     auto [value, at_end] = std::move(head).recv([](Wire& wire) noexcept { return wire.last_sent; });
     static_cast<void>(value);
     static_cast<void>(std::move(at_end).close());

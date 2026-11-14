@@ -7,7 +7,8 @@
 //
 // Expected diagnostic: the handle does not satisfy RecordableHandle.
 
-#include <fixy/session/Mint.h>
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Recording.h>
 
 namespace neg_sess_record_recorded_handle_types {
@@ -17,10 +18,11 @@ struct Wire {};
 int main() {
     namespace s = ::fixy::session;
     using namespace neg_sess_record_recorded_handle_types;
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     s::SessionEventLog first_log;
     s::SessionEventLog second_log;
-    auto once = s::mint_recorded_session(s::mint_session_handle<s::End, Wire>(Wire{}), first_log, s::RoleTagId{1},
-                                         s::RoleTagId{2});
+    auto once =
+        s::mint_recorded_session(s::mint_session<s::End>(ctx, Wire{}), first_log, s::RoleTagId{1}, s::RoleTagId{2});
     auto twice = s::mint_recorded_session(std::move(once), second_log, s::RoleTagId{1}, s::RoleTagId{2});
     static_cast<void>(std::move(twice).close());
     return 0;

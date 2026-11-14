@@ -3,8 +3,9 @@
 // global type, so the protocol is not well-formed and no handle is
 // minted for it.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
 
 namespace s = fixy::session;
@@ -23,7 +24,8 @@ using SameLabel =
     s::Select<s::Send<s::PeerMsg<Bob, Hello, int>, s::End>, s::Send<s::PeerMsg<Bob, Hello, bool>, s::End>>;
 
 int main() {
-    auto handle = s::mint_session_handle<SameLabel, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<SameLabel>(ctx, Wire{});
     (void)handle;
     return 0;
 }

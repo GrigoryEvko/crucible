@@ -2,8 +2,9 @@
 // local type sends to R1 and then to R2, so one carrier would take the
 // traffic of two peers, and the entry point refuses it.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
 
 namespace s = fixy::session;
@@ -27,7 +28,8 @@ using FanOut = g::Msg<R0, R1, Val, int, g::Msg<R0, R2, Val, int, g::End>>;
 using SendsToTwo = typename s::project_t<FanOut, R0>::local;
 
 int main() {
-    Wire back = s::with_session<SendsToTwo, Wire>(Wire{}, [](auto head) noexcept { return head; });
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    Wire back = s::with_session<SendsToTwo>(ctx, Wire{}, [](auto head) noexcept { return head; });
     static_cast<void>(back);
     return 0;
 }

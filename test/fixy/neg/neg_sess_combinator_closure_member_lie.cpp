@@ -8,8 +8,9 @@
 // mint refuses the node whose member disagrees with its argument.
 //
 // Expected diagnostic: Protocol_Specialized_Combinator.
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 #include <foundation/Quarantine.h>
 
 namespace neg_sess_combinator_closure_member_lie_types {
@@ -29,7 +30,8 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 int main() {
     namespace s = ::fixy::session;
     using namespace neg_sess_combinator_closure_member_lie_types;
-    auto handle = s::mint_session_handle<s::Send<Sent, s::End>>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<s::Send<Sent, s::End>>(ctx, Wire{});
     std::move(handle).detach(s::detach_reason::TestInstrumentation{});
     return 0;
 }

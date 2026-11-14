@@ -8,9 +8,10 @@
 // it reads.  Without the value step, a handle built from a projection
 // would put the label word on the wire and drop the value.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Global.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
 
 #include <foundation/Pinned.h>
@@ -113,7 +114,8 @@ struct Outcome {
 };
 
 void run_p(Port port, Outcome& outcome) {
-    auto hello_value = s::mint_session_handle<LocalP>(std::move(port)).send(write_word);
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto hello_value = s::mint_session<LocalP>(ctx, std::move(port)).send(write_word);
     static_assert(std::is_same_v<typename decltype(hello_value)::protocol,
                                  s::Send<int, s::Offer<s::Sender<Q>, s::Recv<s::PeerMsg<Q, Accept, int>, s::End>,
                                                        s::Recv<s::PeerMsg<Q, Refuse, int>, s::End>>>>,
@@ -127,7 +129,8 @@ void run_p(Port port, Outcome& outcome) {
 }
 
 void run_q(Port port, Outcome& outcome) {
-    auto hello_value = s::mint_session_handle<LocalQ>(std::move(port)).recv(read_word);
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto hello_value = s::mint_session<LocalQ>(ctx, std::move(port)).recv(read_word);
     auto [hello, choosing] = std::move(hello_value).recv(read_int);
     outcome.hello_on_q = hello;
     auto accept_value = std::move(choosing).select<0>(write_word);

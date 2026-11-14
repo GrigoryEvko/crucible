@@ -3,8 +3,9 @@
 // the second arm is ever compiled.  The mint walks every arm, so it
 // refuses the protocol anyway.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
@@ -23,7 +24,8 @@ using Proto = s::Select<s::End, s::Send<perm::Permission<Region>, s::End>>;
 }  // namespace
 
 int main() {
-    auto head = s::mint_session_handle<Proto>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto head = s::mint_session<Proto>(ctx, Wire{});
     auto at_end = std::move(head).select<0>([](Wire&, std::size_t) noexcept { return true; });
     (void)std::move(at_end).close();
     return 0;

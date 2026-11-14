@@ -2,8 +2,9 @@
 // can send (rule 2), so it is an empty choice and no handle exists for
 // it.
 
+#include <fixy/Ctx.h>
 #include <fixy/session/CrashTransport.h>
-#include <fixy/session/Mint.h>
+#include <fixy/session/Entry.h>
 
 namespace s = fixy::session;
 
@@ -16,7 +17,8 @@ struct Wire {};
 using Proto = s::Send<int, s::Offer<s::Recv<s::Crash<Bob>, s::End>>>;
 
 int main() {
-    auto handle = s::mint_session_handle<Proto, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<Proto>(ctx, Wire{});
     (void)handle;
     return 0;
 }

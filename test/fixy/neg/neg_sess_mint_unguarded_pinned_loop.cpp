@@ -3,8 +3,9 @@
 // the gate.  A check that admitted it would let the build fail later,
 // inside the handle.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 
@@ -15,7 +16,8 @@ struct Wire {};
 using Spin = s::Loop<s::VendorPinned<s::VendorBackend::NV, s::Continue>>;
 
 int main() {
-    auto handle = s::mint_session_handle<Spin, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<Spin>(ctx, Wire{});
     (void)handle;
     return 0;
 }

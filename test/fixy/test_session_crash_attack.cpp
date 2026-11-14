@@ -30,7 +30,7 @@
 //                              cell, and a crash against a write
 
 #include "session_crash_attack.h"
-#include <fixy/session/Mint.h>
+#include <fixy/session/Entry.h>
 #include <foundation/core/Array.h>
 
 #include <sys/wait.h>
@@ -521,7 +521,7 @@ void on_watchdog(int) { std::_Exit(kDeadlockExit); }
     int in = 0;
     int out = 0;
     OneHolderChannel channel{&in, &out};
-    auto head = s::mint_session_handle<s::Send<int, s::End>>(std::move(channel));
+    auto head = s::mint_session<s::Send<int, s::End>>(bg_ctx(), std::move(channel));
     auto at_end = std::move(head).send(9, [](OneHolderChannel& ch, int& value) noexcept {
         *ch.out = value;
         return true;

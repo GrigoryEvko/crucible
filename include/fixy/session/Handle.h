@@ -66,7 +66,7 @@
 //
 //   1. Each endpoint is linear.  The abandonment policy and the
 //      liveness check give this at run time, and the callback entry
-//      with_session of fixy/session/Mint.h gives it at the type level for
+//      with_session of fixy/session/Entry.h gives it at the type level for
 //      its body.
 //   2. Threads and channels form a forest.  mint_forked_channel of
 //      fixy/session/Mint.h gives this: it makes a channel only as part of
@@ -1291,7 +1291,7 @@ public:
     static_assert(branch_count > 0, "fixy::session::diagnostic [Empty_Choice_Combinator]: "
                                     "SessionHandle<Select<>>: cannot construct a runnable handle "
                                     "on Select<> with zero branches — there is no branch for "
-                                    "select<I>() to choose.  See mint_session_handle for the full "
+                                    "select<I>() to choose.  See mint_session for the full "
                                     "diagnostic and remediation.");
 
     // Picks branch I and signals the choice to the peer through
@@ -1394,7 +1394,7 @@ public:
                                     "on Offer<> with zero branches — there is no label the peer "
                                     "can send.  A sender-annotated Offer<Sender<Role>> reaches "
                                     "this as well: the annotation names the signalling role and "
-                                    "is not a branch.  See mint_session_handle for the full "
+                                    "is not a branch.  See mint_session for the full "
                                     "diagnostic and remediation.");
 
     // Receives the peer's wire word through Transport, a read of a
@@ -1817,8 +1817,10 @@ concept CtxFitsForkedSides =
 // The one friend of SessionOpenKey, so the one class that opens a session
 // on the handle factory.  Each public member is one mint of this layer
 // and states the whole gate of that mint in its requires clause, so a
-// direct call of a member is no weaker than the mint.  The mints of
-// fixy/session/Mint.h forward here for their names and their default
+// direct call of a member is no weaker than the mint.  Each member takes
+// the execution context of the mint, and its gate admits the effect row
+// of the protocol in that context.  The mints of fixy/session/Mint.h and
+// fixy/session/Entry.h forward here for their names and their default
 // arguments, through detail::late_door_t.  No object of the class exists.
 class SessionMintDoor final : ::foundation::NoObject<SessionMintDoor> {
     // One side of a forked channel.  It builds the endpoint in the thread
@@ -1847,11 +1849,10 @@ class SessionMintDoor final : ::foundation::NoObject<SessionMintDoor> {
     };
 
 public:
-    // mint_session_handle: a session with the empty permission set.
-    template <typename Proto, typename Resource, AbandonmentPolicy Policy>
-        requires WellFormedRunnableProtocol<Proto> && SessionResource<Resource>
-              && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
-    [[nodiscard]] static constexpr auto open(Resource r, std::source_location loc) noexcept {
+    // mint_session: a session with the empty permission set.
+    template <typename Proto, AbandonmentPolicy Policy, typename Ctx, typename Resource>
+        requires CtxFitsSessionFrom<Ctx, Proto, Resource>
+    [[nodiscard]] static constexpr auto open(Ctx const&, Resource r, std::source_location loc) noexcept {
         return HandleFactory::open_<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet>(
             SessionOpenKey{}, std::forward<Resource>(r), loc);
     }
@@ -1874,11 +1875,9 @@ public:
     // with_session: runs the body on the first handle of a session that
     // carries the brand of the body, and closes the End handle that the
     // body returns.
-    template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename Body>
-        requires WellFormedRunnableProtocol<Proto> && SessionResource<Resource>
-              && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
-              && SessionBody<Body, Proto, Resource, Policy>
-    [[nodiscard]] static constexpr Resource run(Resource r, Body body, std::source_location loc) noexcept(
+    template <typename Proto, AbandonmentPolicy Policy, typename Ctx, typename Resource, typename Body>
+        requires CtxFitsSessionFrom<Ctx, Proto, Resource> && SessionBody<Body, Proto, Resource, Policy>
+    [[nodiscard]] static constexpr Resource run(Ctx const&, Resource r, Body body, std::source_location loc) noexcept(
         std::is_nothrow_invocable_v<
             Body, detail::first_handle_t<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
                                          detail::brand_ctx_t<Body>>>) {

@@ -4,8 +4,9 @@
 // handle has no brand, so the body gate refuses it, and the handle the
 // body was given cannot be replaced.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 #include <utility>
 
@@ -17,9 +18,10 @@ using Proto = s::Send<Ping, s::End>;
 }  // namespace
 
 int main() {
-    auto back = s::with_session<Proto>(Wire{}, [](auto head) noexcept {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto back = s::with_session<Proto>(ctx, Wire{}, [&ctx](auto head) noexcept {
         std::move(head).detach(s::detach_reason::TestInstrumentation{});
-        auto other = s::mint_session_handle<Proto>(Wire{});
+        auto other = s::mint_session<Proto>(ctx, Wire{});
         return std::move(other).send(Ping{}, [](Wire&, Ping&) noexcept { return true; });
     });
     (void)back;

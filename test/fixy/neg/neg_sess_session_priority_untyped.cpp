@@ -3,8 +3,9 @@
 // count or an index that happens to carry the name, so the handle refuses
 // it rather than read it as an order.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 #include <utility>
 
@@ -17,7 +18,8 @@ struct Wire {
 }  // namespace
 
 int main() {
-    auto head = s::mint_session_handle<s::Send<int, s::End>>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto head = s::mint_session<s::Send<int, s::End>>(ctx, Wire{});
     std::move(head).detach(s::detach_reason::TestInstrumentation{});
     return 0;
 }

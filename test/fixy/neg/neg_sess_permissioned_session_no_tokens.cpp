@@ -1,5 +1,5 @@
 // The permissioned mint starts a session with the set of the tokens that
-// it consumes.  With no token the set is empty, and mint_session_handle
+// it consumes.  With no token the set is empty, and mint_session
 // is the mint for that case.  The gate refuses an empty set, so one
 // session has one mint for each shape of its start.
 

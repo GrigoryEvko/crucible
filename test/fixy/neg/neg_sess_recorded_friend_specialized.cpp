@@ -7,7 +7,8 @@
 // the inner handle of another.
 //
 // Expected diagnostic: the member is private in this context.
-#include <fixy/session/Mint.h>
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Recording.h>
 #include <foundation/Quarantine.h>
 
@@ -34,8 +35,9 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 int main() {
     namespace s = ::fixy::session;
     using namespace neg_sess_recorded_friend_specialized_types;
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     s::SessionEventLog log;
-    auto recorded = s::mint_recorded_session(s::mint_session_handle<s::Send<int, s::End>>(Wire{}), log, s::RoleTagId{1},
+    auto recorded = s::mint_recorded_session(s::mint_session<s::Send<int, s::End>>(ctx, Wire{}), log, s::RoleTagId{1},
                                              s::RoleTagId{2});
     auto stolen = s::Recorded<Tag>::steal(std::move(recorded));
     std::move(stolen).detach(s::detach_reason::TestInstrumentation{});

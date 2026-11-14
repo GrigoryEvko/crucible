@@ -3,8 +3,9 @@
 // it cannot check that the protocol is implementable on that carrier.
 // The mint refuses a local type that names two peers.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
 
 namespace s = fixy::session;
@@ -28,7 +29,8 @@ using TwoSenders = g::Msg<R1, R0, Val, bool, g::Msg<R2, R0, Val, bool, g::End>>;
 using ReceivesFromTwo = typename s::project_t<TwoSenders, R0>::local;
 
 int main() {
-    auto handle = s::mint_session_handle<ReceivesFromTwo, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<ReceivesFromTwo>(ctx, Wire{});
     static_cast<void>(handle);
     return 0;
 }

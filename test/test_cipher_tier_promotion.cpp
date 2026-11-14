@@ -2,6 +2,7 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/session/Delegate.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Mint.h>
 #include <foundation/Pinned.h>
 #include <foundation/reflect/EnumName.h>
@@ -143,7 +144,7 @@ void test_hot_promote_delegate_protocol() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto [delegator, acceptor] = s::mint_test_channel<Carrier>(ctx, CarrierSender{&slot}, CarrierRecipient{&slot});
 
-    auto delegated_endpoint = s::mint_session_handle<HotPromote<ContentHash>, HotWire>(HotWire{.marker = marker});
+    auto delegated_endpoint = s::mint_session<HotPromote<ContentHash>>(ctx, HotWire{.marker = marker});
     CarriedHotEndpoint carried = s::mint_delegated_session(std::move(delegated_endpoint));
 
     auto delegator_end =

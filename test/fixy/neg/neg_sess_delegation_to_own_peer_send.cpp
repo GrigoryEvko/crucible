@@ -1,8 +1,9 @@
 // The sender hands Bob an endpoint whose protocol talks to Bob.  Bob would
 // hold the two ends of the inner session, so the mint refuses the protocol.
 
+#include <fixy/Ctx.h>
 #include <fixy/session/Delegate.h>
-#include <fixy/session/Mint.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Projection.h>
 
 namespace neg_sess_delegation_to_own_peer_send_types {
@@ -24,7 +25,8 @@ using HandsToBob = s::Send<s::PeerMsg<Bob, Hand, Carried>, s::End>;
 
 int main() {
     namespace t = neg_sess_delegation_to_own_peer_send_types;
-    auto handle = t::s::mint_session_handle<t::HandsToBob, t::Wire>(t::Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = t::s::mint_session<t::HandsToBob>(ctx, t::Wire{});
     static_cast<void>(handle);
     return 0;
 }

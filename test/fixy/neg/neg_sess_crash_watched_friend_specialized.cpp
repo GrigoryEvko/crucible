@@ -7,8 +7,9 @@
 // specialization of it reaches the constructor of another.
 //
 // Expected diagnostic: the constructor is private in this context.
+#include <fixy/Ctx.h>
 #include <fixy/session/CrashTransport.h>
-#include <fixy/session/Mint.h>
+#include <fixy/session/Entry.h>
 #include <foundation/Quarantine.h>
 
 namespace neg_sess_crash_watched_friend_specialized_types {
@@ -44,7 +45,8 @@ int main() {
     using namespace neg_sess_crash_watched_friend_specialized_types;
     s::PeerCrashCell cell;
     s::PeerCrashCell own;
-    auto plain = s::mint_session_handle<s::Recv<int, s::End>>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto plain = s::mint_session<s::Recv<int, s::End>>(ctx, Wire{});
     auto forged = s::CrashWatched<Tag, Tag, Tag, s::ReliableSet<>, Tag>::forge(std::move(plain), cell, own);
     std::move(forged).detach(s::detach_reason::TestInstrumentation{});
     return 0;

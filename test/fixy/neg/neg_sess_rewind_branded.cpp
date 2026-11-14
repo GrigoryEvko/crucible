@@ -6,8 +6,9 @@
 // close.  The gate of the rewind refuses a handle that carries a brand.
 //
 // Expected diagnostic: no rewind accepts the branded handle.
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 #include <utility>
 
@@ -27,6 +28,7 @@ struct Body {
 int main() {
     namespace s = ::fixy::session;
     using namespace neg_sess_rewind_branded_types;
-    static_cast<void>(s::with_session<s::End, Wire>(Wire{}, Body{}));
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    static_cast<void>(s::with_session<s::End>(ctx, Wire{}, Body{}));
     return 0;
 }

@@ -6,8 +6,9 @@
 // The protocol is well-formed and moves no permission, so only the
 // SessionResource clause can refuse this call.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 namespace s = ::fixy::session;
 
@@ -21,8 +22,11 @@ struct Queue {
 using Once = s::Send<resource_pointer_fixture::Ping, s::End>;
 
 int main() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     resource_pointer_fixture::Queue queue{};
-    auto handle = s::mint_session_handle<Once, resource_pointer_fixture::Queue*>(&queue);
+    auto handle =
+        s::mint_session<Once, s::DefaultAbandonmentPolicy, ::fixy::TestRunnerCtx, resource_pointer_fixture::Queue*>(
+            ctx, &queue);
     (void)handle;
     return 0;
 }

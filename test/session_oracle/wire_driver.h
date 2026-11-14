@@ -21,8 +21,9 @@
 //
 // The handles use check::Off, so an endpoint may stop before End.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 #include <sys/wait.h>
 #include <unistd.h>
@@ -244,7 +245,8 @@ using EndpointStart = void (*)(Endpoint&);
 
 template <typename P>
 void walk_from_start(Endpoint& self) {
-    walk(fs::mint_session_handle<P, Wire, fs::check::Off>(Wire{}), self);
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    walk(fs::mint_session<P, fs::check::Off>(ctx, Wire{}), self);
 }
 
 // One run of the endpoint that left_start walks against the endpoint that

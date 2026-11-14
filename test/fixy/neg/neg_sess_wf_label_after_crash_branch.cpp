@@ -3,9 +3,10 @@
 // numbers only the message branches.  The protocol is not well-formed,
 // so no handle is minted for it.
 
+#include <fixy/Ctx.h>
 #include <fixy/session/Crash.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 
@@ -18,7 +19,8 @@ struct Wire {};
 using CrashFirst = s::Offer<s::Recv<s::Crash<Peer>, s::End>, s::Recv<Ping, s::End>>;
 
 int main() {
-    auto handle = s::mint_session_handle<CrashFirst, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<CrashFirst>(ctx, Wire{});
     (void)handle;
     return 0;
 }

@@ -3015,7 +3015,7 @@ The `mint_*` prefix is load-bearing. It marks every site where the type system v
 
 The convention has TWO modes, distinguished by whether the mint threads ctx-driven policy:
 
-- **Token mint** — synthesizes a fresh authoritative token whose authority derives from a parent token (or root authority). It has no `CtxFitsX` gate. A permission token mint takes an optional leading context, and a tag that declares a non-empty effect row makes that context necessary. Examples: `mint_permission_root<Tag>()`, `mint_permission_split<L,R>(parent)`, `mint_cap<E>(source)`, `mint_session_handle<Proto>(res)`.
+- **Token mint** — synthesizes a fresh authoritative token whose authority derives from a parent token (or root authority). It has no `CtxFitsX` gate. A permission token mint takes an optional leading context, and a tag that declares a non-empty effect row makes that context necessary. Examples: `mint_permission_root<Tag>()`, `mint_permission_split<L,R>(parent)`, `mint_cap<E>(source)`. No session mint is a token mint: each session mint takes a context, and its gate admits the effect row of the protocol.
   - Note that `mint_permission_split` and `mint_permission_combine` consume a parent token and produce fresh children/parent — the children/parent are authoritative tokens that didn't exist before the call. Mint applies even though the operation is shape-preserving decomposition/composition.
 
 - **Ctx-bound mint** — threads ctx-driven policy through the constructed type. Ctx is the FIRST parameter; the requires-clause is a single `CtxFitsX<X, Ctx>` concept. Examples: `mint_from_ctx<E>(ctx)`, `mint_session<Proto>(ctx, res)`, `mint_permissioned_session<Proto>(ctx, res, perms...)`, `mint_substrate_session<...>(ctx, handle)`, `mint_endpoint<...>(ctx, handle)`.
@@ -3036,7 +3036,6 @@ The convention has TWO modes, distinguished by whether the mint threads ctx-driv
 | ✅ | Ctx-bound | `mint_from_ctx<E>(ctx)` | `CtxOwnsCapability<Ctx, E>`: the row of the context contains `E` | `Capability<E, cap_type_of_t<Ctx>>` |
 | ✅ | Grade token | `fixy::mint_band<Band>(value)` | `ExactBand<Band>`; the key authority is a class local to the mint | `Band` |
 | ✅ | Grade token | `fixy::mint_recipe_spec(value, tier, family)` | `RecipeSpecPayload<T>` | `RecipeSpec<T>` |
-| ✅ | Session token | `mint_session_handle<Proto>(res)` | `WellFormedRunnableProtocol<Proto> ∧ SessionResource<Res> ∧ PermissionFlowCloses<Proto, EmptyPermSet>` | the first `SessionHandle` of `Proto` over `Res` |
 | ✅ | Ctx-bound | `mint_session<Proto>(ctx, res)` | `CtxFitsSession<Ctx, Proto, Res>` | the first handle of `Proto`, with `EmptyPermSet` |
 | ✅ | Ctx-bound | `mint_permissioned_session<Proto>(ctx, res, perms...)` | `CtxFitsPermissionedSession<Ctx, Proto, Res, Tags...>` (a non-empty tag set) | the first handle of `Proto`, with `PermSet<Tags...>` |
 | ✅ | Ctx-bound | `mint_forked_channel<Proto, SelfTag, PeerTag>(ctx, parent, res_self, res_peer, self_body, peer_body)` | `CtxFitsForkedChannel<Ctx, Proto, Parent, SelfTag, PeerTag>`, plus checks of each resource and each body | `Permission<Parent, Brand>` after the two threads join |

@@ -1,4 +1,4 @@
-// mint_session_handle refuses an lvalue reference to a resource whose
+// mint_session refuses an lvalue reference to a resource whose
 // address is not stable.  The handle would store the reference, and a
 // later move of the referent would leave every live handle dangling
 // with no diagnostic at the point of the move.
@@ -7,8 +7,9 @@
 // so the refusal is the reference, not the protocol: this fixture fails
 // only through the SessionResource clause.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 
@@ -24,8 +25,9 @@ struct LooseWire {
 using Once = s::Send<Ping, s::End>;
 
 int main() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     LooseWire wire{};
-    auto handle = s::mint_session_handle<Once, LooseWire&>(wire);
+    auto handle = s::mint_session<Once, s::DefaultAbandonmentPolicy, ::fixy::TestRunnerCtx, LooseWire&>(ctx, wire);
     (void)handle;
     return 0;
 }

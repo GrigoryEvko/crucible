@@ -10,8 +10,8 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <fixy/os/SpinLock.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 #include <foundation/Pinned.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -392,10 +392,13 @@ public:
     // The new handle is minted afresh at the position of `current`, so the
     // swap takes only a handle that such a mint can stand for: one outside a
     // loop body and with no permission set.  A handle that holds permissions
-    // would lose them to the detach, so deduction refuses it.
+    // would lose them to the detach, so deduction refuses it.  The mint
+    // opens the new handle in the context of the swap, so the context
+    // admits the effect row of each payload of Proto.
     template <class Ctx, typename Proto, typename OldResource, ::fixy::session::AbandonmentPolicy Policy,
               typename NewResource>
         requires CtxFitsPathSwapTransition<Ctx> && PathSwapSessionResource<NewResource>
+              && ::fixy::session::CtxFitsSession<Ctx, Proto, NewResource>
     [[nodiscard, deprecated("CRUCIBLE_STUB: commit_sender migrates no in-flight data. "
                             "The bytes buffered on the old path are dropped.")]]
     auto commit_sender(Ctx const& ctx, ::fixy::session::SessionHandle<Proto, OldResource, void, Policy>&& current,
@@ -411,8 +414,8 @@ public:
             CRUCIBLE_TRY(_, advance(SwapState::NewPathFlushing, SwapState::Complete, now_ns));
         }
         std::move(current).detach(::fixy::session::detach_reason::TransportClosedOutOfBand{});
-        return ::fixy::session::mint_session_handle<Proto, NewResource, Policy>(
-            std::forward<NewResource>(new_resource));
+        return ::fixy::session::mint_session<Proto, Policy, Ctx, NewResource>(ctx,
+                                                                              std::forward<NewResource>(new_resource));
     }
 
     template <class Ctx>

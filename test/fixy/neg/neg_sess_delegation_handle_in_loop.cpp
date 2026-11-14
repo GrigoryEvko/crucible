@@ -2,8 +2,9 @@
 // its Continue refers to the loop context.  So it cannot travel as a
 // DelegatedSession.
 
+#include <fixy/Ctx.h>
 #include <fixy/session/Delegate.h>
-#include <fixy/session/Mint.h>
+#include <fixy/session/Entry.h>
 
 namespace neg_sess_delegation_handle_in_loop_types {
 
@@ -18,7 +19,8 @@ using Forever = s::Loop<s::Send<int, s::Continue>>;
 
 int main() {
     namespace t = neg_sess_delegation_handle_in_loop_types;
-    auto handle = t::s::mint_session_handle<t::Forever, t::Wire>(t::Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = t::s::mint_session<t::Forever>(ctx, t::Wire{});
     auto carried = t::s::mint_delegated_session(std::move(handle));
     static_cast<void>(carried);
     return 0;

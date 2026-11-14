@@ -12,6 +12,7 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/session/Delegate.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Mint.h>
 #include <foundation/effects/Row.h>
 
@@ -72,7 +73,8 @@ using SendsRegion = s::Send<s::Transferable<int, Region>, s::End>;
 }
 
 void accept_after_a_move() {
-    auto parcel = s::mint_delegated_session(s::mint_session_handle<Inner, Wire>(Wire{}));
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto parcel = s::mint_delegated_session(s::mint_session<Inner>(ctx, Wire{}));
     auto kept = std::move(parcel);
     auto second = std::move(parcel).accept();
     (void)kept;
@@ -89,8 +91,9 @@ void delegate_with_a_consumed_hold() {
 }
 
 void assign_over_a_live_endpoint() {
-    auto target = s::mint_delegated_session(s::mint_session_handle<Inner, Wire>(Wire{}));
-    auto source = s::mint_delegated_session(s::mint_session_handle<Inner, Wire>(Wire{}));
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto target = s::mint_delegated_session(s::mint_session<Inner>(ctx, Wire{}));
+    auto source = s::mint_delegated_session(s::mint_session<Inner>(ctx, Wire{}));
     target = std::move(source);
     (void)target;
 }

@@ -2,9 +2,10 @@
 // that enters one of them is ambiguous.  The protocol is not
 // well-formed, so no handle is minted for it.
 
+#include <fixy/Ctx.h>
 #include <fixy/session/Crash.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 
@@ -18,7 +19,8 @@ using TwoRecoveries =
     s::Offer<s::Recv<Ping, s::End>, s::Recv<s::Crash<Peer>, s::End>, s::Recv<s::Crash<Peer>, s::Send<Ping, s::End>>>;
 
 int main() {
-    auto handle = s::mint_session_handle<TwoRecoveries, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<TwoRecoveries>(ctx, Wire{});
     (void)handle;
     return 0;
 }

@@ -8,8 +8,9 @@
 //
 // Expected diagnostic: the mint has no match, and the failed clause is
 // the permission flow of the carrier protocol.
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 namespace neg_sess_payload_bare_endpoint_mint_types {
 struct Region {
@@ -27,7 +28,8 @@ using Carrier = ::fixy::session::Send<InLoop, ::fixy::session::End>;
 
 int main() {
     using namespace neg_sess_payload_bare_endpoint_mint_types;
-    auto handle = ::fixy::session::mint_session_handle<Carrier, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = ::fixy::session::mint_session<Carrier>(ctx, Wire{});
     (void)handle;
     return 0;
 }

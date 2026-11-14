@@ -6,8 +6,9 @@
 // refused by the same gate as the mint.
 //
 // Expected diagnostic: the door does not accept the handle.
+#include <fixy/Ctx.h>
 #include <fixy/session/Delegate.h>
-#include <fixy/session/Mint.h>
+#include <fixy/session/Entry.h>
 
 #include <utility>
 
@@ -20,7 +21,8 @@ struct Wire {
 int main() {
     namespace s = ::fixy::session;
     using namespace neg_sess_delegation_door_states_the_gate_types;
-    auto handle = s::mint_session_handle<s::Loop<s::Send<int, s::Continue>>, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<s::Loop<s::Send<int, s::Continue>>>(ctx, Wire{});
     auto carried = s::DelegationDoor::give(std::move(handle), s::mint_permission_hold());
     static_cast<void>(carried);
     return 0;

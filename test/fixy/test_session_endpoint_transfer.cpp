@@ -10,8 +10,9 @@
 // and a child process proves it.  Each key of a private surface has the
 // sealed shape of a passkey, so only its one door makes it.
 
+#include <fixy/Ctx.h>
 #include <fixy/session/Delegate.h>
-#include <fixy/session/Mint.h>
+#include <fixy/session/Entry.h>
 
 #include <sys/wait.h>
 #include <unistd.h>
@@ -34,7 +35,7 @@ struct Wire {
 };
 
 using Proto = s::Send<Ping, s::End>;
-using Handle = decltype(s::mint_session_handle<Proto, Wire>(Wire{}));
+using Handle = decltype(s::mint_session<Proto>(std::declval<::fixy::TestRunnerCtx const&>(), Wire{}));
 
 [[nodiscard]] int fail(const char* what) {
     std::fprintf(stderr, "test_session_endpoint_transfer: %s\n", what);
@@ -67,8 +68,9 @@ static_assert(!std::is_default_constructible_v<s::SessionMintDoor> && std::is_fi
 static_assert(!std::is_default_constructible_v<s::DelegationDoor> && std::is_final_v<s::DelegationDoor>);
 
 int transfer_keeps_the_record_live() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     const std::uint32_t live_before = s::watch::live_count();
-    auto handle = s::mint_session_handle<Proto, Wire>(Wire{7});
+    auto handle = s::mint_session<Proto>(ctx, Wire{7});
     auto carried = s::mint_delegated_session(std::move(handle));
     if (handle.is_live()) return fail("the handle stayed live after its endpoint left it");
     if (!carried.holds_endpoint()) return fail("the payload does not hold the endpoint");
@@ -90,7 +92,8 @@ int transfer_keeps_the_record_live() {
 
 // A handle that already left cannot leave again.
 [[noreturn]] void take_from_a_consumed_handle() {
-    auto handle = s::mint_session_handle<Proto, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<Proto>(ctx, Wire{});
     auto first = s::mint_delegated_session(std::move(handle));
     static_cast<void>(s::mint_delegated_session(std::move(handle)));
     static_cast<void>(first);

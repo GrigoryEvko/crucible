@@ -6,6 +6,7 @@
 // weaker than the mint.
 //
 // Expected diagnostic: no member of the door accepts the protocol.
+#include <fixy/Ctx.h>
 #include <fixy/session/Handle.h>
 
 #include <source_location>
@@ -19,8 +20,10 @@ struct Wire {
 int main() {
     namespace s = ::fixy::session;
     using namespace neg_sess_mint_door_states_the_gate_types;
-    auto head = s::SessionMintDoor::open<s::Send<int, s::Continue>, Wire, s::DefaultAbandonmentPolicy>(
-        Wire{}, std::source_location{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto head =
+        s::SessionMintDoor::open<s::Send<int, s::Continue>, s::DefaultAbandonmentPolicy, ::fixy::TestRunnerCtx, Wire>(
+            ctx, Wire{}, std::source_location{});
     static_cast<void>(head);
     return 0;
 }

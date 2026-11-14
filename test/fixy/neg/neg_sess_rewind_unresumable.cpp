@@ -6,8 +6,9 @@
 // refuses it.
 //
 // Expected diagnostic: no rewind accepts the position.
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 #include <utility>
 
@@ -20,7 +21,8 @@ struct Wire {
 int main() {
     namespace s = ::fixy::session;
     using namespace neg_sess_rewind_unresumable_types;
-    auto at_end = s::mint_session_handle<s::End, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto at_end = s::mint_session<s::End>(ctx, Wire{});
     auto rewound = s::HandleFactory::rewind<s::Continue, void>(std::move(at_end));
     static_cast<void>(rewound);
     return 0;

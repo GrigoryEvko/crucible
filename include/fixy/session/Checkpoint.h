@@ -75,8 +75,8 @@
 
 #include <fixy/session/Crash.h>
 #include <fixy/session/Flow.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 #include <fixy/session/Registry.h>
 
 #include <foundation/NoObject.h>
@@ -699,10 +699,10 @@ public:
     // Proto.  The first checkpoint of the session is the start.
     template <typename Proto, typename PeerProto, AbandonmentPolicy Policy, typename Ctx, typename Resource>
         requires CtxFitsCheckpointSession<Ctx, Proto, PeerProto, Resource>
-    [[nodiscard]] static constexpr auto open(Ctx const&, Resource resource, std::source_location loc) noexcept {
+    [[nodiscard]] static constexpr auto open(Ctx const& ctx, Resource resource, std::source_location loc) noexcept {
         using Start = detail::checkpoint::resolve<Proto, void>;
         auto inner =
-            mint_session_handle<checkpoint_erase_t<Proto>, Resource, Policy>(std::forward<Resource>(resource), loc);
+            mint_session<checkpoint_erase_t<Proto>, Policy, Ctx, Resource>(ctx, std::forward<Resource>(resource), loc);
         return CheckpointHandle<decltype(inner), typename Start::head, typename Start::loop,
                                 CheckpointFrame<Proto, Proto, void>>{std::move(inner)};
     }

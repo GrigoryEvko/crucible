@@ -3,7 +3,8 @@
 // threads.
 
 #include "session_subtype_attack.h"
-#include <fixy/session/Mint.h>
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 
 #include <array>
 #include <atomic>
@@ -67,6 +68,7 @@ struct OffererEnd {
 // value, so each side enters its branch at the value step of its label.
 // L1 then continues with one more value, and L0 ends.
 [[nodiscard]] std::pair<int, int> labels_on_a_word_wire() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     WordWire wire{};
     const auto push_value = [](PickerEnd& end, int& value) noexcept {
         end.wire->values[end.wire->written++] = value;
@@ -76,7 +78,7 @@ struct OffererEnd {
         if (end.wire->read == end.wire->written) return ::fixy::none;
         return ::fixy::some(end.wire->values[end.wire->read++]);
     };
-    auto picker = s::mint_session_handle<Permuted>(PickerEnd{&wire});
+    auto picker = s::mint_session<Permuted>(ctx, PickerEnd{&wire});
     auto chosen = std::move(picker).template select<0>([](PickerEnd& end, std::size_t word) noexcept {
         end.wire->word = word;
         return true;
@@ -89,7 +91,7 @@ struct OffererEnd {
     // The picker wrote the word and the two values before the offerer
     // reads them, so each poll finds its value.
     int received = -1;
-    auto offerer = s::mint_session_handle<s::dual_of_t<Projected>>(OffererEnd{&wire});
+    auto offerer = s::mint_session<s::dual_of_t<Projected>>(ctx, OffererEnd{&wire});
     std::move(offerer).branch([](OffererEnd& end) noexcept { return ::fixy::some(end.wire->word); },
                               [&received, &pop_value](auto handle) noexcept {
                                   using Head = typename decltype(handle)::protocol;
@@ -154,7 +156,8 @@ struct WideEnd {
                 if (end.read == end.wire->written.load(std::memory_order_acquire)) return ::fixy::none;
                 return ::fixy::some(end.wire->values[end.read++].load(std::memory_order_relaxed));
             };
-            auto offerer = s::mint_session_handle<s::dual_of_t<Projected>>(WideEnd{&wire});
+            const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+            auto offerer = s::mint_session<s::dual_of_t<Projected>>(ctx, WideEnd{&wire});
             std::move(offerer).branch(
                 [](WideEnd& end) noexcept -> ::fixy::Option<std::size_t> {
                     if (!end.wire->has_word.load(std::memory_order_acquire)) return ::fixy::none;
@@ -181,7 +184,8 @@ struct WideEnd {
                 end.wire->written.store(slot + 1, std::memory_order_release);
                 return true;
             };
-            auto stepper = s::mint_session_handle<SendsL1Step>(StepEnd{&wire});
+            const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+            auto stepper = s::mint_session<SendsL1Step>(ctx, StepEnd{&wire});
             auto label_value = std::move(stepper).send([](StepEnd& end, std::size_t word) noexcept {
                 end.wire->word.store(word, std::memory_order_relaxed);
                 end.wire->has_word.store(true, std::memory_order_release);

@@ -66,6 +66,7 @@
 #include <fixy/Fn.h>
 #include <fixy/ScopedView.h>
 #include <fixy/os/ThreadTasks.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
 #include <fixy/session/Mint.h>
 
@@ -300,7 +301,10 @@ struct Slot {
     }
 };
 
-[[nodiscard]] auto fresh() noexcept { return s::mint_session_handle<Once, Wire>(Wire{}); }
+[[nodiscard]] auto fresh() noexcept {
+    const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
+    return s::mint_session<Once>(ctx, Wire{});
+}
 
 using FreshHandle = decltype(fresh());
 
@@ -388,8 +392,9 @@ struct Holder {
 }
 
 [[noreturn]] void close_twice() {
-    auto at_end = s::mint_session_handle<s::Send<Ping, s::End>, Wire>(Wire{}).send(
-        Ping{}, [](Wire&, Ping&) noexcept { return true; });
+    const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
+    auto at_end =
+        s::mint_session<s::Send<Ping, s::End>>(ctx, Wire{}).send(Ping{}, [](Wire&, Ping&) noexcept { return true; });
     auto& alias = at_end;
     (void)std::move(at_end).close();
     (void)std::move(alias).close();
@@ -522,15 +527,17 @@ Task hold_across_suspension(FreshHandle handle) {
 }
 
 [[noreturn]] void off_policy_drop() {
+    const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
     {
-        auto handle = s::mint_session_handle<Once, Wire, s::check::Off>(Wire{});
+        auto handle = s::mint_session<Once, s::check::Off>(ctx, Wire{});
         (void)handle;
     }
     std::_Exit(kSilentExit);
 }
 
 [[noreturn]] void off_policy_use_after_move() {
-    auto handle = s::mint_session_handle<Once, Wire, s::check::Off>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
+    auto handle = s::mint_session<Once, s::check::Off>(ctx, Wire{});
     auto taken = std::move(handle);
     auto first = std::move(taken).send(Ping{5}, [](Wire&, Ping&) noexcept { return true; });
     auto second = std::move(handle).send(Ping{6}, [](Wire&, Ping&) noexcept { return true; });
@@ -734,8 +741,9 @@ using OneRead = s::Recv<int, s::End>;
 
 // Waits on the low session while it holds the high one.
 [[noreturn]] void wait_low_while_holding_high() {
-    auto high = s::mint_session_handle<OneRead, HighWire>(HighWire{});
-    auto low = s::mint_session_handle<OneRead, LowWire>(LowWire{});
+    const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
+    auto high = s::mint_session<OneRead>(ctx, HighWire{});
+    auto low = s::mint_session<OneRead>(ctx, LowWire{});
     auto [low_value, low_done] = std::move(low).recv(LateRead{});
     (void)std::move(low_done).close();
     std::move(high).detach(s::detach_reason::TestInstrumentation{});
@@ -744,8 +752,9 @@ using OneRead = s::Recv<int, s::End>;
 
 // Waits on the high session while it holds the low one.
 [[noreturn]] void wait_high_while_holding_low() {
-    auto low = s::mint_session_handle<OneRead, LowWire>(LowWire{});
-    auto high = s::mint_session_handle<OneRead, HighWire>(HighWire{});
+    const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
+    auto low = s::mint_session<OneRead>(ctx, LowWire{});
+    auto high = s::mint_session<OneRead>(ctx, HighWire{});
     auto [high_value, high_done] = std::move(high).recv(LateRead{});
     (void)std::move(high_done).close();
     auto [low_value, low_done] = std::move(low).recv(LateRead{});
@@ -762,14 +771,16 @@ using OneRead = s::Recv<int, s::End>;
 // affine design: a message to a cancelled endpoint is lost.
 [[noreturn]] void cancellation_races_a_send() {
     using LeftSide = s::Recv<Ping, s::Send<Pong, s::End>>;
+    const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
     int discarded = 0;
     for (int round = 0; round < 200; ++round) {
         Pipe pipe{};
         std::jthread left{[&pipe] {
-            auto handle = s::mint_session_handle<LeftSide, LeftEnd, s::check::Cancel>(LeftEnd{&pipe});
+            const ::fixy::TestRunnerCtx left_ctx{eff::testing::test()};
+            auto handle = s::mint_session<LeftSide, s::check::Cancel>(left_ctx, LeftEnd{&pipe});
             (void)handle;
         }};
-        auto right = s::mint_session_handle<s::dual_of_t<LeftSide>, RightEnd>(RightEnd{&pipe});
+        auto right = s::mint_session<s::dual_of_t<LeftSide>>(ctx, RightEnd{&pipe});
         auto waits = std::move(right).send(Ping{round}, [](RightEnd& e, Ping& p) noexcept {
             put(e.pipe->to_left, p.value);
             return true;

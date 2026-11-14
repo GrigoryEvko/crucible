@@ -14,9 +14,10 @@
 #include <fixy/session/Witnessed.h>
 
 #include <fixy/Borrowed.h>
+#include <fixy/Ctx.h>
 #include <fixy/OwnedRegion.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
@@ -144,7 +145,8 @@ void test_a_context_that_refuses_the_row_refuses_the_read() {
 void test_a_protocol_witnessed_borrow_reads_while_the_session_is_there() {
     static std::uint64_t storage[3] = {5, 6, 7};
 
-    auto handle = s::mint_session_handle<Sending, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<Sending>(ctx, Wire{});
     auto borrow = ::fixy::mint_borrowed<Cache>(storage);
     auto witnessed = ::fixy::session::mint_witnessed_at(handle, borrow);
 

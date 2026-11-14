@@ -2,8 +2,9 @@
 // the body returns.  This body returns the handle before the receive, so
 // there is no End handle to close.  The body gate refuses it.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 #include <utility>
 
@@ -16,7 +17,8 @@ using Proto = s::Send<Ping, s::Recv<Pong, s::End>>;
 }  // namespace
 
 int main() {
-    auto back = s::with_session<Proto>(Wire{}, [](auto head) noexcept {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto back = s::with_session<Proto>(ctx, Wire{}, [](auto head) noexcept {
         return std::move(head).send(Ping{}, [](Wire&, Ping&) noexcept { return true; });
     });
     (void)back;

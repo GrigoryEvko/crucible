@@ -109,8 +109,8 @@
 // senders returns such payloads too.
 
 #include <fixy/session/Crash.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 #include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
@@ -683,7 +683,7 @@ public:
         PeerCrashCell* const own_cell = std::exchange(own.cell_, nullptr);
         if (own_cell == nullptr) [[unlikely]]
             detail::crash_transport::abort_on_moved_writer();
-        auto inner = mint_session_handle<Proto, Resource, Policy>(std::forward<Resource>(resource), loc);
+        auto inner = mint_session<Proto, Policy, Ctx, Resource>(ctx, std::forward<Resource>(resource), loc);
         return CrashWatched<decltype(inner), Self, Peer, Reliable, Ctx>{std::move(inner), peer_cell, *own_cell, ctx};
     }
 

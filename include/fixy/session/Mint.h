@@ -4,11 +4,15 @@
 // session, and the door of the mints of fixy/session/Handle.h opens the
 // session.
 //
-// mint_session_handle opens a session with the empty permission set, and
 // mint_permissioned_session consumes a token for each tag of its set.
-// with_session runs a body on a session that the library owns.
 // mint_forked_channel makes a channel and starts its two sides on two
 // threads, and mint_test_channel gives a test the two ends of a channel.
+// mint_session and with_session of fixy/session/Entry.h open a session
+// with the empty permission set.
+//
+// Each mint takes the execution context of the caller.  Its gate admits
+// the effect row of each payload of the protocol in that context, and no
+// mint opens a session with no context.
 
 #include <fixy/session/Admission.h>
 #include <fixy/session/Handle.h>
@@ -23,64 +27,10 @@
 
 namespace fixy::session {
 
-// The body static_asserts repeat the concept's checks.  They fire only
-// if some route reaches the body without the concept having run, and
-// their prose is what explains a rejection the concept states only as a
-// boolean.
-
-template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultAbandonmentPolicy>
-    requires WellFormedRunnableProtocol<Proto> && SessionResource<Resource>
-          && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
-[[nodiscard]] constexpr auto mint_session_handle(Resource r,
-                                                 std::source_location loc = std::source_location::current()) noexcept {
-    static_assert(is_well_formed_v<Proto>, "fixy::session::diagnostic [Protocol_Ill_Formed]: "
-                                           "protocol is ill-formed.  Most likely cause: a Continue "
-                                           "appears outside any enclosing Loop<Body>.  Every Continue must "
-                                           "have a Loop above it in the protocol tree.");
-
-    // is_well_formed refuses an empty choice too.  This assertion names
-    // the fault, and the assertion above gives the general refusal.
-    static_assert(!is_empty_choice_v<Proto>, "fixy::session::diagnostic [Empty_Choice_Combinator]: "
-                                             "mint_session_handle<Proto> — Proto contains a "
-                                             "reachable empty Select<> / Offer<> / Offer<Sender<R>> "
-                                             "(top-level or nested under Send/Recv/Loop/branch).  "
-                                             "Cannot construct a runnable handle: Select<> has "
-                                             "no branch for select<I>() to choose; Offer<> has no label "
-                                             "the peer can signal.  The trait walks recursively so "
-                                             "nested empties are caught at mint time, not at the "
-                                             "eventual select<I>() / recv() that hits the dead-end.  "
-                                             "Subtyping refuses an empty choice as well, because a "
-                                             "substitute of that type never sends.  Add one branch or "
-                                             "more at every reachable choice position, for example "
-                                             "Select<Send<Stop, End>>.");
-
-    static_assert(SessionResource<Resource>, "fixy::session::diagnostic [SessionResource_Refused]: "
-                                             "mint_session_handle<Proto, Resource>: the Resource must be a "
-                                             "value the handle owns, or an lvalue reference to a type "
-                                             "derived from foundation::Pinned<T>.  A value that can be "
-                                             "copied must be fixy::SelfContained: a copy of a Resource that "
-                                             "reaches a channel is a second channel to the peer.  Either: "
-                                             "(a) give the Resource a [[no_unique_address]] "
-                                             "fixy::session::MoveOnlyResource member, or (b) make the "
-                                             "channel Pinned and pass it by lvalue reference.  A raw "
-                                             "pointer, a function pointer and a std::reference_wrapper are "
-                                             "refused.  An rvalue-reference Resource binds to a temporary "
-                                             "and is refused too.");
-
-    static_assert(!std::is_same_v<Proto, Continue>, "fixy::session::diagnostic [Continue_Without_Loop]: "
-                                                    "Continue cannot be the top-level protocol.");
-
-    // Forwarding `loc` keeps the caller's site in the abandonment
-    // diagnostic even though the unroll inserts an intermediate handle
-    // whose own default location would otherwise win.
-    return detail::late_door_t<SessionMintDoor, Proto>::template open<Proto, Resource, Policy>(
-        std::forward<Resource>(r), loc);
-}
-
 // ── A session that starts with permissions ───────────────────────────
 //
 // The permission set of a handle names the regions whose tokens its
-// messages can move.  mint_session_handle starts with the empty set.
+// messages can move.  mint_session starts with the empty set.
 // mint_permissioned_session consumes one token for each tag, and starts
 // the session with the set of those tags.  It returns the handle and a
 // PermHold of the same set.  The handle carries the set as a type, and
@@ -113,32 +63,6 @@ mint_permissioned_session(Ctx const& ctx, Resource resource,
                           ::foundation::permissions::Permission<Tags, Brands>... tokens) noexcept {
     return detail::late_door_t<SessionMintDoor, Proto>::template open_permissioned<Proto, Policy>(
         ctx, std::forward<Resource>(resource), std::move(tokens)...);
-}
-
-// ── The callback entry point ─────────────────────────────────────────
-//
-// The library owns the handle.  It builds the first handle, gives it to
-// the body, takes back the handle that the body returns, and closes it.
-// The body must return a handle at End, so a body that drops the handle
-// or stops early does not compile.  This is the design of Thiemann
-// (ICFP 2023): the shape of the API makes the handle linear.
-//
-// Every handle of the session carries the type of the body as its brand,
-// and the entry point accepts back only a handle with that brand.  A body
-// cannot mint a new session, walk it to End and return it in its place,
-// because no public mint makes a branded handle.
-
-template <typename Proto, typename Resource, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Body>
-    requires WellFormedRunnableProtocol<Proto> && SessionResource<Resource>
-          && PermissionFlowCloses<Proto, ::foundation::permissions::EmptyPermSet>
-          && SessionBody<Body, Proto, Resource, Policy>
-[[nodiscard]] constexpr Resource
-with_session(Resource r, Body body, std::source_location loc = std::source_location::current()) noexcept(
-    std::is_nothrow_invocable_v<Body,
-                                detail::first_handle_t<Proto, Resource, Policy, ::foundation::permissions::EmptyPermSet,
-                                                       detail::brand_ctx_t<Body>>>) {
-    return detail::late_door_t<SessionMintDoor, Proto>::template run<Proto, Resource, Policy>(std::forward<Resource>(r),
-                                                                                              std::move(body), loc);
 }
 
 // ── Channels ─────────────────────────────────────────────────────────

@@ -21,7 +21,6 @@
 
 #include <fixy/channels/SubstrateSessionBridge.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 #include <foundation/NoObject.h>
 #include <foundation/effects/Ctx.h>
@@ -106,18 +105,12 @@ public:
 
     // The session carries an empty permission set.  The handle's own
     // permission already fixes how many producers or consumers there may
-    // be, so the protocol has nothing further to transfer per step.
+    // be, so the protocol has nothing further to transfer per step.  The
+    // session opens in the context of the endpoint, so the gate of the
+    // session mint admits each payload of the protocol in that context.
 
     [[nodiscard]] constexpr auto into_session() && noexcept {
         return mint_substrate_session<Substr, Dir>(ctx_, std::move(handle_));
-    }
-
-    // Dropping the context to hand out a bare session handle is safe for
-    // the same reason: the gate of the mint already admitted each payload
-    // of the protocol, and an empty set evolves at no step of it.
-
-    [[nodiscard]] constexpr auto into_bare_session() && noexcept {
-        return ::fixy::session::mint_session_handle<proto_type>(std::move(handle_));
     }
 
     [[nodiscard]] constexpr handle_type& handle() & noexcept { return handle_; }

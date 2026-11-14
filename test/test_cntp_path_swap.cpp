@@ -1,6 +1,6 @@
 #include <crucible/cntp/PathSwap.h>
 #include <fixy/Ctx.h>
-#include <fixy/session/Mint.h>
+#include <fixy/session/Entry.h>
 
 #include <atomic>
 #include "test_assert.h"
@@ -106,7 +106,7 @@ void test_state_machine_and_session_resource_transition() {
     assert(swapper.sender_observed_drain_ack(bg, 300).is_ok());
     assert(swapper.state() == cntp::SwapState::NewPathFlushing);
 
-    auto old_handle = sess::mint_session_handle<Proto>(Wire{.id = 1});
+    auto old_handle = sess::mint_session<Proto>(bg, Wire{.id = 1});
     auto swapped =
         swapper.commit_sender(bg, std::move(old_handle), Wire{.id = 2}, 400).expect("the swap is at NewPathFlushing");
     assert(swapper.state() == cntp::SwapState::Complete);
@@ -194,7 +194,7 @@ void test_commit_sender_loses_in_flight_bytes() {
     assert(swapper.sender_observed_drain_ack(bg, 300).is_ok());
 
     Wire old_wire{.id = 7, .last = 0xBEEF};  // stands in for buffered data
-    auto old_handle = sess::mint_session_handle<Proto>(std::move(old_wire));
+    auto old_handle = sess::mint_session<Proto>(bg, std::move(old_wire));
 
     Wire new_wire{.id = 9, .last = 0};
     auto swapped = swapper.commit_sender(bg, std::move(old_handle), std::move(new_wire), 400)

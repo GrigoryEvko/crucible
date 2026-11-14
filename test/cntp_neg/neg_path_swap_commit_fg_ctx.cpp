@@ -1,6 +1,6 @@
 #include <crucible/cntp/PathSwap.h>
 #include <fixy/Ctx.h>
-#include <fixy/session/Mint.h>
+#include <fixy/session/Entry.h>
 
 // A commit is a background transition.  The foreground context owns no Bg,
 // so it cannot move a live session handle to a new transport resource.
@@ -20,8 +20,9 @@ int main() {
 
     ::fixy::ColdInitCtx init{fe::testing::init()};
     ::fixy::HotFgCtx fg{fe::testing::foreground()};
+    const ::fixy::TestRunnerCtx ctx{fe::testing::test()};
     auto swapper = cntp::mint_path_swapper(init);
-    auto handle = sess::mint_session_handle<sess::Send<int, sess::End>>(Wire{.id = 1});
+    auto handle = sess::mint_session<sess::Send<int, sess::End>>(ctx, Wire{.id = 1});
     auto result = swapper.commit_sender(fg, std::move(handle), Wire{.id = 2}, 0);
     (void)result;
     return 0;

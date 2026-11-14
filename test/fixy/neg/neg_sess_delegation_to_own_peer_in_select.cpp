@@ -2,8 +2,9 @@
 // Carol.  The Sender note names Carol as a peer of the inner session, so
 // Carol would hold the two ends of it, and the mint refuses the protocol.
 
+#include <fixy/Ctx.h>
 #include <fixy/session/Delegate.h>
-#include <fixy/session/Mint.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Projection.h>
 
 namespace neg_sess_delegation_to_own_peer_in_select_types {
@@ -27,7 +28,8 @@ using Chooses =
 
 int main() {
     namespace t = neg_sess_delegation_to_own_peer_in_select_types;
-    auto handle = t::s::mint_session_handle<t::Chooses, t::Wire>(t::Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = t::s::mint_session<t::Chooses>(ctx, t::Wire{});
     static_cast<void>(handle);
     return 0;
 }

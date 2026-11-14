@@ -2055,7 +2055,7 @@ fixy_neg_compile_test(neg_sess_handle_factory_redefined
   "redefinition of .class fixy::session::HandleFactory."
   "previous definition of .class fixy::session::HandleFactory.")
 fixy_neg_compile_test(neg_sess_mint_door_states_the_gate
-  "no matching function for call to .fixy::session::SessionMintDoor::open<fixy::session::Send<int, fixy::session::Continue>, neg_sess_mint_door_states_the_gate_types::Wire"
+  "no matching function for call to .fixy::session::SessionMintDoor::open<fixy::session::Send<int, fixy::session::Continue>, fixy::session::DefaultAbandonmentPolicy, fixy::TestRunnerCtx, neg_sess_mint_door_states_the_gate_types::Wire"
   "satisfaction of .is_well_formed_v<Proto>. .with Proto = fixy::session::Send<int, fixy::session::Continue>.")
 fixy_neg_compile_test(neg_sess_mint_door_derived_look_alike
   "cannot derive from .final. base"
@@ -2173,14 +2173,14 @@ fixy_neg_compile_test(neg_transition_plainness_differs_on_the_dual
 fixy_test(test_session_node_members)
 fixy_neg_compile_test(neg_sess_combinator_specialized_member
   "fixy::session::diagnostic \\[Protocol_Specialized_Combinator\\]: the node fixy::session::Loop<fixy::session::Recv<int, fixy::session::Continue> >"
-  "no matching function for call to .mint_session_handle<fixy::session::Loop<fixy::session::Recv<int, fixy::session::Continue> > >")
+  "no matching function for call to .mint_session<fixy::session::Loop<fixy::session::Recv<int, fixy::session::Continue> > >")
 # The members_of of GCC 16 hides an alias member whose target is a closure
 # type, and the check reads such a member on a copy with a stand-in.  An
 # explicit specialization has its own source location, so the copy does
 # not speak for it, and a member that lies behind a closure is refused.
 fixy_neg_compile_test(neg_sess_combinator_closure_member_lie
   "fixy::session::diagnostic \\[Protocol_Specialized_Combinator\\]: the node fixy::session::Send<neg_sess_combinator_closure_member_lie_types::<lambda\\(\\)>, fixy::session::End>"
-  "no matching function for call to .mint_session_handle<fixy::session::Send<neg_sess_combinator_closure_member_lie_types::<lambda\\(\\)>, fixy::session::End> >")
+  "no matching function for call to .mint_session<fixy::session::Send<neg_sess_combinator_closure_member_lie_types::<lambda\\(\\)>, fixy::session::End> >")
 fixy_neg_compile_test(neg_sess_global_node_specialized
   "fixy::session::diagnostic \\[Projection_Specialized_Global_Node\\]: the node fixy::session::global::Branch<neg_sess_global_node_specialized_types::Hello, int, fixy::session::global::End>"
   "In instantiation of .consteval auto fixy::session::detail::proj::project_under\\(\\) \\[with G = fixy::session::global::Comm<")
@@ -2352,13 +2352,13 @@ fixy_neg_compile_test(neg_sess_marker_not_plain
 # and refuses VendorBackend::None.  Before, the mint gate admitted all
 # three and the build failed later inside the handle.
 fixy_neg_compile_test(neg_sess_mint_unguarded_loop
-  "no matching function for call to .mint_session_handle"
+  "no matching function for call to .mint_session<Spin>"
   "well_formed_of\\(.*\\(\\^\\^ P, \\^\\^ void\\) \\[with P = fixy::session::Loop<fixy::session::Continue>\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_sess_mint_unguarded_pinned_loop
-  "no matching function for call to .mint_session_handle"
+  "no matching function for call to .mint_session<Spin>"
   "Loop<fixy::session::VendorPinned<foundation::algebra::lattices::VendorBackend::NV, fixy::session::Continue> >\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_sess_mint_vendor_none
-  "no matching function for call to .mint_session_handle"
+  "no matching function for call to .mint_session<Nowhere>"
   "VendorPinned<foundation::algebra::lattices::VendorBackend::None, fixy::session::Send<.*Ping, fixy::session::End> >\\]. evaluated to .false.")
 
 # Subtyping: one walk gives the verdict and its reason, and each refusal
@@ -2503,13 +2503,13 @@ fixy_neg_compile_test(neg_sess_subtype_label_without_identity_input
 # no two crash branches with one payload, and no two branches that name
 # one label.  The mint gate refuses each through is_well_formed_v.
 fixy_neg_compile_test(neg_sess_wf_label_after_crash_branch
-  "no matching function for call to .mint_session_handle"
+  "no matching function for call to .mint_session<CrashFirst>"
   "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Offer<fixy::session::Recv<fixy::session::Crash<")
 fixy_neg_compile_test(neg_sess_wf_repeated_crash_branch
-  "no matching function for call to .mint_session_handle"
+  "no matching function for call to .mint_session<TwoRecoveries>"
   "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Offer<fixy::session::Recv<.*Ping, fixy::session::End>, fixy::session::Recv<fixy::session::Crash<")
 fixy_neg_compile_test(neg_sess_wf_repeated_label
-  "no matching function for call to .mint_session_handle"
+  "no matching function for call to .mint_session<SameLabel>"
   "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<.*Hello, int>")
 
 # A keyed branch sends its label word and a positional branch sends its
@@ -2523,7 +2523,7 @@ fixy_neg_compile_test(neg_sess_wf_label_key_without_identity
   "fixy::session::diagnostic \\[Protocol_Choice_Ill_Formed\\]: the choice fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<neg_sess_wf_label_key_without_identity_types::Bob, neg_sess_wf_label_key_without_identity_types::<lambda\\(\\)>, int>"
   "a label key of the choice has no stable identity, so it has no label word")
 fixy_neg_compile_test(neg_sess_mint_mixed_label_keys
-  "no matching function for call to .mint_session_handle"
+  "no matching function for call to .mint_session<Mixed>"
   "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<.*Hello, int>, fixy::session::End>, fixy::session::Send<int, fixy::session::End>")
 
 # A keyed step is a choice of one branch.  A keyed label branch is its
@@ -2561,22 +2561,22 @@ fixy_test(test_session_subtype_attack test_session_subtype_attack.cpp test_sessi
   test_session_subtype_attack_keyed.cpp test_session_subtype_attack_fuel.cpp
   test_session_subtype_attack_ledger.cpp)
 
-# HS14 for mint_session_handle.  Its requires-clause is the whole
+# HS14 for mint_session.  Its requires-clause is the whole
 # admission gate, so each clause gets a fixture that fails through it
 # and through no other: an ill-formed protocol, a protocol with an empty
 # choice, and a resource whose address is not stable.
 fixy_neg_compile_test(neg_sess_mint_ill_formed
-  "no matching function for call to .mint_session_handle"
+  "no matching function for call to .mint_session<Orphan>"
   "constraints not satisfied"
   "is_well_formed_v<Proto>")
 
 fixy_neg_compile_test(neg_sess_mint_empty_choice
-  "no matching function for call to .mint_session_handle"
+  "no matching function for call to .mint_session<DeadEnd>"
   "constraints not satisfied"
   "is_empty_choice_v<Proto>")
 
 fixy_neg_compile_test(neg_sess_mint_unpinned_reference
-  "no matching function for call to .mint_session_handle"
+  "no matching function for call to .mint_session<Once"
   "constraints not satisfied"
   "satisfaction of .SessionResource<Resource>.")
 
@@ -2584,11 +2584,11 @@ fixy_neg_compile_test(neg_sess_mint_unpinned_reference
 # peer, so SessionResource refuses it: once for a struct that holds a
 # pointer, and once for a raw pointer.
 fixy_neg_compile_test(neg_sess_resource_copy_reaches_channel
-  "no matching function for call to .mint_session_handle<Once>\\(resource_copy_fixture::SharedWire\\)"
+  "no matching function for call to .mint_session<Once>\\(const fixy::TestRunnerCtx&, resource_copy_fixture::SharedWire\\)"
   "satisfaction of .SessionResource<Resource>. \\[with Resource = resource_copy_fixture::SharedWire\\]"
   "no operand of the disjunction is satisfied")
 fixy_neg_compile_test(neg_sess_resource_raw_pointer
-  "no matching function for call to .mint_session_handle<Once, resource_pointer_fixture::Queue\\*>"
+  "no matching function for call to .mint_session<Once, fixy::session::DefaultAbandonmentPolicy, fixy::TestRunnerCtx, resource_pointer_fixture::Queue\\*>"
   "satisfaction of .SessionResource<Resource>. \\[with Resource = resource_pointer_fixture::Queue\\*\\]"
   "no operand of the disjunction is satisfied")
 
@@ -2689,11 +2689,11 @@ fixy_neg_compile_test(neg_sess_end_with_open_loan
   "static assertion failed: fixy::session::diagnostic \\[PermissionImbalance\\]: the protocol reaches End"
   "the expression .!.perm_set_has_open_loan_v<PS>. .with PS = foundation::permissions::PermSet<fixy::session::LentOut<.unnamed.::Region> >")
 fixy_neg_compile_test(neg_sess_send_unheld_permission
-  "no matching function for call to .mint_session_handle"
-  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. \\[with Proto = fixy::session::Send<foundation::permissions::Permission<")
+  "no matching function for call to .mint_session<.anonymous.::Proto>"
+  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags \\.\\.\\.> >. \\[with Proto = fixy::session::Send<foundation::permissions::Permission<.*. Tags = \\{\\}\\]")
 fixy_neg_compile_test(neg_sess_mint_unselected_arm_sends_unheld_permission
-  "no matching function for call to .mint_session_handle"
-  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. \\[with Proto = fixy::session::Select<fixy::session::End, fixy::session::Send<")
+  "no matching function for call to .mint_session<.anonymous.::Proto>"
+  "PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags \\.\\.\\.> >. \\[with Proto = fixy::session::Select<fixy::session::End, fixy::session::Send<.*. Tags = \\{\\}\\]")
 # HS14 for mint_permissioned_session.  Its gate is one concept, and each
 # fixture fails one clause of it: the permission flow on three shapes of
 # protocol, the row of a tag, and the empty set.  A token passed as an
@@ -2788,6 +2788,25 @@ fixy_neg_compile_test(neg_sess_ctx_with_session_foreign_end
 fixy_neg_compile_test(neg_sess_ctx_with_session_copies_resource
   "use of deleted function .copies_resource_fixture::Channel::Channel\\(const copies_resource_fixture::Channel&\\)."
   "initializing argument 2 of .constexpr Resource fixy::session::with_session\\(const Ctx&, Resource, Body, std::source_location\\)")
+# Each session mint takes the execution context of the caller, and the
+# door of the mints states the gate of each mint, the row of the protocol
+# too.  A call with no context is not viable, and the door refuses a
+# context that does not hold the row of the protocol.
+fixy_neg_compile_test(neg_sess_mint_session_without_ctx
+  "no matching function for call to .mint_session<without_ctx_fixture::SendsIo>\\(without_ctx_fixture::Channel\\)."
+  "candidate expects 2 arguments, 1 provided")
+fixy_neg_compile_test(neg_sess_with_session_without_ctx
+  "no matching function for call to .with_session<with_without_ctx_fixture::ReceivesIo>\\(with_without_ctx_fixture::Channel, "
+  "candidate expects 3 arguments, 2 provided")
+fixy_neg_compile_test(neg_sess_mint_door_open_without_ctx
+  "no matching function for call to .fixy::session::SessionMintDoor::open<door_without_ctx_fixture::SendsIo, fixy::session::DefaultAbandonmentPolicy>\\(door_without_ctx_fixture::Channel, <brace-enclosed initializer list>\\)."
+  "candidate expects 3 arguments, 2 provided")
+fixy_neg_compile_test(neg_sess_mint_door_open_ctx_lacks_row
+  "no matching function for call to .fixy::session::SessionMintDoor::open<door_row_fixture::SendsIo, fixy::session::DefaultAbandonmentPolicy>\\(const BgCtx&, door_row_fixture::Channel, <brace-enclosed initializer list>\\)."
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*. Proto = fixy::session::Send<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::IO>, int>, fixy::session::End>.")
+fixy_neg_compile_test(neg_sess_mint_door_run_ctx_lacks_row
+  "no matching function for call to .fixy::session::SessionMintDoor::run<door_run_row_fixture::ReceivesIo, fixy::session::DefaultAbandonmentPolicy>\\(const BgCtx&, door_run_row_fixture::Channel, "
+  "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. .with Ctx = .*. Proto = fixy::session::Recv<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::IO>, int>, fixy::session::End>.")
 
 # ── The machine and Vigil-mode session bridges ────────────────────────
 fixy_test(test_session_bridges)
@@ -2911,15 +2930,15 @@ fixy_neg_compile_test(neg_sess_crash_watched_friend_specialized
 # Rules 1 and 2, and Stop as runtime syntax, hold in every session, so
 # the plain handle factory refuses them.
 fixy_neg_compile_test(neg_sess_crash_label_sent
-  "no matching function for call to .mint_session_handle"
+  "no matching function for call to .mint_session<fixy::session::dual_of_t<"
   "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Select<fixy::session::Send<int, fixy::session::End>, fixy::session::Send<fixy::session::Crash<")
 
 fixy_neg_compile_test(neg_sess_crash_pure_choice
-  "no matching function for call to .mint_session_handle"
+  "no matching function for call to .mint_session<Proto>"
   "is_empty_choice_v<Proto>\\) \\[with Proto = fixy::session::Send<int, fixy::session::Offer<fixy::session::Recv<fixy::session::Crash<")
 
 fixy_neg_compile_test(neg_sess_crash_stop_at_design_time
-  "no matching function for call to .mint_session_handle"
+  "no matching function for call to .mint_session<Proto>"
   "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Send<int, fixy::session::Stop>\\]")
 
 # HS14 for crash(): a reliable role cannot crash, and an ended process
@@ -3018,7 +3037,7 @@ fixy_test(test_session_rollback)
 # Each fixture is one way for one side to choose alone, or one rule of
 # the compliance check.
 fixy_neg_compile_test(neg_sess_checkpoint_single_endpoint
-  "no matching function for call to .mint_session_handle"
+  "no matching function for call to .mint_session<Decide>"
   "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Select<fixy::session::Commit<")
 
 fixy_neg_compile_test(neg_sess_checkpoint_labels_disagree
@@ -3457,7 +3476,7 @@ fixy_neg_compile_test(neg_sess_network_crash_stop_on_mailbox
   "fixy::session::diagnostic \\[Network_Crash_Stop_Needs_Per_Pair_Fifo\\]"
   "a crash-stop protocol binds only to a per-pair FIFO carrier")
 fixy_neg_compile_test(neg_sess_mint_local_names_two_peers
-  "no matching function for call to .mint_session_handle"
+  "no matching function for call to .mint_session<ReceivesFromTwo>"
   "satisfaction of .NamesAtMostOnePeer<Proto>.")
 fixy_neg_compile_test(neg_sess_with_session_local_names_two_peers
   "no matching function for call to .with_session"
@@ -3655,8 +3674,8 @@ fixy_neg_compile_test(neg_sess_payload_bare_endpoint
   "Payload_Refused.: the payload cannot travel on a session channel, because it holds, points at or names a session endpoint outside DelegatedSession"
   "payload_perm_delta<neg_sess_payload_bare_endpoint_types::Envelope>")
 fixy_neg_compile_test(neg_sess_payload_bare_endpoint_mint
-  "no matching function for call to .mint_session_handle<neg_sess_payload_bare_endpoint_mint_types::Carrier"
-  "required for the satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<> >. .with Proto = fixy::session::Send<fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::Continue>")
+  "no matching function for call to .mint_session<neg_sess_payload_bare_endpoint_mint_types::Carrier"
+  "required for the satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags \\.\\.\\.> >. .with Proto = fixy::session::Send<fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::Continue>.*. Tags = \\{\\}.")
 # Each verdict of the payload walk is a concept, so a user specialization
 # of one no longer compiles.  Each of these specializations compiled while
 # the verdict was a variable template, and it flipped a send, a receive,

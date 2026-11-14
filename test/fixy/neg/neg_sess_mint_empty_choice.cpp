@@ -1,4 +1,4 @@
-// mint_session_handle refuses a protocol holding a reachable empty
+// mint_session refuses a protocol holding a reachable empty
 // choice, even when the empty choice is nested rather than at the top.
 //
 // An empty choice is not well-formed, and the mint gate states the
@@ -6,8 +6,9 @@
 // it at mint time is the point: the alternative is a build that succeeds
 // and then fails at the eventual select<I>() that has no branch to reach.
 
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 
 namespace s = fixy::session;
 
@@ -21,7 +22,8 @@ struct Wire {};
 using DeadEnd = s::Send<Ping, s::Select<>>;
 
 int main() {
-    auto handle = s::mint_session_handle<DeadEnd, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_session<DeadEnd>(ctx, Wire{});
     (void)handle;
     return 0;
 }

@@ -5,8 +5,9 @@
 #include <fixy/session/Witnessed.h>
 
 #include <fixy/Borrowed.h>
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
-#include <fixy/session/Mint.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>
@@ -36,7 +37,8 @@ std::uint64_t storage[3] = {1, 2, 3};
 }  // namespace
 
 int main() {
-    auto at_send = s::mint_session_handle<Sending, Wire>(Wire{});
+    const ::fixy::TestRunnerCtx session_ctx{::foundation::effects::testing::test()};
+    auto at_send = s::mint_session<Sending>(session_ctx, Wire{});
     auto borrow = ::fixy::mint_borrowed<Cache>(storage);
     auto witnessed = s::mint_witnessed_at(at_send, borrow);
     FgCtx ctx = eff::testing::foreground();
