@@ -1884,6 +1884,7 @@ fixy_neg_compile_test(neg_sat_det_cross_tier_assignment
   "conversion from .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::Pure>,\\[\\.\\.\\.\\]>."
   "to non-scalar type .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::PhiloxRng>,\\[\\.\\.\\.\\]>. requested")
 fixy_test(test_checked)
+fixy_test(test_arithmetic_twins)
 
 # Each compile-time gate of fixy/Checked.h stops the build at a value the
 # destination type cannot hold.  The first regex is the bracketed tag of
