@@ -49,16 +49,6 @@ struct Vendor {};
 // datasheet numbers rather than what this die achieves at this
 // thermal headroom.
 struct Calibrated {};
-// Timestamps minted by hybrid-logical-clock state. Separate from an
-// External timestamp received from a peer, which must be admitted
-// explicitly before it can drive ordering decisions.
-struct Hlc {};
-// Local marks a write authored by this replica.
-struct Local {};
-// Broadcast messages and repair summaries admitted at the broadcast
-// tree boundary. Raw message identifiers and overlay peer identities
-// cannot drive eager and lazy tree transitions.
-struct Plumtree {};
 // Payload whose end-to-end hash trailer was recomputed at the
 // receiver and matched. Raw wire bytes and merely gossiped payloads
 // cannot substitute.
