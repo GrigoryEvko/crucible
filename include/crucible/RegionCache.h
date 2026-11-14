@@ -60,7 +60,7 @@ struct RegionCache {
     //
     // A region is eligible only once it carries a memory plan, because
     // switching to one without a plan cannot put the context into compiled
-    // mode: CrucibleContext::activate returns false on a null plan.  The scan
+    // mode: CrucibleContext::activate returns false on a region with no plan.  The scan
     // reads the plan, the op count and the ops off the region itself, and
     // not off a snapshot of the insert.  So a region whose plan is built
     // after it was cached becomes eligible on its own.
@@ -73,7 +73,7 @@ struct RegionCache {
         for (uint32_t i = 0; i < count_.get(); i++) {
             const ::fixy::WeakRef<const RegionNode> candidate = regions_.at(prove_slot_(head_.index_back(i)));
             if (!candidate.has_value() || candidate == exclude) continue;
-            if (candidate->plan == nullptr) continue;
+            if (candidate->plan.is_none()) continue;
             if (pos >= candidate->num_ops()) continue;
             if (candidate->op_at(pos).schema_hash == schema && candidate->op_at(pos).shape_hash == shape)
                 return candidate;

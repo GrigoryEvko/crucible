@@ -94,7 +94,7 @@ struct BenchRegion {
 
         region.kind = TraceNodeKind::REGION;
         region.ops = ops.view();
-        region.plan = &plan;
+        region.plan = make_plan_link(plan);
     }
 
     BenchRegion(const BenchRegion&) = delete;

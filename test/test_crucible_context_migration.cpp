@@ -94,7 +94,7 @@ void make_ops(::fixy::View<TraceEntry> ops, ::fixy::View<SlotId> outputs) {
     }
 }
 
-void init_region(RegionNode* region, ::fixy::View<TraceEntry> ops, MemoryPlan* plan) {
+void init_region(RegionNode* region, ::fixy::View<TraceEntry> ops, crucible::PlanLink plan) {
     ::new(region) RegionNode{};
     region->kind = TraceNodeKind::REGION;
     region->ops = ops;
@@ -115,7 +115,7 @@ bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
     make_ops(old_ops.view(), old_outputs.view());
     MemoryPlan old_plan = make_plan(old_slots.view());
     RegionNode old_region{};
-    init_region(&old_region, old_ops.view(), &old_plan);
+    init_region(&old_region, old_ops.view(), crucible::make_plan_link(old_plan));
 
     ::foundation::core::FixedArray<SlotId, 2> new_outputs{SlotId{new_slot}, SlotId{0}};
     ::foundation::core::FixedArray<TraceEntry, 2> new_ops{};
@@ -123,7 +123,7 @@ bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
     MemoryPlan new_plan =
         make_plan(new_slots.view().window(0, new_count).expect("a test plan holds at most kWideSlots slots"));
     RegionNode new_region{};
-    init_region(&new_region, new_ops.view(), &new_plan);
+    init_region(&new_region, new_ops.view(), crucible::make_plan_link(new_plan));
 
     CrucibleContext context;
     assert(context.activate(old_region));
@@ -212,14 +212,14 @@ void test_smaller_new_slot_takes_its_own_size() {
     ::foundation::core::FixedArray<TraceEntry, 2> old_ops{};
     make_ops(old_ops.view(), outputs.view());
     RegionNode old_region{};
-    init_region(&old_region, old_ops.view(), &old_plan);
+    init_region(&old_region, old_ops.view(), crucible::make_plan_link(old_plan));
 
     ::foundation::core::FixedArray<TensorSlot, 1> narrow_slot{};
     MemoryPlan new_plan = make_plan(narrow_slot.view());
     ::foundation::core::FixedArray<TraceEntry, 2> new_ops{};
     make_ops(new_ops.view(), outputs.view());
     RegionNode new_region{};
-    init_region(&new_region, new_ops.view(), &new_plan);
+    init_region(&new_region, new_ops.view(), crucible::make_plan_link(new_plan));
 
     CrucibleContext context;
     assert(context.activate(old_region));

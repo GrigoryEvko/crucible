@@ -28,7 +28,7 @@ using crucible::ShapeHash;
 // so they take that context from the test door.
 static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
 
-static void init_region(RegionNode* r, ::fixy::View<TraceEntry> ops, MemoryPlan* plan) {
+static void init_region(RegionNode* r, ::fixy::View<TraceEntry> ops, crucible::PlanLink plan) {
     ::new(r) RegionNode{};
     r->kind = TraceNodeKind::REGION;
     r->ops = ops;
@@ -105,7 +105,7 @@ static void test_activate() {
     auto plan = make_simple_plan(slots.view());
 
     RegionNode region{};
-    init_region(&region, ops.view(), &plan);
+    init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
     CrucibleContext ctx;
     assert(ctx.activate(region));
@@ -125,7 +125,7 @@ static void test_activate_no_plan() {
     ::foundation::core::FixedArray<TraceEntry, 1> ops{};
 
     RegionNode region{};
-    init_region(&region, ops.view(), nullptr);
+    init_region(&region, ops.view(), crucible::PlanLink{});
 
     CrucibleContext ctx;
     assert(!ctx.activate(region));
@@ -151,7 +151,7 @@ static void test_full_replay() {
     auto plan = make_simple_plan(slots.view());
 
     RegionNode region{};
-    init_region(&region, ops.view(), &plan);
+    init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
     CrucibleContext ctx;
     assert(ctx.activate(region));
@@ -195,7 +195,7 @@ static void test_divergence() {
     auto plan = make_simple_plan(slots.view());
 
     RegionNode region{};
-    init_region(&region, ops.view(), &plan);
+    init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
     CrucibleContext ctx;
     assert(ctx.activate(region));
@@ -228,7 +228,7 @@ static void test_reactivate() {
     auto plan_a = make_simple_plan(slots_a.view());
 
     RegionNode region_a{};
-    init_region(&region_a, ops_a.view(), &plan_a);
+    init_region(&region_a, ops_a.view(), crucible::make_plan_link(plan_a));
 
     // The second region shares no hash with the first, so a stale guard
     // would diverge rather than silently match.
@@ -247,7 +247,7 @@ static void test_reactivate() {
     auto plan_b = make_simple_plan(slots_b.view());
 
     RegionNode region_b{};
-    init_region(&region_b, ops_b.view(), &plan_b);
+    init_region(&region_b, ops_b.view(), crucible::make_plan_link(plan_b));
 
     CrucibleContext ctx;
 
@@ -317,7 +317,7 @@ static void test_external_slots() {
     plan.device_idx = 0;
 
     RegionNode region{};
-    init_region(&region, ops.view(), &plan);
+    init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
     CrucibleContext ctx;
     assert(ctx.activate(region));
@@ -405,7 +405,7 @@ static void test_integration_sweep_line() {
     set_input_slots(ops.at(::foundation::core::index<1>()), op1_in.view());
 
     RegionNode region{};
-    init_region(&region, ops.view(), plan);
+    init_region(&region, ops.view(), crucible::make_plan_link(*plan));
 
     CrucibleContext ctx;
     assert(ctx.activate(region));
@@ -462,7 +462,7 @@ static void test_divergence_counter() {
     auto plan = make_simple_plan(slots.view());
 
     RegionNode region{};
-    init_region(&region, ops.view(), &plan);
+    init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
     CrucibleContext ctx;
 

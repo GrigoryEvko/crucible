@@ -51,10 +51,10 @@ int main() {
     flush_and_wait_region_published(vigil);
 
     const auto* region = vigil.active_region();
-    assert(region && region->plan);
+    assert(region && region->plan.is_some());
+    const ::fixy::Ref<MemoryPlan> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
     ::fixy::report(::fixy::Sink::Out, "  region: {} ops, pool {} B, {} slots ({} ext)\n", region->num_ops(),
-                   static_cast<unsigned long long>(region->plan->pool_bytes), region->plan->num_slots(),
-                   region->plan->num_external);
+                   static_cast<unsigned long long>(plan->pool_bytes), plan->num_slots(), plan->num_external);
 
     align_and_complete_iteration(vigil, net.ops);
     run_compiled_iterations(vigil, net.ops);

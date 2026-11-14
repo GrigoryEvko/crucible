@@ -58,7 +58,7 @@ void test_pipeline_multi_iteration() {
     auto* region2 = bt.active_region.load_acquire().try_get();
     assert(region2 != nullptr && region2 != region1 && "Second boundary did not fire");
     assert(region2->num_ops() == NUM_OPS);
-    assert(region2->plan != nullptr);
+    assert(region2->plan.is_some());
 
     CrucibleContext ctx;
     assert(ctx.activate(*region2));

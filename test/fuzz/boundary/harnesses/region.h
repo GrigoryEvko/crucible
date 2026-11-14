@@ -22,8 +22,8 @@
 namespace crucible::fuzz::boundary {
 
 inline void claim_region_trusted(const char* harness, const RegionNode& region) {
-    if (region.plan != nullptr) {
-        const MemoryPlan& plan = *region.plan;
+    for (const ::fixy::Ref<MemoryPlan>& plan_ref : region.plan) {
+        const MemoryPlan& plan = *plan_ref;
         CRUCIBLE_FUZZ_CLAIM(harness, plan.pool_bytes <= PoolAllocator::kMaxPoolBytes);
         CRUCIBLE_FUZZ_CLAIM(harness, plan.num_external <= plan.num_slots());
         for (const TensorSlot& slot : plan.slots) {
@@ -73,7 +73,7 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
     }
     RegionNode* region = make_region(alloc, dag_arena, ops);
     if (with_plan) {
-        auto* plan = &*arena.make<MemoryPlan>(alloc);
+        const ::fixy::Ref<MemoryPlan> plan = arena.make<MemoryPlan>(alloc);
         plan->pool_bytes = 2 * PoolAllocator::ALIGNMENT;
         plan->num_external = 0;
         plan->device_type = DeviceType::CPU;
@@ -86,7 +86,7 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
             slot.slot_id = SlotId{slot_index};
             ++slot_index;
         }
-        region->plan = plan;
+        region->plan = make_plan_link(*plan);
     }
     return region;
 }
@@ -127,10 +127,12 @@ inline constexpr std::size_t kImageHasPlanOffset = 52;
     // A slot reaches past the pool, and a slot starts off the alignment.
     // The pool allocator aborts on either one.
     RegionNode* past_pool = build_seed_region(arena, dag_arena, true);
-    past_pool->plan->slots.get(1).expect("the seed plan holds two slots")->nbytes = std::uint64_t{1} << 40;
+    const ::fixy::Ref<MemoryPlan> past_pool_plan = PlanLink{past_pool->plan}.expect("the seed region has a plan");
+    past_pool_plan->slots.get(1).expect("the seed plan holds two slots")->nbytes = std::uint64_t{1} << 40;
     seeds.push_back(region_image(past_pool));
     RegionNode* misaligned = build_seed_region(arena, dag_arena, true);
-    misaligned->plan->slots.get(1).expect("the seed plan holds two slots")->offset_bytes += 8;
+    const ::fixy::Ref<MemoryPlan> misaligned_plan = PlanLink{misaligned->plan}.expect("the seed region has a plan");
+    misaligned_plan->slots.get(1).expect("the seed plan holds two slots")->offset_bytes += 8;
     seeds.push_back(region_image(misaligned));
     return seeds;
 }

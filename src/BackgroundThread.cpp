@@ -498,9 +498,11 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     if (num_slots > 0) {
         memory.plan = ::foundation::AlignedBuffer<MemoryPlan>::allocate_value_initialized(1);
         // The plan lives in the memory of the region, outside the epoch, so
-        // the body writes its address and the result of the epoch holds none.
+        // the body writes its link and the result of the epoch holds none.
+        // The sweep gives the address of the storage of the plan.
         publish_scratch_.with_epoch([&]() noexcept {
-            region.plan = compute_memory_plan(bg.alloc, memory.plan[0], publish_scratch_, memory.parts.slots.view());
+            region.plan = make_plan_link(
+                *compute_memory_plan(bg.alloc, memory.plan[0], publish_scratch_, memory.parts.slots.view()));
         });
     }
 

@@ -159,7 +159,7 @@ int main() {
     // of it while the context replays a different region stops that replay,
     // because the loaded region is the active region and cannot replay.
     const crucible::ContentHash stored_hash = active_region->content_hash;
-    assert(active_region->plan == nullptr && "the stored region must have no memory plan");
+    assert(active_region->plan.is_none() && "the stored region must have no memory plan");
     divrig::feed_one_region(vigil, 0);
     crucible::test::flush_and_wait_region_published(vigil);
     for (uint32_t i = 0; i < divrig::NUM_OPS; i++) {

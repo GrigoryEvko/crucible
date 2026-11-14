@@ -80,6 +80,16 @@ struct MemoryPlan {
     }
 };
 
+// A link to the memory plan of a region, or no plan.  The plan is in the
+// memory of the region, and the link only borrows it.  The empty link is the
+// null pointer, so a link takes eight bytes.
+using PlanLink = ::fixy::Option<::fixy::Ref<MemoryPlan>>;
+
+// A full link to the plan.
+[[nodiscard]] inline PlanLink make_plan_link(MemoryPlan& plan) noexcept {
+    return ::fixy::some(::fixy::Ref<MemoryPlan>{::fixy::to(plan)});
+}
+
 // True when the byte ranges of the slots live at op `op` are pairwise
 // disjoint.  Only the simultaneously-live set is checked: two slots whose
 // live ranges do not intersect may share an offset, which is the reuse the
@@ -379,7 +389,9 @@ struct RegionNode : TraceNode {
     using VariantCounter = ::fixy::Monotonic<uint32_t>;
     VariantCounter variant_id = ::fixy::mint_monotonic<uint32_t>(0u);
 
-    MemoryPlan* plan = nullptr;  // null until liveness analysis runs
+    // The memory plan of the region.  A region has no plan until the
+    // liveness analysis runs.
+    PlanLink plan{};
 
     void set_measured_ms(float ms) noexcept {
         CRUCIBLE_PRE(ms >= 0.0f);  // >= also rejects NaN

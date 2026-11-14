@@ -243,7 +243,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         ::fixy::BumpArena slot_arena{1 << 16};
         crucible::MemoryPlan ok_plan{};
         ok_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
-        region->plan = &ok_plan;
+        region->plan = crucible::make_plan_link(ok_plan);
 
         ::fixy::HeapArray<std::byte> pbuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
         const size_t pn = crucible::serialize_region(crucible::SerializedRegion{*region}, pbuf.view());
@@ -255,7 +255,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
 
         crucible::MemoryPlan bad_plan{};
         bad_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 3, crucible::TensorSlot{});
-        region->plan = &bad_plan;
+        region->plan = crucible::make_plan_link(bad_plan);
 
         ::fixy::HeapArray<std::byte> nbuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
         const size_t nn = crucible::serialize_region(crucible::SerializedRegion{*region}, nbuf.view());
@@ -265,7 +265,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
             test.alloc, nbuf.view().window(0, nn).expect("the writer writes inside its image"), narena);
         assert(bad_loaded.is_none() && "deserialize_region must reject slot_id >= plan->num_slots");
 
-        region->plan = nullptr;  // nothing later depends on this.
+        region->plan = ::fixy::none;  // nothing later depends on this.
     }
 
     // An out-of-range pool_bytes becomes an [[assume]] under the release
@@ -278,7 +278,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         crucible::MemoryPlan over_plan{};
         over_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
         over_plan.pool_bytes = crucible::PoolAllocator::kMaxPoolBytes + 1;
-        region->plan = &over_plan;
+        region->plan = crucible::make_plan_link(over_plan);
 
         ::fixy::HeapArray<std::byte> obuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
         const size_t on = crucible::serialize_region(crucible::SerializedRegion{*region}, obuf.view());
@@ -291,7 +291,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         crucible::MemoryPlan at_plan{};
         at_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
         at_plan.pool_bytes = crucible::PoolAllocator::kMaxPoolBytes;
-        region->plan = &at_plan;
+        region->plan = crucible::make_plan_link(at_plan);
 
         ::fixy::HeapArray<std::byte> abuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
         const size_t an = crucible::serialize_region(crucible::SerializedRegion{*region}, abuf.view());
@@ -301,7 +301,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
             test.alloc, abuf.view().window(0, an).expect("the writer writes inside its image"), aarena);
         assert(at_loaded.is_some() && "pool_bytes == kMaxPoolBytes must be accepted (inclusive)");
 
-        region->plan = nullptr;  // restore.
+        region->plan = ::fixy::none;  // restore.
     }
 
     // A writer sets every pad byte of a slot to zero, so one non-zero byte
@@ -314,7 +314,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         crucible::MemoryPlan pad_plan{};
         pad_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
         pad_plan.slots.get(20).expect("the pad plan holds 21 slots")->slot_id = crucible::SlotId{kMarkerSlotId};
-        region->plan = &pad_plan;
+        region->plan = crucible::make_plan_link(pad_plan);
 
         ::fixy::HeapArray<std::byte> image_buf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
         const size_t image_bytes = crucible::serialize_region(crucible::SerializedRegion{*region}, image_buf.view());
@@ -365,7 +365,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
             assert(refuses_with_byte_set_at(pad_at + byte) && "a non-zero byte in the slot pad must refuse the image");
         }
 
-        region->plan = nullptr;
+        region->plan = ::fixy::none;
     }
 
     // An op with scalar arguments and no tensors.  Each array of an entry

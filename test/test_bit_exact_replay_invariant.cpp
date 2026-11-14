@@ -207,20 +207,19 @@ struct Built {
     build_slots(slots.view());
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    head->plan = bt.compute_memory_plan(ctx.alloc, plan_storage, sweep_arena, slots.view());
+    head->plan = crucible::make_plan_link(*bt.compute_memory_plan(ctx.alloc, plan_storage, sweep_arena, slots.view()));
     crucible::recompute_merkle(*head);
 
     Built out;
     out.head_content_hash = head->content_hash.raw();
     out.tail_content_hash = tail->content_hash.raw();
     out.merkle_hash = head->merkle_hash.raw();
-    if (head->plan != nullptr) {
-        out.pool_bytes = head->plan->pool_bytes;
-        out.num_slots = head->plan->num_slots();
-        out.num_external = head->plan->num_external;
+    for (const ::fixy::Ref<MemoryPlan>& plan : head->plan) {
+        out.pool_bytes = plan->pool_bytes;
+        out.num_slots = plan->num_slots();
+        out.num_external = plan->num_external;
         for (uint32_t slot_index = 0; slot_index < out.num_slots && slot_index < kNumSlots; slot_index++) {
-            out.offsets[slot_index] =
-                head->plan->slots.get(slot_index).expect("the plan holds this slot")->offset_bytes;
+            out.offsets[slot_index] = plan->slots.get(slot_index).expect("the plan holds this slot")->offset_bytes;
         }
     }
     return out;

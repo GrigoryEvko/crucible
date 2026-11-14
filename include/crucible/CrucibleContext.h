@@ -76,13 +76,16 @@ struct CrucibleContext {
     CrucibleContext(CrucibleContext&&) = delete("PoolAllocator has interior pointers into pool");
     CrucibleContext& operator=(CrucibleContext&&) = delete("PoolAllocator has interior pointers into pool");
 
+    // Replays region from its first op.  A region with no memory plan cannot
+    // replay, so the context stays as it is and the call returns false.
     [[nodiscard]] bool activate(const RegionNode& region) CRUCIBLE_NO_THREAD_SAFETY {
-        if (!region.plan) [[unlikely]]
+        if (region.plan.is_none()) [[unlikely]]
             return false;
+        const ::fixy::Ref<MemoryPlan> plan = PlanLink{region.plan}.expect("the test above found the plan");
 
         if (mode_ == ContextMode::COMPILED) deactivate();
 
-        pool_.init(*region.plan);
+        pool_.init(*plan);
         engine_.init(region, ReplayEngine::PoolBorrow{pool_});
         active_region_ = ::fixy::mint_tagged<::fixy::tags::source::Vigil>(&region);
         mode_ = ContextMode::COMPILED;
@@ -134,28 +137,29 @@ struct CrucibleContext {
     void* input_ptr(uint16_t) const&& =
         delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
-    // Safe to call part-way through an iteration.
+    // Safe to call part-way through an iteration.  A region with no memory
+    // plan cannot replay, so the context stays as it is and the call returns
+    // false.
     [[nodiscard]] bool switch_region(const RegionNode& alt, uint32_t div_pos) CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
-        if (!alt.plan) [[unlikely]]
+        if (alt.plan.is_none()) [[unlikely]]
             return false;
+        const ::fixy::Ref<MemoryPlan> new_plan = PlanLink{alt.plan}.expect("the test above found the plan");
 
         if (div_pos == 0) return activate(alt);
 
-        // Armed in a release build, unlike the two beliefs further down this
-        // file. A null plan here does not fault: migrate_prefix_slots_ reads
-        // old_plan.slots[sid] at whatever address a null base plus a slot
-        // index lands on, and feeds the offsets it finds to a memcpy. That
-        // writes outside the pool with no diagnostic. The path runs once per
-        // shape change, so an always-on check costs nothing worth counting.
-        CRUCIBLE_FATAL_INVARIANT(active_region_.value() != nullptr && active_region_.value()->plan != nullptr);
+        // Armed in a release build. A compiled context replays a region that
+        // has a plan, and the migration reads the slots of the two plans. The
+        // path runs once per shape change, so an always-on check costs
+        // nothing worth counting.
+        CRUCIBLE_FATAL_INVARIANT(active_region_.value() != nullptr && active_region_.value()->plan.is_some());
         const RegionNode& old_region = *active_region_.value();
 
         // Detaching empties the pool, which makes the view stale, but it goes
         // out of scope before anything touches the pool again.
         auto pv = pool_.initialized_view_();
         const ::foundation::AlignedBytes old_pool = pool_.detach(pv);
-        pool_.init(*alt.plan);
+        pool_.init(*new_plan);
         migrate_prefix_slots_(old_region, alt, old_pool.view(), div_pos);
 
         engine_.init(alt, ReplayEngine::PoolBorrow{pool_});
@@ -279,10 +283,10 @@ private:
 
     void migrate_prefix_slots_(const RegionNode& old_region, const RegionNode& alt,
                                ::fixy::View<const uint8_t> old_pool, uint32_t div_pos) CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(old_region.plan != nullptr);
-        CRUCIBLE_PRE(alt.plan != nullptr);
-        const MemoryPlan& old_plan = *old_region.plan;
-        const MemoryPlan& new_plan = *alt.plan;
+        // The two regions are compiled regions, so each has a plan.  A region
+        // with no plan ends the process in each build.
+        const MemoryPlan& old_plan = *PlanLink{old_region.plan}.expect("the region of a migration has a memory plan");
+        const MemoryPlan& new_plan = *PlanLink{alt.plan}.expect("the region of a migration has a memory plan");
         const uint32_t old_num_slots = old_plan.num_slots();
         const uint32_t new_num_slots = new_plan.num_slots();
         // The bound of the bitset below.  The check runs in each build and

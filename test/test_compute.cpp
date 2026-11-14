@@ -216,7 +216,7 @@ int main() {
     RegionNode region{};
     region.kind = TraceNodeKind::REGION;
     region.ops = ops.view();
-    region.plan = plan;
+    region.plan = make_plan_link(*plan);
 
     CrucibleContext ctx;
     assert(ctx.activate(region));

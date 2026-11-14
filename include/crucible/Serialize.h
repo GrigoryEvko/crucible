@@ -426,10 +426,13 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
     w.w(region->measured_ms);
     w.w(region->variant_id.get());
 
-    const bool has_plan = (region->plan != nullptr);
-    w.w(has_plan);
-    if (has_plan) {
-        const MemoryPlan& plan = *region->plan;
+    // The writes of the image are byte writes, and the compiler cannot prove
+    // that they leave the link of the region as it is.  The copy of the link
+    // keeps one test of the plan.
+    const PlanLink plan_link = region->plan;
+    w.w(plan_link.is_some());
+    for (const ::fixy::Ref<MemoryPlan>& plan_ref : plan_link) {
+        const MemoryPlan& plan = *plan_ref;
         w.w(plan.pool_bytes);
         w.w(plan.num_slots());
         w.w(plan.num_external);
@@ -685,11 +688,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     // least zero, so the advance does not go back.  A value of zero means
     // that no variant was selected when the region was written.
     node.variant_id.advance(variant_id);
-    // The node holds no plan from its construction, and a loaded plan
-    // replaces that.
-    for (const ::fixy::Ref<MemoryPlan> loaded_plan : plan) {
-        node.plan = &*loaded_plan;
-    }
+    node.plan = plan;
     // The node is rebuilt from Cipher bytes, and the fold above matched the
     // content hash that the image records, so it crosses the edge to Loaded.
     return ::fixy::Option<LoadedRegionNode>::some(

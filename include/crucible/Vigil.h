@@ -976,9 +976,10 @@ private:
     // Walks the region's ops to recover each external slot's data pointer
     // from the recorded tensor metadata.  Runs once per activation.
     [[gnu::cold]] void register_externals_from_region_(VigilFgCtx const& fg, const RegionNode& region) {
-        if (!region.plan) return;
+        if (region.plan.is_none()) return;
+        const ::fixy::Ref<MemoryPlan> plan = PlanLink{region.plan}.expect("the test above found the plan");
 
-        for (const TensorSlot& slot : region.plan->slots) {
+        for (const TensorSlot& slot : plan->slots) {
             if (!slot.is_external) continue;
 
             SlotId target = slot.slot_id;
@@ -1011,7 +1012,7 @@ private:
     // migration and the engine advance.  Returns true when the switch
     // succeeded and the engine sits at div_pos.
     [[nodiscard, gnu::cold]] bool try_switch_region_(VigilFgCtx const& fg, const RegionNode& alt, uint32_t div_pos) {
-        if (!alt.plan) return false;
+        if (alt.plan.is_none()) return false;
 
         // Every op before the divergence point must carry an identical
         // schema and shape in both regions.

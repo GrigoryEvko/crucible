@@ -172,7 +172,7 @@ void test_find_alternate_tracks_live_plan() {
     op1.shape_hash = ShapeHash{0x903};
 
     auto* region = make_region(test.alloc, arena, ops.view());
-    assert(region->plan == nullptr);
+    assert(region->plan.is_none());
 
     cache.insert(*region);
     assert(cache.size() == 1);
@@ -191,10 +191,10 @@ void test_find_alternate_tracks_live_plan() {
     slot.birth_op = OpIndex{0};
     slot.death_op = OpIndex{1};
     slot.slot_id = SlotId{0};
-    MemoryPlan* plan = &*arena.make<MemoryPlan>(test.alloc);
+    const ::fixy::Ref<MemoryPlan> plan = arena.make<MemoryPlan>(test.alloc);
     plan->slots = slots.view();
     plan->pool_bytes = 4096;
-    region->plan = plan;
+    region->plan = make_plan_link(*plan);
 
     assert(cache.find_alternate(0, op0.schema_hash, op0.shape_hash).try_get() == region
            && "a region cached before its plan existed stayed unfindable after the plan "

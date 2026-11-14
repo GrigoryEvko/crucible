@@ -56,8 +56,8 @@ int main() {
     std::printf("   BackgroundThread built RegionNode with %u ops\n", vigil.active_region()->num_ops());
 
     const auto* region = vigil.active_region();
-    assert(region && region->plan);
-    const auto* plan = region->plan;
+    assert(region && region->plan.is_some());
+    const ::fixy::Ref<MemoryPlan> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
 
     std::printf("\n── Memory Plan ──\n");
     std::printf("   Pool size: %llu bytes\n", static_cast<unsigned long long>(plan->pool_bytes));
