@@ -149,6 +149,7 @@ test/fixy/test_session_crash_stop.cpp | detail-use | 5 | namespace-scope: fixy::
 test/fixy/test_session_crash_stop.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
 test/fixy/test_session_entry.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
 test/fixy/test_session_global_crash.cpp | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
+test/fixy/test_session_global_types.cpp | detail-use | 4 | namespace-scope: fixy::session::detail | ties the merge fuel of the projection to projection_unfold_limit, and merges a loop that needs each unfold, which no public door gives
 test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::chain_link_has_no_padding_byte(): fixy::session::watch::detail | reads the owner of a watched endpoint record, and the layout of a link of a wait-for chain, which no public door gives
 test/fixy/test_session_handle.cpp | detail-use | 2 | (anonymous namespace)::channel_claim_names_no_holder(): fixy::session::watch::detail | reads the owner of a watched endpoint record, and the layout of a link of a wait-for chain, which no public door gives
 test/fixy/test_session_handle.cpp | detail-use | 1 | (anonymous namespace)::move_token_through_session(): foundation::effects::detail | builds a background context from its witness

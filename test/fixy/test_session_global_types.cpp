@@ -399,6 +399,33 @@ static_assert(
 static_assert(s::projects_v<Ex49, P> && s::projects_v<Ex49, Q>);
 static_assert(!s::association_holds_v<s::projected_context_t<Ex49>, Ex49>);
 
+// ── The fuel of a merge ──────────────────────────────────────────────
+//
+// A merge path of a crash-free projection unfolds a Loop at most
+// projection_unfold_limit times.  A reception that loops, merged with its
+// own loop unrolled that many times, needs each unfold, and one fewer
+// refuses the merge.
+
+using Ticks = s::Loop<s::Recv<s::PeerMsg<P, Add, int>, s::Continue>>;
+
+template <int Count>
+struct unrolled_ticks {
+    using type = s::Recv<s::PeerMsg<P, Add, int>, typename unrolled_ticks<Count - 1>::type>;
+};
+template <>
+struct unrolled_ticks<0> {
+    using type = Ticks;
+};
+
+using TicksUnrolled = unrolled_ticks<s::projection_unfold_limit>::type;
+static_assert(s::detail::proj::merge_fuel_v<s::EveryRoleReliable> == s::projection_unfold_limit,
+              "the merge of a crash-free projection unfolds a Loop as many times as projection_unfold_limit");
+static_assert(
+    !s::is_projection_failure_v<
+        s::detail::proj::merge2<Ticks, TicksUnrolled, s::detail::proj::merge_fuel_v<s::EveryRoleReliable>>::type>);
+static_assert(std::is_same_v<s::detail::proj::merge2<Ticks, TicksUnrolled, s::projection_unfold_limit - 1>::type,
+                             s::NotProjectable<s::projection_failure::MergeUnfoldLimit>>);
+
 // ── Liveness by construction (Theorem 13) ────────────────────────────
 
 static_assert(s::is_live_by_construction_v<Ring>);

@@ -217,10 +217,11 @@ inline constexpr bool is_reliable_role_v<EveryRoleReliable, Role> = true;
 template <typename... Rs, typename Role>
 inline constexpr bool is_reliable_role_v<ReliableSet<Rs...>, Role> = (std::is_same_v<Rs, Role> || ...);
 
-// How many times one merge path can unfold a Loop.  The crash-stop merge
-// unfolds none, which keeps it inside Definition 4.3 of the paper.
+// How many times one merge path can unfold a Loop: projection_unfold_limit
+// for a crash-free projection.  The crash-stop merge unfolds none, which
+// keeps it inside Definition 4.3 of the paper.
 template <typename Reliable>
-inline constexpr int merge_fuel_v = std::is_same_v<Reliable, EveryRoleReliable> ? 4 : 0;
+inline constexpr int merge_fuel_v = std::is_same_v<Reliable, EveryRoleReliable> ? projection_unfold_limit : 0;
 
 // ── Queues ───────────────────────────────────────────────────────────
 
