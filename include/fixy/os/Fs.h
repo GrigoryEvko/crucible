@@ -417,6 +417,16 @@ concept CtxFitsFileMint = ::fixy::atom_pack::CtxAdmitsAtomRow<Ctx, Atoms...> && 
 template <typename Ctx, typename SyncOp>
 concept CtxFitsSync = CtxAdmitsFs<Ctx> && KnownSyncOp<SyncOp> && !std::is_same_v<SyncOp, sync_op::None>;
 
+// The sync of a descriptor and the sync of a directory.  FsyncParentDir
+// flushes the entries of a directory, so it takes a Dirfd and no OwnedFd.  An
+// fsync of the descriptor of a file flushes that file and no entry of its
+// directory.  Each other op takes an OwnedFd.
+template <typename Ctx, typename SyncOp>
+concept CtxFitsDescriptorSync = CtxFitsSync<Ctx, SyncOp> && !std::is_same_v<SyncOp, sync_op::FsyncParentDir>;
+
+template <typename Ctx, typename SyncOp>
+concept CtxFitsDirectorySync = CtxFitsSync<Ctx, SyncOp> && std::is_same_v<SyncOp, sync_op::FsyncParentDir>;
+
 // atomicity::None is refused.  It renames nothing, so a success from it
 // would say that a commit was made when none was.  A caller that needs
 // no commit does not call commit_atomic.
@@ -550,25 +560,26 @@ mint_file(Ctx const&, Path<tags::source::Sanitized> const& sanitized_path, ::mod
                [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
 }
 
-// Not a mint: this acts on an existing handle and synthesizes nothing.
+// Fdatasync or Fsync of a descriptor.  The gate refuses FsyncParentDir, which
+// takes a Dirfd.  The door gives EBADF for a closed handle.  Not a mint: this
+// acts on an existing handle and synthesizes nothing.
 template <typename SyncOp, eff::IsExecCtx Ctx>
-    requires CtxFitsSync<Ctx, SyncOp>
+    requires CtxFitsDescriptorSync<Ctx, SyncOp>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 sync(Ctx const&, const OwnedFd& handle) noexcept {
-    // Fsync, and FsyncParentDir on a directory descriptor, which is the call
-    // that flushes the directory entry.  The door gives EBADF for a closed
-    // handle.
     return std::is_same_v<SyncOp, sync_op::Fdatasync> ? detail::sync_data_(handle.get())
                                                       : detail::sync_all_(handle.get());
 }
 
-// FsyncParentDir takes the directory handle by its own type, so a file
-// descriptor cannot be handed in where an entry flush was meant.
+// FsyncParentDir: the fsync of a directory, which flushes its entries.  It
+// takes the directory handle by its own type, so a file descriptor cannot be
+// handed in where an entry flush was meant.  The door gives EBADF for a closed
+// handle.
 template <typename SyncOp, eff::IsExecCtx Ctx>
-    requires CtxFitsSync<Ctx, SyncOp> && std::is_same_v<SyncOp, sync_op::FsyncParentDir>
+    requires CtxFitsDirectorySync<Ctx, SyncOp>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-sync(Ctx const& ctx, const Dirfd& dir) noexcept {
-    return sync<SyncOp>(ctx, dir.handle());
+sync(Ctx const&, const Dirfd& dir) noexcept {
+    return detail::sync_all_(dir.get());
 }
 
 // Rename uses renameat, where the last writer wins.  RenameAt2NoReplace

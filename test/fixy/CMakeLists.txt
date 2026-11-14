@@ -4960,6 +4960,13 @@ fixy_neg_compile_test(neg_os_fs_sync_none
   "no matching function for call"
   "sync<fixy::fs::sync_op::None>\\(\\{anonymous\\}::IoBlockCtx&, fixy::fs::OwnedFd&\\)")
 
+# FsyncParentDir flushes the entries of a directory, so it takes a Dirfd.
+# The fsync of a file descriptor flushes no entry, so the gate of the
+# descriptor sync refuses the op.
+fixy_neg_compile_test(neg_os_fs_sync_parent_dir_owned_fd
+  "no matching function for call to .sync<fixy::fs::sync_op::FsyncParentDir>\\(\\{anonymous\\}::IoBlockCtx&, fixy::fs::OwnedFd&\\)"
+  "the expression .!\\(is_same_v<SyncOp, fixy::fs::sync_op::FsyncParentDir>\\) \\[with SyncOp = fixy::fs::sync_op::FsyncParentDir\\]. evaluated to .false.")
+
 fixy_neg_compile_test(neg_os_fs_commit_atomic_external_target
   "no matching function for call"
   "commit_atomic<fixy::fs::atomicity::Rename>\\(.*Tagged<foundation::os::PathText<4096>, fixy::tags::source::External>\\)")

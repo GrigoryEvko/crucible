@@ -69,6 +69,12 @@ static_assert(!CtxFitsFileMint<IoBlockCtx, ::fixy::atom::fs::mode<NotAMode>>,
 static_assert(CtxFitsSync<IoBlockCtx, sync_op::Fdatasync>);
 static_assert(CtxFitsSync<IoBlockCtx, sync_op::FsyncParentDir>);
 static_assert(!CtxFitsSync<IoBlockCtx, sync_op::None>, "None has no syscall behind it.");
+static_assert(CtxFitsDescriptorSync<IoBlockCtx, sync_op::Fdatasync>
+              && CtxFitsDescriptorSync<IoBlockCtx, sync_op::Fsync>);
+static_assert(!CtxFitsDescriptorSync<IoBlockCtx, sync_op::FsyncParentDir>,
+              "the fsync of a file descriptor flushes no entry of a directory.");
+static_assert(CtxFitsDirectorySync<IoBlockCtx, sync_op::FsyncParentDir>);
+static_assert(!CtxFitsDirectorySync<IoBlockCtx, sync_op::Fsync> && !CtxFitsDirectorySync<IoBlockCtx, sync_op::None>);
 static_assert(!CtxFitsSync<IoOnlyCtx, sync_op::Fsync>);
 struct NotASyncOp final {};
 static_assert(!KnownSyncOp<NotASyncOp> && !CtxFitsSync<IoBlockCtx, NotASyncOp>);
@@ -87,5 +93,17 @@ static_assert(!std::is_copy_constructible_v<Dirfd>);
 static_assert(!std::is_default_constructible_v<FileDoor> && !std::is_copy_constructible_v<FileDoor>
                   && !std::is_move_constructible_v<FileDoor>,
               "No object of the file door exists.  Its private members are the only calls to ::open.");
+
+// Each door takes one kind of handle by a const reference to its class: a
+// door of a descriptor takes an OwnedFd, and a door under a directory takes a
+// Dirfd.  No conversion joins the two classes, so no door takes the other
+// kind of handle.  The two checks cover each door of fixy/os/Fs.h,
+// fixy/os/Socket.h, fixy/os/Io.h and fixy/os/PerfEvent.h at one time.  The
+// sync door is a template over the op, so the gates above and the fixture
+// neg_os_fs_sync_parent_dir_owned_fd hold the op of each kind.
+static_assert(!std::is_convertible_v<Dirfd const&, OwnedFd const&> && !std::is_constructible_v<OwnedFd, Dirfd const&>,
+              "a door of a descriptor must not take a Dirfd.");
+static_assert(!std::is_convertible_v<OwnedFd const&, Dirfd const&> && !std::is_constructible_v<Dirfd, OwnedFd const&>,
+              "a door under a directory must not take an OwnedFd.");
 
 }  // namespace fixy::fs::detail::fs_surface_invariants

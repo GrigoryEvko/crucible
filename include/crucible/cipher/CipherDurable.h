@@ -163,8 +163,12 @@ public:
     [[nodiscard]] int get() const noexcept { return handle_.get(); }
     [[nodiscard]] const ::fixy::fs::OwnedFd& handle() const noexcept { return handle_; }
 
+    // The handle holds the descriptor of a file.  The flush of the entries of
+    // a directory takes the Dirfd of that directory, so a stance whose sync
+    // op is FsyncParentDir has no sync here.  Its caller gives the Dirfd to
+    // fixy::fs::sync.
     template <eff::IsExecCtx Ctx>
-        requires ::fixy::fs::CtxFitsSync<Ctx, typename Stance::sync_op_type>
+        requires ::fixy::fs::CtxFitsDescriptorSync<Ctx, typename Stance::sync_op_type>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> sync(Ctx const& ctx) const noexcept {
         return ::fixy::fs::sync<typename Stance::sync_op_type>(ctx, handle_);
     }

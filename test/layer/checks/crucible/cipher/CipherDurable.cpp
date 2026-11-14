@@ -63,4 +63,14 @@ static_assert(!std::is_constructible_v<WarmHandle, ::fixy::fs::OwnedFd&&>,
               "An OwnedFd is evidence of a descriptor, not of the flags it was opened with, and the stance is a "
               "claim about those flags.  Only the mint that chose them can build the handle.");
 
+// The handle holds the descriptor of a file, so it syncs the file.  The
+// stance of the head advance flushes a parent directory, which takes a Dirfd,
+// so its handle has no sync.  The probe is a concept over the handle type, so
+// a refused call is false and not an error of this file.
+template <typename Handle>
+concept SyncsAlone = requires(Handle const& handle, IoBlockCtx const& ctx) { handle.sync(ctx); };
+static_assert(SyncsAlone<WarmHandle> && SyncsAlone<CipherDurableHandle<cold_writer_stance>>);
+static_assert(!SyncsAlone<CipherDurableHandle<head_advance_stance>>,
+              "an fsync of the descriptor of a file flushes no entry of its parent directory.");
+
 }  // namespace crucible::cipher::durable::detail::durable_surface_invariants
