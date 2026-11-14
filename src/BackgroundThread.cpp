@@ -1222,8 +1222,8 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
             const TensorMeta& input_meta = *input_metas.get(j).expect("the window holds each input of the op");
             OpIndex& producer = *producers.get(j).expect("the window holds each input of the op");
             SlotId& input_slot = *input_slot_ids.get(j).expect("the window holds each input of the op");
-            void* input_ptr = raw_data_ptr(input_meta);
-            auto lookup = ptr_map_lookup(scratch_map_, local_gen, input_ptr);
+            const PtrMapKey input_key = input_meta.data_ptr;
+            auto lookup = ptr_map_lookup(scratch_map_, local_gen, input_key);
             producer = lookup.op_index;
             if (lookup.op_index.is_valid()) {
                 input_slot = lookup.slot_id;
@@ -1244,7 +1244,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
                 for (auto slot_info : local_slots.get(lookup.slot_id.raw())) {
                     if (slot_info->death_op < OpIndex{i}) slot_info->death_op = OpIndex{i};
                 }
-            } else if (input_ptr != nullptr && next_slot_raw < slot_cap) {
+            } else if (input_key.value() != nullptr && next_slot_raw < slot_cap) {
                 // First sight of an external tensor, such as a parameter
                 // or a data-loader output.
                 SlotId new_slot{next_slot_raw++};
@@ -1258,7 +1258,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
                 slot_info.device_type = input_meta.device_type;
                 slot_info.device_idx = input_meta.device_idx;
                 slot_info.layout = input_meta.layout;
-                (void)ptr_map_insert(scratch_map_, local_gen, input_ptr, OpIndex{}, 0, new_slot);
+                (void)ptr_map_insert(scratch_map_, local_gen, input_key, OpIndex{}, 0, new_slot);
             } else {
                 input_slot = SlotId{};
             }
@@ -1267,14 +1267,14 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
         for (uint16_t j = 0; j < te.num_outputs(); j++) {
             const TensorMeta& output_meta = *output_metas.get(j).expect("the window holds each output of the op");
             SlotId& output_slot = *output_slot_ids.get(j).expect("the window holds each output of the op");
-            void* output_ptr = raw_data_ptr(output_meta);
-            if (!output_ptr) {
+            const PtrMapKey output_key = output_meta.data_ptr;
+            if (output_key.value() == nullptr) {
                 output_slot = SlotId{};
                 continue;
             }
 
             auto result =
-                ptr_map_insert(scratch_map_, local_gen, output_ptr, OpIndex{i}, static_cast<uint8_t>(j), SlotId{0});
+                ptr_map_insert(scratch_map_, local_gen, output_key, OpIndex{i}, static_cast<uint8_t>(j), SlotId{0});
 
             if (result.was_alias) {
                 output_slot = result.old_slot;

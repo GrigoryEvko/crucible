@@ -972,14 +972,14 @@ private:
 
     // The probes of the map start at the hash of the key, and the mask of
     // the map wraps each probe.  A full round of probes visits each slot.
-    [[nodiscard]] static InsertResult ptr_map_insert(::fixy::MaskedArray<PtrSlot>& map, uint8_t gen, void* key,
+    [[nodiscard]] static InsertResult ptr_map_insert(::fixy::MaskedArray<PtrSlot>& map, uint8_t gen, PtrMapKey key,
                                                      OpIndex op_index, uint8_t port, SlotId slot_id) {
-        const uint64_t bucket_idx = hash_ptr(key);
+        const uint64_t bucket_idx = hash_ptr(key.value());
         for (uint64_t probe = 0; probe < map.size(); probe++) {
             auto& slot = map.at_masked(bucket_idx + probe);
             if (slot.gen != gen) {
                 // A stale generation means the slot is empty.  Claim it.
-                slot.key = ::fixy::mint_tagged<::fixy::tags::source::External>(key);
+                slot.key = key;
                 slot.op_index = op_index;
                 slot.port = port;
                 slot.slot_id = slot_id;
@@ -990,7 +990,7 @@ private:
                         .old_port = 0,
                         .old_slot = {}};
             }
-            if (slot.key.value() == key) {
+            if (slot.key.value() == key.value()) {
                 InsertResult result{.slot = ::fixy::WeakRef<PtrSlot>{slot},
                                     .was_alias = (slot.op_index != op_index),
                                     .old_op = slot.op_index,
@@ -1012,12 +1012,12 @@ private:
         uint8_t port = 0;
     };
 
-    [[nodiscard]] static PtrLookup ptr_map_lookup(::fixy::MaskedArray<PtrSlot> const& map, uint8_t gen, void* key) {
-        if (!key) return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};
-        const uint64_t bucket_idx = hash_ptr(key);
+    [[nodiscard]] static PtrLookup ptr_map_lookup(::fixy::MaskedArray<PtrSlot> const& map, uint8_t gen, PtrMapKey key) {
+        if (key.value() == nullptr) return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};
+        const uint64_t bucket_idx = hash_ptr(key.value());
         for (uint64_t probe = 0; probe < map.size(); probe++) {
             auto& slot = map.at_masked(bucket_idx + probe);
-            if (slot.gen == gen && slot.key.value() == key)
+            if (slot.gen == gen && slot.key.value() == key.value())
                 return {.op_index = slot.op_index, .slot_id = slot.slot_id, .port = slot.port};
             if (slot.gen != gen) return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};  // empty → miss
         }

@@ -544,9 +544,8 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             for (const TraceEntry& te : ref_ops) {
                 uint8_t port = 0;
                 for (const TensorMeta& m : te.output_metas()) {
-                    void* ptr = raw_data_ptr(m);
-                    if (ptr)
-                        (void)BackgroundThread::ptr_map_insert(bg.scratch_map_, local_gen, ptr, OpIndex{i}, port,
+                    if (m.data_ptr.value() != nullptr)
+                        (void)BackgroundThread::ptr_map_insert(bg.scratch_map_, local_gen, m.data_ptr, OpIndex{i}, port,
                                                                SlotId{0});
                     ++port;
                 }
@@ -558,8 +557,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             uint32_t dummy_edges = 0;
             for (const TraceEntry& te : ref_ops) {
                 for (const TensorMeta& m : te.input_metas()) {
-                    void* ptr = raw_data_ptr(m);
-                    auto lookup = BackgroundThread::ptr_map_lookup(bg.scratch_map_, local_gen, ptr);
+                    auto lookup = BackgroundThread::ptr_map_lookup(bg.scratch_map_, local_gen, m.data_ptr);
                     if (lookup.op_index.is_valid()) dummy_edges++;
                 }
             }
@@ -599,10 +597,9 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             for (const TraceEntry& te : ref_ops) {
                 uint8_t port = 0;
                 for (const TensorMeta& m : te.output_metas()) {
-                    void* ptr = raw_data_ptr(m);
                     const uint8_t this_port = port++;
-                    if (!ptr) continue;
-                    auto result = BackgroundThread::ptr_map_insert(bg.scratch_map_, local_gen, ptr, OpIndex{i},
+                    if (m.data_ptr.value() == nullptr) continue;
+                    auto result = BackgroundThread::ptr_map_insert(bg.scratch_map_, local_gen, m.data_ptr, OpIndex{i},
                                                                    this_port, SlotId{0});
                     if (result.was_alias) aliases++;
                 }
