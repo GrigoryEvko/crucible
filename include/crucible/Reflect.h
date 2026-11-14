@@ -3,6 +3,7 @@
 #include <crucible/Expr.h>
 #include <fixy/Core.h>
 #include <foundation/Platform.h>
+#include <foundation/reflect/Instance.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -21,6 +22,15 @@ namespace detail_reflect {
 template <typename T>
 concept IsReflectFieldSupported = std::is_enum_v<T> || std::is_integral_v<T> || std::is_floating_point_v<T>
                                || std::is_array_v<T> || std::is_class_v<T>;
+
+// A FixedArray of the base.  It keeps its elements in a private base class,
+// and for_each_field gives no field of a base.  So the class arm would fold
+// no element, and each FixedArray of one type would give one constant.
+// hash_field and pack_field fold its elements with the reduction of a C
+// array, so a FixedArray and a C array of the same elements give the same
+// hash.
+template <typename T>
+concept IsFixedArray = ::foundation::reflect::IsInstanceOf<T, ^^::foundation::core::FixedArray>;
 
 }  // namespace detail_reflect
 
@@ -49,6 +59,11 @@ template <typename T>
         uint64_t h = 0;
         for (size_t i = 0; i < std::extent_v<T>; i++)
             h = h * 0x100000001b3ULL ^ hash_field(val[i]);
+        return detail::fmix64(h);
+    } else if constexpr (IsFixedArray<T>) {
+        uint64_t h = 0;
+        for (const auto& element : val)
+            h = h * 0x100000001b3ULL ^ hash_field(element);
         return detail::fmix64(h);
     } else if constexpr (std::is_class_v<T>) {
         return reflect_hash(val);
@@ -116,6 +131,11 @@ template <typename T>
         uint64_t h = 0;
         for (size_t i = 0; i < std::extent_v<T>; i++)
             h = h * 0x100000001b3ULL ^ pack_field(val[i]);
+        return h;
+    } else if constexpr (IsFixedArray<T>) {
+        uint64_t h = 0;
+        for (const auto& element : val)
+            h = h * 0x100000001b3ULL ^ pack_field(element);
         return h;
     } else if constexpr (std::is_class_v<T>) {
         return reflect_hash(val);

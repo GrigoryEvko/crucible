@@ -11,7 +11,7 @@
 // Guard is 12 bytes, laid out (see MerkleDag.h:302–332):
 //
 //     Guard::Kind    kind      (1B, 5 variants)
-//     uint8_t        pad[3]    (3B — STILL hashed by reflect_hash)
+//     FixedArray<uint8_t, 3> pad (3B — STILL hashed by reflect_hash, as its elements)
 //     OpIndex        op_index  (4B, default UINT32_MAX)
 //     uint16_t       arg_index (2B)
 //     uint16_t       dim_index (2B)
@@ -98,9 +98,9 @@ inline constexpr uint8_t kGuardPerturbSites = 7;
 [[nodiscard]] Guard random_guard(crucible::fuzz::prop::Rng& rng) noexcept {
     Guard g{};
     g.kind = rng.pick<Guard::Kind>();
-    g.pad[0] = static_cast<uint8_t>(rng.next32() & 0xFFu);
-    g.pad[1] = static_cast<uint8_t>(rng.next32() & 0xFFu);
-    g.pad[2] = static_cast<uint8_t>(rng.next32() & 0xFFu);
+    for (uint8_t& byte : g.pad) {
+        byte = static_cast<uint8_t>(rng.next32() & 0xFFu);
+    }
     // op_index: exercise both valid indices and the none() sentinel.
     // Bias toward typical op indices (0..4095) with a 10% escape
     // for none().
@@ -138,9 +138,11 @@ inline constexpr uint8_t kGuardPerturbSites = 7;
 
 [[nodiscard]] Guard perturb_pad(const Guard& base, uint8_t byte_idx) noexcept {
     Guard out = base;
-    // byte_idx ∈ [0,3); caller guarantees.  XOR with 1 guarantees
-    // the byte changes without overflowing uint8_t.
-    out.pad[byte_idx] = static_cast<uint8_t>(base.pad[byte_idx] ^ 1u);
+    // byte_idx ∈ [0,3); caller guarantees, and the checked door ends the
+    // process for another index.  XOR with 1 guarantees the byte changes
+    // without overflowing uint8_t.
+    const uint8_t before = *base.pad.view().get(byte_idx).expect("the index of a pad byte is below 3");
+    *out.pad.view().get(byte_idx).expect("the index of a pad byte is below 3") = static_cast<uint8_t>(before ^ 1u);
     return out;
 }
 

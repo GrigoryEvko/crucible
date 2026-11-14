@@ -21,6 +21,13 @@ struct Dims {
     uint8_t count;
 };
 
+// The fields of Dims, with the values in a FixedArray.  A FixedArray keeps
+// its elements in a private base, so a walk of its own fields finds none.
+struct FixedDims {
+    ::foundation::core::FixedArray<int64_t, 4> values{};
+    uint8_t count = 0;
+};
+
 int main() {
     Point p1{10, 20, 3.14f};
     Point p2{10, 20, 3.14f};
@@ -42,6 +49,46 @@ int main() {
 
     assert(crucible::reflect_hash(d1) == crucible::reflect_hash(d2));
     assert(crucible::reflect_hash(d1) != crucible::reflect_hash(d3));
+
+    // The hash of a Guard is a part of the merkle hash of each branch, and
+    // the store keeps that hash.  So these values are frozen: a change of the
+    // type of a field, such as the type of the pad, must keep each of them.
+    {
+        crucible::Guard by_kind{};
+        by_kind.kind = crucible::Guard::Kind::OP_SEQUENCE;
+        crucible::Guard by_op{};
+        by_op.op_index = crucible::OpIndex{8};
+        crucible::Guard by_arg{};
+        by_arg.arg_index = 3;
+        crucible::Guard by_dim{};
+        by_dim.dim_index = 2;
+        crucible::Guard by_all{};
+        by_all.kind = crucible::Guard::Kind::OP_SEQUENCE;
+        by_all.op_index = crucible::OpIndex{7};
+        by_all.arg_index = 3;
+        by_all.dim_index = 2;
+        assert(crucible::Guard{}.hash() == 0x037FC81E2E2231FCULL);
+        assert(by_kind.hash() == 0x17DFDFC26EEFC973ULL);
+        assert(by_op.hash() == 0x20E09BB3247F17AFULL);
+        assert(by_arg.hash() == 0x5911F28FFD72AA41ULL);
+        assert(by_dim.hash() == 0x3763183160C197F5ULL);
+        assert(by_all.hash() == 0x2553193CAB394B89ULL);
+    }
+
+    // A FixedArray field folds as its elements, with the reduction of a C
+    // array field, so the two layouts give one hash in each fold.  Two values
+    // that differ in one element give two hashes.
+    {
+        constexpr uint64_t kSeed = 0x4649584544415252ULL;  // "FIXEDARR"
+        const FixedDims f1{{1, 2, 3, 4}, 4};
+        const FixedDims f3{{1, 2, 3, 5}, 4};
+        assert(crucible::reflect_hash(f1) != crucible::reflect_hash(f3));
+        assert(crucible::reflect_fmix_fold<kSeed>(f1) != crucible::reflect_fmix_fold<kSeed>(f3));
+        assert(crucible::reflect_hash(f1) == crucible::reflect_hash(d1));
+        assert(crucible::reflect_hash(f3) == crucible::reflect_hash(d3));
+        assert(crucible::reflect_fmix_fold<kSeed>(f1) == crucible::reflect_fmix_fold<kSeed>(d1));
+        assert(crucible::reflect_fmix_fold<kSeed>(f3) == crucible::reflect_fmix_fold<kSeed>(d3));
+    }
 
     // The remaining cases use production types rather than fixtures,
     // so the walk is exercised over real field layouts.

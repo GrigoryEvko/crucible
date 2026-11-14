@@ -239,7 +239,9 @@ struct Guard {
     };
 
     Kind kind = Kind::SHAPE_DIM;
-    uint8_t pad[3]{};
+    // reflect_hash folds a FixedArray as its elements, the same as a C
+    // array, so the pad keeps the hash of each guard.
+    ::foundation::core::FixedArray<uint8_t, 3> pad{};
     OpIndex op_index;
     uint16_t arg_index = 0;  // SHAPE_DIM, DTYPE, DEVICE
     uint16_t dim_index = 0;  // SHAPE_DIM
