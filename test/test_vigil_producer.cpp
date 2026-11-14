@@ -25,7 +25,7 @@ void test_record_op_claims_the_producer_role() {
 
     std::thread claimer([&vigil] {
         auto first = divrig::op_at(0, 0);
-        assert(vigil.record_op(crucible::test::certify_synthetic_entry(first.entry), first.metas, first.n_metas));
+        assert(vigil.record_op(crucible::test::certify_synthetic_op(first.entry, first.metas, first.n_metas)));
         assert(vigil.is_producer_thread() && "the thread that claimed the role holds it");
     });
     claimer.join();
@@ -42,7 +42,7 @@ void test_record_op_claims_the_producer_role() {
 void test_producer_surface_takes_the_claim_context() {
     crucible::Vigil vigil;
     auto first = divrig::op_at(0, 0);
-    assert(vigil.record_op(crucible::test::certify_synthetic_entry(first.entry), first.metas, first.n_metas));
+    assert(vigil.record_op(crucible::test::certify_synthetic_op(first.entry, first.metas, first.n_metas)));
 
     const crucible::VigilFgCtx fg = vigil.mint_producer_context();
     const crucible::TraceRing& ring = vigil.ring(fg);

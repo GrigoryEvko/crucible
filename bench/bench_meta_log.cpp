@@ -78,12 +78,12 @@ int main() {
                 (static_cast<size_t>(MetaLog::CAPACITY) * sizeof(TensorMeta)) / (1024 * 1024));
 
     // Reusable test data in stack-frame storage. MetaLog::try_append
-    // memcpys from (metas, n) into the ring, so the source doesn't need
-    // to live longer than the call.
-    const TensorMeta meta1[1] = {make_meta_2d(64, 768)};
-    const TensorMeta meta2[2] = {make_meta_2d(64, 768), make_meta_2d(768, 768)};
-    const TensorMeta meta3[3] = {make_meta_2d(64, 768), make_meta_2d(768, 768), make_meta_2d(64, 768)};
-    const TensorMeta meta8[8] = {
+    // copies the records of its View into the log, so the source lives only
+    // for the call.
+    const ::fixy::FixedArray<TensorMeta, 1> meta1{make_meta_2d(64, 768)};
+    const ::fixy::FixedArray<TensorMeta, 2> meta2{make_meta_2d(64, 768), make_meta_2d(768, 768)};
+    const ::fixy::FixedArray<TensorMeta, 3> meta3{make_meta_2d(64, 768), make_meta_2d(768, 768), make_meta_2d(64, 768)};
+    const ::fixy::FixedArray<TensorMeta, 8> meta8{
         make_meta_4d(32, 64, 56, 56), make_meta_4d(64, 64, 3, 3),    make_meta_4d(1, 64, 1, 1),
         make_meta_4d(32, 64, 56, 56), make_meta_4d(32, 128, 28, 28), make_meta_4d(128, 64, 3, 3),
         make_meta_4d(1, 128, 1, 1),   make_meta_4d(32, 128, 28, 28),
@@ -104,7 +104,7 @@ int main() {
         [&] {
             auto log = std::make_unique<MetaLog>();
             return bench::run("try_append(1 meta  = 168B)", [&] {
-                auto idx = log->try_append(meta1, 1);
+                auto idx = log->try_append(meta1.view());
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
             });
@@ -112,7 +112,7 @@ int main() {
         [&] {
             auto log = std::make_unique<MetaLog>();
             return bench::run("try_append(2 metas = 336B)", [&] {
-                auto idx = log->try_append(meta2, 2);
+                auto idx = log->try_append(meta2.view());
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
             });
@@ -120,7 +120,7 @@ int main() {
         [&] {
             auto log = std::make_unique<MetaLog>();
             return bench::run("try_append(3 metas = 504B)", [&] {
-                auto idx = log->try_append(meta3, 3);
+                auto idx = log->try_append(meta3.view());
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
             });
@@ -128,7 +128,7 @@ int main() {
         [&] {
             auto log = std::make_unique<MetaLog>();
             return bench::run("try_append(8 metas = 1344B)", [&] {
-                auto idx = log->try_append(meta8, 8);
+                auto idx = log->try_append(meta8.view());
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
             });
@@ -145,7 +145,7 @@ int main() {
             uint32_t since_drain = 0;
             constexpr uint32_t kD = 50000;
             return bench::run("throughput (3 metas/call, drain/50k)", [&] {
-                auto idx = log->try_append(meta3, 3);
+                auto idx = log->try_append(meta3.view());
                 bench::do_not_optimize(idx);
                 if (++since_drain >= kD) [[unlikely]] {
                     log->advance_tail(log->head.load(std::memory_order_relaxed));

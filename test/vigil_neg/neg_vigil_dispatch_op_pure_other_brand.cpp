@@ -2,7 +2,8 @@
 //
 // Vigil::dispatch_op_pure asks for the context of the Vigil's producer
 // claim.  The context of another state's claim proves that its holder owns
-// that state, not a Vigil, so the call is refused.
+// that state, not a Vigil, so the call is refused.  The op is well formed,
+// so the context is the only fault.
 
 #include <crucible/Vigil.h>
 #include <foundation/effects/Ctx.h>
@@ -14,9 +15,10 @@ struct Stranger {};
 int main() {
     crucible::Vigil vigil;
     crucible::TraceRing::Entry entry{};
-    crucible::TensorMeta meta{};
-    (void)vigil.dispatch_op_pure(::foundation::effects::testing::foreground<Stranger>(),
-                                 crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(), &meta,
-                                 1);
+    const crucible::ValidatedOp op =
+        crucible::mint_validated_op(crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(),
+                                    ::fixy::View<const crucible::TensorMeta>{})
+            .expect("an entry with no tensors takes no records");
+    (void)vigil.dispatch_op_pure(::foundation::effects::testing::foreground<Stranger>(), op);
     return 0;
 }

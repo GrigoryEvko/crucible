@@ -50,6 +50,49 @@ inline void flush_and_wait_region_published(Vigil& vigil) {
 TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry&&) =
     delete("the result points into the entry, and a temporary entry ends before the result");
 
+// The first count records of an array of a test: the records of one op.
+template <auto N>
+[[nodiscard]] ::fixy::View<const TensorMeta>
+records_of(::fixy::FixedArray<TensorMeta, N> const& metas CRUCIBLE_LIFETIMEBOUND, uint32_t count) noexcept {
+    return ::fixy::View<const TensorMeta>{metas.view()}.window(0, count).expect(
+        "the count of the records fits the array of the test");
+}
+template <auto N>
+::fixy::View<const TensorMeta> records_of(::fixy::FixedArray<TensorMeta, N> const&&, uint32_t) =
+    delete("the result points into the array, and a temporary array ends before the result");
+
+// Certifies an Entry that a test built, and pairs it with its records, so it
+// can reach record_op and dispatch_op.  The process ends when the count of
+// the records disagrees with the entry, as for each other broken fixture.
+[[nodiscard]] inline ValidatedOp certify_synthetic_op(const TraceRing::Entry& entry CRUCIBLE_LIFETIMEBOUND,
+                                                      ::fixy::View<const TensorMeta> metas) noexcept {
+    return mint_validated_op(certify_synthetic_entry(entry), metas)
+        .expect("the count of the records of a test agrees with its entry");
+}
+ValidatedOp certify_synthetic_op(const TraceRing::Entry&&, ::fixy::View<const TensorMeta>) =
+    delete("the op points into the entry, and a temporary entry ends before the op");
+
+// The same for the first count records of an array of a test.
+template <auto N>
+[[nodiscard]] ValidatedOp certify_synthetic_op(const TraceRing::Entry& entry CRUCIBLE_LIFETIMEBOUND,
+                                               ::fixy::FixedArray<TensorMeta, N> const& metas CRUCIBLE_LIFETIMEBOUND,
+                                               uint32_t count) noexcept {
+    return certify_synthetic_op(entry, records_of(metas, count));
+}
+template <auto N>
+ValidatedOp certify_synthetic_op(const TraceRing::Entry&&, ::fixy::FixedArray<TensorMeta, N> const&, uint32_t) =
+    delete("the op points into the entry, and a temporary entry ends before the op");
+template <auto N>
+ValidatedOp certify_synthetic_op(const TraceRing::Entry&, ::fixy::FixedArray<TensorMeta, N> const&&, uint32_t) =
+    delete("the op points into the array, and a temporary array ends before the op");
+
+// The same for an entry with no records.
+[[nodiscard]] inline ValidatedOp certify_synthetic_op(const TraceRing::Entry& entry CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return certify_synthetic_op(entry, ::fixy::View<const TensorMeta>{});
+}
+ValidatedOp certify_synthetic_op(const TraceRing::Entry&&) =
+    delete("the op points into the entry, and a temporary entry ends before the op");
+
 // Certifies an Entry that a test built, and gives it to dispatch_op.
 //
 // Vigil::dispatch_op is always inlined, so each call site copies the whole
@@ -57,16 +100,28 @@ TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry&&) =
 // translation unit compiles that copy one time, and its back end stays
 // short.  The behaviour is that of a direct call.
 [[nodiscard, gnu::noinline]] inline DispatchResult dispatch_synthetic(Vigil& vigil, const TraceRing::Entry& entry,
-                                                                      const TensorMeta* metas, uint32_t n_metas) {
-    return vigil.dispatch_op(certify_synthetic_entry(entry), metas, n_metas);
+                                                                      ::fixy::View<const TensorMeta> metas) {
+    return vigil.dispatch_op(certify_synthetic_op(entry, metas));
+}
+
+template <auto N>
+[[nodiscard]] DispatchResult dispatch_synthetic(Vigil& vigil, const TraceRing::Entry& entry,
+                                                ::fixy::FixedArray<TensorMeta, N> const& metas, uint32_t count) {
+    return dispatch_synthetic(vigil, entry, records_of(metas, count));
 }
 
 // The same for dispatch_op_pure, which also takes the context of the
 // producer claim of the Vigil.
 [[nodiscard, gnu::noinline]] inline DispatchResult dispatch_pure_synthetic(Vigil& vigil, VigilFgCtx const& fg,
                                                                            const TraceRing::Entry& entry,
-                                                                           const TensorMeta* metas, uint32_t n_metas) {
-    return vigil.dispatch_op_pure(fg, certify_synthetic_entry(entry), metas, n_metas);
+                                                                           ::fixy::View<const TensorMeta> metas) {
+    return vigil.dispatch_op_pure(fg, certify_synthetic_op(entry, metas));
+}
+
+template <auto N>
+[[nodiscard]] DispatchResult dispatch_pure_synthetic(Vigil& vigil, VigilFgCtx const& fg, const TraceRing::Entry& entry,
+                                                     ::fixy::FixedArray<TensorMeta, N> const& metas, uint32_t count) {
+    return dispatch_pure_synthetic(vigil, fg, entry, records_of(metas, count));
 }
 
 }  // namespace crucible::test

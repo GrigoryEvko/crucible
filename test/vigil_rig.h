@@ -45,7 +45,7 @@ inline constexpr crucible::SchemaHash FOREIGN_SCHEMA = crucible::SchemaHash{0x99
 
 struct OpData {
     crucible::TraceRing::Entry entry{};
-    crucible::TensorMeta metas[2]{};
+    ::fixy::FixedArray<crucible::TensorMeta, 2> metas{};
     uint16_t n_metas = 0;
 };
 

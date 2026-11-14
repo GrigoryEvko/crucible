@@ -26,7 +26,7 @@ namespace eff = ::fixy;
 
 int main() {
     crucible::MetaLog log;
-    crucible::TensorMeta m{};
-    (void)log.try_append_pure<eff::Row<eff::Effect::Test>>(&m, 1);
+    const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
+    (void)log.try_append_pure<eff::Row<eff::Effect::Test>>(record.view());
     return 0;
 }

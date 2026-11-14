@@ -153,13 +153,13 @@ void test_permissioned_bulk_drain() {
     PermissionedLog log{raw_log};
     auto [producer, consumer] = mint_handles(log);
 
-    const std::array<::crucible::TensorMeta, 3> records{
+    const ::fixy::FixedArray<::crucible::TensorMeta, 3> records{
         make_meta(1),
         make_meta(2),
         make_meta(3),
     };
 
-    const ::crucible::MetaIndex start = producer.try_append(records.data(), static_cast<std::uint32_t>(records.size()));
+    const ::crucible::MetaIndex start = producer.try_append(records.view());
     CRUCIBLE_TEST_REQUIRE(start.is_valid());
     CRUCIBLE_TEST_REQUIRE(start.raw() == 0);
 
@@ -170,7 +170,7 @@ void test_permissioned_bulk_drain() {
     CRUCIBLE_TEST_REQUIRE(count == records.size());
     CRUCIBLE_TEST_REQUIRE(next == records.size());
     for (std::size_t i = 0; i < records.size(); ++i) {
-        CRUCIBLE_TEST_REQUIRE(same_meta(drained[i], records[i]));
+        CRUCIBLE_TEST_REQUIRE(same_meta(drained[i], crucible::test::element_at(records, i)));
     }
     CRUCIBLE_TEST_REQUIRE(consumer.tail_index() == records.size());
 }
@@ -207,10 +207,10 @@ void test_partial_drain() {
     PermissionedLog log{raw_log};
     auto [producer, consumer] = mint_handles(log);
 
-    const std::array<::crucible::TensorMeta, 5> source{
+    const ::fixy::FixedArray<::crucible::TensorMeta, 5> source{
         make_meta(1), make_meta(2), make_meta(3), make_meta(4), make_meta(5),
     };
-    const ::crucible::MetaIndex start = producer.try_append(source.data(), static_cast<std::uint32_t>(source.size()));
+    const ::crucible::MetaIndex start = producer.try_append(source.view());
     CRUCIBLE_TEST_REQUIRE(start.is_valid());
     CRUCIBLE_TEST_REQUIRE(start.raw() == 0);
 
@@ -222,7 +222,7 @@ void test_partial_drain() {
     CRUCIBLE_TEST_REQUIRE(drained_count == 3);
     CRUCIBLE_TEST_REQUIRE(next == 3);
     for (std::size_t i = 0; i < first_three.size(); ++i) {
-        CRUCIBLE_TEST_REQUIRE(same_meta(first_three[i], source[i]));
+        CRUCIBLE_TEST_REQUIRE(same_meta(first_three[i], crucible::test::element_at(source, i)));
     }
     CRUCIBLE_TEST_REQUIRE(consumer.size_approx() == 2);
     CRUCIBLE_TEST_REQUIRE(producer.size_approx() == 2);
@@ -232,8 +232,8 @@ void test_partial_drain() {
     const std::uint32_t remaining =
         consumer.drain([&](const ::crucible::TensorMeta& meta) { rest[rest_next++] = meta; });
     CRUCIBLE_TEST_REQUIRE(remaining == 2);
-    CRUCIBLE_TEST_REQUIRE(same_meta(rest[0], source[3]));
-    CRUCIBLE_TEST_REQUIRE(same_meta(rest[1], source[4]));
+    CRUCIBLE_TEST_REQUIRE(same_meta(rest[0], source.at(::fixy::index<3>())));
+    CRUCIBLE_TEST_REQUIRE(same_meta(rest[1], source.at(::fixy::index<4>())));
     CRUCIBLE_TEST_REQUIRE(consumer.size_approx() == 0);
 }
 
@@ -244,15 +244,14 @@ void test_metaindex_propagates() {
     PermissionedLog log{raw_log};
     auto [producer, consumer] = mint_handles(log);
 
-    const std::array<::crucible::TensorMeta, 2> first{make_meta(10), make_meta(20)};
-    const std::array<::crucible::TensorMeta, 3> second{make_meta(30), make_meta(40), make_meta(50)};
+    const ::fixy::FixedArray<::crucible::TensorMeta, 2> first{make_meta(10), make_meta(20)};
+    const ::fixy::FixedArray<::crucible::TensorMeta, 3> second{make_meta(30), make_meta(40), make_meta(50)};
 
-    const ::crucible::MetaIndex idx_first = producer.try_append(first.data(), static_cast<std::uint32_t>(first.size()));
+    const ::crucible::MetaIndex idx_first = producer.try_append(first.view());
     CRUCIBLE_TEST_REQUIRE(idx_first.is_valid());
     CRUCIBLE_TEST_REQUIRE(idx_first.raw() == 0);
 
-    const ::crucible::MetaIndex idx_second =
-        producer.try_append(second.data(), static_cast<std::uint32_t>(second.size()));
+    const ::crucible::MetaIndex idx_second = producer.try_append(second.view());
     CRUCIBLE_TEST_REQUIRE(idx_second.is_valid());
     CRUCIBLE_TEST_REQUIRE(idx_second.raw() == first.size());
 

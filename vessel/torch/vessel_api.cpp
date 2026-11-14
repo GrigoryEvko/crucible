@@ -77,7 +77,7 @@ static constexpr uint64_t FNV_OFFSET = 0xcbf29ce484222325ULL;
 // tag to the second live in vessel_api_typed.h, beside the rest of the
 // boundary's rules and shared with the two PyTorch adapters.  The two
 // thunks below build an Entry, mint the first tag over it, and reach a
-// recording entry point only through mint_validated_entry.
+// recording entry point only through validate_ffi_op.
 //
 // ── Schema names ─────────────────────────────────────────────────────
 //
@@ -174,12 +174,15 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
     // thread holds the claim, which is the same gate that dispatch_op has.
     // This entry asks no is_producer_thread question, so that gate is its
     // only guard.
-    const auto validated =
-        crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), metas_typed.value(), n_metas);
-    for (const crucible::TraceRing::ValidatedEntryPtr& certified : validated) {
+    //
+    // The op borrows its records, so the thunk first copies the records of
+    // the caller into a list that it owns.
+    crucible::vessel::OpRecords records{};
+    if (!crucible::vessel::copy_ffi_records(metas_typed, n_metas, records)) return CrucibleDispatchResult{};
+    const auto validated = crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records.view());
+    for (const crucible::ValidatedOp& op : validated) {
         const auto vigil = ::fixy::to(*vigil_typed.value());
-        return encode_dispatch_result(
-            vigil->dispatch_op_pure(vigil->mint_producer_context(), certified, metas_typed.value(), n_metas));
+        return encode_dispatch_result(vigil->dispatch_op_pure(vigil->mint_producer_context(), op));
     }
     return CrucibleDispatchResult{};
 }
@@ -232,12 +235,12 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
 
     // The trust ladder; see the sister site in crucible_dispatch_op.  The
     // producer claim gates this entry as it gates crucible_dispatch_op.
-    const auto validated =
-        crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), metas_typed.value(), n_metas);
-    for (const crucible::TraceRing::ValidatedEntryPtr& certified : validated) {
+    crucible::vessel::OpRecords records{};
+    if (!crucible::vessel::copy_ffi_records(metas_typed, n_metas, records)) return CrucibleDispatchResult{};
+    const auto validated = crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records.view());
+    for (const crucible::ValidatedOp& op : validated) {
         const auto vigil = ::fixy::to(*vigil_typed.value());
-        return encode_dispatch_result(
-            vigil->dispatch_op_pure(vigil->mint_producer_context(), certified, metas_typed.value(), n_metas));
+        return encode_dispatch_result(vigil->dispatch_op_pure(vigil->mint_producer_context(), op));
     }
     return CrucibleDispatchResult{};
 }

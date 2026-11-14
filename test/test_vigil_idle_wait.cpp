@@ -80,9 +80,8 @@ void record_iteration(Vigil& vigil) {
         entry.shape_hash = crucible::ShapeHash{0x200 + op};
         entry.num_inputs = 1;
         entry.num_outputs = 1;
-        // record_op reads the records from the address of the first one.
         const ::fixy::FixedArray<crucible::TensorMeta, 2> metas{make_meta(), make_meta()};
-        (void)vigil.record_op(crucible::test::certify_synthetic_entry(entry), &metas.at(::fixy::index<0>()), 2);
+        (void)vigil.record_op(crucible::test::certify_synthetic_op(entry, metas, 2));
     }
 }
 

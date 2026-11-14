@@ -34,6 +34,7 @@
 #include <crucible/RegionCache.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Transaction.h>
+#include <crucible/ValidatedOp.h>
 #include <crucible/cipher/SessionPersistenceSurface.h>
 #include <crucible/warden/Policy.h>
 #include <crucible/warden/WatchdogVerdict.h>
@@ -71,6 +72,30 @@ class DeadlineWatchdog;
 }  // namespace crucible::warden
 
 namespace crucible {
+
+// Records one op into a trace ring and its metadata log.  The function has no
+// thread gate: Vigil::record_op is the gated door, and a test drives a ring
+// and a log that it owns.
+//
+// The ring slot is reserved first.  A full ring then refuses the op before
+// the log takes a record, so the log holds no record of an op that the ring
+// does not hold.  A full log gives the op no metadata index, and the ring
+// still takes the op, so the detector sees it.  An op with no records gets no
+// index from the log either.  Returns false when the ring is full.
+//
+// The function flattens, so the match and its arms inline, and the record of
+// an op makes no call apart from the copy of the records.
+[[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool record_into(TraceRing& ring, MetaLog& log,
+                                                                       const ValidatedOp& op, ScopeHash scope_hash,
+                                                                       CallsiteHash callsite_hash) noexcept {
+    return ring.try_reserve().match(
+        [&](TraceRing::Reservation reserved) noexcept {
+            const MetaIndex meta_start = log.try_append(op.metas());
+            ring.commit(std::move(reserved), op.entry(), meta_start, scope_hash, callsite_hash);
+            return true;
+        },
+        [] noexcept { return false; });
+}
 
 class Vigil {
 public:
@@ -199,31 +224,25 @@ public:
     Vigil(Vigil&&) = delete("interior pointers from CrucibleContext and ring would dangle");
     Vigil& operator=(Vigil&&) = delete("interior pointers from CrucibleContext and ring would dangle");
 
-    // Appends the tensor metadata, then pushes an op fingerprint to the
-    // ring.  Returns false when either is full, in which case the op is
-    // dropped and the next iteration re-records everything.
+    // Reserves a ring slot, appends the tensor metadata, and then commits an
+    // op fingerprint to the slot (record_into).  Returns false when the ring
+    // is full, in which case the op is dropped and the next iteration
+    // re-records everything.  A full metadata log gives the op no records.
     //
-    // The records are the inputs and then the outputs of the entry, so
-    // n_metas must be their sum.  The build reads that many records for the
-    // op, and a count that disagrees makes it read the records of another
-    // op.  The check ends the process before the log or the ring changes.
+    // The records of the op are the inputs and then the outputs of the
+    // entry, and the build reads that many records for the op.
+    // mint_validated_op is the one door to a ValidatedOp, and it refuses a
+    // count of records that disagrees with the entry.
     //
     // This is a producer entry point in its own right, not a helper of
     // dispatch_op, so it carries the same thread gate.  Without one, a
     // caller that reaches the ring through here from a second thread gets
     // the torn append dispatch_op refuses, and the two entry points state
     // different ownership rules for one ring.
-    [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool record_op(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas,
-                                                           uint32_t n_metas, ScopeHash scope_hash = {},
+    [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool record_op(const ValidatedOp& op, ScopeHash scope_hash = {},
                                                            CallsiteHash callsite_hash = {}) {
-        CRUCIBLE_PRE(ve.value() != nullptr);
-        CRUCIBLE_PRE(n_metas == uint32_t{ve.value()->num_inputs} + ve.value()->num_outputs);
         (void)assert_producer_thread_();
-        MetaIndex meta_start;  // default = none()
-        if (metas && n_metas > 0) {
-            meta_start = meta_log_->try_append(metas, n_metas);
-        }
-        return ring_->try_append(*ve.value(), meta_start, scope_hash, callsite_hash);
+        return record_into(*ring_, *meta_log_, op, scope_hash, callsite_hash);
     }
 
     // Called once per op by the adapter.  A RECORD action means the caller
@@ -234,12 +253,9 @@ public:
     // Only the hot paths live inline here.  Divergence recovery, consuming a
     // pending region and alignment all sit in noinline helpers, so the hot
     // path needs no callee-saved registers for them.
-    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult dispatch_op(TraceRing::ValidatedEntryPtr ve,
-                                                                                     const TensorMeta* metas,
-                                                                                     uint32_t n_metas,
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult dispatch_op(const ValidatedOp& op,
                                                                                      ScopeHash scope_hash = {},
                                                                                      CallsiteHash callsite_hash = {}) {
-        CRUCIBLE_PRE(ve.value() != nullptr);
         // Armed in every build mode, release included. The ring behind this
         // call is single-producer: two threads appending concurrently claim
         // the same slot, and the second overwrites the first with no
@@ -266,7 +282,7 @@ public:
         // The gate returns the context of this Vigil's claim, and every view
         // of the replay chain below is minted from it.
         const VigilFgCtx fg = assert_producer_thread_();
-        const TraceRing::Entry& entry = *ve.value();
+        const TraceRing::Entry& entry = op.entry();
 
         // The branch itself proves the context is compiled.  Minting the
         // view once here is what makes the engine transition below reachable
@@ -285,9 +301,9 @@ public:
         // record it instead of aligning, which costs an extra op before
         // alignment completes.
         if (pending_region_.load_acquire().is_some() || pending_activation_) [[unlikely]]
-            return dispatch_transition_(fg, ve, metas, n_metas, scope_hash, callsite_hash);
+            return dispatch_transition_(fg, op, scope_hash, callsite_hash);
 
-        (void)record_op(ve, metas, n_metas, scope_hash, callsite_hash);
+        (void)record_op(op, scope_hash, callsite_hash);
         return {
             .action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {}, .op_index = OpIndex{}};
     }
@@ -305,11 +321,9 @@ public:
     // The context proves the claim at the time of the mint.  A reference to
     // it can still reach another thread, so dispatch_op checks the thread
     // again before the ring head can advance.
-    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult
-    dispatch_op_pure(VigilFgCtx const&, TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas, uint32_t n_metas,
-                     ScopeHash scope_hash = {}, CallsiteHash callsite_hash = {}) {
-        CRUCIBLE_PRE(ve.value() != nullptr);
-        return dispatch_op(ve, metas, n_metas, scope_hash, callsite_hash);
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult dispatch_op_pure(
+        VigilFgCtx const&, const ValidatedOp& op, ScopeHash scope_hash = {}, CallsiteHash callsite_hash = {}) {
+        return dispatch_op(op, scope_hash, callsite_hash);
     }
 
     // True when a call to record_op or dispatch_op from this thread is
@@ -773,16 +787,17 @@ private:
                 .op_index = OpIndex{}};
     }
 
-    // Takes the certified pointer rather than the Entry behind it. The two
-    // spellings differ where it matters: an Entry reference has to be
-    // certified again before record_op will take it, and certifying one that
-    // is already certified means minting the second tag with no check behind
-    // it. Carrying the pointer keeps the caller's certification.
-    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult
-    dispatch_transition_(VigilFgCtx const& fg, TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas,
-                         uint32_t n_metas, ScopeHash scope_hash, CallsiteHash callsite_hash) {
-        CRUCIBLE_PRE(ve.value() != nullptr);
-        const TraceRing::Entry& entry = *ve.value();
+    // Takes the validated op rather than the Entry behind it.  An Entry
+    // reference has to pass mint_validated_op again before record_op takes
+    // it.  Carrying the op keeps the check of the caller.
+    //
+    // The op comes by value.  A reference to the op of dispatch_op gives
+    // that op an address outside the frame, and then the stack protector
+    // puts a canary on each path of dispatch_op.
+    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult dispatch_transition_(VigilFgCtx const& fg, ValidatedOp op,
+                                                                                   ScopeHash scope_hash,
+                                                                                   CallsiteHash callsite_hash) {
+        const TraceRing::Entry& entry = op.entry();
         // A newer region arriving mid-alignment replaces the pending one.  A
         // region with other ops restarts the alignment from zero, because
         // the old partial match means nothing for it.  A region with the same
@@ -795,7 +810,7 @@ private:
             // bound of try_align_ ends an alignment that finds no match.
             try_align_(fg, entry.schema_hash, entry.shape_hash);
         } else {
-            (void)record_op(ve, metas, n_metas, scope_hash, callsite_hash);
+            (void)record_op(op, scope_hash, callsite_hash);
         }
         publish_held_regions_();
 

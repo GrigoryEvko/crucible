@@ -61,6 +61,7 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Types.h>
+#include <crucible/ValidatedOp.h>
 #include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
@@ -233,6 +234,28 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
     return metas[i].data_ptr;
 }
 
+// ── The records of one op of a C caller ────────────────────────────
+//
+// A recording entry point takes the records of an op as a View.  The C ABI
+// gives a pointer and a count, and no door of the base makes a View of a
+// foreign run whose records hold enumerations and a pointer.  So a thunk
+// copies the records into a list that it owns, and the View borrows the
+// list.  The list holds the most records that the trust ladder admits:
+// 64 inputs and 64 outputs (entry_is_well_formed).
+
+inline constexpr uint32_t kMaxOpRecords = 128;
+using OpRecords = ::fixy::FixedList<TensorMeta, kMaxOpRecords>;
+
+// Copies the n_metas records at typed into records.  Returns false when the
+// count passes the room of the list.  The caller then records nothing.
+[[nodiscard]] inline bool copy_ffi_records(TypedMeta typed, uint32_t n_metas, OpRecords& records) noexcept {
+    if (n_metas > kMaxOpRecords) return false;
+    for (uint32_t i = 0; i < n_metas; ++i) {
+        if (records.push(typed.value()[i]).is_err()) return false;
+    }
+    return true;
+}
+
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // ── Schema-name typed lookup ───────────────────────────────────────
@@ -260,13 +283,15 @@ schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
 // runtime supplied: the C ABI hands over raw integers, the boxed
 // fallback reads an ATen stack, and the unboxed kernels read their own
 // typed arguments.  All three start at
-// `crucible::TraceRing::FromPytorchEntryPtr`, and `Vigil::record_op`
-// and `Vigil::dispatch_op` take `crucible::TraceRing::ValidatedEntryPtr`.
-// The retag catalog admits exactly one transition between those two
-// tags, so the checks below are the whole route from an adapter to the
-// ring.  The boxed fallback and the C ABI build entries from data that
-// has no compile-time bound, and they run the checks at run time
-// through `mint_validated_entry`.  The unboxed kernels discharge the
+// `crucible::TraceRing::FromPytorchEntryPtr`.  `Vigil::record_op` and
+// `Vigil::dispatch_op` take a `crucible::ValidatedOp`, whose one door
+// `crucible::mint_validated_op` takes a
+// `crucible::TraceRing::ValidatedEntryPtr` and checks the count of the
+// records.  The retag catalog admits exactly one transition between the
+// two tags of the entry, so the checks below are the whole route from an
+// adapter to the ring.  The boxed fallback and the C ABI build entries
+// from data that has no compile-time bound, and they run the checks at
+// run time through `validate_ffi_op`.  The unboxed kernels discharge the
 // same checks at compile time: record_kernel.h asserts that
 // `entry_is_well_formed` and `metas_are_well_formed` accept the
 // largest entry each operator can build, and then retags without the
@@ -306,26 +331,18 @@ schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
 // pipeline, which ends the process.  The decoders below keep such a value
 // out of a meta that a recording kernel fills.
 //
-// A count of zero is well formed whatever the pointer is, and the
-// pointer is deliberately not required to be null there.  An operation
-// carrying no tensors is ordinary, and two of the three adapters reach
-// this with the address of a fixed array they never filled, which is
-// not null and is never read because the count is zero.  The C ABI
-// states the stronger rule that the two travel together, and
-// assert_plausible_meta_array is where that rule is checked, on the one
-// path that promises it.
+// An empty View is well formed.  An operation carrying no tensors is
+// ordinary.
 //
 // Cost is one byte compare and three enumerator tests per meta.  A
 // typical operation carries two to eight metas, and the dispatch that
 // reached here is orders of magnitude larger.
-[[nodiscard]] CRUCIBLE_HOT constexpr bool metas_are_well_formed(const crucible::TensorMeta* metas,
-                                                                uint32_t n_metas) noexcept {
-    if (n_metas == 0) return true;
-    if (metas == nullptr) return false;
-    for (uint32_t i = 0; i < n_metas; ++i) {
-        if (metas[i].ndim > crucible::kMaxTensorNDim) return false;
-        if (!crucible::valid_scalar_type(metas[i].dtype) || !crucible::valid_device_type(metas[i].device_type)
-            || !crucible::valid_layout(metas[i].layout))
+[[nodiscard]] CRUCIBLE_HOT constexpr bool
+metas_are_well_formed(::fixy::View<const crucible::TensorMeta> metas) noexcept {
+    for (const crucible::TensorMeta& meta : metas) {
+        if (meta.ndim > crucible::kMaxTensorNDim) return false;
+        if (!crucible::valid_scalar_type(meta.dtype) || !crucible::valid_device_type(meta.device_type)
+            || !crucible::valid_layout(meta.layout))
             return false;
     }
     return true;
@@ -413,24 +430,21 @@ decode_c10_device_type(int8_t ordinal) noexcept {
 // namespace of its own.  The two retags in the vessel use this alias.
 using ValidatedEntryTag = crucible::TraceRing::ValidatedEntryPtr::tag_type;
 
-// The runtime door from the first tag to the second.  An empty return says
-// no certification exists for this operation, and the caller executes
-// eagerly and leaves the ring alone.  There is no failure value that
-// carries the second tag, which is what makes running the checks the
-// only way an adapter reaches a recording entry point.
+// The runtime door from the first tag to an op that a recording entry point
+// takes.  An empty return says no certification exists for this operation,
+// and the caller executes eagerly and leaves the ring alone.  There is no
+// failure value that carries the second tag, which is what makes running
+// the checks the only way an adapter reaches a recording entry point.
 //
-// The records are the inputs and then the outputs of the entry, so a count
-// of records that is not their sum is refused here.  Vigil::record_op ends
-// the process on that count, and a foreign caller must not reach it.
-[[nodiscard]] CRUCIBLE_HOT constexpr ::fixy::Option<crucible::TraceRing::ValidatedEntryPtr>
-mint_validated_entry(crucible::TraceRing::FromPytorchEntryPtr raw, const crucible::TensorMeta* metas,
-                     uint32_t n_metas) noexcept {
+// The records are the inputs and then the outputs of the entry.
+// crucible::mint_validated_op gives no op for a count of records that is
+// not their sum, so the foreign caller of such a count records nothing.
+[[nodiscard]] CRUCIBLE_HOT constexpr ::fixy::Option<crucible::ValidatedOp>
+validate_ffi_op(crucible::TraceRing::FromPytorchEntryPtr raw, ::fixy::View<const crucible::TensorMeta> metas) noexcept {
     if (raw.value() == nullptr) return ::fixy::none;
     const crucible::TraceRing::Entry& entry = *raw.value();
-    if (!entry_is_well_formed(entry)) return ::fixy::none;
-    if (!metas_are_well_formed(metas, n_metas) || n_metas != uint32_t{entry.num_inputs} + entry.num_outputs)
-        return ::fixy::none;
-    return ::fixy::Option<crucible::TraceRing::ValidatedEntryPtr>::some(std::move(raw).retag<ValidatedEntryTag>());
+    if (!entry_is_well_formed(entry) || !metas_are_well_formed(metas)) return ::fixy::none;
+    return crucible::mint_validated_op(std::move(raw).retag<ValidatedEntryTag>(), metas);
 }
 
 }  // namespace crucible::vessel

@@ -59,8 +59,8 @@ OpData make_op(uint32_t iter, uint32_t op_idx) {
     d.entry.num_outputs = 1;
 
     uint16_t idx = 0;
-    if (op_idx > 0) d.metas[idx++] = make_meta(fake_ptr(iter, op_idx - 1));
-    d.metas[idx++] = make_meta(fake_ptr(iter, op_idx));
+    if (op_idx > 0) crucible::test::element_at(d.metas, idx++) = make_meta(fake_ptr(iter, op_idx - 1));
+    crucible::test::element_at(d.metas, idx++) = make_meta(fake_ptr(iter, op_idx));
     d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
 }
@@ -68,14 +68,14 @@ OpData make_op(uint32_t iter, uint32_t op_idx) {
 void feed_record(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        (void)vigil.record_op(crucible::test::certify_synthetic_op(d.entry, d.metas, d.n_metas));
     }
 }
 
 void feed_trigger(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto d = make_op(iter, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        (void)vigil.record_op(crucible::test::certify_synthetic_op(d.entry, d.metas, d.n_metas));
     }
 }
 
@@ -100,9 +100,8 @@ void align_and_activate(Vigil& vigil, uint32_t iter) {
 
 // True when a call of dispatch_op_pure with a context of type Ctx compiles.
 template <class Ctx>
-concept can_dispatch_pure_with = requires(Vigil& vigil, Ctx const& ctx, TraceRing::ValidatedEntryPtr entry) {
-    vigil.dispatch_op_pure(ctx, entry, nullptr, 0u);
-};
+concept can_dispatch_pure_with =
+    requires(Vigil& vigil, Ctx const& ctx, ValidatedOp const& op) { vigil.dispatch_op_pure(ctx, op); };
 
 namespace {
 struct Stranger {};

@@ -49,6 +49,17 @@ constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foregrou
 TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry&&) =
     delete("the result points into the entry, and a temporary entry ends before the result");
 
+// Certifies an Entry this file built, and pairs it with its records, so it
+// can reach record_op and dispatch_op.  The process ends when the count of
+// the records disagrees with the entry.
+[[nodiscard]] ValidatedOp certify_synthetic_op(const TraceRing::Entry& entry CRUCIBLE_LIFETIMEBOUND,
+                                               ::fixy::View<const TensorMeta> metas) noexcept {
+    return crucible::mint_validated_op(certify_synthetic_entry(entry), metas)
+        .expect("the count of the records agrees with the entry");
+}
+ValidatedOp certify_synthetic_op(const TraceRing::Entry&&, ::fixy::View<const TensorMeta>) =
+    delete("the op points into the entry, and a temporary entry ends before the op");
+
 // ── Constants ──────────────────────────────────────────────────────
 
 constexpr uint32_t NUM_OPS = 8;
@@ -84,9 +95,18 @@ TensorMeta make_meta(void* data_ptr) noexcept {
 
 struct OpData {
     TraceRing::Entry entry{};
-    TensorMeta metas[2]{};
+    ::fixy::FixedArray<TensorMeta, 2> metas{};
     uint16_t n_metas = 0;
 };
+
+// The records of the op: the first n_metas records of its array.
+[[nodiscard]] ::fixy::View<const TensorMeta> records_of(const OpData& op CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return ::fixy::View<const TensorMeta>{op.metas.view()}
+        .window(0, op.n_metas)
+        .expect("the count fits the records of the op");
+}
+::fixy::View<const TensorMeta>
+records_of(const OpData&&) = delete("the result points into the op, and a temporary op ends before the result");
 
 OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
     OpData d;
@@ -96,8 +116,11 @@ OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
     d.entry.num_outputs = 1;
 
     uint16_t idx = 0;
-    if (op_idx > 0) d.metas[idx++] = make_meta(fake_ptr(iter, op_idx - 1));
-    d.metas[idx++] = make_meta(fake_ptr(iter, op_idx));
+    if (op_idx > 0)
+        d.metas.at(::fixy::Index<2>::check(idx++).expect("the position fits the array")) =
+            make_meta(fake_ptr(iter, op_idx - 1));
+    d.metas.at(::fixy::Index<2>::check(idx++).expect("the position fits the array")) =
+        make_meta(fake_ptr(iter, op_idx));
     d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
 }
@@ -105,14 +128,14 @@ OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
 void feed_record(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
-        (void)vigil.record_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        (void)vigil.record_op(certify_synthetic_op(d.entry, records_of(d)));
     }
 }
 
 void feed_trigger(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto d = make_op(iter, i);
-        (void)vigil.record_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        (void)vigil.record_op(certify_synthetic_op(d.entry, records_of(d)));
     }
 }
 
@@ -129,14 +152,14 @@ void wait_region_published(Vigil& vigil) {
     uint32_t unexpected_results = 0;
     for (uint32_t i = 0; i < K; i++) {
         auto d = make_op(iter, i);
-        const auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        const auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
         unexpected_results += static_cast<uint32_t>(r.action != DispatchResult::Action::RECORD);
     }
     unexpected_results += static_cast<uint32_t>(!vigil.context().is_compiled());
 
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
-        const auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        const auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
         unexpected_results += static_cast<uint32_t>(r.action != DispatchResult::Action::COMPILED);
     }
     return unexpected_results;
@@ -274,13 +297,13 @@ int main() {
     reports.push_back([&] {
         MetaLog meta_log;
         meta_log.reset();
-        TensorMeta metas[2]{
+        ::fixy::FixedArray<TensorMeta, 2> metas{
             make_meta(fake_ptr(0, 0)),
             make_meta(fake_ptr(0, 1)),
         };
         return bench::run("MetaLog::try_append (2 metas)", [&] {
             bench::do_not_optimize(&meta_log);
-            bench::do_not_optimize(meta_log.try_append(metas, 2));
+            bench::do_not_optimize(meta_log.try_append(metas.view()));
         });
     }());
 
@@ -410,16 +433,17 @@ int main() {
         e.shape_hash = ShapeHash{0xAAA};
         e.num_inputs = 0;
         e.num_outputs = 0;
+        const ::fixy::View<const TensorMeta> no_records{};
         return bench::run("Vigil::record_op (0 metas, profiler hook)",
-                          [&] { bench::do_not_optimize(vigil.record_op(certify_synthetic_entry(e), nullptr, 0)); });
+                          [&] { bench::do_not_optimize(vigil.record_op(certify_synthetic_op(e, no_records))); });
     }());
 
     reports.push_back([&] {
         Vigil vigil;
         auto d = make_op(0, 1);
-        return bench::run("Vigil::record_op (2 metas)", [&] {
-            bench::do_not_optimize(vigil.record_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas));
-        });
+        const ::fixy::View<const TensorMeta> records = records_of(d);
+        return bench::run("Vigil::record_op (2 metas)",
+                          [&] { bench::do_not_optimize(vigil.record_op(certify_synthetic_op(d.entry, records))); });
     }());
 
     // ── dispatch_op RECORDING ──────────────────────────────────────
@@ -428,9 +452,9 @@ int main() {
     reports.push_back([&] {
         Vigil vigil;
         auto d = make_op(0, 1);
-        return bench::run("dispatch_op [RECORDING, no pending]", [&] {
-            bench::do_not_optimize(vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas));
-        });
+        const ::fixy::View<const TensorMeta> records = records_of(d);
+        return bench::run("dispatch_op [RECORDING, no pending]",
+                          [&] { bench::do_not_optimize(vigil.dispatch_op(certify_synthetic_op(d.entry, records))); });
     }());
 
     // ── dispatch_op COMPILED ───────────────────────────────────────
@@ -446,7 +470,7 @@ int main() {
         uint32_t op_idx = 0;
         return bench::run("dispatch_op [COMPILED, cyclic]", [&] {
             auto& d = ops[op_idx];
-            auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
             bench::do_not_optimize(r);
             op_idx = (op_idx + 1) % NUM_OPS;
         });
@@ -465,7 +489,7 @@ int main() {
         uint32_t op_idx = 0;
         return bench::run("dispatch_op [COMPILED + output_ptr]", [&] {
             auto& d = ops[op_idx];
-            auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
             if (r.action == DispatchResult::Action::COMPILED) bench::do_not_optimize(vigil.output_ptr(fg, 0));
             bench::do_not_optimize(r);
             op_idx = (op_idx + 1) % NUM_OPS;
@@ -482,12 +506,12 @@ int main() {
         uint32_t op_idx = 0;
         return bench::run("dispatch_op [COMPILED, MATCH only]", [&] {
             auto& d = ops[op_idx];
-            auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
             bench::do_not_optimize(r);
             op_idx++;
             if (op_idx >= NUM_OPS - 1) {
                 auto& last = ops[NUM_OPS - 1];
-                auto rl = vigil.dispatch_op(certify_synthetic_entry(last.entry), last.metas, last.n_metas);
+                auto rl = vigil.dispatch_op(certify_synthetic_op(last.entry, records_of(last)));
                 bench::do_not_optimize(rl);
                 op_idx = 0;
             }
@@ -504,7 +528,7 @@ int main() {
         return bench::run("dispatch_op [full 8-op iteration]", [&] {
             for (uint32_t i = 0; i < NUM_OPS; i++) {
                 auto& d = ops[i];
-                auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+                auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
                 bench::do_not_optimize(r);
             }
         });
@@ -531,7 +555,7 @@ int main() {
             unexpected_results += setup_compiled_vigil(vigil);
             for (uint32_t i = 0; i < 3; i++) {
                 auto d = make_op(10, i);
-                const auto rr = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+                const auto rr = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
                 unexpected_results += static_cast<uint32_t>(rr.action != DispatchResult::Action::COMPILED);
             }
             TraceRing::Entry bad{};
@@ -539,11 +563,11 @@ int main() {
             bad.shape_hash = SHAPE[3];
             bad.num_inputs = 1;
             bad.num_outputs = 1;
-            TensorMeta bad_metas[2]{
+            ::fixy::FixedArray<TensorMeta, 2> bad_metas{
                 make_meta(fake_ptr(10, 2)),
                 make_meta(fake_ptr(10, 3)),
             };
-            auto rr = vigil.dispatch_op(certify_synthetic_entry(bad), bad_metas, 2);
+            auto rr = vigil.dispatch_op(certify_synthetic_op(bad, bad_metas.view()));
             bench::do_not_optimize(rr);
             unexpected_results += static_cast<uint32_t>(rr.action != DispatchResult::Action::RECORD);
             unexpected_results += static_cast<uint32_t>(rr.status != ReplayStatus::DIVERGED);

@@ -130,20 +130,23 @@ public:
             return std::move(perm_);
         }
 
-        [[nodiscard, gnu::hot]] ::crucible::MetaIndex try_append(const value_type* metas, std::uint32_t count) {
-            return ch_->log_.try_append(metas, count);
+        [[nodiscard, gnu::hot]] ::crucible::MetaIndex try_append(::fixy::View<const value_type> metas) {
+            return ch_->log_.try_append(metas);
         }
 
+        // The record goes into an array of one record, whose View the log
+        // copies.
         [[nodiscard, gnu::hot]] bool try_append_one(const value_type& meta) {
-            return ch_->log_.try_append(&meta, 1).is_valid();
+            const ::fixy::FixedArray<value_type, 1> record{meta};
+            return ch_->log_.try_append(record.view()).is_valid();
         }
 
         // The row gate is this constraint.  The body calls try_append, so the
         // gate does not depend on the row spelling that MetaLog itself reads.
         template <typename CallerRow = ::foundation::effects::Row<>>
             requires ::fixy::IsPure<CallerRow>
-        [[nodiscard, gnu::hot]] ::crucible::MetaIndex try_append_pure(const value_type* metas, std::uint32_t count) {
-            return ch_->log_.try_append(metas, count);
+        [[nodiscard, gnu::hot]] ::crucible::MetaIndex try_append_pure(::fixy::View<const value_type> metas) {
+            return ch_->log_.try_append(metas);
         }
 
         [[nodiscard]] std::uint32_t size_approx() const { return ch_->log_.size().peek(); }

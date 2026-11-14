@@ -25,10 +25,10 @@ namespace eff = ::fixy;
 
 int main() {
     crucible::MetaLog log;
-    crucible::TensorMeta m{};
+    const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
     // Caller declares Row<Bg> — bg consumer-side context cannot
     // call the producer-side try_append_pure path.  IsPure<Row<Bg>>
     // is false; the requires-clause rejects.
-    (void)log.try_append_pure<eff::Row<eff::Effect::Bg>>(&m, 1);
+    (void)log.try_append_pure<eff::Row<eff::Effect::Bg>>(record.view());
     return 0;
 }

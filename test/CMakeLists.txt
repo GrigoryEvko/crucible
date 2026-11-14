@@ -231,6 +231,7 @@ crucible_test(test_vigil_unrepeated_prefix)
 crucible_test(test_vigil_idle_wait)
 crucible_test(test_background_thread_refused_ops)
 crucible_test(test_vigil_record_count)
+crucible_test(test_record_into)
 crucible_test(test_trace_ring)
 crucible_test(test_merkle_dag)
 crucible_test(test_merkle_links)
@@ -3664,8 +3665,19 @@ crucible_neg_compile_test(neg_vigil_dispatch_op_pure_test_ctx
   "cannot convert .const fixy::TestRunnerCtx. \\{aka .const foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, ${VIGIL_PURE_ROW_TAIL}.\\} ${VIGIL_PURE_TO}"
   "${VIGIL_PURE_PARAM}")
 crucible_neg_compile_test(neg_vigil_dispatch_op_pure_no_ctx
-  "no matching function for call to .crucible::Vigil::dispatch_op_pure\\(fixy::Tagged<const crucible::TraceRing::Entry\\*, fixy::tags::vessel_trust::Validated>, crucible::TensorMeta\\*, int\\)."
-  "crucible::Vigil::dispatch_op_pure\\(const crucible::VigilFgCtx&, crucible::TraceRing::ValidatedEntryPtr, ")
+  "no matching function for call to .crucible::Vigil::dispatch_op_pure\\(const crucible::ValidatedOp&\\)."
+  "crucible::Vigil::dispatch_op_pure\\(const crucible::VigilFgCtx&, const crucible::ValidatedOp&, ")
+
+# mint_validated_op is the one door to a ValidatedOp.  The first fixture
+# builds the op with its private constructor.  The second gives the mint an
+# entry that still carries the tag of the foreign runtime, which only the
+# checks of the trust ladder change.
+crucible_neg_compile_test(neg_validated_op_built_outside_mint
+  "is private within this context"
+  "crucible::ValidatedOp::ValidatedOp\\(crucible::TraceRing::ValidatedEntryPtr, foundation::core::View<const crucible::TensorMeta>\\)")
+crucible_neg_compile_test(neg_validated_op_unchecked_entry
+  "could not convert .crucible::mint_ffi_entry\\(entry\\). from .Tagged<"
+  "fixy::tags::vessel_trust::FromPytorch>. to .Tagged<.....,fixy::tags::vessel_trust::Validated>")
 
 # BackgroundThread::run_in_row(ctx) requires CtxAdmits<Ctx, Row<Bg,
 # Alloc, IO, Block>>.  Each fixture hands in a context whose row lacks

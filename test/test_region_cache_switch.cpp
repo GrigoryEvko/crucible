@@ -98,9 +98,9 @@ void test_cache_miss_fallback() {
     bad.shape_hash = ShapeHash{0xBEEF};
     bad.num_inputs = 0;
     bad.num_outputs = 1;
-    TensorMeta bad_meta = make_meta(fake_ptr(99, 99, 0), 512);
+    const ::fixy::FixedArray<TensorMeta, 1> bad_meta{make_meta(fake_ptr(99, 99, 0), 512)};
 
-    auto r = crucible::test::dispatch_synthetic(vigil, bad, &bad_meta, 1);
+    auto r = crucible::test::dispatch_synthetic(vigil, bad, bad_meta, 1);
     assert(r.action == DispatchResult::Action::RECORD);
     assert(r.status == ReplayStatus::DIVERGED);
     assert(!vigil.context().is_compiled());

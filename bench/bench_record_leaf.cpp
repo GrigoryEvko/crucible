@@ -73,6 +73,17 @@ namespace {
 TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry&&) =
     delete("the result points into the entry, and a temporary entry ends before the result");
 
+// Certifies an Entry this file built, and pairs it with its records, so it
+// can reach record_op and dispatch_op.  The process ends when the count of
+// the records disagrees with the entry.
+[[nodiscard]] ValidatedOp certify_synthetic_op(const TraceRing::Entry& entry CRUCIBLE_LIFETIMEBOUND,
+                                               ::fixy::View<const TensorMeta> metas) noexcept {
+    return crucible::mint_validated_op(certify_synthetic_entry(entry), metas)
+        .expect("the count of the records agrees with the entry");
+}
+ValidatedOp certify_synthetic_op(const TraceRing::Entry&&, ::fixy::View<const TensorMeta>) =
+    delete("the op points into the entry, and a temporary entry ends before the op");
+
 // ── Shape of the traced op ─────────────────────────────────────────
 
 constexpr uint32_t NUM_OPS = 8;
@@ -181,9 +192,18 @@ TensorMeta make_meta(void* data_ptr) noexcept {
 
 struct OpData {
     TraceRing::Entry entry{};
-    TensorMeta metas[2]{};
+    ::fixy::FixedArray<TensorMeta, 2> metas{};
     uint16_t n_metas = 0;
 };
+
+// The records of the op: the first n_metas records of its array.
+[[nodiscard]] ::fixy::View<const TensorMeta> records_of(const OpData& op CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return ::fixy::View<const TensorMeta>{op.metas.view()}
+        .window(0, op.n_metas)
+        .expect("the count fits the records of the op");
+}
+::fixy::View<const TensorMeta>
+records_of(const OpData&&) = delete("the result points into the op, and a temporary op ends before the result");
 
 OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
     OpData d;
@@ -193,8 +213,11 @@ OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
     d.entry.num_outputs = 1;
 
     uint16_t idx = 0;
-    if (op_idx > 0) d.metas[idx++] = make_meta(fake_ptr(iter, op_idx - 1));
-    d.metas[idx++] = make_meta(fake_ptr(iter, op_idx));
+    if (op_idx > 0)
+        d.metas.at(::fixy::Index<2>::check(idx++).expect("the position fits the array")) =
+            make_meta(fake_ptr(iter, op_idx - 1));
+    d.metas.at(::fixy::Index<2>::check(idx++).expect("the position fits the array")) =
+        make_meta(fake_ptr(iter, op_idx));
     d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
 }
@@ -202,14 +225,14 @@ OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
 void feed_record(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
-        (void)vigil.record_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        (void)vigil.record_op(certify_synthetic_op(d.entry, records_of(d)));
     }
 }
 
 void feed_trigger(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto d = make_op(iter, i);
-        (void)vigil.record_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        (void)vigil.record_op(certify_synthetic_op(d.entry, records_of(d)));
     }
 }
 
@@ -227,11 +250,11 @@ void wait_region_published(Vigil& vigil) {
 void align_and_activate(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < K; i++) {
         auto d = make_op(iter, i);
-        [[maybe_unused]] auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        [[maybe_unused]] auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
     }
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
-        [[maybe_unused]] auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        [[maybe_unused]] auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
     }
 }
 
@@ -376,15 +399,16 @@ int main() {
         log->reset();
 
         auto d = make_op(0, 1);
+        const ::fixy::View<const TensorMeta> records = records_of(d);
         uint64_t tick = 0;
         return bench::Run("record leaf [2 appends, no drainer]")
             .core(record_core >= 0 ? record_core : bench::env_core())
             .measure([&] {
                 d.entry.schema_hash = SchemaHash{0x1000000u + tick++};
-                MetaIndex meta_start = log->try_append(d.metas, d.n_metas);
+                MetaIndex meta_start = log->try_append(records);
                 if (!meta_start.is_valid()) [[unlikely]] {
                     log->reset();
-                    meta_start = log->try_append(d.metas, d.n_metas);
+                    meta_start = log->try_append(records);
                 }
                 if (!ring->try_append(d.entry, meta_start, ScopeHash{}, CallsiteHash{})) [[unlikely]] {
                     ring->reset();
@@ -400,6 +424,7 @@ int main() {
     reports.push_back([&] {
         Vigil vigil;
         auto d = make_op(0, 1);
+        const ::fixy::View<const TensorMeta> records = records_of(d);
         uint64_t refused = 0;
         uint64_t tick = 0;
         auto report = bench::Run("record_op [2 metas, ring has room]")
@@ -412,7 +437,7 @@ int main() {
                               // difference between the two reports is that case's mode test and
                               // pending-region check and nothing else.
                               d.entry.schema_hash = SchemaHash{0x1000000u + tick++};
-                              const bool took = vigil.record_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+                              const bool took = vigil.record_op(certify_synthetic_op(d.entry, records));
                               refused += static_cast<uint64_t>(!took);
                               bench::do_not_optimize(took);
                           });
@@ -439,6 +464,7 @@ int main() {
     reports.push_back([&] {
         Vigil vigil;
         auto d = make_op(0, 1);
+        const ::fixy::View<const TensorMeta> records = records_of(d);
         uint64_t tick = 0;
         uint64_t recorded = 0;
         auto report = bench::Run("dispatch_op [RECORD leaf, ring has room]")
@@ -448,7 +474,7 @@ int main() {
                           .core(record_core >= 0 ? record_core : bench::env_core())
                           .measure([&] {
                               d.entry.schema_hash = SchemaHash{0x1000000u + tick++};
-                              const auto r = vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+                              const auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records));
                               recorded += static_cast<uint64_t>(r.is_record());
                               bench::do_not_optimize(r);
                           });
@@ -483,7 +509,7 @@ int main() {
         uint32_t op_idx = 0;
         return bench::run("dispatch_op [COMPILED leaf, cyclic]", [&] {
             auto& d = ops[op_idx];
-            bench::do_not_optimize(vigil.dispatch_op(certify_synthetic_entry(d.entry), d.metas, d.n_metas));
+            bench::do_not_optimize(vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d))));
             op_idx = (op_idx + 1) % NUM_OPS;
         });
     }());

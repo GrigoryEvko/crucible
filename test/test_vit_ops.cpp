@@ -274,21 +274,21 @@ OpPacket build_op(uint32_t op_idx, uint32_t iter) {
     pkt.entry.num_outputs = op.n_out;
     pkt.n_metas = static_cast<uint16_t>(op.n_in + op.n_out);
     for (uint8_t i = 0; i < pkt.n_metas; i++)
-        pkt.metas[i] = make_meta(op.t[i], iter);
+        crucible::test::element_at(pkt.metas, i) = make_meta(op.t[i], iter);
     return pkt;
 }
 
 void feed_iteration(Vigil& v, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto p = build_op(i, iter);
-        assert(v.record_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas));
+        assert(v.record_op(crucible::test::certify_synthetic_op(p.entry, p.metas, p.n_metas)));
     }
 }
 
 void feed_trigger(Vigil& v, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto p = build_op(i, iter);
-        assert(v.record_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas));
+        assert(v.record_op(crucible::test::certify_synthetic_op(p.entry, p.metas, p.n_metas)));
     }
 }
 

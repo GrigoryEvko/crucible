@@ -64,7 +64,7 @@ struct ResNet50 {
 
 struct OpPacket {
     crucible::TraceRing::Entry entry{};
-    crucible::TensorMeta metas[6]{};
+    ::fixy::FixedArray<crucible::TensorMeta, 6> metas{};
     uint16_t n_metas = 0;
 };
 

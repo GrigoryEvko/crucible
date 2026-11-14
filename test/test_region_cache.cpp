@@ -64,10 +64,10 @@ OpData make_op(const ShapeHash* shapes, uint32_t variant, uint32_t iter, uint32_
     uint16_t idx = 0;
     if (op_idx > 0) {
         int64_t in_sz = tensor_size(variant, op_idx - 1);
-        d.metas[idx++] = make_meta(fake_ptr(variant, iter, op_idx - 1), in_sz);
+        crucible::test::element_at(d.metas, idx++) = make_meta(fake_ptr(variant, iter, op_idx - 1), in_sz);
     }
     int64_t out_sz = tensor_size(variant, op_idx);
-    d.metas[idx++] = make_meta(fake_ptr(variant, iter, op_idx), out_sz);
+    crucible::test::element_at(d.metas, idx++) = make_meta(fake_ptr(variant, iter, op_idx), out_sz);
     d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
 }
@@ -75,14 +75,14 @@ OpData make_op(const ShapeHash* shapes, uint32_t variant, uint32_t iter, uint32_
 void feed_record(Vigil& vigil, const ShapeHash* shapes, uint32_t variant, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(shapes, variant, iter, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        (void)vigil.record_op(crucible::test::certify_synthetic_op(d.entry, d.metas, d.n_metas));
     }
 }
 
 void feed_trigger(Vigil& vigil, const ShapeHash* shapes, uint32_t variant, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto d = make_op(shapes, variant, iter, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_entry(d.entry), d.metas, d.n_metas);
+        (void)vigil.record_op(crucible::test::certify_synthetic_op(d.entry, d.metas, d.n_metas));
     }
 }
 

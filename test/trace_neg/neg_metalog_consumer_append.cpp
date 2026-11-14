@@ -24,7 +24,7 @@ int main() {
     auto [pp, cp] = ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(log_root());
     (void)pp;
     auto consumer = log.consumer(std::move(cp));
-    const ::crucible::TensorMeta record{};
-    [[maybe_unused]] auto start = consumer.try_append(&record, 1);
+    const ::fixy::FixedArray<::crucible::TensorMeta, 1> record{};
+    [[maybe_unused]] auto start = consumer.try_append(record.view());
     return 0;
 }

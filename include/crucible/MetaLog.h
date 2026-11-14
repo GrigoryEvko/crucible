@@ -80,6 +80,10 @@ struct CRUCIBLE_OWNER MetaLog {
     // The buffer holds its base as its first word, so an indexed access on
     // the hot path is one load of that word from this object.
     ::foundation::AlignedBuffer<TensorMeta, ::foundation::huge_page_bytes> entries_buffer_;
+    // The View of the CAPACITY records of the buffer.  Its count is in its
+    // type, so the window of a run of an append has no check that the
+    // optimizer keeps.  The log does not move, so the View stays valid.
+    ::fixy::View<TensorMeta, CAPACITY> records_;
 
     alignas(64)::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> tail =
         ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
@@ -87,7 +91,8 @@ struct CRUCIBLE_OWNER MetaLog {
     MetaLog()
         : entries_buffer_{
               ::foundation::AlignedBuffer<TensorMeta, ::foundation::huge_page_bytes>::allocate_value_initialized(
-                  CAPACITY)} {
+                  CAPACITY)},
+          records_{entries_buffer_.view().template window<CAPACITY>(0).expect("the buffer holds CAPACITY records")} {
         // The allocation faults the whole buffer in here rather than one page
         // at a time under the recording thread.
         //
@@ -112,7 +117,7 @@ struct CRUCIBLE_OWNER MetaLog {
         // these, goes from 0.9 ms to 37.8 ms.
         //
         // Value initialization, not a memset over the bytes. TensorMeta is
-        // trivially copyable, which is what lets try_append memcpy into it,
+        // trivially copyable, which is what lets try_append copy its bytes,
         // but it carries member initializers and so is not trivially
         // default-constructible. A memset on it is what -Wclass-memaccess
         // exists to reject. The optimizer lowers an all-zero initializer to
@@ -151,13 +156,20 @@ struct CRUCIBLE_OWNER MetaLog {
     MetaLog& operator=(MetaLog&&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
 
     // Appends a run of metadata records and returns the index of the first,
-    // or no index if the buffer is full. Only the producing thread writes the
-    // counter or the slots it is about to fill, which the thread-safety
-    // analysis cannot express, so it is suppressed here.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append(const TensorMeta* metas, uint32_t n)
-        CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(n, std::uint32_t{0}, CAPACITY));
-        CRUCIBLE_PRE(::foundation::decide::valid_span(n, metas));
+    // or no index if the buffer is full or the run is empty. Only the
+    // producing thread writes the counter or the slots it is about to fill,
+    // which the thread-safety analysis cannot express, so it is suppressed
+    // here.
+    [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append(::fixy::View<const TensorMeta> metas) CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(metas.size() <= CAPACITY);
+        // The count and the positions below have the width of a View count
+        // (64 bits on each supported platform), so the test of the run and
+        // the check of each window compare the same values, and the
+        // optimizer removes the checks.  A violation of the precondition
+        // ends the process, so the count is at most CAPACITY below, and the
+        // window of the second run of a wrap fits.
+        const uint64_t n = metas.size();
+        [[assume(n <= CAPACITY)]];
         if (n == 0) [[unlikely]]
             return MetaIndex::none();
 
@@ -173,17 +185,15 @@ struct CRUCIBLE_OWNER MetaLog {
             }
         }
 
-        uint32_t start_pos = static_cast<uint32_t>(h & MASK);
-        [[assume(start_pos < CAPACITY)]];
-        uint32_t end_pos = start_pos + n;
+        const uint64_t start_pos = h & MASK;
 
-        if (end_pos <= CAPACITY) [[likely]] {
-            std::memcpy(entries_buffer_.data() + start_pos, metas, n * sizeof(TensorMeta));
+        if (n <= CAPACITY - start_pos) [[likely]] {
+            write_records_(start_pos, metas, 0, n);
         } else {
             // The run wraps the end of the buffer, so it splits in two.
-            uint32_t first_chunk = CAPACITY - start_pos;
-            std::memcpy(entries_buffer_.data() + start_pos, metas, first_chunk * sizeof(TensorMeta));
-            std::memcpy(entries_buffer_.data(), metas + first_chunk, (n - first_chunk) * sizeof(TensorMeta));
+            const uint64_t first_chunk = CAPACITY - start_pos;
+            write_records_(start_pos, metas, 0, first_chunk);
+            write_records_(0, metas, first_chunk, n - first_chunk);
         }
 
         // One record spans three cache lines, hence three prefetches. The
@@ -194,7 +204,8 @@ struct CRUCIBLE_OWNER MetaLog {
         // the copy above becomes visible.  Each prefetch prepares a write, and
         // the locality 3 keeps the line in each level of the cache.
         {
-            const TensorMeta& next_record = entries_buffer_.data()[(h + n) & MASK];
+            const TensorMeta& next_record = records_.at(
+                ::fixy::Index<CAPACITY>::check((h + n) & MASK).expect("a masked count of the log is below CAPACITY"));
             constexpr ::fixy::PrefetchAccess write_access = ::fixy::PrefetchAccess::write;
             ::fixy::prefetch<write_access, 3>(next_record.sizes);
             ::fixy::prefetch<write_access, 3>(next_record.strides);
@@ -213,12 +224,9 @@ struct CRUCIBLE_OWNER MetaLog {
 
     // The same body, with the tier declared in the return type so a consumer
     // that demands a hot-tier producer can be checked at compile time.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]]
-    CRUCIBLE_INLINE ::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex> try_append_pinned(const TensorMeta* metas,
-                                                                                             uint32_t n)
-        CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(::foundation::decide::valid_span(n, metas));
-        return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex>>(try_append(metas, n));
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex>
+    try_append_pinned(::fixy::View<const TensorMeta> metas) CRUCIBLE_NO_THREAD_SAFETY {
+        return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex>>(try_append(metas));
     }
 
     // Preferred at new call sites: appending touches memory only, so the
@@ -227,11 +235,9 @@ struct CRUCIBLE_OWNER MetaLog {
     // discovered later.
     template <typename CallerRow = ::foundation::effects::Row<>>
         requires ::fixy::IsPure<CallerRow>
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append_pure(const TensorMeta* metas,
-                                                                                         uint32_t n)
+    [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append_pure(::fixy::View<const TensorMeta> metas)
         CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(::foundation::decide::valid_span(n, metas));
-        return try_append(metas, n);
+        return try_append(metas);
     }
 
     // Copies the run of records that starts at index start into dst, one
@@ -297,6 +303,16 @@ struct CRUCIBLE_OWNER MetaLog {
     }
 
 private:
+    // Copies the count records of src from src_at into the buffer from at.
+    // The caller gives two windows that fit, and the count of records_ is in
+    // its type, so the optimizer removes each check of a window.
+    CRUCIBLE_INLINE void write_records_(uint64_t at, ::fixy::View<TensorMeta const> src, uint64_t src_at,
+                                        uint64_t count) noexcept {
+        ::fixy::copy(records_.window(at, count).expect("the records fit in the buffer"),
+                     src.window(src_at, count).expect("the records of the copy are records of the run"))
+            .expect("the two windows of the copy hold the same count");
+    }
+
     // Copies the count records of src from src_at into dst from dst_at.  Each
     // caller gives two windows that fit.
     static void copy_records_(::fixy::View<TensorMeta> dst, uint32_t dst_at, ::fixy::View<TensorMeta const> src,

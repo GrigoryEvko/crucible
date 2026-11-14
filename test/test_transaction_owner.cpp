@@ -53,7 +53,7 @@ constexpr uint32_t kSignature = crucible::Vigil::ALIGNMENT_K;
 
 struct OpData {
     crucible::TraceRing::Entry entry{};
-    crucible::TensorMeta metas[2]{};
+    ::fixy::FixedArray<crucible::TensorMeta, 2> metas{};
     uint16_t n_metas = 0;
 };
 
@@ -81,8 +81,8 @@ OpData op_at(uint32_t iter, uint32_t op_idx) {
     made.entry.num_inputs = (op_idx == 0) ? 0 : 1;
     made.entry.num_outputs = 1;
     uint16_t idx = 0;
-    if (op_idx > 0) made.metas[idx++] = meta_at(fake_ptr(iter, op_idx - 1));
-    made.metas[idx++] = meta_at(fake_ptr(iter, op_idx));
+    if (op_idx > 0) crucible::test::element_at(made.metas, idx++) = meta_at(fake_ptr(iter, op_idx - 1));
+    crucible::test::element_at(made.metas, idx++) = meta_at(fake_ptr(iter, op_idx));
     made.n_metas = static_cast<uint16_t>(made.entry.num_inputs + made.entry.num_outputs);
     return made;
 }
@@ -93,14 +93,13 @@ void feed_one_region(crucible::Vigil& vigil, uint32_t first_iter) {
     for (uint32_t iter = first_iter; iter < first_iter + 2; iter++) {
         for (uint32_t i = 0; i < kOps; i++) {
             auto recorded = op_at(iter, i);
-            (void)vigil.record_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas,
-                                  recorded.n_metas);
+            (void)vigil.record_op(
+                crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
         }
     }
     for (uint32_t i = 0; i < kSignature; i++) {
         auto recorded = op_at(first_iter + 2, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas,
-                              recorded.n_metas);
+        (void)vigil.record_op(crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
     }
 }
 

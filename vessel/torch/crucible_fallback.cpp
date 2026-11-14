@@ -299,6 +299,25 @@ struct SchemaInfo {
 // Output metas are appended AFTER redispatch (need actual results).
 // =====================================================================
 
+// The records of one operation of the fallback, the inputs and then the
+// outputs.
+using InlineMetas = ::fixy::FixedArray<crucible::TensorMeta, MAX_INLINE_METAS>;
+
+// The slot at position.  Each caller tests the position against
+// MAX_INLINE_METAS first, so the optimizer removes the check.
+[[nodiscard]] static crucible::TensorMeta& inline_slot(InlineMetas& metas, uint32_t position) noexcept {
+    return metas.at(
+        ::fixy::Index<MAX_INLINE_METAS>::check(position).expect("a count below MAX_INLINE_METAS names a slot"));
+}
+
+// The first count records of the array.  The extraction keeps each count at
+// most MAX_INLINE_METAS.
+[[nodiscard]] static ::fixy::View<const crucible::TensorMeta> first_records(InlineMetas const& metas,
+                                                                            uint32_t count) noexcept {
+    return ::fixy::View<const crucible::TensorMeta>{metas.view()}.window(0, count).expect(
+        "the extraction keeps each count at most MAX_INLINE_METAS");
+}
+
 struct ExtractionResult {
     MetaCount counts;
     ScalarArgs<true> scalars;
@@ -311,9 +330,9 @@ struct ExtractionResult {
 
     // One defined input tensor: a meta of the array while it has room, and a
     // fold of the overflow digest after that.
-    void add_input(const at::Tensor& tensor, crucible::TensorMeta* metas) {
+    void add_input(const at::Tensor& tensor, InlineMetas& metas) {
         if (counts.inputs < MAX_INLINE_METAS) {
-            if (!fill_meta(metas[counts.inputs], tensor)) is_each_enumeration_named = false;
+            if (!fill_meta(inline_slot(metas, counts.inputs), tensor)) is_each_enumeration_named = false;
             counts.inputs++;
             return;
         }
@@ -324,7 +343,7 @@ struct ExtractionResult {
 };
 
 [[nodiscard]] static ExtractionResult extract_inputs(const torch::jit::Stack& stack, size_t args_begin, size_t num_args,
-                                                     crucible::TensorMeta* metas) {
+                                                     InlineMetas& metas) {
     ExtractionResult r{};
 
     for (size_t i = 0; i < num_args; i++) {
@@ -375,7 +394,7 @@ struct ExtractionResult {
     return r;
 }
 
-static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, crucible::TensorMeta* metas,
+static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, InlineMetas& metas,
                             ExtractionResult& extracted) {
     if (num_returns == 0 || stack.size() < num_returns) return;
     const auto rets_begin = stack.size() - num_returns;
@@ -387,7 +406,7 @@ static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, 
         if (iv.isTensor()) {
             const auto& t = iv.toTensor();
             if (t.defined() && counts.total() < MAX_INLINE_METAS) {
-                if (!fill_meta(metas[counts.total()], t)) extracted.is_each_enumeration_named = false;
+                if (!fill_meta(inline_slot(metas, counts.total()), t)) extracted.is_each_enumeration_named = false;
                 counts.outputs++;
             }
         } else if (iv.isTensorList()) {
@@ -395,7 +414,7 @@ static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, 
             for (const auto ref : iv.toTensorList()) {
                 const at::Tensor t = ref;
                 if (t.defined() && counts.total() < MAX_INLINE_METAS) {
-                    if (!fill_meta(metas[counts.total()], t)) extracted.is_each_enumeration_named = false;
+                    if (!fill_meta(inline_slot(metas, counts.total()), t)) extracted.is_each_enumeration_named = false;
                     counts.outputs++;
                 }
             }
@@ -407,7 +426,7 @@ static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, 
                                                  : iv.isComplexDouble() ? crucible::ScalarType::ComplexDouble
                                                  : iv.isBool()          ? crucible::ScalarType::Bool
                                                                         : crucible::ScalarType::Long;
-                metas[counts.total()] = scalar_result_meta(dtype);
+                inline_slot(metas, counts.total()) = scalar_result_meta(dtype);
                 counts.outputs++;
             }
         }
@@ -507,13 +526,13 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     }
     const auto args_begin = stack->size() - num_args;
 
-    crucible::TensorMeta inline_metas[MAX_INLINE_METAS]{};
+    InlineMetas inline_metas{};
     ExtractionResult extracted = extract_inputs(*stack, args_begin, num_args, inline_metas);
     MetaCount& counts = extracted.counts;
 
     // -- Compute hashes + mutability -----------------------------------
     const auto [schema_hash, is_mutable, is_foreach] = get_schema_info(*vigil, op, schema);
-    const auto shape_hash = compute_shape_hash(inline_metas, counts.inputs);
+    const auto shape_hash = compute_shape_hash(first_records(inline_metas, counts.inputs));
 
     // -- Execute eagerly (Tier 1: always redispatch) ------------------
     op.redispatchBoxed(dispatch_keys & AFTER_CRUCIBLE_KEYSET, stack);
@@ -564,10 +583,9 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     // producer claim.  dispatch_op_pure takes the context of that claim, so
     // this call compiles only with that context.
     const auto validated =
-        crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), inline_metas, counts.total());
-    for (const crucible::TraceRing::ValidatedEntryPtr certified : validated) {
-        static_cast<void>(vigil->dispatch_op_pure(vigil->mint_producer_context(), certified, inline_metas,
-                                                  counts.total(), scope_hash));
+        crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), first_records(inline_metas, counts.total()));
+    for (const crucible::ValidatedOp& certified : validated) {
+        static_cast<void>(vigil->dispatch_op_pure(vigil->mint_producer_context(), certified, scope_hash));
     }
 }
 

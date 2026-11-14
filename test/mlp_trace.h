@@ -97,7 +97,7 @@ inline constexpr int64_t BATCH = 4, IN_DIM = 8, HIDDEN = 4, OUT_DIM = 2;
 // one output.
 struct OpPacket {
     crucible::TraceRing::Entry entry{};
-    crucible::TensorMeta metas[3]{};
+    ::fixy::FixedArray<crucible::TensorMeta, 3> metas{};
     uint16_t n_metas = 0;
 };
 

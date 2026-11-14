@@ -213,6 +213,36 @@ void test_data_ptr_typed() {
     EXPECT(typed_bytes == raw_bytes, "ExternalDataPtr layout must be byte-identical to void*");
 }
 
+// The C thunks copy the records of the caller into a list that they own, and
+// the View of the op borrows the list.  A count past the room of the list
+// copies nothing, and the thunk then records nothing.
+void test_ffi_records_copy() {
+    // The records of the caller are TensorMeta objects, so the copy reads each
+    // record through its own type.  A write through CrucibleMeta and a read
+    // through TensorMeta in one unit lets the optimizer move the read before
+    // the write.  Each record has a different rank, which names it.
+    ::fixy::FixedArray<crucible::TensorMeta, 3> sources{};
+    sources.at(::fixy::index<0>()).ndim = 1;
+    sources.at(::fixy::index<1>()).ndim = 2;
+    sources.at(::fixy::index<2>()).ndim = 3;
+    const ::fixy::FixedArray<crucible::TensorMeta, 3>& caller = sources;
+    const TypedMeta typed = ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(&caller.at(::fixy::index<0>()));
+
+    crucible::vessel::OpRecords records{};
+    EXPECT(crucible::vessel::copy_ffi_records(typed, 3, records), "three records fit the list");
+    EXPECT(records.size() == 3, "the list holds each record of the caller");
+    const ::fixy::View<const crucible::TensorMeta> copied = records.view();
+    EXPECT(copied.get(0).expect("the copy holds a first record")->ndim == 1,
+           "the first record of the copy is the first record of the caller");
+    EXPECT(copied.get(2).expect("the copy holds a last record")->ndim == 3,
+           "the last record of the copy is the last record of the caller");
+
+    crucible::vessel::OpRecords refused{};
+    EXPECT(!crucible::vessel::copy_ffi_records(typed, crucible::vessel::kMaxOpRecords + 1, refused),
+           "a count past the room of the list is refused");
+    EXPECT(refused.size() == 0, "a refused count copies no record");
+}
+
 void test_schema_name_typed() {
     // This target links the core library rather than the vessel one, so
     // the name is registered through the C++ API.  That reaches the same
@@ -277,6 +307,12 @@ void test_handle_distinct_pointers() {
     EXPECT(ta.value() != tb.value(), "distinct inputs must yield distinct typed handle values");
 }
 
+// True when the ladder accepts the one meta.
+[[nodiscard]] bool is_well_formed(const crucible::TensorMeta& meta) noexcept {
+    const ::fixy::FixedArray<crucible::TensorMeta, 1> records{meta};
+    return crucible::vessel::metas_are_well_formed(records.view());
+}
+
 // A meta of the C ABI holds the bytes that a foreign caller wrote.  The
 // ladder accepts it only when its element type, device and layout each name
 // a crucible enumerator.  An element type that names none reaches
@@ -287,37 +323,34 @@ void test_ladder_refuses_unnamed_enumerations() {
     named.dtype = crucible::ScalarType::Float;
     named.device_type = crucible::DeviceType::CUDA;
     named.layout = crucible::Layout::SparseBsc;
-    EXPECT(crucible::vessel::metas_are_well_formed(&named, 1), "a meta with named enumerations is well formed");
+    EXPECT(is_well_formed(named), "a meta with named enumerations is well formed");
 
     crucible::TensorMeta narrow_integer = named;
     narrow_integer.dtype = static_cast<crucible::ScalarType>(27);
-    EXPECT(!crucible::vessel::metas_are_well_formed(&narrow_integer, 1),
-           "the c10 ordinal of uint16 names no crucible element type");
+    EXPECT(!is_well_formed(narrow_integer), "the c10 ordinal of uint16 names no crucible element type");
 
     crucible::TensorMeta quantized = named;
     quantized.dtype = static_cast<crucible::ScalarType>(12);
-    EXPECT(!crucible::vessel::metas_are_well_formed(&quantized, 1),
-           "the c10 ordinal of qint8 names no crucible element type");
+    EXPECT(!is_well_formed(quantized), "the c10 ordinal of qint8 names no crucible element type");
 
     crucible::TensorMeta new_device = named;
     new_device.device_type = static_cast<crucible::DeviceType>(12);
-    EXPECT(!crucible::vessel::metas_are_well_formed(&new_device, 1),
-           "the c10 ordinal of the XPU device names no crucible device");
+    EXPECT(!is_well_formed(new_device), "the c10 ordinal of the XPU device names no crucible device");
 
     crucible::TensorMeta jagged = named;
     jagged.layout = static_cast<crucible::Layout>(7);
-    EXPECT(!crucible::vessel::metas_are_well_formed(&jagged, 1), "the ordinal 7 names no crucible layout");
+    EXPECT(!is_well_formed(jagged), "the ordinal 7 names no crucible layout");
 }
 
-// True when the ladder certifies the entry with the count of records.
-template <class Validated>
-[[nodiscard]] bool is_certified(Validated const& validated) noexcept {
-    return validated.is_some();
+// True when the ladder gives an op for the entry and the records.
+[[nodiscard]] bool is_certified(const crucible::TraceRing::Entry& entry,
+                                ::fixy::View<const crucible::TensorMeta> metas) noexcept {
+    return crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), metas).is_some();
 }
 
 // The records of an entry are its inputs and then its outputs.  The ladder
-// refuses a count of records that is not their sum, because the recording
-// path ends the process on it.
+// refuses a count of records that is not their sum, because the build would
+// then read the records of a different op.
 void test_ladder_refuses_a_count_that_disagrees_with_the_entry() {
     crucible::TraceRing::Entry entry{};
     entry.schema_hash = crucible::SchemaHash{0x61};
@@ -329,15 +362,13 @@ void test_ladder_refuses_a_count_that_disagrees_with_the_entry() {
         meta.ndim = 1;
         meta.dtype = crucible::ScalarType::Float;
     }
-    using crucible::vessel::mint_validated_entry;
-    // The validation reads the records from the address of the first one.
-    EXPECT(is_certified(mint_validated_entry(crucible::mint_ffi_entry(entry), &metas.at(::fixy::index<0>()), 2)),
+    const ::fixy::View<const crucible::TensorMeta> all_records{metas.view()};
+    EXPECT(is_certified(entry, all_records.window(0, 2).expect("two records fit")),
            "a count of records that is the sum of the inputs and the outputs is certified");
-    EXPECT(!is_certified(mint_validated_entry(crucible::mint_ffi_entry(entry), &metas.at(::fixy::index<0>()), 3)),
-           "one record more than the inputs and the outputs is refused");
-    EXPECT(!is_certified(mint_validated_entry(crucible::mint_ffi_entry(entry), &metas.at(::fixy::index<0>()), 1)),
+    EXPECT(!is_certified(entry, all_records), "one record more than the inputs and the outputs is refused");
+    EXPECT(!is_certified(entry, all_records.window(0, 1).expect("one record fits")),
            "one record less than the inputs and the outputs is refused");
-    EXPECT(!is_certified(mint_validated_entry(crucible::mint_ffi_entry(entry), nullptr, 0)),
+    EXPECT(!is_certified(entry, ::fixy::View<const crucible::TensorMeta>{}),
            "no record for an entry with an input and an output is refused");
 }
 
@@ -397,6 +428,7 @@ int main() {
     test_meta_roundtrip();
     test_meta_zero_n_with_null();
     test_data_ptr_typed();
+    test_ffi_records_copy();
     test_schema_name_typed();
     test_abi_version_constant();
     test_handle_distinct_pointers();

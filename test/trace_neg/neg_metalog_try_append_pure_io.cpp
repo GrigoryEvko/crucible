@@ -22,9 +22,9 @@ namespace eff = ::fixy;
 
 int main() {
     crucible::MetaLog log;
-    crucible::TensorMeta m{};
+    const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
     // Caller declares Row<IO> — IsPure<Row<IO>> is false (Row<IO>
     // is not a subrow of Row<>); the requires-clause rejects.
-    (void)log.try_append_pure<eff::Row<eff::Effect::IO>>(&m, 1);
+    (void)log.try_append_pure<eff::Row<eff::Effect::IO>>(record.view());
     return 0;
 }

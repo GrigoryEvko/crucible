@@ -75,8 +75,8 @@ struct Work {
     // the end of that metadata in the log.
     uint64_t push_op_with_meta(MetaLog& log, uint32_t op) {
         assert(count < CAPACITY);
-        const crucible::TensorMeta meta = output_meta(op);
-        const MetaIndex index = log.try_append(&meta, 1);
+        const ::fixy::FixedArray<crucible::TensorMeta, 1> record{output_meta(op)};
+        const MetaIndex index = log.try_append(record.view());
         assert(index.is_valid());
         TraceRing::Entry& entry = crucible::test::element_at(trace, count);
         entry.schema_hash = crucible::SchemaHash{0x7000ULL + op};
@@ -241,8 +241,8 @@ void test_pipeline_releases_after_overflow() {
                 push(op, MetaIndex::none(), 1);
                 continue;
             }
-            const crucible::TensorMeta meta = output_meta(op);
-            const MetaIndex index = metalog->try_append(&meta, 1);
+            const ::fixy::FixedArray<crucible::TensorMeta, 1> record{output_meta(op)};
+            const MetaIndex index = metalog->try_append(record.view());
             assert(index.is_valid());
             if (is_last && op + 1 == OVERFLOW_OP) overflow_end = index.raw() + 1;
             push(op, index, 1);

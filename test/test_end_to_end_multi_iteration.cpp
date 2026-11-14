@@ -44,11 +44,9 @@ void test_pipeline_multi_iteration() {
         e.num_inputs = 1;
         e.num_outputs = 1;
 
-        TensorMeta metas[2]{};
-        metas[0] = make_meta(fake_ptr(2, i - 1));
-        metas[1] = make_meta(fake_ptr(2, i));
+        const ::fixy::FixedArray<TensorMeta, 2> metas{make_meta(fake_ptr(2, i - 1)), make_meta(fake_ptr(2, i))};
 
-        auto ms = meta_log->try_append(metas, 2);
+        auto ms = meta_log->try_append(metas.view());
         assert(ms.is_valid());
         assert(ring->try_append(e, ms));
     }

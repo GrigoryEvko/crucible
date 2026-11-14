@@ -13,7 +13,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <thread>
-#include <vector>
 
 using namespace crucible;
 
@@ -34,14 +33,15 @@ static TensorMeta make_meta(void* ptr, int64_t d0 = 128, int64_t d1 = 256) {
 static void test_empty_state() {
     MetaLog log;
     assert(log.size().peek() == 0);
-    assert(!log.try_append(nullptr, 0).is_valid());
+    assert(!log.try_append(::fixy::View<const TensorMeta>{}).is_valid());
     crucible::test::pass("  test_empty:                     PASSED\n");
 }
 
 static void test_single_append_returns_index_zero() {
     MetaLog log;
     TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x1000)));
-    auto idx = log.try_append(&m, 1);
+    const ::fixy::FixedArray<TensorMeta, 1> record{m};
+    auto idx = log.try_append(record.view());
     assert(idx.is_valid());
     assert(idx.raw() == 0);
     assert(log.size().peek() == 1);
@@ -54,12 +54,14 @@ static void test_single_append_returns_index_zero() {
 
 static void test_batch_append_and_monotonic() {
     MetaLog log;
-    std::vector<TensorMeta> batch;
-    for (int i = 0; i < 8; ++i) {
-        batch.push_back(make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x1000 + i * 16))));
+    ::fixy::FixedArray<TensorMeta, 8> batch{};
+    for (uint32_t i = 0; i < 8; ++i) {
+        crucible::test::element_at(batch, i) =
+            make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x1000 + i * 16)));
     }
-    auto idx1 = log.try_append(batch.data(), 3);
-    auto idx2 = log.try_append(batch.data() + 3, 5);
+    const ::fixy::View<const TensorMeta> records{batch.view()};
+    auto idx1 = log.try_append(records.window(0, 3).expect("the first run fits the batch"));
+    auto idx2 = log.try_append(records.window(3, 5).expect("the second run fits the batch"));
     assert(idx1.is_valid() && idx2.is_valid());
     assert(idx1.raw() == 0);
     assert(idx2.raw() == 3);
@@ -69,7 +71,8 @@ static void test_batch_append_and_monotonic() {
     ::fixy::FixedArray<TensorMeta, 8> copied{};
     log.copy_run(0, copied.view());
     for (size_t i = 0; i < 8; ++i) {
-        assert(raw_data_ptr(crucible::test::element_at(copied, i)) == raw_data_ptr(batch[i]));
+        assert(raw_data_ptr(crucible::test::element_at(copied, i))
+               == raw_data_ptr(crucible::test::element_at(batch, i)));
     }
     crucible::test::pass("  test_batch_monotonic:           PASSED\n");
 }
@@ -77,13 +80,14 @@ static void test_batch_append_and_monotonic() {
 static void test_tail_advance_frees_capacity() {
     MetaLog log;
     TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x2000)));
-    auto idx = log.try_append(&m, 1);
+    const ::fixy::FixedArray<TensorMeta, 1> record{m};
+    auto idx = log.try_append(record.view());
     assert(log.size().peek() == 1);
     log.advance_tail(idx.raw() + 1);
     assert(log.size().peek() == 0);
     // Freeing capacity does not rewind the index.  Indices keep
     // counting, so the next append is 1 and not 0.
-    auto idx2 = log.try_append(&m, 1);
+    auto idx2 = log.try_append(record.view());
     assert(idx2.raw() == 1);
     crucible::test::pass("  test_tail_advance:              PASSED\n");
 }
@@ -91,13 +95,14 @@ static void test_tail_advance_frees_capacity() {
 static void test_reset_zeroes_both_pointers() {
     MetaLog log;
     TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x3000)));
+    const ::fixy::FixedArray<TensorMeta, 1> record{m};
     for (int i = 0; i < 10; ++i)
-        (void)log.try_append(&m, 1);
+        (void)log.try_append(record.view());
     log.advance_tail(5);
     log.reset();
     assert(log.size().peek() == 0);
     // A reset does rewind the index, where advancing the tail does not.
-    auto idx = log.try_append(&m, 1);
+    auto idx = log.try_append(record.view());
     assert(idx.raw() == 0);
     crucible::test::pass("  test_reset:                     PASSED\n");
 }
@@ -117,11 +122,12 @@ static void test_copy_run_across_the_end() {
 
     // Five entries into three remaining slots: the batch straddles the
     // end of the ring.
-    TensorMeta tail5[5]{};
+    ::fixy::FixedArray<TensorMeta, 5> tail5{};
     for (uint32_t i = 0; i < 5; ++i) {
-        tail5[i] = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x5000 + i * 0x100)));
+        crucible::test::element_at(tail5, i) =
+            make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x5000 + i * 0x100)));
     }
-    auto idx = log.try_append(tail5, 5);
+    auto idx = log.try_append(tail5.view());
     assert(idx.is_valid());
     assert(idx.raw() == near_end);
 
@@ -130,14 +136,15 @@ static void test_copy_run_across_the_end() {
     ::fixy::FixedArray<TensorMeta, 5> copied{};
     log.copy_run(near_end, copied.view());
     for (uint32_t i = 0; i < 5; ++i) {
-        assert(raw_data_ptr(crucible::test::element_at(copied, i)) == raw_data_ptr(tail5[i]));
+        assert(raw_data_ptr(crucible::test::element_at(copied, i))
+               == raw_data_ptr(crucible::test::element_at(tail5, i)));
     }
 
     // A run that does not pass the end is one copy.
     ::fixy::FixedArray<TensorMeta, 2> head2{};
     log.copy_run(near_end + 3, head2.view());
-    assert(raw_data_ptr(head2.at(::fixy::index<0>())) == raw_data_ptr(tail5[3]));
-    assert(raw_data_ptr(head2.at(::fixy::index<1>())) == raw_data_ptr(tail5[4]));
+    assert(raw_data_ptr(head2.at(::fixy::index<0>())) == raw_data_ptr(tail5.at(::fixy::index<3>())));
+    assert(raw_data_ptr(head2.at(::fixy::index<1>())) == raw_data_ptr(tail5.at(::fixy::index<4>())));
     crucible::test::pass("  test_copy_run_across_the_end:   PASSED\n");
 }
 
@@ -153,15 +160,17 @@ static void test_counters_pass_two_to_the_32() {
     log.tail.reset_under_quiescence(BELOW_WRAP);
     log.cached_tail_.reset_under_quiescence(BELOW_WRAP);
 
-    TensorMeta run[32]{};
+    ::fixy::FixedArray<TensorMeta, 32> run{};
     for (uint32_t i = 0; i < 32; ++i) {
-        run[i] = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x6000 + i * 0x100)));
+        crucible::test::element_at(run, i) =
+            make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x6000 + i * 0x100)));
     }
-    const MetaIndex first = log.try_append(run, 15);
+    const ::fixy::View<const TensorMeta> records{run.view()};
+    const MetaIndex first = log.try_append(records.window(0, 15).expect("the first run fits the array"));
     assert(first.is_valid() && first.raw() == uint64_t{BELOW_WRAP});
-    const MetaIndex last_below = log.try_append(&run[15], 1);
+    const MetaIndex last_below = log.try_append(records.window(15, 1).expect("the record fits the array"));
     assert(last_below.is_valid() && last_below.raw() == uint64_t{BELOW_WRAP} + 15);
-    const MetaIndex across = log.try_append(&run[16], 16);
+    const MetaIndex across = log.try_append(records.window(16, 16).expect("the last run fits the array"));
     assert(across.is_valid() && across.raw() == (uint64_t{1} << 32));
     assert(log.size().peek() == 32);
 
@@ -170,12 +179,12 @@ static void test_counters_pass_two_to_the_32() {
     ::fixy::FixedArray<TensorMeta, 32> copied{};
     log.copy_run(first.raw(), copied.view());
     for (uint32_t i = 0; i < 32; ++i) {
-        assert(raw_data_ptr(crucible::test::element_at(copied, i)) == raw_data_ptr(run[i]));
+        assert(raw_data_ptr(crucible::test::element_at(copied, i)) == raw_data_ptr(crucible::test::element_at(run, i)));
     }
     const TensorMeta read_below = log.copy_record(last_below.raw());
     const TensorMeta read_across = log.copy_record(across.raw());
-    assert(raw_data_ptr(read_below) == raw_data_ptr(run[15]));
-    assert(raw_data_ptr(read_across) == raw_data_ptr(run[16]));
+    assert(raw_data_ptr(read_below) == raw_data_ptr(run.at(::fixy::index<15>())));
+    assert(raw_data_ptr(read_across) == raw_data_ptr(run.at(::fixy::index<16>())));
 
     log.advance_tail(across.raw() + 16);
     assert(log.size().peek() == 0);
@@ -212,7 +221,8 @@ static void test_spsc_concurrent_integrity() {
     std::jthread producer{[&] {
         for (uint32_t i = 0; i < N; /* advance only on success */) {
             TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(i + 1) << 16));
-            auto idx = log.try_append(&m, 1);
+            const ::fixy::FixedArray<TensorMeta, 1> record{m};
+            auto idx = log.try_append(record.view());
             if (idx.is_valid()) [[likely]] {
                 ++i;
             } else {
@@ -274,7 +284,8 @@ static void test_try_append_pure() {
     {
         MetaLog log;
         TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xA0)));
-        auto idx = log.try_append_pure(&m, 1);
+        const ::fixy::FixedArray<TensorMeta, 1> record{m};
+        auto idx = log.try_append_pure(record.view());
         assert(idx.is_valid());
         assert(idx.raw() == 0);
         assert(log.size().peek() == 1);
@@ -286,8 +297,10 @@ static void test_try_append_pure() {
         MetaLog log;
         TensorMeta m1 = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xB0)));
         TensorMeta m2 = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xC0)));
-        auto idx1 = log.try_append_pure<eff::Row<>>(&m1, 1);
-        auto idx2 = log.try_append_pure<eff::Row<>>(&m2, 1);
+        const ::fixy::FixedArray<TensorMeta, 1> first_record{m1};
+        const ::fixy::FixedArray<TensorMeta, 1> second_record{m2};
+        auto idx1 = log.try_append_pure<eff::Row<>>(first_record.view());
+        auto idx2 = log.try_append_pure<eff::Row<>>(second_record.view());
         assert(idx1.is_valid() && idx2.is_valid());
         assert(idx1.raw() == 0);
         assert(idx2.raw() == 1);
@@ -300,10 +313,11 @@ static void test_try_append_pure() {
     {
         MetaLog log;
         TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xD0)));
-        auto i0 = log.try_append(&m, 1);  // index 0
-        auto i1 = log.try_append_pure(&m, 1);  // index 1
-        auto i2 = log.try_append(&m, 1);  // index 2
-        auto i3 = log.try_append_pure<eff::Row<>>(&m, 1);  // index 3
+        const ::fixy::FixedArray<TensorMeta, 1> record{m};
+        auto i0 = log.try_append(record.view());  // index 0
+        auto i1 = log.try_append_pure(record.view());  // index 1
+        auto i2 = log.try_append(record.view());  // index 2
+        auto i3 = log.try_append_pure<eff::Row<>>(record.view());  // index 3
         assert(i0.raw() == 0);
         assert(i1.raw() == 1);
         assert(i2.raw() == 2);
@@ -339,7 +353,8 @@ static void test_try_append_pure_concurrent() {
     std::jthread producer{[&] {
         for (uint32_t i = 0; i < N; /* advance only on success */) {
             TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(i + 1) << 16));
-            auto idx = log.try_append_pure(&m, 1);
+            const ::fixy::FixedArray<TensorMeta, 1> record{m};
+            auto idx = log.try_append_pure(record.view());
             if (idx.is_valid()) [[likely]] {
                 ++i;
             } else {

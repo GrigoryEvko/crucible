@@ -45,7 +45,7 @@ double run_compiled_iterations(Vigil& vigil) {
             auto p = build_op(i, iter);
             // The timed loop calls dispatch_op directly, so the time is that
             // of the inlined hot path and not that of a helper call.
-            auto r = vigil.dispatch_op(crucible::test::certify_synthetic_entry(p.entry), p.metas, p.n_metas);
+            auto r = vigil.dispatch_op(crucible::test::certify_synthetic_op(p.entry, p.metas, p.n_metas));
             assert(r.action == DispatchResult::Action::COMPILED);
         }
     }

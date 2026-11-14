@@ -79,7 +79,7 @@ static void test_drain_pinned_type_identity() {
 static void test_metalog_try_append_pinned_type_identity() {
     auto log = std::make_unique<MetaLog>();
 
-    using Got = decltype(log->try_append_pinned(static_cast<const TensorMeta*>(nullptr), 0u));
+    using Got = decltype(log->try_append_pinned(::fixy::View<const TensorMeta>{}));
     using Want = HotPath<HotPathTier_v::Hot, MetaIndex>;
     static_assert(std::is_same_v<Got, Want>, "MetaLog::try_append_pinned must return HotPath<Hot, MetaIndex>");
     static_assert(::fixy::band_tier_v<Got> == HotPathTier_v::Hot);
@@ -88,7 +88,8 @@ static void test_metalog_try_append_pinned_type_identity() {
     meta.ndim = 1;
     meta.sizes[0] = ::crucible::tensor_dim(16);
     meta.strides[0] = ::crucible::tensor_dim(1);
-    auto p = log->try_append_pinned(&meta, 1);
+    const ::fixy::FixedArray<TensorMeta, 1> record{meta};
+    auto p = log->try_append_pinned(record.view());
     MetaIndex idx = std::move(p).consume();
     assert(idx.is_valid());
     assert(idx.raw() == 0);
@@ -196,7 +197,8 @@ static void test_metalog_full_buffer_type_pin_survives_failure() {
 
     using NonePathT = HotPath<HotPathTier_v::Hot, MetaIndex>;
     NonePathT none_path = ::fixy::mint_band<NonePathT>(MetaIndex::none());
-    static_assert(std::is_same_v<decltype(log->try_append_pinned(&meta, 1)), NonePathT>);
+    const ::fixy::FixedArray<TensorMeta, 1> record{meta};
+    static_assert(std::is_same_v<decltype(log->try_append_pinned(record.view())), NonePathT>);
     MetaIndex idx = std::move(none_path).consume();
     assert(!idx.is_valid());
 }

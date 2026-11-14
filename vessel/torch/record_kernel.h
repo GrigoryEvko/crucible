@@ -146,7 +146,8 @@ struct MetaCount {
         [] {
             crucible::TensorMeta ceiling{};
             ceiling.ndim = kNDimCeiling;
-            return crucible::vessel::metas_are_well_formed(&ceiling, 1);
+            const ::fixy::FixedArray<crucible::TensorMeta, 1> ceiling_records{ceiling};
+            return crucible::vessel::metas_are_well_formed(ceiling_records.view());
         }(),
         "fill_meta clamps the rank to a value the trust ladder rejects, and the unboxed path relies on the clamp");
     const auto ndim = static_cast<uint8_t>(::fixy::min(tensor.dim(), static_cast<int64_t>(kNDimCeiling)));
@@ -329,15 +330,17 @@ struct MetaCount {
 // because a replay compares this value across runs and across paths.
 // =====================================================================
 
-[[nodiscard]] inline crucible::ShapeHash compute_shape_hash(const crucible::TensorMeta* metas, uint16_t n_inputs) {
+// Always inline: the loop over a View stays in call_recording, as the loop
+// over a pointer did.
+[[nodiscard]] CRUCIBLE_INLINE crucible::ShapeHash compute_shape_hash(::fixy::View<const crucible::TensorMeta> inputs) {
     uint64_t accumulator = kFnvOffset;
-    for (uint16_t i = 0; i < n_inputs; i++) {
-        accumulator = fnv1a_bytes(&metas[i].ndim, 1, accumulator);
+    for (const crucible::TensorMeta& input : inputs) {
+        accumulator = fnv1a_bytes(&input.ndim, 1, accumulator);
         // `sizes` is a TensorDimArray, whose lanes stay plain int64_t so a
         // bulk reader can take the block without a copy. raw_data() is that
         // reader; only the write path goes through the refined TensorDim.
-        const uint32_t nbytes = static_cast<uint32_t>(metas[i].ndim) * static_cast<uint32_t>(sizeof(int64_t));
-        accumulator = fnv1a_bytes(metas[i].sizes.raw_data(), nbytes, accumulator);
+        const uint32_t nbytes = static_cast<uint32_t>(input.ndim) * static_cast<uint32_t>(sizeof(int64_t));
+        accumulator = fnv1a_bytes(input.sizes.raw_data(), nbytes, accumulator);
     }
     return crucible::ShapeHash{accumulator};
 }
@@ -804,7 +807,12 @@ template <uint32_t Capacity, bool MayOverflow>
 struct Recording {
     static_assert(Capacity <= MAX_INLINE_METAS, "a Recording must not admit more metadata than either path records");
 
-    std::array<crucible::TensorMeta, Capacity> metas{};
+    // An array of the base holds at least one element, so an operation with
+    // no tensor has one slot that it never writes.  The counts stay at most
+    // Capacity.
+    static constexpr uint32_t kSlots = Capacity > 0 ? Capacity : 1;
+
+    ::fixy::FixedArray<crucible::TensorMeta, kSlots> metas{};
     MetaCount counts{};
     ScalarArgs<MayOverflow> scalars{};
     [[no_unique_address]] typename input_overflow_of<MayOverflow>::type overflow{};
@@ -812,9 +820,36 @@ struct Recording {
     // enumerator.  append_trace_entry then records nothing.
     bool is_each_enumeration_named = true;
 
+    // The three helpers below are always inline, so the optimizer sees each
+    // read of the counts, and each check of an index or a window folds.
+    //
+    // The slot at position.  Each caller tests the position against Capacity
+    // first, so the optimizer removes the check.
+    [[nodiscard]] CRUCIBLE_INLINE crucible::TensorMeta& slot_at(uint32_t position) noexcept {
+        return metas.at(::fixy::Index<kSlots>::check(position).expect("a count below Capacity names a slot"));
+    }
+
+    // The records of the input tensors.  add_input keeps the count of the
+    // inputs at most Capacity.
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::View<const crucible::TensorMeta> input_records() const& noexcept {
+        const uint32_t count = counts.inputs;
+        [[assume(count <= Capacity)]];
+        return ::fixy::View<const crucible::TensorMeta>{metas.view()}.window(0, count).expect(
+            "the inputs fit the slots");
+    }
+
+    // The records of the operation: the inputs and then the outputs.  The
+    // adds keep the total count at most Capacity.
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::View<const crucible::TensorMeta> records() const& noexcept {
+        const uint32_t count = counts.total();
+        [[assume(count <= Capacity)]];
+        return ::fixy::View<const crucible::TensorMeta>{metas.view()}.window(0, count).expect(
+            "the records fit the slots");
+    }
+
     void add_input(const at::Tensor& tensor) {
         if (tensor.defined() && counts.inputs < Capacity) {
-            if (!fill_meta(metas[counts.inputs], tensor)) is_each_enumeration_named = false;
+            if (!fill_meta(slot_at(counts.inputs), tensor)) is_each_enumeration_named = false;
             counts.inputs++;
         } else if constexpr (MayOverflow) {
             if (tensor.defined()) add_overflow_input(tensor);
@@ -836,7 +871,7 @@ struct Recording {
     // append and every reader of it expect.
     void add_output(const at::Tensor& tensor) {
         if (tensor.defined() && counts.total() < Capacity) {
-            if (!fill_meta(metas[counts.total()], tensor)) is_each_enumeration_named = false;
+            if (!fill_meta(slot_at(counts.total()), tensor)) is_each_enumeration_named = false;
             counts.outputs++;
         }
     }
@@ -844,7 +879,7 @@ struct Recording {
     // A result that is one scalar, as the meta of scalar_result_meta.
     void add_scalar_output(crucible::ScalarType dtype) {
         if (counts.total() < Capacity) {
-            metas[counts.total()] = scalar_result_meta(dtype);
+            slot_at(counts.total()) = scalar_result_meta(dtype);
             counts.outputs++;
         }
     }
@@ -1119,10 +1154,16 @@ void append_trace_entry(const Recording<Capacity, MayOverflow>& recording, cruci
     crucible::TraceRing::Entry entry{};
     entry.schema_hash = schema_hash;
     entry.shape_hash = shape_hash;
-    entry.num_inputs = recording.counts.inputs;
-    entry.num_outputs = recording.counts.outputs;
     entry.op_flags = entry_op_flags<IsMutable, IsForeach>(dispatch_keys);
     write_recorded_scalars(entry, recording);
+
+    // The View of the records and the two counts of the entry come from one
+    // read of the counts, after each call that takes the entry or reads the
+    // Recording.  So the count check of mint_validated_op compares equal
+    // values, and it folds away.
+    const ::fixy::View<const crucible::TensorMeta> records = recording.records();
+    entry.num_inputs = recording.counts.inputs;
+    entry.num_outputs = recording.counts.outputs;
 
     // The trust ladder, discharged at compile time. Every bound it checks has
     // a compile-time ceiling on this path, and RecordKernel asserts that
@@ -1132,7 +1173,7 @@ void append_trace_entry(const Recording<Capacity, MayOverflow>& recording, cruci
     // the start of this function refused each other meta. The runtime walk
     // could therefore reject nothing here. The boxed fallback and the C ABI
     // build entries from data with no compile-time bound, and they keep the
-    // runtime walk through mint_validated_entry.
+    // runtime walk through validate_ffi_op.
     //
     // The schema hash is the one input that is an argument rather than a
     // constant. Its only caller passes RecordKernel::kSchemaHash, which the
@@ -1146,8 +1187,9 @@ void append_trace_entry(const Recording<Capacity, MayOverflow>& recording, cruci
     // Vigil's producer claim. recording_vigil confirmed that this thread can
     // take the claim. A kernel reached from an init, background or test
     // context has no such context, so its call does not compile.
-    (void)vigil->dispatch_op_pure(vigil->mint_producer_context(), std::move(binding).value(), recording.metas.data(),
-                                  recording.counts.total(), scope_hash);
+    const auto op = crucible::mint_validated_op(std::move(binding).value(), records);
+    for (const crucible::ValidatedOp& certified : op)
+        (void)vigil->dispatch_op_pure(vigil->mint_producer_context(), certified, scope_hash);
 }
 
 // =====================================================================
@@ -1247,7 +1289,7 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         // written by it.
         Recording<kCapacity, kMayOverflow> recording{};
         (record_argument(recording, args), ...);
-        const auto shape_hash = compute_shape_hash(recording.metas.data(), recording.counts.inputs);
+        const auto shape_hash = compute_shape_hash(recording.input_records());
         const auto scope_hash = crucible::ScopeHash{c10::CrucibleState::get_tls_state().scope_hash()};
 
         if constexpr (std::is_void_v<Ret>) {

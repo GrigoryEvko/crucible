@@ -211,12 +211,45 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     TraceRing(TraceRing&&) = delete("SPSC ring is pinned to a producer/consumer thread pair");
     TraceRing& operator=(TraceRing&&) = delete("SPSC ring is pinned to a producer/consumer thread pair");
 
+    // A free slot of the ring, which try_reserve found.  The token holds the
+    // head at the reservation.  Only commit moves the head, so a token that
+    // the producer drops leaves the ring as it was.  The token has no
+    // destructor work, and it only moves, so one reservation fills one slot.
+    //
+    // The producer commits a token before it reserves again.  The ring has
+    // one producer, so no other append can move the head between the two
+    // calls.  A token that names an old head trips the check of the head in
+    // a Debug build.
+    class [[nodiscard]] Reservation {
+    public:
+        Reservation(const Reservation&) = delete("one reservation fills one slot of the ring");
+        Reservation& operator=(const Reservation&) = delete("one reservation fills one slot of the ring");
+        ~Reservation() = default;
+
+        // The moves have a body, so the token is not trivially copyable.  An
+        // Option copies the bytes of a trivially copyable payload with its
+        // copy assignment, and this token has none.
+        Reservation(Reservation&& other) noexcept : head_{other.head_} {}
+        Reservation& operator=(Reservation&& other) noexcept {
+            head_ = other.head_;
+            return *this;
+        }
+
+    private:
+        explicit constexpr Reservation(uint64_t reserved_head) noexcept : head_{reserved_head} {}
+        friend struct TraceRing;
+
+        uint64_t head_ = 0;
+    };
+
     // The thread-safety analysis is suppressed throughout: this thread is the
     // sole writer of head and of the slot it is about to fill, which the
     // analysis cannot express.
-    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool
-    try_append(const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
-               CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+    //
+    // Reserves the slot at the head, or gives no token when the ring is full.
+    // The ring does not change: the head moves in commit.
+    [[nodiscard, gnu::hot]] CRUCIBLE_INLINE ::fixy::Option<Reservation> try_reserve() noexcept
+        CRUCIBLE_NO_THREAD_SAFETY {
         const uint64_t h = head.peek_relaxed();
 
         // Refreshing from the consumer's atomic is the slow path, taken only
@@ -224,9 +257,30 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         if (h - cached_tail_.get() >= CAPACITY) [[unlikely]] {
             cached_tail_.advance(tail.get());
             if (h - cached_tail_.get() >= CAPACITY) [[unlikely]]
-                return false;
+                return ::fixy::none;
         }
+        return ::fixy::Option<Reservation>::some(Reservation{h});
+    }
 
+    // Appends one entry, or returns false when the ring is full.  The append
+    // is a reservation and its commit.
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool
+    try_append(const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
+               CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        return try_reserve().match(
+            [&](Reservation reserved) noexcept {
+                commit(std::move(reserved), e, meta_start, scope_hash, callsite_hash);
+                return true;
+            },
+            [] noexcept { return false; });
+    }
+
+    // Writes the entry into the reserved slot, and moves the head past it.
+    // The consumer then sees the entry.
+    [[gnu::hot]] CRUCIBLE_INLINE void commit(Reservation reserved, const Entry& e,
+                                             MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
+                                             CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        const uint64_t h = reserved.head_;
         const RingSlot slot = mask_slot_(h);
         entries.at(slot) = e;
         meta_starts.at(slot) = meta_start;
@@ -246,7 +300,6 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
 
         // This release publishes all four slot writes above to the consumer.
         head.advance_sole_writer_from(h, h + 1);
-        return true;
     }
 
     // Same body, with the tier declared in the return type so a consumer that

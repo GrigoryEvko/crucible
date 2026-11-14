@@ -49,12 +49,12 @@ void drive_one_region(crucible::Vigil& vigil) {
     const SchemaHash schemas[5] = {SchemaHash{0xAA01}, SchemaHash{0xBB02}, SchemaHash{0xCC03}, SchemaHash{0xDD04},
                                    SchemaHash{0xEE05}};
     const crucible::TensorMeta meta = make_meta();
-    const crucible::TensorMeta io_metas[2] = {meta, meta};
+    const ::fixy::FixedArray<crucible::TensorMeta, 2> io_metas{meta, meta};
 
     for (int iter = 0; iter < 3; iter++) {
         for (int j = 0; j < 5; j++) {
             auto e = make_entry(schemas[j]);
-            const bool ok = vigil.record_op(crucible::test::certify_synthetic_entry(e), io_metas, 2);
+            const bool ok = vigil.record_op(crucible::test::certify_synthetic_op(e, io_metas, 2));
             assert(ok && "record_op must succeed (ring not full)");
         }
     }

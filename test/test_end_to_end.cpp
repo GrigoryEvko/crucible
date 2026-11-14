@@ -12,6 +12,7 @@
 #include <crucible/CrucibleContext.h>
 #include <crucible/BackgroundThread.h>
 #include "test_assert.h"
+#include "test_harness.h"
 #include <bit>
 #include <cstdint>
 #include <cstdio>
@@ -46,12 +47,12 @@ void feed_iteration(TraceRing* ring, MetaLog* meta_log, uint32_t iter) {
         e.num_outputs = 1;
 
         const auto n_metas = static_cast<uint16_t>(e.num_inputs + e.num_outputs);
-        TensorMeta metas[2]{};
+        ::fixy::FixedArray<TensorMeta, 2> metas{};
         uint16_t idx = 0;
-        if (i > 0) metas[idx++] = make_meta(fake_ptr(iter, i - 1));
-        metas[idx++] = make_meta(fake_ptr(iter, i));
+        if (i > 0) crucible::test::element_at(metas, idx++) = make_meta(fake_ptr(iter, i - 1));
+        crucible::test::element_at(metas, idx++) = make_meta(fake_ptr(iter, i));
 
-        auto ms = meta_log->try_append(metas, n_metas);
+        auto ms = meta_log->try_append(crucible::test::records_of(metas, n_metas));
         assert(ms.is_valid() && "MetaLog overflow");
         assert(ring->try_append(e, ms) && "TraceRing full");
     }
@@ -66,12 +67,12 @@ void feed_trigger(TraceRing* ring, MetaLog* meta_log, uint32_t iter) {
         e.num_outputs = 1;
 
         const auto n_metas = static_cast<uint16_t>(e.num_inputs + e.num_outputs);
-        TensorMeta metas[2]{};
+        ::fixy::FixedArray<TensorMeta, 2> metas{};
         uint16_t idx = 0;
-        if (i > 0) metas[idx++] = make_meta(fake_ptr(iter, i - 1));
-        metas[idx++] = make_meta(fake_ptr(iter, i));
+        if (i > 0) crucible::test::element_at(metas, idx++) = make_meta(fake_ptr(iter, i - 1));
+        crucible::test::element_at(metas, idx++) = make_meta(fake_ptr(iter, i));
 
-        auto ms = meta_log->try_append(metas, n_metas);
+        auto ms = meta_log->try_append(crucible::test::records_of(metas, n_metas));
         assert(ms.is_valid());
         assert(ring->try_append(e, ms));
     }

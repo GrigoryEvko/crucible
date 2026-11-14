@@ -19,7 +19,7 @@ inline constexpr uint32_t NUM_OPS = 30;
 
 struct OpPacket {
     crucible::TraceRing::Entry entry{};
-    crucible::TensorMeta metas[6]{};
+    ::fixy::FixedArray<crucible::TensorMeta, 6> metas{};
     uint16_t n_metas = 0;
 };
 

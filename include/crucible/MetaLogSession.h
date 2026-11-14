@@ -55,7 +55,7 @@ concept MetaLogSessionSurface =
     requires(Log& log, typename Log::ProducerHandle& producer, typename Log::ConsumerHandle& consumer,
              ::foundation::permissions::Permission<typename Log::producer_tag, typename Log::brand_type> prod_perm,
              ::foundation::permissions::Permission<typename Log::consumer_tag, typename Log::brand_type> cons_perm,
-             const MetaLogRecord* records, const MetaLogRecord& record) {
+             ::fixy::View<const MetaLogRecord> records, const MetaLogRecord& record) {
         typename Log::value_type;
         typename Log::brand_type;
         typename Log::producer_tag;
@@ -69,7 +69,7 @@ concept MetaLogSessionSurface =
 
         { log.producer(std::move(prod_perm)) } -> std::same_as<typename Log::ProducerHandle>;
         { log.consumer(std::move(cons_perm)) } -> std::same_as<typename Log::ConsumerHandle>;
-        { producer.try_append(records, std::uint32_t{1}) } -> std::same_as<::crucible::MetaIndex>;
+        { producer.try_append(records) } -> std::same_as<::crucible::MetaIndex>;
         { producer.try_append_one(record) } -> std::same_as<bool>;
         { consumer.try_drain_one() } -> std::same_as<::fixy::Option<MetaLogRecord>>;
     };

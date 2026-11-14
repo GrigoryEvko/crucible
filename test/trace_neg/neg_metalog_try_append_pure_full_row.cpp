@@ -27,9 +27,9 @@ namespace eff = ::fixy;
 
 int main() {
     crucible::MetaLog log;
-    crucible::TensorMeta m{};
+    const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
     // AllRow contains every Effect atom — the F* lattice top.
     // IsPure<AllRow> is false; the requires-clause rejects.
-    (void)log.try_append_pure<eff::AllRow>(&m, 1);
+    (void)log.try_append_pure<eff::AllRow>(record.view());
     return 0;
 }

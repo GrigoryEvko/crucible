@@ -24,7 +24,6 @@
 #include <cstdio>
 #include <cstring>
 #include <span>
-#include <vector>
 
 namespace test_vigil {
 
@@ -65,8 +64,9 @@ divrig::OpData op_with_parameter(uint32_t iter, uint32_t op_idx) {
     made.entry.shape_hash = divrig::SHAPE[op_idx];
     made.entry.num_inputs = 1;
     made.entry.num_outputs = 1;
-    made.metas[0] = meta_at((op_idx == 0) ? parameter_ptr() : activation_ptr(iter, op_idx - 1), 1024);
-    made.metas[1] = meta_at(activation_ptr(iter, op_idx), 1024);
+    made.metas.at(::fixy::index<0>()) =
+        meta_at((op_idx == 0) ? parameter_ptr() : activation_ptr(iter, op_idx - 1), 1024);
+    made.metas.at(::fixy::index<1>()) = meta_at(activation_ptr(iter, op_idx), 1024);
     made.n_metas = 2;
     return made;
 }
@@ -74,7 +74,7 @@ divrig::OpData op_with_parameter(uint32_t iter, uint32_t op_idx) {
 void record(crucible::Vigil& vigil, uint32_t iter, uint32_t op_idx) {
     const divrig::OpData recorded = op_with_parameter(iter, op_idx);
     const bool was_recorded =
-        vigil.record_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas, recorded.n_metas);
+        vigil.record_op(crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
     assert(was_recorded);
 }
 
@@ -83,9 +83,10 @@ void record(crucible::Vigil& vigil, uint32_t iter, uint32_t op_idx) {
 // released, and over no other slot.
 void fill_released_slots(crucible::MetaLog& log) {
     constexpr uint32_t CHUNK = 4096;
-    const std::vector<crucible::TensorMeta> chunk(CHUNK, meta_at(overwrite_ptr(), 3));
+    const ::fixy::HeapArray<crucible::TensorMeta> chunk =
+        ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, CHUNK, meta_at(overwrite_ptr(), 3));
     for (uint32_t count = CHUNK; count > 0; count /= 2) {
-        while (log.try_append(chunk.data(), count).is_valid()) {}
+        while (log.try_append(chunk.view().window(0, count).expect("the run fits the chunk")).is_valid()) {}
     }
     assert(log.size().peek() == crucible::MetaLog::CAPACITY);
 }

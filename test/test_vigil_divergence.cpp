@@ -41,8 +41,8 @@ OpData op_at(uint32_t iter, uint32_t op_idx) {
     made.entry.num_outputs = 1;
 
     uint16_t idx = 0;
-    if (op_idx > 0) made.metas[idx++] = meta_at(fake_ptr(iter, op_idx - 1));
-    made.metas[idx++] = meta_at(fake_ptr(iter, op_idx));
+    if (op_idx > 0) crucible::test::element_at(made.metas, idx++) = meta_at(fake_ptr(iter, op_idx - 1));
+    crucible::test::element_at(made.metas, idx++) = meta_at(fake_ptr(iter, op_idx));
     made.n_metas = static_cast<uint16_t>(made.entry.num_inputs + made.entry.num_outputs);
     return made;
 }
@@ -51,14 +51,13 @@ void feed_one_region(crucible::Vigil& vigil, uint32_t first_iter) {
     for (uint32_t iter = first_iter; iter < first_iter + 2; iter++) {
         for (uint32_t i = 0; i < NUM_OPS; i++) {
             auto recorded = op_at(iter, i);
-            (void)vigil.record_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas,
-                                  recorded.n_metas);
+            (void)vigil.record_op(
+                crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
         }
     }
     for (uint32_t i = 0; i < K; i++) {
         auto recorded = op_at(first_iter + 2, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas,
-                              recorded.n_metas);
+        (void)vigil.record_op(crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
     }
 }
 
@@ -162,8 +161,8 @@ void test_divergence_drops_the_regions_of_the_backlog() {
     for (uint32_t iter = 4; iter < 4 + BACKLOG_ITERATIONS; iter++) {
         for (uint32_t i = 0; i < NUM_OPS; i++) {
             auto recorded = op_at(iter, i);
-            (void)vigil.record_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas,
-                                  recorded.n_metas);
+            (void)vigil.record_op(
+                crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
         }
     }
 
@@ -270,7 +269,7 @@ void feed_planless_region(crucible::Vigil& vigil) {
         const uint32_t count = (iter < 2) ? divrig::NUM_OPS : divrig::K;
         for (uint32_t i = 0; i < count; i++) {
             const crucible::TraceRing::Entry entry = planless_entry(i);
-            (void)vigil.record_op(crucible::test::certify_synthetic_entry(entry), nullptr, 0);
+            (void)vigil.record_op(crucible::test::certify_synthetic_op(entry));
         }
     }
 }
@@ -367,7 +366,7 @@ divrig::OpData cycle_op(uint32_t cycle, uint32_t iter, uint32_t op_idx) {
 
 void record_cycle_op(crucible::Vigil& vigil, uint32_t cycle, uint32_t iter, uint32_t op_idx) {
     divrig::OpData made = cycle_op(cycle, iter, op_idx);
-    (void)vigil.record_op(crucible::test::certify_synthetic_entry(made.entry), made.metas, made.n_metas);
+    (void)vigil.record_op(crucible::test::certify_synthetic_op(made.entry, made.metas, made.n_metas));
 }
 
 // The input of feed_one_region, with the ops of the cycle.
@@ -486,13 +485,11 @@ void test_same_region_keeps_the_alignment() {
     const uint64_t step_before = vigil.current_step();
     for (uint32_t i = K; i < NUM_OPS; i++) {
         OpData recorded = op_at(2, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas,
-                              recorded.n_metas);
+        (void)vigil.record_op(crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
     }
     for (uint32_t i = 0; i < K; i++) {
         OpData recorded = op_at(3, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_entry(recorded.entry), recorded.metas,
-                              recorded.n_metas);
+        (void)vigil.record_op(crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
     }
     vigil.flush();
     assert(vigil.current_step() > step_before && "the second region must be published");

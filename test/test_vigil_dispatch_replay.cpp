@@ -71,9 +71,9 @@ void test_dispatch_divergence() {
     bad_entry.shape_hash = SHAPE[3];
     bad_entry.num_inputs = 1;
     bad_entry.num_outputs = 1;
-    TensorMeta bad_metas[2]{};
-    bad_metas[0] = make_meta(fake_ptr(4, 2));
-    bad_metas[1] = make_meta(fake_ptr(4, 3));
+    ::fixy::FixedArray<TensorMeta, 2> bad_metas{};
+    bad_metas.at(::fixy::index<0>()) = make_meta(fake_ptr(4, 2));
+    bad_metas.at(::fixy::index<1>()) = make_meta(fake_ptr(4, 3));
 
     auto result = crucible::test::dispatch_synthetic(vigil, bad_entry, bad_metas, 2);
     assert(result.action == DispatchResult::Action::RECORD);
@@ -104,9 +104,9 @@ void test_dispatch_recovery() {
     bad.shape_hash = SHAPE[0];
     bad.num_inputs = 0;
     bad.num_outputs = 1;
-    TensorMeta bad_meta = make_meta(fake_ptr(99, 0));
+    const ::fixy::FixedArray<TensorMeta, 1> bad_meta{make_meta(fake_ptr(99, 0))};
 
-    auto r_div = crucible::test::dispatch_synthetic(vigil, bad, &bad_meta, 1);
+    auto r_div = crucible::test::dispatch_synthetic(vigil, bad, bad_meta, 1);
     assert(r_div.action == DispatchResult::Action::RECORD);
     assert(r_div.status == ReplayStatus::DIVERGED);
     assert(!vigil.context().is_compiled());
