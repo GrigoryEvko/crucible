@@ -69,6 +69,7 @@
 #include <fixy/Tags.h>
 #include <foundation/AlignedBuffer.h>
 #include <foundation/algebra/Graded.h>
+#include <foundation/core/Array.h>
 #include <foundation/core/RunSet.h>
 #include <foundation/effects/Capability.h>
 #include <foundation/effects/Computation.h>
@@ -123,6 +124,7 @@ inline constexpr std::meta::info transparent_payload_families[] = {
     ^^::fixy::AppendOnly,
     ^^::fixy::WriteOnce,
     ^^::fixy::FixedArray,
+    ^^::foundation::core::FixedArray,  // the elements; the count holds no row
     ^^::foundation::AlignedBuffer,  // the elements; the alignment holds no row
     ^^::foundation::core::RunSet,  // the element of each run; the counts hold no row
     ^^std::vector,  // the elements; the allocator holds no row
@@ -198,9 +200,21 @@ inline constexpr std::meta::info leaf_payload_families[] = {
 }
 
 // The payload a transparent family hides.  Reading the member alias
-// instantiates the wrapper, which each rostered family permits.
+// instantiates the wrapper, which each rostered family permits.  A
+// FixedArray of the Region family names its element element_type, and each
+// other family names it value_type.
 template <class T>
-using hidden_payload_t = typename T::value_type;
+struct hidden_payload {
+    using type = typename T::value_type;
+};
+
+template <class T, std::size_t N>
+struct hidden_payload<::foundation::core::FixedArray<T, N>> {
+    using type = typename ::foundation::core::FixedArray<T, N>::element_type;
+};
+
+template <class T>
+using hidden_payload_t = typename hidden_payload<T>::type;
 
 // The answer of the walk: the effects found, as one bit per underlying
 // value, or the first type the walk refused.
