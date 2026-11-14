@@ -459,7 +459,7 @@ public:
         for (::fixy::Box<Cipher>& cipher : cipher_) {
             const RegionNode* region = active_region();
             if (!region) return false;
-            return persist_into_(ctx, *cipher, region);
+            return persist_into_(ctx, *cipher, ::fixy::to(*region));
         }
         return false;
     }
@@ -629,7 +629,7 @@ private:
     // The store is only ever made from open(), so holding one already
     // proves it is open.  One mint of the open view serves both calls.
     template <class Ctx, class Store>
-    [[nodiscard]] bool persist_into_(Ctx const& ctx, Store& store, const RegionNode* region) {
+    [[nodiscard]] bool persist_into_(Ctx const& ctx, Store& store, ::fixy::Ref<const RegionNode> region) {
         auto open_view = store.mint_open_view(ctx);
         const ContentHash hash = store.store(ctx, open_view, Store::content_addressed(region));
         if (!hash) return false;

@@ -12,6 +12,7 @@
 // come back as input to another request on the next replay.
 
 #include <crucible/Cipher.h>
+#include <crucible/MerkleDag.h>
 #include <fixy/Bands.h>
 #include <fixy/Ctx.h>
 
@@ -24,8 +25,11 @@ int main() {
         ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::TextView{"/tmp/crucible_neg_request_at_fleet"}));
     const auto view = cipher.mint_open_view(store_ctx);
 
+    // The band holds a Ref of a region, so the scope is the one fault.
+    using RegionRef = ::fixy::Ref<const ::crucible::RegionNode>;
+    const ::crucible::RegionNode region{};
     auto request_scoped =
-        ::fixy::mint_band<::fixy::opaque_lifetime::PerRequest<const ::crucible::RegionNode*>>(nullptr);
+        ::fixy::mint_band<::fixy::opaque_lifetime::PerRequest<RegionRef>>(RegionRef{::fixy::to(region)});
     auto result = cipher.commit_per_fleet(view, std::move(request_scoped));
     return static_cast<int>(static_cast<bool>(std::move(result).consume()));
 }

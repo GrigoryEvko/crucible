@@ -393,12 +393,6 @@ struct IndexLine {
 
 }  // namespace
 
-Cipher::ContentAddressedRegionPayload Cipher::content_addressed(const RegionNode* region) noexcept {
-    if (region == nullptr) return cipher::content_addressed_payload<RegionNode>(::fixy::none);
-    return cipher::content_addressed_payload<RegionNode>(
-        ContentAddressedRegionPayload::Value::some(::fixy::to(*region)));
-}
-
 ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddressedRegionPayload payload) {
     ContentAddressedRegionPayload::Value value = payload.get();
     if (value.is_none()) return ContentHash{};

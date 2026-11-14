@@ -5,6 +5,7 @@
 // long the region lives, so it is no lifetime band and states no scope.
 
 #include <crucible/Cipher.h>
+#include <crucible/MerkleDag.h>
 #include <fixy/Bands.h>
 #include <fixy/Ctx.h>
 
@@ -17,7 +18,10 @@ int main() {
         ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::TextView{"/tmp/crucible_neg_request_wrong_band"}));
     const auto view = cipher.mint_open_view(store_ctx);
 
-    auto hot_tier = ::fixy::mint_band<::fixy::cipher_tier::Hot<const ::crucible::RegionNode*>>(nullptr);
+    // The band holds a Ref of a region, so the lattice is the one fault.
+    using RegionRef = ::fixy::Ref<const ::crucible::RegionNode>;
+    const ::crucible::RegionNode region{};
+    auto hot_tier = ::fixy::mint_band<::fixy::cipher_tier::Hot<RegionRef>>(RegionRef{::fixy::to(region)});
     auto result = cipher.commit_per_request(view, std::move(hot_tier));
     return static_cast<int>(static_cast<bool>(std::move(result).consume()));
 }

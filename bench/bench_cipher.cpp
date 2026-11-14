@@ -37,7 +37,7 @@ static const auto BG = ::foundation::effects::testing::bg();
 static constexpr auto A = BG.alloc;
 
 // The ops, their arrays and the region are in dag_arena.
-static RegionNode* synth_region(::fixy::BumpArena& dag_arena, uint32_t num_ops, uint64_t salt) {
+static ::fixy::Ref<RegionNode> synth_region(::fixy::BumpArena& dag_arena, uint32_t num_ops, uint64_t salt) {
     TensorMeta meta{};
     meta.ndim = 1;
     meta.sizes[0] = tensor_dim(64);
@@ -51,7 +51,7 @@ static RegionNode* synth_region(::fixy::BumpArena& dag_arena, uint32_t num_ops, 
         te.set_inputs(dag_arena.array(A, 1, meta), dag_arena.array(A, 1, OpIndex{}), dag_arena.array(A, 1, SlotId{}));
         te.set_outputs(dag_arena.array(A, 1, meta), dag_arena.array(A, 1, SlotId{}));
     }
-    return &*make_region(A, dag_arena, ops);
+    return make_region(A, dag_arena, ops);
 }
 
 // The store serializes the producer index and the slot ids of each op, and
@@ -105,11 +105,11 @@ int main() {
         auto open_view = cipher.mint_open_view(ctx);
 
         ::fixy::BumpArena warm_dag_arena{1 << 18};
-        auto* warm_region = synth_region(warm_dag_arena, num_ops, 0xC0FFEE + num_ops);
-        check_unset_ids(*warm_region);
-        const auto warm_payload = Cipher::content_addressed(warm_region);
+        const RegionNode& warm_region = *synth_region(warm_dag_arena, num_ops, 0xC0FFEE + num_ops);
+        check_unset_ids(warm_region);
+        const auto warm_payload = Cipher::content_addressed(::fixy::to(warm_region));
         (void)cipher.store(ctx, open_view, warm_payload);  // prime the warm path
-        const ContentHash warm_h = warm_region->content_hash;
+        const ContentHash warm_h = warm_region.content_hash;
 
         // Cold write: distinct content_hash per iteration, so every
         // sample hits the filesystem. Auto-batch is fine: each body
@@ -131,8 +131,8 @@ int main() {
             uint64_t salt = static_cast<uint64_t>(num_ops) << 32;
             return bench::run(label_cold, [&] {
                 ::fixy::BumpArena region_dag_arena{1 << 18};
-                auto* r = synth_region(region_dag_arena, num_ops, ++salt);
-                auto h = cipher.store(ctx, open_view, Cipher::content_addressed(r));
+                auto h = cipher.store(ctx, open_view,
+                                      Cipher::content_addressed(synth_region(region_dag_arena, num_ops, ++salt)));
                 bench::do_not_optimize(h);
             });
         }());

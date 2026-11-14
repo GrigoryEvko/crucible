@@ -3151,7 +3151,7 @@ crucible_neg_compile_test(neg_philox_op_key_det_raw_uint64
 # cold storage).
 crucible_neg_compile_test(neg_opaque_lifetime_per_request_at_per_fleet_fence
   "no matching function for call to .crucible::Cipher::commit_per_fleet."
-  "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_REQUEST>, const crucible::RegionNode.>. Scope = foundation::algebra::lattices::Lifetime::PER_FLEET.. evaluated to .false.")
+  "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_REQUEST>, foundation::core::Ref<const crucible::RegionNode, foundation::brand::DefaultBrand> >. Scope = foundation::algebra::lattices::Lifetime::PER_FLEET.. evaluated to .false.")
 
 # The rest of the lifetime to tier refusals.  A request-scoped region
 # does not reach the warm tier, which survives a restart, and a
@@ -3160,19 +3160,25 @@ crucible_neg_compile_test(neg_opaque_lifetime_per_request_at_per_fleet_fence
 # commit entry point.
 crucible_neg_compile_test(neg_opaque_lifetime_per_request_at_per_program_fence
   "no matching function for call to .crucible::Cipher::commit_per_program."
-  "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_REQUEST>, const crucible::RegionNode.>. Scope = foundation::algebra::lattices::Lifetime::PER_PROGRAM.. evaluated to .false.")
+  "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_REQUEST>, foundation::core::Ref<const crucible::RegionNode, foundation::brand::DefaultBrand> >. Scope = foundation::algebra::lattices::Lifetime::PER_PROGRAM.. evaluated to .false.")
 crucible_neg_compile_test(neg_opaque_lifetime_per_program_at_per_fleet_fence
   "no matching function for call to .crucible::Cipher::commit_per_fleet."
-  "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_PROGRAM>, const crucible::RegionNode.>. Scope = foundation::algebra::lattices::Lifetime::PER_FLEET.. evaluated to .false.")
+  "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_PROGRAM>, foundation::core::Ref<const crucible::RegionNode, foundation::brand::DefaultBrand> >. Scope = foundation::algebra::lattices::Lifetime::PER_FLEET.. evaluated to .false.")
 crucible_neg_compile_test(neg_cipher_commit_per_request_bare_pointer
   "no matching function for call to .crucible::Cipher::commit_per_request."
   "the expression .is_band_of_v<foundation::algebra::lattices::LifetimeLattice, W> .with W = const crucible::RegionNode... evaluated to .false.")
 crucible_neg_compile_test(neg_cipher_commit_per_request_wrong_band
   "no matching function for call to .crucible::Cipher::commit_per_request."
-  "the expression .is_band_of_v<foundation::algebra::lattices::LifetimeLattice, W> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::CipherTierLattice::At<foundation::algebra::lattices::CipherTierTag::Hot>, const crucible::RegionNode.>.. evaluated to .false.")
+  "the expression .is_band_of_v<foundation::algebra::lattices::LifetimeLattice, W> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::CipherTierLattice::At<foundation::algebra::lattices::CipherTierTag::Hot>, foundation::core::Ref<const crucible::RegionNode, foundation::brand::DefaultBrand> >.. evaluated to .false.")
 crucible_neg_compile_test(neg_cipher_commit_per_program_bare_pointer
   "no matching function for call to .crucible::Cipher::commit_per_program."
   "the expression .is_band_of_v<foundation::algebra::lattices::LifetimeLattice, W> .with W = const crucible::RegionNode... evaluated to .false.")
+
+# Cipher::content_addressed takes a Ref of the region, so a null pointer
+# reaches no payload through it.  The empty payload has its own door.
+crucible_neg_compile_test(neg_cipher_content_addressed_null
+  "cannot convert .std::nullptr_t. to .foundation::core::Ref<const crucible::RegionNode>."
+  "initializing argument 1 of .static crucible::Cipher::ContentAddressedRegionPayload crucible::Cipher::content_addressed.foundation::core::Ref<const crucible::RegionNode>..")
 
 # A NumericalTier below BITEXACT must not reach a consumer that requires
 # BITEXACT.  The three fixtures refuse a gap of six tiers (RELAXED), one

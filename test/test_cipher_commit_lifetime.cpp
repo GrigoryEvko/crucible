@@ -46,6 +46,9 @@ using ::fixy::cipher_tier::Warm;
 
 static auto g_test = ::foundation::effects::testing::test();
 
+// The region that a lifetime band holds.  A Ref is never null.
+using RegionRef = ::fixy::Ref<const RegionNode>;
+
 // The text of the root copies the characters of the directory.
 [[nodiscard]] static Cipher open_cipher(const std::filesystem::path& dir) {
     ::foundation::core::GrowText root = ::foundation::core::mint_grow_text(Cipher::MAX_ROOT_PATH_BYTES);
@@ -58,8 +61,8 @@ static auto g_test = ::foundation::effects::testing::test();
 
 // The band's door is the one site that asserts a lifetime.
 template <Lifetime_v Scope>
-[[nodiscard]] static OpaqueLifetime<Scope, const RegionNode*> pinned(const RegionNode* region) {
-    return ::fixy::mint_band<OpaqueLifetime<Scope, const RegionNode*>>(region);
+[[nodiscard]] static OpaqueLifetime<Scope, RegionRef> pinned(RegionRef region) {
+    return ::fixy::mint_band<OpaqueLifetime<Scope, RegionRef>>(region);
 }
 
 // A random suffix and an up-front remove_all, so that a rerun on a
@@ -76,19 +79,19 @@ static std::filesystem::path tmp_root_for(const char* tag) {
 // Distinct hash_seed values give distinct schema hashes, and therefore
 // distinct content hashes, so each test writes its own object file
 // instead of colliding with a sibling's.
-static RegionNode* mint_region(::fixy::BumpArena& arena, uint64_t hash_seed) {
+static ::fixy::Ref<RegionNode> mint_region(::fixy::BumpArena& arena, uint64_t hash_seed) {
     const ::fixy::View<crucible::TraceEntry> ops =
         arena.array<crucible::TraceEntry>(g_test.alloc, 1, crucible::TraceEntry{});
     crucible::TraceEntry& op = *ops.get(0).expect("the region holds one op");
     op.schema_hash = crucible::SchemaHash{hash_seed * 0x9E3779B97F4A7C15ULL};
-    return &*crucible::make_region(g_test.alloc, arena, ops);
+    return crucible::make_region(g_test.alloc, arena, ops);
 }
 
 static void test_commit_per_fleet_type_identity() {
     auto tmp = tmp_root_for("t01");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena arena{};
-    auto* region = mint_region(arena, 1);
+    const ::fixy::Ref<RegionNode> region = mint_region(arena, 1);
 
     auto wrapped = pinned<Lifetime_v::PER_FLEET>(region);
 
@@ -106,7 +109,7 @@ static void test_commit_per_program_type_identity() {
     auto tmp = tmp_root_for("t02");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena arena{};
-    auto* region = mint_region(arena, 2);
+    const ::fixy::Ref<RegionNode> region = mint_region(arena, 2);
 
     auto wrapped = pinned<Lifetime_v::PER_PROGRAM>(region);
 
@@ -127,7 +130,7 @@ static void test_commit_per_request_type_identity() {
     auto tmp = tmp_root_for("t03");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena arena{};
-    auto* region = mint_region(arena, 3);
+    const ::fixy::Ref<RegionNode> region = mint_region(arena, 3);
 
     auto wrapped = pinned<Lifetime_v::PER_REQUEST>(region);
 
@@ -142,7 +145,7 @@ static void test_fleet_satisfies_request() {
     auto tmp = tmp_root_for("t04");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena arena{};
-    auto* region = mint_region(arena, 4);
+    const ::fixy::Ref<RegionNode> region = mint_region(arena, 4);
 
     auto fleet_wrapped = pinned<Lifetime_v::PER_FLEET>(region);
 
@@ -158,7 +161,7 @@ static void test_fleet_satisfies_program() {
     auto tmp = tmp_root_for("t05");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena arena{};
-    auto* region = mint_region(arena, 5);
+    const ::fixy::Ref<RegionNode> region = mint_region(arena, 5);
 
     auto fleet_wrapped = pinned<Lifetime_v::PER_FLEET>(region);
 
@@ -173,7 +176,7 @@ static void test_program_satisfies_request() {
     auto tmp = tmp_root_for("t06");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena arena{};
-    auto* region = mint_region(arena, 6);
+    const ::fixy::Ref<RegionNode> region = mint_region(arena, 6);
 
     auto program_wrapped = pinned<Lifetime_v::PER_PROGRAM>(region);
 
@@ -187,7 +190,7 @@ static void test_program_self_match() {
     auto tmp = tmp_root_for("t07");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena arena{};
-    auto* region = mint_region(arena, 7);
+    const ::fixy::Ref<RegionNode> region = mint_region(arena, 7);
 
     auto wrapped = pinned<Lifetime_v::PER_PROGRAM>(region);
     auto result = c.commit_per_program(store_ctx(), c.mint_open_view(store_ctx()), std::move(wrapped));
@@ -202,7 +205,7 @@ static void test_single_open_view_type_identity() {
     Cipher c = open_cipher(tmp);
     auto view = c.mint_open_view(store_ctx());
     ::fixy::BumpArena arena{};
-    auto* region = mint_region(arena, 8);
+    const ::fixy::Ref<RegionNode> region = mint_region(arena, 8);
 
     auto w_fleet = pinned<Lifetime_v::PER_FLEET>(region);
     auto w_program = pinned<Lifetime_v::PER_PROGRAM>(region);
@@ -219,7 +222,7 @@ static void test_round_trip_via_program_commit() {
     auto tmp = tmp_root_for("t09");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena arena{};
-    auto* region = mint_region(arena, 9);
+    const ::fixy::Ref<RegionNode> region = mint_region(arena, 9);
     ContentHash original_hash = region->content_hash;
     auto view = c.mint_open_view(store_ctx());
 
@@ -235,18 +238,19 @@ static void test_round_trip_via_program_commit() {
     std::filesystem::remove_all(tmp);
 }
 
-// A null region is not an error at the commit boundary.  The store
-// returns a default ContentHash, which is the "none" sentinel and
-// converts to false.
-static void test_null_region_pass_through() {
-    auto tmp = tmp_root_for("t10");
-    Cipher c = open_cipher(tmp);
-
-    auto wrapped = pinned<Lifetime_v::PER_PROGRAM>(nullptr);
-    auto result = c.commit_per_program(store_ctx(), c.mint_open_view(store_ctx()), std::move(wrapped));
-    ContentHash hash = std::move(result).consume();
-    assert(!static_cast<bool>(hash));
-    std::filesystem::remove_all(tmp);
+// A band holds a Ref of its region, so no commit gets a null region.  A
+// band over a raw pointer is refused at each of the three entry points,
+// also at the scope that the band satisfies.
+static void test_raw_pointer_band_rejected() {
+    static_assert(!crucible::cipher::LifetimePinnedRegion<OpaqueLifetime<Lifetime_v::PER_FLEET, const RegionNode*>,
+                                                          Lifetime_v::PER_REQUEST>);
+    static_assert(!crucible::cipher::LifetimePinnedRegion<OpaqueLifetime<Lifetime_v::PER_FLEET, const RegionNode*>,
+                                                          Lifetime_v::PER_PROGRAM>);
+    static_assert(!crucible::cipher::LifetimePinnedRegion<OpaqueLifetime<Lifetime_v::PER_FLEET, const RegionNode*>,
+                                                          Lifetime_v::PER_FLEET>);
+    static_assert(
+        crucible::cipher::LifetimePinnedRegion<OpaqueLifetime<Lifetime_v::PER_FLEET, RegionRef>, Lifetime_v::PER_FLEET>,
+        "the same band over a Ref of the region passes the gate");
 }
 
 static void test_per_request_cannot_satisfy_per_fleet() {
@@ -268,7 +272,7 @@ static void test_per_request_cannot_satisfy_per_fleet() {
 }
 
 static void test_per_request_cannot_satisfy_per_program() {
-    using PR = OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*>;
+    using PR = OpaqueLifetime<Lifetime_v::PER_REQUEST, RegionRef>;
     static_assert(!crucible::cipher::LifetimePinnedRegion<PR, Lifetime_v::PER_PROGRAM>,
                   "PER_REQUEST data cannot promise program-long persistence, so it "
                   "must not pass the per-program commit fence");
@@ -281,15 +285,15 @@ static void test_non_opaque_lifetime_rejected() {
     static_assert(!::fixy::is_band_of_v<::fixy::LifetimeLattice, ContentHash>);
     static_assert(!::fixy::is_band_of_v<::fixy::LifetimeLattice, Cold<ContentHash>>);
     static_assert(::fixy::is_band_of_v<::fixy::LifetimeLattice, OpaqueLifetime<Lifetime_v::PER_FLEET, ContentHash>>);
-    static_assert(!crucible::cipher::LifetimePinnedRegion<const RegionNode*, Lifetime_v::PER_REQUEST>);
-    static_assert(!crucible::cipher::LifetimePinnedRegion<Cold<const RegionNode*>, Lifetime_v::PER_REQUEST>);
+    static_assert(!crucible::cipher::LifetimePinnedRegion<RegionRef, Lifetime_v::PER_REQUEST>);
+    static_assert(!crucible::cipher::LifetimePinnedRegion<Cold<RegionRef>, Lifetime_v::PER_REQUEST>);
     static_assert(
         !crucible::cipher::LifetimePinnedRegion<OpaqueLifetime<Lifetime_v::PER_FLEET, int>, Lifetime_v::PER_REQUEST>,
         "a band over a value that is no region pointer is refused too");
 }
 
 static void test_layout_invariant() {
-    static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_FLEET, const RegionNode*>) == sizeof(const RegionNode*));
+    static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_FLEET, RegionRef>) == sizeof(RegionRef));
     static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_PROGRAM, ContentHash>) == sizeof(ContentHash));
     static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_REQUEST, int>) == sizeof(int));
 }
@@ -301,13 +305,13 @@ static void test_relax_down_then_commit_per_request() {
     auto tmp = tmp_root_for("t16");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena arena{};
-    auto* region = mint_region(arena, 16);
+    const ::fixy::Ref<RegionNode> region = mint_region(arena, 16);
 
     auto fleet = pinned<Lifetime_v::PER_FLEET>(region);
     auto program = ::fixy::relax<Lifetime_v::PER_PROGRAM>(std::move(fleet));
     auto request = ::fixy::relax<Lifetime_v::PER_REQUEST>(std::move(program));
 
-    static_assert(std::is_same_v<decltype(request), OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*>>);
+    static_assert(std::is_same_v<decltype(request), OpaqueLifetime<Lifetime_v::PER_REQUEST, RegionRef>>);
 
     auto result = c.commit_per_request(c.mint_open_view(store_ctx()), std::move(request));
     static_assert(std::is_same_v<decltype(result), Hot<ContentHash>>);
@@ -320,9 +324,9 @@ static void test_relax_down_then_commit_per_request() {
 // diagnostics and wrong hash folds rather than as a build failure, so the
 // readings are pinned equal.
 static void test_reflective_trait_agreement() {
-    using PR = OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*>;
-    using PP = OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*>;
-    using PF = OpaqueLifetime<Lifetime_v::PER_FLEET, const RegionNode*>;
+    using PR = OpaqueLifetime<Lifetime_v::PER_REQUEST, RegionRef>;
+    using PP = OpaqueLifetime<Lifetime_v::PER_PROGRAM, RegionRef>;
+    using PF = OpaqueLifetime<Lifetime_v::PER_FLEET, RegionRef>;
 
     static_assert(::fixy::band_tier_v<PR> == Lifetime_v::PER_REQUEST);
     static_assert(::fixy::band_tier_v<PP> == Lifetime_v::PER_PROGRAM);
@@ -342,7 +346,7 @@ static void test_idempotent_commit_per_program() {
     auto tmp = tmp_root_for("t18");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena arena{};
-    auto* region = mint_region(arena, 18);
+    const ::fixy::Ref<RegionNode> region = mint_region(arena, 18);
 
     auto first =
         c.commit_per_program(store_ctx(), c.mint_open_view(store_ctx()), pinned<Lifetime_v::PER_PROGRAM>(region));
@@ -361,13 +365,13 @@ static void test_idempotent_commit_per_program() {
 // A positive test cannot witness a refused copy, so it witnesses the
 // trait shape the by-value parameter depends on instead.
 static void test_move_only_witness() {
-    using PF = OpaqueLifetime<Lifetime_v::PER_FLEET, const RegionNode*>;
+    using PF = OpaqueLifetime<Lifetime_v::PER_FLEET, RegionRef>;
 
     static_assert(std::is_move_constructible_v<PF>);
 
     // Trivial, because the substrate is an empty-collapsed wrap over a
-    // bare pointer.  A non-trivial move here would mean the band had
-    // stopped being zero-cost.
+    // Ref, which holds one pointer.  A non-trivial move here would mean
+    // the band had stopped being zero-cost.
     static_assert(std::is_trivially_move_constructible_v<PF>);
 }
 
@@ -378,11 +382,11 @@ static void test_api_completeness_matrix() {
     auto tmp = tmp_root_for("t20");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena arena{};
-    auto* region = mint_region(arena, 20);
+    const ::fixy::Ref<RegionNode> region = mint_region(arena, 20);
 
-    using PR = OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*>;
-    using PP = OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*>;
-    using PF = OpaqueLifetime<Lifetime_v::PER_FLEET, const RegionNode*>;
+    using PR = OpaqueLifetime<Lifetime_v::PER_REQUEST, RegionRef>;
+    using PP = OpaqueLifetime<Lifetime_v::PER_PROGRAM, RegionRef>;
+    using PF = OpaqueLifetime<Lifetime_v::PER_FLEET, RegionRef>;
     auto view = c.mint_open_view(store_ctx());
 
     static_assert(std::is_same_v<decltype(c.commit_per_request(view, std::declval<PR&&>())), Hot<ContentHash>>);
@@ -403,7 +407,7 @@ static void test_content_hash_equality_across_overlay() {
     auto tmp = tmp_root_for("t15");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena arena{};
-    auto* region = mint_region(arena, 0xCAFEBABEULL);
+    const ::fixy::Ref<RegionNode> region = mint_region(arena, 0xCAFEBABEULL);
     auto view = c.mint_open_view(store_ctx());
     ContentHash bare_hash = c.store(store_ctx(), view, Cipher::content_addressed(region));
 
@@ -432,7 +436,7 @@ int main() {
     test_program_self_match();
     test_single_open_view_type_identity();
     test_round_trip_via_program_commit();
-    test_null_region_pass_through();
+    test_raw_pointer_band_rejected();
     test_per_request_cannot_satisfy_per_fleet();
     test_per_request_cannot_satisfy_per_program();
     test_non_opaque_lifetime_rejected();

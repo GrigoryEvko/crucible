@@ -131,10 +131,11 @@ content_addressed_payload(::fixy::Option<::fixy::Ref<const T>> value) noexcept {
 
 // A region whose lifetime band is at least Scope.  A commit entry point
 // persists into a tier that lives as long as its scope, so a narrower
-// band would leak its region into storage that outlives it.
+// band would leak its region into storage that outlives it.  The band
+// holds a Ref of the region, so a band holds a region in each case.
 template <typename W, ::fixy::Lifetime_v Scope>
 concept LifetimePinnedRegion = ::fixy::is_band_of_v<::fixy::LifetimeLattice, W> && ::fixy::satisfies_v<W, Scope>
-                            && std::convertible_to<::fixy::band_value_t<W>, const RegionNode*>;
+                            && std::convertible_to<::fixy::band_value_t<W>, ::fixy::Ref<const RegionNode>>;
 
 // The gate of a commit to the head log, CtxFitsCipherCommit, is in
 // crucible/cipher/SessionPersistenceSurface.h, so that a header that names
@@ -168,9 +169,13 @@ public:
     static_assert(sizeof(SessionEvent) == ::fixy::session::session_event_size && sizeof(SessionEvent) == 72,
                   "Cipher session-event persistence is pinned to the SessionEvent cold-tier wire size.");
 
-    // The payload of a region, or the empty payload for a null region.  The
-    // body is in src/Cipher.cpp, where RegionNode is complete.
-    [[nodiscard]] static ContentAddressedRegionPayload content_addressed(const RegionNode* region) noexcept;
+    // The payload of a region.  A Ref is never null, so the payload holds the
+    // region.  The empty payload comes from cipher::content_addressed_payload
+    // with no value.
+    [[nodiscard]] static ContentAddressedRegionPayload
+    content_addressed(::fixy::Ref<const RegionNode> region) noexcept {
+        return cipher::content_addressed_payload<RegionNode>(ContentAddressedRegionPayload::Value::some(region));
+    }
 
     // The text of a root.  The root comes from an operator, so it crosses a
     // trust boundary, and the caller tags it External.
@@ -288,8 +293,7 @@ public:
         requires cipher::LifetimePinnedRegion<W, ::fixy::Lifetime_v::PER_REQUEST>
     [[nodiscard]] ::fixy::cipher_tier::Hot<ContentHash> commit_per_request(OpenView const& view,
                                                                            W lifetime_pinned_region) noexcept {
-        const RegionNode* region = std::move(lifetime_pinned_region).consume();
-        return publish_hot(view, content_addressed(region));
+        return publish_hot(view, content_addressed(std::move(lifetime_pinned_region).consume()));
     }
 
     template <typename Ctx, typename W>
@@ -297,16 +301,14 @@ public:
               && cipher::LifetimePinnedRegion<W, ::fixy::Lifetime_v::PER_PROGRAM>
     [[nodiscard]] ::fixy::cipher_tier::Warm<ContentHash> commit_per_program(Ctx const& ctx, OpenView const& view,
                                                                             W lifetime_pinned_region) {
-        const RegionNode* region = std::move(lifetime_pinned_region).consume();
-        return publish_warm(ctx, view, content_addressed(region));
+        return publish_warm(ctx, view, content_addressed(std::move(lifetime_pinned_region).consume()));
     }
 
     template <typename W>
         requires cipher::LifetimePinnedRegion<W, ::fixy::Lifetime_v::PER_FLEET>
     [[nodiscard]] ::fixy::cipher_tier::Cold<ContentHash> commit_per_fleet(OpenView const& view,
                                                                           W lifetime_pinned_region) noexcept {
-        const RegionNode* region = std::move(lifetime_pinned_region).consume();
-        return publish_cold(view, content_addressed(region));
+        return publish_cold(view, content_addressed(std::move(lifetime_pinned_region).consume()));
     }
 
     // Real regions sit at a megabyte or less.  The ceiling leaves room for

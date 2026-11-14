@@ -19,6 +19,7 @@ int main() {
     // before the body of store could run.
     const ::fixy::TestRunnerCtx store_ctx{::foundation::effects::testing::test()};
     crucible::Cipher c;
-    (void)c.store(store_ctx, st_view, ::crucible::Cipher::content_addressed(nullptr));
+    (void)c.store(store_ctx, st_view,
+                  ::crucible::cipher::content_addressed_payload<::crucible::RegionNode>(::fixy::none));
     return 0;
 }

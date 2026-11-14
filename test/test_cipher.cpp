@@ -40,7 +40,7 @@ static auto g_test = ::foundation::effects::testing::test();
 // The salt goes into the schema hashes, so two salts give two regions with
 // two content hashes.  The ops, their arrays and the region are in
 // dag_arena.
-static crucible::RegionNode* make_test_region(::fixy::BumpArena& dag_arena, std::uint64_t salt = 0) {
+static ::fixy::Ref<crucible::RegionNode> make_test_region(::fixy::BumpArena& dag_arena, std::uint64_t salt = 0) {
     constexpr uint32_t NUM_OPS = 2;
     const ::fixy::View<crucible::TraceEntry> ops =
         dag_arena.array<crucible::TraceEntry>(g_test.alloc, NUM_OPS, crucible::TraceEntry{});
@@ -61,7 +61,7 @@ static crucible::RegionNode* make_test_region(::fixy::BumpArena& dag_arena, std:
                        crucible::test::run_of(g_test.alloc, dag_arena, crucible::SlotId{i}));
     }
 
-    return &*crucible::make_region(g_test.alloc, dag_arena, ops);
+    return crucible::make_region(g_test.alloc, dag_arena, ops);
 }
 
 // An object lives at objects/<first two hex digits>/<remaining digits>,
@@ -173,15 +173,15 @@ int main() {
         assert(std::filesystem::is_directory(std::string(dir) + "/objects"));
     }
 
-    auto* region = make_test_region(dag_arena);
-    const crucible::ContentHash expected_hash = region->content_hash;
+    const crucible::RegionNode& region = *make_test_region(dag_arena);
+    const crucible::ContentHash expected_hash = region.content_hash;
     assert(static_cast<bool>(expected_hash));
 
     {
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
         const crucible::ContentHash stored_hash =
-            cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(region));
+            cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(region)));
         assert(stored_hash == expected_hash);
 
         const std::string expected_path = object_path(dir, expected_hash);
@@ -190,7 +190,7 @@ int main() {
         // The content decides the name, so storing the same region
         // again names the same object.
         const crucible::ContentHash second_hash =
-            cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(region));
+            cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(region)));
         assert(second_hash == expected_hash);
     }
 
@@ -203,13 +203,13 @@ int main() {
         auto loaded_ca = cipher.load_content_addressed(store_ctx(), ov, g_test.alloc, expected_hash, arena2);
         assert(static_cast<bool>(loaded_ca) && "load() must succeed for a stored hash");
         assert(region_of(loaded_ca).content_hash == expected_hash);
-        assert(region_of(loaded_ca).num_ops() == region->num_ops());
+        assert(region_of(loaded_ca).num_ops() == region.num_ops());
     }
 
     {
         auto cipher = open_cipher(dir);
         auto ov = cipher.mint_open_view(store_ctx());
-        (void)cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(region));
+        (void)cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(region)));
 
         // The log line of the commit holds a reading of CLOCK_MONOTONIC,
         // so it lies between two readings taken around the commit.
@@ -275,13 +275,13 @@ int main() {
         assert(dir_ca != nullptr);
 
         ::fixy::BumpArena ca_dag_arena{1 << 16};
-        auto* ca_region = make_test_region(ca_dag_arena);
-        const auto ca_payload = crucible::Cipher::content_addressed(ca_region);
+        const crucible::RegionNode& ca_region = *make_test_region(ca_dag_arena);
+        const auto ca_payload = crucible::Cipher::content_addressed(::fixy::to(ca_region));
 
         auto cipher = open_cipher(dir_ca);
         auto ov = cipher.mint_open_view(store_ctx());
         const crucible::ContentHash hash = cipher.store(store_ctx(), ov, ca_payload);
-        assert(hash == ca_region->content_hash);
+        assert(hash == ca_region.content_hash);
 
         const std::string path = object_path(dir_ca, hash);
         assert(std::filesystem::exists(path));
@@ -324,8 +324,7 @@ int main() {
         assert(receiver_dir != nullptr);
 
         ::fixy::BumpArena ca_dag_arena{1 << 16};
-        auto* ca_region = make_test_region(ca_dag_arena);
-        const auto ca_payload = crucible::Cipher::content_addressed(ca_region);
+        const auto ca_payload = crucible::Cipher::content_addressed(make_test_region(ca_dag_arena));
 
         auto sender = open_cipher(sender_dir);
         auto receiver = open_cipher(receiver_dir);
@@ -367,6 +366,16 @@ int main() {
         commit_head(cipher, ov, hash, 100);
         assert(cipher.head() == hash);
         assert(cipher.hash_at_step(ov, 100) == hash);
+    }
+
+    {
+        // The empty payload stores nothing, and the store gives the none
+        // hash.  Only content_addressed_payload makes the empty payload.
+        auto cipher = open_cipher(dir);
+        auto ov = cipher.mint_open_view(store_ctx());
+        const crucible::ContentHash hash = cipher.store(
+            store_ctx(), ov, crucible::cipher::content_addressed_payload<crucible::RegionNode>(::fixy::none));
+        assert(!static_cast<bool>(hash));
     }
 
     {
@@ -488,9 +497,9 @@ int main() {
                                                    read_arena)
                            .cache_hit());
             }
-            const auto* distinct_region = make_test_region(cache_dag_arena, i + 1);
             crucible::ContentHash& stored = crucible::test::element_at(hashes, i);
-            stored = cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(distinct_region));
+            stored = cipher.store(store_ctx(), ov,
+                                  crucible::Cipher::content_addressed(make_test_region(cache_dag_arena, i + 1)));
             assert(static_cast<bool>(stored));
         }
         for (const crucible::ContentHash hash : hashes) {
