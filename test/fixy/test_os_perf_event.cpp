@@ -6,11 +6,14 @@
 // also opens an event of the own process.  A host whose perf_event_paranoid
 // is 2 or less opens it with no privilege, and a host with a stricter
 // setting refuses it, so the check accepts the refusal of the kernel.  A
-// type that no PMU has is refused on each host.
+// type that no PMU has is refused on each host.  A counter that includes the
+// children of the thread counts a thread that starts after the open, and a
+// counter of the thread alone does not.
 
 #include <fixy/Core.h>
 #include <fixy/os/PerfEvent.h>
 #include <fixy/os/Process.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/Quarantine.h>
 
 #include <fcntl.h>
@@ -29,6 +32,9 @@ namespace process = fixy::process;
 namespace {
 
 using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block>>;
+// A context that starts threads, for the check of the children.
+using ThreadCtx =
+    eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 using Errno = foundation::os::Errno;
 
 // The words of the door are the words of the kernel header.
@@ -65,16 +71,18 @@ static_assert(offsetof(perf::detail::EventAttributes, config1) == offsetof(::per
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ORACLE: the kernel header and the C library are the models of the perf event door")
 // The bytes of the attributes of the door are the first bytes of a kernel
 // struct with the same fields.  The compare reads the bit-fields, so a wrong
-// bit of exclude_kernel or of exclude_hv fails it.
-[[nodiscard]] bool attributes_match_the_kernel(perf::Event event, std::uint64_t period) noexcept {
+// bit of inherit, of exclude_kernel or of exclude_hv fails it.
+[[nodiscard]] bool attributes_match_the_kernel(perf::Event event, std::uint64_t period,
+                                               perf::Children children) noexcept {
     ::perf_event_attr kernel{};
     kernel.type = event.type;
     kernel.size = PERF_ATTR_SIZE_VER0;
     kernel.config = event.config;
     kernel.sample_period = period;
+    kernel.inherit = children == perf::Children::included ? 1 : 0;
     kernel.exclude_kernel = 1;
     kernel.exclude_hv = 1;
-    perf::detail::EventAttributes const door = perf::detail::user_sample_attributes(event, period);
+    perf::detail::EventAttributes const door = perf::detail::user_sample_attributes(event, period, children);
     return std::memcmp(&kernel, &door, PERF_ATTR_SIZE_VER0) == 0;
 }
 
@@ -86,10 +94,15 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ORACLE: the kernel header and the C library are t
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 [[nodiscard]] int check_attributes() noexcept {
-    if (!attributes_match_the_kernel(perf::hardware_event(perf::HardwareEvent::branch_misses), 10000)) return 1;
-    if (!attributes_match_the_kernel(perf::software_event(perf::SoftwareEvent::major_page_faults), 1)) return 2;
-    if (!attributes_match_the_kernel(perf::cache_read_miss(perf::Cache::last_level), 10000)) return 3;
-    if (!attributes_match_the_kernel(perf::Event{.type = 11, .config = 0}, 100000)) return 4;
+    constexpr perf::Children alone = perf::Children::excluded;
+    constexpr perf::Children with_children = perf::Children::included;
+    if (!attributes_match_the_kernel(perf::hardware_event(perf::HardwareEvent::branch_misses), 10000, alone)) return 1;
+    if (!attributes_match_the_kernel(perf::software_event(perf::SoftwareEvent::major_page_faults), 1, alone)) return 2;
+    if (!attributes_match_the_kernel(perf::cache_read_miss(perf::Cache::last_level), 10000, alone)) return 3;
+    if (!attributes_match_the_kernel(perf::Event{.type = 11, .config = 0}, 100000, alone)) return 4;
+    if (!attributes_match_the_kernel(perf::hardware_event(perf::HardwareEvent::instructions), 0, with_children)) {
+        return 5;
+    }
     return 0;
 }
 
@@ -151,6 +164,51 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
             [](Errno error) -> int { return is_refusal(error) ? 0 : 43; });
 }
 
+// The steps of the loop of the child thread of the check of the children.
+// Each step runs more than one user instruction, so the loop runs more
+// instructions than this count.  The parent only starts and joins the child,
+// and in each build that runs far fewer instructions.
+constexpr std::uint64_t kChildSteps = 10000000;
+
+// Opens a counter of the user instructions of the calling thread with
+// children, runs one child thread that loops kChildSteps steps, joins it, and
+// gives the count.  The error is the error of the open.  A start or a read
+// that fails ends the process.
+[[nodiscard]] foundation::core::Result<std::uint64_t, Errno> count_across_a_child(perf::Children children) noexcept {
+    using Count = foundation::core::Result<std::uint64_t, Errno>;
+    ThreadCtx const ctx{eff::testing::bg()};
+    perf::Event const instructions = perf::hardware_event(perf::HardwareEvent::instructions);
+    return perf::mint_perf_event(ctx, instructions, 0, perf::Task{process::current_thread(ctx), children})
+        .match(
+            [&ctx](fixy::Linear<fixy::fs::OwnedFd> opened) -> Count {
+                fixy::fs::OwnedFd const counter = std::move(opened).consume();
+                auto child = []() noexcept {
+                    std::uint64_t volatile sum = 0;
+                    for (std::uint64_t step = 0; step < kChildSteps; ++step) {
+                        sum = sum + step;
+                    }
+                };
+                fixy::thread::run_joined(ctx, fixy::thread::ThreadOptions{}, child)
+                    .expect("the thread door starts the child thread");
+                return perf::read_count(ctx, counter).expect("the read of the counter gave its count");
+            },
+            [](Errno error) -> Count { return foundation::core::err(error); });
+}
+
+// A counter with its children counts the instructions of a thread that the
+// task starts after the open.  A counter of the task alone does not.
+[[nodiscard]] int check_children() noexcept {
+    return count_across_a_child(perf::Children::included)
+        .match(
+            [](std::uint64_t with_children) -> int {
+                if (with_children < kChildSteps) return 62;
+                return count_across_a_child(perf::Children::excluded)
+                    .match([](std::uint64_t alone) -> int { return alone < kChildSteps ? 0 : 63; },
+                           [](Errno error) -> int { return is_refusal(error) ? 0 : 61; });
+            },
+            [](Errno error) -> int { return is_refusal(error) ? 0 : 61; });
+}
+
 // A closed handle has no count.
 [[nodiscard]] int check_read_of_a_closed_handle() noexcept {
     IoBlockCtx ctx{eff::testing::test()};
@@ -184,6 +242,7 @@ int main() {
     if (failed == 0) failed = check_identity();
     if (failed == 0) failed = check_open_or_refusal();
     if (failed == 0) failed = check_instruction_counter();
+    if (failed == 0) failed = check_children();
     if (failed == 0) failed = check_read_of_a_closed_handle();
     if (failed == 0) failed = check_refusal_of_an_unknown_type();
     if (failed != 0) {

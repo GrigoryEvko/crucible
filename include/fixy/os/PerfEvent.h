@@ -4,7 +4,8 @@
 // the kernel (perf_event_open), and the read of the count of an event.
 //
 // mint_perf_event opens one event of the user space of one task, on each CPU
-// that runs the task.  An event with a period takes a sample at each period
+// that runs the task.  A Task can include the children that the task starts
+// after the open, and the count then sums them.  An event with a period takes a sample at each period
 // events, and a consumer, such as a BPF program that the kernel runs at each
 // sample, reads its descriptor.  An event with no period is a counter, and
 // read_count gives its count.  The event starts enabled, so the door sends no
@@ -43,17 +44,33 @@ struct Event final {
     std::uint64_t config = 0;
 };
 
-// The task that an event follows: one thread.  The kernel reads the id of a
-// process as the id of its first thread, so the event of a ProcessId follows
-// the first thread and not the other threads of the process.
+// The children that an event follows beside its task.  included is the
+// inherit bit of the kernel.  Each thread or process that the task starts
+// after the open gets a copy of the event, and so does each child of such a
+// child.  The count of the event is then the sum of the copies, of the live
+// children and of the ended children.  A child that the task started before
+// the open gets no copy.
+enum class Children : std::uint32_t {
+    excluded = 0,
+    included = 1,
+};
+
+// The task that an event follows: one thread, and its later children when
+// children is included.  The kernel reads the id of a process as the id of
+// its first thread, so the event of a ProcessId follows the first thread and
+// not the other threads of the process.
 class Task final {
     std::uint32_t id_ = 0;
+    Children children_ = Children::excluded;
 
 public:
-    constexpr Task(::fixy::process::ProcessId process) noexcept : id_{std::to_underlying(process)} {}
-    constexpr Task(::fixy::process::ThreadId thread) noexcept : id_{std::to_underlying(thread)} {}
+    constexpr Task(::fixy::process::ProcessId process, Children children = Children::excluded) noexcept
+        : id_{std::to_underlying(process)}, children_{children} {}
+    constexpr Task(::fixy::process::ThreadId thread, Children children = Children::excluded) noexcept
+        : id_{std::to_underlying(thread)}, children_{children} {}
 
     [[nodiscard]] constexpr std::uint32_t id() const noexcept { return id_; }
+    [[nodiscard]] constexpr Children children() const noexcept { return children_; }
 };
 
 // The hardware events of the door: configs of the type PERF_TYPE_HARDWARE.
@@ -85,6 +102,7 @@ inline constexpr std::uint32_t kTypeHardwareCache = 3;  // PERF_TYPE_HW_CACHE
 inline constexpr std::uint64_t kCacheOperationRead = 0;  // PERF_COUNT_HW_CACHE_OP_READ
 inline constexpr std::uint64_t kCacheResultMiss = 1;  // PERF_COUNT_HW_CACHE_RESULT_MISS
 inline constexpr std::uint32_t kAttributesSize = 64;  // PERF_ATTR_SIZE_VER0
+inline constexpr std::uint64_t kInherit = std::uint64_t{1} << 1;  // the bit-field inherit
 inline constexpr std::uint64_t kExcludeKernel = std::uint64_t{1} << 5;  // the bit-field exclude_kernel
 inline constexpr std::uint64_t kExcludeHypervisor = std::uint64_t{1} << 6;  // the bit-field exclude_hv
 inline constexpr std::uint64_t kCloseOnExec = std::uint64_t{1} << 3;  // PERF_FLAG_FD_CLOEXEC
@@ -109,13 +127,16 @@ struct EventAttributes final {
 
 // The attributes of event in user space, with one sample each period events,
 // or no sample for a period of zero.  The event starts enabled, and it counts
-// no event of the kernel and of the hypervisor.
-[[nodiscard]] constexpr EventAttributes user_sample_attributes(Event event, std::uint64_t period) noexcept {
+// no event of the kernel and of the hypervisor.  An event whose children are
+// included has the inherit bit.
+[[nodiscard]] constexpr EventAttributes user_sample_attributes(Event event, std::uint64_t period,
+                                                               Children children) noexcept {
+    std::uint64_t const inherit = children == Children::included ? kInherit : 0;
     return EventAttributes{
         .type = event.type,
         .config = event.config,
         .sample_period = period,
-        .flags = kExcludeKernel | kExcludeHypervisor,
+        .flags = kExcludeKernel | kExcludeHypervisor | inherit,
     };
 }
 
@@ -179,7 +200,7 @@ class PerfEventDoor final : ::foundation::NoObject<PerfEventDoor> {
     [[nodiscard]] static ::foundation::core::Result<::fixy::fs::OwnedFd, ::foundation::os::Errno>
     open_(Event event, std::uint64_t period, Task task) noexcept {
         using Opened = ::foundation::core::Result<::fixy::fs::OwnedFd, ::foundation::os::Errno>;
-        return detail::open_event_(detail::user_sample_attributes(event, period), task.id())
+        return detail::open_event_(detail::user_sample_attributes(event, period, task.children()), task.id())
             .match([](int descriptor) -> Opened { return ::fixy::fs::OwnedFd{descriptor}; },
                    [](::foundation::os::Errno error) -> Opened { return ::foundation::core::err(error); });
     }
