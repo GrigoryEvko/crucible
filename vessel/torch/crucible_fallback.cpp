@@ -549,15 +549,16 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     // thunks pass.  The operation already ran eagerly above, so a
     // rejected Entry costs the trace this operation and costs the caller
     // nothing.
-    auto validated =
+    //
+    // A check before the ladder confirmed that this thread can take the
+    // producer claim.  dispatch_op_pure takes the context of that claim, so
+    // this call compiles only with that context.
+    const auto validated =
         crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), inline_metas, counts.total());
-    if (!validated) [[unlikely]]
-        return;
-
-    // The check above confirmed that this thread can take the producer
-    // claim.  dispatch_op_pure takes the context of that claim, so this call
-    // compiles only with that context.
-    (void)vigil->dispatch_op_pure(vigil->mint_producer_context(), *validated, inline_metas, counts.total(), scope_hash);
+    for (const crucible::TraceRing::ValidatedEntryPtr certified : validated) {
+        static_cast<void>(vigil->dispatch_op_pure(vigil->mint_producer_context(), certified, inline_metas,
+                                                  counts.total(), scope_hash));
+    }
 }
 
 // =====================================================================

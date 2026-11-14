@@ -65,11 +65,11 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Platform.h>
+#include <foundation/Quarantine.h>
 
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -129,6 +129,10 @@ static_assert(offsetof(CrucibleMeta, version) == 152);
 static_assert(offsetof(CrucibleMeta, pad0) == 156);
 static_assert(offsetof(CrucibleMeta, storage_nbytes) == 160);
 static_assert(offsetof(CrucibleMeta, grad_fn_hash) == 168);
+
+// The helpers from here to data_ptr_typed take the handle and the meta array
+// of the C ABI as raw pointers, and give them a type.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the helpers give a type to the handle and the meta array of the C caller")
 
 namespace detail {
 
@@ -228,6 +232,8 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
     CRUCIBLE_DEBUG_ASSERT(metas != nullptr);
     return metas[i].data_ptr;
 }
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // ── Schema-name typed lookup ───────────────────────────────────────
 //
@@ -416,15 +422,15 @@ using ValidatedEntryTag = crucible::TraceRing::ValidatedEntryPtr::tag_type;
 // The records are the inputs and then the outputs of the entry, so a count
 // of records that is not their sum is refused here.  Vigil::record_op ends
 // the process on that count, and a foreign caller must not reach it.
-[[nodiscard]] CRUCIBLE_HOT constexpr std::optional<crucible::TraceRing::ValidatedEntryPtr>
+[[nodiscard]] CRUCIBLE_HOT constexpr ::fixy::Option<crucible::TraceRing::ValidatedEntryPtr>
 mint_validated_entry(crucible::TraceRing::FromPytorchEntryPtr raw, const crucible::TensorMeta* metas,
                      uint32_t n_metas) noexcept {
-    const crucible::TraceRing::Entry* entry = raw.value();
-    if (entry == nullptr) return std::nullopt;
-    if (!entry_is_well_formed(*entry)) return std::nullopt;
-    if (!metas_are_well_formed(metas, n_metas) || n_metas != uint32_t{entry->num_inputs} + entry->num_outputs)
-        return std::nullopt;
-    return std::move(raw).retag<ValidatedEntryTag>();
+    if (raw.value() == nullptr) return ::fixy::none;
+    const crucible::TraceRing::Entry& entry = *raw.value();
+    if (!entry_is_well_formed(entry)) return ::fixy::none;
+    if (!metas_are_well_formed(metas, n_metas) || n_metas != uint32_t{entry.num_inputs} + entry.num_outputs)
+        return ::fixy::none;
+    return ::fixy::Option<crucible::TraceRing::ValidatedEntryPtr>::some(std::move(raw).retag<ValidatedEntryTag>());
 }
 
 }  // namespace crucible::vessel

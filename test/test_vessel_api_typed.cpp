@@ -312,7 +312,7 @@ void test_ladder_refuses_unnamed_enumerations() {
 // True when the ladder certifies the entry with the count of records.
 template <class Validated>
 [[nodiscard]] bool is_certified(Validated const& validated) noexcept {
-    return validated.has_value();
+    return validated.is_some();
 }
 
 // The records of an entry are its inputs and then its outputs.  The ladder

@@ -43,6 +43,21 @@ static_assert(sizeof(CrucibleDispatchResult) == 8);
 static_assert(alignof(crucible::Vigil) == crucible::vessel::detail::kVigilHandleAlignment,
               "vessel_api_typed.h: kVigilHandleAlignment must equal alignof(crucible::Vigil)");
 
+// The C form of the answer of a dispatch.
+[[nodiscard]] static CrucibleDispatchResult encode_dispatch_result(const crucible::DispatchResult& result) noexcept {
+    CrucibleDispatchResult encoded{};
+    encoded.action = static_cast<uint8_t>(result.action);
+    encoded.status = static_cast<uint8_t>(result.status);
+    encoded.op_index = result.op_index.raw();
+    return encoded;
+}
+
+// The C caller owns the Vigil of a handle from crucible_create to
+// crucible_destroy, and it gives the texts and the arrays that the hashes read
+// as raw pointers.  The functions up to crucible_hash_shapes take these
+// pointers in an opt-out region of the class ABI.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
+
 // ── FNV-1a 64-bit ────────────────────────────────────────────────────
 
 static uint64_t fnv1a_bytes(const void* data, size_t len, uint64_t h) {
@@ -119,9 +134,13 @@ uint64_t crucible_hash_shapes(const int64_t* all_sizes, const uint8_t* ndims, ui
     return h;
 }
 
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
 CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t schema_hash, uint64_t shape_hash,
                                             uint16_t num_inputs, uint16_t num_outputs, const CrucibleMeta* metas,
                                             uint32_t n_metas) noexcept {
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     auto vigil_typed = crucible::vessel::as_vigil_typed(handle);
 
     // C→C++ boundary: wrap raw uint64_t into strong hash types.
@@ -149,29 +168,28 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
     // reaches the second only by passing the checks.  An empty result
     // (action=RECORD, status=DIVERGED by default-init of uint8_t) tells
     // the Python side the operation was not recorded.
-    auto validated =
-        crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), metas_typed.value(), n_metas);
-    if (!validated) return CrucibleDispatchResult{};
-
+    //
     // dispatch_op_pure takes the context of the Vigil's producer claim.  The
     // mint claims the calling thread, or ends the process when another
     // thread holds the claim, which is the same gate that dispatch_op has.
     // This entry asks no is_producer_thread question, so that gate is its
     // only guard.
-    crucible::Vigil* const vigil = vigil_typed.value();
-    auto result = vigil->dispatch_op_pure(vigil->mint_producer_context(), *validated, metas_typed.value(), n_metas);
-
-    CrucibleDispatchResult cr{};
-    cr.action = static_cast<uint8_t>(result.action);
-    cr.status = static_cast<uint8_t>(result.status);
-    cr.op_index = result.op_index.raw();
-    return cr;
+    const auto validated =
+        crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), metas_typed.value(), n_metas);
+    for (const crucible::TraceRing::ValidatedEntryPtr& certified : validated) {
+        const auto vigil = ::fixy::to(*vigil_typed.value());
+        return encode_dispatch_result(
+            vigil->dispatch_op_pure(vigil->mint_producer_context(), certified, metas_typed.value(), n_metas));
+    }
+    return CrucibleDispatchResult{};
 }
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
 CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t schema_hash, uint64_t shape_hash,
                                                uint16_t num_inputs, uint16_t num_outputs, const CrucibleMeta* metas,
                                                uint32_t n_metas, const int64_t* scalar_values, uint16_t num_scalars,
                                                uint8_t grad_enabled, uint8_t inference_mode) noexcept {
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     auto vigil_typed = crucible::vessel::as_vigil_typed(handle);
 
     // C→C++ boundary: wrap raw uint64_t into strong hash types.
@@ -211,21 +229,19 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
     // tag.
     auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
 
-    // The trust ladder; see the sister site in crucible_dispatch_op.
-    auto validated =
+    // The trust ladder; see the sister site in crucible_dispatch_op.  The
+    // producer claim gates this entry as it gates crucible_dispatch_op.
+    const auto validated =
         crucible::vessel::mint_validated_entry(crucible::mint_ffi_entry(entry), metas_typed.value(), n_metas);
-    if (!validated) return CrucibleDispatchResult{};
-
-    // The producer claim gates this entry as it gates crucible_dispatch_op.
-    crucible::Vigil* const vigil = vigil_typed.value();
-    auto result = vigil->dispatch_op_pure(vigil->mint_producer_context(), *validated, metas_typed.value(), n_metas);
-
-    CrucibleDispatchResult cr{};
-    cr.action = static_cast<uint8_t>(result.action);
-    cr.status = static_cast<uint8_t>(result.status);
-    cr.op_index = result.op_index.raw();
-    return cr;
+    for (const crucible::TraceRing::ValidatedEntryPtr& certified : validated) {
+        const auto vigil = ::fixy::to(*vigil_typed.value());
+        return encode_dispatch_result(
+            vigil->dispatch_op_pure(vigil->mint_producer_context(), certified, metas_typed.value(), n_metas));
+    }
+    return CrucibleDispatchResult{};
 }
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
 
 void crucible_flush(CrucibleHandle h) noexcept { crucible::vessel::as_vigil_typed(h).value()->flush(); }
 
@@ -258,15 +274,18 @@ uint32_t crucible_metalog_size(CrucibleHandle h) noexcept {
 // Each call proves that it runs on the thread that holds the producer claim.
 // A call from any other thread ends the process, as a dispatch from one does.
 void* crucible_output_ptr(CrucibleHandle h, uint16_t j) noexcept {
-    auto* vigil = crucible::vessel::as_vigil_typed(h).value();
+    const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
     return vigil->output_ptr(vigil->mint_producer_context(), j);
 }
 
 void* crucible_input_ptr(CrucibleHandle h, uint16_t j) noexcept {
-    auto* vigil = crucible::vessel::as_vigil_typed(h).value();
+    const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
     return vigil->input_ptr(vigil->mint_producer_context(), j);
 }
 
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
 void crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const char* name) noexcept {
     // C ABI boundary: validate before routing to SanitizedName.
     // Rules:
@@ -282,6 +301,7 @@ void crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const
     if (name == nullptr) return;
     const size_t len = ::strnlen(name, MAX_NAME + 1);
     if (len == 0 || len > MAX_NAME) return;
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
     // The tables take names only from the thread that holds the producer
     // claim of this Vigil.  Minting the context proves that, and it ends
@@ -299,7 +319,9 @@ void crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const
     crucible::register_schema_name(fg, crucible::SchemaHash{schema_hash}, name_tag);
 }
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
 const char* crucible_schema_name(uint64_t schema_hash) noexcept {
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     // crucible::schema_name reads through both tables.  A caller cannot tell
     // which one accepted the registration, and should not have to.  An
     // unknown hash gives NULL.
@@ -311,6 +333,7 @@ const char* crucible_schema_name(uint64_t schema_hash) noexcept {
     return nullptr;
 }
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
 int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     // FFI boundary: path validation before any fs::* / fopen call.
     //   - path != null
@@ -322,9 +345,9 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     if (path == nullptr) return 0;
     const size_t path_len = ::strnlen(path, MAX_PATH_LEN + 1);
     if (path_len == 0 || path_len > MAX_PATH_LEN) return 0;
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-    auto vigil_typed = crucible::vessel::as_vigil_typed(h);
-    auto* vigil = vigil_typed.value();
+    const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
     vigil->flush();
 
     const auto* region = vigil->active_region();
@@ -425,7 +448,9 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     return ok ? 1 : 0;
 }
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
 uint32_t crucible_active_num_ops(CrucibleHandle h) noexcept {
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     auto vigil_typed = crucible::vessel::as_vigil_typed(h);
     const auto* region = vigil_typed.value()->active_region();
     return region ? region->num_ops() : 0;
