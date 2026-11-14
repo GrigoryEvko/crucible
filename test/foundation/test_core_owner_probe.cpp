@@ -34,7 +34,7 @@
 // roster that the count can go red.
 //
 // What the roster cannot see: it sees only the headers that this unit
-// includes, which are the headers of the eight owners.  An owner on the core
+// includes, which are the headers of the nine owners.  An owner on the core
 // in a header that this unit does not include stays out of the roster until
 // this unit includes that header.  An owner that writes its own moves and
 // never names the core has no state in detail::owner, so the roster cannot
@@ -55,6 +55,7 @@
 namespace {
 
 using ::foundation::AlignedBuffer;
+using ::foundation::AlignedBytes;
 using ::foundation::SwissTableBuffer;
 using ::foundation::core::Box;
 using ::foundation::core::GrowList;
@@ -433,6 +434,36 @@ struct AlignedBufferProbe {
     static void linear() {}
 };
 
+struct AlignedBytesProbe {
+    using Owner = AlignedBytes;
+
+    static void self_move() {
+        Owner held = ::foundation::mint_aligned_bytes(kAlloc, 64, 64);
+        Owner& alias = held;
+        held = static_cast<Owner&&>(alias);
+        CRUCIBLE_FATAL_INVARIANT(held.size() == 64);
+        CRUCIBLE_FATAL_INVARIANT(held.alignment() == 64);
+    }
+
+    static void child_move() {}
+
+    // MOVED-FROM: a new block in the source is a second allocation, and the
+    // ASan run finds a second release if the source kept the first one.
+    static void moved_from() {
+        Owner target = ::foundation::mint_aligned_bytes(kAlloc, 32, 8);
+        Owner source = ::foundation::mint_aligned_bytes(kAlloc, 64, 64);
+        target = static_cast<Owner&&>(source);
+        source = ::foundation::mint_aligned_bytes(kAlloc, 16, 8);
+        CRUCIBLE_FATAL_INVARIANT(target.size() == 64);
+        Owner taken{static_cast<Owner&&>(target)};
+        target = ::foundation::mint_aligned_bytes(kAlloc, 16, 8);
+        CRUCIBLE_FATAL_INVARIANT(taken.size() == 64);
+        CRUCIBLE_FATAL_INVARIANT(taken.alignment() == 64);
+    }
+
+    static void linear() {}
+};
+
 struct SwissTableBufferProbe {
     using Owner = SwissTableBuffer<int>;
 
@@ -484,7 +515,7 @@ struct ProbeList {
 };
 
 using AllProbes = ProbeList<BoxProbe, HoleProbe, HeapArrayProbe, MaskedArrayProbe, GrowListProbe, GrowTextProbe,
-                            AlignedBufferProbe, SwissTableBufferProbe>;
+                            AlignedBufferProbe, AlignedBytesProbe, SwissTableBufferProbe>;
 
 static_assert(AllProbes::gaps == 0,
               "an owner state of the core has no probe in this file, or a probe names an owner off the core, an owner "

@@ -285,7 +285,36 @@ struct AlignedBytesDoor {
 
 }  // namespace detail
 
-class [[nodiscard]] AlignedBytes {
+namespace core::detail::owner {
+
+// The fields of an AlignedBytes: the first byte, the count of bytes and the
+// alignment, or null and zeros when it holds no block.
+struct AlignedBytesState {
+    std::uint8_t* first = nullptr;
+    std::size_t bytes = 0;
+    std::size_t alignment = 0;
+
+    [[nodiscard]] static constexpr AlignedBytesState emptied(AlignedBytesState const& /*state*/) noexcept {
+        return AlignedBytesState{};
+    }
+
+    // Gives the block back to the allocation door with the bytes and the
+    // alignment of the mint.
+    static constexpr void release(AlignedBytesState const& state) noexcept {
+        if (state.first != nullptr) {
+            heap_release_(state.first, ::foundation::detail::aligned_block_bytes(state.bytes, state.alignment),
+                          state.alignment);
+        }
+    }
+};
+
+}  // namespace core::detail::owner
+
+// The core of foundation/core/Owner.h gives the moves and the end of a
+// block.
+class [[nodiscard]] AlignedBytes final : public core::detail::OwnerCore<core::detail::owner::AlignedBytesState> {
+    using State = core::detail::owner::AlignedBytesState;
+
 public:
     // The empty block: no byte and no storage.
     constexpr AlignedBytes() noexcept = default;
@@ -300,10 +329,9 @@ public:
         // The allocation door gives storage of the allocator of the C
         // library, which starts the lifetime of an array of bytes with no
         // write.
-        first_ = static_cast<std::uint8_t*>(
-            core::detail::heap_allocate_(detail::aligned_block_bytes(bytes, alignment), alignment));
-        bytes_ = bytes;
-        alignment_ = alignment;
+        state_ = State{static_cast<std::uint8_t*>(
+                           core::detail::heap_allocate_(detail::aligned_block_bytes(bytes, alignment), alignment)),
+                       bytes, alignment};
     }
 
     AlignedBytes(AlignedBytes const&) =
@@ -311,67 +339,38 @@ public:
     AlignedBytes& operator=(AlignedBytes const&) =
         delete("an AlignedBytes owns its block alone: a copy would give it back two times");
 
-    AlignedBytes(AlignedBytes&& other) noexcept
-        : first_{other.first_}, bytes_{other.bytes_}, alignment_{other.alignment_} {
-        other.first_ = nullptr;
-        other.bytes_ = 0;
-        other.alignment_ = 0;
-    }
+    // The assignment gives the block of this owner back after it takes the
+    // block of other.
+    AlignedBytes(AlignedBytes&&) noexcept = default;
+    AlignedBytes& operator=(AlignedBytes&&) noexcept = default;
 
-    // Gives the block of this owner back, and takes the block of other.
-    AlignedBytes& operator=(AlignedBytes&& other) noexcept {
-        if (this != &other) {
-            reset();
-            first_ = other.first_;
-            bytes_ = other.bytes_;
-            alignment_ = other.alignment_;
-            other.first_ = nullptr;
-            other.bytes_ = 0;
-            other.alignment_ = 0;
-        }
-        return *this;
-    }
-
-    // The destructor and reset() are constexpr, so a class with an empty
-    // block member stays a literal type.  No constant evaluation allocates,
-    // so none reaches the allocation door.
-    constexpr ~AlignedBytes() noexcept { reset(); }
-
-    // Gives the block back to the allocation door with the bytes and the
-    // alignment of the mint, and leaves the empty block.
-    constexpr void reset() noexcept {
-        if (first_ == nullptr) return;
-        core::detail::heap_release_(first_, detail::aligned_block_bytes(bytes_, alignment_), alignment_);
-        first_ = nullptr;
-        bytes_ = 0;
-        alignment_ = 0;
-    }
+    // The end of the block and reset() are constexpr, so a class with an
+    // empty block member stays a literal type.  No constant evaluation
+    // allocates, so none reaches the allocation door.  reset() gives the
+    // block back and leaves the empty block, and the block is empty before
+    // the release starts.
+    constexpr void reset() noexcept { reset_(); }
 
     // The count of bytes that the mint asked for, without the round up.
-    [[nodiscard]] std::size_t size() const noexcept { return bytes_; }
+    [[nodiscard]] std::size_t size() const noexcept { return state_.bytes; }
 
     // The alignment of the first byte, or zero for the empty block.
-    [[nodiscard]] std::size_t alignment() const noexcept { return alignment_; }
+    [[nodiscard]] std::size_t alignment() const noexcept { return state_.alignment; }
 
     // The View of the bytes.  It borrows this block.  The storage is not
     // null for each count above zero, and the allocation door gives no block
     // of more than __PTRDIFF_MAX__ bytes, so the View comes through the door
     // of the base layer, with no check.
     [[nodiscard]] core::View<std::uint8_t> view() & noexcept {
-        return core::View<std::uint8_t>{core::detail::ViewDoor::key(), first_, bytes_};
+        return core::View<std::uint8_t>{core::detail::ViewDoor::key(), state_.first, state_.bytes};
     }
     [[nodiscard]] core::View<std::uint8_t const> view() const& noexcept {
-        return core::View<std::uint8_t const>{core::detail::ViewDoor::key(), first_, bytes_};
+        return core::View<std::uint8_t const>{core::detail::ViewDoor::key(), state_.first, state_.bytes};
     }
     void
     view() && = delete("a view of a temporary AlignedBytes points into a block that the full expression gives back");
     void view() const&& =
         delete("a view of a temporary AlignedBytes points into a block that the full expression gives back");
-
-private:
-    std::uint8_t* first_ = nullptr;
-    std::size_t bytes_ = 0;
-    std::size_t alignment_ = 0;
 };
 
 // The gate of mint_aligned_bytes: the allocation capability, and no other
