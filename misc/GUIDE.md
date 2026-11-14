@@ -950,7 +950,7 @@ At the end of the migration, the families of §XXII replace these tables. The op
 | `std::atomic<T>::wait` / `notify_one` / `notify_all` (C++20 P1135R6) | Efficient wait-for-change on atomic. **libstdc++ 16.0.1 status:** shipped. FTM `__cpp_lib_atomic_wait = 201907L`. On Linux uses raw `futex` syscall (4-byte aligned `__platform_wait_t`); on FreeBSD 64-bit uses its native 64-bit futex; elsewhere falls back to mutex+condvar proxy wait (so latency is higher on non-Linux). `atomic_flag` + free-fn `atomic_wait[_explicit]`/`atomic_notify_*` also shipped. **Hot-path rule still stands:** this is futex-backed, latency is 1-5 µs — keep spinning with `_mm_pause` for intra-core waits ≤40 ns |
 | `std::atomic<shared_ptr<T>>` / `std::atomic<weak_ptr<T>>` (C++20 P0718R2) | Atomic reference-counted pointer — one-stop publication when a DAG branch replaces a shared object. **libstdc++ 16.0.1 status:** shipped. FTM `__cpp_lib_atomic_shared_ptr = 201711L`. `is_always_lock_free = false` — uses internal `_Sp_atomic` with packed refcount+pointer. Full API incl. `wait`/`notify_*`. Not appropriate for hot-path atomic — the refcount CAS serializes readers. Use for Keeper/Cipher warm-tier shared state updates |
 | `std::atomic_signed_lock_free` / `std::atomic_unsigned_lock_free` (C++20 P1135R6) | Type aliases to the widest integer atomic that is always-lock-free on the target. **libstdc++ 16.0.1 status:** shipped. FTM `__cpp_lib_atomic_lock_free_type_aliases = 201907L`. Use for counters where portability of the lock-free guarantee matters more than exact width |
-| `<debugging>` — `breakpoint_if_debugging`, `is_debugger_present` (C++26) | Pause when debugger attached, continue otherwise; tighten `CRUCIBLE_INVARIANT`. **libstdc++ 16 status:** header declares but symbols absent from libstdc++.so — use the `foundation::detail::*` stand-ins in `include/foundation/Platform.h` |
+| `<debugging>` — `breakpoint_if_debugging`, `is_debugger_present` (C++26) | Pause when debugger attached, continue otherwise; the failure arm of `CRUCIBLE_FATAL_INVARIANT` uses it. **libstdc++ 16 status:** header declares but symbols absent from libstdc++.so — use the `foundation::detail::*` stand-ins in `include/foundation/Platform.h` |
 | `std::latch` / `std::barrier` / `std::counting_semaphore` (C++20) | Pool throttling, one-shot init, fan-in waits — replace bespoke atomic+spin where ≥100 ns latency is acceptable |
 | `std::source_location` (C++20) | Call-site capture. The macro prefix maps of the build make `file_name()` a path from the source root (§XXII "The families on main"). The Report family replaces it with `Site`, which `__builtin_FILE`, `__builtin_LINE` and `__builtin_FUNCTION` give with the same path (§XXII) |
 | `std::is_sufficiently_aligned`, `std::aligned_accessor` (C++26) | Typed alternatives to `__builtin_assume_aligned`. **libstdc++ 16.0.1 status:** shipped (`__cpp_lib_is_sufficiently_aligned`/`aligned_accessor = 202411`) |
@@ -1247,7 +1247,7 @@ That macro adds a bounds check to each `operator[]` of `std::array`,
 
 ### Verify preset
 
-The `verify` preset inherits `release` and makes two changes. It removes `-DNDEBUG` from `CMAKE_CXX_FLAGS` and `CMAKE_CXX_FLAGS_RELEASE`, so `CRUCIBLE_INVARIANT` and `CRUCIBLE_DEBUG_ASSERT` do their checks in the Release code. It sets `CRUCIBLE_VERIFY=ON`, which changes the Release contract semantic from `observe` to `enforce` (§XII). The preset does not add `-fanalyzer`. The separate `analyzer` preset sets `CRUCIBLE_ANALYZER=ON`, which adds `-fanalyzer` to a Debug build. The internal small-SMT verification tier is reserved for residual integer-arithmetic obligations (deferred — interim: contracts-only). No external solver dependency: Crucible ships no Z3, no CVC, no proprietary SMT engine, period.
+The `verify` preset inherits `release` and makes two changes. It removes `-DNDEBUG` from `CMAKE_CXX_FLAGS` and `CMAKE_CXX_FLAGS_RELEASE`. It sets `CRUCIBLE_VERIFY=ON`, which changes the Release contract semantic from `observe` to `enforce` (§XII). The preset does not add `-fanalyzer`. The separate `analyzer` preset sets `CRUCIBLE_ANALYZER=ON`, which adds `-fanalyzer` to a Debug build. The internal small-SMT verification tier is reserved for residual integer-arithmetic obligations (deferred — interim: contracts-only). No external solver dependency: Crucible ships no Z3, no CVC, no proprietary SMT engine, period.
 
 ### NEVER (kills determinism or wastes perf)
 
@@ -2183,15 +2183,13 @@ semantic. With the define, the two macros keep only their consteval trap and
 their `[[assume]]` hint. The configure step rejects a target or a source file
 that has one item of the list without the other.
 
-`CRUCIBLE_INVARIANT` and `CRUCIBLE_DEBUG_ASSERT` are `NDEBUG`-keyed by design,
-and they do no check in Release. `CRUCIBLE_FATAL_INVARIANT` does its check in
-every mode, and the semantic has no effect on it.
+`CRUCIBLE_FATAL_INVARIANT` does its check in every mode, and the semantic has
+no effect on it. No check macro of the base reads `NDEBUG`.
 
 Test executables compile with `-UNDEBUG` (`test/CMakeLists.txt`,
-`test/foundation/CMakeLists.txt`, `test/fixy/CMakeLists.txt`), so those
-`NDEBUG`-keyed families are armed in a Release test binary and are not armed in
-a Release library or vessel binary. A green Release test run says less about
-production than it appears to.
+`test/foundation/CMakeLists.txt`, `test/fixy/CMakeLists.txt`). So a check that
+a header keys on `NDEBUG` is armed in a Release test binary and is not armed in
+a Release library or vessel binary.
 
 ### The canonical `Result` flow
 
@@ -2228,29 +2226,14 @@ return compile_kernel(bg, arena, node, caps).match(
 
 A `Result` is a union and a tag. Its error is a scoped enum, a class of at most 16 bytes whose copy, move and end are those of its bytes, or a linear class that gives a resource back to the caller of a failed operation. Such a class can have the user-provided assignment of a byte seal, as a `Ref` has. An error that copies never allocates. The type is `[[nodiscard]]`, and it has no heap memory and no exception table. The other operations of a `Result` are `is_ok()`, `is_err()`, `ok()`, `err()`, `value_or()` and `expect(reason)`, the fatal unwrap (`include/foundation/core/Choice.h`).
 
-### Assertion macro quartet
+### The three check forms
 
 ```cpp
-// ── CRUCIBLE_ASSERT ────────────────────────────────────────────
-// Boundary precondition. NOT always-on: it expands to a P2900
-// `contract_assert`, so the build-system semantic decides whether it
-// checks. Debug enforces. Release observes, which reports through a
-// handler that aborts. Both therefore end the process on a violation.
-// In a TU that takes CRUCIBLE_CONTRACT_IGNORE_OPTIONS, the macro
-// compiles to nothing at all.
-#define CRUCIBLE_ASSERT(cond) contract_assert(cond)
-
-// ── CRUCIBLE_DEBUG_ASSERT ──────────────────────────────────────
-// Hot-path invariant. Check in debug, compiled out in release.
-#ifdef NDEBUG
-  #define CRUCIBLE_DEBUG_ASSERT(cond) ((void)0)
-#else
-  #define CRUCIBLE_DEBUG_ASSERT(cond) contract_assert(cond)
-#endif
-
-// ── CRUCIBLE_INVARIANT ─────────────────────────────────────────
-// Fact the optimizer can exploit. `[[assume]]` in release (free).
-// The debug branch calls foundation::detail::fail_invariant, a cold
+// ── CRUCIBLE_FATAL_INVARIANT ───────────────────────────────────
+// A fact in the middle of a body that correct code always holds.
+// It checks in each build, under NDEBUG and under each contract
+// semantic, so it gives the optimizer no assumption. A false
+// predicate calls foundation::detail::fail_invariant, a cold
 // noreturn helper. include/foundation/Platform.h declares it, and
 // src/foundation/Platform.cpp holds its body. The helper reads the
 // tracer one time through the file door of the base: with no debugger
@@ -2258,16 +2241,12 @@ A `Result` is a union and a tag. Its error is a scoped enum, a class of at most 
 // debugger it traps. Then it calls abort. The
 // foundation::detail stand-ins exist because libstdc++ 16 declares
 // <debugging> and ships no definition for it.
-#ifdef NDEBUG
-  #define CRUCIBLE_INVARIANT(cond) [[assume(cond)]]
-#else
-  #define CRUCIBLE_INVARIANT(cond)                                                          \
-      do {                                                                                  \
-          if (!(cond)) [[unlikely]] {                                                       \
-              ::foundation::detail::fail_invariant("invariant", #cond, __FILE__, __LINE__); \
-          }                                                                                 \
-      } while (0)
-#endif
+#define CRUCIBLE_FATAL_INVARIANT(cond)                                                          \
+    do {                                                                                        \
+        if (!(cond)) [[unlikely]] {                                                             \
+            ::foundation::detail::fail_invariant("fatal invariant", #cond, __FILE__, __LINE__); \
+        }                                                                                       \
+    } while (0)
 
 // ── CRUCIBLE_PRE / CRUCIBLE_POST ───────────────────────────────
 // Boundary pre/postcondition that fires at consteval AND runtime,
@@ -2277,7 +2256,7 @@ A `Result` is a union and a tag. Its error is a scoped enum, a class of at most 
 // for foldable-bodied functions whose predicates touch class
 // members through `this->` (silently bypassed at consteval).
 //
-// The quartet's "always-fire" rail. The runtime arm is a
+// The runtime arm is a
 // contract_assert, and it obeys the contract semantic of the
 // translation unit. Under the ignore semantic the clause becomes
 // [[assume(cond)]] for the optimizer. Under static_assert/consteval it
@@ -2292,9 +2271,9 @@ A `Result` is a union and a tag. Its error is a scoped enum, a class of at most 
 ```
 
 **When to use which:**
-- `CRUCIBLE_ASSERT` — public API entry. Contracts handle it.
-- `CRUCIBLE_DEBUG_ASSERT` — SPSC ring bounds, arena bump sanity, RNG counter — hot path, can't afford a branch.
-- `CRUCIBLE_INVARIANT` — loop trip counts, alignment, range bounds. The optimizer uses it.
+- `CRUCIBLE_FATAL_INVARIANT` — a fact in the middle of a body, such as the state that a load or a call gave. It checks in each build, also in a unit with the ignore semantic. Use it in place of `CRUCIBLE_PRE` for a check that must hold under the ignore semantic, and for a check after a test that the optimizer can fold it into, such as a switch on the same kind. GCC 16 folds the plain branch of this macro there, and it keeps the test of a `contract_assert`.
+- `fatal("reason")` — a state from which the process cannot continue.
+- A raw `contract_assert` stays only where a stated reason needs it, with a comment on the line before it.
 - `CRUCIBLE_PRE` / `CRUCIBLE_POST` — each precondition and each postcondition of a function. `CRUCIBLE_PRE` is a statement at the start of the body, and `CRUCIBLE_POST` is a statement before each return. The decide-catalog predicates and the dual-side audit of pre and post use this rail.
 
 **The contract rule.** A P2900 `pre` or `post` specifier on a function declaration is a compile error in each build. `utils/tools/quarantine/contract.cpp` holds the rule, and the quarantine plugin of that directory applies it in each mode. `utils/tools/quarantine/Quarantine.cmake` builds the plugin at configure time and loads it into each C++ compile of the tree. The rule applies to each file under the source root, also to `include/foundation/` and `include/fixy/`. The error names `CRUCIBLE_PRE` or `CRUCIBLE_POST`, and two notes give the reasons and the opt-out region. A test of the specifier itself puts the specifier in a `CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: reason")` region of `include/foundation/Quarantine.h` (§XXII, R7). Only the plants `utils/plants/contract-specifier/plant-contracts/` and `control-contract-names/` of the plugin use the region for this rule. `cmake/probes/contract_cache.cpp` holds a specifier, because it is a probe of a compiler fix to the specifier, and `execute_process` compiles it without the plugin. The fixtures `neg_contract_specifier_pre`, `neg_contract_specifier_post` and `neg_contract_specifier_template_member` show the error, and the witness of the plugin (the test `guard_plugin_witness`) holds each form of the specifier. The fixture driver keeps the plugin in the compile of each fixture, and the error of this rule is no finding, so the regexes of the three fixtures read it (§XXII "The ratchet"). The plugin cannot see a specifier in a preprocessor arm that the unit does not compile, or on a member function of a local class in a template when the class declares the function and does not define it. The rule `contract-form` (`utils/assay/guard/engines/tsast/contract_form.py`, the test `guard_contract_form`) reads the parse tree of each tracked C++ file, so it finds these specifiers and a specifier in a file that no build compiles. `utils/ledgers/contract-form.txt` admits the files whose subject is the specifier, and the ledger only shrinks. The parse tree does not show a specifier that a macro spells, and the plugin finds that one.

@@ -67,6 +67,7 @@
 #include <fixy/Tags.h>
 #include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
+#include <foundation/contracts/Pre.h>
 
 #include <bit>
 #include <cstddef>
@@ -142,36 +143,23 @@ namespace detail {
 // checks that the two values are equal.
 inline constexpr std::size_t kVigilHandleAlignment = 64;
 
+// A handle of the C caller is above the first page, so it is not null, and
+// it has the alignment of a Vigil.  The checks stay in each build, so a
+// damaged handle ends the process before a read through it.
 inline void assert_plausible_vigil_handle(CrucibleHandle handle) noexcept {
-#ifndef NDEBUG
     const auto bits = std::bit_cast<std::uintptr_t>(handle);
-    CRUCIBLE_DEBUG_ASSERT(handle != nullptr);
-    CRUCIBLE_DEBUG_ASSERT((bits & (kVigilHandleAlignment - 1U)) == 0U);
-    CRUCIBLE_DEBUG_ASSERT(bits >= 4096U);
-#else
-    (void)handle;
-#endif
+    CRUCIBLE_PRE(bits >= 4096U);
+    CRUCIBLE_PRE((bits & (kVigilHandleAlignment - 1U)) == 0U);
 }
 
 // CrucibleMeta is layout-compatible with TensorMeta by construction
-// (asserted above).  Plausibility check guards the alignment of the
-// caller-supplied array AND its non-emptiness — n_metas==0 is allowed
-// with a null pointer; otherwise both must agree.  Debug-only because
-// the assertions are infallible in production code paths but catch
-// FFI corruption in test builds.
+// (asserted above).  An empty array comes with a null pointer, and each
+// other array comes with a pointer that is not null.  The pointer has the
+// alignment of a CrucibleMeta.  The checks stay in each build, so a damaged
+// array of the C ABI ends the process before a read through it.
 inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n_metas) noexcept {
-#ifndef NDEBUG
-    if (n_metas == 0U) {
-        CRUCIBLE_DEBUG_ASSERT(metas == nullptr);
-        return;
-    }
-    CRUCIBLE_DEBUG_ASSERT(metas != nullptr);
-    const auto bits = std::bit_cast<std::uintptr_t>(metas);
-    CRUCIBLE_DEBUG_ASSERT((bits & (alignof(CrucibleMeta) - 1U)) == 0U);
-#else
-    (void)metas;
-    (void)n_metas;
-#endif
+    CRUCIBLE_PRE((metas == nullptr) == (n_metas == 0U));
+    CRUCIBLE_PRE((std::bit_cast<std::uintptr_t>(metas) & (alignof(CrucibleMeta) - 1U)) == 0U);
 }
 
 }  // namespace detail
@@ -227,10 +215,10 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
 //
 // `i` MUST be a valid index in the typed meta array (caller is the
 // authority on the array length, which travels via `n_metas` through
-// the C ABI).  Debug builds tighten this with a contract.
+// the C ABI).  The precondition refuses a null array in each build.
 [[nodiscard]] CRUCIBLE_HOT ExternalDataPtr data_ptr_typed(TypedMeta typed, std::size_t i) noexcept {
     const TensorMeta* metas = typed.value();
-    CRUCIBLE_DEBUG_ASSERT(metas != nullptr);
+    CRUCIBLE_PRE(metas != nullptr);
     return metas[i].data_ptr;
 }
 

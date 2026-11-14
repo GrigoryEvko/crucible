@@ -399,13 +399,11 @@ public:
     // buggy or hostile peer.  Without the mask it would round-trip back
     // out through `raw()`.
     //
-    // The sanitizing AND must not be paired with a claim that it is a
-    // no-op.  A precondition macro lowers to `[[assume(sanitized == b)]]`
-    // under the ignore semantic, which lets the optimizer substitute `b`
-    // for `sanitized`, leaving the AND dead and deleting it.  The debug
-    // assertion carries no such assumption, so the AND survives every
-    // build mode, and the `if consteval` branch keeps the compile-time
-    // rejection.
+    // A poisoned mask ends the process in each build.  The check is
+    // CRUCIBLE_FATAL_INVARIANT and not a precondition macro.  A
+    // precondition macro lowers to `[[assume(sanitized == b)]]` under the
+    // ignore semantic, and the poisoned bits would then pass with no
+    // check.  The `if consteval` branch keeps the compile-time rejection.
     [[nodiscard]] static constexpr EffectMask from_raw(underlying_type b) noexcept {
         underlying_type const sanitized = b & valid_mask;
         // `__builtin_trap` is not a constant expression, so a
@@ -415,7 +413,7 @@ public:
                 __builtin_trap();
             }
         }
-        CRUCIBLE_DEBUG_ASSERT(sanitized == b);
+        CRUCIBLE_FATAL_INVARIANT(sanitized == b);
         return EffectMask{from_raw_tag_t{}, sanitized};
     }
 

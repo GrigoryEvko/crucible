@@ -29,7 +29,7 @@ static void test_empty_graph() {
     TraceGraph g{};
     build_csr(t.alloc, arena, &g, nullptr, 0, 0);
     static_assert(std::is_same_v<TraceGraph::BuiltCount, ::fixy::WriteOnce<uint32_t>>);
-    assert(g.num_edges.get_assuming_set() == 0);
+    CRUCIBLE_FATAL_INVARIANT(g.num_edges.get() == 0);
     crucible::test::pass("  test_empty:                     PASSED\n");
 }
 
@@ -39,7 +39,7 @@ static void test_single_edge_fwd_rev() {
     TraceGraph g{};
     Edge edges[] = {E(0, 1)};
     build_csr(t.alloc, arena, &g, edges, 1, /*num_ops=*/2);
-    assert(g.num_edges.get_assuming_set() == 1);
+    CRUCIBLE_FATAL_INVARIANT(g.num_edges.get() == 1);
     assert(g.out_degree(OpIndex{0}) == 1);
     assert(g.out_degree(OpIndex{1}) == 0);
     assert(first_of(g.fwd_of(OpIndex{0})).dst == OpIndex{1});

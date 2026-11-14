@@ -40,9 +40,9 @@
 //      every run and on every machine.
 //
 // WHY THE VERDICT IS AN EXIT CODE.  This file uses no assertion macro.
-// CRUCIBLE_ASSERT follows the build's contract semantic and
-// CRUCIBLE_DEBUG_ASSERT disappears under NDEBUG, so a test written with
-// them proves progressively less as the build gets closer to what ships.
+// CRUCIBLE_PRE follows the contract semantic of the build, and the ignore
+// semantic makes it an assumption with no check.  So a test written with
+// it proves less as the build gets closer to what ships.
 // A determinism gate has to mean the same thing in the debug build, in a
 // contracts-stripped release build, and in a profile-guided build, where
 // the optimizer has reordered blocks and re-laid every branch from

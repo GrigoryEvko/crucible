@@ -426,9 +426,8 @@ public:
     // The text of the root is a member of the store.  The deleted `const&&`
     // twin refuses a read of the root of a temporary store, because the
     // store releases that text at the end of the statement.
-    // get_assuming_set checks that the root is set in a Debug build, and it
-    // gives that fact to the optimizer in a Release build.
-    [[nodiscard]] ::fixy::TextView root() const& { return root_.get_assuming_set().value().c_text().view(); }
+    // get checks that the root is set, in each build.
+    [[nodiscard]] ::fixy::TextView root() const& { return root_.get().value().c_text().view(); }
     auto root() const&& = delete("a temporary store releases its root at the end of the statement. Read the root "
                                  "of a store that has a name");
 

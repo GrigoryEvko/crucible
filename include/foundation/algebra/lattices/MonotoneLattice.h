@@ -72,14 +72,13 @@ struct MonotoneLattice {
     // contract-evaluation semantic.  A hot-path unit that ignores
     // contracts would otherwise drop the NaN check silently.
     //
-    // It is fatal rather than debug-only because keeping NaN out is a rule
-    // for callers, which the header comment above says nothing here
-    // enforces, so it is a claim and not a fact.  A plain invariant states
-    // it to the optimizer under NDEBUG, and an ordered compare on a value
-    // that is in fact NaN then becomes undefined in exactly the build that
-    // ships.  For every carrier that is not floating point is_nan_safe is
-    // constant true, so the branch folds away and only the floating-point
-    // instantiations pay for it.
+    // Keeping NaN out is a rule for callers, which the header comment above
+    // says nothing here enforces, so it is a claim and not a fact.  An
+    // assumption of it would make an ordered compare on a value that is in
+    // fact NaN undefined in exactly the build that ships.  For every
+    // carrier that is not floating point is_nan_safe is constant true, so
+    // the branch folds away and only the floating-point instantiations pay
+    // for it.
     [[nodiscard]] static constexpr bool is_nan_safe(T const& x) noexcept {
         if constexpr (std::is_floating_point_v<T>) {
             return !__builtin_isnan(x);

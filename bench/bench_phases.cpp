@@ -187,11 +187,11 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bench::refill_meta_log(meta_log, trace);
         auto [ref, ref_region] = build_recorded(bg, ref_scratch, trace).expect("the recorded trace builds");
 
-        const uint32_t num_ops = ref->num_ops.get_assuming_set();
-        const uint32_t num_slots = ref->num_slots.get_assuming_set();
+        const uint32_t num_ops = ref->num_ops.get();
+        const uint32_t num_slots = ref->num_slots.get();
 
         // The forward edges are in the order of their sources.
-        std::vector<Edge> saved_edges(ref->num_edges.get_assuming_set());
+        std::vector<Edge> saved_edges(ref->num_edges.get());
         uint32_t edge_position = 0;
         for (const Edge& edge : ref->fwd_edges) {
             saved_edges[edge_position++] = edge;
@@ -625,7 +625,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         const uint32_t num_slots = build_scratch.with_epoch([&]() noexcept {
             bench::refill_meta_log(meta_log, trace);
             auto [ref_graph, ref_region] = build_recorded(bg, build_scratch, trace).expect("the recorded trace builds");
-            return ref_graph->num_slots.get_assuming_set();
+            return ref_graph->num_slots.get();
         });
 
         std::vector<BackgroundThread::SlotInfo> saved_slots(bg.scratch_slots_.data(),

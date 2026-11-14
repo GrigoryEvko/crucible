@@ -1,11 +1,10 @@
 // A setup check of a bench fires in each build.
 //
 // The presets that build the benches (bench, pgo-generate and pgo) define
-// NDEBUG, so assert checks nothing in a bench.  This file defines NDEBUG
-// before each include, as those builds do, and a failed CRUCIBLE_BENCH_CHECK
-// must still stop the process with SIGABRT.  Its message gives the file, the
-// line and the condition.
-#define NDEBUG
+// NDEBUG, so assert checks nothing in a bench.  The target of this file
+// defines NDEBUG on the command line, as those builds do, and a failed
+// CRUCIBLE_BENCH_CHECK must still stop the process with SIGABRT.  Its
+// message gives the file, the line and the condition.
 
 #include "bench_harness.h"
 

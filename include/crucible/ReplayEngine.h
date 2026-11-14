@@ -181,16 +181,15 @@ struct ReplayEngine {
 
     // The entry is in the region, and the engine only points at it.
     [[nodiscard]] const TraceEntry& current_entry() const {
-        // Debug-only: current_ is null only before the first advance
-        // returns MATCH, which is a caller-sequencing mistake rather than
-        // untrusted input. The dereference on the next line faults on its
-        // own in a release build, so the failure stays loud without a check.
+        // current_ is null only before the first advance returns MATCH,
+        // which is a mistake of the order of the calls of the caller.  The
+        // precondition refuses it in each build.
         //
         // The member is read into a local first because a contract predicate
         // that reaches a member through `this` is rejected as non-constant
         // when the compiler folds this body.
         const TraceEntry* const matched = current_;
-        CRUCIBLE_DEBUG_ASSERT(matched != nullptr);
+        CRUCIBLE_PRE(matched != nullptr);
         return *matched;
     }
 

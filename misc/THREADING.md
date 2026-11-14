@@ -2349,7 +2349,7 @@ The last point is the load-bearing one.  Producer writes `cell.data` UNATOMICALL
 - Extends each cell with a `uint64_t cookie` field.
 - On successful push: cookie = FNV-1a(data bytes).
 - On successful pop: compute expected cookie from `cell.data`; assert equals `cell.cookie`.
-- On mismatch: CRUCIBLE_INVARIANT fails with the cell index, expected vs observed cookies.
+- On mismatch: CRUCIBLE_FATAL_INVARIANT fails with the cell index, expected vs observed cookies.
 
 Zero cost when `verify=false` (the cookie field and its accesses are compiled away).
 

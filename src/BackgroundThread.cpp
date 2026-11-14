@@ -758,7 +758,7 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
 void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProducerHandle&& out) {
     const ::foundation::effects::Bg bg = ::foundation::effects::host::BackgroundOwner::mint_background_context();
     BackgroundThread& owner = in.owner();
-    CRUCIBLE_ASSERT(out.owner.try_get() == &owner);
+    CRUCIBLE_FATAL_INVARIANT(out.owner.try_get() == &owner);
     const OwnerMailboxScope mailbox{owner, PublishStage{}};
     detail::bg_pipeline::StageIdle idle{detail::bg_pipeline::MAILBOX_MAX_SLEEP_NANOS};
 
@@ -778,7 +778,7 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
             // The sink takes each value at its first push.
             auto done = std::make_unique<BgPipelineDone>();
             const bool is_taken = out.try_push(done.get());
-            CRUCIBLE_ASSERT(is_taken);
+            CRUCIBLE_FATAL_INVARIANT(is_taken);
             done.release();
             return;
         }

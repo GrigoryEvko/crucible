@@ -212,7 +212,7 @@ struct BackgroundThread {
     template <typename Job>
         requires std::is_nothrow_invocable_v<Job&, PublishStage const&>
     void run_on_publish_stage(Job&& job) noexcept {
-        CRUCIBLE_ASSERT(stage_held_by_this_thread_ != ::fixy::WeakRef<const BackgroundThread>{*this});
+        CRUCIBLE_PRE(stage_held_by_this_thread_ != ::fixy::WeakRef<const BackgroundThread>{*this});
         using JobType = std::remove_reference_t<Job>;
         OwnerJob request{};
         request.ctx = static_cast<void*>(std::addressof(job));
@@ -642,7 +642,7 @@ public:
     void serve_owner_mailbox_(PublishStage const&) noexcept {
         const ::fixy::WeakRef<OwnerJob> job = owner_mailbox_.load_acquire();
         if (!job.has_value()) return;
-        CRUCIBLE_ASSERT(job != closed_mark_() && job != inline_mark_());
+        CRUCIBLE_FATAL_INVARIANT(job != closed_mark_() && job != inline_mark_());
         job->fn(job->ctx, PublishStage{});
         owner_mailbox_.store_release(::fixy::WeakRef<OwnerJob>{});
         // The caller returns once it reads done, and its record dies with
@@ -666,7 +666,7 @@ public:
             // state would then have two owners.
             const ::fixy::WeakRef<OwnerJob> seen =
                 std::move(opened).err().expect("a refused swap gives the value that it read").observed;
-            CRUCIBLE_ASSERT(seen == inline_mark_() || seen == closed_mark_());
+            CRUCIBLE_FATAL_INVARIANT(seen == inline_mark_() || seen == closed_mark_());
             CRUCIBLE_SPIN_PAUSE;
         }
     }

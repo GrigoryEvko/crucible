@@ -12,9 +12,9 @@
 >   * §II   The Eight Safety Axioms (this file lists Four)
 >   * §III  C++26 language features — opt matrix
 >   * §IV   Library types — opt matrix
->   * §XII  **Error handling and the assertion quartet**
->            (`CRUCIBLE_ASSERT` / `CRUCIBLE_DEBUG_ASSERT` /
->             `CRUCIBLE_INVARIANT` / `CRUCIBLE_PRE` + `CRUCIBLE_POST`)
+>   * §XII  **Error handling and the three check forms**
+>            (`CRUCIBLE_PRE` + `CRUCIBLE_POST` /
+>             `CRUCIBLE_FATAL_INVARIANT` / `fatal`)
 >            with the three-layer VC discharge framing
 >            (type-level proof / named cite / anonymous predicate).
 >   * §XVI  Safety wrappers
@@ -23,7 +23,7 @@
 >   * §XX   Cost hierarchy (Correctness > Determinism > Security > Latency)
 >   * §XXI  The Universal Mint Pattern
 >
-> Cross-reference for the assertion quartet: §XII of CLAUDE.md plus
+> Cross-reference for the three check forms: §XII of CLAUDE.md plus
 > `include/crucible/safety/Pre.h` and `safety/Post.h` docstrings, plus
 > the named-predicate catalog in `safety/Decide.h`.
 >

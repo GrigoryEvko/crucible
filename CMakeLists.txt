@@ -789,8 +789,7 @@ endif()
 #
 # CRUCIBLE_VERIFY builds Release code with the contract families armed.
 # The P2900 clauses, CRUCIBLE_PRE and CRUCIBLE_POST operate under
-# `enforce`.  The preset also removes NDEBUG, which arms
-# CRUCIBLE_INVARIANT and CRUCIBLE_DEBUG_ASSERT.  The build shows how the
+# `enforce`.  The preset also removes NDEBUG.  The build shows how the
 # optimizer changes a checked program.
 option(CRUCIBLE_SANITIZE
   "Put ASan on every target and UBSan on the tests in a Debug build" ON)
@@ -1327,14 +1326,12 @@ endif()
 # Two caveats this flag does NOT cover, recorded here so the next
 # reader does not mistake the scope:
 #
-#   1. CRUCIBLE_INVARIANT and CRUCIBLE_DEBUG_ASSERT are NDEBUG-keyed by
-#      design and stay compiled out.  CRUCIBLE_FATAL_INVARIANT (around
-#      73 call sites) checks in every mode and is unaffected either way.
+#   1. CRUCIBLE_FATAL_INVARIANT checks in every mode, under NDEBUG and
+#      under each contract semantic, and this flag does not change it.
 #   2. Test executables compile with `-UNDEBUG` (see test/CMakeLists.txt),
-#      so the NDEBUG-keyed families above ARE armed in a Release test
-#      binary and are NOT armed in a Release library or vessel binary.
-#      A green Release test run is therefore weaker evidence about
-#      production than it looks.
+#      so a check that a header keys on NDEBUG is armed in a Release test
+#      binary and is not armed in a Release library or vessel binary.  The
+#      check macros of the base have no such key.
 # ═══════════════════════════════════════════════════════════════
 #
 # A consumer with the property CRUCIBLE_CONTRACT_IGNORE gets no semantic

@@ -170,13 +170,12 @@ struct CrucibleContext {
         auto av = engine_.active_view_();
         for (uint32_t i = 0; i < div_pos; i++) {
             auto s = engine_.advance(alt.op_at(i).schema_hash, alt.op_at(i).shape_hash, av);
-            // Debug-only: the engine was just pointed at alt, and these are
-            // alt's own hashes read back in order, so anything but a match
-            // means the engine's cursor is out of step rather than that the
-            // data is bad. A release build carries no check because the next
-            // real op diverges and the recovery path already handles that.
-            CRUCIBLE_DEBUG_ASSERT(s == ReplayStatus::MATCH || s == ReplayStatus::COMPLETE);
-            (void)s;
+            // The engine was just pointed at alt, and these are alt's own
+            // hashes read back in order, so anything but a match means that
+            // the cursor of the engine is out of step.  The data is not bad.
+            // The check stays in each build, and it runs once for each op of
+            // the shared prefix, at the switch of a region only.
+            CRUCIBLE_FATAL_INVARIANT(s == ReplayStatus::MATCH || s == ReplayStatus::COMPLETE);
         }
 
         // Leaving the region pointer on the old region while the engine has

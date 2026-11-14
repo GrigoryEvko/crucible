@@ -545,13 +545,6 @@ public:
         return *value_;
     }
 
-    // Checked in a debug build, and an assumption for the optimizer in a
-    // release build.
-    [[nodiscard]] constexpr const T& get_assuming_set() const noexcept {
-        CRUCIBLE_INVARIANT(value_.has_value());
-        return *value_;
-    }
-
     [[nodiscard]] constexpr bool has_value() const noexcept { return value_.has_value(); }
     [[nodiscard]] constexpr explicit operator bool() const noexcept { return value_.has_value(); }
 };
@@ -775,15 +768,18 @@ public:
     // holds, from that thread's own load or its own copy of its last store.
     // The precondition compares two values in registers, so it folds to one
     // compare where the step is visibly forward, and a step that wraps past
-    // the end of T still fails it.  A Debug build also checks that current
-    // is the stored value.  The store is a plain release with no locked
-    // instruction.  Two writers use advance instead: between the check and
-    // the store here, another writer can pass the new value.
+    // the end of T still fails it.  The check after it makes sure that
+    // current is the stored value, in each build.  It reads the counter with
+    // a relaxed load, which is correct because the caller is the one writer.
+    // The check is CRUCIBLE_FATAL_INVARIANT, because an [[assume]] of the
+    // ignore semantic cannot hold the load.  The store is a plain release
+    // with no locked instruction.  Two writers use advance instead: between
+    // the check and the store here, another writer can pass the new value.
     void advance_sole_writer_from(T current, T new_value) noexcept {
         CRUCIBLE_PRE(Cmp{}(current, new_value));
         // Equal under the order, which asks of T no operator==.
-        CRUCIBLE_DEBUG_ASSERT(!Cmp{}(current, value_.load(std::memory_order_relaxed))
-                              && !Cmp{}(value_.load(std::memory_order_relaxed), current));
+        T const stored = value_.load(std::memory_order_relaxed);
+        CRUCIBLE_FATAL_INVARIANT(!Cmp{}(current, stored) && !Cmp{}(stored, current));
         value_.store(new_value, std::memory_order_release);
     }
 

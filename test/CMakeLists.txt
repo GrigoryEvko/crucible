@@ -597,9 +597,11 @@ crucible_test(test_mimic_semaphore)
 # capabilities only prints a warning.
 crucible_test(test_bench_harness)
 # A failed CRUCIBLE_BENCH_CHECK aborts under NDEBUG, which each preset that
-# builds the benches defines.  The source file defines NDEBUG itself.
+# builds the benches defines.  The target defines NDEBUG on the command line,
+# after the -UNDEBUG of crucible_test, so each header of the unit sees it.
 crucible_test(test_bench_check)
 target_include_directories(test_bench_check PRIVATE ${CMAKE_SOURCE_DIR}/bench)
+target_compile_options(test_bench_check PRIVATE -DNDEBUG)
 # Exercises the crucible::warden module — bounds-enforcement policy rails
 # (SCHED_FIFO/RR priority clamp, mlock, CPU-pin helpers). Header-only,
 # no special capabilities required at test time (the smoke checks the

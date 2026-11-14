@@ -1177,8 +1177,9 @@ void append_trace_entry(const Recording<Capacity, MayOverflow>& recording, cruci
     //
     // The schema hash is the one input that is an argument rather than a
     // constant. Its only caller passes RecordKernel::kSchemaHash, which the
-    // same assert pins to a value other than zero.
-    CRUCIBLE_DEBUG_ASSERT(schema_hash.raw() != 0);
+    // same assert pins to a value other than zero. The check below stays in
+    // each build, so a caller that breaks that rule ends the process.
+    CRUCIBLE_FATAL_INVARIANT(schema_hash.raw() != 0);
     auto validated = crucible::mint_ffi_entry(entry).retag<crucible::vessel::ValidatedEntryTag>();
 
     RecordingBinding binding = ::fixy::mint_fn_for<::fixy::role::PureLinear>(std::move(validated));

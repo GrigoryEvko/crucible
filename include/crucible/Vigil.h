@@ -918,14 +918,13 @@ private:
             // to skip them for the next op to check against the right entry.
             for (uint32_t i = 0; i < uint32_t{alignment_pos_.value()}; i++) {
                 auto status = replay_.advance(region.op_at(i).schema_hash, region.op_at(i).shape_hash);
-                // Debug-only: the hashes fed in here are the region's own,
-                // and alignment already compared each one against the same
-                // entry, so a mismatch means the engine's cursor is out of
-                // step rather than that the data is bad. A release build
-                // carries no check because the next advance diverges and the
-                // recovery path already handles that.
-                CRUCIBLE_DEBUG_ASSERT(status == ReplayStatus::MATCH || status == ReplayStatus::COMPLETE);
-                (void)status;
+                // The hashes fed in here are the region's own, and alignment
+                // already compared each one against the same entry, so a
+                // mismatch means that the cursor of the engine is out of
+                // step.  The data is not bad.  The check stays in each build,
+                // and it runs once for each aligned op, at the activation of
+                // a region only.
+                CRUCIBLE_FATAL_INVARIANT(status == ReplayStatus::MATCH || status == ReplayStatus::COMPLETE);
             }
 
             pending_activation_.reset();

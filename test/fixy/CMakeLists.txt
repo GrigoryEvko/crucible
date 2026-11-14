@@ -71,6 +71,10 @@ fixy_neg_compile_test(neg_fixy_harness_probe
 
 fixy_test(test_qtt)
 fixy_test(test_mutation)
+# The first include of foundation/Platform.h sees NDEBUG, as in a Release
+# library.  The option comes after the -UNDEBUG of fixy_test, so it wins.
+fixy_test(test_checks_under_ndebug)
+target_compile_options(test_checks_under_ndebug PRIVATE -DNDEBUG)
 fixy_test(test_axis)
 
 # A precondition and a postcondition do their checks in a Release build.

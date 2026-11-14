@@ -102,7 +102,7 @@ private:
     // wraps to the largest uint32_t and the range check then admits every
     // index.
     [[nodiscard, gnu::pure]] uint32_t checked_index_(OpIndex i) const noexcept {
-        const uint32_t n_ops = num_ops.get_assuming_set();
+        const uint32_t n_ops = num_ops.get();
         CRUCIBLE_PRE(n_ops > 0u);
         CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(i.raw(), 0u, n_ops - 1u));
         return i.raw();

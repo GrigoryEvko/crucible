@@ -321,7 +321,6 @@ int check_write_once() {
     if (!slot.try_set(33)) return 62;
     if (!slot.has_value()) return 63;
     if (slot.get() != 33) return 64;
-    if (slot.get_assuming_set() != 33) return 65;
     if (slot.try_set(99)) return 66;
     if (slot.get() != 33) return 67;
 

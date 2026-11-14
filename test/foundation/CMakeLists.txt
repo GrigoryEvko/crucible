@@ -147,6 +147,19 @@ foundation_neg_compile_test(neg_platform_longer_cache_line
   "the tree assumes 64-byte cache lines, and GCC gives a longer line")
 set_property(TEST neg_platform_longer_cache_line APPEND PROPERTY ENVIRONMENT
   "CRUCIBLE_NEG_EXTRA_FLAGS=--param=l1-cache-line-size=128 --param=constructive-interference-size=128")
+# The base has three check forms: CRUCIBLE_PRE, CRUCIBLE_POST and
+# CRUCIBLE_FATAL_INVARIANT.  A check that NDEBUG removes, or that becomes an
+# assumption, has no macro.  The first regex names the refusal, and the
+# second names the macro.
+foundation_neg_compile_test(neg_platform_assert_is_gone
+  "was not declared in this scope"
+  ".CRUCIBLE_ASSERT.")
+foundation_neg_compile_test(neg_platform_debug_assert_is_gone
+  "was not declared in this scope"
+  ".CRUCIBLE_DEBUG_ASSERT.")
+foundation_neg_compile_test(neg_platform_invariant_is_gone
+  "was not declared in this scope"
+  ".CRUCIBLE_INVARIANT.")
 
 # Two lattices that pass every law comparing elements through leq alone.
 # The first has a leq that runs against its join, the second has bottom()

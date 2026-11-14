@@ -235,7 +235,7 @@ namespace foundation::detail {
         __builtin_trap();
 }
 
-// The failure arm of the assertion macros below.  With no tracer, it writes
+// The failure arm of the check macro below.  With no tracer, it writes
 // "foundation: WHAT failed: PREDICATE (FILE:LINE)" to standard error.  With
 // a tracer, it traps at the failure.  Then it calls abort.  The write
 // uses the sink of the Report family and no stdio, so a call from a signal
@@ -250,33 +250,20 @@ namespace foundation::detail {
 
 }  // namespace foundation::detail
 
-// CRUCIBLE_INVARIANT states a fact the optimizer may rely on, so under NDEBUG
-// it carries no check at all. The debug path traps only when a debugger is
-// attached: an unconditional trap would kill an unattended run with SIGTRAP
-// before the diagnostic above it could be read.
-
-#define CRUCIBLE_ASSERT(cond) contract_assert(cond)
-
-#ifdef NDEBUG
-#define CRUCIBLE_DEBUG_ASSERT(cond) ((void)0)
-#else
-#define CRUCIBLE_DEBUG_ASSERT(cond) contract_assert(cond)
-#endif
-
-#ifdef NDEBUG
-#define CRUCIBLE_INVARIANT(cond) [[assume(cond)]]
-#else
-#define CRUCIBLE_INVARIANT(cond)                                                          \
-    do {                                                                                  \
-        if (!(cond)) [[unlikely]] {                                                       \
-            ::foundation::detail::fail_invariant("invariant", #cond, __FILE__, __LINE__); \
-        }                                                                                 \
-    } while (0)
-#endif
-
-// This one checks in every build mode. Reach for it where the body cannot
-// continue safely if the predicate fails, such as a noexcept constructor
-// handed an unusable argument.
+// The check of a fact in the middle of a body, which correct code always
+// holds.  A precondition at the start of a body is CRUCIBLE_PRE, and a
+// postcondition before a return is CRUCIBLE_POST (foundation/contracts/).
+// This check does the test in each build, under NDEBUG and under each
+// contract semantic.  So it gives the optimizer no assumption, also in a
+// unit with the ignore semantic, where CRUCIBLE_PRE is an [[assume]].  A
+// false predicate ends the process through fail_invariant.
+//
+// Use it in place of CRUCIBLE_PRE in two cases:
+//   - The check must hold under the ignore semantic, for example a check
+//     that reads a load, which an [[assume]] cannot hold.
+//   - The check follows a test that the optimizer can fold it into, such
+//     as a switch on the same kind.  GCC 16 folds this plain branch.  It
+//     keeps the test of a contract_assert after such a switch.
 #define CRUCIBLE_FATAL_INVARIANT(cond)                                                          \
     do {                                                                                        \
         if (!(cond)) [[unlikely]] {                                                             \
