@@ -187,7 +187,33 @@ namespace detail {
 // a function at namespace scope that is not a template, so no translation
 // unit can specialize a step to close a flow that leaves a loan open.
 //
-// Complexity: one visit for each node of the protocol tree.
+// Complexity: one visit for each distinct triple of a node, a set and a
+// loop set in a translation unit.  Each step into a child reads the sealed
+// cache below, so branches that share a continuation walk it one time.
+[[nodiscard]] consteval bool permission_flow_closes(std::meta::info protocol, std::meta::info ps,
+                                                    std::meta::info loop_ps);
+
+// ── The sealed cache of the flow ────────────────────────────────────
+//
+// The cache is an alias template, which cannot be specialized, and the
+// reader compares the cell that the alias names with the cell of a flow
+// that closes.  A specialization of the cell class changes its body, which
+// no reader reads.  GCC keeps one specialization of an alias template for
+// each argument list, so a translation unit walks each triple one time.
+
+// The cell of the answer for one triple.  It holds nothing.
+template <bool Closes>
+struct flow_cell {};
+
+template <class Protocol, class PS, class LoopPS>
+using flow_cached = flow_cell<permission_flow_closes(^^Protocol, ^^PS, ^^LoopPS)>;
+
+// The answer for a protocol, a set and a loop set.  Each of the three is a
+// type, and loop_ps is void outside every Loop.
+[[nodiscard]] consteval bool flow_closes_cached(std::meta::info protocol, std::meta::info ps, std::meta::info loop_ps) {
+    return std::meta::dealias(std::meta::substitute(^^flow_cached, {protocol, ps, loop_ps})) == ^^flow_cell<true>;
+}
+
 [[nodiscard]] consteval bool permission_flow_closes(std::meta::info protocol, std::meta::info ps,
                                                     std::meta::info loop_ps) {
     const std::meta::info node = std::meta::dealias(protocol);
@@ -201,13 +227,13 @@ namespace detail {
     const std::vector<std::meta::info> arguments = std::meta::template_arguments_of(node);
     if (head == ^^Send) {
         if (!std::meta::extract<bool>(std::meta::substitute(^^handle_admits_send_v, {ps, arguments[0]}))) return false;
-        return permission_flow_closes(arguments[1], std::meta::substitute(^^perm_set_after_send_t, {ps, arguments[0]}),
-                                      loop_ps);
+        return flow_closes_cached(arguments[1], std::meta::substitute(^^perm_set_after_send_t, {ps, arguments[0]}),
+                                  loop_ps);
     }
     if (head == ^^Recv) {
         if (!std::meta::extract<bool>(std::meta::substitute(^^handle_admits_recv_v, {ps, arguments[0]}))) return false;
-        return permission_flow_closes(arguments[1], std::meta::substitute(^^perm_set_after_recv_t, {ps, arguments[0]}),
-                                      loop_ps);
+        return flow_closes_cached(arguments[1], std::meta::substitute(^^perm_set_after_recv_t, {ps, arguments[0]}),
+                                  loop_ps);
     }
     if (head == ^^Select || head == ^^Offer) {
         const bool is_offer = head == ^^Offer;
@@ -217,12 +243,12 @@ namespace detail {
             const bool is_sender_note = is_first && is_offer && std::meta::has_template_arguments(branch)
                                      && std::meta::template_of(branch) == ^^Sender;
             is_first = false;
-            if (!is_sender_note && !permission_flow_closes(branch, ps, loop_ps)) return false;
+            if (!is_sender_note && !flow_closes_cached(branch, ps, loop_ps)) return false;
         }
         return true;
     }
-    if (head == ^^Loop) return permission_flow_closes(arguments[0], ps, ps);
-    if (head == ^^VendorPinned) return permission_flow_closes(arguments[1], ps, loop_ps);
+    if (head == ^^Loop) return flow_closes_cached(arguments[0], ps, ps);
+    if (head == ^^VendorPinned) return flow_closes_cached(arguments[1], ps, loop_ps);
     return false;
 }
 
@@ -232,7 +258,7 @@ namespace detail {
 // holds, receives no second owner of a region, returns each loop to the
 // set of its entry, and reaches End with no open loan.
 template <typename Proto, typename PS>
-concept PermissionFlowCloses = detail::permission_flow_closes(^^Proto, ^^PS, ^^void);
+concept PermissionFlowCloses = detail::flow_closes_cached(^^Proto, ^^PS, ^^void);
 
 // ── Rewinding a session ──────────────────────────────────────────────
 //

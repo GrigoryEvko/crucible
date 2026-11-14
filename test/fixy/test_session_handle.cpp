@@ -285,6 +285,23 @@ static_assert(!s::PermissionFlowCloses<s::Loop<s::Send<Token, s::Continue>>, Hol
               "one iteration gives the region away");
 static_assert(s::PermissionFlowCloses<s::VendorPinned<::fixy::session::VendorBackend::NV, s::End>, NoPerms>);
 
+// Each level of doubled_arms is a Select whose two arms are one protocol.
+// The protocol of 16 levels has 17 distinct nodes, and its expanded tree
+// has 2^16 leaves.  A walk of the expanded tree passes the operation limit
+// of a constant evaluation.  The walk reads its cache at each child, so it
+// visits each distinct node one time.
+template <int Depth>
+struct doubled_arms {
+    using type = s::Select<typename doubled_arms<Depth - 1>::type, typename doubled_arms<Depth - 1>::type>;
+};
+template <>
+struct doubled_arms<0> {
+    using type = s::Send<Token, s::End>;
+};
+static_assert(s::PermissionFlowCloses<doubled_arms<16>::type, HoldsRegion>,
+              "the walk visits each shared continuation one time");
+static_assert(!s::PermissionFlowCloses<doubled_arms<16>::type, NoPerms>, "each leaf sends a region that no set holds");
+
 // The same rules hold for each payload that moves the token: a bare
 // Permission, a Transferable and a Returned.  A send needs the region.  A
 // loop that receives the region must give it back in the same iteration,
