@@ -3669,6 +3669,12 @@ fixy_test(test_session_hold_open_loan_aborts)
 # diagnostic, in a child process.
 fixy_test(test_session_delegation_aborts)
 
+# An assignment over a live Released would drop the read loan of the target,
+# so the move assignment of the marker is deleted.
+fixy_neg_compile_test(neg_session_released_assigned_over_live
+  "use of deleted function .fixy::session::Released<T, Tag>& fixy::session::Released<T, Tag>::operator=\\(fixy::session::Released<T, Tag>&&\\)"
+  "Released carries one read loan back, and an assignment would drop the loan of the target")
+
 # The payload walk refuses a token laundered through a pair, behind a
 # pointer or inside a std::optional, and a payload behind type erasure.
 fixy_neg_compile_test(neg_session_payload_token_behind_pointer

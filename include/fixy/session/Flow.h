@@ -178,6 +178,10 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Borrowed {
     Borrowed(const Borrowed&) = delete("Borrowed is one read loan. A copy is a second loan that no set records");
     Borrowed&
     operator=(const Borrowed&) = delete("Borrowed is one read loan. A copy is a second loan that no set records");
+    // The move of the loan is trivial and its move assignment is
+    // user-provided.  So GCC 16 counts the marker as not trivially
+    // copyable, and the ABI passes it in registers.  The check file of this
+    // header asserts the two facts.
     constexpr Borrowed(Borrowed&&) noexcept = default;
     Borrowed& operator=(Borrowed&&) = delete("Borrowed holds one read loan for its whole life");
     ~Borrowed() = default;
@@ -208,8 +212,13 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Released {
 
     Released(const Released&) = delete("Released ends one read loan. A copy ends it a second time");
     Released& operator=(const Released&) = delete("Released ends one read loan. A copy ends it a second time");
+    // The move has the shape of the move of Borrowed.  An assignment would
+    // write over the loan of the target, and the move assignment of a loan
+    // does nothing.  So the loan of the target would leave through no door,
+    // and its lender would wait for it with no end.
     constexpr Released(Released&&) noexcept = default;
-    constexpr Released& operator=(Released&&) noexcept = default;
+    Released& operator=(Released&&) =
+        delete("Released carries one read loan back, and an assignment would drop the loan of the target");
     ~Released() = default;
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
