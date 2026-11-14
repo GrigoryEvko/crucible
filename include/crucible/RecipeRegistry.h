@@ -284,7 +284,7 @@ private:
         return ::fixy::mint_recipe_spec(recipe, tolerance_of(*recipe), recipe_family_of(*recipe));
     }
 
-    ::foundation::core::FixedArray<Entry, STARTER_COUNT> entries_;
+    ::fixy::FixedArray<Entry, STARTER_COUNT> entries_;
 };
 
 // These strings are persisted by anything that pins a recipe by name, so
@@ -317,7 +317,7 @@ struct StarterSpec {
 // truncates and rounds the fused sum in a different way.  So two chips give
 // different bits for the same inputs, with no bound in units in the last
 // place, and the tier of the two recipes is UNORDERED.
-inline constexpr ::foundation::core::FixedArray<StarterSpec, RecipeRegistry::STARTER_COUNT> kStarterRecipes{
+inline constexpr ::fixy::FixedArray<StarterSpec, RecipeRegistry::STARTER_COUNT> kStarterRecipes{
     {recipe_names::kF32Strict, hashed(NumericalRecipe{
                                    .accum_dtype = ScalarType::Float,
                                    .out_dtype = ScalarType::Float,

@@ -137,8 +137,8 @@ inline constexpr uint32_t TRACE_FORMAT_VERSION = 2;
 inline constexpr uint64_t TRACE_META_BYTES = sizeof(TensorMeta);
 
 // The magic at the start of each trace file.
-inline constexpr ::foundation::core::FixedArray<std::byte, 4> TRACE_MAGIC{std::byte{'C'}, std::byte{'R'},
-                                                                          std::byte{'T'}, std::byte{'R'}};
+inline constexpr ::fixy::FixedArray<std::byte, 4> TRACE_MAGIC{std::byte{'C'}, std::byte{'R'}, std::byte{'T'},
+                                                              std::byte{'R'}};
 
 // The gate of a load.  The load opens a file and reads it, and each of the
 // two can wait on the file system, so the context owns IO and Block.  The
@@ -175,7 +175,7 @@ record_block_(::fixy::View<std::byte const, RecordBytes> record) noexcept {
 template <class Field, std::size_t Offset, std::size_t RecordBytes>
     requires(Offset <= RecordBytes && sizeof(Field) <= RecordBytes - Offset)
 [[nodiscard]] inline Field read_record_field_(::fixy::View<std::byte const, RecordBytes> record) noexcept {
-    ::foundation::core::FixedArray<std::byte, sizeof(Field)> image{};
+    ::fixy::FixedArray<std::byte, sizeof(Field)> image{};
     ::fixy::copy(image.view(), record_block_<Offset, sizeof(Field)>(record));
     return ::fixy::bit_cast<Field>(image);
 }
@@ -225,7 +225,7 @@ read_exact_(Ctx const& io, ::fixy::fs::OwnedFd const& file, ::fixy::View<std::by
 template <std::size_t RecordBytes, CtxFitsTraceLoad Ctx, class OnRecord>
 [[nodiscard]] inline ::fixy::Result<::fixy::Unit, TraceLoadError>
 read_records_(Ctx const& io, ::fixy::fs::OwnedFd const& file, uint32_t count, OnRecord&& on_record) noexcept {
-    ::foundation::core::FixedArray<std::byte, RecordBytes * kTraceRecordsPerRead> batch{};
+    ::fixy::FixedArray<std::byte, RecordBytes * kTraceRecordsPerRead> batch{};
     uint32_t index = 0;
     while (index < count) {
         const std::size_t batch_bytes = std::size_t{::fixy::min(count - index, kTraceRecordsPerRead)} * RecordBytes;
@@ -402,7 +402,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
         return ::fixy::err(TraceLoadError::HeaderTruncated);
     }
 
-    ::foundation::core::FixedArray<std::byte, TRACE_HEADER_BYTES> header{};
+    ::fixy::FixedArray<std::byte, TRACE_HEADER_BYTES> header{};
     CRUCIBLE_TRY(_, detail::read_exact_(io, trace_file, header.view()));
     const ::fixy::View<std::byte const, TRACE_HEADER_BYTES> header_bytes{header.view()};
 
@@ -486,7 +486,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     // The name table is optional and sits after the metadata.  A failed read
     // in the table ends the table, as a malformed tail does, and the trace
     // still loads.
-    ::foundation::core::FixedArray<std::byte, sizeof(uint32_t)> count_bytes{};
+    ::fixy::FixedArray<std::byte, sizeof(uint32_t)> count_bytes{};
     const bool has_name_count = detail::read_exact_(io, trace_file, count_bytes.view()).is_ok();
     const uint32_t raw_num_names =
         has_name_count
@@ -506,7 +506,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
             num_names = 0;
         }
         for (uint32_t i = 0; i < num_names; i++) {
-            ::foundation::core::FixedArray<std::byte, sizeof(uint64_t) + sizeof(uint16_t)> entry_head{};
+            ::fixy::FixedArray<std::byte, sizeof(uint64_t) + sizeof(uint16_t)> entry_head{};
             if (detail::read_exact_(io, trace_file, entry_head.view()).is_err()) break;
             const ::fixy::View<std::byte const, sizeof(uint64_t) + sizeof(uint16_t)> entry_head_bytes{
                 entry_head.view()};
@@ -517,7 +517,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
             // malformed tail.
             if (!kSchemaNameLenRange(raw_name_len)) break;
             const uint16_t name_len = ::fixy::mint_refined<kSchemaNameLenRange>(raw_name_len).value();
-            ::foundation::core::FixedArray<std::byte, SCHEMA_NAME_LEN_MAX> name_bytes{};
+            ::fixy::FixedArray<std::byte, SCHEMA_NAME_LEN_MAX> name_bytes{};
             const ::fixy::View<std::byte> name_read =
                 name_bytes.view().window(0, name_len).expect("a name of a bounded length fits in its buffer");
             if (detail::read_exact_(io, trace_file, name_read).is_err()) break;

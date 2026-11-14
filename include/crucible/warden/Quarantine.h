@@ -191,8 +191,8 @@ class QuarantinePolicy : public ::foundation::Pinned<QuarantinePolicy<MaxCogs, M
     using SlotIndex = ::fixy::Index<MaxCogs>;
     using EventIndex = ::fixy::Index<MaxEvents>;
 
-    ::foundation::core::FixedArray<Slot, MaxCogs> slots_{};
-    ::foundation::core::FixedArray<QuarantineEvent, MaxEvents> events_{};
+    ::fixy::FixedArray<Slot, MaxCogs> slots_{};
+    ::fixy::FixedArray<QuarantineEvent, MaxEvents> events_{};
     // The slot that the next event overwrites.
     EventIndex next_event_ = ::fixy::index<0>();
     std::size_t event_count_ = 0;

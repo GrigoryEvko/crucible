@@ -109,7 +109,7 @@ enum Idx : uint32_t {
 };
 
 struct Snapshot {
-    ::foundation::core::FixedArray<uint64_t, NUM_COUNTERS> counters{};
+    ::fixy::FixedArray<uint64_t, NUM_COUNTERS> counters{};
 
     // The counter at i, or zero for NUM_COUNTERS, which is no slot.
     [[nodiscard]] uint64_t operator[](Idx i) const noexcept {

@@ -102,16 +102,16 @@ struct TopologyEdge {
     EdgeId id{};
     LinkKind kind{LinkKind::Unknown};
     CongestionState state{CongestionState::Healthy};
-    ::foundation::core::FixedArray<std::uint8_t, 2> pad1{};
+    ::fixy::FixedArray<std::uint8_t, 2> pad1{};
     NodeId peer{};
-    ::foundation::core::FixedArray<std::uint8_t, 4> pad_after_peer{};
+    ::fixy::FixedArray<std::uint8_t, 4> pad_after_peer{};
     // A measured quantity.  Calibrated is a source tag, so each field stays
     // trivially copyable and a default edge holds a zero measurement.
     cog::CalibratedValue<std::uint64_t> bandwidth_bytes_per_sec{};
     cog::CalibratedValue<std::uint64_t> rtt_ns_p50{};
     cog::CalibratedValue<std::uint64_t> rtt_ns_p99{};
     cog::CalibratedValue<float> drop_rate{};
-    ::foundation::core::FixedArray<std::uint8_t, 20> pad2{};
+    ::fixy::FixedArray<std::uint8_t, 20> pad2{};
 };
 
 template <class Ctx>

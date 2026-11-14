@@ -152,8 +152,8 @@ class AsymmetricFailureDetector
     struct alignas(64) PeerSlot {
         bool occupied = false;
         cog::Uuid peer_uuid{};
-        ::foundation::core::FixedArray<bool, kRingSlots> outbound{};
-        ::foundation::core::FixedArray<bool, kRingSlots> inbound{};
+        ::fixy::FixedArray<bool, kRingSlots> outbound{};
+        ::fixy::FixedArray<bool, kRingSlots> inbound{};
         DirectionWindow outbound_window{};
         DirectionWindow inbound_window{};
         FailureClass last_class = FailureClass::Inconclusive;
@@ -163,9 +163,9 @@ class AsymmetricFailureDetector
 
     static constexpr std::size_t kMaxEvents = MaxPeers * 4;
 
-    ::foundation::core::FixedArray<PeerSlot, MaxPeers> peers_{};
-    ::foundation::core::FixedArray<::foundation::core::FixedArray<WitnessSlot, MaxWitnesses>, MaxPeers> witnesses_{};
-    ::foundation::core::FixedArray<AsymmetricFailureEvent, kMaxEvents> events_{};
+    ::fixy::FixedArray<PeerSlot, MaxPeers> peers_{};
+    ::fixy::FixedArray<::fixy::FixedArray<WitnessSlot, MaxWitnesses>, MaxPeers> witnesses_{};
+    ::fixy::FixedArray<AsymmetricFailureEvent, kMaxEvents> events_{};
     ::fixy::Index<kMaxEvents> next_event_ = ::fixy::index<0>();
     std::size_t event_count_ = 0;
     AsymmetricFailurePolicy policy_{};
@@ -213,7 +213,7 @@ class AsymmetricFailureDetector
 
     // The cursor of a window is below Window in each state, so its check
     // cannot fail.
-    static constexpr void push_sample(::foundation::core::FixedArray<bool, kRingSlots>& ring, DirectionWindow& window,
+    static constexpr void push_sample(::fixy::FixedArray<bool, kRingSlots>& ring, DirectionWindow& window,
                                       bool success) noexcept {
         ::fixy::Index<kRingSlots> const next =
             ::fixy::Index<kRingSlots>::check(window.next).expect("the cursor of a probe window is below its size");
@@ -352,7 +352,7 @@ class AsymmetricFailureDetector
         if (sequence < slot.sequence.get()) {
             return false;
         }
-        ::foundation::core::FixedArray<WitnessSlot, MaxWitnesses>& witnesses = witnesses_.at(index);
+        ::fixy::FixedArray<WitnessSlot, MaxWitnesses>& witnesses = witnesses_.at(index);
         for (WitnessSlot& existing : witnesses) {
             if (existing.occupied && existing.witness_uuid == witness.uuid) {
                 if (sequence < existing.sequence.get()) {

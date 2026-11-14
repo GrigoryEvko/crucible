@@ -69,7 +69,7 @@ inline constexpr VfIndex first_vf_index = ::fixy::mint_refined<vf_index_bound>(s
 inline constexpr VfResourceLimit no_resource_limit = ::fixy::mint_refined<vf_resource_limit_bound>(std::uint32_t{0});
 
 struct MacAddress {
-    ::foundation::core::FixedArray<std::uint8_t, 6> bytes{};
+    ::fixy::FixedArray<std::uint8_t, 6> bytes{};
 
     [[nodiscard]] static constexpr MacAddress locally_administered(std::uint8_t suffix) noexcept {
         return MacAddress{{0x02u, 0x00u, 0x00u, 0x00u, 0x00u, suffix}};

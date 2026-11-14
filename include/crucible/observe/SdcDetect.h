@@ -71,7 +71,7 @@ struct SdcEvent {
 
 // The bytes of a result, which the bitwise compare reads.
 template <typename T>
-using SdcResultBytes = ::foundation::core::FixedArray<std::byte, sizeof(T)>;
+using SdcResultBytes = ::fixy::FixedArray<std::byte, sizeof(T)>;
 
 // A result that the detector can compare bit for bit: a plain value with no
 // padding bit.  No replica writes a padding bit, so two equal results can
@@ -172,8 +172,8 @@ private:
     using EventIndex = ::fixy::Index<MaxEvents>;
 
     SdcConfig config_{};
-    ::foundation::core::FixedArray<CogSlot, MaxCogs> cogs_{};
-    ::foundation::core::FixedArray<SdcEvent, MaxEvents> events_{};
+    ::fixy::FixedArray<CogSlot, MaxCogs> cogs_{};
+    ::fixy::FixedArray<SdcEvent, MaxEvents> events_{};
     std::uint64_t event_sequence_ = 0;
     // The slot of the next event.
     EventIndex event_cursor_ = ::fixy::index<0>();

@@ -238,7 +238,7 @@ struct CogIdentity {
     Uuid uuid;
     CogLevel level = CogLevel::L0_Atomic;
     CogKind kind = CogKind::Gpu;
-    ::foundation::core::FixedArray<std::uint8_t, 6> pad{};
+    ::fixy::FixedArray<std::uint8_t, 6> pad{};
 
     // The character storage behind these views lives in the topology
     // arena, which must outlive this identity.

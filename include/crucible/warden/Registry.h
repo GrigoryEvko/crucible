@@ -47,7 +47,7 @@ struct HotRegion {
     // buffer that is resized often, where collapsing it into huge
     // pages would stall the resize.
     bool huge_hint = false;
-    ::foundation::core::FixedArray<std::uint8_t, 7> pad{};
+    ::fixy::FixedArray<std::uint8_t, 7> pad{};
 };
 
 namespace detail {
@@ -62,7 +62,7 @@ struct HotRegionSlot {
     ::fixy::Atomic<void*> addr{nullptr};
     ::fixy::Atomic<size_t> len{0};
     ::fixy::Atomic<bool> huge_hint{false};
-    ::foundation::core::FixedArray<std::uint8_t, 7> pad{};
+    ::fixy::FixedArray<std::uint8_t, 7> pad{};
 };
 
 }  // namespace detail
@@ -169,7 +169,7 @@ private:
         slot.addr.store_release(addr);
     }
 
-    ::foundation::core::FixedArray<Slot, max_regions> slots_{};
+    ::fixy::FixedArray<Slot, max_regions> slots_{};
 };
 
 inline void register_hot_region(void* addr, size_t len, bool huge_hint = false) noexcept {

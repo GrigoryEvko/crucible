@@ -35,7 +35,7 @@ constexpr std::size_t qdisc_kind_bytes = 16;
 template <class T>
 [[nodiscard]] ::fixy::Option<T> read_record(::fixy::View<std::byte const> bytes, std::size_t offset) noexcept {
     CRUCIBLE_TRY(part, bytes.window<sizeof(T)>(offset));
-    ::foundation::core::FixedArray<std::byte, sizeof(T)> image{};
+    ::fixy::FixedArray<std::byte, sizeof(T)> image{};
     ::fixy::copy(image.view(), part);
     return ::fixy::some(::fixy::bit_cast<T>(image));
 }

@@ -908,7 +908,7 @@ private:
         SlotId slot_id;
         uint8_t port = 0;
         uint8_t gen = 0;
-        ::foundation::core::FixedArray<uint8_t, 6> pad{};
+        ::fixy::FixedArray<uint8_t, 6> pad{};
     };
 
     static_assert(sizeof(PtrSlot) == 24, "PtrSlot should be 24 bytes");
@@ -927,7 +927,7 @@ private:
         int8_t device_idx = -1;
         Layout layout = Layout::Strided;
         bool is_external = false;
-        ::foundation::core::FixedArray<uint8_t, 3> pad{};
+        ::fixy::FixedArray<uint8_t, 3> pad{};
     };
 
     static_assert(sizeof(SlotInfo) == 24, "SlotInfo: matches TensorSlot bulk region");

@@ -110,13 +110,13 @@ inline constexpr std::size_t xxh_stripe_bytes = 32;
 // The word whose little-endian image is the bytes of word.  The platform is
 // little-endian (foundation/Platform.h), so the copy of the bytes is the word.
 [[nodiscard, gnu::pure]] inline std::uint64_t load_le64(::fixy::View<std::byte const, 8> word) noexcept {
-    ::foundation::core::FixedArray<std::byte, 8> image{};
+    ::fixy::FixedArray<std::byte, 8> image{};
     ::fixy::copy(image.view(), word);
     return ::fixy::bit_cast<std::uint64_t>(image);
 }
 
 [[nodiscard, gnu::pure]] inline std::uint32_t load_le32(::fixy::View<std::byte const, 4> word) noexcept {
-    ::foundation::core::FixedArray<std::byte, 4> image{};
+    ::fixy::FixedArray<std::byte, 4> image{};
     ::fixy::copy(image.view(), word);
     return ::fixy::bit_cast<std::uint32_t>(image);
 }
@@ -352,7 +352,7 @@ private:
     std::uint64_t v2_ = 0;
     std::uint64_t v3_ = 0;
     std::uint64_t v4_ = 0;
-    ::foundation::core::FixedArray<std::byte, detail::xxh_stripe_bytes> memory_{};
+    ::fixy::FixedArray<std::byte, detail::xxh_stripe_bytes> memory_{};
     std::size_t memory_size_ = 0;
 };
 

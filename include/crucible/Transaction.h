@@ -77,7 +77,7 @@ struct Transaction {
     // claim a time that no clock returned.
     ::fixy::Option<Timestamp> ts_ns{};
     TxStatus status = TxStatus::RECORDING;
-    ::foundation::core::FixedArray<uint8_t, 7> pad{};
+    ::fixy::FixedArray<uint8_t, 7> pad{};
 };
 
 // Stores a clock reading in a transaction.  A failed read leaves the

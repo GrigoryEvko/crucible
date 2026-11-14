@@ -363,7 +363,7 @@ class TcamRules : public ::foundation::Pinned<TcamRules<MaxRules, Generation>> {
     // Each table mints its identity when it starts, and the table is
     // pinned.  So two tables of one plan have different identities.
     ::foundation::core::Identity identity_;
-    ::foundation::core::FixedArray<Slot, MaxRules> slots_{};
+    ::fixy::FixedArray<Slot, MaxRules> slots_{};
     std::uint32_t installed_ = 0;
     std::uint32_t retired_ = 0;
 

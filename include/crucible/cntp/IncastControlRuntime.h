@@ -41,7 +41,7 @@ class IncastController : public ::foundation::Pinned<IncastController<MaxFlows>>
 
     using FlowIndex = ::fixy::Index<MaxFlows>;
 
-    ::foundation::core::FixedArray<FlowSlot, MaxFlows> flows_{};
+    ::fixy::FixedArray<FlowSlot, MaxFlows> flows_{};
 
     // The slot of the flow of fd, or no value when no flow of fd started.
     [[nodiscard]] constexpr ::fixy::Option<FlowIndex> find(cntp::SocketFd fd) const noexcept {

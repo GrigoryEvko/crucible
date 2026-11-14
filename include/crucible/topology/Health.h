@@ -217,7 +217,7 @@ namespace detail {
 // slots.
 template <class Slot, std::size_t Count>
 [[nodiscard]] constexpr ::fixy::Option<::fixy::Index<Count>>
-find_peer_slot(::foundation::core::FixedArray<Slot, Count> const& slots, cog::Uuid const& uuid) noexcept {
+find_peer_slot(::fixy::FixedArray<Slot, Count> const& slots, cog::Uuid const& uuid) noexcept {
     for (::fixy::Index<Count> const index : slots.indices()) {
         Slot const& slot = slots.at(index);
         if (slot.occupied && slot.peer.uuid == uuid) {
@@ -230,8 +230,8 @@ find_peer_slot(::foundation::core::FixedArray<Slot, Count> const& slots, cog::Uu
 // The index of the slot of this peer, claimed from a free slot on first
 // sight, or no value when each slot holds another peer.
 template <class Slot, std::size_t Count>
-[[nodiscard]] constexpr ::fixy::Option<::fixy::Index<Count>>
-claim_peer_slot(::foundation::core::FixedArray<Slot, Count>& slots, cog::CogIdentity const& peer) noexcept {
+[[nodiscard]] constexpr ::fixy::Option<::fixy::Index<Count>> claim_peer_slot(::fixy::FixedArray<Slot, Count>& slots,
+                                                                             cog::CogIdentity const& peer) noexcept {
     ::fixy::Option<::fixy::Index<Count>> found = find_peer_slot(slots, peer.uuid);
     if (found.is_some()) {
         return found;
@@ -329,14 +329,14 @@ class PhiAccrualDetector : ::foundation::Pinned<PhiAccrualDetector<MaxPeers, Win
     struct Slot {
         bool occupied = false;
         cog::CogIdentity peer{};
-        ::foundation::core::FixedArray<std::uint64_t, Window> intervals{};
+        ::fixy::FixedArray<std::uint64_t, Window> intervals{};
         std::uint16_t count = 0;
         ::fixy::Index<Window> next = ::fixy::index<0>();
         MonotoneCount last_heartbeat_ns = ::fixy::mint_monotonic<std::uint64_t>(0);
         MonotoneCount sequence = ::fixy::mint_monotonic<std::uint64_t>(0);
     };
 
-    ::foundation::core::FixedArray<Slot, MaxPeers> slots_{};
+    ::fixy::FixedArray<Slot, MaxPeers> slots_{};
     HealthPolicy policy_{};
 
     // The natural logarithm of 10, the double nearest to it.
@@ -457,8 +457,8 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
         MonotoneCount transition_count = ::fixy::mint_monotonic<std::uint64_t>(0);
     };
 
-    ::foundation::core::FixedArray<Slot, MaxPeers> slots_{};
-    ::foundation::core::FixedArray<HealthDeltaEvent, MaxEvents> events_{};
+    ::fixy::FixedArray<Slot, MaxPeers> slots_{};
+    ::fixy::FixedArray<HealthDeltaEvent, MaxEvents> events_{};
     ::fixy::Index<MaxEvents> next_event_ = ::fixy::index<0>();
     std::uint16_t event_count_ = 0;
     HealthPolicy policy_{};

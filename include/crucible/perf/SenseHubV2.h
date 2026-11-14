@@ -344,7 +344,7 @@ struct sense_meta {
     uint32_t num_gauges;  // offset 12
     uint64_t layout_hash;  // offset 16
     uint32_t build_tag;  // offset 24
-    ::foundation::core::FixedArray<uint8_t, 36> _pad;  // offset 28 to 63
+    ::fixy::FixedArray<uint8_t, 36> _pad;  // offset 28 to 63
 };
 
 // A counter is meaningful only as a difference between two readings,
@@ -357,7 +357,7 @@ struct CounterDelta;
 // end.  Each enumerator of Idx and Gauge is below its count, so the zero
 // arm is not reached.
 template <std::size_t Count>
-[[nodiscard]] constexpr uint64_t value_at(::foundation::core::FixedArray<uint64_t, Count> const& values,
+[[nodiscard]] constexpr uint64_t value_at(::fixy::FixedArray<uint64_t, Count> const& values,
                                           std::size_t position) noexcept {
     for (auto const& value : values.get(position)) {
         return *value;
@@ -366,7 +366,7 @@ template <std::size_t Count>
 }
 
 struct alignas(64) CounterSnapshot {
-    ::foundation::core::FixedArray<uint64_t, NUM_COUNTERS> values{};
+    ::fixy::FixedArray<uint64_t, NUM_COUNTERS> values{};
 
     [[nodiscard]] uint64_t operator[](Idx i) const noexcept { return value_at(values, static_cast<std::size_t>(i)); }
 
@@ -374,7 +374,7 @@ struct alignas(64) CounterSnapshot {
 };
 
 struct alignas(64) CounterDelta {
-    ::foundation::core::FixedArray<uint64_t, NUM_COUNTERS> deltas{};
+    ::fixy::FixedArray<uint64_t, NUM_COUNTERS> deltas{};
 
     [[nodiscard]] uint64_t operator[](Idx i) const noexcept { return value_at(deltas, static_cast<std::size_t>(i)); }
 };
@@ -397,7 +397,7 @@ inline CounterDelta CounterSnapshot::operator-(const CounterSnapshot& older) con
 // and makes a difference of two gauges a compile error.
 
 struct alignas(64) GaugeSnapshot {
-    ::foundation::core::FixedArray<uint64_t, NUM_GAUGES> values{};
+    ::fixy::FixedArray<uint64_t, NUM_GAUGES> values{};
 
     [[nodiscard]] uint64_t operator[](Gauge g) const noexcept { return value_at(values, static_cast<std::size_t>(g)); }
 };

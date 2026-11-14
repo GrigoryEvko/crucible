@@ -114,14 +114,14 @@ struct DiscoveryNodeFact {
     cog::Uuid uuid{};
     cog::CogLevel level = cog::CogLevel::L0_Atomic;
     cog::CogKind kind = cog::CogKind::Gpu;
-    ::foundation::core::FixedArray<std::uint8_t, 6> pad_after_kind{};
+    ::fixy::FixedArray<std::uint8_t, 6> pad_after_kind{};
     VendorDiscoveryString vendor{};
     VendorDiscoveryString model{};
     VendorDiscoveryString driver{};
     VendorDiscoveryString firmware{};
     VendorDiscoveryString bus_info{};
     std::int16_t numa_node = -1;
-    ::foundation::core::FixedArray<std::uint8_t, 6> pad_after_numa_node{};
+    ::fixy::FixedArray<std::uint8_t, 6> pad_after_numa_node{};
     cog::NicPortTargetCaps nic_caps{};
 };
 
@@ -129,12 +129,12 @@ struct DiscoveryEdgeFact {
     std::uint16_t from_node = 0;
     std::uint16_t to_node = 0;
     LinkKind kind = LinkKind::Unknown;
-    ::foundation::core::FixedArray<std::uint8_t, 3> pad_after_kind{};
+    ::fixy::FixedArray<std::uint8_t, 3> pad_after_kind{};
     std::uint64_t bandwidth_bytes_per_sec = 0;
     std::uint64_t rtt_ns_p50 = 0;
     std::uint64_t rtt_ns_p99 = 0;
     float drop_rate = 0.0f;
-    ::foundation::core::FixedArray<std::uint8_t, 4> pad_tail{};
+    ::fixy::FixedArray<std::uint8_t, 4> pad_tail{};
 };
 
 template <std::size_t MaxNodes, std::size_t MaxEdges>
@@ -349,10 +349,10 @@ private:
         return ::fixy::mint_tagged<::fixy::tags::source::Vendor>(stable_discovery_hash(fact.firmware.value()));
     }
 
-    ::foundation::core::FixedArray<DiscoveryNodeFact, MaxNodes> node_facts_{};
-    ::foundation::core::FixedArray<DiscoveryEdgeFact, MaxEdges> edge_facts_{};
-    ::foundation::core::FixedArray<cog::CogIdentity, MaxNodes> nodes_{};
-    ::foundation::core::FixedArray<TopologyEdge, MaxEdges> edges_{};
+    ::fixy::FixedArray<DiscoveryNodeFact, MaxNodes> node_facts_{};
+    ::fixy::FixedArray<DiscoveryEdgeFact, MaxEdges> edge_facts_{};
+    ::fixy::FixedArray<cog::CogIdentity, MaxNodes> nodes_{};
+    ::fixy::FixedArray<TopologyEdge, MaxEdges> edges_{};
     std::size_t node_count_ = 0;
     std::size_t edge_count_ = 0;
     DiscoveryReport report_{};

@@ -37,7 +37,7 @@ struct TimelineSchedEvent {
 
 struct TimelineHeader {
     uint64_t write_idx;
-    ::foundation::core::FixedArray<uint64_t, 7> _pad;
+    ::fixy::FixedArray<uint64_t, 7> _pad;
 };
 
 // This value mirrors the ring size the kernel-side program was built

@@ -181,7 +181,7 @@ private:
         return capacity;
     }
 
-    ::foundation::core::FixedArray<std::uint64_t, kWords> words_{};
+    ::fixy::FixedArray<std::uint64_t, kWords> words_{};
 };
 
 // The position of a loop over a CpuSet: the next id of the set, or the

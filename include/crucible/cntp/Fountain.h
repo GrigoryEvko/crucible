@@ -61,7 +61,7 @@ template <typename Buffer>
 using LinearFountainBuffer = ::fixy::Linear<Buffer>;
 
 template <std::size_t SymbolBytes>
-using FountainSymbol = ::foundation::core::FixedArray<std::byte, SymbolBytes>;
+using FountainSymbol = ::fixy::FixedArray<std::byte, SymbolBytes>;
 
 template <std::size_t SourceSymbols, std::size_t SymbolBytes>
     requires FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>
@@ -162,7 +162,7 @@ template <std::size_t SourceSymbols>
     const auto degree_rng = Philox::generate_det(repair_offset(encoding_id, 0), seed).peek();
     const auto degree = sample_ideal_soliton_degree<SourceSymbols>(degree_rng.at(::fixy::index<0>()));
 
-    ::foundation::core::FixedArray<std::uint8_t, SourceSymbols> permutation{};
+    ::fixy::FixedArray<std::uint8_t, SourceSymbols> permutation{};
     for (auto position : permutation.indices()) {
         permutation.at(position) = static_cast<std::uint8_t>(position.raw());
     }
@@ -548,8 +548,8 @@ private:
         return complete() ? FountainDecodeState::Complete : FountainDecodeState::NeedsMore;
     }
 
-    ::foundation::core::FixedArray<Equation, MaxEquations> equations_{};
-    ::foundation::core::FixedArray<std::byte, SourceSymbols * SymbolBytes> decoded_{};
+    ::fixy::FixedArray<Equation, MaxEquations> equations_{};
+    ::fixy::FixedArray<std::byte, SourceSymbols * SymbolBytes> decoded_{};
     source_byte_count source_bytes_ = ::fixy::mint_refined<packet_type::source_bytes_range>(std::size_t{1});
     std::uint64_t decoded_mask_ = 0;
     bool have_source_bytes_ = false;

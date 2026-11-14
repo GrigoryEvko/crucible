@@ -32,7 +32,7 @@ enum class TransportProbeKind : std::uint32_t {
     FederationMtls = 1u << 8,
 };
 
-inline constexpr ::foundation::core::FixedArray<TransportProbeKind, 9> all_transport_probe_kinds{
+inline constexpr ::fixy::FixedArray<TransportProbeKind, 9> all_transport_probe_kinds{
     TransportProbeKind::RdmaWrite,
     TransportProbeKind::RdmaSend,
     TransportProbeKind::RdmaRead,
@@ -202,11 +202,11 @@ public:
 
 private:
     using PeerIndex = ::fixy::Index<MaxPeers>;
-    using KindRow = ::foundation::core::FixedArray<detail::AtomicProbeStats, transport_kind_count>;
+    using KindRow = ::fixy::FixedArray<detail::AtomicProbeStats, transport_kind_count>;
 
     ProbeConfig config_{};
-    ::foundation::core::FixedArray<PeerSlot, MaxPeers> peers_{};
-    ::foundation::core::FixedArray<KindRow, MaxPeers> stats_{};
+    ::fixy::FixedArray<PeerSlot, MaxPeers> peers_{};
+    ::fixy::FixedArray<KindRow, MaxPeers> stats_{};
 
     // The index of the active slot of peer, or no value.  O(MaxPeers).
     [[nodiscard]] ::fixy::Option<PeerIndex> find_peer(cog::CogIdentity const& peer) const noexcept {

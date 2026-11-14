@@ -44,14 +44,14 @@ struct PmuSampleEvent {
     uint64_t ip;
     uint32_t tid;
     uint8_t event_type;
-    ::foundation::core::FixedArray<uint8_t, 3> _pad;
+    ::fixy::FixedArray<uint8_t, 3> _pad;
     uint64_t ts_ns;  // kernel monotonic clock
     uint64_t _pad8;
 };
 
 struct PmuSampleHeader {
     uint64_t write_idx;
-    ::foundation::core::FixedArray<uint64_t, 7> _pad;
+    ::fixy::FixedArray<uint64_t, 7> _pad;
 };
 
 // This value mirrors the ring size the kernel-side program was built

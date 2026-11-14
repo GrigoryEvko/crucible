@@ -34,9 +34,8 @@ inline constexpr std::uint32_t kCongestionMetricBase = 0x43430000u;
 inline constexpr std::size_t kCongestionObservationCount = ::foundation::reflect::enum_count<CongestionMetricSlot>;
 
 using CongestionObservationSet =
-    ::foundation::core::FixedArray<::crucible::observe::ObservationSnapshot, kCongestionObservationCount>;
-using CongestionObservationBatch =
-    ::foundation::core::FixedArray<::crucible::observe::Observation, kCongestionObservationCount>;
+    ::fixy::FixedArray<::crucible::observe::ObservationSnapshot, kCongestionObservationCount>;
+using CongestionObservationBatch = ::fixy::FixedArray<::crucible::observe::Observation, kCongestionObservationCount>;
 
 template <class Ctx>
 concept CtxFitsCongestionTelemetryStart =
@@ -130,7 +129,7 @@ class CongestionTelemetryWorker : public ::foundation::Pinned<CongestionTelemetr
 
     using SlotIndex = ::fixy::Index<MaxLinks>;
 
-    ::foundation::core::FixedArray<Slot, MaxLinks> slots_{};
+    ::fixy::FixedArray<Slot, MaxLinks> slots_{};
     topology::TelemetrySchedule schedule_{};
 
     template <std::size_t Links, std::size_t Flows, class Ctx>

@@ -212,7 +212,7 @@ private:
     // event comes after that call, because Draining is the only state that
     // Stable leads to and only begin_swap enters it.
     ::fixy::Option<PathSwapPlan> plan_{};
-    ::foundation::core::FixedArray<PathSwapEvent, MaxEvents> events_{};
+    ::fixy::FixedArray<PathSwapEvent, MaxEvents> events_{};
     EventIndex next_event_ = ::fixy::index<0>();
     std::size_t event_count_ = 0;
     std::uint64_t deadline_ns_ = 0;

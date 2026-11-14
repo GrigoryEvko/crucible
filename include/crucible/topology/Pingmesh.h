@@ -85,7 +85,7 @@ struct PingmeshAnomaly {
     PingmeshPairStats stats{};
     std::uint32_t zscore_milli = 0;
     bool anomalous = false;
-    ::foundation::core::FixedArray<std::uint8_t, 3> pad_tail{};
+    ::fixy::FixedArray<std::uint8_t, 3> pad_tail{};
 };
 
 // The anomalous pairs of one detection, in the order of the pair grid.
@@ -172,10 +172,10 @@ private:
     using PairIndex = ::fixy::Index<kPairSlots>;
 
     PingmeshConfig config_{};
-    ::foundation::core::FixedArray<PeerSlot, kPeerSlots> peers_{};
-    ::foundation::core::FixedArray<bool, kPairSlots> enabled_pairs_{};
-    ::foundation::core::FixedArray<histogram_type, kPairSlots> latency_{};
-    ::foundation::core::FixedArray<detail::AtomicPingmeshPairCounters, kPairSlots> counters_{};
+    ::fixy::FixedArray<PeerSlot, kPeerSlots> peers_{};
+    ::fixy::FixedArray<bool, kPairSlots> enabled_pairs_{};
+    ::fixy::FixedArray<histogram_type, kPairSlots> latency_{};
+    ::fixy::FixedArray<detail::AtomicPingmeshPairCounters, kPairSlots> counters_{};
 
     // The cell of the directed pair from src to dst.  The product of two
     // indexes below kPeerSlots is below kPairSlots, so the check cannot fail.

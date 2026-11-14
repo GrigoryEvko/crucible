@@ -69,8 +69,8 @@ class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes,
         using permission_row = ::foundation::effects::Row<>;
     };
 
-    ::foundation::core::FixedArray<Slot, kSlots> slots_{};
-    ::foundation::core::FixedArray<PoolEvent, MaxEvents> events_{};
+    ::fixy::FixedArray<Slot, kSlots> slots_{};
+    ::fixy::FixedArray<PoolEvent, MaxEvents> events_{};
     // The const readers take the gate too, to serialize against writers.
     mutable ::fixy::spin::BlockingLock<GateTag> gate_{};
     // A fresh cache line, so a counter store does not invalidate the line

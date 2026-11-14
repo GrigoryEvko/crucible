@@ -20,9 +20,8 @@ inline constexpr std::uint32_t kTopologyHealthMetricBase = 0x48450000u;
 // One observation for each slot.
 inline constexpr std::size_t kTopologyHealthObservationCount = 4;
 
-using TopologyHealthObservationSet =
-    ::foundation::core::FixedArray<ObservationSnapshot, kTopologyHealthObservationCount>;
-using TopologyHealthObservationBatch = ::foundation::core::FixedArray<Observation, kTopologyHealthObservationCount>;
+using TopologyHealthObservationSet = ::fixy::FixedArray<ObservationSnapshot, kTopologyHealthObservationCount>;
+using TopologyHealthObservationBatch = ::fixy::FixedArray<Observation, kTopologyHealthObservationCount>;
 
 [[nodiscard]] constexpr std::uint32_t topology_health_metric_id(std::uint16_t peer_slot,
                                                                 HealthMetricSlot slot) noexcept {

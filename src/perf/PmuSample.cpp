@@ -105,7 +105,7 @@ struct PmuEventSpec {
 // One row for each perf_event program in the BPF object.
 constexpr std::size_t kEventSpecCount = 8;
 
-constexpr ::foundation::core::FixedArray<PmuEventSpec, kEventSpecCount> kEventSpecs{
+constexpr ::fixy::FixedArray<PmuEventSpec, kEventSpecCount> kEventSpecs{
     PmuEventSpec{
         .prog_name = CRUCIBLE_PERF_FOREIGN_NAME("pmu_llc"),
         .event = ::fixy::perf::cache_read_miss(::fixy::perf::Cache::last_level),

@@ -338,7 +338,7 @@ private:
         }
     }
 
-    alignas(64)::foundation::core::FixedArray<::fixy::Atomic<std::uint64_t>, bucket_slots> counts_{};
+    alignas(64)::fixy::FixedArray<::fixy::Atomic<std::uint64_t>, bucket_slots> counts_{};
     alignas(64)::fixy::Atomic<std::uint64_t> total_count_{};
 };
 
@@ -409,7 +409,7 @@ private:
             .expect("a clamped shard is below ShardCount");
     }
 
-    alignas(64)::foundation::core::FixedArray<histogram_type, ShardCount> shards_{};
+    alignas(64)::fixy::FixedArray<histogram_type, ShardCount> shards_{};
     alignas(64)::fixy::Atomic<std::uint64_t> next_thread_shard_{};
 };
 

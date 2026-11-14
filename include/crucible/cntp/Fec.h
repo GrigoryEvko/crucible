@@ -60,13 +60,13 @@ namespace detail {
 
 inline constexpr std::uint16_t gf_poly = 0x11dU;
 
-using GfRow = ::foundation::core::FixedArray<std::uint8_t, 256>;
+using GfRow = ::fixy::FixedArray<std::uint8_t, 256>;
 
 struct GfTables {
-    ::foundation::core::FixedArray<std::uint8_t, 512> exp{};
+    ::fixy::FixedArray<std::uint8_t, 512> exp{};
     GfRow log{};
     GfRow inv{};
-    ::foundation::core::FixedArray<GfRow, 256> mul{};
+    ::fixy::FixedArray<GfRow, 256> mul{};
 };
 
 // The index of a byte in a table of 256 entries.  Each byte is below 256, so
@@ -150,11 +150,11 @@ template <class Field = void>
 }
 
 template <std::size_t N>
-using SquareMatrix = ::foundation::core::FixedArray<::foundation::core::FixedArray<std::uint8_t, N>, N>;
+using SquareMatrix = ::fixy::FixedArray<::fixy::FixedArray<std::uint8_t, N>, N>;
 
 template <std::uint8_t K, std::uint8_t M>
-using GeneratorMatrix = ::foundation::core::FixedArray<::foundation::core::FixedArray<std::uint8_t, K>,
-                                                       static_cast<std::size_t>(K) + static_cast<std::size_t>(M)>;
+using GeneratorMatrix =
+    ::fixy::FixedArray<::fixy::FixedArray<std::uint8_t, K>, static_cast<std::size_t>(K) + static_cast<std::size_t>(M)>;
 
 template <std::uint8_t K, std::uint8_t M>
     requires ReedSolomonShape<K, M>
@@ -230,7 +230,7 @@ template <std::size_t N>
 }
 
 #if defined(__AVX2__) || ((defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__))
-using NibbleTable = ::foundation::core::FixedArray<std::uint8_t, 32>;
+using NibbleTable = ::fixy::FixedArray<std::uint8_t, 32>;
 
 struct alignas(32) NibbleTables {
     alignas(32) NibbleTable lo{};
@@ -499,7 +499,7 @@ public:
 
         // The first K shards that the mask does not erase, and their rows of
         // the generator.
-        ::foundation::core::FixedArray<std::size_t, K> selected{};
+        ::fixy::FixedArray<std::size_t, K> selected{};
         detail::SquareMatrix<K> decode_matrix{};
         std::size_t selected_count = 0;
         std::size_t erased_count = 0;

@@ -23,7 +23,7 @@ template <auto Field, std::size_t Extent>
 [[nodiscard]] ::fixy::Option<typename decltype(Field)::value_type>
 decode_field(::fixy::View<std::byte const, Extent> bytes) noexcept {
     using Value = typename decltype(Field)::value_type;
-    ::foundation::core::FixedArray<std::byte, sizeof(Value)> word{};
+    ::fixy::FixedArray<std::byte, sizeof(Value)> word{};
     ::fixy::copy(
         word.view(),
         bytes.template window<sizeof(Value)>(Field.offset).expect("the constraint puts the field inside the bytes"));

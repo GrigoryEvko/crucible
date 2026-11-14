@@ -82,7 +82,7 @@ using MtlsCipherMask = ::fixy::Bits<MtlsCipherSuite>;
 struct MtlsCertificateBytes {
     static constexpr std::size_t max_bytes = 4096;
 
-    ::foundation::core::FixedArray<std::byte, max_bytes> bytes{};
+    ::fixy::FixedArray<std::byte, max_bytes> bytes{};
     std::uint16_t size = 0;
 
     // The first size bytes.  admit_x509_certificate_pem keeps the size at
@@ -95,7 +95,7 @@ struct MtlsCertificateBytes {
 struct MtlsPrivateKeyBytes {
     static constexpr std::size_t max_bytes = 4096;
 
-    ::foundation::core::FixedArray<std::byte, max_bytes> bytes{};
+    ::fixy::FixedArray<std::byte, max_bytes> bytes{};
     std::uint16_t nbytes = 0;
     MtlsKeyAlgorithm algorithm = MtlsKeyAlgorithm::Ed25519;
 
@@ -189,7 +189,7 @@ constexpr auto MtlsDnsName::from(::fixy::TextView name) noexcept {
 struct MtlsSha256Fingerprint {
     static constexpr std::size_t bytes_count = 32;
 
-    ::foundation::core::FixedArray<std::byte, bytes_count> bytes{};
+    ::fixy::FixedArray<std::byte, bytes_count> bytes{};
 };
 
 using MtlsCertificate = ::fixy::Linear<MtlsCertificateBytes>;
@@ -225,8 +225,8 @@ struct MtlsPolicy {
         MtlsCipherSuite::TlsAes256GcmSha384,
         MtlsCipherSuite::TlsChacha20Poly1305Sha256,
     };
-    ::foundation::core::FixedArray<MtlsDnsName, max_peer_names> allowed_peer_dns{};
-    ::foundation::core::FixedArray<MtlsSha256Fingerprint, max_peer_names> allowed_peer_pins{};
+    ::fixy::FixedArray<MtlsDnsName, max_peer_names> allowed_peer_dns{};
+    ::fixy::FixedArray<MtlsSha256Fingerprint, max_peer_names> allowed_peer_pins{};
     MtlsPeerCount allowed_peer_count{};
 
     // The one writer of allowed_peer_count.  It puts the peer in the next

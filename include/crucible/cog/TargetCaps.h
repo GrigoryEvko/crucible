@@ -192,20 +192,20 @@ struct GpuTargetCaps {
 // padding byte.
 struct NicPortTargetCaps {
     VendorClaim<LinkLayer> link_layer{};
-    ::foundation::core::FixedArray<std::uint8_t, 7> pad_after_link_layer{};
+    ::fixy::FixedArray<std::uint8_t, 7> pad_after_link_layer{};
     VendorClaim<std::uint64_t> line_rate_bytes_per_sec{};
     ValidMtu mtu_bytes = ::fixy::mint_refined<valid_mtu>(std::uint16_t{1500});
 
     VendorClaim<std::uint16_t> max_tx_queues{};
     VendorClaim<std::uint16_t> max_rx_queues{};
-    ::foundation::core::FixedArray<std::uint8_t, 2> pad_after_rx_queues{};
+    ::fixy::FixedArray<std::uint8_t, 2> pad_after_rx_queues{};
     VendorClaim<std::uint32_t> max_qp_count{};  // RDMA queue pairs
     VendorClaim<std::uint32_t> max_cq_count{};  // RDMA completion queues
     VendorClaim<std::uint32_t> max_mr_count{};  // RDMA memory regions
-    ::foundation::core::FixedArray<std::uint8_t, 4> pad_after_mr_count{};
+    ::fixy::FixedArray<std::uint8_t, 4> pad_after_mr_count{};
     VendorClaim<std::uint64_t> max_mr_size_bytes{};
     VendorClaim<std::uint32_t> tcam_entries{};
-    ::foundation::core::FixedArray<std::uint8_t, 4> pad_after_tcam_entries{};
+    ::fixy::FixedArray<std::uint8_t, 4> pad_after_tcam_entries{};
 
     // Line rate that survives PCIe, driver and kernel overhead.
     CalibratedValue<std::uint64_t> effective_bandwidth_bytes_per_sec{};
@@ -218,7 +218,7 @@ struct NicPortTargetCaps {
     VendorClaim<std::uint16_t> pcie_root_complex_id{};
     VendorClaim<PcieGen> pcie_gen{};
     VendorClaim<std::uint8_t> pcie_lanes{};
-    ::foundation::core::FixedArray<std::uint8_t, 4> pad_after_pcie_lanes{};
+    ::fixy::FixedArray<std::uint8_t, 4> pad_after_pcie_lanes{};
 
     // Peer GPUs this port can reach by direct DMA. The View points into
     // an arena this struct does not own and which must outlive it. An
@@ -226,7 +226,7 @@ struct NicPortTargetCaps {
     ::fixy::View<CogIdentity const> gpu_direct_peers{};
 
     ::fixy::Bits<NicFeature> features{};
-    ::foundation::core::FixedArray<std::uint8_t, 4> pad_tail{};
+    ::fixy::FixedArray<std::uint8_t, 4> pad_tail{};
 };
 
 struct NvSwitchTargetCaps {

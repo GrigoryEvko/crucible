@@ -49,7 +49,7 @@ class CreditFlowControl : public ::foundation::Pinned<CreditFlowControl<MaxFlows
                                            "under concurrent grant/consume from independent flows");
     static_assert(sizeof(FlowSlot) >= 64, "FlowSlot occupies a full cache line; trailing padding is "
                                           "intentional — see false-sharing rationale above");
-    static_assert(sizeof(::foundation::core::FixedArray<FlowSlot, 2>) >= 128,
+    static_assert(sizeof(::fixy::FixedArray<FlowSlot, 2>) >= 128,
                   "Two adjacent FlowSlots must span at least two cache lines");
 
     using FlowIndex = ::fixy::Index<MaxFlows>;
@@ -60,7 +60,7 @@ class CreditFlowControl : public ::foundation::Pinned<CreditFlowControl<MaxFlows
         using permission_row = ::foundation::effects::Row<>;
     };
 
-    ::foundation::core::FixedArray<FlowSlot, MaxFlows> flows_{};
+    ::fixy::FixedArray<FlowSlot, MaxFlows> flows_{};
     // start_flow searches the table and then reserves a slot, and those two
     // steps are not atomic together.  The gate serializes them so one socket
     // cannot be published into two slots at once.
@@ -186,7 +186,7 @@ class AdmissionController : public ::foundation::Pinned<AdmissionController<MaxC
         ResourceLimit limit{};
     };
 
-    ::foundation::core::FixedArray<LimitSlot, MaxResourceLimits> limits_{};
+    ::fixy::FixedArray<LimitSlot, MaxResourceLimits> limits_{};
     ::fixy::Atomic<std::uint16_t> live_connections_{0};
     ::fixy::Atomic<std::uint64_t> sequence_{0};
 
