@@ -19,18 +19,11 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/effects/Effect.h>
-#include <foundation/reflect/EnumName.h>
 
-#include <algorithm>
-#include <array>
-#include <concepts>
 #include <cstdint>
 #include <cstring>
-#include <limits>
-#include <memory>
 #include <optional>
 #include <span>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -99,28 +92,55 @@ struct Writer {
     void w(const T& v) {
         write_bytes(&v, sizeof(T));
     }
+
+    // N bytes of zero, which is the one value of a pad byte.
+    template <size_t N>
+    void write_zero_pad() {
+        for (size_t index = 0; index < N; ++index) {
+            w(uint8_t{0});
+        }
+    }
 };
 
+// The reader of an image.  It reads each value from its bytes, the low byte
+// first, as the writer laid them out on a little-endian host.  A read past
+// the end of the image clears is_intact and gives zero, and the parse that
+// follows it is discarded.
 struct Reader {
-    const uint8_t* buf = nullptr;
+    ::fixy::View<const uint8_t> image{};
     size_t pos = 0;
-    size_t len = 0;
-    bool ok = true;
+    bool is_intact = true;
 
-    void read_bytes(void* dst, size_t n) {
-        if (pos + n > len) {
-            ok = false;
-            return;
-        }
-        std::memcpy(dst, buf + pos, n);
-        pos += n;
+    // The next sizeof(Word) bytes as one unsigned word.  Complexity:
+    // O(sizeof(Word)).
+    template <::fixy::UnsignedInteger Word>
+    [[nodiscard]] Word read_word() {
+        return image.template window<sizeof(Word)>(pos).match(
+            [this](::fixy::View<const uint8_t, sizeof(Word)> bytes) noexcept {
+                Word word = 0;
+                for (const auto index : bytes.indices()) {
+                    word = static_cast<Word>(word | (static_cast<Word>(bytes.at(index)) << (8 * index.raw())));
+                }
+                pos += sizeof(Word);
+                return word;
+            },
+            [this] noexcept {
+                is_intact = false;
+                return Word{0};
+            });
     }
 
+    // An integer or a float of the image.  A signed integer and a float take
+    // the bits of the unsigned word of their size.
     template <typename T>
     [[nodiscard]] T r() {
-        T v{};
-        read_bytes(&v, sizeof(T));
-        return v;
+        if constexpr (std::is_same_v<T, float>) {
+            return ::fixy::bit_cast<float>(read_word<uint32_t>());
+        } else if constexpr (std::is_signed_v<T>) {
+            return ::fixy::bit_cast<T>(read_word<std::make_unsigned_t<T>>());
+        } else {
+            return read_word<T>();
+        }
     }
 
     // The real runtime branch behind every validated read in this file.
@@ -139,21 +159,21 @@ struct Reader {
     // that constructor a value its own precondition rejects would abort while
     // contracts are enforced and pass silently otherwise. Returning a value
     // the predicate accepts makes the outcome the same either way: the failure
-    // travels through ok, which every entry point already turns into a null
-    // return, and the substituted value is discarded with the rest of the
-    // parse. A value that passes is returned unchanged, so the bytes a good
-    // image produces are untouched.
+    // travels through is_intact, which every entry point already turns into a
+    // null return, and the substituted value is discarded with the rest of
+    // the parse. A value that passes is returned unchanged, so the bytes a
+    // good image produces are untouched.
     //
-    // Every value is judged, also when ok is already false. An earlier
-    // rejected read clears ok but leaves the bytes that follow it real, so a
-    // read after it returns a wire byte, and the refinement that receives it
-    // assumes its predicate in a release build. Each caller passes a
+    // Every value is judged, also when is_intact is already false. An earlier
+    // rejected read clears is_intact but leaves the bytes that follow it real,
+    // so a read after it returns a wire byte, and the refinement that receives
+    // it assumes its predicate in a release build. Each caller passes a
     // substitute that its predicate accepts.
     template <typename T, typename Pred>
     [[nodiscard]] T read_gated(Pred pred, T valid_substitute = T{0}) {
         const T v = r<T>();
         if (!pred(v)) [[unlikely]] {
-            ok = false;
+            is_intact = false;
             return valid_substitute;
         }
         return v;
@@ -166,60 +186,42 @@ struct Reader {
         return read_gated<uint8_t>([](uint8_t byte) noexcept { return byte <= 1; }) != 0;
     }
 
-    // An enumerator of E.  The set of valid bytes comes from the enumeration
-    // by reflection, so a new enumerator needs no edit here.  A byte that
-    // names no enumerator is refused, and none reaches a switch.
-    template <typename E>
-        requires std::is_scoped_enum_v<E>
-    [[nodiscard]] E read_enumerator() {
-        using Raw = std::underlying_type_t<E>;
-        const auto names_enumerator = [](Raw raw) noexcept {
-            return !::foundation::reflect::enumerator_name(static_cast<E>(raw)).empty();
-        };
-        return static_cast<E>(read_gated<Raw>(names_enumerator, first_enumerator_raw<E>));
+    // An enumerator of E.  fixy::enum_from gives the enumerator of a byte,
+    // so a new enumerator needs no edit here.  A byte that names no
+    // enumerator is refused, and none reaches a switch.  The caller gives an
+    // enumerator as the substitute of a refused byte.
+    template <::fixy::Enumerated E>
+    [[nodiscard]] E read_enumerator(E valid_substitute) {
+        return ::fixy::enum_from<E>(r<std::underlying_type_t<E>>())
+            .match([](E value) noexcept { return value; },
+                   [this, valid_substitute] noexcept {
+                       is_intact = false;
+                       return valid_substitute;
+                   });
     }
 
     // Pad bytes carry no value.  A writer sets them to zero, so a non-zero
-    // byte means the image is not one that a writer produced.  The pad is
-    // set to zero whatever the bytes hold, because zero is the only value
-    // that a pad holds, and the parse of a refused image is discarded.  The
-    // bytes are read in one piece and judged apart from the store.  A loop
-    // that stores each pad byte from the result of a read lets GCC unroll
-    // it into copies that it cannot bound, and at -O3 it then reports a
-    // store past the end of the enclosing object.
+    // byte means the image is not one that a writer produced.  The reader
+    // stores no pad byte: the pad of each object that it builds is zero from
+    // the construction of the object.
     template <size_t N>
-    void read_zero_pad(uint8_t (&pad)[N]) {
-        std::array<uint8_t, N> wire{};
-        read_bytes(wire.data(), N);
-        if (!std::ranges::all_of(wire, [](uint8_t byte) noexcept { return byte == 0; })) [[unlikely]]
-            ok = false;
-        std::ranges::fill(pad, uint8_t{0});
+    void read_zero_pad() {
+        for (size_t index = 0; index < N; ++index) {
+            if (r<uint8_t>() != 0) [[unlikely]]
+                is_intact = false;
+        }
     }
 
-    template <typename E>
-    static constexpr std::underlying_type_t<E> first_enumerator_raw = [] {
-        std::underlying_type_t<E> raw{};
-        bool is_found = false;
-        ::foundation::reflect::for_each_enumerator<E>([&](E value, std::string_view) noexcept {
-            if (!is_found) raw = std::to_underlying(value);
-            is_found = true;
-        });
-        return raw;
-    }();
+    [[nodiscard]] size_t remaining() const noexcept { return (pos <= image.size()) ? (image.size() - pos) : 0; }
 
-    [[nodiscard]] size_t remaining() const noexcept { return (pos <= len) ? (len - pos) : 0; }
-
-    // Ask before growing the arena for n elements. A header can claim a count
-    // near the ceiling with a truncated body, and without this the arena grows
-    // by the full amount before the first element read discovers the end of
-    // the buffer, leaving space only a detach can reclaim.
-    template <typename T>
-    [[nodiscard]] bool has_remaining(size_t n) const noexcept {
-        if (n == 0) return true;
-        // Largest n for which the product below does not wrap.
-        if (n > SIZE_MAX / sizeof(T)) return false;
-        const size_t need = n * sizeof(T);
-        return pos <= len && (len - pos) >= need;
+    // Ask before growing the arena for count elements of element_bytes each.
+    // A header can claim a count near the ceiling with a truncated body, and
+    // without this the arena grows by the full amount before the first
+    // element read discovers the end of the buffer, leaving space only a
+    // detach can reclaim.  A product that wraps has no room.
+    [[nodiscard]] bool has_remaining(size_t count, size_t element_bytes) const noexcept {
+        return ::foundation::core::checked_mul(count, element_bytes)
+            .match([this](size_t need) noexcept { return remaining() >= need; }, [] noexcept { return false; });
     }
 };
 
@@ -300,11 +302,9 @@ inline void write_slot(Writer& w, const TensorSlot& slot) {
     w.w(slot.device_idx);
     w.w(slot.layout);
     w.w(static_cast<uint8_t>(slot.is_external ? 1 : 0));
-    const uint8_t pad3[3] = {};
-    w.write_bytes(pad3, sizeof(pad3));
+    w.write_zero_pad<sizeof(slot.pad)>();
     w.w(slot.slot_id.raw());
-    const uint8_t pad4[4] = {};
-    w.write_bytes(pad4, sizeof(pad4));
+    w.write_zero_pad<sizeof(slot.pad2)>();
 }
 
 // The reader of write_slot.  Each enum, the bool and each pad byte is judged
@@ -321,16 +321,15 @@ inline TensorSlot read_slot(Reader& r) {
     slot.device_idx = r.r<int8_t>();
     slot.layout = make_layout(::fixy::mint_refined<valid_layout>(r.read_gated<int8_t>(valid_layout)));
     slot.is_external = r.read_bool();
-    r.read_zero_pad(slot.pad);
+    r.read_zero_pad<sizeof(slot.pad)>();
     slot.slot_id = SlotId{r.r<uint32_t>()};
-    r.read_zero_pad(slot.pad2);
+    r.read_zero_pad<sizeof(slot.pad2)>();
     return slot;
 }
 
 inline void write_guard(Writer& w, const Guard& guard) {
     w.w(guard.kind);
-    const uint8_t pad3[3] = {};
-    w.write_bytes(pad3, sizeof(pad3));
+    w.write_zero_pad<sizeof(guard.pad)>();
     w.w(guard.op_index.raw());
     w.w(guard.arg_index);
     w.w(guard.dim_index);
@@ -340,8 +339,8 @@ inline void write_guard(Writer& w, const Guard& guard) {
 // kind, so the kind is read as an enumerator.
 inline Guard read_guard(Reader& r) {
     Guard guard{};
-    guard.kind = r.read_enumerator<Guard::Kind>();
-    r.read_zero_pad(guard.pad);
+    guard.kind = r.read_enumerator<Guard::Kind>(Guard::Kind::SHAPE_DIM);
+    r.read_zero_pad<sizeof(guard.pad)>();
     guard.op_index = OpIndex{r.r<uint32_t>()};
     guard.arg_index = r.r<uint16_t>();
     guard.dim_index = r.r<uint16_t>();
@@ -350,12 +349,14 @@ inline Guard read_guard(Reader& r) {
 
 inline constexpr size_t kTensorSlotWireBytes = 40;
 
+// The zero bytes between the node kind and the merkle hash of a header.
+inline constexpr size_t kHeaderPadBytes = 7;
+
 inline void write_header(Writer& w, TraceNodeKind kind, MerkleHash merkle_hash, ContentHash content_hash) {
     w.w(CDAG_MAGIC);
     w.w(CDAG_VERSION.value());
     w.w(std::to_underlying(kind));
-    const uint8_t pad7[7] = {};
-    w.write_bytes(pad7, 7);
+    w.write_zero_pad<kHeaderPadBytes>();
     w.w(merkle_hash.raw());
     w.w(content_hash.raw());
 }
@@ -374,8 +375,7 @@ inline Header read_header(Reader& r) {
     h.version = ::fixy::mint_tagged<::fixy::tags::source::External>(r.r<uint32_t>());
     h.kind = make_trace_node_kind(
         ::fixy::mint_refined<kValidTraceNodeKindBound>(r.read_gated<uint8_t>(kValidTraceNodeKindBound)));
-    uint8_t pad7[7]{};
-    r.read_zero_pad(pad7);
+    r.read_zero_pad<kHeaderPadBytes>();
     h.merkle_hash = MerkleHash{r.r<uint64_t>()};
     h.content_hash = ContentHash{r.r<uint64_t>()};
     return h;
@@ -423,18 +423,17 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
     const bool has_plan = (region->plan != nullptr);
     w.w(has_plan);
     if (has_plan) {
-        const MemoryPlan* plan = region->plan;
-        w.w(plan->pool_bytes);
-        w.w(plan->num_slots());
-        w.w(plan->num_external);
-        w.w(plan->device_type);
-        w.w(plan->device_idx);
-        const uint8_t pad0[sizeof(plan->pad0)] = {};
-        w.write_bytes(pad0, sizeof(pad0));
-        w.w(plan->device_capability);
-        w.w(plan->rank);
-        w.w(plan->world_size);
-        for (const TensorSlot& slot : plan->slots) {
+        const MemoryPlan& plan = *region->plan;
+        w.w(plan.pool_bytes);
+        w.w(plan.num_slots());
+        w.w(plan.num_external);
+        w.w(plan.device_type);
+        w.w(plan.device_idx);
+        w.write_zero_pad<sizeof(plan.pad0)>();
+        w.w(plan.device_capability);
+        w.w(plan.rank);
+        w.w(plan.world_size);
+        for (const TensorSlot& slot : plan.slots) {
             write_slot(w, slot);
         }
     }
@@ -481,10 +480,11 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
 CRUCIBLE_COLD [[nodiscard]] inline std::optional<LoadedRegionNode>
 deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf, ::fixy::BumpArena& arena) {
     using namespace detail_ser;
-    Reader r{.buf = buf.data(), .pos = 0, .len = buf.size()};
+    Reader r{.image = ::fixy::mint_foreign_view(buf.data(), buf.size())};
 
     const Header hdr = read_header(r);
-    if (!r.ok || hdr.magic != CDAG_MAGIC || !cdag_version_matches(hdr.version) || hdr.kind != TraceNodeKind::REGION) {
+    if (!r.is_intact || hdr.magic != CDAG_MAGIC || !cdag_version_matches(hdr.version)
+        || hdr.kind != TraceNodeKind::REGION) {
         return std::nullopt;
     }
 
@@ -493,8 +493,8 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
     const SchemaHash first_op_schema = SchemaHash{r.r<uint64_t>()};
     // RegionNode::set_measured_ms keeps the time finite and not negative.
     // The comparison also refuses a NaN.
-    const float measured_ms = r.read_gated<float>(
-        [](float ms) noexcept { return ms >= 0.0f && ms <= std::numeric_limits<float>::max(); }, 0.0f);
+    const float measured_ms =
+        r.read_gated<float>([](float ms) noexcept { return ms >= 0.0f && ms <= ::fixy::max_of<float>; }, 0.0f);
     const uint32_t variant_id = r.r<uint32_t>();
 
     MemoryPlan* plan = nullptr;
@@ -522,11 +522,11 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
         plan->device_type =
             make_device_type(::fixy::mint_refined<valid_device_type>(r.read_gated<int8_t>(valid_device_type)));
         plan->device_idx = r.r<int8_t>();
-        r.read_zero_pad(plan->pad0);
+        r.read_zero_pad<sizeof(plan->pad0)>();
         plan->device_capability = r.r<uint64_t>();
         plan->rank = r.r<int32_t>();
         plan->world_size = r.r<int32_t>();
-        if (!r.has_remaining<std::array<uint8_t, kTensorSlotWireBytes>>(num_slots)) {
+        if (!r.has_remaining(num_slots, kTensorSlotWireBytes)) {
             return std::nullopt;
         }
         plan->slots = arena.array<TensorSlot>(a, num_slots, TensorSlot{});
@@ -544,7 +544,7 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
     // flags gives a floor per entry, which is enough to reject a declared op
     // count that the remaining bytes cannot possibly hold.
     constexpr size_t kTraceEntryMinWireBytes = 40;
-    if (num_ops > 0 && r.remaining() < static_cast<size_t>(num_ops) * kTraceEntryMinWireBytes) {
+    if (!r.has_remaining(num_ops, kTraceEntryMinWireBytes)) {
         return std::nullopt;
     }
     const ::fixy::View<TraceEntry> ops = arena.array<TraceEntry>(a, num_ops, TraceEntry{});
@@ -641,7 +641,7 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
         te.set_output_slot_ids(output_slot_ids);
     }
 
-    if (!r.ok) return std::nullopt;
+    if (!r.is_intact) return std::nullopt;
 
     // The content hash is the region's identity and the key of its kernels
     // in the cache.  The header states it, and the header comes from outside,
@@ -669,10 +669,10 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
     node.ops = ops;
     node.first_op_schema = first_op_schema;
     node.measured_ms = measured_ms;
-    // The counter is reconstructed rather than advanced. The value on disk may
-    // be zero, meaning no variant had been selected when the region was
-    // written, and advancing to zero is exactly what the counter forbids.
-    std::construct_at(&node.variant_id, ::fixy::mint_monotonic<uint32_t>(variant_id));
+    // A new node holds the counter at zero, and each value on disk is at
+    // least zero, so the advance does not go back.  A value of zero means
+    // that no variant was selected when the region was written.
+    node.variant_id.advance(variant_id);
     node.plan = plan;
     // The node is rebuilt from Cipher bytes, and the fold above matched the
     // content hash that the image records, so it crosses the edge to Loaded.
@@ -710,10 +710,11 @@ template <typename Resolve>
                                                     Resolve&& resolve) {
     Resolve resolver = std::forward<Resolve>(resolve);
     using namespace detail_ser;
-    Reader r{.buf = buf.data(), .pos = 0, .len = buf.size()};
+    Reader r{.image = ::fixy::mint_foreign_view(buf.data(), buf.size())};
 
     const Header hdr = read_header(r);
-    if (!r.ok || hdr.magic != CDAG_MAGIC || !cdag_version_matches(hdr.version) || hdr.kind != TraceNodeKind::BRANCH) {
+    if (!r.is_intact || hdr.magic != CDAG_MAGIC || !cdag_version_matches(hdr.version)
+        || hdr.kind != TraceNodeKind::BRANCH) {
         return nullptr;
     }
     // The header's content-hash field holds the continuation's merkle hash.
@@ -728,7 +729,7 @@ template <typename Resolve>
     // sizes coincide today, but the in-memory arm holds a resolved pointer
     // where the wire holds a hash, so only one of them is the file's business.
     constexpr size_t kArmWireBytes = sizeof(int64_t) + sizeof(uint64_t);
-    if (num_arms > 0 && r.remaining() < static_cast<size_t>(num_arms) * kArmWireBytes) {
+    if (!r.has_remaining(num_arms, kArmWireBytes)) {
         return nullptr;
     }
 
@@ -746,7 +747,7 @@ template <typename Resolve>
 
     // Replay finds an arm by binary search on the value, so an image with
     // unsorted arms would route a guard outcome to the wrong target.
-    if (!r.ok || !node->are_arms_sorted_by_value()) return nullptr;
+    if (!r.is_intact || !node->are_arms_sorted_by_value()) return nullptr;
     return node;
 }
 

@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
             write_header(w, t.kind, t.mh, t.ch);
             if (w.pos != 32) return false;
 
-            Reader r{.buf = buf.data(), .pos = 0, .len = buf.size()};
+            Reader r{.image = ::fixy::mint_foreign_view(buf.data(), buf.size())};
             const Header h = read_header(r);
 
             // Round-trip equality on each field.
