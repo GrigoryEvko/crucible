@@ -5,10 +5,19 @@
 // inside a call that it knows to block.  A read or a write that blocks on a
 // pipe goes through read(2) or write(2) of the C library, which the sanitizer
 // intercepts.  The C library has no function for futex, so a futex call stays
-// raw, and this file tells the sanitizer of it through its hooks.  Each other
-// build compiles no code from this file.  A unit of the C library and a unit
-// of the kernel headers stay apart, so this file includes no header of the
-// kernel.
+// raw, and this file tells the sanitizer of it through its hooks.
+//
+// The sanitizer also keeps a state for each descriptor number.  Its hook of
+// close checks the close against the uses of the descriptor in other threads,
+// and then it clears that state, as its interceptor of close(2) does.  So a
+// close stays raw between the two hooks.  The sanitizer intercepts neither
+// openat nor openat2, and their hooks only check the reads of the path and of
+// the struct open_how.  No hook gives the state of a new descriptor, and the
+// clear of the close keeps a reused number free of an old state.
+//
+// Each other build compiles no code from this file.  A unit of the C library
+// and a unit of the kernel headers stay apart, so this file includes no
+// header of the kernel.
 
 #include "Intercepted.h"
 
@@ -32,11 +41,20 @@
 // their layer.  Each declaration is noexcept, because a hook of the sanitizer
 // throws no exception.  A noexcept function then has no table of the exception
 // path, and the member imports no personality routine of libstdc++.
+//
+// The hooks of close(2), openat(2) and openat2(2) take the words of their
+// call as long, and the post hook takes the result first, in the same form.
 extern "C" {
 void __sanitizer_syscall_pre_impl_futex(long address, long operation, long value, long timeout, long second_address,
                                         long third_value) noexcept;
 void __sanitizer_syscall_post_impl_futex(long result, long address, long operation, long value, long timeout,
                                          long second_address, long third_value) noexcept;
+void __sanitizer_syscall_pre_impl_close(long descriptor) noexcept;
+void __sanitizer_syscall_post_impl_close(long result, long descriptor) noexcept;
+void __sanitizer_syscall_pre_impl_openat(long directory, long path, long flags, long mode) noexcept;
+void __sanitizer_syscall_post_impl_openat(long result, long directory, long path, long flags, long mode) noexcept;
+void __sanitizer_syscall_pre_impl_openat2(long directory, long path, long how, long size) noexcept;
+void __sanitizer_syscall_post_impl_openat2(long result, long directory, long path, long how, long size) noexcept;
 void __tsan_acquire(void* address) noexcept;
 void __tsan_release(void* address) noexcept;
 }
@@ -98,6 +116,38 @@ void leave_futex(FutexCall const& call, long result) noexcept {
                                         static_cast<long>(call.second_address), static_cast<long>(call.third_value));
     if (call.role == FutexRole::wait && result == 0) {
         __tsan_acquire(__builtin_bit_cast(void*, call.address));
+    }
+}
+
+void enter_close(std::uint64_t descriptor) noexcept {
+    __sanitizer_syscall_pre_impl_close(static_cast<long>(descriptor));
+}
+
+void leave_close(std::uint64_t descriptor, long result) noexcept {
+    __sanitizer_syscall_post_impl_close(result, static_cast<long>(descriptor));
+}
+
+void enter_open(OpenWords const& words) noexcept {
+    auto const directory = static_cast<long>(words.directory);
+    auto const path = static_cast<long>(words.path);
+    auto const third = static_cast<long>(words.third);
+    auto const fourth = static_cast<long>(words.fourth);
+    if (words.call == OpenCall::openat) {
+        __sanitizer_syscall_pre_impl_openat(directory, path, third, fourth);
+    } else {
+        __sanitizer_syscall_pre_impl_openat2(directory, path, third, fourth);
+    }
+}
+
+void leave_open(OpenWords const& words, long result) noexcept {
+    auto const directory = static_cast<long>(words.directory);
+    auto const path = static_cast<long>(words.path);
+    auto const third = static_cast<long>(words.third);
+    auto const fourth = static_cast<long>(words.fourth);
+    if (words.call == OpenCall::openat) {
+        __sanitizer_syscall_post_impl_openat(result, directory, path, third, fourth);
+    } else {
+        __sanitizer_syscall_post_impl_openat2(result, directory, path, third, fourth);
     }
 }
 

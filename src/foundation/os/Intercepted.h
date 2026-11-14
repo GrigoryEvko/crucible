@@ -1,9 +1,10 @@
 #pragma once
 
 // The routes of the raw system call primitive in a build with
-// ThreadSanitizer, for a call that can block (THE SANITIZERS of
-// foundation/os/Syscall.h).  Only src/foundation/os/Syscall.cpp includes this
-// header, and only a build with ThreadSanitizer calls the functions.
+// ThreadSanitizer, for a call that can block and for a call that opens or
+// closes a descriptor (THE SANITIZERS of foundation/os/Syscall.h).  Only
+// src/foundation/os/Syscall.cpp includes this header, and only a build with
+// ThreadSanitizer calls the functions.
 
 #include <cstdint>
 
@@ -21,7 +22,6 @@ namespace foundation::os::detail {
 [[nodiscard, gnu::nothrow]] long read_intercepted(std::uint64_t descriptor, std::uint64_t address, std::uint64_t count);
 [[nodiscard, gnu::nothrow]] long write_intercepted(std::uint64_t descriptor, std::uint64_t address,
                                                    std::uint64_t count);
-
 // What a futex call does for the sanitizer: a wake publishes the writes of
 // the thread on the word, and a wait can see the writes of a wake.
 enum class FutexRole : std::uint8_t {
@@ -50,5 +50,41 @@ void enter_futex(FutexCall const& call) noexcept;
 // RESULT of the kernel.  The thread is out of the blocking call, and a wait
 // that ended with no error sees the writes that a wake on the word published.
 void leave_futex(FutexCall const& call, long result) noexcept;
+
+// Tells ThreadSanitizer of a raw close of DESCRIPTOR before the call.  The
+// sanitizer checks the close against each use of the descriptor in a
+// different thread, and then it clears its state of the descriptor.  So a
+// later descriptor with the same number starts with no state.
+void enter_close(std::uint64_t descriptor) noexcept;
+
+// Tells ThreadSanitizer of a raw close after the call, with the word RESULT
+// of the kernel.
+void leave_close(std::uint64_t descriptor, long result) noexcept;
+
+// One raw open of the *at family: the call, the directory, the address of the
+// path, and the two last words.  For openat they are the flags and the mode,
+// and for openat2 the address and the size of the struct open_how.
+enum class OpenCall : std::uint8_t {
+    openat,
+    openat2,
+};
+
+struct OpenWords {
+    OpenCall call = OpenCall::openat;
+    std::uint64_t directory = 0;
+    std::uint64_t path = 0;
+    std::uint64_t third = 0;
+    std::uint64_t fourth = 0;
+};
+
+// Tells ThreadSanitizer of a raw open before the call.  The sanitizer checks
+// the read of the path, and for openat2 the read of the struct open_how,
+// against each write of another thread.  The sanitizer keeps no state of a
+// new descriptor that a hook can give.
+void enter_open(OpenWords const& words) noexcept;
+
+// Tells ThreadSanitizer of a raw open after the call, with the word RESULT of
+// the kernel.
+void leave_open(OpenWords const& words, long result) noexcept;
 
 }  // namespace foundation::os::detail

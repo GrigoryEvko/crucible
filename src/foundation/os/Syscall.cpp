@@ -9,8 +9,8 @@
 // C library, because some declarations of the two kinds of header conflict.
 // In a build with ThreadSanitizer, the primitive gives a read or a write that
 // can block to src/foundation/os/Intercepted.cpp, which is the one door of the
-// floor that calls the C library.  It issues a futex call raw, between the
-// hooks of that file.
+// floor that calls the C library.  It issues a futex call, a close, an openat
+// and an openat2 raw, between the hooks of that file.
 
 #include <foundation/os/FutexWords.h>
 #include <foundation/os/KernelFloor.h>
@@ -363,6 +363,23 @@ long issue_watched_futex(detail::FutexCall const& call) noexcept {
     detail::leave_futex(call, result);
     return result;
 }
+
+// The one raw close, between the two hooks of the sanitizer.
+long issue_watched_close(std::uint64_t descriptor) noexcept {
+    detail::enter_close(descriptor);
+    long const result = issue(__NR_close, descriptor, 0, 0, 0, 0, 0);
+    detail::leave_close(descriptor, result);
+    return result;
+}
+
+// The one raw openat or openat2, between the two hooks of the sanitizer.
+long issue_watched_open(detail::OpenWords const& words) noexcept {
+    detail::enter_open(words);
+    long const number = words.call == detail::OpenCall::openat ? __NR_openat : __NR_openat2;
+    long const result = issue(number, words.directory, words.path, words.third, words.fourth, 0, 0);
+    detail::leave_open(words, result);
+    return result;
+}
 #endif
 
 // THE KERNEL FLOOR.  The first release of each architecture: x86_64 has each
@@ -602,6 +619,15 @@ long raw_syscall(Syscall call, Word first, Word second, Word third, Word fourth,
     }
     if (call == Syscall::write) {
         return detail::write_intercepted(first.bits(), second.bits(), third.bits());
+    }
+    if (call == Syscall::close) {
+        return issue_watched_close(first.bits());
+    }
+    if (call == Syscall::openat || call == Syscall::openat2) {
+        detail::OpenCall const open_call =
+            call == Syscall::openat ? detail::OpenCall::openat : detail::OpenCall::openat2;
+        return issue_watched_open(
+            detail::OpenWords{open_call, first.bits(), second.bits(), third.bits(), fourth.bits()});
     }
 #endif
     return issue(number_of(call), first.bits(), second.bits(), third.bits(), fourth.bits(), fifth.bits(), sixth.bits());

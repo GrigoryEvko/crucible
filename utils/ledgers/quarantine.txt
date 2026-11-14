@@ -96,7 +96,7 @@ bench/ | door-header | 2 | - | -
 bench/ | inline-asm | 3 | - | -
 bench/ | raw-function-pointer | 1 | - | -
 bench/ | raw-new-delete | 2 | - | -
-bench/ | raw-pointer-object | 119 | - | -
+bench/ | raw-pointer-object | 114 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
 bench/ | std-entity | 760 | - | -
@@ -107,10 +107,10 @@ examples/fn/ | raw-pointer-object | 7 | - | -
 examples/fn/ | replace-pending:std::bit_cast | 2 | - | -
 examples/fn/ | std-entity | 10 | - | -
 examples/fn/ | std-object | 3 | - | -
-include/crucible/ | c-array-object | 2 | - | -
+include/crucible/ | c-array-object | 1 | - | -
 include/crucible/ | compiler-builtin | 1 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
-include/crucible/ | raw-pointer-object | 63 | - | -
+include/crucible/ | raw-pointer-object | 58 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 1 | - | -
 include/crucible/ | std-entity | 1 | - | -
 include/crucible/cntp/ | c-library-call | 9 | - | -
@@ -283,7 +283,7 @@ include/foundation/reflect/ | replace-pending:<string_view> | 5 | - | -
 include/foundation/reflect/ | replace-pending:<tuple> | 1 | - | -
 include/foundation/reflect/ | replace-pending:<vector> | 4 | - | -
 src/ | raw-new-delete | 3 | - | -
-src/ | raw-pointer-object | 15 | - | -
+src/ | raw-pointer-object | 9 | - | -
 src/ | std-entity | 69 | - | -
 src/ | std-object | 15 | - | -
 src/fixy/os/ | base-std-entity | 153 | - | -
@@ -315,7 +315,7 @@ test/ | opted-out | 13 | PROBE: the current directory of the process is a direct
 test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | raw-function-pointer | 21 | - | -
 test/ | raw-new-delete | 41 | - | -
-test/ | raw-pointer-object | 397 | - | -
+test/ | raw-pointer-object | 390 | - | -
 test/ | region | 1 | PROBE: the current directory of the process is a directory that it cannot read | the test of the root of the Cipher makes its current directory unreadable through the C library, because the base has no door that changes the current directory or the mode of a directory, and an absolute root must open when the current directory does not open
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | replace-pending:<limits> | 12 | - | -
@@ -362,6 +362,7 @@ test/fixy/ | opted-out | 11 | PROBE: the seal test forges each payload view, gat
 test/fixy/ | opted-out | 1 | PROBE: the test forges stdio::write for a private stream, and IsAtom must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 2 | PROBE: the test forges the wire word of a keyed step and of a branch of a keyed choice | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 1 | PROBE: the test plants an atom in a shipped family, and IsAtom must refuse it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
+test/fixy/ | opted-out | 4 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | raw-function-pointer | 41 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
 test/fixy/ | raw-pointer-object | 159 | - | -
@@ -385,6 +386,7 @@ test/fixy/ | region | 1 | PROBE: the seal test forges each payload view, gate an
 test/fixy/ | region | 1 | PROBE: the test forges stdio::write for a private stream, and IsAtom must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: the test forges the wire word of a keyed step and of a branch of a keyed choice | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: the test plants an atom in a shipped family, and IsAtom must refuse it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
+test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
@@ -548,7 +550,7 @@ test/fuzz/property/ | c-array-object | 17 | - | -
 test/fuzz/property/ | c-library-call | 48 | - | -
 test/fuzz/property/ | compiler-builtin | 4 | - | -
 test/fuzz/property/ | raw-function-pointer | 2 | - | -
-test/fuzz/property/ | raw-pointer-object | 45 | - | -
+test/fuzz/property/ | raw-pointer-object | 43 | - | -
 test/fuzz/property/ | replace-pending:<limits> | 27 | - | -
 test/fuzz/property/ | std-entity | 143 | - | -
 test/fuzz/property/ | std-object | 30 | - | -
