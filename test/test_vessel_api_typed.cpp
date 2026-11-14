@@ -7,6 +7,7 @@
 #include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Lifetime.h>
 
 #include <array>
 #include <bit>
@@ -34,18 +35,27 @@ static_assert(sizeof(TypedHandle) == sizeof(CrucibleHandle));
 static_assert(alignof(TypedHandle) == alignof(CrucibleHandle));
 static_assert(std::is_trivially_copy_constructible_v<TypedHandle>);
 
-static_assert(
-    std::is_same_v<TypedMeta, ::fixy::Tagged<const crucible::TensorMeta*, ::fixy::tags::source::ABIBoundary>>);
+// The typed records keep the C type that the caller wrote.  Only
+// decode_ffi_meta makes a TensorMeta from a record.
+static_assert(std::is_same_v<TypedMeta, ::fixy::Tagged<const CrucibleMeta*, ::fixy::tags::source::ABIBoundary>>);
 static_assert(sizeof(TypedMeta) == sizeof(const CrucibleMeta*));
 static_assert(alignof(TypedMeta) == alignof(const CrucibleMeta*));
 static_assert(std::is_trivially_copy_constructible_v<TypedMeta>);
+
+// No door of the base starts the life of a TensorMeta over the bytes of a C
+// record, so the thunks decode each record into a list.  The checked lifetime
+// start refuses the Tagged pointer of a TensorMeta.  A foreign View refuses
+// its bool, its enumerations and its pointer.  decode refuses a pointer.
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<crucible::TensorMeta>);
+static_assert(!::foundation::core::ForeignElement<crucible::TensorMeta>);
+static_assert(!::foundation::core::ForeignElement<CrucibleMeta>);
+static_assert(!::foundation::core::DecodableFrom<crucible::TensorMeta, CrucibleMeta>);
 
 // Two tags make two distinct classes with no conversion between them.
 // That is what stops a value from crossing the boundary under the wrong
 // provenance.
 static_assert(!std::is_convertible_v<::fixy::Tagged<crucible::Vigil*, ::fixy::tags::source::External>, TypedHandle>);
-static_assert(
-    !std::is_convertible_v<::fixy::Tagged<const crucible::TensorMeta*, ::fixy::tags::source::External>, TypedMeta>);
+static_assert(!std::is_convertible_v<::fixy::Tagged<const CrucibleMeta*, ::fixy::tags::source::External>, TypedMeta>);
 
 // The boundary tag names a source, so the one door admits it.  The tag
 // a check earns is not mintable, so no helper here can claim it.
@@ -110,8 +120,8 @@ void test_handle_roundtrip() {
 }
 
 void test_meta_roundtrip() {
-    // Every field is filled, so reading the same bytes through either
-    // struct has to agree across the whole layout.
+    // Every field is filled, so the decode has to give each field of the
+    // record to the TensorMeta.
     CrucibleMeta meta{};
     meta.sizes[0] = 4;
     meta.sizes[1] = 8;
@@ -143,20 +153,33 @@ void test_meta_roundtrip() {
     EXPECT(typed_single.value() != nullptr, "as_meta_typed on non-null meta must return non-null pointer");
 
     auto typed_multi = crucible::vessel::as_meta_typed(arr, 2);
-    EXPECT(typed_multi.value() == std::bit_cast<const crucible::TensorMeta*>(&arr[0]),
-           "as_meta_typed pointer must match raw pointer (layout-compat reinterpret)");
+    EXPECT(typed_multi.value() == &arr[0], "as_meta_typed pointer must match the raw pointer");
 
-    // The three reads pick an array element, a scalar field and a tail
-    // field, which together catch an offset skew anywhere in the
-    // struct.
-    const auto* tm = typed_multi.value();
-    EXPECT(crucible::raw_tensor_dim(tm[0].sizes[0]) == 4, "TensorMeta::sizes[0] must read 4 from CrucibleMeta");
-    EXPECT(crucible::raw_tensor_dim(tm[0].sizes[1]) == 8, "TensorMeta::sizes[1] must read 8 from CrucibleMeta");
-    EXPECT(tm[0].ndim == 3, "TensorMeta::ndim must read 3");
-    EXPECT(crucible::raw_grad_fn_hash(tm[0]) == 0x0123456789ABCDEFULL,
-           "TensorMeta::grad_fn_hash must read all 64 bits intact");
-    EXPECT(tm[1].storage_nbytes == 4 * 8 * 16 * 4,
-           "Second-element storage_nbytes must read intact (no array stride bug)");
+    // The decode gives each field of the record, the data pointer too.
+    crucible::TensorMeta expected{};
+    expected.sizes[0] = crucible::tensor_dim(4);
+    expected.sizes[1] = crucible::tensor_dim(8);
+    expected.sizes[2] = crucible::tensor_dim(16);
+    expected.strides[0] = crucible::tensor_dim(128);
+    expected.strides[1] = crucible::tensor_dim(16);
+    expected.strides[2] = crucible::tensor_dim(1);
+    expected.data_ptr = crucible::external_data_ptr(meta.data_ptr);
+    expected.ndim = 3;
+    expected.dtype = crucible::ScalarType::Float;
+    expected.device_type = crucible::DeviceType::CUDA;
+    expected.device_idx = 1;
+    expected.layout = crucible::Layout::Strided;
+    expected.requires_grad = true;
+    expected.flags = 0x07;
+    expected.output_nr = 2;
+    expected.storage_offset = 32;
+    expected.version = 5;
+    expected.storage_nbytes = 4 * 8 * 16 * 4;
+    expected.grad_fn_hash = crucible::grad_fn_hash(0x0123456789ABCDEFULL);
+    const bool is_decoded_whole = crucible::vessel::decode_ffi_meta(arr[1]).match(
+        [&expected](crucible::TensorMeta decoded) noexcept { return decoded == expected; },
+        [] noexcept { return false; });
+    EXPECT(is_decoded_whole, "the decode must give each field of the record");
 
     const CrucibleMeta* roundtripped = crucible::vessel::metas_from_typed(typed_multi);
     EXPECT(roundtripped == arr, "metas_from_typed must round-trip to the original CrucibleMeta pointer");
@@ -165,10 +188,10 @@ void test_meta_roundtrip() {
     // wraps.
     std::array<std::byte, sizeof(TypedMeta)> typed_bytes{};
     std::memcpy(typed_bytes.data(), &typed_multi, sizeof(typed_multi));
-    const crucible::TensorMeta* raw_ptr = std::bit_cast<const crucible::TensorMeta*>(&arr[0]);
-    std::array<std::byte, sizeof(const crucible::TensorMeta*)> raw_bytes{};
+    const CrucibleMeta* raw_ptr = &arr[0];
+    std::array<std::byte, sizeof(const CrucibleMeta*)> raw_bytes{};
     std::memcpy(raw_bytes.data(), &raw_ptr, sizeof(raw_ptr));
-    EXPECT(typed_bytes == raw_bytes, "TypedMeta layout must be byte-identical to const TensorMeta*");
+    EXPECT(typed_bytes == raw_bytes, "TypedMeta layout must be byte-identical to const CrucibleMeta*");
 }
 
 void test_meta_zero_n_with_null() {
@@ -213,23 +236,19 @@ void test_data_ptr_typed() {
     EXPECT(typed_bytes == raw_bytes, "ExternalDataPtr layout must be byte-identical to void*");
 }
 
-// The C thunks copy the records of the caller into a list that they own, and
-// the View of the op borrows the list.  A count past the room of the list
-// copies nothing, and the thunk then records nothing.
+// The C thunks decode the records of the caller into a list that they own,
+// and the View of the op borrows the list.  A count past the room of the list
+// decodes nothing, and the thunk then records nothing.
 void test_ffi_records_copy() {
-    // The records of the caller are TensorMeta objects, so the copy reads each
-    // record through its own type.  A write through CrucibleMeta and a read
-    // through TensorMeta in one unit lets the optimizer move the read before
-    // the write.  Each record has a different rank, which names it.
-    ::fixy::FixedArray<crucible::TensorMeta, 3> sources{};
+    // Each record has a different rank, which names it.
+    ::fixy::FixedArray<CrucibleMeta, 3> sources{};
     sources.at(::fixy::index<0>()).ndim = 1;
     sources.at(::fixy::index<1>()).ndim = 2;
     sources.at(::fixy::index<2>()).ndim = 3;
-    const ::fixy::FixedArray<crucible::TensorMeta, 3>& caller = sources;
-    const TypedMeta typed = ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(&caller.at(::fixy::index<0>()));
+    const TypedMeta typed = crucible::vessel::as_meta_typed(&sources.at(::fixy::index<0>()), 3);
 
     crucible::vessel::OpRecords records{};
-    EXPECT(crucible::vessel::copy_ffi_records(typed, 3, records), "three records fit the list");
+    EXPECT(crucible::vessel::decode_ffi_records(typed, 3, records), "three records fit the list");
     EXPECT(records.size() == 3, "the list holds each record of the caller");
     const ::fixy::View<const crucible::TensorMeta> copied = records.view();
     EXPECT(copied.get(0).expect("the copy holds a first record")->ndim == 1,
@@ -238,9 +257,116 @@ void test_ffi_records_copy() {
            "the last record of the copy is the last record of the caller");
 
     crucible::vessel::OpRecords refused{};
-    EXPECT(!crucible::vessel::copy_ffi_records(typed, crucible::vessel::kMaxOpRecords + 1, refused),
+    EXPECT(!crucible::vessel::decode_ffi_records(typed, crucible::vessel::kMaxOpRecords + 1, refused),
            "a count past the room of the list is refused");
-    EXPECT(refused.size() == 0, "a refused count copies no record");
+    EXPECT(refused.size() == 0, "a refused count decodes no record");
+}
+
+// A C caller writes each record through CrucibleMeta, its own type, and the
+// thunk reads the records in the same unit.  Each record that the thunk gives
+// holds the fields that the caller wrote.
+void test_ffi_records_read_the_c_records() {
+    CrucibleMeta written{};
+    written.sizes[0] = 12;
+    written.strides[0] = 1;
+    written.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0x2000U));
+    written.ndim = 1;
+    written.dtype = static_cast<int8_t>(crucible::ScalarType::Float);
+    written.requires_grad = 1;
+    written.storage_nbytes = 444;
+    written.grad_fn_hash = 0xABC2U;
+    ::fixy::FixedArray<CrucibleMeta, 2> callers{};
+    callers.at(::fixy::index<0>()) = written;
+    callers.at(::fixy::index<1>()) = written;
+
+    crucible::vessel::OpRecords records{};
+    EXPECT(crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2), 2,
+                                                records),
+           "two records fit the list");
+    EXPECT(records.size() == 2, "the list holds each record of the caller");
+    for (const crucible::TensorMeta& read : records.view()) {
+        EXPECT(read.ndim == 1, "a record holds the rank that the caller wrote");
+        EXPECT(crucible::raw_tensor_dim(read.sizes[0]) == 12, "a record holds the size that the caller wrote");
+        EXPECT(read.dtype == crucible::ScalarType::Float, "a record holds the element type that the caller wrote");
+        EXPECT(read.requires_grad, "a record holds the gradient flag that the caller wrote");
+        EXPECT(crucible::raw_data_ptr(read) == written.data_ptr,
+               "a record holds the data pointer that the caller wrote");
+        EXPECT(read.storage_nbytes == 444, "a record holds the storage size that the caller wrote");
+        EXPECT(crucible::raw_grad_fn_hash(read) == 0xABC2U, "a record holds the hash that the caller wrote");
+    }
+}
+
+// True when decode_ffi_meta gives a TensorMeta for the record.
+[[nodiscard]] bool is_decoded(const CrucibleMeta& record) noexcept {
+    return crucible::vessel::decode_ffi_meta(record).is_some();
+}
+
+// decode_ffi_meta refuses each byte of a record that breaks a claim of
+// TensorMeta, and decode_ffi_records then records nothing for the op.
+void test_ffi_decode_refuses_each_broken_claim() {
+    CrucibleMeta held{};
+    held.ndim = 2;
+    held.sizes[0] = 3;
+    held.sizes[1] = 5;
+    held.strides[0] = 5;
+    held.strides[1] = 1;
+    held.dtype = static_cast<int8_t>(crucible::ScalarType::Float);
+    held.device_type = static_cast<int8_t>(crucible::DeviceType::CPU);
+    held.device_idx = -1;
+    held.layout = static_cast<int8_t>(crucible::Layout::Strided);
+    held.requires_grad = 1;
+    held.flags = 0x3F;
+    EXPECT(is_decoded(held), "a record that holds each claim decodes");
+
+    CrucibleMeta wide_rank = held;
+    wide_rank.ndim = crucible::kMaxTensorNDim + 1;
+    EXPECT(!is_decoded(wide_rank), "a rank past kMaxTensorNDim is refused");
+
+    CrucibleMeta wide_size = held;
+    wide_size.sizes[1] = crucible::kMaxTensorDimExtent + 1;
+    EXPECT(!is_decoded(wide_size), "a size past kMaxTensorDimExtent is refused");
+
+    CrucibleMeta wide_stride = held;
+    wide_stride.strides[0] = crucible::kMaxTensorDimExtent + 1;
+    EXPECT(!is_decoded(wide_stride), "a stride past kMaxTensorDimExtent is refused");
+
+    CrucibleMeta size_tail = held;
+    size_tail.sizes[2] = 7;
+    EXPECT(!is_decoded(size_tail), "a size past the rank that is not zero is refused");
+
+    CrucibleMeta stride_tail = held;
+    stride_tail.strides[7] = 1;
+    EXPECT(!is_decoded(stride_tail), "a stride past the rank that is not zero is refused");
+
+    CrucibleMeta unnamed_dtype = held;
+    unnamed_dtype.dtype = 27;
+    EXPECT(!is_decoded(unnamed_dtype), "an element type that names no enumerator is refused");
+
+    CrucibleMeta unnamed_device = held;
+    unnamed_device.device_type = 12;
+    EXPECT(!is_decoded(unnamed_device), "a device that names no enumerator is refused");
+
+    CrucibleMeta unnamed_layout = held;
+    unnamed_layout.layout = 7;
+    EXPECT(!is_decoded(unnamed_layout), "a layout that names no enumerator is refused");
+
+    CrucibleMeta negative_device = held;
+    negative_device.device_idx = -2;
+    EXPECT(!is_decoded(negative_device), "a device index below -1 is refused");
+
+    CrucibleMeta wide_grad = held;
+    wide_grad.requires_grad = 2;
+    EXPECT(!is_decoded(wide_grad), "a gradient byte other than 0 and 1 is refused");
+
+    CrucibleMeta reserved_flag = held;
+    reserved_flag.flags = 0x40;
+    EXPECT(!is_decoded(reserved_flag), "a reserved bit of the flags is refused");
+
+    ::fixy::FixedArray<CrucibleMeta, 2> callers{held, wide_grad};
+    crucible::vessel::OpRecords records{};
+    EXPECT(!crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2), 2,
+                                                 records),
+           "an op with a refused record is refused");
 }
 
 void test_schema_name_typed() {
@@ -429,6 +555,8 @@ int main() {
     test_meta_zero_n_with_null();
     test_data_ptr_typed();
     test_ffi_records_copy();
+    test_ffi_records_read_the_c_records();
+    test_ffi_decode_refuses_each_broken_claim();
     test_schema_name_typed();
     test_abi_version_constant();
     test_handle_distinct_pointers();

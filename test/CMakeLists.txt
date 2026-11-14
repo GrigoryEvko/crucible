@@ -4078,14 +4078,23 @@ crucible_neg_compile_test(neg_vessel_typed_handle_wrong_tag
 
 # ─── Vessel ABI typed-meta direction fence ────────────────────────
 #
-# The matching neg-compile witness for as_meta_typed / metas_from_typed
-# (the helper that carries the TensorMeta cast beside the Vigil
-# handle).  Pins that wrong-tag values cannot
-# launder as ABIBoundary-tagged metas — same architectural rationale
-# as the handle fence above, applied to the meta-array entry point.
+# The matching neg-compile witness for as_meta_typed / metas_from_typed,
+# the helpers of the C records beside the Vigil handle.  Pins that
+# wrong-tag values cannot launder as ABIBoundary-tagged metas — same
+# architectural rationale as the handle fence above, applied to the
+# meta-array entry point.
 crucible_neg_compile_test(neg_vessel_typed_meta_wrong_tag
     "could not convert .wrong_tag. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
     "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::ABIBoundary>.")
+
+# The typed records of a C caller hold CrucibleMeta, the type that the
+# caller wrote.  A read of a record through TensorMeta breaks strict
+# aliasing, so the fixture shows that a typed record is no TensorMeta for a
+# reader of one.  decode_ffi_meta is the one door from a record to a
+# TensorMeta.
+crucible_neg_compile_test(neg_vessel_meta_records_are_not_tensor_meta
+    "no matching function for call to .raw_grad_fn_hash\\(const CrucibleMeta&\\)."
+    "neg_vessel_meta_records_are_not_tensor_meta.cpp:22")
 
 # ─── Vessel typed-accessor provenance fences ──────────────────────
 #

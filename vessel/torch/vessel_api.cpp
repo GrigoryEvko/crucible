@@ -5,20 +5,19 @@
 //   * `vessel::as_vigil_typed(h)` materializes a
 //     `Tagged<Vigil*, source::ABIBoundary>` from the opaque handle.
 //   * `vessel::as_meta_typed(metas)` materializes a
-//     `Tagged<const TensorMeta*, source::ABIBoundary>` from the
-//     CrucibleMeta array (layout-compat reinterpret pinned by the
-//     static_asserts in the typed-helper header).
+//     `Tagged<const CrucibleMeta*, source::ABIBoundary>` from the
+//     CrucibleMeta array, and `vessel::decode_ffi_records` makes a
+//     TensorMeta from each record through the checks of
+//     `vessel::decode_ffi_meta`.
 // The Tagged value is unwrapped (`.value()`) just before the actual
 // Vigil method invocation, so provenance is type-visible across the
 // entire thunk while the runtime cost stays at zero (regime-1 EBO
 // collapse on `Tagged<T, Tag>`).
 //
-// Review-enforced rule: no raw `static_cast<Vigil*>(h)` /
-// `reinterpret_cast<TensorMeta*>(metas)` is permitted in this file —
+// Review-enforced rule: no raw `static_cast<Vigil*>(h)` is permitted in
+// this file, and no code reads a CrucibleMeta record as a TensorMeta —
 // grep for `as_vigil_typed` / `as_meta_typed` to find every ABI-
-// crossing site in O(1).  The CrucibleMeta ↔ TensorMeta layout
-// invariants live in vessel_api_typed.h so the proof and the cast
-// are co-located.
+// crossing site in O(1).
 
 #include "vessel_api.h"
 #include "vessel_api_typed.h"
@@ -159,8 +158,7 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
     if (metas == nullptr && n_metas > 0) return CrucibleDispatchResult{};
 
     // metas crosses the FFI as `CrucibleMeta*` and takes the typed-meta
-    // helper for the layout-compatible view change and the provenance
-    // tag.
+    // helper for the provenance tag.
     auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
 
     // The trust ladder.  Every field above came from a caller this
@@ -175,10 +173,11 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
     // This entry asks no is_producer_thread question, so that gate is its
     // only guard.
     //
-    // The op borrows its records, so the thunk first copies the records of
-    // the caller into a list that it owns.
+    // The op borrows its records, so the thunk first decodes the records of
+    // the caller into a list that it owns.  A record that the decode refuses
+    // records nothing.
     crucible::vessel::OpRecords records{};
-    if (!crucible::vessel::copy_ffi_records(metas_typed, n_metas, records)) return CrucibleDispatchResult{};
+    if (!crucible::vessel::decode_ffi_records(metas_typed, n_metas, records)) return CrucibleDispatchResult{};
     const auto validated = crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records.view());
     for (const crucible::ValidatedOp& op : validated) {
         const auto vigil = ::fixy::to(*vigil_typed.value());
@@ -229,14 +228,13 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
     if (metas == nullptr && n_metas > 0) return CrucibleDispatchResult{};
 
     // metas crosses the FFI as `CrucibleMeta*` and takes the typed-meta
-    // helper for the layout-compatible view change and the provenance
-    // tag.
+    // helper for the provenance tag.
     auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
 
     // The trust ladder; see the sister site in crucible_dispatch_op.  The
     // producer claim gates this entry as it gates crucible_dispatch_op.
     crucible::vessel::OpRecords records{};
-    if (!crucible::vessel::copy_ffi_records(metas_typed, n_metas, records)) return CrucibleDispatchResult{};
+    if (!crucible::vessel::decode_ffi_records(metas_typed, n_metas, records)) return CrucibleDispatchResult{};
     const auto validated = crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records.view());
     for (const crucible::ValidatedOp& op : validated) {
         const auto vigil = ::fixy::to(*vigil_typed.value());

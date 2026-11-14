@@ -4,8 +4,10 @@
 // TorchDispatchMode (Python) calls these functions to feed real ATen ops
 // into Crucible's recording and dispatch pipeline.
 //
-// CrucibleMeta is binary-compatible with crucible::TensorMeta (176 bytes).
-// All enum types use the same int8_t ordinals as c10::ScalarType etc.
+// CrucibleMeta has the layout of crucible::TensorMeta (176 bytes).  The C++
+// side reads each record through CrucibleMeta and decodes it into a
+// TensorMeta.  All enum types use the same int8_t ordinals as
+// c10::ScalarType etc.
 //
 // ── Typed-boundary discipline ────────────────────────────────────────
 //
@@ -16,8 +18,10 @@
 //
 //   * CrucibleHandle          → Tagged<Vigil*, source::ABIBoundary>
 //                               via `as_vigil_typed(h)`.
-//   * const CrucibleMeta*     → Tagged<const TensorMeta*, ABIBoundary>
-//                               via `as_meta_typed(metas, n)`.
+//   * const CrucibleMeta*     → Tagged<const CrucibleMeta*, ABIBoundary>
+//                               via `as_meta_typed(metas, n)`, and each
+//                               record → TensorMeta via
+//                               `decode_ffi_meta(record)`.
 //   * CrucibleMeta::data_ptr  → Tagged<void*, source::External>
 //                               via `data_ptr_typed(typed_meta, i)`
 //                               — provenance threads into

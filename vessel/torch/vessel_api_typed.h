@@ -15,11 +15,13 @@
 //   as_vigil_typed(handle)    : CrucibleHandle           -> TypedHandle
 //   from_typed(typed)         : TypedHandle              -> CrucibleHandle
 //
-//   TypedMeta                 := Tagged<const TensorMeta*, ABIBoundary>
+//   TypedMeta                 := Tagged<const CrucibleMeta*, ABIBoundary>
 //   as_meta_typed(metas)      : const CrucibleMeta*      -> TypedMeta
 //   metas_from_typed(typed)   : TypedMeta                -> const CrucibleMeta*
 //
 //   data_ptr_typed(typed, i)  : TypedMeta, std::size_t   -> ExternalDataPtr
+//   decode_ffi_meta(record)   : const CrucibleMeta&      -> Option<TensorMeta>
+//   decode_ffi_records(...)   : TypedMeta, count, list   -> bool
 //
 //   TypedSchemaName           := SchemaTable::LookupName
 //   schema_name_typed(hash)   : SchemaHash               -> TypedSchemaName
@@ -30,33 +32,38 @@
 //
 // ── ABI invariant ──────────────────────────────────────────────────
 //
-// CrucibleMeta is layout-compatible with crucible::TensorMeta by
-// construction; the static_asserts below pin every byte of that
-// claim.  `as_meta_typed` and `metas_from_typed` change the pointer's
-// view with std::bit_cast and are the SOLE pair of such casts in the
-// Vessel boundary — any other cast between the two structs is a
-// review concern.
+// The C caller writes CrucibleMeta records, and the vessel reads each
+// record through CrucibleMeta.  decode_ffi_meta is the one door from a
+// record to a TensorMeta: it reads each field, does a check of it, and
+// writes it into a new TensorMeta.  A read of a CrucibleMeta record
+// through a glvalue of TensorMeta breaks the rule of strict aliasing.
+// GCC at -O3 then removes the stores of the record and reads bytes that
+// the caller did not write.  So no code casts between the two structs.
+//
+// The static_asserts below keep the layout of CrucibleMeta equal to the
+// layout of TensorMeta, byte for byte.  The trace file of crucible_mode.py
+// holds its records in that one layout.  The decode does not need it.
 //
 // ── Zero-cost guarantee ────────────────────────────────────────────
 //
 // `Tagged<T, Tag>` is regime-1 EBO collapse via TrustLattice<Tag>'s
 // empty element_type, so `sizeof(TypedHandle) == sizeof(void*)` and
 // `sizeof(TypedMeta) == sizeof(void*)` are static_assert'd below.
-// The two helpers are CRUCIBLE_HOT (always-inline) and compile to
-// the same machine code as the bare `static_cast` / `bit_cast` after
-// EBO collapse — verified by the production binary's `objdump`
-// snapshot and by the cross-bench harness.
+// The helpers that give a type to a pointer are CRUCIBLE_HOT
+// (always-inline) and compile to the same machine code as the bare
+// pointer after EBO collapse.
 //
 // ── Usage rule (review-enforced) ───────────────────────────────────
 //
 // Every C-ABI thunk in vessel_api.cpp begins with `as_vigil_typed(h)`
 // (and `as_meta_typed(metas)` if it accepts a meta array).  No raw
-// `static_cast<Vigil*>(h)` / `bit_cast<TensorMeta*>(metas)` is
-// permitted outside this header.  Grepping for `as_vigil_typed` or
-// `as_meta_typed` finds every ABI-crossing site in O(1).
+// `static_cast<Vigil*>(h)` is permitted outside this header.  Grepping
+// for `as_vigil_typed` or `as_meta_typed` finds every ABI-crossing site
+// in O(1).
 
 #include "vessel_api.h"
 
+#include <crucible/MerkleDag.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
@@ -96,23 +103,23 @@ static_assert(sizeof(TypedHandle) == sizeof(CrucibleHandle));
 static_assert(alignof(TypedHandle) == alignof(CrucibleHandle));
 static_assert(std::is_trivially_copy_constructible_v<TypedHandle>);
 
-// ── TensorMeta typed view ─────────────────────────────────────────
+// ── The typed records of a C caller ───────────────────────────────
+//
+// The records keep their C type.  decode_ffi_meta below makes a TensorMeta
+// from one record.
 
-using TypedMeta = ::fixy::Tagged<const TensorMeta*, ::fixy::tags::source::ABIBoundary>;
+using TypedMeta = ::fixy::Tagged<const CrucibleMeta*, ::fixy::tags::source::ABIBoundary>;
 
 static_assert(sizeof(TypedMeta) == sizeof(const CrucibleMeta*));
 static_assert(alignof(TypedMeta) == alignof(const CrucibleMeta*));
 static_assert(std::is_trivially_copy_constructible_v<TypedMeta>);
 
-// ── Layout-compat invariants for CrucibleMeta ↔ TensorMeta ────────
+// ── The layout of CrucibleMeta ────────────────────────────────────
 //
-// These are the ABI claim that justifies the `bit_cast` in
-// `as_meta_typed` below: a `const CrucibleMeta*` and a
-// `const TensorMeta*` point at the same byte sequence.  If any
-// assertion fires, the C struct is out of sync with the C++ struct —
-// at which point a read through the cast pointer is UB and the FFI is
-// shovelling garbage to the recording pipeline.  Pinned at the typed
-// helper because this header is the single home for the layout cast.
+// The trace file of crucible_mode.py holds CrucibleMeta records, and the
+// trace loader reads them as TensorMeta records.  So the two structs keep
+// one layout, byte for byte.  The C thunks do not read a record through
+// TensorMeta, and decode_ffi_meta does not need the equal layouts.
 static_assert(sizeof(CrucibleMeta) == sizeof(crucible::TensorMeta), "CrucibleMeta size must match TensorMeta");
 static_assert(sizeof(CrucibleMeta) == 176);
 static_assert(offsetof(CrucibleMeta, sizes) == 0);
@@ -132,8 +139,8 @@ static_assert(offsetof(CrucibleMeta, pad0) == 156);
 static_assert(offsetof(CrucibleMeta, storage_nbytes) == 160);
 static_assert(offsetof(CrucibleMeta, grad_fn_hash) == 168);
 
-// The helpers from here to data_ptr_typed take the handle and the meta array
-// of the C ABI as raw pointers, and give them a type.
+// The helpers from here to decode_ffi_records take the handle and the meta
+// array of the C ABI as raw pointers, give them a type, and read the records.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the helpers give a type to the handle and the meta array of the C caller")
 
 namespace detail {
@@ -152,11 +159,10 @@ inline void assert_plausible_vigil_handle(CrucibleHandle handle) noexcept {
     CRUCIBLE_PRE((bits & (kVigilHandleAlignment - 1U)) == 0U);
 }
 
-// CrucibleMeta is layout-compatible with TensorMeta by construction
-// (asserted above).  An empty array comes with a null pointer, and each
-// other array comes with a pointer that is not null.  The pointer has the
-// alignment of a CrucibleMeta.  The checks stay in each build, so a damaged
-// array of the C ABI ends the process before a read through it.
+// An empty array comes with a null pointer, and each other array comes with
+// a pointer that is not null.  The pointer has the alignment of a
+// CrucibleMeta.  The checks stay in each build, so a damaged array of the C
+// ABI ends the process before a read through it.
 inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n_metas) noexcept {
     CRUCIBLE_PRE((metas == nullptr) == (n_metas == 0U));
     CRUCIBLE_PRE((std::bit_cast<std::uintptr_t>(metas) & (alignof(CrucibleMeta) - 1U)) == 0U);
@@ -175,31 +181,16 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
 
 // ── Meta-array typed view ──────────────────────────────────────────
 //
-// `n_metas` is consumed only by the debug plausibility check; the
-// returned typed view doesn't carry length, since callers already
-// thread `n_metas` separately through the C ABI.  When n_metas==0,
-// `metas` MUST be nullptr — the invariant the C ABI promises.
+// `n_metas` is consumed only by the plausibility check.  The returned
+// typed view does not carry the length, because callers already thread
+// `n_metas` separately through the C ABI.  When n_metas==0, `metas`
+// MUST be nullptr — the invariant the C ABI promises.
 [[nodiscard]] CRUCIBLE_HOT TypedMeta as_meta_typed(const CrucibleMeta* metas, std::size_t n_metas = 0) noexcept {
     detail::assert_plausible_meta_array(metas, n_metas);
-    // A `const CrucibleMeta*` and a `const TensorMeta*` are both object
-    // pointers of one width, so bit_cast reproduces the address and the
-    // view changes without the value changing.
-    //
-    // What makes the read through the result sound is the offsetof and
-    // sizeof block above, not the spelling of the cast: the two structs
-    // are layout-compatible byte for byte, and any drift fires a
-    // static_assert here before a caller can reach the pipeline with a
-    // mismatched struct. std::start_lifetime_as is the other candidate
-    // and does not apply — TensorMeta carries member initializers, so
-    // its default constructor is not trivial and the type is not an
-    // implicit-lifetime type.
-    return ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(std::bit_cast<const crucible::TensorMeta*>(metas));
+    return ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(metas);
 }
 
-[[nodiscard]] CRUCIBLE_HOT const CrucibleMeta* metas_from_typed(TypedMeta typed) noexcept {
-    // The inverse view change, sound by the same layout block.
-    return std::bit_cast<const CrucibleMeta*>(typed.value());
-}
+[[nodiscard]] CRUCIBLE_HOT const CrucibleMeta* metas_from_typed(TypedMeta typed) noexcept { return typed.value(); }
 
 // ── Per-meta data_ptr typed accessor ───────────────────────────────
 //
@@ -209,37 +200,95 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
 // side".  The field is an ExternalDataPtr, a `Tagged<void*,
 // source::External>`, so downstream consumers (memory-plan recording,
 // pool-shadow-handle binding, Cipher snapshot serializer) carry the
-// provenance into their own type-level reasoning.  TensorMeta.h pins
-// its size, its standard layout and its trivial copy.  This helper is
-// a pure read.
+// provenance into their own type-level reasoning.  This helper reads
+// the pointer of one record through CrucibleMeta.
 //
 // `i` MUST be a valid index in the typed meta array (caller is the
 // authority on the array length, which travels via `n_metas` through
 // the C ABI).  The precondition refuses a null array in each build.
 [[nodiscard]] CRUCIBLE_HOT ExternalDataPtr data_ptr_typed(TypedMeta typed, std::size_t i) noexcept {
-    const TensorMeta* metas = typed.value();
+    const CrucibleMeta* metas = typed.value();
     CRUCIBLE_PRE(metas != nullptr);
-    return metas[i].data_ptr;
+    return external_data_ptr(metas[i].data_ptr);
 }
 
 // ── The records of one op of a C caller ────────────────────────────
 //
-// A recording entry point takes the records of an op as a View.  The C ABI
-// gives a pointer and a count, and no door of the base makes a View of a
-// foreign run whose records hold enumerations and a pointer.  So a thunk
-// copies the records into a list that it owns, and the View borrows the
-// list.  The list holds the most records that the trust ladder admits:
-// 64 inputs and 64 outputs (entry_is_well_formed).
+// A recording entry point takes the records of an op as a View of
+// TensorMeta.  The C caller gives CrucibleMeta records, and a TensorMeta
+// exists only where the vessel makes one.  No door of the base starts the
+// life of a TensorMeta over foreign bytes: the checked lifetime start and
+// mint_foreign_view refuse a type with a Tagged pointer, a bool and
+// enumerations, and decode refuses a pointer.  So a thunk decodes each
+// record into a list that it owns, and the View borrows the list.  The list
+// holds the most records that the trust ladder admits: 64 inputs and 64
+// outputs (entry_is_well_formed).
 
 inline constexpr uint32_t kMaxOpRecords = 128;
 using OpRecords = ::fixy::FixedList<TensorMeta, kMaxOpRecords>;
 
-// Copies the n_metas records at typed into records.  Returns false when the
-// count passes the room of the list.  The caller then records nothing.
-[[nodiscard]] inline bool copy_ffi_records(TypedMeta typed, uint32_t n_metas, OpRecords& records) noexcept {
+// The TensorMeta of one record of a C caller, or no value.  The door reads
+// each field through CrucibleMeta, the type that the caller wrote, and does
+// a check of it before a TensorMeta holds it.  The checks are the claims
+// that decode_trace_meta of crucible/TraceLoader.h checks for a record of a
+// trace file:
+//
+//   - the rank is at most kMaxTensorNDim
+//   - each size and each stride below the rank is at most kMaxTensorDimExtent
+//   - each lane past the rank holds zero
+//   - the element type, the device and the layout each name an enumerator
+//   - the device index is -1 for the host, or zero or more
+//   - the gradient byte is 0 or 1, and no reserved bit of the flags is set.
+//
+// The data pointer is an address of this process, and the door keeps it.
+// The padding stays zero.  Linear in kMaxTensorNDim.
+[[nodiscard]] inline ::fixy::Option<TensorMeta> decode_ffi_meta(const CrucibleMeta& record) noexcept {
+    const uint8_t ndim = record.ndim;
+    if (ndim > kMaxTensorNDim) return ::fixy::none;
+    TensorMeta meta{};
+    meta.ndim = make_ndim(::fixy::mint_refined<::fixy::bounded_above<kMaxTensorNDim>>(ndim));
+    for (uint8_t lane = 0; lane < kMaxTensorNDim; ++lane) {
+        const int64_t size = record.sizes[lane];
+        const int64_t stride = record.strides[lane];
+        const bool is_lane_held =
+            lane < ndim ? size <= kMaxTensorDimExtent && stride <= kMaxTensorDimExtent : size == 0 && stride == 0;
+        if (!is_lane_held) return ::fixy::none;
+        meta.sizes[lane] = tensor_dim(size);
+        meta.strides[lane] = tensor_dim(stride);
+    }
+
+    if (!valid_scalar_type(record.dtype) || !valid_device_type(record.device_type) || !valid_layout(record.layout))
+        return ::fixy::none;
+    meta.dtype = make_scalar_type(::fixy::mint_refined<valid_scalar_type>(record.dtype));
+    meta.device_type = make_device_type(::fixy::mint_refined<valid_device_type>(record.device_type));
+    meta.layout = make_layout(::fixy::mint_refined<valid_layout>(record.layout));
+
+    constexpr uint8_t known_flags = meta_flags::IS_LEAF | meta_flags::IS_CONTIGUOUS | meta_flags::HAS_GRAD_FN
+                                  | meta_flags::IS_VIEW | meta_flags::IS_NEG | meta_flags::IS_CONJ;
+    if (record.device_idx < -1 || record.requires_grad > 1 || (record.flags & ~known_flags) != 0) return ::fixy::none;
+    meta.device_idx = record.device_idx;
+    meta.requires_grad = record.requires_grad == 1;
+    meta.flags = record.flags;
+
+    meta.data_ptr = external_data_ptr(record.data_ptr);
+    meta.output_nr = record.output_nr;
+    meta.storage_offset = record.storage_offset;
+    meta.version = record.version;
+    meta.storage_nbytes = record.storage_nbytes;
+    meta.grad_fn_hash = grad_fn_hash(record.grad_fn_hash);
+    return ::fixy::Option<TensorMeta>::some(meta);
+}
+
+// Decodes the n_metas records at typed into records.  Returns false when the
+// count passes the room of the list or when decode_ffi_meta refuses a record.
+// The caller then records nothing.  Linear in n_metas.
+[[nodiscard]] inline bool decode_ffi_records(TypedMeta typed, uint32_t n_metas, OpRecords& records) noexcept {
     if (n_metas > kMaxOpRecords) return false;
     for (uint32_t i = 0; i < n_metas; ++i) {
-        if (records.push(typed.value()[i]).is_err()) return false;
+        const bool is_decoded = decode_ffi_meta(typed.value()[i])
+                                    .match([&records](TensorMeta meta) noexcept { return records.push(meta).is_ok(); },
+                                           [] noexcept { return false; });
+        if (!is_decoded) return false;
     }
     return true;
 }
