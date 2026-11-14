@@ -1032,6 +1032,10 @@ template <typename In, typename... Args>
     static_assert(has_split_authoring_witness_v<In, L, R>, "has_split_authoring_witness<In, L, R> missing for "
                                                            "combine; declare it next to the can_split_into "
                                                            "specialization.");
+    static_assert(tags_are_distinct({^^L, ^^R}), "mint_permission_combine<In> requires L and R to be DISTINCT "
+                                                 "region tags.  Two tokens of one tag folded into a parent "
+                                                 "would need two owners of one region, and the split of the "
+                                                 "parent refuses such a manifest.");
     return Permission<In, Brand>{perm_mint_key{}};
 }
 

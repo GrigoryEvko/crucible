@@ -1591,6 +1591,16 @@ foundation_neg_compile_test(neg_permission_combine_undeclared_parent
 foundation_neg_compile_test(neg_permission_combine_witness_missing
   "static assertion failed: has_split_authoring_witness<In, L, R> missing for combine"
   "has_split_authoring_witness_v<.anonymous.::Other, .anonymous.::Left, .anonymous.::Right>. evaluates to false")
+# A brand names a mint site, so two root mints through one site are two
+# tokens of one tag that the brand agreement admits.  The distinctness
+# check of the binary combine refuses them, in the form with no context
+# and in the ctx-bound form.
+foundation_neg_compile_test(neg_permission_combine_duplicate_child
+  "static assertion failed: mint_permission_combine<In> requires L and R to be DISTINCT region tags"
+  "mint_permission_combine\\(Args&& \\.\\.\\.\\) .with In = .anonymous.::Whole. Args = \\{Permission<.anonymous.::Half, ")
+foundation_neg_compile_test(neg_permission_combine_duplicate_child_with_ctx
+  "static assertion failed: mint_permission_combine<In> requires L and R to be DISTINCT region tags"
+  "mint_permission_combine\\(Args&& \\.\\.\\.\\) .with In = .anonymous.::Whole. Args = \\{foundation::effects::ExecCtx<")
 
 # The same four checks in the body of split_n, and the five in the body
 # of combine_n.
