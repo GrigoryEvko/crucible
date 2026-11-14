@@ -71,7 +71,7 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
                       dag_arena.array(alloc, 1, with_plan ? SlotId{0} : SlotId{}));
         op.set_outputs(dag_arena.array(alloc, 1, meta), dag_arena.array(alloc, 1, SlotId{i}));
     }
-    RegionNode* region = make_region(alloc, dag_arena, ops);
+    const ::fixy::Ref<RegionNode> region = make_region(alloc, dag_arena, ops);
     if (with_plan) {
         const ::fixy::Ref<MemoryPlan> plan = arena.make<MemoryPlan>(alloc);
         plan->pool_bytes = 2 * PoolAllocator::ALIGNMENT;
@@ -88,7 +88,7 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
         }
         region->plan = make_plan_link(*plan);
     }
-    return region;
+    return &*region;
 }
 
 [[nodiscard]] inline std::vector<std::uint8_t> region_image(const RegionNode* region) {

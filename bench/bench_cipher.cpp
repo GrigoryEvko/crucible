@@ -51,7 +51,7 @@ static RegionNode* synth_region(::fixy::BumpArena& dag_arena, uint32_t num_ops, 
         te.set_inputs(dag_arena.array(A, 1, meta), dag_arena.array(A, 1, OpIndex{}), dag_arena.array(A, 1, SlotId{}));
         te.set_outputs(dag_arena.array(A, 1, meta), dag_arena.array(A, 1, SlotId{}));
     }
-    return make_region(A, dag_arena, ops);
+    return &*make_region(A, dag_arena, ops);
 }
 
 // The store serializes the producer index and the slot ids of each op, and

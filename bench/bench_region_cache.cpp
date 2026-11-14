@@ -50,7 +50,7 @@ struct TestFixture {
 
             plans[r] = &*arena.make<MemoryPlan>(test.alloc);
 
-            regions[r] = make_region(test.alloc, arena, ops);
+            regions[r] = &*make_region(test.alloc, arena, ops);
             regions[r]->plan = make_plan_link(*plans[r]);
         }
     }

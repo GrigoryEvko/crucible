@@ -198,9 +198,10 @@ struct Built {
     build_ops(ctx, arena, ops, data_ptr_base);
 
     constexpr uint32_t kSplit = kNumOps / 2;
-    auto* head = crucible::make_region(ctx.alloc, dag_arena, ops.window(0, kSplit).expect("the head is in the ops"));
-    auto* tail = crucible::make_region(ctx.alloc, dag_arena,
-                                       ops.window(kSplit, kNumOps - kSplit).expect("the tail is in the ops"));
+    const ::fixy::Ref<crucible::RegionNode> head =
+        crucible::make_region(ctx.alloc, dag_arena, ops.window(0, kSplit).expect("the head is in the ops"));
+    const ::fixy::Ref<crucible::RegionNode> tail = crucible::make_region(
+        ctx.alloc, dag_arena, ops.window(kSplit, kNumOps - kSplit).expect("the tail is in the ops"));
     head->next = crucible::make_link(*tail);
 
     ::foundation::core::FixedArray<TensorSlot, kNumSlots> slots{};

@@ -25,7 +25,7 @@ static constexpr auto A = BG.alloc;
 // Avoids collision with crucible::make_region — this one builds a region
 // populated with realistic (schema/shape/scope/callsite, 2-input GEMM)
 // op rows.  The ops, their arrays and the region are in dag_arena.
-static RegionNode* synth_region(::fixy::BumpArena& dag_arena, uint32_t num_ops) {
+static ::fixy::Ref<RegionNode> synth_region(::fixy::BumpArena& dag_arena, uint32_t num_ops) {
     const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(A, num_ops, TraceEntry{});
 
     // Each input and the output of each op have one metadata.
@@ -71,7 +71,7 @@ int main() {
         // generously for the worst-case row shape. Lives across both
         // (ser, deser) Runs.
         ::fixy::BumpArena dag_arena{1 << 20};
-        RegionNode* region = synth_region(dag_arena, num_ops);
+        const ::fixy::Ref<RegionNode> region = synth_region(dag_arena, num_ops);
 
         const size_t wire_cap =
             64 + num_ops * (40 + 2 * sizeof(TensorMeta) + sizeof(TensorMeta) + 3 * 3 * sizeof(uint32_t));

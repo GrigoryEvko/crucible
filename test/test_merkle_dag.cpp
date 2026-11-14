@@ -121,26 +121,27 @@ template <class Fake>
     ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0xAABB};
     ops.at(::fixy::index<1>()).schema_hash = SchemaHash{0xCCDD};
     ops.at(::fixy::index<2>()).schema_hash = SchemaHash{0xEEFF};
-    auto* region = crucible::make_region(test.alloc, arena, ops.view());
-    assert(region != nullptr);
-    assert(region->kind == crucible::TraceNodeKind::REGION);
-    assert(region->num_ops() == 3);
-    assert(region->op_at(0).schema_hash == SchemaHash{0xAABB});
-    assert(region->op_at(2).schema_hash == SchemaHash{0xEEFF});
-    assert(region->first_op_schema == SchemaHash{0xAABB});
-    assert(static_cast<bool>(region->content_hash));
+    // The nodes are held as references: a Ref local in this large function
+    // costs the Debug compile far more than a reference.
+    crucible::RegionNode& region = *crucible::make_region(test.alloc, arena, ops.view());
+    assert(region.kind == crucible::TraceNodeKind::REGION);
+    assert(region.num_ops() == 3);
+    assert(region.op_at(0).schema_hash == SchemaHash{0xAABB});
+    assert(region.op_at(2).schema_hash == SchemaHash{0xEEFF});
+    assert(region.first_op_schema == SchemaHash{0xAABB});
+    assert(static_cast<bool>(region.content_hash));
 
-    ContentHash h1 = region->content_hash;
-    auto* region2 = crucible::make_region(test.alloc, arena, ops.view());
-    assert(region2->content_hash == h1);
+    ContentHash h1 = region.content_hash;
+    const crucible::RegionNode& region2 = *crucible::make_region(test.alloc, arena, ops.view());
+    assert(region2.content_hash == h1);
 
-    auto* terminal = crucible::make_terminal(test.alloc, arena);
-    assert(terminal->kind == crucible::TraceNodeKind::TERMINAL);
-    assert(terminal->next.is_none());
+    crucible::TraceNode& terminal = *crucible::make_terminal(test.alloc, arena);
+    assert(terminal.kind == crucible::TraceNodeKind::TERMINAL);
+    assert(terminal.next.is_none());
 
-    region->next = crucible::make_link(*terminal);
-    crucible::recompute_merkle(*region);
-    assert(static_cast<bool>(region->merkle_hash));
+    region.next = crucible::make_link(terminal);
+    crucible::recompute_merkle(region);
+    assert(static_cast<bool>(region.merkle_hash));
 
     // RowHash{0} is the row identity of a bare, unwrapped type, so it is
     // the row every untyped call site keys on.
@@ -347,17 +348,16 @@ template <class Fake>
         rops_b.at(::fixy::index<0>()).schema_hash = SchemaHash{0x0A0A};
         rops_b.at(::fixy::index<1>()).schema_hash = SchemaHash{0x0B0B};
 
-        auto* r_tc = crucible::make_region(test.alloc, arena, rops_a.view(), &recipe_tc);
-        auto* r_strict = crucible::make_region(test.alloc, arena, rops_b.view(), &recipe_strict);
-        auto* r_none = crucible::make_region(test.alloc, arena, rops_a.view());
+        const crucible::RegionNode& r_tc = *crucible::make_region(test.alloc, arena, rops_a.view(), &recipe_tc);
+        const crucible::RegionNode& r_strict = *crucible::make_region(test.alloc, arena, rops_b.view(), &recipe_strict);
+        const crucible::RegionNode& r_none = *crucible::make_region(test.alloc, arena, rops_a.view());
 
-        assert(r_tc != nullptr && r_strict != nullptr && r_none != nullptr);
-        assert(r_tc->content_hash != r_strict->content_hash);
-        assert(r_tc->content_hash != r_none->content_hash);
-        assert(r_strict->content_hash != r_none->content_hash);
+        assert(r_tc.content_hash != r_strict.content_hash);
+        assert(r_tc.content_hash != r_none.content_hash);
+        assert(r_strict.content_hash != r_none.content_hash);
 
         const ContentHash direct_tc = crucible::compute_content_hash(rops_a.view(), &recipe_tc);
-        assert(r_tc->content_hash == direct_tc);
+        assert(r_tc.content_hash == direct_tc);
 
         crucible::KernelCache rcache{test.alloc};
         struct FakeRecipeKernel {
@@ -365,10 +365,10 @@ template <class Fake>
         };
         FakeRecipeKernel tc_kernel{1};
         using crucible::RowHash;
-        assert(rcache.insert(r_tc->content_hash, RowHash{0}, kernel_ref(tc_kernel)).is_ok());
-        assert(is_found(rcache.lookup(r_tc->content_hash, RowHash{0}), tc_kernel));
-        assert(rcache.lookup(r_strict->content_hash, RowHash{0}).is_none());
-        assert(rcache.lookup(r_none->content_hash, RowHash{0}).is_none());
+        assert(rcache.insert(r_tc.content_hash, RowHash{0}, kernel_ref(tc_kernel)).is_ok());
+        assert(is_found(rcache.lookup(r_tc.content_hash, RowHash{0}), tc_kernel));
+        assert(rcache.lookup(r_strict.content_hash, RowHash{0}).is_none());
+        assert(rcache.lookup(r_none.content_hash, RowHash{0}).is_none());
     }
 
     // A fold that stops at five scalar arguments, or that ignores the
@@ -762,14 +762,14 @@ template <class Fake>
         auto make = [&](crucible::LoopTermKind kind, uint32_t count, float epsilon) {
             return [&, kind, count, epsilon] {
                 ::fixy::BumpArena child_arena(1 << 12);
-                auto* body = crucible::make_region(test.alloc, child_arena, guard_body_ops.view());
-                body->next = crucible::make_link(*crucible::make_terminal(test.alloc, child_arena));
-                auto* node =
-                    crucible::make_loop(test.alloc, child_arena, *body, crucible::compute_body_content_hash(*body),
-                                        ::fixy::View<crucible::FeedbackEdge>{}, kind, count, epsilon);
+                crucible::RegionNode& body = *crucible::make_region(test.alloc, child_arena, guard_body_ops.view());
+                body.next = crucible::make_link(*crucible::make_terminal(test.alloc, child_arena));
+                crucible::LoopNode& node =
+                    *crucible::make_loop(test.alloc, child_arena, body, crucible::compute_body_content_hash(body),
+                                         ::fixy::View<crucible::FeedbackEdge>{}, kind, count, epsilon);
                 // Keeps the optimizer from deciding the call had no effect
                 // and eliding the clause along with it.
-                asm volatile("" ::"r"(node) : "memory");
+                asm volatile("" ::"r"(&node) : "memory");
             };
         };
 

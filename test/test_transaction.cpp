@@ -101,9 +101,10 @@ static_assert(!std::is_trivially_copyable_v<crucible::Transaction>);
                                                    uint32_t step) {
     crucible::TraceEntry entry{};
     entry.schema_hash = crucible::SchemaHash{0x5000u + step};
-    auto* region = crucible::make_region(alloc, arena, arena.array<crucible::TraceEntry>(alloc, 1, entry));
+    const ::fixy::Ref<crucible::RegionNode> region =
+        crucible::make_region(alloc, arena, arena.array<crucible::TraceEntry>(alloc, 1, entry));
     crucible::recompute_merkle(*region);
-    return region;
+    return &*region;
 }
 
 // Begins, commits and activates the transaction of one step, as the publish
@@ -301,8 +302,7 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
 
     ::foundation::core::FixedArray<crucible::TraceEntry, 1> ops{};
     ops.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xFEED};
-    auto* region1 = crucible::make_region(test.alloc, arena, ops.view());
-    assert(region1 != nullptr);
+    const ::fixy::Ref<crucible::RegionNode> region1 = crucible::make_region(test.alloc, arena, ops.view());
     // A commit requires a non-zero merkle root, so the hash is recomputed
     // first. The production path does the same thing in the same order.
     // Synthesizing a hash instead would take the test off that path.
@@ -311,8 +311,7 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
 
     ::foundation::core::FixedArray<crucible::TraceEntry, 1> ops2{};
     ops2.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xBEEF};
-    auto* region2 = crucible::make_region(test.alloc, arena, ops2.view());
-    assert(region2 != nullptr);
+    const ::fixy::Ref<crucible::RegionNode> region2 = crucible::make_region(test.alloc, arena, ops2.view());
     crucible::recompute_merkle(*region2);
     assert(region2->merkle_hash.raw() != 0);
 
@@ -332,17 +331,17 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
     assert(tx1->ts_ns.is_some());
     const std::uint64_t begun_at = stamp_nanos(*tx1);
 
-    const bool committed = log.commit(owner, *tx1, arena_region(region1), hash1, merkle1);
+    const bool committed = log.commit(owner, *tx1, arena_region(&*region1), hash1, merkle1);
     assert(committed);
     assert(tx1->status == crucible::TxStatus::COMMITTED);
     assert(tx1->content_hash == hash1);
     assert(tx1->merkle_root == merkle1);
-    assert(tx1->region.value() == region1);
+    assert(tx1->region.value() == &*region1);
     // The reader clamps, so a later stamp through the same log never reads
     // earlier than a former one.
     assert(tx1->ts_ns.is_some() && stamp_nanos(*tx1) >= begun_at);
 
-    const bool double_commit = log.commit(owner, *tx1, arena_region(region1), hash1, merkle1);
+    const bool double_commit = log.commit(owner, *tx1, arena_region(&*region1), hash1, merkle1);
     assert(!double_commit && "commit on COMMITTED tx must return false");
 
     auto* prev = log.activate(owner, *tx1).try_get();
@@ -358,7 +357,7 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
 
     const crucible::ContentHash hash2 = region2->content_hash;
     const crucible::MerkleHash merkle2 = region2->merkle_hash;
-    assert(log.commit(owner, *tx2, arena_region(region2), hash2, merkle2));
+    assert(log.commit(owner, *tx2, arena_region(&*region2), hash2, merkle2));
     assert(tx2->status == crucible::TxStatus::COMMITTED);
 
     auto* superseded = log.activate(owner, *tx2).try_get();
@@ -383,10 +382,11 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
         auto& tx = log.begin_tx(owner, i);
         crucible::TraceEntry e{};
         e.schema_hash = crucible::SchemaHash{static_cast<uint64_t>(i)};
-        auto* r = crucible::make_region(test.alloc, arena, arena.array<crucible::TraceEntry>(test.alloc, 1, e));
+        const ::fixy::Ref<crucible::RegionNode> r =
+            crucible::make_region(test.alloc, arena, arena.array<crucible::TraceEntry>(test.alloc, 1, e));
         // Recomputed before the commit, for the reason given above.
         crucible::recompute_merkle(*r);
-        assert(log.commit(owner, tx, arena_region(r), r->content_hash, r->merkle_hash));
+        assert(log.commit(owner, tx, arena_region(&*r), r->content_hash, r->merkle_hash));
         (void)log.activate(owner, tx);
     }
     // The loop ends at 32, so the last transaction is the active one.

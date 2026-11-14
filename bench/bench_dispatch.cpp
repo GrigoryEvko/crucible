@@ -226,7 +226,7 @@ struct BenchRegion {
             op.set_outputs(dag_arena.array(test.alloc, 1, meta), dag_arena.array(test.alloc, 1, SlotId{i}));
         }
 
-        region = make_region(test.alloc, dag_arena, ops);
+        region = &*make_region(test.alloc, dag_arena, ops);
 
         const ::fixy::View<TensorSlot> slots = dag_arena.array<TensorSlot>(test.alloc, n_ops, TensorSlot{});
         uint32_t i = 0;
@@ -588,13 +588,13 @@ int main() {
                 op.schema_hash = SCHEMA[i];
                 op.shape_hash = ShapeHash{SHAPE[i].raw() + r * 0x100};
             }
-            auto* region = make_region(test.alloc, arena, ops);
+            const ::fixy::Ref<RegionNode> region = make_region(test.alloc, arena, ops);
             const ::fixy::Ref<MemoryPlan> plan = arena.make<MemoryPlan>(test.alloc);
             plan->slots = ::fixy::View<TensorSlot>{};
             plan->pool_bytes = 0;
             check_single_cpu_plan(*plan);
             region->plan = make_plan_link(*plan);
-            regions[r] = region;
+            regions[r] = &*region;
         }
         RegionCache cache;
         for (uint32_t r = 0; r < NR; r++)

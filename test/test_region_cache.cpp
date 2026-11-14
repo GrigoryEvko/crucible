@@ -111,7 +111,7 @@ void test_cache_dedup_and_cap() {
     assert(cache.empty());
 
     ::fixy::BumpArena arena(4096);
-    auto* region = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
+    const auto region = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
     region->content_hash = ContentHash{0x1234};
 
     cache.insert(*region);
@@ -122,7 +122,7 @@ void test_cache_dedup_and_cap() {
     assert(cache.size() == 1);
 
     for (uint32_t i = 1; i < RegionCache::CAP; i++) {
-        auto* r = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
+        const auto r = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
         r->content_hash = ContentHash{0x1234 + i};
         cache.insert(*r);
     }
@@ -130,7 +130,7 @@ void test_cache_dedup_and_cap() {
 
     // Insertion past the capacity evicts the oldest entry instead of
     // growing.
-    auto* overflow = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
+    const auto overflow = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
     overflow->content_hash = ContentHash{0xFFFF};
     cache.insert(*overflow);
     assert(cache.size() == RegionCache::CAP);
@@ -171,12 +171,12 @@ void test_find_alternate_tracks_live_plan() {
     op1.schema_hash = SchemaHash{0x902};
     op1.shape_hash = ShapeHash{0x903};
 
-    auto* region = make_region(test.alloc, arena, ops.view());
+    const auto region = make_region(test.alloc, arena, ops.view());
     assert(region->plan.is_none());
 
     cache.insert(*region);
     assert(cache.size() == 1);
-    assert(cache.find(region->content_hash).try_get() == region
+    assert(cache.find(region->content_hash).try_get() == &*region
            && "a planless region is still cached and still findable by hash");
 
     // Not eligible to switch to: without a plan the context cannot enter
@@ -196,11 +196,11 @@ void test_find_alternate_tracks_live_plan() {
     plan->pool_bytes = 4096;
     region->plan = make_plan_link(*plan);
 
-    assert(cache.find_alternate(0, op0.schema_hash, op0.shape_hash).try_get() == region
+    assert(cache.find_alternate(0, op0.schema_hash, op0.shape_hash).try_get() == &*region
            && "a region cached before its plan existed stayed unfindable after the plan "
               "arrived: find_alternate is reading an insert-time snapshot again, and the "
               "repair path for it has no caller");
-    assert(cache.find_alternate(1, op1.schema_hash, op1.shape_hash).try_get() == region);
+    assert(cache.find_alternate(1, op1.schema_hash, op1.shape_hash).try_get() == &*region);
 
     // The position bound now means one thing: how many ops the region has.
     assert(!cache.find_alternate(2, op1.schema_hash, op1.shape_hash).has_value());

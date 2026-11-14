@@ -103,20 +103,22 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops{};
         mk_ops(ops);
 
-        auto* region_tc = crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_tc);
-        auto* region_strict = crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_strict);
-        auto* region_none = crucible::make_region(alloc_cap(), arena, ops.view());  // no-recipe overload
+        const crucible::RegionNode& region_tc = *crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_tc);
+        const crucible::RegionNode& region_strict =
+            *crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_strict);
+        // The overload with no recipe.
+        const crucible::RegionNode& region_none = *crucible::make_region(alloc_cap(), arena, ops.view());
 
         // Three recipe pins, counting the unpinned baseline, give three
         // hashes.
-        assert(region_tc->content_hash != region_strict->content_hash);
-        assert(region_tc->content_hash != region_none->content_hash);
-        assert(region_strict->content_hash != region_none->content_hash);
+        assert(region_tc.content_hash != region_strict.content_hash);
+        assert(region_tc.content_hash != region_none.content_hash);
+        assert(region_strict.content_hash != region_none.content_hash);
 
         // A hash of zero would mean the mix collapsed.
-        assert(region_tc->content_hash.raw() != 0);
-        assert(region_strict->content_hash.raw() != 0);
-        assert(region_none->content_hash.raw() != 0);
+        assert(region_tc.content_hash.raw() != 0);
+        assert(region_strict.content_hash.raw() != 0);
+        assert(region_none.content_hash.raw() != 0);
     }
 
     // A recovery process loads a persisted blob and must recover the
@@ -137,8 +139,8 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
 
         ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops{};
         mk_ops(ops);
-        auto* region_orig = crucible::make_region(alloc_cap(), arena, ops.view(), recipe_orig);
-        const ContentHash persisted_content_hash = region_orig->content_hash;
+        const crucible::RegionNode& region_orig = *crucible::make_region(alloc_cap(), arena, ops.view(), recipe_orig);
+        const ContentHash persisted_content_hash = region_orig.content_hash;
 
         // What is persisted per region is the pair of the region's content
         // hash and the recipe's hash.  Both are eight-byte values and both
@@ -155,8 +157,9 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
 
         // Rebuilding the region with the recovered recipe reproduces the
         // original content hash, which is the end-to-end claim.
-        auto* region_recovered = crucible::make_region(alloc_cap(), arena, ops.view(), &*recovered);
-        assert(region_recovered->content_hash == persisted_content_hash);
+        const crucible::RegionNode& region_recovered =
+            *crucible::make_region(alloc_cap(), arena, ops.view(), &*recovered);
+        assert(region_recovered.content_hash == persisted_content_hash);
     }
 
     // A fresh process must not produce a different content hash for the
@@ -175,8 +178,8 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
 
         ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops_a{};
         mk_ops(ops_a);
-        auto* region_a = crucible::make_region(alloc_cap(), arena_a, ops_a.view(), &*rec_a);
-        const ContentHash hash_in_proc_a = region_a->content_hash;
+        const crucible::RegionNode& region_a = *crucible::make_region(alloc_cap(), arena_a, ops_a.view(), &*rec_a);
+        const ContentHash hash_in_proc_a = region_a.content_hash;
 
         // A second process, with its own pool, registry and arena, and so
         // with different addresses throughout.
@@ -193,8 +196,8 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
 
         ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops_b{};
         mk_ops(ops_b);
-        auto* region_b = crucible::make_region(alloc_cap(), arena_b, ops_b.view(), &*rec_b);
-        const ContentHash hash_in_proc_b = region_b->content_hash;
+        const crucible::RegionNode& region_b = *crucible::make_region(alloc_cap(), arena_b, ops_b.view(), &*rec_b);
+        const ContentHash hash_in_proc_b = region_b.content_hash;
 
         // The content hashes agree although no pointer is shared, which is
         // what makes a persisted hash a valid cache key in any process.
@@ -221,14 +224,15 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops{};
         mk_ops(ops);
 
-        auto* region_tc = crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_tc);
-        auto* region_ord = crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_ord);
-        auto* region_bf16_tc = crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_bf16_tc);
+        const crucible::RegionNode& region_tc = *crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_tc);
+        const crucible::RegionNode& region_ord = *crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_ord);
+        const crucible::RegionNode& region_bf16_tc =
+            *crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_bf16_tc);
 
         // Three hashes, so three cache slots.
-        assert(region_tc->content_hash != region_ord->content_hash);
-        assert(region_tc->content_hash != region_bf16_tc->content_hash);
-        assert(region_ord->content_hash != region_bf16_tc->content_hash);
+        assert(region_tc.content_hash != region_ord.content_hash);
+        assert(region_tc.content_hash != region_bf16_tc.content_hash);
+        assert(region_ord.content_hash != region_bf16_tc.content_hash);
 
         KernelCache cache{alloc_cap()};
         using crucible::RowHash;
@@ -241,29 +245,29 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
             const char* tag;
         };
         FakeKernel kernel_tc{"f16_tc-compiled"};
-        auto ins = cache.insert(region_tc->content_hash, RowHash{0}, kernel_ref(kernel_tc));
+        auto ins = cache.insert(region_tc.content_hash, RowHash{0}, kernel_ref(kernel_tc));
         assert(ins.is_ok());
-        assert(is_found(cache.lookup(region_tc->content_hash, RowHash{0}), kernel_tc));
+        assert(is_found(cache.lookup(region_tc.content_hash, RowHash{0}), kernel_tc));
 
         // A lookup under the second recipe must miss.  Were the two sharing
         // a slot, the first recipe's kernel would serve the second recipe's
         // work.
-        assert(cache.lookup(region_ord->content_hash, RowHash{0}).is_none());
+        assert(cache.lookup(region_ord.content_hash, RowHash{0}).is_none());
 
         // The third recipe is isolated the same way.
-        assert(cache.lookup(region_bf16_tc->content_hash, RowHash{0}).is_none());
+        assert(cache.lookup(region_bf16_tc.content_hash, RowHash{0}).is_none());
 
         // The first recipe still finds its own kernel.
-        assert(is_found(cache.lookup(region_tc->content_hash, RowHash{0}), kernel_tc));
+        assert(is_found(cache.lookup(region_tc.content_hash, RowHash{0}), kernel_tc));
 
         // Two kernels under two recipes coexist, each reachable only
         // through its own key.
         FakeKernel kernel_ord{"f16_ordered-compiled"};
-        auto ins2 = cache.insert(region_ord->content_hash, RowHash{0}, kernel_ref(kernel_ord));
+        auto ins2 = cache.insert(region_ord.content_hash, RowHash{0}, kernel_ref(kernel_ord));
         assert(ins2.is_ok());
-        assert(is_found(cache.lookup(region_tc->content_hash, RowHash{0}), kernel_tc));
-        assert(is_found(cache.lookup(region_ord->content_hash, RowHash{0}), kernel_ord));
-        assert(cache.lookup(region_bf16_tc->content_hash, RowHash{0}).is_none());
+        assert(is_found(cache.lookup(region_tc.content_hash, RowHash{0}), kernel_tc));
+        assert(is_found(cache.lookup(region_ord.content_hash, RowHash{0}), kernel_ord));
+        assert(cache.lookup(region_bf16_tc.content_hash, RowHash{0}).is_none());
     }
 
     // The search run of prop_content_hash_recipe_disambiguates with the seed

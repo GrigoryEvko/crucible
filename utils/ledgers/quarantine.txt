@@ -96,7 +96,7 @@ bench/ | door-header | 2 | - | -
 bench/ | inline-asm | 3 | - | -
 bench/ | raw-function-pointer | 1 | - | -
 bench/ | raw-new-delete | 2 | - | -
-bench/ | raw-pointer-object | 132 | - | -
+bench/ | raw-pointer-object | 127 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
 bench/ | std-entity | 771 | - | -
@@ -110,7 +110,7 @@ examples/fn/ | std-object | 3 | - | -
 include/crucible/ | c-array-object | 4 | - | -
 include/crucible/ | compiler-builtin | 1 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
-include/crucible/ | raw-pointer-object | 90 | - | -
+include/crucible/ | raw-pointer-object | 79 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 1 | - | -
 include/crucible/ | std-entity | 4 | - | -
 include/crucible/ | std-object | 8 | - | -
@@ -322,7 +322,7 @@ test/ | opted-out | 13 | PROBE: the current directory of the process is a direct
 test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | raw-function-pointer | 21 | - | -
 test/ | raw-new-delete | 41 | - | -
-test/ | raw-pointer-object | 448 | - | -
+test/ | raw-pointer-object | 399 | - | -
 test/ | region | 1 | PROBE: the current directory of the process is a directory that it cannot read | the test of the root of the Cipher makes its current directory unreadable through the C library, because the base has no door that changes the current directory or the mode of a directory, and an absolute root must open when the current directory does not open
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | replace-pending:<limits> | 12 | - | -
@@ -546,7 +546,7 @@ test/fuzz/boundary/harnesses/ | c-library-call | 3 | - | -
 test/fuzz/boundary/harnesses/ | compiler-builtin | 1 | - | -
 test/fuzz/boundary/harnesses/ | opted-out | 13 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
 test/fuzz/boundary/harnesses/ | opted-out | 6 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
-test/fuzz/boundary/harnesses/ | raw-pointer-object | 9 | - | -
+test/fuzz/boundary/harnesses/ | raw-pointer-object | 8 | - | -
 test/fuzz/boundary/harnesses/ | region | 5 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
 test/fuzz/boundary/harnesses/ | region | 2 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
 test/fuzz/boundary/harnesses/ | std-entity | 154 | - | -

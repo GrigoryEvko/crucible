@@ -47,8 +47,7 @@ namespace {
                   crucible::test::run_of(bg.alloc, dag_arena, crucible::OpIndex{0}),
                   crucible::test::run_of(bg.alloc, dag_arena, crucible::SlotId{}));
 
-    auto* region = crucible::make_region(bg.alloc, dag_arena, ops);
-    if (region == nullptr) return 0;
+    const ::fixy::Ref<crucible::RegionNode> region = crucible::make_region(bg.alloc, dag_arena, ops);
     return crucible::serialize_region(crucible::SerializedRegion{*region}, out_buf);
 }
 

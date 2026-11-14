@@ -484,7 +484,8 @@ private:
     CRUCIBLE_PRE(old_guard_value != new_guard_value);
     CRUCIBLE_PRE(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash));
     CRUCIBLE_PRE(recipe == nullptr || !recipe->hash.is_sentinel());
-    auto* new_region = (recipe == nullptr) ? make_region(a, arena, new_ops) : make_region(a, arena, new_ops, recipe);
+    const ::fixy::Ref<RegionNode> new_region =
+        (recipe == nullptr) ? make_region(a, arena, new_ops) : make_region(a, arena, new_ops, recipe);
 
     const TraceLink merge = find_merge_point(new_ops, existing_suffix, recipe);
 

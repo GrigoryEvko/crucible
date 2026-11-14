@@ -270,9 +270,10 @@ private:
 // The copy and the region are in the arena.
 [[nodiscard]] crucible::RegionNode* committed_region(eff::Test const& test, ::fixy::BumpArena& arena,
                                                      crucible::TraceEntry& op) {
-    auto* region = crucible::make_region(test.alloc, arena, arena.array<crucible::TraceEntry>(test.alloc, 1, op));
-    if (region != nullptr) crucible::recompute_merkle(*region);
-    return region;
+    const ::fixy::Ref<crucible::RegionNode> region =
+        crucible::make_region(test.alloc, arena, arena.array<crucible::TraceEntry>(test.alloc, 1, op));
+    crucible::recompute_merkle(*region);
+    return &*region;
 }
 
 // The log stamps the transaction at each change of state.  After a stamp

@@ -61,9 +61,7 @@ static crucible::RegionNode* make_test_region(::fixy::BumpArena& dag_arena, std:
                        crucible::test::run_of(g_test.alloc, dag_arena, crucible::SlotId{i}));
     }
 
-    auto* region = crucible::make_region(g_test.alloc, dag_arena, ops);
-    assert(region != nullptr);
-    return region;
+    return &*crucible::make_region(g_test.alloc, dag_arena, ops);
 }
 
 // An object lives at objects/<first two hex digits>/<remaining digits>,

@@ -807,10 +807,10 @@ private:
 // out: a region hashed under the wrong numerics shares a kernel-cache slot
 // with one hashed under the right ones, and the runtime would serve either
 // kernel to either caller.
-[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a,
-                                             ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND,
-                                             ::fixy::View<TraceEntry> ops) noexcept {
-    RegionNode* node = &*arena.make<RegionNode>(a);
+[[nodiscard]] inline ::fixy::Ref<RegionNode> make_region(::foundation::effects::Alloc a,
+                                                         ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND,
+                                                         ::fixy::View<TraceEntry> ops) noexcept {
+    const ::fixy::Ref<RegionNode> node = arena.make<RegionNode>(a);
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
     node->content_hash = compute_content_hash(ops);
@@ -840,13 +840,14 @@ inline void init_region_node(RegionNode& node, ::fixy::View<TraceEntry> ops, Con
 // the content hash and is then dropped, so a caller that needs to recover the
 // recipe later must track it separately.  A null recipe is rejected rather
 // than accepted, because the overload above already covers that case.
-[[nodiscard]] inline RegionNode* make_region(::foundation::effects::Alloc a,
-                                             ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND,
-                                             ::fixy::View<TraceEntry> ops, const NumericalRecipe* recipe) noexcept {
+[[nodiscard]] inline ::fixy::Ref<RegionNode> make_region(::foundation::effects::Alloc a,
+                                                         ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND,
+                                                         ::fixy::View<TraceEntry> ops,
+                                                         const NumericalRecipe* recipe) noexcept {
     CRUCIBLE_PRE(recipe != nullptr);
     CRUCIBLE_PRE(::foundation::decide::is_non_zero(recipe->hash));
     CRUCIBLE_PRE(!recipe->hash.is_sentinel());
-    RegionNode* node = &*arena.make<RegionNode>(a);
+    const ::fixy::Ref<RegionNode> node = arena.make<RegionNode>(a);
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
     node->content_hash = compute_content_hash(ops, recipe);
@@ -862,23 +863,24 @@ inline void init_region_node(RegionNode& node, ::fixy::View<TraceEntry> ops, Con
 // pack holds the other arguments, and the twin declares no raw pointer
 // parameter.
 template <class... Rest>
-RegionNode* make_region(::foundation::effects::Alloc, ::fixy::BumpArena&&, Rest&&...) =
+::fixy::Ref<RegionNode> make_region(::foundation::effects::Alloc, ::fixy::BumpArena&&, Rest&&...) =
     delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
 
-[[nodiscard]] inline TraceNode* make_terminal(::foundation::effects::Alloc a, ::fixy::BumpArena& arena) noexcept {
-    TraceNode* node = &*arena.make<TraceNode>(a);
+[[nodiscard]] inline ::fixy::Ref<TraceNode> make_terminal(::foundation::effects::Alloc a,
+                                                          ::fixy::BumpArena& arena) noexcept {
+    const ::fixy::Ref<TraceNode> node = arena.make<TraceNode>(a);
     node->kind = TraceNodeKind::TERMINAL;
-    CRUCIBLE_POST(node, node != nullptr);
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::TERMINAL);
     return node;
 }
 
 // The body must be a complete sub-DAG ending in TERMINAL, and
 // body_content_hash must already be folded from that body's region chain.
-[[nodiscard]] inline LoopNode* make_loop(::foundation::effects::Alloc a,
-                                         ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND, TraceNode& body,
-                                         ContentHash body_content_hash, ::fixy::View<FeedbackEdge> feedback,
-                                         LoopTermKind term_kind, uint32_t repeat_count, float epsilon = 0.0f) noexcept {
+[[nodiscard]] inline ::fixy::Ref<LoopNode> make_loop(::foundation::effects::Alloc a,
+                                                     ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND, TraceNode& body,
+                                                     ContentHash body_content_hash, ::fixy::View<FeedbackEdge> feedback,
+                                                     LoopTermKind term_kind, uint32_t repeat_count,
+                                                     float epsilon = 0.0f) noexcept {
     CRUCIBLE_PRE(feedback.size() <= ::fixy::max_of<uint16_t>);
     // A convergence distance is a finite number that cannot be negative, and
     // every bit of epsilon reaches the termination hash through a bit_cast,
@@ -916,7 +918,7 @@ RegionNode* make_region(::foundation::effects::Alloc, ::fixy::BumpArena&&, Rest&
     // REPEAT keeps zero, where it means what it says: run the body no times
     // and continue.
     CRUCIBLE_PRE(term_kind != LoopTermKind::UNTIL || repeat_count > 0u);
-    LoopNode* node = &*arena.make<LoopNode>(a);
+    const ::fixy::Ref<LoopNode> node = arena.make<LoopNode>(a);
     node->kind = TraceNodeKind::LOOP;
     node->body = make_link(body);
     node->body_content_hash = body_content_hash;
@@ -936,7 +938,7 @@ RegionNode* make_region(::foundation::effects::Alloc, ::fixy::BumpArena&&, Rest&
 // arena releases it at the end of the statement.  The pack holds the other
 // arguments, and the twin declares no raw pointer parameter.
 template <class... Rest>
-LoopNode* make_loop(::foundation::effects::Alloc, ::fixy::BumpArena&&, Rest&&...) =
+::fixy::Ref<LoopNode> make_loop(::foundation::effects::Alloc, ::fixy::BumpArena&&, Rest&&...) =
     delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
 
 // Children are recomputed first, because a node's hash folds in the hashes of

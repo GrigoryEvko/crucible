@@ -176,7 +176,7 @@ int main(int argc, char* argv[]) {
             *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, data_arena, 2, 1, 1, 4);
         return bench::run("make_region (481 ops)", [&] {
             ::fixy::BumpArena region_arena{1 << 20};
-            auto* r = make_region(test.alloc, region_arena, ops);
+            const ::fixy::Ref<RegionNode> r = make_region(test.alloc, region_arena, ops);
             bench::do_not_optimize(r);
         });
     }());
@@ -191,7 +191,7 @@ int main(int argc, char* argv[]) {
         bench_rng_state = 0xAAAABBBBCCCCDDDDULL;
         for (uint32_t i = 0; i < N; i++)
             *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, arena, 2, 1, 1, 4);
-        auto* region = make_region(test.alloc, dag_arena, ops);
+        const ::fixy::Ref<RegionNode> region = make_region(test.alloc, dag_arena, ops);
         return bench::run("compute_merkle_hash (RegionNode)", [&] {
             auto h = compute_merkle_hash(*region);
             bench::do_not_optimize(h);

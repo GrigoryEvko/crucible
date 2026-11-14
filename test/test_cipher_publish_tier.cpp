@@ -73,7 +73,7 @@ static RegionNode* make_test_region(::fixy::BumpArena& dag_arena, uint32_t seed)
                   crucible::test::run_of(g_test.alloc, dag_arena, SlotId{}));
     op.set_outputs(crucible::test::run_of(g_test.alloc, dag_arena, meta),
                    crucible::test::run_of(g_test.alloc, dag_arena, SlotId{seed}));
-    return crucible::make_region(g_test.alloc, dag_arena, ops);
+    return &*crucible::make_region(g_test.alloc, dag_arena, ops);
 }
 
 static void test_publish_warm_bit_equality(const char* dir) {

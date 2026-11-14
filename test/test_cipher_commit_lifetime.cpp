@@ -81,7 +81,7 @@ static RegionNode* mint_region(::fixy::BumpArena& arena, uint64_t hash_seed) {
         arena.array<crucible::TraceEntry>(g_test.alloc, 1, crucible::TraceEntry{});
     crucible::TraceEntry& op = *ops.get(0).expect("the region holds one op");
     op.schema_hash = crucible::SchemaHash{hash_seed * 0x9E3779B97F4A7C15ULL};
-    return crucible::make_region(g_test.alloc, arena, ops);
+    return &*crucible::make_region(g_test.alloc, arena, ops);
 }
 
 static void test_commit_per_fleet_type_identity() {

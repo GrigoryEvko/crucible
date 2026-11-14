@@ -78,8 +78,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         op.set_scalar_args(crucible::test::run_of(test.alloc, dag_arena, static_cast<int64_t>(i * 42)));
     }
 
-    auto* region = crucible::make_region(test.alloc, dag_arena, ops);
-    assert(region != nullptr);
+    const ::fixy::Ref<crucible::RegionNode> region = crucible::make_region(test.alloc, dag_arena, ops);
     assert(region->num_ops() == NUM_OPS);
 
     const crucible::ContentHash original_content_hash = region->content_hash;
