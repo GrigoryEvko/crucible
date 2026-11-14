@@ -25,8 +25,7 @@
 // `bench::do_not_optimize(result)` (the `[[gnu::noipa]]` shim) to
 // mark the bool return as observed.  Each procedure
 // covers the canonical instantiation it ships in production: integer
-// types for the overflow / range family, span<Interval<uint64_t>> for the
-// interval predicate.  We do NOT iterate every primitive type — the body's
+// types for the overflow / range family.  We do NOT iterate every primitive type — the body's
 // asymptotic shape is independent of T width, and each extra
 // instantiation adds template-noise to the bench list without
 // signal.
@@ -43,7 +42,6 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
-#include <span>
 
 #include <foundation/contracts/Decide.h>
 
@@ -99,17 +97,6 @@ int main() {
     for (std::size_t i = 0; i < kSeqLen; ++i)
         inc_seq[i] = static_cast<std::int32_t>(i * 7);
 
-    // intervals_pairwise_disjoint fast path: 8 disjoint intervals
-    // tiling [0, 800).  Both the well-formedness pass and the n²
-    // pairwise pass exercise.
-    std::array<dc::Interval<std::uint64_t>, 8> ivs_disjoint{};
-    for (std::size_t i = 0; i < ivs_disjoint.size(); ++i) {
-        ivs_disjoint[i] = dc::Interval<std::uint64_t>{
-            .lo = i * 100,
-            .hi = i * 100 + 100,
-        };
-    }
-
     std::printf("=== decide ===\n\n");
 
     // Each `bench::run(name, body)` is one Report.  Auto-batching
@@ -158,14 +145,6 @@ int main() {
         bench::run("decide::is_power_of_two_le<u64>",
                    [&] {
                        bool r = dc::is_power_of_two_le<std::uint64_t>(v_pow2, v_pow2_bound);
-                       bench::do_not_optimize(r);
-                   }),
-
-        // ── Intervals (quadratic pairwise scan, 8 intervals) ──────
-        bench::run("decide::intervals_pairwise_disjoint<u64, 8>",
-                   [&] {
-                       bool r = dc::intervals_pairwise_disjoint<std::uint64_t>(
-                           std::span<const dc::Interval<std::uint64_t>>(ivs_disjoint.data(), ivs_disjoint.size()));
                        bench::do_not_optimize(r);
                    }),
 

@@ -8,8 +8,6 @@
 #pragma once
 
 #include <concepts>
-#include <cstddef>
-#include <span>
 #include <type_traits>
 
 namespace foundation::decide {
@@ -37,51 +35,6 @@ constexpr bool is_power_of_two_le(T x, T bound) noexcept {
     // The x > 0 guard above makes x - 1 well defined for signed and unsigned T
     // alike.
     return (x & (x - T{1})) == T{0};
-}
-
-// A half-open range [lo, hi): lo inclusive, hi exclusive. The empty range
-// [k, k) is well formed. An inverted range lo > hi is malformed.
-template <std::integral T>
-struct Interval {
-    T lo{};
-    T hi{};
-};
-
-template <std::integral T>
-[[nodiscard]]
-constexpr bool operator==(Interval<T> const& a, Interval<T> const& b) noexcept {
-    return a.lo == b.lo && a.hi == b.hi;
-}
-
-// True iff every interval is well formed and no two intervals overlap. Gaps
-// between intervals are permitted. An empty span is vacuously true. An empty
-// interval is disjoint from every other interval.  Complexity: quadratic in
-// the number of intervals.
-template <std::integral T, std::size_t N = std::dynamic_extent>
-[[nodiscard, gnu::pure]]
-constexpr bool intervals_pairwise_disjoint(std::span<const Interval<T>, N> ivs) noexcept {
-    for (Interval<T> const& iv : ivs) {
-        if (iv.lo > iv.hi) {
-            return false;
-        }
-    }
-    for (std::size_t i = 0; i < ivs.size(); ++i) {
-        for (std::size_t j = i + 1; j < ivs.size(); ++j) {
-            // Skip any pair holding an empty interval. The left-of test alone
-            // reports an empty interval strictly inside another as an overlap:
-            // for [5, 5) inside [0, 10) neither 5 <= 0 nor 10 <= 5 holds, yet
-            // [5, 5) contains no integer and so intersects nothing.
-            if (ivs[i].lo == ivs[i].hi || ivs[j].lo == ivs[j].hi) {
-                continue;
-            }
-            const bool a_left_of_b = ivs[i].hi <= ivs[j].lo;
-            const bool b_left_of_a = ivs[j].hi <= ivs[i].lo;
-            if (!a_left_of_b && !b_left_of_a) {
-                return false;
-            }
-        }
-    }
-    return true;
 }
 
 // True iff a candidate of tier `candidate` may stand in for a slot demanding

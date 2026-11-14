@@ -99,8 +99,8 @@ bench/ | raw-new-delete | 2 | - | -
 bench/ | raw-pointer-object | 192 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
-bench/ | std-entity | 851 | - | -
-bench/ | std-object | 242 | - | -
+bench/ | std-entity | 845 | - | -
+bench/ | std-object | 241 | - | -
 examples/fn/ | c-array-object | 9 | - | -
 examples/fn/ | c-library-call | 12 | - | -
 examples/fn/ | raw-pointer-object | 7 | - | -
@@ -115,11 +115,11 @@ include/crucible/ | raw-new-delete | 4 | - | -
 include/crucible/ | raw-pointer-object | 410 | - | -
 include/crucible/ | replace-pending:<limits> | 6 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 16 | - | -
-include/crucible/ | std-entity | 253 | - | -
-include/crucible/ | std-object | 58 | - | -
+include/crucible/ | std-entity | 251 | - | -
+include/crucible/ | std-object | 57 | - | -
 include/crucible/cipher/ | c-library-call | 3 | - | -
-include/crucible/cipher/ | std-entity | 35 | - | -
-include/crucible/cipher/ | std-object | 30 | - | -
+include/crucible/cipher/ | std-entity | 26 | - | -
+include/crucible/cipher/ | std-object | 27 | - | -
 include/crucible/cntp/ | c-library-call | 9 | - | -
 include/crucible/cntp/ | compiler-builtin | 2 | - | -
 include/crucible/cntp/ | std-object | 1 | - | -
@@ -268,8 +268,8 @@ include/foundation/algebra/lattices/ | replace-pending:<string> | 3 | - | -
 include/foundation/algebra/lattices/ | replace-pending:<string_view> | 19 | - | -
 include/foundation/algebra/lattices/ | replace-pending:<vector> | 1 | - | -
 include/foundation/contracts/ | base-std-entity | 59 | - | -
-include/foundation/contracts/ | base-std-object | 15 | - | -
-include/foundation/contracts/ | replace-pending:<span> | 2 | - | -
+include/foundation/contracts/ | base-std-object | 14 | - | -
+include/foundation/contracts/ | replace-pending:<span> | 1 | - | -
 include/foundation/contracts/ | replace-pending:<string_view> | 1 | - | -
 include/foundation/contracts/ | replace-pending:<vector> | 1 | - | -
 include/foundation/diag/ | base-std-entity | 134 | - | -
@@ -340,8 +340,8 @@ test/ | raw-new-delete | 41 | - | -
 test/ | raw-pointer-object | 535 | - | -
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 93 | - | -
-test/ | std-entity | 1803 | - | -
-test/ | std-object | 669 | - | -
+test/ | std-entity | 1798 | - | -
+test/ | std-object | 664 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
 test/cipher_neg/ | raw-pointer-object | 8 | - | -
 test/cipher_neg/ | std-entity | 22 | - | -
@@ -464,8 +464,8 @@ test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
 test/fixy/neg/ | std-entity | 196 | - | -
 test/fixy/neg/ | std-object | 84 | - | -
-test/foundation/ | c-array-object | 59 | - | -
-test/foundation/ | c-library-call | 413 | - | -
+test/foundation/ | c-array-object | 33 | - | -
+test/foundation/ | c-library-call | 403 | - | -
 test/foundation/ | c-library-object | 7 | - | -
 test/foundation/ | door-header | 7 | - | -
 test/foundation/ | foreign-symbol | 5 | - | -
@@ -501,8 +501,8 @@ test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a 
 test/foundation/ | replace-pending:<limits> | 57 | - | -
 test/foundation/ | replace-pending:std::bit_cast | 9 | - | -
 test/foundation/ | replace-pending:std::source_location | 8 | - | -
-test/foundation/ | std-entity | 605 | - | -
-test/foundation/ | std-object | 198 | - | -
+test/foundation/ | std-entity | 565 | - | -
+test/foundation/ | std-object | 192 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
 test/foundation/neg/ | detail-use | 115 | - | each fixture uses a private name of the base for its probe, such as a check, a context key, a test lattice, the range type of a target type or a range or a cursor that the fixture forges

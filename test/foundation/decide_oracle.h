@@ -22,15 +22,11 @@
 
 #pragma once
 
-#include <algorithm>
 #include <bit>
 #include <concepts>
-#include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <span>
 #include <type_traits>
-#include <vector>
 
 // The oracle has a namespace of the tests, so no template of the base is
 // declared outside the base.
@@ -86,34 +82,6 @@ template <std::integral T>
     auto const ux = static_cast<U>(x);
     if (std::popcount(ux) != 1) return false;
     return x <= bound;
-}
-
-// A half-open range [lo, hi) of the oracle's own, so that this header names
-// no type of the production library.
-template <std::integral T>
-struct Range {
-    T lo{};
-    T hi{};
-};
-
-// A sweep instead of the all-pairs walk of the production form.  A malformed
-// range refuses the whole set.  An empty range holds no integer, so it is
-// dropped.  The remaining ranges are sorted by their low end, and each one
-// must end at or before the start of the next one.  Complexity: O(n log n),
-// with one allocation for the copy.
-template <std::integral T>
-[[nodiscard]] constexpr bool intervals_pairwise_disjoint_oracle(std::span<const Range<T>> ranges) {
-    std::vector<Range<T>> occupied;
-    for (Range<T> const& range : ranges) {
-        if (range.hi < range.lo) return false;
-        if (range.lo < range.hi) occupied.push_back(range);
-    }
-    std::sort(occupied.begin(), occupied.end(),
-              [](Range<T> const& left, Range<T> const& right) { return left.lo < right.lo; });
-    for (std::size_t index = 1; index < occupied.size(); ++index) {
-        if (occupied[index].lo < occupied[index - 1].hi) return false;
-    }
-    return true;
 }
 
 }  // namespace decide_oracle

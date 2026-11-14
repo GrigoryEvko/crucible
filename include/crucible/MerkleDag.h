@@ -80,6 +80,39 @@ struct MemoryPlan {
     }
 };
 
+// The half-open byte range [lo, hi) of a slot in the pool.  The empty range
+// [k, k) is well formed.  A range with lo above hi is malformed.
+struct ByteRange {
+    std::uint64_t lo = 0;
+    std::uint64_t hi = 0;
+};
+
+// True when each range is well formed and no two ranges overlap.  A gap
+// between two ranges is permitted, and an empty View gives true.  An empty
+// range holds no byte, so it overlaps no range, also inside a second range.
+// Complexity: quadratic in the count of ranges.
+[[nodiscard]] constexpr bool are_byte_ranges_disjoint(::fixy::View<ByteRange const> ranges) noexcept {
+    for (ByteRange const& range : ranges) {
+        if (range.lo > range.hi) return false;
+    }
+    std::size_t after_first = 0;
+    for (ByteRange const& first : ranges) {
+        ++after_first;
+        const ::fixy::View<ByteRange const> rest = ranges.window(after_first, ranges.size() - after_first)
+                                                       .expect("the count of a loop is the count of the View");
+        for (ByteRange const& second : rest) {
+            // The test of the two ends alone reports an empty range strictly
+            // inside a second range as an overlap: for [5, 5) inside [0, 10),
+            // neither 5 <= 0 nor 10 <= 5 is true.
+            if (first.lo == first.hi || second.lo == second.hi) continue;
+            const bool is_first_below = first.hi <= second.lo;
+            const bool is_second_below = second.hi <= first.lo;
+            if (!is_first_below && !is_second_below) return false;
+        }
+    }
+    return true;
+}
+
 // True when the byte ranges of the slots live at op `op` are pairwise
 // disjoint.  Only the simultaneously-live set is checked: two slots whose
 // live ranges do not intersect may share an offset, which is the reuse the
@@ -89,22 +122,19 @@ struct MemoryPlan {
 // overflows, returns false — neither case can support a disjointness claim.
 template <std::size_t MaxLive>
 [[nodiscard]] constexpr bool live_intervals_disjoint_at(::fixy::View<const TensorSlot> slots, OpIndex op) noexcept {
-    std::array<::foundation::decide::Interval<std::uint64_t>, MaxLive> live{};
-    std::size_t n = 0;
+    ::fixy::FixedList<ByteRange, MaxLive> live{};
     const std::uint32_t t = op.raw();
     for (TensorSlot const& s : slots) {
         if (s.is_external) continue;
         const std::uint32_t birth = s.birth_op.raw();
         const std::uint32_t death = s.death_op.raw();
         if (birth <= t && t <= death) {
-            if (n >= MaxLive) return false;
             if (!::foundation::decide::no_overflow_sum(s.offset_bytes, s.nbytes)) return false;
-            live[n] = {.lo = s.offset_bytes, .hi = s.offset_bytes + s.nbytes};
-            ++n;
+            const bool is_full = live.push(ByteRange{.lo = s.offset_bytes, .hi = s.offset_bytes + s.nbytes}).is_err();
+            if (is_full) return false;
         }
     }
-    return ::foundation::decide::intervals_pairwise_disjoint(
-        std::span<const ::foundation::decide::Interval<std::uint64_t>>(live.data(), n));
+    return are_byte_ranges_disjoint(live.view());
 }
 
 // The storage span is the sum of the per-dimension extents, not the largest

@@ -67,45 +67,6 @@ static void test_header_layout_invariants() {
     crucible::test::pass("  test_header_layout_invariants:                  PASSED\n");
 }
 
-// The codec itself writes two regions, the header and the payload.  The
-// 256-region case below is a compile-time witness for the cold-tier
-// scale the predicate is meant to serve, and costs nothing at runtime.
-
-static void test_cold_blob_layout_predicate() {
-    static_assert(fed::federation_entry_blob_layout_disjoint(0));
-    static_assert(fed::federation_entry_blob_layout_disjoint(1024));
-
-    constexpr std::array<fed::ColdBlobRegion, 4> ok_regions{{
-        {.offset_bytes = 0, .nbytes = 32},
-        {.offset_bytes = 32, .nbytes = 64},
-        {.offset_bytes = 128, .nbytes = 16},
-        {.offset_bytes = 256, .nbytes = 0},
-    }};
-    static_assert(fed::cold_blob_regions_pairwise_disjoint<4>(std::span<const fed::ColdBlobRegion>{ok_regions}));
-
-    constexpr std::array<fed::ColdBlobRegion, 3> overlap{{
-        {.offset_bytes = 0, .nbytes = 64},
-        {.offset_bytes = 32, .nbytes = 32},
-        {.offset_bytes = 96, .nbytes = 16},
-    }};
-    static_assert(!fed::cold_blob_regions_pairwise_disjoint<3>(std::span<const fed::ColdBlobRegion>{overlap}));
-
-    constexpr auto build_256_region_layout = [] {
-        std::array<fed::ColdBlobRegion, 256> regions{};
-        for (std::size_t i = 0; i < regions.size(); ++i) {
-            regions[i] = {
-                .offset_bytes = i * std::size_t{64},
-                .nbytes = 64,
-            };
-        }
-        return regions;
-    };
-    constexpr auto regions_256 = build_256_region_layout();
-    static_assert(fed::cold_blob_regions_pairwise_disjoint<256>(std::span<const fed::ColdBlobRegion>{regions_256}));
-
-    crucible::test::pass("  test_cold_blob_layout_predicate:                PASSED\n");
-}
-
 // The federation entry wire format puts the magic at offset 0 of the
 // header, as the bytes 'C', 'F', 'E', 'D' in increasing address order.
 // These checks compare the magic with the letters of the format.  A change
@@ -1028,7 +989,6 @@ static void test_permissioned_decode_tags_the_view() {
 int main() {
     ::fixy::report(::fixy::Sink::Out, "test_federation_protocol — wire-format witness\n");
     test_header_layout_invariants();
-    test_cold_blob_layout_predicate();
     test_magic_byte_order();
     test_version_byte_order();
     test_round_trip_basic();
@@ -1062,6 +1022,6 @@ int main() {
     test_magic_collision_with_cdag();
     test_field_width_pins();
     test_vector_buffer_roundtrip();
-    crucible::test::pass("test_federation_protocol: 35 groups, all passed\n");
+    crucible::test::pass("test_federation_protocol: 34 groups, all passed\n");
     return 0;
 }

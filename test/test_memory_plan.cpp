@@ -115,10 +115,88 @@ void test_refuses_slot_lifetimes_outside_the_sweep() {
     crucible::test::pass("  test_refuses_slot_lifetimes_outside_the_sweep: PASSED\n");
 }
 
+// The cases of crucible::are_byte_ranges_disjoint.  Each case is a constant, so
+// a case that fails stops the build.
+using crucible::are_byte_ranges_disjoint;
+using crucible::ByteRange;
+
+template <std::size_t N>
+using Ranges = ::foundation::core::FixedArray<ByteRange, N>;
+
+// An empty View has no pair.
+static_assert(are_byte_ranges_disjoint(::fixy::View<ByteRange const>{}));
+
+constexpr Ranges<1> one_range{ByteRange{0, 100}};
+static_assert(are_byte_ranges_disjoint(one_range.view()));
+
+constexpr Ranges<1> one_empty{ByteRange{50, 50}};
+static_assert(are_byte_ranges_disjoint(one_empty.view()));
+
+// Two ranges that touch at a shared end do not overlap.
+constexpr Ranges<2> touching{ByteRange{0, 64}, ByteRange{64, 128}};
+static_assert(are_byte_ranges_disjoint(touching.view()));
+
+constexpr Ranges<2> gap{ByteRange{0, 64}, ByteRange{128, 256}};
+static_assert(are_byte_ranges_disjoint(gap.view()));
+
+// The order of the ranges does not change the result.
+constexpr Ranges<2> reversed{ByteRange{128, 256}, ByteRange{0, 64}};
+static_assert(are_byte_ranges_disjoint(reversed.view()));
+
+constexpr Ranges<5> packed{ByteRange{0, 64}, ByteRange{64, 192}, ByteRange{192, 256}, ByteRange{256, 320},
+                           ByteRange{320, 1024}};
+static_assert(are_byte_ranges_disjoint(packed.view()));
+
+constexpr Ranges<4> with_empty{ByteRange{0, 64}, ByteRange{64, 64}, ByteRange{64, 128}, ByteRange{128, 128}};
+static_assert(are_byte_ranges_disjoint(with_empty.view()));
+
+// An empty range strictly inside a second range, in the two orders of the
+// pair.  A slot of zero bytes puts an empty range there.
+constexpr Ranges<2> empty_inside{ByteRange{0, 10}, ByteRange{5, 5}};
+static_assert(are_byte_ranges_disjoint(empty_inside.view()));
+
+constexpr Ranges<2> empty_inside_first{ByteRange{5, 5}, ByteRange{0, 10}};
+static_assert(are_byte_ranges_disjoint(empty_inside_first.view()));
+
+constexpr Ranges<3> zero_byte_slot_inside_live{ByteRange{0, 256}, ByteRange{128, 128}, ByteRange{256, 512}};
+static_assert(are_byte_ranges_disjoint(zero_byte_slot_inside_live.view()));
+
+// An offset that does not move past the last range.
+constexpr Ranges<2> adjacent_overlap{ByteRange{0, 100}, ByteRange{50, 150}};
+static_assert(!are_byte_ranges_disjoint(adjacent_overlap.view()));
+
+// A check of the adjacent pairs alone does not find this overlap.
+constexpr Ranges<4> distant_overlap{ByteRange{0, 200}, ByteRange{300, 400}, ByteRange{500, 700}, ByteRange{150, 250}};
+static_assert(!are_byte_ranges_disjoint(distant_overlap.view()));
+
+constexpr Ranges<2> contained{ByteRange{0, 1024}, ByteRange{200, 800}};
+static_assert(!are_byte_ranges_disjoint(contained.view()));
+
+constexpr Ranges<2> duplicate{ByteRange{100, 200}, ByteRange{100, 200}};
+static_assert(!are_byte_ranges_disjoint(duplicate.view()));
+
+constexpr Ranges<1> inverted{ByteRange{50, 30}};
+static_assert(!are_byte_ranges_disjoint(inverted.view()));
+
+// A malformed range refuses the set, also when each pair is disjoint.
+constexpr Ranges<3> mixed_inverted{ByteRange{0, 100}, ByteRange{200, 300}, ByteRange{500, 400}};
+static_assert(!are_byte_ranges_disjoint(mixed_inverted.view()));
+
+// The same check at run time, from a value that the compiler cannot fold.
+void test_are_byte_ranges_disjoint_at_run_time() {
+    std::uint64_t volatile shared_end = 50;
+    const Ranges<2> overlap{ByteRange{0, 100}, ByteRange{shared_end, 150}};
+    assert(!are_byte_ranges_disjoint(overlap.view()));
+    const Ranges<2> touching_at_run_time{ByteRange{0, shared_end}, ByteRange{shared_end, 150}};
+    assert(are_byte_ranges_disjoint(touching_at_run_time.view()));
+    crucible::test::pass("  test_are_byte_ranges_disjoint_at_run_time: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
     test_refuses_slot_lifetimes_outside_the_sweep();
+    test_are_byte_ranges_disjoint_at_run_time();
     auto test = ::foundation::effects::testing::test();
     crucible::BackgroundThread bt;
 

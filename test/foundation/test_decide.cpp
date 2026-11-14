@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <limits>
-#include <span>
 #include <utility>
 
 namespace {
@@ -119,121 +118,6 @@ static_assert(all_valid_widths(std::make_index_sequence<3>{}));
 static_assert(safe_table_capacity(16) == 16);
 static_assert(safe_table_capacity(32) == 32);
 static_assert(safe_table_capacity(64) == 64);
-
-// A zero-length array is ill formed. The span below takes size 0.
-constexpr dc::Interval<uint64_t> empty_ivs[] = {{0, 0}};
-static_assert(dc::intervals_pairwise_disjoint(std::span<const dc::Interval<uint64_t>>{empty_ivs, 0u}));
-
-constexpr dc::Interval<uint64_t> one_iv[] = {{0, 100}};
-static_assert(dc::intervals_pairwise_disjoint(std::span{one_iv}));
-
-constexpr dc::Interval<uint64_t> one_empty[] = {{50, 50}};
-static_assert(dc::intervals_pairwise_disjoint(std::span{one_empty}));
-
-// Touching at a shared endpoint is not an overlap.
-constexpr dc::Interval<uint64_t> touching[] = {{0, 64}, {64, 128}};
-static_assert(dc::intervals_pairwise_disjoint(std::span{touching}));
-
-constexpr dc::Interval<uint64_t> gap[] = {{0, 64}, {128, 256}};
-static_assert(dc::intervals_pairwise_disjoint(std::span{gap}));
-
-// Order independent: the quantification is over pairs.
-constexpr dc::Interval<uint64_t> reversed[] = {{128, 256}, {0, 64}};
-static_assert(dc::intervals_pairwise_disjoint(std::span{reversed}));
-
-constexpr dc::Interval<uint64_t> packed[] = {
-    {0, 64}, {64, 192}, {192, 256}, {256, 320}, {320, 1024},
-};
-static_assert(dc::intervals_pairwise_disjoint(std::span{packed}));
-
-constexpr dc::Interval<uint64_t> with_empty[] = {
-    {0, 64},
-    {64, 64},
-    {64, 128},
-    {128, 128},
-};
-static_assert(dc::intervals_pairwise_disjoint(std::span{with_empty}));
-
-// `with_empty` above places its empty intervals only at shared
-// boundaries. This one places an empty interval strictly inside
-// another, which is the harder case.
-constexpr dc::Interval<uint64_t> empty_inside[] = {{0, 10}, {5, 5}};
-static_assert(dc::intervals_pairwise_disjoint(std::span{empty_inside}));
-
-// The same pair with the empty interval first, because acceptance
-// must not depend on position within the pair.
-constexpr dc::Interval<uint64_t> empty_inside_first[] = {{5, 5}, {0, 10}};
-static_assert(dc::intervals_pairwise_disjoint(std::span{empty_inside_first}));
-
-// A zero-byte allocation is where an empty interval landing inside a
-// live range comes from in practice.
-constexpr dc::Interval<uint64_t> zero_byte_slot_inside_live[] = {
-    {0, 256},
-    {128, 128},
-    {256, 512},
-};
-static_assert(dc::intervals_pairwise_disjoint(std::span{zero_byte_slot_inside_live}));
-
-// The canonical bug shape: an assignment that fails to advance past
-// the previous interval.
-constexpr dc::Interval<uint64_t> adjacent_overlap[] = {{0, 100}, {50, 150}};
-static_assert(!dc::intervals_pairwise_disjoint(std::span{adjacent_overlap}));
-
-// An adjacent-pairs-only check misses an overlap this far apart.
-constexpr dc::Interval<uint64_t> distant_overlap[] = {
-    {0, 200},
-    {300, 400},
-    {500, 700},
-    {150, 250},  // overlaps interval 0
-};
-static_assert(!dc::intervals_pairwise_disjoint(std::span{distant_overlap}));
-
-constexpr dc::Interval<uint64_t> contained[] = {{0, 1024}, {200, 800}};
-static_assert(!dc::intervals_pairwise_disjoint(std::span{contained}));
-
-constexpr dc::Interval<uint64_t> duplicate[] = {{100, 200}, {100, 200}};
-static_assert(!dc::intervals_pairwise_disjoint(std::span{duplicate}));
-
-constexpr dc::Interval<uint64_t> inverted[] = {{50, 30}};
-static_assert(!dc::intervals_pairwise_disjoint(std::span{inverted}));
-
-// A malformed interval rejects even when every other interval is fine.
-constexpr dc::Interval<uint64_t> mixed_inverted[] = {
-    {0, 100},
-    {200, 300},
-    {500, 400},  // inverted
-};
-static_assert(!dc::intervals_pairwise_disjoint(std::span{mixed_inverted}));
-
-constexpr dc::Interval<int32_t> live_ranges_ok[] = {{-10, 5}, {5, 20}};
-static_assert(dc::intervals_pairwise_disjoint(std::span{live_ranges_ok}));
-
-constexpr dc::Interval<int32_t> live_ranges_overlap[] = {{-10, 8}, {5, 20}};
-static_assert(!dc::intervals_pairwise_disjoint(std::span{live_ranges_overlap}));
-
-[[nodiscard]] constexpr bool valid_memory_plan(std::span<const dc::Interval<uint64_t>> byte_ivs) noexcept {
-    CRUCIBLE_PRE(dc::intervals_pairwise_disjoint(byte_ivs));
-    return true;
-}
-
-constexpr dc::Interval<uint64_t> valid_plan[] = {
-    {0, 1024},
-    {1024, 2048},
-    {2048, 4096},
-};
-static_assert(valid_memory_plan(std::span{valid_plan}));
-
-[[nodiscard]] constexpr bool
-slots_have_disjoint_lifetimes(std::span<const dc::Interval<int32_t>> live_ranges) noexcept {
-    CRUCIBLE_PRE(dc::intervals_pairwise_disjoint(live_ranges));
-    return true;
-}
-
-constexpr dc::Interval<int32_t> two_slots_disjoint_life[] = {
-    {0, 5},
-    {6, 10},
-};
-static_assert(slots_have_disjoint_lifetimes(std::span<const dc::Interval<int32_t>>{two_slots_disjoint_life}));
 
 namespace cl = foundation::algebra::lattices;
 
@@ -631,41 +515,6 @@ int main() {
     }
     if (dc::is_power_of_two_le<int32_t>(std::numeric_limits<int32_t>::min(), 64)) {
         std::fprintf(stderr, "test_decide: INT_MIN WRONGLY accepted (UB-on-x-1 risk)\n");
-        return 1;
-    }
-
-    // intervals_pairwise_disjoint
-    uint64_t volatile runtime_lo0 = 0, runtime_hi0 = 64;
-    uint64_t volatile runtime_lo1 = 64, runtime_hi1 = 192;
-    uint64_t volatile runtime_lo2 = 192, runtime_hi2 = 256;
-    dc::Interval<uint64_t> runtime_plan[3] = {
-        {static_cast<uint64_t>(runtime_lo0), static_cast<uint64_t>(runtime_hi0)},
-        {static_cast<uint64_t>(runtime_lo1), static_cast<uint64_t>(runtime_hi1)},
-        {static_cast<uint64_t>(runtime_lo2), static_cast<uint64_t>(runtime_hi2)},
-    };
-    if (!dc::intervals_pairwise_disjoint(std::span<const dc::Interval<uint64_t>>{runtime_plan})) {
-        std::fprintf(stderr, "test_decide: runtime_plan WRONGLY rejected\n");
-        return 1;
-    }
-    sink += static_cast<int>(runtime_plan[0].hi);
-
-    uint64_t volatile ov_lo0 = 0, ov_hi0 = 100;
-    uint64_t volatile ov_lo1 = 50, ov_hi1 = 150;
-    dc::Interval<uint64_t> overlap[2] = {
-        {static_cast<uint64_t>(ov_lo0), static_cast<uint64_t>(ov_hi0)},
-        {static_cast<uint64_t>(ov_lo1), static_cast<uint64_t>(ov_hi1)},
-    };
-    if (dc::intervals_pairwise_disjoint(std::span<const dc::Interval<uint64_t>>{overlap})) {
-        std::fprintf(stderr, "test_decide: adjacent overlap WRONGLY accepted\n");
-        return 1;
-    }
-
-    uint64_t volatile inv_lo = 50, inv_hi = 30;
-    dc::Interval<uint64_t> bad[1] = {
-        {static_cast<uint64_t>(inv_lo), static_cast<uint64_t>(inv_hi)},
-    };
-    if (dc::intervals_pairwise_disjoint(std::span<const dc::Interval<uint64_t>>{bad})) {
-        std::fprintf(stderr, "test_decide: inverted interval WRONGLY accepted\n");
         return 1;
     }
 

@@ -58,12 +58,9 @@
 #include <fixy/session/Network.h>
 #include <fixy/session/Projection.h>
 #include <fixy/session/Protocol.h>
-#include <foundation/contracts/Decide.h>
-#include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -92,43 +89,6 @@ struct FederationEntryHeader {
 };
 
 inline constexpr std::size_t FEDERATION_HEADER_BYTES = sizeof(FederationEntryHeader);
-
-struct ColdBlobRegion {
-    std::size_t offset_bytes = 0;
-    std::size_t nbytes = 0;
-};
-
-template <std::size_t MaxRegions>
-[[nodiscard]] constexpr bool cold_blob_regions_pairwise_disjoint(std::span<const ColdBlobRegion> regions) noexcept {
-    if (regions.size() > MaxRegions) return false;
-
-    std::array<::foundation::decide::Interval<std::size_t>, MaxRegions> intervals{};
-    for (std::size_t i = 0; i < regions.size(); ++i) {
-        const ColdBlobRegion region = regions[i];
-        if (!::foundation::decide::no_overflow_sum(region.offset_bytes, region.nbytes)) {
-            return false;
-        }
-        intervals[i] = {
-            .lo = region.offset_bytes,
-            .hi = region.offset_bytes + region.nbytes,
-        };
-    }
-    return ::foundation::decide::intervals_pairwise_disjoint(
-        std::span<const ::foundation::decide::Interval<std::size_t>>{intervals.data(), regions.size()});
-}
-
-[[nodiscard]] constexpr bool federation_entry_blob_layout_disjoint(std::size_t payload_bytes) noexcept {
-    if (!::foundation::decide::no_overflow_sum(FEDERATION_HEADER_BYTES, payload_bytes)) {
-        return false;
-    }
-    const std::size_t payload_end = FEDERATION_HEADER_BYTES + payload_bytes;
-    const std::array<ColdBlobRegion, 2> regions{{
-        {.offset_bytes = 0, .nbytes = FEDERATION_HEADER_BYTES},
-        {.offset_bytes = FEDERATION_HEADER_BYTES, .nbytes = payload_bytes},
-    }};
-    return payload_end >= FEDERATION_HEADER_BYTES
-        && cold_blob_regions_pairwise_disjoint<regions.size()>(std::span<const ColdBlobRegion>{regions});
-}
 
 enum class FederationError : std::uint8_t {
     None = 0,
@@ -168,7 +128,6 @@ serialize_federation_entry(std::span<std::uint8_t> out_buf, const KernelCacheKey
     if (payload.size() > ::fixy::max_of<std::uint32_t>) {
         return ::fixy::err(FederationError::OutputBufferTooSmall);
     }
-    CRUCIBLE_PRE(federation_entry_blob_layout_disjoint(payload.size()));
 
     const std::size_t total_bytes = FEDERATION_HEADER_BYTES + payload.size();
     if (out_buf.size() < total_bytes) {
@@ -242,7 +201,6 @@ deserialize_federation_header(std::span<const std::uint8_t> in_buf, std::uint16_
     }
 
     const std::size_t bytes_after_header = in_buf.size() - FEDERATION_HEADER_BYTES;
-    CRUCIBLE_PRE(federation_entry_blob_layout_disjoint(hdr.payload_size));
     if (static_cast<std::size_t>(hdr.payload_size) > bytes_after_header) {
         return ::fixy::err(FederationError::TruncatedPayload);
     }

@@ -532,7 +532,6 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::foundation::permissions::tag, kGradeVocabulary},
     {^^::foundation::permissions::row_discipline, "discipline identities, declared and never defined"},
     {^^::foundation::brand, "brands, which are identities of instances and never fold"},
-    {^^::foundation::decide, kMachinery},
     {^^::foundation::diag, "the row-hash fold and the diagnostic surface themselves"},
     {^^::foundation::diag::row_discipline, "discipline identities, declared and never defined"},
     {^^::foundation::fail_closed, kMachinery},

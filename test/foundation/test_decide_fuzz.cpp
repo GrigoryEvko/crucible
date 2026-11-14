@@ -2,9 +2,8 @@
 //
 // Every predicate here is checked against a reference oracle that
 // reaches the same answer by a different route: widening into a larger
-// integer rather than asking the compiler about overflow, counting set
-// bits rather than clearing the lowest one, and a sorted sweep rather than a
-// test of every pair of intervals.  The difference in algorithm is what
+// integer rather than asking the compiler about overflow, and counting set
+// bits rather than clearing the lowest one.  The difference in algorithm is what
 // makes the check worth anything.  An oracle that restated the
 // production body would agree with it about every bug it has.
 //
@@ -17,9 +16,7 @@
 // Ten thousand inputs per predicate is enough to flush the boundary
 // bugs these predicates are prone to: an off-by-one in a length, the
 // wrong comparison on the boundary element, a missed promotion while
-// widening, the wrong sign on a termination test.  The span-based
-// predicate draws a fresh length each round, so the empty span and the
-// single-element span get covered alongside the interesting ones.
+// widening, the wrong sign on a termination test.
 //
 // These predicates are what the contract macros rest on.  A call site
 // that guards itself with one is trusting that the predicate means
@@ -42,7 +39,6 @@
 #include <cstdlib>
 #include <meta>
 #include <random>
-#include <span>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -77,7 +73,6 @@ constexpr int kIterations = 10000;
 
 constexpr std::uint64_t kKeySum = 0xC001C0DE00020002ULL;
 constexpr std::uint64_t kKeyPow2Le = 0xC001C0DE00060006ULL;
-constexpr std::uint64_t kKeyDisjoint = 0xC001C0DE000C000CULL;
 
 // Both calls are pure functions of pure inputs and the comparison
 // feeds nothing, so without a volatile sink the optimizer is entitled
@@ -184,71 +179,16 @@ void fuzz_is_power_of_two_le() {
     }
 }
 
-// Endpoints drawn from a narrow range, so overlaps, touching ends, empty
-// intervals and inverted intervals all occur often.  The signed width
-// reaches intervals below zero.
-void fuzz_intervals_pairwise_disjoint() {
-    constexpr std::size_t kMaxIntervals = 8;
-    for (int i = 0; i < kIterations; ++i) {
-        auto const ctr = generate(static_cast<std::uint64_t>(i), kKeyDisjoint);
-        std::size_t const count = ctr[0] % (kMaxIntervals + 1);
-        dc::Interval<std::int32_t> production[kMaxIntervals]{};
-        dco::Range<std::int32_t> reference[kMaxIntervals]{};
-        // Half the rounds lay the intervals end to end with gaps, so the
-        // accepting answer is common.
-        bool const make_disjoint = (ctr[1] & 1u) == 1u;
-        std::int32_t cursor = -64;
-        for (std::size_t k = 0; k < count; ++k) {
-            auto const sub = generate(static_cast<std::uint64_t>(i) * 64 + k, kKeyDisjoint);
-            std::int32_t lo = 0;
-            std::int32_t hi = 0;
-            if (make_disjoint) {
-                lo = cursor + static_cast<std::int32_t>(sub[0] % 4u);
-                hi = lo + static_cast<std::int32_t>(sub[1] % 8u);
-                cursor = hi;
-            } else {
-                lo = static_cast<std::int32_t>(sub[0] % 128u) - 64;
-                hi = static_cast<std::int32_t>(sub[1] % 128u) - 64;
-            }
-            production[k] = dc::Interval<std::int32_t>{lo, hi};
-            reference[k] = dco::Range<std::int32_t>{lo, hi};
-        }
-        // Reverse half of the disjoint rounds, because the answer must
-        // not depend on the order of the intervals.
-        if (make_disjoint && (ctr[2] & 1u) == 1u) {
-            for (std::size_t k = 0; k < count / 2; ++k) {
-                std::swap(production[k], production[count - 1 - k]);
-                std::swap(reference[k], reference[count - 1 - k]);
-            }
-        }
-        bool const fast =
-            dc::intervals_pairwise_disjoint(std::span<const dc::Interval<std::int32_t>>{production, count});
-        bool const orcl =
-            dco::intervals_pairwise_disjoint_oracle(std::span<const dco::Range<std::int32_t>>{reference, count});
-        if (fast != orcl) {
-            std::fprintf(stderr, "  count=%zu disjoint_by_construction=%d fast=%d oracle=%d\n", count,
-                         make_disjoint ? 1 : 0, fast, orcl);
-            fail("intervals_pairwise_disjoint", i, "see preceding line");
-        }
-        if (make_disjoint && !fast) {
-            std::fprintf(stderr, "  count=%zu: intervals laid end to end were refused\n", count);
-            fail("intervals_pairwise_disjoint", i, "see preceding line");
-        }
-        g_sink ^= static_cast<int>(ctr[3]);
-    }
-}
-
 }  // namespace
 
 int main() {
     std::fprintf(stderr,
-                 "test_decide_fuzz: %d iterations × 3 procedures "
+                 "test_decide_fuzz: %d iterations × 2 procedures "
                  "(Philox4x32-10 stream, fixed seed)\n",
                  kIterations);
 
     fuzz_no_overflow_sum();
     fuzz_is_power_of_two_le();
-    fuzz_intervals_pairwise_disjoint();
 
     if (g_sink == 0) {
         // Every predicate xors something into the sink, so a sink of
@@ -257,6 +197,6 @@ int main() {
         std::fprintf(stderr, "test_decide_fuzz: WARNING — sink is 0; harness may have been DCE'd\n");
         return 1;
     }
-    crucible::test::pass("test_decide_fuzz: all {} × 4 = {} iterations passed\n", kIterations, kIterations * 4);
+    crucible::test::pass("test_decide_fuzz: all {} × 2 = {} iterations passed\n", kIterations, kIterations * 2);
     return 0;
 }
