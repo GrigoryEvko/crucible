@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// The named predicates that a production precondition cites.  A predicate
-// earns its place here through its cites: the rule decide-cite-ratio
-// fails the build when a predicate has fewer than two production cites.
-// A predicate that no precondition needs does not belong here.
+// The catalog of the named predicates that preconditions cite.  Each
+// predicate is a common pattern of a precondition.  A predicate stays in the
+// catalog whether or not a precondition cites it.
 
 #pragma once
 

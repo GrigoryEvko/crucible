@@ -99,7 +99,7 @@ bench/ | raw-new-delete | 2 | - | -
 bench/ | raw-pointer-object | 192 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
-bench/ | std-entity | 845 | - | -
+bench/ | std-entity | 844 | - | -
 bench/ | std-object | 241 | - | -
 examples/fn/ | c-array-object | 9 | - | -
 examples/fn/ | c-library-call | 12 | - | -

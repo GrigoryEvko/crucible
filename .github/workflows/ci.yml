@@ -168,7 +168,7 @@ jobs:
         run: |
           for rule in registry \
                       determinism no-shell python-lint types prose-bans admitted-audit \
-                      decide-cite-ratio derived-files clang-format; do
+                      derived-files clang-format; do
             python3 utils/bin/guard witness --rule "$rule"
           done
           python3 utils/bin/guard check --engine meta

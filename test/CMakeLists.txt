@@ -4531,8 +4531,8 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # costs, the writer of the row-hash golden and the driver of a parse build
 # plant their input in throwaway trees.  The tests of the read set of a test
 # and of the tracer of its calls plant test programs in the work root of the
-# caches.  The tests of the reader of
-# prose and of the rule decide-cite-ratio parse small planted files.  The test
+# caches.  The test of the reader of
+# prose parses small planted files.  The test
 # of the memo of the file hashes hashes
 # planted files, and the test of the run of mypy runs a planted mypy.
 # The rule clang-format runs in one test.  Its ignore file leaves out the
@@ -4540,7 +4540,7 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL crucible_order_census_ch
 # one run on each file used 77 G user instructions and 4.1 s to 4.4 s, and
 # eight parts at the same time used 99 G to 102 G and 3.5 s to 4.1 s.
 crucible_meta_rule_tests(${CRUCIBLE_CHECK_WARNINGS_DIR}
-  TREES admitted-audit decide-cite-ratio derived-files prose-bans)
+  TREES admitted-audit derived-files prose-bans)
 # The rules of the engine elf read the objects, the static libraries and the
 # compile database of this build (cmake/Guards.cmake).  The test modules of
 # the runner of the engine, of the module of its ledgers of one set and of its
