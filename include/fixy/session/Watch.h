@@ -458,6 +458,38 @@ struct wait_chain {
 /// src/fixy/session/Watch.cpp holds the body.
 [[noreturn, gnu::cold]] void report_deadlock(const wait_chain& chain, std::uint64_t self) noexcept;
 
+/// One step of the digest of a cycle: the finalizer of MurmurHash3 over
+/// the state and the word.  The finalizer is a permutation of the 64-bit
+/// words.
+[[nodiscard]] constexpr std::uint64_t mix_digest(std::uint64_t state, std::uint64_t word) noexcept {
+    std::uint64_t value = state ^ (word + 0x9E3779B97F4A7C15ULL + (state << 6) + (state >> 2));
+    value ^= value >> 33;
+    value *= 0xFF51AFD7ED558CCDULL;
+    value ^= value >> 33;
+    value *= 0xC4CEB9FE1A85EC53ULL;
+    value ^= value >> 33;
+    return value;
+}
+
+/// The digest of a cycle of waits, or zero for a chain that is no cycle.
+/// A wait scope keeps the digest of its last trace in place of the chain,
+/// so a scope holds a word and not a chain of 2 KB.  Two traces of one
+/// cycle give one digest.  Two different cycles give one digest with a
+/// chance near 2^-64, and the scope then reports a cycle that the second
+/// trace did not repeat.  Complexity: linear in the links of the chain.
+[[nodiscard]] inline std::uint64_t cycle_digest(const wait_chain& chain) noexcept {
+    if (!chain.is_cycle) return 0;
+    std::uint64_t digest = mix_digest(0, chain.count);
+    for (std::size_t index = 0; index < chain.count; ++index) {
+        const chain_link& link = chain.links[index];
+        digest = mix_digest(digest, (std::uint64_t{link.endpoint} << 32) | link.endpoint_generation);
+        digest = mix_digest(digest, link.peer);
+        digest = mix_digest(digest, link.holder);
+        digest = mix_digest(digest, link.holder_epoch);
+    }
+    return digest | 1;
+}
+
 // ── The priority order ───────────────────────────────────────────────
 
 /// True when the record at `index` is live, has `generation`, and has
@@ -706,19 +738,47 @@ template <::foundation::effects::IsExecCtx Ctx>
 // declared blocking call of its transport, and when a polling or trying
 // transport first finds nothing to do.  poll() runs between the retries.
 // The scope lives on the stack of the waiting thread only.
+//
+// A scope of no endpoint, as under check::Off, does no work: the
+// constructor stores five zero words and returns, and poll() only pauses.
+// A tracked scope reads the clock first at its first trace point.  It
+// keeps the digest of the cycle of its last trace (detail::cycle_digest),
+// not the chain, so no scope carries a chain to clear.
 class wait_scope {
     std::uint32_t endpoint_ = 0;
-    std::uint64_t self_ = 0;
     std::uint32_t spins_ = 0;
+    std::uint64_t self_ = 0;
+    // Zero until the first trace point reads the clock.
     std::uint64_t start_ns_ = 0;
     std::uint64_t last_trace_ns_ = 0;
-    detail::wait_chain suspect_{};
+    // The digest of the cycle of the last trace, or zero.
+    std::uint64_t suspect_digest_ = 0;
+
+    // Reads the clock at a trace point.  After suspect_after_ns, it traces
+    // the wait-for chain at most once for each confirm_after_ns.  The same
+    // cycle at two traces is a deadlock: it prints the cycle and aborts.
+    [[gnu::cold, gnu::noinline]] void trace_when_due_() noexcept {
+        const std::uint64_t now_ns = detail::monotonic_ns();
+        if (now_ns == 0) return;
+        if (start_ns_ == 0) {
+            start_ns_ = now_ns;
+            last_trace_ns_ = now_ns;
+            return;
+        }
+        // The clock counts from boot, so neither sum wraps.
+        if (now_ns < start_ns_ + suspect_after_ns || now_ns < last_trace_ns_ + confirm_after_ns) return;
+        last_trace_ns_ = now_ns;
+        const detail::wait_chain chain = detail::trace_chain(self_, endpoint_);
+        const std::uint64_t digest = detail::cycle_digest(chain);
+        if (digest != 0 && digest == suspect_digest_) [[unlikely]]
+            detail::report_deadlock(chain, self_);
+        suspect_digest_ = digest;
+    }
 
 public:
     /// Refuses the wait when it breaks the priority order, and otherwise
     /// publishes that the calling thread waits on `endpoint`.
-    explicit wait_scope(endpoint_id endpoint) noexcept : start_ns_{detail::monotonic_ns()} {
-        last_trace_ns_ = start_ns_;
+    explicit wait_scope(endpoint_id endpoint) noexcept {
         if (endpoint == endpoint_id::none) return;
         const std::uint64_t self = detail::owner_token();
         if (self == detail::untracked_owner) return;
@@ -741,21 +801,19 @@ public:
         detail::thread_at_(detail::index_of(self_)).blocked_on.store_release(0);
     }
 
-    /// Pauses once.  After suspect_after_ns, it traces the wait-for chain
-    /// at most once for each confirm_after_ns.  The same cycle at two
-    /// traces is a deadlock: it prints the cycle and aborts.
+    /// Pauses once.  Each 1024th pause of a tracked scope is a trace point.
+    /// After suspect_after_ns, it traces the wait-for chain at most once for
+    /// each confirm_after_ns.  The same cycle at two traces is a deadlock:
+    /// it prints the cycle and aborts.
     void poll() noexcept {
         CRUCIBLE_SPIN_PAUSE;
         if (endpoint_ == 0 || (++spins_ & 1023u) != 0) return;
-        const std::uint64_t now_ns = detail::monotonic_ns();
-        // The clock counts from boot, so neither sum wraps.
-        if (now_ns == 0 || now_ns < start_ns_ + suspect_after_ns || now_ns < last_trace_ns_ + confirm_after_ns) return;
-        last_trace_ns_ = now_ns;
-        const detail::wait_chain chain = detail::trace_chain(self_, endpoint_);
-        if (chain.same_cycle_as(suspect_)) [[unlikely]]
-            detail::report_deadlock(chain, self_);
-        suspect_ = chain;
+        trace_when_due_();
     }
+
+    /// The clock time of the first trace point, or zero before it.  A scope
+    /// of no endpoint never reads the clock, so it answers zero.
+    [[nodiscard]] std::uint64_t started_at_ns() const noexcept { return start_ns_; }
 };
 
 }  // namespace fixy::session::watch

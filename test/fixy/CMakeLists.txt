@@ -1984,6 +1984,10 @@ fixy_test(test_session_protocol)
 # one abandonment banner on stderr from that child.
 fixy_test(test_session_handle)
 
+# A declared read or write under check::Off opens a wait scope that reads
+# no clock, and a tracked scope reads it first at its first trace point.
+fixy_test(test_session_watch_cost)
+
 # Entry.h holds the context-bound entry points with the empty permission
 # set: mint_session, and with_session, which lends the Resource by move.
 fixy_test(test_session_entry)
