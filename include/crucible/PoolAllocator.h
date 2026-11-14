@@ -1,13 +1,12 @@
 #pragma once
 
-// Turns a memory plan into one aligned allocation plus a table mapping each
-// slot to a pointer. Slots owned elsewhere are registered by the owner and
-// point outside the pool. The rest point into it.
+// Turns a memory plan into one aligned block of bytes plus a table that maps
+// each slot to an address. Slots owned elsewhere are registered by the owner
+// and point outside the pool. The rest point into it.
 //
-// The buffer and the table are raw heap rather than owning wrappers, because
-// detaching hands the buffer's ownership out to a separate sink. A wrapper
-// that consumed itself on move would tie the buffer's lifetime to this object
-// and make that impossible.
+// The block is a foundation::AlignedBytes, and detach() gives it to the
+// caller, so the caller can keep the old bytes alive while it builds the
+// replacement. The table is a fixy::HeapArray of addresses.
 //
 // One thread builds it and the replay path only reads it once initialisation
 // has returned.
@@ -19,16 +18,16 @@
 #include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/ScopedView.h>
+#include <foundation/AlignedBuffer.h>
 #include <foundation/Platform.h>
-#include <foundation/Saturate.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdint>
-#include <cstdlib>
-#include <cstring>
 #include <type_traits>
+#include <utility>
 
 namespace crucible {
 
@@ -44,30 +43,12 @@ struct CRUCIBLE_OWNER PoolAllocator {
 
     PoolAllocator(const PoolAllocator&) = delete("interior pointers into pool_ would alias");
     PoolAllocator& operator=(const PoolAllocator&) = delete("interior pointers into pool_ would alias");
-    PoolAllocator(PoolAllocator&&) = delete("ptr_table_ entries are interior pointers into pool_");
-    PoolAllocator& operator=(PoolAllocator&&) = delete("ptr_table_ entries are interior pointers into pool_");
+    PoolAllocator(PoolAllocator&&) = delete("table_ entries are interior pointers into pool_");
+    PoolAllocator& operator=(PoolAllocator&&) = delete("table_ entries are interior pointers into pool_");
 
     // The planner lays out slot offsets on this boundary, and it is what
     // coalesced device access and wide vector loads require.
     static constexpr uint32_t ALIGNMENT = 256;
-
-    // Owns a detached buffer and frees it. It is neither copyable nor movable
-    // and is still returned by value: guaranteed elision covers that, and the
-    // class-level nodiscard forces the caller to bind it to a named local
-    // rather than let a temporary free the buffer at the end of the statement.
-    struct [[nodiscard]] CRUCIBLE_OWNER DetachedPool {
-        void* base = nullptr;
-        uint64_t bytes = 0;
-
-        DetachedPool() = default;
-        DetachedPool(void* b, uint64_t n) noexcept : base{b}, bytes{n} {}
-        ~DetachedPool() { std::free(base); }
-
-        DetachedPool(const DetachedPool&) = delete("would double-free the pool buffer");
-        DetachedPool& operator=(const DetachedPool&) = delete("would double-free the pool buffer");
-        DetachedPool(DetachedPool&&) = delete("consumed at detach site via guaranteed elision");
-        DetachedPool& operator=(DetachedPool&&) = delete("consumed at detach site via guaranteed elision");
-    };
 
     // Ceilings on what a plan may ask for. The slot count fits a 32-bit field,
     // but a pointer table for the whole range would be tens of gigabytes, and
@@ -89,51 +70,43 @@ struct CRUCIBLE_OWNER PoolAllocator {
         return is_inside && slot.offset_bytes % ALIGNMENT == 0;
     }
 
-    // Failure to allocate aborts. A runtime that preallocates everything up
-    // front has nowhere to retreat to when the up-front allocation fails.
-    // Externally owned slots start null and are registered before replay.
+    // Failure to allocate ends the process. A runtime that preallocates
+    // everything up front has nowhere to retreat to when the up-front
+    // allocation fails. Externally owned slots start null and are registered
+    // before replay.
     [[gnu::cold, gnu::noinline]]
     void init(const MemoryPlan* plan) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(plan != nullptr);
-        CRUCIBLE_PRE(ptr_table_ == nullptr);
-        CRUCIBLE_PRE(pool_ == nullptr);
+        CRUCIBLE_PRE(!is_initialized());
+        CRUCIBLE_PRE(pool_.size() == 0u);
         const size_t plan_slots = plan->slots.size();
         CRUCIBLE_PRE(::foundation::decide::in_range<size_t>(plan_slots, 0u, kMaxNumSlots));
         CRUCIBLE_PRE(::foundation::decide::in_range<uint64_t>(plan->pool_bytes, 0u, kMaxPoolBytes));
         CRUCIBLE_PRE(plan->num_external <= plan_slots);
-        // The precondition above bounds the count by kMaxNumSlots.
-        num_slots_ = static_cast<uint32_t>(plan_slots);
         num_external_ = plan->num_external;
-        pool_bytes_ = plan->pool_bytes;
 
-        if (pool_bytes_ > 0) {
+        if (plan->pool_bytes > 0) {
             // A pool at least a huge page long is aligned to one so it can be
             // backed by huge pages. Anything smaller takes the base alignment.
-            const size_t page_align =
-                (pool_bytes_ >= crucible::warden::kHugePageBytes) ? crucible::warden::kHugePageBytes : ALIGNMENT;
-            // The preconditions bound both operands far below the point where
-            // the sum could wrap, so the saturating form never saturates here.
-            // It is there so that raising either ceiling later cannot turn a
-            // rounding-up into a wrap.
-            const uint64_t padded = ::foundation::sat::add_sat<uint64_t>(pool_bytes_, page_align - 1);
-            const uint64_t alloc_size = padded & ~(page_align - 1);
-            pool_ = std::aligned_alloc(page_align, alloc_size);
-            if (!pool_) [[unlikely]]
-                std::abort();
+            const bool is_huge = plan->pool_bytes >= crucible::warden::kHugePageBytes;
+            const uint64_t page_align = is_huge ? crucible::warden::kHugePageBytes : ALIGNMENT;
+            pool_ = ::foundation::mint_aligned_bytes(::foundation::effects::Alloc{}, plan->pool_bytes, page_align);
 #ifndef NDEBUG
-            std::memset(pool_, 0xCD, alloc_size);  // a read of unwritten pool memory stands out
+            // A read of unwritten pool memory stands out.
+            ::fixy::fill(pool_.view(), uint8_t{0xCD});
 #endif
-            const bool huge = (page_align == crucible::warden::kHugePageBytes);
-            crucible::warden::register_hot_region(pool_, alloc_size, /*huge=*/huge);
+            // The region covers the whole allocation, which is the pool
+            // rounded up to its alignment.  The preconditions bound the sum
+            // far below a wrap.
+            const uint64_t allocated_bytes = (plan->pool_bytes + page_align - 1) & ~(page_align - 1);
+            crucible::warden::register_hot_region(pool_address_(), allocated_bytes, is_huge);
         }
 
-        if (num_slots_ > 0) {
-            ptr_table_ = static_cast<void**>(std::calloc(num_slots_, sizeof(void*)));
-            if (!ptr_table_) [[unlikely]]
-                std::abort();
+        if (plan_slots > 0) {
+            table_ = ::fixy::mint_heap_array<void*>(::foundation::effects::Alloc{}, plan_slots, nullptr);
 
-            // Externally owned slots stay null. The rest are the base plus
-            // their offset.
+            // Externally owned slots stay null. The rest are the address of
+            // the byte at their offset.
             //
             // The sum is checked for wrap before it is compared. An offset
             // near the top of the range plus a modest size wraps to a small
@@ -141,11 +114,11 @@ struct CRUCIBLE_OWNER PoolAllocator {
             // the slot it describes runs off the end of it. The offsets come
             // from shapes supplied by a foreign runtime, so this stays a
             // runtime check with a diagnostic rather than a precondition.
-            auto* base = static_cast<char*>(pool_);
-            uint32_t s = 0;
+            const ::fixy::View<uint8_t> pool = pool_.view();
+            uint32_t slot_index = 0;
             for (const TensorSlot& slot : plan->slots) {
                 // The check stays armed in a release build.  The next
-                // statement publishes a pointer that later becomes a memcpy
+                // statement publishes an address that later becomes a copy
                 // destination, so a slot reaching past the pool would corrupt
                 // the heap silently instead of trapping.  A slot off the
                 // alignment means the planner produced a slot that the hot
@@ -156,42 +129,38 @@ struct CRUCIBLE_OWNER PoolAllocator {
                 // init can name.  This form is also independent of the
                 // contract evaluation semantic, which differs across targets
                 // in this tree.  Once per plan on a cold path.
-                if (!can_serve_slot(slot, pool_bytes_)) [[unlikely]] {
+                if (!can_serve_slot(slot, plan->pool_bytes)) [[unlikely]] {
                     ::fixy::fatal("PoolAllocator: slot {} does not fit the pool: offset={} nbytes={} pool_bytes={} "
                                   "alignment={}",
-                                  s, slot.offset_bytes, slot.nbytes, pool_bytes_, ALIGNMENT);
+                                  slot_index, slot.offset_bytes, slot.nbytes, plan->pool_bytes, ALIGNMENT);
                 }
-                if (!slot.is_external) ptr_table_[s] = base + slot.offset_bytes;
-                ++s;
+                if (!slot.is_external) {
+                    *table_.get(slot_index).expect("the table holds one entry for each slot of the plan") =
+                        address_in_(pool, slot.offset_bytes);
+                }
+                ++slot_index;
             }
         }
         // A contract predicate that reads a member through `this` is skipped
         // when the compiler folds the body at compile time, so every such
         // check in this file runs from the body rather than a clause.
-        CRUCIBLE_POST(0, num_slots_ == plan_slots);
-        CRUCIBLE_POST(0, pool_bytes_ == plan->pool_bytes);
-        CRUCIBLE_POST(0, ::foundation::decide::implies(pool_bytes_ > 0u, pool_ != nullptr));
-        CRUCIBLE_POST(0, ::foundation::decide::implies(num_slots_ > 0u, ptr_table_ != nullptr));
+        CRUCIBLE_POST(0, num_slots() == plan_slots);
+        CRUCIBLE_POST(0, pool_bytes() == plan->pool_bytes);
+        CRUCIBLE_POST(0, ::foundation::decide::implies(plan_slots > 0u, is_initialized()));
     }
 
     // The destructor calls this on each path, so it has no cold attribute.
     // A cold callee there makes GCC compile each function that owns a pool
     // as an unlikely function.
     void destroy() noexcept {
-        if (pool_) crucible::warden::unregister_hot_region(pool_);
-        std::free(pool_);
-        std::free(ptr_table_);
-        pool_ = nullptr;
-        ptr_table_ = nullptr;
-        pool_bytes_ = 0;
-        num_slots_ = 0;
+        if (pool_.size() > 0) crucible::warden::unregister_hot_region(pool_address_());
+        pool_.reset();
+        table_ = ::fixy::HeapArray<void*>{};
         num_external_ = 0;
         // Back to the default-constructed shape, which is what a subsequent
         // initialisation requires.
-        CRUCIBLE_POST(0, pool_ == nullptr);
-        CRUCIBLE_POST(0, ptr_table_ == nullptr);
-        CRUCIBLE_POST(0, pool_bytes_ == 0u);
-        CRUCIBLE_POST(0, num_slots_ == 0u);
+        CRUCIBLE_POST(0, pool_.size() == 0u);
+        CRUCIBLE_POST(0, table_.size() == 0u);
         CRUCIBLE_POST(0, num_external_ == 0u);
     }
 
@@ -217,28 +186,24 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // been registered returns null and callers test for it, so promising
     // non-null would make that legitimate path undefined.
     //
+    // The read of the table refuses an id at or past the count of slots, so
+    // an id from outside the plan ends the process.
+    //
     // The pool owns its memory and its table, and a temporary pool releases
     // the two at the end of the statement.  A deleted `const&&` twin refuses
     // each read from a temporary pool, here and in the members that follow.
     [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline, gnu::assume_aligned(ALIGNMENT)]]
     inline void* slot_ptr(SlotId sid, InitializedView const&) const& noexcept {
-        // The count guard is not redundant with the range check: at a count of
-        // zero the upper bound below underflows to the largest value and the
-        // range admits everything. The view already proves the count is
-        // positive, so this catches a later change that opens the path.
-        CRUCIBLE_PRE(num_slots_ > 0u);
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(sid.raw(), 0u, num_slots_ - 1u));
-        return ptr_table_[sid.raw()];
+        return *table_.get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
     }
 
     void* slot_ptr(SlotId, InitializedView const&) const&& =
         delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
 
     CRUCIBLE_INLINE void register_external(SlotId sid, ::fixy::NonNull<void*> ptr, InitializedView const&) noexcept {
-        CRUCIBLE_PRE(num_slots_ > 0u);
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(sid.raw(), 0u, num_slots_ - 1u));
-        ptr_table_[sid.raw()] = ptr.value();
-        CRUCIBLE_POST(0, ptr_table_[sid.raw()] == ptr.value());
+        auto entry = table_.get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
+        *entry = ptr.value();
+        CRUCIBLE_POST(0, *entry == ptr.value());
     }
 
     // The raw table, for an inner loop that wants to hoist the indirection out
@@ -247,22 +212,31 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // required so that the escape is at least gated on the pool being live.
     [[nodiscard, gnu::pure, gnu::returns_nonnull]] CRUCIBLE_INLINE void* const*
     table(InitializedView const&) const& noexcept {
-        // What the view already proves, restated for the optimiser so it
-        // matches the non-null promise on the return type.
-        [[assume(ptr_table_ != nullptr)]];
-        return ptr_table_;
+        // The view proves at least one slot, so the read of the first entry
+        // does not fail.  The table is read once for each activation of a
+        // region, not for each op.
+        return &*table_.get(0).expect("an initialized pool holds at least one slot");
     }
 
     void* const* table(InitializedView const&) const&& =
         delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
 
-    [[nodiscard, gnu::pure]] void* pool_base() const& noexcept { return pool_; }
+    // The bytes of the pool, and the address of its first byte (null for a
+    // pool of no bytes).  A const allocator lends writable memory here, as
+    // slot_ptr does.
+    [[nodiscard]] ::fixy::View<uint8_t> bytes() const& noexcept { return pool_.view(); }
+    ::fixy::View<uint8_t> bytes() const&& =
+        delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
+    [[nodiscard, gnu::pure]] void* pool_base() const& noexcept { return pool_address_(); }
     void* pool_base() const&& =
         delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
-    [[nodiscard, gnu::pure]] uint64_t pool_bytes() const noexcept { return pool_bytes_; }
-    [[nodiscard, gnu::pure]] uint32_t num_slots() const noexcept { return num_slots_; }
+    [[nodiscard, gnu::pure]] uint64_t pool_bytes() const noexcept { return pool_.size(); }
+    // init bounds the count by kMaxNumSlots, so it fits 32 bits.
+    [[nodiscard, gnu::pure]] uint32_t num_slots() const noexcept {
+        return ::fixy::narrow<uint32_t>(table_.size()).expect("init bounds the count of slots by kMaxNumSlots");
+    }
     [[nodiscard, gnu::pure]] uint32_t num_external() const noexcept { return num_external_; }
-    [[nodiscard, gnu::pure]] constexpr bool is_initialized() const noexcept { return ptr_table_ != nullptr; }
+    [[nodiscard, gnu::pure]] constexpr bool is_initialized() const noexcept { return table_.size() > 0u; }
 
     // The same values, with their allocation tier carried in the return type.
     // A slot pointer comes out of a preallocated table, which is the pool
@@ -284,7 +258,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // Null when the pool has no bytes, so the caller inspects the result.
     [[nodiscard, gnu::pure]]
     inline ::fixy::alloc_class::Pool<void*> pool_base_pinned() const& noexcept {
-        return ::fixy::mint_band<::fixy::alloc_class::Pool<void*>>(pool_);
+        return ::fixy::mint_band<::fixy::alloc_class::Pool<void*>>(pool_address_());
     }
 
     ::fixy::alloc_class::Pool<void*> pool_base_pinned() const&& =
@@ -294,8 +268,8 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // the condition under which initialisation chose the huge-page alignment.
     [[nodiscard, gnu::pure]]
     inline ::fixy::alloc_class::HugePage<void*> pool_base_huge_pinned() const& noexcept {
-        CRUCIBLE_PRE(pool_bytes_ >= crucible::warden::kHugePageBytes);
-        return ::fixy::mint_band<::fixy::alloc_class::HugePage<void*>>(pool_);
+        CRUCIBLE_PRE(pool_.size() >= crucible::warden::kHugePageBytes);
+        return ::fixy::mint_band<::fixy::alloc_class::HugePage<void*>>(pool_address_());
     }
 
     ::fixy::alloc_class::HugePage<void*> pool_base_huge_pinned() const&& =
@@ -307,20 +281,18 @@ struct CRUCIBLE_OWNER PoolAllocator {
         return p.is_initialized();
     }
 
-    // Hands the buffer out and empties this allocator, which lets a caller
+    // Hands the bytes out and empties this allocator, which lets a caller
     // keep the old data alive while it builds the replacement.  The view is
     // stale once this returns, since the pool it vouched for is now empty.
     // It cannot be refreshed by assignment either.
     [[nodiscard, gnu::cold]]
-    DetachedPool detach(InitializedView const&) noexcept {
-        void* p = pool_;
-        uint64_t n = pool_bytes_;
-        crucible::warden::unregister_hot_region(p);
-        // Cleared before the reset so that the reset does not free a buffer
-        // whose ownership has already moved to the return value.
-        pool_ = nullptr;
+    ::foundation::AlignedBytes detach(InitializedView const&) noexcept {
+        if (pool_.size() > 0) crucible::warden::unregister_hot_region(pool_address_());
+        // The bytes move out before the reset, so the reset does not give
+        // back a block whose ownership has already moved to the return value.
+        ::foundation::AlignedBytes detached = std::move(pool_);
         destroy();
-        return DetachedPool{p, n};
+        return detached;
     }
 
 private:
@@ -337,11 +309,29 @@ private:
         return ::fixy::mint_view<pool_state::Initialized>(*this);
     }
 
-    void* pool_ = nullptr;
-    void** ptr_table_ = nullptr;
-    uint64_t pool_bytes_ = 0;
-    uint32_t num_slots_ = 0;
+    // The address of the first byte of the pool, or null for a pool of no
+    // bytes.
+    [[nodiscard]] void* pool_address_() const noexcept { return address_in_(pool_.view(), 0); }
+
+    // The address of the byte at offset in the pool.  A slot of zero bytes
+    // can start at the end of the pool, and its address is then one past the
+    // last byte.  A pool of no bytes gives null.
+    [[nodiscard]] static void* address_in_(::fixy::View<uint8_t> pool, uint64_t offset) noexcept {
+        if (pool.size() == 0) return nullptr;
+        if (offset < pool.size()) return &*pool.get(offset).expect("the offset is below the size of the pool");
+        return &*pool.get(pool.size() - 1).expect("the pool holds its last byte") + 1;
+    }
+
+    // The bytes of the pool.  A const allocator lends writable tensor
+    // memory: slot_ptr, table and pool_base are const and give addresses that
+    // the caller writes through.  The bytes are no part of the value of the
+    // allocator, so the owner is mutable.
+    mutable ::foundation::AlignedBytes pool_{};
+    // The address of each slot, or null for an external slot that its owner
+    // did not register yet.
+    ::fixy::HeapArray<void*> table_{};
     uint32_t num_external_ = 0;
+    [[maybe_unused]] ::foundation::core::FixedArray<uint8_t, 4> pad_{};
 };
 
 }  // namespace crucible

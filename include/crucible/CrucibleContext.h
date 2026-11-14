@@ -14,7 +14,6 @@
 #include <foundation/contracts/Pre.h>
 
 #include <cstdint>
-#include <cstring>
 #include <type_traits>
 
 namespace crucible {
@@ -155,9 +154,9 @@ struct CrucibleContext {
         // Detaching empties the pool, which makes the view stale, but it goes
         // out of scope before anything touches the pool again.
         auto pv = pool_.initialized_view_();
-        auto old_pool = pool_.detach(pv);
+        const ::foundation::AlignedBytes old_pool = pool_.detach(pv);
         pool_.init(alt.plan);
-        migrate_prefix_slots_(old_region, alt, old_pool.base, div_pos);
+        migrate_prefix_slots_(old_region, alt, old_pool.view(), div_pos);
 
         engine_.init(alt, ReplayEngine::PoolBorrow{pool_});
         active_region_ = ::fixy::mint_tagged<::fixy::tags::source::Vigil>(&alt);
@@ -278,8 +277,8 @@ private:
         }
     }
 
-    void migrate_prefix_slots_(const RegionNode& old_region, const RegionNode& alt, const void* old_pool_base,
-                               uint32_t div_pos) CRUCIBLE_NO_THREAD_SAFETY {
+    void migrate_prefix_slots_(const RegionNode& old_region, const RegionNode& alt,
+                               ::fixy::View<const uint8_t> old_pool, uint32_t div_pos) CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(old_region.plan != nullptr);
         CRUCIBLE_PRE(alt.plan != nullptr);
         const MemoryPlan& old_plan = *old_region.plan;
@@ -337,14 +336,19 @@ private:
                 if ((visited.at(word) & bit) != 0) continue;
                 visited.at(word) |= bit;
 
-                const uint64_t old_offset = old_slot.offset_bytes;
-                const uint64_t new_offset = new_slot.offset_bytes;
-                const uint64_t nbytes = old_slot.nbytes;
-
-                if (nbytes > 0 && old_pool_base) {
-                    std::memcpy(static_cast<char*>(pool_.pool_base()) + new_offset,
-                                static_cast<const char*>(old_pool_base) + old_offset, static_cast<size_t>(nbytes));
-                }
+                // The copy takes the bytes of the old slot that the new slot
+                // holds.  A new slot smaller than the old one gets its own
+                // size, so the copy never writes past it into a neighbor or
+                // past the end of the pool.  Each init checked its slots
+                // against its pool, so each window fits.
+                const uint64_t nbytes = ::fixy::min(old_slot.nbytes, new_slot.nbytes);
+                if (nbytes == 0) continue;
+                const ::fixy::View<const uint8_t> source =
+                    old_pool.window(old_slot.offset_bytes, nbytes).expect("the old init kept each slot in its pool");
+                const ::fixy::View<uint8_t> target = pool_.bytes()
+                                                         .window(new_slot.offset_bytes, nbytes)
+                                                         .expect("the new init kept each slot in its pool");
+                ::fixy::copy(target, source).expect("the two windows hold one count of bytes");
             }
         }
     }
@@ -373,7 +377,7 @@ private:
     static_assert(alignof(ActiveRegionPtr) == alignof(const RegionNode*),
                   "a tagged region pointer must be aligned as the pointer it wraps");
     ActiveRegionPtr active_region_{};  // offset 80
-    PoolAllocator pool_;  // 32 bytes, offset 88
+    PoolAllocator pool_;  // 48 bytes, offset 88
 };
 
 }  // namespace crucible

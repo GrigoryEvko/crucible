@@ -1,5 +1,6 @@
 // A switch of region copies the slots of the shared prefix into the new pool,
 // and a bitset of MIGRATION_MAX_SLOTS bits records each slot that it copied.
+// A new slot smaller than its old slot takes only the bytes that it holds.
 // A plan with more slots than the bitset is refused before a slot is copied,
 // under each contract semantic.  The build compiles this file twice: one time
 // under the contract semantic of the preset, and one time under the ignore
@@ -197,6 +198,40 @@ void test_slot_past_the_bitset_is_refused() {
     crucible::test::pass("  test_slot_past_the_bitset_is_refused: PASSED\n");
 }
 
+// The old slot of the shared prefix holds two times the bytes of its new slot,
+// and the new slot ends the new pool.  The switch copies the bytes that the
+// new slot holds.  A copy of the whole old slot writes past the end of the
+// new pool, which AddressSanitizer reports in a Debug build.
+void test_smaller_new_slot_takes_its_own_size() {
+    ::foundation::core::FixedArray<SlotId, 2> outputs{SlotId{0}, SlotId{0}};
+
+    ::foundation::core::FixedArray<TensorSlot, 1> wide_slot{};
+    MemoryPlan old_plan = make_plan(wide_slot.view());
+    wide_slot.at(::fixy::index<0>()).nbytes = 2 * kSlotBytes;
+    old_plan.pool_bytes = 2 * kSlotBytes;
+    ::foundation::core::FixedArray<TraceEntry, 2> old_ops{};
+    make_ops(old_ops.view(), outputs.view());
+    RegionNode old_region{};
+    init_region(&old_region, old_ops.view(), &old_plan);
+
+    ::foundation::core::FixedArray<TensorSlot, 1> narrow_slot{};
+    MemoryPlan new_plan = make_plan(narrow_slot.view());
+    ::foundation::core::FixedArray<TraceEntry, 2> new_ops{};
+    make_ops(new_ops.view(), outputs.view());
+    RegionNode new_region{};
+    init_region(&new_region, new_ops.view(), &new_plan);
+
+    CrucibleContext context;
+    assert(context.activate(old_region));
+    ::fixy::fill(context.pool().bytes(), std::uint8_t{0x5A});
+    assert(context.switch_region(new_region, 1));
+    assert(context.pool().bytes().size() == kSlotBytes);
+    for (const std::uint8_t byte : context.pool().bytes()) {
+        assert(byte == 0x5A);
+    }
+    crucible::test::pass("  test_smaller_new_slot_takes_its_own_size: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -204,6 +239,7 @@ int main() {
     test_plan_at_the_bound_migrates();
     test_wide_plan_is_refused();
     test_slot_past_the_bitset_is_refused();
+    test_smaller_new_slot_takes_its_own_size();
     crucible::test::pass("test_crucible_context_migration: all tests passed\n");
     return 0;
 }

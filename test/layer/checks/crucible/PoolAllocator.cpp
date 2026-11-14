@@ -4,7 +4,7 @@
 
 namespace crucible {
 
-static_assert(sizeof(PoolAllocator) == 32, "PoolAllocator layout: 2 ptrs + u64 + 2*u32");
+static_assert(sizeof(PoolAllocator) == 48, "PoolAllocator layout: AlignedBytes (24) + HeapArray (16) + 2*u32");
 static_assert(alignof(PoolAllocator) == 8);
 
 // A view must not outlive the scope it was minted in, so storing one in a

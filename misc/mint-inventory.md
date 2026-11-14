@@ -277,6 +277,12 @@ that the axis does not apply to the row.
 | `mint_witnessed_at` | `include/fixy/session/Witnessed.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_witnessed_under` | `include/fixy/session/Witnessed.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 
+## include/foundation/
+
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_aligned_bytes` | `include/foundation/AlignedBuffer.h` | Y | - | Y | Y | token | · | HS14: 2 |
+
 ## include/foundation/core/
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
@@ -336,4 +342,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 74 | 43 | 22 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 128 | 55 | 70 | 3 | 0 | 4 |
+| substrate (`include/foundation/`, `include/fixy/`) | 129 | 55 | 71 | 3 | 0 | 4 |

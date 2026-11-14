@@ -69,6 +69,25 @@ static_assert(!has_constant_size<0, (std::size_t{1} << 62), 8>, "count * element
 static_assert(!has_constant_size<17, (std::size_t{1} << 60) - 1, 16>, "prefix + element bytes wraps");
 static_assert(!has_constant_size<0, max_size, 1>, "the round up to the alignment wraps");
 
+// An AlignedBytes holds its first byte, its count and its alignment.  It is
+// move-only, and only the allocation capability passes the gate of its mint.
+static_assert(sizeof(AlignedBytes) == 3 * sizeof(std::size_t));
+static_assert(!std::is_copy_constructible_v<AlignedBytes> && !std::is_copy_assignable_v<AlignedBytes>);
+static_assert(std::is_nothrow_move_constructible_v<AlignedBytes> && std::is_nothrow_move_assignable_v<AlignedBytes>);
+static_assert(CanMintAlignedBytes<::foundation::core::Alloc>);
+static_assert(!CanMintAlignedBytes<int>, "a tag other than the allocation capability fails the gate");
+static_assert(aligned_block_bytes(1000, 256) == 1024 && aligned_block_bytes(1024, 256) == 1024);
+static_assert(aligned_block_bytes(3, 8) == 8);
+
+// A constant evaluation builds an empty block and destroys it, so a class
+// with an empty block member is a literal type.
+consteval bool empty_block_lives_in_a_constant_evaluation() {
+    AlignedBytes block{};
+    block.reset();
+    return true;
+}
+static_assert(empty_block_lives_in_a_constant_evaluation());
+
 }  // namespace detail::aligned_buffer_self_test
 
 }  // namespace foundation

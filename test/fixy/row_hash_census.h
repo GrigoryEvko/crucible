@@ -857,6 +857,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::simd::mask, kPayload},
     {^^::foundation::AlignedBuffer,
      "an owned allocation of elements: it holds storage and makes no claim about what the elements hold"},
+    {^^::foundation::AlignedBytes,
+     "an owned block of bytes at an alignment of the run: it holds storage and makes no claim about the bytes"},
     {^^::foundation::SwissTableBuffer,
      "the one allocation of an open-addressing table: it holds storage and makes no claim about the slots"},
     {^^::foundation::ThreadLocalRef,

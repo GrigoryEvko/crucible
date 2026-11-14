@@ -111,7 +111,6 @@ int main() {
 
     std::printf("=== pool_allocator ===\n");
     std::printf("  sizeof(PoolAllocator)               = %zu\n", sizeof(PoolAllocator));
-    std::printf("  sizeof(PoolAllocator::DetachedPool) = %zu\n", sizeof(PoolAllocator::DetachedPool));
     std::printf("  sizeof(TensorSlot)                  = %zu\n", sizeof(TensorSlot));
     std::printf("  sizeof(MemoryPlan)                  = %zu\n", sizeof(MemoryPlan));
     std::printf("  sizeof(SlotId)                      = %zu\n\n", sizeof(SlotId));
@@ -278,10 +277,10 @@ int main() {
             {
                 auto pv = pool.mint_initialized_view(kVigilForeground);
                 auto old = pool.detach(pv);
-                bench::do_not_optimize(old.base);
+                bench::do_not_optimize(old.size());
                 pool.init(&plan_b);
             }
-            // DetachedPool destructs here, freeing old allocation.
+            // The detached bytes go back to the heap at the end of the scope.
             bench::do_not_optimize(pool.pool_base());
             pool.destroy();
         });

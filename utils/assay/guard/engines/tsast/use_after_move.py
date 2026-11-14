@@ -222,6 +222,9 @@ PROBE_FILES: dict[str, str] = {
     "test/foundation/test_aligned_buffer.cpp": (
         "a moved-from buffer is empty and owns no storage, and a move assignment hands the storage on"
     ),
+    "test/foundation/test_aligned_bytes.cpp": (
+        "a moved-from block is empty and owns no bytes, and a move assignment hands the block on"
+    ),
     "test/foundation/test_core_box.cpp": "consume() and a borrow of a moved-from Box abort",
     "test/foundation/test_core_choice.cpp": (
         "expect() and the rvalue match() leave an Option empty, and the move of an owning Option leaves the source "

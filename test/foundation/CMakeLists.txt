@@ -1887,6 +1887,17 @@ foundation_neg_compile_test(neg_aligned_buffer_copied
   "use of deleted function .foundation::AlignedBuffer<T, Alignment>::AlignedBuffer\\(const foundation::AlignedBuffer<T, Alignment>&\\) \\[with T = int; long unsigned int Alignment = 4\\]."
   "AlignedBuffer owns its storage alone and is move-only")
 
+# A block of bytes at an alignment of the run: the mint takes the
+# allocation capability and no other tag, and a View of a block that a
+# full expression gives back is deleted.
+foundation_test(test_aligned_bytes)
+foundation_neg_compile_test(neg_aligned_bytes_without_allocation_marker
+  "no matching function for call to .mint_aligned_bytes\\(foundation::effects::cap::IO, int, int\\)."
+  "required for the satisfaction of .CanMintAlignedBytes<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
+foundation_neg_compile_test(neg_aligned_bytes_view_of_temporary
+  "use of deleted function .void foundation::AlignedBytes::view\\(\\) &&."
+  "a view of a temporary AlignedBytes points into a block that the full expression gives back")
+
 # ── The thread-local cell ─────────────────────────────────────────────
 #
 # The cell is built on the first access of each thread, with no argument,

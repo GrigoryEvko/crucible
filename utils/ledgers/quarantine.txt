@@ -89,7 +89,7 @@ reason vessel/ | The unit vessel of section 14.1 of the plan misc/01_10_2026_qua
 @build/test/fixy/armed_roster/ | c-array-object | 1 | - | -
 @build/test/fuzz/generated/ | std-object | 14 | - | -
 bench/ | c-array-object | 123 | - | -
-bench/ | c-library-call | 714 | - | -
+bench/ | c-library-call | 713 | - | -
 bench/ | c-library-object | 17 | - | -
 bench/ | compiler-builtin | 12 | - | -
 bench/ | door-header | 2 | - | -
@@ -107,12 +107,12 @@ examples/fn/ | raw-pointer-object | 7 | - | -
 examples/fn/ | replace-pending:std::bit_cast | 2 | - | -
 examples/fn/ | std-entity | 10 | - | -
 examples/fn/ | std-object | 3 | - | -
-include/crucible/ | c-array-object | 43 | - | -
-include/crucible/ | c-library-call | 37 | - | -
+include/crucible/ | c-array-object | 41 | - | -
+include/crucible/ | c-library-call | 28 | - | -
 include/crucible/ | compiler-builtin | 2 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
 include/crucible/ | raw-new-delete | 1 | - | -
-include/crucible/ | raw-pointer-object | 402 | - | -
+include/crucible/ | raw-pointer-object | 397 | - | -
 include/crucible/ | replace-pending:<limits> | 5 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 14 | - | -
 include/crucible/ | std-entity | 236 | - | -
@@ -403,7 +403,7 @@ test/fixy/ | std-object | 1090 | - | -
 test/fixy/neg/ | c-array-object | 53 | - | -
 test/fixy/neg/ | c-library-call | 5 | - | -
 test/fixy/neg/ | c-library-object | 2 | - | -
-test/fixy/neg/ | detail-use | 252 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
+test/fixy/neg/ | detail-use | 253 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
