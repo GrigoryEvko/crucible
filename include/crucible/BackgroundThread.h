@@ -29,7 +29,6 @@
 #include <fixy/Tags.h>
 #include <fixy/handle/OneShotFlag.h>
 #include <fixy/handle/PublishCommit.h>
-#include <foundation/AlignedBuffer.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
@@ -273,21 +272,24 @@ struct BackgroundThread {
 
         [[nodiscard]] uint64_t size() const noexcept { return count_; }
 
-        // The op at index, counted from the oldest held op.
+        // The op at index, counted from the oldest held op.  The capacity
+        // of each array is a power of two, so its mask wraps the slot of
+        // the ring with no check.  The ring holds count_ ops, so each index
+        // below size() names a held op.
         [[nodiscard]] TraceRing::Entry const& entry(uint64_t index) const noexcept {
-            return entries_[(head_ + index) & mask_];
+            return entries_.at_masked(head_ + index);
         }
         [[nodiscard]] MetaIndex meta_start(uint64_t index) const noexcept {
-            return meta_starts_[(head_ + index) & mask_];
+            return meta_starts_.at_masked(head_ + index);
         }
         [[nodiscard]] uint64_t record_start(uint64_t index) const noexcept {
-            return record_starts_[(head_ + index) & mask_];
+            return record_starts_.at_masked(head_ + index);
         }
         [[nodiscard]] ScopeHash scope_hash(uint64_t index) const noexcept {
-            return scope_hashes_[(head_ + index) & mask_];
+            return scope_hashes_.at_masked(head_ + index);
         }
         [[nodiscard]] CallsiteHash callsite_hash(uint64_t index) const noexcept {
-            return callsite_hashes_[(head_ + index) & mask_];
+            return callsite_hashes_.at_masked(head_ + index);
         }
 
     private:
@@ -295,11 +297,11 @@ struct BackgroundThread {
 
         void grow_();
 
-        ::foundation::AlignedBuffer<TraceRing::Entry> entries_;
-        ::foundation::AlignedBuffer<MetaIndex> meta_starts_;
-        ::foundation::AlignedBuffer<uint64_t> record_starts_;
-        ::foundation::AlignedBuffer<ScopeHash> scope_hashes_;
-        ::foundation::AlignedBuffer<CallsiteHash> callsite_hashes_;
+        ::fixy::MaskedArray<TraceRing::Entry> entries_;
+        ::fixy::MaskedArray<MetaIndex> meta_starts_;
+        ::fixy::MaskedArray<uint64_t> record_starts_;
+        ::fixy::MaskedArray<ScopeHash> scope_hashes_;
+        ::fixy::MaskedArray<CallsiteHash> callsite_hashes_;
         // The capacity minus one, zero before the first push.
         uint64_t mask_ = 0;
         // The slot of the oldest held op, before the mask.
@@ -356,17 +358,17 @@ public:
     // when it discards the region.  The payload walk of the pipeline channels
     // reads each member (fixy/concurrent/PayloadRow.h).
     struct BuiltRegion {
-        ::foundation::AlignedBuffer<TraceEntry> ops;
+        ::fixy::HeapArray<TraceEntry> ops;
         // The tensor metadata of the ops.  An op points into this buffer.
-        ::foundation::AlignedBuffer<TensorMeta> metas;
+        ::fixy::HeapArray<TensorMeta> metas;
         // The scalars, the producer of each input, and the slot ids of the
         // inputs and the outputs of the ops.  An op points into these
         // buffers.
-        ::foundation::AlignedBuffer<int64_t> scalars;
-        ::foundation::AlignedBuffer<OpIndex> producers;
-        ::foundation::AlignedBuffer<SlotId> slot_ids;
+        ::fixy::HeapArray<int64_t> scalars;
+        ::fixy::HeapArray<OpIndex> producers;
+        ::fixy::HeapArray<SlotId> slot_ids;
         // The slots of the memory plan.
-        ::foundation::AlignedBuffer<TensorSlot> slots;
+        ::fixy::HeapArray<TensorSlot> slots;
         ContentHash content_hash;
     };
 
@@ -419,8 +421,10 @@ private:
     // region has slots.  A slot of the store with no node is free.
     struct RegionMemory {
         BuiltRegion parts;
-        ::foundation::AlignedBuffer<RegionNode> node;
-        ::foundation::AlignedBuffer<MemoryPlan> plan;
+        // One RegionNode, and one MemoryPlan when the region has slots.  An
+        // empty node buffer marks a free slot of the store.
+        ::fixy::HeapArray<RegionNode> node;
+        ::fixy::HeapArray<MemoryPlan> plan;
         // The record that the region callback gets, and that the owner can
         // publish to its foreground.
         PublishedRegion published{};
@@ -727,14 +731,14 @@ public:
         // hold (meta_floor_() when the detect stage made the marker).
         uint64_t meta_floor = 0;
         // The ops of the iteration, one element of each buffer for each op,
-        // and each value initialized before the copy.  An iteration has at
-        // most IterationDetector::MAX_PERIOD ops, so the four buffers take at
-        // most 88 bytes for each op, 22 MiB together.  A commit-only marker
-        // holds none.
-        ::foundation::AlignedBuffer<TraceRing::Entry> trace;
-        ::foundation::AlignedBuffer<MetaIndex> meta_starts;
-        ::foundation::AlignedBuffer<ScopeHash> scope_hashes;
-        ::foundation::AlignedBuffer<CallsiteHash> callsite_hashes;
+        // each built from the held op.  An iteration has at most
+        // IterationDetector::MAX_PERIOD ops, so the four buffers take at most
+        // 88 bytes for each op, 22 MiB together.  A commit-only marker holds
+        // none.
+        ::fixy::HeapArray<TraceRing::Entry> trace;
+        ::fixy::HeapArray<MetaIndex> meta_starts;
+        ::fixy::HeapArray<ScopeHash> scope_hashes;
+        ::fixy::HeapArray<CallsiteHash> callsite_hashes;
     };
 
     struct BgPipelineDone {};
@@ -944,32 +948,33 @@ private:
         SlotId old_slot;
     };
 
-    ::foundation::AlignedBuffer<PtrSlot> scratch_map_;
-    ::foundation::AlignedBuffer<SlotInfo> scratch_slots_;
-    ::foundation::AlignedBuffer<Edge> scratch_edges_;
+    // The map has a power-of-two capacity, so its mask wraps each probe.
+    ::fixy::MaskedArray<PtrSlot> scratch_map_;
+    ::fixy::HeapArray<SlotInfo> scratch_slots_;
+    ::fixy::HeapArray<Edge> scratch_edges_;
     uint8_t map_gen_ = 0;
 
-    // Zero means not yet allocated.  ptr_mask_ is a derived view of map_cap_
-    // kept raw because the inner probe loop loads it every iteration.
+    // Zero means not yet allocated.
     ::fixy::Monotonic<uint32_t> map_cap_ = ::fixy::mint_monotonic<uint32_t>(0);
-    uint32_t ptr_mask_ = 0;
     ::fixy::Monotonic<uint32_t> slot_cap_max_ = ::fixy::mint_monotonic<uint32_t>(0);
     ::fixy::Monotonic<uint32_t> edge_cap_max_ = ::fixy::mint_monotonic<uint32_t>(0);
 
     // build_trace_from calls this after its scan of the trace, which
     // supplies exact counts.  Buffers grow and never shrink, so the cost
     // amortizes across iterations.
-    void ensure_scratch_buffers(uint32_t total_inputs, uint32_t total_outputs);
+    void ensure_scratch_buffers(::foundation::effects::Alloc a, uint32_t total_inputs, uint32_t total_outputs);
 
     [[nodiscard, gnu::const]] static uint32_t hash_ptr(void* ptr) noexcept {
         return static_cast<uint32_t>(std::bit_cast<uintptr_t>(ptr) * 0x9E3779B97F4A7C15ULL >> 32);
     }
 
-    [[nodiscard]] static InsertResult ptr_map_insert(PtrSlot* map, uint8_t gen, uint32_t mask, void* key,
+    // The probes of the map start at the hash of the key, and the mask of
+    // the map wraps each probe.  A full round of probes visits each slot.
+    [[nodiscard]] static InsertResult ptr_map_insert(::fixy::MaskedArray<PtrSlot>& map, uint8_t gen, void* key,
                                                      OpIndex op_index, uint8_t port, SlotId slot_id) {
-        uint32_t bucket_idx = hash_ptr(key) & mask;
-        for (uint32_t probe = 0; probe <= mask; probe++) {
-            auto& slot = map[(bucket_idx + probe) & mask];
+        const uint64_t bucket_idx = hash_ptr(key);
+        for (uint64_t probe = 0; probe < map.size(); probe++) {
+            auto& slot = map.at_masked(bucket_idx + probe);
             if (slot.gen != gen) {
                 // A stale generation means the slot is empty.  Claim it.
                 slot.key = ::fixy::mint_tagged<::fixy::tags::source::External>(key);
@@ -1005,11 +1010,11 @@ private:
         uint8_t port = 0;
     };
 
-    [[nodiscard]] static PtrLookup ptr_map_lookup(const PtrSlot* map, uint8_t gen, uint32_t mask, void* key) {
+    [[nodiscard]] static PtrLookup ptr_map_lookup(::fixy::MaskedArray<PtrSlot> const& map, uint8_t gen, void* key) {
         if (!key) return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};
-        uint32_t bucket_idx = hash_ptr(key) & mask;
-        for (uint32_t probe = 0; probe <= mask; probe++) {
-            auto& slot = map[(bucket_idx + probe) & mask];
+        const uint64_t bucket_idx = hash_ptr(key);
+        for (uint64_t probe = 0; probe < map.size(); probe++) {
+            auto& slot = map.at_masked(bucket_idx + probe);
             if (slot.gen == gen && slot.key.value() == key)
                 return {.op_index = slot.op_index, .slot_id = slot.slot_id, .port = slot.port};
             if (slot.gen != gen) return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};  // empty → miss

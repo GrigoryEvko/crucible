@@ -293,7 +293,7 @@ void test_built_graph_owns_its_metadata() {
     auto [graph, parts] = std::move(built).expect("the work builds a graph");
 
     const std::less<const crucible::TensorMeta*> before{};
-    const crucible::TensorMeta* const log_begin = metalog->entries_buffer_.data();
+    const crucible::TensorMeta* const log_begin = &metalog->records_.at(::fixy::index<0>());
     const crucible::TensorMeta* const log_end = log_begin + MetaLog::CAPACITY;
     for (uint32_t op = 0; op < OPS; ++op) {
         // element_at ends the process when the op holds no output metadata.
@@ -383,7 +383,7 @@ void test_scalars_of_an_op_with_no_tensors() {
     five_seven.push_op_with_scalars(0, 5, 7);
     auto [graph_b, region_b] = five_seven.build(bt, test.alloc, scratch).expect("the work builds a graph");
 
-    const crucible::TraceEntry& op = region_a.ops[0];
+    const crucible::TraceEntry& op = *region_a.ops.get(0).expect("the region holds its one op");
     assert(op.num_inputs() == 0 && op.num_outputs() == 0);
     assert(op.num_scalar_args() == 2 && op.scalar_args().size() == 2);
     assert(crucible::test::element_at(op.scalar_args(), 0) == 5);

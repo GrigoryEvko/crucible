@@ -2,8 +2,8 @@
 #include <crucible/MetaLog.h>
 #include <fixy/Aliases.h>
 #include <fixy/Core.h>
-#include <foundation/AlignedBuffer.h>
 #include <foundation/Platform.h>
+#include <foundation/effects/Effect.h>
 
 #include "test_abort_probe.h"
 #include "test_assert.h"
@@ -198,7 +198,8 @@ static void test_copy_run_refuses_a_run_longer_than_the_buffer() {
     MetaLog log;
     // The probe leaves its body through longjmp, so the buffer lives outside
     // the body, and its destructor runs.
-    auto destination = ::foundation::AlignedBuffer<TensorMeta>::allocate_value_initialized(MetaLog::CAPACITY + 1);
+    ::fixy::HeapArray<TensorMeta> destination =
+        ::fixy::mint_heap_array(::foundation::effects::Alloc{}, MetaLog::CAPACITY + 1, TensorMeta{});
     assert(crucible::test::aborts([&] { log.copy_run(0, destination.view()); }));
     crucible::test::pass("  test_copy_run_refuses_long_run: PASSED\n");
 }

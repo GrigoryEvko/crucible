@@ -191,8 +191,7 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         const uint32_t num_slots = ref->num_slots.get();
 
         // The forward edges are in the order of their sources.
-        ::fixy::HeapArray<Edge> saved_edges = ::fixy::mint_heap_array(A, ref->fwd_edges.size(), Edge{});
-        ::fixy::copy(saved_edges.view(), ref->fwd_edges).expect("the copy has the count of the forward edges");
+        const ::fixy::HeapArray<Edge> saved_edges = ::fixy::mint_heap_array_copy<Edge>(A, ref->fwd_edges);
 
         const ::fixy::View<const TensorSlot> saved_slots = ref_region.slots.view();
 
@@ -318,22 +317,24 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         const uint64_t t0 = bench::rdtsc_start();
 
-        auto op_buffer = ::foundation::AlignedBuffer<TraceEntry>::allocate_value_initialized(count);
-        auto scalar_buffer = ::foundation::AlignedBuffer<int64_t>::allocate_value_initialized(total_scalars);
-        auto producer_buffer = ::foundation::AlignedBuffer<OpIndex>::allocate_value_initialized(total_inputs);
-        auto slot_buffer =
-            ::foundation::AlignedBuffer<SlotId>::allocate_value_initialized(total_inputs + total_outputs);
-        bg.ensure_scratch_buffers(total_inputs, total_outputs);
+        ::fixy::HeapArray<TraceEntry> op_buffer = ::fixy::mint_heap_array(A, count, TraceEntry{});
+        ::fixy::HeapArray<int64_t> scalar_buffer = ::fixy::mint_heap_array(A, total_scalars, int64_t{0});
+        ::fixy::HeapArray<OpIndex> producer_buffer = ::fixy::mint_heap_array(A, total_inputs, OpIndex{});
+        ::fixy::HeapArray<SlotId> slot_buffer = ::fixy::mint_heap_array(A, total_inputs + total_outputs, SlotId{});
+        bg.ensure_scratch_buffers(A, total_inputs, total_outputs);
         const uint32_t slot_cap =
-            std::min(bg.slot_cap_max_.get(), std::max(uint32_t{256}, total_inputs + total_outputs));
-        std::fill_n(bg.scratch_slots_.data(), slot_cap, BackgroundThread::SlotInfo{});
+            ::fixy::min(bg.slot_cap_max_.get(), ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
+        for (BackgroundThread::SlotInfo& slot_info :
+             bg.scratch_slots_.view().window(0, slot_cap).expect("the slot scratch holds slot_cap slots")) {
+            slot_info = BackgroundThread::SlotInfo{};
+        }
 
         const uint64_t t1 = bench::rdtsc_end();
 
-        bench::do_not_optimize(op_buffer.data());
-        bench::do_not_optimize(scalar_buffer.data());
-        bench::do_not_optimize(producer_buffer.data());
-        bench::do_not_optimize(slot_buffer.data());
+        bench::do_not_optimize(op_buffer);
+        bench::do_not_optimize(scalar_buffer);
+        bench::do_not_optimize(producer_buffer);
+        bench::do_not_optimize(slot_buffer);
         ns_p1 += static_cast<double>(t1 - t0) * nspc;
     }
 
@@ -360,11 +361,11 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             const uint64_t t0 = bench::rdtsc_start();
-            auto meta_buffer = ::foundation::AlignedBuffer<TensorMeta>::allocate_value_initialized(total_metas);
+            ::fixy::HeapArray<TensorMeta> meta_buffer = ::fixy::mint_heap_array(A, total_metas, TensorMeta{});
             meta_log.copy_run(first_meta.raw(), meta_buffer.view());
             const uint64_t t1 = bench::rdtsc_end();
 
-            bench::do_not_optimize(meta_buffer.data());
+            bench::do_not_optimize(meta_buffer);
             ns_p1b += static_cast<double>(t1 - t0) * nspc;
         }
     }
@@ -391,15 +392,14 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             total_scalars += std::min(re.num_scalar_args, uint16_t(5));
         }
 
-        auto op_buffer = ::foundation::AlignedBuffer<TraceEntry>::allocate_value_initialized(count);
+        ::fixy::HeapArray<TraceEntry> op_buffer = ::fixy::mint_heap_array(A, count, TraceEntry{});
         const uint32_t total_metas =
             first_meta.is_valid() ? static_cast<uint32_t>(max_meta_end - first_meta.raw()) : uint32_t{0};
-        auto meta_buffer = ::foundation::AlignedBuffer<TensorMeta>::allocate_value_initialized(total_metas);
+        ::fixy::HeapArray<TensorMeta> meta_buffer = ::fixy::mint_heap_array(A, total_metas, TensorMeta{});
         meta_log.copy_run(first_meta.raw(), meta_buffer.view());
-        auto scalar_buffer = ::foundation::AlignedBuffer<int64_t>::allocate_value_initialized(total_scalars);
-        auto producer_buffer = ::foundation::AlignedBuffer<OpIndex>::allocate_value_initialized(total_inputs);
-        auto slot_buffer =
-            ::foundation::AlignedBuffer<SlotId>::allocate_value_initialized(total_inputs + total_outputs);
+        ::fixy::HeapArray<int64_t> scalar_buffer = ::fixy::mint_heap_array(A, total_scalars, int64_t{0});
+        ::fixy::HeapArray<OpIndex> producer_buffer = ::fixy::mint_heap_array(A, total_inputs, OpIndex{});
+        ::fixy::HeapArray<SlotId> slot_buffer = ::fixy::mint_heap_array(A, total_inputs + total_outputs, SlotId{});
         const ::fixy::View<TraceEntry> ops = op_buffer.view();
         const ::fixy::View<TensorMeta> meta_run = meta_buffer.view();
         const ::fixy::View<int64_t> scalar_run = scalar_buffer.view();
@@ -467,7 +467,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         });
 
         const uint64_t t1 = bench::rdtsc_end();
-        bench::do_not_optimize(op_buffer.data());
+        bench::do_not_optimize(op_buffer);
         bench::do_not_optimize(copied);
         ns_p2a += static_cast<double>(t1 - t0) * nspc;
         check_ops_without_metas(op_buffer.view(), trace.meta_starts.view());
@@ -483,14 +483,13 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             bench::refill_meta_log(meta_log, trace);
             ref = build_recorded(bg, build_scratch, trace).expect("the recorded trace builds").region;
         });
-        TraceEntry* ref_ops = ref.ops.data();
+        const ::fixy::View<TraceEntry const> ref_ops = ref.ops.view();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             const uint64_t t0 = bench::rdtsc_start();
 
             uint64_t content_h = 0x9E3779B97F4A7C15ULL;
-            for (uint32_t i = 0; i < count; i++) {
-                const auto& te = ref_ops[i];
+            for (const TraceEntry& te : ref_ops) {
                 content_h = detail::combine_ids(content_h, te.schema_hash.raw());
                 for (const TensorMeta& m : te.input_metas()) {
                     uint64_t dim_h = 0;
@@ -529,38 +528,38 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             bench::refill_meta_log(meta_log, trace);
             ref = build_recorded(bg, build_scratch, trace).expect("the recorded trace builds").region;
         });
-        TraceEntry* ref_ops = ref.ops.data();
+        const ::fixy::View<TraceEntry const> ref_ops = ref.ops.view();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             bg.map_gen_++;
             if (bg.map_gen_ == 0) {
-                std::fill_n(bg.scratch_map_.data(), bg.map_cap_.get(), BackgroundThread::PtrSlot{});
+                for (BackgroundThread::PtrSlot& slot : bg.scratch_map_.view()) {
+                    slot = BackgroundThread::PtrSlot{};
+                }
                 bg.map_gen_ = 1;
             }
-            auto* local_map = bg.scratch_map_.data();
             const uint8_t local_gen = bg.map_gen_;
-            const uint32_t local_mask = bg.ptr_mask_;
 
-            for (uint32_t i = 0; i < count; i++) {
-                const auto& te = ref_ops[i];
+            uint32_t i = 0;
+            for (const TraceEntry& te : ref_ops) {
                 uint8_t port = 0;
                 for (const TensorMeta& m : te.output_metas()) {
                     void* ptr = raw_data_ptr(m);
                     if (ptr)
-                        (void)BackgroundThread::ptr_map_insert(local_map, local_gen, local_mask, ptr, OpIndex{i}, port,
+                        (void)BackgroundThread::ptr_map_insert(bg.scratch_map_, local_gen, ptr, OpIndex{i}, port,
                                                                SlotId{0});
                     ++port;
                 }
+                ++i;
             }
 
             const uint64_t t0 = bench::rdtsc_start();
 
             uint32_t dummy_edges = 0;
-            for (uint32_t i = 0; i < count; i++) {
-                const auto& te = ref_ops[i];
+            for (const TraceEntry& te : ref_ops) {
                 for (const TensorMeta& m : te.input_metas()) {
                     void* ptr = raw_data_ptr(m);
-                    auto lookup = BackgroundThread::ptr_map_lookup(local_map, local_gen, local_mask, ptr);
+                    auto lookup = BackgroundThread::ptr_map_lookup(bg.scratch_map_, local_gen, ptr);
                     if (lookup.op_index.is_valid()) dummy_edges++;
                 }
             }
@@ -581,32 +580,33 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             bench::refill_meta_log(meta_log, trace);
             ref = build_recorded(bg, build_scratch, trace).expect("the recorded trace builds").region;
         });
-        TraceEntry* ref_ops = ref.ops.data();
+        const ::fixy::View<TraceEntry const> ref_ops = ref.ops.view();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             bg.map_gen_++;
             if (bg.map_gen_ == 0) {
-                std::fill_n(bg.scratch_map_.data(), bg.map_cap_.get(), BackgroundThread::PtrSlot{});
+                for (BackgroundThread::PtrSlot& slot : bg.scratch_map_.view()) {
+                    slot = BackgroundThread::PtrSlot{};
+                }
                 bg.map_gen_ = 1;
             }
-            auto* local_map = bg.scratch_map_.data();
             const uint8_t local_gen = bg.map_gen_;
-            const uint32_t local_mask = bg.ptr_mask_;
 
             const uint64_t t0 = bench::rdtsc_start();
 
             uint32_t aliases = 0;
-            for (uint32_t i = 0; i < count; i++) {
-                const auto& te = ref_ops[i];
+            uint32_t i = 0;
+            for (const TraceEntry& te : ref_ops) {
                 uint8_t port = 0;
                 for (const TensorMeta& m : te.output_metas()) {
                     void* ptr = raw_data_ptr(m);
                     const uint8_t this_port = port++;
                     if (!ptr) continue;
-                    auto result = BackgroundThread::ptr_map_insert(local_map, local_gen, local_mask, ptr, OpIndex{i},
+                    auto result = BackgroundThread::ptr_map_insert(bg.scratch_map_, local_gen, ptr, OpIndex{i},
                                                                    this_port, SlotId{0});
                     if (result.was_alias) aliases++;
                 }
+                ++i;
             }
 
             const uint64_t t1 = bench::rdtsc_end();
@@ -624,18 +624,22 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             return ref_graph->num_slots.get();
         });
 
-        std::vector<BackgroundThread::SlotInfo> saved_slots(bg.scratch_slots_.data(),
-                                                            bg.scratch_slots_.data() + num_slots);
+        // The slots of the build, and a copy that each turn writes back.
+        const ::fixy::View<BackgroundThread::SlotInfo> built_slots =
+            bg.scratch_slots_.view().window(0, num_slots).expect("the slot scratch holds the slots of the build");
+        const ::fixy::HeapArray<BackgroundThread::SlotInfo> saved_slots =
+            ::fixy::mint_heap_array_copy<BackgroundThread::SlotInfo>(A, built_slots);
 
         for (uint32_t iter = 0; iter < iters; iter++) {
-            std::memcpy(bg.scratch_slots_.data(), saved_slots.data(), num_slots * sizeof(BackgroundThread::SlotInfo));
+            ::fixy::copy(built_slots, saved_slots.view()).expect("the two runs hold the slots of the build");
 
             const uint64_t t0 = bench::rdtsc_start();
 
-            auto slots = ::foundation::AlignedBuffer<TensorSlot>::allocate_value_initialized(num_slots);
-            for (uint32_t s = 0; s < num_slots; s++) {
-                BackgroundThread::SlotInfo const& info = bg.scratch_slots_[s];
-                slots[s] = TensorSlot{.offset_bytes = 0,
+            ::fixy::HeapArray<TensorSlot> slots =
+                ::fixy::mint_heap_array_with<TensorSlot>(A, num_slots, [built_slots](size_t position) noexcept {
+                    BackgroundThread::SlotInfo const& info =
+                        *built_slots.get(position).expect("the slot of each position is built");
+                    return TensorSlot{.offset_bytes = 0,
                                       .nbytes = info.nbytes,
                                       .birth_op = info.birth_op,
                                       .death_op = info.death_op,
@@ -645,12 +649,12 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                                       .layout = info.layout,
                                       .is_external = info.is_external,
                                       .pad = {},
-                                      .slot_id = SlotId{s},
+                                      .slot_id = SlotId{static_cast<uint32_t>(position)},
                                       .pad2 = {}};
-            }
+                });
 
             const uint64_t t1 = bench::rdtsc_end();
-            bench::do_not_optimize(slots.data());
+            bench::do_not_optimize(slots);
             ns_p3 += static_cast<double>(t1 - t0) * nspc;
         }
     }

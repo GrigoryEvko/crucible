@@ -25,7 +25,6 @@
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <fixy/Stale.h>
-#include <foundation/AlignedBuffer.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
@@ -77,21 +76,21 @@ struct CRUCIBLE_OWNER MetaLog {
     // free space, so acting on it is safe. The type enforces the direction,
     // since a value that moved backwards would mean a lost acquire.
     ::fixy::Monotonic<uint64_t> cached_tail_ = ::fixy::mint_monotonic<uint64_t>(0);
-    // The buffer holds its base as its first word, so an indexed access on
-    // the hot path is one load of that word from this object.
-    ::foundation::AlignedBuffer<TensorMeta, ::foundation::huge_page_bytes> entries_buffer_;
+    // The buffer owns the records, at the alignment of a huge page.
+    ::fixy::HeapArray<TensorMeta, crucible::warden::kHugePageBytes> entries_buffer_;
     // The View of the CAPACITY records of the buffer.  Its count is in its
-    // type, so the window of a run of an append has no check that the
-    // optimizer keeps.  The log does not move, so the View stays valid.
+    // type, so a masked slot and the window of a run of an append have no
+    // check that the optimizer keeps.  The View holds only the base, so an
+    // indexed access on the hot path is one load of that word from this
+    // object.  The log does not move, so the View stays valid.
     ::fixy::View<TensorMeta, CAPACITY> records_;
 
     alignas(64)::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> tail =
         ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
 
     MetaLog()
-        : entries_buffer_{
-              ::foundation::AlignedBuffer<TensorMeta, ::foundation::huge_page_bytes>::allocate_value_initialized(
-                  CAPACITY)},
+        : entries_buffer_{::fixy::mint_heap_array<TensorMeta, crucible::warden::kHugePageBytes>(
+              ::foundation::effects::Alloc{}, CAPACITY, TensorMeta{})},
           records_{entries_buffer_.view().template window<CAPACITY>(0).expect("the buffer holds CAPACITY records")} {
         // The allocation faults the whole buffer in here rather than one page
         // at a time under the recording thread.
@@ -116,12 +115,10 @@ struct CRUCIBLE_OWNER MetaLog {
         // Measured end to end: constructing a Vigil, which builds one of
         // these, goes from 0.9 ms to 37.8 ms.
         //
-        // Value initialization, not a memset over the bytes. TensorMeta is
-        // trivially copyable, which is what lets try_append copy its bytes,
-        // but it carries member initializers and so is not trivially
-        // default-constructible. A memset on it is what -Wclass-memaccess
-        // exists to reject. The optimizer lowers an all-zero initializer to
-        // the same stores.
+        // Each record is a copy of TensorMeta{}, not a zero byte. TensorMeta
+        // is trivially copyable, which is what lets try_append copy its
+        // bytes, but it carries member initializers, so a zero byte is not
+        // its default value.
 
         // Registering the region records it in a process-wide table. It
         // issues no system call, so despite the flag below nothing here
@@ -141,14 +138,12 @@ struct CRUCIBLE_OWNER MetaLog {
         // one is not a trade a runtime constructor can make. MADV_COLLAPSE,
         // which puts the stall where the caller chooses, is the shape to
         // reach for if huge pages are wanted later.
-        crucible::warden::register_hot_region(entries_buffer_.data(), entries_buffer_.bytes(), /*huge=*/true);
+        crucible::warden::register_hot_region(first_record_address_(),
+                                              crucible::warden::round_up_huge(CAPACITY * sizeof(TensorMeta)),
+                                              /*huge=*/true);
     }
 
-    ~MetaLog() {
-        if (entries_buffer_) {
-            crucible::warden::unregister_hot_region(entries_buffer_.data());
-        }
-    }
+    ~MetaLog() { crucible::warden::unregister_hot_region(first_record_address_()); }
 
     MetaLog(const MetaLog&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
     MetaLog& operator=(const MetaLog&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
@@ -204,8 +199,7 @@ struct CRUCIBLE_OWNER MetaLog {
         // the copy above becomes visible.  Each prefetch prepares a write, and
         // the locality 3 keeps the line in each level of the cache.
         {
-            const TensorMeta& next_record = records_.at(
-                ::fixy::Index<CAPACITY>::check((h + n) & MASK).expect("a masked count of the log is below CAPACITY"));
+            const TensorMeta& next_record = record_at_(h + n);
             constexpr ::fixy::PrefetchAccess write_access = ::fixy::PrefetchAccess::write;
             ::fixy::prefetch<write_access, 3>(next_record.sizes);
             ::fixy::prefetch<write_access, 3>(next_record.strides);
@@ -252,7 +246,7 @@ struct CRUCIBLE_OWNER MetaLog {
         CRUCIBLE_PRE(dst.size() <= CAPACITY);
         if (dst.size() == 0) return;
         const uint32_t count = static_cast<uint32_t>(dst.size());
-        const ::fixy::View<TensorMeta const> ring = entries_buffer_.view();
+        const ::fixy::View<TensorMeta const> ring = records_;
         const uint32_t start_pos = static_cast<uint32_t>(start & MASK);
         const uint32_t first_chunk = (count <= CAPACITY - start_pos) ? count : CAPACITY - start_pos;
         copy_records_(dst, 0, ring, start_pos, first_chunk);
@@ -260,15 +254,12 @@ struct CRUCIBLE_OWNER MetaLog {
         // The first and the last record of the copy are the records at the
         // two ends of the run.  A start without the mask, or a split of the
         // run at the wrong slot, puts a different record at one end.
-        const uint32_t last_pos = static_cast<uint32_t>((start + count - 1) & MASK);
-        CRUCIBLE_POST(0, *dst.get(0).expect("the copy holds its first record") == entries_buffer_[start_pos]);
-        CRUCIBLE_POST(0, *dst.get(count - 1).expect("the copy holds its last record") == entries_buffer_[last_pos]);
+        CRUCIBLE_POST(0, *dst.get(0).expect("the copy holds its first record") == record_at_(start));
+        CRUCIBLE_POST(0, *dst.get(count - 1).expect("the copy holds its last record") == record_at_(start + count - 1));
     }
 
     // Copies the record at index, with the rule of copy_run.
-    [[nodiscard]] TensorMeta copy_record(uint64_t index) const CRUCIBLE_NO_THREAD_SAFETY {
-        return entries_buffer_[static_cast<uint32_t>(index & MASK)];
-    }
+    [[nodiscard]] TensorMeta copy_record(uint64_t index) const CRUCIBLE_NO_THREAD_SAFETY { return record_at_(index); }
 
     // The consumer is the one writer of tail, so its relaxed load reads its
     // own last store.  The callers give only the new tail.
@@ -303,6 +294,16 @@ struct CRUCIBLE_OWNER MetaLog {
     }
 
 private:
+    // The record in the slot of index: the index masked by MASK.  The mask
+    // keeps the slot below CAPACITY, so the check of the slot folds away.
+    [[nodiscard]] TensorMeta const& record_at_(uint64_t index) const noexcept {
+        return records_.at(::fixy::Index<CAPACITY>::check(index & MASK).expect("a masked slot is below the capacity"));
+    }
+
+    // The address of the first record, for the table of hot regions.  The
+    // buffer always holds CAPACITY records.
+    [[nodiscard]] void* first_record_address_() const noexcept { return &records_.at(::fixy::index<0>()); }
+
     // Copies the count records of src from src_at into the buffer from at.
     // The caller gives two windows that fit, and the count of records_ is in
     // its type, so the optimizer removes each check of a window.

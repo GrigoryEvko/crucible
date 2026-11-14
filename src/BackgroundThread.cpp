@@ -365,17 +365,18 @@ uint64_t BackgroundThread::take_record_start_(TraceRing::Entry const& entry, Met
 void BackgroundThread::PendingOps::grow_() {
     const uint64_t new_capacity = mask_ == 0 ? MIN_CAPACITY : (mask_ + 1) * 2;
     CRUCIBLE_FATAL_INVARIANT(new_capacity <= IterationDetector::HISTORY_MAX_CAPACITY);
-    auto entries = ::foundation::AlignedBuffer<TraceRing::Entry>::allocate_value_initialized(new_capacity);
-    auto meta_starts = ::foundation::AlignedBuffer<MetaIndex>::allocate_value_initialized(new_capacity);
-    auto record_starts = ::foundation::AlignedBuffer<uint64_t>::allocate_value_initialized(new_capacity);
-    auto scope_hashes = ::foundation::AlignedBuffer<ScopeHash>::allocate_value_initialized(new_capacity);
-    auto callsite_hashes = ::foundation::AlignedBuffer<CallsiteHash>::allocate_value_initialized(new_capacity);
+    const ::foundation::effects::Alloc alloc{};
+    ::fixy::MaskedArray<TraceRing::Entry> entries = ::fixy::mint_masked_array<TraceRing::Entry>(alloc, new_capacity);
+    ::fixy::MaskedArray<MetaIndex> meta_starts = ::fixy::mint_masked_array<MetaIndex>(alloc, new_capacity);
+    ::fixy::MaskedArray<uint64_t> record_starts = ::fixy::mint_masked_array<uint64_t>(alloc, new_capacity);
+    ::fixy::MaskedArray<ScopeHash> scope_hashes = ::fixy::mint_masked_array<ScopeHash>(alloc, new_capacity);
+    ::fixy::MaskedArray<CallsiteHash> callsite_hashes = ::fixy::mint_masked_array<CallsiteHash>(alloc, new_capacity);
     for (uint64_t index = 0; index < count_; ++index) {
-        entries[index] = entry(index);
-        meta_starts[index] = meta_start(index);
-        record_starts[index] = record_start(index);
-        scope_hashes[index] = scope_hash(index);
-        callsite_hashes[index] = callsite_hash(index);
+        entries.at_masked(index) = entry(index);
+        meta_starts.at_masked(index) = meta_start(index);
+        record_starts.at_masked(index) = record_start(index);
+        scope_hashes.at_masked(index) = scope_hash(index);
+        callsite_hashes.at_masked(index) = callsite_hash(index);
     }
     entries_ = std::move(entries);
     meta_starts_ = std::move(meta_starts);
@@ -390,12 +391,12 @@ void BackgroundThread::PendingOps::push(TraceRing::Entry const& entry, MetaIndex
                                         ScopeHash scope_hash, CallsiteHash callsite_hash) {
     if (mask_ == 0 || count_ == mask_ + 1) [[unlikely]]
         grow_();
-    const uint64_t slot = (head_ + count_) & mask_;
-    entries_[slot] = entry;
-    meta_starts_[slot] = meta_start;
-    record_starts_[slot] = record_start;
-    scope_hashes_[slot] = scope_hash;
-    callsite_hashes_[slot] = callsite_hash;
+    const uint64_t slot = head_ + count_;
+    entries_.at_masked(slot) = entry;
+    meta_starts_.at_masked(slot) = meta_start;
+    record_starts_.at_masked(slot) = record_start;
+    scope_hashes_.at_masked(slot) = scope_hash;
+    callsite_hashes_.at_masked(slot) = callsite_hash;
     ++count_;
 }
 
@@ -420,16 +421,17 @@ BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work() 
     if (meta_log && completed_len > 0) {
         work = new BgBuildWork{};
         work->reset_point = applied_reset_.peek_relaxed();
-        work->trace = ::foundation::AlignedBuffer<TraceRing::Entry>::allocate_value_initialized(completed_len);
-        work->meta_starts = ::foundation::AlignedBuffer<MetaIndex>::allocate_value_initialized(completed_len);
-        work->scope_hashes = ::foundation::AlignedBuffer<ScopeHash>::allocate_value_initialized(completed_len);
-        work->callsite_hashes = ::foundation::AlignedBuffer<CallsiteHash>::allocate_value_initialized(completed_len);
-        for (uint32_t index = 0; index < completed_len; ++index) {
-            work->trace[index] = pending_ops_.entry(index);
-            work->meta_starts[index] = pending_ops_.meta_start(index);
-            work->scope_hashes[index] = pending_ops_.scope_hash(index);
-            work->callsite_hashes[index] = pending_ops_.callsite_hash(index);
-        }
+        // Each buffer takes the oldest completed_len held ops, in order.
+        const ::foundation::effects::Alloc alloc{};
+        PendingOps const& held = pending_ops_;
+        work->trace = ::fixy::mint_heap_array_with<TraceRing::Entry>(
+            alloc, completed_len, [&held](size_t index) noexcept { return held.entry(index); });
+        work->meta_starts = ::fixy::mint_heap_array_with<MetaIndex>(
+            alloc, completed_len, [&held](size_t index) noexcept { return held.meta_start(index); });
+        work->scope_hashes = ::fixy::mint_heap_array_with<ScopeHash>(
+            alloc, completed_len, [&held](size_t index) noexcept { return held.scope_hash(index); });
+        work->callsite_hashes = ::fixy::mint_heap_array_with<CallsiteHash>(
+            alloc, completed_len, [&held](size_t index) noexcept { return held.callsite_hash(index); });
     }
 
     // The last K ops begin the next iteration, and the ring keeps them.
@@ -477,7 +479,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
                                       StreamPoint reset_point) {
     ::fixy::Option<RegionStoreSlot> free_slot{};
     for (const RegionStoreSlot slot : region_store_.indices()) {
-        if (region_store_.at(slot).node.empty()) {
+        if (region_store_.at(slot).node.size() == 0) {
             free_slot = ::fixy::Option<RegionStoreSlot>::some(slot);
             break;
         }
@@ -487,22 +489,25 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
         return;
     }
     RegionMemory& memory = region_store_.at(std::move(free_slot).expect("the test above found a free slot"));
-    memory = RegionMemory{.parts = std::move(parts),
-                          .node = ::foundation::AlignedBuffer<RegionNode>::allocate_value_initialized(1),
-                          .plan = {},
-                          .published = {},
-                          .left_generation = NOT_LEFT};
-    RegionNode& region = memory.node[0];
+    memory = RegionMemory{
+        .parts = std::move(parts),
+        .node = ::fixy::mint_heap_array_with<RegionNode>(bg.alloc, 1, [](size_t) noexcept { return RegionNode{}; }),
+        .plan = {},
+        .published = {},
+        .left_generation = NOT_LEFT};
+    RegionNode& region = *memory.node.get(0).expect("the region memory holds one node");
     init_region_node(region, memory.parts.ops.view(), memory.parts.content_hash);
     const uint32_t num_slots = static_cast<uint32_t>(memory.parts.slots.size());
     if (num_slots > 0) {
-        memory.plan = ::foundation::AlignedBuffer<MemoryPlan>::allocate_value_initialized(1);
+        memory.plan =
+            ::fixy::mint_heap_array_with<MemoryPlan>(bg.alloc, 1, [](size_t) noexcept { return MemoryPlan{}; });
+        MemoryPlan& plan_storage = *memory.plan.get(0).expect("the region memory holds one plan");
         // The plan lives in the memory of the region, outside the epoch, so
         // the body writes its link and the result of the epoch holds none.
         // The sweep gives the address of the storage of the plan.
         publish_scratch_.with_epoch([&]() noexcept {
             region.plan = make_plan_link(
-                *compute_memory_plan(bg.alloc, memory.plan[0], publish_scratch_, memory.parts.slots.view()));
+                *compute_memory_plan(bg.alloc, plan_storage, publish_scratch_, memory.parts.slots.view()));
         });
     }
 
@@ -531,8 +536,8 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
 // and H held regions.
 void BackgroundThread::sweep_regions_(PublishStage const&) noexcept {
     for (RegionMemory& memory : region_store_) {
-        if (memory.node.empty()) continue;
-        const ::fixy::WeakRef<const RegionNode> region{memory.node[0]};
+        if (memory.node.size() == 0) continue;
+        const ::fixy::WeakRef<const RegionNode> region{*memory.node.get(0).expect("a used slot holds its node")};
         if (region == last_published_ || region == owner_marks_.handed) {
             memory.left_generation = NOT_LEFT;
             continue;
@@ -561,8 +566,8 @@ bool BackgroundThread::is_held_(::fixy::WeakRef<const RegionNode> region) const 
 
 void BackgroundThread::keep_region(PublishStage const&, ::fixy::WeakRef<const RegionNode> region) noexcept {
     for (RegionMemory& memory : region_store_) {
-        if (memory.node.empty()) continue;
-        if (::fixy::WeakRef<const RegionNode>{memory.node[0]} == region) {
+        if (memory.node.size() == 0) continue;
+        if (::fixy::WeakRef<const RegionNode>{*memory.node.get(0).expect("a used slot holds its node")} == region) {
             memory.left_generation = NOT_LEFT;
             return;
         }
@@ -572,7 +577,7 @@ void BackgroundThread::keep_region(PublishStage const&, ::fixy::WeakRef<const Re
 uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {
     uint32_t count = 0;
     for (const RegionMemory& memory : region_store_) {
-        if (!memory.node.empty()) ++count;
+        if (memory.node.size() != 0) ++count;
     }
     return count;
 }
@@ -912,7 +917,8 @@ void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
     std::move(pipeline).run(ctx);
 }
 
-void BackgroundThread::ensure_scratch_buffers(uint32_t total_inputs, uint32_t total_outputs) {
+void BackgroundThread::ensure_scratch_buffers(::foundation::effects::Alloc a, uint32_t total_inputs,
+                                              uint32_t total_outputs) {
     // Power-of-two capacity at a load factor below one half.  The unique
     // pointer count is the output count plus a small external fraction.
     uint32_t raw_map_size = ::fixy::max(
@@ -931,20 +937,19 @@ void BackgroundThread::ensure_scratch_buffers(uint32_t total_inputs, uint32_t to
 
     if (needed_map > map_cap_.get()) {
         map_cap_.advance(needed_map);
-        ptr_mask_ = map_cap_.get() - 1;
-        scratch_map_ = ::foundation::AlignedBuffer<PtrSlot>::allocate_value_initialized(map_cap_.get());
-        // The fresh buffer is zeroed, so generation zero is unused.
+        scratch_map_ = ::fixy::mint_masked_array<PtrSlot>(a, map_cap_.get());
+        // Each fresh slot holds generation zero, so generation zero is unused.
         map_gen_ = 0;
     }
 
     if (needed_slots > slot_cap_max_.get()) {
         slot_cap_max_.advance(needed_slots);
-        scratch_slots_ = ::foundation::AlignedBuffer<SlotInfo>::allocate_value_initialized(slot_cap_max_.get());
+        scratch_slots_ = ::fixy::mint_heap_array(a, slot_cap_max_.get(), SlotInfo{});
     }
 
     if (needed_edges > edge_cap_max_.get()) {
         edge_cap_max_.advance(needed_edges);
-        scratch_edges_ = ::foundation::AlignedBuffer<Edge>::allocate_value_initialized(edge_cap_max_.get());
+        scratch_edges_ = ::fixy::mint_heap_array(a, edge_cap_max_.get(), Edge{});
     }
 }
 
@@ -1006,7 +1011,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
         return ::fixy::err(MetaLogOverflow{});
     }
 
-    ensure_scratch_buffers(total_inputs, total_outputs);
+    ensure_scratch_buffers(a, total_inputs, total_outputs);
 
     // The ops keep their tensor metadata in a buffer of the region, beside
     // their other arrays.  A published region lives as long as its memory.
@@ -1027,13 +1032,13 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
         total_metas = static_cast<uint32_t>(run_length);
     }
 
-    ::foundation::AlignedBuffer<TraceEntry> op_buffer =
-        ::foundation::AlignedBuffer<TraceEntry>::allocate_value_initialized(count);
-    auto* ops = op_buffer.data();
+    // The ops of the region, one for each entry of the trace.  The column of
+    // the ops takes the brand of the scope, so one index of an op reads it
+    // with no check.
+    ::fixy::HeapArray<TraceEntry> op_buffer = ::fixy::mint_heap_array(a, count, TraceEntry{});
+    const auto op_data = trace_data.parallel(op_buffer.view()).expect("the op buffer holds one op for each entry");
 
-    ::foundation::AlignedBuffer<TensorMeta> meta_buffer =
-        ::foundation::AlignedBuffer<TensorMeta>::allocate_value_initialized(total_metas);
-    TensorMeta* meta_base = meta_buffer.data();
+    ::fixy::HeapArray<TensorMeta> meta_buffer = ::fixy::mint_heap_array(a, total_metas, TensorMeta{});
     if (first_meta.is_valid()) {
         meta_log.get()->copy_run(first_meta.raw(), meta_buffer.view());
     }
@@ -1042,12 +1047,9 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
     // and the slot ids of the inputs and then the outputs of each op.  Each
     // op takes its windows in order, so a cursor for each buffer gives the
     // start of the next window.
-    ::foundation::AlignedBuffer<int64_t> scalar_buffer =
-        ::foundation::AlignedBuffer<int64_t>::allocate_value_initialized(total_scalars);
-    ::foundation::AlignedBuffer<OpIndex> producer_buffer =
-        ::foundation::AlignedBuffer<OpIndex>::allocate_value_initialized(total_inputs);
-    ::foundation::AlignedBuffer<SlotId> slot_buffer =
-        ::foundation::AlignedBuffer<SlotId>::allocate_value_initialized(total_inputs + total_outputs);
+    ::fixy::HeapArray<int64_t> scalar_buffer = ::fixy::mint_heap_array(a, total_scalars, int64_t{0});
+    ::fixy::HeapArray<OpIndex> producer_buffer = ::fixy::mint_heap_array(a, total_inputs, OpIndex{});
+    ::fixy::HeapArray<SlotId> slot_buffer = ::fixy::mint_heap_array(a, total_inputs + total_outputs, SlotId{});
     const ::fixy::View<TensorMeta> meta_run = meta_buffer.view();
     const ::fixy::View<int64_t> scalar_run = scalar_buffer.view();
     const ::fixy::View<OpIndex> producer_run = producer_buffer.view();
@@ -1059,15 +1061,21 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
     map_gen_++;
     if (map_gen_ == 0) [[unlikely]] {
         // Generation wrapped, so stale slots would read as current.
-        for (uint32_t index = 0; index < map_cap_.get(); ++index)
-            scratch_map_[index] = PtrSlot{};
+        for (PtrSlot& slot : scratch_map_.view()) {
+            slot = PtrSlot{};
+        }
         map_gen_ = 1;
     }
 
-    // Value-initialize only the portion this call uses.
+    // Value-initialize only the portion this call uses.  The window of the
+    // slots is exactly the slot_cap slots of this call, so a slot id below
+    // slot_cap reads its slot with the one compare of the window.
     uint32_t slot_cap = ::fixy::min(slot_cap_max_.get(), ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
-    for (uint32_t index = 0; index < slot_cap; ++index)
-        scratch_slots_[index] = SlotInfo{};
+    const ::fixy::View<SlotInfo> local_slots =
+        scratch_slots_.view().window(0, slot_cap).expect("the slot scratch holds slot_cap_max_ slots");
+    for (SlotInfo& slot_info : local_slots) {
+        slot_info = SlotInfo{};
+    }
     uint32_t next_slot_raw = 0;
 
     // The edge buffer needs no initialization: num_edges bounds every
@@ -1077,11 +1085,8 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
     // Hoisted into locals because the compiler cannot prove the writes
     // below into the buffers of the region do not alias *this, and would
     // otherwise reload each member on every access.
-    PtrSlot* const local_map = scratch_map_.data();
-    SlotInfo* const local_slots = scratch_slots_.data();
-    Edge* const local_edges = scratch_edges_.data();
+    const ::fixy::View<Edge> local_edges = scratch_edges_.view();
     const uint8_t local_gen = map_gen_;
-    const uint32_t local_mask = ptr_mask_;
 
     // The fold object owns the seed, the per-op mix and the finalizer,
     // so this streaming producer cannot drift from the span producer in
@@ -1117,7 +1122,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
         const uint32_t i = ::fixy::narrow<uint32_t>(index.raw()).expect("a branded index fits in 32 bits");
         const TraceRing::Entry& re = trace_data.at(index);
         MetaIndex ms = meta_data.at(index);
-        auto& te = ops[i];
+        TraceEntry& te = op_data.at(index);
 
         te.schema_hash = re.schema_hash;
         te.shape_hash = re.shape_hash;
@@ -1196,14 +1201,19 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
                     if (!next_ms.is_valid()) return;
                     const uint64_t next_off = next_ms.raw() - first_meta.raw();
                     const TraceRing::Entry& next_re = trace_data.at(next);
+                    // The scan bounds each offset of a metadata index by
+                    // the copied run, so each record below is in the run.
                     if (next_re.num_inputs > 0) {
-                        uint32_t bucket_idx = hash_ptr(raw_data_ptr(meta_base[next_off])) & local_mask;
-                        ::fixy::prefetch<::fixy::PrefetchAccess::read, 1>(local_map[bucket_idx]);
+                        const TensorMeta& next_input =
+                            *meta_run.get(next_off).expect("the copied run holds the metadata of each op");
+                        ::fixy::prefetch<::fixy::PrefetchAccess::read, 1>(
+                            scratch_map_.at_masked(hash_ptr(raw_data_ptr(next_input))));
                     }
                     if (next_re.num_outputs > 0) {
-                        const uint64_t out_off = next_off + next_re.num_inputs;
-                        uint32_t bucket_idx = hash_ptr(raw_data_ptr(meta_base[out_off])) & local_mask;
-                        ::fixy::prefetch<::fixy::PrefetchAccess::write, 1>(local_map[bucket_idx]);
+                        const TensorMeta& next_output = *meta_run.get(next_off + next_re.num_inputs)
+                                                             .expect("the copied run holds the metadata of each op");
+                        ::fixy::prefetch<::fixy::PrefetchAccess::write, 1>(
+                            scratch_map_.at_masked(hash_ptr(raw_data_ptr(next_output))));
                     }
                 },
                 [] noexcept {});
@@ -1213,36 +1223,33 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
             OpIndex& producer = *producers.get(j).expect("the window holds each input of the op");
             SlotId& input_slot = *input_slot_ids.get(j).expect("the window holds each input of the op");
             void* input_ptr = raw_data_ptr(input_meta);
-            auto lookup = ptr_map_lookup(local_map, local_gen, local_mask, input_ptr);
+            auto lookup = ptr_map_lookup(scratch_map_, local_gen, input_ptr);
             producer = lookup.op_index;
             if (lookup.op_index.is_valid()) {
                 input_slot = lookup.slot_id;
-                // Armed in a release build too. The very next statement
-                // writes local_edges[num_edges], so a cap that the edge
-                // count has already reached runs off an arena array and
-                // corrupts whatever the arena handed out next.
-                //
-                // Not a contract clause because a precondition cannot
-                // name a counter this loop is advancing, and because
-                // this form does not depend on the contract evaluation
-                // semantic, which is a per-target build option.
-                CRUCIBLE_FATAL_INVARIANT(num_edges < edge_cap_max_.get());
-                local_edges[num_edges++] = {.src = OpIndex{lookup.op_index.raw()},
-                                            .dst = OpIndex{i},
-                                            .src_port = lookup.port,
-                                            .dst_port = static_cast<uint8_t>(j),
-                                            .kind = EdgeKind::DATA_FLOW,
-                                            .pad = 0};
-                if (lookup.slot_id.raw() < slot_cap) {
-                    auto& slot_info = local_slots[lookup.slot_id.raw()];
-                    slot_info.death_op = std::max(slot_info.death_op, OpIndex{i});
+                // The edge scratch holds an edge for each input and each
+                // output, and the check of the element ends the process in
+                // each build when the count reaches its end.  The check
+                // does not depend on the contract evaluation semantic,
+                // which is a per-target build option.
+                *local_edges.get(num_edges).expect("the edge scratch holds an edge for each input and each output") =
+                    Edge{.src = OpIndex{lookup.op_index.raw()},
+                         .dst = OpIndex{i},
+                         .src_port = lookup.port,
+                         .dst_port = static_cast<uint8_t>(j),
+                         .kind = EdgeKind::DATA_FLOW,
+                         .pad = 0};
+                ++num_edges;
+                // A slot id at or past slot_cap names no slot of this call.
+                for (auto slot_info : local_slots.get(lookup.slot_id.raw())) {
+                    if (slot_info->death_op < OpIndex{i}) slot_info->death_op = OpIndex{i};
                 }
             } else if (input_ptr != nullptr && next_slot_raw < slot_cap) {
                 // First sight of an external tensor, such as a parameter
                 // or a data-loader output.
                 SlotId new_slot{next_slot_raw++};
                 input_slot = new_slot;
-                auto& slot_info = local_slots[new_slot.raw()];
+                SlotInfo& slot_info = *local_slots.get(new_slot.raw()).expect("a new slot is below slot_cap");
                 slot_info.birth_op = OpIndex{0};
                 slot_info.death_op = OpIndex{i};
                 slot_info.is_external = true;
@@ -1251,7 +1258,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
                 slot_info.device_type = input_meta.device_type;
                 slot_info.device_idx = input_meta.device_idx;
                 slot_info.layout = input_meta.layout;
-                (void)ptr_map_insert(local_map, local_gen, local_mask, input_ptr, OpIndex{}, 0, new_slot);
+                (void)ptr_map_insert(scratch_map_, local_gen, input_ptr, OpIndex{}, 0, new_slot);
             } else {
                 input_slot = SlotId{};
             }
@@ -1266,33 +1273,34 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
                 continue;
             }
 
-            auto result = ptr_map_insert(local_map, local_gen, local_mask, output_ptr, OpIndex{i},
-                                         static_cast<uint8_t>(j), SlotId{0});
+            auto result =
+                ptr_map_insert(scratch_map_, local_gen, output_ptr, OpIndex{i}, static_cast<uint8_t>(j), SlotId{0});
 
             if (result.was_alias) {
                 output_slot = result.old_slot;
-                if (result.old_slot.raw() < slot_cap) {
-                    auto& slot_info = local_slots[result.old_slot.raw()];
-                    slot_info.death_op = std::max(slot_info.death_op, OpIndex{i});
+                // A slot id at or past slot_cap names no slot of this call.
+                for (auto slot_info : local_slots.get(result.old_slot.raw())) {
+                    if (slot_info->death_op < OpIndex{i}) slot_info->death_op = OpIndex{i};
                     const uint64_t output_nbytes =
                         compute_storage_nbytes_det(external_tensor_meta(output_meta)).peek().value();
-                    slot_info.nbytes = ::fixy::max(slot_info.nbytes, output_nbytes);
+                    slot_info->nbytes = ::fixy::max(slot_info->nbytes, output_nbytes);
                 }
                 if (result.old_op.is_valid()) {
-                    // Same bound as the data-flow edge above, and armed
-                    // for the same reason: the next statement writes
-                    // local_edges[num_edges].
-                    CRUCIBLE_FATAL_INVARIANT(num_edges < edge_cap_max_.get());
-                    local_edges[num_edges++] = {.src = OpIndex{result.old_op.raw()},
-                                                .dst = OpIndex{i},
-                                                .src_port = result.old_port,
-                                                .dst_port = static_cast<uint8_t>(j),
-                                                .kind = EdgeKind::ALIAS,
-                                                .pad = 0};
+                    // The same bound as the data-flow edge above, with the
+                    // same check of the element.
+                    *local_edges.get(num_edges).expect(
+                        "the edge scratch holds an edge for each input and each output") =
+                        Edge{.src = OpIndex{result.old_op.raw()},
+                             .dst = OpIndex{i},
+                             .src_port = result.old_port,
+                             .dst_port = static_cast<uint8_t>(j),
+                             .kind = EdgeKind::ALIAS,
+                             .pad = 0};
+                    ++num_edges;
                 }
             } else if (next_slot_raw < slot_cap) {
                 SlotId new_slot{next_slot_raw++};
-                auto& slot_info = local_slots[new_slot.raw()];
+                SlotInfo& slot_info = *local_slots.get(new_slot.raw()).expect("a new slot is below slot_cap");
                 slot_info.birth_op = OpIndex{i};
                 slot_info.death_op = OpIndex{i};
                 slot_info.is_external = false;
@@ -1309,27 +1317,27 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
         }
     }
 
+    // Each slot of the build becomes a TensorSlot of the region, in the
+    // order of the slot ids.  compute_memory_plan sets the offset later.
     uint32_t num_slots = ::fixy::min(next_slot_raw, slot_cap);
-    ::foundation::AlignedBuffer<TensorSlot> slots =
-        ::foundation::AlignedBuffer<TensorSlot>::allocate_value_initialized(num_slots);
-    if (num_slots > 0) {
-        for (uint32_t slot_idx = 0; slot_idx < num_slots; slot_idx++) {
-            // compute_memory_plan sets the offset later.
-            SlotInfo const& info = local_slots[slot_idx];
-            slots[slot_idx] = TensorSlot{.offset_bytes = 0,
-                                         .nbytes = info.nbytes,
-                                         .birth_op = info.birth_op,
-                                         .death_op = info.death_op,
-                                         .dtype = info.dtype,
-                                         .device_type = info.device_type,
-                                         .device_idx = info.device_idx,
-                                         .layout = info.layout,
-                                         .is_external = info.is_external,
-                                         .pad = {},
-                                         .slot_id = SlotId{slot_idx},
-                                         .pad2 = {}};
-        }
-    }
+    const ::fixy::View<SlotInfo const> built_slots =
+        local_slots.window(0, num_slots).expect("the slots of the build are below slot_cap");
+    ::fixy::HeapArray<TensorSlot> slots =
+        ::fixy::mint_heap_array_with<TensorSlot>(a, num_slots, [built_slots](size_t slot_idx) noexcept {
+            SlotInfo const& info = *built_slots.get(slot_idx).expect("the slot of each position is built");
+            return TensorSlot{.offset_bytes = 0,
+                              .nbytes = info.nbytes,
+                              .birth_op = info.birth_op,
+                              .death_op = info.death_op,
+                              .dtype = info.dtype,
+                              .device_type = info.device_type,
+                              .device_idx = info.device_idx,
+                              .layout = info.layout,
+                              .is_external = info.is_external,
+                              .pad = {},
+                              .slot_id = SlotId{static_cast<uint32_t>(slot_idx)},
+                              .pad2 = {}};
+        });
 
     const ::fixy::Ref<TraceGraph> graph = alloc_trace_graph(a, scratch);
     graph->ops = op_buffer.view();
@@ -1338,8 +1346,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
     graph->content_hash = content_fold.finish();
     graph->max_meta_end.set(max_meta_end);
     build_csr(a, scratch, *graph,
-              scratch_edges_.view().window(0, num_edges).expect("the build writes each edge below the edge cap"),
-              count);
+              local_edges.window(0, num_edges).expect("the edge scratch holds each edge of the build"), count);
 
     return BuiltTrace{.graph = ::fixy::WeakRef<TraceGraph>{*graph},
                       .region = BuiltRegion{.ops = std::move(op_buffer),
