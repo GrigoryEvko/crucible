@@ -21,6 +21,7 @@
 #include <crucible/cipher/FederationProtocol.h>
 #include <fixy/Ctx.h>
 #include <fixy/session/EventLog.h>
+#include <foundation/Quarantine.h>
 
 #include <array>
 #include <cinttypes>
@@ -73,14 +74,25 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
     const auto session_raw = cursor.take<std::uint64_t>();
     const auto first_step = cursor.take<std::uint32_t>();
     const std::size_t event_count = cursor.take<std::uint8_t>() % 9;
-    std::vector<std::uint8_t> records(event_count * sizeof(SessionEvent));
+    ::fixy::HeapArray<std::byte> records =
+        ::fixy::mint_heap_array(test_alloc(), event_count * sizeof(SessionEvent), std::byte{0});
     for (std::size_t i = 0; i < event_count; ++i) {
-        std::uint8_t* record = records.data() + i * sizeof(SessionEvent);
-        const auto input = cursor.take_bytes(sizeof(SessionEvent));
-        if (!input.empty()) std::memcpy(record, input.data(), input.size());
+        const ::fixy::View<std::byte, sizeof(SessionEvent)> record =
+            records.view().window<sizeof(SessionEvent)>(i * sizeof(SessionEvent)).expect("the batch holds each record");
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the fuzzer gives its input as a pointer to raw bytes and a count")
+        const std::span<const std::byte> raw = as_bytes_view(cursor.take_bytes(sizeof(SessionEvent)));
+        const ::fixy::View<std::byte const> input = ::fixy::mint_foreign_view(raw.data(), raw.size());
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+        ::fixy::copy(::fixy::View<std::byte>{record}.window(0, input.size()).expect("an input holds at most a record"),
+                     input)
+            .expect("the window holds the count of the input");
         const std::uint64_t step = std::uint64_t{first_step} + i;
-        std::memcpy(record + cipher_store_detail::kRecordStepOffset, &step, sizeof(step));
-        std::memcpy(record + cipher_store_detail::kRecordSessionOffset, &session_raw, sizeof(session_raw));
+        ::fixy::copy(
+            record.window<sizeof(step)>(cipher_store_detail::kRecordStepOffset).expect("the record holds a step"),
+            ::fixy::bytes(step));
+        ::fixy::copy(record.window<sizeof(session_raw)>(cipher_store_detail::kRecordSessionOffset)
+                         .expect("the record holds a session"),
+                     ::fixy::bytes(session_raw));
     }
     const auto extra_index_lines = take_chunk(cursor);
 
@@ -98,13 +110,17 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
     std::filesystem::create_directories(session_dir);
     if (event_count > 0) {
         // The batch file and its index line, as an attacker writes them.
-        const ContentHash batch_hash = Cipher::session_event_batch_hash(records);
-        std::vector<std::uint8_t> entry(cipher::federation::FEDERATION_HEADER_BYTES + records.size());
+        const ContentHash batch_hash = Cipher::session_event_batch_hash(records.view());
+        ::fixy::HeapArray<std::byte> entry = ::fixy::mint_heap_array(
+            test_alloc(), cipher::federation::FEDERATION_HEADER_BYTES + records.size(), std::byte{0});
         auto written = cipher::federation::serialize_federation_entry(
-            entry, KernelCacheKey{batch_hash, Cipher::SESSION_EVENT_FEDERATION_ROW_HASH}, records);
+            entry.view(), KernelCacheKey{batch_hash, Cipher::SESSION_EVENT_FEDERATION_ROW_HASH}, records.view());
         if (written.is_ok()) {
-            entry.resize(std::move(written).expect("the batch entry fits its buffer"));
-            write_file(session_dir / (hex16(batch_hash.raw()) + ".cfed"), entry);
+            std::vector<std::uint8_t> entry_file;
+            for (const std::byte byte : entry.view()) {
+                entry_file.push_back(static_cast<std::uint8_t>(byte));
+            }
+            write_file(session_dir / (hex16(batch_hash.raw()) + ".cfed"), entry_file);
             const std::string line = std::to_string(first_step) + ","
                                    + std::to_string(std::uint64_t{first_step} + event_count - 1) + ","
                                    + std::to_string(event_count) + "," + hex16(batch_hash.raw()) + "\n";
@@ -114,8 +130,8 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
 
         // The store's own writer takes only events, and only the decoder
         // turns bytes into an event.
-        if (auto events = ::fixy::session::decode_session_log(as_bytes_view(records))) {
-            (void)cipher.persist_session_events(ctx, view, std::span<const SessionEvent>{*events});
+        if (auto events = ::fixy::session::decode_session_log(records.view())) {
+            (void)cipher.persist_session_events(ctx, view, test_alloc(), std::span<const SessionEvent>{*events});
         }
     }
     // Lines an attacker appends to the index after the writer ran.

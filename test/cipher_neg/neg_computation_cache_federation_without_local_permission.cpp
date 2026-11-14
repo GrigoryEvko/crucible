@@ -1,19 +1,17 @@
 #include <crucible/cipher/ComputationCacheFederation.h>
 #include <foundation/effects/Row.h>
 
-#include <array>
-#include <cstdint>
-#include <span>
+#include <cstddef>
 
 namespace eff = ::foundation::effects;
 
 inline void neg_payload(int) noexcept {}
 
 int main() {
-    std::array<std::uint8_t, 32> buf{};
+    ::foundation::core::FixedArray<std::byte, 32> buf{};
     auto written =
         ::crucible::cipher::federation::serialize_computation_cache_federation_entry<&neg_payload, eff::Row<>, int>(
-            buf, std::span<const std::uint8_t>{});
+            buf.view(), ::fixy::View<std::byte const>{});
     (void)written;
     return 0;
 }

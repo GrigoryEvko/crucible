@@ -32,10 +32,8 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <utility>
 
 namespace crucible::cipher::federation {
@@ -66,19 +64,19 @@ public:
     using payload_type = ::fixy::session::ContentAddressed<Payload>;
 
     constexpr ContentAddressedFederationPayload() noexcept = default;
-    constexpr explicit ContentAddressedFederationPayload(std::span<const std::uint8_t> bytes) noexcept
+    constexpr explicit ContentAddressedFederationPayload(::fixy::View<std::byte const> bytes) noexcept
         : bytes_(bytes) {}
 
     [[nodiscard]] static constexpr ContentAddressedFederationPayload hash_only() noexcept {
         return ContentAddressedFederationPayload{};
     }
 
-    [[nodiscard]] constexpr std::span<const std::uint8_t> bytes() const noexcept { return bytes_; }
+    [[nodiscard]] constexpr ::fixy::View<std::byte const> bytes() const noexcept { return bytes_; }
 
-    [[nodiscard]] constexpr bool elides_wire_bytes() const noexcept { return bytes_.empty(); }
+    [[nodiscard]] constexpr bool elides_wire_bytes() const noexcept { return bytes_.size() == 0; }
 
 private:
-    std::span<const std::uint8_t> bytes_{};
+    ::fixy::View<std::byte const> bytes_{};
 };
 
 template <auto FnPtr, typename Row, typename... Args>
@@ -144,7 +142,7 @@ using LocalCipherPermission = ::foundation::permissions::Permission<::fixy::fede
 template <auto FnPtr, typename Row, typename... Args, typename Brand>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row> && ArgsCanonicallyOrdered<Args...>
 [[nodiscard]] inline ::fixy::Result<std::size_t, FederationError> serialize_computation_cache_federation_entry(
-    const LocalCipherPermission<Brand>& local_permission, std::span<std::uint8_t> out_buf,
+    const LocalCipherPermission<Brand>& local_permission, ::fixy::View<std::byte> out_buf,
     ComputationCacheFederationContentAddressedPayload<FnPtr, Row, Args...> dispatcher_payload) noexcept {
     (void)local_permission;
 
@@ -155,8 +153,8 @@ template <auto FnPtr, typename Row, typename... Args, typename Brand>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row> && ArgsCanonicallyOrdered<Args...>
 [[nodiscard]] inline ::fixy::Result<std::size_t, FederationError>
 serialize_computation_cache_federation_entry(const LocalCipherPermission<Brand>& local_permission,
-                                             std::span<std::uint8_t> out_buf,
-                                             std::span<const std::uint8_t> dispatcher_payload) noexcept {
+                                             ::fixy::View<std::byte> out_buf,
+                                             ::fixy::View<std::byte const> dispatcher_payload) noexcept {
     return serialize_computation_cache_federation_entry<FnPtr, Row, Args...>(
         local_permission, out_buf,
         ComputationCacheFederationContentAddressedPayload<FnPtr, Row, Args...>{dispatcher_payload});
@@ -192,63 +190,54 @@ computation_cache_federation_smoke_test(const LocalCipherPermission<Brand>& loca
     using detail::EmptyR;
     using detail::probe_unary;
 
-    bool ok = true;
-
     {
-        std::array<std::uint8_t, 64> buf{};
-        const std::array<std::uint8_t, 4> body = {0x01, 0x02, 0x03, 0x04};
+        ::foundation::core::FixedArray<std::byte, 64> buf{};
+        const ::foundation::core::FixedArray<std::byte, 4> body{std::byte{0x01}, std::byte{0x02}, std::byte{0x03},
+                                                                std::byte{0x04}};
 
-        auto written =
-            serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(local_permission, buf, body);
+        auto written = serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(local_permission,
+                                                                                               buf.view(), body.view());
         if (written.is_err()) return false;
         const std::size_t written_bytes = std::move(written).expect("the entry fits its buffer");
+        const ::fixy::View<std::byte const> entry =
+            ::fixy::View<std::byte const>{buf.view()}.window(0, written_bytes).expect("the entry is inside its buffer");
 
-        auto decoded =
-            deserialize_untrusted_federation_entry(std::span<const std::uint8_t>(buf.data(), written_bytes),
-                                                   static_cast<std::uint16_t>(::foundation::effects::effect_count));
+        auto decoded = deserialize_untrusted_federation_entry(entry, FEDERATION_UNIVERSE_CARDINALITY);
         if (decoded.is_err()) return false;
         const FederationEntryView view = std::move(decoded).expect("the entry decodes");
 
-        const auto expected_key = federation_key<&probe_unary, EmptyR, int>();
-        ok = ok && (view.header.content_hash == expected_key.content_hash);
-        ok = ok && (view.header.row_hash == expected_key.row_hash);
-        ok = ok && (view.payload.size() == body.size());
-        for (std::size_t i = 0; i < body.size(); ++i) {
-            ok = ok && (view.payload[i] == body[i]);
-        }
+        const KernelCacheKey expected_key = federation_key<&probe_unary, EmptyR, int>();
+        if (view.header.content_hash != expected_key.content_hash) return false;
+        if (view.header.row_hash != expected_key.row_hash) return false;
+        if (!::fixy::equal(view.payload, body.view())) return false;
     }
 
     {
-        std::array<std::uint8_t, 32> buf_empty{};
-        std::array<std::uint8_t, 32> buf_bg{};
+        ::foundation::core::FixedArray<std::byte, 32> buf_empty{};
+        ::foundation::core::FixedArray<std::byte, 32> buf_bg{};
         auto wa = serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
-            local_permission, buf_empty, std::span<const std::uint8_t>{});
-        auto wb = serialize_computation_cache_federation_entry<&probe_unary, BgR, int>(local_permission, buf_bg,
-                                                                                       std::span<const std::uint8_t>{});
+            local_permission, buf_empty.view(), ::fixy::View<std::byte const>{});
+        auto wb = serialize_computation_cache_federation_entry<&probe_unary, BgR, int>(local_permission, buf_bg.view(),
+                                                                                       ::fixy::View<std::byte const>{});
         if (wa.is_err() || wb.is_err()) return false;
         const std::size_t written_empty = std::move(wa).expect("the entry of the empty row fits");
         const std::size_t written_bg = std::move(wb).expect("the entry of the Bg row fits");
-        ok = ok && (written_empty == written_bg);
-        bool any_diff = false;
-        for (std::size_t i = 0; i < written_empty; ++i) {
-            if (buf_empty[i] != buf_bg[i]) {
-                any_diff = true;
-                break;
-            }
-        }
-        ok = ok && any_diff;
+        // The two entries fill their buffers, so the two buffers differ
+        // where the two rows differ.
+        if (written_empty != written_bg) return false;
+        if (::fixy::equal(buf_empty.view(), buf_bg.view())) return false;
     }
 
     {
-        std::array<std::uint8_t, 32> buf{};
+        ::foundation::core::FixedArray<std::byte, 32> buf{};
         using Payload = ComputationCacheFederationContentAddressedPayload<&probe_unary, EmptyR, int>;
-        auto written = serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(local_permission, buf,
-                                                                                               Payload::hash_only());
+        auto written = serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
+            local_permission, buf.view(), Payload::hash_only());
         if (written.is_err()) return false;
-        ok = ok && (std::move(written).expect("the hash-only entry fits") == FEDERATION_HEADER_BYTES);
+        if (std::move(written).expect("the hash-only entry fits") != FEDERATION_HEADER_BYTES) return false;
     }
 
-    return ok;
+    return true;
 }
 
 }  // namespace crucible::cipher::federation

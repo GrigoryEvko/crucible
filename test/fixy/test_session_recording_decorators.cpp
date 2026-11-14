@@ -5,6 +5,8 @@
 
 #include "session_recording.h"
 
+#include <foundation/core/Array.h>
+
 #include <cstddef>
 #include <cstdlib>
 #include <type_traits>
@@ -66,13 +68,17 @@ int check_crash_recording() {
         return fail("the detected crash was not recorded as a PeerCrashed stop with its cause");
     if (log_p[4].op() != s::SessionOp::Close) return fail("the close was not recorded");
 
-    // Replay reads the same events back from the bytes.
-    std::vector<std::byte> block;
+    // Replay reads the same events back from the bytes.  The check above
+    // gives the log five events.
+    ::foundation::core::FixedArray<std::byte, 5 * s::session_event_size> block{};
+    std::size_t position = 0;
     for (const s::SessionEvent& event : log_p) {
-        const auto bytes = event.encode();
-        block.insert(block.end(), bytes.begin(), bytes.end());
+        for (const std::byte byte : event.encode()) {
+            *block.get(position).expect("the block holds five records") = byte;
+            ++position;
+        }
     }
-    const auto replayed = s::decode_session_log(block);
+    const auto replayed = s::decode_session_log(block.view());
     if (!replayed || replayed->size() != log_p.size()) return fail("the recorded log did not decode");
     for (std::size_t index = 0; index < replayed->size(); ++index) {
         if ((*replayed)[index].encode() != log_p[index].encode()) return fail("a replayed event differs");

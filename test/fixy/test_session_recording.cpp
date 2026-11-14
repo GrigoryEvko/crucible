@@ -25,6 +25,7 @@
 #include "session_recording.h"
 
 #include <fixy/session/Mint.h>
+#include <foundation/core/Array.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Hash.h>
@@ -178,18 +179,25 @@ static_assert(s::decode_session_event(std::span<const std::byte>{kSendBytes.data
 namespace {
 
 int check_log_decode() {
-    std::vector<std::byte> block;
-    for (const auto& bytes : {kSendBytes, kCloseBytes, kStopBytes})
-        block.insert(block.end(), bytes.begin(), bytes.end());
-    const auto whole = s::decode_session_log(block);
+    ::foundation::core::FixedArray<std::byte, 3 * s::session_event_size> block{};
+    std::size_t position = 0;
+    for (const auto& bytes : {kSendBytes, kCloseBytes, kStopBytes}) {
+        for (const std::byte byte : bytes) {
+            *block.get(position).expect("the block holds three records") = byte;
+            ++position;
+        }
+    }
+    const auto whole = s::decode_session_log(block.view());
     if (!whole || whole->size() != 3) return fail("a valid block of three records did not decode");
 
-    std::vector<std::byte> truncated(block.begin(), block.end() - 1);
+    const ::foundation::core::View<std::byte const> truncated = ::foundation::core::View<std::byte const>{block.view()}
+                                                                    .window(0, block.size() - 1)
+                                                                    .expect("the block holds more than one byte");
     const auto short_block = s::decode_session_log(truncated);
     if (short_block || short_block.error().index != 2) return fail("a truncated block did not name its last record");
 
-    block[72 + kOpOffset] = std::byte{0};
-    const auto corrupt = s::decode_session_log(block);
+    *block.get(72 + kOpOffset).expect("the offset is inside the block") = std::byte{0};
+    const auto corrupt = s::decode_session_log(block.view());
     if (corrupt || corrupt.error().index != 1 || corrupt.error().error != s::EventDecodeError::UnknownOperation)
         return fail("a corrupt middle record was not named");
     return 0;

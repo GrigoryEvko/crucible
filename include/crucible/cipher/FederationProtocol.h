@@ -63,8 +63,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <span>
 #include <type_traits>
 
 namespace crucible::cipher::federation {
@@ -77,6 +75,12 @@ inline constexpr std::uint32_t FEDERATION_MAGIC = 0x44454643u;
 // later header read under this layout would take four bytes of the
 // reserved word for something else.
 inline constexpr std::uint16_t FEDERATION_PROTOCOL_V1 = 1u;
+
+// The count of effect atoms of this build: the stamp that a sender writes,
+// and the count that a receiver of this build states.  The check file of
+// this header states that the count fits the 16-bit field.
+inline constexpr std::uint16_t FEDERATION_UNIVERSE_CARDINALITY =
+    static_cast<std::uint16_t>(::foundation::effects::effect_count);
 
 struct FederationEntryHeader {
     std::uint32_t magic = 0;
@@ -116,8 +120,8 @@ enum class FederationError : std::uint8_t {
 // route, not a terminated process.
 
 [[nodiscard]] inline ::fixy::Result<std::size_t, FederationError>
-serialize_federation_entry(std::span<std::uint8_t> out_buf, const KernelCacheKey& key,
-                           std::span<const std::uint8_t> payload) noexcept {
+serialize_federation_entry(::fixy::View<std::byte> out_buf, const KernelCacheKey& key,
+                           ::fixy::View<std::byte const> payload) noexcept {
     if (key.is_sentinel()) {
         return ::fixy::err(FederationError::SentinelKey);
     }
@@ -125,33 +129,39 @@ serialize_federation_entry(std::span<std::uint8_t> out_buf, const KernelCacheKey
         return ::fixy::err(FederationError::ZeroKey);
     }
 
-    if (payload.size() > ::fixy::max_of<std::uint32_t>) {
-        return ::fixy::err(FederationError::OutputBufferTooSmall);
-    }
+    // The payload size is a 32-bit field of the header.
+    CRUCIBLE_TRY(payload_size,
+                 ::fixy::narrow<std::uint32_t>(payload.size()).ok_or(FederationError::OutputBufferTooSmall));
 
     const std::size_t total_bytes = FEDERATION_HEADER_BYTES + payload.size();
     if (out_buf.size() < total_bytes) {
         return ::fixy::err(FederationError::OutputBufferTooSmall);
     }
 
-    FederationEntryHeader hdr{};
-    hdr.magic = FEDERATION_MAGIC;
-    hdr.protocol_version = FEDERATION_PROTOCOL_V1;
-    hdr.universe_cardinality = static_cast<std::uint16_t>(::foundation::effects::effect_count);
-    hdr.content_hash = key.content_hash;
-    hdr.row_hash = key.row_hash;
-    hdr.payload_size = static_cast<std::uint32_t>(payload.size());
-    hdr.reserved = 0;
+    const FederationEntryHeader hdr{
+        .magic = FEDERATION_MAGIC,
+        .protocol_version = FEDERATION_PROTOCOL_V1,
+        .universe_cardinality = FEDERATION_UNIVERSE_CARDINALITY,
+        .content_hash = key.content_hash,
+        .row_hash = key.row_hash,
+        .payload_size = payload_size,
+        .reserved = 0,
+    };
 
-    // A byte codec copies. Starting a lifetime at the address is the
-    // tool for arena type-punning and would be wrong here.
-    std::memcpy(out_buf.data(), &hdr, FEDERATION_HEADER_BYTES);
+    // A byte codec copies the bytes of the header. Starting a lifetime
+    // at the address is the tool for arena type-punning and would be
+    // wrong here.
+    ::fixy::copy(out_buf.window<FEDERATION_HEADER_BYTES>(0).expect("the size check puts the header inside the buffer"),
+                 ::fixy::bytes(hdr));
 
     // An entry with no payload bytes is valid and meaningful. It
     // announces the pair of hashes, and the receiver looks the
     // artifact up in its own store from the content hash.
-    if (!payload.empty()) {
-        std::memcpy(out_buf.data() + FEDERATION_HEADER_BYTES, payload.data(), payload.size());
+    if (payload.size() != 0) {
+        ::fixy::copy(out_buf.window(FEDERATION_HEADER_BYTES, payload.size())
+                         .expect("the size check puts the payload inside the buffer"),
+                     payload)
+            .expect("the window holds the count of the payload");
     }
 
     return total_bytes;
@@ -165,13 +175,14 @@ serialize_federation_entry(std::span<std::uint8_t> out_buf, const KernelCacheKey
 // the content hash in the returned header.
 
 [[nodiscard]] inline ::fixy::Result<FederationEntryHeader, FederationError>
-deserialize_federation_header(std::span<const std::uint8_t> in_buf, std::uint16_t receiver_cardinality) noexcept {
-    if (in_buf.size() < FEDERATION_HEADER_BYTES) {
-        return ::fixy::err(FederationError::TruncatedHeader);
-    }
+deserialize_federation_header(::fixy::View<std::byte const> in_buf, std::uint16_t receiver_cardinality) noexcept {
+    CRUCIBLE_TRY(header_bytes, in_buf.window<FEDERATION_HEADER_BYTES>(0).ok_or(FederationError::TruncatedHeader));
 
-    FederationEntryHeader hdr{};
-    std::memcpy(&hdr, in_buf.data(), FEDERATION_HEADER_BYTES);
+    // Each bit pattern of the header is a value, so the copy of its bytes
+    // cannot fail.  The checks below read the fields.
+    ::foundation::core::FixedArray<std::byte, FEDERATION_HEADER_BYTES> image{};
+    ::fixy::copy(image.view(), header_bytes);
+    const FederationEntryHeader hdr = ::fixy::bit_cast<FederationEntryHeader>(image);
 
     if (hdr.magic != FEDERATION_MAGIC) {
         return ::fixy::err(FederationError::BadMagic);
@@ -201,31 +212,30 @@ deserialize_federation_header(std::span<const std::uint8_t> in_buf, std::uint16_
     }
 
     const std::size_t bytes_after_header = in_buf.size() - FEDERATION_HEADER_BYTES;
-    if (static_cast<std::size_t>(hdr.payload_size) > bytes_after_header) {
+    if (hdr.payload_size > bytes_after_header) {
         return ::fixy::err(FederationError::TruncatedPayload);
     }
 
     return hdr;
 }
 
-// The payload span aliases the input buffer. It stays valid only
+// The payload View borrows the input buffer. It stays valid only
 // while that buffer does.
 
 struct FederationEntryView {
     FederationEntryHeader header{};
-    std::span<const std::uint8_t> payload{};
+    ::fixy::View<std::byte const> payload{};
 };
 
 [[nodiscard]] inline ::fixy::Result<FederationEntryView, FederationError>
-deserialize_untrusted_federation_entry(std::span<const std::uint8_t> in_buf,
+deserialize_untrusted_federation_entry(::fixy::View<std::byte const> in_buf,
                                        std::uint16_t receiver_cardinality) noexcept {
     CRUCIBLE_TRY(header, deserialize_federation_header(in_buf, receiver_cardinality));
 
-    const std::size_t payload_offset = FEDERATION_HEADER_BYTES;
-    const std::size_t payload_size = static_cast<std::size_t>(header.payload_size);
     return FederationEntryView{
         .header = header,
-        .payload = in_buf.subspan(payload_offset, payload_size),
+        .payload = in_buf.window(FEDERATION_HEADER_BYTES, header.payload_size)
+                       .expect("the header check puts the payload inside the buffer"),
     };
 }
 
@@ -239,7 +249,7 @@ template <typename Org, typename Brand>
     ::fixy::Tagged<FederationEntryView, ::foundation::permissions::tag::FederatedPeer<Org>>, FederationError>
 deserialize_federation_entry(const ::foundation::permissions::Permission<
                                  ::foundation::permissions::tag::FederatedPeer<Org>, Brand>& peer_permission,
-                             std::span<const std::uint8_t> in_buf, std::uint16_t receiver_cardinality) noexcept {
+                             ::fixy::View<std::byte const> in_buf, std::uint16_t receiver_cardinality) noexcept {
     (void)peer_permission;
 
     CRUCIBLE_TRY(view, deserialize_untrusted_federation_entry(in_buf, receiver_cardinality));
@@ -299,7 +309,7 @@ struct PullRequest {
 template <typename KeyTag = AnyFederationKey>
 struct FederationEntryPayload {
     using key_tag = KeyTag;
-    std::span<const std::uint8_t> bytes{};
+    ::fixy::View<std::byte const> bytes{};
 };
 
 template <typename KeyTag = AnyFederationKey>

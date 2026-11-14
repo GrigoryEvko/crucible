@@ -31,7 +31,7 @@ static_assert(role_protocol_matches_v<SenderRole, ComputationCacheFederationSend
 static_assert(::fixy::session::is_content_addressed_v<
               typename ComputationCacheFederationContentAddressedPayload<&probe_unary, EmptyR, int>::payload_type>);
 static_assert(sizeof(ComputationCacheFederationContentAddressedPayload<&probe_unary, EmptyR, int>)
-              == sizeof(std::span<const std::uint8_t>));
+              == sizeof(::fixy::View<std::byte const>));
 
 static_assert(federation_key<&probe_unary, EmptyR, int>() == federation_key<&probe_unary, EmptyR, int>(),
               "the federation key must be deterministic for the same inputs.");

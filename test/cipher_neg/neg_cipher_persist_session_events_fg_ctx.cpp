@@ -15,7 +15,8 @@ int main() {
         store_ctx, store_ctx.cap().alloc,
         ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::TextView{"/tmp/crucible_neg_persist_events_fg"}));
     const auto view = cipher.mint_open_view(store_ctx);
-    const auto hash = cipher.persist_session_events(::foundation::effects::testing::foreground(), view,
-                                                    std::span<const ::crucible::Cipher::SessionEvent>{});
+    const auto hash =
+        cipher.persist_session_events(::foundation::effects::testing::foreground(), view, store_ctx.cap().alloc,
+                                      std::span<const ::crucible::Cipher::SessionEvent>{});
     return static_cast<bool>(hash) ? 0 : 1;
 }

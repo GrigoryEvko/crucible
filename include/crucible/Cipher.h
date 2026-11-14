@@ -389,12 +389,14 @@ public:
 
     // Stores one batch of session events and indexes it.  The events must
     // belong to one session and carry consecutive step ids.  A refused or
-    // failed batch gives the none hash.
+    // failed batch gives the none hash.  The encode of the batch takes the
+    // allocation capability.
     template <typename Ctx>
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
     [[nodiscard]] ContentHash persist_session_events(Ctx const& ctx, OpenView const& view,
+                                                     ::foundation::effects::Alloc allocation,
                                                      std::span<const SessionEvent> events) {
-        return persist_session_events_(file_ctx_(ctx), view, events);
+        return persist_session_events_(file_ctx_(ctx), view, allocation, events);
     }
 
     // The events of one session from the step from_step on, in step order.
@@ -425,7 +427,7 @@ public:
     // line.  Anyone who writes the store can compute it, so it proves
     // only which bytes a batch holds, and the loader checks each record
     // after it.  Complexity: linear in the payload size.
-    [[nodiscard]] static ContentHash session_event_batch_hash(std::span<const std::uint8_t> bytes) noexcept;
+    [[nodiscard]] static ContentHash session_event_batch_hash(::fixy::View<std::byte const> bytes) noexcept;
 
 private:
     using LogEntry = ::fixy::session::SessionEvent;
@@ -512,6 +514,7 @@ private:
                                             uint64_t step_id, ::fixy::MonotonicClockBytes<std::uint64_t> committed_at);
 
     [[nodiscard]] ContentHash persist_session_events_(FileCtx const& file_ctx, OpenView const&,
+                                                      ::foundation::effects::Alloc allocation,
                                                       std::span<const SessionEvent> events);
 
     // The head hash that the text of a HEAD file names, or none when the

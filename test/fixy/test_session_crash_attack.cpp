@@ -31,6 +31,7 @@
 
 #include "session_crash_attack.h"
 #include <fixy/session/Mint.h>
+#include <foundation/core/Array.h>
 
 #include <sys/wait.h>
 #include <unistd.h>
@@ -154,10 +155,13 @@ void corrupt_event_bytes() {
         const auto decoded = s::decode_session_event(std::span<const std::byte>{bytes.data(), length});
         if (decoded || decoded.error() != s::EventDecodeError::Truncated) finish(Outcome::Silent);
     }
-    std::array<std::byte, 2 * s::session_event_size - 1> torn{};
-    for (std::size_t index = 0; index < bytes.size(); ++index)
-        torn[index] = bytes[index];
-    const auto torn_log = s::decode_session_log(torn);
+    ::foundation::core::FixedArray<std::byte, 2 * s::session_event_size - 1> torn{};
+    std::size_t position = 0;
+    for (const std::byte byte : bytes) {
+        *torn.get(position).expect("the torn block holds the first record") = byte;
+        ++position;
+    }
+    const auto torn_log = s::decode_session_log(torn.view());
     if (torn_log || torn_log.error().error != s::EventDecodeError::Truncated) finish(Outcome::Silent);
     finish(refused > 0 && accepted > 0 ? Outcome::Correct : Outcome::Silent);
 }

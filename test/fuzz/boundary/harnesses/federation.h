@@ -9,9 +9,9 @@
 #include "../harness.h"
 
 #include <crucible/cipher/FederationProtocol.h>
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
 
-#include <algorithm>
 #include <vector>
 
 namespace crucible::fuzz::boundary {
@@ -23,15 +23,25 @@ inline constexpr auto kReceiverAtomCount = static_cast<std::uint16_t>(::foundati
 [[nodiscard]] inline Seeds seeds_federation() {
     namespace fed = ::crucible::cipher::federation;
     Seeds seeds;
-    for (std::string_view payload : {std::string_view{}, std::string_view{"payload bytes"}}) {
+    for (const ::fixy::TextView payload : {::fixy::TextView{}, ::fixy::TextView{"payload bytes"}}) {
+        ::foundation::core::FixedArray<std::byte, 16> body{};
+        std::size_t count = 0;
+        for (const char character : payload) {
+            *body.get(count).expect("a seed payload fits 16 bytes") = static_cast<std::byte>(character);
+            ++count;
+        }
+        ::foundation::core::FixedArray<std::byte, 64> entry{};
+        auto written = fed::serialize_federation_entry(
+            entry.view(), KernelCacheKey{ContentHash{0x1234}, RowHash{0x5678}},
+            ::fixy::View<std::byte const>{body.view()}.window(0, count).expect("the payload is inside its buffer"));
+        const std::size_t written_bytes = std::move(written).expect("the seed entry fits its buffer");
         std::vector<std::uint8_t> seed;
         append_raw(seed, kReceiverAtomCount);
-        std::vector<std::uint8_t> entry(fed::FEDERATION_HEADER_BYTES + payload.size());
-        const auto body = text_bytes(payload);
-        auto written = fed::serialize_federation_entry(std::span<std::uint8_t>{entry},
-                                                       KernelCacheKey{ContentHash{0x1234}, RowHash{0x5678}}, body);
-        if (written.is_ok()) entry.resize(std::move(written).expect("the seed entry fits its buffer"));
-        append_bytes(seed, entry);
+        for (const std::byte byte : ::fixy::View<std::byte const>{entry.view()}
+                                        .window(0, written_bytes)
+                                        .expect("the entry is inside its buffer")) {
+            seed.push_back(static_cast<std::uint8_t>(byte));
+        }
         seeds.push_back(std::move(seed));
     }
     return seeds;
@@ -41,7 +51,10 @@ inline void run_federation(std::span<const std::uint8_t> bytes) {
     namespace fed = ::crucible::cipher::federation;
     ByteCursor cursor{bytes};
     const auto receiver_cardinality = cursor.take<std::uint16_t>();
-    const auto entry_bytes = cursor.rest();
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the fuzzer gives its input as a pointer to raw bytes and a count")
+    const std::span<const std::byte> raw = as_bytes_view(cursor.rest());
+    const ::fixy::View<std::byte const> entry_bytes = ::fixy::mint_foreign_view(raw.data(), raw.size());
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
     auto decoded = fed::deserialize_untrusted_federation_entry(entry_bytes, receiver_cardinality);
     if (decoded.is_err()) return;
@@ -51,22 +64,26 @@ inline void run_federation(std::span<const std::uint8_t> bytes) {
     CRUCIBLE_FUZZ_CLAIM("federation", !key.is_zero() && !key.is_sentinel());
     CRUCIBLE_FUZZ_CLAIM("federation", view.header.universe_cardinality <= receiver_cardinality);
     CRUCIBLE_FUZZ_CLAIM("federation", view.payload.size() == view.header.payload_size);
-    CRUCIBLE_FUZZ_CLAIM(
-        "federation", view.payload.empty()
-                          || (view.payload.data() >= entry_bytes.data()
-                              && view.payload.data() + view.payload.size() <= entry_bytes.data() + entry_bytes.size()));
+    // The payload lies inside the input, from the first byte after the
+    // header.
+    CRUCIBLE_FUZZ_CLAIM("federation", view.payload.size() <= entry_bytes.size() - fed::FEDERATION_HEADER_BYTES);
+    CRUCIBLE_FUZZ_CLAIM("federation",
+                        view.payload.size() == 0
+                            || ::fixy::same_object(
+                                view.payload.get(0).expect("the payload holds a byte"),
+                                entry_bytes.get(fed::FEDERATION_HEADER_BYTES).expect("the input holds the payload")));
 
-    std::vector<std::uint8_t> out(fed::FEDERATION_HEADER_BYTES + view.payload.size());
-    auto written = fed::serialize_federation_entry(std::span<std::uint8_t>{out}, key, view.payload);
+    ::fixy::HeapArray<std::byte> out =
+        ::fixy::mint_heap_array(test_alloc(), fed::FEDERATION_HEADER_BYTES + view.payload.size(), std::byte{0});
+    auto written = fed::serialize_federation_entry(out.view(), key, view.payload);
     CRUCIBLE_FUZZ_CLAIM("federation", written.is_ok());
-    const std::size_t written_bytes = std::move(written).expect("an accepted entry writes back");
-    auto read_again = fed::deserialize_untrusted_federation_entry(
-        std::span<const std::uint8_t>{out.data(), written_bytes}, kReceiverAtomCount);
+    CRUCIBLE_FUZZ_CLAIM("federation", std::move(written).expect("an accepted entry writes back") == out.size());
+    auto read_again = fed::deserialize_untrusted_federation_entry(out.view(), kReceiverAtomCount);
     CRUCIBLE_FUZZ_CLAIM("federation", read_again.is_ok());
     const fed::FederationEntryView again = std::move(read_again).expect("the written entry reads back");
     CRUCIBLE_FUZZ_CLAIM("federation", again.header.content_hash == view.header.content_hash);
     CRUCIBLE_FUZZ_CLAIM("federation", again.header.row_hash == view.header.row_hash);
-    CRUCIBLE_FUZZ_CLAIM("federation", std::ranges::equal(again.payload, view.payload));
+    CRUCIBLE_FUZZ_CLAIM("federation", ::fixy::equal(again.payload, view.payload));
 }
 
 }  // namespace crucible::fuzz::boundary

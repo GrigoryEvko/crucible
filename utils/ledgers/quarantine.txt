@@ -107,19 +107,16 @@ examples/fn/ | raw-pointer-object | 7 | - | -
 examples/fn/ | replace-pending:std::bit_cast | 2 | - | -
 examples/fn/ | std-entity | 10 | - | -
 examples/fn/ | std-object | 3 | - | -
-include/crucible/ | c-array-object | 45 | - | -
-include/crucible/ | c-library-call | 38 | - | -
-include/crucible/ | compiler-builtin | 3 | - | -
+include/crucible/ | c-array-object | 43 | - | -
+include/crucible/ | c-library-call | 37 | - | -
+include/crucible/ | compiler-builtin | 2 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
 include/crucible/ | raw-new-delete | 1 | - | -
 include/crucible/ | raw-pointer-object | 402 | - | -
 include/crucible/ | replace-pending:<limits> | 5 | - | -
-include/crucible/ | replace-pending:std::bit_cast | 16 | - | -
+include/crucible/ | replace-pending:std::bit_cast | 14 | - | -
 include/crucible/ | std-entity | 236 | - | -
-include/crucible/ | std-object | 48 | - | -
-include/crucible/cipher/ | c-library-call | 3 | - | -
-include/crucible/cipher/ | std-entity | 25 | - | -
-include/crucible/cipher/ | std-object | 18 | - | -
+include/crucible/ | std-object | 47 | - | -
 include/crucible/cntp/ | c-library-call | 9 | - | -
 include/crucible/cntp/ | compiler-builtin | 2 | - | -
 include/crucible/cntp/ | std-object | 1 | - | -
@@ -222,8 +219,8 @@ include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<system_error> | 4 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 56 | - | -
-include/fixy/session/ | base-std-entity | 476 | - | -
-include/fixy/session/ | base-std-object | 202 | - | -
+include/fixy/session/ | base-std-entity | 472 | - | -
+include/fixy/session/ | base-std-object | 201 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
 include/fixy/session/ | replace-pending:<atomic> | 2 | - | -
@@ -299,11 +296,10 @@ include/foundation/reflect/ | replace-pending:<string> | 2 | - | -
 include/foundation/reflect/ | replace-pending:<string_view> | 5 | - | -
 include/foundation/reflect/ | replace-pending:<tuple> | 1 | - | -
 include/foundation/reflect/ | replace-pending:<vector> | 4 | - | -
-src/ | c-library-call | 2 | - | -
 src/ | raw-new-delete | 3 | - | -
 src/ | raw-pointer-object | 25 | - | -
-src/ | std-entity | 156 | - | -
-src/ | std-object | 32 | - | -
+src/ | std-entity | 129 | - | -
+src/ | std-object | 27 | - | -
 src/fixy/os/ | base-std-entity | 153 | - | -
 src/fixy/os/ | base-std-object | 63 | - | -
 src/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
@@ -323,7 +319,7 @@ src/perf/ | foreign-symbol | 14 | - | -
 src/perf/ | raw-pointer-object | 3 | - | -
 src/perf/ | replace-pending:std::bit_cast | 2 | - | -
 test/ | c-array-object | 222 | - | -
-test/ | c-library-call | 901 | - | -
+test/ | c-library-call | 891 | - | -
 test/ | c-library-object | 15 | - | -
 test/ | compiler-builtin | 1 | - | -
 test/ | door-header | 20 | - | -
@@ -334,12 +330,12 @@ test/ | raw-new-delete | 41 | - | -
 test/ | raw-pointer-object | 535 | - | -
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 93 | - | -
-test/ | std-entity | 1768 | - | -
-test/ | std-object | 654 | - | -
+test/ | std-entity | 1646 | - | -
+test/ | std-object | 583 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
 test/cipher_neg/ | raw-pointer-object | 2 | - | -
-test/cipher_neg/ | std-entity | 9 | - | -
-test/cipher_neg/ | std-object | 6 | - | -
+test/cipher_neg/ | std-entity | 8 | - | -
+test/cipher_neg/ | std-object | 3 | - | -
 test/cntp_neg/ | raw-pointer-object | 1 | - | -
 test/cntp_neg/ | std-entity | 3 | - | -
 test/cntp_neg/ | std-object | 5 | - | -
@@ -402,8 +398,8 @@ test/fixy/ | region | 1 | PROBE: the test plants an atom in a shipped family, an
 test/fixy/ | replace-pending:<limits> | 30 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 15 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 3053 | - | -
-test/fixy/ | std-object | 1095 | - | -
+test/fixy/ | std-entity | 3050 | - | -
+test/fixy/ | std-object | 1090 | - | -
 test/fixy/neg/ | c-array-object | 53 | - | -
 test/fixy/neg/ | c-library-call | 5 | - | -
 test/fixy/neg/ | c-library-object | 2 | - | -
@@ -549,13 +545,15 @@ test/fuzz/boundary/ | raw-pointer-object | 8 | - | -
 test/fuzz/boundary/ | std-entity | 146 | - | -
 test/fuzz/boundary/ | std-object | 49 | - | -
 test/fuzz/boundary/harnesses/ | c-array-object | 6 | - | -
-test/fuzz/boundary/harnesses/ | c-library-call | 6 | - | -
+test/fuzz/boundary/harnesses/ | c-library-call | 3 | - | -
 test/fuzz/boundary/harnesses/ | compiler-builtin | 1 | - | -
+test/fuzz/boundary/harnesses/ | opted-out | 9 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
 test/fuzz/boundary/harnesses/ | opted-out | 6 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
-test/fuzz/boundary/harnesses/ | raw-pointer-object | 16 | - | -
+test/fuzz/boundary/harnesses/ | raw-pointer-object | 15 | - | -
+test/fuzz/boundary/harnesses/ | region | 3 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
 test/fuzz/boundary/harnesses/ | region | 2 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
-test/fuzz/boundary/harnesses/ | std-entity | 206 | - | -
-test/fuzz/boundary/harnesses/ | std-object | 99 | - | -
+test/fuzz/boundary/harnesses/ | std-entity | 181 | - | -
+test/fuzz/boundary/harnesses/ | std-object | 90 | - | -
 test/fuzz/property/ | c-array-object | 20 | - | -
 test/fuzz/property/ | c-library-call | 48 | - | -
 test/fuzz/property/ | compiler-builtin | 4 | - | -
@@ -574,7 +572,6 @@ test/layer/ | std-entity | 61 | - | -
 test/layer/checks/crucible/ | replace-pending:std::source_location | 1 | - | -
 test/layer/checks/crucible/ | std-entity | 24 | - | -
 test/layer/checks/crucible/ | std-object | 3 | - | -
-test/layer/checks/crucible/cipher/ | std-entity | 1 | - | -
 test/layer/checks/crucible/cog/ | std-object | 19 | - | -
 test/layer/checks/crucible/mimic/ | std-entity | 3 | - | -
 test/layer/checks/crucible/mimic/ | std-object | 3 | - | -

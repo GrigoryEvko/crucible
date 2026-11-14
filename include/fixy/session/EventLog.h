@@ -64,6 +64,7 @@
 #include <foundation/Pinned.h>
 #include <foundation/algebra/lattices/CipherTierLattice.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Region.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Hash.h>
 
@@ -599,15 +600,19 @@ struct EventLogDecodeFailure {
 
 // Complexity: linear in the number of records.
 [[nodiscard]] inline std::expected<std::vector<SessionEvent>, EventLogDecodeFailure>
-decode_session_log(std::span<const std::byte> bytes) {
+decode_session_log(::foundation::core::View<std::byte const> bytes) {
     if (bytes.size() % session_event_size != 0) {
         return std::unexpected(EventLogDecodeFailure{bytes.size() / session_event_size, EventDecodeError::Truncated});
     }
     std::vector<SessionEvent> events(bytes.size() / session_event_size, SessionEvent::close(RoleTagId{}, RoleTagId{}));
-    for (std::size_t index = 0; index < events.size(); ++index) {
-        auto decoded = decode_session_event(bytes.subspan(index * session_event_size, session_event_size));
+    std::size_t index = 0;
+    for (::foundation::core::View<std::byte const, session_event_size> const record :
+         bytes.chunks<session_event_size>()) {
+        auto decoded = decode_session_event(std::span<const std::byte>{
+            first_of_(::foundation::core::detail::ViewDoor::key(), record), session_event_size});
         if (!decoded) return std::unexpected(EventLogDecodeFailure{index, decoded.error()});
         events[index] = *decoded;
+        ++index;
     }
     return events;
 }

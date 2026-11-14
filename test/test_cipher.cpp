@@ -404,8 +404,13 @@ int main() {
         auto ov = cipher.mint_open_view(store_ctx());
         const auto first_batch = session_batch(10, 10);
         const auto second_batch = session_batch(20, 5);
-        assert(static_cast<bool>(cipher.persist_session_events(store_ctx(), ov, first_batch)));
-        assert(static_cast<bool>(cipher.persist_session_events(store_ctx(), ov, second_batch)));
+        const crucible::ContentHash first_hash =
+            cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch);
+        assert(static_cast<bool>(first_hash));
+        assert(static_cast<bool>(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, second_batch)));
+        // A batch whose file the store holds gives its hash again, after a
+        // compare of the stored bytes with the bytes of the batch.
+        assert(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch) == first_hash);
 
         const ::fixy::session::SessionTagId session = first_batch.front().session();
         const auto from_middle =
@@ -422,6 +427,26 @@ int main() {
         assert(second_only.size() == 5 && second_only.front().step_id().value == 20);
 
         std::filesystem::remove_all(dir_events);
+    }
+
+    // The batch hash names a stored batch file, so its value for given bytes
+    // must not change.  Each value is the hash of the release of this
+    // format: the bytes 0 to 143, 72 bytes of 0xAB, and no byte.
+    {
+        ::foundation::core::FixedArray<std::byte, 144> counting{};
+        std::size_t position = 0;
+        for (std::byte& byte : counting) {
+            byte = static_cast<std::byte>(position);
+            ++position;
+        }
+        ::foundation::core::FixedArray<std::byte, 72> repeated{};
+        ::fixy::fill(repeated.view(), std::byte{0xAB});
+        assert(crucible::Cipher::session_event_batch_hash(counting.view())
+               == crucible::ContentHash{0xeb48340c1ea14751ULL});
+        assert(crucible::Cipher::session_event_batch_hash(repeated.view())
+               == crucible::ContentHash{0x1a51e80700eac78fULL});
+        assert(crucible::Cipher::session_event_batch_hash(::fixy::View<std::byte const>{})
+               == crucible::ContentHash{0x35c3cb3b6b06b0e2ULL});
     }
 
     // The cache of object bytes holds at most 64 entries, and it removes the

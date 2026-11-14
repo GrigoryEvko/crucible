@@ -3636,7 +3636,7 @@ crucible_neg_compile_test(neg_computation_cache_federation_non_fn
   "required for the satisfaction of .IsCacheableFunction<FnPtr>. .with FnPtr = 42.")
 crucible_neg_compile_test(neg_computation_cache_federation_without_local_permission
   "no matching function for call to .serialize_computation_cache_federation_entry<neg_payload, foundation::effects::Row<>, int>\\("
-  "serialize_computation_cache_federation_entry\\(LocalCipherPermission<Brand>&, std::span<unsigned char>")
+  "serialize_computation_cache_federation_entry\\(LocalCipherPermission<Brand>&, foundation::core::View<std::byte>")
 
 # ─── The row gate of MetaLog::try_append_pure ───────────────────────
 # MetaLog::try_append_pure<CallerRow> requires IsPure<CallerRow>, that
@@ -4018,7 +4018,7 @@ crucible_neg_compile_test(neg_cipher_wrong_tag
 # organization.  A call with no token, or with the token of another
 # organization, does not compile.
 crucible_neg_compile_test(neg_federation_deserialize_without_permission
-    "no matching function for call to .deserialize_federation_entry\\(std::array<unsigned char, 32>&, uint16_t\\)."
+    "no matching function for call to .deserialize_federation_entry\\(foundation::core::View<const std::byte, 32>, uint16_t\\)."
     "deserialize_federation_entry\\(const foundation::permissions::Permission<foundation::permissions::tag::FederatedPeer<Org>, Brand>&,")
 crucible_neg_compile_test(neg_federation_deserialize_wrong_org_permission
     "no matching function for call to .deserialize_federation_entry<OrgB>\\(foundation::permissions::Permission<foundation::permissions::tag::FederatedPeer<OrgA>,"

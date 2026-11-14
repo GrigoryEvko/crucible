@@ -231,6 +231,35 @@ template <class Ctx>
             [](::foundation::os::Errno) { return false; });
 }
 
+// The bytes of path under dir, when the file holds more than zero and at
+// most maximum bytes.  No value for a file that does not open, has another
+// size, or reads short.  Complexity: one read of the file.
+template <class Ctx>
+[[nodiscard]] ::fixy::Option<::fixy::HeapArray<std::byte>>
+read_batch_at_(Ctx const& ctx, ::foundation::effects::Alloc allocation, ::fixy::fs::Dirfd const& dir,
+               ::fixy::CText path, std::size_t maximum) noexcept {
+    // The rvalue match refuses a result that holds an address, and a
+    // HeapArray holds one.  So the arms give a bool, and the bytes leave
+    // through the Option.
+    ::fixy::Option<::fixy::HeapArray<std::byte>> read{};
+    static_cast<void>(::fixy::fs::mint_file_at<::fixy::fs::read_only>(ctx, dir, path)
+                          .match(
+                              [&](::fixy::Linear<::fixy::fs::OwnedFd> opened) {
+                                  const ::fixy::fs::OwnedFd file = std::move(opened).consume();
+                                  const std::int64_t size = ::fixy::fs::file_size(ctx, file).value_or(0);
+                                  if (size <= 0 || static_cast<std::uint64_t>(size) > maximum) return false;
+                                  ::fixy::HeapArray<std::byte> bytes =
+                                      ::fixy::mint_heap_array(allocation, static_cast<std::size_t>(size), std::byte{0});
+                                  if (::fixy::fs::read_full(ctx, file, bytes.view()).value_or(0) != bytes.size()) {
+                                      return false;
+                                  }
+                                  read = ::fixy::Option<::fixy::HeapArray<std::byte>>::some(std::move(bytes));
+                                  return true;
+                              },
+                              [](::foundation::os::Errno) { return false; }));
+    return read;
+}
+
 // The first line of a text, without its newline, and the text after the
 // newline.  A text with no newline is one line.
 struct LineSplit {
@@ -451,6 +480,7 @@ Cipher::LoadedContentAddressedRegionPayload Cipher::load_content_addressed_(File
 }
 
 ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView const&,
+                                            ::foundation::effects::Alloc allocation,
                                             std::span<const SessionEvent> events) {
     if (events.empty()) return ContentHash{};
 
@@ -477,19 +507,23 @@ ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView co
     // Each event goes to the batch through its own encoder, which is
     // the one route from an event to bytes.  The hash consumes those
     // bytes structurally.  Complexity: linear in the number of events.
-    std::vector<std::uint8_t> payload(payload_bytes);
+    ::fixy::HeapArray<std::byte> payload = ::fixy::mint_heap_array(allocation, payload_bytes, std::byte{0});
     for (std::size_t i = 0; i < events.size(); ++i) {
         const auto record = events[i].encode();
-        std::memcpy(payload.data() + i * sizeof(SessionEvent), record.data(), record.size());
+        ::fixy::copy(payload.view()
+                         .window<sizeof(SessionEvent)>(i * sizeof(SessionEvent))
+                         .expect("the payload holds a record for each event"),
+                     ::fixy::bytes(record));
     }
-    const ContentHash hash = session_event_batch_hash(std::span<const std::uint8_t>{payload});
+    const ContentHash hash = session_event_batch_hash(payload.view());
     const KernelCacheKey key{hash, SESSION_EVENT_FEDERATION_ROW_HASH};
 
-    std::vector<std::uint8_t> encoded(cipher::federation::FEDERATION_HEADER_BYTES + payload.size());
-    auto written = cipher::federation::serialize_federation_entry(std::span<std::uint8_t>{encoded}, key,
-                                                                  std::span<const std::uint8_t>{payload});
-    if (written.is_err()) return ContentHash{};
-    encoded.resize(std::move(written).expect("the entry fits the buffer of its size"));
+    // The entry fills its buffer: the header and then the payload.
+    ::fixy::HeapArray<std::byte> encoded =
+        ::fixy::mint_heap_array(allocation, cipher::federation::FEDERATION_HEADER_BYTES + payload_bytes, std::byte{0});
+    if (cipher::federation::serialize_federation_entry(encoded.view(), key, payload.view()).is_err()) {
+        return ContentHash{};
+    }
 
     // The index line: "<first_step>,<last_step>,<count>,<16-hex hash>\n".
     // The longest form is 20 + 1 + 20 + 1 + 20 + 1 + 16 + 1 = 80 bytes,
@@ -508,7 +542,6 @@ ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView co
 
     const EntryPath batch = batch_entry_(hash.raw());
     const EntryPath session_directory = session_entry_(session);
-    std::vector<std::uint8_t> stored_batch;
 
     // The session subdirectory anchors the batch and the index at two
     // levels: root dirfd, then session dirfd, then the leaf under
@@ -526,11 +559,14 @@ ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView co
                     const bool is_batch_present =
                         ::fixy::fs::has_entry_at(ctx, session_dir, batch.c_text()).value_or(false);
                     const bool is_batch_stored =
-                        is_batch_present
-                            ? read_entry_at_(ctx, session_dir, batch.c_text(), encoded.size(), stored_batch)
-                                  && stored_batch == encoded
-                            : replace_entry_at_(ctx, session_dir, batch.c_text().view(),
-                                                std::as_bytes(std::span<const std::uint8_t>{encoded}));
+                        is_batch_present ? read_batch_at_(ctx, allocation, session_dir, batch.c_text(), encoded.size())
+                                               .match(
+                                                   [&encoded](::fixy::HeapArray<std::byte> stored) {
+                                                       return ::fixy::equal(stored.view(), encoded.view());
+                                                   },
+                                                   [] { return false; })
+                                         : replace_entry_at_(ctx, session_dir, batch.c_text().view(),
+                                                             ::fixy::View<std::byte const>{encoded.view()});
                     return is_batch_stored && append_entry_at_(ctx, session_dir, "index", index_line);
                 },
                 [](::foundation::os::Errno) { return false; });
@@ -578,16 +614,15 @@ std::vector<Cipher::SessionEvent> Cipher::load_session_events_(FileCtx const& fi
 
         const ContentHash hash{index_line.hash};
         const EntryPath batch = batch_entry_(index_line.hash);
-        std::vector<std::uint8_t> bytes;
-        const bool is_read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
-            return read_entry_at_(ctx, session_dir, batch.c_text(),
-                                  cipher::federation::FEDERATION_HEADER_BYTES + MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES,
-                                  bytes);
+        ::fixy::Option<::fixy::HeapArray<std::byte>> read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+            return read_batch_at_(ctx, allocation, session_dir, batch.c_text(),
+                                  cipher::federation::FEDERATION_HEADER_BYTES + MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES);
         });
-        if (!is_read || bytes.size() < cipher::federation::FEDERATION_HEADER_BYTES) continue;
+        if (read.is_none()) continue;
+        const ::fixy::HeapArray<std::byte> bytes = std::move(read).expect("the batch file read");
 
         auto entry = cipher::federation::deserialize_untrusted_federation_entry(
-            std::span<const std::uint8_t>{bytes}, static_cast<std::uint16_t>(::foundation::effects::effect_count));
+            bytes.view(), cipher::federation::FEDERATION_UNIVERSE_CARDINALITY);
         if (entry.is_err()) continue;
         const cipher::federation::FederationEntryView view = std::move(entry).expect("the entry decoded");
         if (view.header.content_hash != hash) continue;
@@ -605,7 +640,7 @@ std::vector<Cipher::SessionEvent> Cipher::load_session_events_(FileCtx const& fi
         // each record goes through the event decoder, which is the one
         // route from bytes to an event and refuses a record with a byte
         // outside its field.
-        auto decoded = ::fixy::session::decode_session_log(std::as_bytes(view.payload));
+        auto decoded = ::fixy::session::decode_session_log(view.payload);
         if (!decoded) continue;
         if (decoded->front().step_id().value != first) continue;
         if (decoded->back().step_id().value != last) continue;
@@ -671,9 +706,9 @@ ContentHash Cipher::hash_at_step(OpenView const&, uint64_t step_id) const {
     return ContentHash{};
 }
 
-ContentHash Cipher::session_event_batch_hash(std::span<const std::uint8_t> bytes) noexcept {
+ContentHash Cipher::session_event_batch_hash(::fixy::View<std::byte const> bytes) noexcept {
     uint64_t h = 0xcbf29ce484222325ULL ^ 0x53455353494f4e45ULL ^ bytes.size();
-    for (std::uint8_t byte : bytes) {
+    for (const std::byte byte : bytes) {
         h ^= static_cast<uint64_t>(byte);
         h *= 0x100000001b3ULL;
     }

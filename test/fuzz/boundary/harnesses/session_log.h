@@ -7,9 +7,9 @@
 
 #include "../harness.h"
 
+#include <fixy/Core.h>
 #include <fixy/session/EventLog.h>
-
-#include <algorithm>
+#include <foundation/Quarantine.h>
 
 namespace crucible::fuzz::boundary {
 
@@ -26,7 +26,10 @@ namespace crucible::fuzz::boundary {
 }
 
 inline void run_session_log(std::span<const std::uint8_t> bytes) {
-    const auto block = as_bytes_view(bytes);
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the fuzzer gives its input as a pointer to raw bytes and a count")
+    const std::span<const std::byte> raw = as_bytes_view(bytes);
+    const ::fixy::View<std::byte const> block = ::fixy::mint_foreign_view(raw.data(), raw.size());
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     auto events = ::fixy::session::decode_session_log(block);
     if (!events) {
         CRUCIBLE_FUZZ_CLAIM("session_log", events.error().index * ::fixy::session::session_event_size <= bytes.size());
@@ -35,8 +38,10 @@ inline void run_session_log(std::span<const std::uint8_t> bytes) {
     CRUCIBLE_FUZZ_CLAIM("session_log", events->size() * ::fixy::session::session_event_size == bytes.size());
     for (std::size_t i = 0; i < events->size(); ++i) {
         const auto encoded = (*events)[i].encode();
-        const auto record = block.subspan(i * ::fixy::session::session_event_size, ::fixy::session::session_event_size);
-        CRUCIBLE_FUZZ_CLAIM("session_log", std::ranges::equal(encoded, record));
+        const ::fixy::View<std::byte const, ::fixy::session::session_event_size> record =
+            block.window<::fixy::session::session_event_size>(i * ::fixy::session::session_event_size)
+                .expect("each event has its record in the block");
+        CRUCIBLE_FUZZ_CLAIM("session_log", ::fixy::equal(::fixy::bytes(encoded), record));
     }
 }
 

@@ -7,7 +7,6 @@
 #include <crucible/cipher/FederationProtocol.h>
 #include <fixy/Federation.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
@@ -34,9 +33,9 @@ int main() {
     (void)peer_key;
     (void)returned_cipher;
 
-    std::array<std::uint8_t, 32> buf{};
+    const ::foundation::core::FixedArray<std::byte, 32> buf{};
     auto peer = std::move(admitted).expect("the shared key verifies the handshake");
-    auto view = ::crucible::cipher::federation::deserialize_federation_entry<OrgB>(peer, buf, std::uint16_t{0});
+    auto view = ::crucible::cipher::federation::deserialize_federation_entry<OrgB>(peer, buf.view(), std::uint16_t{0});
     (void)view;
     return 0;
 }
