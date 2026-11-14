@@ -338,15 +338,20 @@ concept DroppablePayload = std::is_copy_constructible_v<T> || !::foundation::lin
 template <class... Ts>
 concept HoldsLinearAlternative = (!DroppablePayload<Ts> || ...);
 
-// A payload whose bytes an Option or a Result can copy, and that is
-// droppable.  A trivially copyable payload is one.  A payload of the shape
+// A payload whose bytes an Option or a Result can copy.  The union of the
+// plain slot declares a destructor, so it has no move, and the slot builds
+// its copy and its move from the copy constructor of each payload.  So a
+// plain payload has a copy constructor that copies its bytes.  A trivially
+// copyable payload with that copy is one.  A payload of the shape
 // TrivialCopyShape is one too: its copy, move and end are those of its
 // bytes, and its assignment can be user-provided, as the assignment of a
-// sealed class is.  The ABI passes the sum of such payloads in registers.
-// The conjunction stops at its first false part, so the walk of
-// DroppablePayload does not run for a payload that a part before it refuses.
+// sealed class is.  A move-only payload takes the owning slot, which moves
+// it, also when its bytes are trivially copyable.  A payload that copies is
+// droppable, so no plain payload is linear.  The ABI passes the sum of plain
+// payloads in registers.
 template <class T>
-concept PlainPayload = (std::is_trivially_copyable_v<T> || detail::TrivialCopyShape<T>) && DroppablePayload<T>;
+concept PlainPayload =
+    std::is_trivially_copy_constructible_v<T> && (std::is_trivially_copyable_v<T> || detail::TrivialCopyShape<T>);
 
 // A part that the compare of a sum reads: its == gives exactly bool and
 // does not throw.  A floating-point part is refused, because NaN is not

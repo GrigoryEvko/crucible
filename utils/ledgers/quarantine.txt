@@ -123,7 +123,7 @@ include/crucible/perf/detail/ | std-entity | 4 | - | -
 include/crucible/perf/detail/ | std-object | 1 | - | -
 include/crucible/warden/ | std-entity | 1 | - | -
 include/crucible/warden/ | std-object | 1 | - | -
-include/fixy/ | base-std-entity | 355 | - | -
+include/fixy/ | base-std-entity | 354 | - | -
 include/fixy/ | base-std-object | 202 | - | -
 include/fixy/ | replace-pending:<array> | 6 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
@@ -204,7 +204,7 @@ include/fixy/os/ | replace-pending:<string> | 1 | - | -
 include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<system_error> | 4 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
-include/fixy/session/ | base-c-library-call | 56 | - | -
+include/fixy/session/ | base-c-library-call | 51 | - | -
 include/fixy/session/ | base-std-entity | 467 | - | -
 include/fixy/session/ | base-std-object | 197 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
@@ -389,7 +389,7 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2950 | - | -
+test/fixy/ | std-entity | 2949 | - | -
 test/fixy/ | std-object | 1077 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 5 | - | -

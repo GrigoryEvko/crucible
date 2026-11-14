@@ -468,6 +468,72 @@ static_assert(Result<int, SealedError>{err(SealedError{7})}.is_err());
 static_assert(Result<int, SealedError>{err(SealedError{7})}.err().expect("a constant error").code == 7);
 static_assert(Result<int, SealedError>{5}.expect("a constant value") == 5);
 
+// The slot of a payload for each pair of facts: its bytes are trivially
+// copyable or not, and it copies or only moves.  The plain slot builds its
+// copy and its move from the copy of each payload, so only a payload that
+// copies its bytes takes it.  A payload that only moves takes the owning
+// slot, which moves it, also when its bytes are trivially copyable.  Each
+// sum moves, and no sum uses an operation that its payload deletes.
+struct BytesThatCopy {
+    std::uint32_t raw = 0;
+};
+struct BytesThatOnlyMove {
+    std::uint32_t raw = 0;
+    constexpr BytesThatOnlyMove() noexcept = default;
+    constexpr explicit BytesThatOnlyMove(std::uint32_t value) noexcept : raw{value} {}
+    BytesThatOnlyMove(BytesThatOnlyMove const&) = delete("the payload only moves");
+    BytesThatOnlyMove& operator=(BytesThatOnlyMove const&) = delete("the payload only moves");
+    constexpr BytesThatOnlyMove(BytesThatOnlyMove&&) noexcept = default;
+    constexpr BytesThatOnlyMove& operator=(BytesThatOnlyMove&&) noexcept = default;
+    ~BytesThatOnlyMove() = default;
+};
+struct CopyWithABody {
+    std::uint32_t raw = 0;
+    constexpr CopyWithABody() noexcept = default;
+    constexpr CopyWithABody(CopyWithABody const& other) noexcept : raw{other.raw} {}
+    constexpr CopyWithABody& operator=(CopyWithABody const& other) noexcept {
+        raw = other.raw;
+        return *this;
+    }
+};
+struct BytesThatCopyOnce {
+    std::uint32_t const raw = 0;
+};
+
+static_assert(std::is_trivially_copyable_v<BytesThatCopy> && std::is_copy_constructible_v<BytesThatCopy>);
+static_assert(std::is_trivially_copyable_v<BytesThatOnlyMove> && !std::is_copy_constructible_v<BytesThatOnlyMove>);
+static_assert(!std::is_trivially_copyable_v<CopyWithABody> && std::is_copy_constructible_v<CopyWithABody>);
+static_assert(!std::is_trivially_copyable_v<Owner> && !std::is_copy_constructible_v<Owner>);
+static_assert(std::is_trivially_copyable_v<BytesThatCopyOnce> && !std::is_copy_assignable_v<BytesThatCopyOnce>);
+
+static_assert(option_form_of<BytesThatCopy> == OptionForm::plain && is_plain_sum_v<int, BytesThatCopy>);
+static_assert(option_form_of<BytesThatOnlyMove> == OptionForm::owning && !is_plain_sum_v<int, BytesThatOnlyMove>);
+static_assert(option_form_of<CopyWithABody> == OptionForm::owning && !is_plain_sum_v<int, CopyWithABody>);
+static_assert(option_form_of<Owner> == OptionForm::owning && !is_plain_sum_v<int, Owner>);
+static_assert(option_form_of<SealedWord> == OptionForm::plain && is_plain_sum_v<int, SealedWord>);
+static_assert(option_form_of<BytesThatCopyOnce> == OptionForm::plain && is_plain_sum_v<int, BytesThatCopyOnce>);
+
+static_assert(std::is_nothrow_move_constructible_v<Option<BytesThatOnlyMove>>);
+static_assert(std::is_nothrow_move_assignable_v<Option<BytesThatOnlyMove>>);
+static_assert(!std::is_copy_constructible_v<Option<BytesThatOnlyMove>>);
+static_assert(std::is_nothrow_move_constructible_v<Result<BytesThatOnlyMove, Code>>);
+static_assert(std::is_copy_constructible_v<Option<BytesThatCopyOnce>>);
+static_assert(!std::is_copy_assignable_v<Option<BytesThatCopyOnce>>);
+
+// An Option of a payload that only moves moves its payload, and the source is
+// then empty.
+[[nodiscard]] consteval bool moves_a_payload_that_only_moves() {
+    Option<BytesThatOnlyMove> held = Option<BytesThatOnlyMove>::some(BytesThatOnlyMove{7});
+    Option<BytesThatOnlyMove> moved{std::move(held)};
+    Option<BytesThatOnlyMove> assigned{};
+    assigned = std::move(moved);
+    Result<BytesThatOnlyMove, Code> result{BytesThatOnlyMove{9}};
+    Result<BytesThatOnlyMove, Code> moved_result{std::move(result)};
+    return std::move(assigned).expect("a constant claim").raw == 7
+        && std::move(moved_result).expect("a constant claim").raw == 9;
+}
+static_assert(moves_a_payload_that_only_moves());
+
 // The assignment of a sum of sealed parts copies the bytes of the source: a
 // value over an error, an error over a value, and a self assignment.
 [[nodiscard]] consteval bool sealed_sum_assigns_bytes() {
