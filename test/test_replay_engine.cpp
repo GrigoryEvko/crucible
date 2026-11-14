@@ -99,7 +99,7 @@ static void test_linear_match() {
     ::foundation::core::FixedArray<TensorSlot, 3> slots{};
     auto plan = make_simple_plan(slots.view());
     PoolAllocator pool;
-    pool.init(&plan);
+    pool.init(plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     ReplayEngine engine;
@@ -153,7 +153,7 @@ static void test_schema_divergence() {
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());
     PoolAllocator pool;
-    pool.init(&plan);
+    pool.init(plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
     engine.init(region, ReplayEngine::PoolBorrow{pool});
@@ -189,7 +189,7 @@ static void test_shape_divergence() {
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());
     PoolAllocator pool;
-    pool.init(&plan);
+    pool.init(plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
     engine.init(region, ReplayEngine::PoolBorrow{pool});
@@ -221,7 +221,7 @@ static void test_reset() {
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());
     PoolAllocator pool;
-    pool.init(&plan);
+    pool.init(plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
     engine.init(region, ReplayEngine::PoolBorrow{pool});
@@ -264,7 +264,7 @@ static void test_input_ptr() {
     ::foundation::core::FixedArray<TensorSlot, 2> slots{};
     auto plan = make_simple_plan(slots.view());
     PoolAllocator pool;
-    pool.init(&plan);
+    pool.init(plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
     engine.init(region, ReplayEngine::PoolBorrow{pool});
@@ -295,7 +295,7 @@ static void test_invalid_slot() {
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());
     PoolAllocator pool;
-    pool.init(&plan);
+    pool.init(plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
     engine.init(region, ReplayEngine::PoolBorrow{pool});
@@ -325,7 +325,7 @@ static void test_current_entry() {
     ::foundation::core::FixedArray<TensorSlot, 1> slots{};
     auto plan = make_simple_plan(slots.view());
     PoolAllocator pool;
-    pool.init(&plan);
+    pool.init(plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine engine;
     engine.init(region, ReplayEngine::PoolBorrow{pool});
@@ -395,7 +395,7 @@ static void test_integration_with_pool() {
     assert(plan != nullptr);
 
     PoolAllocator pool;
-    pool.init(plan);
+    pool.init(*plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     alignas(256) char fake_param[128];

@@ -76,7 +76,7 @@ static void test_basic_init() {
     MemoryPlan plan = make_manual_plan(slots.view(), 3072, 1);
 
     PoolAllocator pool;
-    pool.init(&plan);
+    pool.init(plan);
     // The view is checked once, here.  Every later call that takes it
     // treats it as proof and re-checks nothing.
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -134,7 +134,7 @@ static void test_external_registration() {
     MemoryPlan plan = make_manual_plan(slots.view(), 1024, 1);
 
     PoolAllocator pool;
-    pool.init(&plan);
+    pool.init(plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     assert(pool.slot_ptr(SlotId{1}, pv) == nullptr);
@@ -192,7 +192,7 @@ static void test_write_read_isolation() {
     MemoryPlan plan = make_manual_plan(slots.view(), 1024, 0);
 
     PoolAllocator pool;
-    pool.init(&plan);
+    pool.init(plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     std::memset(pool.slot_ptr(SlotId{0}, pv), 0xAA, 256);
@@ -245,7 +245,7 @@ static void test_all_external() {
     MemoryPlan plan = make_manual_plan(slots.view(), 0, 2);
 
     PoolAllocator pool;
-    pool.init(&plan);
+    pool.init(plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     assert(pool.is_initialized());
@@ -284,7 +284,7 @@ static void test_reinit() {
     MemoryPlan plan_a = make_manual_plan(slots_a.view(), 512, 0);
 
     PoolAllocator pool;
-    pool.init(&plan_a);
+    pool.init(plan_a);
     assert(pool.pool_bytes() == 512);
     void* old_base = pool.pool_base();
 
@@ -318,7 +318,7 @@ static void test_reinit() {
                                                   .pad2 = {}};
 
     MemoryPlan plan_b = make_manual_plan(slots_b.view(), 3072, 0);
-    pool.init(&plan_b);
+    pool.init(plan_b);
     auto pv_b = pool.mint_initialized_view(kVigilForeground);
 
     assert(pool.is_initialized());
@@ -401,7 +401,7 @@ static void test_integration_with_sweep_line() {
     assert(plan->pool_bytes > 0);
 
     PoolAllocator pool;
-    pool.init(plan);
+    pool.init(*plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     assert(pool.is_initialized());
@@ -457,7 +457,7 @@ static void expect_abort_on_init(const TensorSlot& slot, uint64_t pool_bytes, co
     ::foundation::core::FixedArray<TensorSlot, 1> slots{slot};
     MemoryPlan plan = make_manual_plan(slots.view(), pool_bytes, 0);
     PoolAllocator pool;
-    if (!crucible::test::aborts([&pool, &plan] { pool.init(&plan); })) {
+    if (!crucible::test::aborts([&pool, &plan] { pool.init(plan); })) {
         std::fprintf(stderr, "  %s: the guard did not fire\n", what);
         std::abort();
     }

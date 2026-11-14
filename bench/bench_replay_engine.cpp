@@ -170,7 +170,7 @@ int main() {
         // Runs for this N. IIFE-lambdas capture by reference.
         BenchRegion br{n};
         PoolAllocator pool;
-        pool.init(&br.plan);
+        pool.init(br.plan);
 
         ReplayEngine engine;
         engine.init(br.region, ReplayEngine::PoolBorrow{pool});

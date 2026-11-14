@@ -309,7 +309,7 @@ int main() {
         check_single_cpu_plan(*plan);
 
         PoolAllocator pool;
-        pool.init(plan);
+        pool.init(*plan);
 
         uint32_t slot_idx = 0;
         auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -337,7 +337,7 @@ int main() {
         BenchRegion br;
         br.build(NUM_OPS, SCHEMA, SHAPE);
         PoolAllocator pool;
-        pool.init(br.plan);
+        pool.init(*br.plan);
         ReplayEngine engine;
         engine.init(*br.region, ReplayEngine::PoolBorrow{pool});
         auto av = engine.mint_active_view(kVigilForeground);

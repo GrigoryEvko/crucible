@@ -75,22 +75,21 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // allocation fails. Externally owned slots start null and are registered
     // before replay.
     [[gnu::cold, gnu::noinline]]
-    void init(const MemoryPlan* plan) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(plan != nullptr);
+    void init(const MemoryPlan& plan) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(!is_initialized());
         CRUCIBLE_PRE(pool_.size() == 0u);
-        const size_t plan_slots = plan->slots.size();
+        const size_t plan_slots = plan.slots.size();
         CRUCIBLE_PRE(::foundation::decide::in_range<size_t>(plan_slots, 0u, kMaxNumSlots));
-        CRUCIBLE_PRE(::foundation::decide::in_range<uint64_t>(plan->pool_bytes, 0u, kMaxPoolBytes));
-        CRUCIBLE_PRE(plan->num_external <= plan_slots);
-        num_external_ = plan->num_external;
+        CRUCIBLE_PRE(::foundation::decide::in_range<uint64_t>(plan.pool_bytes, 0u, kMaxPoolBytes));
+        CRUCIBLE_PRE(plan.num_external <= plan_slots);
+        num_external_ = plan.num_external;
 
-        if (plan->pool_bytes > 0) {
+        if (plan.pool_bytes > 0) {
             // A pool at least a huge page long is aligned to one so it can be
             // backed by huge pages. Anything smaller takes the base alignment.
-            const bool is_huge = plan->pool_bytes >= crucible::warden::kHugePageBytes;
+            const bool is_huge = plan.pool_bytes >= crucible::warden::kHugePageBytes;
             const uint64_t page_align = is_huge ? crucible::warden::kHugePageBytes : ALIGNMENT;
-            pool_ = ::foundation::mint_aligned_bytes(::foundation::effects::Alloc{}, plan->pool_bytes, page_align);
+            pool_ = ::foundation::mint_aligned_bytes(::foundation::effects::Alloc{}, plan.pool_bytes, page_align);
 #ifndef NDEBUG
             // A read of unwritten pool memory stands out.
             ::fixy::fill(pool_.view(), uint8_t{0xCD});
@@ -98,7 +97,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
             // The region covers the whole allocation, which is the pool
             // rounded up to its alignment.  The preconditions bound the sum
             // far below a wrap.
-            const uint64_t allocated_bytes = (plan->pool_bytes + page_align - 1) & ~(page_align - 1);
+            const uint64_t allocated_bytes = (plan.pool_bytes + page_align - 1) & ~(page_align - 1);
             crucible::warden::register_hot_region(pool_address_(), allocated_bytes, is_huge);
         }
 
@@ -116,7 +115,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
             // runtime check with a diagnostic rather than a precondition.
             const ::fixy::View<uint8_t> pool = pool_.view();
             uint32_t slot_index = 0;
-            for (const TensorSlot& slot : plan->slots) {
+            for (const TensorSlot& slot : plan.slots) {
                 // The check stays armed in a release build.  The next
                 // statement publishes an address that later becomes a copy
                 // destination, so a slot reaching past the pool would corrupt
@@ -129,10 +128,10 @@ struct CRUCIBLE_OWNER PoolAllocator {
                 // init can name.  This form is also independent of the
                 // contract evaluation semantic, which differs across targets
                 // in this tree.  Once per plan on a cold path.
-                if (!can_serve_slot(slot, plan->pool_bytes)) [[unlikely]] {
+                if (!can_serve_slot(slot, plan.pool_bytes)) [[unlikely]] {
                     ::fixy::fatal("PoolAllocator: slot {} does not fit the pool: offset={} nbytes={} pool_bytes={} "
                                   "alignment={}",
-                                  slot_index, slot.offset_bytes, slot.nbytes, plan->pool_bytes, ALIGNMENT);
+                                  slot_index, slot.offset_bytes, slot.nbytes, plan.pool_bytes, ALIGNMENT);
                 }
                 if (!slot.is_external) {
                     *table_.get(slot_index).expect("the table holds one entry for each slot of the plan") =
@@ -145,7 +144,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
         // when the compiler folds the body at compile time, so every such
         // check in this file runs from the body rather than a clause.
         CRUCIBLE_POST(0, num_slots() == plan_slots);
-        CRUCIBLE_POST(0, pool_bytes() == plan->pool_bytes);
+        CRUCIBLE_POST(0, pool_bytes() == plan.pool_bytes);
         CRUCIBLE_POST(0, ::foundation::decide::implies(plan_slots > 0u, is_initialized()));
     }
 

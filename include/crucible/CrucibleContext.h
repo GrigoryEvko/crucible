@@ -82,7 +82,7 @@ struct CrucibleContext {
 
         if (mode_ == ContextMode::COMPILED) deactivate();
 
-        pool_.init(region.plan);
+        pool_.init(*region.plan);
         engine_.init(region, ReplayEngine::PoolBorrow{pool_});
         active_region_ = ::fixy::mint_tagged<::fixy::tags::source::Vigil>(&region);
         mode_ = ContextMode::COMPILED;
@@ -155,7 +155,7 @@ struct CrucibleContext {
         // out of scope before anything touches the pool again.
         auto pv = pool_.initialized_view_();
         const ::foundation::AlignedBytes old_pool = pool_.detach(pv);
-        pool_.init(alt.plan);
+        pool_.init(*alt.plan);
         migrate_prefix_slots_(old_region, alt, old_pool.view(), div_pos);
 
         engine_.init(alt, ReplayEngine::PoolBorrow{pool_});
