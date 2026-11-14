@@ -3,6 +3,6 @@
 
 layer floor 0 include/
 
-cite fixy::IsPositive positive
+cite fixy::IsNonNegative non_negative
 
 quarantine src/

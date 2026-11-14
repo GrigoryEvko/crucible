@@ -1,109 +1,8 @@
 #pragma once
 
-#include <crucible/Ops.h>
-#include <crucible/Types.h>
-#include <fixy/Tagged.h>
-#include <foundation/Platform.h>
-#include <foundation/contracts/Decide.h>
-#include <foundation/contracts/Pre.h>
-
-#include <bit>
 #include <cstdint>
 
 namespace crucible {
-
-// An interned expression node. Two nodes with the same structure are the
-// same object, so equality is pointer equality.
-//
-// Every field is const because interning depends on a published node never
-// changing: a changed hash orphans its slot in the intern table, and a
-// changed payload breaks the structural equality that deduplication rests on.
-//
-// Nodes live in an arena, which never runs destructors. This type is
-// trivially destructible.
-struct Expr {
-    // The arity ceiling of the whole IR. `nargs` is a uint8_t, so a node
-    // cannot name a 256th child: a wider argument list would have to be
-    // truncated, and a node whose `nargs` disagrees with the length of its
-    // `args` array reads past that array on every later traversal.
-    //
-    // Every scratch buffer and every arity precondition in ExprPool is sized
-    // from this one constant, so the bound has a single place to change.
-    static constexpr uint8_t kMaxArgs = 255;
-
-    const Op op = Op::INTEGER;
-    const uint8_t nargs = 0;
-    const uint16_t flags = 0;
-    const SymbolId symbol_id;  // default-valued on a node that is not a symbol
-    // This hash is process-local. The intern table mixes the addresses of the
-    // child array into it, so the same structure hashes differently in
-    // another process. It must never be persisted, shared between processes,
-    // or folded into a content hash. The tag is what makes a cross-family use
-    // fail to compile rather than silently produce an unstable key.
-    const ::fixy::Tagged<std::uint64_t, hash_family::FamilyB> hash{};
-    const int64_t payload = 0;  // an integer, a double's bits, or a name pointer
-    const Expr* const* const args = nullptr;
-
-    // The default node is the integer zero.
-    constexpr Expr() noexcept = default;
-
-    // Zero is a legitimate hash and a legitimate payload. A null child array
-    // is legitimate too, but only for a node with no children.
-    constexpr Expr(Op op_, uint8_t nargs_, uint16_t flags_, SymbolId symbol_id_, uint64_t hash_, int64_t payload_,
-                   const Expr* const* args_) noexcept
-        : op(op_),
-          nargs(nargs_),
-          flags(flags_),
-          symbol_id(symbol_id_),
-          hash(::fixy::mint_tagged<hash_family::FamilyB>(hash_)),
-          payload(payload_),
-          args(args_) {
-        CRUCIBLE_PRE(::foundation::decide::implies(::foundation::decide::positive(nargs_), args_ != nullptr));
-    }
-
-    Expr(const Expr&) = delete("interned Exprs have identity equality; copying would break intern");
-    Expr& operator=(const Expr&) = delete("fields are const");
-    Expr(Expr&&) = delete("interned Exprs are arena-pinned");
-    Expr& operator=(Expr&&) = delete("fields are const");
-
-    [[nodiscard]] constexpr int64_t as_int() const { return payload; }
-
-    [[nodiscard]] double as_float() const { return std::bit_cast<double>(payload); }
-
-    [[nodiscard]] const char* as_symbol_name() const noexcept { return std::bit_cast<const char*>(payload); }
-
-    [[nodiscard, gnu::pure]] constexpr bool is_integer() const { return flags & ExprFlags::IS_INTEGER; }
-    [[nodiscard, gnu::pure]] constexpr bool is_real() const { return flags & ExprFlags::IS_REAL; }
-    [[nodiscard, gnu::pure]] constexpr bool is_finite() const { return flags & ExprFlags::IS_FINITE; }
-    [[nodiscard, gnu::pure]] constexpr bool is_positive() const { return flags & ExprFlags::IS_POSITIVE; }
-    [[nodiscard, gnu::pure]] constexpr bool is_negative() const { return flags & ExprFlags::IS_NEGATIVE; }
-    [[nodiscard, gnu::pure]] constexpr bool is_nonnegative() const { return flags & ExprFlags::IS_NONNEGATIVE; }
-    [[nodiscard, gnu::pure]] constexpr bool is_nonpositive() const { return flags & ExprFlags::IS_NONPOSITIVE; }
-    [[nodiscard, gnu::pure]] constexpr bool is_zero() const { return flags & ExprFlags::IS_ZERO; }
-    [[nodiscard, gnu::pure]] constexpr bool is_even() const { return flags & ExprFlags::IS_EVEN; }
-    [[nodiscard, gnu::pure]] constexpr bool is_odd() const { return flags & ExprFlags::IS_ODD; }
-    [[nodiscard, gnu::pure]] constexpr bool is_number() const { return flags & ExprFlags::IS_NUMBER; }
-    [[nodiscard, gnu::pure]] constexpr bool is_symbol() const { return flags & ExprFlags::IS_SYMBOL; }
-    [[nodiscard, gnu::pure]] constexpr bool is_boolean() const { return flags & ExprFlags::IS_BOOLEAN; }
-
-    [[nodiscard, gnu::pure]] constexpr bool is_atom() const { return nargs == 0; }
-
-    [[nodiscard, gnu::pure]] constexpr bool is_one() const { return op == Op::INTEGER && payload == 1; }
-
-    [[nodiscard, gnu::pure]] constexpr bool is_neg_one() const { return op == Op::INTEGER && payload == -1; }
-
-    [[nodiscard, gnu::pure]] constexpr bool is_zero_int() const { return op == Op::INTEGER && payload == 0; }
-
-    [[nodiscard]] const Expr* arg(uint8_t i) const {
-        // The first guard is not redundant with the second. On a node with no
-        // children the subtraction below wraps to the largest uint8_t and the
-        // range check then admits every index.
-        CRUCIBLE_PRE(nargs > 0u);
-        CRUCIBLE_PRE(::foundation::decide::in_range<std::uint8_t>(i, 0u, static_cast<std::uint8_t>(nargs - 1u)));
-        CRUCIBLE_PRE(args != nullptr);
-        return args[i];
-    }
-};
 
 namespace detail {
 
@@ -187,8 +86,7 @@ constexpr uint64_t fmix64(uint64_t k) {
 // The rule home of the quarantine plugin refuses a
 // second body (utils/tools/quarantine/home.cpp).
 //
-// MerkleDag.h, Graph.h and ExprPool.h fold with it, and Expr.h is upstream
-// of all of them.
+// MerkleDag.h folds with it, and Expr.h is upstream of MerkleDag.h.
 [[nodiscard]] constexpr uint64_t combine_ids(uint64_t a, uint64_t b) noexcept {
     a ^= b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2);
     return fmix64(a);

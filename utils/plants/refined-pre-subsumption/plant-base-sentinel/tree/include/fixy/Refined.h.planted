@@ -4,12 +4,12 @@
 
 namespace fixy {
 
-struct IsPositive {};
+struct IsNonNegative {};
 struct IsNonZero {};
 template <unsigned Max>
 struct BoundedAbove {};
 
-inline constexpr IsPositive positive{};
+inline constexpr IsNonNegative non_negative{};
 inline constexpr IsNonZero non_zero{};
 template <unsigned Max>
 inline constexpr BoundedAbove<Max> bounded_above{};

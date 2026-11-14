@@ -4,9 +4,9 @@
 //
 // is_power_of_two_le(x, bound) returns true iff x is a power of two AND
 // 0 < x <= bound.  Unlike the other Decide predicates fuzzed so far, it
-// has FIVE real production cites — SwissCtrl::kGroupWidth (SIMD group
+// has real production cites — SwissCtrl::kGroupWidth (SIMD group
 // width), the KernelCache lock-free slot-table size, and the RecipePool
-// / ExprPool / ExprPool-int-cache capacities — all capacity invariants
+// capacity — all capacity invariants
 // for open-addressing / SIMD structures where a non-power-of-two size
 // silently breaks the `x & (x-1)` mask arithmetic.  A regression here
 // corrupts hash-table probing, so it is the highest-value Decide

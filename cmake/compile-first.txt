@@ -13,8 +13,6 @@ bench_content_hash
 bench_decide_compile_time
 bench_diag_emission
 bench_dispatch
-bench_expr_pool
-bench_graph
 bench_iteration_detector
 bench_kernel_cache
 bench_merkle_dag
@@ -59,7 +57,6 @@ layer_walks_across_headers_1
 layer_walks_across_headers_2
 layer_walks_across_headers_3
 prop_checked_arith
-prop_expr_pool_intern
 rejections_generated
 test_armed_roster
 test_atom
@@ -81,14 +78,12 @@ test_concurrent_swmr_session
 test_crucible_context
 test_diag
 test_endpoint
-test_expr_pool_fast_symbol
 test_federation_protocol
 test_fn
 test_forgeable_proofs
 test_fs
 test_iteration_detector
 test_lattices_bands
-test_lower
 test_merkle_dag
 test_meta_log
 test_metalog_session

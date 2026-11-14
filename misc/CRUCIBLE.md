@@ -2589,7 +2589,7 @@ The 17-layer model maps onto specific realtime mechanisms. This table is the "ho
 | L3 Memory | `mlock2(MLOCK_ONFAULT)` + `MADV_HUGEPAGE` on PoolAllocator, MemoryPlan; prefault walk | `src/rt/MemoryHardening.cpp` (new), hooks into `include/crucible/PoolAllocator.h` |
 | L4 Operations | Dispatch thread on SCHED_DEADLINE, pinned, RSEQ for TraceRing head | `src/rt/DispatchThread.cpp` (new) |
 | L5 Tensors | ConductorTensorImpl storage backed by L3 pools — no heap alloc in tensor lifecycle | existing `include/crucible/Tensor.h`, verified by L0 |
-| L6 Graphs | TraceGraph build on WARM thread; atomic pointer swap to publish | existing `include/crucible/Graph.h`, §7 |
+| L6 Graphs | TraceGraph build on WARM thread; atomic pointer swap to publish | existing `include/crucible/TraceGraph.h`, §7 |
 | L7 Merkle DAG | Release-store / acquire-load at swap site; never a lock on hot read path | existing `include/crucible/MerkleDag.h` |
 | L8–L12 Intelligence | All analyses on WARM; modifications published via atomic swap at iteration boundary | existing; no new realtime code |
 | L13 Distribution | NIC-local NUMA for comm thread; GPUDirect RDMA for bulk; UCX not ibverbs-direct | `src/rt/CommThread.cpp` (new), §5 CNTP |

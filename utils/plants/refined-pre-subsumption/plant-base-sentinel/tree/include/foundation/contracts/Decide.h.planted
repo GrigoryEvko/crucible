@@ -4,8 +4,8 @@
 namespace foundation::decide {
 
 template <class T>
-constexpr bool positive(T value) noexcept {
-    return value > 0;
+constexpr bool non_negative(T value) noexcept {
+    return value >= 0;
 }
 
 template <class T>

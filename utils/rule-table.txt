@@ -471,9 +471,7 @@ seal include/crucible/MerkleDag.h include/crucible/ledger/ include/fixy/ledger/ 
 seal include/crucible/KernelCache.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
 seal include/crucible/DimHash.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
 seal include/crucible/TraceGraph.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
-seal include/crucible/Graph.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
 seal include/crucible/Expr.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
-seal include/crucible/ExprPool.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
 seal include/crucible/CKernel.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
 seal include/crucible/StorageNbytes.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/
 seal include/crucible/PoolAllocator.h include/crucible/ledger/ include/fixy/ledger/ include/foundation/ledger/

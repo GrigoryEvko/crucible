@@ -4,7 +4,7 @@
 
 layer floor 0 include/
 
-cite fixy::IsPositive positive
+cite fixy::IsNonNegative non_negative
 cite fixy::IsNonZero is_non_zero non_zero
 cite fixy::BoundedAbove in_range bounded_above
 

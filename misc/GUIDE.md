@@ -523,7 +523,7 @@ residency, quarantine, and hardening policy.
 
 **Phase 1: Foundation (DONE — 9.5K lines and 24 tests at the end of the phase, built then with Clang 22 and GCC 15. The tree builds only with GCC 16 at this time, §I)**
 
-L4 Operations: TraceRing SPSC, MetaLog, recording pipeline. L6 Graphs: TraceGraph CSR. L7 Merkle DAG: RegionNode, BranchNode, content/merkle hashing. L3 Memory: MemoryPlan sweep-line, PoolAllocator. L4/L7 Compiled Tier 1: ReplayEngine, CrucibleContext, dispatch_op, divergence recovery. L2 Kernels: CKernel 146-op taxonomy. L14: Serialize/Deserialize, Cipher. L6 Graph IR: Graph.h, ExprPool, SymbolTable. L0 partial: Met(X) effect rows + cap tags (`foundation/effects/Effect.h`, which defines `Alloc / IO / Block` and `Bg / Init / Test`, `foundation/effects/Computation.h`, `foundation/effects/Row.h`), Reflect.h (reflect_hash). Vessel: PyTorch adapter.
+L4 Operations: TraceRing SPSC, MetaLog, recording pipeline. L6 Graphs: TraceGraph CSR. L7 Merkle DAG: RegionNode, BranchNode, content/merkle hashing. L3 Memory: MemoryPlan sweep-line, PoolAllocator. L4/L7 Compiled Tier 1: ReplayEngine, CrucibleContext, dispatch_op, divergence recovery. L2 Kernels: CKernel 146-op taxonomy. L14: Serialize/Deserialize, Cipher. L0 partial: Met(X) effect rows + cap tags (`foundation/effects/Effect.h`, which defines `Alloc / IO / Block` and `Bg / Init / Test`, `foundation/effects/Computation.h`, `foundation/effects/Row.h`), Reflect.h (reflect_hash). Vessel: PyTorch adapter.
 
 **Phase 2a: Safety Foundation (IN FLIGHT)**
 
@@ -709,7 +709,7 @@ struct TensorSlot {
 
 **Discipline:**
 - Every semantic value is a strong type. No raw `uint32_t` for anything with meaning.
-- IDs: `OpIndex`, `SlotId`, `NodeId`, `SymbolId`, `MetaIndex`, `KernelId` (all `CRUCIBLE_STRONG_ID(Name, Word)` → `explicit(Word)`, `.raw()`, `.none()`, `<=>`, no arithmetic). `MetaIndex` has a `uint64_t` word: it counts metadata records, and 32 bits wrap in hours. Each other ID has a `uint32_t` word.
+- IDs: `OpIndex`, `SlotId`, `NodeId`, `MetaIndex`, `KernelId` (all `CRUCIBLE_STRONG_ID(Name, Word)` → `explicit(Word)`, `.raw()`, `.none()`, `<=>`, no arithmetic). `MetaIndex` has a `uint64_t` word: it counts metadata records, and 32 bits wrap in hours. Each other ID has a `uint32_t` word.
 - Hashes: `SchemaHash`, `ShapeHash`, `ContentHash` (all `CRUCIBLE_STRONG_HASH(Name)`).
 - Enums: `enum class` with explicit underlying type. Convert via `std::to_underlying()` only.
 - Bit reinterpretation: `std::bit_cast<T>()` only, with the limits of §IV. `reinterpret_cast` is BANNED.
@@ -2124,13 +2124,13 @@ two ways:
   in `CRUCIBLE_CONTRACT_IGNORE_TUS`, and only in a Release build with
   `CRUCIBLE_BENCH`.
 - `crucible_contract_ignore_target()` of `cmake/ContractSemantic.cmake`
-  applies it to four test targets in every build. In
+  applies it to three test targets in every build. In
   `test/foundation/CMakeLists.txt`, `test_pre_post_cost` measures the ignore
   arm of `CRUCIBLE_PRE`, and `test_swiss_table_buffer_ignore` shows that the
   capacity check and the size check of the Swiss table buffer still abort when
   no contract clause checks. In `test/CMakeLists.txt`,
-  `test_crucible_context_migration_ignore` and `test_expr_pool_capacity_ignore`
-  run the tests of their source file under the ignore semantic.
+  `test_crucible_context_migration_ignore` runs the tests of its source file
+  under the ignore semantic.
 
 `observe` does not mean the program keeps running. P2900 says the handler returns
 and execution resumes, but this project's `handle_contract_violation`
@@ -2612,7 +2612,7 @@ The other rules of the table count findings or facts, and no rule gives a warnin
 
 ### Hot path is header-only
 
-- **Hot path** (`TraceRing`, `Arena`, `Graph`, `Expr`, `MerkleDag`, `CKernel`, `PoolAllocator`): header-only. Enables cross-TU inlining even without LTO.
+- **Hot path** (`TraceRing`, `Arena`, `Expr`, `MerkleDag`, `CKernel`, `PoolAllocator`): header-only. Enables cross-TU inlining even without LTO.
 - **Cold path** (Cipher cold tier, serialization, CLI, tools): `.h` + `.cpp` split. Reduces rebuild cost when implementation changes.
 - **Templates**: always header-only (mandatory).
 - **`inline` functions**: header-only with `inline` keyword (ODR).
@@ -2900,7 +2900,7 @@ Test names (fuzzer property checks, gtest-style names) obey the same rule: `prop
 Five categories of short names are exempt because they ARE the standard vocabulary in their domain — renaming them would make the code less recognizable, not more:
 
 - **Crucible ontology primitives**: `Vigil`, `Keeper`, `Relay`, `Cipher`, `Canopy`, `Meridian`, `Observe`, `Warden`, `Vessel` are full words and fine at any length. Their short aliases in hot paths are not — use the full name.
-- **Hot-path idiomatic short names** canonical in Crucible: `op` (Op), `args` (const Expr* const*), `nargs` (uint8_t), `ndim` (uint8_t), `dtype` (ScalarType), `a` (the `::foundation::effects::Alloc` capability parameter of every Arena/ExprPool/MerkleDag/Graph allocator function), `arena` (the `Arena&` beside it), `ctx` (an execution context: `foundation::effects::ExecCtx` in a ctx-bound mint, or `CrucibleContext`), `bg` (`::foundation::effects::Bg` context — the background-thread context that holds the Alloc, IO and Block atoms), `fg` (the foreground context. Its capability type is `foundation::effects::ctx_cap::Fg`, and it permits no effect atom, because hot-path code holds no capability), `ms` (MetaIndex strong ID), `ring` (TraceRing&). Established in TraceRing.h / ExprPool.h / MerkleDag.h; rename would be churn.
+- **Hot-path idiomatic short names** canonical in Crucible: `op` (an operation), `args` (the arguments of an operation), `ndim` (uint8_t), `dtype` (ScalarType), `a` (the `::foundation::effects::Alloc` capability parameter of every Arena/MerkleDag allocator function), `arena` (the `Arena&` beside it), `ctx` (an execution context: `foundation::effects::ExecCtx` in a ctx-bound mint, or `CrucibleContext`), `bg` (`::foundation::effects::Bg` context — the background-thread context that holds the Alloc, IO and Block atoms), `fg` (the foreground context. Its capability type is `foundation::effects::ctx_cap::Fg`, and it permits no effect atom, because hot-path code holds no capability), `ms` (MetaIndex strong ID), `ring` (TraceRing&). Established in TraceRing.h / MerkleDag.h; rename would be churn.
 - **Binary-operation sides** (the FX/parser convention, preserved): `lhs` / `rhs` inside `add(lhs, rhs)`, `mul(lhs, rhs)`, `compare(lhs, rhs)`. Fine in accessors (`binop_lhs()`, `binop_rhs()`) because they project fields whose semantics are exactly "left side" / "right side".
 - **Loop induction variables** over a compile-time small range: `i`, `j`, `d` (dimension), `k` inside `for (uint8_t d = 0; d < ndim; ++d)`. `d` for dimension is idiomatic because `ndim` is the canonical spelling of the upper bound.
 - **Template type parameters** in generic code: `T`, `U`, `V`, `T1`, `T2` are canonical STL-style naming. A template parameter named `Predicate` is fine; one named `Fn` or `F` depends on role — a type-erased callable is `Callable` or `Predicate`, not `F`. Single-letter OK only for type-level `T`-style.

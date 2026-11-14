@@ -185,7 +185,6 @@ enum class TrainingPhase : uint8_t {
 CRUCIBLE_STRONG_ID(OpIndex, uint32_t);
 CRUCIBLE_STRONG_ID(SlotId, uint32_t);
 CRUCIBLE_STRONG_ID(NodeId, uint32_t);
-CRUCIBLE_STRONG_ID(SymbolId, uint32_t);
 // The count of the first record of a run in the metadata log, from the first
 // record that the log held.  The count only grows, and 64 bits do not wrap in
 // the life of a process.  The slot of the record is the count masked by the

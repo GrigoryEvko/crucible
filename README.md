@@ -71,7 +71,7 @@ include/fixy/handle/             Handles that a caller sets or publishes one tim
 include/fixy/os/                 Doors to the operating system: files, maps, sockets, threads, time
 include/fixy/session/            Binary and multiparty session types, subtyping, crash-stop
 include/crucible/                Layer 3, namespace crucible: the runtime.  Arena, TraceRing,
-                                 MetaLog, TraceGraph, MerkleDag, Graph, ExprPool, CKernel, Philox,
+                                 MetaLog, TraceGraph, MerkleDag, CKernel, Philox,
                                  Serialize, ReplayEngine, PoolAllocator, Vigil, RecipeRegistry
 include/crucible/cipher/         The computation cache and its federation protocol
 include/crucible/cntp/           The CNTP network transport: congestion control, pacing, FEC

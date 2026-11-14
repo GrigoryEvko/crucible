@@ -8,10 +8,10 @@
 compile sentinel src/uses.cpp sentinel=include/fixy/Uses.h stage=c
 exit sentinel pass
 judge sentinel
-finding sentinel refined-pre-subsumption retest include/fixy/Uses.h:13:46 | planted::header_retest: count: decide::positive
-finding sentinel refined-pre-subsumption retest include/fixy/Uses.h:19:46 | planted::template_retest: count: decide::positive
-finding sentinel refined-pre-subsumption retest include/fixy/Uses.h:26:50 | planted::Holder::member_retest: count: decide::positive
-finding sentinel refined-pre-subsumption retest include/fixy/Uses.h:35:54 | planted::local_class_retest::Local::retest: count: decide::positive
+finding sentinel refined-pre-subsumption retest include/fixy/Uses.h:13:50 | planted::header_retest: count: decide::non_negative
+finding sentinel refined-pre-subsumption retest include/fixy/Uses.h:19:50 | planted::template_retest: count: decide::non_negative
+finding sentinel refined-pre-subsumption retest include/fixy/Uses.h:26:54 | planted::Holder::member_retest: count: decide::non_negative
+finding sentinel refined-pre-subsumption retest include/fixy/Uses.h:35:58 | planted::local_class_retest::Local::retest: count: decide::non_negative
 
 compile plain src/uses.cpp stage=c
 exit plain pass
@@ -20,4 +20,4 @@ judge plain
 compile main src/base/main.cpp stage=c
 exit main pass
 judge main
-finding main refined-pre-subsumption retest src/base/main.cpp:10:46 | planted::main_retest: count: decide::positive
+finding main refined-pre-subsumption retest src/base/main.cpp:10:50 | planted::main_retest: count: decide::non_negative

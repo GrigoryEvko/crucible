@@ -6,8 +6,8 @@
 
 namespace planted {
 
-int main_retest(fixy::Refined<fixy::positive, int> count) {
-    CRUCIBLE_PRE(foundation::decide::positive(count.value()));
+int main_retest(fixy::Refined<fixy::non_negative, int> count) {
+    CRUCIBLE_PRE(foundation::decide::non_negative(count.value()));
     return count.value();
 }
 

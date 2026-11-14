@@ -5,9 +5,9 @@
 compile retest src/retest.cpp stage=c
 exit retest pass
 judge retest
-finding retest refined-pre-subsumption retest src/retest.cpp:13:46 | planted::plain: count: decide::positive
+finding retest refined-pre-subsumption retest src/retest.cpp:13:50 | planted::plain: count: decide::non_negative
 finding retest refined-pre-subsumption retest src/retest.cpp:17:46 | planted::nested_bound: index: decide::in_range
-finding retest refined-pre-subsumption retest src/retest.cpp:21:51 | planted::const_parameter: count: decide::positive
-finding retest refined-pre-subsumption retest src/retest.cpp:25:50 | planted::through_alias: count: decide::positive
+finding retest refined-pre-subsumption retest src/retest.cpp:21:55 | planted::const_parameter: count: decide::non_negative
+finding retest refined-pre-subsumption retest src/retest.cpp:25:54 | planted::through_alias: count: decide::non_negative
 finding retest refined-pre-subsumption retest src/retest.cpp:29:49 | planted::sealed: divisor: decide::is_non_zero
-finding retest refined-pre-subsumption retest src/retest.cpp:35:30 | planted::split_over_lines: count: decide::positive
+finding retest refined-pre-subsumption retest src/retest.cpp:35:34 | planted::split_over_lines: count: decide::non_negative

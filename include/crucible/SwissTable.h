@@ -120,8 +120,7 @@ struct CtrlGroup {
     Bytes ctrl{};
 
     // The group_width() control bytes from pos.  The bytes need no alignment.
-    // The pointer stays, because the intern probe of ExprPool holds its
-    // control bytes as a raw int8_t pointer.
+    // The tests and the bench hold their control bytes as a raw int8_t pointer.
     [[nodiscard]] CRUCIBLE_INLINE static CtrlGroup load(const int8_t* pos) {
         return {::foundation::simd::load<Bytes>(pos)};
     }

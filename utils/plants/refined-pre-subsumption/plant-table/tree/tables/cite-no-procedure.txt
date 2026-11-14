@@ -1,2 +1,2 @@
 quarantine src/
-cite fixy::IsPositive
+cite fixy::IsNonNegative

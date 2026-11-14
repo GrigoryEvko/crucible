@@ -1,3 +1,3 @@
-cite fixy::IsPositive positive
+cite fixy::IsNonNegative non_negative
 cite fixy::BoundedAbove in_range bounded_above
 quarantine src/

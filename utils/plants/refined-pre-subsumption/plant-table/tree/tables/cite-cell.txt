@@ -1,2 +1,2 @@
 quarantine src/
-cite fixy::IsPositive positive | a cite row has no reason
+cite fixy::IsNonNegative non_negative | a cite row has no reason

@@ -6,8 +6,8 @@
 
 namespace planted {
 
-int out_of_scope(fixy::Refined<fixy::positive, int> count) {
-    CRUCIBLE_PRE(foundation::decide::positive(count.value()));
+int out_of_scope(fixy::Refined<fixy::non_negative, int> count) {
+    CRUCIBLE_PRE(foundation::decide::non_negative(count.value()));
     return count.value();
 }
 

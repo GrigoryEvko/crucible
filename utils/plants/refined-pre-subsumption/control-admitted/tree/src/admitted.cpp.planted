@@ -7,8 +7,8 @@
 
 namespace planted {
 
-int kept(fixy::Refined<fixy::positive, int> count) {
-    CRUCIBLE_PRE(foundation::decide::positive(count.value()));  // REFINED-PRE-OK: a planted deliberate test
+int kept(fixy::Refined<fixy::non_negative, int> count) {
+    CRUCIBLE_PRE(foundation::decide::non_negative(count.value()));  // REFINED-PRE-OK: a planted deliberate test
     return count.value();
 }
 

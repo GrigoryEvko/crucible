@@ -1544,7 +1544,7 @@ endif()
 # under that option.  One consequence is worth stating plainly: with
 # the plain `release` preset (CRUCIBLE_BENCH=OFF) this block does
 # nothing, so every TU in that build evaluates its contracts.  The
-# exceptions are the four test targets that call
+# exceptions are the three test targets that call
 # crucible_contract_ignore_target() of cmake/ContractSemantic.cmake, in
 # test/CMakeLists.txt and test/foundation/CMakeLists.txt.
 if(CMAKE_BUILD_TYPE MATCHES "Release" AND CRUCIBLE_BENCH)

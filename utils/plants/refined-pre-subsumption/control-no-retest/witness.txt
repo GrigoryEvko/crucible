@@ -9,4 +9,4 @@ judge clean
 compile scoped test/scoped.cpp stage=c
 exit scoped pass
 judge scoped
-finding scoped refined-pre-subsumption retest test/scoped.cpp:10:46 | planted::out_of_scope: count: decide::positive
+finding scoped refined-pre-subsumption retest test/scoped.cpp:10:50 | planted::out_of_scope: count: decide::non_negative

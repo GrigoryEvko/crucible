@@ -4,7 +4,7 @@
 namespace planted {
 
 int call_header() {
-    return header_retest(fixy::Refined<fixy::positive, int>{1});
+    return header_retest(fixy::Refined<fixy::non_negative, int>{1});
 }
 
 }  // namespace planted

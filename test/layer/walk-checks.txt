@@ -14,12 +14,10 @@
 #   each weight, and --measure BUILD_DIR measures each weight again.
 crucible/CKernel.cpp | 0.5 | ::fixy::tags::admitted_retags
 crucible/DimHash.cpp | 0.0 | ::fixy::tags::admitted_retags
-crucible/Expr.cpp | 0.0 | ::fixy::tags::admitted_retags
 crucible/MetaLogSession.cpp | 0.2 | ::fixy::session::combinators
 crucible/Serialize.cpp | 1.6 | ::fixy::tags::admitted_retags
 crucible/SingletonInitGraph.cpp | 0.1 | unknown
 crucible/SwissTable.cpp | 0.1 | unknown
-crucible/SymbolTable.cpp | 0.1 | ::fixy::tags::admitted_retags
 crucible/TensorMeta.cpp | 0.0 | ::fixy::tags::admitted_retags
 crucible/TraceRing.cpp | 0.1 | unknown
 crucible/Types.cpp | 0.2 | ::crucible

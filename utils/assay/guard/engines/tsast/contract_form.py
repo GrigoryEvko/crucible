@@ -40,7 +40,7 @@ THE ASSUMPTION
     `.` or `->` (the rule removes `this->`), or the receiver of a call of a
     member function.  These are no subject: a called function, a name after a
     namespace or a class, a type and a name in capital letters.
-    For example, `[[assume(n > 0)]]` after `CRUCIBLE_PRE(decide::positive(n))`
+    For example, `[[assume(n > 0)]]` after `CRUCIBLE_PRE(decide::is_non_zero(n))`
     is an error, and `[[assume(p->size > 0)]]` after
     `CRUCIBLE_PRE(p != nullptr)` is not.  The entity of the kind is
     `FUNCTION: SUBJECTS`.

@@ -208,7 +208,6 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   target_compile_options(test_swiss_table_avx2 PRIVATE -mavx2 -mno-avx512f)
 endif()
 crucible_test(test_meta_log)
-crucible_test(test_symbol_table)
 crucible_test(test_cntp_backpressure)
 crucible_test(test_cntp_connection_pool)
 crucible_test(test_cntp_congestion_control)
@@ -299,8 +298,6 @@ target_compile_definitions(test_process_wide_across_libraries PRIVATE
   STATIC_TLS_CONTROL_PATH="$<TARGET_FILE:test_static_tls_control>"
   STATIC_TLS_PLANT_PATH="$<TARGET_FILE:test_static_tls_plant>")
 set_tests_properties(test_process_wide_across_libraries PROPERTIES ENVIRONMENT_MODIFICATION "GLIBC_TUNABLES=unset:")
-crucible_test(test_graph)
-crucible_test(test_lower)
 crucible_test(test_reflect)
 crucible_test(test_pool_allocator)
 crucible_test(test_replay_engine)
@@ -557,12 +554,6 @@ crucible_test(test_vessel_api_typed)
 crucible_test(test_vessel_entry_slots)
 crucible_test(test_storage_nbytes_simd)
 crucible_test(test_trace_ring_pop_batch)
-crucible_test(test_expr_pool_fast_symbol)
-# A reserve past the capacity bound is refused before the table is allocated,
-# under the contract semantic of the preset and under the ignore semantic.
-crucible_test(test_expr_pool_capacity)
-crucible_test(test_expr_pool_capacity_ignore test_expr_pool_capacity.cpp)
-crucible_contract_ignore_target(test_expr_pool_capacity_ignore)
 # Each group of tests that drives a Vigil is a source file of its own, so
 # that no translation unit compiles all of them.
 crucible_test(test_region_cache test_region_cache.cpp test_region_cache_switch.cpp test_region_cache_migration.cpp
@@ -1809,20 +1800,6 @@ crucible_neg_compile_test(neg_schema_register_abi_boundary_name
   "neg_schema_register_abi_boundary_name.cpp:23:42: error: no matching function for call to .register_schema_name"
   "required for the satisfaction of .SchemaNameSource<Tag>. \\[with Tag = fixy::tags::source::ABIBoundary\\]")
 
-# SymbolTable::add() returns
-# InternalSymbolId = Tagged<SymbolId, source::FromInternal>.  Two HS14
-# fixtures cover the mint boundary's two soundness directions:
-#   * neg_symbol_table_add_raw_symbol_id — internal Tagged value cannot
-#     decay to raw SymbolId without explicit .value().
-#   * neg_symbol_table_add_cross_tag — internal provenance cannot pass
-#     as source::External.
-crucible_neg_compile_test(neg_symbol_table_add_raw_symbol_id
-  "conversion from .crucible::InternalSymbolId. .aka .fixy::Tagged<crucible::SymbolId, fixy::tags::source::FromInternal>.."
-  "to non-scalar type .crucible::SymbolId. requested")
-crucible_neg_compile_test(neg_symbol_table_add_cross_tag
-  "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::FromInternal>."
-  "to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>. requested")
-
 # The ring storage of TransactionLog<N> is fixy::CyclicBuffer<Transaction,
 # N>, and two gates hold the positive power-of-two capacity:
 #   * _non_power_of_two (N = 7): the class-body static_assert and the
@@ -1861,28 +1838,6 @@ crucible_neg_compile_test(neg_transaction_region_raw_pointer
 crucible_neg_compile_test(neg_transaction_region_loaded_cross_tag
   "neg_transaction_region_loaded_cross_tag.cpp:33:33: error: cannot convert"
   ".Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Loaded>. to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>.")
-
-# lower_trace_to_graph requires Recorded/Replayed
-# TraceGraph provenance and propagates that source to the returned Graph.
-crucible_neg_compile_test(neg_lower_trace_graph_raw_input
-  "no matching function for call to .lower_trace_to_graph<LowerBgAllocRow>\\(foundation::effects::cap::Alloc&, crucible::TraceGraph\\*,"
-  "mismatched types .fixy::Tagged<const crucible::TraceGraph\\*, Source>. and .crucible::TraceGraph\\*.")
-crucible_neg_compile_test(neg_lower_trace_graph_cross_source
-  "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Replayed>."
-  "to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Recorded>. requested")
-
-# lower_trace_to_graph runs in the background
-# compilation path and allocates Graph scratch.  Required row is
-# Row<Bg, Alloc>; pure, Alloc-only, and Bg-only callers are rejected.
-crucible_neg_compile_test(neg_lower_trace_graph_pure_row
-  "no matching function for call to .lower_trace_to_graph<foundation::effects::Row<> >"
-  "required for the satisfaction of .Subrow<foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>, CallerRow>. .with CallerRow = foundation::effects::Row<>.")
-crucible_neg_compile_test(neg_lower_trace_graph_alloc_only_row
-  "no matching function for call to .lower_trace_to_graph<foundation::effects::Row<foundation::effects::Effect::Alloc> >"
-  "required for the satisfaction of .Subrow<foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>, CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Alloc>.")
-crucible_neg_compile_test(neg_lower_trace_graph_bg_only_row
-  "no matching function for call to .lower_trace_to_graph<foundation::effects::Row<foundation::effects::Effect::Bg> >"
-  "required for the satisfaction of .Subrow<foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>, CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Bg>.")
 
 # Transaction::step_id is fixy::Monotonic<uint64_t>.
 #   * neg_transaction_step_id_assign_from_raw: Monotonic has no assignment
@@ -3120,19 +3075,6 @@ crucible_neg_compile_test(neg_types_hash_family_cross_lane
   "static assertion failed"
   "the expression .is_same_v<typename crucible::hash_family_of<[A-Za-z_][A-Za-z0-9_]*>::family, crucible::hash_family::FamilyB> .with HashT = crucible::ContentHash.. evaluated to .false.")
 
-# Expr::hash is fixy::Tagged<uint64_t, hash_family::FamilyB>.  The two
-# fixtures take that type from the field.
-#   - neg_expr_hash_bare_u64_assign: a bare uint64_t does not convert,
-#     because the constructor from the value is explicit and private.
-#   - neg_expr_hash_cross_family: a Family-A hash does not convert,
-#     because the two families are different types.
-crucible_neg_compile_test(neg_expr_hash_bare_u64_assign
-  "neg_expr_hash_bare_u64_assign.cpp:29:39: error: no match for .operator=. \\(operand types are .ExprHash. \\{aka .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>.\\} and .uint64_t."
-  "no known conversion for argument 1 from .uint64_t. \\{aka .long unsigned int.\\} to .const fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>&.")
-crucible_neg_compile_test(neg_expr_hash_cross_family
-  "neg_expr_hash_cross_family.cpp:31:21: error: no match for .operator=. \\(operand types are .ExprHash. \\{aka .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>.\\} and .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyA>.\\)"
-  "no known conversion for argument 1 from .fixy::Tagged<long unsigned int, crucible::hash_family::FamilyA>. to .const fixy::Tagged<long unsigned int, crucible::hash_family::FamilyB>&.")
-
 # ─── IsReflectFieldSupported HS14 negative-compile fixtures ───────
 #   - neg_reflect_supported_void           (void excluded from allow-list)
 #   - neg_reflect_supported_function_type  (function types excluded)
@@ -3302,40 +3244,6 @@ crucible_neg_compile_test(neg_swiss_group_width_zero
 crucible_neg_compile_test(neg_swiss_group_width_not_power_of_two
   "__builtin_trap.*is not a constant expression"
   "mint_refined<IsPowerOfTwo\\(\\), long unsigned int>\\(48\\)")
-
-# ExprPool reads int_cache_ through IntCacheLiteral, which is
-# Refined<in_range<-128, 127>, int64_t>.  Two fixtures pin the two ends
-# of the closed range: -129 is one below the low end, and 128 is one
-# above the high end.  The first regex says that the precondition of
-# the door failed.  The second names the door, its predicate and the
-# value, so the rejection is the one under test.
-crucible_neg_compile_test(neg_expr_pool_int_cache_literal_below_low
-  "__builtin_trap.*is not a constant expression"
-  "mint_refined<InRange<-128, 127>\\(\\), long int>\\(-129\\)")
-crucible_neg_compile_test(neg_expr_pool_int_cache_literal_above_high
-  "__builtin_trap.*is not a constant expression"
-  "mint_refined<InRange<-128, 127>\\(\\), long int>\\(128\\)")
-
-# ExprPool::capacity_ is a PowerOfTwo<size_t>, and intern_count_ is a
-# Monotonic<size_t>.  The fixtures pin two absences: no capacity that is
-# not a power of two, and no assignment of a raw integer to the intern
-# count.
-crucible_neg_compile_test(neg_expr_pool_capacity_not_power_of_two
-  "__builtin_trap.*is not a constant expression"
-  "mint_refined<IsPowerOfTwo\\(\\), long unsigned int>\\(12\\)")
-crucible_neg_compile_test(neg_expr_pool_intern_count_assign_raw
-  "no match for .operator=."
-  "crucible::ExprPool::InternCount.*fixy::Monotonic<long unsigned int")
-
-# ExprPool::make returns DetSafe<Pure, Tagged<const Expr*,
-# source::Interned>>.  A raw Expr* and a value at the same tier with a
-# different source tag must both fail at the consumer.
-crucible_neg_compile_test(neg_expr_pool_make_raw_expr
-  "could not convert"
-  "from .const crucible::Expr\\*. to .crucible::ExprPool::PureInternedExpr.")
-crucible_neg_compile_test(neg_expr_pool_make_cross_tag
-  "could not convert"
-  "source::External>>. to .Graded<.*source::Interned>>")
 
 # RecipePool::capacity_ is a PowerOfTwo<uint32_t>, and size_ is a
 # Monotonic<uint32_t>.  The fixtures pin two absences: no capacity that
