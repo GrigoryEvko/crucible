@@ -57,8 +57,8 @@ namespace crucible::detail {
     // The load is the element-aligned form. The descriptor is aligned for
     // its element type and no further, so the vector-aligned form would be
     // unsound even though each array is a full vector wide.
-    auto sizes = ::foundation::simd::load<i64x8>(meta.sizes.raw_data());
-    auto strides = ::foundation::simd::load<i64x8>(meta.strides.raw_data());
+    auto sizes = ::foundation::simd::load<i64x8>(meta.sizes.lanes());
+    auto strides = ::foundation::simd::load<i64x8>(meta.strides.lanes());
 
     // The first half of the constant table is for extents and the second
     // half for strides. Element-aligned again: the table is a plain global.

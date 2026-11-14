@@ -162,7 +162,7 @@ static void test_natural_tensor_meta_alignment() {
     assert(chosen != 0);
 
     auto* meta = std::construct_at(std::bit_cast<TensorMeta*>(chosen), make_meta({16, 32, 64}, {2048, 64, 1}));
-    assert(std::bit_cast<std::uintptr_t>(meta->sizes.raw_data()) % 64 != 0);
+    assert(!::fixy::address_of(::fixy::to(meta->sizes.lanes().at(::fixy::index<0>()))).is_aligned<64>());
     check_equiv(*meta, "natural-align-not-vector-align");
     std::destroy_at(meta);
 

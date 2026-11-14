@@ -97,6 +97,21 @@ static void test_load_bytes() {
     crucible::test::pass("  test_load_bytes: PASSED\n");
 }
 
+// A load from the lanes of one register gives each lane its element, the
+// lowest lane first.  The window starts one element in, so the load reads
+// an address that has only the alignment of the element.
+static void test_load_lanes() {
+    ::foundation::core::FixedArray<int64_t, 9> lanes{};
+    for (auto index : lanes.indices()) {
+        lanes.at(index) = static_cast<int64_t>(index.raw()) * -3;
+    }
+    auto const v = simd::load<simd::i64x8>(lanes.view().window<8>(1).expect("8 lanes fit after the first"));
+    for (int lane = 0; lane < 8; ++lane) {
+        assert(v[lane] == static_cast<int64_t>(lane + 1) * -3);
+    }
+    crucible::test::pass("  test_load_lanes: PASSED\n");
+}
+
 // A store into the bytes of one register writes each lane as its
 // little-endian word, and touches no byte outside the window.  A bit cast
 // keeps each bit of the register.
@@ -356,7 +371,7 @@ static void test_dim_hash_equivalence_handcoded() {
     assert(chosen != 0);
     auto* unaligned =
         std::construct_at(std::bit_cast<crucible::TensorMeta*>(chosen), make_meta({16, 32, 64}, {2048, 64, 1}));
-    assert(std::bit_cast<std::uintptr_t>(unaligned->sizes.raw_data()) % 64 != 0);
+    assert(!::fixy::address_of(::fixy::to(unaligned->sizes.lanes().at(::fixy::index<0>()))).is_aligned<64>());
     expect_agree(*unaligned);
     std::destroy_at(unaligned);
 
@@ -375,6 +390,7 @@ int main() {
     test_det_safe_simd_concept();
     test_load();
     test_load_bytes();
+    test_load_lanes();
     test_store_bytes_and_bit_cast();
     test_collect_bits();
     test_for_each_register_run();

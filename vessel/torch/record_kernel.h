@@ -150,7 +150,10 @@ struct MetaCount {
             return crucible::vessel::metas_are_well_formed(ceiling_records.view());
         }(),
         "fill_meta clamps the rank to a value the trust ladder rejects, and the unboxed path relies on the clamp");
-    const auto ndim = static_cast<uint8_t>(::fixy::min(tensor.dim(), static_cast<int64_t>(kNDimCeiling)));
+    // The clamp has two sides, so the rank is a lane count from 0 to 8 for
+    // each value of dim(), and each lane index below it is below 8.
+    const auto ndim = static_cast<uint8_t>(
+        ::fixy::clamp(tensor.dim(), ::fixy::bounds<int64_t{0}, static_cast<int64_t>(kNDimCeiling)>()));
     meta.ndim = ndim;
 
     const auto sizes = tensor.sizes();
@@ -338,10 +341,10 @@ struct MetaCount {
     for (const crucible::TensorMeta& input : inputs) {
         accumulator = fnv1a_bytes(&input.ndim, 1, accumulator);
         // `sizes` is a TensorDimArray, whose lanes stay plain int64_t so a
-        // bulk reader can take the block without a copy. raw_data() is that
+        // bulk reader can take the block without a copy. lanes() is that
         // reader; only the write path goes through the refined TensorDim.
         const uint32_t nbytes = static_cast<uint32_t>(input.ndim) * static_cast<uint32_t>(sizeof(int64_t));
-        accumulator = fnv1a_bytes(input.sizes.raw_data(), nbytes, accumulator);
+        accumulator = fnv1a_bytes(&input.sizes.lanes().at(::fixy::index<0>()), nbytes, accumulator);
     }
     return crucible::ShapeHash{accumulator};
 }

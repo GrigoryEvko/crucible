@@ -1,6 +1,7 @@
 #pragma once
 
 #include <crucible/Types.h>
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <foundation/Platform.h>
@@ -37,12 +38,22 @@ inline constexpr int64_t kMaxTensorDimExtent = ::fixy::max_of<int64_t> / kTensor
 using TensorDim = ::fixy::Refined<::fixy::bounded_above<kMaxTensorDimExtent>, int64_t>;
 
 struct TensorDimArray {
+    // The index of one lane.
+    using LaneIndex = ::fixy::Index<kMaxTensorNDim>;
+
 private:
-    int64_t lanes_[kMaxTensorNDim]{};
+    ::fixy::FixedArray<int64_t, kMaxTensorNDim> lanes_{};
+
+    // The lane of a dimension.  A dimension index comes from a loop bounded
+    // by ndim, which the trust ladder bounds by the lane count, so a caller
+    // that knows the bound folds the check away.
+    [[nodiscard]] static constexpr LaneIndex lane_of_(std::size_t index) noexcept {
+        return LaneIndex::check(index).expect("a dimension index is below the lane count of a TensorDimArray");
+    }
 
 public:
     struct Slot {
-        int64_t* lane = nullptr;
+        ::fixy::Ref<int64_t> lane;
 
         constexpr void operator=(TensorDim dim) const noexcept { *lane = dim.value(); }
 
@@ -54,7 +65,7 @@ public:
     };
 
     struct ConstSlot {
-        const int64_t* lane = nullptr;
+        ::fixy::Ref<const int64_t> lane;
 
         [[nodiscard]] constexpr int64_t value() const noexcept { return *lane; }
 
@@ -63,23 +74,25 @@ public:
         }
     };
 
-    [[nodiscard]] constexpr Slot operator[](std::size_t index) noexcept { return Slot{&lanes_[index]}; }
+    [[nodiscard]] constexpr Slot operator[](std::size_t index) noexcept {
+        return Slot{::fixy::to(lanes_.at(lane_of_(index)))};
+    }
 
-    [[nodiscard]] constexpr ConstSlot operator[](std::size_t index) const noexcept { return ConstSlot{&lanes_[index]}; }
+    [[nodiscard]] constexpr ConstSlot operator[](std::size_t index) const noexcept {
+        return ConstSlot{::fixy::to(lanes_.at(lane_of_(index)))};
+    }
 
-    [[nodiscard]] constexpr int64_t* raw_data() noexcept { return lanes_; }
-
-    [[nodiscard]] constexpr const int64_t* raw_data() const noexcept { return lanes_; }
+    // Each lane, the lanes past ndim too, for a reader that takes the whole
+    // block, such as a vector load.
+    [[nodiscard]] constexpr ::fixy::View<int64_t const, kMaxTensorNDim> lanes() const& noexcept {
+        return lanes_.view();
+    }
+    void lanes() const&& = delete("a view of the lanes of a temporary block dangles at the end of the full expression");
 
     // Two blocks are equal when each lane holds the same value, the lanes
-    // past ndim too.  The compare is a loop and not a defaulted compare.  In
-    // a constant evaluation that compares two blocks, GCC 16 gives the
-    // result of the first defaulted compare of a C array for the second one.
+    // past ndim too.
     [[nodiscard]] friend constexpr bool operator==(TensorDimArray const& left, TensorDimArray const& right) noexcept {
-        for (std::size_t lane = 0; lane < kMaxTensorNDim; ++lane) {
-            if (left.lanes_[lane] != right.lanes_[lane]) return false;
-        }
-        return true;
+        return left.lanes_ == right.lanes_;
     }
 };
 

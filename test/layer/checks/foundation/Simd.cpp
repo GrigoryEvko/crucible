@@ -43,6 +43,13 @@ static_assert(RegisterBytes<u64x4, std::byte const, 32> && RegisterBytes<u8x16, 
 static_assert(!RegisterBytes<u64x4, std::byte const, 16>, "a load reads exactly the bytes of one register");
 static_assert(!RegisterBytes<u64x4, std::uint64_t const, 4>, "the View holds bytes, not lanes");
 
+// A load from lanes reads exactly the lanes of one register, of the lane
+// type of the vector.
+static_assert(RegisterLanes<u64x4, std::uint64_t const, 4> && RegisterLanes<i64x8, std::int64_t, 8>);
+static_assert(!RegisterLanes<i64x8, std::int64_t const, 4>, "a load reads each lane of one register");
+static_assert(!RegisterLanes<i64x8, std::uint64_t const, 8>, "the lanes have the lane type of the vector");
+static_assert(!RegisterLanes<u8x16, std::uint8_t const, 16>, "a View of bytes takes the load of RegisterBytes");
+
 // A sign gather reads a register of one-byte lanes, a vec or a mask.
 static_assert(ByteLaneRegister<vec<std::int8_t, 16>> && ByteLaneRegister<vec<char, 32>>
               && ByteLaneRegister<u8x32::mask_type> && ByteLaneRegister<vec<std::uint8_t, 64>>);

@@ -136,8 +136,8 @@ compute_storage_nbytes_scalar_det(ExternalTensorMeta meta) noexcept {
 
     // The descriptor is aligned for its element type and no further, so the
     // load must not assume vector alignment.
-    auto sizes = ::foundation::simd::load<i64x8>(raw.sizes.raw_data());
-    auto strides = ::foundation::simd::load<i64x8>(raw.strides.raw_data());
+    auto sizes = ::foundation::simd::load<i64x8>(raw.sizes.lanes());
+    auto strides = ::foundation::simd::load<i64x8>(raw.strides.lanes());
 
     auto valid_mask = ::foundation::simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
 
@@ -179,8 +179,8 @@ compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
     using ::foundation::simd::i64x8;
 
     // The descriptor is aligned for its element type and no further.
-    auto sizes = ::foundation::simd::load<i64x8>(raw.sizes.raw_data());
-    auto strides = ::foundation::simd::load<i64x8>(raw.strides.raw_data());
+    auto sizes = ::foundation::simd::load<i64x8>(raw.sizes.lanes());
+    auto strides = ::foundation::simd::load<i64x8>(raw.strides.lanes());
 
     auto valid_mask = ::foundation::simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
 

@@ -249,6 +249,28 @@ template <typename V, typename Byte, std::size_t Bytes>
     return V{raw};
 }
 
+// A View of the lanes of one register of V: elements of the lane type of V
+// wider than one byte, and exactly as many as V has lanes.  A View of bytes
+// takes the load of RegisterBytes.
+template <typename V, typename Lane, std::size_t Lanes>
+concept RegisterLanes =
+    requires {
+        typename V::raw_type;
+        typename V::value_type;
+    } && std::is_same_v<std::remove_const_t<Lane>, typename V::value_type> && (sizeof(Lane) > 1)
+    && Lanes * sizeof(Lane) == sizeof(typename V::raw_type);
+
+// The load of a vector from the lanes of one register, the lowest lane
+// first.  The type of the View proves the count, so the copy has no check,
+// and the lanes need no alignment beyond the alignment of their type.
+template <typename V, typename Lane, std::size_t Lanes>
+    requires RegisterLanes<V, Lane, Lanes>
+[[nodiscard]] CRUCIBLE_INLINE V load(core::View<Lane, Lanes> lanes) noexcept {
+    typename V::raw_type raw{};
+    __builtin_memcpy(&raw, first_of_(core::detail::ViewDoor::key(), lanes), sizeof(raw));
+    return V{raw};
+}
+
 template <typename V>
 CRUCIBLE_INLINE void store(V value, typename V::value_type* ptr) noexcept {
     const typename V::raw_type raw = value.raw();
