@@ -1218,6 +1218,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::topology::Topology, "a measured description of the host, read by the scheduler and never a "
                                    "template argument of a kernel signature"},
     {^^::fixy::concurrent::WorkBudget, kPayload},
+    {^^::fixy::concurrent::HostFacts, "the facts of a host that the parallelism rule reads, from the topology or "
+                                      "from a test, and never a template argument of a kernel signature"},
     {^^::fixy::concurrent::ParallelismDecision, kPayload},
     {^^::fixy::concurrent::ParallelismRule,
      "the parallelism rule: it has static members only, no object of it exists, and it is never a value"},

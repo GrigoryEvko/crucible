@@ -138,6 +138,20 @@ inline constexpr std::size_t kL3ResidentMaxFactor = 4;
 
 }  // namespace parallelism_rule_detail
 
+// The facts of a host that the rule reads.  recommend and classify read them
+// from the topology of this host.  A test gives a host of its own, such as a
+// host of one CPU, to recommend_for and classify_for.
+struct HostFacts {
+    std::size_t l1d_bytes = 0;
+    std::size_t l2_bytes = 0;
+    std::size_t l3_bytes = 0;
+    // The CPUs of the process, which a launcher mask or a cpuset can make
+    // fewer than the CPUs of the host.  A CPU quota does not.
+    std::size_t process_cpus = 1;
+    std::size_t largest_l3_group_cpus = 1;
+    std::size_t numa_nodes = 1;
+};
+
 // Stateless.  The cache sizes are read at decision time, by which point
 // the topology has already probed them.
 //
@@ -148,17 +162,24 @@ inline constexpr std::size_t kL3ResidentMaxFactor = 4;
 class ParallelismRule final : ::foundation::NoObject<ParallelismRule> {
 public:
     // The boundaries come from the host, so one byte count classifies
-    // differently on two machines.  Not gnu::pure: the first call probes the
-    // topology, and each call reads the guard of Topology::instance().
+    // differently on two machines.
+    [[nodiscard]] static constexpr Tier classify_for(HostFacts const& host, std::size_t ws_bytes) noexcept {
+        if (ws_bytes <= host.l1d_bytes) return Tier::L1Resident;
+        if (ws_bytes <= host.l2_bytes) return Tier::L2Resident;
+        if (ws_bytes <= host.l3_bytes) return Tier::L3Resident;
+        return Tier::DRAMBound;
+    }
+
+    // Not gnu::pure: the first call probes the topology, and each call reads
+    // the guard of Topology::instance().
     [[nodiscard]] static Tier classify(std::size_t ws_bytes) noexcept {
         const auto& topo = ::fixy::topology::Topology::instance();
-        const std::size_t l1d = topo.l1d_per_core_bytes();
-        const std::size_t l2 = topo.l2_per_core_bytes();
-        const std::size_t l3 = topo.l3_instance_bytes();
-        if (ws_bytes <= l1d) return Tier::L1Resident;
-        if (ws_bytes <= l2) return Tier::L2Resident;
-        if (ws_bytes <= l3) return Tier::L3Resident;
-        return Tier::DRAMBound;
+        const HostFacts caches{
+            .l1d_bytes = topo.l1d_per_core_bytes(),
+            .l2_bytes = topo.l2_per_core_bytes(),
+            .l3_bytes = topo.l3_instance_bytes(),
+        };
+        return classify_for(caches, ws_bytes);
     }
 
     // The question a caller asks when it chooses between inline and
@@ -170,54 +191,62 @@ public:
 
     // Deterministic: the same host and the same budget always give the
     // same answer.  There is no randomness and no per-call-site state.
-    [[nodiscard]] static ParallelismDecision recommend(WorkBudget budget) noexcept {
-        const auto& topo = ::fixy::topology::Topology::instance();
+    [[nodiscard]] static constexpr ParallelismDecision recommend_for(HostFacts const& host,
+                                                                     WorkBudget budget) noexcept {
         const std::size_t ws = budget.working_set_bytes();
-
-        // The CPUs of the process, which a launcher mask or a cpuset can
-        // make fewer than the CPUs of the host.  A CPU quota does not.
-        const std::size_t process_cpus = topo.process_cpu_count();
-        const std::size_t largest_group_cpus = topo.largest_l3_group_cpus();
-        const std::size_t cores_avail = process_cpus == 0 ? 1 : process_cpus;
-        const std::size_t group_cpus = largest_group_cpus == 0 ? 1 : largest_group_cpus;
+        const std::size_t cores_avail = host.process_cpus == 0 ? 1 : host.process_cpus;
+        const std::size_t group_cpus = host.largest_l3_group_cpus == 0 ? 1 : host.largest_l3_group_cpus;
 
         ParallelismDecision dec;
-        dec.tier = classify(ws);
+        dec.tier = classify_for(host, ws);
 
         // The set is already hot in one core's private cache, so a
         // second worker buys invalidation traffic and nothing else.
-        if (is_core_private_tier(dec.tier)) {
-            dec.kind = ParallelismDecision::Kind::Sequential;
-            dec.factor = 1;
-            dec.numa = NumaPolicy::NumaIgnore;
-            return dec;
-        }
+        if (is_core_private_tier(dec.tier)) return dec;
 
-        // The set fits one L3 instance.  The factor is at most the count
-        // of the CPUs of the largest L3 group, which largest_l3_group_cpus
-        // gives, and the intent keeps the workers on one NUMA node.
+        std::size_t want = 1;
+        NumaPolicy numa = NumaPolicy::NumaIgnore;
         if (dec.tier == Tier::L3Resident) {
+            // The set fits one L3 instance.  The factor is at most the
+            // count of the CPUs of the largest L3 group, and the intent
+            // keeps the workers on one NUMA node.
             constexpr std::size_t max_factor = parallelism_rule_detail::kL3ResidentMaxFactor;
             const std::size_t usable_in_group = cores_avail < group_cpus ? cores_avail : group_cpus;
-            const std::size_t want = max_factor < usable_in_group ? max_factor : usable_in_group;
-            dec.kind = ParallelismDecision::Kind::Parallel;
-            dec.factor = parallelism_rule_detail::round_to_factor_ladder(want);
-            dec.numa = NumaPolicy::NumaLocal;
-            return dec;
+            want = max_factor < usable_in_group ? max_factor : usable_in_group;
+            numa = NumaPolicy::NumaLocal;
+        } else {
+            // Bandwidth-bound.  The factor follows how many L2-sized pieces
+            // the set divides into, and spreading over nodes recruits their
+            // memory controllers.
+            const std::size_t l2 = host.l2_bytes == 0 ? 1 : host.l2_bytes;
+            const std::size_t l2_pieces = ws / l2;
+            const std::size_t pieces = l2_pieces == 0 ? 1 : l2_pieces;
+            want = pieces < cores_avail ? pieces : cores_avail;
+            numa = host.numa_nodes > 1 ? NumaPolicy::NumaSpread : NumaPolicy::NumaIgnore;
         }
 
-        // Bandwidth-bound.  The factor follows how many L2-sized pieces
-        // the set divides into, and spreading over nodes recruits their
-        // memory controllers.
-        const std::size_t l2_bytes = topo.l2_per_core_bytes();
-        const std::size_t l2 = l2_bytes == 0 ? 1 : l2_bytes;
-        const std::size_t l2_pieces = ws / l2;
-        const std::size_t pieces = l2_pieces == 0 ? 1 : l2_pieces;
-        const std::size_t want = pieces < cores_avail ? pieces : cores_avail;
+        // A factor of one is the calling thread alone, which is the
+        // sequential decision.  A process of one CPU, or a largest L3 group
+        // of one CPU, gives that factor.
+        const std::size_t factor = parallelism_rule_detail::round_to_factor_ladder(want);
+        if (factor < 2) return dec;
         dec.kind = ParallelismDecision::Kind::Parallel;
-        dec.factor = parallelism_rule_detail::round_to_factor_ladder(want);
-        dec.numa = (topo.numa_nodes() > 1) ? NumaPolicy::NumaSpread : NumaPolicy::NumaIgnore;
+        dec.factor = factor;
+        dec.numa = numa;
         return dec;
+    }
+
+    [[nodiscard]] static ParallelismDecision recommend(WorkBudget budget) noexcept {
+        const auto& topo = ::fixy::topology::Topology::instance();
+        const HostFacts host{
+            .l1d_bytes = topo.l1d_per_core_bytes(),
+            .l2_bytes = topo.l2_per_core_bytes(),
+            .l3_bytes = topo.l3_instance_bytes(),
+            .process_cpus = topo.process_cpu_count(),
+            .largest_l3_group_cpus = topo.largest_l3_group_cpus(),
+            .numa_nodes = topo.numa_nodes(),
+        };
+        return recommend_for(host, budget);
     }
 
     // A span read and written in place.  The byte count saturates, for

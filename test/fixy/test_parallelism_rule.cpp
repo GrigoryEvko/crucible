@@ -8,6 +8,7 @@
 // is inside that cache.  A failed check records the failure
 // and returns from its case, because nothing in this tree throws.
 
+#include <fixy/Core.h>
 #include <fixy/concurrent/ParallelismRule.h>
 #include <fixy/os/Topology.h>
 
@@ -264,6 +265,71 @@ void test_no_regression_invariant() {
     }
 }
 
+// A factor of one is the calling thread alone, so a Parallel decision has a
+// factor of two or more.  The sweep gives the rule hosts that this host is
+// not: a process of zero, one or some CPUs, a largest L3 group of zero, one
+// or some CPUs, and sets in each tier.
+void test_parallel_only_with_two_workers() {
+    std::size_t contradictions = 0;
+    const ::foundation::core::FixedArray<std::size_t, 6> process_counts{0, 1, 2, 3, 16, 224};
+    const ::foundation::core::FixedArray<std::size_t, 4> group_counts{0, 1, 2, 16};
+    for (const std::size_t process_cpus : process_counts) {
+        for (const std::size_t group_cpus : group_counts) {
+            const fixy::concurrent::HostFacts host{
+                .l1d_bytes = std::size_t{32} << 10,
+                .l2_bytes = std::size_t{1} << 20,
+                .l3_bytes = std::size_t{32} << 20,
+                .process_cpus = process_cpus,
+                .largest_l3_group_cpus = group_cpus,
+                .numa_nodes = 2,
+            };
+            for (std::size_t ws = 1024; ws <= (std::size_t{1} << 32); ws *= 4) {
+                const auto dec = ParallelismRule::recommend_for(host, WorkBudget{.read_bytes = ws});
+                const bool is_sequential_form =
+                    !dec.is_parallel() && dec.factor == 1 && dec.numa == NumaPolicy::NumaIgnore;
+                if (dec.is_parallel() ? dec.factor < 2 : !is_sequential_form) {
+                    fixy::report(fixy::Sink::Err,
+                                 "  the rule gives factor {} and kind {} for {} bytes, {} process CPUs and an L3 "
+                                 "group of {} CPUs\n",
+                                 dec.factor, static_cast<int>(dec.kind), ws, process_cpus, group_cpus);
+                    ++contradictions;
+                }
+            }
+        }
+    }
+    CRUCIBLE_TEST_REQUIRE(contradictions == 0);
+}
+
+// The two hosts of one usable CPU for a set past L2: a process of one CPU,
+// and a largest L3 group of one CPU for a set that fits L3.
+void test_one_cpu_hosts_stay_sequential() {
+    const fixy::concurrent::HostFacts one_cpu{
+        .l1d_bytes = std::size_t{32} << 10,
+        .l2_bytes = std::size_t{1} << 20,
+        .l3_bytes = std::size_t{32} << 20,
+        .process_cpus = 1,
+        .largest_l3_group_cpus = 8,
+        .numa_nodes = 2,
+    };
+    const fixy::concurrent::HostFacts group_of_one{
+        .l1d_bytes = std::size_t{32} << 10,
+        .l2_bytes = std::size_t{1} << 20,
+        .l3_bytes = std::size_t{32} << 20,
+        .process_cpus = 16,
+        .largest_l3_group_cpus = 1,
+        .numa_nodes = 2,
+    };
+    const WorkBudget l3_set{.read_bytes = std::size_t{8} << 20};
+    const WorkBudget dram_set{.read_bytes = std::size_t{256} << 20};
+
+    CRUCIBLE_TEST_REQUIRE(!ParallelismRule::recommend_for(one_cpu, l3_set).is_parallel());
+    CRUCIBLE_TEST_REQUIRE(!ParallelismRule::recommend_for(one_cpu, dram_set).is_parallel());
+    CRUCIBLE_TEST_REQUIRE(ParallelismRule::recommend_for(one_cpu, dram_set).tier == Tier::DRAMBound);
+    CRUCIBLE_TEST_REQUIRE(!ParallelismRule::recommend_for(group_of_one, l3_set).is_parallel());
+    CRUCIBLE_TEST_REQUIRE(ParallelismRule::recommend_for(group_of_one, l3_set).tier == Tier::L3Resident);
+    CRUCIBLE_TEST_REQUIRE(ParallelismRule::recommend_for(group_of_one, dram_set).factor == 16);
+}
+
 void run_test(const char* name, void (*body)()) {
     const int failed_before = total_failed;
     body();
@@ -293,6 +359,8 @@ int main() {
     run_test("budget_for_span helper", test_budget_for_span);
     run_test("saturated budget is not small", test_saturated_budget_is_not_small);
     run_test("no-regression invariant", test_no_regression_invariant);
+    run_test("Parallel only with two workers", test_parallel_only_with_two_workers);
+    run_test("one-CPU hosts stay sequential", test_one_cpu_hosts_stay_sequential);
 
     std::fprintf(stderr, "\n%d failed\n", total_failed);
     return total_failed == 0 ? 0 : 1;

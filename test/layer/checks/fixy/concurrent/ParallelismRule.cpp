@@ -31,6 +31,31 @@ static_assert(ParallelismRule::budget_for_span<std::uint64_t>(1024).item_count =
 static_assert(!ParallelismDecision{}.is_parallel());
 static_assert(ParallelismDecision{}.factor == 1);
 
+// A factor of one is the sequential decision.  A process of one CPU, or a
+// largest L3 group of one CPU, gives it for a set past L2.
+inline constexpr HostFacts kOneCpu{.l1d_bytes = 32 << 10,
+                                   .l2_bytes = 1 << 20,
+                                   .l3_bytes = 32 << 20,
+                                   .process_cpus = 1,
+                                   .largest_l3_group_cpus = 8,
+                                   .numa_nodes = 2};
+inline constexpr HostFacts kGroupOfOne{.l1d_bytes = 32 << 10,
+                                       .l2_bytes = 1 << 20,
+                                       .l3_bytes = 32 << 20,
+                                       .process_cpus = 16,
+                                       .largest_l3_group_cpus = 1,
+                                       .numa_nodes = 2};
+inline constexpr WorkBudget kL3Set{.read_bytes = 8 << 20, .write_bytes = 0};
+inline constexpr WorkBudget kDramSet{.read_bytes = std::size_t{256} << 20, .write_bytes = 0};
+static_assert(!ParallelismRule::recommend_for(kOneCpu, kL3Set).is_parallel());
+static_assert(ParallelismRule::recommend_for(kOneCpu, kL3Set).factor == 1);
+static_assert(ParallelismRule::recommend_for(kOneCpu, kL3Set).tier == Tier::L3Resident);
+static_assert(!ParallelismRule::recommend_for(kOneCpu, kDramSet).is_parallel());
+static_assert(ParallelismRule::recommend_for(kOneCpu, kDramSet).numa == NumaPolicy::NumaIgnore);
+static_assert(!ParallelismRule::recommend_for(kGroupOfOne, kL3Set).is_parallel());
+static_assert(ParallelismRule::recommend_for(kGroupOfOne, kDramSet).factor == 16);
+static_assert(ParallelismRule::recommend_for(kGroupOfOne, kDramSet).numa == NumaPolicy::NumaSpread);
+
 static_assert(is_core_private_tier(Tier::L1Resident));
 static_assert(is_core_private_tier(Tier::L2Resident));
 static_assert(!is_core_private_tier(Tier::L3Resident));

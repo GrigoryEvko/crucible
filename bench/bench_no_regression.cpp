@@ -490,7 +490,10 @@ int main() {
             std::printf("  FAIL %-26s expected sequential decision for small tier\n", w.name);
             ++failures;
         }
-        if (!small && !dec.is_parallel()) {
+        // A process of one CPU has no second worker, so a large set stays
+        // sequential there.
+        const bool has_second_cpu = ::fixy::topology::Topology::instance().process_cpu_count() >= 2;
+        if (!small && has_second_cpu && !dec.is_parallel()) {
             std::printf("  FAIL %-26s expected parallel decision for large tier\n", w.name);
             ++failures;
         }
