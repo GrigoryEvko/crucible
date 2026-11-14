@@ -39,6 +39,23 @@ consteval uint32_t bounded_counter_after_reset() {
 }
 static_assert(bounded_counter_after_reset() == 4U);
 
+// An order with no known direction gives a cell no bump.  test_mutation
+// bumps each cell under each of the two orders that have a direction.
+namespace detail::mutation_checks {
+struct ByLowBit {
+    [[nodiscard]] constexpr bool operator()(uint32_t left, uint32_t right) const noexcept {
+        return (left & 1U) < (right & 1U);
+    }
+};
+template <typename Cell>
+concept Bumps = requires(Cell& cell) { cell.bump(); };
+static_assert(Bumps<Monotonic<uint32_t>>);
+static_assert(!Bumps<Monotonic<uint32_t, ByLowBit>>);
+static_assert(Bumps<BoundedMonotonic<uint32_t, 8U>>);
+static_assert(!Bumps<BoundedMonotonic<uint32_t, 8U, ByLowBit>>);
+static_assert(!Bumps<AtomicMonotonic<uint32_t, CounterWriters::many, ByLowBit>>);
+}  // namespace detail::mutation_checks
+
 static_assert(sizeof(WriteOnceNonNull<int*>) == sizeof(int*));
 static_assert(sizeof(WriteOnceNonNull<void*>) == sizeof(void*));
 

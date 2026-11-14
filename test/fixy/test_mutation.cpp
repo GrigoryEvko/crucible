@@ -215,12 +215,29 @@ int check_monotonic() {
     if (epoch.get() != 3) return 27;
 
     // Under std::greater the direction inverts.
-    Monotonic<std::uint64_t, std::greater<std::uint64_t>> floor =
-        ::fixy::mint_monotonic<std::uint64_t, std::greater<std::uint64_t>>(100);
+    auto floor = ::fixy::mint_monotonic<std::uint64_t, std::greater<std::uint64_t>>(100);
     if (!floor.try_advance(50)) return 28;
     if (floor.try_advance(60)) return 29;
     if (floor.get() != 50) return 30;
+
+    // bump steps in the direction of the comparator, so under std::greater
+    // it takes one away.  check_bounded_monotonic bumps a cell at the floor
+    // of its carrier, which aborts in the bump of this cell.
+    floor.bump();
+    if (floor.get() != 49) return 31;
     return 0;
+}
+
+// Bumps a cell one time and gives its value after the step.
+template <class Cell>
+[[nodiscard]] auto value_after_bump(Cell cell) noexcept {
+    cell.bump();
+    return cell.get();
+}
+
+// A bounded counter of at most 10 that moves down.
+[[nodiscard]] auto falling_counter_at(std::uint32_t start) noexcept {
+    return ::fixy::mint_bounded_monotonic<std::uint32_t, 10U, std::greater<std::uint32_t>>(start);
 }
 
 int check_ordered_append_only() {
@@ -294,6 +311,11 @@ int check_bounded_monotonic() {
     bumper.bump();
     // A fourth bump would fire the bound precondition.
     if (bumper.get() != 3U) return 53;
+
+    // Under std::greater, bump steps down, and the bound holds for each step.
+    // A step past the floor of the carrier aborts.
+    if (value_after_bump(falling_counter_at(10U)) != 9U) return 210;
+    if (!aborts([] { (void)value_after_bump(falling_counter_at(0U)); })) return 211;
 
     // try_advance rejects rather than firing a contract. The two
     // rejections below have different causes.
@@ -404,6 +426,13 @@ int check_atomic_monotonic() {
         if (floor.try_advance(60ULL)) return 104;  // backwards
         if (!floor.try_advance(0ULL)) return 105;
         if (floor.get() != 0ULL) return 106;
+
+        // Under std::greater, bump walks the counter down instead.
+        floor.reset_under_quiescence(1000ULL);
+        if (floor.bump() != 1000ULL) return 118;
+        if (floor.get() != 999ULL) return 119;
+        if (floor.bump_by(99ULL) != 999ULL) return 120;
+        if (floor.get() != 900ULL) return 121;
     }
 
     {
@@ -425,17 +454,6 @@ int check_atomic_monotonic() {
         if (ring_head.get() != 7ULL) return 115;
         if (ring_head.bump_by(0ULL) != 7ULL) return 116;
         if (ring_head.get() != 7ULL) return 117;
-    }
-
-    // Under std::greater, bump walks the counter down instead.
-    {
-        AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::many, std::greater<std::uint64_t>> ttl =
-            ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::many, std::greater<std::uint64_t>>(
-                1000ULL);
-        if (ttl.bump() != 1000ULL) return 118;
-        if (ttl.get() != 999ULL) return 119;
-        if (ttl.bump_by(99ULL) != 999ULL) return 120;
-        if (ttl.get() != 900ULL) return 121;
     }
 
     // A single producer owns the head, so it may read its own value relaxed

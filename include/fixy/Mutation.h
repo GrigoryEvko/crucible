@@ -11,6 +11,7 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Number.h>
 #include <foundation/reflect/Instance.h>
 
 #include <atomic>
@@ -88,6 +89,15 @@ concept AppendOnlyStorage =
 template <typename T, typename Cmp>
 concept MonotoneCarrier =
     std::move_constructible<T> && std::default_initializable<Cmp> && std::strict_weak_order<Cmp, T const&, T const&>;
+
+// The two orders whose direction a step of one can read.  std::less moves
+// a cell up, and std::greater moves it down.  The bump of each monotone
+// cell steps in that direction, and a cell over another order has no bump.
+template <typename T, typename Cmp>
+concept AscendingOrder = std::same_as<Cmp, std::less<T>> || std::same_as<Cmp, std::less<>>;
+
+template <typename T, typename Cmp>
+concept DescendingOrder = std::same_as<Cmp, std::greater<T>> || std::same_as<Cmp, std::greater<>>;
 
 // The integer types that std::cmp_less and std::in_range accept: every
 // integral type except bool and the character types.
@@ -381,16 +391,19 @@ public:
         return true;
     }
 
-    // Overflow is the only way an integral counter can go backward, so
-    // the precondition rules out wraparound: peek() != max means
-    // peek() + 1 still fits in T.
+    // A step of one in the direction of Cmp: std::less adds one, and
+    // std::greater takes one away.  The step goes through advance, so the
+    // order checks it.  A step past the end of T would wrap the value to the
+    // other end, so the precondition refuses a value at the end of T.
     constexpr void bump() noexcept
-        requires std::integral<T>
+        requires ::foundation::core::Integer<T> && (AscendingOrder<T, Cmp> || DescendingOrder<T, Cmp>)
     {
-        CRUCIBLE_PRE(impl_.peek() != std::numeric_limits<T>::max());
+        CRUCIBLE_PRE(impl_.peek()
+                     != ((AscendingOrder<T, Cmp>) ? ::foundation::core::max_of<T> : ::foundation::core::min_of<T>));
         T const prior = impl_.peek();
-        impl_ = graded_type{static_cast<T>(prior + T{1})};
-        CRUCIBLE_POST(0, impl_.peek() == static_cast<T>(prior + T{1}));
+        T const stepped = AscendingOrder<T, Cmp> ? static_cast<T>(prior + T{1}) : static_cast<T>(prior - T{1});
+        advance(stepped);
+        CRUCIBLE_POST(0, impl_.peek() == stepped);
     }
 
     // The only way to move the value backward. The caller must ensure
@@ -473,9 +486,14 @@ public:
         return inner_.try_advance(std::move(new_value));
     }
 
-    constexpr void bump() noexcept {
-        CRUCIBLE_PRE(std::cmp_less(inner_.get(), Max));
-        inner_.advance(static_cast<T>(inner_.get() + T{1}));
+    // A step of one in the direction of Cmp, as the bump of Monotonic.  An
+    // ascending counter stays at most Max.  A descending counter starts at
+    // most Max and moves down, so the bound holds for each step.
+    constexpr void bump() noexcept
+        requires(AscendingOrder<T, Cmp> || DescendingOrder<T, Cmp>)
+    {
+        CRUCIBLE_PRE((DescendingOrder<T, Cmp>) || std::cmp_less(inner_.get(), Max));
+        inner_.bump();
     }
 
     // The only way to move the value backward. The caller must ensure
@@ -682,8 +700,8 @@ template <typename T, CounterWriters Writers, typename Cmp>
 class [[nodiscard]] alignas(64) AtomicMonotonic : ::foundation::Pinned<AtomicMonotonic<T, Writers, Cmp>> {
     std::atomic<T> value_;
 
-    static constexpr bool kIsLess = std::is_same_v<Cmp, std::less<T>> || std::is_same_v<Cmp, std::less<>>;
-    static constexpr bool kIsGreater = std::is_same_v<Cmp, std::greater<T>> || std::is_same_v<Cmp, std::greater<>>;
+    static constexpr bool kIsLess = AscendingOrder<T, Cmp>;
+    static constexpr bool kIsGreater = DescendingOrder<T, Cmp>;
     static constexpr bool kFastPathEligible = std::integral<T> && (kIsLess || kIsGreater);
 
     constexpr explicit AtomicMonotonic(T initial) noexcept : value_{initial} {}
