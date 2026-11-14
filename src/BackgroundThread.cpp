@@ -821,12 +821,12 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
     }
 }
 
-void BackgroundThread::start(TraceRing* ring_ptr, MetaLog* meta_log_ptr, int32_t rank_, int32_t world_size_,
+void BackgroundThread::start(TraceRing& trace_ring, MetaLog& trace_meta_log, int32_t rank_, int32_t world_size_,
                              uint64_t device_cap) {
     global_schema_table().seal();
     global_ckernel_table().value()->seal();
-    ring.set(ring_ptr);
-    meta_log.set(meta_log_ptr);
+    ring.set(&trace_ring);
+    meta_log.set(&trace_meta_log);
     rank = rank_;
     world_size = world_size_;
     device_capability = ::fixy::mint_tagged<::fixy::tags::source::Meridian>(device_cap);

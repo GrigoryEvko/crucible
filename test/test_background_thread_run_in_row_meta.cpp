@@ -215,7 +215,7 @@ void test_pipeline_releases_after_overflow() {
     BackgroundThread bt;
     auto ring = std::make_unique<TraceRing>();
     auto metalog = std::make_unique<MetaLog>();
-    bt.start(ring.get(), metalog.get());
+    bt.start(*ring, *metalog);
 
     // The detector accepts the period of one iteration and then cuts each
     // iteration after it.  The last iteration below meets the overflow at

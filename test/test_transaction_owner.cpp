@@ -164,7 +164,7 @@ void job_runs_on_the_stage_while_it_runs() {
     auto ring = std::make_unique<crucible::TraceRing>();
     auto meta_log = std::make_unique<crucible::MetaLog>();
     crucible::BackgroundThread background;
-    background.start(ring.get(), meta_log.get());
+    background.start(*ring, *meta_log);
 
     const std::thread::id caller = std::this_thread::get_id();
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{30};

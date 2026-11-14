@@ -839,7 +839,9 @@ public:
     // complete before the background thread starts" into a load-bearing
     // rule: a late registration is rejected by the table contract instead of
     // racing the lookups this thread performs.
-    void start(TraceRing* ring_ptr, MetaLog* meta_log_ptr, int32_t rank_ = -1, int32_t world_size_ = 0,
+    // The ring and the metadata log are references, so no caller can give
+    // a null pointer.  The thread keeps their addresses until stop().
+    void start(TraceRing& trace_ring, MetaLog& trace_meta_log, int32_t rank_ = -1, int32_t world_size_ = 0,
                uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY;
 
     // Signals the drain stage to stop and joins the pipeline thread.  The
