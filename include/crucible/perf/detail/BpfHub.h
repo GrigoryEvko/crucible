@@ -16,6 +16,7 @@
 #include <fixy/os/Mmap.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Pinned.h>
+#include <foundation/Quarantine.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/Auxiliary.h>
@@ -25,9 +26,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <inplace_vector>
-#include <span>
-#include <string>
 #include <utility>
 
 namespace crucible::perf::detail {
@@ -52,7 +50,7 @@ struct LoadSpec {
     ForeignName facade{};
     // The libbpf object name, such as "crucible_sched_switch".
     ForeignName object_name{};
-    std::span<const unsigned char> bytecode{};
+    ForeignBytes bytecode{};
     // One missing tracepoint fails the load of the whole object, so the
     // loader turns off each program whose tracepoint the kernel lacks.  A
     // tp_btf object skips the probe, because its BTF lookup at load time
@@ -73,7 +71,10 @@ struct LoadSpec {
 // settles once, as one kept link or as one failure, and settle() refuses
 // an outcome past MaxLinks.  attached() and attach_failures() therefore
 // stay within the bound that they publish.  MaxLinks is an int because
-// the facades publish the bound as bounded_above of an int literal.
+// the facades publish the bound as bounded_above of an int literal.  libbpf
+// gives the object and each link as a raw pointer of C, so the class stands
+// in an opt-out region of the class ABI.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C")
 template <int MaxLinks>
 class BpfObject : ::foundation::NonMovable<BpfObject<MaxLinks>> {
     static_assert(MaxLinks > 0, "A BPF facade needs at least one link slot.");
@@ -82,8 +83,9 @@ public:
     BpfObject() noexcept = default;
 
     ~BpfObject() {
-        for (bpf_link* link : links_)
-            bpf_link__destroy(link);
+        for (HeldLink const& held : links_) {
+            bpf_link__destroy(held.link);
+        }
         if (obj_ != nullptr) bpf_object__close(obj_);
     }
 
@@ -110,7 +112,7 @@ public:
         bpf_object_open_opts opts{};
         opts.sz = sizeof(opts);
         opts.object_name = spec.object_name.abi;
-        bpf_object* const opened = bpf_object__open_mem(spec.bytecode.data(), spec.bytecode.size(), &opts);
+        bpf_object* const opened = bpf_object__open_mem(spec.bytecode.abi, spec.bytecode.size, &opts);
         // libbpf returns null or a pointer that encodes an errno.  Closing
         // the second would dereference the encoded integer, so it is
         // dropped here and never stored.
@@ -141,7 +143,7 @@ public:
             attach_failures_.bump();
             return false;
         }
-        if (links_.try_push_back(link) == nullptr) {
+        if (links_.push(HeldLink{.link = link}).is_err()) {
             bpf_link__destroy(link);
             attach_failures_.bump();
             return false;
@@ -185,18 +187,17 @@ public:
 
 private:
     // Every object declares target_tgid as the first variable of its
-    // .rodata, so the tgid goes at offset 0.  The section holds a handful
-    // of bytes, and the copy runs once per load.
+    // .rodata, so the tgid goes at offset 0.  Before the load, libbpf gives
+    // the initial value of a global data map as its own memory, which a
+    // write changes in place, as the generated skeletons of libbpf do.
     void patch_target_tgid_(::fixy::process::ProcessId process) noexcept {
         bpf_map* const rodata = find_rodata(obj_);
         if (rodata == nullptr) return;
         std::size_t size = 0;
-        const void* const current = bpf_map__initial_value(rodata, &size);
+        void* const current = bpf_map__initial_value(rodata, &size);
         if (current == nullptr || size < sizeof(uint32_t)) return;
-        std::string rewritten(static_cast<const char*>(current), size);
         const uint32_t tgid = std::to_underlying(process);
-        std::memcpy(rewritten.data(), &tgid, sizeof(tgid));
-        (void)bpf_map__set_initial_value(rodata, rewritten.data(), size);
+        std::memcpy(current, &tgid, sizeof(tgid));
     }
 
     // A sched_switch program runs in the context of the task that switches
@@ -237,10 +238,17 @@ private:
         return require_attached(spec);
     }
 
+    // A link that the object keeps.  The list of the base holds a class of
+    // the perf layer, and not the pointer type of libbpf itself.
+    struct HeldLink {
+        bpf_link* link = nullptr;
+    };
+
     bpf_object* obj_ = nullptr;
-    std::inplace_vector<bpf_link*, static_cast<std::size_t>(MaxLinks)> links_{};
+    ::fixy::FixedList<HeldLink, static_cast<std::size_t>(MaxLinks)> links_{};
     ::fixy::Monotonic<std::size_t> attach_failures_ = ::fixy::mint_monotonic<std::size_t>(0);
 };
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // The region tag of one mapped BPF map.  It carries the tag of the
 // facade, so the mapping of one facade does not pass for the mapping of

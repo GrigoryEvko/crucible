@@ -1,5 +1,11 @@
 #pragma once
 
+// The adapter of the perf layer to libbpf: the names, the objects, the maps,
+// the programs and the print callback of libbpf, and the probe of a
+// tracepoint.  libbpf gives each of them as a raw pointer of C, and its print
+// callback takes a printf format with a va_list, so the body of this header
+// stands in one opt-out region of the class ABI.
+
 #include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/handle/Once.h>
@@ -7,6 +13,7 @@
 #include <fixy/os/Fs.h>
 #include <fixy/os/Process.h>
 #include <foundation/Platform.h>
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/PathText.h>
 
@@ -21,6 +28,8 @@
 
 namespace crucible::perf::detail {
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C")
+
 namespace source {
 struct BpfMap {};
 }  // namespace source
@@ -34,6 +43,13 @@ using Fd = ::fixy::Tagged<int, source::BpfMap>;
 struct ForeignName {
     const char* abi = "";
     ::fixy::TextView text{};
+};
+
+// The bytecode of a BPF object, which the build embeds as an array of C
+// linkage, and which bpf_object__open_mem reads.
+struct ForeignBytes {
+    const unsigned char* abi = nullptr;
+    std::size_t size = 0;
 };
 
 #define CRUCIBLE_PERF_FOREIGN_NAME(literal) \
@@ -167,5 +183,7 @@ void disable_unavailable_programs(Ctx const& ctx, bpf_object* obj) noexcept {
 // POSIX convention.
 
 [[nodiscard]] inline int libbpf_errno(const void* p) noexcept { return static_cast<int>(-libbpf_get_error(p)); }
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 }  // namespace crucible::perf::detail

@@ -13,7 +13,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <utility>
 
 extern "C" {
@@ -200,7 +199,7 @@ namespace {
     const detail::LoadSpec spec{
         .facade = facade,
         .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_pmu_sample"),
-        .bytecode = std::span{pmu_sample_bpf_bytecode, static_cast<std::size_t>(pmu_sample_bpf_bytecode_len)},
+        .bytecode = {.abi = pmu_sample_bpf_bytecode, .size = static_cast<std::size_t>(pmu_sample_bpf_bytecode_len)},
         .probe_tracepoints = false,
         .load_advice = "(apply CAP_BPF+CAP_PERFMON; verifier rejected, missing CAP_BPF, or kernel too old)",
         .attach_advice = "no perf_event programs attached (apply CAP_PERFMON; kernel.perf_event_paranoid > 2 "

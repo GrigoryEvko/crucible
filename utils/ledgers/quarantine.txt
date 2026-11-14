@@ -134,7 +134,9 @@ include/crucible/observe/ | std-object | 6 | - | -
 include/crucible/perf/ | raw-pointer-object | 3 | - | -
 include/crucible/perf/detail/ | c-library-call | 29 | - | -
 include/crucible/perf/detail/ | c-library-object | 19 | - | -
+include/crucible/perf/detail/ | opted-out | 70 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | raw-pointer-object | 29 | - | -
+include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | replace-pending:std::bit_cast | 4 | - | -
 include/crucible/perf/detail/ | std-entity | 12 | - | -
 include/crucible/perf/detail/ | std-object | 4 | - | -

@@ -5,7 +5,6 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <utility>
 
 extern "C" {
@@ -37,7 +36,7 @@ SenseHub::~SenseHub() = default;
     const detail::LoadSpec spec{
         .facade = facade,
         .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_senses"),
-        .bytecode = std::span{sense_hub_bpf_bytecode, static_cast<std::size_t>(sense_hub_bpf_bytecode_len)},
+        .bytecode = {.abi = sense_hub_bpf_bytecode, .size = static_cast<std::size_t>(sense_hub_bpf_bytecode_len)},
         .attach_advice = "no programs attached (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; kernel missing "
                          "every tracepoint, or lacking CAP_PERFMON or CAP_DAC_READ_SEARCH)",
     };

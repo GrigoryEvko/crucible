@@ -4,7 +4,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <utility>
 
 extern "C" {
@@ -34,8 +33,8 @@ SyscallLatency::~SyscallLatency() = default;
     const detail::RingSpec spec{
         .load = {.facade = CRUCIBLE_PERF_FOREIGN_NAME("syscall_latency"),
                  .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_syscall_latency"),
-                 .bytecode = std::span{syscall_latency_bpf_bytecode,
-                                       static_cast<std::size_t>(syscall_latency_bpf_bytecode_len)},
+                 .bytecode = {.abi = syscall_latency_bpf_bytecode,
+                              .size = static_cast<std::size_t>(syscall_latency_bpf_bytecode_len)},
                  .min_attached = 2,
                  .attach_advice = "expected 2 tracepoint attachments (raw_syscalls/sys_enter and sys_exit), got "
                                   "fewer (kernel missing raw_syscalls tracepoints, or partial CAP_BPF rejection)"},

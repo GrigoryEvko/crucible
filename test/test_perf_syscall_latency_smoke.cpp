@@ -1,4 +1,5 @@
 #include <crucible/perf/SyscallLatency.h>
+#include <fixy/os/Process.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -65,8 +66,8 @@ static_assert(sizeof(crucible::perf::SyscallLatency) == sizeof(::fixy::Option<::
 int main() {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     setenv("CRUCIBLE_PERF_QUIET", "1", /*overwrite=*/0);
-    ::fixy::Option<crucible::perf::SyscallLatency> loaded =
-        crucible::perf::load_syscall_latency(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
+    ::fixy::InitLoadCtx const ctx{::foundation::effects::testing::init()};
+    ::fixy::Option<crucible::perf::SyscallLatency> loaded = crucible::perf::load_syscall_latency(ctx);
     static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SyscallLatency>>);
     if (loaded.is_none()) return crucible::test::verdict_of_no_load("perf::load_syscall_latency()");
 
@@ -96,11 +97,19 @@ int main() {
             return 1;
         }
 
-        // No specific count is asserted, because the kernel need not have
-        // logged a syscall yet. The check is that the call links and yields
-        // a u64.
+        // The two programs run in the task that makes the syscall.  Thus the
+        // syscall of current_process() is in the count before it returns.  A
+        // count of zero means that the programs do not see the tgid of this process.
+        const ::fixy::process::ProcessId self = ::fixy::process::current_process(ctx);
         const uint64_t syscalls = hub.total_syscalls();
         static_assert(std::is_same_v<decltype(syscalls), const uint64_t>);
+        if (syscalls == 0) {
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::SyscallLatency::total_syscalls() is 0 after a syscall of process {}. "
+                           "The programs do not see its tgid\n",
+                           std::to_underlying(self));
+            return 1;
+        }
 
         // The view spans the whole ring, not just the written prefix.
         const auto timeline = hub.timeline_view();
