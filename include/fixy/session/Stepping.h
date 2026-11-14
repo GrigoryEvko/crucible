@@ -55,6 +55,7 @@
 #include <fixy/session/Watch.h>
 
 #include <foundation/algebra/Modality.h>
+#include <foundation/core/Text.h>
 
 #include <concepts>
 #include <cstdint>
@@ -245,6 +246,12 @@ inline constexpr bool default_policy_checks_abandonment = DefaultAbandonmentPoli
 // constant data.
 template <typename T>
 inline constexpr std::string_view type_display_name_v = std::meta::display_string_of(^^T);
+
+// The same name as a text of the base, for a report through fatal.  The
+// name lives in the constant data of the program, as the view above.
+template <typename T>
+inline constexpr ::foundation::core::TextView type_display_text_v =
+    ::foundation::core::detail::text_over_(type_display_name_v<T>.data(), type_display_name_v<T>.size());
 
 // ── The Stepping wrapper contract ────────────────────────────────────
 //

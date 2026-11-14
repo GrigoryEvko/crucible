@@ -128,6 +128,10 @@ struct hot_invariant final {};
 struct Ping {
     int value = 0;
 };
+// The role and the label of a keyed message.  A label key needs a stable
+// identity, so each has a declared name in a named namespace.
+struct Speaker {};
+struct Hello {};
 }  // namespace attack_tags
 
 template <>
@@ -1106,11 +1110,42 @@ constexpr std::string_view kSignalReport = "LIVE PROTOCOL AT A FATAL SIGNAL";
     return failures;
 }
 
-// ── Which check refused a wait ───────────────────────────────────────
+// ── A word that the protocol does not accept ─────────────────────────
+//
+// A peer that sends a label word this position does not accept ends the
+// process.  The child's standard error names the refusal, the word and the
+// protocol, so the end is never a bare abort.
+
+using HearsHello = s::Recv<s::PeerMsg<attack_tags::Speaker, attack_tags::Hello, void>, s::End>;
+using TwoWays = s::Offer<s::Recv<int, s::End>, s::Recv<long, s::End>>;
+
+// The word 7 names no label of either protocol below.
+constexpr std::size_t kForeignWord = 7;
+
+[[noreturn]] void keyed_recv_reads_a_foreign_label_word() {
+    const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
+    auto handle = s::mint_session<HearsHello>(ctx, Wire{});
+    auto at_end = std::move(handle).recv(
+        [](Wire&) noexcept -> ::fixy::Option<std::size_t> { return ::fixy::some(kForeignWord); });
+    static_cast<void>(std::move(at_end).close());
+    ::fixy::fatal("the keyed reception took a word that is not the label word of its message");
+}
+
+[[noreturn]] void offer_reads_a_word_that_names_no_branch() {
+    const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
+    auto handle = s::mint_session<TwoWays>(ctx, Wire{});
+    std::move(handle).branch(
+        [](Wire&) noexcept -> ::fixy::Option<std::size_t> { return ::fixy::some(kForeignWord); },
+        [](auto branch) noexcept { std::move(branch).detach(s::detach_reason::TestInstrumentation{}); });
+    ::fixy::fatal("the Offer took a word that names none of its branches");
+}
+
+// ── Which check refused a wait or a word ─────────────────────────────
 //
 // The priority order refuses each wait below before the thread waits, so
-// the deadlock detector never runs for them.  The child's standard error
-// names the check that refused the wait.
+// the deadlock detector never runs for them.  The handle refuses each word
+// below that its position does not accept.  The child's standard error
+// names the check that refused the wait or the word.
 
 struct wait_refusal_case {
     std::string_view name;
@@ -1123,6 +1158,11 @@ constexpr wait_refusal_case kWaitRefusals[] = {
     {"one_thread_holds_both_ends_declared_wait", "[Wait_On_Held_Peer]", one_thread_holds_both_ends_declared_wait},
     {"two_forked_sessions_in_a_cycle", "[Wait_Breaks_Priority_Order]", two_forked_sessions_in_a_cycle},
     {"wait_low_while_holding_high", "[Wait_Breaks_Priority_Order]", wait_low_while_holding_high},
+    {"keyed_recv_reads_a_foreign_label_word", "[Keyed_Label_Word_Mismatch]: a keyed reception read the word 7",
+     keyed_recv_reads_a_foreign_label_word},
+    {"offer_reads_a_word_that_names_no_branch",
+     "[Word_Names_No_Branch]: an Offer read the word 7, which names none of its 2 branches",
+     offer_reads_a_word_that_names_no_branch},
 };
 
 [[nodiscard]] int run_wait_refusals() {
@@ -1133,7 +1173,7 @@ constexpr wait_refusal_case kWaitRefusals[] = {
         const bool is_expected =
             !end.is_clean_exit && names_the_check && end.output.find("DEADLOCK ACROSS SESSIONS") == std::string::npos;
         std::fprintf(stderr, "[wait] %-40.*s %s\n", static_cast<int>(entry.name.size()), entry.name.data(),
-                     is_expected ? "refused before the wait" : "UNEXPECTED");
+                     is_expected ? "refused, and the text names the check" : "UNEXPECTED");
         if (!is_expected) {
             ++failures;
             std::fprintf(stderr, "  child output:\n%s\n", end.output.c_str());

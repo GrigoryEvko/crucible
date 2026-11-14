@@ -80,6 +80,7 @@
 #include <fixy/session/Registry.h>
 
 #include <foundation/NoObject.h>
+#include <foundation/Platform.h>
 #include <foundation/contracts/Armed.h>
 #include <foundation/permissions/PermSet.h>
 
@@ -683,6 +684,10 @@ class CheckpointDoor final : ::foundation::NoObject<CheckpointDoor> {
 
     // The plain handle cannot say which label it took when two branches
     // erase to one type, so the branch that the wire word names decides.
+    // The plain handle refuses a word that names no branch first
+    // (Word_Names_No_Branch), and the erasure keeps the count and the order
+    // of the branches.  So the label names a branch whose plain handle is
+    // Next, and a dispatch that runs no branch is a broken invariant.
     template <typename Branches, typename Inner, typename HeadLoop, typename Frame, typename Next, typename Handler,
               std::size_t... Is>
     static constexpr auto dispatch_(std::size_t label, Next next, Handler& handler, std::index_sequence<Is...>) {
@@ -702,8 +707,7 @@ class CheckpointDoor final : ::foundation::NoObject<CheckpointDoor> {
                     }
                 }(),
                 ...);
-            if (!is_dispatched) [[unlikely]]
-                std::abort();
+            CRUCIBLE_FATAL_INVARIANT(is_dispatched);
         } else {
             std::optional<Result> result;
             (
@@ -718,8 +722,7 @@ class CheckpointDoor final : ::foundation::NoObject<CheckpointDoor> {
                     }
                 }(),
                 ...);
-            if (!is_dispatched) [[unlikely]]
-                std::abort();
+            CRUCIBLE_FATAL_INVARIANT(is_dispatched);
             return std::move(*result);
         }
     }

@@ -113,6 +113,9 @@
 #include <fixy/session/Wire.h>
 
 #include <foundation/NoObject.h>
+#include <foundation/Platform.h>
+#include <foundation/core/Report.h>
+#include <foundation/core/Text.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/Permission.h>
@@ -255,6 +258,28 @@ report_use_after_consume(std::string_view wrapper, std::string_view protocol, st
                  static_cast<int>(wrapper.size()), wrapper.data(), static_cast<int>(protocol.size()), protocol.data(),
                  have_loc ? loc_file : "<unknown>", have_loc ? loc.line() : std::uint_least32_t{0});
     std::abort();
+}
+
+// The refusal of a keyed reception whose read gave a word other than the
+// label word of its message.  The peer sent a label that this position does
+// not accept, so the two endpoints do not agree on the protocol.
+[[noreturn, gnu::cold, gnu::noinline]] inline void
+report_foreign_label_word(std::uint64_t word, std::uint64_t expected, ::foundation::core::TextView protocol) noexcept {
+    ::foundation::core::fatal("fixy::session: diagnostic [Keyed_Label_Word_Mismatch]: a keyed reception read the "
+                              "word {}, and its message has the label word {}.  The peer sent a label that this "
+                              "position does not accept, so the two endpoints do not agree on the protocol {}.",
+                              word, expected, protocol);
+}
+
+// The refusal of an Offer whose read gave a word that names none of its
+// branches.  The peer sent a label that this protocol does not define.
+[[noreturn, gnu::cold, gnu::noinline]] inline void
+report_word_names_no_branch(std::uint64_t word, std::size_t branch_count,
+                            ::foundation::core::TextView protocol) noexcept {
+    ::foundation::core::fatal("fixy::session: diagnostic [Word_Names_No_Branch]: an Offer read the word {}, which "
+                              "names none of its {} branches.  The peer sent a label that this protocol does not "
+                              "define, so the two endpoints do not agree on the protocol {}.",
+                              word, branch_count, protocol);
 }
 
 }  // namespace detail
@@ -735,13 +760,14 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
         return core;
     }
 
-    // Calls the handler with the handle that the choice enters for branch
-    // idx, and first with the index as a constant when PassesIndex holds.
-    // The handler is invoked once per branch type, and every branch must
-    // give the handler the same return type, or all of them void.
+    // Calls the handler with the handle that the choice enters for the
+    // branch that the wire word names, and first with the index as a
+    // constant when PassesIndex holds.  The handler is invoked once per
+    // branch type, and every branch must give the handler the same return
+    // type, or all of them void.
     template <bool PassesIndex, typename Choice, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
               typename PS, typename Handler, std::size_t... Is>
-    static constexpr auto dispatch_(std::size_t idx, Resource res, watch::session_ref session, Handler handler,
+    static constexpr auto dispatch_(std::size_t word, Resource res, watch::session_ref session, Handler handler,
                                     std::index_sequence<Is...>);
 
     // Calls the handler for branch I, with the index first when PassesIndex
@@ -878,9 +904,9 @@ public:
 
     // Reads the label word of a keyed message.  It returns the handle at
     // the value step, or past the message when its payload is void.  A
-    // word other than the label word of this message aborts: the peer sent
-    // a label that this position does not accept, as a word that names no
-    // branch of an Offer aborts.
+    // word other than the label word of this message ends the process with
+    // Keyed_Label_Word_Mismatch: the peer sent a label that this position
+    // does not accept, as a word that names no branch of an Offer does.
     template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
               typename Transport>
         requires is_keyed_step_v<Recv<T, R>> && ReadTransport<Transport, Resource, std::size_t>
@@ -893,7 +919,8 @@ public:
         const std::size_t word =
             detail::read_through<std::size_t>(transport, core.live_resource_(), core.session_().endpoint);
         if (word != detail::step_wire_word_of(^^Recv<T, R>)) [[unlikely]] {
-            std::abort();
+            detail::report_foreign_label_word(word, detail::step_wire_word_of(^^Recv<T, R>),
+                                              type_display_text_v<Recv<T, R>>);
         }
         const watch::session_ref session = core.session_();
         return step_<keyed_landing_t<Recv<T, R>>, Resource, LoopCtx, Policy, PS>(core.take_resource_(), session);
@@ -958,8 +985,9 @@ public:
     // branch that the word names (branch_of_wire_word).  In a keyed choice
     // the handle of a label branch stands at the value step of its message,
     // or past the message when its payload is void.  A word that names no
-    // branch aborts: the peer has sent a label this protocol does not
-    // define, so the two endpoints no longer agree.
+    // branch ends the process with Word_Names_No_Branch: the peer has sent a
+    // label this protocol does not define, so the two endpoints no longer
+    // agree.
     template <typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
               typename Transport, typename Handler>
         requires ReadTransport<Transport, Resource, std::size_t>
@@ -971,8 +999,7 @@ public:
             detail::read_through<std::size_t>(transport, core.live_resource_(), core.session_().endpoint);
         const watch::session_ref session = core.session_();
         return dispatch_<false, Choice, Resource, LoopCtx, Policy, PS>(
-            branch_of_wire_word<Choice>(word), core.take_resource_(), session, std::move(handler),
-            std::make_index_sequence<Choice::branch_count>{});
+            word, core.take_resource_(), session, std::move(handler), std::make_index_sequence<Choice::branch_count>{});
     }
 
     // The step of branch, with the index of the branch given to the
@@ -988,8 +1015,7 @@ public:
             detail::read_through<std::size_t>(transport, core.live_resource_(), core.session_().endpoint);
         const watch::session_ref session = core.session_();
         return dispatch_<true, Choice, Resource, LoopCtx, Policy, PS>(
-            branch_of_wire_word<Choice>(word), core.take_resource_(), session, std::move(handler),
-            std::make_index_sequence<Choice::branch_count>{});
+            word, core.take_resource_(), session, std::move(handler), std::make_index_sequence<Choice::branch_count>{});
     }
 
     // Enters branch I of an Offer WITHOUT receiving the peer's label.  The
@@ -1256,8 +1282,9 @@ public:
     // Reads the label word of the message through Transport, a read of a
     // std::size_t word.  It returns the handle at the value step, or past
     // the message when its payload is void.  A word other than the label
-    // word of this message aborts: the peer sent a label that this position
-    // does not accept, as a word that names no branch of an Offer aborts.
+    // word of this message ends the process with Keyed_Label_Word_Mismatch:
+    // the peer sent a label that this position does not accept, as a word
+    // that names no branch of an Offer does.
     template <typename Transport>
         requires is_keyed && ReadTransport<Transport, Resource, std::size_t>
     [[nodiscard]] constexpr auto recv(Transport transport) && {
@@ -1534,16 +1561,17 @@ HandleFactory::enter_(Resource r, watch::session_ref session) noexcept(std::is_n
     }
 }
 
-// A word that names no branch aborts.  The result type comes from branch
-// 0.  A branch whose handler returns a different type then fails to
-// convert into the single optional below, which is what enforces the
-// same-return-type rule.
+// A word that names no branch ends the process with Word_Names_No_Branch.
+// The result type comes from branch 0.  A branch whose handler returns a
+// different type then fails to convert into the single optional below,
+// which is what enforces the same-return-type rule.
 template <bool PassesIndex, typename Choice, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
           typename Handler, std::size_t... Is>
-constexpr auto HandleFactory::dispatch_(std::size_t idx, Resource res, watch::session_ref session, Handler handler,
+constexpr auto HandleFactory::dispatch_(std::size_t word, Resource res, watch::session_ref session, Handler handler,
                                         std::index_sequence<Is...>) {
+    const std::size_t idx = branch_of_wire_word<Choice>(word);
     if (idx >= Choice::branch_count) [[unlikely]] {
-        std::abort();
+        detail::report_word_names_no_branch(word, Choice::branch_count, type_display_text_v<Choice>);
     }
     using FirstHandle = decltype(enter_<Choice, 0, Resource, LoopCtx, Policy, PS>(std::declval<Resource>(), session));
     using Result = decltype(call_branch_<PassesIndex, 0>(std::declval<Handler&&>(), std::declval<FirstHandle>()));
@@ -1572,8 +1600,9 @@ constexpr auto HandleFactory::dispatch_(std::size_t idx, Resource res, watch::se
                 }
             }(),
             ...);
-        if (!result) [[unlikely]]
-            std::abort();
+        // An index below the branch count names one of the indices of the
+        // fold above, so a branch ran.
+        CRUCIBLE_FATAL_INVARIANT(result.has_value());
         return std::move(*result);
     }
 }
