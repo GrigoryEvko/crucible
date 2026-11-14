@@ -359,15 +359,19 @@ template <class Fake>
     assert(collected.at(::fixy::index<1>()) == body_r2);
     assert(collected.at(::fixy::index<2>()) == final_region);
 
+    // The replays of this test share one guard callback.  The replays that
+    // count regions share one closure type of counter_of, so the unit
+    // compiles two instantiations of replay and not one for each call.
+    auto never_diverges = [](const crucible::Guard&) -> int64_t { return 0; };
+    auto counter_of = [](uint32_t& count) { return [&count](crucible::RegionNode*) { ++count; }; };
+
     uint32_t exec_count = 0;
     std::vector<ContentHash> replay_log;
     replay_log.reserve(16);
-    bool replay_ok = crucible::replay(
-        loop, [](const crucible::Guard&) -> int64_t { return 0; },
-        [&](crucible::RegionNode* r) {
-            replay_log.push_back(r->content_hash);
-            exec_count++;
-        });
+    bool replay_ok = crucible::replay(loop, never_diverges, [&](crucible::RegionNode* r) {
+        replay_log.push_back(r->content_hash);
+        exec_count++;
+    });
     assert(replay_ok);
     // 4 iterations × 2 body regions + 1 continuation region.
     assert(exec_count == 9);
@@ -382,8 +386,7 @@ template <class Fake>
         crucible::make_loop(test.alloc, arena, *body_r1, body_ch, fb_edges.view(), crucible::LoopTermKind::REPEAT, 0);
     loop_zero->next = final_region;
     uint32_t zero_count = 0;
-    bool zero_ok = crucible::replay(
-        loop_zero, [](const crucible::Guard&) -> int64_t { return 0; }, [&](crucible::RegionNode*) { zero_count++; });
+    bool zero_ok = crucible::replay(loop_zero, never_diverges, counter_of(zero_count));
     assert(zero_ok);
     assert(zero_count == 1);  // the continuation region alone
 
@@ -874,12 +877,10 @@ template <class Fake>
         auto* loose = build_until_loop(0.5f);
         auto* tight = build_until_loop(0.001f);
 
-        auto never_diverges = [](const crucible::Guard&) -> int64_t { return 0; };
-
         uint32_t loose_regions = 0;
-        assert(crucible::replay(loose, never_diverges, [&](crucible::RegionNode*) { ++loose_regions; }));
+        assert(crucible::replay(loose, never_diverges, counter_of(loose_regions)));
         uint32_t tight_regions = 0;
-        assert(crucible::replay(tight, never_diverges, [&](crucible::RegionNode*) { ++tight_regions; }));
+        assert(crucible::replay(tight, never_diverges, counter_of(tight_regions)));
 
         // 500x the threshold and the same number of iterations.  A replay
         // that consulted epsilon could not produce this.
@@ -972,6 +973,23 @@ template <class Fake>
 
         ::fixy::report(::fixy::Sink::Out,
                        "  make_loop rejects NaN, infinite and negative epsilon, and an UNTIL count of zero\n");
+
+        // A loaded branch keeps an arm with no target until a caller
+        // resolves it.  The merkle hash of such a branch ends the process
+        // with its reason, and it reads no null node.
+        auto hash_unresolved_branch = [&] {
+            ::fixy::BumpArena child_arena(1 << 12);
+            crucible::BranchNode& branch = *child_arena.make<crucible::BranchNode>(test.alloc);
+            branch.kind = crucible::TraceNodeKind::BRANCH;
+            branch.arms =
+                child_arena.array<crucible::BranchNode::Arm>(test.alloc, 1, crucible::BranchNode::Arm{.value = 1});
+            crucible::recompute_merkle(&branch);
+            // The child prints the hash only when the hash returns.
+            ::fixy::report(::fixy::Sink::Out, "  the hash of the unresolved branch: {}\n", branch.merkle_hash.raw());
+        };
+        assert(dies(hash_unresolved_branch) && "the hash of a branch read the target of an arm that has none");
+
+        ::fixy::report(::fixy::Sink::Out, "  the hash of a branch with an unresolved arm ends the process\n");
 
         // The door of the inputs and of the outputs takes each array of the
         // count together, so an array of a different count ends the process.

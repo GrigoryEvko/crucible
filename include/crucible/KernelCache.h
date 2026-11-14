@@ -507,8 +507,8 @@ private:
     branch->kind = TraceNodeKind::BRANCH;
     branch->guard = guard;
     // Arms go in sorted by value: replay binary-searches them.
-    const BranchNode::Arm old_arm{.value = old_guard_value, .target = divergence_point};
-    const BranchNode::Arm new_arm{.value = new_guard_value, .target = new_region};
+    const BranchNode::Arm old_arm{.value = old_guard_value, .target = make_link(*divergence_point)};
+    const BranchNode::Arm new_arm{.value = new_guard_value, .target = make_link(*new_region)};
     const bool is_old_first = old_guard_value <= new_guard_value;
     branch->arms = arena.array<BranchNode::Arm>(a, 2, old_arm);
     BranchNode::Arm& first_arm = *branch->arms.get(0).expect("a branch of two arms holds arm 0");

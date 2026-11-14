@@ -704,17 +704,20 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     w.w(branch->num_arms());
     for (const BranchNode::Arm& arm : branch->arms) {
         w.w(arm.value);
-        const uint64_t target_hash = arm.target ? arm.target->merkle_hash.raw() : uint64_t{0};
+        // An arm with no target writes the hash zero.
+        const uint64_t target_hash =
+            arm.target.match([](::fixy::Ref<TraceNode> const& target) noexcept { return target->merkle_hash.raw(); },
+                             []() noexcept { return uint64_t{0}; });
         w.w(target_hash);
     }
 
     return w.has_room ? w.pos : 0;
 }
 
-// The resolver turns each persisted merkle hash back into a node pointer.
-// Returns null on a parse error.
+// The resolver turns each persisted merkle hash back into a link to a node,
+// or into an empty link.  Returns null on a parse error.
 template <typename Resolve>
-    requires std::is_invocable_r_v<TraceNode*, Resolve&, MerkleHash>
+    requires std::is_invocable_r_v<TraceLink, Resolve&, MerkleHash>
 [[nodiscard]] inline BranchNode* deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
                                                     ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND,
                                                     Resolve&& resolve) {
@@ -736,7 +739,7 @@ template <typename Resolve>
 
     // Reject a truncated body before growing the arena for the arms. The wire
     // cost is spelled out rather than taken from the in-memory arm: the two
-    // sizes coincide today, but the in-memory arm holds a resolved pointer
+    // sizes coincide today, but the in-memory arm holds a resolved link
     // where the wire holds a hash, so only one of them is the file's business.
     constexpr size_t kArmWireBytes = sizeof(int64_t) + sizeof(uint64_t);
     if (!r.has_remaining(num_arms, kArmWireBytes)) {
@@ -761,11 +764,11 @@ template <typename Resolve>
     return node;
 }
 
-// The branch with no resolver: the target of each arm stays null, and the
+// The branch with no resolver: the target of each arm stays empty, and the
 // caller resolves the targets later.
 [[nodiscard]] inline BranchNode* deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
                                                     ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND) {
-    return deserialize_branch(a, image, arena, [](MerkleHash) noexcept -> TraceNode* { return nullptr; });
+    return deserialize_branch(a, image, arena, [](MerkleHash) noexcept { return TraceLink{}; });
 }
 
 // The twin of the two deserialize_branch overloads above.  The node is in

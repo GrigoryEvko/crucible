@@ -271,6 +271,8 @@ using ValidTraceNodeKindRaw = ::fixy::Refined<kValidTraceNodeKindBound, uint8_t>
 }
 
 struct TraceNode;
+struct RegionNode;
+struct BranchNode;
 struct LoopNode;
 
 // A link to one node of the DAG, or no node.  The node is in the arena of
@@ -297,8 +299,11 @@ struct TraceNode {
         return ::fixy::mint_refined<::fixy::non_zero>(merkle_hash);
     }
 
-    // The node as a loop, or no value when its kind is not LOOP.  The door
-    // reads the kind, so no walk downcasts a node by hand.
+    // The node as a region, a branch or a loop, or no value when its kind is
+    // a different kind.  The doors read the kind, so no walk downcasts a node
+    // by hand.
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<RegionNode>> as_region() noexcept;
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<BranchNode>> as_branch() noexcept;
     [[nodiscard]] ::fixy::Option<::fixy::Ref<LoopNode>> as_loop() noexcept;
 };
 
@@ -426,7 +431,16 @@ struct BranchNode : TraceNode {
 
     struct Arm {
         int64_t value = 0;  // the observed guard outcome
-        TraceNode* target = nullptr;
+        // The node that the arm runs.  An arm of a loaded branch has no
+        // target until a caller resolves it.
+        TraceLink target{};
+
+        // The target of the arm.  A hash of the branch reads the target of
+        // each arm, so an arm with no target ends the process here.
+        [[nodiscard]] TraceNode& resolved_target() const noexcept {
+            return *TraceLink{target}.expect("an arm of the branch has no target: resolve the targets of a "
+                                             "loaded branch before a walk reads them");
+        }
     };
 
     uint32_t pad1 = 0;  // the bytes between the guard and the arms
@@ -499,6 +513,16 @@ struct LoopNode : TraceNode {
         return ::fixy::mint_refined<::fixy::non_zero>(body_content_hash);
     }
 };
+
+inline ::fixy::Option<::fixy::Ref<RegionNode>> TraceNode::as_region() noexcept {
+    if (kind != TraceNodeKind::REGION) return ::fixy::none;
+    return ::fixy::some(::fixy::Ref<RegionNode>{::fixy::to(static_cast<RegionNode&>(*this))});
+}
+
+inline ::fixy::Option<::fixy::Ref<BranchNode>> TraceNode::as_branch() noexcept {
+    if (kind != TraceNodeKind::BRANCH) return ::fixy::none;
+    return ::fixy::some(::fixy::Ref<BranchNode>{::fixy::to(static_cast<BranchNode&>(*this))});
+}
 
 inline ::fixy::Option<::fixy::Ref<LoopNode>> TraceNode::as_loop() noexcept {
     if (kind != TraceNodeKind::LOOP) return ::fixy::none;
@@ -700,10 +724,10 @@ private:
             merkle_hash_state = static_cast<RegionNode*>(node)->content_hash.raw();
             break;
         case TraceNodeKind::BRANCH: {
-            auto* branch = static_cast<BranchNode*>(node);
+            const ::fixy::Ref<BranchNode> branch = node->as_branch().expect("the kind of the node is BRANCH");
             merkle_hash_state = detail::fmix64(branch->guard.hash());
             for (const BranchNode::Arm& arm : branch->arms) {
-                merkle_hash_state ^= detail::fmix64(arm.target->merkle_hash.raw());
+                merkle_hash_state ^= detail::fmix64(arm.resolved_target().merkle_hash.raw());
                 merkle_hash_state *= 0x9E3779B97F4A7C15ULL;
             }
             break;
@@ -737,8 +761,8 @@ private:
 [[nodiscard, gnu::pure]] inline ContentHash branched_content_hash(BranchNode* branch) noexcept {
     uint64_t branched_hash_state = detail::fmix64(branch->guard.hash());
     for (const BranchNode::Arm& arm : branch->arms) {
-        if (arm.target->kind == TraceNodeKind::REGION) {
-            branched_hash_state ^= detail::fmix64(static_cast<RegionNode*>(arm.target)->content_hash.raw());
+        for (const ::fixy::Ref<RegionNode>& region : arm.resolved_target().as_region()) {
+            branched_hash_state ^= detail::fmix64(region->content_hash.raw());
             branched_hash_state *= 0x9E3779B97F4A7C15ULL;
         }
     }
@@ -891,9 +915,8 @@ LoopNode* make_loop(::foundation::effects::Alloc, ::fixy::BumpArena&&, Rest&&...
 inline void recompute_merkle(TraceNode* node) {
     if (!node) return;
     if (node->kind == TraceNodeKind::BRANCH) {
-        auto* branch = static_cast<BranchNode*>(node);
-        for (const BranchNode::Arm& arm : branch->arms)
-            recompute_merkle(arm.target);
+        for (const BranchNode::Arm& arm : node->as_branch().expect("the kind of the node is BRANCH")->arms)
+            recompute_merkle(detail::node_of_link(arm.target));
     } else if (node->kind == TraceNodeKind::LOOP) {
         recompute_merkle(detail::node_of_link(node->as_loop().expect("the kind of the node is LOOP")->body));
     }
@@ -910,9 +933,8 @@ inline void recompute_merkle(TraceNode* node) {
                 ++count;
                 break;
             case TraceNodeKind::BRANCH: {
-                auto* branch = static_cast<BranchNode*>(node);
-                for (const BranchNode::Arm& arm : branch->arms)
-                    count = collect_regions(arm.target, out, count);
+                for (const BranchNode::Arm& arm : node->as_branch().expect("the kind of the node is BRANCH")->arms)
+                    count = collect_regions(detail::node_of_link(arm.target), out, count);
                 break;
             }
             case TraceNodeKind::LOOP:
@@ -995,12 +1017,12 @@ template <typename GuardEval, typename RegionExec>
             }
 
             case TraceNodeKind::BRANCH: {
-                auto* branch = static_cast<BranchNode*>(node);
+                const ::fixy::Ref<BranchNode> branch = node->as_branch().expect("the kind of the node is BRANCH");
                 int64_t val = eval_guard(branch->guard);
 
                 contract_assert(branch->are_arms_sorted_by_value());
 
-                TraceNode* arm = nullptr;
+                TraceLink arm{};
                 {
                     const ::fixy::View<const BranchNode::Arm> arms = branch->arms;
                     uint32_t lo = 0, hi = branch->num_arms();
@@ -1019,9 +1041,11 @@ template <typename GuardEval, typename RegionExec>
                     }
                 }
 
-                if (!arm) return false;  // unseen guard value: the caller falls back to recording
+                // An unseen guard value, or an arm with no target: the caller
+                // falls back to recording.
+                if (arm.is_none()) return false;
 
-                if (!replay(arm, eval_guard, exec_region)) return false;
+                if (!replay(detail::node_of_link(arm), eval_guard, exec_region)) return false;
 
                 node = branch->next;
                 break;
@@ -1111,14 +1135,15 @@ struct DagDiff {
         }
 
         if (a->kind == TraceNodeKind::BRANCH) {
-            auto* ba = static_cast<BranchNode*>(a);
-            auto* bb = static_cast<BranchNode*>(b);
+            const ::fixy::Ref<BranchNode> ba = a->as_branch().expect("the kind of the node is BRANCH");
+            const ::fixy::Ref<BranchNode> bb = b->as_branch().expect("the two nodes have one kind");
             if (ba->guard.hash() != bb->guard.hash() || ba->arms.size() != bb->arms.size())
                 return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
             for (auto [arm_a, arm_b] :
                  ::fixy::zip(ba->arms, bb->arms).expect("the two branches hold one count of arms")) {
                 if (arm_a->value != arm_b->value) return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
-                DagDiff arm_diff = dag_diff(arm_a->target, arm_b->target, depth + 1);
+                DagDiff arm_diff =
+                    dag_diff(detail::node_of_link(arm_a->target), detail::node_of_link(arm_b->target), depth + 1);
                 if (arm_diff.kind != DagDiff::Kind::IDENTICAL) return arm_diff;
             }
             a = a->next;
@@ -1159,9 +1184,8 @@ struct DagDiff {
         ++count;
         switch (node->kind) {
             case TraceNodeKind::BRANCH: {
-                auto* b = static_cast<BranchNode*>(node);
-                for (const BranchNode::Arm& arm : b->arms)
-                    count += dag_node_count(arm.target);
+                for (const BranchNode::Arm& arm : node->as_branch().expect("the kind of the node is BRANCH")->arms)
+                    count += dag_node_count(detail::node_of_link(arm.target));
                 break;
             }
             case TraceNodeKind::LOOP:

@@ -1914,6 +1914,13 @@ crucible_neg_compile_test(neg_trace_node_kind_uint8_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<3>\\(\\), unsigned char>\\(255\\)")
 
+# The target of an arm is a link, and a link has no operator->.  A walk
+# reads the target through a match, a loop over the link, or
+# resolved_target().
+crucible_neg_compile_test(neg_branch_arm_target_raw_read
+  "error: base operand of .->. has non-pointer type"
+  "non-pointer type .const crucible::TraceLink.")
+
 # CDAG_VERSION is a fixy::Tagged<uint32_t, source::FormatVersion>.
 # Disk-read header versions enter as source::External and are compared
 # with the in-process format constant before the wire body is trusted.
