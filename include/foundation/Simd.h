@@ -62,6 +62,25 @@ using comparison_t =
 template <typename ElementType, int Lanes>
 using comparison_lane_t = std::remove_cvref_t<decltype(std::declval<comparison_t<ElementType, Lanes>>()[0])>;
 
+// The vector that a lane operation computes in.  A signed integer lane
+// computes in its unsigned type, where an add, a subtract, a multiply and a
+// negate wrap modulo two to the width of the lane.  In the signed type, a
+// result outside the range is an overflow, and a signed overflow is undefined
+// behavior.  Each other lane computes in its own type.
+template <typename ElementType, int Lanes>
+struct wrap_vector {
+    using type = raw_vector_t<ElementType, Lanes>;
+};
+
+template <typename ElementType, int Lanes>
+    requires std::signed_integral<ElementType>
+struct wrap_vector<ElementType, Lanes> {
+    using type = raw_vector_t<std::make_unsigned_t<ElementType>, Lanes>;
+};
+
+template <typename ElementType, int Lanes>
+using wrap_vector_t = typename wrap_vector<ElementType, Lanes>::type;
+
 }  // namespace detail
 
 // A lane holds all ones for true and zero for false, which is what the
@@ -164,14 +183,18 @@ public:
 
     [[nodiscard]] constexpr ElementType operator[](int lane) const noexcept { return v_[lane]; }
 
-    [[nodiscard]] friend constexpr vec operator+(vec a, vec b) noexcept { return vec{a.v_ + b.v_}; }
-    [[nodiscard]] friend constexpr vec operator-(vec a, vec b) noexcept { return vec{a.v_ - b.v_}; }
-    [[nodiscard]] friend constexpr vec operator*(vec a, vec b) noexcept { return vec{a.v_ * b.v_}; }
+    // On signed integer lanes, the add, the subtract, the multiply and the
+    // negate wrap modulo two to the width of the lane, with no overflow
+    // (detail::wrap_vector).  The bits of each lane and the instructions are
+    // the same as in the signed type.
+    [[nodiscard]] friend constexpr vec operator+(vec a, vec b) noexcept { return unwrap_(wrap_(a) + wrap_(b)); }
+    [[nodiscard]] friend constexpr vec operator-(vec a, vec b) noexcept { return unwrap_(wrap_(a) - wrap_(b)); }
+    [[nodiscard]] friend constexpr vec operator*(vec a, vec b) noexcept { return unwrap_(wrap_(a) * wrap_(b)); }
     [[nodiscard]] friend constexpr vec operator&(vec a, vec b) noexcept { return vec{a.v_ & b.v_}; }
     [[nodiscard]] friend constexpr vec operator|(vec a, vec b) noexcept { return vec{a.v_ | b.v_}; }
     [[nodiscard]] friend constexpr vec operator^(vec a, vec b) noexcept { return vec{a.v_ ^ b.v_}; }
     [[nodiscard]] friend constexpr vec operator~(vec a) noexcept { return vec{~a.v_}; }
-    [[nodiscard]] friend constexpr vec operator-(vec a) noexcept { return vec{-a.v_}; }
+    [[nodiscard]] friend constexpr vec operator-(vec a) noexcept { return unwrap_(-wrap_(a)); }
     [[nodiscard]] friend constexpr vec operator<<(vec a, int s) noexcept { return vec{a.v_ << s}; }
     [[nodiscard]] friend constexpr vec operator>>(vec a, int s) noexcept { return vec{a.v_ >> s}; }
     [[nodiscard]] friend constexpr vec operator<<(vec a, vec s) noexcept { return vec{a.v_ << s.v_}; }
@@ -190,6 +213,17 @@ private:
     template <typename OtherElement, int OtherLanes>
         requires detail::VectorShape<OtherElement, OtherLanes>
     friend class vec;
+
+    using wrap_type = detail::wrap_vector_t<ElementType, Lanes>;
+
+    // The bits of the lanes in the vector of the wrapping operations, and
+    // back.  No bit changes.
+    [[nodiscard]] static constexpr wrap_type wrap_(vec value) noexcept {
+        return __builtin_bit_cast(wrap_type, value.v_);
+    }
+    [[nodiscard]] static constexpr vec unwrap_(wrap_type value) noexcept {
+        return vec{__builtin_bit_cast(raw_type, value)};
+    }
 
     raw_type v_{};
 };

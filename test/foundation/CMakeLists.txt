@@ -54,6 +54,10 @@ foundation_test(test_brand)
 # Each reduction of foundation/Simd.h at the limits of each lane type.  In
 # the preset ubsan-strict, a signed overflow ends the test.
 foundation_test(test_simd_reduction_limits)
+# The add, the subtract, the multiply and the negate of foundation/Simd.h at
+# the limits of each lane type.  In the preset ubsan-strict, a signed overflow
+# ends the test.
+foundation_test(test_simd_operator_limits)
 
 # Negative-compile fixtures for the foundation layer.
 #
