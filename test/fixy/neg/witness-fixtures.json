@@ -1094,11 +1094,11 @@
     },
     {
       "type": "foundation::AlignedBytes",
-      "header": "foundation/AlignedBuffer.h"
+      "header": "foundation/AlignedBytes.h"
     },
     {
       "type": "foundation::detail::AlignedBytesKey",
-      "header": "foundation/AlignedBuffer.h"
+      "header": "foundation/AlignedBytes.h"
     },
     {
       "type": "foundation::core::Identity",

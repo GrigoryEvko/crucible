@@ -18,7 +18,7 @@
 #include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/ScopedView.h>
-#include <foundation/AlignedBuffer.h>
+#include <foundation/AlignedBytes.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>

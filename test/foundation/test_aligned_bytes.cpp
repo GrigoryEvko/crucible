@@ -1,11 +1,11 @@
-// Tests of AlignedBytes and mint_aligned_bytes of foundation/AlignedBuffer.h.
+// Tests of AlignedBytes and mint_aligned_bytes of foundation/AlignedBytes.h.
 //
 // The block keeps the alignment that the mint got at run time, also the
 // alignment of a huge page.  A count of zero is the empty block.  The View
 // reaches each byte, a move gives the block to the target, and an alignment
 // that is not a power of two ends the process.
 
-#include <foundation/AlignedBuffer.h>
+#include <foundation/AlignedBytes.h>
 
 #include <foundation/Platform.h>
 #include <foundation/core/Ref.h>

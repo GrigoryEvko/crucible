@@ -96,34 +96,27 @@ bench/ | door-header | 2 | - | -
 bench/ | inline-asm | 3 | - | -
 bench/ | raw-function-pointer | 1 | - | -
 bench/ | raw-new-delete | 2 | - | -
-bench/ | raw-pointer-object | 127 | - | -
+bench/ | raw-pointer-object | 124 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
-bench/ | std-entity | 771 | - | -
-bench/ | std-object | 232 | - | -
+bench/ | std-entity | 766 | - | -
+bench/ | std-object | 231 | - | -
 examples/fn/ | c-array-object | 9 | - | -
 examples/fn/ | c-library-call | 12 | - | -
 examples/fn/ | raw-pointer-object | 7 | - | -
 examples/fn/ | replace-pending:std::bit_cast | 2 | - | -
 examples/fn/ | std-entity | 10 | - | -
 examples/fn/ | std-object | 3 | - | -
-include/crucible/ | c-array-object | 4 | - | -
+include/crucible/ | c-array-object | 2 | - | -
 include/crucible/ | compiler-builtin | 1 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
-include/crucible/ | raw-pointer-object | 79 | - | -
+include/crucible/ | raw-pointer-object | 69 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 1 | - | -
-include/crucible/ | std-entity | 4 | - | -
-include/crucible/ | std-object | 8 | - | -
+include/crucible/ | std-entity | 1 | - | -
 include/crucible/cntp/ | c-library-call | 9 | - | -
 include/crucible/cntp/ | compiler-builtin | 2 | - | -
-include/crucible/cntp/ | std-object | 1 | - | -
-include/crucible/mimic/ | raw-pointer-object | 2 | - | -
-include/crucible/observe/ | std-object | 3 | - | -
-include/crucible/perf/ | raw-pointer-object | 3 | - | -
-include/crucible/perf/detail/ | c-library-call | 1 | - | -
-include/crucible/perf/detail/ | c-library-object | 2 | - | -
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
-include/crucible/perf/detail/ | raw-pointer-object | 6 | - | -
+include/crucible/perf/detail/ | raw-pointer-object | 4 | - | -
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | replace-pending:std::bit_cast | 4 | - | -
 include/crucible/perf/detail/ | std-entity | 4 | - | -
@@ -232,7 +225,7 @@ include/fixy/session/ | replace-pending:<string_view> | 10 | - | -
 include/fixy/session/ | replace-pending:<tuple> | 7 | - | -
 include/fixy/session/ | replace-pending:<vector> | 9 | - | -
 include/foundation/ | base-c-library-call | 4 | - | -
-include/foundation/ | base-std-entity | 26 | - | -
+include/foundation/ | base-std-entity | 25 | - | -
 include/foundation/ | base-std-object | 12 | - | -
 include/foundation/ | replace-pending:<atomic> | 1 | - | -
 include/foundation/ | replace-pending:<bit> | 4 | - | -
@@ -290,7 +283,7 @@ include/foundation/reflect/ | replace-pending:<string_view> | 5 | - | -
 include/foundation/reflect/ | replace-pending:<tuple> | 1 | - | -
 include/foundation/reflect/ | replace-pending:<vector> | 4 | - | -
 src/ | raw-new-delete | 3 | - | -
-src/ | raw-pointer-object | 24 | - | -
+src/ | raw-pointer-object | 20 | - | -
 src/ | std-entity | 71 | - | -
 src/ | std-object | 15 | - | -
 src/fixy/os/ | base-std-entity | 153 | - | -
@@ -311,8 +304,8 @@ src/perf/ | compiler-builtin | 1 | - | -
 src/perf/ | foreign-symbol | 14 | - | -
 src/perf/ | raw-pointer-object | 3 | - | -
 src/perf/ | replace-pending:std::bit_cast | 2 | - | -
-test/ | c-array-object | 162 | - | -
-test/ | c-library-call | 854 | - | -
+test/ | c-array-object | 160 | - | -
+test/ | c-library-call | 853 | - | -
 test/ | c-library-object | 14 | - | -
 test/ | compiler-builtin | 1 | - | -
 test/ | door-header | 19 | - | -
@@ -322,13 +315,13 @@ test/ | opted-out | 13 | PROBE: the current directory of the process is a direct
 test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | raw-function-pointer | 21 | - | -
 test/ | raw-new-delete | 41 | - | -
-test/ | raw-pointer-object | 399 | - | -
+test/ | raw-pointer-object | 398 | - | -
 test/ | region | 1 | PROBE: the current directory of the process is a directory that it cannot read | the test of the root of the Cipher makes its current directory unreadable through the C library, because the base has no door that changes the current directory or the mode of a directory, and an absolute root must open when the current directory does not open
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | replace-pending:<limits> | 12 | - | -
-test/ | replace-pending:std::bit_cast | 87 | - | -
-test/ | std-entity | 1523 | - | -
-test/ | std-object | 543 | - | -
+test/ | replace-pending:std::bit_cast | 85 | - | -
+test/ | std-entity | 1501 | - | -
+test/ | std-object | 540 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
 test/cipher_neg/ | raw-pointer-object | 2 | - | -
 test/cipher_neg/ | std-entity | 6 | - | -
@@ -551,14 +544,14 @@ test/fuzz/boundary/harnesses/ | region | 5 | ABI: the fuzzer gives its input as 
 test/fuzz/boundary/harnesses/ | region | 2 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
 test/fuzz/boundary/harnesses/ | std-entity | 154 | - | -
 test/fuzz/boundary/harnesses/ | std-object | 83 | - | -
-test/fuzz/property/ | c-array-object | 19 | - | -
+test/fuzz/property/ | c-array-object | 17 | - | -
 test/fuzz/property/ | c-library-call | 48 | - | -
 test/fuzz/property/ | compiler-builtin | 4 | - | -
 test/fuzz/property/ | raw-function-pointer | 2 | - | -
-test/fuzz/property/ | raw-pointer-object | 46 | - | -
+test/fuzz/property/ | raw-pointer-object | 45 | - | -
 test/fuzz/property/ | replace-pending:<limits> | 27 | - | -
-test/fuzz/property/ | std-entity | 146 | - | -
-test/fuzz/property/ | std-object | 38 | - | -
+test/fuzz/property/ | std-entity | 143 | - | -
+test/fuzz/property/ | std-object | 30 | - | -
 test/kernel_neg/ | raw-pointer-object | 1 | - | -
 test/kernel_neg/ | replace-pending:<limits> | 1 | - | -
 test/layer/ | door-header | 1 | - | -
@@ -634,8 +627,8 @@ test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family pr
 test/swiss_table_neg/ | replace-pending:<limits> | 1 | - | -
 test/tensor_neg/ | raw-pointer-object | 1 | - | -
 test/trace_neg/ | replace-pending:<limits> | 1 | - | -
-test/trace_neg/ | std-entity | 43 | - | -
-test/trace_neg/ | std-object | 14 | - | -
+test/trace_neg/ | std-entity | 36 | - | -
+test/trace_neg/ | std-object | 12 | - | -
 test/tsan/ | c-library-call | 1 | - | -
 test/tsan/ | std-entity | 32 | - | -
 test/tsan/ | std-object | 13 | - | -

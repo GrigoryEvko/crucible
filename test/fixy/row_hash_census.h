@@ -105,6 +105,7 @@
 #include <fixy/Tags.h>
 #include <fixy/Throws.h>
 #include <foundation/AlignedBuffer.h>
+#include <foundation/AlignedBytes.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/algebra/Lattice.h>

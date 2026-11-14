@@ -281,7 +281,7 @@ that the axis does not apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_aligned_bytes` | `include/foundation/AlignedBuffer.h` | Y | - | Y | Y | token | · | HS14: 2 |
+| `mint_aligned_bytes` | `include/foundation/AlignedBytes.h` | Y | - | Y | Y | token | · | HS14: 2 |
 
 ## include/foundation/core/
 

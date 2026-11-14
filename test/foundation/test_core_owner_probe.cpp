@@ -46,6 +46,7 @@
 // see it at all.  The check finds such an owner only when a probe names it.
 
 #include <foundation/AlignedBuffer.h>
+#include <foundation/AlignedBytes.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>

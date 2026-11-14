@@ -2,7 +2,7 @@
 // gives the block back, so the View would dangle.  The overload for an
 // rvalue is deleted.
 
-#include <foundation/AlignedBuffer.h>
+#include <foundation/AlignedBytes.h>
 #include <foundation/effects/Effect.h>
 
 int main() {

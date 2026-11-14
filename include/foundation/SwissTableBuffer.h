@@ -9,7 +9,7 @@
 // the table writes one.  A proof type, or a class that holds one, cannot start
 // its lifetime that way, so it cannot be a slot.
 
-#include <foundation/AlignedBuffer.h>
+#include <foundation/AlignedBytes.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Heap.h>
