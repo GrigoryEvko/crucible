@@ -35,6 +35,14 @@ struct ThrowingMove final {
     ThrowingMove(ThrowingMove&&) noexcept(false) {}
 };
 
+// A pinned element that writes a move of its own.  Its address is its
+// identity, so the list refuses it by its type, as it refuses an Atomic.
+struct MovedPin final : ::foundation::Pinned<MovedPin> {
+    int value = 0;
+    MovedPin() noexcept = default;
+    MovedPin(MovedPin&& other) noexcept : ::foundation::Pinned<MovedPin>{}, value{other.value} {}
+};
+
 // An owner holds a pointer and three counts.  It moves and does not copy,
 // and a list of a linear element is linear and has no clear().
 static_assert(sizeof(GrowList<int>) == 4 * sizeof(std::size_t));
@@ -46,6 +54,8 @@ static_assert(::foundation::linear::is_linear_v<GrowList<LinearToken>>);
 static_assert(!::foundation::linear::is_linear_v<GrowList<int>>);
 static_assert(GrowListElement<int> && GrowListElement<GrowList<int>> && GrowListElement<Box<int>>);
 static_assert(!GrowListElement<ThrowingMove> && !GrowListElement<int const>);
+static_assert(std::is_nothrow_move_constructible_v<MovedPin> && !GrowListElement<MovedPin>);
+static_assert(!GrowListElement<Atomic<int>> && GrowListElement<Box<Atomic<int>>> && GrowListElement<Box<MovedPin>>);
 
 template <class List>
 concept Clears = requires(List& list) { list.clear(); };

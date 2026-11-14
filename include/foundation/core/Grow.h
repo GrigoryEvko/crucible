@@ -58,6 +58,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/Pinned.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
@@ -149,9 +150,15 @@ struct GrowTextState {
 }  // namespace detail
 
 // The element of a GrowList: an owned element that moves with no throw,
-// because a growth moves each element.
+// because a growth moves each element.  A pinned element derives from
+// foundation::Pinned, because its address is its identity, such as an
+// Atomic.  A growth would change that address, so the list refuses such an
+// element, also when the element writes a move of its own.  A growable set of
+// pinned elements is a GrowList of Box<T>, and a fixed set is a HeapArray
+// from mint_heap_array_with.
 template <class T>
-concept GrowListElement = OwnedElement<T> && std::is_nothrow_move_constructible_v<T>;
+concept GrowListElement =
+    OwnedElement<T> && std::is_nothrow_move_constructible_v<T> && !std::is_base_of_v<::foundation::Pinned<T>, T>;
 
 template <class T>
     requires GrowListElement<T>

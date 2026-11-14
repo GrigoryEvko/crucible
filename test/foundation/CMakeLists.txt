@@ -2967,6 +2967,11 @@ foundation_neg_compile_test(neg_core_grow_list_append_without_allocation_marker
 foundation_neg_compile_test(neg_core_grow_list_throwing_move
   "no matching function for call to .mint_grow_list<ThrowingMove>\\(int\\)."
   "the expression .is_nothrow_move_constructible_v<T> \\[with T = ThrowingMove\\]. evaluated to .false.")
+# A growth moves each element, so a GrowList refuses a pinned element by its
+# type, also an element that writes a move of its own.
+foundation_neg_compile_test(neg_core_grow_list_pinned_element
+  "no matching function for call to .mint_grow_list<Cell>\\(int\\)."
+  "the expression .!\\(is_base_of_v<foundation::Pinned<T>, T>\\) \\[with T = Cell\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_grow_text_append_without_allocation_marker
   "no matching function for call to .foundation::core::GrowText::append\\(foundation::effects::cap::IO, const char \\[9\\]\\)."
   "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
