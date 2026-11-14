@@ -60,33 +60,32 @@ void test_snapshot_maps_to_fixed_observation_batch() {
 
     auto const batch = observe::topology_health_observations(7, sample_snapshot(), observe::ObservationSource::Keeper);
 
-    CRUCIBLE_REQUIRE(batch[0].kind == observe::ObservationKind::HealthScore);
-    CRUCIBLE_REQUIRE(batch[0].source == observe::ObservationSource::Keeper);
-    CRUCIBLE_REQUIRE(batch[0].value == 777);
-    CRUCIBLE_REQUIRE(batch[0].sequence == 42);
-    CRUCIBLE_REQUIRE(batch[1].kind == observe::ObservationKind::PhiMilli);
-    CRUCIBLE_REQUIRE(batch[1].value == 1234);
-    CRUCIBLE_REQUIRE(batch[2].kind == observe::ObservationKind::DropRatePpm);
-    CRUCIBLE_REQUIRE(batch[2].value == 456);
-    CRUCIBLE_REQUIRE(batch[3].kind == observe::ObservationKind::WearUsedPpm);
-    CRUCIBLE_REQUIRE(batch[3].value == 789000);
+    CRUCIBLE_REQUIRE(batch.at(::fixy::index<0>()).kind == observe::ObservationKind::HealthScore);
+    CRUCIBLE_REQUIRE(batch.at(::fixy::index<0>()).source == observe::ObservationSource::Keeper);
+    CRUCIBLE_REQUIRE(batch.at(::fixy::index<0>()).value == 777);
+    CRUCIBLE_REQUIRE(batch.at(::fixy::index<0>()).sequence == 42);
+    CRUCIBLE_REQUIRE(batch.at(::fixy::index<1>()).kind == observe::ObservationKind::PhiMilli);
+    CRUCIBLE_REQUIRE(batch.at(::fixy::index<1>()).value == 1234);
+    CRUCIBLE_REQUIRE(batch.at(::fixy::index<2>()).kind == observe::ObservationKind::DropRatePpm);
+    CRUCIBLE_REQUIRE(batch.at(::fixy::index<2>()).value == 456);
+    CRUCIBLE_REQUIRE(batch.at(::fixy::index<3>()).kind == observe::ObservationKind::WearUsedPpm);
+    CRUCIBLE_REQUIRE(batch.at(::fixy::index<3>()).value == 789000);
 }
 
 void test_publish_updates_dedicated_latest_value_sinks() {
-    observe::TopologyHealthObservationSet sinks{
-        observe::ObservationSnapshot{},
-        observe::ObservationSnapshot{},
-        observe::ObservationSnapshot{},
-        observe::ObservationSnapshot{},
-    };
+    observe::TopologyHealthObservationSet sinks{};
 
     observe::publish_topology_health(sinks, 2, sample_snapshot(), observe::ObservationSource::Runtime);
 
-    CRUCIBLE_REQUIRE(observe::latest_observation(sinks[0]).kind == observe::ObservationKind::HealthScore);
-    CRUCIBLE_REQUIRE(observe::latest_observation(sinks[1]).kind == observe::ObservationKind::PhiMilli);
-    CRUCIBLE_REQUIRE(observe::latest_observation(sinks[2]).kind == observe::ObservationKind::DropRatePpm);
-    CRUCIBLE_REQUIRE(observe::latest_observation(sinks[3]).kind == observe::ObservationKind::WearUsedPpm);
-    CRUCIBLE_REQUIRE(observe::latest_observation(sinks[3]).metric_id
+    CRUCIBLE_REQUIRE(observe::latest_observation(sinks.at(::fixy::index<0>())).kind
+                     == observe::ObservationKind::HealthScore);
+    CRUCIBLE_REQUIRE(observe::latest_observation(sinks.at(::fixy::index<1>())).kind
+                     == observe::ObservationKind::PhiMilli);
+    CRUCIBLE_REQUIRE(observe::latest_observation(sinks.at(::fixy::index<2>())).kind
+                     == observe::ObservationKind::DropRatePpm);
+    CRUCIBLE_REQUIRE(observe::latest_observation(sinks.at(::fixy::index<3>())).kind
+                     == observe::ObservationKind::WearUsedPpm);
+    CRUCIBLE_REQUIRE(observe::latest_observation(sinks.at(::fixy::index<3>())).metric_id
                      == observe::topology_health_metric_id(2, observe::HealthMetricSlot::WearUsedPpm));
 }
 

@@ -2,12 +2,10 @@
 
 #include <crucible/observe/Observation.h>
 #include <crucible/topology/Health.h>
+#include <fixy/Core.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <meta>
-#include <type_traits>
 
 namespace crucible::observe {
 
@@ -22,8 +20,9 @@ inline constexpr std::uint32_t kTopologyHealthMetricBase = 0x48450000u;
 // One observation for each slot.
 inline constexpr std::size_t kTopologyHealthObservationCount = 4;
 
-using TopologyHealthObservationSet = std::array<ObservationSnapshot, kTopologyHealthObservationCount>;
-using TopologyHealthObservationBatch = std::array<Observation, kTopologyHealthObservationCount>;
+using TopologyHealthObservationSet =
+    ::foundation::core::FixedArray<ObservationSnapshot, kTopologyHealthObservationCount>;
+using TopologyHealthObservationBatch = ::foundation::core::FixedArray<Observation, kTopologyHealthObservationCount>;
 
 [[nodiscard]] constexpr std::uint32_t topology_health_metric_id(std::uint16_t peer_slot,
                                                                 HealthMetricSlot slot) noexcept {
@@ -33,7 +32,7 @@ using TopologyHealthObservationBatch = std::array<Observation, kTopologyHealthOb
 [[nodiscard]] constexpr TopologyHealthObservationBatch
 topology_health_observations(std::uint16_t peer_slot, topology::HealthSnapshot const& snapshot,
                              ObservationSource source = ObservationSource::Runtime) noexcept {
-    return TopologyHealthObservationBatch{{
+    return TopologyHealthObservationBatch{
         make_observation(ObservationKind::HealthScore, source,
                          topology_health_metric_id(peer_slot, HealthMetricSlot::Score), snapshot.score.raw(),
                          snapshot.sequence),
@@ -46,15 +45,15 @@ topology_health_observations(std::uint16_t peer_slot, topology::HealthSnapshot c
         make_observation(ObservationKind::WearUsedPpm, source,
                          topology_health_metric_id(peer_slot, HealthMetricSlot::WearUsedPpm), snapshot.wear_used_ppm,
                          snapshot.sequence),
-    }};
+    };
 }
 
 inline void publish_topology_health(TopologyHealthObservationSet& sinks, std::uint16_t peer_slot,
                                     topology::HealthSnapshot const& snapshot,
                                     ObservationSource source = ObservationSource::Runtime) noexcept {
     TopologyHealthObservationBatch const observations = topology_health_observations(peer_slot, snapshot, source);
-    for (std::size_t i = 0; i < observations.size(); ++i) {
-        record_observation(sinks[i], observations[i]);
+    for (::fixy::Index<kTopologyHealthObservationCount> const index : TopologyHealthObservationSet::indices()) {
+        record_observation(sinks.at(index), observations.at(index));
     }
 }
 
