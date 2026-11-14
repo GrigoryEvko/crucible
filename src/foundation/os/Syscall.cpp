@@ -1,5 +1,6 @@
-// The door of the raw system call primitive (foundation/os/Syscall.h) and of
-// the kernel floor (foundation/os/KernelFloor.h).
+// The door of the raw system call primitive (foundation/os/Syscall.h), of
+// the kernel floor (foundation/os/KernelFloor.h) and of the block of SIGPIPE
+// (foundation/os/PipeSignal.h).
 //
 // This file is the one place of the base with the system call instruction,
 // and the one includer of <asm/unistd.h>, <asm-generic/errno-base.h>,
@@ -17,6 +18,7 @@
 #include <foundation/os/MapWords.h>
 #include <foundation/os/MemoryPolicyWords.h>
 #include <foundation/os/OpenFlags.h>
+#include <foundation/os/PipeSignal.h>
 #include <foundation/os/SchedWords.h>
 #include <foundation/os/Syscall.h>
 
@@ -382,6 +384,38 @@ long issue_watched_open(detail::OpenWords const& words) noexcept {
 }
 #endif
 
+// THE PIPE SIGNAL (foundation/os/PipeSignal.h).  The signal set of the kernel
+// holds 64 signals on x86_64 and on aarch64, with the bit N - 1 for the
+// signal N.  So the set of the one signal SIGPIPE is one word, and the kernel
+// refuses a set of a different size with EINVAL.  No enumerator of Syscall
+// names rt_sigprocmask or rt_sigtimedwait, so this set is the one set of the
+// two calls in the base.
+//
+// The words are the values of <asm/signal.h> and
+// <asm-generic/signal-defs.h> on the two architectures: SIGPIPE is 13,
+// SIG_BLOCK is 0 and SIG_UNBLOCK is 1.  This file cannot include
+// <asm/signal.h>, because its sigset_t conflicts with the sigset_t of the C
+// library, which <meta> brings in.  test_report_sink_pipe reads the mask
+// through the C library, so a wrong word fails the test.
+constexpr std::uint64_t kPipeSignal = 13;
+constexpr std::uint64_t kPipeSignalSet = std::uint64_t{1} << (kPipeSignal - 1);
+constexpr std::uint64_t kKernelSignalSetBytes = sizeof(std::uint64_t);
+constexpr std::uint64_t kSignalBlock = 0;
+constexpr std::uint64_t kSignalUnblock = 1;
+
+// The word of an address that the kernel reads or writes.
+[[nodiscard]] std::uint64_t word_of(void const* address) noexcept { return __builtin_bit_cast(std::uint64_t, address); }
+
+// The words of each call are valid, so the kernel refuses rt_sigprocmask
+// only for a set size that is not its own.  That is a defect of this file,
+// which test_report_sink_pipe shows, and the process ends.  The pair cannot
+// report the defect, because the report sink writes under a block.
+void refuse_a_failed_mask_change(long word) noexcept {
+    if (word != 0) {
+        __builtin_trap();
+    }
+}
+
 // THE KERNEL FLOOR.  The first release of each architecture: x86_64 has each
 // call of the 2.6.0 table at 2.6.0, and aarch64 came in 3.7.0 with each call
 // of the generic table.
@@ -567,15 +601,23 @@ void append_release(char* bytes, std::size_t capacity, std::size_t& at, KernelVe
 
 // Writes the bytes to standard error, again after a short write and after a
 // signal.  The process ends after the write, so a write that fails has no
-// caller to tell, and the function stops.
+// caller to tell, and the function stops.  A standard error with no reader
+// gives epipe and no SIGPIPE (THE PIPE SIGNAL of foundation/os/PipeSignal.h),
+// so the process ends by the trap of the check.
 void write_to_standard_error(char const* bytes, std::size_t count) noexcept {
     constexpr int kStandardError = 2;
+    PipeSignalBlock block = PipeSignalBlock::block_calling_thread();
     std::size_t written = 0;
     while (written < count) {
         long const taken = raw_syscall(Syscall::write, kStandardError, bytes + written, count - written);
         if (taken > 0) {
             written += static_cast<std::size_t>(taken);
-        } else if (taken != -EINTR) {
+            continue;
+        }
+        if (taken == -EPIPE) {
+            block.mark_broken_pipe();
+        }
+        if (taken != -EINTR) {
             return;
         }
     }
@@ -607,6 +649,35 @@ void write_to_standard_error(char const* bytes, std::size_t count) noexcept {
 }
 
 }  // namespace
+
+namespace detail {
+
+bool block_pipe_signal_() noexcept {
+    std::uint64_t const pipe = kPipeSignalSet;
+    std::uint64_t previous = 0;
+    refuse_a_failed_mask_change(
+        issue(__NR_rt_sigprocmask, kSignalBlock, word_of(&pipe), word_of(&previous), kKernelSignalSetBytes, 0, 0));
+    return (previous & kPipeSignalSet) != 0;
+}
+
+void release_pipe_signal_(bool was_blocked, bool has_broken_pipe) noexcept {
+    if (was_blocked) {
+        return;
+    }
+    std::uint64_t const pipe = kPipeSignalSet;
+    if (has_broken_pipe) {
+        // A wait of zero takes the pending signal, or gives EAGAIN when no
+        // signal is pending.  The kernel does not sleep for a wait of zero,
+        // so no other signal interrupts it with EINTR.
+        KernelTimespec const no_wait{};
+        static_cast<void>(
+            issue(__NR_rt_sigtimedwait, word_of(&pipe), 0, word_of(&no_wait), kKernelSignalSetBytes, 0, 0));
+    }
+    refuse_a_failed_mask_change(
+        issue(__NR_rt_sigprocmask, kSignalUnblock, word_of(&pipe), 0, kKernelSignalSetBytes, 0, 0));
+}
+
+}  // namespace detail
 
 long raw_syscall(Syscall call, Word first, Word second, Word third, Word fourth, Word fifth, Word sixth) noexcept {
 #if defined(__SANITIZE_THREAD__)

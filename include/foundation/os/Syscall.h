@@ -25,7 +25,10 @@
 //   not issue raw, because the C library owns its state: the signal calls, the
 //   thread and process starts, the thread and TLS state, the credentials, the
 //   program break and the exits.  The enumeration names none of them, and the
-//   rule syscalls refuses a raw call of one (denied-syscall).
+//   rule syscalls refuses a raw call of one (denied-syscall).  The one
+//   exception is the block of SIGPIPE of foundation/os/PipeSignal.h: the door
+//   file issues rt_sigprocmask and rt_sigtimedwait with a set that holds only
+//   SIGPIPE, and with no enumerator.
 //
 // THE SANITIZERS
 //   ThreadSanitizer delivers a signal only inside a call that it intercepts,

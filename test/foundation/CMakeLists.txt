@@ -1970,6 +1970,10 @@ foundation_neg_compile_test(neg_thread_local_ref_store_of_another_type
 # reads an integer of a text, and test_core_parse compares it with a
 # reference of the grammar and with std::from_chars.
 foundation_test(test_core_report)
+# A report and a fatal exit to a standard error with no reader raise no
+# SIGPIPE in the thread, and the mask of the thread after the write is the
+# mask before it.
+foundation_test(test_report_sink_pipe)
 foundation_test(test_core_text)
 foundation_test(test_core_float_format)
 foundation_test(test_core_parse)
@@ -3213,6 +3217,12 @@ foundation_test(test_os_floor)
 foundation_neg_compile_test(neg_os_path_text_of_temporary
   "use of deleted function .*foundation::os::PathText<Capacity>::c_text\\(\\) const &&"
   "a CText of a temporary PathText points into an object that the full expression ends")
+
+# No enumerator of Syscall names rt_sigprocmask, so a door cannot change the
+# signal mask with a set other than the set of SIGPIPE of PipeSignal.h.
+foundation_neg_compile_test(neg_os_raw_signal_mask_call
+  ".rt_sigprocmask. is not a member of .foundation::os::Syscall."
+  "block_each_signal")
 
 # ── The attack ledger of the primitive families ───────────────────────
 #
