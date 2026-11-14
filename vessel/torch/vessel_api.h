@@ -40,6 +40,12 @@
 
 #pragma once
 
+// The opt-out region below exists only for the C++ compile, which loads the
+// quarantine plugin.  A C compiler reads the declarations with no region.
+#ifdef __cplusplus
+#include <foundation/Quarantine.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -65,6 +71,10 @@ extern "C" {
 #define CRUCIBLE_VESSEL_NOEXCEPT noexcept
 #else
 #define CRUCIBLE_VESSEL_NOEXCEPT
+#endif
+
+#ifdef __cplusplus
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("C-HEADER: a C caller and ctypes read these declarations, so they hold only C types")
 #endif
 
 // Opaque handle to a crucible::Vigil instance.
@@ -222,5 +232,6 @@ CRUCIBLE_VESSEL_API int crucible_export_crtrace(CrucibleHandle h, const char* pa
 CRUCIBLE_VESSEL_API uint32_t crucible_active_num_ops(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 #ifdef __cplusplus
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 #endif

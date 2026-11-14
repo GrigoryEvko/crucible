@@ -108,8 +108,8 @@ examples/fn/ | replace-pending:std::bit_cast | 2 | - | -
 examples/fn/ | std-entity | 10 | - | -
 examples/fn/ | std-object | 3 | - | -
 include/crucible/ | c-array-object | 52 | - | -
-include/crucible/ | c-library-call | 42 | - | -
-include/crucible/ | compiler-builtin | 4 | - | -
+include/crucible/ | c-library-call | 39 | - | -
+include/crucible/ | compiler-builtin | 3 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
 include/crucible/ | raw-new-delete | 4 | - | -
 include/crucible/ | raw-pointer-object | 410 | - | -
@@ -123,23 +123,17 @@ include/crucible/cipher/ | std-object | 27 | - | -
 include/crucible/cntp/ | c-library-call | 9 | - | -
 include/crucible/cntp/ | compiler-builtin | 2 | - | -
 include/crucible/cntp/ | std-object | 1 | - | -
-include/crucible/cog/ | raw-pointer-object | 1 | - | -
-include/crucible/cog/ | std-entity | 2 | - | -
-include/crucible/cog/ | std-object | 5 | - | -
-include/crucible/mimic/ | raw-pointer-object | 3 | - | -
-include/crucible/mimic/ | std-entity | 4 | - | -
-include/crucible/mimic/ | std-object | 5 | - | -
-include/crucible/observe/ | std-entity | 5 | - | -
-include/crucible/observe/ | std-object | 6 | - | -
+include/crucible/mimic/ | raw-pointer-object | 2 | - | -
+include/crucible/observe/ | std-object | 3 | - | -
 include/crucible/perf/ | raw-pointer-object | 3 | - | -
-include/crucible/perf/detail/ | c-library-call | 29 | - | -
-include/crucible/perf/detail/ | c-library-object | 19 | - | -
+include/crucible/perf/detail/ | c-library-call | 1 | - | -
+include/crucible/perf/detail/ | c-library-object | 2 | - | -
 include/crucible/perf/detail/ | opted-out | 70 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
-include/crucible/perf/detail/ | raw-pointer-object | 29 | - | -
+include/crucible/perf/detail/ | raw-pointer-object | 6 | - | -
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | replace-pending:std::bit_cast | 4 | - | -
-include/crucible/perf/detail/ | std-entity | 12 | - | -
-include/crucible/perf/detail/ | std-object | 4 | - | -
+include/crucible/perf/detail/ | std-entity | 4 | - | -
+include/crucible/perf/detail/ | std-object | 1 | - | -
 include/crucible/warden/ | raw-pointer-object | 13 | - | -
 include/crucible/warden/ | std-entity | 1 | - | -
 include/crucible/warden/ | std-object | 1 | - | -
@@ -329,8 +323,7 @@ src/perf/ | compiler-builtin | 1 | - | -
 src/perf/ | foreign-symbol | 14 | - | -
 src/perf/ | raw-pointer-object | 3 | - | -
 src/perf/ | replace-pending:std::bit_cast | 2 | - | -
-src/perf/ | std-entity | 7 | - | -
-test/ | c-array-object | 223 | - | -
+test/ | c-array-object | 222 | - | -
 test/ | c-library-call | 901 | - | -
 test/ | c-library-object | 15 | - | -
 test/ | compiler-builtin | 1 | - | -
@@ -342,8 +335,8 @@ test/ | raw-new-delete | 41 | - | -
 test/ | raw-pointer-object | 535 | - | -
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 93 | - | -
-test/ | std-entity | 1798 | - | -
-test/ | std-object | 664 | - | -
+test/ | std-entity | 1770 | - | -
+test/ | std-object | 658 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
 test/cipher_neg/ | raw-pointer-object | 8 | - | -
 test/cipher_neg/ | std-entity | 22 | - | -
@@ -584,10 +577,9 @@ test/layer/checks/crucible/ | std-entity | 24 | - | -
 test/layer/checks/crucible/ | std-object | 3 | - | -
 test/layer/checks/crucible/cipher/ | std-entity | 1 | - | -
 test/layer/checks/crucible/cog/ | std-object | 19 | - | -
-test/layer/checks/crucible/mimic/ | std-entity | 4 | - | -
+test/layer/checks/crucible/mimic/ | std-entity | 3 | - | -
 test/layer/checks/crucible/mimic/ | std-object | 3 | - | -
-test/layer/checks/crucible/observe/ | std-entity | 3 | - | -
-test/layer/checks/crucible/observe/ | std-object | 1 | - | -
+test/layer/checks/crucible/observe/ | std-entity | 1 | - | -
 test/layer/checks/crucible/topology/ | replace-pending:<limits> | 1 | - | -
 test/layer/checks/crucible/topology/ | std-object | 1 | - | -
 test/layer/checks/fixy/ | c-array-object | 9 | - | -
@@ -637,8 +629,6 @@ test/layer/checks/foundation/reflect/ | raw-pointer-object | 5 | - | -
 test/layer/checks/foundation/reflect/ | std-entity | 44 | - | -
 test/layer/checks/foundation/reflect/ | std-object | 17 | - | -
 test/memory_neg/ | raw-pointer-object | 2 | - | -
-test/mimic_neg/ | std-entity | 1 | - | -
-test/mimic_neg/ | std-object | 2 | - | -
 test/perf_neg/ | std-entity | 1 | - | -
 test/session_oracle/ | c-array-object | 37 | - | -
 test/session_oracle/ | c-library-call | 13 | - | -
@@ -669,15 +659,15 @@ utils/tools/ | std-entity | 15 | - | -
 utils/tools/ | std-object | 1 | - | -
 utils/tools/lsp_code_action_plugin/ | std-entity | 97 | - | -
 utils/tools/lsp_code_action_plugin/ | std-object | 27 | - | -
-vessel/torch/ | c-array-object | 3 | - | -
 vessel/torch/ | c-library-call | 5 | - | -
 vessel/torch/ | c-library-object | 1 | - | -
-vessel/torch/ | foreign-symbol | 20 | - | -
+vessel/torch/ | opted-out | 51 | C-HEADER: a C caller and ctypes read these declarations, so they hold only C types | vessel_api.h is a header that a C compiler and ctypes read, so its declarations hold only C types
 vessel/torch/ | raw-new-delete | 2 | - | -
-vessel/torch/ | raw-pointer-object | 76 | - | -
+vessel/torch/ | raw-pointer-object | 48 | - | -
 vessel/torch/ | region | 1 | ABI: ctypes reads the name as a C text up to its zero | -
 vessel/torch/ | region | 1 | ABI: fwrite of the C library reads the characters of the name | -
 vessel/torch/ | region | 1 | ABI: the C caller gives the name as a pointer, and strnlen gave its length | -
+vessel/torch/ | region | 1 | C-HEADER: a C caller and ctypes read these declarations, so they hold only C types | vessel_api.h is a header that a C compiler and ctypes read, so its declarations hold only C types
 vessel/torch/ | replace-pending:std::bit_cast | 4 | - | -
 vessel/torch/ | std-entity | 5 | - | -
 vessel/torch/ | std-object | 3 | - | -
