@@ -72,7 +72,7 @@ struct ReplayEngine {
         }
         end_ = ops_ + region.ops.size();
         cursor_ = ops_;
-        current_ = nullptr;
+        current_.reset();
         // The precondition above already established what minting this view
         // checks, and the call it gates returns a pointer promised non-null,
         // which is what the postcondition below rests on.
@@ -124,7 +124,7 @@ struct ReplayEngine {
         if (shape_hash != expected_shape_) [[unlikely]]
             return ReplayStatus::DIVERGED;
 
-        current_ = cursor_;
+        current_ = ::fixy::WeakRef<const TraceEntry>{*cursor_};
 
         // The pointers of the slot ids and their counts end on the line after
         // the hashes of this entry, and the caller asks for them almost
@@ -153,8 +153,8 @@ struct ReplayEngine {
     // check.  The member is read into a local, so no contract reads a member
     // through this.
     [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const {
-        const TraceEntry* const matched = current_;
-        CRUCIBLE_PRE(matched != nullptr);
+        const ::fixy::WeakRef<const TraceEntry> matched = current_;
+        CRUCIBLE_PRE(matched.has_value());
         ::fixy::View<const SlotId> const slot_ids = matched->output_slot_ids();
         CRUCIBLE_PRE(j < slot_ids.size());
         SlotId const sid =
@@ -168,8 +168,8 @@ struct ReplayEngine {
 
     // The same for one of the inputs.
     [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const {
-        const TraceEntry* const matched = current_;
-        CRUCIBLE_PRE(matched != nullptr);
+        const ::fixy::WeakRef<const TraceEntry> matched = current_;
+        CRUCIBLE_PRE(matched.has_value());
         ::fixy::View<const SlotId> const slot_ids = matched->input_slot_ids();
         CRUCIBLE_PRE(j < slot_ids.size());
         SlotId const sid =
@@ -181,26 +181,26 @@ struct ReplayEngine {
 
     // The entry is in the region, and the engine only points at it.
     [[nodiscard]] const TraceEntry& current_entry() const {
-        // current_ is null only before the first advance returns MATCH,
+        // current_ is empty only before the first advance returns MATCH,
         // which is a mistake of the order of the calls of the caller.  The
         // precondition refuses it in each build.
         //
         // The member is read into a local first because a contract predicate
         // that reaches a member through `this` is rejected as non-constant
         // when the compiler folds this body.
-        const TraceEntry* const matched = current_;
-        CRUCIBLE_PRE(matched != nullptr);
-        return *matched;
+        const ::fixy::WeakRef<const TraceEntry> matched = current_;
+        CRUCIBLE_PRE(matched.has_value());
+        return matched.get();
     }
 
     [[nodiscard]] ::fixy::Tagged<OpIndex, op_role::Matched> matched_op_index() const {
-        // Armed in every build.  A null current_ would make the subtraction
+        // Armed in every build.  An empty current_ would make the subtraction
         // produce a garbage index rather than fault, and the index then
         // reaches a caller that indexes with it.  The local is for the same
         // folding reason as in current_entry.
-        const TraceEntry* const matched = current_;
-        CRUCIBLE_PRE(matched != nullptr);
-        return ::fixy::mint_tagged<op_role::Matched>(OpIndex{static_cast<uint32_t>(matched - ops_)});
+        const ::fixy::WeakRef<const TraceEntry> matched = current_;
+        CRUCIBLE_PRE(matched.has_value());
+        return ::fixy::mint_tagged<op_role::Matched>(OpIndex{static_cast<uint32_t>(&matched.get() - ops_)});
     }
 
     // Distinct in type from the matched index, so a caller that could just as
@@ -269,7 +269,7 @@ private:
     ShapeHash expected_shape_{};
     const TraceEntry* cursor_ = nullptr;  // where the next operation is read
     const TraceEntry* end_ = nullptr;  // one past the last operation
-    const TraceEntry* current_ = nullptr;  // the last operation that matched
+    ::fixy::WeakRef<const TraceEntry> current_{};  // the last operation that matched
     void* const* slot_table_ = nullptr;
     const TraceEntry* ops_ = nullptr;  // the base, for rewinding
     uint64_t pad_replay_ = 0;
