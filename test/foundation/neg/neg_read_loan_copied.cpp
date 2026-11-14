@@ -19,8 +19,9 @@ struct Region {
 }  // namespace
 
 int main() {
-    auto loan = ::foundation::permissions::mint_read_loan(::foundation::permissions::mint_permission_root<Region>());
-    auto copy = loan.first;
+    auto [loan, lent] =
+        ::foundation::permissions::mint_read_loan(::foundation::permissions::mint_permission_root<Region>());
+    auto copy = loan;
     (void)copy;
     return 0;
 }

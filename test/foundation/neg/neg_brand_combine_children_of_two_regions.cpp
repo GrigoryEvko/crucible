@@ -29,12 +29,12 @@ struct has_split_authoring_witness<Whole, Left, Right> : std::true_type {};
 }  // namespace foundation::permissions
 
 int main() {
-    auto first = ::foundation::permissions::mint_permission_split<Left, Right>(
+    auto [first_left, first_right] = ::foundation::permissions::mint_permission_split<Left, Right>(
         ::foundation::permissions::mint_permission_root<Whole>());
-    auto second = ::foundation::permissions::mint_permission_split<Left, Right>(
+    auto [second_left, second_right] = ::foundation::permissions::mint_permission_split<Left, Right>(
         ::foundation::permissions::mint_permission_root<Whole>());
     auto folded =
-        ::foundation::permissions::mint_permission_combine<Whole>(std::move(first.first), std::move(second.second));
+        ::foundation::permissions::mint_permission_combine<Whole>(std::move(first_left), std::move(second_right));
     (void)folded;
     return 0;
 }

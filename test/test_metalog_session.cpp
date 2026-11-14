@@ -405,8 +405,9 @@ void second_live_consumer() {
 void copy_of_a_released_record() {
     ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
-    auto producer = log.producer(mint_halves().first);
-    auto consumer = log.consumer(mint_halves().second);
+    auto [producer_token, consumer_token] = mint_halves();
+    auto producer = log.producer(std::move(producer_token));
+    auto consumer = log.consumer(std::move(consumer_token));
     const ::crucible::TensorMeta record = make_meta(1);
     CRUCIBLE_FATAL_INVARIANT(producer.try_append_one(record) && producer.try_append_one(record));
     CRUCIBLE_FATAL_INVARIANT(consumer.drain([](const ::crucible::TensorMeta&) noexcept {}, 1) == 1);

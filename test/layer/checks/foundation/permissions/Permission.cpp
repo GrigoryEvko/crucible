@@ -69,6 +69,13 @@ template <>
 struct has_split_pack_authoring_witness<detail::seplog_combine_n_parent, detail::seplog_combine_n_a,
                                         detail::seplog_combine_n_b, detail::seplog_combine_n_c> : std::true_type {};
 
+template <>
+struct can_split_into<detail::seplog_test_tag, detail::seplog_test_left, detail::seplog_test_right> : std::true_type {};
+
+template <>
+struct has_split_authoring_witness<detail::seplog_test_tag, detail::seplog_test_left, detail::seplog_test_right>
+    : std::true_type {};
+
 // No route builds the key without a constructor.  std::bit_cast builds
 // any trivially copyable type from bytes, and std::start_lifetime_as
 // builds any implicit-lifetime type over a buffer, and neither names a
@@ -403,6 +410,34 @@ constexpr bool combine_n_round_trip() noexcept {
     return true;
 }
 static_assert(combine_n_round_trip());
+
+// The two split mints give their tokens in a Record, with the brand of the
+// parent.  A Record of empty tokens takes one byte, and a std::pair of two
+// empty tokens takes two.  A binding gives out each token, and the two
+// tokens fold back into the parent.
+constexpr bool split_gives_a_record() noexcept {
+    auto whole = mint_permission_root<seplog_test_tag>();
+    using WholeBrand = ::foundation::brand::brand_of_t<decltype(whole)>;
+    auto halves = mint_permission_split<seplog_test_left, seplog_test_right>(std::move(whole));
+    static_assert(
+        std::is_same_v<decltype(halves), ::foundation::core::Record<Permission<seplog_test_left, WholeBrand>,
+                                                                    Permission<seplog_test_right, WholeBrand>>>);
+    static_assert(sizeof(halves) == 1);
+    auto [left, right] = std::move(halves);
+    auto rebuilt = mint_permission_combine<seplog_test_tag>(std::move(left), std::move(right));
+    static_assert(std::is_same_v<decltype(rebuilt), Permission<seplog_test_tag, WholeBrand>>);
+
+    auto parts = mint_permission_split_n<seplog_combine_n_a, seplog_combine_n_b, seplog_combine_n_c>(
+        mint_permission_root<seplog_combine_n_parent>());
+    static_assert(decltype(parts)::size() == 3);
+    static_assert(sizeof(parts) == 1);
+    auto [a, b, c] = std::move(parts);
+    auto rebuilt_n = mint_permission_combine_n<seplog_combine_n_parent>(std::move(a), std::move(b), std::move(c));
+    ::foundation::linear::drop(std::move(rebuilt));
+    ::foundation::linear::drop(std::move(rebuilt_n));
+    return true;
+}
+static_assert(split_gives_a_record());
 static_assert(seplog_roster::root_brands_are_fresh());
 static_assert(seplog_roster::erasure_keeps_the_tag());
 }  // namespace detail

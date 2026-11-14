@@ -262,14 +262,13 @@ mint_permission_fork_inline(Ctx const& ctx, Permission<Parent, Brand>&& parent, 
     detail::permission_fork_check_<false, Children...>();
     auto children = mint_permission_split_n<Children...>(ctx, std::move(parent));
     auto bodies = std::tuple<std::decay_t<Callables>...>{std::forward<Callables>(callables)...};
+    auto& [... child] = children;
+    auto& [... body] = bodies;
     // The comma fold runs the bodies in child order.  Each door gives its
     // child back into the place that it took the child from.
-    [&]<std::size_t... Is>(std::index_sequence<Is...>) constexpr noexcept {
-        ((std::get<Is>(children) = with_write_view(ctx, std::move(std::get<Is>(children)), std::get<Is>(bodies))), ...);
-    }(std::index_sequence_for<Children...>{});
+    ((child = with_write_view(ctx, std::move(child), body)), ...);
     // The children never left this frame.  The combine consumes each of
     // them, and it checks the manifest and the brand again.
-    auto& [... child] = children;
     return mint_permission_combine_n<Parent>(ctx, std::move(child)...);
 }
 

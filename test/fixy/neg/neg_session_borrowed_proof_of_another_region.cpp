@@ -23,7 +23,7 @@ struct Other {
 }  // namespace
 
 int main() {
-    auto loans = fp::mint_read_loan(fp::permission_erase_brand(fp::mint_permission_root<Other>()));
-    sess::Borrowed<int, Region> message{1, std::move(loans.first)};
+    auto [loan, lent] = fp::mint_read_loan(fp::permission_erase_brand(fp::mint_permission_root<Other>()));
+    sess::Borrowed<int, Region> message{1, std::move(loan)};
     return message.peek();
 }

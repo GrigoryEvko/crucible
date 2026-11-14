@@ -1314,7 +1314,7 @@ fixy_neg_compile_test(neg_federation_admittance_address_names_brand
 # nobody.
 fixy_neg_compile_test(neg_federation_admittance_const_admission
   "passing .const foundation::permissions::FederationAdmission<NegConstOrg>. as .this. argument discards qualifiers"
-  "in call to .constexpr std::pair<foundation::permissions::Permission<fixy::federation::LocalCipherTag, LocalBrand>, foundation::core::Result<foundation::permissions::Permission<foundation::permissions::tag::FederatedPeer<Org>, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type>, fixy::federation::AdmittanceError> > foundation::permissions::FederationAdmission<Org>::mint_federation_admittance")
+  "in call to .constexpr foundation::core::Record<foundation::permissions::Permission<fixy::federation::LocalCipherTag, LocalBrand>, foundation::core::Result<foundation::permissions::Permission<foundation::permissions::tag::FederatedPeer<Org>, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type>, fixy::federation::AdmittanceError> > foundation::permissions::FederationAdmission<Org>::mint_federation_admittance")
 
 # Verified -> Unverified has no edge in admitted_retags; the member
 # retag fails its constraint and the note names RetagAllowed with the

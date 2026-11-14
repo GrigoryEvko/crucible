@@ -42,6 +42,7 @@
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Record.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/SharedPermission.h>
@@ -81,7 +82,7 @@ concept ReadViewNeedsNoCtx = permission_row_empty(^^Tag);
 // comes back only with the loan, through mint_permission_after_loan.
 template <typename Tag, typename Brand>
     requires ReadViewNeedsNoCtx<Tag>
-[[nodiscard]] constexpr std::pair<ReadLoan<Tag, Brand>, LentPermission<Tag, Brand>>
+[[nodiscard]] constexpr ::foundation::core::Record<ReadLoan<Tag, Brand>, LentPermission<Tag, Brand>>
 mint_read_loan(Permission<Tag, Brand>&& token) noexcept;
 
 // A named token stays with the caller, so a loan of it would exist
@@ -338,7 +339,7 @@ private:
 
     template <typename Tag_, typename Brand_>
         requires ReadViewNeedsNoCtx<Tag_>
-    friend constexpr std::pair<ReadLoan<Tag_, Brand_>, LentPermission<Tag_, Brand_>>
+    friend constexpr ::foundation::core::Record<ReadLoan<Tag_, Brand_>, LentPermission<Tag_, Brand_>>
     mint_read_loan(Permission<Tag_, Brand_>&& token) noexcept;
 };
 
@@ -370,7 +371,7 @@ private:
 
     template <typename Tag_, typename Brand_>
         requires ReadViewNeedsNoCtx<Tag_>
-    friend constexpr std::pair<ReadLoan<Tag_, Brand_>, LentPermission<Tag_, Brand_>>
+    friend constexpr ::foundation::core::Record<ReadLoan<Tag_, Brand_>, LentPermission<Tag_, Brand_>>
     mint_read_loan(Permission<Tag_, Brand_>&& token) noexcept;
 
     template <typename Tag_, typename Brand_>
@@ -381,7 +382,7 @@ private:
 
 template <typename Tag, typename Brand>
     requires ReadViewNeedsNoCtx<Tag>
-[[nodiscard]] constexpr std::pair<ReadLoan<Tag, Brand>, LentPermission<Tag, Brand>>
+[[nodiscard]] constexpr ::foundation::core::Record<ReadLoan<Tag, Brand>, LentPermission<Tag, Brand>>
 mint_read_loan(Permission<Tag, Brand>&& token) noexcept {
     return {ReadLoan<Tag, Brand>{}, LentPermission<Tag, Brand>{std::move(token)}};
 }

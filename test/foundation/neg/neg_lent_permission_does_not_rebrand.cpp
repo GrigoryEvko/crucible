@@ -31,8 +31,8 @@ int main() {
     auto held_a = fp::mint_permission_root<Region>();
     auto held_b = fp::mint_permission_root<Region>();
     using BrandA = decltype(held_a)::brand_type;
-    auto lent_b = fp::mint_read_loan(std::move(held_b));
-    fp::LentPermission<Region, BrandA> rebranded{std::move(lent_b.second)};
+    auto [loan_b, lent_b] = fp::mint_read_loan(std::move(held_b));
+    fp::LentPermission<Region, BrandA> rebranded{std::move(lent_b)};
     (void)rebranded;
     (void)held_a;
     return 0;

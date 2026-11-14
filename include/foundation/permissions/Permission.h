@@ -53,6 +53,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Record.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/diag/FailClosed.h>
 #include <foundation/effects/Ctx.h>
@@ -688,8 +689,8 @@ mint_permission_root(Args const&...) noexcept;
 
 template <typename L, typename R, typename... Args>
     requires PermissionSplitArgs<L, R, Args...>
-[[nodiscard]] constexpr std::pair<Permission<L, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>,
-                                  Permission<R, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>>
+[[nodiscard]] constexpr ::foundation::core::Record<Permission<L, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>,
+                                                   Permission<R, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>>
 mint_permission_split(Args&&...) noexcept;
 
 template <typename In, typename... Args>
@@ -699,7 +700,8 @@ mint_permission_combine(Args&&...) noexcept;
 
 template <typename... Children, typename... Args>
     requires PermissionSplitNArgs<std::tuple<Children...>, Args...>
-[[nodiscard]] constexpr std::tuple<Permission<Children, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>...>
+[[nodiscard]] constexpr ::foundation::core::Record<
+    Permission<Children, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>...>
 mint_permission_split_n(Args&&...) noexcept;
 
 template <typename Parent, typename... Args>
@@ -755,8 +757,8 @@ private:
 
     template <typename L, typename R, typename... Args>
         requires PermissionSplitArgs<L, R, Args...>
-    friend constexpr std::pair<Permission<L, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>,
-                               Permission<R, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>>
+    friend constexpr ::foundation::core::Record<Permission<L, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>,
+                                                Permission<R, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>>
     mint_permission_split(Args&&...) noexcept;
 
     template <typename In, typename... Args>
@@ -766,7 +768,8 @@ private:
 
     template <typename... Children, typename... Args>
         requires PermissionSplitNArgs<std::tuple<Children...>, Args...>
-    friend constexpr std::tuple<Permission<Children, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>...>
+    friend constexpr ::foundation::core::Record<
+        Permission<Children, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>...>
     mint_permission_split_n(Args&&...) noexcept;
 
     template <typename Parent, typename... Args>
@@ -957,8 +960,8 @@ template <typename Tag, typename Brand, ::foundation::effects::IsExecCtx Ctx>
 
 template <typename L, typename R, typename... Args>
     requires PermissionSplitArgs<L, R, Args...>
-[[nodiscard]] constexpr std::pair<Permission<L, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>,
-                                  Permission<R, detail::perm_brand_t<Args... [sizeof...(Args) - 1]>>>
+[[nodiscard]] constexpr ::foundation::core::Record<Permission<L, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>,
+                                                   Permission<R, detail::perm_brand_t<Args... [sizeof...(Args) - 1]>>>
 mint_permission_split(Args&&...) noexcept {
     using In = detail::perm_tag_t<Args...[sizeof...(Args) - 1]>;
     using Brand = detail::perm_brand_t<Args...[sizeof...(Args) - 1]>;
@@ -996,8 +999,8 @@ mint_permission_split(Args&&...) noexcept {
                                                  "can_split_into<In, A, A> would mint two Permission<A> from one "
                                                  "parent — two linear tokens for the SAME region, aliasing "
                                                  "the very disjointness the CSL frame rule proves.");
-    return std::pair<Permission<L, Brand>, Permission<R, Brand>>{Permission<L, Brand>{perm_mint_key{}},
-                                                                 Permission<R, Brand>{perm_mint_key{}}};
+    return ::foundation::core::Record<Permission<L, Brand>, Permission<R, Brand>>{
+        Permission<L, Brand>{perm_mint_key{}}, Permission<R, Brand>{perm_mint_key{}}};
 }
 
 template <typename In, typename... Args>
@@ -1041,7 +1044,7 @@ template <typename In, typename... Args>
 
 template <typename... Children, typename... Args>
     requires PermissionSplitNArgs<std::tuple<Children...>, Args...>
-[[nodiscard]] constexpr std::tuple<Permission<
+[[nodiscard]] constexpr ::foundation::core::Record<Permission<
     Children, detail::perm_brand_t<Args...[sizeof...(Args) - 1]>>...> mint_permission_split_n(Args&&...) noexcept {
     using In = detail::perm_tag_t<Args...[sizeof...(Args) - 1]>;
     using Brand = detail::perm_brand_t<Args...[sizeof...(Args) - 1]>;
@@ -1073,7 +1076,7 @@ template <typename... Children, typename... Args>
                                                       "can_split_into_pack<In, A, A, ...> would mint two Permission<A> "
                                                       "from one parent — aliasing the same region across the "
                                                       "disjoint children the CSL frame rule promises.");
-    return std::tuple<Permission<Children, Brand>...>{Permission<Children, Brand>{perm_mint_key{}}...};
+    return ::foundation::core::Record<Permission<Children, Brand>...>{Permission<Children, Brand>{perm_mint_key{}}...};
 }
 
 namespace detail {

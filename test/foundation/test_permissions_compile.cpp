@@ -235,11 +235,10 @@ void test_permission_row_compile() {
     using RowRight = permission_row_compile_tags::BlockChild;
 
     auto whole = perm::mint_permission_root<RowWhole>(test_ctx);
-    auto split = perm::mint_permission_split<RowLeft, RowRight>(test_ctx, std::move(whole));
-    auto joined = perm::mint_permission_combine<RowWhole>(test_ctx, std::move(split.first), std::move(split.second));
-    auto split_n = perm::mint_permission_split_n<RowLeft, RowRight>(test_ctx, std::move(joined));
-    auto joined_n = perm::mint_permission_combine_n<RowWhole>(test_ctx, std::move(std::get<0>(split_n)),
-                                                              std::move(std::get<1>(split_n)));
+    auto [left, right] = perm::mint_permission_split<RowLeft, RowRight>(test_ctx, std::move(whole));
+    auto joined = perm::mint_permission_combine<RowWhole>(test_ctx, std::move(left), std::move(right));
+    auto [left_n, right_n] = perm::mint_permission_split_n<RowLeft, RowRight>(test_ctx, std::move(joined));
+    auto joined_n = perm::mint_permission_combine_n<RowWhole>(test_ctx, std::move(left_n), std::move(right_n));
     ::foundation::linear::drop(std::move(joined_n));
 }
 // The body names the fixture tags of detail::permset_smoke in

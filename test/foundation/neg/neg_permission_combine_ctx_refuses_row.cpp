@@ -40,8 +40,8 @@ int main() {
     eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>
         test_ctx{eff::testing::test()};
     auto whole = perm::mint_permission_root<Whole>(test_ctx);
-    auto halves = perm::mint_permission_split<Left, Right>(test_ctx, std::move(whole));
-    [[maybe_unused]] auto rebuilt = perm::mint_permission_combine<Whole>(
-        ::foundation::effects::testing::foreground(), std::move(halves.first), std::move(halves.second));
+    auto [left, right] = perm::mint_permission_split<Left, Right>(test_ctx, std::move(whole));
+    [[maybe_unused]] auto rebuilt = perm::mint_permission_combine<Whole>(::foundation::effects::testing::foreground(),
+                                                                         std::move(left), std::move(right));
     return 0;
 }

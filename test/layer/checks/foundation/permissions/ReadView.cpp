@@ -101,6 +101,15 @@ static_assert(door_hands_the_source_back());
 }
 static_assert(loan_round_trip());
 
+// The loan mint gives the loan and the parked token in a Record of one
+// byte, as the two empty classes are.  Each keeps the brand of the token.
+using branded_loan_record = ::foundation::core::Record<ReadLoan<read_view_test_tag, read_view_brand_a>,
+                                                       LentPermission<read_view_test_tag, read_view_brand_a>>;
+static_assert(
+    std::is_same_v<decltype(mint_read_loan(std::declval<Permission<read_view_test_tag, read_view_brand_a>>())),
+                   branded_loan_record>);
+static_assert(sizeof(branded_loan_record) == 1);
+
 // ── The gates answer ────────────────────────────────────────────────
 
 template <typename Tag>

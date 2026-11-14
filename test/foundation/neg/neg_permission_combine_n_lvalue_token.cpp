@@ -37,7 +37,7 @@ struct has_split_pack_authoring_witness<Whole, Left, Right> : std::true_type {};
 int main() {
     namespace perm = ::foundation::permissions;
     auto parts = perm::mint_permission_split_n<Left, Right>(perm::mint_permission_root<Whole>());
-    auto& left = std::get<0>(parts);
-    [[maybe_unused]] auto rebuilt = perm::mint_permission_combine_n<Whole>(left, std::move(std::get<1>(parts)));
+    auto& [left, right] = parts;
+    [[maybe_unused]] auto rebuilt = perm::mint_permission_combine_n<Whole>(left, std::move(right));
     return 0;
 }

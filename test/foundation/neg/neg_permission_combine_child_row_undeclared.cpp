@@ -41,8 +41,7 @@ struct has_split_authoring_witness<RowlessWhole, Left, Right> : std::true_type {
 int main() {
     namespace perm = ::foundation::permissions;
     auto whole = perm::mint_permission_root<Whole>();
-    auto halves = perm::mint_permission_split<Left, Right>(std::move(whole));
-    [[maybe_unused]] auto rebuilt =
-        perm::mint_permission_combine<RowlessWhole>(std::move(halves.first), std::move(halves.second));
+    auto [left, right] = perm::mint_permission_split<Left, Right>(std::move(whole));
+    [[maybe_unused]] auto rebuilt = perm::mint_permission_combine<RowlessWhole>(std::move(left), std::move(right));
     return 0;
 }

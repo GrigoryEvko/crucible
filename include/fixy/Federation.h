@@ -321,7 +321,7 @@ public:
     // (foundation/Brand.h).
     template <typename... Explicit, typename LocalBrand, typename Brand = CRUCIBLE_FRESH_BRAND>
         requires ::fixy::federation::AdmittanceNamesNoBrand<Explicit...>
-    [[nodiscard]] constexpr std::pair<
+    [[nodiscard]] constexpr ::fixy::Record<
         Permission<::fixy::federation::LocalCipherTag, LocalBrand>,
         ::fixy::Result<Permission<tag::FederatedPeer<Org>, ::foundation::brand::undeducible_brand_t<Brand>>,
                        ::fixy::federation::AdmittanceError>>

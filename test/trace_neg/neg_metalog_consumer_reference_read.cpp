@@ -20,8 +20,9 @@ using Log = ::crucible::permissioned_metalog_t<decltype(log_root())>;
 int main() {
     ::crucible::MetaLog raw{::foundation::effects::testing::test().alloc};
     Log log{raw};
-    auto consumer = log.consumer(
-        ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(log_root()).second);
+    auto [producer_token, consumer_token] =
+        ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(log_root());
+    auto consumer = log.consumer(std::move(consumer_token));
     [[maybe_unused]] const auto& record = consumer.at(::crucible::MetaIndex{0});
     return 0;
 }

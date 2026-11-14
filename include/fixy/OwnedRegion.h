@@ -492,15 +492,17 @@ auto OwnedRegion<T, Tag, Brand>::split_into_impl_(std::index_sequence<Is...>) &&
     T* const base = std::exchange(base_, nullptr);
     const std::size_t total = std::exchange(count_, 0);
 
-    auto sub_perms = ::foundation::permissions::mint_permission_split_n<Slice<Tag, Is, SplitName>...>(std::move(perm_));
+    // The binding pack holds one token for each shard, in the order of Is.
+    auto [... sub_perms] =
+        ::foundation::permissions::mint_permission_split_n<Slice<Tag, Is, SplitName>...>(std::move(perm_));
 
     using Shards = std::tuple<OwnedRegion<T, Slice<Tag, Is, SplitName>, Brand>...>;
     using Witness = Disjoint<Tag, Brand, SplitName, N>;
-    return SplitParts<Witness, Shards>{Witness{detail::split_mint_t{}},
-                                       Shards{OwnedRegion<T, Slice<Tag, Is, SplitName>, Brand>{
-                                           base + detail::shard_start(total, N, Is),
-                                           detail::shard_start(total, N, Is + 1) - detail::shard_start(total, N, Is),
-                                           std::move(std::get<Is>(sub_perms))}...}};
+    return SplitParts<Witness, Shards>{
+        Witness{detail::split_mint_t{}},
+        Shards{OwnedRegion<T, Slice<Tag, Is, SplitName>, Brand>{
+            base + detail::shard_start(total, N, Is),
+            detail::shard_start(total, N, Is + 1) - detail::shard_start(total, N, Is), std::move(sub_perms)}...}};
 }
 
 // The detection surface of OwnedRegion.  One reflection query answers

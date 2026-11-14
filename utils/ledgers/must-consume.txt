@@ -13,7 +13,7 @@ bench/ | discarded-temporary | 2 | - | -
 bench/ | unconsumed | 8 | - | -
 include/crucible/cntp/ | unconsumed | 25 | - | -
 include/crucible/perf/detail/ | unconsumed | 1 | - | -
-include/fixy/ | unconsumed | 3 | - | -
+include/fixy/ | unconsumed | 2 | - | -
 include/fixy/channels/ | unconsumed | 1 | - | -
 include/fixy/concurrent/ | unconsumed | 2 | - | -
 include/fixy/session/ | unconsumed | 13 | - | -
@@ -25,7 +25,7 @@ test/fixy/ | double-consume | 5 | - | -
 test/fixy/ | unconsumed | 199 | - | -
 test/fixy/ | unconsumed-on-path | 1 | - | -
 test/foundation/ | discarded-temporary | 2 | - | -
-test/foundation/ | unconsumed | 13 | - | -
+test/foundation/ | unconsumed | 12 | - | -
 test/foundation/ | unconsumed-on-path | 1 | - | -
 test/layer/checks/fixy/ | unconsumed | 1 | - | -
 test/layer/checks/fixy/channels/ | unconsumed | 9 | - | -
