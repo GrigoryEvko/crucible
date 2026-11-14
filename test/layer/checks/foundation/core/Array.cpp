@@ -254,6 +254,49 @@ static_assert(!ViewsTemporary<HeapArray<int> const>);
 }
 static_assert(empty_reads() == 0);
 
+// A MaskedArray holds a pointer, a count and a mask.  It moves and does not
+// copy.  Its mint builds each element with the default constructor, so an
+// element that does not copy passes, and an element with no default
+// constructor does not.  No subscript and no data() reach an element.
+struct PinnedElement final {
+    PinnedElement() noexcept = default;
+    PinnedElement(PinnedElement const&) = delete;
+    PinnedElement(PinnedElement&&) = delete;
+};
+static_assert(sizeof(MaskedArray<std::uint64_t>) == 3 * sizeof(std::size_t));
+static_assert(sizeof(MaskedArray<std::uint8_t, 4096>) == 3 * sizeof(std::size_t));
+static_assert(std::is_nothrow_move_constructible_v<MaskedArray<int>>
+              && std::is_nothrow_move_assignable_v<MaskedArray<int>>);
+static_assert(!std::is_copy_constructible_v<MaskedArray<int>> && !std::is_copy_assignable_v<MaskedArray<int>>);
+static_assert(!std::is_trivially_copyable_v<MaskedArray<int>>);
+static_assert(CanMintMaskedArray<int, alignof(int), Alloc>);
+static_assert(CanMintMaskedArray<PinnedElement, 64, Alloc>);
+static_assert(CanMintMaskedArray<MoveOnlyElement, alignof(MoveOnlyElement), Alloc>);
+static_assert(!CanMintMaskedArray<int, alignof(int), OtherTag>);
+static_assert(!CanMintMaskedArray<NoDefault, alignof(NoDefault), Alloc>);
+static_assert(!CanMintMaskedArray<int, 3, Alloc>);
+static_assert(!CanMintMaskedArray<std::uint64_t, 4, Alloc>);
+static_assert(!HasSubscript<MaskedArray<int>&> && !HasData<MaskedArray<int>&>);
+static_assert(!::foundation::linear::is_linear_v<MaskedArray<int>>);
+
+// at_masked of an lvalue gives a reference to the element, and a const array
+// gives a const one.  A view and an element of a temporary are refused.
+template <class Array>
+concept ReadsMaskedTemporary = requires { std::declval<Array>().at_masked(std::uint64_t{0}); };
+static_assert(std::is_same_v<decltype(std::declval<MaskedArray<int>&>().at_masked(0)), int&>);
+static_assert(std::is_same_v<decltype(std::declval<MaskedArray<int> const&>().at_masked(0)), int const&>);
+static_assert(ViewsTemporary<MaskedArray<int>&> && !ViewsTemporary<MaskedArray<int>>);
+static_assert(!ViewsTemporary<MaskedArray<int> const>);
+static_assert(ReadsMaskedTemporary<MaskedArray<int>&> && !ReadsMaskedTemporary<MaskedArray<int>>);
+static_assert(!ReadsMaskedTemporary<MaskedArray<int> const>);
+
+// The empty array holds no storage, in a constant evaluation too.
+[[nodiscard]] consteval std::size_t empty_masked_reads() noexcept {
+    MaskedArray<int> const empty{};
+    return empty.size() + empty.view().size();
+}
+static_assert(empty_masked_reads() == 0);
+
 }  // namespace detail::array_checks
 
 }  // namespace foundation::core

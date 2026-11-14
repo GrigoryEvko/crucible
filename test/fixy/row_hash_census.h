@@ -944,6 +944,9 @@ inline constexpr StatedZero kZeros[] = {
      "an inline array of elements: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::HeapArray,
      "an array of elements on the heap: it holds storage and makes no claim about what the elements hold"},
+    {^^::foundation::core::MaskedArray,
+     "an array of a power-of-two count of elements on the heap: it holds storage and makes no claim about what the "
+     "elements hold"},
     {^^::foundation::core::FixedList,
      "an inline list of at most N elements: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::GrowList,

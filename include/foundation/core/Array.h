@@ -5,6 +5,9 @@
 //
 //   FixedArray<T, N>    N elements inline, in the object itself
 //   HeapArray<T, Align> count elements on the heap, at the alignment Align
+//   MaskedArray<T, Align>
+//                       a power-of-two count of elements on the heap, read
+//                       at a masked key with no check
 //
 // A FixedArray fills each element at its construction.  The default
 // constructor value-initializes each element, so an array of integers holds
@@ -48,6 +51,17 @@
 // and gives the storage back.  An empty HeapArray, also the default one,
 // holds no storage.  A HeapArray of a linear element is linear itself, so
 // each path of its holder consumes it.
+//
+// THE MASKED ARRAY
+//   mint_masked_array<T, Align>(alloc, count)   the one door: count
+//                       elements from their default constructor, so an
+//                       element that does not copy passes.  The count is a
+//                       power of two from 1 to 2^31
+//   size(), view()      as a HeapArray gives them
+//   at_masked(key)      the element at key & (count - 1), with no check
+//
+// A MaskedArray owns its storage as a HeapArray does.  It has no operator[]
+// and no pointer to its elements.
 
 #include <foundation/Linear.h>
 #include <foundation/core/Algorithms.h>
@@ -61,6 +75,7 @@
 #include <foundation/core/Report.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <new>
 #include <type_traits>
 #include <utility>
@@ -270,13 +285,14 @@ template <class T, std::size_t Align>
     return padded & ~(Align - 1);
 }
 
-// The door of mint_heap_array, and the key of the constructor of a
-// HeapArray.  HeapArrayDoor is the one friend of the key, and only
-// mint_heap_array calls the door.  The door and the key hold no template,
-// so no explicit specialization of a template reaches the key.  The
-// constructor that takes the key allocates the storage and builds each
-// element itself.  So a use of namespace detail outside the base gets only a
-// HeapArray of new storage, with no allocation capability at its call site.
+// The door of mint_heap_array and mint_masked_array, and the key of the
+// constructors of a HeapArray and a MaskedArray.  HeapArrayDoor is the one
+// friend of the key, and only the two mints call the door.  The door and the
+// key hold no template, so no explicit specialization of a template reaches
+// the key.  A constructor that takes the key allocates the storage and builds
+// each element itself.  So a use of namespace detail outside the base gets
+// only an array of new storage, with no allocation capability at its call
+// site.
 struct HeapArrayDoor;
 
 class [[nodiscard]] HeapArrayKey final {
@@ -470,6 +486,159 @@ template <class T, std::size_t Align = alignof(T), class Marker>
     requires CanMintHeapArray<T, Align, Marker>
 [[nodiscard]] HeapArray<T, Align> mint_heap_array(Marker /*allocation*/, std::size_t count, T const& fill) noexcept {
     return HeapArray<T, Align>{detail::HeapArrayDoor::key(), count, fill};
+}
+
+// ── MaskedArray ────────────────────────────────────────────────────────────
+
+namespace detail {
+
+// The largest count of a MaskedArray.  A slot below the count plus a probe
+// step below the count then fits in 32 bits.
+inline constexpr std::size_t masked_array_max_count = std::size_t{1} << 31;
+
+// True for a power of two from 1 to masked_array_max_count.
+[[nodiscard]] constexpr bool is_masked_array_count_(std::size_t count) noexcept {
+    return count != 0 && count <= masked_array_max_count && (count & (count - 1)) == 0;
+}
+
+}  // namespace detail
+
+// The arguments of mint_masked_array: an element that its default
+// constructor builds with no throw, an alignment of the storage, and the
+// allocation capability.  The mint copies no element, so an element that
+// does not copy or move, such as a class of Atomic cells, passes.
+template <class T, std::size_t Align, class Marker>
+concept CanMintMaskedArray = OwnedElement<T> && detail::HeapArrayAlignment<T, Align> && AllocationCapability<Marker>
+                          && std::is_nothrow_default_constructible_v<T>;
+
+// An open-addressing table on the heap: a count of elements that is a power
+// of two, at the alignment Align.  at_masked(key) reads the element at
+// key & (count - 1) with no check, because the mask keeps each key below the
+// count.  A probe loop adds its step to the key, and the mask wraps it.
+//
+// The array owns its storage alone.  A move gives the storage to the target
+// and leaves the source empty, and the destructor ends each element and gives
+// the storage back.  An empty array, also the default one, holds no storage
+// and has the mask 0, so at_masked of it reads the null address and faults.
+// The rule use-after-move refuses a read of a local after its move.
+template <class T, std::size_t Align = alignof(T)>
+    requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
+class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
+    MaskedArray final {
+    T* first_ = nullptr;
+    std::size_t count_ = 0;
+    std::size_t mask_ = 0;
+
+    // Ends each element from the last, and gives the storage back to the
+    // allocation door with the bytes and the alignment of the mint.  An
+    // empty array holds no storage.  Complexity: O(count).
+    constexpr void release_() noexcept {
+        if (first_ == nullptr) {
+            return;
+        }
+        if constexpr (!std::is_trivially_destructible_v<T>) {
+            for (std::size_t position = count_; position != 0; --position) {
+                first_[position - 1].~T();
+            }
+        }
+        detail::heap_release_(static_cast<void*>(first_), detail::heap_array_bytes_<T, Align>(count_), Align);
+        first_ = nullptr;
+        count_ = 0;
+        mask_ = 0;
+    }
+
+public:
+    using element_type = T;
+
+    // The empty array: no element and no storage.
+    constexpr MaskedArray() noexcept = default;
+
+    // count elements from their default constructor, in new storage at the
+    // alignment Align, with the key that only HeapArrayDoor builds.  The mint
+    // states the count as a precondition.  This check holds in each build
+    // and under each contract semantic, because a count of zero gives the
+    // mask of each bit, and at_masked would then read past the storage.
+    // Complexity: one allocation and O(count) constructions.
+    explicit MaskedArray(detail::HeapArrayKey const& /*key*/, std::size_t count) noexcept
+        requires std::is_nothrow_default_constructible_v<T>
+    {
+        if (!detail::is_masked_array_count_(count)) [[unlikely]] {
+            fatal("a MaskedArray of {} elements: the count must be a power of two from 1 to 2^31", count);
+        }
+        std::size_t const bytes = detail::heap_array_bytes_<T, Align>(count);
+        T* const first = static_cast<T*>(detail::heap_allocate_(bytes, Align));
+        for (std::size_t position = 0; position != count; ++position) {
+            ::new(static_cast<void*>(first + position)) T();
+        }
+        first_ = first;
+        count_ = count;
+        mask_ = count - 1;
+    }
+
+    constexpr MaskedArray(MaskedArray&& other) noexcept
+        : first_{other.first_}, count_{other.count_}, mask_{other.mask_} {
+        other.first_ = nullptr;
+        other.count_ = 0;
+        other.mask_ = 0;
+    }
+
+    // Ends each element that this array holds, and takes the storage of
+    // other.
+    constexpr MaskedArray& operator=(MaskedArray&& other) noexcept {
+        if (this != &other) {
+            release_();
+            first_ = other.first_;
+            count_ = other.count_;
+            mask_ = other.mask_;
+            other.first_ = nullptr;
+            other.count_ = 0;
+            other.mask_ = 0;
+        }
+        return *this;
+    }
+
+    MaskedArray(MaskedArray const&) =
+        delete("a MaskedArray owns its storage alone: a copy would free the storage two times");
+    MaskedArray& operator=(MaskedArray const&) =
+        delete("a MaskedArray owns its storage alone: a copy would free the storage two times");
+
+    constexpr ~MaskedArray() { release_(); }
+
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return count_; }
+
+    // The View of the elements.  It borrows this array.  The mint bounds the
+    // count and gives storage for each count, so the View comes through the
+    // door of the base layer, with no check.
+    [[nodiscard]] constexpr View<T> view() & noexcept { return View<T>{detail::ViewDoor::key(), first_, count_}; }
+    [[nodiscard]] constexpr View<T const> view() const& noexcept {
+        return View<T const>{detail::ViewDoor::key(), first_, count_};
+    }
+    void view() && = delete("a view of a temporary MaskedArray points into storage that the full expression frees");
+    void
+    view() const&& = delete("a view of a temporary MaskedArray points into storage that the full expression frees");
+
+    // The element at key & (count - 1), with no check.  The count is a power
+    // of two, so each masked key is below it.  Complexity: O(1).
+    [[nodiscard]] constexpr T& at_masked(std::uint64_t key) & noexcept { return first_[key & mask_]; }
+    [[nodiscard]] constexpr T const& at_masked(std::uint64_t key) const& noexcept { return first_[key & mask_]; }
+    void at_masked(std::uint64_t) && = delete("an element of a temporary MaskedArray dangles at the end of the full "
+                                              "expression");
+    void at_masked(std::uint64_t) const&& = delete("an element of a temporary MaskedArray dangles at the end of the "
+                                                   "full expression");
+};
+
+// The one door of a MaskedArray: count elements from their default
+// constructor, at the alignment Align, in new storage of the allocation
+// door.  The count is a power of two from 1 to 2^31.  The allocation
+// capability comes first, so each allocation shows at its call.  The
+// allocation door ends the process when the memory is exhausted, as it does
+// for mint_heap_array.  Complexity: one allocation and O(count) constructions.
+template <class T, std::size_t Align = alignof(T), class Marker>
+    requires CanMintMaskedArray<T, Align, Marker>
+[[nodiscard]] MaskedArray<T, Align> mint_masked_array(Marker /*allocation*/, std::size_t count) noexcept {
+    // Not CRUCIBLE_PRE: its assumption under the ignore semantic could delete the check of the constructor.
+    contract_assert(detail::is_masked_array_count_(count));
+    return MaskedArray<T, Align>{detail::HeapArrayDoor::key(), count};
 }
 
 }  // namespace foundation::core

@@ -2863,6 +2863,12 @@ foundation_neg_compile_test(neg_core_lower_bound_float_key
 # power of two.  It does not copy, and a view of a temporary is refused.
 foundation_test(test_core_heap_array)
 
+# A MaskedArray holds a power-of-two count of elements from their default
+# constructor, so a pinned element passes.  A key at or past the count reads
+# the element of its low bits, a move leaves the source empty, and a bad
+# count ends the process.
+foundation_test(test_core_masked_array)
+
 # A FixedList holds at most N elements, and a push into a full list gives
 # Full, which holds the value of a linear element.  Each element ends one
 # time, and the model of a FixedArray and a count agrees with each step.
@@ -2979,6 +2985,12 @@ foundation_neg_compile_test(neg_core_heap_array_view_of_temporary
 foundation_neg_compile_test(neg_core_heap_array_mint_forged_body
   "no matching function for call to .foundation::core::HeapArray<int>::HeapArray\\(<brace-enclosed initializer list>\\)."
   "HeapArray\\(const foundation::core::detail::HeapArrayKey&, std::size_t, const T&\\) requires  is_nothrow_copy_constructible_v<T>")
+foundation_neg_compile_test(neg_core_masked_array_copied
+  "use of deleted function .foundation::core::MaskedArray<T, Align>::MaskedArray\\(const foundation::core::MaskedArray<T, Align>&\\) \\[with T = int; long unsigned int Align = 4\\]."
+  "a MaskedArray owns its storage alone: a copy would free the storage two times")
+foundation_neg_compile_test(neg_core_masked_array_element_not_default_constructible
+  "no matching function for call to .mint_masked_array<NoDefault>\\(foundation::core::Alloc, int\\)."
+  "the expression .is_nothrow_default_constructible_v<T> \\[with T = NoDefault\\]. evaluated to .false.")
 # View names view_over_ and first_of_ as no friend template: a forged
 # specialization of view_over_ reaches no private constructor of a View, and
 # first_of_ is a friend that is no template, so it has no specialization.
