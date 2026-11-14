@@ -12,6 +12,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/atoms/Syscall.h>
+#include <fixy/os/Environment.h>
 #include <fixy/os/Pages.h>
 #include <fixy/os/Sched.h>
 #include <foundation/Platform.h>
@@ -23,7 +24,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <utility>
 
 namespace crucible::warden {
@@ -31,9 +31,9 @@ namespace crucible::warden {
 namespace detail {
 
 // True when the environment variable name holds the text "1".
-[[nodiscard]] inline bool is_env_set_to_one(const char* name) noexcept {
-    const char* value = std::getenv(name);
-    return value != nullptr && value[0] == '1' && value[1] == '\0';
+[[nodiscard]] inline bool is_env_set_to_one(::fixy::CText name) noexcept {
+    return ::fixy::env::read_variable(name).match([](::fixy::TextView value) noexcept { return value == "1"; },
+                                                  [] noexcept { return false; });
 }
 
 // Log scanners match on the "[warden] " prefix and the "unavailable"
