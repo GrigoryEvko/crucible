@@ -88,9 +88,8 @@ int main(int argc, char** argv) {
             // If its semantic fields happen to match a starter,
             // by_hash should hit.  Else it should miss with
             // HashNotFound, not NameNotFound.
-            const auto* extra_ptr = pool.intern(init.alloc, extra);
-            if (extra_ptr == nullptr) return false;
-            return registry.by_hash(extra_ptr->hash)
+            const RecipeRegistry::RecipeRef extra_recipe = pool.intern(init.alloc, extra);
+            return registry.by_hash(extra_recipe->hash)
                 .match(
                     [&](RecipeRegistry::RecipeRef found) noexcept {
                         // A hit must be one of the starter recipes.

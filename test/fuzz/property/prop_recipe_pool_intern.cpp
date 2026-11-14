@@ -55,15 +55,15 @@ int main(int argc, char** argv) {
             RecipePool pool{::fixy::mint_borrowed_ref(arena), init,
                             /*initial_capacity=*/8};
 
-            // Phase 1: insert all, capture pointers.
-            std::array<const NumericalRecipe*, 30> ptrs{};
-            for (size_t i = 0; i < recipes.size(); ++i) {
-                ptrs[i] = pool.intern(init.alloc, recipes[i]);
-                if (ptrs[i] == nullptr) return false;  // never null
+            // Phase 1: insert all, keep a Ref of each recipe.
+            ::fixy::FixedList<::fixy::Ref<const NumericalRecipe>, 30> interned{};
+            for (const NumericalRecipe& recipe : recipes) {
+                const ::fixy::Ref<const NumericalRecipe> stored = pool.intern(init.alloc, recipe);
                 // Pool authority: returned recipe carries the
                 // canonical compute_recipe_hash, ignoring any
                 // pre-set hash on the input.
-                if (ptrs[i]->hash != compute_recipe_hash(recipes[i])) return false;
+                if (stored->hash != compute_recipe_hash(recipe)) return false;
+                (void)interned.push(stored).expect("the list holds one Ref for each recipe");
             }
 
             // Phase 2: pairwise iff invariant.  semantic_equal is
@@ -77,9 +77,10 @@ int main(int argc, char** argv) {
             };
             for (size_t i = 0; i < recipes.size(); ++i) {
                 for (size_t j = 0; j < recipes.size(); ++j) {
-                    const bool eq_ptrs = (ptrs[i] == ptrs[j]);
+                    const bool is_same_recipe = ::fixy::same_object(*interned.get(i).expect("each recipe has a Ref"),
+                                                                    *interned.get(j).expect("each recipe has a Ref"));
                     const bool eq_fields = sem_eq(recipes[i], recipes[j]);
-                    if (eq_ptrs != eq_fields) return false;
+                    if (is_same_recipe != eq_fields) return false;
                 }
             }
             return true;

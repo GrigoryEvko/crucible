@@ -1,8 +1,9 @@
 #pragma once
 
-// Interns recipes so that two kernels with the same semantics hold the same
-// pointer. Downstream identity, deduplication and cache keys then compare
-// pointers instead of comparing or rehashing fields.
+// Interns recipes so that two kernels with the same semantics hold a Ref of
+// the same recipe. Downstream identity, deduplication and cache keys then
+// compare the identity of the recipes instead of comparing or rehashing
+// fields.
 //
 // A pool is single-threaded and does no locking on the intern path. The
 // recipes live in the arena, so no recipe is freed until the arena is. The
@@ -58,14 +59,13 @@ public:
     RecipePool(RecipePool&&) = delete("interior pointers would dangle");
     RecipePool& operator=(RecipePool&&) = delete("interior pointers would dangle");
 
-    // Two calls return the same pointer exactly when their arguments agree
-    // on every field but the hash. The hash of the argument is ignored: the
-    // pool computes and owns that field.
+    // Two calls return a Ref of the same recipe exactly when their arguments
+    // agree on every field but the hash. The hash of the argument is ignored:
+    // the pool computes and owns that field.
     //
     // The recipe is in the arena, and not in the pool.
-    [[nodiscard, gnu::returns_nonnull]] const NumericalRecipe* intern(::foundation::effects::Alloc a,
-                                                                      const NumericalRecipe& fields)
-        CRUCIBLE_NO_THREAD_SAFETY {
+    [[nodiscard]] ::fixy::Ref<const NumericalRecipe> intern(::foundation::effects::Alloc a,
+                                                            const NumericalRecipe& fields) CRUCIBLE_NO_THREAD_SAFETY {
         const RecipeHash h = compute_recipe_hash(fields);
         const uint64_t hv = h.raw();
 
@@ -79,11 +79,11 @@ public:
                     // The table this probe walked no longer exists.
                     return intern(a, fields);
                 }
-                return &*install_(a, key, fields, h);
+                return install_(a, key, fields, h);
             }
             for (const ::fixy::Ref<const NumericalRecipe> stored : s.recipe) {
                 if (s.hash == hv && semantic_equal_(*stored, fields)) {
-                    return &*stored;
+                    return stored;
                 }
             }
         }

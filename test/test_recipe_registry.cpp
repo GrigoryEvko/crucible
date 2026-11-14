@@ -337,9 +337,9 @@ using MintedPoolBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<RecipeP
         for (const auto& spec : crucible::detail_recipe_registry::kStarterRecipes) {
             // Re-intern the starter spec's fields → must hit the canonical
             // pointer already stored by the registry.
-            const auto* via_pool = pool.intern(alloc_cap(), spec.fields);
+            RecipeRegistry::RecipeRef const via_pool = pool.intern(alloc_cap(), spec.fields);
             RecipeRegistry::RecipeRef const via_reg = reg.by_name(spec.name).expect("each starter is present");
-            assert(via_pool == &*via_reg);
+            assert(::fixy::same_object(via_pool, via_reg));
         }
         // An unchanged pool size is what proves every intern was a hit.
         assert(pool.size() == RecipeRegistry::STARTER_COUNT);

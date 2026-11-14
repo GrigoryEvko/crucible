@@ -418,7 +418,7 @@ inline constexpr ::fixy::FixedArray<StarterSpec, RecipeRegistry::STARTER_COUNT> 
 template <std::size_t I>
 inline RecipeRegistry::Entry RecipeRegistry::intern_starter_(PoolBorrow pool, ::foundation::effects::Alloc a) noexcept {
     detail_recipe_registry::StarterSpec const& spec = detail_recipe_registry::kStarterRecipes.at(::fixy::index<I>());
-    return Entry{.name = spec.name, .recipe = ::fixy::to(*pool->intern(a, spec.fields))};
+    return Entry{.name = spec.name, .recipe = pool->intern(a, spec.fields)};
 }
 
 // A braced list runs its elements in order, so the pool interns the starter

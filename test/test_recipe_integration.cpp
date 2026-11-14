@@ -290,7 +290,8 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         entry.at(::fixy::index<0>()).schema_hash = SchemaHash{0xAA01};
 
         const ContentHash with_recipe =
-            crucible::make_region(alloc_cap(), arena, entry.view(), pool.intern(alloc_cap(), zero_bytes))->content_hash;
+            crucible::make_region(alloc_cap(), arena, entry.view(), &*pool.intern(alloc_cap(), zero_bytes))
+                ->content_hash;
         const ContentHash with_no_recipe = crucible::make_region(alloc_cap(), arena, entry.view())->content_hash;
         assert(with_recipe != with_no_recipe);
         assert(with_recipe.raw() != 0);

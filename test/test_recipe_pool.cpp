@@ -30,6 +30,7 @@ using crucible::ScalarType;
 using crucible::ScalePolicy;
 using crucible::SoftmaxRecurrence;
 using fixy::BumpArena;
+using RecipeRef = ::fixy::Ref<const NumericalRecipe>;
 
 // Other fields stay at their defaults.  These three vary enough to
 // avoid hash collisions across the small matrices below.
@@ -101,12 +102,11 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
 
         const NumericalRecipe fields = mk(ScalarType::Float, ScalarType::Half, ReductionDeterminism::BITEXACT_TC);
 
-        const auto* a = pool.intern(alloc_cap(), fields);
-        const auto* b = pool.intern(alloc_cap(), fields);
-        assert(a == b);
+        const RecipeRef a = pool.intern(alloc_cap(), fields);
+        const RecipeRef b = pool.intern(alloc_cap(), fields);
+        assert(::fixy::same_object(a, b));
         assert(pool.size() == 1);
 
-        assert(a != nullptr);
         assert(a->hash == crucible::compute_recipe_hash(fields));
         assert(a->accum_dtype == ScalarType::Float);
         assert(a->out_dtype == ScalarType::Half);
@@ -117,16 +117,16 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
         BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
 
-        const auto* r_f32_strict =
+        const RecipeRef r_f32_strict =
             pool.intern(alloc_cap(), mk(ScalarType::Float, ScalarType::Float, ReductionDeterminism::BITEXACT_STRICT));
-        const auto* r_f16_tc =
+        const RecipeRef r_f16_tc =
             pool.intern(alloc_cap(), mk(ScalarType::Float, ScalarType::Half, ReductionDeterminism::BITEXACT_TC));
-        const auto* r_bf16_ordered =
+        const RecipeRef r_bf16_ordered =
             pool.intern(alloc_cap(), mk(ScalarType::Float, ScalarType::BFloat16, ReductionDeterminism::ORDERED));
 
-        assert(r_f32_strict != r_f16_tc);
-        assert(r_f32_strict != r_bf16_ordered);
-        assert(r_f16_tc != r_bf16_ordered);
+        assert(!::fixy::same_object(r_f32_strict, r_f16_tc));
+        assert(!::fixy::same_object(r_f32_strict, r_bf16_ordered));
+        assert(!::fixy::same_object(r_f16_tc, r_bf16_ordered));
         assert(pool.size() == 3);
     }
 
@@ -137,7 +137,7 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
         NumericalRecipe poisoned = mk(ScalarType::Float, ScalarType::Half, ReductionDeterminism::ORDERED);
         poisoned.hash = RecipeHash{0xDEADBEEFCAFEBABEULL};
 
-        const auto* r = pool.intern(alloc_cap(), poisoned);
+        const RecipeRef r = pool.intern(alloc_cap(), poisoned);
         // Stored hash is compute_recipe_hash of the semantic fields,
         // NOT the poisoned value supplied by the caller.
         assert(r->hash == crucible::compute_recipe_hash(poisoned));
@@ -151,17 +151,17 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
 
         NumericalRecipe fresh = mk(ScalarType::Float, ScalarType::Float, ReductionDeterminism::BITEXACT_STRICT);
-        const auto* a = pool.intern(alloc_cap(), fresh);
+        const RecipeRef a = pool.intern(alloc_cap(), fresh);
 
         NumericalRecipe poisoned = fresh;
         poisoned.hash = RecipeHash{0xFFFFFFFFFFFFFFFFULL};
-        const auto* b = pool.intern(alloc_cap(), poisoned);
+        const RecipeRef b = pool.intern(alloc_cap(), poisoned);
 
-        assert(a == b);
+        assert(::fixy::same_object(a, b));
         assert(pool.size() == 1);
     }
 
-    // Arena-owned recipes never move, so a pointer captured before a grow
+    // Arena-owned recipes never move, so a Ref captured before a grow
     // stays valid after it.  Capacity 8 at 50% load grows after 4 entries,
     // so 10 insertions force two grows, to 16 and then 32.
     {
@@ -183,11 +183,10 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
             mk(ScalarType::Float, ScalarType::Float, ReductionDeterminism::ORDERED),
         };
 
-        const NumericalRecipe* ptrs[N]{};
+        ::fixy::FixedList<RecipeRef, N> interned{};
 
-        for (unsigned i = 0; i < N; ++i) {
-            ptrs[i] = pool.intern(alloc_cap(), keys[i]);
-            assert(ptrs[i] != nullptr);
+        for (const NumericalRecipe& key : keys) {
+            (void)interned.push(pool.intern(alloc_cap(), key)).expect("the list holds one Ref for each key");
         }
 
         assert(pool.capacity() >= 32);
@@ -195,13 +194,16 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
 
         for (unsigned i = 0; i < N; ++i) {
             for (unsigned j = i + 1; j < N; ++j) {
-                assert(ptrs[i] != ptrs[j]);
+                assert(!::fixy::same_object(*interned.get(i).expect("each key has a Ref"),
+                                            *interned.get(j).expect("each key has a Ref")));
             }
         }
 
-        for (unsigned i = 0; i < N; ++i) {
-            const auto* re = pool.intern(alloc_cap(), keys[i]);
-            assert(re == ptrs[i]);
+        unsigned position = 0;
+        for (const NumericalRecipe& key : keys) {
+            const RecipeRef re = pool.intern(alloc_cap(), key);
+            assert(::fixy::same_object(re, *interned.get(position).expect("each key has a Ref")));
+            ++position;
         }
         assert(pool.size() == N);  // no new entries on hits
     }
@@ -229,7 +231,6 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
             ScalePolicy::PER_BLOCK_NVFP4,
         };
 
-        std::unordered_set<const NumericalRecipe*> seen_ptrs;
         std::unordered_set<uint64_t> seen_hashes;
 
         for (auto accum : dtypes) {
@@ -237,9 +238,12 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
                 for (auto det : dets) {
                     for (auto sp : scales) {
                         const NumericalRecipe fields = mk(accum, out, det, sp);
-                        const auto* p = pool.intern(alloc_cap(), fields);
-                        const auto [it_p, inserted_p] = seen_ptrs.insert(p);
-                        assert(inserted_p && "pool aliased two distinct recipes");
+                        const RecipeRef p = pool.intern(alloc_cap(), fields);
+                        // A recipe that holds other fields is a recipe of a
+                        // different key, so the pool aliased two keys.
+                        const bool holds_the_fields = p->accum_dtype == accum && p->out_dtype == out
+                                                   && p->determinism == det && p->scale_policy == sp;
+                        assert(holds_the_fields && "pool aliased two distinct recipes");
                         const auto [it_h, inserted_h] = seen_hashes.insert(p->hash.raw());
                         assert(inserted_h && "two distinct recipes share a hash");
                     }
@@ -248,12 +252,12 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
         }
 
         assert(pool.size() == 400);
-        assert(seen_ptrs.size() == 400);
+        assert(seen_hashes.size() == 400);
         assert(pool.capacity() >= 1024);  // 400 @ 50% load requires capacity >= 800 → next pow2
     }
 
-    // Pointer equality is a per-pool invariant, not a global one: each
-    // pool owns its own arena storage.
+    // The identity of a recipe is a per-pool invariant, not a global one:
+    // each pool owns its own arena storage.
     {
         BumpArena arena_a{};
         BumpArena arena_b{};
@@ -262,10 +266,10 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
 
         const NumericalRecipe fields = mk(ScalarType::Float, ScalarType::Float, ReductionDeterminism::BITEXACT_STRICT);
 
-        const auto* a = pool_a.intern(alloc_cap(), fields);
-        const auto* b = pool_b.intern(alloc_cap(), fields);
+        const RecipeRef a = pool_a.intern(alloc_cap(), fields);
+        const RecipeRef b = pool_b.intern(alloc_cap(), fields);
 
-        assert(a != b);
+        assert(!::fixy::same_object(a, b));
         assert(a->hash == b->hash);
         assert(a->accum_dtype == b->accum_dtype);
     }
@@ -273,11 +277,11 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
     {
         BumpArena arena{};
         RecipePool pool{::fixy::mint_borrowed_ref(arena), init_cap(), 32};
-        const auto* r =
+        const auto r =
             pool.intern(alloc_cap(), mk(ScalarType::Float, ScalarType::Float, ReductionDeterminism::ORDERED));
-        static_assert(std::is_same_v<decltype(r), const NumericalRecipe*>,
-                      "RecipePool::intern must return const NumericalRecipe*");
-        assert(r != nullptr);
+        static_assert(std::is_same_v<decltype(r), const RecipeRef>,
+                      "RecipePool::intern gives a Ref, which is never null");
+        assert(r->determinism == ReductionDeterminism::ORDERED);
     }
 
     crucible::test::pass("test_recipe_pool: all tests passed\n");
