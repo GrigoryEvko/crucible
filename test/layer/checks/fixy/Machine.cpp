@@ -2,10 +2,15 @@
 
 #include <fixy/Machine.h>
 
+#include <type_traits>
+#include <utility>
+
 namespace fixy {
 
-static_assert(sizeof(Machine<int>) == sizeof(int));
-static_assert(sizeof(Machine<void*>) == sizeof(void*));
+// The machine costs its state and one flag, which takes the alignment of
+// the state.
+static_assert(sizeof(Machine<int>) == sizeof(int) + alignof(int));
+static_assert(sizeof(Machine<void*>) == sizeof(void*) + alignof(void*));
 
 namespace detail::machine_self_test {
 
@@ -70,6 +75,45 @@ static_assert(!std::is_constructible_v<ConnMachine, Disconnected>,
     return std::move(m_same).extract().fd == 43;
 }
 static_assert(walks_the_relation());
+
+// A move and a transition clear the flag of their source, and a move
+// assignment gives the flag of its source to the target.  The source is a
+// member that a callee empties, as a holder of a machine sees it.
+struct HeldMachine {
+    Machine<int> machine = mint_machine<int>(1);
+};
+
+[[nodiscard]] consteval Machine<int> take_machine(Machine<int>& held) noexcept { return std::move(held); }
+
+[[nodiscard]] consteval Machine<int> step_machine(Machine<int>& held) noexcept {
+    return transition_to(std::move(held), 2);
+}
+
+[[nodiscard]] consteval bool move_clears_the_source() noexcept {
+    HeldMachine held{};
+    Machine<int> taken = take_machine(held.machine);
+    return !held.machine.is_live() && taken.is_live() && taken.data() == 1;
+}
+static_assert(move_clears_the_source());
+
+[[nodiscard]] consteval bool transition_clears_the_source() noexcept {
+    HeldMachine held{};
+    Machine<int> next = step_machine(held.machine);
+    return !held.machine.is_live() && next.is_live() && next.data() == 2;
+}
+static_assert(transition_clears_the_source());
+
+[[nodiscard]] consteval bool assignment_builds_a_spent_machine_again() noexcept {
+    HeldMachine held{};
+    Machine<int> taken = take_machine(held.machine);
+    held.machine = take_machine(taken);
+    return held.machine.is_live() && !taken.is_live() && held.machine.data() == 1;
+}
+static_assert(assignment_builds_a_spent_machine_again());
+
+static_assert(!std::is_trivially_copyable_v<Machine<int>>);
+static_assert(std::is_nothrow_move_constructible_v<Machine<int>>);
+static_assert(std::is_nothrow_move_assignable_v<Machine<int>>);
 
 }  // namespace detail::machine_self_test
 

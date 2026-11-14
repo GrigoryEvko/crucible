@@ -18,8 +18,16 @@
 // namespace as the Edges parameter.  A machine that names none reads
 // fixy::machine::no_edges, which holds no edge, so it admits only a move
 // to its own state.
+//
+// A transition takes the machine as an rvalue, but the caller keeps the
+// name of the source, and a member or a reference can hold the source.  So
+// the machine carries one flag of state.  A move and a transition clear the
+// flag of the source, and each read and each transition of a machine with
+// a clear flag ends the process.  A move assignment gives the flag of its
+// source to the target, so an assignment can build a spent machine again.
 
 #include <foundation/Platform.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/diag/FailClosed.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/reflect/Instance.h>
@@ -67,6 +75,8 @@ class [[nodiscard]] Machine {
                                                   "namespace that declares the machine's edges, written ^^name.");
 
     State state_;
+    // False after a move or a transition took the state.
+    bool is_live_ = true;
 
     constexpr explicit Machine(State s) noexcept(std::is_nothrow_move_constructible_v<State>) : state_{std::move(s)} {}
 
@@ -98,17 +108,46 @@ public:
 
     Machine(const Machine&) = delete("Machine is move-only; transitions consume it");
     Machine& operator=(const Machine&) = delete("Machine is move-only; transitions consume it");
-    Machine(Machine&&) = default;
-    Machine& operator=(Machine&&) = default;
+
+    // The move clears the flag of the source, so no later step of the
+    // source reads the moved-from state.
+    constexpr Machine(Machine&& other) noexcept(std::is_nothrow_move_constructible_v<State>)
+        : state_{std::move(other.state_)}, is_live_{other.is_live_} {
+        other.is_live_ = false;
+    }
+
+    // The flag of the source is read before the state moves, so a self
+    // assignment keeps the flag.
+    constexpr Machine& operator=(Machine&& other) noexcept(std::is_nothrow_move_assignable_v<State>)
+        requires std::is_move_assignable_v<State>
+    {
+        bool const was_live = other.is_live_;
+        other.is_live_ = false;
+        state_ = std::move(other.state_);
+        is_live_ = was_live;
+        return *this;
+    }
+
     ~Machine() = default;
 
-    [[nodiscard]] constexpr const State& data() const& noexcept { return state_; }
+    // True while no move and no transition took the state.
+    [[nodiscard]] constexpr bool is_live() const noexcept { return is_live_; }
+
+    [[nodiscard]] constexpr const State& data() const& noexcept {
+        CRUCIBLE_PRE(is_live_);
+        return state_;
+    }
 
     // For bookkeeping within one state only.  A change that means the machine
     // has entered another state goes through a transition instead.
-    [[nodiscard]] constexpr State& data_mut() & noexcept { return state_; }
+    [[nodiscard]] constexpr State& data_mut() & noexcept {
+        CRUCIBLE_PRE(is_live_);
+        return state_;
+    }
 
     [[nodiscard]] constexpr State extract() && noexcept(std::is_nothrow_move_constructible_v<State>) {
+        CRUCIBLE_PRE(is_live_);
+        is_live_ = false;
         return std::move(state_);
     }
 };

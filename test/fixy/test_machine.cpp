@@ -83,9 +83,9 @@ static_assert(!fmach::can_transition_v<Disconnected, Connecting>,
               "can_transition_v must reject when M is a bare State (must be "
               "wrapped in Machine<>).");
 
-// The machine costs its state and has no public constructor.
-static_assert(sizeof(ConnMachine) == sizeof(Disconnected));
-static_assert(sizeof(Machine<std::uint64_t>) == sizeof(std::uint64_t));
+// The machine costs its state and one flag, and has no public constructor.
+static_assert(sizeof(ConnMachine) == sizeof(Disconnected) + alignof(Disconnected));
+static_assert(sizeof(Machine<std::uint64_t>) == sizeof(std::uint64_t) + alignof(std::uint64_t));
 static_assert(!std::is_copy_constructible_v<ConnMachine>);
 static_assert(std::is_nothrow_move_constructible_v<ConnMachine>);
 static_assert(!std::is_constructible_v<ConnMachine, Disconnected>);

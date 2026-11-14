@@ -350,9 +350,6 @@ inline constexpr ByteCopyAllowance byte_copy_ledger[] = {
      "mint_tagged builds a tag that names a source from any value.  An earned tag makes the wrapper not trivially "
      "copyable"},
     {^^::fixy::fn, "mint_fn builds a binding of each accepted pack from any value, and a refused pack is no type"},
-    {^^::fixy::Machine,
-     "mint_machine opens a machine in any state, and data_mut writes the data of a live machine, so a byte image "
-     "adds no state"},
     {^^::fixy::Monotonic,
      "mint_monotonic takes any initial value, and reset_under_quiescence puts any value in a live counter through "
      "a public member, so a byte image adds no value"},
@@ -374,7 +371,7 @@ inline constexpr ByteCopyAllowance byte_copy_ledger[] = {
 // The ledger only shrinks.  Lower this count in the commit that removes an
 // entry.  A new entry also needs a higher count, so the change shows the
 // reason of that entry to its reviewer.
-inline constexpr std::size_t byte_copy_ledger_size = 8;
+inline constexpr std::size_t byte_copy_ledger_size = 7;
 static_assert(std::size(byte_copy_ledger) == byte_copy_ledger_size,
               "the byte-copy ledger changed size.  Lower byte_copy_ledger_size when an entry leaves.  A new entry "
               "needs a reason that a reviewer accepts, and then a higher count");

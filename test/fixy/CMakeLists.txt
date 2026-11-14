@@ -1447,6 +1447,9 @@ fixy_test(test_owned_region test_owned_region.cpp test_owned_region_split.cpp te
 fixy_test(test_borrowed)
 fixy_test(test_scoped_view)
 fixy_test(test_machine)
+# A machine that a move or a transition emptied refuses each read, each
+# extract and each transition, in a child process.
+fixy_test(test_machine_moved_from)
 
 # The escape audit reads private members: a carrier holding a view in a
 # private field fails no_scoped_view_field_check with the audit's own
@@ -1468,6 +1471,13 @@ fixy_neg_compile_test(neg_machine_transition_not_admitted
   "constraints not satisfied"
   "satisfaction of .MachineTransition<OldState, NewState, Edges>."
   "machine_transition_v<From, To, Edges>.*evaluated to .false.")
+# A step of a machine that a callee moved out of a holder fails the check of
+# the flag, so a constant evaluation of the step is not a constant
+# expression.
+fixy_neg_compile_test(neg_machine_step_after_move
+  "non-constant condition for static assertion"
+  "in .constexpr. expansion of .fixy::transition_to<int, int, \\^\\^machine::no_edges>\\("
+  "fixy/Machine\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
 # A Borrowed of a const element type built from a temporary vector
 # selects the deleted rvalue-range twin of the span constructor.

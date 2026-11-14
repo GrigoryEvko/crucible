@@ -80,14 +80,14 @@ static_assert(std::is_same_v<typename Bridge::protocol, Reporting>);
 static_assert(s::SessionResource<Bridge::lease_type>);
 static_assert(!s::SessionResource<::fixy::Machine<Payload>*>, "a pointer to the machine is a second holder");
 
-// The bridge adds nothing to the state it owns: the Pinned base is
+// The bridge adds nothing to the machine it owns: the Pinned base is
 // empty and the machine is the only member.  An assertion of this under
 // `#ifdef NDEBUG` would hide it from every build that runs the test
 // suite.  Nothing here varies with the build mode, because the bridge
 // stores no handle and therefore no abandonment policy.
-static_assert(sizeof(Bridge) == sizeof(Payload));
-static_assert(sizeof(s::SessionFromMachine<char, s::End>) == sizeof(char));
-static_assert(sizeof(s::SessionFromMachine<double, s::End>) == sizeof(double));
+static_assert(sizeof(Bridge) == sizeof(::fixy::Machine<Payload>));
+static_assert(sizeof(s::SessionFromMachine<char, s::End>) == sizeof(::fixy::Machine<char>));
+static_assert(sizeof(s::SessionFromMachine<double, s::End>) == sizeof(::fixy::Machine<double>));
 
 // ── The atomic cell ──────────────────────────────────────────────────
 
