@@ -112,7 +112,7 @@ include/crucible/ | c-library-call | 3 | - | -
 include/crucible/ | compiler-builtin | 1 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
 include/crucible/ | raw-new-delete | 1 | - | -
-include/crucible/ | raw-pointer-object | 159 | - | -
+include/crucible/ | raw-pointer-object | 156 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 1 | - | -
 include/crucible/ | std-entity | 24 | - | -
 include/crucible/ | std-object | 9 | - | -
@@ -400,7 +400,7 @@ test/fixy/ | region | 1 | PROBE: the test plants an atom in a shipped family, an
 test/fixy/ | replace-pending:<limits> | 29 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 15 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 3030 | - | -
+test/fixy/ | std-entity | 3024 | - | -
 test/fixy/ | std-object | 1085 | - | -
 test/fixy/neg/ | c-array-object | 53 | - | -
 test/fixy/neg/ | c-library-call | 5 | - | -

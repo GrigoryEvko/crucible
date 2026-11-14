@@ -301,10 +301,10 @@ template <class Fake>
     fb_edges.at(::fixy::index<0>()).input_idx = 0;
 
     auto* loop =
-        crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges.view(), crucible::LoopTermKind::REPEAT, 4);
+        crucible::make_loop(test.alloc, arena, *body_r1, body_ch, fb_edges.view(), crucible::LoopTermKind::REPEAT, 4);
 
     assert(loop->kind == crucible::TraceNodeKind::LOOP);
-    assert(loop->body == body_r1);
+    assert(crucible::is_link_to(loop->body, *body_r1));
     assert(loop->body_content_hash == body_ch);
     assert(loop->num_feedback() == 1);
     assert(loop->feedback_edges.get(0).expect("the loop holds one feedback edge")->output_idx == 0);
@@ -327,12 +327,12 @@ template <class Fake>
     assert(static_cast<bool>(loop_merkle));
 
     auto* loop2 =
-        crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges.view(), crucible::LoopTermKind::REPEAT, 8);
+        crucible::make_loop(test.alloc, arena, *body_r1, body_ch, fb_edges.view(), crucible::LoopTermKind::REPEAT, 8);
     loop2->next = final_region;
     crucible::recompute_merkle(loop2);
     assert(loop2->merkle_hash != loop_merkle);
 
-    auto* loop3 = crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges.view(),
+    auto* loop3 = crucible::make_loop(test.alloc, arena, *body_r1, body_ch, fb_edges.view(),
                                       crucible::LoopTermKind::UNTIL, 4, 0.001f);
     loop3->next = final_region;
     crucible::recompute_merkle(loop3);
@@ -343,7 +343,7 @@ template <class Fake>
     fb_edges2.at(::fixy::index<0>()) = {.output_idx = 0, .input_idx = 0};
     fb_edges2.at(::fixy::index<1>()) = {.output_idx = 1, .input_idx = 1};
     auto* loop4 =
-        crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges2.view(), crucible::LoopTermKind::REPEAT, 4);
+        crucible::make_loop(test.alloc, arena, *body_r1, body_ch, fb_edges2.view(), crucible::LoopTermKind::REPEAT, 4);
     loop4->next = final_region;
     crucible::recompute_merkle(loop4);
     assert(loop4->merkle_hash != loop_merkle);
@@ -379,7 +379,7 @@ template <class Fake>
     assert(replay_log[8] == final_region->content_hash);
 
     auto* loop_zero =
-        crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges.view(), crucible::LoopTermKind::REPEAT, 0);
+        crucible::make_loop(test.alloc, arena, *body_r1, body_ch, fb_edges.view(), crucible::LoopTermKind::REPEAT, 0);
     loop_zero->next = final_region;
     uint32_t zero_count = 0;
     bool zero_ok = crucible::replay(
@@ -864,7 +864,7 @@ template <class Fake>
             auto* body = crucible::make_region(test.alloc, arena, loop_body_ops.view());
             body->next = crucible::make_terminal(test.alloc, arena);
             auto* node =
-                crucible::make_loop(test.alloc, arena, body, crucible::compute_body_content_hash(body),
+                crucible::make_loop(test.alloc, arena, *body, crucible::compute_body_content_hash(body),
                                     ::fixy::View<crucible::FeedbackEdge>{}, crucible::LoopTermKind::UNTIL, 3, epsilon);
             node->next = crucible::make_terminal(test.alloc, arena);
             crucible::recompute_merkle(node);
@@ -939,7 +939,7 @@ template <class Fake>
                 auto* body = crucible::make_region(test.alloc, child_arena, guard_body_ops.view());
                 body->next = crucible::make_terminal(test.alloc, child_arena);
                 auto* node =
-                    crucible::make_loop(test.alloc, child_arena, body, crucible::compute_body_content_hash(body),
+                    crucible::make_loop(test.alloc, child_arena, *body, crucible::compute_body_content_hash(body),
                                         ::fixy::View<crucible::FeedbackEdge>{}, kind, count, epsilon);
                 // Keeps the optimizer from deciding the call had no effect
                 // and eliding the clause along with it.

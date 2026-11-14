@@ -270,6 +270,14 @@ using ValidTraceNodeKindRaw = ::fixy::Refined<kValidTraceNodeKindBound, uint8_t>
     return static_cast<TraceNodeKind>(raw.value());
 }
 
+struct TraceNode;
+struct LoopNode;
+
+// A link to one node of the DAG, or no node.  The node is in the arena of
+// the DAG, and the link only borrows it.  The empty link is the null
+// pointer, so a link takes eight bytes.
+using TraceLink = ::fixy::Option<::fixy::Ref<TraceNode>>;
+
 // Nodes are arena-allocated and are never freed individually.
 struct TraceNode {
     TraceNodeKind kind{};
@@ -288,7 +296,37 @@ struct TraceNode {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(merkle_hash));
         return ::fixy::mint_refined<::fixy::non_zero>(merkle_hash);
     }
+
+    // The node as a loop, or no value when its kind is not LOOP.  The door
+    // reads the kind, so no walk downcasts a node by hand.
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<LoopNode>> as_loop() noexcept;
 };
+
+// A full link to the node.
+[[nodiscard]] inline TraceLink make_link(TraceNode& node) noexcept {
+    return ::fixy::some(::fixy::Ref<TraceNode>{::fixy::to(node)});
+}
+
+// True when the link reaches the node.  The test compares the addresses of
+// the two nodes, so a link to a copy of the node is not a link to the node.
+[[nodiscard]] inline bool is_link_to(TraceLink const& link, TraceNode const& node) noexcept {
+    return link.match(
+        [&node](::fixy::Ref<TraceNode> const& linked) noexcept {
+            return ::fixy::same_object(linked, ::fixy::to(node));
+        },
+        []() noexcept { return false; });
+}
+
+namespace detail {
+
+// The node of a link, or null for an empty link.  A walk that takes a raw
+// node reads a link through it.
+[[nodiscard]] inline TraceNode* node_of_link(TraceLink const& link) noexcept {
+    return link.match([](::fixy::Ref<TraceNode> const& node) noexcept { return &*node; },
+                      []() noexcept -> TraceNode* { return nullptr; });
+}
+
+}  // namespace detail
 
 // Zero is the "never built" hash.  A TERMINAL node legitimately carries
 // MerkleHash{}, but it is a sentinel leaf, never a root: two unbuilt subtrees
@@ -434,7 +472,9 @@ enum class LoopTermKind : uint8_t {
 
 struct LoopNode : TraceNode {
     ContentHash body_content_hash;
-    TraceNode* body = nullptr;  // self-contained chain ending in TERMINAL
+    // The first node of the body: a chain that ends in TERMINAL.  make_loop
+    // sets it, and replay refuses a loop with an empty body.
+    TraceLink body{};
     // The edges are in the arena, and the node only borrows them.
     ::fixy::View<FeedbackEdge> feedback_edges{};
     LoopTermKind term_kind = LoopTermKind::REPEAT;
@@ -459,6 +499,11 @@ struct LoopNode : TraceNode {
         return ::fixy::mint_refined<::fixy::non_zero>(body_content_hash);
     }
 };
+
+inline ::fixy::Option<::fixy::Ref<LoopNode>> TraceNode::as_loop() noexcept {
+    if (kind != TraceNodeKind::LOOP) return ::fixy::none;
+    return ::fixy::some(::fixy::Ref<LoopNode>{::fixy::to(static_cast<LoopNode&>(*this))});
+}
 
 // An empty edge set hashes to 0 and any non-empty set hashes non-zero.  The
 // non-zero seed is what makes the first claim hold: fmix64 is a permutation,
@@ -664,7 +709,7 @@ private:
             break;
         }
         case TraceNodeKind::LOOP: {
-            auto* loop = static_cast<LoopNode*>(node);
+            const ::fixy::Ref<LoopNode> loop = node->as_loop().expect("the kind of the node is LOOP");
             // The salts keep a loop from hashing the same as a region with
             // the same content.  Mixing is fmix64 and XOR, which survives a
             // zero feedback or termination component: fmix64 is a permutation
@@ -778,10 +823,9 @@ RegionNode* make_region(::foundation::effects::Alloc, ::fixy::BumpArena&&, Rest&
 // The body must be a complete sub-DAG ending in TERMINAL, and
 // body_content_hash must already be folded from that body's region chain.
 [[nodiscard]] inline LoopNode* make_loop(::foundation::effects::Alloc a,
-                                         ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND, TraceNode* body,
+                                         ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND, TraceNode& body,
                                          ContentHash body_content_hash, ::fixy::View<FeedbackEdge> feedback,
                                          LoopTermKind term_kind, uint32_t repeat_count, float epsilon = 0.0f) noexcept {
-    CRUCIBLE_PRE(body != nullptr);
     CRUCIBLE_PRE(feedback.size() <= ::fixy::max_of<uint16_t>);
     // A convergence distance is a finite number that cannot be negative, and
     // every bit of epsilon reaches the termination hash through a bit_cast,
@@ -821,14 +865,14 @@ RegionNode* make_region(::foundation::effects::Alloc, ::fixy::BumpArena&&, Rest&
     CRUCIBLE_PRE(term_kind != LoopTermKind::UNTIL || repeat_count > 0u);
     LoopNode* node = &*arena.make<LoopNode>(a);
     node->kind = TraceNodeKind::LOOP;
-    node->body = body;
+    node->body = make_link(body);
     node->body_content_hash = body_content_hash;
     node->feedback_edges = feedback;
     node->term_kind = term_kind;
     node->repeat_count = repeat_count;
     node->epsilon = epsilon;
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::LOOP);
-    CRUCIBLE_POST(node, node->body == body);
+    CRUCIBLE_POST(node, is_link_to(node->body, body));
     CRUCIBLE_POST(node, node->feedback_edges.size() == feedback.size());
     CRUCIBLE_POST(node, node->term_kind == term_kind);
     CRUCIBLE_POST(node, node->repeat_count == repeat_count);
@@ -851,7 +895,7 @@ inline void recompute_merkle(TraceNode* node) {
         for (const BranchNode::Arm& arm : branch->arms)
             recompute_merkle(arm.target);
     } else if (node->kind == TraceNodeKind::LOOP) {
-        recompute_merkle(static_cast<LoopNode*>(node)->body);
+        recompute_merkle(detail::node_of_link(node->as_loop().expect("the kind of the node is LOOP")->body));
     }
     if (node->next) recompute_merkle(node->next);
 
@@ -872,7 +916,8 @@ inline void recompute_merkle(TraceNode* node) {
                 break;
             }
             case TraceNodeKind::LOOP:
-                count = collect_regions(static_cast<LoopNode*>(node)->body, out, count);
+                count = collect_regions(
+                    detail::node_of_link(node->as_loop().expect("the kind of the node is LOOP")->body), out, count);
                 break;
             case TraceNodeKind::TERMINAL:
                 break;  // not a stop condition here: the walk follows next
@@ -983,13 +1028,13 @@ template <typename GuardEval, typename RegionExec>
             }
 
             case TraceNodeKind::LOOP: {
-                auto* loop = static_cast<LoopNode*>(node);
-                // Armed in release. A null body does not fault: the
+                const ::fixy::Ref<LoopNode> loop = node->as_loop().expect("the kind of the node is LOOP");
+                // Armed in release. An empty body does not fault: the
                 // recursive call walks `while (node)` zero times and returns
                 // true, so the loop reports a successful replay of a body
                 // that never ran. A wrong answer is worse than a trap, and
                 // this is a cold path, so the check stays in every build.
-                CRUCIBLE_FATAL_INVARIANT(loop->body != nullptr);
+                CRUCIBLE_FATAL_INVARIANT(loop->body.is_some());
                 // repeat_count drives both termination kinds, and epsilon
                 // drives neither.  That is the DetSafe axiom, not an
                 // omission: replay reproduces a recorded execution, and a
@@ -1012,7 +1057,7 @@ template <typename GuardEval, typename RegionExec>
                 // because it would skip the body and report success.
                 CRUCIBLE_FATAL_INVARIANT(loop->term_kind != LoopTermKind::UNTIL || loop->repeat_count > 0u);
                 for (uint32_t i = 0; i < loop->repeat_count; i++) {
-                    if (!replay(loop->body, eval_guard, exec_region)) return false;
+                    if (!replay(detail::node_of_link(loop->body), eval_guard, exec_region)) return false;
                 }
                 node = node->next;
                 break;
@@ -1083,8 +1128,8 @@ struct DagDiff {
         }
 
         if (a->kind == TraceNodeKind::LOOP) {
-            auto* la = static_cast<LoopNode*>(a);
-            auto* lb = static_cast<LoopNode*>(b);
+            const ::fixy::Ref<LoopNode> la = a->as_loop().expect("the kind of the node is LOOP");
+            const ::fixy::Ref<LoopNode> lb = b->as_loop().expect("the two nodes have one kind");
             if (la->body_content_hash != lb->body_content_hash || la->term_kind != lb->term_kind
                 || la->repeat_count != lb->repeat_count
                 || ::fixy::bit_cast<uint32_t>(la->epsilon) != ::fixy::bit_cast<uint32_t>(lb->epsilon))
@@ -1092,7 +1137,7 @@ struct DagDiff {
             if (!::fixy::equal(la->feedback_edges, lb->feedback_edges))
                 return {a, b, depth, DagDiff::Kind::LOOP_MISMATCH};
             // The bodies agree on content, so compare their structure.
-            DagDiff body_diff = dag_diff(la->body, lb->body, depth + 1);
+            DagDiff body_diff = dag_diff(detail::node_of_link(la->body), detail::node_of_link(lb->body), depth + 1);
             if (body_diff.kind != DagDiff::Kind::IDENTICAL) return body_diff;
             a = a->next;
             b = b->next;
@@ -1120,7 +1165,8 @@ struct DagDiff {
                 break;
             }
             case TraceNodeKind::LOOP:
-                count += dag_node_count(static_cast<LoopNode*>(node)->body);
+                count +=
+                    dag_node_count(detail::node_of_link(node->as_loop().expect("the kind of the node is LOOP")->body));
                 break;
             case TraceNodeKind::REGION:
             case TraceNodeKind::TERMINAL:
