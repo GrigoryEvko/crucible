@@ -136,4 +136,19 @@ static_assert(::fixy::Digest<CoreTag>{5}.raw() == 5u);
 static_assert(std::is_same_v<::fixy::Philox4x32, ::foundation::core::Philox4x32>
               && ::fixy::Philox4x32::generate(0u, 0u) == ::fixy::Philox4x32::generate({0u, 0u, 0u, 0u}, {0u, 0u}));
 
+// A sum of sealed values keeps the plain slot: its copy, move and end are
+// those of its bytes, and the seal of the value seals the sum.  The ABI then
+// gives a sum of at most 16 bytes back in registers.  A text view has two
+// words, so a sum of one has 24 bytes and comes back through memory, with
+// no call of a destructor.  The check of Option<Identity> is in the check
+// file of Identity.h.
+template <class Sum>
+concept SealedSumOfBytes = ::foundation::core::detail::TrivialCopyShape<Sum> && std::is_nothrow_move_assignable_v<Sum>
+                        && !std::is_trivially_copyable_v<Sum>;
+static_assert(SealedSumOfBytes<::fixy::Result<::fixy::TextView, ::fixy::Truncated>>);
+static_assert(SealedSumOfBytes<::fixy::Option<::fixy::CText>>);
+static_assert(SealedSumOfBytes<::fixy::Result<::fixy::Ref<int, CoreCheckBrand>, ::fixy::Full<int>>>
+              && sizeof(::fixy::Result<::fixy::Ref<int, CoreCheckBrand>, ::fixy::Full<int>>) == 16);
+static_assert(SealedSumOfBytes<::fixy::Option<::fixy::Address>> && sizeof(::fixy::Option<::fixy::Address>) == 16);
+
 }  // namespace fixy::detail::core_checks

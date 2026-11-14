@@ -428,6 +428,17 @@ struct SealedError {
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal{};
 };
 
+// A sealed payload of one word, as a sealed pointer is.
+struct SealedWord {
+    std::uint64_t raw = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal{};
+};
+
+// The bytes of a sum are its value when its copy, move and end are those of
+// its bytes.  The ABI then gives a sum of at most 16 bytes back in registers.
+template <class Sum>
+concept SumOfBytes = detail::TrivialCopyShape<Sum> && std::is_nothrow_move_assignable_v<Sum>;
+
 // The error gate: a scoped enum, or a class of at most 16 bytes whose copy,
 // move and end are those of its bytes.  The niche gate reads the same
 // shape.
@@ -439,15 +450,43 @@ static_assert(!ErrorValue<TooWideError>);
 static_assert(!ErrorValue<CountedError>);
 static_assert(!ErrorValue<Code const>);
 
-// A Result of a sealed error takes its owning form, which is move-only, as
-// it does for a linear error.
+// A sum of sealed parts keeps the plain slot: its copy, move and end are
+// those of its bytes, and it has the size of a plain sum.  The seal of a part
+// seals the sum, so std::bit_cast builds no sum that holds a sealed part.
 static_assert(!std::is_trivially_copyable_v<SealedError> && detail::TrivialCopyShape<SealedError>);
 static_assert(ErrorValue<SealedError> && sizeof(SealedError) == sizeof(std::uint32_t));
-static_assert(!std::is_copy_constructible_v<Result<int, SealedError>>);
-static_assert(std::is_nothrow_move_constructible_v<Result<int, SealedError>>);
+static_assert(PlainPayload<SealedError> && PlainPayload<SealedWord>);
+static_assert(option_form_of<SealedWord> == OptionForm::plain);
+static_assert(SumOfBytes<Result<int, SealedError>> && sizeof(Result<int, SealedError>) == 8);
+static_assert(SumOfBytes<Result<SealedWord, Code>> && sizeof(Result<SealedWord, Code>) == 16);
+static_assert(SumOfBytes<Option<SealedWord>> && sizeof(Option<SealedWord>) == 16);
+static_assert(std::is_copy_assignable_v<Option<SealedWord>> && std::is_copy_assignable_v<Result<int, SealedError>>);
+static_assert(!std::is_trivially_copyable_v<Result<int, SealedError>>);
+static_assert(!std::is_trivially_copyable_v<Option<SealedWord>>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Option<SealedWord>>);
 static_assert(Result<int, SealedError>{err(SealedError{7})}.is_err());
 static_assert(Result<int, SealedError>{err(SealedError{7})}.err().expect("a constant error").code == 7);
 static_assert(Result<int, SealedError>{5}.expect("a constant value") == 5);
+
+// The assignment of a sum of sealed parts copies the bytes of the source: a
+// value over an error, an error over a value, and a self assignment.
+[[nodiscard]] consteval bool sealed_sum_assigns_bytes() {
+    Result<int, SealedError> held{err(SealedError{7})};
+    Result<int, SealedError> const value{5};
+    held = value;
+    if (!held.is_ok()) return false;
+    held = Result<int, SealedError>{err(SealedError{9})};
+    if (!held.is_err()) return false;
+    Result<int, SealedError> const& alias = held;
+    held = alias;
+    if (std::move(held).err().expect("a constant error").code != 9) return false;
+    Option<SealedWord> word = Option<SealedWord>::some(SealedWord{41});
+    word = Option<SealedWord>{none};
+    if (word.is_some()) return false;
+    word = Option<SealedWord>::some(SealedWord{42});
+    return std::move(word).expect("a constant word").raw == 42;
+}
+static_assert(sealed_sum_assigns_bytes());
 
 // An Err marks a return.  It is neither a payload nor an error value.
 static_assert(std::is_trivially_copyable_v<Err<Code>> && sizeof(Err<Code>) <= 16);

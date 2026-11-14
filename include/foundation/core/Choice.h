@@ -27,12 +27,15 @@
 //   niche    The payload declares an empty value through niche<T>.  The
 //            Option then has the size of the payload, and the empty value
 //            is the state "no value".
-//   plain    A trivially copyable payload with no niche.  The Option holds
-//            the payload and a tag, in the layout of a plain Result, and it
-//            is trivially copyable.  The tag is one byte, or one word of
-//            eight bytes after a storage of whole words.  The x86-64 System
-//            V ABI then gives it back in registers when it has at most 16
-//            bytes.
+//   plain    A payload with no niche whose copy, move and end are those of
+//            its bytes.  The Option holds the payload and a tag, in the
+//            layout of a plain Result.  Its copy, move and end are those of
+//            its bytes too.  The tag is one byte, or one word of eight bytes
+//            after a storage of whole words.  The x86-64 System V ABI then
+//            gives it back in registers when it has at most 16 bytes.  The
+//            Option is trivially copyable when its payload is.  A sealed
+//            payload (foundation/ByteSeal.h) gives the Option an assignment
+//            that copies the bytes, so the Option is sealed too.
 //   owning   Each other payload.  The Option is move-only.  A move leaves
 //            the source empty, and the destructor destroys the payload.
 //
@@ -335,12 +338,15 @@ concept DroppablePayload = std::is_copy_constructible_v<T> || !::foundation::lin
 template <class... Ts>
 concept HoldsLinearAlternative = (!DroppablePayload<Ts> || ...);
 
-// A payload whose bytes an Option or a Result can copy: trivially copyable,
-// trivially destructible and droppable.  The conjunction stops at its
-// first false part, so the walk of DroppablePayload does not run for a
-// payload that a part before it refuses.
+// A payload whose bytes an Option or a Result can copy, and that is
+// droppable.  A trivially copyable payload is one.  A payload of the shape
+// TrivialCopyShape is one too: its copy, move and end are those of its
+// bytes, and its assignment can be user-provided, as the assignment of a
+// sealed class is.  The ABI passes the sum of such payloads in registers.
+// The conjunction stops at its first false part, so the walk of
+// DroppablePayload does not run for a payload that a part before it refuses.
 template <class T>
-concept PlainPayload = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T> && DroppablePayload<T>;
+concept PlainPayload = (std::is_trivially_copyable_v<T> || detail::TrivialCopyShape<T>) && DroppablePayload<T>;
 
 // A part that the compare of a sum reads: its == gives exactly bool and
 // does not throw.  A floating-point part is refused, because NaN is not
@@ -362,11 +368,11 @@ struct Unit final {
 // refused, because an error never allocates.  A class with a reference
 // member is refused, because the reference cannot be assigned and can
 // outlive its object.  A sealed class, such as a Ref, has a user-provided
-// assignment, and the Result then takes its owning form, as it does for a
-// linear error.  A linear error gives a resource back to the caller of a
-// failed operation.  It moves and ends with no throw, and only a consumer
-// of the Result gives it out.  An Err marks a return, so it is not an error
-// value itself.
+// assignment, and the Result then keeps its plain form with an assignment
+// that copies the bytes.  A linear error gives a resource back to the
+// caller of a failed operation.  It moves and ends with no throw, and only a
+// consumer of the Result gives it out.  An Err marks a return, so it is not
+// an error value itself.
 template <class E>
 concept ErrorValue = !std::is_const_v<E> && !std::is_volatile_v<E> && !detail::ErrMark<E>
                   && (std::is_scoped_enum_v<E> || (std::is_class_v<E> && detail::TrivialCopyShape<E> && sizeof(E) <= 16)
@@ -1124,11 +1130,18 @@ struct SumDoor {
     [[nodiscard]] static constexpr SumKey key() noexcept { return SumKey{}; }
 };
 
-// The slot of a plain sum: the storage and the tag of TaggedCells.  The
-// special members are implicit, and each one is trivial, because each
-// alternative is trivially copyable.  The tag is the index of the active
-// alternative.  The storage keeps the size and the alignment of the union of
-// the bare alternatives.
+// The slot of a plain sum: the storage and the tag of TaggedCells.  The tag
+// is the index of the active alternative.  The storage keeps the size and
+// the alignment of the union of the bare alternatives.
+//
+// The copy, the move and the end of the slot are those of its bytes, because
+// each alternative has that shape.  So the ABI passes a slot of at most 16
+// bytes in registers.  When each alternative assigns its bytes, the slot
+// keeps the trivial assignment, and the slot is trivially copyable.  A sealed
+// alternative has a user-provided assignment, and the union then has none.
+// So the slot builds its cells again from a copy of the source, which is a
+// copy of the bytes.  The slot is then not trivially copyable, and
+// std::bit_cast builds no sum that holds a sealed alternative.
 //
 // The ABI of x86_64 and of aarch64 gives a sum of at most 16 bytes back in
 // two registers.  GCC can then read each byte of the storage into a register,
@@ -1169,6 +1182,30 @@ public:
     constexpr SumSlotOf(AlternativeAt<Index> at,
                         U&& value) noexcept(std::is_nothrow_constructible_v<Storage, AlternativeAt<Index>, U&&>)
         : cells_{static_cast<TagWord>(Index), at, static_cast<U&&>(value)} {}
+
+    constexpr SumSlotOf(SumSlotOf const&) noexcept = default;
+    constexpr SumSlotOf(SumSlotOf&&) noexcept = default;
+    constexpr SumSlotOf& operator=(SumSlotOf const&) noexcept
+        requires(std::is_trivially_copy_assignable_v<Ts> && ...)
+    = default;
+    constexpr SumSlotOf& operator=(SumSlotOf&&) noexcept
+        requires(std::is_trivially_move_assignable_v<Ts> && ...)
+    = default;
+
+    // The assignment of a slot with a sealed alternative.  The copy of the
+    // source comes first, so a self assignment reads no cell that the new
+    // cells replace.  An rvalue binds here too, because a move of the bytes
+    // is their copy.
+    constexpr SumSlotOf& operator=(SumSlotOf const& other) noexcept
+        requires(!(std::is_trivially_copy_assignable_v<Ts> && ...) && (std::is_nothrow_copy_assignable_v<Ts> && ...)
+                 && (std::is_trivially_copy_constructible_v<Ts> && ...))
+    {
+        TaggedCells<Storage, TagWord> const copied{other.cells_};
+        ::new(static_cast<void*>(&cells_)) TaggedCells<Storage, TagWord>(copied);
+        return *this;
+    }
+
+    ~SumSlotOf() = default;
 };
 
 // The slot of a sum with an alternative that owns something.  The slot is

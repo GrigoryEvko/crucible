@@ -498,6 +498,34 @@ namespace {
     return word_below(value, limit);
 }
 
+// A sealed word, as an Address or a Tagged pointer of an earned tag is.  The
+// seal makes its assignment user-provided, so it is not trivially copyable.
+// Its copy, move and end are those of its bytes, so an Option of it keeps the
+// plain slot.  The Option comes back in two registers, and a match of it is
+// one test of the tag, as for an Option of a plain word.
+struct SealedWord final {
+    std::size_t raw = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal{};
+};
+
+namespace {
+
+[[nodiscard]] constexpr fixy::Option<SealedWord> sealed_word_below(std::size_t value, std::size_t limit) noexcept {
+    if (value >= limit) return fixy::none;
+    return fixy::Option<SealedWord>::some(SealedWord{.raw = value});
+}
+
+}  // namespace
+
+[[gnu::used]] fixy::Option<SealedWord> option_sealed_word_below(std::size_t value, std::size_t limit) noexcept {
+    return sealed_word_below(value, limit);
+}
+
+[[gnu::used]] std::size_t option_sealed_match(fixy::Option<SealedWord> option) noexcept {
+    return std::move(option).match([](SealedWord word) noexcept { return word.raw * 3u; },
+                                   []() noexcept { return std::size_t{0}; });
+}
+
 // A compare of two Options tests the two states, and compares the payloads
 // only when both hold one.
 [[gnu::used]] bool option_equal(fixy::Option<std::uint32_t> left, fixy::Option<std::uint32_t> right) noexcept {
@@ -1108,6 +1136,15 @@ struct RawWord final {
 [[gnu::used]] RawWord option_word_below_raw(std::size_t value, std::size_t limit) noexcept {
     if (value >= limit) return RawWord{0, 0};
     return RawWord{value, 1};
+}
+
+[[gnu::used]] RawWord option_sealed_word_below_raw(std::size_t value, std::size_t limit) noexcept {
+    if (value >= limit) return RawWord{0, 0};
+    return RawWord{value, 1};
+}
+
+[[gnu::used]] std::size_t option_sealed_match_raw(RawWord option) noexcept {
+    return option.holds != 0 ? option.value * 3u : 0u;
 }
 
 [[gnu::used]] bool option_equal_raw(std::optional<std::uint32_t> left, std::optional<std::uint32_t> right) noexcept {

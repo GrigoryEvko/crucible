@@ -25,6 +25,12 @@ static_assert(std::is_trivially_copy_constructible_v<Identity>);
 static_assert(std::is_copy_assignable_v<Identity>);
 static_assert(!std::is_trivially_copyable_v<Identity>);
 
+// An Option of an identity keeps the plain slot: its copy, move and end are
+// those of its bytes, so the ABI gives it back in two registers.  The seal
+// of the identity seals the Option.
+static_assert(detail::TrivialCopyShape<Option<Identity>> && std::is_nothrow_move_assignable_v<Option<Identity>>);
+static_assert(sizeof(Option<Identity>) == 16 && !std::is_trivially_copyable_v<Option<Identity>>);
+
 // An identity compares for equality and has no order.
 static_assert(std::equality_comparable<Identity>);
 static_assert(!std::totally_ordered<Identity>);

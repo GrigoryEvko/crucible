@@ -19,7 +19,9 @@
 // [[nodiscard]].
 //
 // The storage is the sum of the family (Choice.h).  The sum of plain
-// alternatives holds the storage and a tag, and it is trivially copyable.
+// alternatives holds the storage and a tag, and its copy, move and end are
+// those of its bytes.  It is trivially copyable when each alternative is,
+// and a sealed alternative gives it an assignment that copies the bytes.
 // A sum with an alternative that owns something is move-only.  Its move
 // keeps the moved-from alternative in the source, which its destructor
 // ends, so a borrow of the source stays a borrow of a live object.  A

@@ -661,6 +661,17 @@ PROBES: tuple[Probe, ...] = (
         "carries no padding byte",
     ),
     Probe(
+        "option_sealed_word_below",
+        "an Option of a sealed word from an inlined function comes back in two registers with no store to the stack, "
+        "as a raw pair of a size and a flag word does.  The seal gives the payload a user-provided assignment, and the "
+        "Option keeps the plain slot, because its copy, move and end are those of its bytes",
+    ),
+    Probe(
+        "option_sealed_match",
+        "the match of an Option of a sealed word comes in two registers and is one test of the tag word, as the "
+        "raw pair of a size and a flag word is",
+    ),
+    Probe(
         "option_equal",
         "a compare of two Options of a 4-byte payload compares the two tags, and compares the payloads only when both "
         "hold one, as the compare of two std::optional does.  The tag is the state, so the family side builds no "
