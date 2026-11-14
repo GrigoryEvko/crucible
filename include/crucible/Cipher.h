@@ -395,7 +395,7 @@ public:
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
     [[nodiscard]] ContentHash persist_session_events(Ctx const& ctx, OpenView const& view,
                                                      ::foundation::effects::Alloc allocation,
-                                                     std::span<const SessionEvent> events) {
+                                                     ::fixy::View<SessionEvent const> events) {
         return persist_session_events_(file_ctx_(ctx), view, allocation, events);
     }
 
@@ -501,10 +501,9 @@ private:
                                                                               ContentHash content_hash,
                                                                               ::fixy::BumpArena& arena) const;
 
-    [[nodiscard]] std::vector<SessionEvent> load_session_events_(FileCtx const& file_ctx, OpenView const&,
-                                                                 ::foundation::effects::Alloc a,
-                                                                 ::fixy::session::SessionTagId session,
-                                                                 ::fixy::session::StepId from_step) const;
+    [[nodiscard]] ::foundation::core::GrowList<SessionEvent>
+    load_session_events_(FileCtx const& file_ctx, OpenView const&, ::foundation::effects::Alloc a,
+                         ::fixy::session::SessionTagId session, ::fixy::session::StepId from_step) const;
 
     // The commit that record_event starts.  The reading is the time of the
     // commit, and a clock reader is the only source of one.  The in-memory
@@ -515,7 +514,7 @@ private:
 
     [[nodiscard]] ContentHash persist_session_events_(FileCtx const& file_ctx, OpenView const&,
                                                       ::foundation::effects::Alloc allocation,
-                                                      std::span<const SessionEvent> events);
+                                                      ::fixy::View<SessionEvent const> events);
 
     // The head hash that the text of a HEAD file names, or none when the
     // text before its first newline is no hexadecimal number.

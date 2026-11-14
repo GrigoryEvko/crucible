@@ -107,15 +107,24 @@ static std::uint64_t last_log_timestamp(const char* dir) {
 }
 
 // The events of one session, at steps first, first + 1, ..., first + count - 1.
-static std::vector<crucible::Cipher::SessionEvent> session_batch(std::uint64_t first, std::size_t count) {
-    std::vector<crucible::Cipher::SessionEvent> events(
-        count, crucible::Cipher::SessionEvent::close(::fixy::session::RoleTagId{}, ::fixy::session::RoleTagId{}));
-    for (std::size_t i = 0; i < count; ++i) {
-        events[i] = crucible::Cipher::SessionEvent::cipher_event(
-            ::fixy::session::SessionOp::StoreCommitted, ::fixy::session::StepId{first + i},
-            ::fixy::session::StateHash{0x5E550000u + first + i}, first + i);
+static ::fixy::HeapArray<crucible::Cipher::SessionEvent> session_batch(std::uint64_t first, std::size_t count) {
+    ::fixy::HeapArray<crucible::Cipher::SessionEvent> events = ::fixy::mint_heap_array(
+        g_test.alloc, count,
+        crucible::Cipher::SessionEvent::close(::fixy::session::RoleTagId{}, ::fixy::session::RoleTagId{}));
+    std::uint64_t step = first;
+    for (crucible::Cipher::SessionEvent& event : events.view()) {
+        event = crucible::Cipher::SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted,
+                                                             ::fixy::session::StepId{step},
+                                                             ::fixy::session::StateHash{0x5E550000u + step}, step);
+        ++step;
     }
     return events;
+}
+
+// The step of the event at position of a list of loaded events.
+[[nodiscard]] static std::uint64_t step_at(::foundation::core::GrowList<crucible::Cipher::SessionEvent> const& events,
+                                           std::size_t position) {
+    return events.view().get(position).expect("the position is inside the list")->step_id().value;
 }
 
 static_assert(
@@ -403,26 +412,27 @@ int main() {
         const auto first_batch = session_batch(10, 10);
         const auto second_batch = session_batch(20, 5);
         const crucible::ContentHash first_hash =
-            cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch);
+            cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch.view());
         assert(static_cast<bool>(first_hash));
-        assert(static_cast<bool>(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, second_batch)));
+        assert(static_cast<bool>(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, second_batch.view())));
         // A batch whose file the store holds gives its hash again, after a
         // compare of the stored bytes with the bytes of the batch.
-        assert(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch) == first_hash);
+        assert(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch.view()) == first_hash);
 
-        const ::fixy::session::SessionTagId session = first_batch.front().session();
+        const ::fixy::session::SessionTagId session =
+            first_batch.view().get(0).expect("the first batch holds ten events")->session();
         const auto from_middle =
             cipher.load_session_events(store_ctx(), ov, g_test.alloc, session, ::fixy::session::StepId{15});
         assert(from_middle.size() == 10);
         for (std::size_t i = 0; i < from_middle.size(); ++i) {
-            assert(from_middle[i].step_id().value == 15 + i);
+            assert(step_at(from_middle, i) == 15 + i);
         }
         const auto every_event = cipher.load_session_events(store_ctx(), ov, g_test.alloc, session);
         assert(every_event.size() == 15);
-        assert(every_event.front().step_id().value == 10 && every_event.back().step_id().value == 24);
+        assert(step_at(every_event, 0) == 10 && step_at(every_event, 14) == 24);
         const auto second_only =
             cipher.load_session_events(store_ctx(), ov, g_test.alloc, session, ::fixy::session::StepId{20});
-        assert(second_only.size() == 5 && second_only.front().step_id().value == 20);
+        assert(second_only.size() == 5 && step_at(second_only, 0) == 20);
 
         std::filesystem::remove_all(dir_events);
     }

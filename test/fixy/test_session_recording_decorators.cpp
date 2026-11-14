@@ -78,10 +78,14 @@ int check_crash_recording() {
             ++position;
         }
     }
-    const auto replayed = s::decode_session_log(block.view());
-    if (!replayed || replayed->size() != log_p.size()) return fail("the recorded log did not decode");
-    for (std::size_t index = 0; index < replayed->size(); ++index) {
-        if ((*replayed)[index].encode() != log_p[index].encode()) return fail("a replayed event differs");
+    auto decoded = s::decode_session_log(::foundation::effects::testing::test().alloc, block.view());
+    if (decoded.is_err()) return fail("the recorded log did not decode");
+    const ::foundation::core::HeapArray<s::SessionEvent> replayed = std::move(decoded).expect("the log decoded");
+    if (replayed.size() != log_p.size()) return fail("the recorded log did not decode");
+    std::size_t index = 0;
+    for (const s::SessionEvent& event : replayed.view()) {
+        if (event.encode() != log_p[index].encode()) return fail("a replayed event differs");
+        ++index;
     }
     return 0;
 }

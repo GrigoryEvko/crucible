@@ -187,18 +187,22 @@ int check_log_decode() {
             ++position;
         }
     }
-    const auto whole = s::decode_session_log(block.view());
-    if (!whole || whole->size() != 3) return fail("a valid block of three records did not decode");
+    const auto alloc = ::foundation::effects::testing::test().alloc;
+    auto whole = s::decode_session_log(alloc, block.view());
+    if (whole.is_err() || std::move(whole).expect("the block decoded").size() != 3)
+        return fail("a valid block of three records did not decode");
 
     const ::foundation::core::View<std::byte const> truncated = ::foundation::core::View<std::byte const>{block.view()}
                                                                     .window(0, block.size() - 1)
                                                                     .expect("the block holds more than one byte");
-    const auto short_block = s::decode_session_log(truncated);
-    if (short_block || short_block.error().index != 2) return fail("a truncated block did not name its last record");
+    const auto short_block = s::decode_session_log(alloc, truncated);
+    if (short_block.is_ok() || short_block.err().expect("the block is short").index != 2)
+        return fail("a truncated block did not name its last record");
 
     *block.get(72 + kOpOffset).expect("the offset is inside the block") = std::byte{0};
-    const auto corrupt = s::decode_session_log(block.view());
-    if (corrupt || corrupt.error().index != 1 || corrupt.error().error != s::EventDecodeError::UnknownOperation)
+    const auto corrupt = s::decode_session_log(alloc, block.view());
+    if (corrupt.is_ok() || corrupt.err().expect("the block is corrupt").index != 1
+        || corrupt.err().expect("the block is corrupt").error != s::EventDecodeError::UnknownOperation)
         return fail("a corrupt middle record was not named");
     return 0;
 }

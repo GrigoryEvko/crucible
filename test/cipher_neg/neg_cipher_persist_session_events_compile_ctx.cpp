@@ -7,8 +7,6 @@
 #include <crucible/Cipher.h>
 #include <fixy/Ctx.h>
 
-#include <span>
-
 int main() {
     const ::fixy::TestRunnerCtx store_ctx{::foundation::effects::testing::test()};
     auto cipher = ::crucible::Cipher::open(store_ctx, store_ctx.cap().alloc,
@@ -17,6 +15,6 @@ int main() {
     const auto view = cipher.mint_open_view(store_ctx);
     const ::fixy::BgCompileCtx compile{::foundation::effects::testing::bg()};
     const auto hash = cipher.persist_session_events(compile, view, store_ctx.cap().alloc,
-                                                    std::span<const ::crucible::Cipher::SessionEvent>{});
+                                                    ::fixy::View<const ::crucible::Cipher::SessionEvent>{});
     return static_cast<bool>(hash) ? 0 : 1;
 }

@@ -481,22 +481,28 @@ Cipher::LoadedContentAddressedRegionPayload Cipher::load_content_addressed_(File
 
 ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView const&,
                                             ::foundation::effects::Alloc allocation,
-                                            std::span<const SessionEvent> events) {
-    if (events.empty()) return ContentHash{};
+                                            ::fixy::View<SessionEvent const> events) {
+    if (events.size() == 0) return ContentHash{};
 
     if (events.size() > MAX_SESSION_EVENT_BATCH_EVENTS) {
         return ContentHash{};
     }
 
-    const ::fixy::session::SessionTagId session = events.front().session();
-    for (std::size_t i = 1; i < events.size(); ++i) {
-        if (events[i].session() != session) [[unlikely]] {
+    const ::fixy::session::SessionTagId session = events.get(0).expect("the batch holds an event")->session();
+    const uint64_t first_step = events.get(0).expect("the batch holds an event")->step_id().value;
+    const uint64_t last_step = events.get(events.size() - 1).expect("the batch holds an event")->step_id().value;
+    bool has_previous = false;
+    uint64_t previous_step = 0;
+    for (const SessionEvent& event : events) {
+        if (event.session() != session) [[unlikely]] {
             return ContentHash{};
         }
-        const uint64_t prev_step = events[i - 1].step_id().value;
-        if (prev_step == ::fixy::max_of<uint64_t> || prev_step + 1 != events[i].step_id().value) [[unlikely]] {
+        const uint64_t step = event.step_id().value;
+        if (has_previous && (previous_step == ::fixy::max_of<uint64_t> || previous_step + 1 != step)) [[unlikely]] {
             return ContentHash{};
         }
+        previous_step = step;
+        has_previous = true;
     }
 
     const std::size_t payload_bytes = events.size() * sizeof(SessionEvent);
@@ -508,12 +514,14 @@ ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView co
     // the one route from an event to bytes.  The hash consumes those
     // bytes structurally.  Complexity: linear in the number of events.
     ::fixy::HeapArray<std::byte> payload = ::fixy::mint_heap_array(allocation, payload_bytes, std::byte{0});
-    for (std::size_t i = 0; i < events.size(); ++i) {
-        const auto record = events[i].encode();
+    std::size_t position = 0;
+    for (const SessionEvent& event : events) {
+        const auto record = event.encode();
         ::fixy::copy(payload.view()
-                         .window<sizeof(SessionEvent)>(i * sizeof(SessionEvent))
+                         .window<sizeof(SessionEvent)>(position * sizeof(SessionEvent))
                          .expect("the payload holds a record for each event"),
                      ::fixy::bytes(record));
+        ++position;
     }
     const ContentHash hash = session_event_batch_hash(payload.view());
     const KernelCacheKey key{hash, SESSION_EVENT_FEDERATION_ROW_HASH};
@@ -536,9 +544,9 @@ ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView co
     // re-appends the entry.
     const ::fixy::FixedText<16> hash_digits = hex_digits_(hash.raw());
     ::fixy::FixedText<96> record{};
-    const ::fixy::TextView index_line = ::fixy::format(record, "{},{},{},{}\n", events.front().step_id().value,
-                                                       events.back().step_id().value, events.size(), hash_digits.view())
-                                            .expect("an index line fits 96 characters");
+    const ::fixy::TextView index_line =
+        ::fixy::format(record, "{},{},{},{}\n", first_step, last_step, events.size(), hash_digits.view())
+            .expect("an index line fits 96 characters");
 
     const EntryPath batch = batch_entry_(hash.raw());
     const EntryPath session_directory = session_entry_(session);
@@ -577,11 +585,13 @@ ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView co
     return hash;
 }
 
-std::vector<Cipher::SessionEvent> Cipher::load_session_events_(FileCtx const& file_ctx, OpenView const&,
-                                                               ::foundation::effects::Alloc allocation,
-                                                               ::fixy::session::SessionTagId session,
-                                                               ::fixy::session::StepId from_step) const {
-    std::vector<SessionEvent> out;
+::foundation::core::GrowList<Cipher::SessionEvent>
+Cipher::load_session_events_(FileCtx const& file_ctx, OpenView const&, ::foundation::effects::Alloc allocation,
+                             ::fixy::session::SessionTagId session, ::fixy::session::StepId from_step) const {
+    // The index bounds no count of events, so the list takes the largest
+    // count of a View.
+    ::foundation::core::GrowList<SessionEvent> out =
+        ::foundation::core::mint_grow_list<SessionEvent>(::fixy::max_of<std::size_t>);
     const EntryPath session_directory = session_entry_(session);
     auto opened = with_file_ctx_(file_ctx, [&](auto const& ctx) {
         return ::fixy::fs::open_dirfd_at(ctx, root_dirfd_, session_directory.c_text());
@@ -640,37 +650,42 @@ std::vector<Cipher::SessionEvent> Cipher::load_session_events_(FileCtx const& fi
         // each record goes through the event decoder, which is the one
         // route from bytes to an event and refuses a record with a byte
         // outside its field.
-        auto decoded = ::fixy::session::decode_session_log(view.payload);
-        if (!decoded) continue;
-        if (decoded->front().step_id().value != first) continue;
-        if (decoded->back().step_id().value != last) continue;
-        bool valid_batch = true;
-        for (std::size_t i = 0; i < decoded->size(); ++i) {
-            const SessionEvent& event = (*decoded)[i];
-            if (event.session() != session) {
-                valid_batch = false;
-                break;
-            }
-            if (i != 0) {
-                const uint64_t prev_step = (*decoded)[i - 1].step_id().value;
-                if (prev_step == ::fixy::max_of<uint64_t> || prev_step + 1u != event.step_id().value) {
-                    valid_batch = false;
-                    break;
-                }
-            }
-            if (have_loaded && event.step_id().value <= highest_loaded) {
-                valid_batch = false;
-                break;
-            }
+        auto decoded = ::fixy::session::decode_session_log(allocation, view.payload);
+        if (decoded.is_err()) continue;
+        const ::fixy::HeapArray<SessionEvent> events = std::move(decoded).expect("the batch decoded");
+        // The count check above gives the batch count events, and count is
+        // above zero.
+        if (events.view().get(0).expect("the batch holds an event")->step_id().value != first) continue;
+        if (events.view().get(events.size() - 1).expect("the batch holds an event")->step_id().value != last) {
+            continue;
         }
-        if (!valid_batch) continue;
+        bool is_valid_batch = true;
+        bool has_previous = false;
+        uint64_t previous_step = 0;
+        for (const SessionEvent& event : events.view()) {
+            const uint64_t step = event.step_id().value;
+            const bool is_out_of_session = event.session() != session;
+            const bool is_out_of_sequence =
+                has_previous && (previous_step == ::fixy::max_of<uint64_t> || previous_step + 1u != step);
+            const bool is_loaded_already = have_loaded && step <= highest_loaded;
+            if (is_out_of_session || is_out_of_sequence || is_loaded_already) {
+                is_valid_batch = false;
+                break;
+            }
+            previous_step = step;
+            has_previous = true;
+        }
+        if (!is_valid_batch) continue;
 
         // The steps of the batch are first, first + 1, ..., last, and
         // last is at or after from_step.  So the events at from_step or
-        // after are one suffix of the batch, and it is not empty.  One
-        // range insert appends it.
+        // after are one suffix of the batch, and it is not empty.
         const std::uint64_t skipped = from_step.value > first ? from_step.value - first : std::uint64_t{0};
-        out.insert(out.end(), decoded->begin() + static_cast<std::ptrdiff_t>(skipped), decoded->end());
+        const ::fixy::View<SessionEvent const> suffix =
+            events.view().window(skipped, events.size() - skipped).expect("the suffix is inside the batch");
+        for (const SessionEvent& event : suffix) {
+            out.append(allocation, event).expect("the list of the events has no maximum");
+        }
         highest_loaded = last;
         have_loaded = true;
     }

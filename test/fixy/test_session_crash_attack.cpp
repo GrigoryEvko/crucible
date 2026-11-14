@@ -161,8 +161,9 @@ void corrupt_event_bytes() {
         *torn.get(position).expect("the torn block holds the first record") = byte;
         ++position;
     }
-    const auto torn_log = s::decode_session_log(torn.view());
-    if (torn_log || torn_log.error().error != s::EventDecodeError::Truncated) finish(Outcome::Silent);
+    const auto torn_log = s::decode_session_log(::foundation::effects::testing::test().alloc, torn.view());
+    if (torn_log.is_ok() || torn_log.err().expect("the torn block is refused").error != s::EventDecodeError::Truncated)
+        finish(Outcome::Silent);
     finish(refused > 0 && accepted > 0 ? Outcome::Correct : Outcome::Silent);
 }
 

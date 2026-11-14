@@ -64,6 +64,9 @@
 #include <foundation/Pinned.h>
 #include <foundation/algebra/lattices/CipherTierLattice.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Heap.h>
 #include <foundation/core/Region.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Hash.h>
@@ -598,20 +601,23 @@ struct EventLogDecodeFailure {
     EventDecodeError error = EventDecodeError::Truncated;
 };
 
-// Complexity: linear in the number of records.
-[[nodiscard]] inline std::expected<std::vector<SessionEvent>, EventLogDecodeFailure>
-decode_session_log(::foundation::core::View<std::byte const> bytes) {
+// The events take one allocation for the count of records.  Complexity:
+// linear in the number of records.
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::HeapArray<SessionEvent>, EventLogDecodeFailure>
+decode_session_log(::foundation::core::Alloc allocation, ::foundation::core::View<std::byte const> bytes) {
     if (bytes.size() % session_event_size != 0) {
-        return std::unexpected(EventLogDecodeFailure{bytes.size() / session_event_size, EventDecodeError::Truncated});
+        return ::foundation::core::err(
+            EventLogDecodeFailure{bytes.size() / session_event_size, EventDecodeError::Truncated});
     }
-    std::vector<SessionEvent> events(bytes.size() / session_event_size, SessionEvent::close(RoleTagId{}, RoleTagId{}));
+    ::foundation::core::HeapArray<SessionEvent> events = ::foundation::core::mint_heap_array(
+        allocation, bytes.size() / session_event_size, SessionEvent::close(RoleTagId{}, RoleTagId{}));
     std::size_t index = 0;
     for (::foundation::core::View<std::byte const, session_event_size> const record :
          bytes.chunks<session_event_size>()) {
         auto decoded = decode_session_event(std::span<const std::byte>{
             first_of_(::foundation::core::detail::ViewDoor::key(), record), session_event_size});
-        if (!decoded) return std::unexpected(EventLogDecodeFailure{index, decoded.error()});
-        events[index] = *decoded;
+        if (!decoded) return ::foundation::core::err(EventLogDecodeFailure{index, decoded.error()});
+        *events.get(index).expect("the events hold a slot for each record") = *decoded;
         ++index;
     }
     return events;

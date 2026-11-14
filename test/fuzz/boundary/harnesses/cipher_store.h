@@ -130,8 +130,10 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
 
         // The store's own writer takes only events, and only the decoder
         // turns bytes into an event.
-        if (auto events = ::fixy::session::decode_session_log(records.view())) {
-            (void)cipher.persist_session_events(ctx, view, test_alloc(), std::span<const SessionEvent>{*events});
+        auto decoded = ::fixy::session::decode_session_log(test_alloc(), records.view());
+        if (decoded.is_ok()) {
+            const ::fixy::HeapArray<SessionEvent> events = std::move(decoded).expect("the batch decoded");
+            (void)cipher.persist_session_events(ctx, view, test_alloc(), events.view());
         }
     }
     // Lines an attacker appends to the index after the writer ran.
