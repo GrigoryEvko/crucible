@@ -191,22 +191,18 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         const uint32_t num_slots = ref->num_slots.get();
 
         // The forward edges are in the order of their sources.
-        std::vector<Edge> saved_edges(ref->num_edges.get());
-        uint32_t edge_position = 0;
-        for (const Edge& edge : ref->fwd_edges) {
-            saved_edges[edge_position++] = edge;
-        }
+        ::fixy::HeapArray<Edge> saved_edges = ::fixy::mint_heap_array(A, ref->fwd_edges.size(), Edge{});
+        ::fixy::copy(saved_edges.view(), ref->fwd_edges).expect("the copy has the count of the forward edges");
 
         const ::fixy::View<const TensorSlot> saved_slots = ref_region.slots.view();
 
         // build_csr
         for (uint32_t iter = 0; iter < iters; iter++) {
             ::fixy::BumpArena csr_arena{1 << 18};
-            auto* graph2 = alloc_trace_graph(A, csr_arena);
-            graph2->ops = nullptr;
+            const ::fixy::Ref<TraceGraph> graph2 = alloc_trace_graph(A, csr_arena);
 
             const uint64_t t0 = bench::rdtsc_start();
-            build_csr(A, csr_arena, graph2, saved_edges.data(), static_cast<uint32_t>(saved_edges.size()), num_ops);
+            build_csr(A, csr_arena, *graph2, saved_edges.view(), num_ops);
             const uint64_t t1 = bench::rdtsc_end();
 
             bench::do_not_optimize(graph2);

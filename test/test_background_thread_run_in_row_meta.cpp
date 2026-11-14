@@ -297,7 +297,8 @@ void test_built_graph_owns_its_metadata() {
     const crucible::TensorMeta* const log_end = log_begin + MetaLog::CAPACITY;
     for (uint32_t op = 0; op < OPS; ++op) {
         // element_at ends the process when the op holds no output metadata.
-        const crucible::TensorMeta& first_meta = crucible::test::element_at(graph->ops[op].output_metas(), 0);
+        const crucible::TensorMeta& first_meta =
+            crucible::test::element_at(graph->op(crucible::OpIndex{op}).output_metas(), 0);
         const crucible::TensorMeta* const metas = &first_meta;
         assert((before(metas, log_begin) || !before(metas, log_end))
                && "an op of the graph points into the buffer of the metadata log");
@@ -312,7 +313,7 @@ void test_built_graph_owns_its_metadata() {
         bt.release_meta_log(stage, OPS);
     });
     const crucible::RegionNode* const region = bt.active_region.load_acquire().try_get();
-    assert(region != nullptr && &region->op_at(0) == graph->ops);
+    assert(region != nullptr && &region->op_at(0) == &graph->op(crucible::OpIndex{0}));
     assert(metalog->tail.get() == OPS);
 
     crucible::test::pass("  built_graph_owns_its_metadata:             PASSED\n");
@@ -348,7 +349,8 @@ void test_build_and_release_pass_two_to_the_32() {
     BackgroundThread::TraceBuild built = work.build(bt, test.alloc, scratch);
     auto [graph, parts] = std::move(built).expect("the work builds a graph");
     for (uint32_t op = 0; op < OPS; ++op) {
-        const crucible::TensorMeta& first_meta = crucible::test::element_at(graph->ops[op].output_metas(), 0);
+        const crucible::TensorMeta& first_meta =
+            crucible::test::element_at(graph->op(crucible::OpIndex{op}).output_metas(), 0);
         assert(crucible::raw_data_ptr(first_meta) == crucible::raw_data_ptr(output_meta(op)));
     }
 

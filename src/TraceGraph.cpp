@@ -35,45 +35,47 @@ uint32_t TraceGraph::offset_(::fixy::View<const uint32_t> offsets, uint32_t inde
         .expect("the offsets of an op bound a run of its CSR edges");
 }
 
-TraceGraph* alloc_trace_graph(::foundation::effects::Alloc a, ::fixy::BumpArena& arena) noexcept {
-    return &*arena.make<TraceGraph>(a);
+::fixy::Ref<TraceGraph> alloc_trace_graph(::foundation::effects::Alloc a, ::fixy::BumpArena& arena) noexcept {
+    return arena.make<TraceGraph>(a);
 }
 
-void build_csr(::foundation::effects::Alloc a, ::fixy::BumpArena& arena, TraceGraph* graph, const Edge* edges,
-               uint32_t num_edges, uint32_t num_ops) {
-    graph->num_edges.set(num_edges);
-    graph->num_ops.set(num_ops);
+void build_csr(::foundation::effects::Alloc a, ::fixy::BumpArena& arena, TraceGraph& graph,
+               ::fixy::View<const Edge> edges, uint32_t num_ops) {
+    const uint32_t num_edges =
+        ::fixy::narrow<uint32_t>(edges.size()).expect("the build of a trace gives at most 2^32 - 1 edges");
+    graph.num_edges.set(num_edges);
+    graph.num_ops.set(num_ops);
 
     // A graph with no ops has no offset arrays.
     if (num_ops == 0) return;
 
-    graph->fwd_edges = arena.array(a, num_edges, Edge{});
-    graph->fwd_offsets = arena.array<uint32_t>(a, num_ops + 1, 0);
-    graph->rev_edges = arena.array(a, num_edges, Edge{});
-    graph->rev_offsets = arena.array<uint32_t>(a, num_ops + 1, 0);
+    graph.fwd_edges = arena.array(a, num_edges, Edge{});
+    graph.fwd_offsets = arena.array<uint32_t>(a, num_ops + 1, 0);
+    graph.rev_edges = arena.array(a, num_edges, Edge{});
+    graph.rev_offsets = arena.array<uint32_t>(a, num_ops + 1, 0);
 
-    for (uint32_t e = 0; e < num_edges; e++) {
-        ++detail::csr_element_(graph->fwd_offsets, edges[e].src.raw() + 1);
-        ++detail::csr_element_(graph->rev_offsets, edges[e].dst.raw() + 1);
+    for (const Edge& edge : edges) {
+        ++detail::csr_element_(graph.fwd_offsets, edge.src.raw() + 1);
+        ++detail::csr_element_(graph.rev_offsets, edge.dst.raw() + 1);
     }
 
     for (uint32_t i = 1; i <= num_ops; i++) {
-        detail::csr_element_(graph->fwd_offsets, i) += detail::csr_element_(graph->fwd_offsets, i - 1);
-        detail::csr_element_(graph->rev_offsets, i) += detail::csr_element_(graph->rev_offsets, i - 1);
+        detail::csr_element_(graph.fwd_offsets, i) += detail::csr_element_(graph.fwd_offsets, i - 1);
+        detail::csr_element_(graph.rev_offsets, i) += detail::csr_element_(graph.rev_offsets, i - 1);
     }
 
     // The cursor of each op starts at its offset.  The last offset is the
     // edge count, which no cursor needs.
     const ::fixy::View<uint32_t> fwd_cursor = arena.array<uint32_t>(a, num_ops, 0);
     const ::fixy::View<uint32_t> rev_cursor = arena.array<uint32_t>(a, num_ops, 0);
-    ::fixy::copy(fwd_cursor, graph->fwd_offsets.window(0, num_ops).expect("the offsets hold one entry for each op"))
+    ::fixy::copy(fwd_cursor, graph.fwd_offsets.window(0, num_ops).expect("the offsets hold one entry for each op"))
         .expect("the cursors hold one entry for each op");
-    ::fixy::copy(rev_cursor, graph->rev_offsets.window(0, num_ops).expect("the offsets hold one entry for each op"))
+    ::fixy::copy(rev_cursor, graph.rev_offsets.window(0, num_ops).expect("the offsets hold one entry for each op"))
         .expect("the cursors hold one entry for each op");
 
-    for (uint32_t e = 0; e < num_edges; e++) {
-        detail::csr_element_(graph->fwd_edges, detail::csr_element_(fwd_cursor, edges[e].src.raw())++) = edges[e];
-        detail::csr_element_(graph->rev_edges, detail::csr_element_(rev_cursor, edges[e].dst.raw())++) = edges[e];
+    for (const Edge& edge : edges) {
+        detail::csr_element_(graph.fwd_edges, detail::csr_element_(fwd_cursor, edge.src.raw())++) = edge;
+        detail::csr_element_(graph.rev_edges, detail::csr_element_(rev_cursor, edge.dst.raw())++) = edge;
     }
 }
 

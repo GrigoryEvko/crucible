@@ -204,23 +204,22 @@ int main(int argc, char* argv[]) {
         ::fixy::BumpArena arena{1 << 20};
         constexpr uint32_t NUM_OPS = 481;
         constexpr uint32_t NUM_EDGES = 900;
-        auto* edges = &*arena.array(test.alloc, NUM_EDGES, Edge{}).begin();
+        const ::fixy::View<Edge> edges = arena.array(test.alloc, NUM_EDGES, Edge{});
         bench_rng_state = 0x5555666677778888ULL;
-        for (uint32_t e = 0; e < NUM_EDGES; e++) {
+        for (Edge& edge : edges) {
             const uint32_t src = static_cast<uint32_t>(bench_rand() % NUM_OPS);
-            const uint32_t dst = std::min(src + 1 + static_cast<uint32_t>(bench_rand() % 5), NUM_OPS - 1);
-            std::construct_at(&edges[e], Edge{.src = OpIndex{src},
-                                              .dst = OpIndex{dst},
-                                              .src_port = 0,
-                                              .dst_port = 0,
-                                              .kind = EdgeKind::DATA_FLOW,
-                                              .pad = 0});
+            const uint32_t dst = ::fixy::min(src + 1 + static_cast<uint32_t>(bench_rand() % 5), NUM_OPS - 1);
+            edge = Edge{.src = OpIndex{src},
+                        .dst = OpIndex{dst},
+                        .src_port = 0,
+                        .dst_port = 0,
+                        .kind = EdgeKind::DATA_FLOW,
+                        .pad = 0};
         }
         return bench::run("build_csr (481 ops, 900 edges)", [&] {
             ::fixy::BumpArena csr_arena{1 << 16};
-            auto* graph = alloc_trace_graph(test.alloc, csr_arena);
-            graph->ops = nullptr;
-            build_csr(test.alloc, csr_arena, graph, edges, NUM_EDGES, NUM_OPS);
+            const ::fixy::Ref<TraceGraph> graph = alloc_trace_graph(test.alloc, csr_arena);
+            build_csr(test.alloc, csr_arena, *graph, edges, NUM_OPS);
             bench::do_not_optimize(graph);
         });
     }());

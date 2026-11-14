@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <type_traits>
-#include <vector>
 
 using namespace crucible;
 
@@ -27,7 +26,7 @@ static void test_empty_graph() {
     auto t = ::foundation::effects::testing::test();
     ::fixy::BumpArena arena{1 << 16};
     TraceGraph g{};
-    build_csr(t.alloc, arena, &g, nullptr, 0, 0);
+    build_csr(t.alloc, arena, g, ::fixy::View<const Edge>{}, 0);
     static_assert(std::is_same_v<TraceGraph::BuiltCount, ::fixy::WriteOnce<uint32_t>>);
     CRUCIBLE_FATAL_INVARIANT(g.num_edges.get() == 0);
     crucible::test::pass("  test_empty:                     PASSED\n");
@@ -37,8 +36,8 @@ static void test_single_edge_fwd_rev() {
     auto t = ::foundation::effects::testing::test();
     ::fixy::BumpArena arena{1 << 16};
     TraceGraph g{};
-    Edge edges[] = {E(0, 1)};
-    build_csr(t.alloc, arena, &g, edges, 1, /*num_ops=*/2);
+    const ::fixy::FixedArray<Edge, 1> edges{E(0, 1)};
+    build_csr(t.alloc, arena, g, edges.view(), /*num_ops=*/2);
     CRUCIBLE_FATAL_INVARIANT(g.num_edges.get() == 1);
     assert(g.out_degree(OpIndex{0}) == 1);
     assert(g.out_degree(OpIndex{1}) == 0);
@@ -54,8 +53,8 @@ static void test_counting_sort_groups_by_src() {
     auto t = ::foundation::effects::testing::test();
     ::fixy::BumpArena arena{1 << 16};
     TraceGraph g{};
-    std::vector<Edge> edges = {E(2, 3), E(0, 1), E(2, 4), E(1, 2), E(0, 2), E(2, 5)};
-    build_csr(t.alloc, arena, &g, edges.data(), static_cast<uint32_t>(edges.size()), /*num_ops=*/6);
+    const ::fixy::FixedArray<Edge, 6> edges{E(2, 3), E(0, 1), E(2, 4), E(1, 2), E(0, 2), E(2, 5)};
+    build_csr(t.alloc, arena, g, edges.view(), /*num_ops=*/6);
 
     assert(g.out_degree(OpIndex{0}) == 2);
     assert(g.out_degree(OpIndex{1}) == 1);
@@ -84,12 +83,12 @@ static void test_edge_kind_preserved() {
     auto t = ::foundation::effects::testing::test();
     ::fixy::BumpArena arena{1 << 16};
     TraceGraph g{};
-    Edge edges[] = {
+    const ::fixy::FixedArray<Edge, 3> edges{
         E(0, 1, EdgeKind::DATA_FLOW),
         E(0, 1, EdgeKind::ALIAS),
         E(0, 2, EdgeKind::CONTROL_FLOW),
     };
-    build_csr(t.alloc, arena, &g, edges, 3, /*num_ops=*/3);
+    build_csr(t.alloc, arena, g, edges.view(), /*num_ops=*/3);
     assert(g.out_degree(OpIndex{0}) == 3);
 
     bool saw_df = false, saw_alias = false, saw_cf = false;
@@ -107,11 +106,13 @@ static void test_offsets_prefix_sum_invariant() {
     auto t = ::foundation::effects::testing::test();
     ::fixy::BumpArena arena{1 << 16};
     TraceGraph g{};
-    std::vector<Edge> edges;
+    ::fixy::FixedArray<Edge, 9> edges{};
     // Chain: 0->1->2->...->9
-    for (uint32_t i = 0; i + 1 < 10; ++i)
-        edges.push_back(E(i, i + 1));
-    build_csr(t.alloc, arena, &g, edges.data(), static_cast<uint32_t>(edges.size()), /*num_ops=*/10);
+    for (const auto index : edges.indices()) {
+        const auto from = static_cast<uint32_t>(index.raw());
+        edges.at(index) = E(from, from + 1);
+    }
+    build_csr(t.alloc, arena, g, edges.view(), /*num_ops=*/10);
 
     assert(g.fwd_offsets.size() == 11 && g.rev_offsets.size() == 11);
     for (uint32_t i = 1; i <= 10; ++i) {
@@ -128,10 +129,11 @@ static void test_fanout_node_has_multiple_edges() {
     ::fixy::BumpArena arena{1 << 16};
     TraceGraph g{};
     // Hub-and-spoke: node 0 → {1, 2, 3, 4, 5, 6, 7, 8, 9}
-    std::vector<Edge> edges;
-    for (uint32_t i = 1; i < 10; ++i)
-        edges.push_back(E(0, i));
-    build_csr(t.alloc, arena, &g, edges.data(), 9, /*num_ops=*/10);
+    ::fixy::FixedArray<Edge, 9> edges{};
+    for (const auto index : edges.indices()) {
+        edges.at(index) = E(0, static_cast<uint32_t>(index.raw()) + 1);
+    }
+    build_csr(t.alloc, arena, g, edges.view(), /*num_ops=*/10);
 
     assert(g.out_degree(OpIndex{0}) == 9);
     for (uint32_t i = 1; i < 10; ++i) {

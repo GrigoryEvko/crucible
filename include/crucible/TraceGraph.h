@@ -53,7 +53,7 @@ struct TraceGraph {
     using BuiltCount = ::fixy::WriteOnce<uint32_t>;
 
     // The ops in trace order.
-    TraceEntry* ops = nullptr;
+    ::fixy::View<TraceEntry> ops{};
     BuiltCount num_ops = ::fixy::mint_write_once<uint32_t>();
 
     // Sorted by source, so a walk answers which ops consume a given output.
@@ -66,7 +66,7 @@ struct TraceGraph {
 
     BuiltCount num_edges = ::fixy::mint_write_once<uint32_t>();
 
-    TensorSlot* slots = nullptr;
+    ::fixy::View<TensorSlot> slots{};
     BuiltCount num_slots = ::fixy::mint_write_once<uint32_t>();  // count of distinct storages, not of tensors
 
     ContentHash content_hash;
@@ -86,7 +86,9 @@ struct TraceGraph {
     [[nodiscard]] ::fixy::View<const Edge> rev_of(OpIndex i) const noexcept;
     [[nodiscard]] uint32_t in_degree(OpIndex i) const noexcept;
 
-    [[nodiscard, gnu::pure]] const TraceEntry& op(OpIndex i) const noexcept { return ops[checked_index_(i)]; }
+    [[nodiscard, gnu::pure]] const TraceEntry& op(OpIndex i) const noexcept {
+        return *ops.get(checked_index_(i)).expect("the build gives the graph one entry for each op");
+    }
 
     // The precondition refuses a graph with no ops, where the fold
     // legitimately produces a zero hash. A caller that tolerates that
@@ -117,16 +119,16 @@ private:
     edges_of_(::fixy::View<const Edge> edges, ::fixy::View<const uint32_t> offsets, uint32_t index) noexcept;
 };
 
-// The graph is in the arena.  make gives a Ref, and the build stage keeps the
-// graph through a pointer for the length of one epoch.  The bodies of this
-// function and of build_csr are in src/TraceGraph.cpp, so a unit that includes
-// this header compiles no part of the build.
-[[nodiscard]] TraceGraph* alloc_trace_graph(::foundation::effects::Alloc a,
-                                            ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND) noexcept;
+// The graph is in the arena, and the build stage keeps its Ref for the length
+// of one epoch.  The bodies of this function and of build_csr are in
+// src/TraceGraph.cpp, so a unit that includes this header compiles no part of
+// the build.
+[[nodiscard]] ::fixy::Ref<TraceGraph> alloc_trace_graph(::foundation::effects::Alloc a,
+                                                        ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND) noexcept;
 
 // The graph is in the arena, and a temporary arena releases it at the end of
 // the statement.  This twin refuses a temporary arena.
-TraceGraph* alloc_trace_graph(::foundation::effects::Alloc, ::fixy::BumpArena&&) =
+void alloc_trace_graph(::foundation::effects::Alloc, ::fixy::BumpArena&&) =
     delete("a temporary arena releases the graph at the end of the statement. Use an arena that has a name");
 
 namespace detail {
@@ -142,7 +144,8 @@ template <class T>
 
 // Counting sort into both adjacency arrays, linear in ops plus edges. The
 // caller owns the graph struct. Only the arrays inside it are allocated here.
-void build_csr(::foundation::effects::Alloc a, ::fixy::BumpArena& arena, TraceGraph* graph, const Edge* edges,
-               uint32_t num_edges, uint32_t num_ops);
+// The source and the destination of each edge are below num_ops.
+void build_csr(::foundation::effects::Alloc a, ::fixy::BumpArena& arena, TraceGraph& graph,
+               ::fixy::View<const Edge> edges, uint32_t num_ops);
 
 }  // namespace crucible

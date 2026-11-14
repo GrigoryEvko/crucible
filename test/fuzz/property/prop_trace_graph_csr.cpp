@@ -64,19 +64,24 @@ struct GraphSpec {
     uint32_t num_ops = 0;  // >= 1
 };
 
-// Materialize the spec into a fresh Edge[] (kind defaults to DATA_FLOW;
-// bucketing depends only on src/dst, so a constant kind is fine — the
-// src/dst/port variation already distinguishes edges for the oracle).
-void materialize(const GraphSpec& spec, crucible::Edge* out) noexcept {
+// Materialize the spec into the first edges of out, and give that run (kind
+// defaults to DATA_FLOW; bucketing depends only on src/dst, so a constant
+// kind is fine — the src/dst/port variation already distinguishes edges for
+// the oracle).
+::fixy::View<const crucible::Edge> materialize(const GraphSpec& spec, ::fixy::View<crucible::Edge> out) noexcept {
     using crucible::Edge;
     using crucible::OpIndex;
-    for (uint32_t e = 0; e < spec.num_edges; ++e) {
-        out[e] = Edge{};
-        out[e].src = OpIndex{spec.edges[e].src};
-        out[e].dst = OpIndex{spec.edges[e].dst};
-        out[e].src_port = spec.edges[e].src_port;
-        out[e].dst_port = spec.edges[e].dst_port;
+    const ::fixy::View<Edge> run = out.window(0, spec.num_edges).expect("a spec holds at most kMaxEdges edges");
+    uint32_t e = 0;
+    for (Edge& edge : run) {
+        edge = Edge{};
+        edge.src = OpIndex{spec.edges[e].src};
+        edge.dst = OpIndex{spec.edges[e].dst};
+        edge.src_port = spec.edges[e].src_port;
+        edge.dst_port = spec.edges[e].dst_port;
+        ++e;
     }
+    return run;
 }
 
 [[nodiscard]] bool edge_eq(const crucible::Edge& a, const crucible::Edge& b) noexcept {
@@ -126,13 +131,13 @@ int main(int argc, char** argv) {
             const uint32_t num_ops = spec.num_ops;
             const uint32_t num_edges = spec.num_edges;
 
-            Edge in_edges[kMaxEdges]{};
-            materialize(spec, in_edges);
+            ::fixy::FixedArray<Edge, kMaxEdges> in_edges{};
+            const ::fixy::View<const Edge> in_run = materialize(spec, in_edges.view());
 
             auto test = ::foundation::effects::testing::test();
             BumpArena arena{1 << 16};
             TraceGraph graph{};
-            build_csr(test.alloc, arena, &graph, in_edges, num_edges, num_ops);
+            build_csr(test.alloc, arena, graph, in_run, num_ops);
 
             // (A) Offset shape — forward and reverse.
             const ::fixy::View<const uint32_t> fwd = graph.fwd_offsets;
@@ -169,7 +174,7 @@ int main(int argc, char** argv) {
                 std::stable_sort(order.begin(), order.begin() + num_edges,
                                  [&](uint32_t x, uint32_t y) { return spec.edges[x].src < spec.edges[y].src; });
                 for (uint32_t k = 0; k < num_edges; ++k) {
-                    if (!edge_eq(edge_at(graph.fwd_edges, k), in_edges[order[k]])) return false;
+                    if (!edge_eq(edge_at(graph.fwd_edges, k), edge_at(in_run, order[k]))) return false;
                 }
 
                 // Reverse: stable sort indices by dst.
@@ -178,16 +183,16 @@ int main(int argc, char** argv) {
                 std::stable_sort(order.begin(), order.begin() + num_edges,
                                  [&](uint32_t x, uint32_t y) { return spec.edges[x].dst < spec.edges[y].dst; });
                 for (uint32_t k = 0; k < num_edges; ++k) {
-                    if (!edge_eq(edge_at(graph.rev_edges, k), in_edges[order[k]])) return false;
+                    if (!edge_eq(edge_at(graph.rev_edges, k), edge_at(in_run, order[k]))) return false;
                 }
             }
 
             // (D) Determinism — rebuild on a fresh arena, compare bytes.
-            Edge in_edges2[kMaxEdges]{};
-            materialize(spec, in_edges2);
+            ::fixy::FixedArray<Edge, kMaxEdges> in_edges2{};
+            const ::fixy::View<const Edge> in_run2 = materialize(spec, in_edges2.view());
             BumpArena arena2{1 << 16};
             TraceGraph graph2{};
-            build_csr(test.alloc, arena2, &graph2, in_edges2, num_edges, num_ops);
+            build_csr(test.alloc, arena2, graph2, in_run2, num_ops);
             for (uint32_t v = 0; v <= num_ops; ++v) {
                 if (offset_at(graph2.fwd_offsets, v) != offset_at(fwd, v)) return false;
                 if (offset_at(graph2.rev_offsets, v) != offset_at(rev, v)) return false;

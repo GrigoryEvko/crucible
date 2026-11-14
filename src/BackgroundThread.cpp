@@ -1331,13 +1331,15 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
         }
     }
 
-    auto* graph = alloc_trace_graph(a, scratch);
-    graph->ops = ops;
-    graph->slots = slots.data();
+    const ::fixy::Ref<TraceGraph> graph = alloc_trace_graph(a, scratch);
+    graph->ops = op_buffer.view();
+    graph->slots = slots.view();
     graph->num_slots.set(num_slots);
     graph->content_hash = content_fold.finish();
     graph->max_meta_end.set(max_meta_end);
-    build_csr(a, scratch, graph, local_edges, num_edges, count);
+    build_csr(a, scratch, *graph,
+              scratch_edges_.view().window(0, num_edges).expect("the build writes each edge below the edge cap"),
+              count);
 
     return BuiltTrace{.graph = ::fixy::WeakRef<TraceGraph>{*graph},
                       .region = BuiltRegion{.ops = std::move(op_buffer),
