@@ -33,6 +33,9 @@ foundation_test(test_lattices_core)
 # runs add and mul under the abort probe.
 foundation_test(test_lattice_closure)
 foundation_test(test_lattices_bands)
+# The laws of each float lattice hold bit for bit at the infinities, the
+# two zeros and the subnormals.
+foundation_test(test_float_lattice_laws)
 foundation_test(test_lattices_counters)
 foundation_test(test_counter_clock_attacks)
 foundation_test(test_effects_core)

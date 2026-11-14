@@ -114,6 +114,9 @@ void each_lattice_keeps_its_carrier() {
     check_closure<fl::QttSemiring>(fl::QttGrade::One);
     check_closure<fl::MonotoneLattice<std::uint64_t>>(std::uint64_t{1}, std::uint64_t{1000});
     check_closure<fl::MonotoneLattice<std::int32_t>>(std::int32_t{-1}, std::int32_t{0}, std::int32_t{1});
+    check_closure<fl::MonotoneLattice<double>>(-::foundation::core::infinity_of<double>, -0.0, 0.0,
+                                               ::foundation::core::min_subnormal_of<double>,
+                                               ::foundation::core::infinity_of<double>);
     check_closure<fl::SeqPrefixLattice<ClosureEvent>>(fl::Length<ClosureEvent>::at(3));
     check_closure<fl::AffinityLattice>();
     check_closure<fl::NumaNodeLattice>();

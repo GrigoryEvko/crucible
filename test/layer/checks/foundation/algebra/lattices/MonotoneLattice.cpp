@@ -1,6 +1,10 @@
 // The compile-time checks of foundation/algebra/lattices/MonotoneLattice.h.
 
 #include <foundation/algebra/lattices/MonotoneLattice.h>
+#include <foundation/core/Number.h>
+#include <foundation/core/Scalar.h>
+
+#include <cstdint>
 
 namespace foundation::algebra::lattices {
 
@@ -100,6 +104,76 @@ static_assert(MonF64Less::is_nan_safe(std::numeric_limits<double>::infinity()));
 static_assert(MonF64Less::is_nan_safe(-std::numeric_limits<double>::infinity()));
 static_assert(!MonF64Less::is_nan_safe(std::numeric_limits<double>::quiet_NaN()));
 static_assert(!MonF64Less::is_nan_safe(std::numeric_limits<double>::signaling_NaN()));
+
+// The bounds of a floating-point order are the two infinities, so each
+// value other than NaN is inside the order.  -0 is below +0 under
+// std::less, and above it under std::greater, so join and meet give the
+// same bits for the two orders of their operands.
+[[nodiscard]] consteval std::uint64_t bits_of(double value) noexcept {
+    return ::foundation::core::bit_cast<std::uint64_t>(value);
+}
+
+constexpr double kInfinity = ::foundation::core::infinity_of<double>;
+
+static_assert(bits_of(MonF64Less::bottom()) == bits_of(-kInfinity));
+static_assert(bits_of(MonF64Less::top()) == bits_of(kInfinity));
+static_assert(bits_of(MonF64Greater::bottom()) == bits_of(kInfinity));
+static_assert(bits_of(MonF64Greater::top()) == bits_of(-kInfinity));
+static_assert(MonF64Less::leq(-0.0, 0.0) && !MonF64Less::leq(0.0, -0.0));
+static_assert(MonF64Greater::leq(0.0, -0.0) && !MonF64Greater::leq(-0.0, 0.0));
+static_assert(bits_of(MonF64Less::join(-0.0, 0.0)) == bits_of(0.0)
+              && bits_of(MonF64Less::join(0.0, -0.0)) == bits_of(0.0));
+static_assert(bits_of(MonF64Less::meet(-0.0, 0.0)) == bits_of(-0.0)
+              && bits_of(MonF64Less::meet(0.0, -0.0)) == bits_of(-0.0));
+static_assert(bits_of(MonF64Greater::join(-0.0, 0.0)) == bits_of(-0.0)
+              && bits_of(MonF64Greater::join(0.0, -0.0)) == bits_of(-0.0));
+
+// The laws of an order over double, bit for bit, at a triple of values:
+// each value is inside the order, join and meet are idempotent,
+// commutative, associative and absorbing, and leq is antisymmetric.
+template <typename L>
+[[nodiscard]] consteval bool float_laws_hold_at(double a, double b, double c) {
+    const bool is_inside = L::leq(L::bottom(), a) && L::leq(a, L::top());
+    const bool is_idempotent = bits_of(L::join(a, a)) == bits_of(a) && bits_of(L::meet(a, a)) == bits_of(a);
+    const bool is_commutative =
+        bits_of(L::join(a, b)) == bits_of(L::join(b, a)) && bits_of(L::meet(a, b)) == bits_of(L::meet(b, a));
+    const bool is_associative = bits_of(L::join(L::join(a, b), c)) == bits_of(L::join(a, L::join(b, c)))
+                             && bits_of(L::meet(L::meet(a, b), c)) == bits_of(L::meet(a, L::meet(b, c)));
+    const bool is_absorbing =
+        bits_of(L::join(a, L::meet(a, b))) == bits_of(a) && bits_of(L::meet(a, L::join(a, b))) == bits_of(a);
+    const bool is_antisymmetric = !(L::leq(a, b) && L::leq(b, a)) || bits_of(a) == bits_of(b);
+    return is_inside && is_idempotent && is_commutative && is_associative && is_absorbing && is_antisymmetric;
+}
+
+template <typename L, typename... Values>
+[[nodiscard]] consteval bool float_laws_hold_for_pair(double a, double b, Values... values) {
+    return (float_laws_hold_at<L>(a, b, values) && ...);
+}
+
+template <typename L, typename... Values>
+[[nodiscard]] consteval bool float_laws_hold_for_first(double a, Values... values) {
+    return (float_laws_hold_for_pair<L>(a, values, values...) && ...);
+}
+
+// Each triple of the values.  Complexity: cubic in the values.
+template <typename L, typename... Values>
+[[nodiscard]] consteval bool float_laws_hold(Values... values) {
+    return (float_laws_hold_for_first<L>(values, values...) && ...);
+}
+
+// The special values of double: the infinities, the limits, the two zeros,
+// the least subnormals and the least normals.
+template <typename L>
+[[nodiscard]] consteval bool float_laws_hold_at_the_special_values() {
+    constexpr double kHighest = ::foundation::core::max_of<double>;
+    constexpr double kNormal = ::foundation::core::min_normal_of<double>;
+    constexpr double kSubnormal = ::foundation::core::min_subnormal_of<double>;
+    return float_laws_hold<L>(-kInfinity, -kHighest, -1.0, -kNormal, -kSubnormal, -0.0, 0.0, kSubnormal, kNormal, 1.0,
+                              kHighest, kInfinity);
+}
+
+static_assert(float_laws_hold_at_the_special_values<MonF64Less>());
+static_assert(float_laws_hold_at_the_special_values<MonF64Greater>());
 
 static_assert(MonU64Less::name() == "MonotoneLattice");
 static_assert(MonI32Custom::name() == "MonotoneLattice");

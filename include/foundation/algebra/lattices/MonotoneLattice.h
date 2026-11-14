@@ -13,8 +13,15 @@
 // NaN breaks the laws for a floating-point carrier.  Every comparison
 // involving NaN is false, so join stops being commutative: join(NaN,
 // 1.0) is NaN while join(1.0, NaN) is 1.0.  Callers must keep NaN out.
-// Nothing here enforces that at compile time.  The bounds themselves
-// are safe because lowest() and max() are finite.
+// Nothing here enforces that at compile time.
+//
+// The other special values are in the carrier.  The bounds of a
+// floating-point type with infinities are the two infinities, so each
+// value other than NaN is inside the order.  The two zeros are equal under
+// Cmp, but their bits differ, so the order puts -0 below +0 under
+// std::less, and the dual order puts +0 below -0 under std::greater.  Then
+// leq is antisymmetric bit for bit, and join and meet are commutative bit
+// for bit.
 //
 // The lattice states no claim orientation.  A monotone count can be a
 // lower bound or an upper bound, and the two bounds run in opposite
@@ -42,18 +49,51 @@ namespace foundation::algebra::lattices {
 template <typename T, typename Cmp>
 struct monotone_bounds;
 
+namespace detail {
+
+// The greatest value of an arithmetic type: the infinity of a
+// floating-point type, and max() of each other type.  The builtins give the
+// infinity of each floating-point type.
+template <typename T>
+[[nodiscard]] constexpr T greatest_value_of() noexcept {
+    if constexpr (std::is_same_v<T, float>) {
+        return __builtin_inff();
+    } else if constexpr (std::is_same_v<T, double>) {
+        return __builtin_inf();
+    } else if constexpr (std::is_same_v<T, long double>) {
+        return __builtin_infl();
+    } else if constexpr (std::is_floating_point_v<T>) {
+        return static_cast<T>(__builtin_infl());
+    } else {
+        return std::numeric_limits<T>::max();
+    }
+}
+
+// The least value of an arithmetic type: the negative infinity of a
+// floating-point type, and lowest() of each other type.
+template <typename T>
+[[nodiscard]] constexpr T least_value_of() noexcept {
+    if constexpr (std::is_floating_point_v<T>) {
+        return -greatest_value_of<T>();
+    } else {
+        return std::numeric_limits<T>::lowest();
+    }
+}
+
+}  // namespace detail
+
 template <typename T>
     requires std::is_arithmetic_v<T>
 struct monotone_bounds<T, std::less<T>> {
-    [[nodiscard]] static constexpr T lattice_bottom() noexcept { return std::numeric_limits<T>::lowest(); }
-    [[nodiscard]] static constexpr T lattice_top() noexcept { return std::numeric_limits<T>::max(); }
+    [[nodiscard]] static constexpr T lattice_bottom() noexcept { return detail::least_value_of<T>(); }
+    [[nodiscard]] static constexpr T lattice_top() noexcept { return detail::greatest_value_of<T>(); }
 };
 
 template <typename T>
     requires std::is_arithmetic_v<T>
 struct monotone_bounds<T, std::greater<T>> {
-    [[nodiscard]] static constexpr T lattice_bottom() noexcept { return std::numeric_limits<T>::max(); }
-    [[nodiscard]] static constexpr T lattice_top() noexcept { return std::numeric_limits<T>::lowest(); }
+    [[nodiscard]] static constexpr T lattice_bottom() noexcept { return detail::greatest_value_of<T>(); }
+    [[nodiscard]] static constexpr T lattice_top() noexcept { return detail::least_value_of<T>(); }
 };
 
 template <typename T, typename Cmp>
@@ -87,17 +127,35 @@ struct MonotoneLattice {
         }
     }
 
+    // True when a is strictly before b: Cmp, with the two zeros of a
+    // floating-point type in an order.  Two values other than NaN that Cmp
+    // ties are equal, and only the two zeros are equal with different bits.
+    // Cmp orders them as it orders -1 and +1, so the dual order reverses the
+    // zeros too.  For a carrier that is not floating point, the tie arm is
+    // gone and this is Cmp.
+    [[nodiscard]] static constexpr bool is_before(T const& a, T const& b) noexcept {
+        if (Cmp{}(a, b)) return true;
+        if constexpr (std::is_floating_point_v<T>) {
+            const bool is_a_negative = __builtin_signbit(a) != 0;
+            const bool is_b_negative = __builtin_signbit(b) != 0;
+            if (is_a_negative != is_b_negative && !Cmp{}(b, a)) {
+                return Cmp{}(is_a_negative ? T{-1} : T{1}, is_b_negative ? T{-1} : T{1});
+            }
+        }
+        return false;
+    }
+
     [[nodiscard]] static constexpr bool leq(T const& a, T const& b) noexcept {
         CRUCIBLE_FATAL_INVARIANT(is_nan_safe(a) && is_nan_safe(b));
-        return !Cmp{}(b, a);
+        return !is_before(b, a);
     }
     [[nodiscard]] static constexpr T join(T const& a, T const& b) noexcept {
         CRUCIBLE_FATAL_INVARIANT(is_nan_safe(a) && is_nan_safe(b));
-        return Cmp{}(a, b) ? b : a;
+        return is_before(a, b) ? b : a;
     }
     [[nodiscard]] static constexpr T meet(T const& a, T const& b) noexcept {
         CRUCIBLE_FATAL_INVARIANT(is_nan_safe(a) && is_nan_safe(b));
-        return Cmp{}(a, b) ? a : b;
+        return is_before(a, b) ? a : b;
     }
 
     [[nodiscard]] static constexpr T bottom() noexcept
@@ -122,6 +180,7 @@ namespace detail {
 using MonU64Less = MonotoneLattice<std::uint64_t, std::less<std::uint64_t>>;
 using MonF64Less = MonotoneLattice<double, std::less<double>>;
 using MonU64Greater = MonotoneLattice<std::uint64_t, std::greater<std::uint64_t>>;
+using MonF64Greater = MonotoneLattice<double, std::greater<double>>;
 
 template <typename T>
 using MonotonicGraded = Graded<ModalityKind::Absolute, MonotoneLattice<T, std::less<T>>, T>;
