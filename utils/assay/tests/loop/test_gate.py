@@ -1455,19 +1455,94 @@ def lock_cases(expect: testing.Expect) -> None:
             and gate.Gate(work, work / "land", 1, False, lane=2).tree == work / "land" / "tree-3"
             and gate.LANES == max(1, proc.DEFAULT_JOBS // heavy.SLICE),
         )
-        names = [gate.next_run(work / "land") for _ in range(gate.RUNS_KEPT + 2)]
+        names: list[str] = []
+        for _ in range(gate.RUNS_KEPT + 2):
+            with gate.hold_run(work / "land") as name:
+                names.append(name)
         kept = [path.name for path in sorted((work / "land" / gate.LOGS).iterdir())]
         expect(
-            "each run gets a new directory of logs one above the highest, and only the last directories of the rule stay",
+            "each run gets a new directory of logs one above the highest, and only the newest run and the last ended "
+            "runs of the rule before it stay",
             names[0] == f"{gate.RUN_MARK}{1:0{gate.RUN_WIDTH}d}"
             and len(set(names)) == len(names)
-            and kept == names[-gate.RUNS_KEPT :],
+            and kept == names[-(gate.RUNS_KEPT + 1) :],
         )
         planted = gate.Gate(work, work / "land", 1, False, run=names[-1])
         expect(
             "a gate of a run writes its logs into the directory of the run",
             planted.logs == work / "land" / gate.LOGS / names[-1]
             and gate.Gate(work, work / "land", 1, False).logs == work / "land" / gate.LOGS,
+        )
+
+
+def live_run_cases(expect: testing.Expect) -> None:
+    """Hold a run live through a burst of short runs: its logs stay, and they go as an ended run after it (THE LOGS)."""
+    with tempfile.TemporaryDirectory(prefix="gate-live-") as work_text:
+        land = Path(work_text) / "land"
+        logs = land / gate.LOGS
+        counts: list[int] = []
+        with gate.hold_run(land) as live:
+            is_live = heavy.is_held(logs / live / gate.LIVE)
+            for _ in range(gate.RUNS_KEPT + 2):
+                with gate.hold_run(land):
+                    counts.append(len(paths.listing(logs, f"{gate.RUN_MARK}*")))
+            is_kept = (logs / live).is_dir()
+        expect(
+            f"a run holds the lock of its directory, a burst of {gate.RUNS_KEPT + 2} short runs keeps the directory of "
+            f"the live run, and the bound counts only the ended runs: {counts}",
+            is_live and is_kept and counts[-1] == gate.RUNS_KEPT + 2 and max(counts) == gate.RUNS_KEPT + 2,
+        )
+        is_ended = not heavy.is_held(logs / live / gate.LIVE)
+        with gate.hold_run(land):
+            is_gone = not (logs / live).exists()
+        expect(
+            "after the holder ends, its lock is free, and the next run removes the directory as the oldest ended run",
+            is_ended and is_gone,
+        )
+
+    with tempfile.TemporaryDirectory(prefix="gate-earlier-") as work_text:
+        land = Path(work_text) / "land"
+        count = gate.RUNS_KEPT + 2
+        earlier = [land / gate.LOGS / f"{gate.RUN_MARK}{number:0{gate.RUN_WIDTH}d}" for number in range(1, count + 1)]
+        for path in earlier:
+            path.mkdir(parents=True)
+        with gate.hold_run(land) as name:
+            kept = [path.name for path in paths.listing(land / gate.LOGS, f"{gate.RUN_MARK}*")]
+        expect(
+            "a directory of a run with no file of the lock, such as a run of an earlier copy of the module, is an ended "
+            f"run: {name}, {kept[0]}",
+            name == f"{gate.RUN_MARK}{count + 1:0{gate.RUN_WIDTH}d}"
+            and kept == [path.name for path in earlier[-gate.RUNS_KEPT :]] + [name],
+        )
+
+    with tempfile.TemporaryDirectory(prefix="gate-check-") as work_text:
+        planted = gate.Gate(Path(work_text), Path(work_text) / "land", 1, False)
+        seen: list[tuple[str, bool]] = []
+
+        def probed(self: gate.Gate, candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+            """Record the run of the check and if its directory is live, and give an accepted verdict."""
+            seen.append((self.run, heavy.is_held(self.logs / gate.LIVE)))
+            if is_retry:
+                raise gate.GateError("a planted error of the check")
+            return gate.Verdict(("debug",), (), 1.0, logs=str(self.logs))
+
+        candidate = gate.Candidate("a" * 40, "b" * 40, ())
+        with mock.patch.object(gate.Gate, "check", probed):
+            verdict = planted.check_in_run(candidate, False)
+            try:
+                planted.check_in_run(candidate, True)
+                is_raised = False
+            except gate.GateError:
+                is_raised = True
+        runs = [run for run, _ in seen]
+        expect(
+            "each check of a landing runs in a new run that is live for the whole check, and free after it, also "
+            f"after an error: {seen}",
+            [is_live for _, is_live in seen] == [True, True]
+            and len(set(runs)) == 2
+            and verdict.logs == str(planted.work / gate.LOGS / runs[0])
+            and is_raised
+            and not any(heavy.is_held(planted.work / gate.LOGS / run / gate.LIVE) for run in runs),
         )
 
 
@@ -1496,5 +1571,6 @@ def main(argv: list[str]) -> int:
             base_run_cases,
             careful_cases,
             lock_cases,
+            live_run_cases,
         ),
     )

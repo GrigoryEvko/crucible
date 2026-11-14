@@ -2560,12 +2560,7 @@ def held_gate(
     is_every = any(item.options.is_every for item in batch)
     repository = repository_of(batch[0])
     planned = gate.Gate(heavy.main_work_tree(repository), work, jobs, is_every, lane=lane)
-
-    def run_check(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
-        """Run the gate with the logs of the run in a directory of its own."""
-        return replace(planned, run=gate.next_run(work)).check(candidate, is_retry)
-
-    return run_check, heavy.gate_session(repository)
+    return planned.check_in_run, heavy.gate_session(repository)
 
 
 def refused_queue(queue: Path, problem: Exception) -> bool:
@@ -2764,11 +2759,7 @@ def checked(root: Path, request: Request, options: Options, work: Path) -> int:
     """
     decisions: list[Decision] = []
     with gate.session(root, work, options.jobs, options.is_every) as session, heavy.gate_session(root):
-
-        def run_check(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
-            """Run the gate with the logs of the run in a directory of its own."""
-            return replace(session, run=gate.next_run(work)).check(candidate, is_retry)
-
+        run_check = session.check_in_run
         queued = Queued(0, root, request, options)
         if request.is_empty:
             head = git.head(root)

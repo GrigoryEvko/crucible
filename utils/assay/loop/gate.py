@@ -340,14 +340,25 @@ THE VERDICT
 THE LOGS
     Each step writes its log into the directory of the logs of its gate.
     That is the directory LOGS of the work directory, or a directory of the
-    run in LOGS.  next_run() makes a new directory of a run, one above the
-    highest number of a run.  It removes each directory of a run, other than
-    the last RUNS_KEPT.  The problems of a refused landing then name logs
-    that the next run does not change.  The name of a log holds its
-    configuration and its step.  Two threads then do not write one log.  The
-    round after THE REDUCE puts AGAIN_MARK after the name of the
-    configuration (log_name()).  The logs of the first round then stay, such
-    as the output of a test that was red in the suite and green alone.
+    run in LOGS.  hold_run() makes a new directory of a run, one above the
+    highest number of a run.  The run holds an exclusive lock of flock(2) on
+    the file LIVE of its directory from its start to its end
+    (Gate.check_in_run()).  The problems of a refused landing then name logs
+    that the next run does not change.
+
+    hold_run() also removes each ended run, other than the last RUNS_KEPT
+    ended runs.  An ended run is a directory whose file LIVE no process
+    holds, or a directory with no file LIVE.  A burst of short runs then
+    does not remove the logs of a long run that is live.  The lock file
+    RUNS_LOCK of the work directory lets one landing at a time make a run
+    and remove the ended runs.  A different landing then never sees a new
+    run before its lock.
+
+    The name of a log holds its configuration and its step.  Two threads
+    then do not write one log.  The round after THE REDUCE puts AGAIN_MARK
+    after the name of the configuration (log_name()).  The logs of the first
+    round then stay, such as the output of a test that was red in the suite
+    and green alone.
     When a run has a red test, the gate copies the report of the suite into
     the log SUITE_REPORT.  The next landing in the lane replaces the report in
     the build, so only that copy keeps the output of a flaky test.
@@ -401,20 +412,23 @@ from assay.readers import ctest as ctest_reader
 from assay.readers import ninja as ninja_reader
 from assay.setup import pins as cmake_pin
 
-# The directory of the warm tree, the lock of the tree and the directory of the logs, in the work directory.
+# The directory of the warm tree, the lock of the tree, the directory of the logs and the lock of its runs, in the work
+# directory (THE LOGS).
 TREE = "tree"
 LOCK = "tree.lock"
 LOGS = "logs"
+RUNS_LOCK = "logs.lock"
 # The lock that a holder of the first lane holds, and the count of the lanes (THE LANES).  The pool caps the slots of
 # all the lanes together, so each lane past the slots of the busy lanes fills only idle slots.  The count comes from the
 # CPUs and not from the slots of the pool, because each lane has a warm tree of its own.
 PRIMARY = "primary.lock"
 LANES = max(1, proc.DEFAULT_JOBS // heavy.SLICE)
-# The name of the directory of the logs of one run, before its number, and the directories of the runs that stay (THE
-# LOGS).
+# The name of the directory of the logs of one run, before its number, the count of the ended runs that stay, and the
+# file of the directory that a live run holds a lock on (THE LOGS).
 RUN_MARK = "run-"
 RUN_WIDTH = 6
 RUNS_KEPT = 24
+LIVE = ".live"
 # The mark after the name of the configuration in the name of a log of the round after THE REDUCE (THE LOGS).
 AGAIN_MARK = ".again"
 # The step name of the copy of the report of the suite, which holds the output of each red test (THE LOGS).
@@ -1116,6 +1130,17 @@ class Gate:
             tuple(round(item.slot_seconds, 1) for item in ended),
         )
 
+    def check_in_run(self, candidate: Candidate, is_retry: bool) -> Verdict:
+        """Check a candidate with its logs in a new run, which stays live until the check ends (THE LOGS).
+
+        Raises:
+            GateError: If check() gives the error
+            git.GitError: If a git command fails
+            OSError: If the directory of the run or its lock cannot be made
+        """
+        with hold_run(self.work) as run:
+            return replace(self, run=run).check(candidate, is_retry)
+
 
 # ── The step of a check ────────────────────────────────────────────────────
 
@@ -1591,25 +1616,42 @@ class Step:
         return [*(item for item in results if item is not None), *later]
 
 
-def next_run(work: Path) -> str:
-    """Make the directory of the logs of a new run, remove the expired ones, and return its name (THE LOGS).
+def make_run(logs: Path, runs: Sequence[Path]) -> str:
+    """Make the directory of a new run in `logs`, one above the highest number of `runs`, and return its name (THE LOGS).
 
-    Complexity: linear in the directories of the runs.
+    A directory that a landing of an earlier copy of the module made first moves the number up by one.
     """
-    logs = work / LOGS
-    logs.mkdir(parents=True, exist_ok=True)
-    runs = [path for path in paths.listing(logs, f"{RUN_MARK}*") if path.name.removeprefix(RUN_MARK).isdigit()]
     number = max((int(path.name.removeprefix(RUN_MARK)) for path in runs), default=0) + 1
     while True:
         name = f"{RUN_MARK}{number:0{RUN_WIDTH}d}"
         try:
             (logs / name).mkdir()
-            break
+            return name
         except FileExistsError:
             number += 1
-    for old in runs[: max(0, len(runs) + 1 - RUNS_KEPT)]:
-        shutil.rmtree(old, ignore_errors=True)
-    return name
+
+
+@contextlib.contextmanager
+def hold_run(work: Path) -> Iterator[str]:
+    """Make the directory of the logs of a new run, hold it live for the block, and give its name (THE LOGS).
+
+    The block holds an exclusive lock of flock(2) on the file LIVE of the directory.  The function also removes each
+    ended run, other than the last RUNS_KEPT ended runs.  It holds the lock of RUNS_LOCK while it makes the run and
+    removes the ended runs.  Thus no landing sees a run before its lock.  Complexity: linear in the directories of the
+    runs.
+    """
+    logs = work / LOGS
+    logs.mkdir(parents=True, exist_ok=True)
+    with contextlib.ExitStack() as held:
+        with open(work / RUNS_LOCK, "a", encoding="ascii") as runs_lock:
+            fcntl.flock(runs_lock, fcntl.LOCK_EX)
+            runs = [path for path in paths.listing(logs, f"{RUN_MARK}*") if path.name.removeprefix(RUN_MARK).isdigit()]
+            ended = [path for path in runs if not heavy.is_held(path / LIVE)]
+            name = make_run(logs, runs)
+            fcntl.flock(held.enter_context(open(logs / name / LIVE, "a", encoding="ascii")), fcntl.LOCK_EX)
+            for old in ended[: max(0, len(ended) - RUNS_KEPT)]:
+                shutil.rmtree(old, ignore_errors=True)
+        yield name
 
 
 def tree_name(lane: int) -> str:
