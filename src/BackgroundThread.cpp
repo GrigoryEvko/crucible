@@ -498,8 +498,10 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     const uint32_t num_slots = static_cast<uint32_t>(memory.parts.slots.size());
     if (num_slots > 0) {
         memory.plan = ::foundation::AlignedBuffer<MemoryPlan>::allocate_value_initialized(1);
-        region.plan = publish_scratch_.with_epoch([&]() noexcept {
-            return compute_memory_plan(bg.alloc, memory.plan[0], publish_scratch_, memory.parts.slots.view());
+        // The plan lives in the memory of the region, outside the epoch, so
+        // the body writes its address and the result of the epoch holds none.
+        publish_scratch_.with_epoch([&]() noexcept {
+            region.plan = compute_memory_plan(bg.alloc, memory.plan[0], publish_scratch_, memory.parts.slots.view());
         });
     }
 
@@ -722,21 +724,25 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
         (void)owner.works_built_.bump();
 
         // One epoch of the build scratch covers this work item.  The graph
-        // and its CSR arrays die at its end.  The region does not point
-        // into the scratch, so its parts go on alone.
-        TraceBuild built = owner.build_scratch_.with_epoch([&]() noexcept {
-            return owner.build_trace_from(ctx.cap().alloc, owner.build_scratch_, work->trace.view(),
-                                          work->meta_starts.view(), work->scope_hashes.view(),
-                                          work->callsite_hashes.view());
+        // and its CSR arrays die at its end, so only the region leaves the
+        // epoch.  The region owns its buffers and does not point into the
+        // scratch.  A work that met the overflow builds no region.
+        ::fixy::Option<BuiltRegion> built{::fixy::none};
+        owner.build_scratch_.with_epoch([&]() noexcept {
+            owner
+                .build_trace_from(ctx.cap().alloc, owner.build_scratch_, work->trace.view(), work->meta_starts.view(),
+                                  work->scope_hashes.view(), work->callsite_hashes.view())
+                .match([&](BuiltTrace trace) noexcept { built = ::fixy::some(std::move(trace.region)); },
+                       [](MetaLogOverflow /*overflow*/) noexcept {});
         });
 
         // A work that met the overflow sends no region.  The floor of a later
         // commit marker releases its records.
-        if (built.is_err()) {
+        if (built.is_none()) {
             continue;
         }
 
-        BuiltRegion region = std::move(built).expect("the build made a graph").region;
+        BuiltRegion region = std::move(built).expect("the build made a region");
 
         auto publish = std::make_unique<BgGraphPublish>(BgGraphPublish{
             .kind = BgGraphPublish::Kind::Region, .region = std::move(region), .reset_point = work->reset_point});

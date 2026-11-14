@@ -37,11 +37,19 @@
 //     first.  An epoch in a different epoch of one arena, and an epoch of an
 //     arena that holds bytes, end the process.
 //
-// A View has no brand, so no type refuses a View that leaves the body of an
-// epoch.  The check is at run time: in a build with AddressSanitizer, the end
-// of an epoch poisons each block, and each allocation unpoisons only the
-// bytes that it gives (foundation/os/Poison.h).  A read through a View of an
-// ended epoch then ends the process with a report.
+// The result of the body of an epoch holds no borrow (HoldsNoBorrow of
+// foundation/core/Choice.h).  So a Ref, a View, an address, or a class that
+// holds one does not leave the epoch through the result.  The concept
+// refuses each borrow, also a borrow of bytes that the epoch does not end.
+// Such a value leaves through a variable that the body captures.
+//
+// That capture is the one route that stays open: a body can write a borrow
+// into the epoch to a variable that it captures.  A View has no brand, so
+// no type refuses it there.  The check of that route is at run time: in a
+// build with AddressSanitizer, the end of an epoch poisons each block, and
+// each allocation unpoisons only the bytes that it gives
+// (foundation/os/Poison.h).  A read through a View of an ended epoch then
+// ends the process with a report.
 //
 // The cold path, the end of an epoch and the end of the arena are in
 // src/foundation/os/BumpArena.cpp, which calls the allocation door and the
@@ -168,9 +176,10 @@ public:
 
     // Calls body in an epoch, and gives its result.  The arena must hold no
     // bytes, so the epoch covers each byte that the arena gives out during
-    // the body.  After the body, each of those bytes dies.
+    // the body.  After the body, each of those bytes dies, so the result
+    // holds no borrow.
     template <class Body>
-        requires EpochBody<Body>
+        requires EpochBody<Body> && HoldsNoBorrow<std::invoke_result_t<Body&&>>
     std::invoke_result_t<Body&&> with_epoch(Body&& body) & noexcept {
         open_epoch_();
         if constexpr (std::is_void_v<std::invoke_result_t<Body&&>>) {
@@ -182,6 +191,15 @@ public:
             return result;
         }
     }
+
+    // A body whose result holds a borrow binds to this overload, so the
+    // refusal gives its reason.
+    template <class Body>
+        requires EpochBody<Body> && (!HoldsNoBorrow<std::invoke_result_t<Body &&>>)
+    void with_epoch(Body&&) & = delete(
+        "the result of an epoch holds no borrow, because the end of the epoch ends each byte that the arena gave out "
+        "during the body: give a value with no reference and no address, or write a value that owns its storage to "
+        "a variable that the body captures");
 
     template <class Body>
     void with_epoch(Body&&) && = delete("a temporary arena gives back its blocks at the end of the statement");

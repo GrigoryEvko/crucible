@@ -1,0 +1,11 @@
+// The end of an epoch ends each byte that the arena gave out during the
+// body, so a Ref of an object of the epoch must not leave it as the result.
+
+#include <foundation/core/BumpArena.h>
+#include <foundation/effects/Effect.h>
+
+int main() {
+    ::foundation::core::BumpArena arena{4096};
+    static_cast<void>(arena.with_epoch([&]() noexcept { return arena.make<int>(::foundation::effects::Alloc{}, 5); }));
+    return 0;
+}

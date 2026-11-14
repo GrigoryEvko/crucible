@@ -6,6 +6,10 @@
 // a use after poison.  test/foundation/CMakeLists.txt registers the program
 // only in a build with AddressSanitizer, and the test passes only on the text
 // of that report.
+//
+// The result of an epoch holds no borrow, so the View leaves the epoch
+// through a variable that the body captures.  That route is the one that the
+// run-time check of the poison covers.
 
 #include <foundation/core/BumpArena.h>
 
@@ -17,8 +21,8 @@
 
 int main() {
     ::foundation::core::BumpArena arena{4096};
-    ::foundation::core::View<std::uint64_t> const value = arena.with_epoch(
-        [&]() noexcept { return arena.array<std::uint64_t>(::foundation::effects::Alloc{}, 1, 0x5EED); });
+    ::foundation::core::View<std::uint64_t> value{};
+    arena.with_epoch([&]() noexcept { value = arena.array<std::uint64_t>(::foundation::effects::Alloc{}, 1, 0x5EED); });
 
     // The epoch ended, so this read must not return.
     std::uint64_t total = 0;

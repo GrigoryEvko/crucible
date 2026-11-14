@@ -481,11 +481,13 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     double ns_p2b = 0;
     {
         // The region of the build owns the ops, so the ops outlive the epoch.
-        BackgroundThread::BuiltTrace ref = build_scratch.with_epoch([&]() noexcept {
+        // The graph dies at the end of the epoch, so only the region leaves it.
+        BackgroundThread::BuiltRegion ref{};
+        build_scratch.with_epoch([&]() noexcept {
             bench::refill_meta_log(meta_log, trace);
-            return build_recorded(bg, build_scratch, trace).expect("the recorded trace builds");
+            ref = build_recorded(bg, build_scratch, trace).expect("the recorded trace builds").region;
         });
-        TraceEntry* ref_ops = ref.region.ops.data();
+        TraceEntry* ref_ops = ref.ops.data();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             const uint64_t t0 = bench::rdtsc_start();
@@ -525,11 +527,13 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     double ns_p2c = 0;
     {
         // The region of the build owns the ops, so the ops outlive the epoch.
-        BackgroundThread::BuiltTrace ref = build_scratch.with_epoch([&]() noexcept {
+        // The graph dies at the end of the epoch, so only the region leaves it.
+        BackgroundThread::BuiltRegion ref{};
+        build_scratch.with_epoch([&]() noexcept {
             bench::refill_meta_log(meta_log, trace);
-            return build_recorded(bg, build_scratch, trace).expect("the recorded trace builds");
+            ref = build_recorded(bg, build_scratch, trace).expect("the recorded trace builds").region;
         });
-        TraceEntry* ref_ops = ref.region.ops.data();
+        TraceEntry* ref_ops = ref.ops.data();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             bg.map_gen_++;
@@ -575,11 +579,13 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     double ns_p2d = 0;
     {
         // The region of the build owns the ops, so the ops outlive the epoch.
-        BackgroundThread::BuiltTrace ref = build_scratch.with_epoch([&]() noexcept {
+        // The graph dies at the end of the epoch, so only the region leaves it.
+        BackgroundThread::BuiltRegion ref{};
+        build_scratch.with_epoch([&]() noexcept {
             bench::refill_meta_log(meta_log, trace);
-            return build_recorded(bg, build_scratch, trace).expect("the recorded trace builds");
+            ref = build_recorded(bg, build_scratch, trace).expect("the recorded trace builds").region;
         });
-        TraceEntry* ref_ops = ref.region.ops.data();
+        TraceEntry* ref_ops = ref.ops.data();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             bg.map_gen_++;

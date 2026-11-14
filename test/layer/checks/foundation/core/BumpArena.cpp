@@ -89,6 +89,15 @@ static_assert(std::is_same_v<decltype(std::declval<BumpArena&>().with_epoch(sile
 // arena gives back its blocks at the end of the statement.
 static_assert(!MakesInt<BumpArena&&> && !FillsInts<BumpArena&&> && !RunsEpoch<BumpArena&&>);
 
+// The result of an epoch holds no borrow: a View is refused, and a value and
+// no value pass.
+inline constexpr auto view_body = []() noexcept { return View<int>{}; };
+inline constexpr auto silent_void_body = []() noexcept {};
+template <class Body>
+concept RunsEpochOf = requires(BumpArena& arena, Body const& body) { arena.with_epoch(body); };
+static_assert(!RunsEpochOf<decltype(view_body)>);
+static_assert(RunsEpochOf<decltype(silent_body)> && RunsEpochOf<decltype(silent_void_body)>);
+
 // The target of a Ref of each brand.
 template <class R>
 struct RefTargetOf;

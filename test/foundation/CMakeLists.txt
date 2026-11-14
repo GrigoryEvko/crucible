@@ -2413,6 +2413,17 @@ foundation_neg_compile_test(neg_core_bump_arena_make_on_temporary
 foundation_neg_compile_test(neg_core_bump_arena_make_with_destructor
   "no matching function for call to .foundation::core::BumpArena::make<Ended>\\(foundation::core::Alloc\\)."
   "the expression .is_trivially_destructible_v<T> \\[with T = Ended\\]. evaluated to .false.")
+# The result of an epoch holds no borrow: a Ref, a View, or a class that
+# holds one of the epoch does not leave it.
+foundation_neg_compile_test(neg_core_bump_arena_epoch_gives_ref
+  "use of deleted function .void foundation::core::BumpArena::with_epoch\\(Body&&\\) &"
+  "the result of an epoch holds no borrow, because the end of the epoch ends each byte")
+foundation_neg_compile_test(neg_core_bump_arena_epoch_gives_view
+  "use of deleted function .void foundation::core::BumpArena::with_epoch\\(Body&&\\) &"
+  "the result of an epoch holds no borrow, because the end of the epoch ends each byte")
+foundation_neg_compile_test(neg_core_bump_arena_epoch_gives_holder
+  "use of deleted function .void foundation::core::BumpArena::with_epoch\\(Body&&\\) &"
+  "the result of an epoch holds no borrow, because the end of the epoch ends each byte")
 
 # Runs that share a table of counts.  A write of a View of a different count
 # ends the process, and the test catches the abort.
