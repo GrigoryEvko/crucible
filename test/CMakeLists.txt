@@ -3117,10 +3117,12 @@ crucible_neg_compile_test(neg_reflect_pack_field_unsupported_category
   "In instantiation of .constexpr uint64_t crucible::detail_reflect::pack_field\\(const T&\\) .with T = int Target::\\*.")
 
 # reflect_hash refuses a pointer field, because an address changes from run
-# to run.
+# to run.  The pointer of a TensorMeta is the private state of a Tagged, so
+# the field walk refuses the Tagged.  It refuses each other Tagged of a
+# TensorMeta too, so the first regex matches each refusal.
 crucible_neg_compile_test(neg_reflect_hash_pointer_field
-  "static assertion failed: reflect_hash refuses a pointer field"
-  "crucible::detail_reflect::hash_field")
+  "no matching function for call to .for_each_field\\(const fixy::Tagged<"
+  "required for the satisfaction of .FieldWalkable<T>. \\[with T = fixy::Tagged<void\\*, fixy::tags::source::External>\\]")
 
 # ─── Philox op_key DetSafe gate neg-compiles (2 fixtures) ───────────
 #

@@ -13,8 +13,8 @@
 //                        bit pattern is a value of a BitValid To
 //   for_each_field(object, visit)
 //                        visit(field) for each non-static data member of a
-//                        class, the private members too, in the order of
-//                        the declarations
+//                        class, in the order of the declarations.  The class
+//                        hides no state, or it is plain (FieldWalkable)
 //
 // A part that declares a niche (Choice.h) has an empty value that no valid
 // value holds, such as the reserved value of an id.  decode gives no value
@@ -216,6 +216,22 @@ template <class T, class Visit, std::size_t... Indexes>
 constexpr void visit_fields_([[maybe_unused]] T const& object, [[maybe_unused]] Visit& visit,
                              std::index_sequence<Indexes...> /*indexes*/) noexcept {
     (visit_field_at_<Indexes>(object, visit), ...);
+}
+
+// True when each base of the class is public, and each non-static data
+// member of the class and of each base at each depth is public.  Such a
+// class hides no state in its members.  The public lists of the class have
+// the sizes of its full lists, which base_count and member_count give.
+// Linear in the number of subobject declarations that the walk reaches.
+[[nodiscard]] consteval bool has_only_public_state(std::meta::info spelled) {
+    std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
+    auto const public_bases = std::meta::bases_of(type, std::meta::access_context::unprivileged());
+    if (public_bases.size() != base_count(type)) return false;
+    for (std::size_t index = 0; index < public_bases.size(); ++index) {
+        if (!has_only_public_state(std::meta::type_of(public_bases[index]))) return false;
+    }
+    return std::meta::nonstatic_data_members_of(type, std::meta::access_context::unprivileged()).size()
+        == member_count(type);
 }
 
 // A class that nests deeper than this is refused, not walked.
@@ -453,13 +469,25 @@ template <class To, class From>
     return __builtin_bit_cast(To, source);
 }
 
-// Calls visit(field) for each non-static data member of object, the private
-// members too, in the order of the declarations.  visit gets each field as a
-// const lvalue.  A member of a base class is no member of object, so the
-// walk does not visit it.  A class with no member gives no call.
-// Complexity: one call of visit for each member.
+// A class whose fields for_each_field gives: each field of the class and of
+// its bases is public, or the class is trivially copyable and plain.  The
+// bytes of a plain class are its value, and bit_cast and decode read them
+// already, so the walk shows no state that the base hides.  A class with a
+// private address, a private seal or a private tag of a sum is refused.  So
+// the walk gives no raw address of a Ref, a View or a Box, and no private
+// value of a sealed wrapper.
+template <class T>
+concept FieldWalkable =
+    std::is_class_v<T>
+    && (detail::has_only_public_state(^^T) || (std::is_trivially_copyable_v<T> && detail::is_plain_at(^^T, 0)));
+
+// Calls visit(field) for each non-static data member of object, in the order
+// of the declarations.  A private member of a plain class is a field too.
+// visit gets each field as a const lvalue.  A member of a base class is no
+// member of object, so the walk does not visit it.  A class with no member
+// gives no call.  Complexity: one call of visit for each member.
 template <class T, class Visit>
-    requires std::is_class_v<T>
+    requires FieldWalkable<T>
 constexpr void for_each_field(T const& object, Visit&& visit) noexcept {
     detail::visit_fields_(object, visit, std::make_index_sequence<detail::member_count(^^T)>{});
 }

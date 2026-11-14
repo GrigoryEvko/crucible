@@ -2423,6 +2423,20 @@ foundation_neg_compile_test(neg_core_bump_arena_make_on_temporary
 foundation_neg_compile_test(neg_core_bump_arena_make_with_destructor
   "no matching function for call to .foundation::core::BumpArena::make<Ended>\\(foundation::core::Alloc\\)."
   "the expression .is_trivially_destructible_v<T> \\[with T = Ended\\]. evaluated to .false.")
+# The field walk refuses a class that hides an address: a Ref, a View, a Box
+# and a class with a private View.
+foundation_neg_compile_test(neg_core_for_each_field_ref
+  "no matching function for call to .for_each_field\\(const foundation::core::Ref<int, "
+  "required for the satisfaction of .FieldWalkable<T>. \\[with T = foundation::core::Ref<int, ")
+foundation_neg_compile_test(neg_core_for_each_field_view
+  "no matching function for call to .for_each_field\\(const foundation::core::View<int>&"
+  "required for the satisfaction of .FieldWalkable<T>. \\[with T = foundation::core::View<int, ")
+foundation_neg_compile_test(neg_core_for_each_field_box
+  "no matching function for call to .for_each_field\\(const foundation::core::Box<int>&"
+  "required for the satisfaction of .FieldWalkable<T>. \\[with T = foundation::core::Box<int>\\]")
+foundation_neg_compile_test(neg_core_for_each_field_private_address
+  "no matching function for call to .for_each_field\\(const .anonymous.::Cursor&"
+  "required for the satisfaction of .FieldWalkable<T>. \\[with T = <unnamed>::Cursor\\]")
 # The result of an epoch holds no borrow: a Ref, a View, or a class that
 # holds one of the epoch does not leave it.
 foundation_neg_compile_test(neg_core_bump_arena_epoch_gives_ref

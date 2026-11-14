@@ -8,6 +8,7 @@
 #include <foundation/core/Id.h>
 #include <foundation/core/Philox.h>
 #include <foundation/core/Quantity.h>
+#include <foundation/core/Region.h>
 #include <foundation/core/Verbs.h>
 
 #include <cstddef>
@@ -284,13 +285,41 @@ static_assert(field_fold(PrivatePair{7, 9}) == 7009 && field_count(PrivatePair{7
 static_assert(field_fold(Triple{1, 2, 3}) == 1002003 && field_count(Token{}) == 0);
 static_assert(field_fold(WordsAndTail{{1, 2}, 3}) == 3 && field_count(WordsAndTail{{1, 2}, 3}) == 1);
 
+// A private View, the private state of a class that keeps an invariant in
+// its copy, and a private sealed member stay private.
+class PrivateAddress {
+    View<int const> elements_{};
+};
+class PrivateCountedWord {
+public:
+    PrivateCountedWord(PrivateCountedWord const& other) noexcept : word_{other.word_ + 1} {}
+
+private:
+    std::uint32_t word_ = 0;
+};
+class PrivateSealedWord {
+    std::uint64_t word_ = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+struct PublicAddress {
+    View<int const> elements{};
+};
+
+// The walk takes a class that hides no state, and a plain class that is
+// trivially copyable.  It refuses each other class.
+static_assert(FieldWalkable<PrivatePair> && FieldWalkable<Triple> && FieldWalkable<Token>);
+static_assert(FieldWalkable<WordsAndTail> && FieldWalkable<PublicAddress>);
+static_assert(!FieldWalkable<PrivateAddress> && !FieldWalkable<PrivateCountedWord>);
+static_assert(!FieldWalkable<PrivateSealedWord> && !FieldWalkable<int>);
+
 // ── The closed surface ────────────────────────────────────────────────
 
 // The family list of plan section 11.7: each name of the API table and of
 // the gates, and the accessors lo and hi of Bounds and the halves low and
 // high of WideProduct, which the design of the unit gives.
 inline constexpr TextView scalar_names{
-    "Integer SignedInteger UnsignedInteger Float Arithmetic Enumerated DecodableFrom BitValid Exchangeable "
+    "Integer SignedInteger UnsignedInteger Float Arithmetic Enumerated DecodableFrom BitValid FieldWalkable "
+    "Exchangeable "
     "fits_each_value max_of min_of bits_of value_bits_of min_normal_of min_subnormal_of epsilon_of infinity_of "
     "quiet_nan_of "
     "signaling_nan_of min max Bounds of lo hi bounds clamp compare fits unsigned_abs abs_diff narrow "
