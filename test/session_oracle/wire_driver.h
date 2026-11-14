@@ -21,6 +21,7 @@
 //
 // The handles use check::Off, so an endpoint may stop before End.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
@@ -30,6 +31,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -258,11 +260,12 @@ void walk_from_start(Endpoint& self) {
                                                     unsigned seed) {
     std::fflush(nullptr);
     const pid_t child = ::fork();
-    if (child < 0) {
-        std::perror("session_oracle wire: fork");
-        std::abort();
-    }
+    if (child < 0) ::fixy::fatal("session_oracle wire: the fork of the child process failed");
     if (child == 0) {
+        // The watchdog ends a child that the two-second wait did not end.
+        // The child can get SIG_IGN for SIGALRM from its parent, so it sets
+        // the action that the watchdog needs.
+        static_cast<void>(std::signal(SIGALRM, SIG_DFL));
         ::alarm(10);
         Queue a_to_b;
         Queue b_to_a;

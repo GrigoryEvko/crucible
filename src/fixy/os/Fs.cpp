@@ -10,6 +10,7 @@
 // function of the C library (THE SANITIZERS of foundation/os/Syscall.h).
 
 #include <fixy/os/Fs.h>
+#include <fixy/os/Signal.h>
 
 #include <foundation/core/Choice.h>
 #include <foundation/os/Errno.h>
@@ -287,9 +288,15 @@ UnitResult write_full_(int descriptor, void const* first, std::size_t count) noe
         return core::err(os::Errno::ebadf);
     }
     char const* const bytes = static_cast<char const*>(first);
-    return write_full_steps_(count, [descriptor, bytes](std::size_t offset, std::size_t remaining) {
+    // A write to a pipe or a socket with no reader raises SIGPIPE, and
+    // write(2) has no MSG_NOSIGNAL.  The block of the signal holds for the
+    // whole loop (THE PIPE SIGNAL of fixy/os/Signal.h).
+    bool const was_blocked = ::fixy::signal::detail::block_pipe_signal_();
+    UnitResult written = write_full_steps_(count, [descriptor, bytes](std::size_t offset, std::size_t remaining) {
         return os::result_of(os::raw_syscall(os::Syscall::write, descriptor, bytes + offset, remaining));
     });
+    ::fixy::signal::detail::release_pipe_signal_(was_blocked, written.err().value_or(os::Errno{}) == os::Errno::epipe);
+    return written;
 }
 
 core::Result<std::int64_t, os::Errno> file_size_(int descriptor) noexcept {

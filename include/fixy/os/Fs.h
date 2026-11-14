@@ -317,7 +317,9 @@ read_all_into_(int descriptor, ::foundation::core::Alloc allocation, ::foundatio
 [[nodiscard]] ::foundation::core::Result<std::size_t, ::foundation::os::Errno> read_full_(int descriptor, void* first,
                                                                                           std::size_t count) noexcept;
 
-// Writes the COUNT bytes at FIRST (write_full_steps_).
+// Writes the COUNT bytes at FIRST (write_full_steps_).  A write to a pipe or
+// a socket with no reader gives epipe, and the thread gets no SIGPIPE (THE
+// PIPE SIGNAL of fixy/os/Signal.h).
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 write_full_(int descriptor, void const* first, std::size_t count) noexcept;
 
@@ -850,7 +852,8 @@ has_entry(Ctx const&, ::foundation::core::CText path) noexcept {
 // The three calls below read and write through a handle that is open.
 // A signal that interrupts a read or a write restarts it, and every other
 // error returns.  read_full stops at the end of the file, so it returns
-// fewer bytes than the span holds only there.
+// fewer bytes than the span holds only there.  A write_full to a pipe or a
+// socket with no reader gives epipe, and the process gets no SIGPIPE.
 //
 // Each takes an OwnedFd, and the context that the other calls in this
 // header take, because each call can park the caller on the disk.

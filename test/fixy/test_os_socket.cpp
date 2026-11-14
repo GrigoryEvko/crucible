@@ -5,11 +5,13 @@
 // the mint returns is a socket of the kind the tag names, that it does not
 // survive execve, that a netlink request gets its reply through the door,
 // that each TCP option of the door reaches the TCP option of the kernel,
-// that the timestamp calls reach the kernel, and that a send to a socket
-// with no connection gives an error and no signal.  The check file of the
+// that the timestamp calls reach the kernel, and that a send and a full
+// write of the file door to a socket with no connection give an error and no
+// signal.  The check file of the
 // header holds the walk of the control data of each kind of message.
 
 #include <fixy/Core.h>
+#include <fixy/os/Fs.h>
 #include <fixy/os/Socket.h>
 #include <foundation/Quarantine.h>
 #include <foundation/core/Algorithms.h>
@@ -24,7 +26,8 @@
 #include <utility>
 #include "../test_assert.h"
 
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a send that raises SIGPIPE reaches a handler that marks its arrival")
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a send or a write that raises SIGPIPE reaches a handler that marks its arrival")
+#include <pthread.h>
 #include <signal.h>
 
 namespace {
@@ -32,25 +35,41 @@ namespace {
 // One when a SIGPIPE reached mark_pipe_signal.
 volatile sig_atomic_t pipe_signal_arrived = 0;
 
-// The action of SIGPIPE that install_pipe_marker replaced.
+// The action of SIGPIPE that install_pipe_marker replaced, and the signal
+// mask of the thread before it.
 struct ::sigaction replaced_pipe_action{};
+::sigset_t replaced_mask{};
 
 void mark_pipe_signal(int) noexcept { pipe_signal_arrived = 1; }
 
-// Puts mark_pipe_signal on SIGPIPE.  The handler also replaces a SIG_IGN that
-// the process got from its parent, which hides the signal.
+// Puts mark_pipe_signal on SIGPIPE, and unblocks SIGPIPE in the thread.  The
+// process can get SIG_IGN for SIGPIPE and a mask that blocks it from its
+// parent, and each of the two hides the signal.
 [[nodiscard]] bool install_pipe_marker() noexcept {
     pipe_signal_arrived = 0;
     struct ::sigaction marker{};
     marker.sa_handler = &mark_pipe_signal;
     static_cast<void>(::sigemptyset(&marker.sa_mask));
-    return ::sigaction(SIGPIPE, &marker, &replaced_pipe_action) == 0;
+    ::sigset_t pipe{};
+    static_cast<void>(::sigemptyset(&pipe));
+    static_cast<void>(::sigaddset(&pipe, SIGPIPE));
+    return ::sigaction(SIGPIPE, &marker, &replaced_pipe_action) == 0
+        && ::pthread_sigmask(SIG_UNBLOCK, &pipe, &replaced_mask) == 0;
 }
 
-// Puts back the action that install_pipe_marker replaced.
-[[nodiscard]] bool restore_pipe_action() noexcept { return ::sigaction(SIGPIPE, &replaced_pipe_action, nullptr) == 0; }
+// Puts back the action and the mask that install_pipe_marker replaced.
+[[nodiscard]] bool restore_pipe_action() noexcept {
+    return ::pthread_sigmask(SIG_SETMASK, &replaced_mask, nullptr) == 0
+        && ::sigaction(SIGPIPE, &replaced_pipe_action, nullptr) == 0;
+}
 
 [[nodiscard]] bool has_pipe_signal_arrived() noexcept { return pipe_signal_arrived != 0; }
+
+// True when the mask of the thread blocks SIGPIPE.
+[[nodiscard]] bool is_pipe_signal_blocked() noexcept {
+    ::sigset_t current{};
+    return ::pthread_sigmask(SIG_SETMASK, nullptr, &current) == 0 && ::sigismember(&current, SIGPIPE) == 1;
+}
 
 }  // namespace
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -226,6 +245,27 @@ struct LinkDumpRequest final {
     return 0;
 }
 
+// A full write to a TCP socket with no connection gives epipe, and the kernel
+// raises SIGPIPE in the thread, because write(2) has no MSG_NOSIGNAL.  The
+// file door blocks the signal for the write and takes the signal of the
+// write, so the handler of the case marks no arrival.  The mask of the thread
+// after the write is the mask before it, which does not block SIGPIPE.
+[[nodiscard]] int check_write_raises_no_signal() noexcept {
+    IoBlockCtx ctx{eff::testing::test()};
+    fixy::fs::OwnedFd const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
+    if (!tcp.is_open()) return 71;
+    if (!install_pipe_marker()) return 72;
+    LinkDumpRequest const request{};
+    auto const written = fixy::fs::write_full(ctx, tcp, foundation::core::bytes(request));
+    bool const is_blocked = is_pipe_signal_blocked();
+    bool const is_restored = restore_pipe_action();
+    if (written.err().value_or(foundation::os::Errno::eio) != foundation::os::Errno::epipe) return 73;
+    if (has_pipe_signal_arrived()) return 74;
+    if (is_blocked) return 75;
+    if (!is_restored) return 76;
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -236,6 +276,7 @@ int main() {
     if (failed == 0) failed = check_hardware_timestamping();
     if (failed == 0) failed = check_receive_with_timestamps();
     if (failed == 0) failed = check_send_raises_no_signal();
+    if (failed == 0) failed = check_write_raises_no_signal();
     if (failed != 0) {
         std::fprintf(stderr, "test_os_socket: check %d failed\n", failed);
         return failed;
