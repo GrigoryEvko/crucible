@@ -514,7 +514,8 @@ public:
         }
 
         ::fixy::FixedArray<::fixy::WeakRef<RegionNode>, CAP> slots_{};
-        ::fixy::AtomicMonotonic<uint64_t> total_ = ::fixy::mint_atomic_monotonic<uint64_t>(0);
+        ::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> total_ =
+            ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
     };
 
     UncompiledRegionQueue uncompiled_regions;
@@ -597,7 +598,8 @@ public:
 private:
     ::fixy::AtomicMonotonic<StreamPoint> requested_reset_ = ::fixy::mint_atomic_monotonic<StreamPoint>(StreamPoint{});
     // The detect stage is the one writer of the two below.
-    ::fixy::AtomicMonotonic<StreamPoint> applied_reset_ = ::fixy::mint_atomic_monotonic<StreamPoint>(StreamPoint{});
+    ::fixy::AtomicMonotonic<StreamPoint, ::fixy::CounterWriters::sole> applied_reset_ =
+        ::fixy::mint_atomic_monotonic<StreamPoint, ::fixy::CounterWriters::sole>(StreamPoint{});
     // The count of ops that the detect stage read.
     uint64_t stream_ops_ = 0;
 

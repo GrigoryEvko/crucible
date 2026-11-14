@@ -663,18 +663,30 @@ template <typename Ptr>
 // with unrelated state pays for it on every step. Placing the
 // alignment here makes an embedder that forgets it safe anyway, at a
 // cost of one cache line per counter.
+//
+// The type states how many threads write the counter.  The writer of a
+// counter of one writer reads its own value with relaxed order
+// (peek_relaxed).  A counter of many writers has no such read, because a
+// writer there reads values that a different thread stored.  The type
+// states the count and proves no thread: the embedder that names
+// CounterWriters::sole states who the one writer is.
 
-template <typename T, typename Cmp = std::less<T>>
+enum class CounterWriters : std::uint8_t {
+    many = 0,
+    sole = 1,
+};
+
+template <typename T, CounterWriters Writers = CounterWriters::many, typename Cmp = std::less<T>>
     requires std::is_trivially_copyable_v<T>
 class AtomicMonotonic;
 
-template <typename T, typename Cmp = std::less<T>>
+template <typename T, CounterWriters Writers = CounterWriters::many, typename Cmp = std::less<T>>
     requires std::is_trivially_copyable_v<T>
-[[nodiscard]] constexpr AtomicMonotonic<T, Cmp> mint_atomic_monotonic(T initial) noexcept;
+[[nodiscard]] constexpr AtomicMonotonic<T, Writers, Cmp> mint_atomic_monotonic(T initial) noexcept;
 
-template <typename T, typename Cmp>
+template <typename T, CounterWriters Writers, typename Cmp>
     requires std::is_trivially_copyable_v<T>
-class [[nodiscard]] alignas(64) AtomicMonotonic : ::foundation::Pinned<AtomicMonotonic<T, Cmp>> {
+class [[nodiscard]] alignas(64) AtomicMonotonic : ::foundation::Pinned<AtomicMonotonic<T, Writers, Cmp>> {
     std::atomic<T> value_;
 
     static constexpr bool kIsLess = std::is_same_v<Cmp, std::less<T>> || std::is_same_v<Cmp, std::less<>>;
@@ -683,15 +695,16 @@ class [[nodiscard]] alignas(64) AtomicMonotonic : ::foundation::Pinned<AtomicMon
 
     constexpr explicit AtomicMonotonic(T initial) noexcept : value_{initial} {}
 
-    template <typename U, typename C>
+    template <typename U, CounterWriters W, typename C>
         requires std::is_trivially_copyable_v<U>
-    friend constexpr AtomicMonotonic<U, C> mint_atomic_monotonic(U initial) noexcept;
+    friend constexpr AtomicMonotonic<U, W, C> mint_atomic_monotonic(U initial) noexcept;
 
 public:
     using value_type = T;
     using comparator_type = Cmp;
     using row_discipline = ::fixy::row_discipline::atomic_monotonic<Cmp>;
     using row_payload = T;
+    static constexpr CounterWriters writers = Writers;
 
     [[nodiscard]] T get() const noexcept { return value_.load(std::memory_order_acquire); }
 
@@ -699,7 +712,15 @@ public:
     // this counter and is reading its own value. A reader on another
     // thread needs get(), whose acquire pairs with the release half of
     // advance and bump.
-    [[nodiscard]] T peek_relaxed() const noexcept { return value_.load(std::memory_order_relaxed); }
+    [[nodiscard]] T peek_relaxed() const noexcept
+        requires(Writers == CounterWriters::sole)
+    {
+        return value_.load(std::memory_order_relaxed);
+    }
+    T peek_relaxed() const noexcept
+        requires(Writers == CounterWriters::many)
+    = delete("AtomicMonotonic::peek_relaxed: a counter of many writers has no thread that reads its own last store. "
+             "Read it with get(), or seed a compare-exchange with load_relaxed()");
 
     // Same load as peek_relaxed, but for a caller that is not the sole
     // writer and is seeding a compare-and-advance retry loop. Relaxed
@@ -838,13 +859,13 @@ public:
     static void fence_seq_cst() noexcept { std::atomic_thread_fence(std::memory_order_seq_cst); }
 };
 
-template <typename T, typename Cmp>
+template <typename T, CounterWriters Writers, typename Cmp>
     requires std::is_trivially_copyable_v<T>
-[[nodiscard]] constexpr AtomicMonotonic<T, Cmp> mint_atomic_monotonic(T initial) noexcept {
-    return AtomicMonotonic<T, Cmp>{initial};
+[[nodiscard]] constexpr AtomicMonotonic<T, Writers, Cmp> mint_atomic_monotonic(T initial) noexcept {
+    return AtomicMonotonic<T, Writers, Cmp>{initial};
 }
 
 template <typename T>
-using MaxObserved = AtomicMonotonic<T, std::less<T>>;
+using MaxObserved = AtomicMonotonic<T, CounterWriters::many, std::less<T>>;
 
 }  // namespace fixy

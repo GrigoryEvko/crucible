@@ -171,8 +171,10 @@ private:
     // locked instruction.  The writer hands in the value it read, so the
     // step check compares registers and loads nothing.
 
-    ::fixy::AtomicMonotonic<std::uint64_t> head_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
-    ::fixy::AtomicMonotonic<std::uint64_t> tail_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
+    ::fixy::AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> head_ =
+        ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
+    ::fixy::AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> tail_ =
+        ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
 
     alignas(64) std::array<T, Capacity> buffer_{};
 };

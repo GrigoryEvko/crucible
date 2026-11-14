@@ -68,7 +68,10 @@ struct CRUCIBLE_OWNER MetaLog {
     // 64 bits.  At 2^32 records a 32-bit counter wraps to zero, and the
     // contract of the counter stops the process.  A large model reaches that
     // count in hours.  The slot of a record is its count masked by MASK.
-    alignas(64)::fixy::AtomicMonotonic<uint64_t> head = ::fixy::mint_atomic_monotonic<uint64_t>(0);
+    // The producer is the one writer of head, and the consumer is the one
+    // writer of tail.
+    alignas(64)::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> head =
+        ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
     // The producer's private view of the consumer's counter, refreshed only
     // when it claims the buffer is full. A stale value can only under-report
     // free space, so acting on it is safe. The type enforces the direction,
@@ -78,7 +81,8 @@ struct CRUCIBLE_OWNER MetaLog {
     // the hot path is one load of that word from this object.
     ::foundation::AlignedBuffer<TensorMeta, ::foundation::huge_page_bytes> entries_buffer_;
 
-    alignas(64)::fixy::AtomicMonotonic<uint64_t> tail = ::fixy::mint_atomic_monotonic<uint64_t>(0);
+    alignas(64)::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> tail =
+        ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
 
     MetaLog()
         : entries_buffer_{

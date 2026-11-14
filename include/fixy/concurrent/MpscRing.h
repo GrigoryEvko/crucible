@@ -313,8 +313,10 @@ private:
 
     alignas(64) std::array<T, Capacity> cells_{};
     alignas(64) std::array<std::atomic<std::uint64_t>, WORDS> ready_{};
+    // The producers write head_.  The consumer is the one writer of tail_.
     ::fixy::AtomicMonotonic<std::uint64_t> head_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
-    ::fixy::AtomicMonotonic<std::uint64_t> tail_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
+    ::fixy::AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> tail_ =
+        ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
 };
 
 }  // namespace fixy::concurrent

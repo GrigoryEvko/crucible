@@ -102,8 +102,9 @@ public:
         // cannot slip in between and be missed.
         ::fixy::AtomicMonotonic<std::int64_t>::fence_seq_cst();
         // A relaxed load suffices: the fence above already carries the
-        // cross-thread ordering.
-        std::int64_t t = top_.peek_relaxed();
+        // cross-thread ordering.  The thieves write top too, so the owner
+        // is not its one writer, and the read is load_relaxed.
+        std::int64_t t = top_.load_relaxed();
 
         if (t > b) {
             bottom_.store(b + 1, std::memory_order_relaxed);

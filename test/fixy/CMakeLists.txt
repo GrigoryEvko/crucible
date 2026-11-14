@@ -223,6 +223,9 @@ fixy_neg_compile_test(neg_mutation_atomic_monotonic_string
 fixy_neg_compile_test(neg_mutation_atomic_monotonic_user_copy
   "fixy::mint_atomic_monotonic\\(T\\) .with T = .[a-z]+.::Stamp."
   "..[a-z]+.::Stamp. is not trivially copyable")
+fixy_neg_compile_test(neg_mutation_atomic_monotonic_peek_shared
+  "a counter of many writers has no thread that reads its own last store"
+  "fixy::AtomicMonotonic<T, Writers, Cmp>::peek_relaxed\\(\\) const")
 fixy_neg_compile_test(neg_mutation_write_once_non_null_not_pointer
   "required for the satisfaction of .SlotPointer<Ptr>. \\[with Ptr = int\\]"
   "the expression .is_pointer_v<Ptr> \\[with Ptr = int\\]. evaluated to .false.")

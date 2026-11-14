@@ -63,7 +63,19 @@ static_assert(sizeof(WriteOnceNonNull<void*>) == sizeof(void*));
 // AtomicMonotonic owns a cache line.
 static_assert(alignof(AtomicMonotonic<std::uint64_t>) >= 64);
 static_assert(sizeof(AtomicMonotonic<std::uint64_t>) >= 64);
-static_assert(std::is_same_v<MaxObserved<std::uint32_t>, AtomicMonotonic<std::uint32_t, std::less<std::uint32_t>>>);
+static_assert(std::is_same_v<MaxObserved<std::uint32_t>,
+                             AtomicMonotonic<std::uint32_t, ::fixy::CounterWriters::many, std::less<std::uint32_t>>>);
+
+// Only the cell of one writer reads its own value with relaxed order.  A
+// cell of many writers has no such read, and its writers seed a
+// compare-exchange with load_relaxed.
+template <class Cell>
+concept HasPeekRelaxed = requires(Cell const& cell) { cell.peek_relaxed(); };
+template <class Cell>
+concept HasLoadRelaxed = requires(Cell const& cell) { cell.load_relaxed(); };
+static_assert(HasPeekRelaxed<AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole>>);
+static_assert(!HasPeekRelaxed<AtomicMonotonic<std::uint64_t>>);
+static_assert(HasLoadRelaxed<AtomicMonotonic<std::uint64_t>>);
 
 // ── Diagnostic surface ───────────────────────────────────────────────
 static_assert(fa::GradedWrapper<Monotonic<std::uint64_t>>);
@@ -383,8 +395,9 @@ int check_atomic_monotonic() {
     // Under std::greater the whole direction inverts: advancing walks the
     // value down, and a larger value counts as backwards.
     {
-        AtomicMonotonic<std::uint64_t, std::greater<std::uint64_t>> floor =
-            ::fixy::mint_atomic_monotonic<std::uint64_t, std::greater<std::uint64_t>>(100ULL);
+        AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::many, std::greater<std::uint64_t>> floor =
+            ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::many, std::greater<std::uint64_t>>(
+                100ULL);
         if (floor.get() != 100ULL) return 100;
         if (!floor.try_advance(50ULL)) return 101;
         if (floor.get() != 50ULL) return 102;
@@ -417,8 +430,9 @@ int check_atomic_monotonic() {
 
     // Under std::greater, bump walks the counter down instead.
     {
-        AtomicMonotonic<std::uint64_t, std::greater<std::uint64_t>> ttl =
-            ::fixy::mint_atomic_monotonic<std::uint64_t, std::greater<std::uint64_t>>(1000ULL);
+        AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::many, std::greater<std::uint64_t>> ttl =
+            ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::many, std::greater<std::uint64_t>>(
+                1000ULL);
         if (ttl.bump() != 1000ULL) return 118;
         if (ttl.get() != 999ULL) return 119;
         if (ttl.bump_by(99ULL) != 999ULL) return 120;
@@ -429,7 +443,8 @@ int check_atomic_monotonic() {
     // and publish the successor with a release store. get() is the acquire
     // load a reader on another thread would use.
     {
-        AtomicMonotonic<std::uint64_t> spsc_head = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
+        AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> spsc_head =
+            ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
         const std::uint64_t h0 = spsc_head.peek_relaxed();
         if (h0 != 0ULL) return 122;
         spsc_head.advance(h0 + 1);
@@ -547,8 +562,9 @@ int check_atomic_monotonic() {
 
     // Compare-exchange follows the same inverted direction under greater.
     {
-        AtomicMonotonic<std::uint64_t, std::greater<std::uint64_t>> ttl =
-            ::fixy::mint_atomic_monotonic<std::uint64_t, std::greater<std::uint64_t>>(1000ULL);
+        AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::many, std::greater<std::uint64_t>> ttl =
+            ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::many, std::greater<std::uint64_t>>(
+                1000ULL);
 
         std::uint64_t observed = 1000ULL;
         bool ok = ttl.compare_exchange_advance(observed, 999ULL);
@@ -705,8 +721,9 @@ int check_contracts_abort() {
     if (near_top.get() != 250) return 187;
     if (near_top.bump_by(std::uint8_t{5}) != 250 || near_top.get() != 255) return 188;
     if (!aborts([&] { (void)near_top.bump(); })) return 189;
-    AtomicMonotonic<std::uint8_t, std::greater<std::uint8_t>> near_floor =
-        ::fixy::mint_atomic_monotonic<std::uint8_t, std::greater<std::uint8_t>>(std::uint8_t{3});
+    AtomicMonotonic<std::uint8_t, ::fixy::CounterWriters::many, std::greater<std::uint8_t>> near_floor =
+        ::fixy::mint_atomic_monotonic<std::uint8_t, ::fixy::CounterWriters::many, std::greater<std::uint8_t>>(
+            std::uint8_t{3});
     if (!aborts([&] { (void)near_floor.bump_by(std::uint8_t{4}); })) return 190;
     if (near_floor.get() != 3) return 191;
     if (near_floor.bump_by(std::uint8_t{3}) != 3 || near_floor.get() != 0) return 192;

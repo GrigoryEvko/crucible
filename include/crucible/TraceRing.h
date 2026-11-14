@@ -162,9 +162,11 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // acquire, which is the edge that makes the slot writes visible across
     // the pair. A thread reading its own counter uses peek_relaxed and needs
     // no ordering.
-    alignas(64)::fixy::AtomicMonotonic<uint64_t> head = ::fixy::mint_atomic_monotonic<uint64_t>(0);
+    alignas(64)::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> head =
+        ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
 
-    alignas(64)::fixy::AtomicMonotonic<uint64_t> tail = ::fixy::mint_atomic_monotonic<uint64_t>(0);
+    alignas(64)::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> tail =
+        ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
 
     // The consumer is the only party that reads or writes this, so drains
     // track their position here and publish to tail only once the copies are
