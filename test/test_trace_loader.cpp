@@ -56,10 +56,9 @@ static std::string write_tmp(const void* data, size_t n) {
 // The sanitized form of the path of a test file.  No path of these tests
 // holds a ".." component, so each one passes the check.
 static ::fixy::Path<::fixy::tags::source::Sanitized> sanitized(const std::string& raw) {
-    auto checked =
-        ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{raw}));
-    assert(checked.has_value());
-    return std::move(*checked);
+    return ::fixy::sanitize_path(
+               ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::mint_foreign_text(raw.data(), raw.size())))
+        .expect("each path of these tests passes the check");
 }
 
 // True when the load refused its file for the reason error.

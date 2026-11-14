@@ -814,18 +814,20 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
     }
 }
 
-void Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation, RootPath root,
-                        ::fixy::Path<::fixy::tags::source::Sanitized> sanitized_root, ::fixy::fs::Dirfd const& here) {
+void Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation,
+                        ::fixy::Path<::fixy::tags::source::Sanitized> const& root, ::fixy::fs::Dirfd const& here) {
     // The root opens with O_NOFOLLOW, so a symlinked root fails with
     // ELOOP.  Abort rather than continue: the durable-on-return contract
     // needs a root directory whose identity is stable for this instance's
     // lifetime.
     root_dirfd_ = with_file_ctx_(file_ctx, [&](auto const& ctx) {
-                      make_root_directories_(ctx, here, root.c_text().view());
-                      return ::fixy::fs::open_dirfd(ctx, std::move(sanitized_root));
+                      make_root_directories_(ctx, here, root.value().c_text().view());
+                      return ::fixy::fs::open_dirfd(ctx, root);
                   }).expect("the root of the Cipher does not open as a directory");
+    // The bound of the root is the bound of the path, so the path of the
+    // root is a copy of the path.
     [[maybe_unused]] const bool root_set =
-        root_.try_set(::fixy::mint_tagged<::fixy::tags::source::Durable>(std::move(root)));
+        root_.try_set(::fixy::mint_tagged<::fixy::tags::source::Durable>(RootPath{root.value()}));
     [[assume(root_set)]];
     static_cast<void>(with_file_ctx_(
         file_ctx, [&](auto const& ctx) { return ::fixy::fs::make_directory_at(ctx, root_dirfd_, "objects").is_ok(); }));

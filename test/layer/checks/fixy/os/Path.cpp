@@ -4,7 +4,7 @@
 
 namespace fixy::detail::path_self_test {
 
-static_assert(sizeof(Path<tags::source::External>) == sizeof(std::filesystem::path));
+static_assert(sizeof(Path<tags::source::External>) == sizeof(::foundation::os::PathText<kPathBytes>));
 
 static_assert(!std::is_same_v<sanitize::path_traversal::no_dotdot, sanitize::path_traversal::absolute_root_locked>,
               "no_dotdot and absolute_root_locked must be distinct policy-marker types: separate "
@@ -36,11 +36,9 @@ static_assert(!RetagAllowed<::fixy::detail::retag_sentinel::NeverFrom, tags::sou
 // CipherPath has no edge into Sanitized on purpose.  Its bytes never
 // crossed an untrusted boundary, and keeping it out of the three
 // external lanes is what stops operator-supplied bytes from reaching
-// the directory-anchored open helpers.
-template <typename From>
-concept CanSanitize = requires(Path<From> p) { sanitize::path_traversal::sanitize_path_no_dotdot(std::move(p)); };
-static_assert(CanSanitize<tags::source::External>);
-static_assert(CanSanitize<tags::source::FromUserPath>);
-static_assert(!CanSanitize<::fixy::detail::retag_sentinel::NeverFrom>);
+// the directory-anchored open helpers.  The sanitizers admit a tag through
+// this concept, and test/fixy/test_path.cpp calls each lane.
+static_assert(!RetagAllowed<tags::source::CipherPath, tags::source::Sanitized>,
+              "tags::source::CipherPath must have no edge into tags::source::Sanitized.");
 
 }  // namespace fixy::detail::path_self_test

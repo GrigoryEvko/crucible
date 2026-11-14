@@ -38,14 +38,10 @@ using IoBlockCtx =
     eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 
 // Every path the surface takes is Path<Sanitized>, and the only way to
-// one is through the sanitizer: mint the external form, then launder it.
+// one is through the sanitizer: tag the text External, then launder it.
 [[nodiscard]] fixy::Path<src::Sanitized> sanitized(const std::string& raw) {
-    auto laundered = fixy::sanitize::path_traversal::sanitize_path_no_dotdot(
-        fixy::mint_tagged<src::External>(std::filesystem::path{raw}));
-    if (!laundered) {
-        ::fixy::fatal("a test path failed to sanitize\n");
-    }
-    return std::move(*laundered);
+    return fixy::sanitize_path(fixy::mint_tagged<src::External>(fixy::mint_foreign_text(raw.data(), raw.size())))
+        .expect("each test path passes the sanitizer");
 }
 
 using crucible::test::ScratchDir;

@@ -13,8 +13,9 @@
 int main() {
     const ::fixy::TestRunnerCtx store_ctx{::foundation::effects::testing::test()};
     auto already_sanitized = ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(
-        std::filesystem::path{"/tmp/crucible_neg_open_sanitized_input"}));
+                                                       ::fixy::TextView{"/tmp/crucible_neg_open_sanitized_input"}))
+                                 .expect("the path is clean");
     [[maybe_unused]] auto cipher =
-        ::crucible::Cipher::open(store_ctx, store_ctx.cap().alloc, std::move(*already_sanitized));
+        ::crucible::Cipher::open(store_ctx, store_ctx.cap().alloc, std::move(already_sanitized));
     return 0;
 }

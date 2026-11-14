@@ -6,11 +6,10 @@
 
 #include <fixy/os/Path.h>
 
-#include <filesystem>
 #include <utility>
 
 int main() {
-    auto cipher_path = fixy::mint_tagged<fixy::tags::source::CipherPath>(std::filesystem::path{"/var/cipher"});
+    auto cipher_path = fixy::mint_tagged<fixy::tags::source::CipherPath>(foundation::os::PathText<fixy::kPathBytes>{});
     auto sanitized = fixy::sanitize::path_traversal::sanitize_path_no_dotdot(std::move(cipher_path));
-    return sanitized.has_value() ? 0 : 1;
+    return sanitized.is_ok() ? 0 : 1;
 }

@@ -5,9 +5,9 @@
 
 #include <fixy/os/Path.h>
 
-#include <filesystem>
+#include <foundation/os/PathText.h>
 
 int main() {
-    fixy::Path<fixy::tags::source::Sanitized> forged{std::filesystem::path{"../etc/passwd"}};
-    return forged.value().empty() ? 0 : 1;
+    fixy::Path<fixy::tags::source::Sanitized> forged{foundation::os::PathText<fixy::kPathBytes>{}};
+    return forged.value().size() == 0 ? 0 : 1;
 }

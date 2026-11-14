@@ -115,11 +115,11 @@ include/crucible/ | raw-new-delete | 4 | - | -
 include/crucible/ | raw-pointer-object | 410 | - | -
 include/crucible/ | replace-pending:<limits> | 6 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 16 | - | -
-include/crucible/ | std-entity | 251 | - | -
-include/crucible/ | std-object | 57 | - | -
+include/crucible/ | std-entity | 245 | - | -
+include/crucible/ | std-object | 50 | - | -
 include/crucible/cipher/ | c-library-call | 3 | - | -
-include/crucible/cipher/ | std-entity | 26 | - | -
-include/crucible/cipher/ | std-object | 27 | - | -
+include/crucible/cipher/ | std-entity | 25 | - | -
+include/crucible/cipher/ | std-object | 18 | - | -
 include/crucible/cntp/ | c-library-call | 9 | - | -
 include/crucible/cntp/ | compiler-builtin | 2 | - | -
 include/crucible/cntp/ | std-object | 1 | - | -
@@ -205,20 +205,19 @@ include/fixy/handle/ | replace-pending:<cstdio> | 1 | - | -
 include/fixy/handle/ | replace-pending:<cstdlib> | 1 | - | -
 include/fixy/os/ | base-c-library-call | 15 | - | -
 include/fixy/os/ | base-c-library-object | 10 | - | -
-include/fixy/os/ | base-std-entity | 176 | - | -
-include/fixy/os/ | base-std-object | 87 | - | -
+include/fixy/os/ | base-std-entity | 134 | - | -
+include/fixy/os/ | base-std-object | 59 | - | -
 include/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
 include/fixy/os/ | replace-pending:<array> | 1 | - | -
 include/fixy/os/ | replace-pending:<cerrno> | 3 | - | -
 include/fixy/os/ | replace-pending:<climits> | 1 | - | -
 include/fixy/os/ | replace-pending:<cstdio> | 1 | - | -
 include/fixy/os/ | replace-pending:<ctime> | 1 | - | -
-include/fixy/os/ | replace-pending:<expected> | 8 | - | -
-include/fixy/os/ | replace-pending:<filesystem> | 1 | - | -
+include/fixy/os/ | replace-pending:<expected> | 7 | - | -
 include/fixy/os/ | replace-pending:<limits> | 1 | - | -
 include/fixy/os/ | replace-pending:<optional> | 1 | - | -
 include/fixy/os/ | replace-pending:<span> | 2 | - | -
-include/fixy/os/ | replace-pending:<string> | 2 | - | -
+include/fixy/os/ | replace-pending:<string> | 1 | - | -
 include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<system_error> | 4 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
@@ -303,8 +302,8 @@ include/foundation/reflect/ | replace-pending:<vector> | 4 | - | -
 src/ | c-library-call | 2 | - | -
 src/ | raw-new-delete | 3 | - | -
 src/ | raw-pointer-object | 25 | - | -
-src/ | std-entity | 157 | - | -
-src/ | std-object | 33 | - | -
+src/ | std-entity | 156 | - | -
+src/ | std-object | 32 | - | -
 src/fixy/os/ | base-std-entity | 153 | - | -
 src/fixy/os/ | base-std-object | 63 | - | -
 src/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
@@ -335,12 +334,12 @@ test/ | raw-new-delete | 41 | - | -
 test/ | raw-pointer-object | 535 | - | -
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 93 | - | -
-test/ | std-entity | 1770 | - | -
-test/ | std-object | 658 | - | -
+test/ | std-entity | 1769 | - | -
+test/ | std-object | 654 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
-test/cipher_neg/ | raw-pointer-object | 8 | - | -
-test/cipher_neg/ | std-entity | 22 | - | -
-test/cipher_neg/ | std-object | 13 | - | -
+test/cipher_neg/ | raw-pointer-object | 2 | - | -
+test/cipher_neg/ | std-entity | 9 | - | -
+test/cipher_neg/ | std-object | 6 | - | -
 test/cntp_neg/ | raw-pointer-object | 1 | - | -
 test/cntp_neg/ | std-entity | 3 | - | -
 test/cntp_neg/ | std-object | 5 | - | -
@@ -356,7 +355,7 @@ test/dag_neg/ | raw-pointer-object | 5 | - | -
 test/dag_neg/ | std-entity | 1 | - | -
 test/dag_neg/ | std-object | 3 | - | -
 test/fixy/ | c-array-object | 100 | - | -
-test/fixy/ | c-library-call | 1476 | - | -
+test/fixy/ | c-library-call | 1469 | - | -
 test/fixy/ | c-library-object | 9 | - | -
 test/fixy/ | door-header | 22 | - | -
 test/fixy/ | opted-out | 16 | ORACLE: the C library reports the attributes of the calling thread | -
@@ -403,8 +402,8 @@ test/fixy/ | region | 1 | PROBE: the test plants an atom in a shipped family, an
 test/fixy/ | replace-pending:<limits> | 30 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 15 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 3097 | - | -
-test/fixy/ | std-object | 1103 | - | -
+test/fixy/ | std-entity | 3053 | - | -
+test/fixy/ | std-object | 1095 | - | -
 test/fixy/neg/ | c-array-object | 53 | - | -
 test/fixy/neg/ | c-library-call | 5 | - | -
 test/fixy/neg/ | c-library-object | 2 | - | -
@@ -433,7 +432,7 @@ test/fixy/neg/ | opted-out | 4 | PROBE: the fixture takes the address of a membe
 test/fixy/neg/ | opted-out | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | raw-function-pointer | 2 | - | -
 test/fixy/neg/ | raw-new-delete | 1 | - | -
-test/fixy/neg/ | raw-pointer-object | 31 | - | -
+test/fixy/neg/ | raw-pointer-object | 19 | - | -
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges a CheckpointHandle that builds a handle around a plain one | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -457,8 +456,8 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member m
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/neg/ | std-entity | 196 | - | -
-test/fixy/neg/ | std-object | 84 | - | -
+test/fixy/neg/ | std-entity | 165 | - | -
+test/fixy/neg/ | std-object | 70 | - | -
 test/foundation/ | c-array-object | 33 | - | -
 test/foundation/ | c-library-call | 403 | - | -
 test/foundation/ | c-library-object | 7 | - | -
@@ -556,7 +555,7 @@ test/fuzz/boundary/harnesses/ | opted-out | 6 | ABI: the fuzzer gives the host t
 test/fuzz/boundary/harnesses/ | raw-pointer-object | 16 | - | -
 test/fuzz/boundary/harnesses/ | region | 2 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
 test/fuzz/boundary/harnesses/ | std-entity | 206 | - | -
-test/fuzz/boundary/harnesses/ | std-object | 100 | - | -
+test/fuzz/boundary/harnesses/ | std-object | 99 | - | -
 test/fuzz/property/ | c-array-object | 20 | - | -
 test/fuzz/property/ | c-library-call | 48 | - | -
 test/fuzz/property/ | compiler-builtin | 4 | - | -
@@ -600,7 +599,7 @@ test/layer/checks/fixy/fp/ | replace-pending:std::bit_cast | 1 | - | -
 test/layer/checks/fixy/fp/ | std-entity | 15 | - | -
 test/layer/checks/fixy/handle/ | std-entity | 2 | - | -
 test/layer/checks/fixy/os/ | c-array-object | 2 | - | -
-test/layer/checks/fixy/os/ | std-entity | 12 | - | -
+test/layer/checks/fixy/os/ | std-entity | 10 | - | -
 test/layer/checks/fixy/session/ | replace-pending:std::source_location | 1 | - | -
 test/layer/checks/fixy/session/ | std-entity | 3 | - | -
 test/layer/checks/fixy/session/ | std-object | 1 | - | -

@@ -22,8 +22,6 @@
 #include <fixy/atoms/Os.h>
 #include <fixy/os/Fs.h>
 
-#include <filesystem>
-
 namespace eff = foundation::effects;
 namespace fs = fixy::fs;
 namespace atom_fs = fixy::atom::fs;
@@ -35,9 +33,8 @@ namespace {
 using IoBlockCtx =
     eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 
-[[maybe_unused]] fixy::Path<src::Sanitized> sanitized(const char* raw) {
-    return *fixy::sanitize::path_traversal::sanitize_path_no_dotdot(
-        fixy::mint_tagged<src::External>(std::filesystem::path{raw}));
+[[maybe_unused]] fixy::Path<src::Sanitized> sanitized(foundation::core::TextView raw) {
+    return fixy::sanitize_path(fixy::mint_tagged<src::External>(raw)).expect("the path is clean");
 }
 
 }  // namespace

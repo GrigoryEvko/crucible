@@ -711,11 +711,13 @@ int main(int argc, char* argv[]) {
     std::printf("TSC ratio: %.4f ns/cycle\n", bench::Timer::ns_per_cycle());
 
     // A path that fails the path check counts as a file that does not open.
-    auto sanitized_path =
-        ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{trace_path}));
-    auto loaded = sanitized_path ? load_trace(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
-                                              std::move(*sanitized_path))
-                                 : ::fixy::Result<LoadedTrace, TraceLoadError>{::fixy::err(TraceLoadError::OpenFailed)};
+    const std::string_view trace_text{trace_path};
+    auto sanitized_path = ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(
+        ::fixy::mint_foreign_text(trace_text.data(), trace_text.size())));
+    auto loaded = sanitized_path.is_ok()
+                    ? load_trace(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
+                                 std::move(sanitized_path).expect("the path passed the check"))
+                    : ::fixy::Result<LoadedTrace, TraceLoadError>{::fixy::err(TraceLoadError::OpenFailed)};
     if (loaded.is_err()) {
         std::fprintf(stderr, "error: could not load %s\n", trace_path);
         std::fprintf(stderr, "usage: %s [file.crtrace] [iters]\n", argv[0]);

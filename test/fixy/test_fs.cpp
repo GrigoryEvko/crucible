@@ -41,15 +41,10 @@ using IoBlockCtx =
     eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 
 // Every path the surface takes is Path<Sanitized>, and the only way to
-// one is through the sanitizer: mint the external form, then launder it.
+// one is through the sanitizer: tag the text External, then launder it.
 [[nodiscard]] fixy::Path<src::Sanitized> sanitized(const std::string& raw) {
-    auto laundered = fixy::sanitize::path_traversal::sanitize_path_no_dotdot(
-        fixy::mint_tagged<src::External>(std::filesystem::path{raw}));
-    if (!laundered) {
-        std::fprintf(stderr, "a test path failed to sanitize: %s\n", raw.c_str());
-        std::abort();
-    }
-    return std::move(*laundered);
+    return fixy::sanitize_path(fixy::mint_tagged<src::External>(fixy::mint_foreign_text(raw.data(), raw.size())))
+        .expect("each test path passes the sanitizer");
 }
 
 using crucible::test::ScratchDir;
@@ -365,26 +360,6 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     return 0;
 }
 
-// The PathText of a sanitized path holds its characters, and a path longer
-// than the capacity gives ENAMETOOLONG.
-[[nodiscard]] int path_text_of_a_sanitized_path() {
-    auto built = fs::path_text_of<64>(sanitized("/tmp/cipher/objects"));
-    if (built.is_err()) {
-        fixy::report(fixy::Sink::Err, "path_text_of failed (errno {})\n", errno_of(built));
-        return 1;
-    }
-    auto const path = std::move(built).expect("the path fits");
-    if (!(path.c_text().view() == foundation::core::TextView{"/tmp/cipher/objects"})) {
-        fixy::report(fixy::Sink::Err, "path_text_of did not keep the characters of the path\n");
-        return 1;
-    }
-    if (errno_of(fs::path_text_of<4>(sanitized("/tmp/cipher"))) != ENAMETOOLONG) {
-        fixy::report(fixy::Sink::Err, "path_text_of of a long path did not give ENAMETOOLONG\n");
-        return 1;
-    }
-    return 0;
-}
-
 }  // namespace
 
 int main() {
@@ -399,6 +374,5 @@ int main() {
     if (const int rc = calls_under_a_directory(scratch); rc != 0) return rc;
     if (const int rc = open_under_a_directory_refuses_a_symbolic_link(); rc != 0) return rc;
     if (const int rc = has_entry_reads_a_full_path(); rc != 0) return rc;
-    if (const int rc = path_text_of_a_sanitized_path(); rc != 0) return rc;
     return 0;
 }

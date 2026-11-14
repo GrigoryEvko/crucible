@@ -42,13 +42,28 @@ inline void run_trace_file(std::span<const std::uint8_t> bytes) {
     constexpr std::size_t kMaxInputBytes = std::size_t{1} << 20;
     if (bytes.size() > kMaxInputBytes) bytes = bytes.first(kMaxInputBytes);
 
-    write_file(scratch_dir() / "input.crtrace", bytes);
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     // The scratch path is absolute and holds no ".." component.
+    ::foundation::os::PathText<::fixy::kPathBytes> input{};
+    if (input.append(::fixy::mint_foreign_text(scratch_dir().c_str(), scratch_dir().native().size())).is_err()
+        || input.append(::fixy::TextView{"/input.crtrace"}).is_err())
+        return;
     auto sanitized_path =
-        ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(scratch_dir() / "input.crtrace"));
-    if (!sanitized_path) return;
-    auto loaded = load_trace(ctx, std::move(*sanitized_path));
+        ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(input.c_text().view()));
+    if (sanitized_path.is_err()) return;
+    const ::fixy::Path<::fixy::tags::source::Sanitized> path =
+        std::move(sanitized_path).expect("the scratch path passes the check");
+    {
+        // The descriptor closes at the end of this block, before the load.
+        const ::fixy::fs::OwnedFd file =
+            ::fixy::fs::mint_file<::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>>(ctx, path).match(
+                [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd {
+                    return std::move(opened).consume();
+                },
+                [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
+        if (!file.is_open() || ::fixy::fs::write_full(ctx, file, as_bytes_view(bytes)).is_err()) return;
+    }
+    auto loaded = load_trace(ctx, path);
     if (loaded.is_err()) return;
     const LoadedTrace trace = std::move(loaded).expect("the load holds a trace after the check of its error");
 

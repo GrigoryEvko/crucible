@@ -369,11 +369,14 @@ int main(int argc, char* argv[]) {
         reports.push_back([path = argv[i]] {
             auto test = ::foundation::effects::testing::test();
             // A path that fails the path check counts as a file that does not open.
-            auto sanitized_path =
-                ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{path}));
+            const std::string_view path_text{path};
+            auto sanitized_path = ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(
+                ::fixy::mint_foreign_text(path_text.data(), path_text.size())));
             auto loaded_trace =
-                sanitized_path ? load_trace(::fixy::TestRunnerCtx{test}, std::move(*sanitized_path))
-                               : ::fixy::Result<LoadedTrace, TraceLoadError>{::fixy::err(TraceLoadError::OpenFailed)};
+                sanitized_path.is_ok()
+                    ? load_trace(::fixy::TestRunnerCtx{test},
+                                 std::move(sanitized_path).expect("the path passed the check"))
+                    : ::fixy::Result<LoadedTrace, TraceLoadError>{::fixy::err(TraceLoadError::OpenFailed)};
             if (loaded_trace.is_err()) {
                 std::fprintf(stderr, "[skip] could not load %s\n", path);
                 return bench::run("build_trace (skipped — load fail)", [] { asm volatile("" ::: "memory"); });

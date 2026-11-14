@@ -355,17 +355,9 @@ template <typename Ctx, typename Atomicity>
 concept CtxFitsCommitAtomic =
     CtxAdmitsFs<Ctx> && KnownAtomicity<Atomicity> && !std::is_same_v<Atomicity, atomicity::None>;
 
-namespace detail {
-
-// The characters of a sanitized path, with a zero after them.  The
-// sanitizer refused each zero byte before the end, so a reader of the
-// kernel reads each character and no other byte.
-[[nodiscard]] inline char const* path_chars_(Path<tags::source::Sanitized> const& path) noexcept {
-    return path.value().c_str();
-}
-
-}  // namespace detail
-
+// Each call below that takes a sanitized path gives the kernel the CText of
+// its PathText, so the kernel reads each character and the zero after them.
+//
 // The Atoms pack precedes Ctx because every explicit template argument
 // fills the pack and Ctx deduces from the first function argument.
 //
@@ -375,13 +367,13 @@ namespace detail {
 template <typename... Atoms, eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, Atoms...>
 [[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
-mint_file(Ctx const&, Path<tags::source::Sanitized> sanitized_path, ::mode_t perms = 0644) noexcept;
+mint_file(Ctx const&, Path<tags::source::Sanitized> const& sanitized_path, ::mode_t perms = 0644) noexcept;
 
 // Declared here and defined below FileDoor for the same reason.
 template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
 [[nodiscard]] ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
-open_dirfd(Ctx const&, Path<tags::source::Sanitized> dir) noexcept;
+open_dirfd(Ctx const&, Path<tags::source::Sanitized> const& dir) noexcept;
 
 // The opens of a path under a directory (THE CALLS UNDER A DIRECTORY below),
 // declared here and defined below FileDoor for the same reason.
@@ -406,12 +398,12 @@ open_dirfd_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noex
 class FileDoor final : ::foundation::NoObject<FileDoor> {
     template <typename... FriendAtoms, eff::IsExecCtx FriendCtx>
         requires CtxFitsFileMint<FriendCtx, FriendAtoms...>
-    friend auto mint_file(FriendCtx const&, Path<tags::source::Sanitized>, ::mode_t) noexcept
+    friend auto mint_file(FriendCtx const&, Path<tags::source::Sanitized> const&, ::mode_t) noexcept
         -> ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
 
     template <eff::IsExecCtx FriendCtx>
         requires ::fixy::fs::CtxAdmitsFs<FriendCtx>
-    friend auto open_dirfd(FriendCtx const&, Path<tags::source::Sanitized>) noexcept
+    friend auto open_dirfd(FriendCtx const&, Path<tags::source::Sanitized> const&) noexcept
         -> ::foundation::core::Result<Dirfd, ::foundation::os::Errno>;
 
     template <typename... FriendAtoms, eff::IsExecCtx FriendCtx>
@@ -480,10 +472,11 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
 template <typename... Atoms, eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, Atoms...>
 [[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
-mint_file(Ctx const&, Path<tags::source::Sanitized> sanitized_path, ::mode_t perms) noexcept {
+mint_file(Ctx const&, Path<tags::source::Sanitized> const& sanitized_path, ::mode_t perms) noexcept {
     using Minted = ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
     constexpr int flags = detail::fold_open_flags<Atoms...>();
-    return FileDoor::open_path_(detail::path_chars_(sanitized_path), flags, perms)
+    return FileDoor::open_path_(::foundation::core::detail::c_text_first_(sanitized_path.value().c_text()), flags,
+                                perms)
         .match([](OwnedFd descriptor) -> Minted { return mint_linear<OwnedFd>(std::move(descriptor)); },
                [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
 }
@@ -521,18 +514,20 @@ sync(Ctx const& ctx, const Dirfd& dir) noexcept {
 template <typename Atomicity, eff::IsExecCtx Ctx>
     requires CtxFitsCommitAtomic<Ctx, Atomicity>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-commit_atomic(Ctx const&, Path<tags::source::Sanitized> tmp, Path<tags::source::Sanitized> target) noexcept {
+commit_atomic(Ctx const&, Path<tags::source::Sanitized> const& tmp,
+              Path<tags::source::Sanitized> const& target) noexcept {
     constexpr int here = ::foundation::os::kAtCurrentDirectory;
-    return std::is_same_v<Atomicity, atomicity::Rename>
-             ? detail::rename_replacing_at_(here, detail::path_chars_(tmp), detail::path_chars_(target))
-             : detail::rename_no_replace_at_(here, detail::path_chars_(tmp), detail::path_chars_(target));
+    char const* const source = ::foundation::core::detail::c_text_first_(tmp.value().c_text());
+    char const* const destination = ::foundation::core::detail::c_text_first_(target.value().c_text());
+    return std::is_same_v<Atomicity, atomicity::Rename> ? detail::rename_replacing_at_(here, source, destination)
+                                                        : detail::rename_no_replace_at_(here, source, destination);
 }
 
 template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
 [[nodiscard]] ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
-open_dirfd(Ctx const&, Path<tags::source::Sanitized> dir) noexcept {
-    return FileDoor::open_directory_(detail::path_chars_(dir));
+open_dirfd(Ctx const&, Path<tags::source::Sanitized> const& dir) noexcept {
+    return FileDoor::open_directory_(::foundation::core::detail::c_text_first_(dir.value().c_text()));
 }
 
 // THE CALLS UNDER A DIRECTORY
@@ -700,25 +695,6 @@ read_whole_at(Ctx const& ctx, Marker allocation, Dirfd const& dir, ::foundation:
             [](::foundation::os::Errno error) -> Read { return ::foundation::core::err(error); });
 }
 
-// The path of a sanitized path as a PathText of at most Capacity
-// characters, with a zero after the last one.  A longer path gives
-// enametoolong.  The sanitizer refused each zero byte, so the append gives
-// no einval.  Complexity: linear in the length of the path.
-template <std::size_t Capacity>
-    requires(Capacity > 0 && Capacity < static_cast<std::size_t>(__PTRDIFF_MAX__))
-[[nodiscard]] ::foundation::core::Result<::foundation::os::PathText<Capacity>, ::foundation::os::Errno>
-path_text_of(Path<tags::source::Sanitized> const& path) noexcept {
-    using Built = ::foundation::core::Result<::foundation::os::PathText<Capacity>, ::foundation::os::Errno>;
-    char const* const first = detail::path_chars_(path);
-    std::size_t size = 0;
-    while (first[size] != '\0')
-        ++size;
-    ::foundation::os::PathText<Capacity> text{};
-    return text.append(::foundation::core::detail::text_over_(first, size))
-        .match([&text](::foundation::core::Unit) -> Built { return text; },
-               [](::foundation::os::Errno error) -> Built { return ::foundation::core::err(error); });
-}
-
 // The durable and atomic_write atoms only declare intent.  The mint
 // opens the file.  The caller still calls sync<Fsync> after writing and
 // then commit_atomic<Rename> to move the result into place.
@@ -727,9 +703,9 @@ template <eff::IsExecCtx Ctx>
                              ::fixy::atom::fs::durable<sync_op::Fsync>,
                              ::fixy::atom::fs::atomic_write<atomicity::Rename>>
 [[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
-mint_durable_truncate_file(Ctx const& ctx, Path<tags::source::Sanitized> path, ::mode_t perms = 0644) noexcept {
+mint_durable_truncate_file(Ctx const& ctx, Path<tags::source::Sanitized> const& path, ::mode_t perms = 0644) noexcept {
     return mint_file<::fixy::atom::fs::mode<open_mode::WriteTruncate>, ::fixy::atom::fs::durable<sync_op::Fsync>,
-                     ::fixy::atom::fs::atomic_write<atomicity::Rename>>(ctx, std::move(path), perms);
+                     ::fixy::atom::fs::atomic_write<atomicity::Rename>>(ctx, path, perms);
 }
 
 // O_DSYNC makes each write(2) return only once the data is on stable
@@ -743,9 +719,9 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, ::fixy::atom::fs::mode<open_mode::WriteAppend>,
                              ::fixy::atom::fs::durable<sync_op::Fdatasync>, ::fixy::atom::fs::with_flag<flag::DataSync>>
 [[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
-mint_durable_append_file(Ctx const& ctx, Path<tags::source::Sanitized> path, ::mode_t perms = 0644) noexcept {
+mint_durable_append_file(Ctx const& ctx, Path<tags::source::Sanitized> const& path, ::mode_t perms = 0644) noexcept {
     return mint_file<::fixy::atom::fs::mode<open_mode::WriteAppend>, ::fixy::atom::fs::durable<sync_op::Fdatasync>,
-                     ::fixy::atom::fs::with_flag<flag::DataSync>>(ctx, std::move(path), perms);
+                     ::fixy::atom::fs::with_flag<flag::DataSync>>(ctx, path, perms);
 }
 
 }  // namespace fixy::fs

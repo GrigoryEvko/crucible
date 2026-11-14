@@ -6,7 +6,8 @@
 #include <fixy/atoms/Os.h>
 #include <fixy/os/Fs.h>
 
-#include <filesystem>
+#include <foundation/os/PathText.h>
+
 #include <utility>
 
 namespace eff = foundation::effects;
@@ -21,9 +22,8 @@ using IoBlockCtx =
 // Admits IO but NOT Block: the row of the cold init context.
 using IoOnlyCtx = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effect::Alloc, eff::Effect::IO>>;
 
-[[maybe_unused]] fixy::Path<src::Sanitized> sanitized(const char* raw) {
-    return *fixy::sanitize::path_traversal::sanitize_path_no_dotdot(
-        fixy::mint_tagged<src::External>(std::filesystem::path{raw}));
+[[maybe_unused]] fixy::Path<src::Sanitized> sanitized(foundation::core::TextView raw) {
+    return fixy::sanitize_path(fixy::mint_tagged<src::External>(raw)).expect("the path is clean");
 }
 }  // namespace
 
@@ -31,6 +31,6 @@ int main() {
     IoBlockCtx ctx{eff::testing::test()};
     [[maybe_unused]] auto r = fs::commit_atomic<fs::atomicity::Rename>(
         ctx, sanitized("/tmp/fixy-neg-fs.tmp"),
-        fixy::mint_tagged<src::External>(std::filesystem::path{"/tmp/fixy-neg-fs"}));
+        fixy::mint_tagged<src::External>(foundation::os::PathText<fixy::kPathBytes>{}));
     return 0;
 }

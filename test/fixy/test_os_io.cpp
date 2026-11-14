@@ -59,13 +59,8 @@ inline constexpr std::size_t kPayloadBytes = 4096;
 // Every path the file surface takes is Path<Sanitized>, and the only way
 // to one is through the sanitizer.
 [[nodiscard]] fixy::Path<src::Sanitized> sanitized(const std::string& raw) {
-    auto laundered = fixy::sanitize::path_traversal::sanitize_path_no_dotdot(
-        fixy::mint_tagged<src::External>(std::filesystem::path{raw}));
-    if (!laundered) {
-        std::fprintf(stderr, "a test path failed to sanitize: %s\n", raw.c_str());
-        std::abort();
-    }
-    return std::move(*laundered);
+    return fixy::sanitize_path(fixy::mint_tagged<src::External>(fixy::mint_foreign_text(raw.data(), raw.size())))
+        .expect("each test path passes the sanitizer");
 }
 
 using crucible::test::ScratchDir;

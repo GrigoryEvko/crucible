@@ -4956,7 +4956,7 @@ fixy_neg_compile_test(neg_os_fs_mint_file_at_empty_atoms
 
 fixy_neg_compile_test(neg_os_fs_mint_file_external_path
   "no matching function for call"
-  "Tagged<std::filesystem::__cxx11::path, fixy::tags::source::External>\\)")
+  "Tagged<foundation::os::PathText<4096>, fixy::tags::source::External>\\)")
 
 fixy_neg_compile_test(neg_os_fs_sync_none
   "no matching function for call"
@@ -4964,7 +4964,7 @@ fixy_neg_compile_test(neg_os_fs_sync_none
 
 fixy_neg_compile_test(neg_os_fs_commit_atomic_external_target
   "no matching function for call"
-  "commit_atomic<fixy::fs::atomicity::Rename>\\(.*Tagged<std::filesystem::__cxx11::path, fixy::tags::source::External>\\)")
+  "commit_atomic<fixy::fs::atomicity::Rename>\\(.*Tagged<foundation::os::PathText<4096>, fixy::tags::source::External>\\)")
 
 # atomicity::None renames nothing, so the commit gate refuses it.
 fixy_neg_compile_test(neg_os_fs_commit_atomic_none
@@ -4977,7 +4977,7 @@ fixy_neg_compile_test(neg_os_fs_durable_append_ctx_lacks_block
 
 fixy_neg_compile_test(neg_os_fs_durable_append_external_path
   "no matching function for call"
-  "mint_durable_append_file\\(.*Tagged<std::filesystem::__cxx11::path, fixy::tags::source::External>\\)")
+  "mint_durable_append_file\\(.*Tagged<foundation::os::PathText<4096>, fixy::tags::source::External>\\)")
 
 fixy_neg_compile_test(neg_os_fs_durable_truncate_ctx_lacks_block
   "no matching function for call"
@@ -4985,7 +4985,7 @@ fixy_neg_compile_test(neg_os_fs_durable_truncate_ctx_lacks_block
 
 fixy_neg_compile_test(neg_os_fs_durable_truncate_external_path
   "no matching function for call"
-  "mint_durable_truncate_file\\(.*Tagged<std::filesystem::__cxx11::path, fixy::tags::source::External>\\)")
+  "mint_durable_truncate_file\\(.*Tagged<foundation::os::PathText<4096>, fixy::tags::source::External>\\)")
 
 # ── The witness rows: one fixture for each row ─────────────────────────
 #

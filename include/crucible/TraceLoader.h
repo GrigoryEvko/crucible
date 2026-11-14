@@ -365,22 +365,22 @@ decode_trace_meta(::fixy::View<std::byte const, sizeof(TensorMeta)> raw) noexcep
 // empty view means that the table is sealed, and the names then stay out.
 template <CtxFitsTraceLoad Ctx>
 [[nodiscard]] inline ::fixy::Result<LoadedTrace, TraceLoadError>
-load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> path,
+load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& path,
             ::fixy::Option<SchemaTable::MutableView> const& schema_table_view, bool should_register_names) {
     using detail::read_record_field_;
 
     // A report names no path, because a report writes no raw text.  Each
     // caller knows the path that it gave.
     using Opened = ::fixy::Result<::fixy::fs::OwnedFd, TraceLoadError>;
-    CRUCIBLE_TRY(trace_file, ::fixy::fs::mint_file<::fixy::fs::read_only>(io, std::move(path))
-                                 .match([](::fixy::Linear<::fixy::fs::OwnedFd> opened) noexcept
-                                            -> Opened { return std::move(opened).consume(); },
-                                        [](::foundation::os::Errno error) noexcept -> Opened {
-                                            ::fixy::report(::fixy::Sink::Err,
-                                                           "load_trace: cannot open the trace file (error {})\n",
-                                                           ::foundation::os::error_number(error));
-                                            return ::fixy::err(TraceLoadError::OpenFailed);
-                                        }));
+    CRUCIBLE_TRY(
+        trace_file,
+        ::fixy::fs::mint_file<::fixy::fs::read_only>(io, path).match(
+            [](::fixy::Linear<::fixy::fs::OwnedFd> opened) noexcept -> Opened { return std::move(opened).consume(); },
+            [](::foundation::os::Errno error) noexcept -> Opened {
+                ::fixy::report(::fixy::Sink::Err, "load_trace: cannot open the trace file (error {})\n",
+                               ::foundation::os::error_number(error));
+                return ::fixy::err(TraceLoadError::OpenFailed);
+            }));
 
     // The size of the file bounds every count in it, so it is read first.
     using Sized = ::fixy::Result<uint64_t, TraceLoadError>;
@@ -550,8 +550,8 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> path,
 // writes there.
 template <CtxFitsTraceLoad Ctx>
 [[nodiscard]] inline ::fixy::Result<LoadedTrace, TraceLoadError>
-load_trace(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> path) {
-    return load_trace_(io, std::move(path), ::fixy::none, false);
+load_trace(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& path) {
+    return load_trace_(io, path, ::fixy::none, false);
 }
 
 // Loads the trace at path, and puts its schema names into the global table.
@@ -560,8 +560,8 @@ load_trace(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> path) {
 // producer claim, which the table asks for before it takes a name.
 template <CtxFitsTraceLoad Ctx>
 [[nodiscard]] inline ::fixy::Result<LoadedTrace, TraceLoadError>
-load_trace(Ctx const& io, VigilFgCtx const& fg, ::fixy::Path<::fixy::tags::source::Sanitized> path) {
-    return load_trace_(io, std::move(path), global_schema_table().mint_mutable_view(fg), true);
+load_trace(Ctx const& io, VigilFgCtx const& fg, ::fixy::Path<::fixy::tags::source::Sanitized> const& path) {
+    return load_trace_(io, path, global_schema_table().mint_mutable_view(fg), true);
 }
 
 }  // namespace crucible

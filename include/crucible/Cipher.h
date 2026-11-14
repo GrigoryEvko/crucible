@@ -52,10 +52,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <expected>
-#include <filesystem>
 #include <optional>
 #include <span>
-#include <string>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -140,7 +138,9 @@ concept LifetimePinnedRegion = ::fixy::is_band_of_v<::fixy::LifetimeLattice, W> 
 
 class CRUCIBLE_OWNER Cipher {
 public:
-    static constexpr std::size_t MAX_ROOT_PATH_BYTES = 4096;
+    // The bound of the root is the bound of a sanitized path, so a root
+    // that the sanitizer passes fits RootPath.
+    static constexpr std::size_t MAX_ROOT_PATH_BYTES = ::fixy::kPathBytes;
 
     // The path of the root, with a zero after its last character.
     using RootPath = ::foundation::os::PathText<MAX_ROOT_PATH_BYTES>;
@@ -190,44 +190,16 @@ public:
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
     [[gnu::cold]] static Cipher open(Ctx const& ctx, ::foundation::effects::Alloc allocation, RootText root_text) {
         Cipher c;
-        if (root_text.value().size() > MAX_ROOT_PATH_BYTES) {
-            return c;
-        }
-
-        // The sanitizer reads a std::filesystem::path, so the path copies
-        // the characters of the text.  Complexity: linear in the length of
-        // the text.
-        std::string root_chars;
-        for (const char character : root_text.value()) {
-            root_chars.push_back(character);
-        }
-        auto sanitized_e = ::fixy::sanitize_path(
-            ::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{std::move(root_chars)}));
-        if (!sanitized_e) {
-            return c;
-        }
-
-        // The sanitizer enforces a wider path cap than this one.  The
-        // narrower cap here is the bound of the path of the root, so both
-        // checks stay.
-        auto root_path = ::fixy::fs::path_text_of<MAX_ROOT_PATH_BYTES>(*sanitized_e);
-        if (root_path.is_err()) {
-            return c;
-        }
-
-        // The current directory anchors the make of a relative root.  "."
-        // holds no "..", so the sanitizer passes it.  A current directory
-        // that does not open leaves the make of a relative root to fail.
-        auto current =
-            ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(std::filesystem::path{"."}));
-        ::fixy::fs::Dirfd here{};
-        if (current) {
-            here = ::fixy::fs::open_dirfd(ctx, std::move(*current))
-                       .match([](::fixy::fs::Dirfd opened) { return opened; },
-                              [](::foundation::os::Errno) { return ::fixy::fs::Dirfd{}; });
-        }
-        c.open_root_(file_ctx_(ctx), allocation, std::move(root_path).expect("the root fits its path"),
-                     std::move(*sanitized_e), here);
+        // The sanitizer refuses an empty root, a root longer than
+        // MAX_ROOT_PATH_BYTES, a zero byte and a ".." part.  A refused root
+        // gives a Cipher that is not open.
+        const ::fixy::Result<::fixy::Path<::fixy::tags::source::Sanitized>, ::fixy::PathTraversalError> root =
+            ::fixy::sanitize_path(root_text);
+        root.match(
+            [&](::fixy::Path<::fixy::tags::source::Sanitized> const& sanitized_root) {
+                c.open_root_(file_ctx_(ctx), allocation, sanitized_root, open_current_directory_(ctx));
+            },
+            [](::fixy::PathTraversalError const&) {});
         return c;
     }
 
@@ -550,12 +522,25 @@ private:
 
     void remember_cached_bytes(ContentHash hash, std::span<const uint8_t> bytes) const;
 
+    // The current directory, which anchors the make of a relative root.  A
+    // current directory that does not open gives a closed Dirfd, and the
+    // make of a relative root then fails.
+    template <typename Ctx>
+    [[nodiscard]] static ::fixy::fs::Dirfd open_current_directory_(Ctx const& ctx) {
+        const ::fixy::Path<::fixy::tags::source::Sanitized> current =
+            ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::TextView{"."}))
+                .expect("the sanitizer passes the current directory");
+        return ::fixy::fs::open_dirfd(ctx, current)
+            .match([](::fixy::fs::Dirfd opened) { return opened; },
+                   [](::foundation::os::Errno) { return ::fixy::fs::Dirfd{}; });
+    }
+
     // Makes the root and its object directory, opens the root, and reads
     // the log and HEAD.  here is the current directory, which anchors the
     // make of a relative root.  A root that does not open as a directory
     // ends the process.
-    void open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation, RootPath root,
-                    ::fixy::Path<::fixy::tags::source::Sanitized> sanitized_root, ::fixy::fs::Dirfd const& here);
+    void open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation,
+                    ::fixy::Path<::fixy::tags::source::Sanitized> const& root, ::fixy::fs::Dirfd const& here);
 
     // Malformed lines are skipped rather than fatal.  A corrupt or
     // truncated log leaves the in-memory state as a proper prefix of what
