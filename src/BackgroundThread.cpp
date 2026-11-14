@@ -503,7 +503,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
         });
     }
 
-    recompute_merkle(&region);
+    recompute_merkle(region);
     const ::fixy::WeakRef<RegionNode> published{region};
     last_published_ = ::fixy::WeakRef<const RegionNode>{region};
 

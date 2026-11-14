@@ -271,7 +271,7 @@ private:
 [[nodiscard]] crucible::RegionNode* committed_region(eff::Test const& test, ::fixy::BumpArena& arena,
                                                      crucible::TraceEntry& op) {
     auto* region = crucible::make_region(test.alloc, arena, arena.array<crucible::TraceEntry>(test.alloc, 1, op));
-    if (region != nullptr) crucible::recompute_merkle(region);
+    if (region != nullptr) crucible::recompute_merkle(*region);
     return region;
 }
 

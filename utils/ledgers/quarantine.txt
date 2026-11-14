@@ -112,7 +112,7 @@ include/crucible/ | c-library-call | 3 | - | -
 include/crucible/ | compiler-builtin | 1 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
 include/crucible/ | raw-new-delete | 1 | - | -
-include/crucible/ | raw-pointer-object | 143 | - | -
+include/crucible/ | raw-pointer-object | 116 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 1 | - | -
 include/crucible/ | std-entity | 21 | - | -
 include/crucible/ | std-object | 9 | - | -
@@ -327,7 +327,7 @@ test/ | inline-asm | 1 | - | -
 test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | raw-function-pointer | 21 | - | -
 test/ | raw-new-delete | 41 | - | -
-test/ | raw-pointer-object | 460 | - | -
+test/ | raw-pointer-object | 457 | - | -
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 87 | - | -

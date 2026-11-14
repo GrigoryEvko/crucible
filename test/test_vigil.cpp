@@ -146,9 +146,9 @@ int main() {
         // Guard evaluation. The region is linear, so there is no guard.
         [](const crucible::Guard&) -> int64_t { return 0; },
         // Region execution.
-        [&region_exec_count, &exec_region_ptr](const crucible::RegionNode* r) {
+        [&region_exec_count, &exec_region_ptr](const crucible::RegionNode& r) {
             region_exec_count++;
-            exec_region_ptr = r;
+            exec_region_ptr = &r;
         });
 
     assert(replayed && "replay() must return true for a linear region");

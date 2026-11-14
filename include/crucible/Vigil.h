@@ -428,7 +428,7 @@ public:
     [[nodiscard]] bool replay(GuardEval&& eval_guard, RegionExec&& exec_region) {
         RegionNode* region = active_region_mut();
         if (!region) return false;
-        return crucible::replay(region, std::forward<GuardEval>(eval_guard), std::forward<RegionExec>(exec_region));
+        return crucible::replay(*region, std::forward<GuardEval>(eval_guard), std::forward<RegionExec>(exec_region));
     }
 
     // Serializes the active region to the store and advances its head.

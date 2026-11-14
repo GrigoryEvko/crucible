@@ -102,7 +102,7 @@ static_assert(!std::is_trivially_copyable_v<crucible::Transaction>);
     crucible::TraceEntry entry{};
     entry.schema_hash = crucible::SchemaHash{0x5000u + step};
     auto* region = crucible::make_region(alloc, arena, arena.array<crucible::TraceEntry>(alloc, 1, entry));
-    crucible::recompute_merkle(region);
+    crucible::recompute_merkle(*region);
     return region;
 }
 
@@ -306,14 +306,14 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
     // A commit requires a non-zero merkle root, so the hash is recomputed
     // first. The production path does the same thing in the same order.
     // Synthesizing a hash instead would take the test off that path.
-    crucible::recompute_merkle(region1);
+    crucible::recompute_merkle(*region1);
     assert(region1->merkle_hash.raw() != 0);
 
     ::foundation::core::FixedArray<crucible::TraceEntry, 1> ops2{};
     ops2.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xBEEF};
     auto* region2 = crucible::make_region(test.alloc, arena, ops2.view());
     assert(region2 != nullptr);
-    crucible::recompute_merkle(region2);
+    crucible::recompute_merkle(*region2);
     assert(region2->merkle_hash.raw() != 0);
 
     assert(log.size(owner) == 0);
@@ -385,7 +385,7 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
         e.schema_hash = crucible::SchemaHash{static_cast<uint64_t>(i)};
         auto* r = crucible::make_region(test.alloc, arena, arena.array<crucible::TraceEntry>(test.alloc, 1, e));
         // Recomputed before the commit, for the reason given above.
-        crucible::recompute_merkle(r);
+        crucible::recompute_merkle(*r);
         assert(log.commit(owner, tx, arena_region(r), r->content_hash, r->merkle_hash));
         (void)log.activate(owner, tx);
     }

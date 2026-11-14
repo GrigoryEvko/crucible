@@ -71,11 +71,11 @@ namespace {
     ops_b.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xB2};
     crucible::RegionNode& region_a = *crucible::make_region(test.alloc, arena, ops_a.view());
     crucible::RegionNode& region_b = *crucible::make_region(test.alloc, arena, ops_b.view());
-    region_a.next = crucible::make_terminal(test.alloc, arena);
-    region_b.next = crucible::make_terminal(test.alloc, arena);
+    region_a.next = crucible::make_link(*crucible::make_terminal(test.alloc, arena));
+    region_b.next = crucible::make_link(*crucible::make_terminal(test.alloc, arena));
     crucible::BranchNode& branch =
         make_two_arm_branch(test.alloc, arena, crucible::make_link(region_a), crucible::make_link(region_b));
-    branch.next = crucible::make_terminal(test.alloc, arena);
+    branch.next = crucible::make_link(*crucible::make_terminal(test.alloc, arena));
 
     // The doors of a region and of a branch give the node itself, and no
     // value for each other kind.
@@ -103,7 +103,7 @@ namespace {
     // The merkle hash of the branch folds the merkle hash of each target in
     // the order of the arms, and then the hash of the continuation.  The
     // format is the same as when the target was a raw pointer.
-    crucible::recompute_merkle(&branch);
+    crucible::recompute_merkle(branch);
     uint64_t expected = crucible::detail::fmix64(branch.guard.hash());
     expected ^= crucible::detail::fmix64(region_a.merkle_hash.raw());
     expected *= 0x9E3779B97F4A7C15ULL;
@@ -143,6 +143,56 @@ namespace {
     for (const crucible::BranchNode::Arm& arm : unresolved.arms) {
         assert(arm.target.is_none());
     }
+
+    // ── The walks along the links ────────────────────────────────────
+    // replay runs the arm of the guard value, and then the continuation.
+    // An unseen value, and an arm with no target, stop the replay.
+    auto replay_with = [&](crucible::TraceNode& first, int64_t guard_value, uint32_t& ran_a, uint32_t& ran_b) {
+        return crucible::replay(
+            first, [guard_value](const crucible::Guard&) noexcept { return guard_value; },
+            [&](crucible::RegionNode& ran) noexcept {
+                if (::fixy::same_object(::fixy::to(ran), ::fixy::to(region_a))) ++ran_a;
+                if (::fixy::same_object(::fixy::to(ran), ::fixy::to(region_b))) ++ran_b;
+            });
+    };
+    uint32_t ran_a = 0;
+    uint32_t ran_b = 0;
+    assert(replay_with(branch, 2, ran_a, ran_b));
+    assert(ran_a == 0 && ran_b == 1);
+    assert(replay_with(branch, 1, ran_a, ran_b));
+    assert(ran_a == 1 && ran_b == 1);
+    assert(!replay_with(branch, 3, ran_a, ran_b));
+    assert(!replay_with(loaded, 2, ran_a, ran_b));
+    assert(ran_a == 1 && ran_b == 1);
+
+    // The count of nodes: the branch, the two arm regions with their
+    // TERMINAL nodes, and the TERMINAL continuation.  An empty link has no
+    // node.
+    assert(crucible::dag_node_count(crucible::make_link(branch)) == 6);
+    assert(crucible::dag_node_count(crucible::TraceLink{}) == 0);
+
+    // collect_regions reads the region of each arm.
+    ::foundation::core::FixedArray<crucible::RegionNode*, 4> collected{};
+    assert(crucible::collect_regions(branch, collected.view()) == 2);
+    assert(crucible::compute_merkle_hash(branch) == branch.merkle_hash);
+
+    // dag_diff agrees on one DAG and on two empty links, and reports an end
+    // of one chain against a node of the other.
+    assert(crucible::dag_diff(crucible::make_link(branch), crucible::make_link(branch)).kind
+           == crucible::DagDiff::Kind::IDENTICAL);
+    assert(crucible::dag_diff(crucible::TraceLink{}, crucible::TraceLink{}).kind == crucible::DagDiff::Kind::IDENTICAL);
+    const crucible::DagDiff ended = crucible::dag_diff(crucible::make_link(region), crucible::TraceLink{});
+    assert(ended.kind == crucible::DagDiff::Kind::STRUCTURE_MISMATCH);
+    assert(crucible::is_link_to(ended.node_a, region));
+    assert(ended.node_b.is_none());
+
+    // find_merge_point gives the link to the first region of the shared
+    // tail, and an empty link when the tails differ.
+    const ::fixy::View<const crucible::TraceEntry> tail_ops = ops_b.view();
+    assert(
+        crucible::is_link_to(crucible::find_merge_point(tail_ops, crucible::make_link(region_b), nullptr), region_b));
+    assert(crucible::find_merge_point(tail_ops, crucible::make_link(region_a), nullptr).is_none());
+    assert(crucible::find_merge_point(tail_ops, crucible::TraceLink{}, nullptr).is_none());
 
     crucible::test::pass("test_merkle_links: all tests passed\n");
     return 0;

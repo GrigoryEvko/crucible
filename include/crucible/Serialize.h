@@ -674,7 +674,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     node.kind = TraceNodeKind::REGION;
     node.merkle_hash = hdr.merkle_hash;
     node.content_hash = hdr.content_hash;
-    node.next = nullptr;
+    node.next = ::fixy::none;
     node.ops = ops;
     node.first_op_schema = first_op_schema;
     node.measured_ms = measured_ms;
@@ -696,7 +696,9 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
 
     // A branch node repurposes the header's content-hash field to hold the
     // merkle hash of the continuation, the suffix the arms merge back into.
-    const MerkleHash cont_hash = branch->next ? branch->next->merkle_hash : MerkleHash{};
+    const MerkleHash cont_hash = branch->next.match(
+        [](::fixy::Ref<TraceNode> const& continuation) noexcept { return continuation->merkle_hash; },
+        []() noexcept { return MerkleHash{}; });
     write_header(w, TraceNodeKind::BRANCH, branch->merkle_hash, ContentHash{cont_hash.raw()});
 
     write_guard(w, branch->guard);
@@ -749,7 +751,7 @@ template <typename Resolve>
     BranchNode* node = &*arena.make<BranchNode>(a);
     node->kind = TraceNodeKind::BRANCH;
     node->merkle_hash = hdr.merkle_hash;
-    node->next = nullptr;  // the caller resolves the continuation separately
+    node->next = ::fixy::none;  // the caller resolves the continuation separately
     node->guard = guard;
     node->arms = arena.array<BranchNode::Arm>(a, num_arms, BranchNode::Arm{});
     for (BranchNode::Arm& arm : node->arms) {

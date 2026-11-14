@@ -201,14 +201,14 @@ struct Built {
     auto* head = crucible::make_region(ctx.alloc, dag_arena, ops.window(0, kSplit).expect("the head is in the ops"));
     auto* tail = crucible::make_region(ctx.alloc, dag_arena,
                                        ops.window(kSplit, kNumOps - kSplit).expect("the tail is in the ops"));
-    head->next = tail;
+    head->next = crucible::make_link(*tail);
 
     ::foundation::core::FixedArray<TensorSlot, kNumSlots> slots{};
     build_slots(slots.view());
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
     head->plan = bt.compute_memory_plan(ctx.alloc, plan_storage, sweep_arena, slots.view());
-    crucible::recompute_merkle(head);
+    crucible::recompute_merkle(*head);
 
     Built out;
     out.head_content_hash = head->content_hash.raw();

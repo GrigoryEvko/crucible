@@ -193,7 +193,7 @@ int main(int argc, char* argv[]) {
             *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, arena, 2, 1, 1, 4);
         auto* region = make_region(test.alloc, dag_arena, ops);
         return bench::run("compute_merkle_hash (RegionNode)", [&] {
-            auto h = compute_merkle_hash(region);
+            auto h = compute_merkle_hash(*region);
             bench::do_not_optimize(h);
         });
     }());

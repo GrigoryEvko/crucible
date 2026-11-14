@@ -234,6 +234,7 @@ crucible_test(test_vigil_record_count)
 crucible_test(test_trace_ring)
 crucible_test(test_merkle_dag)
 crucible_test(test_merkle_links)
+crucible_test(test_merkle_loop)
 crucible_test(test_memory_plan)
 # The DetSafe gate CLAUDE.md §XIII names first.  Labelled so it can be run
 # on its own against a build whose codegen changed — a profile-guided build

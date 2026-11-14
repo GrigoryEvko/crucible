@@ -477,17 +477,16 @@ private:
 // It has no caller today -- this whole function does not -- and a default
 // would hand the first one a wrong-kernel path it never had to think about.
 [[nodiscard]] inline BranchNode* add_branch(::foundation::effects::Alloc a, ::fixy::BumpArena& arena,
-                                            KernelCache& kernel_cache, TraceNode* divergence_point,
+                                            KernelCache& kernel_cache, TraceNode& divergence_point,
                                             ::fixy::View<TraceEntry> new_ops, int64_t old_guard_value,
-                                            int64_t new_guard_value, Guard guard, TraceNode* existing_suffix,
+                                            int64_t new_guard_value, Guard guard, TraceLink existing_suffix,
                                             const NumericalRecipe* recipe) {
-    CRUCIBLE_PRE(divergence_point != nullptr);
     CRUCIBLE_PRE(old_guard_value != new_guard_value);
     CRUCIBLE_PRE(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash));
     CRUCIBLE_PRE(recipe == nullptr || !recipe->hash.is_sentinel());
     auto* new_region = (recipe == nullptr) ? make_region(a, arena, new_ops) : make_region(a, arena, new_ops, recipe);
 
-    TraceNode* merge = find_merge_point(new_ops, existing_suffix, recipe);
+    const TraceLink merge = find_merge_point(new_ops, existing_suffix, recipe);
 
     new_region->next = merge;
 
@@ -507,7 +506,7 @@ private:
     branch->kind = TraceNodeKind::BRANCH;
     branch->guard = guard;
     // Arms go in sorted by value: replay binary-searches them.
-    const BranchNode::Arm old_arm{.value = old_guard_value, .target = make_link(*divergence_point)};
+    const BranchNode::Arm old_arm{.value = old_guard_value, .target = make_link(divergence_point)};
     const BranchNode::Arm new_arm{.value = new_guard_value, .target = make_link(*new_region)};
     const bool is_old_first = old_guard_value <= new_guard_value;
     branch->arms = arena.array<BranchNode::Arm>(a, 2, old_arm);
@@ -517,7 +516,7 @@ private:
     second_arm = is_old_first ? new_arm : old_arm;
     branch->next = merge;
 
-    recompute_merkle(branch);
+    recompute_merkle(*branch);
 
     CRUCIBLE_POST(branch, branch != nullptr);
     CRUCIBLE_POST(branch, branch->kind == TraceNodeKind::BRANCH);

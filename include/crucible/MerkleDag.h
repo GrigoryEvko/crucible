@@ -287,7 +287,8 @@ struct TraceNode {
     // Identity of this node and every descendant.  The field stays a bare
     // MerkleHash because wrapping it would change the layout.
     MerkleHash merkle_hash;
-    TraceNode* next = nullptr;  // continuation, null for TERMINAL
+    // The continuation.  A TERMINAL node has none.
+    TraceLink next{};
 
     // A node that has not been through recompute_merkle carries hash 0, and
     // comparing that against a stored hash reports a spurious mismatch.  This
@@ -321,17 +322,6 @@ struct TraceNode {
         },
         []() noexcept { return false; });
 }
-
-namespace detail {
-
-// The node of a link, or null for an empty link.  A walk that takes a raw
-// node reads a link through it.
-[[nodiscard]] inline TraceNode* node_of_link(TraceLink const& link) noexcept {
-    return link.match([](::fixy::Ref<TraceNode> const& node) noexcept { return &*node; },
-                      []() noexcept -> TraceNode* { return nullptr; });
-}
-
-}  // namespace detail
 
 // Zero is the "never built" hash.  A TERMINAL node legitimately carries
 // MerkleHash{}, but it is a sentinel leaf, never a root: two unbuilt subtrees
@@ -559,13 +549,14 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 
 // Pure is sound despite the pointer chase: the chain reachable through body
 // and the content_hash of each region on it are both fixed at construction.
-[[nodiscard, gnu::pure]] inline ContentHash compute_body_content_hash(TraceNode* body) noexcept {
+[[nodiscard, gnu::pure]] inline ContentHash compute_body_content_hash(TraceNode& body) noexcept {
     uint64_t body_hash_state = 0x9E3779B97F4A7C15ULL;
-    TraceNode* walk = body;
-    while (walk) {
-        if (walk->kind == TraceNodeKind::REGION)
-            body_hash_state = detail::combine_ids(body_hash_state, static_cast<RegionNode*>(walk)->content_hash.raw());
-        walk = walk->next;
+    TraceLink walk = make_link(body);
+    while (walk.is_some()) {
+        const ::fixy::Ref<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
+        for (const ::fixy::Ref<RegionNode>& region : node->as_region())
+            body_hash_state = detail::combine_ids(body_hash_state, region->content_hash.raw());
+        walk = node->next;
     }
     return ContentHash{detail::fmix64(body_hash_state)};
 }
@@ -715,16 +706,14 @@ private:
     return SchemaHash{};
 }
 
-[[nodiscard, gnu::pure]] inline MerkleHash compute_merkle_hash(TraceNode* node) noexcept {
-    if (!node) return MerkleHash{};
-
+[[nodiscard, gnu::pure]] inline MerkleHash compute_merkle_hash(TraceNode& node) noexcept {
     uint64_t merkle_hash_state;
-    switch (node->kind) {
+    switch (node.kind) {
         case TraceNodeKind::REGION:
-            merkle_hash_state = static_cast<RegionNode*>(node)->content_hash.raw();
+            merkle_hash_state = node.as_region().expect("the kind of the node is REGION")->content_hash.raw();
             break;
         case TraceNodeKind::BRANCH: {
-            const ::fixy::Ref<BranchNode> branch = node->as_branch().expect("the kind of the node is BRANCH");
+            const ::fixy::Ref<BranchNode> branch = node.as_branch().expect("the kind of the node is BRANCH");
             merkle_hash_state = detail::fmix64(branch->guard.hash());
             for (const BranchNode::Arm& arm : branch->arms) {
                 merkle_hash_state ^= detail::fmix64(arm.resolved_target().merkle_hash.raw());
@@ -733,7 +722,7 @@ private:
             break;
         }
         case TraceNodeKind::LOOP: {
-            const ::fixy::Ref<LoopNode> loop = node->as_loop().expect("the kind of the node is LOOP");
+            const ::fixy::Ref<LoopNode> loop = node.as_loop().expect("the kind of the node is LOOP");
             // The salts keep a loop from hashing the same as a region with
             // the same content.  Mixing is fmix64 and XOR, which survives a
             // zero feedback or termination component: fmix64 is a permutation
@@ -751,16 +740,17 @@ private:
             ::fixy::unreachable();
     }
 
-    if (node->next) merkle_hash_state = detail::fmix64(merkle_hash_state ^ node->next->merkle_hash.raw());
+    for (const ::fixy::Ref<TraceNode>& continuation : node.next)
+        merkle_hash_state = detail::fmix64(merkle_hash_state ^ continuation->merkle_hash.raw());
 
     return MerkleHash{merkle_hash_state};
 }
 
 // Content hash for one kernel that fuses every arm of a branch.  Pure is
 // sound: the guard and the arms' content hashes are fixed at construction.
-[[nodiscard, gnu::pure]] inline ContentHash branched_content_hash(BranchNode* branch) noexcept {
-    uint64_t branched_hash_state = detail::fmix64(branch->guard.hash());
-    for (const BranchNode::Arm& arm : branch->arms) {
+[[nodiscard, gnu::pure]] inline ContentHash branched_content_hash(BranchNode const& branch) noexcept {
+    uint64_t branched_hash_state = detail::fmix64(branch.guard.hash());
+    for (const BranchNode::Arm& arm : branch.arms) {
         for (const ::fixy::Ref<RegionNode>& region : arm.resolved_target().as_region()) {
             branched_hash_state ^= detail::fmix64(region->content_hash.raw());
             branched_hash_state *= 0x9E3779B97F4A7C15ULL;
@@ -912,47 +902,57 @@ LoopNode* make_loop(::foundation::effects::Alloc, ::fixy::BumpArena&&, Rest&&...
 
 // Children are recomputed first, because a node's hash folds in the hashes of
 // its arms, its body and its continuation.
-inline void recompute_merkle(TraceNode* node) {
-    if (!node) return;
-    if (node->kind == TraceNodeKind::BRANCH) {
-        for (const BranchNode::Arm& arm : node->as_branch().expect("the kind of the node is BRANCH")->arms)
-            recompute_merkle(detail::node_of_link(arm.target));
-    } else if (node->kind == TraceNodeKind::LOOP) {
-        recompute_merkle(detail::node_of_link(node->as_loop().expect("the kind of the node is LOOP")->body));
+inline void recompute_merkle(TraceNode& node) {
+    for (const ::fixy::Ref<BranchNode>& branch : node.as_branch()) {
+        for (const BranchNode::Arm& arm : branch->arms)
+            for (const ::fixy::Ref<TraceNode>& target : arm.target)
+                recompute_merkle(*target);
     }
-    if (node->next) recompute_merkle(node->next);
+    for (const ::fixy::Ref<LoopNode>& loop : node.as_loop()) {
+        for (const ::fixy::Ref<TraceNode>& body : loop->body)
+            recompute_merkle(*body);
+    }
+    for (const ::fixy::Ref<TraceNode>& continuation : node.next)
+        recompute_merkle(*continuation);
 
-    node->merkle_hash = compute_merkle_hash(node);
+    node.merkle_hash = compute_merkle_hash(node);
 }
 
-[[nodiscard]] inline uint32_t collect_regions(TraceNode* node, ::fixy::View<RegionNode*> out, uint32_t count = 0) {
-    while (node && count < out.size()) {
+// Writes the region of each node of the chain that starts at first, and of
+// the arms and the bodies on it, after the first count entries of out.
+// Returns the count of entries, at most the size of out.
+[[nodiscard]] inline uint32_t collect_regions(TraceNode& first, ::fixy::View<RegionNode*> out, uint32_t count = 0) {
+    TraceLink walk = make_link(first);
+    while (walk.is_some() && count < out.size()) {
+        const ::fixy::Ref<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
         switch (node->kind) {
             case TraceNodeKind::REGION:
-                *out.get(count).expect("the count is below the size of out") = static_cast<RegionNode*>(node);
+                *out.get(count).expect("the count is below the size of out") =
+                    &*node->as_region().expect("the kind of the node is REGION");
                 ++count;
                 break;
             case TraceNodeKind::BRANCH: {
                 for (const BranchNode::Arm& arm : node->as_branch().expect("the kind of the node is BRANCH")->arms)
-                    count = collect_regions(detail::node_of_link(arm.target), out, count);
+                    for (const ::fixy::Ref<TraceNode>& target : arm.target)
+                        count = collect_regions(*target, out, count);
                 break;
             }
             case TraceNodeKind::LOOP:
-                count = collect_regions(
-                    detail::node_of_link(node->as_loop().expect("the kind of the node is LOOP")->body), out, count);
+                for (const ::fixy::Ref<TraceNode>& body : node->as_loop().expect("the kind of the node is LOOP")->body)
+                    count = collect_regions(*body, out, count);
                 break;
             case TraceNodeKind::TERMINAL:
                 break;  // not a stop condition here: the walk follows next
             default:
                 ::fixy::unreachable();
         }
-        node = node->next;
+        walk = node->next;
     }
     return count;
 }
 
-// Returns the first node of the shared suffix, or null when the new ops and
-// the existing continuation share no tail.
+// Returns the link to the first node of the shared suffix, or an empty link
+// when the new ops and the existing continuation share no tail.
 //
 // The recipe is required rather than defaulted, and null is how a caller says
 // it selects no numerics. The comparison below is between a hash folded here
@@ -961,31 +961,28 @@ inline void recompute_merkle(TraceNode* node) {
 // would let a caller that has a recipe omit it and get a silent stream of
 // missed merges, every suffix looking distinct because the two sides folded
 // different things.
-[[nodiscard]] inline TraceNode* find_merge_point(::fixy::View<const TraceEntry> new_ops,
-                                                 TraceNode* existing_continuation, const NumericalRecipe* recipe) {
+[[nodiscard]] inline TraceLink find_merge_point(::fixy::View<const TraceEntry> new_ops, TraceLink existing_continuation,
+                                                const NumericalRecipe* recipe) {
     CRUCIBLE_PRE(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash));
     CRUCIBLE_PRE(recipe == nullptr || !recipe->hash.is_sentinel());
     constexpr uint32_t MAX_REGIONS = 1024;
-    ::foundation::core::FixedArray<RegionNode*, MAX_REGIONS> existing_regions{};
-    const ::fixy::View<RegionNode*, MAX_REGIONS> existing_view = existing_regions.view();
-    uint32_t num_existing = 0;
+    // The regions at the start of the continuation, up to the first node of
+    // a different kind, or up to MAX_REGIONS regions.
+    ::fixy::FixedList<::fixy::Ref<RegionNode>, MAX_REGIONS> existing_regions{};
 
-    TraceNode* walk = existing_continuation;
-    while (walk && walk->kind == TraceNodeKind::REGION && num_existing < MAX_REGIONS) {
-        *existing_view.get(num_existing).expect("the count is below MAX_REGIONS") = static_cast<RegionNode*>(walk);
-        ++num_existing;
-        walk = walk->next;
+    TraceLink walk = existing_continuation;
+    while (walk.is_some()) {
+        const ::fixy::Ref<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
+        if (node->kind != TraceNodeKind::REGION) break;
+        if (existing_regions.push(node->as_region().expect("the kind of the node is REGION")).is_err()) break;
+        walk = node->next;
     }
 
-    if (num_existing == 0) return nullptr;
-
-    TraceNode* merge = nullptr;
+    TraceLink merge{};
     uint32_t new_pos = static_cast<uint32_t>(new_ops.size());
-    uint32_t ex_idx = num_existing;
 
-    while (ex_idx > 0 && new_pos > 0) {
-        ex_idx--;
-        RegionNode* region = *existing_view.get(ex_idx).expect("ex_idx is below num_existing");
+    for (const ::fixy::Ref<RegionNode>& region : existing_regions.reverse()) {
+        if (new_pos == 0) break;
         const uint32_t region_ops = region->num_ops();
         if (new_pos < region_ops) break;
 
@@ -993,26 +990,24 @@ inline void recompute_merkle(TraceNode* node) {
             new_ops.window(new_pos - region_ops, region_ops).expect("the tail of the new ops holds the region"),
             recipe);
 
-        if (new_hash == region->content_hash) {
-            merge = region;
-            new_pos -= region_ops;
-        } else {
-            break;
-        }
+        if (new_hash != region->content_hash) break;
+        merge = make_link(*region);
+        new_pos -= region_ops;
     }
 
     return merge;
 }
 
-// GuardEval is int64_t(const Guard&) and RegionExec is void(RegionNode*).
+// GuardEval is int64_t(const Guard&) and RegionExec is void(RegionNode&).
 template <typename GuardEval, typename RegionExec>
-[[nodiscard, gnu::flatten]] inline bool replay(TraceNode* node, GuardEval&& eval_guard, RegionExec&& exec_region) {
-    while (node) {
+[[nodiscard, gnu::flatten]] inline bool replay(TraceNode& first, GuardEval&& eval_guard, RegionExec&& exec_region) {
+    TraceLink walk = make_link(first);
+    while (walk.is_some()) {
+        const ::fixy::Ref<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
         switch (node->kind) {
             case TraceNodeKind::REGION: {
-                auto* region = static_cast<RegionNode*>(node);
-                exec_region(region);
-                node = node->next;
+                exec_region(*node->as_region().expect("the kind of the node is REGION"));
+                walk = node->next;
                 break;
             }
 
@@ -1045,19 +1040,19 @@ template <typename GuardEval, typename RegionExec>
                 // falls back to recording.
                 if (arm.is_none()) return false;
 
-                if (!replay(detail::node_of_link(arm), eval_guard, exec_region)) return false;
+                for (const ::fixy::Ref<TraceNode>& target : arm)
+                    if (!replay(*target, eval_guard, exec_region)) return false;
 
-                node = branch->next;
+                walk = branch->next;
                 break;
             }
 
             case TraceNodeKind::LOOP: {
                 const ::fixy::Ref<LoopNode> loop = node->as_loop().expect("the kind of the node is LOOP");
-                // Armed in release. An empty body does not fault: the
-                // recursive call walks `while (node)` zero times and returns
-                // true, so the loop reports a successful replay of a body
-                // that never ran. A wrong answer is worse than a trap, and
-                // this is a cold path, so the check stays in every build.
+                // Armed in release. An empty body does not fault: the loop
+                // below makes no turn and reports a successful replay of a
+                // body that never ran. A wrong answer is worse than a trap,
+                // and this is a cold path, so the check stays in every build.
                 CRUCIBLE_FATAL_INVARIANT(loop->body.is_some());
                 // repeat_count drives both termination kinds, and epsilon
                 // drives neither.  That is the DetSafe axiom, not an
@@ -1081,9 +1076,10 @@ template <typename GuardEval, typename RegionExec>
                 // because it would skip the body and report success.
                 CRUCIBLE_FATAL_INVARIANT(loop->term_kind != LoopTermKind::UNTIL || loop->repeat_count > 0u);
                 for (uint32_t i = 0; i < loop->repeat_count; i++) {
-                    if (!replay(detail::node_of_link(loop->body), eval_guard, exec_region)) return false;
+                    for (const ::fixy::Ref<TraceNode>& body : loop->body)
+                        if (!replay(*body, eval_guard, exec_region)) return false;
                 }
-                node = node->next;
+                walk = node->next;
                 break;
             }
 
@@ -1098,8 +1094,10 @@ template <typename GuardEval, typename RegionExec>
 }
 
 struct DagDiff {
-    TraceNode* node_a = nullptr;
-    TraceNode* node_b = nullptr;
+    // The two nodes where the walks diverge.  An empty link is the end of a
+    // chain.  The two links are empty when the two DAGs agree.
+    TraceLink node_a{};
+    TraceLink node_b{};
     uint32_t depth = 0;
 
     enum class Kind : uint8_t {
@@ -1115,46 +1113,49 @@ struct DagDiff {
 // Walks two DAGs in lockstep and reports the first divergence.  The walk is
 // iterative along the next-chain, so a long trace cannot overflow the stack.
 // Only arms and loop bodies recurse, and their depth is bounded.
-[[nodiscard]] inline DagDiff dag_diff(TraceNode* a, TraceNode* b, uint32_t depth = 0) {
-    while (a && b) {
+[[nodiscard]] inline DagDiff dag_diff(TraceLink a, TraceLink b, uint32_t depth = 0) {
+    while (a.is_some() && b.is_some()) {
+        const ::fixy::Ref<TraceNode> node_a = TraceLink{a}.expect("the condition of the loop tests the link");
+        const ::fixy::Ref<TraceNode> node_b = TraceLink{b}.expect("the condition of the loop tests the link");
         // Equal hashes mean the whole subtree below is equal.
-        if (a->merkle_hash == b->merkle_hash) return {nullptr, nullptr, depth, DagDiff::Kind::IDENTICAL};
+        if (node_a->merkle_hash == node_b->merkle_hash)
+            return {::fixy::none, ::fixy::none, depth, DagDiff::Kind::IDENTICAL};
 
-        if (a->kind != b->kind) return {a, b, depth, DagDiff::Kind::KIND_MISMATCH};
+        if (node_a->kind != node_b->kind) return {a, b, depth, DagDiff::Kind::KIND_MISMATCH};
 
-        if (a->kind == TraceNodeKind::TERMINAL) return {nullptr, nullptr, depth, DagDiff::Kind::IDENTICAL};
+        if (node_a->kind == TraceNodeKind::TERMINAL)
+            return {::fixy::none, ::fixy::none, depth, DagDiff::Kind::IDENTICAL};
 
-        if (a->kind == TraceNodeKind::REGION) {
-            auto* ra = static_cast<RegionNode*>(a);
-            auto* rb = static_cast<RegionNode*>(b);
+        if (node_a->kind == TraceNodeKind::REGION) {
+            const ::fixy::Ref<RegionNode> ra = node_a->as_region().expect("the kind of the node is REGION");
+            const ::fixy::Ref<RegionNode> rb = node_b->as_region().expect("the two nodes have one kind");
             if (ra->content_hash != rb->content_hash) return {a, b, depth, DagDiff::Kind::CONTENT_MISMATCH};
-            a = a->next;
-            b = b->next;
+            a = node_a->next;
+            b = node_b->next;
             ++depth;
             continue;
         }
 
-        if (a->kind == TraceNodeKind::BRANCH) {
-            const ::fixy::Ref<BranchNode> ba = a->as_branch().expect("the kind of the node is BRANCH");
-            const ::fixy::Ref<BranchNode> bb = b->as_branch().expect("the two nodes have one kind");
+        if (node_a->kind == TraceNodeKind::BRANCH) {
+            const ::fixy::Ref<BranchNode> ba = node_a->as_branch().expect("the kind of the node is BRANCH");
+            const ::fixy::Ref<BranchNode> bb = node_b->as_branch().expect("the two nodes have one kind");
             if (ba->guard.hash() != bb->guard.hash() || ba->arms.size() != bb->arms.size())
                 return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
             for (auto [arm_a, arm_b] :
                  ::fixy::zip(ba->arms, bb->arms).expect("the two branches hold one count of arms")) {
                 if (arm_a->value != arm_b->value) return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
-                DagDiff arm_diff =
-                    dag_diff(detail::node_of_link(arm_a->target), detail::node_of_link(arm_b->target), depth + 1);
+                DagDiff arm_diff = dag_diff(arm_a->target, arm_b->target, depth + 1);
                 if (arm_diff.kind != DagDiff::Kind::IDENTICAL) return arm_diff;
             }
-            a = a->next;
-            b = b->next;
+            a = node_a->next;
+            b = node_b->next;
             ++depth;
             continue;
         }
 
-        if (a->kind == TraceNodeKind::LOOP) {
-            const ::fixy::Ref<LoopNode> la = a->as_loop().expect("the kind of the node is LOOP");
-            const ::fixy::Ref<LoopNode> lb = b->as_loop().expect("the two nodes have one kind");
+        if (node_a->kind == TraceNodeKind::LOOP) {
+            const ::fixy::Ref<LoopNode> la = node_a->as_loop().expect("the kind of the node is LOOP");
+            const ::fixy::Ref<LoopNode> lb = node_b->as_loop().expect("the two nodes have one kind");
             if (la->body_content_hash != lb->body_content_hash || la->term_kind != lb->term_kind
                 || la->repeat_count != lb->repeat_count
                 || ::fixy::bit_cast<uint32_t>(la->epsilon) != ::fixy::bit_cast<uint32_t>(lb->epsilon))
@@ -1162,10 +1163,10 @@ struct DagDiff {
             if (!::fixy::equal(la->feedback_edges, lb->feedback_edges))
                 return {a, b, depth, DagDiff::Kind::LOOP_MISMATCH};
             // The bodies agree on content, so compare their structure.
-            DagDiff body_diff = dag_diff(detail::node_of_link(la->body), detail::node_of_link(lb->body), depth + 1);
+            DagDiff body_diff = dag_diff(la->body, lb->body, depth + 1);
             if (body_diff.kind != DagDiff::Kind::IDENTICAL) return body_diff;
-            a = a->next;
-            b = b->next;
+            a = node_a->next;
+            b = node_b->next;
             ++depth;
             continue;
         }
@@ -1173,24 +1174,27 @@ struct DagDiff {
         return {a, b, depth, DagDiff::Kind::KIND_MISMATCH};
     }
 
-    if (a == b)  // both null: the two chains ended together
-        return {nullptr, nullptr, depth, DagDiff::Kind::IDENTICAL};
+    // Two empty links: the two chains ended together.
+    if (a.is_none() && b.is_none()) return {::fixy::none, ::fixy::none, depth, DagDiff::Kind::IDENTICAL};
     return {a, b, depth, DagDiff::Kind::STRUCTURE_MISMATCH};
 }
 
-[[nodiscard]] inline uint32_t dag_node_count(TraceNode* node) {
+// The count of the nodes of the chain that starts at the link, with the
+// nodes of each arm and each body on it.
+[[nodiscard]] inline uint32_t dag_node_count(TraceLink first) {
     uint32_t count = 0;
-    while (node) {
+    TraceLink walk = first;
+    while (walk.is_some()) {
+        const ::fixy::Ref<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
         ++count;
         switch (node->kind) {
             case TraceNodeKind::BRANCH: {
                 for (const BranchNode::Arm& arm : node->as_branch().expect("the kind of the node is BRANCH")->arms)
-                    count += dag_node_count(detail::node_of_link(arm.target));
+                    count += dag_node_count(arm.target);
                 break;
             }
             case TraceNodeKind::LOOP:
-                count +=
-                    dag_node_count(detail::node_of_link(node->as_loop().expect("the kind of the node is LOOP")->body));
+                count += dag_node_count(node->as_loop().expect("the kind of the node is LOOP")->body);
                 break;
             case TraceNodeKind::REGION:
             case TraceNodeKind::TERMINAL:
@@ -1198,7 +1202,7 @@ struct DagDiff {
             default:
                 ::fixy::unreachable();
         }
-        node = node->next;
+        walk = node->next;
     }
     return count;
 }

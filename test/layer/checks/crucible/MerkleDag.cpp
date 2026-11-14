@@ -25,8 +25,10 @@ static_assert(std::is_nothrow_copy_constructible_v<TraceEntry>, "a TraceEntry co
 static_assert(sizeof(Guard) == 12, "Guard must be 12 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(Guard);
 
+// A node holds the link to its continuation, and a link refuses a byte copy,
+// so a node is not trivially copyable.  An arena ends no node.
 static_assert(sizeof(TraceNode) == 24, "TraceNode must be 24 bytes");
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TraceNode);
+static_assert(std::is_trivially_destructible_v<TraceNode>, "an arena ends no TraceNode");
 
 static_assert(sizeof(RegionNode) == 80, "RegionNode must be 80 bytes — the persisted layout matches this");
 
