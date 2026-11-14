@@ -22,15 +22,27 @@ clock_after(std::array<std::uint64_t, HB::process_count> const& steps) noexcept 
     return clock;
 }
 
+// The lattice axioms and the bottom identity at three witnesses.  The
+// lattice has no top, so no top identity applies.
+template <typename HB>
+[[nodiscard]] consteval bool axioms_below_at(typename HB::element_type a, typename HB::element_type b,
+                                             typename HB::element_type c) noexcept {
+    return verify_lattice_axioms_at<HB>(a, b, c) && verify_bottom_identity<HB>(a) && verify_bottom_identity<HB>(b)
+        && verify_bottom_identity<HB>(c);
+}
+
 using HB4 = HappensBeforeLattice<4>;
 
 static_assert(Lattice<HB4>);
-static_assert(BoundedLattice<HB4>);
 static_assert(BoundedBelowLattice<HB4>);
-static_assert(BoundedAboveLattice<HB4>);
+
+// A clock claims a history, so a top would claim the longest history with
+// no recorded event, and it would win each join.  The lattice has none.
+static_assert(!BoundedAboveLattice<HB4> && !BoundedLattice<HB4> && !HasTop<HB4>);
+static_assert(!HasTop<HappensBeforeLattice<1>>);
 
 // The negative assertions pin what this lattice is not, so that dropping
-// bottom or top silently demotes nothing, and so that no carrier can be
+// the bottom silently demotes nothing, and so that no carrier can be
 // instantiated over it expecting a multiplicative structure it does not have.
 static_assert(!UnboundedLattice<HB4>);
 static_assert(!Semiring<HB4>);
@@ -42,7 +54,9 @@ static_assert(HB4::process_count == 4);
 static_assert(std::three_way_comparable<HB4::element_type, std::partial_ordering>);
 
 inline constexpr HB4::element_type hb4_bot{};
-inline constexpr HB4::element_type hb4_top = HB4::top();
+
+// A clock above each witness below.
+inline constexpr HB4::element_type hb4_high = clock_after<HB4>({3, 3, 3, 3});
 
 // A chain: hb4_a precedes hb4_b precedes hb4_c.
 inline constexpr HB4::element_type hb4_a = clock_after<HB4>({1, 0, 0, 0});
@@ -56,17 +70,17 @@ inline constexpr HB4::element_type hb4_y = clock_after<HB4>({0, 2, 0, 1});
 // The slots of a clock, for pins against a literal.
 using Slots4 = std::array<std::uint64_t, 4>;
 
-static_assert(verify_bounded_lattice_axioms_at<HB4>(hb4_bot, hb4_bot, hb4_bot));
-static_assert(verify_bounded_lattice_axioms_at<HB4>(hb4_bot, hb4_a, hb4_top));
-static_assert(verify_bounded_lattice_axioms_at<HB4>(hb4_a, hb4_b, hb4_c));
-static_assert(verify_bounded_lattice_axioms_at<HB4>(hb4_x, hb4_y, hb4_top));
-static_assert(verify_bounded_lattice_axioms_at<HB4>(hb4_a, hb4_x, hb4_y));
+static_assert(axioms_below_at<HB4>(hb4_bot, hb4_bot, hb4_bot));
+static_assert(axioms_below_at<HB4>(hb4_bot, hb4_a, hb4_high));
+static_assert(axioms_below_at<HB4>(hb4_a, hb4_b, hb4_c));
+static_assert(axioms_below_at<HB4>(hb4_x, hb4_y, hb4_high));
+static_assert(axioms_below_at<HB4>(hb4_a, hb4_x, hb4_y));
 
 // Each slot is a chain, and a product of distributive lattices is
 // distributive, so the pointwise order distributes.
 static_assert(verify_distributive_lattice<HB4>(hb4_a, hb4_b, hb4_c));
 static_assert(verify_distributive_lattice<HB4>(hb4_x, hb4_y, hb4_a));
-static_assert(verify_distributive_lattice<HB4>(hb4_bot, hb4_top, hb4_x));
+static_assert(verify_distributive_lattice<HB4>(hb4_bot, hb4_high, hb4_x));
 static_assert(verify_distributive_lattice<HB4>(hb4_a, hb4_a, hb4_y));
 
 static_assert(HB4::leq(hb4_a, hb4_b));
@@ -87,8 +101,8 @@ static_assert(HB4::leq(hb4_a, hb4_a));
 static_assert(!HB4::happens_before(hb4_a, hb4_a));
 static_assert(!HB4::is_concurrent(hb4_a, hb4_a));
 
-// The axiom rollups above already prove the bottom and top identities, but
-// they prove them algebraically.  These restate the same facts as order
+// The axiom rollups above already prove the bottom identity, but they
+// prove it algebraically.  These restate the same facts as order
 // questions, which is what catches a leq whose arguments got swapped while the
 // identities still hold.
 static_assert(HB4::leq(hb4_bot, hb4_a));
@@ -96,19 +110,17 @@ static_assert(HB4::leq(hb4_bot, hb4_b));
 static_assert(HB4::leq(hb4_bot, hb4_c));
 static_assert(HB4::leq(hb4_bot, hb4_x));
 static_assert(HB4::leq(hb4_bot, hb4_y));
-static_assert(HB4::leq(hb4_bot, hb4_top));
-static_assert(HB4::leq(hb4_a, hb4_top));
-static_assert(HB4::leq(hb4_b, hb4_top));
-static_assert(HB4::leq(hb4_c, hb4_top));
-static_assert(HB4::leq(hb4_x, hb4_top));
-static_assert(HB4::leq(hb4_y, hb4_top));
+static_assert(HB4::leq(hb4_bot, hb4_high));
+static_assert(HB4::leq(hb4_a, hb4_high));
+static_assert(HB4::leq(hb4_b, hb4_high));
+static_assert(HB4::leq(hb4_c, hb4_high));
+static_assert(HB4::leq(hb4_x, hb4_high));
+static_assert(HB4::leq(hb4_y, hb4_high));
 
-// Pinning the two values as well catches a top that returned the zero vector,
-// which the algebraic rollups would still accept.
+// Pinning the two values as well catches a bottom that returned a clock
+// other than the zero vector, which the algebraic rollups would still accept.
 static_assert(hb4_bot.slots() == Slots4{0, 0, 0, 0});
-static_assert(hb4_top.slots()
-              == Slots4{std::numeric_limits<std::uint64_t>::max(), std::numeric_limits<std::uint64_t>::max(),
-                        std::numeric_limits<std::uint64_t>::max(), std::numeric_limits<std::uint64_t>::max()});
+static_assert(hb4_high.slots() == Slots4{3, 3, 3, 3});
 
 // All four results of the comparison must be reachable.
 static_assert((hb4_bot <=> hb4_bot) == std::partial_ordering::equivalent);
@@ -118,8 +130,8 @@ static_assert((hb4_b <=> hb4_a) == std::partial_ordering::greater);
 static_assert((hb4_a <=> hb4_c) == std::partial_ordering::less);
 static_assert((hb4_x <=> hb4_y) == std::partial_ordering::unordered);
 static_assert((hb4_y <=> hb4_x) == std::partial_ordering::unordered);
-static_assert((hb4_bot <=> hb4_top) == std::partial_ordering::less);
-static_assert((hb4_top <=> hb4_bot) == std::partial_ordering::greater);
+static_assert((hb4_bot <=> hb4_high) == std::partial_ordering::less);
+static_assert((hb4_high <=> hb4_bot) == std::partial_ordering::greater);
 
 static_assert(hb4_a < hb4_b);
 static_assert(hb4_a <= hb4_b);
@@ -206,7 +218,7 @@ static_assert(!HB1::is_concurrent(hb1_zero, hb1_one));
 static_assert(!HB1::is_concurrent(hb1_one, hb1_two));
 static_assert(HB1::comparable(hb1_zero, hb1_two));
 
-static_assert(verify_bounded_lattice_axioms_at<HB1>(hb1_zero, hb1_one, hb1_two));
+static_assert(axioms_below_at<HB1>(hb1_zero, hb1_one, hb1_two));
 static_assert(verify_distributive_lattice<HB1>(hb1_zero, hb1_one, hb1_two));
 
 inline constexpr HB1::element_type hb1_zero_after_succ = HB1::successor_at(hb1_zero, 0);

@@ -1,14 +1,37 @@
 // A slot at the largest value cannot advance: the increment would wrap
 // to zero, and the successor would then sit below its own input.  The
 // guard is a CRUCIBLE_PRE in the body of successor_at, so it fires
-// during constant evaluation, where a native pre() clause is skipped.
+// during constant evaluation, where a native pre() clause is skipped.  The
+// clock has no top, so the saturated clock comes from a checked read of an
+// image, as storage can give it.
 
 #include <foundation/algebra/lattices/HappensBefore.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/ImageRead.h>
 
+#include <cstddef>
+
+namespace fe = ::foundation::effects;
 namespace fl = ::foundation::algebra::lattices;
 using HB = fl::HappensBeforeLattice<2>;
 
-constexpr HB::element_type saturated = HB::top();
+// Byte `index` of the axis word, little-endian as an image holds it.
+[[nodiscard]] constexpr std::byte axis_byte(unsigned index) noexcept {
+    return static_cast<std::byte>((HB::image_axis() >> (8u * index)) & 0xFFu);
+}
+
+constexpr std::byte full{0xFF};
+
+[[nodiscard]] constexpr HB::element_type saturated_clock() noexcept {
+    fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO>> const scope{fe::testing::test()};
+    return *fe::mint_from_image<HB>(
+        scope, HB::image_type{axis_byte(0), axis_byte(1), axis_byte(2), axis_byte(3), axis_byte(4), axis_byte(5),
+                              axis_byte(6), axis_byte(7), full,         full,         full,         full,
+                              full,         full,         full,         full,         full,         full,
+                              full,         full,         full,         full,         full,         full});
+}
+
+constexpr HB::element_type saturated = saturated_clock();
 static_assert(HB::successor_at(saturated, 0)[1] == 0);
 
 int main() { return 0; }

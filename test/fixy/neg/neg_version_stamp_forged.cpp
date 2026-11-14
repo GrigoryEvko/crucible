@@ -4,6 +4,7 @@
 #include <fixy/EpochVersioned.h>
 
 int main() {
-    fixy::VersionStamp const stamp{fixy::EpochLattice::top(), fixy::GenerationLattice::top()};
+    fixy::VersionStamp const stamp{fixy::EpochLattice::successor(fixy::EpochLattice::bottom()),
+                                   fixy::GenerationLattice::successor(fixy::GenerationLattice::bottom())};
     return static_cast<int>(stamp.epoch().raw());
 }

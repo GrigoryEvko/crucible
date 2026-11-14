@@ -18,6 +18,30 @@ template <typename L>
     return count;
 }
 
+// The highest witness of an axis: the top of a use axis, and a count far
+// from genesis on a version axis, which has no top.
+template <typename L>
+[[nodiscard]] consteval typename L::element_type high_witness() noexcept {
+    if constexpr (BoundedAboveLattice<L>) {
+        return L::top();
+    } else {
+        return after_steps<L>(2048);
+    }
+}
+
+// The axioms at the bounds that the axis has.  A version axis has a
+// bottom and no top.
+template <typename L>
+[[nodiscard]] consteval bool bounded_axioms_at(typename L::element_type a, typename L::element_type b,
+                                               typename L::element_type c) noexcept {
+    if constexpr (BoundedAboveLattice<L>) {
+        return verify_bounded_lattice_axioms_at<L>(a, b, c);
+    } else {
+        return verify_lattice_axioms_at<L>(a, b, c) && verify_bottom_identity<L>(a) && verify_bottom_identity<L>(b)
+            && verify_bottom_identity<L>(c);
+    }
+}
+
 template <typename L>
 [[nodiscard]] consteval bool laws_hold_for() noexcept {
     // The interior witnesses matter: bottom and top satisfy the
@@ -27,25 +51,38 @@ template <typename L>
     auto const c5 = after_steps<L>(5);
     auto const c8 = after_steps<L>(8);
     auto const c42 = after_steps<L>(42);
-    return verify_bounded_lattice_axioms_at<L>(L::bottom(), after_steps<L>(1024), L::top())
-        && verify_bounded_lattice_axioms_at<L>(L::bottom(), c42, after_steps<L>(99))
-        && verify_bounded_lattice_axioms_at<L>(after_steps<L>(1), c2, after_steps<L>(3))
-        && verify_bounded_lattice_axioms_at<L>(c42, L::top(), L::bottom())
-        && verify_distributive_lattice<L>(L::bottom(), after_steps<L>(1024), L::top())
+    auto const high = high_witness<L>();
+    return bounded_axioms_at<L>(L::bottom(), after_steps<L>(1024), high)
+        && bounded_axioms_at<L>(L::bottom(), c42, after_steps<L>(99))
+        && bounded_axioms_at<L>(after_steps<L>(1), c2, after_steps<L>(3))
+        && bounded_axioms_at<L>(c42, high, L::bottom())
+        && verify_distributive_lattice<L>(L::bottom(), after_steps<L>(1024), high)
         && verify_distributive_lattice<L>(c2, c5, c8) && verify_distributive_lattice<L>(c42, c42, c8)
         && verify_distributive_lattice<L>(c8, c2, c5);
 }
 
+// The pins of the top of a use axis.  A version axis has no top, so it
+// has no such pin.
+template <typename L>
+[[nodiscard]] consteval bool top_pins_hold_for() noexcept {
+    if constexpr (BoundedAboveLattice<L>) {
+        constexpr std::uint64_t max = std::numeric_limits<std::uint64_t>::max();
+        auto const c41 = after_steps<L>(41);
+        return L::top().raw() == max && L::meet(c41, L::top()) == c41 && L::join(L::top(), c41) == L::top()
+            && L::is_at_most(L::top(), typename L::bound_type{max});
+    } else {
+        return true;
+    }
+}
+
 template <typename L>
 [[nodiscard]] consteval bool pins_hold_for() noexcept {
-    constexpr std::uint64_t max = std::numeric_limits<std::uint64_t>::max();
     auto const c3 = after_steps<L>(3);
     auto const c7 = after_steps<L>(7);
     auto const c41 = after_steps<L>(41);
-    return L::bottom().raw() == 0 && L::top().raw() == max && L::leq(L::bottom(), c3) && L::leq(c7, c7)
-        && !L::leq(c7, c3) && L::join(c3, c7).raw() == 7 && L::join(c7, c3).raw() == 7 && L::meet(c3, c7).raw() == 3
-        && L::meet(c7, c3).raw() == 3 && L::join(c41, L::bottom()) == c41 && L::meet(c41, L::top()) == c41
-        && L::join(L::top(), c41) == L::top() && L::meet(L::bottom(), c41) == L::bottom() &&
+    return L::bottom().raw() == 0 && L::leq(L::bottom(), c3) && L::leq(c7, c7) && !L::leq(c7, c3)
+        && L::join(c3, c7).raw() == 7 && L::join(c7, c3).raw() == 7 && L::meet(c3, c7).raw() == 3
+        && L::meet(c7, c3).raw() == 3 && L::join(c41, L::bottom()) == c41 && L::meet(L::bottom(), c41) == L::bottom() &&
            typename L::element_type{} == L::bottom()
         // The successor is one step up and strictly above its input.
         && L::successor(L::bottom()).raw() == 1 && L::leq(c41, L::successor(c41))
@@ -54,7 +91,7 @@ template <typename L>
         // the count itself.
         && L::is_at_least(c7, typename L::bound_type{7}) && !L::is_at_least(c7, typename L::bound_type{8})
         && L::is_at_most(c7, typename L::bound_type{7}) && !L::is_at_most(c7, typename L::bound_type{6})
-        && L::is_at_least(c7, typename L::bound_type{c7}) && L::is_at_most(L::top(), typename L::bound_type{max});
+        && L::is_at_least(c7, typename L::bound_type{c7}) && top_pins_hold_for<L>();
 }
 
 // The image carries the axis and the count, and names the axis first.
@@ -74,7 +111,9 @@ template <typename L>
 [[nodiscard]] consteval bool shape_holds_for() noexcept {
     using E = typename L::element_type;
     using B = typename L::bound_type;
-    return Lattice<L> && BoundedLattice<L> && !UnboundedLattice<L> && !Semiring<L> && sizeof(E) == sizeof(std::uint64_t)
+    constexpr bool is_use_axis = L::claim_orientation == ClaimOrientation::weaker_is_higher;
+    return Lattice<L> && BoundedBelowLattice<L> && BoundedAboveLattice<L> == is_use_axis
+        && !UnboundedLattice<L> && !Semiring<L> && sizeof(E) == sizeof(std::uint64_t)
         && std::is_standard_layout_v<E> && !std::is_same_v<E, std::uint64_t> && !std::is_convertible_v<E, std::uint64_t>
         && !std::is_convertible_v<std::uint64_t, E> && !std::is_constructible_v<E, std::uint64_t>
         && !std::is_constructible_v<E, int> && !std::is_constructible_v<E, B>
@@ -129,6 +168,14 @@ template <typename L>
 concept has_image_door = requires(typename L::element_type count) { L::image_of(count); };
 static_assert(has_image_door<EpochLattice>);
 static_assert(!has_image_door<StrongCounterLattice<templated_axis<1>>>);
+
+// The top exists on a use axis and not on a version axis.  On a version
+// axis a top would be the newest count with no successor step, and it
+// would win each join.
+template <typename L>
+concept has_top = requires { L::top(); };
+static_assert(has_top<PeakBytesLattice> && has_top<BitsBudgetLattice>);
+static_assert(!has_top<EpochLattice> && !has_top<GenerationLattice>);
 
 // The sum exists on a use axis and not on a version axis.
 template <typename L>

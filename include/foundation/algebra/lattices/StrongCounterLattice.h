@@ -5,7 +5,8 @@
 // Four axes are the same lattice under four names: the fleet epoch, the
 // node generation, the peak byte count and the bits budget.  Each is the
 // numeric order on a 64-bit unsigned count, with zero at the bottom, the
-// largest value at the top, the maximum as join and the minimum as meet.
+// maximum as join and the minimum as meet.  A use axis has the largest
+// value at the top, and a version axis has no top.
 // This header states the lattice one time, and
 // the tag parameter keeps the four axes apart: each instantiation has its
 // own nested element type, so an epoch cannot be assigned from a
@@ -18,10 +19,16 @@
 //   - successor(), one step up;
 //   - saturating_sum(), the use of two stages in sequence, on a use axis
 //     only, where a sum of two measured uses is itself a measured use;
-//   - top(), the witness that a bounded lattice must have;
+//   - top(), on a use axis only, the largest use, which is the weakest
+//     claim of that axis;
 //   - mint_from_image() of foundation/effects/ImageRead.h, the checked
 //     read of a count that crossed a wire or came back from storage.  It
 //     calls read_image() here with the key that only it gets.
+//
+// A version axis has no top.  On that axis a higher count is a newer
+// version and a stronger claim, so a top would be the newest version with
+// no successor step, and it would win each join.  The largest count of a
+// version axis comes only from successor() or from a checked read.
 //
 // No door takes an integer.  raw() gives the count back as a plain
 // integer, and that integer builds no count of any axis, so an epoch
@@ -267,7 +274,12 @@ struct StrongCounterLattice {
     using image_type = std::array<std::byte, 16>;
 
     [[nodiscard]] static constexpr element_type bottom() noexcept { return element_type{}; }
-    [[nodiscard]] static constexpr element_type top() noexcept {
+
+    // A use axis only.  The comment at the head of this header gives the
+    // reason that a version axis has no top.
+    [[nodiscard]] static constexpr element_type top() noexcept
+        requires(Tag::claim_orientation == ClaimOrientation::weaker_is_higher)
+    {
         return element_type{std::numeric_limits<std::uint64_t>::max()};
     }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return a.raw() <= b.raw(); }

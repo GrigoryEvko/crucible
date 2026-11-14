@@ -11,8 +11,9 @@
 // A clock claims a history: the count in each slot is the number of events
 // of that process that the clock has seen.  So a clock has the doors of an
 // event history and no other.  bottom() is the empty history, successor_at()
-// is a local event, causal_merge() is a receive, join() and meet() combine
-// two clocks that exist, and top() is the witness a bounded lattice needs.
+// is a local event, causal_merge() is a receive, and join() and meet()
+// combine two clocks that exist.  The lattice has no top.  A top would claim
+// the longest history with no recorded event, and it would win each join.
 // mint_from_image() of foundation/effects/ImageRead.h is the checked read of
 // a clock that crossed a wire, and it needs a context that owns IO.  It
 // calls read_image() here with the key that only it gets.  No door takes an
@@ -145,17 +146,6 @@ struct HappensBeforeLattice {
     using image_type = std::array<std::byte, 8 * (N + 1)>;
 
     [[nodiscard]] static constexpr element_type bottom() noexcept { return element_type{}; }
-
-    // The order over the naturals has no greatest element, so this top is
-    // synthesized rather than real.  A bounded lattice needs some witness, and
-    // a clock that reached the maximum would already have overflowed.
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        element_type result;
-        for (std::size_t i = 0; i < N; ++i) {
-            result.clock_[i] = std::numeric_limits<std::uint64_t>::max();
-        }
-        return result;
-    }
 
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
         for (std::size_t i = 0; i < N; ++i) {

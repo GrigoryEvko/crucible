@@ -84,12 +84,12 @@ typename L::element_type count_at(std::uint64_t count) {
 }
 
 // The one version source and the one budget authority of this program.
-// The source has reached the top of both counters, so it vouches for any
-// version below it.
+// The source has adopted the largest count of both counters, read back as
+// storage gives it, so it vouches for any version below it.
 fixy::VersionSource& version_source() {
     static fixy::VersionSource source = fixy::mint_version_source(InitCtx{fe::testing::init()});
     static bool const reached_the_top = [] {
-        (void)source.adopt(EpochLattice::top(), GenerationLattice::top());
+        (void)source.adopt(count_at<EpochLattice>(kMax), count_at<GenerationLattice>(kMax));
         return true;
     }();
     (void)reached_the_top;

@@ -5,6 +5,7 @@
 #include <fixy/EpochVersioned.h>
 
 int main() {
-    fixy::EpochVersioned<int> const claimed{1, fixy::EpochLattice::top(), fixy::GenerationLattice::top()};
+    fixy::EpochVersioned<int> const claimed{1, fixy::EpochLattice::successor(fixy::EpochLattice::bottom()),
+                                            fixy::GenerationLattice::successor(fixy::GenerationLattice::bottom())};
     return claimed.peek();
 }

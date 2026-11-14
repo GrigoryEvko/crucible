@@ -146,10 +146,15 @@ void exercise_counter(char const* name) {
     E const high = count_at<L>(g_runtime_seed + 10);
     if (!L::leq(low, high) || L::leq(high, low)) fail(name);
     if (!(L::join(low, high) == high) || !(L::meet(low, high) == low)) fail(name);
-    if (!(L::join(low, L::bottom()) == low) || !(L::meet(high, L::top()) == high)) fail(name);
-    if (!L::leq(L::bottom(), low) || !L::leq(high, L::top())) fail(name);
+    if (!(L::join(low, L::bottom()) == low) || !L::leq(L::bottom(), low)) fail(name);
     if ((low <=> high) != std::strong_ordering::less) fail(name);
-    if (L::top().raw() != std::numeric_limits<std::uint64_t>::max()) fail(name);
+    // A use axis has a top, the largest use.  A version axis has none.
+    if constexpr (fa::BoundedAboveLattice<L>) {
+        if (!(L::meet(high, L::top()) == high) || !L::leq(high, L::top())) fail(name);
+        if (L::top().raw() != std::numeric_limits<std::uint64_t>::max()) fail(name);
+    } else {
+        if (L::claim_orientation != fa::ClaimOrientation::stronger_is_higher) fail(name);
+    }
     if (!(L::successor(low) == count_at<L>(g_runtime_seed + 1)) || !L::leq(low, L::successor(low))) fail(name);
     if (!L::is_at_least(high, typename L::bound_type{g_runtime_seed + 10})
         || L::is_at_least(low, typename L::bound_type{high})) {

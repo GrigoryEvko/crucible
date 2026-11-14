@@ -16,7 +16,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iterator>
-#include <limits>
 #include <string_view>
 #include <type_traits>
 
@@ -44,6 +43,12 @@ static_assert(!std::is_default_constructible_v<EV>);
 static_assert(!std::is_constructible_v<fixy::Epoch, std::uint64_t>);
 static_assert(!std::is_constructible_v<fixy::Epoch, fixy::Generation>);
 
+// A version axis has no top, so no call builds its newest count with no
+// successor step.  That count would win each join and each adopt.
+template <typename L>
+concept has_top = requires { L::top(); };
+static_assert(!has_top<EpochLattice> && !has_top<GenerationLattice>);
+
 // A source vouches only for a version it has reached, so a received
 // version above its own is refused.
 [[nodiscard]] inline bool source_refuses_a_version_it_has_not_reached() {
@@ -67,11 +72,8 @@ inline constexpr KnownLimit kLedger[] = {
     {"a second source minted in one Init scope stamps a version that the first source never reached",
      "a stamp names no source, so a gate cannot tell which source vouched for it; only a source identity carried "
      "in every stamp and every versioned value would refuse this, at a word for each value"},
-    {"top() of a count lattice builds the largest count with no successor steps",
-     "a count is a number of steps and not an event, successor() reaches every count a program can wait for, and "
-     "the claim that events happened lives in the VersionSource, which a count alone never answers"},
 };
-static_assert(std::size(kLedger) <= 2, "the ledger only shrinks");
+static_assert(std::size(kLedger) <= 1, "the ledger only shrinks");
 
 // The first ledger entry reproduces: a value stamped by a rogue source
 // claims a version that the real source has not reached.
@@ -98,8 +100,6 @@ int main() {
     };
 
     expect(source_refuses_a_version_it_has_not_reached(), "a source vouched for a version it has not reached");
-    expect(EpochLattice::top().raw() == std::numeric_limits<std::uint64_t>::max(),
-           "stale ledger entry: top() no longer builds the largest count, delete it");
     expect(a_second_source_outruns_the_first(),
            "stale ledger entry: a second source no longer outruns the first, delete it");
 

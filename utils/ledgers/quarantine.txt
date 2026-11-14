@@ -248,7 +248,7 @@ include/foundation/ | replace-pending:<string_view> | 3 | - | -
 include/foundation/algebra/ | base-std-entity | 16 | - | -
 include/foundation/algebra/ | base-std-object | 11 | - | -
 include/foundation/algebra/ | replace-pending:<string_view> | 4 | - | -
-include/foundation/algebra/lattices/ | base-std-entity | 64 | - | -
+include/foundation/algebra/lattices/ | base-std-entity | 63 | - | -
 include/foundation/algebra/lattices/ | base-std-object | 75 | - | -
 include/foundation/algebra/lattices/ | replace-pending:<array> | 4 | - | -
 include/foundation/algebra/lattices/ | replace-pending:<expected> | 2 | - | -
@@ -393,7 +393,7 @@ test/fixy/ | region | 1 | PROBE: the seal test forges each payload view, gate an
 test/fixy/ | region | 1 | PROBE: the test forges stdio::write for a private stream, and IsAtom must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: the test forges the wire word of a keyed step and of a branch of a keyed choice | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: the test plants an atom in a shipped family, and IsAtom must refuse it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
-test/fixy/ | replace-pending:<limits> | 30 | - | -
+test/fixy/ | replace-pending:<limits> | 29 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 15 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
 test/fixy/ | std-entity | 3030 | - | -
@@ -534,7 +534,7 @@ test/foundation/neg/ | region | 6 | PROBE: the fixture plants a declaration in a
 test/foundation/neg/ | region | 1 | PROBE: the fixture plants a tag template of the base with no alias | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/neg/ | region | 1 | PROBE: the probe forges a niche of a Ref to show that Ref gives a niche no friend | -
 test/foundation/neg/ | region | 1 | PROBE: the probe specializes the Ref door to show that it cannot write the pointer | -
-test/foundation/neg/ | std-entity | 75 | - | -
+test/foundation/neg/ | std-entity | 77 | - | -
 test/foundation/neg/ | std-object | 51 | - | -
 test/fuzz/boundary/ | c-array-object | 1 | - | -
 test/fuzz/boundary/ | c-library-call | 25 | - | -
@@ -602,7 +602,7 @@ test/layer/checks/foundation/ | raw-pointer-object | 1 | - | -
 test/layer/checks/foundation/ | std-entity | 2 | - | -
 test/layer/checks/foundation/algebra/ | std-entity | 1 | - | -
 test/layer/checks/foundation/algebra/lattices/ | c-array-object | 1 | - | -
-test/layer/checks/foundation/algebra/lattices/ | replace-pending:<limits> | 28 | - | -
+test/layer/checks/foundation/algebra/lattices/ | replace-pending:<limits> | 24 | - | -
 test/layer/checks/foundation/algebra/lattices/ | std-entity | 41 | - | -
 test/layer/checks/foundation/algebra/lattices/ | std-object | 14 | - | -
 test/layer/checks/foundation/contracts/ | c-array-object | 4 | - | -

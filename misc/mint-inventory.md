@@ -321,7 +321,7 @@ that the axis does not apply to the row.
 | `mint_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_foreground_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | token | · | HS14: 4 |
 | `mint_from_ctx` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
-| `mint_from_image` | `include/foundation/effects/ImageRead.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
+| `mint_from_image` | `include/foundation/effects/ImageRead.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
 
 ## include/foundation/permissions/
 

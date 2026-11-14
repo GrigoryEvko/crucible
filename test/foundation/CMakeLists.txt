@@ -240,8 +240,19 @@ foundation_neg_compile_test(neg_happens_before_successor_overflows
 # The largest count has no successor, because the step would wrap.
 foundation_neg_compile_test(neg_strong_counter_successor_overflows
   "non-constant condition for static assertion"
-  "in .constexpr. expansion of .foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::successor\\("
+  "in .constexpr. expansion of .foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::peak_bytes>::successor\\("
   "foundation/algebra/lattices/StrongCounterLattice\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+# A version axis has no top, so no call names its newest count, either on
+# the axis or as the bottom of its dual.  A vector clock has no top.
+foundation_neg_compile_test(neg_strong_counter_top_of_version
+  "no matching function for call to .foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>::top\\(\\)."
+  "the expression ..Tag::claim_orientation. == foundation::algebra::ClaimOrientation::weaker_is_higher .with Tag = foundation::algebra::lattices::counter_tags::epoch.. evaluated to .false.")
+foundation_neg_compile_test(neg_strong_counter_dual_bottom_of_version
+  "no matching function for call to .foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch> >::bottom\\(\\)."
+  "required for the satisfaction of .BoundedAboveLattice<L>. .with L = foundation::algebra::lattices::StrongCounterLattice<foundation::algebra::lattices::counter_tags::epoch>.")
+foundation_neg_compile_test(neg_happens_before_top
+  ".top. is not a member of .HB. .aka .foundation::algebra::lattices::HappensBeforeLattice<2>.."
+  "neg_happens_before_top\\.cpp:[0-9]+:[0-9]+: error:")
 # A counter that exists cannot be edited in place.
 foundation_neg_compile_test(neg_strong_counter_count_is_private
   "is private within this context"

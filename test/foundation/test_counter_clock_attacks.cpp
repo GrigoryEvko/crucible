@@ -102,11 +102,17 @@ typename HB::element_type clock_at(std::array<std::uint64_t, HB::process_count> 
 
 // ── Counters at the top ─────────────────────────────────────────────
 
+// The largest count of an axis comes from a checked read.  A use axis also
+// names it as its top.  A version axis has no top, because its newest count
+// would then exist with no successor step and win each join.
 template <typename L>
 void attack_counter_top(char const* axis) {
     using E = typename L::element_type;
     std::uint64_t const s = g_seed;
-    E const top = L::top();
+    E const top = count_at<L>(kMax);
+    constexpr bool is_use_axis = L::claim_orientation == fa::ClaimOrientation::weaker_is_higher;
+    expect(fa::BoundedAboveLattice<L> == is_use_axis, axis);
+    if constexpr (fa::BoundedAboveLattice<L>) expect(L::top() == top, axis);
     E const low = count_at<L>(s);
     E const near_top = count_at<L>(kMax - s);
 
@@ -131,9 +137,11 @@ void attack_counter_top(char const* axis) {
     expect(fe::mint_from_image<L>(ctx, L::image_of(L::bottom())) == L::bottom(), axis);
     expect(fe::mint_from_image<L>(ctx, L::image_of(near_top)) == near_top, axis);
 
-    // The dual turns the extremes over and keeps every element.
+    // The dual turns the extremes over and keeps every element.  The dual of
+    // a version axis has no bottom, because the axis has no top.
     using D = fl::DualLattice<L>;
-    expect(D::bottom() == top && D::top() == L::bottom(), axis);
+    expect(fa::BoundedBelowLattice<D> == is_use_axis && D::top() == L::bottom(), axis);
+    if constexpr (fa::BoundedBelowLattice<D>) expect(D::bottom() == top, axis);
     expect(D::join(low, top) == low && D::meet(low, top) == top, axis);
     expect(D::leq(top, low) && !D::leq(low, top), axis);
 }
@@ -236,10 +244,12 @@ void attack_clock_single_slot() {
             expect(HB::happens_before(a, b) == (s * i < s * j), "one slot orders by the count");
         }
     }
+    // The clock has no top, and the largest clock comes from a checked read.
+    HB::element_type const largest = clock_at<HB>({kMax});
     HB::element_type const near_top = clock_at<HB>({kMax - 1});
-    expect(HB::successor_at(near_top, 0) == HB::top(), "one step below the top reaches the top");
-    expect(HB::causal_merge(clock_at<HB>({3}), near_top, 0) == HB::top(),
-           "a merge that lands on the top is still a successor of both inputs");
+    expect(HB::successor_at(near_top, 0) == largest, "one step below the largest clock reaches it");
+    expect(HB::causal_merge(clock_at<HB>({3}), near_top, 0) == largest,
+           "a merge that lands on the largest clock is still a successor of both inputs");
 }
 
 // A clock carries its slots through an image, and an image of one
@@ -288,8 +298,11 @@ void attack_clock_equal_and_concurrent() {
     expect(HB::leq(p, everything) && HB::leq(q, everything) && HB::leq(r, everything), "the join is an upper bound");
     expect(HB::meet(HB::meet(p, q), r) == HB::bottom(), "the meet of an antichain of units is the bottom");
 
-    // The top is absorbing and follows everything below it.
-    expect(HB::join(HB::top(), a) == HB::top() && HB::happens_before(a, HB::top()), "the top absorbs and follows");
+    // The largest clock that a read gives absorbs and follows everything
+    // below it.  No door builds it with no read.
+    HB::element_type const largest = clock_at<HB>({kMax, kMax, kMax});
+    expect(HB::join(largest, a) == largest && HB::happens_before(a, largest), "the largest clock absorbs and follows");
+    expect(!fa::HasTop<HB>, "a clock has no top");
     expect(HB::join(HB::bottom(), a) == a && HB::happens_before(HB::bottom(), a), "the bottom is the identity");
 }
 
