@@ -229,10 +229,13 @@ public:
         // Copies the record at index and leaves the tail where it is.  The
         // index must name a record that the log holds, from the tail up to
         // the head.  A record before the tail is free, and the producer can
-        // write a new record into its slot.
+        // write a new record into its slot.  The test of the live window
+        // reads two loads, which an assumption cannot hold, so it is a fatal
+        // invariant and checks under each contract semantic.
         [[nodiscard]] value_type copy_at(::crucible::MetaIndex index) const {
             CRUCIBLE_PRE(index.is_valid());
-            CRUCIBLE_PRE(index.raw() >= ch_->log_.tail.peek_relaxed() && index.raw() < ch_->log_.head.get());
+            CRUCIBLE_FATAL_INVARIANT(index.raw() >= ch_->log_.tail.peek_relaxed()
+                                     && index.raw() < ch_->log_.head.get());
             return ch_->log_.copy_record(index.raw());
         }
 

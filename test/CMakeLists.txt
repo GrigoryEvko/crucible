@@ -311,6 +311,10 @@ crucible_test(test_crucible_context)
 crucible_test(test_crucible_context_migration)
 crucible_test(test_crucible_context_migration_ignore test_crucible_context_migration.cpp)
 crucible_contract_ignore_target(test_crucible_context_migration_ignore)
+# Lazy::get and the denominator bound of FractionalLattice refuse a violation
+# under the ignore semantic.
+crucible_test(test_fatal_invariants_under_ignore)
+crucible_contract_ignore_target(test_fatal_invariants_under_ignore)
 # Each group of tests is a source file of its own, so that no translation
 # unit compiles all of them.
 crucible_test(test_vigil_dispatch test_vigil_dispatch.cpp test_vigil_dispatch_threads.cpp
@@ -662,8 +666,13 @@ set_property(TEST
 
 # MetaLogSession.h — the typed-session facade over the production MetaLog
 # TensorMeta side channel.  Covers the permissioned endpoints, a session
-# round trip, and the handle that a session gives back at End.
+# round trip, and the handle that a session gives back at End.  The second
+# target builds the file with the ignore semantic, where each attack must
+# still end the process: a copy outside the live window of the log is a
+# fatal invariant, and no assumption.
 crucible_test(test_metalog_session)
+crucible_test(test_metalog_session_ignore test_metalog_session.cpp)
+crucible_contract_ignore_target(test_metalog_session_ignore)
 
 # SingletonInitGraph.h: the registry of runtime singletons and the gate
 # that refuses a cycle in their lazy-initialization graph.

@@ -5,7 +5,6 @@
 
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
-#include <foundation/contracts/Pre.h>
 
 #include <array>
 #include <atomic>
@@ -107,13 +106,16 @@ public:
         return *storage_ptr_();
     }
 
+    // A read before the build of the value reads bytes that hold no T.  The
+    // test reads a load of the gate, which an assumption cannot hold, so it
+    // is a fatal invariant and checks under each contract semantic.
     [[nodiscard]] T& get() & {
-        CRUCIBLE_PRE(initialized());
+        CRUCIBLE_FATAL_INVARIANT(initialized());
         return *storage_ptr_();
     }
 
     [[nodiscard]] const T& get() const& {
-        CRUCIBLE_PRE(initialized());
+        CRUCIBLE_FATAL_INVARIANT(initialized());
         return *storage_ptr_();
     }
 

@@ -15,8 +15,11 @@
 // the sixty-second, as does a product of denominators.  The numerator sum of
 // an accepted add is at most the product of the denominators.  add and mul
 // still reduce in the wide type before they narrow.  A result whose reduced
-// denominator is above the bound is outside the carrier, and the
-// postcondition of the operation refuses it.
+// denominator is above the bound is outside the carrier, and the operation
+// refuses it with a fatal invariant.  The limit depends on the data, a share
+// of a share many times, and not on an error of the caller.  So the refusal
+// checks under each contract semantic, and the ignore semantic does not make
+// it an assumption.
 //
 // The second is that the comparisons widen unconditionally.  A caller that
 // builds a value outside the bound still gets a mathematically correct answer
@@ -27,7 +30,6 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/DualLattice.h>
-#include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 
 #include <compare>
@@ -141,7 +143,7 @@ struct FractionalLattice {
 
     // Combines two shares.  A sum above one has no share, so add refuses it.
     // The reduction happens in the wide type, before narrowing, for the reason
-    // given at simplify_wide.  The postcondition refuses a sum whose reduced
+    // given at simplify_wide.  The fatal invariant refuses a sum whose reduced
     // denominator is above the bound, such as 1/(2^31 - 1) + 1/2^31.
     [[nodiscard]] static constexpr element_type add(element_type a, element_type b) noexcept {
         CRUCIBLE_PRE(a.is_well_formed() && b.is_well_formed());
@@ -150,13 +152,13 @@ struct FractionalLattice {
         const W num128 = static_cast<W>(a.num) * b.den + static_cast<W>(b.num) * a.den;
         const W den128 = static_cast<W>(a.den) * b.den;
         const Rational sum = simplify_wide(num128, den128);
-        CRUCIBLE_POST(sum, sum.is_well_formed());
+        CRUCIBLE_FATAL_INVARIANT(sum.is_well_formed());
         return sum;
     }
 
     // Splits a share by a share.  Multiplying two bounded numerators, and two
     // bounded denominators, stays inside the narrow type, so this one narrows
-    // before reducing.  The postcondition refuses a product whose reduced
+    // before reducing.  The fatal invariant refuses a product whose reduced
     // denominator is above the bound, such as 1/2^31 * 1/2^31.
     [[nodiscard]] static constexpr element_type mul(element_type a, element_type b) noexcept {
         CRUCIBLE_PRE(a.is_well_formed() && b.is_well_formed());
@@ -167,7 +169,7 @@ struct FractionalLattice {
             static_cast<std::int64_t>(num128),
             static_cast<std::int64_t>(den128),
         });
-        CRUCIBLE_POST(product, product.is_well_formed());
+        CRUCIBLE_FATAL_INVARIANT(product.is_well_formed());
         return product;
     }
 
