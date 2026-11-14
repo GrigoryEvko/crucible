@@ -15,7 +15,7 @@
 
 int main() {
     ::fixy::BumpArena arena{1024};
-    std::span<const std::uint8_t> bytes{};
+    ::fixy::View<const std::byte> bytes{};
 
     // MUST fail: deserialize_region returns std::optional<LoadedRegionNode>.
     crucible::RegionNode* raw =

@@ -120,9 +120,10 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
                     sizeof(crucible::TensorMeta));
     }
     assert(crucible::raw_data_ptr(recorded[0][0]) == parameter_ptr());
-    std::vector<uint8_t> serialized_before(std::size_t{1} << 16);
-    const std::size_t bytes_before =
-        crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{serialized_before});
+    ::fixy::HeapArray<std::byte> serialized_before =
+        ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, size_t{1} << 16, std::byte{0});
+    const size_t bytes_before =
+        crucible::serialize_region(crucible::SerializedRegion{*region}, serialized_before.view());
     assert(bytes_before > 0);
 
     fill_released_slots(vigil.meta_log(fg));
@@ -140,15 +141,17 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
 
     // The store writes the same bytes as before the overwrite, and a load of
     // them folds to the content hash of the region.
-    std::vector<uint8_t> serialized_after(std::size_t{1} << 16);
-    const std::size_t bytes_after =
-        crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{serialized_after});
+    ::fixy::HeapArray<std::byte> serialized_after =
+        ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, size_t{1} << 16, std::byte{0});
+    const size_t bytes_after = crucible::serialize_region(crucible::SerializedRegion{*region}, serialized_after.view());
     assert(bytes_after == bytes_before);
-    assert(std::memcmp(serialized_after.data(), serialized_before.data(), bytes_before) == 0);
+    const ::fixy::View<const std::byte> image_after =
+        serialized_after.view().window(0, bytes_after).expect("the writer writes inside its image");
+    assert(::fixy::equal(
+        image_after, serialized_before.view().window(0, bytes_before).expect("the writer writes inside its image")));
     ::fixy::BumpArena load_arena{std::size_t{1} << 16};
     const auto loaded =
-        crucible::deserialize_region(::foundation::effects::testing::test().alloc,
-                                     std::span<const uint8_t>{serialized_after.data(), bytes_after}, load_arena);
+        crucible::deserialize_region(::foundation::effects::testing::test().alloc, image_after, load_arena);
     assert(loaded.has_value());
 
     // The activation registers the data pointer of the parameter, which it

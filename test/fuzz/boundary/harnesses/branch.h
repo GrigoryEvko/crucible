@@ -9,6 +9,8 @@
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
+#include <foundation/Quarantine.h>
+#include <foundation/core/Region.h>
 
 #include <array>
 #include <vector>
@@ -26,9 +28,13 @@ namespace crucible::fuzz::boundary {
     branch->arms = arena.array<BranchNode::Arm>(alloc, arms, BranchNode::Arm{});
     for (std::uint32_t i = 0; i < arms; ++i)
         *branch->arms.get(i).expect("i is below the count of arms") = BranchNode::Arm{.value = values[i]};
-    std::vector<std::uint8_t> image(4096);
-    image.resize(serialize_branch(branch, std::span<std::uint8_t>{image}));
-    return image;
+    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(alloc, 4096, std::byte{0});
+    const size_t written = serialize_branch(SerializedBranch{*branch}, image.view());
+    std::vector<std::uint8_t> seed(written);
+    for (size_t index = 0; index < written; ++index) {
+        seed[index] = static_cast<std::uint8_t>(*image.get(index).expect("the writer writes inside its image"));
+    }
+    return seed;
 }
 
 // The guard kind is the first byte after the 32-byte header.
@@ -56,15 +62,22 @@ inline void run_branch(std::span<const std::uint8_t> bytes) {
 
     ::fixy::BumpArena arena{};
     const auto alloc = test_alloc();
-    BranchNode* branch = deserialize_branch(alloc, bytes, arena, nullptr);
+    // The input lives for the call of the harness, so its View is valid
+    // here.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the fuzzer gives its input as a pointer to raw bytes and a count")
+    const ::fixy::View<const std::byte> input =
+        ::foundation::core::byte_view(::fixy::mint_foreign_view(bytes.data(), bytes.size()));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    BranchNode* branch = deserialize_branch(alloc, input, arena);
     if (branch == nullptr) return;
     CRUCIBLE_FUZZ_CLAIM("branch", branch->num_arms() <= CDAG_MAX_BRANCH_ARMS);
     CRUCIBLE_FUZZ_CLAIM("branch", branch->are_arms_sorted_by_value());
 
-    std::vector<std::uint8_t> image(bytes.size() + 256);
-    const std::size_t written = serialize_branch(branch, std::span<std::uint8_t>{image});
+    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(alloc, input.size() + 256, std::byte{0});
+    const size_t written = serialize_branch(SerializedBranch{*branch}, image.view());
     CRUCIBLE_FUZZ_CLAIM("branch", written > 0);
-    BranchNode* again = deserialize_branch(alloc, std::span<const std::uint8_t>{image.data(), written}, arena, nullptr);
+    BranchNode* again =
+        deserialize_branch(alloc, image.view().window(0, written).expect("the writer writes inside its image"), arena);
     CRUCIBLE_FUZZ_CLAIM("branch", again != nullptr);
     CRUCIBLE_FUZZ_CLAIM("branch", again->num_arms() == branch->num_arms());
     CRUCIBLE_FUZZ_CLAIM("branch", again->merkle_hash == branch->merkle_hash);

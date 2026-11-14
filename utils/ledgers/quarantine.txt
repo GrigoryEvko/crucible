@@ -99,8 +99,8 @@ bench/ | raw-new-delete | 2 | - | -
 bench/ | raw-pointer-object | 192 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
-bench/ | std-entity | 844 | - | -
-bench/ | std-object | 241 | - | -
+bench/ | std-entity | 840 | - | -
+bench/ | std-object | 240 | - | -
 examples/fn/ | c-array-object | 9 | - | -
 examples/fn/ | c-library-call | 12 | - | -
 examples/fn/ | raw-pointer-object | 7 | - | -
@@ -108,15 +108,15 @@ examples/fn/ | replace-pending:std::bit_cast | 2 | - | -
 examples/fn/ | std-entity | 10 | - | -
 examples/fn/ | std-object | 3 | - | -
 include/crucible/ | c-array-object | 41 | - | -
-include/crucible/ | c-library-call | 28 | - | -
+include/crucible/ | c-library-call | 27 | - | -
 include/crucible/ | compiler-builtin | 2 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
 include/crucible/ | raw-new-delete | 1 | - | -
-include/crucible/ | raw-pointer-object | 396 | - | -
+include/crucible/ | raw-pointer-object | 393 | - | -
 include/crucible/ | replace-pending:<limits> | 5 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 14 | - | -
-include/crucible/ | std-entity | 236 | - | -
-include/crucible/ | std-object | 43 | - | -
+include/crucible/ | std-entity | 230 | - | -
+include/crucible/ | std-object | 36 | - | -
 include/crucible/cntp/ | c-library-call | 9 | - | -
 include/crucible/cntp/ | compiler-builtin | 2 | - | -
 include/crucible/cntp/ | std-object | 1 | - | -
@@ -298,8 +298,8 @@ include/foundation/reflect/ | replace-pending:<tuple> | 1 | - | -
 include/foundation/reflect/ | replace-pending:<vector> | 4 | - | -
 src/ | raw-new-delete | 3 | - | -
 src/ | raw-pointer-object | 25 | - | -
-src/ | std-entity | 99 | - | -
-src/ | std-object | 23 | - | -
+src/ | std-entity | 75 | - | -
+src/ | std-object | 17 | - | -
 src/fixy/os/ | base-std-entity | 153 | - | -
 src/fixy/os/ | base-std-object | 63 | - | -
 src/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
@@ -318,8 +318,8 @@ src/perf/ | compiler-builtin | 1 | - | -
 src/perf/ | foreign-symbol | 14 | - | -
 src/perf/ | raw-pointer-object | 3 | - | -
 src/perf/ | replace-pending:std::bit_cast | 2 | - | -
-test/ | c-array-object | 222 | - | -
-test/ | c-library-call | 891 | - | -
+test/ | c-array-object | 211 | - | -
+test/ | c-library-call | 881 | - | -
 test/ | c-library-object | 15 | - | -
 test/ | compiler-builtin | 1 | - | -
 test/ | door-header | 20 | - | -
@@ -330,8 +330,8 @@ test/ | raw-new-delete | 41 | - | -
 test/ | raw-pointer-object | 535 | - | -
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 93 | - | -
-test/ | std-entity | 1636 | - | -
-test/ | std-object | 576 | - | -
+test/ | std-entity | 1604 | - | -
+test/ | std-object | 569 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
 test/cipher_neg/ | raw-pointer-object | 2 | - | -
 test/cipher_neg/ | std-entity | 6 | - | -
@@ -348,8 +348,7 @@ test/ct/ | raw-pointer-object | 5 | - | -
 test/ct/ | std-entity | 20 | - | -
 test/ct/ | std-object | 13 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
-test/dag_neg/ | std-entity | 1 | - | -
-test/dag_neg/ | std-object | 3 | - | -
+test/dag_neg/ | std-object | 1 | - | -
 test/fixy/ | c-array-object | 100 | - | -
 test/fixy/ | c-library-call | 1469 | - | -
 test/fixy/ | c-library-object | 9 | - | -
@@ -547,21 +546,21 @@ test/fuzz/boundary/ | std-object | 49 | - | -
 test/fuzz/boundary/harnesses/ | c-array-object | 6 | - | -
 test/fuzz/boundary/harnesses/ | c-library-call | 3 | - | -
 test/fuzz/boundary/harnesses/ | compiler-builtin | 1 | - | -
-test/fuzz/boundary/harnesses/ | opted-out | 9 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
+test/fuzz/boundary/harnesses/ | opted-out | 13 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
 test/fuzz/boundary/harnesses/ | opted-out | 6 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
 test/fuzz/boundary/harnesses/ | raw-pointer-object | 15 | - | -
-test/fuzz/boundary/harnesses/ | region | 3 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
+test/fuzz/boundary/harnesses/ | region | 5 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
 test/fuzz/boundary/harnesses/ | region | 2 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
-test/fuzz/boundary/harnesses/ | std-entity | 165 | - | -
-test/fuzz/boundary/harnesses/ | std-object | 87 | - | -
+test/fuzz/boundary/harnesses/ | std-entity | 157 | - | -
+test/fuzz/boundary/harnesses/ | std-object | 85 | - | -
 test/fuzz/property/ | c-array-object | 20 | - | -
 test/fuzz/property/ | c-library-call | 48 | - | -
 test/fuzz/property/ | compiler-builtin | 4 | - | -
 test/fuzz/property/ | raw-function-pointer | 2 | - | -
 test/fuzz/property/ | raw-pointer-object | 59 | - | -
 test/fuzz/property/ | replace-pending:<limits> | 36 | - | -
-test/fuzz/property/ | std-entity | 196 | - | -
-test/fuzz/property/ | std-object | 53 | - | -
+test/fuzz/property/ | std-entity | 192 | - | -
+test/fuzz/property/ | std-object | 52 | - | -
 test/graph_neg/ | raw-pointer-object | 6 | - | -
 test/kernel_neg/ | raw-pointer-object | 1 | - | -
 test/kernel_neg/ | replace-pending:<limits> | 1 | - | -

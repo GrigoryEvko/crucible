@@ -3,19 +3,17 @@
 #include "test_assert.h"
 #include <bit>
 #include <cinttypes>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
-#include <vector>
 #include <memory>
-#include <span>
 
 // A drift in this hash means the wire format changed, which requires a
 // CDAG_VERSION bump.
-static uint64_t fnv1a_bytes(std::span<const uint8_t> bytes) {
+static uint64_t fnv1a_bytes(::fixy::View<const std::byte> bytes) {
     uint64_t h = 0xcbf29ce484222325ULL;  // FNV offset basis
-    for (uint8_t b : bytes) {
-        h ^= b;
+    for (const std::byte byte : bytes) {
+        h ^= static_cast<uint8_t>(byte);
         h *= 0x100000001b3ULL;  // FNV prime
     }
     return h;
@@ -88,12 +86,13 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     const crucible::MerkleHash original_merkle_hash = region->merkle_hash;
     assert(static_cast<bool>(original_content_hash));
 
-    uint8_t buf[65536];
-    const size_t n = crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{buf});
+    ::fixy::HeapArray<std::byte> buf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
+    const size_t n = crucible::serialize_region(crucible::SerializedRegion{*region}, buf.view());
     assert(n > 0 && "serialize_region returned 0 — buffer too small or bad region");
+    const ::fixy::View<const std::byte> wire = buf.view().window(0, n).expect("the writer writes inside its image");
 
     ::fixy::BumpArena arena2{1 << 16};
-    auto loaded_region = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{buf, n}, arena2);
+    auto loaded_region = crucible::deserialize_region(test.alloc, wire, arena2);
     assert(loaded_region.has_value() && "deserialize_region returned no region");
     crucible::RegionNode* loaded = loaded_region->value();
 
@@ -162,18 +161,15 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     // structural round-trip above cannot see.  Each call writes a
     // separately poisoned buffer, so neither can bias the other.
     {
-        uint8_t buf_a[65536];
-        uint8_t buf_b[65536];
-        std::memset(buf_a, 0xAA, sizeof(buf_a));
-        std::memset(buf_b, 0xBB, sizeof(buf_b));
+        ::fixy::HeapArray<std::byte> buf_a = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0xAA});
+        ::fixy::HeapArray<std::byte> buf_b = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0xBB});
 
-        const size_t na =
-            crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{buf_a});
-        const size_t nb =
-            crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{buf_b});
+        const size_t na = crucible::serialize_region(crucible::SerializedRegion{*region}, buf_a.view());
+        const size_t nb = crucible::serialize_region(crucible::SerializedRegion{*region}, buf_b.view());
         assert(na == nb && "serialize_region byte count must be deterministic");
         assert(na > 0);
-        assert(std::memcmp(buf_a, buf_b, na) == 0
+        assert(::fixy::equal(buf_a.view().window(0, na).expect("the writer writes inside its image"),
+                             buf_b.view().window(0, nb).expect("the writer writes inside its image"))
                && "serialize_region bytes must be deterministic — uninit-memory leak?");
     }
 
@@ -190,7 +186,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
                       "CDAG_VERSION bump detected — update wire-byte golden below "
                       "after confirming the new bytes hash to the expected value.");
 
-        const uint64_t wire_hash = fnv1a_bytes(std::span<const uint8_t>{buf, n});
+        const uint64_t wire_hash = fnv1a_bytes(wire);
 
         // CDAG_VERSION 11 writes the storage size of each meta in 8 bytes,
         // not 4.  The image holds 9 metas, so it is 36 bytes longer.
@@ -210,13 +206,13 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         }
     }
 
-    uint8_t tiny_buf[4];
-    const size_t n_tiny =
-        crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{tiny_buf});
+    ::fixy::HeapArray<std::byte> tiny_buf = ::fixy::mint_heap_array(test.alloc, 4, std::byte{0});
+    const size_t n_tiny = crucible::serialize_region(crucible::SerializedRegion{*region}, tiny_buf.view());
     assert(n_tiny == 0 && "serialize_region must return 0 on buffer overflow");
 
     ::fixy::BumpArena arena3{1 << 16};
-    auto bad_region = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{buf, 10}, arena3);
+    auto bad_region =
+        crucible::deserialize_region(test.alloc, wire.window(0, 10).expect("the image holds ten bytes"), arena3);
     assert(!bad_region.has_value() && "deserialize_region must refuse a truncated input");
 
     // A header claiming 0xFFFFFFFF ops would otherwise drive an
@@ -224,20 +220,17 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     {
         // Offset 0..3 = magic; 4..7 = version; 8 = kind byte; 9..15 pad;
         // 16..23 merkle; 24..31 content; 32..35 num_ops.
-        std::vector<uint8_t> adv(128, 0);
-        const uint32_t magic = crucible::CDAG_MAGIC;
-        const uint32_t version = crucible::CDAG_VERSION.value();
-        const uint8_t kind = static_cast<uint8_t>(crucible::TraceNodeKind::REGION);
-        std::memcpy(adv.data() + 0, &magic, 4);
-        std::memcpy(adv.data() + 4, &version, 4);
-        adv[8] = kind;
+        ::fixy::HeapArray<std::byte> adv = ::fixy::mint_heap_array(test.alloc, 128, std::byte{0});
+        crucible::detail_ser::Writer adv_writer{.image = adv.view()};
         // merkle_hash + content_hash stay zero.
+        crucible::detail_ser::write_header(adv_writer, crucible::TraceNodeKind::REGION, crucible::MerkleHash{},
+                                           crucible::ContentHash{});
         const uint32_t bogus_num_ops = 0xFFFFFFFFu;
-        std::memcpy(adv.data() + 32, &bogus_num_ops, 4);
+        adv_writer.w(bogus_num_ops);
+        assert(adv_writer.has_room && adv_writer.pos == 36);
 
         ::fixy::BumpArena arena4{1 << 16};
-        auto adversarial_region =
-            crucible::deserialize_region(test.alloc, std::span<const uint8_t>{adv.data(), adv.size()}, arena4);
+        auto adversarial_region = crucible::deserialize_region(test.alloc, adv.view(), arena4);
         assert(!adversarial_region.has_value() && "deserialize_region must reject num_ops > CDAG_MAX_OPS");
     }
 
@@ -253,22 +246,24 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         ok_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 21, crucible::TensorSlot{});
         region->plan = &ok_plan;
 
-        uint8_t pbuf[65536];
-        const size_t pn = crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{pbuf});
+        ::fixy::HeapArray<std::byte> pbuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
+        const size_t pn = crucible::serialize_region(crucible::SerializedRegion{*region}, pbuf.view());
         assert(pn > 0 && "plan-bearing serialize failed");
         ::fixy::BumpArena parena{1 << 16};
-        auto ok_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{pbuf, pn}, parena);
+        auto ok_loaded = crucible::deserialize_region(
+            test.alloc, pbuf.view().window(0, pn).expect("the writer writes inside its image"), parena);
         assert(ok_loaded.has_value() && "plan-bearing region with in-range slot_ids must load");
 
         crucible::MemoryPlan bad_plan{};
         bad_plan.slots = slot_arena.array<crucible::TensorSlot>(test.alloc, 3, crucible::TensorSlot{});
         region->plan = &bad_plan;
 
-        uint8_t nbuf[65536];
-        const size_t nn = crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{nbuf});
+        ::fixy::HeapArray<std::byte> nbuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
+        const size_t nn = crucible::serialize_region(crucible::SerializedRegion{*region}, nbuf.view());
         assert(nn > 0 && "plan-bearing (oob) serialize failed");
         ::fixy::BumpArena narena{1 << 16};
-        auto bad_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{nbuf, nn}, narena);
+        auto bad_loaded = crucible::deserialize_region(
+            test.alloc, nbuf.view().window(0, nn).expect("the writer writes inside its image"), narena);
         assert(!bad_loaded.has_value() && "deserialize_region must reject slot_id >= plan->num_slots");
 
         region->plan = nullptr;  // nothing later depends on this.
@@ -286,11 +281,12 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         over_plan.pool_bytes = crucible::PoolAllocator::kMaxPoolBytes + 1;
         region->plan = &over_plan;
 
-        uint8_t obuf[65536];
-        const size_t on = crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{obuf});
+        ::fixy::HeapArray<std::byte> obuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
+        const size_t on = crucible::serialize_region(crucible::SerializedRegion{*region}, obuf.view());
         assert(on > 0 && "over-pool_bytes serialize failed");
         ::fixy::BumpArena oarena{1 << 16};
-        auto over_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{obuf, on}, oarena);
+        auto over_loaded = crucible::deserialize_region(
+            test.alloc, obuf.view().window(0, on).expect("the writer writes inside its image"), oarena);
         assert(!over_loaded.has_value() && "deserialize_region must reject pool_bytes > kMaxPoolBytes");
 
         crucible::MemoryPlan at_plan{};
@@ -298,11 +294,12 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         at_plan.pool_bytes = crucible::PoolAllocator::kMaxPoolBytes;
         region->plan = &at_plan;
 
-        uint8_t abuf[65536];
-        const size_t an = crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{abuf});
+        ::fixy::HeapArray<std::byte> abuf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
+        const size_t an = crucible::serialize_region(crucible::SerializedRegion{*region}, abuf.view());
         assert(an > 0 && "at-cap pool_bytes serialize failed");
         ::fixy::BumpArena aarena{1 << 16};
-        auto at_loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{abuf, an}, aarena);
+        auto at_loaded = crucible::deserialize_region(
+            test.alloc, abuf.view().window(0, an).expect("the writer writes inside its image"), aarena);
         assert(at_loaded.has_value() && "pool_bytes == kMaxPoolBytes must be accepted (inclusive)");
 
         region->plan = nullptr;  // restore.
@@ -320,36 +317,47 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         pad_plan.slots.get(20).expect("the pad plan holds 21 slots")->slot_id = crucible::SlotId{kMarkerSlotId};
         region->plan = &pad_plan;
 
-        std::vector<uint8_t> image(65536);
-        const size_t image_bytes =
-            crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{image});
+        ::fixy::HeapArray<std::byte> image_buf = ::fixy::mint_heap_array(test.alloc, 65536, std::byte{0});
+        const size_t image_bytes = crucible::serialize_region(crucible::SerializedRegion{*region}, image_buf.view());
         assert(image_bytes > 0 && "pad-probe serialize failed");
-        image.resize(image_bytes);
+        const ::fixy::View<const std::byte> image =
+            image_buf.view().window(0, image_bytes).expect("the writer writes inside its image");
 
-        uint8_t marker[sizeof(kMarkerSlotId)];
-        std::memcpy(marker, &kMarkerSlotId, sizeof(marker));
+        // The slot id at at, read as the writer writes a word: the low byte
+        // first.
+        const auto holds_marker_at = [&](size_t at) {
+            return image.window<sizeof(kMarkerSlotId)>(at).match(
+                [](::fixy::View<const std::byte, sizeof(kMarkerSlotId)> word) noexcept {
+                    uint32_t value = 0;
+                    for (const auto index : word.indices()) {
+                        value |= static_cast<uint32_t>(word.at(index)) << (8 * index.raw());
+                    }
+                    return value == kMarkerSlotId;
+                },
+                [] noexcept { return false; });
+        };
         size_t marker_at = image_bytes;
         size_t marker_count = 0;
-        for (size_t at = 0; at + sizeof(marker) <= image_bytes; ++at) {
-            if (std::memcmp(image.data() + at, marker, sizeof(marker)) == 0) {
+        for (size_t at = 0; at + sizeof(kMarkerSlotId) <= image_bytes; ++at) {
+            if (holds_marker_at(at)) {
                 marker_at = at;
                 ++marker_count;
             }
         }
         assert(marker_count == 1 && "the marker slot id must occur once in the image");
         const size_t pad_at = marker_at - 3;
-        const size_t pad2_at = marker_at + sizeof(marker);
+        const size_t pad2_at = marker_at + sizeof(kMarkerSlotId);
 
         ::fixy::BumpArena clean_arena{1 << 16};
-        auto clean = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{image}, clean_arena);
+        auto clean = crucible::deserialize_region(test.alloc, image, clean_arena);
         assert(clean.has_value() && "the unmodified pad-probe image must load");
 
         const auto refuses_with_byte_set_at = [&](size_t at) {
-            std::vector<uint8_t> corrupt = image;
-            corrupt[at] = 1;
+            ::fixy::HeapArray<std::byte> corrupt = ::fixy::mint_heap_array(test.alloc, image_bytes, std::byte{0});
+            ::fixy::copy(corrupt.view(), image).expect("the copy has the count of the image");
+            *corrupt.get(at).expect("the pad is inside the image") = std::byte{1};
             ::fixy::BumpArena corrupt_arena{1 << 16};
-            return !crucible::deserialize_region(test.alloc, std::span<const uint8_t>{corrupt}, corrupt_arena)
-                        .has_value();
+            return !crucible::deserialize_region(test.alloc, corrupt.view(), corrupt_arena).has_value();
         };
         for (size_t byte = 0; byte < 4; ++byte) {
             assert(refuses_with_byte_set_at(pad2_at + byte) && "a non-zero byte in pad2 must refuse the image");
@@ -359,6 +367,32 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         }
 
         region->plan = nullptr;
+    }
+
+    // An op with scalar arguments and no tensors.  Each array of an entry
+    // holds its count, so the image of such a region loads back, and the
+    // loaded op holds the same scalars.
+    {
+        ::fixy::BumpArena scalar_arena{1 << 16};
+        const ::fixy::View<crucible::TraceEntry> scalar_ops =
+            scalar_arena.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
+        crucible::TraceEntry& scalar_op = *scalar_ops.get(0).expect("the region holds one op");
+        scalar_op.schema_hash = crucible::SchemaHash{0x77};
+        scalar_op.set_scalar_args(crucible::test::run_of(test.alloc, scalar_arena, int64_t{5}, int64_t{6}));
+        const crucible::RegionNode& scalar_region = *crucible::make_region(test.alloc, scalar_arena, scalar_ops);
+
+        ::fixy::HeapArray<std::byte> scalar_buf = ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0});
+        const size_t scalar_bytes =
+            crucible::serialize_region(crucible::SerializedRegion{scalar_region}, scalar_buf.view());
+        assert(scalar_bytes > 0 && "the region of an op with scalars and no tensors must serialize");
+        ::fixy::BumpArena load_arena{1 << 16};
+        auto loaded_scalars = crucible::deserialize_region(
+            test.alloc, scalar_buf.view().window(0, scalar_bytes).expect("the writer writes inside its image"),
+            load_arena);
+        assert(loaded_scalars.has_value() && "the region of an op with scalars and no tensors must load back");
+        const crucible::TraceEntry& loaded_op = loaded_scalars->value()->op_at(0);
+        assert(loaded_op.num_inputs() == 0 && loaded_op.num_outputs() == 0);
+        assert(::fixy::equal(loaded_op.scalar_args(), scalar_op.scalar_args()));
     }
 
     crucible::test::pass("test_serialize: all tests passed\n");

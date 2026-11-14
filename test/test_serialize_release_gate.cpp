@@ -14,18 +14,16 @@
 #include <crucible/Serialize.h>
 #include <foundation/effects/Effect.h>
 
-#include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
-#include <span>
 #include "test_assert.h"
 
 namespace {
 
 // Returns the number of bytes written, or zero if the region could not be
 // built.  The op, its arrays and the region are in an arena of the call.
-[[nodiscard]] size_t build_and_serialize(::foundation::effects::Test bg, std::span<uint8_t> out_buf) {
+[[nodiscard]] size_t build_and_serialize(::foundation::effects::Test bg, ::fixy::View<std::byte> out_buf) {
     ::fixy::BumpArena dag_arena{1 << 16};
     const ::fixy::View<crucible::TraceEntry> ops =
         dag_arena.array<crucible::TraceEntry>(bg.alloc, 1, crucible::TraceEntry{});
@@ -51,7 +49,7 @@ namespace {
 
     auto* region = crucible::make_region(bg.alloc, dag_arena, ops);
     if (region == nullptr) return 0;
-    return crucible::serialize_region(crucible::SerializedRegion{*region}, crucible::SerialBuffer{out_buf});
+    return crucible::serialize_region(crucible::SerializedRegion{*region}, out_buf);
 }
 
 // The wire layout, little-endian, restated here as this test's ground
@@ -77,7 +75,7 @@ constexpr size_t kMetaDevice = kMetaDtype + 1;  // device_type byte
 constexpr size_t kMetaLayout = kMetaDevice + 1 + 1;  // +device_idx, layout byte
 
 // Rejection is no region coming back out of the boundary.
-[[nodiscard]] bool is_rejected(::foundation::effects::Test bg, std::span<const uint8_t> bytes) {
+[[nodiscard]] bool is_rejected(::foundation::effects::Test bg, ::fixy::View<const std::byte> bytes) {
     ::fixy::BumpArena arena{1 << 16};
     return !crucible::deserialize_region(bg.alloc, bytes, arena).has_value();
 }
@@ -87,16 +85,17 @@ constexpr size_t kMetaLayout = kMetaDevice + 1 + 1;  // +device_idx, layout byte
 [[gnu::cold]] int main() {
     auto bg = ::foundation::effects::testing::test();
 
-    uint8_t buf[65536];
-    const size_t n = build_and_serialize(bg, std::span<uint8_t>{buf, sizeof(buf)});
+    ::fixy::HeapArray<std::byte> buf = ::fixy::mint_heap_array(bg.alloc, 65536, std::byte{0});
+    const size_t n = build_and_serialize(bg, buf.view());
     if (n == 0) {
         std::fprintf(stderr, "serialize failed\n");
         return 1;
     }
+    const ::fixy::View<const std::byte> image = buf.view().window(0, n).expect("the writer writes inside its image");
 
     // Untouched bytes must still round-trip: a gate that rejects
     // everything would pass every case below.
-    if (is_rejected(bg, std::span<const uint8_t>{buf, n})) {
+    if (is_rejected(bg, image)) {
         std::fprintf(stderr, "happy path wrongly rejected — gate broke success path\n");
         return 2;
     }
@@ -127,16 +126,17 @@ constexpr size_t kMetaLayout = kMetaDevice + 1 + 1;  // +device_idx, layout byte
             std::fprintf(stderr, "offset for %s (%zu) past wire size %zu — layout drift\n", c.name, c.off, n);
             return 3;
         }
-        uint8_t corrupt[65536];
-        std::memcpy(corrupt, buf, n);
+        ::fixy::HeapArray<std::byte> corrupt = ::fixy::mint_heap_array(bg.alloc, n, std::byte{0});
+        ::fixy::copy(corrupt.view(), image).expect("the copy has the count of the image");
+        std::byte& target = *corrupt.get(c.off).expect("the offset is inside the image");
         // Confirm we are actually flipping the byte to a DIFFERENT value
         // (otherwise the test would pass vacuously).
-        if (corrupt[c.off] == c.bad) {
+        if (target == std::byte{c.bad}) {
             std::fprintf(stderr, "%s: corrupt byte equals original — no mutation\n", c.name);
             return 4;
         }
-        corrupt[c.off] = c.bad;
-        if (!is_rejected(bg, std::span<const uint8_t>{corrupt, n})) {
+        target = std::byte{c.bad};
+        if (!is_rejected(bg, corrupt.view())) {
             std::fprintf(stderr,
                          "%s: malformed byte 0x%02x at offset %zu NOT rejected "
                          "(release-stripped contract let it through)\n",

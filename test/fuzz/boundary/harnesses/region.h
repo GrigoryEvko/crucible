@@ -13,6 +13,8 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/PoolAllocator.h>
 #include <crucible/Serialize.h>
+#include <foundation/Quarantine.h>
+#include <foundation/core/Region.h>
 
 #include <memory>
 #include <vector>
@@ -90,9 +92,13 @@ inline void claim_region_trusted(const char* harness, const RegionNode& region) 
 }
 
 [[nodiscard]] inline std::vector<std::uint8_t> region_image(const RegionNode* region) {
-    std::vector<std::uint8_t> image(std::size_t{1} << 16);
-    image.resize(serialize_region(SerializedRegion{*region}, SerialBuffer{image}));
-    return image;
+    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(test_alloc(), size_t{1} << 16, std::byte{0});
+    const size_t written = serialize_region(SerializedRegion{*region}, image.view());
+    std::vector<std::uint8_t> seed(written);
+    for (size_t index = 0; index < written; ++index) {
+        seed[index] = static_cast<std::uint8_t>(*image.get(index).expect("the writer writes inside its image"));
+    }
+    return seed;
 }
 
 // Offsets of fields in a region image: the 32-byte header, then the op
@@ -147,17 +153,24 @@ inline void run_region(std::span<const std::uint8_t> bytes) {
 
     ::fixy::BumpArena arena{};
     const auto alloc = test_alloc();
-    const auto loaded = deserialize_region(alloc, bytes, arena);
+    // The input lives for the call of the harness, so its View is valid
+    // here.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the fuzzer gives its input as a pointer to raw bytes and a count")
+    const ::fixy::View<const std::byte> input =
+        ::foundation::core::byte_view(::fixy::mint_foreign_view(bytes.data(), bytes.size()));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    const auto loaded = deserialize_region(alloc, input, arena);
     if (!loaded) return;
     RegionNode* region = loaded->value();
     claim_region_trusted("region", *region);
 
     // The loaded region writes back to an image that loads to the same
     // region: the loader keeps every field the writer reads.
-    std::vector<std::uint8_t> image(bytes.size() + 4096);
-    const std::size_t written = serialize_region(SerializedRegion{*region}, SerialBuffer{image});
+    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(alloc, input.size() + 4096, std::byte{0});
+    const size_t written = serialize_region(SerializedRegion{*region}, image.view());
     CRUCIBLE_FUZZ_CLAIM("region", written > 0);
-    const auto reloaded = deserialize_region(alloc, std::span<const std::uint8_t>{image.data(), written}, arena);
+    const auto reloaded =
+        deserialize_region(alloc, image.view().window(0, written).expect("the writer writes inside its image"), arena);
     CRUCIBLE_FUZZ_CLAIM("region", reloaded.has_value());
     RegionNode* again = reloaded->value();
     CRUCIBLE_FUZZ_CLAIM("region", again->num_ops() == region->num_ops());

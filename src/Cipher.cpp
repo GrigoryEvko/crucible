@@ -109,8 +109,8 @@ template <class Ctx>
 //
 // The doors retry EINTR on write, fdatasync, renameat and fsync.  If any
 // step fails after the tmp file exists, it is unlinked so a later run does
-// not trip over a partial-write artifact.  Bytes is a TextView or a span of
-// bytes, the two buffers that write_full takes.
+// not trip over a partial-write artifact.  Bytes is a TextView, a span of
+// bytes or a View of bytes, the buffers that write_full takes.
 template <class Ctx, class Bytes>
 [[nodiscard]] bool replace_entry_at_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir, ::fixy::TextView path,
                                      Bytes bytes) noexcept {
@@ -210,27 +210,6 @@ void make_root_directories_(Ctx const& ctx, ::fixy::fs::Dirfd const& here, ::fix
     static_cast<void>(::fixy::fs::make_directory_at(ctx, here, prefix.c_text()).is_ok());
 }
 
-// Reads each byte of path under dir into bytes, when the file holds more
-// than zero and at most maximum bytes.  bytes takes the size of the file.
-// Gives false for a file that does not open, has another size, or reads
-// short.
-template <class Ctx>
-[[nodiscard]] bool read_entry_at_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir, ::fixy::CText path, std::size_t maximum,
-                                  std::vector<std::uint8_t>& bytes) noexcept {
-    return ::fixy::fs::mint_file_at<::fixy::fs::read_only>(ctx, dir, path)
-        .match(
-            [&](::fixy::Linear<::fixy::fs::OwnedFd> opened) {
-                const ::fixy::fs::OwnedFd file = std::move(opened).consume();
-                const std::int64_t size = ::fixy::fs::file_size(ctx, file).value_or(0);
-                if (size <= 0 || static_cast<std::uint64_t>(size) > maximum) return false;
-                bytes.resize(static_cast<std::size_t>(size));
-                return ::fixy::fs::read_full(ctx, file, std::as_writable_bytes(std::span<std::uint8_t>{bytes}))
-                           .value_or(0)
-                    == bytes.size();
-            },
-            [](::foundation::os::Errno) { return false; });
-}
-
 // The bytes of path under dir, when the file holds more than zero and at
 // most maximum bytes.  No value for a file that does not open, has another
 // size, or reads short.  Complexity: one read of the file.
@@ -258,6 +237,15 @@ read_batch_at_(Ctx const& ctx, ::foundation::effects::Alloc allocation, ::fixy::
                               },
                               [](::foundation::os::Errno) { return false; }));
     return read;
+}
+
+// An owned copy of bytes in new storage of allocation.  Complexity: one
+// allocation and a copy of each byte.
+[[nodiscard]] ::fixy::HeapArray<std::byte> copy_bytes_(::foundation::effects::Alloc allocation,
+                                                       ::fixy::View<const std::byte> bytes) noexcept {
+    ::fixy::HeapArray<std::byte> owned = ::fixy::mint_heap_array(allocation, bytes.size(), std::byte{0});
+    ::fixy::copy(owned.view(), bytes).expect("the copy has the count of the bytes");
+    return owned;
 }
 
 // The first line of a text, without its newline, and the text after the
@@ -402,9 +390,11 @@ ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddr
     }
 
     const size_t cap = estimate_serial_size(*region).value();
-    std::vector<uint8_t> buf(cap);
-    const size_t n = serialize_region(SerializedRegion{*region}, SerialBuffer{buf});
+    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(allocation_, cap, std::byte{0});
+    const size_t n = serialize_region(SerializedRegion{*region}, image.view());
     if (n == 0) return ContentHash{};
+    const ::fixy::View<const std::byte> written =
+        image.view().window(0, n).expect("the writer writes inside its image");
 
     // The directory of the object holds the objects of one first byte of
     // the hash.  A directory that is there gives eexist, and a directory
@@ -419,14 +409,13 @@ ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddr
     // crash.
     const bool is_written = with_file_ctx_(file_ctx, [&](auto const& ctx) {
         static_cast<void>(::fixy::fs::make_directory_at(ctx, root_dirfd_, directory.c_text()).is_ok());
-        return replace_entry_at_(ctx, root_dirfd_, object.c_text().view(),
-                                 std::as_bytes(std::span<const uint8_t>{buf.data(), n}));
+        return replace_entry_at_(ctx, root_dirfd_, object.c_text().view(), written);
     });
     if (!is_written) {
         return ContentHash{};
     }
 
-    remember_cached_bytes(hash, std::span<const uint8_t>{buf.data(), n});
+    remember_cached_bytes(hash, written);
     return hash;
 }
 
@@ -448,8 +437,8 @@ Cipher::LoadedContentAddressedRegionPayload Cipher::load_content_addressed_(File
                                                                             ::fixy::BumpArena& arena) const {
     if (!content_hash) return nullptr;
 
-    const std::span<const uint8_t> cached = cached_bytes(content_hash);
-    if (!cached.empty()) {
+    const ::fixy::View<const std::byte> cached = cached_bytes(content_hash);
+    if (cached.size() != 0) {
         const std::optional<LoadedRegionNode> loaded_region = deserialize_region(a, cached, arena);
         if (loaded_region && loaded_region->value()->content_hash == content_hash) {
             return LoadedContentAddressedRegionPayload{loaded_region->value(), true};
@@ -461,21 +450,21 @@ Cipher::LoadedContentAddressedRegionPayload Cipher::load_content_addressed_(File
     // If the read is later changed and drops its bound, the mint's
     // precondition still fires.
     const EntryPath object = object_entry_(content_hash.raw());
-    std::vector<uint8_t> buf;
-    const bool is_read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
-        return read_entry_at_(ctx, root_dirfd_, object.c_text(), MAX_OBJECT_BYTES, buf);
+    ::fixy::Option<::fixy::HeapArray<std::byte>> read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+        return read_batch_at_(ctx, a, root_dirfd_, object.c_text(), MAX_OBJECT_BYTES);
     });
-    if (!is_read) return nullptr;
+    if (read.is_none()) return nullptr;
+    const ::fixy::HeapArray<std::byte> image = std::move(read).expect("the object file read");
     [[maybe_unused]] const ValidatedObjectSize validated_len =
-        ::fixy::mint_refined<::fixy::bounded_above<MAX_OBJECT_BYTES>>(buf.size());
+        ::fixy::mint_refined<::fixy::bounded_above<MAX_OBJECT_BYTES>>(image.size());
 
-    const std::optional<LoadedRegionNode> loaded_region = deserialize_region(a, std::span<const uint8_t>{buf}, arena);
+    const std::optional<LoadedRegionNode> loaded_region = deserialize_region(a, image.view(), arena);
     // The file name is the key, and anyone who writes the store can put
     // any region under any name.  A region whose own hash is not the key
     // is refused, the same as on the cache path above, so a lookup never
     // returns another region.
     if (!loaded_region || loaded_region->value()->content_hash != content_hash) return nullptr;
-    remember_cached_bytes(content_hash, std::span<const uint8_t>{buf});
+    remember_cached_bytes(content_hash, image.view());
     return LoadedContentAddressedRegionPayload{loaded_region->value(), false};
 }
 
@@ -812,7 +801,7 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
 // The two members of the resident cache are cold.  A store and a load wait
 // on the disk, so the code of the cache needs no speed.  A cold body also
 // takes no part of the inline budget of this unit.
-[[gnu::cold]] std::span<const uint8_t> Cipher::cached_bytes(ContentHash hash) const noexcept {
+[[gnu::cold]] ::fixy::View<const std::byte> Cipher::cached_bytes(ContentHash hash) const noexcept {
     // The walk swaps the hit with each entry after it, so the hit becomes
     // the last entry and the other entries keep their order of use.  No two
     // entries share a hash.  Complexity: linear in the count of entries.
@@ -825,13 +814,13 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
     // or the cache holds no entry of the hash.
     for (const CachedObjectBytes& entry : resident_cache_.view().reverse()) {
         if (entry.hash != hash) break;
-        return entry.bytes;
+        return entry.bytes.view();
     }
     return {};
 }
 
-[[gnu::cold]] void Cipher::remember_cached_bytes(ContentHash hash, std::span<const uint8_t> bytes) const {
-    if (!hash || bytes.empty() || bytes.size() > MAX_RESIDENT_CACHE_BYTES) {
+[[gnu::cold]] void Cipher::remember_cached_bytes(ContentHash hash, ::fixy::View<const std::byte> bytes) const {
+    if (!hash || bytes.size() == 0 || bytes.size() > MAX_RESIDENT_CACHE_BYTES) {
         return;
     }
     for (const CachedObjectBytes& entry : resident_cache_) {
@@ -856,7 +845,7 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
     const bool is_full = resident_cache_
                              .push(CachedObjectBytes{
                                  .hash = hash,
-                                 .bytes = std::vector<uint8_t>(bytes.begin(), bytes.end()),
+                                 .bytes = copy_bytes_(allocation_, bytes),
                              })
                              .is_err();
     if (is_full) [[unlikely]] {

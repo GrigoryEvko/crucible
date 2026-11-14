@@ -190,6 +190,7 @@ public:
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
     [[gnu::cold]] static Cipher open(Ctx const& ctx, ::foundation::effects::Alloc allocation, RootText root_text) {
         Cipher c;
+        c.allocation_ = allocation;
         // The sanitizer refuses an empty root, a root longer than
         // MAX_ROOT_PATH_BYTES, a zero byte and a ".." part.  A refused root
         // gives a Cipher that is not open.
@@ -436,7 +437,7 @@ private:
 
     struct CachedObjectBytes {
         ContentHash hash;
-        std::vector<uint8_t> bytes;
+        ::fixy::HeapArray<std::byte> bytes{};
     };
 
     static constexpr size_t MAX_RESIDENT_CACHE_BYTES = size_t{8} << 20;
@@ -475,6 +476,9 @@ private:
     // push never grows a buffer.
     mutable ::fixy::FixedList<CachedObjectBytes, MAX_RESIDENT_CACHE_ENTRIES> resident_cache_{};
     mutable size_t resident_cache_bytes_ = 0;
+    // The allocation capability that open received.  The image of a store
+    // and the copies of the resident cache allocate only through it.
+    [[no_unique_address]] ::foundation::effects::Alloc allocation_{};
 
     [[nodiscard]] static constexpr bool commits_head_(const LogEntry& entry) noexcept {
         return ::fixy::session::session_op_commits_cipher_head(entry.op());
@@ -520,9 +524,11 @@ private:
     // text before its first newline is no hexadecimal number.
     [[nodiscard]] static ::fixy::Option<ContentHash> parse_head_(::fixy::TextView text) noexcept;
 
-    [[nodiscard]] std::span<const uint8_t> cached_bytes(ContentHash hash) const noexcept;
+    // The bytes of the cached image of hash, or no bytes.  The View borrows
+    // the cache until the next remember_cached_bytes.
+    [[nodiscard]] ::fixy::View<const std::byte> cached_bytes(ContentHash hash) const noexcept;
 
-    void remember_cached_bytes(ContentHash hash, std::span<const uint8_t> bytes) const;
+    void remember_cached_bytes(ContentHash hash, ::fixy::View<const std::byte> bytes) const;
 
     // The current directory, which anchors the make of a relative root.  A
     // current directory that does not open gives a closed Dirfd, and the

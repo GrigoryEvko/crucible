@@ -20,10 +20,9 @@
 #include <fixy/Tags.h>
 #include <foundation/effects/Effect.h>
 
+#include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <optional>
-#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -73,31 +72,51 @@ static constexpr uint32_t CDAG_MAX_BRANCH_ARMS = 1u << 16;
 
 namespace detail_ser {
 
+// The writer of an image.  It writes each value as its bytes, the low byte
+// first, which is the layout that the reader reads.  A write past the end of
+// the image clears has_room, and the serialize function then gives zero.
 struct Writer {
-    uint8_t* buf = nullptr;
+    ::fixy::View<std::byte> image{};
     size_t pos = 0;
-    size_t max = 0;
-    bool ok = true;
+    bool has_room = true;
 
-    void write_bytes(const void* src, size_t n) {
-        if (pos + n > max) {
-            ok = false;
-            return;
-        }
-        std::memcpy(buf + pos, src, n);
-        pos += n;
+    // One unsigned word as its sizeof(Word) bytes.  Complexity:
+    // O(sizeof(Word)).
+    template <::fixy::UnsignedInteger Word>
+    void write_word(Word word) {
+        image.template window<sizeof(Word)>(pos).match(
+            [this, word](::fixy::View<std::byte, sizeof(Word)> bytes) noexcept {
+                for (const auto index : bytes.indices()) {
+                    bytes.at(index) = static_cast<std::byte>(static_cast<uint8_t>(word >> (8 * index.raw())));
+                }
+                pos += sizeof(Word);
+            },
+            [this] noexcept { has_room = false; });
     }
 
+    // An integer, a bool, an enumerator or a float.  An enumerator gives its
+    // underlying integer, and a bool gives one byte of 0 or 1.  A signed
+    // integer and a float give the bits of the unsigned word of their size.
     template <typename T>
-    void w(const T& v) {
-        write_bytes(&v, sizeof(T));
+    void w(T value) {
+        if constexpr (std::is_enum_v<T>) {
+            w(std::to_underlying(value));
+        } else if constexpr (std::is_same_v<T, bool>) {
+            write_word(static_cast<uint8_t>(value ? 1 : 0));
+        } else if constexpr (std::is_same_v<T, float>) {
+            write_word(::fixy::bit_cast<uint32_t>(value));
+        } else if constexpr (std::is_signed_v<T>) {
+            write_word(::fixy::bit_cast<std::make_unsigned_t<T>>(value));
+        } else {
+            write_word(value);
+        }
     }
 
     // N bytes of zero, which is the one value of a pad byte.
     template <size_t N>
     void write_zero_pad() {
         for (size_t index = 0; index < N; ++index) {
-            w(uint8_t{0});
+            write_word(uint8_t{0});
         }
     }
 };
@@ -107,7 +126,7 @@ struct Writer {
 // the end of the image clears is_intact and gives zero, and the parse that
 // follows it is discarded.
 struct Reader {
-    ::fixy::View<const uint8_t> image{};
+    ::fixy::View<const std::byte> image{};
     size_t pos = 0;
     bool is_intact = true;
 
@@ -116,7 +135,7 @@ struct Reader {
     template <::fixy::UnsignedInteger Word>
     [[nodiscard]] Word read_word() {
         return image.template window<sizeof(Word)>(pos).match(
-            [this](::fixy::View<const uint8_t, sizeof(Word)> bytes) noexcept {
+            [this](::fixy::View<const std::byte, sizeof(Word)> bytes) noexcept {
                 Word word = 0;
                 for (const auto index : bytes.indices()) {
                     word = static_cast<Word>(word | (static_cast<Word>(bytes.at(index)) << (8 * index.raw())));
@@ -232,8 +251,12 @@ struct Reader {
 // does not compile, where it would otherwise produce an image whose bytes
 // differ between runs. Pad bytes are zero for the same reason.
 inline void write_meta(Writer& w, const TensorMeta& m) {
-    w.write_bytes(m.sizes.raw_data(), sizeof(m.sizes));
-    w.write_bytes(m.strides.raw_data(), sizeof(m.strides));
+    for (uint8_t d = 0; d < kMaxTensorNDim; ++d) {
+        w.w(m.sizes[d].value());
+    }
+    for (uint8_t d = 0; d < kMaxTensorNDim; ++d) {
+        w.w(m.strides[d].value());
+    }
     constexpr auto zero_ptr = ::fixy::mint_refined<::fixy::is_zero>(std::uint64_t{0});
     w.w(zero_ptr.value());
     w.w(m.ndim);
@@ -386,16 +409,16 @@ inline Header read_header(Reader& r) {
 // The region that serialize_region reads.  A borrow is never null.
 using SerializedRegion = ::fixy::BorrowedRef<const RegionNode>;
 
-// The owner of the bytes that serialize_region writes: the caller.
-struct SerialBufferOwner {};
-using SerialBuffer = ::fixy::Borrowed<uint8_t, SerialBufferOwner>;
+// The branch that serialize_branch reads.  A borrow is never null.
+using SerializedBranch = ::fixy::BorrowedRef<const BranchNode>;
 
-// Returns the byte count written, or zero if the buffer was too small.  Each
-// entry of the region carries its own tensor metadata, so the function reads
-// no metadata log.
-CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion region, SerialBuffer buf) {
+// Writes the image of the region into the first bytes of image.  Returns the
+// byte count written, or zero if image was too small.  Each entry of the
+// region carries its own tensor metadata, so the function reads no metadata
+// log.
+CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion region, ::fixy::View<std::byte> image) {
     using namespace detail_ser;
-    Writer w{.buf = buf.data(), .pos = 0, .max = buf.size()};
+    Writer w{.image = image};
 
     write_header(w, TraceNodeKind::REGION, region->merkle_hash, region->content_hash);
 
@@ -463,16 +486,16 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
         }
     }
 
-    return w.ok ? w.pos : 0;
+    return w.has_room ? w.pos : 0;
 }
 
 // Returns no region on a parse error, a version mismatch or a content hash
 // that the operations do not fold to. Every structure it builds lives in the
 // arena.
 CRUCIBLE_COLD [[nodiscard]] inline std::optional<LoadedRegionNode>
-deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf, ::fixy::BumpArena& arena) {
+deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image, ::fixy::BumpArena& arena) {
     using namespace detail_ser;
-    Reader r{.image = ::fixy::mint_foreign_view(buf.data(), buf.size())};
+    Reader r{.image = image};
 
     const Header hdr = read_header(r);
     if (!r.is_intact || hdr.magic != CDAG_MAGIC || !cdag_version_matches(hdr.version)
@@ -665,10 +688,11 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
     return ::fixy::mint_tagged<::fixy::tags::source::Replayed>(&node).retag<::fixy::tags::source::Loaded>();
 }
 
-// Returns the byte count written, or zero if the buffer was too small.
-[[nodiscard]] inline size_t serialize_branch(const BranchNode* branch, std::span<uint8_t> buf) {
+// Writes the image of the branch into the first bytes of image.  Returns the
+// byte count written, or zero if image was too small.
+[[nodiscard]] inline size_t serialize_branch(SerializedBranch branch, ::fixy::View<std::byte> image) {
     using namespace detail_ser;
-    Writer w{.buf = buf.data(), .pos = 0, .max = buf.size()};
+    Writer w{.image = image};
 
     // A branch node repurposes the header's content-hash field to hold the
     // merkle hash of the continuation, the suffix the arms merge back into.
@@ -684,19 +708,19 @@ deserialize_region(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
         w.w(target_hash);
     }
 
-    return w.ok ? w.pos : 0;
+    return w.has_room ? w.pos : 0;
 }
 
 // The resolver turns each persisted merkle hash back into a node pointer.
 // Returns null on a parse error.
 template <typename Resolve>
     requires std::is_invocable_r_v<TraceNode*, Resolve&, MerkleHash>
-[[nodiscard]] inline BranchNode* deserialize_branch(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
+[[nodiscard]] inline BranchNode* deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
                                                     ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND,
                                                     Resolve&& resolve) {
     Resolve resolver = std::forward<Resolve>(resolve);
     using namespace detail_ser;
-    Reader r{.image = ::fixy::mint_foreign_view(buf.data(), buf.size())};
+    Reader r{.image = image};
 
     const Header hdr = read_header(r);
     if (!r.is_intact || hdr.magic != CDAG_MAGIC || !cdag_version_matches(hdr.version)
@@ -737,9 +761,11 @@ template <typename Resolve>
     return node;
 }
 
-[[nodiscard]] inline BranchNode* deserialize_branch(::foundation::effects::Alloc a, std::span<const uint8_t> buf,
-                                                    ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND, std::nullptr_t) {
-    return deserialize_branch(a, buf, arena, [](MerkleHash) noexcept -> TraceNode* { return nullptr; });
+// The branch with no resolver: the target of each arm stays null, and the
+// caller resolves the targets later.
+[[nodiscard]] inline BranchNode* deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
+                                                    ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND) {
+    return deserialize_branch(a, image, arena, [](MerkleHash) noexcept -> TraceNode* { return nullptr; });
 }
 
 // The twin of the two deserialize_branch overloads above.  The node is in

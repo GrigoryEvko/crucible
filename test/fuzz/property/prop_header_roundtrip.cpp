@@ -27,7 +27,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
 
-#include <array>
+#include <cstddef>
 #include <cstdint>
 
 int main(int argc, char** argv) {
@@ -62,12 +62,12 @@ int main(int argc, char** argv) {
         [](const auto& t) {
             // 32-byte buffer is the documented header size
             // (magic 4 + version 4 + kind 1 + pad 7 + merkle 8 + content 8).
-            std::array<uint8_t, 32> buf{};
-            Writer w{.buf = buf.data(), .pos = 0, .max = buf.size()};
+            ::foundation::core::FixedArray<std::byte, 32> image{};
+            Writer w{.image = image.view()};
             write_header(w, t.kind, t.mh, t.ch);
             if (w.pos != 32) return false;
 
-            Reader r{.image = ::fixy::mint_foreign_view(buf.data(), buf.size())};
+            Reader r{.image = image.view()};
             const Header h = read_header(r);
 
             // Round-trip equality on each field.

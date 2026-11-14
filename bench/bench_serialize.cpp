@@ -5,10 +5,10 @@
 // checkpoint / replay. Target: sub-microsecond for small regions,
 // linear in op count for large ones.
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <span>
 #include <vector>
 
 #include <crucible/MerkleDag.h>
@@ -75,28 +75,29 @@ int main() {
 
         const size_t wire_cap =
             64 + num_ops * (40 + 2 * sizeof(TensorMeta) + sizeof(TensorMeta) + 3 * 3 * sizeof(uint32_t));
-        std::vector<uint8_t> buf(wire_cap);
+        ::fixy::HeapArray<std::byte> buf = ::fixy::mint_heap_array(A, wire_cap, std::byte{0});
 
         char label_ser[64], label_des[64];
         std::snprintf(label_ser, sizeof(label_ser), "serialize_region   (%4u ops)", num_ops);
         std::snprintf(label_des, sizeof(label_des), "deserialize_region (%4u ops)", num_ops);
 
         reports.push_back(bench::run(label_ser, [&] {
-            size_t n = serialize_region(SerializedRegion{*region}, SerialBuffer{buf});
+            size_t n = serialize_region(SerializedRegion{*region}, buf.view());
             bench::do_not_optimize(n);
         }));
 
         // Prime the buffer once — deserialize consumes stable bytes.
-        const size_t serial_len = serialize_region(SerializedRegion{*region}, SerialBuffer{buf});
+        const size_t serial_len = serialize_region(SerializedRegion{*region}, buf.view());
         if (serial_len == 0) {
             std::fprintf(stderr, "serialize failed at num_ops=%u\n", num_ops);
             std::exit(1);
         }
+        const ::fixy::View<const std::byte> image =
+            buf.view().window(0, serial_len).expect("the writer writes inside its buffer");
 
-        reports.push_back(bench::run(label_des, [&, serial_len] {
+        reports.push_back(bench::run(label_des, [&, image] {
             ::fixy::BumpArena read_arena{1 << 20};
-            const auto loaded_region =
-                deserialize_region(A, std::span<const uint8_t>{buf.data(), serial_len}, read_arena);
+            const auto loaded_region = deserialize_region(A, image, read_arena);
             RegionNode* r = loaded_region ? loaded_region->value() : nullptr;
             bench::do_not_optimize(r);
         }));

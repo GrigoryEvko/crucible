@@ -17,7 +17,7 @@
 
 int main() {
     ::fixy::BumpArena arena{1024};
-    std::span<const std::uint8_t> bytes{};
+    ::fixy::View<const std::byte> bytes{};
 
     using ExternalRegion = ::fixy::Tagged<crucible::RegionNode*, ::fixy::tags::source::External>;
 
