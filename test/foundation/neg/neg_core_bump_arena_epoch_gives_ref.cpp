@@ -6,6 +6,7 @@
 
 int main() {
     ::foundation::core::BumpArena arena{4096};
-    static_cast<void>(arena.with_epoch([&]() noexcept { return arena.make<int>(::foundation::effects::Alloc{}, 5); }));
+    static_cast<void>(
+        arena.with_epoch([&]() noexcept { return arena.make<int>(::foundation::effects::testing::test().alloc, 5); }));
     return 0;
 }

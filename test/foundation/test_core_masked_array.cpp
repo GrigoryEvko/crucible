@@ -72,7 +72,8 @@ template <class Array>
 void test_element_of_an_empty_array_aborts() {
     MaskedArray<std::uint64_t> empty{};
     MaskedArray<std::uint64_t> const fixed_empty{};
-    MaskedArray<std::uint64_t> source = mint_masked_array<std::uint64_t>(::foundation::effects::Alloc{}, 4);
+    MaskedArray<std::uint64_t> source =
+        mint_masked_array<std::uint64_t>(::foundation::effects::testing::test().alloc, 4);
     MaskedArray<std::uint64_t> const target{std::move(through(source))};
     CRUCIBLE_FATAL_INVARIANT(target.size() == 4);
     bool const default_aborts = ::crucible::test::aborts([&] { static_cast<void>(empty.at_masked(0)); });
@@ -86,7 +87,7 @@ void test_element_of_an_empty_array_aborts() {
 // Each count gives that count of zeros, and a key at or past the count reads
 // the element of the key modulo the count.
 void test_counts_and_wrapping_keys() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     ::foundation::core::FixedArray<std::size_t, 5> const counts{std::size_t{1}, std::size_t{2}, std::size_t{4},
                                                                 std::size_t{64}, std::size_t{1} << 16};
     for (std::size_t const count : counts) {
@@ -113,7 +114,7 @@ void test_counts_and_wrapping_keys() {
 
 template <std::size_t Alignment>
 void test_alignment() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     for (std::size_t count = 1; count <= 256; count *= 4) {
         MaskedArray<std::uint8_t, Alignment> bytes = mint_masked_array<std::uint8_t, Alignment>(alloc, count);
         auto const first = bytes.view().get(0).expect("the array holds an element");
@@ -131,7 +132,7 @@ void test_each_alignment() {
 // A table of pinned slots: a write at one key shows at each key with the same
 // low bits.
 void test_pinned_slots() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     MaskedArray<PinnedSlot, 64> table = mint_masked_array<PinnedSlot, 64>(alloc, 16);
     CRUCIBLE_FATAL_INVARIANT(table.size() == 16);
     for (PinnedSlot const& slot : table.view()) {
@@ -146,7 +147,7 @@ void test_pinned_slots() {
 }
 
 void test_move_and_destruction_counts() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     {
         MaskedArray<Counted> first = mint_masked_array<Counted>(alloc, 8);
         CRUCIBLE_FATAL_INVARIANT(live_elements == 8);
@@ -182,7 +183,7 @@ void test_bad_counts_abort() {
     for (std::size_t const count : counts) {
         bool const bad_count_aborts = ::crucible::test::aborts([count] {
             MaskedArray<std::uint64_t> const refused =
-                mint_masked_array<std::uint64_t>(::foundation::effects::Alloc{}, count);
+                mint_masked_array<std::uint64_t>(::foundation::effects::testing::test().alloc, count);
             static_cast<void>(refused);
         });
         CRUCIBLE_FATAL_INVARIANT(bad_count_aborts);
@@ -193,7 +194,7 @@ void test_bad_counts_abort() {
 // a key reads back at each key with the same low bits.  A plain array that the
 // test indexes with key % count is the model.
 void test_agrees_with_plain_model() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     ::crucible::test::PhiloxStream stream{0x5EEDA77A00000002u};
     for (int trial = 0; trial < 128; ++trial) {
         std::size_t const count = std::size_t{1} << stream.below(12);

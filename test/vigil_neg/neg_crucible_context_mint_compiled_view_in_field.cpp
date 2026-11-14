@@ -31,7 +31,7 @@
 // this file.  The anchor itself does not change the discipline being
 // tested — the static_assert below is the actual neg-compile gate.
 [[maybe_unused]] static auto anchor_compiled_view_mint() {
-    crucible::CrucibleContext ctx;
+    crucible::CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     // mint_compiled_view's pre `mode_ == COMPILED` would fire on the
     // default-constructed (RECORD) ctx at runtime — but this fixture
     // is a compile-time test and runtime is never reached.  The

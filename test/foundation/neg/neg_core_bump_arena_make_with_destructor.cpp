@@ -11,6 +11,6 @@ struct Ended {
 
 int main() {
     ::foundation::core::BumpArena arena{4096};
-    auto const object = arena.make<Ended>(::foundation::effects::Alloc{});
+    auto const object = arena.make<Ended>(::foundation::effects::testing::test().alloc);
     return object->value;
 }

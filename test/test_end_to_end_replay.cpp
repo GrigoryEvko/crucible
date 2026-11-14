@@ -19,9 +19,9 @@ namespace test_end_to_end {
 // op confirms the boundary.
 void test_pipeline_basic() {
     auto* ring = new TraceRing();
-    auto* meta_log = new MetaLog();
+    auto* meta_log = new MetaLog(::foundation::effects::testing::test().alloc);
 
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     // Everything is queued before the background thread starts, so the
     // drain sees one complete stream and the outcome does not depend on
@@ -58,7 +58,7 @@ void test_pipeline_basic() {
                == crucible::test::element_at(region->op_at(i - 1).output_slot_ids(), 0));
     }
 
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     assert(ctx.is_recording());
     assert(ctx.activate(*region));
     assert(ctx.is_compiled());
@@ -102,9 +102,9 @@ void test_pipeline_basic() {
 
 void test_pipeline_divergence() {
     auto* ring = new TraceRing();
-    auto* meta_log = new MetaLog();
+    auto* meta_log = new MetaLog(::foundation::effects::testing::test().alloc);
 
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     feed_iteration(ring, meta_log, 0);
     feed_iteration(ring, meta_log, 1);
@@ -116,7 +116,7 @@ void test_pipeline_divergence() {
     auto* region = bt.active_region.load_acquire().try_get();
     assert(region != nullptr);
 
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     assert(ctx.activate(*region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 

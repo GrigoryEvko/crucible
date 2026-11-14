@@ -6,7 +6,7 @@
 
 int main() {
     ::foundation::core::MaskedArray<int> const first =
-        ::foundation::core::mint_masked_array<int>(::foundation::effects::Alloc{}, 4);
+        ::foundation::core::mint_masked_array<int>(::foundation::effects::testing::test().alloc, 4);
     ::foundation::core::MaskedArray<int> const second = first;
     return static_cast<int>(second.size());
 }

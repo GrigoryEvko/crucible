@@ -77,7 +77,7 @@ static void test_drain_pinned_type_identity() {
 }
 
 static void test_metalog_try_append_pinned_type_identity() {
-    auto log = std::make_unique<MetaLog>();
+    auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
 
     using Got = decltype(log->try_append_pinned(::fixy::View<const TensorMeta>{}));
     using Want = HotPath<HotPathTier_v::Hot, MetaIndex>;
@@ -189,7 +189,7 @@ static void test_full_ring_type_pin_survives_failure() {
 // The same argument for the metadata log, whose failure return is an
 // invalid index rather than false.
 static void test_metalog_full_buffer_type_pin_survives_failure() {
-    auto log = std::make_unique<MetaLog>();
+    auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
     TensorMeta meta{};
     meta.ndim = 1;
     meta.sizes[0] = ::crucible::tensor_dim(1);

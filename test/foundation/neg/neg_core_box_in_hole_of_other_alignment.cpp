@@ -13,7 +13,7 @@ struct TwoWords {
 };
 
 int main() {
-    auto hole = foundation::core::mint_hole<8, 8>(foundation::effects::Alloc{});
+    auto hole = foundation::core::mint_hole<8, 8>(foundation::effects::testing::test().alloc);
     foundation::core::Box<TwoWords> box = foundation::core::mint_box<TwoWords>(std::move(hole));
     return static_cast<int>(box->first);
 }

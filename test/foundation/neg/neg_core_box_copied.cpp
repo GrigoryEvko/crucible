@@ -4,7 +4,8 @@
 #include <foundation/effects/Effect.h>
 
 int main() {
-    ::foundation::core::Box<int> first = ::foundation::core::mint_box<int>(::foundation::effects::Alloc{}, 1);
+    ::foundation::core::Box<int> first =
+        ::foundation::core::mint_box<int>(::foundation::effects::testing::test().alloc, 1);
     ::foundation::core::Box<int> second = first;
     return *second;
 }

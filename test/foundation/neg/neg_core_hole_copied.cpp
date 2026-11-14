@@ -7,7 +7,7 @@
 #include <utility>
 
 int main() {
-    auto hole = foundation::core::mint_hole<8, 8>(foundation::effects::Alloc{});
+    auto hole = foundation::core::mint_hole<8, 8>(foundation::effects::testing::test().alloc);
     auto copy = hole;
     std::move(copy).consume();
     std::move(hole).consume();

@@ -60,7 +60,8 @@ constexpr ::fixy::InitLoadCtx kStartup{::foundation::effects::testing::init()};
 constexpr std::size_t kFreshBlockBytes = std::size_t{33} << 20;
 
 [[nodiscard]] ::foundation::AlignedBytes allocate_fresh_block() noexcept {
-    return ::foundation::mint_aligned_bytes(::foundation::effects::Alloc{}, kFreshBlockBytes, page_size());
+    return ::foundation::mint_aligned_bytes(::foundation::effects::testing::test().alloc, kFreshBlockBytes,
+                                            page_size());
 }
 
 // The count bytes from the byte at offset of a block.

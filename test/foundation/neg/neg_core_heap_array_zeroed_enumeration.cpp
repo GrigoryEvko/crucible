@@ -13,6 +13,6 @@ enum class Mode : std::uint8_t {
 };
 
 int main() {
-    auto modes = ::foundation::core::mint_heap_array_zeroed<Mode>(::foundation::effects::Alloc{}, 4);
+    auto modes = ::foundation::core::mint_heap_array_zeroed<Mode>(::foundation::effects::testing::test().alloc, 4);
     return static_cast<int>(modes.size());
 }

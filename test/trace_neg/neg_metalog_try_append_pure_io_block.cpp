@@ -22,7 +22,7 @@
 namespace eff = ::fixy;
 
 int main() {
-    crucible::MetaLog log;
+    crucible::MetaLog log{::foundation::effects::testing::test().alloc};
     const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
     (void)log.try_append_pure<eff::Row<eff::Effect::IO, eff::Effect::Block>>(record.view());
     return 0;

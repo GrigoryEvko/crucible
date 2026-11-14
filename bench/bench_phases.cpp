@@ -724,10 +724,10 @@ int main(int argc, char* argv[]) {
 
     const uint32_t iters = (argc >= 3) ? static_cast<uint32_t>(std::atoi(argv[2])) : kDefaultIters;
 
-    MetaLog meta_log;
+    MetaLog meta_log{::foundation::effects::testing::test().alloc};
     meta_log.reset();
 
-    BackgroundThread bg;
+    BackgroundThread bg{::foundation::effects::testing::test().alloc};
     bg.meta_log.set(&meta_log);
 
     std::printf("\n=== full pipeline (bench::run with BPF sensing) ===\n");

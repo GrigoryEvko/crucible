@@ -6,7 +6,7 @@
 
 int main() {
     ::foundation::core::HeapArray<int> const first =
-        ::foundation::core::mint_heap_array(::foundation::effects::Alloc{}, 4, 1);
+        ::foundation::core::mint_heap_array(::foundation::effects::testing::test().alloc, 4, 1);
     ::foundation::core::HeapArray<int> const second = first;
     return static_cast<int>(second.size());
 }

@@ -72,7 +72,7 @@ using ::foundation::core::Hole;
 using ::foundation::core::MaskedArray;
 using ::foundation::core::Option;
 
-constexpr ::foundation::effects::Alloc kAlloc{};
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
 // The number of live nodes of each kind.  Each hazard ends with zero.
 int live_nodes = 0;

@@ -16,7 +16,7 @@ struct Held final {};
 
 int main() {
     namespace core = ::foundation::core;
-    auto values = core::mint_heap_array(::foundation::effects::Alloc{}, 4, 1);
+    auto values = core::mint_heap_array(::foundation::effects::testing::test().alloc, 4, 1);
     using Pick = core::Option<core::Ref<int, Held>> (core::HeapArray<int>::*)(std::size_t) & noexcept;
     auto result = (values.*static_cast<Pick>(&core::HeapArray<int>::get))(0);
     static_cast<void>(result);

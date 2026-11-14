@@ -6,6 +6,6 @@
 #include <foundation/effects/Effect.h>
 
 int main() {
-    auto held = ::foundation::core::mint_box<int>(::foundation::effects::Alloc{}, "seven");
+    auto held = ::foundation::core::mint_box<int>(::foundation::effects::testing::test().alloc, "seven");
     return *held;
 }

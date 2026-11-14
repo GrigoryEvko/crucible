@@ -124,7 +124,7 @@ template <typename T>
 [[nodiscard]] int moved_from_directory_refuses() {
     fixy::TextView const name{"directory"};
     IoBlockCtx ctx{eff::testing::test()};
-    eff::Alloc const alloc{};
+    eff::Alloc const alloc = eff::testing::test().alloc;
     auto opened = fs::open_dirfd(ctx, sanitized("/proc"));
     if (opened.is_err()) return answered(name, "nothing: the open of /proc failed");
     fs::Dirfd source = std::move(opened).expect("/proc opened");

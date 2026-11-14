@@ -8,7 +8,7 @@
 #include <utility>
 
 int main() {
-    auto hole = foundation::core::mint_hole<8, 8>(foundation::effects::Alloc{});
+    auto hole = foundation::core::mint_hole<8, 8>(foundation::effects::testing::test().alloc);
     foundation::core::Box<std::uint64_t> box = foundation::core::mint_box<std::uint64_t>(hole, std::uint64_t{1});
     return static_cast<int>(*box);
 }

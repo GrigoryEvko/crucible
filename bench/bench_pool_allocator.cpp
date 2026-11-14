@@ -122,7 +122,7 @@ int main() {
         ::foundation::core::FixedArray<TensorSlot, 1> slots{};
         MemoryPlan plan = make_uniform_plan(slots.view(), 256);
         PoolAllocator pool;
-        pool.init(plan);
+        pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
         const SlotId s0{0};
         auto r = bench::run("slot_ptr(1 slot, same)", [&] { bench::do_not_optimize(pool.slot_ptr(s0, pv)); });
@@ -135,7 +135,7 @@ int main() {
             ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
             MemoryPlan plan = make_uniform_plan(slots.view(), 256);
             PoolAllocator pool;
-            pool.init(plan);
+            pool.init(::foundation::effects::testing::test().alloc, plan);
             auto pv = pool.mint_initialized_view(kVigilForeground);
             char label[64];
             std::snprintf(label, sizeof(label), "slot_ptr(%u slots, sweep)", N);
@@ -157,7 +157,7 @@ int main() {
             ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
             MemoryPlan plan = make_uniform_plan(slots.view(), 256);
             PoolAllocator pool;
-            pool.init(plan);
+            pool.init(::foundation::effects::testing::test().alloc, plan);
             auto pv = pool.mint_initialized_view(kVigilForeground);
 
             std::vector<uint32_t> indices(ACCESS_COUNT);
@@ -185,7 +185,7 @@ int main() {
         ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
         MemoryPlan plan = make_uniform_plan(slots.view(), 256);
         PoolAllocator pool;
-        pool.init(plan);
+        pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
         auto r = bench::run("slot_ptr(100, direct ref)", [&] {
             for (uint32_t i = 0; i < N; i++)
@@ -200,7 +200,7 @@ int main() {
         ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
         MemoryPlan plan = make_uniform_plan(slots.view(), 256);
         PoolAllocator pool;
-        pool.init(plan);
+        pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
         const PoolAllocator* pool_ptr = &pool;
         bench::do_not_optimize(pool_ptr);
@@ -217,7 +217,7 @@ int main() {
         ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
         MemoryPlan plan = make_uniform_plan(slots.view(), 256);
         PoolAllocator pool;
-        pool.init(plan);
+        pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
         void* const* tbl = pool.table(pv);
         bench::do_not_optimize(tbl);
@@ -238,7 +238,7 @@ int main() {
             std::snprintf(label, sizeof(label), "init(%u slots)", N);
             return bench::run(label, [&] {
                 PoolAllocator pool;
-                pool.init(plan);
+                pool.init(::foundation::effects::testing::test().alloc, plan);
                 bench::do_not_optimize(pool.pool_base());
                 pool.destroy();
             });
@@ -258,7 +258,7 @@ int main() {
         MemoryPlan plan = make_uniform_plan(slots.view(), 256);
         return bench::run("init+destroy (100 slots, pair)", [&] {
             PoolAllocator pool;
-            pool.init(plan);
+            pool.init(::foundation::effects::testing::test().alloc, plan);
             bench::do_not_optimize(pool.pool_base());
             pool.destroy();
         });
@@ -273,12 +273,12 @@ int main() {
         MemoryPlan plan_b = make_uniform_plan(slots_b.view(), 512);
         return bench::run("detach+init(100 slots)", [&] {
             PoolAllocator pool;
-            pool.init(plan_a);
+            pool.init(::foundation::effects::testing::test().alloc, plan_a);
             {
                 auto pv = pool.mint_initialized_view(kVigilForeground);
                 auto old = pool.detach(pv);
                 bench::do_not_optimize(old.size());
-                pool.init(plan_b);
+                pool.init(::foundation::effects::testing::test().alloc, plan_b);
             }
             // The detached bytes go back to the heap at the end of the scope.
             bench::do_not_optimize(pool.pool_base());
@@ -295,7 +295,7 @@ int main() {
         MemoryPlan plan = make_mixed_plan(slots.view(), N_INT, N_EXT, 256);
 
         PoolAllocator pool;
-        pool.init(plan);
+        pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
 
         alignas(256) static char ext_bufs[N_EXT][256];
@@ -318,7 +318,7 @@ int main() {
         MemoryPlan plan = make_uniform_plan(slots.view(), 256);
 
         PoolAllocator pool;
-        pool.init(plan);
+        pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
 
         struct OpSlots {

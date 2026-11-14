@@ -393,7 +393,7 @@ int main() {
     // roughly once in 65,536 bodies and rounds to nothing per op.
     reports.push_back([&] {
         auto ring = std::make_unique<TraceRing>();
-        auto log = std::make_unique<MetaLog>();
+        auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
         ring->reset();
         log->reset();
 

@@ -192,7 +192,7 @@ struct Built {
 [[nodiscard]] Built build_once(::foundation::effects::Test ctx, uint64_t data_ptr_base) noexcept {
     ::fixy::BumpArena arena{1 << 20};
     ::fixy::BumpArena dag_arena{1 << 20};
-    crucible::BackgroundThread bt;
+    crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     const ::fixy::View<TraceEntry> ops = dag_arena.array<TraceEntry>(ctx.alloc, kNumOps, TraceEntry{});
     build_ops(ctx, arena, ops, data_ptr_base);

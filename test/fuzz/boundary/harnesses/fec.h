@@ -27,7 +27,7 @@ namespace crucible::fuzz::boundary {
 // The bytes of a run of the input, in a heap array that a codec reads as a
 // View.
 [[nodiscard]] inline ::fixy::HeapArray<std::byte> heap_bytes(auto const& run) {
-    auto out = ::fixy::mint_heap_array(::foundation::effects::Alloc{}, run.size(), std::byte{0});
+    auto out = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, run.size(), std::byte{0});
     std::size_t position = 0;
     for (std::byte& byte : out) {
         byte = std::byte{run[position]};
@@ -49,14 +49,14 @@ inline void run_fec(std::span<const std::uint8_t> bytes) {
     const auto bit_is_set = [mask_bits](std::size_t i) noexcept { return ((unsigned{mask_bits} >> i) & 1U) != 0; };
     for (auto shard : mask.indices())
         mask.at(shard) = bit_is_set(shard.raw());
-    auto output = ::fixy::mint_heap_array(::foundation::effects::Alloc{}, output_size, std::byte{0});
+    auto output = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, output_size, std::byte{0});
     (void)codec.decode(received.view(), mask.view(), output.view());
 
     // Encode the rest of the input, erase at most two shards, decode.
     const auto input = heap_bytes(cursor.rest());
     if (input.size() == 0) return;
-    auto encoded =
-        ::fixy::mint_heap_array(::foundation::effects::Alloc{}, Codec::encoded_size_for(input.size()), std::byte{0});
+    auto encoded = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc,
+                                           Codec::encoded_size_for(input.size()), std::byte{0});
     CRUCIBLE_FUZZ_CLAIM("fec", codec.encode(input.view(), encoded.view()).is_ok());
     const std::size_t shard = encoded.size() / Codec::total_shards;
     ::foundation::core::FixedArray<bool, Codec::total_shards> erased{};
@@ -69,7 +69,7 @@ inline void run_fec(std::span<const std::uint8_t> bytes) {
         ::fixy::fill(encoded.view().window(index.raw() * shard, shard).expect("the shard lies inside the block"),
                      std::byte{0xA5});
     }
-    auto decoded = ::fixy::mint_heap_array(::foundation::effects::Alloc{}, input.size(), std::byte{0});
+    auto decoded = ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, input.size(), std::byte{0});
     CRUCIBLE_FUZZ_CLAIM("fec", codec.decode(encoded.view(), erased.view(), decoded.view()).is_ok());
     CRUCIBLE_FUZZ_CLAIM("fec", ::fixy::equal(decoded.view(), input.view()));
 }

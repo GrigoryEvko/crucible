@@ -177,13 +177,14 @@ void every_accessor_runs_at_run_time() {
     e = fe::Effect::Test;
     [[maybe_unused]] std::string_view n6 = fe::effect_name(e);
 
-    [[maybe_unused]] fe::cap::Alloc a_tag{};
-    [[maybe_unused]] fe::cap::IO i_tag{};
-    [[maybe_unused]] fe::cap::Block b_tag{};
-
     [[maybe_unused]] auto bg_ctx = fe::testing::bg();
     [[maybe_unused]] auto init_ctx = fe::testing::init();
     [[maybe_unused]] auto test_ctx = fe::testing::test();
+
+    // A context holds each value atom, and a copy out of it is the atom.
+    [[maybe_unused]] fe::cap::Alloc a_tag = test_ctx.alloc;
+    [[maybe_unused]] fe::cap::IO i_tag = test_ctx.io;
+    [[maybe_unused]] fe::cap::Block b_tag = test_ctx.block;
 }
 
 // The rest of Row.h is consteval-only.  This body is the one place the

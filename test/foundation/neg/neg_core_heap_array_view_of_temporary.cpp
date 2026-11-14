@@ -5,6 +5,6 @@
 #include <foundation/effects/Effect.h>
 
 int main() {
-    auto elements = ::foundation::core::mint_heap_array(::foundation::effects::Alloc{}, 4, 1).view();
+    auto elements = ::foundation::core::mint_heap_array(::foundation::effects::testing::test().alloc, 4, 1).view();
     return static_cast<int>(elements.size());
 }

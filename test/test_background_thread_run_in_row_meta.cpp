@@ -132,8 +132,8 @@ void test_overflow_build_leaves_tail() {
     using namespace meta_rig;
     seal_global_tables();
 
-    BackgroundThread bt;
-    auto metalog = std::make_unique<MetaLog>();
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
     bt.meta_log.set(metalog.get());
     const auto test = ::foundation::effects::testing::test();
 
@@ -166,8 +166,8 @@ void test_publish_stage_releases_in_order() {
     using namespace meta_rig;
     seal_global_tables();
 
-    BackgroundThread bt;
-    auto metalog = std::make_unique<MetaLog>();
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
     bt.meta_log.set(metalog.get());
     const auto test = ::foundation::effects::testing::test();
     const auto bg = ::foundation::effects::testing::bg();
@@ -212,9 +212,9 @@ void test_publish_stage_releases_in_order() {
 void test_pipeline_releases_after_overflow() {
     using namespace meta_rig;
 
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     auto ring = std::make_unique<TraceRing>();
-    auto metalog = std::make_unique<MetaLog>();
+    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
     bt.start(*ring, *metalog);
 
     // The detector accepts the period of one iteration and then cuts each
@@ -277,8 +277,8 @@ void test_built_graph_owns_its_metadata() {
     using namespace meta_rig;
     seal_global_tables();
 
-    BackgroundThread bt;
-    auto metalog = std::make_unique<MetaLog>();
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
     bt.meta_log.set(metalog.get());
     const auto test = ::foundation::effects::testing::test();
     const auto bg = ::foundation::effects::testing::bg();
@@ -326,8 +326,8 @@ void test_build_and_release_pass_two_to_the_32() {
     using namespace meta_rig;
     seal_global_tables();
 
-    BackgroundThread bt;
-    auto metalog = std::make_unique<MetaLog>();
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
     bt.meta_log.set(metalog.get());
     const auto test = ::foundation::effects::testing::test();
     const auto bg = ::foundation::effects::testing::bg();
@@ -372,7 +372,7 @@ void test_scalars_of_an_op_with_no_tensors() {
     seal_global_tables();
 
     // The ops have no metadata index, so the build reads no metadata log.
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     const auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena scratch{size_t{1} << 16};
 

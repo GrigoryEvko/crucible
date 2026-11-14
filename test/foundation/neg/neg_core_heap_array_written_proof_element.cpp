@@ -28,7 +28,7 @@ struct WritesNothing {
 }  // namespace
 
 int main() {
-    auto tokens =
-        ::foundation::core::mint_heap_array_written<HoldsToken>(::foundation::effects::Alloc{}, 0, WritesNothing{});
+    auto tokens = ::foundation::core::mint_heap_array_written<HoldsToken>(::foundation::effects::testing::test().alloc,
+                                                                          0, WritesNothing{});
     return static_cast<int>(tokens.size());
 }

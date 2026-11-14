@@ -33,7 +33,7 @@
 static void requires_ckernel_mutable_view(crucible::CKernelTable::MutableView const&) noexcept {}
 
 int main() {
-    crucible::CrucibleContext ctx;
+    crucible::CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     // Default-constructed CrucibleContext is in RECORD mode; calling
     // mint_compiled_view() would fire its `CRUCIBLE_PRE(mode_ == COMPILED)` at
     // runtime — but this neg-compile fixture never gets to runtime.

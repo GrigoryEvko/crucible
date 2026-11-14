@@ -42,11 +42,11 @@ template <class T>
 
 // count bytes of the arena, as the address of the first one.
 [[nodiscard]] Address take(BumpArena& arena, std::size_t count) noexcept {
-    return first_address(arena.array(::foundation::effects::Alloc{}, count, std::byte{0}));
+    return first_address(arena.array(::foundation::effects::testing::test().alloc, count, std::byte{0}));
 }
 
 void test_make_builds_the_object() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     BumpArena arena{4096};
     auto const pair = arena.make<Pair>(alloc, Pair{.key = 7, .count = 3, .flags = 1});
     CRUCIBLE_FATAL_INVARIANT(pair->key == 7 && pair->count == 3 && pair->flags == 1);
@@ -61,7 +61,7 @@ void test_make_builds_the_object() {
 }
 
 void test_array_fills_each_element() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     BumpArena arena{4096};
     View<std::uint32_t> const numbers = arena.array<std::uint32_t>(alloc, 1000, 7);
     CRUCIBLE_FATAL_INVARIANT(numbers.size() == 1000);
@@ -84,7 +84,7 @@ void test_array_fills_each_element() {
 // A count of zero gives the empty View and takes no block.
 void test_empty_array_takes_no_bytes() {
     BumpArena arena{4096};
-    View<std::uint64_t> const empty = arena.array<std::uint64_t>(::foundation::effects::Alloc{}, 0, 5);
+    View<std::uint64_t> const empty = arena.array<std::uint64_t>(::foundation::effects::testing::test().alloc, 0, 5);
     CRUCIBLE_FATAL_INVARIANT(empty.size() == 0);
     CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() == 0);
 }
@@ -172,7 +172,8 @@ void test_wrong_uses_end_the_process() {
 
     BumpArena too_long{4096};
     bool const too_long_aborts = ::crucible::test::aborts([&] {
-        static_cast<void>(too_long.array<std::uint64_t>(::foundation::effects::Alloc{}, ~std::size_t{0} / 4, 0));
+        static_cast<void>(
+            too_long.array<std::uint64_t>(::foundation::effects::testing::test().alloc, ~std::size_t{0} / 4, 0));
     });
     CRUCIBLE_FATAL_INVARIANT(too_long_aborts);
 
@@ -197,10 +198,11 @@ void test_agrees_with_plain_model() {
                 std::size_t const count = 1 + stream.below(40);
                 std::uint64_t const fill = position.raw() + 1;
                 if (stream.below(2) == 0) {
-                    View<std::uint32_t> const odd = arena.array<std::uint32_t>(::foundation::effects::Alloc{}, 1, 0);
+                    View<std::uint32_t> const odd =
+                        arena.array<std::uint32_t>(::foundation::effects::testing::test().alloc, 1, 0);
                     CRUCIBLE_FATAL_INVARIANT(first_address(odd).is_aligned<alignof(std::uint32_t)>());
                 }
-                *slot = arena.array(::foundation::effects::Alloc{}, count, Wide{.first = fill});
+                *slot = arena.array(::foundation::effects::testing::test().alloc, count, Wide{.first = fill});
                 CRUCIBLE_FATAL_INVARIANT(first_address(*slot).is_aligned<64>());
             }
             for (auto [position, slot] : arrays.enumerate()) {

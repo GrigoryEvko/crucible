@@ -63,7 +63,7 @@ static void test_slot_ptr_pinned_bit_equality() {
     MemoryPlan plan = make_plan(slots.view(), 2048, 0);
 
     PoolAllocator pool;
-    pool.init(plan);
+    pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     void* raw_0 = pool.slot_ptr(SlotId{0}, pv);
@@ -84,7 +84,7 @@ static void test_slot_ptr_pinned_type_identity() {
     MemoryPlan plan = make_plan(slots.view(), 256, 0);
 
     PoolAllocator pool;
-    pool.init(plan);
+    pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     using Got = decltype(pool.slot_ptr_pinned(SlotId{0}, pv));
@@ -157,7 +157,7 @@ static void test_pool_base_pinned_small_pool() {
     MemoryPlan plan = make_plan(slots.view(), 1024, 0);
 
     PoolAllocator pool;
-    pool.init(plan);
+    pool.init(::foundation::effects::testing::test().alloc, plan);
 
     auto pinned = pool.pool_base_pinned();
     static_assert(std::is_same_v<decltype(pinned), AllocClass<AllocClassTag_v::Pool, void*>>);
@@ -181,7 +181,7 @@ static void test_pool_base_huge_pinned() {
     MemoryPlan plan = make_plan(slots.view(), HP, 0);
 
     PoolAllocator pool;
-    pool.init(plan);
+    pool.init(::foundation::effects::testing::test().alloc, plan);
 
     // The accessor has a precondition on the pool being at least one
     // huge page, which the plan above satisfies.
@@ -202,7 +202,7 @@ static void test_pool_relax_to_weaker() {
     MemoryPlan plan = make_plan(slots.view(), 256, 0);
 
     PoolAllocator pool;
-    pool.init(plan);
+    pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     auto pinned = pool.slot_ptr_pinned(SlotId{0}, pv);
@@ -244,7 +244,7 @@ static void test_e2e_fence_checked_consumer() {
     MemoryPlan plan = make_plan(slots.view(), 1024, 0);
 
     PoolAllocator pool;
-    pool.init(plan);
+    pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     auto slot_pinned = pool.slot_ptr_pinned(SlotId{0}, pv);
@@ -264,7 +264,7 @@ static void test_pool_base_pinned_with_huge_alignment() {
     MemoryPlan plan = make_plan(slots.view(), HP, 0);
 
     PoolAllocator pool;
-    pool.init(plan);
+    pool.init(::foundation::effects::testing::test().alloc, plan);
 
     auto pool_pinned = pool.pool_base_pinned();
     static_assert(std::is_same_v<decltype(pool_pinned), AllocClass<AllocClassTag_v::Pool, void*>>);

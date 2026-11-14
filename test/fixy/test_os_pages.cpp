@@ -44,7 +44,8 @@ constexpr ::fixy::InitLoadCtx kStartup{::foundation::effects::testing::init()};
 constexpr std::size_t kFreshBlockBytes = std::size_t{33} << 20;
 
 [[nodiscard]] ::foundation::AlignedBytes allocate_fresh_block() noexcept {
-    return ::foundation::mint_aligned_bytes(::foundation::effects::Alloc{}, kFreshBlockBytes, page_size());
+    return ::foundation::mint_aligned_bytes(::foundation::effects::testing::test().alloc, kFreshBlockBytes,
+                                            page_size());
 }
 
 // Words that the program only reads.  The linker puts a constant with no
@@ -87,7 +88,7 @@ constexpr std::size_t kPastTheLockLimit = std::size_t{16} * 1024 * 1024;
 // enomem to an unprivileged process, and a privileged process gets the lock.
 // An unlock of the page then works in each case.
 void lock_and_unlock_reach_the_kernel() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     core::HeapArray<std::byte, kPageBytes> page =
         core::mint_heap_array<std::byte, kPageBytes>(alloc, kPageBytes, std::byte{0});
     core::View<std::byte const> const bytes = page.view();
@@ -112,7 +113,7 @@ void lock_and_unlock_reach_the_kernel() {
 // page holds none, and the door makes no system call.  A kernel with no THP
 // refuses the advice with einval.
 void huge_page_advice_covers_the_whole_huge_pages() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     core::HeapArray<std::byte, pages::huge_page_bytes> region =
         core::mint_heap_array<std::byte, pages::huge_page_bytes>(alloc, 2 * pages::huge_page_bytes, std::byte{0});
     core::View<std::byte const> const bytes = region.view();

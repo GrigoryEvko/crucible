@@ -50,7 +50,7 @@ struct Pair {
 };
 
 void test_mint_and_access() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     Box<int> number = mint_box<int>(alloc, 41);
     CRUCIBLE_FATAL_INVARIANT(*number == 41);
     *number += 1;
@@ -76,7 +76,7 @@ void test_mint_and_access() {
 }
 
 void test_destruction_counts() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     {
         Box<CountedObject> first = mint_box<CountedObject>(alloc, 1);
         CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
@@ -97,7 +97,7 @@ void test_destruction_counts() {
 }
 
 void test_self_move_assignment_keeps_the_object() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     {
         Box<CountedObject> held = mint_box<CountedObject>(alloc, 7);
         Box<CountedObject>& alias = held;
@@ -130,7 +130,7 @@ private:
 };
 
 void test_consume() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     {
         Box<CountedMovable> held = mint_box<CountedMovable>(alloc, 13);
         CRUCIBLE_FATAL_INVARIANT(live_movables == 1);
@@ -148,7 +148,7 @@ void test_consume() {
 // the precondition ends the process.  The probe jumps out of the body with
 // no destructor call, so the body owns no allocation.
 void test_consume_of_moved_from_aborts() {
-    Box<int> source = mint_box<int>(::foundation::effects::Alloc{}, 1);
+    Box<int> source = mint_box<int>(::foundation::effects::testing::test().alloc, 1);
     Box<int> target{std::move(source)};
     bool const moved_from_consume_aborts =
         ::crucible::test::aborts([&source] { static_cast<void>(std::move(source).consume()); });
@@ -159,7 +159,7 @@ void test_consume_of_moved_from_aborts() {
 // The probe borrows a moved-from Box on purpose: each build tests for the
 // object, so the borrow ends the process and reads no null pointer.
 void test_borrow_of_moved_from_aborts() {
-    Box<int> source = mint_box<int>(::foundation::effects::Alloc{}, 2);
+    Box<int> source = mint_box<int>(::foundation::effects::testing::test().alloc, 2);
     Box<int> target{std::move(source)};
     bool const view_aborts = ::crucible::test::aborts([&source] { static_cast<void>(source.view()); });
     bool const star_aborts = ::crucible::test::aborts([&source] { static_cast<void>(*source); });
@@ -181,7 +181,7 @@ struct alignas(Alignment) AlignedValue {
 
 template <std::size_t Alignment>
 void test_box_at_alignment() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     for (std::uint64_t trial = 0; trial < 8; ++trial) {
         Box<AlignedValue<Alignment>> held = mint_box<AlignedValue<Alignment>>(alloc, AlignedValue<Alignment>{trial});
         CRUCIBLE_FATAL_INVARIANT(std::bit_cast<std::uintptr_t>(&*held) % Alignment == 0);
@@ -202,7 +202,7 @@ void test_each_alignment() {
 // chain, give back the values they were built from.  A plain model holds
 // the values.
 void test_agrees_with_plain_model() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     ::crucible::test::PhiloxStream stream{0x5EEDB0C5000000A1u};
     for (int trial = 0; trial < 512; ++trial) {
         std::uint64_t const model_value = stream.next_wide();
@@ -248,7 +248,8 @@ struct Engine {
     int power = 0;
 };
 
-EngineOwner::EngineOwner(int level) noexcept : engine_{mint_box<Engine>(::foundation::effects::Alloc{}, level)} {}
+EngineOwner::EngineOwner(int level) noexcept
+    : engine_{mint_box<Engine>(::foundation::effects::testing::test().alloc, level)} {}
 
 EngineOwner::~EngineOwner() = default;
 
@@ -302,7 +303,7 @@ GearOwner::GearOwner() noexcept = default;
 GearOwner::~GearOwner() = default;
 
 void GearOwner::fit(int teeth) noexcept {
-    gear_ = ::foundation::core::some(mint_box<Gear>(::foundation::effects::Alloc{}, teeth));
+    gear_ = ::foundation::core::some(mint_box<Gear>(::foundation::effects::testing::test().alloc, teeth));
 }
 
 bool GearOwner::has_gear() const noexcept { return gear_.is_some(); }

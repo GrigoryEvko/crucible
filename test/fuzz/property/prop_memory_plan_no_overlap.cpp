@@ -41,8 +41,9 @@
 //       (aligned by induction), so the invariant must hold for every
 //       internal slot regardless of the random liveness shape.
 //
-// A fresh BackgroundThread is constructed per iteration: its default
-// ctor spawns NO pipeline thread (start() does that), so the only
+// A fresh BackgroundThread is constructed per iteration, with the
+// allocation tag of the test context.  Its constructor spawns NO pipeline
+// thread (start() does that), so the only
 // state is its arena, which is reclaimed when the local dies —
 // bounding memory across the run.  test_memory_plan.cpp proves the
 // construct-and-call-without-start() shape is sound.
@@ -158,7 +159,7 @@ int main(int argc, char** argv) {
                 slots1.view().window(0, num_slots).expect("a set holds at most kMaxSlots slots");
 
             auto test = ::foundation::effects::testing::test();
-            BackgroundThread bt1;
+            BackgroundThread bt1{::foundation::effects::testing::test().alloc};
             crucible::MemoryPlan plan_storage1{};
             ::fixy::BumpArena sweep_arena1{size_t{1} << 16};
             const crucible::MemoryPlan& plan1 =
@@ -200,7 +201,7 @@ int main(int argc, char** argv) {
             (void)materialize(set, slots2.view());
             const ::fixy::View<TensorSlot> set_slots2 =
                 slots2.view().window(0, num_slots).expect("a set holds at most kMaxSlots slots");
-            BackgroundThread bt2;
+            BackgroundThread bt2{::foundation::effects::testing::test().alloc};
             crucible::MemoryPlan plan_storage2{};
             ::fixy::BumpArena sweep_arena2{size_t{1} << 16};
             const crucible::MemoryPlan& plan2 =

@@ -69,7 +69,9 @@ struct DispatchResult {
 };
 
 struct CrucibleContext {
-    CrucibleContext() = default;
+    // The caller gives the allocation capability of its context.  The pool
+    // of each region that the context activates allocates through it.
+    explicit CrucibleContext(::foundation::effects::Alloc allocation) noexcept : allocation_{allocation} {}
 
     CrucibleContext(const CrucibleContext&) = delete("owns PoolAllocator with interior pointers");
     CrucibleContext& operator=(const CrucibleContext&) = delete("owns PoolAllocator with interior pointers");
@@ -85,7 +87,7 @@ struct CrucibleContext {
 
         if (mode_ == ContextMode::COMPILED) deactivate();
 
-        pool_.init(*plan);
+        pool_.init(allocation_, *plan);
         engine_.init(region, ReplayEngine::PoolBorrow{pool_});
         active_region_ = ::fixy::mint_tagged<::fixy::tags::source::Vigil>(&region);
         mode_ = ContextMode::COMPILED;
@@ -159,7 +161,7 @@ struct CrucibleContext {
         // out of scope before anything touches the pool again.
         auto pv = pool_.initialized_view_();
         const ::foundation::AlignedBytes old_pool = pool_.detach(pv);
-        pool_.init(*new_plan);
+        pool_.init(allocation_, *new_plan);
         migrate_prefix_slots_(old_region, alt, old_pool.view(), div_pos);
 
         engine_.init(alt, ReplayEngine::PoolBorrow{pool_});
@@ -381,6 +383,11 @@ private:
                   "a tagged region pointer must be aligned as the pointer it wraps");
     ActiveRegionPtr active_region_{};  // offset 80
     PoolAllocator pool_;  // 48 bytes, offset 88
+    // The allocation capability that the constructor received.  The pool of
+    // each activated region allocates only through it.  The tag is empty, so
+    // it adds no storage.  It has no initializer, because the one
+    // constructor sets it.
+    [[no_unique_address]] ::foundation::effects::Alloc allocation_;
 };
 
 }  // namespace crucible

@@ -8,6 +8,7 @@
 
 int main() {
     auto numbers = ::foundation::core::mint_heap_array_with<int>(
-        ::foundation::effects::IO{}, 4, [](std::size_t position) noexcept { return static_cast<int>(position); });
+        ::foundation::effects::testing::test().io, 4,
+        [](std::size_t position) noexcept { return static_cast<int>(position); });
     return static_cast<int>(numbers.size());
 }

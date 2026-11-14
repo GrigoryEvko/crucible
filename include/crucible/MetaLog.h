@@ -89,9 +89,11 @@ struct CRUCIBLE_OWNER MetaLog {
     alignas(64)::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> tail =
         ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
 
-    MetaLog()
-        : entries_buffer_{::fixy::mint_heap_array<TensorMeta, crucible::warden::kHugePageBytes>(
-              ::foundation::effects::Alloc{}, CAPACITY, TensorMeta{})},
+    // The caller gives the allocation capability of its context for the
+    // buffer of the records.
+    explicit MetaLog(::foundation::effects::Alloc allocation)
+        : entries_buffer_{::fixy::mint_heap_array<TensorMeta, crucible::warden::kHugePageBytes>(allocation, CAPACITY,
+                                                                                                TensorMeta{})},
           records_{entries_buffer_.view().template window<CAPACITY>(0).expect("the buffer holds CAPACITY records")} {
         // The allocation faults the whole buffer in here rather than one page
         // at a time under the recording thread.

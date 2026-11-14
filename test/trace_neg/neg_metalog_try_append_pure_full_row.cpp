@@ -26,7 +26,7 @@
 namespace eff = ::fixy;
 
 int main() {
-    crucible::MetaLog log;
+    crucible::MetaLog log{::foundation::effects::testing::test().alloc};
     const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
     // AllRow contains every Effect atom — the F* lattice top.
     // IsPure<AllRow> is false; the requires-clause rejects.

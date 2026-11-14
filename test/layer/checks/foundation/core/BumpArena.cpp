@@ -76,13 +76,14 @@ static_assert(!EpochBody<decltype(body_with_argument) const&>);
 // make gives a Ref, array gives a View, and with_epoch gives the result of
 // its body.
 template <class Arena>
-concept MakesInt = requires { std::declval<Arena>().template make<int>(Alloc{}, 5); };
+concept MakesInt = requires { std::declval<Arena>().template make<int>(std::declval<Alloc>(), 5); };
 template <class Arena>
-concept FillsInts = requires { std::declval<Arena>().array(Alloc{}, std::size_t{4}, 0); };
+concept FillsInts = requires { std::declval<Arena>().array(std::declval<Alloc>(), std::size_t{4}, 0); };
 template <class Arena>
 concept RunsEpoch = requires { std::declval<Arena>().with_epoch(silent_body); };
 static_assert(MakesInt<BumpArena&> && FillsInts<BumpArena&> && RunsEpoch<BumpArena&>);
-static_assert(std::is_same_v<decltype(std::declval<BumpArena&>().array(Alloc{}, std::size_t{4}, 0)), View<int>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<BumpArena&>().array(std::declval<Alloc>(), std::size_t{4}, 0)), View<int>>);
 static_assert(std::is_same_v<decltype(std::declval<BumpArena&>().with_epoch(silent_body)), int>);
 
 // An allocation and an epoch of a temporary arena are refused, because the
@@ -108,8 +109,8 @@ struct RefTargetOf<Ref<T, Brand>> {
 
 // make gives a Ref to a T.  Two calls give two fresh brands.
 [[nodiscard]] consteval bool make_gives_fresh_refs() noexcept {
-    using First = decltype(std::declval<BumpArena&>().make<Plain>(Alloc{}));
-    using Second = decltype(std::declval<BumpArena&>().make<Plain>(Alloc{}));
+    using First = decltype(std::declval<BumpArena&>().make<Plain>(std::declval<Alloc>()));
+    using Second = decltype(std::declval<BumpArena&>().make<Plain>(std::declval<Alloc>()));
     return std::is_same_v<typename RefTargetOf<First>::type, Plain> && !std::is_same_v<First, Second>;
 }
 static_assert(make_gives_fresh_refs());

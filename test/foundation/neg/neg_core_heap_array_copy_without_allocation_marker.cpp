@@ -5,7 +5,8 @@
 #include <foundation/effects/Effect.h>
 
 int main() {
-    auto const source = ::foundation::core::mint_heap_array(::foundation::effects::Alloc{}, 4, 1);
-    auto copied = ::foundation::core::mint_heap_array_copy<int>(::foundation::effects::IO{}, source.view());
+    auto const source = ::foundation::core::mint_heap_array(::foundation::effects::testing::test().alloc, 4, 1);
+    auto copied =
+        ::foundation::core::mint_heap_array_copy<int>(::foundation::effects::testing::test().io, source.view());
     return static_cast<int>(copied.size());
 }

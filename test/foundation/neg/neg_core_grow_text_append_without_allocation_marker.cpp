@@ -6,6 +6,6 @@
 
 int main() {
     auto text = ::foundation::core::mint_grow_text(16);
-    text.append(::foundation::effects::IO{}, "crucible").expect("the text is below its maximum");
+    text.append(::foundation::effects::testing::test().io, "crucible").expect("the text is below its maximum");
     return static_cast<int>(text.size());
 }

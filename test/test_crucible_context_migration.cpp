@@ -125,7 +125,7 @@ bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
     RegionNode new_region{};
     init_region(&new_region, new_ops.view(), crucible::make_plan_link(new_plan));
 
-    CrucibleContext context;
+    CrucibleContext context{::foundation::effects::testing::test().alloc};
     assert(context.activate(old_region));
     const bool was_switched = context.switch_region(new_region, 1);
     return was_switched && context.active_region().try_get() == &new_region;
@@ -221,7 +221,7 @@ void test_smaller_new_slot_takes_its_own_size() {
     RegionNode new_region{};
     init_region(&new_region, new_ops.view(), crucible::make_plan_link(new_plan));
 
-    CrucibleContext context;
+    CrucibleContext context{::foundation::effects::testing::test().alloc};
     assert(context.activate(old_region));
     ::fixy::fill(context.pool().bytes(), std::uint8_t{0x5A});
     assert(context.switch_region(new_region, 1));

@@ -242,8 +242,7 @@ struct SchemaInfo {
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: PyTorch gives the operator name in a std::string")
     const ::fixy::TextView full_name_text = ::fixy::mint_foreign_text(full_name.data(), full_name.size());
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    crucible::register_schema_name(vigil.mint_producer_context(), schema_hash,
-                                   ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(full_name_text));
+    vigil.register_schema_name(schema_hash, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(full_name_text));
 
     // Authoritative mutability from schema alias annotations.
     // Catches both in-place ops (add_.Tensor: self(a!)) and out= variants

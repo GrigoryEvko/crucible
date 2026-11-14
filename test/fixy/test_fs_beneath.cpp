@@ -95,7 +95,7 @@ template <typename T>
 [[nodiscard]] int opens_refuse(fixy::TextView escape, fs::Dirfd const& dir, PathBuffer const& file,
                                PathBuffer const& directory, Errno expected) {
     IoBlockCtx const ctx{eff::testing::test()};
-    eff::Alloc const alloc{};
+    eff::Alloc const alloc = eff::testing::test().alloc;
     int failed = 0;
     if (Errno const given = open_error_of(fs::mint_file_at<fs::read_only>(ctx, dir, file.c_text()));
         given != expected) {

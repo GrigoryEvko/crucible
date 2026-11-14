@@ -11,7 +11,7 @@ int main() {
     t.seal();
     auto sv = t.mint_sealed_view();
 
-    t.register_name(sv, crucible::SchemaHash{0x42},
+    t.register_name(::foundation::effects::testing::test().alloc, sv, crucible::SchemaHash{0x42},
                     ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::mm"}));
     return 0;
 }

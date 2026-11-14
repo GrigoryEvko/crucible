@@ -47,7 +47,7 @@ private:
 };
 
 void test_empty_array() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     HeapArray<std::uint32_t> const empty = mint_heap_array(alloc, 0, std::uint32_t{5});
     CRUCIBLE_FATAL_INVARIANT(empty.size() == 0);
     CRUCIBLE_FATAL_INVARIANT(empty.view().size() == 0);
@@ -64,7 +64,7 @@ void test_empty_array() {
 }
 
 void test_fill_and_reads() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     HeapArray<std::uint32_t> numbers = mint_heap_array(alloc, 1000, std::uint32_t{7});
     CRUCIBLE_FATAL_INVARIANT(numbers.size() == 1000);
     for (std::uint32_t const element : numbers) {
@@ -93,7 +93,7 @@ void test_fill_and_reads() {
 
 template <std::size_t Alignment>
 void test_alignment() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     for (std::size_t count = 1; count < 70; count += 23) {
         HeapArray<std::uint8_t, Alignment> bytes = mint_heap_array<std::uint8_t, Alignment>(alloc, count, 0);
         auto const first = bytes.get(0).expect("the array holds an element");
@@ -121,7 +121,7 @@ struct[[= ::foundation::lifetime::no_start_over_bytes{}]] Stamped {
 };
 
 void test_sealed_element() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     HeapArray<Stamped, 64> const filled = mint_heap_array<Stamped, 64>(alloc, 3, Stamped{});
     HeapArray<Stamped> const built =
         mint_heap_array_with<Stamped>(alloc, 3, [](std::size_t) noexcept { return Stamped{}; });
@@ -134,7 +134,7 @@ void test_sealed_element() {
 }
 
 void test_destruction_counts() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     {
         CountedCopy const fill{4};
         HeapArray<CountedCopy> first = mint_heap_array(alloc, 5, fill);
@@ -162,7 +162,7 @@ void test_destruction_counts() {
 }
 
 void test_equality() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     HeapArray<int> const left = mint_heap_array(alloc, 4, 2);
     HeapArray<int> right = mint_heap_array(alloc, 4, 2);
     HeapArray<int> const shorter = mint_heap_array(alloc, 3, 2);
@@ -177,7 +177,7 @@ void test_equality() {
 void test_too_long_aborts() {
     bool const too_long_aborts = ::crucible::test::aborts([] {
         HeapArray<std::uint64_t> const huge =
-            mint_heap_array(::foundation::effects::Alloc{}, ~std::size_t{0} / 4, std::uint64_t{0});
+            mint_heap_array(::foundation::effects::testing::test().alloc, ~std::size_t{0} / 4, std::uint64_t{0});
         static_cast<void>(huge);
     });
     CRUCIBLE_FATAL_INVARIANT(too_long_aborts);
@@ -187,7 +187,7 @@ void test_too_long_aborts() {
 // at each position, get agrees with the count, and a write through get
 // shows in the loop.  A plain count and a plain sum are the model.
 void test_agrees_with_plain_model() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     ::crucible::test::PhiloxStream stream{0x5EEDA77A00000001u};
     for (int trial = 0; trial < 256; ++trial) {
         std::size_t const count = stream.below(300);
@@ -233,7 +233,7 @@ private:
 // mint_heap_array_with builds each element at its home, from the result of
 // init at its position, in the order of the positions.
 void test_with_builds_in_place() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     std::size_t calls = 0;
     HeapArray<Anchored> const anchored = mint_heap_array_with<Anchored>(alloc, 37, [&](std::size_t position) noexcept {
         CRUCIBLE_FATAL_INVARIANT(position == calls);
@@ -282,7 +282,7 @@ void test_with_builds_in_place() {
 // mint_heap_array_copy copies each element of a View, and the copy owns its
 // own storage.
 void test_copy_of_view() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     HeapArray<std::uint32_t> source = mint_heap_array(alloc, 9, std::uint32_t{4});
     *source.get(8).expect("the position is below the count") = 11;
     HeapArray<std::uint32_t> copied = mint_heap_array_copy<std::uint32_t>(alloc, source.view());
@@ -304,7 +304,7 @@ void test_copy_of_view() {
 // that the test frees before the mint hold a pattern, so a block that the
 // allocator gives again with that pattern fails the test.
 void test_zeroed() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     {
         HeapArray<std::uint64_t, 64> const poison = mint_heap_array<std::uint64_t, 64>(alloc, 512, 0xABABABABABABABABu);
         CRUCIBLE_FATAL_INVARIANT(poison.size() == 512);
@@ -332,7 +332,7 @@ void test_zeroed() {
 // mint_heap_array_written gives the elements that the writer put through
 // its lease, in order, one value at a time or one run at a time.
 void test_written() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     HeapArray<std::uint32_t> const run = mint_heap_array(alloc, 3, std::uint32_t{40});
     HeapArray<std::uint32_t, 64> const written =
         mint_heap_array_written<std::uint32_t, 64>(alloc, 6, [&](WriteLease<std::uint32_t>& lease) noexcept {
@@ -367,15 +367,16 @@ void test_written() {
 // body, so the run of the long write lives outside the body.
 void test_written_aborts() {
     bool const unwritten_aborts = ::crucible::test::aborts([] {
-        HeapArray<std::uint32_t> const partial = mint_heap_array_written<std::uint32_t>(
-            ::foundation::effects::Alloc{}, 4, [](WriteLease<std::uint32_t>& lease) noexcept { lease.put(1); });
+        HeapArray<std::uint32_t> const partial =
+            mint_heap_array_written<std::uint32_t>(::foundation::effects::testing::test().alloc, 4,
+                                                   [](WriteLease<std::uint32_t>& lease) noexcept { lease.put(1); });
         static_cast<void>(partial);
     });
     CRUCIBLE_FATAL_INVARIANT(unwritten_aborts);
 
     bool const overflow_aborts = ::crucible::test::aborts([] {
         HeapArray<std::uint32_t> const longer = mint_heap_array_written<std::uint32_t>(
-            ::foundation::effects::Alloc{}, 1, [](WriteLease<std::uint32_t>& lease) noexcept {
+            ::foundation::effects::testing::test().alloc, 1, [](WriteLease<std::uint32_t>& lease) noexcept {
                 lease.put(1);
                 lease.put(2);
                 CRUCIBLE_FATAL_INVARIANT(lease.remaining() == 0 && lease.refused() == 1);
@@ -384,10 +385,11 @@ void test_written_aborts() {
     });
     CRUCIBLE_FATAL_INVARIANT(overflow_aborts);
 
-    HeapArray<std::uint32_t> const run = mint_heap_array(::foundation::effects::Alloc{}, 3, std::uint32_t{5});
+    HeapArray<std::uint32_t> const run =
+        mint_heap_array(::foundation::effects::testing::test().alloc, 3, std::uint32_t{5});
     bool const long_run_aborts = ::crucible::test::aborts([&] {
         HeapArray<std::uint32_t> const shorter = mint_heap_array_written<std::uint32_t>(
-            ::foundation::effects::Alloc{}, 2, [&](WriteLease<std::uint32_t>& lease) noexcept {
+            ::foundation::effects::testing::test().alloc, 2, [&](WriteLease<std::uint32_t>& lease) noexcept {
                 lease.put_run(run.view());
                 CRUCIBLE_FATAL_INVARIANT(lease.remaining() == 2 && lease.refused() == 3);
             });
@@ -397,7 +399,7 @@ void test_written_aborts() {
 
     bool const exact_passes = !::crucible::test::aborts([] {
         HeapArray<std::uint32_t> const exact = mint_heap_array_written<std::uint32_t>(
-            ::foundation::effects::Alloc{}, 2, [](WriteLease<std::uint32_t>& lease) noexcept {
+            ::foundation::effects::testing::test().alloc, 2, [](WriteLease<std::uint32_t>& lease) noexcept {
                 lease.put(1);
                 lease.put(2);
             });

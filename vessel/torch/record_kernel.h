@@ -1277,8 +1277,8 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         // generated headers this table was built from, so crucible produced
         // the name.
         const QualifiedOpName name{aten_op_table[TableIndex]};
-        crucible::register_schema_name(vigil.mint_producer_context(), kSchemaHash,
-                                       ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(name.c_text().view()));
+        vigil.register_schema_name(kSchemaHash,
+                                   ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(name.c_text().view()));
         schema_name_registered.store(true, std::memory_order_relaxed);
     }
 

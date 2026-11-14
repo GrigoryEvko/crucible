@@ -149,7 +149,7 @@ void run_test(const char* name, Body body) {
 }
 
 void test_permissioned_bulk_drain() {
-    ::crucible::MetaLog raw_log;
+    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto [producer, consumer] = mint_handles(log);
 
@@ -176,7 +176,7 @@ void test_permissioned_bulk_drain() {
 }
 
 void test_single_append_drain() {
-    ::crucible::MetaLog raw_log;
+    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto [producer, consumer] = mint_handles(log);
 
@@ -203,7 +203,7 @@ void test_single_append_drain() {
 // A drain with a limit stops at the limit, and the next drain takes the
 // records that stay.
 void test_partial_drain() {
-    ::crucible::MetaLog raw_log;
+    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto [producer, consumer] = mint_handles(log);
 
@@ -240,7 +240,7 @@ void test_partial_drain() {
 // A bulk append returns the index of the first record it wrote, and copy_at()
 // copies the record at that index.
 void test_metaindex_propagates() {
-    ::crucible::MetaLog raw_log;
+    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto [producer, consumer] = mint_handles(log);
 
@@ -260,7 +260,7 @@ void test_metaindex_propagates() {
 }
 
 void test_empty_drain() {
-    ::crucible::MetaLog raw_log;
+    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto [producer, consumer] = mint_handles(log);
     (void)producer;
@@ -282,7 +282,7 @@ void test_empty_drain() {
 // move-assignment too.  Each loop keeps its current session in an optional
 // and puts the next one in its place with emplace.
 void test_typed_session_round_trip() {
-    ::crucible::MetaLog raw_log;
+    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto [producer, consumer] = mint_handles(log);
 
@@ -334,7 +334,7 @@ void test_typed_session_round_trip() {
 // log, and the moved-from caller variable does not.
 void test_session_gives_the_handle_back() {
     const FgCtx fg = ::foundation::effects::testing::foreground();
-    ::crucible::MetaLog raw_log;
+    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto [producer, consumer] = mint_handles(log);
 
@@ -364,7 +364,7 @@ template <typename Handle>
 }
 
 void log_producer() {
-    ::crucible::MetaLog raw_log;
+    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto [producer, consumer] = mint_handles(log);
     [[maybe_unused]] auto moved = std::move(producer);
@@ -372,7 +372,7 @@ void log_producer() {
 }
 
 void log_consumer() {
-    ::crucible::MetaLog raw_log;
+    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto [producer, consumer] = mint_handles(log);
     [[maybe_unused]] auto moved = std::move(consumer);
@@ -382,7 +382,7 @@ void log_consumer() {
 // One call site that runs two times mints two roots of one brand.  The
 // claim of each role refuses the second live handle of that role.
 void second_live_producer() {
-    ::crucible::MetaLog raw_log;
+    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto [first_producer, first_consumer] = mint_halves();
     auto [second_producer, second_consumer] = mint_halves();
@@ -391,7 +391,7 @@ void second_live_producer() {
 }
 
 void second_live_consumer() {
-    ::crucible::MetaLog raw_log;
+    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto [first_producer, first_consumer] = mint_halves();
     auto [second_producer, second_consumer] = mint_halves();
@@ -403,7 +403,7 @@ void second_live_consumer() {
 // producer can then write a new record into that slot, so a copy of the
 // record at index 0 ends the process.
 void copy_of_a_released_record() {
-    ::crucible::MetaLog raw_log;
+    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto producer = log.producer(mint_halves().first);
     auto consumer = log.consumer(mint_halves().second);

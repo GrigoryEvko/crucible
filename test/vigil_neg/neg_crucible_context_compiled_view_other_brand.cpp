@@ -11,7 +11,7 @@ struct Stranger {};
 }  // namespace
 
 int main() {
-    crucible::CrucibleContext ctx;
+    crucible::CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     auto cv = ctx.mint_compiled_view(::foundation::effects::testing::foreground<Stranger>());
     (void)cv;
     return 0;

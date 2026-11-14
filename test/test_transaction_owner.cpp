@@ -141,7 +141,7 @@ void rollback_on_a_fresh_vigil() {
 // runs on its caller, who owns the state while no stage runs.  Two jobs in
 // a row show that the inline path gives the mailbox back.
 void job_runs_on_the_caller_without_a_stage() {
-    crucible::BackgroundThread background;
+    crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
     int runs = 0;
     background.run_on_publish_stage([&runs](crucible::BackgroundThread::PublishStage const&) noexcept { ++runs; });
     background.run_on_publish_stage([&runs](crucible::BackgroundThread::PublishStage const&) noexcept { ++runs; });
@@ -162,8 +162,8 @@ std::thread::id thread_of_one_job(crucible::BackgroundThread& background) {
 // caller again.
 void job_runs_on_the_stage_while_it_runs() {
     auto ring = std::make_unique<crucible::TraceRing>();
-    auto meta_log = std::make_unique<crucible::MetaLog>();
-    crucible::BackgroundThread background;
+    auto meta_log = std::make_unique<crucible::MetaLog>(::foundation::effects::testing::test().alloc);
+    crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
     background.start(*ring, *meta_log);
 
     const std::thread::id caller = std::this_thread::get_id();
@@ -182,7 +182,7 @@ void job_runs_on_the_stage_while_it_runs() {
 // on itself, because the thread that runs it holds the stage.  The contract
 // ends the process instead of letting it hang.
 void nested_job_ends_the_process() {
-    crucible::BackgroundThread background;
+    crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
     background.run_on_publish_stage([&background](crucible::BackgroundThread::PublishStage const&) noexcept {
         background.run_on_publish_stage([](crucible::BackgroundThread::PublishStage const&) noexcept {});
     });

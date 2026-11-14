@@ -35,7 +35,7 @@ template <std::size_t Alignment>
 }
 
 void test_empty_block() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     AlignedBytes const empty = mint_aligned_bytes(alloc, 0, 256);
     CRUCIBLE_FATAL_INVARIANT(empty.size() == 0);
     CRUCIBLE_FATAL_INVARIANT(empty.alignment() == 0);
@@ -49,7 +49,7 @@ void test_empty_block() {
 // The block keeps each alignment of the run time, from below the alignment
 // of malloc up to a huge page.
 void test_alignments() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     AlignedBytes small = mint_aligned_bytes(alloc, 3, 8);
     CRUCIBLE_FATAL_INVARIANT(small.size() == 3 && small.alignment() == 8);
     CRUCIBLE_FATAL_INVARIANT(first_byte_is_aligned<8>(small));
@@ -65,7 +65,7 @@ void test_alignments() {
 
 // A fill through the View reaches each byte, and the const View reads them.
 void test_view_reaches_each_byte() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     AlignedBytes block = mint_aligned_bytes(alloc, 4096 + 17, 64);
     ::foundation::core::fill(block.view(), std::uint8_t{0xCD});
     *block.view().get(4096 + 16).expect("the last byte") = 7;
@@ -81,7 +81,7 @@ void test_view_reaches_each_byte() {
 // A move gives the block to the target and leaves the source empty.  A move
 // assignment gives the old block of the target back first.
 void test_move() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     AlignedBytes first = mint_aligned_bytes(alloc, 512, 256);
     *first.view().get(0).expect("the first byte") = 42;
     AlignedBytes second{std::move(first)};
@@ -107,10 +107,13 @@ int main() {
 
     // An alignment that is not a power of two is a defect of the caller, and
     // the precondition ends the process.
-    if (!crucible::test::aborts([] { (void)mint_aligned_bytes(::foundation::effects::Alloc{}, 64, 24); })) return 1;
-    if (!crucible::test::aborts([] { (void)mint_aligned_bytes(::foundation::effects::Alloc{}, 64, 0); })) return 2;
+    if (!crucible::test::aborts([] { (void)mint_aligned_bytes(::foundation::effects::testing::test().alloc, 64, 24); }))
+        return 1;
+    if (!crucible::test::aborts([] { (void)mint_aligned_bytes(::foundation::effects::testing::test().alloc, 64, 0); }))
+        return 2;
     // A size whose round up to the alignment wraps ends the process.
-    if (!crucible::test::aborts([] { (void)mint_aligned_bytes(::foundation::effects::Alloc{}, ~std::size_t{0}, 64); }))
+    if (!crucible::test::aborts(
+            [] { (void)mint_aligned_bytes(::foundation::effects::testing::test().alloc, ~std::size_t{0}, 64); }))
         return 3;
     return 0;
 }

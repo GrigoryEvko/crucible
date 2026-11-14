@@ -102,7 +102,7 @@ int main() {
     // would blow the stack.
     bench::Report reports[] = {
         [&] {
-            auto log = std::make_unique<MetaLog>();
+            auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
             return bench::run("try_append(1 meta  = 168B)", [&] {
                 auto idx = log->try_append(meta1.view());
                 bench::do_not_optimize(idx);
@@ -110,7 +110,7 @@ int main() {
             });
         }(),
         [&] {
-            auto log = std::make_unique<MetaLog>();
+            auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
             return bench::run("try_append(2 metas = 336B)", [&] {
                 auto idx = log->try_append(meta2.view());
                 bench::do_not_optimize(idx);
@@ -118,7 +118,7 @@ int main() {
             });
         }(),
         [&] {
-            auto log = std::make_unique<MetaLog>();
+            auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
             return bench::run("try_append(3 metas = 504B)", [&] {
                 auto idx = log->try_append(meta3.view());
                 bench::do_not_optimize(idx);
@@ -126,7 +126,7 @@ int main() {
             });
         }(),
         [&] {
-            auto log = std::make_unique<MetaLog>();
+            auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
             return bench::run("try_append(8 metas = 1344B)", [&] {
                 auto idx = log->try_append(meta8.view());
                 bench::do_not_optimize(idx);
@@ -141,7 +141,7 @@ int main() {
         // Inner counter stays a local to avoid atomic-store pollution
         // of the measurement.
         [&] {
-            auto log = std::make_unique<MetaLog>();
+            auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
             uint32_t since_drain = 0;
             constexpr uint32_t kD = 50000;
             return bench::run("throughput (3 metas/call, drain/50k)", [&] {
@@ -156,14 +156,14 @@ int main() {
 
         // ── Raw atomics (floor for ordering cost) ─────────────────────
         [&] {
-            auto log = std::make_unique<MetaLog>();
+            auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
             return bench::run("head.load (relaxed)", [&] {
                 auto h = log->head.load(std::memory_order_relaxed);
                 bench::do_not_optimize(h);
             });
         }(),
         [&] {
-            auto log = std::make_unique<MetaLog>();
+            auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
             uint32_t v = 0;
             return bench::run("head.advance_sole_writer_from (release)", [&] {
                 log->head.advance_sole_writer_from(v, v + 1);

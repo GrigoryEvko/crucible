@@ -13,6 +13,7 @@ struct MoveOnly {
 
 int main() {
     ::foundation::core::View<MoveOnly const> const source{};
-    auto copied = ::foundation::core::mint_heap_array_copy<MoveOnly>(::foundation::effects::Alloc{}, source);
+    auto copied =
+        ::foundation::core::mint_heap_array_copy<MoveOnly>(::foundation::effects::testing::test().alloc, source);
     return static_cast<int>(copied.size());
 }

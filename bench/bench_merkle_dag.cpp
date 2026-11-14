@@ -245,7 +245,7 @@ int main(int argc, char* argv[]) {
             CRUCIBLE_BENCH_CHECK(slot.offset_bytes == 0);
             ++slot_index;
         }
-        BackgroundThread bg;
+        BackgroundThread bg{::foundation::effects::testing::test().alloc};
         // The planner writes the offsets into the slots, so each run plans a
         // copy of them in scratch.  The arrays of the sweep are in
         // sweep_scratch.
@@ -273,7 +273,7 @@ int main(int argc, char* argv[]) {
         // on the heap, as it does in Vigil.
         auto ring = std::make_unique<TraceRing>();
         ring->reset();
-        MetaLog meta_log;
+        MetaLog meta_log{::foundation::effects::testing::test().alloc};
         meta_log.reset();
 
         bench_rng_state = 0x1111222233334444ULL;
@@ -309,7 +309,7 @@ int main(int argc, char* argv[]) {
                 abort_full_ring(i, N);
         }
 
-        BackgroundThread bg;
+        BackgroundThread bg{::foundation::effects::testing::test().alloc};
         bg.ring.set(ring.get());
         bg.meta_log.set(&meta_log);
 
@@ -389,10 +389,10 @@ int main(int argc, char* argv[]) {
                 std::move(loaded_trace).expect("the load holds a trace after the check of its error");
             std::fprintf(stderr, "[trace] %s: %u ops, %u metas\n", path, trace.num_ops, trace.num_metas);
 
-            MetaLog meta_log;
+            MetaLog meta_log{::foundation::effects::testing::test().alloc};
             meta_log.reset();
 
-            BackgroundThread bg;
+            BackgroundThread bg{::foundation::effects::testing::test().alloc};
             bg.meta_log.set(&meta_log);
             const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
             ::fixy::BumpArena scratch{arena_bytes};

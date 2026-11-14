@@ -168,7 +168,7 @@ int main() {
                                                     .slot_id = SlotId{SL_SM},
                                                     .pad2 = {}};
 
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
     crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
@@ -217,7 +217,7 @@ int main() {
     region.ops = ops.view();
     region.plan = make_plan_link(plan);
 
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     assert(ctx.activate(region));
     assert(ctx.is_compiled());
 

@@ -91,7 +91,7 @@ using CountedHole = Hole<sizeof(Counted), alignof(Counted)>;
 void test_mint_and_consume() {
     std::size_t const takes = allocator_takes;
     std::size_t const gives = allocator_gives;
-    CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::Alloc{});
+    CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::testing::test().alloc);
     CRUCIBLE_FATAL_INVARIANT(allocator_takes == takes + 1);
     std::move(hole).consume();
     CRUCIBLE_FATAL_INVARIANT(allocator_gives == gives + 1);
@@ -104,7 +104,7 @@ void test_steps_take_one_allocation() {
     constexpr std::uint64_t steps = 64;
     std::size_t const takes = allocator_takes;
     std::size_t const gives = allocator_gives;
-    CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::Alloc{});
+    CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::testing::test().alloc);
     for (std::uint64_t step = 0; step < steps; ++step) {
         Box<Counted> box = mint_box<Counted>(std::move(hole), step);
         CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
@@ -121,7 +121,7 @@ void test_steps_take_one_allocation() {
 // A Box in a Hole holds the storage of the Hole, and a Hole from that Box
 // gives the same storage again.
 void test_box_keeps_the_storage_of_the_hole() {
-    CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::Alloc{});
+    CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::testing::test().alloc);
     Box<Counted> first = mint_box<Counted>(std::move(hole), std::uint64_t{1});
     auto const first_address = ::foundation::core::address_of(first.view());
     CountedHole again = mint_hole(std::move(first));
@@ -135,7 +135,7 @@ void test_box_keeps_the_storage_of_the_hole() {
 void test_end_of_box_in_hole_gives_the_storage_back() {
     std::size_t const gives = allocator_gives;
     {
-        CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::Alloc{});
+        CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::testing::test().alloc);
         Box<Counted> box = mint_box<Counted>(std::move(hole), std::uint64_t{5});
         CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
     }
@@ -149,8 +149,8 @@ void test_end_of_box_in_hole_gives_the_storage_back() {
 void test_move_and_drop() {
     std::size_t const takes = allocator_takes;
     std::size_t const gives = allocator_gives;
-    CountedHole source = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::Alloc{});
-    CountedHole target = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::Alloc{});
+    CountedHole source = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::testing::test().alloc);
+    CountedHole target = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::testing::test().alloc);
     std::move(target).consume();
     CRUCIBLE_FATAL_INVARIANT(allocator_gives == gives + 1);
     target = std::move(source);
@@ -171,7 +171,7 @@ struct alignas(Alignment) AlignedValue {
 template <std::size_t Alignment>
 void test_hole_at_alignment() {
     using Value = AlignedValue<Alignment>;
-    auto hole = mint_hole<sizeof(Value), alignof(Value)>(::foundation::effects::Alloc{});
+    auto hole = mint_hole<sizeof(Value), alignof(Value)>(::foundation::effects::testing::test().alloc);
     Box<Value> box = mint_box<Value>(std::move(hole), Value{Alignment});
     CRUCIBLE_FATAL_INVARIANT(::foundation::core::address_of(box.view()).template is_aligned<Alignment>());
     CRUCIBLE_FATAL_INVARIANT(box->value == Alignment);
@@ -206,12 +206,12 @@ void build_in_spent_hole(CountedHole& hole) {
 // after each helper is the one spend of the Hole of the body.
 void test_spend_of_moved_from_aborts() {
     bool const consume_aborts = ::crucible::test::aborts([] {
-        CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::Alloc{});
+        CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::testing::test().alloc);
         consume_two_times(hole);
         std::move(hole).consume();
     });
     bool const build_aborts = ::crucible::test::aborts([] {
-        CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::Alloc{});
+        CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::testing::test().alloc);
         build_in_spent_hole(hole);
         std::move(hole).consume();
     });
@@ -221,7 +221,7 @@ void test_spend_of_moved_from_aborts() {
 // The probe gives up a moved-from Box on purpose: it holds no object, and
 // the mint of a Hole ends the process.
 void test_hole_of_moved_from_box_aborts() {
-    CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::Alloc{});
+    CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::testing::test().alloc);
     Box<Counted> source = mint_box<Counted>(std::move(hole), std::uint64_t{4});
     Box<Counted> target{std::move(source)};
     bool const hole_aborts = ::crucible::test::aborts([&source] { mint_hole(std::move(source)).consume(); });

@@ -21,7 +21,7 @@
 namespace eff = ::fixy;
 
 int main() {
-    crucible::MetaLog log;
+    crucible::MetaLog log{::foundation::effects::testing::test().alloc};
     const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
     // Caller declares Row<IO> — IsPure<Row<IO>> is false (Row<IO>
     // is not a subrow of Row<>); the requires-clause rejects.

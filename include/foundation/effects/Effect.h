@@ -297,9 +297,11 @@ namespace detail {
 template <Effect E>
 struct AtomField;
 
+// The field names the tag by its own name in foundation/core, so a
+// diagnostic about a copy of it names the class that the doors take.
 template <>
 struct AtomField<Effect::Alloc> {
-    [[no_unique_address]] cap::Alloc alloc{};
+    [[no_unique_address]] ::foundation::core::Alloc alloc{};
 };
 
 template <>

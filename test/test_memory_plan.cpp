@@ -58,7 +58,7 @@ ChildResult run_in_child(void (*attack)()) {
 // lifetime that the planner accepts.
 void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     auto test = ::foundation::effects::testing::test();
-    crucible::BackgroundThread bt;
+    crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
     ::foundation::core::FixedArray<crucible::TensorSlot, 2> slots{};
     crucible::TensorSlot& first_slot = slots.at(::foundation::core::index<0>());
     first_slot.nbytes = 1024;
@@ -120,7 +120,7 @@ void test_refuses_slot_lifetimes_outside_the_sweep() {
 int main() {
     test_refuses_slot_lifetimes_outside_the_sweep();
     auto test = ::foundation::effects::testing::test();
-    crucible::BackgroundThread bt;
+    crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     // The intervals are chosen so slot 2 can reuse slot 1's space: slot 1 dies at
     // op 3 and slot 2 is born at op 4.  Slot 3 is external and takes no pool

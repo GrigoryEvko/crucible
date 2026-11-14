@@ -256,10 +256,11 @@ struct BackgroundThread {
     class PendingOps {
     public:
         // Adds the newest op.  record_start is the position of the op in the
-        // stream of records of the metadata log.  Complexity: O(1), and O(n)
-        // when the ring grows.
-        void push(TraceRing::Entry const& entry, MetaIndex meta_start, uint64_t record_start, ScopeHash scope_hash,
-                  CallsiteHash callsite_hash);
+        // stream of records of the metadata log.  The ring grows with the
+        // allocation capability of the detect stage.  Complexity: O(1), and
+        // O(n) when the ring grows.
+        void push(::foundation::effects::Alloc alloc, TraceRing::Entry const& entry, MetaIndex meta_start,
+                  uint64_t record_start, ScopeHash scope_hash, CallsiteHash callsite_hash);
 
         // Drops the count oldest ops.  A count past size() drops each op.
         void drop_oldest(uint64_t count) noexcept {
@@ -295,7 +296,7 @@ struct BackgroundThread {
     private:
         static constexpr uint64_t MIN_CAPACITY = uint64_t{1} << 12;
 
-        void grow_();
+        void grow_(::foundation::effects::Alloc alloc);
 
         ::fixy::MaskedArray<TraceRing::Entry> entries_;
         ::fixy::MaskedArray<MetaIndex> meta_starts_;
@@ -793,9 +794,10 @@ public:
     // The detect stage calls this at each iteration boundary that the
     // detector reports.  It drops the held ops before the iteration, copies
     // the completed iteration into a work item, and keeps the last K ops,
-    // which begin the next iteration.  It returns null when the iteration is
-    // empty or no metadata log is set.
-    [[nodiscard]] BgBuildWork* prepare_iteration_build_work();
+    // which begin the next iteration.  The buffers of the work item take the
+    // allocation capability of the detect stage.  It returns null when the
+    // iteration is empty or no metadata log is set.
+    [[nodiscard]] BgBuildWork* prepare_iteration_build_work(::foundation::effects::Alloc alloc);
 
     // The detect stage calls this after each op.  It drops the held ops
     // before IterationDetector::oldest_claimable(), because no future work
@@ -854,8 +856,9 @@ public:
     ~BackgroundThread() CRUCIBLE_NO_THREAD_SAFETY;
 
     // src/BackgroundThread.cpp defines it, where the pipeline is a complete
-    // type.
-    BackgroundThread();
+    // type.  The caller gives the allocation capability of its context, and
+    // the pipeline takes its storage through it.
+    explicit BackgroundThread(::foundation::effects::Alloc allocation);
     BackgroundThread(const BackgroundThread&) = delete("BackgroundThread owns a pipeline jthread");
     BackgroundThread& operator=(const BackgroundThread&) = delete("BackgroundThread owns a pipeline jthread");
     BackgroundThread(BackgroundThread&&) = delete("BackgroundThread owns a pipeline jthread with captured this");

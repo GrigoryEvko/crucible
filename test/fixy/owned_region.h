@@ -67,7 +67,8 @@ public:
     }
 };
 
-inline ::foundation::effects::Alloc test_alloc_token() noexcept { return ::foundation::effects::Alloc{}; }
+// The allocation capability of the test context.
+inline ::foundation::effects::Alloc test_alloc_token() noexcept { return ::foundation::effects::testing::test().alloc; }
 
 // The byte offset of a shard from the start of its region.  It is read
 // as an integer, so a shard that starts past the region gives a number

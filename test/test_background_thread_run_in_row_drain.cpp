@@ -22,9 +22,9 @@ namespace test_background_thread_run_in_row {
 // the call falls straight through to the trailing drain, which is empty.
 // What is under test is that the entry point forwards at all.
 void test_t04_runtime_smoke() {
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     auto ring = std::make_unique<TraceRing>();
-    auto metalog = std::make_unique<MetaLog>();
+    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
 
     bt.ring.set(ring.get());
     bt.meta_log.set(metalog.get());
@@ -50,9 +50,9 @@ void test_t04_runtime_smoke() {
 // iteration detector advances but never closes anything, which leaves plain
 // drain motion to observe.
 void test_concurrent_spsc_drain() {
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     auto ring = std::make_unique<TraceRing>();
-    auto metalog = std::make_unique<MetaLog>();
+    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
     bt.ring.set(ring.get());
     bt.meta_log.set(metalog.get());
     bt.stop_requested.reset_in_quiescent_context(::fixy::handle::OneShotFlag::QuiescenceProof{});
@@ -98,9 +98,9 @@ void test_concurrent_spsc_drain() {
 // which the normal start sequence does and this test deliberately bypasses in
 // order to reach the entry point directly.
 void test_large_batch_drain() {
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     auto ring = std::make_unique<TraceRing>();
-    auto metalog = std::make_unique<MetaLog>();
+    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
     bt.ring.set(ring.get());
     bt.meta_log.set(metalog.get());
     bt.stop_requested.reset_in_quiescent_context(::fixy::handle::OneShotFlag::QuiescenceProof{});
@@ -142,9 +142,9 @@ void test_large_batch_drain() {
 // instantiation, or a destructor that failed to run would leave the second
 // invocation dead, and the second cycle would then drain nothing.
 void test_rearm_cycle() {
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     auto ring = std::make_unique<TraceRing>();
-    auto metalog = std::make_unique<MetaLog>();
+    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
     bt.ring.set(ring.get());
     bt.meta_log.set(metalog.get());
 

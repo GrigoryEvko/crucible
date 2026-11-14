@@ -6,6 +6,6 @@
 
 int main() {
     auto numbers = ::foundation::core::mint_grow_list<int>(4);
-    numbers.append(::foundation::effects::IO{}, 1).expect("the list is below its maximum");
+    numbers.append(::foundation::effects::testing::test().io, 1).expect("the list is below its maximum");
     return static_cast<int>(numbers.size());
 }

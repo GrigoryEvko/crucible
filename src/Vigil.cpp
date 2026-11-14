@@ -24,9 +24,12 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
     : cfg_(std::move(cfg)),
       ring_owner_{::fixy::mint_box<TraceRing>(startup.cap().alloc)},
       ring_{ring_owner_.view()},
-      meta_log_owner_{::fixy::mint_box<MetaLog>(startup.cap().alloc)},
+      meta_log_owner_{::fixy::mint_box<MetaLog>(startup.cap().alloc, startup.cap().alloc)},
       meta_log_{meta_log_owner_.view()},
-      tx_log_{startup} {
+      tx_log_{startup},
+      replay_{startup.cap().alloc},
+      allocation_{startup.cap().alloc},
+      bg_{startup.cap().alloc} {
     ring_->reset();
     meta_log_->reset();
 

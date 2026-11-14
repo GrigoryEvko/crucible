@@ -67,7 +67,7 @@ void test_empty_run_has_its_elements() {
 // The elements of the count: the View holds them, a write through the View
 // reaches them, and the other run of the slot stays absent.
 void test_full_run_gives_its_elements() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     BumpArena arena{4096};
     OpRuns runs{};
     runs.set_count<0>(4);
@@ -88,7 +88,7 @@ void test_full_run_gives_its_elements() {
 // Two runs share one count, and a new count drops the runs of its slot
 // only.
 void test_new_count_drops_the_runs_of_its_slot() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     BumpArena arena{4096};
     OpRuns runs{};
     runs.set_count<0>(3);
@@ -108,7 +108,7 @@ void test_new_count_drops_the_runs_of_its_slot() {
 // A copy holds the same runs and counts, and a new count of the copy does
 // not change the source.
 void test_copy_holds_the_same_runs() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     BumpArena arena{4096};
     OpRuns runs{};
     runs.set_count<2>(2);
@@ -125,7 +125,7 @@ void test_copy_holds_the_same_runs() {
 // A View of a different count ends the process, and the run keeps its
 // state.
 void test_wrong_count_ends_the_process() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     BumpArena arena{4096};
     OpRuns runs{};
     runs.set_count<0>(3);

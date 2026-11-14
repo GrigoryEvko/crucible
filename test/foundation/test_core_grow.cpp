@@ -68,7 +68,7 @@ struct[[= ::foundation::linear::linear{}]] Token final {
 // A list of integers grows from empty through many doublings, and each read
 // sees each appended value in order.
 void test_append_across_growths() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     GrowList<std::uint32_t> list = mint_grow_list<std::uint32_t>(100000);
     assert(list.size() == 0 && list.view().size() == 0 && list.get(0).is_none());
     for (std::uint32_t value = 0; value < 5000; ++value) {
@@ -96,7 +96,7 @@ void test_append_across_growths() {
 
 // An append at the maximum gives Full and changes nothing.
 void test_refusal_at_the_maximum() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     GrowList<int> list = mint_grow_list<int>(3);
     for (int value = 1; value <= 3; ++value) {
         list.append(alloc, value).expect("the list is below its maximum");
@@ -111,7 +111,7 @@ void test_refusal_at_the_maximum() {
 // The Full of a linear element gives the value back, and a growth moves each
 // token into the new storage.
 void test_full_gives_a_linear_value_back() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     GrowList<Token> list = mint_grow_list<Token>(40);
     for (int id = 0; id < 40; ++id) {
         list.append(alloc, Token{id}).expect("the list is below its maximum");
@@ -137,7 +137,7 @@ void test_each_element_ends_once() {
     auto const counter = ::foundation::core::to(ends);
     using CounterRef = std::remove_const_t<decltype(counter)>;
     using Element = Counted<CounterRef>;
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     {
         GrowList<Element> list = mint_grow_list<Element>(1000);
         for (int label = 0; label < 300; ++label) {
@@ -162,7 +162,7 @@ void test_each_element_ends_once() {
 
 // A list of lists grows, and each inner list keeps its elements.
 void test_nested_lists() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     GrowList<GrowList<int>> pools = mint_grow_list<GrowList<int>>(64);
     for (int pool = 0; pool < 20; ++pool) {
         GrowList<int> members = mint_grow_list<int>(64);
@@ -183,7 +183,7 @@ void test_nested_lists() {
 // A text grows through many appends of each kind, and refuses an append that
 // does not fit below its maximum.
 void test_text_appends() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     GrowText text = mint_grow_text(4096);
     assert(text.size() == 0 && text.view() == TextView{});
     text.append(alloc, "crucible").expect("the text is below its maximum");
@@ -218,7 +218,7 @@ void test_text_appends() {
 // An append of a view of the same text copies the characters before the
 // growth gives the old storage back.
 void test_text_appends_itself() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     GrowText text = mint_grow_text(1 << 20);
     text.append(alloc, "ab").expect("the text is below its maximum");
     for (int turn = 0; turn < 12; ++turn) {
@@ -241,7 +241,7 @@ void test_text_appends_itself() {
 // The property: random appends to a list and a text agree with a model of a
 // count and a sum, and a refusal comes exactly at the maximum.
 void test_agrees_with_a_model() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     ::crucible::test::PhiloxStream stream{0x5EEDA77A00000002u};
     for (int trial = 0; trial < 64; ++trial) {
         std::size_t const maximum = stream.below(500);
@@ -288,7 +288,7 @@ void test_foreign_doors() {
 // zero, and no value for each other view.  foreign_c_str gives the address
 // of the first character, and the zero follows the last character.
 void test_c_text_doors() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     GrowText name = mint_grow_text(64);
     name.append(alloc, "aten::mm").expect("the text is below its maximum");
     // A view with no zero at its end.

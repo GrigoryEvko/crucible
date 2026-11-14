@@ -71,7 +71,7 @@ static_assert(Appends<GrowText, Alloc, char> && Appends<GrowText, Alloc, TextVie
 static_assert(Appends<GrowText, Alloc, View<char const>> && Appends<GrowText, Alloc, View<char>>);
 static_assert(!Appends<GrowText, OtherTag, TextView>);
 template <class Owner>
-concept AppendsToTemporary = requires { std::declval<Owner>().append(Alloc{}, 1); };
+concept AppendsToTemporary = requires { std::declval<Owner>().append(std::declval<Alloc>(), 1); };
 template <class Owner>
 concept ViewsTemporary = requires { std::declval<Owner>().view(); };
 template <class Owner>

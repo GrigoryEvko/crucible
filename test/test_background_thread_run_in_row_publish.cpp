@@ -125,9 +125,9 @@ namespace test_background_thread_run_in_row {
 void test_reset_drops_inflight_regions() {
     using namespace publish_rig;
 
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     auto ring = std::make_unique<TraceRing>();
-    auto metalog = std::make_unique<MetaLog>();
+    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
     Gate gate;
 
     bt.set_region_ready_callback(&gate, &on_region_ready);
@@ -212,9 +212,9 @@ void test_reset_applies_at_its_point() {
     constexpr uint32_t BACKLOG_ITERS = 400;
 
     const auto test = ::foundation::effects::testing::test();
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(test.alloc);
-    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc);
+    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc, test.alloc);
     Gate gate;
 
     bt.set_region_ready_callback(&gate, &on_region_ready);
@@ -268,9 +268,9 @@ void test_mark_keeps_an_unapplied_restart() {
     using StreamPoint = BackgroundThread::StreamPoint;
 
     const auto test = ::foundation::effects::testing::test();
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(test.alloc);
-    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc);
+    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc, test.alloc);
     Gate gate;
 
     bt.set_region_ready_callback(&gate, &on_region_ready);
@@ -325,9 +325,9 @@ void test_reset_skips_the_stale_backlog() {
     constexpr uint32_t BACKLOG_ITERS = 400;
 
     const auto test = ::foundation::effects::testing::test();
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(test.alloc);
-    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc);
+    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc, test.alloc);
     Gate gate;
 
     bt.set_region_ready_callback(&gate, &on_region_ready);
@@ -360,9 +360,9 @@ void test_reset_skips_the_stale_backlog() {
 void test_published_regions_keep_their_hashes() {
     using namespace publish_rig;
 
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     auto ring = std::make_unique<TraceRing>();
-    auto metalog = std::make_unique<MetaLog>();
+    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
     Gate gate;
     // Nothing is parked here.  The test reads each callback, and holding one
     // would only keep the pipeline waiting.
@@ -428,15 +428,15 @@ void test_long_run_keeps_its_scratch() {
     constexpr uint32_t LONG_RUN_ITERS = 10000;
 
     auto test = ::foundation::effects::testing::test();
-    BackgroundThread short_bt;
+    BackgroundThread short_bt{::foundation::effects::testing::test().alloc};
     ::fixy::Box<TraceRing> short_ring = ::fixy::mint_box<TraceRing>(test.alloc);
-    ::fixy::Box<MetaLog> short_metalog = ::fixy::mint_box<MetaLog>(test.alloc);
+    ::fixy::Box<MetaLog> short_metalog = ::fixy::mint_box<MetaLog>(test.alloc, test.alloc);
     const uint64_t short_published = run_family_a(short_bt, *short_ring, *short_metalog, A_ITERS);
     assert(short_published >= 1 && "the short run published no region, so its arenas witness nothing");
 
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(test.alloc);
-    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc);
+    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc, test.alloc);
     const uint64_t published = run_family_a(bt, *ring, *metalog, LONG_RUN_ITERS);
     assert(published >= LONG_RUN_ITERS / 2 && "the run published too few regions to witness the scratch");
     assert(bt.scratch_retained_bytes() == short_bt.scratch_retained_bytes()

@@ -24,7 +24,7 @@
 namespace eff = ::fixy;
 
 int main() {
-    crucible::MetaLog log;
+    crucible::MetaLog log{::foundation::effects::testing::test().alloc};
     const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
     // Caller declares Row<Bg> — bg consumer-side context cannot
     // call the producer-side try_append_pure path.  IsPure<Row<Bg>>

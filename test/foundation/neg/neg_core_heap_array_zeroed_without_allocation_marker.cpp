@@ -5,6 +5,6 @@
 #include <foundation/effects/Effect.h>
 
 int main() {
-    auto zeros = ::foundation::core::mint_heap_array_zeroed<int>(::foundation::effects::IO{}, 4);
+    auto zeros = ::foundation::core::mint_heap_array_zeroed<int>(::foundation::effects::testing::test().io, 4);
     return static_cast<int>(zeros.size());
 }

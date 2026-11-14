@@ -5,6 +5,6 @@
 #include <foundation/effects/Effect.h>
 
 int main() {
-    auto numbers = ::foundation::core::mint_heap_array(::foundation::effects::IO{}, 4, 1);
+    auto numbers = ::foundation::core::mint_heap_array(::foundation::effects::testing::test().io, 4, 1);
     return static_cast<int>(numbers.size());
 }

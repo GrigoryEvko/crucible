@@ -122,12 +122,15 @@ public:
     // name is not a registration, and it returns true without a write.
     // The view names the table it proves, and a view of another table
     // proves nothing about this one, so that is checked in every build mode.
+    // The copy of the name allocates through the allocation capability of
+    // the caller.
     template <SchemaNameSource Tag>
-    [[nodiscard]] bool register_name(MutableView const& view, SchemaHash hash, Name<Tag> const& name_tag) {
+    [[nodiscard]] bool register_name(::foundation::effects::Alloc allocation, MutableView const& view, SchemaHash hash,
+                                     Name<Tag> const& name_tag) {
         CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
         const ::fixy::TextView name = name_tag.value();
         if (name.size() == 0) return true;
-        return seal_.with_write_section([&] { write_name_(hash, name); });
+        return seal_.with_write_section([&] { write_name_(allocation, hash, name); });
     }
 
     // The unqualified form is safe in either phase. The overload taking a
@@ -195,8 +198,8 @@ private:
     // order: the carried entry changes place with each entry of a larger
     // hash, so each such entry moves one place up, and the last one goes to
     // the end.  Complexity: O(n).
-    void write_name_(SchemaHash hash, ::fixy::TextView name) {
-        SchemaEntry carried{.hash = hash, .name = copy_name_(name)};
+    void write_name_(::foundation::effects::Alloc allocation, SchemaHash hash, ::fixy::TextView name) {
+        SchemaEntry carried{.hash = hash, .name = copy_name_(allocation, name)};
         for (SchemaEntry& entry : entries_) {
             // Before the first change of place, each entry has a smaller hash
             // than the new one, so an equal hash is the entry of this hash.
@@ -218,10 +221,9 @@ private:
     }
 
     // The characters of name before its first zero, and one zero after them.
-    // A registration is cold, and its context holds no allocation capability,
-    // so the copy takes the bare allocation tag.  Complexity: the length of
-    // the name.
-    [[nodiscard]] static ::fixy::GrowText copy_name_(::fixy::TextView name) {
+    // The copy allocates through the allocation capability of the caller.
+    // Complexity: the length of the name.
+    [[nodiscard]] static ::fixy::GrowText copy_name_(::foundation::effects::Alloc allocation, ::fixy::TextView name) {
         const ::fixy::Option<std::size_t> zero = ::fixy::find(name, '\0');
         const ::fixy::TextView characters = zero.match(
             [name](std::size_t position) noexcept {
@@ -232,10 +234,9 @@ private:
             ::fixy::fatal("crucible: a schema name is longer than SCHEMA_NAME_MAX characters.  Raise SCHEMA_NAME_MAX "
                           "in crucible/SchemaTable.h");
         }
-        const ::foundation::effects::Alloc alloc{};
         ::fixy::GrowText copy = ::fixy::mint_grow_text(SCHEMA_NAME_MAX + 1);
-        copy.append(alloc, characters).expect("the name fits below the maximum of its text");
-        copy.append(alloc, '\0').expect("the zero fits below the maximum of its text");
+        copy.append(allocation, characters).expect("the name fits below the maximum of its text");
+        copy.append(allocation, '\0').expect("the zero fits below the maximum of its text");
         return copy;
     }
 
@@ -276,27 +277,32 @@ CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline SchemaTable& late_schema_table() {
 }
 
 // False when the global table was sealed after the view was minted, and
-// then nothing is registered.
+// then nothing is registered.  The copy of the name allocates through the
+// allocation capability of the caller.
 template <SchemaNameSource Tag>
-[[nodiscard]] inline bool register_schema_name(SchemaTable::MutableView const& view, SchemaHash hash,
+[[nodiscard]] inline bool register_schema_name(::foundation::effects::Alloc allocation,
+                                               SchemaTable::MutableView const& view, SchemaHash hash,
                                                SchemaTable::Name<Tag> const& name) {
-    return global_schema_table().register_name(view, hash, name);
+    return global_schema_table().register_name(allocation, view, hash, name);
 }
 
 // Registers the name of one schema from the thread that holds the producer
 // claim of a Vigil.  The name goes to the global table while that table takes
-// writes, and to the late table after the seal, so it is never dropped.
+// writes, and to the late table after the seal, so it is never dropped.  The
+// foreground context holds no allocation capability, so the caller gives
+// one.  A Vigil gives the one of its startup context.
 template <SchemaNameSource Tag>
-inline void register_schema_name(VigilFgCtx const& fg, SchemaHash hash, SchemaTable::Name<Tag> const& name) {
+inline void register_schema_name(VigilFgCtx const& fg, ::foundation::effects::Alloc allocation, SchemaHash hash,
+                                 SchemaTable::Name<Tag> const& name) {
     SchemaTable& global_table = global_schema_table();
     for (const SchemaTable::MutableView& global_view : global_table.mint_mutable_view(fg)) {
-        if (global_table.register_name(global_view, hash, name)) return;
+        if (global_table.register_name(allocation, global_view, hash, name)) return;
     }
     // Nothing seals the late table, so its view exists and its write lands.
     SchemaTable& late_table = late_schema_table();
     const SchemaTable::MutableView late_view =
         late_table.mint_mutable_view(fg).expect("nothing seals the late schema table, so it mints a mutable view");
-    const bool was_registered_late = late_table.register_name(late_view, hash, name);
+    const bool was_registered_late = late_table.register_name(allocation, late_view, hash, name);
     CRUCIBLE_FATAL_INVARIANT(was_registered_late);
 }
 

@@ -111,7 +111,7 @@ int main() {
     slots.at(::foundation::core::index<SL_LOGITS>()) = make_int(SL_LOGITS, SZ_BNCLS, 13, 14);
     slots.at(::foundation::core::index<SL_PROBS>()) = make_int(SL_PROBS, SZ_BNCLS, 14, 14);
 
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
     crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
@@ -162,7 +162,7 @@ int main() {
     region.ops = ops.view();
     region.plan = make_plan_link(plan);
 
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     assert(ctx.activate(region));
     assert(ctx.is_compiled());
 

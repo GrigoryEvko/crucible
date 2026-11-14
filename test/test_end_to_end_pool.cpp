@@ -20,9 +20,9 @@ namespace test_end_to_end {
 // two entries resolve to the same pool bytes.
 void test_pipeline_data_flow() {
     auto* ring = new TraceRing();
-    auto* meta_log = new MetaLog();
+    auto* meta_log = new MetaLog(::foundation::effects::testing::test().alloc);
 
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     feed_iteration(ring, meta_log, 0);
     feed_iteration(ring, meta_log, 1);
@@ -34,7 +34,7 @@ void test_pipeline_data_flow() {
     auto* region = bt.active_region.load_acquire().try_get();
     assert(region != nullptr);
 
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     assert(ctx.activate(*region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
@@ -72,9 +72,9 @@ void test_pipeline_data_flow() {
 
 void test_pipeline_pool_bounds() {
     auto* ring = new TraceRing();
-    auto* meta_log = new MetaLog();
+    auto* meta_log = new MetaLog(::foundation::effects::testing::test().alloc);
 
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     feed_iteration(ring, meta_log, 0);
     feed_iteration(ring, meta_log, 1);
@@ -86,7 +86,7 @@ void test_pipeline_pool_bounds() {
     auto* region = bt.active_region.load_acquire().try_get();
     assert(region != nullptr);
 
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     assert(ctx.activate(*region));
 
     auto* pool_base = static_cast<uint8_t*>(ctx.pool().pool_base());

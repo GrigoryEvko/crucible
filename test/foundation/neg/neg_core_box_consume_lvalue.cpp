@@ -6,6 +6,7 @@
 #include <foundation/effects/Effect.h>
 
 int main() {
-    ::foundation::core::Box<int> held = ::foundation::core::mint_box<int>(::foundation::effects::Alloc{}, 3);
+    ::foundation::core::Box<int> held =
+        ::foundation::core::mint_box<int>(::foundation::effects::testing::test().alloc, 3);
     return held.consume();
 }

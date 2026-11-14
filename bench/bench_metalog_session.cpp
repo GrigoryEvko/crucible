@@ -116,7 +116,7 @@ int main() {
     static_assert(sizeof(PermissionedLog::ProducerHandle) == sizeof(void*));
     static_assert(sizeof(PermissionedLog::ConsumerHandle) == sizeof(void*));
 
-    auto raw_owner = std::make_unique<::crucible::MetaLog>();
+    auto raw_owner = std::make_unique<::crucible::MetaLog>(::foundation::effects::testing::test().alloc);
     ::crucible::MetaLog& raw = *raw_owner;
     PermissionedLog log{raw};
 

@@ -22,7 +22,7 @@ using Log = ::crucible::permissioned_metalog_t<decltype(log_root())>;
 
 int main() {
     using Log = consumer_wrong_permission_fixture::Log;
-    ::crucible::MetaLog raw;
+    ::crucible::MetaLog raw{::foundation::effects::testing::test().alloc};
     Log log{raw};
     auto [wrong, unused] = ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(
         consumer_wrong_permission_fixture::log_root());

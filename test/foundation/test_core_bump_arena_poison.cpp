@@ -22,7 +22,9 @@
 int main() {
     ::foundation::core::BumpArena arena{4096};
     ::foundation::core::View<std::uint64_t> value{};
-    arena.with_epoch([&]() noexcept { value = arena.array<std::uint64_t>(::foundation::effects::Alloc{}, 1, 0x5EED); });
+    arena.with_epoch([&]() noexcept {
+        value = arena.array<std::uint64_t>(::foundation::effects::testing::test().alloc, 1, 0x5EED);
+    });
 
     // The epoch ended, so this read must not return.
     std::uint64_t total = 0;

@@ -12,7 +12,7 @@
 namespace eff = ::foundation::effects;
 
 int main() {
-    ::crucible::BackgroundThread bt;
+    ::crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
     const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>> ctx{
         eff::testing::bg()};
     bt.run_in_row(ctx);

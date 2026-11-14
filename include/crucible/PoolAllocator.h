@@ -74,9 +74,10 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // Failure to allocate ends the process. A runtime that preallocates
     // everything up front has nowhere to retreat to when the up-front
     // allocation fails. Externally owned slots start null and are registered
-    // before replay.
+    // before replay.  The pool and the slot table allocate through the
+    // allocation capability of the caller.
     [[gnu::cold, gnu::noinline]]
-    void init(const MemoryPlan& plan) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+    void init(::foundation::effects::Alloc allocation, const MemoryPlan& plan) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(!is_initialized());
         CRUCIBLE_PRE(pool_.size() == 0u);
         const size_t plan_slots = plan.slots.size();
@@ -90,7 +91,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
             // backed by huge pages. Anything smaller takes the base alignment.
             const bool is_huge = plan.pool_bytes >= crucible::warden::kHugePageBytes;
             const uint64_t page_align = is_huge ? crucible::warden::kHugePageBytes : ALIGNMENT;
-            pool_ = ::foundation::mint_aligned_bytes(::foundation::effects::Alloc{}, plan.pool_bytes, page_align);
+            pool_ = ::foundation::mint_aligned_bytes(allocation, plan.pool_bytes, page_align);
 #ifndef NDEBUG
             // A read of unwritten pool memory stands out.
             ::fixy::fill(pool_.view(), uint8_t{0xCD});
@@ -101,7 +102,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
         }
 
         if (plan_slots > 0) {
-            table_ = ::fixy::mint_heap_array<void*>(::foundation::effects::Alloc{}, plan_slots, nullptr);
+            table_ = ::fixy::mint_heap_array<void*>(allocation, plan_slots, nullptr);
 
             // Externally owned slots stay null. The rest are the address of
             // the byte at their offset.

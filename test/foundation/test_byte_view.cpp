@@ -28,7 +28,7 @@ static_assert(std::is_same_v<decltype(byte_view(std::declval<View<std::uint8_t, 
 // A write through the bytes reaches each element of the run, and a read
 // through the const bytes gives each element.
 void test_reads_and_writes_the_run() {
-    ::foundation::effects::Alloc const alloc{};
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     ::foundation::core::HeapArray<std::uint8_t> run = ::foundation::core::mint_heap_array(alloc, 5, std::uint8_t{0});
     View<std::byte> const bytes = byte_view(run.view());
     CRUCIBLE_FATAL_INVARIANT(bytes.size() == 5);

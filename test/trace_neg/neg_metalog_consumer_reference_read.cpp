@@ -18,7 +18,7 @@ using Log = ::crucible::permissioned_metalog_t<decltype(log_root())>;
 }  // namespace
 
 int main() {
-    ::crucible::MetaLog raw;
+    ::crucible::MetaLog raw{::foundation::effects::testing::test().alloc};
     Log log{raw};
     auto consumer = log.consumer(
         ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(log_root()).second);

@@ -9,7 +9,7 @@
 
 int main() {
     foundation::core::Box<std::uint64_t> box =
-        foundation::core::mint_box<std::uint64_t>(foundation::effects::Alloc{}, std::uint64_t{1});
+        foundation::core::mint_box<std::uint64_t>(foundation::effects::testing::test().alloc, std::uint64_t{1});
     auto hole = foundation::core::mint_hole(box);
     std::move(hole).consume();
     return 0;

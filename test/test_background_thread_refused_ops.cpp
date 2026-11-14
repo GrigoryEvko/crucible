@@ -59,7 +59,7 @@ TraceRing& test_ring() {
 }
 
 MetaLog& test_log() {
-    static MetaLog log{};
+    static MetaLog log{::foundation::effects::testing::test().alloc};
     return log;
 }
 
@@ -82,7 +82,7 @@ void wait_for_pipeline(BackgroundThread& bt, TraceRing& ring) {
 
 void test_refused_ops_give_no_wrong_region() {
     TraceRing& ring = test_ring();
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     // No pipeline runs, so the ring takes CAPACITY ops of the loop and
     // refuses the rest.  The program goes on, so the index counts each

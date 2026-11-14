@@ -364,7 +364,7 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 [[nodiscard]] int calls_under_a_directory(const ScratchDir& scratch) {
     namespace core = foundation::core;
     IoBlockCtx ctx{eff::testing::test()};
-    eff::Alloc const alloc{};
+    eff::Alloc const alloc = eff::testing::test().alloc;
 
     auto opened_root = fs::open_dirfd(ctx, sanitized(scratch.path()));
     if (opened_root.is_err()) {

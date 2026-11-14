@@ -335,9 +335,8 @@ struct BackgroundThread::Pipeline {
     static void MakeRegionFn(GraphPublishInput&& in, BgSinkProducerHandle&& out);
 };
 
-// The constructor takes no context, so the one allocation of the pipeline
-// takes the bare allocation tag.
-BackgroundThread::BackgroundThread() : pipeline_{::fixy::mint_box<Pipeline>(::foundation::effects::Alloc{})} {}
+BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation)
+    : pipeline_{::fixy::mint_box<Pipeline>(allocation)} {}
 
 BackgroundThread::BgBuildWork* BackgroundThread::make_commit_work(uint32_t count) {
     auto* work = new BgBuildWork{};
@@ -362,10 +361,9 @@ uint64_t BackgroundThread::take_record_start_(TraceRing::Entry const& entry, Met
 // slot zero.  The detect stage drops each op that no future work can hold,
 // so the count stays at most half of the history of the detector, K ops more
 // and the op that the detect stage adds before it drops.
-void BackgroundThread::PendingOps::grow_() {
+void BackgroundThread::PendingOps::grow_(::foundation::effects::Alloc alloc) {
     const uint64_t new_capacity = mask_ == 0 ? MIN_CAPACITY : (mask_ + 1) * 2;
     CRUCIBLE_FATAL_INVARIANT(new_capacity <= IterationDetector::HISTORY_MAX_CAPACITY);
-    const ::foundation::effects::Alloc alloc{};
     ::fixy::MaskedArray<TraceRing::Entry> entries = ::fixy::mint_masked_array<TraceRing::Entry>(alloc, new_capacity);
     ::fixy::MaskedArray<MetaIndex> meta_starts = ::fixy::mint_masked_array<MetaIndex>(alloc, new_capacity);
     ::fixy::MaskedArray<uint64_t> record_starts = ::fixy::mint_masked_array<uint64_t>(alloc, new_capacity);
@@ -387,10 +385,11 @@ void BackgroundThread::PendingOps::grow_() {
     head_ = 0;
 }
 
-void BackgroundThread::PendingOps::push(TraceRing::Entry const& entry, MetaIndex meta_start, uint64_t record_start,
-                                        ScopeHash scope_hash, CallsiteHash callsite_hash) {
+void BackgroundThread::PendingOps::push(::foundation::effects::Alloc alloc, TraceRing::Entry const& entry,
+                                        MetaIndex meta_start, uint64_t record_start, ScopeHash scope_hash,
+                                        CallsiteHash callsite_hash) {
     if (mask_ == 0 || count_ == mask_ + 1) [[unlikely]]
-        grow_();
+        grow_(alloc);
     const uint64_t slot = head_ + count_;
     entries_.at_masked(slot) = entry;
     meta_starts_.at_masked(slot) = meta_start;
@@ -406,7 +405,7 @@ void BackgroundThread::drop_unclaimable_ops_() noexcept {
     if (oldest_claimable > first_held) pending_ops_.drop_oldest(oldest_claimable - first_held);
 }
 
-BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work() {
+BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work(::foundation::effects::Alloc alloc) {
     uint32_t total = static_cast<uint32_t>(pending_ops_.size());
     const uint32_t iter_len = detector.last_completed_len;
 
@@ -422,7 +421,6 @@ BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work() 
         work = new BgBuildWork{};
         work->reset_point = applied_reset_.peek_relaxed();
         // Each buffer takes the oldest completed_len held ops, in order.
-        const ::foundation::effects::Alloc alloc{};
         PendingOps const& held = pending_ops_;
         work->trace = ::fixy::mint_heap_array_with<TraceRing::Entry>(
             alloc, completed_len, [&held](size_t index) noexcept { return held.entry(index); });
@@ -659,12 +657,13 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
             owner.apply_due_reset_();
             ++owner.stream_ops_;
 
-            owner.pending_ops_.push(entry, ops.meta_starts.at(slot),
+            owner.pending_ops_.push(in.ctx().cap().alloc, entry, ops.meta_starts.at(slot),
                                     owner.take_record_start_(entry, ops.meta_starts.at(slot)),
                                     ops.scope_hashes.at(slot), ops.callsite_hashes.at(slot));
 
             if (owner.detector.check(in.ctx().cap().alloc, entry.schema_hash, entry.shape_hash)) {
-                if (auto work = std::unique_ptr<BgBuildWork>(owner.prepare_iteration_build_work())) {
+                if (auto work =
+                        std::unique_ptr<BgBuildWork>(owner.prepare_iteration_build_work(in.ctx().cap().alloc))) {
                     push_pipeline(in.ctx(), parks.build_work, out, work.get());
                     work.release();
                 }

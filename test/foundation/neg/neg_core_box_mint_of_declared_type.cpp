@@ -7,6 +7,6 @@
 struct Engine;
 
 int main() {
-    static_cast<void>(::foundation::core::mint_box<Engine>(::foundation::effects::Alloc{}));
+    static_cast<void>(::foundation::core::mint_box<Engine>(::foundation::effects::testing::test().alloc));
     return 0;
 }

@@ -13,6 +13,6 @@ struct MoveOnly {
 
 int main() {
     MoveOnly const fill{};
-    auto items = ::foundation::core::mint_heap_array(::foundation::effects::Alloc{}, 4, fill);
+    auto items = ::foundation::core::mint_heap_array(::foundation::effects::testing::test().alloc, 4, fill);
     return static_cast<int>(items.size());
 }

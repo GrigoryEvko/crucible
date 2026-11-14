@@ -5,6 +5,6 @@
 #include <foundation/effects/Effect.h>
 
 int main() {
-    auto const object = ::foundation::core::BumpArena{4096}.make<int>(::foundation::effects::Alloc{}, 5);
+    auto const object = ::foundation::core::BumpArena{4096}.make<int>(::foundation::effects::testing::test().alloc, 5);
     return *object;
 }

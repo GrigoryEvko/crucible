@@ -163,7 +163,7 @@ TraceRing& pipeline_ring() {
 }
 
 MetaLog& pipeline_log() {
-    static MetaLog log{};
+    static MetaLog log{::foundation::effects::testing::test().alloc};
     return log;
 }
 
@@ -172,7 +172,7 @@ void test_detect_stage_holds_a_bounded_trace() {
     // only the ops that a future iteration can claim: at most half of the
     // history of the detector and K ops more.  The stream fills the largest
     // history, and then it moves through a second full history.
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     TraceRing& ring = pipeline_ring();
     bt.start(ring, pipeline_log());
     const fixy::TestRunnerCtx runner{foundation::effects::testing::test()};

@@ -25,7 +25,7 @@ using Log = ::crucible::permissioned_metalog_t<decltype(log_root())>;
 int main() {
     using Log = producer_lvalue_fixture::Log;
     const auto ctx = ::foundation::effects::testing::foreground();
-    ::crucible::MetaLog raw;
+    ::crucible::MetaLog raw{::foundation::effects::testing::test().alloc};
     Log log{raw};
     auto [producer_perm, consumer_perm] =
         ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(

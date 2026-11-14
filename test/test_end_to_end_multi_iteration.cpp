@@ -20,9 +20,9 @@ namespace test_end_to_end {
 // before starting a fresh one.
 void test_pipeline_multi_iteration() {
     auto* ring = new TraceRing();
-    auto* meta_log = new MetaLog();
+    auto* meta_log = new MetaLog(::foundation::effects::testing::test().alloc);
 
-    BackgroundThread bt;
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     feed_iteration(ring, meta_log, 0);
     feed_iteration(ring, meta_log, 1);
@@ -60,7 +60,7 @@ void test_pipeline_multi_iteration() {
     assert(region2->num_ops() == NUM_OPS);
     assert(region2->plan.is_some());
 
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     assert(ctx.activate(*region2));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
     for (uint32_t i = 0; i < NUM_OPS; i++) {

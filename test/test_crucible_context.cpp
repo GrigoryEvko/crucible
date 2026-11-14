@@ -78,7 +78,7 @@ static MemoryPlan make_simple_plan(::fixy::View<TensorSlot> slots) {
 }
 
 static void test_initial_state() {
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
 
     assert(ctx.mode() == ContextMode::RECORD);
     assert(ctx.is_recording());
@@ -107,7 +107,7 @@ static void test_activate() {
     RegionNode region{};
     init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     assert(ctx.activate(region));
 
     assert(ctx.mode() == ContextMode::COMPILED);
@@ -127,7 +127,7 @@ static void test_activate_no_plan() {
     RegionNode region{};
     init_region(&region, ops.view(), crucible::PlanLink{});
 
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     assert(!ctx.activate(region));
     assert(ctx.is_recording());
 
@@ -153,7 +153,7 @@ static void test_full_replay() {
     RegionNode region{};
     init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     assert(ctx.activate(region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
@@ -197,7 +197,7 @@ static void test_divergence() {
     RegionNode region{};
     init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     assert(ctx.activate(region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
@@ -249,7 +249,7 @@ static void test_reactivate() {
     RegionNode region_b{};
     init_region(&region_b, ops_b.view(), crucible::make_plan_link(plan_b));
 
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
 
     assert(ctx.activate(region_a));
     {
@@ -319,7 +319,7 @@ static void test_external_slots() {
     RegionNode region{};
     init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     assert(ctx.activate(region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
@@ -340,7 +340,7 @@ static void test_external_slots() {
 // chooses and the assertions never name one.
 static void test_integration_sweep_line() {
     auto test = ::foundation::effects::testing::test();
-    crucible::BackgroundThread bt;
+    crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     // Slot 2 is external: it stands for a parameter whose storage the
     // pool does not own and must not place.
@@ -406,7 +406,7 @@ static void test_integration_sweep_line() {
     RegionNode region{};
     init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     assert(ctx.activate(region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
@@ -463,7 +463,7 @@ static void test_divergence_counter() {
     RegionNode region{};
     init_region(&region, ops.view(), crucible::make_plan_link(plan));
 
-    CrucibleContext ctx;
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
 
     assert(ctx.activate(region));
     {

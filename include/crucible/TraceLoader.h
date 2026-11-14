@@ -492,7 +492,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
                             .retag<::fixy::tags::source::Sanitized>();
             const bool was_registered = schema_table_view.match(
                 [&](SchemaTable::MutableView const& view) {
-                    return register_schema_name(view, SchemaHash{schema_hash_raw}, name);
+                    return register_schema_name(io.cap().alloc, view, SchemaHash{schema_hash_raw}, name);
                 },
                 [] noexcept { return false; });
             if (!was_registered) break;

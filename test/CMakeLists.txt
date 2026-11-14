@@ -1816,10 +1816,10 @@ crucible_neg_compile_test(neg_schema_table_lookup_cross_tag
 #   * neg_schema_register_abi_boundary_name: a C ABI name that the entry did
 #     not retag is refused at register_schema_name.
 crucible_neg_compile_test(neg_schema_register_external_name
-  "neg_schema_register_external_name.cpp:25:31: error: no matching function for call to .crucible::SchemaTable::register_name"
+  "neg_schema_register_external_name.cpp:26:31: error: no matching function for call to .crucible::SchemaTable::register_name"
   "required for the satisfaction of .SchemaNameSource<Tag>. \\[with Tag = fixy::tags::source::External\\]")
 crucible_neg_compile_test(neg_schema_register_abi_boundary_name
-  "neg_schema_register_abi_boundary_name.cpp:23:42: error: no matching function for call to .register_schema_name"
+  "neg_schema_register_abi_boundary_name.cpp:24:42: error: no matching function for call to .register_schema_name"
   "required for the satisfaction of .SchemaNameSource<Tag>. \\[with Tag = fixy::tags::source::ABIBoundary\\]")
 
 # The ring storage of TransactionLog<N> is fixy::CyclicBuffer<Transaction,
@@ -4167,10 +4167,10 @@ crucible_neg_compile_test(neg_dispatch_result_compiled_op_index_on_record
 # sanitizer itself.  It refuses a bare string and a path that a caller
 # tagged Sanitized.
 crucible_neg_compile_test(neg_cipher_open_rejects_bare_string
-    "no matching function for call to .crucible::Cipher::open.const fixy::TestRunnerCtx&, const foundation::effects::cap::Alloc&, const char .35.."
+    "no matching function for call to .crucible::Cipher::open.const fixy::TestRunnerCtx&, const foundation::core::Alloc&, const char .35.."
     "to type .crucible::Cipher::RootText. .aka .fixy::Tagged<foundation::core::TextView, fixy::tags::source::External>..")
 crucible_neg_compile_test(neg_cipher_open_rejects_sanitized_input
-    "no matching function for call to .crucible::Cipher::open.const fixy::TestRunnerCtx&, const foundation::effects::cap::Alloc&, std::remove_reference<fixy::Tagged<foundation::os::PathText<4096>, fixy::tags::source::Sanitized>&>::type."
+    "no matching function for call to .crucible::Cipher::open.const fixy::TestRunnerCtx&, const foundation::core::Alloc&, std::remove_reference<fixy::Tagged<foundation::os::PathText<4096>, fixy::tags::source::Sanitized>&>::type."
     "aka .fixy::Tagged<foundation::os::PathText<4096>, fixy::tags::source::Sanitized>... to type .crucible::Cipher::RootText. .aka .fixy::Tagged<foundation::core::TextView, fixy::tags::source::External>..")
 
 # Each fixture file under test/*_neg/ has a registration above.  A file with

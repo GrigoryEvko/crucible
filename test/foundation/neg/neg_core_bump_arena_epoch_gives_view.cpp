@@ -8,7 +8,7 @@
 
 int main() {
     ::foundation::core::BumpArena arena{4096};
-    static_cast<void>(
-        arena.with_epoch([&]() noexcept { return arena.array<std::uint32_t>(::foundation::effects::Alloc{}, 4, 7u); }));
+    static_cast<void>(arena.with_epoch(
+        [&]() noexcept { return arena.array<std::uint32_t>(::foundation::effects::testing::test().alloc, 4, 7u); }));
     return 0;
 }

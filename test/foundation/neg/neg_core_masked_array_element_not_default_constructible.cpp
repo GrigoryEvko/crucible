@@ -10,6 +10,6 @@ struct NoDefault {
 };
 
 int main() {
-    auto items = ::foundation::core::mint_masked_array<NoDefault>(::foundation::effects::Alloc{}, 4);
+    auto items = ::foundation::core::mint_masked_array<NoDefault>(::foundation::effects::testing::test().alloc, 4);
     return static_cast<int>(items.size());
 }

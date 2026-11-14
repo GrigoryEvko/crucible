@@ -170,12 +170,12 @@ int main() {
         // Runs for this N. IIFE-lambdas capture by reference.
         BenchRegion br{n};
         PoolAllocator pool;
-        pool.init(br.plan);
+        pool.init(::foundation::effects::testing::test().alloc, br.plan);
 
         ReplayEngine engine;
         engine.init(br.region, ReplayEngine::PoolBorrow{pool});
 
-        CrucibleContext ctx;
+        CrucibleContext ctx{::foundation::effects::testing::test().alloc};
         (void)ctx.activate(br.region);
 
         char label1[64], label2[64], label3[64], label4[64];

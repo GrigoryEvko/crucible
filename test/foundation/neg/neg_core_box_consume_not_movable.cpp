@@ -12,6 +12,6 @@ struct Fixed {
 };
 
 int main() {
-    auto held = ::foundation::core::mint_box<Fixed>(::foundation::effects::Alloc{}, 3);
+    auto held = ::foundation::core::mint_box<Fixed>(::foundation::effects::testing::test().alloc, 3);
     return static_cast<decltype(held)&&>(held).consume().value;
 }

@@ -32,6 +32,7 @@
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/RegionCache.h>
+#include <crucible/SchemaTable.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Transaction.h>
 #include <crucible/ValidatedOp.h>
@@ -347,6 +348,16 @@ public:
     // external-slot surfaces below ask for it.  Not constexpr: the claim
     // reads the thread id and an atomic.
     [[nodiscard]] CRUCIBLE_INLINE VigilFgCtx mint_producer_context() noexcept { return assert_producer_thread_(); }
+
+    // Registers the name of one schema from the thread that holds the
+    // producer claim of this Vigil, as crucible::register_schema_name does.
+    // The copy of the name allocates through the allocation capability of the
+    // startup context, which this Vigil keeps.  So the foreground context
+    // holds no atom, and only this cold path allocates through the kept one.
+    template <SchemaNameSource Tag>
+    [[gnu::cold]] void register_schema_name(SchemaHash hash, SchemaTable::Name<Tag> const& name) {
+        ::crucible::register_schema_name(assert_producer_thread_(), allocation_, hash, name);
+    }
 
     // Only the foreground writes the mode, at each activation and
     // deactivation of the replay context.  The cell loads with acquire
@@ -1103,6 +1114,10 @@ private:
     // reads it while the foreground writes the counters of the context.
     class ReplayState {
     public:
+        // The context allocates the pool of each region that it activates,
+        // through the allocation capability of the startup context.
+        explicit ReplayState(::foundation::effects::Alloc allocation) noexcept : ctx_{allocation} {}
+
         [[nodiscard]] const CrucibleContext& context() const noexcept { return ctx_; }
         [[nodiscard]] Mode mode() const noexcept { return mode_.load(); }
 
@@ -1185,6 +1200,13 @@ private:
     ::fixy::Atomic<uint32_t> wd_healthy_count_{};
     ::fixy::Atomic<uint32_t> wd_downgrade_count_{};
     ::fixy::Atomic<uint32_t> wd_insufficient_count_{};
+
+    // The allocation capability of the startup context.  A registration of a
+    // schema name on the producer thread allocates through it, so the
+    // foreground context itself holds no atom.  The tag is empty, so it adds
+    // no storage.  It has no initializer, because only the constructor of
+    // the Vigil holds the startup context, and it sets the tag.
+    [[no_unique_address]] ::foundation::effects::Alloc allocation_;
 
     BackgroundThread bg_;  // Must stay last.
 };

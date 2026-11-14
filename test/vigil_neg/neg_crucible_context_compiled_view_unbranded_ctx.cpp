@@ -7,7 +7,7 @@
 #include <crucible/CrucibleContext.h>
 
 int main() {
-    crucible::CrucibleContext ctx;
+    crucible::CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     auto cv = ctx.mint_compiled_view(::foundation::effects::testing::foreground());
     (void)cv;
     return 0;

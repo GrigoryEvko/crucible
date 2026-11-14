@@ -26,7 +26,7 @@ static bool eq(::fixy::Option<SchemaTable::LookupName> const& name, ::fixy::Text
 // A registration into an open table always lands.
 template <SchemaNameSource Tag>
 static void reg(SchemaTable& t, SchemaTable::MutableView const& view, SchemaHash hash, SchemaTable::Name<Tag> name) {
-    const bool was_registered = t.register_name(view, hash, name);
+    const bool was_registered = t.register_name(::foundation::effects::testing::test().alloc, view, hash, name);
     assert(was_registered);
 }
 
@@ -40,8 +40,9 @@ static_assert(!SchemaNameSource<source::Interned>);
 static_assert(std::is_same_v<SchemaTable::LookupName::tag_type, source::Interned>);
 
 template <typename Tag>
-concept registers_as = requires(SchemaTable& t, SchemaTable::MutableView const& v,
-                                ::fixy::Tagged<::fixy::TextView, Tag> n) { t.register_name(v, SchemaHash{1}, n); };
+concept registers_as =
+    requires(SchemaTable& t, SchemaTable::MutableView const& v, ::fixy::Tagged<::fixy::TextView, Tag> n,
+             ::foundation::effects::Alloc a) { t.register_name(a, v, SchemaHash{1}, n); };
 static_assert(registers_as<source::Sanitized>);
 static_assert(registers_as<source::FromInternal>);
 static_assert(!registers_as<source::External>, "a raw external name must not reach the table");
@@ -131,7 +132,8 @@ static void test_binary_search_across_many() {
 static void test_global_table_convenience() {
     global_schema_table().clear(test_ctx());  // this table outlives the test
     const auto gv = global_schema_table().mint_mutable_view(kVigilForeground).expect("a cleared table is open");
-    const bool was_registered = register_schema_name(gv, H(0xAA), S("aten::relu"));
+    const bool was_registered =
+        register_schema_name(::foundation::effects::testing::test().alloc, gv, H(0xAA), S("aten::relu"));
     assert(was_registered);
     assert(eq(schema_name(H(0xAA)), "aten::relu"));
     assert(eq(schema_short_name(H(0xAA)), "relu"));
@@ -209,12 +211,14 @@ static void test_write_after_seal_through_an_older_view_is_refused() {
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
     reg(t, mv, H(0x10), S("aten::before"));
     t.seal();
-    const bool was_registered = t.register_name(mv, H(0x20), S("aten::after"));
+    const bool was_registered =
+        t.register_name(::foundation::effects::testing::test().alloc, mv, H(0x20), S("aten::after"));
     assert(!was_registered);
     assert(t.count() == 1);
     assert(missing(t.lookup(H(0x20))));
     // A write to an existing hash is refused too, and keeps the old name.
-    const bool was_renamed = t.register_name(mv, H(0x10), S("aten::renamed"));
+    const bool was_renamed =
+        t.register_name(::foundation::effects::testing::test().alloc, mv, H(0x10), S("aten::renamed"));
     assert(!was_renamed);
     assert(eq(t.lookup(H(0x10)), "aten::before"));
     crucible::test::pass("  test_write_after_seal_refused:  PASSED\n");

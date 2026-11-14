@@ -305,11 +305,6 @@ void crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const
     if (len == 0 || len > MAX_NAME) return;
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-    // The tables take names only from the thread that holds the producer
-    // claim of this Vigil.  Minting the context proves that, and it ends
-    // the process on any other thread.
-    const crucible::VigilFgCtx fg = crucible::vessel::as_vigil_typed(h).value()->mint_producer_context();
-
     // The checks above are the boundary's sanitizer, and the retag records
     // that they ran.  The name is never dropped: a sealed global table sends
     // it to the late table.
@@ -318,7 +313,11 @@ void crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     const auto name_tag =
         ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name_text).retag<::fixy::tags::source::Sanitized>();
-    crucible::register_schema_name(fg, crucible::SchemaHash{schema_hash}, name_tag);
+
+    // The tables take names only from the thread that holds the producer
+    // claim of this Vigil.  The Vigil mints that context for the write, and
+    // the mint ends the process on any other thread.
+    crucible::vessel::as_vigil_typed(h).value()->register_schema_name(crucible::SchemaHash{schema_hash}, name_tag);
 }
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")

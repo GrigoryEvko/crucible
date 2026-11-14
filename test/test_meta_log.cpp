@@ -31,14 +31,14 @@ static TensorMeta make_meta(void* ptr, int64_t d0 = 128, int64_t d1 = 256) {
 }
 
 static void test_empty_state() {
-    MetaLog log;
+    MetaLog log{::foundation::effects::testing::test().alloc};
     assert(log.size().peek() == 0);
     assert(!log.try_append(::fixy::View<const TensorMeta>{}).is_valid());
     crucible::test::pass("  test_empty:                     PASSED\n");
 }
 
 static void test_single_append_returns_index_zero() {
-    MetaLog log;
+    MetaLog log{::foundation::effects::testing::test().alloc};
     TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x1000)));
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
     auto idx = log.try_append(record.view());
@@ -53,7 +53,7 @@ static void test_single_append_returns_index_zero() {
 }
 
 static void test_batch_append_and_monotonic() {
-    MetaLog log;
+    MetaLog log{::foundation::effects::testing::test().alloc};
     ::fixy::FixedArray<TensorMeta, 8> batch{};
     for (uint32_t i = 0; i < 8; ++i) {
         crucible::test::element_at(batch, i) =
@@ -78,7 +78,7 @@ static void test_batch_append_and_monotonic() {
 }
 
 static void test_tail_advance_frees_capacity() {
-    MetaLog log;
+    MetaLog log{::foundation::effects::testing::test().alloc};
     TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x2000)));
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
     auto idx = log.try_append(record.view());
@@ -93,7 +93,7 @@ static void test_tail_advance_frees_capacity() {
 }
 
 static void test_reset_zeroes_both_pointers() {
-    MetaLog log;
+    MetaLog log{::foundation::effects::testing::test().alloc};
     TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x3000)));
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
     for (int i = 0; i < 10; ++i)
@@ -108,7 +108,7 @@ static void test_reset_zeroes_both_pointers() {
 }
 
 static void test_copy_run_across_the_end() {
-    MetaLog log;
+    MetaLog log{::foundation::effects::testing::test().alloc};
     // The three counters start three slots from the end of the ring.  The
     // next append then passes the end.  A fill and a drain of the ring hold a
     // second buffer of 176 MB, and the ring holds 176 MB too.  The
@@ -153,7 +153,7 @@ static void test_copy_run_across_the_end() {
 // In 32 bits the record at 2^32 - 1 takes the index of none, and the append
 // after it moves the head back.
 static void test_counters_pass_two_to_the_32() {
-    MetaLog log;
+    MetaLog log{::foundation::effects::testing::test().alloc};
     // No other thread uses the log, which is the condition of the reset.
     constexpr uint32_t BELOW_WRAP = 0xFFFFFFF0u;
     log.head.reset_under_quiescence(BELOW_WRAP);
@@ -195,11 +195,11 @@ static void test_counters_pass_two_to_the_32() {
 // A run longer than the buffer holds records that the producer wrote over.
 // The copy refuses such a run before it reads a slot.
 static void test_copy_run_refuses_a_run_longer_than_the_buffer() {
-    MetaLog log;
+    MetaLog log{::foundation::effects::testing::test().alloc};
     // The probe leaves its body through longjmp, so the buffer lives outside
     // the body, and its destructor runs.
     ::fixy::HeapArray<TensorMeta> destination =
-        ::fixy::mint_heap_array(::foundation::effects::Alloc{}, MetaLog::CAPACITY + 1, TensorMeta{});
+        ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, MetaLog::CAPACITY + 1, TensorMeta{});
     assert(crucible::test::aborts([&] { log.copy_run(0, destination.view()); }));
     crucible::test::pass("  test_copy_run_refuses_long_run: PASSED\n");
 }
@@ -214,7 +214,7 @@ static void test_copy_run_refuses_a_run_longer_than_the_buffer() {
 // duplication from the payload alone.
 static void test_spsc_concurrent_integrity() {
     constexpr uint32_t N = 100000;
-    MetaLog log;
+    MetaLog log{::foundation::effects::testing::test().alloc};
 
     std::atomic<bool> producer_done{false};
     std::atomic<uint32_t> lost_spin{0};  // diagnostic only
@@ -283,7 +283,7 @@ static void test_try_append_pure() {
     namespace eff = ::fixy;
 
     {
-        MetaLog log;
+        MetaLog log{::foundation::effects::testing::test().alloc};
         TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xA0)));
         const ::fixy::FixedArray<TensorMeta, 1> record{m};
         auto idx = log.try_append_pure(record.view());
@@ -295,7 +295,7 @@ static void test_try_append_pure() {
     }
 
     {
-        MetaLog log;
+        MetaLog log{::foundation::effects::testing::test().alloc};
         TensorMeta m1 = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xB0)));
         TensorMeta m2 = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xC0)));
         const ::fixy::FixedArray<TensorMeta, 1> first_record{m1};
@@ -312,7 +312,7 @@ static void test_try_append_pure() {
     // repeat, which is what shows the facade forwards into the same
     // storage rather than keeping a second one.
     {
-        MetaLog log;
+        MetaLog log{::foundation::effects::testing::test().alloc};
         TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xD0)));
         const ::fixy::FixedArray<TensorMeta, 1> record{m};
         auto i0 = log.try_append(record.view());  // index 0
@@ -346,7 +346,7 @@ static void test_try_append_pure() {
 
 static void test_try_append_pure_concurrent() {
     constexpr uint32_t N = 50000;
-    MetaLog log;
+    MetaLog log{::foundation::effects::testing::test().alloc};
 
     std::atomic<bool> producer_done{false};
     std::atomic<uint32_t> lost_spin{0};

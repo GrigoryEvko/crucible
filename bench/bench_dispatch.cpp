@@ -306,7 +306,7 @@ int main() {
     }());
 
     reports.push_back([&] {
-        MetaLog meta_log;
+        MetaLog meta_log{::foundation::effects::testing::test().alloc};
         meta_log.reset();
         ::fixy::FixedArray<TensorMeta, 2> metas{
             make_meta(fake_ptr(0, 0)),
@@ -343,7 +343,7 @@ int main() {
         check_single_cpu_plan(*plan);
 
         PoolAllocator pool;
-        pool.init(*plan);
+        pool.init(::foundation::effects::testing::test().alloc, *plan);
 
         uint32_t slot_idx = 0;
         auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -371,7 +371,7 @@ int main() {
         BenchRegion br;
         br.build(NUM_OPS, SCHEMA, SHAPE);
         PoolAllocator pool;
-        pool.init(*br.plan);
+        pool.init(::foundation::effects::testing::test().alloc, *br.plan);
         ReplayEngine engine;
         engine.init(*br.region, ReplayEngine::PoolBorrow{pool});
         auto av = engine.mint_active_view(kVigilForeground);
@@ -394,7 +394,7 @@ int main() {
     reports.push_back([&] {
         BenchRegion br;
         br.build(NUM_OPS, SCHEMA, SHAPE);
-        CrucibleContext ctx;
+        CrucibleContext ctx{::foundation::effects::testing::test().alloc};
         (void)ctx.activate(*br.region);
 
         uint32_t op_idx = 0;
@@ -419,7 +419,7 @@ int main() {
         }
         BenchRegion br;
         br.build(BIG, big_sch, big_shp);
-        CrucibleContext ctx;
+        CrucibleContext ctx{::foundation::effects::testing::test().alloc};
         (void)ctx.activate(*br.region);
 
         uint32_t op_idx = 0;

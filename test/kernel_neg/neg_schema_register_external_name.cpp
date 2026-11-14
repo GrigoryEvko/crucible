@@ -22,5 +22,6 @@ int main() {
     const auto view = table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>())
                           .expect("an open table mints a mutable view");
     const auto name = ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::TextView{"aten::mm"});
-    return table.register_name(view, crucible::SchemaHash{0x42}, name) ? 0 : 1;
+    const ::foundation::effects::Alloc allocation = ::foundation::effects::testing::test().alloc;
+    return table.register_name(allocation, view, crucible::SchemaHash{0x42}, name) ? 0 : 1;
 }

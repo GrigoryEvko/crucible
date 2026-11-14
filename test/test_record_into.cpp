@@ -30,7 +30,7 @@ TraceRing& test_ring() {
 }
 
 MetaLog& test_log() {
-    static MetaLog log{};
+    static MetaLog log{::foundation::effects::testing::test().alloc};
     return log;
 }
 
