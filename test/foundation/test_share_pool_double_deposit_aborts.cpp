@@ -1,11 +1,18 @@
-// A pool that still parks its exclusive refuses a second deposit.
+// A pool that still parks its exclusive refuses a second deposit, and a
+// pool that lends a share refuses a deposit.
 //
 // A brand names a mint site, so two root mints through one site are two
-// tokens of one type, and either fits the pool.  Without the precondition
-// of deposit_exclusive, the second deposit overwrites the parked token,
-// and the one region has had two owners.  The attack runs in a child
-// process, and the test passes only when the child ends by SIGABRT with
-// the violated condition in its diagnostic.
+// tokens of one type, and either fits the pool.  Without the check of the
+// state in deposit_exclusive, the second deposit overwrites the parked
+// token, and the one region has had two owners.  A deposit into a pool
+// that lends stores zero over the live count, and the next upgrade takes
+// the region from under a reader.  Each attack runs in a child process,
+// and the test passes only when the child ends by SIGABRT with the failed
+// condition in its diagnostic.
+//
+// Two targets build this file.  test_share_pool_deposit_under_ignore
+// builds it with the ignore semantic, where a precondition is only an
+// assumption.  So the check of the state must be a fatal invariant.
 
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/SharedPermission.h>
@@ -66,10 +73,24 @@ void deposit_while_parked() {
     pool.deposit_exclusive(std::move(second));
 }
 
+// The body runs under one lent share of the pool, and deposits there.
+void deposit_while_lending() {
+    namespace fp = ::foundation::permissions;
+    auto first = mint_region();
+    auto second = mint_region();
+    fp::SharedPermissionPool pool{std::move(first)};
+    fp::with_shared_read(
+        pool, [&pool, token = std::move(second)](auto) mutable noexcept { pool.deposit_exclusive(std::move(token)); });
+}
+
 }  // namespace
 
 int main() {
-    const bool refused = attack_aborts_with(deposit_while_parked, "!parked_.has_value()");
+    const bool is_parked_refused =
+        attack_aborts_with(deposit_while_parked, "fatal invariant failed: is_exclusive_out()");
+    const bool is_lending_refused =
+        attack_aborts_with(deposit_while_lending, "fatal invariant failed: is_exclusive_out()");
+    const bool refused = is_parked_refused && is_lending_refused;
     std::printf("test_share_pool_double_deposit_aborts: %s\n", refused ? "refused" : "NOT REFUSED");
     return refused ? 0 : 1;
 }

@@ -26,7 +26,6 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/algebra/lattices/FractionalLattice.h>
-#include <foundation/contracts/Pre.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Fwd.h>
@@ -292,15 +291,28 @@ public:
         return try_upgrade_raw_();
     }
 
+    // The holder of the exclusive gives it back.  While the exclusive is
+    // out, the state is the exclusive-out bit alone: a lend fails on the
+    // bit, and no guard lives, because the upgrade found a count of zero.
+    // So no other thread writes the state or the parked permission here.
+    //
+    // A deposit into a pool that lends would store zero over live shares.
+    // The two checks below end the process in each build, also in a unit
+    // with the ignore semantic, where a precondition is only an assumption.
+    // The first check comes before the write of the parked permission, so a
+    // refused deposit writes nothing.  The bit is set only with a count of
+    // zero, so the bit alone tells that the exclusive is out.  The
+    // compare-exchange clears the bit only from the state of the bit alone.
+    //
     // No postcondition: an upgrade on another thread can take the parked
     // permission before a witness reads it.
     void deposit_exclusive(Permission<Tag, Brand>&& exc) noexcept {
-        CRUCIBLE_PRE(!parked_.has_value());
+        CRUCIBLE_FATAL_INVARIANT(is_exclusive_out());
         parked_ = std::move(exc);
-        // The count is zero whenever the exclusive-out bit is set, so a
-        // plain store of zero clears the bit without discarding a count.
         // Release, so a later lend sees the freshly parked permission.
-        state_.store(0, std::memory_order_release);
+        std::uint64_t expected = EXCLUSIVE_OUT_BIT;
+        const bool is_bit_cleared = state_.compare_exchange_strong(expected, 0, std::memory_order_release);
+        CRUCIBLE_FATAL_INVARIANT(is_bit_cleared);
     }
 
     [[nodiscard]] std::uint64_t outstanding() const noexcept {

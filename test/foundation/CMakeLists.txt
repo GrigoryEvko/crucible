@@ -1699,10 +1699,16 @@ foundation_neg_compile_test(neg_shared_read_of_a_temporary_pool_void_body
   "no matching function for call to .with_shared_read\\("
   "required for the satisfaction of .WithSharedReadArgs<Args \\.\\.\\.>. \\[with Args = \\{foundation::permissions::SharedPermissionPool<<unnamed>::Region")
 
-# A pool that still parks its exclusive refuses a second deposit.  The
-# attack runs in a child process, and the test passes only on the
-# violated condition.
+# A pool that still parks its exclusive refuses a second deposit, and a pool
+# that lends a share refuses a deposit.  Each attack runs in a child
+# process, and the test passes only on the violated condition.
 foundation_test(test_share_pool_double_deposit_aborts)
+
+# The same two refusals in a unit with the ignore semantic.  There a
+# precondition is only an assumption, so the checks of the pool are fatal
+# invariants.
+foundation_test(test_share_pool_deposit_under_ignore test_share_pool_double_deposit_aborts.cpp)
+crucible_contract_ignore_target(test_share_pool_deposit_under_ignore)
 
 # ── The row-mismatch message builder ──────────────────────────────────
 #
