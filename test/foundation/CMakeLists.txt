@@ -2972,8 +2972,10 @@ foundation_test(test_core_masked_array)
 
 # Each owner of heap storage of the base meets the hazards of a move: a
 # self-move, a move from a child that the old value owns, a moved-from
-# source, and a linear element.
+# source, and a linear element.  The owner of a mapping is in fixy, so the
+# probe links fixy for the map door.
 foundation_test(test_core_owner_probe)
+target_link_libraries(test_core_owner_probe PRIVATE fixy)
 
 # A FixedList holds at most N elements, and a push into a full list gives
 # Full, which holds the value of a linear element.  Each element ends one

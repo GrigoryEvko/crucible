@@ -41,6 +41,7 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Owner.h>
 #include <foundation/core/Region.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
@@ -170,6 +171,30 @@ using mapping_row_t =
 
 }  // namespace fixy::mmap
 
+namespace foundation::core::detail::owner {
+
+// The fields of an OwnedMmap: the address and the length of the mapping, or
+// null and zero when it holds no mapping.  The state is a member of the home
+// of the owner states of foundation/core/Owner.h, so the probe of the owners
+// holds it in its roster.  The unmap takes the length that the map took.
+struct MappingState {
+    void* address = nullptr;
+    std::size_t length = 0;
+
+    [[nodiscard]] static constexpr MappingState emptied(MappingState const& /*state*/) noexcept {
+        return MappingState{};
+    }
+
+    // Unmaps the mapping.  The empty state unmaps nothing.
+    static constexpr void release(MappingState const& state) noexcept {
+        if (state.address != nullptr) {
+            ::fixy::mmap::detail::unmap_region_(state.address, state.length);
+        }
+    }
+};
+
+}  // namespace foundation::core::detail::owner
+
 namespace fixy {
 
 // The claims the carriers in this header make that no lattice grades.
@@ -227,8 +252,16 @@ concept MappingViewElement =
 
 }  // namespace mmap
 
+// The core of foundation/core/Owner.h gives the moves and the end of a
+// mapping.  A move assignment reads the source and empties it before it
+// unmaps the old mapping of the target, so a source inside that mapping is
+// read before the unmap.
 template <typename Tag, typename Prot, typename Share, typename Brand = ::foundation::brand::DefaultBrand>
-class [[nodiscard]] OwnedMmap {
+class [[nodiscard]] OwnedMmap final
+    : public ::foundation::core::detail::OwnerCore<::foundation::core::detail::owner::MappingState> {
+    using State = ::foundation::core::detail::owner::MappingState;
+    using Core = ::foundation::core::detail::OwnerCore<State>;
+
     static_assert(::foundation::brand::IsBrand<Brand>,
                   "OwnedMmap<Tag, Prot, Share, Brand>: Brand must be an empty class type: the brand of the "
                   "permission the mapping was minted with, or DefaultBrand.");
@@ -239,13 +272,10 @@ class [[nodiscard]] OwnedMmap {
                   "OwnedMmap<Tag, Prot, Share, Brand>: Share must be a primary share tag of fixy::mmap::share: "
                   "Private, Shared or Anonymous.  The type is the claim of the share mode.");
 
-    void* addr_ = nullptr;
-    std::size_t len_ = 0;
-
     // Private, and mint_region is its only caller.  A public one lets any
     // address be claimed, and the destructor unmaps whatever it was
     // claimed over.
-    explicit OwnedMmap(void* address, std::size_t length) noexcept : addr_{address}, len_{length} {}
+    explicit OwnedMmap(void* address, std::size_t length) noexcept : Core{State{address, length}} {}
 
 public:
     using tag_type = Tag;
@@ -283,25 +313,16 @@ public:
     OwnedMmap(const OwnedMmap&) = delete("mmap region is unique; copy would double-unmap on destruction");
     OwnedMmap& operator=(const OwnedMmap&) = delete("mmap region is unique; copy would double-unmap on destruction");
 
-    OwnedMmap(OwnedMmap&& other) noexcept
-        : addr_{std::exchange(other.addr_, nullptr)}, len_{std::exchange(other.len_, 0)} {}
-
-    OwnedMmap& operator=(OwnedMmap&& other) noexcept {
-        if (this != &other) {
-            release_();
-            addr_ = std::exchange(other.addr_, nullptr);
-            len_ = std::exchange(other.len_, 0);
-        }
-        return *this;
-    }
-
-    ~OwnedMmap() noexcept { release_(); }
+    // The assignment unmaps the old mapping of this owner after it takes the
+    // mapping of other.
+    OwnedMmap(OwnedMmap&&) noexcept = default;
+    OwnedMmap& operator=(OwnedMmap&&) noexcept = default;
 
     // A borrow.  Ownership stays here, so the caller must not unmap
     // the returned pointer.
-    [[nodiscard]] void* data() const noexcept { return addr_; }
-    [[nodiscard]] std::size_t size() const noexcept { return len_; }
-    [[nodiscard]] bool is_mapped() const noexcept { return addr_ != nullptr; }
+    [[nodiscard]] void* data() const noexcept { return this->state_.address; }
+    [[nodiscard]] std::size_t size() const noexcept { return this->state_.length; }
+    [[nodiscard]] bool is_mapped() const noexcept { return this->state_.address != nullptr; }
 
     // The bytes of the mapping as a View of T, with the count from the
     // length of the mapping, or no value when the length is not a whole
@@ -341,10 +362,13 @@ public:
     // written.
     //
     // The witness is taken by value and is empty, so the rationale
-    // lives in the type and costs nothing at run time.
+    // lives in the type and costs nothing at run time.  The owner is empty
+    // when the call returns, and no unmap runs.
     template <atom::IsLeakAtom LeakAtom>
     [[nodiscard]] std::pair<void*, std::size_t> release(LeakAtom) && noexcept {
-        return {std::exchange(addr_, nullptr), std::exchange(len_, 0)};
+        State const held = this->state_;
+        this->state_ = State::emptied(held);
+        return {held.address, held.length};
     }
 
 private:
@@ -352,18 +376,11 @@ private:
     [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T>> view_of_() const noexcept {
         using Result = ::foundation::core::Option<::foundation::core::View<T>>;
         if (!is_mapped()) return Result::some(::foundation::core::View<T>{});
-        if (len_ % sizeof(T) != 0) return Result{::foundation::core::none};
-        std::size_t const count = len_ / sizeof(T);
-        T* const first = ::foundation::lifetime::start_as_array<std::remove_const_t<T>>(addr_, count).data();
+        if (this->state_.length % sizeof(T) != 0) return Result{::foundation::core::none};
+        std::size_t const count = this->state_.length / sizeof(T);
+        T* const first =
+            ::foundation::lifetime::start_as_array<std::remove_const_t<T>>(this->state_.address, count).data();
         return Result::some(::foundation::core::detail::view_over_<T>(first, count));
-    }
-
-    void release_() noexcept {
-        if (is_mapped()) {
-            mmap::detail::unmap_region_(addr_, len_);
-            addr_ = nullptr;
-            len_ = 0;
-        }
     }
 };
 

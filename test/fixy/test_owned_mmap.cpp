@@ -176,7 +176,7 @@ int check_move_assign_unmaps_the_replaced_region() {
 }
 
 // The empty state is reachable without a syscall, and every query
-// answers on it.  release_ takes the not-mapped branch, so the
+// answers on it.  The release of the empty state unmaps nothing, so the
 // destructor of an empty region issues no syscall.
 int check_empty_state() {
     Region empty{};

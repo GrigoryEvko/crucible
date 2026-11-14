@@ -45,6 +45,7 @@
 // never names the core has no state in detail::owner, so the roster cannot
 // see it at all.  The check finds such an owner only when a probe names it.
 
+#include <fixy/os/OwnedMmap.h>
 #include <foundation/AlignedBytes.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
@@ -573,6 +574,57 @@ struct SwissTableBufferProbe {
     }
 };
 
+// ── The mapping ─────────────────────────────────────────────────────────
+
+// The tag and the brand of the mappings of the probe.
+struct MappingProbeTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct MappingProbeBrand {};
+
+// The probe holds empty mappings only.  A mapping with pages comes only from
+// mint_region, which gives a std::expected, and the rule quarantine counts
+// each use of it in this directory.  test/fixy/test_owned_mmap.cpp moves and
+// assigns mappings that hold pages, and it releases one with a leak atom.
+struct OwnedMmapProbe {
+    using Owner = ::fixy::OwnedMmap<MappingProbeTag, ::fixy::mmap::prot::WriteCopy, ::fixy::mmap::share::Anonymous,
+                                    MappingProbeBrand>;
+
+    static void self_move() {
+        Owner held{};
+        Owner& alias = held;
+        held = static_cast<Owner&&>(alias);
+        CRUCIBLE_FATAL_INVARIANT(!held.is_mapped() && held.size() == 0);
+    }
+
+    // A child move needs an OwnedMmap that lives in the pages of a mapping.
+    // A View of a mapping starts the lifetime of an implicit-lifetime
+    // element only, and an owner is no such element, so no door of the base
+    // builds that child.
+    static void child_move() {}
+
+    static void moved_from() {
+        Owner target{};
+        Owner source{};
+        target = static_cast<Owner&&>(source);
+        source = Owner{};
+        Owner taken{static_cast<Owner&&>(target)};
+        CRUCIBLE_FATAL_INVARIANT(!taken.is_mapped() && taken.size() == 0);
+    }
+
+    static void linear() {}
+
+    // EMPTY: a moved-from OwnedMmap holds no address, and its View is empty.
+    static void empty() {
+        Owner source{};
+        Owner const target{static_cast<Owner&&>(through(source))};
+        CRUCIBLE_FATAL_INVARIANT(!target.is_mapped());
+        CRUCIBLE_FATAL_INVARIANT(!through(source).is_mapped() && through(source).size() == 0);
+        CRUCIBLE_FATAL_INVARIANT(
+            through(source).template view<std::byte>().expect("an empty mapping gives an empty View").size() == 0);
+    }
+};
+
 // Runs each hazard of one probe.  Each hazard ends with no live node.
 template <class Probe>
 void run_probe() {
@@ -597,7 +649,7 @@ struct ProbeList {
 };
 
 using AllProbes = ProbeList<BoxProbe, HoleProbe, HeapArrayProbe, MaskedArrayProbe, GrowListProbe, GrowTextProbe,
-                            AlignedBytesProbe, SwissTableBufferProbe>;
+                            AlignedBytesProbe, SwissTableBufferProbe, OwnedMmapProbe>;
 
 static_assert(AllProbes::gaps == 0,
               "an owner state of the core has no probe in this file, or a probe names an owner off the core, an owner "
