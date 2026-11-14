@@ -110,7 +110,7 @@ examples/fn/ | std-object | 3 | - | -
 include/crucible/ | c-array-object | 2 | - | -
 include/crucible/ | compiler-builtin | 1 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
-include/crucible/ | raw-pointer-object | 68 | - | -
+include/crucible/ | raw-pointer-object | 63 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 1 | - | -
 include/crucible/ | std-entity | 1 | - | -
 include/crucible/cntp/ | c-library-call | 9 | - | -
@@ -339,7 +339,7 @@ test/ct/ | std-entity | 20 | - | -
 test/ct/ | std-object | 13 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
 test/fixy/ | c-array-object | 100 | - | -
-test/fixy/ | c-library-call | 1461 | - | -
+test/fixy/ | c-library-call | 1455 | - | -
 test/fixy/ | c-library-object | 9 | - | -
 test/fixy/ | door-header | 22 | - | -
 test/fixy/ | opted-out | 16 | ORACLE: the C library reports the attributes of the calling thread | -

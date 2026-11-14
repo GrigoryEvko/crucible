@@ -69,32 +69,32 @@ using crucible::test::ScratchDir;
 inline constexpr std::string_view kScratchPrefix = "fixy-io-test";
 
 // The source and the destination of one transfer: two files in a scratch
-// directory, the source filled with a pattern.  An empty handle in either
-// means that a file could not be made.
+// directory, the source filled with a pattern.
 struct TransferFiles final {
     fs::OwnedFd source;
     fs::OwnedFd destination;
 };
 
-// The descriptor of a mint, or an empty handle when the open failed.
-[[nodiscard]] fs::OwnedFd descriptor_of(fixy::Result<fixy::Linear<fs::OwnedFd>, foundation::os::Errno> minted) {
+using MadeFd = fixy::Result<fs::OwnedFd, foundation::os::Errno>;
+using MadeFiles = fixy::Result<TransferFiles, foundation::os::Errno>;
+
+// The descriptor of a mint, or the Errno of the open that failed.  The door
+// gives the Errno in its Result and does not set errno.
+[[nodiscard]] MadeFd descriptor_of(fixy::Result<fixy::Linear<fs::OwnedFd>, foundation::os::Errno> minted) {
     return std::move(minted).match(
-        [](fixy::Linear<fs::OwnedFd> opened) -> fs::OwnedFd { return std::move(opened).consume(); },
-        [](foundation::os::Errno) -> fs::OwnedFd { return fs::OwnedFd{}; });
+        [](fixy::Linear<fs::OwnedFd> opened) -> MadeFd { return std::move(opened).consume(); },
+        [](foundation::os::Errno error) -> MadeFd { return fixy::err(error); });
 }
 
-[[nodiscard]] TransferFiles make_transfer_files(IoBlockCtx const& ctx, ScratchDir const& scratch,
-                                                std::span<const std::uint8_t> pattern) {
-    TransferFiles files{};
-    files.source = descriptor_of(
-        fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadWrite>>(ctx, sanitized(scratch.file("src"))));
-    files.destination = descriptor_of(
-        fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadWrite>>(ctx, sanitized(scratch.file("dst"))));
-    if (!files.source.is_open() || !files.destination.is_open()) return TransferFiles{};
-    if (fs::write_full(ctx, files.source, std::as_bytes(pattern)).is_err()) {
-        files.source = fs::OwnedFd{};
-    }
-    return files;
+// The two files of a transfer, or the Errno of the first open or write of
+// the doors that failed.
+[[nodiscard]] MadeFiles make_transfer_files(IoBlockCtx const& ctx, ScratchDir const& scratch,
+                                            std::span<const std::uint8_t> pattern) {
+    using ReadWrite = fixy::atom::fs::mode<fs::open_mode::ReadWrite>;
+    CRUCIBLE_TRY(source, descriptor_of(fs::mint_file<ReadWrite>(ctx, sanitized(scratch.file("src")))));
+    CRUCIBLE_TRY(destination, descriptor_of(fs::mint_file<ReadWrite>(ctx, sanitized(scratch.file("dst")))));
+    CRUCIBLE_TRY(_, fs::write_full(ctx, source, std::as_bytes(pattern)));
+    return TransferFiles{std::move(source), std::move(destination)};
 }
 
 // Whether the destination holds the pattern at its start.
@@ -209,11 +209,13 @@ struct TransferFiles final {
         std::fprintf(stderr, "[skipped] no scratch directory under /tmp (errno %d)\n", errno);
         return 0;
     }
-    TransferFiles files = make_transfer_files(ctx, scratch, pattern);
-    if (!files.source.is_open() || !files.destination.is_open()) {
-        std::fprintf(stderr, "making the two transfer files failed (errno %d)\n", errno);
+    MadeFiles made = make_transfer_files(ctx, scratch, pattern);
+    if (made.is_err()) {
+        fixy::report(fixy::Sink::Err, "making the two transfer files failed (errno {})\n",
+                     foundation::os::error_number_of(made));
         return 1;
     }
+    TransferFiles files = std::move(made).expect("the doors made the two transfer files");
 
     const auto moved = fixy::io::zerocopy_transfer<Sendfile>(ctx, files.source, files.destination, kPayloadBytes);
     if (!moved) {
@@ -253,11 +255,13 @@ struct TransferFiles final {
         std::fprintf(stderr, "[skipped] no scratch directory under /tmp (errno %d)\n", errno);
         return 0;
     }
-    TransferFiles files = make_transfer_files(ctx, scratch, pattern);
-    if (!files.source.is_open() || !files.destination.is_open()) {
-        std::fprintf(stderr, "making the two transfer files failed (errno %d)\n", errno);
+    MadeFiles made = make_transfer_files(ctx, scratch, pattern);
+    if (made.is_err()) {
+        fixy::report(fixy::Sink::Err, "making the two transfer files failed (errno {})\n",
+                     foundation::os::error_number_of(made));
         return 1;
     }
+    TransferFiles files = std::move(made).expect("the doors made the two transfer files");
 
     const auto moved = fixy::io::zerocopy_transfer<CopyFileRange>(ctx, files.source, files.destination, kPayloadBytes);
     if (!moved) {
