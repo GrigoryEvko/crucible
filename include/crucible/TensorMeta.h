@@ -110,6 +110,17 @@ public:
 
 [[nodiscard]] inline constexpr int64_t raw_tensor_dim(TensorDimArray::ConstSlot dim) noexcept { return dim.value(); }
 
+// The bits of TensorMeta::flags.  Bits 6 and 7 are reserved, and each
+// descriptor writes them as zero.
+namespace meta_flags {
+inline constexpr uint8_t IS_LEAF = 1 << 0;
+inline constexpr uint8_t IS_CONTIGUOUS = 1 << 1;
+inline constexpr uint8_t HAS_GRAD_FN = 1 << 2;
+inline constexpr uint8_t IS_VIEW = 1 << 3;
+inline constexpr uint8_t IS_NEG = 1 << 4;
+inline constexpr uint8_t IS_CONJ = 1 << 5;
+}  // namespace meta_flags
+
 struct TensorMeta {
     // The lanes past ndim must start at zero, and the reason is the wire
     // image rather than any hash. write_meta in Serialize.h writes both
@@ -262,6 +273,82 @@ using ValidLayout = ::fixy::Refined<valid_layout, std::int8_t>;
 
 [[nodiscard, gnu::const]] inline constexpr Layout make_layout(ValidLayout raw) noexcept {
     return static_cast<Layout>(raw.value());
+}
+
+// The fields of one tensor descriptor as a writer outside the process gave
+// them: a C caller of the vessel, or a metadata record of a trace file.  No
+// field holds a checked claim, so this type is not a TensorMeta, and
+// decode_tensor_meta is the one door from it to a TensorMeta.  The data
+// pointer is not a field, because only the caller of the door knows if the
+// address has a meaning in this process.
+struct UncheckedTensorMeta {
+    ::fixy::FixedArray<int64_t, kMaxTensorNDim> sizes{};
+    ::fixy::FixedArray<int64_t, kMaxTensorNDim> strides{};
+    uint8_t ndim = 0;
+    int8_t dtype = 0;
+    int8_t device_type = 0;
+    int8_t device_idx = 0;
+    int8_t layout = 0;
+    uint8_t requires_grad = 0;
+    uint8_t flags = 0;
+    uint8_t output_nr = 0;
+    int64_t storage_offset = 0;
+    uint32_t version = 0;
+    // The padding before the storage size.  The door does not read it.
+    uint32_t pad0 = 0;
+    uint64_t storage_nbytes = 0;
+    uint64_t grad_fn_hash = 0;
+};
+
+// The TensorMeta of the fields, with data_ptr as its data pointer, or no value
+// when a field breaks a claim of the type.  The claims are:
+//
+//   - the rank is at most kMaxTensorNDim
+//   - each size and each stride below the rank is at most kMaxTensorDimExtent
+//   - each lane past the rank holds zero, so equal descriptors write equal bytes
+//   - the element type, the device and the layout each name an enumerator
+//   - the device index is -1 for the host, or zero or more
+//   - the gradient byte is 0 or 1, because a bool with another byte is
+//     undefined behaviour to read
+//   - no reserved bit of the flags is set.
+//
+// The padding of the TensorMeta stays zero.  Linear in kMaxTensorNDim.
+[[nodiscard]] inline ::fixy::Option<TensorMeta> decode_tensor_meta(UncheckedTensorMeta const& fields,
+                                                                   ExternalDataPtr data_ptr) noexcept {
+    const uint8_t ndim = fields.ndim;
+    if (ndim > kMaxTensorNDim) return ::fixy::none;
+    TensorMeta meta{};
+    meta.ndim = make_ndim(::fixy::mint_refined<::fixy::bounded_above<kMaxTensorNDim>>(ndim));
+    for (const TensorDimArray::LaneIndex lane : decltype(fields.sizes)::indices()) {
+        const int64_t size = fields.sizes.at(lane);
+        const int64_t stride = fields.strides.at(lane);
+        const bool is_lane_held =
+            lane.raw() < ndim ? size <= kMaxTensorDimExtent && stride <= kMaxTensorDimExtent : size == 0 && stride == 0;
+        if (!is_lane_held) return ::fixy::none;
+        meta.sizes[lane.raw()] = tensor_dim(size);
+        meta.strides[lane.raw()] = tensor_dim(stride);
+    }
+
+    if (!valid_scalar_type(fields.dtype) || !valid_device_type(fields.device_type) || !valid_layout(fields.layout))
+        return ::fixy::none;
+    meta.dtype = make_scalar_type(::fixy::mint_refined<valid_scalar_type>(fields.dtype));
+    meta.device_type = make_device_type(::fixy::mint_refined<valid_device_type>(fields.device_type));
+    meta.layout = make_layout(::fixy::mint_refined<valid_layout>(fields.layout));
+
+    constexpr uint8_t known_flags = meta_flags::IS_LEAF | meta_flags::IS_CONTIGUOUS | meta_flags::HAS_GRAD_FN
+                                  | meta_flags::IS_VIEW | meta_flags::IS_NEG | meta_flags::IS_CONJ;
+    if (fields.device_idx < -1 || fields.requires_grad > 1 || (fields.flags & ~known_flags) != 0) return ::fixy::none;
+    meta.device_idx = fields.device_idx;
+    meta.requires_grad = fields.requires_grad == 1;
+    meta.flags = fields.flags;
+
+    meta.data_ptr = data_ptr;
+    meta.output_nr = fields.output_nr;
+    meta.storage_offset = fields.storage_offset;
+    meta.version = fields.version;
+    meta.storage_nbytes = fields.storage_nbytes;
+    meta.grad_fn_hash = grad_fn_hash(fields.grad_fn_hash);
+    return ::fixy::Option<TensorMeta>::some(meta);
 }
 
 }  // namespace crucible

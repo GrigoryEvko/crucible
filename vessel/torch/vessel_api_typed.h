@@ -33,9 +33,9 @@
 // ── ABI invariant ──────────────────────────────────────────────────
 //
 // The C caller writes CrucibleMeta records, and the vessel reads each
-// record through CrucibleMeta.  decode_ffi_meta is the one door from a
-// record to a TensorMeta: it reads each field, does a check of it, and
-// writes it into a new TensorMeta.  A read of a CrucibleMeta record
+// record through CrucibleMeta.  decode_ffi_meta reads each field of a record
+// and gives the fields to decode_tensor_meta of crucible/TensorMeta.h, the
+// one checked door to a TensorMeta.  A read of a CrucibleMeta record
 // through a glvalue of TensorMeta breaks the rule of strict aliasing.
 // GCC at -O3 then removes the stores of the record and reads bytes that
 // the caller did not write.  So no code casts between the two structs.
@@ -227,56 +227,31 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
 inline constexpr uint32_t kMaxOpRecords = 128;
 using OpRecords = ::fixy::FixedList<TensorMeta, kMaxOpRecords>;
 
-// The TensorMeta of one record of a C caller, or no value.  The door reads
-// each field through CrucibleMeta, the type that the caller wrote, and does
-// a check of it before a TensorMeta holds it.  The checks are the claims
-// that decode_trace_meta of crucible/TraceLoader.h checks for a record of a
-// trace file:
-//
-//   - the rank is at most kMaxTensorNDim
-//   - each size and each stride below the rank is at most kMaxTensorDimExtent
-//   - each lane past the rank holds zero
-//   - the element type, the device and the layout each name an enumerator
-//   - the device index is -1 for the host, or zero or more
-//   - the gradient byte is 0 or 1, and no reserved bit of the flags is set.
-//
-// The data pointer is an address of this process, and the door keeps it.
-// The padding stays zero.  Linear in kMaxTensorNDim.
+// The TensorMeta of one record of a C caller, or no value.  The function reads
+// each field through CrucibleMeta, the type that the caller wrote, and gives
+// the fields to decode_tensor_meta of crucible/TensorMeta.h.  That door does
+// the checks of each claim of TensorMeta, the same checks as for a record of
+// a trace file.  The data pointer is an address of this process, and the
+// TensorMeta keeps it.  Linear in kMaxTensorNDim.
 [[nodiscard]] inline ::fixy::Option<TensorMeta> decode_ffi_meta(const CrucibleMeta& record) noexcept {
-    const uint8_t ndim = record.ndim;
-    if (ndim > kMaxTensorNDim) return ::fixy::none;
-    TensorMeta meta{};
-    meta.ndim = make_ndim(::fixy::mint_refined<::fixy::bounded_above<kMaxTensorNDim>>(ndim));
-    for (uint8_t lane = 0; lane < kMaxTensorNDim; ++lane) {
-        const int64_t size = record.sizes[lane];
-        const int64_t stride = record.strides[lane];
-        const bool is_lane_held =
-            lane < ndim ? size <= kMaxTensorDimExtent && stride <= kMaxTensorDimExtent : size == 0 && stride == 0;
-        if (!is_lane_held) return ::fixy::none;
-        meta.sizes[lane] = tensor_dim(size);
-        meta.strides[lane] = tensor_dim(stride);
+    UncheckedTensorMeta fields{};
+    for (const TensorDimArray::LaneIndex lane : decltype(fields.sizes)::indices()) {
+        fields.sizes.at(lane) = record.sizes[lane.raw()];
+        fields.strides.at(lane) = record.strides[lane.raw()];
     }
-
-    if (!valid_scalar_type(record.dtype) || !valid_device_type(record.device_type) || !valid_layout(record.layout))
-        return ::fixy::none;
-    meta.dtype = make_scalar_type(::fixy::mint_refined<valid_scalar_type>(record.dtype));
-    meta.device_type = make_device_type(::fixy::mint_refined<valid_device_type>(record.device_type));
-    meta.layout = make_layout(::fixy::mint_refined<valid_layout>(record.layout));
-
-    constexpr uint8_t known_flags = meta_flags::IS_LEAF | meta_flags::IS_CONTIGUOUS | meta_flags::HAS_GRAD_FN
-                                  | meta_flags::IS_VIEW | meta_flags::IS_NEG | meta_flags::IS_CONJ;
-    if (record.device_idx < -1 || record.requires_grad > 1 || (record.flags & ~known_flags) != 0) return ::fixy::none;
-    meta.device_idx = record.device_idx;
-    meta.requires_grad = record.requires_grad == 1;
-    meta.flags = record.flags;
-
-    meta.data_ptr = external_data_ptr(record.data_ptr);
-    meta.output_nr = record.output_nr;
-    meta.storage_offset = record.storage_offset;
-    meta.version = record.version;
-    meta.storage_nbytes = record.storage_nbytes;
-    meta.grad_fn_hash = grad_fn_hash(record.grad_fn_hash);
-    return ::fixy::Option<TensorMeta>::some(meta);
+    fields.ndim = record.ndim;
+    fields.dtype = record.dtype;
+    fields.device_type = record.device_type;
+    fields.device_idx = record.device_idx;
+    fields.layout = record.layout;
+    fields.requires_grad = record.requires_grad;
+    fields.flags = record.flags;
+    fields.output_nr = record.output_nr;
+    fields.storage_offset = record.storage_offset;
+    fields.version = record.version;
+    fields.storage_nbytes = record.storage_nbytes;
+    fields.grad_fn_hash = record.grad_fn_hash;
+    return decode_tensor_meta(fields, external_data_ptr(record.data_ptr));
 }
 
 // Decodes the n_metas records at typed into records.  Returns false when the

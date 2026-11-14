@@ -31,15 +31,6 @@ namespace crucible {
 
 struct CompiledKernel;
 
-namespace meta_flags {
-inline constexpr uint8_t IS_LEAF = 1 << 0;
-inline constexpr uint8_t IS_CONTIGUOUS = 1 << 1;
-inline constexpr uint8_t HAS_GRAD_FN = 1 << 2;
-inline constexpr uint8_t IS_VIEW = 1 << 3;
-inline constexpr uint8_t IS_NEG = 1 << 4;
-inline constexpr uint8_t IS_CONJ = 1 << 5;
-}  // namespace meta_flags
-
 struct TensorSlot {
     uint64_t offset_bytes = 0;
     uint64_t nbytes = 0;

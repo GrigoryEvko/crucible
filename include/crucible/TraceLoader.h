@@ -17,7 +17,8 @@
 //     uint8  gradient flag, uint8 packed operation flags
 //
 //   Metadata records, 176 bytes each, at the offsets of the tensor metadata
-//   struct.  Each field is read through the checked doors of that struct.
+//   struct.  Each record goes through decode_tensor_meta, the checked door of
+//   that struct.
 //
 //   A schema-name table follows if the file has trailing data:
 //     uint32   name count
@@ -154,9 +155,6 @@ namespace detail {
 // stack, so the reads of a load need no allocation.
 inline constexpr uint32_t kTraceRecordsPerRead = 64;
 
-// The bytes of the lanes of one dimension array of a metadata record.
-inline constexpr std::size_t kTraceDimBlockBytes = sizeof(int64_t) * kMaxTensorNDim;
-
 // The bytes of the inline scalar values of an op record.
 inline constexpr std::size_t kTraceScalarBlockBytes = sizeof(int64_t) * decltype(TraceOpRecord::scalar_values)::size();
 
@@ -178,23 +176,6 @@ template <class Field, std::size_t Offset, std::size_t RecordBytes>
     ::fixy::FixedArray<std::byte, sizeof(Field)> image{};
     ::fixy::copy(image.view(), record_block_<Offset, sizeof(Field)>(record));
     return ::fixy::bit_cast<Field>(image);
-}
-
-// A lane inside the rank must fit the extent bound that the storage-span
-// arithmetic relies on.  A lane past the rank must hold zero, because the
-// wire image writes every lane and two equal descriptors must write equal
-// bytes.
-[[nodiscard]] inline bool read_trace_dims_(::fixy::View<std::byte const, kTraceDimBlockBytes> block, uint8_t ndim,
-                                           TensorDimArray& out) noexcept {
-    uint8_t lane_index = 0;
-    for (::fixy::View<std::byte const, sizeof(int64_t)> lane_bytes : block.chunks<sizeof(int64_t)>()) {
-        const auto lane = read_record_field_<int64_t, 0>(lane_bytes);
-        const bool lane_is_valid = lane_index < ndim ? lane <= kMaxTensorDimExtent : lane == 0;
-        if (!lane_is_valid) return false;
-        out[lane_index] = tensor_dim(lane);
-        ++lane_index;
-    }
-    return true;
 }
 
 // Reads the bytes of buffer from the file.  A read that ends early gives
@@ -310,54 +291,32 @@ decode_trace_op_(::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record,
 
 }  // namespace detail
 
-// Builds one metadata record from its bytes through the checked doors of
-// TensorMeta.  A record whose bytes break a claim of its type is refused.
-// The bool is read as a byte, because a bool that holds any other byte is
-// undefined behaviour to read.  The stored address is not read: it has no
-// meaning in this process, so the field keeps its null value and a later
-// use of it fails loudly.
+// Builds one metadata record from its bytes through decode_tensor_meta, the
+// checked door of TensorMeta.  A record whose bytes break a claim of its type
+// is refused.  Each field is read as the integer of its width, so the bool
+// is read as a byte.  The stored address is not read: it has no meaning in
+// this process, so the data pointer keeps its null value and a later use of
+// it fails loudly.
 [[nodiscard]] inline ::fixy::Option<TensorMeta>
 decode_trace_meta(::fixy::View<std::byte const, sizeof(TensorMeta)> raw) noexcept {
     using detail::read_record_field_;
-    TensorMeta meta{};
-
-    const auto ndim = read_record_field_<uint8_t, offsetof(TensorMeta, ndim)>(raw);
-    if (ndim > kMaxTensorNDim) return ::fixy::none;
-    meta.ndim = make_ndim(::fixy::mint_refined<::fixy::bounded_above<kMaxTensorNDim>>(ndim));
-    if (!detail::read_trace_dims_(detail::record_block_<offsetof(TensorMeta, sizes), detail::kTraceDimBlockBytes>(raw),
-                                  ndim, meta.sizes))
-        return ::fixy::none;
-    if (!detail::read_trace_dims_(
-            detail::record_block_<offsetof(TensorMeta, strides), detail::kTraceDimBlockBytes>(raw), ndim, meta.strides))
-        return ::fixy::none;
-
-    const auto dtype = read_record_field_<int8_t, offsetof(TensorMeta, dtype)>(raw);
-    const auto device_type = read_record_field_<int8_t, offsetof(TensorMeta, device_type)>(raw);
-    const auto layout = read_record_field_<int8_t, offsetof(TensorMeta, layout)>(raw);
-    if (!valid_scalar_type(dtype) || !valid_device_type(device_type) || !valid_layout(layout)) return ::fixy::none;
-    meta.dtype = make_scalar_type(::fixy::mint_refined<valid_scalar_type>(dtype));
-    meta.device_type = make_device_type(::fixy::mint_refined<valid_device_type>(device_type));
-    meta.layout = make_layout(::fixy::mint_refined<valid_layout>(layout));
-
-    // The host is -1, and a device index is never negative otherwise.  A
-    // flag bit that no meta_flags constant names is reserved and written as
-    // zero.
-    constexpr uint8_t known_flags = meta_flags::IS_LEAF | meta_flags::IS_CONTIGUOUS | meta_flags::HAS_GRAD_FN
-                                  | meta_flags::IS_VIEW | meta_flags::IS_NEG | meta_flags::IS_CONJ;
-    const auto device_idx = read_record_field_<int8_t, offsetof(TensorMeta, device_idx)>(raw);
-    const auto requires_grad = read_record_field_<uint8_t, offsetof(TensorMeta, requires_grad)>(raw);
-    const auto flags = read_record_field_<uint8_t, offsetof(TensorMeta, flags)>(raw);
-    if (device_idx < -1 || requires_grad > 1 || (flags & ~known_flags) != 0) return ::fixy::none;
-    meta.device_idx = device_idx;
-    meta.requires_grad = requires_grad == 1;
-    meta.flags = flags;
-
-    meta.output_nr = read_record_field_<uint8_t, offsetof(TensorMeta, output_nr)>(raw);
-    meta.storage_offset = read_record_field_<int64_t, offsetof(TensorMeta, storage_offset)>(raw);
-    meta.version = read_record_field_<uint32_t, offsetof(TensorMeta, version)>(raw);
-    meta.storage_nbytes = read_record_field_<uint64_t, offsetof(TensorMeta, storage_nbytes)>(raw);
-    meta.grad_fn_hash = grad_fn_hash(read_record_field_<uint64_t, offsetof(TensorMeta, grad_fn_hash)>(raw));
-    return ::fixy::Option<TensorMeta>::some(meta);
+    using Lanes = ::fixy::FixedArray<int64_t, kMaxTensorNDim>;
+    UncheckedTensorMeta fields{};
+    fields.sizes = read_record_field_<Lanes, offsetof(TensorMeta, sizes)>(raw);
+    fields.strides = read_record_field_<Lanes, offsetof(TensorMeta, strides)>(raw);
+    fields.ndim = read_record_field_<uint8_t, offsetof(TensorMeta, ndim)>(raw);
+    fields.dtype = read_record_field_<int8_t, offsetof(TensorMeta, dtype)>(raw);
+    fields.device_type = read_record_field_<int8_t, offsetof(TensorMeta, device_type)>(raw);
+    fields.device_idx = read_record_field_<int8_t, offsetof(TensorMeta, device_idx)>(raw);
+    fields.layout = read_record_field_<int8_t, offsetof(TensorMeta, layout)>(raw);
+    fields.requires_grad = read_record_field_<uint8_t, offsetof(TensorMeta, requires_grad)>(raw);
+    fields.flags = read_record_field_<uint8_t, offsetof(TensorMeta, flags)>(raw);
+    fields.output_nr = read_record_field_<uint8_t, offsetof(TensorMeta, output_nr)>(raw);
+    fields.storage_offset = read_record_field_<int64_t, offsetof(TensorMeta, storage_offset)>(raw);
+    fields.version = read_record_field_<uint32_t, offsetof(TensorMeta, version)>(raw);
+    fields.storage_nbytes = read_record_field_<uint64_t, offsetof(TensorMeta, storage_nbytes)>(raw);
+    fields.grad_fn_hash = read_record_field_<uint64_t, offsetof(TensorMeta, grad_fn_hash)>(raw);
+    return decode_tensor_meta(fields, ExternalDataPtr{});
 }
 
 // Loads the trace at path.  When should_register_names is true, the schema
