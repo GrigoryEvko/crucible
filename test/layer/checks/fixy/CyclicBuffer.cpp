@@ -72,6 +72,18 @@ static_assert(full_empty_transitions());
 }
 static_assert(cursor_tracks_absolute_count());
 
+// A fresh claim starts a value-initialized element, so an element whose
+// default constructor can throw has no fresh claim: a throw between the end
+// of the old element and the start of the new one leaves the slot with no
+// element.
+struct ThrowingDefault {
+    ThrowingDefault() noexcept(false) {}
+};
+template <typename Ring>
+concept HasFreshClaim = requires(Ring& ring) { ring.claim_fresh(); };
+static_assert(HasFreshClaim<CB8>);
+static_assert(!HasFreshClaim<CyclicBuffer<ThrowingDefault, 8>>);
+
 }  // namespace detail::cyclic_buffer_self_test
 
 }  // namespace fixy

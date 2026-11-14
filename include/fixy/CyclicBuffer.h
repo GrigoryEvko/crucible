@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <new>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -73,6 +74,22 @@ public:
         cursor_.advance();
         if (count_.get() < N) count_.bump();
         return slot;
+    }
+
+    // The slot of the next claim, with a value-initialized element in it.
+    // The claim ends the old element and starts the new one in the same
+    // storage, so a ring of elements that refuse an assignment, such as an
+    // element with a counter that only goes up, recycles its slots.  The new
+    // element has the type and the storage of the old one, so it replaces the
+    // old one transparently, and each reference to the slot reaches it.
+    // Value initialization zeroes an element with no user-provided default
+    // constructor first, so each padding byte of such an element is zero.
+    [[nodiscard]] reference claim_fresh() noexcept
+        requires std::is_nothrow_default_constructible_v<T>
+    {
+        T* const slot = __builtin_addressof(claim());
+        slot->~T();
+        return *::new(static_cast<void*>(slot)) T();
     }
 
     constexpr reference push(T const& value) noexcept(std::is_nothrow_copy_assignable_v<T>)

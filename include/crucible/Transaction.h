@@ -26,7 +26,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <new>
 #include <type_traits>
 
 namespace crucible {
@@ -175,21 +174,16 @@ public:
             if (oldest != active_ref_() && oldest != target) break;
             (void)ring_.claim();
         }
-        // Claiming advances only the cursor, so the slot that it hands back
-        // stays valid across the reset that follows.
-        Transaction& slot = ring_.claim();
-        // Recycling ends the life of the old transaction and starts a new
-        // one in the slot.  An assignment would write step_id backward, and
-        // its Monotonic refuses an assignment.  The value initialization
+        // The fresh claim ends the life of the old transaction and starts a
+        // new one in the slot.  An assignment would write step_id backward,
+        // and its Monotonic refuses an assignment.  The value initialization
         // also sets each padding byte to zero.
-        slot.~Transaction();
-        Transaction& tx = *::new(static_cast<void*>(&slot)) Transaction();
+        Transaction& tx = ring_.claim_fresh();
         // Set rather than assigned, so a later edit cannot reintroduce a write
         // that goes backwards.
         tx.step_id.advance(step_id);
         stamp_transaction(tx, clock_.read());
-        // Reordering the claim and the reset would return a slot that still
-        // holds the previous transaction.  A failed clock read leaves the
+        // A failed clock read leaves the
         // timestamp empty, so the postcondition of stamp_transaction states
         // the timestamp, and none here does.  A contract predicate reads each
         // local as const, so the borrow of tx comes before the clauses.

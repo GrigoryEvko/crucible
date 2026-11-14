@@ -58,6 +58,38 @@ using Ring = ::fixy::CyclicBuffer<std::uint64_t, 4>;
     return view.recent(0) == 5 ? 0 : 1;
 }
 
+// The count of the ends of each Step.  A test reads it around a fresh claim.
+int g_step_ends = 0;
+
+// An element whose value only goes up.  The assignment is deleted, as the
+// assignment of a counter that refuses a write backward is, so only a fresh
+// claim gives its slot a new element.
+struct Step {
+    std::uint64_t value = 7;
+
+    Step() noexcept = default;
+    Step(const Step&) = default;
+    Step& operator=(const Step&) = delete("a step only goes up");
+    ~Step() { ++g_step_ends; }
+};
+
+// A fresh claim of a full ring ends the oldest element one time and starts a
+// value-initialized element in its slot.  The reference of the claim reaches
+// the slot that recent(0) reads.
+[[nodiscard]] int claim_fresh_starts_a_new_element_in_the_slot() {
+    ::fixy::CyclicBuffer<Step, 2> ring{};
+    ring.claim().value = 11;
+    ring.claim().value = 12;
+    const int ends_before = g_step_ends;
+    Step& fresh = ring.claim_fresh();
+    if (g_step_ends != ends_before + 1) return 1;
+    if (fresh.value != 7 || &fresh != &ring.recent(0)) return 2;
+    if (ring.recent(1).value != 12 || ring.size() != 2) return 3;
+    fresh.value = 13;
+    if (ring.recent(0).value != 13) return 4;
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -66,5 +98,6 @@ int main() {
     if (const int failed = evicts_the_oldest_past_capacity(); failed != 0) return 30 + failed;
     if (const int failed = claim_returns_the_slot_to_fill(); failed != 0) return 40 + failed;
     if (const int failed = const_ring_reads_the_same_slots(); failed != 0) return 50 + failed;
+    if (const int failed = claim_fresh_starts_a_new_element_in_the_slot(); failed != 0) return 60 + failed;
     return 0;
 }
