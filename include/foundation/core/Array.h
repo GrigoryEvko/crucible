@@ -96,12 +96,20 @@ namespace detail {
 template <class T, std::size_t Position>
 using ArrayParameter = T;
 
-template <class T, std::size_t N, class Positions = std::make_index_sequence<N>>
+// The largest count of an array that has the list constructor.  The
+// constructor declares one parameter for each element, and the compiler
+// builds that declaration for each array type.  An array of 65536 elements
+// then costs more than a second of compile time and 100 MB in each unit that
+// names it.  No code writes a list of more than 256 values.
+inline constexpr std::size_t max_listed_array_count = 256;
+
+template <class T, std::size_t N, class Positions = std::make_index_sequence<(N <= max_listed_array_count) ? N : 0>>
 class ArrayStorage;
 
 // The storage of a FixedArray, and its constructors.  The list constructor
 // has exactly N parameters of the type T, so a literal argument converts as
-// a function argument does, and no tail of the array is left out.
+// a function argument does, and no tail of the array is left out.  An array
+// of more than max_listed_array_count elements has no list constructor.
 template <class T, std::size_t N, std::size_t... Positions>
 class ArrayStorage<T, N, std::index_sequence<Positions...>> {
 protected:
@@ -109,17 +117,24 @@ protected:
     // initializes each element itself.
     T elements_[N]{};
 
-public:
-    // Each element value-initialized: an integer is zero.
-    constexpr ArrayStorage() noexcept
-        requires std::is_nothrow_default_constructible_v<T>
-    = default;
+    // Each element value-initialized: an integer is zero.  The default
+    // constructor of FixedArray holds the constraint.  A constraint here is
+    // evaluated when the class of the array is complete.  For an element that
+    // is a nested class with default member initializers, inside its
+    // enclosing class, that point comes before the compiler reads the
+    // initializers.  The trait of the element then gives false, and the
+    // compiler keeps that answer for the rest of the unit.  The constructor
+    // is protected, so the inherited form of it is no default constructor
+    // of a FixedArray whose element has none.
+    constexpr ArrayStorage() noexcept = default;
 
+public:
     // Each element from its argument, in order.  The constructor of one
     // argument is explicit, so a value of T does not convert to an array of
-    // one element.
+    // one element.  The bound comes first in the constraint, so an array
+    // past the bound reads no trait of its element.
     constexpr explicit(N == 1) ArrayStorage(ArrayParameter<T, Positions>... values) noexcept
-        requires std::is_nothrow_move_constructible_v<T>
+        requires(N <= max_listed_array_count) && std::is_nothrow_move_constructible_v<T>
         : elements_{static_cast<T&&>(values)...} {}
 };
 

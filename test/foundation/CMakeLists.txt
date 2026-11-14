@@ -2814,8 +2814,12 @@ foundation_neg_compile_test(neg_core_index_static_past_count
   "In function .foundation::core::Index<4> past_the_end\\(\\).")
 foundation_neg_compile_test(neg_core_fixed_array_partial_list
   "no matching function for call to .foundation::core::FixedArray<int, 3>::FixedArray\\(<brace-enclosed initializer list>\\)."
-  "ArrayStorage\\(foundation::core::detail::ArrayParameter<T, Positions>\\.\\.\\.\\) requires  is_nothrow_move_constructible_v<T> \\[with T = int; long unsigned int N = 3; long unsigned int \\.\\.\\.Positions = \\{0, 1, 2\\}\\]."
+  "ArrayStorage\\(foundation::core::detail::ArrayParameter<T, Positions>\\.\\.\\.\\) requires  N <= foundation::core::detail::max_listed_array_count && \\(is_nothrow_move_constructible_v<T>\\) \\[with T = int; long unsigned int N = 3; long unsigned int \\.\\.\\.Positions = \\{0, 1, 2\\}\\]."
   "candidate expects 3 arguments, 2 provided")
+foundation_neg_compile_test(neg_core_fixed_array_list_past_bound
+  "no matching function for call to .foundation::core::FixedArray<int, 257>::FixedArray\\(<brace-enclosed initializer list>\\)."
+  "FixedArray\\(\\) requires  is_nothrow_default_constructible_v<T> \\[with T = int; long unsigned int N = 257\\]."
+  "candidate expects 0 arguments, 257 provided")
 foundation_neg_compile_test(neg_core_fixed_array_view_of_temporary
   "use of deleted function .void foundation::core::FixedArray<T, N>::view\\(\\) && \\[with T = int; long unsigned int N = 4\\]."
   "a view of a temporary FixedArray points into an object that the full expression ends")

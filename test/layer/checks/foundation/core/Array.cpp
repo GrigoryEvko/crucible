@@ -31,6 +31,13 @@ static_assert(std::is_trivially_copyable_v<FixedArray<std::uint64_t, 2>>);
 static_assert(std::is_trivially_destructible_v<FixedArray<Record, 3>>);
 static_assert(FixedArray<int, 7>::size() == 7);
 
+// An array has the layout and the alignment of its elements, so a class
+// with a fixed layout can hold one, and an alignment specifier on an
+// instance reaches the first element.
+static_assert(std::is_standard_layout_v<FixedArray<std::int64_t, 5>>);
+static_assert(alignof(FixedArray<std::int64_t, 8>) == alignof(std::int64_t));
+static_assert(alignof(FixedArray<char, 16>) == 1);
+
 // The gates: no zero count, no array, no const and no reference element.
 template <class T, std::size_t N>
 concept HasFixedArray = requires { typename FixedArray<T, N>; };
@@ -51,6 +58,45 @@ static_assert(!std::is_constructible_v<FixedArray<int, 3>, int, int, int, int>);
 static_assert(std::is_constructible_v<FixedArray<int, 1>, int>);
 static_assert(!std::is_convertible_v<int, FixedArray<int, 1>>);
 static_assert(std::is_constructible_v<FixedArray<NoDefault, 2>, NoDefault, NoDefault>);
+
+// The list constructor exists up to max_listed_array_count elements.  A
+// larger array has only the default constructor, so its declaration costs no
+// parameter for each element.  The fixture neg_core_fixed_array_list_past_bound
+// holds the refusal of a list of 257 values.
+template <std::size_t... Positions>
+[[nodiscard]] consteval FixedArray<int, sizeof...(Positions)> listed_array(std::index_sequence<Positions...>) noexcept {
+    return FixedArray<int, sizeof...(Positions)>{static_cast<int>(Positions)...};
+}
+inline constexpr FixedArray<int, max_listed_array_count> longest_list =
+    listed_array(std::make_index_sequence<max_listed_array_count>{});
+static_assert(longest_list.at(index<max_listed_array_count - 1>()) == 255);
+static_assert(std::is_nothrow_default_constructible_v<FixedArray<Record, 65536>>);
+static_assert(!std::is_constructible_v<FixedArray<int, 257>, int>);
+
+// An array of a nested class with default member initializers can be a
+// member of the enclosing class, at each count.  The constraint of the default
+// constructor sits on FixedArray alone, so the class of the storage reads no
+// trait of the element before the compiler reads the initializers.
+struct Enclosing {
+    struct Nested {
+        std::uint32_t count = 0;
+        std::uint64_t value = 7;
+    };
+    FixedArray<Nested, 4> small{};
+};
+struct LargeEnclosing {
+    struct Nested {
+        std::uint32_t count = 0;
+    };
+    FixedArray<Nested, 65536> large{};
+};
+static_assert(std::is_nothrow_default_constructible_v<Enclosing>);
+static_assert(std::is_nothrow_default_constructible_v<LargeEnclosing>);
+[[nodiscard]] consteval std::uint64_t nested_value() noexcept {
+    Enclosing const enclosing{};
+    return enclosing.small.at(index<3>()).value;
+}
+static_assert(nested_value() == 7);
 
 // No subscript, no pointer and no data() reach an element.
 template <class Array>

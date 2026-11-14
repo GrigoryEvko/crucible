@@ -73,6 +73,30 @@ void test_fixed_array_starts_with_zeros() {
     assert(words.size() == 16);
 }
 
+// An element whose default constructor is not trivial: it starts with the
+// value 7.
+struct Seven {
+    int value = 7;
+};
+
+// An array past the bound of the list constructor still value-initializes
+// each element.  The array lives in static storage, because it holds 256 KB.
+void test_large_fixed_array_value_initializes() {
+    static FixedArray<Seven, 65536> sevens;
+    static FixedArray<std::uint32_t, 65536> zeros;
+    std::size_t sevens_seen = 0;
+    for (Seven const& element : sevens) {
+        if (element.value == 7) ++sevens_seen;
+    }
+    std::size_t zeros_seen = 0;
+    for (std::uint32_t const element : zeros) {
+        if (element == 0) ++zeros_seen;
+    }
+    assert(sevens_seen == 65536 && zeros_seen == 65536);
+    sevens.at(index<65535>()).value = 8;
+    assert(sevens.at(Index<65536>::check(65535).expect("65535 is below 65536")).value == 8);
+}
+
 void test_fixed_array_reads_at_proven_indexes() {
     FixedArray<int, 4> numbers{4, 8, 15, 16};
     assert(numbers.at(index<0>()) == 4);
@@ -211,6 +235,7 @@ int main() {
     test_index_range_visits_each_index_in_order();
     test_index_cursor_at_the_end_aborts();
     test_fixed_array_starts_with_zeros();
+    test_large_fixed_array_value_initializes();
     test_fixed_array_reads_at_proven_indexes();
     test_fixed_array_view_fill_and_copy();
     test_get_reads_below_the_count();

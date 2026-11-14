@@ -18,7 +18,6 @@
 format 1
 rule heavy-include
 include/crucible/BackgroundThread.h | heavy-include | 1 | <memory> | the class holds its stage pipeline in a std::unique_ptr, and run_on_publish_stage takes the address of the job with std::addressof
-include/crucible/Serialize.h | heavy-include | 1 | <memory> | the reader makes the variant counter of a node with std::construct_at, because the counter refuses a step to the value 0 that a file can hold
 include/crucible/cntp/Fec.h | heavy-include | 1 | <arm_neon.h> | -
 include/fixy/Borrowed.h | heavy-include | 1 | <ranges> | the constructors from a range accept only a std::ranges::contiguous_range that is a std::ranges::borrowed_range, and they read std::ranges::data and std::ranges::size
 include/fixy/Budgeted.h | heavy-include | 1 | <memory> | a moved-from source gets the unbounded grade again through std::destroy_at and std::construct_at, because Graded sets its grade only when it makes the object
