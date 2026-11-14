@@ -4993,6 +4993,15 @@ fixy_neg_compile_test(neg_os_fs_sync_parent_dir_owned_fd
   "no matching function for call to .sync<fixy::fs::sync_op::FsyncParentDir>\\(\\{anonymous\\}::IoBlockCtx&, fixy::fs::OwnedFd&\\)"
   "the expression .!\\(is_same_v<SyncOp, fixy::fs::sync_op::FsyncParentDir>\\) \\[with SyncOp = fixy::fs::sync_op::FsyncParentDir\\]. evaluated to .false.")
 
+# A Dirfd gives no reference to its descriptor, so a door of a descriptor
+# takes no directory: neither the full read nor the sync of a descriptor.
+fixy_neg_compile_test(neg_os_fs_dirfd_handle_read_full
+  "has no member named .handle."
+  ".const class fixy::fs::Dirfd.")
+fixy_neg_compile_test(neg_os_fs_dirfd_handle_fsync
+  "has no member named .handle."
+  ".const class fixy::fs::Dirfd.")
+
 fixy_neg_compile_test(neg_os_fs_commit_atomic_external_target
   "no matching function for call"
   "commit_atomic<fixy::fs::atomicity::Rename>\\(.*Tagged<foundation::os::PathText<4096>, fixy::tags::source::External>\\)")

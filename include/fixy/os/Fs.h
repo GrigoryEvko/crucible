@@ -408,6 +408,9 @@ class FileDoor;
 // consuming one is not enough.  The door opens the directory, and
 // open_dirfd is the gated caller of the door.  A Result of a Dirfd needs
 // the complete class, so the door, which comes after the class, gives it.
+//
+// The class gives no reference to the OwnedFd that it holds.  So no door of
+// a descriptor, such as read_full or sync<Fsync>, takes a directory.
 class [[nodiscard]] Dirfd {
     OwnedFd fd_;
 
@@ -426,7 +429,6 @@ public:
 
     [[nodiscard]] int get() const noexcept { return fd_.get(); }
     [[nodiscard]] bool is_open() const noexcept { return fd_.is_open(); }
-    [[nodiscard]] const OwnedFd& handle() const noexcept { return fd_; }
 };
 
 namespace detail {

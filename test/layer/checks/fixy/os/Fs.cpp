@@ -117,11 +117,14 @@ static_assert(splits("///", "///", 0, true));
 
 // Each door takes one kind of handle by a const reference to its class: a
 // door of a descriptor takes an OwnedFd, and a door under a directory takes a
-// Dirfd.  No conversion joins the two classes, so no door takes the other
-// kind of handle.  The two checks cover each door of fixy/os/Fs.h,
-// fixy/os/Socket.h, fixy/os/Io.h and fixy/os/PerfEvent.h at one time.  The
-// sync door is a template over the op, so the gates above and the fixture
-// neg_os_fs_sync_parent_dir_owned_fd hold the op of each kind.
+// Dirfd.  No conversion joins the two classes, and a Dirfd gives no
+// reference to the OwnedFd that it holds, so no door takes the other kind of
+// handle.  The two checks cover each door of fixy/os/Fs.h, fixy/os/Socket.h,
+// fixy/os/Io.h and fixy/os/PerfEvent.h at one time.  The fixtures
+// neg_os_fs_dirfd_handle_read_full and neg_os_fs_dirfd_handle_fsync hold the
+// absence of the reference.  The sync door is a template over the op, so the
+// gates above and the fixture neg_os_fs_sync_parent_dir_owned_fd hold the op
+// of each kind.
 static_assert(!std::is_convertible_v<Dirfd const&, OwnedFd const&> && !std::is_constructible_v<OwnedFd, Dirfd const&>,
               "a door of a descriptor must not take a Dirfd.");
 static_assert(!std::is_convertible_v<OwnedFd const&, Dirfd const&> && !std::is_constructible_v<Dirfd, OwnedFd const&>,

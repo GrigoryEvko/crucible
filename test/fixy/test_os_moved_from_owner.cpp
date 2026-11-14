@@ -131,7 +131,7 @@ template <typename T>
     fs::Dirfd const live = std::move(source);
 
     foundation::core::GrowText text = foundation::core::mint_grow_text(64);
-    if (source.is_open() || source.get() >= 0 || source.handle().is_open()) return answered(name, "is_open or get");
+    if (source.is_open() || source.get() >= 0) return answered(name, "is_open or get");
     if (!refuses_with(fs::sync<fs::sync_op::FsyncParentDir>(ctx, source), Errno::ebadf)) {
         return answered(name, "FsyncParentDir");
     }
