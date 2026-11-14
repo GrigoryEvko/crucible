@@ -186,6 +186,7 @@ Do a check of each axiom on each change.
 | Kind | Mechanism |
 |---|---|
 | Cannot occur in correct code | `CRUCIBLE_PRE(condition)` at the start of the body, `CRUCIBLE_POST(result, condition)` before a return |
+| Cannot occur in correct code, in the middle of a body | `CRUCIBLE_FATAL_INVARIANT(condition)`, which checks in each build and under each contract semantic. Use it in place of `CRUCIBLE_PRE` after a test that the compiler can fold it into, such as a switch on the same kind, and for a check that must hold under the ignore semantic |
 | Can occur, but rarely | Return a `Result<T, E>`. The error is a small enum or a small plain class |
 | Cannot continue | `fatal("reason")`, which ends the process in each build |
 
