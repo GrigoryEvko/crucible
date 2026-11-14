@@ -330,9 +330,10 @@ struct MetaCount {
 // because a replay compares this value across runs and across paths.
 // =====================================================================
 
-// Always inline: the loop over a View stays in call_recording, as the loop
-// over a pointer did.
-[[nodiscard]] CRUCIBLE_INLINE crucible::ShapeHash compute_shape_hash(::fixy::View<const crucible::TensorMeta> inputs) {
+// GCC chooses for each recording kernel if it inlines the loop or calls the
+// one copy of it in the shard.  A loop in each kernel makes the code of the
+// shard larger.
+[[nodiscard]] inline crucible::ShapeHash compute_shape_hash(::fixy::View<const crucible::TensorMeta> inputs) {
     uint64_t accumulator = kFnvOffset;
     for (const crucible::TensorMeta& input : inputs) {
         accumulator = fnv1a_bytes(&input.ndim, 1, accumulator);
@@ -1159,8 +1160,8 @@ void append_trace_entry(const Recording<Capacity, MayOverflow>& recording, cruci
 
     // The View of the records and the two counts of the entry come from one
     // read of the counts, after each call that takes the entry or reads the
-    // Recording.  So the count check of mint_validated_op compares equal
-    // values, and it folds away.
+    // Recording.  So the count check of mint_validated_op always passes.  GCC
+    // keeps the compare, because it reads the counts back from the entry.
     const ::fixy::View<const crucible::TensorMeta> records = recording.records();
     entry.num_inputs = recording.counts.inputs;
     entry.num_outputs = recording.counts.outputs;
