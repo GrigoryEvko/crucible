@@ -1,6 +1,6 @@
 // The bridge mints session handles over the machine it owns, so a
 // protocol it could never run is refused at the bridge's own door
-// rather than at the first session_view() call.
+// rather than at the first with_view() call.
 //
 // Continue binds to the nearest enclosing Loop.  With no Loop above it
 // there is no body to return to, so the protocol has no next position.

@@ -687,6 +687,11 @@
       "constructor": "\\bHoldFactory\\("
     },
     {
+      "name": "neg_witness_session_machinelease_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bMachineLease\\("
+    },
+    {
       "name": "neg_witness_session_permhold_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bPermHold\\("
@@ -1046,6 +1051,10 @@
     },
     {
       "type": "fixy::session::SessionFromMachine<int, fixy::session::End>",
+      "header": "fixy/session/MachineBridge.h"
+    },
+    {
+      "type": "fixy::session::MachineLease<int>",
       "header": "fixy/session/MachineBridge.h"
     },
     {

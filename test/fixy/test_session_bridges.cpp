@@ -2,8 +2,8 @@
 // checked.
 //
 // The two bridges answer different questions.  SessionFromMachine owns
-// a machine and mints a lens over it, so the checks are about ownership
-// and about the exact handle a Proto produces.  The atomic form borrows
+// a machine and lends it to one view at a time, so the checks are about
+// ownership and about the lease that a view gets.  The atomic form borrows
 // a cell another thread publishes into, so the checks are about the
 // concept that admits a cell and about walking the protocol far enough
 // to observe the state actually change.
@@ -47,17 +47,17 @@ using Bridge = s::SessionFromMachine<Payload, Reporting>;
 // the effect row of each payload, as the context of mint_session must.
 using SendsIo = s::Send<eff::Computation<eff::Row<eff::Effect::IO>, int>, s::End>;
 using IoBridge = s::SessionFromMachine<Payload, SendsIo>;
-static_assert(s::CtxFitsSession<BgIoCtx, SendsIo, IoBridge&>);
-static_assert(!s::CtxFitsSession<BgCtx, SendsIo, IoBridge&>, "the background context holds no IO");
+static_assert(s::CtxFitsSession<BgIoCtx, SendsIo, IoBridge::lease_type>);
+static_assert(!s::CtxFitsSession<BgCtx, SendsIo, IoBridge::lease_type>, "the background context holds no IO");
 static_assert(!s::CtxFitsAtomicSession<BgCtx, SendsIo, vm::ModeCell>, "the background context holds no IO");
 static_assert(s::CtxFitsAtomicSession<BgIoCtx, SendsIo, vm::ModeCell>);
 static_assert(!s::CtxFitsAtomicSession<int, vm::ModeProtocol, vm::ModeCell>, "an int is not an execution context");
 
 // ── The bridge owns, and cannot move ─────────────────────────────────
 //
-// A minted handle holds a reference to the bridge, so a bridge that
-// moved would leave every live handle referring to freed storage and the
-// next step would follow the reference.
+// The lease of a view points at the machine of the bridge, so a bridge
+// that moved during a view would leave the lease pointing at freed
+// storage, and the next step would follow the pointer.
 static_assert(!std::is_copy_constructible_v<Bridge>);
 static_assert(!std::is_move_constructible_v<Bridge>);
 static_assert(!std::is_copy_assignable_v<Bridge>);
@@ -73,13 +73,11 @@ static_assert(std::is_same_v<typename Bridge::state_type, Payload>);
 static_assert(std::is_same_v<typename Bridge::machine_type, ::fixy::Machine<Payload>>);
 static_assert(std::is_same_v<typename Bridge::protocol, Reporting>);
 
-// A loop is unrolled one step at mint time, so the handle carries the
-// loop body as its protocol and the loop itself as the context.  That
-// unroll is what binds the Continue inside the body.  The Resource is a
-// reference to the Pinned bridge, never a pointer to the machine.
-using ExpectedView = s::SessionHandle<s::Select<s::Send<int, s::Continue>, s::End>, Bridge&, Reporting>;
-static_assert(std::is_same_v<s::session_view_t<Bridge, BgCtx>, ExpectedView>);
-static_assert(s::SessionResource<Bridge&>);
+// The Resource of a view is the lease of the machine, never the bridge
+// and never a bare pointer to the machine.  The lease reaches the state
+// and nothing else, so a body cannot reach extract() or a second view
+// through it.
+static_assert(s::SessionResource<Bridge::lease_type>);
 static_assert(!s::SessionResource<::fixy::Machine<Payload>*>, "a pointer to the machine is a second holder");
 
 // The bridge adds nothing to the state it owns: the Pinned base is
@@ -149,7 +147,18 @@ static_assert(vm::CtxFitsVigilModeBridge<BgCtx, vm::ModeCell>);
 static_assert(!vm::CtxFitsVigilModeBridge<BgCtx, LookalikeCell>);
 static_assert(!vm::CtxFitsVigilModeBridge<int, vm::ModeCell>, "an int is not an execution context");
 
-// ── Runtime: the bridge is a lens on the machine it owns ─────────────
+// ── Runtime: the bridge lends the machine it owns to a view ──────────
+
+// The body of a view holds no state.  It sends 7 through the lease, then
+// leaves the loop, and returns the End handle that ends the view.
+constexpr auto report_seven = [](auto head) noexcept {
+    auto sending = std::move(head).template select<0>(s::no_label);
+    auto again = std::move(sending).send(7, [](auto& lease, int& value) noexcept {
+        lease.state_mut().ticks = value;
+        return true;
+    });
+    return std::move(again).template select<1>(s::no_label);
+};
 
 [[nodiscard]] int bridge_owns_and_lends() {
     auto bridge = s::mint_session_from_machine<Reporting, Payload>(5);
@@ -158,31 +167,16 @@ static_assert(!vm::CtxFitsVigilModeBridge<int, vm::ModeCell>, "an int is not an 
         return 1;
     }
 
-    // The bridge keeps its own imperative view while a handle is out.
+    // The bridge keeps its own imperative access when no view lives.
     bridge.state_mut().ticks = 6;
 
+    // A step of the view reaches the machine through the lease.
     const BgCtx ctx{eff::testing::bg()};
-    auto view = bridge.session_view(ctx);
-    if (&view.resource() != &bridge || &view.resource().machine() != &bridge.machine()) {
-        std::fprintf(stderr, "the handle borrowed something other than the bridge\n");
-        return 1;
-    }
-
-    // A step reaches the machine through the bridge that the handle holds.
-    auto sending = std::move(view).select<0>(s::no_label);
-    auto again = std::move(sending).send(7, [](Bridge& held, int& value) noexcept {
-        held.state_mut().ticks = value;
-        return true;
-    });
+    bridge.with_view(ctx, report_seven);
     if (bridge.state().ticks != 7) {
         std::fprintf(stderr, "the send did not reach the machine of the bridge\n");
         return 1;
     }
-
-    // The protocol has not ended.  The detach tells the destructor that
-    // the abandonment is deliberate.  Without it this function would
-    // abort under the checking policy.
-    std::move(again).detach(s::detach_reason::OwnerLifetimeBoundEarlyExit{});
 
     // extract() is the only way the state leaves the bridge, because
     // the bridge itself cannot be moved.
@@ -199,17 +193,14 @@ static_assert(!vm::CtxFitsVigilModeBridge<int, vm::ModeCell>, "an int is not an 
     return 0;
 }
 
-// At End the protocol owes nothing, so close() hands back the reference
-// to the bridge that the handle held.
-[[nodiscard]] int terminal_view_closes() {
+// At End the protocol owes nothing, so the body returns its head as it
+// is, and the view ends with the state as it was.
+[[nodiscard]] int terminal_view_ends() {
     auto bridge = s::mint_session_from_machine<s::End, Payload>(1);
     const BgCtx ctx{eff::testing::bg()};
-    auto view = bridge.session_view(ctx);
-    static_assert(std::is_same_v<typename decltype(view)::protocol, s::End>);
-
-    auto& recovered = std::move(view).close();
-    if (&recovered != &bridge || &recovered.machine() != &bridge.machine()) {
-        std::fprintf(stderr, "close returned a different bridge\n");
+    bridge.with_view(ctx, [](auto head) noexcept { return head; });
+    if (bridge.state().ticks != 1) {
+        std::fprintf(stderr, "a view of End changed the state\n");
         return 1;
     }
     return 0;
@@ -302,7 +293,7 @@ static_assert(!vm::CtxFitsVigilModeBridge<int, vm::ModeCell>, "an int is not an 
 
 int main() {
     if (const int rc = bridge_owns_and_lends(); rc != 0) return rc;
-    if (const int rc = terminal_view_closes(); rc != 0) return rc;
+    if (const int rc = terminal_view_ends(); rc != 0) return rc;
     if (const int rc = mode_protocol_round_trip(); rc != 0) return rc;
     if (const int rc = published_mode_orders_the_owner_writes(); rc != 0) return rc;
     return 0;

@@ -2814,6 +2814,10 @@ fixy_neg_compile_test(neg_sess_mint_door_run_ctx_lacks_row
 # ── The machine and Vigil-mode session bridges ────────────────────────
 fixy_test(test_session_bridges)
 
+# A view of a machine bridge runs its protocol over a lease of the machine
+# inside a body with no state.
+fixy_test(test_session_machine_view)
+
 # HS14 for mint_session_from_machine: one fixture per clause of its
 # gate — the protocol it will mint handles over, and the arguments it
 # builds the state from.
@@ -2854,6 +2858,19 @@ fixy_neg_compile_test(neg_sess_atomic_ctx_row_refused
 fixy_neg_compile_test(neg_sess_machine_view_ctx_row_refused
   "no matching function for call to .fixy::session::SessionFromMachine<neg_sess_machine_view_ctx_row_refused_types::Payload,"
   "satisfaction of .CtxAdmitsProtocolRow<Ctx, Proto>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
+
+# A view is a borrow of the machine of the bridge, and one view lives at a
+# time.  A body that captures the bridge could open a second view or
+# extract the state while the view lives, so the gate of a view takes only
+# a body with no state.
+fixy_neg_compile_test(neg_sess_machine_second_view_during_view
+  "no matching function for call to .fixy::session::SessionFromMachine<second_view_fixture::Payload,"
+  "required for the satisfaction of .CtxFitsMachineView<Ctx, Proto, fixy::session::MachineLease<State, Edges>, Body>."
+  "__is_empty\\(Body\\)")
+fixy_neg_compile_test(neg_sess_machine_extract_during_view
+  "no matching function for call to .fixy::session::SessionFromMachine<extract_fixture::Payload,"
+  "required for the satisfaction of .CtxFitsMachineView<Ctx, Proto, fixy::session::MachineLease<State, Edges>, Body>."
+  "__is_empty\\(Body\\)")
 
 # HS14 for mint_vigil_mode_bridge.  The two fixtures separate the two
 # ways to fail the cell clause: an unrelated type, and a cell that

@@ -3,15 +3,22 @@
 // A machine and a session are two views of one typestate value.  A
 // machine transition is a local computation.  A session step is an
 // event an observer can log, replay or compare.  A bridge owns one
-// machine and mints a session handle over it on demand, so the same
-// state is driven imperatively from inside and read structurally from
-// outside.
+// machine and runs a session over it on demand, so the same state is
+// driven imperatively from inside and read structurally from outside.
 //
-// The bridge is pinned because a minted handle holds a reference to the
-// bridge.  The Resource of that handle is the Pinned bridge, not a
-// pointer, because a copy of a pointer is a second holder of the
-// machine.  Moving the bridge would leave the reference at freed
-// storage, and Pinned deletes the move.
+// A view is a borrow of the machine, and the bridge lends it to one body
+// at a time.  with_view runs Proto over a MachineLease, a move-only
+// Resource that reaches the machine and nothing else of the bridge.  The
+// body is a function object with no state, so it holds nothing of its
+// caller: not the bridge, so no second view and no extract while the view
+// lives.  The view ends when the body returns, and only then can the
+// caller extract the state.  A body still reaches an object of static
+// storage by its name, and a bridge with static storage is outside this
+// guarantee.
+//
+// The bridge is pinned because a lease holds the address of its machine.
+// Moving the bridge would leave the address at freed storage, and Pinned
+// deletes the move.
 //
 // Proto is not constrained to a single party.  Party count is a claim
 // about the protocol a caller picked, not a structural property of any
@@ -45,6 +52,41 @@ namespace fixy::session {
 
 template <typename State, typename Proto, std::meta::info Edges>
 class SessionFromMachine;
+
+// The Resource of one view: the lease of the machine of one bridge for
+// the span of the view.  It reaches the state of the machine, and nothing
+// else of the bridge: not the machine itself, which an extract would
+// consume.  It is move-only, so it is an owned SessionResource, and no
+// copy of it reaches the machine a second time.  Only the bridge builds
+// one.
+template <typename State, std::meta::info Edges = ^^::fixy::machine::no_edges>
+class [[nodiscard]] MachineLease {
+    ::fixy::Machine<State, Edges>* machine_ = nullptr;
+    [[no_unique_address]] MoveOnlyResource move_only_{};
+    // No byte route builds a lease, so no lease reaches a machine that no
+    // bridge lent.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    template <typename FState, typename FProto, std::meta::info FEdges>
+    friend class SessionFromMachine;
+
+    constexpr explicit MachineLease(::fixy::Machine<State, Edges>& machine) noexcept : machine_{&machine} {}
+
+public:
+    // A view drives the machine of its bridge and no peer, so each choice
+    // of a view puts no label (Local choices in fixy/session/Handle.h).
+    static constexpr Network session_network = Network::Local;
+
+    [[nodiscard]] constexpr const State& state() const& noexcept { return machine_->data(); }
+    [[nodiscard]] constexpr State& state_mut() & noexcept { return machine_->data_mut(); }
+};
+
+// The gate of a view: the gate of with_session over the lease, and a body
+// with no state, which holds nothing of its caller.  A body that captures
+// the bridge could open a second view of it or extract its state while the
+// view lives, so the gate refuses each body that captures.
+template <typename Ctx, typename Proto, typename Lease, typename Body>
+concept CtxFitsMachineView = __is_empty(Body) && CtxFitsSessionBody<Ctx, Proto, Lease, DefaultAbandonmentPolicy, Body>;
 
 // The bridge's one door.  fixy::Machine made its own constructor
 // private and put a mint in front of it for the same reason: the
@@ -85,13 +127,10 @@ public:
     using state_type = State;
     using machine_type = ::fixy::Machine<State, Edges>;
     using protocol = Proto;
+    using lease_type = MachineLease<State, Edges>;
     static constexpr std::meta::info edges = Edges;
     using row_discipline = ::fixy::row_discipline::session_from_machine<Proto>;
     using row_payload = machine_type;
-
-    // A view drives the machine of this bridge and no peer, so each choice
-    // of a view puts no label (Local choices in fixy/session/Handle.h).
-    static constexpr Network session_network = Network::Local;
 
     ~SessionFromMachine() = default;
 
@@ -103,26 +142,25 @@ public:
 
     [[nodiscard]] constexpr State& state_mut() & noexcept { return machine_.data_mut(); }
 
-    // The bridge is the Resource of each handle, and each handle is a
-    // lens for one observable transition, so a fresh handle is minted per
-    // call.  At most one may be live at a time: two handles would drive
-    // the same machine state against each other.  Nothing here enforces
-    // that, exactly as nothing enforces it for two mutable borrows of
-    // the machine.  The gate is the gate of mint_session, so the context
-    // admits the effect row of each payload of Proto.  The return type is
-    // deduced, because the class is complete only in the body, and the
-    // Pinned check needs it complete.
-    template <typename Ctx>
-        requires CtxFitsSession<Ctx, Proto, SessionFromMachine&>
-    [[nodiscard]] auto session_view(Ctx const& ctx) & noexcept {
-        return mint_session<Proto, DefaultAbandonmentPolicy, Ctx, SessionFromMachine&>(ctx, *this);
+    // Runs Proto over a lease of the machine inside the body, and ends the
+    // lease when the body returns the End handle (with_session of
+    // fixy/session/Entry.h).  The gate is the gate of with_session, so the
+    // context admits the effect row of each payload of Proto, and the body
+    // has no state, so it holds no second door to this bridge.  One view
+    // lives at a time, and none lives after the call.  No code of the tree
+    // throws, so the view is noexcept for each body.
+    template <typename Ctx, typename Body>
+        requires CtxFitsMachineView<Ctx, Proto, MachineLease<State, Edges>, Body>
+    constexpr void with_view(Ctx const& ctx, Body body) & noexcept {
+        static_cast<void>(with_session<Proto, DefaultAbandonmentPolicy, Ctx, lease_type>(ctx, lease_type{machine_},
+                                                                                         static_cast<Body&&>(body)));
     }
 
     [[nodiscard]] static constexpr std::string_view protocol_name() noexcept { return type_display_name_v<Proto>; }
 
     // The bridge cannot be moved, so this is the only way the state
-    // leaves it.  The bridge is moved-from afterwards and neither view
-    // is usable.
+    // leaves it.  No view lives outside with_view, so no view sees the
+    // bridge after the extract.
     [[nodiscard]] constexpr State extract() && noexcept(std::is_nothrow_move_constructible_v<State>) {
         return std::move(machine_).extract();
     }
@@ -135,17 +173,6 @@ mint_session_from_machine(Args&&... args) noexcept(std::is_nothrow_constructible
     -> SessionFromMachine<State, Proto, Edges> {
     return SessionFromMachine<State, Proto, Edges>{::fixy::mint_machine<State, Edges>(std::forward<Args>(args)...)};
 }
-
-// The handle type that session_view(ctx) of Bridge returns.
-//
-// A view gives nothing back that its caller does not already hold: the
-// caller owns the bridge, and the bridge owns the machine.  So the view
-// ends through the handle API.  At End, close() returns the reference to
-// the bridge.  Before End, detach() with a reason tells the destructor
-// that the remaining steps are abandoned on purpose, and the caller goes
-// on with its own bridge.
-template <typename Bridge, typename Ctx>
-using session_view_t = decltype(std::declval<Bridge&>().session_view(std::declval<Ctx const&>()));
 
 // A state machine whose address is its cross-thread publication
 // identity cannot be owned by a bridge: readers on other threads hold
