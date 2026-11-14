@@ -4,6 +4,7 @@
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <foundation/Platform.h>
+#include <foundation/contracts/Pre.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -83,10 +84,10 @@ public:
 };
 
 // A size or a stride comes from PyTorch, a trace or a file. The bound is a
-// contract assertion ahead of the mint, because the mint alone only assumes
-// its predicate under NDEBUG, and a Release build must still stop here.
+// precondition of this door. The mint checks the same predicate, but a
+// report of this precondition names the door that the caller used.
 [[nodiscard]] inline constexpr TensorDim tensor_dim(int64_t value) noexcept {
-    contract_assert(value <= kMaxTensorDimExtent);
+    CRUCIBLE_PRE(value <= kMaxTensorDimExtent);
     return ::fixy::mint_refined<::fixy::bounded_above<kMaxTensorDimExtent>>(value);
 }
 

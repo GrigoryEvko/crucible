@@ -4,6 +4,7 @@
 #include <fixy/Refined.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
+#include <foundation/contracts/Pre.h>
 
 #include <compare>
 #include <cstddef>
@@ -20,9 +21,9 @@ namespace crucible {
 // undefined type, and the powers of two up to sixteen, so anything above
 // sixteen fails at construction rather than propagating.
 //
-// The bound is a contract assertion ahead of the mint. The mint alone only
-// assumes its predicate under NDEBUG, and a Release build that evaluates
-// contracts must still stop on a value above sixteen.
+// The bound is a precondition of the constructor. The mint checks the same
+// predicate, but a report of this precondition names the door that the
+// caller used.
 struct ElementBytes {
     using Bytes = ::fixy::Refined<::fixy::bounded_above<uint8_t{16}>, uint8_t>;
 
@@ -42,7 +43,7 @@ struct ElementBytes {
 
 private:
     [[nodiscard]] static constexpr Bytes checked_(uint8_t v) noexcept {
-        contract_assert(v <= uint8_t{16});
+        CRUCIBLE_PRE(v <= uint8_t{16});
         return ::fixy::mint_refined<::fixy::bounded_above<uint8_t{16}>>(v);
     }
 };

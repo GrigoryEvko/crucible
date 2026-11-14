@@ -826,7 +826,7 @@ private:
 inline void init_region_node(RegionNode& node, ::fixy::View<TraceEntry> ops, ContentHash precomputed_hash) noexcept {
     CRUCIBLE_PRE(::foundation::decide::is_non_zero(precomputed_hash) || ops.size() == 0);
     // A non-zero hash here means a second construction over a live node.
-    contract_assert(node.content_hash.raw() == 0);
+    CRUCIBLE_PRE(node.content_hash.raw() == 0);
     node.kind = TraceNodeKind::REGION;
     node.ops = ops;
     node.content_hash = precomputed_hash;
@@ -1055,7 +1055,7 @@ template <typename GuardEval, typename RegionExec>
                 const ::fixy::Ref<BranchNode> branch = node->expect_branch();
                 int64_t val = eval_guard(branch->guard);
 
-                contract_assert(branch->are_arms_sorted_by_value());
+                CRUCIBLE_FATAL_INVARIANT(branch->are_arms_sorted_by_value());
 
                 TraceLink arm{};
                 {

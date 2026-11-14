@@ -1136,11 +1136,10 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
         te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
         // The scalar array is fixed at five entries, so a larger count
         // means the recorder wrote past it or a stored count is corrupt.
-        // The assert fires before the first memcpy can inherit garbage,
-        // and the clamp on the next line stands in where contracts
-        // compile out.
-        contract_assert(re.num_scalar_args <= 5);
-        uint16_t n_scalars = ::fixy::min(re.num_scalar_args, uint16_t{5});
+        // The check ends the process in each build, before a copy can
+        // read past the array.
+        CRUCIBLE_FATAL_INVARIANT(re.num_scalar_args <= 5);
+        const uint16_t n_scalars = re.num_scalar_args;
 
         // The scalars of each op go into its entry, also for an op with no
         // tensors, so they fold into the content hash.

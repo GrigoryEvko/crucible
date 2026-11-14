@@ -147,7 +147,7 @@ public:
                 // The content hash is already claimed by CAS before this
                 // endpoint exists.  The two stores must stay in this order:
                 // the kernel store is what makes the row visible to readers.
-                contract_assert(slot_->content_hash_.load_acquire() == snapshot.content_hash);
+                CRUCIBLE_FATAL_INVARIANT(slot_->content_hash_.load_acquire() == snapshot.content_hash);
                 slot_->row_hash_.store_release(snapshot.row_hash);
                 slot_->kernel_.store_release(snapshot.kernel);
             }

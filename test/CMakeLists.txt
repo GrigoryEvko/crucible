@@ -1636,15 +1636,14 @@ crucible_neg_compile_test(neg_warden_deadline_watchdog_mint_no_ctx
 # is an overload-set rejection in production code, and each has an
 # annotated comment below.
 
-# ElementBytes::value_ wraps Refined<bounded_above<16>,
-# uint8_t>; constructing ElementBytes{17} in constexpr context drives the
-# bounded_above<16>(17) contract assertion through constant evaluation.  The
-# violation is rejected as a non-constant expression (P1494R5 + P2900R14),
-# pinning the structural bound at the storage type rather than relying on
-# the source dtype enum being well-formed.
+# ElementBytes::value_ wraps Refined<bounded_above<16>, uint8_t>.  A
+# construction of ElementBytes{17} in a constant expression reaches the
+# precondition of the constructor, whose trap is not a constant expression.
+# The bound holds at the storage type, and it does not depend on a source
+# dtype enum that is well formed.
 crucible_neg_compile_test(neg_element_bytes_above_max
-  "contract predicate is false in constant expression"
-  "crucible/Types.h:[0-9]+:[0-9]+: error: contract predicate")
+  "foundation/contracts/Pre\\.h:[0-9]+:[0-9]+: error: .__builtin_trap\\(\\). is not a constant expression"
+  "crucible/Types\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
 # IterationDetector::Period is the fixy Refined<in_range<K, MAX_PERIOD>,
 # uint32_t>, and mint_refined<kPeriodBound> is its one door.  A length out
@@ -2154,8 +2153,8 @@ crucible_neg_compile_test(neg_tensor_meta_dim_raw_assignment
   "no match for .operator=. .operand types are .crucible::TensorDimArray::Slot. and .int.."
   "no known conversion for argument 1 from .int. to .crucible::TensorDim. .aka .fixy::Refinement<fixy::BoundedAbove<576460752303423487>\\(\\), long int, false>..")
 crucible_neg_compile_test(neg_tensor_meta_dim_above_max
-  "contract predicate is false in constant expression"
-  "crucible/TensorMeta.h:[0-9]+:[0-9]+: error: contract predicate")
+  "foundation/contracts/Pre\\.h:[0-9]+:[0-9]+: error: .__builtin_trap\\(\\). is not a constant expression"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
 # TensorMeta::data_ptr stores
 # ExternalDataPtr = Tagged<void*, source::External>.  Two HS14
