@@ -60,6 +60,20 @@ static_assert(kOpenDirectory == O_DIRECTORY, "kOpenDirectory is not O_DIRECTORY 
 static_assert(kOpenNoFollow == O_NOFOLLOW, "kOpenNoFollow is not O_NOFOLLOW of <linux/fcntl.h>");
 static_assert(kOpenDirect == O_DIRECT, "kOpenDirect is not O_DIRECT of <linux/fcntl.h>");
 
+// The argument and the resolve flags of openat2 are the words of
+// <linux/openat2.h>, which <linux/fcntl.h> includes.
+static_assert(kResolveNoMagicLinks == RESOLVE_NO_MAGICLINKS,
+              "kResolveNoMagicLinks is not RESOLVE_NO_MAGICLINKS of <linux/openat2.h>");
+static_assert(kResolveBeneath == RESOLVE_BENEATH, "kResolveBeneath is not RESOLVE_BENEATH of <linux/openat2.h>");
+static_assert(sizeof(OpenHow) == sizeof(::open_how),
+              "OpenHow does not have the size of struct open_how of <linux/openat2.h>");
+static_assert(offsetof(OpenHow, flags) == offsetof(::open_how, flags),
+              "OpenHow::flags is not at the place of flags of struct open_how");
+static_assert(offsetof(OpenHow, mode) == offsetof(::open_how, mode),
+              "OpenHow::mode is not at the place of mode of struct open_how");
+static_assert(offsetof(OpenHow, resolve) == offsetof(::open_how, resolve),
+              "OpenHow::resolve is not at the place of resolve of struct open_how");
+
 // The argument words of foundation/os/MapWords.h are the words of the kernel
 // header.
 static_assert(kProtectNone == PROT_NONE, "kProtectNone is not PROT_NONE of <linux/mman.h>");
@@ -235,6 +249,8 @@ constexpr long kNoCall = -1;
             return __NR_gettid;
         case Syscall::perf_event_open:
             return __NR_perf_event_open;
+        case Syscall::openat2:
+            return __NR_openat2;
         default:
             return kNoCall;
     }
@@ -361,8 +377,11 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // MPOL_MF_MOVE, which came in 2.6.16.  move_pages came in 2.6.18.  futex came
 // in 2.6.0, and the futex door uses FUTEX_WAIT_BITSET, which came in 2.6.25.
 // perf_event_open came in 2.6.31, sched_setattr and sched_getattr in 3.14,
-// renameat2 in 3.15, mlock2 in 4.4, copy_file_range in 4.5 and io_uring_setup
-// in 5.1.  gettid came before 2.6.0.
+// renameat2 in 3.15, mlock2 in 4.4, copy_file_range in 4.5, io_uring_setup in
+// 5.1 and openat2 in 5.6.  gettid came before 2.6.0.  The file door opens
+// each path under a directory with openat2 and RESOLVE_BENEATH, and an open
+// with openat would follow a path out of the directory with no error.  So
+// openat2 is no feature call, and it sets the floor at 5.6.
 [[nodiscard]] constexpr KernelVersion introduced_in(Syscall call) noexcept {
     KernelVersion added = kFirstRelease;
     switch (call) {
@@ -398,6 +417,9 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
             break;
         case Syscall::io_uring_setup:
             added = KernelVersion{5, 1, 0};
+            break;
+        case Syscall::openat2:
+            added = KernelVersion{5, 6, 0};
             break;
         case Syscall::read:
         case Syscall::write:

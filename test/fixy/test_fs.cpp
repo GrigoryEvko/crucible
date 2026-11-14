@@ -298,6 +298,65 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     return 0;
 }
 
+// The open beneath a directory tries again after eagain, which a rename that
+// races the lookup of a ".." part gives, and it stops after kBeneathTries
+// steps that gave it.  A signal adds a step and no try.  Each other error
+// ends the open at once.
+[[nodiscard]] int open_beneath_ends_at_the_bound_of_its_tries() {
+    namespace core = foundation::core;
+    using foundation::os::Errno;
+    using Step = core::Result<std::uint64_t, Errno>;
+    constexpr std::size_t kTries = fs::detail::kBeneathTries;
+
+    // The step of a plan: eintr on the call that interrupted_call names,
+    // eagain on the first raced other calls, and descriptor 7 after them.
+    // calls counts the calls.
+    std::size_t calls = 0;
+    auto const planned_step = [&calls](std::size_t raced, std::size_t interrupted_call) {
+        return [&calls, raced, interrupted_call, given = std::size_t{0}]() mutable -> Step {
+            calls += 1;
+            if (calls == interrupted_call) return core::err(Errno::eintr);
+            if (given < raced) {
+                given += 1;
+                return core::err(Errno::eagain);
+            }
+            return std::uint64_t{7};
+        };
+    };
+
+    auto const opened_late = fs::detail::open_beneath_steps_(planned_step(kTries - 1, 0));
+    if (opened_late.is_err() || calls != kTries) {
+        fixy::report(fixy::Sink::Err, "an open after {} eagain steps ended with errno {} after {} steps\n", kTries - 1,
+                     errno_of(opened_late), calls);
+        return 1;
+    }
+    calls = 0;
+    auto const raced_out = fs::detail::open_beneath_steps_(planned_step(kTries, 0));
+    if (raced_out.err().value_or(Errno{}) != Errno::eagain || calls != kTries) {
+        fixy::report(fixy::Sink::Err, "an open after {} eagain steps ended with errno {} after {} steps\n", kTries,
+                     errno_of(raced_out), calls);
+        return 1;
+    }
+    calls = 0;
+    auto const interrupted = fs::detail::open_beneath_steps_(planned_step(kTries - 1, 1));
+    if (interrupted.is_err() || calls != kTries + 1) {
+        fixy::report(fixy::Sink::Err, "an open after a signal and {} eagain steps ended with errno {} after {} steps\n",
+                     kTries - 1, errno_of(interrupted), calls);
+        return 1;
+    }
+    calls = 0;
+    auto const refused = fs::detail::open_beneath_steps_([&calls]() -> Step {
+        calls += 1;
+        return core::err(Errno::exdev);
+    });
+    if (refused.err().value_or(Errno{}) != Errno::exdev || calls != 1) {
+        fixy::report(fixy::Sink::Err, "an open that the kernel refused ended with errno {} after {} steps\n",
+                     errno_of(refused), calls);
+        return 1;
+    }
+    return 0;
+}
+
 // The calls under a directory: a new directory, its open, a file under it
 // that a View and a TextView fill, a commit by a rename in the same
 // directory, a whole read, a check of an entry and a remove.  The report of
@@ -434,6 +493,7 @@ int main() {
     if (const int rc = dirfd_opens_and_flushes_the_entry(scratch); rc != 0) return rc;
     if (const int rc = full_reads_and_writes_round_trip(scratch); rc != 0) return rc;
     if (const int rc = full_transfers_end_on_a_zero_step(); rc != 0) return rc;
+    if (const int rc = open_beneath_ends_at_the_bound_of_its_tries(); rc != 0) return rc;
     if (const int rc = calls_under_a_directory(scratch); rc != 0) return rc;
     if (const int rc = open_under_a_directory_refuses_a_symbolic_link(); rc != 0) return rc;
     if (const int rc = has_entry_reads_a_full_path(); rc != 0) return rc;

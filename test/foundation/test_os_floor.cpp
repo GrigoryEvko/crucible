@@ -175,7 +175,8 @@ void test_closes_each_listing_descriptor() {
 void test_judges_each_release_text() {
     CRUCIBLE_FATAL_INVARIANT(os::judge_release("2.6.0") == os::KernelVerdict::too_old);
     CRUCIBLE_FATAL_INVARIANT(os::judge_release("999.0") == os::KernelVerdict::admitted);
-    CRUCIBLE_FATAL_INVARIANT(os::judge_release("3.7.0") == os::KernelVerdict::admitted);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_release("5.5.19") == os::KernelVerdict::too_old);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_release("5.6.0") == os::KernelVerdict::admitted);
     CRUCIBLE_FATAL_INVARIANT(os::judge_release("7.1.4-202.fc44.x86_64") == os::KernelVerdict::admitted);
     CRUCIBLE_FATAL_INVARIANT(os::judge_release("6.1.") == os::KernelVerdict::admitted);
     CRUCIBLE_FATAL_INVARIANT(os::judge_release("") == os::KernelVerdict::unreadable);
@@ -186,12 +187,12 @@ void test_judges_each_release_text() {
     CRUCIBLE_FATAL_INVARIANT(os::judge_release("6.1.70000") == os::KernelVerdict::unreadable);
 }
 
-// The floor is one release of the two architectures, and no newer than the
-// first release that has each call of the enumeration on aarch64.
+// The floor is 5.6 on the two architectures: the release of openat2, which
+// each open beneath a directory issues, and the newest call that is no
+// feature call.
 void test_derives_the_floor() {
     os::KernelVersion const floor = os::minimum_kernel();
-    CRUCIBLE_FATAL_INVARIANT(!std::is_lt(floor <=> os::KernelVersion{2, 6, 0}));
-    CRUCIBLE_FATAL_INVARIANT(!std::is_gt(floor <=> os::KernelVersion{3, 7, 0}));
+    CRUCIBLE_FATAL_INVARIANT(std::is_eq(floor <=> os::KernelVersion{5, 6, 0}));
 }
 
 }  // namespace

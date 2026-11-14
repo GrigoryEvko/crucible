@@ -88,14 +88,17 @@ UnitResult rename_no_replace_at_(int directory, char const* from, char const* to
     return unit_of(word);
 }
 
-core::Result<int, os::Errno> open_at_(int directory, char const* path, int flags, std::uint32_t mode) noexcept {
-    long word = 0;
-    do {
-        word = os::raw_syscall(os::Syscall::openat, directory, path, flags, mode);
-    } while (word == kInterrupted);
-    return os::result_of(word).match(
-        [](std::uint64_t descriptor) -> core::Result<int, os::Errno> { return static_cast<int>(descriptor); },
-        [](os::Errno error) -> core::Result<int, os::Errno> { return core::err(error); });
+core::Result<int, os::Errno> open_beneath_(int directory, char const* path, int flags, std::uint32_t mode) noexcept {
+    // The flags are not negative, so the cast to a word keeps each bit.
+    os::OpenHow const how{
+        .flags = static_cast<std::uint32_t>(flags),
+        .mode = (flags & os::kOpenCreate) != 0 ? mode : 0U,
+        .resolve = os::kResolveBeneath | os::kResolveNoMagicLinks,
+    };
+    return open_beneath_steps_([directory, path, &how] {
+        return os::result_of(
+            os::raw_syscall(os::Syscall::openat2, directory, path, static_cast<void const*>(&how), sizeof how));
+    });
 }
 
 UnitResult unlink_at_(int directory, char const* path) noexcept {

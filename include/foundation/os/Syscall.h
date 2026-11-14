@@ -102,6 +102,7 @@ enum class Syscall : std::uint8_t {
     prctl,
     gettid,
     perf_event_open,
+    openat2,
 };
 
 // True when the call can wait with no bound for another thread or process,

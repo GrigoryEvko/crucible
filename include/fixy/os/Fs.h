@@ -162,12 +162,56 @@ rename_replacing_at_(int directory, char const* from, char const* to) noexcept;
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 rename_no_replace_at_(int directory, char const* from, char const* to) noexcept;
 
-// Opens PATH under DIRECTORY with the open flags FLAGS of
-// foundation/os/OpenFlags.h, and gives the descriptor (openat).  The kernel
-// reads MODE only when FLAGS holds kOpenCreate.  A door class of OwnedFd is
-// the one caller that keeps the descriptor.
-[[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno> open_at_(int directory, char const* path,
-                                                                                int flags, std::uint32_t mode) noexcept;
+// Opens PATH beneath DIRECTORY with the open flags FLAGS of
+// foundation/os/OpenFlags.h, and gives the descriptor (openat2 with
+// RESOLVE_BENEATH and RESOLVE_NO_MAGICLINKS).  A path that leaves the
+// directory gives exdev, and a magic link of procfs gives eloop.  The door
+// gives MODE to the kernel only when FLAGS holds kOpenCreate.  It tries again
+// after eagain, as open_beneath_steps_ tells.  A door class of OwnedFd is the
+// one caller that keeps the descriptor.
+[[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno>
+open_beneath_(int directory, char const* path, int flags, std::uint32_t mode) noexcept;
+
+// The count of the tries of an open beneath a directory.  The kernel gives
+// eagain for RESOLVE_BENEATH when a rename or a mount on the host races the
+// lookup of a ".." part.  A path with no ".." part gets no eagain.
+inline constexpr std::size_t kBeneathTries = 32;
+
+// Opens with STEP until a step gives a descriptor or an error other than
+// eintr and eagain: STEP() gives the descriptor or the error of the kernel.
+// A step that a signal interrupts runs again with no bound, as each call of
+// the door file does.  A step that gives eagain runs again, and the open gives
+// eagain after kBeneathTries steps that gave it.  Complexity: at most
+// kBeneathTries steps, and one more step for each signal.
+template <class Step>
+[[nodiscard]] constexpr ::foundation::core::Result<int, ::foundation::os::Errno>
+open_beneath_steps_(Step step) noexcept {
+    std::size_t raced = 0;
+    bool is_open = false;
+    bool has_failed = false;
+    int descriptor = -1;
+    ::foundation::os::Errno failure = ::foundation::os::Errno::eagain;
+    while (!is_open && !has_failed) {
+        step().match(
+            [&](std::uint64_t opened) {
+                descriptor = static_cast<int>(opened);
+                is_open = true;
+            },
+            [&](::foundation::os::Errno error) {
+                if (error == ::foundation::os::Errno::eagain) {
+                    raced += 1;
+                    has_failed = raced == kBeneathTries;
+                } else if (error != ::foundation::os::Errno::eintr) {
+                    failure = error;
+                    has_failed = true;
+                }
+            });
+    }
+    if (has_failed) {
+        return ::foundation::core::err(failure);
+    }
+    return descriptor;
+}
 
 // Removes the entry PATH under DIRECTORY, which is no directory (unlinkat).
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
@@ -536,15 +580,15 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
         return own_directory_(detail::open_descriptor_(dir_path, directory_flags_, 0));
     }
 
-    // The opens of a path under the directory of the descriptor directory.
+    // The opens of a path beneath the directory of the descriptor directory.
     [[nodiscard]] static ::foundation::core::Result<OwnedFd, ::foundation::os::Errno>
     open_path_at_(int directory, const char* path, int flags, std::uint32_t perms) noexcept {
-        return own_(detail::open_at_(directory, path, flags, perms));
+        return own_(detail::open_beneath_(directory, path, flags, perms));
     }
 
     [[nodiscard]] static ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
     open_directory_at_(int directory, const char* path) noexcept {
-        return own_directory_(detail::open_at_(directory, path, directory_flags_, 0));
+        return own_directory_(detail::open_beneath_(directory, path, directory_flags_, 0));
     }
 };
 
@@ -619,6 +663,13 @@ open_dirfd(Ctx const&, Path<tags::source::Sanitized> const& dir) noexcept {
 //   other error returns in the Result.  Each call takes the context that the
 //   other calls of this header take, because each can park the caller on
 //   the disk.
+//
+//   An open reads its path beneath the directory (detail::open_beneath_).  A
+//   path that leaves the directory gives exdev: an absolute path, a ".." part
+//   that climbs above the directory, or a symbolic link whose target is
+//   outside it.  A magic link of procfs, such as /proc/self/root, gives
+//   eloop.  A ".." part and a symbolic link in a middle part that stay inside
+//   the directory are permitted.
 //
 //   A Dirfd that holds no descriptor, such as a Dirfd that a move emptied,
 //   gives ebadf, and the call makes no system call.  The kernel reads an

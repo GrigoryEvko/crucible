@@ -112,7 +112,7 @@ include/crucible/ | c-library-call | 3 | - | -
 include/crucible/ | compiler-builtin | 1 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
 include/crucible/ | raw-new-delete | 1 | - | -
-include/crucible/ | raw-pointer-object | 144 | - | -
+include/crucible/ | raw-pointer-object | 143 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 1 | - | -
 include/crucible/ | std-entity | 21 | - | -
 include/crucible/ | std-object | 9 | - | -
@@ -317,7 +317,7 @@ src/perf/ | compiler-builtin | 1 | - | -
 src/perf/ | foreign-symbol | 14 | - | -
 src/perf/ | raw-pointer-object | 3 | - | -
 src/perf/ | replace-pending:std::bit_cast | 2 | - | -
-test/ | c-array-object | 179 | - | -
+test/ | c-array-object | 178 | - | -
 test/ | c-library-call | 854 | - | -
 test/ | c-library-object | 14 | - | -
 test/ | compiler-builtin | 1 | - | -
@@ -327,12 +327,12 @@ test/ | inline-asm | 1 | - | -
 test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | raw-function-pointer | 21 | - | -
 test/ | raw-new-delete | 41 | - | -
-test/ | raw-pointer-object | 474 | - | -
+test/ | raw-pointer-object | 460 | - | -
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 87 | - | -
-test/ | std-entity | 1564 | - | -
-test/ | std-object | 561 | - | -
+test/ | std-entity | 1560 | - | -
+test/ | std-object | 559 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
 test/cipher_neg/ | raw-pointer-object | 2 | - | -
 test/cipher_neg/ | std-entity | 6 | - | -
@@ -560,10 +560,10 @@ test/fuzz/property/ | c-array-object | 19 | - | -
 test/fuzz/property/ | c-library-call | 48 | - | -
 test/fuzz/property/ | compiler-builtin | 4 | - | -
 test/fuzz/property/ | raw-function-pointer | 2 | - | -
-test/fuzz/property/ | raw-pointer-object | 47 | - | -
+test/fuzz/property/ | raw-pointer-object | 46 | - | -
 test/fuzz/property/ | replace-pending:<limits> | 36 | - | -
-test/fuzz/property/ | std-entity | 172 | - | -
-test/fuzz/property/ | std-object | 48 | - | -
+test/fuzz/property/ | std-entity | 168 | - | -
+test/fuzz/property/ | std-object | 47 | - | -
 test/kernel_neg/ | raw-pointer-object | 1 | - | -
 test/kernel_neg/ | replace-pending:<limits> | 1 | - | -
 test/layer/ | door-header | 1 | - | -

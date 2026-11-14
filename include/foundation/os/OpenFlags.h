@@ -1,17 +1,20 @@
 #pragma once
 
 // The argument words of an open of the doors: the directory of a relative
-// path, the access mode and the flags of an open, and the flag of a status
-// read through a descriptor.
+// path, the access mode and the flags of an open, the flag of a status read
+// through a descriptor, and the argument and the resolve flags of openat2.
 //
-// The values are the values of <linux/fcntl.h> on x86_64 and aarch64.  The
-// values of O_DIRECTORY, O_NOFOLLOW and O_DIRECT are different on the two
-// architectures.  The door file src/foundation/os/Syscall.cpp compares each
-// value with that header.  A door that includes a header of the C library
+// The values are the values of <linux/fcntl.h> and <linux/openat2.h> on
+// x86_64 and aarch64.  The values of O_DIRECTORY, O_NOFOLLOW and O_DIRECT are
+// different on the two architectures.  The door file
+// src/foundation/os/Syscall.cpp compares each value and the layout of
+// OpenHow with those headers.  A door that includes a header of the C library
 // cannot include <linux/fcntl.h> too, because <fcntl.h> declares the same
 // structs, so the doors take the values from here.
 //
 // This header is in the floor layer F0_os of utils/rule-table.txt.
+
+#include <cstdint>
 
 namespace foundation::os {
 
@@ -70,5 +73,24 @@ inline constexpr int kOpenDirect = 0200000;
 #else
 #error "foundation/os/OpenFlags.h gives the flags of x86_64 and aarch64 only.  Add the values of the new architecture."
 #endif
+
+// The resolve flags of openat2.  An open with kResolveBeneath fails with
+// EXDEV when a part of the path names an entry outside the directory of the
+// descriptor: an absolute path, a ".." part that climbs above the directory,
+// or a symbolic link whose target is outside it (RESOLVE_BENEATH).  An open
+// with kResolveNoMagicLinks fails with ELOOP at a magic link of procfs, such
+// as /proc/self/root (RESOLVE_NO_MAGICLINKS).
+inline constexpr std::uint64_t kResolveNoMagicLinks = 0x02;
+inline constexpr std::uint64_t kResolveBeneath = 0x08;
+
+// The argument of openat2 (struct open_how of <linux/openat2.h>): the open
+// flags, the permission bits of a new file, and the resolve flags.  The
+// kernel refuses permission bits with EINVAL when the flags hold no
+// kOpenCreate.
+struct OpenHow {
+    std::uint64_t flags = 0;
+    std::uint64_t mode = 0;
+    std::uint64_t resolve = 0;
+};
 
 }  // namespace foundation::os
