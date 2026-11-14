@@ -46,13 +46,17 @@ public:
 
     // Every write the publishing stage made before its bump is visible to a
     // reader that observes the bumped value through this load.
-    [[nodiscard, gnu::pure]] uint64_t load_acquire() const noexcept { return value_.load(std::memory_order_acquire); }
+    //
+    // No read here is gnu::pure.  The publishing stage changes the value
+    // between two reads, and a pure read lets the compiler fold the reads of
+    // a wait loop into one.
+    [[nodiscard]] uint64_t load_acquire() const noexcept { return value_.load(std::memory_order_acquire); }
 
     // Carries no synchronization.  Read the counter this way for reporting
     // only, never to conclude that the published writes are visible.  These
     // two are the only reads: a read that takes its order as an argument
     // would admit a release order, which no load can have.
-    [[nodiscard, gnu::pure]] uint64_t peek_relaxed() const noexcept { return value_.load(std::memory_order_relaxed); }
+    [[nodiscard]] uint64_t peek_relaxed() const noexcept { return value_.load(std::memory_order_relaxed); }
 };
 
 }  // namespace fixy::handle

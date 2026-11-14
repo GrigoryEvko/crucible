@@ -148,8 +148,9 @@ inline constexpr std::size_t kL3ResidentMaxFactor = 4;
 class ParallelismRule final : ::foundation::NoObject<ParallelismRule> {
 public:
     // The boundaries come from the host, so one byte count classifies
-    // differently on two machines.
-    [[nodiscard, gnu::pure]] static Tier classify(std::size_t ws_bytes) noexcept {
+    // differently on two machines.  Not gnu::pure: the first call probes the
+    // topology, and each call reads the guard of Topology::instance().
+    [[nodiscard]] static Tier classify(std::size_t ws_bytes) noexcept {
         const auto& topo = ::fixy::topology::Topology::instance();
         const std::size_t l1d = topo.l1d_per_core_bytes();
         const std::size_t l2 = topo.l2_per_core_bytes();
@@ -163,7 +164,7 @@ public:
     // The question a caller asks when it chooses between inline and
     // threaded work.  A set in one core's private cache is already hot
     // there, so a second worker buys invalidation traffic and nothing else.
-    [[nodiscard, gnu::pure]] static bool is_core_resident(std::size_t ws_bytes) noexcept {
+    [[nodiscard]] static bool is_core_resident(std::size_t ws_bytes) noexcept {
         return is_core_private_tier(classify(ws_bytes));
     }
 

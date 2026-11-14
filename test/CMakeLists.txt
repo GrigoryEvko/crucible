@@ -337,6 +337,18 @@ crucible_test(test_trace_ring_hot_path)
 crucible_test(test_cipher_commit_lifetime)
 crucible_test(test_chase_lev_deque)
 
+# test_atomic_reads_per_turn counts the calls that a loop of reads runs,
+# through the entry hook of -finstrument-functions.  A read of a cell that
+# another thread writes must run on each turn.  -O2 and -fno-inline keep
+# each read a call that the optimizer can move, in each preset.  A sanitizer
+# and the counters of a profile-generate build put their own code into the
+# loop, and that code keeps a pure read in place.  So the unit takes no
+# sanitizer and no profile counter.  The source options come after the
+# options of the build, and the compiler uses the last.
+crucible_test(test_atomic_reads_per_turn)
+set_property(SOURCE test_atomic_reads_per_turn.cpp APPEND PROPERTY COMPILE_OPTIONS
+  -O2 -fno-inline -finstrument-functions -fno-sanitize=all -fno-profile-arcs -fno-profile-values)
+
 # Every configure refuses a compiler that does not have each fix in
 # utils/toolchain/gcc/patches.  This test runs the probes on the compiler of the
 # build, which must pass, and on stub compilers, which must each get the

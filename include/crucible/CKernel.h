@@ -273,7 +273,11 @@ void publish_static_ckernel_table(const StaticCKernelTable&&) = delete(
 // framework adapter, and OPAQUE when the published array does not name this
 // schema. Both answers are the same answer the run-time table gives on a
 // miss, so the fallback below is reached in exactly those two cases.
-[[nodiscard, gnu::pure]] inline CKernelId classify_static(SchemaHash schema_hash) noexcept {
+//
+// Not gnu::pure, and classify_kernel is not either.  The adapter can publish
+// between two calls, and a pure call lets the compiler keep the OPAQUE of
+// the first call.
+[[nodiscard]] inline CKernelId classify_static(SchemaHash schema_hash) noexcept {
     return detail::static_ckernel_table_.load_acquire().match(
         [schema_hash](::fixy::Ref<const StaticCKernelTable> table) noexcept {
             return detail::find_kernel_id_(table->entries, schema_hash);
@@ -284,7 +288,7 @@ void publish_static_ckernel_table(const StaticCKernelTable&&) = delete(
 // The published array first, the run-time table second. An adapter that
 // publishes a classification for a schema and also registers one for it gets
 // the published answer, which is the one its own generator derived.
-[[nodiscard, gnu::pure]] inline CKernelId classify_kernel(SchemaHash schema_hash) noexcept {
+[[nodiscard]] inline CKernelId classify_kernel(SchemaHash schema_hash) noexcept {
     const CKernelId from_static = classify_static(schema_hash);
     if (from_static != CKernelId::OPAQUE) return from_static;
     return global_ckernel_table().value()->classify(schema_hash);

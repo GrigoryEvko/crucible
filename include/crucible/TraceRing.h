@@ -446,14 +446,17 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // head and tail are read at different instants while both threads run, so
     // the difference is a snapshot of a value that was never simultaneously
     // true. The return type says so and forces the caller to acknowledge it.
-    [[nodiscard, gnu::pure]] ::fixy::Stale<uint32_t> size() const noexcept CRUCIBLE_NO_THREAD_SAFETY {
+    //
+    // Neither read is gnu::pure.  The other thread moves head and tail, and a
+    // pure read lets the compiler fold the reads of a wait loop into one.
+    [[nodiscard]] ::fixy::Stale<uint32_t> size() const noexcept CRUCIBLE_NO_THREAD_SAFETY {
         return ::fixy::Stale<uint32_t>::at_infinity(static_cast<uint32_t>(head.get() - tail.get()));
     }
 
     // The acquire in get() means the returned bound also implies visibility of
     // every entry produced up to it, which is what makes it usable as a
     // catch-up target.
-    [[nodiscard, gnu::pure]] uint64_t total_produced() const noexcept CRUCIBLE_NO_THREAD_SAFETY { return head.get(); }
+    [[nodiscard]] uint64_t total_produced() const noexcept CRUCIBLE_NO_THREAD_SAFETY { return head.get(); }
 
     // Valid only once both threads have stopped. Every counter here moves
     // backwards, which the monotonicity contract otherwise forbids, so the
