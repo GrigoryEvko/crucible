@@ -4,8 +4,9 @@
 // pointer. Downstream identity, deduplication and cache keys then compare
 // pointers instead of comparing or rehashing fields.
 //
-// A pool is single-threaded and does no locking on the intern path. It is
-// arena-owned, so nothing here is freed until the arena is.
+// A pool is single-threaded and does no locking on the intern path. The
+// recipes live in the arena, so no recipe is freed until the arena is. The
+// pool owns its slot table on the heap, and a growth frees the old table.
 
 #include <crucible/NumericalRecipe.h>
 #include <fixy/Borrowed.h>
@@ -24,6 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 namespace crucible {
 
@@ -68,18 +70,16 @@ public:
         const uint64_t hv = h.raw();
 
         const uint32_t cap = capacity_.value();
-        const uint32_t mask = cap - 1;
-        uint32_t idx = static_cast<uint32_t>(hv) & mask;
         for (uint32_t probe = 0; probe < cap; ++probe) {
-            const uint32_t i = (idx + probe) & mask;
-            Slot const& s = slot_(i);
+            const uint64_t key = hv + probe;
+            Slot const& s = slots_.at_masked(key);
             if (s.recipe.is_none()) {
                 if ((size_.get() + 1) * 2 > cap) [[unlikely]] {
                     grow_(a);
                     // The table this probe walked no longer exists.
                     return intern(a, fields);
                 }
-                return &*install_(a, i, fields, h);
+                return &*install_(a, key, fields, h);
             }
             for (const ::fixy::Ref<const NumericalRecipe> stored : s.recipe) {
                 if (s.hash == hv && semantic_equal_(*stored, fields)) {
@@ -101,11 +101,6 @@ private:
         ::fixy::Option<::fixy::Ref<const NumericalRecipe>> recipe = ::fixy::none;  // none marks an empty slot
     };
 
-    // The slot at a masked index, which is below the capacity.
-    [[nodiscard]] Slot& slot_(uint32_t index) noexcept {
-        return *slots_.get(index).expect("a masked index is below the capacity of the table");
-    }
-
     // Only the public constructor names this tag, so no caller reaches the
     // erased borrow below.
     struct erased_door_ {};
@@ -125,7 +120,7 @@ private:
         : arena_{arena},
           capacity_{::fixy::mint_refined<::fixy::power_of_two>(initial_capacity)},
           size_{::fixy::mint_monotonic<uint32_t>(0)} {
-        slots_ = arena_->array(init.alloc, initial_capacity, Slot{});
+        slots_ = ::fixy::mint_masked_array<Slot>(init.alloc, initial_capacity);
         // A post clause whose predicate reads a member through `this` is
         // skipped at consteval, so these route through the macro. The leading
         // 0 is the placeholder return value for a function returning void.
@@ -143,12 +138,14 @@ private:
             && a.determinism == b.determinism && a.flags == b.flags;
     }
 
-    [[nodiscard]] ::fixy::Ref<const NumericalRecipe> install_(::foundation::effects::Alloc a, uint32_t i,
+    // Installs the recipe in the slot of key.
+    [[nodiscard]] ::fixy::Ref<const NumericalRecipe> install_(::foundation::effects::Alloc a, uint64_t key,
                                                               const NumericalRecipe& fields, RecipeHash h) {
         const auto recipe = arena_->make<NumericalRecipe>(a, fields);
         recipe->hash = h;
 
-        slot_(i) = Slot{.hash = h.raw(), .recipe = ::fixy::some(::fixy::Ref<const NumericalRecipe>{recipe})};
+        slots_.at_masked(key) =
+            Slot{.hash = h.raw(), .recipe = ::fixy::some(::fixy::Ref<const NumericalRecipe>{recipe})};
         size_.bump();
         return recipe;
     }
@@ -156,19 +153,17 @@ private:
     [[gnu::cold, gnu::noinline]]
     void grow_(::foundation::effects::Alloc a) {
         const uint32_t old_size = size_.get();
-        const ::fixy::View<const Slot> old_slots = slots_;
+        const ::fixy::MaskedArray<Slot> old_slots = std::move(slots_);
         const uint32_t new_cap = capacity_.value() * 2;
 
-        slots_ = arena_->array(a, new_cap, Slot{});
+        slots_ = ::fixy::mint_masked_array<Slot>(a, new_cap);
         capacity_ = ::fixy::mint_refined<::fixy::power_of_two>(new_cap);
 
-        const uint32_t new_mask = new_cap - 1;
         uint32_t reinserted = 0;
-        for (const Slot& s : old_slots) {
+        for (const Slot& s : old_slots.view()) {
             if (s.recipe.is_none()) continue;
-            uint32_t idx = static_cast<uint32_t>(s.hash) & new_mask;
             for (uint32_t probe = 0; probe < new_cap; ++probe) {
-                Slot& target = slot_((idx + probe) & new_mask);
+                Slot& target = slots_.at_masked(s.hash + probe);
                 if (target.recipe.is_none()) {
                     target = s;
                     ++reinserted;
@@ -178,12 +173,11 @@ private:
         }
         CRUCIBLE_POST(0, reinserted == old_size);
         size_.advance(reinserted);
-        // The old slot array stays in the arena until the arena dies. Each
-        // growth doubles, so a pool leaks at most its own size that way.
+        // The old table ends here, and its destructor frees it.
     }
 
     ArenaBorrow arena_;
-    ::fixy::View<Slot> slots_{};
+    ::fixy::MaskedArray<Slot> slots_{};
     Capacity capacity_;
     Size size_;
 };
