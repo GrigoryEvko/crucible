@@ -185,7 +185,9 @@ public:
     // of the log takes the allocation capability.
     //
     // The path check here is string-level only.  Symlink defense lives in
-    // the O_NOFOLLOW-anchored openat helpers of src/Cipher.cpp.
+    // the doors under the root Dirfd, which src/Cipher.cpp calls.  Each door
+    // resolves its path beneath the root, and each open of a leaf folds in
+    // O_NOFOLLOW.
     template <typename Ctx>
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
     [[gnu::cold]] static Cipher open(Ctx const& ctx, ::foundation::effects::Alloc allocation, RootText root_text) {
@@ -462,10 +464,14 @@ private:
     //       symlink, so a substituted HEAD, log, index or object file
     //       fails with ELOOP instead of redirecting the write.
     //
-    // O_NOFOLLOW inspects only the trailing pathname component, never the
-    // intermediate directories.  Substituting an intermediate directory
-    // needs write access to the Cipher root, which is outside the threat
-    // model: whoever owns this dirfd also owns the root's permissions.
+    // O_NOFOLLOW inspects only the trailing pathname component.  Each door
+    // under the dirfd also resolves its path beneath the root, so a
+    // symbolic link in an intermediate directory, an absolute path or a
+    // ".." part cannot take the path out of the root.  A link that stays
+    // inside the root is followed.  Substituting an intermediate directory
+    // with such a link needs write access to the Cipher root, which is
+    // outside the threat model: whoever owns this dirfd also owns the
+    // root's permissions.
     ::fixy::fs::Dirfd root_dirfd_{};
     ContentHash head_{};
 

@@ -56,6 +56,7 @@ static_assert(kOpenAppend == O_APPEND, "kOpenAppend is not O_APPEND of <linux/fc
 static_assert(kOpenDataSync == O_DSYNC, "kOpenDataSync is not O_DSYNC of <linux/fcntl.h>");
 static_assert(kOpenFullSync == O_SYNC, "kOpenFullSync is not O_SYNC of <linux/fcntl.h>");
 static_assert(kOpenCloseOnExec == O_CLOEXEC, "kOpenCloseOnExec is not O_CLOEXEC of <linux/fcntl.h>");
+static_assert(kOpenPath == O_PATH, "kOpenPath is not O_PATH of <linux/fcntl.h>");
 static_assert(kOpenDirectory == O_DIRECTORY, "kOpenDirectory is not O_DIRECTORY of <linux/fcntl.h>");
 static_assert(kOpenNoFollow == O_NOFOLLOW, "kOpenNoFollow is not O_NOFOLLOW of <linux/fcntl.h>");
 static_assert(kOpenDirect == O_DIRECT, "kOpenDirect is not O_DIRECT of <linux/fcntl.h>");

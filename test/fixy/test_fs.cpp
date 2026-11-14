@@ -435,6 +435,30 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         fixy::report(fixy::Sink::Err, "unlink_at did not remove the file\n");
         return 1;
     }
+
+    // A path with a directory part: each door opens the part beneath root,
+    // and acts on the final name in it.  The two names of the commit have two
+    // directory parts, and a ".." part that stays inside root is permitted.
+    if (fs::make_directory_at(ctx, root, "objects/inner/").is_err()
+        || !fs::has_entry_at(ctx, root, "objects/inner").value_or(false)) {
+        fixy::report(fixy::Sink::Err, "make_directory_at of objects/inner/ did not make the directory\n");
+        return 1;
+    }
+    Opened nested =
+        opened_of(fs::mint_file_at<fixy::atom::fs::mode<fs::open_mode::WriteCreate>>(ctx, root, "objects/moved.tmp"));
+    if (nested.error_number != 0) {
+        fixy::report(fixy::Sink::Err, "mint_file_at of objects/moved.tmp failed (errno {})\n", nested.error_number);
+        return 1;
+    }
+    nested.file = fs::OwnedFd{};
+    if (fs::commit_atomic_at<fs::atomicity::RenameAt2NoReplace>(ctx, root, "objects/moved.tmp", "objects/inner/moved")
+            .is_err()
+        || !fs::has_entry_at(ctx, objects, "inner/moved").value_or(false)
+        || fs::unlink_at(ctx, root, "objects/inner/../inner/moved").is_err()
+        || fs::has_entry_at(ctx, objects, "inner/moved").value_or(true)) {
+        fixy::report(fixy::Sink::Err, "a commit or an unlink under a directory part did not act on its entry\n");
+        return 1;
+    }
     return 0;
 }
 

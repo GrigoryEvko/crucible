@@ -6,7 +6,9 @@
 //   - an absolute path
 //   - a ".." part that climbs above the directory
 //   - a symbolic link in a middle part whose target is outside the
-//     directory.  Each Linux host has /dev/fd, a link to /proc/self/fd.
+//     directory.  Each Linux host has /sys/class/net/lo, a relative link to
+//     ../../devices/virtual/net/lo, and /dev/fd, an absolute link to
+//     /proc/self/fd.
 //   - a magic link of procfs in a middle part: root of /proc/self, which
 //     names the root directory of the process.
 //
@@ -14,9 +16,13 @@
 // magic link.  A ".." part and a link that stay inside the directory are
 // permitted.
 //
-// The directories of the cases are /proc/sys, /proc and /dev, which each
-// Linux host has.  Each escape names a file that a read can open, so a door
-// that does not refuse the escape opens it, and the case fails.
+// The directories of the cases are in /proc, /sys and /dev, which each Linux
+// host has.  Each escape of an open names a file that a read can open, so a
+// door that does not refuse the escape opens it, and the case fails.  Each
+// escape of a door that makes, removes or renames an entry names an entry
+// that is missing in procfs or sysfs, which make no entry, so such a door
+// changes no file.  The target of each such escape is on the mount of the
+// directory, so a rename that the kernel gets gives no exdev of its own.
 
 #include <fixy/Core.h>
 #include <fixy/os/Fs.h>
@@ -105,22 +111,92 @@ template <typename T>
     return failed;
 }
 
-// Each open refuses each of the four escapes.  The cases run to the end, so
-// the report names each door that did not refuse an escape.  The link case
-// goes through /dev/fd to the descriptor of a Dirfd of /proc/sys.
+// Each open refuses each escape.  The cases run to the end, so the report
+// names each door that did not refuse an escape.  The absolute link goes
+// through /dev/fd to the descriptor of a Dirfd of /proc/sys.
 [[nodiscard]] int each_open_refuses_each_escape() {
     fs::Dirfd const proc_sys = directory_at("/proc/sys");
     fs::Dirfd const proc = directory_at("/proc");
+    fs::Dirfd const net = directory_at("/sys/class/net");
     fs::Dirfd const dev = directory_at("/dev");
     PathBuffer descriptor{};
     descriptor.append_decimal(static_cast<std::uint64_t>(proc_sys.get())).expect("a number fits the buffer");
+    fixy::TextView const number = descriptor.c_text().view();
 
     int failed = opens_refuse("absolute", proc_sys, joined("/proc/sys/kernel/ostype"), joined("/dev"), Errno::exdev);
     failed += opens_refuse("dot-dot", proc_sys, joined("kernel/../../sys/kernel/ostype"), joined(".."), Errno::exdev);
-    failed += opens_refuse("symbolic link", dev, joined("fd/", descriptor.c_text().view(), "/kernel/ostype"),
-                           joined("fd/", descriptor.c_text().view(), "/kernel"), Errno::exdev);
+    failed += opens_refuse("symbolic link", net, joined("lo/address"), joined("lo/statistics"), Errno::exdev);
+    failed += opens_refuse("absolute link", dev, joined("fd/", number, "/kernel/ostype"),
+                           joined("fd/", number, "/kernel"), Errno::exdev);
     failed += opens_refuse("magic link", proc, joined("self/root/proc/sys/kernel/ostype"), joined("self/root/dev"),
                            Errno::eloop);
+    return failed;
+}
+
+// The doors of one entry under one escape: unlink_at, make_directory_at and
+// the two forms of commit_atomic_at take missing, a path of an entry that is
+// not there, and has_entry_at takes present, a path of an entry that is
+// there.  A commit takes the escape as its source, with the target
+// no-target, and as its target, with the source no-entry.  Each door gives
+// expected.  It gives the count of the doors that did not.
+[[nodiscard]] int entry_doors_refuse(fixy::TextView escape, fs::Dirfd const& dir, PathBuffer const& missing,
+                                     PathBuffer const& present, Errno expected) {
+    IoBlockCtx const ctx{eff::testing::test()};
+    using Replacing = fs::atomicity::Rename;
+    using NoReplace = fs::atomicity::RenameAt2NoReplace;
+    int failed = 0;
+    if (Errno const given = error_of(fs::unlink_at(ctx, dir, missing.c_text())); given != expected) {
+        failed += refused_badly(escape, "unlink_at", given, expected);
+    }
+    if (Errno const given = error_of(fs::make_directory_at(ctx, dir, missing.c_text())); given != expected) {
+        failed += refused_badly(escape, "make_directory_at", given, expected);
+    }
+    if (Errno const given = error_of(fs::has_entry_at(ctx, dir, present.c_text())); given != expected) {
+        failed += refused_badly(escape, "has_entry_at", given, expected);
+    }
+    if (Errno const given = error_of(fs::commit_atomic_at<Replacing>(ctx, dir, missing.c_text(), "no-target"));
+        given != expected) {
+        failed += refused_badly(escape, "commit_atomic_at<Rename> from the escape", given, expected);
+    }
+    if (Errno const given = error_of(fs::commit_atomic_at<Replacing>(ctx, dir, "no-entry", missing.c_text()));
+        given != expected) {
+        failed += refused_badly(escape, "commit_atomic_at<Rename> to the escape", given, expected);
+    }
+    if (Errno const given = error_of(fs::commit_atomic_at<NoReplace>(ctx, dir, missing.c_text(), "no-target"));
+        given != expected) {
+        failed += refused_badly(escape, "commit_atomic_at<RenameAt2NoReplace> from the escape", given, expected);
+    }
+    if (Errno const given = error_of(fs::commit_atomic_at<NoReplace>(ctx, dir, "no-entry", missing.c_text()));
+        given != expected) {
+        failed += refused_badly(escape, "commit_atomic_at<RenameAt2NoReplace> to the escape", given, expected);
+    }
+    return failed;
+}
+
+// Each door of one entry refuses each escape, and four more forms of a path
+// that leaves the directory: a bare "..", a ".." part at the end, a slash at
+// the end, and the name of an entry of "/".  The last form takes a Dirfd of
+// "/", because the target of the escape must be on the mount of the
+// directory.  /proc of the last form is a mount point, so a rename of it
+// gives ebusy, and no door changes it.
+[[nodiscard]] int each_entry_door_refuses_each_escape() {
+    fs::Dirfd const proc_sys = directory_at("/proc/sys");
+    fs::Dirfd const proc = directory_at("/proc");
+    fs::Dirfd const net = directory_at("/sys/class/net");
+    fs::Dirfd const root = directory_at("/");
+
+    int failed = entry_doors_refuse("absolute", proc_sys, joined("/proc/sys/kernel/no-entry"),
+                                    joined("/proc/sys/kernel/ostype"), Errno::exdev);
+    failed += entry_doors_refuse("dot-dot", proc_sys, joined("kernel/../../sys/kernel/no-entry"),
+                                 joined("kernel/../../sys/kernel/ostype"), Errno::exdev);
+    failed += entry_doors_refuse("symbolic link", net, joined("lo/no-entry"), joined("lo/address"), Errno::exdev);
+    failed += entry_doors_refuse("magic link", proc, joined("self/root/proc/sys/kernel/no-entry"),
+                                 joined("self/root/proc/sys/kernel/ostype"), Errno::eloop);
+    failed += entry_doors_refuse("bare dot-dot", proc_sys, joined(".."), joined(".."), Errno::exdev);
+    failed +=
+        entry_doors_refuse("final dot-dot", proc_sys, joined("kernel/../.."), joined("kernel/../.."), Errno::exdev);
+    failed += entry_doors_refuse("final slash", proc_sys, joined("../no-entry/"), joined("../sys/"), Errno::exdev);
+    failed += entry_doors_refuse("entry of the root", root, joined("/proc"), joined("/proc"), Errno::exdev);
     return failed;
 }
 
@@ -149,10 +225,47 @@ template <typename T>
     return 0;
 }
 
+// The doors of one entry take a ".." part and a symbolic link that stay
+// inside the directory.  has_entry_at sees an entry through them, and sees
+// /proc/self, a link at the last part, as an entry.  An unlink and a commit
+// of a missing entry reach the kernel, which gives enoent.
+[[nodiscard]] int each_entry_door_permits_a_path_inside() {
+    IoBlockCtx const ctx{eff::testing::test()};
+    fs::Dirfd const proc_sys = directory_at("/proc/sys");
+    fs::Dirfd const proc = directory_at("/proc");
+    bool const has_seen = fs::has_entry_at(ctx, proc_sys, "kernel/../kernel/ostype").value_or(false)
+                       && fs::has_entry_at(ctx, proc, "self/status").value_or(false)
+                       && fs::has_entry_at(ctx, proc, "self").value_or(false)
+                       && !fs::has_entry_at(ctx, proc_sys, "kernel/../kernel/no-entry").value_or(true);
+    if (!has_seen) {
+        fixy::report(fixy::Sink::Err, "has_entry_at did not see an entry through a path inside the directory\n");
+        return 1;
+    }
+    if (Errno const given = error_of(fs::unlink_at(ctx, proc_sys, "kernel/../kernel/no-entry"));
+        given != Errno::enoent) {
+        fixy::report(fixy::Sink::Err, "unlink_at of kernel/../kernel/no-entry gave errno {}\n",
+                     std::to_underlying(given));
+        return 1;
+    }
+    if (Errno const given = error_of(fs::commit_atomic_at<fs::atomicity::Rename>(
+            ctx, proc_sys, "kernel/../kernel/no-entry", "kernel/no-target"));
+        given != Errno::enoent) {
+        fixy::report(fixy::Sink::Err, "commit_atomic_at of kernel/../kernel/no-entry gave errno {}\n",
+                     std::to_underlying(given));
+        return 1;
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
-    if (int const rc = each_open_refuses_each_escape(); rc != 0) return rc;
+    int const failed = each_open_refuses_each_escape() + each_entry_door_refuses_each_escape();
+    if (failed != 0) {
+        fixy::report(fixy::Sink::Err, "{} doors did not refuse an escape\n", failed);
+        return 1;
+    }
     if (int const rc = each_open_permits_a_path_inside(); rc != 0) return rc;
+    if (int const rc = each_entry_door_permits_a_path_inside(); rc != 0) return rc;
     return 0;
 }

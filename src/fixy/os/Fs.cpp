@@ -72,20 +72,121 @@ UnitResult sync_all_(int descriptor) noexcept {
     return unit_of(word);
 }
 
-UnitResult rename_replacing_at_(int directory, char const* from, char const* to) noexcept {
+namespace {
+
+// The rename of a commit: renameat, which replaces a file at the target, or
+// renameat2 with RENAME_NOREPLACE, which gives eexist for it.
+enum class RenameKind : std::uint8_t {
+    replacing,
+    no_replace,
+};
+
+// Renames FROM under FROM_DIRECTORY to TO under TO_DIRECTORY.
+[[nodiscard]] UnitResult rename_entry(int from_directory, char const* from, int to_directory, char const* to,
+                                      RenameKind kind) noexcept {
     long word = 0;
     do {
-        word = os::raw_syscall(os::Syscall::renameat, directory, from, directory, to);
+        word = kind == RenameKind::replacing
+                 ? os::raw_syscall(os::Syscall::renameat, from_directory, from, to_directory, to)
+                 : os::raw_syscall(os::Syscall::renameat2, from_directory, from, to_directory, to, RENAME_NOREPLACE);
     } while (word == kInterrupted);
     return unit_of(word);
 }
 
-UnitResult rename_no_replace_at_(int directory, char const* from, char const* to) noexcept {
+// Removes the entry NAME of DIRECTORY, which is no directory.
+[[nodiscard]] UnitResult unlink_entry(int directory, char const* name) noexcept {
     long word = 0;
     do {
-        word = os::raw_syscall(os::Syscall::renameat2, directory, from, directory, to, RENAME_NOREPLACE);
+        word = os::raw_syscall(os::Syscall::unlinkat, directory, name, 0);
     } while (word == kInterrupted);
     return unit_of(word);
+}
+
+// Makes the directory NAME of DIRECTORY with the permission bits MODE.
+[[nodiscard]] UnitResult make_directory_entry(int directory, char const* name, std::uint32_t mode) noexcept {
+    long word = 0;
+    do {
+        word = os::raw_syscall(os::Syscall::mkdirat, directory, name, mode);
+    } while (word == kInterrupted);
+    return unit_of(word);
+}
+
+// The open flags of a directory part (THE FINAL NAME of fixy/os/Fs.h).  The
+// descriptor of O_PATH is the directory of a call of the *at family, and the
+// open reads no data of the directory.
+constexpr int kDirectoryPartFlags = os::kOpenPath | os::kOpenDirectory | os::kOpenCloseOnExec;
+
+// Gives ACT(PARENT, NAME), where PARENT is the descriptor of the directory
+// PART beneath DIRECTORY.  The door closes PARENT after ACT.
+template <class T, class Act>
+[[nodiscard]] core::Result<T, os::Errno> act_in_part(int directory, char const* part, char const* name,
+                                                     Act const& act) noexcept {
+    return open_beneath_(directory, part, kDirectoryPartFlags, 0)
+        .match(
+            [&](int parent) -> core::Result<T, os::Errno> {
+                core::Result<T, os::Errno> acted = act(parent, name);
+                close_descriptor_(parent);
+                return acted;
+            },
+            [](os::Errno error) -> core::Result<T, os::Errno> { return core::err(error); });
+}
+
+// Gives ACT(PARENT, NAME) for the split of PATH beneath DIRECTORY (THE FINAL
+// NAME of fixy/os/Fs.h): PARENT is the descriptor of the directory part, or
+// DIRECTORY for a path with no directory part, and NAME is the final name.
+// The final name is the rest of PATH after its directory part, so it keeps
+// the zero of PATH.  Complexity: linear in the size of the path, and one
+// open and one close for a path with a directory part.
+template <class T, class Act>
+[[nodiscard]] core::Result<T, os::Errno> act_on_final_name(int directory, core::CText path, Act const& act) noexcept {
+    FinalSplit const split = split_final_name_(path.view());
+    char const* const text = core::detail::c_text_first_(path);
+    if (split.is_whole) return act_in_part<T>(directory, text, ".", act);
+    char const* const name = text + split.final_at;
+    if (split.parent.size() == 0) return act(directory, name);
+    os::PathText<::fixy::kPathBytes> part{};
+    if (part.append(split.parent).is_err()) return core::err(os::Errno::enametoolong);
+    return act_in_part<T>(directory, core::detail::c_text_first_(part.c_text()), name, act);
+}
+
+// Renames FROM to TO, the two beneath DIRECTORY.  Two paths whose directory
+// parts are the same text take one open of that directory, so the rename
+// stays in one directory.
+[[nodiscard]] UnitResult rename_beneath(int directory, core::CText from, core::CText to, RenameKind kind) noexcept {
+    FinalSplit const from_split = split_final_name_(from.view());
+    FinalSplit const to_split = split_final_name_(to.view());
+    bool const is_one_part = !from_split.is_whole && !to_split.is_whole && from_split.parent == to_split.parent;
+    if (is_one_part) {
+        char const* const to_name = core::detail::c_text_first_(to) + to_split.final_at;
+        return act_on_final_name<core::Unit>(directory, from, [to_name, kind](int parent, char const* from_name) {
+            return rename_entry(parent, from_name, parent, to_name, kind);
+        });
+    }
+    return act_on_final_name<core::Unit>(
+        directory, from, [directory, to, kind](int from_parent, char const* from_name) {
+            return act_on_final_name<core::Unit>(
+                directory, to, [from_parent, from_name, kind](int to_parent, char const* to_name) {
+                    return rename_entry(from_parent, from_name, to_parent, to_name, kind);
+                });
+        });
+}
+
+}  // namespace
+
+UnitResult rename_replacing_at_(int directory, char const* from, char const* to) noexcept {
+    return rename_entry(directory, from, directory, to, RenameKind::replacing);
+}
+
+UnitResult rename_no_replace_at_(int directory, char const* from, char const* to) noexcept {
+    return rename_entry(directory, from, directory, to, RenameKind::no_replace);
+}
+
+UnitResult rename_replacing_beneath_(int directory, core::CText from, core::CText to) noexcept {
+    return rename_beneath(directory, from, to, RenameKind::replacing);
+}
+
+UnitResult rename_no_replace_beneath_(int directory, core::CText from, core::CText to) noexcept {
+    return rename_beneath(directory, from, to, RenameKind::no_replace);
 }
 
 core::Result<int, os::Errno> open_beneath_(int directory, char const* path, int flags, std::uint32_t mode) noexcept {
@@ -101,20 +202,28 @@ core::Result<int, os::Errno> open_beneath_(int directory, char const* path, int 
     });
 }
 
-UnitResult unlink_at_(int directory, char const* path) noexcept {
-    long word = 0;
-    do {
-        word = os::raw_syscall(os::Syscall::unlinkat, directory, path, 0);
-    } while (word == kInterrupted);
-    return unit_of(word);
+UnitResult unlink_beneath_(int directory, core::CText path) noexcept {
+    return act_on_final_name<core::Unit>(directory, path,
+                                         [](int parent, char const* name) { return unlink_entry(parent, name); });
 }
 
-UnitResult make_directory_at_(int directory, char const* path, std::uint32_t mode) noexcept {
-    long word = 0;
-    do {
-        word = os::raw_syscall(os::Syscall::mkdirat, directory, path, mode);
-    } while (word == kInterrupted);
-    return unit_of(word);
+UnitResult make_directory_beneath_(int directory, core::CText path, std::uint32_t mode) noexcept {
+    return act_on_final_name<core::Unit>(
+        directory, path, [mode](int parent, char const* name) { return make_directory_entry(parent, name, mode); });
+}
+
+core::Result<bool, os::Errno> has_entry_beneath_(int directory, core::CText path) noexcept {
+    constexpr int kEntryFlags = os::kOpenPath | os::kOpenNoFollow | os::kOpenCloseOnExec;
+    return open_beneath_(directory, core::detail::c_text_first_(path), kEntryFlags, 0)
+        .match(
+            [](int entry) -> core::Result<bool, os::Errno> {
+                close_descriptor_(entry);
+                return true;
+            },
+            [](os::Errno error) -> core::Result<bool, os::Errno> {
+                if (error == os::Errno::enoent) return false;
+                return core::err(error);
+            });
 }
 
 core::Result<bool, os::Errno> has_entry_at_(int directory, char const* path) noexcept {

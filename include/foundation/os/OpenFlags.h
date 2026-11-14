@@ -58,6 +58,12 @@ inline constexpr int kOpenFullSync = 04010000;
 // (O_CLOEXEC), so no started program gets it.
 inline constexpr int kOpenCloseOnExec = 02000000;
 
+// The open gives a descriptor that names the entry and reads no data of it
+// (O_PATH).  A call of the *at family reads such a descriptor of a directory
+// as its directory.  With O_NOFOLLOW, a symbolic link at the last part of the
+// path opens as itself.
+inline constexpr int kOpenPath = 010000000;
+
 // The open fails with ENOTDIR when the path names no directory (O_DIRECTORY).
 // The open fails with ELOOP when the last part of the path is a symbolic link
 // (O_NOFOLLOW).  The reads and the writes move the data between the device

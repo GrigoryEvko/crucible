@@ -49,10 +49,11 @@ struct PathTraversal {};
 //
 // A leading `/` is not rejected: an absolute root is a legitimate
 // choice.  Symlinks are not resolved either, and a check here could not
-// settle them anyway — the guarantee comes from opening the root with
-// O_NOFOLLOW and O_DIRECTORY and anchoring later opens to that
-// descriptor.  Nothing here touches the filesystem, so a path that
-// passes need not exist.
+// settle them anyway.  The guarantee comes from the doors under a Dirfd of
+// fixy/os/Fs.h: open_dirfd opens the root with O_NOFOLLOW and O_DIRECTORY,
+// and each door under the Dirfd resolves its path beneath the root, so no
+// absolute path, ".." part or symbolic link leaves it.  Nothing here touches
+// the filesystem, so a path that passes need not exist.
 enum class PathTraversalError : std::uint8_t {
     Empty = 0,
     TooLong = 1,

@@ -94,6 +94,27 @@ static_assert(!std::is_default_constructible_v<FileDoor> && !std::is_copy_constr
                   && !std::is_move_constructible_v<FileDoor>,
               "No object of the file door exists.  Its private members are the only calls to ::open.");
 
+// The split of a path for a call of one final name.  The directory part
+// keeps the slash after it, and the final name keeps the slashes at the end
+// of the path.  A last part "." or "..", and a path of slashes only, open the
+// whole path, so no final name is "..".
+[[nodiscard]] consteval bool splits(::foundation::core::TextView path, ::foundation::core::TextView parent,
+                                    std::size_t final_at, bool is_whole) {
+    FinalSplit const split = split_final_name_(path);
+    return split.parent == parent && split.final_at == final_at && split.is_whole == is_whole;
+}
+
+static_assert(splits("name", "", 0, false));
+static_assert(splits("a/b/name", "a/b/", 4, false));
+static_assert(splits("a//name//", "a//", 3, false));
+static_assert(splits("/name", "/", 1, false));
+static_assert(splits("..name", "", 0, false));
+static_assert(splits("", "", 0, false));
+static_assert(splits("..", "..", 0, true));
+static_assert(splits("a/..", "a/..", 0, true));
+static_assert(splits("a/./", "a/./", 0, true));
+static_assert(splits("///", "///", 0, true));
+
 // Each door takes one kind of handle by a const reference to its class: a
 // door of a descriptor takes an OwnedFd, and a door under a directory takes a
 // Dirfd.  No conversion joins the two classes, so no door takes the other

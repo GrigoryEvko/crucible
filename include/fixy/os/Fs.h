@@ -153,6 +153,9 @@ sync_data_(int descriptor) noexcept;
 sync_all_(int descriptor) noexcept;
 
 // Renames FROM to TO under DIRECTORY, and replaces a file at TO (renameat).
+// The kernel reads an absolute path and a ".." part with no limit, so only
+// commit_atomic, which takes the current directory and full paths, calls
+// this and the rename below.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 rename_replacing_at_(int directory, char const* from, char const* to) noexcept;
 
@@ -213,20 +216,95 @@ open_beneath_steps_(Step step) noexcept {
     return descriptor;
 }
 
-// Removes the entry PATH under DIRECTORY, which is no directory (unlinkat).
-[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-unlink_at_(int directory, char const* path) noexcept;
-
-// Makes the directory PATH under DIRECTORY with the permission bits MODE
-// (mkdirat).  An entry at PATH gives eexist.
-[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-make_directory_at_(int directory, char const* path, std::uint32_t mode) noexcept;
-
 // True when PATH names an entry under DIRECTORY, and false when no entry has
 // the name (newfstatat with kAtSymlinkNoFollow).  A symbolic link is an
-// entry, and the call does not follow it.
+// entry, and the call does not follow it.  The kernel reads an absolute path
+// and a ".." part with no limit, so only has_entry, which takes the current
+// directory and a full path, calls this.
 [[nodiscard]] ::foundation::core::Result<bool, ::foundation::os::Errno> has_entry_at_(int directory,
                                                                                       char const* path) noexcept;
+
+// THE FINAL NAME
+//   unlinkat, mkdirat and renameat take no resolve flags.  So the door of
+//   each of them opens the directory part of its path beneath the Dirfd
+//   (open_beneath_, with O_PATH), and it gives the call one final name under
+//   that directory.  The final name is the last part of the path, with the
+//   slashes after it, so the call keeps the meaning of a slash at the end.
+//   A path with no slash before its last part has no directory part, and
+//   the call takes the Dirfd itself.  A last part "." or "..", and a path of
+//   slashes only, name a directory and no entry of one.  For such a path the
+//   door opens the whole path beneath the Dirfd, and the final name is ".".
+//   So no final name holds a slash before its end, and no final name is
+//   "..".
+
+// The split of a path for a call of one final name (THE FINAL NAME).
+struct FinalSplit {
+    // The characters of the directory part, with the slash after them.  The
+    // text is empty when the final name is under the Dirfd itself, and it is
+    // the whole path when is_whole is true.
+    ::foundation::core::TextView parent{};
+    // The offset of the final name in the path.
+    std::size_t final_at = 0;
+    // True when the door opens the whole path, and the final name is ".".
+    bool is_whole = false;
+};
+
+// The split of PATH (THE FINAL NAME).  An empty path has no directory part,
+// and the kernel gives enoent for its empty final name.  Complexity: linear
+// in the size of the path.
+[[nodiscard]] constexpr FinalSplit split_final_name_(::foundation::core::TextView path) noexcept {
+    std::size_t index = 0;
+    std::size_t start = 0;
+    std::size_t end = 0;
+    bool is_after_slash = true;
+    for (char const character : path) {
+        if (character != '/') {
+            if (is_after_slash) start = index;
+            end = index + 1;
+        }
+        is_after_slash = character == '/';
+        index += 1;
+    }
+    if (end == 0) return FinalSplit{.parent = path, .final_at = 0, .is_whole = path.size() != 0};
+    ::foundation::core::TextView const last = path.window(start, end - start).expect("the last part is in the path");
+    if (last == ::foundation::core::TextView{"."} || last == ::foundation::core::TextView{".."}) {
+        return FinalSplit{.parent = path, .final_at = 0, .is_whole = true};
+    }
+    return FinalSplit{
+        .parent = path.window(0, start).expect("the directory part is in the path"),
+        .final_at = start,
+        .is_whole = false,
+    };
+}
+
+// Removes the entry PATH beneath DIRECTORY, which is no directory (unlinkat
+// of the final name).
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+unlink_beneath_(int directory, ::foundation::core::CText path) noexcept;
+
+// Makes the directory PATH beneath DIRECTORY with the permission bits MODE
+// (mkdirat of the final name).  An entry at PATH gives eexist.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+make_directory_beneath_(int directory, ::foundation::core::CText path, std::uint32_t mode) noexcept;
+
+// Renames FROM to TO, the two beneath DIRECTORY, and replaces a file at TO
+// (renameat of the two final names).  When the two directory parts are the
+// same text, the door opens that directory one time.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+rename_replacing_beneath_(int directory, ::foundation::core::CText from, ::foundation::core::CText to) noexcept;
+
+// The rename of rename_replacing_beneath_, which gives eexist when a file is
+// at TO (renameat2 with RENAME_NOREPLACE).
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+rename_no_replace_beneath_(int directory, ::foundation::core::CText from, ::foundation::core::CText to) noexcept;
+
+// True when PATH names an entry beneath DIRECTORY, and false when no entry
+// has the name.  The door opens the whole path with O_PATH and O_NOFOLLOW
+// beneath the directory, and it closes the descriptor.  So it reads no data,
+// and a symbolic link at the last part is an entry that the door does not
+// follow.
+[[nodiscard]] ::foundation::core::Result<bool, ::foundation::os::Errno>
+has_entry_beneath_(int directory, ::foundation::core::CText path) noexcept;
 
 // Reads each byte of DESCRIPTOR from its offset to the end of the file, and
 // puts the bytes after the characters of TEXT.  It gives the count of the
@@ -664,12 +742,15 @@ open_dirfd(Ctx const&, Path<tags::source::Sanitized> const& dir) noexcept {
 //   other calls of this header take, because each can park the caller on
 //   the disk.
 //
-//   An open reads its path beneath the directory (detail::open_beneath_).  A
-//   path that leaves the directory gives exdev: an absolute path, a ".." part
-//   that climbs above the directory, or a symbolic link whose target is
-//   outside it.  A magic link of procfs, such as /proc/self/root, gives
-//   eloop.  A ".." part and a symbolic link in a middle part that stay inside
-//   the directory are permitted.
+//   Each call reads its path beneath the directory.  An open gives the path
+//   to detail::open_beneath_.  A remove, a make, a rename and a check of an
+//   entry open the directory part of the path beneath the directory, and the
+//   kernel acts on one final name under it (THE FINAL NAME of the detail
+//   calls).  A path that leaves the directory gives exdev: an absolute path,
+//   a ".." part that climbs above the directory, or a symbolic link whose
+//   target is outside it.  A magic link of procfs, such as /proc/self/root,
+//   gives eloop.  A ".." part and a symbolic link in a middle part that stay
+//   inside the directory are permitted.
 //
 //   A Dirfd that holds no descriptor, such as a Dirfd that a move emptied,
 //   gives ebadf, and the call makes no system call.  The kernel reads an
@@ -712,10 +793,8 @@ commit_atomic_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText from, :
     if (!dir.is_open()) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    char const* const source = ::foundation::core::detail::c_text_first_(from);
-    char const* const target = ::foundation::core::detail::c_text_first_(to);
-    return std::is_same_v<Atomicity, atomicity::Rename> ? detail::rename_replacing_at_(dir.get(), source, target)
-                                                        : detail::rename_no_replace_at_(dir.get(), source, target);
+    return std::is_same_v<Atomicity, atomicity::Rename> ? detail::rename_replacing_beneath_(dir.get(), from, to)
+                                                        : detail::rename_no_replace_beneath_(dir.get(), from, to);
 }
 
 // Removes the file at path under dir.  A directory at path gives eisdir.
@@ -726,7 +805,7 @@ unlink_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noexcept
     if (!dir.is_open()) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return detail::unlink_at_(dir.get(), ::foundation::core::detail::c_text_first_(path));
+    return detail::unlink_beneath_(dir.get(), path);
 }
 
 // Makes the directory at path under dir, with the permission bits perms.
@@ -738,7 +817,7 @@ make_directory_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path, 
     if (!dir.is_open()) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return detail::make_directory_at_(dir.get(), ::foundation::core::detail::c_text_first_(path), perms);
+    return detail::make_directory_beneath_(dir.get(), path, perms);
 }
 
 // True when an entry is at path under dir, and false when no entry is
@@ -750,7 +829,7 @@ has_entry_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noexc
     if (!dir.is_open()) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return detail::has_entry_at_(dir.get(), ::foundation::core::detail::c_text_first_(path));
+    return detail::has_entry_beneath_(dir.get(), path);
 }
 
 // True when an entry is at path, and false when no entry is there.  The
