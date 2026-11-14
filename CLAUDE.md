@@ -46,7 +46,8 @@ Tests and benches move onto the base after step 1. They do not stop step 2.
 
 ### Rules for the scope of work
 
-- The base is need-driven. Add a base type or an operation when product code needs it. Do not add an operation that no caller uses.
+- Build the base ahead of its callers. It holds the common patterns of advanced programming languages and type systems, each in a clean and safe form.
+- Lack of use is not a reason to delete a part or not to build it. Keep each part that is useful for the infrastructure of an ML and HPC framework. If a part is not useful there, it can go, and you can look at it again later.
 - Each base type that you add has the full quality: safe, no hidden effect, zero cost on the hot path, with tests.
 - Do not add a guard rule, a plant, a ledger or a plugin rule, unless the owner asks for it.
 - Do not start a soundness campaign against the base, unless the owner asks for it.
