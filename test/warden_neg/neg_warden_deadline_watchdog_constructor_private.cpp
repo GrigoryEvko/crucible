@@ -9,7 +9,7 @@
 
 int main() {
     crucible::warden::Policy policy = crucible::warden::Policy::production();
-    crucible::warden::DeadlineWatchdog wd{nullptr, policy};
+    crucible::warden::DeadlineWatchdog wd{::fixy::none, policy};
     (void)wd;
     return 0;
 }

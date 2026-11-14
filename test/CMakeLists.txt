@@ -1121,10 +1121,10 @@ crucible_neg_compile_test(neg_hot_region_registry_handle_direct_ctor
     "HotRegionRegistryHandle::HotRegionRegistryHandle\\(\\). is private within this context"
     "declared private here")
 crucible_neg_compile_test(neg_deadline_watchdog_mint_bg_ctx
-    "no matching function for call to .mint_deadline_watchdog\\(fixy::BgLoadCtx, std::nullptr_t, crucible::warden::Policy&\\)."
+    "no matching function for call to .mint_deadline_watchdog\\(fixy::BgLoadCtx, const foundation::core::NoValue&, crucible::warden::Policy&\\)."
     "required for the satisfaction of .CtxFitsDeadlineWatchdogMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 crucible_neg_compile_test(neg_deadline_watchdog_mint_hot_fg_ctx
-    "no matching function for call to .mint_deadline_watchdog\\(const fixy::HotFgCtx&, std::nullptr_t, crucible::warden::Policy&\\)."
+    "no matching function for call to .mint_deadline_watchdog\\(const fixy::HotFgCtx&, const foundation::core::NoValue&, crucible::warden::Policy&\\)."
     "required for the satisfaction of .CtxFitsDeadlineWatchdogMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 
 # ─── §XXI Universal Mint Pattern for perf/ hubs ───────────────────
@@ -1281,8 +1281,13 @@ crucible_neg_compile_test(neg_hot_region_registry_mint_not_exec_ctx
     "constraint|constraints.*not satisfied"
     "CtxFitsHotRegionRegistryMint")
 crucible_neg_compile_test(neg_deadline_watchdog_mint_not_exec_ctx
-    "no matching function for call to .mint_deadline_watchdog\\(NotAnExecCtx, std::nullptr_t, crucible::warden::Policy&\\)."
+    "no matching function for call to .mint_deadline_watchdog\\(NotAnExecCtx, const foundation::core::NoValue&, crucible::warden::Policy&\\)."
     "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = NotAnExecCtx.")
+# The source of a watchdog is an Option of a Ref, so a raw null pointer is
+# no source.
+crucible_neg_compile_test(neg_deadline_watchdog_mint_raw_pointer_source
+    "no matching function for call to .mint_deadline_watchdog\\(fixy::ColdInitCtx, std::nullptr_t, crucible::warden::Policy&\\)."
+    "cannot convert .nullptr. .type .std::nullptr_t.. to type .crucible::warden::WatchdogSource.")
 
 # mimic::CogMimic comes only from mint_cog_mimic.  Each fixture reaches
 # one gate:
@@ -1606,7 +1611,7 @@ crucible_neg_compile_test(neg_perf_syscall_tp_btf_load_no_cap
 # watchdog with the constructor, and one calls the mint with no context.
 crucible_neg_compile_test(neg_warden_deadline_watchdog_constructor_private
     "is private within this context"
-    ".constexpr crucible::warden::DeadlineWatchdog::DeadlineWatchdog\\(const crucible::perf::Senses\\*, const crucible::warden::Policy&\\). is private")
+    ".constexpr crucible::warden::DeadlineWatchdog::DeadlineWatchdog\\(crucible::warden::WatchdogSource, const crucible::warden::Policy&\\). is private")
 crucible_neg_compile_test(neg_warden_deadline_watchdog_mint_no_ctx
     "no matching function for call to .mint_deadline_watchdog\\(std::nullptr_t, crucible::warden::Policy&\\)."
     "candidate expects 3 arguments, 2 provided")

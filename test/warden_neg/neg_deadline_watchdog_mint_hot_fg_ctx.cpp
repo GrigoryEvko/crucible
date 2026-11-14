@@ -12,7 +12,7 @@ int main() {
     p.deadline_miss_budget = 100;
     p.watchdog_window_sec = 1;
     const ::fixy::HotFgCtx foreground = ::foundation::effects::testing::foreground();
-    auto watchdog = crucible::warden::mint_deadline_watchdog(foreground, /*senses=*/nullptr, p);
+    auto watchdog = crucible::warden::mint_deadline_watchdog(foreground, /*senses=*/::fixy::none, p);
     (void)watchdog;
     return 0;
 }

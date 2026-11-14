@@ -50,11 +50,11 @@ namespace crucible::warden {
 
 // The verdict, WatchdogVerdict, is in crucible/warden/WatchdogVerdict.h.
 
-// The telemetry pointer is borrowed, and what it points at must
-// outlive the watchdog. It is a raw pointer rather than a non-null
-// borrow type because a null source is part of the contract: a host
-// without the telemetry capability, or a test exercising the degraded
-// path, passes one deliberately.
+// The telemetry source is borrowed, and it must outlive the watchdog.
+// It is an Option of a Ref, because a watchdog with no source is part of
+// the contract: a host without the telemetry capability, or a test of the
+// degraded path, gives no source on purpose.  The Option has the size of
+// one pointer.
 
 // A poll belongs to a background, start-up or test context. The hot
 // foreground is rejected.  A poll reads the boot clock, so the gate is
@@ -74,15 +74,18 @@ concept CtxFitsDeadlineWatchdogMint =
 
 class DeadlineWatchdog;
 
+// The telemetry source of a watchdog, or no source.
+using WatchdogSource = ::fixy::Option<::fixy::Ref<::crucible::perf::Senses const>>;
+
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsDeadlineWatchdogMint<Ctx>
-[[nodiscard]] constexpr DeadlineWatchdog mint_deadline_watchdog(Ctx const&, const ::crucible::perf::Senses* senses,
+[[nodiscard]] constexpr DeadlineWatchdog mint_deadline_watchdog(Ctx const&, WatchdogSource senses,
                                                                 const Policy& policy) noexcept;
 
 class DeadlineWatchdog {
     // The constructor is private, and the mint is its one friend.  So a
     // watchdog comes only from a context that owns the Init atom.
-    constexpr explicit DeadlineWatchdog(const ::crucible::perf::Senses* senses, const Policy& policy) noexcept
+    constexpr explicit DeadlineWatchdog(WatchdogSource senses, const Policy& policy) noexcept
         : senses_{senses},
           miss_budget_{policy.deadline_miss_budget},
           window_ns_{static_cast<uint64_t>(policy.watchdog_window_sec) * 1000000000ull} {
@@ -94,7 +97,7 @@ class DeadlineWatchdog {
 
     template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsDeadlineWatchdogMint<Ctx>
-    friend constexpr DeadlineWatchdog mint_deadline_watchdog(Ctx const&, const ::crucible::perf::Senses* senses,
+    friend constexpr DeadlineWatchdog mint_deadline_watchdog(Ctx const&, WatchdogSource senses,
                                                              const Policy& policy) noexcept;
 
 public:
@@ -127,15 +130,14 @@ public:
             return WatchdogVerdict::InsufficientData;
         }
 
-        if (senses_ == nullptr) {
-            return WatchdogVerdict::InsufficientData;
-        }
-
-        auto sched = senses_->sched_switch();
+        // A watchdog with no source has no counter.  A source can also
+        // lack the counter, on an older kernel or without the capability
+        // to load it.  That is an absence of signal, not evidence of
+        // health.
+        auto sched = senses_.match(
+            [](::fixy::Ref<::crucible::perf::Senses const> senses) noexcept { return senses->sched_switch(); },
+            []() noexcept { return ::fixy::Option<::fixy::Ref<::crucible::perf::SchedSwitch const>>{}; });
         if (sched.is_none()) {
-            // The counter is not attached, which happens on an older
-            // kernel or without the capability to load it. That is an
-            // absence of signal, not evidence of health.
             return WatchdogVerdict::InsufficientData;
         }
 
@@ -229,7 +231,7 @@ public:
     ~DeadlineWatchdog() noexcept = default;
 
 private:
-    const ::crucible::perf::Senses* senses_ = nullptr;
+    WatchdogSource senses_{};
     uint32_t miss_budget_ = 0;
     uint64_t window_ns_ = 0;
     uint64_t window_started_ns_ = 0;  // zero until the first observation
@@ -239,7 +241,7 @@ private:
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsDeadlineWatchdogMint<Ctx>
-[[nodiscard]] constexpr DeadlineWatchdog mint_deadline_watchdog(Ctx const&, const ::crucible::perf::Senses* senses,
+[[nodiscard]] constexpr DeadlineWatchdog mint_deadline_watchdog(Ctx const&, WatchdogSource senses,
                                                                 const Policy& policy) noexcept {
     return DeadlineWatchdog{senses, policy};
 }

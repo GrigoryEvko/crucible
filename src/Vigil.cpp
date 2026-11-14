@@ -57,7 +57,9 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
             startup.cap().alloc,
             ::crucible::perf::Senses::load_subset(startup, ::crucible::perf::SensesMask{.sched_switch = true}));
         wd_ = ::fixy::some(::fixy::mint_box<::crucible::warden::DeadlineWatchdog>(
-            startup.cap().alloc, ::crucible::warden::mint_deadline_watchdog(startup, &*senses, cfg_.watchdog_policy)));
+            startup.cap().alloc,
+            ::crucible::warden::mint_deadline_watchdog(startup, ::crucible::warden::WatchdogSource::some(senses.view()),
+                                                       cfg_.watchdog_policy)));
         senses_ = ::fixy::some(std::move(senses));
     }
 

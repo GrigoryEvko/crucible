@@ -88,12 +88,12 @@ int main() {
     // many times it is asked for.
     {
         Policy policy = Policy::production();  // a nonzero budget
-        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
+        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/::fixy::none, policy);
         for (int i = 0; i < 5; ++i) {
             const auto v = watchdog.observe(runner);
             if (v != WatchdogVerdict::InsufficientData) {
                 ::fixy::report(::fixy::Sink::Err,
-                               "nullptr-Senses Watchdog should return "
+                               "a watchdog with no source should return "
                                "InsufficientData; got {} on iteration {}\n",
                                watchdog_verdict_name(v), i);
                 ++failures;
@@ -104,7 +104,7 @@ int main() {
         if (watchdog.baseline_count() != 0u || watchdog.latest_count() != 0u || watchdog.window_started_ns() != 0u
             || watchdog.misses_in_window() != 0u) {
             std::fprintf(stderr,
-                         "nullptr-Senses Watchdog diagnostics should be all "
+                         "the diagnostics of a watchdog with no source should be all "
                          "zero; got baseline=%llu latest=%llu window=%llu\n",
                          static_cast<unsigned long long>(watchdog.baseline_count()),
                          static_cast<unsigned long long>(watchdog.latest_count()),
@@ -117,7 +117,7 @@ int main() {
     {
         Policy policy = Policy::none();
         policy.deadline_miss_budget = 0;
-        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
+        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/::fixy::none, policy);
         const auto v = watchdog.observe(runner);
         if (v != WatchdogVerdict::InsufficientData) {
             ::fixy::report(::fixy::Sink::Err, "budget=0 should disable watchdog; got {}\n", watchdog_verdict_name(v));
@@ -136,7 +136,7 @@ int main() {
     {
         Policy policy = Policy::production();
         policy.watchdog_window_sec = 0;
-        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
+        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/::fixy::none, policy);
         for (int i = 0; i < 5; ++i) {
             const auto v = watchdog.observe(runner);
             if (v != WatchdogVerdict::InsufficientData) {
@@ -184,7 +184,7 @@ int main() {
 
     {
         Policy policy = Policy::production();
-        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
+        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/::fixy::none, policy);
         if (watchdog.miss_budget() != policy.deadline_miss_budget) {
             std::fprintf(stderr, "miss_budget() = %u; expected %u\n", watchdog.miss_budget(),
                          policy.deadline_miss_budget);
@@ -208,7 +208,7 @@ int main() {
     // observation.
     {
         Policy policy = Policy::production();
-        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
+        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/::fixy::none, policy);
         (void)watchdog.observe(runner);  // no source, so no state changes
         watchdog.reset();
         if (watchdog.baseline_count() != 0u || watchdog.latest_count() != 0u || watchdog.window_started_ns() != 0u) {
@@ -225,7 +225,7 @@ int main() {
         const ::fixy::Result<::fixy::BootClockBytes<uint64_t>, ::foundation::os::Errno> failed_read{
             ::fixy::err(::foundation::os::Errno::eio)};
         Policy policy = Policy::production();
-        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
+        DeadlineWatchdog watchdog = mint_deadline_watchdog(startup, /*senses=*/::fixy::none, policy);
         if (watchdog.observe_at(runner, failed_read) != WatchdogVerdict::InsufficientData) {
             std::fprintf(stderr, "a failed clock read must give InsufficientData\n");
             ++failures;
@@ -241,7 +241,8 @@ int main() {
         if (senses.sched_switch().is_none()) {
             failures += crucible::test::verdict_of_no_load("warden::DeadlineWatchdog with a sched_switch source");
         } else {
-            DeadlineWatchdog sensing = mint_deadline_watchdog(startup, &senses, policy);
+            DeadlineWatchdog sensing =
+                mint_deadline_watchdog(startup, crucible::warden::WatchdogSource::some(::fixy::to(senses)), policy);
             const auto boot_clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Boot>(runner);
             const auto reading = boot_clock.read();
             if (reading.is_err()) {
@@ -270,7 +271,7 @@ int main() {
     // A watchdog moved into a new home keeps working.
     {
         Policy policy = Policy::production();
-        DeadlineWatchdog watchdog_src = mint_deadline_watchdog(startup, /*senses=*/nullptr, policy);
+        DeadlineWatchdog watchdog_src = mint_deadline_watchdog(startup, /*senses=*/::fixy::none, policy);
         DeadlineWatchdog watchdog_sink = std::move(watchdog_src);
         const auto v = watchdog_sink.observe(runner);
         if (v != WatchdogVerdict::InsufficientData) {
