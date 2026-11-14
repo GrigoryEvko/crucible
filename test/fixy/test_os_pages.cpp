@@ -206,6 +206,30 @@ void populate_refuses_a_range_with_no_write_access() {
     CRUCIBLE_FATAL_INVARIANT(pages::populate_pages(kStartup, core::bytes(kReadOnlyWords)).is_err());
 }
 
+// A record with padding, which bytes() refuses.
+struct PaddedRecord {
+    std::uint8_t tag = 0;
+    std::uint64_t value = 0;
+};
+
+// storage_of gives the bytes that hold an object or a run of elements, from
+// the address of the first byte.  An empty run gives no byte.
+void storage_of_gives_the_bytes_of_an_object_and_of_a_run() {
+    PaddedRecord const object{};
+    core::View<std::byte const> const storage = pages::storage_of(object);
+    CRUCIBLE_FATAL_INVARIANT(storage.size() == sizeof(PaddedRecord));
+    CRUCIBLE_FATAL_INVARIANT(core::address_of(core::to(object))
+                             == core::address_of(storage.get(0).expect("the storage holds a first byte")));
+
+    core::FixedArray<PaddedRecord, 4> const records{};
+    core::View<PaddedRecord const> const elements = records.view();
+    core::View<std::byte const> const run_storage = pages::storage_of(elements);
+    CRUCIBLE_FATAL_INVARIANT(run_storage.size() == 4 * sizeof(PaddedRecord));
+    CRUCIBLE_FATAL_INVARIANT(core::address_of(elements.get(0).expect("the run holds a first element"))
+                             == core::address_of(run_storage.get(0).expect("the storage holds a first byte")));
+    CRUCIBLE_FATAL_INVARIANT(pages::storage_of(core::View<PaddedRecord const>{}).size() == 0);
+}
+
 // The exchange gives the setting before the call.  A second exchange with
 // the same setting gives that setting back, so the set and the read reach
 // the right options of prctl.  The last exchange puts the first setting back.
@@ -233,6 +257,7 @@ int main() {
     huge_page_advice_covers_the_whole_huge_pages();
     populate_faults_in_each_page_of_the_range();
     populate_refuses_a_range_with_no_write_access();
+    storage_of_gives_the_bytes_of_an_object_and_of_a_run();
     thp_exchange_reads_and_sets_the_setting();
     return 0;
 }

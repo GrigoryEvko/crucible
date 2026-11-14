@@ -29,4 +29,18 @@ static_assert(static_cast<std::uint32_t>(ThpSetting::allowed) == 0
                   && static_cast<std::uint32_t>(ThpSetting::refused) == 1,
               "the enumerators are the words of PR_GET_THP_DISABLE.");
 
+// The storage of an object has the size of the object, also for an object
+// with padding, which bytes() refuses.  The fixture
+// neg_os_pages_storage_of_temporary shows that the storage of a temporary is
+// refused.
+struct PaddedRecord {
+    std::uint8_t tag = 0;
+    std::uint64_t value = 0;
+};
+inline constexpr PaddedRecord kRecord{};
+static_assert(
+    std::is_same_v<decltype(storage_of(kRecord)), ::foundation::core::View<std::byte const, sizeof(PaddedRecord)>>);
+static_assert(std::is_same_v<decltype(storage_of(::foundation::core::View<PaddedRecord const>{})),
+                             ::foundation::core::View<std::byte const>>);
+
 }  // namespace fixy::pages::detail::pages_surface_invariants

@@ -18,6 +18,7 @@
 #include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/ScopedView.h>
+#include <fixy/os/Pages.h>
 #include <foundation/AlignedBytes.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
@@ -94,11 +95,9 @@ struct CRUCIBLE_OWNER PoolAllocator {
             // A read of unwritten pool memory stands out.
             ::fixy::fill(pool_.view(), uint8_t{0xCD});
 #endif
-            // The region covers the whole allocation, which is the pool
-            // rounded up to its alignment.  The preconditions bound the sum
-            // far below a wrap.
-            const uint64_t allocated_bytes = (plan.pool_bytes + page_align - 1) & ~(page_align - 1);
-            crucible::warden::register_hot_region(pool_address_(), allocated_bytes, is_huge);
+            // The region holds the bytes of the pool, and not the bytes that
+            // the round up to the alignment adds after them.
+            crucible::warden::register_hot_region(::fixy::pages::storage_of(pool_.view()), is_huge);
         }
 
         if (plan_slots > 0) {
@@ -152,7 +151,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // A cold callee there makes GCC compile each function that owns a pool
     // as an unlikely function.
     void destroy() noexcept {
-        if (pool_.size() > 0) crucible::warden::unregister_hot_region(pool_address_());
+        crucible::warden::unregister_hot_region(::fixy::pages::storage_of(pool_.view()));
         pool_.reset();
         table_ = ::fixy::HeapArray<void*>{};
         num_external_ = 0;
@@ -286,7 +285,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // It cannot be refreshed by assignment either.
     [[nodiscard, gnu::cold]]
     ::foundation::AlignedBytes detach(InitializedView const&) noexcept {
-        if (pool_.size() > 0) crucible::warden::unregister_hot_region(pool_address_());
+        crucible::warden::unregister_hot_region(::fixy::pages::storage_of(pool_.view()));
         // The bytes move out before the reset, so the reset does not give
         // back a block whose ownership has already moved to the return value.
         ::foundation::AlignedBytes detached = std::move(pool_);

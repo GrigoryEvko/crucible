@@ -49,6 +49,7 @@
 #include <fixy/Stale.h>
 #include <fixy/Tagged.h>
 #include <fixy/atoms/Hw.h>
+#include <fixy/os/Pages.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
@@ -204,8 +205,10 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         return RingSlot::check(counter & MASK).expect("a masked counter of the ring is below CAPACITY");
     }
 
-    TraceRing() noexcept { crucible::warden::register_hot_region(this, sizeof(*this), /*huge=*/true); }
-    ~TraceRing() { crucible::warden::unregister_hot_region(this); }
+    TraceRing() noexcept {
+        crucible::warden::register_hot_region(::fixy::pages::storage_of(*this), /*huge_hint=*/true);
+    }
+    ~TraceRing() { crucible::warden::unregister_hot_region(::fixy::pages::storage_of(*this)); }
     TraceRing(const TraceRing&) = delete("SPSC ring is pinned to a producer/consumer thread pair");
     TraceRing& operator=(const TraceRing&) = delete("SPSC ring is pinned to a producer/consumer thread pair");
     TraceRing(TraceRing&&) = delete("SPSC ring is pinned to a producer/consumer thread pair");

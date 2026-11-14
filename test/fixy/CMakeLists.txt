@@ -4711,6 +4711,11 @@ fixy_neg_compile_test(neg_os_mmap_release_erased_mapping
 # is a row of a closed table, so no class of a caller brings a value of
 # its own, and a specialization of a variable template of advice values
 # names nothing.
+# storage_of of fixy/os/Pages.h refuses a temporary, because the View of its
+# storage dangles at the end of the full expression.
+fixy_neg_compile_test(neg_os_pages_storage_of_temporary
+  "use of deleted function .void fixy::pages::storage_of\\(const T&&\\) \\[with T = PaddedRecord\\]."
+  "the storage of a temporary object ends at the end of the full expression")
 fixy_neg_compile_test(neg_os_mmap_free_on_safe_surface
   "no matching function for call to .advise<fixy::mmap::advice::Free>\\("
   "the expression .!\\(DiscardsPages<Advice>\\) \\[with Advice = fixy::mmap::advice::Free\\]. evaluated to .false.")

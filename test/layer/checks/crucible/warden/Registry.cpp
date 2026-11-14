@@ -17,4 +17,11 @@ static_assert(!CtxFitsHotRegionRegistryMint<::fixy::HotFgCtx>);
 static_assert(!std::is_default_constructible_v<HotRegionRegistryHandle>,
               "A handle built without the mint would carry an authorization nobody checked.");
 
+// The registry is a static of the process with no end at exit.  A withdrawal
+// from a destructor that runs after the end of main then finds a live list.
+static_assert(std::is_trivially_destructible_v<HotRegionRegistry::Snapshot>
+                  && std::is_trivially_destructible_v<::fixy::spin::UnwitnessedBlockingLock>,
+              "The list and the lock of the registry must end with no code, so the static of the registry has no end "
+              "at exit.");
+
 }  // namespace crucible::warden

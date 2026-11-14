@@ -25,6 +25,7 @@
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <fixy/Stale.h>
+#include <fixy/os/Pages.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
@@ -138,12 +139,10 @@ struct CRUCIBLE_OWNER MetaLog {
         // one is not a trade a runtime constructor can make. MADV_COLLAPSE,
         // which puts the stall where the caller chooses, is the shape to
         // reach for if huge pages are wanted later.
-        crucible::warden::register_hot_region(first_record_address_(),
-                                              crucible::warden::round_up_huge(CAPACITY * sizeof(TensorMeta)),
-                                              /*huge=*/true);
+        crucible::warden::register_hot_region(::fixy::pages::storage_of(records_), /*huge_hint=*/true);
     }
 
-    ~MetaLog() { crucible::warden::unregister_hot_region(first_record_address_()); }
+    ~MetaLog() { crucible::warden::unregister_hot_region(::fixy::pages::storage_of(records_)); }
 
     MetaLog(const MetaLog&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
     MetaLog& operator=(const MetaLog&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
@@ -299,10 +298,6 @@ private:
     [[nodiscard]] TensorMeta const& record_at_(uint64_t index) const noexcept {
         return records_.at(::fixy::Index<CAPACITY>::check(index & MASK).expect("a masked slot is below the capacity"));
     }
-
-    // The address of the first record, for the table of hot regions.  The
-    // buffer always holds CAPACITY records.
-    [[nodiscard]] void* first_record_address_() const noexcept { return &records_.at(::fixy::index<0>()); }
 
     // Copies the count records of src from src_at into the buffer from at.
     // The caller gives two windows that fit, and the count of records_ is in

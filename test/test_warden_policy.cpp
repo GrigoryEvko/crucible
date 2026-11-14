@@ -24,6 +24,8 @@
 #include <crucible/warden/Registry.h>
 #include <crucible/warden/CpuTopology.h>
 #include <fixy/Ctx.h>
+#include <fixy/concurrent/PermissionFork.h>
+#include <fixy/concurrent/PermissionedSpscChannel.h>
 #include <fixy/os/NumaPlacement.h>
 #include <fixy/os/Pages.h>
 #include <fixy/os/Sched.h>
@@ -440,35 +442,73 @@ void test_policy_production_degrades_gracefully() {
     CHECK(g.pinned_cpu() >= -1, "pinned_cpu is plausible after production()");
 }
 
+// The region of a snapshot that starts at the first byte of bytes, or no
+// region.
+[[nodiscard]] ::fixy::Option<crucible::warden::HotRegion> region_at(::fixy::View<std::byte const> bytes) noexcept {
+    ::fixy::Ref<std::byte const> const first = bytes.get(0).expect("the View holds a first byte");
+    for (crucible::warden::HotRegion const& region : crucible::warden::HotRegionRegistry::instance().snapshot()) {
+        auto const start = region.bytes.get(0);
+        for (auto const start_byte : start) {
+            if (::fixy::same_object(start_byte, first)) return ::fixy::some(region);
+        }
+    }
+    return ::fixy::none;
+}
+
+// The length of the region of a snapshot that starts at the first byte of
+// bytes, or zero for no region.
+[[nodiscard]] size_t registered_length(::fixy::View<std::byte const> bytes) noexcept {
+    return region_at(bytes).match([](crucible::warden::HotRegion region) noexcept { return region.bytes.size(); },
+                                  []() noexcept { return size_t{0}; });
+}
+
+// A region is known by its first byte.  A second registration at the same
+// first byte replaces the length and the hint, a withdrawal at a different
+// first byte changes nothing, and a withdrawal of a region keeps each other
+// region with its own length.
 void test_registry_basic() {
     using namespace crucible::warden;
 
     auto& reg = HotRegionRegistry::instance();
     const size_t baseline = reg.size();
 
-    alignas(64) unsigned char buf[4096]{};
-    register_hot_region(buf, sizeof(buf), /*huge=*/false);
+    alignas(64)::fixy::FixedArray<std::byte, 4096> buf{};
+    ::fixy::View<std::byte const> const bytes = buf.view();
+    register_hot_region(bytes, /*huge_hint=*/false);
     CHECK(reg.size() == baseline + 1, "one registration bumps size");
 
-    register_hot_region(buf, sizeof(buf), /*huge=*/true);
+    register_hot_region(bytes, /*huge_hint=*/true);
     CHECK(reg.size() == baseline + 1, "re-register same addr is an update, not a new slot");
+    CHECK(registered_length(bytes) == 4096, "len preserved on update");
+    CHECK(region_at(bytes).match([](HotRegion region) noexcept { return region.huge_hint; },
+                                 []() noexcept { return false; }),
+          "huge_hint updated to true");
 
-    auto snap = reg.snapshot();
-    bool found = false;
-    for (const auto& r : snap) {
-        if (r.bytes.size() != 0 && static_cast<const void*>(&*r.bytes.begin()) == static_cast<const void*>(buf)) {
-            CHECK(r.bytes.size() == sizeof(buf), "len preserved on update");
-            CHECK(r.huge_hint, "huge_hint updated to true");
-            found = true;
-            break;
-        }
-    }
-    CHECK(found, "registered region appears in snapshot");
+    register_hot_region(bytes.window(0, 1024).expect("the window fits"), /*huge_hint=*/false);
+    CHECK(reg.size() == baseline + 1, "a shorter region at the same first byte replaces the region");
+    CHECK(registered_length(bytes) == 1024, "the length of the second registration is the length");
 
-    unregister_hot_region(buf);
+    register_hot_region(::fixy::View<std::byte const>{}, /*huge_hint=*/false);
+    CHECK(reg.size() == baseline + 1, "an empty region registers nothing");
+
+    unregister_hot_region(bytes.window(1, 16).expect("the window fits"));
+    CHECK(reg.size() == baseline + 1, "a withdrawal at a different first byte changes nothing");
+
+    ::fixy::View<std::byte const> const second = bytes.window(1024, 1024).expect("the window fits");
+    ::fixy::View<std::byte const> const third = bytes.window(2048, 2048).expect("the window fits");
+    register_hot_region(second, /*huge_hint=*/false);
+    register_hot_region(third, /*huge_hint=*/false);
+    unregister_hot_region(bytes);
+    CHECK(reg.size() == baseline + 2, "unregister withdraws one region");
+    CHECK(registered_length(bytes) == 0, "the withdrawn region is not in the snapshot");
+    CHECK(registered_length(second) == 1024 && registered_length(third) == 2048,
+          "each other region keeps its own length");
+
+    unregister_hot_region(second);
+    unregister_hot_region(third);
     CHECK(reg.size() == baseline, "unregister restores size");
 
-    unregister_hot_region(buf);
+    unregister_hot_region(bytes);
     CHECK(reg.size() == baseline, "double-unregister is a no-op");
 }
 
@@ -478,10 +518,11 @@ void test_registry_basic() {
 void test_registry_applies_on_mint_hardening() {
     using namespace crucible::warden;
 
-    alignas(64) unsigned char buf[4096]{};
+    alignas(64)::fixy::FixedArray<std::byte, 4096> buf{};
+    ::fixy::View<std::byte const> const bytes = buf.view();
     const size_t baseline = HotRegionRegistry::instance().size();
 
-    register_hot_region(buf, sizeof(buf), /*huge=*/false);
+    register_hot_region(bytes, /*huge_hint=*/false);
     CHECK(HotRegionRegistry::instance().size() == baseline + 1, "buf registered");
 
     // This policy enables the region lock while staying on SCHED_OTHER,
@@ -495,19 +536,86 @@ void test_registry_applies_on_mint_hardening() {
     }
     ::unsetenv("CRUCIBLE_WARDEN_QUIET");
 
-    unregister_hot_region(buf);
+    unregister_hot_region(bytes);
     CHECK(HotRegionRegistry::instance().size() == baseline, "registry clean after unregister");
 }
 
-// A snapshot returns up to 256 regions, and the registry holds 256 slots.
-// Each padding byte of a region or a slot costs one store for each element of
-// the list (padding_bytes.h).  The slot is a private class, so the test names
-// it through the member that holds the slots.
-void test_region_and_slot_have_no_padding_byte() {
-    crucible::test::expect_no_padding_byte<^^crucible::warden::HotRegion>();
-    constexpr std::meta::info slot_list = crucible::test::member_type(^^crucible::warden::HotRegionRegistry, "slots_");
-    crucible::test::expect_no_padding_byte<std::meta::template_arguments_of(slot_list)[0]>();
+// The tag of the two threads of the race of the registry.  The split of
+// fixy/concurrent/PermissionedSpscChannel.h gives one permission to each.
+struct RegistryRaceTag final {};
+using RaceWhole = ::fixy::concurrent::spsc_tag::Whole<RegistryRaceTag>;
+using RaceWriter = ::fixy::concurrent::spsc_tag::Producer<RegistryRaceTag>;
+using RaceReader = ::fixy::concurrent::spsc_tag::Consumer<RegistryRaceTag>;
+using RaceCtx = ::foundation::effects::ExecCtx<::foundation::effects::Bg,
+                                               ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
+
+// The turns of the writer of the race.  Each turn registers and withdraws
+// two regions.
+constexpr std::uint32_t kRaceTurns = 20000;
+
+// True when the two Views start at one byte.
+[[nodiscard]] bool is_same_start(::fixy::View<std::byte const> first, ::fixy::View<std::byte const> second) noexcept {
+    auto const first_start = first.get(0);
+    auto const second_start = second.get(0);
+    for (auto const first_byte : first_start) {
+        for (auto const second_byte : second_start) {
+            return ::fixy::same_object(first_byte, second_byte);
+        }
+    }
+    return false;
 }
+
+// A snapshot pairs each first byte with the length of its own registration.
+// The writer registers a short region and withdraws it, then a long region at
+// a different first byte, in each turn.  The reader takes snapshots at the
+// same time.  A region with the first byte of one and the length of the other
+// is a torn read.  ThreadSanitizer also checks the order that the lock of the
+// registry gives to the two threads.
+void test_snapshot_pairs_each_start_with_its_own_length() {
+    using namespace crucible::warden;
+    alignas(64)::fixy::FixedArray<std::byte, 8192> buf{};
+    ::fixy::View<std::byte const> const all = buf.view();
+    ::fixy::View<std::byte const> const short_region = all.window(0, 64).expect("the window fits");
+    ::fixy::View<std::byte const> const long_region = all.window(4096, 4096).expect("the window fits");
+    ::fixy::Atomic<bool> is_written{false};
+    ::fixy::Atomic<std::uint64_t> torn_reads{0};
+
+    auto const write_turns = [&]() noexcept {
+        for (std::uint32_t turn = 0; turn < kRaceTurns; ++turn) {
+            register_hot_region(short_region, /*huge_hint=*/false);
+            unregister_hot_region(short_region);
+            register_hot_region(long_region, /*huge_hint=*/false);
+            unregister_hot_region(long_region);
+        }
+        is_written.store_release(true);
+    };
+    auto const read_snapshots = [&]() noexcept {
+        while (!is_written.load_acquire()) {
+            for (HotRegion const& region : HotRegionRegistry::instance().snapshot()) {
+                bool const is_torn_short = is_same_start(region.bytes, short_region) && region.bytes.size() != 64;
+                bool const is_torn_long = is_same_start(region.bytes, long_region) && region.bytes.size() != 4096;
+                if (is_torn_short || is_torn_long) static_cast<void>(torn_reads.fetch_add_acq_rel(1));
+            }
+        }
+    };
+
+    auto whole = ::foundation::permissions::mint_permission_root<RaceWhole>();
+    using WholeBrand = ::foundation::brand::brand_of_t<decltype(whole)>;
+    auto rebuilt = ::fixy::concurrent::mint_permission_fork<RaceWriter, RaceReader>(
+        RaceCtx{::foundation::effects::testing::bg()}, std::move(whole),
+        [&write_turns](::foundation::permissions::WriteView<RaceWriter, WholeBrand> const&, RaceCtx const&) noexcept {
+            write_turns();
+        },
+        [&read_snapshots](::foundation::permissions::WriteView<RaceReader, WholeBrand> const&,
+                          RaceCtx const&) noexcept { read_snapshots(); });
+    ::foundation::linear::drop(std::move(rebuilt));
+    CHECK(torn_reads.load_acquire() == 0, "no snapshot pairs a first byte with the length of a different region");
+}
+
+// A snapshot returns up to 256 regions, and the registry holds a list of
+// 256 regions.  Each padding byte of a region costs one store for each
+// element of the list (padding_bytes.h).
+void test_region_has_no_padding_byte() { crucible::test::expect_no_padding_byte<^^crucible::warden::HotRegion>(); }
 
 // prefault faults in each page that holds a byte of its range.  The window
 // below holds the last byte of the first page and the first byte of the
@@ -558,7 +666,8 @@ void test_apply_prefaults_each_registered_region() {
     std::size_t const page = page_size();
     ::foundation::AlignedBytes block = allocate_fresh_block();
     ::fixy::View<std::byte> const bytes = ::foundation::core::byte_view(block.view());
-    register_hot_region(&*bytes.get((2 * page) - 1).expect("the byte is inside the block"), 2, /*huge=*/false);
+    ::fixy::View<std::byte const> const region = bytes.window((2 * page) - 1, 2).expect("the region fits in the block");
+    register_hot_region(region, /*huge_hint=*/false);
 
     Policy policy = Policy::dev_quiet();
     policy.mlock_hot_regions = false;
@@ -580,7 +689,7 @@ void test_apply_prefaults_each_registered_region() {
     CHECK(pages_with_no_frame(window_of(block, page, 2 * page)) == 0, "each page of the region has a frame");
     CHECK(pages_with_no_frame(window_of(block, 3 * page, page)) == 1, "the page after the region has no frame");
 
-    unregister_hot_region(&*bytes.get((2 * page) - 1).expect("the byte is inside the block"));
+    unregister_hot_region(region);
     static_cast<void>(::fixy::pages::exchange_thp_setting(kStartup, first_thp).expect("the process puts back THP"));
 }
 
@@ -621,7 +730,8 @@ int main() {
     test_policy_production_degrades_gracefully();
     test_registry_basic();
     test_registry_applies_on_mint_hardening();
-    test_region_and_slot_have_no_padding_byte();
+    test_region_has_no_padding_byte();
+    test_snapshot_pairs_each_start_with_its_own_length();
     test_prefault_faults_in_each_page_of_the_range();
     test_apply_prefaults_each_registered_region();
     test_revert_keeps_a_prior_thp_refusal();
