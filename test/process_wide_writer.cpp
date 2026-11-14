@@ -8,21 +8,16 @@
 #include <crucible/SchemaTable.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
-
-#include <array>
+#include <foundation/core/Array.h>
 
 namespace process_wide_libraries {
 namespace {
 
-inline constexpr std::array<crucible::CKernelEntry, 1> kPublishedRows{{
-    {.schema_hash = crucible::SchemaHash{kPublishedHash}, .id = crucible::CKernelId::GEMM_MM},
-}};
+inline constexpr ::foundation::core::FixedArray<crucible::CKernelEntry, 1> kPublishedRows{
+    crucible::CKernelEntry{.schema_hash = crucible::SchemaHash{kPublishedHash}, .id = crucible::CKernelId::GEMM_MM}};
 
 // Static storage duration, which publish_static_ckernel_table asks of the table.
-inline constexpr crucible::StaticCKernelTable kPublishedTable{
-    .entries = kPublishedRows.data(),
-    .count = static_cast<std::uint32_t>(kPublishedRows.size()),
-};
+inline constexpr crucible::StaticCKernelTable kPublishedTable{.entries = kPublishedRows.view()};
 
 // A mutable view asks for the context of a Vigil's producer claim.  No Vigil
 // runs here, so the context comes from the test door.

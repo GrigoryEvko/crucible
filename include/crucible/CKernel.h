@@ -17,7 +17,7 @@
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
 
-#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -39,6 +39,24 @@ struct CKernelEntry {
     uint16_t pad1 = 0;
     uint32_t pad2 = 0;
 };
+
+namespace detail {
+
+// The identifier of the entry of schema_hash in entries, which the schema
+// hashes sort, or OPAQUE when no entry holds that hash.  The run-time table
+// and the published table use this one lookup.  Complexity: O(log n).
+[[nodiscard]] constexpr CKernelId find_kernel_id_(::fixy::View<const CKernelEntry> entries,
+                                                  SchemaHash schema_hash) noexcept {
+    const std::size_t position = ::fixy::lower_bound_by_key(
+        entries, [](const CKernelEntry& entry) noexcept { return entry.schema_hash.raw(); }, schema_hash.raw());
+    return entries.get(position).match(
+        [schema_hash](auto entry) noexcept {
+            return entry->schema_hash == schema_hash ? entry->id : CKernelId::OPAQUE;
+        },
+        [] noexcept { return CKernelId::OPAQUE; });
+}
+
+}  // namespace detail
 
 namespace ckernel_state {
 struct Mutable {};
@@ -124,13 +142,7 @@ public:
     // classifying reader runs. An interleaved registration would invalidate it.
     // Complexity: O(log n).
     [[nodiscard, gnu::pure]] CKernelId classify(SchemaHash schema_hash) const noexcept {
-        const auto found = entries_.get(::fixy::lower_bound_by_key(
-            entries_.view(), [](const CKernelEntry& entry) noexcept { return entry.schema_hash.raw(); },
-            schema_hash.raw()));
-        for (const auto& entry : found) {
-            if (entry->schema_hash == schema_hash) return entry->id;
-        }
-        return CKernelId::OPAQUE;
+        return detail::find_kernel_id_(entries_.view(), schema_hash);
     }
 
     [[nodiscard]] uint32_t count() const noexcept { return static_cast<uint32_t>(entries_.size()); }
@@ -221,22 +233,23 @@ CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline CKernelTableSingleton global_ckernel_
 
 struct StaticCKernelTable {
     // Sorted by schema_hash, so classify_static below can bisect it.
-    const CKernelEntry* entries = nullptr;
-    uint32_t count = 0;
+    ::fixy::View<const CKernelEntry> entries{};
 };
 
 namespace detail {
 // Constant-initialized, so it has no dynamic initializer to order against
-// the adapter that publishes into it and no guard variable to race on.
+// the adapter that publishes into it and no guard variable to race on.  The
+// empty Option is the state before the publication.
 //
-// One pointer for the process.  The PyTorch adapter publishes from
-// libcrucible_dispatch.so, and the background thread that classifies runs
-// in libcrucible_vessel.so.
-CRUCIBLE_PROCESS_WIDE inline constinit std::atomic<const StaticCKernelTable*> static_ckernel_table_{nullptr};
+// One cell of one pointer for the process.  The PyTorch adapter publishes
+// from libcrucible_dispatch.so, and the background thread that classifies
+// runs in libcrucible_vessel.so.
+CRUCIBLE_PROCESS_WIDE inline constinit ::fixy::Atomic<::fixy::Option<::fixy::Ref<const StaticCKernelTable>>>
+    static_ckernel_table_{};
 }  // namespace detail
 
 // Publishing is a release store, and classify_static reads with acquire, so a
-// reader that observes the pointer also observes every entry the adapter
+// reader that observes the table also observes every entry the adapter
 // wrote before it. The adapter publishes from its load-time initializer, so
 // the table is in place before the adapter records its first operation, and
 // so before the background thread classifies one.  The background thread can
@@ -245,8 +258,8 @@ CRUCIBLE_PROCESS_WIDE inline constinit std::atomic<const StaticCKernelTable*> st
 // The array must outlive the process's classifying readers. A `constexpr`
 // array with static storage duration satisfies that; a local does not.
 inline void publish_static_ckernel_table(const StaticCKernelTable& table CRUCIBLE_LIFETIMEBOUND) noexcept {
-    CRUCIBLE_PRE(table.entries != nullptr || table.count == 0u);
-    detail::static_ckernel_table_.store(&table, std::memory_order_release);
+    detail::static_ckernel_table_.store_release(
+        ::fixy::Option<::fixy::Ref<const StaticCKernelTable>>::some(::fixy::to(table)));
 }
 
 // The lifetime of a temporary table stops at the end of the statement, but
@@ -261,19 +274,11 @@ void publish_static_ckernel_table(const StaticCKernelTable&&) = delete(
 // schema. Both answers are the same answer the run-time table gives on a
 // miss, so the fallback below is reached in exactly those two cases.
 [[nodiscard, gnu::pure]] inline CKernelId classify_static(SchemaHash schema_hash) noexcept {
-    const StaticCKernelTable* table = detail::static_ckernel_table_.load(std::memory_order_acquire);
-    if (table == nullptr) [[unlikely]]
-        return CKernelId::OPAQUE;
-    uint32_t lo = 0, hi = table->count;
-    while (lo < hi) {
-        const uint32_t mid = lo + (hi - lo) / 2;
-        if (table->entries[mid].schema_hash == schema_hash) return table->entries[mid].id;
-        if (table->entries[mid].schema_hash < schema_hash)
-            lo = mid + 1;
-        else
-            hi = mid;
-    }
-    return CKernelId::OPAQUE;
+    return detail::static_ckernel_table_.load_acquire().match(
+        [schema_hash](::fixy::Ref<const StaticCKernelTable> table) noexcept {
+            return detail::find_kernel_id_(table->entries, schema_hash);
+        },
+        [] noexcept { return CKernelId::OPAQUE; });
 }
 
 // The published array first, the run-time table second. An adapter that

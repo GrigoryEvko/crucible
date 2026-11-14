@@ -32,9 +32,9 @@
 #include "record_kernel.h"
 
 #include <ATen/Operators.h>
+#include <fixy/FixedArray.h>
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -63,7 +63,7 @@ static_assert(kShard < kShardCount, "the index of the shard of register.cpp is n
 // finished. They are published instead, as one sorted array that
 // crucible::classify_kernel reads before the run-time table.
 //
-// The array is built in two consteval passes because std::array needs its
+// The array is built in two consteval passes because a FixedArray needs its
 // size as a constant: the first counts the classified rows and the second
 // fills and sorts them. std::define_static_array would do it in one pass, but
 // it requires a structural type and CKernelEntry is not one — SchemaHash keeps
@@ -80,8 +80,8 @@ static_assert(kShard < kShardCount, "the index of the shard of register.cpp is n
 
 // Sorted by schema hash, which is what crucible::classify_static bisects.
 template <uint32_t Count>
-[[nodiscard]] consteval std::array<crucible::CKernelEntry, Count> classified_rows() {
-    std::array<crucible::CKernelEntry, Count> entries{};
+[[nodiscard]] consteval ::fixy::FixedArray<crucible::CKernelEntry, Count> classified_rows() {
+    ::fixy::FixedArray<crucible::CKernelEntry, Count> entries{};
     uint32_t next = 0;
     for (const OpEntry& row : aten_op_table)
         if (row.kernel_id != crucible::CKernelId::OPAQUE)
@@ -95,10 +95,7 @@ inline constexpr auto kClassifiedRows = classified_rows<classified_row_count()>(
 
 // Static storage duration, which is what publish_static_ckernel_table needs of
 // the array it takes the address of.
-inline constexpr crucible::StaticCKernelTable kStaticCKernelTable{
-    .entries = kClassifiedRows.data(),
-    .count = static_cast<uint32_t>(kClassifiedRows.size()),
-};
+inline constexpr crucible::StaticCKernelTable kStaticCKernelTable{.entries = kClassifiedRows.view()};
 
 static_assert(kClassifiedRows.size() > crucible::CKERNEL_TABLE_CAP,
               "if the classified set fits the run-time cap again, registering it is the simpler route and this "
