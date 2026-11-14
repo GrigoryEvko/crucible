@@ -2061,6 +2061,11 @@ foundation_neg_compile_test(neg_core_option_expect_reason_with_zero
 foundation_neg_compile_test(neg_core_option_cursor_of_temporary
   "use of deleted function .void foundation::core::Option<T>::begin\\(\\) && \\[with T = int\\]."
   "a cursor of a temporary Option points into an object that the full expression ends")
+# A mutable loop over an Option of a niche payload that a door can build as
+# its empty value gives only the const cursor.
+foundation_neg_compile_test(neg_core_option_loop_writes_niche
+  "binding reference of type .SlotId&."
+  "to .const foundation::core::Id<.anonymous.::SlotTag, unsigned int>. discards qualifiers")
 foundation_neg_compile_test(neg_core_option_owning_copied
   "use of deleted function .foundation::core::Option<Owner>::Option\\(const foundation::core::Option<Owner>&\\)."
   "an owning Option is move-only: a copy would duplicate what the payload owns")

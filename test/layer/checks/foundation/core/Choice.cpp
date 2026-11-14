@@ -749,6 +749,15 @@ static_assert(!GivesValueOr<Option<Token>, Token> && GivesValueOr<Option<Owner>,
 static_assert(std::is_same_v<decltype(std::declval<Option<Token>&>().begin()), OptionCursor<Token const>>);
 static_assert(std::is_same_v<decltype(std::declval<Option<Owner>&>().begin()), OptionCursor<Owner>>);
 
+// A write through the mutable cursor bypasses the test of Option::some.  So
+// a niche payload that an aggregate or a door can build as its empty value
+// has only the const cursor, and a niche that states that no door builds the
+// empty value keeps the mutable cursor.
+static_assert(std::is_same_v<decltype(std::declval<Option<SlotNumber>&>().begin()), OptionCursor<SlotNumber const>>);
+static_assert(std::is_same_v<decltype(std::declval<Option<SlotNumber>&>().end()), OptionCursor<SlotNumber const>>);
+static_assert(std::is_same_v<decltype(std::declval<Option<TrustedSlot>&>().begin()), OptionCursor<TrustedSlot>>);
+static_assert(std::is_same_v<decltype(std::declval<Option<std::uint64_t>&>().begin()), OptionCursor<std::uint64_t>>);
+
 // A linear error.  The const err() would copy it, so only the rvalue err()
 // gives it, and value_or() would drop it.
 static_assert(ErrorValue<Token> && ErrorValue<HoldsToken>);

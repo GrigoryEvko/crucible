@@ -856,15 +856,29 @@ public:
     // over a temporary binds it to a reference first, and calls these
     // overloads on that lvalue.  A linear payload has only the const
     // cursor, so no loop moves the payload out and leaves the Option full.
-    [[nodiscard]] constexpr OptionCursor<T> begin() & noexcept
+    // A write through the mutable cursor bypasses the test of
+    // Option::some.  So a niche payload gets the mutable cursor only when its
+    // niche states that no door of T builds the empty value.  Each other
+    // niche payload gets the const cursor, and no write makes a full Option
+    // read as empty.  The body makes the choice, so no constraint reads the
+    // open template niche.
+    [[nodiscard]] constexpr auto begin() & noexcept
         requires DroppablePayload<T>
     {
-        return OptionCursor<T>{slot_.holds_() ? &slot_.payload_() : nullptr};
+        if constexpr (detail::UndeclaredNicheOf<T> || detail::NicheRead<T>::is_empty_never_built()) {
+            return OptionCursor<T>{slot_.holds_() ? &slot_.payload_() : nullptr};
+        } else {
+            return OptionCursor<T const>{slot_.holds_() ? &slot_.payload_() : nullptr};
+        }
     }
-    [[nodiscard]] constexpr OptionCursor<T> end() & noexcept
+    [[nodiscard]] constexpr auto end() & noexcept
         requires DroppablePayload<T>
     {
-        return OptionCursor<T>{nullptr};
+        if constexpr (detail::UndeclaredNicheOf<T> || detail::NicheRead<T>::is_empty_never_built()) {
+            return OptionCursor<T>{nullptr};
+        } else {
+            return OptionCursor<T const>{nullptr};
+        }
     }
     [[nodiscard]] constexpr OptionCursor<T const> begin() const& noexcept {
         return OptionCursor<T const>{slot_.holds_() ? &slot_.payload_() : nullptr};
