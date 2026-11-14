@@ -3,17 +3,16 @@
 //
 // Why this file exists next to bench_dispatch.cpp
 // ------------------------------------------------
-// bench_dispatch's "dispatch_op [RECORDING, no pending]" case dispatches one
-// unchanging op. The detector reads that repetition as an iteration, builds
-// a region, and the Vigil is in COMPILED mode after about 128 calls —
-// measured, not inferred. Everything after that is the compiled leaf, so the
-// case reports a recording latency it stopped measuring almost immediately.
-// The cases here hold RECORD mode with a schema hash that never repeats, and
-// abort if the mode changes under them.
+// One unchanging op that a Vigil records again and again is an iteration to
+// the detector. The detector builds a region, and the Vigil is in COMPILED
+// mode after about 128 calls. A record case that dispatches such an op times
+// the compiled leaf after that. The cases here hold RECORD mode with a
+// schema hash that never repeats, and abort if the mode changes under them.
+// The record cases of bench_dispatch do the same, and this file adds the gate.
 //
 // The COMPILED leaf has no such problem: that path never touches the ring at
-// all, so bench_dispatch's compiled cases were already sound. One is
-// repeated here so the gate covers both leaves from a single binary.
+// all. One compiled case is repeated here so the gate covers both leaves from
+// a single binary.
 //
 // The four cases, and which of them to believe
 // --------------------------------------------

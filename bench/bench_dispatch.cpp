@@ -65,6 +65,17 @@ ValidatedOp certify_synthetic_op(const TraceRing::Entry&&, ::fixy::View<const Te
 constexpr uint32_t NUM_OPS = 8;
 constexpr uint32_t K = Vigil::ALIGNMENT_K;  // 5
 
+// A record case appends one op in each body.  The bodies of a case stay below
+// the room of the ring, so each body appends and no body times the refusal of
+// a full ring.  Eight bodies share one timed region, because one append costs
+// less than the timer.
+constexpr size_t RECORD_WARMUP = 1000;
+constexpr size_t RECORD_SAMPLES = 7000;
+constexpr size_t RECORD_BATCH = 8;
+constexpr size_t RECORD_BODIES = RECORD_WARMUP + RECORD_SAMPLES * RECORD_BATCH;
+static_assert(RECORD_BODIES < TraceRing::CAPACITY,
+              "a record case must end before the ring fills, or it times the refusal of a full ring");
+
 constexpr SchemaHash SCHEMA[NUM_OPS] = {
     SchemaHash{0x100}, SchemaHash{0x101}, SchemaHash{0x102}, SchemaHash{0x103},
     SchemaHash{0x104}, SchemaHash{0x105}, SchemaHash{0x106}, SchemaHash{0x107},
@@ -426,35 +437,82 @@ int main() {
     // ── record_op path ─────────────────────────────────────────────
     std::printf("\n--- record_op path ---\n");
 
+    // Each record case runs RECORD_BODIES bodies.  The two record_op cases
+    // count the refusals of record_op, and a refusal ends the bench, because
+    // the case then timed a full ring and not the append that its name says.
+    // Each body gives the op a schema hash that no other body gives, so the
+    // detector finds no iteration and the Vigil stays in the RECORD mode.
+    // The store of the hash is the one cost that this adds.
     reports.push_back([&] {
         Vigil vigil;
         TraceRing::Entry e{};
-        e.schema_hash = SchemaHash{0x999};
         e.shape_hash = ShapeHash{0xAAA};
         e.num_inputs = 0;
         e.num_outputs = 0;
         const ::fixy::View<const TensorMeta> no_records{};
-        return bench::run("Vigil::record_op (0 metas, profiler hook)",
-                          [&] { bench::do_not_optimize(vigil.record_op(certify_synthetic_op(e, no_records))); });
+        uint64_t refused = 0;
+        uint64_t tick = 0;
+        auto report = bench::Run("Vigil::record_op (0 metas, profiler hook)")
+                          .warmup(RECORD_WARMUP)
+                          .samples(RECORD_SAMPLES)
+                          .batch(RECORD_BATCH)
+                          .core(bench::env_core())
+                          .measure([&] {
+                              e.schema_hash = SchemaHash{0x1000000u + tick++};
+                              const bool took = vigil.record_op(certify_synthetic_op(e, no_records));
+                              refused += static_cast<uint64_t>(!took);
+                              bench::do_not_optimize(took);
+                          });
+        CRUCIBLE_BENCH_CHECK(refused == 0);
+        return report;
     }());
 
     reports.push_back([&] {
         Vigil vigil;
         auto d = make_op(0, 1);
         const ::fixy::View<const TensorMeta> records = records_of(d);
-        return bench::run("Vigil::record_op (2 metas)",
-                          [&] { bench::do_not_optimize(vigil.record_op(certify_synthetic_op(d.entry, records))); });
+        uint64_t refused = 0;
+        uint64_t tick = 0;
+        auto report = bench::Run("Vigil::record_op (2 metas)")
+                          .warmup(RECORD_WARMUP)
+                          .samples(RECORD_SAMPLES)
+                          .batch(RECORD_BATCH)
+                          .core(bench::env_core())
+                          .measure([&] {
+                              d.entry.schema_hash = SchemaHash{0x1000000u + tick++};
+                              const bool took = vigil.record_op(certify_synthetic_op(d.entry, records));
+                              refused += static_cast<uint64_t>(!took);
+                              bench::do_not_optimize(took);
+                          });
+        CRUCIBLE_BENCH_CHECK(refused == 0);
+        return report;
     }());
 
     // ── dispatch_op RECORDING ──────────────────────────────────────
     std::printf("\n--- dispatch_op RECORDING ---\n");
 
+    // The answer of dispatch_op does not tell a refusal of the ring.  The run
+    // stays below the room of the ring, so no body meets a full ring.  The
+    // count of RECORD answers shows that the Vigil stayed in the RECORD mode.
     reports.push_back([&] {
         Vigil vigil;
         auto d = make_op(0, 1);
         const ::fixy::View<const TensorMeta> records = records_of(d);
-        return bench::run("dispatch_op [RECORDING, no pending]",
-                          [&] { bench::do_not_optimize(vigil.dispatch_op(certify_synthetic_op(d.entry, records))); });
+        uint64_t recorded = 0;
+        uint64_t tick = 0;
+        auto report = bench::Run("dispatch_op [RECORDING, no pending]")
+                          .warmup(RECORD_WARMUP)
+                          .samples(RECORD_SAMPLES)
+                          .batch(RECORD_BATCH)
+                          .core(bench::env_core())
+                          .measure([&] {
+                              d.entry.schema_hash = SchemaHash{0x1000000u + tick++};
+                              const auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records));
+                              recorded += static_cast<uint64_t>(r.is_record());
+                              bench::do_not_optimize(r);
+                          });
+        CRUCIBLE_BENCH_CHECK(recorded == tick);
+        return report;
     }());
 
     // ── dispatch_op COMPILED ───────────────────────────────────────
