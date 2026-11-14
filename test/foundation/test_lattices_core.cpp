@@ -1,4 +1,4 @@
-// Sentinel TU for the core-wrapper lattices and the saturation helpers.
+// Sentinel TU for the core-wrapper lattices.
 // It includes each header, so each is compiled under the project flags,
 // and it runs each operation on an argument that the optimizer cannot
 // see.  Each result is compared with the value that the lattice or the
@@ -13,7 +13,6 @@
 //   grade derived from value  SeqPrefix with grade_of         sizeof(T)
 //   two fields                Staleness, Fractional           more
 
-#include <foundation/Saturate.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/BoolLattice.h>
 #include <foundation/algebra/lattices/ConfLattice.h>
@@ -132,30 +131,6 @@ template <typename T>
 // multiplies, so it cannot tell 3/4 from 6/8.
 [[nodiscard]] bool is_exactly(fl::Rational value, std::int64_t num, std::int64_t den) noexcept {
     return value.num == num && value.den == den;
-}
-
-void saturate_runs_at_run_time() {
-    using ::foundation::sat::add_sat;
-    using ::foundation::sat::mul_sat;
-    using ::foundation::sat::sub_sat;
-    const unsigned char high = opaque<unsigned char>(250);
-    const unsigned char step = opaque<unsigned char>(10);
-    expect(add_sat(high, step) == 255);
-    expect(add_sat(step, step) == 20);
-    expect(sub_sat(step, high) == 0);
-    expect(sub_sat(high, step) == 240);
-    expect(mul_sat(high, step) == 255);
-    expect(mul_sat(step, step) == 100);
-
-    const signed char negative = opaque<signed char>(-120);
-    const signed char ten = opaque<signed char>(10);
-    expect(sub_sat(negative, ten) == -128);
-    expect(add_sat(negative, ten) == -110);
-
-    const int million = opaque(1000000);
-    expect(add_sat(million, million) == 2000000);
-    expect(mul_sat(million, million) == std::numeric_limits<int>::max());
-    expect(mul_sat(-million, million) == std::numeric_limits<int>::min());
 }
 
 void bool_lattice_runs_at_run_time() {
@@ -399,7 +374,6 @@ void fractional_lattice_runs_at_run_time() {
 }  // namespace
 
 int main() {
-    saturate_runs_at_run_time();
     bool_lattice_runs_at_run_time();
     trust_lattice_runs_at_run_time();
     conf_lattice_runs_at_run_time();

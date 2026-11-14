@@ -97,6 +97,18 @@ static_assert(::fixy::bits_of<std::uint16_t> == 16 && ::fixy::value_bits_of<std:
 static_assert(::fixy::min_of<std::int8_t> == -128 && ::fixy::gcd(12, 18) == 6u);
 static_assert(std::is_same_v<::fixy::WideProduct<unsigned>, ::foundation::core::WideProduct<unsigned>>);
 static_assert(::fixy::widening_mul(std::uint8_t{16}, std::uint8_t{16}).high == 1);
+static_assert(::fixy::checked_add(2, 3).is_some() && ::fixy::checked_sub(0u, 1u).is_none());
+static_assert(::fixy::checked_mul(1 << 16, 1 << 16).is_none() && ::fixy::checked_div(7, 0).is_none());
+static_assert(::fixy::checked_rem(7, 3).is_some() && ::fixy::checked_neg(::fixy::min_of<int>).is_none());
+static_assert(::fixy::checked_abs(::fixy::min_of<int>).is_none() && ::fixy::checked_shl(1, 32).is_none());
+static_assert(::fixy::checked_shr(8, 3).is_some()
+              && ::fixy::wrapping_add(::fixy::max_of<int>, 1) == ::fixy::min_of<int>);
+static_assert(::fixy::wrapping_sub(0u, 1u) == ::fixy::max_of<unsigned> && ::fixy::wrapping_mul(1u << 31, 2u) == 0u);
+static_assert(::fixy::wrapping_neg(1u) == ::fixy::max_of<unsigned> && ::fixy::wrapping_shl(1u, 33) == 2u);
+static_assert(::fixy::wrapping_shr(8u, 35) == 1u
+              && ::fixy::saturating_add(::fixy::max_of<int>, 1) == ::fixy::max_of<int>);
+static_assert(::fixy::saturating_sub(0u, 1u) == 0u && ::fixy::saturating_mul(1 << 16, 1 << 16) == ::fixy::max_of<int>);
+static_assert(::fixy::saturating_div(::fixy::min_of<int>, -1) == ::fixy::max_of<int>);
 static_assert(::fixy::min(2, 3) == 2 && ::fixy::max(2, 3) == 3 && ::fixy::clamp(9, ::fixy::bounds<0, 5>()) == 5);
 static_assert(std::is_same_v<::fixy::Bounds<int>, ::foundation::core::Bounds<int>>);
 static_assert(std::is_lt(::fixy::compare(-1, 1u)) && ::fixy::fits<std::uint8_t>(255)

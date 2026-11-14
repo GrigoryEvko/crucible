@@ -79,12 +79,12 @@
 // the order dual, as fixy/EpochVersioned.h does through DualLattice.h.
 
 #include <foundation/ByteSeal.h>
-#include <foundation/Saturate.h>
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Arithmetic.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>
@@ -304,7 +304,7 @@ struct StrongCounterLattice {
     [[nodiscard]] static constexpr element_type saturating_sum(element_type a, element_type b) noexcept
         requires(Tag::claim_orientation == ClaimOrientation::weaker_is_higher)
     {
-        return element_type{::foundation::sat::add_sat(a.raw(), b.raw())};
+        return element_type{::foundation::core::saturating_add(a.raw(), b.raw())};
     }
 
     // The admission queries: a count against a bound.

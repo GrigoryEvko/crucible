@@ -38,7 +38,6 @@
 #include <crucible/warden/Policy.h>
 #include <crucible/warden/WatchdogVerdict.h>
 #include <fixy/Borrowed.h>
-#include <fixy/Checked.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Mutation.h>

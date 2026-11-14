@@ -2,8 +2,8 @@
 //
 // These groups exercise the nine helpers that return a fixy wrapper —
 // the det, from and into families — which live in fixy/Saturate.h.  The
-// groups over the three plain helpers are in
-// test/foundation/test_saturate.cpp, beside the header those live in.
+// plain saturating forms are the Scalar family, and
+// test/foundation/test_core_scalar_arith.cpp holds their tests.
 // Each check is an EXPECT, so one run reports every failure it has.  The
 // band checks use the free `relax<Tier>(band)` of fixy/Bands.h and the
 // free `satisfies_v<Band, Tier>`.

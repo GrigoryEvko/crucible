@@ -179,7 +179,6 @@
 #include <foundation/reflect/Hash.h>
 #include <foundation/reflect/Instance.h>
 #include <foundation/reflect/Signature.h>
-#include <foundation/Saturate.h>
 #include <foundation/Simd.h>
 #include <foundation/SwissTableBuffer.h>
 #include <foundation/ThreadLocalRef.h>

@@ -8,6 +8,9 @@
 //                                           the quotient of the minimum by
 //                                           -1 has no value
 //   checked_neg                             the exact negation, or no value
+//   checked_abs                             the absolute value of a signed
+//                                           value, or no value for the
+//                                           minimum
 //   checked_shl(v, n), checked_shr(v, n)    no value for a count outside
 //                                           [0, bits), and checked_shl has
 //                                           no value when v * 2^n does not
@@ -18,7 +21,10 @@
 //   saturating_add, saturating_sub, saturating_mul
 //                                           the exact result, or the
 //                                           nearest limit of the type
-//   gcd(a, b)                               the greatest common divisor as
+//   saturating_div                          the quotient, and the maximum
+//                                           for the minimum by -1.  A zero
+//                                           divisor ends the process
+//   gcd(a, b)                             the greatest common divisor as
 //                                           an unsigned value, for each input
 //   widening_mul(a, b)                      the full product of two unsigned
 //                                           values, as two halves
@@ -37,6 +43,12 @@
 //
 // The remainder has the sign of the dividend: -7 rem 3 is -1.  The minimum
 // rem -1 is 0, although the quotient of the same operands has no value.
+//
+// A quotient has no nearest limit for a zero divisor, so saturating_div
+// ends the process through fatal() there, as std::saturating_div has the
+// precondition of a divisor other than 0.  The saturating form of a cast
+// is saturating_narrow of Convert.h.  For an integer source it gives the
+// value of std::saturating_cast.
 //
 // gcd(0, 0) is 0, and gcd(min_of<std::int64_t>, 0) is 2^63, which the
 // unsigned result holds.  The loop is the binary algorithm: at most one
@@ -138,6 +150,14 @@ template <Integer T>
     return Option<T>::some(negated);
 }
 
+// An unsigned value has no sign, so the form takes a signed type only.
+// unsigned_abs of Compare.h gives the magnitude of each value.
+template <SignedInteger T>
+[[nodiscard]] constexpr Option<T> checked_abs(T value) noexcept {
+    if (value < T{0}) return checked_neg(value);
+    return Option<T>::some(value);
+}
+
 // The right shift gives back the value only when the left shift lost no
 // bit and kept the sign.
 template <Integer T>
@@ -235,6 +255,17 @@ template <Integer T>
     } else {
         return max_of<T>;
     }
+}
+
+template <Integer T>
+[[nodiscard]] constexpr T saturating_div(T dividend, T divisor) noexcept {
+    if (divisor == T{0}) [[unlikely]] {
+        fatal("saturating_div got the divisor 0, which gives no quotient");
+    }
+    if (detail::is_minimum_by_minus_one(dividend, divisor)) [[unlikely]] {
+        return max_of<T>;
+    }
+    return static_cast<T>(dividend / divisor);
 }
 
 template <Integer T>

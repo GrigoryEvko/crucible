@@ -654,27 +654,25 @@ struct TokenB final {};
 
 // ── Scalar ──────────────────────────────────────────────────────────────────
 
-// fixy/Checked.h holds the names of the three arithmetic sets until slice
-// 4.10, so the probes call the family in foundation::core.
 [[gnu::used]] fixy::Option<std::uint32_t> scalar_checked_add(std::uint32_t left, std::uint32_t right) noexcept {
-    return ::foundation::core::checked_add(left, right);
+    return fixy::checked_add(left, right);
 }
 
 // An Option of a word has 16 bytes, and it comes back in two registers.
 [[gnu::used]] fixy::Option<std::uint64_t> scalar_checked_add_wide(std::uint64_t left, std::uint64_t right) noexcept {
-    return ::foundation::core::checked_add(left, right);
+    return fixy::checked_add(left, right);
 }
 
 [[gnu::used]] fixy::Option<std::int32_t> scalar_checked_div(std::int32_t dividend, std::int32_t divisor) noexcept {
-    return ::foundation::core::checked_div(dividend, divisor);
+    return fixy::checked_div(dividend, divisor);
 }
 
 [[gnu::used]] std::uint64_t scalar_wrapping_shl(std::uint64_t value, int count) noexcept {
-    return ::foundation::core::wrapping_shl(value, count);
+    return fixy::wrapping_shl(value, count);
 }
 
 [[gnu::used]] std::int64_t scalar_saturating_add(std::int64_t left, std::int64_t right) noexcept {
-    return ::foundation::core::saturating_add(left, right);
+    return fixy::saturating_add(left, right);
 }
 
 [[gnu::used]] ::foundation::core::WideProduct<std::uint64_t> scalar_widening_mul(std::uint64_t left,
@@ -755,7 +753,7 @@ using ProbeSlotId = fixy::Id<struct ProbeSlotTag, std::uint32_t>;
 using ProbeBytes = fixy::Quantity<fixy::unit::Byte, std::uint32_t>;
 
 [[gnu::used]] fixy::Option<ProbeBytes> scalar_quantity_add(ProbeBytes left, ProbeBytes right) noexcept {
-    return ::foundation::core::checked_add(left, right);
+    return fixy::checked_add(left, right);
 }
 
 [[gnu::used]] fixy::Option<fixy::Quantity<fixy::unit::Nanosecond, std::uint32_t>>

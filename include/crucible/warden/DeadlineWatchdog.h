@@ -40,7 +40,6 @@
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/Time.h>
 #include <foundation/Platform.h>
-#include <foundation/Saturate.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
@@ -173,7 +172,7 @@ public:
         // positive number and manufacture a Downgrade out of nothing.
         const uint64_t elapsed_ns = now_ns - window_started_ns_;
         if (elapsed_ns >= window_ns_) {
-            const uint64_t misses = ::foundation::sat::sub_sat<uint64_t>(count, baseline_count_);
+            const uint64_t misses = ::fixy::saturating_sub<uint64_t>(count, baseline_count_);
             const WatchdogVerdict v = (misses > miss_budget_) ? WatchdogVerdict::Downgrade : WatchdogVerdict::Healthy;
 
             window_started_ns_ = now_ns;
@@ -184,7 +183,7 @@ public:
         // A budget already blown mid-window is reported at once rather
         // than a whole window later, which matters during a storm of
         // misses.
-        const uint64_t misses = ::foundation::sat::sub_sat<uint64_t>(count, baseline_count_);
+        const uint64_t misses = ::fixy::saturating_sub<uint64_t>(count, baseline_count_);
         if (misses > miss_budget_) {
             // The window is deliberately left running, so every
             // further call keeps reporting Downgrade until it closes.
@@ -218,7 +217,7 @@ public:
 
     // Saturating, for the same reason the subtraction in observe() is.
     CRUCIBLE_PURE uint64_t misses_in_window() const noexcept {
-        return ::foundation::sat::sub_sat<uint64_t>(latest_count_, baseline_count_);
+        return ::fixy::saturating_sub<uint64_t>(latest_count_, baseline_count_);
     }
 
     DeadlineWatchdog(const DeadlineWatchdog&) =

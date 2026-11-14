@@ -864,7 +864,7 @@ public:
     // and the publish stage write the arenas, so read the value only when no
     // pipeline thread runs: before start() or after stop().
     [[nodiscard]] size_t scratch_retained_bytes() const noexcept {
-        return ::foundation::sat::add_sat(build_scratch_.retained_bytes(), publish_scratch_.retained_bytes());
+        return ::fixy::saturating_add(build_scratch_.retained_bytes(), publish_scratch_.retained_bytes());
     }
 
     // Gives the regions that the owner holds to the sweep of this publish.

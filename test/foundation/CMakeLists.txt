@@ -26,9 +26,6 @@ function(foundation_test name)
 endfunction()
 
 foundation_test(test_platform)
-# test/fixy/test_saturate.cpp has the same file name, and a CMake target
-# name is global.  Each of the two targets carries the name of its layer.
-foundation_test(test_saturate_foundation test_saturate.cpp)
 foundation_test(test_signature)
 foundation_test(test_algebra_core)
 foundation_test(test_lattices_core)

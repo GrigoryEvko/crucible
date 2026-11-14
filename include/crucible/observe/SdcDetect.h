@@ -10,7 +10,6 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/Pinned.h>
-#include <foundation/Saturate.h>
 #include <foundation/diag/Tag.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
@@ -289,9 +288,9 @@ public:
             Result replica = body(comparison_slot.cog);
             if (!detail::equivalent(primary, replica, config_.strategy, config_.tolerance_units)) {
                 // A count that wrapped to zero would clear a suspect Cog.
-                primary_slot.mismatch_count = ::foundation::sat::add_sat(primary_slot.mismatch_count, std::uint16_t{1});
+                primary_slot.mismatch_count = ::fixy::saturating_add(primary_slot.mismatch_count, std::uint16_t{1});
                 comparison_slot.mismatch_count =
-                    ::foundation::sat::add_sat(comparison_slot.mismatch_count, std::uint16_t{1});
+                    ::fixy::saturating_add(comparison_slot.mismatch_count, std::uint16_t{1});
 
                 SdcEvent event = make_event(SdcEventKind::Mismatch, slot.raw() + 1u);
                 event.comparison_slot = static_cast<std::uint16_t>(slot.raw());

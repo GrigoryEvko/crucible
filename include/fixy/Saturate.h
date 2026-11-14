@@ -1,12 +1,12 @@
 #pragma once
 
-// Saturating arithmetic that keeps what the plain helpers throw away.
+// Saturating arithmetic that keeps what the plain forms throw away.
 //
-// The three helpers that return a plain T live in foundation/Saturate.h.
+// The plain forms that return a T are saturating_add, saturating_sub and
+// saturating_mul of the Scalar family (foundation/core/Arithmetic.h).
 // The nine below return a fixy wrapper, Saturated<T> or the DetSafe band
 // over it, and the layer line keeps a fixy type out of foundation.  So
-// the nine live here.  This header re-exports the three plain helpers,
-// so fixy::sat holds all twelve under one name.
+// the nine live here.
 //
 //   *_sat_det   the checked result inside DetSafe<Pure, ...>: the value
 //               is a function of its operands alone, and the pin says so
@@ -23,66 +23,58 @@
 #include <fixy/Bands.h>
 #include <fixy/Saturated.h>
 #include <foundation/Platform.h>
-#include <foundation/Saturate.h>
-
-#include <concepts>
-#include <cstdint>
-#include <type_traits>
+#include <foundation/core/Number.h>
 
 namespace fixy::sat {
 
-using ::foundation::sat::add_sat;
-using ::foundation::sat::mul_sat;
-using ::foundation::sat::sub_sat;
-
-template <std::integral T>
+template <::foundation::core::Integer T>
 using DetSatPure = DetSafe<DetSafeTier_v::Pure, Saturated<T>>;
 
-template <std::integral T>
+template <::foundation::core::Integer T>
 CRUCIBLE_CONST constexpr DetSatPure<T> add_sat_det(T a, T b) noexcept {
     return mint_band<DetSatPure<T>>(add_sat_checked(a, b));
 }
 
-template <std::integral T>
+template <::foundation::core::Integer T>
 CRUCIBLE_CONST constexpr DetSatPure<T> sub_sat_det(T a, T b) noexcept {
     return mint_band<DetSatPure<T>>(sub_sat_checked(a, b));
 }
 
-template <std::integral T>
+template <::foundation::core::Integer T>
 CRUCIBLE_CONST constexpr DetSatPure<T> mul_sat_det(T a, T b) noexcept {
     return mint_band<DetSatPure<T>>(mul_sat_checked(a, b));
 }
 
-template <std::integral T>
+template <::foundation::core::Integer T>
 CRUCIBLE_PURE constexpr Saturated<T> add_sat_from(T const& counter, T value) noexcept {
     return add_sat_checked(counter, value);
 }
 
-template <std::integral T>
+template <::foundation::core::Integer T>
 CRUCIBLE_PURE constexpr Saturated<T> sub_sat_from(T const& counter, T value) noexcept {
     return sub_sat_checked(counter, value);
 }
 
-template <std::integral T>
+template <::foundation::core::Integer T>
 CRUCIBLE_PURE constexpr Saturated<T> mul_sat_from(T const& counter, T value) noexcept {
     return mul_sat_checked(counter, value);
 }
 
-template <std::integral T>
+template <::foundation::core::Integer T>
 [[nodiscard]] constexpr Saturated<T> add_sat_into(T& dest, T value) noexcept {
     auto result = add_sat_from(dest, value);
     dest = result.value();
     return result;
 }
 
-template <std::integral T>
+template <::foundation::core::Integer T>
 [[nodiscard]] constexpr Saturated<T> sub_sat_into(T& dest, T value) noexcept {
     auto result = sub_sat_from(dest, value);
     dest = result.value();
     return result;
 }
 
-template <std::integral T>
+template <::foundation::core::Integer T>
 [[nodiscard]] constexpr Saturated<T> mul_sat_into(T& dest, T value) noexcept {
     auto result = mul_sat_from(dest, value);
     dest = result.value();

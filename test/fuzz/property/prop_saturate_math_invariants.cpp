@@ -1,11 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════
-// prop_saturate_math_invariants — foundation::sat::{add,sub,mul}_sat
-// mathematical properties under random stress.
+// prop_saturate_math_invariants — saturating_add, saturating_sub and
+// saturating_mul of foundation/core/Arithmetic.h: mathematical properties
+// under random stress.
 //
-// foundation/Saturate.h gives the exact result when no overflow occurs.
-// On overflow it calls std::saturating_add, std::saturating_sub or
-// std::saturating_mul.  This test compares the two paths with a
-// reference from the overflow builtins.
+// Each form gives the exact result when no overflow occurs.  On overflow
+// it gives the nearest limit of the type.  This test compares the two
+// paths with a reference from the overflow builtins.
 //
 // ─── Bug classes this catches ──────────────────────────────────────
 //
@@ -59,7 +59,7 @@
 
 #include "property_runner.h"
 
-#include <foundation/Saturate.h>
+#include <foundation/core/Arithmetic.h>
 
 #include <cstdint>
 #include <limits>
@@ -176,30 +176,32 @@ template <typename T>
 
 template <typename T>
 [[nodiscard]] bool check_sat_props(T a, T b) noexcept {
-    using namespace foundation::sat;
+    using ::foundation::core::saturating_add;
+    using ::foundation::core::saturating_mul;
+    using ::foundation::core::saturating_sub;
     constexpr T kZero = T{0};
     constexpr T kOne = T{1};
     constexpr T kMin = std::numeric_limits<T>::min();
     constexpr T kMax = std::numeric_limits<T>::max();
 
     // ── Algebraic identities (additive / multiplicative neutral) ──
-    if (add_sat<T>(a, kZero) != a) return false;
-    if (add_sat<T>(kZero, a) != a) return false;
-    if (sub_sat<T>(a, kZero) != a) return false;
-    if (sub_sat<T>(a, a) != kZero) return false;
-    if (mul_sat<T>(a, kOne) != a) return false;
-    if (mul_sat<T>(kOne, a) != a) return false;
-    if (mul_sat<T>(a, kZero) != kZero) return false;
-    if (mul_sat<T>(kZero, a) != kZero) return false;
+    if (saturating_add<T>(a, kZero) != a) return false;
+    if (saturating_add<T>(kZero, a) != a) return false;
+    if (saturating_sub<T>(a, kZero) != a) return false;
+    if (saturating_sub<T>(a, a) != kZero) return false;
+    if (saturating_mul<T>(a, kOne) != a) return false;
+    if (saturating_mul<T>(kOne, a) != a) return false;
+    if (saturating_mul<T>(a, kZero) != kZero) return false;
+    if (saturating_mul<T>(kZero, a) != kZero) return false;
 
     // ── Commutativity ────────────────────────────────────────────
-    if (add_sat<T>(a, b) != add_sat<T>(b, a)) return false;
-    if (mul_sat<T>(a, b) != mul_sat<T>(b, a)) return false;
+    if (saturating_add<T>(a, b) != saturating_add<T>(b, a)) return false;
+    if (saturating_mul<T>(a, b) != saturating_mul<T>(b, a)) return false;
 
     // ── Differential vs reference: add ───────────────────────────
     {
         const RefResult<T> ref = ref_add<T>(a, b);
-        const T got = add_sat<T>(a, b);
+        const T got = saturating_add<T>(a, b);
         if (!ref.overflowed) {
             if (got != ref.value) return false;
         } else {
@@ -210,7 +212,7 @@ template <typename T>
     // ── Differential vs reference: sub ───────────────────────────
     {
         const RefResult<T> ref = ref_sub<T>(a, b);
-        const T got = sub_sat<T>(a, b);
+        const T got = saturating_sub<T>(a, b);
         if (!ref.overflowed) {
             if (got != ref.value) return false;
         } else {
@@ -221,7 +223,7 @@ template <typename T>
     // ── Differential vs reference: mul ───────────────────────────
     {
         const RefResult<T> ref = ref_mul<T>(a, b);
-        const T got = mul_sat<T>(a, b);
+        const T got = saturating_mul<T>(a, b);
         if (!ref.overflowed) {
             if (got != ref.value) return false;
         } else {
@@ -238,40 +240,40 @@ template <typename T>
     if constexpr (std::is_unsigned_v<T>) {
         // Unsigned add: MAX + anything positive → MAX.
         if (a != kZero) {
-            if (add_sat<T>(kMax, a) != kMax) return false;
-            if (add_sat<T>(a, kMax) != kMax) return false;
+            if (saturating_add<T>(kMax, a) != kMax) return false;
+            if (saturating_add<T>(a, kMax) != kMax) return false;
         }
         // Unsigned sub: 0 - anything positive → 0.
         if (a != kZero) {
-            if (sub_sat<T>(kZero, a) != kZero) return false;
+            if (saturating_sub<T>(kZero, a) != kZero) return false;
         }
         // Unsigned mul: MAX * k (k>1) → MAX; MAX * 0 → 0; MAX * 1 → MAX.
         if (a > kOne) {
-            if (mul_sat<T>(kMax, a) != kMax) return false;
-            if (mul_sat<T>(a, kMax) != kMax) return false;
+            if (saturating_mul<T>(kMax, a) != kMax) return false;
+            if (saturating_mul<T>(a, kMax) != kMax) return false;
         }
-        if (mul_sat<T>(kMax, kZero) != kZero) return false;
-        if (mul_sat<T>(kMax, kOne) != kMax) return false;
+        if (saturating_mul<T>(kMax, kZero) != kZero) return false;
+        if (saturating_mul<T>(kMax, kOne) != kMax) return false;
     } else {
         // Signed add: MAX + positive → MAX; MIN + negative → MIN.
         if (a > kZero) {
-            if (add_sat<T>(kMax, a) != kMax) return false;
-            if (add_sat<T>(a, kMax) != kMax) return false;
+            if (saturating_add<T>(kMax, a) != kMax) return false;
+            if (saturating_add<T>(a, kMax) != kMax) return false;
         }
         if (a < kZero) {
-            if (add_sat<T>(kMin, a) != kMin) return false;
-            if (add_sat<T>(a, kMin) != kMin) return false;
+            if (saturating_add<T>(kMin, a) != kMin) return false;
+            if (saturating_add<T>(a, kMin) != kMin) return false;
         }
         // Signed sub: MAX - negative → MAX; MIN - positive → MIN.
         if (a < kZero && a != kMin) {
-            if (sub_sat<T>(kMax, a) != kMax) return false;
+            if (saturating_sub<T>(kMax, a) != kMax) return false;
         }
         if (a > kZero) {
-            if (sub_sat<T>(kMin, a) != kMin) return false;
+            if (saturating_sub<T>(kMin, a) != kMin) return false;
         }
         // Signed mul extreme: MIN * (-1) overflows (|MIN| > MAX) → MAX.
         if (kMin != T{0}) {
-            if (mul_sat<T>(kMin, T{-1}) != kMax) return false;
+            if (saturating_mul<T>(kMin, T{-1}) != kMax) return false;
         }
     }
 
@@ -313,8 +315,8 @@ int main(int argc, char** argv) {
         "saturate math invariants (u64/i64/u32/i32)", cfg, [](Rng& rng) { return generate(rng); },
         [](const Input& in) {
             // Volatile barrier defeats constexpr folding of the
-            // constexpr sat:: primitives.  Each iteration's (a, b)
-            // must enter add_sat / sub_sat / mul_sat at RUNTIME so
+            // constexpr saturating forms.  Each iteration's (a, b)
+            // must enter saturating_add / _sub / _mul at RUNTIME so
             // the __builtin_*_overflow codegen is actually exercised
             // rather than constant-folded away.
             const Input* volatile p = &in;

@@ -55,7 +55,7 @@
 
 #include <fixy/os/Topology.h>
 #include <foundation/NoObject.h>
-#include <foundation/Saturate.h>
+#include <foundation/core/Arithmetic.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -70,7 +70,7 @@ struct WorkBudget {
     // The bytes the work touches.  The sum saturates, because a wrapped
     // sum reads as a small set and would keep a huge one sequential.
     [[nodiscard]] constexpr std::size_t working_set_bytes() const noexcept {
-        return ::foundation::sat::add_sat(read_bytes, write_bytes);
+        return ::foundation::core::saturating_add(read_bytes, write_bytes);
     }
 };
 
@@ -253,7 +253,7 @@ public:
     // the reason working_set_bytes gives.
     template <typename T>
     [[nodiscard]] static constexpr WorkBudget budget_for_span(std::size_t count) noexcept {
-        const std::size_t bytes = ::foundation::sat::mul_sat(count, sizeof(T));
+        const std::size_t bytes = ::foundation::core::saturating_mul(count, sizeof(T));
         return WorkBudget{
             .read_bytes = bytes,
             .write_bytes = bytes,

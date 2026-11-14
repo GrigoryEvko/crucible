@@ -3,7 +3,6 @@
 #include <crucible/perf/SyscallLatency.h>  // for TimelineSyscallEvent, TimelineHeader, TIMELINE_CAPACITY
 
 #include <fixy/Borrowed.h>
-#include <fixy/Checked.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>

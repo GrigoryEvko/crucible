@@ -181,12 +181,28 @@ using ::foundation::core::quiet_nan_of;
 using ::foundation::core::signaling_nan_of;
 using ::foundation::core::value_bits_of;
 
-// The three arithmetic sets checked_*, wrapping_* and saturating_* stay out
-// of namespace fixy, because fixy/Checked.h declares the same names there
-// with the same parameters.
+using ::foundation::core::checked_abs;
+using ::foundation::core::checked_add;
+using ::foundation::core::checked_div;
+using ::foundation::core::checked_mul;
+using ::foundation::core::checked_neg;
+using ::foundation::core::checked_rem;
+using ::foundation::core::checked_shl;
+using ::foundation::core::checked_shr;
+using ::foundation::core::checked_sub;
 using ::foundation::core::gcd;
+using ::foundation::core::saturating_add;
+using ::foundation::core::saturating_div;
+using ::foundation::core::saturating_mul;
+using ::foundation::core::saturating_sub;
 using ::foundation::core::WideProduct;
 using ::foundation::core::widening_mul;
+using ::foundation::core::wrapping_add;
+using ::foundation::core::wrapping_mul;
+using ::foundation::core::wrapping_neg;
+using ::foundation::core::wrapping_shl;
+using ::foundation::core::wrapping_shr;
+using ::foundation::core::wrapping_sub;
 
 using ::foundation::core::abs_diff;
 using ::foundation::core::Bounds;

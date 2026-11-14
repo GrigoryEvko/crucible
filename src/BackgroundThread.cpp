@@ -11,6 +11,7 @@
 
 #include <crucible/CKernel.h>
 #include <crucible/SchemaTable.h>
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 #include <fixy/concurrent/PermissionedSpscChannel.h>
 #include <fixy/concurrent/Pipeline.h>
@@ -19,7 +20,6 @@
 #include <fixy/os/Time.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/Lifetime.h>
-#include <foundation/Saturate.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/permissions/Permission.h>
@@ -409,12 +409,11 @@ BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work() 
     uint32_t total = static_cast<uint32_t>(pending_ops_.size());
     const uint32_t iter_len = detector.last_completed_len;
 
-    const uint32_t warmup =
-        ::foundation::sat::sub_sat(::foundation::sat::sub_sat(total, IterationDetector::K), iter_len);
+    const uint32_t warmup = ::fixy::saturating_sub(::fixy::saturating_sub(total, IterationDetector::K), iter_len);
     pending_ops_.drop_oldest(warmup);
-    total = ::foundation::sat::sub_sat(total, warmup);
+    total = ::fixy::saturating_sub(total, warmup);
 
-    const uint32_t completed_len = ::foundation::sat::sub_sat(total, IterationDetector::K);
+    const uint32_t completed_len = ::fixy::saturating_sub(total, IterationDetector::K);
     (void)iterations_completed.bump();
 
     BgBuildWork* work = nullptr;
@@ -914,21 +913,19 @@ void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
 void BackgroundThread::ensure_scratch_buffers(uint32_t total_inputs, uint32_t total_outputs) {
     // Power-of-two capacity at a load factor below one half.  The unique
     // pointer count is the output count plus a small external fraction.
-    uint32_t raw_map_size =
-        ::fixy::max(MIN_PTR_MAP_CAP,
-                    ::foundation::sat::mul_sat(::foundation::sat::add_sat(total_outputs, uint32_t{256}), uint32_t{2}));
+    uint32_t raw_map_size = ::fixy::max(
+        MIN_PTR_MAP_CAP, ::fixy::saturating_mul(::fixy::saturating_add(total_outputs, uint32_t{256}), uint32_t{2}));
     uint32_t needed_map =
         (raw_map_size >= MAX_PTR_MAP_CAP)
             ? MAX_PTR_MAP_CAP
             : ::fixy::bit_ceil(raw_map_size).expect("a size below MAX_PTR_MAP_CAP has a power of two in 32 bits");
 
     // Unique storages are bounded by the outputs plus external headroom.
-    uint32_t needed_slots =
-        ::fixy::max(MIN_SCRATCH_SLOT_CAP, ::foundation::sat::add_sat(total_outputs, uint32_t{1024}));
+    uint32_t needed_slots = ::fixy::max(MIN_SCRATCH_SLOT_CAP, ::fixy::saturating_add(total_outputs, uint32_t{1024}));
 
     // Data-flow edges are bounded by the inputs, alias edges by the
     // outputs.
-    uint32_t needed_edges = ::fixy::max(MIN_SCRATCH_EDGE_CAP, ::foundation::sat::add_sat(total_inputs, total_outputs));
+    uint32_t needed_edges = ::fixy::max(MIN_SCRATCH_EDGE_CAP, ::fixy::saturating_add(total_inputs, total_outputs));
 
     if (needed_map > map_cap_.get()) {
         map_cap_.advance(needed_map);

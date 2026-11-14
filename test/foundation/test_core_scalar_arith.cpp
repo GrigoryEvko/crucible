@@ -3,12 +3,14 @@
 // values, over each pair of the edge values of each width, and over Philox
 // pairs of each width.  The checked form has a value exactly when the exact
 // result fits, the wrapping form is the exact result modulo 2^bits, and the
-// saturating form is the exact result clamped to the limits.
+// saturating form is the exact result clamped to the limits.  A zero divisor
+// of saturating_div ends the process.
 
 #include <foundation/core/Arithmetic.h>
 
 #include <foundation/Platform.h>
 
+#include "abort_probe.h"
 #include "philox_stream.h"
 
 #include <cstdint>
@@ -125,6 +127,7 @@ void check_pair(T left, T right) {
         CRUCIBLE_FATAL_INVARIANT(core::checked_div(a, b).is_some() == fits<T>(quotient));
         CRUCIBLE_FATAL_INVARIANT(!fits<T>(quotient) || holds(core::checked_div(a, b), static_cast<T>(quotient)));
         CRUCIBLE_FATAL_INVARIANT(holds(core::checked_rem(a, b), static_cast<T>(remainder)));
+        CRUCIBLE_FATAL_INVARIANT(core::saturating_div(a, b) == clamp_to<T>(quotient));
     }
 
     // gcd divides the two operands, and no larger value divides the two.
@@ -151,6 +154,11 @@ void check_value(T input) {
     CRUCIBLE_FATAL_INVARIANT(core::checked_neg(value).is_some() == fits<T>(negation));
     CRUCIBLE_FATAL_INVARIANT(!fits<T>(negation) || holds(core::checked_neg(value), static_cast<T>(negation)));
     CRUCIBLE_FATAL_INVARIANT(core::wrapping_neg(value) == modulo<T>(static_cast<Unsigned128>(negation)));
+    if constexpr (std::is_signed_v<T>) {
+        Signed128 const absolute = value < T{0} ? negation : static_cast<Signed128>(value);
+        CRUCIBLE_FATAL_INVARIANT(core::checked_abs(value).is_some() == fits<T>(absolute));
+        CRUCIBLE_FATAL_INVARIANT(!fits<T>(absolute) || holds(core::checked_abs(value), static_cast<T>(absolute)));
+    }
     for (int count = -2; count < core::bits_of<T> + 2; ++count) {
         bool const in_range = count >= 0 && count < core::bits_of<T>;
         int const step = static_cast<int>(static_cast<unsigned>(count) & static_cast<unsigned>(core::bits_of<T> - 1));
@@ -313,6 +321,32 @@ void test_gcd_against_euclid() {
     CRUCIBLE_FATAL_INVARIANT(core::gcd(opaque(std::int32_t{0}), std::int32_t{0}) == 0u);
 }
 
+// The absolute value takes a signed type only.  Each set takes an Integer
+// and nothing else: no float, no bool and no character type.
+template <class T>
+concept HasCheckedAbs = requires(T value) { core::checked_abs(value); };
+static_assert(HasCheckedAbs<int> && HasCheckedAbs<std::int64_t>);
+static_assert(!HasCheckedAbs<unsigned> && !HasCheckedAbs<std::uint8_t> && !HasCheckedAbs<double>);
+
+template <class T>
+concept SomeSetTakes =
+    requires(T value) { core::checked_add(value, value); } || requires(T value) { core::wrapping_add(value, value); }
+    || requires(T value) { core::saturating_add(value, value); }
+    || requires(T value) { core::saturating_div(value, value); };
+static_assert(SomeSetTakes<int> && SomeSetTakes<std::uint8_t> && SomeSetTakes<long long>);
+static_assert(!SomeSetTakes<double> && !SomeSetTakes<float> && !SomeSetTakes<bool>);
+static_assert(!SomeSetTakes<char> && !SomeSetTakes<char8_t> && !SomeSetTakes<wchar_t>);
+
+// A zero divisor of saturating_div ends the process, signed and unsigned,
+// and a divisor other than 0 returns.
+void test_saturating_div_ends_on_zero() {
+    using ::crucible::test::aborts;
+    CRUCIBLE_FATAL_INVARIANT(aborts([] { (void)core::saturating_div(opaque(7), 0); }));
+    CRUCIBLE_FATAL_INVARIANT(aborts([] { (void)core::saturating_div(opaque(std::uint64_t{7}), std::uint64_t{0}); }));
+    CRUCIBLE_FATAL_INVARIANT(aborts([] { (void)core::saturating_div(opaque(core::min_of<int>), 0); }));
+    CRUCIBLE_FATAL_INVARIANT(!aborts([] { (void)core::saturating_div(opaque(core::min_of<int>), -1); }));
+}
+
 }  // namespace
 
 int main() {
@@ -321,5 +355,6 @@ int main() {
     test_philox_pairs_of_each_width();
     test_widening_mul();
     test_gcd_against_euclid();
+    test_saturating_div_ends_on_zero();
     return 0;
 }

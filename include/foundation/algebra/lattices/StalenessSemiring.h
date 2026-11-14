@@ -19,10 +19,10 @@
 // right answer: a staleness past the representable range is unbounded
 // for any practical purpose.
 
-#include <foundation/Saturate.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Arithmetic.h>
 
 #include <compare>
 #include <cstdint>
@@ -72,7 +72,7 @@ struct StalenessSemiring {
         if (a.is_infinite() || b.is_infinite()) {
             return top();
         }
-        return element_type{::foundation::sat::add_sat(a.value, b.value)};
+        return element_type{::foundation::core::saturating_add(a.value, b.value)};
     }
 
     [[nodiscard]] static consteval std::string_view name() noexcept { return "StalenessSemiring"; }

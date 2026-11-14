@@ -2,6 +2,10 @@
 
 #include <fixy/Saturate.h>
 
+#include <cstdint>
+#include <type_traits>
+#include <utility>
+
 namespace fixy::sat {
 
 namespace detail::saturate_self_test {
@@ -19,7 +23,6 @@ static_assert(sizeof(DetSatPure<std::uint64_t>) == sizeof(Saturated<std::uint64_
 static_assert(
     std::is_same_v<decltype(add_sat_from(std::declval<std::uint32_t const&>(), 1u)), Saturated<std::uint32_t>>);
 static_assert(std::is_same_v<decltype(add_sat_into(std::declval<std::uint32_t&>(), 1u)), Saturated<std::uint32_t>>);
-static_assert(std::is_same_v<decltype(add_sat<std::uint32_t>(1u, 2u)), std::uint32_t>);
 
 }  // namespace detail::saturate_self_test
 

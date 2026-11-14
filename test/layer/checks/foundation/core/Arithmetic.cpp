@@ -45,6 +45,12 @@ static_assert(holds(checked_neg(5), -5) && empty(checked_neg(min_of<int>))
               && holds(checked_neg(max_of<int>), -max_of<int>));
 static_assert(holds(checked_neg(std::uint32_t{0}), std::uint32_t{0}) && empty(checked_neg(std::uint32_t{1})));
 
+// The absolute value has no value for the minimum.  test_core_scalar_arith
+// holds the refusal of an unsigned type.
+static_assert(holds(checked_abs(-7), 7) && holds(checked_abs(7), 7) && holds(checked_abs(0), 0));
+static_assert(empty(checked_abs(min_of<std::int8_t>)) && holds(checked_abs(std::int8_t{-127}), std::int8_t{127}));
+static_assert(empty(checked_abs(min_of<std::int64_t>)));
+
 // A shift count outside [0, bits) has no value, and a left shift that loses
 // a bit or changes the sign has no value.
 static_assert(holds(checked_shl(1, 30), 1 << 30) && empty(checked_shl(1, 31)) && empty(checked_shl(1, 32)));
@@ -77,6 +83,19 @@ static_assert(saturating_mul(std::int8_t{-100}, std::int8_t{2}) == -128);
 static_assert(saturating_mul(std::int8_t{-100}, std::int8_t{-2}) == 127);
 static_assert(saturating_mul(std::uint64_t{1} << 40, std::uint64_t{1} << 40) == max_of<std::uint64_t>);
 static_assert(saturating_add(3, 4) == 7 && saturating_sub(3, 4) == -1 && saturating_mul(3, 4) == 12);
+
+// The quotient of the minimum by -1 clamps to the maximum.  A zero divisor
+// ends the process through fatal(), so its call is no constant.
+template <auto Dividend, auto Divisor>
+concept DividesAsConstant = requires {
+    typename std::integral_constant<decltype(Dividend), ::foundation::core::saturating_div(Dividend, Divisor)>;
+};
+static_assert(saturating_div(min_of<int>, -1) == max_of<int> && saturating_div(min_of<int>, 1) == min_of<int>);
+static_assert(saturating_div(min_of<std::int8_t>, std::int8_t{-1}) == max_of<std::int8_t>);
+static_assert(saturating_div(-7, 2) == -3 && saturating_div(7, -2) == -3);
+static_assert(saturating_div(std::uint8_t{255}, std::uint8_t{5}) == std::uint8_t{51});
+static_assert(DividesAsConstant<7, 2> && !DividesAsConstant<7, 0>
+              && !DividesAsConstant<std::uint64_t{7}, std::uint64_t{0}>);
 
 // gcd is unsigned and total.
 static_assert(std::is_same_v<decltype(gcd(1, 2)), unsigned>

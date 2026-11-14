@@ -14,12 +14,12 @@
 // assignment replaces the value and the flag together.
 
 #include <foundation/Platform.h>
+#include <foundation/core/Arithmetic.h>
 
 #include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <numeric>
 #include <string_view>
 #include <type_traits>
 
@@ -78,34 +78,33 @@ public:
 };
 
 // The three below split the work: the builtin answers whether the exact
-// result fits, and the library supplies the clamped value when it does
-// not.  A clamp with a sign rule written out by hand is a chance to get
-// the end of the range wrong, for a value the library already knows.
-// This header adds only the part the library does not carry: the flag.
+// result fits, and the saturating form of the Scalar family gives the
+// clamped value when it does not.  This header adds only the part that the
+// family does not carry: the flag.
 
-template <std::integral T>
+template <::foundation::core::Integer T>
 [[nodiscard]] constexpr Saturated<T> add_sat_checked(T a, T b) noexcept {
     T r{};
     if (__builtin_add_overflow(a, b, &r)) [[unlikely]] {
-        return Saturated<T>{std::saturating_add(a, b), true};
+        return Saturated<T>{::foundation::core::saturating_add(a, b), true};
     }
     return Saturated<T>{r, false};
 }
 
-template <std::integral T>
+template <::foundation::core::Integer T>
 [[nodiscard]] constexpr Saturated<T> sub_sat_checked(T a, T b) noexcept {
     T r{};
     if (__builtin_sub_overflow(a, b, &r)) [[unlikely]] {
-        return Saturated<T>{std::saturating_sub(a, b), true};
+        return Saturated<T>{::foundation::core::saturating_sub(a, b), true};
     }
     return Saturated<T>{r, false};
 }
 
-template <std::integral T>
+template <::foundation::core::Integer T>
 [[nodiscard]] constexpr Saturated<T> mul_sat_checked(T a, T b) noexcept {
     T r{};
     if (__builtin_mul_overflow(a, b, &r)) [[unlikely]] {
-        return Saturated<T>{std::saturating_mul(a, b), true};
+        return Saturated<T>{::foundation::core::saturating_mul(a, b), true};
     }
     return Saturated<T>{r, false};
 }

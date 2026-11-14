@@ -1,24 +1,26 @@
-// Microbench for the saturating helpers of fixy::sat.
+// Microbench for the saturating forms of the Scalar family and of fixy::sat.
 //
-// add_sat, sub_sat and mul_sat come from foundation/Saturate.h. Each one
-// gives the exact result when no overflow occurs, and calls the library
-// clamp only on overflow. The *_sat_from forms give the result in a
-// Saturated<T>, and the *_sat_into forms also write it back.
+// saturating_add, saturating_sub and saturating_mul come from
+// foundation/core/Arithmetic.h through fixy/Core.h. Each one gives the
+// exact result when no overflow occurs, and the nearest limit of the type
+// on overflow. The *_sat_from forms give the result in a Saturated<T>, and
+// the *_sat_into forms also write it back.
 
 #include <cstdint>
 #include <cstdio>
 
+#include <fixy/Core.h>
 #include <fixy/Saturate.h>
 
 #include "bench_harness.h"
 
-using fixy::sat::add_sat;
+using fixy::saturating_add;
+using fixy::saturating_mul;
+using fixy::saturating_sub;
 using fixy::sat::add_sat_from;
 using fixy::sat::add_sat_into;
-using fixy::sat::mul_sat;
 using fixy::sat::mul_sat_from;
 using fixy::sat::mul_sat_into;
-using fixy::sat::sub_sat;
 using fixy::sat::sub_sat_from;
 using fixy::sat::sub_sat_into;
 
@@ -46,8 +48,7 @@ int main() {
     volatile int32_t imin = INT32_MIN;
     volatile int32_t neg1 = -1;
 
-    // Arena-relevant shape: n × sizeof(T) with overflow-check. Mirrors
-    // Arena::alloc_array — catch overflow before malloc.
+    // The shape of an array size: n × sizeof(T) with an overflow check.
     volatile size_t n = 10000;
     volatile size_t elt_sz = 168;
 
@@ -60,65 +61,65 @@ int main() {
     bench::Report reports[] = {
         bench::run("add_sat<u32>   common",
                    [&] {
-                       auto r = add_sat(u_a, u_b);
+                       auto r = saturating_add(u_a, u_b);
                        bench::do_not_optimize(r);
                    }),
         bench::run("sub_sat<u32>   common",
                    [&] {
-                       auto r = sub_sat(u_a, u_b);
+                       auto r = saturating_sub(u_a, u_b);
                        bench::do_not_optimize(r);
                    }),
         bench::run("mul_sat<u32>   common",
                    [&] {
-                       auto r = mul_sat(u_a, u_b);
+                       auto r = saturating_mul(u_a, u_b);
                        bench::do_not_optimize(r);
                    }),
 
         bench::run("add_sat<i32>   common",
                    [&] {
-                       auto r = add_sat(s_a, s_b);
+                       auto r = saturating_add(s_a, s_b);
                        bench::do_not_optimize(r);
                    }),
         bench::run("sub_sat<i32>   common",
                    [&] {
-                       auto r = sub_sat(s_a, s_b);
+                       auto r = saturating_sub(s_a, s_b);
                        bench::do_not_optimize(r);
                    }),
         bench::run("mul_sat<i32>   common",
                    [&] {
-                       auto r = mul_sat(s_a, s_b);
+                       auto r = saturating_mul(s_a, s_b);
                        bench::do_not_optimize(r);
                    }),
 
         bench::run("add_sat<u64>   common",
                    [&] {
-                       auto r = add_sat(U_a, U_b);
+                       auto r = saturating_add(U_a, U_b);
                        bench::do_not_optimize(r);
                    }),
         bench::run("mul_sat<u64>   common",
                    [&] {
-                       auto r = mul_sat(U_a, U_b);
+                       auto r = saturating_mul(U_a, U_b);
                        bench::do_not_optimize(r);
                    }),
         bench::run("mul_sat<i64>   common",
                    [&] {
-                       auto r = mul_sat(S_a, S_b);
+                       auto r = saturating_mul(S_a, S_b);
                        bench::do_not_optimize(r);
                    }),
 
         bench::run("add_sat<u64>   overflow",
                    [&] {
-                       auto r = add_sat(big_a, big_b);
+                       auto r = saturating_add(big_a, big_b);
                        bench::do_not_optimize(r);
                    }),
         bench::run("mul_sat<i32>   INT_MIN×-1",
                    [&] {
-                       auto r = mul_sat(imin, neg1);
+                       auto r = saturating_mul(imin, neg1);
                        bench::do_not_optimize(r);
                    }),
         bench::run("mul_sat<size_t> array-sz",
                    [&] {
-                       auto r = mul_sat(n, elt_sz);
+                       auto r = saturating_mul(n, elt_sz);
                        bench::do_not_optimize(r);
                    }),
 

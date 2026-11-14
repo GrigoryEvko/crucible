@@ -23,7 +23,6 @@
 
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
-#include <fixy/Checked.h>
 #include <fixy/Core.h>
 #include <foundation/reflect/Hash.h>
 

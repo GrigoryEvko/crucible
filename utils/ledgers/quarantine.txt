@@ -132,19 +132,16 @@ include/crucible/perf/detail/ | std-object | 1 | - | -
 include/crucible/warden/ | raw-pointer-object | 13 | - | -
 include/crucible/warden/ | std-entity | 1 | - | -
 include/crucible/warden/ | std-object | 1 | - | -
-include/fixy/ | base-c-library-call | 5 | - | -
-include/fixy/ | base-std-entity | 385 | - | -
-include/fixy/ | base-std-object | 211 | - | -
+include/fixy/ | base-std-entity | 357 | - | -
+include/fixy/ | base-std-object | 202 | - | -
 include/fixy/ | replace-pending:<array> | 6 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
 include/fixy/ | replace-pending:<bit> | 4 | - | -
-include/fixy/ | replace-pending:<cstdlib> | 1 | - | -
 include/fixy/ | replace-pending:<expected> | 2 | - | -
 include/fixy/ | replace-pending:<functional> | 1 | - | -
-include/fixy/ | replace-pending:<limits> | 3 | - | -
+include/fixy/ | replace-pending:<limits> | 2 | - | -
 include/fixy/ | replace-pending:<memory> | 2 | - | -
-include/fixy/ | replace-pending:<numeric> | 1 | - | -
-include/fixy/ | replace-pending:<optional> | 5 | - | -
+include/fixy/ | replace-pending:<optional> | 4 | - | -
 include/fixy/ | replace-pending:<ranges> | 2 | - | -
 include/fixy/ | replace-pending:<span> | 6 | - | -
 include/fixy/ | replace-pending:<string> | 5 | - | -
@@ -236,12 +233,11 @@ include/fixy/session/ | replace-pending:<string_view> | 10 | - | -
 include/fixy/session/ | replace-pending:<tuple> | 7 | - | -
 include/fixy/session/ | replace-pending:<vector> | 9 | - | -
 include/foundation/ | base-c-library-call | 4 | - | -
-include/foundation/ | base-std-entity | 29 | - | -
+include/foundation/ | base-std-entity | 26 | - | -
 include/foundation/ | base-std-object | 12 | - | -
 include/foundation/ | replace-pending:<atomic> | 1 | - | -
 include/foundation/ | replace-pending:<bit> | 4 | - | -
 include/foundation/ | replace-pending:<cstring> | 1 | - | -
-include/foundation/ | replace-pending:<numeric> | 1 | - | -
 include/foundation/ | replace-pending:<span> | 3 | - | -
 include/foundation/ | replace-pending:<string_view> | 3 | - | -
 include/foundation/algebra/ | base-std-entity | 16 | - | -
@@ -351,12 +347,11 @@ test/ct/ | std-entity | 20 | - | -
 test/ct/ | std-object | 13 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
 test/fixy/ | c-array-object | 100 | - | -
-test/fixy/ | c-library-call | 1469 | - | -
+test/fixy/ | c-library-call | 1467 | - | -
 test/fixy/ | c-library-object | 9 | - | -
 test/fixy/ | door-header | 22 | - | -
 test/fixy/ | opted-out | 16 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | opted-out | 3 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
-test/fixy/ | opted-out | 3 | ORACLE: the std::optional of a copy of the arithmetic set is compared with its core twin | the differential test of the copies of the integer arithmetic set reads the std::optional of each copy of fixy/Checked.h, and compares it with the Option of its core twin
 test/fixy/ | opted-out | 6 | PROBE: a send that raises SIGPIPE reaches a handler that marks its arrival | the test of the send door installs a handler of SIGPIPE through the C library, because the base has no door that sets the action of a signal outside an Init context, and the handler replaces a SIG_IGN from the runner of the tests
 test/fixy/ | opted-out | 7 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper | -
 test/fixy/ | opted-out | 20 | PROBE: a signal reaches a thread that waits in the futex door | -
@@ -380,7 +375,6 @@ test/fixy/ | raw-new-delete | 9 | - | -
 test/fixy/ | raw-pointer-object | 159 | - | -
 test/fixy/ | region | 1 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | region | 1 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
-test/fixy/ | region | 1 | ORACLE: the std::optional of a copy of the arithmetic set is compared with its core twin | the differential test of the copies of the integer arithmetic set reads the std::optional of each copy of fixy/Checked.h, and compares it with the Option of its core twin
 test/fixy/ | region | 1 | PROBE: a send that raises SIGPIPE reaches a handler that marks its arrival | the test of the send door installs a handler of SIGPIPE through the C library, because the base has no door that sets the action of a signal outside an Init context, and the handler replaces a SIG_IGN from the runner of the tests
 test/fixy/ | region | 1 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper | -
 test/fixy/ | region | 1 | PROBE: a signal reaches a thread that waits in the futex door | -
@@ -399,11 +393,11 @@ test/fixy/ | region | 1 | PROBE: the seal test forges each payload view, gate an
 test/fixy/ | region | 1 | PROBE: the test forges stdio::write for a private stream, and IsAtom must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: the test forges the wire word of a keyed step and of a branch of a keyed choice | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: the test plants an atom in a shipped family, and IsAtom must refuse it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
-test/fixy/ | replace-pending:<limits> | 29 | - | -
+test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 3007 | - | -
-test/fixy/ | std-object | 1083 | - | -
+test/fixy/ | std-entity | 2949 | - | -
+test/fixy/ | std-object | 1077 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 5 | - | -
 test/fixy/neg/ | c-library-object | 2 | - | -
@@ -459,7 +453,7 @@ test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
 test/fixy/neg/ | std-entity | 164 | - | -
 test/fixy/neg/ | std-object | 70 | - | -
 test/foundation/ | c-array-object | 33 | - | -
-test/foundation/ | c-library-call | 403 | - | -
+test/foundation/ | c-library-call | 399 | - | -
 test/foundation/ | c-library-object | 7 | - | -
 test/foundation/ | door-header | 7 | - | -
 test/foundation/ | foreign-symbol | 5 | - | -
@@ -492,10 +486,10 @@ test/foundation/ | region | 1 | PROBE: a bit copy of zero bytes into a Ref, as a
 test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of a OneOf | the test of which() copies bytes that hold a tag outside the alternatives over a OneOf in a PROBE region
 test/foundation/ | region | 1 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
-test/foundation/ | replace-pending:<limits> | 57 | - | -
+test/foundation/ | replace-pending:<limits> | 53 | - | -
 test/foundation/ | replace-pending:std::bit_cast | 9 | - | -
 test/foundation/ | replace-pending:std::source_location | 8 | - | -
-test/foundation/ | std-entity | 565 | - | -
+test/foundation/ | std-entity | 562 | - | -
 test/foundation/ | std-object | 192 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
@@ -563,9 +557,9 @@ test/fuzz/property/ | c-library-call | 48 | - | -
 test/fuzz/property/ | compiler-builtin | 4 | - | -
 test/fuzz/property/ | raw-function-pointer | 2 | - | -
 test/fuzz/property/ | raw-pointer-object | 46 | - | -
-test/fuzz/property/ | replace-pending:<limits> | 36 | - | -
-test/fuzz/property/ | std-entity | 168 | - | -
-test/fuzz/property/ | std-object | 47 | - | -
+test/fuzz/property/ | replace-pending:<limits> | 27 | - | -
+test/fuzz/property/ | std-entity | 146 | - | -
+test/fuzz/property/ | std-object | 38 | - | -
 test/kernel_neg/ | raw-pointer-object | 1 | - | -
 test/kernel_neg/ | replace-pending:<limits> | 1 | - | -
 test/layer/ | door-header | 1 | - | -

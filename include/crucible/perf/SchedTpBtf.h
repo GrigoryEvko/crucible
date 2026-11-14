@@ -3,7 +3,6 @@
 #include <crucible/perf/SchedSwitch.h>
 
 #include <fixy/Borrowed.h>
-#include <fixy/Checked.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>

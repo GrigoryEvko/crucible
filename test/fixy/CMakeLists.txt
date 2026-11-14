@@ -1858,11 +1858,7 @@ fixy_neg_compile_test(neg_cyclic_buffer_push_of_a_const_element
   "template constraint failure for .template<class T, long unsigned int N>  requires \\(OwnedElement<T>\\)"
   "required for the satisfaction of .OwnedElement<T>. \\[with T = const test_cyclic_buffer_const_element::Reading\\]")
 fixy_test(test_saturated)
-
-# test/foundation/test_saturate.cpp has the same file name, and a CMake
-# target name is global.  Each of the two targets carries the name of its
-# layer.
-fixy_test(test_saturate_fixy test_saturate.cpp)
+fixy_test(test_saturate)
 
 # The four refusals of fixy/Saturate.h.  Each fixture name starts with
 # neg_sat_, the name of the namespace fixy::sat.  An into helper takes a
@@ -1884,7 +1880,6 @@ fixy_neg_compile_test(neg_sat_det_cross_tier_assignment
   "conversion from .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::Pure>,\\[\\.\\.\\.\\]>."
   "to non-scalar type .Graded<\\[\\.\\.\\.\\],At<foundation::algebra::lattices::DetSafeTier::PhiloxRng>,\\[\\.\\.\\.\\]>. requested")
 fixy_test(test_checked)
-fixy_test(test_arithmetic_twins)
 
 # Each compile-time gate of fixy/Checked.h stops the build at a value the
 # destination type cannot hold.  The first regex is the bracketed tag of
