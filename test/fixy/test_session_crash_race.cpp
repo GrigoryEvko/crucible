@@ -137,7 +137,8 @@ template <typename Handle>
 
 // A send to a crashed peer writes nothing and gives the payload back.
 // So the queue holds the label and the value exactly when the payload
-// did not come back, and the label counts as the one message sent.
+// did not come back.  The label and the value are one message, and it
+// counts when the value goes, so a label alone counts as no message.
 template <typename Sent>
 [[nodiscard]] int check_send_outcome(const Sent& sent, const Mailbox& queue, int value) {
     const std::size_t queued = queue.slots.size();
@@ -147,8 +148,8 @@ template <typename Sent>
     } else if (queued != 2 || queue.slots[1] != static_cast<std::uint64_t>(value)) {
         return fail("a payload that did not come back is missing from the queue");
     }
-    const std::uint64_t labels = queued >= 1 ? 1 : 0;
-    if (sent.next.messages_sent() != labels) return fail("the count of messages sent disagrees with the queue");
+    const std::uint64_t messages = queued == 2 ? 1 : 0;
+    if (sent.next.messages_sent() != messages) return fail("the count of messages sent disagrees with the queue");
     return 0;
 }
 

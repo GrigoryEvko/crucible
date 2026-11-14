@@ -80,6 +80,14 @@
 // count, and it takes the crash branch at its next reception.  The add is
 // one locked operation for each message, on a crash-watched session only.
 //
+// A message counts when it is whole.  A label whose branch opens with a
+// send, and a keyed label word with a value, are half of their message,
+// and the send of the payload counts it.  A report between the label and
+// the payload did not count the message of the label.  The count after the
+// payload reads the fence, so the session stops there, and the peer takes
+// its crash branch: the label and the payload that the transport reports
+// are past the count.
+//
 // ── One class for every head ────────────────────────────────────────
 //
 // One class handles every head, and the crash branch is what runs on a
@@ -97,7 +105,10 @@
 // reports as taken and that the peer never reads is the loss that rule
 // r-↯ defines for a queue into a crashed peer, so the report and the loss
 // look the same.  And the transport delivers a label and the payload of
-// its branch together: a split shows as Crash_Splits_A_Message.
+// its branch together: a split shows as Crash_Splits_A_Message.  A
+// transport that shows a label to the peer before its payload breaks this
+// trust.  If the peer reads that label, and the sender then dies before
+// the payload, the peer ends with Crash_Splits_A_Message.
 //
 // Every transport of a crash session returns at once.  A write tries, and
 // a read polls, so every wait of the decorator is its own wait through the
@@ -462,7 +473,9 @@ struct payload_sender<payload_to_receive<Sender>, Peer> {
 
 // The messages that the decorator counted on its session, one count for
 // each direction.  A label and the payload of its branch are one message.
-// The counts travel from each handle to the next.
+// A sent message counts when its last part goes, and a received message
+// counts at its first part.  The counts travel from each handle to the
+// next.
 struct message_counts {
     std::uint64_t received = 0;
     std::uint64_t sent = 0;
@@ -730,11 +743,11 @@ public:
                             }
                             return std::invoke(transport, resource, payload);
                         });
-        // The payload of a label is part of the label's message, which the
-        // select counted.  A payload that did not go is no message.
-        constexpr bool is_payload_of_label = std::is_same_v<Position, detail::crash_transport::payload_to_send>;
+        // A message counts once it is whole: a bare message at its write, and
+        // the message of a label at the write of its payload.  A payload that
+        // did not go is no message.
         const detail::crash_transport::message_counts counts =
-            (is_payload_of_label || undelivered.has_value()) ? watched.counts_ : one_more_sent_(watched);
+            undelivered.has_value() ? watched.counts_ : one_more_sent_(watched);
         auto wrapped = wrap_(watched, std::move(next), counts);
         return CrashSend<decltype(wrapped), T>{std::move(wrapped), std::move(undelivered)};
     }
@@ -754,7 +767,11 @@ public:
         auto next = std::move(watched.inner_)
                         .send(detail::crash_transport::watched_word_write<typename Handle::resource_type>(
                             *watched.peer_cell_, transport, is_written));
-        const detail::crash_transport::message_counts counts = is_written ? one_more_sent_(watched) : watched.counts_;
+        // A word with a value is half of its message, and the send of the
+        // value counts the message.  A word with no value is the whole
+        // message.
+        const detail::crash_transport::message_counts counts =
+            (is_written && !keyed_step_has_value_v<P>) ? one_more_sent_(watched) : watched.counts_;
         auto wrapped = [&] {
             if constexpr (keyed_step_has_value_v<P>) {
                 return wrap_<detail::crash_transport::payload_to_send>(watched, std::move(next), counts);
@@ -779,7 +796,6 @@ public:
         auto next = std::move(watched.inner_)
                         .template select<I>(detail::crash_transport::watched_word_write<typename Handle::resource_type>(
                             *watched.peer_cell_, transport, is_written));
-        const detail::crash_transport::message_counts counts = is_written ? one_more_sent_(watched) : watched.counts_;
         using Next = decltype(next);
         constexpr bool is_inside_message = [] {
             if constexpr (is_keyed_choice_v<P>) {
@@ -788,6 +804,11 @@ public:
                 return is_send_v<typename Next::protocol>;
             }
         }();
+        // A label with a payload to go is half of its message, and the send
+        // of the payload counts the message.  A label alone is the whole
+        // message.
+        const detail::crash_transport::message_counts counts =
+            (is_written && !is_inside_message) ? one_more_sent_(watched) : watched.counts_;
         if constexpr (is_inside_message) {
             return wrap_<detail::crash_transport::payload_to_send>(watched, std::move(next), counts);
         } else {

@@ -178,6 +178,9 @@ void run_loop_to_crash(Loop handle, const Poll& poll, const OnMessage& on_messag
 [[noreturn]] void crash_between_check_and_write_loses_token();
 [[noreturn]] void bare_recv_from_crashed_reliable_peer();
 [[noreturn]] void peer_dies_between_label_and_payload();
+[[noreturn]] void false_report_between_label_and_payload();
+[[noreturn]] void reported_sender_stops_at_the_payload();
+[[noreturn]] void peer_reads_label_before_the_report();
 
 // test_session_crash_attack.cpp: the event log.
 [[noreturn]] void recorder_sees_the_crash();
@@ -207,7 +210,10 @@ inline constexpr attack_case kAttacks[] = {
     {"false_suspicion_fences_the_sender", Outcome::Caught, false_suspicion_fences_the_sender},
     {"crash_between_check_and_write_loses_token", Outcome::Correct, crash_between_check_and_write_loses_token},
     {"bare_recv_from_crashed_reliable_peer", Outcome::Caught, bare_recv_from_crashed_reliable_peer},
-    {"peer_dies_between_label_and_payload", Outcome::Caught, peer_dies_between_label_and_payload},
+    {"peer_dies_between_label_and_payload", Outcome::Correct, peer_dies_between_label_and_payload},
+    {"false_report_between_label_and_payload", Outcome::Correct, false_report_between_label_and_payload},
+    {"reported_sender_stops_at_the_payload", Outcome::Caught, reported_sender_stops_at_the_payload},
+    {"peer_reads_label_before_the_report", Outcome::Caught, peer_reads_label_before_the_report},
     {"recorder_sees_the_crash", Outcome::Correct, recorder_sees_the_crash},
     {"corrupt_event_bytes", Outcome::Correct, corrupt_event_bytes},
 };

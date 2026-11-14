@@ -403,7 +403,7 @@ test/fixy/ | replace-pending:<limits> | 29 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
 test/fixy/ | std-entity | 3007 | - | -
-test/fixy/ | std-object | 1084 | - | -
+test/fixy/ | std-object | 1083 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 5 | - | -
 test/fixy/neg/ | c-library-object | 2 | - | -
