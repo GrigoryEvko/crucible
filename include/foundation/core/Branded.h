@@ -332,10 +332,13 @@ public:
     }
 
     // The element at an index of this view.  The brand proves the index below
-    // the count, so the read has no check.
+    // the count, so the read has no check.  The assume reads a local copy of
+    // the count.  An assume that reads the member count_ makes GCC 16 keep
+    // the view in memory, and a loop then stores the view again for each read.
     [[nodiscard]] constexpr T& at(BrandedIndex<Brand> index) const noexcept {
         std::size_t const position = index.raw();
-        [[assume(position < count_)]];
+        std::size_t const count = count_;
+        [[assume(position < count)]];
         return first_[position];
     }
 
