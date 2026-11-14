@@ -315,11 +315,11 @@ test/ | opted-out | 13 | PROBE: the current directory of the process is a direct
 test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | raw-function-pointer | 21 | - | -
 test/ | raw-new-delete | 41 | - | -
-test/ | raw-pointer-object | 398 | - | -
+test/ | raw-pointer-object | 397 | - | -
 test/ | region | 1 | PROBE: the current directory of the process is a directory that it cannot read | the test of the root of the Cipher makes its current directory unreadable through the C library, because the base has no door that changes the current directory or the mode of a directory, and an absolute root must open when the current directory does not open
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | replace-pending:<limits> | 12 | - | -
-test/ | replace-pending:std::bit_cast | 85 | - | -
+test/ | replace-pending:std::bit_cast | 84 | - | -
 test/ | std-entity | 1501 | - | -
 test/ | std-object | 540 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
@@ -647,7 +647,7 @@ utils/tools/lsp_code_action_plugin/ | std-object | 27 | - | -
 vessel/torch/ | c-library-call | 3 | - | -
 vessel/torch/ | c-library-object | 1 | - | -
 vessel/torch/ | opted-out | 33 | ABI: a C entry takes and gives the raw pointers of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
-vessel/torch/ | opted-out | 11 | ABI: the helpers give a type to the handle and the meta array of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
+vessel/torch/ | opted-out | 9 | ABI: the helpers give a type to the handle and the meta array of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
 vessel/torch/ | opted-out | 51 | C-HEADER: a C caller and ctypes read these declarations, so they hold only C types | vessel_api.h is a header that a C compiler and ctypes read, so its declarations hold only C types
 vessel/torch/ | raw-pointer-object | 4 | - | -
 vessel/torch/ | region | 8 | ABI: a C entry takes and gives the raw pointers of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes

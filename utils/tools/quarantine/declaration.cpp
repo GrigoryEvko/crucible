@@ -1464,13 +1464,10 @@ void check_permission_member(tree decl) {
 
 // The names of a getter whose provenance is the object that it reads.
 constexpr const char* kAccessors[] = {
-    "data",      "data_mut", "begin",   "end",      "cbegin",      "cend",
-    "front",     "back",     "at",      "get",      "get_or_init", "get_assuming_set",
-    "peek",      "peek_mut", "value",   "resource", "ctx",         "in",
-    "out",       "input",    "output",  "stage",    "machine",     "state",
-    "state_mut", "current",  "carrier", "handle",   "pin",         "c_str",
-    "sq_ring",   "cq_ring",  "sqes",    "observe",  "consume",     "try_get",
-    "raw_ptr",   "graded",   "cap",     "span",     "cspan",
+    "data",        "data_mut", "begin",    "end",       "cbegin",   "cend",    "front",  "back", "at",    "get",
+    "get_or_init", "peek",     "peek_mut", "value",     "resource", "ctx",     "in",     "out",  "input", "output",
+    "stage",       "machine",  "state",    "state_mut", "current",  "carrier", "handle", "pin",  "c_str", "sq_ring",
+    "cq_ring",     "sqes",     "observe",  "consume",   "try_get",  "raw_ptr", "graded", "cap",  "span",  "cspan",
 };
 
 // The explicit doors of the C boundary and of the hand-off of ownership.
