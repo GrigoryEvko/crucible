@@ -4,13 +4,10 @@
 #include <crucible/cog/TargetCaps.h>
 #include <foundation/effects/Concurrent.h>
 #include <foundation/effects/Resources.h>
-#include <foundation/reflect/Anchor.h>
 
 #include <concepts>
 #include <cstdint>
-#include <meta>
 #include <type_traits>
-#include <vector>
 
 namespace crucible::cog {
 
@@ -25,10 +22,10 @@ namespace crucible::cog {
 // The primary template stays undefined, so an unrecognised kind fails
 // at name lookup rather than reading a default of zero.
 //
-// The axis fold below is reflection-driven and picks up a new resource
-// axis on its own. A specialisation that does not add a case for the
-// new axis gives it a ceiling of 0 and rejects every demand on it,
-// which is wrong-but-safe rather than silently permissive.
+// The fold below reads each tag of the row, so it takes a new resource
+// axis with no change here. A specialisation that does not add a case
+// for the new axis gives it a ceiling of 0 and rejects every demand on
+// it, which is wrong-but-safe rather than silently permissive.
 
 template <CogKind K>
 struct cog_max_capacity;
@@ -185,27 +182,24 @@ concept HasCogCapacity = requires(::foundation::effects::ResourceKind axis) {
 
 namespace detail {
 
+// The demand of the row on each axis that a tag of the row names is at most
+// the ceiling of the kind.  An axis that the row does not name has a demand
+// of 0, which each ceiling admits, so the tags of the row name each axis
+// that can refuse it.  The demand on an axis is the sum of each tag of that
+// axis.  Complexity: O(T^2) for T tags, at compile time only.
 template <typename Row, CogKind K>
-[[nodiscard]] consteval bool evaluate_row_fits_cog() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Row, std::vector<std::meta::info>>>(
-            std::meta::enumerators_of(^^::foundation::effects::ResourceKind)));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        constexpr ::foundation::effects::ResourceKind axis = [:en:];
-        constexpr std::uint64_t demand = ::foundation::effects::concurrent_row_value_v<axis, Row>;
-        constexpr std::uint64_t ceiling = cog_max_capacity<K>::for_kind(axis);
-        if (demand > ceiling) {
-            return false;
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
+struct row_fits_cog;
+
+template <::foundation::effects::ResourceTag... Tags, CogKind K>
+struct row_fits_cog<::foundation::effects::ConcurrentRow<Tags...>, K> {
+    static constexpr bool value =
+        ((::foundation::effects::concurrent_row_value_v<Tags::kind, ::foundation::effects::ConcurrentRow<Tags...>>
+          <= cog_max_capacity<K>::for_kind(Tags::kind))
+         && ...);
+};
 
 template <typename Row, CogKind K>
-inline constexpr bool row_fits_cog_v = evaluate_row_fits_cog<Row, K>();
+inline constexpr bool row_fits_cog_v = row_fits_cog<Row, K>::value;
 
 }  // namespace detail
 
@@ -346,27 +340,30 @@ struct caps_runtime_capacity<CogKind::DramChannel> {
 
 }  // namespace detail
 
+namespace detail {
+
+// The runtime form of row_fits_cog: the demand on each axis that a tag of
+// the row names is at most the measured capacity of one Cog.  Complexity:
+// O(T) reads of the schema for T tags.
+template <typename Row, CogKind K>
+struct row_fits_caps;
+
+template <::foundation::effects::ResourceTag... Tags, CogKind K>
+struct row_fits_caps<::foundation::effects::ConcurrentRow<Tags...>, K> {
+    [[nodiscard]] static constexpr bool fits(caps_for_t<K> const& caps) noexcept {
+        return (
+            (::foundation::effects::concurrent_row_value_v<Tags::kind, ::foundation::effects::ConcurrentRow<Tags...>>
+             <= caps_runtime_capacity<K>::for_kind(caps, Tags::kind))
+            && ...);
+    }
+};
+
+}  // namespace detail
+
 template <typename Row, CogKind K>
     requires ::foundation::effects::IsConcurrentRow<Row> && HasCogCapacity<K>
 [[nodiscard]] constexpr bool fits_cog_caps_runtime(caps_for_t<K> const& caps) noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(static_cast<::foundation::reflect::anchored_t<^^Row, std::vector<std::meta::info>>>(
-            std::meta::enumerators_of(^^::foundation::effects::ResourceKind)));
-    bool fits = true;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        constexpr ::foundation::effects::ResourceKind axis = [:en:];
-        constexpr std::uint64_t demand = ::foundation::effects::concurrent_row_value_v<axis, Row>;
-        if (demand > 0) {
-            const std::uint64_t capacity = detail::caps_runtime_capacity<K>::for_kind(caps, axis);
-            if (demand > capacity) {
-                fits = false;
-            }
-        }
-    }
-#pragma GCC diagnostic pop
-    return fits;
+    return detail::row_fits_caps<Row, K>::fits(caps);
 }
 
 }  // namespace crucible::cog
