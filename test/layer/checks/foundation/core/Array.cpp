@@ -289,6 +289,77 @@ static_assert(::foundation::linear::is_linear_v<HeapArray<LinearToken>>);
 static_assert(ViewsTemporary<HeapArray<int>&> && !ViewsTemporary<HeapArray<int>>);
 static_assert(!ViewsTemporary<HeapArray<int> const>);
 
+// mint_heap_array_with builds each element in place from the result of
+// init, which is exactly a T, so an element that does not copy or move
+// passes.  An init that gives a type that converts to T, or that can throw,
+// does not pass.
+struct Anchored final {
+    std::uint64_t position = 0;
+    explicit Anchored(std::uint64_t from) noexcept : position{from} {}
+    Anchored(Anchored const&) = delete;
+    Anchored(Anchored&&) = delete;
+};
+struct BuildsAnchored final {
+    Anchored operator()(std::size_t position) const noexcept { return Anchored{position}; }
+};
+struct BuildsLong final {
+    long operator()(std::size_t position) const noexcept { return static_cast<long>(position); }
+};
+struct BuildsThrowing final {
+    int operator()(std::size_t position) const { return static_cast<int>(position); }
+};
+static_assert(CanMintHeapArrayWith<Anchored, alignof(Anchored), Alloc, BuildsAnchored>);
+static_assert(CanMintHeapArrayWith<Anchored, 64, Alloc, BuildsAnchored>);
+static_assert(CanMintHeapArrayWith<long, alignof(long), Alloc, BuildsLong>);
+static_assert(!CanMintHeapArrayWith<int, alignof(int), Alloc, BuildsLong>);
+static_assert(!CanMintHeapArrayWith<int, alignof(int), Alloc, BuildsThrowing>);
+static_assert(!CanMintHeapArrayWith<Anchored, alignof(Anchored), OtherTag, BuildsAnchored>);
+static_assert(!CanMintHeapArrayWith<Anchored, 4, Alloc, BuildsAnchored>);
+
+// mint_heap_array_zeroed takes an element of which each bit pattern is a
+// value, whose lifetime starts over its bytes: an integer, a float and a
+// record of them.  A bool, an enumeration with an enumerator, a pointer and a
+// proof do not pass, because zero bytes can be no value of them.
+enum class Mode : std::uint8_t {
+    first = 1,
+    second = 2
+};
+static_assert(CanMintHeapArrayZeroed<std::uint64_t, 64, Alloc>
+              && CanMintHeapArrayZeroed<double, alignof(double), Alloc>);
+static_assert(CanMintHeapArrayZeroed<Record, alignof(Record), Alloc>);
+static_assert(!CanMintHeapArrayZeroed<bool, alignof(bool), Alloc>);
+static_assert(!CanMintHeapArrayZeroed<Mode, alignof(Mode), Alloc>);
+static_assert(!CanMintHeapArrayZeroed<int*, alignof(int*), Alloc>);
+static_assert(!CanMintHeapArrayZeroed<::foundation::lifetime::detail::HoldsProof,
+                                      alignof(::foundation::lifetime::detail::HoldsProof), Alloc>);
+static_assert(!CanMintHeapArrayZeroed<std::uint64_t, 64, OtherTag>);
+
+// mint_heap_array_written takes an implicit-lifetime element that a move of
+// bytes writes, and a writer that takes a WriteLease with no throw.  A proof
+// does not pass.  The lease has no read: no view(), no get(), no subscript
+// and no data().  It does not copy or move, so it stays in the frame of the
+// mint.
+struct WritesNothing final {
+    void operator()(WriteLease<int>& lease) const noexcept { static_cast<void>(lease.remaining()); }
+};
+struct WritesThrowing final {
+    void operator()(WriteLease<int>& lease) const { static_cast<void>(lease.remaining()); }
+};
+static_assert(CanMintHeapArrayWritten<int, alignof(int), Alloc, WritesNothing>);
+static_assert(CanMintHeapArrayWritten<int, 64, Alloc, WritesNothing>);
+static_assert(!CanMintHeapArrayWritten<int, alignof(int), Alloc, WritesThrowing>);
+static_assert(!CanMintHeapArrayWritten<int, alignof(int), OtherTag, WritesNothing>);
+static_assert(!CanMintHeapArrayWritten<::foundation::lifetime::detail::HoldsProof,
+                                       alignof(::foundation::lifetime::detail::HoldsProof), Alloc, WritesNothing>);
+static_assert(!CanMintHeapArrayWritten<Anchored, alignof(Anchored), Alloc, WritesNothing>);
+template <class Lease>
+concept ReadsLease = requires(Lease& lease) { lease.view(); } || requires(Lease& lease) { lease.get(0); }
+                  || requires(Lease& lease) { lease[0]; } || requires(Lease& lease) { lease.data(); };
+static_assert(!ReadsLease<WriteLease<int>> && !ReadsLease<WriteLease<Record>>);
+static_assert(!std::is_copy_constructible_v<WriteLease<int>> && !std::is_move_constructible_v<WriteLease<int>>);
+static_assert(!std::is_copy_assignable_v<WriteLease<int>> && !std::is_move_assignable_v<WriteLease<int>>);
+static_assert(sizeof(WriteLease<int>) == 3 * sizeof(std::size_t));
+
 // The empty array holds no storage, in a constant evaluation too.
 [[nodiscard]] consteval std::size_t empty_reads() noexcept {
     HeapArray<int> const empty{};

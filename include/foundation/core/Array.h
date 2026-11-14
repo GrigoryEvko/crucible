@@ -37,11 +37,31 @@
 // when its element is, so the ABI passes a small array in registers.
 //
 // THE HEAP ARRAY
-//   mint_heap_array(alloc, count, fill)   the one door: count copies of
-//                       fill in storage from the allocation door of
-//                       foundation/core/Heap.h.  The allocation capability
-//                       comes first, so each allocation shows at its call.
-//                       A count of zero allocates nothing
+//   The five mints put count elements in storage from the allocation door of
+//   foundation/core/Heap.h.  The allocation capability comes first in each
+//   mint, so each allocation shows at its call.  A count of zero allocates
+//   nothing.  Each element holds a value before the mint returns.
+//
+//   mint_heap_array(alloc, count, fill)
+//                       count copies of fill
+//   mint_heap_array_with<T>(alloc, count, init)
+//                       the element at each position built in place from
+//                       init(position).  No element moves, so a pinned
+//                       element, such as an Atomic, passes
+//   mint_heap_array_copy<T>(alloc, source)
+//                       a copy of each element of a View
+//   mint_heap_array_zeroed<T>(alloc, count)
+//                       count elements with zero in each byte.  Each bit
+//                       pattern of the element is a value (BitValid)
+//   mint_heap_array_written<T>(alloc, count, writer)
+//                       count elements of an implicit-lifetime type that
+//                       writer(lease) writes through a WriteLease.  The lease
+//                       writes the elements in order and has no read, so no
+//                       code reads an element before its write.  A writer
+//                       that leaves an element with no write, or that gives
+//                       an element past the last one, ends the process before
+//                       the array exists
+//
 //   size(), view(), the loop, get(position), and the iteration verbs, as
 //                       a FixedArray gives them.  No type holds the count of a
 //                       HeapArray, so it has no indices() and no enumerate()
@@ -63,6 +83,7 @@
 // A MaskedArray owns its storage as a HeapArray does.  It has no operator[]
 // and no pointer to its elements.
 
+#include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Arithmetic.h>
@@ -354,14 +375,14 @@ struct MaskedArrayState {
 
 }  // namespace owner
 
-// The door of mint_heap_array and mint_masked_array, and the key of the
-// constructors of a HeapArray and a MaskedArray.  HeapArrayDoor is the one
-// friend of the key, and only the two mints call the door.  The door and the
-// key hold no template, so no explicit specialization of a template reaches
-// the key.  A constructor that takes the key allocates the storage and builds
-// each element itself.  So a use of namespace detail outside the base gets
-// only an array of new storage, with no allocation capability at its call
-// site.
+// The door of the mints of a HeapArray and of mint_masked_array, and the key
+// of the constructors of a HeapArray, a MaskedArray and a WriteLease.
+// HeapArrayDoor is the one friend of the key, and only the mints call the
+// door.  The door and the key hold no template, so no explicit
+// specialization of a template reaches the key.  A constructor of an array
+// that takes the key allocates the storage and builds each element itself.
+// So a use of namespace detail outside the base gets only an array of new
+// storage, with no allocation capability at its call site.
 struct HeapArrayDoor;
 
 class [[nodiscard]] HeapArrayKey final {
@@ -378,13 +399,134 @@ struct HeapArrayDoor {
     [[nodiscard]] static constexpr HeapArrayKey key() noexcept { return HeapArrayKey{}; }
 };
 
+// The tags of the keyed constructors of a HeapArray, one for each mint
+// after mint_heap_array.
+struct BuildEachTag final {};
+struct CopyTag final {};
+struct ZeroTag final {};
+struct WriteTag final {};
+
+// The storage of count elements of T at the alignment Align, from the
+// allocation door.  count is above zero, and a count whose bytes do not fit
+// ends the process before the allocation.  The bytes hold no value.
+template <class T, std::size_t Align>
+[[nodiscard]] void* allocate_heap_elements_(std::size_t count) noexcept {
+    return heap_allocate_(heap_array_bytes_<T, Align>(count), Align);
+}
+
+// The fatal exit of a writer of mint_heap_array_written that left elements
+// with no write, or that gave elements past the last one.
+[[noreturn]] CRUCIBLE_COLD inline void refuse_written_array_(std::size_t count, std::size_t unwritten,
+                                                             std::size_t refused) noexcept {
+    fatal("the writer of mint_heap_array_written left {} of {} elements with no write, and gave {} elements past "
+          "the last one",
+          unwritten, count, refused);
+}
+
 }  // namespace detail
 
-// The arguments of mint_heap_array: an element that copies with no throw,
-// an alignment of the storage, and the allocation capability.
+// The arguments of mint_heap_array and mint_heap_array_copy: an element that
+// copies with no throw, an alignment of the storage, and the allocation
+// capability.
 template <class T, std::size_t Align, class Marker>
 concept CanMintHeapArray = OwnedElement<T> && detail::HeapArrayAlignment<T, Align> && AllocationCapability<Marker>
                         && std::is_nothrow_copy_constructible_v<T>;
+
+// The arguments of mint_heap_array_with: an alignment of the storage, the
+// allocation capability, and an init that gives a T for each position with
+// no throw.  The result is a T and not a type that converts to T, so the
+// mint builds each element from it in place, with no copy and no move.  An
+// element that does not copy or move, such as an Atomic, passes.
+template <class T, std::size_t Align, class Marker, class Init>
+concept CanMintHeapArrayWith =
+    OwnedElement<T> && detail::HeapArrayAlignment<T, Align> && AllocationCapability<Marker>
+    && std::is_nothrow_invocable_v<Init&, std::size_t> && std::same_as<std::invoke_result_t<Init&, std::size_t>, T>;
+
+// The arguments of mint_heap_array_zeroed: an element whose lifetime starts
+// over its bytes (foundation/Lifetime.h), and of which each bit pattern is a
+// value (BitValid), so zero in each byte is a value.  A bool, an enumeration
+// with an enumerator, a pointer and a proof do not pass.
+template <class T, std::size_t Align, class Marker>
+concept CanMintHeapArrayZeroed = OwnedElement<T> && detail::HeapArrayAlignment<T, Align> && AllocationCapability<Marker>
+                              && ::foundation::lifetime::ImplicitLifetimeThroughout<T> && BitValid<T>;
+
+// ── WriteLease ─────────────────────────────────────────────────────────────
+
+// The write-only lease of the fresh elements of mint_heap_array_written.
+// The lease writes the elements in order, from the first, and each element
+// one time.  It has no read: no view(), no get() and no reference to an
+// element.  So the writer reads no element that has no write.  The mint
+// gives the writer a lease, and it gives the HeapArray only after the
+// writer wrote each element.
+//
+//   put(value)      writes value into the next element
+//   put_run(run)    writes the elements of a View into the next elements
+//   remaining()     the count of elements with no write
+//
+// A write past the last element writes nothing, and the mint then ends the
+// process when the writer returns.  The lease does not copy and does not
+// move, so it stays in the frame of the mint.
+template <class T>
+    requires RegionCopyElement<T>
+class [[nodiscard]] WriteLease final {
+    T* next_ = nullptr;
+    std::size_t remaining_ = 0;
+    std::size_t refused_ = 0;
+    // The seal refuses a lease from a byte image, so only the constructor
+    // makes one.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+public:
+    // The count elements at first, with the key that only HeapArrayDoor
+    // builds.  first is not null when count is above zero.
+    constexpr WriteLease(detail::HeapArrayKey const& /*key*/, T* first, std::size_t count) noexcept
+        : next_{first}, remaining_{count} {}
+
+    WriteLease(WriteLease const&) = delete("a WriteLease lends the elements of one mint, and a copy would write them "
+                                           "two times");
+    WriteLease& operator=(WriteLease const&) = delete("a WriteLease lends the elements of one mint");
+
+    [[nodiscard]] constexpr std::size_t remaining() const noexcept { return remaining_; }
+
+    // The count of elements that a write past the last element gave.
+    [[nodiscard]] constexpr std::size_t refused() const noexcept { return refused_; }
+
+    // Writes value into the next element.  Complexity: O(1).
+    void put(T const& value) & noexcept {
+        if (remaining_ == 0) [[unlikely]] {
+            ++refused_;
+            return;
+        }
+        *next_ = value;
+        ++next_;
+        --remaining_;
+    }
+
+    // Writes each element of run into the next elements, in order: one
+    // move of bytes.  run is no part of this lease, because the array does
+    // not exist before the mint returns.  A run longer than remaining()
+    // writes nothing.  Complexity: O(run.size()).
+    void put_run(View<T const> run) & noexcept {
+        std::size_t const count = run.size();
+        if (count > remaining_) [[unlikely]] {
+            refused_ += count;
+            return;
+        }
+        if (count != 0) {
+            __builtin_memmove(static_cast<void*>(next_), first_of_(detail::ViewDoor::key(), run), count * sizeof(T));
+        }
+        next_ += count;
+        remaining_ -= count;
+    }
+};
+
+// The arguments of mint_heap_array_written: an element whose lifetime starts
+// over its bytes, and that a move of bytes writes (RegionCopyElement).  The
+// writer takes the WriteLease with no throw.
+template <class T, std::size_t Align, class Marker, class Writer>
+concept CanMintHeapArrayWritten = OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
+                               && AllocationCapability<Marker> && ::foundation::lifetime::ImplicitLifetimeThroughout<T>
+                               && RegionCopyElement<T> && std::is_nothrow_invocable_v<Writer&, WriteLease<T>&>;
 
 template <class T, std::size_t Align = alignof(T)>
     requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
@@ -409,10 +551,91 @@ public:
         if (count == 0) {
             return;
         }
-        std::size_t const bytes = detail::heap_array_bytes_<T, Align>(count);
-        T* const first = static_cast<T*>(detail::heap_allocate_(bytes, Align));
+        T* const first = static_cast<T*>(detail::allocate_heap_elements_<T, Align>(count));
         for (std::size_t position = 0; position != count; ++position) {
             ::new(static_cast<void*>(first + position)) T(fill);
+        }
+        this->state_ = State{first, count};
+    }
+
+    // count elements, each built in place from init(position), in the order
+    // of the positions.  The result of init is a T, so the element takes it
+    // with no copy and no move.  Complexity: one allocation and O(count)
+    // calls of init.
+    template <class Init>
+        requires std::is_nothrow_invocable_v<Init&, std::size_t>
+              && std::same_as<std::invoke_result_t<Init&, std::size_t>, T>
+    explicit HeapArray(detail::HeapArrayKey const& /*key*/, detail::BuildEachTag /*tag*/, std::size_t count,
+                       Init& init) noexcept {
+        if (count == 0) {
+            return;
+        }
+        T* const first = static_cast<T*>(detail::allocate_heap_elements_<T, Align>(count));
+        for (std::size_t position = 0; position != count; ++position) {
+            ::new(static_cast<void*>(first + position)) T(init(position));
+        }
+        this->state_ = State{first, count};
+    }
+
+    // A copy of each element of source, in order.  Complexity: one
+    // allocation and O(source.size()) copies.
+    explicit HeapArray(detail::HeapArrayKey const& /*key*/, detail::CopyTag /*tag*/, View<T const> source) noexcept
+        requires std::is_nothrow_copy_constructible_v<T>
+    {
+        std::size_t const count = source.size();
+        if (count == 0) {
+            return;
+        }
+        T* const first = static_cast<T*>(detail::allocate_heap_elements_<T, Align>(count));
+        T* target = first;
+        for (T const& element : source) {
+            ::new(static_cast<void*>(target)) T(element);
+            ++target;
+        }
+        this->state_ = State{first, count};
+    }
+
+    // count elements with zero in each byte.  The allocation door gives
+    // storage of the allocator of the C library, which starts the lifetime
+    // of each element of an implicit-lifetime type with no write.  Each bit
+    // pattern of T is a value, so each element holds the value of its zero
+    // bytes.  Complexity: one allocation and one write of count * sizeof(T)
+    // bytes.
+    explicit HeapArray(detail::HeapArrayKey const& /*key*/, detail::ZeroTag /*tag*/, std::size_t count) noexcept
+        requires ::foundation::lifetime::ImplicitLifetimeThroughout<T> && BitValid<T>
+    {
+        if (count == 0) {
+            return;
+        }
+        void* const storage = detail::allocate_heap_elements_<T, Align>(count);
+        __builtin_memset(storage, 0, count * sizeof(T));
+        this->state_ = State{static_cast<T*>(storage), count};
+    }
+
+    // count elements that writer(lease) writes through a WriteLease.  The
+    // allocator starts the lifetime of each element before the writer runs,
+    // as for the zeroed array, and the lease writes each element before any
+    // code can read it.  The writer runs also for a count of zero, with a
+    // lease of no element.  A writer that leaves an element with no write, or
+    // that gives an element past the last one, ends the process.  The
+    // storage goes back to the allocation door first, and each element is
+    // trivially destructible.  The check is a plain branch, so it holds under
+    // each contract semantic.  Complexity: one allocation and the writes of
+    // the writer.
+    template <class Writer>
+        requires ::foundation::lifetime::ImplicitLifetimeThroughout<T> && RegionCopyElement<T>
+              && std::is_nothrow_invocable_v<Writer&, WriteLease<T>&>
+    explicit HeapArray(detail::HeapArrayKey const& key, detail::WriteTag /*tag*/, std::size_t count,
+                       Writer& writer) noexcept {
+        T* first = nullptr;
+        if (count != 0) {
+            first = static_cast<T*>(detail::allocate_heap_elements_<T, Align>(count));
+        }
+        WriteLease<T> lease{key, first, count};
+        writer(lease);
+        if (lease.remaining() != 0 || lease.refused() != 0) [[unlikely]] {
+            detail::release_heap_elements_<T, Align>(first, count);
+            detail::refuse_written_array_(count, lease.remaining(), lease.refused());
         }
         this->state_ = State{first, count};
     }
@@ -533,6 +756,46 @@ template <class T, std::size_t Align = alignof(T), class Marker>
     requires CanMintHeapArray<T, Align, Marker>
 [[nodiscard]] HeapArray<T, Align> mint_heap_array(Marker /*allocation*/, std::size_t count, T const& fill) noexcept {
     return HeapArray<T, Align>{detail::HeapArrayDoor::key(), count, fill};
+}
+
+// count elements at the alignment Align, each built in place from
+// init(position), in the order of the positions.  init gives a T with no
+// throw, and no element moves after its construction.  Complexity: one
+// allocation and O(count) calls of init.
+template <class T, std::size_t Align = alignof(T), class Marker, class Init>
+    requires CanMintHeapArrayWith<T, Align, Marker, Init>
+[[nodiscard]] HeapArray<T, Align> mint_heap_array_with(Marker /*allocation*/, std::size_t count, Init init) noexcept {
+    return HeapArray<T, Align>{detail::HeapArrayDoor::key(), detail::BuildEachTag{}, count, init};
+}
+
+// A copy of each element of source at the alignment Align.  Complexity: one
+// allocation and O(source.size()) copies.
+template <class T, std::size_t Align = alignof(T), class Marker>
+    requires CanMintHeapArray<T, Align, Marker>
+[[nodiscard]] HeapArray<T, Align> mint_heap_array_copy(Marker /*allocation*/,
+                                                       std::type_identity_t<View<T const>> source) noexcept {
+    return HeapArray<T, Align>{detail::HeapArrayDoor::key(), detail::CopyTag{}, source};
+}
+
+// count elements at the alignment Align with zero in each byte.  Each bit
+// pattern of T is a value, so each element holds a value.  Complexity: one
+// allocation and one write of the bytes.
+template <class T, std::size_t Align = alignof(T), class Marker>
+    requires CanMintHeapArrayZeroed<T, Align, Marker>
+[[nodiscard]] HeapArray<T, Align> mint_heap_array_zeroed(Marker /*allocation*/, std::size_t count) noexcept {
+    return HeapArray<T, Align>{detail::HeapArrayDoor::key(), detail::ZeroTag{}, count};
+}
+
+// count elements at the alignment Align that writer(lease) writes through a
+// WriteLease, in order.  The lease has no read, so no element is read before
+// its write.  A writer that leaves an element with no write, or that gives an
+// element past the last one, ends the process, and the array then never
+// exists.  Complexity: one allocation and the writes of the writer.
+template <class T, std::size_t Align = alignof(T), class Marker, class Writer>
+    requires CanMintHeapArrayWritten<T, Align, Marker, Writer>
+[[nodiscard]] HeapArray<T, Align> mint_heap_array_written(Marker /*allocation*/, std::size_t count,
+                                                          Writer writer) noexcept {
+    return HeapArray<T, Align>{detail::HeapArrayDoor::key(), detail::WriteTag{}, count, writer};
 }
 
 // ── MaskedArray ────────────────────────────────────────────────────────────

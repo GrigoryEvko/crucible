@@ -147,12 +147,17 @@ using ::foundation::core::MaskedArray;
 using ::foundation::core::mint_branded_scope;
 using ::foundation::core::mint_foreign_view;
 using ::foundation::core::mint_heap_array;
+using ::foundation::core::mint_heap_array_copy;
+using ::foundation::core::mint_heap_array_with;
+using ::foundation::core::mint_heap_array_written;
+using ::foundation::core::mint_heap_array_zeroed;
 using ::foundation::core::mint_masked_array;
 using ::foundation::core::RunOf;
 using ::foundation::core::RunSet;
 using ::foundation::core::starts_with;
 using ::foundation::core::StaticIndex;
 using ::foundation::core::View;
+using ::foundation::core::WriteLease;
 using ::foundation::core::zip;
 
 using ::foundation::core::bit_cast;

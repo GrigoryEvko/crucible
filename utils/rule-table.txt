@@ -717,11 +717,15 @@ witness <foundation/core/Region.h> private | foundation::core::detail::ReverseCu
 witness <foundation/core/Region.h> private | foundation::core::detail::WindowCursor<int, 2> | foundation::core::detail::WindowCursor<int, 2>{forge::rvalue<int*>(), forge::rvalue<int*>()}
 witness <foundation/core/Region.h> private | foundation::core::detail::ChunkCursor<int, 2> | foundation::core::detail::ChunkCursor<int, 2>{forge::rvalue<int*>(), forge::rvalue<int*>()}
 # A HeapArray has no constructor from a pointer, so the destructor frees
-# only storage that a HeapArray allocated.  The constructor of a HeapArray
+# only storage that a HeapArray allocated.  Each constructor of a HeapArray
 # takes the key that only HeapArrayDoor builds, so each HeapArray comes
-# through mint_heap_array.
+# through a mint of foundation/core/Array.h.
 witness <foundation/core/Array.h> no-match | foundation::core::HeapArray<int> | foundation::core::HeapArray<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
 witness <foundation/core/Array.h> private | foundation::core::detail::HeapArrayKey | foundation::core::detail::HeapArrayKey{}
+# A WriteLease has no constructor from a pointer and a count, so a lease
+# writes only the fresh elements of a mint.  Its constructor takes the key
+# of HeapArrayDoor, so each lease comes from mint_heap_array_written.
+witness <foundation/core/Array.h> no-match | foundation::core::WriteLease<int> | foundation::core::WriteLease<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
 # A MaskedArray has no constructor from a pointer either.  Its constructor
 # takes the key of HeapArrayDoor, so each MaskedArray comes through
 # mint_masked_array.

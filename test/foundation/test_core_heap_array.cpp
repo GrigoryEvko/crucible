@@ -1,8 +1,9 @@
-// Tests of foundation/core/Array.h: HeapArray and mint_heap_array.
+// Tests of foundation/core/Array.h: HeapArray and its five mints.
 
 #include <foundation/core/Array.h>
 
 #include <foundation/Platform.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/core/Ref.h>
 #include <foundation/effects/Effect.h>
 
@@ -17,6 +18,11 @@ namespace {
 
 using ::foundation::core::HeapArray;
 using ::foundation::core::mint_heap_array;
+using ::foundation::core::mint_heap_array_copy;
+using ::foundation::core::mint_heap_array_with;
+using ::foundation::core::mint_heap_array_written;
+using ::foundation::core::mint_heap_array_zeroed;
+using ::foundation::core::WriteLease;
 
 // The allocation tag passes the gate of the mint, and a different tag does
 // not.
@@ -179,6 +185,203 @@ void test_agrees_with_plain_model() {
     }
 }
 
+// An element whose address is its identity.  It keeps the address of its
+// construction, and it does not copy or move.
+class Anchored {
+public:
+    explicit Anchored(std::size_t position) noexcept
+        : home_{::foundation::core::address_of(::foundation::core::to(*this))}, position_{position} {}
+    Anchored(Anchored const&) = delete;
+    Anchored(Anchored&&) = delete;
+    Anchored& operator=(Anchored const&) = delete;
+    Anchored& operator=(Anchored&&) = delete;
+
+    [[nodiscard]] bool is_at_home() const noexcept {
+        return ::foundation::core::address_of(::foundation::core::to(*this)) == home_;
+    }
+    [[nodiscard]] std::size_t position() const noexcept { return position_; }
+
+private:
+    ::foundation::core::Address home_;
+    std::size_t position_ = 0;
+};
+
+// mint_heap_array_with builds each element at its home, from the result of
+// init at its position, in the order of the positions.
+void test_with_builds_in_place() {
+    ::foundation::effects::Alloc const alloc{};
+    std::size_t calls = 0;
+    HeapArray<Anchored> const anchored = mint_heap_array_with<Anchored>(alloc, 37, [&](std::size_t position) noexcept {
+        CRUCIBLE_FATAL_INVARIANT(position == calls);
+        ++calls;
+        return Anchored{position};
+    });
+    CRUCIBLE_FATAL_INVARIANT(calls == 37 && anchored.size() == 37);
+    std::size_t expected = 0;
+    for (Anchored const& element : anchored) {
+        CRUCIBLE_FATAL_INVARIANT(element.is_at_home());
+        CRUCIBLE_FATAL_INVARIANT(element.position() == expected);
+        ++expected;
+    }
+
+    // An Atomic is pinned, and each cell builds in place at the alignment of
+    // a cache line.
+    using Cell = ::foundation::core::Atomic<std::uint64_t>;
+    HeapArray<Cell, 64> const cells =
+        mint_heap_array_with<Cell, 64>(alloc, 5, [](std::size_t position) noexcept { return Cell{position * 3}; });
+    std::uint64_t total = 0;
+    for (Cell const& cell : cells) {
+        total += cell.load_acquire();
+    }
+    CRUCIBLE_FATAL_INVARIANT(total == 3 * (0 + 1 + 2 + 3 + 4));
+    CRUCIBLE_FATAL_INVARIANT(
+        ::foundation::core::address_of(cells.get(0).expect("the array holds a cell")).is_aligned<64>());
+
+    // A count of zero calls init no time and allocates nothing.
+    HeapArray<Anchored> const empty = mint_heap_array_with<Anchored>(alloc, 0, [&](std::size_t position) noexcept {
+        ++calls;
+        return Anchored{position};
+    });
+    CRUCIBLE_FATAL_INVARIANT(empty.size() == 0 && calls == 37);
+
+    // The array ends each element that init built.
+    {
+        CountedCopy const label{9};
+        HeapArray<CountedCopy> const counted = mint_heap_array_with<CountedCopy>(
+            alloc, 4, [](std::size_t position) noexcept { return CountedCopy{static_cast<int>(position)}; });
+        CRUCIBLE_FATAL_INVARIANT(live_copies == 5);
+        CRUCIBLE_FATAL_INVARIANT(counted.get(3).expect("the position is below the count")->label() == 3);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_copies == 0);
+}
+
+// mint_heap_array_copy copies each element of a View, and the copy owns its
+// own storage.
+void test_copy_of_view() {
+    ::foundation::effects::Alloc const alloc{};
+    HeapArray<std::uint32_t> source = mint_heap_array(alloc, 9, std::uint32_t{4});
+    *source.get(8).expect("the position is below the count") = 11;
+    HeapArray<std::uint32_t> copied = mint_heap_array_copy<std::uint32_t>(alloc, source.view());
+    CRUCIBLE_FATAL_INVARIANT(copied == source);
+    *copied.get(0).expect("the position is below the count") = 2;
+    CRUCIBLE_FATAL_INVARIANT(*source.get(0).expect("the position is below the count") == 4);
+
+    HeapArray<std::uint32_t, 64> const window =
+        mint_heap_array_copy<std::uint32_t, 64>(alloc, source.view().window(7, 2).expect("two elements fit"));
+    CRUCIBLE_FATAL_INVARIANT(window.size() == 2);
+    CRUCIBLE_FATAL_INVARIANT(*window.get(1).expect("the position is below the count") == 11);
+
+    HeapArray<std::uint32_t> const nothing =
+        mint_heap_array_copy<std::uint32_t>(alloc, ::foundation::core::View<std::uint32_t const>{});
+    CRUCIBLE_FATAL_INVARIANT(nothing.size() == 0);
+}
+
+// mint_heap_array_zeroed gives zero in each element.  The bytes of an array
+// that the test frees before the mint hold a pattern, so a block that the
+// allocator gives again with that pattern fails the test.
+void test_zeroed() {
+    ::foundation::effects::Alloc const alloc{};
+    {
+        HeapArray<std::uint64_t, 64> const poison = mint_heap_array<std::uint64_t, 64>(alloc, 512, 0xABABABABABABABABu);
+        CRUCIBLE_FATAL_INVARIANT(poison.size() == 512);
+    }
+    HeapArray<std::uint64_t, 64> const zeros = mint_heap_array_zeroed<std::uint64_t, 64>(alloc, 512);
+    CRUCIBLE_FATAL_INVARIANT(zeros.size() == 512);
+    for (std::uint64_t const element : zeros) {
+        CRUCIBLE_FATAL_INVARIANT(element == 0);
+    }
+
+    // The mint writes bytes and runs no constructor, so a member initializer
+    // gives no value to an element.
+    struct Sample {
+        std::uint32_t count = 7;
+        double weight = 1.5;
+    };
+    HeapArray<Sample> const samples = mint_heap_array_zeroed<Sample>(alloc, 3);
+    for (Sample const& sample : samples) {
+        CRUCIBLE_FATAL_INVARIANT(sample.count == 0);
+        CRUCIBLE_FATAL_INVARIANT(::foundation::core::bit_cast<std::uint64_t>(sample.weight) == 0);
+    }
+    CRUCIBLE_FATAL_INVARIANT(mint_heap_array_zeroed<std::uint8_t>(alloc, 0).size() == 0);
+}
+
+// mint_heap_array_written gives the elements that the writer put through
+// its lease, in order, one value at a time or one run at a time.
+void test_written() {
+    ::foundation::effects::Alloc const alloc{};
+    HeapArray<std::uint32_t> const run = mint_heap_array(alloc, 3, std::uint32_t{40});
+    HeapArray<std::uint32_t, 64> const written =
+        mint_heap_array_written<std::uint32_t, 64>(alloc, 6, [&](WriteLease<std::uint32_t>& lease) noexcept {
+            CRUCIBLE_FATAL_INVARIANT(lease.remaining() == 6);
+            lease.put(1);
+            lease.put(2);
+            lease.put_run(run.view());
+            CRUCIBLE_FATAL_INVARIANT(lease.remaining() == 1);
+            lease.put(3);
+        });
+    CRUCIBLE_FATAL_INVARIANT(written.size() == 6);
+    std::uint32_t total = 0;
+    for (std::uint32_t const element : written) {
+        total += element;
+    }
+    CRUCIBLE_FATAL_INVARIANT(total == 1 + 2 + 40 + 40 + 40 + 3);
+    CRUCIBLE_FATAL_INVARIANT(*written.get(5).expect("the position is below the count") == 3);
+
+    // A count of zero gives the writer a lease of no element.
+    bool is_called = false;
+    HeapArray<std::uint32_t> const empty =
+        mint_heap_array_written<std::uint32_t>(alloc, 0, [&](WriteLease<std::uint32_t>& lease) noexcept {
+            is_called = true;
+            lease.put_run(::foundation::core::View<std::uint32_t const>{});
+        });
+    CRUCIBLE_FATAL_INVARIANT(is_called && empty.size() == 0);
+}
+
+// A writer that leaves an element with no write, and a write past the last
+// element, end the process before the array exists.  The mint gives the
+// storage back first.  The abort probe jumps past each destructor of the
+// body, so the run of the long write lives outside the body.
+void test_written_aborts() {
+    bool const unwritten_aborts = ::crucible::test::aborts([] {
+        HeapArray<std::uint32_t> const partial = mint_heap_array_written<std::uint32_t>(
+            ::foundation::effects::Alloc{}, 4, [](WriteLease<std::uint32_t>& lease) noexcept { lease.put(1); });
+        static_cast<void>(partial);
+    });
+    CRUCIBLE_FATAL_INVARIANT(unwritten_aborts);
+
+    bool const overflow_aborts = ::crucible::test::aborts([] {
+        HeapArray<std::uint32_t> const longer = mint_heap_array_written<std::uint32_t>(
+            ::foundation::effects::Alloc{}, 1, [](WriteLease<std::uint32_t>& lease) noexcept {
+                lease.put(1);
+                lease.put(2);
+                CRUCIBLE_FATAL_INVARIANT(lease.remaining() == 0 && lease.refused() == 1);
+            });
+        static_cast<void>(longer);
+    });
+    CRUCIBLE_FATAL_INVARIANT(overflow_aborts);
+
+    HeapArray<std::uint32_t> const run = mint_heap_array(::foundation::effects::Alloc{}, 3, std::uint32_t{5});
+    bool const long_run_aborts = ::crucible::test::aborts([&] {
+        HeapArray<std::uint32_t> const shorter = mint_heap_array_written<std::uint32_t>(
+            ::foundation::effects::Alloc{}, 2, [&](WriteLease<std::uint32_t>& lease) noexcept {
+                lease.put_run(run.view());
+                CRUCIBLE_FATAL_INVARIANT(lease.remaining() == 2 && lease.refused() == 3);
+            });
+        static_cast<void>(shorter);
+    });
+    CRUCIBLE_FATAL_INVARIANT(long_run_aborts);
+
+    bool const exact_passes = !::crucible::test::aborts([] {
+        HeapArray<std::uint32_t> const exact = mint_heap_array_written<std::uint32_t>(
+            ::foundation::effects::Alloc{}, 2, [](WriteLease<std::uint32_t>& lease) noexcept {
+                lease.put(1);
+                lease.put(2);
+            });
+        static_cast<void>(exact);
+    });
+    CRUCIBLE_FATAL_INVARIANT(exact_passes);
+}
+
 }  // namespace
 
 int main() {
@@ -189,5 +392,10 @@ int main() {
     test_equality();
     test_too_long_aborts();
     test_agrees_with_plain_model();
+    test_with_builds_in_place();
+    test_copy_of_view();
+    test_zeroed();
+    test_written();
+    test_written_aborts();
     return 0;
 }

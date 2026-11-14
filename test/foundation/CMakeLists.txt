@@ -3064,6 +3064,39 @@ foundation_neg_compile_test(neg_core_heap_array_view_of_temporary
 foundation_neg_compile_test(neg_core_heap_array_mint_forged_body
   "no matching function for call to .foundation::core::HeapArray<int>::HeapArray\\(<brace-enclosed initializer list>\\)."
   "HeapArray\\(const foundation::core::detail::HeapArrayKey&, std::size_t, const T&\\) requires  is_nothrow_copy_constructible_v<T>")
+# Each of the four other mints of a HeapArray takes the allocation capability
+# first.  mint_heap_array_with takes an init whose result is exactly the
+# element, mint_heap_array_copy an element that copies, mint_heap_array_zeroed
+# an element of which each bit pattern is a value, and
+# mint_heap_array_written an element whose lifetime starts over its bytes.
+# The WriteLease of the writer has no read.
+foundation_neg_compile_test(neg_core_heap_array_with_without_allocation_marker
+  "no matching function for call to .mint_heap_array_with<int>\\(foundation::effects::cap::IO, int, main\\(\\)::<lambda\\(std::size_t\\)>\\)."
+  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
+foundation_neg_compile_test(neg_core_heap_array_with_init_of_other_type
+  "no matching function for call to .mint_heap_array_with<int>\\(foundation::core::Alloc, int, main\\(\\)::<lambda\\(std::size_t\\)>\\)."
+  "the expression .is_same_v<_Tp, _Up> \\[with _Tp = long int; _Up = int\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_heap_array_copy_without_allocation_marker
+  "no matching function for call to .mint_heap_array_copy<int>\\(foundation::effects::cap::IO, foundation::core::View<const int, 18446744073709551615>\\)."
+  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
+foundation_neg_compile_test(neg_core_heap_array_copy_not_copyable
+  "no matching function for call to .mint_heap_array_copy<MoveOnly>\\(foundation::core::Alloc, const foundation::core::View<const MoveOnly>&\\)."
+  "the expression .is_nothrow_copy_constructible_v<T> \\[with T = MoveOnly\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_heap_array_zeroed_without_allocation_marker
+  "no matching function for call to .mint_heap_array_zeroed<int>\\(foundation::effects::cap::IO, int\\)."
+  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
+foundation_neg_compile_test(neg_core_heap_array_zeroed_enumeration
+  "no matching function for call to .mint_heap_array_zeroed<Mode>\\(foundation::core::Alloc, int\\)."
+  "required for the satisfaction of .BitValid<T>. \\[with T = Mode\\]")
+foundation_neg_compile_test(neg_core_heap_array_written_without_allocation_marker
+  "no matching function for call to .mint_heap_array_written<int>\\(foundation::effects::cap::IO, int, main\\(\\)::<lambda\\(foundation::core::WriteLease<int>&\\)>\\)."
+  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
+foundation_neg_compile_test(neg_core_heap_array_written_proof_element
+  "no matching function for call to .mint_heap_array_written<.anonymous.::HoldsToken>\\(foundation::core::Alloc, int, .anonymous.::WritesNothing\\)."
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = <unnamed>::HoldsToken\\]")
+foundation_neg_compile_test(neg_core_heap_array_written_read_before_write
+  "neg_core_heap_array_written_read_before_write\\.cpp:13:[0-9]+: error: .class foundation::core::WriteLease<unsigned int>. has no member named .get."
+  "has no member named .get.")
 foundation_neg_compile_test(neg_core_masked_array_copied
   "use of deleted function .foundation::core::MaskedArray<T, Align>::MaskedArray\\(const foundation::core::MaskedArray<T, Align>&\\) \\[with T = int; long unsigned int Align = 4\\]."
   "a MaskedArray owns its storage alone: a copy would free the storage two times")
