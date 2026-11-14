@@ -507,6 +507,35 @@ consteval CheckpointVerdict verdict_of(info left_protocol, info right_protocol) 
     return run.verdict;
 }
 
+// ── The sealed cache of the verdict ─────────────────────────────────
+//
+// The gate asks the verdict of one pair in each of its clauses, and one
+// walk of a large pair costs a large part of the operation limit of a
+// constant evaluation.  The cache is an alias template, which cannot be
+// specialized, and the reader takes the verdict from the value argument of
+// the cell that the alias names.  A specialization of the cell class
+// changes its body, which no reader reads.  GCC keeps one specialization
+// of an alias template for each argument list, so a translation unit walks
+// each pair one time.
+
+// The cell of the verdict of one pair.  It holds nothing.
+template <CheckpointVerdict Verdict>
+struct verdict_cell {};
+
+template <class Left, class Right>
+using verdict_cached = verdict_cell<verdict_of(^^Left, ^^Right)>;
+
+// The verdict of a pair.  A reflection that is not a type has no cache
+// cell, so its verdict comes from the walk.  Complexity: one walk for each
+// pair of types in a translation unit, and a lookup after that.
+consteval CheckpointVerdict cached_verdict_of(info left_protocol, info right_protocol) {
+    if (!std::meta::is_type(left_protocol) || !std::meta::is_type(right_protocol)) {
+        return verdict_of(left_protocol, right_protocol);
+    }
+    const info cell = std::meta::substitute(^^verdict_cached, {left_protocol, right_protocol});
+    return std::meta::extract<CheckpointVerdict>(argument(cell, 0));
+}
+
 // True when the question is a CheckpointPair whose verdict is Compliant.
 // Any other type answers false.
 [[nodiscard]] consteval bool pair_is_compliant(info question);
@@ -515,10 +544,11 @@ consteval CheckpointVerdict verdict_of(info left_protocol, info right_protocol) 
 
 // The verdict for a pair of checkpoint protocols, one for each endpoint.
 // A function at namespace scope that is not a template, so no translation
-// unit can specialize the verdict.
+// unit can specialize the verdict.  It reads the sealed cache, so a
+// translation unit walks each pair one time.
 [[nodiscard]] consteval CheckpointVerdict checkpoint_verdict_of(std::meta::info protocol,
                                                                 std::meta::info peer_protocol) {
-    return detail::checkpoint::verdict_of(protocol, peer_protocol);
+    return detail::checkpoint::cached_verdict_of(protocol, peer_protocol);
 }
 
 // The question "are these two protocols compliant", as a one-argument
@@ -533,14 +563,14 @@ consteval bool detail::checkpoint::pair_is_compliant(info question) {
         return false;
     }
     const std::vector<info> sides = std::meta::template_arguments_of(asked);
-    return verdict_of(sides[0], sides[1]) == CheckpointVerdict::Compliant;
+    return cached_verdict_of(sides[0], sides[1]) == CheckpointVerdict::Compliant;
 }
 
 template <typename Q>
 using is_checkpoint_compliant = std::bool_constant<detail::checkpoint::pair_is_compliant(^^Q)>;
 
 template <typename P1, typename P2>
-concept checkpoint_compliant_v = detail::checkpoint::verdict_of(^^P1, ^^P2) == CheckpointVerdict::Compliant;
+concept checkpoint_compliant_v = detail::checkpoint::cached_verdict_of(^^P1, ^^P2) == CheckpointVerdict::Compliant;
 
 // Whether Proto can run on one endpoint of a checkpoint session whose
 // other endpoint runs PeerProto.  Each refusal is its own atomic
@@ -550,18 +580,19 @@ concept checkpoint_compliant_v = detail::checkpoint::verdict_of(^^P1, ^^P2) == C
 // so the first two clauses refuse a node whose members disagree with its
 // arguments (fixy/session/Protocol.h).  Each clause calls a function at
 // namespace scope that is not a template, so no translation unit can
-// specialize a verdict.
+// specialize a verdict.  The clauses read the sealed cache, so they share
+// one walk of the pair.
 template <typename Proto, typename PeerProto>
 concept CheckpointSessionAdmissible =
     ::fixy::session::detail::require_agreeing_members(^^Proto)
     && ::fixy::session::detail::require_agreeing_members(^^PeerProto)
-    && detail::checkpoint::verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::NotCheckpointShaped
-    && detail::checkpoint::verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::Stuck
-    && detail::checkpoint::verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::LabelOutOfRange
-    && detail::checkpoint::verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::LabelsDisagree
-    && detail::checkpoint::verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::RollToImposedCheckpoint
-    && detail::checkpoint::verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::LoopUnresolved
-    && detail::checkpoint::verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::TooManyConfigurations
+    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::NotCheckpointShaped
+    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::Stuck
+    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::LabelOutOfRange
+    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::LabelsDisagree
+    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::RollToImposedCheckpoint
+    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::LoopUnresolved
+    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::TooManyConfigurations
     && checkpoint_compliant_v<Proto, PeerProto> && WellFormedRunnableProtocol<checkpoint_erase_t<Proto>>
     && WellFormedRunnableProtocol<checkpoint_erase_t<PeerProto>>;
 
