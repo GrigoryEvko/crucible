@@ -82,6 +82,17 @@ concept can_extract = requires(C c) { std::move(c).extract(); };
 static_assert(can_extract<fixy::band_value_t<PureInt>>);
 static_assert(!can_extract<fixy::band_value_t<TotIoInt>>);
 
+// A Tot over a non-empty row opens with run, in a context whose row covers
+// the row of the value.  The row of every atom claims the background atom
+// and the test atom, and no context holds the two, so such a value has no
+// exit.
+using TestRow = Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block>;
+using TestCtx = ::foundation::effects::ExecCtx<::foundation::effects::Test, TestRow>;
+template <typename C, typename Ctx>
+concept runs_in = requires(C const& c, Ctx const& ctx) { c.run(ctx); };
+static_assert(runs_in<fixy::band_value_t<TotIoInt>, TestCtx>);
+static_assert(!runs_in<fixy::band_value_t<fixy::Tot<fixy::AllRow, int>>, TestCtx>);
+
 constexpr PureInt pinned = fixy::mint_band<PureInt>(Computation<Row<>, int>::mint_computation(42));
 
 // An engaged row is built only by the witnessed mint, under a context
@@ -146,17 +157,20 @@ int main() {
         std::fprintf(stderr, "test_aliases: relax of a Tot value did not move the tier\n");
         return 1;
     }
-    if (std::move(relaxed).consume().graded().consume().v != seed) {
+    if (std::move(relaxed).consume().run(io_ctx).v != seed) {
         std::fprintf(stderr, "test_aliases: Tot<IO, MoveOnlyValue> lost its value\n");
         return 1;
     }
 
-    auto tot_all = fixy::mint_band<fixy::Tot<fixy::AllRow, std::unique_ptr<int>>>(
+    // A move-only payload widens to the widest row of the test context, and
+    // leaves through run.  A value at the row of every atom has no exit.
+    TestCtx const test_ctx{::foundation::effects::testing::test()};
+    auto tot_test = fixy::mint_band<fixy::Tot<TestRow, std::unique_ptr<int>>>(
         Computation<Row<>, std::unique_ptr<int>>::mint_computation_in_ctx<Effect::IO>(io_ctx,
                                                                                       std::make_unique<int>(seed))
-            .template weaken<fixy::AllRow>());
-    if (*tot_all.peek().graded().peek() != seed) {
-        std::fprintf(stderr, "test_aliases: Tot<AllRow, unique_ptr<int>> lost its value\n");
+            .template weaken<TestRow>());
+    if (*tot_test.peek().run(test_ctx) != seed) {
+        std::fprintf(stderr, "test_aliases: Tot<TestRow, unique_ptr<int>> lost its value\n");
         return 1;
     }
     return 0;

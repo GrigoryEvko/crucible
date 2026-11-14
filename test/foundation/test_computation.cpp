@@ -65,15 +65,17 @@ static_assert(
     }(),
     "The witnessed mint at Effect::Bg did not produce a Computation at Row<Bg>.");
 
-// The final read goes through the substrate view because extract is
-// gated off for a non-empty row.
+// The final read goes through run, because extract and the substrate view
+// are gated off for a non-empty row.  The context of the read covers the
+// widest row.
 static_assert(
     [] consteval {
         BgCtx const ctx{fe::testing::bg()};
+        BgIoCtx const io_ctx{fe::testing::bg()};
         auto bg = fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, 13);
         auto wider = bg.template weaken<Row<Effect::Bg, Effect::Alloc>>();
         auto widest = wider.template weaken<Row<Effect::Bg, Effect::Alloc, Effect::IO>>();
-        return widest.graded().peek() == 13;
+        return widest.run(io_ctx) == 13;
     }(),
     "A chain of weaken calls through nested subrows did not preserve the inner value.");
 
@@ -85,7 +87,7 @@ static_assert(
             [&ctx](int x) { return fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::IO>(ctx, x + 1); });
         using Chained = decltype(chained);
         return fe::Subrow<Row<Effect::Bg>, Chained::row_type> && fe::Subrow<Row<Effect::IO>, Chained::row_type>
-            && std::is_same_v<Chained::value_type, int> && chained.graded().peek() == 11;
+            && std::is_same_v<Chained::value_type, int> && chained.run(ctx) == 11;
     }(),
     "A bind must carry the effects of both sides into the result row.");
 
@@ -104,13 +106,45 @@ static_assert(
 
 static_assert(
     [] consteval {
-        BgCtx const ctx{fe::testing::bg()};
-        auto engaged = fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, 77);
-        auto g = std::move(engaged).graded();
+        auto pure = fe::Computation<Row<>, int>::mint_computation(77);
+        auto g = std::move(pure).graded();
         using G = decltype(g);
-        return std::is_same_v<G, fe::ComputationGraded<Row<Effect::Bg>, int>> && g.peek() == 77;
+        return std::is_same_v<G, fe::ComputationGraded<Row<>, int>> && g.peek() == 77;
     }(),
     "The rvalue graded accessor must move the substrate out at the matching specialization.");
+
+// The rvalue run moves the payload of an engaged row out, into a context
+// whose row covers it.
+static_assert(
+    [] consteval {
+        BgCtx const ctx{fe::testing::bg()};
+        auto engaged = fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, 78);
+        int const moved = std::move(engaged).run(ctx);
+        return moved == 78;
+    }(),
+    "The rvalue run must move the payload of an engaged row out.");
+
+// An engaged row has no substrate view, and it runs only in a context whose
+// row covers it.
+template <typename C>
+concept HasGradedView = requires(C const& c) { c.graded(); };
+template <typename C>
+concept HasGradedMove = requires(C&& c) { std::move(c).graded(); };
+template <typename C, typename Ctx>
+concept RunsIn = requires(C const& c, Ctx const& ctx) { c.run(ctx); };
+template <typename C, typename Ctx>
+concept MovesOutIn = requires(C&& c, Ctx const& ctx) { std::move(c).run(ctx); };
+
+using EngagedBg = fe::Computation<Row<Effect::Bg>, int>;
+using EngagedBgIo = fe::Computation<Row<Effect::Bg, Effect::IO>, int>;
+using FgCtx = fe::ExecCtx<fe::ctx_cap::Fg, Row<>>;
+static_assert(!HasGradedView<EngagedBg> && !HasGradedMove<EngagedBg>);
+static_assert(HasGradedView<fe::Computation<Row<>, int>> && HasGradedMove<fe::Computation<Row<>, int>>);
+static_assert(RunsIn<EngagedBg, BgCtx> && MovesOutIn<EngagedBg, BgCtx>);
+static_assert(!RunsIn<EngagedBg, FgCtx> && !MovesOutIn<EngagedBg, FgCtx>);
+static_assert(!RunsIn<EngagedBgIo, BgCtx> && RunsIn<EngagedBgIo, BgIoCtx>);
+static_assert(!RunsIn<fe::Computation<Row<Effect::Bg>, fe::Capability<Effect::IO, fe::Bg>>, BgIoCtx>,
+              "A payload that conveys an authority does not leave through run either.");
 
 // Drives every accessor with non-constant arguments, where inline-body
 // and constant-evaluation regressions surface that the assertions in
@@ -186,13 +220,19 @@ void computation_runs_at_run_time() {
     (void)then_lvalue;
     (void)then_rvalue;
 
-    auto graded_lvalue_owner = Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, 555);
+    auto graded_lvalue_owner = Computation<Row<>, int>::mint_computation(555);
     auto const& g_view = graded_lvalue_owner.graded();
     [[maybe_unused]] int peeked = g_view.peek();
 
-    auto graded_rvalue_owner = Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, 666);
+    auto graded_rvalue_owner = Computation<Row<>, int>::mint_computation(666);
     auto g_moved = std::move(graded_rvalue_owner).graded();
     [[maybe_unused]] int peeked_moved = g_moved.peek();
+
+    auto run_lvalue_owner = Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, 777);
+    [[maybe_unused]] int const& ran = run_lvalue_owner.run(ctx);
+
+    auto run_rvalue_owner = Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(ctx, 888);
+    [[maybe_unused]] int ran_moved = std::move(run_rvalue_owner).run(ctx);
 }
 
 // The authority relation, read over complete types.
@@ -307,7 +347,7 @@ int main() {
     fe::detail::ctx_witnesses::BgWitness bg_ctx{fe::testing::bg()};
     auto claimed = fe::Computation<Row<>, int>::mint_computation_in_ctx<Effect::Bg>(bg_ctx, value);
     auto wider = std::move(claimed).template weaken<Row<Effect::Bg, Effect::Alloc>>();
-    if (wider.graded().peek() != 21) return 2;
+    if (wider.run(bg_ctx) != 21) return 2;
     if (wider.grade() != decltype(wider)::grade_type{}) return 3;
 
     // The admitting direction at run time, not only in the assertions.

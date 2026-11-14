@@ -459,14 +459,32 @@ static_assert(
     "The lvalue graded accessor must expose the substrate view at the matching specialization.");
 
 // The view is const, and a payload that conveys an authority does not
-// reach the substrate view at all.
+// reach the substrate view at all.  The substrate reads the payload with
+// no gate, so an engaged row has no view either.
 static_assert(std::is_same_v<decltype(std::declval<Computation<Row<>, int> const&>().graded()),
                              ComputationGraded<Row<>, int> const&>);
 template <typename C>
 concept HasGradedView = requires(C const& c) { c.graded(); };
 template <typename C>
 concept HasGradedMove = requires(C&& c) { std::move(c).graded(); };
-static_assert(HasGradedView<Computation<Row<Effect::Bg>, int>> && HasGradedMove<Computation<Row<Effect::Bg>, int>>);
+static_assert(HasGradedView<Computation<Row<>, int>> && HasGradedMove<Computation<Row<>, int>>);
+static_assert(!HasGradedView<Computation<Row<Effect::Bg>, int>> && !HasGradedMove<Computation<Row<Effect::Bg>, int>>);
+
+// The payload of an engaged row leaves through run, in a context whose row
+// covers the row of the value, and in no other.
+template <typename C, typename Ctx>
+concept RunsIn = requires(C const& c, Ctx const& ctx) { c.run(ctx); };
+template <typename C, typename Ctx>
+concept MovesOutIn = requires(C&& c, Ctx const& ctx) { std::move(c).run(ctx); };
+static_assert(RunsIn<Computation<Row<Effect::Bg>, int>, detail::ctx_witnesses::BgWitness>
+              && MovesOutIn<Computation<Row<Effect::Bg>, int>, detail::ctx_witnesses::BgWitness>);
+static_assert(!RunsIn<Computation<Row<Effect::Bg>, int>, detail::ctx_witnesses::FgWitness>
+              && !MovesOutIn<Computation<Row<Effect::Bg>, int>, detail::ctx_witnesses::FgWitness>);
+static_assert(!RunsIn<Computation<Row<Effect::Bg, Effect::IO>, int>, detail::ctx_witnesses::BgWitness>
+              && RunsIn<Computation<Row<Effect::Bg, Effect::IO>, int>, detail::ctx_witnesses::BgIoWitness>);
+static_assert(!RunsIn<Computation<Row<Effect::Test>, int>, detail::ctx_witnesses::BgBlockWitness>,
+              "A background context does not run a value that claims the test atom.");
+static_assert(!RunsIn<int, detail::ctx_witnesses::BgWitness>);
 static_assert(!detail::extract_admits_payload_v<detail::ctx_witnesses::BgWitness>,
               "The positive witness for the graded constraint depends on a context conveying authority.");
 

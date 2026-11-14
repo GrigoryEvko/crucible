@@ -23,7 +23,9 @@
 // the row and whatever the payload holds, and each route out of a
 // Computation carries the gate that belongs to it.  An engaged row is
 // built only by the witnessed mint, which reads the row of a context, or
-// by a member that keeps or widens a row the value already had.
+// by a member that keeps or widens a row the value already had.  The
+// payload of an engaged row leaves only through run, which asks for a
+// context whose row covers the row of the value.
 
 #include <foundation/Linear.h>
 #include <foundation/algebra/Graded.h>
@@ -408,20 +410,39 @@ public:
     // The way out to the substrate view, for code that wants the
     // uniform grade and lattice diagnostics or a cache key.  The view
     // is the base subobject and const: no copy, no second object, and no
-    // write through it.  Each form carries the payload constraint that
-    // map carries, because the substrate reads the payload out.  The
-    // rvalue form moves the substrate out, and the row stays in its
-    // lattice type.
+    // write through it.  The substrate reads the payload out with no gate,
+    // so each form carries the two constraints of extract: the empty row,
+    // and a payload that conveys no authority.  An engaged row has no
+    // view, and its payload leaves through run.  The rvalue form moves the
+    // substrate out, and the row stays in its lattice type.
     [[nodiscard]] constexpr const graded_type& graded() const& noexcept
-        requires detail::extract_admits_payload_v<T>
+        requires(::foundation::effects::row_size(^^R) == 0) && detail::extract_admits_payload_v<T>
     {
         return *this;
     }
 
     [[nodiscard]] constexpr graded_type graded() && noexcept(std::is_nothrow_move_constructible_v<graded_type>)
-        requires detail::extract_admits_payload_v<T>
+        requires(::foundation::effects::row_size(^^R) == 0) && detail::extract_admits_payload_v<T>
     {
         return std::move(*this);
+    }
+
+    // The exit of an engaged row.  A context whose row covers R may
+    // exercise each effect that R claims, so the payload leaves into that
+    // context and into no other.  The context argument is read for its
+    // type alone, as for the witnessed mint.  The payload constraint is
+    // the one extract carries: a payload that conveys an authority would
+    // leave with a power that R does not name.
+    template <class Ctx>
+        requires CtxAdmits<Ctx, R> && detail::extract_admits_payload_v<T>
+    [[nodiscard]] constexpr const T& run(Ctx const&) const& noexcept {
+        return base::peek();
+    }
+
+    template <class Ctx>
+        requires CtxAdmits<Ctx, R> && detail::extract_admits_payload_v<T>
+    [[nodiscard]] constexpr T run(Ctx const&) && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return std::move(*this).base::consume();
     }
 };
 

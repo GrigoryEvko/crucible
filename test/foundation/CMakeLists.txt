@@ -638,6 +638,17 @@ foundation_neg_compile_test(neg_computation_engaged_row_default_built
 foundation_neg_compile_test(neg_computation_graded_move_of_a_capability
   "no matching function for call to .foundation::effects::Computation<foundation::effects::Row<>, foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Test> >::graded\\(\\)."
   "the expression .extract_admits_payload_v<T> \\[with T = foundation::effects::Capability<foundation::effects::Effect::IO, foundation::effects::Test>\\]. evaluated to .false.")
+# An engaged row has no substrate view, and its payload leaves only through
+# run, into a context whose row covers it.
+foundation_neg_compile_test(neg_computation_graded_peek_of_engaged_row
+  "no matching function for call to .foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>, int>::graded\\(\\) const."
+  "== 0 .with R = foundation::effects::Row<foundation::effects::Effect::Bg>.. evaluated to .false.")
+foundation_neg_compile_test(neg_computation_graded_consume_of_engaged_row
+  "no matching function for call to .foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>, int>::graded\\(\\)."
+  "== 0 .with R = foundation::effects::Row<foundation::effects::Effect::Bg>.. evaluated to .false.")
+foundation_neg_compile_test(neg_computation_run_outside_its_row
+  "no matching function for call to .foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::Bg>, int>::run\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >&\\) const."
+  "required for the satisfaction of .CtxAdmits<Ctx, R>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. R = foundation::effects::Row<foundation::effects::Effect::Bg>.")
 foundation_neg_compile_test(neg_computation_graded_view_of_a_context
   "no matching function for call to .foundation::effects::Computation<foundation::effects::Row<>, foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> > >::graded\\(\\) const."
   "the expression .extract_admits_payload_v<T> \\[with T = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]. evaluated to .false.")
