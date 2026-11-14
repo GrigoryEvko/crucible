@@ -1,12 +1,13 @@
 #pragma once
 
 // The socket syscall.  A kind tag names one socket, and the tag is read
-// twice: once for the domain, type and protocol that ::socket takes, and
+// twice: once for the domain, type and protocol that socket(2) takes, and
 // once for the effect row that the calling context must admit.
 //
 // mint_socket below makes the call through SocketDoor, the one door to
-// ::socket, so a socket handle holds a descriptor that the kernel
-// returned to a gated mint.
+// socket(2), so a socket handle holds a descriptor that the kernel returned
+// to a gated mint.  The door file src/fixy/os/Socket.cpp issues the call with
+// the raw primitive of foundation/os/Syscall.h.
 //
 // Two kinds are declared: the netlink socket of the qdisc query, and the
 // TCP stream socket whose options the test of THE SOCKET CALLS reads back
@@ -33,7 +34,6 @@
 #include <linux/netlink.h>
 #include <sys/socket.h>
 
-#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <meta>
@@ -58,7 +58,7 @@ struct TcpStream final {};
 
 namespace detail {
 
-// The three arguments of ::socket for one kind.
+// The three arguments of socket(2) for one kind.
 struct socket_triple final {
     int domain = -1;
     int type = -1;
@@ -67,12 +67,12 @@ struct socket_triple final {
 
 }  // namespace detail
 
-// The domain, type and protocol of each kind.  A kind reaches ::socket
+// The domain, type and protocol of each kind.  A kind reaches socket(2)
 // only through a row of this table, and fixy/os/AtomPack.h says why a
 // table is closed: a class template map takes a specialization for a
 // class of the caller, and the gated mint can then open a raw packet
 // socket as a known kind.  A kind with no row has no triple, so the mint refuses
-// it and ::socket never sees a guessed triple.
+// it and socket(2) never sees a guessed triple.
 inline constexpr ::fixy::atom_pack::tag_row<detail::socket_triple> socket_table[] = {
     {^^socket_kind::NetlinkRoute, {AF_NETLINK, SOCK_RAW, NETLINK_ROUTE}},
     {^^socket_kind::TcpStream, {AF_INET, SOCK_STREAM, 0}},
@@ -106,7 +106,7 @@ template <typename Kind, eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<Linear<::fixy::fs::OwnedFd>, ::foundation::os::Errno>
 mint_socket(Ctx const&) noexcept;
 
-// The door to ::socket.  No object of it exists.  Its member is private,
+// The door to socket(2).  No object of it exists.  Its member is private,
 // and its one friend is mint_socket.  OwnedFd befriends this class, so a
 // socket handle comes only from mint_socket, after its gate.  The door
 // reads the triple of the kind, so no caller gives it a domain, a type or
@@ -117,17 +117,16 @@ class SocketDoor final : ::foundation::NoObject<SocketDoor> {
     friend auto mint_socket(FriendCtx const&) noexcept
         -> ::foundation::core::Result<Linear<::fixy::fs::OwnedFd>, ::foundation::os::Errno>;
 
-    // SOCK_CLOEXEC is folded in, because a descriptor that survives execve
-    // leaks into every child process.  Returns the error of the kernel on
-    // failure and no handle.
+    // The open door of src/fixy/os/Socket.cpp adds SOCK_CLOEXEC, because a
+    // descriptor that survives execve leaks into each child process.  It
+    // gives the error of the kernel on failure and no handle.
     template <MappedSocketKind Kind>
     [[nodiscard]] static ::foundation::core::Result<::fixy::fs::OwnedFd, ::foundation::os::Errno> open_() noexcept {
+        using Opened = ::foundation::core::Result<::fixy::fs::OwnedFd, ::foundation::os::Errno>;
         constexpr detail::socket_triple triple = socket_triple_of(^^Kind);
-        const int fd = ::socket(triple.domain, triple.type | SOCK_CLOEXEC, triple.protocol);
-        if (fd < 0) {
-            return ::foundation::core::err(static_cast<::foundation::os::Errno>(errno));
-        }
-        return ::fixy::fs::OwnedFd{fd};
+        return detail::open_socket_(triple.domain, triple.type, triple.protocol)
+            .match([](int descriptor) -> Opened { return ::fixy::fs::OwnedFd{descriptor}; },
+                   [](::foundation::os::Errno error) -> Opened { return ::foundation::core::err(error); });
     }
 };
 

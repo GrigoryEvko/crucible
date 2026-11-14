@@ -35,12 +35,13 @@ static_assert(!CtxFitsSocketMint<IoOnlyCtx, socket_kind::NetlinkRoute>,
 static_assert(!CtxFitsSocketMint<IoBlockCtx, NotASocketKind>, "a kind with no triple must be refused.");
 static_assert(!std::is_default_constructible_v<SocketDoor> && !std::is_copy_constructible_v<SocketDoor>
                   && !std::is_move_constructible_v<SocketDoor>,
-              "No object of the socket door exists.  Its private member is the only call to ::socket.");
+              "No object of the socket door exists.  Its private member is the only call to socket(2).");
 
 // THE KERNEL WORDS of fixy/os/SocketCalls.h are the words of the system
 // headers.
 static_assert(socket_level == SOL_SOCKET);
 static_assert(send_no_signal_flag == MSG_NOSIGNAL);
+static_assert(socket_close_on_exec_flag == SOCK_CLOEXEC);
 static_assert(timestamping_option == SO_TIMESTAMPING && timestamping_option == SCM_TIMESTAMPING);
 static_assert(receive_timestamping_flags
               == (SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_SOFTWARE

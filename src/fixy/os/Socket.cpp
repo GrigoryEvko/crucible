@@ -1,5 +1,5 @@
-// The socket door of fixy (fixy/os/SocketCalls.h): the options, the bind,
-// the send and the receive of a socket, and the stamps of a receive.  It
+// The socket door of fixy (fixy/os/SocketCalls.h): the open, the options, the
+// bind, the send and the receive of a socket, and the stamps of a receive.  It
 // issues the raw primitive of foundation/os/Syscall.h.  It is the one
 // includer of <linux/tcp.h>, for the names of the TCP options.  It includes
 // no header of the C library, because some declarations of the two kinds of
@@ -100,6 +100,12 @@ UnitResult set_option_(int socket, int level, int name, void const* value, std::
         word = os::raw_syscall(os::Syscall::setsockopt, socket, level, name, value, size);
     } while (word == kInterrupted);
     return unit_of(word);
+}
+
+core::Result<int, os::Errno> open_socket_(int domain, int type, int protocol) noexcept {
+    return os::result_of(os::raw_syscall(os::Syscall::socket, domain, type | socket_close_on_exec_flag, protocol))
+        .match([](std::uint64_t descriptor) -> core::Result<int, os::Errno> { return static_cast<int>(descriptor); },
+               [](os::Errno error) -> core::Result<int, os::Errno> { return core::err(error); });
 }
 
 UnitResult bind_address_(int socket, void const* address, std::uint32_t size) noexcept {

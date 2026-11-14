@@ -103,6 +103,7 @@ enum class Syscall : std::uint8_t {
     gettid,
     perf_event_open,
     openat2,
+    socket,
 };
 
 // True when the call can wait with no bound for another thread or process,

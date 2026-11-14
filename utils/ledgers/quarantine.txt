@@ -187,13 +187,13 @@ include/fixy/handle/ | replace-pending:<array> | 1 | - | -
 include/fixy/handle/ | replace-pending:<atomic> | 4 | - | -
 include/fixy/handle/ | replace-pending:<cstdio> | 1 | - | -
 include/fixy/handle/ | replace-pending:<cstdlib> | 1 | - | -
-include/fixy/os/ | base-c-library-call | 15 | - | -
+include/fixy/os/ | base-c-library-call | 13 | - | -
 include/fixy/os/ | base-c-library-object | 10 | - | -
 include/fixy/os/ | base-std-entity | 134 | - | -
 include/fixy/os/ | base-std-object | 59 | - | -
 include/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
 include/fixy/os/ | replace-pending:<array> | 1 | - | -
-include/fixy/os/ | replace-pending:<cerrno> | 3 | - | -
+include/fixy/os/ | replace-pending:<cerrno> | 2 | - | -
 include/fixy/os/ | replace-pending:<climits> | 1 | - | -
 include/fixy/os/ | replace-pending:<cstdio> | 1 | - | -
 include/fixy/os/ | replace-pending:<ctime> | 1 | - | -
@@ -225,13 +225,13 @@ include/fixy/session/ | replace-pending:<string_view> | 10 | - | -
 include/fixy/session/ | replace-pending:<tuple> | 7 | - | -
 include/fixy/session/ | replace-pending:<vector> | 9 | - | -
 include/foundation/ | base-c-library-call | 4 | - | -
-include/foundation/ | base-std-entity | 25 | - | -
-include/foundation/ | base-std-object | 12 | - | -
+include/foundation/ | base-std-entity | 22 | - | -
+include/foundation/ | base-std-object | 9 | - | -
 include/foundation/ | replace-pending:<atomic> | 1 | - | -
-include/foundation/ | replace-pending:<bit> | 4 | - | -
+include/foundation/ | replace-pending:<bit> | 3 | - | -
 include/foundation/ | replace-pending:<cstring> | 1 | - | -
-include/foundation/ | replace-pending:<span> | 3 | - | -
-include/foundation/ | replace-pending:<string_view> | 3 | - | -
+include/foundation/ | replace-pending:<span> | 2 | - | -
+include/foundation/ | replace-pending:<string_view> | 2 | - | -
 include/foundation/algebra/ | base-std-entity | 16 | - | -
 include/foundation/algebra/ | base-std-object | 11 | - | -
 include/foundation/algebra/ | replace-pending:<string_view> | 4 | - | -
@@ -464,7 +464,7 @@ test/foundation/ | opted-out | 2 | PROBE: decode walks a C array of enumerations
 test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | raw-function-pointer | 17 | - | -
 test/foundation/ | raw-new-delete | 2 | - | -
-test/foundation/ | raw-pointer-object | 46 | - | -
+test/foundation/ | raw-pointer-object | 45 | - | -
 test/foundation/ | region | 1 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
 test/foundation/ | region | 1 | ORACLE: memcpy is the model of the bytes of an object | -
 test/foundation/ | region | 1 | ORACLE: std::array is the model of the writes of a FixedArray | -
@@ -478,10 +478,10 @@ test/foundation/ | region | 1 | PROBE: a bit copy of zero bytes into a Ref, as a
 test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of a OneOf | the test of which() copies bytes that hold a tag outside the alternatives over a OneOf in a PROBE region
 test/foundation/ | region | 1 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
-test/foundation/ | replace-pending:<limits> | 53 | - | -
-test/foundation/ | replace-pending:std::bit_cast | 9 | - | -
+test/foundation/ | replace-pending:<limits> | 52 | - | -
+test/foundation/ | replace-pending:std::bit_cast | 8 | - | -
 test/foundation/ | replace-pending:std::source_location | 8 | - | -
-test/foundation/ | std-entity | 562 | - | -
+test/foundation/ | std-entity | 532 | - | -
 test/foundation/ | std-object | 192 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -

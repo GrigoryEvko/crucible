@@ -81,6 +81,11 @@ inline constexpr int socket_level = 1;
 // flags of each send, because the default action of SIGPIPE ends the process.
 inline constexpr int send_no_signal_flag = 0x4000;
 
+// SOCK_CLOEXEC: the descriptor of a socket closes at execve.  The open door
+// adds it to the type of each socket, because a descriptor that survives
+// execve leaks into each child process.
+inline constexpr int socket_close_on_exec_flag = 02000000;
+
 // SO_TIMESTAMPING of a 64-bit build.  The kernel gives the stamps in a
 // control message of the same type (SCM_TIMESTAMPING).
 inline constexpr int timestamping_option = 37;
@@ -209,6 +214,12 @@ read_timestamp_control_(::foundation::core::View<std::byte const> control) noexc
     }
     return NoTimestampMessage{};
 }
+
+// Opens a socket of DOMAIN, TYPE and PROTOCOL with socket_close_on_exec_flag
+// in its type, and gives its descriptor.  The kernel answers socket(2) at
+// once, so the call does not wait.
+[[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno> open_socket_(int domain, int type,
+                                                                                    int protocol) noexcept;
 
 // Sets the TCP option option of SOCKET to the SIZE bytes at VALUE.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>

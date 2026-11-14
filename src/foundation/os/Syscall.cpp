@@ -254,6 +254,8 @@ constexpr long kNoCall = -1;
             return __NR_perf_event_open;
         case Syscall::openat2:
             return __NR_openat2;
+        case Syscall::socket:
+            return __NR_socket;
         default:
             return kNoCall;
     }
@@ -445,6 +447,7 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::getpid:
         case Syscall::setsockopt:
         case Syscall::getsockopt:
+        case Syscall::socket:
         case Syscall::bind:
         case Syscall::sendto:
         case Syscall::recvfrom:
